@@ -293,6 +293,10 @@ function collectUnlabeledTakeover(oldMapPath, candidateMapPath, imageIds, candid
     assert(env.BRIDGE_SCHEMA_COMPATIBILITY_MODE === 'prefix_242_or_244', `candidate bridge schema mode missing: ${oldMapping.service}`)
     if (oldMapping.service === 'api-replica') assert(env.RELEASE_ID === candidate.releaseId && env.RELEASE_GIT_SHA === candidate.gitSha && env.RELEASE_MANIFEST_SHA256 === candidate.manifestSha256 && env.RELEASE_IMAGE_SET_DIGEST === candidate.imageSetDigest, 'candidate API release identity is invalid')
     const oldSpec = immutableContainerSpec(old), candidateSpec = immutableContainerSpec(next)
+    assert(oldMapping.container_id === oldSpec.id && oldMapping.image_id === oldSpec.image_id
+      && oldMapping.config_sha256 === oldSpec.config_sha256 && oldMapping.host_sha256 === oldSpec.host_sha256
+      && oldMapping.networks_sha256 === digest(Buffer.from(canonical(oldSpec.networks))),
+    `historical root-only rollback fingerprint drifted: ${oldMapping.service}`)
     assert(canonical(oldSpec.networks.map(net => [net.name, net.id])) === canonical(candidateSpec.networks.map(net => [net.name, net.id])), `candidate network topology differs from old: ${oldMapping.service}`)
     const parkedName = `${oldMapping.container}.parked.${candidate.releaseId}`
     assert(parkedName.length <= 127 && /^[A-Za-z0-9][A-Za-z0-9_.-]+$/u.test(parkedName), 'parked container name is unsafe')

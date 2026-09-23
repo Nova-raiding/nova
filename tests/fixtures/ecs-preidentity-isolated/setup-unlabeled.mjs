@@ -1,5 +1,6 @@
 import './setup.mjs'
 import fs from 'node:fs'
+import { createHash } from 'node:crypto'
 
 const services = ['api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync']
 const sha = value => value.repeat(64)
@@ -21,10 +22,18 @@ const pairs = services.map((service, index) => {
     NetworkSettings: { Networks: networks(service) } })
   return { service, old: make(oldId, oldName, true, false), candidate: make(candidateId, candidateName, false, true) }
 })
+const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(',')}]` : value && typeof value === 'object' ? `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}` : JSON.stringify(value)
+const digest = value => createHash('sha256').update(canonical(value)).digest('hex')
+const frozenOldMap = oldMap.map((entry, index) => {
+  const value = pairs[index].old
+  const networkIdentity = Object.entries(value.NetworkSettings.Networks).map(([name, net]) => ({ name, id: net.NetworkID, aliases: [...(net.Aliases ?? [])].sort() })).sort((a, b) => a.name.localeCompare(b.name))
+  return { ...entry, container_id: value.Id, image_id: value.Image,
+    config_sha256: digest(value.Config), host_sha256: digest(value.HostConfig), networks_sha256: digest(networkIdentity) }
+})
 const plan = JSON.parse(fs.readFileSync('/state/bridge-plan.json', 'utf8'))
 plan.target.services = services
 fs.writeFileSync('/state/bridge-unlabeled-plan.json', JSON.stringify(plan), { mode: 0o600 })
-fs.writeFileSync('/state/unlabeled-old-map.json', JSON.stringify(oldMap), { mode: 0o600 })
+fs.writeFileSync('/state/unlabeled-old-map.json', JSON.stringify(frozenOldMap), { mode: 0o600 })
 fs.writeFileSync('/state/unlabeled-candidate-map.json', JSON.stringify(candidateMap), { mode: 0o600 })
 fs.writeFileSync('/state/unlabeled-candidate-compose.yml', `services:\n${services.map(service => `  ${service}:\n    image: ${service === 'api-replica' ? 'new-api' : 'new-worker'}@${image(service === 'api-replica' ? 'c' : 'd')}\n`).join('')}`, { mode: 0o600 })
 fs.writeFileSync('/state/unlabeled-candidate-digests.json', JSON.stringify(Object.fromEntries(services.map(service => [service, `${service === 'api-replica' ? 'new-api' : 'new-worker'}@${image(service === 'api-replica' ? 'c' : 'd')}`]))), { mode: 0o600 })
