@@ -43,6 +43,34 @@ case "$cloud_source_v2" in
     cp "$source_archive" "$archive"
     [ "$(sed -n 's/^source_sha256=//p' "$source_identity")" = "sha256:$(shasum -a 256 "$archive" | awk '{print $1}')" ] || { echo 'cloud candidate source digest mismatch' >&2; exit 2; }
     [ "$(git get-tar-commit-id < "$archive" 2>/dev/null)" = "$revision" ] || { echo 'cloud candidate archive commit mismatch' >&2; exit 2; }
+    command -v python3 >/dev/null 2>&1 || { echo 'python3 is required to validate the cloud source archive' >&2; exit 2; }
+    ARCHIVE="$archive" python3 <<'PY'
+import os, pathlib, tarfile
+with tarfile.open(os.environ['ARCHIVE'], 'r:') as source:
+    members = source.getmembers()
+    if not members or len(members) > 250_000:
+        raise SystemExit('cloud candidate archive member count is invalid')
+    seen = set()
+    total = 0
+    for member in members:
+        path = pathlib.PurePosixPath(member.name)
+        if path.is_absolute() or not member.name or '..' in path.parts:
+            raise SystemExit(f'unsafe cloud candidate archive path: {member.name}')
+        normalized = path.as_posix().rstrip('/')
+        if not normalized or normalized in seen:
+            raise SystemExit(f'duplicate cloud candidate archive path: {member.name}')
+        if normalized == 'apps/plugin' or normalized.startswith('apps/plugin/') or normalized == '.codex-marketplace' or normalized.startswith('.codex-marketplace/'):
+            raise SystemExit(f'cloud candidate archive contains local plugin source: {member.name}')
+        seen.add(normalized)
+        if not (member.isdir() or member.isfile()) or member.mode & 0o7000:
+            raise SystemExit(f'unsafe cloud candidate archive member: {member.name}')
+        if member.isfile():
+            if member.size > 2 * 1024 * 1024 * 1024:
+                raise SystemExit(f'oversized cloud candidate archive member: {member.name}')
+            total += member.size
+            if total > 4 * 1024 * 1024 * 1024:
+                raise SystemExit('cloud candidate archive expands beyond the release limit')
+PY
     ;;
   *) echo 'ECS_CLOUD_SOURCE_V2 must be 0 or 1' >&2; exit 2 ;;
 esac

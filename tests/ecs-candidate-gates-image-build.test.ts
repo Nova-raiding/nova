@@ -74,4 +74,37 @@ describe('ECS candidate gate image construction', () => {
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain(`revision=${revision}`)
   })
+
+  it('refuses a v2 gate image when the bundled cloud archive still contains local plugin source', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'candidate-cloud-image-build-'))
+    const root = join(dir, 'repo')
+    const bundle = join(dir, 'bundle')
+    const bin = join(dir, 'bin')
+    mkdirSync(join(root, 'infra/scripts'), { recursive: true })
+    mkdirSync(join(root, 'infra/docker'), { recursive: true })
+    mkdirSync(join(root, 'apps/plugin'), { recursive: true })
+    mkdirSync(bundle)
+    mkdirSync(bin)
+    cpSync(resolve('infra/scripts/build-ecs-candidate-gates-image.sh'), join(root, 'infra/scripts/build-ecs-candidate-gates-image.sh'))
+    cpSync(resolve('infra/docker/candidate-gates.Dockerfile'), join(root, 'infra/docker/candidate-gates.Dockerfile'))
+    writeFileSync(join(root, 'apps/plugin/bridge.mjs'), 'export {}\n')
+    spawnSync('git', ['init', '-q'], { cwd: root })
+    spawnSync('git', ['add', '.'], { cwd: root })
+    spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'candidate'], { cwd: root })
+    const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim()
+    const archive = join(bundle, 'candidate-source.tar')
+    const archived = spawnSync('git', ['archive', '--format=tar', '-o', archive, revision], { cwd: root, encoding: 'utf8' })
+    expect(archived.status, archived.stderr).toBe(0)
+    const sourceSha = spawnSync('shasum', ['-a', '256', archive], { encoding: 'utf8' }).stdout.split(/\s+/u)[0]
+    writeFileSync(join(bundle, 'candidate-identity.txt'), `git_sha=${revision}\nsource_sha256=sha256:${sourceSha}\nschema_version=candidate-identity/2\n`)
+    writeFileSync(join(bin, 'docker'), '#!/bin/sh\necho "docker must not be invoked" >&2\nexit 99\n', { mode: 0o755 })
+    const result = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-candidate-gates-image.sh')], {
+      cwd: dir,
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, ECS_CANDIDATE_GIT_SHA: revision, ECS_CLOUD_SOURCE_V2: '1', ECS_CANDIDATE_BUNDLE_DIR: bundle },
+      encoding: 'utf8',
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('cloud candidate archive contains local plugin source')
+    expect(result.stderr).not.toContain('docker must not be invoked')
+  })
 })
