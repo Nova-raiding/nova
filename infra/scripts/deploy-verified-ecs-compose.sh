@@ -27,9 +27,11 @@ readonly ECS_PREIDENTITY_RECOVERY_ENTRYPOINT=/usr/local/libexec/merchant/ecs-pre
 : "${RELEASE_ID:?RELEASE_ID is required}"
 : "${IMAGE_DIGESTS_JSON:?IMAGE_DIGESTS_JSON is required}"
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
+: "${EXPECTED_MIGRATION_VERSION:?EXPECTED_MIGRATION_VERSION is required}"
 
 [ "$CONFIRM_ECS_DEPLOY" = YES ] || { echo 'ECS deployment refused: confirmation must equal YES' >&2; exit 2; }
 printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo 'unsafe RELEASE_ID' >&2; exit 2; }
+printf '%s' "$EXPECTED_MIGRATION_VERSION" | grep -Eq '^[1-9][0-9]*$' || { echo 'invalid EXPECTED_MIGRATION_VERSION' >&2; exit 2; }
 printf '%s' "${ECS_COMPOSE_PROJECT:-merchant-production}" | grep -Eq '^[a-z0-9][a-z0-9_-]{0,62}$' || { echo 'unsafe ECS_COMPOSE_PROJECT' >&2; exit 2; }
 printf '%s' "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" | grep -Eq '^[1-9][0-9]{0,3}$' || { echo 'invalid ECS_COMPOSE_WAIT_TIMEOUT_SECONDS' >&2; exit 2; }
 printf '%s' "${ECS_POST_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300}" | grep -Eq '^[1-9][0-9]{0,3}$' || { echo 'invalid ECS_POST_DEPLOY_HEALTH_TIMEOUT_SECONDS' >&2; exit 2; }
@@ -291,7 +293,7 @@ ECS_ROLLBACK_ENV_FILE="$rollback_capsule_dir/runtime.env"
 rollback_compose_sha=$(shasum -a 256 "$ECS_ROLLBACK_COMPOSE_PATH" | awk '{print $1}')
 rollback_env_sha=$(shasum -a 256 "$ECS_ROLLBACK_ENV_FILE" | awk '{print $1}')
 rollback_digests_sha=$(printf '%s' "$ECS_ROLLBACK_IMAGE_DIGESTS_JSON" | shasum -a 256 | awk '{print $1}')
-PLAN="$ECS_ROLLBACK_PLAN_PATH" COMPOSE_SHA="$rollback_compose_sha" ENV_SHA="$rollback_env_sha" DIGESTS_SHA="$rollback_digests_sha" \
+PLAN="$ECS_ROLLBACK_PLAN_PATH" COMPOSE_SHA="$rollback_compose_sha" ENV_SHA="$rollback_env_sha" DIGESTS_SHA="$rollback_digests_sha" EXPECTED_MIGRATION_VERSION="$EXPECTED_MIGRATION_VERSION" \
 PROJECT="$project" CANDIDATE_ID="$RELEASE_ID" CANDIDATE_GIT="$git_sha" CANDIDATE_MANIFEST="$manifest_sha256" CANDIDATE_IMAGES="$image_set_digest" \
 DIGESTS="$ECS_ROLLBACK_IMAGE_DIGESTS_JSON" node <<'NODE'
 const fs=require('fs')
@@ -306,8 +308,31 @@ const current={release_id:process.env.CANDIDATE_ID,git_sha:process.env.CANDIDATE
 required(Object.entries(current).every(([key,value])=>plan.current?.[key]===value),'rollback capsule current identity does not match the candidate')
 required(plan.target?.compose_sha256===process.env.COMPOSE_SHA&&plan.target?.env_sha256===process.env.ENV_SHA&&plan.target?.image_digests_sha256===process.env.DIGESTS_SHA,'rollback capsule artifact checksum mismatch')
 required(plan.database?.strategy==='forward_only'&&plan.database?.schema_downgrade===false&&plan.volumes?.preserve===true,'rollback capsule data-preservation contract is invalid')
+const candidateTail=Number(process.env.EXPECTED_MIGRATION_VERSION)
+const liveVersion=plan.database?.live_migration_version
+const rollbackTail=plan.database?.target_migration_tail
+required(Number.isSafeInteger(candidateTail)&&candidateTail>0,'candidate migration tail is invalid')
+required(Number.isSafeInteger(liveVersion)&&liveVersion>0&&liveVersion<=candidateTail,'rollback capsule live migration version is invalid')
+required(Number.isSafeInteger(rollbackTail)&&rollbackTail===candidateTail,'rollback target must contain exactly the candidate migration chain')
+const approved=plan.database?.allowed_prefix_sha256
+required(approved&&Object.getPrototypeOf(approved)===Object.prototype,'rollback capsule approved migration prefixes are missing')
+for(let version=liveVersion;version<=rollbackTail;version+=1){
+  required(/^[0-9a-f]{64}$/.test(approved[version]??''),`rollback capsule lacks an approved migration prefix at ${version}`)
+}
 required(digests&&Object.keys(digests).length>0&&Object.values(digests).every(value=>/^sha256:[0-9a-f]{64}$/.test(value)),'rollback capsule image digests are invalid')
 NODE
+if [ "$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(p.database.live_migration_version))' "$ECS_ROLLBACK_PLAN_PATH")" -lt "$EXPECTED_MIGRATION_VERSION" ]; then
+  # The old runtime must not serve traffic against a schema it cannot read.
+  # A forward-compatible bridge is installed and identity-checked separately
+  # before this candidate is allowed to migrate the shared database.
+  live_bridge_release=$(curl --fail --silent --show-error --max-time 15 "${PRODUCTION_API_BASE_URL%/}/releasez")
+  BRIDGE_RELEASE="$live_bridge_release" BRIDGE_PLAN="$ECS_ROLLBACK_PLAN_PATH" node -e '
+    const plan=JSON.parse(require("fs").readFileSync(process.env.BRIDGE_PLAN,"utf8"))
+    const body=JSON.parse(process.env.BRIDGE_RELEASE),live=body.data?.release??body.release
+    const target=plan.target,expected={release_id:target.release_id,release_git_sha:target.git_sha,manifest_sha256:target.manifest_sha256,image_set_digest:target.image_set_digest}
+    if(!live||Object.entries(expected).some(([key,value])=>live[key]!==value))throw new Error("forward-compatible rollback bridge is not the current public release")
+  '
+fi
 state_path="$ECS_DEPLOY_STATE_DIR/${RELEASE_ID}.predeploy.json"
 attempt_id="attempt_$(printf '%s:%s:%s' "$RELEASE_ID" "$DEPLOYMENT_NONCE" "$$" | shasum -a 256 | awk '{print $1}')"
 DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" capture --state "$state_path" --attempt-id "$attempt_id" \
@@ -317,6 +342,10 @@ DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" capture --st
   --candidate-image-set-digest "$image_set_digest" --candidate-image-digests "$rollback_capsule_dir/candidate-image-digests.json" \
   --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH"
 [ -s "$state_path" ] || { echo 'pre-deploy state capture failed' >&2; exit 1; }
+PREDEPLOY_STATE="$state_path" ROLLBACK_PLAN="$ECS_ROLLBACK_PLAN_PATH" node -e '
+  const fs=require("fs"),state=JSON.parse(fs.readFileSync(process.env.PREDEPLOY_STATE,"utf8")),plan=JSON.parse(fs.readFileSync(process.env.ROLLBACK_PLAN,"utf8"))
+  if(state.database_before?.migration_version!==plan.database.live_migration_version)throw new Error("rollback capsule live migration version differs from signed predeploy observation")
+'
 
 # Consume only after every read-only gate passes and immediately before the
 # first mutation. A consumed nonce is never deleted or reused after failure.
