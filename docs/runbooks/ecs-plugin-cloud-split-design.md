@@ -1,6 +1,6 @@
-# 本地插件与 ECS 云端源码的双制品边界（设计，尚未启用）
+# 本地插件与 ECS 云端源码的双制品边界（分阶段实施，尚未上线）
 
-状态：**NO-GO**。本文不改变现有部署器或生产身份格式。当前 `candidate-source.tar` 约 48.9 MB，已排除已跟踪的 `artifacts/`、`screenshots/`；再排除 `apps/plugin/`、`.codex-marketplace/` 后约 46.7 MB，只节省约 2.2 MB。此变更的主要目的不是解决 101 磁盘占用，而是落实“插件前端只在用户桌面安装”的边界。不能以裸 `git archive HEAD`（约 528 MB）的大小衡量现有生产候选包。
+状态：**NO-GO**。v2 双制品的打包、签名记录、云端清单、候选归档及云端门禁镜像已在隔离分支实现定向验证，但尚无生产 macOS/Windows 双平台原生安装与真实 ChatGPT host 证据，也没有切换 101。执行云端测试的操作入口是先在可信本地发布机生成、签名并核验双平台制品和测试记录，再于无插件源码的候选归档目录运行 `npm run test:cloud-release-gates`；此命令不能替代本地安装验收。当前 `candidate-source.tar` 约 48.9 MB，已排除已跟踪的 `artifacts/`、`screenshots/`；再排除 `apps/plugin/`、`.codex-marketplace/` 后约 46.7 MB，只节省约 2.2 MB。此变更的主要目的不是解决 101 磁盘占用，而是落实“插件前端只在用户桌面安装”的边界。不能以裸 `git archive HEAD`（约 528 MB）的大小衡量现有生产候选包。
 
 ## 现状中的直接依赖
 

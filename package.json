@@ -61,7 +61,7 @@
     "test:ops-console": "npm test --workspace merchant-ops-console",
     "test:plugin-import-contract": "node apps/plugin/skills/six-platform-public-import/scripts/extract-product.test.mjs && node .codex-marketplace/plugins/merchant-marketing/skills/six-platform-public-import/scripts/extract-product.test.mjs",
     "test:ecs-source-archive-contract": "node --import tsx scripts/run-safe-tests.ts tests/ecs-source-archive-contract.test.ts",
-    "test:cloud-release-gates": "node scripts/run-cloud-release-gates.mjs",
+    "test:cloud-release-gates": "node --test tests/plugin-release-descriptor.test.mjs tests/local-plugin-test-attestation.test.mjs tests/cloud-release-gate-split.test.mjs && node scripts/run-cloud-release-gates.mjs",
     "audit:ops-surface": "node scripts/audit-ops-surface.mjs",
     "test:watch": "node --import tsx scripts/run-safe-tests.ts watch",
     "test:runtime:isolated": "vitest run --config vitest.runtime.config.ts --no-file-parallelism",
