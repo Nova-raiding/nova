@@ -21207,7 +21207,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   const url = new URL(req.url ?? '/', `${publicRequestOrigin(req)}/`)
   const path = url.pathname
   const isLocalPluginConnectionRoute = path === '/v1/auth/local-plugin/connect-requests' || path === '/v1/auth/local-plugin/install-instances/register' || path === '/v1/auth/local-plugin/install-instances/pair' || /^\/v1\/auth\/local-plugin\/connect-requests\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/status$/iu.test(path)
-  const isPasswordAuthRoute = isLocalPluginConnectionRoute || path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke' || path === '/v1/auth/local-plugin/authorize' || path === '/v1/auth/local-plugin/token'
+  const isPasswordAuthRoute = isLocalPluginConnectionRoute || path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/workspace-bootstrap' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke' || path === '/v1/auth/local-plugin/authorize' || path === '/v1/auth/local-plugin/token'
   const passwordSessionToken = () => {
     const encoded = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
     if (!encoded) return ''
@@ -21261,6 +21261,33 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const current = await passwordAuthRepository.authenticate(passwordSessionToken())
       if (!current) throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录', 401)
       return send(res, 200, 'unknown', { account: current.account, session_id: current.sessionId, issued_at: current.issuedAt, expires_at: current.expiresAt, workspaces: current.account.workspaceIds, roles: current.account.roles }, null, req)
+    }
+    if (req.method === 'POST' && path === '/v1/auth/workspace-bootstrap') {
+      // Only an active, workspace-less merchant password account can take
+      // this first-run path. It cannot mint a workspace-scoped MCP token until
+      // the durable owner membership and account binding both exist.
+      const origin = publicRequestOrigin(req)
+      if (header(req, 'origin')?.trim() !== origin) throw new DomainError('AUTH_CSRF_ORIGIN_INVALID', '首次工作区创建来源无效', 403)
+      const current = await passwordAuthRepository.authenticate(passwordSessionToken())
+      if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') throw new DomainError('AUTH_SESSION_INVALID', '请先登录已开通的商家账号', 401)
+      if (current.account.workspaceIds.length !== 0) throw new DomainError('AUTH_BOOTSTRAP_ACCOUNT_CHANGED', '当前账号已绑定工作区，不能再次创建', 409)
+      const input = await body(req, 16 * 1024)
+      const displayName = String(input.display_name ?? '').normalize('NFKC').trim()
+      if (!displayName || displayName.length > 120 || /[\u0000-\u001f\u007f\u200b-\u200f]/u.test(displayName)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '工作区名称无效', 400)
+      try {
+        const workspace = await (persistence.workspaceBootstrap ?? memoryWorkspaceBootstrap).bootstrap({
+          issuer: 'damai-password', externalSubject: current.account.login, identityId: current.account.identityId,
+          candidateWorkspaceId: `ws_${randomUUID().replaceAll('-', '').slice(0, 24)}`,
+          displayName, actorId: current.account.identityId,
+        })
+        await passwordAuthRepository.bindBootstrappedWorkspace({ login: current.account.login, identityId: current.account.identityId, workspaceId: workspace.workspaceId })
+        knownWorkspaces.add(workspace.workspaceId)
+        return send(res, 201, workspace.workspaceId, { workspace_id: workspace.workspaceId, status: 'active', reused: !workspace.created, next_action: 'local_plugin_connect' }, null, req)
+      } catch (error) {
+        if (error instanceof WorkspaceBootstrapError) throw new DomainError(error.code, '商家身份与首次工作区绑定无效，请联系管理员核查', error.code === 'WORKSPACE_BOOTSTRAP_BINDING_INACTIVE' ? 409 : 403)
+        if (['AUTH_BOOTSTRAP_ACCOUNT_CHANGED', 'AUTH_BOOTSTRAP_MEMBERSHIP_INVALID'].includes((error as { code?: string }).code ?? '')) throw new DomainError((error as { code: string }).code, '首次工作区绑定未完成，请重新登录或联系管理员', 409)
+        throw error
+      }
     }
     if (req.method === 'POST' && path === '/v1/auth/local-plugin/install-instances/register') {
       if (process.env.LOCAL_PLUGIN_ONE_CLICK_ENABLED !== 'true') throw new DomainError('LOCAL_PLUGIN_ONE_CLICK_UNAVAILABLE', '本地插件一键连接尚未启用', 503)
@@ -21618,7 +21645,8 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     requireOperationsRole(req, ['platform_ops', 'platform_admin', 'ops_admin'])
     const input = await body(req, 64 * 1024)
     const workspaceIds = Array.isArray(input.workspace_ids) ? input.workspace_ids.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).map(value => value.trim()) : []
-    if (!workspaceIds.length) throw new DomainError('AUTH_ACCOUNT_PROVISIONING_INVALID', '至少绑定一个有效企业工作区', 400)
+    const bootstrapWorkspace = input.bootstrap_workspace === true
+    if ((!workspaceIds.length && !bootstrapWorkspace) || (workspaceIds.length && bootstrapWorkspace)) throw new DomainError('AUTH_ACCOUNT_PROVISIONING_INVALID', '须绑定现有工作区，或显式开启首次工作区引导', 400)
     try {
       const account = await passwordAuthRepository.createMerchantAccount({
         login: String(input.login ?? ''),
@@ -21626,6 +21654,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         enterpriseName: String(input.enterprise_name ?? input.enterpriseName ?? ''),
         contactName: String(input.contact_name ?? input.contactName ?? ''),
         workspaceIds,
+        bootstrapWorkspace,
         actorId: requestPrincipals.get(req)?.actorId ?? 'platform_ops',
         reason: String(input.reason ?? ''),
       })
@@ -21648,7 +21677,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
           reason: String(input.reason ?? '').trim(),
         })
       }
-      return send(res, 201, 'unknown', { account: { ...account, workspaceIds: account.workspaceIds }, onboarding_fee_fen: 500000, vip_access: 'pending_billing_verification' }, null, req)
+      return send(res, 201, 'unknown', { account: { ...account, workspaceIds: account.workspaceIds }, onboarding_fee_fen: 500000, vip_access: 'pending_billing_verification', ...(bootstrapWorkspace ? { next_action: 'workspace_bootstrap' } : {}) }, null, req)
     } catch (error) {
       const code = (error as { code?: string }).code
       const status = code === 'AUTH_LOGIN_ALREADY_EXISTS' ? 409 : code === 'AUTH_PASSWORD_POLICY_INVALID' || code === 'AUTH_ACCOUNT_PROVISIONING_INVALID' || code === 'AUTH_LOGIN_INVALID' || code === 'AUTH_WORKSPACE_NOT_FOUND' ? 400 : 500

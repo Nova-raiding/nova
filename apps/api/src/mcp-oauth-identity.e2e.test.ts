@@ -27,6 +27,40 @@ describe('canonical password identity MCP OAuth', () => {
     vi.unstubAllEnvs()
   })
 
+  it('lets an operator-provisioned workspace-less merchant bootstrap once before issuing a local stdio token', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+    const repository = new MemoryPasswordAuthRepository()
+    await repository.ensurePlatformAccount({ login: 'bootstrap-operator@example.test', passwordHash: await argon2.hash('BootstrapOperator1234!'), roles: ['platform_admin'] })
+    setPasswordAuthRepositoryForTests(repository)
+    const base = await start()
+    const operatorLogin = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: 'bootstrap-operator@example.test', password: 'BootstrapOperator1234!', account_type: 'platform' }) })
+    expect(operatorLogin.status).toBe(200)
+    const operatorCookie = operatorLogin.headers.get('set-cookie')?.split(';')[0]
+    const merchantLogin = `first-workspace-${Date.now()}@example.test`
+    const password = 'FirstWorkspace1234!'
+    const provision = await fetch(`${base}/v1/ops/merchant-accounts`, { method: 'POST', headers: { cookie: operatorCookie!, 'content-type': 'application/json', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ login: merchantLogin, password, enterprise_name: '首次工作区企业', contact_name: '商家', workspace_ids: [], bootstrap_workspace: true, reason: '受保护首次工作区引导' }) })
+    expect(provision.status).toBe(201)
+    await expect(provision.json()).resolves.toMatchObject({ data: { account: { workspaceIds: [] }, next_action: 'workspace_bootstrap' } })
+    const merchantLoginResponse = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: merchantLogin, password, account_type: 'merchant' }) })
+    expect(merchantLoginResponse.status).toBe(200)
+    const cookie = merchantLoginResponse.headers.get('set-cookie')?.split(';')[0]
+    const beforeToken = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({}) })
+    expect(beforeToken.status).not.toBe(200)
+    const csrf = await fetch(`${base}/v1/auth/workspace-bootstrap`, { method: 'POST', headers: { cookie: cookie!, origin: 'https://wrong.example', 'content-type': 'application/json' }, body: JSON.stringify({ display_name: '首次工作区' }) })
+    expect(csrf.status).toBe(403)
+    const bootstrap = await fetch(`${base}/v1/auth/workspace-bootstrap`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ display_name: '首次工作区' }) })
+    expect(bootstrap.status).toBe(201)
+    const payload = await bootstrap.json() as { data?: { workspace_id?: string } }
+    const workspaceId = payload.data?.workspace_id
+    expect(workspaceId).toMatch(/^ws_[a-f0-9]{24}$/u)
+    expect((await repository.authenticate(cookie!.split('=')[1]!))?.account.workspaceIds).toEqual([workspaceId])
+    const token = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) })
+    expect(token.status).toBe(200)
+    const second = await fetch(`${base}/v1/auth/workspace-bootstrap`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ display_name: '第二工作区' }) })
+    expect(second.status).toBe(409)
+  })
+
   it('exchanges a merchant browser session for a local desktop MCP token without ChatGPT OAuth', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
     vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')

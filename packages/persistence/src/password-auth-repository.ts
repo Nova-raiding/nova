@@ -61,7 +61,8 @@ export interface McpOAuthTokenPair {
 }
 export interface PasswordAuthRepository {
   register(input: { login: string; password: string; enterpriseName: string; contactName: string; termsAgreed: boolean }): Promise<{ account: PasswordAccount; applicationId: string }>
-  createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string }): Promise<PasswordAccount>
+  createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string; bootstrapWorkspace?: boolean }): Promise<PasswordAccount>
+  bindBootstrappedWorkspace(input: { login: string; identityId: string; workspaceId: string }): Promise<PasswordAccount>
   listAccounts(): Promise<PasswordAccount[]>
   listMerchantRegistrationApplications(input: { limit: number; offset: number }): Promise<{ items: PasswordAccount[]; total: number; limit: number; offset: number }>
   login(input: { login: string; password: string; ip?: string; userAgent?: string }): Promise<{ token: string; principal: PasswordSessionPrincipal }>
@@ -158,9 +159,9 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
     auditMemory(this.events, 'auth.platform_preseeded', login, { account_type: 'platform' })
   }
 
-  async createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string }) {
+  async createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string; bootstrapWorkspace?: boolean }) {
     const login = assertRegistration({ ...input, termsAgreed: true })
-    if (!input.workspaceIds.length || !input.actorId.trim() || input.reason.trim().length < 4) throw Object.assign(new Error('ACCOUNT_PROVISIONING_INVALID'), { code: 'AUTH_ACCOUNT_PROVISIONING_INVALID' })
+    if ((!input.workspaceIds.length && input.bootstrapWorkspace !== true) || (input.workspaceIds.length && input.bootstrapWorkspace === true) || !input.actorId.trim() || input.reason.trim().length < 4) throw Object.assign(new Error('ACCOUNT_PROVISIONING_INVALID'), { code: 'AUTH_ACCOUNT_PROVISIONING_INVALID' })
     if (this.accounts.has(login)) throw Object.assign(new Error('LOGIN_ALREADY_EXISTS'), { code: 'AUTH_LOGIN_ALREADY_EXISTS' })
     let passwordHash: string
     try { passwordHash = await hashPassword(input.password) } catch (error) { if ((error as Error).message === 'PASSWORD_POLICY_INVALID') throw Object.assign(new Error('PASSWORD_POLICY_INVALID'), { code: 'AUTH_PASSWORD_POLICY_INVALID' }); throw error }
@@ -169,6 +170,18 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
     const account: AccountRecord = { id: accountId, identityId: accountId, login, accountType: 'merchant', enterpriseName: input.enterpriseName.trim(), contactName: input.contactName.trim(), status: 'active', roles: ['merchant'], workspaceIds: [...new Set(input.workspaceIds.map(value => value.trim()).filter(Boolean))], failedAttempts: 0, revision: 1, authEpoch: 1, createdAt: now, updatedAt: now, passwordHash }
     this.accounts.set(login, account)
     auditMemory(this.events, 'auth.merchant_created', account.id, { workspace_ids: account.workspaceIds, actor_id: input.actorId, reason: input.reason })
+    return accountPublic(account)
+  }
+
+  async bindBootstrappedWorkspace(input: { login: string; identityId: string; workspaceId: string }) {
+    const account = this.accounts.get(normalizeLogin(input.login))
+    if (!account || account.identityId !== input.identityId || account.accountType !== 'merchant' || account.status !== 'active' || (account.workspaceIds.length > 0 && (account.workspaceIds.length !== 1 || account.workspaceIds[0] !== input.workspaceId))) throw Object.assign(new Error('BOOTSTRAP_ACCOUNT_CHANGED'), { code: 'AUTH_BOOTSTRAP_ACCOUNT_CHANGED' })
+    if (account.workspaceIds.length === 0) {
+      account.workspaceIds = [input.workspaceId]
+      account.revision += 1
+      account.updatedAt = new Date().toISOString()
+      auditMemory(this.events, 'auth.merchant_workspace_bootstrapped', account.id, { workspace_id: input.workspaceId, actor_id: input.identityId })
+    }
     return accountPublic(account)
   }
 
@@ -326,10 +339,10 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
   private async find(client: SqlClient, login: string) { const result = await client.query<any>(`SELECT id, identity_id AS "identityId", login_identifier AS login, account_type AS "accountType", enterprise_name AS "enterpriseName", contact_name AS "contactName", password_hash AS "passwordHash", status, roles, workspace_ids AS "workspaceIds", failed_attempts AS "failedAttempts", locked_until AS "lockedUntil", auth_epoch AS "authEpoch", revision, created_at AS "createdAt", updated_at AS "updatedAt" FROM platform_password_accounts WHERE login_identifier=$1`, [login]); return result.rows[0] as (AccountRecord & { identityId: string }) | undefined }
   private public(account: AccountRecord) { return accountPublic({ ...account, createdAt: iso(account.createdAt), updatedAt: iso(account.updatedAt) }) }
   async register(input: { login: string; password: string; enterpriseName: string; contactName: string; termsAgreed: boolean }) { const login = assertRegistration(input); const passwordHash = await hashPassword(input.password); return this.withClient(async client => { const identityId = randomUUID(); const applicationId = randomUUID(); try { await client.query(`INSERT INTO platform_identities (id, issuer, external_subject, display_name) VALUES ($1,'damai-password',$2,$3)`, [identityId, login, input.contactName.trim()]); await client.query(`INSERT INTO platform_password_accounts (id, identity_id, login_identifier, account_type, enterprise_name, contact_name, password_hash, terms_agreed_at, status, roles, workspace_ids) VALUES ($1,$2,$3,'merchant',$4,$5,$6,now(),'merchant_pending',ARRAY['merchant'],ARRAY[]::text[])`, [applicationId, identityId, login, input.enterpriseName.trim(), input.contactName.trim(), passwordHash]); await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2,'auth.registered',$3,'merchant registration',$4)`, [randomUUID(), identityId, login, { account_type: 'merchant', status: 'merchant_pending' }]) } catch (error) { if ((error as { code?: string }).code === '23505') throw Object.assign(new Error('LOGIN_ALREADY_EXISTS'), { code: 'AUTH_LOGIN_ALREADY_EXISTS' }); throw error } const account = await this.find(client, login); return { account: this.public(account!), applicationId } }) }
-  async createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string }) {
+  async createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string; bootstrapWorkspace?: boolean }) {
     const login = assertRegistration({ ...input, termsAgreed: true })
     const workspaceIds = [...new Set(input.workspaceIds.map(value => value.trim()).filter(Boolean))]
-    if (!workspaceIds.length || !input.actorId.trim() || input.reason.trim().length < 4) throw Object.assign(new Error('ACCOUNT_PROVISIONING_INVALID'), { code: 'AUTH_ACCOUNT_PROVISIONING_INVALID' })
+    if ((!workspaceIds.length && input.bootstrapWorkspace !== true) || (workspaceIds.length && input.bootstrapWorkspace === true) || !input.actorId.trim() || input.reason.trim().length < 4) throw Object.assign(new Error('ACCOUNT_PROVISIONING_INVALID'), { code: 'AUTH_ACCOUNT_PROVISIONING_INVALID' })
     const passwordHash = await hashPassword(input.password)
     return this.withClient(async client => {
       const workspaces = await client.query<{ id: string }>('SELECT id FROM workspaces WHERE id = ANY($1::text[]) AND status = $2', [workspaceIds, 'active'])
@@ -347,6 +360,27 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
       }
       const account = await this.find(client, login)
       return this.public(account!)
+    })
+  }
+
+  async bindBootstrappedWorkspace(input: { login: string; identityId: string; workspaceId: string }) {
+    const login = assertLogin(input.login)
+    if (!input.identityId.trim() || !input.workspaceId.trim()) throw Object.assign(new Error('BOOTSTRAP_ACCOUNT_CHANGED'), { code: 'AUTH_BOOTSTRAP_ACCOUNT_CHANGED' })
+    return this.withClient(async client => {
+      // Serialize same-account bind/retry after the workspace bootstrap's own
+      // identity lock. A competing request must observe the committed binding.
+      await client.query('SELECT id FROM platform_password_accounts WHERE login_identifier=$1 FOR UPDATE', [login])
+      const current = await this.find(client, login)
+      if (!current || current.identityId !== input.identityId || current.accountType !== 'merchant' || current.status !== 'active' || (current.workspaceIds.length > 0 && (current.workspaceIds.length !== 1 || current.workspaceIds[0] !== input.workspaceId))) throw Object.assign(new Error('BOOTSTRAP_ACCOUNT_CHANGED'), { code: 'AUTH_BOOTSTRAP_ACCOUNT_CHANGED' })
+      if (current.workspaceIds.length === 0) {
+        const bound = await client.query<{ id: string }>(`SELECT m.id FROM workspace_members m JOIN workspaces w ON w.id=m.workspace_id WHERE m.workspace_id=$1 AND m.identity_id=$2 AND m.external_subject=$3 AND m.role='workspace_owner' AND m.status='active' AND w.status='active'`, [input.workspaceId, input.identityId, login])
+        if (bound.rows.length !== 1) throw Object.assign(new Error('BOOTSTRAP_MEMBERSHIP_INVALID'), { code: 'AUTH_BOOTSTRAP_MEMBERSHIP_INVALID' })
+        const updated = await client.query(`UPDATE platform_password_accounts SET workspace_ids=ARRAY[$3]::text[],revision=revision+1,updated_at=now() WHERE login_identifier=$1 AND identity_id=$2 AND account_type='merchant' AND status='active' AND cardinality(workspace_ids)=0 RETURNING id`, [login, input.identityId, input.workspaceId])
+        if (updated.rowCount !== 1) throw Object.assign(new Error('BOOTSTRAP_ACCOUNT_CHANGED'), { code: 'AUTH_BOOTSTRAP_ACCOUNT_CHANGED' })
+        await this.syncEnterpriseName(client, [input.workspaceId], current.enterpriseName ?? '')
+        await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2,'auth.merchant_workspace_bootstrapped',$3,'first workspace bootstrap',$4)`, [randomUUID(), input.identityId, input.identityId, { workspace_id: input.workspaceId }])
+      }
+      return this.public((await this.find(client, login))!)
     })
   }
   async listAccounts() { return this.withClient(async client => { const result = await client.query<AccountRecord>(`SELECT a.id, a.identity_id AS "identityId", a.login_identifier AS login, a.account_type AS "accountType", a.enterprise_name AS "enterpriseName", a.contact_name AS "contactName", a.password_hash AS "passwordHash", a.status, a.roles, a.workspace_ids AS "workspaceIds", a.failed_attempts AS "failedAttempts", a.locked_until AS "lockedUntil", a.auth_epoch AS "authEpoch", a.revision, a.created_at AS "createdAt", a.updated_at AS "updatedAt" FROM platform_password_accounts a ORDER BY a.updated_at DESC, a.id ASC`); return result.rows.map(row => this.public(row)) }) }

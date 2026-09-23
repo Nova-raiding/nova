@@ -262,6 +262,7 @@ export const HTTP_ROUTE_COVERAGE_EXEMPTIONS: readonly HttpRouteCoverageExemption
   { pathTemplate: '/v1/auth/password/reset-request', methods: AUTH_FORM_METHODS, reason: 'password reset request; unauthenticated by design' },
   { pathTemplate: '/v1/auth/password/reset-confirm', methods: AUTH_FORM_METHODS, reason: 'password reset confirmation; authenticated by the reset token' },
   { pathTemplate: '/v1/auth/password/change', methods: AUTH_FORM_METHODS, reason: 'password change; authenticated by the caller session cookie' },
+  { pathTemplate: '/v1/auth/workspace-bootstrap', methods: AUTH_FORM_METHODS, reason: 'first merchant workspace; authenticated by an active merchant session cookie plus same-origin check' },
   { pathTemplate: '/v1/auth/mcp-token', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token exchange; authenticated by the caller session cookie plus origin check' },
   { pathTemplate: '/v1/auth/mcp-token/refresh', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token refresh; authenticated by the refresh token itself' },
   { pathTemplate: '/v1/auth/mcp-token/revoke', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token revocation; authenticated by the token being revoked' },
