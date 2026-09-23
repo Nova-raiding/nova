@@ -7,6 +7,11 @@ COPY services ./services
 COPY tests ./tests
 COPY demo ./demo
 COPY scripts ./scripts
+# The root composite build typechecks tests that import host-side release
+# helpers. Keep those imports resolvable in the build stage; the API source
+# manifest still scopes only apps/api + packages, and runtime copies neither
+# infra/scripts nor these host-side helpers.
+COPY infra/scripts ./infra/scripts
 # Release-gate tests imported by the root composite build use the checked-in
 # attestation helpers. Keep them in the build stage only; they are not copied
 # into the runtime image.
