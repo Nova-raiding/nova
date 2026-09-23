@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildCloudReleaseManifest, buildReleaseManifest } from '../scripts/release-manifest.js'
+import { PLUGIN_CONTRACT_TESTS } from '../scripts/local-plugin-test-attestation.mjs'
 import { validateReleaseManifest } from './release-manifest-gate.js'
 
 const sha = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
@@ -34,8 +35,20 @@ function fixture() {
   const descriptorPath = join(dir, 'plugin-descriptor.json')
   const descriptor = { ...fields, signature_base64: sign(null, Buffer.from(JSON.stringify(fields)), pair.privateKey).toString('base64') }
   writeFileSync(descriptorPath, `${JSON.stringify(descriptor)}\n`)
+  const testNow = Date.now()
+  const testFields = {
+    schema_version: 'local-plugin-tests/2', release_id: legacy.releaseId, git_sha: legacy.components.releaseGitSha,
+    platform: descriptor.platform, descriptor_sha256: sha(readFileSync(descriptorPath)),
+    suite_sha256: sha(JSON.stringify(PLUGIN_CONTRACT_TESTS)), status: 'pass',
+    generated_at: new Date(testNow).toISOString(), expires_at: new Date(testNow + 86_400_000).toISOString(),
+    key_id: 'plugin-test-key',
+  }
+  const pluginTestAttestationPath = join(dir, 'local-plugin-test-attestation.json')
+  writeFileSync(pluginTestAttestationPath, `${JSON.stringify({ ...testFields,
+    signature_base64: sign(null, Buffer.from(JSON.stringify(testFields)), pair.privateKey).toString('base64') })}\n`)
   const manifest = buildCloudReleaseManifest({ root, releaseId: legacy.releaseId, pluginDescriptorPath: descriptorPath,
-    pluginPublicKeyPath: publicKeyPath, pluginKeyId: 'plugin-test-key', pluginPackagePath: packagePath })
+    pluginPublicKeyPath: publicKeyPath, pluginKeyId: 'plugin-test-key', pluginPackagePath: packagePath,
+    pluginTestAttestationPath })
   manifest.productionEvidence = evidence as typeof manifest.productionEvidence
   const staged = join(dir, 'staged')
   mkdirSync(staged)
@@ -50,8 +63,8 @@ function fixture() {
     `sync_plan_sha256=sha256:${'c'.repeat(64)}`, '',
   ].join('\n'))
   const options = { root: staged, expectedReleaseId: manifest.releaseId,
-    pluginDescriptorPath: descriptorPath, pluginPublicKeyPem: publicKeyPem, pluginKeyId: 'plugin-test-key' }
-  return { manifest, staged, descriptorPath, options }
+    pluginDescriptorPath: descriptorPath, pluginTestAttestationPath, pluginPublicKeyPem: publicKeyPem, pluginKeyId: 'plugin-test-key' }
+  return { manifest, staged, descriptorPath, pluginTestAttestationPath, options }
 }
 
 describe('cloud-only release manifest v2', () => {
@@ -65,7 +78,7 @@ describe('cloud-only release manifest v2', () => {
   it('fails closed on missing trust, tampered descriptor, or plugin artifact leakage', () => {
     const f = fixture()
     expect(validateReleaseManifest(f.manifest, { root: f.staged, expectedReleaseId: f.manifest.releaseId }))
-      .toContain('plugin-release/2 requires a trusted descriptor file, public key and key ID')
+      .toContain('plugin-release/2 requires a trusted descriptor, local test attestation, public key and key ID')
     const bytes = readFileSync(f.descriptorPath, 'utf8')
     writeFileSync(f.descriptorPath, bytes.replace('darwin-arm64', 'win32-x64'))
     expect(validateReleaseManifest(f.manifest, f.options).some(error => error.includes('descriptor SHA-256 mismatch'))).toBe(true)

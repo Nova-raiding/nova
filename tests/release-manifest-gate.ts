@@ -4,13 +4,14 @@ import { resolve, sep } from 'node:path'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
 import { releaseGitShaForRoot } from '../scripts/release-identity.js'
 import { verifyPluginReleaseDescriptor, type PluginReleaseDescriptor } from '../scripts/plugin-release-descriptor.mjs'
+import { verifyLocalPluginTestAttestation, type LocalPluginTestAttestation } from '../scripts/local-plugin-test-attestation.mjs'
 import { validateCapacityEvidence } from './capacity-evidence-gate.js'
 import { validateManualOperationsEvidence } from './manual-operations-evidence-gate.js'
 
-type ReleaseManifest = { schemaVersion?: number; releaseId?: string; components?: { repositoryVersion?: string; releaseGitSha?: string; pluginVersion?: string }; mcp?: { methodCount?: number; methodListSha256?: string; bridgeSha256?: string }; artifacts?: Array<{ path?: string; sha256?: string; bytes?: number }>; pluginRelease?: { descriptorSha256?: string; packageSha256?: string; keyId?: string; platform?: string }; productionEvidenceBundle?: { required?: boolean; schemaVersion?: string }; productionEvidence?: Record<string, string> }
+type ReleaseManifest = { schemaVersion?: number; releaseId?: string; components?: { repositoryVersion?: string; releaseGitSha?: string; pluginVersion?: string }; mcp?: { methodCount?: number; methodListSha256?: string; bridgeSha256?: string }; artifacts?: Array<{ path?: string; sha256?: string; bytes?: number }>; pluginRelease?: { descriptorSha256?: string; testAttestationSha256?: string; packageSha256?: string; keyId?: string; platform?: string }; productionEvidenceBundle?: { required?: boolean; schemaVersion?: string }; productionEvidence?: Record<string, string> }
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
 const requiredArtifacts = ['VERSION', 'CHANGELOG.md', 'release-metadata.json', 'scripts/release-manifest.ts', 'scripts/release-identity.ts', 'apps/plugin/.codex-plugin/plugin.json', 'apps/plugin/package.json', 'apps/plugin/skills/merchant-marketing/SKILL.md', 'apps/plugin/mcp/bridge.mjs', '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', 'apps/api/openapi.yaml', 'packages/contracts/src/mcp.ts', 'services/payment-gateway/index.mjs', 'services/payment-gateway/alipay.mjs', 'services/payment-gateway/alipay.d.mts', 'packages/billing/src/callback-envelope.mjs', 'packages/billing/src/callback-envelope.d.mts', 'services/payment-gateway/Dockerfile', 'infra/scripts/render-ecs-production-compose.sh', 'infra/scripts/stage-verified-ecs-release.sh', 'infra/scripts/deploy-verified-ecs-compose.sh', 'infra/scripts/rollback-ecs-compose.sh', 'infra/scripts/invoke-ecs-automatic-rollback.sh', 'infra/scripts/install-ecs-release-controls.mjs', 'infra/scripts/install-ecs-release-controls.d.mts', 'infra/protected/attest-manual-operations-evidence.mjs', 'infra/protected/attest-manual-operations-evidence.d.mts', 'infra/protected/attest-release-evidence-bundle.mjs', 'infra/protected/attest-release-evidence-bundle.d.mts', 'infra/protected/attest-postgres-backup.mjs', 'infra/protected/attest-postgres-backup.d.mts', 'infra/protected/ecs-preidentity-recovery.mjs', 'infra/protected/ecs-preidentity-recovery.d.mts', 'tests/release-evidence-bundle-gate.ts']
-const cloudRequiredArtifacts = [...requiredArtifacts.filter(path => !path.startsWith('apps/plugin/') && !path.startsWith('.codex-marketplace/')), 'scripts/plugin-release-descriptor.mjs', 'scripts/plugin-release-descriptor.d.mts']
+const cloudRequiredArtifacts = [...requiredArtifacts.filter(path => !path.startsWith('apps/plugin/') && !path.startsWith('.codex-marketplace/')), 'scripts/plugin-release-descriptor.mjs', 'scripts/plugin-release-descriptor.d.mts', 'scripts/local-plugin-test-attestation.mjs', 'scripts/local-plugin-test-attestation.d.mts']
 const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'restore', 'objectStorage', 'codexAppHost', 'canonicalCutover'] as const
 type EvidenceField = typeof evidenceFields[number]
 const signedEvidenceFields = new Set<EvidenceField>(['capability', 'payment', 'restore', 'objectStorage', 'codexAppHost'])
@@ -36,6 +37,7 @@ type EvidenceBindingOptions = {
   maxManifestAgeMs?: number
   maxEvidenceAgeMs?: number
   pluginDescriptorPath?: string
+  pluginTestAttestationPath?: string
   pluginPublicKeyPem?: string
   pluginKeyId?: string
 }
@@ -118,7 +120,7 @@ export function validateReleaseManifest(document: unknown, options: { root?: str
   if (value.mcp?.methodCount !== MCP_METHODS.length) errors.push(`mcp.methodCount must match ${MCP_METHODS.length}`)
   if (value.mcp?.methodListSha256 !== sha256(JSON.stringify(MCP_METHODS))) errors.push('mcp.methodListSha256 does not match the current MCP contract')
   if (value.schemaVersion === 2) {
-    if (!options.pluginDescriptorPath || !options.pluginPublicKeyPem || !options.pluginKeyId) errors.push('plugin-release/2 requires a trusted descriptor file, public key and key ID')
+    if (!options.pluginDescriptorPath || !options.pluginTestAttestationPath || !options.pluginPublicKeyPem || !options.pluginKeyId) errors.push('plugin-release/2 requires a trusted descriptor, local test attestation, public key and key ID')
     else try {
       const stat = lstatSync(options.pluginDescriptorPath)
       if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('descriptor is not a regular non-symlink file')
@@ -135,6 +137,15 @@ export function validateReleaseManifest(document: unknown, options: { root?: str
         || value.components?.pluginVersion !== descriptor.plugin_version || value.mcp?.bridgeSha256 !== descriptor.bridge_sha256) {
         throw new Error('signed plugin descriptor does not match the cloud release manifest')
       }
+      const testStat = lstatSync(options.pluginTestAttestationPath)
+      if (!testStat.isFile() || testStat.isSymbolicLink()) throw new Error('local plugin test attestation is not a regular non-symlink file')
+      const testBytes = readFileSync(options.pluginTestAttestationPath)
+      if (value.pluginRelease?.testAttestationSha256 !== sha256(testBytes)) throw new Error('local plugin test attestation SHA-256 mismatch')
+      verifyLocalPluginTestAttestation(JSON.parse(testBytes.toString('utf8')) as LocalPluginTestAttestation, {
+        publicKeyPem: options.pluginPublicKeyPem, keyId: options.pluginKeyId,
+        releaseId: value.releaseId!, gitSha: value.components!.releaseGitSha!,
+        platform: descriptor.platform, descriptorSha256: sha256(bytes), now: (options.now ?? new Date()).getTime(),
+      })
     } catch (error) { errors.push(`plugin-release/2 verification failed: ${error instanceof Error ? error.message : String(error)}`) }
   } else {
     const currentBridgeHash = (() => { try { return sha256(readFileSync(resolve(root, 'apps/plugin/mcp/bridge.mjs'))) } catch { return '' } })()
@@ -165,9 +176,9 @@ function main() {
   if (!file || !releaseId || !artifactRoot || !publicKeyPath || !trustedKeyId || evidenceFields.some(field => !evidenceFiles[field])) { console.error('release manifest, artifact root, all evidence files and fixed production trust anchor are required'); process.exit(2) }
   let document: unknown
   try { document = JSON.parse(readFileSync(file, 'utf8')) } catch (error) { console.error(`unable to read release manifest: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
-  const pluginDescriptorPath = arg('--plugin-descriptor'); const pluginPublicKeyPath = arg('--plugin-public-key'); const pluginKeyId = arg('--plugin-key-id')
+  const pluginDescriptorPath = arg('--plugin-descriptor'); const pluginTestAttestationPath = arg('--plugin-test-attestation'); const pluginPublicKeyPath = arg('--plugin-public-key'); const pluginKeyId = arg('--plugin-key-id')
   const errors = validateReleaseManifest(document, { expectedReleaseId: releaseId, artifactRoot, evidenceFiles, publicKeyPem: readFileSync(publicKeyPath, 'utf8'), trustedKeyId,
-    pluginDescriptorPath, pluginPublicKeyPem: pluginPublicKeyPath ? readFileSync(pluginPublicKeyPath, 'utf8') : undefined, pluginKeyId })
+    pluginDescriptorPath, pluginTestAttestationPath, pluginPublicKeyPem: pluginPublicKeyPath ? readFileSync(pluginPublicKeyPath, 'utf8') : undefined, pluginKeyId })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
   console.log(`release manifest gate passed: ${file} (source artifacts and exact production evidence bytes are hash-, freshness- and signature-bound)`)
 }

@@ -84,10 +84,12 @@ describe('verified ECS release staging', () => {
   it('fails closed on v2 descriptor tampering or absent protected plugin trust before extraction', () => {
     const value = fixture()
     const descriptor = join(value.bundle, 'plugin-release-descriptor.json')
+    const testRecord = join(value.bundle, 'local-plugin-test-attestation.json')
     writeFileSync(descriptor, '{"schema_version":"plugin-release/2"}\n')
+    writeFileSync(testRecord, '{"schema_version":"local-plugin-tests/2"}\n')
     const identity = join(value.bundle, 'candidate-identity.txt')
     const v1 = readFileSync(identity, 'utf8')
-    writeFileSync(identity, `${v1}schema_version=candidate-identity/2\nrelease_id=release-1\nplugin_descriptor_sha256=sha256:${sha(readFileSync(descriptor))}\nplugin_key_id=plugin-test-key\n`)
+    writeFileSync(identity, `${v1}schema_version=candidate-identity/2\nrelease_id=release-1\nplugin_descriptor_sha256=sha256:${sha(readFileSync(descriptor))}\nplugin_test_attestation_sha256=sha256:${sha(readFileSync(testRecord))}\nplugin_key_id=plugin-test-key\n`)
     writeFileSync(descriptor, 'tampered')
     const tampered = run(value)
     expect(tampered.status).not.toBe(0)

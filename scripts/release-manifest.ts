@@ -5,6 +5,7 @@ import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
 import { countMerchantBridgeTools } from './merchant-bridge-surface.js'
 import { releaseGitShaForRoot } from './release-identity.js'
 import { verifyPluginReleaseDescriptor } from './plugin-release-descriptor.mjs'
+import { verifyLocalPluginTestAttestation } from './local-plugin-test-attestation.mjs'
 
 export interface ReleaseManifest {
   schemaVersion: 1
@@ -28,7 +29,7 @@ export interface ReleaseManifest {
 
 export type CloudReleaseManifest = Omit<ReleaseManifest, 'schemaVersion'> & {
   schemaVersion: 2
-  pluginRelease: { descriptorSha256: string; packageSha256: string; keyId: string; platform: string }
+  pluginRelease: { descriptorSha256: string; testAttestationSha256: string; packageSha256: string; keyId: string; platform: string }
 }
 
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
@@ -160,6 +161,7 @@ export function buildCloudReleaseManifest(input: Parameters<typeof buildReleaseM
   pluginPublicKeyPath: string
   pluginKeyId: string
   pluginPackagePath: string
+  pluginTestAttestationPath: string
 }): CloudReleaseManifest {
   const root = resolve(input.root ?? process.cwd())
   const legacy = buildReleaseManifest(input)
@@ -176,8 +178,15 @@ export function buildCloudReleaseManifest(input: Parameters<typeof buildReleaseM
     || descriptor.skill_sha256 !== sha256(readFileSync(resolve(root, 'apps/plugin/skills/merchant-marketing/SKILL.md')))) {
     throw new Error('signed plugin descriptor does not match committed plugin source')
   }
+  const testBytes = readFileSync(input.pluginTestAttestationPath)
+  verifyLocalPluginTestAttestation(JSON.parse(testBytes.toString('utf8')), {
+    publicKeyPem: readFileSync(input.pluginPublicKeyPath), keyId: input.pluginKeyId,
+    releaseId: legacy.releaseId, gitSha: legacy.components.releaseGitSha,
+    platform: descriptor.platform, descriptorSha256: sha256(descriptorBytes),
+  })
   const artifacts = legacy.artifacts.filter(item => !item.path.startsWith('apps/plugin/') && !item.path.startsWith('.codex-marketplace/'))
-  for (const path of ['scripts/plugin-release-descriptor.mjs', 'scripts/plugin-release-descriptor.d.mts']) {
+  for (const path of ['scripts/plugin-release-descriptor.mjs', 'scripts/plugin-release-descriptor.d.mts',
+    'scripts/local-plugin-test-attestation.mjs', 'scripts/local-plugin-test-attestation.d.mts']) {
     const bytes = readFileSync(resolve(root, path))
     artifacts.push({ path, sha256: sha256(bytes), bytes: bytes.byteLength })
   }
@@ -187,7 +196,7 @@ export function buildCloudReleaseManifest(input: Parameters<typeof buildReleaseM
     artifacts,
     pluginRelease: {
       descriptorSha256: sha256(descriptorBytes), packageSha256: descriptor.package_sha256,
-      keyId: descriptor.key_id, platform: descriptor.platform,
+      testAttestationSha256: sha256(testBytes), keyId: descriptor.key_id, platform: descriptor.platform,
     },
   }
 }
@@ -205,7 +214,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.url.repl
   const manifest = descriptor
     ? buildCloudReleaseManifest({ root: process.cwd(), releaseId, pluginDescriptorPath: descriptor,
       pluginPublicKeyPath: argument('--plugin-public-key') ?? '', pluginKeyId: argument('--plugin-key-id') ?? '',
-      pluginPackagePath: argument('--plugin-package') ?? '' })
+      pluginPackagePath: argument('--plugin-package') ?? '', pluginTestAttestationPath: argument('--plugin-test-attestation') ?? '' })
     : buildReleaseManifest({ root: process.cwd(), releaseId })
   const target = resolve(output)
   mkdirSync(dirname(target), { recursive: true })

@@ -44,10 +44,16 @@ if [ "$cloud_source_v2" = 1 ]; then
   : "${ECS_PLUGIN_PACKAGE_PATH:?cloud-only candidate requires local plugin package}"
   : "${ECS_PLUGIN_PUBLIC_KEY_PATH:?cloud-only candidate requires trusted plugin public key}"
   : "${ECS_PLUGIN_KEY_ID:?cloud-only candidate requires trusted plugin key ID}"
+  : "${ECS_PLUGIN_TEST_ATTESTATION_PATH:?cloud-only candidate requires signed local plugin tests}"
   node "$root/scripts/plugin-release-descriptor.mjs" verify \
     --descriptor "$ECS_PLUGIN_DESCRIPTOR_PATH" --package "$ECS_PLUGIN_PACKAGE_PATH" \
     --public-key "$ECS_PLUGIN_PUBLIC_KEY_PATH" --key-id "$ECS_PLUGIN_KEY_ID" \
     --release-id "$RELEASE_ID" --git-sha "$revision"
+  plugin_platform=$(node -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(x.platform)' "$ECS_PLUGIN_DESCRIPTOR_PATH")
+  node "$root/scripts/local-plugin-test-attestation.mjs" verify \
+    --record "$ECS_PLUGIN_TEST_ATTESTATION_PATH" --descriptor "$ECS_PLUGIN_DESCRIPTOR_PATH" \
+    --public-key "$ECS_PLUGIN_PUBLIC_KEY_PATH" --key-id "$ECS_PLUGIN_KEY_ID" \
+    --release-id "$RELEASE_ID" --git-sha "$revision" --platform "$plugin_platform"
 fi
 
 mkdir -p "$output_dir"
@@ -197,7 +203,9 @@ if [ "$cloud_source_v2" = 1 ]; then
   git -C "$root" archive --format=tar "$revision" \
     ':(exclude)artifacts' ':(exclude)screenshots' ':(exclude)apps/plugin' ':(exclude).codex-marketplace' > "$archive"
   cp "$ECS_PLUGIN_DESCRIPTOR_PATH" "$output_dir/plugin-release-descriptor.json"
+  cp "$ECS_PLUGIN_TEST_ATTESTATION_PATH" "$output_dir/local-plugin-test-attestation.json"
   plugin_descriptor_sha=$(shasum -a 256 "$output_dir/plugin-release-descriptor.json" | awk '{print $1}')
+  plugin_test_sha=$(shasum -a 256 "$output_dir/local-plugin-test-attestation.json" | awk '{print $1}')
 else
   git -C "$root" archive --format=tar "$revision" \
     ':(exclude)artifacts' ':(exclude)screenshots' > "$archive"
@@ -213,8 +221,8 @@ comparison_manifest_sha256=sha256:$manifest_sha
 sync_plan_sha256=sha256:$report_sha
 EOF
 if [ "$cloud_source_v2" = 1 ]; then
-  printf 'schema_version=candidate-identity/2\nrelease_id=%s\nplugin_descriptor_sha256=sha256:%s\nplugin_key_id=%s\n' \
-    "$RELEASE_ID" "$plugin_descriptor_sha" "$ECS_PLUGIN_KEY_ID" >> "$output_dir/candidate-identity.txt"
+  printf 'schema_version=candidate-identity/2\nrelease_id=%s\nplugin_descriptor_sha256=sha256:%s\nplugin_test_attestation_sha256=sha256:%s\nplugin_key_id=%s\n' \
+    "$RELEASE_ID" "$plugin_descriptor_sha" "$plugin_test_sha" "$ECS_PLUGIN_KEY_ID" >> "$output_dir/candidate-identity.txt"
 fi
 
 cat > "$output_dir/README.txt" <<'EOF'
