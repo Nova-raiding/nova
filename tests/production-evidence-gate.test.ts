@@ -17,7 +17,12 @@ afterAll(() => rmSync(artifactRoot, { recursive: true, force: true }))
 const options = (kind: ProductionEvidenceKind) => ({ kind, releaseId: 'release-1', imageSetDigest, manifestSha256, releaseGitSha, deploymentNonce, artifactRoot, trustedKeyId: 'release-security-2026', publicKeyPem, now })
 
 function artifactReference(kind: ProductionEvidenceKind, name: string) {
-  const relative = `${kind}/${name}.json`; const path = join(artifactRoot, relative); const content = JSON.stringify({ kind, name, provider_request_id: `request-${name}` })
+  const relative = `${kind}/${name}.json`; const path = join(artifactRoot, relative); const content = JSON.stringify(kind === 'payment' ? {
+    kind, operation: name, release_id: 'release-1', deployment_nonce: deploymentNonce,
+    order_id_sha256: 'f'.repeat(64), provider_trade_id_sha256: 'b'.repeat(64),
+    amount_fen: 1, observed_at: '2026-08-28T05:10:00Z', provider_request_id: `request-${name}`, simulated: false,
+    outcome: ({ checkout: 'created', callback: 'accepted', callback_replay: 'idempotent', provider_query: 'paid', reconciliation: 'balanced', refund: 'succeeded' } as Record<string, string>)[name],
+  } : { kind, name, provider_request_id: `request-${name}` })
   mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content)
   return `artifact://production/${relative}#${createHash('sha256').update(content).digest('hex')}`
 }
@@ -88,6 +93,24 @@ describe('production payment and restore evidence gates', () => {
     checks.refund!.evidence_ref = checks.checkout!.evidence_ref
     value.signature_base64 = signProductionEvidence(value, privateKeyPem)
     expect(validateProductionEvidence(value, options('payment'))).toContain('checks.refund.evidence_ref must differ from checks.checkout.evidence_ref')
+  })
+
+  it('rejects signed payment refs whose bytes do not prove the named operation and common order identity', () => {
+    const value = evidence('payment')
+    const checks = value.checks as Record<string, { status: string; evidence_ref: string }>
+    const forged = (name: string, content: unknown) => {
+      const relative = `payment/forged-${name}.json`
+      const serialized = JSON.stringify(content)
+      writeFileSync(join(artifactRoot, relative), serialized)
+      checks[name]!.evidence_ref = `artifact://production/${relative}#${createHash('sha256').update(serialized).digest('hex')}`
+    }
+    forged('callback', { kind: 'payment', operation: 'checkout', provider_request_id: 'request-callback' })
+    forged('refund', { kind: 'payment', operation: 'refund', release_id: 'release-1', deployment_nonce: deploymentNonce, order_id_sha256: 'a'.repeat(64), provider_trade_id_sha256: 'b'.repeat(64), amount_fen: 1, observed_at: '2026-08-28T05:10:00Z', provider_request_id: 'request-refund', outcome: 'succeeded' })
+    value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('payment'))).toEqual(expect.arrayContaining([
+      'checks.callback.evidence_ref operation must match callback',
+      'checks.refund.evidence_ref order_id_sha256 must match the other payment operations',
+    ]))
   })
 
   it('allows restore checks to cite the same backup artifact', () => {

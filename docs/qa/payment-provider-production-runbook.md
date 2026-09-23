@@ -59,3 +59,9 @@
 ## 上线证据
 
 上线审批必须附带 checkout、callback、callback replay、query、refund、reconciliation 六类证据。只有六类全部为 pass，且 API、worker、数据库和回调入口健康，才可将支付能力标记为 GO。
+
+每一步必须保存独立的、受保护目录内的原始回执。对应的 JSON 索引至少包含 `kind=payment`、精确的 `operation`（`checkout`、`callback`、`callback_replay`、`provider_query`、`reconciliation`、`refund`）、`release_id`、`deployment_nonce`、相同的 `order_id_sha256`、金额分值 `amount_fen`、真实 `observed_at`、非空 `provider_request_id`、`simulated=false` 和结果 `outcome`。除 checkout 外还须包含与总证据一致的 `provider_trade_id_sha256`。结果依次为 `created`、`accepted`、`idempotent`、`paid`、`balanced`、`succeeded`。不要把支付宝密钥、完整交易号或支付人资料写入回执。
+
+这些字段与文件哈希只是发布门禁的**一致性校验**，不是支付事实的自动证明。签发人必须从真实网关响应、验签后的回调、订单/账本只读查询和退款查询分别采集原始记录，核对同一订单与金额后，才可签发最终 payment evidence；测试代码中的签名辅助函数、手工填写的 `pass` 或网页截图都不能充当生产签发。当前仓库没有受保护的六阶段生产采集和签发器；在其安装并运行、六份真实回执齐备前，该门禁保持 NO-GO。
+
+`billing.recharge.create` 的一分测试只覆盖钱包充值，且要求专用工作区、`PAYMENT_ONE_FEN_TEST_ENABLED=true`、匹配的 `PAYMENT_ONE_FEN_TEST_WORKSPACE_ID` 和 `real-pay-test-` 幂等键。套餐购买走 `subscription.order.create`，必须另外核对真实 SKU、金额、签名回调与生效后的权益，不得用充值回执声称套餐购买已验收。不要为了采证而开启全局一分支付或绕过最低金额限制。

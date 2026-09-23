@@ -1,5 +1,5 @@
 import { createHash, createPublicKey, sign, verify } from 'node:crypto'
-import { closeSync, lstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs'
+import { closeSync, lstatSync, openSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 
 export type ProductionEvidenceKind = 'payment' | 'restore'
@@ -19,22 +19,51 @@ function sha256File(path: string) {
   return hash.digest('hex')
 }
 
-function validateArtifact(reference: string | undefined, root: string, label: string): string[] {
+function validateArtifact(reference: string | undefined, root: string, label: string, readContent = false): { errors: string[]; content?: Buffer } {
   const match = artifactRef.exec(reference ?? '')
-  if (!match) return [`${label} must be an immutable production artifact with SHA-256 fragment`]
+  if (!match) return { errors: [`${label} must be an immutable production artifact with SHA-256 fragment`] }
   const relative = match[1]!; const expectedHash = match[2]!
-  if (relative.split('/').some(segment => segment === '.' || segment === '..' || segment.length === 0)) return [`${label} contains an invalid artifact path`]
+  if (relative.split('/').some(segment => segment === '.' || segment === '..' || segment.length === 0)) return { errors: [`${label} contains an invalid artifact path`] }
   try {
     const realRoot = realpathSync(root); const candidate = resolve(realRoot, relative)
-    if (candidate !== realRoot && !candidate.startsWith(`${realRoot}${sep}`)) return [`${label} escapes the artifact root`]
-    if (lstatSync(candidate).isSymbolicLink() || !lstatSync(candidate).isFile()) return [`${label} must resolve to a regular non-symlink artifact`]
+    if (candidate !== realRoot && !candidate.startsWith(`${realRoot}${sep}`)) return { errors: [`${label} escapes the artifact root`] }
+    if (lstatSync(candidate).isSymbolicLink() || !lstatSync(candidate).isFile()) return { errors: [`${label} must resolve to a regular non-symlink artifact`] }
     const realCandidate = realpathSync(candidate)
-    if (!realCandidate.startsWith(`${realRoot}${sep}`)) return [`${label} escapes the artifact root`]
-    if (sha256File(realCandidate) !== expectedHash) return [`${label} SHA-256 does not match the referenced artifact`]
+    if (!realCandidate.startsWith(`${realRoot}${sep}`)) return { errors: [`${label} escapes the artifact root`] }
+    if (sha256File(realCandidate) !== expectedHash) return { errors: [`${label} SHA-256 does not match the referenced artifact`] }
+    if (readContent) {
+      if (statSync(realCandidate).size > 65_536) return { errors: [`${label} exceeds the payment artifact size limit`] }
+      const content = readFileSync(realCandidate)
+      if (createHash('sha256').update(content).digest('hex') !== expectedHash) return { errors: [`${label} SHA-256 does not match the referenced artifact`] }
+      return { errors: [], content }
+    }
   } catch {
-    return [`${label} referenced artifact does not exist or cannot be read`]
+    return { errors: [`${label} referenced artifact does not exist or cannot be read`] }
   }
-  return []
+  return { errors: [] }
+}
+
+const paymentOutcomes: Record<string, string> = { checkout: 'created', callback: 'accepted', callback_replay: 'idempotent', provider_query: 'paid', reconciliation: 'balanced', refund: 'succeeded' }
+const sha256Hex = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value)
+function validatePaymentArtifact(content: Buffer, name: string, document: Evidence, options: { releaseId: string; deploymentNonce: string; now: Date }): { errors: string[]; orderHash?: string } {
+  const label = `checks.${name}.evidence_ref`
+  let artifact: Record<string, unknown>
+  try { const parsed: unknown = JSON.parse(content.toString('utf8')); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object'); artifact = parsed as Record<string, unknown> }
+  catch { return { errors: [`${label} must contain a payment operation JSON object`] } }
+  const errors: string[] = []
+  if (artifact.kind !== 'payment') errors.push(`${label} kind must be payment`)
+  if (artifact.operation !== name) errors.push(`${label} operation must match ${name}`)
+  if (artifact.release_id !== options.releaseId) errors.push(`${label} release_id must match the release`)
+  if (artifact.deployment_nonce !== options.deploymentNonce) errors.push(`${label} deployment_nonce must match the deployment`)
+  if (artifact.simulated !== false) errors.push(`${label} simulated must be false`)
+  if (!sha256Hex(artifact.order_id_sha256)) errors.push(`${label} order_id_sha256 must be a SHA-256 hash`)
+  if (name !== 'checkout' && artifact.provider_trade_id_sha256 !== document.provider_trade_id_sha256) errors.push(`${label} provider_trade_id_sha256 must match the payment evidence`)
+  const amountFen = typeof document.amount_cny === 'number' ? Math.round(document.amount_cny * 100) : NaN
+  if (!Number.isSafeInteger(amountFen) || amountFen <= 0 || artifact.amount_fen !== amountFen) errors.push(`${label} amount_fen must match the payment evidence`)
+  if (!iso(artifact.observed_at) || Date.parse(String(artifact.observed_at)) > options.now.getTime() + 300_000 || Date.parse(String(artifact.observed_at)) > Date.parse(String(document.generated_at ?? ''))) errors.push(`${label} observed_at must be a valid observation before evidence generation`)
+  if (!text(artifact.provider_request_id)) errors.push(`${label} provider_request_id is required`)
+  if (artifact.outcome !== paymentOutcomes[name]) errors.push(`${label} outcome must match ${paymentOutcomes[name]}`)
+  return { errors, ...(sha256Hex(artifact.order_id_sha256) ? { orderHash: artifact.order_id_sha256 } : {}) }
 }
 /** Used by the independent evidence pipeline and tests; preflight receives no private key. */
 export const signProductionEvidence = (value: unknown, privateKeyPem: string) => sign(null, payload(value), privateKeyPem).toString('base64')
@@ -57,10 +86,20 @@ export function validateProductionEvidence(document: unknown, options: { kind: P
   const maxAge = options.kind === 'payment' ? 24 : 168
   if (Number.isFinite(attested) && now.getTime() - attested > maxAge * 3_600_000) errors.push('evidence is stale')
   const seenArtifactRefs = new Map<string, string>()
+  let paymentOrderHash: string | undefined
   for (const name of checksByKind[options.kind]) {
     const check = value.checks?.[name]
     if (check?.status !== 'pass') errors.push(`checks.${name}.status must be pass`)
-    errors.push(...validateArtifact(check?.evidence_ref, options.artifactRoot, `checks.${name}.evidence_ref`))
+    const artifact = validateArtifact(check?.evidence_ref, options.artifactRoot, `checks.${name}.evidence_ref`, options.kind === 'payment')
+    errors.push(...artifact.errors)
+    if (options.kind === 'payment' && artifact.content) {
+      const payment = validatePaymentArtifact(artifact.content, name, value, { releaseId: options.releaseId, deploymentNonce: options.deploymentNonce, now })
+      errors.push(...payment.errors)
+      if (payment.orderHash) {
+        if (paymentOrderHash && payment.orderHash !== paymentOrderHash) errors.push(`checks.${name}.evidence_ref order_id_sha256 must match the other payment operations`)
+        paymentOrderHash ??= payment.orderHash
+      }
+    }
     if (options.kind === 'payment' && text(check?.evidence_ref)) {
       const previous = seenArtifactRefs.get(check.evidence_ref)
       if (previous) errors.push(`checks.${name}.evidence_ref must differ from checks.${previous}.evidence_ref`)
