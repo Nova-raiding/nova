@@ -27,6 +27,12 @@ readonly ECS_PREIDENTITY_RECOVERY_ENTRYPOINT=/usr/local/libexec/merchant/ecs-pre
 : "${RELEASE_ID:?RELEASE_ID is required}"
 : "${IMAGE_DIGESTS_JSON:?IMAGE_DIGESTS_JSON is required}"
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
+case "${ECS_BRIDGE_CODE_ONLY:-NO}" in YES|NO) ;; *) echo 'ECS_BRIDGE_CODE_ONLY must be YES or NO' >&2; exit 2 ;; esac
+if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
+  [ "${DEPLOYMENT_SCOPE:-full}" = full ] || { echo 'bridge code cutover requires full production acceptance' >&2; exit 2; }
+  [ "${EXPECTED_MIGRATION_VERSION:-}" = 244 ] || { echo 'bridge code cutover requires candidate migration tail 244' >&2; exit 2; }
+  [ "${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}" = prefix_242_or_244 ] || { echo 'bridge code cutover requires the reviewed 242/244 schema mode' >&2; exit 2; }
+fi
 : "${EXPECTED_MIGRATION_VERSION:?EXPECTED_MIGRATION_VERSION is required}"
 
 [ "$CONFIRM_ECS_DEPLOY" = YES ] || { echo 'ECS deployment refused: confirmation must equal YES' >&2; exit 2; }
@@ -196,7 +202,14 @@ rollback_on_failure() {
   if [ "$mutation_started" = true ] && [ "$rollback_attempted" = false ]; then
     rollback_attempted=true
     recovery_succeeded=false
-    if [ "$runtime_cutover_started" = false ]; then
+    if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
+      echo 'B code cutover failed; invoking signed partial-switch bridge recovery without migration' >&2
+      DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" bridge-recover --state "$state_path" --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" \
+        --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" \
+        --recovery-compose "$ECS_ROLLBACK_COMPOSE_PATH" --recovery-env "$ECS_ROLLBACK_ENV_FILE" \
+        --recovery-image-digests "$rollback_capsule_dir/image-digests.json" --compose-project "$project" \
+        --lock-path "$ECS_DEPLOY_LOCK_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL" && recovery_succeeded=true
+    elif [ "$runtime_cutover_started" = false ]; then
       echo "ECS deployment failed before runtime cutover; invoking protected preidentity forward recovery" >&2
       # The helper verifies and locks inherited FD 9 against the canonical lock,
       # independently re-inspects the old workload/DB, and refuses partial cutover.
@@ -206,7 +219,7 @@ rollback_on_failure() {
         --recovery-image-digests "$rollback_capsule_dir/image-digests.json" --compose-project "$project" \
         --lock-path "$ECS_DEPLOY_LOCK_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL" && recovery_succeeded=true
     fi
-    if [ "$recovery_succeeded" = false ]; then
+    if [ "$recovery_succeeded" = false ] && [ "${ECS_BRIDGE_CODE_ONLY:-NO}" != YES ]; then
       echo "ECS deployment failed after mutation; invoking protected rollback entrypoint" >&2
       # Keep FD 9 locked through rollback and gateway restoration. The public
       # candidate gateway must still serve its /releasez identity when the
@@ -216,6 +229,9 @@ rollback_on_failure() {
         ECS_ROLLBACK_ENV_FILE="$ECS_ROLLBACK_ENV_FILE" ECS_ROLLBACK_IMAGE_DIGESTS_JSON="$ECS_ROLLBACK_IMAGE_DIGESTS_JSON" \
         ECS_ROLLBACK_STATE_PATH="$ECS_ROLLBACK_STATE_PATH" PRODUCTION_API_BASE_URL="$PRODUCTION_API_BASE_URL" DATABASE_URL="$DATABASE_URL" \
         sh "$root/infra/scripts/invoke-ecs-automatic-rollback.sh" && recovery_succeeded=true || echo 'protected rollback entrypoint failed; production remains blocked' >&2
+    fi
+    if [ "$recovery_succeeded" = false ] && [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
+      echo 'signed bridge recovery did not verify; do not invoke ordinary candidate-identity rollback, manual recovery is required' >&2
     fi
     if [ "$external_gateway_handoff_started" = true ]; then
       if [ "$recovery_succeeded" = true ]; then
@@ -288,9 +304,12 @@ mkdir -m 0700 "$rollback_capsule_dir" 2>/dev/null || { echo 'rollback capsule sn
 cp "$ECS_ROLLBACK_PLAN_PATH" "$rollback_capsule_dir/plan.json"
 cp "$ECS_ROLLBACK_COMPOSE_PATH" "$rollback_capsule_dir/compose.yml"
 cp "$ECS_ROLLBACK_ENV_FILE" "$rollback_capsule_dir/runtime.env"
+if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then cp "$verified_compose" "$rollback_capsule_dir/candidate-compose.yml"; fi
+if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then cmp -s "$verified_compose" "$rollback_capsule_dir/candidate-compose.yml" || { echo 'bridge candidate Compose changed while freezing' >&2; exit 1; }; fi
 printf '%s' "$ECS_ROLLBACK_IMAGE_DIGESTS_JSON" > "$rollback_capsule_dir/image-digests.json"
 printf '%s' "$IMAGE_DIGESTS_JSON" > "$rollback_capsule_dir/candidate-image-digests.json"
 chmod 0400 "$rollback_capsule_dir/plan.json" "$rollback_capsule_dir/compose.yml" "$rollback_capsule_dir/runtime.env" "$rollback_capsule_dir/image-digests.json" "$rollback_capsule_dir/candidate-image-digests.json"
+if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then chmod 0400 "$rollback_capsule_dir/candidate-compose.yml"; fi
 ECS_ROLLBACK_PLAN_PATH="$rollback_capsule_dir/plan.json"
 ECS_ROLLBACK_COMPOSE_PATH="$rollback_capsule_dir/compose.yml"
 ECS_ROLLBACK_ENV_FILE="$rollback_capsule_dir/runtime.env"
@@ -317,7 +336,8 @@ const liveVersion=plan.database?.live_migration_version
 const rollbackTail=plan.database?.target_migration_tail
 required(Number.isSafeInteger(candidateTail)&&candidateTail>0,'candidate migration tail is invalid')
 required(Number.isSafeInteger(liveVersion)&&liveVersion>0&&liveVersion<=candidateTail,'rollback capsule live migration version is invalid')
-required(Number.isSafeInteger(rollbackTail)&&rollbackTail===candidateTail,'rollback target must contain exactly the candidate migration chain')
+if(process.env.ECS_BRIDGE_CODE_ONLY==='YES') required(candidateTail===244&&liveVersion===242&&rollbackTail===242,'B code-only capsule requires old schema 242 and candidate tail 244')
+else required(Number.isSafeInteger(rollbackTail)&&rollbackTail===candidateTail,'rollback target must contain exactly the candidate migration chain')
 const approved=plan.database?.allowed_prefix_sha256
 required(approved&&Object.getPrototypeOf(approved)===Object.prototype,'rollback capsule approved migration prefixes are missing')
 for(let version=liveVersion;version<=rollbackTail;version+=1){
@@ -325,7 +345,7 @@ for(let version=liveVersion;version<=rollbackTail;version+=1){
 }
 required(digests&&Object.keys(digests).length>0&&Object.values(digests).every(value=>/^sha256:[0-9a-f]{64}$/.test(value)),'rollback capsule image digests are invalid')
 NODE
-if [ "$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(p.database.live_migration_version))' "$ECS_ROLLBACK_PLAN_PATH")" -lt "$EXPECTED_MIGRATION_VERSION" ]; then
+if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" != YES ] && [ "$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(p.database.live_migration_version))' "$ECS_ROLLBACK_PLAN_PATH")" -lt "$EXPECTED_MIGRATION_VERSION" ]; then
   # The old runtime must not serve traffic against a schema it cannot read.
   # A forward-compatible bridge is installed and identity-checked separately
   # before this candidate is allowed to migrate the shared database.
@@ -339,12 +359,25 @@ if [ "$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"
 fi
 state_path="$ECS_DEPLOY_STATE_DIR/${RELEASE_ID}.predeploy.json"
 attempt_id="attempt_$(printf '%s:%s:%s' "$RELEASE_ID" "$DEPLOYMENT_NONCE" "$$" | shasum -a 256 | awk '{print $1}')"
-DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" capture --state "$state_path" --attempt-id "$attempt_id" \
+if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
+  # The signed per-service image IDs must come from the exact frozen Compose,
+  # not IMAGE_DIGESTS_JSON (which contains bare artifact digests, not refs).
+  docker compose -p "$project" -f "$verified_compose" config --format json | node -e '
+    const fs=require("fs"),value=JSON.parse(fs.readFileSync(0,"utf8"))
+    for(const name of ["api","api-replica","ui","ops-ui","payment-gateway","worker-sync","worker-generation","worker-publish","worker-reconcile","worker-automation","worker-scan","clamav","pilot-gateway"]){
+      if(!/^[^\s]+@sha256:[0-9a-f]{64}$/.test(value.services?.[name]?.image??""))throw new Error(`bridge service lacks immutable image: ${name}`)
+      if((name==="api"||name==="api-replica"||name.startsWith("worker-"))&&value.services[name].environment?.BRIDGE_SCHEMA_COMPATIBILITY_MODE!=="prefix_242_or_244")throw new Error(`bridge schema mode missing from ${name}`)
+    }
+  '
+fi
+set -- capture --state "$state_path" --attempt-id "$attempt_id" \
   --lock-path "$ECS_DEPLOY_LOCK_PATH" \
   --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" --compose-project "$project" \
   --candidate-release-id "$RELEASE_ID" --candidate-git-sha "$git_sha" --candidate-manifest-sha256 "$manifest_sha256" \
   --candidate-image-set-digest "$image_set_digest" --candidate-image-digests "$rollback_capsule_dir/candidate-image-digests.json" \
   --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH"
+if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then set -- "$@" --mode bridge_code_only --candidate-compose "$rollback_capsule_dir/candidate-compose.yml"; fi
+DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" "$@"
 [ -s "$state_path" ] || { echo 'pre-deploy state capture failed' >&2; exit 1; }
 PREDEPLOY_STATE="$state_path" ROLLBACK_PLAN="$ECS_ROLLBACK_PLAN_PATH" node -e '
   const fs=require("fs"),state=JSON.parse(fs.readFileSync(process.env.PREDEPLOY_STATE,"utf8")),plan=JSON.parse(fs.readFileSync(process.env.ROLLBACK_PLAN,"utf8"))
@@ -358,27 +391,40 @@ IMAGE_DIGEST="$image_set_digest" PRODUCTION_EVIDENCE_MANIFEST_SHA256="$manifest_
   sh "$root/infra/scripts/consume-production-evidence-nonce.sh"
 "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase nonce_consumed
 
-# Migration must finish before any candidate runtime container is recreated.
-# Destructive service, volume, and database cleanup is deliberately absent.
-assert_inputs_unchanged
-"$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase migration_started
-mutation_started=true
-docker compose -p "$project" -f "$verified_compose" run --rm --no-deps --pull never migrate
-assert_inputs_unchanged
-# The read-only preflight accepts only an immutable prefix of this candidate's
-# chain. Before any runtime container is recreated, prove the migration job
-# advanced both runtime roles to the complete reviewed chain.
-MIGRATION_CHAIN_MODE=complete sh "$root/infra/scripts/verify-database-migration-chain.sh"
-"$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase migration_complete
-assert_inputs_unchanged
-"$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase runtime_cutover_started
+if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
+  # B is first proven healthy against DB 242. Never run the candidate migration
+  # job here: old 242 images remain the signed partial-cutover recovery target.
+  assert_inputs_unchanged
+  DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" bridge-begin --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" \
+    --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" --compose-project "$project" --deployment-nonce "$DEPLOYMENT_NONCE" \
+    --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL"
+  mutation_started=true
+else
+  # Migration must finish before any candidate runtime container is recreated.
+  assert_inputs_unchanged
+  "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase migration_started
+  mutation_started=true
+  docker compose -p "$project" -f "$verified_compose" run --rm --no-deps --pull never migrate
+  assert_inputs_unchanged
+  MIGRATION_CHAIN_MODE=complete sh "$root/infra/scripts/verify-database-migration-chain.sh"
+  "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase migration_complete
+  assert_inputs_unchanged
+  "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase runtime_cutover_started
+fi
 runtime_cutover_started=true
 if [ -n "$external_gateway_state" ]; then
   external_gateway_handoff_started=true
   external_gateway_action stop
 fi
-docker compose -p "$project" -f "$verified_compose" up -d --no-build --pull never --remove-orphans --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
-  api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway
+if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
+  # Preserve every unrelated container in the signed inventory; only the
+  # reviewed service map may change during this recoverable code cutover.
+  docker compose -p "$project" -f "$verified_compose" up -d --no-build --pull never --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
+    api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway
+else
+  docker compose -p "$project" -f "$verified_compose" up -d --no-build --pull never --remove-orphans --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
+    api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway
+fi
 
 health_deadline=$(( $(date +%s) + ${ECS_POST_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300} ))
 while ! curl --fail --silent --show-error --max-time 15 "${PRODUCTION_API_BASE_URL%/}/livez" >/dev/null 2>&1 || \
@@ -412,7 +458,13 @@ if [ "${DEPLOYMENT_SCOPE:-full}" = full ]; then
 else
   echo "post-deploy business acceptance deferred: deployment_scope=${DEPLOYMENT_SCOPE}"
 fi
-"$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase runtime_identity_verified
+if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
+  DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" bridge-verify --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" \
+    --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" --compose-project "$project" --deployment-nonce "$DEPLOYMENT_NONCE" \
+    --production-api-base-url "$PRODUCTION_API_BASE_URL"
+else
+  "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase runtime_identity_verified
+fi
 
 mutation_started=false
 trap - EXIT HUP INT TERM

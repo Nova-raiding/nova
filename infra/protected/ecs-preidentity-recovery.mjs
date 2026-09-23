@@ -257,13 +257,14 @@ function collectCandidateImageIds(path) {
     const id = cleanExec(BIN.docker, ['image', 'inspect', '--format', '{{.Id}}', value]).trim(); assert(IMAGE.test(id), `candidate image is unavailable locally: ${value}`); return id
   }))].sort()
 }
-function collectCandidateServiceImageIds(path, services) {
-  const mapping = JSON.parse(readRegular(path).toString('utf8'))
-  assert(mapping && Object.getPrototypeOf(mapping) === Object.prototype, 'candidate service image map is invalid')
+function collectCandidateServiceImageIds(composePath, project, services) {
+  const document = jsonCommand(BIN.docker, ['compose', '-p', project, '-f', composePath, 'config', '--format', 'json'])
+  const mapping = document?.services
+  assert(mapping && Object.getPrototypeOf(mapping) === Object.prototype, 'candidate Compose service map is invalid')
   const result = {}
   for (const service of services) {
-    const ref = mapping[service]
-    assert(typeof ref === 'string' && /@sha256:[a-f0-9]{64}$/u.test(ref), `candidate image reference missing for ${service}`)
+    const ref = mapping[service]?.image
+    assert(typeof ref === 'string' && /@sha256:[a-f0-9]{64}$/u.test(ref), `candidate Compose image reference missing for ${service}`)
     const imageId = cleanExec(BIN.docker, ['image', 'inspect', '--format', '{{.Id}}', ref]).trim()
     assert(IMAGE.test(imageId), `candidate image ID invalid for ${service}`)
     result[service] = imageId
@@ -314,7 +315,7 @@ function assertInheritedLock(lockPath) {
 }
 const COMMON = { '--state': true, '--lock-path': true }
 const SPECS = Object.freeze({
-  capture: { ...COMMON, '--attempt-id': true, '--service-map': true, '--compose-project': true, '--candidate-release-id': true, '--candidate-git-sha': true, '--candidate-manifest-sha256': true, '--candidate-image-set-digest': true, '--candidate-image-digests': true, '--deployment-nonce': true, '--recovery-plan': true, '--mode': false },
+  capture: { ...COMMON, '--attempt-id': true, '--service-map': true, '--compose-project': true, '--candidate-release-id': true, '--candidate-git-sha': true, '--candidate-manifest-sha256': true, '--candidate-image-set-digest': true, '--candidate-image-digests': true, '--candidate-compose': false, '--deployment-nonce': true, '--recovery-plan': true, '--mode': false },
   phase: { ...COMMON, '--phase': true },
   verify: { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true },
   recover: { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true, '--recovery-compose': true, '--recovery-env': true, '--recovery-image-digests': true, '--production-api-base-url': true, '--wait-timeout': false },
@@ -330,12 +331,15 @@ function main(args) {
     const planPath = get('--recovery-plan'), mapPath = get('--service-map'), candidateDigestsPath = get('--candidate-image-digests')
     protectedPath(planPath, 'recovery plan'); protectedPath(mapPath, 'reviewed service map'); protectedPath(candidateDigestsPath, 'candidate image digests')
     const recovery = parsePlan(planPath)
-    const containers = collectContainers(mapPath), candidateImageIds = collectCandidateImageIds(candidateDigestsPath)
+    const containers = collectContainers(mapPath)
+    if (get('--mode') === 'bridge_code_only') protectedPath(get('--candidate-compose'), 'bridge candidate Compose')
+    const candidateServiceImageIds = get('--mode') === 'bridge_code_only' ? collectCandidateServiceImageIds(get('--candidate-compose'), get('--compose-project'), containers.map(item => item.service)) : undefined
+    const candidateImageIds = candidateServiceImageIds ? Object.values(candidateServiceImageIds) : collectCandidateImageIds(candidateDigestsPath)
     const oldImageIds = new Set(containers.map(value => value.imageId)), exclusive = candidateImageIds.filter(value => !oldImageIds.has(value))
     const binding = { attemptId: get('--attempt-id'), deploymentNonce: get('--deployment-nonce'), keyId: readRegular(KEY_ID_PATH, 128).toString('utf8').trim(), candidate: { releaseId: get('--candidate-release-id'), gitSha: get('--candidate-git-sha'), manifestSha256: get('--candidate-manifest-sha256'), imageSetDigest: get('--candidate-image-set-digest') }, recovery, ...(get('--mode') ? { mode: get('--mode') } : {}) }
     const candidateIdentity = { release_id: binding.candidate.releaseId, release_git_sha: binding.candidate.gitSha, manifest_sha256: binding.candidate.manifestSha256, image_set_digest: binding.candidate.imageSetDigest }
     assert(canonical(containers.map(value => value.service).sort()) === canonical(recovery.services), 'reviewed service map must exactly match the frozen recovery runtime services')
-    const observed = { composeProject: get('--compose-project'), containers, inventory: collectInventory(), candidateImageIds, ...(binding.mode === 'bridge_code_only' ? { candidateServiceImageIds: collectCandidateServiceImageIds(candidateDigestsPath, containers.map(item => item.service)) } : {}), candidateExclusiveRunning: candidateContainersRunning(exclusive), candidateIdentityRunning: candidateIdentityRunning(candidateIdentity), database: collectDatabase(process.env.DATABASE_URL) }
+    const observed = { composeProject: get('--compose-project'), containers, inventory: collectInventory(), candidateImageIds, ...(candidateServiceImageIds ? { candidateServiceImageIds } : {}), candidateExclusiveRunning: candidateContainersRunning(exclusive), candidateIdentityRunning: candidateIdentityRunning(candidateIdentity), database: collectDatabase(process.env.DATABASE_URL) }
     writeAtomic(statePath, createSignedSnapshot(observed, binding, privatePem, publicPem)); process.stdout.write('preidentity snapshot captured\n'); return
   }
   protectedPath(statePath, 'preidentity journal', 0o600)
@@ -387,7 +391,7 @@ function main(args) {
     const compose = get('--recovery-compose'), env = get('--recovery-env'), digests = get('--recovery-image-digests')
     for (const [path, label] of [[compose, 'bridge recovery Compose'], [env, 'bridge recovery environment'], [digests, 'bridge recovery image digests']]) protectedPath(path, label)
     assert(digest(readRegular(compose)) === recovery.composeSha256 && digest(readRegular(env)) === recovery.envSha256 && digest(readRegular(digests)) === recovery.imageDigestsSha256, 'bridge recovery artifacts changed')
-    const targetImageIds = collectCandidateImageIds(digests)
+    const targetImageIds = Object.values(collectCandidateServiceImageIds(compose, get('--compose-project'), document.recovery_target.services))
     assert(document.predeployment_workload.services.every(item => targetImageIds.includes(item.image_id)), 'original bridge recovery image is not locally available')
     const timeout = get('--wait-timeout') ?? '300'; assert(/^(?:[3-9][0-9]|[1-8][0-9]{2}|900)$/u.test(timeout), 'wait timeout must be 30-900 seconds')
     if (document.phase === 'bridge_cutover_started') writeAtomic(statePath, transitionJournal(document, 'bridge_recovery_started', privatePem, publicPem), true)
