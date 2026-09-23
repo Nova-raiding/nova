@@ -132,8 +132,17 @@ esac
 : "${PAYMENT_PROVIDER_MERCHANT_ID:?PAYMENT_PROVIDER_MERCHANT_ID is required}"
 : "${PAYMENT_CALLBACK_BASE_URL:?public HTTPS payment callback base URL is required}"
 : "${PAYMENT_CALLBACK_SECRET:?PAYMENT_CALLBACK_SECRET is required}"
+: "${PAYMENT_PROTECTED_RECEIPT_HOST_DIR:?PAYMENT_PROTECTED_RECEIPT_HOST_DIR is required}"
 : "${PAYMENT_RECONCILIATION_ENABLED:?PAYMENT_RECONCILIATION_ENABLED=true is required}"
 : "${PAYMENT_REFUND_ENABLED:?PAYMENT_REFUND_ENABLED=true is required}"
+case "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" in
+  /*) ;;
+  *) echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be absolute' >&2; exit 1 ;;
+esac
+if [ ! -d "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ -L "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ "$(stat -c '%u:%a' "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR")" != '100:700' ]; then
+  echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be a non-symlink directory owned by UID 100 with mode 0700' >&2
+  exit 1
+fi
 printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo 'unsafe RELEASE_ID' >&2; exit 1; }
 printf '%s' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo 'DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters' >&2; exit 1; }
 case "$REDIS_URL" in

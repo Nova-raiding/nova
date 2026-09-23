@@ -7,6 +7,8 @@ COPY services/payment-gateway/Dockerfile ./services/payment-gateway/Dockerfile
 COPY services/payment-gateway/index.mjs ./services/payment-gateway/index.mjs
 COPY services/payment-gateway/alipay.mjs ./services/payment-gateway/alipay.mjs
 COPY services/payment-gateway/alipay.d.mts ./services/payment-gateway/alipay.d.mts
+COPY services/payment-gateway/protected-receipt.mjs ./services/payment-gateway/protected-receipt.mjs
+COPY services/payment-gateway/protected-receipt.d.mts ./services/payment-gateway/protected-receipt.d.mts
 COPY packages/billing/src/callback-envelope.mjs ./packages/billing/src/callback-envelope.mjs
 COPY packages/billing/src/callback-envelope.d.mts ./packages/billing/src/callback-envelope.d.mts
 COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs
@@ -17,6 +19,7 @@ FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a55
 WORKDIR /app
 COPY --from=source /source/services/payment-gateway/index.mjs ./services/payment-gateway/index.mjs
 COPY --from=source /source/services/payment-gateway/alipay.mjs ./services/payment-gateway/alipay.mjs
+COPY --from=source /source/services/payment-gateway/protected-receipt.mjs ./services/payment-gateway/protected-receipt.mjs
 COPY --from=source /source/packages/billing/src/callback-envelope.mjs ./packages/billing/src/callback-envelope.mjs
 COPY --from=source /source/.release-source/gateway.manifest /app/.release-source/gateway.manifest
 COPY --from=source /source/.release-source/gateway.manifest.sha256 /app/.release-source/gateway.manifest.sha256

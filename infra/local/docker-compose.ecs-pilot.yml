@@ -197,6 +197,7 @@ services:
       PAYMENT_GATEWAY_API_KEY: ${PAYMENT_PROVIDER_API_KEY:?PAYMENT_PROVIDER_API_KEY is required}
       PAYMENT_CALLBACK_SECRET: ${PAYMENT_CALLBACK_SECRET:?PAYMENT_CALLBACK_SECRET is required}
       PAYMENT_API_BASE_URL: ${PAYMENT_API_BASE_URL:-http://api:8787}
+      PAYMENT_PROTECTED_RECEIPT_DIR: /run/payment-receipts
       ALIPAY_APP_ID: ${ALIPAY_APP_ID:?ALIPAY_APP_ID is required}
       ALIPAY_REQUEST_TIMEOUT_MS: ${ALIPAY_REQUEST_TIMEOUT_MS:-10000}
       ALIPAY_APP_PRIVATE_KEY_PATH: /run/secrets/alipay_app_private_key
@@ -204,6 +205,13 @@ services:
     volumes:
       - /opt/merchant-deploy/deploy/secrets/alipay_app_private_key:/run/secrets/alipay_app_private_key:ro
       - /opt/merchant-deploy/deploy/secrets/alipay_public_key:/run/secrets/alipay_public_key:ro
+      # Provision this host directory as UID 100, mode 0700 before release.
+      # The gateway refuses callbacks if receipt writes cannot be durable.
+      - type: bind
+        source: ${PAYMENT_PROTECTED_RECEIPT_HOST_DIR:?PAYMENT_PROTECTED_RECEIPT_HOST_DIR is required}
+        target: /run/payment-receipts
+        bind:
+          create_host_path: false
     expose: ["8790"]
     depends_on:
       api: { condition: service_healthy }

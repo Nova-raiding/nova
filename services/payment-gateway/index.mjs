@@ -13,10 +13,11 @@ import {
   refundQueryResponseMatchesRequest,
   responseMatchesOrder,
   signAlipayParams,
-  verifyNotifySignature,
+  verifiedNotifySigningContent,
   verifyResponseSignature,
 } from './alipay.mjs'
 import { signPaymentCallback } from '../../packages/billing/src/callback-envelope.mjs'
+import { captureVerifiedNotifyReceipt } from './protected-receipt.mjs'
 
 const env = name => { const value = process.env[name]?.trim(); if (!value) throw new Error(`${name} is required`); return value }
 const port = Number(process.env.PORT || 8790)
@@ -127,7 +128,38 @@ async function handle(req, res) {
     const state = normalizeRefundQueryState(node)
     return json(res, 200, { state, ...(state === 'unknown' ? {} : { order_id: orderId, provider_refund_id: node.trade_no || orderId, refund_request_id: refundRequestId, workspace_id: workspaceId, amount_fen: amountFen }) })
   }
-  if (req.method === 'POST' && req.url === '/v1/notify/alipay') { const input = await body(req); if (!verifyNotifySignature(input, publicKey, appId)) return json(res, 400, { error: 'INVALID_ALIPAY_SIGNATURE' }); const context = decodePassbackParams(String(input.passback_params || '')); const amountText = String(input.total_amount ?? '').trim(); const amountFen = /^\d+(?:\.\d{1,2})?$/u.test(amountText) ? Math.round(Number(amountText) * 100) : Number.NaN; const states = { TRADE_SUCCESS: 'paid', TRADE_FINISHED: 'paid', TRADE_CLOSED: 'closed', WAIT_BUYER_PAY: 'pending' }; const state = states[String(input.trade_status ?? '').trim()]; if (!context.workspace_id || !input.out_trade_no || !input.trade_no || !Number.isSafeInteger(amountFen) || amountFen <= 0 || !state) return json(res, 400, { error: 'INVALID_NOTIFY' }); const response = await forward({ workspaceId: String(context.workspace_id), orderId: String(input.out_trade_no), tradeNo: String(input.trade_no), amountFen, state, callbackPath: String(context.callback_path || '') }); if (!response.ok) return json(res, 502, { error: 'API_CALLBACK_FAILED' }); res.writeHead(200, { 'content-type': 'text/plain' }); res.end('success'); return }
+  if (req.method === 'POST' && req.url === '/v1/notify/alipay') {
+    const input = await body(req)
+    const nativeSignedFields = verifiedNotifySigningContent(input, publicKey, appId)
+    if (nativeSignedFields === null) return json(res, 400, { error: 'INVALID_ALIPAY_SIGNATURE' })
+    const context = decodePassbackParams(String(input.passback_params || ''))
+    const amountText = String(input.total_amount ?? '').trim()
+    const amountFen = /^\d+(?:\.\d{1,2})?$/u.test(amountText) ? Math.round(Number(amountText) * 100) : Number.NaN
+    const states = { TRADE_SUCCESS: 'paid', TRADE_FINISHED: 'paid', TRADE_CLOSED: 'closed', WAIT_BUYER_PAY: 'pending' }
+    const state = states[String(input.trade_status ?? '').trim()]
+    if (!context.workspace_id || !input.out_trade_no || !input.trade_no || !Number.isSafeInteger(amountFen) || amountFen <= 0 || !state) return json(res, 400, { error: 'INVALID_NOTIFY' })
+    const callbackPath = ['/v1/billing/callback/alipay', '/v1/subscriptions/callback/alipay', '/v1/commercial/callback/alipay'].includes(String(context.callback_path || ''))
+      ? String(context.callback_path)
+      : '/v1/billing/callback/alipay'
+    const response = await forward({ workspaceId: String(context.workspace_id), orderId: String(input.out_trade_no), tradeNo: String(input.trade_no), amountFen, state, callbackPath })
+    if (!response.ok) return json(res, 502, { error: 'API_CALLBACK_FAILED' })
+    captureVerifiedNotifyReceipt({
+      directory: process.env.PAYMENT_PROTECTED_RECEIPT_DIR,
+      providerSignatureVerified: true,
+      nativeSignature: String(input.sign),
+      nativeSignedFields,
+      apiCallbackStatus: response.status,
+      callbackPath,
+      orderId: String(input.out_trade_no),
+      providerTradeId: String(input.trade_no),
+      workspaceId: String(context.workspace_id),
+      amountFen,
+      state,
+    })
+    res.writeHead(200, { 'content-type': 'text/plain' })
+    res.end('success')
+    return
+  }
   return json(res, 404, { error: 'NOT_FOUND' })
 }
 http.createServer((req, res) => handle(req, res).catch(error => json(res, 500, { error: 'GATEWAY_ERROR', code: error instanceof Error && /^(?:alipay_http_\d{3}|alipay_request_timeout|alipay_request_failed|alipay_invalid_response_signature|alipay_invalid_response|alipay_response_order_mismatch|alipay_refund_query_mismatch)$/u.test(error.message) ? error.message : 'gateway_failure' }))).listen(port, '0.0.0.0')

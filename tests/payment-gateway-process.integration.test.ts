@@ -1,6 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { createSign, generateKeyPairSync } from 'node:crypto'
+import { createHash, createSign, generateKeyPairSync } from 'node:crypto'
+import { chmodSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { verifyPaymentCallbackSignature } from '../packages/billing/src/payment-provider.js'
 import { encodeAlipayParams, encodePassbackParams, signingContent } from '../services/payment-gateway/alipay.mjs'
@@ -80,6 +83,8 @@ describe('payment gateway process contract', () => {
     const callbackSecret = 'process-contract-callback-secret'
     const gatewayApiKey = 'process-contract-gateway-key'
     const appId = 'process-contract-alipay-app'
+    const receiptDirectory = mkdtempSync(join(tmpdir(), 'gateway-notify-receipt-'))
+    chmodSync(receiptDirectory, 0o700)
     let alipayCalls = 0
     const alipayPort = await listen(createServer((_req, res) => {
       alipayCalls += 1
@@ -115,6 +120,7 @@ describe('payment gateway process contract', () => {
         PAYMENT_GATEWAY_API_KEY: gatewayApiKey,
         PAYMENT_CALLBACK_SECRET: callbackSecret,
         PAYMENT_API_BASE_URL: `http://127.0.0.1:${apiPort}`,
+        PAYMENT_PROTECTED_RECEIPT_DIR: receiptDirectory,
         PUBLIC_BASE_URL: 'https://yxsona.com',
       },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -204,6 +210,22 @@ describe('payment gateway process contract', () => {
     await expect(notifyResponse.text()).resolves.toBe('success')
     expect(alipayCalls).toBe(0)
     expect(apiRequests).toHaveLength(1)
+    const receiptFiles = readdirSync(receiptDirectory)
+    expect(receiptFiles).toHaveLength(1)
+    const receiptText = readFileSync(join(receiptDirectory, receiptFiles[0]!), 'utf8')
+    expect(receiptText).not.toContain(notification.out_trade_no)
+    expect(receiptText).not.toContain(notification.trade_no)
+    expect(receiptText).not.toContain(sign)
+    expect(JSON.parse(receiptText)).toMatchObject({
+      source: 'alipay_native_notify',
+      provider_signature_verified: true,
+      api_callback_status: 200,
+      amount_fen: 1000,
+      state: 'paid',
+      order_id_sha256: createHash('sha256').update(notification.out_trade_no).digest('hex'),
+      provider_trade_id_sha256: createHash('sha256').update(notification.trade_no).digest('hex'),
+      final_evidence: false,
+    })
 
     const forwarded = apiRequests[0]!
     expect(forwarded.path).toBe('/v1/billing/callback/alipay')
@@ -247,5 +269,6 @@ describe('payment gateway process contract', () => {
       await expect(invalidResponse.json()).resolves.toEqual({ error: 'INVALID_NOTIFY' })
     }
     expect(apiRequests).toHaveLength(1)
+    expect(readdirSync(receiptDirectory)).toHaveLength(1)
   }, 20_000)
 })

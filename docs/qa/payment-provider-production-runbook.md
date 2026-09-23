@@ -26,6 +26,11 @@
 - `PAYMENT_CALLBACK_BASE_URL=https://<merchant-host>/v1`
 - `PAYMENT_RECONCILIATION_ENABLED=true`
 - `PAYMENT_REFUND_ENABLED=true`
+- `PAYMENT_PROTECTED_RECEIPT_HOST_DIR=/var/lib/merchant-release-security/payment-receipts`（示例绝对路径；部署前以网关 UID 100 建立、权限 0700，且不能是符号链接）
+
+支付网关在支付宝原生 RSA2 验签和内部 API 2xx 响应后，才向该目录以 0600、排他创建模式写一份 `payment-gateway-source-receipt.v1`。收据只包含订单号、交易号、工作区、原生签名及实际验签原文的 SHA-256、分值、时间和回调 HTTP 状态；不保存原始回调、签名、密钥或付款人资料，也不写普通日志。目录未配置或权限不符时不能产生可用收据，写入失败会让支付宝收到失败响应并按其重试语义重新通知。收据本身不等于最终支付证明，必须由受保护签发器与真实 provider 查询、数据库订单和账本记录交叉核对。
+
+收据保留窗口建议为 7 天，至少覆盖证据签发、退款对账及回滚观察期；到期清理须按具体文件先核对证据引用、审批和可恢复性并留审计记录，禁止对整个目录执行盲目递归删除。当前代码仅实现回调来源收据，尚未实现自动保留清理或六阶段最终签发，因此不能据此宣布支付上线门禁通过。
 
 `PAYMENT_PROVIDER_API_KEY` 是 API 调用支付网关与网关校验请求共同使用的服务端 Bearer 密钥，ECS Compose 会把同一个 Secret 注入两端。不要再创建独立的 `PAYMENT_GATEWAY_API_KEY`，否则两个值漂移后所有 checkout/query/refund 都会返回 401。
 
