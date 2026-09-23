@@ -27,6 +27,13 @@ docker exec "$container" sh -lc '
 base='exec 9>/state/lock; flock -n 9; DATABASE_URL=postgres://user:secret@db/merchant /usr/local/libexec/merchant/ecs-preidentity-recovery'
 common='--lock-path /state/lock --service-map /state/unlabeled-old-map.json --compose-project merchant-production --deployment-nonce nonce_abcdefghijklmnopqr --recovery-plan /state/bridge-unlabeled-plan.json --production-api-base-url https://yxsona.com/api'
 capture="$base capture --mode bridge_unlabeled_code_only --lock-path /state/lock --service-map /state/unlabeled-old-map.json --candidate-service-map /state/unlabeled-candidate-map.json --external-gateway-id 9999999999999999999999999999999999999999999999999999999999999999 --compose-project merchant-production --candidate-release-id release-a9 --candidate-git-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --candidate-manifest-sha256 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --candidate-image-set-digest sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc --candidate-image-digests /state/unlabeled-candidate-digests.json --candidate-compose /state/unlabeled-candidate-compose.yml --deployment-nonce nonce_abcdefghijklmnopqr --recovery-plan /state/bridge-unlabeled-plan.json"
+docker exec "$container" mv /state/unlabeled-old-map.json /state/unlabeled-old-map.saved
+if docker exec "$container" sh -lc "$capture --state /state/missing-map.json --attempt-id attempt_missing_map_abcdefghijklmnop"; then echo 'missing protected old service map unexpectedly signed takeover' >&2; exit 1; fi
+docker exec "$container" mv /state/unlabeled-old-map.saved /state/unlabeled-old-map.json
+docker exec "$container" mv /state/bridge-unlabeled-plan.json /state/bridge-unlabeled-plan.saved
+if docker exec "$container" sh -lc "$capture --state /state/missing-capsule.json --attempt-id attempt_missing_plan_abcdefghijklmnop"; then echo 'missing protected old capsule unexpectedly signed takeover' >&2; exit 1; fi
+docker exec "$container" mv /state/bridge-unlabeled-plan.saved /state/bridge-unlabeled-plan.json
+docker exec "$container" sh -lc 'test ! -e /state/missing-map.json && test ! -e /state/missing-capsule.json'
 docker exec "$container" sh -lc "$capture --state /state/unlabeled-failure.json --attempt-id attempt_unlabeled_abcdefghijklmnop"
 docker exec "$container" sh -lc "$base phase --state /state/unlabeled-failure.json --lock-path /state/lock --phase nonce_consumed"
 docker exec "$container" touch /state/bridge-db243

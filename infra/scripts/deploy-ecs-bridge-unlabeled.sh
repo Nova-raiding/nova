@@ -51,11 +51,12 @@ protected() {
     parent=$(dirname "$parent")
   done
 }
-for path in "$helper" /run/release-security/evidence-trust/production-preidentity-recovery-sha256 "$ECS_PREIDENTITY_SERVICE_MAP_PATH" "$ECS_ROLLBACK_PLAN_PATH" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBACK_ENV_FILE" "$ECS_ROLLBACK_IMAGE_DIGESTS_PATH" "$ECS_DEPLOY_STATE_DIR" "$ECS_DEPLOY_LOCK_PATH" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" "$ECS_CANDIDATE_IDENTITY_PATH" "$ECS_CANDIDATE_SOURCE_ARCHIVE" "$ECS_RELEASE_IMAGES_PATH" "$ECS_EIGHT_IMAGE_SET_PATH"; do protected "$path"; done
+for path in "$helper" /run/release-security/evidence-trust/production-preidentity-recovery-sha256 "$ECS_PREIDENTITY_SERVICE_MAP_PATH" "$ECS_ROLLBACK_PLAN_PATH" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBACK_ENV_FILE" "$ECS_ROLLBACK_IMAGE_DIGESTS_PATH" "$ECS_DEPLOY_STATE_DIR" "$ECS_DEPLOY_LOCK_PATH" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" "$ECS_CANDIDATE_IDENTITY_PATH" "$ECS_CANDIDATE_SOURCE_ARCHIVE" "$ECS_RELEASE_IMAGES_PATH" "$ECS_EIGHT_IMAGE_SET_PATH" "$PRODUCTION_CONFIG_PATH"; do protected "$path"; done
 [ -x "$helper" ] && [ -f "$helper" ] && [ -d "$ECS_DEPLOY_STATE_DIR" ] && [ -f "$ECS_DEPLOY_LOCK_PATH" ] || { echo 'B protected release controls are incomplete' >&2; exit 2; }
-installed=$(sed -n '1p' /run/release-security/evidence-trust/production-preidentity-recovery-sha256)
-source_digest=$(shasum -a 256 "$control_root/infra/protected/ecs-preidentity-recovery.mjs" | awk '{print $1}')
-[ "$installed" = "$source_digest" ] && [ "$(shasum -a 256 "$helper" | awk '{print $1}')" = "$installed" ] || { echo 'installed protected helper is not the reviewed seven-container version' >&2; exit 2; }
+node_path=$(sed -n '1s/^#!//p' "$helper")
+case "$node_path" in /*) protected "$node_path" ;; *) echo 'protected helper shebang does not name a reviewed runtime' >&2; exit 2 ;; esac
+[ -x "$node_path" ] && [ -f "$node_path" ] || { echo 'protected helper Node runtime is invalid' >&2; exit 2; }
+node "$control_root/infra/scripts/verify-ecs-bridge-control-install.mjs" "$control_root/infra/protected/ecs-preidentity-recovery.mjs" "$helper" /run/release-security/evidence-trust/production-preidentity-recovery-sha256
 exec 9>>"$ECS_DEPLOY_LOCK_PATH"
 flock -n 9 || { echo 'another release holds the production mutation lock' >&2; exit 1; }
 full_compose_digest=$(shasum -a 256 "$ECS_BRIDGE_FULL_COMPOSE_PATH" | awk '{print $1}')
@@ -71,6 +72,8 @@ assert_frozen_compose() {
 b_source=$(CDPATH='' cd -- "$ECS_BRIDGE_SOURCE_ROOT" && pwd -P)
 protected "$b_source"
 [ -f "$b_source/.candidate-identity" ] && [ -f "$b_source/.candidate-source.tar" ] && [ ! -L "$b_source/.candidate-identity" ] && [ ! -L "$b_source/.candidate-source.tar" ] || { echo 'staged B source identity/archive pair is missing' >&2; exit 2; }
+protected "$b_source/.candidate-identity"
+protected "$b_source/.candidate-source.tar"
 cmp -s "$b_source/.candidate-identity" "$ECS_CANDIDATE_IDENTITY_PATH" && cmp -s "$b_source/.candidate-source.tar" "$ECS_CANDIDATE_SOURCE_ARCHIVE" || { echo 'staged B source package differs from reviewed B package' >&2; exit 2; }
 staged_git_sha=$(sed -n 's/^git_sha=//p' "$ECS_CANDIDATE_IDENTITY_PATH")
 [ "$(git get-tar-commit-id < "$ECS_CANDIDATE_SOURCE_ARCHIVE" 2>/dev/null)" = "$staged_git_sha" ] || { echo 'B source archive embedded Git commit differs from identity' >&2; exit 2; }
