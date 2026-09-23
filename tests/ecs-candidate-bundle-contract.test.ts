@@ -139,7 +139,22 @@ describe('ECS candidate bundle contract', () => {
       'tests/codex-app-host-evidence-gate.test.ts',
       'tests/codex-app-host-evidence-gate.ts',
       'tests/operations-scripts.test.ts',
+      'apps/worker/src/scanner-heartbeat.ts',
+      'demo/merchant-studio/src/manual-platform-account-discovery.test.ts',
+      'infra/scripts/validate-production-config-yaml.rb',
+      'infra/protected/ecs-bridge-b-journal-store.mjs',
+      'infra/protected/ecs-bridge-b-journal-store.d.mts',
+      'infra/protected/ecs-bridge-b-transition.mjs',
+      'infra/protected/ecs-bridge-b-transition.d.mts',
+      'packages/workers/src/scanner-heartbeat.ts',
+      'packages/workers/src/scanner-heartbeat.test.ts',
+      'tests/ecs-compose-rollback.test.ts',
+      'tests/mcp-integration-mode-release-gate.test.ts',
+      'tests/ecs-bridge-b-transition.test.ts',
     ]) expect(manifest, `${path} must be compared with the remote checkout`).toContain(path)
+
+    const entries = manifest.slice(manifest.indexOf("<<'EOF'\n") + "<<'EOF'\n".length).split('\n').filter(Boolean)
+    expect(new Set(entries).size, 'manifest paths must not be duplicated').toBe(entries.length)
   })
 
   it('keeps host deployment entrypoints executable while verifier modules remain data', () => {
