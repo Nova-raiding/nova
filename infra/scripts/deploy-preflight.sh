@@ -120,7 +120,7 @@ npx --no-install tsx "$(dirname "$0")/../../tests/model-relay-evidence-gate.ts" 
 mcp_base_url=$(ruby "$(dirname "$0")/validate-production-config-yaml.rb" "$config_path" --print-mcp-base-url)
 [ -n "$mcp_base_url" ] || { echo "mcp_base_url is required for Codex host evidence binding" >&2; exit 1; }
 bridge_sha256=$(shasum -a 256 "$repo_root/apps/plugin/mcp/bridge.mjs" | awk '{print $1}')
-npx --no-install tsx "$(dirname "$0")/../../tests/codex-app-host-evidence-gate.ts" --file "$CODEX_APP_HOST_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-mcp-base-url "$mcp_base_url" --expected-bridge-sha256 "$bridge_sha256" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-artifacts
+npx --no-install tsx "$(dirname "$0")/../../tests/codex-app-host-evidence-gate.ts" --file "$CODEX_APP_HOST_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-mcp-base-url "$mcp_base_url" --expected-bridge-sha256 "$bridge_sha256" --expected-git-sha "$release_git_sha" --expected-image-set-digest "$image_set_digest" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-artifacts
 storage_bucket=$(awk '/^[[:space:]]*object_storage_bucket:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
 storage_endpoint=$(awk '/^[[:space:]]*object_storage_endpoint:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
 storage_encryption=$(awk '/^[[:space:]]*object_storage_sse_mode:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
