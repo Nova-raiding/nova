@@ -1,5 +1,5 @@
 import { createHash, createPublicKey, sign, verify } from 'node:crypto'
-import { closeSync, lstatSync, openSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs'
+import { closeSync, constants, lstatSync, openSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 
 export type ProductionEvidenceKind = 'payment' | 'restore'
@@ -19,7 +19,7 @@ function sha256File(path: string) {
   return hash.digest('hex')
 }
 
-function validateArtifact(reference: string | undefined, root: string, label: string, readContent = false): { errors: string[]; content?: Buffer } {
+function validateArtifact(reference: string | undefined, root: string, label: string, contentKind?: 'payment' | 'restore'): { errors: string[]; content?: Buffer } {
   const match = artifactRef.exec(reference ?? '')
   if (!match) return { errors: [`${label} must be an immutable production artifact with SHA-256 fragment`] }
   const relative = match[1]!; const expectedHash = match[2]!
@@ -31,12 +31,16 @@ function validateArtifact(reference: string | undefined, root: string, label: st
     const realCandidate = realpathSync(candidate)
     if (!realCandidate.startsWith(`${realRoot}${sep}`)) return { errors: [`${label} escapes the artifact root`] }
     if (sha256File(realCandidate) !== expectedHash) return { errors: [`${label} SHA-256 does not match the referenced artifact`] }
-    if (readContent) {
-      if (statSync(realCandidate).size > 65_536) return { errors: [`${label} exceeds the payment artifact size limit`] }
-      const content = readFileSync(realCandidate)
+    if (!contentKind) return { errors: [] }
+    const limit = contentKind === 'payment' ? 65_536 : 1024 * 1024
+    if (statSync(realCandidate).size > limit) return { errors: [`${label} exceeds the ${contentKind === 'payment' ? 'payment artifact size limit' : 'bounded PG17 capture size limit'}`] }
+    const descriptor = openSync(realCandidate, constants.O_RDONLY | constants.O_NOFOLLOW)
+    try {
+      const content = readFileSync(descriptor)
+      if (content.length > limit) return { errors: [`${label} exceeds the ${contentKind === 'payment' ? 'payment artifact size limit' : 'bounded PG17 capture size limit'}`] }
       if (createHash('sha256').update(content).digest('hex') !== expectedHash) return { errors: [`${label} SHA-256 does not match the referenced artifact`] }
       return { errors: [], content }
-    }
+    } finally { closeSync(descriptor) }
   } catch {
     return { errors: [`${label} referenced artifact does not exist or cannot be read`] }
   }
@@ -65,6 +69,29 @@ function validatePaymentArtifact(content: Buffer, name: string, document: Eviden
   if (artifact.outcome !== paymentOutcomes[name]) errors.push(`${label} outcome must match ${paymentOutcomes[name]}`)
   return { errors, ...(sha256Hex(artifact.order_id_sha256) ? { orderHash: artifact.order_id_sha256 } : {}) }
 }
+
+function validateRestoreCapture(bytes: Buffer | undefined, evidence: Evidence, options: { releaseId: string; imageSetDigest: string; manifestSha256: string; releaseGitSha: string; deploymentNonce: string }): string[] {
+  const label = 'checks.isolated_restore.evidence_ref'
+  if (!bytes || bytes.length > 1024 * 1024) return [`${label} must contain a bounded PG17 capture`]
+  let capture: Record<string, unknown>
+  try { capture = JSON.parse(bytes.toString('utf8')) as Record<string, unknown> } catch { return [`${label} must contain JSON`] }
+  if (!capture || typeof capture !== 'object' || Array.isArray(capture)) return [`${label} must contain a JSON object`]
+  const expected: Record<string, unknown> = { schema_version: 'pg17-isolated-restore-capture/1', status: 'pass', simulated: false, release_id: options.releaseId, release_git_sha: options.releaseGitSha, image_set_digest: options.imageSetDigest, manifest_sha256: options.manifestSha256, deployment_nonce_sha256: createHash('sha256').update(options.deploymentNonce).digest('hex'), backup_sha256: evidence.backup_sha256, restored_migration_prefix: '1:242:242', migrated_prefix: '1:244:244' }
+  const errors = Object.entries(expected).filter(([key, value]) => capture[key] !== value).map(([key]) => `${label} ${key} does not match the protected restore capture`)
+  for (const key of ['source_database_id_sha256', 'target_database_id_sha256', 'migration_chain_sha256', 'postgres_image_id', 'container_id', 'network_id'] as const) {
+    const value = capture[key]
+    if (!new RegExp(key === 'postgres_image_id' ? '^sha256:[a-f0-9]{64}$' : '^[a-f0-9]{64}$', 'u').test(String(value ?? ''))) errors.push(`${label} ${key} is invalid`)
+  }
+  if (!/^sha256:[a-f0-9]{64}$/u.test(String(capture.source_archive_sha256 ?? ''))) errors.push(`${label} source archive digest is invalid`)
+  if (!/postgres:17-alpine@sha256:[a-f0-9]{64}$/u.test(String(capture.postgres_image_ref ?? ''))) errors.push(`${label} PostgreSQL image is not pinned PG17`)
+  if (!/^merchant_restore_data_[a-f0-9]{24}$/u.test(String(capture.volume_name ?? ''))) errors.push(`${label} isolated volume identity is invalid`)
+  if (capture.source_database_id_sha256 === capture.target_database_id_sha256) errors.push(`${label} target database is not isolated`)
+  if (!Array.isArray(capture.migration_chain_rows) || capture.migration_chain_rows.length !== 244 || capture.migration_chain_rows.some((row, index) => typeof row !== 'string' || !row.startsWith(`${index + 1}|`))) errors.push(`${label} migration chain is incomplete`)
+  else if (createHash('sha256').update(capture.migration_chain_rows.join('\n')).digest('hex') !== capture.migration_chain_sha256) errors.push(`${label} migration chain digest is invalid`)
+  if (!iso(capture.captured_at) || Date.parse(String(capture.captured_at)) > Date.parse(String(evidence.generated_at))) errors.push(`${label} capture timestamp is invalid`)
+  if (iso(capture.captured_at) && Date.parse(String(capture.captured_at)) < Date.parse(String(evidence.source_backup_created_at))) errors.push(`${label} capture precedes the backup`)
+  return errors
+}
 /** Used by the independent evidence pipeline and tests; preflight receives no private key. */
 export const signProductionEvidence = (value: unknown, privateKeyPem: string) => sign(null, payload(value), privateKeyPem).toString('base64')
 
@@ -90,7 +117,8 @@ export function validateProductionEvidence(document: unknown, options: { kind: P
   for (const name of checksByKind[options.kind]) {
     const check = value.checks?.[name]
     if (check?.status !== 'pass') errors.push(`checks.${name}.status must be pass`)
-    const artifact = validateArtifact(check?.evidence_ref, options.artifactRoot, `checks.${name}.evidence_ref`, options.kind === 'payment')
+    const contentKind = options.kind === 'payment' ? 'payment' : name === 'isolated_restore' ? 'restore' : undefined
+    const artifact = validateArtifact(check?.evidence_ref, options.artifactRoot, `checks.${name}.evidence_ref`, contentKind)
     errors.push(...artifact.errors)
     if (options.kind === 'payment' && artifact.content) {
       const payment = validatePaymentArtifact(artifact.content, name, value, { releaseId: options.releaseId, deploymentNonce: options.deploymentNonce, now })
@@ -100,7 +128,8 @@ export function validateProductionEvidence(document: unknown, options: { kind: P
         paymentOrderHash ??= payment.orderHash
       }
     }
-    if (options.kind === 'payment' && text(check?.evidence_ref)) {
+    if (options.kind === 'restore' && name === 'isolated_restore' && artifact.errors.length === 0) errors.push(...validateRestoreCapture(artifact.content, value, options))
+    if (text(check?.evidence_ref)) {
       const previous = seenArtifactRefs.get(check.evidence_ref)
       if (previous) errors.push(`checks.${name}.evidence_ref must differ from checks.${previous}.evidence_ref`)
       else seenArtifactRefs.set(check.evidence_ref, name)
