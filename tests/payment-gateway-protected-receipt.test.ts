@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { captureVerifiedNotifyReceipt } from '../services/payment-gateway/protected-receipt.mjs'
+import { captureGatewayOperationReceipt, captureVerifiedNotifyReceipt } from '../services/payment-gateway/protected-receipt.mjs'
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 const input = (directory: string) => ({
@@ -62,6 +62,39 @@ describe('protected Alipay native callback source receipt', () => {
     mkdirSync(directory, { mode: 0o700 })
     symlinkSync(realParent, join(parent, 'alias'))
     expect(() => captureVerifiedNotifyReceipt(input(join(parent, 'alias', 'receipts')))).toThrow(/canonical/u)
+    expect(readdirSync(directory)).toHaveLength(0)
+  })
+})
+
+describe('protected Alipay gateway operation source receipts', () => {
+  it('records signed checkout and verified provider query/refund without plaintext identifiers or claiming final evidence', () => {
+    const directory = mkdtempSync(join(realpathSync(tmpdir()), 'gateway-operation-receipt-'))
+    chmodSync(directory, 0o700)
+    const common = { directory, orderId: 'sensitive-order', workspaceId: 'sensitive-workspace', amountFen: 29 }
+    const checkout = captureGatewayOperationReceipt({ ...common, operation: 'checkout', signedCheckoutParams: 'sensitive-signed-params', outcome: 'created' })
+    const query = captureGatewayOperationReceipt({ ...common, operation: 'provider_query', providerResponseSignatureVerified: true, providerTradeId: 'sensitive-trade', providerResponseReference: 'sensitive-request', outcome: 'paid' })
+    const refund = captureGatewayOperationReceipt({ ...common, operation: 'refund', providerResponseSignatureVerified: true, providerTradeId: 'sensitive-trade', providerResponseReference: 'sensitive-request', refundRequestId: 'sensitive-refund', outcome: 'processing' })
+    expect(readdirSync(directory)).toHaveLength(3)
+    for (const receipt of [checkout, query, refund]) {
+      if (!receipt) throw new Error('protected capture unexpectedly disabled')
+      const stored = readFileSync(join(directory, `${receipt.request_id}.json`), 'utf8')
+      expect(stored).not.toContain('sensitive-')
+      expect(stored).toContain(digest('sensitive-order'))
+      expect(statSync(join(directory, `${receipt.request_id}.json`)).mode & 0o777).toBe(0o600)
+      expect(receipt).toMatchObject({ raw_body_stored: false, final_evidence: false })
+    }
+    expect(checkout?.source).toBe('alipay_signed_checkout')
+    expect(query?.source).toBe('alipay_verified_response')
+    expect(refund?.outcome).toBe('processing')
+  })
+
+  it('refuses unsupported or unverified operation claims', () => {
+    const directory = mkdtempSync(join(realpathSync(tmpdir()), 'gateway-operation-receipt-'))
+    chmodSync(directory, 0o700)
+    const common = { directory, orderId: 'order', workspaceId: 'workspace', amountFen: 1 }
+    expect(() => captureGatewayOperationReceipt({ ...common, operation: 'provider_query', providerTradeId: 'trade', providerResponseReference: 'request', outcome: 'paid' })).toThrow(/verified response/u)
+    expect(() => captureGatewayOperationReceipt({ ...common, operation: 'provider_query', providerResponseSignatureVerified: true, providerTradeId: 'trade', providerResponseReference: 'request', outcome: 'pending' })).toThrow(/paid result/u)
+    expect(() => captureGatewayOperationReceipt({ ...common, operation: 'checkout', signedCheckoutParams: 'signed', outcome: 'paid' })).toThrow(/signed checkout/u)
     expect(readdirSync(directory)).toHaveLength(0)
   })
 })
