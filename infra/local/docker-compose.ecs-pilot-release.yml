@@ -16,6 +16,8 @@ services:
       RELEASE_GIT_SHA: ${PILOT_RELEASE_GIT_SHA:?PILOT_RELEASE_GIT_SHA is required}
       RELEASE_MANIFEST_SHA256: ${PILOT_RELEASE_MANIFEST_SHA256:?PILOT_RELEASE_MANIFEST_SHA256 is required}
       RELEASE_IMAGE_SET_DIGEST: ${PILOT_RELEASE_IMAGE_SET_DIGEST:?PILOT_RELEASE_IMAGE_SET_DIGEST is required}
+      BRIDGE_SCHEMA_COMPATIBILITY_MODE: ${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}
+      RUN_MIGRATIONS_ON_STARTUP: "false"
   api-replica:
     build: !reset null
     image: ${API_IMAGE_REF:?API_IMAGE_REF must be an immutable repository@sha256 reference}
@@ -24,6 +26,8 @@ services:
       RELEASE_GIT_SHA: ${PILOT_RELEASE_GIT_SHA:?PILOT_RELEASE_GIT_SHA is required}
       RELEASE_MANIFEST_SHA256: ${PILOT_RELEASE_MANIFEST_SHA256:?PILOT_RELEASE_MANIFEST_SHA256 is required}
       RELEASE_IMAGE_SET_DIGEST: ${PILOT_RELEASE_IMAGE_SET_DIGEST:?PILOT_RELEASE_IMAGE_SET_DIGEST is required}
+      BRIDGE_SCHEMA_COMPATIBILITY_MODE: ${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}
+      RUN_MIGRATIONS_ON_STARTUP: "false"
   ui:
     build: !reset null
     image: ${UI_IMAGE_REF:?UI_IMAGE_REF must be an immutable repository@sha256 reference}
@@ -44,6 +48,8 @@ services:
   worker-sync: &release-worker-image
     build: !reset null
     image: ${WORKER_IMAGE_REF:?WORKER_IMAGE_REF must be an immutable repository@sha256 reference}
+    environment:
+      BRIDGE_SCHEMA_COMPATIBILITY_MODE: ${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}
   worker-generation:
     <<: *release-worker-image
     build: !reset null

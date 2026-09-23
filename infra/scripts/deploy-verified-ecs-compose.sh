@@ -368,6 +368,7 @@ if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
     for(const name of ["api","api-replica","ui","ops-ui","payment-gateway","worker-sync","worker-generation","worker-publish","worker-reconcile","worker-automation","worker-scan","clamav","pilot-gateway"]){
       if(!/^[^\s]+@sha256:[0-9a-f]{64}$/.test(value.services?.[name]?.image??""))throw new Error(`bridge service lacks immutable image: ${name}`)
       if((name==="api"||name==="api-replica"||name.startsWith("worker-"))&&value.services[name].environment?.BRIDGE_SCHEMA_COMPATIBILITY_MODE!=="prefix_242_or_244")throw new Error(`bridge schema mode missing from ${name}`)
+      if((name==="api"||name==="api-replica")&&value.services[name].environment?.RUN_MIGRATIONS_ON_STARTUP!=="false")throw new Error(`bridge code cutover must disable startup migrations on ${name}`)
     }
   '
 fi
