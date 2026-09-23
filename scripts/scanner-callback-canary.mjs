@@ -85,7 +85,7 @@ export async function runScannerCallbackCanary({ env = process.env, execute = fa
   const { baseUrl, expectedReleaseId, expectedSha, workspaceId } = admission
   const released = await json(await fetchImpl(canaryUrl(baseUrl, '/releasez'), { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(10_000) }))
   requireIdentity(released, expectedReleaseId, expectedSha)
-  if (!execute) return { status: 'dry_run', releaseId: expectedReleaseId, workspaceId, writes: 0, proof: false }
+  if (!execute) return { status: 'dry_run', evidenceType: 'unsigned_observation', releaseId: expectedReleaseId, workspaceId, writes: 0, proof: false }
 
   const headers = { authorization: `Bearer ${env.SCANNER_CANARY_API_TOKEN}`, 'x-workspace-id': workspaceId }
   // A read proves this exact token can access this exact workspace, and checks
@@ -123,7 +123,11 @@ export async function runScannerCallbackCanary({ env = process.env, execute = fa
       && scanner?.ready === true && scanner?.ready_instances >= 1 && scanner?.backlog === 0 && scanner?.dead_letter === 0) {
       const downloaded = await fetchImpl(canaryUrl(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/download`), { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(10_000) })
       if (downloaded.ok && sha256(Buffer.from(await downloaded.arrayBuffer())) === digest) {
-        return { status: 'passed', releaseId: expectedReleaseId, workspaceId, assetId, sha256: digest, callbackAcceptedAt: new Date(callbackAt).toISOString(), writes: 1, proof: true }
+        // The public readiness aggregate is not an asset-bound signed receipt;
+        // even a fresh callback could belong to another concurrent upload.
+        // The exact downloaded bytes prove this asset became clean, but the
+        // protected signer and durable scan-attempt record remain separate gates.
+        return { status: 'observed', evidenceType: 'unsigned_observation', releaseId: expectedReleaseId, workspaceId, assetId, sha256: digest, callbackAcceptedAt: new Date(callbackAt).toISOString(), writes: 1, proof: false }
       }
     }
     await sleep(5_000)

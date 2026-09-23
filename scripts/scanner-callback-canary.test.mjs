@@ -29,7 +29,7 @@ test('dry run is read-only and checks exact release', async () => {
   const methods = []
   const result = await runScannerCallbackCanary({ env, fetchImpl: async (url, options) => { methods.push([url.pathname, options.method]); return release } })
   assert.deepEqual(methods, [['/api/releasez', 'GET']])
-  assert.deepEqual(result, { status: 'dry_run', releaseId: env.SCANNER_CANARY_RELEASE_ID, workspaceId: 'ws_canary', writes: 0, proof: false })
+  assert.deepEqual(result, { status: 'dry_run', evidenceType: 'unsigned_observation', releaseId: env.SCANNER_CANARY_RELEASE_ID, workspaceId: 'ws_canary', writes: 0, proof: false })
 })
 
 test('execution requires workspace, entitlement and release-bound confirmation before HTTP', () => {
@@ -63,9 +63,10 @@ test('one quarantined upload requires fresh callback and exact clean download', 
     throw new Error(`unexpected ${url.pathname}`)
   }
   const result = await runScannerCallbackCanary({ env, execute: true, fetchImpl, now: () => time, sleep: async ms => { time += ms }, nonce: Buffer.from([1, 2, 3]) })
-  assert.equal(result.status, 'passed')
+  assert.equal(result.status, 'observed')
+  assert.equal(result.evidenceType, 'unsigned_observation')
   assert.equal(result.writes, 1)
-  assert.equal(result.proof, true)
+  assert.equal(result.proof, false)
   assert.equal(calls.filter(call => call[2] === 'POST').length, 1)
   assert.deepEqual(calls[1], ['/api/v1/assets', '?limit=1', 'GET'])
 })

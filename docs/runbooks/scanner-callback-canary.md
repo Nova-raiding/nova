@@ -24,4 +24,4 @@ export SCANNER_CANARY_CONFIRM="${SCANNER_CANARY_RELEASE_ID}:${SCANNER_CANARY_WOR
 node scripts/scanner-callback-canary.mjs --execute
 ```
 
-一次执行最多上传一个随机内容的合法 1×1 PNG，避免命中旧的 `trusted clean` 去重。成功条件同时包括：上传初始为 `quarantined`，候选 `/readyz` 的 `latest_callback_accepted_at` 晚于本次上传，扫描器 ready 且队列无积压/死信，以及该素材经正常鉴权下载后的 SHA-256 与上传内容相同。脚本输出是未签名的运行观察，不代替受保护发布证据、数据库中 `asset_scan_attempts.callback_status=accepted` 与签名回执、或容器健康验收。执行失败后保留素材 ID/名称与 SHA-256 核对原因，不能直接重试或把素材手工改为 clean。达到 24 小时后仍需由正式受控定时机制产生新的真实回调，旧证据自然过期是预期行为。
+一次执行最多上传一个随机内容的合法 1×1 PNG，避免命中旧的 `trusted clean` 去重。脚本仅在以下观察同时成立时返回 `status=observed`、`evidenceType=unsigned_observation`、`proof=false`：上传初始为 `quarantined`，候选 `/readyz` 的 `latest_callback_accepted_at` 晚于本次上传，扫描器 ready 且队列无积压/死信，以及该素材经正常鉴权下载后的 SHA-256 与上传内容相同。聚合回调时间可能属于另一笔并发上传，因此这个结果不能单独计入签名生产发布门禁；还必须独立核对受保护发布证据、该素材对应的数据库 `asset_scan_attempts.callback_status=accepted` 与签名回执，以及容器健康。执行失败后保留素材 ID/名称与 SHA-256 核对原因，不能直接重试或把素材手工改为 clean。达到 24 小时后仍需由正式受控定时机制产生新的真实回调，旧证据自然过期是预期行为。
