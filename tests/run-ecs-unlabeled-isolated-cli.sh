@@ -35,6 +35,9 @@ docker exec "$container" rm /state/bridge-db243
 docker exec "$container" /usr/bin/docker stop --time 30 9999999999999999999999999999999999999999999999999999999999999999
 if docker exec "$container" sh -lc "$base bridge-begin --state /state/unlabeled-failure.json $common"; then echo 'stopped external gateway unexpectedly authorized unlabeled takeover' >&2; exit 1; fi
 docker exec "$container" /usr/bin/docker start 9999999999999999999999999999999999999999999999999999999999999999
+docker exec "$container" touch /state/gateway-upstream-drift
+if docker exec "$container" sh -lc "$base bridge-begin --state /state/unlabeled-failure.json $common"; then echo 'drifted external gateway upstream unexpectedly authorized unlabeled takeover' >&2; exit 1; fi
+docker exec "$container" rm /state/gateway-upstream-drift
 docker exec "$container" rm /state/unlabeled-mutation-count
 docker exec "$container" sh -lc "$base bridge-begin --state /state/unlabeled-failure.json $common"
 docker exec "$container" sh -lc 'printf 5 > /state/unlabeled-fail-at'

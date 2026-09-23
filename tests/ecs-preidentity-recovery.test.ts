@@ -56,7 +56,7 @@ describe('protected ECS pre-identity recovery', () => {
       containers: pairs.map(pair => ({ service: pair.service, id: pair.old.id, imageId: pair.old.image_id, configHash: sha('2'), state: 'running' })),
       inventory: [...pairs.map(pair => ({ id: pair.old.id, name: pair.old_name, image_id: pair.old.image_id, config_hash: sha('2') })), { id: sha('9'), name: 'external-gateway', image_id: image('7'), config_hash: sha('8') }],
       candidateImageIds: [image('c')], candidateServiceImageIds: Object.fromEntries(services.map(service => [service, image('c')])), unlabeledTakeover: pairs,
-      unlabeledGateway: { id: sha('9'), image_id: image('7'), config_sha256: sha('8'), host_sha256: sha('9'), networks: [{ name: 'merchant-production_default', id: sha('4'), aliases: [] }] },
+      unlabeledGateway: { id: sha('9'), image_id: image('7'), config_sha256: sha('8'), host_sha256: sha('9'), nginx_config_sha256: sha('a'), networks: [{ name: 'merchant-production_default', id: sha('4'), aliases: [] }] },
     }
     const sevenBinding = { ...binding, mode: 'bridge_unlabeled_code_only' as const,
       recovery: { ...binding.recovery, migrationTail: 242, allowedPrefixSha256: { 242: sha('5') }, services } }
