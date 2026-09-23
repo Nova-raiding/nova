@@ -10,6 +10,7 @@ import { assertWorkerReadinessDependencies } from '../apps/worker/src/main.ts'
 const fixture = await createIsolatedOpsFixture({ evidenceDir: await mkdtemp(join(tmpdir(), 'reverse-bridge-')) })
 const admin = new Pool({ connectionString: fixture.acceptanceDatabaseUrls.legacyBackfill })
 let server
+let persistence
 try {
   const migrations = await loadMigrations()
   await new MigrationRunner(admin, migrations.slice(0, 242)).run()
@@ -18,11 +19,12 @@ try {
     DATABASE_URL: fixture.acceptanceDatabaseUrls.legacyBackfill,
     OPS_DATABASE_URL: fixture.opsDatabaseUrl, REDIS_URL: fixture.redisUrl,
     RUN_MIGRATIONS_ON_STARTUP: 'false', BRIDGE_SCHEMA_COMPATIBILITY_MODE: 'prefix_242_or_244',
+    PORT: '0', API_BIND_HOST: '127.0.0.1',
   })
   const api = await import('../apps/api/src/server.ts')
   server = api.server
-  await api.persistenceReady
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
+  persistence = await api.persistenceReady
+  if (!server.listening) await new Promise((resolve, reject) => { server.once('error', reject); server.once('listening', resolve) })
   const base = `http://127.0.0.1:${server.address().port}`
   const probe = async (version, ready) => {
     const response = await fetch(`${base}/healthz`)
@@ -42,9 +44,16 @@ try {
   await new MigrationRunner(admin, [migrations[243]]).run()
   await probe(244, true)
   process.stdout.write('PASS: cloud-v2 API+worker prefix bridge on isolated PG17 242/243/244\n')
+} catch (error) {
+  process.stderr.write(`SMOKE_FAIL: ${error instanceof Error ? error.message : String(error)}\n`)
+  process.exitCode = 1
 } finally {
   if (server?.listening) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+  await persistence?.close?.()
   await admin.end()
   const disposal = await fixture.dispose()
   process.stdout.write(JSON.stringify({ fixture_cleanup: disposal }) + '\n')
 }
+// The API module owns long-lived Redis clients. The fixture and database have
+// been explicitly closed above; end this dedicated smoke process now.
+process.exit(process.exitCode ?? 0)
