@@ -89,6 +89,9 @@ infra/local/ecs-production-compose.layers
 infra/scripts/pilot-compose-preflight.sh
 infra/scripts/render-ecs-production-compose.sh
 infra/scripts/stage-verified-ecs-release.sh
+infra/scripts/verify-staged-plugin-release-v2.sh
+scripts/plugin-release-descriptor.mjs
+scripts/local-plugin-test-attestation.mjs
 infra/scripts/ecs-build-lock.sh
 infra/scripts/ecs-one-click-deploy.sh
 infra/scripts/check-ecs-storage-budget.sh

@@ -223,7 +223,19 @@ fi
 model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$config_path")
 npx --no-install tsx tests/model-relay-evidence-gate.ts --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
 mcp_base_url=$(ruby infra/scripts/validate-production-config-yaml.rb "$config_path" --print-mcp-base-url)
-bridge_sha256=$(shasum -a 256 apps/plugin/mcp/bridge.mjs | awk '{print $1}')
+plugin_source_schema=$(sed -n 's/^schema_version=//p' "$root/.candidate-identity" 2>/dev/null || true)
+case "$plugin_source_schema" in
+  '') bridge_sha256=$(shasum -a 256 apps/plugin/mcp/bridge.mjs | awk '{print $1}') ;;
+  candidate-identity/2)
+    bridge_sha256=$(sh "$root/infra/scripts/verify-staged-plugin-release-v2.sh" "$root" "$RELEASE_ID" "$release_git_sha")
+    PLUGIN_RELEASE_DESCRIPTOR_PATH="$root/.plugin-release-descriptor.json"
+    PLUGIN_RELEASE_TEST_ATTESTATION_PATH="$root/.local-plugin-test-attestation.json"
+    PLUGIN_RELEASE_PUBLIC_KEY_PATH=/run/release-security/plugin-trust/plugin-release-public.pem
+    PLUGIN_RELEASE_KEY_ID=$(sed -n '1p' /run/release-security/plugin-trust/key-id)
+    export PLUGIN_RELEASE_DESCRIPTOR_PATH PLUGIN_RELEASE_TEST_ATTESTATION_PATH PLUGIN_RELEASE_PUBLIC_KEY_PATH PLUGIN_RELEASE_KEY_ID
+    ;;
+  *) echo 'candidate plugin source schema is unsupported' >&2; exit 2 ;;
+esac
 npx --no-install tsx tests/codex-app-host-evidence-gate.ts --file "$CODEX_APP_HOST_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-mcp-base-url "$mcp_base_url" --expected-bridge-sha256 "$bridge_sha256" --expected-git-sha "$release_git_sha" --expected-image-set-digest "$image_set_digest" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-artifacts
 npx --no-install tsx tests/canonical-product-cutover-evidence-gate.ts --file "$CANONICAL_CUTOVER_EVIDENCE_PATH" --release-id "$RELEASE_ID" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT"
 npx --no-install tsx tests/release-manifest-gate.ts --file "$RELEASE_MANIFEST_PATH" --release-id "$RELEASE_ID" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id" --capability-evidence "$CAPABILITY_EVIDENCE_PATH" --capacity-evidence "$CAPACITY_REPORT_PATH" --model-relay-evidence "$MODEL_RELAY_EVIDENCE_PATH" --payment-evidence "$PAYMENT_EVIDENCE_PATH" --restore-evidence "$RESTORE_EVIDENCE_PATH" --object-storage-evidence "$OBJECT_STORAGE_EVIDENCE_PATH" --codex-app-host-evidence "$CODEX_APP_HOST_EVIDENCE_PATH" --canonical-cutover-evidence "$CANONICAL_CUTOVER_EVIDENCE_PATH"

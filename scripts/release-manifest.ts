@@ -186,7 +186,8 @@ export function buildCloudReleaseManifest(input: Parameters<typeof buildReleaseM
   })
   const artifacts = legacy.artifacts.filter(item => !item.path.startsWith('apps/plugin/') && !item.path.startsWith('.codex-marketplace/'))
   for (const path of ['scripts/plugin-release-descriptor.mjs', 'scripts/plugin-release-descriptor.d.mts',
-    'scripts/local-plugin-test-attestation.mjs', 'scripts/local-plugin-test-attestation.d.mts']) {
+    'scripts/local-plugin-test-attestation.mjs', 'scripts/local-plugin-test-attestation.d.mts',
+    'infra/scripts/verify-staged-plugin-release-v2.sh']) {
     const bytes = readFileSync(resolve(root, path))
     artifacts.push({ path, sha256: sha256(bytes), bytes: bytes.byteLength })
   }
