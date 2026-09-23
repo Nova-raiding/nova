@@ -18,6 +18,7 @@ export const LOCAL_ONLY_RELEASE_TESTS = Object.freeze([
   'tests/release-manifest-gate.test.ts',
   'tests/container-source-manifest.test.ts',
   'tests/operations-scripts.test.ts',
+  'tests/source-artifact-hygiene.test.ts',
   'tests/mcp-surface-contract.test.ts',
   'tests/plugin-manifest.test.ts',
 ])
