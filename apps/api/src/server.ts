@@ -22,6 +22,7 @@ import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
 import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, AuthorizationRepositoryError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, compareMembersByRecency, DEFAULT_MEMBER_ENTERPRISE_NAME, effectiveDebitFenOf, effectiveDebitFensOf, loadMigrations, reversalOrderId, settlementOrderId, visibleProductIds, memberIdentityKey, memberMatchesQuery, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type WorkspaceMember, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
+import { verifyBridgeMigrationPrefix } from '../../../packages/persistence/src/migration.js'
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import { CustomerDeliveryError, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository, normalizeCustomerDeliveryAccountListInput, customerDeliveryAccountCursor, type CustomerDeliveryRepository } from '../../../packages/persistence/src/customer-delivery-repository.js'
 import { loadCustomerDeliveryAsset, requireCustomerDeliveryAsset } from './customer-delivery-assets.js'
@@ -3686,6 +3687,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const opsSqlPool = (opsPool ?? pool) as unknown as SqlPool
     const migrations = await loadMigrations()
     const expectedMigrationVersion = migrations.at(-1)?.version ?? 0
+    const bridgeSchemaMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
     if (process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') await runMigrations(sqlPool, migrations)
     const outbox = new PostgresOutboxRepository(sqlPool)
     const business = new PostgresBusinessRepository(sqlPool, { normalizedProjection: true })
@@ -3888,8 +3890,13 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const checkHealth = async () => {
       const client = await pool.connect()
       try {
-        const migrationState = await client.query<{ version: number | null }>('SELECT max(version)::int AS version FROM schema_migrations')
-        if ((migrationState.rows[0]?.version ?? 0) < expectedMigrationVersion) throw new Error('database schema is behind the application migrations')
+        if (bridgeSchemaMode) {
+          const migrationState = await client.query<{ version: number; name: string; checksum: string | null }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version ASC')
+          verifyBridgeMigrationPrefix(migrationState.rows, migrations, bridgeSchemaMode)
+        } else {
+          const migrationState = await client.query<{ version: number | null }>('SELECT max(version)::int AS version FROM schema_migrations')
+          if ((migrationState.rows[0]?.version ?? 0) < expectedMigrationVersion) throw new Error('database schema is behind the application migrations')
+        }
       } finally { client.release() }
       if (opsPool) {
         const opsClient = await opsPool.connect()

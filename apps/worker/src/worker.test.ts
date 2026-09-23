@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -343,6 +344,20 @@ describe('worker production entry', () => {
       .rejects.toThrow('invalid or incomplete readiness envelope')
     await expect(assertWorkerReadinessDependencies({ database, apiBaseUrl: 'http://api:8787', fetcher: async () => new Response('{}', { status: 503 }), expectedMigrations }))
       .rejects.toThrow('returned 503')
+  })
+
+  it('permits only exact 242 or 244 checksummed bridge histories while keeping default readiness strict', async () => {
+    const expectedMigrations = await loadMigrations()
+    const rows = expectedMigrations.map(item => ({ version: item.version, name: item.name, checksum: createHash('sha256').update(item.sql).digest('hex') }))
+    const database = (selected: typeof rows) => ({ query: async () => ({ rows: selected }) })
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 242)), expectedMigrations, bridgeMode: 'prefix_242_or_244', bridgeMigrations: expectedMigrations }))
+      .resolves.toEqual({ migrationVersion: 242, apiReady: false })
+    await expect(assertWorkerReadinessDependencies({ database: database(rows), expectedMigrations, bridgeMode: 'prefix_242_or_244', bridgeMigrations: expectedMigrations }))
+      .resolves.toEqual({ migrationVersion: 244, apiReady: false })
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 242)), expectedMigrations }))
+      .rejects.toThrow('expected complete migration chain through 244')
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 243)), expectedMigrations, bridgeMode: 'prefix_242_or_244', bridgeMigrations: expectedMigrations }))
+      .rejects.toThrow('exactly 242 or 244')
   })
 
   it('requires complete scan callback credentials before advertising scanner readiness', async () => {

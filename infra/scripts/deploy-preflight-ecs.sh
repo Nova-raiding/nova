@@ -79,6 +79,8 @@ config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 # that requires it. Keeping the list here is what makes the preflight able to
 # name a missing value before the render, which is the whole point of it.
 : "${WORKER_API_CREDENTIALS:?WORKER_API_CREDENTIALS is required}"
+: "${BRIDGE_SCHEMA_COMPATIBILITY_MODE:?bridge schema compatibility mode is required}"
+[ "$BRIDGE_SCHEMA_COMPATIBILITY_MODE" = prefix_242_or_244 ] || { echo 'bridge schema compatibility mode must be prefix_242_or_244' >&2; exit 1; }
 : "${WORKER_WORKSPACES:?WORKER_WORKSPACES=auto or an explicit production workspace allowlist is required}"
 : "${WORKER_SYNC_API_TOKEN:?WORKER_SYNC_API_TOKEN is required}"
 : "${WORKER_SYNC_API_SIGNING_SECRET:?WORKER_SYNC_API_SIGNING_SECRET is required}"

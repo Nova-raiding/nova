@@ -216,6 +216,24 @@ export function verifyAppliedMigrations(
   }
 }
 
+/** Bridge-only runtime contract: the old business code can run before and
+ * after the two additive local-plugin migrations, but never on a partial or
+ * foreign history. The ordinary release path continues to require its full
+ * migration chain. */
+export function verifyBridgeMigrationPrefix(
+  applied: readonly AppliedMigration[],
+  expected: readonly Migration[],
+  mode: string | undefined,
+): 242 | 244 {
+  if (mode !== 'prefix_242_or_244') throw new Error('bridge schema compatibility mode is not enabled')
+  if (expected.length !== 244 || expected.some((migration, index) => migration.version !== index + 1)) {
+    throw new Error('bridge release must carry the complete migration chain through 244')
+  }
+  if (applied.length !== 242 && applied.length !== 244) throw new Error('bridge database migration prefix must be exactly 242 or 244')
+  verifyAppliedMigrations(applied, expected, migrationChecksumBaseline())
+  return applied.length
+}
+
 /**
  * Splits a PostgreSQL script only at top-level semicolons. Quoted strings,
  * identifiers, dollar-quoted function bodies, and nested comments stay intact.
@@ -693,6 +711,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const revokeMcpOauthAppAcl = await readFile(new URL('./migrations/240_revoke_mcp_oauth_app_acl.sql', import.meta.url), 'utf8')
   const repairOpsDirectoryFinanceReadAcl = await readFile(new URL('./migrations/241_repair_ops_directory_finance_read_acl.sql', import.meta.url), 'utf8')
   const repairCreativePointAllocationReservationIndex = await readFile(new URL('./migrations/242_repair_creative_point_allocation_reservation_index.sql', import.meta.url), 'utf8')
+  const localPluginConnectionRequests = await readFile(new URL('./migrations/243_local_plugin_connection_requests.sql', import.meta.url), 'utf8')
+  const localPluginInstallInstances = await readFile(new URL('./migrations/244_local_plugin_install_instances.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -936,6 +956,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 240, name: 'revoke_mcp_oauth_app_acl', sql: revokeMcpOauthAppAcl },
     { version: 241, name: 'repair_ops_directory_finance_read_acl', sql: repairOpsDirectoryFinanceReadAcl },
     { version: 242, name: 'repair_creative_point_allocation_reservation_index', sql: repairCreativePointAllocationReservationIndex, transactional: false },
+    { version: 243, name: 'local_plugin_connection_requests', sql: localPluginConnectionRequests },
+    { version: 244, name: 'local_plugin_install_instances', sql: localPluginInstallInstances },
   ]
 }
 
