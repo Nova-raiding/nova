@@ -193,7 +193,14 @@ export function authorizeBridgeBRecovery(document, input, publicPem, now = new D
   assert(input.composeProject === document.compose_project, 'Bridge B recovery Compose project changed')
   assert(input.database?.version === 242 && input.database?.historySha256 === document.database_before.migration_history_sha256, 'Bridge B recovery forbidden after database leaves the captured 242 prefix')
   assert((input.database.invalidConcurrentIndexes ?? []).length === 0, 'invalid concurrent index blocks Bridge B recovery')
-  assert(input.currentBridgeIdentity?.releaseId === document.bridge.release_id && input.currentBridgeIdentity?.gitSha === document.bridge.release_git_sha && input.currentBridgeIdentity?.manifestSha256 === document.bridge.manifest_sha256 && input.currentBridgeIdentity?.imageSetDigest === document.bridge.image_set_digest, 'running release is not the captured Bridge B identity')
+  const isCandidateApi = input.currentBridgeIdentity?.releaseId === document.bridge.release_id && input.currentBridgeIdentity?.gitSha === document.bridge.release_git_sha && input.currentBridgeIdentity?.manifestSha256 === document.bridge.manifest_sha256 && input.currentBridgeIdentity?.imageSetDigest === document.bridge.image_set_digest
+  if (!isCandidateApi) {
+    assert(document.phase === 'bridge_runtime_mutation_started', 'verified Bridge B recovery requires the candidate API identity')
+    const old = document.recovery_capsule?.target
+    assert(input.currentBridgeIdentity?.releaseId === old?.release_id && input.currentBridgeIdentity?.gitSha === old?.release_git_sha && input.currentBridgeIdentity?.manifestSha256 === old?.manifest_sha256 && input.currentBridgeIdentity?.imageSetDigest === old?.image_set_digest, 'running release is neither the captured Bridge B nor frozen old-runtime identity')
+    const baselineApi = document.baseline.services.find(item => item.service === 'api')
+    assert(input.currentApiContainer?.id === baselineApi?.id && input.currentApiContainer?.imageId === baselineApi?.image_id && input.currentApiContainer?.configHash === baselineApi?.config_hash, 'old API recovery requires the exact captured baseline container, image and configuration')
+  }
   assert(input.baseline?.workloadSha256 === document.baseline.workload_sha256 && input.baseline?.inventorySha256 === document.baseline.inventory_sha256, 'Bridge B recovery inventory is not the captured baseline')
   assert(input.recovery?.composeSha256 && HEX.test(input.recovery.composeSha256) && input.recovery.composeSha256 === document.recovery_capsule.compose_sha256, 'recovery Compose does not match the signed old-runtime capsule')
   assert(input.recovery?.envSha256 && HEX.test(input.recovery.envSha256) && input.recovery.envSha256 === document.recovery_capsule.env_sha256, 'recovery environment does not match the signed old-runtime capsule')
@@ -611,6 +618,7 @@ function recover(get, privatePem, publicPem) {
     composeProject: project,
     database: before,
     currentBridgeIdentity,
+    currentApiContainer: { id: currentApi.id, imageId: currentApi.image_id, configHash: currentApi.config_hash },
     baseline: { workloadSha256: journal.baseline.workload_sha256, inventorySha256: journal.baseline.inventory_sha256 },
     recovery: {
       composeSha256: old.artifactHashes.compose_sha256,

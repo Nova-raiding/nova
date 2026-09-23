@@ -40,7 +40,7 @@ const observed = {
 const binding = {
   attemptId: 'attempt_BridgeB_abcdefghijkl', deploymentNonce, bridge, keyId: 'production-release-2026',
   bridgeArtifacts: { compose_sha256: sha('5'), env_sha256: sha('6'), image_digests_sha256: sha('7'), services: ['api'] },
-  recoveryCapsule: { compose_sha256: sha('8'), env_sha256: sha('9'), image_digests_sha256: sha('a'), services: ['api'] },
+  recoveryCapsule: { compose_sha256: sha('8'), env_sha256: sha('9'), image_digests_sha256: sha('a'), services: ['api'], target: { release_id: 'old-release-242', release_git_sha: git('e'), manifest_sha256: sha('f'), image_set_digest: image('4') } },
 }
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
@@ -69,6 +69,7 @@ function recoveryInput(overrides: Record<string, unknown> = {}) {
   return {
     deploymentNonce, composeProject: observed.composeProject,
     currentBridgeIdentity: bridge, database: observed.database, baseline,
+    currentApiContainer: { id: observed.containers[0].id, imageId: observed.containers[0].imageId, configHash: observed.containers[0].configHash },
     recovery: { composeSha256: sha('8'), envSha256: sha('9'), imageDigestsSha256: sha('a'), targetServices: ['api'] },
     ...overrides,
   }
@@ -161,6 +162,16 @@ describe('protected ECS Bridge B transition policy', () => {
       { recovery: { ...recoveryInput().recovery, imageDigestsSha256: sha('9') } },
       { recovery: { ...recoveryInput().recovery, targetServices: ['api', 'worker'] } },
     ].entries()) expect(() => authorizeBridgeBRecovery(mutationStarted(), recoveryInput(override), keys.publicKey, now), `override ${index}`).toThrow()
+  })
+
+  it('permits an old API during mutation-started recovery only on its captured baseline container', () => {
+    const oldIdentity = { releaseId: 'old-release-242', gitSha: git('e'), manifestSha256: sha('f'), imageSetDigest: image('4') }
+    expect(authorizeBridgeBRecovery(mutationStarted(), recoveryInput({ currentBridgeIdentity: oldIdentity }), keys.publicKey, now).operation).toBe('compose_up_old_runtime_only')
+    expect(() => authorizeBridgeBRecovery(mutationStarted(), recoveryInput({ currentBridgeIdentity: oldIdentity, currentApiContainer: { ...recoveryInput().currentApiContainer, id: 'b'.repeat(64) } }), keys.publicKey, now)).toThrow(/exact captured baseline container/u)
+    const verified = transitionBridgeBJournal(mutationStarted(), 'bridge_runtime_verified', keys.privateKey, keys.publicKey, now)
+    expect(() => authorizeBridgeBRecovery(verified, recoveryInput({ currentBridgeIdentity: oldIdentity }), keys.publicKey, now)).toThrow(/verified Bridge B recovery requires the candidate API identity/u)
+    const thirdIdentity = { ...oldIdentity, gitSha: git('9') }
+    expect(() => authorizeBridgeBRecovery(mutationStarted(), recoveryInput({ currentBridgeIdentity: thirdIdentity }), keys.publicKey, now)).toThrow(/neither the captured Bridge B nor frozen old-runtime identity/u)
   })
 
   it('persists nonce consumption atomically and rejects replay or stale phase advancement', async () => {
