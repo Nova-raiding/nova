@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -85,6 +85,7 @@ test('accepts only a real three-image save archive whose config IDs and layer di
     const result = await verifyDockerSaveArchive(archive, ids)
     assert.equal(result.kind, 'docker-save-three-image')
     assert.deepEqual(result.image_ids, ids)
+    await assert.rejects(verifyDockerSaveArchive(join(dir, 'missing.tar'), ids))
     await assert.rejects(verifyDockerSaveArchive(archive, [ids[0], apiImage, ids[2]]), /differs from running/)
     writeFileSync(join(dir, entries[0].Layers[0]), 'tampered')
     execFileSync('tar', ['-cf', archive, '-C', dir, 'manifest.json', ...entries.flatMap(entry => [entry.Config, entry.Layers[0]])])
@@ -92,4 +93,16 @@ test('accepts only a real three-image save archive whose config IDs and layer di
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('B runner fails closed on absent evidence/archive before nonce or Docker create', () => {
+  const script = readFileSync(new URL('../infra/scripts/deploy-ecs-bridge-unlabeled.sh', import.meta.url), 'utf8')
+  execFileSync('sh', ['-n', new URL('../infra/scripts/deploy-ecs-bridge-unlabeled.sh', import.meta.url).pathname])
+  assert.match(script, /ECS_OLD_RUNTIME_EVIDENCE_PATH:\?root-only frozen old runtime evidence is required/u)
+  assert.match(script, /ECS_OLD_IMAGE_ARCHIVE_PATH:\?root-only old API\/worker\/gateway image archive is required/u)
+  const verify = script.indexOf('ecs-bridge-old-runtime-evidence.mjs" verify')
+  assert.ok(verify > 0)
+  assert.ok(verify < script.indexOf('consume-production-evidence-nonce.sh'))
+  assert.ok(verify < script.indexOf('create --no-build --pull never'))
+  assert.ok(verify < script.indexOf('bridge-begin --state'))
 })
