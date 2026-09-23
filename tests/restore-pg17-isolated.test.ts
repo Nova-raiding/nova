@@ -1,10 +1,10 @@
 import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { readArchiveCommit, retainedNonceBinding, validateArchiveCommit, validateContainerInspection, validateMigrationAssets, validateRestoreInputs } from '../infra/protected/restore-pg17-isolated.mjs'
+import { composeDigestArgument, migrationContainerArgs, postgresContainerArgs, readArchiveCommit, retainedNonceBinding, validateArchiveCommit, validateContainerInspection, validateMigrationAssets, validateRestoreInputs } from '../infra/protected/restore-pg17-isolated.mjs'
 
 const sha = (value: string) => createHash('sha256').update(value).digest('hex')
 const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]` : value && typeof value === 'object' ? `{${Object.entries(value).filter(([key]) => key !== 'signature_base64').sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}` : JSON.stringify(value)
@@ -64,6 +64,50 @@ describe('protected PostgreSQL 17 isolated restore input contract', () => {
     const value = retainedNonceBinding(nonce)
     expect(value).toEqual({ deployment_nonce_sha256: sha(nonce) })
     expect(JSON.stringify(value)).not.toContain(nonce)
+  })
+  it('passes validated JSON text, not a sidecar path, to the real Ruby Compose gate', () => {
+    const input = fixture()
+    const digests = input.imageSet.image_digests as Record<string, string>
+    const references = input.imageSet.image_references as Record<string, string>
+    const services: Record<string, { image: string }> = {}
+    const groups: Record<string, string[]> = {
+      'merchant-api': ['api', 'api-replica'],
+      'postgres-migration': ['migrate'],
+      'merchant-worker': ['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan'],
+      'merchant-ui': ['ui'], 'merchant-ops-ui': ['ops-ui'],
+      'payment-gateway': ['payment-gateway'], 'pilot-gateway': ['pilot-gateway'], clamav: ['clamav'],
+    }
+    for (const [artifact, names] of Object.entries(groups)) for (const name of names) services[name] = { image: references[artifact]! }
+    const directory = mkdtempSync(join(tmpdir(), 'pg17-compose-gate-'))
+    const compose = join(directory, 'rendered-compose.json'), sidecar = join(directory, 'image-digests.json')
+    writeFileSync(compose, JSON.stringify({ services }))
+    writeFileSync(sidecar, JSON.stringify(digests))
+    const gate = 'infra/scripts/validate-ecs-compose-release.rb'
+    const jsonArgument = composeDigestArgument(digests, { ...digests })
+    const imageResult = spawnSync('ruby', [gate, compose, jsonArgument, '--print-image-set-digest'], { encoding: 'utf8' })
+    expect(imageResult.status).toBe(0)
+    expect(imageResult.stdout.trim()).toBe(input.imageSetDigest)
+    const manifestResult = spawnSync('ruby', [gate, compose, jsonArgument, '--print-manifest-sha256'], { encoding: 'utf8' })
+    expect(manifestResult.status).toBe(0)
+    expect(manifestResult.stdout.trim()).toMatch(/^[a-f0-9]{64}$/u)
+    const pathInsteadOfJson = spawnSync('ruby', [gate, compose, sidecar, '--print-image-set-digest'], { encoding: 'utf8' })
+    expect(pathInsteadOfJson.status).not.toBe(0)
+    expect(() => composeDigestArgument({ ...digests, 'merchant-api': `sha256:${'0'.repeat(64)}` }, digests)).toThrow(/sidecar mismatch/)
+  })
+  it('keeps the isolated database password out of Docker arguments and published ports', () => {
+    const image = `registry.example/library/postgres:17-alpine@sha256:${'a'.repeat(64)}`
+    const postgres = postgresContainerArgs({ containerName: 'restore-db', network: 'internal-only', volume: 'restore-data', image })
+    const migration = migrationContainerArgs({ migrationName: 'restore-migrate', containerName: 'restore-db', network: 'internal-only', migrations: '/protected/migrations', script: '/protected/apply-migrations.sh', image })
+    for (const args of [postgres, migration]) {
+      expect(args).not.toContain('-p')
+      expect(args).not.toContain('--publish')
+      expect(args.join(' ')).not.toContain('isolated-only')
+      expect(args.slice(args.indexOf('--network') + 1, args.indexOf('--network') + 2)).toEqual(['internal-only'])
+    }
+    expect(postgres[postgres.indexOf('POSTGRES_PASSWORD') - 1]).toBe('--env')
+    expect(migration[migration.indexOf('PGPASSWORD') - 1]).toBe('--env')
+    expect(postgres.some(arg => arg.startsWith('POSTGRES_PASSWORD='))).toBe(false)
+    expect(migration.some(arg => arg.startsWith('PGPASSWORD='))).toBe(false)
   })
   it('rejects missing or mutable image identity and release mismatch', () => {
     const missing = fixture(); delete (missing.imageSet.image_digests as Record<string, string>)['merchant-api']

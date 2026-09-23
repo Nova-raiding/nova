@@ -85,6 +85,18 @@ export function validateRestoreInputs({ backupSha256, backupName, attestation, p
 }
 export function validateArchiveCommit(actual, expected) { requireValue(GIT.test(actual ?? '') && actual === expected, 'candidate archive embedded Git commit does not match staged identity') }
 export function retainedNonceBinding(nonce) { requireValue(/^[A-Za-z0-9_-]{22,128}$/u.test(nonce ?? ''), 'deployment nonce is invalid'); return { deployment_nonce_sha256: sha(nonce) } }
+export function composeDigestArgument(digestFile, imageDigests) {
+  requireValue(digestFile && typeof digestFile === 'object' && !Array.isArray(digestFile) && imageDigests && typeof imageDigests === 'object' && !Array.isArray(imageDigests), 'eight-image digest sidecar is invalid')
+  const keys = Object.keys(digestFile).sort()
+  requireValue(keys.length === EXPECTED_IMAGES.length && keys.join(',') === EXPECTED_IMAGES.join(',') && keys.every(key => digestFile[key] === imageDigests[key]), 'eight-image digest sidecar mismatch')
+  return JSON.stringify(digestFile)
+}
+export function postgresContainerArgs({ containerName, network, volume, image }) {
+  return ['run', '-d', '--name', containerName, '--network', network, '--mount', `type=volume,source=${volume},target=/var/lib/postgresql/data`, '--env', 'POSTGRES_PASSWORD', '--env', 'POSTGRES_DB=merchant', image]
+}
+export function migrationContainerArgs({ migrationName, containerName, network, migrations, script, image }) {
+  return ['run', '--rm', '--name', migrationName, '--network', network, '--env', `PGHOST=${containerName}`, '--env', 'PGPORT=5432', '--env', 'PGDATABASE=merchant', '--env', 'PGUSER=postgres', '--env', 'PGPASSWORD', '--mount', `type=bind,source=${migrations},target=/migrations,readonly`, '--mount', `type=bind,source=${script},target=/ops/apply-migrations.sh,readonly`, '--entrypoint', '/bin/sh', image, '/ops/apply-migrations.sh']
+}
 export function readArchiveCommit(path) {
   const header = Buffer.alloc(4096)
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
@@ -123,8 +135,8 @@ function dockerStream(args, file, timeout = 3_600_000) {
     source.on('error', finish); source.pipe(child.stdin)
   })
 }
-function docker(args, input, timeout = 120_000) {
-  const result = spawnSync(DOCKER, args, { input, encoding: input ? undefined : 'utf8', timeout, maxBuffer: 64 * 1024, env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', DOCKER_HOST: 'unix:///var/run/docker.sock' } })
+function docker(args, input, timeout = 120_000, isolatedEnvironment = {}) {
+  const result = spawnSync(DOCKER, args, { input, encoding: input ? undefined : 'utf8', timeout, maxBuffer: 64 * 1024, env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', DOCKER_HOST: 'unix:///var/run/docker.sock', ...isolatedEnvironment } })
   requireValue(!result.error && result.status === 0, `isolated Docker operation failed: ${args[0]}`)
   return String(result.stdout ?? '').trim()
 }
@@ -162,12 +174,12 @@ async function main(args) {
   validateArchiveCommit(readArchiveCommit(join(root, '.candidate-source.tar')), identity.git_sha)
   const imageSet = JSON.parse(readRegular(options['--eight-image-set'], 16 * 1024).toString())
   const digestFile = JSON.parse(readRegular(options['--image-digests'], 16 * 1024).toString())
-  requireValue(JSON.stringify(digestFile) === JSON.stringify(imageSet.image_digests), 'eight-image digest sidecar mismatch')
+  const digestJson = composeDigestArgument(digestFile, imageSet.image_digests)
   for (const path of [join(TRUST_ROOT, 'production-evidence-public.pem'), join(TRUST_ROOT, 'production-evidence-key-id')]) protectedPath(path)
   const attestation = JSON.parse(readRegular(attestationPath, 32 * 1024).toString())
   const backupSha256 = await hashFile(backupPath, 16 * 1024 * 1024 * 1024)
   const binding = validateRestoreInputs({ backupSha256, backupName: basename(backupPath), attestation, publicPem: readRegular(join(TRUST_ROOT, 'production-evidence-public.pem'), 8192), keyId: readRegular(join(TRUST_ROOT, 'production-evidence-key-id'), 128).toString().trim(), identity, imageSet, releaseId: options['--release-id'], gitSha: options['--git-sha'], imageSetDigest: options['--image-set-digest'], manifestSha256: options['--manifest-sha256'], deploymentNonce: options['--deployment-nonce'] })
-  const nonce = randomBytes(12).toString('hex'), containerName = `merchant_restore_${nonce}`, network = `merchant_restore_net_${nonce}`, volume = `merchant_restore_data_${nonce}`
+  const nonce = randomBytes(12).toString('hex'), containerName = `merchant_restore_${nonce}`, migrationName = `merchant_restore_migrate_${nonce}`, network = `merchant_restore_net_${nonce}`, volume = `merchant_restore_data_${nonce}`
   const output = join(RESTORE_ROOT, `${options['--release-id']}-${nonce}.json`)
   const extraction = join(RESTORE_ROOT, `${options['--release-id']}-${nonce}-source`)
   mkdirSync(extraction, { mode: 0o700 })
@@ -182,18 +194,19 @@ async function main(args) {
   const composeGate = join(extraction, 'infra/scripts/validate-ecs-compose-release.rb')
   protectedPath(composeGate); protectedPath('/usr/bin/ruby'); protectedPath('/usr/bin/tar')
   for (const [mode, expected] of [['--print-image-set-digest', options['--image-set-digest']], ['--print-manifest-sha256', options['--manifest-sha256']]]) {
-    const result = spawnSync('/usr/bin/ruby', [composeGate, options['--rendered-compose'], options['--image-digests'], mode], { encoding: 'utf8', timeout: 30_000, maxBuffer: 8192, env: { PATH: '/usr/bin:/bin' } })
+    const result = spawnSync('/usr/bin/ruby', [composeGate, options['--rendered-compose'], digestJson, mode], { encoding: 'utf8', timeout: 30_000, maxBuffer: 8192, env: { PATH: '/usr/bin:/bin' } })
     requireValue(!result.error && result.status === 0 && result.stdout.trim() === expected, `rendered Compose ${mode} does not match frozen release`)
   }
   const imageId = JSON.parse(docker(['image', 'inspect', binding.postgresImage]))[0]?.Id
   requireValue(/^sha256:[a-f0-9]{64}$/u.test(imageId ?? ''), 'PostgreSQL 17 image is missing')
+  const isolatedPassword = randomBytes(48).toString('base64url')
   let containerId
   let networkId
   try {
   networkId = docker(['network', 'create', '--internal', network])
   requireValue(/^[a-f0-9]{64}$/u.test(networkId), 'internal network identity invalid')
   const volumeName = docker(['volume', 'create', volume]); requireValue(volumeName === volume, 'isolated volume identity mismatch')
-  containerId = docker(['run', '-d', '--name', containerName, '--network', network, '--mount', `type=volume,source=${volume},target=/var/lib/postgresql/data`, '--env', 'POSTGRES_PASSWORD=isolated-only', '--env', 'POSTGRES_DB=merchant', binding.postgresImage])
+  containerId = docker(postgresContainerArgs({ containerName, network, volume, image: binding.postgresImage }), undefined, 120_000, { POSTGRES_PASSWORD: isolatedPassword })
   requireValue(/^[a-f0-9]{64}$/u.test(containerId), 'isolated container ID invalid')
   const networkState = JSON.parse(docker(['network', 'inspect', network]))[0]
   requireValue(networkState?.Id === networkId && networkState.Internal === true, 'restore network is not internal')
@@ -207,7 +220,7 @@ async function main(args) {
   requireValue(/^\d{1,32}$/u.test(dbIdentity) && sha(dbIdentity) !== binding.sourceDatabaseIdSha256, 'restore target is not an isolated database identity')
   const before = query(containerId, "select min(version)||':'||max(version)||':'||count(*) from public.schema_migrations")
   requireValue(before === '1:242:242', 'restored migration history is not the complete 242 prefix')
-  const migrationContainer = docker(['run', '--rm', '--network', network, '--env', `PGHOST=${containerName}`, '--env', 'PGPORT=5432', '--env', 'PGDATABASE=merchant', '--env', 'PGUSER=postgres', '--env', 'PGPASSWORD=isolated-only', '--mount', `type=bind,source=${migrations},target=/migrations,readonly`, '--mount', `type=bind,source=${script},target=/ops/apply-migrations.sh,readonly`, '--entrypoint', '/bin/sh', binding.postgresImage, '/ops/apply-migrations.sh'], undefined, 3_600_000)
+  const migrationContainer = docker(migrationContainerArgs({ migrationName, containerName, network, migrations, script, image: binding.postgresImage }), undefined, 3_600_000, { PGPASSWORD: isolatedPassword })
   requireValue(migrationContainer.length < 64 * 1024, 'migration diagnostics exceeded limit')
   const after = query(containerId, "select min(version)||':'||max(version)||':'||count(*) from public.schema_migrations")
   requireValue(after === '1:244:244', 'candidate migrations did not end at complete 244 prefix')
@@ -221,7 +234,12 @@ async function main(args) {
   record(output, { schema_version: 'pg17-isolated-restore-capture/1', status: 'pass', simulated: false, release_id: options['--release-id'], release_git_sha: options['--git-sha'], image_set_digest: options['--image-set-digest'], manifest_sha256: options['--manifest-sha256'], ...retainedNonceBinding(options['--deployment-nonce']), source_archive_sha256: identity.source_sha256, migration_script_sha256: sha(readRegular(script, 256 * 1024)), backup_sha256: binding.backupSha256, source_database_id_sha256: binding.sourceDatabaseIdSha256, target_database_id_sha256: sha(dbIdentity), postgres_image_ref: binding.postgresImage, postgres_image_id: imageId, network_id: networkId, container_id: containerId, volume_name: volume, restored_migration_prefix: before, migrated_prefix: after, migration_chain_sha256: sha(migrationRows), migration_chain_rows: migrationRows.split('\n'), migration_command_output_sha256: sha(migrationContainer), captured_at: new Date().toISOString() })
   process.stdout.write(`PG17 isolated restore captured: ${output}\n`)
   } catch (error) {
-    if (containerId && /^[a-f0-9]{64}$/u.test(containerId)) { try { docker(['stop', '--time', '3', containerId], undefined, 10_000) } catch {} }
+    try { docker(['rm', '-f', migrationName], undefined, 10_000) } catch {}
+    if (containerId && /^[a-f0-9]{64}$/u.test(containerId)) {
+      try { docker(['stop', '--time', '3', containerId], undefined, 10_000) } catch {}
+      try { docker(['rm', containerId], undefined, 10_000) } catch {}
+    }
+    if (networkId && /^[a-f0-9]{64}$/u.test(networkId)) { try { docker(['network', 'rm', networkId], undefined, 10_000) } catch {} }
     try { record(output, { schema_version: 'pg17-isolated-restore-capture/1', status: 'fail', release_id: options['--release-id'], backup_sha256: binding.backupSha256, network_id: networkId ?? null, container_id: containerId ?? null, volume_name: volume, captured_at: new Date().toISOString() }) } catch {}
     throw error
   }

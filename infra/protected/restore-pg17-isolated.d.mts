@@ -16,5 +16,8 @@ export function validateRestoreInputs(input: {
 export function validateMigrationAssets(names: string[]): void
 export function validateArchiveCommit(actual: string, expected: string): void
 export function retainedNonceBinding(nonce: string): { deployment_nonce_sha256: string }
+export function composeDigestArgument(digestFile: Record<string, string>, imageDigests: Record<string, string>): string
+export function postgresContainerArgs(input: { containerName: string; network: string; volume: string; image: string }): string[]
+export function migrationContainerArgs(input: { migrationName: string; containerName: string; network: string; migrations: string; script: string; image: string }): string[]
 export function readArchiveCommit(path: string): string
 export function validateContainerInspection(value: Record<string, unknown>, options: { id: string; expectedImageId: string; expectedNetwork: string; expectedVolume: string }): Record<string, unknown>
