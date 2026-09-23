@@ -110,6 +110,17 @@ describe('Codex plugin installation package', () => {
         { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: home } })
       expect(bundledNode.status, bundledNode.stderr).toBe(0)
       expect(bundledNode.stdout.trim()).toBe('22.16.0')
+      const mcp = spawnSync(resolve(installedRoot, 'runtime/node'), [resolve(installedRoot, 'mcp/bridge.mjs')], {
+        cwd: installedRoot,
+        encoding: 'utf8',
+        input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`,
+        env: { PATH: '/usr/bin:/bin', HOME: home, NODE_ENV: 'test', DEPLOY_ENV: 'local_desktop' },
+        timeout: 15_000,
+      })
+      expect(mcp.status, mcp.stderr).toBe(0)
+      const responses = mcp.stdout.trim().split('\n').map(line => JSON.parse(line))
+      expect(responses[0].result.serverInfo.version).toBe(readJson('.codex-plugin/plugin.json').version)
+      expect(responses[1].result.tools.length).toBeGreaterThan(0)
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

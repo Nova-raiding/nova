@@ -130,6 +130,12 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          trap {
+            Write-Host "::error file=.github/workflows/windows-plugin-package.yml,line=1::MCP_SMOKE_$($_.Exception.Message)"
+            $errorPath = Join-Path $env:RUNNER_TEMP 'mcp-smoke-error.txt'
+            if (Test-Path -LiteralPath $errorPath) { Write-Host ((Get-Content -LiteralPath $errorPath -Raw) -replace '[\r\n]+', ' | ') }
+            exit 1
+          }
           $extract = Join-Path $env:RUNNER_TEMP 'storenova-extracted'
           $manifest = Get-Content -LiteralPath (Join-Path $extract '.codex-plugin\plugin.json') -Raw | ConvertFrom-Json
           $installed = Join-Path (Join-Path $env:RUNNER_TEMP 'storenova-clean-user') ".codex\plugins\cache\merchant-personal\merchant-marketing\$($manifest.version)"
