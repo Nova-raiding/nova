@@ -71,6 +71,7 @@ infra/scripts/ecs-one-click-deploy.sh
 infra/scripts/check-ecs-storage-budget.sh
 infra/scripts/build-ecs-release-images.sh
 infra/scripts/prepare-ecs-eight-image-set.mjs
+infra/scripts/verify-bridge-b-package.mjs
 infra/scripts/capture-manual-operations-evidence.sh
 infra/scripts/deploy-verified-ecs-compose.sh
 infra/scripts/rollback-ecs-compose.sh
@@ -90,6 +91,7 @@ tests/ecs-release-control-installer.test.ts
 tests/postgres-backup-attester.test.ts
 tests/postgres-backup-attester-cli-e2e.sh
 tests/ecs-preidentity-recovery.test.ts
+tests/bridge-b-package.test.ts
 tests/run-ecs-preidentity-isolated-cli.sh
 tests/fixtures/ecs-preidentity-isolated/docker.mjs
 tests/fixtures/ecs-preidentity-isolated/psql.mjs
@@ -116,6 +118,7 @@ docs/runbooks/durable-platform-authorization-bootstrap.md
 docs/runbooks/ecs-verified-compose-deploy.md
 docs/runbooks/ecs-release-evidence-bundle-attester.md
 docs/runbooks/ecs-release-image-build.md
+docs/runbooks/ecs-bridge-b-package.md
 EOF
 
 # The migration registry loads the entire chain, so review all SQL assets
