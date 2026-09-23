@@ -59,8 +59,37 @@ describe('Codex plugin installation package', () => {
       expect(listing.stdout).toContain('windows/StoreNovaConnectHelper.cs')
       expect(listing.stdout).toContain('scripts/build-connect-helper-windows.mjs')
       expect(listing.stdout).toContain('scripts/verify-connect-helper-windows.ps1')
+      expect(listing.stdout).toContain('install-chatgpt.ps1')
+      const installer = spawnSync('tar', ['-xOzf', artifact, 'install-chatgpt.ps1'], { encoding: 'utf8' })
+      expect(installer.status, installer.stderr).toBe(0)
+      expect(installer.stdout).toContain('scripts/login-local-windows.mjs')
+      expect(installer.stdout).not.toContain('SetEnvironmentVariable("MERCHANT_WORKSPACE_ID"')
+      expect(installer.stdout).not.toContain('ws_guirenniaoniao')
+      expect(installer.stdout).toContain('StoreNovaCredentialHelper.exe')
+      expect(installer.stdout).toContain('Get-FileHash')
+      expect(installer.stdout).toContain('Get-AuthenticodeSignature')
+      expect(installer.stdout).toContain('STORENOVA_WINDOWS_SIGNER_THUMBPRINT')
+      expect(installer.stdout.indexOf('Get-AuthenticodeSignature')).toBeLessThan(installer.stdout.indexOf('New-Item -ItemType Directory'))
+      expect(installer.stdout).toContain('Existing personal marketplace is invalid; refusing to overwrite it')
+      expect(installer.stdout).toContain('Where-Object { $_.name -ne "merchant-marketing" }')
+      expect(installer.stdout).toContain('[System.IO.File]::Replace($temporaryPath, $marketplacePath, $backupPath)')
+      expect(installer.stdout).not.toContain('[System.IO.File]::WriteAllText((Join-Path $marketplaceRoot "marketplace.json")')
+      expect(listing.stdout).not.toContain('StoreNovaCredentialHelper.exe')
       expect(listing.stdout).not.toContain('Store Nova Connect.app')
       expect(listing.stdout).not.toContain('StoreNovaConnectHelper.exe')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('does not bundle a Windows credential binary without a Windows signing check', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-windows-package-'))
+    try {
+      const artifact = resolve(directory, 'merchant-marketing.tar.gz')
+      const packaged = spawnSync(process.execPath, [resolve(root, 'scripts/package-local-plugin.mjs'), artifact, '--windows-helper-dir', directory], { encoding: 'utf8' })
+      expect(packaged.status).not.toBe(0)
+      expect(packaged.stderr).toMatch(/signed Windows helper packaging must run on Windows|trusted Windows signer thumbprint is required|signed Windows credential helper and SHA-256 file are both required/u)
+      expect(existsSync(artifact)).toBe(false)
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
@@ -95,13 +124,13 @@ describe('Codex plugin installation package', () => {
     expect(packageJson.engines).toEqual({ node: '>=18' })
     expect(packageJson.merchantRuntime).toMatchObject({
       desktopHost: 'ChatGPT.app',
-      supportedDesktopPlatforms: ['darwin'],
-      environmentRecovery: 'macOS launchctl user session',
+      supportedDesktopPlatforms: ['darwin', 'win32'],
+      environmentRecovery: 'host-injected environment with platform credential storage',
     })
     const server = mcp.mcpServers['merchant-marketing']
     expect(server).toMatchObject({
-      command: 'sh',
-      args: ['./mcp/bridge.sh'],
+      command: 'node',
+      args: ['./mcp/bridge.mjs'],
       cwd: '.',
     })
     expect(server).not.toHaveProperty('env')
@@ -485,6 +514,7 @@ esac
     expect(evidence).toMatchObject({
       ok: true,
       plugin_version: readJson('.codex-plugin/plugin.json').version,
+      manifest: { errors: [] },
       tools: {
         required: ['merchant.start', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list'],
         missing: [],

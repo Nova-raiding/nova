@@ -22,6 +22,11 @@ const provisionTrustBundle = (directory: string, consumerContents = '#!/bin/sh\n
   writeFileSync(join(directory, 'production-evidence-nonce-consumer-sha256'), `${sha256(consumerContents)}\n`, { mode: 0o600 })
   writeFileSync(join(directory, 'production-capability-attester-sha256'), `${sha256('#!/bin/sh\nexit 0\n')}\n`, { mode: 0o600 })
   writeFileSync(join(directory, 'production-evidence-bundle-attester-sha256'), `${sha256('#!/bin/sh\nexit 0\n')}\n`, { mode: 0o600 })
+  const controls = join(directory, 'controls'); mkdirSync(controls, { mode: 0o700 })
+  for (const name of ['attest-capability-evidence', 'attest-manual-operations-evidence', 'attest-release-evidence-bundle']) {
+    writeFileSync(join(controls, name), '#!/bin/sh\nexit 0\n', { mode: 0o700 })
+  }
+  writeFileSync(join(directory, 'production-manual-operations-attester-sha256'), `${sha256('#!/bin/sh\nexit 0\n')}\n`, { mode: 0o600 })
 }
 
 const nonceEnvironment = (directory: string, consumer: string) => ({
@@ -36,6 +41,31 @@ describe('production evidence trust and replay scripts', () => {
     expect(run('infra/scripts/validate-production-evidence-trust.sh', [resolve('.')], testHook(directory))).toContain('trust boundary passed')
     expect(() => run('infra/scripts/validate-production-evidence-trust.sh', [resolve('.')], testHook(resolve('infra/trust')))).toThrow(/outside the mutable repository/)
     expect(() => run('infra/scripts/validate-production-evidence-trust.sh', [resolve('.')], { PRODUCTION_EVIDENCE_TRUST_DIR: directory })).toThrow(/forbidden.*fixed/)
+  })
+
+  it('checks the selected attester and bundle bytes, without requiring the other operations mode', () => {
+    const directory = temporaryDirectory(); provisionTrustBundle(directory)
+    const capabilityDigest = join(directory, 'production-capability-attester-sha256')
+    unlinkSync(capabilityDigest)
+    expect(run('infra/scripts/validate-production-evidence-trust.sh', [resolve('.'), 'manual'], testHook(directory))).toContain('trust boundary passed')
+    expect(() => run('infra/scripts/validate-production-evidence-trust.sh', [resolve('.'), 'official_api'], testHook(directory))).toThrow(/capability.*digest|trust file/)
+    writeFileSync(capabilityDigest, `${sha256('#!/bin/sh\nexit 0\n')}\n`, { mode: 0o600 })
+    writeFileSync(join(directory, 'controls', 'attest-manual-operations-evidence'), '#!/bin/sh\nexit 1\n', { mode: 0o700 })
+    expect(() => run('infra/scripts/validate-production-evidence-trust.sh', [resolve('.'), 'manual'], testHook(directory))).toThrow(/manual operations attester digest mismatch/)
+    writeFileSync(join(directory, 'controls', 'attest-manual-operations-evidence'), '#!/bin/sh\nexit 0\n', { mode: 0o700 })
+    writeFileSync(join(directory, 'controls', 'attest-release-evidence-bundle'), '#!/bin/sh\nexit 1\n', { mode: 0o700 })
+    expect(() => run('infra/scripts/validate-production-evidence-trust.sh', [resolve('.'), 'manual'], testHook(directory))).toThrow(/bundle attester digest mismatch/)
+  })
+
+  it('rejects unsafe mode selection and modified or symlinked control executables', () => {
+    const directory = temporaryDirectory(); provisionTrustBundle(directory)
+    expect(() => run('infra/scripts/validate-production-evidence-trust.sh', [resolve('.'), 'unknown'], testHook(directory))).toThrow(/mode must be manual or official_api/)
+    writeFileSync(join(directory, 'controls', 'attest-capability-evidence'), '#!/bin/sh\nexit 1\n', { mode: 0o700 })
+    expect(() => run('infra/scripts/validate-production-evidence-trust.sh', [resolve('.'), 'official_api'], testHook(directory))).toThrow(/capability attester digest mismatch/)
+    const control = join(directory, 'controls', 'attest-release-evidence-bundle')
+    const target = join(directory, 'controls', 'bundle-target')
+    writeFileSync(target, '#!/bin/sh\nexit 0\n', { mode: 0o700 }); unlinkSync(control); symlinkSync(target, control)
+    expect(() => run('infra/scripts/validate-production-evidence-trust.sh', [resolve('.'), 'manual'], testHook(directory))).toThrow(/regular non-symlink executable/)
   })
 
   it('fails closed unless the non-production test hook has both explicit guards', () => {

@@ -407,5 +407,3 @@ test('legacy publish route returns to knowledge without loading the retired publ
   await expect(page.getByText('暂无真实发布任务', { exact: true })).toHaveCount(0)
   await expect.poll(() => publishListRequests).toBe(0)
 })
-
-

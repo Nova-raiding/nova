@@ -1,0 +1,2 @@
+export function validateManualCandidate(value: unknown, binding: { releaseId: string }, now?: Date): Record<string, unknown>
+export function signManualCandidate(value: unknown, binding: { releaseId: string; imageSetDigest: string; manifestSha256: string; releaseGitSha: string; deploymentNonce: string; keyId: string }, privatePem: string | Buffer, publicPem: string | Buffer, now?: Date): Record<string, unknown>

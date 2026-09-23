@@ -10,6 +10,7 @@ root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 : "${PILOT_RELEASE_MANIFEST_SHA256:?PILOT_RELEASE_MANIFEST_SHA256 is required}"
 : "${PILOT_RELEASE_IMAGE_SET_DIGEST:?PILOT_RELEASE_IMAGE_SET_DIGEST is required}"
 : "${PILOT_RELEASE_CONFIG_SHA256:?PILOT_RELEASE_CONFIG_SHA256 is required}"
+: "${PLATFORM_OPERATIONS_MODE:?PLATFORM_OPERATIONS_MODE must match the reviewed release config}"
 : "${ECS_PRODUCTION_ENV_FILE:?ECS_PRODUCTION_ENV_FILE is required for ECS production pilot preflight}"
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
 : "${OBJECT_STORAGE_EVIDENCE_PATH:?OBJECT_STORAGE_EVIDENCE_PATH is required}"
@@ -73,7 +74,7 @@ printf '%s\n' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || {
 }
 
 cd "$root"
-sh infra/scripts/validate-production-evidence-trust.sh "$root"
+sh infra/scripts/validate-production-evidence-trust.sh "$root" "$PLATFORM_OPERATIONS_MODE"
 trust_dir='/run/release-security/evidence-trust'
 trust_root="$trust_dir/production-evidence-public.pem"
 trusted_key_id=$(sed -n '1p' "$trust_dir/production-evidence-key-id")

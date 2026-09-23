@@ -95,4 +95,23 @@ last_layer=$(tail -n 1 "$layers_file")
 [ "$first_layer" = 'infra/local/docker-compose.yml' ] || { echo 'ECS production Compose base layer must be first' >&2; exit 1; }
 [ "$last_layer" = 'infra/local/docker-compose.ecs-pilot-release.yml' ] || { echo 'ECS production release identity layer must be last' >&2; exit 1; }
 
-docker compose --env-file "$production_env" "$@" config --format json
+# Compose v5 serializes CPU quantities as JSON numbers, while the Compose v2.27
+# installed on ECS expects strings when it reads this rendered file back. Keep
+# the immutable, interpolated render and normalize only Compose CPU quantities.
+docker compose --env-file "$production_env" "$@" config --format json | node -e '
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => { input += chunk; });
+process.stdin.on("end", () => {
+  let compose;
+  try { compose = JSON.parse(input); }
+  catch { console.error("Docker Compose did not produce valid JSON"); process.exitCode = 1; return; }
+  for (const service of Object.values(compose.services ?? {})) {
+    if (typeof service.cpus === "number") service.cpus = String(service.cpus);
+    for (const resource of [service.deploy?.resources?.limits, service.deploy?.resources?.reservations]) {
+      if (resource && typeof resource.cpus === "number") resource.cpus = String(resource.cpus);
+    }
+  }
+  process.stdout.write(JSON.stringify(compose, null, 2) + "\n");
+});
+'

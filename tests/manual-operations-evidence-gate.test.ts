@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { generateKeyPairSync } from 'node:crypto'
+import { signManualCandidate, validateManualCandidate } from '../infra/protected/attest-manual-operations-evidence.mjs'
 import { validateManualOperationsEvidence } from './manual-operations-evidence-gate.js'
 
 const now = new Date('2026-09-21T08:00:00Z')
@@ -34,5 +36,27 @@ describe('manual operations evidence gate', () => {
     ]))
     const future = { ...evidence, generated_at: '2026-09-21T08:05:01Z', expires_at: '2026-09-22T08:05:01Z' }
     expect(validateManualOperationsEvidence(future, 'release-1', now)).toContain('generated_at must not be more than five minutes in the future')
+  })
+
+  it('requires the protected Ed25519 signature and exact deployment bindings for production', () => {
+    const pair = generateKeyPairSync('ed25519')
+    const privatePem = pair.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
+    const publicKeyPem = pair.publicKey.export({ format: 'pem', type: 'spki' }).toString()
+    const candidate = { ...evidence, isolation_probe_workspace_id: 'foreign-workspace', checks: [
+      { name: 'tenant_scope', status: 'pass', observation: 'foreign_workspace_rejected' },
+      { name: 'manual_report', status: 'pass', observation: 'human_evidence_boundary_preserved' },
+      { name: 'merchant_visibility', status: 'pass', observation: 'expected_report_visible' },
+    ] }
+    const binding = { releaseId: 'release-1', imageSetDigest: `sha256:${'a'.repeat(64)}`, manifestSha256: 'b'.repeat(64), releaseGitSha: 'c'.repeat(40), deploymentNonce: 'n'.repeat(22), keyId: 'test-key' }
+    const signed = signManualCandidate(candidate, binding, privatePem, publicKeyPem, now)
+    const production = { ...binding, trustedKeyId: binding.keyId, publicKeyPem }
+    expect(validateManualOperationsEvidence(signed, 'release-1', now, production)).toEqual([])
+    expect(validateManualOperationsEvidence(candidate, 'release-1', now, production)).toContain('signature_base64 is required')
+    expect(validateManualOperationsEvidence({ ...signed, workspace_id: 'foreign-workspace' }, 'release-1', now, production)).toContain('signature_base64 is invalid')
+    expect(validateManualOperationsEvidence(signed, 'release-1', now, { ...production, deploymentNonce: 'x'.repeat(22) })).toContain(`deployment_nonce must match ${'x'.repeat(22)}`)
+    expect(validateManualOperationsEvidence(signed, 'release-1', now, { ...production, trustedKeyId: 'unknown' })).toContain('key_id must match unknown')
+    expect(() => signManualCandidate({ ...candidate, official_api_receipt: true }, binding, privatePem, publicKeyPem, now)).toThrow('candidate manual workflow boundary mismatch')
+    expect(() => signManualCandidate(candidate, binding, privatePem, generateKeyPairSync('ed25519').publicKey.export({ format: 'pem', type: 'spki' }), now)).toThrow('protected private key does not match trust anchor')
+    expect(() => validateManualCandidate({ ...candidate, signature_base64: 'forged' }, binding, now)).toThrow('candidate already contains signer fields')
   })
 })

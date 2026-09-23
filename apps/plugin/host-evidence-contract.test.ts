@@ -12,8 +12,8 @@ describe('ChatGPT Host/OIDC local evidence contract', () => {
 
     expect(runtime).toMatchObject({
       desktopHost: 'ChatGPT.app',
-      supportedDesktopPlatforms: ['darwin'],
-      environmentRecovery: 'macOS launchctl user session',
+      supportedDesktopPlatforms: ['darwin', 'win32'],
+      environmentRecovery: 'host-injected environment with platform credential storage',
     })
     expect(runtime.otherPlatforms).toMatch(/outside the current desktop support boundary/u)
     expect(readJson('.codex-plugin/plugin.json').interface.displayName).toBe('Store Nova')

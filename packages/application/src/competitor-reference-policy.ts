@@ -391,4 +391,3 @@ export function evaluateCompetitorReferencePolicy(input: CompetitorReferencePoli
     thresholds,
   }
 }
-

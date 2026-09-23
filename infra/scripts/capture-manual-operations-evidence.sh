@@ -5,7 +5,6 @@ set -eu
 # observations. The caller cannot supply check results: this script derives all
 # three pass rows from HTTP responses and writes the evidence exactly once.
 : "${RELEASE_ID:?RELEASE_ID is required}"
-: "${PRODUCTION_API_BASE_URL:?PRODUCTION_API_BASE_URL is required}"
 : "${PRODUCTION_CANARY_BEARER_TOKEN:?PRODUCTION_CANARY_BEARER_TOKEN is required}"
 : "${PRODUCTION_CANARY_WORKSPACE_ID:?PRODUCTION_CANARY_WORKSPACE_ID is required}"
 : "${PRODUCTION_CANARY_ISOLATION_WORKSPACE_ID:?PRODUCTION_CANARY_ISOLATION_WORKSPACE_ID is required}"
@@ -16,7 +15,28 @@ set -eu
 case "$RELEASE_ID" in *[!A-Za-z0-9._-]*|'') echo 'RELEASE_ID contains unsafe characters' >&2; exit 1 ;; esac
 case "$PRODUCTION_CANARY_WORKSPACE_ID:$PRODUCTION_CANARY_ISOLATION_WORKSPACE_ID" in *[!A-Za-z0-9._:-]*) echo 'workspace id contains unsafe characters' >&2; exit 1 ;; esac
 [ "$PRODUCTION_CANARY_WORKSPACE_ID" != "$PRODUCTION_CANARY_ISOLATION_WORKSPACE_ID" ] || { echo 'isolation workspace must differ from the target workspace' >&2; exit 1; }
-printf '%s' "$PRODUCTION_API_BASE_URL" | grep -Eq '^https://[^/?#]+/?$' || { echo 'PRODUCTION_API_BASE_URL must be an HTTPS origin' >&2; exit 1; }
+if [ -n "${MANUAL_OPERATIONS_CANDIDATE_API_BASE_URL:-}" ]; then
+  echo 'candidate loopback URL mode is disabled; use the exact Docker container transport' >&2
+  exit 1
+fi
+if [ -n "${MANUAL_OPERATIONS_CANDIDATE_CONTAINER_ID:-}" ]; then
+  candidate_mode=true
+  : "${MANUAL_OPERATIONS_CANDIDATE_API_IMAGE_REF:?candidate immutable API image reference is required}"
+  printf '%s' "$MANUAL_OPERATIONS_CANDIDATE_CONTAINER_ID" | grep -Eq '^[0-9a-f]{64}$' || { echo 'candidate container ID must be a full Docker ID' >&2; exit 1; }
+  : "${MANUAL_OPERATIONS_EXPECTED_RELEASE_GIT_SHA:?candidate Git SHA is required}"
+  : "${MANUAL_OPERATIONS_EXPECTED_MANIFEST_SHA256:?candidate manifest SHA-256 is required}"
+  : "${MANUAL_OPERATIONS_EXPECTED_IMAGE_SET_DIGEST:?candidate image-set digest is required}"
+  printf '%s' "$MANUAL_OPERATIONS_EXPECTED_RELEASE_GIT_SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo 'candidate Git SHA is invalid' >&2; exit 1; }
+  printf '%s' "$MANUAL_OPERATIONS_EXPECTED_MANIFEST_SHA256" | grep -Eq '^[0-9a-f]{64}$' || { echo 'candidate manifest SHA-256 is invalid' >&2; exit 1; }
+  printf '%s' "$MANUAL_OPERATIONS_EXPECTED_IMAGE_SET_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo 'candidate image-set digest is invalid' >&2; exit 1; }
+  candidate_helper=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)/candidate-api-docker-request.mjs
+  [ -f "$candidate_helper" ] || { echo 'candidate Docker request helper is missing' >&2; exit 1; }
+else
+  candidate_mode=false
+  : "${PRODUCTION_API_BASE_URL:?PRODUCTION_API_BASE_URL is required}"
+  printf '%s' "$PRODUCTION_API_BASE_URL" | grep -Eq '^https://[^/?#]+/?$' || { echo 'PRODUCTION_API_BASE_URL must be an HTTPS origin' >&2; exit 1; }
+  origin=${PRODUCTION_API_BASE_URL%/}
+fi
 [ "${MANUAL_OPERATIONS_EVIDENCE_OUTPUT#/}" != "$MANUAL_OPERATIONS_EVIDENCE_OUTPUT" ] || { echo 'evidence output must be absolute' >&2; exit 1; }
 output_dir=$(dirname "$MANUAL_OPERATIONS_EVIDENCE_OUTPUT")
 [ -d "$output_dir" ] && [ "$(CDPATH= cd -- "$output_dir" && pwd -P)" = "$output_dir" ] || { echo 'evidence output directory must be an existing canonical directory' >&2; exit 1; }
@@ -24,17 +44,62 @@ output_dir=$(dirname "$MANUAL_OPERATIONS_EVIDENCE_OUTPUT")
 
 workdir=$(mktemp -d "${TMPDIR:-/tmp}/manual-operations-evidence.XXXXXX")
 trap 'rm -rf "$workdir"' EXIT HUP INT TERM
-origin=${PRODUCTION_API_BASE_URL%/}
+capture_http() {
+  curl -q --proto '=https' --silent --show-error --max-time 20 "$@"
+}
+capture_candidate() {
+  name=$1; workspace=$2; body=$3
+  if [ "$name" = release ]; then
+    printf '{}' | NODE_OPTIONS= node "$candidate_helper" "$MANUAL_OPERATIONS_CANDIDATE_CONTAINER_ID" "$MANUAL_OPERATIONS_CANDIDATE_API_IMAGE_REF" /releasez "$name" "$workdir"
+  else
+    CANDIDATE_WORKSPACE="$workspace" CANDIDATE_BODY="$body" NODE_OPTIONS= node -e \
+      'process.stdout.write(JSON.stringify({token:process.env.PRODUCTION_CANARY_BEARER_TOKEN,workspace:process.env.CANDIDATE_WORKSPACE,body:process.env.CANDIDATE_BODY}))' \
+      | NODE_OPTIONS= node "$candidate_helper" "$MANUAL_OPERATIONS_CANDIDATE_CONTAINER_ID" "$MANUAL_OPERATIONS_CANDIDATE_API_IMAGE_REF" /mcp "$name" "$workdir"
+  fi
+}
 
-curl --silent --show-error --max-time 20 --output "$workdir/release.json" --write-out '%{http_code}' \
-  "$origin/releasez" >"$workdir/release.status"
+if [ "$candidate_mode" = true ]; then
+  capture_candidate release '' ''
+else
+  capture_http --output "$workdir/release.json" --write-out '%{http_code}' \
+    "$origin/releasez" >"$workdir/release.status"
+fi
+
+# Authenticate the running candidate's immutable identity before the first
+# Bearer-bearing request. A wrong listener must never receive the canary token.
+RELEASE_ID="$RELEASE_ID" WORKDIR="$workdir" CANDIDATE_MODE="$candidate_mode" \
+EXPECTED_GIT_SHA="${MANUAL_OPERATIONS_EXPECTED_RELEASE_GIT_SHA:-}" \
+EXPECTED_MANIFEST_SHA256="${MANUAL_OPERATIONS_EXPECTED_MANIFEST_SHA256:-}" \
+EXPECTED_IMAGE_SET_DIGEST="${MANUAL_OPERATIONS_EXPECTED_IMAGE_SET_DIGEST:-}" \
+node <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const fail = message => { throw new Error(message); };
+const workdir = process.env.WORKDIR;
+if (fs.readFileSync(path.join(workdir, 'release.status'), 'utf8') !== '200') fail('release identity endpoint did not return HTTP 200');
+let body;
+try { body = JSON.parse(fs.readFileSync(path.join(workdir, 'release.json'), 'utf8')); }
+catch { fail('release identity endpoint returned invalid JSON'); }
+const identity = body?.data?.release ?? body?.release;
+if (identity?.release_id !== process.env.RELEASE_ID) fail('API release identity does not match RELEASE_ID');
+if (process.env.CANDIDATE_MODE === 'true' && (
+  identity?.release_git_sha !== process.env.EXPECTED_GIT_SHA
+  || identity?.manifest_sha256 !== process.env.EXPECTED_MANIFEST_SHA256
+  || identity?.image_set_digest !== process.env.EXPECTED_IMAGE_SET_DIGEST
+  || body?.data?.ready !== true
+)) fail('candidate API release identity or readiness does not match the reviewed image set');
+NODE
 
 rpc() {
   workspace=$1; body=$2; name=$3
-  curl --silent --show-error --max-time 20 --output "$workdir/$name.json" --write-out '%{http_code}' \
-    -H "authorization: Bearer $PRODUCTION_CANARY_BEARER_TOKEN" \
-    -H "x-workspace-id: $workspace" -H 'content-type: application/json' \
-    --data "$body" "$origin/mcp" >"$workdir/$name.status"
+  if [ "$candidate_mode" = true ]; then
+    capture_candidate "$name" "$workspace" "$body"
+  else
+    capture_http --output "$workdir/$name.json" --write-out '%{http_code}' \
+      -H "authorization: Bearer $PRODUCTION_CANARY_BEARER_TOKEN" \
+      -H "x-workspace-id: $workspace" -H 'content-type: application/json' \
+      --data "$body" "$origin/mcp" >"$workdir/$name.status"
+  fi
 }
 
 rpc "$PRODUCTION_CANARY_WORKSPACE_ID" \
@@ -47,6 +112,10 @@ rpc "$PRODUCTION_CANARY_ISOLATION_WORKSPACE_ID" \
 RELEASE_ID="$RELEASE_ID" TARGET_WORKSPACE="$PRODUCTION_CANARY_WORKSPACE_ID" \
 ISOLATION_WORKSPACE="$PRODUCTION_CANARY_ISOLATION_WORKSPACE_ID" REPORT_ID="$PRODUCTION_MANUAL_REPORT_ID" \
 VERIFIED_BY="$MANUAL_OPERATIONS_VERIFIED_BY" OUTPUT="$MANUAL_OPERATIONS_EVIDENCE_OUTPUT" WORKDIR="$workdir" \
+CANDIDATE_MODE="$candidate_mode" \
+EXPECTED_GIT_SHA="${MANUAL_OPERATIONS_EXPECTED_RELEASE_GIT_SHA:-}" \
+EXPECTED_MANIFEST_SHA256="${MANUAL_OPERATIONS_EXPECTED_MANIFEST_SHA256:-}" \
+EXPECTED_IMAGE_SET_DIGEST="${MANUAL_OPERATIONS_EXPECTED_IMAGE_SET_DIGEST:-}" \
 node <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
@@ -57,6 +126,13 @@ if (status('release') !== 200) fail('release identity endpoint did not return HT
 const release = read('release');
 const releaseId = release.release_id ?? release.data?.release_id ?? release.data?.release?.release_id;
 if (releaseId !== process.env.RELEASE_ID) fail('deployed release identity does not match RELEASE_ID');
+if (process.env.CANDIDATE_MODE === 'true') {
+  const identity = release.data?.release ?? release.release;
+  if (!identity || identity.release_git_sha !== process.env.EXPECTED_GIT_SHA
+    || identity.manifest_sha256 !== process.env.EXPECTED_MANIFEST_SHA256
+    || identity.image_set_digest !== process.env.EXPECTED_IMAGE_SET_DIGEST
+    || release.data?.ready !== true) fail('candidate API release identity or readiness does not match the reviewed image set');
+}
 if (status('target-list') !== 200 || status('target-get') !== 200) fail('target workspace manual evidence reads did not return HTTP 200');
 const unwrap = value => value?.data?.result ?? value?.result;
 const list = unwrap(read('target-list'));

@@ -1,7 +1,7 @@
 {
   "id": "merchant-marketing",
   "name": "merchant-marketing",
-  "version": "0.1.0+codex.20260921191000",
+  "version": "0.1.0+codex.20260923113000",
   "description": "商家营销内容助手：从公开链接或手工资料出发，制作、审核并导出内容。",
   "author": {
     "name": "Merchant Marketing Team",
@@ -29,6 +29,8 @@
     "developerName": "Merchant Marketing Team",
     "category": "Productivity",
     "websiteURL": "https://yxsona.com/",
+    "logo": "./assets/store-nova-logo.png",
+    "composerIcon": "./assets/store-nova-logo.png",
     "privacyPolicyURL": "https://yxsona.com/privacy/",
     "termsOfServiceURL": "https://yxsona.com/terms/",
     "capabilities": [

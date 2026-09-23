@@ -19,7 +19,7 @@ describe('local plugin login installer runtime', () => {
       openBrowser: () => {}, storeCredential: () => {}, configureSession: () => {} })).rejects.toThrow('REQUEST_ID_INVALID')
   })
 
-  it('drives the real listener and HTTP exchange, rejects forged callback, then persists before configuring', async () => {
+  it.each(['keychain', 'windows_credential_manager'])('drives the real listener for %s, rejects forged callback, then persists before configuring', async credentialSource => {
     let authorization: URL
     let exchanges = 0
     const events: string[] = []
@@ -40,7 +40,7 @@ describe('local plugin login installer runtime', () => {
     await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve))
     try {
       const address = provider.address() as { port: number }
-      const result = await loginLocalPlugin({ baseUrl: `http://127.0.0.1:${address.port}`, workspaceId: 'ws_test', requestId: 'req_1234567890abcdef',
+      const result = await loginLocalPlugin({ baseUrl: `http://127.0.0.1:${address.port}`, workspaceId: 'ws_test', requestId: 'req_1234567890abcdef', credentialSource,
         openBrowser: async (url: string) => {
           authorization = new URL(url)
           expect(authorization.searchParams.get('code_challenge_method')).toBe('S256')
@@ -62,7 +62,7 @@ describe('local plugin login installer runtime', () => {
       })
       expect(exchanges).toBe(1)
       expect(events).toEqual(['stored', 'configured'])
-      expect(result).toMatchObject({ ok: true, host_verified: false, credential_source: 'keychain', restart_required: true })
+      expect(result).toMatchObject({ ok: true, host_verified: false, credential_source: credentialSource, restart_required: true })
       expect(JSON.stringify(result)).not.toMatch(/synthetic|access_token|refresh_token/u)
     } finally { provider.closeAllConnections(); await new Promise<void>(resolve => provider.close(() => resolve())) }
   })

@@ -29,6 +29,7 @@ case "${RESTORE_ALLOW_UNSIGNED_LOCAL:-}" in
     [ -n "${ALERT_RECEIVER_DATABASE_URL:-}" ] || [ -n "${ALERT_RECEIVER_DATABASE_URL_FILE:-}" ] || { echo "ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE is required for production restore" >&2; exit 1; }
     [ -z "${ALERT_RECEIVER_DATABASE_URL:-}" ] || [ -z "${ALERT_RECEIVER_DATABASE_URL_FILE:-}" ] || { echo "Set only one of ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE" >&2; exit 1; }
     : "${BACKUP_ATTESTATION_PATH:?production restore requires BACKUP_ATTESTATION_PATH}"
+    : "${PLATFORM_OPERATIONS_MODE:?PLATFORM_OPERATIONS_MODE must match the reviewed release config for production restore}"
     : "${EXPECTED_SOURCE_DATABASE_ID_SHA256:?EXPECTED_SOURCE_DATABASE_ID_SHA256 is required}"
     command -v node >/dev/null 2>&1 || { echo "node is required for production target preflight" >&2; exit 1; }
     node "$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/validate-production-database-url.mjs" DATABASE_URL
@@ -38,7 +39,7 @@ case "${RESTORE_ALLOW_UNSIGNED_LOCAL:-}" in
   [ -n "$target_database_id" ] || { echo "target database identity could not be read" >&2; exit 1; }
   target_database_id_sha256=$(printf '%s' "$target_database_id" | sha256sum | awk '{print $1}')
   [ "$target_database_id_sha256" != "$EXPECTED_SOURCE_DATABASE_ID_SHA256" ] || { echo "restore target database identity matches approved source; isolated target is required" >&2; exit 1; }
-    sh "$root/infra/scripts/validate-production-evidence-trust.sh" "$root"
+    sh "$root/infra/scripts/validate-production-evidence-trust.sh" "$root" "$PLATFORM_OPERATIONS_MODE"
   trust_dir=/run/release-security/evidence-trust
   trusted_key_id=$(sed -n '1p' "$trust_dir/production-evidence-key-id")
   npx --no-install tsx "$root/tests/backup-attestation-gate.ts" --file "$BACKUP_ATTESTATION_PATH" --backup "$verified_backup" --expected-backup-file-name "$(basename "$BACKUP_FILE")" --public-key "$trust_dir/production-evidence-public.pem" --key-id "$trusted_key_id" --expected-source-database-id-sha256 "$EXPECTED_SOURCE_DATABASE_ID_SHA256"

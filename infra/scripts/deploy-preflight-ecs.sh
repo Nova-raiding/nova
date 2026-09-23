@@ -195,10 +195,10 @@ if [ -d "$root/.git" ]; then
   [ "${VITEST:-false}" = true ] || [ -z "$(git status --porcelain --untracked-files=all)" ] || { echo 'release preflight requires a clean git worktree' >&2; exit 1; }
 fi
 RELEASE_ID="$RELEASE_ID" RELEASE_GIT_SHA="$release_git_sha" ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON"
-sh infra/scripts/validate-production-evidence-trust.sh "$root"
+platform_operations_mode=$(awk '/^[[:space:]]*platform_operations_mode:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$config_path")
+sh infra/scripts/validate-production-evidence-trust.sh "$root" "$platform_operations_mode"
 trust_root=/run/release-security/evidence-trust/production-evidence-public.pem
 trusted_key_id=$(sed -n '1p' /run/release-security/evidence-trust/production-evidence-key-id)
-platform_operations_mode=$(awk '/^[[:space:]]*platform_operations_mode:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$config_path")
 if [ "$platform_operations_mode" = manual ]; then
   npx --no-install tsx tests/manual-operations-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"
 else
@@ -229,7 +229,10 @@ if [ "$DEPLOYMENT_SCOPE" = infra ]; then
   exit 0
 fi
 if [ "$platform_operations_mode" = manual ]; then
-  npx --no-install tsx tests/manual-operations-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"
+  npx --no-install tsx tests/manual-operations-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID" \
+    --require-signed-production --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" \
+    --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" \
+    --public-key "$trust_root" --key-id "$trusted_key_id"
 else
   npx --no-install tsx tests/capability-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
 fi

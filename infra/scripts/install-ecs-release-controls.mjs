@@ -10,6 +10,7 @@ export const CONTROLS = Object.freeze({
   backup: Object.freeze({ executable: 'attest-postgres-backup', digest: 'production-backup-attester-sha256' }),
   preidentity: Object.freeze({ executable: 'ecs-preidentity-recovery', digest: 'production-preidentity-recovery-sha256' }),
   capability: Object.freeze({ executable: 'attest-capability-evidence', digest: 'production-capability-attester-sha256' }),
+  manual: Object.freeze({ executable: 'attest-manual-operations-evidence', digest: 'production-manual-operations-attester-sha256' }),
   bundle: Object.freeze({ executable: 'attest-release-evidence-bundle', digest: 'production-evidence-bundle-attester-sha256' }),
 });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');

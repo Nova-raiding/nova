@@ -83,7 +83,7 @@ describe('model relay evidence gate', () => {
   it('requires a distinct, immutable 503 recovery trace for production evidence', () => {
     const root = mkdtempSync(join(tmpdir(), 'relay-recovery-binding-'))
     mkdirSync(join(root, 'relay'), { recursive: true })
-    const body = JSON.stringify({ release_id: 'release-1', failure_status: 503, failed_request_id: 'req-failed', recovery_request_id: 'req-recovered' })
+    const body = JSON.stringify({ schema_version: '1', release_id: 'release-1', failure: { release_id: 'release-1', observed_at: '2026-08-26T00:58:00Z', http_status: 503, error_code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', relay_response: { error: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' } }, provider_request_id: 'req-failed', relay: 'https://relay.example.com', endpoint: '/probe' }, recovery: { release_id: 'release-1', observed_at: '2026-08-26T00:59:00Z', http_status: 200, provider_request_id: 'req-recovered', relay: 'https://relay.example.com', endpoint: '/probe' } })
     const digest = createHash('sha256').update(body).digest('hex')
     writeFileSync(join(root, 'relay', 'recovery.json'), body)
     const complete = {
@@ -105,8 +105,45 @@ describe('model relay evidence gate', () => {
       .not.toEqual(expect.arrayContaining([expect.stringContaining('error_recovery')]))
     expect(validateModelRelayEvidence({ ...complete, error_recovery: { ...complete.error_recovery, recovery_request_id: 'req-failed' } }, { requireProduction: true, artifactRoot: root, now: new Date('2026-08-26T02:00:00Z') }))
       .toContain('error_recovery request ids must be distinct')
+    expect(validateModelRelayEvidence({ ...complete, error_recovery: { ...complete.error_recovery, evidence_ref: 'file:///relay/recovery.json' } }, { requireProduction: true, artifactRoot: root, now: new Date('2026-08-26T02:00:00Z') }))
+      .toContain('error_recovery.evidence_ref must be an immutable production artifact with SHA-256 fragment')
+    expect(validateModelRelayEvidence({ ...complete, error_recovery: { ...complete.error_recovery, evidence_ref: `artifact://production/relay/recovery.json#${'0'.repeat(64)}` } }, { requireProduction: true, artifactRoot: root, now: new Date('2026-08-26T02:00:00Z') }))
+      .toContain('error_recovery.evidence_ref SHA-256 does not match the referenced artifact')
     expect(validateModelRelayEvidence({ ...complete, error_recovery: undefined }, { requireProduction: true, artifactRoot: root, now: new Date('2026-08-26T02:00:00Z') }))
       .toContain('error_recovery is required for production relay evidence')
+  })
+
+  it.each([
+    ['artifact release', (artifact: any) => { artifact.release_id = 'other-release' }],
+    ['failure release', (artifact: any) => { artifact.failure.release_id = 'other-release' }],
+    ['recovery release', (artifact: any) => { artifact.recovery.release_id = 'other-release' }],
+    ['failure status', (artifact: any) => { artifact.failure.http_status = 200 }],
+    ['model not found 503', (artifact: any) => { artifact.failure.error_code = 'model_not_found'; artifact.failure.relay_response.error.code = 'model_not_found' }],
+    ['missing semantic code', (artifact: any) => { delete artifact.failure.error_code }],
+    ['missing raw response code', (artifact: any) => { delete artifact.failure.relay_response }],
+    ['summary and raw code mismatch', (artifact: any) => { artifact.failure.relay_response.error.code = 'model_not_found' }],
+    ['recovery status', (artifact: any) => { artifact.recovery.http_status = 503 }],
+    ['failure timestamp', (artifact: any) => { artifact.failure.observed_at = '2026-08-26T00:57:00Z' }],
+    ['recovery timestamp', (artifact: any) => { artifact.recovery.observed_at = '2026-08-26T00:57:00Z' }],
+    ['failure request id', (artifact: any) => { artifact.failure.provider_request_id = 'other-request' }],
+    ['recovery request id', (artifact: any) => { artifact.recovery.provider_request_id = 'other-request' }],
+    ['failure relay', (artifact: any) => { artifact.failure.relay = 'https://other.example.com' }],
+    ['recovery endpoint', (artifact: any) => { artifact.recovery.endpoint = '/other' }],
+  ])('rejects a hashed recovery artifact with tampered %s', (_, tamper) => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-recovery-tamper-'))
+    mkdirSync(join(root, 'relay'), { recursive: true })
+    const artifact = { schema_version: '1', release_id: 'release-1', failure: { release_id: 'release-1', observed_at: '2026-08-26T00:58:00Z', http_status: 503, error_code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', relay_response: { error: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' } }, provider_request_id: 'req-failed', relay: 'https://relay.example.com', endpoint: '/probe' }, recovery: { release_id: 'release-1', observed_at: '2026-08-26T00:59:00Z', http_status: 200, provider_request_id: 'req-recovered', relay: 'https://relay.example.com', endpoint: '/probe' } }
+    tamper(artifact)
+    const body = JSON.stringify(artifact)
+    writeFileSync(join(root, 'relay', 'recovery.json'), body)
+    const digest = createHash('sha256').update(body).digest('hex')
+    const document = {
+      ...structuredClone(evidence),
+      expires_at: '2026-08-27T01:00:00Z',
+      error_recovery: { verified: true, failure_status: 503, failure_observed_at: '2026-08-26T00:58:00Z', recovered_at: '2026-08-26T00:59:00Z', failed_request_id: 'req-failed', recovery_request_id: 'req-recovered', evidence_ref: `artifact://production/relay/recovery.json#${digest}` },
+    }
+    expect(validateModelRelayEvidence(document, { requireProduction: true, artifactRoot: root, now: new Date('2026-08-26T02:00:00Z') }))
+      .toEqual(expect.arrayContaining([expect.stringContaining('error_recovery.evidence_ref')]))
   })
 
   it('rejects a summary that claims observed cost when the immutable receipt disagrees', () => {

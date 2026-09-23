@@ -6726,6 +6726,32 @@ function publicRequestOrigin(req: IncomingMessage) {
   return new URL('/', `${protocol}://${host}`).origin
 }
 
+// The desktop login can be opened through a proxy/embedded browser whose
+// document origin is not identical to the API origin. Keep the form target
+// restricted to the configured canonical API origin instead of allowing any
+// external destination.
+function localPluginAuthorizationCsp() {
+  const configured = process.env.PUBLIC_APP_BASE_URL?.trim()
+  if (configured) {
+    try {
+      const origin = new URL(configured).origin
+      return `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${origin}; frame-ancestors 'none'`
+    } catch { /* fall through to the strict same-origin policy */ }
+  }
+  return "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+}
+
+function localPluginCanonicalAuthorizationUrl(req: IncomingMessage, url: URL): string | undefined {
+  const configured = process.env.PUBLIC_APP_BASE_URL?.trim()
+  if (!configured) return undefined
+  const canonical = new URL(configured).origin
+  const forwardedProto = header(req, 'x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase()
+  const protocol = forwardedProto === 'https' ? 'https' : (req.socket as { encrypted?: boolean }).encrypted === true ? 'https' : 'http'
+  const host = header(req, 'x-forwarded-host')?.split(',')[0]?.trim() || header(req, 'host')?.trim()
+  if (host && `${protocol}://${host}`.toLowerCase() === canonical.toLowerCase()) return undefined
+  return `${canonical}${url.pathname}${url.search}`
+}
+
 function configuredAllowedOrigins(): Set<string> {
   return new Set((process.env.ALLOWED_ORIGINS ?? process.env.ALLOWED_ORIGIN ?? '')
     .split(',')
@@ -21289,6 +21315,12 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     }
     if (path === '/v1/auth/local-plugin/authorize' && (req.method === 'GET' || req.method === 'POST')) {
       if (isProduction() && mcpIntegrationMode() !== 'local_stdio') throw new DomainError('MCP_LOCAL_TOKEN_FLOW_DISABLED', '当前部署未启用本地插件凭据', 409)
+      if (req.method === 'GET') {
+        const canonicalUrl = localPluginCanonicalAuthorizationUrl(req, url)
+        if (canonicalUrl) {
+          res.statusCode = 302; res.setHeader('location', canonicalUrl); res.setHeader('referrer-policy', 'no-referrer'); res.end(); return
+        }
+      }
       const contentType = header(req, 'content-type')?.split(';')[0]?.trim().toLowerCase()
       if (req.method === 'POST' && contentType !== 'application/x-www-form-urlencoded') throw new DomainError('LOCAL_PLUGIN_AUTH_INVALID_REQUEST', '本地插件授权请求格式无效', 415)
       const requestOrigin = header(req, 'origin')?.trim()
@@ -21303,7 +21335,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const current = await passwordAuthRepository.authenticate(passwordSessionToken())
       if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') {
         if (req.method === 'GET') {
-          res.statusCode = 401; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"); res.end(localPluginLoginRequiredHtml(authorization)); return
+          res.statusCode = 401; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', localPluginAuthorizationCsp()); res.end(localPluginLoginRequiredHtml(authorization)); return
         }
         throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请先登录商家后台再重新授权', 401)
       }
@@ -21321,7 +21353,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         if (!pending || pending.status !== 'pending') throw new DomainError('LOCAL_PLUGIN_CONNECTION_INVALID', '连接请求无效、已过期或已使用', 409)
       }
       if (req.method === 'GET') {
-        res.statusCode = 200; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"); res.end(localPluginAuthorizationHtml(authorization, { login: current.account.login, workspaceId })); return
+        res.statusCode = 200; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', localPluginAuthorizationCsp()); res.end(localPluginAuthorizationHtml(authorization, { login: current.account.login, workspaceId })); return
       }
       const context = { clientId: LOCAL_PLUGIN_CLIENT_ID, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
       if (authorization.installInstanceId && proofInstance) {

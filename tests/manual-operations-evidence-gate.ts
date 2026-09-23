@@ -1,4 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { validateCapabilityProductionSignature } from './capability-evidence-gate.js'
+
+export type ManualProductionBindings = Parameters<typeof validateCapabilityProductionSignature>[1]
 
 type ManualEvidence = {
   schema_version?: string
@@ -20,7 +23,7 @@ const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u
 const MAX_AGE_MS = 24 * 60 * 60_000
 const REQUIRED_CHECKS = ['tenant_scope', 'manual_report', 'merchant_visibility'] as const
 
-export function validateManualOperationsEvidence(value: unknown, expectedReleaseId?: string, now = new Date()): string[] {
+export function validateManualOperationsEvidence(value: unknown, expectedReleaseId?: string, now = new Date(), production?: ManualProductionBindings): string[] {
   const errors: string[] = []
   if (!value || typeof value !== 'object' || Array.isArray(value)) return ['document must be a JSON object']
   const document = value as ManualEvidence
@@ -54,6 +57,7 @@ export function validateManualOperationsEvidence(value: unknown, expectedRelease
     if (new Set(names).size !== names.length) errors.push('workflow check names must be unique')
     for (const required of REQUIRED_CHECKS) if (!names.includes(required)) errors.push(`${required} workflow check is required`)
   }
+  if (production) errors.push(...validateCapabilityProductionSignature(value, production))
   return errors
 }
 
@@ -62,9 +66,19 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const file = arg('--file')
   const releaseId = arg('--release-id')
   if (!file || !releaseId) { console.error('manual operations evidence file and release id are required'); process.exit(2) }
+  const production = process.argv.includes('--require-signed-production')
+  const imageSetDigest = arg('--image-set-digest'), manifestSha256 = arg('--manifest-sha256'), releaseGitSha = arg('--release-git-sha')
+  const deploymentNonce = arg('--deployment-nonce'), publicKeyPath = arg('--public-key'), trustedKeyId = arg('--key-id')
+  if (production && (!imageSetDigest || !manifestSha256 || !releaseGitSha || !deploymentNonce || !publicKeyPath || !trustedKeyId)) {
+    console.error('signed manual production evidence requires image set, manifest, commit, deployment nonce and fixed trust anchor bindings'); process.exit(2)
+  }
   let value: unknown
   try { value = JSON.parse(readFileSync(file, 'utf8')) } catch (error) { console.error(`unable to read evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
-  const errors = validateManualOperationsEvidence(value, releaseId)
+  let bindings: ManualProductionBindings | undefined
+  try {
+    if (production) bindings = { releaseId, imageSetDigest: imageSetDigest!, manifestSha256: manifestSha256!, releaseGitSha: releaseGitSha!, deploymentNonce: deploymentNonce!, publicKeyPem: readFileSync(publicKeyPath!, 'utf8'), trustedKeyId: trustedKeyId! }
+  } catch { console.error('unable to read manual evidence trust anchor'); process.exit(1) }
+  const errors = validateManualOperationsEvidence(value, releaseId, new Date(), bindings)
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
-  console.log(`manual operations evidence gate passed: ${file}`)
+  console.log(`manual operations evidence gate passed: ${file}${production ? ' (production signature and deployment binding validated)' : ' (schema only; not production attestation)'}`)
 }

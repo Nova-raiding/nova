@@ -1,9 +1,9 @@
 {
   "mcpServers": {
     "merchant-marketing": {
-      "command": "sh",
+      "command": "node",
       "args": [
-        "./mcp/bridge.sh"
+        "./mcp/bridge.mjs"
       ],
       "cwd": ".",
       "env_vars": [

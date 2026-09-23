@@ -17,7 +17,7 @@ Use this installation order from the root-owned reviewed release checkout:
 1. Provision and independently verify the fixed Node runtime and the PostgreSQL 16 client binaries.
 2. Pre-create `/usr/local/libexec/merchant`, `/run/release-security/evidence-trust`, and `/var/lib/merchant-release-security` as canonical root-owned paths with no group/other write access.
 3. Write and independently review the backup source policy at the fixed path `/run/release-security/evidence-trust/production-backup-source.json`. Its only fields are `system_identifier_sha256`, `database_oid`, and `database_name`; derive them from the approved production PostgreSQL source and do not accept a caller-selected policy path.
-4. Install capability, backup, preidentity, then bundle controls with the same reviewed runtime digest. Installation does not authorize executing any control.
+4. Install the capability control for `official_api`, or the manual control for `manual`, then backup, preidentity, and bundle controls with the same reviewed runtime digest. Installation does not authorize executing any control.
 5. Provision each control's keys and operational inputs separately, then run its dedicated validation before use.
 
 Run the exact installer interface once per control, substituting only the reviewed release ID and independently recorded SHA-256 values:
@@ -27,6 +27,14 @@ env -i /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node /srv
   --control capability \
   --source /srv/merchant-releases/RELEASE_ID/infra/protected/attest-capability-evidence.mjs \
   --source-sha256 REVIEWED_CAPABILITY_SOURCE_SHA256 \
+  --node /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+  --node-sha256 REVIEWED_NODE_SHA256
+
+# For the current manual profile, install this control instead of capability:
+env -i /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node /srv/merchant-releases/RELEASE_ID/infra/scripts/install-ecs-release-controls.mjs \
+  --control manual \
+  --source /srv/merchant-releases/RELEASE_ID/infra/protected/attest-manual-operations-evidence.mjs \
+  --source-sha256 REVIEWED_MANUAL_SOURCE_SHA256 \
   --node /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
   --node-sha256 REVIEWED_NODE_SHA256
 
@@ -70,6 +78,6 @@ sh tests/run-ecs-preidentity-isolated-cli.sh
 
 It uses partial Docker and `psql` stubs from `tests/fixtures/ecs-preidentity-isolated/`. It is a deterministic isolated contract drill, NOT real recovery evidence, and must not be cited as proof of a production recovery, restore, deployment, or cutover.
 
-`validate-production-evidence-trust.sh` checks the installed executable against that digest during the release gate. Installation does not create or copy a private key; key provisioning remains a separate host security operation.
+`validate-production-evidence-trust.sh` checks the installed bundle executable against that digest during the release gate. The deploy preflight also passes the release's operations mode (`manual` or `official_api`) and checks the matching installed attester against its mode-specific digest; the other mode's attester is not required. Both controls must live at their fixed root-owned, non-symlink paths outside the repository. Installation does not create or copy a private key; key provisioning remains a separate host security operation.
 
 After independent evidence producers finish, the protected process signs the bundle. Set `RELEASE_EVIDENCE_BUNDLE_PATH` to that immutable output. The bundle's `manifest_sha256` is the SHA-256 of the exact `RELEASE_MANIFEST_PATH` bytes; it is intentionally distinct from the normalized rendered-Compose digest used by the individual production evidence gates. Invoke the protected attester with `--manifest-sha256 "$(shasum -a 256 "$RELEASE_MANIFEST_PATH" | awk '{print $1}')"`. `deploy-preflight-ecs.sh` then validates the signature, lifetime, exact eight artifact hashes, exact paths supplied to deployment, release-manifest/image/Git/nonce binding, duplicate references, symlinks, and path escape before deployment can proceed. Unit fixtures exercise this contract only; they are not production evidence and do not provision a production private key.

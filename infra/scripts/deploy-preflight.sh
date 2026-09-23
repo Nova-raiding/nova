@@ -106,7 +106,7 @@ if [ "${VITEST:-false}" != true ] && [ -n "$(git -C "$repo_root" status --porcel
   echo 'release preflight requires a clean git worktree' >&2
   exit 1
 fi
-sh "$(dirname "$0")/validate-production-evidence-trust.sh" "$repo_root"
+sh "$(dirname "$0")/validate-production-evidence-trust.sh" "$repo_root" "$platform_operations_mode"
 trust_root="$trust_dir/production-evidence-public.pem"
 if [ "$platform_operations_mode" = manual ]; then
   npx --no-install tsx "$(dirname "$0")/../../tests/manual-operations-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"
@@ -162,7 +162,10 @@ sh "$(dirname "$0")/verify-container-source-freshness.sh" \
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
 printf '%s\n' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo "DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters" >&2; exit 1; }
 if [ "$platform_operations_mode" = manual ]; then
-  npx --no-install tsx "$(dirname "$0")/../../tests/manual-operations-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"
+  npx --no-install tsx "$(dirname "$0")/../../tests/manual-operations-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID" \
+    --require-signed-production --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" \
+    --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" \
+    --public-key "$trust_root" --key-id "$trusted_key_id"
 else
   npx --no-install tsx "$(dirname "$0")/../../tests/capability-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
 fi

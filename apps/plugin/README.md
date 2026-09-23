@@ -21,6 +21,8 @@ macOS 新安装当前仍使用本地登录 CLI：它在 `127.0.0.1` 随机端口
 
 独立包的平台无关部分同时包含 macOS Swift 与 Windows C# Helper 源码，但不包含平台二进制。Windows 开发机可设置 `STORENOVA_WINDOWS_CSC_PATH` 后运行 `node scripts/build-connect-helper-windows.mjs`，它只生成未签名 EXE 和 SHA-256 文件，不会写注册表、安装协议或访问 Credential Manager。`verify-connect-helper-windows.ps1` 会核对 SHA-256、Authenticode `Valid` 状态及固定的 `STORENOVA_WINDOWS_SIGNER_THUMBPRINT`；任一证据缺失即失败。即使签名通过，在安装实例绑定完成前脚本仍以退出码 78 返回 `production_ready=false`，不会安装或注册 `storenova://`。这不是 Windows 正式安装说明，而是发布门禁和开发构建说明。
 
+Windows 包内的 `install-chatgpt.ps1` 在复制任何文件前，还会检查登录必需的 `windows/StoreNovaCredentialHelper.exe`、同名 `.sha256` 文件、有效 Authenticode 签名和预先配置的 `STORENOVA_WINDOWS_SIGNER_THUMBPRINT`。当前独立包不携带该签名二进制，因此直接运行安装器会明确失败；需要由可信 Windows 发布流程提供并验证后，才能完成本地安装与登录。此检查不代表 `storenova://` 连接助手已通过其独立的安装实例绑定门禁。
+
 ### 本地安装（不使用 ChatGPT OAuth）
 
 本插件支持本地桌面模式：ChatGPT/Codex 启动已安装包中的 stdio bridge，bridge 通过 HTTPS

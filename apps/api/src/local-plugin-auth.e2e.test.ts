@@ -36,14 +36,21 @@ describe('local plugin browser PKCE', () => {
     const callbackAddress = callbackServer.address()
     if (!callbackAddress || typeof callbackAddress === 'string') throw new Error('callback server did not bind')
     const redirectUri = `http://127.0.0.1:${callbackAddress.port}/merchant-mcp-callback`
+    vi.stubEnv('PUBLIC_APP_BASE_URL', base)
     const verifier = 'local-plugin-pkce-verifier-000000000000000000000000000000000000'
     const challenge = createHash('sha256').update(verifier).digest('base64url')
     const state = 'x'.repeat(43)
     const authorization = new URL(`${base}/v1/auth/local-plugin/authorize`)
     for (const [key, value] of Object.entries({ response_type: 'code', client_id: 'local-desktop', redirect_uri: redirectUri, state, code_challenge: challenge, code_challenge_method: 'S256', scope: 'merchant', resource: `${base}/mcp`, workspace_id: workspaceId })) authorization.searchParams.set(key, value)
 
+    const proxied = await fetch(authorization, { redirect: 'manual', headers: { host: 'proxy.example.test', 'x-forwarded-host': 'proxy.example.test', 'x-forwarded-proto': 'https' } })
+    expect(proxied.status).toBe(302)
+    expect(proxied.headers.get('location')).toBe(authorization.toString())
+    expect(proxied.headers.get('referrer-policy')).toBe('no-referrer')
+
     const unauthenticated = await fetch(authorization)
     expect(unauthenticated.status).toBe(401)
+    expect(unauthenticated.headers.get('content-security-policy')).toContain("form-action 'self' http://127.0.0.1:")
     expect(await unauthenticated.text()).toContain('新标签页打开商家后台登录')
 
     const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
@@ -51,6 +58,7 @@ describe('local plugin browser PKCE', () => {
     expect(cookie).toBeTruthy()
     const consent = await fetch(authorization, { headers: { cookie: cookie! } })
     expect(consent.status).toBe(200)
+    expect(consent.headers.get('content-security-policy')).toContain("form-action 'self' http://127.0.0.1:")
     const consentHtml = await consent.text()
     expect(consentHtml).toContain('确认授权本地插件')
     expect(consentHtml).not.toContain(password)

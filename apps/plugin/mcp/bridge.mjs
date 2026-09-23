@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url'
 import { assertRelayEvidence } from './relay-evidence.mjs'
 import { loadManagedToken, validatedRotatedCredential } from './managed-token.mjs'
 import { writeKeychainCredential } from './keychain-credential.mjs'
+import { writeWindowsCredential } from './windows-credential.mjs'
 
 // ChatGPT/Codex may launch the JavaScript entrypoint with a bundled Node binary.
 // On macOS, recover only missing configuration from launchd;
@@ -63,6 +64,11 @@ async function performLocalDesktopTokenRefresh() {
         { apiOrigin: origin, workspaceId },
         rotated.bundle,
       )
+    } catch { return false }
+  } else if (tokenSource === 'windows_credential_manager') {
+    if (process.platform !== 'win32') return false
+    try {
+      writeWindowsCredential({ apiOrigin: origin, workspaceId }, rotated.bundle)
     } catch { return false }
   } else if (tokenSource === 'launchd' && process.platform === 'darwin') {
     try {

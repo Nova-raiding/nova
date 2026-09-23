@@ -26,7 +26,7 @@ cleanup() {
 }
 trap cleanup EXIT
 trust_dir=/run/release-security/evidence-trust
-sh "$root/infra/scripts/validate-production-evidence-trust.sh" "$root"
+sh "$root/infra/scripts/validate-production-evidence-trust.sh" "$root" "${PLATFORM_OPERATIONS_MODE:-official_api}"
 trusted_key_id=$(sed -n '1p' "$trust_dir/production-evidence-key-id")
 npx --no-install tsx "$root/tests/release-bundle-gate.ts" --file "$ROLLBACK_RELEASE_BUNDLE_PATH" --release-id "$RELEASE_ID" \
   --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_dir/production-evidence-public.pem" --key-id "$trusted_key_id" --descriptor-out "$descriptor"
@@ -45,7 +45,10 @@ verified_sha=$(shasum -a 256 "$verified_manifest" | awk '{print $1}')
 [ "$source_before" = "$source_after" ] && [ "$source_before" = "$verified_sha" ] || { echo "rollback manifest changed during verification" >&2; exit 1; }
 sh "$root/infra/scripts/validate-kubernetes-release.sh" "$verified_manifest" "$ROLLBACK_IMAGE_DIGESTS_JSON" --rollback >/dev/null
 if [ "${PLATFORM_OPERATIONS_MODE:-}" = manual ]; then
-  npx --no-install tsx "$root/tests/manual-operations-evidence-gate.ts" --file "$ROLLBACK_CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"
+  npx --no-install tsx "$root/tests/manual-operations-evidence-gate.ts" --file "$ROLLBACK_CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID" \
+    --require-signed-production --image-set-digest "$image_set_digest" --manifest-sha256 "$verified_sha" \
+    --release-git-sha "$release_git_sha" --deployment-nonce "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}" \
+    --public-key "$trust_dir/production-evidence-public.pem" --key-id "$trusted_key_id"
 else
   npx --no-install tsx "$root/tests/capability-evidence-gate.ts" --file "$ROLLBACK_CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID" \
     --image-set-digest "$image_set_digest" --manifest-sha256 "$verified_sha" --release-git-sha "$release_git_sha" --deployment-nonce "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}" \

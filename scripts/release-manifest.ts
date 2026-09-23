@@ -105,6 +105,8 @@ export function buildReleaseManifest(input: {
     resolve(root, 'infra/scripts/install-ecs-release-controls.d.mts'),
     resolve(root, 'infra/protected/attest-release-evidence-bundle.mjs'),
     resolve(root, 'infra/protected/attest-release-evidence-bundle.d.mts'),
+    resolve(root, 'infra/protected/attest-manual-operations-evidence.mjs'),
+    resolve(root, 'infra/protected/attest-manual-operations-evidence.d.mts'),
     resolve(root, 'infra/protected/attest-postgres-backup.mjs'),
     resolve(root, 'infra/protected/attest-postgres-backup.d.mts'),
     resolve(root, 'infra/protected/ecs-preidentity-recovery.mjs'),

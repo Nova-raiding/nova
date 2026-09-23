@@ -49,7 +49,10 @@ function classifyFailure(result: CommandResult): CheckReason {
 }
 
 function parseJson(stdout: string): unknown {
-  try { return JSON.parse(stdout) } catch { return undefined }
+  // ossutil 2.4.0 appends this timing footer even with --output-format json.
+  // Accept only that exact trailing line; arbitrary command output must fail closed.
+  const json = stdout.replace(/\n\n\d+(?:\.\d+)?\(s\) elapsed\n$/u, '')
+  try { return JSON.parse(json) } catch { return undefined }
 }
 
 function findValues(value: unknown, target: string): unknown[] {

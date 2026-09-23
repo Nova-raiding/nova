@@ -62,12 +62,13 @@ export function credentialFromResponse(payload, target) {
 
 /** The verifier and tokens never leave memory except through the credential store. */
 export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, openBrowser, storeCredential, configureSession,
-  fetchImpl = fetch, timeoutMs = 300000, signal }) {
+  fetchImpl = fetch, timeoutMs = 300000, signal, credentialSource = 'keychain' }) {
   const target = validateLoginTarget(baseUrl, workspaceId)
   if (requestId !== undefined && (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/u.test(requestId))) {
     throw fail('REQUEST_ID_INVALID')
   }
-  if (![openBrowser, storeCredential, configureSession].every(fn => typeof fn === 'function')
+  if (!['keychain', 'windows_credential_manager'].includes(credentialSource)
+    || ![openBrowser, storeCredential, configureSession].every(fn => typeof fn === 'function')
     || !Number.isSafeInteger(timeoutMs) || timeoutMs < 50 || timeoutMs > 600000) throw fail('CONFIG_INVALID')
   const verifier = randomBytes(32).toString('base64url')
   const state = randomBytes(32).toString('base64url')
@@ -135,7 +136,7 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, openBr
     await storeCredential(target, bundle)
     await configureSession(target)
     return { ok: true, mode: 'local_stdio', workspace_id: target.workspaceId, api_origin: target.apiOrigin,
-      credential_source: 'keychain', restart_required: true, host_verified: false }
+      credential_source: credentialSource, restart_required: true, host_verified: false }
   } catch (error) {
     if (error instanceof Error && error.message === 'LOCAL_PLUGIN_LOGIN_CANCEL_REVOKE_FAILED') throw error
     if (signal?.aborted) throw fail('CANCELLED')

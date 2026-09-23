@@ -49,7 +49,7 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(31)
+    expect(manifest.artifacts).toHaveLength(33)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'services/payment-gateway/index.mjs',
       'services/payment-gateway/alipay.mjs',
@@ -71,6 +71,8 @@ describe('release manifest', () => {
       'infra/protected/ecs-preidentity-recovery.d.mts',
       'infra/protected/attest-release-evidence-bundle.mjs',
       'infra/protected/attest-release-evidence-bundle.d.mts',
+      'infra/protected/attest-manual-operations-evidence.mjs',
+      'infra/protected/attest-manual-operations-evidence.d.mts',
       'tests/release-evidence-bundle-gate.ts',
     ]))
     expect(manifest.artifacts.every(item => /^[a-f0-9]{64}$/.test(item.sha256) && item.bytes > 0)).toBe(true)

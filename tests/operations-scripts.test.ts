@@ -264,6 +264,7 @@ describe('deployment operation scripts', () => {
     expect(source).toContain('validate-kubernetes-release.sh')
     expect(source).toContain('ROLLBACK_MANIFEST_SHA256')
     expect(source).toContain('run-production-canary.sh')
+    expect(source).toMatch(/manual-operations-evidence-gate\.ts[^\n]*\n\s*--require-signed-production --image-set-digest/)
     expect(source).toContain('merchant-worker-reconcile merchant-worker-automation merchant-worker-scan')
     expect(source).toContain('WORKER_ROLE=generation')
     expect(source).toContain('WORKER_ROLE=scan')
@@ -325,7 +326,7 @@ describe('deployment operation scripts', () => {
     writeFileSync(psql, `#!/bin/sh\nprintf '%s\\n' '${systemIdentifier}'\n`)
     chmodSync(psql, 0o755)
     expect(() => run('infra/scripts/restore-postgres.sh', [], {
-      DATABASE_URL: 'postgresql://merchant@db.internal/merchant?sslmode=verify-full', ALERT_RECEIVER_DATABASE_URL: 'postgresql://receiver@receiver-db.internal/merchant?sslmode=verify-full', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'production', RESTORE_TARGET_ISOLATED: 'YES', BACKUP_ATTESTATION_PATH: join(directory, 'missing-attestation.json'), EXPECTED_SOURCE_DATABASE_ID_SHA256: sourceIdentity, PATH: `${bin}:${process.env.PATH ?? ''}`,
+      DATABASE_URL: 'postgresql://merchant@db.internal/merchant?sslmode=verify-full', ALERT_RECEIVER_DATABASE_URL: 'postgresql://receiver@receiver-db.internal/merchant?sslmode=verify-full', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'production', RESTORE_TARGET_ISOLATED: 'YES', BACKUP_ATTESTATION_PATH: join(directory, 'missing-attestation.json'), PLATFORM_OPERATIONS_MODE: 'manual', EXPECTED_SOURCE_DATABASE_ID_SHA256: sourceIdentity, PATH: `${bin}:${process.env.PATH ?? ''}`,
     })).toThrow(/matches approved source/)
   })
 
@@ -337,7 +338,7 @@ describe('deployment operation scripts', () => {
       DATABASE_URL: 'postgresql://merchant@127.0.0.1:5432/merchant?sslmode=require', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_ALLOW_UNSIGNED_LOCAL: 'YES',
     })).toThrow(/RESTORE_TARGET_ENVIRONMENT/)
     expect(() => run('infra/scripts/restore-postgres.sh', [], {
-      DATABASE_URL: 'postgresql://merchant@127.0.0.1:5432/merchant?sslmode=require', ALERT_RECEIVER_DATABASE_URL: 'postgresql://receiver@receiver-db.internal/merchant?sslmode=verify-full', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'production', RESTORE_TARGET_ISOLATED: 'YES', BACKUP_ATTESTATION_PATH: join(directory, 'missing-attestation.json'), EXPECTED_SOURCE_DATABASE_ID_SHA256: 'a'.repeat(64),
+      DATABASE_URL: 'postgresql://merchant@127.0.0.1:5432/merchant?sslmode=require', ALERT_RECEIVER_DATABASE_URL: 'postgresql://receiver@receiver-db.internal/merchant?sslmode=verify-full', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'production', RESTORE_TARGET_ISOLATED: 'YES', BACKUP_ATTESTATION_PATH: join(directory, 'missing-attestation.json'), PLATFORM_OPERATIONS_MODE: 'manual', EXPECTED_SOURCE_DATABASE_ID_SHA256: 'a'.repeat(64),
     })).toThrow(/must not use localhost|loopback|unspecified/)
   })
 
@@ -499,6 +500,7 @@ describe('deployment operation scripts', () => {
     expect(ecsDeployPreflight.indexOf('validate-ecs-production-compose.mjs')).toBeLessThan(ecsDeployPreflight.indexOf('validate-ecs-compose-release.rb'))
     expect(ecsDeployPreflight).toContain('validate-production-evidence-trust.sh')
     expect(ecsDeployPreflight).toContain('release-manifest-gate.ts')
+    expect(ecsDeployPreflight).toMatch(/manual-operations-evidence-gate\.ts[^\n]*\n\s*--require-signed-production --image-set-digest/)
     expect(ecsDeployPreflight).toContain('verify-container-source-freshness.sh')
     expect(ecsDeployPreflight).toContain('release preflight requires a clean git worktree')
     expect(ecsDeployPreflight).toContain('for tool in node npm npx ruby git docker psql shasum')
@@ -511,6 +513,7 @@ describe('deployment operation scripts', () => {
     expect(deployPreflight).toContain('--expected-mcp-base-url')
     expect(deployPreflight).toContain('--expected-bridge-sha256')
     expect(deployPreflight).toContain('release-manifest-gate.ts')
+    expect(deployPreflight).toMatch(/manual-operations-evidence-gate\.ts[^\n]*\n\s*--require-signed-production --image-set-digest/)
     expect(ecsDeployPreflight).toContain('release_manifest_sha256=$(shasum -a 256 "$RELEASE_MANIFEST_PATH"')
     expect(ecsDeployPreflight).toContain('--image-set-digest "$image_set_digest" --manifest-sha256 "$release_manifest_sha256"')
     for (const binding of ['--release-git-sha', '--manifest-sha256', '--image-set-digest', '--deployment-nonce', '--expected-config-checksum', '--public-key', '--key-id']) expect(deployPreflight).toContain(binding)

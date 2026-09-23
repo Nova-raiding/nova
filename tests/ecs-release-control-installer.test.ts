@@ -21,7 +21,7 @@ describe('protected release-control installation', () => {
     expect(() => prepareControlBytes('backup', source, sha, node)).toThrow('canonical');
   });
   it('does not accept arbitrary destinations or trust directories', () => {
-    expect(Object.keys(CONTROLS).sort()).toEqual(['backup', 'bundle', 'capability', 'preidentity']);
+    expect(Object.keys(CONTROLS).sort()).toEqual(['backup', 'bundle', 'capability', 'manual', 'preidentity']);
     expect(() => parseInstallArguments(['--destination', '/tmp/evil'])).toThrow();
   });
   it('requires all exact non-duplicated CLI arguments', () => {

@@ -168,6 +168,23 @@ describe('ECS production Compose contract', () => {
     expect(validate(rendered)).toContain('contract passed')
   })
 
+  it('renders CPU quantities as strings so the ECS Compose version can read the artifact', () => {
+    const rendered = renderFinalProductionCompose()
+    for (const service of Object.values(rendered.services) as any[]) {
+      for (const resource of [service.deploy?.resources?.limits, service.deploy?.resources?.reservations]) {
+        if (resource?.cpus !== undefined) expect(typeof resource.cpus).toBe('string')
+      }
+      if (service.cpus !== undefined) expect(typeof service.cpus).toBe('string')
+    }
+
+    const dir = mkdtempSync(join(tmpdir(), 'ecs-compose-roundtrip-'))
+    const path = join(dir, 'rendered.json')
+    writeFileSync(path, JSON.stringify(rendered))
+    expect(() => execFileSync('docker', ['compose', '-f', path, 'config', '--format', 'json'], {
+      cwd: process.cwd(), stdio: 'pipe',
+    })).not.toThrow()
+  })
+
   it.each([
     ['NODE_ENV', 'development'],
     ['DEPLOYMENT_PROFILE', 'local_acceptance'],

@@ -103,8 +103,7 @@ const manifestErrors = [
   manifest.version === packageJson.version ? null : 'manifest version does not match package version',
   manifest.version === expectedVersion ? null : 'installed version does not match expected source version',
   manifest.mcpServers === './.mcp.json' ? null : 'manifest mcpServers must point to ./.mcp.json',
-  startup?.command === 'sh' ? null : 'MCP startup command must be sh',
-  Array.isArray(startup?.args) && startup.args.length === 1 && startup.args[0] === './mcp/bridge.sh' ? null : 'MCP startup args must point to ./mcp/bridge.sh',
+  startup?.command === 'node' && Array.isArray(startup?.args) && startup.args.length === 1 && startup.args[0] === './mcp/bridge.mjs' ? null : 'MCP startup must use node ./mcp/bridge.mjs',
 ].filter(Boolean)
 const installedDirectoryVersion = installedRoot.split(/[\\/]/u).at(-1)
 const cachePathVersionError = installedDirectoryVersion && semverPattern.test(installedDirectoryVersion) && installedDirectoryVersion !== expectedVersion

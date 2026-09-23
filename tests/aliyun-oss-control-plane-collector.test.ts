@@ -31,6 +31,29 @@ describe('Aliyun OSS read-only control-plane collector', () => {
     expect(JSON.stringify(result)).not.toContain('merchant-assets')
   })
 
+  it('accepts the ossutil 2.4.0 elapsed footer after a JSON response', async () => {
+    const withElapsed = (body: unknown) => ({ status: 0, stdout: `${JSON.stringify(body)}\n\n0.169249(s) elapsed\n`, stderr: '' })
+    const execute: CommandExecutor = (_binary, args) => {
+      if (args.includes('get-bucket-versioning')) return withElapsed({ VersioningConfiguration: { Status: 'Enabled' } })
+      if (args.includes('get-bucket-lifecycle')) return withElapsed({ LifecycleConfiguration: { Rule: [lifecycleRule] } })
+      return withElapsed({ PublicAccessBlockConfiguration: { BlockPublicAccess: true } })
+    }
+    const result = await collectAliyunOssControlPlane({ bucket: 'merchant-assets', region: 'cn-hangzhou', lifecycleRuleId, execute })
+    expect(result.ready).toBe(true)
+  })
+
+  it.each([
+    'unexpected log line',
+    '0.169249(s) elapsed\nextra text',
+    '-1(s) elapsed',
+    'NaN(s) elapsed',
+  ])('rejects unrecognized text following JSON: %s', async footer => {
+    const execute: CommandExecutor = () => ({ status: 0, stdout: `{"Status":"Enabled"}\n\n${footer}\n`, stderr: '' })
+    const result = await collectAliyunOssControlPlane({ bucket: 'merchant-assets', region: 'cn-hangzhou', lifecycleRuleId, execute })
+    expect(result.ready).toBe(false)
+    expect(Object.values(result.checks)).toEqual(Array(3).fill({ state: 'blocked', reason: 'invalid_response', observed: null }))
+  })
+
   it('distinguishes permission denial, absent configuration, and unsupported API', async () => {
     const execute: CommandExecutor = (_binary, args) => {
       if (args.includes('get-bucket-versioning')) return { status: 1, stdout: '', stderr: 'AccessDenied: status code 403' }

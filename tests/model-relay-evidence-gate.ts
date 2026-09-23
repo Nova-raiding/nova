@@ -18,7 +18,8 @@ const relayOrigin = (value: string): string | undefined => {
   } catch { return undefined }
 }
 const immutableArtifact = /^artifact:\/\/production\/[A-Za-z0-9._/-]+#([a-f0-9]{64})$/u
-function validateArtifact(reference: string | undefined, root: string, label: string, expected?: { releaseId?: string; result?: RelayResult }): string[] {
+type ExpectedArtifact = { releaseId?: string; result?: RelayResult; recovery?: RelayErrorRecovery; relay?: string }
+function validateArtifact(reference: string | undefined, root: string, label: string, expected?: ExpectedArtifact): string[] {
   const match = immutableArtifact.exec(reference ?? '')
   if (!match) return [`${label} must be an immutable production artifact with SHA-256 fragment`]
   const relative = reference!.slice('artifact://production/'.length).split('#')[0]!
@@ -36,11 +37,37 @@ function validateArtifact(reference: string | undefined, root: string, label: st
       let artifactValue: Record<string, any>
       try { artifactValue = JSON.parse(readFileSync(realCandidate, 'utf8')) as Record<string, any> }
       catch { return [`${label} must contain a JSON relay receipt`] }
-      if (artifactValue.release_id !== expected.releaseId) return [`${label} release_id must match the evidence release_id`]
-      if (artifactValue.modality !== expected.result?.modality) return [`${label} modality must match ${expected.result?.modality}`]
-      const receipt = artifactValue.result
-      if (!receipt || typeof receipt !== 'object' || ['providerRequestId', 'providerJobId', 'model', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result?.usage)) {
-        return [`${label} receipt must match the summarized request, model, state, endpoint, usage and cost`]
+      if (!artifactValue || typeof artifactValue !== 'object' || Array.isArray(artifactValue) || artifactValue.release_id !== expected.releaseId) return [`${label} release_id must match the evidence release_id`]
+      if (expected.recovery) {
+        const { failure, recovery } = artifactValue
+        const summary = expected.recovery
+        const validCapture = (capture: unknown): capture is Record<string, unknown> => !!capture && typeof capture === 'object' && !Array.isArray(capture)
+        const failureBody = validCapture(failure) ? failure.relay_response : undefined
+        const failureError = validCapture(failureBody) ? failureBody.error : undefined
+        if (artifactValue.schema_version !== '1' || !validCapture(failure) || !validCapture(recovery)
+          || failure.release_id !== expected.releaseId || recovery.release_id !== expected.releaseId
+          || failure.http_status !== 503 || typeof recovery.http_status !== 'number' || !Number.isSafeInteger(recovery.http_status) || recovery.http_status < 200 || recovery.http_status > 299
+          || failure.error_code !== 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
+          || !validCapture(failureError) || failureError.code !== failure.error_code
+          || !isIsoInstant(failure.observed_at) || !isIsoInstant(recovery.observed_at)
+          || failure.observed_at !== summary.failure_observed_at || recovery.observed_at !== summary.recovered_at
+          || Date.parse(recovery.observed_at) <= Date.parse(failure.observed_at)
+          || !nonEmpty(failure.provider_request_id) || !nonEmpty(recovery.provider_request_id)
+          || failure.provider_request_id !== summary.failed_request_id || recovery.provider_request_id !== summary.recovery_request_id
+          || failure.provider_request_id === recovery.provider_request_id
+          || failure.relay !== expected.relay || recovery.relay !== expected.relay
+          || !nonEmpty(failure.endpoint) || failure.endpoint !== recovery.endpoint
+          || !failure.endpoint.startsWith('/') || failure.endpoint.startsWith('//') || failure.endpoint.includes('\\')
+          || failure.endpoint.includes('?') || failure.endpoint.includes('#') || failure.endpoint.split('/').some(segment => segment === '.' || segment === '..')
+          || /[\u0000-\u001f\u007f]/u.test(failure.endpoint)) {
+          return [`${label} capture pair must match the summarized 503 MODEL_PROVIDER_OUTCOME_UNKNOWN recovery, release, relay, endpoint, times and request ids`]
+        }
+      } else if (expected.result) {
+        if (artifactValue.modality !== expected.result.modality) return [`${label} modality must match ${expected.result.modality}`]
+        const receipt = artifactValue.result
+        if (!receipt || typeof receipt !== 'object' || ['providerRequestId', 'providerJobId', 'model', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result.usage)) {
+          return [`${label} receipt must match the summarized request, model, state, endpoint, usage and cost`]
+        }
       }
     }
   } catch { return [`${label} referenced artifact does not exist or cannot be read`] }
@@ -132,7 +159,7 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
       if (!nonEmpty(recovery.failed_request_id)) errors.push('error_recovery.failed_request_id is required')
       if (!nonEmpty(recovery.recovery_request_id)) errors.push('error_recovery.recovery_request_id is required')
       if (nonEmpty(recovery.failed_request_id) && recovery.failed_request_id === recovery.recovery_request_id) errors.push('error_recovery request ids must be distinct')
-      errors.push(...validateArtifact(recovery.evidence_ref, options.artifactRoot ?? '', 'error_recovery.evidence_ref'))
+      errors.push(...validateArtifact(recovery.evidence_ref, options.artifactRoot ?? '', 'error_recovery.evidence_ref', { releaseId: value.release_id, relay: value.relay, recovery }))
     }
   }
   return errors

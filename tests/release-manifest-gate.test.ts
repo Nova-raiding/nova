@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildReleaseManifest } from '../scripts/release-manifest.js'
 import { signProductionEvidence } from './production-evidence-gate.js'
+import { signManualCandidate } from '../infra/protected/attest-manual-operations-evidence.mjs'
 import { validateReleaseManifest } from './release-manifest-gate.js'
 
 const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'restore', 'objectStorage', 'codexAppHost', 'canonicalCutover'] as const
@@ -30,7 +31,7 @@ function boundManifestFixture() {
   }
   const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1', generatedAt: '2026-08-29T01:00:00Z', ...refs })
   const options = { root: process.cwd(), expectedReleaseId: 'release-1', artifactRoot, evidenceFiles, publicKeyPem, trustedKeyId: 'release-security-test', now: new Date('2026-08-29T02:00:00Z') }
-  return { artifactRoot, evidenceFiles, manifest, options }
+  return { artifactRoot, evidenceFiles, manifest, options, privateKeyPem }
 }
 
 describe('release manifest production gate', () => {
@@ -72,6 +73,8 @@ describe('release manifest production gate', () => {
       'infra/scripts/install-ecs-release-controls.d.mts',
       'infra/protected/attest-release-evidence-bundle.mjs',
       'infra/protected/attest-release-evidence-bundle.d.mts',
+      'infra/protected/attest-manual-operations-evidence.mjs',
+      'infra/protected/attest-manual-operations-evidence.d.mts',
       'infra/protected/attest-postgres-backup.mjs',
       'infra/protected/attest-postgres-backup.d.mts',
       'infra/protected/ecs-preidentity-recovery.mjs',
@@ -144,6 +147,33 @@ describe('release manifest production gate', () => {
     writeFileSync(unsignedStorage.evidenceFiles.objectStorage, unsignedStorageContents)
     unsignedStorage.manifest.productionEvidence.objectStorage = `artifact://production/evidence/objectStorage.json#${digest(unsignedStorageContents)}`
     expect(validateReleaseManifest(unsignedStorage.manifest, unsignedStorage.options)).toContain('productionEvidence.objectStorage signature_base64 must be a canonical Ed25519 signature')
+  })
+
+  it('validates manual capability workflow semantics as well as the artifact signature', () => {
+    const fixture = boundManifestFixture()
+    const privatePem = fixture.privateKeyPem
+    const publicKeyPem = fixture.options.publicKeyPem
+    const candidate = {
+      schema_version: 'manual-operations-evidence/1', release_id: 'release-1', environment: 'production', workflow: 'public_import_manual_publish',
+      workspace_id: 'workspace-1', isolation_probe_workspace_id: 'foreign-workspace', manual_publish_report_id: 'report-1',
+      official_api_receipt: false, tenant_isolation_verified: true, simulated: false, generated_at: '2026-08-29T00:00:00Z',
+      expires_at: '2026-08-30T00:00:00Z', verified_by: 'release-operator',
+      checks: [
+        { name: 'tenant_scope', status: 'pass', observation: 'foreign_workspace_rejected' },
+        { name: 'manual_report', status: 'pass', observation: 'human_evidence_boundary_preserved' },
+        { name: 'merchant_visibility', status: 'pass', observation: 'expected_report_visible' },
+      ],
+    }
+    const signed = signManualCandidate(candidate, { releaseId: 'release-1', imageSetDigest: `sha256:${'a'.repeat(64)}`, manifestSha256: 'b'.repeat(64), releaseGitSha: 'c'.repeat(40), deploymentNonce: 'n'.repeat(22), keyId: 'release-security-test' }, privatePem, publicKeyPem, new Date('2026-08-29T02:00:00Z'))
+    const bytes = JSON.stringify(signed)
+    writeFileSync(fixture.evidenceFiles.capability, bytes)
+    fixture.manifest.productionEvidence.capability = `artifact://production/evidence/capability.json#${digest(bytes)}`
+    expect(validateReleaseManifest(fixture.manifest, { ...fixture.options, publicKeyPem })).toEqual([])
+    const invalid = { ...signed, official_api_receipt: true }
+    const invalidBytes = JSON.stringify(invalid)
+    writeFileSync(fixture.evidenceFiles.capability, invalidBytes)
+    fixture.manifest.productionEvidence.capability = `artifact://production/evidence/capability.json#${digest(invalidBytes)}`
+    expect(validateReleaseManifest(fixture.manifest, { ...fixture.options, publicKeyPem })).toContain('productionEvidence.capability official_api_receipt must be false')
   })
 
   it('accepts an explicitly bound no-load capacity artifact without treating it as a capacity pass', () => {

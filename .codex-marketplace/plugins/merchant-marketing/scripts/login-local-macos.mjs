@@ -61,10 +61,14 @@ export function credentialFromResponse(payload, target) {
 }
 
 /** The verifier and tokens never leave memory except through the credential store. */
-export async function loginLocalPlugin({ baseUrl, workspaceId, openBrowser, storeCredential, configureSession,
-  fetchImpl = fetch, timeoutMs = 300000, signal }) {
+export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, openBrowser, storeCredential, configureSession,
+  fetchImpl = fetch, timeoutMs = 300000, signal, credentialSource = 'keychain' }) {
   const target = validateLoginTarget(baseUrl, workspaceId)
-  if (![openBrowser, storeCredential, configureSession].every(fn => typeof fn === 'function')
+  if (requestId !== undefined && (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/u.test(requestId))) {
+    throw fail('REQUEST_ID_INVALID')
+  }
+  if (!['keychain', 'windows_credential_manager'].includes(credentialSource)
+    || ![openBrowser, storeCredential, configureSession].every(fn => typeof fn === 'function')
     || !Number.isSafeInteger(timeoutMs) || timeoutMs < 50 || timeoutMs > 600000) throw fail('CONFIG_INVALID')
   const verifier = randomBytes(32).toString('base64url')
   const state = randomBytes(32).toString('base64url')
@@ -109,7 +113,7 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, openBrowser, stor
     const authorize = new URL('/v1/auth/local-plugin/authorize', target.apiOrigin)
     for (const [name, value] of Object.entries({ response_type: 'code', client_id: 'local-desktop', redirect_uri: redirectUri,
       state, code_challenge: challenge, code_challenge_method: 'S256', scope: 'merchant',
-      resource: `${target.apiOrigin}/mcp`, workspace_id: target.workspaceId })) authorize.searchParams.set(name, value)
+      resource: `${target.apiOrigin}/mcp`, workspace_id: target.workspaceId, ...(requestId ? { connection_request_id: requestId } : {}) })) authorize.searchParams.set(name, value)
     timer = setTimeout(() => reject(fail('TIMEOUT')), timeoutMs)
     signal?.addEventListener('abort', cancel, { once: true })
     await openBrowser(authorize.toString())
@@ -121,7 +125,8 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, openBrowser, stor
       method: 'POST', redirect: 'error', signal: exchangeSignal,
       headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
       body: new URLSearchParams({ grant_type: 'authorization_code', client_id: 'local-desktop', redirect_uri: redirectUri,
-        code, code_verifier: verifier, resource: `${target.apiOrigin}/mcp`, workspace_id: target.workspaceId }),
+        code, code_verifier: verifier, resource: `${target.apiOrigin}/mcp`, workspace_id: target.workspaceId,
+        ...(requestId ? { connection_request_id: requestId } : {}) }),
     })
     const bundle = credentialFromResponse(await boundedJson(response), target)
     if (signal?.aborted) {
@@ -131,7 +136,7 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, openBrowser, stor
     await storeCredential(target, bundle)
     await configureSession(target)
     return { ok: true, mode: 'local_stdio', workspace_id: target.workspaceId, api_origin: target.apiOrigin,
-      credential_source: 'keychain', restart_required: true, host_verified: false }
+      credential_source: credentialSource, restart_required: true, host_verified: false }
   } catch (error) {
     if (error instanceof Error && error.message === 'LOCAL_PLUGIN_LOGIN_CANCEL_REVOKE_FAILED') throw error
     if (signal?.aborted) throw fail('CANCELLED')
@@ -158,13 +163,13 @@ function configureLaunchd(target) {
 async function main() {
   const args = process.argv.slice(2)
   if (args.length === 1 && args[0] === '--help') {
-    process.stdout.write('用法: node scripts/login-local-macos.mjs --base-url https://yxsona.com --workspace ws_xxx [--no-open]\n在商家浏览器登录并确认后，凭据写入系统钥匙串；不需要 ChatGPT OAuth 或插件市场上架。\n')
+    process.stdout.write('用法: node scripts/login-local-macos.mjs --base-url https://yxsona.com --workspace ws_xxx [--request-id <一次性请求标识>] [--no-open]\n在商家浏览器登录并确认后，凭据写入系统钥匙串；不需要 ChatGPT OAuth 或插件市场上架。\n')
     return
   }
   const options = new Map()
   for (let index = 0; index < args.length; index++) {
     const key = args[index]
-    if (!['--base-url', '--workspace', '--no-open'].includes(key) || options.has(key)) throw fail('ARGUMENTS_INVALID')
+    if (!['--base-url', '--workspace', '--request-id', '--no-open'].includes(key) || options.has(key)) throw fail('ARGUMENTS_INVALID')
     const value = key === '--no-open' ? true : args[++index]
     if (!value || typeof value === 'string' && value.startsWith('--')) throw fail('ARGUMENTS_INVALID')
     options.set(key, value)
@@ -181,7 +186,7 @@ async function main() {
   process.once('SIGINT', cancel)
   process.once('SIGTERM', cancel)
   try {
-    const result = await loginLocalPlugin({ baseUrl: options.get('--base-url'), workspaceId: options.get('--workspace'),
+    const result = await loginLocalPlugin({ baseUrl: options.get('--base-url'), workspaceId: options.get('--workspace'), requestId: options.get('--request-id'),
       openBrowser: url => options.get('--no-open') ? process.stdout.write(`请在商家浏览器打开此授权地址（不含 token）：\n${url}\n`)
         : execFileSync('/usr/bin/open', [url], { stdio: 'ignore', timeout: 5000 }),
       storeCredential: writeKeychainCredential, configureSession: configureLaunchd, signal: controller.signal })

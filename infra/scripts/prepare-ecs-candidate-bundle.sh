@@ -76,6 +76,10 @@ infra/scripts/check-ecs-storage-budget.sh
 infra/scripts/build-ecs-release-images.sh
 infra/scripts/prepare-ecs-eight-image-set.mjs
 infra/scripts/capture-manual-operations-evidence.sh
+infra/scripts/candidate-api-docker-request.mjs
+infra/scripts/launch-ecs-candidate-api.mjs
+infra/scripts/launch-ecs-candidate-tls-gateway.mjs
+infra/scripts/launch-ecs-candidate-tls-gateway.d.mts
 infra/scripts/deploy-verified-ecs-compose.sh
 infra/scripts/ecs-external-gateway-handoff.mjs
 infra/scripts/ecs-external-gateway-handoff.d.mts
@@ -89,6 +93,8 @@ infra/protected/attest-release-evidence-bundle.mjs
 infra/protected/attest-release-evidence-bundle.d.mts
 infra/protected/attest-postgres-backup.mjs
 infra/protected/attest-postgres-backup.d.mts
+infra/protected/attest-manual-operations-evidence.mjs
+infra/protected/attest-manual-operations-evidence.d.mts
 infra/protected/ecs-preidentity-recovery.mjs
 infra/protected/ecs-preidentity-recovery.d.mts
 tests/release-evidence-bundle-gate.ts
@@ -123,6 +129,7 @@ docs/runbooks/durable-platform-authorization-bootstrap.md
 docs/runbooks/ecs-verified-compose-deploy.md
 docs/runbooks/ecs-release-evidence-bundle-attester.md
 docs/runbooks/ecs-release-image-build.md
+docs/runbooks/ecs-candidate-api-sidecar.md
 EOF
 
 # The migration registry loads the entire chain, so review all SQL assets
