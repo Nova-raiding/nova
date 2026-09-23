@@ -151,8 +151,16 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $binary = Join-Path (Join-Path $env:RUNNER_TEMP 'storenova-helper') 'StoreNovaCredentialHelper.exe'
           $request = '{"operation":"write","target":"com.storenova.installation-identity","account":"current-installation","data":"ci-package-smoke"}'
-          $request | & $binary
-          if ($LASTEXITCODE -ne 0) { Write-Host '::error file=.github/workflows/windows-plugin-package.yml,line=1::CREDENTIAL_WRITE_FAILED'; exit 1 }
+          $inputPath = Join-Path $env:RUNNER_TEMP 'credential-write-request.json'
+          $outputPath = Join-Path $env:RUNNER_TEMP 'credential-write-output.txt'
+          $errorPath = Join-Path $env:RUNNER_TEMP 'credential-write-error.txt'
+          [System.IO.File]::WriteAllText($inputPath, $request, [System.Text.Encoding]::ASCII)
+          $process = Start-Process -FilePath $binary -RedirectStandardInput $inputPath -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            $diagnostic = (Get-Content -LiteralPath $errorPath -Raw).Trim()
+            Write-Host "::error file=.github/workflows/windows-plugin-package.yml,line=1::CREDENTIAL_WRITE_FAILED $diagnostic"
+            exit 1
+          }
       - name: Verify Credential Manager read
         shell: powershell
         run: |
