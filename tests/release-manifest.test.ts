@@ -49,8 +49,10 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(33)
+    expect(manifest.artifacts).toHaveLength(35)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
+      'scripts/release-manifest.ts',
+      'scripts/release-identity.ts',
       'services/payment-gateway/index.mjs',
       'services/payment-gateway/alipay.mjs',
       'services/payment-gateway/alipay.d.mts',
