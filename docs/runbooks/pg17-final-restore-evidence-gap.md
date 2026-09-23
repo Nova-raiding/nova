@@ -20,3 +20,5 @@
 - 缺少固定安装、root 拥有、独立于发布目录的最终恢复签名器及其受保护密钥/摘要；在仓库里加一个可传任意 JSON 的签名脚本会降低而非提高可信度。
 
 上述四项没有实际配置并在 101 上复核之前，owner 只能保留原始 PG17 capture，不能签发最终 `restore` 证据或继续生产迁移/切流。本文件是执行边界，不是成功证明。
+
+`infra/protected/compare-pg17-data-integrity.mjs` 可以比较两份独立取得的 `pg17-rowset-inventory/1` JSON：一份 `kind=live-backup-baseline`，一份 `kind=isolated-restore-observation`。每份必须绑定相同发布与备份摘要、各自数据库身份、UTC 观察时间，并为每张表提供 `name`、`row_count`、`canonical_rows_sha256`、`rls_policy_sha256`。调用者以 `--baseline`、`--restored`、`--capture`、`--output` 给出四个互异的绝对或相对路径；输出用 `O_EXCL` 创建的 0600 原始比较 JSON，失败仍留档。比较器只对已经取得的行摘要做确定性核对，**不负责从数据库采样、验证采样者身份或签发最终证据**。缺少受保护的备份前采样器与冻结基线时，不能用恢复后的数据反推一份 baseline。隔离 API/worker 的只读凭据、独立 Redis/队列、副作用阻断与真实桌面宿主入口也尚未配置，故目前没有安全的自动应用冒烟 runner。
