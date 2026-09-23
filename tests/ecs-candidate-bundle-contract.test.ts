@@ -82,6 +82,56 @@ describe('ECS candidate bundle contract', () => {
     ]) expect(manifest).toContain(path)
   })
 
+  it('includes changed runtime and release inputs in the remote comparison manifest', () => {
+    const script = readFileSync('infra/scripts/prepare-ecs-candidate-bundle.sh', 'utf8')
+    const start = script.indexOf('cat > "$manifest" <<\'EOF\'')
+    const manifest = script.slice(start, script.indexOf('\nEOF', start))
+
+    for (const path of [
+      'demo/merchant-studio/package.json',
+      'demo/merchant-studio/src/App.tsx',
+      'demo/merchant-studio/scripts/verify-production-copy.mjs',
+      'demo/merchant-studio/scripts/verify-production-copy.test.mjs',
+      'packages/ai/src/embedding.ts',
+      'packages/ai/src/generator.ts',
+      'packages/ai/src/image-editor.ts',
+      'packages/ai/src/image-facts.ts',
+      'packages/ai/src/image-generator.ts',
+      'packages/ai/src/image-generator.test.ts',
+      'packages/ai/src/relay-usage.ts',
+      'packages/ai/src/relay-usage.test.ts',
+      'packages/ai/src/video-generator.ts',
+      'infra/scripts/verify-ecs-ops-auth-mode.sh',
+      'infra/scripts/build-ecs-release-images.sh',
+      'infra/scripts/deploy-preflight-ecs.sh',
+      'apps/plugin/scripts/upgrade-installed-plugin.mjs',
+      'apps/plugin/scripts/upgrade-installed-plugin.test.ts',
+      '.codex-marketplace/plugins/merchant-marketing/scripts/upgrade-installed-plugin.mjs',
+      '.codex-marketplace/plugins/merchant-marketing/scripts/upgrade-installed-plugin.test.ts',
+      'packages/persistence/src/migration.ts',
+      'packages/persistence/src/migration-245.test.ts',
+      'packages/persistence/src/migrations/245_local_plugin_authorized_timestamp.sql',
+      'scripts/model-relay-canary.ts',
+      'scripts/release-manifest.ts',
+      'scripts/scanner-callback-canary.mjs',
+      'scripts/scanner-callback-canary-evidence.ts',
+      'tests/ecs-compose-deploy-runner.test.ts',
+      'tests/ecs-release-images-build.test.ts',
+      'tests/model-relay-contract.test.ts',
+      'tests/production-evidence-gate.ts',
+      'tests/release-manifest-gate.ts',
+      '.github/workflows/ci.yml',
+      'docs/runbooks/ecs-candidate-safe-sync.md',
+      'docs/runbooks/ecs-verified-compose-deploy.md',
+      'docs/runbooks/scanner-callback-canary.md',
+      'AGENTS.md',
+      'infra/scripts/prepare-ecs-candidate-bundle.sh',
+      'tests/ecs-candidate-bundle-contract.test.ts',
+      'tests/test-entrypoint-coverage.ts',
+      'tests/scanner-callback-canary-evidence.test.ts',
+    ]) expect(manifest, `${path} must be compared with the remote checkout`).toContain(path)
+  })
+
   it('keeps host deployment entrypoints executable while verifier modules remain data', () => {
     for (const path of [
       'infra/scripts/render-ecs-production-compose.sh',

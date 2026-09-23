@@ -2,6 +2,8 @@
 
 `infra/scripts/deploy-verified-ecs-compose.sh` 只在 ECS 宿主的已审查发布目录运行。它不建立 SSH 连接，也不会从开发机复制配置、密钥或生产证据。执行器依次绑定干净提交和 `candidate-identity.txt`、复制并校验 rendered Compose 与生产配置、运行完整 ECS preflight、保存现网容器状态、消费 deployment nonce、执行迁移、通过两个运行角色验证数据库已到候选完整迁移链、启动摘要固定的服务，最后核对 `/livez`、`/readyz`、`/releasez`、数据库支持的鉴权请求和生产 canary。
 
+完整 ECS preflight 会验证摘要固定的 Ops UI 镜像带有构建时 auth-mode 标签，并要求其值与受保护生产配置中的 API `OPS_AUTH_MODE` 一致。缺少标签或选择了 password/oidc 不匹配的镜像时，preflight 在消费 nonce 或任何运行时变更前退出。
+
 渲染器、部署器、回滚器、release control installer、受保护的 backup/bundle/preidentity 控制源码和 bundle verifier 必须同时出现在候选对比清单与 release manifest 的 SHA-256 artifacts 中。候选包里的完整 `candidate-source.tar` 以同一个 Git SHA 生成，因此也包含这些文件；任一文件缺失或字节变化都必须重新生成发布清单，不能沿用旧签名证据。
 
 受保护控制只能从精确发布提交的已审查源码安装。安装时以 root 从空环境调用 `env -i /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node /srv/merchant-releases/RELEASE_ID/infra/scripts/install-ecs-release-controls.mjs`，并完整传入 `--control`、绝对 `--source`、`--source-sha256`、绝对 `--node` 和 `--node-sha256`；固定 runtime、安装顺序、backup source policy 和逐项命令见 evidence bundle attester runbook。仓库源码的 executable bit 不构成授权，安装器也不负责密钥、签名、部署或业务数据变更。

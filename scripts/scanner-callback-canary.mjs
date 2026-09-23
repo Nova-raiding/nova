@@ -73,6 +73,7 @@ export function canaryAdmission(env, execute) {
   if (execute) {
     if (env.SCANNER_CANARY_CONFIRM !== `${expectedReleaseId}:${workspaceId}`) throw new Error('SCANNER_CANARY_CONFIRM must exactly bind release and workspace')
     if (env.SCANNER_CANARY_WORKER_SCOPE_VERIFIED !== 'true') throw new Error('scanner worker workspace scope must be independently verified')
+    if (env.SCANNER_CANARY_RECOVERY_VERIFIED !== 'true') throw new Error('scanner recovery capability must be independently verified')
     if (env.SCANNER_CANARY_ENTITLEMENT_VERIFIED !== 'true') throw new Error('canary workspace asset.upload entitlement must be independently verified')
     requireValue(env.SCANNER_CANARY_API_TOKEN, 'SCANNER_CANARY_API_TOKEN')
   }
@@ -86,6 +87,23 @@ export async function runScannerCallbackCanary({ env = process.env, execute = fa
   const released = await json(await fetchImpl(canaryUrl(baseUrl, '/releasez'), { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(10_000) }))
   requireIdentity(released, expectedReleaseId, expectedSha)
   if (!execute) return { status: 'dry_run', evidenceType: 'unsigned_observation', releaseId: expectedReleaseId, workspaceId, writes: 0, proof: false }
+
+  // The scanner-specific /readyz may be 503 precisely because an old callback
+  // expired. The worker's recovery path depends on /healthz (database + Redis),
+  // so prove that dependency envelope before creating a quarantined asset.
+  const healthResponse = await fetchImpl(canaryUrl(baseUrl, '/healthz'), { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(10_000) })
+  const health = await json(healthResponse)
+  if (!healthResponse.ok || health.error != null || health.data?.persistence?.ready !== true || health.data?.redis?.ready !== true) {
+    throw new Error('CANARY_API_HEALTH_BLOCKED')
+  }
+
+  // Only the stale/missing accepted-callback gate may be bypassed for the
+  // recovery canary. Other readiness failures must stop before creating an
+  // asset that the worker may not be able to process.
+  const initialReadyResponse = await fetchImpl(canaryUrl(baseUrl, '/readyz'), { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(10_000) })
+  const initialReady = await json(initialReadyResponse)
+  const callbackOnlyBlock = initialReadyResponse.status === 503 && initialReady.error?.code === 'SCANNER_NOT_READY'
+  if (!callbackOnlyBlock && (!initialReadyResponse.ok || initialReady.error != null)) throw new Error('CANARY_READINESS_BLOCKED')
 
   const headers = { authorization: `Bearer ${env.SCANNER_CANARY_API_TOKEN}`, 'x-workspace-id': workspaceId }
   // A read proves this exact token can access this exact workspace, and checks

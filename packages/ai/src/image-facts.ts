@@ -1,4 +1,4 @@
-import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
+import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
@@ -70,6 +70,7 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
           ] }],
         })
       const providerKey = providerIdempotencyKey({ operation: 'ocr', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
+      assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
       const response = await withProviderRequestRetry(async () => {
         if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
         if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'ocr', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })

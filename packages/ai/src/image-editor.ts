@@ -1,4 +1,4 @@
-import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
+import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
@@ -46,7 +46,7 @@ function imageReferencesFromPayload(payload: unknown): string[] {
     ...(data && Array.isArray(data.images) ? data.images : []),
     ...(result && Array.isArray(result.data) ? result.data : []),
   ]
-  return items.flatMap(item => {
+  const references = items.flatMap(item => {
     if (typeof item === 'string') return /^https:\/\//u.test(item) || /^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/iu.test(item) ? [item] : []
     if (!record(item)) return []
     if (typeof item.url === 'string' && /^https:\/\//u.test(item.url)) return [item.url]
@@ -54,6 +54,8 @@ function imageReferencesFromPayload(payload: unknown): string[] {
     if (typeof item.b64_json === 'string' && item.b64_json.trim()) return [`data:image/png;base64,${item.b64_json}`]
     return []
   }).filter((value, index, values) => values.indexOf(value) === index)
+  if (items.length > 0 && references.length === 0) throw new Error('IMAGE_ARTIFACT_RESPONSE_INVALID')
+  return references
 }
 
 function validateImageEditRelayPath(value: string | undefined) {
@@ -83,6 +85,7 @@ export class OpenAICompatibleImageEditGenerator implements ImageEditGenerator {
       const requestBody = JSON.stringify({ model: this.options.model, prompt: input.prompt, image: sourceImages, image_mode: 'optimize', edit_region: input.region, n: 1, size: '1024x1024', response_format: 'url' })
       const providerKey = providerIdempotencyKey({ operation: 'image_edit', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
       const response = await withProviderRequestRetry(async () => {
+        assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
         if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
         if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'image_edit', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
         controller.signal.throwIfAborted()
@@ -105,9 +108,15 @@ export class OpenAICompatibleImageEditGenerator implements ImageEditGenerator {
       let payload: unknown
       try { payload = JSON.parse(responseText) as unknown }
       catch (error) { throwProviderOutcomeUnknown(providerKey, 'image edit provider response parsing', error) }
-      await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image_edit', model: this.options.model, context: { ...input.usageContext, billingUnits: 1, providerAttemptId: providerKey } })
-      const images = imageReferencesFromPayload(payload).slice(0, 1)
-      if (images.length !== 1) throwProviderOutcomeUnknown(providerKey, 'image edit provider incomplete result')
+      let images: string[]
+      try {
+        images = imageReferencesFromPayload(payload)
+      } catch (error) {
+        await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image_edit', model: this.options.model, context: { ...input.usageContext, providerAttemptId: providerKey } })
+        throwProviderOutcomeUnknown(providerKey, 'image edit artifact parsing failed after usage settlement', error)
+      }
+      const usage = await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image_edit', model: this.options.model, context: { ...input.usageContext, observedArtifactCount: images.length, providerAttemptId: providerKey } })
+      if (usage.metadata?.artifact_count_mismatch === true || images.length !== 1) throwProviderOutcomeUnknown(providerKey, 'image edit provider artifact count does not match reported usage')
       return images
     } finally { clearTimeout(timeout) }
   }

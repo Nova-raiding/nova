@@ -49,7 +49,7 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(35)
+    expect(manifest.artifacts).toHaveLength(38)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',
@@ -63,6 +63,9 @@ describe('release manifest', () => {
       'infra/scripts/stage-verified-ecs-release.sh',
       'infra/scripts/ecs-one-click-deploy.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
+      'infra/scripts/deploy-preflight-ecs.sh',
+      'infra/scripts/build-ecs-release-images.sh',
+      'infra/scripts/verify-ecs-ops-auth-mode.sh',
       'infra/scripts/rollback-ecs-compose.sh',
       'infra/scripts/invoke-ecs-automatic-rollback.sh',
       'infra/scripts/install-ecs-release-controls.mjs',

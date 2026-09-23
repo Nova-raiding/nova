@@ -30,6 +30,7 @@ describe('bounded ECS release image builder', () => {
     expect(source).toContain('ECS_OPS_UI_LOGIN_URL')
     expect(source).toContain('ECS_OPS_AUTH_MODE')
     expect(source).toContain('--build-arg "OPS_CONSOLE_AUTH_MODE=$ops_auth_mode"')
+    expect(source).toContain('--label "com.storenova.ops-auth-mode=$ops_auth_mode"')
     expect(source).toContain('--build-arg "VITE_OPS_LOGIN_URL=$ops_login_url"')
   })
 
@@ -149,6 +150,7 @@ describe('bounded ECS release image builder', () => {
     const dockerLog = readFileSync(log, 'utf8')
     expect(dockerLog.match(/builder prune -f --keep-storage 1GB/gu)).toHaveLength(2)
     expect(dockerLog).toContain('--label org.opencontainers.image.revision=')
+    expect(dockerLog).toContain('--label com.storenova.ops-auth-mode=oidc')
     expect(dockerLog).toContain('--build-arg VITE_OPS_LOGIN_URL=https://sso.example.test/authorize?client_id=ops')
     expect(dockerLog).toContain('infra/docker/pilot-gateway-https.Dockerfile')
     expect(dockerLog).not.toMatch(/compose| run /u)

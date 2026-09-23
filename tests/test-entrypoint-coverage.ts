@@ -147,6 +147,10 @@ export const UNCOLLECTED_VITEST_TEST_FILES: readonly UncollectedTestFile[] = [
     file: 'apps/api/src/canonical-backfill-contract.test.ts',
     reason: 'Quarantined merchant bearer-login contract. It is excluded from the default suite (NON_HERMETIC_TEST_FILES) and no dedicated launcher binds it: its own comment says it is not claimed as passing until a signed, isolated runtime migration exists. Not a placeholder — a gap with an owner, tracked here because "has no entrypoint at all" is a different defect from "runs somewhere else".',
   },
+  {
+    file: 'demo/merchant-studio/scripts/verify-production-copy.test.mjs',
+    reason: 'This is a Node built-in test, not a Vitest suite. The merchant-studio package exposes test:production-copy-guard and CI invokes that named script directly; it is listed here so the Vitest-only coverage scanner does not mistake the Node test for an orphan.',
+  },
 ]
 
 /** Browser specs no Playwright project or runner argument schedules. */

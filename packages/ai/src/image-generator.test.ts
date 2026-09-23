@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { OpenAICompatibleImageGenerator, createImageGeneratorFromEnv } from './image-generator.js'
 import { OpenAICompatibleImageEditGenerator, createImageEditGeneratorFromEnv } from './image-editor.js'
+import type { RelayUsageRecord } from './relay-usage.js'
 
 const VALID_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
@@ -42,7 +43,7 @@ describe('image generator', () => {
   it('maps URL and base64 provider results into safe image references', async () => {
     const generator = new OpenAICompatibleImageGenerator({
       baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
-      fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ url: 'https://cdn.example/one.png' }, { b64_json: 'aGVsbG8=' }] }), { status: 200 }),
+      fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, output_image_count: 2, cost_cny: 0.001 }, data: [{ url: 'https://cdn.example/one.png' }, { b64_json: 'aGVsbG8=' }] }), { status: 200 }),
     })
     await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 2 })).resolves.toEqual(['https://cdn.example/one.png', 'data:image/png;base64,aGVsbG8='])
   })
@@ -60,6 +61,7 @@ describe('image generator', () => {
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async () => new Response(JSON.stringify({
         data: [{ url: 'https://cdn.example/one.png' }],
+        usage: { output_image_count: 3 },
         metadata: {
           request_id: 'provider-request-3',
           output: { choices: [
@@ -84,7 +86,7 @@ describe('image generator', () => {
       endpoint = String(url)
       body = init?.body as FormData
       expect(new Headers(init?.headers).has('content-type')).toBe(false)
-      return new Response(JSON.stringify({ id: 'image-test-request', usage: { total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
+      return new Response(JSON.stringify({ id: 'image-test-request', usage: { total_tokens: 2, output_image_count: 1, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
     } })
     await generator.generate({ productTitle: '外套', direction: '白底', count: 1, mode: 'optimize', sourceAssetRefs: ['asset_source_1'], sourceImages: ['data:image/png;base64,AQID'] })
     expect(endpoint).toBe('https://relay.example/images/edits')
@@ -96,7 +98,7 @@ describe('image generator', () => {
     const source = 'data:image/png;base64,AQID'
     const generator = new OpenAICompatibleImageGenerator({
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
-      fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'AQID' }] }), { status: 200 }),
+      fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { total_tokens: 2, output_image_count: 1, cost_cny: 0.001 }, data: [{ b64_json: 'AQID' }] }), { status: 200 }),
     })
     await expect(generator.generate({ productTitle: '外套', direction: '白底主图', count: 1, mode: 'optimize', sourceImages: [source] }))
       .rejects.toMatchObject({ code: 'IMAGE_OUTPUT_UNCHANGED', providerOutcome: 'failed', retryable: false })
@@ -115,7 +117,7 @@ describe('image generator', () => {
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
-        return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 })
+        return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, output_image_count: 1, cost_cny: 0.001 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 })
       },
     })
     await generator.generate({
@@ -142,9 +144,61 @@ describe('image generator', () => {
   it('does not deliver image artifacts when the usage receipt cannot be recorded', async () => {
     const generator = new OpenAICompatibleImageGenerator({
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model',
-      fetch: async () => new Response(JSON.stringify({ id: 'unsettled-image', data: [{ b64_json: VALID_PNG }] }), { status: 200 }),
+      fetch: async () => new Response(JSON.stringify({ id: 'unsettled-image', usage: { output_image_count: 1 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 }),
     })
     await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 1, usageContext: { workspaceId: 'ws_image', actionId: 'image:unsettled' } })).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'sink' })
+  })
+
+  it('settles actual output units and rejects a conflicting provider image count', async () => {
+    const sink = vi.fn<(record: RelayUsageRecord) => { recorded: true; costEvidence: true }>(() => ({ recorded: true, costEvidence: true }))
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: sink,
+      fetch: async () => new Response(JSON.stringify({ id: 'image-count-mismatch', usage: { output_image_count: 2, cost_cny: 0.02 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 }),
+    })
+    await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 1 })).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ providerRequestId: 'image-count-mismatch', costCny: 0.02, metadata: expect.objectContaining({ billing_units: 2, observed_artifact_count: 1, artifact_count_mismatch: true }) }))
+  })
+
+  it('records the provider receipt but does not deliver a malformed image result body', async () => {
+    const sink = vi.fn<(record: RelayUsageRecord) => { recorded: true; costEvidence: true }>(() => ({ recorded: true, costEvidence: true }))
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: sink,
+      fetch: async () => new Response(JSON.stringify({ id: 'malformed-image-result', usage: { output_image_count: 1, cost_cny: 0.01 }, data: [{}] }), { status: 200 }),
+    })
+    await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 1 })).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ providerRequestId: 'malformed-image-result', costCny: 0.01, metadata: expect.objectContaining({ billing_units: 1, billing_units_evidence: 'provider_usage' }) }))
+    expect(sink.mock.calls[0]?.[0].metadata).not.toHaveProperty('observed_artifact_count')
+  })
+
+  it('leaves a malformed image response unsettled when provider units are absent', async () => {
+    const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: sink,
+      fetch: async () => new Response(JSON.stringify({ id: 'malformed-image-unmetered', cost_cny: 0.01, data: [{}] }), { status: 200 }),
+    })
+    await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 1 })).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage' })
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('blocks production dispatch before a missing usage sink can incur provider cost', async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ data: [{ b64_json: VALID_PNG }] }), { status: 200 }))
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model',
+      relaySecurity: { environment: 'production', allowedHosts: ['relay.example'] }, fetch,
+    })
+    await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 1 })).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'sink' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('records actual provider units but blocks a malformed image edit artifact', async () => {
+    const sink = vi.fn<(record: RelayUsageRecord) => { recorded: true; costEvidence: true }>(() => ({ recorded: true, costEvidence: true }))
+    const generator = new OpenAICompatibleImageEditGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'edit-model', usageSink: sink,
+      fetch: async () => new Response(JSON.stringify({ id: 'malformed-image-edit', usage: { output_image_count: 1, cost_cny: 0.01 }, data: [{}] }), { status: 200 }),
+    })
+    await expect(generator.generate({ prompt: '优化背景', sourceImages: [{ bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png' }], region: { x: 0, y: 0, width: 1, height: 1 } })).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ providerRequestId: 'malformed-image-edit', costCny: 0.01, metadata: expect.objectContaining({ billing_units: 1, billing_units_evidence: 'provider_usage' }) }))
+    expect(sink.mock.calls[0]?.[0].metadata).not.toHaveProperty('observed_artifact_count')
   })
 
   it('turns confirmed marketing inputs into a designed main-image layer', async () => {
@@ -153,7 +207,7 @@ describe('image generator', () => {
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
-        return new Response(JSON.stringify({ data: [{ b64_json: VALID_PNG }] }), { status: 200 })
+        return new Response(JSON.stringify({ usage: { output_image_count: 1 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 })
       },
     })
     await generator.generate({
@@ -178,7 +232,7 @@ describe('image generator', () => {
       fetch: async (_url, init) => {
         const body = JSON.parse(String(init?.body)) as { prompt: string }
         prompt = body.prompt
-        return new Response(JSON.stringify({ data: [{ b64_json: VALID_PNG }] }), { status: 200 })
+        return new Response(JSON.stringify({ usage: { output_image_count: 1 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 })
       },
     })
     await generator.generate({ productTitle: '外套', direction: '详情长图', count: 1, visualBrief: { size: '1024x4096', outputVariant: 'detail_long', detailSections: ['首屏价值主张：商品与核心收益', '参数规格：尺寸与适配'], marketingLabels: ['活动价 ¥99.00'] } })
@@ -194,7 +248,7 @@ describe('image generator', () => {
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init) => {
         prompt = (JSON.parse(String(init?.body)) as { prompt: string }).prompt
-        return new Response(JSON.stringify({ data: [{ b64_json: VALID_PNG }] }), { status: 200 })
+        return new Response(JSON.stringify({ usage: { output_image_count: 1 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 })
       },
     })
     await generator.generate({ productTitle: '外套', direction: '夏季活动 Banner', count: 1, visualBrief: { platform: 'taobao', placement: '活动 Banner', outputVariant: 'banner', marketingLabels: ['活动价 ¥99.00', '立即抢购'] } })
@@ -210,7 +264,7 @@ describe('image generator', () => {
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
-        return new Response(JSON.stringify({ data: [{ b64_json: VALID_PNG }] }), { status: 200 })
+        return new Response(JSON.stringify({ usage: { output_image_count: 1 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 })
       },
     })
     await generator.generate({ productTitle: '外套', direction: '白底主图', count: 1, visualBrief: { platform: 'taobao', placement: '商品主图' } })
@@ -224,7 +278,7 @@ describe('image generator', () => {
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
-        return new Response(JSON.stringify({ data: [{ b64_json: VALID_PNG }] }), { status: 200 })
+        return new Response(JSON.stringify({ usage: { output_image_count: 1 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 })
       },
     })
     await generator.generate({ productTitle: '浅蓝色防晒外套', direction: '重新设计构图和户外通勤场景', count: 1, visualBrief: { platform: 'taobao', placement: '商品主图' } })
@@ -239,7 +293,7 @@ describe('image generator', () => {
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init) => {
         prompt = (JSON.parse(String(init?.body)) as { prompt: string }).prompt
-        return new Response(JSON.stringify({ data: [{ b64_json: VALID_PNG }] }), { status: 200 })
+        return new Response(JSON.stringify({ usage: { output_image_count: 1 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 })
       },
     })
     await generator.generate({ productTitle: '轻云防晒外套', direction: '活动头图', count: 1, visualBrief: { outputVariant: 'banner', marketingLabels: ['轻量通勤', '立即查看'] } })
@@ -270,7 +324,7 @@ describe('image generator', () => {
 
   it('allows a provider-specific image path while rejecting absolute paths', async () => {
     let endpoint = ''
-    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }), path: '/v1/image/generate', fetch: async url => { endpoint = String(url); return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 }) } })
+    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }), path: '/v1/image/generate', fetch: async url => { endpoint = String(url); return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, output_image_count: 1, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 }) } })
     await generator.generate({ productTitle: '外套', direction: '白底', count: 1 })
     expect(endpoint).toBe('https://relay.example/v1/image/generate')
     expect(() => new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }), path: 'https://evil.example/generate' })).toThrow('safe relative path')
@@ -279,7 +333,7 @@ describe('image generator', () => {
   it('sends approved source image bytes to the relay image-to-image endpoint', async () => {
     let body: Record<string, unknown> | undefined
     let endpoint = ''
-    const generator = new OpenAICompatibleImageEditGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'edit-model', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (url, init) => { endpoint = String(url); body = JSON.parse(String(init?.body)) as Record<string, unknown>; return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 }) } })
+    const generator = new OpenAICompatibleImageEditGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'edit-model', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (url, init) => { endpoint = String(url); body = JSON.parse(String(init?.body)) as Record<string, unknown>; return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, output_image_count: 1, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 }) } })
     await expect(generator.generate({ prompt: '优化背景', sourceImages: [{ bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png' }], region: { x: 0.1, y: 0.2, width: 0.5, height: 0.4 } })).resolves.toHaveLength(1)
     expect(endpoint).toBe('https://relay.example/images/generations')
     expect(body).toMatchObject({ image: ['data:image/png;base64,AQID'], image_mode: 'optimize', edit_region: { x: 0.1, y: 0.2, width: 0.5, height: 0.4 }, size: '1024x1024', response_format: 'url' })
@@ -330,7 +384,7 @@ describe('image generator', () => {
       fetch: (async (_url, init) => {
         const headers = init?.headers as Record<string, string>
         key = headers['idempotency-key'] ?? ''
-        return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
+        return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, output_image_count: 1, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
       }) as typeof fetch,
     })
     await generator.generate({ productTitle: '外套', direction: '白底', count: 1 }, { providerOperationKey: 'image_provider_operation_reserved_1' })
@@ -413,7 +467,7 @@ it('preserves a per-job long page canvas in the real multipart edit request', as
     const body = init?.body as FormData
     expect(body.get('size')).toBe('1024x4096')
     expect(body.get('prompt')).toContain('完整商品详情页长图')
-    return new Response(JSON.stringify({ id: 'long-page', usage: { total_tokens: 1, cost_cny: 0.01 }, data: [{ url: 'https://cdn.example/long.png' }] }))
+    return new Response(JSON.stringify({ id: 'long-page', usage: { total_tokens: 1, output_image_count: 1, cost_cny: 0.01 }, data: [{ url: 'https://cdn.example/long.png' }] }))
   } })
   await generator.generate({ productTitle: '冲锋衣', direction: '六章节详情页', count: 1, mode: 'optimize', sourceImages: ['data:image/png;base64,AQID'], visualBrief: { size: '1024x4096' } })
 })
@@ -426,7 +480,7 @@ it('sends Qwen native reference messages and long-page parameters through the co
     expect(body.parameters).toEqual({ size: '1024*4096', n: 1, watermark: false })
     expect(body.input.messages[0].content[0]).toEqual({ image: source })
     expect(body.input.messages[0].content[1].text).toContain('完整商品详情页长图')
-    return new Response(JSON.stringify({ id: 'native-long', usage: { cost_cny: 0.01 }, data: [{ url: 'https://cdn.example/long.png' }] }))
+    return new Response(JSON.stringify({ id: 'native-long', usage: { output_image_count: 1, cost_cny: 0.01 }, data: [{ url: 'https://cdn.example/long.png' }] }))
   } })
   await generator.generate({ productTitle: '冲锋衣', direction: '六章节详情页', count: 1, mode: 'optimize', sourceImages: [source], visualBrief: { size: '1024x4096' } })
 })

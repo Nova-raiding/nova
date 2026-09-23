@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/verify-production-copy.mjs",
+    "test:production-copy-guard": "node --test scripts/verify-production-copy.test.mjs",
     "preview": "vite preview"
   },
   "license": "UNLICENSED",

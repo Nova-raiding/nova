@@ -72,7 +72,11 @@ describe('local plugin browser PKCE', () => {
 
     const unauthenticated = await fetch(authorization)
     expect(unauthenticated.status).toBe(401)
-    expect(unauthenticated.headers.get('content-security-policy')).toContain("form-action 'self' http://127.0.0.1:")
+    const unauthenticatedFormAction = unauthenticated.headers.get('content-security-policy')
+      ?.split(';').map(directive => directive.trim()).find(directive => directive.startsWith('form-action'))
+    const expectedFormAction = ['form-action', "'self'", new URL(base).origin, new URL(redirectUri).origin]
+    expect(unauthenticatedFormAction?.split(/\s+/u)).toEqual(expectedFormAction)
+    expect(unauthenticatedFormAction).not.toContain('127.0.0.1:*')
     expect(await unauthenticated.text()).toContain('打开商家后台登录')
 
     const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
@@ -80,9 +84,10 @@ describe('local plugin browser PKCE', () => {
     expect(cookie).toBeTruthy()
     const consent = await fetch(authorization, { headers: { cookie: cookie! } })
     expect(consent.status).toBe(200)
-    expect(consent.headers.get('content-security-policy')).toContain("form-action 'self' http://127.0.0.1:")
-    expect(consent.headers.get('content-security-policy')).toContain(new URL(redirectUri).origin)
-    expect(consent.headers.get('content-security-policy')).not.toContain('127.0.0.1:*')
+    const consentFormAction = consent.headers.get('content-security-policy')
+      ?.split(';').map(directive => directive.trim()).find(directive => directive.startsWith('form-action'))
+    expect(consentFormAction?.split(/\s+/u)).toEqual(expectedFormAction)
+    expect(consentFormAction).not.toContain('127.0.0.1:*')
     const consentHtml = await consent.text()
     expect(consentHtml).toContain('确认授权本地插件')
     expect(consentHtml).not.toContain(password)

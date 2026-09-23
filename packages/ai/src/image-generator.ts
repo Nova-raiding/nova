@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
+import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, ProviderRequestFailedError, ProviderOutcomeUnknownError, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
@@ -172,7 +172,7 @@ function imageReferencesFromPayload(payload: unknown): string[] {
     return choice.message.content
   })
   const items = [...choiceItems, ...rootItems]
-  return items.flatMap(item => {
+  const references = items.flatMap(item => {
     if (typeof item === 'string') {
       if (/^https:\/\//u.test(item) || /^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/iu.test(item)) return [item]
       return []
@@ -183,6 +183,8 @@ function imageReferencesFromPayload(payload: unknown): string[] {
     if (typeof item.b64_json === 'string' && item.b64_json.trim()) return [`data:image/png;base64,${item.b64_json}`]
     return []
   }).filter((value, index, values) => values.indexOf(value) === index)
+  if (items.length > 0 && references.length === 0) throw new Error('IMAGE_ARTIFACT_RESPONSE_INVALID')
+  return references
 }
 
 function dataUrlDigest(value: string): string | undefined {
@@ -354,6 +356,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         }
       }
       const response = await withProviderRequestRetry(async () => {
+        assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
         if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
         if (this.options.beforeRequest) await this.options.beforeRequest({ operation: editing ? 'image_edit' : 'image_generate', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
         controller.signal.throwIfAborted()
@@ -383,30 +386,39 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         throwProviderOutcomeUnknown(providerKey, 'image provider response parsing', error)
       }
       const providerError = providerErrorSummary(payload)
-      imageTrace('provider.response', { model: this.options.model, provider_request_id: providerKey, http_status: response.status, provider_error: providerError.summary ?? null, response_item_count: record(payload) && Array.isArray(payload.data) ? payload.data.length : 0, parsed_image_count: imageReferencesFromPayload(payload).length })
+      let parsedImageCount: number | null = null
+      try { parsedImageCount = imageReferencesFromPayload(payload).length } catch { /* malformed artifacts are handled below, after usage settlement */ }
+      imageTrace('provider.response', { model: this.options.model, provider_request_id: providerKey, http_status: response.status, provider_error: providerError.summary ?? null, response_item_count: record(payload) && Array.isArray(payload.data) ? payload.data.length : 0, parsed_image_count: parsedImageCount })
       assertProviderResponseAccepted(response, providerKey, 'image provider', providerError.summary)
       if (providerError.summary) {
         const requestId = providerError.requestId
         if (requestId) throw new ProviderOutcomeUnknownError(providerKey, `image provider returned ${providerError.summary}; outcome requires reconciliation`, undefined, response.status, requestId, providerError.summary)
         throw new ProviderRequestFailedError(providerKey, response.status || 502, `image provider returned ${providerError.summary}`, undefined, providerError.summary)
       }
-      const images = imageReferencesFromPayload(payload).slice(0, input.count)
-      if (images.length !== input.count) throwProviderOutcomeUnknown(providerKey, 'image provider incomplete result')
+      let images: string[]
+      try {
+        images = imageReferencesFromPayload(payload)
+      } catch (error) {
+        // Artifact parsing can fail after the provider has already accepted
+        // and billed the request. Keep only explicit provider usage in the
+        // receipt; never infer units from request parameters or malformed
+        // artifacts, then leave the artifact outcome pending reconciliation.
+        await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image', model: this.options.model, context: { ...input.usageContext, providerAttemptId: providerKey } })
+        throwProviderOutcomeUnknown(providerKey, 'image provider artifact parsing failed after usage settlement', error)
+      }
+      // Record the provider-reported billing count even when its artifacts are
+      // malformed, so a billed response remains reconcilable. Artifact counts
+      // are diagnostic only and never substituted for provider usage.
+      const usage = await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image', model: this.options.model, context: { ...input.usageContext, observedArtifactCount: images.length, providerAttemptId: providerKey } })
+      if (usage.metadata?.artifact_count_mismatch === true || images.length !== input.count) throwProviderOutcomeUnknown(providerKey, 'image provider artifact count does not match request and reported usage')
       if (input.mode === 'optimize' && sourceImages.length > 0) {
         const sourceDigests = new Set(sourceImages.map(dataUrlDigest).filter((value): value is string => Boolean(value)))
         const unchanged = images.some(image => {
           const digest = dataUrlDigest(image)
           return Boolean(digest && sourceDigests.has(digest))
         })
-        if (unchanged) {
-          throw new ImageOutputUnchangedError(providerKey)
-        }
+        if (unchanged) throw new ImageOutputUnchangedError(providerKey)
       }
-      // Artifact delivery is downstream of durable usage/cost settlement. A
-      // provider response must never reach the worker callback when its
-      // receipt cannot be recorded; this is the image equivalent of the text,
-      // OCR, edit and video adapters' fail-closed boundary.
-      await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image', model: this.options.model, context: { ...input.usageContext, billingUnits: input.count, providerAttemptId: providerKey } })
       const finalImages = hasMarketingLayer
         ? await composeMarketingImages(images, { productTitle: input.productTitle, ...brief }, this.fetchImpl, { signal: controller.signal })
         : images

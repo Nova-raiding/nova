@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
+import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { inspectOutboundUrl } from '../../connectors/src/outbound-security.js'
 import { assertRelayBaseUrl, assertRelayUrl, relaySecurityFromEnv, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
@@ -423,6 +423,7 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
         const logicalAttemptKey = input.usageContext?.actionId?.trim()
           ? `mm-${createHash('sha256').update(JSON.stringify([input.usageContext.workspaceId?.trim() ?? '', input.usageContext.actionId.trim(), this.options.model.trim(), attempt, requestBody]), 'utf8').digest('hex')}`
           : providerIdempotencyKey({ operation: 'text_generate', model: this.options.model, workspaceId: input.usageContext?.workspaceId, requestBody })
+        assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
         const response = await withProviderRequestRetry(async () => {
           if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
           if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'text_generate', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })

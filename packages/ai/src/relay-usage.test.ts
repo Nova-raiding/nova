@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { emitRelayUsage, ModelUsageEvidenceMissingError, ModelUsageSettlementPendingError, parseRelayUsage, relayUsageReceiptKey } from './relay-usage.js'
 
 describe('relay usage normalization', () => {
@@ -72,12 +72,65 @@ describe('relay usage normalization', () => {
     expect(usage).toMatchObject({ providerRequestId: 'request_result', inputTokens: 7, outputTokens: 3, totalTokens: 10, costCny: 0.02, metadata: { usage_observed: true } })
   })
 
-  it('records an unmetered provider response instead of silently losing cost evidence', () => {
-    expect(parseRelayUsage({ data: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1' })).toMatchObject({ modality: 'image', model: 'image-v1', metadata: { usage_observed: true } })
+  it('requires actual image units instead of promoting an artifact-only response to metered usage', async () => {
+    const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    await expect(emitRelayUsage(
+      sink,
+      { id: 'unmetered-image', cost_cny: 0.01, data: [{ url: 'https://cdn.example/image.png' }] },
+      new Headers(),
+      { modality: 'image', model: 'image-v1', context: { providerAttemptId: 'attempt_unmetered_image' } },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage' })
+    expect(sink).not.toHaveBeenCalled()
   })
 
   it('uses an image response body id when the relay omits request-id headers', () => {
-    expect(parseRelayUsage({ id: 'image-response-123', data: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1' })).toMatchObject({ providerRequestId: 'image-response-123', metadata: { usage_observed: true } })
+    expect(parseRelayUsage({ id: 'image-response-123', usage: { output_image_count: 1 }, data: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1', context: { observedArtifactCount: 1 } })).toMatchObject({ providerRequestId: 'image-response-123', metadata: { usage_observed: true, billing_units: 1, billing_units_evidence: 'provider_usage' } })
+  })
+
+  it('recognizes top-level image arrays through the sanitized usage parser', () => {
+    expect(parseRelayUsage({ id: 'image-response-456', usage: { output_image_count: 1 }, images: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1', context: { observedArtifactCount: 1 } })).toMatchObject({ providerRequestId: 'image-response-456', metadata: { usage_observed: true } })
+  })
+
+  it('rejects unsafe request ids on top-level image responses before the usage sink', async () => {
+    const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    await expect(emitRelayUsage(
+      sink,
+      { id: 'image-\u0001-injected', usage: { output_image_count: 1 }, images: [{ url: 'https://cdn.example/image.png' }] },
+      new Headers(),
+      { modality: 'image', model: 'image-v1', context: { observedArtifactCount: 1 } },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'identity' })
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['zero', 0],
+    ['fractional', 1.5],
+    ['malformed', 'one'],
+  ])('fails closed for %s provider image unit count', async (_label, outputImageCount) => {
+    const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    expect(parseRelayUsage(
+      { id: 'image-count-invalid', usage: { output_image_count: outputImageCount, cost_cny: 0.01 }, data: [{ url: 'https://cdn.example/image.png' }] },
+      new Headers(),
+      { modality: 'image', model: 'image-v1', context: { observedArtifactCount: 1 } },
+    )).toMatchObject({ providerRequestId: 'image-count-invalid', costCny: 0.01, metadata: { usage_observed: false } })
+    await expect(emitRelayUsage(
+      sink,
+      { id: 'image-count-invalid', usage: { output_image_count: outputImageCount, cost_cny: 0.01 }, data: [{ url: 'https://cdn.example/image.png' }] },
+      new Headers(),
+      { modality: 'image', model: 'image-v1', context: { observedArtifactCount: 1, providerAttemptId: 'attempt_image_count_invalid' } },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage' })
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when provider image units disagree with the returned artifact count', async () => {
+    const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    await expect(emitRelayUsage(
+      sink,
+      { id: 'image-count-mismatch', usage: { output_image_count: 2, cost_cny: 0.02 }, data: [{ url: 'https://cdn.example/image.png' }] },
+      new Headers(),
+      { modality: 'image', model: 'image-v1', context: { observedArtifactCount: 1, providerAttemptId: 'attempt_image_count_mismatch' } },
+    )).resolves.toMatchObject({ providerRequestId: 'image-count-mismatch', costCny: 0.02, metadata: { usage_observed: true, billing_units: 2, billing_units_evidence: 'provider_usage', observed_artifact_count: 1, artifact_count_mismatch: true } })
+    expect(sink).toHaveBeenCalledOnce()
   })
 
   it('does not treat a cost-only response as usage evidence', async () => {

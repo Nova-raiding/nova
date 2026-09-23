@@ -107,7 +107,15 @@ function inspect(binary, id) {
   if (!fullId.test(value?.Id ?? '')) throw new Error('candidate Docker inspection has no full ID')
   return value
 }
-function probe(port, releaseId, gitSha, imageSetDigest) {
+export function assertCandidateReleaseIdentity(value, { releaseId, gitSha, manifestSha256, imageSetDigest }) {
+  const release = value?.data?.release ?? value?.release
+  if (value?.data?.ready !== true || release?.release_id !== releaseId ||
+      release?.release_git_sha !== gitSha || release?.manifest_sha256 !== manifestSha256 ||
+      release?.image_set_digest !== imageSetDigest) throw new Error('candidate release identity mismatch')
+  return release
+}
+
+function probe(port, releaseId, gitSha, manifestSha256, imageSetDigest) {
   return new Promise((resolve, reject) => {
     const req = request({ hostname: '127.0.0.1', port, servername: 'yxsona.com', path: '/releasez', method: 'GET',
       headers: { Host: 'yxsona.com' }, rejectUnauthorized: true, timeout: 5000 }, res => {
@@ -116,9 +124,8 @@ function probe(port, releaseId, gitSha, imageSetDigest) {
       res.on('end', () => {
         try {
           const value = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-          const release = value?.data?.release
-          if (res.statusCode !== 200 || value?.data?.ready !== true || release?.release_id !== releaseId ||
-              release?.release_git_sha !== gitSha || release?.image_set_digest !== imageSetDigest) throw new Error('candidate release identity mismatch')
+          if (res.statusCode !== 200) throw new Error('candidate release identity mismatch')
+          assertCandidateReleaseIdentity(value, { releaseId, gitSha, manifestSha256, imageSetDigest })
           resolve()
         } catch (error) { reject(error) }
       })
@@ -144,9 +151,11 @@ async function main() {
   const gateway = compose?.services?.['pilot-gateway']
   const network = compose?.networks?.default?.name
   const gitSha = api?.environment?.RELEASE_GIT_SHA
+  const manifestSha256 = api?.environment?.RELEASE_MANIFEST_SHA256
   const imageSetDigest = api?.environment?.RELEASE_IMAGE_SET_DIGEST
   if (gateway?.image !== gatewayImageRef || api?.environment?.RELEASE_ID !== releaseId ||
-      !/^[0-9a-f]{40}$/.test(gitSha ?? '') || !/^sha256:[0-9a-f]{64}$/.test(imageSetDigest ?? '') ||
+      !/^[0-9a-f]{40}$/.test(gitSha ?? '') || !/^[0-9a-f]{64}$/.test(manifestSha256 ?? '') ||
+      !/^sha256:[0-9a-f]{64}$/.test(imageSetDigest ?? '') ||
       !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(network ?? '')) throw new Error('candidate frozen Compose identity is incomplete')
   const imageId = docker(binary, ['image', 'inspect', '--format', '{{.Id}}', gatewayImageRef])
   if (!/^sha256:[0-9a-f]{64}$/.test(imageId) || !imageRefPattern.test(api?.image ?? '')) throw new Error('candidate image identities are invalid')
@@ -192,7 +201,7 @@ async function main() {
     if (!process.env.CANDIDATE_TLS_TEST_SKIP_PROBE) {
       let lastError
       for (let attempt = 0; attempt < 10; attempt += 1) {
-        try { await probe(port, releaseId, gitSha, imageSetDigest); lastError = null; break }
+        try { await probe(port, releaseId, gitSha, manifestSha256, imageSetDigest); lastError = null; break }
         catch (error) { lastError = error; await new Promise(resolve => setTimeout(resolve, 500)) }
       }
       if (lastError) throw lastError

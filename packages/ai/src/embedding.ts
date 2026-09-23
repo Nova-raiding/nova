@@ -2,7 +2,7 @@ import { readBoundedResponseText } from '../../connectors/src/bounded-response.j
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 import { assertProviderResponseAccepted, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { assertRelayBaseUrl, assertRelayUrl, relaySecurityFromEnv, type RelaySecurityPolicy } from './relay-security.js'
-import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
+import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 
 const MAX_EMBEDDING_INPUTS = 64
 const MAX_EMBEDDING_INPUT_CHARS = 32_000
@@ -40,6 +40,7 @@ export class OpenAICompatibleEmbeddingClient implements EmbeddingClient {
     if (!input.texts.length || input.texts.length > MAX_EMBEDDING_INPUTS || input.texts.some(text => typeof text !== 'string' || !text.trim() || text.length > MAX_EMBEDDING_INPUT_CHARS)) throw new Error('EMBEDDING_INPUT_INVALID')
     const body = JSON.stringify({ model: this.options.model, input: input.texts, encoding_format: 'float', ...(this.options.dimensions ? { dimensions: this.options.dimensions } : {}) })
     const attemptKey = providerIdempotencyKey({ operation: 'embedding', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody: body })
+    assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
     const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 90_000)
     try {
       const response = await withProviderRequestRetry(async () => {

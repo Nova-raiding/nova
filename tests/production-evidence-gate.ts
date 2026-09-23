@@ -76,7 +76,7 @@ function validateRestoreCapture(bytes: Buffer | undefined, evidence: Evidence, o
   let capture: Record<string, unknown>
   try { capture = JSON.parse(bytes.toString('utf8')) as Record<string, unknown> } catch { return [`${label} must contain JSON`] }
   if (!capture || typeof capture !== 'object' || Array.isArray(capture)) return [`${label} must contain a JSON object`]
-  const expected: Record<string, unknown> = { schema_version: 'pg17-isolated-restore-capture/1', status: 'pass', simulated: false, release_id: options.releaseId, release_git_sha: options.releaseGitSha, image_set_digest: options.imageSetDigest, manifest_sha256: options.manifestSha256, deployment_nonce_sha256: createHash('sha256').update(options.deploymentNonce).digest('hex'), backup_sha256: evidence.backup_sha256, restored_migration_prefix: '1:242:242', migrated_prefix: '1:244:244' }
+  const expected: Record<string, unknown> = { schema_version: 'pg17-isolated-restore-capture/1', status: 'pass', simulated: false, release_id: options.releaseId, release_git_sha: options.releaseGitSha, image_set_digest: options.imageSetDigest, manifest_sha256: options.manifestSha256, deployment_nonce_sha256: createHash('sha256').update(options.deploymentNonce).digest('hex'), backup_sha256: evidence.backup_sha256, restored_migration_prefix: '1:242:242', migrated_prefix: '1:245:245' }
   const errors = Object.entries(expected).filter(([key, value]) => capture[key] !== value).map(([key]) => `${label} ${key} does not match the protected restore capture`)
   for (const key of ['source_database_id_sha256', 'target_database_id_sha256', 'migration_chain_sha256', 'postgres_image_id', 'container_id', 'network_id'] as const) {
     const value = capture[key]
@@ -86,7 +86,7 @@ function validateRestoreCapture(bytes: Buffer | undefined, evidence: Evidence, o
   if (!/postgres:17-alpine@sha256:[a-f0-9]{64}$/u.test(String(capture.postgres_image_ref ?? ''))) errors.push(`${label} PostgreSQL image is not pinned PG17`)
   if (!/^merchant_restore_data_[a-f0-9]{24}$/u.test(String(capture.volume_name ?? ''))) errors.push(`${label} isolated volume identity is invalid`)
   if (capture.source_database_id_sha256 === capture.target_database_id_sha256) errors.push(`${label} target database is not isolated`)
-  if (!Array.isArray(capture.migration_chain_rows) || capture.migration_chain_rows.length !== 244 || capture.migration_chain_rows.some((row, index) => typeof row !== 'string' || !row.startsWith(`${index + 1}|`))) errors.push(`${label} migration chain is incomplete`)
+  if (!Array.isArray(capture.migration_chain_rows) || capture.migration_chain_rows.length !== 245 || capture.migration_chain_rows.some((row, index) => typeof row !== 'string' || !row.startsWith(`${index + 1}|`))) errors.push(`${label} migration chain is incomplete`)
   else if (createHash('sha256').update(capture.migration_chain_rows.join('\n')).digest('hex') !== capture.migration_chain_sha256) errors.push(`${label} migration chain digest is invalid`)
   if (!iso(capture.captured_at) || Date.parse(String(capture.captured_at)) > Date.parse(String(evidence.generated_at))) errors.push(`${label} capture timestamp is invalid`)
   if (iso(capture.captured_at) && Date.parse(String(capture.captured_at)) < Date.parse(String(evidence.source_backup_created_at))) errors.push(`${label} capture precedes the backup`)

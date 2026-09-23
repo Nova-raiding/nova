@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { isSecureEnvironment } from '../../connectors/src/outbound-security.js'
 
 export type RelayUsageModality = 'text' | 'image' | 'image_edit' | 'ocr' | 'video' | 'embedding'
 
@@ -9,7 +10,8 @@ export interface RelayUsageContext {
   runKey?: string
   contextLinkId?: string
   contextHash?: string
-  billingUnits?: number
+  /** Count of usable image artifacts parsed from the provider response; diagnostic only. */
+  observedArtifactCount?: number
   resolution?: string
   /** Request-side estimate used for budget preauthorization, never settlement. */
   preauthorizationDurationSeconds?: number
@@ -75,6 +77,11 @@ export class ModelUsageEvidenceMissingError extends Error {
     super(`model usage ${missing} evidence is missing`)
     this.name = 'ModelUsageEvidenceMissingError'
   }
+}
+
+/** Production model calls must have a durable settlement sink before dispatch. */
+export function assertUsageSinkConfiguredBeforeDispatch(sink: RelayUsageSink | undefined, environment: string | undefined = process.env.NODE_ENV): void {
+  if (isSecureEnvironment(environment) && !sink) throw new ModelUsageEvidenceMissingError('sink')
 }
 
 type RecordLike = Record<string, unknown>
@@ -160,6 +167,7 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   const costCny = firstNumber(usage?.cost_cny, usage?.costCny, root.cost_cny, root.costCny, data?.cost_cny, data?.costCny, nestedData?.cost_cny, nestedData?.costCny, result?.cost_cny, result?.costCny)
   const imageResultObserved = (defaults.modality === 'image' || defaults.modality === 'image_edit') && (
     (Array.isArray(root.data) && root.data.length > 0)
+    || (Array.isArray(root.images) && root.images.length > 0)
     || (data && Array.isArray(data.data) && data.data.length > 0)
     || (data && Array.isArray(data.images) && data.images.length > 0)
     || (result && Array.isArray(result.data) && result.data.length > 0)
@@ -189,14 +197,18 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // Cost is not usage. A relay that reports only a price has not provided
   // enough metering evidence to settle a model call safely.
   // Image relays commonly meter by generated image units rather than tokens.
-  // Treat a positive output_image_count as usage evidence; the pricing client
-  // then derives currency from the frozen billing_units context.
-  const outputImageCount = firstNumber(usage?.output_image_count, usage?.outputImageCount, root.output_image_count, data?.output_image_count, result?.output_image_count, metadata?.output_image_count)
+  // Only a positive provider-reported output_image_count is billing evidence;
+  // parsed artifacts are diagnostic and never substitute for provider usage.
+  const rawOutputImageCount = [usage?.output_image_count, usage?.outputImageCount, root.output_image_count, data?.output_image_count, result?.output_image_count, metadata?.output_image_count].find(value => value !== undefined)
+  const reportedOutputImageCount = rawOutputImageCount === undefined ? undefined : tokenFrom(rawOutputImageCount)
+  const reportedOutputImageCountValid = rawOutputImageCount === undefined || (reportedOutputImageCount !== undefined && reportedOutputImageCount > 0)
+  const observedArtifactCount = defaults.context?.observedArtifactCount
+  const observedArtifactCountValid = observedArtifactCount !== undefined && Number.isSafeInteger(observedArtifactCount) && observedArtifactCount >= 0
+  const imageArtifactCountMismatch = reportedOutputImageCount !== undefined && observedArtifactCountValid && reportedOutputImageCount !== observedArtifactCount
   const parsedProviderDurationSeconds = firstNumber(usage?.duration_seconds, usage?.durationSeconds)
   const providerDurationSeconds = parsedProviderDurationSeconds !== undefined && parsedProviderDurationSeconds > 0 ? parsedProviderDurationSeconds : undefined
-  // A successful image response is itself metering evidence when the relay
-  // omits token/usage metadata: each returned image is one billable unit and
-  // the caller supplies the requested count as the bounded billing context.
+  // Artifact arrays may identify a body request ID, but never prove billed
+  // image units by themselves.
   const videoEvidenceNode = data ?? result ?? nestedData ?? root
   // A generic response `id` is not proof that a video job was accepted: chat
   // style relays often echo an id even when no render was queued. Accept it
@@ -216,7 +228,10 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // envelope carried it. Persisting it keeps a queued (and possibly billed)
   // job reconcilable even when its usage cannot be settled locally.
   const videoJobId = defaults.modality === 'video' && videoRequestAccepted ? explicitVideoJobIdValue ?? statusBoundVideoIdValue : undefined
-  const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || providerDurationSeconds !== undefined || ((defaults.modality === 'image' || defaults.modality === 'image_edit') && outputImageCount !== undefined && outputImageCount > 0) || imageResultObserved
+  const imageModality = defaults.modality === 'image' || defaults.modality === 'image_edit'
+  const usageObserved = imageModality
+    ? rawOutputImageCount !== undefined && reportedOutputImageCountValid && reportedOutputImageCount !== undefined && reportedOutputImageCount > 0
+    : inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || providerDurationSeconds !== undefined
   const preauthorizationDurationSeconds = defaults.context?.preauthorizationDurationSeconds ?? defaults.context?.durationSeconds
   return {
     ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}),
@@ -241,7 +256,9 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
       // call, and without this id the queued (possibly billed) provider job
       // has no reconcilable identity anywhere in the ledger.
       ...(videoJobId ? { provider_job_id: videoJobId } : {}),
-      ...(defaults.context?.billingUnits ? { billing_units: defaults.context.billingUnits } : {}),
+      ...(imageModality && reportedOutputImageCount !== undefined ? { billing_units: reportedOutputImageCount, billing_units_evidence: 'provider_usage' } : {}),
+      ...(imageModality && observedArtifactCountValid ? { observed_artifact_count: observedArtifactCount } : {}),
+      ...(imageModality && imageArtifactCountMismatch ? { artifact_count_mismatch: true } : {}),
       ...(defaults.context?.resolution ? { resolution: defaults.context.resolution } : {}),
       ...(providerDurationSeconds !== undefined ? { duration_seconds: providerDurationSeconds, duration_evidence: 'provider_usage' } : {}),
       ...(preauthorizationDurationSeconds ? { preauthorization_duration_seconds: preauthorizationDurationSeconds, preauthorization_estimate: true } : {}),
@@ -251,22 +268,7 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
 }
 
 export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: unknown, headers: Headers, defaults: { modality: RelayUsageModality; model: string; context?: RelayUsageContext }) {
-  let usage = parseRelayUsage(payload, headers, defaults)
-  // Some OpenAI-compatible image relays return only `{data:[...]}` and omit
-  // all usage metadata. The returned artifact count is still bounded,
-  // provider-controlled evidence for one image unit.
-  if (!usage && (defaults.modality === 'image' || defaults.modality === 'image_edit') && record(payload)) {
-    const data = record(payload.data) ? payload.data : undefined
-    const result = data && record(data.result) ? data.result : undefined
-    const items = [
-      ...(Array.isArray(payload.data) ? payload.data : []),
-      ...(Array.isArray(payload.images) ? payload.images : []),
-      ...(data && Array.isArray(data.data) ? data.data : []),
-      ...(data && Array.isArray(data.images) ? data.images : []),
-      ...(result && Array.isArray(result.data) ? result.data : []),
-    ]
-    if (items.length > 0) usage = { modality: defaults.modality, model: defaults.model, ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}), ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}), ...(defaults.context?.runKey ? { runKey: defaults.context.runKey } : {}), ...(defaults.context?.providerAttemptId ? { providerAttemptId: defaults.context.providerAttemptId } : {}), providerRequestId: headers.get('x-oneapi-request-id') ?? (typeof payload.id === 'string' ? payload.id : undefined), observedAt: new Date().toISOString(), metadata: { usage_observed: true, billing_units: defaults.context?.billingUnits ?? items.length } }
-  }
+  const usage = parseRelayUsage(payload, headers, defaults)
   if (!usage || usage.metadata?.usage_observed !== true) throw new ModelUsageEvidenceMissingError('usage')
   if (!usage.providerRequestId?.trim() && !usage.providerAttemptId?.trim()) throw new ModelUsageEvidenceMissingError('identity')
   if (!sink) throw new ModelUsageEvidenceMissingError('sink')

@@ -198,6 +198,7 @@ if [ "$ops_auth_mode" = oidc ]; then
   build_image merchant-ops-ui infra/docker/ops-console.Dockerfile \
     --build-arg OPS_CONSOLE_BUILD_MODE=production \
     --build-arg "OPS_CONSOLE_AUTH_MODE=$ops_auth_mode" \
+    --label "com.storenova.ops-auth-mode=$ops_auth_mode" \
     --build-arg "VITE_API_BASE=${ECS_OPS_UI_API_BASE:-/api}" --build-arg VITE_BASE=/ops/ \
     --build-arg "VITE_OPS_LOGIN_URL=$ops_login_url" \
     --build-arg "RELEASE_ID=$release_id" --build-arg "RELEASE_GIT_SHA=$revision"
@@ -207,6 +208,7 @@ else
   build_image merchant-ops-ui infra/docker/ops-console.Dockerfile \
     --build-arg OPS_CONSOLE_BUILD_MODE=production \
     --build-arg "OPS_CONSOLE_AUTH_MODE=$ops_auth_mode" \
+    --label "com.storenova.ops-auth-mode=$ops_auth_mode" \
     --build-arg "VITE_API_BASE=${ECS_OPS_UI_API_BASE:-/api}" --build-arg VITE_BASE=/ops/ \
     --build-arg "RELEASE_ID=$release_id" --build-arg "RELEASE_GIT_SHA=$revision"
 fi

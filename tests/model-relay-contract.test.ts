@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, readRelayErrorRecovery, requireCanaryBudget, requireFiniteRelayTokenQuota, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
+import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, persistRelayCanaryEvidence, readRelayErrorRecovery, requireCanaryBudget, requireFiniteRelayTokenQuota, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -46,6 +46,32 @@ describe('production model relay contract', () => {
   it('requires an explicit per-run budget before any model request', () => {
     for (const value of [undefined, '', '0', '-1', 'NaN', 'Infinity']) expect(() => requireCanaryBudget(value)).toThrow('MODEL_RELAY_CANARY_MAX_TOTAL_CNY')
     expect(requireCanaryBudget('1.25')).toEqual({ limitCny: 1.25, reservedCny: 0 })
+  })
+
+  it('keeps partial production modality runs out of the final evidence path', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'relay-partial-evidence-'))
+    const path = join(directory, 'final-evidence.json')
+    const evidence = { schema_version: '1', release_id: 'release-1', results: [] }
+    try {
+      const partial = persistRelayCanaryEvidence({ path, environment: 'production', modalities: ['text', 'ocr'], evidence })
+      expect(partial).toEqual({ evidence: { ...evidence, state: 'partial' }, state: 'partial', written: false, exitCode: 1 })
+      expect(() => readFileSync(path, 'utf8')).toThrow()
+
+      const duplicateCoverage = persistRelayCanaryEvidence({ path, environment: 'production', modalities: ['text', 'image', 'image_edit', 'ocr', 'ocr'], evidence })
+      expect(duplicateCoverage).toMatchObject({ state: 'partial', written: false, exitCode: 1, evidence: { state: 'partial' } })
+      expect(() => readFileSync(path, 'utf8')).toThrow()
+    } finally { rmSync(directory, { recursive: true, force: true }) }
+  })
+
+  it('writes the final production evidence path only when all five modalities are requested once', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'relay-complete-evidence-'))
+    const path = join(directory, 'final-evidence.json')
+    const evidence = { schema_version: '1', release_id: 'release-1', results: [] }
+    try {
+      const persisted = persistRelayCanaryEvidence({ path, environment: 'production', modalities: ['text', 'image', 'image_edit', 'ocr', 'video'], evidence })
+      expect(persisted).toEqual({ evidence, state: 'complete', written: true, exitCode: 0 })
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(evidence)
+    } finally { rmSync(directory, { recursive: true, force: true }) }
   })
 
   it('requires a finite server-enforced relay token before any billable request', async () => {
@@ -178,28 +204,38 @@ describe('production model relay contract', () => {
     expect(extractProviderRequestId({ data: { result: { request_id: 'envelope_request_1' } } }, new Headers())).toBe('envelope_request_1')
   })
 
-  it('keeps fixed-price image usage separate from a provider cost receipt', async () => {
+  it('keeps provider image cost but leaves usage pending when provider units are absent', async () => {
     await expect(evaluateRelayUsageEvidence(
       { data: [{ url: 'https://cdn.example/image.png' }], cost_cny: 0.02 },
       new Headers({ 'x-request-id': 'req-image' }),
       'image',
       'image-v1',
-    )).resolves.toEqual({ usageObserved: true, usage: { billingUnits: 1 }, usageProviderRequestId: 'req-image', costObserved: true, costSource: 'provider_receipt', costCny: 0.02 })
+    )).resolves.toEqual({ usageObserved: false, costObserved: true, costSource: 'provider_receipt', costCny: 0.02 })
   })
 
-  it('uses the bounded request unit as fixed-price image usage evidence', async () => {
+  it('uses only provider reported image units as fixed-price usage evidence', async () => {
     const pricing = { quote: async () => ({ costCny: 0.12, metadata: {
       cost_source: 'relay_pricing_snapshot' as const, pricing_version: 'pricing-v1', pricing_group: 'VIP', group_ratio: 1,
       usd_exchange_rate: 7, quota_per_unit: 500_000, quota_type: 1, model_ratio: 0, model_price: 0.12,
       completion_ratio: 1, raw_quota: 60_000, rounded_quota: 60_000, formula_version: 'new-api-quota-v1' as const,
     } }) }
     await expect(evaluateRelayUsageEvidence(
-      { data: [{ url: 'https://cdn.example/image.png' }] },
+      { usage: { output_image_count: 1 }, data: [{ url: 'https://cdn.example/image.png' }] },
       new Headers({ 'x-request-id': 'req-image' }),
       'image',
       'image-v1',
       { pricing },
     )).resolves.toEqual({ usageObserved: true, usage: { billingUnits: 1 }, usageProviderRequestId: 'req-image', costObserved: true, costSource: 'relay_pricing_snapshot', costCny: 0.12, pricingVersion: 'pricing-v1', pricingGroup: 'VIP' })
+  })
+
+  it.each([0, -1, 1.5, '1x'])('does not use malformed or non-positive provider image count %p', async count => {
+    const pricing = { quote: vi.fn() }
+    await expect(evaluateRelayUsageEvidence(
+      { usage: { output_image_count: count }, data: [{ url: 'https://cdn.example/image.png' }] },
+      new Headers({ 'x-request-id': 'req-image-invalid' }),
+      'image', 'image-v1', { pricing },
+    )).resolves.toEqual({ usageObserved: false, costObserved: false })
+    expect(pricing.quote).not.toHaveBeenCalled()
   })
 
   it('requires a numeric non-negative provider cost receipt', async () => {

@@ -13,16 +13,29 @@ describe('plugin upgrade path', () => {
     const fakeCodex = resolve(directory, 'codex')
     writeFileSync(fakeCodex, `#!/usr/bin/env node
 const { cpSync, mkdirSync } = require('node:fs')
-mkdirSync(process.env.FAKE_INSTALLED, { recursive: true })
-cpSync(process.env.FAKE_SOURCE, process.env.FAKE_INSTALLED, { recursive: true })
-process.stdout.write(JSON.stringify({ ok: true }))
+const args = process.argv.slice(2)
+if (args.join(' ') === 'plugin marketplace list --json') {
+  process.stdout.write(JSON.stringify({ marketplaces: [{ name: 'merchant-local', root: process.env.FAKE_MARKETPLACE_ROOT, marketplaceSource: { sourceType: 'local', source: process.env.FAKE_MARKETPLACE_ROOT } }] }))
+  process.exit(0)
+}
+if (args.join(' ') === 'plugin add merchant-marketing@merchant-local --json') {
+  mkdirSync(process.env.FAKE_INSTALLED, { recursive: true })
+  cpSync(process.env.FAKE_MARKETPLACE_PLUGIN, process.env.FAKE_INSTALLED, { recursive: true })
+  process.stdout.write(JSON.stringify({ ok: true }))
+  process.exit(0)
+}
+process.exit(2)
 `)
     chmodSync(fakeCodex, 0o755)
     try {
       const result = spawnSync(process.execPath, [resolve(source, 'scripts/upgrade-installed-plugin.mjs'),
         '--source', source, '--marketplace', 'merchant-local', '--codex', fakeCodex, '--installed', installed], {
         encoding: 'utf8',
-        env: { ...process.env, FAKE_SOURCE: source, FAKE_INSTALLED: installed },
+        env: { ...process.env,
+          FAKE_MARKETPLACE_ROOT: resolve(process.cwd(), '.codex-marketplace'),
+          FAKE_MARKETPLACE_PLUGIN: resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing'),
+          FAKE_INSTALLED: installed,
+        },
       })
       expect(result.status, result.stderr).toBe(0)
       const evidence = JSON.parse(result.stdout)
@@ -91,7 +104,7 @@ process.stdout.write(JSON.stringify({ ok: true }))
 
   it('keeps the source and marketplace upgrade scripts byte-identical', () => {
     const marketplace = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing')
-    for (const path of ['scripts/upgrade-installed-plugin.mjs', 'scripts/verify-installed-bridge.mjs', 'scripts/install-local-macos.sh']) {
+    for (const path of ['scripts/upgrade-installed-plugin.mjs', 'scripts/upgrade-installed-plugin.test.ts', 'scripts/verify-installed-bridge.mjs', 'scripts/install-local-macos.sh']) {
       expect(readFileSync(resolve(marketplace, path), 'utf8'), path).toBe(readFileSync(resolve(source, path), 'utf8'))
     }
   })

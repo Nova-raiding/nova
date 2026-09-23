@@ -119,11 +119,11 @@ describe('protected PostgreSQL 17 isolated restore input contract', () => {
     const wrongDigest = fixture(); wrongDigest.imageSetDigest = `sha256:${'0'.repeat(64)}`
     expect(() => validateRestoreInputs(wrongDigest)).toThrow(/digest mismatch/)
   })
-  it('requires exactly the frozen 001–244 migration chain with named 243/244 files', () => {
+  it('requires exactly the frozen 001–245 migration chain with named 243/244/245 files', () => {
     const migrationNames = readdirSync('packages/persistence/src/migrations')
     expect(() => validateMigrationAssets(migrationNames)).not.toThrow()
-    expect(() => validateMigrationAssets(migrationNames.filter(name => !name.startsWith('243_')))).toThrow(/244 SQL files/)
-    expect(() => validateMigrationAssets([...migrationNames.slice(0, -1), '244_arbitrary.sql'])).toThrow(/243\/244 migration identity/)
+    expect(() => validateMigrationAssets(migrationNames.filter(name => !name.startsWith('243_')))).toThrow(/245 SQL files/)
+    expect(() => validateMigrationAssets([...migrationNames.slice(0, -1), '245_arbitrary.sql'])).toThrow(/243\/244\/245 migration identity/)
     expect(() => validateMigrationAssets([...migrationNames.slice(0, -1), '../escape.sql'])).toThrow(/gap or unsafe/)
   })
   it('rejects a public port, foreign network, changed image or unexpected bind mount', () => {

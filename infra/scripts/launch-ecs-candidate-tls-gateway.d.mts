@@ -1,5 +1,10 @@
 export function candidateGatewayConfig(ip: string): string
 
+export function assertCandidateReleaseIdentity(
+  value: unknown,
+  expected: { releaseId: string; gitSha: string; manifestSha256: string; imageSetDigest: string },
+): { release_id: string; release_git_sha: string; manifest_sha256: string; image_set_digest: string }
+
 export interface CandidateApiDescriptor {
   Id: string
   Image: string

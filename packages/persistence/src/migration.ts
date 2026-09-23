@@ -695,6 +695,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const repairCreativePointAllocationReservationIndex = await readFile(new URL('./migrations/242_repair_creative_point_allocation_reservation_index.sql', import.meta.url), 'utf8')
   const localPluginConnectionRequests = await readFile(new URL('./migrations/243_local_plugin_connection_requests.sql', import.meta.url), 'utf8')
   const localPluginInstallInstances = await readFile(new URL('./migrations/244_local_plugin_install_instances.sql', import.meta.url), 'utf8')
+  const localPluginAuthorizedTimestamp = await readFile(new URL('./migrations/245_local_plugin_authorized_timestamp.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -940,6 +941,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 242, name: 'repair_creative_point_allocation_reservation_index', sql: repairCreativePointAllocationReservationIndex, transactional: false },
     { version: 243, name: 'local_plugin_connection_requests', sql: localPluginConnectionRequests },
     { version: 244, name: 'local_plugin_install_instances', sql: localPluginInstallInstances },
+    { version: 245, name: 'local_plugin_authorized_timestamp', sql: localPluginAuthorizedTimestamp },
   ]
 }
 

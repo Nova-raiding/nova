@@ -50,6 +50,9 @@ jobs:
       - name: Install Merchant Studio dependencies
         working-directory: demo/merchant-studio
         run: npm ci
+      - name: Test Merchant Studio production copy guard
+        working-directory: demo/merchant-studio
+        run: npm run test:production-copy-guard
       - name: Install PostgreSQL 17 client for schema-dump acceptance
         run: |
           sudo install -d -m 0755 /etc/apt/keyrings
@@ -262,6 +265,7 @@ jobs:
           packages/persistence/src/authorization-execution-reservation-rls.postgres.test.ts
           packages/persistence/src/authorization-repository.postgres.test.ts
           packages/persistence/src/authorization-rls-probe.postgres.test.ts
+          packages/persistence/src/local-plugin-install-rls.release.postgres.test.ts
           packages/persistence/src/billing-effective-amount.postgres.test.ts
           packages/persistence/src/billing-repository.postgres.test.ts
           packages/persistence/src/business-repository.postgres.test.ts

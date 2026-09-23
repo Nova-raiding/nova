@@ -109,10 +109,10 @@ export function readArchiveCommit(path) {
 }
 function lines(text) { return Object.fromEntries(text.trim().split('\n').map(line => { const at = line.indexOf('='); requireValue(at > 0, 'candidate identity malformed'); return [line.slice(0, at), line.slice(at + 1)] })) }
 export function validateMigrationAssets(names) {
-  requireValue(Array.isArray(names) && names.length === 244, 'candidate migration chain must contain exactly 244 SQL files')
+  requireValue(Array.isArray(names) && names.length === 245, 'candidate migration chain must contain exactly 245 SQL files')
   const ordered = [...names].sort()
   for (let index = 0; index < ordered.length; index++) requireValue(new RegExp(`^${String(index + 1).padStart(3, '0')}_[a-z0-9][a-z0-9_]*\\.sql$`, 'u').test(ordered[index]), 'candidate migration chain has a gap or unsafe filename')
-  requireValue(ordered[242] === '243_local_plugin_connection_requests.sql' && ordered[243] === '244_local_plugin_install_instances.sql', 'candidate 243/244 migration identity mismatch')
+  requireValue(ordered[242] === '243_local_plugin_connection_requests.sql' && ordered[243] === '244_local_plugin_install_instances.sql' && ordered[244] === '245_local_plugin_authorized_timestamp.sql', 'candidate 243/244/245 migration identity mismatch')
 }
 async function hashFile(path, maxBytes) {
   const st = statSync(path); requireValue(st.size > 0 && st.size <= maxBytes, 'input size is invalid')
@@ -223,11 +223,11 @@ async function main(args) {
   const migrationContainer = docker(migrationContainerArgs({ migrationName, containerName, network, migrations, script, image: binding.postgresImage }), undefined, 3_600_000, { PGPASSWORD: isolatedPassword })
   requireValue(migrationContainer.length < 64 * 1024, 'migration diagnostics exceeded limit')
   const after = query(containerId, "select min(version)||':'||max(version)||':'||count(*) from public.schema_migrations")
-  requireValue(after === '1:244:244', 'candidate migrations did not end at complete 244 prefix')
+  requireValue(after === '1:245:245', 'candidate migrations did not end at complete 245 prefix')
   const migrationRows = docker(['exec', '-u', 'postgres', containerId, 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'merchant', '-c', 'select version, name, checksum from public.schema_migrations order by version'])
-  requireValue(migrationRows.split('\n').length === 244, 'migration chain row count changed')
-  for (const version of [243, 244]) {
-    const fileName = readRegular(join(migrations, `${version}_${version === 243 ? 'local_plugin_connection_requests' : 'local_plugin_install_instances'}.sql`), 4 * 1024 * 1024)
+  requireValue(migrationRows.split('\n').length === 245, 'migration chain row count changed')
+  for (const [version, name] of [[243, 'local_plugin_connection_requests'], [244, 'local_plugin_install_instances'], [245, 'local_plugin_authorized_timestamp']]) {
+    const fileName = readRegular(join(migrations, `${version}_${name}.sql`), 4 * 1024 * 1024)
     requireValue(migrationRows.split('\n')[version - 1]?.split('|')[2] === sha(fileName), `migration ${version} checksum mismatch`)
   }
   inspectContainer(containerId, imageId, network, volume)

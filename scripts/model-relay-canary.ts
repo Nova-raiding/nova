@@ -205,6 +205,25 @@ export function readRelayErrorRecovery(path: string | undefined): Record<string,
   return value as Record<string, unknown>
 }
 
+/** Persist final evidence only for a production run that covered each required
+ * modality exactly once. Partial production probes remain visible as partial
+ * stdout results, but cannot occupy the canonical evidence path. */
+export function persistRelayCanaryEvidence(input: {
+  path?: string
+  environment?: string
+  modalities: readonly ProbeResult['modality'][]
+  evidence: Record<string, unknown>
+}): { evidence: Record<string, unknown>; state: 'partial' | 'complete'; written: boolean; exitCode: 0 | 1 } {
+  const required: ProbeResult['modality'][] = ['text', 'image', 'image_edit', 'ocr', 'video']
+  const isComplete = input.modalities.length === required.length
+    && required.every(modality => input.modalities.filter(item => item === modality).length === 1)
+  const partialProduction = input.environment?.trim() === 'production' && !isComplete
+  const evidence = partialProduction ? { ...input.evidence, state: 'partial' } : input.evidence
+  const shouldWrite = Boolean(input.path?.trim()) && !partialProduction
+  if (shouldWrite) writeFileSync(input.path!.trim(), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
+  return { evidence, state: partialProduction ? 'partial' : 'complete', written: shouldWrite, exitCode: partialProduction ? 1 : 0 }
+}
+
 function modelFor(modality: ProbeResult['modality']) {
   if (modality === 'text') return process.env.AI_MODEL?.trim() || process.env.MODEL_ID?.trim() || ''
   if (modality === 'image') return process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || ''
@@ -331,18 +350,17 @@ export async function evaluateRelayUsageEvidence(
   const parsed = parseRelayUsage(payload, headers, {
     modality,
     model,
-    ...(modality === 'image' || modality === 'image_edit'
-      ? { context: { billingUnits: 1 } }
-      : modality === 'video' ? { context: { durationSeconds: options.durationSeconds ?? videoDurationSeconds, ...(options.resolution ? { resolution: options.resolution } : {}) } } : {}),
+    ...(modality === 'video' ? { context: { durationSeconds: options.durationSeconds ?? videoDurationSeconds, ...(options.resolution ? { resolution: options.resolution } : {}) } } : {}),
   })
   const nonNegativeNumber = (value: unknown): number | undefined => {
     const number = typeof value === 'number' ? value : typeof value === 'string' && /^\d+(?:\.\d+)?$/u.test(value.trim()) ? Number(value) : undefined
     return number !== undefined && Number.isFinite(number) && number >= 0 ? number : undefined
   }
-  const imageArtifacts = Array.isArray(record.data) ? record.data.length
-    : nested && Array.isArray(nested.data) ? nested.data.length
-      : result && Array.isArray(result.data) ? result.data.length : 0
-  const reportedBillingUnits = nonNegativeNumber(rawUsage?.billing_units ?? rawUsage?.billed_units ?? rawUsage?.output_image_count)
+  const rawImageCount = rawUsage?.output_image_count
+  const parsedImageCount = nonNegativeNumber(rawImageCount)
+  const reportedBillingUnits = parsedImageCount !== undefined && Number.isSafeInteger(parsedImageCount) && parsedImageCount > 0
+    ? parsedImageCount
+    : undefined
   // The suffixed fields are defined in seconds. A generic `duration` is only
   // trusted when the provider explicitly says seconds or when the same
   // receipt corroborates it with `output_video_duration`. Never infer its
@@ -386,7 +404,9 @@ export async function evaluateRelayUsageEvidence(
     ...(parsed?.inputTokens !== undefined ? { inputTokens: parsed.inputTokens } : {}),
     ...(parsed?.outputTokens !== undefined ? { outputTokens: parsed.outputTokens } : {}),
     ...(parsed?.totalTokens !== undefined ? { totalTokens: parsed.totalTokens } : {}),
-    ...(modality === 'image' || modality === 'image_edit' ? { billingUnits: reportedBillingUnits ?? imageArtifacts } : {}),
+    ...(modality === 'image' || modality === 'image_edit'
+      ? reportedBillingUnits !== undefined ? { billingUnits: reportedBillingUnits } : {}
+      : {}),
     ...(modality === 'video' && reportedDuration !== undefined ? { durationSeconds: reportedDuration } : {}),
   }
   // Cost alone proves money, not consumption units. Only response-derived
@@ -670,8 +690,9 @@ export async function main() {
           ...(errorRecovery ? { error_recovery: errorRecovery } : {}),
         }
         const evidencePath = process.env.MODEL_RELAY_EVIDENCE_PATH?.trim()
-        if (evidencePath) writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
-        console.log(JSON.stringify(evidence, null, 2))
+        const persisted = persistRelayCanaryEvidence({ path: evidencePath, environment: process.env.NODE_ENV, modalities, evidence })
+        console.log(JSON.stringify(persisted.evidence, null, 2))
+        if (persisted.exitCode !== 0) process.exitCode = persisted.exitCode
         if (results.some(result => result.state !== 'ready' || result.providerRequestId === undefined || result.usageObserved !== true || result.costObserved !== true)) process.exitCode = 1
         if (process.env.NODE_ENV?.trim() === 'production' && (!artifactRoot || results.some(result => !result.evidence_ref))) process.exitCode = 1
         if (process.env.NODE_ENV?.trim() === 'production' && !errorRecovery) process.exitCode = 1

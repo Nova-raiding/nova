@@ -122,8 +122,19 @@ const isPlainJson = (value: unknown, seen = new Set<object>()): value is Feature
   const prototype = Object.getPrototypeOf(value)
   if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return false
   seen.add(value)
-  const children = Array.isArray(value) ? value : Object.values(value)
-  const valid = children.every(child => child === null || typeof child === 'string' || typeof child === 'boolean' || (typeof child === 'number' && Number.isFinite(child)) || (typeof child === 'object' && isPlainJson(child, seen)))
+  // Array#every skips holes. Treating a sparse array as JSON would silently
+  // turn its missing elements into null when serialized, changing the value
+  // accepted by this contract.
+  let valid = true
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, index)) { valid = false; break }
+      const child = value[index]
+      if (!(child === null || typeof child === 'string' || typeof child === 'boolean' || (typeof child === 'number' && Number.isFinite(child)) || (typeof child === 'object' && isPlainJson(child, seen)))) { valid = false; break }
+    }
+  } else {
+    valid = Object.values(value).every(child => child === null || typeof child === 'string' || typeof child === 'boolean' || (typeof child === 'number' && Number.isFinite(child)) || (typeof child === 'object' && isPlainJson(child, seen)))
+  }
   seen.delete(value)
   return valid
 }

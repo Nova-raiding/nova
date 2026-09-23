@@ -170,7 +170,11 @@ describe('production readiness fail-closed', () => {
 
   it('projects a valid file-backed no-load report as not_performed over HTTP', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'capacity-no-load-'))
-    const report = { schema_version: '1', status: 'not_performed', cloud_gate: false, environment: 'production', release_id: 'release-current', software_version: 'release-current', config_version: 'config-current', data_version: 'migration-242', target_url: 'https://ops.example.test', started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z', expires_at: '2026-09-23T01:00:00Z', profile: 'no_load', scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope', sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' } }
+    const now = new Date()
+    const startedAt = new Date(now.getTime() - 60 * 60 * 1000).toISOString()
+    const endedAt = now.toISOString()
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
+    const report = { schema_version: '1', status: 'not_performed', cloud_gate: false, environment: 'production', release_id: 'release-current', software_version: 'release-current', config_version: 'config-current', data_version: 'migration-242', target_url: 'https://ops.example.test', started_at: startedAt, ended_at: endedAt, expires_at: expiresAt, profile: 'no_load', scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope', sign_off: { verified_by: 'owner', verified_at: endedAt } }
     writeFileSync(join(directory, 'capacity.json'), JSON.stringify(report))
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('CAPACITY_REPORT_PATH', join(directory, 'capacity.json'))

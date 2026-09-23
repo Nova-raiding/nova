@@ -116,6 +116,9 @@ describe('release manifest production gate', () => {
     const deploymentArtifacts = [
       'infra/scripts/render-ecs-production-compose.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
+      'infra/scripts/deploy-preflight-ecs.sh',
+      'infra/scripts/build-ecs-release-images.sh',
+      'infra/scripts/verify-ecs-ops-auth-mode.sh',
       'infra/scripts/rollback-ecs-compose.sh',
       'infra/scripts/invoke-ecs-automatic-rollback.sh',
       'infra/scripts/install-ecs-release-controls.mjs',

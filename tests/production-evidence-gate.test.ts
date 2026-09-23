@@ -18,7 +18,7 @@ const options = (kind: ProductionEvidenceKind) => ({ kind, releaseId: 'release-1
 
 function artifactReference(kind: ProductionEvidenceKind, name: string) {
   const relative = `${kind}/${name}.json`; const path = join(artifactRoot, relative)
-  const migrationRows = Array.from({ length: 244 }, (_, index) => `${index + 1}|migration|${'a'.repeat(64)}`)
+  const migrationRows = Array.from({ length: 245 }, (_, index) => `${index + 1}|migration|${'a'.repeat(64)}`)
   const content = kind === 'payment' ? JSON.stringify({
     kind, operation: name, release_id: 'release-1', deployment_nonce: deploymentNonce,
     order_id_sha256: 'f'.repeat(64), provider_trade_id_sha256: 'b'.repeat(64),
@@ -31,7 +31,7 @@ function artifactReference(kind: ProductionEvidenceKind, name: string) {
     source_archive_sha256: `sha256:${'3'.repeat(64)}`, migration_chain_sha256: createHash('sha256').update(migrationRows.join('\n')).digest('hex'),
     postgres_image_ref: `registry.example/postgres:17-alpine@sha256:${'4'.repeat(64)}`, postgres_image_id: `sha256:${'4'.repeat(64)}`,
     container_id: '5'.repeat(64), network_id: '6'.repeat(64), volume_name: `merchant_restore_data_${'7'.repeat(24)}`,
-    restored_migration_prefix: '1:242:242', migrated_prefix: '1:244:244', migration_chain_rows: migrationRows,
+    restored_migration_prefix: '1:242:242', migrated_prefix: '1:245:245', migration_chain_rows: migrationRows,
     captured_at: '2026-08-28T05:10:00Z',
   }) : JSON.stringify({ kind, name, provider_request_id: `request-${name}` })
   mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content)

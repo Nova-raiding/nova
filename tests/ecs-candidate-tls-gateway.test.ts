@@ -1,9 +1,9 @@
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { assertCandidateApi, assertCandidateGateway, candidateGatewayConfig } from '../infra/scripts/launch-ecs-candidate-tls-gateway.mjs'
+import { assertCandidateApi, assertCandidateGateway, assertCandidateReleaseIdentity, candidateGatewayConfig } from '../infra/scripts/launch-ecs-candidate-tls-gateway.mjs'
 
 const script = 'infra/scripts/launch-ecs-candidate-tls-gateway.mjs'
 const apiRef = `registry.test/api@sha256:${'a'.repeat(64)}`
@@ -14,6 +14,9 @@ const apiImageId = `sha256:${'e'.repeat(64)}`
 const gatewayImageId = `sha256:${'f'.repeat(64)}`
 const network = 'merchant_production_default'
 const releaseId = 'release-test'
+const gitSha = '1'.repeat(40)
+const manifestSha256 = '3'.repeat(64)
+const imageSetDigest = `sha256:${'2'.repeat(64)}`
 const port = '18443'
 
 function apiContainer() {
@@ -43,7 +46,7 @@ function fixture() {
   writeFileSync(join(certDir, 'fullchain.pem'), 'test certificate placeholder')
   writeFileSync(join(certDir, 'privkey.pem'), 'test key placeholder')
   writeFileSync(compose, JSON.stringify({ networks: { default: { name: network } }, services: {
-    api: { image: apiRef, environment: { RELEASE_ID: releaseId, RELEASE_GIT_SHA: '1'.repeat(40), RELEASE_IMAGE_SET_DIGEST: `sha256:${'2'.repeat(64)}` } },
+    api: { image: apiRef, environment: { RELEASE_ID: releaseId, RELEASE_GIT_SHA: gitSha, RELEASE_MANIFEST_SHA256: manifestSha256, RELEASE_IMAGE_SET_DIGEST: imageSetDigest } },
     'pilot-gateway': { image: gatewayRef },
   } }))
   writeFileSync(env, 'RELEASE_ID=release-test\n')
@@ -69,6 +72,30 @@ process.exit(1);
 }
 
 describe('isolated ECS candidate TLS gateway', () => {
+  it('requires the exact frozen manifest identity in the candidate TLS release probe', () => {
+    const expected = { releaseId, gitSha, manifestSha256, imageSetDigest }
+    const response = { data: { ready: true, release: {
+      release_id: releaseId, release_git_sha: gitSha, manifest_sha256: manifestSha256, image_set_digest: imageSetDigest,
+    } } }
+    expect(assertCandidateReleaseIdentity(response, expected).manifest_sha256).toBe(manifestSha256)
+    expect(() => assertCandidateReleaseIdentity({ data: { ...response.data, release: { ...response.data.release, manifest_sha256: '4'.repeat(64) } } }, expected)).toThrow('candidate release identity mismatch')
+    expect(() => assertCandidateReleaseIdentity({ data: { ...response.data, release: { release_id: releaseId, release_git_sha: gitSha, image_set_digest: imageSetDigest } } }, expected)).toThrow('candidate release identity mismatch')
+  })
+
+  it('rejects a missing or malformed frozen Compose manifest before Docker access', () => {
+    for (const manifest of [undefined, 'bad']) {
+      const value = fixture()
+      const compose = JSON.parse(readFileSync(value.compose, 'utf8'))
+      if (manifest === undefined) delete compose.services.api.environment.RELEASE_MANIFEST_SHA256
+      else compose.services.api.environment.RELEASE_MANIFEST_SHA256 = manifest
+      writeFileSync(value.compose, JSON.stringify(compose))
+      const result = spawnSync('node', value.args, { env: value.processEnv, encoding: 'utf8' })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('candidate frozen Compose identity is incomplete')
+      expect(existsSync(value.calls)).toBe(false)
+    }
+  })
+
   it('pins the only upstream to the exact API IP and denies all unrelated paths', () => {
     const conf = candidateGatewayConfig('172.20.0.8')
     expect(conf).toContain('proxy_pass http://172.20.0.8:8787/mcp;')

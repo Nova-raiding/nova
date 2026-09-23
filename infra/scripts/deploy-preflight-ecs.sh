@@ -106,6 +106,7 @@ case "$OPS_AUTH_MODE" in
   oidc) : "${OIDC_PROXY_SIGNING_SECRET:?OIDC_PROXY_SIGNING_SECRET is required when OPS_AUTH_MODE=oidc}" ;;
   *) echo 'OPS_AUTH_MODE must be password or oidc' >&2; exit 1 ;;
 esac
+sh infra/scripts/verify-ecs-ops-auth-mode.sh "$OPS_AUTH_MODE" "$OPS_UI_IMAGE_REF" "$RENDERED_COMPOSE_PATH"
 : "${MODEL_COST_ESTIMATE_VERSION:?MODEL_COST_ESTIMATE_VERSION production value is required}"
 : "${ASSET_SCANNER_API_TOKEN:?ASSET_SCANNER_API_TOKEN is required}"
 : "${ASSET_SCANNER_WORKSPACE_SIGNING_SECRET:?ASSET_SCANNER_WORKSPACE_SIGNING_SECRET is required}"

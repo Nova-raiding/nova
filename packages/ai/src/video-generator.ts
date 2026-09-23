@@ -1,4 +1,4 @@
-import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
+import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, ProviderRequestFailedError, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
@@ -114,6 +114,7 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
       const model = input.sourceImage ? this.options.imageModel! : this.options.model
       const requestBody = JSON.stringify({ model, prompt: input.prompt, duration: this.options.durationSeconds ?? 5, ...(input.sourceImage ? { image: input.sourceImage } : {}), ...(this.options.resolution ? { size: this.options.resolution, metadata: { parameters: { resolution: this.options.resolution }, ...(input.sourceImage && (model.startsWith('happyhorse-') || model.startsWith('wan3.0')) ? { input: { media: [{ type: 'first_frame', url: input.sourceImage }] } } : {}) } } : {}) })
       const providerKey = providerIdempotencyKey({ operation: 'video_generate', model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
+      assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
       let form: FormData | undefined
       if (this.options.requestFormat === 'openai-video') {
         form = new FormData()

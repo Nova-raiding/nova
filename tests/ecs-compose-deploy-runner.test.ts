@@ -8,6 +8,59 @@ const path = 'infra/scripts/deploy-verified-ecs-compose.sh'
 const source = () => readFileSync(path, 'utf8')
 
 describe('verified ECS Compose deployment runner', () => {
+  it.each(['password', 'oidc'])('accepts matching API and Ops UI %s auth modes', mode => {
+    const directory = mkdtempSync(join(tmpdir(), 'ecs-ops-auth-mode-'))
+    const docker = join(directory, 'docker')
+    const compose = join(directory, 'compose.json')
+    const image = `registry.example.test/ops-ui@sha256:${'a'.repeat(64)}`
+    writeFileSync(compose, JSON.stringify({ services: { 'ops-ui': { image } } }))
+    writeFileSync(docker, `#!/bin/sh\nprintf '%s\\n' '${mode}'\n`, { mode: 0o700 })
+    chmodSync(docker, 0o700)
+    const result = spawnSync('sh', ['infra/scripts/verify-ecs-ops-auth-mode.sh', mode, image, compose], {
+      env: { ...process.env, PATH: `${directory}:${process.env.PATH}` }, encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')).toContain('verify-ecs-ops-auth-mode.sh "$OPS_AUTH_MODE" "$OPS_UI_IMAGE_REF" "$RENDERED_COMPOSE_PATH"')
+    expect(readFileSync('infra/scripts/build-ecs-release-images.sh', 'utf8')).toContain('--label "com.storenova.ops-auth-mode=$ops_auth_mode"')
+  })
+
+  it('rejects UI/API auth mode mismatch before release preflight can continue', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ecs-ops-auth-mode-'))
+    const docker = join(directory, 'docker')
+    const compose = join(directory, 'compose.json')
+    const image = `registry.example.test/ops-ui@sha256:${'a'.repeat(64)}`
+    writeFileSync(compose, JSON.stringify({ services: { 'ops-ui': { image } } }))
+    writeFileSync(docker, '#!/bin/sh\nprintf "password\\n"\n', { mode: 0o700 })
+    chmodSync(docker, 0o700)
+    const result = spawnSync('sh', ['infra/scripts/verify-ecs-ops-auth-mode.sh', 'oidc', image, compose], {
+      env: { ...process.env, PATH: `${directory}:${process.env.PATH}` }, encoding: 'utf8',
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('does not match API OPS_AUTH_MODE')
+  })
+
+  it('rejects missing/invalid image auth metadata and mutable UI references', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ecs-ops-auth-mode-'))
+    const docker = join(directory, 'docker')
+    const compose = join(directory, 'compose.json')
+    const image = `registry.example.test/ops-ui@sha256:${'a'.repeat(64)}`
+    writeFileSync(compose, JSON.stringify({ services: { 'ops-ui': { image } } }))
+    writeFileSync(docker, '#!/bin/sh\nprintf "<no value>\\n"\n', { mode: 0o700 })
+    chmodSync(docker, 0o700)
+    const env = { ...process.env, PATH: `${directory}:${process.env.PATH}` }
+    const missing = spawnSync('sh', ['infra/scripts/verify-ecs-ops-auth-mode.sh', 'oidc', image, compose], { env, encoding: 'utf8' })
+    expect(missing.status).not.toBe(0)
+    expect(missing.stderr).toContain('missing a valid build auth mode label')
+    const mutable = spawnSync('sh', ['infra/scripts/verify-ecs-ops-auth-mode.sh', 'password', 'registry.example.test/ops-ui:latest', compose], { env, encoding: 'utf8' })
+    expect(mutable.status).not.toBe(0)
+    expect(mutable.stderr).toContain('pinned by digest')
+    const differentCompose = join(directory, 'different-compose.json')
+    writeFileSync(differentCompose, JSON.stringify({ services: { 'ops-ui': { image: `registry.example.test/other@sha256:${'b'.repeat(64)}` } } }))
+    const wrongImage = spawnSync('sh', ['infra/scripts/verify-ecs-ops-auth-mode.sh', 'password', image, differentCompose], { env, encoding: 'utf8' })
+    expect(wrongImage.status).not.toBe(0)
+    expect(wrongImage.stderr).toContain('does not match rendered Compose')
+  })
+
   it('captures an external gateway before nonce consumption and restores it only after business rollback', () => {
     const script = source()
     expect(script.indexOf('external_gateway_action snapshot')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
@@ -126,15 +179,15 @@ describe('verified ECS Compose deployment runner', () => {
       expires_at: new Date(Date.now() + 60_000).toISOString(), compose_project: 'merchant-production', current: candidate,
       target: { release_id: 'bridge', git_sha: 'd'.repeat(40), manifest_sha256: hash('e'), image_set_digest: `sha256:${hash('f')}`,
         compose_sha256: hash('1'), env_sha256: hash('2'), image_digests_sha256: hash('3') },
-      database: { strategy: 'forward_only', schema_downgrade: false, live_migration_version: 242, target_migration_tail: 244,
-        allowed_prefix_sha256: { 242: hash('4'), 243: hash('5'), 244: hash('6') } }, volumes: { preserve: true },
+      database: { strategy: 'forward_only', schema_downgrade: false, live_migration_version: 242, target_migration_tail: 245,
+        allowed_prefix_sha256: { 242: hash('4'), 243: hash('5'), 244: hash('6'), 245: hash('7') } }, volumes: { preserve: true },
     }
     const verify = (database: Record<string, unknown>) => {
       writeFileSync(planPath, JSON.stringify({ ...base, database }))
       return spawnSync('node', ['-'], { input: block![1], encoding: 'utf8', env: {
         ...process.env, PLAN: planPath, COMPOSE_SHA: hash('1'), ENV_SHA: hash('2'), DIGESTS_SHA: hash('3'), PROJECT: 'merchant-production',
         CANDIDATE_ID: candidate.release_id, CANDIDATE_GIT: candidate.git_sha, CANDIDATE_MANIFEST: candidate.manifest_sha256,
-        CANDIDATE_IMAGES: candidate.image_set_digest, EXPECTED_MIGRATION_VERSION: '244', DIGESTS: JSON.stringify({ api: `sha256:${hash('7')}` }),
+        CANDIDATE_IMAGES: candidate.image_set_digest, EXPECTED_MIGRATION_VERSION: '245', DIGESTS: JSON.stringify({ api: `sha256:${hash('8')}` }),
       } })
     }
     expect(verify(base.database).status).toBe(0)
