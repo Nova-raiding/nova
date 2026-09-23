@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { closeSync, existsSync, fsyncSync, lstatSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { gunzipSync } from 'node:zlib'
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const hex = value => typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value)
@@ -23,15 +24,87 @@ function regularBytes(path, label) {
   return readFileSync(path)
 }
 
-function verifyPackageContents(path, expected) {
-  const listed = spawnSync('tar', ['-tzf', path], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 })
-  if (listed.status !== 0) throw new Error('plugin package is not a readable tar.gz archive')
-  const entries = listed.stdout.trimEnd().split('\n')
-  if (entries.some(entry => !entry || entry.startsWith('/') || entry.split('/').includes('..'))) throw new Error('plugin package contains an unsafe path')
+function tarField(header, start, length) {
+  const field = header.subarray(start, start + length)
+  const end = field.indexOf(0)
+  if (end >= 0 && field.subarray(end).some(byte => byte !== 0)) throw new Error('plugin package has malformed tar metadata')
+  if (field.subarray(0, end < 0 ? field.length : end).some(byte => byte < 33 || byte > 126)) {
+    throw new Error('plugin package has non-ASCII tar path metadata')
+  }
+  return field.subarray(0, end < 0 ? field.length : end).toString('ascii')
+}
+
+function tarOctal(header, start, length) {
+  const field = header.subarray(start, start + length)
+  if (field.some(byte => byte !== 0 && byte !== 32 && (byte < 48 || byte > 55))) {
+    throw new Error('plugin package has unsupported tar number encoding')
+  }
+  const value = field.toString('ascii')
+  if (!/^[\0 ]*[0-7]+[\0 ]*$/u.test(value)) throw new Error('plugin package has unsupported tar number encoding')
+  const number = Number.parseInt(value.match(/[0-7]+/u)[0], 8)
+  if (!Number.isSafeInteger(number)) throw new Error('plugin package tar number is unsafe')
+  return number
+}
+
+function safePackagePath(name) {
+  if (!name || name.startsWith('/') || /[^\x21-\x7e]/u.test(name) || /[\\:<>"?*|]/u.test(name)) return false
+  const parts = name.split('/')
+  return parts.every(part => part && part !== '.' && part !== '..' && !/[. ]$/u.test(part)
+    && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(part))
+}
+
+function verifyPackageContents(packageBytes, expected) {
+  let archive
+  try { archive = gunzipSync(packageBytes, { maxOutputLength: 256 * 1024 * 1024 }) }
+  catch { throw new Error('plugin package is not a bounded readable tar.gz archive') }
+  if (archive.length % 512 !== 0) throw new Error('plugin package tar block size is invalid')
+  const entries = new Map()
+  const foldedNames = new Set()
+  let offset = 0
+  let terminated = false
+  while (offset + 512 <= archive.length) {
+    const header = archive.subarray(offset, offset + 512)
+    if (header.every(byte => byte === 0)) {
+      if (offset + 1024 > archive.length || archive.subarray(offset).some(byte => byte !== 0)) {
+        throw new Error('plugin package has nonzero data after tar terminator')
+      }
+      terminated = true
+      break
+    }
+    if (entries.size >= 10_000) throw new Error('plugin package contains too many files')
+    const checksum = tarOctal(header, 148, 8)
+    let actualChecksum = 0
+    for (let i = 0; i < 512; i++) actualChecksum += i >= 148 && i < 156 ? 32 : header[i]
+    if (checksum !== actualChecksum) throw new Error('plugin package tar header checksum is invalid')
+    if (header.subarray(257, 262).toString('ascii') !== 'ustar') throw new Error('plugin package requires unambiguous USTAR headers')
+    const name = tarField(header, 0, 100)
+    const prefix = tarField(header, 345, 155)
+    const path = prefix ? `${prefix}/${name}` : name
+    if (!safePackagePath(path)) throw new Error(`plugin package contains an unsafe path: ${path}`)
+    const folded = path.toLowerCase()
+    if (foldedNames.has(folded)) throw new Error(`plugin package contains a duplicate path: ${path}`)
+    foldedNames.add(folded)
+    const type = header[156]
+    if (type !== 0 && type !== 48) throw new Error(`plugin package contains a non-regular file: ${path}`)
+    if (header.subarray(157, 257).some(byte => byte !== 0)) throw new Error(`plugin package regular file has a link target: ${path}`)
+    if ((tarOctal(header, 100, 8) & 0o7000) !== 0) throw new Error(`plugin package contains a privileged file mode: ${path}`)
+    const size = tarOctal(header, 124, 12)
+    const end = offset + 512 + size
+    if (end > archive.length || size > 32 * 1024 * 1024) throw new Error(`plugin package file size is unsafe: ${path}`)
+    entries.set(path, archive.subarray(offset + 512, end))
+    offset += 512 + Math.ceil(size / 512) * 512
+  }
+  if (!terminated || entries.size === 0) throw new Error('plugin package tar terminator or files are missing')
+  for (const path of entries.keys()) {
+    const parts = path.split('/')
+    for (let i = 1; i < parts.length; i++) {
+      if (foldedNames.has(parts.slice(0, i).join('/').toLowerCase())) throw new Error(`plugin package file shadows a directory: ${path}`)
+    }
+  }
   for (const [entry, bytes] of Object.entries(expected)) {
-    if (entries.filter(name => name === entry).length !== 1) throw new Error(`plugin package must contain exactly one ${entry}`)
-    const extracted = spawnSync('tar', ['-xOzf', path, entry], { maxBuffer: 4 * 1024 * 1024 })
-    if (extracted.status !== 0 || !extracted.stdout.equals(bytes)) throw new Error(`plugin package ${entry} differs from signed source`)
+    const actual = entries.get(entry)
+    if (!actual) throw new Error(`plugin package must contain exactly one ${entry}`)
+    if (!actual.equals(bytes)) throw new Error(`plugin package ${entry} differs from signed source`)
   }
 }
 
@@ -95,7 +168,7 @@ export function signPluginReleaseDescriptor(options) {
   if (packageBytes.length > 100 * 1024 * 1024) throw new Error('plugin package exceeds signing size limit')
   const bridge = regularBytes(resolve(pluginRoot, 'mcp/bridge.mjs'), 'plugin bridge')
   const skill = regularBytes(resolve(pluginRoot, 'skills/merchant-marketing/SKILL.md'), 'plugin skill')
-  verifyPackageContents(options.packagePath, {
+  verifyPackageContents(packageBytes, {
     '.codex-plugin/plugin.json': pluginManifest,
     'package.json': pluginPackage,
     'mcp/bridge.mjs': bridge,

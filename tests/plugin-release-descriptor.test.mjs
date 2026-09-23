@@ -5,7 +5,32 @@ import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { gunzipSync, gzipSync } from 'node:zlib'
 import { signPluginReleaseDescriptor, verifyPluginReleaseDescriptor } from '../scripts/plugin-release-descriptor.mjs'
+
+function appendTarMember(packageBytes, name, type = '0', linkname = '') {
+  const archive = gunzipSync(packageBytes)
+  let offset = 0
+  while (offset + 512 <= archive.length && archive.subarray(offset, offset + 512).some(byte => byte !== 0)) {
+    const size = Number.parseInt(archive.subarray(offset + 124, offset + 136).toString('ascii'), 8)
+    offset += 512 + Math.ceil(size / 512) * 512
+  }
+  const header = Buffer.alloc(512)
+  header.write(name, 0, 100, 'ascii')
+  header.write('0000644\0', 100, 'ascii')
+  header.write('0000000\0', 108, 'ascii')
+  header.write('0000000\0', 116, 'ascii')
+  header.write('00000000000\0', 124, 'ascii')
+  header.write('00000000000\0', 136, 'ascii')
+  header.fill(32, 148, 156)
+  header.write(type, 156, 'ascii')
+  header.write(linkname, 157, 100, 'ascii')
+  header.write('ustar\0', 257, 'ascii')
+  header.write('00', 263, 'ascii')
+  const checksum = header.reduce((sum, byte) => sum + byte, 0)
+  header.write(checksum.toString(8).padStart(6, '0') + '\0 ', 148, 'ascii')
+  return gzipSync(Buffer.concat([archive.subarray(0, offset), header, Buffer.alloc(1024)]))
+}
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'plugin-release-descriptor-'))
@@ -95,4 +120,28 @@ test('refuses symlink package and permissive private key', () => {
   const exposedKey = join(f.root, 'permissive.pem')
   writeFileSync(exposedKey, 'not a key', { mode: 0o644 })
   assert.throws(() => signPluginReleaseDescriptor({ ...f.options, privateKeyPath: exposedKey }), /0600\/0400/u)
+})
+
+test('refuses extra links, special files, duplicate entries and Windows-unsafe archive paths before signing', () => {
+  const f = fixture()
+  const original = readFileSync(f.packagePath)
+  const rejected = [
+    { name: 'extra-link', type: '2', linkname: '/etc/passwd', reason: /non-regular file/u },
+    { name: 'extra-hardlink', type: '1', linkname: 'package.json', reason: /non-regular file/u },
+    { name: 'extra-fifo', type: '6', reason: /non-regular file/u },
+    { name: 'package.json', reason: /duplicate path/u },
+    { name: 'PACKAGE.JSON', reason: /duplicate path/u },
+    { name: 'package.json/child', reason: /shadows a directory/u },
+    { name: 'C:\\evil', reason: /unsafe path/u },
+    { name: 'nested\\evil', reason: /unsafe path/u },
+    { name: 'nested/file:stream', reason: /unsafe path/u },
+    { name: 'nested/file?.js', reason: /unsafe path/u },
+    { name: 'CON.txt', reason: /unsafe path/u },
+    { name: 'nested/../evil', reason: /unsafe path/u },
+    { name: 'nested//evil', reason: /unsafe path/u },
+  ]
+  for (const item of rejected) {
+    writeFileSync(f.packagePath, appendTarMember(original, item.name, item.type, item.linkname))
+    assert.throws(() => signPluginReleaseDescriptor(f.options), item.reason, item.name)
+  }
 })
