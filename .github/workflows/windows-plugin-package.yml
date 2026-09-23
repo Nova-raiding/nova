@@ -39,14 +39,29 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Credential helper build failed' }
       - name: Create a runner-local test certificate
         timeout-minutes: 3
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
-          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Store Nova CI package test only' -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(1)
-          $cerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.cer'
-          Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
-          Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+          $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+          $request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new('CN=Store Nova CI package test only', $rsa, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+          $oids = [System.Security.Cryptography.OidCollection]::new()
+          [void]$oids.Add([System.Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.3'))
+          $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($oids, $false))
+          $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($true, $false, 0, $true))
+          $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new([System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature -bor [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyCertSign, $true))
+          $created = $request.CreateSelfSigned((Get-Date).AddMinutes(-5), (Get-Date).AddDays(1))
+          $password = [guid]::NewGuid().ToString('N')
+          $pfx = $created.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $password)
+          $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet -bor [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet
+          $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, $password, $flags)
+          $my = [System.Security.Cryptography.X509Certificates.X509Store]::new('My', 'CurrentUser')
+          $my.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+          $my.Add($cert)
+          $my.Close()
+          $root = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'CurrentUser')
+          $root.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+          $root.Add([System.Security.Cryptography.X509Certificates.X509Certificate2]::new($cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)))
+          $root.Close()
           [System.IO.File]::AppendAllText($env:GITHUB_ENV, "STORENOVA_WINDOWS_SIGNER_THUMBPRINT=$($cert.Thumbprint)`n", [System.Text.UTF8Encoding]::new($false))
       - name: Sign and validate the helper with the test certificate
         timeout-minutes: 3
