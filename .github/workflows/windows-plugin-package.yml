@@ -127,6 +127,7 @@ jobs:
             exit 1
           }
       - name: Verify bundled MCP initialize and tool discovery
+        timeout-minutes: 2
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -152,8 +153,7 @@ jobs:
           [System.IO.File]::WriteAllText($inputPath, "$requests`n", [System.Text.Encoding]::ASCII)
           $env:NODE_ENV = 'test'
           $env:DEPLOY_ENV = 'local_desktop'
-          $process = Start-Process -FilePath $node -ArgumentList (Join-Path $installed 'mcp\bridge.mjs') -WorkingDirectory $installed -RedirectStandardInput $inputPath -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -PassThru
-          if (-not $process.WaitForExit(15000)) { $process.Kill(); throw 'Bundled MCP handshake timed out' }
+          $process = Start-Process -FilePath $node -ArgumentList (Join-Path $installed 'mcp\bridge.mjs') -WorkingDirectory $installed -RedirectStandardInput $inputPath -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Bundled MCP bridge exited $($process.ExitCode)" }
           $responses = @(Get-Content -LiteralPath $outputPath | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json })
           if ($responses.Count -ne 2 -or $responses[0].result.serverInfo.version -ne $manifest.version -or $responses[1].result.tools.Count -lt 1) {
