@@ -6732,15 +6732,18 @@ function publicRequestOrigin(req: IncomingMessage) {
 // document origin is not identical to the API origin. Keep the form target
 // restricted to the configured canonical API origin instead of allowing any
 // external destination.
-function localPluginAuthorizationCsp() {
+function localPluginAuthorizationCsp(callbackRedirectUri?: string) {
+  const callbackOrigin = callbackRedirectUri ? new URL(callbackRedirectUri).origin : undefined
   const configured = process.env.PUBLIC_APP_BASE_URL?.trim()
   if (configured) {
     try {
       const origin = new URL(configured).origin
-      return `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${origin}; frame-ancestors 'none'`
+      // Authorization POST is same-origin, then its 303 redirects the browser
+      // to the installer’s one-time loopback callback on a random local port.
+      return `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${origin}${callbackOrigin ? ` ${callbackOrigin}` : ''}; frame-ancestors 'none'`
     } catch { /* fall through to the strict same-origin policy */ }
   }
-  return "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+  return `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'${callbackOrigin ? ` ${callbackOrigin}` : ''}; frame-ancestors 'none'`
 }
 
 function localPluginCanonicalAuthorizationUrl(req: IncomingMessage, url: URL): string | undefined {
@@ -21346,7 +21349,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const current = await passwordAuthRepository.authenticate(passwordSessionToken())
       if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') {
         if (req.method === 'GET') {
-          res.statusCode = 401; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', localPluginAuthorizationCsp()); res.end(localPluginLoginRequiredHtml(authorization)); return
+          res.statusCode = 401; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', localPluginAuthorizationCsp(authorization.redirectUri)); res.end(localPluginLoginRequiredHtml(authorization)); return
         }
         throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请先登录商家后台再重新授权', 401)
       }
@@ -21364,7 +21367,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         if (!pending || pending.status !== 'pending') throw new DomainError('LOCAL_PLUGIN_CONNECTION_INVALID', '连接请求无效、已过期或已使用', 409)
       }
       if (req.method === 'GET') {
-        res.statusCode = 200; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', localPluginAuthorizationCsp()); res.end(localPluginAuthorizationHtml(authorization, { login: current.account.login, workspaceId })); return
+        res.statusCode = 200; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', localPluginAuthorizationCsp(authorization.redirectUri)); res.end(localPluginAuthorizationHtml(authorization, { login: current.account.login, workspaceId })); return
       }
       const context = { clientId: LOCAL_PLUGIN_CLIENT_ID, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
       // Check and persist the account/workspace grant before consuming the

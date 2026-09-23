@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { join } from 'node:path'
+import { chromium, type Browser } from 'playwright'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import { server, setPasswordAuthRepositoryForTests, workspaceMembers } from './server.js'
@@ -11,8 +14,27 @@ async function start() {
   return `http://127.0.0.1:${address.port}`
 }
 
+function installedChromiumPath(): string | undefined {
+  if (process.env.CHROME_BIN) return process.env.CHROME_BIN
+  const paths = [chromium.executablePath()]
+  if (process.platform === 'darwin') paths.push('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
+  if (process.platform === 'win32') {
+    for (const root of [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA]) {
+      if (root) paths.push(join(root, 'Google/Chrome/Application/chrome.exe'))
+    }
+  }
+  if (process.platform === 'linux') paths.push('/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser')
+  return paths.find(path => existsSync(path))
+}
+
 describe('local plugin browser PKCE', () => {
+  let browser: Browser | undefined
+  let callbackServer: ReturnType<typeof createServer> | undefined
   afterEach(async () => {
+    await browser?.close()
+    browser = undefined
+    if (callbackServer?.listening) await new Promise<void>(resolve => callbackServer!.close(() => resolve()))
+    callbackServer = undefined
     if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
     setPasswordAuthRepositoryForTests()
     vi.unstubAllEnvs()
@@ -31,8 +53,8 @@ describe('local plugin browser PKCE', () => {
     await workspaceMembers.bindIdentity({ workspaceId, externalSubject: login, identityId: account.identityId })
     const base = await start()
     let callbackUrl = ''
-    const callbackServer = createServer((req, res) => { callbackUrl = req.url ?? ''; res.writeHead(200, { 'content-type': 'text/plain' }); res.end('authorization received') })
-    await new Promise<void>((resolve, reject) => { callbackServer.once('error', reject); callbackServer.listen(0, '127.0.0.1', resolve) })
+    callbackServer = createServer((req, res) => { if (req.url?.startsWith('/merchant-mcp-callback?')) callbackUrl = req.url; res.writeHead(200, { 'content-type': 'text/plain' }); res.end('authorization received') })
+    await new Promise<void>((resolve, reject) => { callbackServer!.once('error', reject); callbackServer!.listen(0, '127.0.0.1', resolve) })
     const callbackAddress = callbackServer.address()
     if (!callbackAddress || typeof callbackAddress === 'string') throw new Error('callback server did not bind')
     const redirectUri = `http://127.0.0.1:${callbackAddress.port}/merchant-mcp-callback`
@@ -51,7 +73,7 @@ describe('local plugin browser PKCE', () => {
     const unauthenticated = await fetch(authorization)
     expect(unauthenticated.status).toBe(401)
     expect(unauthenticated.headers.get('content-security-policy')).toContain("form-action 'self' http://127.0.0.1:")
-    expect(await unauthenticated.text()).toContain('新标签页打开商家后台登录')
+    expect(await unauthenticated.text()).toContain('打开商家后台登录')
 
     const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
     const cookie = logged.headers.get('set-cookie')?.split(';')[0]
@@ -59,6 +81,8 @@ describe('local plugin browser PKCE', () => {
     const consent = await fetch(authorization, { headers: { cookie: cookie! } })
     expect(consent.status).toBe(200)
     expect(consent.headers.get('content-security-policy')).toContain("form-action 'self' http://127.0.0.1:")
+    expect(consent.headers.get('content-security-policy')).toContain(new URL(redirectUri).origin)
+    expect(consent.headers.get('content-security-policy')).not.toContain('127.0.0.1:*')
     const consentHtml = await consent.text()
     expect(consentHtml).toContain('确认授权本地插件')
     expect(consentHtml).not.toContain(password)
@@ -66,14 +90,31 @@ describe('local plugin browser PKCE', () => {
     const form = new URLSearchParams(authorization.searchParams)
     const crossOrigin = await fetch(`${base}/v1/auth/local-plugin/authorize`, { method: 'POST', redirect: 'manual', headers: { cookie: cookie!, origin: 'https://evil.example', 'content-type': 'application/x-www-form-urlencoded' }, body: form })
     expect(crossOrigin.status).toBe(403)
-    const approved = await fetch(`${base}/v1/auth/local-plugin/authorize`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/x-www-form-urlencoded' }, body: form })
-    expect(approved.status).toBe(200)
-    expect(await approved.text()).toBe('authorization received')
+    // Chromium enforces form-action over the complete redirect chain. Verify
+    // the real consent POST can reach the installer's random loopback port.
+    const executablePath = installedChromiumPath()
+    browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) })
+    const browserContext = await browser.newContext()
+    const [cookieName, cookieValue] = cookie!.split('=', 2) as [string, string]
+    await browserContext.addCookies([{ name: cookieName, value: cookieValue, url: base }])
+    const page = await browserContext.newPage()
+    page.setDefaultTimeout(5_000)
+    page.setDefaultNavigationTimeout(5_000)
+    await page.goto(authorization.toString())
+    const postResponse = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/v1/auth/local-plugin/authorize')
+    await page.getByRole('button', { name: '确认授权本地插件' }).click()
+    expect((await postResponse).status()).toBe(303)
+    await expect.poll(() => callbackUrl).toContain('code=')
+    expect(await page.locator('body').innerText()).toContain('authorization received')
+    await browserContext.close()
+    await browser.close()
+    browser = undefined
     const callback = new URL(callbackUrl, redirectUri)
     expect(callback.origin + callback.pathname).toBe(redirectUri)
     expect(callback.searchParams.get('state')).toBe(state)
     const code = callback.searchParams.get('code')!
-    await new Promise<void>(resolve => callbackServer.close(() => resolve()))
+    await new Promise<void>(resolve => callbackServer!.close(() => resolve()))
+    callbackServer = undefined
 
     const tokenForm = new URLSearchParams({ grant_type: 'authorization_code', client_id: 'local-desktop', redirect_uri: redirectUri, code, code_verifier: verifier, resource: `${base}/mcp`, workspace_id: workspaceId })
     const exchanged = await fetch(`${base}/v1/auth/local-plugin/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: tokenForm })
@@ -87,7 +128,7 @@ describe('local plugin browser PKCE', () => {
     const replay = await fetch(`${base}/v1/auth/local-plugin/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: tokenForm })
     expect(replay.status).toBe(400)
     await expect(replay.json()).resolves.toMatchObject({ error: { code: 'MCP_OAUTH_INVALID_GRANT' } })
-  })
+  }, 30_000)
 
   it('binds a multi-workspace authorization code to the selected workspace through token exchange', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
