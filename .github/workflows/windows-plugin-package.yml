@@ -78,10 +78,18 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
           $binary = Join-Path $helperDir 'StoreNovaCredentialHelper.exe'
-          $cert = Get-Item "Cert:\CurrentUser\My\$env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT"
+          $cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Thumbprint -eq $env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT } | Select-Object -First 1
+          if ($null -eq $cert -or -not $cert.HasPrivateKey) { throw 'Imported test signing key is unavailable' }
           $signature = Set-AuthenticodeSignature -FilePath $binary -Certificate $cert -HashAlgorithm SHA256
-          if ($signature.Status -ne 'Valid') { throw "Test signing failed: $($signature.Status)" }
+          if ($null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $cert.Thumbprint) { throw 'Test signature was not attached' }
           (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash | Set-Content -LiteralPath "$binary.sha256" -Encoding Ascii
+      - name: Verify the test signature trust chain
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $binary = Join-Path (Join-Path $env:RUNNER_TEMP 'storenova-helper') 'StoreNovaCredentialHelper.exe'
+          $signature = Get-AuthenticodeSignature -LiteralPath $binary
+          if ($signature.Status -ne 'Valid') { throw "Test signature is not trusted: $($signature.Status)" }
       - name: Package and verify a clean Windows install
         shell: powershell
         run: |
