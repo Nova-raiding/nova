@@ -166,6 +166,16 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $binary = Join-Path (Join-Path $env:RUNNER_TEMP 'storenova-helper') 'StoreNovaCredentialHelper.exe'
-          $read = '{"operation":"read","target":"com.storenova.installation-identity","account":"current-installation"}' | & $binary
-          if ($LASTEXITCODE -ne 0 -or $read -ne 'ci-package-smoke') { Write-Host '::error file=.github/workflows/windows-plugin-package.yml,line=1::CREDENTIAL_READ_FAILED'; exit 1 }
+          $request = '{"operation":"read","target":"com.storenova.installation-identity","account":"current-installation"}'
+          $inputPath = Join-Path $env:RUNNER_TEMP 'credential-read-request.json'
+          $outputPath = Join-Path $env:RUNNER_TEMP 'credential-read-output.txt'
+          $errorPath = Join-Path $env:RUNNER_TEMP 'credential-read-error.txt'
+          [System.IO.File]::WriteAllText($inputPath, $request, [System.Text.Encoding]::ASCII)
+          $process = Start-Process -FilePath $binary -RedirectStandardInput $inputPath -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -Wait -PassThru
+          $read = if (Test-Path -LiteralPath $outputPath) { (Get-Content -LiteralPath $outputPath -Raw).Trim() } else { '' }
+          if ($process.ExitCode -ne 0 -or $read -ne 'ci-package-smoke') {
+            $diagnostic = if (Test-Path -LiteralPath $errorPath) { (Get-Content -LiteralPath $errorPath -Raw).Trim() } else { '' }
+            Write-Host "::error file=.github/workflows/windows-plugin-package.yml,line=1::CREDENTIAL_READ_FAILED $diagnostic"
+            exit 1
+          }
           Write-Host 'Windows package build, bundled install, MCP runtime, and Credential Manager passed.'
