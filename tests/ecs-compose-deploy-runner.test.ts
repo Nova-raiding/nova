@@ -8,11 +8,14 @@ const path = 'infra/scripts/deploy-verified-ecs-compose.sh'
 const source = () => readFileSync(path, 'utf8')
 
 describe('verified ECS Compose deployment runner', () => {
-  it('captures an external gateway before nonce consumption and recovers it before unlocking for business rollback', () => {
+  it('captures an external gateway before nonce consumption and restores it only after business rollback', () => {
     const script = source()
     expect(script.indexOf('external_gateway_action snapshot')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('external_gateway_action stop')).toBeLessThan(script.indexOf('up -d --no-build --pull never --remove-orphans'))
-    expect(script.indexOf('restore_external_gateway ||')).toBeLessThan(script.indexOf('flock -u 9'))
+    expect(script.indexOf('sh "$root/infra/scripts/invoke-ecs-automatic-rollback.sh"')).toBeLessThan(script.indexOf('restore_external_gateway ||'))
+    expect(script).toContain('ECS_INHERITED_DEPLOY_LOCK_FD9=YES')
+    expect(script).toContain('external gateway remains in candidate topology because runtime rollback failed')
+    expect(script).not.toContain('flock -u 9')
     expect(script).toContain('check-ports --candidate-project "$project"')
     expect(script).toContain('rollback Compose without public 80/443 bindings')
   })
@@ -92,11 +95,11 @@ describe('verified ECS Compose deployment runner', () => {
     expect(script).toContain('capture')
     for (const phase of ['nonce_consumed', 'migration_started', 'migration_complete', 'runtime_cutover_started', 'runtime_identity_verified']) expect(script).toContain(`--phase ${phase}`)
     expect(script).toContain('recover --state "$state_path"')
-    expect(script).toContain('Ordinary rollback deliberately retains its complete /releasez current')
+    expect(script).toContain('ordinary rollback validates the current release')
     expect(script).toContain('mutation_started=true')
     expect(script).not.toContain('ECS_DEPLOY_STATE_PATH="$state_path"')
     expect(script).toContain('protected rollback entrypoint failed; production remains blocked')
-    expect(script).toContain('flock -u 9')
+    expect(script).not.toContain('flock -u 9')
     for (const name of ['ECS_ROLLBACK_PLAN_PATH', 'ECS_ROLLBACK_COMPOSE_PATH', 'ECS_ROLLBACK_ENV_FILE', 'ECS_ROLLBACK_IMAGE_DIGESTS_JSON', 'ECS_ROLLBACK_STATE_PATH']) expect(script).toContain(name)
     expect(script).toContain('invoke-ecs-automatic-rollback.sh')
     const consume = script.indexOf('consume-production-evidence-nonce.sh')
@@ -110,22 +113,55 @@ describe('verified ECS Compose deployment runner', () => {
     expect(mutation).toBeLessThan(migration)
   })
 
+  it('rejects a rollback capsule that cannot recover every candidate migration prefix before consuming the nonce', () => {
+    const script = source()
+    const block = script.match(/PLAN="\$ECS_ROLLBACK_PLAN_PATH"[^\n]*\\\n[\s\S]*? node <<'NODE'\n([\s\S]*?)\nNODE/)
+    expect(block).not.toBeNull()
+    const directory = mkdtempSync(join(tmpdir(), 'ecs-migration-rollback-'))
+    const planPath = join(directory, 'plan.json')
+    const hash = (value: string) => value.repeat(64)
+    const candidate = { release_id: 'candidate', git_sha: 'a'.repeat(40), manifest_sha256: hash('b'), image_set_digest: `sha256:${hash('c')}` }
+    const base = {
+      schema_version: '1', kind: 'ecs-compose-rollback-capsule', created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 60_000).toISOString(), compose_project: 'merchant-production', current: candidate,
+      target: { release_id: 'bridge', git_sha: 'd'.repeat(40), manifest_sha256: hash('e'), image_set_digest: `sha256:${hash('f')}`,
+        compose_sha256: hash('1'), env_sha256: hash('2'), image_digests_sha256: hash('3') },
+      database: { strategy: 'forward_only', schema_downgrade: false, live_migration_version: 242, target_migration_tail: 244,
+        allowed_prefix_sha256: { 242: hash('4'), 243: hash('5'), 244: hash('6') } }, volumes: { preserve: true },
+    }
+    const verify = (database: Record<string, unknown>) => {
+      writeFileSync(planPath, JSON.stringify({ ...base, database }))
+      return spawnSync('node', ['-'], { input: block![1], encoding: 'utf8', env: {
+        ...process.env, PLAN: planPath, COMPOSE_SHA: hash('1'), ENV_SHA: hash('2'), DIGESTS_SHA: hash('3'), PROJECT: 'merchant-production',
+        CANDIDATE_ID: candidate.release_id, CANDIDATE_GIT: candidate.git_sha, CANDIDATE_MANIFEST: candidate.manifest_sha256,
+        CANDIDATE_IMAGES: candidate.image_set_digest, EXPECTED_MIGRATION_VERSION: '244', DIGESTS: JSON.stringify({ api: `sha256:${hash('7')}` }),
+      } })
+    }
+    expect(verify(base.database).status).toBe(0)
+    expect(verify({ ...base.database, target_migration_tail: 242 }).stderr).toContain('rollback target must contain exactly the candidate migration chain')
+    expect(verify({ ...base.database, allowed_prefix_sha256: { 242: hash('4'), 244: hash('6') } }).stderr).toContain('lacks an approved migration prefix at 243')
+    expect(script.indexOf('rollback target must contain exactly the candidate migration chain')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
+    expect(script.indexOf('forward-compatible rollback bridge is not the current public release')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
+    expect(script.indexOf('rollback capsule live migration version differs from signed predeploy observation')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
+  })
+
   it('executes the automatic rollback entrypoint with the complete frozen capsule contract', () => {
     const directory = mkdtempSync(join(tmpdir(), 'ecs-auto-rollback-'))
     const capture = join(directory, 'capture.json')
     const entrypoint = join(directory, 'rollback')
-    writeFileSync(entrypoint, `#!/bin/sh\nnode -e 'const fs=require("fs");fs.writeFileSync(process.env.CAPTURE,JSON.stringify({confirm:process.env.CONFIRM_ECS_ROLLBACK,plan:process.env.ECS_ROLLBACK_PLAN_PATH,compose:process.env.ECS_ROLLBACK_COMPOSE_PATH,env:process.env.ECS_ROLLBACK_ENV_FILE,digests:process.env.ECS_ROLLBACK_IMAGE_DIGESTS_JSON,state:process.env.ECS_ROLLBACK_STATE_PATH,lock:process.env.ECS_DEPLOY_LOCK_PATH,project:process.env.ECS_COMPOSE_PROJECT,api:process.env.PRODUCTION_API_BASE_URL,database:process.env.DATABASE_URL,failed:process.env.ECS_FAILED_RELEASE_ID}))'\n`)
+    writeFileSync(entrypoint, `#!/bin/sh\nnode -e 'const fs=require("fs");fs.writeFileSync(process.env.CAPTURE,JSON.stringify({confirm:process.env.CONFIRM_ECS_ROLLBACK,plan:process.env.ECS_ROLLBACK_PLAN_PATH,compose:process.env.ECS_ROLLBACK_COMPOSE_PATH,env:process.env.ECS_ROLLBACK_ENV_FILE,digests:process.env.ECS_ROLLBACK_IMAGE_DIGESTS_JSON,state:process.env.ECS_ROLLBACK_STATE_PATH,lock:process.env.ECS_DEPLOY_LOCK_PATH,project:process.env.ECS_COMPOSE_PROJECT,api:process.env.PRODUCTION_API_BASE_URL,database:process.env.DATABASE_URL,failed:process.env.ECS_FAILED_RELEASE_ID,inherited:process.env.ECS_INHERITED_DEPLOY_LOCK_FD9}))'\n`)
     chmodSync(entrypoint, 0o700)
     const expected = {
       confirm: 'YES', plan: '/protected/plan.json', compose: '/protected/compose.yml', env: '/protected/runtime.env',
       digests: '{"api":"sha256:' + 'a'.repeat(64) + '"}', state: '/protected/state.json', lock: '/protected/deploy.lock',
-      project: 'merchant-production', api: 'https://production.example.test', database: 'postgres://readonly', failed: 'release-candidate',
+      project: 'merchant-production', api: 'https://production.example.test', database: 'postgres://readonly', failed: 'release-candidate', inherited: 'YES',
     }
     execFileSync('sh', ['infra/scripts/invoke-ecs-automatic-rollback.sh'], { env: {
       ...process.env, CAPTURE: capture, ECS_ROLLBACK_ENTRYPOINT: entrypoint, ECS_ROLLBACK_PLAN_PATH: expected.plan,
       ECS_ROLLBACK_COMPOSE_PATH: expected.compose, ECS_ROLLBACK_ENV_FILE: expected.env, ECS_ROLLBACK_IMAGE_DIGESTS_JSON: expected.digests,
       ECS_ROLLBACK_STATE_PATH: expected.state, ECS_DEPLOY_LOCK_PATH: expected.lock, ECS_COMPOSE_PROJECT: expected.project,
       PRODUCTION_API_BASE_URL: expected.api, DATABASE_URL: expected.database, ECS_FAILED_RELEASE_ID: expected.failed,
+      ECS_INHERITED_DEPLOY_LOCK_FD9: expected.inherited,
     } })
     expect(JSON.parse(readFileSync(capture, 'utf8'))).toEqual(expected)
     // The legacy rollback wrapper never parsed ecs-predeploy-state/1 and still

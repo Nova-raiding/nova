@@ -15,6 +15,7 @@ import {
   signAlipayParams,
   signingContent,
   verifyNotifySignature,
+  verifiedNotifySigningContent,
   verifyResponseSignature,
 } from '../services/payment-gateway/alipay.mjs'
 
@@ -52,9 +53,11 @@ describe('payment gateway Alipay protocol helpers', () => {
     const documented = { app_id: 'demo', out_trade_no: 'order-1', total_amount: '0.01', trade_no: 'trade-1', sign_type: 'RSA2' }
     const documentedSign = createSign('RSA-SHA256').update(signingContent(documented, { includeSignType: false }), 'utf8').sign(privateKeyPem, 'base64')
     expect(verifyNotifySignature({ ...documented, sign: documentedSign }, publicKeyPem, 'demo')).toBe(true)
+    expect(verifiedNotifySigningContent({ ...documented, sign: documentedSign }, publicKeyPem, 'demo')).toBe(signingContent(documented, { includeSignType: false }))
 
     const legacySign = signAlipayParams(documented, privateKeyPem)
     expect(verifyNotifySignature({ ...documented, sign: legacySign }, publicKeyPem, 'demo')).toBe(true)
+    expect(verifiedNotifySigningContent({ ...documented, sign: legacySign }, publicKeyPem, 'demo')).toBe(signingContent(documented))
     const omittedSignTypeSign = createSign('RSA-SHA256').update(signingContent({ ...documented, sign_type: 'RSA2' }), 'utf8').sign(privateKeyPem, 'base64')
     const omittedSignType = { ...documented, sign: omittedSignTypeSign } as Record<string, string>
     delete omittedSignType.sign_type

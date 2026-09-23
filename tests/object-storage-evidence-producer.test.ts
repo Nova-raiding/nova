@@ -15,7 +15,7 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'oss-v2-producer-')); mkdirSync(join(root, 'raw'))
   const put = (name: string, value: unknown) => { const path = join(root, 'raw', name); writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`); return path }
   const bucket = 'merchant-assets-production'
-  const canaryPath = put('canary.json', { schema_version: '1', state: 'ready', release_id: releaseId, environment: 'production', simulated: false, provider: 'aliyun-oss', bucket, endpoint: 'https://s3.oss-cn-beijing.aliyuncs.com', region: 'cn-beijing', canary_prefix: 'merchant-assets/canary/release-oss-v2/run/', object_key_sha256: '1'.repeat(64), payload_sha256: '2'.repeat(64), encryption: 'AES256', checks: ['put', 'head', 'get_hash', 'encryption', 'delete'].map(id => ({ id, state: 'passed' })), observed_at: observedAt })
+  const canaryPath = put('canary.json', { schema_version: '1', state: 'ready', release_id: releaseId, environment: 'production', simulated: false, provider: 'aliyun-oss', bucket, endpoint: 'https://s3.oss-cn-beijing.aliyuncs.com', region: 'cn-beijing', canary_prefix: 'merchant-assets/canary/release-oss-v2/run/', object_key_sha256: '1'.repeat(64), payload_sha256: '2'.repeat(64), encryption: 'AES256', checks: ['put', 'head', 'get_hash', 'encryption', 'delete', 'delete_verified'].map(id => ({ id, state: 'passed' })), observed_at: observedAt })
   const endpoint = 'https://s3.oss-cn-beijing.aliyuncs.com'
   const lifecyclePolicyId = 'store-nova-merchant-assets-retention'
   const controlPlanePath = put('control.json', { schema_version: '1', provider: 'aliyun-oss', mode: 'read-only', bucket_sha256: createHash('sha256').update(bucket).digest('hex'), region: 'cn-beijing', endpoint_sha256: createHash('sha256').update(endpoint).digest('hex'), lifecycle_rule_id_sha256: createHash('sha256').update(lifecyclePolicyId).digest('hex'), observed_at: observedAt, ready: true, checks: { versioning_enabled: { state: 'passed', observed: true }, lifecycle_enabled_rules: { state: 'passed', observed: 1 }, public_access_blocked: { state: 'passed', observed: true } } })
@@ -61,5 +61,12 @@ describe('object storage schema v2 evidence producer', () => {
     const canary = JSON.parse(readFileSync(stale.input.canaryPath, 'utf8'))
     writeFileSync(stale.input.canaryPath, JSON.stringify({ ...canary, observed_at: '2026-09-12T08:00:00.000Z' }))
     expect(() => produceObjectStorageEvidence(stale.input)).toThrow('OBJECT_STORAGE_EVIDENCE_CANARY_STALE')
+  })
+
+  it('rejects an old canary that only issued DELETE without verifying the exact version disappeared', () => {
+    const value = fixture()
+    const canary = JSON.parse(readFileSync(value.input.canaryPath, 'utf8'))
+    writeFileSync(value.input.canaryPath, JSON.stringify({ ...canary, checks: canary.checks.filter((check: { id: string }) => check.id !== 'delete_verified') }))
+    expect(() => produceObjectStorageEvidence(value.input)).toThrow('OBJECT_STORAGE_EVIDENCE_CANARY_CHECKS_INCOMPLETE')
   })
 })

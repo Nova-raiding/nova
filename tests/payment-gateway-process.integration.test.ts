@@ -1,6 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { createSign, generateKeyPairSync } from 'node:crypto'
+import { createHash, createSign, generateKeyPairSync } from 'node:crypto'
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { verifyPaymentCallbackSignature } from '../packages/billing/src/payment-provider.js'
 import { encodeAlipayParams, encodePassbackParams, signingContent } from '../services/payment-gateway/alipay.mjs'
@@ -80,6 +83,8 @@ describe('payment gateway process contract', () => {
     const callbackSecret = 'process-contract-callback-secret'
     const gatewayApiKey = 'process-contract-gateway-key'
     const appId = 'process-contract-alipay-app'
+    const receiptDirectory = mkdtempSync(join(realpathSync(tmpdir()), 'gateway-notify-receipt-'))
+    chmodSync(receiptDirectory, 0o700)
     let alipayCalls = 0
     const alipayPort = await listen(createServer((_req, res) => {
       alipayCalls += 1
@@ -115,6 +120,7 @@ describe('payment gateway process contract', () => {
         PAYMENT_GATEWAY_API_KEY: gatewayApiKey,
         PAYMENT_CALLBACK_SECRET: callbackSecret,
         PAYMENT_API_BASE_URL: `http://127.0.0.1:${apiPort}`,
+        PAYMENT_PROTECTED_RECEIPT_DIR: receiptDirectory,
         PUBLIC_BASE_URL: 'https://yxsona.com',
       },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -204,6 +210,24 @@ describe('payment gateway process contract', () => {
     await expect(notifyResponse.text()).resolves.toBe('success')
     expect(alipayCalls).toBe(0)
     expect(apiRequests).toHaveLength(1)
+    const receiptFiles = readdirSync(receiptDirectory)
+    expect(receiptFiles).toHaveLength(2)
+    const receipts = receiptFiles.map(file => readFileSync(join(receiptDirectory, file), 'utf8'))
+    expect(receipts.map(value => JSON.parse(value) as { source: string }).map(value => value.source).sort()).toEqual(['alipay_native_notify', 'alipay_signed_checkout'])
+    const receiptText = receipts.find(value => (JSON.parse(value) as { source: string }).source === 'alipay_native_notify')!
+    expect(receiptText).not.toContain(notification.out_trade_no)
+    expect(receiptText).not.toContain(notification.trade_no)
+    expect(receiptText).not.toContain(sign)
+    expect(JSON.parse(receiptText)).toMatchObject({
+      source: 'alipay_native_notify',
+      provider_signature_verified: true,
+      api_callback_status: 200,
+      amount_fen: 1000,
+      state: 'paid',
+      order_id_sha256: createHash('sha256').update(notification.out_trade_no).digest('hex'),
+      provider_trade_id_sha256: createHash('sha256').update(notification.trade_no).digest('hex'),
+      final_evidence: false,
+    })
 
     const forwarded = apiRequests[0]!
     expect(forwarded.path).toBe('/v1/billing/callback/alipay')
@@ -247,5 +271,53 @@ describe('payment gateway process contract', () => {
       await expect(invalidResponse.json()).resolves.toEqual({ error: 'INVALID_NOTIFY' })
     }
     expect(apiRequests).toHaveLength(1)
+    expect(readdirSync(receiptDirectory)).toHaveLength(2)
+  }, 20_000)
+
+  it('captures only redacted source facts from signed Alipay query and refund responses', async () => {
+    const alipayPair = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    const merchantPair = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    const alipayPrivateKey = alipayPair.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
+    const receiptDirectory = mkdtempSync(join(realpathSync(tmpdir()), 'gateway-operation-receipt-'))
+    chmodSync(receiptDirectory, 0o700)
+    const orderId = 'sensitive-real-order'
+    const tradeId = 'sensitive-real-trade'
+    const workspaceId = 'sensitive-real-workspace'
+    const alipayPort = await listen(createServer(async (req, res) => {
+      let raw = ''
+      for await (const chunk of req) raw += String(chunk)
+      const method = new URLSearchParams(raw).get('method')
+      const responseKey = method === 'alipay.trade.query' ? 'alipay_trade_query_response' : 'alipay_trade_refund_response'
+      const result = method === 'alipay.trade.query'
+        ? { code: '10000', out_trade_no: orderId, trade_no: tradeId, total_amount: '0.29', trade_status: 'TRADE_SUCCESS' }
+        : { code: '10000', out_trade_no: orderId, trade_no: tradeId, fund_change: 'Y' }
+      const content = JSON.stringify(result)
+      const signature = createSign('RSA-SHA256').update(content, 'utf8').sign(alipayPrivateKey, 'base64')
+      res.writeHead(200, { 'content-type': 'application/json' }).end(`{"${responseKey}":${content},"sign":"${signature}"}`)
+    }))
+    const gatewayPort = await reservePort()
+    const child = spawn(process.execPath, ['services/payment-gateway/index.mjs'], {
+      cwd: process.cwd(),
+      env: { ...process.env, NODE_ENV: 'test', PORT: String(gatewayPort), ALIPAY_APP_ID: 'test-app', ALIPAY_APP_PRIVATE_KEY: merchantPair.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(), ALIPAY_PUBLIC_KEY: alipayPair.publicKey.export({ format: 'pem', type: 'spki' }).toString(), ALIPAY_GATEWAY_URL: `http://127.0.0.1:${alipayPort}/gateway.do`, PAYMENT_GATEWAY_API_KEY: 'test-service-key', PAYMENT_CALLBACK_SECRET: 'test-callback-secret', PAYMENT_API_BASE_URL: 'http://127.0.0.1:1', PAYMENT_PROTECTED_RECEIPT_DIR: receiptDirectory },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    children.add(child)
+    const base = `http://127.0.0.1:${gatewayPort}`
+    await waitForGateway(base, child, () => '')
+    const headers = { authorization: 'Bearer test-service-key', 'content-type': 'application/json' }
+    const query = await fetch(`${base}/v1/query`, { method: 'POST', headers, body: JSON.stringify({ channel: 'alipay', order_id: orderId, workspace_id: workspaceId }) })
+    expect(query.status).toBe(200)
+    await expect(query.json()).resolves.toMatchObject({ state: 'paid', amount_fen: 29 })
+    const refund = await fetch(`${base}/v1/refund`, { method: 'POST', headers, body: JSON.stringify({ channel: 'alipay', order_id: orderId, workspace_id: workspaceId, provider_trade_id: tradeId, refund_request_id: 'sensitive-refund', amount_fen: 29 }) })
+    expect(refund.status).toBe(200)
+    await expect(refund.json()).resolves.toMatchObject({ state: 'completed', amount_fen: 29 })
+    const receipts = readdirSync(receiptDirectory).map(file => readFileSync(join(receiptDirectory, file), 'utf8'))
+    expect(receipts).toHaveLength(2)
+    expect(receipts.map(value => (JSON.parse(value) as { operation: string }).operation).sort()).toEqual(['provider_query', 'refund'])
+    for (const receipt of receipts) {
+      expect(receipt).not.toContain('sensitive-')
+      expect(receipt).toContain(createHash('sha256').update(orderId).digest('hex'))
+      expect(JSON.parse(receipt)).toMatchObject({ provider_response_signature_verified: true, amount_fen: 29, final_evidence: false })
+    }
   }, 20_000)
 })

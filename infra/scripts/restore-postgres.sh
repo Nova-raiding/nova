@@ -42,7 +42,7 @@ case "${RESTORE_ALLOW_UNSIGNED_LOCAL:-}" in
     sh "$root/infra/scripts/validate-production-evidence-trust.sh" "$root" "$PLATFORM_OPERATIONS_MODE"
   trust_dir=/run/release-security/evidence-trust
   trusted_key_id=$(sed -n '1p' "$trust_dir/production-evidence-key-id")
-  npx --no-install tsx "$root/tests/backup-attestation-gate.ts" --file "$BACKUP_ATTESTATION_PATH" --backup "$verified_backup" --expected-backup-file-name "$(basename "$BACKUP_FILE")" --public-key "$trust_dir/production-evidence-public.pem" --key-id "$trusted_key_id" --expected-source-database-id-sha256 "$EXPECTED_SOURCE_DATABASE_ID_SHA256"
+  npx --no-install tsx "$root/tests/backup-attestation-gate.ts" --file "$BACKUP_ATTESTATION_PATH" --backup "$verified_backup" --expected-backup-file-name "$(basename "$BACKUP_FILE")" --public-key "$trust_dir/production-evidence-public.pem" --key-id "$trusted_key_id" --expected-source-database-id-sha256 "$EXPECTED_SOURCE_DATABASE_ID_SHA256" --require-snapshot-time
     ;;
   *) echo "RESTORE_ALLOW_UNSIGNED_LOCAL must be YES or unset" >&2; exit 2 ;;
 esac

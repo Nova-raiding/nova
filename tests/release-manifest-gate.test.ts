@@ -1,7 +1,7 @@
 import { createHash, generateKeyPairSync } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildReleaseManifest } from '../scripts/release-manifest.js'
 import { signProductionEvidence } from './production-evidence-gate.js'
@@ -34,7 +34,56 @@ function boundManifestFixture() {
   return { artifactRoot, evidenceFiles, manifest, options, privateKeyPem }
 }
 
+function stagedManifestFixture() {
+  const fixture = boundManifestFixture()
+  const stagedRoot = mkdtempSync(join(tmpdir(), 'staged-release-manifest-'))
+  for (const artifact of fixture.manifest.artifacts) {
+    const target = join(stagedRoot, artifact.path)
+    mkdirSync(dirname(target), { recursive: true })
+    copyFileSync(join(process.cwd(), artifact.path), target)
+  }
+  const navigation = 'apps/ops-console/src/navigation/opsNavigation.ts'
+  mkdirSync(dirname(join(stagedRoot, navigation)), { recursive: true })
+  copyFileSync(join(process.cwd(), navigation), join(stagedRoot, navigation))
+  const identityPath = join(stagedRoot, '.candidate-identity')
+  writeFileSync(identityPath, [
+    'release_id=release-1',
+    `git_sha=${fixture.manifest.components.releaseGitSha}`,
+    `source_sha256=sha256:${'a'.repeat(64)}`,
+    `comparison_manifest_sha256=sha256:${'b'.repeat(64)}`,
+    `sync_plan_sha256=sha256:${'c'.repeat(64)}`,
+    '',
+  ].join('\n'))
+  return { ...fixture, stagedRoot, identityPath }
+}
+
 describe('release manifest production gate', () => {
+  it('accepts a verified staged source without .git using its candidate identity', () => {
+    const fixture = stagedManifestFixture()
+    expect(validateReleaseManifest(fixture.manifest, { ...fixture.options, root: fixture.stagedRoot })).toEqual([])
+    const previous = process.env.RELEASE_GIT_SHA
+    process.env.RELEASE_GIT_SHA = ''
+    try {
+      const generated = buildReleaseManifest({ root: fixture.stagedRoot, releaseId: 'release-1' })
+      expect(generated.components.releaseGitSha).toBe(fixture.manifest.components.releaseGitSha)
+    } finally {
+      if (previous === undefined) delete process.env.RELEASE_GIT_SHA
+      else process.env.RELEASE_GIT_SHA = previous
+    }
+  })
+
+  it('rejects a staged identity with the wrong release, duplicate Git SHA, or invalid Git SHA', () => {
+    const fixture = stagedManifestFixture()
+    for (const lines of [
+      [`release_id=release-other`, `git_sha=${fixture.manifest.components.releaseGitSha}`],
+      ['release_id=release-1', `git_sha=${fixture.manifest.components.releaseGitSha}`, `git_sha=${fixture.manifest.components.releaseGitSha}`],
+      ['release_id=release-1', 'git_sha=invalid'],
+    ]) {
+      writeFileSync(fixture.identityPath, `${lines.join('\n')}\n`)
+      expect(validateReleaseManifest(fixture.manifest, { ...fixture.options, root: fixture.stagedRoot })).toContain('components.releaseGitSha must match the current Git HEAD or staged candidate identity')
+    }
+  })
+
   it('binds API/OpenAPI, MCP and plugin source to one release', () => {
     const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1', capabilityEvidenceRef: 'artifact://production/evidence/capability#' + 'a'.repeat(64), capacityEvidenceRef: 'artifact://production/evidence/capacity#' + 'a'.repeat(64), modelRelayEvidenceRef: 'artifact://production/evidence/relay#' + 'a'.repeat(64), paymentEvidenceRef: 'artifact://production/evidence/payment#' + 'a'.repeat(64), restoreEvidenceRef: 'artifact://production/evidence/restore#' + 'a'.repeat(64), objectStorageEvidenceRef: 'artifact://production/evidence/storage#' + 'a'.repeat(64), codexAppHostEvidenceRef: 'artifact://production/evidence/codex-host#' + 'a'.repeat(64), canonicalCutoverEvidenceRef: 'artifact://production/evidence/canonical-cutover#' + 'a'.repeat(64) })
     expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: 'release-1' })).toEqual([])

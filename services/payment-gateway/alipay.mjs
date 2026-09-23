@@ -86,11 +86,11 @@ export function encodeAlipayParams(params) {
  * Alipay application cannot be replayed against this gateway (the Alipay
  * platform public key is shared across applications).
  */
-export function verifyNotifySignature(input, publicKey, expectedAppId) {
+export function verifiedNotifySigningContent(input, publicKey, expectedAppId) {
   const signature = typeof input?.sign === 'string' ? input.sign : ''
-  if (!signature) return false
-  if (typeof expectedAppId !== 'string' || !expectedAppId.trim() || typeof input?.app_id !== 'string' || input.app_id !== expectedAppId.trim()) return false
-  if (input?.sign_type && String(input.sign_type).toUpperCase() !== 'RSA2') return false
+  if (!signature) return null
+  if (typeof expectedAppId !== 'string' || !expectedAppId.trim() || typeof input?.app_id !== 'string' || input.app_id !== expectedAppId.trim()) return null
+  if (input?.sign_type && String(input.sign_type).toUpperCase() !== 'RSA2') return null
 
   const withoutSignType = Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'sign' && key !== 'sign_type'))
   const suppliedSignType = Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'sign'))
@@ -101,13 +101,17 @@ export function verifyNotifySignature(input, publicKey, expectedAppId) {
   for (const [params, includeSignType] of [[withoutSignType, false], [withDefaultSignType, true], [suppliedSignType, Object.prototype.hasOwnProperty.call(suppliedSignType, 'sign_type')]]) {
     const content = signingContent(params, { includeSignType })
     try {
-      if (crypto.createVerify('RSA-SHA256').update(content, 'utf8').verify(publicKey, signature, 'base64')) return true
+      if (crypto.createVerify('RSA-SHA256').update(content, 'utf8').verify(publicKey, signature, 'base64')) return content
     } catch {
       // A malformed signature must be treated as an ordinary verification
       // failure, never as a gateway crash.
     }
   }
-  return false
+  return null
+}
+
+export function verifyNotifySignature(input, publicKey, expectedAppId) {
+  return verifiedNotifySigningContent(input, publicKey, expectedAppId) !== null
 }
 
 /** Parse either Alipay's form callback or our internal JSON requests. */

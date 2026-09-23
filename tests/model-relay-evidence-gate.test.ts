@@ -82,6 +82,29 @@ describe('model relay evidence gate', () => {
     expect(validateModelRelayEvidence(stale, { requireProduction: true, now: new Date('2026-08-27T02:00:00Z') })).toContain('relay evidence is stale')
   })
 
+  it('rejects production evidence without two immutable finite token receipts', () => {
+    const now = new Date('2026-08-26T02:00:00Z')
+    const root = mkdtempSync(join(tmpdir(), 'relay-token-cap-binding-'))
+    mkdirSync(join(root, 'relay'), { recursive: true })
+    const base = { ...evidence, expires_at: '2026-08-27T01:00:00Z' }
+    expect(validateModelRelayEvidence(base, { requireProduction: true, artifactRoot: root, now })).toContain('token_quota is required for production relay evidence')
+    const quotas = (['model', 'video'] as const).map(credential => {
+      const token_quota = { credential, observed_at: '2026-08-26T00:59:00Z', total_granted: 1000, total_used: 200, total_available: 800, expires_at: 0, unlimited_quota: false }
+      const body = JSON.stringify({ schema_version: '1', release_id: 'release-1', token_quota })
+      const digest = createHash('sha256').update(body).digest('hex')
+      writeFileSync(join(root, 'relay', `token-${credential}.json`), body)
+      return { ...token_quota, evidence_ref: `artifact://production/relay/token-${credential}.json#${digest}` }
+    })
+    const validErrors = validateModelRelayEvidence({ ...base, token_quota: quotas }, { requireProduction: true, artifactRoot: root, now })
+    expect(validErrors.filter(error => error.startsWith('token_quota'))).toEqual([])
+    const unlimited = structuredClone(quotas)
+    unlimited[0]!.unlimited_quota = true
+    expect(validateModelRelayEvidence({ ...base, token_quota: unlimited }, { requireProduction: true, artifactRoot: root, now })).toContain('token_quota.model must be a current finite server-enforced quota')
+    const mismatched = structuredClone(quotas)
+    mismatched[1]!.total_available = 700
+    expect(validateModelRelayEvidence({ ...base, token_quota: mismatched }, { requireProduction: true, artifactRoot: root, now })).toContain('token_quota.video.evidence_ref token quota receipt must match the summarized finite token evidence')
+  })
+
   it('requires a distinct, immutable 503 recovery trace for production evidence', () => {
     const root = mkdtempSync(join(tmpdir(), 'relay-recovery-binding-'))
     mkdirSync(join(root, 'relay'), { recursive: true })

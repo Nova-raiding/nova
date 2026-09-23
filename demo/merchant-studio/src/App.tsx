@@ -2433,9 +2433,6 @@ export function Overview({
           </small>
         </div>
       )}
-      {baseUrl && isManualPlatformOperationsMode(apiMode) && (
-        <div className="info-notice" role="status">当前为人工运营模式，六平台店铺由运营人员在官方后台处理；首页不会自动发现、授权或同步店铺。</div>
-      )}
       {baseUrl && !apiMode && (
         <div className="info-notice" role="status">平台运营模式未确认，已停止自动发现店铺和读取同步任务；不会用默认模式绕过服务端权限。</div>
       )}
@@ -5354,7 +5351,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
     // server did return, and neither read falls back to a demo catalogue.
     if (isManualPlatformOperationsMode(apiMode)) {
       setAccounts([])
-      setCatalogReadNote('人工运营模式不执行平台店铺发现；商品来自商家知识库与人工导入。')
+      setCatalogReadNote('')
     } else if (shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
       fetchPlatformAccounts(baseUrl)
         .then((page) => { if (active) setAccounts(Array.isArray(page.items) ? page.items : []) })
@@ -5617,9 +5614,9 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
         <aside className="catalog-platform-rail" aria-label="平台列表">
           <div className="catalog-platform-rail-heading"><span>平台</span><small>选择后查看店铺</small></div>
           <div className="catalog-platform-list">
-          {platforms === null ? (
+          {platforms === null && catalogReadNote ? (
             <p className="muted" role="status">{catalogReadNote}</p>
-          ) : platforms.map((platform) => (
+          ) : platforms?.map((platform) => (
             <button className={`${selectedPlatform === platform.id ? 'active ' : ''}${platform.connected ? 'connected' : 'disconnected'}`} type="button" aria-pressed={selectedPlatform === platform.id} key={platform.id} onClick={() => setSelectedPlatform(platform.id)}>
               <span className="catalog-platform-mark" aria-hidden="true">{platform.mark}</span><span className="catalog-platform-list-copy"><strong>{platform.label}</strong><small>{platform.stores.length} 家店铺</small></span><span className="catalog-platform-connection"><i />{platform.statusLabel}</span><ChevronRight size={16} aria-hidden="true" />
             </button>

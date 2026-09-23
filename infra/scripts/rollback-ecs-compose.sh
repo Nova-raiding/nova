@@ -56,7 +56,15 @@ lock_mode=$(stat -c %a "$canonical_lock_parent")
 [ "$lock_uid" = "$(id -u)" ] || { echo 'ECS deploy lock parent must be owned by the invoking user' >&2; exit 2; }
 case "$lock_mode" in *[2367][0-7]|*[0-7][2367]) echo 'ECS deploy lock parent must not be group/world writable' >&2; exit 2;; esac
 [ ! -L "$ECS_DEPLOY_LOCK_PATH" ] || { echo 'ECS deploy lock must not be a symlink' >&2; exit 2; }
-exec 9>"$ECS_DEPLOY_LOCK_PATH"
+if [ "${ECS_INHERITED_DEPLOY_LOCK_FD9:-}" = YES ]; then
+  # Automatic rollback is invoked from the failed deploy while FD 9 is still
+  # locked. Verify the inherited descriptor before using it; reopening the
+  # lock here would self-deadlock or create an unlocked handoff window.
+  node -e 'const fs=require("fs"),fd=fs.fstatSync(9),path=fs.statSync(process.env.ECS_DEPLOY_LOCK_PATH);if(!fd.isFile()||fd.dev!==path.dev||fd.ino!==path.ino)throw new Error("inherited FD 9 is not the production mutation lock")' || exit 2
+else
+  [ -z "${ECS_INHERITED_DEPLOY_LOCK_FD9:-}" ] || { echo 'invalid inherited ECS lock mode' >&2; exit 2; }
+  exec 9>"$ECS_DEPLOY_LOCK_PATH"
+fi
 [ -f "$ECS_DEPLOY_LOCK_PATH" ] && [ ! -L "$ECS_DEPLOY_LOCK_PATH" ] || { echo 'ECS deploy lock must be a regular non-symlink file' >&2; exit 2; }
 flock -n 9 || { echo 'another ECS Compose deployment or rollback holds the production mutation lock' >&2; exit 1; }
 umask 077

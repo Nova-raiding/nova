@@ -36,6 +36,9 @@ describe('ECS Compose rollback executor', () => {
 
     expect(script).toContain('ECS_DEPLOY_LOCK_PATH')
     expect(script).toContain('flock -n 9')
+    expect(script).toContain('inherited FD 9 is not the production mutation lock')
+    expect(script).toContain('ECS_INHERITED_DEPLOY_LOCK_FD9')
+    expect(script.indexOf('inherited FD 9 is not the production mutation lock')).toBeLessThan(validation)
     expect(script).toContain('another ECS Compose deployment or rollback holds the production mutation lock')
     expect(script).toContain('rollback plan changed while copying')
     expect(script).toContain('rollback Compose changed while copying')

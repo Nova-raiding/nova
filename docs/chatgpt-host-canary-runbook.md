@@ -8,6 +8,7 @@
 - `mcp_base_url` 必须是正式公网 DNS 域名的 HTTPS 根 origin，不含 `/mcp`、凭据、query、localhost 或 IP 字面量。
 - 宿主必须标识为真实 macOS ChatGPT.app；`simulated=false`。
 - 每个场景保存不可变 artifact 引用，且 console/network errors 均为 0。
+- 预生产验收必须另外保存隔离 `/releasez` 的原始 JSON；记录候选 API 与 TLS gateway 的完整 Docker ID、临时 `.mcp.json` 与 route 文件的 SHA-256，并与冻结 Git SHA、image-set digest 一起写入 `candidate_route`。每个场景和错误恢复对账使用不同的 artifact 文件。
 
 ## 必测场景
 
@@ -28,7 +29,7 @@
 
 使用 `tests/codex-app-host-evidence-gate.ts` 校验最终 evidence JSON；只有校验通过且与当前 release、MCP origin、bridge SHA 一致，才能移除“真实 ChatGPT 宿主验收”上线阻断。
 
-执行生产门禁前，从当前发布清单取得 `RELEASE_ID`、`MCP_BASE_URL`、`BRIDGE_SHA256` 三个值。`--require-artifacts` 要求显式提供这三个非空绑定参数；空的 `RELEASE_ID` 会被拒绝。
+执行生产门禁前，从当前发布清单取得 `RELEASE_ID`、`MCP_BASE_URL`、`BRIDGE_SHA256`、`RELEASE_GIT_SHA` 和 `IMAGE_SET_DIGEST`。`--require-artifacts` 要求显式提供这些非空绑定参数。
 
 ## 采集文件
 
@@ -37,7 +38,7 @@
 ```json
 {
   "release_id": "当前发布 ID",
-  "environment": "production",
+  "environment": "preproduction",
   "generated_at": "2026-09-23T02:00:00Z",
   "host": "chatgpt",
   "app_version": "真实 ChatGPT.app 版本",
@@ -45,14 +46,23 @@
   "mcp_base_url": "https://正式商家域名",
   "bridge_sha256": "已安装 bridge.mjs 的 SHA-256",
   "simulated": false,
+  "candidate_route": {
+    "expected_git_sha": "40 位冻结 Git SHA",
+    "expected_image_set_digest": "sha256:64 位镜像集摘要",
+    "candidate_api_container_id": "64 位候选 API Docker ID",
+    "gateway_container_id": "64 位隔离 TLS gateway Docker ID",
+    "mcp_config_sha256": "64 位临时 .mcp.json SHA-256",
+    "route_file_sha256": "64 位临时 route 文件 SHA-256",
+    "release_probe_artifact_path": "/secure/captures/releasez.json"
+  },
   "scenarios": [
-    { "id": "plugin_discovery", "state": "passed", "console_errors": 0, "network_errors": 0, "artifact_path": "artifacts/codex-host/plugin-discovery.json" },
+    { "id": "plugin_discovery", "state": "passed", "console_errors": 0, "network_errors": 0, "artifact_path": "/secure/captures/plugin-discovery.json" },
     {
       "id": "error_recovery",
       "state": "passed",
       "console_errors": 0,
       "network_errors": 0,
-      "artifact_path": "artifacts/codex-host/error-recovery.json",
+      "artifact_path": "/secure/captures/error-recovery.json",
       "error_recovery": {
         "trigger_http_status": 503,
         "trigger_error_code": "MODEL_PROVIDER_OUTCOME_UNKNOWN",
@@ -63,14 +73,14 @@
         "before_state": "outcome_unknown",
         "after_state": "reconciled_succeeded",
         "reconciliation_required": true,
-        "outcome_artifact_path": "artifacts/codex-host/error-outcome.json"
+        "outcome_artifact_path": "/secure/captures/error-outcome.json"
       }
     }
   ]
 }
 ```
 
-将示例时间和占位文本替换为本次真实宿主采集值，并按同样格式补齐其余 13 个场景。`generated_at` 必须是宿主采集时的 UTC 时间（`YYYY-MM-DDTHH:mm:ssZ` 或带三位毫秒）；执行下方 `--require-artifacts` 门禁时，采集时间不得晚于当前时间五分钟，也不得早于当前时间 24 小时。`artifact_path` 和 `error_recovery.outcome_artifact_path` 均指向 `--artifact-root` 内已存在的常规文件，不接受符号链接；示例路径以项目根目录为当前工作目录。采集器会计算 SHA-256，生成最终证据中的 `evidence_ref` 和 `outcome_evidence_ref`，不要在 capture JSON 中手填这两个字段。使用：
+将示例时间和占位文本替换为本次真实宿主采集值，并按同样格式补齐其余 13 个场景。`generated_at` 必须是宿主采集时的 UTC 时间；执行下方 `--require-artifacts` 门禁时，采集时间不得晚于当前时间五分钟，也不得早于当前时间 24 小时。`artifact_path`、`error_recovery.outcome_artifact_path` 和候选 `/releasez` 文件均指向 `--artifact-root` 内已存在的不同常规文件，不接受符号链接。采集器会计算 SHA-256 并生成不可变引用，不要在 capture JSON 中手填这些引用。上线后正式域名复测另采一份 `environment=production` 的证据，此时不使用 `candidate_route`。使用：
 
 ```bash
 npm run codex:host:evidence -- \
@@ -82,8 +92,10 @@ npx tsx tests/codex-app-host-evidence-gate.ts \
   --release-id "$RELEASE_ID" \
   --expected-mcp-base-url "$MCP_BASE_URL" \
   --expected-bridge-sha256 "$BRIDGE_SHA256" \
+  --expected-git-sha "$RELEASE_GIT_SHA" \
+  --expected-image-set-digest "$IMAGE_SET_DIGEST" \
   --artifact-root artifacts \
   --require-artifacts
 ```
 
-采集器会拒绝 localhost、fixture、mock、模拟标记和缺失场景；它不能从本地浏览器或 Bridge 自行生成宿主证据。
+采集器会拒绝 localhost、fixture、mock、模拟标记、缺失场景、复用场景文件以及不匹配的候选 `/releasez`；它只能检查操作员提供的证据一致性，不能从本地浏览器或 Bridge 自行生成宿主证据，也不能单独证明截图或宿主日志确由 ChatGPT 产生。上线前仍需人工核验真实宿主记录。

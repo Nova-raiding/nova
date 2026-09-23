@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, readRelayErrorRecovery, requireProductionReleaseBinding, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
+import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, readRelayErrorRecovery, requireCanaryBudget, requireFiniteRelayTokenQuota, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -41,6 +41,85 @@ describe('production model relay contract', () => {
 
   it('allows polling an existing video job without re-confirming a new billable request', () => {
     expect(shouldBlockForCostGuard({ modality: 'video', confirmCost: false, existingVideoTaskId: 'job-existing' })).toBe(false)
+  })
+
+  it('requires an explicit per-run budget before any model request', () => {
+    for (const value of [undefined, '', '0', '-1', 'NaN', 'Infinity']) expect(() => requireCanaryBudget(value)).toThrow('MODEL_RELAY_CANARY_MAX_TOTAL_CNY')
+    expect(requireCanaryBudget('1.25')).toEqual({ limitCny: 1.25, reservedCny: 0 })
+  })
+
+  it('requires a finite server-enforced relay token before any billable request', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ code: true, data: { object: 'token_usage', total_granted: 1000, total_used: 200, total_available: 800, unlimited_quota: false, expires_at: 0 } })))
+    const input = { baseUrl: 'https://relay.example.test/v1', apiKey: 'test-key', credential: 'model' as const, fetcher, now: new Date('2026-09-23T00:00:00Z') }
+    await expect(requireFiniteRelayTokenQuota(input)).resolves.toMatchObject({ credential: 'model', total_available: 800, unlimited_quota: false, observed_at: '2026-09-23T00:00:00.000Z' })
+    expect(fetcher).toHaveBeenCalledWith(new URL('https://relay.example.test/api/usage/token/'), expect.objectContaining({ redirect: 'error', headers: expect.objectContaining({ authorization: 'Bearer test-key' }) }))
+    for (const data of [
+      { object: 'token_usage', total_granted: 0, total_used: 100, total_available: -100, unlimited_quota: true, expires_at: 0 },
+      { object: 'token_usage', total_granted: 1000, total_used: 1000, total_available: 0, unlimited_quota: false, expires_at: 0 },
+      { object: 'token_usage', total_granted: 1000, total_used: 200, total_available: 900, unlimited_quota: false, expires_at: 0 },
+      { object: 'token_usage', total_granted: 1000, total_used: 200, total_available: 800, unlimited_quota: false, expires_at: 1 },
+    ]) {
+      fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ code: true, data })))
+      await expect(requireFiniteRelayTokenQuota(input)).rejects.toThrow(/finite.*quota/u)
+    }
+    fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ code: false, data: { object: 'token_usage' } })))
+    await expect(requireFiniteRelayTokenQuota(input)).rejects.toThrow('response is invalid')
+    fetcher.mockResolvedValueOnce(new Response('{}', { status: 401 }))
+    await expect(requireFiniteRelayTokenQuota(input)).rejects.toThrow('HTTP 401')
+  })
+
+  it('stores a finite token receipt by content hash without exposing its key', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-token-quota-'))
+    try {
+      const quota = { credential: 'model' as const, observed_at: '2026-09-23T00:00:00Z', total_granted: 1000, total_used: 200, total_available: 800, expires_at: 0, unlimited_quota: false as const }
+      const reference = writeRelayTokenQuotaArtifact(root, 'release-1', quota)
+      expect(reference).toMatch(/^artifact:\/\/production\/relay\/release-1\/token-model-[a-f0-9]{16}\.json#[a-f0-9]{64}$/u)
+      const path = join(root, reference.slice('artifact://production/'.length).split('#')[0]!)
+      expect(readFileSync(path, 'utf8')).toContain('"total_available": 800')
+      expect(writeRelayTokenQuotaArtifact(root, 'release-1', quota)).toBe(reference)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('reserves three possible 429 attempts and rejects an over-budget probe before dispatch', async () => {
+    const budget = requireCanaryBudget('0.59')
+    const pricing = { estimateRequestCost: vi.fn(async () => ({ costCny: 0.2, metadata: { pricing_version: 'v1', pricing_group: 'VIP', quota_type: 1, formula_version: 'new-api-quota-v1' as const } })) }
+    await expect(reserveCanaryCost({ pricing, budget, modality: 'image', model: 'image-1', requestBody: { n: 1 } })).rejects.toThrow('exceeds MODEL_RELAY_CANARY_MAX_TOTAL_CNY')
+    expect(budget.reservedCny).toBe(0)
+    budget.limitCny = 0.6
+    await expect(reserveCanaryCost({ pricing, budget, modality: 'image', model: 'image-1', requestBody: { n: 1 } })).resolves.toBe(0.6)
+    expect(budget.reservedCny).toBe(0.6)
+  })
+
+  it('rejects unknown or misleading media prices rather than treating an estimate as observed cost', async () => {
+    const budget = requireCanaryBudget('10')
+    const input = { budget, modality: 'image_edit' as const, model: 'edit-1', requestBody: { n: 1 } }
+    await expect(reserveCanaryCost({ ...input, pricing: undefined })).rejects.toThrow('pricing snapshot is required')
+    await expect(reserveCanaryCost({ ...input, pricing: { estimateRequestCost: async () => ({ costCny: 0, metadata: { pricing_version: 'v1', pricing_group: 'VIP', quota_type: 1, formula_version: 'new-api-quota-v1' as const } }) } })).rejects.toThrow('unknown or zero')
+    await expect(reserveCanaryCost({ ...input, pricing: { estimateRequestCost: async () => ({ costCny: 0.1, metadata: { pricing_version: 'v1', pricing_group: 'VIP', quota_type: 0, formula_version: 'new-api-quota-v1' as const } }) } })).rejects.toThrow('fixed-unit')
+    expect(budget.reservedCny).toBe(0)
+  })
+
+  it('requires an explicit priced video resolution and duration before reserving', async () => {
+    const budget = requireCanaryBudget('10')
+    const pricing = { estimateRequestCost: vi.fn(async () => ({ costCny: 0.75, metadata: { pricing_version: 'v1', pricing_group: 'VIP', quota_type: 1, formula_version: 'relay-video-cny-per-second-v1' as const } })) }
+    const input = { pricing, budget, modality: 'video' as const, model: 'video-1', requestBody: { duration: 3 }, durationSeconds: 3 }
+    await expect(reserveCanaryCost(input)).rejects.toThrow('explicit 720P/1080P resolution')
+    expect(pricing.estimateRequestCost).not.toHaveBeenCalled()
+    await expect(reserveCanaryCost({ ...input, resolution: '480P' })).rejects.toThrow('explicit 720P/1080P resolution')
+    await expect(reserveCanaryCost({ ...input, resolution: '720P', durationSeconds: 16 })).rejects.toThrow('3-15 second duration')
+    await expect(reserveCanaryCost({ ...input, resolution: '720P' })).resolves.toBe(2.25)
+    expect(pricing.estimateRequestCost).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ preauthorization_duration_seconds: 3, resolution: '720P' }) }))
+    expect(budget.reservedCny).toBe(2.25)
+  })
+
+  it('rejects fallback video ratio pricing and budgets bounded text tokens', async () => {
+    const budget = requireCanaryBudget('1')
+    const unsupported = { estimateRequestCost: async () => ({ costCny: 0.1, metadata: { pricing_version: 'v1', pricing_group: 'VIP', quota_type: 1, formula_version: 'new-api-quota-v1' as const } }) }
+    await expect(reserveCanaryCost({ pricing: unsupported, budget, modality: 'video', model: 'video-1', requestBody: { duration: 3 }, durationSeconds: 3, resolution: '720P' })).rejects.toThrow('explicit duration/resolution relay price')
+    const pricing = { estimateRequestCost: vi.fn(async () => ({ costCny: 0.01, metadata: { pricing_version: 'v1', pricing_group: 'VIP', quota_type: 0, formula_version: 'new-api-quota-v1' as const } })) }
+    const requestBody = { model: 'text-1', max_tokens: 8, messages: [{ role: 'user', content: '只返回 OK' }] }
+    await reserveCanaryCost({ pricing, budget, modality: 'text', model: 'text-1', requestBody })
+    expect(pricing.estimateRequestCost).toHaveBeenCalledWith(expect.objectContaining({ inputTokens: Buffer.byteLength(JSON.stringify(requestBody), 'utf8'), outputTokens: 8 }))
   })
 
   it.each([

@@ -77,24 +77,26 @@ const policy = {
   database_oid: Number(process.env.DATABASE_OID),
   database_name: process.env.DATABASE_NAME,
 }
-writeFileSync('/run/release-security/evidence-trust/production-backup-source.json', JSON.stringify(policy) + '\n', { mode: 0o644 })
+writeFileSync('/run/release-security/evidence-trust/production-backup-source-release-synthetic-cli-e2e.json', JSON.stringify(policy) + '\n', { mode: 0o444 })
 NODE
 inside sh -c "sha256sum /usr/local/libexec/merchant/attest-postgres-backup | awk '{print \$1}' > /run/release-security/evidence-trust/production-backup-attester-sha256"
 inside chown root:root \
   /var/lib/merchant-release-security/production-capability-private.pem \
   /run/release-security/evidence-trust/production-evidence-public.pem \
   /run/release-security/evidence-trust/production-evidence-key-id \
-  /run/release-security/evidence-trust/production-backup-source.json \
+  /run/release-security/evidence-trust/production-backup-source-release-synthetic-cli-e2e.json \
   /run/release-security/evidence-trust/production-backup-attester-sha256
 inside chmod 0600 /var/lib/merchant-release-security/production-capability-private.pem
 inside sh -c 'chmod 0644 /run/release-security/evidence-trust/*'
+source_policy=/run/release-security/evidence-trust/production-backup-source-release-synthetic-cli-e2e.json
+inside chmod 0444 "$source_policy"
 
 backup=/var/lib/merchant-release-security/backups/e2e/merchant.dump
 checksum=${backup}.sha256
 attestation=/var/lib/merchant-release-security/backups/e2e/merchant.attestation.json
 docker exec "$pg_container" env NODE_ENV=production PGHOST=/var/run/postgresql PGDATABASE=postgres PGUSER=postgres \
   /usr/local/libexec/merchant/attest-postgres-backup create \
-  --backup "$backup" --checksum "$checksum" --attestation "$attestation" >"$scratch/cli.out" 2>"$scratch/cli.err" &
+  --backup "$backup" --checksum "$checksum" --attestation "$attestation" --source-policy "$source_policy" >"$scratch/cli.out" 2>"$scratch/cli.err" &
 cli_pid=$!
 
 observed_snapshot=0
@@ -110,16 +112,28 @@ done
 inside psql -U postgres -v ON_ERROR_STOP=1 -c "UPDATE public.zz_snapshot_probe SET value='after' WHERE id=1" >/dev/null
 wait "$cli_pid" || fail "full CLI failed: $(cat "$scratch/cli.err")"
 inside sha256sum -c "$checksum" >/dev/null || fail 'fresh backup checksum was rejected'
+docker exec -i "$pg_container" env ATTESTATION_PATH="$attestation" /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node - <<'NODE'
+const { readFileSync } = require('node:fs')
+const value = JSON.parse(readFileSync(process.env.ATTESTATION_PATH, 'utf8'))
+const started = Date.parse(value.backup_started_at)
+const observed = Date.parse(value.snapshot_export_observed_at)
+const completed = Date.parse(value.dump_completed_at)
+if (value.schema_version !== '2' || !/^[a-f0-9]{64}$/.test(value.snapshot_id_sha256) ||
+    !Number.isFinite(started) || !Number.isFinite(observed) || !Number.isFinite(completed) ||
+    value.created_at !== value.backup_started_at || !(started <= observed && observed <= completed)) {
+  throw new Error('protected backup did not attest the real snapshot/dump chronology')
+}
+NODE
 
 inside createdb -U postgres restored_e2e
 inside pg_restore -U postgres -d restored_e2e --no-owner --no-privileges "$backup"
 restored_value=$(inside psql -U postgres -d restored_e2e -At -c 'SELECT value FROM public.zz_snapshot_probe WHERE id=1')
 [ "$restored_value" = before ] || fail "snapshot was inconsistent: restored value=$restored_value"
 
-inside cp /run/release-security/evidence-trust/production-backup-source.json /run/release-security/evidence-trust/source-policy.good
+inside cp "$source_policy" /run/release-security/evidence-trust/source-policy.good
 docker exec -i "$pg_container" /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node - <<'NODE'
 const fs = require('node:fs')
-const path = '/run/release-security/evidence-trust/production-backup-source.json'
+const path = '/run/release-security/evidence-trust/production-backup-source-release-synthetic-cli-e2e.json'
 const policy = JSON.parse(fs.readFileSync(path, 'utf8'))
 policy.database_oid += 1
 fs.writeFileSync(path, JSON.stringify(policy) + '\n', { mode: 0o644 })
@@ -128,16 +142,19 @@ if inside env NODE_ENV=production PGHOST=/var/run/postgresql PGDATABASE=postgres
   /usr/local/libexec/merchant/attest-postgres-backup create \
   --backup /var/lib/merchant-release-security/backups/e2e/wrong-oid.dump \
   --checksum /var/lib/merchant-release-security/backups/e2e/wrong-oid.sha256 \
-  --attestation /var/lib/merchant-release-security/backups/e2e/wrong-oid.json >"$scratch/oid.out" 2>"$scratch/oid.err"; then
+  --attestation /var/lib/merchant-release-security/backups/e2e/wrong-oid.json \
+  --source-policy "$source_policy" >"$scratch/oid.out" 2>"$scratch/oid.err"; then
   fail 'wrong database OID was accepted'
 fi
 grep -q 'database OID does not match protected source policy' "$scratch/oid.err" || fail 'wrong OID rejection reason was not preserved'
 inside test ! -e /var/lib/merchant-release-security/backups/e2e/wrong-oid.dump || fail 'wrong OID produced a backup'
-inside mv /run/release-security/evidence-trust/source-policy.good /run/release-security/evidence-trust/production-backup-source.json
+inside mv /run/release-security/evidence-trust/source-policy.good "$source_policy"
+inside chmod 0444 "$source_policy"
 
 if inside env NODE_ENV=production PGHOST=/var/run/postgresql PGDATABASE=postgres PGUSER=postgres \
   /usr/local/libexec/merchant/attest-postgres-backup create \
-  --backup /root/outside.dump --checksum /root/outside.sha256 --attestation /root/outside.json >"$scratch/path.out" 2>"$scratch/path.err"; then
+  --backup /root/outside.dump --checksum /root/outside.sha256 --attestation /root/outside.json \
+  --source-policy "$source_policy" >"$scratch/path.out" 2>"$scratch/path.err"; then
   fail 'out-of-root output was accepted'
 fi
 grep -q 'output must be inside the protected backup root' "$scratch/path.err" || fail 'output boundary rejection reason was not preserved'

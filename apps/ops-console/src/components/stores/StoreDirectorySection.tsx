@@ -235,7 +235,6 @@ export function StoreDirectorySection({
       <Modal title="登记人工店铺" open={registerOpen} okText="确认登记" cancelText="取消" confirmLoading={registering}
         okButtonProps={{ disabled: !manualWorkspaceId || !manualPlatform || !manualAccountId.trim() || !manualReason.trim() }}
         onCancel={() => { if (!registering) resetManualForm(); }} onOk={() => void submitManualStore()}>
-        <Alert type="warning" showIcon title="这不是平台授权" description="仅建立人工运营的店铺边界，不保存 OAuth 凭据，不会自动同步或发布。" style={{ marginBottom: 16 }} />
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <label htmlFor="manual-store-workspace">商家工作区</label>
           <Select id="manual-store-workspace" value={manualWorkspaceId || undefined} onChange={setManualWorkspaceId} options={workspaces.filter(item => item.status === "active").map(item => ({ value: item.workspaceId, label: `${item.enterpriseName ?? "未命名企业主体"} · ${item.workspaceId}` }))} placeholder="选择已启用商家工作区" showSearch optionFilterProp="label" />

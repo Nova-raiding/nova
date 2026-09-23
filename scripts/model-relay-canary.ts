@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readBoundedResponseText } from '../packages/connectors/src/bounded-response.js'
-import { createRelayPricingClientFromEnv } from '../packages/ai/src/relay-pricing.js'
-import { parseRelayUsage } from '../packages/ai/src/relay-usage.js'
+import { createRelayPricingClientFromEnv, type RelayPricingMetadata } from '../packages/ai/src/relay-pricing.js'
+import { parseRelayUsage, type RelayUsageRecord } from '../packages/ai/src/relay-usage.js'
 import { retryAfterMilliseconds } from '../packages/ai/src/provider-request.js'
 import { assertRelayUrl, relaySecurityFromEnv } from '../packages/ai/src/relay-security.js'
 
@@ -50,6 +50,109 @@ const pricingClient = createRelayPricingClientFromEnv(process.env)
 const relaySecurity = relaySecurityFromEnv(process.env)
 const artifactRoot = process.env.MODEL_RELAY_ARTIFACT_ROOT?.trim()
 const releaseId = process.env.RELEASE_ID?.trim() || ''
+
+type CanaryPricing = { estimateRequestCost: (usage: RelayUsageRecord) => Promise<{ costCny: number; metadata: Pick<RelayPricingMetadata, 'pricing_version' | 'pricing_group' | 'quota_type' | 'formula_version'> }> }
+type CanaryBudget = { limitCny: number; reservedCny: number }
+type RelayTokenQuota = { credential: 'model' | 'video'; observed_at: string; total_granted: number; total_used: number; total_available: number; expires_at: number; unlimited_quota: false; evidence_ref?: string }
+
+/** The caller's budget is not a provider-enforced ceiling. Only a finite relay
+ * token can bound spend if this process crashes, retries elsewhere, or races. */
+export async function requireFiniteRelayTokenQuota(input: {
+  baseUrl: string
+  apiKey: string
+  credential: RelayTokenQuota['credential']
+  fetcher?: typeof fetch
+  now?: Date
+}): Promise<RelayTokenQuota> {
+  const origin = new URL(input.baseUrl)
+  if (origin.protocol !== 'https:' || origin.username || origin.password || origin.search || origin.hash) throw new Error('relay token quota requires a canonical HTTPS origin')
+  if (!input.apiKey.trim()) throw new Error(`${input.credential} relay token is missing`)
+  const observedAt = input.now ?? new Date()
+  const response = await (input.fetcher ?? fetch)(new URL('/api/usage/token/', origin), {
+    headers: { accept: 'application/json', authorization: `Bearer ${input.apiKey}` },
+    redirect: 'error', signal: AbortSignal.timeout(10_000),
+  })
+  if (!response.ok) throw new Error(`${input.credential} relay token quota HTTP ${response.status}`)
+  let root: unknown
+  try { root = JSON.parse(await readBoundedResponseText(response, 16 * 1024, 'relay token quota')) as unknown }
+  catch { throw new Error(`${input.credential} relay token quota response is invalid`) }
+  const envelope = root && typeof root === 'object' && !Array.isArray(root) ? root as Record<string, unknown> : undefined
+  const data = envelope?.data && typeof envelope.data === 'object' && !Array.isArray(envelope.data) ? envelope.data as Record<string, unknown> : undefined
+  if ((envelope?.code !== true && envelope?.success !== true) || data?.object !== 'token_usage') throw new Error(`${input.credential} relay token quota response is invalid`)
+  if (data.unlimited_quota !== false) throw new Error(`${input.credential} relay token must have a finite server-enforced quota`)
+  const { total_granted: granted, total_used: used, total_available: available, expires_at: expiresAt } = data
+  if (![granted, used, available, expiresAt].every(value => typeof value === 'number' && Number.isSafeInteger(value))
+    || (granted as number) <= 0 || (used as number) < 0 || (available as number) <= 0
+    || (used as number) + (available as number) !== granted
+    || (expiresAt as number) < 0 || ((expiresAt as number) !== 0 && (expiresAt as number) <= Math.floor(observedAt.getTime() / 1000))) {
+    throw new Error(`${input.credential} relay token finite quota evidence is invalid or exhausted`)
+  }
+  return { credential: input.credential, observed_at: observedAt.toISOString(), total_granted: granted as number, total_used: used as number, total_available: available as number, expires_at: expiresAt as number, unlimited_quota: false }
+}
+
+export function writeRelayTokenQuotaArtifact(root: string, release: string, quota: RelayTokenQuota): string {
+  if (!/^[A-Za-z0-9._-]+$/u.test(release)) throw new Error('RELEASE_ID must be a safe artifact path component')
+  const { evidence_ref: _reference, ...snapshot } = quota
+  const body = JSON.stringify({ schema_version: '1', release_id: release, token_quota: snapshot }, null, 2) + '\n'
+  const digest = createHash('sha256').update(body).digest('hex')
+  const directory = resolve(root, 'relay', release)
+  const target = resolve(directory, `token-${quota.credential}-${digest.slice(0, 16)}.json`)
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  if (existsSync(target)) {
+    if (readFileSync(target, 'utf8') !== body) throw new Error('relay token quota artifact hash collision')
+  } else writeFileSync(target, body, { mode: 0o600, flag: 'wx' })
+  return `artifact://production/${relative(resolve(root), target).split('\\').join('/')}#${digest}`
+}
+
+export function requireCanaryBudget(value: string | undefined): CanaryBudget {
+  const limitCny = value?.trim() && /^\d+(?:\.\d+)?$/u.test(value.trim()) ? Number(value) : NaN
+  if (!Number.isFinite(limitCny) || limitCny <= 0) throw new Error('MODEL_RELAY_CANARY_MAX_TOTAL_CNY must be an explicit positive CNY budget')
+  return { limitCny, reservedCny: 0 }
+}
+
+/** Reserve the worst case of three 429 attempts before any billable relay request. */
+export async function reserveCanaryCost(input: {
+  pricing: CanaryPricing | undefined
+  budget: CanaryBudget
+  modality: ProbeResult['modality']
+  model: string
+  requestBody: Record<string, unknown>
+  durationSeconds?: number
+  resolution?: string
+}): Promise<number> {
+  if (!input.pricing) throw new Error('relay pricing snapshot is required before a canary request')
+  const { modality, model, requestBody } = input
+  if (modality === 'video' && (!['720P', '1080P'].includes(input.resolution ?? '') || !Number.isSafeInteger(input.durationSeconds) || (input.durationSeconds ?? 0) < 3 || (input.durationSeconds ?? 0) > 15)) {
+    throw new Error('video canary requires explicit 720P/1080P resolution and 3-15 second duration before pricing')
+  }
+  const estimate = await input.pricing.estimateRequestCost({
+    modality, model, observedAt: new Date().toISOString(),
+    ...(modality === 'text' || modality === 'ocr'
+      ? { inputTokens: Buffer.byteLength(JSON.stringify(requestBody), 'utf8'), outputTokens: Number(requestBody.max_tokens) }
+      : {}),
+    metadata: modality === 'image' || modality === 'image_edit'
+      ? { billing_units: 1 }
+      : modality === 'video'
+        ? { preauthorization_estimate: true, preauthorization_duration_seconds: input.durationSeconds, resolution: input.resolution }
+        : {},
+  })
+  if (!estimate.metadata.pricing_version || !estimate.metadata.pricing_group || !Number.isFinite(estimate.costCny) || estimate.costCny <= 0) {
+    throw new Error('relay canary price is unknown or zero')
+  }
+  if ((modality === 'image' || modality === 'image_edit') && estimate.metadata.quota_type !== 1) {
+    throw new Error('image canary requires an explicit fixed-unit relay price')
+  }
+  if (modality === 'video' && !['relay-video-resolution-v1', 'relay-video-cny-per-second-v1'].includes(estimate.metadata.formula_version)) {
+    throw new Error('video canary requires an explicit duration/resolution relay price')
+  }
+  // Round up, never down: a fractional micro-yuan must not escape the cap.
+  const reservation = Math.ceil(Number((estimate.costCny * 3 * 1_000_000).toFixed(6))) / 1_000_000
+  if (!Number.isFinite(reservation) || reservation <= 0 || input.budget.reservedCny + reservation > input.budget.limitCny) {
+    throw new Error('relay canary request exceeds MODEL_RELAY_CANARY_MAX_TOTAL_CNY')
+  }
+  input.budget.reservedCny += reservation
+  return reservation
+}
 
 export function resolveBoundedInteger(value: string | undefined, fallback: number, minimum: number, maximum: number, name: string): number {
   const text = value?.trim()
@@ -399,7 +502,7 @@ function hasHttpsOutput(value: unknown, depth = 0): boolean {
   return ['result_url', 'video_url', 'output_url', 'url', 'output'].some(key => hasHttpsOutput(output[key], depth + 1))
 }
 
-async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
+async function probe(modality: ProbeResult['modality'], budget: CanaryBudget): Promise<ProbeResult> {
   const model = modelFor(modality)
   const existingVideoTaskId = modality === 'video' ? process.env.MODEL_RELAY_CANARY_VIDEO_TASK_ID?.trim() : undefined
   const endpoint = existingVideoTaskId ? process.env.VIDEO_STATUS_PATH?.trim() || '/video/generations/{job_id}' : endpointFor(modality)
@@ -432,6 +535,12 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
         ...(process.env.VIDEO_REQUEST_FORMAT?.trim() ? { requestFormat: process.env.VIDEO_REQUEST_FORMAT.trim() } : {}),
       })
       : undefined
+    if (!existingVideoTaskId) {
+      await reserveCanaryCost({
+        pricing: pricingClient, budget, modality, model, requestBody: body,
+        ...(modality === 'video' ? { durationSeconds: videoDurationSeconds, resolution: process.env.VIDEO_RESOLUTION?.trim().toUpperCase() } : {}),
+      })
+    }
     const requestBody = !existingVideoTaskId ? videoRequest?.body ?? JSON.stringify(body) : usesVideoStatusPath ? undefined : JSON.stringify({ job_id: existingVideoTaskId })
     const idempotencyKey = canaryIdempotencyKey({ releaseId, modality, model, ...(existingVideoTaskId ? { existingVideoTaskId } : {}) })
     let response: Response | undefined
@@ -535,7 +644,18 @@ export async function main() {
       try {
         requireProductionReleaseBinding({ environment: process.env.NODE_ENV, releaseId })
         if (!relaySecurity) throw new Error('MODEL_RELAY_BASE_URL/ALLOWED_HOSTS 不满足 relay 安全配置')
-        for (const modality of modalities) results.push(await probe(modality))
+        if (process.env.NODE_ENV?.trim() === 'production' && !artifactRoot) throw new Error('MODEL_RELAY_ARTIFACT_ROOT is required before production relay requests')
+        await assertRelayUrl(base, relaySecurity)
+        const budget = requireCanaryBudget(process.env.MODEL_RELAY_CANARY_MAX_TOTAL_CNY)
+        const credentials: Array<{ credential: RelayTokenQuota['credential']; apiKey: string }> = modalities.some(modality => modality !== 'video')
+          ? [{ credential: 'model' as const, apiKey: key }]
+          : []
+        if (modalities.includes('video')) credentials.push({ credential: 'video', apiKey: videoKey })
+        const tokenQuota = await Promise.all(credentials.map(async credential => {
+          const quota = await requireFiniteRelayTokenQuota({ baseUrl: base, ...credential })
+          return artifactRoot ? { ...quota, evidence_ref: writeRelayTokenQuotaArtifact(artifactRoot, releaseId, quota) } : quota
+        }))
+        for (const modality of modalities) results.push(await probe(modality, budget))
         // The evidence contract stores the relay origin; each result carries its
         // endpoint path. This keeps /v1 configuration paths out of the origin
         // field and makes generated evidence compatible with its validator.
@@ -546,7 +666,7 @@ export async function main() {
         const evidence = {
           schema_version: '1', release_id: releaseId, generated_at: generatedAt.toISOString(),
           expires_at: new Date(generatedAt.getTime() + ttlSeconds * 1000).toISOString(),
-          environment: process.env.NODE_ENV?.trim() || '', simulated: false, relay: relayOrigin, results,
+          environment: process.env.NODE_ENV?.trim() || '', simulated: false, relay: relayOrigin, token_quota: tokenQuota, results,
           ...(errorRecovery ? { error_recovery: errorRecovery } : {}),
         }
         const evidencePath = process.env.MODEL_RELAY_EVIDENCE_PATH?.trim()

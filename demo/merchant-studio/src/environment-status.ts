@@ -114,7 +114,7 @@ export function resolveMerchantEnvironmentStatus({
   if (!manualPlatformOperations && !officialApiPlatformOperations) blockers.push('未返回可识别的平台运营模式')
   if (platformOperationsReady === false) blockers.push('平台运营未就绪')
   else if (platformOperationsReady !== true) blockers.push('未返回平台运营就绪证据')
-  if (manualPlatformOperations && automatedWritesEnabled !== false) blockers.push('人工运营模式的自动写入边界未确认')
+  if (manualPlatformOperations && automatedWritesEnabled !== false) blockers.push('自动平台写入边界未确认')
   if (officialApiPlatformOperations && writesEnabled === false) blockers.push('官方接口写入已关闭')
   else if (officialApiPlatformOperations && writesEnabled !== true) blockers.push('未返回官方接口写入能力证据')
   if (officialApiPlatformOperations && automatedWritesEnabled !== true) blockers.push('官方接口自动写入未就绪')
@@ -126,7 +126,7 @@ export function resolveMerchantEnvironmentStatus({
   const facts = [
     'API 连通：正常',
     `运行模式：${modeLabel}`,
-    `平台运营：${manualPlatformOperations ? '人工处理（预期不自动写入）' : officialApiPlatformOperations ? '官方接口' : '未确认'}`,
+    ...(manualPlatformOperations ? [] : [`平台运营：${officialApiPlatformOperations ? '官方接口' : '未确认'}`]),
     `自动平台写入：${automatedWritesEnabled === true ? '已开放' : automatedWritesEnabled === false ? '已关闭' : '未确认'}`,
     `生产门禁：${productionGate === true ? '已通过' : productionGate === false ? '未通过' : '未确认'}`,
     modelFact(modelStatus, modelStatusRead),
@@ -134,8 +134,6 @@ export function resolveMerchantEnvironmentStatus({
   const actions: string[] = []
   if (isDemo)
     actions.push('如需上线，请管理员切换到生产环境，并完成生产门禁。')
-  if (manualPlatformOperations)
-    actions.push('当前为预期的人工运营模式：商品数据采集、核验和平台发布由运营人员完成；本页面不会自动写入平台。')
   if (officialApiPlatformOperations && (writesEnabled !== true || automatedWritesEnabled !== true))
     actions.push('请管理员检查官方接口写入能力；当前页面不会提交真实平台写入。')
   if (!isDemo && productionGate !== true)
@@ -148,7 +146,7 @@ export function resolveMerchantEnvironmentStatus({
       topbarLabel: '生产就绪',
       title: '生产环境已就绪',
       detail: manualPlatformOperations
-        ? '生产上线门禁和模型中转已通过服务端检查；平台作业按预期由人工完成，不启用自动写入。'
+        ? '生产上线门禁和模型中转已通过服务端检查。'
         : '生产上线门禁、官方接口写入和模型中转均已通过服务端检查。',
       facts,
       actions,

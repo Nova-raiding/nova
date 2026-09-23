@@ -35,7 +35,7 @@ describe('resolveMerchantEnvironmentStatus', () => {
 
     expect(result).toMatchObject({ state: 'demo', tone: 'warning', topbarLabel: '演示环境' })
     expect(result.detail).toContain('当前是本地演示模式')
-    expect(result.facts).toContain('平台运营：人工处理（预期不自动写入）')
+    expect(result.facts.join('；')).not.toContain('人工运营')
     expect(result.actions.join('；')).not.toMatch(/授权|同步|OAuth/iu)
   })
 
@@ -57,8 +57,7 @@ describe('resolveMerchantEnvironmentStatus', () => {
     const result = resolve(health())
 
     expect(result).toMatchObject({ state: 'ready', tone: 'ready', topbarLabel: '生产就绪' })
-    expect(result.detail).toContain('平台作业按预期由人工完成')
-    expect(result.detail).toContain('不启用自动写入')
+    expect(result.detail).toBe('生产上线门禁和模型中转已通过服务端检查。')
     expect(result.facts).toContain('自动平台写入：已关闭')
   })
 
@@ -94,7 +93,7 @@ describe('resolveMerchantEnvironmentStatus', () => {
     }))
 
     expect(result).toMatchObject({ state: 'blocked', tone: 'warning' })
-    expect(result.detail).toContain('人工运营模式的自动写入边界未确认')
+    expect(result.detail).toContain('自动平台写入边界未确认')
   })
 
   it('fails closed for an unknown platform operations mode', () => {

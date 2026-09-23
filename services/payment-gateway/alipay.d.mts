@@ -16,6 +16,11 @@ export function verifyNotifySignature(
   publicKey: string,
   expectedAppId: string,
 ): boolean
+export function verifiedNotifySigningContent(
+  input: Record<string, unknown>,
+  publicKey: string,
+  expectedAppId: string,
+): string | null
 
 export function parseRequestBody(raw: string, contentType?: string): Record<string, unknown>
 

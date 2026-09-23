@@ -76,7 +76,32 @@ const hashFile = file => {
 
 const evidenceRef = artifact => `artifact://production/${relative(root, artifact.absolute).split('\\').join('/')}#${artifact.digest}`
 
+let candidateRoute
+if (capture.environment === 'preproduction') {
+  const route = capture.candidate_route
+  if (!route || typeof route !== 'object') throw new Error('preproduction capture requires candidate_route from the isolated TLS host run')
+  if (!/^[a-f0-9]{40}$/u.test(route.expected_git_sha ?? '') || !/^sha256:[a-f0-9]{64}$/u.test(route.expected_image_set_digest ?? '')) throw new Error('candidate_route requires frozen Git and image-set identities')
+  for (const field of ['candidate_api_container_id', 'gateway_container_id', 'mcp_config_sha256', 'route_file_sha256']) {
+    if (!/^[a-f0-9]{64}$/u.test(route[field] ?? '')) throw new Error(`candidate_route.${field} requires a full Docker ID or SHA-256`)
+  }
+  const probe = hashFile(route.release_probe_artifact_path)
+  if (lstatSync(probe.absolute).size > 64 * 1024) throw new Error('candidate route probe must be a bounded /releasez JSON response')
+  let observed
+  try { observed = JSON.parse(readFileSync(probe.absolute, 'utf8'))?.data } catch { throw new Error('candidate_route.release_probe_artifact_path must contain /releasez JSON') }
+  if (observed?.ready !== true || observed.release?.release_id !== capture.release_id || observed.release?.release_git_sha !== route.expected_git_sha || observed.release?.image_set_digest !== route.expected_image_set_digest) throw new Error('candidate route probe does not match the frozen release')
+  candidateRoute = {
+    expected_git_sha: route.expected_git_sha,
+    expected_image_set_digest: route.expected_image_set_digest,
+    candidate_api_container_id: route.candidate_api_container_id,
+    gateway_container_id: route.gateway_container_id,
+    mcp_config_sha256: route.mcp_config_sha256,
+    route_file_sha256: route.route_file_sha256,
+    release_probe_evidence_ref: evidenceRef(probe),
+  }
+}
+
 const seenScenarioIds = new Set()
+const usedArtifacts = new Set(candidateRoute ? [realpathSync(resolve(capture.candidate_route.release_probe_artifact_path))] : [])
 const scenarios = capture.scenarios.map(scenario => {
   if (!scenario || typeof scenario !== 'object') throw new Error('scenario must be an object')
   const id = String(scenario.id ?? '')
@@ -87,12 +112,16 @@ const scenarios = capture.scenarios.map(scenario => {
     throw new Error(`${id} must be passed with zero console/network errors`)
   }
   const artifact = hashFile(scenario.artifact_path)
+  if (usedArtifacts.has(artifact.absolute)) throw new Error(`${id} must have its own host artifact, separate from the release probe`)
+  usedArtifacts.add(artifact.absolute)
   const result = { id, state: 'passed', evidence_ref: evidenceRef(artifact), console_errors: 0, network_errors: 0 }
   if (id === 'error_recovery') {
     if (!scenario.error_recovery || scenario.error_recovery.trigger_http_status !== 503 || scenario.error_recovery.trigger_error_code !== 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {
       throw new Error('error_recovery must include a real 503 MODEL_PROVIDER_OUTCOME_UNKNOWN capture')
     }
     const outcomeArtifact = hashFile(scenario.error_recovery.outcome_artifact_path)
+    if (outcomeArtifact.absolute === artifact.absolute) throw new Error('error_recovery outcome must be a separate reconciliation artifact')
+    if (usedArtifacts.has(outcomeArtifact.absolute)) throw new Error('error_recovery outcome must not reuse the release probe or a scenario artifact')
     result.error_recovery = {
       ...scenario.error_recovery,
       outcome_evidence_ref: evidenceRef(outcomeArtifact),
@@ -116,6 +145,7 @@ const evidence = {
   mcp_base_url: String(capture.mcp_base_url),
   bridge_sha256: String(capture.bridge_sha256),
   simulated: false,
+  ...(candidateRoute ? { candidate_route: candidateRoute } : {}),
   scenarios,
 }
 mkdirSync(dirname(resolve(outputPath)), { recursive: true })

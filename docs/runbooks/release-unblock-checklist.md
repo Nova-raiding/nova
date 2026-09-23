@@ -46,6 +46,20 @@ image_edit，最后执行最短 3 秒 video。媒体探针不得自动重跑；�
 `MODEL_RELAY_CANARY_VIDEO_TASK_ID` 轮询既有任务。503 恢复只能从自然发生或批准演练
 留下的两个真实 capture 归档：
 
+每次 `--probe` 均须显式设置 `MODEL_RELAY_CANARY_MAX_TOTAL_CNY`，它是该次进程的
+人民币预算。canary 会先从已鉴权 relay 获取价格快照，按最多三次 429 尝试预留
+预算；未知或零价格、预算不足时不会发送生成请求。视频新任务还须显式设置
+`VIDEO_DURATION_SECONDS=3` 与 relay 定价支持的 `VIDEO_RESOLUTION=720P`（或
+`1080P`），不能仅凭应用运行时的 `MODEL_*_MAX_REQUEST_CNY` 额度放行。
+该请求前预算不是 relay 账户的服务端硬额度；执行前仍应核对账户级限额及
+实际定价，生成后以 provider usage/cost 收据结算，不把预估写成实付。
+生产探针现在还会以相同的模型/视频 Bearer token 只读查询
+`GET /api/usage/token/`，要求两者 `unlimited_quota=false`、有限正剩余额度和
+未过期状态；查询结果进入带 SHA-256 的不可变 artifact，并由发布证据门禁复核。
+101 当前模型和视频 token 均返回 `unlimited_quota=true`，因此在中转后台为生产
+token 配置有限的服务端额度、再重新采集证据前，五模态门禁保持 NO-GO。此步骤
+不能由本地 `MODEL_RELAY_CANARY_MAX_TOTAL_CNY` 替代，也不能靠伪造快照通过。
+
 ```sh
 export RELEASE_ID='release-<当前冻结的候选标识>'
 npx tsx scripts/model-relay-recovery-evidence.ts \

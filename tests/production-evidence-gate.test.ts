@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -17,7 +17,23 @@ afterAll(() => rmSync(artifactRoot, { recursive: true, force: true }))
 const options = (kind: ProductionEvidenceKind) => ({ kind, releaseId: 'release-1', imageSetDigest, manifestSha256, releaseGitSha, deploymentNonce, artifactRoot, trustedKeyId: 'release-security-2026', publicKeyPem, now })
 
 function artifactReference(kind: ProductionEvidenceKind, name: string) {
-  const relative = `${kind}/${name}.json`; const path = join(artifactRoot, relative); const content = JSON.stringify({ kind, name, provider_request_id: `request-${name}` })
+  const relative = `${kind}/${name}.json`; const path = join(artifactRoot, relative)
+  const migrationRows = Array.from({ length: 244 }, (_, index) => `${index + 1}|migration|${'a'.repeat(64)}`)
+  const content = kind === 'payment' ? JSON.stringify({
+    kind, operation: name, release_id: 'release-1', deployment_nonce: deploymentNonce,
+    order_id_sha256: 'f'.repeat(64), provider_trade_id_sha256: 'b'.repeat(64),
+    amount_fen: 1, observed_at: '2026-08-28T05:10:00Z', provider_request_id: `request-${name}`, simulated: false,
+    outcome: ({ checkout: 'created', callback: 'accepted', callback_replay: 'idempotent', provider_query: 'paid', reconciliation: 'balanced', refund: 'succeeded' } as Record<string, string>)[name],
+  }) : kind === 'restore' && name === 'isolated_restore' ? JSON.stringify({
+    schema_version: 'pg17-isolated-restore-capture/1', status: 'pass', simulated: false, release_id: 'release-1', release_git_sha: releaseGitSha,
+    image_set_digest: imageSetDigest, manifest_sha256: manifestSha256, deployment_nonce_sha256: createHash('sha256').update(deploymentNonce).digest('hex'),
+    backup_sha256: 'c'.repeat(64), source_database_id_sha256: '1'.repeat(64), target_database_id_sha256: '2'.repeat(64),
+    source_archive_sha256: `sha256:${'3'.repeat(64)}`, migration_chain_sha256: createHash('sha256').update(migrationRows.join('\n')).digest('hex'),
+    postgres_image_ref: `registry.example/postgres:17-alpine@sha256:${'4'.repeat(64)}`, postgres_image_id: `sha256:${'4'.repeat(64)}`,
+    container_id: '5'.repeat(64), network_id: '6'.repeat(64), volume_name: `merchant_restore_data_${'7'.repeat(24)}`,
+    restored_migration_prefix: '1:242:242', migrated_prefix: '1:244:244', migration_chain_rows: migrationRows,
+    captured_at: '2026-08-28T05:10:00Z',
+  }) : JSON.stringify({ kind, name, provider_request_id: `request-${name}` })
   mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content)
   return `artifact://production/${relative}#${createHash('sha256').update(content).digest('hex')}`
 }
@@ -90,12 +106,56 @@ describe('production payment and restore evidence gates', () => {
     expect(validateProductionEvidence(value, options('payment'))).toContain('checks.refund.evidence_ref must differ from checks.checkout.evidence_ref')
   })
 
-  it('allows restore checks to cite the same backup artifact', () => {
+  it('rejects signed payment refs whose bytes do not prove the named operation and common order identity', () => {
+    const value = evidence('payment')
+    const checks = value.checks as Record<string, { status: string; evidence_ref: string }>
+    const forged = (name: string, content: unknown) => {
+      const relative = `payment/forged-${name}.json`
+      const serialized = JSON.stringify(content)
+      writeFileSync(join(artifactRoot, relative), serialized)
+      checks[name]!.evidence_ref = `artifact://production/${relative}#${createHash('sha256').update(serialized).digest('hex')}`
+    }
+    forged('callback', { kind: 'payment', operation: 'checkout', provider_request_id: 'request-callback' })
+    forged('refund', { kind: 'payment', operation: 'refund', release_id: 'release-1', deployment_nonce: deploymentNonce, order_id_sha256: 'a'.repeat(64), provider_trade_id_sha256: 'b'.repeat(64), amount_fen: 1, observed_at: '2026-08-28T05:10:00Z', provider_request_id: 'request-refund', outcome: 'succeeded' })
+    value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('payment'))).toEqual(expect.arrayContaining([
+      'checks.callback.evidence_ref operation must match callback',
+      'checks.refund.evidence_ref order_id_sha256 must match the other payment operations',
+    ]))
+  })
+
+  it('requires distinct restore artifacts for the backup, isolated restore, migration, integrity and smoke checks', () => {
     const value = evidence('restore')
     const checks = value.checks as Record<string, { status: string; evidence_ref: string }>
     checks.data_integrity!.evidence_ref = checks.backup_checksum!.evidence_ref
     value.signature_base64 = signProductionEvidence(value, privateKeyPem)
-    expect(validateProductionEvidence(value, options('restore'))).toEqual([])
+    expect(validateProductionEvidence(value, options('restore'))).toContain('checks.data_integrity.evidence_ref must differ from checks.backup_checksum.evidence_ref')
+  })
+
+  it('rejects an isolated restore artifact that is only a generic JSON pass claim', () => {
+    const value = evidence('restore')
+    const fake = JSON.stringify({ status: 'pass', simulated: false })
+    writeFileSync(join(artifactRoot, 'restore/isolated_restore.json'), fake)
+    ;(value.checks as Record<string, { evidence_ref: string }>).isolated_restore!.evidence_ref = `artifact://production/restore/isolated_restore.json#${createHash('sha256').update(fake).digest('hex')}`
+    value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('restore'))).toContain('checks.isolated_restore.evidence_ref schema_version does not match the protected restore capture')
+  })
+
+  it('rejects a capture copied from another release, nonce, backup or unisolated database', () => {
+    const value = evidence('restore')
+    const path = join(artifactRoot, 'restore/isolated_restore.json')
+    const original = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+    const bad = { ...original, release_id: 'other-release', deployment_nonce_sha256: '0'.repeat(64), backup_sha256: '9'.repeat(64), target_database_id_sha256: original.source_database_id_sha256 }
+    const bytes = JSON.stringify(bad)
+    writeFileSync(path, bytes)
+    ;(value.checks as Record<string, { evidence_ref: string }>).isolated_restore!.evidence_ref = `artifact://production/restore/isolated_restore.json#${createHash('sha256').update(bytes).digest('hex')}`
+    value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('restore'))).toEqual(expect.arrayContaining([
+      'checks.isolated_restore.evidence_ref release_id does not match the protected restore capture',
+      'checks.isolated_restore.evidence_ref deployment_nonce_sha256 does not match the protected restore capture',
+      'checks.isolated_restore.evidence_ref backup_sha256 does not match the protected restore capture',
+      'checks.isolated_restore.evidence_ref target database is not isolated',
+    ]))
   })
 
   it('rejects impossible restore chronology even when independently signed', () => {

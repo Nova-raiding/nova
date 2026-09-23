@@ -1,14 +1,14 @@
 import { createHash, createPublicKey, verify } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
 import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
+import { releaseGitShaForRoot } from '../scripts/release-identity.js'
 import { validateCapacityEvidence } from './capacity-evidence-gate.js'
 import { validateManualOperationsEvidence } from './manual-operations-evidence-gate.js'
 
 type ReleaseManifest = { schemaVersion?: number; releaseId?: string; components?: { repositoryVersion?: string; releaseGitSha?: string }; mcp?: { methodCount?: number; methodListSha256?: string; bridgeSha256?: string }; artifacts?: Array<{ path?: string; sha256?: string; bytes?: number }>; productionEvidenceBundle?: { required?: boolean; schemaVersion?: string }; productionEvidence?: Record<string, string> }
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
-const requiredArtifacts = ['VERSION', 'CHANGELOG.md', 'release-metadata.json', 'apps/plugin/.codex-plugin/plugin.json', 'apps/plugin/package.json', 'apps/plugin/skills/merchant-marketing/SKILL.md', 'apps/plugin/mcp/bridge.mjs', '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', 'apps/api/openapi.yaml', 'packages/contracts/src/mcp.ts', 'services/payment-gateway/index.mjs', 'services/payment-gateway/alipay.mjs', 'services/payment-gateway/alipay.d.mts', 'packages/billing/src/callback-envelope.mjs', 'packages/billing/src/callback-envelope.d.mts', 'services/payment-gateway/Dockerfile', 'infra/scripts/render-ecs-production-compose.sh', 'infra/scripts/stage-verified-ecs-release.sh', 'infra/scripts/deploy-verified-ecs-compose.sh', 'infra/scripts/rollback-ecs-compose.sh', 'infra/scripts/invoke-ecs-automatic-rollback.sh', 'infra/scripts/install-ecs-release-controls.mjs', 'infra/scripts/install-ecs-release-controls.d.mts', 'infra/protected/attest-manual-operations-evidence.mjs', 'infra/protected/attest-manual-operations-evidence.d.mts', 'infra/protected/attest-release-evidence-bundle.mjs', 'infra/protected/attest-release-evidence-bundle.d.mts', 'infra/protected/attest-postgres-backup.mjs', 'infra/protected/attest-postgres-backup.d.mts', 'infra/protected/ecs-preidentity-recovery.mjs', 'infra/protected/ecs-preidentity-recovery.d.mts', 'tests/release-evidence-bundle-gate.ts']
+const requiredArtifacts = ['VERSION', 'CHANGELOG.md', 'release-metadata.json', 'scripts/release-manifest.ts', 'scripts/release-identity.ts', 'apps/plugin/.codex-plugin/plugin.json', 'apps/plugin/package.json', 'apps/plugin/skills/merchant-marketing/SKILL.md', 'apps/plugin/mcp/bridge.mjs', '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', 'apps/api/openapi.yaml', 'packages/contracts/src/mcp.ts', 'services/payment-gateway/index.mjs', 'services/payment-gateway/alipay.mjs', 'services/payment-gateway/alipay.d.mts', 'packages/billing/src/callback-envelope.mjs', 'packages/billing/src/callback-envelope.d.mts', 'services/payment-gateway/Dockerfile', 'infra/scripts/render-ecs-production-compose.sh', 'infra/scripts/stage-verified-ecs-release.sh', 'infra/scripts/deploy-verified-ecs-compose.sh', 'infra/scripts/rollback-ecs-compose.sh', 'infra/scripts/invoke-ecs-automatic-rollback.sh', 'infra/scripts/install-ecs-release-controls.mjs', 'infra/scripts/install-ecs-release-controls.d.mts', 'infra/protected/attest-manual-operations-evidence.mjs', 'infra/protected/attest-manual-operations-evidence.d.mts', 'infra/protected/attest-release-evidence-bundle.mjs', 'infra/protected/attest-release-evidence-bundle.d.mts', 'infra/protected/attest-postgres-backup.mjs', 'infra/protected/attest-postgres-backup.d.mts', 'infra/protected/ecs-preidentity-recovery.mjs', 'infra/protected/ecs-preidentity-recovery.d.mts', 'tests/release-evidence-bundle-gate.ts']
 const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'restore', 'objectStorage', 'codexAppHost', 'canonicalCutover'] as const
 type EvidenceField = typeof evidenceFields[number]
 const signedEvidenceFields = new Set<EvidenceField>(['capability', 'payment', 'restore', 'objectStorage', 'codexAppHost'])
@@ -106,9 +106,9 @@ export function validateReleaseManifest(document: unknown, options: { root?: str
   if (!value.releaseId) errors.push('releaseId is required')
   if (options.expectedReleaseId && value.releaseId !== options.expectedReleaseId) errors.push(`releaseId must match ${options.expectedReleaseId}`)
   const repositoryVersion = (() => { try { return readFileSync(resolve(root, 'VERSION'), 'utf8').trim() } catch { return '' } })()
-  const releaseGitSha = (() => { try { return execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() } catch { return '' } })()
+  const releaseGitSha = releaseGitShaForRoot(root, value.releaseId)
   if (value.components?.repositoryVersion !== repositoryVersion) errors.push('components.repositoryVersion must match VERSION')
-  if (value.components?.releaseGitSha !== releaseGitSha) errors.push('components.releaseGitSha must match the current Git HEAD')
+  if (value.components?.releaseGitSha !== releaseGitSha) errors.push('components.releaseGitSha must match the current Git HEAD or staged candidate identity')
   validateInstant((value as ReleaseManifest & { generatedAt?: string }).generatedAt, 'generatedAt', (options.now ?? new Date()).getTime(), options.maxManifestAgeMs ?? 86_400_000, errors)
   if (value.mcp?.methodCount !== MCP_METHODS.length) errors.push(`mcp.methodCount must match ${MCP_METHODS.length}`)
   if (value.mcp?.methodListSha256 !== sha256(JSON.stringify(MCP_METHODS))) errors.push('mcp.methodListSha256 does not match the current MCP contract')

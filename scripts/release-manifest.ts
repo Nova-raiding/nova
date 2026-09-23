@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, relative } from 'node:path'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
 import { countMerchantBridgeTools } from './merchant-bridge-surface.js'
+import { releaseGitShaForRoot } from './release-identity.js'
 
 export interface ReleaseManifest {
   schemaVersion: 1
@@ -72,7 +72,7 @@ export function buildReleaseManifest(input: {
   if (releaseMetadata.opsDomainCount !== opsDomainCount) throw new Error('release metadata Ops domain count does not match the current navigation surface')
   const releaseGitSha = input.releaseGitSha?.trim()
     || process.env.RELEASE_GIT_SHA?.trim()
-    || execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    || releaseGitShaForRoot(root, input.releaseId)
   if (!/^[a-f0-9]{40}$/u.test(releaseGitSha)) throw new Error('release git SHA must be a full 40-character commit SHA')
   // The payment gateway is an independently built/runtime-deployed service in
   // the ECS pilot path. Keep its complete checked-in source and build recipe in
@@ -82,6 +82,8 @@ export function buildReleaseManifest(input: {
     resolve(root, 'VERSION'),
     resolve(root, 'CHANGELOG.md'),
     releaseMetadataPath,
+    resolve(root, 'scripts/release-manifest.ts'),
+    resolve(root, 'scripts/release-identity.ts'),
     pluginManifestPath,
     packagePath,
     skillPath,

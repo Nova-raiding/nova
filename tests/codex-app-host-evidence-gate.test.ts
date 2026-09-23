@@ -35,6 +35,8 @@ describe('Codex App host evidence gate', () => {
     const captureDir = join(root, 'real-host-captures')
     mkdirSync(captureDir)
     const scenarioIds = evidence.scenarios.map(({ id }) => id)
+    const outcomePath = join(captureDir, 'error-recovery-outcome.json')
+    writeFileSync(outcomePath, JSON.stringify({ reconciled: true }))
     const scenarios = scenarioIds.map(id => {
       const artifactPath = join(captureDir, `${id}.json`)
       writeFileSync(artifactPath, JSON.stringify({ id, captured: true }))
@@ -45,17 +47,20 @@ describe('Codex App host evidence gate', () => {
             trigger_http_status: 503, trigger_error_code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN',
             request_id: 'request-503', trace_id: 'trace-503', recovery_action: 'query_provider',
             retry_allowed: false, before_state: 'outcome_unknown', after_state: 'reconciled_failed',
-            reconciliation_required: true, outcome_artifact_path: artifactPath,
+            reconciliation_required: true, outcome_artifact_path: outcomePath,
           },
         } : {}),
       }
     })
     const capturePath = join(root, 'capture.json')
     const outputPath = join(root, 'evidence.json')
+    const probePath = join(captureDir, 'releasez.json')
+    writeFileSync(probePath, JSON.stringify({ data: { ready: true, release: { release_id: 'release-1', release_git_sha: 'c'.repeat(40), image_set_digest: `sha256:${'d'.repeat(64)}` } } }))
     writeFileSync(capturePath, JSON.stringify({
       release_id: 'release-1', environment: 'preproduction', generated_at: '2026-08-29T01:00:00Z',
       host: 'codex-app-macos-arm64', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
       mcp_base_url: 'https://merchant.example.com', bridge_sha256: 'b'.repeat(64), scenarios,
+      candidate_route: { expected_git_sha: 'c'.repeat(40), expected_image_set_digest: `sha256:${'d'.repeat(64)}`, candidate_api_container_id: 'e'.repeat(64), gateway_container_id: 'f'.repeat(64), mcp_config_sha256: '1'.repeat(64), route_file_sha256: '2'.repeat(64), release_probe_artifact_path: probePath },
     }))
 
     const run = spawnSync(process.execPath, [
@@ -65,10 +70,26 @@ describe('Codex App host evidence gate', () => {
     expect(run.status, run.stderr).toBe(0)
     const collected = JSON.parse(readFileSync(outputPath, 'utf8'))
     expect(collected.scenarios[0].evidence_ref).toMatch(/^artifact:\/\/production\/real-host-captures\//u)
+    expect(collected.candidate_route.release_probe_evidence_ref).toMatch(/^artifact:\/\/production\/real-host-captures\/releasez\.json#/u)
     expect(validateCodexAppHostEvidence(collected, {
       expectedReleaseId: 'release-1', expectedMcpBaseUrl: 'https://merchant.example.com',
-      expectedBridgeSha256: 'b'.repeat(64), artifactRoot: root,
+      expectedBridgeSha256: 'b'.repeat(64), expectedGitSha: 'c'.repeat(40), expectedImageSetDigest: `sha256:${'d'.repeat(64)}`, artifactRoot: root,
     })).toEqual([])
+    expect(validateCodexAppHostEvidence(collected, { requireFresh: true, artifactRoot: root, now: new Date('2026-08-29T02:00:00Z'), expectedGitSha: 'a'.repeat(40) })).toContain('candidate_route.expected_git_sha must match the release candidate')
+    const oldProbe = structuredClone(collected)
+    oldProbe.candidate_route.expected_git_sha = 'a'.repeat(40)
+    expect(validateCodexAppHostEvidence(oldProbe, { requireFresh: true, artifactRoot: root, now: new Date('2026-08-29T02:00:00Z') })).toContain('candidate_route.release_probe_evidence_ref must contain the frozen candidate /releasez identity')
+  })
+
+  it('rejects missing candidate route and reused scenario or reconciliation files', () => {
+    expect(validateCodexAppHostEvidence(evidence, { requireFresh: true, now: new Date('2026-08-29T02:00:00Z') })).toContain('candidate_route is required for preproduction host evidence')
+    const reused = structuredClone(evidence)
+    reused.scenarios[1]!.evidence_ref = reused.scenarios[0]!.evidence_ref
+    reused.scenarios.find(({ id }) => id === 'error_recovery')!.error_recovery!.outcome_evidence_ref = reused.scenarios.find(({ id }) => id === 'error_recovery')!.evidence_ref
+    expect(validateCodexAppHostEvidence(reused)).toEqual(expect.arrayContaining([
+      'merchant_start.evidence_ref must not reuse the release probe or another scenario artifact',
+      'error_recovery.outcome_evidence_ref must be a separate reconciliation artifact',
+    ]))
   })
 
   it('accepts only release-bound external host evidence', () => {
@@ -107,7 +128,7 @@ describe('Codex App host evidence gate', () => {
       '--expected-bridge-sha256', 'b'.repeat(64),
     ], { encoding: 'utf8' })
     expect(run.status).toBe(2)
-    expect(run.stderr).toContain('--release-id is required')
+    expect(run.stderr).toContain('--release-id, --expected-mcp-base-url, --expected-bridge-sha256, --expected-git-sha and --expected-image-set-digest are required')
   })
 
   it('rejects local/fixture evidence and non-clean scenarios', () => {

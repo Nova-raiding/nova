@@ -132,8 +132,17 @@ esac
 : "${PAYMENT_PROVIDER_MERCHANT_ID:?PAYMENT_PROVIDER_MERCHANT_ID is required}"
 : "${PAYMENT_CALLBACK_BASE_URL:?public HTTPS payment callback base URL is required}"
 : "${PAYMENT_CALLBACK_SECRET:?PAYMENT_CALLBACK_SECRET is required}"
+: "${PAYMENT_PROTECTED_RECEIPT_HOST_DIR:?PAYMENT_PROTECTED_RECEIPT_HOST_DIR is required}"
 : "${PAYMENT_RECONCILIATION_ENABLED:?PAYMENT_RECONCILIATION_ENABLED=true is required}"
 : "${PAYMENT_REFUND_ENABLED:?PAYMENT_REFUND_ENABLED=true is required}"
+case "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" in
+  /var/lib/merchant-release-security/*) ;;
+  *) echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be under /var/lib/merchant-release-security/' >&2; exit 1 ;;
+esac
+if [ ! -d "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ "$(realpath "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR")" != "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ "$(stat -c '%u:%a' "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR")" != '100:700' ]; then
+  echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be a canonical non-symlink directory owned by UID 100 with mode 0700' >&2
+  exit 1
+fi
 printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo 'unsafe RELEASE_ID' >&2; exit 1; }
 printf '%s' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo 'DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters' >&2; exit 1; }
 case "$REDIS_URL" in
@@ -214,7 +223,7 @@ model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^
 npx --no-install tsx tests/model-relay-evidence-gate.ts --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
 mcp_base_url=$(ruby infra/scripts/validate-production-config-yaml.rb "$config_path" --print-mcp-base-url)
 bridge_sha256=$(shasum -a 256 apps/plugin/mcp/bridge.mjs | awk '{print $1}')
-npx --no-install tsx tests/codex-app-host-evidence-gate.ts --file "$CODEX_APP_HOST_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-mcp-base-url "$mcp_base_url" --expected-bridge-sha256 "$bridge_sha256" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-artifacts
+npx --no-install tsx tests/codex-app-host-evidence-gate.ts --file "$CODEX_APP_HOST_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-mcp-base-url "$mcp_base_url" --expected-bridge-sha256 "$bridge_sha256" --expected-git-sha "$release_git_sha" --expected-image-set-digest "$image_set_digest" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-artifacts
 npx --no-install tsx tests/canonical-product-cutover-evidence-gate.ts --file "$CANONICAL_CUTOVER_EVIDENCE_PATH" --release-id "$RELEASE_ID" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT"
 npx --no-install tsx tests/release-manifest-gate.ts --file "$RELEASE_MANIFEST_PATH" --release-id "$RELEASE_ID" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id" --capability-evidence "$CAPABILITY_EVIDENCE_PATH" --capacity-evidence "$CAPACITY_REPORT_PATH" --model-relay-evidence "$MODEL_RELAY_EVIDENCE_PATH" --payment-evidence "$PAYMENT_EVIDENCE_PATH" --restore-evidence "$RESTORE_EVIDENCE_PATH" --object-storage-evidence "$OBJECT_STORAGE_EVIDENCE_PATH" --codex-app-host-evidence "$CODEX_APP_HOST_EVIDENCE_PATH" --canonical-cutover-evidence "$CANONICAL_CUTOVER_EVIDENCE_PATH"
 workspace_latest_migration=$(find packages/persistence/src/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_*.sql' -exec basename {} \; | sed 's/_.*//' | sort -n | tail -1)
