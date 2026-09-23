@@ -21,6 +21,7 @@ export interface ObservedRecoveryState {
   candidateImageIds: string[]
   candidateServiceImageIds?: Record<string, string>
   unlabeledTakeover?: UnlabeledTakeoverPair[]
+  unlabeledGateway?: UnlabeledTakeoverPair['old']
   candidateExclusiveRunning?: boolean
   candidateIdentityRunning?: boolean
   database: { version: number; historySha256: string; invalidConcurrentIndexes: string[] }
@@ -41,6 +42,7 @@ export interface SignedRecoveryJournal extends Record<string, unknown> {
   deployment_mode?: 'bridge_code_only' | 'bridge_unlabeled_code_only'
   candidate_service_image_ids?: Record<string, string>
   unlabeled_takeover?: UnlabeledTakeoverPair[]
+  unlabeled_gateway?: UnlabeledTakeoverPair['old']
   predeployment_workload: {
     services: Array<Record<string, unknown>>
     container_set_digest: string

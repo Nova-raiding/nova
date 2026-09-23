@@ -98,6 +98,7 @@ export function createSignedSnapshot(observed, binding, privatePem, publicPem, n
         assert(Array.isArray(side.networks) && side.networks.length > 0 && side.networks.every(net => typeof net.name === 'string' && HEX.test(net.id) && Array.isArray(net.aliases)), `unlabeled network identity is invalid: ${pair.service}`)
       }
     }
+    assert(observed.unlabeledGateway && HEX.test(observed.unlabeledGateway.id) && observed.inventory.some(item => item.id === observed.unlabeledGateway.id) && !containers.some(item => item.id === observed.unlabeledGateway.id), 'running external gateway must be distinct and frozen in the signed Docker inventory')
   }
   const oldImageIds = new Set(containers.map(value => value.image_id))
   const candidateExclusiveImageIds = [...new Set(observed.candidateImageIds)].filter(value => !oldImageIds.has(value)).sort()
@@ -114,7 +115,7 @@ export function createSignedSnapshot(observed, binding, privatePem, publicPem, n
     database_policy: { strategy: 'forward_only', minimum_version: observed.database.version, maximum_version: binding.recovery.migrationTail, target_version: binding.recovery.migrationTail, schema_downgrade: false },
     key_id: binding.keyId,
     ...(['bridge_code_only', 'bridge_unlabeled_code_only'].includes(binding.mode) ? { deployment_mode: binding.mode, predeployment_inventory: observed.inventory, candidate_service_image_ids: observed.candidateServiceImageIds } : {}),
-    ...(binding.mode === 'bridge_unlabeled_code_only' ? { unlabeled_takeover: observed.unlabeledTakeover } : {}),
+    ...(binding.mode === 'bridge_unlabeled_code_only' ? { unlabeled_takeover: observed.unlabeledTakeover, unlabeled_gateway: observed.unlabeledGateway } : {}),
   }
   return signDocument(document, privatePem, publicPem)
 }
@@ -308,6 +309,20 @@ function validateUnlabeledPair(pair) {
   }
   return { old, candidate }
 }
+function collectUnlabeledGateway(id) {
+  const gateway = inspectExactContainer(id)
+  assert(gateway.State?.Running === true, 'external gateway is not running')
+  const bindings = Object.values(gateway.HostConfig?.PortBindings ?? {}).flatMap(values => values ?? []).map(value => String(value.HostPort))
+  assert(bindings.includes('80') && bindings.includes('443'), 'external gateway does not own public 80/443')
+  const spec = immutableContainerSpec(gateway)
+  assert(spec.networks.some(net => net.name === 'merchant-production_default'), 'external gateway is not attached to the reviewed API network')
+  return spec
+}
+function validateUnlabeledGateway(document) {
+  if (document.deployment_mode !== 'bridge_unlabeled_code_only') return
+  const observed = collectUnlabeledGateway(document.unlabeled_gateway?.id)
+  assert(canonical(observed) === canonical(document.unlabeled_gateway), 'external gateway Docker identity or network changed')
+}
 export function switchUnlabeledPairs(pairs, actions) {
   for (const pair of pairs) {
     actions.stop(pair.old.id)
@@ -403,7 +418,7 @@ function assertInheritedLock(lockPath) {
 }
 const COMMON = { '--state': true, '--lock-path': true }
 const SPECS = Object.freeze({
-  capture: { ...COMMON, '--attempt-id': true, '--service-map': true, '--candidate-service-map': false, '--compose-project': true, '--candidate-release-id': true, '--candidate-git-sha': true, '--candidate-manifest-sha256': true, '--candidate-image-set-digest': true, '--candidate-image-digests': true, '--candidate-compose': false, '--deployment-nonce': true, '--recovery-plan': true, '--mode': false },
+  capture: { ...COMMON, '--attempt-id': true, '--service-map': true, '--candidate-service-map': false, '--external-gateway-id': false, '--compose-project': true, '--candidate-release-id': true, '--candidate-git-sha': true, '--candidate-manifest-sha256': true, '--candidate-image-set-digest': true, '--candidate-image-digests': true, '--candidate-compose': false, '--deployment-nonce': true, '--recovery-plan': true, '--mode': false },
   phase: { ...COMMON, '--phase': true },
   verify: { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true },
   recover: { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true, '--recovery-compose': true, '--recovery-env': true, '--recovery-image-digests': true, '--production-api-base-url': true, '--wait-timeout': false },
@@ -431,7 +446,8 @@ function main(args) {
     const candidateIdentity = { release_id: binding.candidate.releaseId, release_git_sha: binding.candidate.gitSha, manifest_sha256: binding.candidate.manifestSha256, image_set_digest: binding.candidate.imageSetDigest }
     assert(canonical(containers.map(value => value.service).sort()) === canonical(recovery.services), 'reviewed service map must exactly match the frozen recovery runtime services')
     const unlabeledTakeover = get('--mode') === 'bridge_unlabeled_code_only' ? collectUnlabeledTakeover(mapPath, get('--candidate-service-map'), candidateServiceImageIds, binding.candidate) : undefined
-    const observed = { composeProject: get('--compose-project'), containers, inventory: collectInventory(), candidateImageIds, ...(candidateServiceImageIds ? { candidateServiceImageIds } : {}), ...(unlabeledTakeover ? { unlabeledTakeover } : {}), candidateExclusiveRunning: candidateContainersRunning(exclusive), candidateIdentityRunning: candidateIdentityRunning(candidateIdentity), database: collectDatabase(process.env.DATABASE_URL) }
+    const unlabeledGateway = get('--mode') === 'bridge_unlabeled_code_only' ? collectUnlabeledGateway(get('--external-gateway-id')) : undefined
+    const observed = { composeProject: get('--compose-project'), containers, inventory: collectInventory(), candidateImageIds, ...(candidateServiceImageIds ? { candidateServiceImageIds } : {}), ...(unlabeledTakeover ? { unlabeledTakeover, unlabeledGateway } : {}), candidateExclusiveRunning: candidateContainersRunning(exclusive), candidateIdentityRunning: candidateIdentityRunning(candidateIdentity), database: collectDatabase(process.env.DATABASE_URL) }
     writeAtomic(statePath, createSignedSnapshot(observed, binding, privatePem, publicPem)); process.stdout.write('preidentity snapshot captured\n'); return
   }
   protectedPath(statePath, 'preidentity journal', 0o600)
@@ -440,6 +456,7 @@ function main(args) {
   if (command.startsWith('bridge-')) {
     assert(['bridge_code_only', 'bridge_unlabeled_code_only'].includes(document.deployment_mode) && verifyDocument(document, publicPem), 'signed bridge journal is required')
     assert(Date.parse(document.expires_at) > Date.now(), 'bridge journal is expired')
+    validateUnlabeledGateway(document)
     protectedPath(get('--service-map'), 'bridge reviewed service map')
     if (command !== 'bridge-verify') protectedPath(get('--recovery-plan'), 'bridge recovery plan')
     verifyNonceLedger(get('--deployment-nonce'), document.candidate)
