@@ -125,27 +125,60 @@ const cachePathVersionError = installedDirectoryVersion && semverPattern.test(in
   : null
 if (cachePathVersionError) manifestErrors.push(cachePathVersionError)
 
+const protocolVersion = '2025-06-18'
+const initializeRequest = { jsonrpc: '2.0', id: 1, method: 'initialize', params: {
+  protocolVersion, capabilities: {}, clientInfo: { name: 'installed-bridge-verifier', version: '1' },
+} }
+const initializedNotification = { jsonrpc: '2.0', method: 'notifications/initialized' }
 const discoveryEnv = { ...process.env, MERCHANT_MCP_TOKEN_SOURCE: 'environment', MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' }
-function discoverTools(root, nodeBinary = process.execPath) {
+function bridgeResponses(root, nodeBinary, env, request) {
   const bridge = spawnSync(nodeBinary, [resolve(root, 'mcp/bridge.mjs')], {
     encoding: 'utf8',
-    input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`,
-    env: discoveryEnv,
+    input: [initializeRequest, initializedNotification, request].map(message => JSON.stringify(message)).join('\n') + '\n',
+    env,
     timeout: 10_000,
   })
-  if (bridge.status !== 0) return { names: [], error: `exit ${bridge.status ?? 'unknown'}` }
+  if (bridge.status !== 0) return { error: `exit ${bridge.status ?? 'unknown'}${bridge.error ? `: ${bridge.error.message}` : ''}` }
   try {
-    const response = JSON.parse(bridge.stdout.trim())
-    const tools = Array.isArray(response?.result?.tools) ? response.result.tools : []
-    return { names: tools.map(tool => tool?.name).filter(name => typeof name === 'string') }
+    const lines = bridge.stdout.trim().split(/\r?\n/u).filter(Boolean).map(line => JSON.parse(line))
+    const initialized = lines.find(line => line.id === 1)
+    if (initialized?.result?.protocolVersion !== protocolVersion
+      || initialized.result.serverInfo?.name !== 'merchant-marketing'
+      || initialized.result.serverInfo?.version !== expectedVersion) {
+      return { error: 'invalid initialize response' }
+    }
+    const response = lines.find(line => line.id === request.id)
+    return response ? { response } : { error: `missing ${request.method} response` }
   } catch {
-    return { names: [], error: 'invalid tools/list response' }
+    return { error: `invalid ${request.method} response` }
   }
+}
+function discoverTools(root, nodeBinary = process.execPath) {
+  const probe = bridgeResponses(root, nodeBinary, discoveryEnv,
+    { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
+  if (probe.error) return { names: [], error: probe.error }
+  const tools = probe.response?.result?.tools
+  if (!Array.isArray(tools)) return { names: [], error: 'invalid tools/list response' }
+  return { names: tools.map(tool => tool?.name).filter(name => typeof name === 'string') }
 }
 
 const sourceDiscovery = discoverTools(sourceRoot)
 const installedDiscovery = discoverTools(installedRoot,
   startup?.command === bundledNodeCommand && bundledNodeExists ? bundledNodePath : process.execPath)
+// VITEST only disables macOS launchd recovery in the bridge; keep NODE_ENV in
+// production so this probes the production failure path without host secrets.
+const unconfiguredEnv = { ...process.env, NODE_ENV: 'production', VITEST: 'true', MERCHANT_MCP_TOKEN_SOURCE: 'environment',
+  MERCHANT_MCP_BASE_URL: '', MERCHANT_MCP_TOKEN: '', MERCHANT_MCP_REFRESH_TOKEN: '',
+  MERCHANT_WORKSPACE_ID: '', MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false' }
+const unconfiguredProbe = bridgeResponses(installedRoot,
+  startup?.command === bundledNodeCommand && bundledNodeExists ? bundledNodePath : process.execPath,
+  unconfiguredEnv, { jsonrpc: '2.0', id: 2, method: 'tools/call',
+    params: { name: 'workspace.health', arguments: {} } })
+const unconfiguredCode = unconfiguredProbe.response?.result?.structuredContent?.code
+const unconfiguredError = unconfiguredProbe.error
+  ?? (unconfiguredProbe.response?.result?.isError === true
+    && ['MCP_AUTH_REQUIRED', 'MCP_CONFIGURATION_REQUIRED'].includes(unconfiguredCode)
+    ? null : `unconfigured tools/call did not fail closed: ${String(unconfiguredCode ?? 'missing code')}`)
 const sourceToolNames = sourceDiscovery.names
 const toolNames = installedDiscovery.names
 const sourceToolSet = new Set(sourceToolNames)
@@ -175,6 +208,7 @@ const toolCacheDrift = mismatchedFiles.some(path => path === 'mcp/bridge.mjs' ||
   || duplicateTools.length > 0
   || Boolean(sourceDiscovery.error)
   || Boolean(installedDiscovery.error)
+  || Boolean(unconfiguredError)
 const connectHelperSourcePaths = [
   'macos/store-nova-connect-helper.swift', 'scripts/build-connect-helper.mjs', 'scripts/connect-local-macos.mjs',
   'windows/StoreNovaConnectHelper.cs', 'scripts/build-connect-helper-windows.mjs', 'scripts/verify-connect-helper-windows.ps1',
@@ -188,6 +222,7 @@ const ok = mismatchedFiles.length === 0
   && sourceVersionErrors.length === 0
   && !sourceDiscovery.error
   && !installedDiscovery.error
+  && !unconfiguredError
   && missingFromInstalled.length === 0
   && unexpectedInInstalled.length === 0
   && duplicateTools.length === 0
@@ -214,6 +249,7 @@ const evidence = {
     source_count: sourceToolNames.length,
     source_discovery_error: sourceDiscovery.error ?? null,
     installed_discovery_error: installedDiscovery.error ?? null,
+    unconfigured_call: { tool: 'workspace.health', blocked: !unconfiguredError, code: unconfiguredCode ?? null, error: unconfiguredError },
     required: requiredTools,
     missing: missingTools,
     forbidden: forbiddenTools,

@@ -83,6 +83,16 @@ try {
   $packagedHash = (Get-FileHash -LiteralPath $packagedHelper -Algorithm SHA256).Hash.ToUpperInvariant()
   if ($packagedHash -ne $helperHash) { throw 'Packaged credential helper differs from the signed executable' }
   $packagedNode = Join-Path $extract 'runtime\node.exe'
+  $nodeSignature = Get-AuthenticodeSignature -LiteralPath $packagedNode
+  if ($nodeSignature.Status -ne 'Valid' -or $null -eq $nodeSignature.SignerCertificate) {
+    throw "Bundled Windows Node Authenticode signature is not trusted: $($nodeSignature.Status)"
+  }
+  if ($nodeSignature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=OpenJS Foundation(?:,|$)') {
+    throw 'Bundled Windows Node executable was not signed by the expected upstream publisher'
+  }
+  if ($null -eq $nodeSignature.TimeStamperCertificate) {
+    throw 'Bundled Windows Node executable has no trusted timestamp'
+  }
   $nodeVersion = & $packagedNode --version
   if ($LASTEXITCODE -ne 0 -or $nodeVersion -ne 'v22.16.0') { throw 'Bundled Windows Node runtime failed verification' }
   $packageHash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToUpperInvariant()

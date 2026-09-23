@@ -36,6 +36,7 @@
 {
   "release_id": "当前发布 ID",
   "environment": "production",
+  "generated_at": "2026-09-23T02:00:00Z",
   "host": "chatgpt",
   "app_version": "真实 ChatGPT.app 版本",
   "plugin_version": "已安装插件版本",
@@ -43,12 +44,31 @@
   "bridge_sha256": "已安装 bridge.mjs 的 SHA-256",
   "simulated": false,
   "scenarios": [
-    { "id": "plugin_discovery", "state": "passed", "console_errors": 0, "network_errors": 0, "artifact_path": "codex-host/plugin-discovery.json" }
+    { "id": "plugin_discovery", "state": "passed", "console_errors": 0, "network_errors": 0, "artifact_path": "artifacts/codex-host/plugin-discovery.json" },
+    {
+      "id": "error_recovery",
+      "state": "passed",
+      "console_errors": 0,
+      "network_errors": 0,
+      "artifact_path": "artifacts/codex-host/error-recovery.json",
+      "error_recovery": {
+        "trigger_http_status": 503,
+        "trigger_error_code": "MODEL_PROVIDER_OUTCOME_UNKNOWN",
+        "request_id": "真实请求 ID",
+        "trace_id": "真实追踪 ID",
+        "recovery_action": "query_provider",
+        "retry_allowed": false,
+        "before_state": "outcome_unknown",
+        "after_state": "reconciled_succeeded",
+        "reconciliation_required": true,
+        "outcome_artifact_path": "artifacts/codex-host/error-outcome.json"
+      }
+    }
   ]
 }
 ```
 
-其余场景按同样格式补齐；`error_recovery` 还必须包含 `trigger_http_status=503`、`trigger_error_code=MODEL_PROVIDER_OUTCOME_UNKNOWN`、`retry_allowed=false`，以及真实对账结果文件路径 `outcome_artifact_path`。使用：
+将示例时间和占位文本替换为本次真实宿主采集值，并按同样格式补齐其余 13 个场景。`generated_at` 必须是宿主采集时的 UTC 时间（`YYYY-MM-DDTHH:mm:ssZ` 或带三位毫秒）；执行下方 `--require-artifacts` 门禁时，采集时间不得晚于当前时间五分钟，也不得早于当前时间 24 小时。`artifact_path` 和 `error_recovery.outcome_artifact_path` 均指向 `--artifact-root` 内已存在的常规文件，不接受符号链接；示例路径以项目根目录为当前工作目录。采集器会计算 SHA-256，生成最终证据中的 `evidence_ref` 和 `outcome_evidence_ref`，不要在 capture JSON 中手填这两个字段。使用：
 
 ```bash
 npm run codex:host:evidence -- \

@@ -27,6 +27,17 @@ function run(command, args, timeout = 180_000, includeStderr = false) {
 
 function sha256(path) { return createHash('sha256').update(readFileSync(path)).digest('hex') }
 
+function assertDeveloperIdExecutable(path, label) {
+  run('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', path])
+  const signature = run('/usr/bin/codesign', ['--display', '--verbose=4', path], 180_000, true)
+  if (!signature.includes(`TeamIdentifier=${teamId}`) ||
+      !signature.includes('Authority=Developer ID Application:') ||
+      !/flags=0x[0-9a-f]+\([^)]*runtime[^)]*\)/iu.test(signature) ||
+      !/^Timestamp=.+$/mu.test(signature)) {
+    throw new Error(`${label} Developer ID signer, team, hardened runtime, or secure timestamp is invalid`)
+  }
+}
+
 if (process.platform !== 'darwin' || !['arm64', 'x64'].includes(process.arch)) throw new Error('macOS arm64 or x64 release host required')
 if (!output.endsWith('.dmg')) throw new Error('signed macOS deliverable must be a .dmg file')
 if (!/^[0-9A-F]{40}$/u.test(signer)) throw new Error('STORENOVA_MAC_SIGNER_THUMBPRINT must be a Developer ID Application certificate SHA-1')
@@ -49,14 +60,20 @@ try {
   run('/usr/bin/tar', ['-xzf', candidate, '-C', staged])
 
   const helper = resolve(staged, 'mcp/keychain-credential-helper')
+  const node = resolve(staged, 'runtime/node')
   const source = resolve(staged, 'mcp/keychain-credential-helper.swift')
   const buildRecord = resolve(staged, 'mcp/keychain-credential-helper.build.json')
-  run('/usr/bin/codesign', ['--force', '--sign', signer, '--options', 'runtime', '--timestamp', helper])
-  run('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', helper])
-  const signature = run('/usr/bin/codesign', ['--display', '--verbose=4', helper], 180_000, true)
-  if (!signature.includes(`TeamIdentifier=${teamId}`) || !signature.includes('Authority=Developer ID Application:')) {
-    throw new Error('Keychain helper signer or team does not match release configuration')
+  // V8 needs JIT under the hardened runtime. Never inherit the upstream Node
+  // development entitlements (including get-task-allow) into our release.
+  const nodeEntitlements = resolve(scratch, 'node-entitlements.plist')
+  writeFileSync(nodeEntitlements, '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/><key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/></dict></plist>\n')
+  run('/usr/bin/codesign', ['--force', '--sign', signer, '--options', 'runtime', '--entitlements', nodeEntitlements, '--timestamp', node])
+  assertDeveloperIdExecutable(node, 'Bundled Node')
+  if (run(node, ['-p', '`${process.platform}/${process.arch}/${process.versions.node}`']).trim() !== `darwin/${process.arch}/22.16.0`) {
+    throw new Error('signed bundled Node fails the architecture/version runtime probe')
   }
+  run('/usr/bin/codesign', ['--force', '--sign', signer, '--options', 'runtime', '--timestamp', helper])
+  assertDeveloperIdExecutable(helper, 'Keychain helper')
   const record = JSON.parse(readFileSync(buildRecord, 'utf8'))
   if (record.source_sha256 !== sha256(source) || record.platform !== 'darwin' || record.arch !== process.arch) {
     throw new Error('Keychain helper build record does not match the packaged source or release architecture')
@@ -67,6 +84,10 @@ try {
   run('/usr/bin/hdiutil', ['create', '-quiet', '-srcfolder', staged, '-volname', 'Merchant Marketing', '-format', 'UDZO', '-ov', image], 300_000)
   run('/usr/bin/codesign', ['--force', '--sign', signer, '--timestamp', image])
   run('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', image])
+  const imageSignature = run('/usr/bin/codesign', ['--display', '--verbose=4', image], 180_000, true)
+  if (!imageSignature.includes(`TeamIdentifier=${teamId}`) || !imageSignature.includes('Authority=Developer ID Application:') || !/^Timestamp=.+$/mu.test(imageSignature)) {
+    throw new Error('DMG Developer ID signer, team, or secure timestamp is invalid')
+  }
   const notarizationOutput = run('/usr/bin/xcrun', ['notarytool', 'submit', image, '--keychain-profile', notaryProfile, '--wait', '--output-format', 'json'], 1_200_000)
   let notarization
   try { notarization = JSON.parse(notarizationOutput.trim()) }
@@ -75,6 +96,24 @@ try {
   run('/usr/bin/xcrun', ['stapler', 'staple', image], 300_000)
   run('/usr/bin/xcrun', ['stapler', 'validate', image])
   run('/usr/sbin/spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=4', image])
+
+  // Inspect the shipped bytes, not just the pre-image staging directory.
+  const mounted = resolve(scratch, 'mounted')
+  mkdirSync(mounted)
+  run('/usr/bin/hdiutil', ['attach', '-quiet', '-readonly', '-nobrowse', '-mountpoint', mounted, image], 300_000)
+  try {
+    const shippedNode = resolve(mounted, 'runtime/node')
+    const shippedHelper = resolve(mounted, 'mcp/keychain-credential-helper')
+    assertDeveloperIdExecutable(shippedNode, 'DMG bundled Node')
+    assertDeveloperIdExecutable(shippedHelper, 'DMG Keychain helper')
+    if (sha256(shippedNode) !== sha256(node) || sha256(shippedHelper) !== sha256(helper)) {
+      throw new Error('DMG executable bytes differ from signed staging payload')
+    }
+    run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=4', shippedNode])
+    run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=4', shippedHelper])
+  } finally {
+    run('/usr/bin/hdiutil', ['detach', '-quiet', mounted], 300_000)
+  }
 
   mkdirSync(dirname(output), { recursive: true })
   const digest = sha256(image)

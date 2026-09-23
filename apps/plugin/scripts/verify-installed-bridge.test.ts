@@ -32,6 +32,12 @@ describe('installed MCP bridge verification', () => {
       expect(result.status, JSON.stringify({ stderr: result.stderr, manifest: evidence.manifest, discovery: evidence.tools.installed_discovery_error })).toBe(0)
       expect(evidence.manifest.errors).toEqual([])
       expect(evidence.tools.installed_discovery_error).toBeNull()
+      expect(evidence.tools.unconfigured_call).toMatchObject({
+        tool: 'workspace.health',
+        blocked: true,
+        error: null,
+      })
+      expect(['MCP_AUTH_REQUIRED', 'MCP_CONFIGURATION_REQUIRED']).toContain(evidence.tools.unconfigured_call.code)
       expect(evidence.runtime_files.find((file: { path: string }) => file.path === '.mcp.json')).toMatchObject({ matches: true })
     } finally {
       rmSync(directory, { recursive: true, force: true })

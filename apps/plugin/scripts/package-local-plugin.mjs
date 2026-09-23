@@ -29,6 +29,15 @@ if (!['arm64', 'x64'].includes(architecture)) throw new Error('unsupported deskt
 if (platform === 'win32' && architecture !== 'x64') throw new Error('Windows credential helper currently supports x64 only')
 const nodeVersion = 'v22.16.0'
 const nodeArchiveName = platform === 'win32' ? `node-${nodeVersion}-win-${architecture}.zip` : `node-${nodeVersion}-${platform}-${architecture}.tar.gz`
+// Pinned from Node.js v22.16.0's signed SHASUMS. A checksum downloaded from
+// the same location as an archive cannot authenticate it on its own.
+const nodeArchiveHashes = {
+  'node-v22.16.0-darwin-arm64.tar.gz': '1d7f34ec4c03e12d8b33481e5c4560432d7dc31a0ef3ff5a4d9a8ada7cf6ecc9',
+  'node-v22.16.0-darwin-x64.tar.gz': '838d400f7e66c804e5d11e2ecb61d6e9e878611146baff69d6a2def3cc23f4ac',
+  'node-v22.16.0-win-x64.zip': '21c2d9735c80b8f86dab19305aa6a9f6f59bbc808f68de3eef09d5832e3bfbbd',
+}
+const pinnedNodeHash = nodeArchiveHashes[nodeArchiveName]
+if (!pinnedNodeHash) throw new Error(`bundled Node runtime has no pinned SHA-256: ${nodeArchiveName}`)
 const cache = resolve(repositoryRoot, 'artifacts', 'local-plugin', 'runtime-cache')
 mkdirSync(cache, { recursive: true })
 const archive = resolve(cache, nodeArchiveName)
@@ -60,7 +69,9 @@ downloadIfMissing(`https://nodejs.org/dist/${nodeVersion}/${nodeArchiveName}`, a
 const expectedNodeHash = readFileSync(sums, 'utf8').split(/\r?\n/u)
   .map(line => line.trim().split(/\s+/u)).find(parts => parts[1] === nodeArchiveName)?.[0]
 const actualNodeHash = createHash('sha256').update(readFileSync(archive)).digest('hex')
-if (!expectedNodeHash || expectedNodeHash !== actualNodeHash) throw new Error('official Node runtime archive SHA-256 mismatch')
+if (expectedNodeHash !== pinnedNodeHash || actualNodeHash !== pinnedNodeHash) {
+  throw new Error('official Node runtime archive SHA-256 mismatch against pinned release digest')
+}
 let windowsHelperFiles = null
 if (windowsHelperDir) {
   if (process.platform !== 'win32') throw new Error('signed Windows helper packaging must run on Windows')
@@ -254,7 +265,7 @@ try {
       reason: 'Custom-scheme helper binaries are not shipped until platform signing and installation-instance binding are enforced.',
       platforms: {
         darwin: { source_included: true, binary_included: false },
-        win32: { source_included: true, binary_included: Boolean(windowsHelperFiles), authenticode_required: true },
+        win32: { source_included: true, binary_included: false, authenticode_required: true },
       },
     },
   }, null, 2)}\n`)

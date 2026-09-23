@@ -42,6 +42,7 @@ jobs:
             runtime/node mcp/keychain-credential-helper mcp/keychain-credential-helper.build.json
           test "$(lipo -archs "$RUNNER_TEMP/runtime/node")" = x86_64
           test "$(lipo -archs "$RUNNER_TEMP/mcp/keychain-credential-helper")" = x86_64
+          xcrun vtool -show-build "$RUNNER_TEMP/runtime/node" | grep -q 'minos 11.0'
           xcrun vtool -show-build "$RUNNER_TEMP/mcp/keychain-credential-helper" | grep -q 'minos 11.0'
           shasum -a 256 "$artifact" > "$artifact.sha256"
       - name: Verify clean install and bundled MCP discovery
@@ -56,21 +57,23 @@ jobs:
           export PATH=/usr/bin:/bin
           sh "$extracted/install.sh"
           installed="$home/plugins/merchant-marketing"
+          cache="$home/.codex/plugins/cache/merchant-personal/merchant-marketing/local"
           test -x "$installed/runtime/node"
           test -x "$installed/mcp/keychain-credential-helper"
-          test -f "$home/.codex/plugins/cache/merchant-personal/merchant-marketing/local/runtime/node"
+          test -x "$cache/runtime/node"
+          test -x "$cache/mcp/keychain-credential-helper"
           grep -q 'enabled = true' "$home/.codex/config.toml"
-          test "$("$installed/runtime/node" -p 'process.platform + "/" + process.arch')" = darwin/x64
+          test "$("$cache/runtime/node" -p 'process.platform + "/" + process.arch')" = darwin/x64
           printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize"}' \
             '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' |
-            NODE_ENV=test DEPLOY_ENV=local_desktop "$installed/runtime/node" "$installed/mcp/bridge.mjs" > "$RUNNER_TEMP/mcp-responses.jsonl"
-          "$installed/runtime/node" -e '
+            NODE_ENV=test DEPLOY_ENV=local_desktop "$cache/runtime/node" "$cache/mcp/bridge.mjs" > "$RUNNER_TEMP/mcp-responses.jsonl"
+          "$cache/runtime/node" -e '
             const fs = require("node:fs");
             const lines = fs.readFileSync(process.argv[1], "utf8").trim().split("\n").map(JSON.parse);
             const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
             if (lines.length !== 2 || lines[0]?.result?.serverInfo?.version !== manifest.version ||
                 !Array.isArray(lines[1]?.result?.tools) || lines[1].result.tools.length === 0) process.exit(1);
-          ' "$RUNNER_TEMP/mcp-responses.jsonl" "$installed/.codex-plugin/plugin.json"
+          ' "$RUNNER_TEMP/mcp-responses.jsonl" "$cache/.codex-plugin/plugin.json"
       - name: Keep the verified CI artifact
         uses: actions/upload-artifact@v4
         with:

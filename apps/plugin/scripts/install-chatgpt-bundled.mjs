@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, resolve, sep } from 'node:path'
+import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -28,9 +28,9 @@ if ([destination, cache].some(path => path === source || path.startsWith(`${sour
 }
 const configPath = resolve(codexHome, 'config.toml')
 const configSection = `[plugins."merchant-marketing@${marketplace.name}"]`
-const oldConfig = existsSync(configPath) ? readFileSync(configPath, 'utf8') : ''
+const oldConfig = existsSync(configPath) ? readFileSync(configPath, 'utf8') : null
 const oldRegistry = existsSync(marketplacePath) ? readFileSync(marketplacePath, 'utf8') : null
-const lines = oldConfig.split('\n')
+const lines = (oldConfig ?? '').split('\n')
 const sectionIndex = lines.findIndex(line => line.trim() === configSection)
 if (sectionIndex !== -1) {
   const end = lines.findIndex((line, index) => index > sectionIndex && /^\[/u.test(line.trim()))
@@ -51,7 +51,7 @@ const staged = mkdtempSync(resolve(dirname(destination), '.merchant-marketing-in
 const stagedCache = mkdtempSync(resolve(dirname(cache), '.merchant-marketing-cache-'))
 const temporaryRegistry = resolve(dirname(marketplacePath), `.marketplace-${process.pid}.tmp`)
 const temporaryConfig = resolve(dirname(configPath), `.config-${process.pid}.tmp`)
-const copyPluginFile = path => !path.split(/[\\/]/u).includes('.agents')
+const copyPluginFile = path => !relative(source, path).split(/[\\/]/u).includes('.agents')
 try {
   cpSync(source, staged, { recursive: true, filter: copyPluginFile })
   cpSync(source, stagedCache, { recursive: true, filter: copyPluginFile })
@@ -63,6 +63,8 @@ try {
   let movedCache = false
   let installedSource = false
   let installedCache = false
+  let installedRegistry = false
+  let installedConfig = false
   try {
     if (previous) { renameSync(destination, previous); movedSource = true }
     if (previousCache) { renameSync(cache, previousCache); movedCache = true }
@@ -72,15 +74,29 @@ try {
     installedCache = true
     writeFileSync(temporaryRegistry, `${JSON.stringify(marketplace, null, 2)}\n`, { mode: 0o600 })
     renameSync(temporaryRegistry, marketplacePath)
+    installedRegistry = true
     writeFileSync(temporaryConfig, nextConfig, { mode: 0o600 })
     renameSync(temporaryConfig, configPath)
+    installedConfig = true
   } catch (error) {
     if (installedSource) rmSync(destination, { recursive: true, force: true })
     if (movedSource) renameSync(previous, destination)
     if (installedCache) rmSync(cache, { recursive: true, force: true })
     if (movedCache) renameSync(previousCache, cache)
-    if (oldRegistry === null) { if (existsSync(marketplacePath)) rmSync(marketplacePath) }
-    else writeFileSync(marketplacePath, oldRegistry)
+    if (installedRegistry) {
+      if (oldRegistry === null) rmSync(marketplacePath)
+      else {
+        writeFileSync(temporaryRegistry, oldRegistry, { mode: 0o600 })
+        renameSync(temporaryRegistry, marketplacePath)
+      }
+    }
+    if (installedConfig) {
+      if (oldConfig === null) rmSync(configPath)
+      else {
+        writeFileSync(temporaryConfig, oldConfig, { mode: 0o600 })
+        renameSync(temporaryConfig, configPath)
+      }
+    }
     throw error
   }
   if (previous) rmSync(previous, { recursive: true, force: true })

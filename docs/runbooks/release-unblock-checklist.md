@@ -1,14 +1,12 @@
 # Store Nova 发布解阻清单
 
-本文只用于当前候选版本的人工发布准备，不替代 `deploy-verified-ecs-compose.sh` 的发布门禁。
+本文是人工发布准备清单，不替代 `deploy-verified-ecs-compose.sh` 的发布门禁。每次执行前必须重新冻结候选身份；下方历史状态只用于说明差距，不是可复用的发布输入。
 
 ## 1. 固定候选身份
 
-候选分支：`main`
+历史快照（2026-09-19）：当时的候选为 `main` / `3e3522ab024102d0b451785928bd71fa89051a87`，101 上候选容器为更旧的 `53721389bf6d3399b264642bc0c5969302ad39e8`。这些 SHA、差异文件数和缺失文件数不代表当前状态，不能直接用于后续 staging 或发布。
 
-当前候选提交：`3e3522ab`（完整 SHA：`3e3522ab024102d0b451785928bd71fa89051a87`）
-
-候选包已于 2026-09-19 生成。101 上现有候选容器仍绑定旧提交 `53721389bf6d3399b264642bc0c5969302ad39e8`，不得将其视为当前候选；必须先完成安全同步、人工合并 21 个差异文件，并补齐 45 个远端缺失文件后再 staging。
+当前插件包候选在 `codex/windows-plugin-bundle` 分支；正式发布前从最终审核提交读取完整 Git SHA、`release-metadata.json`、包及镜像摘要，并与目标主机 `/releasez` 身份逐项核对。生产 `/releasez` 若属于旧提交，即使返回 ready，也不能证明当前候选已上线。
 
 发布前必须把以下字段绑定到同一 `RELEASE_ID`，不得现场修改或复用旧证据：Git SHA、源码归档摘要、镜像摘要、渲染 Compose 摘要、deployment nonce、capability/capacity evidence。
 
@@ -49,12 +47,13 @@ image_edit，最后执行最短 3 秒 video。媒体探针不得自动重跑；�
 留下的两个真实 capture 归档：
 
 ```sh
+export RELEASE_ID='release-<当前冻结的候选标识>'
 npx tsx scripts/model-relay-recovery-evidence.ts \
   --failure /受保护路径/relay-503.json \
   --recovery /受保护路径/relay-recovered.json \
   --artifact-root /受保护证据根目录 \
-  --release-id release-9df84aa1 \
-  --output /受保护路径/release-9df84aa1-relay-recovery.json
+  --release-id "$RELEASE_ID" \
+  --output "/受保护路径/${RELEASE_ID}-relay-recovery.json"
 ```
 
 该命令不发网络请求，只验证并封存已有响应；随后将输出路径作为
@@ -68,16 +67,16 @@ npx tsx scripts/model-relay-recovery-evidence.ts \
 `yxsona.com` 与 `ops.yxsona.com` 生产域名会被脚本直接拒绝。当前候选可先执行：
 
 ```sh
-RELEASE_ID=release-9df84aa1 \
+RELEASE_ID='release-<当前冻结的候选标识>' \
 CAPACITY_PROFILE=pilot_50 \
-CAPACITY_CAPTURE_TARGET_URL=https://<isolated-preproduction-host> \
-CAPACITY_CAPTURE_OUTPUT=/受保护证据目录/release-9df84aa1-capacity-raw.json \
+CAPACITY_CAPTURE_TARGET_URL='https://<isolated-preproduction-host>' \
+CAPACITY_CAPTURE_OUTPUT='/受保护证据目录/<当前冻结的候选release-id>-capacity-raw.json' \
 sh infra/scripts/capture-ecs-capacity-evidence.sh plan
 ```
 
 经容量窗口、隔离预发资源和影响范围人工批准后，才可额外设置
 `CAPACITY_CAPTURE_TARGET_KIND=isolated_preproduction`、
-`CAPACITY_CAPTURE_CONFIRM=release-9df84aa1`、`CAPACITY_CAPTURE_EXPECTED_GIT_SHA=<完整40位提交>`
+`CAPACITY_CAPTURE_CONFIRM=<当前冻结的候选release-id>`、`CAPACITY_CAPTURE_EXPECTED_GIT_SHA=<完整40位提交>`
 与受保护 token，并把动作改为 `capture`。采集器会先请求 `/releasez`，且仅在
 release ID、Git SHA 和 ready 身份均与候选一致时才发送负载；身份请求与容量请求均不跟随重定向。
 隔离环境必须预先创建该 profile 所需的 `ws_capacity_0..N` 工作区，并为每个工作区绑定淘宝测试账号；采集会真实执行任务创建与 job admission，缺少账号时必须失败，不能把零任务报告当作覆盖证据。

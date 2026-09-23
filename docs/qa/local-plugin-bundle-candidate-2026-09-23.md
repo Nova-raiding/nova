@@ -1,13 +1,14 @@
 # 本地插件打包候选验收（2026-09-23）
 
-结论：**NO-GO，不能把当前候选包作为正式用户安装包或宣布生产上线。** 本记录对应 `codex/windows-plugin-bundle` 提交 `e7d60129`。
+结论：**NO-GO，不能把当前候选包作为正式用户安装包或宣布生产上线。** 本记录覆盖 `codex/windows-plugin-bundle` 的本地插件包候选；各条证据以其标注的工件与 CI 运行身份为准。
 
 ## 已验证
 
 - macOS arm64 内部候选包：`artifacts/local-plugin/merchant-marketing-0.1.0+codex.20260923132700-darwin-arm64.tar.gz`，SHA-256 `c137967fea80563ac1d270440967545cdbce6c6315a275dd1a02cd8d15452823`。内置 Node 22.16.0；Keychain helper 最低 macOS 11；45 个运行时文件与源码清单一致；隔离安装、MCP 初始化与工具发现通过。该 tarball **未完成 Developer ID 签名和公证**。
-- [Intel Mac 原生 CI](https://github.com/Nova-raiding/nova/actions/runs/35822613692)：`macos-15-intel` 上的 x64 构建、最低系统版本、隔离安装和 MCP 发现通过。上传的工件仅供 CI 验收。
+- 本轮加固后的 macOS arm64 内部候选包：`artifacts/local-plugin/merchant-marketing-0.1.0+codex.20260923132700-darwin-arm64-candidate-r2.tar.gz`，SHA-256 `bedf8b71b6e8c3aa5c0dfa8f0f4f816ef066375f703abfa0afdb90db49c750c7`。固定校验官方 Node 发行摘要，包含更新后的本地安装与 MCP 验证脚本；打包器明确报告 `ready_to_install=false`、`release_status=unsigned_candidate`。它仍不是用户交付包。
+- [Intel Mac 原生 CI](https://github.com/Nova-raiding/nova/actions/runs/35822613692)：先前工作流在 `macos-15-intel` 上的 x64 构建、Keychain helper 最低系统版本、隔离安装和 MCP 发现通过。当前工作流另补内置 Node 的最低系统版本检查，并从实际 `local` 安装缓存运行 MCP 握手；这两项新增断言须由后续 Intel CI 运行确认。上传的工件仅供 CI 验收。
 - [Windows 原生 CI](https://github.com/Nova-raiding/nova/actions/runs/35822801940)：临时测试证书下完成自包含 .NET helper 签名、ZIP 校验、包内安装入口、安装缓存中的 MCP 初始化和工具发现、Credential Manager 读写，以及安装后 JS 适配器的长令牌往返。临时测试证书不可用于用户交付。
-- 受修改影响的本地 121 项测试和类型检查通过；原有发布门禁测试此前为 1042 通过、16 项按现有规则跳过，本次未因无关代码重跑整个门禁集。CodeGraph 索引已同步，用于定位打包链路及定向测试范围。
+- 前一轮受影响的本地 121 项测试通过；本轮加固后重跑安装、macOS 发布门禁、安装后 MCP 验证共 31 项，全部通过，类型检查通过。原有发布门禁测试此前为 1042 通过、16 项按现有规则跳过，本次未因无关代码重跑整个门禁集。CodeGraph 索引已同步，用于定位打包链路及定向测试范围。
 - 公网 API 和运营后台 `/healthz` 返回 `ok`；这不代替生产 readiness 或桌面宿主验收。
 
 ## 正式交付阻断

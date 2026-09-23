@@ -118,11 +118,35 @@ jobs:
             $inputPath = Join-Path $env:RUNNER_TEMP 'storenova-install-input.txt'
             $outputPath = Join-Path $env:RUNNER_TEMP 'storenova-install-output.txt'
             $errorPath = Join-Path $env:RUNNER_TEMP 'storenova-install-error.txt'
-            [System.IO.File]::WriteAllText($inputPath, "`n", [System.Text.Encoding]::ASCII)
-            $process = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + (Join-Path $extract 'install-chatgpt.ps1') + '"')) -RedirectStandardInput $inputPath -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -Wait -PassThru
+            [System.IO.File]::WriteAllText($inputPath, "`n`n", [System.Text.Encoding]::ASCII)
+            $installCommand = 'call "' + (Join-Path $extract 'install.cmd') + '"'
+            $process = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/d', '/c', $installCommand) -RedirectStandardInput $inputPath -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -Wait -PassThru
             if ($process.ExitCode -ne 0) { throw "Packaged installer failed: $((Get-Content -LiteralPath $errorPath -Raw).Trim())" }
             $manifest = Get-Content -LiteralPath (Join-Path $extract '.codex-plugin\plugin.json') -Raw | ConvertFrom-Json
             $installed = Join-Path $env:CODEX_HOME 'plugins\cache\merchant-personal\merchant-marketing\local'
+            $installedSource = Join-Path $sandboxHome 'plugins\merchant-marketing'
+            $registryPath = Join-Path $env:AGENTS_HOME 'plugins\marketplace.json'
+            if (-not (Test-Path -LiteralPath $registryPath -PathType Leaf)) { throw 'Personal plugin marketplace registry is missing' }
+            $registry = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
+            $marketplaceEntry = @($registry.plugins | Where-Object { $_.name -eq 'merchant-marketing' })
+            if ($registry.name -ne 'merchant-personal' -or $marketplaceEntry.Count -ne 1 -or $marketplaceEntry[0].source.source -ne 'local' -or $marketplaceEntry[0].source.path -ne './plugins/merchant-marketing') {
+              throw 'Personal plugin marketplace source does not point to the installed source'
+            }
+            foreach ($pluginPath in @($installed, $installedSource)) {
+              $pluginManifest = Join-Path $pluginPath '.codex-plugin\plugin.json'
+              if (-not (Test-Path -LiteralPath $pluginManifest -PathType Leaf)) { throw "Installed plugin manifest is missing: $pluginPath" }
+              if ((Get-FileHash -LiteralPath $pluginManifest -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $extract '.codex-plugin\plugin.json') -Algorithm SHA256).Hash) {
+                throw "Installed plugin manifest differs from the package: $pluginPath"
+              }
+              foreach ($relativePath in @('runtime\node.exe', 'windows\StoreNovaCredentialHelper.exe', 'mcp\bridge.mjs', '.mcp.json')) {
+                $installedFile = Join-Path $pluginPath $relativePath
+                $packageFile = Join-Path $extract $relativePath
+                if (-not (Test-Path -LiteralPath $installedFile -PathType Leaf)) { throw "Installed plugin file is missing: $installedFile" }
+                if ((Get-FileHash -LiteralPath $installedFile -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash) {
+                  throw "Installed plugin file differs from the package: $installedFile"
+                }
+              }
+            }
             if (-not (Test-Path -LiteralPath (Join-Path $installed 'runtime\node.exe') -PathType Leaf)) { throw 'Bundled Node was not installed' }
             $installedHelper = Join-Path $installed 'windows\StoreNovaCredentialHelper.exe'
             $packageHelper = Join-Path $extract 'windows\StoreNovaCredentialHelper.exe'
@@ -159,7 +183,8 @@ jobs:
           $errorPath = Join-Path $env:RUNNER_TEMP 'mcp-smoke-error.txt'
           $requests = @(
             '{"jsonrpc":"2.0","id":1,"method":"initialize"}',
-            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}',
+            '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"onboarding.status","arguments":{}}}'
           ) -join "`n"
           [System.IO.File]::WriteAllText($inputPath, "$requests`n", [System.Text.Encoding]::ASCII)
           $env:NODE_ENV = 'test'
@@ -168,12 +193,15 @@ jobs:
           if ($null -ne $process.ExitCode -and $process.ExitCode -ne 0) { throw "Bundled MCP bridge exited $($process.ExitCode)" }
           if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Bundled MCP bridge produced no response file' }
           $responses = @(Get-Content -LiteralPath $outputPath | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json })
-          if ($responses.Count -ne 2 -or $responses[0].result.serverInfo.version -ne $manifest.version -or $responses[1].result.tools.Count -lt 1) {
+          if ($responses.Count -ne 3 -or $responses[0].result.serverInfo.version -ne $manifest.version -or $responses[1].result.tools.Count -lt 1) {
             throw 'Bundled MCP initialize or tool discovery returned an invalid response'
           }
           $names = @($responses[1].result.tools | ForEach-Object { $_.name })
           if ($names -notcontains 'merchant.start' -or $names -notcontains 'merchant.first_value' -or @($names | Where-Object { $_ -like 'ops.*' }).Count -gt 0) {
             throw 'Bundled MCP merchant tool surface is incomplete or exposes ops tools'
+          }
+          if ($responses[2].result.isError -ne $true -or $responses[2].result.structuredContent.code -ne 'MCP_CONFIGURATION_REQUIRED') {
+            throw 'Bundled onboarding.status did not fail closed when connection configuration is missing'
           }
       - name: Verify Credential Manager write
         shell: powershell
