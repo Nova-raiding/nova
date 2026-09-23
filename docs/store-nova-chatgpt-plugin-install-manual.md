@@ -71,9 +71,11 @@ access token 过期时 bridge 沿用 `POST /v1/auth/mcp-token/refresh` 轮换并
 
 平台交付两个独立包：macOS `darwin-arm64` 或 `darwin-x64`，Windows `win32-x64`。包内包括对应平台的 Node 运行时；macOS 还包括已编译的 Keychain helper，Windows 包必须包括已签名、单文件且自带 .NET 运行时的 Credential Manager helper。用户电脑不需要预装 Node、Swift、.NET SDK 或 Codex CLI。ChatGPT 桌面应用、Store Nova 商家账号、管理员分配的工作区和网络连接仍需具备。
 
-macOS 解压后双击 `install.command`，按提示输入分配的工作区；也可运行 `sh install.sh`，然后运行 `sh login.sh --workspace ws_<管理员分配的工作区>`。Windows 解压后运行 `install.cmd` 并输入工作区；也可稍后运行 `login.cmd --workspace ws_<管理员分配的工作区>`。登录时在浏览器核对商家账号与工作区并确认授权。最后完全退出并重新打开 ChatGPT，在新对话调用 `onboarding.status` 核验真实宿主身份和工作区。安装器写入本机个人插件源、安装缓存和启用配置，不发布到公开或团队市场。
+macOS 用户打开已签名、公证并装订票据的正式 DMG 后运行 `install.command`，按提示输入分配的工作区；也可运行 `sh install.sh`，然后运行 `sh login.sh --workspace ws_<管理员分配的工作区>`。直接打包产生的 `.tar.gz` 只用于内部验收，不交付用户。Windows 用户解压正式 ZIP 后运行 `install.cmd` 并输入工作区；也可稍后运行 `login.cmd --workspace ws_<管理员分配的工作区>`。登录时在浏览器核对商家账号与工作区并确认授权。最后完全退出并重新打开 ChatGPT，在新对话调用 `onboarding.status` 核验真实宿主身份和工作区。安装器写入本机个人插件源、安装缓存和启用配置，不发布到公开或团队市场。
 
-Windows 包必须在 Windows x64 发布机上构建。发布机安装构建工具并持有可信 Authenticode 签名证书后，运行 `apps/plugin/scripts/build-signed-windows-package.ps1`，提供输出 ZIP、证书指纹和可信时间戳服务地址。脚本构建自包含凭据 helper、签名、校验并生成 ZIP 与同名 `.sha256` 文件；任何门禁失败都不会留下候选 ZIP。构建工具只属于发布机环境，用户电脑无需安装。当前 macOS 构建机不能代替 Windows 实机安装验收。
+macOS 正式 DMG 在持有 Developer ID Application 证书和 Apple 公证 Keychain profile 的发布机上运行 `apps/plugin/scripts/build-signed-macos-package.mjs` 生成。缺少签名身份、公证接受结果、装订票据或 Gatekeeper 验证时不产生可交付包。发布机凭据不进入用户包。
+
+Windows 包必须在 Windows x64 发布机上构建。发布机安装构建工具并持有可信 Authenticode 代码签名证书后，运行 `apps/plugin/scripts/build-signed-windows-package.ps1`，提供输出 ZIP、证书指纹和可信时间戳服务地址。正式发布拒绝自签名及 CI 测试证书；输出 ZIP 或 `.sha256` 文件已存在时拒绝覆盖。脚本构建自包含凭据 helper、签名、校验并生成 ZIP 与同名 `.sha256` 文件；任何门禁失败都不会留下候选 ZIP。构建工具只属于发布机环境，用户电脑无需安装。当前 macOS 构建机不能代替 Windows 实机安装验收。
 
 #### 开发人员从源码安装
 

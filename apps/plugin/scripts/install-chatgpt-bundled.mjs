@@ -21,7 +21,8 @@ if (!marketplace || !Array.isArray(marketplace.plugins)) throw new Error('Existi
 if (!/^[A-Za-z0-9_-]+$/u.test(marketplace.name ?? '')) throw new Error('Personal plugin registry name is invalid')
 marketplace.plugins = [...marketplace.plugins.filter(plugin => plugin?.name !== 'merchant-marketing'), entry]
 const codexHome = resolve(process.env.CODEX_HOME || resolve(homedir(), '.codex'))
-const cache = resolve(codexHome, 'plugins', 'cache', marketplace.name, 'merchant-marketing', manifest.version)
+// ChatGPT resolves a local marketplace installation from the literal `local` cache slot.
+const cache = resolve(codexHome, 'plugins', 'cache', marketplace.name, 'merchant-marketing', 'local')
 if ([destination, cache].some(path => path === source || path.startsWith(`${source}${sep}`))) {
   throw new Error('Plugin install destination must be outside the extracted package')
 }
@@ -50,9 +51,10 @@ const staged = mkdtempSync(resolve(dirname(destination), '.merchant-marketing-in
 const stagedCache = mkdtempSync(resolve(dirname(cache), '.merchant-marketing-cache-'))
 const temporaryRegistry = resolve(dirname(marketplacePath), `.marketplace-${process.pid}.tmp`)
 const temporaryConfig = resolve(dirname(configPath), `.config-${process.pid}.tmp`)
+const copyPluginFile = path => !path.split(/[\\/]/u).includes('.agents')
 try {
-  cpSync(source, staged, { recursive: true, filter: path => !path.includes('/.agents/') })
-  cpSync(source, stagedCache, { recursive: true, filter: path => !path.includes('/.agents/') })
+  cpSync(source, staged, { recursive: true, filter: copyPluginFile })
+  cpSync(source, stagedCache, { recursive: true, filter: copyPluginFile })
   // The copied runtime must be able to start without the developer's PATH.
   if (!existsSync(resolve(staged, 'runtime', process.platform === 'win32' ? 'node.exe' : 'node'))) throw new Error('Runtime copy failed')
   const previous = existsSync(destination) ? resolve(dirname(destination), `.merchant-marketing-previous-${process.pid}`) : null

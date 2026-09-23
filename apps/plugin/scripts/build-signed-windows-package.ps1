@@ -18,6 +18,7 @@ if (-not $CiTestCertificate -and [string]::IsNullOrWhiteSpace($TimestampServer))
 $output = [System.IO.Path]::GetFullPath($OutputPath)
 if (-not $output.EndsWith('.zip', [System.StringComparison]::OrdinalIgnoreCase)) { throw 'Windows package output must end in .zip' }
 if (Test-Path -LiteralPath $output) { throw 'Output package already exists' }
+if (Test-Path -LiteralPath "$output.sha256") { throw 'Output package checksum already exists' }
 $outputDirectory = Split-Path -Parent $output
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 
@@ -45,6 +46,21 @@ try {
   if ($certificate.Count -ne 1) { throw 'Signing certificate with a usable private key is unavailable' }
   if ($certificate[0].NotBefore -gt (Get-Date) -or $certificate[0].NotAfter -lt (Get-Date)) { throw 'Signing certificate is outside its validity period' }
   if ($CiTestCertificate -and $certificate[0].Subject -ne 'CN=Store Nova CI package test only') { throw 'Test-certificate mode requires the runner-local test certificate' }
+  $codeSigningOid = '1.3.6.1.5.5.7.3.3'
+  $signingUsages = @($certificate[0].Extensions | Where-Object { $_ -is [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension] })
+  $hasCodeSigningUsage = $false
+  if ($signingUsages.Count -eq 1) {
+    foreach ($usage in $signingUsages[0].EnhancedKeyUsages) {
+      if ($usage.Value -eq $codeSigningOid) { $hasCodeSigningUsage = $true; break }
+    }
+  }
+  if (-not $hasCodeSigningUsage) {
+    throw 'Signing certificate must explicitly allow Authenticode code signing'
+  }
+  if (-not $CiTestCertificate) {
+    if ($certificate[0].Subject -eq 'CN=Store Nova CI package test only') { throw 'The CI test certificate cannot sign a production package' }
+    if ($certificate[0].Subject -eq $certificate[0].Issuer) { throw 'A self-signed certificate cannot sign a production package' }
+  }
 
   $signingArguments = @{ FilePath = $binary; Certificate = $certificate[0]; HashAlgorithm = 'SHA256' }
   if (-not [string]::IsNullOrWhiteSpace($TimestampServer)) { $signingArguments.TimestampServer = $TimestampServer }

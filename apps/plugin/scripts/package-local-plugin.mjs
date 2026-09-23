@@ -101,6 +101,19 @@ const required = [
   'scheduled/daily-store-risk-scan.json', 'scheduled/weekly-six-platform-digest.json',
   'skills/ecommerce-video-marketing/SKILL.md', 'skills/merchant-marketing/SKILL.md',
   'skills/six-platform-public-import/SKILL.md', 'skills/storyboard-prompt-assistant/SKILL.md',
+  'skills/ecommerce-video-marketing/references/culture_adaptation.md',
+  'skills/ecommerce-video-marketing/references/shot_guide.md',
+  'skills/ecommerce-video-marketing/references/video_guide.md',
+  'skills/ecommerce-video-marketing/references/video_templates.md',
+  'skills/six-platform-public-import/references/platforms.md',
+  'skills/six-platform-public-import/scripts/extract-product.mjs',
+  'skills/merchant-marketing/references/automations.md',
+  'skills/merchant-marketing/references/ecommerce-detail-page-generator.md',
+  'skills/merchant-marketing/references/ecommerce-detail-page-generator/category-playbooks.md',
+  'skills/merchant-marketing/references/ecommerce-detail-page-generator/page-spec.schema.json',
+  'skills/merchant-marketing/references/ecommerce-detail-page-generator/platform-profiles.json',
+  'skills/merchant-marketing/references/ecommerce-detail-page-generator/platform-style-guide.md',
+  'skills/merchant-marketing/references/ecommerce-detail-page-generator/prompt-recipes.md',
   'ui/image-local-edit.html', 'ui/recharge.html',
 ]
 for (const relativePath of required) {
@@ -133,7 +146,8 @@ try {
   if (platform === 'darwin') {
     const helperSource = resolve(staging, 'mcp/keychain-credential-helper.swift')
     const helperBinary = resolve(staging, 'mcp/keychain-credential-helper')
-    run('/usr/bin/xcrun', ['swiftc', '-O', '-target', `${architecture}-apple-macos11.0`, helperSource, '-o', helperBinary])
+    const swiftArchitecture = architecture === 'x64' ? 'x86_64' : architecture
+    run('/usr/bin/xcrun', ['swiftc', '-O', '-target', `${swiftArchitecture}-apple-macos11.0`, helperSource, '-o', helperBinary])
     chmodSync(helperBinary, 0o700)
     const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex')
     writeFileSync(resolve(staging, 'mcp/keychain-credential-helper.build.json'), `${JSON.stringify({ schema_version: '1', source_sha256: digest(helperSource), binary_sha256: digest(helperBinary), platform, arch: architecture })}\n`)
@@ -199,7 +213,7 @@ try {
     'cd /d "%~dp0"',
     'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install-chatgpt.ps1"',
     'if errorlevel 1 (echo Store Nova installation failed. & pause & exit /b 1)',
-    'echo Store Nova plugin source copied. Restart ChatGPT, install Merchant Marketing, then complete local workspace login.',
+    'echo Store Nova local plugin installed. Restart ChatGPT, confirm Merchant Marketing is enabled, then complete workspace login.',
     'pause',
     '',
   ].join('\r\n')
@@ -227,7 +241,10 @@ try {
     platform,
     architecture,
     bundled_node_version: nodeVersion,
-    ready_to_install: platform === 'darwin' || Boolean(windowsHelperFiles),
+    // The macOS tarball is a locally runnable candidate. Gatekeeper-ready
+    // distribution requires Developer ID signing and Apple notarization.
+    ready_to_install: platform === 'win32' && Boolean(windowsHelperFiles),
+    release_status: platform === 'darwin' ? 'unsigned_candidate' : 'signed_candidate',
     cloud_code_included: false,
     connect_helper: {
       source_included: true,

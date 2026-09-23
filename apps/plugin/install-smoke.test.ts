@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -43,7 +43,8 @@ describe('Codex plugin installation package', () => {
         platform: 'darwin',
         architecture: process.arch,
         bundled_node_version: 'v22.16.0',
-        ready_to_install: true,
+        ready_to_install: false,
+        release_status: 'unsigned_candidate',
         connect_helper: {
           source_included: true,
           app_bundle_included: false,
@@ -57,6 +58,17 @@ describe('Codex plugin installation package', () => {
       })
       const listing = spawnSync('tar', ['-tzf', artifact], { encoding: 'utf8' })
       expect(listing.status, listing.stderr).toBe(0)
+      const skillFiles: string[] = []
+      const collectSkillFiles = (directoryPath: string, relative = ''): void => {
+        for (const entry of readdirSync(directoryPath, { withFileTypes: true })) {
+          const nested = relative ? `${relative}/${entry.name}` : entry.name
+          if (entry.isDirectory()) collectSkillFiles(resolve(directoryPath, entry.name), nested)
+          else if (entry.isFile() && !/\.test\.[cm]?[jt]s$/u.test(entry.name)) skillFiles.push(`skills/${nested}`)
+        }
+      }
+      collectSkillFiles(resolve(root, 'skills'))
+      for (const skillFile of skillFiles) expect(listing.stdout).toContain(skillFile)
+      expect(listing.stdout).not.toContain('skills/six-platform-public-import/scripts/extract-product.test.mjs')
       expect(listing.stdout).toContain('macos/store-nova-connect-helper.swift')
       expect(listing.stdout).toContain('scripts/build-connect-helper.mjs')
       expect(listing.stdout).toContain('scripts/connect-local-macos.mjs')
@@ -102,9 +114,11 @@ describe('Codex plugin installation package', () => {
       expect(installed.status, installed.stderr).toBe(0)
       const installedRoot = resolve(home, 'plugins/merchant-marketing')
       expect(existsSync(resolve(installedRoot, 'runtime/node'))).toBe(true)
+      expect(existsSync(resolve(installedRoot, '.agents'))).toBe(false)
       expect(JSON.parse(readFileSync(resolve(home, '.agents/plugins/marketplace.json'), 'utf8')).plugins[0].source.path).toBe('./plugins/merchant-marketing')
-      const installedCache = resolve(home, '.codex/plugins/cache/merchant-personal/merchant-marketing', readJson('.codex-plugin/plugin.json').version)
+      const installedCache = resolve(home, '.codex/plugins/cache/merchant-personal/merchant-marketing/local')
       expect(existsSync(resolve(installedCache, 'runtime/node'))).toBe(true)
+      expect(existsSync(resolve(installedCache, '.agents'))).toBe(false)
       expect(readFileSync(resolve(home, '.codex/config.toml'), 'utf8')).toContain('[plugins."merchant-marketing@merchant-personal"]\nenabled = true')
       const bundledNode = spawnSync(resolve(installedRoot, 'runtime/node'), ['-p', 'process.versions.node'],
         { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: home } })

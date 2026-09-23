@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
@@ -87,23 +87,37 @@ const installedRuntimeFiles = [...new Set([
 const missingRuntimeFiles = sourceRuntimeFiles.filter(path => !existsSync(resolve(installedRoot, path)))
 const unexpectedRuntimeFiles = installedRuntimeFiles.filter(path => !sourceRuntimeFiles.includes(path))
 const sha256 = path => createHash('sha256').update(readFileSync(path)).digest('hex')
+const bundledNodeCommand = process.platform === 'win32' ? './runtime/node.exe' : './runtime/node'
+const sourceMcp = JSON.parse(readFileSync(resolve(sourceRoot, '.mcp.json'), 'utf8'))
+const installedMcp = JSON.parse(readFileSync(resolve(installedRoot, '.mcp.json'), 'utf8'))
+const installedStartup = installedMcp?.mcpServers?.['merchant-marketing']
+const bundledNodePath = resolve(installedRoot, bundledNodeCommand)
+const bundledNodeExists = existsSync(bundledNodePath) && statSync(bundledNodePath).isFile()
+const bundledMcpMatchesSource = (() => {
+  if (installedStartup?.command !== bundledNodeCommand || sourceMcp?.mcpServers?.['merchant-marketing']?.command !== 'node') return false
+  const normalized = structuredClone(installedMcp)
+  normalized.mcpServers['merchant-marketing'].command = 'node'
+  return JSON.stringify(normalized) === JSON.stringify(sourceMcp)
+})()
 const files = sourceRuntimeFiles.filter(path => existsSync(resolve(installedRoot, path))).map(path => {
   const sourceSha256 = sha256(resolve(sourceRoot, path))
   const installedSha256 = sha256(resolve(installedRoot, path))
-  return { path, source_sha256: sourceSha256, installed_sha256: installedSha256, matches: sourceSha256 === installedSha256 }
+  return { path, source_sha256: sourceSha256, installed_sha256: installedSha256,
+    matches: sourceSha256 === installedSha256 || (path === '.mcp.json' && bundledMcpMatchesSource) }
 })
 
 const manifest = JSON.parse(readFileSync(resolve(installedRoot, '.codex-plugin/plugin.json'), 'utf8'))
 const packageJson = JSON.parse(readFileSync(resolve(installedRoot, 'package.json'), 'utf8'))
-const mcp = JSON.parse(readFileSync(resolve(installedRoot, '.mcp.json'), 'utf8'))
-const startup = mcp?.mcpServers?.['merchant-marketing']
+const startup = installedStartup
 const manifestErrors = [
   manifest.id === 'merchant-marketing' ? null : 'manifest id is not merchant-marketing',
   manifest.name === 'merchant-marketing' ? null : 'manifest name is not merchant-marketing',
   manifest.version === packageJson.version ? null : 'manifest version does not match package version',
   manifest.version === expectedVersion ? null : 'installed version does not match expected source version',
   manifest.mcpServers === './.mcp.json' ? null : 'manifest mcpServers must point to ./.mcp.json',
-  startup?.command === 'node' && Array.isArray(startup?.args) && startup.args.length === 1 && startup.args[0] === './mcp/bridge.mjs' ? null : 'MCP startup must use node ./mcp/bridge.mjs',
+  (startup?.command === 'node' || (startup?.command === bundledNodeCommand && bundledNodeExists))
+    && Array.isArray(startup?.args) && startup.args.length === 1 && startup.args[0] === './mcp/bridge.mjs'
+    ? null : `MCP startup must use node or the present ${bundledNodeCommand} runtime with ./mcp/bridge.mjs`,
 ].filter(Boolean)
 const installedDirectoryVersion = installedRoot.split(/[\\/]/u).at(-1)
 const cachePathVersionError = installedDirectoryVersion && semverPattern.test(installedDirectoryVersion) && installedDirectoryVersion !== expectedVersion
@@ -112,8 +126,8 @@ const cachePathVersionError = installedDirectoryVersion && semverPattern.test(in
 if (cachePathVersionError) manifestErrors.push(cachePathVersionError)
 
 const discoveryEnv = { ...process.env, MERCHANT_MCP_TOKEN_SOURCE: 'environment', MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' }
-function discoverTools(root) {
-  const bridge = spawnSync(process.execPath, [resolve(root, 'mcp/bridge.mjs')], {
+function discoverTools(root, nodeBinary = process.execPath) {
+  const bridge = spawnSync(nodeBinary, [resolve(root, 'mcp/bridge.mjs')], {
     encoding: 'utf8',
     input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`,
     env: discoveryEnv,
@@ -130,7 +144,8 @@ function discoverTools(root) {
 }
 
 const sourceDiscovery = discoverTools(sourceRoot)
-const installedDiscovery = discoverTools(installedRoot)
+const installedDiscovery = discoverTools(installedRoot,
+  startup?.command === bundledNodeCommand && bundledNodeExists ? bundledNodePath : process.execPath)
 const sourceToolNames = sourceDiscovery.names
 const toolNames = installedDiscovery.names
 const sourceToolSet = new Set(sourceToolNames)
