@@ -93,6 +93,8 @@ infra/protected/attest-release-evidence-bundle.mjs
 infra/protected/attest-release-evidence-bundle.d.mts
 infra/protected/attest-postgres-backup.mjs
 infra/protected/attest-postgres-backup.d.mts
+infra/protected/restore-pg17-isolated.mjs
+infra/protected/restore-pg17-isolated.d.mts
 infra/protected/attest-manual-operations-evidence.mjs
 infra/protected/attest-manual-operations-evidence.d.mts
 infra/protected/ecs-preidentity-recovery.mjs
@@ -128,6 +130,8 @@ docs/runbooks/aliyun-oss-canary-delete-version-authorization.md
 docs/runbooks/durable-platform-authorization-bootstrap.md
 docs/runbooks/ecs-verified-compose-deploy.md
 docs/runbooks/ecs-release-evidence-bundle-attester.md
+docs/runbooks/pg17-isolated-restore-capture.md
+tests/restore-pg17-isolated.test.ts
 docs/runbooks/ecs-release-image-build.md
 docs/runbooks/ecs-candidate-api-sidecar.md
 EOF
