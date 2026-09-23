@@ -216,6 +216,22 @@ export function verifyAppliedMigrations(
   }
 }
 
+/** Reviewed bridge artifact only: accept a complete, checksummed 242 or 244
+ * prefix. A partially applied 243 migration must never make the code ready. */
+export function verifyBridgeMigrationPrefix(
+  applied: readonly AppliedMigration[],
+  expected: readonly Migration[],
+  mode: string | undefined,
+): 242 | 244 {
+  if (mode !== 'prefix_242_or_244') throw new Error('bridge schema compatibility mode is not enabled')
+  if (expected.length !== 244 || expected.some((migration, index) => migration.version !== index + 1)) {
+    throw new Error('bridge release must carry the complete migration chain through 244')
+  }
+  if (applied.length !== 242 && applied.length !== 244) throw new Error('bridge database migration prefix must be exactly 242 or 244')
+  verifyAppliedMigrations(applied, expected, migrationChecksumBaseline())
+  return applied.length
+}
+
 /**
  * Splits a PostgreSQL script only at top-level semicolons. Quoted strings,
  * identifiers, dollar-quoted function bodies, and nested comments stay intact.
