@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, relative, resolve, sep } from 'node:path'
@@ -180,7 +180,7 @@ export function installBundledPlugin(options = {}) {
     restart_required: true, login_required: true }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])) {
   try { process.stdout.write(`${JSON.stringify(installBundledPlugin())}\n`) }
   catch (error) { process.stderr.write(`${error instanceof Error ? error.message : 'Plugin installation failed'}\n`); process.exitCode = 1 }
 }

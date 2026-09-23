@@ -50,9 +50,10 @@ describe('Codex plugin installation package', () => {
       mkdirSync(resolve(home, '.agents/plugins'), { recursive: true })
       cpSync(resolve(root, 'scripts/install-chatgpt-bundled.mjs'), resolve(source, 'scripts/install-chatgpt-bundled.mjs'))
       cpSync(resolve(root, 'scripts/bundle-provenance.mjs'), resolve(source, 'scripts/bundle-provenance.mjs'))
-      writeFileSync(resolve(source, '.codex-plugin/plugin.json'), JSON.stringify({ id: 'merchant-marketing', name: 'merchant-marketing', version: '1.0.0' }))
+      writeFileSync(resolve(source, '.codex-plugin/plugin.json'), JSON.stringify({ id: 'merchant-marketing', name: 'merchant-marketing', version: '1.0.0', mcpServers: './.mcp.json' }))
+      writeFileSync(resolve(source, 'package.json'), JSON.stringify({ name: '@merchant-marketing/plugin', version: '1.0.0' }))
       writeFileSync(resolve(source, 'runtime/node'), 'bundled runtime marker')
-      const bundlePaths = ['.codex-plugin/plugin.json', 'runtime/node', 'scripts/bundle-provenance.mjs', 'scripts/install-chatgpt-bundled.mjs']
+      const bundlePaths = ['.codex-plugin/plugin.json', 'package.json', 'runtime/node', 'scripts/bundle-provenance.mjs', 'scripts/install-chatgpt-bundled.mjs']
       writeFileSync(resolve(source, 'bundle-provenance.json'), `${JSON.stringify({
         schema_version: '1', plugin: 'merchant-marketing', version: '1.0.0', platform: process.platform,
         architecture: process.arch, git_commit: 'a'.repeat(40), source_dirty: false, authenticity_verified: false,
