@@ -22,3 +22,5 @@
 上述四项没有实际配置并在 101 上复核之前，owner 只能保留原始 PG17 capture，不能签发最终 `restore` 证据或继续生产迁移/切流。本文件是执行边界，不是成功证明。
 
 `infra/protected/compare-pg17-data-integrity.mjs` 可以比较两份独立取得的 `pg17-rowset-inventory/1` JSON：一份 `kind=live-backup-baseline`，一份 `kind=isolated-restore-observation`。每份必须绑定相同发布与备份摘要、各自数据库身份、UTC 观察时间，并为每张表提供 `name`、`row_count`、`canonical_rows_sha256`、`rls_policy_sha256`。调用者以 `--baseline`、`--restored`、`--capture`、`--output` 给出四个互异的绝对或相对路径；输出用 `O_EXCL` 创建的 0600 原始比较 JSON，失败仍留档。比较器只对已经取得的行摘要做确定性核对，**不负责从数据库采样、验证采样者身份或签发最终证据**。缺少受保护的备份前采样器与冻结基线时，不能用恢复后的数据反推一份 baseline。隔离 API/worker 的只读凭据、独立 Redis/队列、副作用阻断与真实桌面宿主入口也尚未配置，故目前没有安全的自动应用冒烟 runner。
+
+`infra/protected/preflight-pg17-application-smoke.mjs` 是只读拓扑预检，不启动 API/worker。它要求 root-owned/0600 的 capture、候选环境、镜像库存与角色观察文件；只对 capture 指向的 Docker 内部 bridge 网络及 Postgres 容器做 inspect，Redis 必须是同网无挂载/无端口的独立容器。API/worker 的 DB 与 Redis URL 只能指向这些容器，环境变量采用严格白名单，镜像必须是不可变 digest；角色观察必须显示独立只读、无超级用户/绕过 RLS/写权限。**角色观察文件仍须由独立受保护的数据库查询采集，预检本身不能证明其真实性。**当前 worker 没有无派发的恢复冒烟模式，因此预检即使其余拓扑条件满足也固定 NO-GO、退出非零，绝不生成应用 `pass` 或最终证据。它不能用生产 Compose/env 直接启动业务容器。
