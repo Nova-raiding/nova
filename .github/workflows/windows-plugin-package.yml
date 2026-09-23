@@ -160,7 +160,9 @@ jobs:
             }
             $signedEntry = Get-Content -LiteralPath $bootstrap -Raw
             if ($signedEntry.IndexOf('ensure-chatgpt-windows.ps1') -lt 0 -or
-                $signedEntry.IndexOf('install-chatgpt-bundled.mjs') -le $signedEntry.IndexOf('ensure-chatgpt-windows.ps1')) {
+                $signedEntry.IndexOf('install-chatgpt-bundled.mjs') -lt 0 -or
+                $signedEntry.IndexOf('& $preflight') -lt 0 -or
+                $signedEntry.IndexOf('& $runtime $installer') -le $signedEntry.IndexOf('& $preflight')) {
               throw 'Signed installer does not verify the official ChatGPT app before the plugin install'
             }
             $preflight = Join-Path $extract 'scripts\ensure-chatgpt-windows.ps1'
