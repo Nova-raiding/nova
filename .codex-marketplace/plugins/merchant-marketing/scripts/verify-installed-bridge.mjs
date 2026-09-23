@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { provenanceFile, verifyBundleProvenance } from './bundle-provenance.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const defaultSourceRoot = resolve(scriptDirectory, '..')
@@ -21,6 +22,11 @@ const installedRoot = resolve(argumentsByName.get('installed') ?? process.env.ME
 if (!argumentsByName.get('installed') && !process.env.MERCHANT_INSTALLED_PLUGIN_DIR) {
   throw new Error('installed plugin path is required via --installed or MERCHANT_INSTALLED_PLUGIN_DIR')
 }
+const packagedSource = existsSync(resolve(sourceRoot, provenanceFile))
+const packagedInstall = existsSync(resolve(installedRoot, provenanceFile))
+const provenance = packagedSource || packagedInstall
+  ? verifyBundleProvenance(installedRoot, { installed: installedRoot !== sourceRoot })
+  : { ok: true, errors: [], checked_files: 0, verification_scope: 'unpackaged_development_source' }
 
 const semverPattern = /^\d+\.\d+\.\d+(?:[+-][0-9A-Za-z.-]+)?$/u
 const sourceManifest = JSON.parse(readFileSync(resolve(sourceRoot, '.codex-plugin/plugin.json'), 'utf8'))
@@ -55,6 +61,8 @@ const fixedRuntimeFiles = [
   'windows/StoreNovaCredentialHelper.csproj',
   'scripts/build-connect-helper-windows.mjs',
   'scripts/build-windows-credential-helper.mjs',
+  'scripts/bundle-provenance.mjs',
+  'scripts/verify-bundle-provenance.mjs',
   'scripts/verify-connect-helper-windows.ps1',
   'scripts/login-local-macos.mjs',
   'scripts/login-local-windows.mjs',
@@ -87,23 +95,37 @@ const installedRuntimeFiles = [...new Set([
 const missingRuntimeFiles = sourceRuntimeFiles.filter(path => !existsSync(resolve(installedRoot, path)))
 const unexpectedRuntimeFiles = installedRuntimeFiles.filter(path => !sourceRuntimeFiles.includes(path))
 const sha256 = path => createHash('sha256').update(readFileSync(path)).digest('hex')
+const bundledNodeCommand = process.platform === 'win32' ? './runtime/node.exe' : './runtime/node'
+const sourceMcp = JSON.parse(readFileSync(resolve(sourceRoot, '.mcp.json'), 'utf8'))
+const installedMcp = JSON.parse(readFileSync(resolve(installedRoot, '.mcp.json'), 'utf8'))
+const installedStartup = installedMcp?.mcpServers?.['merchant-marketing']
+const bundledNodePath = resolve(installedRoot, bundledNodeCommand)
+const bundledNodeExists = existsSync(bundledNodePath) && statSync(bundledNodePath).isFile()
+const bundledMcpMatchesSource = (() => {
+  if (installedStartup?.command !== bundledNodeCommand || sourceMcp?.mcpServers?.['merchant-marketing']?.command !== 'node') return false
+  const normalized = structuredClone(installedMcp)
+  normalized.mcpServers['merchant-marketing'].command = 'node'
+  return JSON.stringify(normalized) === JSON.stringify(sourceMcp)
+})()
 const files = sourceRuntimeFiles.filter(path => existsSync(resolve(installedRoot, path))).map(path => {
   const sourceSha256 = sha256(resolve(sourceRoot, path))
   const installedSha256 = sha256(resolve(installedRoot, path))
-  return { path, source_sha256: sourceSha256, installed_sha256: installedSha256, matches: sourceSha256 === installedSha256 }
+  return { path, source_sha256: sourceSha256, installed_sha256: installedSha256,
+    matches: sourceSha256 === installedSha256 || (path === '.mcp.json' && bundledMcpMatchesSource) }
 })
 
 const manifest = JSON.parse(readFileSync(resolve(installedRoot, '.codex-plugin/plugin.json'), 'utf8'))
 const packageJson = JSON.parse(readFileSync(resolve(installedRoot, 'package.json'), 'utf8'))
-const mcp = JSON.parse(readFileSync(resolve(installedRoot, '.mcp.json'), 'utf8'))
-const startup = mcp?.mcpServers?.['merchant-marketing']
+const startup = installedStartup
 const manifestErrors = [
   manifest.id === 'merchant-marketing' ? null : 'manifest id is not merchant-marketing',
   manifest.name === 'merchant-marketing' ? null : 'manifest name is not merchant-marketing',
   manifest.version === packageJson.version ? null : 'manifest version does not match package version',
   manifest.version === expectedVersion ? null : 'installed version does not match expected source version',
   manifest.mcpServers === './.mcp.json' ? null : 'manifest mcpServers must point to ./.mcp.json',
-  startup?.command === 'node' && Array.isArray(startup?.args) && startup.args.length === 1 && startup.args[0] === './mcp/bridge.mjs' ? null : 'MCP startup must use node ./mcp/bridge.mjs',
+  (startup?.command === 'node' || (startup?.command === bundledNodeCommand && bundledNodeExists))
+    && Array.isArray(startup?.args) && startup.args.length === 1 && startup.args[0] === './mcp/bridge.mjs'
+    ? null : `MCP startup must use node or the present ${bundledNodeCommand} runtime with ./mcp/bridge.mjs`,
 ].filter(Boolean)
 const installedDirectoryVersion = installedRoot.split(/[\\/]/u).at(-1)
 const cachePathVersionError = installedDirectoryVersion && semverPattern.test(installedDirectoryVersion) && installedDirectoryVersion !== expectedVersion
@@ -111,26 +133,60 @@ const cachePathVersionError = installedDirectoryVersion && semverPattern.test(in
   : null
 if (cachePathVersionError) manifestErrors.push(cachePathVersionError)
 
+const protocolVersion = '2025-06-18'
+const initializeRequest = { jsonrpc: '2.0', id: 1, method: 'initialize', params: {
+  protocolVersion, capabilities: {}, clientInfo: { name: 'installed-bridge-verifier', version: '1' },
+} }
+const initializedNotification = { jsonrpc: '2.0', method: 'notifications/initialized' }
 const discoveryEnv = { ...process.env, MERCHANT_MCP_TOKEN_SOURCE: 'environment', MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' }
-function discoverTools(root) {
-  const bridge = spawnSync(process.execPath, [resolve(root, 'mcp/bridge.mjs')], {
+function bridgeResponses(root, nodeBinary, env, request) {
+  const bridge = spawnSync(nodeBinary, [resolve(root, 'mcp/bridge.mjs')], {
     encoding: 'utf8',
-    input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`,
-    env: discoveryEnv,
+    input: [initializeRequest, initializedNotification, request].map(message => JSON.stringify(message)).join('\n') + '\n',
+    env,
     timeout: 10_000,
   })
-  if (bridge.status !== 0) return { names: [], error: `exit ${bridge.status ?? 'unknown'}` }
+  if (bridge.status !== 0) return { error: `exit ${bridge.status ?? 'unknown'}${bridge.error ? `: ${bridge.error.message}` : ''}` }
   try {
-    const response = JSON.parse(bridge.stdout.trim())
-    const tools = Array.isArray(response?.result?.tools) ? response.result.tools : []
-    return { names: tools.map(tool => tool?.name).filter(name => typeof name === 'string') }
+    const lines = bridge.stdout.trim().split(/\r?\n/u).filter(Boolean).map(line => JSON.parse(line))
+    const initialized = lines.find(line => line.id === 1)
+    if (initialized?.result?.protocolVersion !== protocolVersion
+      || initialized.result.serverInfo?.name !== 'merchant-marketing'
+      || initialized.result.serverInfo?.version !== expectedVersion) {
+      return { error: 'invalid initialize response' }
+    }
+    const response = lines.find(line => line.id === request.id)
+    return response ? { response } : { error: `missing ${request.method} response` }
   } catch {
-    return { names: [], error: 'invalid tools/list response' }
+    return { error: `invalid ${request.method} response` }
   }
+}
+function discoverTools(root, nodeBinary = process.execPath) {
+  const probe = bridgeResponses(root, nodeBinary, discoveryEnv,
+    { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
+  if (probe.error) return { names: [], error: probe.error }
+  const tools = probe.response?.result?.tools
+  if (!Array.isArray(tools)) return { names: [], error: 'invalid tools/list response' }
+  return { names: tools.map(tool => tool?.name).filter(name => typeof name === 'string') }
 }
 
 const sourceDiscovery = discoverTools(sourceRoot)
-const installedDiscovery = discoverTools(installedRoot)
+const installedDiscovery = discoverTools(installedRoot,
+  startup?.command === bundledNodeCommand && bundledNodeExists ? bundledNodePath : process.execPath)
+// VITEST only disables macOS launchd recovery in the bridge; keep NODE_ENV in
+// production so this probes the production failure path without host secrets.
+const unconfiguredEnv = { ...process.env, NODE_ENV: 'production', VITEST: 'true', MERCHANT_MCP_TOKEN_SOURCE: 'environment',
+  MERCHANT_MCP_BASE_URL: '', MERCHANT_MCP_TOKEN: '', MERCHANT_MCP_REFRESH_TOKEN: '',
+  MERCHANT_WORKSPACE_ID: '', MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false' }
+const unconfiguredProbe = bridgeResponses(installedRoot,
+  startup?.command === bundledNodeCommand && bundledNodeExists ? bundledNodePath : process.execPath,
+  unconfiguredEnv, { jsonrpc: '2.0', id: 2, method: 'tools/call',
+    params: { name: 'workspace.health', arguments: {} } })
+const unconfiguredCode = unconfiguredProbe.response?.result?.structuredContent?.code
+const unconfiguredError = unconfiguredProbe.error
+  ?? (unconfiguredProbe.response?.result?.isError === true
+    && ['MCP_AUTH_REQUIRED', 'MCP_CONFIGURATION_REQUIRED'].includes(unconfiguredCode)
+    ? null : `unconfigured tools/call did not fail closed: ${String(unconfiguredCode ?? 'missing code')}`)
 const sourceToolNames = sourceDiscovery.names
 const toolNames = installedDiscovery.names
 const sourceToolSet = new Set(sourceToolNames)
@@ -160,6 +216,7 @@ const toolCacheDrift = mismatchedFiles.some(path => path === 'mcp/bridge.mjs' ||
   || duplicateTools.length > 0
   || Boolean(sourceDiscovery.error)
   || Boolean(installedDiscovery.error)
+  || Boolean(unconfiguredError)
 const connectHelperSourcePaths = [
   'macos/store-nova-connect-helper.swift', 'scripts/build-connect-helper.mjs', 'scripts/connect-local-macos.mjs',
   'windows/StoreNovaConnectHelper.cs', 'scripts/build-connect-helper-windows.mjs', 'scripts/verify-connect-helper-windows.ps1',
@@ -167,12 +224,14 @@ const connectHelperSourcePaths = [
 const connectHelperSourceVerified = !missingRuntimeFiles.some(path => connectHelperSourcePaths.includes(path))
   && !mismatchedFiles.some(path => connectHelperSourcePaths.includes(path))
 const ok = mismatchedFiles.length === 0
+  && provenance.ok
   && missingRuntimeFiles.length === 0
   && unexpectedRuntimeFiles.length === 0
   && manifestErrors.length === 0
   && sourceVersionErrors.length === 0
   && !sourceDiscovery.error
   && !installedDiscovery.error
+  && !unconfiguredError
   && missingFromInstalled.length === 0
   && unexpectedInInstalled.length === 0
   && duplicateTools.length === 0
@@ -181,6 +240,7 @@ const ok = mismatchedFiles.length === 0
 
 const evidence = {
   ok,
+  bundle_provenance: provenance,
   plugin_version: manifest.version,
   expected_plugin_version: expectedVersion,
   source_manifest: { version: sourceManifestVersion, package_version: sourcePackageVersion, errors: sourceVersionErrors },
@@ -199,6 +259,7 @@ const evidence = {
     source_count: sourceToolNames.length,
     source_discovery_error: sourceDiscovery.error ?? null,
     installed_discovery_error: installedDiscovery.error ?? null,
+    unconfigured_call: { tool: 'workspace.health', blocked: !unconfiguredError, code: unconfiguredCode ?? null, error: unconfiguredError },
     required: requiredTools,
     missing: missingTools,
     forbidden: forbiddenTools,
