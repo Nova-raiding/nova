@@ -360,18 +360,11 @@ if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" != YES ] && [ "$(node -e 'const p=JSON.parse(
 fi
 state_path="$ECS_DEPLOY_STATE_DIR/${RELEASE_ID}.predeploy.json"
 attempt_id="attempt_$(printf '%s:%s:%s' "$RELEASE_ID" "$DEPLOYMENT_NONCE" "$$" | shasum -a 256 | awk '{print $1}')"
-if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
-  # The signed per-service image IDs must come from the exact frozen Compose,
-  # not IMAGE_DIGESTS_JSON (which contains bare artifact digests, not refs).
-  docker compose -p "$project" -f "$verified_compose" config --format json | node -e '
-    const fs=require("fs"),value=JSON.parse(fs.readFileSync(0,"utf8"))
-    for(const name of ["api","api-replica","ui","ops-ui","payment-gateway","worker-sync","worker-generation","worker-publish","worker-reconcile","worker-automation","worker-scan","clamav","pilot-gateway"]){
-      if(!/^[^\s]+@sha256:[0-9a-f]{64}$/.test(value.services?.[name]?.image??""))throw new Error(`bridge service lacks immutable image: ${name}`)
-      if((name==="api"||name==="api-replica"||name.startsWith("worker-"))&&value.services[name].environment?.BRIDGE_SCHEMA_COMPATIBILITY_MODE!=="prefix_242_or_244")throw new Error(`bridge schema mode missing from ${name}`)
-      if((name==="api"||name==="api-replica")&&value.services[name].environment?.RUN_MIGRATIONS_ON_STARTUP!=="false")throw new Error(`bridge code cutover must disable startup migrations on ${name}`)
-    }
-  '
-fi
+# Validate the exact frozen render before journal capture, nonce consumption or
+# migration. B requires the bridge mode; ordinary C must remove it entirely.
+# The signed B per-service image IDs come from this render, not the bare
+# artifact digests in IMAGE_DIGESTS_JSON.
+docker compose -p "$project" -f "$verified_compose" config --format json | ECS_BRIDGE_CODE_ONLY="${ECS_BRIDGE_CODE_ONLY:-NO}" node "$root/infra/scripts/validate-ecs-rendered-bridge-mode.mjs"
 set -- capture --state "$state_path" --attempt-id "$attempt_id" \
   --lock-path "$ECS_DEPLOY_LOCK_PATH" \
   --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" --compose-project "$project" \
