@@ -95,14 +95,16 @@ async function hashFile(path, maxBytes) {
 function dockerStream(args, file, timeout = 3_600_000) {
   return new Promise((resolveCommand, rejectCommand) => {
     const child = spawn(DOCKER, args, { stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', DOCKER_HOST: 'unix:///var/run/docker.sock' } })
+    const source = createReadStream(file, { flags: 'r' })
     let output = '', bytes = 0, settled = false
-    const finish = error => { if (settled) return; settled = true; clearTimeout(timer); if (error) rejectCommand(error); else resolveCommand(output.trim()) }
+    const finish = error => { if (settled) return; settled = true; clearTimeout(timer); if (error) { source.destroy(); child.kill('SIGTERM'); rejectCommand(error) } else resolveCommand(output.trim()) }
     const timer = setTimeout(() => { child.kill('SIGKILL'); finish(new Error('isolated Docker operation timed out')) }, timeout)
     child.stdout.on('data', chunk => { bytes += chunk.length; if (bytes > 64 * 1024) { child.kill('SIGKILL'); finish(new Error('Docker output exceeded limit')) } else output += chunk.toString('utf8') })
     child.stderr.on('data', chunk => { bytes += chunk.length; if (bytes > 64 * 1024) { child.kill('SIGKILL'); finish(new Error('Docker diagnostics exceeded limit')) } })
     child.on('error', finish)
+    child.stdin.on('error', finish)
     child.on('close', code => finish(code === 0 ? null : new Error(`isolated Docker operation failed: ${args[0]}`)))
-    const source = createReadStream(file, { flags: 'r' }); source.on('error', finish); source.pipe(child.stdin)
+    source.on('error', finish); source.pipe(child.stdin)
   })
 }
 function docker(args, input, timeout = 120_000) {
