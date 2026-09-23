@@ -15,6 +15,11 @@ function compose(extraService = false) {
 }
 
 describe('signed seven-container B takeover runner', () => {
+  it('rejects the historical full-Compose B entrypoint before any mutation', () => {
+    const generic = readFileSync('infra/scripts/deploy-verified-ecs-compose.sh', 'utf8')
+    expect(generic).toContain('B code-only release must use the signed seven-container deploy-ecs-bridge-unlabeled.sh runner')
+    expect(generic.indexOf('B code-only release must use the signed seven-container')).toBeLessThan(generic.indexOf('exec 9>>"$ECS_DEPLOY_LOCK_PATH"'))
+  })
   it('keeps source, gateway, schema, nonce and old readiness gates before mutation', () => {
     const script = readFileSync(runner, 'utf8')
     expect(execFileSync('sh', ['-n', runner], { encoding: 'utf8' })).toBe('')

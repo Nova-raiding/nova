@@ -29,6 +29,10 @@ readonly ECS_PREIDENTITY_RECOVERY_ENTRYPOINT=/usr/local/libexec/merchant/ecs-pre
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
 case "${ECS_BRIDGE_CODE_ONLY:-NO}" in YES|NO) ;; *) echo 'ECS_BRIDGE_CODE_ONLY must be YES or NO' >&2; exit 2 ;; esac
 if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
+  echo 'B code-only release must use the signed seven-container deploy-ecs-bridge-unlabeled.sh runner; full Compose takeover is forbidden' >&2
+  exit 2
+fi
+if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
   [ "${DEPLOYMENT_SCOPE:-full}" = full ] || { echo 'bridge code cutover requires full production acceptance' >&2; exit 2; }
   [ "${EXPECTED_MIGRATION_VERSION:-}" = 244 ] || { echo 'bridge code cutover requires candidate migration tail 244' >&2; exit 2; }
   [ "${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}" = prefix_242_or_244 ] || { echo 'bridge code cutover requires the reviewed 242/244 schema mode' >&2; exit 2; }

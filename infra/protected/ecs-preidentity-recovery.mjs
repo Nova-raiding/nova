@@ -18,6 +18,7 @@ const NONCE_LEDGER = '/var/lib/merchant-release-security/production-nonces.sqlit
 const BIN = Object.freeze({ docker: '/usr/bin/docker', psql: '/usr/bin/psql', flock: '/usr/bin/flock', curl: '/usr/bin/curl' })
 const TRANSITIONS = Object.freeze({ captured: ['nonce_consumed'], nonce_consumed: ['migration_started'], migration_started: ['migration_complete', 'recovery_started'], migration_complete: ['runtime_cutover_started', 'recovery_started'], runtime_cutover_started: ['runtime_identity_verified'], recovery_started: ['recovery_verified'], runtime_identity_verified: [], recovery_verified: [] })
 const BRIDGE_TRANSITIONS = Object.freeze({ captured: ['nonce_consumed'], nonce_consumed: ['bridge_cutover_started'], bridge_cutover_started: ['bridge_identity_verified', 'bridge_recovery_started'], bridge_recovery_started: ['bridge_recovery_verified'], bridge_identity_verified: [], bridge_recovery_verified: [] })
+const BRIDGE_UNLABELED_TRANSITIONS = Object.freeze({ captured: ['nonce_consumed'], nonce_consumed: ['bridge_cutover_started'], bridge_cutover_started: ['bridge_identity_verified', 'bridge_recovery_started'], bridge_recovery_started: ['bridge_runtime_recovery_verified'], bridge_runtime_recovery_verified: ['bridge_recovery_verified'], bridge_identity_verified: [], bridge_recovery_verified: [] })
 const HEX = /^[a-f0-9]{64}$/u, IMAGE = /^sha256:[a-f0-9]{64}$/u, GIT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u
 const UNLABELED_SERVICES = Object.freeze(['api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync'])
 
@@ -127,7 +128,7 @@ export function createSignedSnapshot(observed, binding, privatePem, publicPem, n
 
 export function transitionJournal(document, nextPhase, privatePem, publicPem, now = new Date()) {
   assert(verifyDocument(document, publicPem), 'journal signature is invalid')
-  const transitions = ['bridge_code_only', 'bridge_unlabeled_code_only'].includes(document.deployment_mode) ? BRIDGE_TRANSITIONS : TRANSITIONS
+  const transitions = document.deployment_mode === 'bridge_unlabeled_code_only' ? BRIDGE_UNLABELED_TRANSITIONS : document.deployment_mode === 'bridge_code_only' ? BRIDGE_TRANSITIONS : TRANSITIONS
   assert(transitions[document.phase]?.includes(nextPhase), 'journal phase transition is not monotonic')
   assert(Date.parse(document.expires_at) > now.getTime(), 'journal is expired')
   return signDocument({ ...document, phase: nextPhase, updated_at: now.toISOString(), signature_base64: undefined }, privatePem, publicPem)
