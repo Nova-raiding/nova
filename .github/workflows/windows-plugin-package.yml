@@ -29,13 +29,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Checkout failed' }
           node --version
           dotnet --version
-      - name: Build a self-contained Credential Manager helper and test-sign it
+      - name: Build a self-contained Credential Manager helper
+        timeout-minutes: 8
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
           node apps/plugin/scripts/build-windows-credential-helper.mjs $helperDir
           if ($LASTEXITCODE -ne 0) { throw 'Credential helper build failed' }
+      - name: Test-sign the helper for runner-local verification
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
           $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Store Nova CI package test only' -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(1)
           $cerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.cer'
           Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
@@ -44,7 +50,13 @@ jobs:
           $signature = Set-AuthenticodeSignature -FilePath $binary -Certificate $cert -HashAlgorithm SHA256
           if ($signature.Status -ne 'Valid') { throw "Test signing failed: $($signature.Status)" }
           (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash | Set-Content -LiteralPath "$binary.sha256" -Encoding Ascii
-          $env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT = $cert.Thumbprint
+          [System.IO.File]::AppendAllText($env:GITHUB_ENV, "STORENOVA_WINDOWS_SIGNER_THUMBPRINT=$($cert.Thumbprint)`n", [System.Text.UTF8Encoding]::new($false))
+      - name: Package and verify a clean Windows install
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
+          $binary = Join-Path $helperDir 'StoreNovaCredentialHelper.exe'
           $artifact = Join-Path $env:RUNNER_TEMP 'storenova-windows-ci-only.zip'
           node apps/plugin/scripts/package-local-plugin.mjs $artifact --windows-helper-dir $helperDir
           if ($LASTEXITCODE -ne 0) { throw 'Windows package build failed' }
