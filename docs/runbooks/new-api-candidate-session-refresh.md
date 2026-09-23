@@ -48,3 +48,14 @@ cannot be proven, do not refresh and keep the release blocked. The official
 specifies cookie rotation and its limited replay window; the
 [token management API](https://github.com/QuantumNous/new-api-docs/blob/main/docs/api/fei-token-management.md)
 requires a user credential rather than a model key.
+
+The API's subsequent usage-log refreshes use the same session file and `.lock`
+namespace. Every replica must mount the same persistent 0700 directory at the
+same path with the same owner UID, on storage with reliable POSIX exclusive
+create, rename, and fsync semantics. A successful refresh writes a 0600 temporary
+file, fsyncs it, renames it over the session, fsyncs the directory, and only
+then removes the lock. A network error, invalid response, persistence failure,
+or crash leaves the lock in place and blocks further automatic refreshes. Do
+not delete a retained lock or replay an old cookie without inspecting the
+upstream session and the protected file together. A local process mutex, a
+per-replica file, or a model `sk-` key is not an equivalent substitute.
