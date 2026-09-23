@@ -158,7 +158,8 @@ printf '%s\n' "$revision" > "$output_dir/source-head.txt"
 # artifact is the complete committed tree, not a hand-maintained subset of the
 # current working directory. Its digest can therefore be compared directly
 # with the candidate image's source_sha256 OCI label.
-git -C "$root" archive --format=tar "$revision" > "$archive"
+git -C "$root" archive --format=tar "$revision" \
+  ':(exclude)artifacts' ':(exclude)screenshots' > "$archive"
 archive_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
 manifest_sha=$(shasum -a 256 "$manifest" | awk '{print $1}')
 report_sha=$(shasum -a 256 "$report" | awk '{print $1}')
