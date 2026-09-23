@@ -32,6 +32,9 @@ if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
   [ "${DEPLOYMENT_SCOPE:-full}" = full ] || { echo 'bridge code cutover requires full production acceptance' >&2; exit 2; }
   [ "${EXPECTED_MIGRATION_VERSION:-}" = 244 ] || { echo 'bridge code cutover requires candidate migration tail 244' >&2; exit 2; }
   [ "${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}" = prefix_242_or_244 ] || { echo 'bridge code cutover requires the reviewed 242/244 schema mode' >&2; exit 2; }
+  # The signed Docker inventory currently has no topology exception for a
+  # separate old 80/443 gateway. Reject before nonce consumption or mutation.
+  [ -z "${ECS_EXTERNAL_GATEWAY_ID:-}" ] || { echo 'bridge code cutover with an external gateway requires a separately signed topology contract' >&2; exit 2; }
 fi
 : "${EXPECTED_MIGRATION_VERSION:?EXPECTED_MIGRATION_VERSION is required}"
 
@@ -204,11 +207,24 @@ rollback_on_failure() {
     recovery_succeeded=false
     if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
       echo 'B code cutover failed; invoking signed partial-switch bridge recovery without migration' >&2
-      DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" bridge-recover --state "$state_path" --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" \
+      if DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" bridge-recover --state "$state_path" --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" \
         --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" \
         --recovery-compose "$ECS_ROLLBACK_COMPOSE_PATH" --recovery-env "$ECS_ROLLBACK_ENV_FILE" \
         --recovery-image-digests "$rollback_capsule_dir/image-digests.json" --compose-project "$project" \
-        --lock-path "$ECS_DEPLOY_LOCK_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL" && recovery_succeeded=true
+        --lock-path "$ECS_DEPLOY_LOCK_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL"; then
+        # The old public listener may still be stopped. The signed runtime
+        # phase is deliberately not a completed recovery until the old gateway
+        # is restored under FD9 and the old public release identity is checked.
+        gateway_restored=true
+        if [ "$external_gateway_handoff_started" = true ]; then
+          restore_external_gateway || gateway_restored=false
+        fi
+        if [ "$gateway_restored" = true ]; then
+          DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" bridge-finalize --state "$state_path" --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" \
+            --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --compose-project "$project" \
+            --lock-path "$ECS_DEPLOY_LOCK_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL" && recovery_succeeded=true
+        fi
+      fi
     elif [ "$runtime_cutover_started" = false ]; then
       echo "ECS deployment failed before runtime cutover; invoking protected preidentity forward recovery" >&2
       # The helper verifies and locks inherited FD 9 against the canonical lock,
@@ -233,7 +249,7 @@ rollback_on_failure() {
     if [ "$recovery_succeeded" = false ] && [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
       echo 'signed bridge recovery did not verify; do not invoke ordinary candidate-identity rollback, manual recovery is required' >&2
     fi
-    if [ "$external_gateway_handoff_started" = true ]; then
+    if [ "$external_gateway_handoff_started" = true ] && [ "${ECS_BRIDGE_CODE_ONLY:-NO}" != YES ]; then
       if [ "$recovery_succeeded" = true ]; then
         # Only restore the old listener after the reviewed runtime is healthy.
         restore_external_gateway || echo 'external gateway recovery failed; protected snapshot retained for operator recovery' >&2
