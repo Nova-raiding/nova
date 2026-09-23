@@ -55,16 +55,21 @@ jobs:
           [System.IO.File]::WriteAllBytes($pfxPath, $created.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, 'ci-test-only'))
           [System.IO.File]::WriteAllBytes($cerPath, $created.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
           [System.IO.File]::AppendAllText($env:GITHUB_ENV, "STORENOVA_WINDOWS_SIGNER_THUMBPRINT=$($created.Thumbprint)`n", [System.Text.UTF8Encoding]::new($false))
-      - name: Import the runner-local test certificate
+      - name: Import the runner-local test signing key
         timeout-minutes: 3
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $pfxPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.pfx'
-          $cerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.cer'
           certutil.exe -user -f -p ci-test-only -importPFX My $pfxPath NoRoot
           if ($LASTEXITCODE -ne 0) { throw 'Test certificate private key import failed' }
-          certutil.exe -user -f -addstore Root $cerPath
+      - name: Trust the runner-local test certificate
+        timeout-minutes: 3
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.cer'
+          certutil.exe -f -addstore Root $cerPath
           if ($LASTEXITCODE -ne 0) { throw 'Test certificate trust import failed' }
       - name: Sign and validate the helper with the test certificate
         timeout-minutes: 3
