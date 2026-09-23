@@ -152,8 +152,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       const document = signPluginReleaseDescriptor({ packagePath, pluginRoot: arg('--plugin-root'), privateKeyPath: arg('--private-key'), keyId, releaseId: arg('--release-id'), gitSha: arg('--git-sha'), platform: arg('--platform'), mcpMethodsSha256: arg('--mcp-methods-sha256') })
       writeNew(resolve(output), `${JSON.stringify(document, null, 2)}\n`)
       console.log(`plugin descriptor signed: ${basename(output)} package_sha256=${document.package_sha256}`)
-    } else if (mode === 'verify') {
-      if (!descriptorPath || !publicKeyPath || !keyId || !packagePath) throw new Error('verify requires --descriptor, --public-key, --key-id and --package')
+    } else if (mode === 'verify' || mode === 'verify-cloud') {
+      if (!descriptorPath || !publicKeyPath || !keyId || (mode === 'verify' && !packagePath)) throw new Error('verify requires --descriptor, --public-key, --key-id and a package unless using verify-cloud')
+      if (mode === 'verify-cloud' && (!arg('--release-id') || !arg('--git-sha'))) throw new Error('verify-cloud requires release and Git identity')
       const document = JSON.parse(regularBytes(descriptorPath, 'plugin descriptor').toString('utf8'))
       verifyPluginReleaseDescriptor(document, { publicKeyPem: regularBytes(publicKeyPath, 'trusted public key'), keyId, packagePath, releaseId: arg('--release-id'), gitSha: arg('--git-sha'), platform: arg('--platform'), mcpMethodsSha256: arg('--mcp-methods-sha256') })
       console.log(`plugin descriptor verified: ${basename(descriptorPath)}`)

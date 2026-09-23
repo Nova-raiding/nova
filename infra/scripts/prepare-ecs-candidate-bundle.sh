@@ -36,6 +36,19 @@ revision=$(git -C "$root" rev-parse HEAD)
 printf '%s' "$revision" | grep -Eq '^[0-9a-f]{40}$' || {
   echo 'candidate HEAD must be a full commit SHA' >&2; exit 2;
 }
+cloud_source_v2=${ECS_CLOUD_SOURCE_V2:-0}
+case "$cloud_source_v2" in 0|1) ;; *) echo 'ECS_CLOUD_SOURCE_V2 must be 0 or 1' >&2; exit 2 ;; esac
+if [ "$cloud_source_v2" = 1 ]; then
+  : "${RELEASE_ID:?cloud-only candidate requires RELEASE_ID}"
+  : "${ECS_PLUGIN_DESCRIPTOR_PATH:?cloud-only candidate requires signed plugin descriptor}"
+  : "${ECS_PLUGIN_PACKAGE_PATH:?cloud-only candidate requires local plugin package}"
+  : "${ECS_PLUGIN_PUBLIC_KEY_PATH:?cloud-only candidate requires trusted plugin public key}"
+  : "${ECS_PLUGIN_KEY_ID:?cloud-only candidate requires trusted plugin key ID}"
+  node "$root/scripts/plugin-release-descriptor.mjs" verify \
+    --descriptor "$ECS_PLUGIN_DESCRIPTOR_PATH" --package "$ECS_PLUGIN_PACKAGE_PATH" \
+    --public-key "$ECS_PLUGIN_PUBLIC_KEY_PATH" --key-id "$ECS_PLUGIN_KEY_ID" \
+    --release-id "$RELEASE_ID" --git-sha "$revision"
+fi
 
 mkdir -p "$output_dir"
 manifest="$output_dir/files.txt"
@@ -180,8 +193,15 @@ printf '%s\n' "$revision" > "$output_dir/source-head.txt"
 # contracts remain in the source archive because release verification imports
 # their markdown/spec fixtures; only their large generated media belongs in
 # the separately attested evidence bundle.
-git -C "$root" archive --format=tar "$revision" \
-  ':(exclude)artifacts' ':(exclude)screenshots' > "$archive"
+if [ "$cloud_source_v2" = 1 ]; then
+  git -C "$root" archive --format=tar "$revision" \
+    ':(exclude)artifacts' ':(exclude)screenshots' ':(exclude)apps/plugin' ':(exclude).codex-marketplace' > "$archive"
+  cp "$ECS_PLUGIN_DESCRIPTOR_PATH" "$output_dir/plugin-release-descriptor.json"
+  plugin_descriptor_sha=$(shasum -a 256 "$output_dir/plugin-release-descriptor.json" | awk '{print $1}')
+else
+  git -C "$root" archive --format=tar "$revision" \
+    ':(exclude)artifacts' ':(exclude)screenshots' > "$archive"
+fi
 archive_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
 manifest_sha=$(shasum -a 256 "$manifest" | awk '{print $1}')
 report_sha=$(shasum -a 256 "$report" | awk '{print $1}')
@@ -192,6 +212,10 @@ source_sha256=sha256:$archive_sha
 comparison_manifest_sha256=sha256:$manifest_sha
 sync_plan_sha256=sha256:$report_sha
 EOF
+if [ "$cloud_source_v2" = 1 ]; then
+  printf 'schema_version=candidate-identity/2\nrelease_id=%s\nplugin_descriptor_sha256=sha256:%s\nplugin_key_id=%s\n' \
+    "$RELEASE_ID" "$plugin_descriptor_sha" "$ECS_PLUGIN_KEY_ID" >> "$output_dir/candidate-identity.txt"
+fi
 
 cat > "$output_dir/README.txt" <<'EOF'
 This review candidate must be materialized by
