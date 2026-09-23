@@ -28,6 +28,11 @@ function canonical(value) {
   if (value && typeof value === 'object') return `{${Object.entries(value).filter(([key]) => key !== 'signature_base64').sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`
   return JSON.stringify(value)
 }
+function canonicalDocker(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalDocker).join(',')}]`
+  if (value && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalDocker(item)}`).join(',')}}`
+  return JSON.stringify(value)
+}
 function signDocument(value, privatePem, publicPem) {
   const privateKey = createPrivateKey(privatePem), publicKey = createPublicKey(publicPem)
   assert(privateKey.asymmetricKeyType === 'ed25519' && publicKey.asymmetricKeyType === 'ed25519', 'recovery trust keys must be Ed25519')
@@ -269,7 +274,7 @@ function immutableContainerSpec(value) {
     name, id: net.NetworkID, aliases: [...(net.Aliases ?? [])].sort(),
   })).sort((a, b) => a.name.localeCompare(b.name))
   assert(networks.length > 0 && networks.every(net => /^[a-zA-Z0-9_.-]+$/u.test(net.name) && HEX.test(net.id) && net.aliases.every(alias => typeof alias === 'string')), 'container network bindings are invalid')
-  return { id: value.Id, image_id: value.Image, config_sha256: digest(Buffer.from(canonical(value.Config))), host_sha256: digest(Buffer.from(canonical(value.HostConfig))), networks }
+  return { id: value.Id, image_id: value.Image, config_sha256: digest(Buffer.from(canonicalDocker(value.Config))), host_sha256: digest(Buffer.from(canonicalDocker(value.HostConfig))), networks }
 }
 function readServiceMap(path) {
   protectedPath(path, 'unlabeled service map')
