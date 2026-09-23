@@ -61,12 +61,11 @@ access token 过期时 bridge 沿用 `POST /v1/auth/mcp-token/refresh` 轮换并
 
 ### A1. 准备条件
 
-- macOS 桌面端 ChatGPT/Codex 已安装并能启动。
-- 技术安装人员有该电脑的用户权限，可以执行 `codex`、`node`、`xcrun swiftc` 和 `open`。
+- 对应平台的桌面端 ChatGPT 已安装并能启动，安装人员有该电脑的当前用户权限。
 - 已从平台管理员拿到以下非敏感配置：
   - 商家 API 根地址，例如 `https://merchant.example.com`；地址不能带 `/mcp`、查询参数或凭据。
   - 管理员分配的工作区标识，例如 `ws_xxx`。
-- 已拿到 Store Nova 插件源码目录。本项目直接本地部署，不发布到公开插件市场。
+- 已拿到对应平台的 Store Nova 插件包。本项目直接本地部署，不发布到公开插件市场。
 
 ### A2. 安装包含运行环境的平台包
 
