@@ -61,13 +61,13 @@ describe('Codex plugin installation package', () => {
     expect(packageJson.engines).toEqual({ node: '>=18' })
     expect(packageJson.merchantRuntime).toMatchObject({
       desktopHost: 'ChatGPT.app',
-      supportedDesktopPlatforms: ['darwin'],
-      environmentRecovery: 'macOS launchctl user session',
+      supportedDesktopPlatforms: ['darwin', 'win32'],
+      environmentRecovery: 'host-injected environment with platform credential storage',
     })
     const server = mcp.mcpServers['merchant-marketing']
     expect(server).toMatchObject({
-      command: 'sh',
-      args: ['./mcp/bridge.sh'],
+      command: 'node',
+      args: ['./mcp/bridge.mjs'],
       cwd: '.',
     })
     expect(server).not.toHaveProperty('env')

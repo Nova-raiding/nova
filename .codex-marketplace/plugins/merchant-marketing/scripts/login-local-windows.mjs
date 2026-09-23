@@ -31,7 +31,8 @@ export async function main(args = process.argv.slice(2), dependencies = {}) {
   ;(dependencies.assertCredentialReady ?? assertWindowsCredentialHelperReady)()
   return loginLocalPlugin({ baseUrl: target.apiOrigin, workspaceId: target.workspaceId, requestId: options.get('--request-id'),
     credentialSource: 'windows_credential_manager',
-    openBrowser: dependencies.openBrowser ?? (url => options.get('--no-open') ? undefined
+    openBrowser: dependencies.openBrowser ?? (url => options.get('--no-open')
+      ? process.stdout.write(`请在商家浏览器打开此授权地址（不含 token）：\n${url}\n`)
       : execFileSync('rundll32.exe', ['url.dll,FileProtocolHandler', url], { stdio: 'ignore', windowsHide: true, timeout: 5000 })),
     storeCredential: dependencies.storeCredential ?? writeWindowsCredential,
     configureSession: dependencies.configureSession ?? (value => configureWindowsSession(value)),

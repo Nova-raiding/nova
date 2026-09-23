@@ -124,6 +124,7 @@ const CONFIG_ONLY_BROWSER_SPECS = [
   spec('ops-delivery-readonly-isolated.spec.js'),
   spec('ops-mcp-request-matrix.spec.js'),
   spec('ops-rbac-desktop-matrix.spec.js'),
+  spec('ops-refund-isolated.spec.js'),
   spec('ops-workbench-dirty-guard.spec.js'),
 ].sort()
 

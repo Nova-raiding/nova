@@ -141,7 +141,7 @@ export const mutations: InvariantFragment['mutations'] = [
     uniqueness: {
       noSecondImplementation: [
         {
-          pattern: "\\?\\s*'POST'\\s*:\\s*'GET'|'sync_products'\\s*,\\s*'(?:GET|HEAD|POST)'",
+          pattern: "signedParametersCarryCredential[^\\n]*\\?\\s*'POST'\\s*:\\s*'GET'|'sync_products'\\s*,\\s*'(?:GET|HEAD|POST)'",
           sample: "const readMethod = config.signer?.signedParametersCarryCredential === true ? 'POST' : 'GET'",
           allow: ['packages/connectors/src/http-connector.ts', RULE_DECLARATION_SITE],
           why: 'the read is dispatched with a method derived from the signer. A literal method next to the `sync_products` operation anywhere else is a second transport decision, which is how the flip escaped onto the bearer platforms the first time.',
@@ -174,7 +174,7 @@ export const mutations: InvariantFragment['mutations'] = [
     uniqueness: {
       noSecondImplementation: [
         {
-          pattern: "\\?\\s*'POST'\\s*:\\s*'GET'|'sync_products'\\s*,\\s*'(?:GET|HEAD|POST)'",
+          pattern: "signedParametersCarryCredential[^\\n]*\\?\\s*'POST'\\s*:\\s*'GET'|'sync_products'\\s*,\\s*'(?:GET|HEAD|POST)'",
           sample: "const readMethod = config.signer?.signedParametersCarryCredential === true ? 'POST' : 'GET'",
           allow: ['packages/connectors/src/http-connector.ts', RULE_DECLARATION_SITE],
           why: 'a literal read method beside the `sync_products` operation elsewhere is a second place that decides this platform family\'s transport, which is exactly how a router fix reached the bearer platforms.',

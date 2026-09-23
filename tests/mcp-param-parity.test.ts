@@ -245,7 +245,8 @@ describe('audit remediation pins', () => {
     expect(sites.map(site => site.method).sort()).toEqual([
       'billing.recharge.create', 'billing.recharge.get', 'billing.transactions',
       'campaign.batch.create', 'campaign.batch.generate', 'catalog.facts.confirm',
-      'catalog.image.retry', 'support.customer.replies.list', 'workspace.metrics',
+      'catalog.image.retry', 'commercial.order.create', 'commercial.order.payment.get',
+      'support.customer.replies.list', 'workspace.metrics',
     ])
     for (const site of sites) {
       const declared = declaredKeys(site.method)
