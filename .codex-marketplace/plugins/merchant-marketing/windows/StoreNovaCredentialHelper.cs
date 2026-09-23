@@ -34,7 +34,9 @@ static class Program {
         var handle = GCHandle.Alloc(secret, GCHandleType.Pinned);
         try { var credential = new Credential { Type=CRED_TYPE_GENERIC, TargetName=name, CredentialBlobSize=(uint)secret.Length,
           CredentialBlob=handle.AddrOfPinnedObject(), Persist=CRED_PERSIST_LOCAL_MACHINE, UserName=request.account };
-          return CredWrite(ref credential, 0) ? 0 : 1;
+          if (CredWrite(ref credential, 0)) return 0;
+          Diagnostic("CredWrite", Marshal.GetLastPInvokeError());
+          return 1;
         } finally { Array.Clear(secret); handle.Free(); }
       }
       if (request.operation == "read" && CredRead(name, CRED_TYPE_GENERIC, 0, out var pointer)) {
@@ -43,7 +45,12 @@ static class Program {
           Console.OpenStandardOutput().Write(secret, 0, secret.Length); Array.Clear(secret); return 0;
         } finally { CredFree(pointer); }
       }
-    } catch { }
-    return 1; // Deliberately never print credential values or native error details.
+    } catch (Exception error) { Diagnostic(error.GetType().Name, 0); }
+    return 1; // Never print credential values.
+  }
+
+  static void Diagnostic(string operation, int code) {
+    if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
+      Console.Error.WriteLine($"Credential helper {operation} failed (Win32 {code}).");
   }
 }

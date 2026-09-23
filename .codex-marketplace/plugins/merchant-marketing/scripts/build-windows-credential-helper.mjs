@@ -11,6 +11,6 @@ mkdirSync(output, { recursive: true })
 const project = resolve(pluginRoot, 'windows', 'StoreNovaCredentialHelper.csproj')
 if (!existsSync(project)) throw new Error('Windows credential helper project is missing')
 const result = spawnSync('dotnet', ['publish', project, '--configuration', 'Release', '--runtime', 'win-x64',
-  '--no-self-contained', '--output', output, '-p:DebugType=None', '-p:DebugSymbols=false'], { encoding: 'utf8', windowsHide: true })
+  '--self-contained', 'true', '--output', output, '-p:DebugType=None', '-p:DebugSymbols=false'], { encoding: 'utf8', windowsHide: true })
 if (result.status !== 0) throw new Error(result.stderr?.trim() || result.stdout?.trim() || 'dotnet publish failed')
-process.stdout.write(`${JSON.stringify({ ok: true, output, credential_store: 'Credential Manager + DPAPI CurrentUser', signed: false, production_ready: false })}\n`)
+process.stdout.write(`${JSON.stringify({ ok: true, output, credential_store: 'Credential Manager + DPAPI CurrentUser', dotnet_runtime_bundled: true, signed: false, production_ready: false })}\n`)
