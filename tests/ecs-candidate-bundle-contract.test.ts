@@ -174,6 +174,28 @@ describe('ECS candidate bundle contract', () => {
     expect(result.stderr).not.toContain('ssh')
   })
 
+  it('refuses to overwrite an existing candidate directory before remote access', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ecs-candidate-existing-'))
+    mkdirSync(join(root, 'infra/scripts'), { recursive: true })
+    cpSync(resolve('infra/scripts/prepare-ecs-candidate-bundle.sh'), join(root, 'infra/scripts/prepare-ecs-candidate-bundle.sh'))
+    spawnSync('git', ['init', '-q'], { cwd: root })
+    spawnSync('git', ['add', '.'], { cwd: root })
+    spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'candidate'], { cwd: root })
+    const output = join(root, '..', `${root.split('/').at(-1)}-already-reviewed`)
+    mkdirSync(output)
+    writeFileSync(join(output, 'review-note.txt'), 'preserve this review\n')
+
+    const result = spawnSync('sh', [join(root, 'infra/scripts/prepare-ecs-candidate-bundle.sh'), output], {
+      env: { ...process.env, ECS_CANDIDATE_REMOTE_ALIAS: 'must-not-connect.invalid' },
+      encoding: 'utf8',
+    })
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('candidate output directory already exists')
+    expect(result.stderr).not.toContain('ssh')
+    expect(readFileSync(join(output, 'review-note.txt'), 'utf8')).toBe('preserve this review\n')
+  })
+
   it.each([
     { root: "/opt/merchant-deploy' ; touch /tmp/unsafe ; : '", alias: '101', reason: 'unsafe characters' },
     { root: '/opt/../merchant-deploy', alias: '101', reason: 'canonical' },

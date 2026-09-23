@@ -175,6 +175,8 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
         else if (options.artifactRoot) errors.push(...validateArtifact(recovery.outcome_evidence_ref, options.artifactRoot, 'error_recovery.outcome_evidence_ref'))
         if (recovery.outcome_evidence_ref === scenario.evidence_ref) errors.push('error_recovery.outcome_evidence_ref must be a separate reconciliation artifact')
         if (recovery.outcome_evidence_ref === value.candidate_route?.release_probe_evidence_ref) errors.push('error_recovery.outcome_evidence_ref must not reuse the release probe')
+        if (value.scenarios.some(other => other !== scenario && other?.evidence_ref === recovery.outcome_evidence_ref)) errors.push('error_recovery.outcome_evidence_ref must not reuse another scenario artifact')
+        if (nonEmpty(recovery.outcome_evidence_ref)) usedArtifacts.add(recovery.outcome_evidence_ref)
       }
     }
   }

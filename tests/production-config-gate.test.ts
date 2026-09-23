@@ -180,6 +180,14 @@ describe('production config gate', () => {
     expect(() => run(nestedRelayRef)()).toThrow(/required production config key is missing: model_relay_api_key_ref/)
   })
 
+  it('rejects nested shadows of top-level settings consumed by shell checks', () => {
+    // The shell gate's value checks scan text lines. A nested duplicate could
+    // otherwise satisfy a required value check while the runtime reads the
+    // opposite top-level value (for example, enabling a platform write flag).
+    const shadowed = `${config()}\nnotes:\n  pinduoduo_write_enabled: true`
+    expect(() => run(shadowed)()).toThrow(/required setting must not be nested: pinduoduo_write_enabled/)
+  })
+
   it('requires a positive per-task model cost cap', () => {
     expect(() => run(config().replace('maximum_task_cost_cny: "0.50"', 'maximum_task_cost_cny: "0.00"'))()).toThrow(/positive CNY amount/)
     expect(() => run(config().replace('maximum_task_cost_cny: "0.50"', 'maximum_task_cost_cny: "0.001"'))()).toThrow(/positive CNY amount/)

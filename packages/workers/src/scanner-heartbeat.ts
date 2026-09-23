@@ -74,7 +74,9 @@ const isoMs = (value: string | undefined): number | undefined => {
 
 const ageSeconds = (nowMs: number, value: string | undefined): number | undefined => {
   const parsed = isoMs(value)
-  return parsed === undefined ? undefined : Math.max(0, Math.floor((nowMs - parsed) / 1000))
+  // Future evidence usually means clocks disagree or the timestamp is forged.
+  // Treat it as absent; clamping it to age zero would make it look freshest.
+  return parsed === undefined || parsed > nowMs ? undefined : Math.floor((nowMs - parsed) / 1000)
 }
 
 /** Parses the clamd VERSION response without trusting locale-specific Date parsing. */
@@ -88,6 +90,7 @@ export function parseClamAvVersion(raw: string, now = new Date()): Pick<ScannerH
   if (month === undefined) throw new Error('CLAMAV_DEFINITIONS_DATE_INVALID')
   const publishedMs = Date.UTC(Number(match[8]), month, Number(match[4]), Number(match[5]), Number(match[6]), Number(match[7]))
   if (!Number.isFinite(publishedMs)) throw new Error('CLAMAV_DEFINITIONS_DATE_INVALID')
+  if (publishedMs > now.getTime()) throw new Error('CLAMAV_DEFINITIONS_DATE_INVALID')
   const publishedAt = new Date(publishedMs).toISOString()
   return {
     engineVersion: match[1],
@@ -128,7 +131,7 @@ export function createScannerHeartbeat(input: {
   const nowMs = now.getTime()
   const eicarAge = ageSeconds(nowMs, input.eicar.checkedAt)
   const callbackAge = ageSeconds(nowMs, input.callback.lastAcceptedAt)
-  const definitionsFresh = input.clamav.definitionsAgeSeconds !== undefined && input.clamav.definitionsAgeSeconds <= input.thresholds.definitionsMaxAgeSeconds
+  const definitionsFresh = input.clamav.definitionsAgeSeconds !== undefined && input.clamav.definitionsAgeSeconds >= 0 && input.clamav.definitionsAgeSeconds <= input.thresholds.definitionsMaxAgeSeconds
   const eicarFresh = input.eicar.passed && eicarAge !== undefined && eicarAge <= input.thresholds.eicarMaxAgeSeconds
   const callbackFresh = input.callback.configured && input.callback.capable && callbackAge !== undefined && callbackAge <= input.thresholds.callbackMaxAgeSeconds
   const queueEvidenceValid = Number.isSafeInteger(input.queue.backlog) && input.queue.backlog >= 0

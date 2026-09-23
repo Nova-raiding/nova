@@ -92,6 +92,53 @@ describe('ECS Compose rollback executor', () => {
     expect(result.status).toBe(1)
   })
 
+  it('checks late rollback dependencies before reserving the one-shot state path', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-rollback-deps-')))
+    const bin = join(root, 'bin')
+    const state = join(root, 'state')
+    mkdirSync(bin)
+    mkdirSync(state)
+    chmodSync(state, 0o700)
+    for (const command of ['docker', 'node', 'psql', 'flock']) {
+      const executable = join(bin, command)
+      writeFileSync(executable, '#!/bin/sh\nexit 99\n')
+      chmodSync(executable, 0o700)
+    }
+    for (const command of ['dirname', 'grep']) {
+      const executable = join(bin, command)
+      writeFileSync(executable, `#!/bin/sh\nexec /usr/bin/${command} "$@"\n`)
+      chmodSync(executable, 0o700)
+    }
+    const plan = join(root, 'plan.json')
+    const compose = join(root, 'compose.yml')
+    const env = join(root, 'runtime.env')
+    const statePath = join(state, 'rollback.json')
+    writeFileSync(plan, '{}')
+    writeFileSync(compose, 'services: {}\n')
+    writeFileSync(env, '')
+
+    const result = spawnSync('/bin/sh', [path], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: bin,
+        CONFIRM_ECS_ROLLBACK: 'YES',
+        ECS_ROLLBACK_PLAN_PATH: plan,
+        ECS_ROLLBACK_COMPOSE_PATH: compose,
+        ECS_ROLLBACK_ENV_FILE: env,
+        ECS_ROLLBACK_IMAGE_DIGESTS_JSON: '{}',
+        ECS_ROLLBACK_STATE_PATH: statePath,
+        ECS_DEPLOY_LOCK_PATH: join(state, 'production.lock'),
+        PRODUCTION_API_BASE_URL: 'https://production.example.test',
+        DATABASE_URL: 'postgres://unused',
+      },
+    })
+
+    expect(result.stderr).toContain('shasum is required')
+    expect(result.status).toBe(2)
+    expect(readdirSync(state)).toEqual([])
+  })
+
   it('proves the rollback image can read the forward-only live schema before apply', () => {
     const script = source()
     const metadata = JSON.parse(readFileSync('release-metadata.json', 'utf8')) as { expectedMigrationVersion: number }

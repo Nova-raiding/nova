@@ -103,6 +103,10 @@ describe('Codex App host evidence gate', () => {
       'merchant_start.evidence_ref must not reuse the release probe or another scenario artifact',
       'error_recovery.outcome_evidence_ref must be a separate reconciliation artifact',
     ]))
+
+    const reconciliationReusesScenario = structuredClone(evidence)
+    reconciliationReusesScenario.scenarios.find(({ id }) => id === 'error_recovery')!.error_recovery!.outcome_evidence_ref = reconciliationReusesScenario.scenarios.find(({ id }) => id === 'image_generation')!.evidence_ref
+    expect(validateCodexAppHostEvidence(reconciliationReusesScenario)).toContain('error_recovery.outcome_evidence_ref must not reuse another scenario artifact')
   })
 
   it('accepts only release-bound external host evidence', () => {

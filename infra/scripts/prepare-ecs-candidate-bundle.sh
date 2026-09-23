@@ -37,7 +37,16 @@ printf '%s' "$revision" | grep -Eq '^[0-9a-f]{40}$' || {
   echo 'candidate HEAD must be a full commit SHA' >&2; exit 2;
 }
 
-mkdir -p "$output_dir"
+# Never reuse a prior candidate directory: replacing its review inputs can
+# invalidate an operator's review while leaving the path and name unchanged.
+# Create the parent as needed, then use mkdir (not mkdir -p) for an atomic
+# claim of the final candidate path.
+output_parent=$(dirname "$output_dir")
+mkdir -p "$output_parent"
+mkdir "$output_dir" 2>/dev/null || {
+  echo 'candidate output directory already exists; choose a new path' >&2
+  exit 2
+}
 manifest="$output_dir/files.txt"
 report="$output_dir/sync-plan.tsv"
 archive="$output_dir/candidate-source.tar"

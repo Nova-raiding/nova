@@ -24,10 +24,13 @@ for path in "$ECS_ROLLBACK_PLAN_PATH" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBAC
   [ -f "$path" ] && [ ! -L "$path" ] || { echo "rollback input must be a regular non-symlink file: $path" >&2; exit 2; }
   case "$path" in /*) ;; *) echo "rollback input path must be absolute: $path" >&2; exit 2 ;; esac
 done
-command -v docker >/dev/null 2>&1 || { echo 'docker is required' >&2; exit 2; }
-command -v node >/dev/null 2>&1 || { echo 'node is required' >&2; exit 2; }
-command -v psql >/dev/null 2>&1 || { echo 'psql is required' >&2; exit 2; }
-command -v flock >/dev/null 2>&1 || { echo 'flock is required' >&2; exit 2; }
+# Check every external utility used after the rollback state path is reserved.
+# Otherwise a missing late dependency (for example shasum or curl) can leave
+# an empty state file behind, making the approved one-shot state path unusable
+# even though no rollback mutation took place.
+for tool in docker node psql flock shasum awk cp chmod mktemp rm stat id dirname basename grep curl ruby date sleep mv; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "$tool is required" >&2; exit 2; }
+done
 
 state_dir=$(dirname "$ECS_ROLLBACK_STATE_PATH")
 [ -d "$state_dir" ] && [ ! -L "$state_dir" ] || { echo 'rollback state directory must already exist and must not be a symlink' >&2; exit 2; }

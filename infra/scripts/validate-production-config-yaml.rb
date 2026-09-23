@@ -11,14 +11,14 @@ rescue Psych::Exception
   exit 1
 end
 
-def walk(node)
+def walk(node, depth = 0, nested_keys = [])
   if node.is_a?(Psych::Nodes::Alias) || (node.respond_to?(:anchor) && node.anchor)
     warn 'production config YAML aliases are forbidden'
     exit 1
   end
   case node
   when Psych::Nodes::Document, Psych::Nodes::Sequence
-    node.children.each { |child| walk(child) }
+    node.children.each { |child| walk(child, depth + (node.is_a?(Psych::Nodes::Sequence) ? 1 : 0), nested_keys) }
   when Psych::Nodes::Mapping
     seen = {}
     node.children.each_slice(2) do |key, value|
@@ -28,13 +28,17 @@ def walk(node)
         exit 1
       end
       seen[key_name] = true if key_name
-      walk(key)
-      walk(value)
+      nested_keys << key_name if depth.positive? && key_name
+      walk(key, depth)
+      walk(value, depth + 1, nested_keys)
     end
   end
 end
 
-walk(document)
+required_keys = ENV.fetch('REQUIRED_PRODUCTION_CONFIG_KEYS', '').split
+required_keys.concat(%w[xiaohongshu_auth_enabled xiaohongshu_read_enabled xiaohongshu_write_enabled douyin_auth_enabled douyin_read_enabled douyin_write_enabled])
+nested_required_keys = []
+walk(document, 0, nested_required_keys)
 
 begin
   config = YAML.safe_load(File.read(path, encoding: 'UTF-8'), aliases: false)
@@ -51,13 +55,18 @@ unless config.is_a?(Hash)
   exit 1
 end
 
-required_keys = ENV.fetch('REQUIRED_PRODUCTION_CONFIG_KEYS', '').split
 if config['knowledge_vector_index_enabled'] == true
   required_keys.concat(%w[embedding_model embedding_dimensions embedding_max_request_cny])
 end
 missing_required_key = required_keys.find { |key| !config.key?(key) }
 if missing_required_key
   warn "required production config key is missing: #{missing_required_key}"
+  exit 1
+end
+
+nested_shadow = (required_keys & nested_required_keys).first
+if nested_shadow
+  warn "production config required setting must not be nested: #{nested_shadow}"
   exit 1
 end
 

@@ -18,6 +18,14 @@ describe('scanner heartbeat contract', () => {
     expect(assertClamAvExecutionAdmission('ClamAV 1.4.2/28108/Sat Aug 30 09:30:00 2026', { now, definitionsMaxAgeSeconds: 1800 })).toMatchObject({ definitionsVersion: '28108', definitionsAgeSeconds: 1800 })
     expect(() => assertClamAvExecutionAdmission('ClamAV 1.4.2/28108/Sat Aug 30 09:30:00 2026', { now, definitionsMaxAgeSeconds: 1799 })).toThrow(expect.objectContaining({ code: 'CLAMAV_DEFINITIONS_STALE', retryable: true }))
     expect(() => assertClamAvExecutionAdmission('ClamAV malformed', { now, definitionsMaxAgeSeconds: 86_400 })).toThrow(expect.objectContaining({ code: 'CLAMAV_VERSION_INVALID', retryable: true }))
+    expect(() => parseClamAvVersion('ClamAV 1.4.2/28108/Sat Aug 30 10:01:00 2026', now)).toThrow('CLAMAV_DEFINITIONS_DATE_INVALID')
+  })
+
+  it('does not treat future EICAR or callback timestamps as fresh readiness evidence', () => {
+    const base = healthy('scan-future-evidence')
+    const future = '2026-08-30T10:00:01.000Z'
+    expect(createScannerHeartbeat({ instanceId: 'scan-future-eicar', now, thresholds, checks: base.checks, clamav: base.clamav, eicar: { passed: true, checkedAt: future, signature: 'Eicar-Test-Signature' }, callback: base.callback, queue: base.queue })).toMatchObject({ ready: false, recoveryCapable: false })
+    expect(createScannerHeartbeat({ instanceId: 'scan-future-callback', now, thresholds, checks: base.checks, clamav: base.clamav, eicar: base.eicar, callback: { configured: true, capable: true, lastAcceptedAt: future }, queue: base.queue })).toMatchObject({ ready: false })
   })
 
   it('fails closed when EICAR, definitions, callback or dependencies are stale', () => {

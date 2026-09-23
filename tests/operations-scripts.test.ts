@@ -531,6 +531,27 @@ describe('deployment operation scripts', () => {
     expect(() => run('infra/scripts/deploy-preflight.sh', [], { VITEST: 'true', NODE_ENV: 'production' })).toThrow(/VITEST.*NODE_ENV=test/)
   })
 
+  it('keeps ECS infra scope independent of full business acceptance artifacts', () => {
+    const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
+    const fullAcceptanceBlock = preflight.slice(
+      preflight.indexOf('if [ "$DEPLOYMENT_SCOPE" = full ]; then\nplatform_operations_mode='),
+      preflight.indexOf('workspace_latest_migration=')
+    )
+    expect(fullAcceptanceBlock).toContain('validate-production-evidence-trust.sh')
+    for (const gate of [
+      'manual-operations-evidence-gate.ts',
+      'capacity-evidence-gate.ts',
+      'model-relay-evidence-gate.ts',
+      'codex-app-host-evidence-gate.ts',
+      'canonical-product-cutover-evidence-gate.ts',
+      'release-manifest-gate.ts',
+    ]) expect(fullAcceptanceBlock).toContain(gate)
+    expect(preflight).toContain('if [ "$DEPLOYMENT_SCOPE" = full ]; then\n  release_manifest_sha256=')
+    expect(preflight).toContain('shasum -a 256 "$RELEASE_MANIFEST_PATH"')
+    expect(fullAcceptanceBlock.trimEnd().endsWith('fi')).toBe(true)
+    expect(preflight.indexOf('if [ "$DEPLOYMENT_SCOPE" = infra ]; then')).toBeGreaterThan(preflight.indexOf('verify-container-source-freshness.sh'))
+  })
+
   it('requires explicit production schema-owner connection fields for the ECS migration', () => {
     const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
     // The migrate container uses psql through PG*, independently of the API
