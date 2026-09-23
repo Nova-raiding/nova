@@ -32,7 +32,14 @@ try {
   const output = join(directory, 'old-map.json')
   execFileSync('node', ['infra/scripts/create-ecs-bridge-old-map.mjs', output, gateway], { stdio: 'pipe' })
   const map = JSON.parse(readFileSync(output, 'utf8'))
-  assert.deepEqual(map, services.map(service => ({ service, container: `merchant-production-${service}-1` })))
+  assert.deepEqual(map.map(({ service, container }) => ({ service, container })), services.map(service => ({ service, container: `merchant-production-${service}-1` })))
+  for (const [index, entry] of map.entries()) {
+    assert.equal(entry.container_id, ownedContainers[index])
+    for (const field of ['image_id', 'config_sha256', 'host_sha256', 'networks_sha256']) {
+      assert.match(entry[field], field === 'image_id' ? /^sha256:[0-9a-f]{64}$/u : /^[0-9a-f]{64}$/u)
+    }
+    assert.equal(JSON.stringify(entry).includes('Env'), false, 'old map must not serialize environment values')
+  }
   assert.equal(statSync(output).mode & 0o777, 0o600)
   assert.notEqual(execFileSync('docker', ['inspect', '--format', '{{.Id}}', gateway], { encoding: 'utf8' }).trim(), '')
   const worker = ownedContainers[1]
@@ -41,7 +48,7 @@ try {
     const missing = spawnSync('node', ['infra/scripts/create-ecs-bridge-old-map.mjs', join(directory, 'missing-worker.json'), gateway], { encoding: 'utf8' })
     assert.notEqual(missing.status, 0, 'historical worker name drift must be rejected')
   } finally { run('rename', worker, `merchant-production-${services[1]}-1`) }
-  console.log('PASS: actual seven running unlabeled containers and external gateway yielded protected old map; no inspect env serialized')
+  console.log('PASS: actual seven unlabeled IDs and config/network fingerprints frozen without inspect env serialization')
 } finally {
   for (const id of [...ownedContainers].reverse()) {
     try { run('rm', '-f', id) } catch { console.error(`owned test container requires inspection: ${id}`) }
