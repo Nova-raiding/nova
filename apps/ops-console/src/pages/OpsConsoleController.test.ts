@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { App as AntApp } from "antd";
-import { OpsAntAppBoundary, OpsSessionRecoveryGuidance, accessDeniedEvidence, accessDeniedReasonCode, isExpectedUnauthenticatedSessionError, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
+import { OpsAntAppBoundary, OpsSessionRecoveryGuidance, accessDeniedEvidence, accessDeniedReasonCode, isExpectedUnauthenticatedSessionError, opsContentLoadingMessage, opsSessionGateState, opsUnauthenticatedRecovery, selectStoreScope } from "./OpsConsoleController.js";
 import { opsLoadWarningPresentation } from "../components/opsErrorPresentation.js";
 import { openBrandStore } from "./StoresPage.js";
 
@@ -57,6 +57,12 @@ describe("desktop keyboard navigation", () => {
 });
 
 describe("managed session gate", () => {
+  it("offers the existing password session only when managed SSO has no usable entry", () => {
+    expect(opsUnauthenticatedRecovery(true, true, "blocked")).toBe("password");
+    expect(opsUnauthenticatedRecovery(true, true, "blocked", "https://sso.example.test/login")).toBe("sso");
+    expect(opsUnauthenticatedRecovery(true, false, "blocked")).toBeNull();
+    expect(opsUnauthenticatedRecovery(false, true, "blocked")).toBe("password");
+  });
   it("uses the same account/password recovery path for every deployment mode", () => {
     const managed = renderToStaticMarkup(createElement(OpsSessionRecoveryGuidance, { managed: true, error: "AUTHZ_WORKBENCH_FORBIDDEN" }));
     expect(managed).toContain("顶部“平台运营账号登录”");

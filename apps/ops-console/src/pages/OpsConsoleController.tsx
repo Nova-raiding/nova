@@ -142,6 +142,17 @@ export function opsSessionGateState(
   return "loading";
 }
 
+export function opsUnauthenticatedRecovery(
+  managed: boolean,
+  expectedUnauthenticated: boolean,
+  gate: ReturnType<typeof opsSessionGateState>,
+  loginUrl?: string,
+): "sso" | "password" | null {
+  if (managed && expectedUnauthenticated) return loginUrl ? "sso" : "password";
+  if (!managed && (gate === "blocked" || expectedUnauthenticated)) return "password";
+  return null;
+}
+
 export function opsContentLoadingMessage(
   sessionGate: ReturnType<typeof opsSessionGateState>,
   switchingWorkbench: boolean,
@@ -297,7 +308,8 @@ function Dashboard({
     return () => window.cancelAnimationFrame(focusTimer);
   }, [sessionGate]);
 
-  if (managedOpsSession && expectedUnauthenticated) {
+  const recovery = opsUnauthenticatedRecovery(managedOpsSession, expectedUnauthenticated, sessionGate, managedOpsLoginUrl);
+  if (recovery === "sso") {
     // A managed deployment has no working password path, so it must not be
     // offered one: the operator gets gateway re-entry instead of a form that
     // can only report success and fail again.
@@ -305,16 +317,17 @@ function Dashboard({
       <ManagedOpsReauthentication
         detail={sessionDiagnostic}
         loading={model.loading}
-        onReauthenticate={managedOpsLoginUrl ? () => window.location.assign(managedOpsLoginUrl!) : undefined}
+        onReauthenticate={() => window.location.assign(managedOpsLoginUrl!)}
       />
     );
   }
 
-  if (!managedOpsSession && (sessionGate === "blocked" || expectedUnauthenticated)) {
+  if (recovery === "password") {
     return (
       <PlatformOpsLoginPage
-        // Only a password-backed deployment reaches this branch; a managed
-        // session was routed to the SSO re-authentication surface above.
+        // If no SSO entry exists, the API's authenticated platform-password
+        // cookie path is the only usable recovery path. The API still resolves
+        // durable roles from the account's real identity on every request.
         managedSession={managedOpsSession}
         error={sessionError}
         loading={model.loading}
