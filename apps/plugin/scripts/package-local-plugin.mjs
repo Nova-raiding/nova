@@ -38,6 +38,17 @@ function run(command, args, extraEnv = {}) {
   if (result.error || result.status !== 0) throw new Error(`${command} failed: ${result.stderr?.trim() || result.error?.message || result.status}`)
   return result.stdout
 }
+function runPowerShell(script, extraEnv = {}) {
+  const environment = { ...process.env, ...extraEnv }
+  const args = ['-NoProfile', '-NonInteractive', '-Command', script]
+  let result = spawnSync('pwsh.exe', args, { encoding: 'utf8', timeout: 180_000, windowsHide: true, env: environment })
+  if (result.error?.code === 'ENOENT') {
+    for (const key of Object.keys(environment)) if (key.toLowerCase() === 'psmodulepath') delete environment[key]
+    result = spawnSync('powershell.exe', args, { encoding: 'utf8', timeout: 180_000, windowsHide: true, env: environment })
+  }
+  if (result.error || result.status !== 0) throw new Error(`PowerShell failed: ${result.stderr?.trim() || result.error?.message || result.status}`)
+  return result.stdout
+}
 function downloadIfMissing(url, target) {
   if (existsSync(target)) return
   const temporary = `${target}.${process.pid}.tmp`
@@ -61,9 +72,16 @@ if (windowsHelperDir) {
   const expectedHash = readFileSync(hashFile, 'utf8').trim().split(/\s+/u)[0]?.toUpperCase()
   const actualHash = createHash('sha256').update(readFileSync(binary)).digest('hex').toUpperCase()
   if (!/^[0-9A-F]{64}$/u.test(expectedHash ?? '') || expectedHash !== actualHash) throw new Error('Windows credential helper SHA-256 mismatch')
-  const signatureCheck = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    '$s=Get-AuthenticodeSignature -LiteralPath $env:STORENOVA_VERIFY_BINARY; if ($s.Status -ne "Valid") { [Console]::Error.WriteLine("signature_status=" + $s.Status); exit 1 }; if ($null -eq $s.SignerCertificate) { [Console]::Error.WriteLine("signer_missing"); exit 1 }; if ($s.SignerCertificate.Thumbprint.Replace(" ", "").ToUpperInvariant() -ne $env:STORENOVA_VERIFY_SIGNER) { [Console]::Error.WriteLine("signer_mismatch"); exit 1 }'],
-  { encoding: 'utf8', windowsHide: true, env: { ...process.env, STORENOVA_VERIFY_BINARY: binary, STORENOVA_VERIFY_SIGNER: expectedSigner } })
+  const signatureScript = '$s=Get-AuthenticodeSignature -LiteralPath $env:STORENOVA_VERIFY_BINARY; if ($s.Status -ne "Valid") { [Console]::Error.WriteLine("signature_status=" + $s.Status); exit 1 }; if ($null -eq $s.SignerCertificate) { [Console]::Error.WriteLine("signer_missing"); exit 1 }; if ($s.SignerCertificate.Thumbprint.Replace(" ", "").ToUpperInvariant() -ne $env:STORENOVA_VERIFY_SIGNER) { [Console]::Error.WriteLine("signer_mismatch"); exit 1 }'
+  const signatureEnvironment = { ...process.env, STORENOVA_VERIFY_BINARY: binary, STORENOVA_VERIFY_SIGNER: expectedSigner }
+  let signatureCheck = spawnSync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', signatureScript],
+    { encoding: 'utf8', windowsHide: true, env: signatureEnvironment })
+  if (signatureCheck.error?.code === 'ENOENT') {
+    // A PowerShell 7 parent can give Windows PowerShell an incompatible PSModulePath.
+    for (const key of Object.keys(signatureEnvironment)) if (key.toLowerCase() === 'psmodulepath') delete signatureEnvironment[key]
+    signatureCheck = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', signatureScript],
+      { encoding: 'utf8', windowsHide: true, env: signatureEnvironment })
+  }
   if (signatureCheck.status !== 0) throw new Error(`Windows credential helper Authenticode signature or signer mismatch: ${signatureCheck.stderr?.trim() || signatureCheck.error?.message || signatureCheck.status}`)
   windowsHelperFiles = { binary, hashFile }
 }
@@ -101,9 +119,8 @@ try {
   const extracted = mkdtempSync(resolve(cache, '.node-extract-'))
   try {
     if (platform === 'win32') {
-      run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-        'Expand-Archive -LiteralPath $env:STORENOVA_NODE_ARCHIVE -DestinationPath $env:STORENOVA_NODE_EXTRACT -Force'],
-      { STORENOVA_NODE_ARCHIVE: archive, STORENOVA_NODE_EXTRACT: extracted })
+      runPowerShell('Expand-Archive -LiteralPath $env:STORENOVA_NODE_ARCHIVE -DestinationPath $env:STORENOVA_NODE_EXTRACT -Force',
+        { STORENOVA_NODE_ARCHIVE: archive, STORENOVA_NODE_EXTRACT: extracted })
       cpSync(resolve(extracted, `node-${nodeVersion}-win-${architecture}`, 'node.exe'), resolve(runtimeFolder, 'node.exe'))
     } else {
       run('tar', ['-xzf', archive, '-C', extracted, `node-${nodeVersion}-${platform}-${architecture}/bin/node`])
@@ -193,9 +210,8 @@ try {
     if (!output.toLowerCase().endsWith('.zip')) throw new Error('Windows deliverable must be a .zip file')
     const temporary = `${output}.${process.pid}.tmp`
     try {
-      run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-        'Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory($env:STORENOVA_PACKAGE_STAGING, $env:STORENOVA_PACKAGE_OUTPUT)'],
-      { STORENOVA_PACKAGE_STAGING: staging, STORENOVA_PACKAGE_OUTPUT: temporary })
+      runPowerShell('Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory($env:STORENOVA_PACKAGE_STAGING, $env:STORENOVA_PACKAGE_OUTPUT)',
+        { STORENOVA_PACKAGE_STAGING: staging, STORENOVA_PACKAGE_OUTPUT: temporary })
       if (existsSync(output)) rmSync(output)
       renameSync(temporary, output)
     } finally { if (existsSync(temporary)) rmSync(temporary) }
