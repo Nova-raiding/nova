@@ -21,12 +21,12 @@ describe('Merchant Studio paid wallet projection', () => {
     expect(implementation).not.toContain("'billing.status'")
   })
 
-  it('shows both the creative-point balance and the latest verified recharge', () => {
+  it('shows the creative-point balance and an order without claiming unpaid benefits', () => {
     expect(app).toContain('当前剩余创意点')
     expect(app).toContain('财务与资源')
     expect(app).toContain('充值创意点')
-    expect(app).toContain('支付完成后由服务端回调或查单入账，未支付不会增加创意点。')
-    expect(app).toContain('充值订单：')
+    expect(app).toContain('支付完成后由服务端回调或查单入账，未支付不会增加权益或创意点。')
+    expect(app).toContain('订单：{rechargeOrder.id}')
     expect(styles).toContain('.finance-balance-card')
   })
 
