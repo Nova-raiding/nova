@@ -283,17 +283,25 @@ describe('payment gateway process contract', () => {
     const orderId = 'sensitive-real-order'
     const tradeId = 'sensitive-real-trade'
     const workspaceId = 'sensitive-real-workspace'
+    const refundRequestId = 'sensitive-refund'
+    let refundQueryStatus = 'REFUND_SUCCESS'
+    let refundQueryAmount: string | undefined = '0.29'
+    let signedRefundQueryResponse = ''
     const alipayPort = await listen(createServer(async (req, res) => {
       let raw = ''
       for await (const chunk of req) raw += String(chunk)
       const method = new URLSearchParams(raw).get('method')
-      const responseKey = method === 'alipay.trade.query' ? 'alipay_trade_query_response' : 'alipay_trade_refund_response'
+      const responseKey = method === 'alipay.trade.query' ? 'alipay_trade_query_response' : method === 'alipay.trade.fastpay.refund.query' ? 'alipay_trade_fastpay_refund_query_response' : 'alipay_trade_refund_response'
       const result = method === 'alipay.trade.query'
         ? { code: '10000', out_trade_no: orderId, trade_no: tradeId, total_amount: '0.29', trade_status: 'TRADE_SUCCESS' }
+        : method === 'alipay.trade.fastpay.refund.query'
+          ? { code: '10000', out_trade_no: orderId, trade_no: tradeId, out_request_no: refundRequestId, refund_status: refundQueryStatus, ...(refundQueryAmount ? { refund_amount: refundQueryAmount } : {}) }
         : { code: '10000', out_trade_no: orderId, trade_no: tradeId, fund_change: 'Y' }
       const content = JSON.stringify(result)
       const signature = createSign('RSA-SHA256').update(content, 'utf8').sign(alipayPrivateKey, 'base64')
-      res.writeHead(200, { 'content-type': 'application/json' }).end(`{"${responseKey}":${content},"sign":"${signature}"}`)
+      const signedResponse = `{"${responseKey}":${content},"sign":"${signature}"}`
+      if (method === 'alipay.trade.fastpay.refund.query') signedRefundQueryResponse = signedResponse
+      res.writeHead(200, { 'content-type': 'application/json' }).end(signedResponse)
     }))
     const gatewayPort = await reservePort()
     const child = spawn(process.execPath, ['services/payment-gateway/index.mjs'], {
@@ -308,16 +316,30 @@ describe('payment gateway process contract', () => {
     const query = await fetch(`${base}/v1/query`, { method: 'POST', headers, body: JSON.stringify({ channel: 'alipay', order_id: orderId, workspace_id: workspaceId }) })
     expect(query.status).toBe(200)
     await expect(query.json()).resolves.toMatchObject({ state: 'paid', amount_fen: 29 })
-    const refund = await fetch(`${base}/v1/refund`, { method: 'POST', headers, body: JSON.stringify({ channel: 'alipay', order_id: orderId, workspace_id: workspaceId, provider_trade_id: tradeId, refund_request_id: 'sensitive-refund', amount_fen: 29 }) })
+    const refund = await fetch(`${base}/v1/refund`, { method: 'POST', headers, body: JSON.stringify({ channel: 'alipay', order_id: orderId, workspace_id: workspaceId, provider_trade_id: tradeId, refund_request_id: refundRequestId, amount_fen: 29 }) })
     expect(refund.status).toBe(200)
     await expect(refund.json()).resolves.toMatchObject({ state: 'completed', amount_fen: 29 })
+    const refundQueryInput = JSON.stringify({ channel: 'alipay', order_id: orderId, workspace_id: workspaceId, refund_request_id: refundRequestId, amount_fen: 29 })
+    const refundQuery = await fetch(`${base}/v1/refund/query`, { method: 'POST', headers, body: refundQueryInput })
+    expect(refundQuery.status).toBe(200)
+    await expect(refundQuery.json()).resolves.toMatchObject({ state: 'succeeded', amount_fen: 29 })
     const receipts = readdirSync(receiptDirectory).map(file => readFileSync(join(receiptDirectory, file), 'utf8'))
-    expect(receipts).toHaveLength(2)
-    expect(receipts.map(value => (JSON.parse(value) as { operation: string }).operation).sort()).toEqual(['provider_query', 'refund'])
+    expect(receipts).toHaveLength(3)
+    expect(receipts.map(value => (JSON.parse(value) as { operation: string }).operation).sort()).toEqual(['provider_query', 'refund', 'refund_query'])
     for (const receipt of receipts) {
       expect(receipt).not.toContain('sensitive-')
       expect(receipt).toContain(createHash('sha256').update(orderId).digest('hex'))
       expect(JSON.parse(receipt)).toMatchObject({ provider_response_signature_verified: true, amount_fen: 29, final_evidence: false })
     }
+    const queryReceipt = receipts.map(value => JSON.parse(value) as Record<string, unknown>).find(value => value.operation === 'refund_query')
+    expect(queryReceipt).toMatchObject({ refund_request_id_sha256: createHash('sha256').update(refundRequestId).digest('hex'), signed_response_sha256: createHash('sha256').update(signedRefundQueryResponse).digest('hex'), provider_native_status: 'REFUND_SUCCESS', ledger_state_observed: false })
+    refundQueryStatus = 'SUCCESS'
+    const aliasQuery = await fetch(`${base}/v1/refund/query`, { method: 'POST', headers, body: refundQueryInput })
+    await expect(aliasQuery.json()).resolves.toMatchObject({ state: 'unknown' })
+    refundQueryStatus = 'REFUND_SUCCESS'
+    refundQueryAmount = undefined
+    const missingAmount = await fetch(`${base}/v1/refund/query`, { method: 'POST', headers, body: refundQueryInput })
+    expect(missingAmount.status).toBe(500)
+    expect(readdirSync(receiptDirectory)).toHaveLength(3)
   }, 20_000)
 })

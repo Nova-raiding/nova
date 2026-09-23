@@ -63,7 +63,7 @@ async function callAlipay(method, content) {
     const raw = await response.text()
     if (!verifyResponseSignature(raw, method, publicKey)) throw new Error('alipay_invalid_response_signature')
     try {
-      return JSON.parse(raw)
+      return { document: JSON.parse(raw), signedResponseSha256: crypto.createHash('sha256').update(raw).digest('hex') }
     } catch {
       throw new Error('alipay_invalid_response')
     }
@@ -96,7 +96,7 @@ async function handle(req, res) {
     const orderId = typeof input.order_id === 'string' ? input.order_id.trim() : ''
     const workspaceId = typeof input.workspace_id === 'string' ? input.workspace_id.trim() : ''
     if (!orderId || !workspaceId) return json(res, 400, { error: 'INVALID_QUERY' })
-    const node = (await callAlipay('alipay.trade.query', { out_trade_no: orderId })).alipay_trade_query_response || {}
+    const node = (await callAlipay('alipay.trade.query', { out_trade_no: orderId })).document.alipay_trade_query_response || {}
     if (!responseMatchesOrder(node, orderId)) throw new Error('alipay_response_order_mismatch')
     const state = node.trade_status === 'TRADE_SUCCESS' || node.trade_status === 'TRADE_FINISHED' ? 'paid' : node.trade_status === 'TRADE_CLOSED' ? 'closed' : 'pending'
     if (state === 'paid') captureGatewayOperationReceipt({ directory: process.env.PAYMENT_PROTECTED_RECEIPT_DIR, operation: 'provider_query', orderId, workspaceId, providerTradeId: node.trade_no, providerResponseReference: node.trade_no, amountFen: Math.round(Number(node.total_amount) * 100), providerResponseSignatureVerified: true, outcome: state })
@@ -111,7 +111,7 @@ async function handle(req, res) {
     const amountFen = Number(input.amount_fen)
     const providerTradeId = typeof input.provider_trade_id === 'string' ? input.provider_trade_id.trim() : ''
     if (!orderId || !refundRequestId || !workspaceId || !providerTradeId || !Number.isSafeInteger(amountFen) || amountFen <= 0) return json(res, 400, { error: 'INVALID_REFUND' })
-    const node = (await callAlipay('alipay.trade.refund', { trade_no: providerTradeId, refund_amount: (amountFen / 100).toFixed(2), refund_reason: input.reason || 'merchant refund', out_request_no: refundRequestId })).alipay_trade_refund_response || {}
+    const node = (await callAlipay('alipay.trade.refund', { trade_no: providerTradeId, refund_amount: (amountFen / 100).toFixed(2), refund_reason: input.reason || 'merchant refund', out_request_no: refundRequestId })).document.alipay_trade_refund_response || {}
     if (!responseMatchesOrder(node, orderId)) throw new Error('alipay_response_order_mismatch')
     const state = normalizeRefundSubmissionState(node)
     captureGatewayOperationReceipt({ directory: process.env.PAYMENT_PROTECTED_RECEIPT_DIR, operation: 'refund', orderId, workspaceId, providerTradeId, providerResponseReference: node.trade_no || providerTradeId, refundRequestId, amountFen, providerResponseSignatureVerified: true, outcome: state })
@@ -125,9 +125,14 @@ async function handle(req, res) {
     const workspaceId = typeof input.workspace_id === 'string' ? input.workspace_id.trim() : ''
     const amountFen = Number(input.amount_fen)
     if (!orderId || !refundRequestId || !workspaceId || !Number.isSafeInteger(amountFen) || amountFen <= 0) return json(res, 400, { error: 'INVALID_REFUND_QUERY' })
-    const node = (await callAlipay('alipay.trade.fastpay.refund.query', { out_trade_no: orderId, out_request_no: refundRequestId })).alipay_trade_fastpay_refund_query_response || {}
+    const providerResponse = await callAlipay('alipay.trade.fastpay.refund.query', { out_trade_no: orderId, out_request_no: refundRequestId })
+    const node = providerResponse.document.alipay_trade_fastpay_refund_query_response || {}
     if (!refundQueryResponseMatchesRequest(node, orderId, refundRequestId, amountFen)) throw new Error('alipay_refund_query_mismatch')
     const state = normalizeRefundQueryState(node)
+    if (state === 'succeeded') {
+      if (typeof node.trade_no !== 'string' || !node.trade_no.trim()) throw new Error('alipay_refund_query_mismatch')
+      captureGatewayOperationReceipt({ directory: process.env.PAYMENT_PROTECTED_RECEIPT_DIR, operation: 'refund_query', orderId, workspaceId, providerTradeId: node.trade_no, providerResponseReference: node.trade_no, refundRequestId, amountFen, providerResponseSignatureVerified: true, signedResponseSha256: providerResponse.signedResponseSha256, providerNativeStatus: node.refund_status, outcome: state })
+    }
     return json(res, 200, { state, ...(state === 'unknown' ? {} : { order_id: orderId, provider_refund_id: node.trade_no || orderId, refund_request_id: refundRequestId, workspace_id: workspaceId, amount_fen: amountFen }) })
   }
   if (req.method === 'POST' && req.url === '/v1/notify/alipay') {

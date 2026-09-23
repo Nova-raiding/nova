@@ -35,7 +35,7 @@ export function captureVerifiedNotifyReceipt(input: VerifiedNotifyReceiptInput):
 
 export interface GatewayOperationReceiptInput {
   directory?: string
-  operation: 'checkout' | 'provider_query' | 'refund'
+  operation: 'checkout' | 'provider_query' | 'refund' | 'refund_query'
   orderId: string
   workspaceId: string
   amountFen: number
@@ -45,6 +45,8 @@ export interface GatewayOperationReceiptInput {
   providerTradeId?: string
   providerResponseReference?: string
   refundRequestId?: string
+  signedResponseSha256?: string
+  providerNativeStatus?: string
 }
 
 export interface GatewayOperationReceipt {
@@ -59,6 +61,9 @@ export interface GatewayOperationReceipt {
   provider_response_reference_sha256?: string
   refund_request_id_sha256?: string
   signed_checkout_params_sha256?: string
+  signed_response_sha256?: string
+  provider_native_status?: 'REFUND_SUCCESS'
+  ledger_state_observed?: false
   amount_fen: number
   outcome: GatewayOperationReceiptInput['outcome']
   provider_response_signature_verified: boolean

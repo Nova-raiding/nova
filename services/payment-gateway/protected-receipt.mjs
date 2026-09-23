@@ -65,7 +65,7 @@ export function captureVerifiedNotifyReceipt(input) {
  */
 export function captureGatewayOperationReceipt(input) {
   if (!input.directory) return null
-  if (!['checkout', 'provider_query', 'refund'].includes(input.operation)) throw new Error('unsupported gateway receipt operation')
+  if (!['checkout', 'provider_query', 'refund', 'refund_query'].includes(input.operation)) throw new Error('unsupported gateway receipt operation')
   if (!input.orderId || !input.workspaceId || !Number.isSafeInteger(input.amountFen) || input.amountFen <= 0) throw new Error('gateway receipt identity or amount is invalid')
   if (input.operation === 'checkout') {
     if (!input.signedCheckoutParams || input.outcome !== 'created' || input.providerTradeId) throw new Error('checkout receipt requires signed checkout parameters only')
@@ -74,6 +74,11 @@ export function captureGatewayOperationReceipt(input) {
   }
   if (input.operation === 'provider_query' && input.outcome !== 'paid') throw new Error('provider query receipt requires a paid result')
   if (input.operation === 'refund' && !['completed', 'processing'].includes(input.outcome)) throw new Error('refund receipt requires a real provider submission state')
+  if (input.operation === 'refund_query') {
+    if (!input.refundRequestId) throw new Error('refund query receipt requires a refund request id')
+    if (input.providerNativeStatus !== 'REFUND_SUCCESS' || input.outcome !== 'succeeded') throw new Error('refund query receipt requires native success')
+    if (!/^[a-f0-9]{64}$/u.test(input.signedResponseSha256 ?? '')) throw new Error('refund query receipt requires a verified signed response SHA-256')
+  }
   const receipt = {
     schema_version: 'payment-gateway-operation-source-receipt.v1',
     source: input.operation === 'checkout' ? 'alipay_signed_checkout' : 'alipay_verified_response',
@@ -86,6 +91,7 @@ export function captureGatewayOperationReceipt(input) {
     ...(input.providerResponseReference ? { provider_response_reference_sha256: hash(input.providerResponseReference) } : {}),
     ...(input.refundRequestId ? { refund_request_id_sha256: hash(input.refundRequestId) } : {}),
     ...(input.signedCheckoutParams ? { signed_checkout_params_sha256: hash(input.signedCheckoutParams) } : {}),
+    ...(input.operation === 'refund_query' ? { signed_response_sha256: input.signedResponseSha256, provider_native_status: input.providerNativeStatus, ledger_state_observed: false } : {}),
     amount_fen: input.amountFen,
     outcome: input.outcome,
     provider_response_signature_verified: input.operation === 'checkout' ? false : true,
