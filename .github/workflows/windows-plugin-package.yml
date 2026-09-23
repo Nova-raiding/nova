@@ -42,18 +42,28 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $rsa = [System.Security.Cryptography.RSA]::Create(2048)
-          $request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new('CN=Store Nova CI package test only', $rsa, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+          $rootKey = [System.Security.Cryptography.RSA]::Create(2048)
+          $rootRequest = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new('CN=Store Nova CI test root', $rootKey, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+          $rootRequest.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($true, $false, 0, $true))
+          $rootRequest.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new([System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyCertSign -bor [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::CrlSign, $true))
+          $rootCert = $rootRequest.CreateSelfSigned((Get-Date).AddMinutes(-10), (Get-Date).AddDays(2))
+          $leafKey = [System.Security.Cryptography.RSA]::Create(2048)
+          $request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new('CN=Store Nova CI package test only', $leafKey, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
           $oids = [System.Security.Cryptography.OidCollection]::new()
           [void]$oids.Add([System.Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.3'))
           $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($oids, $false))
-          $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($true, $false, 0, $true))
-          $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new([System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature -bor [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyCertSign, $true))
-          $created = $request.CreateSelfSigned((Get-Date).AddMinutes(-5), (Get-Date).AddDays(1))
+          $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $true))
+          $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new([System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature, $true))
+          $serial = [byte[]]::new(16)
+          [System.Security.Cryptography.RandomNumberGenerator]::Fill($serial)
+          $serial[0] = $serial[0] -band 0x7f
+          $created = $request.Create($rootCert, (Get-Date).AddMinutes(-5), (Get-Date).AddDays(1), $serial).CopyWithPrivateKey($leafKey)
           $pfxPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.pfx'
           $cerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.cer'
+          $leafCerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-leaf.cer'
           [System.IO.File]::WriteAllBytes($pfxPath, $created.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, 'ci-test-only'))
-          [System.IO.File]::WriteAllBytes($cerPath, $created.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+          [System.IO.File]::WriteAllBytes($cerPath, $rootCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+          [System.IO.File]::WriteAllBytes($leafCerPath, $created.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
           [System.IO.File]::AppendAllText($env:GITHUB_ENV, "STORENOVA_WINDOWS_SIGNER_THUMBPRINT=$($created.Thumbprint)`n", [System.Text.UTF8Encoding]::new($false))
       - name: Import the runner-local test signing key
         timeout-minutes: 3
@@ -71,6 +81,8 @@ jobs:
           $cerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.cer'
           certutil.exe -f -addstore Root $cerPath
           if ($LASTEXITCODE -ne 0) { throw 'Test certificate trust import failed' }
+          certutil.exe -f -addstore TrustedPublisher (Join-Path $env:RUNNER_TEMP 'storenova-ci-leaf.cer')
+          if ($LASTEXITCODE -ne 0) { throw 'Test publisher trust import failed' }
       - name: Sign and validate the helper with the test certificate
         timeout-minutes: 3
         shell: powershell
@@ -89,7 +101,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $binary = Join-Path (Join-Path $env:RUNNER_TEMP 'storenova-helper') 'StoreNovaCredentialHelper.exe'
           $signature = Get-AuthenticodeSignature -LiteralPath $binary
-          if ($signature.Status -ne 'Valid') { throw "Test signature is not trusted: $($signature.Status)" }
+          if ($signature.Status -ne 'Valid') { Write-Host "::error file=.github/workflows/windows-plugin-package.yml,line=1::SIGNATURE_STATUS_$($signature.Status)"; exit 1 }
       - name: Package and verify a clean Windows install
         shell: powershell
         run: |
