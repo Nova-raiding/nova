@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +11,12 @@ if (process.platform !== 'darwin') throw new Error('此安装入口仅支持 mac
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const appPaths = ['/Applications/ChatGPT.app', resolve(homedir(), 'Applications/ChatGPT.app')]
+const bundled = resolve(root, 'ChatGPT.app.zip')
+if (existsSync(bundled) && !appPaths.some(existsSync)) {
+  mkdirSync('/Applications', { recursive: true })
+  const expanded = spawnSync('/usr/bin/ditto', ['-x', '-k', bundled, '/Applications'], { stdio: 'inherit' })
+  if (expanded.error || expanded.status !== 0) throw new Error('随包 ChatGPT.app 解压失败。')
+}
 const existing = appPaths.find(existsSync)
 const downloadPage = 'https://chatgpt.com/download/'
 let appPath = existing

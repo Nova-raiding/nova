@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { writeBundleProvenance, provenanceFile } from './bundle-provenance.mjs'
+import { verifyChatGPTMacApp } from './verify-chatgpt-macos.mjs'
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = resolve(pluginRoot, '..', '..')
@@ -39,6 +40,12 @@ if (platform === 'win32' && !windowsHelperDir) throw new Error('Windows package 
 const architecture = process.arch
 if (!['arm64', 'x64'].includes(architecture)) throw new Error('unsupported desktop architecture')
 if (platform === 'win32' && architecture !== 'x64') throw new Error('Windows credential helper currently supports x64 only')
+const bundledChatGPTPath = platform === 'darwin' && process.env.STORENOVA_BUNDLE_CHATGPT_APP === 'true'
+  ? resolve(process.env.STORENOVA_CHATGPT_APP_PATH || '/Applications/ChatGPT.app') : null
+if (bundledChatGPTPath) {
+  const checked = verifyChatGPTMacApp(bundledChatGPTPath)
+  if (!checked.ok) throw new Error(`bundled ChatGPT.app failed official signature verification: ${checked.reason}`)
+}
 const nodeVersion = 'v22.16.0'
 const nodeArchiveName = platform === 'win32' ? `node-${nodeVersion}-win-${architecture}.zip` : `node-${nodeVersion}-${platform}-${architecture}.tar.gz`
 // Pinned from Node.js v22.16.0's signed SHASUMS. A checksum downloaded from
@@ -177,6 +184,11 @@ try {
     const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex')
     writeFileSync(resolve(staging, 'mcp/keychain-credential-helper.build.json'), `${JSON.stringify({ schema_version: '1', source_sha256: digest(helperSource), binary_sha256: digest(helperBinary), platform, arch: architecture })}\n`)
   }
+  if (bundledChatGPTPath) {
+    // Keep the official app's internal symlinks intact; provenance hashes the
+    // archive as one input and the installer expands it with ditto.
+    run('/usr/bin/ditto', ['-c', '-k', '--keepParent', bundledChatGPTPath, resolve(staging, 'ChatGPT.app.zip')])
+  }
   if (windowsHelperFiles) writeFileSync(resolve(staging, 'windows/credential-signer.txt'), `${String(process.env.STORENOVA_WINDOWS_SIGNER_THUMBPRINT).replace(/\s/gu, '').toUpperCase()}\n`)
   const mcpConfig = JSON.parse(readFileSync(resolve(staging, '.mcp.json'), 'utf8'))
   mcpConfig.mcpServers['merchant-marketing'].command = platform === 'win32' ? './runtime/node.exe' : './runtime/node'
@@ -257,11 +269,12 @@ try {
     ready_to_install: platform === 'win32' && Boolean(windowsHelperFiles) && !ciTestCertificate && !sourceDirty,
     ci_test_certificate: ciTestCertificate,
     source_dirty: sourceDirty,
+    chatgpt_app_bundled: Boolean(bundledChatGPTPath),
   }
   if (sourceDirty) bundleStatus.release_status = 'dirty_source_candidate'
   writeFileSync(resolve(staging, 'bundle-status.json'), `${JSON.stringify(bundleStatus, null, 2)}\n`)
   writeBundleProvenance(staging, { plugin: manifest.id, version, platform, architecture, gitCommit, sourceDirty })
-  const packageEntries = [...required, 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'login.sh', 'install.command', 'install-all.command'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'login.cmd', 'install-plugin.ps1', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json', 'bundle-status.json', provenanceFile]
+  const packageEntries = [...required, 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'login.sh', 'install.command', 'install-all.command'] : []), ...(bundledChatGPTPath ? ['ChatGPT.app.zip'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'login.cmd', 'install-plugin.ps1', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json', 'bundle-status.json', provenanceFile]
   mkdirSync(dirname(output), { recursive: true })
   if (platform === 'win32') {
     if (!output.toLowerCase().endsWith('.zip')) throw new Error('Windows deliverable must be a .zip file')
@@ -291,7 +304,7 @@ try {
     cloud_code_included: false,
     connect_helper: {
       source_included: true,
-      app_bundle_included: false,
+      app_bundle_included: Boolean(bundledChatGPTPath),
       custom_scheme: 'development_recovery_only',
       production_ready: false,
       reason: 'Custom-scheme helper binaries are not shipped until platform signing and installation-instance binding are enforced.',
