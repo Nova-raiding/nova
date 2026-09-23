@@ -193,10 +193,6 @@ NODE
 rollback_on_failure() {
   status=$?
   trap - EXIT HUP INT TERM
-  if [ "$external_gateway_handoff_started" = true ]; then
-    # This restores the old public listener, not the old API/worker release.
-    restore_external_gateway || echo 'external gateway recovery failed; protected snapshot retained for operator recovery' >&2
-  fi
   if [ "$mutation_started" = true ] && [ "$rollback_attempted" = false ]; then
     rollback_attempted=true
     recovery_succeeded=false
@@ -212,14 +208,22 @@ rollback_on_failure() {
     fi
     if [ "$recovery_succeeded" = false ]; then
       echo "ECS deployment failed after mutation; invoking protected rollback entrypoint" >&2
-      flock -u 9
-      # Ordinary rollback deliberately retains its complete /releasez current
-      # identity check; no preidentity exception is passed into that executor.
-      ECS_FAILED_RELEASE_ID="$RELEASE_ID" ECS_COMPOSE_PROJECT="$project" ECS_DEPLOY_LOCK_PATH="$ECS_DEPLOY_LOCK_PATH" \
+      # Keep FD 9 locked through rollback and gateway restoration. The public
+      # candidate gateway must still serve its /releasez identity when the
+      # ordinary rollback validates the current release.
+      ECS_INHERITED_DEPLOY_LOCK_FD9=YES ECS_FAILED_RELEASE_ID="$RELEASE_ID" ECS_COMPOSE_PROJECT="$project" ECS_DEPLOY_LOCK_PATH="$ECS_DEPLOY_LOCK_PATH" \
         ECS_ROLLBACK_PLAN_PATH="$ECS_ROLLBACK_PLAN_PATH" ECS_ROLLBACK_COMPOSE_PATH="$ECS_ROLLBACK_COMPOSE_PATH" \
         ECS_ROLLBACK_ENV_FILE="$ECS_ROLLBACK_ENV_FILE" ECS_ROLLBACK_IMAGE_DIGESTS_JSON="$ECS_ROLLBACK_IMAGE_DIGESTS_JSON" \
         ECS_ROLLBACK_STATE_PATH="$ECS_ROLLBACK_STATE_PATH" PRODUCTION_API_BASE_URL="$PRODUCTION_API_BASE_URL" DATABASE_URL="$DATABASE_URL" \
-        sh "$root/infra/scripts/invoke-ecs-automatic-rollback.sh" || echo 'protected rollback entrypoint failed; production remains blocked' >&2
+        sh "$root/infra/scripts/invoke-ecs-automatic-rollback.sh" && recovery_succeeded=true || echo 'protected rollback entrypoint failed; production remains blocked' >&2
+    fi
+    if [ "$external_gateway_handoff_started" = true ]; then
+      if [ "$recovery_succeeded" = true ]; then
+        # Only restore the old listener after the reviewed runtime is healthy.
+        restore_external_gateway || echo 'external gateway recovery failed; protected snapshot retained for operator recovery' >&2
+      else
+        echo 'external gateway remains in candidate topology because runtime rollback failed; manual recovery required' >&2
+      fi
     fi
   fi
   cleanup

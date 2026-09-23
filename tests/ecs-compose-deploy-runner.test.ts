@@ -8,11 +8,14 @@ const path = 'infra/scripts/deploy-verified-ecs-compose.sh'
 const source = () => readFileSync(path, 'utf8')
 
 describe('verified ECS Compose deployment runner', () => {
-  it('captures an external gateway before nonce consumption and recovers it before unlocking for business rollback', () => {
+  it('captures an external gateway before nonce consumption and restores it only after business rollback', () => {
     const script = source()
     expect(script.indexOf('external_gateway_action snapshot')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('external_gateway_action stop')).toBeLessThan(script.indexOf('up -d --no-build --pull never --remove-orphans'))
-    expect(script.indexOf('restore_external_gateway ||')).toBeLessThan(script.indexOf('flock -u 9'))
+    expect(script.indexOf('sh "$root/infra/scripts/invoke-ecs-automatic-rollback.sh"')).toBeLessThan(script.indexOf('restore_external_gateway ||'))
+    expect(script).toContain('ECS_INHERITED_DEPLOY_LOCK_FD9=YES')
+    expect(script).toContain('external gateway remains in candidate topology because runtime rollback failed')
+    expect(script).not.toContain('flock -u 9')
     expect(script).toContain('check-ports --candidate-project "$project"')
     expect(script).toContain('rollback Compose without public 80/443 bindings')
   })
@@ -92,11 +95,11 @@ describe('verified ECS Compose deployment runner', () => {
     expect(script).toContain('capture')
     for (const phase of ['nonce_consumed', 'migration_started', 'migration_complete', 'runtime_cutover_started', 'runtime_identity_verified']) expect(script).toContain(`--phase ${phase}`)
     expect(script).toContain('recover --state "$state_path"')
-    expect(script).toContain('Ordinary rollback deliberately retains its complete /releasez current')
+    expect(script).toContain('ordinary rollback validates the current release')
     expect(script).toContain('mutation_started=true')
     expect(script).not.toContain('ECS_DEPLOY_STATE_PATH="$state_path"')
     expect(script).toContain('protected rollback entrypoint failed; production remains blocked')
-    expect(script).toContain('flock -u 9')
+    expect(script).not.toContain('flock -u 9')
     for (const name of ['ECS_ROLLBACK_PLAN_PATH', 'ECS_ROLLBACK_COMPOSE_PATH', 'ECS_ROLLBACK_ENV_FILE', 'ECS_ROLLBACK_IMAGE_DIGESTS_JSON', 'ECS_ROLLBACK_STATE_PATH']) expect(script).toContain(name)
     expect(script).toContain('invoke-ecs-automatic-rollback.sh')
     const consume = script.indexOf('consume-production-evidence-nonce.sh')
@@ -146,18 +149,19 @@ describe('verified ECS Compose deployment runner', () => {
     const directory = mkdtempSync(join(tmpdir(), 'ecs-auto-rollback-'))
     const capture = join(directory, 'capture.json')
     const entrypoint = join(directory, 'rollback')
-    writeFileSync(entrypoint, `#!/bin/sh\nnode -e 'const fs=require("fs");fs.writeFileSync(process.env.CAPTURE,JSON.stringify({confirm:process.env.CONFIRM_ECS_ROLLBACK,plan:process.env.ECS_ROLLBACK_PLAN_PATH,compose:process.env.ECS_ROLLBACK_COMPOSE_PATH,env:process.env.ECS_ROLLBACK_ENV_FILE,digests:process.env.ECS_ROLLBACK_IMAGE_DIGESTS_JSON,state:process.env.ECS_ROLLBACK_STATE_PATH,lock:process.env.ECS_DEPLOY_LOCK_PATH,project:process.env.ECS_COMPOSE_PROJECT,api:process.env.PRODUCTION_API_BASE_URL,database:process.env.DATABASE_URL,failed:process.env.ECS_FAILED_RELEASE_ID}))'\n`)
+    writeFileSync(entrypoint, `#!/bin/sh\nnode -e 'const fs=require("fs");fs.writeFileSync(process.env.CAPTURE,JSON.stringify({confirm:process.env.CONFIRM_ECS_ROLLBACK,plan:process.env.ECS_ROLLBACK_PLAN_PATH,compose:process.env.ECS_ROLLBACK_COMPOSE_PATH,env:process.env.ECS_ROLLBACK_ENV_FILE,digests:process.env.ECS_ROLLBACK_IMAGE_DIGESTS_JSON,state:process.env.ECS_ROLLBACK_STATE_PATH,lock:process.env.ECS_DEPLOY_LOCK_PATH,project:process.env.ECS_COMPOSE_PROJECT,api:process.env.PRODUCTION_API_BASE_URL,database:process.env.DATABASE_URL,failed:process.env.ECS_FAILED_RELEASE_ID,inherited:process.env.ECS_INHERITED_DEPLOY_LOCK_FD9}))'\n`)
     chmodSync(entrypoint, 0o700)
     const expected = {
       confirm: 'YES', plan: '/protected/plan.json', compose: '/protected/compose.yml', env: '/protected/runtime.env',
       digests: '{"api":"sha256:' + 'a'.repeat(64) + '"}', state: '/protected/state.json', lock: '/protected/deploy.lock',
-      project: 'merchant-production', api: 'https://production.example.test', database: 'postgres://readonly', failed: 'release-candidate',
+      project: 'merchant-production', api: 'https://production.example.test', database: 'postgres://readonly', failed: 'release-candidate', inherited: 'YES',
     }
     execFileSync('sh', ['infra/scripts/invoke-ecs-automatic-rollback.sh'], { env: {
       ...process.env, CAPTURE: capture, ECS_ROLLBACK_ENTRYPOINT: entrypoint, ECS_ROLLBACK_PLAN_PATH: expected.plan,
       ECS_ROLLBACK_COMPOSE_PATH: expected.compose, ECS_ROLLBACK_ENV_FILE: expected.env, ECS_ROLLBACK_IMAGE_DIGESTS_JSON: expected.digests,
       ECS_ROLLBACK_STATE_PATH: expected.state, ECS_DEPLOY_LOCK_PATH: expected.lock, ECS_COMPOSE_PROJECT: expected.project,
       PRODUCTION_API_BASE_URL: expected.api, DATABASE_URL: expected.database, ECS_FAILED_RELEASE_ID: expected.failed,
+      ECS_INHERITED_DEPLOY_LOCK_FD9: expected.inherited,
     } })
     expect(JSON.parse(readFileSync(capture, 'utf8'))).toEqual(expected)
     // The legacy rollback wrapper never parsed ecs-predeploy-state/1 and still
