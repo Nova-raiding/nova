@@ -19974,7 +19974,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await reserveCreativePointsForModel(workspaceId, `model:${usageKey}`, commercialDecision)
       const usage = await observeLegacyTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant')
       let draft
-      try { draft = await service.generateDraft(task.id, undefined, `model:${usageKey}`) } catch (error) { await releaseReservedModelPoints(workspaceId, `model:${usageKey}`, '内容生成失败'); if (providerSucceededButSettlementPending(error)) await markTaskUsageProviderOutcomePending(workspaceId, usageKey); else if (usage.charged || usage.walletDebited) await refundTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? 'merchant', '内容生成失败'); throw error }
+      try { draft = await service.generateDraft(task.id, undefined, `model:${usageKey}`) } catch (error) { if (providerSucceededButSettlementPending(error)) await markTaskUsageProviderOutcomePending(workspaceId, usageKey); else { await releaseReservedModelPoints(workspaceId, `model:${usageKey}`, '内容生成失败'); if (usage.charged || usage.walletDebited) await refundTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? 'merchant', '内容生成失败') } throw error }
       const execution = await requireSettledContentExecutionEvidence(workspaceId, 'model:' + usageKey)
       await persistSnapshot(workspaceId, 'content_version', draft, draft as unknown as Record<string, unknown>)
       await persistSnapshot(workspaceId, 'task', service.getTask(task.id), service.getTask(task.id) as unknown as Record<string, unknown>)

@@ -32,6 +32,12 @@ describe('daily model budget provider boundary', () => {
     expect(source).toContain("alertKey: `model-budget-overrun:${usage.actionId}`")
   })
 
+  it('preserves synchronous content point reservations when provider outcome needs reconciliation', () => {
+    const handler = source.slice(source.indexOf("case 'content.generate':"), source.indexOf("case 'content.codex.prepare':"))
+    const catchBranch = handler.match(/try \{ draft = await service\.generateDraft\(task\.id, undefined, `model:\$\{usageKey\}`\) \} catch \(error\) \{([^\n]+)\}/u)?.[1]
+    expect(catchBranch).toMatch(/if \(providerSucceededButSettlementPending\(error\)\) await markTaskUsageProviderOutcomePending\(workspaceId, usageKey\); else \{ await releaseReservedModelPoints\(/u)
+  })
+
   it('reserves async generation before context freezing and releases fixture completion', () => {
     expect(source).toContain("return isProduction() || process.env.LOCAL_COMPOSE === 'true'")
     expect(source).toContain('if (durableContentGenerationEnvironment()) {')
