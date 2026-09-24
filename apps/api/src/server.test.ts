@@ -688,12 +688,14 @@ describe('API application wiring', () => {
 
   it('routes every real quarantine object write through quota and atomic asset persistence', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
-    expect((source.match(/const stored = await putQuarantineObject\(/gu) ?? [])).toHaveLength(6)
+    // Deferred demo upload paths also persist directly to quarantine before
+    // recording their unscanned asset event.
+    expect((source.match(/const stored = await putQuarantineObject\(/gu) ?? [])).toHaveLength(8)
     // Customer-delivery quarantine adds one independently authorized atomic
     // event; it must retain the same asset/outbox transaction boundary.
-    expect((source.match(/await persistAssetSnapshotAndEvent\(workspaceId,/gu) ?? [])).toHaveLength(6)
+    expect((source.match(/await persistAssetSnapshotAndEvent\(workspaceId,/gu) ?? [])).toHaveLength(7)
     expect(source).toContain('await persistAssetSnapshotAndEvent(workspaceId, asset, CUSTOMER_DELIVERY_SCAN_EVENT, eventPayload, asset as unknown as Record<string, unknown>)')
-    expect((source.match(/compensateStoredAsset\(/gu) ?? [])).toHaveLength(7)
+    expect((source.match(/compensateStoredAsset\(/gu) ?? [])).toHaveLength(9)
     expect(source).toContain('const quota = persistence.storageQuota')
     expect(source).toContain('onDeleted: async row =>')
     expect(source).toContain('releaseAfterPhysicalDeletion')
