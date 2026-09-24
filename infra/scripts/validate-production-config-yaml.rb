@@ -37,6 +37,7 @@ end
 
 required_keys = ENV.fetch('REQUIRED_PRODUCTION_CONFIG_KEYS', '').split
 required_keys.concat(%w[xiaohongshu_auth_enabled xiaohongshu_read_enabled xiaohongshu_write_enabled douyin_auth_enabled douyin_read_enabled douyin_write_enabled])
+required_keys << 'OPS_AUTH_MODE'
 nested_required_keys = []
 walk(document, 0, nested_required_keys)
 
@@ -103,8 +104,8 @@ if config['knowledge_vector_index_enabled'] == true
   end
 end
 
-if config.key?('OPS_AUTH_MODE') && !%w[password oidc].include?(config['OPS_AUTH_MODE'])
-  warn 'OPS_AUTH_MODE must be password or oidc'
+if config['OPS_AUTH_MODE'] != 'password'
+  warn 'OPS_AUTH_MODE must be password'
   exit 1
 end
 

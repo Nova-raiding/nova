@@ -1,15 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { openPlatformConsole, openWorkspaceConsole } from './ops-auth.js'
+import { openPlatformConsole } from './ops-auth.js'
 
 const workspaceId = process.env.OPS_E2E_WORKSPACE_ID
 const outputDir = process.env.OPS_E2E_OUTPUT_DIR
 if (!workspaceId || !outputDir) throw new Error('ISOLATED_ACCOUNT_LABEL_RUNNER_REQUIRED')
-for (const base of [process.env.OPS_OIDC_BASE_URL, process.env.OPS_WORKSPACE_OIDC_BASE_URL]) {
+for (const base of [process.env.OPS_BASE_URL]) {
   const url = new URL(base || '')
   if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || !url.port || url.pathname !== '/' || url.username || url.password || url.search || url.hash) throw new Error('ACCOUNT_LABEL_REQUIRES_LOOPBACK_FIXTURE')
 }
@@ -18,20 +15,18 @@ test.use({ channel: 'chrome', viewport: { width: 1440, height: 900 }, timezoneId
 test.describe.configure({ retries: 0 })
 test.setTimeout(90_000)
 
-for (const workbench of ['platform', 'workspace']) {
-  test(`${workbench} displays the authenticated login from the signed v2 proof`, async ({ page }, testInfo) => {
-    const evidenceDir = join(outputDir, `account-label-${workbench}`)
+test('platform displays the authenticated login from the authenticated password session', async ({ page }, testInfo) => {
+    const evidenceDir = join(outputDir, 'account-label-platform')
     await mkdir(evidenceDir, { recursive: true })
-    const expectedLogin = workbench === 'platform' ? process.env.LOCAL_OIDC_TEST_USERNAME : process.env.OPS_WORKSPACE_OIDC_USERNAME
+    const expectedLogin = process.env.OPS_TEST_USERNAME
     if (!expectedLogin) throw new Error('ISOLATED_ACCOUNT_LOGIN_REQUIRED')
-    const evidence = { status: 'failed', kind: 'real_signed_oidc_login_claim_v2', workbench, businessMutations: false, sessionForged: false, credentialsSaved: false }
+    const evidence = { status: 'failed', kind: 'real_password_session_login_identity', workbench: 'platform', businessMutations: false, sessionForged: false, credentialsSaved: false }
     try {
-      if (workbench === 'workspace') await openWorkspaceConsole(page, '/ops/members?workbench=workspace')
-      else await openPlatformConsole(page, '/ops/customer-delivery?workbench=platform')
+      await openPlatformConsole(page, '/ops/customer-delivery?workbench=platform')
       const response = await page.request.post(new URL('/api/mcp', page.url()).toString(), {
-        // Browser-supplied display metadata must not override the authenticated
-        // gateway value. The gateway removes these and signs its own login.
-        headers: { 'x-ops-workbench': workbench, 'x-workspace-id': workspaceId, 'x-oidc-proof-version': '2', 'x-oidc-display-login': Buffer.from('forged-browser-login').toString('base64url') },
+        // Browser-supplied display metadata must not override the account
+        // identity derived from the authenticated password session.
+        headers: { 'x-ops-workbench': 'platform', 'x-workspace-id': workspaceId, 'x-ops-display-login': 'forged-browser-login' },
         data: { jsonrpc: '2.0', id: 'account-label-read', method: 'ops.session', params: {} },
       })
       expect(response.status()).toBe(200)
@@ -39,55 +34,25 @@ for (const workbench of ['platform', 'workspace']) {
       const session = envelope.data?.result ?? envelope.result
       expect(session?.actor_id).toBeTruthy()
       expect(session?.account_login).toBe(expectedLogin)
-      expect(session?.workbench).toBe(workbench)
+      expect(session?.workbench).toBe('platform')
       const trigger = page.getByRole('button', { name: '打开账号信息', exact: true })
-      await expect(trigger).toContainText(expectedLogin)
-      await expect(trigger).not.toContainText(session.actor_id)
-      if (workbench === 'workspace') {
-        await expect(page.getByRole('heading', { name: '成员与权限', exact: true })).toBeVisible()
-        const currentAccount = page.locator('.ops-members-page .ant-card').filter({ has: page.getByText('当前账号权限', { exact: true }) }).first()
-        await expect(currentAccount).toContainText(`当前账号：${expectedLogin}`)
-        await expect(currentAccount).not.toContainText(session.actor_id)
-      }
+      await expect(trigger.locator('strong')).toHaveAttribute('title', expectedLogin)
+      await expect(trigger.locator('strong')).not.toHaveAttribute('title', session.actor_id)
       await trigger.click()
       const panel = page.getByRole('dialog', { name: '账号信息', exact: true })
       await expect(panel).toContainText(expectedLogin)
       await expect(panel).not.toContainText(session.actor_id)
       await trigger.click()
       await page.reload({ waitUntil: 'domcontentloaded' })
-      await expect(trigger).toContainText(expectedLogin)
-      await expect(trigger).not.toContainText(session.actor_id)
-
-      const screenshot = join(evidenceDir, 'account-panel-shot-scraper.png')
-      const storyboard = join(evidenceDir, 'storyboard.json')
-      await writeFile(storyboard, JSON.stringify({
-        url: page.url(), output: join(evidenceDir, 'account-panel.webm'), viewport: { width: 1440, height: 900 },
-        javascript: `sessionStorage.setItem('ops_connection_config_v1', ${JSON.stringify(JSON.stringify({ apiBase: '/api', workspaceId, workbench }))}); sessionStorage.setItem('ops_workspace_id', ${JSON.stringify(workspaceId)}); sessionStorage.setItem('ops_workbench', ${JSON.stringify(workbench)});`,
-        scenes: [{ name: 'Open verified account identity', open: page.url(), wait_for: '[aria-label="当前身份与权限范围"]:has-text("已由服务端验证")', do: [
-          { wait_for: workbench === 'workspace' ? 'h1:has-text("成员与权限")' : 'h1:has-text("客户交付")' },
-          ...(workbench === 'workspace' ? [{ wait_for: `.ops-members-page:has-text(${JSON.stringify(`当前账号：${expectedLogin}`)})` }] : []),
-          { wait_for: '.ops-status-tag:has-text("已登录")' },
-          { wait_for: `[aria-label="打开账号信息"]:has-text(${JSON.stringify(expectedLogin)})` },
-          { click: '[aria-label="打开账号信息"]' },
-          { wait_for: `[role="dialog"][aria-label="账号信息"]:has-text(${JSON.stringify(expectedLogin)})` },
-          { pause: 0.5 },
-          { screenshot },
-        ] }],
-      }), { mode: 0o600, flag: 'wx' })
-      const installed = join(homedir(), '.local/bin/shot-scraper')
-      const authState = await page.context().storageState()
-      await new Promise((resolve, reject) => {
-        const child = spawn(existsSync(installed) ? installed : 'shot-scraper', ['video', storyboard, '--auth', '/dev/stdin', '--browser', 'chrome', '--timeout', '30000'], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 35_000 })
-        child.stdout.resume(); child.stderr.resume()
-        child.once('error', () => reject(new Error('ACCOUNT_LABEL_CAPTURE_UNAVAILABLE')))
-        child.once('exit', code => code === 0 ? resolve() : reject(new Error('ACCOUNT_LABEL_CAPTURE_FAILED')))
-        child.stdin.on('error', () => {})
-        child.stdin.end(JSON.stringify(authState))
-      })
+      await expect(trigger.locator('strong')).toHaveAttribute('title', expectedLogin)
+      await expect(trigger.locator('strong')).not.toHaveAttribute('title', session.actor_id)
+      await trigger.click()
+      await expect(panel).toContainText(expectedLogin)
+      const screenshot = join(evidenceDir, 'account-panel.png')
+      await page.screenshot({ path: screenshot, fullPage: true })
       await testInfo.attach('account-panel', { path: screenshot, contentType: 'image/png' })
       evidence.status = 'passed'
-      evidence.screenshot = 'account-panel-shot-scraper.png'
-      evidence.video = 'account-panel.webm'
+      evidence.screenshot = 'account-panel.png'
       evidence.reloadChecked = true
       evidence.forgedBrowserLoginIgnored = true
       evidence.loginMatchesAuthenticatedInput = true
@@ -96,4 +61,3 @@ for (const workbench of ['platform', 'workspace']) {
       await writeFile(join(evidenceDir, 'result.json'), JSON.stringify(evidence, null, 2), { mode: 0o600, flag: 'wx' })
     }
   })
-}

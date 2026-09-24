@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canViewOpsDomain, domainFromLocation, opsDomains, requiredWorkbenchForDomain, urlForDomain, visibleOpsDomains } from "./opsNavigation.js";
+import { canViewOpsDomain, domainFromLocation, opsDomains, requiredWorkbenchForDomain, urlForDomain, urlForDomainWithQuery, visibleOpsDomains } from "./opsNavigation.js";
 import { createAuthorizationProjection } from "../authz/authorization.js";
 
 const authorization = (capabilities: string[], managed = true) => createAuthorizationProjection(
@@ -18,6 +18,24 @@ describe("operations navigation", () => {
       { pathname: "/console/ops/overview", search: "?tenant=demo&tab=active" },
       domain,
     )).toBe(`/console/ops/${domain}?tenant=demo&tab=active`);
+  });
+
+  it("carries the selected workspace between routes and preserves unrelated query and hash", () => {
+    expect(urlForDomainWithQuery(
+      { pathname: "/console/ops/overview", search: "?tab=active&workspace=old", hash: "#ledger" },
+      "finance",
+      { workspace: " ws_selected " },
+    )).toBe("/console/ops/finance?tab=active&workspace=ws_selected#ledger");
+  });
+
+  it.each([...opsDomains, "governance"] as const)("recognizes and replaces the %s route", (currentDomain) => {
+    const expectedDomain = currentDomain === "governance" ? "overview" : currentDomain;
+    expect(domainFromLocation({ pathname: `/console/ops/${currentDomain}/`, hash: "" }))
+      .toBe(expectedDomain);
+    expect(urlForDomain(
+      { pathname: `/console/ops/${currentDomain}/`, search: "?tenant=demo" },
+      "tasks",
+    )).toBe("/console/ops/tasks?tenant=demo");
   });
 
   it.each([
@@ -59,6 +77,9 @@ describe("operations navigation", () => {
   it("canonicalizes the legacy finance task link to the task queue", () => {
     expect(domainFromLocation({ pathname: "/ops/finance/merchant/tasks", hash: "" })).toBe("tasks");
     expect(urlForDomain({ pathname: "/ops/finance/merchant/tasks", search: "" }, "tasks")).toBe("/ops/tasks");
+    expect(domainFromLocation({ pathname: "/console/ops/finance/merchant/tasks/", hash: "" })).toBe("tasks");
+    expect(urlForDomain({ pathname: "/console/ops/finance/merchant/tasks/", search: "?tenant=demo" }, "tasks"))
+      .toBe("/console/ops/tasks?tenant=demo");
   });
 
   it("replaces an existing Ops route instead of nesting it", () => {

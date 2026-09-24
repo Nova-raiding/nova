@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { openPlatformConsole } from './ops-auth.js'
 
 test.setTimeout(240_000)
-const baseUrl = process.env.OPS_OIDC_BASE_URL ?? process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
+const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
 // Platform operations and workspace administration are separate workbenches.
 // Member governance is intentionally not part of the platform walk: it is
 // only exercised with a workspace membership fixture below.
@@ -42,12 +42,6 @@ test('walk every Ops Console section through the real browser UI', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   context.setDefaultTimeout(10_000)
-  await context.addInitScript(() => {
-    localStorage.setItem('ops_workspace_id', 'ws_demo')
-    localStorage.setItem('ops_actor_id', 'actor_demo')
-    localStorage.setItem('ops_api_token', 'pilot-local-token')
-    localStorage.setItem('ops_workbench', 'platform')
-  })
   const page = await context.newPage()
   const badResponses = []
   const rpcErrors = []
@@ -164,12 +158,6 @@ test('keeps the withdrawn model services surface unreachable and the restored fi
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   context.setDefaultTimeout(10_000)
-  await context.addInitScript(() => {
-    localStorage.setItem('ops_workspace_id', 'ws_demo')
-    localStorage.setItem('ops_actor_id', 'actor_demo')
-    localStorage.setItem('ops_api_token', 'pilot-local-token')
-    localStorage.setItem('ops_workbench', 'platform')
-  })
   const page = await context.newPage()
   try {
     // Boot straight onto the finance deep link so the assertion covers
@@ -208,12 +196,6 @@ test('keeps the withdrawn model services surface unreachable and the restored fi
 test('does not report model configuration success when model status fails', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
-  await context.addInitScript(() => {
-    localStorage.setItem('ops_workspace_id', 'ws_demo')
-    localStorage.setItem('ops_actor_id', 'actor_demo')
-    localStorage.setItem('ops_api_token', 'pilot-local-token')
-    localStorage.setItem('ops_workbench', 'platform')
-  })
   // Fail exactly one dataset: every other read stays real, so any warning the
   // assertions below see has to come from `platform.model.status`.
   const failedModelStatusCalls = []

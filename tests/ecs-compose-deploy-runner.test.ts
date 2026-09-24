@@ -65,6 +65,10 @@ describe('verified ECS Compose deployment runner', () => {
     expect(result.status, result.stderr).toBe(0)
     expect(readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')).toContain('verify-ecs-ops-auth-mode.sh "$OPS_AUTH_MODE" "$OPS_UI_IMAGE_REF" "$RENDERED_COMPOSE_PATH"')
     expect(readFileSync('infra/scripts/build-ecs-release-images.sh', 'utf8')).toContain('--label "com.storenova.ops-auth-mode=$ops_auth_mode"')
+    const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
+    expect(preflight).toContain(': "${PUBLIC_OPS_BASE_URL:?PUBLIC_OPS_BASE_URL is required}"')
+    expect(preflight).toContain("[ \"$PUBLIC_OPS_BASE_URL\" = 'https://ops.yxsona.com' ]")
+    expect(preflight).toContain('ECS production deploy requires MCP_INTEGRATION_MODE=local_stdio')
   })
 
   it('rejects UI/API auth mode mismatch before release preflight can continue', () => {

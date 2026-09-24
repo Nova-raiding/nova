@@ -11,8 +11,8 @@ import { openWorkspaceConsole } from './ops-auth.js'
 // uploads, synthetic clean receipts, payment calls, or creative-point grants.
 const workspaceId = process.env.OPS_E2E_WORKSPACE_ID
 const outputDir = process.env.OPS_E2E_OUTPUT_DIR
-const workspaceBase = process.env.OPS_WORKSPACE_OIDC_BASE_URL
-const platformBase = process.env.OPS_OIDC_BASE_URL
+const workspaceBase = process.env.OPS_WORKSPACE_BASE_URL
+const platformBase = process.env.OPS_BASE_URL
 if (!workspaceId || !outputDir || !workspaceBase || !platformBase) throw new Error('ISOLATED_OPS_AUTH_BOUNDARY_RUNNER_REQUIRED')
 const workspaceOrigin = new URL(workspaceBase)
 const platformOrigin = new URL(platformBase)

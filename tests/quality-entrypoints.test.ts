@@ -32,7 +32,7 @@ const LEGACY_NON_RELEASE_GATES = new Set([
 ])
 const CRITICAL_DEFAULT_RELEASE_GATES = [
   'tests/mcp-integration-mode-release-gate.test.ts',
-  'tests/mcp-oauth-production-script.test.ts',
+  'tests/mcp-integration-production-script.test.ts',
   'tests/payment-gateway-process.integration.test.ts',
   'apps/api/src/payment-capability-status.test.ts',
   'apps/api/src/payment-reconciliation-worker.e2e.test.ts',
@@ -156,7 +156,7 @@ describe('quality entrypoint coverage', () => {
 
   it('keeps the commercial read-boundary acceptance runner behind a named entrypoint', () => {
     // `scripts/verify-commercial-read-boundaries.ts` is a fail-closed security
-    // acceptance runner — real PostgreSQL 17, row-level security, a signed OIDC
+    // acceptance runner — real PostgreSQL 17, row-level security, a password
     // identity, the HTTP route and the native MCP transport — and it had no
     // package.json script at all, so nothing could invoke it and the inventory
     // above could not even see the file. It has a named entrypoint now, and the
@@ -268,7 +268,7 @@ describe('quality entrypoint coverage', () => {
     ])
     for (const file of ISOLATED_REDIS_TEST_FILES) expect(NON_HERMETIC_TEST_FILES).toContain(file)
     expect(readFileSync(resolve(root, 'scripts/run-isolated-redis-tests.ts'), 'utf8')).toContain('numPendingTests !== 0')
-    expect(script('test:browser:ops:jit')).toContain('scripts/run-ops-oidc-e2e.ts')
+    expect(script('test:browser:ops:jit')).toContain('scripts/run-ops-password-e2e.ts')
     expect(readFileSync(resolve(root, 'vitest.config.ts'), 'utf8')).toContain('...NON_HERMETIC_TEST_FILES')
     // The legacy canonical API contract still embeds merchant bearer login.
     // It is quarantined, not claimed as passing until its signed, isolated

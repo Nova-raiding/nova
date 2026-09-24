@@ -3,6 +3,7 @@ import {
   domainFromLocation,
   type OpsDomain,
   urlForDomain,
+  urlForDomainWithQuery,
 } from "./opsNavigation.js";
 
 function canonicalizeOpsLocation(location: Pick<Location, "pathname" | "search" | "hash">): OpsDomain {
@@ -19,6 +20,7 @@ export function useOpsNavigation(options: {
 } = {}): {
   activeDomain: OpsDomain;
   navigate: (domain: OpsDomain) => void;
+  navigateWithQuery: (domain: OpsDomain, query: Record<string, string | undefined>) => void;
 } {
   const [activeDomain, setActiveDomain] = useState<OpsDomain>(() =>
     canonicalizeOpsLocation(window.location),
@@ -58,5 +60,16 @@ export function useOpsNavigation(options: {
     );
   };
 
-  return { activeDomain, navigate };
+  const navigateWithQuery = (domain: OpsDomain, query: Record<string, string | undefined>) => {
+    const target = urlForDomainWithQuery(window.location, domain, query);
+    if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== target) {
+      window.history.pushState(null, "", target);
+    }
+    setActiveDomain(domain);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+    window.requestAnimationFrame(() => document.querySelector<HTMLElement>("#ops-main-content")?.focus({ preventScroll: true }));
+  };
+
+  return { activeDomain, navigate, navigateWithQuery };
 }

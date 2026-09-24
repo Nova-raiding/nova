@@ -7,7 +7,7 @@ import { useOpsConsoleModel, type OpsConsoleModel } from "../hooks/useOpsConsole
 import { useOpsNavigation } from "../navigation/useOpsNavigation";
 import { opsPageRegistry } from "../navigation/opsPageRegistry.js";
 import { platformLabels } from "../types/ops";
-import { abortOpsRequests, hasOpsConnection, managedOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
+import { abortOpsRequests, hasOpsConnection, managedOpsSession, passwordOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
 import { OpsPageBoundary } from "../components/OpsPageBoundary";
 import { canViewOpsDomain, domainFromLocation, requiredWorkbenchForDomain, urlForDomain, visibleOpsDomains, type OpsDomain } from "../navigation/opsNavigation.js";
 import { AuthorizationProvider } from "../authz/AuthorizationProvider.js";
@@ -208,12 +208,12 @@ function Dashboard({
     }, () => window.history.replaceState(null, "", currentUrl));
     return true;
   };
-  const { activeDomain, navigate: navigateToRoute } = useOpsNavigation({ onPopstate: deferredPopstate });
+  const { activeDomain, navigate: navigateToRoute, navigateWithQuery } = useOpsNavigation({ onPopstate: deferredPopstate });
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const sessionErrorEvidence = model.dataSetErrorEvidence("ops.session");
   const sessionDataSetError = model.dataSetError("ops.session");
   const expectedUnauthenticated = isExpectedUnauthenticatedSessionError(sessionErrorEvidence);
-  const sessionError = !model.opsSession && !expectedUnauthenticated
+  const sessionError = !model.opsSession
     ? sessionDataSetError ?? (!hasOpsConnection() ? "尚未登录平台运营账号" : undefined)
     : undefined;
   // Keep the service diagnostic mode-neutral; user guidance always points to
@@ -246,6 +246,16 @@ function Dashboard({
     }
     navigateToRoute(domain);
   };
+  const navigateToDomainWithQuery = (domain: Parameters<typeof navigateToRoute>[0], query: Record<string, string | undefined>) => {
+    const blocked = domainNavigationBlockedReason(domain, activeWorkbench);
+    if (blocked) { void message.warning(blocked); return; }
+    const requiredWorkbench = requiredWorkbenchForDomain(domain);
+    if (requiredWorkbench && requiredWorkbench !== activeWorkbench) {
+      onWorkbenchChange(requiredWorkbench, false, () => navigateWithQuery(domain, query));
+      return;
+    }
+    navigateWithQuery(domain, query);
+  };
   const canAutoLoadModelMarkup =
     (activeDomain === "models" || activeDomain === "finance") &&
     model.canModelMarkup &&
@@ -274,7 +284,7 @@ function Dashboard({
     }
   }, [activeDomain, canAutoLoadModelMarkup, model.canUserGovernance, model.opsSession?.actor_id]);
 
-  if (expectedUnauthenticated) {
+  if (!model.opsSession && (expectedUnauthenticated || sessionError)) {
     return (
       <PlatformOpsLoginPage
         managedSession={false}
@@ -365,7 +375,7 @@ function Dashboard({
           ) : authorized ? (
             <OpsPageBoundary resetKey={activeDomain}>
               <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} aria-label="正在加载页面" />}>
-                <ActivePage model={model} onNavigate={navigateToDomain} />
+                <ActivePage model={model} onNavigate={navigateToDomain} onNavigateWithQuery={navigateToDomainWithQuery} />
               </Suspense>
             </OpsPageBoundary>
           ) : (

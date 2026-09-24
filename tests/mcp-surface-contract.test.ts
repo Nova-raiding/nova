@@ -249,6 +249,10 @@ describe('MCP surface coverage', () => {
     const rootReadme = readFileSync(new URL('../apps/plugin/skills/merchant-marketing/SKILL.md', import.meta.url), 'utf8')
     const installedSkill = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/skills/merchant-marketing/SKILL.md', import.meta.url), 'utf8')
     expect(installedSkill).toBe(rootReadme)
+    const neverExposedMerchantTools = new Set(['workspace.bootstrap'])
+    for (const method of neverExposedMerchantTools) {
+      expect(runtimeTools.has(method), `${method} must remain unavailable to merchant tools`).toBe(false)
+    }
     const allowlisted = new Set<string>(MCP_METHODS)
     const tokens = new Set([...rootReadme.matchAll(/`([a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+)`/gu)].map(match => match[1]!))
     expect(tokens.size).toBeGreaterThan(0)
@@ -257,6 +261,7 @@ describe('MCP surface coverage', () => {
       // at all (permissions such as customer.content.update, artifact names
       // such as review-findings.json) are documentation, not tool calls.
       if (!allowlisted.has(token)) continue
+      if (neverExposedMerchantTools.has(token)) continue
       const conditional = CONDITIONALLY_EXPOSED_TOOLS.get(token)
       if (conditional) {
         // A declared conditional tool must actually be conditional: absent by

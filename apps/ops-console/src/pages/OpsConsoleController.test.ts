@@ -69,6 +69,7 @@ describe("password session gate", () => {
     const source = await readFile(new URL("./OpsConsoleController.tsx", import.meta.url), "utf8");
 
     expect(source).toContain('sessionGate === "error"');
+    expect(source).toContain('opsSessionGateState(managedOpsSession, Boolean(model.opsSession), sessionError)');
     expect(source).toContain('title="无法验证运营会话"');
     expect(source).toContain('onClick={() => void model.load()}');
   });

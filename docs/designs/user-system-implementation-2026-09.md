@@ -1,5 +1,7 @@
 # 商家与平台后台用户系统落地说明
 
+> **已被取代（2026-09-25）**：本文记录的 OIDC/SSO 登录、ChatGPT 远程 MCP OAuth、OIDC 配置和相应上线门禁均为历史设计，不得用于当前实施、操作或验收。当前 Ops Console 只使用 Store Nova 账号密码；ChatGPT 插件只使用本地直装 stdio 与 Store Nova 本地账号密码绑定流程。当前基线见 [桌面端本地插件身份 ADR](../architecture/desktop-only-auth-adr.md)。本文仅供历史追溯。
+
 ## 目标
 
 商家运营后台、平台运营后台和 ChatGPT MCP 使用同一套服务端身份模型。浏览器只持有 HttpOnly 会话 Cookie，API/MCP 依据服务端投影的 identity、membership、workspace、role、capability 和 commercial entitlement 决策；前端不再把 Bearer token、workspace ID 或 actor ID 当作用户凭据。

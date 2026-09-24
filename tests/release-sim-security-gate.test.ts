@@ -18,7 +18,6 @@ const composeArgs = [
 const required = {
   RELEASE_SIM_SESSION_ID_HASH_SECRET:
     "test-session-secret-with-sufficient-entropy",
-  RELEASE_SIM_OIDC_SIGNING_SECRET: "test-oidc-secret-with-sufficient-entropy",
   RELEASE_SIM_WORKER_SYNC_API_TOKEN: "test-sync-token-with-sufficient-entropy",
   RELEASE_SIM_WORKER_SYNC_SIGNING_SECRET: "test-sync-signing-with-sufficient-entropy",
   RELEASE_SIM_WORKER_GENERATION_API_TOKEN: "test-generation-token-with-sufficient-entropy",
@@ -86,7 +85,6 @@ describe("release-sim security boundary", () => {
       "OPS_AUTH_MODE",
       "MERCHANT_BEARER_HOSTNAME",
       "SESSION_ID_HASH_SECRET",
-      "OIDC_PROXY_SIGNING_SECRET",
       "WORKER_API_CREDENTIALS",
       "RELEASE_ID",
       "RELEASE_GIT_SHA",
@@ -106,7 +104,7 @@ describe("release-sim security boundary", () => {
       DB_POOL_MAX: "10",
       OPS_DB_POOL_MAX: "3",
       ALLOW_WILDCARD_WORKSPACE_GRANT: "false",
-      OPS_AUTH_MODE: "oidc",
+      OPS_AUTH_MODE: "password",
       MERCHANT_BEARER_HOSTNAME: "127.0.0.1",
     });
     const grants = JSON.parse(api?.API_AUTH_TOKENS ?? "{}") as Record<string, unknown>;

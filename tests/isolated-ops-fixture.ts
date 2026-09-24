@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
+import argon2 from 'argon2'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -9,7 +10,7 @@ import { loadMigrations, MigrationRunner, type Migration } from '../packages/per
 import { PostgresPasswordAuthRepository } from '../packages/persistence/src/password-auth-repository.js'
 
 export const ISOLATED_POSTGRES_IMAGE = 'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73'
-const PURPOSE = 'isolated-ops-oidc-acceptance'
+const PURPOSE = 'isolated-ops-password-acceptance'
 const LABEL_PREFIX = 'merchant.fixture'
 type ContainerKind = 'postgres' | 'redis'
 type OwnedContainer = { id: string; name: string; runId: string; kind: ContainerKind; image: string }
@@ -65,6 +66,9 @@ export interface IsolatedOpsFixture {
   approverId: string
   issuer: string
   actorSubject: string
+  platformLogin: string
+  platformPassword: string
+  platformIdentityId: string
   containerEvidence: IsolatedContainerEvidence[]
   dispose(): Promise<IsolatedFixtureDisposal>
 }
@@ -219,14 +223,12 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
     await admin.query(`ALTER ROLE merchant_app PASSWORD '${appPassword}'`)
     await admin.query(`ALTER ROLE merchant_ops PASSWORD '${opsPassword}'`)
     const workspaceId = `ws_ops_fixture_${runId.replaceAll('-', '')}`
-    const actorIdentityId = randomUUID()
     const subjectIdentityId = randomUUID()
     const approverIdentityId = randomUUID()
     const approverId = `ops-fixture-approver-${runId}`
     const issuer = `http://127.0.0.1/isolated-ops-idp/${runId}`
-    const actorSubject = `ops-fixture-actor-${runId}`
     await admin.query('INSERT INTO workspaces (id,status) VALUES ($1,\'active\')', [workspaceId])
-    for (const [id, externalSubject, name] of [[actorIdentityId, actorSubject, 'Isolated Ops Actor'], [subjectIdentityId, `ops-fixture-target-${runId}`, 'Isolated Grant Target'], [approverIdentityId, approverId, 'Isolated Approval Fixture']]) {
+    for (const [id, externalSubject, name] of [[subjectIdentityId, `ops-fixture-target-${runId}`, 'Isolated Grant Target'], [approverIdentityId, approverId, 'Isolated Approval Fixture']]) {
       await admin.query('INSERT INTO platform_identities (id,issuer,external_subject,display_name) VALUES ($1,$2,$3,$4)', [id, issuer, externalSubject, name])
     }
     await admin.query(
@@ -239,7 +241,7 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
     ops = new Pool({ connectionString: opsUrl.toString(), connectionTimeoutMillis: 1_000 })
     const merchantAccount = await new PostgresPasswordAuthRepository(ops).createMerchantAccount({
       login: `merchant-${runId}@fixture.invalid`,
-      password: randomBytes(24).toString('base64url'),
+      password: `A1${randomBytes(24).toString('hex')}`,
       enterpriseName: '隔离验收企业',
       contactName: '隔离验收商家',
       workspaceIds: [workspaceId],
@@ -250,12 +252,18 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
       || merchantAccount.workspaceIds.length !== 1 || merchantAccount.workspaceIds[0] !== workspaceId) {
       throw new Error('ISOLATED_FIXTURE_MERCHANT_DIRECTORY_SEED_MISMATCH')
     }
+    const platformLogin = `ops-${runId}@fixture.invalid`
+    const platformPassword = `A1${randomBytes(24).toString('hex')}`
+    const passwordAuth = new PostgresPasswordAuthRepository(ops)
+    await passwordAuth.ensurePlatformAccount({ login: platformLogin, passwordHash: await argon2.hash(platformPassword, { type: argon2.argon2id, memoryCost: 19_456, timeCost: 2, parallelism: 1 }), roles: ['platform_admin'] })
+    const platformAccount = (await passwordAuth.listAccounts()).find(account => account.login === platformLogin)
+    if (!platformAccount || platformAccount.accountType !== 'platform' || platformAccount.status !== 'active') throw new Error('ISOLATED_FIXTURE_PLATFORM_ACCOUNT_SEED_MISMATCH')
     const repository = new PostgresAuthorizationRepository(ops)
-    await repository.assignPlatformRole({ subjectIdentityId: actorIdentityId, role: 'platform_admin', assignedBy: 'isolated-fixture-bootstrap', reason: 'synthetic desktop acceptance actor', expectedAuthorizationRevision: 0 })
-    await repository.assignPlatformRole({ subjectIdentityId: actorIdentityId, role: 'security_admin', assignedBy: 'isolated-fixture-bootstrap', reason: 'synthetic desktop acceptance security actor', expectedAuthorizationRevision: 1 })
+    await repository.assignPlatformRole({ subjectIdentityId: platformAccount.identityId, role: 'platform_admin', assignedBy: 'isolated-fixture-bootstrap', reason: 'synthetic desktop acceptance actor', expectedAuthorizationRevision: 0 })
+    await repository.assignPlatformRole({ subjectIdentityId: platformAccount.identityId, role: 'security_admin', assignedBy: 'isolated-fixture-bootstrap', reason: 'synthetic desktop acceptance security actor', expectedAuthorizationRevision: 1 })
     await repository.assignPlatformRole({ subjectIdentityId: approverIdentityId, role: 'security_admin', assignedBy: 'isolated-fixture-bootstrap', reason: 'synthetic independent approval identity', expectedAuthorizationRevision: 0 })
-    const roles = await repository.listActivePlatformRoles(actorIdentityId)
-    if (roles.length !== 2 || await repository.getAuthorizationRevision(actorIdentityId) !== 2 || await repository.getAuthorizationRevision(subjectIdentityId) !== 0) throw new Error('ISOLATED_FIXTURE_AUTHORITY_SEED_MISMATCH')
+    const roles = await repository.listActivePlatformRoles(platformAccount.identityId)
+    if (roles.length !== 2 || await repository.getAuthorizationRevision(platformAccount.identityId) !== 2 || await repository.getAuthorizationRevision(subjectIdentityId) !== 0) throw new Error('ISOLATED_FIXTURE_AUTHORITY_SEED_MISMATCH')
     const roleFlags = (await admin.query("SELECT rolname,rolsuper,rolbypassrls,rolcreatedb,rolcreaterole FROM pg_roles WHERE rolname IN ('merchant_app','merchant_ops') ORDER BY rolname")).rows
     if (roleFlags.length !== 2 || roleFlags.some(row => row.rolsuper || row.rolbypassrls || row.rolcreatedb || row.rolcreaterole)) throw new Error('ISOLATED_FIXTURE_RUNTIME_ROLE_UNSAFE')
     const app = new Pool({ connectionString: appUrl.toString(), connectionTimeoutMillis: 1_000, max: 1 })
@@ -274,10 +282,10 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
       const url = new URL(adminUrl); url.pathname = `/${name}`
       return [key, url.toString()]
     })) as IsolatedOpsFixture['acceptanceDatabaseUrls']
-    await writeFile(join(output, `fixture-ready-${runId}.json`), JSON.stringify({ runId, containers: evidence, serverVersion, migrationVersions: applied, workspaceId, actorIdentityId, subjectIdentityId, approverIdentityId, approverId, issuer, actorSubject, actorRoles: roles.map(role => role.role), runtimeRoles: roleFlags, acceptanceDatabases: Object.values(ISOLATED_ACCEPTANCE_DATABASES), commercialModelCalls: 0, fixtureOnly: true }, null, 2), { mode: 0o600, flag: 'wx' })
+    await writeFile(join(output, `fixture-ready-${runId}.json`), JSON.stringify({ runId, containers: evidence, serverVersion, migrationVersions: applied, workspaceId, actorIdentityId: platformAccount.identityId, subjectIdentityId, approverIdentityId, approverId, issuer, actorSubject: platformAccount.identityId, actorRoles: roles.map(role => role.role), runtimeRoles: roleFlags, acceptanceDatabases: Object.values(ISOLATED_ACCEPTANCE_DATABASES), commercialModelCalls: 0, fixtureOnly: true, authentication: 'password' }, null, 2), { mode: 0o600, flag: 'wx' })
     await ops.end(); ops = undefined
     await admin.end(); admin = undefined
-    return { runId, databaseUrl: appUrl.toString(), adminDatabaseUrl: adminUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: redisUrl.toString(), acceptanceDatabaseUrls, workspaceId, subjectIdentityId, workspaceActorSubject: `ops-fixture-target-${runId}`, approverId, issuer, actorSubject, containerEvidence: evidence, dispose }
+    return { runId, databaseUrl: appUrl.toString(), adminDatabaseUrl: adminUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: redisUrl.toString(), acceptanceDatabaseUrls, workspaceId, subjectIdentityId, workspaceActorSubject: `ops-fixture-target-${runId}`, approverId, issuer, actorSubject: platformAccount.identityId, platformLogin, platformPassword, platformIdentityId: platformAccount.identityId, containerEvidence: evidence, dispose }
   } catch (error) {
     await ops?.end(); ops = undefined
     await admin?.end(); admin = undefined

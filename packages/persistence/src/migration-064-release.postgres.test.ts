@@ -89,13 +89,13 @@ describe('064 workspace identity bootstrap', () => {
       ops = new Pool({ connectionString: opsUrl.toString(), max: 4 })
       const repositoryA = new PostgresWorkspaceBootstrapRepository(appA, ops)
       const repositoryB = new PostgresWorkspaceBootstrapRepository(appB, ops)
-      const common = { issuer: 'https://issuer-a.example', externalSubject: 'same-subject', identityId: identityA, displayName: '可信身份工作区', actorId: 'same-subject' }
+      const common = { issuer: 'https://issuer-a.example', externalSubject: 'same-subject', identityId: identityA, displayName: '可信身份工作区', actorId: 'same-subject', allowCreate: true }
 
       const [first, concurrent] = await Promise.all([
         repositoryA.bootstrap({ ...common, candidateWorkspaceId: 'ws_process_a' }),
         repositoryB.bootstrap({ ...common, candidateWorkspaceId: 'ws_process_b' }),
       ])
-      const restarted = await new PostgresWorkspaceBootstrapRepository(appB, ops).bootstrap({ ...common, candidateWorkspaceId: 'ws_after_local_binding_loss', displayName: '不应覆盖原名称' })
+      const restarted = await new PostgresWorkspaceBootstrapRepository(appB, ops).bootstrap({ ...common, candidateWorkspaceId: 'ws_after_local_binding_loss', displayName: '不应覆盖原名称', allowCreate: false })
 
       expect(new Set([first.workspaceId, concurrent.workspaceId, restarted.workspaceId]).size).toBe(1)
       expect([first.created, concurrent.created].filter(Boolean)).toHaveLength(1)
@@ -104,7 +104,7 @@ describe('064 workspace identity bootstrap', () => {
       await expect(database.query(`SELECT id FROM workspaces WHERE id IN ('ws_process_a','ws_process_b','ws_after_local_binding_loss') ORDER BY id`)).resolves.toMatchObject({ rows: [{ id: canonicalWorkspaceId }] })
       await expect(database.query(`SELECT workspace_id, role, status, identity_id::text AS identity_id FROM workspace_members WHERE external_subject='same-subject' AND identity_id=$1`, [identityA])).resolves.toMatchObject({ rows: [{ workspace_id: canonicalWorkspaceId, role: 'workspace_owner', status: 'active', identity_id: identityA }] })
 
-      const isolated = await repositoryB.bootstrap({ issuer: 'https://issuer-b.example', externalSubject: 'same-subject', identityId: identityB, candidateWorkspaceId: 'ws_issuer_b', displayName: '另一发行方', actorId: 'same-subject' })
+      const isolated = await repositoryB.bootstrap({ issuer: 'https://issuer-b.example', externalSubject: 'same-subject', identityId: identityB, candidateWorkspaceId: 'ws_issuer_b', displayName: '另一发行方', actorId: 'same-subject', allowCreate: true })
       expect(isolated).toMatchObject({ workspaceId: 'ws_issuer_b', created: true })
       expect(isolated.workspaceId).not.toBe(canonicalWorkspaceId)
     } catch (error) {
@@ -175,7 +175,7 @@ describe('064 workspace identity bootstrap', () => {
 
       const tenant = new RecordingPool(app as unknown as SqlPool)
       const control = new RecordingPool(ops as unknown as SqlPool)
-      const input = { issuer, externalSubject, identityId, candidateWorkspaceId: 'ws_role_boundary_a', displayName: '角色边界工作区', actorId: externalSubject }
+      const input = { issuer, externalSubject, identityId, candidateWorkspaceId: 'ws_role_boundary_a', displayName: '角色边界工作区', actorId: externalSubject, allowCreate: true }
 
       // The observed local-stack failure, reproduced against the real role
       // model: the tenant runtime role cannot read the identity row at all.
@@ -194,7 +194,7 @@ describe('064 workspace identity bootstrap', () => {
         .resolves.toMatchObject({ rows: [{ identity_id: identityId, workspace_id: 'ws_role_boundary_a' }] })
       // A second bootstrap reuses the binding, which is the path that re-reads
       // the workspace through the tenant pool only.
-      await expect(repository.bootstrap({ ...input, candidateWorkspaceId: 'ws_role_boundary_b' })).resolves.toMatchObject({ workspaceId: 'ws_role_boundary_a', created: false })
+      await expect(repository.bootstrap({ ...input, candidateWorkspaceId: 'ws_role_boundary_b', allowCreate: false })).resolves.toMatchObject({ workspaceId: 'ws_role_boundary_a', created: false })
 
       // Routing, asserted per pool: the control plane sees only the identity
       // read (one per bootstrap call) and the tenant pool never mentions the

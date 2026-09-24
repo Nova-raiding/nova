@@ -241,7 +241,7 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   // Current merchant scope is content production, review and export.
   // Keep server compatibility and audit records; do not expose store sync or
   // publishing actions through this merchant bridge.
-  'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm',
+  'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm', 'workspace.bootstrap',
   'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'sync.retry_failed',
   'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
   'automation.scan', 'automation.tick', 'automation.pause',
@@ -305,7 +305,7 @@ const reasonProperty = boundedString(1000, 3, '当前交互写操作的可审计
 const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   ...READ_ONLY_METHODS,
   'merchant.start',
-  'content.export', 'catalog.image.review', 'catalog.image.select', 'workspace.bootstrap',
+  'content.export', 'catalog.image.review', 'catalog.image.select',
   // The merchant explicitly supplied the image and requested an unpublished
   // preview. Uploading the source and invoking candidate generation are part
   // of that same non-publishing workflow; binding/publishing remains gated.
@@ -1655,13 +1655,17 @@ function toolErrorPresentation(method, args, code, details) {
     const missing = Array.isArray(details?.missing) && details.missing.length
       ? details.missing.join('、')
       : '服务地址或工作区配置'
+    const workspaceBindingMissing = Array.isArray(details?.missing) && details.missing.includes('MERCHANT_WORKSPACE_ID')
     return {
-      text: `Store Nova连接配置未加载（缺少${missing}）。请重新加载插件连接或重启 ChatGPT；已保存的商品、SKU 和素材不会丢失。本次未向后端发送请求。`,
+      text: workspaceBindingMissing
+        ? '尚未绑定工作区，本次未向后端发送请求。请联系平台管理员获取已分配的 ws_... 工作区 ID，再在插件安装目录运行：runtime/node scripts/login-local-macos.mjs --base-url https://yxsona.com --workspace ws_<管理员分配的工作区>。Windows 请运行 runtime\\node.exe scripts\\login-local-windows.mjs --base-url https://yxsona.com --workspace ws_<管理员分配的工作区>。按提示完成浏览器授权后重启 ChatGPT。商家不能自行创建工作区。'
+        : `Store Nova连接配置未加载（缺少${missing}）。请重新加载插件连接或重启 ChatGPT；已保存的商品、SKU 和素材不会丢失。本次未向后端发送请求。`,
       recovery: {
-        state: 'configuration_required',
+        state: workspaceBindingMissing ? 'workspace_binding_required' : 'configuration_required',
         user_action_required: true,
         preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
-        resume_message: '继续',
+        resume_message: workspaceBindingMissing ? '管理员分配的工作区绑定完成后重试' : '继续',
+        ...(workspaceBindingMissing ? { next_action: { label: '联系平台管理员获取已分配的工作区 ID，然后运行本地插件登录脚本。', target: 'local_plugin_login', workspace_id_format: 'ws_...' } } : {}),
       },
     }
   }
@@ -2368,9 +2372,9 @@ function toolContent(method, result) {
       }
       return content
     }
-    if (status === 'clean') return [{ type: 'text', text: `图片检查已通过。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${sanitizeMerchantAction(result.next_step)}` : ''}`.trim() }]
+     if (status === 'clean') return [{ type: 'text', text: `图片检查已通过。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${sanitizeMerchantAction(result.next_step)}` : ''}`.trim() }]
     if (status === 'unscanned') return [{ type: 'text', text: `文件已上传，可继续使用。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${sanitizeMerchantAction(result.next_step)}` : ''}`.trim() }]
-    if (status === 'blocked') return [{ type: 'text', text: '这张图片暂时不能继续使用。素材已安全保留；平台会在你重新提交图片时自动复检，无需人工处理或提交扫描结果。' }]
+     if (status === 'blocked') return [{ type: 'text', text: '这张图片暂时不能继续使用。素材已安全保留；平台会在你重新提交图片时自动复检，无需人工处理或提交扫描结果。' }]
     return [{ type: 'text', text: '图片已收到，正在自动检查。检查通过后会等待你的确认再生成。' }]
   }
   if (method === 'content.export') return materializeExportArtifact(result).content
@@ -2783,14 +2787,9 @@ async function resolveGeneratedImagePreview(method, initialResult) {
 }
 
 async function callRemote(method, params) {
-  // A new Codex conversation must not force a merchant to understand
-  // workspace IDs or environment variables. Bootstrap is still explicit at
-  // the API boundary, but the bridge performs it once before the first
-  // merchant-facing entry point. Production never falls back to ws_demo.
+  // Workspace IDs are assigned by the platform administrator. Never create
+  // one from the merchant plugin; missing bindings fail closed below.
   assertTransportConfiguration()
-  if (method === 'merchant.start' && !configuredEnv('MERCHANT_WORKSPACE_ID') && !loadWorkspaceBinding() && !allowsLocalFixtureFallback()) {
-    await callRemote('workspace.bootstrap', { display_name: 'Store Nova商家工作区' })
-  }
   const scopedWorkspaceId = method === 'workspace.bootstrap' ? '' : workspaceId()
   const requestedWorkspaceId = typeof params?.workspace_id === 'string' ? params.workspace_id.trim() : ''
   if (scopedWorkspaceId && requestedWorkspaceId && requestedWorkspaceId !== scopedWorkspaceId) {

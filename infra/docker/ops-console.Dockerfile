@@ -5,14 +5,13 @@ ARG OPS_CONSOLE_AUTH_MODE
 ARG VITE_API_BASE
 ARG VITE_BASE=/
 ARG VITE_OPS_LOCAL_SESSION=false
-ARG VITE_OPS_LOGIN_URL
 RUN set -eu; \
     api_base="${VITE_API_BASE:-}"; \
     test -n "$api_base" || { echo >&2 "VITE_API_BASE is required"; exit 1; }; \
     case "$api_base" in *'?'*|*'#'*|*'@'*) echo >&2 "VITE_API_BASE must not contain query, fragment, or credentials"; exit 1;; esac; \
     case "$OPS_CONSOLE_BUILD_MODE" in \
       production) \
-        case "$OPS_CONSOLE_AUTH_MODE" in password|oidc) ;; *) echo >&2 "production OPS_CONSOLE_AUTH_MODE must be password or oidc"; exit 1;; esac; \
+        case "$OPS_CONSOLE_AUTH_MODE" in password) ;; *) echo >&2 "production Ops Console supports password authentication only"; exit 1;; esac; \
         case "$api_base" in https://*|/api) ;; *) echo >&2 "production VITE_API_BASE must be HTTPS or /api"; exit 1;; esac \
         ;; \
       local) \
@@ -30,7 +29,6 @@ ARG OPS_CONSOLE_AUTH_MODE
 ARG VITE_API_BASE
 ARG VITE_BASE
 ARG VITE_OPS_LOCAL_SESSION
-ARG VITE_OPS_LOGIN_URL
 ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
 COPY package.json package-lock.json ./
@@ -41,7 +39,7 @@ COPY packages/contracts packages/contracts
 COPY packages/application/src/spreadsheet-batch.ts packages/application/src/spreadsheet-batch.ts
 COPY apps/ops-console apps/ops-console
 RUN if [ "$OPS_CONSOLE_BUILD_MODE" = production ]; then auth_mode="$OPS_CONSOLE_AUTH_MODE"; build_mode="$OPS_CONSOLE_AUTH_MODE"; else auth_mode=local; build_mode=local; fi; \
-    VITE_API_BASE="$VITE_API_BASE" VITE_BASE="$VITE_BASE" VITE_OPS_AUTH_MODE="$auth_mode" VITE_OPS_BUILD_MODE="$build_mode" VITE_OPS_LOCAL_SESSION="$VITE_OPS_LOCAL_SESSION" VITE_OPS_LOGIN_URL="$VITE_OPS_LOGIN_URL" npm run build --workspace apps/ops-console
+    VITE_API_BASE="$VITE_API_BASE" VITE_BASE="$VITE_BASE" VITE_OPS_AUTH_MODE="$auth_mode" VITE_OPS_BUILD_MODE="$build_mode" VITE_OPS_LOCAL_SESSION="$VITE_OPS_LOCAL_SESSION" npm run build --workspace apps/ops-console
 ARG RELEASE_ID=unbound
 ARG RELEASE_GIT_SHA=unbound
 # Non-secret, build-time identity. Never infer UI freshness from its API proxy.

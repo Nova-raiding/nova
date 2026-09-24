@@ -11,7 +11,7 @@ import { openPlatformConsole } from './ops-auth.js'
 // No direct DB writes, payment, scanner, model calls, or shared credentials.
 const workspaceId = process.env.OPS_E2E_WORKSPACE_ID
 const outputDir = process.env.OPS_E2E_OUTPUT_DIR
-const baseUrl = process.env.OPS_OIDC_BASE_URL
+const baseUrl = process.env.OPS_BASE_URL
 if (!workspaceId || !outputDir || !baseUrl) throw new Error('ISOLATED_DELIVERY_READONLY_RUNNER_REQUIRED')
 const origin = new URL(baseUrl)
 if (origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || !origin.port || origin.pathname !== '/' || origin.username || origin.password || origin.search || origin.hash) throw new Error('DELIVERY_READONLY_REQUIRES_LOOPBACK_FIXTURE')
@@ -23,7 +23,7 @@ test.setTimeout(120_000)
 test('read-only platform operator can inspect every delivery section without mutation authority', async ({ page }, testInfo) => {
   const evidenceDir = join(outputDir, 'delivery-readonly')
   await mkdir(evidenceDir, { recursive: true })
-  const evidence = { status: 'failed', kind: 'real_oidc_durable_readonly_delivery', events: [], sharedDataTouched: false, credentialsSaved: false, scannerStarted: false }
+  const evidence = { status: 'failed', kind: 'real_password_session_durable_readonly_delivery', events: [], sharedDataTouched: false, credentialsSaved: false, scannerStarted: false }
   const rpc = async (method, params = {}, expectedStatus = 200) => {
     const response = await page.request.post(new URL('/api/mcp', origin).toString(), {
       headers: { 'x-ops-workbench': 'platform', 'x-workspace-id': workspaceId },

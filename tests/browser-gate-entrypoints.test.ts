@@ -7,7 +7,7 @@
  *
  *   1. `npm run check` chains none of `test:browser:merchant`,
  *      `test:browser:ops` or `test:browser:ops:jit`. The browser suites need
- *      Docker, a real browser and a signed OIDC identity; folding them into the
+ *      Docker, a real browser and an isolated password account; folding them into the
  *      deterministic local gate would turn every run red. That is a real gap,
  *      and this file records it (see
  *      `DECLARED_BROWSER_ENTRYPOINTS_UNINVOKED_BY_CHECK`) rather than asserting
@@ -83,7 +83,6 @@ const MERCHANT_SPECS = [
 const OPS_SPECS = [
   spec('ops-all.spec.js'),
   spec('ops-users.spec.js'),
-  spec('ops-workspace-visual.spec.js'),
   spec('ops.spec.js'),
 ].sort()
 
@@ -141,9 +140,9 @@ describe('browser gate entrypoints', () => {
     expect(specPathsIn('node --import tsx run.ts --workers=1')).toEqual([])
   })
 
-  it('runs exactly the four ops specs named in the test:browser:ops command', () => {
+  it('runs exactly the three Ops Console specs named in the test:browser:ops command', () => {
     const command = script('test:browser:ops')
-    expect(command).toContain('scripts/run-ops-oidc-e2e.ts')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
     expect(specPathsIn(command)).toEqual(OPS_SPECS)
     // The runner is launched with explicit paths; it must not point at a config.
     expect(command).not.toContain('--config')
@@ -160,10 +159,10 @@ describe('browser gate entrypoints', () => {
 
   it('gives test:browser:ops:jit no spec, so it runs the runner fallback spec', () => {
     const command = script('test:browser:ops:jit')
-    expect(command).toContain('scripts/run-ops-oidc-e2e.ts')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
     expect(specPathsIn(command)).toEqual([])
     expect(command).not.toContain('--config')
-    const runner = readFileSync(resolve(root, 'scripts/run-ops-oidc-e2e.ts'), 'utf8')
+    const runner = readFileSync(resolve(root, 'scripts/run-ops-password-e2e.ts'), 'utf8')
     // The runner's only literal spec path is the no-argument fallback, and its
     // argument validator rejects anything but spec paths, --workers=1 and
     // --grep, so `--config` can never reach the Playwright CLI through it.

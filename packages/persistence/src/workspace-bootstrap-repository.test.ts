@@ -40,6 +40,7 @@ const bootstrapInput = (overrides: Record<string, unknown> = {}) => ({
   candidateWorkspaceId: 'ws_candidate_a',
   displayName: '第一工作区',
   actorId: 'merchant-1',
+  allowCreate: true,
   ...overrides,
 })
 
@@ -51,8 +52,8 @@ describe('MemoryWorkspaceBootstrapRepository', () => {
     const repository = new MemoryWorkspaceBootstrapRepository(members, operations, workspaceId => statuses.set(workspaceId, 'active'), workspaceId => statuses.get(workspaceId) ?? 'active')
 
     const [first, second] = await Promise.all([
-      repository.bootstrap({ issuer: 'https://issuer.example', externalSubject: 'merchant-1', identityId: 'identity-1', candidateWorkspaceId: 'ws_candidate_a', displayName: '第一工作区', actorId: 'merchant-1' }),
-      repository.bootstrap({ issuer: 'https://issuer.example', externalSubject: 'merchant-1', identityId: 'identity-1', candidateWorkspaceId: 'ws_candidate_b', displayName: '第二工作区', actorId: 'merchant-1' }),
+      repository.bootstrap({ issuer: 'https://issuer.example', externalSubject: 'merchant-1', identityId: 'identity-1', candidateWorkspaceId: 'ws_candidate_a', displayName: '第一工作区', actorId: 'merchant-1', allowCreate: true }),
+      repository.bootstrap({ issuer: 'https://issuer.example', externalSubject: 'merchant-1', identityId: 'identity-1', candidateWorkspaceId: 'ws_candidate_b', displayName: '第二工作区', actorId: 'merchant-1', allowCreate: true }),
     ])
 
     expect(new Set([first.workspaceId, second.workspaceId])).toEqual(new Set(['ws_candidate_a']))
@@ -68,11 +69,26 @@ describe('MemoryWorkspaceBootstrapRepository', () => {
     const statuses = new Map<string, 'active' | 'disabled'>()
     const repository = new MemoryWorkspaceBootstrapRepository(members, operations, workspaceId => statuses.set(workspaceId, 'active'), workspaceId => statuses.get(workspaceId) ?? 'active')
 
-    const left = await repository.bootstrap({ issuer: 'https://issuer-a.example', externalSubject: 'shared-subject', candidateWorkspaceId: 'ws_issuer_a', displayName: 'A', actorId: 'shared-subject' })
-    const right = await repository.bootstrap({ issuer: 'https://issuer-b.example', externalSubject: 'shared-subject', candidateWorkspaceId: 'ws_issuer_b', displayName: 'B', actorId: 'shared-subject' })
+    const left = await repository.bootstrap({ issuer: 'https://issuer-a.example', externalSubject: 'shared-subject', candidateWorkspaceId: 'ws_issuer_a', displayName: 'A', actorId: 'shared-subject', allowCreate: true })
+    const right = await repository.bootstrap({ issuer: 'https://issuer-b.example', externalSubject: 'shared-subject', candidateWorkspaceId: 'ws_issuer_b', displayName: 'B', actorId: 'shared-subject', allowCreate: true })
 
     expect(left.workspaceId).toBe('ws_issuer_a')
     expect(right.workspaceId).toBe('ws_issuer_b')
+  })
+
+  it('resolves an existing binding without create authority and denies unassigned identities', async () => {
+    const members = new MemoryMembersRepository()
+    const operations = new MemoryOperationsRepository()
+    const activated: string[] = []
+    const repository = new MemoryWorkspaceBootstrapRepository(members, operations, workspaceId => { activated.push(workspaceId) }, () => 'active')
+    await repository.bootstrap(bootstrapInput())
+
+    await expect(repository.bootstrap(bootstrapInput({ candidateWorkspaceId: 'ws_must_not_exist', allowCreate: false })))
+      .resolves.toMatchObject({ workspaceId: 'ws_candidate_a', created: false })
+    await expect(repository.bootstrap(bootstrapInput({ externalSubject: 'unassigned-user', actorId: 'unassigned-user', allowCreate: false })))
+      .rejects.toMatchObject({ code: 'WORKSPACE_ADMIN_ASSIGNMENT_REQUIRED' })
+    expect(activated).toEqual(['ws_candidate_a'])
+    expect(await members.list('ws_must_not_exist')).toEqual([])
   })
 })
 
@@ -127,5 +143,13 @@ describe('PostgresWorkspaceBootstrapRepository pool routing', () => {
       .resolves.toMatchObject({ created: true })
     expect(control.calls).toEqual([])
     expect(tenant.calls.some(statement => statement.includes('platform_identities'))).toBe(false)
+  })
+
+  it('refuses unassigned identities without inserting tenant, member, binding, or audit rows', async () => {
+    const tenant = new StubPool()
+    const control = new StubPool({ id: 'identity-1' })
+    await expect(new PostgresWorkspaceBootstrapRepository(tenant, control).bootstrap(bootstrapInput({ allowCreate: false })))
+      .rejects.toMatchObject({ code: 'WORKSPACE_ADMIN_ASSIGNMENT_REQUIRED' })
+    expect(tenant.calls.some(statement => /INSERT INTO (workspaces|workspace_members|workspace_identity_bindings|workspace_operation_audit)/u.test(statement))).toBe(false)
   })
 })

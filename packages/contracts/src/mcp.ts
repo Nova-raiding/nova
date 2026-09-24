@@ -689,7 +689,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'workspace.bootstrap',
-    description: 'Create a new merchant workspace during first-run onboarding; returns the immutable workspace binding.',
+    description: 'Resolve the authenticated identity’s existing administrator-assigned workspace binding for local plugin setup. Strict deployments never create a tenant through this method.',
     params: params({ display_name: { type: 'string' }, external_subject: { type: 'string' } }, ['display_name']),
   },
   {

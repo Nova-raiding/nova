@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearOpsConnectionConfig,
+  clearExpiredOpsSession,
   abortOpsRequests,
   describeOpsError,
   hasOpsConnection,
@@ -9,8 +10,7 @@ import {
   opsRestPost,
   purgeLocalOpsCredentialsForManagedSession,
   readOpsConnectionConfig,
-  resolveManagedOpsLoginUrl,
-  resolveManagedOpsSession,
+  resolveLocalBearerSession,
   rpcForWorkspace,
   rpcWithMeta,
   saveOpsConnectionConfig,
@@ -18,42 +18,21 @@ import {
 import type { OpsRequestError } from "../types/ops.js";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import { ManagedOpsReauthentication } from "../components/ManagedOpsReauthentication.js";
 
 const storage = () => ({ getItem: (_key: string) => "", setItem: (_key: string, _value: string) => undefined, removeItem: (_key: string) => undefined, clear: () => undefined });
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("workspace RPC boundary", () => {
-  it("requires an explicit production auth mode and preserves the real password-session path", () => {
-    expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_AUTH_MODE: "local" })).toBe(true);
-    expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_BUILD_MODE: "local", VITE_OPS_AUTH_MODE: "local" })).toBe(false);
-    expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_BUILD_MODE: "password", VITE_OPS_AUTH_MODE: "password" })).toBe(false);
-    expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_BUILD_MODE: "password", VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
-    expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
-    expect(resolveManagedOpsSession({ PROD: false, VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
-    expect(resolveManagedOpsSession({ PROD: false, VITE_OPS_AUTH_MODE: "local" })).toBe(false);
-  });
-
-  it("uses only an explicitly configured safe SSO entry and fails closed when it is absent", () => {
-    expect(resolveManagedOpsLoginUrl({}, "https://ops.yxsona.com")).toBeUndefined();
-    expect(resolveManagedOpsLoginUrl({ VITE_OPS_LOGIN_URL: "/auth/login?return_to=%2Fops%2Foverview" }, "https://ops.yxsona.com"))
-      .toBe("https://ops.yxsona.com/auth/login?return_to=%2Fops%2Foverview");
-    expect(resolveManagedOpsLoginUrl({ VITE_OPS_LOGIN_URL: "https://idp.example.test/authorize?client_id=ops" }, "https://ops.yxsona.com"))
-      .toBe("https://idp.example.test/authorize?client_id=ops");
-    expect(resolveManagedOpsLoginUrl({ VITE_OPS_LOGIN_URL: "http://idp.example.test/authorize" }, "https://ops.yxsona.com")).toBeUndefined();
-    expect(resolveManagedOpsLoginUrl({ VITE_OPS_LOGIN_URL: "https://user:secret@idp.example.test/authorize" }, "https://ops.yxsona.com")).toBeUndefined();
-  });
-
-  it("does not offer a reload loop when the managed SSO entry is missing", () => {
-    const blocked = renderToStaticMarkup(createElement(ManagedOpsReauthentication, { detail: "UNAUTHENTICATED" }));
-    expect(blocked).toContain("组织登录入口未配置");
-    expect(blocked).toContain("当前发布未配置可验证的组织 SSO 登录地址");
-    expect(blocked).toContain("disabled");
-
-    const configured = renderToStaticMarkup(createElement(ManagedOpsReauthentication, { onReauthenticate: () => undefined }));
-    expect(configured).toContain("重新登录组织账号");
-    expect(configured).not.toContain("当前发布未配置");
+  it("uses password sessions in production and reserves bearer sessions for explicit local builds", () => {
+    expect(resolveLocalBearerSession({ PROD: true, VITE_OPS_AUTH_MODE: "local" })).toBe(false);
+    expect(resolveLocalBearerSession({ PROD: true, VITE_OPS_BUILD_MODE: "local", VITE_OPS_AUTH_MODE: "local" })).toBe(true);
+    expect(resolveLocalBearerSession({ PROD: true, VITE_OPS_BUILD_MODE: "password", VITE_OPS_AUTH_MODE: "password" })).toBe(false);
+    expect(resolveLocalBearerSession({ PROD: true, VITE_OPS_BUILD_MODE: "password", VITE_OPS_AUTH_MODE: "oidc" })).toBe(false);
+    expect(resolveLocalBearerSession({ PROD: true, VITE_OPS_AUTH_MODE: "oidc" })).toBe(false);
+    expect(resolveLocalBearerSession({ PROD: true })).toBe(false);
+    expect(resolveLocalBearerSession({ PROD: false, VITE_OPS_AUTH_MODE: "oidc" })).toBe(false);
+    expect(resolveLocalBearerSession({ PROD: false, VITE_OPS_AUTH_MODE: "local" })).toBe(false);
   });
 
   it("removes persisted local bearer credentials when the managed bundle starts", () => {
@@ -86,7 +65,7 @@ describe("workspace RPC boundary", () => {
     ]);
   });
 
-  it("atomically saves a local connection and reads the same tuple after refresh", async () => {
+  it("keeps API/workspace binding but never persists a bearer in password-session mode", async () => {
     const values = new Map<string, string>();
     const local = storage();
     vi.spyOn(local, "getItem").mockImplementation((key) => values.get(key) ?? "");
@@ -98,17 +77,15 @@ describe("workspace RPC boundary", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const saved = saveOpsConnectionConfig({ apiBase: "http://127.0.0.1:8787/", workspaceId: " ws_demo ", actorId: " actor_demo ", token: " pilot-local-token ", workbench: "platform" });
-    expect(saved).toEqual({ apiBase: "http://127.0.0.1:8787", workspaceId: "ws_demo", actorId: "actor_demo", token: "pilot-local-token", workbench: "platform" });
+    expect(saved).toEqual({ apiBase: "http://127.0.0.1:8787", workspaceId: "ws_demo", actorId: "", token: "", workbench: "platform" });
     expect(setItem).toHaveBeenCalledTimes(1);
     expect(readOpsConnectionConfig()).toEqual(saved);
-    expect(hasOpsConnection()).toBe(true);
+    expect(hasOpsConnection()).toBe(false);
 
     await rpcWithMeta("ops.session");
     expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:8787/mcp", expect.objectContaining({
       credentials: "same-origin",
       headers: expect.objectContaining({
-        authorization: "Bearer pilot-local-token",
-        "x-actor-id": "actor_demo",
         "x-ops-workbench": "platform",
       }),
     }));
@@ -140,7 +117,7 @@ describe("workspace RPC boundary", () => {
     expect(headers).not.toHaveProperty("x-workspace-id");
   });
 
-  it("uses cookie credentials for password-session RPC restores and keeps bearer mode unchanged", async () => {
+  it("uses cookie credentials for password-session RPC restores and ignores stale bearer values", async () => {
     const values = new Map<string, string>([
       ["ops_password_session_active", "true"],
       ["ops_api_base", "http://ops.test/"],
@@ -175,9 +152,10 @@ describe("workspace RPC boundary", () => {
       credentials: "same-origin",
       headers: expect.objectContaining({
         "x-ops-workbench": "workspace",
-        authorization: "Bearer token-rest",
       }),
     }));
+    const [, request] = fetchMockWithToken.mock.calls[0] as unknown as [string, RequestInit];
+    expect(request.headers).not.toHaveProperty("authorization");
   });
 
   it("never attaches a stale local bearer in the password cookie build", async () => {
@@ -240,8 +218,8 @@ describe("workspace RPC boundary", () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: { jsonrpc: "2.0", id: "1", result: {} } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    expect(readOpsConnectionConfig().token).toBe("platform-token");
-    expect(hasOpsConnection()).toBe(true);
+    expect(readOpsConnectionConfig().token).toBe("");
+    expect(hasOpsConnection()).toBe(false);
 
     await logoutPlatformOps();
     expect(fetchMock).toHaveBeenCalledWith("http://ops.test/v1/auth/logout", expect.objectContaining({ method: "POST" }));
@@ -254,7 +232,7 @@ describe("workspace RPC boundary", () => {
     expect(hasOpsConnection()).toBe(false);
   });
 
-  it("rejects a local bearer that survives the connection config wipe", () => {
+  it("keeps the password login available after removing a stale local bearer", () => {
     const values = new Map<string, string>([["ops_api_token", "legacy-platform-token"]]);
     const local = storage();
     vi.spyOn(local, "getItem").mockImplementation((key) => values.get(key) ?? "");
@@ -266,6 +244,26 @@ describe("workspace RPC boundary", () => {
     expect(values.has("ops_api_token")).toBe(false);
     expect(readOpsConnectionConfig().token).toBe("");
     expect(hasOpsConnection()).toBe(false);
+  });
+
+  it("clears the persisted password-session hint when the server rejects the session", () => {
+    const values = new Map<string, string>([
+      ["ops_password_session_active", "true"],
+      ["ops_connection_config_v1", JSON.stringify({ apiBase: "/api", workspaceId: "ws-expired", workbench: "workspace" })],
+      ["ops_workbench", "workspace"],
+    ]);
+    const local = storage();
+    vi.spyOn(local, "getItem").mockImplementation((key) => values.get(key) ?? "");
+    vi.spyOn(local, "removeItem").mockImplementation((key) => { values.delete(key); });
+    vi.stubGlobal("localStorage", local);
+    vi.stubGlobal("sessionStorage", storage());
+
+    clearExpiredOpsSession();
+
+    expect(values.has("ops_password_session_active")).toBe(false);
+    expect(values.has("ops_connection_config_v1")).toBe(false);
+    expect(values.has("ops_workbench")).toBe(false);
+    expect(readOpsConnectionConfig().workspaceId).toBe("");
   });
 
   it("recovers from corrupt versioned configuration through the legacy local keys", () => {
@@ -283,7 +281,7 @@ describe("workspace RPC boundary", () => {
     vi.stubGlobal("localStorage", local);
     vi.stubGlobal("sessionStorage", storage());
 
-    expect(readOpsConnectionConfig()).toEqual({ apiBase: "http://127.0.0.1:8787", workspaceId: "ws_demo", actorId: "actor_demo", token: "pilot-local-token", workbench: "workspace" });
+    expect(readOpsConnectionConfig()).toEqual({ apiBase: "http://127.0.0.1:8787", workspaceId: "ws_demo", actorId: "", token: "", workbench: "workspace" });
     expect(values.has("ops_connection_config_v1")).toBe(false);
   });
 
@@ -333,7 +331,10 @@ describe("workspace RPC boundary", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(opsRestGetWithMeta<{ status: string; items: unknown[] }>("/v1/delivery-readiness")).resolves.toMatchObject({ state: "data", data: { status: "unverified", items: [] }, meta: { requestId: "req-rest", workspaceId: "ws-rest" } });
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://ops.test/v1/delivery-readiness", expect.objectContaining({ method: "GET", credentials: "same-origin", headers: expect.objectContaining({ authorization: "Bearer token-rest", "x-actor-id": "actor-rest", "x-workspace-id": "ws-rest", "x-ops-workbench": "workspace" }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://ops.test/v1/delivery-readiness", expect.objectContaining({ method: "GET", credentials: "same-origin", headers: expect.objectContaining({ "x-workspace-id": "ws-rest", "x-ops-workbench": "workspace" }) }));
+    const [, request] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(request.headers).not.toHaveProperty("authorization");
+    expect(request.headers).not.toHaveProperty("x-actor-id");
     await expect(opsRestGetWithMeta("/v1/delivery-readiness")).resolves.toMatchObject({ state: "empty", data: null });
   });
 

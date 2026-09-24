@@ -52,12 +52,6 @@ export const UNINVOKED_SCRIPTS: readonly UninvokedScript[] = [
     reason: 'Kubernetes and ACK are outside the current ECS release scope. This dedicated suite remains runnable when that deployment target is explicitly authorized, while the ECS release gate does not invoke it.',
   },
   {
-    script: 'dev:ops-console:oidc-gateway',
-    category: 'local-dev',
-    requires: 'A developer workstation with Ops Console running locally',
-    reason: 'Manual local helper (tests/local-oidc-gateway.ts). It is started by hand while a human drives the Ops Console login flow; it has no assertion and must never gate a delivery.',
-  },
-  {
     script: 'dev:stack:relay',
     category: 'local-dev',
     requires: 'A local Docker daemon and a relay credential in the developer environment',

@@ -10,13 +10,13 @@ import { openWorkspaceConsole } from './ops-auth.js'
 // Owner-owned acceptance snapshot: browser response evidence uses exact RPC ids.
 // This spec is intentionally runner-only. The managed runner supplies an
 // isolated PG17/Redis/OIDC stack and refuses shared bearer fixtures.
-const baseUrl = process.env.OPS_OIDC_BASE_URL
+const baseUrl = process.env.OPS_BASE_URL
 const workspaceId = process.env.OPS_E2E_WORKSPACE_ID
 const outputDir = process.env.OPS_E2E_OUTPUT_DIR
 const realDeliveryScan = process.env.OPS_E2E_REAL_DELIVERY_SCAN === 'true'
-if (!baseUrl || !workspaceId || !outputDir) throw new Error('Run through scripts/run-ops-oidc-e2e.ts with OPS_OIDC_BASE_URL, OPS_E2E_WORKSPACE_ID and OPS_E2E_OUTPUT_DIR')
+if (!baseUrl || !workspaceId || !outputDir) throw new Error('Run through scripts/run-ops-password-e2e.ts with OPS_BASE_URL, OPS_E2E_WORKSPACE_ID and OPS_E2E_OUTPUT_DIR')
 const origin = new URL(baseUrl)
-if (origin.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname) || !origin.port || origin.pathname !== '/' || origin.username || origin.password || origin.search || origin.hash) throw new Error('OPS_OIDC_BASE_URL must be an explicit loopback origin')
+if (origin.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname) || !origin.port || origin.pathname !== '/' || origin.username || origin.password || origin.search || origin.hash) throw new Error('OPS_BASE_URL must be an explicit loopback origin')
 
 test.describe.configure({ mode: 'serial', retries: 0 })
 test.use({ channel: 'chrome', timezoneId: 'Asia/Shanghai', viewport: { width: 1440, height: 900 }, trace: 'off', video: 'off', screenshot: 'off' })
@@ -288,7 +288,7 @@ async function verifyCleanContractReuse(page, targetWorkspaceId, file, assetRef,
   let requestNumber = 0
   const hash = sha256(file.buffer)
   const call = async (method, params) => {
-    // The context request shares the current signed OIDC cookie jar. No bearer,
+    // The context request shares the current password-session cookie jar. No bearer,
     // copied credentials, or mocked repository is introduced for this PG check.
     let response
     try {
@@ -426,8 +426,8 @@ async function login(page) {
   }, { workspaceId })
   await page.goto(new URL('/ops/customer-delivery?workbench=platform', origin).toString(), { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('textbox', { name: '运营账号', exact: true })).toBeVisible()
-  await page.getByRole('textbox', { name: '运营账号', exact: true }).fill(process.env.LOCAL_OIDC_TEST_USERNAME)
-  await page.getByLabel('密码', { exact: true }).fill(process.env.LOCAL_OIDC_TEST_PASSWORD)
+  await page.getByRole('textbox', { name: '运营账号', exact: true }).fill(process.env.OPS_TEST_USERNAME)
+  await page.getByLabel('密码', { exact: true }).fill(process.env.OPS_TEST_PASSWORD)
   await page.getByRole('button', { name: '安全登录', exact: true }).click()
   await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('已由服务端验证', { timeout: 30_000 })
   await expect(page.getByRole('heading', { name: '客户交付', exact: true })).toBeVisible({ timeout: 30_000 })
@@ -442,7 +442,7 @@ async function closeDrawer(page) {
 }
 
 async function verifyWorkspaceCannotAccessDelivery(browser, deliveryId, assetRef, file, evidence) {
-  const workspaceBaseUrl = process.env.OPS_WORKSPACE_OIDC_BASE_URL
+  const workspaceBaseUrl = process.env.OPS_WORKSPACE_BASE_URL
   if (!workspaceBaseUrl) throw new Error('ISOLATED_WORKSPACE_OIDC_REQUIRED')
   const workspaceOrigin = new URL(workspaceBaseUrl)
   if (workspaceOrigin.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(workspaceOrigin.hostname) || !workspaceOrigin.port || workspaceOrigin.pathname !== '/' || workspaceOrigin.username || workspaceOrigin.password || workspaceOrigin.search || workspaceOrigin.hash || workspaceOrigin.origin === origin.origin) throw new Error('WORKSPACE_OIDC_MUST_BE_A_SEPARATE_LOOPBACK_ORIGIN')

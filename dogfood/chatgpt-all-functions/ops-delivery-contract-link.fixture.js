@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { openPlatformConsole } from './ops-auth.js'
 
 // Runner-only: no shared session, browser routes, simulated scanner or receipt.
-const baseUrl = process.env.OPS_OIDC_BASE_URL
+const baseUrl = process.env.OPS_BASE_URL
 const workspaceId = process.env.OPS_E2E_WORKSPACE_ID
 const outputDir = process.env.OPS_E2E_OUTPUT_DIR
 if (!baseUrl || !workspaceId || !outputDir || process.env.OPS_E2E_REAL_DELIVERY_SCAN !== 'true') throw new Error('CONTRACT_LINK_REAL_ISOLATED_RUNNER_REQUIRED')

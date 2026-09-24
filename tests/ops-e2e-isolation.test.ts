@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { disposeOpsE2eResources, fetchOpsE2eHealth, monitorOpsE2eScanner, opsChildEnvironment, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout } from '../scripts/run-ops-oidc-e2e.js'
+import { disposeOpsE2eResources, fetchOpsE2eHealth, monitorOpsE2eScanner, opsChildEnvironment, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout } from '../scripts/run-ops-password-e2e.js'
 
 const { forbidRuntimeResources } = vi.hoisted(() => ({
   forbidRuntimeResources: vi.fn(() => { throw new Error('OPS_E2E_RESOURCE_CREATION_ATTEMPTED') }),
@@ -24,17 +24,13 @@ vi.mock('./isolated-ops-fixture.js', async importOriginal => {
   const actual = await importOriginal<typeof import('./isolated-ops-fixture.js')>()
   return { ...actual, createIsolatedOpsFixture: forbidRuntimeResources }
 })
-vi.mock('./local-oidc-gateway.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('./local-oidc-gateway.js')>()
-  return { ...actual, createLocalOidcGateway: forbidRuntimeResources }
-})
 vi.mock('../scripts/customer-delivery-scan-fixture.js', async importOriginal => {
   const actual = await importOriginal<typeof import('../scripts/customer-delivery-scan-fixture.js')>()
   return { ...actual, startCustomerDeliveryScanFixture: forbidRuntimeResources }
 })
 
 describe('Ops browser acceptance isolation', () => {
-  const source = readFileSync('scripts/run-ops-oidc-e2e.ts', 'utf8')
+  const source = readFileSync('scripts/run-ops-password-e2e.ts', 'utf8')
   it('provisions its own persistence instead of copying a running business service', () => {
     expect(source).toContain('createIsolatedOpsFixture')
     expect(source).not.toContain('inspected.Config.Env')
@@ -82,7 +78,7 @@ describe('Ops browser acceptance isolation', () => {
     const body = source.slice(source.indexOf('export async function runOpsE2e('))
     const validation = body.indexOf('validateOpsE2eScannerStartupTimeout(source)')
     expect(validation).toBeGreaterThan(-1)
-    for (const firstResource of ['mkdirSync(', 'createIsolatedOpsFixture(', 'freeLoopbackPort(', 'startCustomerDeliveryScanFixture(', 'createLocalOidcGateway(', 'spawn(']) {
+    for (const firstResource of ['mkdirSync(', 'createIsolatedOpsFixture(', 'freeLoopbackPort(', 'startCustomerDeliveryScanFixture(', 'createOpsPasswordProxy(', 'spawn(']) {
       expect(body.indexOf(firstResource)).toBeGreaterThan(validation)
     }
     expect(body).toContain('startupTimeoutMs: scannerStartupTimeoutMs')

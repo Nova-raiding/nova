@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setOAuthStateStoreForTests, setPaymentProviderForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
+import { request as httpRequest } from 'node:http'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, productionReadinessDiagnostics, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setOAuthStateStoreForTests, setPaymentProviderForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
 import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/security/src/redis-oauth.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
@@ -24,6 +25,22 @@ async function start() {
 
 async function json(response: Response) { return { response, body: await response.json() as Envelope } }
 
+async function requestThroughHost(base: string, path: string, host: string, headers: Record<string, string> = {}) {
+  const target = new URL(base)
+  return new Promise<{ status: number; body: Envelope }>((resolve, reject) => {
+    const request = httpRequest({ hostname: target.hostname, port: Number(target.port), path, method: 'GET', headers: { ...headers, host } }, response => {
+      const chunks: Buffer[] = []
+      response.on('data', chunk => chunks.push(Buffer.from(chunk)))
+      response.on('end', () => {
+        try { resolve({ status: response.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as Envelope }) }
+        catch (error) { reject(error) }
+      })
+    })
+    request.on('error', reject)
+    request.end()
+  })
+}
+
 function workerProofHeaders(input: { role: WorkerRequestRole; secret: string; method: string; path: string; workspaceId: string; body?: string }) {
   return createWorkerRequestProof({ secret: input.secret, role: input.role, method: input.method, requestTarget: input.path, workspaceId: input.workspaceId, body: input.body }).headers
 }
@@ -44,19 +61,6 @@ function workerDecisionContent(productId: string) {
       },
     }],
   }
-}
-
-function signedOidcBootstrap(input: { issuer: string; subject: string; nonce: string; displayName: string; externalSubject?: string }) {
-  const path = '/mcp'
-  const timestamp = String(Math.floor(Date.now() / 1000))
-  const authTime = String(Number(timestamp) - 10)
-  const sessionExpiresAt = String(Number(timestamp) + 3600)
-  const sessionId = `session-${input.nonce}`
-  const body = JSON.stringify({ jsonrpc: '2.0', id: input.nonce, method: 'workspace.bootstrap', params: { display_name: input.displayName, ...(input.externalSubject ? { external_subject: input.externalSubject } : {}) } })
-  const bodyDigest = createHash('sha256').update(body).digest('hex')
-  const canonical = ['POST', path, '', 'workspace', input.issuer, input.subject, sessionId, '', '', authTime, sessionExpiresAt, timestamp, bodyDigest, input.nonce].join('\n')
-  const signature = createHmac('sha256', 'oidc-test-secret').update(canonical).digest('hex')
-  return { body, headers: { 'content-type': 'application/json', 'x-workspace-bootstrap': 'true', 'x-oidc-workbench': 'workspace', 'x-oidc-issuer': input.issuer, 'x-oidc-sub': input.subject, 'x-oidc-sid': sessionId, 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': sessionExpiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-body-sha256': bodyDigest, 'x-oidc-nonce': input.nonce, 'x-oidc-signature': signature } }
 }
 
 async function configureBearerMembers(entries: Array<{ token: string; workspaceId: string; actorId?: string; role?: 'workspace_owner' | 'merchant_admin' | 'operator' | 'support' | 'finance' | 'platform_ops'; grantWorkspaces?: string[]; gatewayRoles?: string[]; deniedCapabilities?: string[]; workbenches?: Array<'platform' | 'workspace'> }>) {
@@ -1355,144 +1359,40 @@ describe('security and access-control acceptance gates', () => {
     expect(allowed.status).toBe(200)
   })
 
-  it('accepts only a short-lived signed OIDC gateway identity in managed ops mode', async () => {
+  it('rejects retired OIDC configuration and does not authenticate signed headers', async () => {
     vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('OPS_AUTH_MODE', 'oidc')
-    vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', 'oidc-test-secret')
-    await workspaceMembers.upsert({ workspaceId: 'ws_oidc', externalSubject: 'oidc-user', displayName: 'oidc-user', role: 'merchant_admin', status: 'active', invitedBy: 'security-test' })
-    await grantCreativePointsForTests('ws_oidc')
-    grantContinuousFeatureEntitlementForTests('ws_oidc')
-    service.registerPlatformAccount({ workspaceId: 'ws_oidc', platform: 'taobao', remoteAccountId: 'oidc-store', credentialRef: 'vault://oidc-store' })
+    expect(productionReadinessDiagnostics({ NODE_ENV: 'production', OPS_AUTH_MODE: 'password', MCP_INTEGRATION_MODE: 'local_stdio', OIDC_PROXY_SIGNING_SECRET: 'retired-secret' }).gates.identity?.reasons ?? []).toContain('retired_external_auth_settings_present')
+    vi.stubEnv('OPS_AUTH_MODE', 'password')
     const base = await start()
-    const path = '/v1/products'
-    const timestamp = String(Math.floor(Date.now() / 1000))
-    const authTime = String(Number(timestamp) - 10)
-    const sessionExpiresAt = String(Number(timestamp) + 3600)
-    const bodyDigest = createHash('sha256').update('').digest('hex')
-    const nonce = `oidc-get-${Date.now()}-nonce`
-    const canonical = ['GET', path, 'ws_oidc', 'workspace', 'https://issuer.example.com', 'oidc-user', 'oidc-session-1', 'merchant_admin,operator', 'mfa', authTime, sessionExpiresAt, timestamp, bodyDigest, nonce].join('\n')
-    const signature = createHmac('sha256', 'oidc-test-secret').update(canonical).digest('hex')
-    const headers = { 'x-workspace-id': 'ws_oidc', 'x-oidc-workbench': 'workspace', 'x-oidc-issuer': 'https://issuer.example.com', 'x-oidc-sub': 'oidc-user', 'x-oidc-sid': 'oidc-session-1', 'x-oidc-workspace': 'ws_oidc', 'x-oidc-roles': 'operator,merchant_admin', 'x-oidc-amr': 'mfa', 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': sessionExpiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-body-sha256': bodyDigest, 'x-oidc-nonce': nonce, 'x-oidc-signature': signature }
-    const missing = await fetch(`${base}${path}`, { headers: { 'x-workspace-id': 'ws_oidc' } })
-    expect(missing.status).toBe(401)
-    const queryTampered = await fetch(`${base}${path}?limit=1`, { headers })
-    expect(queryTampered.status).toBe(401)
-    const workbenchTampered = await fetch(`${base}${path}`, { headers: { ...headers, 'x-oidc-workbench': 'platform' } })
-    expect(workbenchTampered.status).toBe(401)
-    const workbenchMissing = await fetch(`${base}${path}`, { headers: Object.fromEntries(Object.entries(headers).filter(([name]) => name !== 'x-oidc-workbench')) })
-    expect(workbenchMissing.status).toBe(401)
-    expect((await workbenchMissing.json() as Envelope).error?.code).toBe('AUTHZ_WORKBENCH_ASSERTION_INVALID')
-    const allowed = await fetch(`${base}${path}`, { headers })
-    expect(allowed.status).toBe(200)
-    const conflicting = await fetch(`${base}${path}`, { headers: { ...headers, 'x-workspace-id': 'ws_other' } })
-    expect(conflicting.status).toBe(403)
-    const bearer = await fetch(`${base}${path}`, { headers: { authorization: 'Bearer ignored', 'x-workspace-id': 'ws_oidc' } })
-    expect(bearer.status).toBe(401)
+    const response = await fetch(`${base}/v1/products`, { headers: {
+      'x-workspace-id': 'ws_retired_oidc', 'x-oidc-workbench': 'workspace',
+      'x-oidc-issuer': 'https://issuer.example.com', 'x-oidc-sub': 'forged-operator',
+      'x-oidc-roles': 'merchant_admin', 'x-oidc-signature': 'forged-signature',
+    } })
+    expect(response.status).toBe(401)
+    expect((await response.json() as Envelope).error?.code).toBe('UNAUTHENTICATED')
   })
 
-  it('keeps the merchant host bearer boundary separate from the OIDC ops host', async () => {
+  it('keeps the merchant host bearer boundary separate from the password-authenticated Ops host', async () => {
     vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('OPS_AUTH_MODE', 'oidc')
-    vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', 'oidc-test-secret')
-    // The ephemeral test server is addressed through 127.0.0.1; production
-    // sets this to merchant.example.com in the Kubernetes ConfigMap.
-    vi.stubEnv('MERCHANT_BEARER_HOSTNAME', '127.0.0.1')
+    vi.stubEnv('OPS_AUTH_MODE', 'password')
+    // Exercise the production reverse-proxy Host contract while the test
+    // server itself remains bound to loopback.
+    vi.stubEnv('MERCHANT_BEARER_HOSTNAME', 'yxsona.com')
+    vi.stubEnv('PUBLIC_OPS_BASE_URL', 'https://ops.yxsona.com')
     await configureBearerMembers([{ token: 'merchant-ui-token', workspaceId: 'ws_merchant_host' }])
     await grantCreativePointsForTests('ws_merchant_host')
     grantContinuousFeatureEntitlementForTests('ws_merchant_host')
     service.registerPlatformAccount({ workspaceId: 'ws_merchant_host', platform: 'taobao', remoteAccountId: 'merchant-host-store', credentialRef: 'vault://merchant-host-store' })
     const base = await start()
     const path = '/v1/products'
-    const merchant = await fetch(`${base}${path}`, { headers: { authorization: 'Bearer merchant-ui-token', 'x-workspace-id': 'ws_merchant_host' } })
+    const merchant = await requestThroughHost(base, path, 'yxsona.com', { authorization: 'Bearer merchant-ui-token', 'x-workspace-id': 'ws_merchant_host' })
     expect(merchant.status).toBe(200)
-    const merchantEscalation = await fetch(`${base}${path}`, { headers: { authorization: 'Bearer merchant-ui-token', 'x-workspace-id': 'ws_merchant_host', 'x-ops-workbench': 'platform' } })
+    const merchantEscalation = await requestThroughHost(base, path, 'yxsona.com', { authorization: 'Bearer merchant-ui-token', 'x-workspace-id': 'ws_merchant_host', 'x-ops-workbench': 'platform' })
     expect(merchantEscalation.status).toBe(403)
-    expect((await merchantEscalation.json() as Envelope).error?.code).toBe('AUTHZ_WORKBENCH_FORBIDDEN')
-    vi.stubEnv('MERCHANT_BEARER_HOSTNAME', 'ops.merchant.example.com')
-    const opsBearer = await fetch(`${base}${path}`, { headers: { host: 'ops.merchant.example.com', authorization: 'Bearer merchant-ui-token', 'x-workspace-id': 'ws_merchant_host' } })
+    expect(merchantEscalation.body.error?.code).toBe('AUTHZ_WORKBENCH_FORBIDDEN')
+    const opsBearer = await requestThroughHost(base, path, 'ops.yxsona.com', { authorization: 'Bearer merchant-ui-token', 'x-workspace-id': 'ws_merchant_host' })
     expect(opsBearer.status).toBe(401)
-  })
-
-  it('allows a signed OIDC identity to bootstrap once before a workspace is assigned', async () => {
-    vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('OPS_AUTH_MODE', 'oidc')
-    vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', 'oidc-test-secret')
-    const base = await start()
-    const path = '/mcp'
-    const timestamp = String(Math.floor(Date.now() / 1000))
-    const authTime = String(Number(timestamp) - 10)
-    const sessionExpiresAt = String(Number(timestamp) + 3600)
-    const requestBody = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.bootstrap', params: { display_name: 'OIDC 首次工作区' } })
-    const bodyDigest = createHash('sha256').update(requestBody).digest('hex')
-    const nonce = `oidc-bootstrap-${Date.now()}-1`
-    const canonical = ['POST', path, '', 'workspace', 'https://issuer.example.com', 'new-oidc-user', 'bootstrap-session-1', '', '', authTime, sessionExpiresAt, timestamp, bodyDigest, nonce].join('\n')
-    const signature = createHmac('sha256', 'oidc-test-secret').update(canonical).digest('hex')
-    const headers = {
-      'content-type': 'application/json',
-      'x-workspace-bootstrap': 'true',
-      'x-oidc-workbench': 'workspace',
-      'x-oidc-issuer': 'https://issuer.example.com',
-      'x-oidc-sub': 'new-oidc-user',
-      'x-oidc-sid': 'bootstrap-session-1',
-      'x-oidc-auth-time': authTime,
-      'x-oidc-session-expires-at': sessionExpiresAt,
-      'x-oidc-timestamp': timestamp,
-      'x-oidc-body-sha256': bodyDigest,
-      'x-oidc-nonce': nonce,
-      'x-oidc-signature': signature,
-    }
-    const response = await fetch(`${base}${path}`, { method: 'POST', headers, body: requestBody }).then(json)
-    expect(response.body.error).toBeNull()
-    expect((response.body.data as { result: { workspaceId: string; owner: { actorId: string } } }).result).toMatchObject({ workspaceId: expect.stringMatching(/^ws_[a-f0-9]{24}$/), owner: { actorId: 'new-oidc-user' } })
-    const replay = await fetch(`${base}${path}`, { method: 'POST', headers, body: requestBody })
-    expect(replay.status).toBe(401)
-    expect((await replay.json() as Envelope).error?.code).toBe('UNAUTHENTICATED')
-    const substituted = await fetch(`${base}${path}`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'workspace.bootstrap', params: { display_name: '被替换的请求体' } }) })
-    expect(substituted.status).toBe(401)
-    expect((await substituted.json() as Envelope).error?.code).toBe('UNAUTHENTICATED')
-  })
-
-  it('reuses bootstrap by signed issuer and subject while isolating another issuer', async () => {
-    vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('OPS_AUTH_MODE', 'oidc')
-    vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', 'oidc-test-secret')
-    const base = await start()
-    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-    const subject = `bootstrap-idempotent-${suffix}`
-    const firstRequest = signedOidcBootstrap({ issuer: 'https://issuer-a.example.com', subject, nonce: `bootstrap-a1-${suffix}`, displayName: '首次可信工作区' })
-    const secondRequest = signedOidcBootstrap({ issuer: 'https://issuer-a.example.com', subject, nonce: `bootstrap-a2-${suffix}`, displayName: '不得覆盖名称' })
-    const isolatedRequest = signedOidcBootstrap({ issuer: 'https://issuer-b.example.com', subject, nonce: `bootstrap-b1-${suffix}`, displayName: '另一发行方工作区' })
-
-    const first = await fetch(`${base}/mcp`, { method: 'POST', ...firstRequest }).then(json)
-    const second = await fetch(`${base}/mcp`, { method: 'POST', ...secondRequest }).then(json)
-    const isolated = await fetch(`${base}/mcp`, { method: 'POST', ...isolatedRequest }).then(json)
-    const firstResult = (first.body.data as { result: { workspaceId: string; displayName: string; reused: boolean; owner: { issuer: string; externalSubject: string } } }).result
-    const secondResult = (second.body.data as { result: typeof firstResult }).result
-    const isolatedResult = (isolated.body.data as { result: typeof firstResult }).result
-
-    expect(firstResult).toMatchObject({ reused: false, displayName: '首次可信工作区', owner: { issuer: 'https://issuer-a.example.com', externalSubject: subject } })
-    expect(secondResult).toMatchObject({ workspaceId: firstResult.workspaceId, reused: true, displayName: '首次可信工作区' })
-    expect(isolatedResult).toMatchObject({ reused: false, owner: { issuer: 'https://issuer-b.example.com', externalSubject: subject } })
-    expect(isolatedResult.workspaceId).not.toBe(firstResult.workspaceId)
-  })
-
-  it('does not allow bootstrap to assign ownership to a different external subject', async () => {
-    vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('OPS_AUTH_MODE', 'oidc')
-    vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', 'oidc-test-secret')
-    const base = await start()
-    const path = '/mcp'
-    const timestamp = String(Math.floor(Date.now() / 1000))
-    const authTime = String(Number(timestamp) - 10)
-    const sessionExpiresAt = String(Number(timestamp) + 3600)
-    const requestBody = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.bootstrap', params: { display_name: '错误 owner 工作区', external_subject: 'different-user' } })
-    const bodyDigest = createHash('sha256').update(requestBody).digest('hex')
-    const nonce = `oidc-bootstrap-${Date.now()}-2`
-    const canonical = ['POST', path, '', 'workspace', 'https://issuer.example.com', 'authenticated-user', 'bootstrap-session-2', '', '', authTime, sessionExpiresAt, timestamp, bodyDigest, nonce].join('\n')
-    const signature = createHmac('sha256', 'oidc-test-secret').update(canonical).digest('hex')
-    const response = await fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-bootstrap': 'true', 'x-oidc-workbench': 'workspace', 'x-oidc-issuer': 'https://issuer.example.com', 'x-oidc-sub': 'authenticated-user', 'x-oidc-sid': 'bootstrap-session-2', 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': sessionExpiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-body-sha256': bodyDigest, 'x-oidc-nonce': nonce, 'x-oidc-signature': signature }, body: requestBody })
-    expect(response.status).toBe(403)
-    expect((await response.json() as Envelope).error?.code).toBe('FORBIDDEN')
   })
 
   it('rejects wildcard workspace grants in production even if the local deployment flags are enabled', async () => {

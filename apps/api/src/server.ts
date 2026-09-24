@@ -58,7 +58,6 @@ import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/sec
 import { assetScanReceiptDigest, parseAssetScanReceipt, verifyAssetScanReceiptSignature, type SignedAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
 import { verifyScannerRequestProof } from '../../../packages/security/src/scanner-request-proof.js'
 import { verifyWorkerRequestProof, WORKER_ROLES, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
-import { bindOidcDisplayLoginProof } from '../../../packages/security/src/oidc-login-proof.js'
 import { LOCAL_PLUGIN_CLIENT_ID, LocalPluginAuthorizationRequestError, localPluginAuthorizationHtml, localPluginLoginRequiredHtml, parseLocalPluginAuthorizationRequest, parseLocalPluginTokenRequest } from './local-plugin-auth.js'
 import { LocalPluginConnectionError, MemoryLocalPluginConnectionRepository, PostgresLocalPluginConnectionRepository, type LocalPluginConnectionRepository } from '../../../packages/persistence/src/local-plugin-connection-repository.js'
 import { LocalPluginInstallInstanceError, MemoryLocalPluginInstallInstanceRepository, PostgresLocalPluginInstallInstanceRepository, type LocalPluginInstallInstanceRepository } from '../../../packages/persistence/src/local-plugin-install-instance-repository.js'
@@ -262,7 +261,7 @@ async function getActionLedgerWithHistoricalImageCompat(workspaceId: string, act
   return historical ? { action: historical, actionKey: historicalActionKey } : { action: exact, actionKey }
 }
 
-async function recordRelayUsage(usage: RelayUsageRecord) {
+async function recordRelayUsage(usage: RelayUsageRecord, options: { deferCreativePointSettlementToWorker?: boolean } = {}) {
   if (isProduction() && !usage.workspaceId?.trim()) throw new Error('MODEL_USAGE_WORKSPACE_REQUIRED')
   if (isProduction() && !usage.actionId?.trim()) throw new Error('MODEL_USAGE_ACTION_REQUIRED')
   if (isProduction() && !usage.runKey?.trim()) throw new Error('MODEL_USAGE_RUN_KEY_REQUIRED')
@@ -326,7 +325,7 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
   const creativeReservation = usage.actionId && creativePointsRepository?.getReservationByActionKey
     ? await creativePointsRepository.getReservationByActionKey(workspaceId, usage.actionId)
     : null
-  if (creativeReservation?.status === 'active') {
+  if (!options.deferCreativePointSettlementToWorker && creativeReservation?.status === 'active') {
     if (!persistence.creativePointLifecycle || usage.costCny === undefined) throw new DomainError('POINT_SETTLEMENT_EVIDENCE_UNAVAILABLE', '模型回执缺少创意点结算所需的持久化用量、成本或 provider 回执仓储', 503)
     const providerRequestId = usage.providerRequestId ?? usage.providerAttemptId
     if (!providerRequestId) throw new DomainError('MODEL_USAGE_RECEIPT_IDENTITY_MISSING', '模型回执缺少真实 provider request id，创意点保持预留并等待对账', 409)
@@ -769,7 +768,6 @@ export function setOAuthStateStoreForTests(override?: { store: OAuthStateRuntime
 function oauthStateStore() { return oauthStateStoreOverrideForTests?.store ?? defaultOauthStateStore }
 function oauthStateStoreProductionReady() { return oauthStateStoreOverrideForTests?.satisfiesProductionRedisRequirement ?? Boolean(redisOAuthPort) }
 const redisRateLimit = createRedisRateLimit(process.env.REDIS_URL)
-const redisOidcNonce = createRedisOidcNonce(process.env.REDIS_URL)
 const redisAssetScannerNonce = createRedisAssetScannerNonce(process.env.REDIS_URL)
 const redisWorkerNonce = createRedisWorkerNonce(process.env.REDIS_URL)
 const redisHealth = createRedisHealth(process.env.REDIS_URL)
@@ -988,7 +986,7 @@ function createRedisOAuthPort(url: string | undefined): OAuthRedisPort | undefin
 }
 
 interface RedisRateLimitPort { increment(key: string, ttlSeconds: number): Promise<number> }
-interface RedisOidcNoncePort { consume(nonce: string, ttlSeconds: number): Promise<boolean> }
+interface RedisOneTimeNoncePort { consume(nonce: string, ttlSeconds: number): Promise<boolean> }
 interface RedisHealthPort {
   ping(): Promise<void>
   scannerHeartbeats(nowEpochMs: number): Promise<unknown[]>
@@ -1016,21 +1014,7 @@ function createRedisHealth(url: string | undefined): RedisHealthPort | undefined
   }
 }
 
-function createRedisOidcNonce(url: string | undefined): RedisOidcNoncePort | undefined {
-  if (!url?.trim()) return undefined
-  const client = createClient(redisClientOptions(url.trim()))
-  client.on('error', () => undefined)
-  const ready = client.connect()
-  return {
-    async consume(nonce, ttlSeconds) {
-      await withRedisOperationTimeout(ready)
-      const result = await withRedisOperationTimeout(client.set(`merchant:oidc-nonce:${createHash('sha256').update(nonce).digest('hex')}`, '1', { NX: true, EX: ttlSeconds }))
-      return result === 'OK'
-    },
-  }
-}
-
-function createRedisAssetScannerNonce(url: string | undefined): RedisOidcNoncePort | undefined {
+function createRedisAssetScannerNonce(url: string | undefined): RedisOneTimeNoncePort | undefined {
   if (!url?.trim()) return undefined
   const client = createClient(redisClientOptions(url.trim()))
   client.on('error', () => undefined)
@@ -1045,7 +1029,7 @@ function createRedisAssetScannerNonce(url: string | undefined): RedisOidcNoncePo
   }
 }
 
-function createRedisWorkerNonce(url: string | undefined): RedisOidcNoncePort | undefined {
+function createRedisWorkerNonce(url: string | undefined): RedisOneTimeNoncePort | undefined {
   if (!url?.trim()) return undefined
   const client = createClient(redisClientOptions(url.trim()))
   client.on('error', () => undefined)
@@ -6795,188 +6779,13 @@ function isTrustedPlatformBrowserOrigin(req: IncomingMessage, origin: string | u
   return allowed.has(origin)
 }
 
-function localFixtureOAuthAllowed(req: IncomingMessage): boolean {
-  if (isProduction() || process.env.MCP_OAUTH_REQUIRED === 'true') return false
-  const loopback = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1'
-  try {
-    const configured = process.env.PUBLIC_APP_BASE_URL?.trim()
-    if (configured && !loopback(new URL(configured).hostname)) return false
-    const hostname = (value: string) => new URL(`http://${value}`).hostname.toLowerCase()
-    const host = hostname(header(req, 'host') ?? '')
-    const forwardedHost = header(req, 'x-forwarded-host')?.split(',')[0]?.trim()
-    const forwarded = forwardedHost ? hostname(forwardedHost) : undefined
-    return loopback(host) && (!forwarded || loopback(forwarded))
-  } catch { return false }
-}
+function localPluginTokenContext(req: IncomingMessage) { const configured = process.env.PUBLIC_APP_BASE_URL?.trim(); const origin = isProduction() && configured ? new URL(configured).origin : publicRequestOrigin(req); const resource = `${origin}/mcp`; return { issuer: origin, audience: resource, resource, scope: ['merchant'] } }
 
-/**
- * Return MCP OAuth discovery metadata only when the advertised authorization
- * server is actually configured.  The local fixture endpoints below are
- * useful for development, but must never be advertised by a production
- * deployment: doing so makes ChatGPT show a login flow that can only end in a
- * 404/503.  Production values are injected by the deployment secret/config
- * layer and are required to be absolute HTTPS URLs.
- */
-function mcpOAuthDiscovery(req: IncomingMessage) {
-  if (!localFixtureOAuthAllowed(req) && !mcpOAuthClients()) return null
-  if (!productionMcpOAuthRuntimeReady(req)) return null
-  const serviceOrigin = publicRequestOrigin(req)
-  const issuer = process.env.MCP_OAUTH_ISSUER?.trim() || serviceOrigin
-  const authorizationEndpoint = process.env.MCP_OAUTH_AUTHORIZATION_ENDPOINT?.trim() || (!isProduction() ? `${issuer}/oauth/authorize` : '')
-  const tokenEndpoint = process.env.MCP_OAUTH_TOKEN_ENDPOINT?.trim() || (!isProduction() ? `${issuer}/oauth/token` : '')
-  const validEndpoint = (value: string) => {
-    try {
-      const parsed = new URL(value)
-      return parsed.protocol === 'https:' && Boolean(parsed.host)
-    } catch {
-      return false
-    }
-  }
-  const validIssuer = (() => {
-    try {
-      const parsed = new URL(issuer)
-      return parsed.protocol === 'https:' && Boolean(parsed.host)
-    } catch {
-      return false
-    }
-  })()
-  if (isProduction() && (!validIssuer || !validEndpoint(authorizationEndpoint) || !validEndpoint(tokenEndpoint))) return null
-  if (!authorizationEndpoint || !tokenEndpoint) return null
-  return {
-    issuer,
-    authorizationEndpoint,
-    tokenEndpoint,
-    revocationEndpoint: `${issuer}/oauth/revoke`,
-    resource: `${serviceOrigin}/mcp`,
-    scopes: ['merchant'],
-  }
-}
-
-type McpOAuthClientRegistry = Record<string, readonly string[]>
-
-function mcpOAuthClients(source: NodeJS.ProcessEnv = process.env): McpOAuthClientRegistry | undefined {
-  try {
-    const parsed: unknown = JSON.parse(source.MCP_OAUTH_CLIENTS ?? '')
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
-    // Client IDs are untrusted configuration keys. Keep lookups independent
-    // of Object.prototype so inherited names cannot masquerade as clients.
-    const clients: McpOAuthClientRegistry = Object.create(null) as McpOAuthClientRegistry
-    for (const [clientId, redirects] of Object.entries(parsed as Record<string, unknown>)) {
-      if (!/^[A-Za-z0-9._~-]{1,128}$/u.test(clientId) || !Array.isArray(redirects) || redirects.length === 0) return undefined
-      const normalized = redirects.map(value => typeof value === 'string' ? value.trim() : '')
-      if (normalized.some(value => {
-        try {
-          const uri = new URL(value)
-          const loopback = uri.hostname === '127.0.0.1' || uri.hostname === 'localhost' || uri.hostname === '[::1]'
-          return Boolean(uri.username || uri.password || uri.hash) || (uri.protocol !== 'https:' && !(uri.protocol === 'http:' && loopback))
-        } catch { return true }
-      })) return undefined
-      clients[clientId] = [...new Set(normalized)]
-    }
-    return Object.keys(clients).length ? clients : undefined
-  } catch { return undefined }
-}
-
-function oauthSingle(params: URLSearchParams, key: string): string | undefined { const values = params.getAll(key); return values.length === 1 ? values[0] : undefined }
-function oauthCriticalParamsValid(params: URLSearchParams, keys: readonly string[]) { return keys.every(key => params.getAll(key).length <= 1) }
-function escapeOAuthHtml(value: string) { return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;') }
-function sendOAuthProtocolError(res: ServerResponse, status: number, error: string) { res.statusCode = status; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store'); res.setHeader('pragma', 'no-cache'); res.end(JSON.stringify({ error })) }
-function mcpOAuthRequestContext(req: IncomingMessage) { const configured = process.env.PUBLIC_APP_BASE_URL?.trim(); const origin = isProduction() && configured ? new URL(configured).origin : publicRequestOrigin(req); const issuer = process.env.MCP_OAUTH_ISSUER?.trim() || origin; const resource = `${origin}/mcp`; return { issuer, audience: resource, resource, scope: ['merchant'] } }
-
-type McpIntegrationMode = 'local_stdio' | 'remote_oauth'
+type McpIntegrationMode = 'local_stdio'
 function mcpIntegrationMode(source: NodeJS.ProcessEnv = process.env): McpIntegrationMode | undefined {
   const configured = source.MCP_INTEGRATION_MODE?.trim()
-  if (configured === 'local_stdio' || configured === 'remote_oauth') return configured
-  if (source.NODE_ENV !== 'production' && source.MCP_OAUTH_REQUIRED === 'true') return 'remote_oauth'
+  if (configured === 'local_stdio') return configured
   return undefined
-}
-
-function productionMcpOAuthRuntimeReady(_req: IncomingMessage, source: NodeJS.ProcessEnv = process.env): boolean {
-  if (source.NODE_ENV !== 'production') return true
-  if (source.MCP_OAUTH_REQUIRED !== 'true') return false
-  try {
-    const publicUrl = new URL(source.PUBLIC_APP_BASE_URL ?? '')
-    if (publicUrl.protocol !== 'https:' || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash || publicUrl.pathname !== '/') return false
-    const issuer = source.MCP_OAUTH_ISSUER?.trim() || publicUrl.origin
-    const authorizationEndpoint = source.MCP_OAUTH_AUTHORIZATION_ENDPOINT?.trim() || `${issuer}/oauth/authorize`
-    const tokenEndpoint = source.MCP_OAUTH_TOKEN_ENDPOINT?.trim() || `${issuer}/oauth/token`
-    return issuer === publicUrl.origin && authorizationEndpoint === `${issuer}/oauth/authorize` && tokenEndpoint === `${issuer}/oauth/token`
-  } catch { return false }
-}
-
-async function handleMcpOAuthAuthorize(req: IncomingMessage, res: ServerResponse, url: URL) {
-  if (!productionMcpOAuthRuntimeReady(req)) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
-  const clients = mcpOAuthClients()
-  if (!clients) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
-  let params = url.searchParams
-  if (req.method === 'POST') {
-    if (header(req, 'content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') return sendOAuthProtocolError(res, 415, 'invalid_request')
-    params = new URLSearchParams((await requestBodyBytes(req, 32 * 1024)).toString('utf8'))
-  }
-  if (!oauthCriticalParamsValid(params, ['response_type', 'client_id', 'redirect_uri', 'state', 'code_challenge', 'code_challenge_method', 'scope', 'resource'])) return sendOAuthProtocolError(res, 400, 'invalid_request')
-  const clientId = oauthSingle(params, 'client_id') ?? ''; const redirectUri = oauthSingle(params, 'redirect_uri') ?? ''; const state = oauthSingle(params, 'state') ?? ''; const codeChallenge = oauthSingle(params, 'code_challenge') ?? ''; const context = mcpOAuthRequestContext(req)
-  const valid = oauthSingle(params, 'response_type') === 'code' && clients[clientId]?.includes(redirectUri) && oauthSingle(params, 'code_challenge_method') === 'S256' && /^[A-Za-z0-9_-]{43}$/u.test(codeChallenge) && oauthSingle(params, 'scope') === 'merchant' && oauthSingle(params, 'resource') === context.resource && state.length > 0 && state.length <= 2048
-  if (!valid) return sendOAuthProtocolError(res, 400, 'invalid_request')
-  res.setHeader('cache-control', 'no-store')
-  if (req.method === 'GET') {
-    const hidden = [...params.entries()].map(([key, value]) => `<input type="hidden" name="${escapeOAuthHtml(key)}" value="${escapeOAuthHtml(value)}">`).join('')
-    res.statusCode = 200; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
-    res.end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>登录 Store Nova</title></head><body><main><h1>登录 Store Nova</h1><p>使用平台运营为您创建的商家账号授权 ChatGPT 插件。</p><form method="post" action="/oauth/authorize">${hidden}<label>账号<input name="login" autocomplete="username" required></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">登录并授权</button></form></main></body></html>`); return
-  }
-  const login = oauthSingle(params, 'login') ?? ''; const password = oauthSingle(params, 'password') ?? ''
-  if (!login || !password || params.getAll('login').length !== 1 || params.getAll('password').length !== 1) return sendOAuthProtocolError(res, 400, 'invalid_request')
-  try {
-    const logged = await passwordAuthRepository.login({ login, password, ip: header(req, 'x-forwarded-for')?.split(',')[0]?.trim() ?? req.socket.remoteAddress, userAgent: header(req, 'user-agent') })
-    if (logged.principal.account.accountType !== 'merchant' || logged.principal.account.status !== 'active') { await passwordAuthRepository.logout(logged.token, 'mcp_oauth_account_invalid'); return sendOAuthProtocolError(res, 401, 'access_denied') }
-    const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: logged.principal.account, clientId, redirectUri, codeChallenge })
-    const target = new URL(redirectUri); target.searchParams.set('code', issued.code); target.searchParams.set('state', state)
-    await passwordAuthRepository.logout(logged.token, 'mcp_oauth_authorization_complete')
-    res.statusCode = 302; res.setHeader('location', target.toString()); res.end()
-  } catch { return sendOAuthProtocolError(res, 401, 'access_denied') }
-}
-
-async function handleMcpOAuthToken(req: IncomingMessage, res: ServerResponse) {
-  if (!productionMcpOAuthRuntimeReady(req)) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
-  const clients = mcpOAuthClients()
-  if (!clients) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
-  if (header(req, 'content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') return sendOAuthProtocolError(res, 415, 'invalid_request')
-  const params = new URLSearchParams((await requestBodyBytes(req, 32 * 1024)).toString('utf8'))
-  if (!oauthCriticalParamsValid(params, ['grant_type', 'client_id', 'redirect_uri', 'code', 'code_verifier', 'refresh_token', 'resource'])) return sendOAuthProtocolError(res, 400, 'invalid_request')
-  const clientId = oauthSingle(params, 'client_id') ?? ''; const context = mcpOAuthRequestContext(req)
-  if (!clients[clientId] || oauthSingle(params, 'resource') !== context.resource) return sendOAuthProtocolError(res, 400, 'invalid_request')
-  try {
-    const grantType = oauthSingle(params, 'grant_type'); const redirectUri = oauthSingle(params, 'redirect_uri') ?? ''
-    if (grantType === 'authorization_code' && !clients[clientId]!.includes(redirectUri)) return sendOAuthProtocolError(res, 400, 'invalid_request')
-    const pair = grantType === 'authorization_code' ? await passwordAuthRepository.exchangeMcpAuthorizationCode({ ...context, clientId, redirectUri, code: oauthSingle(params, 'code') ?? '', codeVerifier: oauthSingle(params, 'code_verifier') ?? '' }) : grantType === 'refresh_token' ? await passwordAuthRepository.refreshMcpOAuthToken({ ...context, clientId, refreshToken: oauthSingle(params, 'refresh_token') ?? '' }) : undefined
-    if (!pair) return sendOAuthProtocolError(res, 400, 'invalid_request')
-    res.statusCode = 200; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store'); res.setHeader('pragma', 'no-cache'); res.end(JSON.stringify({ access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' ') }))
-  } catch { return sendOAuthProtocolError(res, 400, 'invalid_grant') }
-}
-
-/** RFC 7009 token revocation.  The endpoint intentionally returns 200 for an
- * unknown token so callers cannot use it as a token oracle. */
-async function handleMcpOAuthRevoke(req: IncomingMessage, res: ServerResponse) {
-  if (!productionMcpOAuthRuntimeReady(req)) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
-  const clients = mcpOAuthClients()
-  if (!clients) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
-  if (header(req, 'content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') return sendOAuthProtocolError(res, 415, 'invalid_request')
-  const params = new URLSearchParams((await requestBodyBytes(req, 32 * 1024)).toString('utf8'))
-  if (!oauthCriticalParamsValid(params, ['token', 'client_id', 'token_type_hint', 'resource'])) return sendOAuthProtocolError(res, 400, 'invalid_request')
-  const clientId = oauthSingle(params, 'client_id') ?? ''
-  const token = oauthSingle(params, 'token') ?? ''
-  const resource = oauthSingle(params, 'resource')
-  const context = mcpOAuthRequestContext(req)
-  if (!clients[clientId] || !token || (resource !== undefined && resource !== context.resource)) return sendOAuthProtocolError(res, 400, 'invalid_request')
-  const hint = oauthSingle(params, 'token_type_hint')
-  if (hint !== undefined && hint !== 'access_token' && hint !== 'refresh_token') return sendOAuthProtocolError(res, 400, 'unsupported_token_type')
-  try {
-    await passwordAuthRepository.revokeMcpOAuthToken({ ...context, clientId, token, tokenTypeHint: hint as 'access_token' | 'refresh_token' | undefined })
-  } catch {
-    // RFC 7009 requires a successful response for an otherwise well-formed
-    // unknown or already-revoked token; persistence failures remain 503.
-    return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
-  }
-  res.statusCode = 200; res.setHeader('cache-control', 'no-store'); res.setHeader('pragma', 'no-cache'); res.end()
 }
 
 type RequestObservationState = RequestLogInput & { startedAt: bigint; failed: boolean }
@@ -7341,7 +7150,7 @@ type RequestPrincipal = {
   availableWorkbenches?: OpsWorkbench[]
   issuer?: string
   sessionSubject?: string
-  sessionKind?: 'oidc' | 'api_token'
+  sessionKind?: 'api_token'
   sessionIssuedAt?: string
   sessionExpiresAt?: string
   mfaVerified?: boolean
@@ -7396,7 +7205,6 @@ const verifiedWorkerRequestRoles = new WeakMap<IncomingMessage, WorkerRequestRol
 // the same session so a burst of UI requests cannot queue on the same unique
 // key and exhaust the API pool.
 const authenticatedObservationFlights = new Map<string, Promise<IdentityAuthorizationSnapshot>>()
-const testOidcNonces = new Map<string, number>()
 const testAssetScannerNonces = new Map<string, number>()
 const testWorkerNonces = new Map<string, number>()
 const workspaceMemberRoles = new Set<MemberRole>(['workspace_owner', 'merchant_admin', 'operator', 'support', 'finance', 'platform_ops'])
@@ -7973,9 +7781,9 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
     && bootstrapPrincipal?.identityId
     && bootstrapPrincipal.workspaces.includes(workspaceId)
     && !bootstrapPrincipal.explicitDeniedCapabilities?.includes(policy.capability)) return policy
-  // A signed OIDC principal is intentionally allowed to create its first
-  // workspace before membership exists. All subsequent methods require the
-  // projected capability and active membership.
+  // A verified identity may resolve its own administrator-assigned binding
+  // before membership is hydrated. Strict deployments never grant creation
+  // authority through this pre-membership lookup.
   const projection = effectiveAuthorizationProjection(requestPrincipals.get(req), workspaceId)
   const projectedAtoms = method === 'ops.support.tickets.list' && params.platform_scope === 'platform'
     ? [...projection.atoms, ...projection.atoms
@@ -8000,7 +7808,9 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
     mode: enforce ? 'enforce' : 'shadow',
   })
   if (['workspace.invitations.list', 'workspace.invitation.accept'].includes(method) && await hasPendingInvitationForPrincipal(req, workspaceId)) return policy
-  if (method === 'workspace.bootstrap' && !requestPrincipals.get(req)?.memberRole) {
+  if (method === 'workspace.bootstrap' && !bootstrapPrincipal?.memberRole
+    && bootstrapPrincipal?.workbench === 'workspace'
+    && Boolean(bootstrapPrincipal.issuer && bootstrapPrincipal.identityId)) {
     const bootstrapDecision = { ...decision, authorized: true, allowed: true, result: 'shadow_allow' as const, reason_code: 'AUTHZ_ALLOWED' as const }
     await recordAuthorizationDecision(req, workspaceId, bootstrapDecision)
     return policy
@@ -8254,16 +8064,6 @@ function mapIdentityLifecycleError(error: unknown): never {
   throw error
 }
 
-async function consumeOidcNonce(nonce: string): Promise<boolean> {
-  if (redisOidcNonce) return redisOidcNonce.consume(nonce, 120)
-  if (!process.env.VITEST) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关一次性 nonce 存储不可用', 503)
-  const now = Date.now()
-  for (const [key, expiresAt] of testOidcNonces) if (expiresAt <= now) testOidcNonces.delete(key)
-  if (testOidcNonces.has(nonce)) return false
-  testOidcNonces.set(nonce, now + 120_000)
-  return true
-}
-
 async function consumeAssetScannerNonce(nonce: string): Promise<boolean> {
   if (redisAssetScannerNonce) return redisAssetScannerNonce.consume(nonce, 120)
   if (!process.env.VITEST) throw new DomainError('ASSET_SCANNER_NONCE_STORE_UNAVAILABLE', 'asset scanner nonce store is unavailable', 503)
@@ -8284,57 +8084,6 @@ async function consumeWorkerNonce(nonce: string): Promise<boolean> {
   return true
 }
 
-async function authenticateOidcGateway(req: IncomingMessage): Promise<RequestPrincipal> {
-  const secret = process.env.OIDC_PROXY_SIGNING_SECRET?.trim()
-  if (!secret) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关签名密钥未配置', 503)
-  const subject = header(req, 'x-oidc-sub')?.trim() ?? ''
-  const issuer = header(req, 'x-oidc-issuer')?.trim() ?? ''
-  const sessionId = header(req, 'x-oidc-sid')?.trim() ?? ''
-  const workspaceId = header(req, 'x-oidc-workspace')?.trim() ?? ''
-  const workbench = header(req, 'x-oidc-workbench')?.trim() ?? ''
-  const bootstrapRequested = header(req, 'x-workspace-bootstrap') === 'true'
-  const roles = (header(req, 'x-oidc-roles') ?? '').split(',').map(value => value.trim()).filter(Boolean).sort()
-  const amr = (header(req, 'x-oidc-amr') ?? '').split(',').map(value => value.trim()).filter(Boolean).sort()
-  const authTime = header(req, 'x-oidc-auth-time')?.trim() ?? ''
-  const sessionExpiresAt = header(req, 'x-oidc-session-expires-at')?.trim() ?? ''
-  const timestamp = header(req, 'x-oidc-timestamp')?.trim() ?? ''
-  const nonce = header(req, 'x-oidc-nonce')?.trim() ?? ''
-  const bodyDigest = header(req, 'x-oidc-body-sha256')?.trim().toLowerCase() ?? ''
-  const signature = header(req, 'x-oidc-signature')?.trim() ?? ''
-  const timestampSeconds = Number(timestamp)
-  const nowSeconds = Math.floor(Date.now() / 1000)
-  const authTimeSeconds = Number(authTime)
-  const expiresAtSeconds = Number(sessionExpiresAt)
-  if (!issuer || !subject || !sessionId || (workbench !== 'platform' && workbench !== 'workspace') || (workbench === 'workspace' && !workspaceId && !bootstrapRequested) || !/^\d{10}$/.test(timestamp) || !/^\d{10}$/.test(authTime) || !/^\d{10}$/.test(sessionExpiresAt) || !Number.isSafeInteger(timestampSeconds) || !Number.isSafeInteger(authTimeSeconds) || !Number.isSafeInteger(expiresAtSeconds) || authTimeSeconds > nowSeconds + 60 || expiresAtSeconds <= nowSeconds || Math.abs(nowSeconds - timestampSeconds) > 60 || !/^[A-Za-z0-9_-]{16,128}$/u.test(nonce) || !/^[a-f0-9]{64}$/u.test(bodyDigest) || !/^[a-f0-9]{64}$/i.test(signature)) throw new DomainError('AUTHZ_WORKBENCH_ASSERTION_INVALID', 'OIDC 网关身份断言缺少有效且受签名保护的工作台', 401)
-  // Sign the exact request-target, including the raw query string. The gateway
-  // and API must agree on bytes before any URL decoding or parameter sorting.
-  const requestTarget = req.url ?? '/'
-  const legacyCanonical = [req.method ?? 'GET', requestTarget, workspaceId, workbench, issuer, subject, sessionId, roles.join(','), amr.join(','), authTime, sessionExpiresAt, timestamp, bodyDigest, nonce].join('\n')
-  let proof: ReturnType<typeof bindOidcDisplayLoginProof>
-  try {
-    proof = bindOidcDisplayLoginProof(legacyCanonical, req.headers['x-oidc-proof-version'], req.headers['x-oidc-display-login'])
-  } catch {
-    throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关账号展示断言无效', 401)
-  }
-  const expected = createHmac('sha256', secret).update(proof.canonical).digest('hex')
-  if (!safeEqual(expected, signature)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关身份签名无效', 401)
-  const hasPlatformRole = roles.some(role => {
-    const canonicalRole = canonicalizeRole(role, 'gateway')
-    return canonicalRole !== undefined && platformCanonicalRoles.has(canonicalRole)
-  })
-  if (workbench === 'platform' && !hasPlatformRole) throw new DomainError('AUTHZ_WORKBENCH_FORBIDDEN', '当前 OIDC 平台身份没有平台工作台角色', 403)
-  const requested = header(req, 'x-workspace-id')?.trim()
-  if (workbench === 'workspace' && !requested && !bootstrapRequested) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_REQUIRED, 'workspace 工作台必须携带 X-Workspace-Id', 401)
-  if (requested && requested !== workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, '请求工作区与 OIDC 会话工作区不一致', 403)
-  const defaultMaxBodyBytes = req.method === 'POST' && new URL(req.url ?? '/', 'http://oidc.internal').pathname === '/mcp' ? MCP_BODY_LIMIT : 50 * 1024 * 1024
-  const configuredMax = Number(process.env.OIDC_PROXY_MAX_BODY_BYTES ?? defaultMaxBodyBytes)
-  const maxBodyBytes = Number.isSafeInteger(configuredMax) && configuredMax > 0 ? configuredMax : defaultMaxBodyBytes
-  const actualBodyDigest = createHash('sha256').update(await requestBodyBytes(req, maxBodyBytes)).digest('hex')
-  if (!safeEqual(actualBodyDigest, bodyDigest)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关请求体摘要不一致', 401)
-  if (!await consumeOidcNonce(nonce)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关身份断言已使用', 401)
-  return { actorId: subject, displayAccountLogin: proof.displayAccountLogin, workspaces: workspaceId ? [workspaceId] : [], roles, workbench: workbench as OpsWorkbench, availableWorkbenches: hasPlatformRole ? ['platform'] : [], issuer, sessionSubject: sessionId, sessionKind: 'oidc', sessionIssuedAt: new Date(authTimeSeconds * 1000).toISOString(), sessionExpiresAt: new Date(expiresAtSeconds * 1000).toISOString(), mfaVerified: amr.includes('mfa') }
-}
-
 /** Production identity boundary: opaque bearer token -> permitted workspaces. */
 async function authenticate(req: IncomingMessage) {
   // A valid password session is an explicit identity assertion and must take
@@ -8344,13 +8093,8 @@ async function authenticate(req: IncomingMessage) {
   const isMcpRequest = (req.url ?? '').split('?')[0] === '/mcp'
   const integrationMode = isMcpRequest ? mcpIntegrationMode() : undefined
   if (isMcpRequest && isProduction() && process.env.VITEST !== 'true' && !integrationMode) throw new DomainError('MCP_INTEGRATION_MODE_NOT_CONFIGURED', 'MCP 接入模式未配置', 503)
-  const remoteOAuth = integrationMode === 'remote_oauth'
   const localStdio = integrationMode === 'local_stdio'
-  const oauthClients = isMcpRequest && remoteOAuth ? mcpOAuthClients() : undefined
-  const mcpOAuthRequired = isMcpRequest && remoteOAuth && process.env.MCP_OAUTH_REQUIRED === 'true'
-  if (mcpOAuthRequired && !oauthClients) throw new DomainError('MCP_OAUTH_NOT_CONFIGURED', 'MCP OAuth 客户端注册表缺失或无效', 503)
-  if (isMcpRequest && remoteOAuth && isProduction() && !productionMcpOAuthRuntimeReady(req)) throw new DomainError('MCP_OAUTH_NOT_CONFIGURED', 'MCP OAuth 生产运行时未完成配置', 503)
-  const mcpOAuthBoundary = isMcpRequest && (localStdio || mcpOAuthRequired || Boolean(oauthClients))
+  const mcpOAuthBoundary = isMcpRequest && localStdio
   const authorizationHeader = header(req, 'authorization')?.trim() ?? ''
   const passwordCookie = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
   let invalidPasswordSession = false
@@ -8366,7 +8110,7 @@ async function authenticate(req: IncomingMessage) {
         // must exchange for a short-lived local-desktop token; an authenticated
         // platform session remains usable by the desktop operations console.
         if (mcpOAuthBoundary && !platform) {
-          if (!/^Bearer\s+[^\s]+$/iu.test(authorizationHeader)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '商家插件 MCP 请求必须携带 OAuth Bearer token', 401)
+          if (!/^Bearer\s+[^\s]+$/iu.test(authorizationHeader)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '商家插件 MCP 请求必须携带本地插件凭据', 401)
         } else {
           if (isMcpRequest && platform && isProduction()) {
             const requestOrigin = header(req, 'origin')?.trim()
@@ -8390,7 +8134,7 @@ async function authenticate(req: IncomingMessage) {
     else invalidPasswordSession = true
   }
   if (invalidPasswordSession) throw new DomainError('AUTH_SESSION_INVALID', '平台登录会话已失效，请重新登录', 401)
-  if (mcpOAuthBoundary && !/^Bearer\s+[^\s]+$/iu.test(authorizationHeader)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'MCP 请求必须携带 OAuth Bearer token', 401)
+  if (mcpOAuthBoundary && !/^Bearer\s+[^\s]+$/iu.test(authorizationHeader)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'MCP 请求必须携带本地插件凭据', 401)
   if (!requiresStrictAuth()) {
     const requestedWorkbench = header(req, 'x-ops-workbench')?.trim()
     if (requestedWorkbench && requestedWorkbench !== 'platform' && requestedWorkbench !== 'workspace') throw new DomainError('AUTHZ_WORKBENCH_ASSERTION_INVALID', '工作台只能是 platform 或 workspace', 400)
@@ -8407,34 +8151,28 @@ async function authenticate(req: IncomingMessage) {
     })
     return
   }
-  // The merchant UI/plugin and the operations console share this API service
-  // in the Kubernetes baseline, but intentionally have different identity
-  // boundaries. Only the explicitly configured merchant host may use the
-  // bearer-token branch; every other production host remains OIDC-only.
+  // The merchant UI/plugin and operations console share this API service but
+  // keep separate password and local-plugin credential boundaries.
   const merchantBearerHostname = process.env.MERCHANT_BEARER_HOSTNAME?.trim().toLowerCase()
-  const requestHostname = (header(req, 'host')?.trim().toLowerCase().split(':')[0] ?? '')
+  const requestHostname = (() => {
+    const forwardedHost = header(req, 'x-forwarded-host')?.split(',')[0]?.trim()
+    const host = (forwardedHost || header(req, 'host')?.trim() || '').trim().toLowerCase()
+    try { return new URL(`https://${host}`).hostname.toLowerCase() } catch { return '' }
+  })()
   const merchantBearerRequest = Boolean(merchantBearerHostname && requestHostname === merchantBearerHostname)
-  if (process.env.OPS_AUTH_MODE === 'oidc' && !merchantBearerRequest) {
-    const principal = await authenticateOidcGateway(req)
-    requestPrincipals.set(req, principal)
-    await observeAuthenticatedPrincipal(req, principal)
-    const claimedActor = header(req, 'x-actor-id')?.trim()
-    if (claimedActor && claimedActor !== principal.actorId) throw new DomainError(ERROR_CODES.FORBIDDEN, 'X-Actor-Id 与认证身份不一致', 403)
-    return
-  }
   const authorization = authorizationHeader
   const encodedCookieToken = (header(req, 'cookie') ?? '')
     .split(';')
     .map(value => value.trim())
-    .find(value => value.startsWith('ops_local_session='))
-    ?.slice('ops_local_session='.length)
+    .find(value => value.startsWith('damai_session='))
+    ?.slice('damai_session='.length)
   let cookieToken: string | undefined
   try { cookieToken = encodedCookieToken ? decodeURIComponent(encodedCookieToken) : undefined } catch { cookieToken = undefined }
   const token = authorization?.match(/^Bearer\s+([^\s]+)$/i)?.[1] ?? cookieToken
   if (!token) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '生产请求必须携带有效 Bearer token', 401)
   if (isMcpRequest) {
     if (localStdio) {
-      const context = mcpOAuthRequestContext(req)
+      const context = localPluginTokenContext(req)
       const oauthPrincipal = await passwordAuthRepository.authenticateMcpAccessToken({ ...context, clientId: 'local-desktop', accessToken: token })
       if (!oauthPrincipal) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '本地插件 MCP token 无效或已过期', 401)
       const requestedWorkspace = header(req, 'x-workspace-id')?.trim()
@@ -8444,21 +8182,12 @@ async function authenticate(req: IncomingMessage) {
       await hydrateDurableAuthorizationContext(req, principal)
       return
     }
-    const clients = oauthClients
-    if (clients) {
-      const context = mcpOAuthRequestContext(req)
-      for (const clientId of Object.keys(clients)) {
-        const oauthPrincipal = await passwordAuthRepository.authenticateMcpAccessToken({ ...context, clientId, accessToken: token })
-        if (!oauthPrincipal) continue
-        const requestedWorkspace = header(req, 'x-workspace-id')?.trim()
-        if (requestedWorkspace && requestedWorkspace !== oauthPrincipal.workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, 'MCP OAuth token 无权切换到其他工作区', 403)
-        const principal: RequestPrincipal = { credentialSource: 'mcp_oauth', actorId: oauthPrincipal.identityId, accountLogin: oauthPrincipal.accountLogin, identityId: oauthPrincipal.identityId, sessionId: oauthPrincipal.tokenId, sessionSubject: oauthPrincipal.tokenId, sessionKind: 'api_token', sessionIssuedAt: oauthPrincipal.issuedAt, sessionExpiresAt: oauthPrincipal.expiresAt, roles: ['merchant'], workspaces: [oauthPrincipal.workspaceId], workbench: 'workspace', availableWorkbenches: ['workspace'], identityStatus: 'active', mfaVerified: false }
-        requestPrincipals.set(req, principal)
-        await hydrateDurableAuthorizationContext(req, principal)
-        return
-      }
-      throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'MCP OAuth access token 无效或已过期', 401)
-    }
+  }
+  const publicOpsBase = process.env.PUBLIC_OPS_BASE_URL?.trim()
+  const publicOpsHostname = publicOpsBase ? (() => { try { return new URL(publicOpsBase).hostname.toLowerCase() } catch { return '' } })() : ''
+  const usesBearerCredential = /^Bearer\s+[^\s]+$/iu.test(authorizationHeader ?? '')
+  if (usesBearerCredential && publicOpsHostname && requestHostname === publicOpsHostname && !localStdio) {
+    throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '运营台必须使用账号密码会话登录', 401)
   }
   let grants: Record<string, unknown>
   try {
@@ -9524,35 +9253,28 @@ type ProductionReadinessGate = { ready: boolean; reasons: string[] }
 
 function productionIdentityReadiness(source: NodeJS.ProcessEnv): ProductionReadinessGate {
   const reasons: string[] = []
-  if (!['oidc', 'password'].includes(source.OPS_AUTH_MODE ?? '')) reasons.push('ops_auth_mode_must_be_oidc_or_password')
-  if (source.OPS_AUTH_MODE === 'oidc' && !source.OIDC_PROXY_SIGNING_SECRET?.trim()) reasons.push('oidc_proxy_signing_secret_missing')
+  if (source.OPS_AUTH_MODE !== 'password') reasons.push('ops_auth_mode_must_be_password')
   if (!source.SESSION_ID_HASH_SECRET?.trim()) reasons.push('session_id_hash_secret_missing')
   if (!source.OPS_DATABASE_URL?.trim()) reasons.push('canonical_password_identity_store_missing')
   const merchantHostname = source.MERCHANT_BEARER_HOSTNAME?.trim().toLowerCase()
   if (!merchantHostname) reasons.push('merchant_bearer_hostname_missing')
   else if (merchantHostname.includes('*') || merchantHostname.includes('://') || merchantHostname.includes('/')) reasons.push('merchant_bearer_hostname_invalid')
+  let opsHostname = ''
+  try {
+    const opsUrl = new URL(source.PUBLIC_OPS_BASE_URL ?? '')
+    if (opsUrl.protocol !== 'https:' || opsUrl.username || opsUrl.password || opsUrl.search || opsUrl.hash || opsUrl.pathname !== '/') throw new Error('unsafe Ops origin')
+    opsHostname = opsUrl.hostname.toLowerCase()
+  } catch { reasons.push('public_ops_base_url_invalid') }
+  if (merchantHostname && opsHostname && merchantHostname === opsHostname) reasons.push('ops_and_merchant_hostnames_must_differ')
   const integrationMode = mcpIntegrationMode(source)
-  if (!integrationMode) reasons.push('mcp_integration_mode_missing_or_invalid')
-  if (integrationMode === 'local_stdio') {
-    if (source.MCP_OAUTH_REQUIRED !== 'false') reasons.push('local_stdio_must_not_require_remote_oauth')
-    if (['MCP_OAUTH_CLIENTS', 'MCP_OAUTH_ISSUER', 'MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'MCP_OAUTH_TOKEN_ENDPOINT'].some(key => source[key]?.trim())) reasons.push('local_stdio_remote_oauth_configuration_present')
-    if (source.OPENAI_APPS_CHALLENGE_TOKEN?.trim()) reasons.push('local_stdio_openai_challenge_present')
-  }
-  if (integrationMode === 'remote_oauth' && source.MCP_OAUTH_REQUIRED !== 'true') reasons.push('mcp_oauth_required_must_be_true')
+  if (integrationMode !== 'local_stdio') reasons.push('mcp_integration_mode_must_be_local_stdio')
+  if (['MCP_OAUTH_REQUIRED', 'MCP_OAUTH_CLIENTS', 'MCP_OAUTH_ISSUER', 'MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'MCP_OAUTH_TOKEN_ENDPOINT', 'OPENAI_APPS_CHALLENGE_TOKEN', 'OIDC_PROXY_SIGNING_SECRET'].some(key => source[key]?.trim())) reasons.push('retired_external_auth_settings_present')
   let publicOrigin = ''
   try {
     const publicUrl = new URL(source.PUBLIC_APP_BASE_URL ?? '')
     if (publicUrl.protocol !== 'https:' || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash || publicUrl.pathname !== '/') throw new Error('unsafe public origin')
     publicOrigin = publicUrl.origin
   } catch { reasons.push('public_app_base_url_invalid') }
-  if (integrationMode === 'remote_oauth') {
-    const issuer = source.MCP_OAUTH_ISSUER?.trim() || ''
-    if (!publicOrigin || issuer !== publicOrigin) reasons.push('mcp_oauth_issuer_must_be_self_hosted')
-    const authorizationEndpoint = source.MCP_OAUTH_AUTHORIZATION_ENDPOINT?.trim() || ''
-    const tokenEndpoint = source.MCP_OAUTH_TOKEN_ENDPOINT?.trim() || ''
-    if (!issuer || authorizationEndpoint !== `${issuer}/oauth/authorize` || tokenEndpoint !== `${issuer}/oauth/token`) reasons.push('mcp_oauth_endpoints_must_be_self_hosted')
-    if (!mcpOAuthClients(source)) reasons.push('mcp_oauth_clients_missing_or_invalid')
-  }
   return { ready: reasons.length === 0, reasons }
 }
 
@@ -14533,10 +14255,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '创建工作区需要可识别的商家身份', 401)
       const claimedSubject = typeof params.external_subject === 'string' && params.external_subject.trim() ? params.external_subject.trim() : undefined
       if (claimedSubject && claimedSubject !== actorId) throw new DomainError(ERROR_CODES.FORBIDDEN, '新工作区 owner 只能绑定当前认证身份；external_subject 不能替代认证主体', 403)
-      if (requiresStrictAuth() && (!principal?.issuer || !principal.identityId)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '创建工作区需要经过可信身份网关解析 issuer 和 subject', 401)
+      const strictAuth = requiresStrictAuth()
+      if (strictAuth && (!principal?.issuer || !principal.identityId || principal.workbench !== 'workspace')) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '解析管理员分配的工作区需要可信身份网关提供 issuer、subject 和 workspace workbench', 401)
       const issuer = principal?.issuer ?? (fixtureMode ? 'urn:merchant:fixture' : 'urn:merchant:local')
       try {
-        const bootstrapped = await (persistence.workspaceBootstrap ?? memoryWorkspaceBootstrap).bootstrap({ issuer, externalSubject: actorId, ...(principal?.identityId ? { identityId: principal.identityId } : {}), candidateWorkspaceId: `ws_${randomUUID().replaceAll('-', '').slice(0, 24)}`, displayName, actorId })
+        const allowCreate = !strictAuth
+        const bootstrapped = await (persistence.workspaceBootstrap ?? memoryWorkspaceBootstrap).bootstrap({ issuer, externalSubject: actorId, ...(principal?.identityId ? { identityId: principal.identityId } : {}), ...(allowCreate ? { candidateWorkspaceId: `ws_${randomUUID().replaceAll('-', '').slice(0, 24)}` } : {}), displayName, actorId, allowCreate })
+          if (error.code === 'WORKSPACE_ADMIN_ASSIGNMENT_REQUIRED') throw new DomainError(error.code, '当前身份尚未绑定管理员分配的工作区；请联系平台管理员完成工作区分配和本地插件绑定', 403)
         workspaceId = bootstrapped.workspaceId
         knownWorkspaces.add(workspaceId)
         return result({ workspaceId, displayName: bootstrapped.displayName, status: 'active', reused: !bootstrapped.created, owner: { issuer, externalSubject: actorId, actorId }, binding: { environmentVariable: 'MERCHANT_WORKSPACE_ID', requiredValue: workspaceId, nextStep: '将该值绑定到 Codex 插件后重新调用 workspace.health' } })
@@ -21631,62 +21356,6 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     res.end(JSON.stringify({ workspace_id: workspaceId, workbench: 'workspace' }))
     return
   }
-  if (path === '/oauth/authorize' && (req.method === 'GET' || req.method === 'POST') && mcpOAuthClients()) return handleMcpOAuthAuthorize(req, res, url)
-  if (path === '/oauth/token' && req.method === 'POST' && mcpOAuthClients()) return handleMcpOAuthToken(req, res)
-  if (path === '/oauth/revoke' && req.method === 'POST' && mcpOAuthClients()) return handleMcpOAuthRevoke(req, res)
-  if (path === '/oauth/authorize' && req.method === 'GET') {
-    if (!localFixtureOAuthAllowed(req)) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
-    if (!oauthCriticalParamsValid(url.searchParams, ['redirect_uri', 'state'])) return sendOAuthProtocolError(res, 400, 'invalid_request')
-    const redirect = oauthSingle(url.searchParams, 'redirect_uri'); const state = oauthSingle(url.searchParams, 'state') ?? ''
-    if (!redirect || state.length > 2048) return sendOAuthProtocolError(res, 400, 'invalid_request')
-    let target: URL
-    try {
-      target = new URL(redirect)
-      const loopback = target.hostname === '127.0.0.1' || target.hostname === 'localhost' || target.hostname === '[::1]'
-      if (target.username || target.password || target.hash || (target.protocol !== 'https:' && !(target.protocol === 'http:' && loopback))) return sendOAuthProtocolError(res, 400, 'invalid_request')
-    } catch { return sendOAuthProtocolError(res, 400, 'invalid_request') }
-    target.searchParams.set('code', 'fixture-code'); if (state) target.searchParams.set('state', state)
-    res.statusCode = 302; res.setHeader('location', target.toString()); res.end(); return
-  }
-  if (path === '/oauth/token' && req.method === 'POST') {
-    if (!localFixtureOAuthAllowed(req)) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
-    if (header(req, 'content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') return sendOAuthProtocolError(res, 415, 'invalid_request')
-    const params = new URLSearchParams((await requestBodyBytes(req, 32 * 1024)).toString('utf8'))
-    if (!oauthCriticalParamsValid(params, ['grant_type', 'code'])) return sendOAuthProtocolError(res, 400, 'invalid_request')
-    if (oauthSingle(params, 'grant_type') !== 'authorization_code' || oauthSingle(params, 'code') !== 'fixture-code') return sendOAuthProtocolError(res, 400, 'invalid_grant')
-    const fixture = process.env.MERCHANT_MCP_TOKEN?.trim() || 'fixture-token'
-    res.statusCode = 200; res.setHeader('content-type', 'application/json'); res.setHeader('cache-control', 'no-store'); res.setHeader('pragma', 'no-cache'); res.end(JSON.stringify({ access_token: fixture, token_type: 'Bearer', expires_in: 3600, scope: 'merchant' })); return
-  }
-  if (path === '/oauth/revoke' && req.method === 'POST') return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
-  // OAuth discovery endpoints used by ChatGPT/MCP clients. Keep these public
-  // so an unauthenticated client can discover where to sign in.
-  if (req.method === 'GET' && path === '/.well-known/oauth-protected-resource') {
-    const discovery = mcpOAuthDiscovery(req)
-    if (!discovery) {
-      res.statusCode = 503; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store')
-      res.end(JSON.stringify({ error: 'MCP_OAUTH_NOT_CONFIGURED' })); return
-    }
-    res.statusCode = 200; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store')
-    res.end(JSON.stringify({ resource: discovery.resource, authorization_servers: [discovery.issuer], scopes_supported: discovery.scopes })); return
-  }
-  if (req.method === 'GET' && path === '/.well-known/oauth-authorization-server') {
-    const discovery = mcpOAuthDiscovery(req)
-    if (!discovery) {
-      res.statusCode = 503; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store')
-      res.end(JSON.stringify({ error: 'MCP_OAUTH_NOT_CONFIGURED' })); return
-    }
-    res.statusCode = 200; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store')
-    res.end(JSON.stringify({ issuer: discovery.issuer, authorization_endpoint: discovery.authorizationEndpoint, token_endpoint: discovery.tokenEndpoint, revocation_endpoint: discovery.revocationEndpoint, response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'], token_endpoint_auth_methods_supported: ['none'], code_challenge_methods_supported: ['S256'], scopes_supported: discovery.scopes })); return
-  }
-  if (req.method === 'GET' && path === '/.well-known/openai-apps-challenge') {
-    const challenge = process.env.OPENAI_APPS_CHALLENGE_TOKEN?.trim()
-    if (!challenge) {
-      res.statusCode = 503; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store')
-      res.end(JSON.stringify({ error: 'OPENAI_APPS_CHALLENGE_NOT_CONFIGURED' })); return
-    }
-    res.statusCode = 200; res.setHeader('content-type', 'text/plain; charset=utf-8'); res.setHeader('cache-control', 'no-store'); res.setHeader('x-content-type-options', 'nosniff')
-    res.end(challenge); return
-  }
   if (req.method === 'GET' && path === '/metrics') {
     const metricsToken = process.env.METRICS_AUTH_TOKEN?.trim()
     if (isProduction() && (!metricsToken || header(req, 'authorization') !== `Bearer ${metricsToken}`)) {
@@ -21719,7 +21388,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     || /^\/v1\/internal\/image-generation-continuations\/[^/]+\/execute$/u.test(path)
   )
   const assetScannerRoute = isAssetScannerRoute(req.method, path)
-  const infrastructureProbe = path === '/healthz' || path === '/readyz' || path === '/livez' || path === '/releasez' || path === '/.well-known/openai-apps-challenge'
+  const infrastructureProbe = path === '/healthz' || path === '/readyz' || path === '/livez' || path === '/releasez'
   // Health probes are infrastructure-scoped and intentionally unauthenticated;
   // all merchant and MCP routes still pass the production identity boundary.
   // OAuth callbacks are the exception: the platform redirects a browser and
@@ -24773,7 +24442,6 @@ const server = createServer((req, res) => {
     const workspaceId = (() => { try { return resolveWorkspace(req) } catch { return isProduction() ? 'unknown' : 'ws_demo' } })()
     enrichRequestObservation(req, { workspaceId, actorId: trustedRequestObservationActor(req) })
     failRequestObservation(req, observedFailure.status, observedFailure.code)
-    if (observedFailure.status === 401 && (req.url ?? '').split('?')[0] === '/mcp') res.setHeader('www-authenticate', `Bearer resource_metadata="${publicRequestOrigin(req)}/.well-known/oauth-protected-resource"`)
     if (isClientDisconnect(error) && (res.destroyed || res.writableEnded)) return
     if (nativeMcpRequests.has(req) && !res.writableEnded) {
       const id = nativeMcpRequestIds.get(req) ?? null

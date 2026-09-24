@@ -7,8 +7,8 @@ ops_ui_image_ref=$2
 rendered_compose_path=$3
 
 case "$api_auth_mode" in
-  password|oidc) ;;
-  *) echo 'OPS_AUTH_MODE must be password or oidc' >&2; exit 1 ;;
+  password) ;;
+  *) echo 'OPS_AUTH_MODE must be password' >&2; exit 1 ;;
 esac
 printf '%s' "$ops_ui_image_ref" | grep -Eq '^.+@sha256:[0-9a-f]{64}$' || {
   echo 'OPS_UI_IMAGE_REF must be pinned by digest for auth mode verification' >&2; exit 1;
@@ -40,7 +40,7 @@ if ! ui_auth_mode=$(docker image inspect --format '{{index .Config.Labels "com.s
   exit 1
 fi
 case "$ui_auth_mode" in
-  password|oidc) ;;
+  password) ;;
   *) echo 'pinned Ops UI image is missing a valid build auth mode label' >&2; exit 1 ;;
 esac
 [ "$ui_auth_mode" = "$api_auth_mode" ] || {

@@ -45,11 +45,10 @@ describe('bounded ECS release image builder', () => {
     expect(source).toContain("atomicWrite('repository-image-digests.json'")
     expect(source).toContain("flag: 'wx'")
     expect(source).toContain('ECS release image output directory must not already exist')
-    expect(source).toContain('ECS_OPS_UI_LOGIN_URL')
     expect(source).toContain('ECS_OPS_AUTH_MODE')
     expect(source).toContain('--build-arg "OPS_CONSOLE_AUTH_MODE=$ops_auth_mode"')
     expect(source).toContain('--label "com.storenova.ops-auth-mode=$ops_auth_mode"')
-    expect(source).toContain('--build-arg "VITE_OPS_LOGIN_URL=$ops_login_url"')
+    expect(source).not.toContain('VITE_OPS_LOGIN_URL')
   })
 
   it('refuses mutable or unsafe release identity before Docker is invoked', () => {
@@ -86,7 +85,7 @@ describe('bounded ECS release image builder', () => {
     expect(readFileSync(marker, 'utf8')).toBe('preserve this pre-existing content')
   })
 
-  it('rejects an unsafe Ops login build URL without guessing an auth route', () => {
+  it('rejects non-password Ops authentication before Docker is invoked', () => {
     const result = spawnSync('sh', [script], {
       env: {
         ...process.env,
@@ -95,29 +94,16 @@ describe('bounded ECS release image builder', () => {
         ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
         ECS_RELEASE_IMAGE_OUTPUT_DIR: join(mkdtempSync(join(tmpdir(), 'ecs-ops-login-parent-')), 'output'),
         ECS_OPS_AUTH_MODE: 'oidc',
-        ECS_OPS_UI_LOGIN_URL: 'http://user:secret@idp.example.test/authorize#token',
       },
       encoding: 'utf8',
     })
     expect(result.status).not.toBe(0)
-    expect(result.stderr).toContain('ECS_OPS_UI_LOGIN_URL must be HTTPS without credentials or a fragment')
+    expect(result.stderr).toContain('ECS_OPS_AUTH_MODE must be password')
   })
 
-  it('rejects a contradictory password build with an SSO login URL', () => {
-    const result = spawnSync('sh', [script], {
-      env: {
-        ...process.env,
-        ECS_RELEASE_GIT_SHA: releaseRevision(),
-        RELEASE_ID: 'release-password-with-sso',
-        ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
-        ECS_RELEASE_IMAGE_OUTPUT_DIR: join(mkdtempSync(join(tmpdir(), 'ecs-password-parent-')), 'output'),
-        ECS_OPS_AUTH_MODE: 'password',
-        ECS_OPS_UI_LOGIN_URL: 'https://sso.example.test/authorize',
-      },
-      encoding: 'utf8',
-    })
-    expect(result.status).not.toBe(0)
-    expect(result.stderr).toContain('ECS_OPS_UI_LOGIN_URL must be empty when ECS_OPS_AUTH_MODE=password')
+  it('does not expose an external Ops login URL build input', () => {
+    expect(readFileSync(script, 'utf8')).not.toContain('ECS_OPS_UI_LOGIN_URL')
+    expect(readFileSync('infra/docker/ops-console.Dockerfile', 'utf8')).not.toContain('VITE_OPS_LOGIN_URL')
   })
 
   it('publishes immutable references and an atomic six-image digest manifest', () => {
@@ -157,8 +143,7 @@ describe('bounded ECS release image builder', () => {
       ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
       ECS_BUILD_LOCK_PATH: join(directory, 'build.lock'),
       ECS_BUILD_CACHE_KEEP_STORAGE: '1GB',
-      ECS_OPS_AUTH_MODE: 'oidc',
-      ECS_OPS_UI_LOGIN_URL: 'https://sso.example.test/authorize?client_id=ops',
+      ECS_OPS_AUTH_MODE: 'password',
     }
     const mismatchedIdentity = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-release-images.sh')], {
       cwd: directory,
@@ -207,8 +192,8 @@ describe('bounded ECS release image builder', () => {
     const dockerLog = readFileSync(log, 'utf8')
     expect(dockerLog.match(/builder prune -f --keep-storage 1GB/gu)).toHaveLength(4)
     expect(dockerLog).toContain('--label org.opencontainers.image.revision=')
-    expect(dockerLog).toContain('--label com.storenova.ops-auth-mode=oidc')
-    expect(dockerLog).toContain('--build-arg VITE_OPS_LOGIN_URL=https://sso.example.test/authorize?client_id=ops')
+    expect(dockerLog).toContain('--label com.storenova.ops-auth-mode=password')
+    expect(dockerLog).not.toContain('VITE_OPS_LOGIN_URL')
     expect(dockerLog).toContain('infra/docker/pilot-gateway-https.Dockerfile')
     expect(dockerLog).not.toMatch(/compose| run /u)
   })

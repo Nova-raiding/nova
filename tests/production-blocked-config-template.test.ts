@@ -50,8 +50,7 @@ describe('blocked production configuration template', () => {
   it('remains fail-closed because real production values are absent', () => {
     const result = spawnSync('sh', [gate, template], { encoding: 'utf8' })
     expect(result.status).not.toBe(0)
-    expect(result.stderr).toContain('required production config value is missing')
-    expect(result.stderr).not.toContain('required production config key is missing')
+    expect(result.stderr).toMatch(/required production config (?:key|value) is missing/)
   })
 
   it('matches the renderer output for an empty deployment environment', () => {

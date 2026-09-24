@@ -17,6 +17,13 @@ export const opsDomains = [
 
 export type OpsDomain = (typeof opsDomains)[number];
 
+// Keep route recognition and route replacement aligned with the domain source
+// of truth. `governance` remains a legacy alias for the overview landing page.
+const opsRoutePattern = new RegExp(
+  `/ops/(?:governance|${opsDomains.join("|")})/?$`,
+  "u",
+);
+
 /** Domains served by the platform operations console. Merchant operations are
  * handled by Merchant Studio, so the Ops Console never switches workbench.
  *
@@ -55,7 +62,7 @@ export function domainFromLocation(
   // the finance route. Keep them usable, but canonicalize to /ops/tasks.
   if (/\/ops\/finance\/merchant\/tasks\/?$/u.test(location.pathname)) return "tasks";
   const pathDomain = location.pathname
-    .match(/\/ops\/(?:governance|overview|users|customer-delivery|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u)?.[0]
+    .match(opsRoutePattern)?.[0]
     .split("/")
     .filter(Boolean)
     .at(-1);
@@ -73,13 +80,11 @@ export function urlForDomain(
   location: Pick<Location, "pathname" | "search">,
   domain: OpsDomain,
 ): string {
-  const currentOpsRoute =
-    /\/ops\/(?:governance|overview|users|customer-delivery|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u;
   const legacyMerchantTasksRoute = /\/ops\/finance\/merchant\/tasks\/?$/u;
   const opsRootRoute = /\/ops\/?$/u;
   const unknownOpsDeepLink = /\/ops\/.*$/u;
-  const basePath = currentOpsRoute.test(location.pathname)
-    ? location.pathname.replace(currentOpsRoute, "")
+  const basePath = opsRoutePattern.test(location.pathname)
+    ? location.pathname.replace(opsRoutePattern, "")
     : legacyMerchantTasksRoute.test(location.pathname)
       ? location.pathname.replace(legacyMerchantTasksRoute, "")
       : opsRootRoute.test(location.pathname)
@@ -88,4 +93,19 @@ export function urlForDomain(
           ? location.pathname.replace(unknownOpsDeepLink, "")
           : location.pathname.replace(/\/$/u, "");
   return `${basePath}/ops/${domain}${location.search}`;
+}
+
+export function urlForDomainWithQuery(
+  location: Pick<Location, "pathname" | "search" | "hash">,
+  domain: OpsDomain,
+  patch: Record<string, string | undefined>,
+): string {
+  const params = new URLSearchParams(location.search);
+  for (const [key, value] of Object.entries(patch)) {
+    if (value?.trim()) params.set(key, value.trim());
+    else params.delete(key);
+  }
+  const route = urlForDomain(location, domain).split("?")[0];
+  const query = params.toString();
+  return `${route}${query ? `?${query}` : ""}${location.hash}`;
 }

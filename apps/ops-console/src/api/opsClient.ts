@@ -68,9 +68,9 @@ export function describeOpsError(error: unknown): string {
   }
 }
 
-// A production bundle must never silently fall back to the local demo operator.
-// Development keeps the fixture-friendly local mode; deployed builds require
-// the OIDC gateway session unless explicitly configured otherwise.
+// Production bundles must never fall back to the local demo operator. Normal
+// deployments use the password session; only explicitly marked local builds
+// may enable the local bearer adapter.
 type OpsAuthEnvironment = Readonly<Record<string, string | boolean | undefined>>;
 
 const viteEnv = (import.meta as ImportMeta & { env: OpsAuthEnvironment }).env;
@@ -83,47 +83,17 @@ export function recordOpsBootstrapTrace(event: string, details: Record<string, u
   trace.push({ event, ...details });
 }
 
-export function resolveManagedOpsSession(environment: OpsAuthEnvironment): boolean {
-  // An explicit OIDC build must never fall back to the local bearer adapter.
-  // This is especially important for isolated Vite acceptance runners where
-  // auth mode can be transformed separately from the build mode.
-  if (environment.VITE_OPS_BUILD_MODE === "oidc") return true;
-  // Password-backed production is also an explicit deployment contract. It
-  // uses the durable HttpOnly damai_session cookie and must render the real
-  // Store Nova platform-account login form instead of the OIDC reauth gate.
-  if (environment.VITE_OPS_BUILD_MODE === "password" && environment.VITE_OPS_AUTH_MODE === "password") return false;
-  // Local Compose builds are still Vite production bundles, but they are
-  // explicitly isolated acceptance builds. Keep the local bearer adapter
-  // available only when both compile-time flags agree.
-  if (environment.VITE_OPS_BUILD_MODE === "local" && environment.VITE_OPS_AUTH_MODE === "local") return false;
-  // Production assets must never expose the local Bearer/operator adapter,
-  // even when a deployment accidentally injects a local-mode override.
-  if (environment.PROD === true) return true;
-  if (environment.VITE_OPS_AUTH_MODE === "oidc") return true;
-  if (environment.VITE_OPS_AUTH_MODE === "local") return false;
-  return false;
+export function resolveLocalBearerSession(environment: OpsAuthEnvironment): boolean {
+  return environment.VITE_OPS_BUILD_MODE === "local" && environment.VITE_OPS_AUTH_MODE === "local";
 }
 
-export function resolveManagedOpsLoginUrl(
-  environment: OpsAuthEnvironment,
-  origin = typeof window === "undefined" ? "https://ops.invalid" : window.location.origin,
-): string | undefined {
-  const configured = environment.VITE_OPS_LOGIN_URL;
-  if (typeof configured !== "string" || !configured.trim()) return undefined;
-  try {
-    const target = new URL(configured.trim(), origin);
-    const loopbackHttp = target.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(target.hostname);
-    if ((target.protocol !== "https:" && !loopbackHttp) || target.username || target.password) return undefined;
-    return target.href;
-  } catch {
-    return undefined;
-  }
-}
-
-export const managedOpsSession = resolveManagedOpsSession(viteEnv);
-export const passwordOpsSession = viteEnv.VITE_OPS_BUILD_MODE === "password" && viteEnv.VITE_OPS_AUTH_MODE === "password";
-export const managedOpsLoginUrl = resolveManagedOpsLoginUrl(viteEnv);
-export const localOpsSessionEnabled = viteEnv.VITE_OPS_LOCAL_SESSION === "true" && !managedOpsSession;
+export const localBearerSession = resolveLocalBearerSession(viteEnv);
+export const cookieOpsSession = !localBearerSession;
+// This flag represents the former externally managed/OIDC transport. Password
+// login uses cookies too, but keeps its connection config in localStorage.
+export const managedOpsSession = false;
+export const passwordOpsSession = cookieOpsSession;
+export const localOpsSessionEnabled = viteEnv.VITE_OPS_LOCAL_SESSION === "true" && localBearerSession;
 const LOCAL_SESSION_DISABLED_KEY = "ops_local_session_disabled";
 const PASSWORD_SESSION_ACTIVE_KEY = "ops_password_session_active";
 let localOpsSessionPromise: Promise<void> | undefined;
@@ -187,10 +157,11 @@ export function purgeLocalOpsCredentialsForManagedSession(
 ): void {
   if (!managed) return;
   for (const key of LOCAL_CREDENTIAL_KEYS) storage.removeItem(key);
-  // A managed OIDC session still needs the route-scoped tenant/workbench
-  // context to select the correct signed boundary. These values are not
-  // credentials and are validated again by the gateway/API on every request.
+  // Password sessions still need route-scoped tenant/workbench context. These
+  // values are not credentials and the API validates them on every request.
 }
+
+/** Password-cookie builds may cache their last server projection between SPA navigations. */
 
 export const OPS_REQUEST_TIMEOUT_MS = 10_000;
 // Platform aggregates fan out across every authorized workspace. They are
@@ -291,12 +262,12 @@ function normalizedConnectionConfig(value: unknown): OpsConnectionConfig | undef
   const actorId = typeof value.actorId === "string" ? value.actorId.trim() : "";
   const token = typeof value.token === "string" ? value.token.trim() : "";
   const workbench = normalizedWorkbench(value.workbench);
-  if (!apiBase || (workbench === "workspace" && !workspaceId) || (!managedOpsSession && !localOpsSessionEnabled && !token)) return undefined;
+  if (!apiBase || (workbench === "workspace" && !workspaceId) || (!managedOpsSession && !passwordOpsSession && !localOpsSessionEnabled && !token)) return undefined;
   return {
     apiBase,
     workspaceId,
-    actorId: managedOpsSession || localOpsSessionEnabled ? "" : actorId,
-    token: managedOpsSession || localOpsSessionEnabled ? "" : token,
+    actorId: managedOpsSession || passwordOpsSession || localOpsSessionEnabled ? "" : actorId,
+    token: managedOpsSession || passwordOpsSession || localOpsSessionEnabled ? "" : token,
     workbench,
   };
 }
@@ -363,9 +334,8 @@ export function saveOpsConnectionConfig(input: OpsConnectionConfigInput): OpsCon
  * is the logout/401 boundary: `readOpsConnectionConfig` falls back to those
  * keys, so removing only the versioned tuple left a usable bearer in
  * localStorage — `onRefresh()` still succeeded after 退出登录 and a shared
- * machine kept the operator's credential. Managed OIDC sessions keep their
- * context in sessionStorage and authenticate with an HttpOnly cookie, so only
- * the route-scoped UI context is cleared for them.
+ * machine kept the operator's credential. Cookie sessions authenticate with
+ * an HttpOnly cookie and keep non-secret UI context in localStorage.
  */
 export function clearOpsConnectionConfig(): void {
   const storage = configStorage();
@@ -373,6 +343,12 @@ export function clearOpsConnectionConfig(): void {
   storage.removeItem(OPS_WORKBENCH_KEY);
   if (managedOpsSession || typeof localStorage === "undefined") return;
   for (const key of LOCAL_CREDENTIAL_KEYS) localStorage.removeItem(key);
+}
+
+/** Clear browser-side session hints after the server rejects the cookie. */
+export function clearExpiredOpsSession(): void {
+  markPasswordSessionActive(false);
+  clearOpsConnectionConfig();
 }
 
 /** Commit the active UI context without treating URL state as authority. */
@@ -452,7 +428,7 @@ function requestError(payload: RpcErrorPayload | undefined, response: Response, 
 
 export function opsApiBase(): string {
   const configured = readOpsConnectionConfig().apiBase;
-  // Managed OIDC deployments always own a same-origin /api boundary. Keep
+  // Password-session deployments own a same-origin /api boundary. Keep
   // the session usable when a stale connection-config entry was purged during
   // login; local bearer mode still requires an explicit configured base.
   const resolved = configured || (managedOpsSession || passwordOpsSession ? "/api" : "");
@@ -463,13 +439,13 @@ export function opsApiBase(): string {
 /**
  * The console must never manufacture a workspace or operator identity. In
  * local development the token is intentionally entered by the operator and
- * kept only in browser storage; production uses the OIDC gateway session.
+ * kept only in browser storage; production uses the password-session cookie.
  */
 export function hasOpsConnection(): boolean {
   const config = readOpsConnectionConfig();
-  // The signed OIDC session supplies workbench and tenant scope server-side;
-  // stale local UI workbench state must not disable managed API hydration.
   const connected = managedOpsSession || passwordSessionActive() || Boolean(config.apiBase && (config.workbench === "platform" || config.workspaceId) && ((localOpsSessionEnabled && !localOpsSessionSuppressed()) || config.token));
+  // The authenticated server session supplies identity and roles; workbench
+  // context remains route-scoped UI state and cannot grant authorization.
   recordOpsBootstrapTrace("connection", { connected, managed: managedOpsSession, hasApiBase: Boolean(config.apiBase), workbench: config.workbench, hasWorkspace: Boolean(config.workspaceId) });
   return connected;
 }
@@ -584,10 +560,10 @@ async function rpcAtWorkspace<T>(
   await ensureLocalOpsSession();
   const connection = readOpsConnectionConfig();
   const workspaceId = workspaceOverride ?? connection.workspaceId;
-  // The OIDC gateway supplies credentials and derives the authorized scope
-  // from the signed session. The selected workbench still comes from the
-  // route-scoped connection state; the gateway rejects a stale/mismatched
-  // value instead of allowing a bearer or UI value to widen scope.
+  // The password session supplies credentials and the API derives authorized
+  // scope server-side. Workbench selection remains route-scoped UI state; the
+  // API rejects a stale/mismatched value instead of allowing UI state to widen
+  // scope.
   const workbench = connection.workbench;
   if (!workspaceId && workbench === "workspace") {
     const error = new Error("请先配置真实工作区 ID") as OpsRequestError;

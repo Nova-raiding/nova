@@ -18,6 +18,15 @@ describe("OpsHeader account authentication UX", () => {
     expect(markup).not.toContain("当前状态");
   });
 
+  it("keeps only the account/password path when the legacy managed flag is present", () => {
+    const markup = renderToStaticMarkup(
+      <OpsHeader managedSession sessionLoaded={false} onRefresh={() => undefined} />,
+    );
+    expect(markup).toContain("平台运营账号登录");
+    expect(markup).toContain("打开账号信息");
+    expect(markup).not.toContain("组织登录");
+  });
+
   it("documents server-side session and password handling", async () => {
     const source = await import("node:fs/promises").then(({ readFile }) =>
       readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"),

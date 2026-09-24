@@ -7,7 +7,7 @@ const plan = isolatedContainerRunArgs({ runId, kind: 'postgres', image: ISOLATED
 const owned = { id: 'a'.repeat(64), name: plan.name, runId, kind: 'postgres' as const, image: ISOLATED_POSTGRES_IMAGE }
 const inspection = () => ({
   id: owned.id, name: `/${owned.name}`, image: owned.image, autoRemove: true, running: true,
-  labels: { 'merchant.fixture.purpose': 'isolated-ops-oidc-acceptance', 'merchant.fixture.run-id': runId, 'merchant.fixture.kind': 'postgres' },
+  labels: { 'merchant.fixture.purpose': 'isolated-ops-password-acceptance', 'merchant.fixture.run-id': runId, 'merchant.fixture.kind': 'postgres' },
   mounts: [{ Type: 'tmpfs', Destination: '/var/lib/postgresql/data' }],
   tmpfs: { '/var/lib/postgresql/data': 'rw,nosuid,size=512m' },
   ports: { '5432/tcp': [{ HostIp: '127.0.0.1', HostPort: '49163' }] },
@@ -116,6 +116,16 @@ describe('isolated Ops fixture safety boundary', () => {
     for (const line of source.split('\n').filter(line => line.includes('writeFile('))) {
       expect(line).not.toMatch(/adminDatabaseUrl|adminUrl|appUrl|opsUrl|postgresPassword|appPassword|opsPassword|redisPassword/u)
     }
+  })
+
+  it('keeps the password Ops actor platform-only instead of granting synthetic workspace membership', () => {
+    const source = readFileSync(new URL('./isolated-ops-fixture.ts', import.meta.url), 'utf8')
+    expect(source).toContain("const platformLogin = `ops-${runId}@fixture.invalid`")
+    expect(source).toContain('platformLogin, platformPassword, platformIdentityId: platformAccount.identityId')
+    expect(source).toContain('subjectIdentityId, `ops-fixture-target-${runId}`')
+    expect(source).not.toContain('Isolated Ops Password Actor')
+    expect(source).not.toContain('[randomUUID(), workspaceId, platformLogin, platformAccount.identityId]')
+    expect(source).not.toContain('const actorIdentityId = randomUUID()')
   })
 
   it('binds the isolated database migration chain to release metadata instead of a stale literal', () => {

@@ -5,9 +5,9 @@ Status: DRAFT_FOR_GSTACK_REVIEW
 Date: 2026-09-08
 Scope: ChatGPT 插件、商家运营后台、平台管理后台的统一身份、会话、付费开通与创意点入口
 
-> **产品决策已更新（2026-09-09）**：本设计稿中的“外部 OIDC/OAuth、邀请制、业务 API 不自建密码库”是历史草案，不再是用户可见登录方案。请以 [《Store Nova商家营销平台产品总文档》](../store-nova-product-master-document.md) v2.0 为准：平台运营和商家均使用Store Nova账号密码；ChatGPT 仍可在底层使用 OAuth/MCP 协议，但密码只在Store Nova授权页输入。本文仅保留可复用的会话、权益和账务状态机，认证实现必须先完成 v2.0 Phase 1 决策。
+> **产品决策已更新（2026-09-25）**：本文是历史设计稿；其中“外部 OIDC/OAuth、邀请制、业务 API 不自建密码库”均不再适用。请以 [《Store Nova商家营销平台产品总文档》](../store-nova-product-master-document.md) v2.0 和 [桌面端本地插件身份 ADR](../architecture/desktop-only-auth-adr.md) 为准：运营后台和商家均只使用 Store Nova 账号密码；ChatGPT 侧只使用本地直装 stdio 插件。远程 ChatGPT MCP OAuth、SSO/OIDC 和其他登录方式均不属于当前产品流程。本文只供历史追溯，不作为实现或验收依据。
 
-> **执行边界**：下文保留用于追溯 2026-09-08 的历史讨论；凡出现“OIDC 直登、只允许邀请、排除自建密码、充值已完成或插件展示预计扣点”，均不得作为当前开发/验收依据。当前唯一可执行认证和商业状态以总文档 §6、§15、§24–§26 为准。
+> **执行边界**：下文保留用于追溯 2026-09-08 的历史讨论；凡出现 OIDC 登录、OIDC 网关、只允许邀请或排除自建密码，均不得作为当前开发/验收依据。当前唯一可执行认证和商业状态以总文档 §6、§15、§24–§26 为准。
 
 ## 问题
 
@@ -167,12 +167,12 @@ OIDC/session gateway
 
 ## 已有能力复用
 
-- `apps/api/src/server.ts`：OIDC 代理签名校验、nonce 防重放、会话投影和 fail-closed 配置检查。
+- `apps/api/src/server.ts`：当前只接受账号密码会话；旧 OIDC 设置 fail closed。
 - `packages/persistence/src/identity-lifecycle-repository.ts`：身份与成员生命周期持久化。
 - `packages/persistence/src/authorization-repository.ts`：持久化授权和审计。
-- `apps/ops-console/src/api/opsClient.ts`：managed session 模式、同源 Cookie 请求与工作台边界。
+- `apps/ops-console/src/api/opsClient.ts`：账号密码会话、同源 Cookie 请求与工作台边界。
 - `apps/ops-console/src/pages/OpsConsoleController.tsx`：未认证恢复提示、登录入口和权限验证门禁。
-- `tests/local-oidc-gateway.ts`、`scripts/run-ops-oidc-e2e.ts`：隔离的登录、Cookie、CSRF、签名身份和浏览器 E2E 基础。
+- `scripts/run-ops-password-e2e.ts`：隔离 PostgreSQL 密码账号、真实登录 Cookie 与桌面浏览器验收。
 
 ## 建议架构
 

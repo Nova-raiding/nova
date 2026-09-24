@@ -12,9 +12,9 @@ import { openPlatformConsole } from './ops-auth.js'
 import './ops-delivery-contract-link.fixture.js'
 
 const workspaceId = process.env.OPS_E2E_WORKSPACE_ID
-const base = process.env.OPS_OIDC_BASE_URL
+const base = process.env.OPS_BASE_URL
 const output = process.env.OPS_E2E_OUTPUT_DIR
-const secret = process.env.LOCAL_OIDC_TEST_PASSWORD
+const secret = process.env.OPS_TEST_PASSWORD
 if (!workspaceId || !base || !output || !secret) throw new Error('ACCOUNT_ACCESS_ISOLATED_RUNNER_REQUIRED')
 const digest = text => createHash('sha256').update(text).digest('hex')
 const credentials = label => ({ label, login: `delivery-${label.toLowerCase()}-${digest(workspaceId).slice(0, 16)}@fixture.invalid`, password: `Fixture-${digest(`${secret}\0${workspaceId}\0${label}`)}` })

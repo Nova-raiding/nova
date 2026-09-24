@@ -6,6 +6,7 @@ import { UsersPage } from "../pages/UsersPage.js";
 export interface OpsDomainPageProps {
   model: OpsConsoleModel;
   onNavigate: (domain: OpsDomain) => void;
+  onNavigateWithQuery?: (domain: OpsDomain, query: Record<string, string | undefined>) => void;
 }
 
 type OpsDomainPage = LazyExoticComponent<ComponentType<OpsDomainPageProps>>;

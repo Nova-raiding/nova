@@ -12,10 +12,10 @@ function requiredEnvironment(name) {
 }
 
 const config = {
-  baseUrl: requiredEnvironment('OPS_OIDC_BASE_URL').trim(),
-  username: requiredEnvironment('LOCAL_OIDC_TEST_USERNAME'),
-  password: requiredEnvironment('LOCAL_OIDC_TEST_PASSWORD'),
-  actorId: requiredEnvironment('LOCAL_OIDC_SUBJECT').trim(),
+  baseUrl: requiredEnvironment('OPS_BASE_URL').trim(),
+  username: requiredEnvironment('OPS_TEST_USERNAME'),
+  password: requiredEnvironment('OPS_TEST_PASSWORD'),
+  actorId: requiredEnvironment('OPS_ACTOR_ID').trim(),
   workspaceId: requiredEnvironment('OPS_E2E_WORKSPACE_ID').trim(),
   subjectIdentityId: requiredEnvironment('OPS_E2E_SUBJECT_IDENTITY_ID').trim(),
   approverId: requiredEnvironment('OPS_E2E_APPROVER_ID').trim(),
@@ -25,12 +25,12 @@ const gatewayUrl = new URL(config.baseUrl)
 if (gatewayUrl.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(gatewayUrl.hostname)
   || !gatewayUrl.port || gatewayUrl.username || gatewayUrl.password || gatewayUrl.search || gatewayUrl.hash
   || gatewayUrl.pathname !== '/') {
-  throw new Error('OPS_OIDC_BASE_URL must be an explicit loopback HTTP gateway origin with a port')
+  throw new Error('OPS_BASE_URL must be an explicit loopback HTTP gateway origin with a port')
 }
 if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(config.subjectIdentityId)) {
   throw new Error('OPS_E2E_SUBJECT_IDENTITY_ID must be a persistent fixture UUID')
 }
-if (config.approverId === config.actorId) throw new Error('OPS_E2E_APPROVER_ID must differ from LOCAL_OIDC_SUBJECT')
+if (config.approverId === config.actorId) throw new Error('OPS_E2E_APPROVER_ID must differ from OPS_ACTOR_ID')
 if (!isAbsolute(config.outputDir) || config.outputDir === '/') throw new Error('OPS_E2E_OUTPUT_DIR must be an explicit absolute evidence directory')
 for (const key of ['actorId', 'workspaceId', 'approverId']) {
   if (/[\u0000-\u001f\u007f]/u.test(config[key])) throw new Error(`Invalid isolated fixture identifier: ${key}`)
@@ -186,7 +186,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
     await mkdir(evidenceDir, { recursive: true })
     const evidence = {
       schema_version: 1,
-      evidence_kind: 'isolated_live_oidc_ui_rpc',
+      evidence_kind: 'isolated_live_password_ui_rpc',
       raw_browser_trace_saved: false,
       viewport,
       fixture: { workspace_id: config.workspaceId, subject_ref: reference(config.subjectIdentityId), actor_ref: reference(config.actorId), approver_ref: reference(config.approverId) },
@@ -202,7 +202,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
     }
     await page.setViewportSize(viewport)
     try {
-      step('signed_oidc_login_and_grant_capabilities')
+      step('password_login_and_grant_capabilities')
       await login(page, evidence)
       await page.getByRole('textbox', { name: 'JIT 目标身份 ID', exact: true }).fill(config.subjectIdentityId)
       await page.getByRole('textbox', { name: 'JIT 目标工作区 ID', exact: true }).fill(config.workspaceId)

@@ -66,7 +66,7 @@
 | 步骤 | 检查内容 | 完成条件 | 阻断示例 |
 |---|---|---|---|
 | 插件连接 | `MERCHANT_MCP_BASE_URL`、HTTPS、MCP 握手 | `initialize` 和 `tools/list` 成功 | 地址缺失、非 HTTPS、工具为空 |
-| 用户身份 | Bearer/OIDC 身份映射 | 服务端返回有效 actor 与角色 | 未登录、token 过期、角色缺失 |
+| 用户身份 | Store Nova 账号密码会话与本地插件凭据 | 服务端返回当前 identity 与预分配 workspace | 未登录、凭据过期、角色缺失 |
 | 工作区 | `workspace.bootstrap` 或恢复 binding | 返回当前 workspace 且租户范围一致 | workspace 缺失、binding 失效 |
 | 创意点准入 | `billing.status` / commercial access | `balance_state=ready` 且 access revision 有效 | unknown、余额不足、准入过期 |
 | 平台选择 | 六个平台列表 | 用户明确选择平台 | 用户未选择或选择不支持平台 |
@@ -94,7 +94,7 @@
 
 ### 7.1 必须绑定
 
-- ChatGPT/Codex 宿主身份：由宿主和服务端 Bearer/OIDC 提供；用户不可在插件中伪造角色。
+- Store Nova 用户身份：通过账号密码登录验证；服务端绑定 identity 与管理员预分配的 workspace，用户和插件均不能伪造角色。
 - 工作区：首次由服务端创建或恢复；binding 按 API、身份和 token 指纹隔离保存。
 - 店铺：必须使用 `platform + account_id`，不能只使用店铺名称，不能默认列表第一家。
 - 官方平台授权：通过服务端 OAuth 官方流程完成，插件只展示脱敏结果。

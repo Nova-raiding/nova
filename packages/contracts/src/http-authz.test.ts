@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { MCP_METHODS } from './mcp.js'
 import { getMcpMethodPolicy } from './authz.js'
-import { HTTP_OPERATION_POLICIES, assertHttpOperationPolicyCoverage, getHttpOperationPolicy } from './http-authz.js'
+import { HTTP_OPERATION_POLICIES, HTTP_ROUTE_COVERAGE_EXEMPTIONS, assertHttpOperationPolicyCoverage, getHttpOperationPolicy } from './http-authz.js'
 
 describe('HTTP authorization policy registry', () => {
   it('is unique and every identity operation references a registered MCP policy', () => {
@@ -68,6 +68,17 @@ describe('HTTP authorization policy registry', () => {
     expect(getHttpOperationPolicy('GET', '/v1/tasks/task%ZZ')).toBeUndefined()
     expect(getHttpOperationPolicy('GET', '/v1/tasks/task\u00001')).toBeUndefined()
     expect(getHttpOperationPolicy('GET', 'v1/tasks/task-1')).toBeUndefined()
+  })
+
+  it('keeps local stdio auth routes while excluding retired remote ChatGPT OAuth endpoints', () => {
+    const paths = HTTP_ROUTE_COVERAGE_EXEMPTIONS.map(route => route.pathTemplate)
+    expect(paths).toContain('/v1/auth/local-plugin/authorize')
+    expect(paths).toContain('/v1/auth/local-plugin/token')
+    expect(paths).not.toContain('/.well-known/openai-apps-challenge')
+    expect(paths).not.toContain('/.well-known/oauth-authorization-server')
+    expect(paths).not.toContain('/.well-known/oauth-protected-resource')
+    expect(paths).not.toContain('/oauth/authorize')
+    expect(paths).not.toContain('/oauth/token')
   })
 
   it('covers every documented OpenAPI operation exactly once while retaining internal runtime policies', () => {

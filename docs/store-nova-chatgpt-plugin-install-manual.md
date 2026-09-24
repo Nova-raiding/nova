@@ -24,11 +24,9 @@ stdio bridge，由 bridge 连接 Store Nova API/MCP。这条链路不使用 Chat
 凭据。浏览器中出现的 Store Nova 授权确认页是本地 CLI 的 PKCE 登录，不是 ChatGPT OAuth；
 不能取消 Store Nova 自己的登录、工作区/RLS 或审计授权。
 
-### 本地桌面模式（推荐给本地安装用户）
+### 本地桌面模式（当前正式路径）
 
-先完成 A2 的本地安装，再按 A3 使用本地 CLI 完成浏览器授权和 Keychain 写入。商家后台的
-“连接 ChatGPT 本地插件”按钮及 Helper 已有原型，但在 Helper 完成签名、公证、安装实例绑定和
-抗协议劫持验收前，生产环境必须保持关闭。短期 access/refresh token 只写入当前 macOS 用户的
+先完成 A2 的本地安装，再按 A3 使用本地 CLI 完成浏览器授权和 Keychain 写入。商家后台一键连接按钮及 Helper 仍是安全预览，生产环境关闭；当前也没有已交付的独立商家自助后台。因此不要指导商家寻找后台连接页或点击该按钮。Store Nova 授权页供 CLI 完成登录和工作区确认，不代表商家自助后台已交付。短期 access/refresh token 只写入当前 macOS 用户的
 Keychain，不进入 URL、命令行、launchd、仓库或聊天。
 
 本地模式的请求路径是：
@@ -53,7 +51,7 @@ access token 过期时 bridge 沿用 `POST /v1/auth/mcp-token/refresh` 轮换并
 
 | 角色 | 负责什么 | 不应该做什么 |
 | --- | --- | --- |
-| 平台管理员 | 准备商家 API 根地址、工作区、OIDC/Bearer 映射、服务端模型和支付配置 | 不把密钥写进插件包、仓库或聊天 |
+| 平台管理员 | 准备商家 API 根地址、管理员分配的工作区、账号和服务端模型/支付配置 | 不把密钥写进插件包、仓库或聊天 |
 | 技术安装人员 | 在商家电脑安装/更新插件，注入连接环境，重启 ChatGPT，完成只读验收 | 不替商家保存平台账号密码，不默认开启写权限 |
 | 商家 | 在 ChatGPT 中用自然语言选择店铺、上传资料、确认内容和发布 | 不填写 `product_id`、`account_id`、模型 Key 或平台密码 |
 
@@ -95,19 +93,9 @@ Codex CLI 目前把本地插件源也归在 `plugin marketplace` 命令组下；
 
 应看到 `merchant-marketing@merchant-local` 为 `installed, enabled`。插件更新后重新执行本地安装脚本，再重启 ChatGPT；已经打开的对话不会自动刷新旧的 MCP 工具快照。
 
-### A3. 在商家后台一键连接（安全预览，生产默认关闭）
+### A3. 使用本地 CLI 绑定工作区（当前正式路径）
 
-1. 使用将要运行 ChatGPT 的同一个 macOS 用户登录商家后台。
-2. 打开“连接本地插件”，确认页面显示的账号与目标工作区正确。
-3. 点击“连接 ChatGPT 本地插件”，并在 macOS/浏览器提示中允许打开 Store Nova Helper。
-4. 在 Store Nova 授权页确认工作区。页面显示“已连接”只证明 Helper 已完成授权、钥匙串写入和本地
-   bridge 检查；它不代表 ChatGPT 已重新加载插件。
-5. 按 A4 **完全退出并重新打开 ChatGPT**，新建会话后按 A5 调用 `onboarding.status` 验证。
-
-如果页面显示“需安装”，先重新执行 A2；如果显示“已过期”“被拒绝”或“验证失败”，按页面提示
-重试。一次性连接链接不得复制到聊天、配置文件或另一台电脑，也不要把页面状态当作最终宿主验收。
-
-#### CLI 正式路径
+工作区由平台管理员预先分配；商家不得自行创建、猜测或切换 `ws_...`。未取得工作区 ID 时先联系管理员；未完成 CLI 登录和绑定时不要调用 `onboarding.status`，也不得把 `workspace.bootstrap` 当作自助恢复方式。缺少绑定属于配置阻断，完成管理员分配和下面的本地登录后再验收。
 
 进入 A2 实际安装得到的插件目录：
 
@@ -138,7 +126,7 @@ ChatGPT 宿主已经加载或验收通过。
 
 > 请调用 Store Nova 的 onboarding.status，检查当前身份和工作区。
 
-首次调用会读取工作区和准入状态。正常结果应继续询问上传资料、选择商品或查看工作区；不应出现 `MCP_CONFIGURATION_REQUIRED`、`MERCHANT_MCP_BASE_URL is required` 或“插件连接配置未加载”。
+`onboarding.status` 只用于核验身份、工作区和引导状态；成功后根据返回结果说明当前能力并询问一个资料或制作目标，不把它当作商业准入或生成成功。不要用 `merchant.start` 代替身份验收：该入口另受商业门禁约束，可能返回下述 402/503。绑定后的连接验收不应出现 `MCP_CONFIGURATION_REQUIRED`、`MERCHANT_MCP_BASE_URL is required` 或“插件连接配置未加载”。
 
 注意 `merchant.start` 本身受商业准入门禁：工作区余额为 0、余额未知或缺套餐权益时分别返回 `CREATIVE_POINTS_EXHAUSTED`（402）、`CREATIVE_POINTS_UNAVAILABLE`（503）、`COMMERCIAL_ENTITLEMENT_REQUIRED`（402）。这是准入阻断而不是安装错误；此时 `onboarding.status` 和 `workspace.health` 仍可正常读取状态，便于区分“装错了”和“还没开通”。
 
@@ -228,8 +216,8 @@ ChatGPT 宿主已经加载或验收通过。
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
 | `MCP_CONFIGURATION_REQUIRED`，缺少 `MERCHANT_MCP_BASE_URL` | 本地连接未完成，或 ChatGPT 尚未重启读取非敏感连接配置 | 重新执行 A3 CLI，完全退出并重启 ChatGPT 后开启新会话 |
-| `MERCHANT_WORKSPACE_ID is required` | 未分配工作区，或连接到了错误用户 | 让管理员确认工作区，在启动 ChatGPT 的同一 macOS 用户会话重新连接 |
-| `401/403`、角色无权限 | OIDC/Bearer 映射失败或 token 过期 | 管理员检查网关身份映射和 token，不要改客户端角色变量 |
+| `MERCHANT_WORKSPACE_ID is required` / `MCP_CONFIGURATION_REQUIRED`（工作区未绑定） | 尚未绑定管理员分配的工作区，或当前身份与工作区不匹配 | 停止调用，不运行 `workspace.bootstrap`；让管理员分配/核对 `ws_...`，然后在运行 ChatGPT 的同一用户会话运行本地登录 CLI 完成绑定，重启后调用 `onboarding.status` |
+| `401/403`、角色无权限 | 账号会话失效、工作区未授权或角色不足 | 使用 Store Nova 账号密码重新登录；管理员核对账号状态、成员关系和角色，不要改客户端权限变量 |
 | `MCP_STRICT_AUTH_REQUIRED` | 本地连接未完成或旧 launchd 配置仍在生效 | 重新执行 A3 CLI；不要手工注入 token，完全退出并重启 ChatGPT |
 | 工具列表少、旧入口仍出现 | 本地插件缓存未更新，或对话保存了旧快照 | 重新执行本地安装脚本，重启 ChatGPT，开启新会话 |
 | `Selected model is at capacity` | 宿主模型尚未把消息交给插件 | 在 ChatGPT 模型选择器切换可用宿主模型后重试 |

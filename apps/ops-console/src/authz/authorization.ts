@@ -129,7 +129,7 @@ export function createAuthorizationProjection(
       projected.scopes.delete(capability);
     }
   }
-  // Credential transport (OIDC vs local Bearer) never changes authorization.
+  // Credential transport (password cookie vs local Bearer) never changes authorization.
   // Both modes consume the server projection and remain deny-all before the
   // session arrives.
   const capabilities = projected.present ? projected.allow : new Set<string>();

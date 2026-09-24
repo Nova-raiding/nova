@@ -11,8 +11,8 @@ import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from '../packa
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const bridgePath = fileURLToPath(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url))
-const callback = 'http://127.0.0.1:19093/oauth/callback'
-const clientId = 'chatgpt-commercial-payment-e2e'
+const callback = 'http://127.0.0.1:19093/merchant-mcp-callback'
+const clientId = 'local-desktop'
 const verifier = 'commercial-payment-pkce-verifier-0000000000000000000000000000000000'
 const challenge = createHash('sha256').update(verifier).digest('base64url')
 
@@ -43,8 +43,7 @@ async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; ca
       PORT: '0',
       API_BIND_HOST: '127.0.0.1',
       AUTH_ENFORCEMENT: 'strict',
-      MCP_OAUTH_REQUIRED: 'true',
-      MCP_OAUTH_CLIENTS: JSON.stringify({ [clientId]: [callback] }),
+      MCP_INTEGRATION_MODE: 'local_stdio',
       COMMERCIAL_PAYMENT_PROVIDER: 'alipay',
       PAYMENT_MODE: 'provider',
       PAYMENT_CALLBACK_BASE_URL: 'https://fixture.invalid/callbacks',
@@ -125,7 +124,7 @@ async function bridgeCall(child: ChildProcessWithoutNullStreams, id: number, nam
   return await nextBridgeLine(child.stdout) as { result?: { isError?: boolean; structuredContent?: Record<string, any> }; error?: Record<string, unknown> }
 }
 
-describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', () => {
+describe('local stdio plugin commercial point-pack payment PostgreSQL vertical', () => {
   it('grants one point pack to the canonical buyer exactly once and camouflages it from another workspace member', async () => {
     if (!databaseUrlValue) throw new Error('PERSISTENCE_RELEASE_DATABASE_URL_REQUIRED')
     const baseDatabase = new URL(databaseUrlValue)
@@ -194,21 +193,17 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
       const running = await startApi({ databaseUrl: appUrl, opsDatabaseUrl: opsUrl, callbackSecret })
       api = running.child
       const resource = `${running.base}/mcp`
-      const authorizeAndExchange = async (merchant: (typeof merchants)[number], state: string) => {
-        const authorize = new URL(`${running.base}/oauth/authorize`)
-        for (const [key, value] of Object.entries({ response_type: 'code', client_id: clientId, redirect_uri: callback, state, code_challenge: challenge, code_challenge_method: 'S256', scope: 'merchant', resource })) authorize.searchParams.set(key, value)
-        const form = new URLSearchParams(authorize.searchParams)
-        form.set('login', merchant.login); form.set('password', merchant.password)
-        const authorized = await fetch(`${running.base}/oauth/authorize`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form, redirect: 'manual' })
-        expect(authorized.status).toBe(302)
-        const redirected = new URL(authorized.headers.get('location')!)
-        expect(redirected.searchParams.get('state')).toBe(state)
-        const exchanged = await fetch(`${running.base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', client_id: clientId, redirect_uri: callback, code: redirected.searchParams.get('code')!, code_verifier: verifier, resource }) })
+      const authorizeAndExchange = async (merchant: (typeof merchants)[number]) => {
+        const issued = await accounts.issueMcpAuthorizationCode({
+          account: merchant.account, clientId, redirectUri: callback, codeChallenge: challenge,
+          issuer: running.base, audience: resource, resource, scope: ['merchant'], workspaceId,
+        })
+        const exchanged = await fetch(`${running.base}/v1/auth/local-plugin/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', client_id: clientId, redirect_uri: callback, code: issued.code, code_verifier: verifier, resource, workspace_id: workspaceId }) })
         expect(exchanged.status).toBe(200)
-        return (await exchanged.json() as { access_token: string }).access_token
+        return ((await exchanged.json() as { data: { access_token: string } }).data).access_token
       }
-      const [tokenA, tokenB] = await Promise.all([authorizeAndExchange(merchants[0]!, `a-${suffix}`), authorizeAndExchange(merchants[1]!, `b-${suffix}`)])
-      // These are real PKCE-issued merchant tokens, not workspace OIDC sessions.
+      const [tokenA, tokenB] = await Promise.all([authorizeAndExchange(merchants[0]!), authorizeAndExchange(merchants[1]!)])
+      // These are real local-plugin PKCE-issued merchant tokens, not Ops sessions.
       // Keep the ops session exclusion tied to the verified credential source.
       for (const token of [tokenA, tokenB]) {
         const opsSession = await fetch(`${running.base}/mcp`, {
