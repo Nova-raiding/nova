@@ -23,6 +23,7 @@ import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
 import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, AuthorizationRepositoryError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, compareMembersByRecency, DEFAULT_MEMBER_ENTERPRISE_NAME, effectiveDebitFenOf, effectiveDebitFensOf, loadMigrations, reversalOrderId, settlementOrderId, visibleProductIds, memberIdentityKey, memberMatchesQuery, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type WorkspaceMember, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
+import { PostgresDemoEvaluationEntitlementRepository } from '../../../packages/persistence/src/demo-evaluation-entitlement-repository.js'
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import { CustomerDeliveryError, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository, normalizeCustomerDeliveryAccountListInput, customerDeliveryAccountCursor, type CustomerDeliveryRepository } from '../../../packages/persistence/src/customer-delivery-repository.js'
 import { loadCustomerDeliveryAsset, requireCustomerDeliveryAsset } from './customer-delivery-assets.js'
@@ -1204,6 +1205,7 @@ export interface ApiPersistence {
   commercialPointAdjustmentApprovals?: CommercialPointAdjustmentApprovalRepository
   commercialCatalog?: CommercialCatalogRepository
   commercialContracts?: PostgresCommercialContractRepository
+  demoEvaluationEntitlements?: PostgresDemoEvaluationEntitlementRepository
   privateTrialConversion?: PostgresPrivateTrialConversionRepository
   commercialRefunds?: CommercialRefundRepository
   serviceFulfillment?: ServiceFulfillmentRepository
@@ -3719,6 +3721,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const commercialPointAdjustmentApprovals = new PostgresCommercialPointAdjustmentApprovalRepository(sqlPool)
     const commercialCatalog = opsPool ? new PostgresCommercialCatalogRepository(opsSqlPool) : undefined
     const commercialContracts = new PostgresCommercialContractRepository(sqlPool)
+    const demoEvaluationEntitlements = new PostgresDemoEvaluationEntitlementRepository(sqlPool)
     const privateTrialConversion = new PostgresPrivateTrialConversionRepository(sqlPool)
     const commercialRefunds = new PostgresCommercialRefundRepository(sqlPool)
     const serviceFulfillment = new PostgresServiceFulfillmentRepository(sqlPool)
@@ -3934,7 +3937,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -4027,6 +4030,18 @@ const commercialAccessService = new CommercialAccessService({
       return memoryContinuousFeatureEntitlements.get(workspace_id) ?? []
     },
   },
+  ...(process.env.DEPLOYMENT_PROFILE === 'ecs' && process.env.DEMO_EVALUATION_ENTITLEMENT_ENABLED === 'true'
+    ? { demo_evaluation: {
+      workspaceId: 'ws_guirenniaoniao' as const,
+      projection: {
+        async listDemoEvaluationEntitlements({ workspace_id }: { workspace_id: string }) {
+          await persistenceReady
+          if (!persistence.demoEvaluationEntitlements) throw new Error('demo evaluation projection unavailable')
+          return persistence.demoEvaluationEntitlements.listDemoEvaluationEntitlements({ workspace_id })
+        },
+      },
+    } }
+    : {}),
   next_actions: error => error === ERROR_CODES.CREATIVE_POINTS_EXHAUSTED || error === ERROR_CODES.CREATIVE_POINTS_INSUFFICIENT
     ? ['commercial.order.create', 'commercial.catalog.get', 'creative-points.balance.get']
     : ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'],

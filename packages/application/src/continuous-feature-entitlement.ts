@@ -30,6 +30,21 @@ export interface ContinuousFeatureEntitlementPort {
   listV2EntitlementSnapshots(input: { readonly workspace_id: string }): Promise<readonly ContinuousFeatureEntitlementSnapshotV2[]>
 }
 
+/** A separately audited, time-limited evaluation grant; never a paid V2 order. */
+export interface DemoEvaluationEntitlement {
+  readonly id: string
+  readonly workspaceId: string
+  readonly startsAt: string
+  readonly expiresAt: string
+  readonly createdAt: string
+  readonly checksum: string
+  readonly status: 'active' | 'revoked'
+}
+
+export interface DemoEvaluationEntitlementPort {
+  listDemoEvaluationEntitlements(input: { readonly workspace_id: string }): Promise<readonly DemoEvaluationEntitlement[]>
+}
+
 export type ContinuousFeatureEntitlementDecision =
   | {
       readonly allowed: true
@@ -53,6 +68,8 @@ export type ContinuousFeatureEntitlementDecision =
 export interface ContinuousFeatureEntitlementServiceOptions {
   readonly projection: ContinuousFeatureEntitlementPort
   readonly now?: () => Date
+  /** Must only be supplied by the explicit ECS demo profile for this workspace. */
+  readonly demoEvaluation?: { readonly workspaceId: 'ws_guirenniaoniao'; readonly projection: DemoEvaluationEntitlementPort }
 }
 
 const SHA256 = /^[a-f0-9]{64}$/u
@@ -122,10 +139,12 @@ function isAuthoritativeSnapshot(
 export class ContinuousFeatureEntitlementService {
   readonly #projection: ContinuousFeatureEntitlementPort
   readonly #now: () => Date
+  readonly #demoEvaluation: ContinuousFeatureEntitlementServiceOptions['demoEvaluation']
 
   constructor(options: ContinuousFeatureEntitlementServiceOptions) {
     this.#projection = options.projection
     this.#now = options.now ?? (() => new Date())
+    this.#demoEvaluation = options.demoEvaluation
   }
 
   async decide(input: {
@@ -149,7 +168,34 @@ export class ContinuousFeatureEntitlementService {
     if (!Array.isArray(snapshots)) return denied('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', ignored)
 
     const authoritative = snapshots.filter(snapshot => isAuthoritativeSnapshot(snapshot, input.workspace_id, current.valueOf()))
-    if (authoritative.length === 0) return denied('COMMERCIAL_ENTITLEMENT_REQUIRED', ignored)
+    if (authoritative.length === 0) {
+      if (!this.#demoEvaluation || input.workspace_id !== this.#demoEvaluation.workspaceId) return denied('COMMERCIAL_ENTITLEMENT_REQUIRED', ignored)
+      let demo: readonly DemoEvaluationEntitlement[]
+      try {
+        demo = await this.#demoEvaluation.projection.listDemoEvaluationEntitlements({ workspace_id: input.workspace_id })
+      } catch {
+        return denied('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', ignored)
+      }
+      if (!Array.isArray(demo)) return denied('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', ignored)
+      const active = demo.filter(item => {
+        const start = canonicalInstant(item.startsAt)
+        const end = canonicalInstant(item.expiresAt)
+        const created = canonicalInstant(item.createdAt)
+        return item.workspaceId === input.workspace_id && item.status === 'active'
+          && identifier(item.id) && SHA256.test(item.checksum)
+          && start !== undefined && end !== undefined && created !== undefined
+          && start < end && start <= current.valueOf() && current.valueOf() < end && created <= current.valueOf()
+      })
+      if (active.length === 0) return denied('COMMERCIAL_ENTITLEMENT_REQUIRED', ignored)
+      if (active.length !== 1) return denied('COMMERCIAL_ENTITLEMENT_AMBIGUOUS', ignored)
+      const grant = active[0]!
+      return {
+        allowed: true, code: 'OK', snapshot_id: grant.id,
+        subscription_period_id: `demo-evaluation:${grant.id}`,
+        catalog_version_id: 'demo-evaluation:v1', checksum: grant.checksum,
+        ignored_legacy_sources: ignored,
+      }
+    }
     if (authoritative.length !== 1) return denied('COMMERCIAL_ENTITLEMENT_AMBIGUOUS', ignored)
 
     const snapshot = authoritative[0]!

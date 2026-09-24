@@ -12,6 +12,7 @@ import {
 import {
   ContinuousFeatureEntitlementService,
   type ContinuousFeatureEntitlementPort,
+  type DemoEvaluationEntitlementPort,
 } from './continuous-feature-entitlement.js'
 
 export type CreativePointBalanceProjection =
@@ -74,6 +75,8 @@ export interface CommercialAccessServiceOptions {
   readonly rate_resolver: ApprovedCreativePointRateResolver
   /** V2 subscription snapshot authority for every non-recovery merchant feature. */
   readonly entitlement_projection: ContinuousFeatureEntitlementPort
+  /** Explicit ECS demo grant, scoped to the sole first-install workspace. */
+  readonly demo_evaluation?: { readonly workspaceId: 'ws_guirenniaoniao'; readonly projection: DemoEvaluationEntitlementPort }
   /** Only server-authorized recovery actions may be exposed to clients. */
   readonly next_actions?: (error: CommercialAccessErrorCode) => readonly string[]
   /** Injectable for deterministic tests; production defaults to cryptographic UUIDs. */
@@ -136,7 +139,7 @@ export class CommercialAccessService {
     this.#registryVersion = options.registry_version
     this.#balanceProjection = options.balance_projection
     this.#rateResolver = options.rate_resolver
-    this.#continuousEntitlement = new ContinuousFeatureEntitlementService({ projection: options.entitlement_projection, now: options.now })
+    this.#continuousEntitlement = new ContinuousFeatureEntitlementService({ projection: options.entitlement_projection, now: options.now, demoEvaluation: options.demo_evaluation })
     this.#nextActions = options.next_actions
     this.#idFactory = options.id_factory ?? randomUUID
     this.#now = options.now ?? (() => new Date())
