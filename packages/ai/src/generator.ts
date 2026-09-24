@@ -8,6 +8,8 @@ import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ContentGenerationInput {
   platform: string
+  /** Unbound preview: creative copy only, with no fact-backed detail modules. */
+  candidateOnly?: boolean
   product: {
     id?: string
     title: string
@@ -170,7 +172,7 @@ function normalizeProviderStructure(value: unknown, input: ContentGenerationInpu
 }
 
 /** Validate without repairing or silently dropping fields. This is the trust boundary for model/Codex output. */
-export function validateContentSchema(value: unknown, source = 'content', options: { requireDecisionContracts?: boolean } = {}): GeneratedContent {
+export function validateContentSchema(value: unknown, source = 'content', options: { requireDecisionContracts?: boolean; candidateOnly?: boolean } = {}): GeneratedContent {
   const errors: string[] = []
   const requiredText = (record: Record<string, unknown>, key: string, errorPath = key) => {
     if (typeof record[key] !== 'string' || !(record[key] as string).trim()) errors.push(`${errorPath} 必须是非空字符串`)
@@ -179,10 +181,16 @@ export function validateContentSchema(value: unknown, source = 'content', option
   if (!isRecord(value)) throw new Error(`CONTENT_SCHEMA_INVALID: ${source} 必须是 JSON 对象`)
   const title = requiredText(value, 'title')
   const detail = requiredText(value, 'detail')
+  if (options.candidateOnly) {
+    for (const key of Object.keys(value)) if (!['title', 'detail', 'sellingPoints', 'brief'].includes(key)) errors.push(`未绑定候选不得包含 ${key}`)
+    if (isRecord(value.brief) && value.brief.priceExpression !== undefined) errors.push('未绑定候选不得包含价格表达')
+  }
   if (!Array.isArray(value.sellingPoints) || value.sellingPoints.length === 0) errors.push('sellingPoints 必须是非空字符串数组')
   else value.sellingPoints.forEach((item, index) => { if (typeof item !== 'string' || !item.trim()) errors.push(`sellingPoints[${index}] 必须是非空字符串`) })
 
   let modules: ContentModule[] | undefined
+  if (options.candidateOnly && value.modules !== undefined) errors.push('未绑定候选不得包含事实模块')
+  if (options.candidateOnly && value.brief === undefined) errors.push('未绑定候选 brief 必须是对象')
   if (options.requireDecisionContracts === true && value.modules === undefined) {
     errors.push('modules 必须是非空数组')
   }
@@ -314,11 +322,17 @@ function validateProviderScope(content: GeneratedContent, input: ContentGenerati
 }
 
 function validate(value: unknown, input: ContentGenerationInput): GeneratedContent {
-  return validateProviderScope(validateContentSchema(value, '模型响应', { requireDecisionContracts: true }), input)
+  return validateProviderScope(validateContentSchema(value, '模型响应', input.candidateOnly ? { candidateOnly: true } : { requireDecisionContracts: true }), input)
 }
 
 function prompt(input: ContentGenerationInput) {
   const { usageContext: _usageContext, ...providerInput } = input
+  if (input.candidateOnly) return JSON.stringify({
+    role: 'commerce-content-candidate',
+    outputShape: { title: '非空字符串', detail: '非空字符串', sellingPoints: ['非空字符串'], brief: { platform: '目标 platform', placement: '非空字符串', targetDimensions: '按目标平台版位规范配置，未配置时由设计确认', visualHierarchy: ['非空字符串'], productImageGuidance: '非空字符串', logoSafety: '非空字符串', headline: '非空字符串', subheadline: '非空字符串', coreSellingPoint: '非空字符串', cta: '非空字符串', textDensity: '非空字符串', safeArea: '非空字符串', protectedAreas: ['非空字符串'] } },
+    instruction: '仅生成未绑定商品的创意文案预览，返回 JSON 的 title、detail、sellingPoints、brief。不得返回 modules、事实来源、SKU、价格、库存、材质、功能、效果、认证或促销等未经确认的商品事实。product.title 只作为用户提供的主题，不证明商品事实。所有文字应明确属于待确认的创意建议；不得照抄 outputShape 示例字符串。brief 的必填字段都不可为空，未知尺寸使用指定待确认文案。',
+    input: providerInput,
+  })
   return JSON.stringify({
     role: 'commerce-content-generation',
     outputShape: {
@@ -358,6 +372,7 @@ export function budgetContentGenerationInput(input: ContentGenerationInput, maxI
   maxInputTokens = resolveTokenBudget(maxInputTokens, 4_000, 'input')
   const hardContext: ContentGenerationInput = {
     platform: input.platform,
+    ...(input.candidateOnly ? { candidateOnly: true } : {}),
     product: input.product,
     directionId: input.directionId,
     ...(input.confirmedFactSourceIds?.length ? { confirmedFactSourceIds: input.confirmedFactSourceIds } : {}),
@@ -457,7 +472,9 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
         const content = normalizeProviderStructure(readContent(payload), boundedInput)
         try { return validate(content, boundedInput) } catch (error) {
           if (attempt === 2 || !(error instanceof Error) || !error.message.includes('CONTENT_SCHEMA_INVALID')) throw error
-          const repairMessage = `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。重新返回完整 JSON，逐字段核对初始消息中的 outputShape。尤其每个模块必须有 factSourceIds、decisionContract.claim.factSourceIds、decisionContract.visualContract.requiredElements、decisionContract.priority 和 decisionContract.optional；claim.validUntil 只在输入事实有真实有效期时填写，不得虚构时间。仅使用输入 confirmedFactSourceIds 中的真实 ID；缺少来源则删除该模块，不能复制 outputShape 的示意值。只修复结构和缺失字段，不增加未确认事实。evidence.type 仅允许 real_image、parameter、test_report、comparison、usage_result、manual_review；evidence.status 仅允许 verified、missing、expired、conflict；product.id 不是 SKU ID，claim.skuIds 和 referencedSkuIds 只能使用 product.skuIds 中的值。不要复述上一份响应。`
+          const repairMessage = boundedInput.candidateOnly
+            ? `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。只返回完整 JSON：title、detail、sellingPoints、brief；不得返回 modules 或任何未经确认的商品事实。逐字段核对初始 outputShape，勿照抄示意值。`
+            : `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。重新返回完整 JSON，逐字段核对初始消息中的 outputShape。尤其每个模块必须有 factSourceIds、decisionContract.claim.factSourceIds、decisionContract.visualContract.requiredElements、decisionContract.priority 和 decisionContract.optional；claim.validUntil 只在输入事实有真实有效期时填写，不得虚构时间。仅使用输入 confirmedFactSourceIds 中的真实 ID；缺少来源则删除该模块，不能复制 outputShape 的示意值。只修复结构和缺失字段，不增加未确认事实。evidence.type 仅允许 real_image、parameter、test_report、comparison、usage_result、manual_review；evidence.status 仅允许 verified、missing、expired、conflict；product.id 不是 SKU ID，claim.skuIds 和 referencedSkuIds 只能使用 product.skuIds 中的值。不要复述上一份响应。`
           const nextRepairMessages = [...repairMessages, repairMessage]
           if (estimateRequestTokensFromPrompt(initialPrompt, nextRepairMessages) > (this.options.maxInputTokens ?? 4_000)) throw new Error('CONTEXT_BUDGET_EXCEEDED: 累计结构修复消息加入后超过输入 Token 预算')
           repairMessages.push(repairMessage)

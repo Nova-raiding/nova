@@ -20,6 +20,23 @@ function validGeneratedContent(input: Record<string, unknown> = {}) {
 }
 
 describe('content generator', () => {
+  it('generates an unbound candidate through the provider without allowing fact modules', async () => {
+    const brief = { platform: 'general', placement: '预览', targetDimensions: '按目标平台版位规范配置，未配置时由设计确认', visualHierarchy: ['主题'], productImageGuidance: '待确认素材', logoSafety: '待确认', headline: '创意标题', subheadline: '待确认', coreSellingPoint: '待确认', cta: '了解更多', textDensity: '低', safeArea: '待确认', protectedAreas: ['商品主体'] }
+    const content = { title: '创意标题', detail: '待商家确认的文案方向', sellingPoints: ['待确认的表达方向'], brief }
+    let promptText = ''
+    const generator = new OpenAICompatibleContentGenerator({
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async (_url, init = {}) => {
+        promptText = String(init.body)
+        return new Response(JSON.stringify({ id: 'candidate-request', usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify(content) } }] }), { status: 200 })
+      },
+    })
+    await expect(generator.generate({ platform: 'general', candidateOnly: true, directionId: '创意方向', product: { title: '主题', stock: 0, skuCount: 0 } })).resolves.toEqual(content)
+    expect(promptText).toContain('不得返回 modules')
+    expect(() => validateContentSchema({ ...content, modules: validModules }, 'candidate', { candidateOnly: true })).toThrow('未绑定候选不得包含事实模块')
+    expect(() => validateContentSchema({ title: content.title, detail: content.detail, sellingPoints: content.sellingPoints }, 'candidate', { candidateOnly: true })).toThrow('brief 必须是对象')
+    expect(() => validateContentSchema(content, 'formal', { requireDecisionContracts: true })).toThrow('modules 必须是非空数组')
+  })
   it('does not assemble a text provider from placeholder relay configuration', () => {
     expect(createContentGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: '${MODEL_RELAY_API_KEY}', AI_MODEL: 'REPLACE_WITH_TEXT_MODEL' })).toBeUndefined()
     expect(createContentGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-relay-key', AI_MODEL: 'your-text-model' })).toBeUndefined()

@@ -12072,13 +12072,13 @@ async function merchantFirstValuePreview(workspaceId: string, params: JsonObject
     try {
       await recordActionSettlement({ workspaceId, actionKey: actionId, actionKind: 'model_text', settlement: 'included_quota', amountFen: 0, actorId: requestActor(req), description: '未绑定商品文案候选生成', settlementStatus: 'authorized' })
       await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'content.draft.generate', resourceType: 'content_draft_candidate', resourceId: actionId, before: {}, after: { candidate_only: true, platform, title }, reason: '生成未绑定内容候选；不创建正式版本、不允许发布' })
-      generated = await contentGenerator.generate({ platform, directionId: prompt, product: { title, stock: 0, skuCount: 0 }, usageContext: { workspaceId, actionId, runKey: actionId } })
+      generated = await contentGenerator.generate({ platform, candidateOnly: true, directionId: prompt, product: { title, stock: 0, skuCount: 0 }, usageContext: { workspaceId, actionId, runKey: actionId } })
     } catch (error) {
       if (!providerSucceededButSettlementPending(error)) await releaseReservedModelPoints(workspaceId, actionId, '文案候选生成失败')
       throw error
     }
     await requireSettledContentExecutionEvidence(workspaceId, actionId)
-    const body = validateContentSchema(generated, 'content.draft.generate')
+    const body = validateContentSchema(generated, 'content.draft.generate', { candidateOnly: true })
     return { readOnly: true, previewOnly: true, candidateOnly: true, publishable: false, formalVersionCreated: false, product: { id: null, title, platform, factsConfirmed: false }, contentPreview: { id: actionId, taskId: null, version: null, state: 'candidate', body }, execution: { mode: 'platform_relay_candidate', simulated: false, providerExecuted: true, modelCalled: true, label: '平台中转模型已生成内容候选', message: '仅供预览；未创建正式内容版本，未批准、未发布' }, nextActions: ['绑定已授权店铺并确认商品事实后，创建正式任务', '正式商品内容必须通过 content.generate 生成并审核'] }
   }
   const example = params.example === 'true'
