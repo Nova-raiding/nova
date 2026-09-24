@@ -91,6 +91,11 @@ infra/scripts/ecs-one-click-deploy.sh
 infra/scripts/check-ecs-storage-budget.sh
 infra/scripts/build-ecs-release-images.sh
 infra/scripts/prepare-ecs-eight-image-set.mjs
+infra/scripts/ecs-review-structure.mjs
+infra/scripts/ecs-review-structure.d.mts
+infra/scripts/inspect-ecs-review-structure.mjs
+tests/ecs-review-structure-inspection.test.ts
+docs/runbooks/ecs-source-review-acquisition.md
 infra/scripts/capture-manual-operations-evidence.sh
 infra/scripts/candidate-api-docker-request.mjs
 infra/scripts/launch-ecs-candidate-api.mjs

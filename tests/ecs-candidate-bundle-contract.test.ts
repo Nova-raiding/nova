@@ -100,6 +100,11 @@ describe('ECS candidate bundle contract', () => {
     const manifest = script.slice(start, script.indexOf('\nEOF', start))
 
     for (const path of [
+      'infra/scripts/ecs-review-structure.mjs',
+      'infra/scripts/ecs-review-structure.d.mts',
+      'infra/scripts/inspect-ecs-review-structure.mjs',
+      'tests/ecs-review-structure-inspection.test.ts',
+      'docs/runbooks/ecs-source-review-acquisition.md',
       'apps/api/src/scanner-health.test.ts',
       'apps/api/src/connector-capability-evidence-trust.ts',
       'apps/api/src/connector-capability-evidence-trust.test.ts',

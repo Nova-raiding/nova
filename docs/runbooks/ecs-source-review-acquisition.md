@@ -57,3 +57,28 @@ revealing values. No such diff should include secret values, credentials,
 private keys, or rendered production configuration. The existing safe-sync
 runbook remains authoritative for manual three-way merge and all release
 gates.
+
+## Sanitized structural review for refused paths
+
+`infra/scripts/inspect-ecs-review-structure.mjs` reviews the fixed set of
+non-source paths that have a safe structural summary. It revalidates the
+candidate archive, manifest, and sync-plan digests, then reads only the
+explicit structural allowlist through the same remote no-symlink, regular-file
+reader. Each remote byte stream must match the exact `remote_sha256` in the
+bound sync plan before it is summarized. Candidate archive bytes are checked
+against the corresponding `local_sha256`.
+
+The script keeps source/config bytes in memory and writes only a mode-0600
+summary report. The report contains hashes, path names, structure counts, and
+limited safe identifiers such as package names or CSS property names. It never
+includes file contents, configuration values, URLs, test titles, or secret
+references. A parser failure is reported as `unable_to_safely_parse`; it does
+not fall back to printing the file.
+
+Compose files and layers, `.env.example`, release metadata, credential source,
+production-config validators, database-role/migration scripts, and stage/deploy
+scripts remain `protected_onsite_review_required`. Their sync-plan hashes are
+listed in the report, but the tool does not request or transfer their bytes.
+An authorized operator must review those files in the protected host context
+and return only a sanitized structural summary; values, credentials, and
+rendered configuration must not be copied into the candidate bundle.
