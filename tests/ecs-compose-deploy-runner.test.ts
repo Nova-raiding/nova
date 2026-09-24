@@ -50,7 +50,8 @@ describe('verified ECS Compose deployment runner', () => {
     expect(firstClose).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
   })
 
-  it.each(['password', 'oidc'])('accepts matching API and Ops UI %s auth modes', mode => {
+  it('accepts matching password-only API and Ops UI auth mode', () => {
+    const mode = 'password'
     const directory = mkdtempSync(join(tmpdir(), 'ecs-ops-auth-mode-'))
     const docker = join(directory, 'docker')
     const compose = join(directory, 'compose.json')
@@ -78,7 +79,7 @@ describe('verified ECS Compose deployment runner', () => {
       env: { ...process.env, PATH: `${directory}:${process.env.PATH}` }, encoding: 'utf8',
     })
     expect(result.status).not.toBe(0)
-    expect(result.stderr).toContain('does not match API OPS_AUTH_MODE')
+    expect(result.stderr).toContain('OPS_AUTH_MODE must be password')
   })
 
   it('rejects missing/invalid image auth metadata and mutable UI references', () => {
@@ -90,7 +91,7 @@ describe('verified ECS Compose deployment runner', () => {
     writeFileSync(docker, '#!/bin/sh\nprintf "<no value>\\n"\n', { mode: 0o700 })
     chmodSync(docker, 0o700)
     const env = { ...process.env, PATH: `${directory}:${process.env.PATH}` }
-    const missing = spawnSync('sh', ['infra/scripts/verify-ecs-ops-auth-mode.sh', 'oidc', image, compose], { env, encoding: 'utf8' })
+    const missing = spawnSync('sh', ['infra/scripts/verify-ecs-ops-auth-mode.sh', 'password', image, compose], { env, encoding: 'utf8' })
     expect(missing.status).not.toBe(0)
     expect(missing.stderr).toContain('missing a valid build auth mode label')
     const mutable = spawnSync('sh', ['infra/scripts/verify-ecs-ops-auth-mode.sh', 'password', 'registry.example.test/ops-ui:latest', compose], { env, encoding: 'utf8' })
@@ -169,7 +170,6 @@ describe('verified ECS Compose deployment runner', () => {
 
   it('binds the committed candidate before consuming the nonce or mutating Compose', () => {
     const script = source()
-    const baselineReady = script.indexOf('baseline_ready=$(curl')
     const preflight = script.indexOf('deploy-preflight-ecs.sh')
     const consume = script.indexOf('consume-production-evidence-nonce.sh')
     const localImages = script.indexOf('config --images')
@@ -189,29 +189,28 @@ describe('verified ECS Compose deployment runner', () => {
     expect(localImages).toBeGreaterThan(preflight)
     expect(consume).toBeGreaterThan(preflight)
     expect(localImages).toBeLessThan(consume)
-    expect(baselineReady).toBeGreaterThan(0)
-    expect(baselineReady).toBeLessThan(consume)
-    expect(script).toContain('current production baseline /readyz is not healthy; refusing nonce consumption and migration')
+    const preidentityCapture = script.indexOf('"$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" capture --state "$state_path"')
+    expect(preidentityCapture).toBeGreaterThan(0)
+    expect(preidentityCapture).toBeLessThan(consume)
     expect(migration).toBeGreaterThan(consume)
     expect(completeMigrationVerification).toBeGreaterThan(migration)
     expect(completeMigrationVerification).toBeLessThan(rollout)
     expect(rollout).toBeGreaterThan(migration)
   })
 
-  it('requires a ready old production baseline before consuming the nonce or migrating', () => {
+  it('captures the actual old runtime before mutation without requiring its readiness to validate the candidate', () => {
     const script = source()
-    const baseline = script.indexOf("baseline_ready=$(curl --fail --silent --show-error --max-time 15")
     const rollbackCapsule = script.indexOf('mkdir -m 0700 "$rollback_capsule_dir"')
     const preidentityCapture = script.indexOf('"$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" capture --state "$state_path"')
     const consume = script.indexOf('consume-production-evidence-nonce.sh')
     const migration = script.indexOf('run --rm --no-deps --pull never migrate')
-    expect(script.slice(baseline, consume)).toContain('/readyz')
-    expect(script.slice(baseline, consume)).toContain('envelope.data?.ready!==true')
-    expect(baseline).toBeGreaterThan(0)
-    expect(baseline).toBeLessThan(rollbackCapsule)
-    expect(baseline).toBeLessThan(preidentityCapture)
-    expect(baseline).toBeLessThan(consume)
-    expect(baseline).toBeLessThan(migration)
+    expect(script).not.toContain('current production baseline /readyz is not healthy')
+    expect(script).not.toContain('baseline_ready=$(curl')
+    expect(rollbackCapsule).toBeGreaterThan(0)
+    expect(preidentityCapture).toBeGreaterThan(rollbackCapsule)
+    expect(preidentityCapture).toBeLessThan(consume)
+    expect(consume).toBeLessThan(migration)
+    expect(script.indexOf('candidate did not become healthy before the bounded deadline')).toBeGreaterThan(migration)
   })
 
   it('preflights every immutable image locally and forbids deploy-time pulls', () => {
