@@ -26,7 +26,7 @@ function fixture() {
   }
   compose.services.api.environment = {
     RELEASE_ID: 'release-check', RELEASE_GIT_SHA: sha, NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs',
-    RUN_MIGRATIONS_ON_STARTUP: 'false', CONNECTOR_FIXTURE_MODE: 'false',
+    RUN_MIGRATIONS_ON_STARTUP: 'false', CONNECTOR_FIXTURE_MODE: 'false', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
     RELEASE_MANIFEST_SHA256: 'd'.repeat(64), RELEASE_IMAGE_SET_DIGEST: `sha256:${'e'.repeat(64)}`,
     DATABASE_URL: `postgres://merchant_app:${'a'.repeat(48)}@postgres:5432/merchant`,
     OPS_DATABASE_URL: `postgres://merchant_ops:${'b'.repeat(48)}@postgres:5432/merchant`,
@@ -119,6 +119,15 @@ describe('isolated ECS demo candidate first install', () => {
     const result = value.run()
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain('API does not match frozen candidate identity')
+    expect(() => readFileSync(value.marker)).toThrow()
+  })
+
+  it('requires durable authorization assignments in the candidate API', () => {
+    const value = fixture()
+    delete value.compose.services.api.environment.AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED
+    const result = value.run()
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('production mode')
     expect(() => readFileSync(value.marker)).toThrow()
   })
 

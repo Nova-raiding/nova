@@ -48,7 +48,8 @@ const services = compose?.services ?? {}
 const api = services.api
 if (api?.environment?.RELEASE_ID !== releaseId || api?.environment?.RELEASE_GIT_SHA !== gitSha ||
     api?.environment?.NODE_ENV !== 'production' || api?.environment?.DEPLOYMENT_PROFILE !== 'ecs' ||
-    api?.environment?.RUN_MIGRATIONS_ON_STARTUP !== 'false' || api?.environment?.CONNECTOR_FIXTURE_MODE !== 'false') fail('API does not match frozen candidate identity and production mode')
+    api?.environment?.RUN_MIGRATIONS_ON_STARTUP !== 'false' || api?.environment?.CONNECTOR_FIXTURE_MODE !== 'false' ||
+    api?.environment?.AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED !== 'true') fail('API does not match frozen candidate identity and production mode')
 if (!/^[0-9a-f]{64}$/.test(api.environment.RELEASE_MANIFEST_SHA256 ?? '') ||
     !/^sha256:[0-9a-f]{64}$/.test(api.environment.RELEASE_IMAGE_SET_DIGEST ?? '')) fail('API lacks frozen manifest and image-set identity')
 if (api.environment.PLUGIN_WRITE_ENABLED !== 'false' ||
