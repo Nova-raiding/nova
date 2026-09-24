@@ -123,7 +123,7 @@ describe('automatic platform asset scanner boundary', () => {
     expect(download.status).toBe(403)
   })
 
-  it('presents quarantined uploads as automatic system work with no manual scan action', async () => {
+  it('shows quarantined uploads awaiting scanner callback without claiming a verified scan', async () => {
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'merchant-auto-scan-ux' }
     const mcp = (id: number, method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) }).then(response => response.json()) as Promise<any>
     const source = Buffer.concat([Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'), Buffer.from(`automatic-scan-${Date.now()}`)])
@@ -131,13 +131,13 @@ describe('automatic platform asset scanner boundary', () => {
     expect(uploaded.error).toBeNull()
     expect(uploaded.data.result).toMatchObject({
       scanStatus: 'quarantined',
-      scanAutomation: { state: 'pending', mode: 'platform_worker', userActionRequired: false, message: '系统正在自动检查，通过后自动继续；无需操作' },
+      scanAutomation: { state: 'pending', mode: 'platform_worker', userActionRequired: false, message: '素材已收到，正在等待平台安全扫描回调；目前尚未确认扫描通过。请稍后查询素材状态，扫描通过后再继续。' },
     })
 
     const listed = await mcp(71, 'asset.list', {})
     expect(listed.error).toBeNull()
     const action = listed.data.result.asset_actions.find((item: { asset_id: string }) => item.asset_id === uploaded.data.result.id)
-    expect(action).toMatchObject({ action: null, next_step: '系统正在自动检查，通过后自动继续；无需操作', scan_automation: { userActionRequired: false } })
+    expect(action).toMatchObject({ action: null, next_step: '素材已收到，正在等待平台安全扫描回调；目前尚未确认扫描通过。请稍后查询素材状态，扫描通过后再继续。', scan_automation: { userActionRequired: false } })
     expect(listed.data.result.action_cards).toEqual([])
     expect(JSON.stringify({ upload: uploaded.data.result, action })).not.toMatch(/scan_evidence_ref|提交安全扫描结果|管理员|"method":"asset\.scan"/u)
   })

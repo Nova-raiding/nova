@@ -11067,13 +11067,7 @@ async function automaticallyScanLocalFixture(workspaceId: string, asset: import(
 }
 
 function conversationalAssetScanWaitingState() {
-  const state = assetScanWaitingState()
-  return {
-    ...state,
-    message: state.state === 'pending'
-      ? '系统正在自动检查，通过后自动继续；无需操作'
-      : '当前暂时无法检查图片，素材和任务已保留；请稍后继续，无需提交扫描结果',
-  }
+  return assetScanWaitingState()
 }
 
 export function requireApprovedAssetForImageGeneration(workspaceId: string, product: { platform: Platform }, requestedAssetIds?: string[], unboundCandidate = false) {
@@ -14261,13 +14255,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       try {
         const allowCreate = !strictAuth
         const bootstrapped = await (persistence.workspaceBootstrap ?? memoryWorkspaceBootstrap).bootstrap({ issuer, externalSubject: actorId, ...(principal?.identityId ? { identityId: principal.identityId } : {}), ...(allowCreate ? { candidateWorkspaceId: `ws_${randomUUID().replaceAll('-', '').slice(0, 24)}` } : {}), displayName, actorId, allowCreate })
-          if (error.code === 'WORKSPACE_ADMIN_ASSIGNMENT_REQUIRED') throw new DomainError(error.code, '当前身份尚未绑定管理员分配的工作区；请联系平台管理员完成工作区分配和本地插件绑定', 403)
         workspaceId = bootstrapped.workspaceId
         knownWorkspaces.add(workspaceId)
         return result({ workspaceId, displayName: bootstrapped.displayName, status: 'active', reused: !bootstrapped.created, owner: { issuer, externalSubject: actorId, actorId }, binding: { environmentVariable: 'MERCHANT_WORKSPACE_ID', requiredValue: workspaceId, nextStep: '将该值绑定到 Codex 插件后重新调用 workspace.health' } })
       } catch (error) {
         if (error instanceof WorkspaceBootstrapError) {
           if (error.code === 'WORKSPACE_BOOTSTRAP_BINDING_INACTIVE') throw new DomainError(error.code, '该身份已有工作区绑定，但工作区或 owner 成员已停用；请联系管理员恢复，不能另建工作区绕过停用', 409)
+          if (error.code === 'WORKSPACE_ADMIN_ASSIGNMENT_REQUIRED') throw new DomainError(error.code, '当前身份尚未绑定管理员分配的工作区；请联系平台管理员完成工作区分配和本地插件绑定', 403)
           throw new DomainError(error.code, '认证身份与 workspace binding 不一致', 403)
         }
         throw error
@@ -16645,7 +16639,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           failedAt: durableFailure.event.publishedAt ?? durableFailure.event.createdAt,
         } : null
         const base = { id: asset.id, name: asset.name, mimeType: asset.mimeType, scanStatus: asset.scanStatus, parseStatus: asset.parseStatus, rightsStatus: asset.rightsStatus, rightsScope: asset.rightsScope ?? null, readiness: asset.readiness, revision: asset.revision, createdAt: asset.createdAt, scanFailure }
-        if (asset.scanStatus === 'quarantined') return { ...base, nextAction: null, scanAutomation: conversationalAssetScanWaitingState(), nextStep: conversationalAssetScanWaitingState().message }
+        if (asset.scanStatus === 'quarantined') {
+          const scanAutomation = conversationalAssetScanWaitingState()
+          return { ...base, nextAction: null, scanAutomation, nextStep: scanAutomation.message }
+        }
         if (asset.scanStatus === 'blocked') return { ...base, nextAction: null, nextStep: '联系安全审核并重新上传或解除安全阻断' }
         if (asset.parseStatus === 'failed') return { ...base, nextAction: { method: 'asset.facts.confirm', label: '人工确认素材事实', requiredInputs: ['asset_id', 'facts_json', 'reason'] } }
         if (asset.parseStatus !== 'succeeded') return { ...base, nextAction: { method: 'asset.parse', label: '解析素材事实', requiredInputs: ['asset_id'] } }
@@ -19312,7 +19309,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const display = assetDisplayProjection(asset)
         const awaitingAutomaticScan = asset.scanStatus === 'quarantined'
         const action = awaitingAutomaticScan ? null : display.nextAction ? { method: display.nextAction.method, label: display.nextAction.label, required_inputs: [ 'asset_id' ], confirmation: 'interactive_confirmation' } : null
-        return { ...base, display, action, next_step: awaitingAutomaticScan ? '系统正在自动检查，通过后自动继续；无需操作' : display.nextAction?.label ?? '素材已满足当前 readiness 条件', ...(awaitingAutomaticScan ? { scan_automation: conversationalAssetScanWaitingState() } : {}) }
+        const scanAutomation = awaitingAutomaticScan ? conversationalAssetScanWaitingState() : undefined
+        return { ...base, display, action, next_step: scanAutomation?.message ?? display.nextAction?.label ?? '素材已满足当前 readiness 条件', ...(scanAutomation ? { scan_automation: scanAutomation } : {}) }
       })
       const quotaSnapshot = (await persistence.storageQuota?.getSnapshot(workspaceId)) ?? { limitBytes: configuredStorageQuotaLimit(), usedBytes: 0, reservedBytes: 0 }
       const storageQuota = quotaSnapshot
@@ -22261,6 +22259,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   }
   if (req.method === 'POST' && path === '/v1/internal/model-usage') {
     await requireWorkerAuthorization(req)
+    const deferCreativePointSettlementToWorker = verifiedWorkerRequestRoles.get(req) === 'generation'
     const workspaceId = headerRequired(req, 'x-workspace-id')
     const input = await body(req)
     const modality = input.modality
@@ -22289,7 +22288,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     if (!actionAuthorization || ['refunded', 'released', 'manual_attention'].includes(actionAuthorization.settlementStatus ?? '') || actionAuthorization.state === 'refunded') {
       throw new DomainError('MODEL_USAGE_ACTION_NOT_AUTHORIZED', '模型中转回执未绑定有效的原始扣费授权，已阻断入账', 409)
     }
-    await recordRelayUsage({ workspaceId, actionId, runKey, ...(contextLinkId ? { contextLinkId, contextHash: contextHash! } : {}), modality: modality as RelayUsageRecord['modality'], model, ...(providerRequestId ? { providerRequestId } : {}), ...(input.inputTokens !== undefined ? { inputTokens: number(input.inputTokens, 'inputTokens')! } : {}), ...(input.outputTokens !== undefined ? { outputTokens: number(input.outputTokens, 'outputTokens')! } : {}), ...(input.totalTokens !== undefined ? { totalTokens: number(input.totalTokens, 'totalTokens')! } : {}), ...(input.costCny !== undefined ? { costCny: number(input.costCny, 'costCny')! } : {}), observedAt: typeof input.observedAt === 'string' && Number.isFinite(Date.parse(input.observedAt)) ? input.observedAt : new Date().toISOString(), ...(input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata) ? { metadata: input.metadata as Record<string, unknown> } : {}) })
+    await recordRelayUsage({ workspaceId, actionId, runKey, ...(contextLinkId ? { contextLinkId, contextHash: contextHash! } : {}), modality: modality as RelayUsageRecord['modality'], model, ...(providerRequestId ? { providerRequestId } : {}), ...(input.inputTokens !== undefined ? { inputTokens: number(input.inputTokens, 'inputTokens')! } : {}), ...(input.outputTokens !== undefined ? { outputTokens: number(input.outputTokens, 'outputTokens')! } : {}), ...(input.totalTokens !== undefined ? { totalTokens: number(input.totalTokens, 'totalTokens')! } : {}), ...(input.costCny !== undefined ? { costCny: number(input.costCny, 'costCny')! } : {}), observedAt: typeof input.observedAt === 'string' && Number.isFinite(Date.parse(input.observedAt)) ? input.observedAt : new Date().toISOString(), ...(input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata) ? { metadata: input.metadata as Record<string, unknown> } : {}) }, { deferCreativePointSettlementToWorker })
     return send(res, 200, workspaceId, { recorded: true, action_id: actionId ?? null, provider_request_id: providerRequestId ?? null }, null, req)
   }
   if (req.method === 'POST' && path === '/v1/internal/image-generation-jobs/reconciliation') {

@@ -25,16 +25,24 @@ describe('asset scan automation policy', () => {
   })
 
   it('never asks a merchant or administrator to manufacture evidence', () => {
+    const configurationRequired = assetScanWaitingState({})
     const states = [
       assetScanWaitingState({ ASSET_SCAN_AUTOMATION_MODE: 'external_callback' }),
       assetScanWaitingState({ ASSET_SCANNER_MODE: 'clamav_worker' }),
-      assetScanWaitingState({}),
+      configurationRequired,
     ]
     expect(states[0]).toMatchObject({ state: 'pending', mode: 'platform_worker', userActionRequired: false })
     expect(states[1]).toMatchObject({ state: 'pending', mode: 'platform_worker', userActionRequired: false })
-    expect(states[2]).toMatchObject({ state: 'configuration_required', userActionRequired: false })
+    expect(configurationRequired).toMatchObject({ state: 'configuration_required', userActionRequired: false })
+    for (const state of states.slice(0, 2)) {
+      expect(state.message).toContain('等待平台安全扫描回调')
+      expect(state.message).toContain('尚未确认扫描通过')
+      expect(state.message).toContain('稍后查询素材状态')
+    }
+    expect(configurationRequired.message).toContain('当前暂时无法检查图片')
+    expect(configurationRequired.message).toContain('稍后查询素材状态')
     for (const state of states) {
-      expect(state.message).not.toMatch(/管理员|扫描完成|扫描证据|运营后台|上线阻断/u)
+      expect(state.message).not.toMatch(/正在自动|通过后自动继续|无需操作|扫描完成|扫描证据/u)
     }
   })
 })

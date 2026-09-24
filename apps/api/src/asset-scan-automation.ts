@@ -43,12 +43,12 @@ export function assetScanWaitingState(env: NodeJS.ProcessEnv = process.env) {
         state: 'pending' as const,
         mode: 'platform_worker' as const,
         userActionRequired: false,
-        message: '图片已收到，正在自动进行安全检查。通过后会等待你的确认再继续生成。',
+        message: '素材已收到，正在等待平台安全扫描回调；目前尚未确认扫描通过。请稍后查询素材状态，扫描通过后再继续。',
       }
     : {
         state: 'configuration_required' as const,
         mode: 'unconfigured' as const,
         userActionRequired: false,
-        message: '当前暂时无法检查图片。图片和任务已保留，没有生成内容，也不会产生费用；请稍后继续。',
+        message: '当前暂时无法检查图片。素材和任务已保留，没有生成内容，也不会产生费用；请稍后查询素材状态，无需提交扫描结果。',
       }
 }
