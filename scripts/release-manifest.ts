@@ -97,6 +97,16 @@ export function buildReleaseManifest(input: {
     resolve(root, 'packages/billing/src/callback-envelope.mjs'),
     resolve(root, 'packages/billing/src/callback-envelope.d.mts'),
     resolve(root, 'services/payment-gateway/Dockerfile'),
+    // Candidate TLS gateway and handoff controls are a separate deployment
+    // path from the payment gateway above; bind their source and tests too.
+    resolve(root, 'infra/docker/pilot-gateway-https.Dockerfile'),
+    resolve(root, 'infra/nginx/pilot-gateway-https.conf'),
+    resolve(root, 'infra/scripts/launch-ecs-candidate-tls-gateway.mjs'),
+    resolve(root, 'infra/scripts/launch-ecs-candidate-tls-gateway.d.mts'),
+    resolve(root, 'infra/scripts/ecs-external-gateway-handoff.mjs'),
+    resolve(root, 'infra/scripts/ecs-external-gateway-handoff.d.mts'),
+    resolve(root, 'tests/ecs-candidate-tls-gateway.test.ts'),
+    resolve(root, 'tests/ecs-external-gateway-handoff.test.ts'),
     resolve(root, 'infra/scripts/render-ecs-production-compose.sh'),
     resolve(root, 'infra/scripts/stage-verified-ecs-release.sh'),
     resolve(root, 'infra/scripts/ecs-build-lock.sh'),
@@ -110,6 +120,25 @@ export function buildReleaseManifest(input: {
     resolve(root, 'infra/scripts/invoke-ecs-automatic-rollback.sh'),
     resolve(root, 'infra/scripts/install-ecs-release-controls.mjs'),
     resolve(root, 'infra/scripts/install-ecs-release-controls.d.mts'),
+    // Bridge B is an installed, production-capable host control with a
+    // separately imported journal store. Bind both modules and its acceptance
+    // harness to the same release identity.
+    resolve(root, 'infra/protected/ecs-bridge-b-transition.mjs'),
+    resolve(root, 'infra/protected/ecs-bridge-b-transition.d.mts'),
+    resolve(root, 'infra/protected/ecs-bridge-b-journal-store.mjs'),
+    resolve(root, 'infra/protected/ecs-bridge-b-journal-store.d.mts'),
+    resolve(root, 'tests/ecs-bridge-b-transition.test.ts'),
+    resolve(root, 'tests/run-ecs-bridge-b-host-cli.sh'),
+    resolve(root, 'tests/fixtures/ecs-bridge-b-host-cli/curl.mjs'),
+    resolve(root, 'tests/fixtures/ecs-bridge-b-host-cli/docker.mjs'),
+    resolve(root, 'tests/fixtures/ecs-bridge-b-host-cli/nonce-consumer.mjs'),
+    resolve(root, 'tests/fixtures/ecs-bridge-b-host-cli/psql.mjs'),
+    resolve(root, 'tests/fixtures/ecs-bridge-b-host-cli/run.mjs'),
+    resolve(root, 'tests/fixtures/ecs-bridge-b-host-cli/setup.mjs'),
+    // The scanner healthcheck is part of the production container probe and
+    // must not drift independently from its contract test.
+    resolve(root, 'apps/worker/src/scanner-container-healthcheck.ts'),
+    resolve(root, 'apps/worker/src/scanner-container-healthcheck.test.ts'),
     resolve(root, 'tests/ecs-staging-toolchain-installer.test.mjs'),
     resolve(root, 'tests/ecs-staging-toolchain-installer.container-check.mjs'),
     resolve(root, 'tests/ecs-one-click-deploy.test.ts'),

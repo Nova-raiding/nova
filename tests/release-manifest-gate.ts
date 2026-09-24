@@ -10,6 +10,30 @@ type ReleaseManifest = { schemaVersion?: number; releaseId?: string; components?
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
 const requiredArtifacts = ['VERSION', 'CHANGELOG.md', 'release-metadata.json', 'scripts/release-manifest.ts', 'scripts/release-identity.ts', 'apps/plugin/.codex-plugin/plugin.json', 'apps/plugin/package.json', 'apps/plugin/skills/merchant-marketing/SKILL.md', 'apps/plugin/mcp/bridge.mjs', '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', 'apps/api/openapi.yaml', 'packages/contracts/src/mcp.ts', 'services/payment-gateway/index.mjs', 'services/payment-gateway/alipay.mjs', 'services/payment-gateway/alipay.d.mts', 'packages/billing/src/callback-envelope.mjs', 'packages/billing/src/callback-envelope.d.mts', 'services/payment-gateway/Dockerfile', 'infra/scripts/render-ecs-production-compose.sh', 'infra/scripts/stage-verified-ecs-release.sh', 'infra/scripts/ecs-build-lock.sh', 'infra/scripts/install-ecs-staging-toolchain.mjs', 'infra/scripts/ecs-one-click-deploy.sh', 'infra/scripts/deploy-verified-ecs-compose.sh', 'infra/scripts/rollback-ecs-compose.sh', 'infra/scripts/invoke-ecs-automatic-rollback.sh', 'infra/scripts/install-ecs-release-controls.mjs', 'infra/scripts/install-ecs-release-controls.d.mts', 'tests/ecs-staging-toolchain-installer.test.mjs', 'tests/ecs-staging-toolchain-installer.container-check.mjs', 'tests/ecs-one-click-deploy.test.ts', 'docs/runbooks/ecs-candidate-safe-sync.md', 'infra/protected/attest-manual-operations-evidence.mjs', 'infra/protected/attest-manual-operations-evidence.d.mts', 'infra/protected/attest-release-evidence-bundle.mjs', 'infra/protected/attest-release-evidence-bundle.d.mts', 'infra/protected/attest-postgres-backup.mjs', 'infra/protected/attest-postgres-backup.d.mts', 'infra/protected/ecs-preidentity-recovery.mjs', 'infra/protected/ecs-preidentity-recovery.d.mts', 'tests/release-evidence-bundle-gate.ts']
 requiredArtifacts.push('infra/scripts/deploy-preflight-ecs.sh', 'infra/scripts/build-ecs-release-images.sh', 'infra/scripts/verify-ecs-ops-auth-mode.sh')
+requiredArtifacts.push(
+  'infra/protected/ecs-bridge-b-transition.mjs',
+  'infra/protected/ecs-bridge-b-transition.d.mts',
+  'infra/protected/ecs-bridge-b-journal-store.mjs',
+  'infra/protected/ecs-bridge-b-journal-store.d.mts',
+  'tests/ecs-bridge-b-transition.test.ts',
+  'tests/run-ecs-bridge-b-host-cli.sh',
+  'tests/fixtures/ecs-bridge-b-host-cli/curl.mjs',
+  'tests/fixtures/ecs-bridge-b-host-cli/docker.mjs',
+  'tests/fixtures/ecs-bridge-b-host-cli/nonce-consumer.mjs',
+  'tests/fixtures/ecs-bridge-b-host-cli/psql.mjs',
+  'tests/fixtures/ecs-bridge-b-host-cli/run.mjs',
+  'tests/fixtures/ecs-bridge-b-host-cli/setup.mjs',
+  'apps/worker/src/scanner-container-healthcheck.ts',
+  'apps/worker/src/scanner-container-healthcheck.test.ts',
+  'infra/docker/pilot-gateway-https.Dockerfile',
+  'infra/nginx/pilot-gateway-https.conf',
+  'infra/scripts/launch-ecs-candidate-tls-gateway.mjs',
+  'infra/scripts/launch-ecs-candidate-tls-gateway.d.mts',
+  'infra/scripts/ecs-external-gateway-handoff.mjs',
+  'infra/scripts/ecs-external-gateway-handoff.d.mts',
+  'tests/ecs-candidate-tls-gateway.test.ts',
+  'tests/ecs-external-gateway-handoff.test.ts',
+)
 const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'restore', 'objectStorage', 'codexAppHost', 'canonicalCutover'] as const
 type EvidenceField = typeof evidenceFields[number]
 const signedEvidenceFields = new Set<EvidenceField>(['capability', 'payment', 'restore', 'objectStorage', 'codexAppHost'])
