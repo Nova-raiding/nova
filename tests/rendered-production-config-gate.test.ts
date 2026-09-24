@@ -79,33 +79,6 @@ function run(configDocument: unknown, manifestDocument: unknown) {
 }
 
 describe('production config and rendered manifest binding gate', () => {
-  it('binds the checked-in runtime and ingress contract in every production scale overlay', () => {
-    const overlayConfig = {
-      ...config(),
-      merchant_bearer_hostname: 'yxsona.com',
-      public_endpoints: { app_base_url: 'https://yxsona.com', ops_base_url: 'https://ops.yxsona.com', oauth_callback_base_url: 'https://yxsona.com/v1/oauth/callback' },
-      codex: { mcp: { base_url: 'https://yxsona.com' } },
-      model_relay_base_url: 'https://model-relay.example.com/v1', text_model: 'merchant-main-text', image_model: 'merchant-main-image', image_edit_model: 'merchant-main-image-edit', ocr_model: 'merchant-vision-ocr', video_model: 'merchant-video', embedding_model: 'merchant-embedding', embedding_dimensions: 1536, embedding_max_request_cny: '0.00', knowledge_vector_index_enabled: false,
-      approved_requests_per_minute: 0, approved_tokens_per_minute: 0, maximum_task_cost_cny: '0.00',
-      object_storage_bucket: 'codex-image-20260914', object_storage_region: 'cn-beijing', object_storage_endpoint: 'https://s3.oss-cn-beijing.aliyuncs.com', asset_display_base_url: 'https://yxsona.com',
-      lifecycle_policy_ref: 'vault://merchant-asset-lifecycle-policy', asset_scan_policy_version: '2026-08-30',
-      payment_checkout_base_url: 'https://pay.yxsona.com/checkout', payment_provider_checkout_api_url: 'https://pay.yxsona.com/v1/checkout', payment_provider_query_api_url: 'https://pay.yxsona.com/v1/query', payment_provider_refund_query_api_url: 'https://pay.yxsona.com/v1/refund/query', payment_provider_refund_api_url: 'https://pay.yxsona.com/v1/refund', payment_provider_merchant_id: '2088123456789012', payment_callback_base_url: 'https://yxsona.com/v1',
-      platform_rule_sync_manifest_url: 'https://rules.example.com/platform-rules/v1/manifest.json',
-    }
-    for (const overlay of ['pilot-50', 'wave-100', 'wave-250', 'target-500']) {
-      const rendered = execFileSync('kustomize', ['build', `infra/kubernetes/overlays/${overlay}`], { encoding: 'utf8', stdio: 'pipe' })
-        .replaceAll('https://payments.example.com', 'https://pay.yxsona.com')
-        .replaceAll('merchant-example', '2088123456789012')
-        // The artifact allowlists are template values too: the binding gate
-        // requires each to equal the operator's production config value, so an
-        // unsubstituted manifest fails rather than shipping an allowlist that
-        // rejects every real artifact host.
-        .replaceAll('video-cdn.example.com', 'videos.merchant-assets.cn')
-        .replaceAll('image-cdn.example.com', 'images.merchant-assets.cn')
-      expect(run(overlayConfig, rendered)()).toContain('binding gate passed')
-    }
-  })
-
   it('accepts one exact non-secret runtime and ingress projection', () => {
     expect(run(config(), manifest())()).toContain('binding gate passed')
   })

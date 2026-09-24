@@ -3,6 +3,10 @@
 // the default suite. This list remains explicit even if an individual test
 // later removes its historical localhost fallback.
 export const NON_HERMETIC_TEST_FILES = [
+  // Optional Kubernetes/ACK checks are outside the ECS release denominator.
+  // Their dedicated Vitest configuration collects both files explicitly.
+  'tests/kubernetes-release-gate.test.ts',
+  'tests/rendered-kubernetes-config.test.ts',
   'tests/local-docker-runtime-contract.test.ts',
   'tests/local-docker-fault-acceptance.test.ts',
   'tests/local-docker-release-gate.test.ts',

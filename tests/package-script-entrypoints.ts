@@ -46,6 +46,12 @@ export interface UninvokedScript {
  */
 export const UNINVOKED_SCRIPTS: readonly UninvokedScript[] = [
   {
+    script: 'test:kubernetes-release-gate',
+    category: 'release-operator',
+    requires: 'An explicitly requested Kubernetes or ACK release review',
+    reason: 'Kubernetes and ACK are outside the current ECS release scope. This dedicated suite remains runnable when that deployment target is explicitly authorized, while the ECS release gate does not invoke it.',
+  },
+  {
     script: 'dev:ops-console:oidc-gateway',
     category: 'local-dev',
     requires: 'A developer workstation with Ops Console running locally',

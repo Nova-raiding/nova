@@ -28,11 +28,11 @@ const packageJson = JSON.parse(packageJsonSource) as {
 }
 const LEGACY_NON_RELEASE_GATES = new Set([
   'tests/local-docker-release-gate.test.ts',
+  'tests/kubernetes-release-gate.test.ts',
 ])
 const CRITICAL_DEFAULT_RELEASE_GATES = [
   'tests/mcp-integration-mode-release-gate.test.ts',
   'tests/mcp-oauth-production-script.test.ts',
-  'tests/kubernetes-release-gate.test.ts',
   'tests/payment-gateway-process.integration.test.ts',
   'apps/api/src/payment-capability-status.test.ts',
   'apps/api/src/payment-reconciliation-worker.e2e.test.ts',
@@ -89,6 +89,8 @@ describe('quality entrypoint coverage', () => {
     expect(check).toContain('npm run build:ops-console')
     expect(check).toContain('npm run build:merchant-studio')
     expect(check).toContain('npm run test:plugin-import-contract')
+    expect(check).toContain('npm run test:ecs-staging-toolchain')
+    expect(script('test:ecs-staging-toolchain')).toBe('node --test tests/ecs-staging-toolchain-installer.test.mjs')
     expect(script('test:plugin-import-contract')).toContain('apps/plugin/skills/six-platform-public-import/scripts/extract-product.test.mjs')
     expect(script('test:plugin-import-contract')).toContain('.codex-marketplace/plugins/merchant-marketing/skills/six-platform-public-import/scripts/extract-product.test.mjs')
     // `invariants:verify` was the only mechanism in this repository that proves
@@ -168,6 +170,12 @@ describe('quality entrypoint coverage', () => {
 
   it('keeps all fail-closed gate tests in the explicit release suite', () => {
     const releaseGate = script('test:release-gates')
+    expect(releaseGate).toContain('&& npm run test:ecs-staging-toolchain')
+    expect(releaseGate).not.toContain('tests/kubernetes-release-gate.test.ts')
+    expect(script('test:kubernetes-release-gate')).toBe('vitest run --config vitest.kubernetes.config.ts --no-file-parallelism tests/kubernetes-release-gate.test.ts tests/rendered-kubernetes-config.test.ts')
+    const kubernetesConfig = readFileSync(resolve(root, 'vitest.kubernetes.config.ts'), 'utf8')
+    expect(kubernetesConfig).toContain("'tests/kubernetes-release-gate.test.ts'")
+    expect(kubernetesConfig).toContain("'tests/rendered-kubernetes-config.test.ts'")
     const missing = filesUnder('tests')
       .filter(file => /^tests\/[^/]+-gate\.test\.ts$/.test(file))
       .filter(file => !LEGACY_NON_RELEASE_GATES.has(file))
@@ -243,7 +251,9 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(36)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(38)
+    expect(NON_HERMETIC_TEST_FILES).toContain('tests/kubernetes-release-gate.test.ts')
+    expect(NON_HERMETIC_TEST_FILES).toContain('tests/rendered-kubernetes-config.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/support-repository-sla-filter.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
