@@ -69,6 +69,7 @@ for (const name of required) {
   }
 }
 const databaseServices = ['api', 'migrate']
+const runtimeRoles = new Map()
 for (const name of databaseServices) {
   const env = services[name].environment ?? {}
   for (const key of ['DATABASE_URL', 'OPS_DATABASE_URL', 'ALERT_RECEIVER_DATABASE_URL']) {
@@ -78,9 +79,15 @@ for (const name of databaseServices) {
     try { url = new URL(value) } catch { fail(`${name} ${key} is invalid`) }
     if (!['postgres:', 'postgresql:'].includes(url.protocol) || url.hostname !== 'postgres' ||
         (url.port && url.port !== '5432')) fail(`${name} ${key} must target the isolated Compose postgres service`)
+    if (name === 'api') {
+      const expectedRole = { DATABASE_URL: 'merchant_app', OPS_DATABASE_URL: 'merchant_ops', ALERT_RECEIVER_DATABASE_URL: 'merchant_alert_receiver' }[key]
+      if (url.username !== expectedRole || !/^[0-9a-f]{48}$/.test(url.password) || url.pathname !== '/merchant') fail(`${key} must use a fresh isolated runtime role and database`)
+      runtimeRoles.set(expectedRole, url.password)
+    }
   }
   if (name === 'migrate' && env.PGHOST !== 'postgres') fail('migration PGHOST must target isolated Compose postgres')
 }
+if (runtimeRoles.size !== 3) fail('candidate API requires three isolated database roles')
 if (JSON.stringify(services.migrate).includes('seed-demo')) fail('candidate migration must not seed demo data')
 let redisUrl
 try { redisUrl = new URL(api.environment.REDIS_URL) } catch { fail('API REDIS_URL is invalid') }
@@ -101,10 +108,10 @@ for (const [key, value] of Object.entries(compose.volumes ?? {})) {
   if (value?.external || !name.startsWith(`${project}_`)) fail('candidate cannot use an external or shared volume')
 }
 
-function docker(args, { capture = false } = {}) {
+function docker(args, { capture = false, input } = {}) {
   const result = spawnSync(dockerBinary, ['--host', 'unix:///var/run/docker.sock', ...args], {
     encoding: 'utf8', timeout: 300_000, maxBuffer: 2 * 1024 * 1024,
-    env: { PATH: process.env.PATH ?? '/usr/bin:/bin' }, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { PATH: process.env.PATH ?? '/usr/bin:/bin' }, input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
   })
   // Docker may print interpolated secrets on error, so never echo its output.
   if (result.error || result.status !== 0) fail(`candidate Docker step failed: ${args[0]} ${args[1] ?? ''}`)
@@ -155,6 +162,9 @@ for (const name of ['postgres', 'redis']) {
   } while (Date.now() < deadline)
   if (status !== 'healthy') fail(`${name} health timed out`)
 }
+const roleSql = [...runtimeRoles].map(([role, password]) =>
+  `CREATE ROLE ${role} LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;`).join('\n')
+docker([...composeArgs, 'exec', '-T', 'postgres', 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', 'merchant', '-d', 'merchant'], { input: `${roleSql}\n` })
 docker([...composeArgs, 'run', '--rm', '--no-deps', '--pull', 'never', 'migrate'])
 const appServices = required.filter(name => !['postgres', 'redis', 'migrate'].includes(name))
 docker([...composeArgs, 'up', '-d', '--no-deps', '--no-build', '--pull', 'never', ...appServices])

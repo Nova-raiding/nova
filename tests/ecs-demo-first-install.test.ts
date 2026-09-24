@@ -28,7 +28,9 @@ function fixture() {
     RELEASE_ID: 'release-check', RELEASE_GIT_SHA: sha, NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs',
     RUN_MIGRATIONS_ON_STARTUP: 'false', CONNECTOR_FIXTURE_MODE: 'false',
     RELEASE_MANIFEST_SHA256: 'd'.repeat(64), RELEASE_IMAGE_SET_DIGEST: `sha256:${'e'.repeat(64)}`,
-    DATABASE_URL: 'postgres://user:password@postgres:5432/merchant',
+    DATABASE_URL: `postgres://merchant_app:${'a'.repeat(48)}@postgres:5432/merchant`,
+    OPS_DATABASE_URL: `postgres://merchant_ops:${'b'.repeat(48)}@postgres:5432/merchant`,
+    ALERT_RECEIVER_DATABASE_URL: `postgres://merchant_alert_receiver:${'c'.repeat(48)}@postgres:5432/merchant`,
     REDIS_URL: 'redis://redis:6379', PLUGIN_WRITE_ENABLED: 'false',
     ASSET_STORAGE_PREFIX: 'demo-candidate/release-check',
   }
@@ -94,7 +96,7 @@ describe('isolated ECS demo candidate first install', () => {
       ['REDIS_URL', 'redis://prod-redis.internal:6379'],
       ['PLUGIN_WRITE_ENABLED', 'true'],
       ['ASSET_STORAGE_PREFIX', 'production'],
-    ]) {
+    ] as const) {
       const fixtureValue = fixture()
       fixtureValue.compose.services.api.environment[field] = value
       const result = fixtureValue.run()
