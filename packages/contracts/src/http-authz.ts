@@ -276,18 +276,6 @@ export const HTTP_ROUTE_COVERAGE_EXEMPTIONS: readonly HttpRouteCoverageExemption
   // loopback origin, and gets its bearer from the API environment. The dispatch
   // guard is `req.method === 'GET'`.
   { pathTemplate: '/v1/ops/local-session', methods: ['GET'], reason: 'local-only ops console bootstrap; 404 outside the local Compose profile' },
-  // MCP OAuth authorization server for ChatGPT/MCP clients. Protocol-level
-  // authentication (PKCE, redirect allow-list, client configuration) — these
-  // are the endpoints that *mint* the merchant bearer. `/oauth/authorize`
-  // serves the consent form (GET) and accepts it (POST); the other two are
-  // POST-only.
-  { pathTemplate: '/oauth/authorize', methods: AUTH_FORM_METHODS, reason: 'MCP OAuth authorization endpoint; protocol authentication, not bearer' },
-  { pathTemplate: '/oauth/token', methods: ['POST'], reason: 'MCP OAuth token endpoint; authenticates the authorization code and PKCE verifier' },
-  { pathTemplate: '/oauth/revoke', methods: ['POST'], reason: 'MCP OAuth revocation endpoint; protocol authentication, not bearer' },
-  // OAuth discovery. Public by design so an unauthenticated client can find the
-  // authorization server, and GET-only in the dispatch guard.
-  { pathTemplate: '/.well-known/oauth-protected-resource', methods: ['GET'], reason: 'public OAuth discovery document' },
-  { pathTemplate: '/.well-known/oauth-authorization-server', methods: ['GET'], reason: 'public OAuth discovery document' },
   { pathTemplate: '/.well-known/openai-apps-challenge', methods: ['GET'], reason: 'public OpenAI app challenge token; not an operation' },
 ]
 
