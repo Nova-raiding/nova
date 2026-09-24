@@ -5,7 +5,9 @@ services:
     environment:
       ASSET_SCANNER_MODE: deferred
       DEMO_UNSCANNED_ASSETS_ENABLED: "true"
+      DEMO_EVALUATION_ENTITLEMENT_ENABLED: "true"
   api-replica:
     environment:
       ASSET_SCANNER_MODE: deferred
       DEMO_UNSCANNED_ASSETS_ENABLED: "true"
+      DEMO_EVALUATION_ENTITLEMENT_ENABLED: "true"
