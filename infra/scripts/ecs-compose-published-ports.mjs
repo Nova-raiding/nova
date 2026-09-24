@@ -69,9 +69,10 @@ export function findPublishedPortConflicts(compose, containers, candidateProject
   for (const container of containers) {
     if (container.State?.Running !== true) continue
     const labels = container.Config?.Labels ?? {}
-    const isReplacement = labels['com.docker.compose.project'] === candidateProject && replacing.has(labels['com.docker.compose.service'])
+    const serviceName = labels['com.docker.compose.service']
+    const isProjectReplacement = labels['com.docker.compose.project'] === candidateProject && replacing.has(serviceName)
     const isGatewayHandoff = container.Id === allowedGatewayId
-    if (container.HostConfig?.NetworkMode === 'host' && !isReplacement && candidate.length > 0) {
+    if (container.HostConfig?.NetworkMode === 'host' && candidate.length > 0) {
       for (const requested of candidate) conflicts.push({ ...requested, owner: `host-network container ${String(container.Name ?? container.Id).replace(/^\//, '')}` })
       continue
     }
@@ -81,7 +82,8 @@ export function findPublishedPortConflicts(compose, containers, candidateProject
       for (const binding of bindings ?? []) {
         if (!binding?.HostPort) continue
         const occupied = { hostIp: String(binding.HostIp ?? ''), protocol, ...portRange(binding.HostPort, 'running container host port') }
-        if (isReplacement || (isGatewayHandoff && ['80', '443'].includes(String(occupied.start)) && occupied.start === occupied.end)) {
+        const sameServiceRebind = isProjectReplacement && candidate.some(requested => requested.service === serviceName && overlaps(requested, occupied))
+        if (sameServiceRebind || (isGatewayHandoff && ['80', '443'].includes(String(occupied.start)) && occupied.start === occupied.end)) {
           replacementBindings.push(occupied)
           continue
         }
@@ -105,12 +107,12 @@ export function findPublishedPortConflicts(compose, containers, candidateProject
   return conflicts
 }
 
-function parseListeners(output) {
+export function parseListeners(output) {
   return output.split('\n').map(line => {
     const fields = line.trim().split(/\s+/)
-    if (fields.length < 5 || !['tcp', 'udp', 'sctp'].includes(fields[0])) return null
+    if (fields.length < 6 || !['tcp', 'udp', 'sctp'].includes(fields[0])) return null
     const protocol = fields[0]
-    const endpoint = fields[3]
+    const endpoint = fields[4]
     const split = endpoint.startsWith('[') ? endpoint.lastIndexOf(']:') : endpoint.lastIndexOf(':')
     if (split < 0) throw new Error('host socket inventory returned an invalid listener')
     const hostIp = endpoint.startsWith('[') ? endpoint.slice(1, split) : endpoint.slice(0, split)

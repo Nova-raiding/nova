@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findPublishedPortConflicts } from '../infra/scripts/ecs-compose-published-ports.mjs'
+import { findPublishedPortConflicts, parseListeners } from '../infra/scripts/ecs-compose-published-ports.mjs'
 
 const candidate = (hostIp = '127.0.0.1', published = '8787', protocol = 'tcp', target: number | string = 8787) => ({
   services: { api: { ports: [{ target, published, host_ip: hostIp, protocol }] } },
@@ -31,6 +31,21 @@ describe('ECS candidate published-port preflight', () => {
     expect(findPublishedPortConflicts(candidate('127.0.0.1'), [running('0.0.0.0')], 'merchant-production', ['api'])).toHaveLength(1)
     expect(findPublishedPortConflicts(candidate('127.0.0.1'), [running('192.168.1.2')], 'merchant-production', ['api'])).toHaveLength(0)
     expect(findPublishedPortConflicts(candidate('::ffff:127.0.0.1'), [], 'merchant-production', ['api'], '', [{ hostIp: '127.0.0.1', port: '8787', protocol: 'tcp' }])).toHaveLength(1)
+  })
+
+  it('parses IPv4, IPv6, TCP, UDP and SCTP host listeners without exposing process details', () => {
+    const listeners = parseListeners([
+      'tcp LISTEN 0 4096 127.0.0.1:8787 0.0.0.0:*',
+      'udp UNCONN 0 0 0.0.0.0:5353 0.0.0.0:*',
+      'sctp LISTEN 0 128 [::1]:9899 [::]:*',
+      'tcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))',
+    ].join('\n'))
+    expect(listeners).toEqual([
+      { protocol: 'tcp', hostIp: '127.0.0.1', port: '8787' },
+      { protocol: 'udp', hostIp: '0.0.0.0', port: '5353' },
+      { protocol: 'sctp', hostIp: '::1', port: '9899' },
+      { protocol: 'tcp', hostIp: '0.0.0.0', port: '22' },
+    ])
   })
 
   it('detects SCTP host listeners and ignores listeners on a different protocol', () => {
