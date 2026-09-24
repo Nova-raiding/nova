@@ -3321,7 +3321,10 @@ function configuredStorageQuotaLimit(): number {
 function getAssetStorage(): ObjectStoragePort {
   if (assetStorage) return assetStorage
   if (isProduction()) {
-    if (process.env.DEPLOYMENT_PROFILE === 'local_acceptance' && process.env.ALLOW_LOCAL_DURABLE_OBJECT_STORAGE === 'true') {
+    const demoLocalStorage = process.env.DEPLOYMENT_PROFILE === 'ecs'
+      && process.env.DEMO_UNSCANNED_ASSETS_ENABLED === 'true'
+      && process.env.DEMO_LOCAL_DURABLE_ASSET_STORAGE_ENABLED === 'true'
+    if ((process.env.DEPLOYMENT_PROFILE === 'local_acceptance' && process.env.ALLOW_LOCAL_DURABLE_OBJECT_STORAGE === 'true') || demoLocalStorage) {
       const root = process.env.ASSET_STORAGE_ROOT?.trim()
       if (!root || !root.startsWith('/var/lib/merchant-assets/')) throw new DomainError('ASSET_STORAGE_CONFIG_INVALID', '本地生产验收对象存储必须位于专用持久卷 /var/lib/merchant-assets/', 503)
       assetStorage = new LocalObjectStorage(root, { maxObjectBytes: configuredAssetLimit() })
