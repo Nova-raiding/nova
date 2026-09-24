@@ -133,6 +133,7 @@ trust_key_id_path="$trust_dir/production-evidence-key-id"
 trusted_key_id=$(sed -n '1p' "$trust_key_id_path")
 npx --no-install tsx "$(dirname "$0")/../../tests/release-manifest-gate.ts" \
   --file "$RELEASE_MANIFEST_PATH" --release-id "$RELEASE_ID" \
+  --expected-candidate-manifest-sha256 "$manifest_sha256" \
   --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id" \
   --capability-evidence "$CAPABILITY_EVIDENCE_PATH" --capacity-evidence "$CAPACITY_REPORT_PATH" \
   --model-relay-evidence "$MODEL_RELAY_EVIDENCE_PATH" --payment-evidence "$PAYMENT_EVIDENCE_PATH" \
@@ -179,4 +180,16 @@ npx --no-install tsx "$(dirname "$0")/../../tests/object-storage-evidence-gate.t
   --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind payment --file "$PAYMENT_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
+RELEASE_EVIDENCE_BUNDLE_PATH=${RELEASE_EVIDENCE_BUNDLE_PATH:?RELEASE_EVIDENCE_BUNDLE_PATH is required}
+release_manifest_sha256=$(shasum -a 256 "$RELEASE_MANIFEST_PATH" | awk '{print $1}')
+npx --no-install tsx "$(dirname "$0")/../../tests/release-evidence-bundle-gate.ts" \
+  --file "$RELEASE_EVIDENCE_BUNDLE_PATH" --release-manifest "$RELEASE_MANIFEST_PATH" \
+  --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" \
+  --manifest-sha256 "$release_manifest_sha256" --candidate-manifest-sha256 "$manifest_sha256" \
+  --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" \
+  --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id" \
+  --capability-evidence "$CAPABILITY_EVIDENCE_PATH" --capacity-evidence "$CAPACITY_REPORT_PATH" \
+  --model-relay-evidence "$MODEL_RELAY_EVIDENCE_PATH" --payment-evidence "$PAYMENT_EVIDENCE_PATH" \
+  --restore-evidence "$RESTORE_EVIDENCE_PATH" --object-storage-evidence "$OBJECT_STORAGE_EVIDENCE_PATH" \
+  --codex-app-host-evidence "$CODEX_APP_HOST_EVIDENCE_PATH" --canonical-cutover-evidence "$CANONICAL_CUTOVER_EVIDENCE_PATH"
 echo "deploy preflight passed: release_id=$RELEASE_ID image_set_digest=$image_set_digest migration=$EXPECTED_MIGRATION_VERSION profile=$profile secret_provider=$SECRET_PROVIDER capability_evidence=$CAPABILITY_EVIDENCE_PATH capacity_report=$CAPACITY_REPORT_PATH model_relay_evidence=$MODEL_RELAY_EVIDENCE_PATH codex_app_host_evidence=$CODEX_APP_HOST_EVIDENCE_PATH object_storage_evidence=$OBJECT_STORAGE_EVIDENCE_PATH payment_evidence=$PAYMENT_EVIDENCE_PATH restore_evidence=$RESTORE_EVIDENCE_PATH"
