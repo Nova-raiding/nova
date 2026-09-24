@@ -244,7 +244,7 @@ export interface AssetMetadata {
   validFrom?: string
   validTo?: string
   aiModificationAllowed?: boolean
-  scanStatus: 'quarantined' | 'clean' | 'blocked'
+  scanStatus: 'quarantined' | 'unscanned' | 'clean' | 'blocked'
   /** Immutable platform scanner receipt binding. Never supplied by merchants. */
   scanReceiptId?: string
   scanReceiptDigest?: string
@@ -321,12 +321,24 @@ export function isTrustedCleanAsset(asset: TrustedCleanAssetInput): boolean {
   return storageKey.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..')
 }
 
-export function assetReadiness(asset: Pick<AssetMetadata, 'workspaceId' | 'storageKey' | 'scanStatus' | 'scanReceiptId' | 'scanReceiptDigest' | 'scanVerdict' | 'parseStatus' | 'rightsStatus' | 'rightsScope' | 'factsConfirmedBy' | 'factsConfirmedAt'>): AssetReadiness {
+/** Demo uploads remain explicitly unscanned; this never represents a clean scanner verdict. */
+export function isUsableAssetWithoutScan(asset: TrustedCleanAssetInput, allowUnscannedAssets = false): boolean {
+  if (isTrustedCleanAsset(asset)) return true
+  if (!allowUnscannedAssets || asset.scanStatus !== 'unscanned') return false
+  const workspaceId = asset.workspaceId.trim()
+  const storageKey = asset.storageKey.trim()
+  if (!workspaceId || workspaceId !== asset.workspaceId || /[\\/]/u.test(workspaceId)) return false
+  if (storageKey !== asset.storageKey || !storageKey.startsWith(`quarantine/${workspaceId}/`) || storageKey.includes('\\')) return false
+  return storageKey.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..')
+}
+
+export function assetReadiness(asset: Pick<AssetMetadata, 'workspaceId' | 'storageKey' | 'scanStatus' | 'scanReceiptId' | 'scanReceiptDigest' | 'scanVerdict' | 'parseStatus' | 'rightsStatus' | 'rightsScope' | 'factsConfirmedBy' | 'factsConfirmedAt'>, allowUnscannedAssets = false): AssetReadiness {
   const reasons: string[] = []
   const trustedClean = isTrustedCleanAsset(asset)
+  const usable = isUsableAssetWithoutScan(asset, allowUnscannedAssets)
   if (asset.scanStatus === 'blocked') reasons.push('安全扫描阻断')
   else if (asset.scanStatus === 'clean' && !trustedClean) reasons.push('安全扫描凭据缺失或无效')
-  else if (!trustedClean) reasons.push('等待安全扫描')
+  else if (!usable) reasons.push('等待安全扫描')
   if (asset.parseStatus === 'failed') reasons.push('素材事实解析失败')
   else if (asset.parseStatus !== 'succeeded') reasons.push('等待素材事实解析')
   if (asset.rightsStatus === 'rejected' || asset.rightsScope === 'unusable') reasons.push('商用权益被拒绝或不可用')
@@ -908,14 +920,14 @@ export function imageArchiveReceiptDigest(input: { archiveReceiptId: string; wor
   })
 }
 
-export function imageGenerationCandidateUsability(input: { workspaceId: string; job: ImageGenerationJob; output?: VisualGenerationOutput; asset?: AssetMetadata }) {
+export function imageGenerationCandidateUsability(input: { workspaceId: string; job: ImageGenerationJob; output?: VisualGenerationOutput; asset?: AssetMetadata; allowUnscannedAssets?: boolean }) {
   const { job, output, asset } = input
   let reason: ImageGenerationCandidateUsabilityReason | undefined
   if (job.state !== 'succeeded' || job.archiveState !== 'archived') reason = 'job_not_ready'
   else if (!output) reason = 'asset_missing_or_scope_mismatch'
   else if (output.reviewStatus === 'blocked') reason = 'candidate_blocked'
   else if (!asset || asset.workspaceId !== input.workspaceId || asset.id !== output.assetId) reason = 'asset_missing_or_scope_mismatch'
-  else if (!isTrustedCleanAsset(asset)) reason = 'asset_scan_required'
+  else if (!isUsableAssetWithoutScan(asset, input.allowUnscannedAssets)) reason = 'asset_scan_required'
   else if (asset.sha256 !== output.sha256 || asset.sizeBytes !== output.sizeBytes || asset.mimeType !== output.mimeType) reason = 'asset_metadata_mismatch'
   else if (!output.archiveReceiptId || !output.archiveReceiptDigest) reason = 'archive_receipt_missing'
   else if (!/^[a-f0-9]{64}$/u.test(output.archiveReceiptDigest)) reason = 'archive_receipt_invalid'
@@ -1432,6 +1444,8 @@ function validateMerchantIntentAnswer(value: unknown) {
 export interface MerchantServiceOptions {
   fixtureMode?: boolean
   seedFixture?: boolean
+  /** Explicit demo mode: uploaded assets stay unscanned and are usable from their scoped object key. */
+  allowUnscannedAssets?: boolean
   /** Require every task-bound platform account to be registered and connected. */
   strictAccountScope?: boolean
   /**
@@ -1624,7 +1638,7 @@ export class MerchantService {
       return !(asset.parseStatus === 'succeeded' && Boolean(asset.factsConfirmedBy && asset.factsConfirmedAt))
     }
     const assetUsableForTask = (asset: AssetMetadata) => asset.workspaceId === task.workspaceId
-      && isTrustedCleanAsset(asset)
+      && isUsableAssetWithoutScan(asset, this.options.allowUnscannedAssets)
       && asset.rightsStatus === 'approved'
       && asset.rightsScope !== 'unusable'
       && !assetRequiresConfirmedFacts(asset)
@@ -1646,7 +1660,7 @@ export class MerchantService {
       const asset = this.assets.get(assetId)
       if (!asset || asset.workspaceId !== task.workspaceId) return []
       if (asset.preference?.verdict === 'disliked') throw new DomainError('ASSET_PREFERENCE_BLOCKED', `素材“${asset.name}”已标记为不喜欢，不能进入本次生成快照`, 409, { asset_id: asset.id, reasons: asset.preference.reasons, next_step: '移除该素材，或在素材库修改评价后重新确认制作方案' })
-      if (!assetUsableForTask(asset)) throw new DomainError('ASSET_NOT_READY', `素材“${asset.name}”未通过本次生成所需的安全、权益、事实、平台或用途检查`, 409, { asset_id: asset.id, scan_status: asset.scanStatus, rights_status: asset.rightsStatus, parse_status: asset.parseStatus, facts_confirmed: Boolean(asset.factsConfirmedBy && asset.factsConfirmedAt), applicable_platforms: asset.applicablePlatforms ?? [], usage_scopes: asset.usageScopes ?? [], next_step: '完成安全扫描、权益确认或事实解析/人工确认，并调整素材使用范围后重试' })
+      if (!assetUsableForTask(asset)) throw new DomainError('ASSET_NOT_READY', `素材“${asset.name}”未通过本次生成所需的权益、事实、平台或用途检查`, 409, { asset_id: asset.id, scan_status: asset.scanStatus, rights_status: asset.rightsStatus, parse_status: asset.parseStatus, facts_confirmed: Boolean(asset.factsConfirmedBy && asset.factsConfirmedAt), applicable_platforms: asset.applicablePlatforms ?? [], usage_scopes: asset.usageScopes ?? [], next_step: '确认权益和素材事实，并调整素材使用范围后重试' })
       return [{ id: asset.id, revision: asset.revision, sha256: asset.sha256, contentTrust: structuredClone(asset.contentTrust ?? untrustedAssetContent()), ...(asset.preference ? { preference: structuredClone(asset.preference) } : {}) }]
     })
     const brandId = typeof task.answers.brand_id === 'string' ? task.answers.brand_id.trim() : ''
@@ -2457,14 +2471,14 @@ export class MerchantService {
       if (missing.length) throw new DomainError('ASSET_NOT_FOUND', '部分品牌素材不存在或不属于当前工作区', 404, { asset_ids: missing })
     }
     if (!assets.length) throw new DomainError('BRAND_ASSETS_REQUIRED', '请先上传并读取品牌资料，再提取品牌候选字段', 409)
-    const trusted = assets.filter(isTrustedCleanAsset)
-    if (!trusted.length) throw new DomainError('BRAND_ASSETS_SCAN_REQUIRED', '品牌资料尚未通过可信安全扫描，不能读取为品牌候选；请等待平台自动检查', 409)
+    const trusted = assets.filter(asset => isUsableAssetWithoutScan(asset, this.options.allowUnscannedAssets))
+    if (!trusted.length) throw new DomainError('BRAND_ASSETS_SCAN_REQUIRED', '品牌资料尚不可用', 409)
     const extracted = extractBrandCandidates(trusted)
     return {
       ...extracted,
       ignoredAssets: [
         ...extracted.ignoredAssets,
-        ...assets.filter(asset => !isTrustedCleanAsset(asset)).map(asset => ({ assetId: asset.id, assetName: asset.name, reason: '可信安全扫描尚未通过' })),
+        ...assets.filter(asset => !isUsableAssetWithoutScan(asset, this.options.allowUnscannedAssets)).map(asset => ({ assetId: asset.id, assetName: asset.name, reason: '素材不可用' })),
       ],
     }
   }
@@ -2533,7 +2547,7 @@ export class MerchantService {
     if (!rules) return { ready: true, configured: false, issues, rules: null }
     const isAssetReady = (asset: AssetMetadata | undefined) => Boolean(asset
       && asset.workspaceId === workspaceId
-      && isTrustedCleanAsset(asset)
+      && isUsableAssetWithoutScan(asset, this.options.allowUnscannedAssets)
       && asset.rightsStatus === 'approved'
       && asset.rightsScope !== 'unusable'
       && (!platform || !asset.applicablePlatforms?.length || asset.applicablePlatforms.includes(platform))
@@ -2560,9 +2574,11 @@ export class MerchantService {
     if (!readiness.ready) throw new DomainError('BRAND_VISUAL_RULES_BLOCKED', '品牌视觉强规则未满足，已阻止生成；请先修正 Logo/字体素材与授权状态', 409, { issues: readiness.issues, next_step: '在素材库的品牌视觉强规则中修正配置，并完成对应素材的扫描与权益确认' })
     return readiness
   }
-  registerAsset(input: { workspaceId: string; name: string; mimeType: string; sizeBytes: number; sha256: string; storageKey: string; sourceProviderJobId?: string; rightsStatus?: AssetMetadata['rightsStatus']; rightsScope?: AssetMetadata['rightsScope']; applicablePlatforms?: Platform[]; applicableRegions?: string[]; usageScopes?: string[]; validFrom?: string; validTo?: string; aiModificationAllowed?: boolean; uploadedByActorId?: string }): AssetRegistrationResult {
+  registerAsset(input: { workspaceId: string; name: string; mimeType: string; sizeBytes: number; sha256: string; storageKey: string; scanMode?: 'unscanned'; sourceProviderJobId?: string; rightsStatus?: AssetMetadata['rightsStatus']; rightsScope?: AssetMetadata['rightsScope']; applicablePlatforms?: Platform[]; applicableRegions?: string[]; usageScopes?: string[]; validFrom?: string; validTo?: string; aiModificationAllowed?: boolean; uploadedByActorId?: string }): AssetRegistrationResult {
     const sha256 = input.sha256.trim().toLowerCase()
+    if (input.scanMode === 'unscanned' && !this.options.allowUnscannedAssets) throw new DomainError('ASSET_SCAN_REQUIRED', '当前环境未启用免扫描上传', 409)
     if (!input.name.trim() || !input.mimeType.trim() || !Number.isInteger(input.sizeBytes) || input.sizeBytes < 0 || input.sizeBytes > 50 * 1024 * 1024 || !/^[a-f0-9]{64}$/.test(sha256) || !input.storageKey.trim() || input.storageKey.includes('..') || !input.storageKey.startsWith('quarantine/')) throw new DomainError('ASSET_METADATA_INVALID', '素材元数据无效或超过 50MB 限制', 400)
+    if (input.scanMode === 'unscanned' && !isUsableAssetWithoutScan({ workspaceId: input.workspaceId, storageKey: input.storageKey, scanStatus: 'unscanned' }, true)) throw new DomainError('ASSET_METADATA_INVALID', '免扫描素材的存储路径与工作区不一致', 400)
     const normalizeList = (values: string[] | undefined, code: string, label: string) => {
       if (values === undefined) return undefined
       const normalized = [...new Set(values.map(value => value.trim()).filter(Boolean))]
@@ -2603,7 +2619,7 @@ export class MerchantService {
     }
     const createdAt = now()
     const uploader = input.uploadedByActorId?.trim()
-    const asset: AssetRegistrationResult = { id: id('asset'), workspaceId: input.workspaceId, name: input.name.trim(), mimeType: input.mimeType.trim(), sizeBytes: input.sizeBytes, sha256, sourceRevision: 1, storageKey: input.storageKey.trim(), ...(input.sourceProviderJobId ? { sourceProviderJobId: input.sourceProviderJobId.trim() } : {}), rightsStatus: input.rightsStatus ?? 'pending', ...(input.rightsScope ? { rightsScope: input.rightsScope } : {}), ...(input.applicablePlatforms?.length ? { applicablePlatforms: [...input.applicablePlatforms] } : {}), ...(applicableRegions?.length ? { applicableRegions } : {}), ...(usageScopes?.length ? { usageScopes } : {}), ...(input.validFrom ? { validFrom: new Date(input.validFrom).toISOString() } : {}), ...(input.validTo ? { validTo: new Date(input.validTo).toISOString() } : {}), ...(input.aiModificationAllowed !== undefined ? { aiModificationAllowed: input.aiModificationAllowed } : {}), scanStatus: 'quarantined', parseStatus: 'pending', contentTrust: untrustedAssetContent(), references: [{ name: input.name.trim(), mimeType: input.mimeType.trim(), firstSeenAt: createdAt }], ...(uploader ? { uploadedByActorIds: [uploader] } : {}), revision: 1, createdAt, deduplication: { mode: 'created', rightsAndScanStatePreserved: false, referenceAdded: true } }
+    const asset: AssetRegistrationResult = { id: id('asset'), workspaceId: input.workspaceId, name: input.name.trim(), mimeType: input.mimeType.trim(), sizeBytes: input.sizeBytes, sha256, sourceRevision: 1, storageKey: input.storageKey.trim(), ...(input.sourceProviderJobId ? { sourceProviderJobId: input.sourceProviderJobId.trim() } : {}), rightsStatus: input.rightsStatus ?? 'pending', ...(input.rightsScope ? { rightsScope: input.rightsScope } : {}), ...(input.applicablePlatforms?.length ? { applicablePlatforms: [...input.applicablePlatforms] } : {}), ...(applicableRegions?.length ? { applicableRegions } : {}), ...(usageScopes?.length ? { usageScopes } : {}), ...(input.validFrom ? { validFrom: new Date(input.validFrom).toISOString() } : {}), ...(input.validTo ? { validTo: new Date(input.validTo).toISOString() } : {}), ...(input.aiModificationAllowed !== undefined ? { aiModificationAllowed: input.aiModificationAllowed } : {}), scanStatus: input.scanMode ?? 'quarantined', parseStatus: 'pending', contentTrust: untrustedAssetContent(), references: [{ name: input.name.trim(), mimeType: input.mimeType.trim(), firstSeenAt: createdAt }], ...(uploader ? { uploadedByActorIds: [uploader] } : {}), revision: 1, createdAt, deduplication: { mode: 'created', rightsAndScanStatePreserved: false, referenceAdded: true } }
     this.assets.set(asset.id, asset)
     return asset
   }
@@ -2632,7 +2648,7 @@ export class MerchantService {
     asset.revision += 1
     return asset
   }
-  listAssets(workspaceId: string) { return [...this.assets.values()].filter(asset => asset.workspaceId === workspaceId).map(asset => ({ ...asset, readiness: assetReadiness(asset) })) }
+  listAssets(workspaceId: string) { return [...this.assets.values()].filter(asset => asset.workspaceId === workspaceId).map(asset => ({ ...asset, readiness: assetReadiness(asset, this.options.allowUnscannedAssets) })) }
   findAssetBySourceProviderJobId(workspaceId: string, providerJobId: string) { return [...this.assets.values()].find(asset => asset.workspaceId === workspaceId && asset.sourceProviderJobId === providerJobId) }
   listAssetsPage(workspaceId: string, input: { limit?: number; offset?: number } = {}) {
     const limit = Math.min(100, Math.max(1, Number.isInteger(input.limit) ? input.limit! : 20))
@@ -2645,7 +2661,7 @@ export class MerchantService {
     if (!asset || asset.workspaceId !== input.workspaceId) throw new DomainError('ASSET_NOT_FOUND', '素材不存在', 404)
     if (input.previewEvidence && input.state !== 'succeeded') throw new DomainError('ASSET_PREVIEW_PARSE_REQUIRED', '只有解析成功的素材可以进入预览规划', 409)
     if ((input.source === 'parser' || input.source === 'model_ocr') && asset.parseStatus === 'succeeded' && asset.extractedFactsSource === 'manual') throw new DomainError('ASSET_FACTS_MANUAL_LOCKED', '素材事实已由商家人工确认；自动解析不能覆盖或降级人工确认结果', 409)
-    if (input.source === 'manual' && !isTrustedCleanAsset(asset)) throw new DomainError('ASSET_FACTS_SCAN_REQUIRED', '素材完成可信安全扫描后才能人工确认事实', 409)
+    if (input.source === 'manual' && !isUsableAssetWithoutScan(asset, this.options.allowUnscannedAssets)) throw new DomainError('ASSET_FACTS_SCAN_REQUIRED', '素材尚不可用，不能人工确认事实', 409)
     if (input.source === 'manual' && (!input.facts || Object.keys(input.facts).length === 0)) throw new DomainError('ASSET_FACTS_EMPTY', '人工补录事实不能为空', 400)
     asset.parseStatus = input.state
     if (input.facts) {
@@ -2713,7 +2729,7 @@ export class MerchantService {
     if (!['pending', 'approved', 'rejected'].includes(input.rightsStatus)) throw new DomainError('ASSET_RIGHTS_STATUS_INVALID', '素材权益状态必须是 pending、approved 或 rejected', 400)
     if (input.rightsScope !== undefined && !['owned', 'commercial_authorized', 'limited_use', 'internal_only', 'unknown', 'unusable'].includes(input.rightsScope)) throw new DomainError('ASSET_RIGHTS_SCOPE_INVALID', '素材权益范围无效', 400)
     if (input.applicablePlatforms?.some(platform => !supportedPlatforms.includes(platform))) throw new DomainError('ASSET_PLATFORM_SCOPE_INVALID', '素材适用平台无效', 400)
-    if (!isTrustedCleanAsset(asset) && input.rightsStatus === 'approved') throw new DomainError('ASSET_RIGHTS_SCAN_REQUIRED', '素材完成可信安全扫描后才能确认权利', 409)
+    if (!isUsableAssetWithoutScan(asset, this.options.allowUnscannedAssets) && input.rightsStatus === 'approved') throw new DomainError('ASSET_RIGHTS_SCAN_REQUIRED', '素材尚不可用，不能确认权利', 409)
     // Normalize and validate every field before mutating the asset.  A rejected
     // rights update must not leave behind a partially applied status/date.
     const validFrom = input.validFrom !== undefined ? Date.parse(input.validFrom) : undefined
@@ -3115,7 +3131,7 @@ export class MerchantService {
       if (!output || job.state !== 'succeeded' || job.archiveState !== 'archived') throw new DomainError('VISUAL_NOT_READY', '图片候选尚未完整归档，不能完成审核', 409)
       if (output.assetId) {
         const asset = this.assets.get(output.assetId)
-        if (!asset || asset.workspaceId !== workspaceId || !isTrustedCleanAsset(asset)) throw new DomainError('VISUAL_SCAN_REQUIRED', '图片候选对应素材尚未通过可信安全扫描，不能完成审核', 409, { visual_ref: visualRef, asset_id: output.assetId, scan_status: asset?.scanStatus ?? 'missing', next_step: '等待平台自动安全检查完成后重新审核图片候选' })
+        if (!asset || asset.workspaceId !== workspaceId || !isUsableAssetWithoutScan(asset, this.options.allowUnscannedAssets)) throw new DomainError('VISUAL_SCAN_REQUIRED', '图片候选对应素材不可用，不能完成审核', 409, { visual_ref: visualRef, asset_id: output.assetId, scan_status: asset?.scanStatus ?? 'missing' })
       }
       let authenticity: VisualAuthenticitySnapshot | undefined
       if (status === 'passed') {
@@ -3156,7 +3172,7 @@ export class MerchantService {
     if (priorIntent) {
       if (priorIntent.intentHash !== intentHash) throw new DomainError('IDEMPOTENCY_CONFLICT', '幂等键已绑定其他图片候选偏好意图', 409)
       const output = job.outputs?.find(candidate => candidate.visualRef === priorIntent.visualRef)
-      const usability = imageGenerationCandidateUsability({ workspaceId: input.workspaceId, job, output, asset: output?.assetId ? this.assets.get(output.assetId) : undefined })
+      const usability = imageGenerationCandidateUsability({ workspaceId: input.workspaceId, job, output, asset: output?.assetId ? this.assets.get(output.assetId) : undefined, allowUnscannedAssets: this.options.allowUnscannedAssets })
       return { job, preferredSelection: priorIntent, reviewStatus: usability.reviewStatus, publishable: usability.publishable, currentlyUsable: usability.currentlyUsable }
     }
     if (job.state !== 'succeeded' || job.archiveState !== 'archived') throw new DomainError('VISUAL_NOT_READY', '图片候选任务尚未成功并完整归档，不能记录偏好', 409)
@@ -3164,7 +3180,7 @@ export class MerchantService {
     if (!output) throw new DomainError('VISUAL_SELECTION_SCOPE_MISMATCH', '图片候选不属于当前图片任务', 409, { job_id: job.id, visual_ref: visualRef })
     if (output.reviewStatus === 'blocked') throw new DomainError('VISUAL_BLOCKED', '已阻断的图片候选不能记录为偏好', 409, { job_id: job.id, visual_ref: visualRef })
     const asset = output.assetId ? this.assets.get(output.assetId) : undefined
-    const usability = imageGenerationCandidateUsability({ workspaceId: input.workspaceId, job, output, asset })
+    const usability = imageGenerationCandidateUsability({ workspaceId: input.workspaceId, job, output, asset, allowUnscannedAssets: this.options.allowUnscannedAssets })
     if (!usability.currentlyUsable) {
       if (usability.reason === 'candidate_blocked') throw new DomainError('VISUAL_BLOCKED', '已阻断的图片候选不能记录为偏好', 409, { job_id: job.id, visual_ref: visualRef })
       if (usability.reason === 'asset_missing_or_scope_mismatch' || usability.reason === 'asset_scan_required') throw new DomainError('VISUAL_SCAN_REQUIRED', '图片候选对应素材尚未通过可信安全扫描，不能记录偏好', 409, { visual_ref: visualRef, asset_id: output.assetId ?? null, scan_status: asset?.scanStatus ?? 'missing', next_step: '等待平台自动安全检查完成后重新选择图片候选' })
@@ -3216,7 +3232,7 @@ export class MerchantService {
       if (!output || job.state !== 'succeeded' || job.archiveState !== 'archived' || output.reviewStatus !== 'passed') throw new DomainError('VISUAL_REVIEW_REQUIRED', '图片候选必须完整归档并通过检查后才能选择', 409)
       if (output.assetId) {
         const asset = this.assets.get(output.assetId)
-        if (!asset || asset.workspaceId !== input.workspaceId || !isTrustedCleanAsset(asset)) throw new DomainError('VISUAL_SCAN_REQUIRED', '图片候选对应素材尚未通过可信安全扫描，不能选择', 409, { visual_ref: visualRef, asset_id: output.assetId, scan_status: asset?.scanStatus ?? 'missing', next_step: '等待平台自动安全检查完成后重新选择图片' })
+        if (!asset || asset.workspaceId !== input.workspaceId || !isUsableAssetWithoutScan(asset, this.options.allowUnscannedAssets)) throw new DomainError('VISUAL_SCAN_REQUIRED', '图片候选对应素材不可用，不能选择', 409, { visual_ref: visualRef, asset_id: output.assetId, scan_status: asset?.scanStatus ?? 'missing' })
       }
       return { visualRef, role: index === 0 ? 'main' as const : 'secondary' as const, ...(job.skuIds?.length ? { skuIds: [...job.skuIds] } : {}), ordinal: output.ordinal, sha256: output.sha256, mimeType: output.mimeType, sizeBytes: output.sizeBytes, sourceProductVersion: job.sourceProductVersion, reviewStatus: 'passed' as const, ...(output.authenticity ? { authenticity: clone(output.authenticity) } : {}) }
     })
@@ -4999,7 +5015,7 @@ export class MerchantService {
     const evidenceAssetIds = [...new Set((input.evidenceAssetIds ?? []).map(value => value.trim()).filter(Boolean))]
     for (const assetId of evidenceAssetIds) {
       const asset = this.assets.get(assetId)
-      if (!asset || asset.workspaceId !== workspaceId || !isTrustedCleanAsset(asset)) throw new DomainError('MANUAL_PUBLISH_EVIDENCE_INVALID', '人工发布证据必须是当前工作区已通过可信扫描的私有资产', 409, { asset_id: assetId })
+      if (!asset || asset.workspaceId !== workspaceId || !isUsableAssetWithoutScan(asset, this.options.allowUnscannedAssets)) throw new DomainError('MANUAL_PUBLISH_EVIDENCE_INVALID', '人工发布证据必须是当前工作区可用的私有资产', 409, { asset_id: assetId })
     }
     const publisherId = input.publisherId?.normalize('NFKC').trim() || undefined
     const reviewerId = input.reviewerId?.normalize('NFKC').trim() || undefined

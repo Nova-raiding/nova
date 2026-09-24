@@ -127,7 +127,7 @@ export interface ProductAssetBindingLinkInput {
   status: 'active' | 'disabled'
   assetExists: boolean
   assetBrandId?: string
-  scanStatus?: 'quarantined' | 'clean' | 'blocked'
+  scanStatus?: 'quarantined' | 'unscanned' | 'clean' | 'blocked'
   rightsStatus?: 'pending' | 'approved' | 'rejected'
 }
 

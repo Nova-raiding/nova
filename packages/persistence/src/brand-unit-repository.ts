@@ -33,7 +33,7 @@ export interface CanonicalChainConsistencyRows {
   campaignItems: Array<{ id: string; workspaceId: string; brandId: string; canonicalProductId?: string; listingId?: string; taskId?: string; platform?: string; accountId?: string }>
   tasks: Array<{ id: string; workspaceId: string; productId: string; brandId?: string; canonicalProductId?: string; listingId?: string; campaignItemId?: string; platform?: string; accountId?: string }>
   publishJobs: Array<{ id: string; workspaceId: string; taskId: string; canonicalProductId?: string; listingId?: string; platform?: string; accountId?: string }>
-  assetBindings: Array<{ workspaceId: string; productId: string; assetId: string; assetRole: 'source' | 'main' | 'secondary' | 'detail'; status: 'active' | 'disabled'; assetExists: boolean; assetBrandId?: string; scanStatus?: 'quarantined' | 'clean' | 'blocked'; rightsStatus?: 'pending' | 'approved' | 'rejected' }>
+  assetBindings: Array<{ workspaceId: string; productId: string; assetId: string; assetRole: 'source' | 'main' | 'secondary' | 'detail'; status: 'active' | 'disabled'; assetExists: boolean; assetBrandId?: string; scanStatus?: 'quarantined' | 'unscanned' | 'clean' | 'blocked'; rightsStatus?: 'pending' | 'approved' | 'rejected' }>
 }
 export interface CampaignBatchRow {
   id: string

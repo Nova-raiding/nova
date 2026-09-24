@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { DomainError, MerchantService, isTrustedCleanAsset, type AssetMetadata, type ContentVersion, type PublishJob, type Task } from './service.js'
+import { DomainError, MerchantService, isTrustedCleanAsset, isUsableAssetWithoutScan, type AssetMetadata, type ContentVersion, type PublishJob, type Task } from './service.js'
 import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecyclePort } from './campaign-delivery-orchestrator.js'
 import type { CampaignDeliveryManifestInput } from './campaign-delivery-manifest.js'
 import { verifyDeliveryBundle, type DeliveryBundleFile, type DeliveryBundleManifest } from '../../multimodal/src/delivery-bundle-manifest.js'
@@ -1138,6 +1138,23 @@ describe('MerchantService', () => {
     expect(isTrustedCleanAsset({ ...asset, storageKey: `clean/ws_other/${asset.id}/source` })).toBe(false)
     expect(isTrustedCleanAsset({ ...asset, storageKey: `clean/${asset.workspaceId}/${asset.id}/../source` })).toBe(false)
     expect(service.confirmProductionPlan('ws_trusted_clean', task.id, 'merchant').state).toBe('plan_confirmed')
+  })
+
+  it('uses an explicit demo mode for unscanned uploads without claiming a scanner verdict', () => {
+    const input = { workspaceId: 'ws_no_scan', name: 'hero.png', mimeType: 'image/png', sizeBytes: 10, sha256: 'a'.repeat(64), storageKey: 'quarantine/ws_no_scan/hero.png', scanMode: 'unscanned' as const }
+    const normal = new MerchantService({ seedFixture: false })
+    expect(() => normal.registerAsset(input)).toThrowError(expect.objectContaining({ code: 'ASSET_SCAN_REQUIRED' }))
+    const demo = new MerchantService({ seedFixture: false, allowUnscannedAssets: true })
+    const asset = demo.registerAsset(input)
+    expect(asset.scanStatus).toBe('unscanned')
+    expect(asset.scanReceiptId).toBeUndefined()
+    expect(isTrustedCleanAsset(asset)).toBe(false)
+    expect(isUsableAssetWithoutScan(asset)).toBe(false)
+    expect(isUsableAssetWithoutScan(asset, true)).toBe(true)
+    expect(isUsableAssetWithoutScan({ ...asset, storageKey: 'quarantine/ws_other/hero.png' }, true)).toBe(false)
+    expect(isUsableAssetWithoutScan({ ...asset, storageKey: 'quarantine/ws_no_scan/../hero.png' }, true)).toBe(false)
+    expect(demo.listAssets('ws_no_scan')[0]?.readiness.reasons).not.toContain('等待安全扫描')
+    expect(() => demo.registerAsset({ ...input, sha256: 'b'.repeat(64), storageKey: 'quarantine/ws_other/hero.png' })).toThrowError(expect.objectContaining({ code: 'ASSET_METADATA_INVALID' }))
   })
 
   it('revokes an account while preserving identity and blocking operations', () => {
