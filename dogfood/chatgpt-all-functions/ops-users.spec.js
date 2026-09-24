@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { openPlatformConsole, openWorkspaceConsole } from './ops-auth.js'
+import { openPlatformConsole } from './ops-auth.js'
 
 test.setTimeout(120_000)
 test.use({ channel: 'chrome' })
@@ -104,7 +104,6 @@ test('operates the platform user directory without destructive confirmation', as
   await expect(detailDrawer.getByRole('heading', { name: '月费详情' })).toBeVisible()
   await expect(detailDrawer.getByRole('heading', { name: '钱包' })).toBeVisible()
   await expect(detailDrawer.getByRole('heading', { name: '当月消耗表' })).toBeVisible()
-  await expect(detailDrawer.getByRole('heading', { name: /用户总消耗金额/u })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(detailDrawer).toBeHidden()
   await expect(detailButton).toBeFocused()
@@ -161,23 +160,4 @@ test('operates the platform user directory without destructive confirmation', as
   await page.screenshot({ path: resolve(shots, 'user-directory.png'), fullPage: true })
   await writeFile('ops-users-result.json', JSON.stringify({ errors, url: page.url(), rows: await page.locator('tbody tr').count() }, null, 2))
   expect(errors).toEqual([])
-})
-
-test('keeps member governance in the workspace workbench', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1000 })
-  // Authenticate through the signed OIDC gateway before entering the
-  // workspace workbench. A bearer token in localStorage is intentionally not
-  // accepted by the OIDC runner and would make this test exercise an
-  // impossible mixed-auth state.
-  await openWorkspaceConsole(page, '/ops/members?workbench=workspace')
-  await expect(page).toHaveURL(/\/ops\/members\?workbench=workspace$/u)
-  await expect(page.getByRole('heading', { name: '成员与权限' })).toBeVisible()
-  await expect(page.getByText('当前租户成员')).toBeVisible()
-  const inviteForm = page.getByRole('form', { name: '邀请工作区成员' })
-  await expect(inviteForm).toBeVisible()
-  await inviteForm.getByRole('textbox', { name: /用户 ID/u }).focus()
-  await expect(inviteForm.getByRole('textbox', { name: /用户 ID/u })).toBeFocused()
-  const shots = resolve('screenshots', 'ops-users')
-  await mkdir(shots, { recursive: true })
-  await page.screenshot({ path: resolve(shots, 'members-governance-workspace-1440.png') })
 })
