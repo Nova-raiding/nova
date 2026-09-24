@@ -51,6 +51,7 @@ describe('deployment operation scripts', () => {
     expect(layers).toEqual([
       'infra/local/docker-compose.yml',
       'infra/local/docker-compose.ecs-pilot.yml',
+      'infra/local/docker-compose.ecs-production-api-private.yml',
       'infra/local/docker-compose.ecs-oss-cutover.yml',
       'infra/local/docker-compose.ecs-production-migration.yml',
       'infra/local/docker-compose.ecs-pilot-https.yml',

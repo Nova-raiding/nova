@@ -164,12 +164,13 @@ describe('ECS production Compose contract', () => {
     expect(validate(rendered, { PRODUCTION_CANARY_WORKSPACE_ID: 'ws_canary' })).toContain('contract passed')
   })
 
-  it('accepts the real final six-layer production render and proves demo seed removal', () => {
+  it('accepts the real final seven-layer production render and keeps the API private to the project network', () => {
     const rendered = renderFinalProductionCompose()
     const migrate = rendered.services.migrate
     expect(JSON.stringify(migrate.entrypoint)).not.toContain('seed-demo.sql')
     expect(JSON.stringify(migrate.volumes)).not.toContain('seed-demo.sql')
     const gateway = rendered.services['pilot-gateway']
+    expect(rendered.services.api.ports ?? []).toEqual([])
     expect(rendered.networks.default.name).toBe('compose-contract-test_default')
     expect(Object.values(rendered.volumes).every((volume: any) => volume.name.startsWith('compose-contract-test_'))).toBe(true)
     expect(gateway.image).toBe(`registry.example/pilot-gateway@sha256:${'a'.repeat(64)}`)

@@ -123,7 +123,7 @@ sh infra/scripts/ecs-one-click-deploy.sh cleanup
 - `missing_remote`：确认是当前候选版本的新增文件后，才可放入隔离发布目录。
 - `.env`、密钥、OAuth/支付凭据、告警 Webhook 密钥及签名私钥不得进入候选包。
 - `docker-compose.ecs-pilot.yml` 在服务器上可能保留六平台连接器、Vault 和生产安全配置；本地版本不能直接替换它。
-- 最终层顺序只由 `infra/local/ecs-production-compose.layers` 定义：基础 Compose → ECS pilot → OSS cutover → 生产迁移 → HTTPS gateway → release identity。HTTPS 层发布宿主 80/443 到容器 8080/8443，并只读挂载受保护证书目录；网关使用同项目服务别名解析 upstream。禁止加入开发用途的 `deploy/runtime/auth-hardening.yml`；最终渲染必须通过 `validate-ecs-production-compose.mjs` 的服务器生产安全校验。OSS overlay 仅包含 `api`、`api-replica` 的存储、生命周期和配额字段，不修改六平台、Vault、支付、证据或告警配置；当前候选不启用 `--profile alerts`。
+- 最终层顺序只由 `infra/local/ecs-production-compose.layers` 定义：基础 Compose → ECS pilot → production API private → OSS cutover → 生产迁移 → HTTPS gateway → release identity。production API private 层清空 `api` 的宿主端口发布；gateway 和 payment-gateway 通过同项目服务名访问 API，因此不需要宿主映射，也不会与本机服务争用端口。HTTPS 层发布宿主 80/443 到容器 8080/8443，并只读挂载受保护证书目录；网关使用同项目服务别名解析 upstream。禁止加入开发用途的 `deploy/runtime/auth-hardening.yml`；最终渲染必须通过 `validate-ecs-production-compose.mjs` 的服务器生产安全校验。OSS overlay 仅包含 `api`、`api-replica` 的存储、生命周期和配额字段，不修改六平台、Vault、支付、证据或告警配置；当前候选不启用 `--profile alerts`。
 - 生产证据不得从开发机复制充数，必须绑定最终 release ID、Git SHA、镜像摘要、配置摘要和 deployment nonce，并由服务器信任边界签名。
 
 ## 切换前门禁

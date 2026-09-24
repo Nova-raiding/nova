@@ -1,0 +1,6 @@
+# Production API consumers use the project network (the gateway and payment
+# gateway resolve the API by Compose service name). Keep the API private to
+# that network so a host-local development service cannot block the release.
+services:
+  api:
+    ports: !override []
