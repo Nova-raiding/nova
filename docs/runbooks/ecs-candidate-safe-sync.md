@@ -21,6 +21,8 @@ RELEASE_ID=<release-id> \
 sh infra/scripts/stage-verified-ecs-release.sh
 ```
 
+该 staging 入口依赖同目录的 `infra/scripts/ecs-build-lock.sh`。从候选 checkout 运行时，两者必须来自同一个已审查的候选归档；如果将入口安装为独立主机控制程序，必须通过受信主机安装流程成对安装入口和锁 helper，并分别核对源码摘要、root-owned 固定目录及不可由 group/other 写入的父目录。缺少 helper 或 helper 是符号链接时，入口会 fail-closed；不得让它回退到可变仓库路径。当前 protected-control installer 不负责安装这两个 staging 文件，不能把单独复制入口脚本视为完成安装。
+
 staging 执行器会重新校验身份文件中源码归档、比较清单和同步计划的 SHA-256，并核对 Git archive 内嵌提交 SHA；含路径穿越、链接或特殊文件的归档会被拒绝。它只在 releases 根目录内创建随机临时目录，以 `npm ci --ignore-scripts` 从锁文件安装，保留只读的 `.candidate-source.tar` 和 `.candidate-identity` 供部署器重新核验，最后原子改名为全新的 release 目录。目标已存在时拒绝覆盖。生产 `.env`、密钥和运行时凭据不得进入候选包或 release checkout，仍由受保护的主机路径在渲染和部署阶段注入。
 
 ## 一键部署与磁盘上限
