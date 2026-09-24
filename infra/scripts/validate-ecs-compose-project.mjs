@@ -2,12 +2,12 @@
 import { readFileSync } from 'node:fs'
 
 const [, , composePath, project] = process.argv
-if (!composePath || !project) throw new Error('usage: validate-ecs-compose-project.mjs <rendered-compose.json> <compose-project>')
+if (!composePath || !project) throw new Error('usage: validate-ecs-compose-project.mjs <rendered-compose.json|-> <compose-project>')
 if (!/^[a-z0-9][a-z0-9_-]{0,62}$/u.test(project)) throw new Error('unsafe ECS_COMPOSE_PROJECT')
 
 let compose
 try {
-  compose = JSON.parse(readFileSync(composePath, 'utf8'))
+  compose = JSON.parse(composePath === '-' ? readFileSync(0, 'utf8') : readFileSync(composePath, 'utf8'))
 } catch (error) {
   throw new Error(`rendered ECS Compose is not valid JSON: ${error instanceof Error ? error.message : String(error)}`)
 }

@@ -130,6 +130,8 @@ describe('verified ECS Compose deployment runner', () => {
 
   it('validates frozen network and volume names against the selected project', () => {
     expect(readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')).toContain('validate-ecs-compose-project.mjs" "$RENDERED_COMPOSE_PATH" "$ECS_COMPOSE_PROJECT"')
+    expect(source()).toContain('validate-ecs-compose-project.mjs" - "$project"')
+    expect(readFileSync('infra/scripts/rollback-ecs-compose.sh', 'utf8')).toContain('validate-ecs-compose-project.mjs" - "$project"')
     const dir = mkdtempSync(join(tmpdir(), 'ecs-compose-project-'))
     const compose = join(dir, 'compose.json')
     writeFileSync(compose, JSON.stringify({
@@ -143,6 +145,11 @@ describe('verified ECS Compose deployment runner', () => {
     const stale = spawnSync('node', ['infra/scripts/validate-ecs-compose-project.mjs', compose, 'merchant-candidate-test'], { encoding: 'utf8' })
     expect(stale.status).not.toBe(0)
     expect(stale.stderr).toContain('must be frozen as merchant-candidate-test_default')
+
+    const stdin = spawnSync('node', ['infra/scripts/validate-ecs-compose-project.mjs', '-', 'merchant-candidate-test'], {
+      input: JSON.stringify({ networks: { default: { name: 'merchant-candidate-test_default' } } }), encoding: 'utf8',
+    })
+    expect(stdin.status, stdin.stderr).toBe(0)
   })
 
   it('binds the committed candidate before consuming the nonce or mutating Compose', () => {

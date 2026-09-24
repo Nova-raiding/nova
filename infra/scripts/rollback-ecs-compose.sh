@@ -178,6 +178,7 @@ RELEASE_ID="$TARGET_RELEASE_ID" RELEASE_GIT_SHA="$TARGET_GIT_SHA" ruby "$root/in
 
 project=${ECS_COMPOSE_PROJECT:-merchant-production}
 compose() { docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" "$@"; }
+compose config --format json | node "$root/infra/scripts/validate-ecs-compose-project.mjs" - "$project" || fail validation_failed 'rollback Compose resources do not belong to the selected ECS project'
 rollback_images=$(compose config --images) || fail validation_failed 'could not enumerate target rollback images'
 [ -n "$rollback_images" ] || fail validation_failed 'target rollback release contains no images'
 printf '%s\n' "$rollback_images" | while IFS= read -r image; do

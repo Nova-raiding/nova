@@ -265,6 +265,11 @@ assert_inputs_unchanged() {
 image_set_digest=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$verified_compose" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 manifest_sha256=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$verified_compose" "$IMAGE_DIGESTS_JSON" --print-manifest-sha256)
 project=${ECS_COMPOSE_PROJECT:-merchant-production}
+docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" config --format json \
+  | node "$root/infra/scripts/validate-ecs-compose-project.mjs" - "$project" || {
+    echo 'rollback Compose resources do not belong to the selected ECS project' >&2
+    exit 1
+  }
 if [ -n "${ECS_EXTERNAL_GATEWAY_ID:-}" ]; then
   : "${ECS_EXTERNAL_GATEWAY_PROJECT:?reviewed external gateway project is required}"
   [ "$ECS_EXTERNAL_GATEWAY_PROJECT" != "$project" ] || { echo 'external gateway must belong to a different Compose project' >&2; exit 1; }
