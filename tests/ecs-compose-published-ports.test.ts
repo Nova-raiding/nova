@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { findPublishedPortConflicts, parseListeners } from '../infra/scripts/ecs-compose-published-ports.mjs'
 
-const candidate = (hostIp = '127.0.0.1', published = '8787', protocol = 'tcp', target: number | string = 8787) => ({
+const candidate = (hostIp = '127.0.0.1', published = '8787', protocol: 'tcp' | 'udp' | 'sctp' = 'tcp', target: number | string = 8787) => ({
   services: { api: { ports: [{ target, published, host_ip: hostIp, protocol }] } },
 })
 const running = (hostIp = '127.0.0.1', hostPort = '8787', project = 'local', id = 'a'.repeat(64)) => ({
