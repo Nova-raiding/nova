@@ -37,18 +37,13 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: 'true',
   MODEL_RELAY_OCR_COST_EVIDENCE: 'true',
   MODEL_RELAY_VIDEO_COST_EVIDENCE: 'true',
-  OPS_AUTH_MODE: 'oidc',
-  OIDC_PROXY_SIGNING_SECRET: 'oidc-signing-secret',
+  OPS_AUTH_MODE: 'password',
   SESSION_ID_HASH_SECRET: 'session-hash-secret',
   OPS_DATABASE_URL: 'postgres://merchant_ops@database/store_nova',
   MERCHANT_BEARER_HOSTNAME: 'merchant.example.test',
-  MCP_INTEGRATION_MODE: 'remote_oauth',
-  MCP_OAUTH_REQUIRED: 'true',
+  PUBLIC_OPS_BASE_URL: 'https://ops.example.test',
+  MCP_INTEGRATION_MODE: 'local_stdio',
   PUBLIC_APP_BASE_URL: 'https://merchant.example.test',
-  MCP_OAUTH_ISSUER: 'https://merchant.example.test',
-  MCP_OAUTH_AUTHORIZATION_ENDPOINT: 'https://merchant.example.test/oauth/authorize',
-  MCP_OAUTH_TOKEN_ENDPOINT: 'https://merchant.example.test/oauth/token',
-  MCP_OAUTH_CLIENTS: JSON.stringify({ 'chatgpt-production': ['https://chatgpt.com/oauth/callback'] }),
   API_AUTH_TOKENS: JSON.stringify({
     'merchant-token': { actor_id: 'merchant-owner', workspaces: ['ws_production'], roles: ['workspace_owner'] },
   }),
@@ -246,14 +241,11 @@ describe('production readiness fail-closed', () => {
       { gate: 'relay', key: 'MODEL_RELAY_API_KEY' },
       { gate: 'authorization', key: 'MCP_AUTHZ_MODE' },
       { gate: 'authorization', key: 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED' },
-      { gate: 'identity', key: 'OIDC_PROXY_SIGNING_SECRET' },
+      { gate: 'identity', key: 'OPS_AUTH_MODE' },
       { gate: 'identity', key: 'OPS_DATABASE_URL' },
-      { gate: 'identity', key: 'MCP_OAUTH_REQUIRED' },
-      { gate: 'identity', key: 'MCP_OAUTH_CLIENTS' },
+      { gate: 'identity', key: 'PUBLIC_OPS_BASE_URL' },
+      { gate: 'identity', key: 'MCP_INTEGRATION_MODE' },
       { gate: 'identity', key: 'PUBLIC_APP_BASE_URL' },
-      { gate: 'identity', key: 'MCP_OAUTH_ISSUER' },
-      { gate: 'identity', key: 'MCP_OAUTH_AUTHORIZATION_ENDPOINT' },
-      { gate: 'identity', key: 'MCP_OAUTH_TOKEN_ENDPOINT' },
       { gate: 'object_storage', key: 'ASSET_STORAGE_KMS_KEY_ID' },
       { gate: 'object_storage', key: 'ASSET_DISPLAY_URL_SIGNING_SECRET' },
       { gate: 'asset_scanner', key: 'ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS' },
@@ -298,14 +290,15 @@ describe('production readiness fail-closed', () => {
   })
 
   it.each([
-    ['MCP_OAUTH_REQUIRED', 'false', 'mcp_oauth_required_must_be_true'],
-    ['MCP_OAUTH_REQUIRED', ' true ', 'mcp_oauth_required_must_be_true'],
+    ['OPS_AUTH_MODE', 'oidc', 'ops_auth_mode_must_be_password'],
+    ['MCP_INTEGRATION_MODE', 'remote_oauth', 'mcp_integration_mode_must_be_local_stdio'],
+    ['MCP_OAUTH_REQUIRED', 'true', 'retired_external_auth_settings_present'],
+    ['MCP_OAUTH_ISSUER', 'https://accounts.example.test', 'retired_external_auth_settings_present'],
+    ['OIDC_PROXY_SIGNING_SECRET', 'retired-secret', 'retired_external_auth_settings_present'],
     ['PUBLIC_APP_BASE_URL', 'http://merchant.example.test', 'public_app_base_url_invalid'],
     ['PUBLIC_APP_BASE_URL', 'https://other.example.test/mcp', 'public_app_base_url_invalid'],
-    ['MCP_OAUTH_ISSUER', 'https://accounts.example.test', 'mcp_oauth_issuer_must_be_self_hosted'],
-    ['MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'https://accounts.example.test/oauth/authorize', 'mcp_oauth_endpoints_must_be_self_hosted'],
-    ['MCP_OAUTH_TOKEN_ENDPOINT', 'https://merchant.example.test/oauth/token/v2', 'mcp_oauth_endpoints_must_be_self_hosted'],
-    ['MCP_OAUTH_CLIENTS', '{}', 'mcp_oauth_clients_missing_or_invalid'],
+    ['PUBLIC_OPS_BASE_URL', 'http://ops.example.test', 'public_ops_base_url_invalid'],
+    ['PUBLIC_OPS_BASE_URL', 'https://merchant.example.test', 'ops_and_merchant_hostnames_must_differ'],
   ])('rejects non-canonical production identity setting %s=%s', (key, value, reason) => {
     const environment = productionEnvironment()
     environment[key] = value
@@ -323,27 +316,17 @@ describe('production readiness fail-closed', () => {
     expect(result.gates.object_storage).toMatchObject({ ready: true, reasons: [] })
   })
 
-  it('accepts local stdio production identity without remote OAuth registration', () => {
+  it('requires local stdio production identity and password login', () => {
     const environment = productionEnvironment()
-    environment.MCP_INTEGRATION_MODE = 'local_stdio'
-    environment.MCP_OAUTH_REQUIRED = 'false'
-    delete environment.MCP_OAUTH_CLIENTS
-    delete environment.MCP_OAUTH_ISSUER
-    delete environment.MCP_OAUTH_AUTHORIZATION_ENDPOINT
-    delete environment.MCP_OAUTH_TOKEN_ENDPOINT
-
     const result = productionReadinessDiagnostics(environment)
     expect(result.gates.identity).toMatchObject({ ready: true, reasons: [] })
   })
 
-  it('fails closed when production MCP integration mode is absent or contradictory', () => {
+  it('fails closed when production MCP integration mode is absent', () => {
     const missing = productionEnvironment()
     delete missing.MCP_INTEGRATION_MODE
-    expect(productionReadinessDiagnostics(missing).gates.identity).toMatchObject({ ready: false, reasons: expect.arrayContaining(['mcp_integration_mode_missing_or_invalid']) })
+    expect(productionReadinessDiagnostics(missing).gates.identity).toMatchObject({ ready: false, reasons: expect.arrayContaining(['mcp_integration_mode_must_be_local_stdio']) })
 
-    const contradictory = productionEnvironment()
-    contradictory.MCP_INTEGRATION_MODE = 'local_stdio'
-    expect(productionReadinessDiagnostics(contradictory).gates.identity).toMatchObject({ ready: false, reasons: expect.arrayContaining(['local_stdio_must_not_require_remote_oauth']) })
   })
 
   it('accepts ACK RRSA only when the admission-injected pod identity is complete', () => {
