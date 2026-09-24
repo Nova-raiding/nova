@@ -1,17 +1,26 @@
 import { readFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
 import { buildReleaseManifest } from '../scripts/release-manifest.js'
+import { releaseGitShaForRoot } from '../scripts/release-identity.js'
+
+function testReleaseId(root: string): string {
+  if (releaseGitShaForRoot(root, 'release-1')) return 'release-1'
+  const identity = readFileSync(`${root}/.candidate-identity`, 'utf8')
+  const candidateReleaseId = identity.split(/\r?\n/u).find(line => line.startsWith('release_id='))?.slice('release_id='.length)
+  if (!candidateReleaseId || !releaseGitShaForRoot(root, candidateReleaseId)) throw new Error('release manifest tests require a valid staged candidate identity')
+  return candidateReleaseId
+}
 
 describe('release manifest', () => {
   it('binds the plugin, skill, MCP and evidence references to one release', () => {
     const pluginVersion = (JSON.parse(readFileSync('apps/plugin/package.json', 'utf8')) as { version: string }).version
     const repositoryVersion = readFileSync('VERSION', 'utf8').trim()
-    const releaseGitSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    const releaseId = testReleaseId(process.cwd())
+    const releaseGitSha = releaseGitShaForRoot(process.cwd(), releaseId)
     const manifest = buildReleaseManifest({
       root: process.cwd(),
-      releaseId: 'rc-20260826',
+      releaseId,
       generatedAt: '2026-08-26T13:30:00.000Z',
       connectorBuild: 'connector-rc-1',
       modelId: 'relay-model-1',
@@ -26,7 +35,7 @@ describe('release manifest', () => {
     })
     expect(manifest).toMatchObject({
       schemaVersion: 1,
-      releaseId: 'rc-20260826',
+      releaseId,
       components: {
         repositoryVersion,
         releaseGitSha,
@@ -115,7 +124,7 @@ describe('release manifest', () => {
   })
 
   it('marks production evidence as missing when no evidence refs are supplied', () => {
-    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'local-audit-20260826' })
+    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: testReleaseId(process.cwd()) })
     expect(manifest.productionEvidence).toEqual({
       capability: 'not-provided',
       capacity: 'not-provided',

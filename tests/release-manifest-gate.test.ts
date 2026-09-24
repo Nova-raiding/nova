@@ -1,9 +1,10 @@
 import { createHash, generateKeyPairSync } from 'node:crypto'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildReleaseManifest } from '../scripts/release-manifest.js'
+import { releaseGitShaForRoot } from '../scripts/release-identity.js'
 import { signProductionEvidence } from './production-evidence-gate.js'
 import { signManualCandidate } from '../infra/protected/attest-manual-operations-evidence.mjs'
 import { validateReleaseManifest } from './release-manifest-gate.js'
@@ -11,6 +12,15 @@ import { validateReleaseManifest } from './release-manifest-gate.js'
 const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'restore', 'objectStorage', 'codexAppHost', 'canonicalCutover'] as const
 const inputNames = { capability: 'capabilityEvidenceRef', capacity: 'capacityEvidenceRef', modelRelay: 'modelRelayEvidenceRef', payment: 'paymentEvidenceRef', restore: 'restoreEvidenceRef', objectStorage: 'objectStorageEvidenceRef', codexAppHost: 'codexAppHostEvidenceRef', canonicalCutover: 'canonicalCutoverEvidenceRef' } as const
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
+
+const fixtureReleaseId = (() => {
+  const root = process.cwd()
+  if (existsSync(join(root, '.git'))) return 'release-1'
+  const identity = readFileSync(join(root, '.candidate-identity'), 'utf8')
+  const releaseId = identity.match(/^release_id=([^\n]+)$/mu)?.[1]
+  if (!releaseId || !releaseGitShaForRoot(root, releaseId)) throw new Error('test source has no valid Git HEAD or bound staged candidate identity')
+  return releaseId
+})()
 
 function boundManifestFixture() {
   const artifactRoot = mkdtempSync(join(tmpdir(), 'release-manifest-evidence-'))
@@ -21,7 +31,7 @@ function boundManifestFixture() {
   const refs = {} as Record<string, string>
   mkdirSync(join(artifactRoot, 'evidence'))
   for (const field of evidenceFields) {
-    const document: Record<string, unknown> = { schema_version: '2', release_id: 'release-1', generated_at: '2026-08-29T00:00:00Z', expires_at: '2026-09-02T00:00:00Z', key_id: 'release-security-test', environment: 'production', status: 'pass' }
+    const document: Record<string, unknown> = { schema_version: '2', release_id: fixtureReleaseId, generated_at: '2026-08-29T00:00:00Z', expires_at: '2026-09-02T00:00:00Z', key_id: 'release-security-test', environment: 'production', status: 'pass' }
     if (field === 'capability' || field === 'payment' || field === 'restore' || field === 'objectStorage' || field === 'codexAppHost') document.signature_base64 = signProductionEvidence(document, privateKeyPem)
     const contents = JSON.stringify(document)
     const path = join(artifactRoot, 'evidence', `${field}.json`)
@@ -29,8 +39,8 @@ function boundManifestFixture() {
     evidenceFiles[field] = path
     refs[inputNames[field]] = `artifact://production/evidence/${field}.json#${digest(contents)}`
   }
-  const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1', generatedAt: '2026-08-29T01:00:00Z', ...refs })
-  const options = { root: process.cwd(), expectedReleaseId: 'release-1', artifactRoot, evidenceFiles, publicKeyPem, trustedKeyId: 'release-security-test', now: new Date('2026-08-29T02:00:00Z') }
+  const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId, generatedAt: '2026-08-29T01:00:00Z', ...refs })
+  const options = { root: process.cwd(), expectedReleaseId: fixtureReleaseId, artifactRoot, evidenceFiles, publicKeyPem, trustedKeyId: 'release-security-test', now: new Date('2026-08-29T02:00:00Z') }
   return { artifactRoot, evidenceFiles, manifest, options, privateKeyPem }
 }
 
@@ -47,7 +57,7 @@ function stagedManifestFixture() {
   copyFileSync(join(process.cwd(), navigation), join(stagedRoot, navigation))
   const identityPath = join(stagedRoot, '.candidate-identity')
   writeFileSync(identityPath, [
-    'release_id=release-1',
+    `release_id=${fixtureReleaseId}`,
     `git_sha=${fixture.manifest.components.releaseGitSha}`,
     `source_sha256=sha256:${'a'.repeat(64)}`,
     `comparison_manifest_sha256=sha256:${'b'.repeat(64)}`,
@@ -64,7 +74,7 @@ describe('release manifest production gate', () => {
     const previous = process.env.RELEASE_GIT_SHA
     process.env.RELEASE_GIT_SHA = ''
     try {
-      const generated = buildReleaseManifest({ root: fixture.stagedRoot, releaseId: 'release-1' })
+      const generated = buildReleaseManifest({ root: fixture.stagedRoot, releaseId: fixtureReleaseId })
       expect(generated.components.releaseGitSha).toBe(fixture.manifest.components.releaseGitSha)
     } finally {
       if (previous === undefined) delete process.env.RELEASE_GIT_SHA
@@ -108,8 +118,8 @@ describe('release manifest production gate', () => {
     const fixture = stagedManifestFixture()
     for (const lines of [
       [`release_id=release-other`, `git_sha=${fixture.manifest.components.releaseGitSha}`],
-      ['release_id=release-1', `git_sha=${fixture.manifest.components.releaseGitSha}`, `git_sha=${fixture.manifest.components.releaseGitSha}`],
-      ['release_id=release-1', 'git_sha=invalid'],
+      [`release_id=${fixtureReleaseId}`, `git_sha=${fixture.manifest.components.releaseGitSha}`, `git_sha=${fixture.manifest.components.releaseGitSha}`],
+      [`release_id=${fixtureReleaseId}`, 'git_sha=invalid'],
     ]) {
       writeFileSync(fixture.identityPath, `${lines.join('\n')}\n`)
       expect(validateReleaseManifest(fixture.manifest, { ...fixture.options, root: fixture.stagedRoot })).toContain('components.releaseGitSha must match the current Git HEAD or staged candidate identity')
@@ -117,14 +127,14 @@ describe('release manifest production gate', () => {
   })
 
   it('binds API/OpenAPI, MCP and plugin source to one release', () => {
-    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1', capabilityEvidenceRef: 'artifact://production/evidence/capability#' + 'a'.repeat(64), capacityEvidenceRef: 'artifact://production/evidence/capacity#' + 'a'.repeat(64), modelRelayEvidenceRef: 'artifact://production/evidence/relay#' + 'a'.repeat(64), paymentEvidenceRef: 'artifact://production/evidence/payment#' + 'a'.repeat(64), restoreEvidenceRef: 'artifact://production/evidence/restore#' + 'a'.repeat(64), objectStorageEvidenceRef: 'artifact://production/evidence/storage#' + 'a'.repeat(64), codexAppHostEvidenceRef: 'artifact://production/evidence/codex-host#' + 'a'.repeat(64), canonicalCutoverEvidenceRef: 'artifact://production/evidence/canonical-cutover#' + 'a'.repeat(64) })
-    expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: 'release-1' })).toEqual([])
+    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId, capabilityEvidenceRef: 'artifact://production/evidence/capability#' + 'a'.repeat(64), capacityEvidenceRef: 'artifact://production/evidence/capacity#' + 'a'.repeat(64), modelRelayEvidenceRef: 'artifact://production/evidence/relay#' + 'a'.repeat(64), paymentEvidenceRef: 'artifact://production/evidence/payment#' + 'a'.repeat(64), restoreEvidenceRef: 'artifact://production/evidence/restore#' + 'a'.repeat(64), objectStorageEvidenceRef: 'artifact://production/evidence/storage#' + 'a'.repeat(64), codexAppHostEvidenceRef: 'artifact://production/evidence/codex-host#' + 'a'.repeat(64), canonicalCutoverEvidenceRef: 'artifact://production/evidence/canonical-cutover#' + 'a'.repeat(64) })
+    expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: fixtureReleaseId })).toEqual([])
   })
   it('rejects stale API/MCP artifacts and unbound production evidence', () => {
-    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId })
     delete (manifest as Partial<typeof manifest>).productionEvidenceBundle
     manifest.artifacts.find(item => item.path === 'apps/api/openapi.yaml')!.sha256 = 'f'.repeat(64)
-    expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: 'release-1' })).toEqual(expect.arrayContaining(['productionEvidenceBundle must require release-evidence-bundle/1', 'artifact SHA-256 does not match current source: apps/api/openapi.yaml', 'productionEvidence.capability must be an immutable production artifact']))
+    expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: fixtureReleaseId })).toEqual(expect.arrayContaining(['productionEvidenceBundle must require release-evidence-bundle/1', 'artifact SHA-256 does not match current source: apps/api/openapi.yaml', 'productionEvidence.capability must be an immutable production artifact']))
     expect(readFileSync('apps/api/openapi.yaml', 'utf8').length).toBeGreaterThan(0)
   })
   it('binds every payment-gateway source and build artifact to the release', () => {
@@ -136,12 +146,12 @@ describe('release manifest production gate', () => {
       'packages/billing/src/callback-envelope.d.mts',
       'services/payment-gateway/Dockerfile',
     ]
-    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId })
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining(gatewayArtifacts))
     for (const path of gatewayArtifacts) {
-      const tampered = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+      const tampered = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId })
       tampered.artifacts.find(item => item.path === path)!.sha256 = 'f'.repeat(64)
-      expect(validateReleaseManifest(tampered, { root: process.cwd(), expectedReleaseId: 'release-1' })).toContain(`artifact SHA-256 does not match current source: ${path}`)
+      expect(validateReleaseManifest(tampered, { root: process.cwd(), expectedReleaseId: fixtureReleaseId })).toContain(`artifact SHA-256 does not match current source: ${path}`)
     }
   })
   it('binds the ECS deploy, rollback, render and evidence-bundle trust chain', () => {
@@ -197,26 +207,26 @@ describe('release manifest production gate', () => {
       'tests/ecs-candidate-full-https-gateway.test.ts',
       'tests/ecs-external-gateway-handoff.test.ts',
     ]
-    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId })
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining(deploymentArtifacts))
     for (const path of deploymentArtifacts) {
-      const tampered = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+      const tampered = structuredClone(manifest)
       tampered.artifacts.find(item => item.path === path)!.sha256 = 'f'.repeat(64)
-      expect(validateReleaseManifest(tampered, { root: process.cwd(), expectedReleaseId: 'release-1' })).toContain(`artifact SHA-256 does not match current source: ${path}`)
+      expect(validateReleaseManifest(tampered, { root: process.cwd(), expectedReleaseId: fixtureReleaseId })).toContain(`artifact SHA-256 does not match current source: ${path}`)
     }
   })
   it('rejects a stale bridge digest or missing marketplace mirror', () => {
-    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1', capabilityEvidenceRef: 'artifact://production/evidence/capability#' + 'a'.repeat(64), capacityEvidenceRef: 'artifact://production/evidence/capacity#' + 'a'.repeat(64), modelRelayEvidenceRef: 'artifact://production/evidence/relay#' + 'a'.repeat(64), paymentEvidenceRef: 'artifact://production/evidence/payment#' + 'a'.repeat(64), restoreEvidenceRef: 'artifact://production/evidence/restore#' + 'a'.repeat(64), objectStorageEvidenceRef: 'artifact://production/evidence/storage#' + 'a'.repeat(64), codexAppHostEvidenceRef: 'artifact://production/evidence/codex-host#' + 'a'.repeat(64), canonicalCutoverEvidenceRef: 'artifact://production/evidence/canonical-cutover#' + 'a'.repeat(64) })
+    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId, capabilityEvidenceRef: 'artifact://production/evidence/capability#' + 'a'.repeat(64), capacityEvidenceRef: 'artifact://production/evidence/capacity#' + 'a'.repeat(64), modelRelayEvidenceRef: 'artifact://production/evidence/relay#' + 'a'.repeat(64), paymentEvidenceRef: 'artifact://production/evidence/payment#' + 'a'.repeat(64), restoreEvidenceRef: 'artifact://production/evidence/restore#' + 'a'.repeat(64), objectStorageEvidenceRef: 'artifact://production/evidence/storage#' + 'a'.repeat(64), codexAppHostEvidenceRef: 'artifact://production/evidence/codex-host#' + 'a'.repeat(64), canonicalCutoverEvidenceRef: 'artifact://production/evidence/canonical-cutover#' + 'a'.repeat(64) })
     manifest.mcp!.bridgeSha256 = 'f'.repeat(64)
     manifest.artifacts = manifest.artifacts.filter(item => item.path !== '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs')
-    expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: 'release-1' })).toEqual(expect.arrayContaining(['mcp.bridgeSha256 does not match the current source bridge', 'artifact is missing: .codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs']))
+    expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: fixtureReleaseId })).toEqual(expect.arrayContaining(['mcp.bridgeSha256 does not match the current source bridge', 'artifact is missing: .codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs']))
   })
 
   it('rejects duplicate artifact paths instead of silently overwriting one entry', () => {
-    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId })
     const artifact = manifest.artifacts.find(item => item.path === 'VERSION')!
     manifest.artifacts.push({ ...artifact, sha256: 'f'.repeat(64) })
-    expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: 'release-1' })).toContain('artifact path is duplicated: VERSION')
+    expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: fixtureReleaseId })).toContain('artifact path is duplicated: VERSION')
   })
 
   it('binds the exact evidence bytes, freshness and existing production signatures without creating a production key', () => {
@@ -226,7 +236,7 @@ describe('release manifest production gate', () => {
     const stale = boundManifestFixture()
     expect(validateReleaseManifest(stale.manifest, { ...stale.options, now: new Date('2026-09-10T02:00:00Z') })).toEqual(expect.arrayContaining(['generatedAt is stale', 'productionEvidence.capacity generated timestamp is stale']))
 
-    writeFileSync(fixture.evidenceFiles.capacity, JSON.stringify({ release_id: 'release-1', generated_at: '2026-08-29T00:00:00Z' }))
+    writeFileSync(fixture.evidenceFiles.capacity, JSON.stringify({ release_id: fixtureReleaseId, generated_at: '2026-08-29T00:00:00Z' }))
     expect(validateReleaseManifest(fixture.manifest, fixture.options)).toContain('productionEvidence.capacity SHA-256 does not match the referenced artifact')
 
     const swapped = boundManifestFixture()
@@ -270,7 +280,7 @@ describe('release manifest production gate', () => {
     const privatePem = fixture.privateKeyPem
     const publicKeyPem = fixture.options.publicKeyPem
     const candidate = {
-      schema_version: 'manual-operations-evidence/1', release_id: 'release-1', environment: 'production', workflow: 'public_import_manual_publish',
+      schema_version: 'manual-operations-evidence/1', release_id: fixtureReleaseId, environment: 'production', workflow: 'public_import_manual_publish',
       workspace_id: 'workspace-1', isolation_probe_workspace_id: 'foreign-workspace', manual_publish_report_id: 'report-1',
       official_api_receipt: false, tenant_isolation_verified: true, simulated: false, generated_at: '2026-08-29T00:00:00Z',
       expires_at: '2026-08-30T00:00:00Z', verified_by: 'release-operator',
@@ -280,7 +290,7 @@ describe('release manifest production gate', () => {
         { name: 'merchant_visibility', status: 'pass', observation: 'expected_report_visible' },
       ],
     }
-    const signed = signManualCandidate(candidate, { releaseId: 'release-1', imageSetDigest: `sha256:${'a'.repeat(64)}`, manifestSha256: 'b'.repeat(64), releaseGitSha: 'c'.repeat(40), deploymentNonce: 'n'.repeat(22), keyId: 'release-security-test' }, privatePem, publicKeyPem, new Date('2026-08-29T02:00:00Z'))
+    const signed = signManualCandidate(candidate, { releaseId: fixtureReleaseId, imageSetDigest: `sha256:${'a'.repeat(64)}`, manifestSha256: 'b'.repeat(64), releaseGitSha: 'c'.repeat(40), deploymentNonce: 'n'.repeat(22), keyId: 'release-security-test' }, privatePem, publicKeyPem, new Date('2026-08-29T02:00:00Z'))
     const bytes = JSON.stringify(signed)
     writeFileSync(fixture.evidenceFiles.capability, bytes)
     fixture.manifest.productionEvidence.capability = `artifact://production/evidence/capability.json#${digest(bytes)}`
@@ -297,14 +307,14 @@ describe('release manifest production gate', () => {
     writeFileSync(fixture.evidenceFiles.capacity, JSON.stringify({
       schema_version: '1', status: 'not_performed', profile: 'no_load', cloud_gate: false,
       capacity_commitment: 'none', scope: 'no_load', reason: 'load_testing_excluded_by_release_scope',
-      release_id: 'release-1', environment: 'production', target_url: 'https://yxsona.com',
+      release_id: fixtureReleaseId, environment: 'production', target_url: 'https://yxsona.com',
       started_at: '2026-08-29T00:00:00Z', ended_at: '2026-08-29T00:30:00Z',
       expires_at: '2026-09-02T00:00:00Z', generated_at: '2026-08-29T00:30:00Z',
-      software_version: 'release-1', config_version: 'release-1', data_version: 'release-1',
+      software_version: fixtureReleaseId, config_version: fixtureReleaseId, data_version: fixtureReleaseId,
       sign_off: { verified_by: 'test', verified_at: '2026-08-29T00:15:00Z' },
     }))
     const manifest = buildReleaseManifest({
-      root: process.cwd(), releaseId: 'release-1',
+      root: process.cwd(), releaseId: fixtureReleaseId,
       capabilityEvidenceRef: fixture.manifest.productionEvidence.capability,
       capacityEvidenceRef: `artifact://production/evidence/capacity#${createHash('sha256').update(readFileSync(fixture.evidenceFiles.capacity)).digest('hex')}`,
       modelRelayEvidenceRef: fixture.manifest.productionEvidence.modelRelay,
@@ -326,9 +336,9 @@ describe('release manifest production gate', () => {
     const base = {
       schema_version: '1', status: 'not_performed', profile: 'no_load', cloud_gate: false,
       capacity_commitment: 'none', scope: 'no_load', reason: 'load_testing_excluded_by_release_scope',
-      release_id: 'release-1', environment: 'production', target_url: 'https://yxsona.com',
+      release_id: fixtureReleaseId, environment: 'production', target_url: 'https://yxsona.com',
       started_at: '2026-08-29T00:00:00Z', ended_at: '2026-08-29T00:30:00Z', expires_at: '2026-09-02T00:00:00Z',
-      software_version: 'release-1', config_version: 'release-1', data_version: 'release-1',
+      software_version: fixtureReleaseId, config_version: fixtureReleaseId, data_version: fixtureReleaseId,
       sign_off: { verified_by: 'test', verified_at: '2026-08-29T00:15:00Z' },
     }
     for (const [field, value, expected] of [
