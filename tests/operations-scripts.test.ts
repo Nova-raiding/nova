@@ -366,7 +366,7 @@ describe('deployment operation scripts', () => {
       clamav: 'sha256:' + 'f'.repeat(64),
     }
     writeFileSync(config, [
-      'plugin_enabled: true', 'merchant_bearer_hostname: merchant.example.com', 'app_base_url: https://merchant.example.com', 'ops_base_url: https://ops.merchant.example.com', 'mcp_base_url: https://merchant.example.com', 'oauth_callback_base_url: https://merchant.example.com/v1/oauth/callback', 'OPS_AUTH_MODE: oidc',
+      'plugin_enabled: true', 'merchant_bearer_hostname: merchant.example.com', 'app_base_url: https://merchant.example.com', 'ops_base_url: https://ops.yxsona.com', 'mcp_base_url: https://merchant.example.com', 'oauth_callback_base_url: https://merchant.example.com/v1/oauth/callback', 'OPS_AUTH_MODE: password',
       'auth_enforcement: strict', 'mcp_authorization_mode: enforce', 'durable_platform_assignments_required: true', 'platform_operations_mode: official_api', 'require_approved_asset_for_generation: true', 'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
       'jd_auth_enabled: true', 'jd_read_enabled: true', 'jd_write_enabled: true',
       'taobao_tmall_auth_enabled: true', 'taobao_tmall_read_enabled: true', 'taobao_tmall_write_enabled: true',
@@ -428,19 +428,19 @@ describe('deployment operation scripts', () => {
       { apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'merchant-runtime' }, data: scannerRuntime },
       { apiVersion: 'v1', kind: 'Namespace', metadata: { name: 'merchant', labels: { 'pod-identity.alibabacloud.com/injection': 'on' } } },
       { apiVersion: 'v1', kind: 'ServiceAccount', metadata: { name: 'merchant-api-rrsa', annotations: { 'pod-identity.alibabacloud.com/role-name': 'StoreNovaAckOssRole' } } },
-      { apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', metadata: { name: 'merchant', annotations: { 'nginx.ingress.kubernetes.io/proxy-body-size': '1m' } }, spec: { tls: [{ hosts: ['merchant.example.com', 'ops.merchant.example.com'], secretName: 'merchant-tls' }], rules: [
+      { apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', metadata: { name: 'merchant', annotations: { 'nginx.ingress.kubernetes.io/proxy-body-size': '1m' } }, spec: { tls: [{ hosts: ['merchant.example.com', 'ops.yxsona.com'], secretName: 'merchant-tls' }], rules: [
         { host: 'merchant.example.com', http: { paths: [
           { path: '/mcp', pathType: 'Exact', backend: { service: { name: 'merchant-api', port: { name: 'http' } } } },
           { path: '/v1', pathType: 'Prefix', backend: { service: { name: 'merchant-api', port: { name: 'http' } } } },
           { path: '/', pathType: 'Prefix', backend: { service: { name: 'merchant-ui', port: { name: 'http' } } } },
         ] } },
-        { host: 'ops.merchant.example.com', http: { paths: [
+        { host: 'ops.yxsona.com', http: { paths: [
           { path: '/', pathType: 'Prefix', backend: { service: { name: 'merchant-ops-ui', port: { name: 'http' } } } },
         ] } },
       ] } },
       { apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', metadata: { name: 'merchant-browser-api-upload', annotations: { 'nginx.ingress.kubernetes.io/proxy-body-size': '70m' } }, spec: { rules: [
         { host: 'merchant.example.com', http: { paths: ['/mcp', '/api/mcp', '/v1/assets/upload', '/api/v1/assets/upload'].map((path) => ({ path, pathType: 'Exact', backend: { service: { name: path === '/mcp' || path === '/v1/assets/upload' ? 'merchant-api' : 'merchant-ui', port: { name: 'http' } } } })) } },
-        { host: 'ops.merchant.example.com', http: { paths: ['/api/mcp', '/v1/assets/upload', '/api/v1/assets/upload'].map((path) => ({ path, pathType: 'Exact', backend: { service: { name: path === '/v1/assets/upload' ? 'merchant-api' : 'merchant-ops-ui', port: { name: 'http' } } } })) } },
+        { host: 'ops.yxsona.com', http: { paths: ['/api/mcp', '/v1/assets/upload', '/api/v1/assets/upload'].map((path) => ({ path, pathType: 'Exact', backend: { service: { name: path === '/v1/assets/upload' ? 'merchant-api' : 'merchant-ops-ui', port: { name: 'http' } } } })) } },
       ] } },
       { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-api' }, spec: { template: { metadata: { annotations: scannerConfigAnnotation }, spec: { serviceAccountName: 'merchant-api-rrsa', containers: [{ name: 'api', image: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [scannerSecret('ASSET_SCANNER_API_TOKEN'), scannerSecret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCAN_TRUSTED_PUBLIC_KEYS'), runtimeSecret('MODEL_RELAY_API_KEY'), runtimeSecret('PLATFORM_RULE_SYNC_SIGNING_SECRET'), runtimeSecret('PAYMENT_PROVIDER_API_KEY'), runtimeSecret('PAYMENT_CALLBACK_SECRET')] }] } } } },
       { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-worker-scan' }, spec: { template: { metadata: { annotations: scannerConfigAnnotation }, spec: { nodeSelector: { 'kubernetes.io/arch': 'amd64' }, volumes: [{ name: 'clamav-config', configMap: { name: 'merchant-clamav-config' } }], containers: [
@@ -740,7 +740,7 @@ describe('deployment operation scripts', () => {
     expect(dockerfile).toContain('api_base="${VITE_API_BASE:-}"')
     expect(dockerfile).toContain('test -n "$api_base"')
     expect(dockerfile).toContain('ARG OPS_CONSOLE_AUTH_MODE')
-    expect(dockerfile).toContain('production OPS_CONSOLE_AUTH_MODE must be password or oidc')
+    expect(dockerfile).toContain('production Ops Console supports password authentication only')
     expect(dockerfile).toContain('auth_mode="$OPS_CONSOLE_AUTH_MODE"')
     expect(dockerfile).toContain('auth_mode=local')
     expect(dockerfile).toContain('OPS_CONSOLE_BUILD_MODE=production')
@@ -768,9 +768,8 @@ describe('deployment operation scripts', () => {
     expect(apiLocation).toContain('proxy_set_header Authorization $http_authorization')
     expect(apiLocation).toContain('proxy_set_header X-Ops-Workbench $http_x_ops_workbench')
     expect(apiLocation).not.toContain('MERCHANT_API_TOKEN')
-    const challengeLocation = gateway.split('location = /.well-known/openai-apps-challenge {')[1]?.split('}')[0] ?? ''
-    expect(challengeLocation).toContain('proxy_pass http://pilot_api')
-    expect(challengeLocation).toContain('proxy_set_header X-Forwarded-Proto $scheme')
+    expect(gateway).toContain('location ^~ /v1/auth/local-plugin/')
+    expect(gateway).not.toContain('/.well-known/openai-apps-challenge')
     const releaseLocation = gateway.split('location = /releasez {')[1]?.split('}')[0] ?? ''
     expect(releaseLocation).toContain('proxy_pass http://pilot_api/releasez')
     expect(releaseLocation).toContain('proxy_set_header X-Forwarded-Proto $scheme')
@@ -781,9 +780,12 @@ describe('deployment operation scripts', () => {
     expect(alertServer).toContain('set $alert_receiver_upstream http://alert-receiver:8791;')
     expect(alertServer).toContain('location = /internal/v1/alerts')
     expect(alertServer).toContain('location / { return 404; }')
-    const httpsChallengeLocation = httpsGateway.split('location = /.well-known/openai-apps-challenge {')[1]?.split('}')[0] ?? ''
-    expect(httpsChallengeLocation).toContain('proxy_pass http://pilot_api')
-    expect(httpsChallengeLocation).toContain('proxy_set_header X-Forwarded-Proto https')
+    expect(httpsGateway).not.toContain('/.well-known/openai-apps-challenge')
+    expect(httpsGateway).not.toContain('/.well-known/oauth-authorization-server')
+    expect(httpsGateway).not.toContain('/.well-known/oauth-protected-resource')
+    expect(httpsGateway).not.toContain('/oauth/authorize')
+    expect(httpsGateway).not.toContain('/oauth/token')
+    expect(httpsGateway).toContain('location ^~ /v1/auth/local-plugin/')
     const httpsReleaseLocation = httpsGateway.split('location = /releasez {')[1]?.split('}')[0] ?? ''
     expect(httpsReleaseLocation).toContain('proxy_pass http://pilot_api/releasez')
     expect(httpsReleaseLocation).toContain('proxy_set_header X-Forwarded-Proto https')

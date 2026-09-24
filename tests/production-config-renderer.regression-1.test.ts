@@ -14,7 +14,7 @@ function completeEnvironment(): Record<string, string> {
     MERCHANT_BEARER_HOSTNAME: 'merchant.yxsona.com', AUTH_ENFORCEMENT: 'strict',
     MCP_AUTHORIZATION_MODE: 'enforce', DURABLE_PLATFORM_ASSIGNMENTS_REQUIRED: 'true',
     PLATFORM_OPERATIONS_MODE: 'manual',
-    APP_BASE_URL: 'https://merchant.yxsona.com', OPS_BASE_URL: 'https://ops.yxsona.com', MCP_BASE_URL: 'https://merchant.yxsona.com',
+    APP_BASE_URL: 'https://merchant.yxsona.com', PUBLIC_OPS_BASE_URL: 'https://ops.yxsona.com', MCP_BASE_URL: 'https://merchant.yxsona.com',
     OPS_AUTH_MODE: 'password', SECRET_PROVIDER: 'vault', ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ALERT_NOTIFICATIONS_ENABLED: 'false',
     DATABASE_MAX_BACKEND_CONNECTIONS: '300', DATABASE_CONNECTION_UTILIZATION_ALERT_PERCENT: '80',
     ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_RECEIPT_KEY_ID: 'scanner-acceptance-v1', ASSET_SCAN_POLICY_VERSION: 'policy-acceptance-v1',

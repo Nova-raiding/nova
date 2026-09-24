@@ -28,16 +28,13 @@ spec:
             - configMapRef: {name: merchant-runtime}
           env:
             - {name: OTEL_SERVICE_NAME, value: merchant-api}
-            # ChatGPT loads the packaged stdio plugin locally. The bridge uses
-            # a short-lived workspace-bound bearer; remote OpenAI App OAuth is
-            # a separate, optional deployment profile.
+            # ChatGPT loads the packaged stdio plugin locally and uses the
+            # Store Nova local account/password binding flow.
             - {name: MCP_INTEGRATION_MODE, value: local_stdio}
-            - {name: MCP_OAUTH_REQUIRED, value: "false"}
             - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}
             - {name: OPS_DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: OPS_DATABASE_URL}}}
             - {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}
             - {name: API_AUTH_TOKENS, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: API_AUTH_TOKENS}}}
-            - {name: OIDC_PROXY_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: OIDC_PROXY_SIGNING_SECRET}}}
             - {name: SESSION_ID_HASH_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: SESSION_ID_HASH_SECRET}}}
             - {name: WORKER_API_CREDENTIALS, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_API_CREDENTIALS}}}
             - {name: ASSET_SCANNER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-scanner-secrets, key: ASSET_SCANNER_API_TOKEN}}}

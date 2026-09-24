@@ -307,7 +307,7 @@ services:
       VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-}
       VAULT_CREDENTIAL_PATH_PREFIX: ${VAULT_CREDENTIAL_PATH_PREFIX:-}
       PUBLIC_APP_BASE_URL: ${PUBLIC_APP_BASE_URL:-https://yxsona.com}
-      PUBLIC_OPS_BASE_URL: ${PUBLIC_OPS_BASE_URL:-https://ops.yxsona.com}
+      PUBLIC_OPS_BASE_URL: https://ops.yxsona.com
       MCP_INTEGRATION_MODE: local_stdio
       PUBLIC_ASSET_BASE_URL: ${PUBLIC_ASSET_BASE_URL:-https://yxsona.com}
       PUBLIC_OAUTH_REDIRECT_URI: ${PUBLIC_OAUTH_REDIRECT_URI:-https://yxsona.com/v1/oauth/callback/{platform}}

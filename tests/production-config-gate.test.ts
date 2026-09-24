@@ -20,7 +20,8 @@ function config(overrides: Record<string, boolean> = {}) {
   return [
     'plugin_enabled: true', 'merchant_bearer_hostname: merchant.example.com',
     'app_base_url: https://merchant.example.com',
-    'ops_base_url: https://ops.merchant.example.com',
+    'ops_base_url: https://ops.yxsona.com',
+    'PUBLIC_OPS_BASE_URL: https://ops.yxsona.com',
     'mcp_base_url: https://merchant.example.com',
     'OPS_AUTH_MODE: password',
     'auth_enforcement: strict',
@@ -149,16 +150,17 @@ describe('production config gate', () => {
     expect(run(official)()).toContain('production config gate passed')
   })
 
-  it('accepts the nested production-config OIDC spelling used by the release document', () => {
+  it('rejects OIDC auth mode for the account/password-only production Ops Console', () => {
     const nested = config()
-      .replace('OPS_AUTH_MODE: password', 'auth_mode: "oidc_gateway_hmac"')
-      .replace('app_base_url: https://merchant.example.com\nops_base_url: https://ops.merchant.example.com\nmcp_base_url: https://merchant.example.com', 'public_endpoints:\n  app_base_url: https://merchant.example.com\n  ops_base_url: https://ops.merchant.example.com\ncodex:\n  mcp:\n    base_url: https://merchant.example.com')
-    expect(run(nested)()).toContain('production config gate passed')
+      .replace('OPS_AUTH_MODE: password', 'OPS_AUTH_MODE: oidc')
+      .replace('app_base_url: https://merchant.example.com\nops_base_url: https://ops.yxsona.com\nmcp_base_url: https://merchant.example.com', 'public_endpoints:\n  app_base_url: https://merchant.example.com\n  ops_base_url: https://ops.yxsona.com\ncodex:\n  mcp:\n    base_url: https://merchant.example.com')
+    expect(() => run(nested)()).toThrow(/OPS_AUTH_MODE must be password/)
   })
 
   it('rejects ambiguous or unsafe public origin contracts', () => {
     expect(() => run(`${config()}\npublic_endpoints:\n  app_base_url: https://merchant.example.com`)()).toThrow(/ambiguous/)
-    expect(() => run(config().replace('ops_base_url: https://ops.merchant.example.com', 'ops_base_url: https://merchant.example.com'))()).toThrow(/distinct/)
+    expect(() => run(config().replace('ops_base_url: https://ops.yxsona.com', 'ops_base_url: https://ops.attacker.example'))()).toThrow(/ops_base_url must equal https:\/\/ops\.yxsona\.com/)
+    expect(() => run(config().replace('ops_base_url: https://ops.yxsona.com', 'ops_base_url: https://merchant.example.com'))()).toThrow(/distinct|must equal https:\/\/ops\.yxsona\.com/)
     expect(() => run(config().replace('mcp_base_url: https://merchant.example.com', 'mcp_base_url: https://merchant.example.com/mcp'))()).toThrow(/canonical HTTPS origin/)
   })
 

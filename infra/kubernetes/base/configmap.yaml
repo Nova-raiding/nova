@@ -6,7 +6,9 @@ data:
   NODE_ENV: production
   CONNECTOR_FIXTURE_MODE: "false"
   PLATFORM_OPERATIONS_MODE: "manual"
-  OPS_AUTH_MODE: oidc
+  # Retired Kubernetes path only. Current production is ECS and password-only;
+  # this value is rejected by active production config and ECS release gates.
+  OPS_AUTH_MODE: password
   # Production authorization is fail-closed. Durable platform assignments are
   # authoritative over gateway role claims so revocation takes effect on the
   # next request instead of waiting for an upstream session refresh.
@@ -16,12 +18,10 @@ data:
   # carries approved commercial rights. The API reads this boolean with a
   # fail-open default, so the rendered runtime has to state it explicitly.
   REQUIRE_APPROVED_ASSET_FOR_GENERATION: "true"
-  # The merchant host uses the bearer boundary; ops.yxsona.com
-  # remains OIDC-gateway-only. The API compares this exact host value.
+  # The merchant host uses the bearer boundary. The API compares this exact host value.
   MERCHANT_BEARER_HOSTNAME: yxsona.com
   # ChatGPT/Codex receives the service origin and appends /mcp itself. Keep the
-  # ops origin separate so bearer-authenticated plugin traffic cannot drift
-  # onto the OIDC-only operations workbench.
+  # ops origin separate from the plugin origin.
   PUBLIC_APP_BASE_URL: https://yxsona.com
   PUBLIC_OPS_BASE_URL: https://ops.yxsona.com
   PORT: "8787"

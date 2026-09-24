@@ -102,11 +102,12 @@ node "$root/infra/scripts/validate-ecs-compose-project.mjs" "$RENDERED_COMPOSE_P
 : "${WORKER_SCAN_API_SIGNING_SECRET:?WORKER_SCAN_API_SIGNING_SECRET is required}"
 : "${API_AUTH_TOKENS:?API_AUTH_TOKENS is required}"
 : "${SESSION_ID_HASH_SECRET:?SESSION_ID_HASH_SECRET is required}"
-: "${OPS_AUTH_MODE:?OPS_AUTH_MODE must be password or oidc}"
+: "${PUBLIC_OPS_BASE_URL:?PUBLIC_OPS_BASE_URL is required}"
+[ "$PUBLIC_OPS_BASE_URL" = 'https://ops.yxsona.com' ] || { echo 'PUBLIC_OPS_BASE_URL must equal https://ops.yxsona.com' >&2; exit 1; }
+: "${OPS_AUTH_MODE:=password}"
 case "$OPS_AUTH_MODE" in
   password) ;;
-  oidc) : "${OIDC_PROXY_SIGNING_SECRET:?OIDC_PROXY_SIGNING_SECRET is required when OPS_AUTH_MODE=oidc}" ;;
-  *) echo 'OPS_AUTH_MODE must be password or oidc' >&2; exit 1 ;;
+  *) echo 'OPS_AUTH_MODE must be password' >&2; exit 1 ;;
 esac
 sh infra/scripts/verify-ecs-ops-auth-mode.sh "$OPS_AUTH_MODE" "$OPS_UI_IMAGE_REF" "$RENDERED_COMPOSE_PATH"
 : "${MODEL_COST_ESTIMATE_VERSION:?MODEL_COST_ESTIMATE_VERSION production value is required}"
@@ -186,7 +187,7 @@ case "$MCP_INTEGRATION_MODE" in
   local_stdio) ;;
   *) echo 'ECS production deploy requires MCP_INTEGRATION_MODE=local_stdio' >&2; exit 1 ;;
 esac
-node infra/scripts/check-mcp-oauth-production.mjs --config
+node infra/scripts/check-mcp-integration-production.mjs --config
 sh infra/scripts/validate-production-config.sh "$config_path"
 node infra/scripts/validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"
 image_set_digest=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)

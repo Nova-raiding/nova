@@ -22,6 +22,7 @@ try {
     mcp_authorization_mode: 'MCP_AUTHZ_MODE',
     durable_platform_assignments_required: 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED',
     app_base_url: 'PUBLIC_APP_BASE_URL',
+    ops_base_url: 'PUBLIC_OPS_BASE_URL',
     embedding_model: 'EMBEDDING_MODEL', embedding_dimensions: 'EMBEDDING_DIMENSIONS', embedding_max_request_cny: 'MODEL_EMBEDDING_MAX_REQUEST_CNY',
   };
   const socialGroups = ['xiaohongshu', 'douyin'].map(platform =>

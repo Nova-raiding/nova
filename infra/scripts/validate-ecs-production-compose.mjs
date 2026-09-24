@@ -62,6 +62,8 @@ for (const name of ['api', 'api-replica']) {
     LOCAL_COMPOSE: 'false',
     CONNECTOR_FIXTURE_MODE: 'false',
     PLATFORM_OPERATIONS_MODE: 'manual',
+    OPS_AUTH_MODE: 'password',
+    PUBLIC_OPS_BASE_URL: 'https://ops.yxsona.com',
     MERCHANT_TEST_APPROVED_RATES: 'false',
     ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
     ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ecs_ram_role',
@@ -77,9 +79,9 @@ for (const name of ['api', 'api-replica']) {
     if (!String(environment[key] ?? '').trim()) fail(`${name}.${key} must be configured`)
   }
   if (String(environment.MCP_INTEGRATION_MODE ?? '') !== 'local_stdio') fail(`${name}.MCP_INTEGRATION_MODE must equal local_stdio`)
-  if (String(environment.MCP_OAUTH_REQUIRED ?? '') !== 'false') fail(`${name}.MCP_OAUTH_REQUIRED must equal false for local stdio`)
-  if (String(environment.MCP_OAUTH_CLIENTS ?? '') !== '') fail(`${name}.MCP_OAUTH_CLIENTS must be empty for local stdio`)
-  if (String(environment.OPENAI_APPS_CHALLENGE_TOKEN ?? '') !== '') fail(`${name}.OPENAI_APPS_CHALLENGE_TOKEN must be empty for local stdio`)
+  for (const key of ['MCP_OAUTH_REQUIRED', 'MCP_OAUTH_CLIENTS', 'MCP_OAUTH_ISSUER', 'MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'MCP_OAUTH_TOKEN_ENDPOINT', 'OPENAI_APPS_CHALLENGE_TOKEN', 'OIDC_PROXY_SIGNING_SECRET']) {
+    if (String(environment[key] ?? '') !== '') fail(`${name}.${key} is retired and must be omitted`)
+  }
   if (String(environment.ALLOW_WILDCARD_WORKSPACE_GRANT ?? '') !== 'false') fail(`${name}.ALLOW_WILDCARD_WORKSPACE_GRANT must equal false`)
   if (String(environment.OPS_LOCAL_SESSION_WORKSPACE_ID ?? '') !== '') fail(`${name}.OPS_LOCAL_SESSION_WORKSPACE_ID must be empty`)
   const serialized = JSON.stringify(environment)

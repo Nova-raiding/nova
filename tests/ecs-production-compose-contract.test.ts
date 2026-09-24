@@ -21,7 +21,8 @@ const valid = {
       ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
       OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
-      MCP_INTEGRATION_MODE: 'local_stdio', MCP_OAUTH_REQUIRED: 'false',
+      MCP_INTEGRATION_MODE: 'local_stdio',
+      OPS_AUTH_MODE: 'password', PUBLIC_OPS_BASE_URL: 'https://ops.yxsona.com',
       CAPACITY_REPORT_PATH: '/run/release-evidence/capacity-report.json',
     } },
     'api-replica': { ...nodeHardening, volumes: ['/evidence/capacity.json:/run/release-evidence/capacity-report.json:ro'], environment: {
@@ -38,7 +39,8 @@ const valid = {
       ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
       OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
-      MCP_INTEGRATION_MODE: 'local_stdio', MCP_OAUTH_REQUIRED: 'false',
+      MCP_INTEGRATION_MODE: 'local_stdio',
+      OPS_AUTH_MODE: 'password', PUBLIC_OPS_BASE_URL: 'https://ops.yxsona.com',
       CAPACITY_REPORT_PATH: '/run/release-evidence/capacity-report.json',
     } },
     ...Object.fromEntries(['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan'].map(name => [name, { ...nodeHardening, environment: {
@@ -197,6 +199,21 @@ describe('ECS production Compose contract', () => {
       expect.objectContaining({ source: '/opt/merchant-deploy/deploy/certs', target: '/etc/nginx/certs', read_only: true }),
     ]))
     expect(validate(rendered)).toContain('contract passed')
+    expect(rendered.services.api.environment.PUBLIC_OPS_BASE_URL).toBe('https://ops.yxsona.com')
+    expect(rendered.services['api-replica'].environment.PUBLIC_OPS_BASE_URL).toBe('https://ops.yxsona.com')
+  })
+
+  it.each([
+    ['OPS_AUTH_MODE', 'oidc'],
+    ['PUBLIC_OPS_BASE_URL', 'https://ops.attacker.example'],
+    ['MCP_INTEGRATION_MODE', 'remote_oauth'],
+  ])('rejects API production auth/profile override %s=%s', (key, value) => {
+    for (const serviceName of ['api', 'api-replica']) {
+      const rendered = structuredClone(valid)
+      const service = rendered.services[serviceName as 'api' | 'api-replica']
+      ;(service.environment as Record<string, string>)[key] = value
+      expect(() => validate(rendered)).toThrow(new RegExp(`${serviceName}\\.${key}`))
+    }
   })
 
   it('renders CPU quantities as strings so the ECS Compose version can read the artifact', () => {
