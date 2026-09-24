@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 
@@ -11,7 +11,21 @@ function fixture() {
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-stage-')))
   const repo = join(base, 'repo'); const bundle = join(base, 'bundle'); const releases = join(base, 'releases'); const bin = join(base, 'bin')
   mkdirSync(join(repo, 'infra/scripts'), { recursive: true }); mkdirSync(bundle); mkdirSync(releases); mkdirSync(bin)
-  cpSync(resolve('infra/scripts/stage-verified-ecs-release.sh'), join(repo, 'infra/scripts/stage-verified-ecs-release.sh'))
+  // Keep the unit fixture hermetic. The production script pins the protected
+  // 101 runtime; its exact host paths are exercised by the isolated container
+  // check, while this fixture substitutes only those paths inside its archive.
+  const protectedNode = '/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node'
+  const protectedBin = dirname(protectedNode)
+  const protectedNpm = '/usr/lib/node_modules/npm/bin/npm-cli.js'
+  const fixtureNpm = join(bin, 'npm-cli.cjs')
+  const stagingSource = readFileSync(resolve('infra/scripts/stage-verified-ecs-release.sh'), 'utf8')
+  expect(stagingSource).toContain(`STAGING_NODE=${protectedNode}`)
+  expect(stagingSource).toContain(`STAGING_NPM_CLI=${protectedNpm}`)
+  writeFileSync(join(repo, 'infra/scripts/stage-verified-ecs-release.sh'), stagingSource
+    .replaceAll(protectedNode, process.execPath)
+    .replaceAll(protectedBin, dirname(process.execPath))
+    .replaceAll(protectedNpm, fixtureNpm)
+    .replace('[ "$node_version" = v22.23.2 ]', `[ "$node_version" = ${process.version} ]`))
   cpSync(resolve('infra/scripts/ecs-build-lock.sh'), join(repo, 'infra/scripts/ecs-build-lock.sh'))
   writeFileSync(join(repo, 'package.json'), '{"name":"fixture","version":"1.0.0"}\n')
   writeFileSync(join(repo, 'package-lock.json'), '{"name":"fixture","version":"1.0.0","lockfileVersion":3,"packages":{"":{"name":"fixture","version":"1.0.0"}}}\n')
@@ -30,7 +44,14 @@ function fixture() {
     `sync_plan_sha256=sha256:${sha(readFileSync(join(bundle, 'sync-plan.tsv')))}`,
     '',
   ].join('\n'))
-  writeFileSync(join(bin, 'npm'), '#!/bin/sh\ncase "$1" in\n  ci) printf "%s\\n" "$@" > .npm-ci-args ;;\n  run) [ "$2" = build ] || exit 9 ;;\n  *) exit 9 ;;\nesac\n', { mode: 0o755 })
+  writeFileSync(fixtureNpm, `const fs = require('node:fs')
+const args = process.argv.slice(2)
+if (args[0] === '--version') { console.log('10.9.4'); process.exit(0) }
+if (args[0] === 'ci') { fs.writeFileSync('.npm-ci-args', args.join('\\n')); process.exit(0) }
+if (args[0] === 'run' && args[1] === 'build') {
+  setTimeout(() => process.exit(0), Number(process.env.ECS_FIXTURE_NPM_DELAY_MS || 0))
+} else process.exit(9)
+`)
   return { base, repo, bundle, releases, bin, gitSha }
 }
 
@@ -66,10 +87,9 @@ describe('verified ECS release staging', () => {
 
   it('serializes concurrent attempts for the same release identity', async () => {
     const value = fixture()
-    writeFileSync(join(value.bin, 'npm'), '#!/bin/sh\nsleep 1\n', { mode: 0o755 })
     const invoke = () => new Promise<{ status: number | null; stderr: string }>((resolveResult) => {
       const child = spawn('sh', [join(value.repo, 'infra/scripts/stage-verified-ecs-release.sh')], {
-        env: { ...process.env, PATH: `${value.bin}:${process.env.PATH}`, ECS_BUILD_LOCK_PATH: join(value.base, 'build.lock'), ECS_CANDIDATE_BUNDLE_DIR: value.bundle, ECS_RELEASES_ROOT: value.releases, RELEASE_ID: 'release-1' },
+        env: { ...process.env, PATH: `${value.bin}:${process.env.PATH}`, ECS_FIXTURE_NPM_DELAY_MS: '1000', ECS_BUILD_LOCK_PATH: join(value.base, 'build.lock'), ECS_CANDIDATE_BUNDLE_DIR: value.bundle, ECS_RELEASES_ROOT: value.releases, RELEASE_ID: 'release-1' },
       })
       let stderr = ''; child.stderr.setEncoding('utf8'); child.stderr.on('data', chunk => { stderr += chunk })
       child.on('close', status => resolveResult({ status, stderr }))
