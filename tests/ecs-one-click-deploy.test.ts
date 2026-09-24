@@ -23,6 +23,24 @@ function candidate(root: string, name: string, gitSha: string, age: number) {
 }
 
 describe('ECS one-click deployment storage policy', () => {
+  it('rejects non-full scope before acquiring the mutation lock or staging a release', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-scope-')))
+    chmodSync(root, 0o700)
+    const result = spawnSync('sh', [script, 'deploy'], {
+      env: { PATH: process.env.PATH, ECS_RELEASES_ROOT: root, RELEASE_ID: 'release-scope-check', DEPLOYMENT_SCOPE: 'infra' },
+      encoding: 'utf8',
+    })
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain('deployment scope must be full')
+    expect(result.stderr).not.toContain('ECS_CANDIDATE_BUNDLE_DIR')
+    expect(spawnSync('test', ['-e', join(root, '.ecs-one-click-mutation.lock')]).status).not.toBe(0)
+    expect(spawnSync('test', ['-e', join(root, 'release-scope-check')]).status).not.toBe(0)
+    const source = readFileSync(script, 'utf8')
+    const scopeGate = source.indexOf('deployment scope must be full')
+    expect(scopeGate).toBeLessThan(source.indexOf('orchestration_lock='))
+    expect(scopeGate).toBeLessThan(source.indexOf('staging_entrypoint='))
+  })
+
   it('is valid shell and deploys before applying cleanup', () => {
     expect(execFileSync('sh', ['-n', script], { encoding: 'utf8' })).toBe('')
     const source = readFileSync(script, 'utf8')

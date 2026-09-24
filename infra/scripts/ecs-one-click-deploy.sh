@@ -16,6 +16,10 @@ action=${1:-deploy}
 : "${ECS_BUILD_CACHE_UNTIL:=24h}"
 
 case "$action" in deploy|cleanup|report) ;; *) echo 'usage: ecs-one-click-deploy.sh [deploy|cleanup|report]' >&2; exit 2 ;; esac
+if [ "$action" = deploy ] && [ "${DEPLOYMENT_SCOPE:-full}" != full ]; then
+  echo 'ECS one-click deployment refused: deployment scope must be full' >&2
+  exit 2
+fi
 # `report` is unconditionally read-only, even when invoked from an environment
 # that used YES for a preceding cleanup. It also intentionally does not acquire
 # the mutation lock below.
