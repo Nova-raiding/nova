@@ -38,6 +38,8 @@ describe('content generator', () => {
     expect(String(calls[0]?.body)).toContain('不得出现 restrictedSubjects')
     expect(String(calls[0]?.body)).toContain('real_image、parameter、test_report、comparison、usage_result、manual_review')
     expect(String(calls[0]?.body)).toContain('referencedSkuIds 必须存在并逐个包含相同的 SKU ID')
+    expect(String(calls[0]?.body)).toContain('outputShape')
+    expect(String(calls[0]?.body)).toContain('visualContract')
   })
 
   it('retries a rate-limited text request with the same idempotency key', async () => {
@@ -288,6 +290,8 @@ describe('content generator', () => {
     expect(String(calls[1]?.body)).toContain('只修复结构和缺失字段')
     const retry = JSON.parse(String(calls[1]?.body)) as { messages: Array<{ role: string; content: string }> }
     expect(retry.messages.some(message => message.role === 'assistant')).toBe(false)
+    expect(retry.messages.at(-1)?.content).toContain('decisionContract.visualContract.requiredElements')
+    expect(retry.messages.at(-1)?.content).toContain('缺少来源则删除该模块')
     expect(String(calls[1]?.body)).not.toContain('"sellingPoints":[]')
     const initial = JSON.parse(String(calls[0]?.body)) as { messages: Array<{ content: string }> }
     expect(retry.messages[0]?.content).toBe(initial.messages[0]?.content)
