@@ -39,13 +39,13 @@ export function OpsPage({
       tabIndex={-1}
     >
       <Space orientation="vertical" size={20} className="content-stack">
-        {!hideTitle ? <header className="ops-page-header">
-          <div className="ops-page-heading">
+        {!hideTitle || actions ? <header className="ops-page-header">
+          {!hideTitle ? <div className="ops-page-heading">
             {eyebrow ? <Typography.Text className="ops-page-eyebrow">{eyebrow}</Typography.Text> : null}
             <HeadingTag className="ops-page-title">{title}</HeadingTag>
             {description ? <Typography.Paragraph className="ops-page-description">{description}</Typography.Paragraph> : null}
             {nextStep ? <Typography.Text className="ops-page-next-step">{nextStep}</Typography.Text> : null}
-          </div>
+          </div> : null}
           {actions ? <div className="ops-page-actions">{actions}</div> : null}
         </header> : null}
         {children}
