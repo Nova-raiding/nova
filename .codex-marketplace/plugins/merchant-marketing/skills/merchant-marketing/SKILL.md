@@ -67,9 +67,9 @@ description: Store Nova 商品资料整理、内容候选制作、审核与导�
 
 每轮最多做一次需要商家判断的动作。查询、校验和同一动作所需的只读补充查询可以连续执行；不得在同一轮同时要求上传素材、确认事实、确认方案或确认发布。商家回复“好/继续/确认”时，只能确认当前对话或按需组件明确标出的那一个动作；没有明确目标的泛化确认不得触发写操作。
 
-首次安装、工作区不明确或用户明确要求开始使用时，先调用只读 `onboarding.status` 核验身份与当前工作区。展示简短欢迎和“资料 → 内容 → 审核 → 导出”的产品范围，只给当前一个资料或目标问题；不展示旧店铺接入四步进度，也不把它当作候选路径门槛。已有配置且用户提出具体目标时，可用 `merchant.start` 恢复当前意图，但只采用当前内容范围内、已通过服务端门禁的下一步，忽略遗留连接/同步/发布建议。只有宿主身份、MCP 地址和服务端 bootstrap 均通过时，首次缺少工作区才可执行一次 `workspace.bootstrap`；失败必须阻断，生产不得回退演示工作区。需要生成、编辑或确认时，先调用 `workspace.interactive.confirm` 开启当前交互写会话；它不替代事实、权限、创意点、扫描或模型中转门禁。中转鉴权、请求、用量、成本与错误证据缺失时，不用宿主模型替代，也不宣称业务生成成功。
+商家工作区必须由平台管理员预先分配。首次安装或尚未绑定时，先引导商家取得管理员分配的 `ws_...`，再运行本地登录 CLI 完成身份登录和工作区绑定；不得调用 `workspace.bootstrap` 创建或猜测工作区。缺少绑定时将其作为 `MCP_CONFIGURATION_REQUIRED` 配置阻断，提示完成管理员分配和 CLI 登录，不使用演示数据。绑定后完全重启 ChatGPT，再调用只读 `onboarding.status` 核验身份与当前工作区。展示简短欢迎和“资料 → 内容 → 审核 → 导出”的产品范围，只给当前一个资料或目标问题；不展示旧店铺接入四步进度，也不把它当作候选路径门槛。已有配置且用户提出具体目标时，可用 `merchant.start` 恢复当前意图，但只采用当前内容范围内、已通过服务端门禁的下一步，忽略遗留连接/同步/发布建议。需要生成、编辑或确认时，先调用 `workspace.interactive.confirm` 开启当前交互写会话；它不替代事实、权限、创意点、扫描或模型中转门禁。中转鉴权、请求、用量、成本与错误证据缺失时，不用宿主模型替代，也不宣称业务生成成功。
 
-**首次使用命令优先级最高**：用户说“@Store Nova 开始使用”“开始首次配置”或明确首次使用时，先调用 `onboarding.status`，不得被宿主附带的历史任务覆盖。仅展示已核验的身份/工作区状态与当前内容范围；不自动恢复旧店铺接入、同步或发布流程。用户说“继续”只推进当前明确的资料或内容步骤，不凭一句回复宣布初始化完成。
+**首次使用命令优先级最高**：用户说“@Store Nova 开始使用”“开始首次配置”或明确首次使用时，不得被宿主附带的历史任务覆盖。先确认管理员分配的工作区已由本地登录 CLI 绑定；未绑定则说明配置阻断并引导完成 CLI 登录，不调用 `workspace.bootstrap`。绑定后再调用 `onboarding.status`，仅展示已核验的身份/工作区状态与当前内容范围；不自动恢复旧店铺接入、同步或发布流程。用户说“继续”只推进当前明确的资料或内容步骤，不凭一句回复宣布初始化完成。
 
 ### 任务状态与恢复（强制）
 
@@ -248,7 +248,7 @@ description: Store Nova 商品资料整理、内容候选制作、审核与导�
 - 所有 REST、MCP 和错误响应都按统一 envelope 读取：`request_id`、`trace_id`、`workspace_id`、`data`、`warnings`、`next_actions`、`error`。
 
 不要保存平台账号密码，不使用网页爬虫，不把平台 API 未配置误报为已连接，不把模型检查当作平台或法律最终审核。
-插件通过 `mcp/bridge.mjs` 把标准 MCP `initialize`、`tools/list`、`tools/call` 转发到 API `/mcp`；首次会话由服务端身份完成 `workspace.bootstrap`，bridge 将返回的工作区绑定按当前 API、身份和 Token 指纹保存，并在后续请求注入工作区范围。只有需要手工部署 bridge 时才配置 `MERCHANT_WORKSPACE_ID`。如果 bridge 未发现工具，先检查 `MERCHANT_MCP_BASE_URL`、工作区身份和网关连通性。
+插件通过 `mcp/bridge.mjs` 把标准 MCP `initialize`、`tools/list`、`tools/call` 转发到 API `/mcp`；工作区由平台管理员预先分配，商家插件隐藏并拒绝 `workspace.bootstrap`，不会自动创建 tenant。缺少绑定时，bridge 在本地返回 `MCP_CONFIGURATION_REQUIRED`，不发送 API 请求。获取管理员分配的工作区 ID 后，在插件安装目录运行 `runtime/node scripts/login-local-macos.mjs --base-url https://yxsona.com --workspace ws_<管理员分配的工作区>`；Windows 运行 `runtime\\node.exe scripts\\login-local-windows.mjs --base-url https://yxsona.com --workspace ws_<管理员分配的工作区>`，按提示完成登录并重启 ChatGPT。只有需要手工部署 bridge 时才配置 `MERCHANT_WORKSPACE_ID`。如果 bridge 未发现工具，先检查 `MERCHANT_MCP_BASE_URL`、工作区身份和网关连通性。
 
 当前插件内容写操作仍受交互确认和服务端门禁控制；平台同步、发布与自动化入口保持隐藏，不因用户要求导出或批准内容而开启。
 
@@ -262,7 +262,7 @@ description: Store Nova 商品资料整理、内容候选制作、审核与导�
 - Excel 导入的 SKU 若带 sourceAssetIds，生成时只使用已选择 SKU 的这些原图；不要把商品级图片列表或另一 SKU 的原图自动替代。SKU 无原图时说明具体缺图，不重复要求上传整份表格。
 ## 安装后引导（资料与内容入口）
 
-首次使用先调用只读 `onboarding.status`。只根据实际结果说明身份、工作区与当前能力；缺少登录、API、工作区或令牌时阻断，不使用演示数据替代。旧店铺接入 `initialization` 仅是兼容状态，不作为当前首屏四步或制作候选的完成条件。
+先确认管理员已分配工作区，且本地登录 CLI 已完成该工作区绑定；未绑定时按配置阻断处理，不调用 `workspace.bootstrap`，也不把 `onboarding.status` 当作创建或绑定入口。绑定并重启 ChatGPT 后，首次调用只读 `onboarding.status` 核验身份、工作区和引导状态；缺少登录、API、工作区或令牌时阻断，不使用演示数据替代。旧店铺接入 `initialization` 仅是兼容状态，不作为当前首屏四步或制作候选的完成条件。
 
 欢迎语可用：“我们可以把你的商品资料整理成可审阅的文案和视觉候选，并在工具支持时审核、导出。请发商品公开链接，或上传自己的资料。”若用户已经提供目标与资料，不重复索取，直接核验当前步骤。
 
