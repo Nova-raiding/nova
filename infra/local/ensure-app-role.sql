@@ -70,6 +70,14 @@ BEGIN
   IF to_regclass('public.platform_authorization_audit') IS NOT NULL THEN
     EXECUTE 'REVOKE ALL ON TABLE platform_authorization_audit FROM merchant_app';
   END IF;
+  -- These install/connection records belong to the operations role. The
+  -- blanket compatibility grant above must not re-expose them after migrate.
+  IF to_regclass('public.local_plugin_connection_requests') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE local_plugin_connection_requests FROM merchant_app';
+  END IF;
+  IF to_regclass('public.local_plugin_install_instances') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE local_plugin_install_instances, local_plugin_install_challenges, local_plugin_install_audit FROM merchant_app';
+  END IF;
 END
 $$;
 -- The broad compatibility grant above is deliberately followed by the
