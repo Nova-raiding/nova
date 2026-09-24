@@ -297,6 +297,21 @@ printf '%s\n' "$release_images" | while IFS= read -r image; do
     echo "verified release image resolved to an invalid local image ID: $image" >&2; exit 1;
   }
 done
+# The running release must already be strictly ready before we consume the
+# one-time deployment nonce or apply forward-only migrations. This is a
+# read-only baseline guard. Keep it before creating attempt-specific recovery
+# artifacts so a rejected retry cannot leave a capsule/state collision behind.
+baseline_ready=$(curl --fail --silent --show-error --max-time 15 "${PRODUCTION_API_BASE_URL%/}/readyz") || {
+  echo 'current production baseline /readyz is not healthy; refusing nonce consumption and migration' >&2
+  exit 1
+}
+printf '%s' "$baseline_ready" | node -e '
+  let body="";process.stdin.setEncoding("utf8");process.stdin.on("data",chunk=>body+=chunk);process.stdin.on("end",()=>{
+    try { const envelope=JSON.parse(body); if(envelope.error!=null || envelope.data?.ready!==true) throw new Error() }
+    catch { console.error("current production baseline /readyz did not report ready=true"); process.exit(1) }
+  })
+' || exit 1
+
 umask 077
 rollback_capsule_dir="$ECS_DEPLOY_STATE_DIR/${RELEASE_ID}.rollback-capsule"
 mkdir -m 0700 "$rollback_capsule_dir" 2>/dev/null || { echo 'rollback capsule snapshot already exists or cannot be created' >&2; exit 1; }
@@ -365,21 +380,6 @@ PREDEPLOY_STATE="$state_path" ROLLBACK_PLAN="$ECS_ROLLBACK_PLAN_PATH" node -e '
   const fs=require("fs"),state=JSON.parse(fs.readFileSync(process.env.PREDEPLOY_STATE,"utf8")),plan=JSON.parse(fs.readFileSync(process.env.ROLLBACK_PLAN,"utf8"))
   if(state.database_before?.migration_version!==plan.database.live_migration_version)throw new Error("rollback capsule live migration version differs from signed predeploy observation")
 '
-
-# The running release must already be strictly ready before we consume the
-# one-time deployment nonce or apply forward-only migrations. This is a
-# read-only baseline guard: it prevents a known unhealthy production service
-# from being used as the starting point for a candidate cutover.
-baseline_ready=$(curl --fail --silent --show-error --max-time 15 "${PRODUCTION_API_BASE_URL%/}/readyz") || {
-  echo 'current production baseline /readyz is not healthy; refusing nonce consumption and migration' >&2
-  exit 1
-}
-printf '%s' "$baseline_ready" | node -e '
-  let body="";process.stdin.setEncoding("utf8");process.stdin.on("data",chunk=>body+=chunk);process.stdin.on("end",()=>{
-    try { const envelope=JSON.parse(body); if(envelope.error!=null || envelope.data?.ready!==true) throw new Error() }
-    catch { console.error("current production baseline /readyz did not report ready=true"); process.exit(1) }
-  })
-' || exit 1
 
 # Consume only after every read-only gate passes and immediately before the
 # first mutation. A consumed nonce is never deleted or reused after failure.
