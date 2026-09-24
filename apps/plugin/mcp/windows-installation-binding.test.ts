@@ -8,7 +8,7 @@ describe('Windows signed package installation binding', () => {
     const identityStore = { load: () => identity, save: (value: unknown) => { identity = value } }
     const receiptStore = { load: () => receipt, save: (value: unknown) => { receipt = value } }
     const first = prepareWindowsInstallationBinding({ identityStore, receiptStore, packageSha256: 'a'.repeat(64),
-      pluginVersion: '0.1.0+codex.20260923132700', signerThumbprint: 'B'.repeat(40) })
+      pluginVersion: '0.1.0+codex.20260925075058', signerThumbprint: 'B'.repeat(40) })
     expect(receipt).toBeUndefined()
     expect(verifyWindowsInstallationBinding(first.candidate)).toBe(true)
     expect(verifyWindowsInstallationBinding({ ...first.candidate, platform: 'macos' })).toBe(false)

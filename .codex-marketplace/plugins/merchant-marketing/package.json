@@ -2,7 +2,7 @@
   "name": "@merchant-marketing/plugin",
   "private": true,
   "license": "UNLICENSED",
-  "version": "0.1.0+codex.20260923132700",
+  "version": "0.1.0+codex.20260925075058",
   "type": "module",
   "engines": {
     "node": ">=18"

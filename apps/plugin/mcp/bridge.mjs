@@ -697,7 +697,7 @@ const METHODS = {
   },
   'catalog.image.generate': {
     description: '根据已确认商品事实生成商品主图或详情图候选；用户要求整套电商详情图时必须先完成商品识别、买家顾虑和六类图片方案，再按确认方案真实调用图片模型生成，不能把文字方案、占位卡片或原图当作详情页交付。确认方案后生成完整详情长图必须显式传 size=1024x4096 或 1024x3072，并在同一轮自动查询，只有返回真实 images/图片附件后才能称为已生成。用户已上传图片时可省略 product_id，提供 title + asset_ids_json 生成未绑定候选（仅候选、不可发布）。独立上传图片生成时不要先调用 asset.parse，也不要把自动解析出的品类当作商品事实；仅使用用户消息中的描述和图片本身；用户已要求制作时直接生成未绑定候选，不重复询问商用权或 AI 修改许可，不自动批准素材权益。禁止编造销量、认证、测评、续航、兼容性或其他未确认商品事实。',
-    inputSchema: { type: 'object', properties: { product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '工作区内已通过可信安全扫描的上传图片 ID 数组 JSON；未绑定候选不要求预先确认商用权或 AI 修改许可，明确限制仍生效；正式绑定生成仍须通过权益检查。' }, size: { type: 'string', enum: ['1024x1024', '1024x1536', '1536x1024', '1024x3072', '1024x4096'], description: '单次画布尺寸；横向 Banner 使用 1536x1024，完整详情页长图使用 1024x4096。' }, direction: { type: 'string' }, selling_points_json: { type: 'string', description: '商家已确认、可上图的卖点字符串数组 JSON。' }, traffic_keywords_json: { type: 'string', description: '商家已确认的搜索/流量关键词字符串数组 JSON。' }, promotion_labels_json: { type: 'string', description: '已确认且仍有效的促销标签字符串数组 JSON；禁止虚构价格或折扣。' }, marketing_labels_json: { type: 'string', description: '商家已确认的营销短标签字符串数组 JSON。' }, headline: { type: 'string', description: '主图精确主标题。' }, subheadline: { type: 'string', description: '主图精确副标题。' }, cta: { type: 'string', description: '主图精确行动文案。' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '工作区内已上传图片 ID 数组 JSON；未绑定候选不要求预先确认商用权或 AI 修改许可，明确限制仍生效；正式绑定生成仍须通过权益检查。' }, size: { type: 'string', enum: ['1024x1024', '1024x1536', '1536x1024', '1024x3072', '1024x4096'], description: '单次画布尺寸；横向 Banner 使用 1536x1024，完整详情页长图使用 1024x4096。' }, direction: { type: 'string' }, selling_points_json: { type: 'string', description: '商家已确认、可上图的卖点字符串数组 JSON。' }, traffic_keywords_json: { type: 'string', description: '商家已确认的搜索/流量关键词字符串数组 JSON。' }, promotion_labels_json: { type: 'string', description: '已确认且仍有效的促销标签字符串数组 JSON；禁止虚构价格或折扣。' }, marketing_labels_json: { type: 'string', description: '商家已确认的营销短标签字符串数组 JSON。' }, headline: { type: 'string', description: '主图精确主标题。' }, subheadline: { type: 'string', description: '主图精确副标题。' }, cta: { type: 'string', description: '主图精确行动文案。' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, additionalProperties: false },
   },
   'catalog.image.retry': {
     description: '安全重试尚未启动 Provider 且没有候选或对账证据的图片任务。',
@@ -752,7 +752,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   'asset.parse': {
-    description: '解析已完成安全扫描的文本或 JSON 素材。',
+    description: '解析已上传的文本或 JSON 素材。',
     inputSchema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
   },
   'asset.facts.confirm': {
@@ -780,7 +780,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { topic: { type: 'string' }, product_id: { type: 'string' } }, additionalProperties: false },
   },
   'asset.upload': {
-    description: '上传用户已附加的本地素材并自动完成安全检查。附件优先传绝对 file_path，由 bridge 读取文件；不要在终端生成或向模型传递 base64。图片生成任务可同时携带 continuation_kind=image_generation 及当前商品、任务和生成参数；扫描和权益检查通过后必须等待商家确认，确认前不会调用图片模型。上传后本工具会在同一调用内有界等待检查结果：检查中无需操作，风险阻断时只需重新上传。绝对不要调用 automation.scan 推进文件检查，也不要要求用户、平台人员或人工证据完成检查。单文件最多 50MB。',
+    description: '上传用户已附加的本地素材并保存到当前工作区。附件优先传绝对 file_path，由 bridge 读取文件；不要在终端生成或向模型传递 base64。图片生成任务可同时携带 continuation_kind=image_generation 及当前商品、任务和生成参数；需要商家确认图片权益后再继续，确认前不会调用图片模型。上传后本工具会在同一调用内有界等待检查结果：检查中无需操作，风险阻断时只需重新上传。绝对不要调用 automation.scan 推进文件检查，也不要要求用户、平台人员或人工证据完成检查。单文件最多 50MB。',
     inputSchema: { type: 'object', properties: { name: { type: 'string' }, mime_type: { type: 'string' }, file_path: { type: 'string', description: '用户在当前会话明确附加的本地文件绝对路径。' }, content_base64: { type: 'string', description: '仅用于已经很小的内联内容；本地附件请使用 file_path。' }, sha256: { type: 'string' }, rights_scope: { type: 'string', enum: ['owned', 'commercial_authorized', 'limited_use', 'internal_only', 'unknown', 'unusable'] }, applicable_platforms_json: { type: 'string' }, applicable_regions_json: { type: 'string' }, usage_scopes_json: { type: 'string' }, valid_from: { type: 'string' }, valid_to: { type: 'string' }, ai_modification_allowed: { type: 'string', enum: ['true', 'false'] }, continuation_kind: { type: 'string', enum: ['image_generation'] }, continuation_product_id: { type: 'string' }, continuation_task_id: { type: 'string' }, continuation_content_version_id: { type: 'string' }, continuation_sku_ids_json: { type: 'string', description: '续跑图片生成时使用的 SKU ID 字符串数组 JSON。' }, continuation_direction: { type: 'string' }, continuation_count: { type: 'string' }, continuation_idempotency_key: { type: 'string' } }, required: ['name', 'mime_type'], oneOf: [{ required: ['file_path'] }, { required: ['content_base64'] }], additionalProperties: false },
   },
   'asset.upload.batch': {
@@ -808,7 +808,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { asset_id: { type: 'string' }, scan_evidence_ref: { type: 'string' } }, required: ['asset_id', 'scan_evidence_ref'], additionalProperties: false },
   },
   'asset.generation.confirm': {
-    description: '确认素材已通过安全扫描和权益检查；确认后平台 Worker 才允许调用图片模型生成。',
+    description: '确认素材权益；确认后平台 Worker 才允许调用图片模型生成。',
     inputSchema: { type: 'object', properties: { job_id: { type: 'string' } }, required: ['job_id'], additionalProperties: false },
   },
   'asset.rights.update': {
@@ -1386,7 +1386,7 @@ function userFacingToolText(method, result) {
       return [
         '您好，感谢您使用 Store Nova。',
         '从公开商品链接、手工填写的商品资料或你上传的图片开始，完成内容生产 → 审核 → 导出。',
-        '不必先连接店铺。资料导入和草稿生成仍需有效登录、当前工作区权限、服务端准入，以及真实模型配置、创意点和安全检查；候选保持未批准、未发布。',
+        '不必先连接店铺。资料导入和草稿生成仍需有效登录、当前工作区权限、服务端准入，以及真实模型配置、创意点和成本证据；候选保持未批准、未发布。',
         '公开链接只是来源线索，不代表系统已读取页面或确认商品事实；若当前无法读取，请补充商品资料。审核和导出仅使用当前实际支持的工具，草稿不能冒充正式内容版本。',
         '当前不提供库存/订单同步和自动发布。历史店铺接入状态已保留，但不代表本次内容已生成、审核或导出；不要发送 Cookie、平台密码或验证码。',
         '你想制作什么内容？可以提供公开商品链接、商品资料或图片。',
@@ -2354,7 +2354,7 @@ function toolAnnotations(name) {
 }
 
 function onboardingUiHtml() {
-  return `<!doctype html><meta charset="utf-8"><title>Store Nova安装引导</title><style>body{font:16px system-ui,sans-serif;color:#172554;margin:24px;line-height:1.6}h1{font-size:22px;margin:0 0 16px}.muted{color:#475569}</style><h1>Store Nova插件安装引导</h1><p>公开链接或手工资料 → 内容生产 → 审核 → 导出</p><p class="muted">请先调用 onboarding.status 读取真实状态。这是流程说明，不代表内容已经生成、审核或导出；不要求先连接店铺。</p><p class="muted">公开链接只是来源线索。生成仍需身份、工作区权限、创意点、模型中转和安全检查；无法读取或缺少工具时请补充资料，不使用 Cookie、平台密码或验证码。</p>`
+  return `<!doctype html><meta charset="utf-8"><title>Store Nova安装引导</title><style>body{font:16px system-ui,sans-serif;color:#172554;margin:24px;line-height:1.6}h1{font-size:22px;margin:0 0 16px}.muted{color:#475569}</style><h1>Store Nova插件安装引导</h1><p>公开链接或手工资料 → 内容生产 → 审核 → 导出</p><p class="muted">请先调用 onboarding.status 读取真实状态。这是流程说明，不代表内容已经生成、审核或导出；不要求先连接店铺。</p><p class="muted">公开链接只是来源线索。生成仍需身份、工作区权限、创意点、模型中转和成本证据；无法读取或缺少工具时请补充资料，不使用 Cookie、平台密码或验证码。</p>`
 }
 
 function toolContent(method, result) {
@@ -3286,7 +3286,7 @@ function merchantAssetStructuredContent(method, result) {
           } }
         : {}),
       asset_actions: assetActions,
-      candidate_generation_guidance: '用户明确要求使用上传图片制作且图片已通过可信安全扫描时，可调用 catalog.image.generate 生成未绑定候选；权益 pending/unknown 不要求重复确认，正式素材的解析/事实/readiness 状态不是未绑定候选的准入结论。扫描未知或未通过、明确拒绝、禁止 AI 修改、用途/平台限制及素材过期必须阻断，并由生成接口重新校验。不得自动批准权益；候选始终未绑定、未批准、未发布，正式生成、审核和发布仍须通过原门禁。',
+      candidate_generation_guidance: '用户明确要求使用工作区内已上传图片制作时，可调用 catalog.image.generate 生成未绑定候选；权益 pending/unknown 不要求重复确认，正式素材的解析/事实/readiness 状态不是未绑定候选的准入结论。已被明确阻断的素材、明确拒绝、禁止 AI 修改、用途/平台限制及素材过期必须阻断，并由生成接口重新校验。不得自动批准权益；候选始终未绑定、未批准、未发布，正式生成、审核和发布仍须通过原门禁。',
       empty_state: assets.length ? null : { title: '还没有素材', message: '请先上传商品图片或品牌资料。' },
     }
   }

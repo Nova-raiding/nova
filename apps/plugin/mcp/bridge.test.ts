@@ -1069,7 +1069,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260923132700' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260925075058' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -2067,7 +2067,7 @@ describe('Codex stdio MCP bridge', () => {
         continuation_idempotency_key: { type: 'string' },
       })
       expect(upload.inputSchema.required).toEqual(['name', 'mime_type'])
-      expect(upload.description).toMatch(/自动完成安全检查/u)
+      expect(upload.description).toMatch(/保存到当前工作区/u)
       expect(upload.description).toMatch(/不要调用 automation\.scan/u)
       expect(upload.description).toMatch(/不要要求.*人工证据/u)
       for (const toolName of ['asset.upload', 'task.create']) {
@@ -2126,7 +2126,7 @@ describe('Codex stdio MCP bridge', () => {
         readiness: { draft: 0, ready: 0, blocked: 1, total: 1 },
         storage_quota: { used_bytes: 800, reserved_bytes: 100, limit_bytes: 1000, available_bytes: 100, status: 'near_limit' },
         asset_actions: [{ asset_id: 'asset_blocked_1', name: 'bad.png', mime_type: 'image/png', scan_status: 'blocked', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理', user_action_required: true }],
-        candidate_generation_guidance: '用户明确要求使用上传图片制作且图片已通过可信安全扫描时，可调用 catalog.image.generate 生成未绑定候选；权益 pending/unknown 不要求重复确认，正式素材的解析/事实/readiness 状态不是未绑定候选的准入结论。扫描未知或未通过、明确拒绝、禁止 AI 修改、用途/平台限制及素材过期必须阻断，并由生成接口重新校验。不得自动批准权益；候选始终未绑定、未批准、未发布，正式生成、审核和发布仍须通过原门禁。',
+        candidate_generation_guidance: '用户明确要求使用工作区内已上传图片制作时，可调用 catalog.image.generate 生成未绑定候选；权益 pending/unknown 不要求重复确认，正式素材的解析/事实/readiness 状态不是未绑定候选的准入结论。已被明确阻断的素材、明确拒绝、禁止 AI 修改、用途/平台限制及素材过期必须阻断，并由生成接口重新校验。不得自动批准权益；候选始终未绑定、未批准、未发布，正式生成、审核和发布仍须通过原门禁。',
         empty_state: null,
       })
       const serialized = JSON.stringify(response.result.structuredContent)

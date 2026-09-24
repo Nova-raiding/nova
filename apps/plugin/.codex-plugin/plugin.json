@@ -1,7 +1,7 @@
 {
   "id": "merchant-marketing",
   "name": "merchant-marketing",
-  "version": "0.1.0+codex.20260923132700",
+  "version": "0.1.0+codex.20260925075058",
   "description": "商家营销内容助手：从公开链接或手工资料出发，制作、审核并导出内容。",
   "author": {
     "name": "Merchant Marketing Team",
@@ -25,7 +25,7 @@
   "interface": {
     "displayName": "Store Nova",
     "shortDescription": "从商品资料开始，制作内容、主图与视频脚本，审核后导出",
-    "longDescription": "通过原生对话完成公开链接或手工资料输入、内容生产、审核与导出，不要求先连接店铺。公开链接只是来源线索，商品事实仍需核验。身份、工作区权限、创意点、模型中转与安全检查由服务端校验，缺少真实配置或证据时明确阻断。当前不提供库存/订单同步和自动发布；草稿保持未批准、未发布。",
+    "longDescription": "通过原生对话完成公开链接或手工资料输入、内容生产、审核与导出，不要求先连接店铺。公开链接只是来源线索，商品事实仍需核验。身份、工作区权限、创意点、模型中转与成本证据由服务端校验，缺少真实配置或证据时明确阻断。当前不提供库存/订单同步和自动发布；草稿保持未批准、未发布。",
     "developerName": "Merchant Marketing Team",
     "category": "Productivity",
     "websiteURL": "https://yxsona.com/",
