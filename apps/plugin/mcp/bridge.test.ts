@@ -52,6 +52,7 @@ process.env.MERCHANT_ARTIFACT_DIR = TEST_ARTIFACT_DIR
 afterAll(async () => { await rm(TEST_ARTIFACT_DIR, { recursive: true, force: true }) })
 
 const MERCHANT_HIDDEN_METHODS = new Set([
+  'workspace.bootstrap',
   'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm',
   'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'sync.retry_failed',
   'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
@@ -1032,7 +1033,7 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
       const listedNames = (await nextLine(child.stdout)).result.tools.map((tool: { name: string }) => tool.name)
       for (const name of MERCHANT_HIDDEN_METHODS) expect(listedNames).not.toContain(name)
-      for (const name of ['catalog.import', 'content.draft.generate', 'content.export', 'content.review.decide', 'workspace.health', 'workspace.bootstrap', 'subscription.orders.list', 'commercial.order.create']) expect(listedNames).toContain(name)
+      for (const name of ['catalog.import', 'content.draft.generate', 'content.export', 'content.review.decide', 'workspace.health', 'subscription.orders.list', 'commercial.order.create']) expect(listedNames).toContain(name)
       for (const [index, name] of [...MERCHANT_HIDDEN_METHODS].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name, arguments: {} } })}\n`)
         expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
@@ -1164,7 +1165,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageCandidateUi.result.contents[0].text).not.toContain('票据')
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`)
       const listed = await nextLine(child.stdout)
-      expect(listed.result.tools).toHaveLength(131)
+      expect(listed.result.tools.some((tool: { name: string }) => tool.name === 'workspace.bootstrap')).toBe(false)
       const catalogImageGet = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.get')
       expect(catalogImageGet).toMatchObject({ name: 'catalog.image.get', annotations: { readOnlyHint: true } })
       expect(catalogImageGet).not.toHaveProperty('_meta')
@@ -2171,6 +2172,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(methods[0]).toBe('asset.upload')
       expect(methods).toContain('asset.list')
       expect(methods).not.toContain('automation.scan')
+      expect(response.result.structuredContent).toBeTruthy()
     } finally {
       child.kill()
       await close(server)
@@ -2963,44 +2965,6 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('keeps the bootstrapped workspace for the next first-run call in the same process', async () => {
-    const codexHome = await mkdtemp(join(tmpdir(), 'merchant-codex-home-'))
-    const requests: Array<{ method?: string; workspace?: string; header?: string }> = []
-    const server = createServer(async (req, res) => {
-      const chunks: Buffer[] = []
-      for await (const chunk of req) chunks.push(Buffer.from(chunk))
-      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-      requests.push({ method: body.method, workspace: body.params?.workspace_id, header: req.headers['x-workspace-id'] as string | undefined })
-      res.setHeader('content-type', 'application/json')
-      const result = body.method === 'workspace.bootstrap' ? { workspaceId: 'ws_bootstrapped_1', status: 'active' } : { workspace: { id: 'ws_bootstrapped_1', status: 'ready' } }
-      res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: body.id, result }, warnings: [], next_actions: [], error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...TEST_PROCESS_ENV, CODEX_HOME: codexHome, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: '${MERCHANT_WORKSPACE_ID}', MERCHANT_ALLOW_FIXTURE_FALLBACK: '${MERCHANT_ALLOW_FIXTURE_FALLBACK}' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.bootstrap', arguments: { display_name: '首次工作区' } } })}\n`)
-      expect((await nextLine(child.stdout)).result.structuredContent).toMatchObject({ workspaceId: 'ws_bootstrapped_1' })
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result.structuredContent).toEqual({
-        conversation_state: { stage: 'provide_materials', status: 'needs_input', connected_store_count: 0 },
-        completed_summary: '当前还没有可用店铺。',
-        question: '你想制作什么内容？可以提供公开商品链接、商品资料或图片。',
-        expected_input: { kind: 'product_materials', accepts: ['natural_language', 'public_url', 'attachment'] },
-      })
-      expect(requests).toEqual([
-        { method: 'workspace.bootstrap', workspace: undefined, header: undefined },
-        { method: 'workspace.health', workspace: 'ws_bootstrapped_1', header: 'ws_bootstrapped_1' },
-      ])
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
   it('uses the local desktop bridge with a cloud bearer and fixed workspace scope, without ChatGPT OAuth', async () => {
     const requests: Array<{ path?: string; authorization?: string; workspace?: string; bodyWorkspace?: string }> = []
     const server = createServer(async (req, res) => {
@@ -3028,22 +2992,12 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('automatically bootstraps before the merchant-facing start entry when no workspace is bound', async () => {
+  it.each(['onboarding.status', 'merchant.start'])('%s fails closed without an admin-assigned workspace and sends no HTTP request', async method => {
     const codexHome = await mkdtemp(join(tmpdir(), 'merchant-codex-home-'))
     await mkdir(join(codexHome, 'merchant-marketing'), { recursive: true })
     await writeFile(join(codexHome, 'merchant-marketing', 'workspace-binding.json'), JSON.stringify({ schema_version: '2', workspace_id: 'ws_wrong_environment', scope: { api_origin: 'https://old.example.test', actor_id: '', token_sha256: '', environment: 'development' } }))
-    const requests: string[] = []
-    const server = createServer(async (req, res) => {
-      const chunks: Buffer[] = []
-      for await (const chunk of req) chunks.push(Buffer.from(chunk))
-      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-      requests.push(body.method)
-      res.setHeader('content-type', 'application/json')
-      const result = body.method === 'workspace.bootstrap'
-        ? { workspaceId: 'ws_auto_start_1', status: 'active' }
-        : { greeting: '欢迎使用Store Nova。', workspace: { id: 'ws_auto_start_1', status: 'ready' } }
-      res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: body.id, result }, warnings: [], next_actions: [], error: null }))
-    })
+    let requests = 0
+    const server = createServer((_req, res) => { requests += 1; res.writeHead(200).end('{}') })
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
@@ -3051,16 +3005,13 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result.structuredContent).toEqual({
-        conversation_state: { stage: 'provide_materials', status: 'needs_input' },
-        completed_summary: '欢迎使用Store Nova。',
-        question: '你想制作什么内容？可以提供公开商品链接、商品资料或图片。',
-        expected_input: { kind: 'product_materials', accepts: ['natural_language', 'public_url', 'attachment'] },
-      })
-      expect(requests).toEqual(['workspace.bootstrap', 'merchant.start'])
-      const savedBinding = JSON.parse(await readFile(join(codexHome, 'merchant-marketing', 'workspace-binding.json'), 'utf8'))
-      expect(savedBinding).toMatchObject({ schema_version: '2', workspace_id: 'ws_auto_start_1', scope: { api_origin: `http://127.0.0.1:${address.port}`, actor_id: '', token_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: method, arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_CONFIGURATION_REQUIRED', recovery: { state: 'workspace_binding_required', user_action_required: true, next_action: { target: 'local_plugin_login', workspace_id_format: 'ws_...' } } } })
+      expect(response.result.content[0].text).toContain('联系平台管理员获取已分配的 ws_... 工作区 ID')
+      expect(response.result.content[0].text).toContain('scripts/login-local-macos.mjs --base-url https://yxsona.com')
+      expect(response.result.content[0].text).toContain('商家不能自行创建工作区')
+      expect(requests).toBe(0)
     } finally {
       child.kill()
       await close(server)

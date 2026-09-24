@@ -276,7 +276,6 @@ export const HTTP_ROUTE_COVERAGE_EXEMPTIONS: readonly HttpRouteCoverageExemption
   // loopback origin, and gets its bearer from the API environment. The dispatch
   // guard is `req.method === 'GET'`.
   { pathTemplate: '/v1/ops/local-session', methods: ['GET'], reason: 'local-only ops console bootstrap; 404 outside the local Compose profile' },
-  { pathTemplate: '/.well-known/openai-apps-challenge', methods: ['GET'], reason: 'public OpenAI app challenge token; not an operation' },
 ]
 
 /**
