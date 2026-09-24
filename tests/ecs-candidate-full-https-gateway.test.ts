@@ -16,9 +16,10 @@ const gatewayImageId = `sha256:${'d'.repeat(64)}`
 const port = '18443'
 const certDirName = 'certs'
 const services = ['api-replica', 'ui', 'ops-ui', 'payment-gateway'] as const
-const imageRefs = Object.fromEntries(services.map((name, index) => [name, `registry.test/${name}@sha256:${String(index + 1).repeat(64)}`]))
+type Service = typeof services[number]
+const imageRefs = Object.fromEntries(services.map((name, index) => [name, `registry.test/${name}@sha256:${String(index + 1).repeat(64)}`])) as Record<Service, string>
 const imageIds = Object.fromEntries(services.map((name, index) => [imageRefs[name], `sha256:${String(index + 5).repeat(64)}`]))
-const serviceIds = Object.fromEntries(services.map((name, index) => [name, String(index + 1).repeat(64)]))
+const serviceIds = Object.fromEntries(services.map((name, index) => [name, String(index + 1).repeat(64)])) as Record<Service, string>
 
 function gatewayContainer(name: string, certDir: string) {
   return {
@@ -35,10 +36,12 @@ function gatewayContainer(name: string, certDir: string) {
   }
 }
 
-function upstreamContainer(service: typeof services[number]) {
+function upstreamContainer(service: Service) {
   const imageRef = imageRefs[service]
+  const imageId = imageIds[imageRef]
+  if (!imageId) throw new Error(`missing image ID for ${service}`)
   return {
-    Id: serviceIds[service], Image: imageIds[imageRef], Name: `/candidate-${service}-1`, State: { Running: true },
+    Id: serviceIds[service], Image: imageId, Name: `/candidate-${service}-1`, State: { Running: true },
     Config: { Labels: { 'com.docker.compose.project': project, 'com.docker.compose.service': service } },
     HostConfig: { PortBindings: {} },
     NetworkSettings: { Networks: { [network]: { NetworkID: networkId, Aliases: [service] } } },
