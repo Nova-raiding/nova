@@ -1,0 +1,11 @@
+# Demo-first install: uploaded assets are explicitly marked unscanned and
+# remain scoped to their workspace. This overlay does not start worker-scan.
+services:
+  api:
+    environment:
+      ASSET_SCANNER_MODE: deferred
+      DEMO_UNSCANNED_ASSETS_ENABLED: "true"
+  api-replica:
+    environment:
+      ASSET_SCANNER_MODE: deferred
+      DEMO_UNSCANNED_ASSETS_ENABLED: "true"
