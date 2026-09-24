@@ -7,6 +7,7 @@ export const EVIDENCE_KINDS = ['capability','capacity','modelRelay','payment','r
 type Kind = typeof EVIDENCE_KINDS[number]
 type Bundle = Record<string, unknown> & { artifacts?: Array<{kind?: string; ref?: string}> }
 const REF = /^artifact:\/\/production\/([A-Za-z0-9._/-]+)#([a-f0-9]{64})$/u
+const preproductionArtifactPathPart = /(?:^|[._-])(?:preproduction|preprod)(?:$|[._/-])/iu
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u
 const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]` : value && typeof value === 'object' ? `{${Object.entries(value as Record<string,unknown>).filter(([key]) => key !== 'signature_base64').sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0).map(([key,item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}` : JSON.stringify(value)
 const sha256 = (value: Buffer) => createHash('sha256').update(value).digest('hex')
@@ -46,7 +47,12 @@ export function validateReleaseEvidenceBundle(document: unknown, options: { rele
     if (seenKinds.has(kind)) errors.push(`artifact kind is duplicated: ${kind}`); seenKinds.add(kind)
     if (!match) { errors.push(`${kind} ref must be an immutable production artifact`); continue }
     if (seenRefs.has(entry.ref!)) errors.push(`artifact ref is duplicated: ${kind}`); seenRefs.add(entry.ref!)
-    const relative = match[1]!; if (relative.split('/').some(part => !part || part === '.' || part === '..')) { errors.push(`${kind} ref contains an invalid path`); continue }
+    const relative = match[1]!
+    if (kind === 'codexAppHost' && relative.split('/').some(part => preproductionArtifactPathPart.test(part))) {
+      errors.push('codexAppHost ref must not reference a preproduction artifact')
+      continue
+    }
+    if (relative.split('/').some(part => !part || part === '.' || part === '..')) { errors.push(`${kind} ref contains an invalid path`); continue }
     try {
       const candidate = resolve(root, relative), stat = lstatSync(candidate), real = realpathSync(candidate)
       if (!candidate.startsWith(`${root}${sep}`) || !real.startsWith(`${root}${sep}`) || stat.isSymbolicLink() || !stat.isFile()) throw new Error('unsafe')
@@ -54,6 +60,13 @@ export function validateReleaseEvidenceBundle(document: unknown, options: { rele
       if (kind === 'capacity') {
         try { validateCapacityArtifact(JSON.parse(bytes.toString('utf8')) as Record<string, unknown>, options.releaseId, errors, new Date(now)) }
         catch { errors.push('capacity artifact is invalid JSON') }
+      }
+      if (kind === 'codexAppHost') {
+        try {
+          const evidence = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>
+          if (evidence.environment !== 'production') errors.push('codexAppHost environment must be production')
+          if (Object.hasOwn(evidence, 'candidate_route')) errors.push('codexAppHost candidate_route is forbidden in production evidence')
+        } catch { errors.push('codexAppHost artifact is invalid JSON') }
       }
       const supplied = options.evidenceFiles[kind]; if (!supplied || lstatSync(supplied).isSymbolicLink() || realpathSync(supplied) !== real) errors.push(`${kind} must reference the exact evidence file passed to deployment`)
     } catch { errors.push(`${kind} artifact escapes the root, is a symlink, or cannot be read`) }

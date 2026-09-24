@@ -38,6 +38,7 @@ const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'rest
 type EvidenceField = typeof evidenceFields[number]
 const signedEvidenceFields = new Set<EvidenceField>(['capability', 'payment', 'restore', 'objectStorage', 'codexAppHost'])
 const immutableProductionArtifact = /^artifact:\/\/production\/([A-Za-z0-9._/-]+)#([a-f0-9]{64})$/u
+const preproductionArtifactPathPart = /(?:^|[._-])(?:preproduction|preprod)(?:$|[._/-])/iu
 const compare = ([left]: [string, unknown], [right]: [string, unknown]) => left < right ? -1 : left > right ? 1 : 0
 const canonical = (value: unknown): string => Array.isArray(value)
   ? `[${value.map(canonical).join(',')}]`
@@ -82,6 +83,10 @@ function validateEvidenceBindings(value: ReleaseManifest, options: EvidenceBindi
     const match = immutableProductionArtifact.exec(reference)
     if (!match) continue
     const relative = match[1]!
+    if (field === 'codexAppHost' && relative.split('/').some(part => preproductionArtifactPathPart.test(part))) {
+      errors.push('productionEvidence.codexAppHost must not reference a preproduction artifact')
+      continue
+    }
     if (relative.split('/').some(part => !part || part === '.' || part === '..')) { errors.push(`productionEvidence.${field} contains an invalid path`); continue }
     try {
       const candidate = resolve(root, relative)
@@ -99,6 +104,10 @@ function validateEvidenceBindings(value: ReleaseManifest, options: EvidenceBindi
         if (!suppliedStat.isFile() || suppliedStat.isSymbolicLink() || realpathSync(supplied) !== path) errors.push(`productionEvidence.${field} must reference the exact evidence file passed to deployment`)
       }
       const document = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>
+      if (field === 'codexAppHost') {
+        if (document.environment !== 'production') errors.push('productionEvidence.codexAppHost environment must be production')
+        if (Object.hasOwn(document, 'candidate_route')) errors.push('productionEvidence.codexAppHost candidate_route is forbidden in production evidence')
+      }
       if (field === 'capacity') validateCapacityArtifact(document, value.releaseId!, errors, new Date(now))
       if (field === 'capability' && document.schema_version === 'manual-operations-evidence/1') {
         errors.push(...validateManualOperationsEvidence(document, value.releaseId, new Date(now)).map(error => `productionEvidence.capability ${error}`))

@@ -49,6 +49,13 @@ const sha256 = /^[a-f0-9]{64}$/u
 const imageSetDigest = /^sha256:[a-f0-9]{64}$/u
 const gitSha = /^[a-f0-9]{40}$/u
 const strictUtcInstant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u
+const preproductionPathPart = /(?:^|[._-])(?:preproduction|preprod)(?:$|[._/-])/iu
+
+function isPreproductionArtifact(reference: string): boolean {
+  if (!immutableArtifact.test(reference)) return false
+  const relative = reference.slice('artifact://production/'.length).split('#', 1)[0]!
+  return relative.split('/').some(part => preproductionPathPart.test(part))
+}
 
 function canonicalPublicOrigin(value: unknown): string | undefined {
   if (!nonEmpty(value)) return undefined
@@ -94,7 +101,7 @@ function validateReleaseProbe(reference: string | undefined, root: string, relea
   return []
 }
 
-export function validateCodexAppHostEvidence(document: unknown, options: { expectedReleaseId?: string; expectedManifestSha256?: string; expectedMcpBaseUrl?: string; expectedBridgeSha256?: string; expectedGitSha?: string; expectedImageSetDigest?: string; artifactRoot?: string; requireFresh?: boolean; now?: Date } = {}): string[] {
+export function validateCodexAppHostEvidence(document: unknown, options: { expectedReleaseId?: string; expectedManifestSha256?: string; expectedMcpBaseUrl?: string; expectedBridgeSha256?: string; expectedGitSha?: string; expectedImageSetDigest?: string; artifactRoot?: string; requireFresh?: boolean; requireProduction?: boolean; now?: Date } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as HostEvidence
@@ -104,6 +111,10 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
   if (!sha256.test(value.manifest_sha256 ?? '')) errors.push('manifest_sha256 must be a SHA-256 digest')
   if (options.expectedManifestSha256 && value.manifest_sha256 !== options.expectedManifestSha256) errors.push(`manifest_sha256 must match ${options.expectedManifestSha256}`)
   if (value.environment !== 'preproduction' && value.environment !== 'production') errors.push('environment must be preproduction or production')
+  if (options.requireProduction) {
+    if (value.environment !== 'production') errors.push('environment must be production for production release evidence')
+    if (Object.hasOwn(value, 'candidate_route')) errors.push('candidate_route is forbidden in production host evidence')
+  }
   if (!nonEmpty(value.generated_at) || !strictUtcInstant.test(value.generated_at) || Number.isNaN(Date.parse(value.generated_at))) errors.push('generated_at must be a strict UTC ISO timestamp')
   else if (options.requireFresh) {
     const generatedAt = Date.parse(value.generated_at); const now = (options.now ?? new Date()).getTime()
@@ -152,6 +163,7 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
     seen.add(scenario.id)
     if (scenario.state !== 'passed') errors.push(`${scenario.id}.state must be passed`)
     if (!nonEmpty(scenario.evidence_ref) || !immutableArtifact.test(scenario.evidence_ref)) errors.push(`${scenario.id}.evidence_ref must be an immutable production artifact`)
+    else if (options.requireProduction && isPreproductionArtifact(scenario.evidence_ref)) errors.push(`${scenario.id}.evidence_ref must not reference a preproduction artifact`)
     else if (options.artifactRoot) errors.push(...validateArtifact(scenario.evidence_ref, options.artifactRoot, `${scenario.id}.evidence_ref`))
     if (nonEmpty(scenario.evidence_ref)) {
       if (usedArtifacts.has(scenario.evidence_ref)) errors.push(`${scenario.id}.evidence_ref must not reuse the release probe or another scenario artifact`)
@@ -172,6 +184,7 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
         if (!['reconciled_succeeded', 'reconciled_failed', 'outcome_unknown'].includes(recovery.after_state ?? '')) errors.push('error_recovery.after_state is invalid')
         if (recovery.reconciliation_required !== true) errors.push('error_recovery.reconciliation_required must be true')
         if (!immutableArtifact.test(recovery.outcome_evidence_ref ?? '')) errors.push('error_recovery.outcome_evidence_ref must be an immutable production artifact')
+        else if (options.requireProduction && isPreproductionArtifact(recovery.outcome_evidence_ref!)) errors.push('error_recovery.outcome_evidence_ref must not reference a preproduction artifact')
         else if (options.artifactRoot) errors.push(...validateArtifact(recovery.outcome_evidence_ref, options.artifactRoot, 'error_recovery.outcome_evidence_ref'))
         if (recovery.outcome_evidence_ref === scenario.evidence_ref) errors.push('error_recovery.outcome_evidence_ref must be a separate reconciliation artifact')
         if (recovery.outcome_evidence_ref === value.candidate_route?.release_probe_evidence_ref) errors.push('error_recovery.outcome_evidence_ref must not reuse the release probe')
@@ -207,7 +220,7 @@ function main() {
   if (args.includes('--require-artifacts') && (!expectedReleaseId || !expectedMcpBaseUrl || !expectedBridgeSha256 || !expectedGitSha || !expectedImageSetDigest || !expectedManifestSha256 || !sha256.test(expectedManifestSha256))) { console.error('--release-id, --expected-mcp-base-url, --expected-bridge-sha256, --expected-git-sha, --expected-manifest-sha256 and --expected-image-set-digest are required for host evidence validation'); process.exit(2) }
   let document: unknown
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read Codex App host evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
-  const errors = validateCodexAppHostEvidence(document, { expectedReleaseId, expectedManifestSha256, expectedMcpBaseUrl, expectedBridgeSha256, expectedGitSha, expectedImageSetDigest, artifactRoot, requireFresh: args.includes('--require-artifacts') })
+  const errors = validateCodexAppHostEvidence(document, { expectedReleaseId, expectedManifestSha256, expectedMcpBaseUrl, expectedBridgeSha256, expectedGitSha, expectedImageSetDigest, artifactRoot, requireFresh: args.includes('--require-artifacts'), requireProduction: args.includes('--require-production') })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
   console.log(`Codex App host evidence consistency gate passed: ${path} (real ChatGPT/Codex host provenance still requires operator review)`)
 }

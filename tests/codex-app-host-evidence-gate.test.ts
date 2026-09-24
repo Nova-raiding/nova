@@ -113,6 +113,24 @@ describe('Codex App host evidence gate', () => {
     expect(validateCodexAppHostEvidence(evidence, { expectedReleaseId: 'release-1', expectedMcpBaseUrl: 'https://merchant.example.com', expectedBridgeSha256: 'b'.repeat(64) })).toEqual([])
   })
 
+  it('production release validation accepts production evidence and rejects preproduction routes and artifacts', () => {
+    const production = { ...structuredClone(evidence), environment: 'production' }
+    expect(validateCodexAppHostEvidence(production, { requireProduction: true })).toEqual([])
+
+    expect(validateCodexAppHostEvidence(evidence, { requireProduction: true })).toContain('environment must be production for production release evidence')
+
+    const routed = { ...production, candidate_route: {} }
+    expect(validateCodexAppHostEvidence(routed, { requireProduction: true })).toContain('candidate_route is forbidden in production host evidence')
+
+    const preproductionArtifact = structuredClone(production)
+    preproductionArtifact.scenarios[0]!.evidence_ref = `artifact://production/preproduction/${preproductionArtifact.scenarios[0]!.id}.json#${'a'.repeat(64)}`
+    expect(validateCodexAppHostEvidence(preproductionArtifact, { requireProduction: true })).toContain('plugin_discovery.evidence_ref must not reference a preproduction artifact')
+
+    const preproductionRecovery = structuredClone(production)
+    preproductionRecovery.scenarios.find(({ id }) => id === 'error_recovery')!.error_recovery!.outcome_evidence_ref = `artifact://production/preprod/error-outcome.json#${'c'.repeat(64)}`
+    expect(validateCodexAppHostEvidence(preproductionRecovery, { requireProduction: true })).toContain('error_recovery.outcome_evidence_ref must not reference a preproduction artifact')
+  })
+
   it('requires and matches the expected release manifest SHA in host evidence', () => {
     expect(validateCodexAppHostEvidence({ ...evidence, manifest_sha256: undefined }, { expectedManifestSha256: '9'.repeat(64) })).toContain('manifest_sha256 must be a SHA-256 digest')
     expect(validateCodexAppHostEvidence(evidence, { expectedManifestSha256: '8'.repeat(64) })).toContain(`manifest_sha256 must match ${'8'.repeat(64)}`)

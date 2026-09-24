@@ -10,6 +10,7 @@ export const EVIDENCE_KINDS = ['capability','capacity','modelRelay','payment','r
 const HEX = /^[a-f0-9]{64}$/u, IMAGE = /^sha256:[a-f0-9]{64}$/u, GIT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u, NONCE = /^[A-Za-z0-9_-]{22,128}$/u
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u
 const MAX_AGE_MS = 24 * 60 * 60_000
+const PREPRODUCTION_ARTIFACT_PART = /(?:^|[._-])(?:preproduction|preprod)(?:$|[._/-])/iu
 function assert(value, message) { if (!value) throw new Error(message) }
 function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`; if (value && typeof value === 'object') return `{${Object.entries(value).filter(([key]) => key !== 'signature_base64').sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0).map(([key,item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`; return JSON.stringify(value) }
 function readRegular(path, max = 4 * 1024 * 1024) { const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW); try { const st = fstatSync(fd); assert(st.isFile() && st.size > 0 && st.size <= max, 'unsafe evidence file'); return readFileSync(fd) } finally { closeSync(fd) } }
@@ -20,8 +21,13 @@ function artifact(path, root, kind, releaseId, now) {
   assert(!lstatSync(absolute).isSymbolicLink() && real.startsWith(`${rootReal}${sep}`), `${kind} evidence escapes artifact root or is a symlink`)
   const name = relative(rootReal, real)
   assert(name && !name.split(sep).some(part => !part || part === '.' || part === '..'), `${kind} evidence path is invalid`)
+  assert(kind !== 'codexAppHost' || !name.split(sep).some(part => PREPRODUCTION_ARTIFACT_PART.test(part)), 'codexAppHost evidence path must not reference a preproduction artifact')
   const bytes = readRegular(real), document = JSON.parse(bytes.toString('utf8'))
   assert((document.release_id ?? document.releaseId) === releaseId, `${kind} evidence release mismatch`)
+  if (kind === 'codexAppHost') {
+    assert(document.environment === 'production', 'codexAppHost evidence environment must be production')
+    assert(!Object.hasOwn(document, 'candidate_route'), 'codexAppHost evidence candidate_route is forbidden in production evidence')
+  }
   const timestamp = document.attested_at ?? document.generated_at ?? document.generatedAt ?? document.ended_at
   const instant = typeof timestamp === 'string' && UTC.test(timestamp) ? Date.parse(timestamp) : Number.NaN
   assert(Number.isFinite(instant) && instant <= now + 300_000 && now - instant <= MAX_AGE_MS, `${kind} evidence is stale or has an invalid timestamp`)

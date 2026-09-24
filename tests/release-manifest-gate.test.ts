@@ -72,6 +72,38 @@ describe('release manifest production gate', () => {
     }
   })
 
+  it('production manifest gate rejects preproduction ChatGPT host evidence, candidate routes and preproduction artifact refs', () => {
+    const fixture = boundManifestFixture()
+    const hostPath = fixture.evidenceFiles.codexAppHost
+    const host = JSON.parse(readFileSync(hostPath, 'utf8')) as Record<string, unknown>
+    delete host.signature_base64
+    host.environment = 'preproduction'
+    host.signature_base64 = signProductionEvidence(host, fixture.privateKeyPem)
+    const preproductionHost = JSON.stringify(host)
+    writeFileSync(hostPath, preproductionHost)
+    fixture.manifest.productionEvidence!.codexAppHost = `artifact://production/evidence/codexAppHost.json#${digest(preproductionHost)}`
+    expect(validateReleaseManifest(fixture.manifest, fixture.options)).toContain('productionEvidence.codexAppHost environment must be production')
+
+    host.environment = 'production'
+    host.candidate_route = { expected_git_sha: 'c'.repeat(40) }
+    delete host.signature_base64
+    host.signature_base64 = signProductionEvidence(host, fixture.privateKeyPem)
+    const routedHost = JSON.stringify(host)
+    writeFileSync(hostPath, routedHost)
+    fixture.manifest.productionEvidence!.codexAppHost = `artifact://production/evidence/codexAppHost.json#${digest(routedHost)}`
+    expect(validateReleaseManifest(fixture.manifest, fixture.options)).toContain('productionEvidence.codexAppHost candidate_route is forbidden in production evidence')
+
+    delete host.candidate_route
+    delete host.signature_base64
+    host.signature_base64 = signProductionEvidence(host, fixture.privateKeyPem)
+    const path = join(fixture.artifactRoot, 'evidence', 'preproduction-codexAppHost.json')
+    const pathHost = JSON.stringify(host)
+    writeFileSync(path, pathHost)
+    fixture.evidenceFiles.codexAppHost = path
+    fixture.manifest.productionEvidence!.codexAppHost = `artifact://production/evidence/preproduction-codexAppHost.json#${digest(pathHost)}`
+    expect(validateReleaseManifest(fixture.manifest, fixture.options)).toContain('productionEvidence.codexAppHost must not reference a preproduction artifact')
+  })
+
   it('rejects a staged identity with the wrong release, duplicate Git SHA, or invalid Git SHA', () => {
     const fixture = stagedManifestFixture()
     for (const lines of [
