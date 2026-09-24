@@ -73,6 +73,19 @@ describe("workspace RPC boundary", () => {
     expect(removeItem).not.toHaveBeenCalled();
   });
 
+  it("removes stale local bearer credentials when the password cookie bundle starts", () => {
+    const removeItem = vi.fn();
+
+    purgeLocalOpsCredentialsForManagedSession({ removeItem }, true);
+
+    expect(removeItem.mock.calls.map(([key]) => key)).toEqual([
+      "ops_connection_config_v1",
+      "ops_api_base",
+      "ops_actor_id",
+      "ops_api_token",
+    ]);
+  });
+
   it("atomically saves a local connection and reads the same tuple after refresh", async () => {
     const values = new Map<string, string>();
     const local = storage();
@@ -165,6 +178,31 @@ describe("workspace RPC boundary", () => {
         authorization: "Bearer token-rest",
       }),
     }));
+  });
+
+  it("never attaches a stale local bearer in the password cookie build", async () => {
+    const values = new Map<string, string>([
+      ["ops_api_base", "http://ops.test/"],
+      ["ops_actor_id", "stale-actor"],
+      ["ops_api_token", "stale-bearer"],
+      ["ops_password_session_active", "true"],
+      ["ops_workbench", "platform"],
+    ]);
+    const local = storage();
+    vi.spyOn(local, "getItem").mockImplementation((key) => values.get(key) ?? "");
+    vi.spyOn(local, "removeItem").mockImplementation((key) => { values.delete(key); });
+    vi.stubGlobal("localStorage", local);
+    vi.stubGlobal("sessionStorage", storage());
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: { jsonrpc: "2.0", id: "1", result: {} } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await rpcWithMeta("ops.session");
+
+    const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>;
+    const headers = calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers).not.toHaveProperty("authorization");
+    expect(headers).not.toHaveProperty("x-actor-id");
+    expect(calls[0]?.[1]?.credentials).toBe("include");
   });
 
   it("keeps the previous valid configuration when a replacement is invalid and can clear it", () => {

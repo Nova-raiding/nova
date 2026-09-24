@@ -177,9 +177,13 @@ const LOCAL_CREDENTIAL_KEYS = [
   "ops_api_token",
 ] as const;
 
+function cookieManagedOpsSession(): boolean {
+  return managedOpsSession || passwordOpsSession || passwordSessionActive();
+}
+
 export function purgeLocalOpsCredentialsForManagedSession(
   storage: Pick<Storage, "removeItem">,
-  managed = managedOpsSession,
+  managed = managedOpsSession || passwordOpsSession,
 ): void {
   if (!managed) return;
   for (const key of LOCAL_CREDENTIAL_KEYS) storage.removeItem(key);
@@ -305,12 +309,12 @@ function legacyConnectionConfig(): OpsConnectionConfig {
       viteEnv.VITE_API_BASE,
     ),
     workspaceId: storage.getItem("ops_workspace_id")?.trim() || (localOpsSessionEnabled ? "ws_demo" : ""),
-    actorId: managedOpsSession ? "" : localStorage.getItem("ops_actor_id")?.trim() ?? "",
+    actorId: cookieManagedOpsSession() ? "" : localStorage.getItem("ops_actor_id")?.trim() ?? "",
     // Local Compose sessions exchange the server-held token for an HttpOnly
     // cookie. Never reuse a stale Bearer token from an earlier workspace
     // session, otherwise it wins over the cookie and can force platform
     // requests through the workspace-only authorization boundary.
-    token: managedOpsSession || localOpsSessionEnabled ? "" : localStorage.getItem("ops_api_token")?.trim() ?? "",
+    token: cookieManagedOpsSession() || localOpsSessionEnabled ? "" : localStorage.getItem("ops_api_token")?.trim() ?? "",
     workbench: normalizedWorkbench(storage.getItem(OPS_WORKBENCH_KEY)),
   };
 }
@@ -599,7 +603,7 @@ async function rpcAtWorkspace<T>(
   // API treats that combination as a workbench mismatch and rejects otherwise
   // valid platform capabilities (for example platform.model.status).
   if (workspaceId && workbench === "workspace") headers["x-workspace-id"] = workspaceId;
-  if (!managedOpsSession) {
+  if (!cookieManagedOpsSession() && !localOpsSessionEnabled) {
     if (connection.actorId) headers["x-actor-id"] = connection.actorId;
     if (connection.token) headers.authorization = `Bearer ${connection.token}`;
   }
@@ -757,7 +761,7 @@ export async function opsRestGetWithMeta<T>(
   // the previous workspace route. The API treats a tenant header on a
   // platform workbench as a scope mismatch; keep REST consistent with RPC.
   if (connection.workspaceId && connection.workbench === "workspace") headers["x-workspace-id"] = connection.workspaceId;
-  if (!managedOpsSession) {
+  if (!cookieManagedOpsSession() && !localOpsSessionEnabled) {
     if (connection.actorId) headers["x-actor-id"] = connection.actorId;
     if (connection.token) headers.authorization = `Bearer ${connection.token}`;
   }
@@ -841,7 +845,7 @@ export async function opsRestPost<T>(path: string, body: Record<string, unknown>
   // Keep platform REST mutations aggregate-scoped as well. A workspace id is
   // only valid when the active workbench is workspace-scoped.
   if (connection.workspaceId && connection.workbench === "workspace") headers["x-workspace-id"] = connection.workspaceId;
-  if (!managedOpsSession) { if (connection.actorId) headers["x-actor-id"] = connection.actorId; if (connection.token) headers.authorization = `Bearer ${connection.token}`; }
+  if (!cookieManagedOpsSession() && !localOpsSessionEnabled) { if (connection.actorId) headers["x-actor-id"] = connection.actorId; if (connection.token) headers.authorization = `Bearer ${connection.token}`; }
   const controller = new AbortController(); const requestEpoch = opsRequestEpoch; activeOpsRequests.add(controller);
   const abortFromCaller = () => controller.abort(options.signal?.reason);
   if (options.signal?.aborted) abortFromCaller(); else options.signal?.addEventListener("abort", abortFromCaller, { once: true });
