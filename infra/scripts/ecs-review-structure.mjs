@@ -5,12 +5,13 @@ export const STRUCTURE_REVIEW_PATHS = Object.freeze([
   'infra/docker/api.Dockerfile', 'infra/docker/worker.Dockerfile', 'infra/docker/pilot-gateway-https.Dockerfile', 'infra/docker/ops-console.Dockerfile', 'infra/docker/ui.Dockerfile',
   'infra/nginx/pilot-gateway-https.conf', 'infra/nginx/merchant-studio.conf', 'infra/nginx/ops-console.conf', 'infra/nginx/pilot-gateway.conf',
   'apps/ops-console/src/styles.css', 'demo/merchant-studio/src/capability.css', 'demo/merchant-studio/src/styles.css',
+  'apps/ops-console/README.md',
   'tests/ecs-pilot-api-replica-parity.test.ts', 'tests/object-storage-evidence-gate.test.ts', 'tests/model-relay-contract.test.ts', 'tests/production-config-gate.test.ts', 'tests/rendered-production-config-gate.test.ts', 'tests/production-evidence-gate.test.ts', 'tests/release-manifest-gate.test.ts', 'tests/release-manifest.test.ts', 'tests/local-compose-ops-ui.test.ts', 'tests/codex-app-host-evidence-gate.test.ts', 'tests/operations-scripts.test.ts', 'tests/ecs-compose-published-ports.test.ts', 'demo/merchant-studio/api.test.ts', 'demo/merchant-studio/notification-center.test.ts', 'demo/merchant-studio/image-generation-desktop.spec.js',
   'tests/object-storage-evidence-gate.ts', 'packages/contracts/src/ops/feature-flags.ts', 'tests/production-evidence-gate.ts', 'tests/release-manifest-gate.ts', 'tests/test-suite-isolation.ts', '.github/workflows/ci.yml', 'AGENTS.md', 'tests/codex-app-host-evidence-gate.ts', 'demo/merchant-studio/README.md', 'docs/chatgpt-host-canary-runbook.md',
 ])
 
 export const PROTECTED_OPS_PATHS = Object.freeze([
-  '.env.example', 'release-metadata.json',
+  '.env.example', 'apps/ops-console/.env.example', 'release-metadata.json',
   'infra/local/docker-compose.yml', 'infra/local/docker-compose.ecs-pilot.yml', 'infra/local/docker-compose.ecs-production-api-private.yml', 'infra/local/docker-compose.ecs-production-migration.yml', 'infra/local/docker-compose.ecs-pilot-release.yml', 'infra/local/ecs-production-compose.layers',
   'infra/scripts/render-ecs-production-compose.sh', 'infra/scripts/validate-ecs-production-compose.mjs', 'infra/scripts/validate-production-config.sh', 'infra/scripts/validate-production-config-yaml.rb', 'infra/scripts/rotate-alipay-secrets.sh',
   'apps/api/src/aliyun-ecs-role-credentials.ts',

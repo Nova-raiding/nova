@@ -1,14 +1,24 @@
 import { describe, expect, it } from 'vitest'
+import { PROTECTED_OPS_PATHS, STRUCTURE_REVIEW_PATHS } from '../infra/scripts/ecs-review-structure.mjs'
 import { isAllowlistedReviewSource } from '../infra/scripts/ecs-review-source-policy.mjs'
 
 describe('ECS source-only remote review policy', () => {
   it('allows application and library source files only', () => {
     for (const path of [
       'apps/api/src/server.ts', 'apps/ops-console/src/App.tsx',
+      'apps/ops-console/vite.config.ts',
       'demo/merchant-studio/src/App.tsx', 'packages/ai/src/relay-usage.ts',
       'packages/persistence/src/migrations/245_local_plugin_authorized_timestamp.sql',
       'scripts/model-relay-recovery-evidence.ts',
     ]) expect(isAllowlistedReviewSource(path), path).toBe(true)
+  })
+
+  it('classifies root Ops release inputs without treating templates or docs as executable source', () => {
+    expect(PROTECTED_OPS_PATHS).toContain('apps/ops-console/.env.example')
+    expect(STRUCTURE_REVIEW_PATHS).toContain('apps/ops-console/README.md')
+    expect(isAllowlistedReviewSource('apps/ops-console/vite.config.ts')).toBe(true)
+    expect(isAllowlistedReviewSource('apps/ops-console/.env.example')).toBe(false)
+    expect(isAllowlistedReviewSource('apps/ops-console/README.md')).toBe(false)
   })
 
   it('refuses production Compose, environment, secrets, evidence, and non-source paths', () => {
