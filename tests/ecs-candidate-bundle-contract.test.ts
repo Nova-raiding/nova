@@ -172,6 +172,8 @@ describe('ECS candidate bundle contract', () => {
       'tests/ecs-candidate-full-https-gateway.test.ts',
       'infra/scripts/build-ecs-release-images.sh',
       'infra/scripts/deploy-preflight-ecs.sh',
+      'infra/scripts/check-mcp-integration-production.mjs',
+      'tests/mcp-integration-production-script.test.ts',
       'infra/scripts/deploy-preflight.sh',
       'apps/plugin/scripts/upgrade-installed-plugin.mjs',
       'apps/plugin/scripts/upgrade-installed-plugin.test.ts',
