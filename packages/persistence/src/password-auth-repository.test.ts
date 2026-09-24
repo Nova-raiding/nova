@@ -1,8 +1,21 @@
 import { createHash } from 'node:crypto'
+import argon2 from 'argon2'
 import { describe, expect, it } from 'vitest'
 import { MemoryPasswordAuthRepository } from './password-auth-repository.js'
 
 describe('password authentication', () => {
+  it('bootstraps the first platform administrator once and repairs an existing matching account', async () => {
+    const hash = await argon2.hash('BootstrapPass123', { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 })
+    const auth = new MemoryPasswordAuthRepository()
+    await auth.ensurePlatformAccount({ login: 'first@example.com', passwordHash: hash })
+    const repaired = await auth.bootstrapFirstPlatformAdmin({ login: 'first@example.com', passwordHash: hash })
+    expect(repaired.status).toBe('repaired')
+    expect(await auth.bootstrapFirstPlatformAdmin({ login: 'first@example.com', passwordHash: hash })).toEqual({ identityId: repaired.identityId, status: 'existing' })
+    await expect(auth.bootstrapFirstPlatformAdmin({ login: 'other@example.com', passwordHash: hash })).rejects.toThrow('PLATFORM_ADMIN_BOOTSTRAP_CONFLICT')
+    const otherHash = await argon2.hash('AnotherBootstrap123', { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 })
+    await expect(auth.bootstrapFirstPlatformAdmin({ login: 'first@example.com', passwordHash: otherHash })).rejects.toThrow('PLATFORM_ADMIN_BOOTSTRAP_CONFLICT')
+    await expect(new MemoryPasswordAuthRepository().bootstrapFirstPlatformAdmin({ login: 'broken@example.com', passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$invalid$invalid' })).rejects.toThrow('PLATFORM_ACCOUNT_PASSWORD_HASH_INVALID')
+  })
   it('requires eight characters with letters and numbers', async () => {
     const auth = new MemoryPasswordAuthRepository()
     await expect(auth.register({ login: 'short@example.com', password: 'test123', enterpriseName: '企业', contactName: '管理员', termsAgreed: true })).rejects.toMatchObject({ code: 'AUTH_PASSWORD_POLICY_INVALID' })

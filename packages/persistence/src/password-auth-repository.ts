@@ -9,6 +9,15 @@ const normalizeLogin = (value: string) => value.trim().toLowerCase()
 const validatePassword = (password: string) => { if (typeof password !== 'string' || password.length < 8 || password.length > 256 || !/[A-Za-z]/u.test(password) || !/[0-9]/u.test(password)) throw new Error('PASSWORD_POLICY_INVALID') }
 const hashPassword = async (password: string) => { validatePassword(password); return argon2.hash(password, { type: argon2.argon2id, memoryCost: 19_456, timeCost: 2, parallelism: 1 }) }
 const verifyPassword = async (hash: string, password: string) => { if (!hash || typeof password !== 'string' || password.length > 256) return false; try { return await argon2.verify(hash, password) } catch { return false } }
+const assertPlatformBootstrapHash = async (hash: string) => {
+  const invalid = () => new Error('PLATFORM_ACCOUNT_PASSWORD_HASH_INVALID')
+  if (typeof hash !== 'string' || hash.length > 512) throw invalid()
+  const match = /^\$argon2id\$v=19\$m=(\d+),p=(\d+),t=(\d+)\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/u.exec(hash)
+  if (!match) throw invalid()
+  const [, memory, parallelism, time, salt, digest] = match
+  if (Number(memory) < 8192 || Number(memory) > 1048576 || Number(time) < 1 || Number(time) > 10 || Number(parallelism) < 1 || Number(parallelism) > 16 || salt!.length < 22 || digest!.length < 22) throw invalid()
+  try { await argon2.verify(hash, randomBytes(32).toString('base64url')) } catch { throw invalid() }
+}
 
 export type PasswordAccountType = 'merchant' | 'platform'
 export type PasswordAccountStatus = 'merchant_pending' | 'active' | 'suspended' | 'revoked' | 'rejected'
@@ -72,6 +81,7 @@ export interface PasswordAuthRepository {
   requestPasswordReset(login: string): Promise<{ accepted: true; token?: string }>
   confirmPasswordReset(token: string, password: string): Promise<void>
   ensurePlatformAccount(input: { login: string; passwordHash: string; roles?: string[] }): Promise<void>
+  bootstrapFirstPlatformAdmin(input: { login: string; passwordHash: string }): Promise<{ identityId: string; status: 'created' | 'repaired' | 'existing' }>
   activateMerchantAccount(input: { login: string; workspaceIds: string[]; actorId?: string; reason?: string }): Promise<PasswordAccount>
   reviewMerchantRegistration(input: { login: string; decision: 'approved' | 'rejected'; workspaceIds?: string[]; actorId?: string; reason: string }): Promise<PasswordAccount>
   issueMcpAuthorizationCode(input: McpOAuthContext & { account: PasswordAccount; redirectUri: string; codeChallenge: string; workspaceId?: string }): Promise<{ code: string; expiresAt: string; workspaceId: string }>
@@ -117,6 +127,7 @@ function assertRegistration(input: { login: string; password: string; enterprise
 function auditMemory(events: Array<Record<string, unknown>>, eventType: string, accountId: string, evidence: Record<string, unknown> = {}) { events.push({ id: randomUUID(), eventType, accountId, evidence, createdAt: new Date().toISOString() }) }
 
 export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
+  private bootstrapAdminIdentityId?: string
   private readonly accounts = new Map<string, AccountRecord>()
   private readonly sessions = new Map<string, SessionRecord>()
   private readonly resets = new Map<string, ResetRecord>()
@@ -156,6 +167,20 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
     const accountId = randomUUID()
     this.accounts.set(login, { id: accountId, identityId: accountId, login, accountType: 'platform', status: 'active', roles: input.roles?.length ? [...new Set(input.roles)] : ['platform_admin'], workspaceIds: [], failedAttempts: 0, revision: 1, authEpoch: 1, createdAt: now, updatedAt: now, passwordHash: input.passwordHash })
     auditMemory(this.events, 'auth.platform_preseeded', login, { account_type: 'platform' })
+  }
+  async bootstrapFirstPlatformAdmin(input: { login: string; passwordHash: string }) {
+    const login = assertLogin(input.login)
+    await assertPlatformBootstrapHash(input.passwordHash)
+    const existing = this.accounts.get(login)
+    if (this.bootstrapAdminIdentityId) {
+      if (existing?.identityId === this.bootstrapAdminIdentityId && existing.accountType === 'platform' && existing.status === 'active' && existing.passwordHash === input.passwordHash) return { identityId: existing.identityId, status: 'existing' as const }
+      throw new Error('PLATFORM_ADMIN_BOOTSTRAP_CONFLICT')
+    }
+    if ([...this.accounts.values()].some(account => account.accountType === 'platform' && account.login !== login)) throw new Error('PLATFORM_ADMIN_BOOTSTRAP_CONFLICT')
+    if (existing && (existing.accountType !== 'platform' || existing.status !== 'active' || existing.passwordHash !== input.passwordHash || !existing.roles.includes('platform_admin'))) throw new Error('PLATFORM_ADMIN_BOOTSTRAP_CONFLICT')
+    if (!existing) await this.ensurePlatformAccount({ login, passwordHash: input.passwordHash, roles: ['platform_admin'] })
+    this.bootstrapAdminIdentityId = this.accounts.get(login)!.identityId
+    return { identityId: this.bootstrapAdminIdentityId, status: existing ? 'repaired' as const : 'created' as const }
   }
 
   async createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string }) {
@@ -456,6 +481,41 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
       )
     })
   }
+  async bootstrapFirstPlatformAdmin(input: { login: string; passwordHash: string }): Promise<{ identityId: string; status: 'created' | 'repaired' | 'existing' }> {
+    const login = assertLogin(input.login)
+    await assertPlatformBootstrapHash(input.passwordHash)
+    return this.withClient(async client => {
+      // All API replicas use this transaction-scoped lock before deciding who
+      // may become the first durable administrator.
+      await client.query(`SELECT pg_advisory_xact_lock(1729828301, 104) `)
+      const admins = await client.query<{ subject_identity_id: string }>(`SELECT subject_identity_id FROM platform_role_assignments WHERE role IN ('platform_admin','platform_owner') LIMIT 2`)
+      const accounts = await client.query<{ identity_id: string; login_identifier: string; account_type: string; status: string; password_hash: string; roles: string[] }>(`SELECT identity_id,login_identifier,account_type,status,password_hash,roles FROM platform_password_accounts WHERE account_type='platform' OR login_identifier=$1`, [login])
+      const account = accounts.rows.find(row => row.login_identifier === login)
+      if (accounts.rows.some(row => row.login_identifier !== login) || (account && (account.account_type !== 'platform' || account.status !== 'active' || account.password_hash !== input.passwordHash || !account.roles.includes('platform_admin')))) throw new Error('PLATFORM_ADMIN_BOOTSTRAP_CONFLICT')
+      if (admins.rows.length) {
+        const assignment = await client.query<{ id: string }>(`SELECT id FROM platform_role_assignments WHERE subject_identity_id=$1 AND role='platform_admin' AND revoked_at IS NULL AND valid_from<=now() AND (expires_at IS NULL OR expires_at>now())`, [account?.identity_id ?? null])
+        if (admins.rows.length !== 1 || !account || admins.rows[0]?.subject_identity_id !== account.identity_id || !assignment.rows.length) throw new Error('PLATFORM_ADMIN_BOOTSTRAP_CONFLICT')
+        return { identityId: account.identity_id, status: 'existing' as const }
+      }
+      let identityId = account?.identity_id
+      if (!identityId) {
+        const identity = await client.query<{ id: string }>(`INSERT INTO platform_identities (id,issuer,external_subject,display_name) VALUES ($1,'damai-password',$2,$2) ON CONFLICT (issuer,external_subject) DO UPDATE SET updated_at=now() RETURNING id`, [randomUUID(), login])
+        identityId = identity.rows[0]?.id
+        if (!identityId) throw new Error('PLATFORM_IDENTITY_BOOTSTRAP_FAILED')
+        await client.query(`INSERT INTO platform_password_accounts (id,identity_id,login_identifier,account_type,password_hash,status,roles,workspace_ids) VALUES ($1,$2,$3,'platform',$4,'active',ARRAY['platform_admin'],ARRAY[]::text[])`, [randomUUID(), identityId, login, input.passwordHash])
+      }
+      const existingRevision = await client.query<{ revision: string | number }>(`SELECT revision FROM authorization_revisions WHERE subject_identity_id=$1 FOR UPDATE`, [identityId])
+      if (existingRevision.rows.length && Number(existingRevision.rows[0]?.revision) !== 0) throw new Error('PLATFORM_ADMIN_BOOTSTRAP_CONFLICT')
+      await client.query(`INSERT INTO authorization_revisions (subject_identity_id,revision,updated_by,update_reason) VALUES ($1,1,'platform-bootstrap','initial platform administrator') ON CONFLICT (subject_identity_id) DO UPDATE SET revision=1,updated_by='platform-bootstrap',update_reason='initial platform administrator',updated_at=now() WHERE authorization_revisions.revision=0`, [identityId])
+      const assignmentId = randomUUID()
+      const inserted = await client.query<{ valid_from: Date; created_at: Date; updated_at: Date }>(`INSERT INTO platform_role_assignments (id,subject_identity_id,role,assigned_by,reason,authorization_revision) VALUES ($1,$2,'platform_admin','platform-bootstrap','initial platform administrator',1) RETURNING valid_from,created_at,updated_at`, [assignmentId, identityId])
+      const roleTime = inserted.rows[0]
+      if (!roleTime) throw new Error('PLATFORM_ADMIN_BOOTSTRAP_CONFLICT')
+      await client.query(`INSERT INTO platform_role_assignment_events (id,assignment_id,subject_identity_id,event_type,actor_id,reason,authorization_revision,assignment_revision,snapshot_json) VALUES ($1,$2,$3,'assigned','platform-bootstrap','initial platform administrator',1,1,$4)`, [randomUUID(), assignmentId, identityId, { id: assignmentId, subjectIdentityId: identityId, role: 'platform_admin', assignedBy: 'platform-bootstrap', reason: 'initial platform administrator', validFrom: roleTime.valid_from.toISOString(), revision: 1, authorizationRevision: 1, createdAt: roleTime.created_at.toISOString(), updatedAt: roleTime.updated_at.toISOString() }])
+      return { identityId, status: account ? 'repaired' as const : 'created' as const }
+    })
+  }
+
   async activateMerchantAccount(input: { login: string; workspaceIds: string[]; actorId?: string; reason?: string }) { const login = assertLogin(input.login); return this.withClient(async client => { const workspaceIds = [...new Set(input.workspaceIds.map(value => value.trim()).filter(Boolean))]; const result = await client.query<any>(`UPDATE platform_password_accounts SET status='active', workspace_ids=$2, revision=revision+1, updated_at=now() WHERE login_identifier=$1 AND account_type='merchant' RETURNING id,identity_id AS "identityId",login_identifier AS login,account_type AS "accountType",enterprise_name AS "enterpriseName",contact_name AS "contactName",status,roles,workspace_ids AS "workspaceIds",failed_attempts AS "failedAttempts",locked_until AS "lockedUntil",revision,created_at AS "createdAt",updated_at AS "updatedAt"`, [login, workspaceIds]); const account = result.rows[0] as PasswordAccount | undefined; if (!account) throw Object.assign(new Error('AUTH_ACCOUNT_NOT_FOUND'), { code: 'AUTH_ACCOUNT_NOT_FOUND' }); await this.syncEnterpriseName(client, workspaceIds, account.enterpriseName ?? ''); await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,before_json,after_json,evidence_json) VALUES ($1,$2,'auth.merchant_activated',$3,$4,$5,$6,$7)`, [randomUUID(), account.identityId, input.actorId?.trim() || 'system', input.reason?.trim() || 'merchant account activated', { status: 'merchant_pending' }, { account_type: account.accountType, status: account.status, workspace_ids: workspaceIds, revision: account.revision }, { source: 'password_auth_repository' }]); return this.public(account as AccountRecord) }) }
   async login(input: { login: string; password: string; ip?: string; userAgent?: string }) { const login = assertLogin(input.login); const outcome = await this.withClient(async client => { const account = await this.find(client, login); const now = Date.now(); if (account?.lockedUntil && Date.parse(iso(account.lockedUntil)) > now) return { failure: Object.assign(new Error('AUTH_ACCOUNT_LOCKED'), { code: 'AUTH_ACCOUNT_LOCKED' }) } as const; const valid = account ? await verifyPassword(account.passwordHash, input.password) : false; if (account && valid && account.status !== 'active') { await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2,'auth.login_blocked',$3,'password authentication blocked for inactive account',$4)`, [randomUUID(), account.identityId, account.login, { status: account.status }]); return { failure: Object.assign(new Error('AUTH_ACCOUNT_NOT_ACTIVE'), { code: 'AUTH_ACCOUNT_NOT_ACTIVE' }) } as const } if (!account || !valid) { if (account) { const incremented = await client.query<{ failed_attempts: number | string }>(`UPDATE platform_password_accounts SET failed_attempts=failed_attempts+1, locked_until=CASE WHEN failed_attempts+1>=5 THEN now()+interval '15 minutes' ELSE locked_until END, updated_at=now() WHERE id=$1 RETURNING failed_attempts`, [account.id]); const attempts = Number(incremented.rows[0]?.failed_attempts ?? account.failedAttempts + 1); await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2,$3,$4,'password authentication failed',$5)`, [randomUUID(), account.identityId, attempts >= 5 ? 'auth.locked' : 'auth.login_failed', account.login, { attempts }]) } return { failure: loginError() } as const } await client.query(`UPDATE platform_password_accounts SET failed_attempts=0, locked_until=NULL, updated_at=now() WHERE id=$1`, [account.id]); const token = newOpaqueToken(); const issuedAt = new Date(now).toISOString(); const expiresAt = new Date(now + SESSION_MS).toISOString(); const sessionId = randomUUID(); await client.query(`INSERT INTO platform_password_sessions (id,account_id,token_hash,auth_epoch,issued_at,expires_at,ip_hash,user_agent_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [sessionId, account.id, tokenDigest(token), account.authEpoch, issuedAt, expiresAt, input.ip ? tokenDigest(input.ip) : null, input.userAgent ? tokenDigest(input.userAgent) : null]); // platform_identity_events.session_id references OIDC/API sessions only; password sessions are kept in evidence_json.
     await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2,'auth.login_succeeded',$3,'password authentication succeeded',$4)`, [randomUUID(), account.identityId, account.login, { password_session_id: sessionId }]); return { token, principal: { account: this.public(account), sessionId, issuedAt, expiresAt } } })

@@ -1,6 +1,7 @@
 import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
+import argon2 from 'argon2'
 import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner } from './migration.js'
 import { PostgresPasswordAuthRepository } from './password-auth-repository.js'
@@ -96,6 +97,34 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
       }
 
       const repository = new PostgresPasswordAuthRepository(ops)
+      const bootstrapHash = await argon2.hash('BootstrapPass123', { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 })
+      const bootstrapLogin = `first-admin-${randomUUID().replaceAll('-', '')}@example.com`
+      const concurrentBootstraps = await Promise.all([
+        repository.bootstrapFirstPlatformAdmin({ login: bootstrapLogin, passwordHash: bootstrapHash }),
+        new PostgresPasswordAuthRepository(ops).bootstrapFirstPlatformAdmin({ login: bootstrapLogin, passwordHash: bootstrapHash }),
+      ])
+      expect(concurrentBootstraps.map(result => result.status).sort()).toEqual(['created', 'existing'])
+      const bootstrap = concurrentBootstraps.find(result => result.status === 'created')!
+      const retry = await repository.bootstrapFirstPlatformAdmin({ login: bootstrapLogin, passwordHash: bootstrapHash })
+      expect(retry).toEqual({ identityId: bootstrap.identityId, status: 'existing' })
+      await expect(repository.bootstrapFirstPlatformAdmin({ login: `other-admin-${randomUUID().replaceAll('-', '')}@example.com`, passwordHash: bootstrapHash })).rejects.toThrow('PLATFORM_ADMIN_BOOTSTRAP_CONFLICT')
+      const durableAdmin = await ops.connect()
+      try {
+        await durableAdmin.query('BEGIN READ ONLY')
+        await durableAdmin.query(`SELECT set_config('app.platform_scope', 'platform_ops', true)`)
+        const assignments = await durableAdmin.query<{ role: string; authorization_revision: string }>(`SELECT role,authorization_revision FROM platform_role_assignments WHERE subject_identity_id=$1`, [bootstrap.identityId])
+        const revisions = await durableAdmin.query<{ revision: string }>(`SELECT revision FROM authorization_revisions WHERE subject_identity_id=$1`, [bootstrap.identityId])
+        const events = await durableAdmin.query<{ event_type: string; authorization_revision: string }>(`SELECT event_type,authorization_revision FROM platform_role_assignment_events WHERE subject_identity_id=$1`, [bootstrap.identityId])
+        expect(assignments.rows).toEqual([{ role: 'platform_admin', authorization_revision: '1' }])
+        expect(revisions.rows).toEqual([{ revision: '1' }])
+        expect(events.rows).toEqual([{ event_type: 'assigned', authorization_revision: '1' }])
+        await durableAdmin.query('COMMIT')
+      } catch (error) {
+        await durableAdmin.query('ROLLBACK')
+        throw error
+      } finally {
+        durableAdmin.release()
+      }
       const login = `registration-${randomUUID().replaceAll('-', '')}@example.com`
       const registered = await repository.register({
         login,
