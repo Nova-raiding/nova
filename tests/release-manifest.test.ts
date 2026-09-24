@@ -58,7 +58,7 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(78)
+    expect(manifest.artifacts).toHaveLength(79)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',
@@ -92,6 +92,7 @@ describe('release manifest', () => {
       'infra/scripts/ecs-one-click-deploy.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/ecs-compose-published-ports.mjs',
+      'infra/scripts/ecs-compose-published-ports.d.mts',
       'infra/scripts/deploy-preflight-ecs.sh',
       'tests/ecs-compose-published-ports.test.ts',
       'infra/scripts/build-ecs-release-images.sh',

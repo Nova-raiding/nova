@@ -77,6 +77,7 @@ describe('ECS candidate bundle contract', () => {
       'infra/scripts/candidate-api-docker-request.mjs',
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/ecs-compose-published-ports.mjs',
+      'infra/scripts/ecs-compose-published-ports.d.mts',
       'infra/scripts/rollback-ecs-compose.sh',
       'infra/scripts/invoke-ecs-automatic-rollback.sh',
       'infra/scripts/install-ecs-release-controls.mjs',

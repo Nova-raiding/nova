@@ -108,6 +108,7 @@ infra/scripts/launch-ecs-candidate-full-https-gateway.d.mts
 tests/ecs-candidate-full-https-gateway.test.ts
 infra/scripts/deploy-verified-ecs-compose.sh
 infra/scripts/ecs-compose-published-ports.mjs
+infra/scripts/ecs-compose-published-ports.d.mts
 infra/scripts/ecs-external-gateway-handoff.mjs
 infra/scripts/ecs-external-gateway-handoff.d.mts
 tests/ecs-external-gateway-handoff.test.ts

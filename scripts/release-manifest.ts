@@ -118,6 +118,7 @@ export function buildReleaseManifest(input: {
     resolve(root, 'infra/scripts/ecs-one-click-deploy.sh'),
     resolve(root, 'infra/scripts/deploy-verified-ecs-compose.sh'),
     resolve(root, 'infra/scripts/ecs-compose-published-ports.mjs'),
+    resolve(root, 'infra/scripts/ecs-compose-published-ports.d.mts'),
     resolve(root, 'infra/scripts/deploy-preflight-ecs.sh'),
     resolve(root, 'infra/scripts/build-ecs-release-images.sh'),
     resolve(root, 'infra/scripts/verify-ecs-ops-auth-mode.sh'),

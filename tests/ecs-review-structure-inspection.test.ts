@@ -66,6 +66,7 @@ const crypto=require('node:crypto');let input='';process.stdin.setEncoding('utf8
 describe('ECS sanitized remote structure review', () => {
   it('includes candidate port preflight code and regression coverage in protected source review', () => {
     expect(PROTECTED_OPS_PATHS).toContain('infra/scripts/ecs-compose-published-ports.mjs')
+    expect(PROTECTED_OPS_PATHS).toContain('infra/scripts/ecs-compose-published-ports.d.mts')
     expect(STRUCTURE_REVIEW_PATHS).toContain('tests/ecs-compose-published-ports.test.ts')
   })
 

@@ -14,7 +14,7 @@ export const PROTECTED_OPS_PATHS = Object.freeze([
   'infra/local/docker-compose.yml', 'infra/local/docker-compose.ecs-pilot.yml', 'infra/local/docker-compose.ecs-production-migration.yml', 'infra/local/docker-compose.ecs-pilot-release.yml', 'infra/local/ecs-production-compose.layers',
   'infra/scripts/render-ecs-production-compose.sh', 'infra/scripts/validate-ecs-production-compose.mjs', 'infra/scripts/validate-production-config.sh', 'infra/scripts/validate-production-config-yaml.rb', 'infra/scripts/rotate-alipay-secrets.sh',
   'apps/api/src/aliyun-ecs-role-credentials.ts',
-  'infra/scripts/apply-migrations.sh', 'infra/scripts/verify-runtime-db-role.sh', 'infra/scripts/generate-container-source-manifest.mjs', 'infra/local/ensure-app-role.sql', 'infra/scripts/pilot-compose-preflight.sh', 'infra/scripts/stage-verified-ecs-release.sh', 'infra/scripts/deploy-verified-ecs-compose.sh', 'infra/scripts/ecs-compose-published-ports.mjs', 'infra/scripts/deploy-preflight-ecs.sh', 'infra/scripts/deploy-preflight.sh',
+  'infra/scripts/apply-migrations.sh', 'infra/scripts/verify-runtime-db-role.sh', 'infra/scripts/generate-container-source-manifest.mjs', 'infra/local/ensure-app-role.sql', 'infra/scripts/pilot-compose-preflight.sh', 'infra/scripts/stage-verified-ecs-release.sh', 'infra/scripts/deploy-verified-ecs-compose.sh', 'infra/scripts/ecs-compose-published-ports.mjs', 'infra/scripts/ecs-compose-published-ports.d.mts', 'infra/scripts/deploy-preflight-ecs.sh', 'infra/scripts/deploy-preflight.sh',
 ])
 
 const digest = data => createHash('sha256').update(data).digest('hex')
