@@ -37,9 +37,11 @@ async function closeBrowserWithDeadline(instance?: Browser) {
 const settle = (page: Page) => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
 describe("customer delivery workspace selection", () => {
-  it("points operators to the real shared workspace selection action", () => {
-    expect(pageSource).toContain("商家经营台账");
-    expect(pageSource).toContain("查看该企业授权");
+  it("points operators to the customer workspace selector on this page", () => {
+    expect(pageSource).toContain("本页上方的「选择目标企业」");
+    expect(pageSource).toContain('aria-label="客户交付目标企业工作区"');
+    expect(pageSource).not.toContain("商家经营台账");
+    expect(pageSource).not.toContain("查看该企业授权");
     expect(pageSource).not.toContain("请先在「商业化总览」中选择目标企业");
   });
 
@@ -129,8 +131,8 @@ describe("customer delivery read-only desktop interaction", () => {
       cacheDir: cacheDirectory,
       logLevel: "error",
       define: {
-        "import.meta.env.VITE_OPS_AUTH_MODE": JSON.stringify("oidc"),
-        "import.meta.env.VITE_OPS_BUILD_MODE": JSON.stringify("oidc"),
+        "import.meta.env.VITE_OPS_AUTH_MODE": JSON.stringify("password"),
+        "import.meta.env.VITE_OPS_BUILD_MODE": JSON.stringify("production"),
         "import.meta.env.VITE_API_BASE": JSON.stringify("/api"),
         "import.meta.env.VITE_OPS_LOCAL_SESSION": JSON.stringify("false"),
       },
@@ -146,7 +148,7 @@ describe("customer delivery read-only desktop interaction", () => {
             import { App } from 'antd';
             import { CustomerDeliveryPage } from '/src/pages/CustomerDeliveryPage.tsx';
             import { UnsavedChangesProvider, useUnsavedChangesState } from '/src/components/authz/UnsavedChangesContext.tsx';
-            sessionStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
+            localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
             function DirtyLabelProbe() {
               const { labels } = useUnsavedChangesState();
               return React.createElement('span', { 'data-testid': 'dirty-labels' }, labels.join('、'));
@@ -300,6 +302,7 @@ describe("customer delivery read-only desktop interaction", () => {
       // would enable the write controls that target it. Nothing may be read
       // and no write control may be enabled in that state.
       const methods = await prepare(page, { write: true, target: "", awaitRows: false });
+      expect(await page.getByRole("combobox", { name: "客户交付目标企业工作区", exact: true }).count()).toBe(1);
       await page.getByText("客户建档", { exact: true }).waitFor();
       await settle(page);
       // Nothing at all may be requested: `ws-directory-first` was never chosen.
