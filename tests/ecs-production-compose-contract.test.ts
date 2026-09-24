@@ -68,6 +68,7 @@ function renderFinalProductionCompose() {
   mkdirSync(localDir, { recursive: true })
   mkdirSync(scriptsDir, { recursive: true })
   for (const file of files) writeFileSync(join(renderRoot, file), readFileSync(file, 'utf8'))
+  writeFileSync(join(localDir, 'ecs-production-compose.layers'), `${files.join('\n')}\n`)
   const rendererPath = join(scriptsDir, 'render-ecs-production-compose.sh')
   writeFileSync(rendererPath, readFileSync('infra/scripts/render-ecs-production-compose.sh', 'utf8'), { mode: 0o700 })
   writeFileSync(join(renderRoot, '.env'), '')
