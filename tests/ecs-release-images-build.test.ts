@@ -6,6 +6,24 @@ import { describe, expect, it } from 'vitest'
 
 const script = resolve('infra/scripts/build-ecs-release-images.sh')
 
+function releaseRevision(): string {
+  const identityPath = resolve('.candidate-identity')
+  if (existsSync(identityPath)) {
+    const identity = readFileSync(identityPath, 'utf8')
+    const revision = /^git_sha=([0-9a-f]{40})$/mu.exec(identity)?.[1]
+    if (!revision || !/^release_id=(?:release|ecs)-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/mu.test(identity) || !/^source_sha256=sha256:[0-9a-f]{64}$/mu.test(identity) || !existsSync(resolve('.candidate-source.tar'))) {
+      throw new Error('staged candidate identity is incomplete')
+    }
+    return revision
+  }
+  const result = spawnSync('git', ['rev-parse', '--verify', 'HEAD'], { encoding: 'utf8' })
+  const revision = result.stdout.trim()
+  if (result.status !== 0 || !/^[0-9a-f]{40}$/u.test(revision)) {
+    throw new Error('release image tests require a Git checkout or a staged candidate identity')
+  }
+  return revision
+}
+
 describe('bounded ECS release image builder', () => {
   it('builds the complete repository-owned image set, binds source identity, and bounds cache', () => {
     const source = readFileSync(script, 'utf8')
@@ -53,7 +71,7 @@ describe('bounded ECS release image builder', () => {
     const result = spawnSync('sh', [script], {
       env: {
         ...process.env,
-        ECS_RELEASE_GIT_SHA: spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
+        ECS_RELEASE_GIT_SHA: releaseRevision(),
         RELEASE_ID: 'release-existing',
         ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
         ECS_RELEASE_IMAGE_OUTPUT_DIR: directory,
@@ -69,7 +87,7 @@ describe('bounded ECS release image builder', () => {
     const result = spawnSync('sh', [script], {
       env: {
         ...process.env,
-        ECS_RELEASE_GIT_SHA: spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
+        ECS_RELEASE_GIT_SHA: releaseRevision(),
         RELEASE_ID: 'release-unsafe-ops-login',
         ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
         ECS_RELEASE_IMAGE_OUTPUT_DIR: join(mkdtempSync(join(tmpdir(), 'ecs-ops-login-parent-')), 'output'),
@@ -86,7 +104,7 @@ describe('bounded ECS release image builder', () => {
     const result = spawnSync('sh', [script], {
       env: {
         ...process.env,
-        ECS_RELEASE_GIT_SHA: spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
+        ECS_RELEASE_GIT_SHA: releaseRevision(),
         RELEASE_ID: 'release-password-with-sso',
         ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
         ECS_RELEASE_IMAGE_OUTPUT_DIR: join(mkdtempSync(join(tmpdir(), 'ecs-password-parent-')), 'output'),
