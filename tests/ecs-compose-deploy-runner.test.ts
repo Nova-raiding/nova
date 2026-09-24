@@ -8,6 +8,19 @@ const path = 'infra/scripts/deploy-verified-ecs-compose.sh'
 const source = () => readFileSync(path, 'utf8')
 
 describe('verified ECS Compose deployment runner', () => {
+  it('rejects infra scope before required inputs, nonce consumption, migrations, or Compose mutation', () => {
+    const result = spawnSync('sh', [path], { env: { PATH: process.env.PATH, DEPLOYMENT_SCOPE: 'infra' }, encoding: 'utf8' })
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain('production deployment scope must be full')
+    expect(result.stderr).not.toContain('CONFIRM_ECS_DEPLOY')
+    const script = source()
+    const scopeGate = script.indexOf('production deployment scope must be full')
+    for (const mutation of ['consume-production-evidence-nonce.sh', 'run --rm --no-deps --pull never migrate', 'up -d --no-build --pull never --remove-orphans']) {
+      expect(scopeGate).toBeGreaterThanOrEqual(0)
+      expect(scopeGate).toBeLessThan(script.indexOf(mutation))
+    }
+  })
+
   it.each(['password', 'oidc'])('accepts matching API and Ops UI %s auth modes', mode => {
     const directory = mkdtempSync(join(tmpdir(), 'ecs-ops-auth-mode-'))
     const docker = join(directory, 'docker')

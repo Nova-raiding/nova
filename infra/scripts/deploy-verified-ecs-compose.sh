@@ -3,6 +3,10 @@ set -eu
 
 # Apply an already-rendered, digest-pinned ECS Compose release. This script is
 # intentionally host-local: transport and SSH remain an operator boundary.
+[ "${DEPLOYMENT_SCOPE:-full}" = full ] || {
+  echo 'ECS deployment refused: production deployment scope must be full' >&2
+  exit 2
+}
 root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd -P)
 readonly ECS_PREIDENTITY_RECOVERY_ENTRYPOINT=/usr/local/libexec/merchant/ecs-preidentity-recovery
 
