@@ -5,6 +5,7 @@ import argon2 from 'argon2'
 import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner } from './migration.js'
 import { PostgresPasswordAuthRepository } from './password-auth-repository.js'
+import { runFirstInstall } from '../../../scripts/bootstrap-first-install.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const postgresIt = databaseUrlValue ? it : it.skip
@@ -125,6 +126,24 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
       } finally {
         durableAdmin.release()
       }
+      const firstInstallEnv = {
+        FIRST_INSTALL_WORKSPACE_ID: 'ws_guirenniaoniao',
+        FIRST_INSTALL_PLATFORM_LOGIN: bootstrapLogin,
+        FIRST_INSTALL_PLATFORM_PASSWORD_HASH: bootstrapHash,
+        FIRST_INSTALL_MERCHANT_LOGIN: `first-owner-${randomUUID().replaceAll('-', '')}@example.com`,
+        FIRST_INSTALL_MERCHANT_PASSWORD: 'MerchantPass123',
+        FIRST_INSTALL_MERCHANT_TERMS_AGREED: 'true',
+        FIRST_INSTALL_ENTERPRISE_NAME: 'Initial Merchant',
+        FIRST_INSTALL_MERCHANT_DISPLAY_NAME: 'Initial Owner',
+        FIRST_INSTALL_REASON: 'Verified first workspace installation',
+        FIRST_INSTALL_OPS_DATABASE_URL: connection(base, databaseName, 'merchant_ops', 'merchant_ops_local_only'),
+        FIRST_INSTALL_ADMIN_DATABASE_URL: connection(base, databaseName),
+      }
+      const installed = await runFirstInstall(firstInstallEnv)
+      expect(installed).toMatchObject({ platformIdentityId: bootstrap.identityId, platformStatus: 'existing', workspaceId: 'ws_guirenniaoniao', workspaceCreated: true })
+      await expect(runFirstInstall(firstInstallEnv)).resolves.toMatchObject({ platformIdentityId: bootstrap.identityId, merchantIdentityId: installed.merchantIdentityId, workspaceCreated: false })
+      const installedRows = await database.query<{ count: string }>(`SELECT count(*)::text AS count FROM workspace_members WHERE workspace_id='ws_guirenniaoniao' AND identity_id=$1 AND role='workspace_owner' AND status='active'`, [installed.merchantIdentityId])
+      expect(installedRows.rows).toEqual([{ count: '1' }])
       const login = `registration-${randomUUID().replaceAll('-', '')}@example.com`
       const registered = await repository.register({
         login,
