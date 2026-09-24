@@ -200,7 +200,7 @@ describe('E1 password-session JIT revoke under enforced durable authorization', 
     expect(repository.successfulMutations.map(event => event.type)).toEqual(['issued', 'revoked'])
     const audit = (await audits.list({ actorId: who.subject, method: revokeMethod })).find(row => row.requestId === revoked.body.request_id)
     expect(audit).toMatchObject({ result: 'allow', capability: 'authorization.grant.manage', workbench: 'platform', policyVersion: AUTHZ_POLICY_VERSION, traceId: revoked.body.trace_id, evidence: { obligations: { required: ['reason', 'revision'], missing: [] } } })
-    const afterAccess = await call(subject, 'ops.session', {}, 'workspace', false, approvalToken, true, workspaceId)
+    const afterAccess = await call<Session>(subject, 'ops.session', {}, 'workspace', false, approvalToken, true, workspaceId)
     expect(afterAccess.status).toBe(200)
     expect(afterAccess.body.data?.result.temporary_grants).toEqual([])
     const after = await state(grant)
