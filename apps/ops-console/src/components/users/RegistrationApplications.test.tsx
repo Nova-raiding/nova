@@ -56,7 +56,7 @@ describe("registration applications error state", () => {
             import { createRoot } from 'react-dom/client';
             import { App } from 'antd';
             import { RegistrationApplications } from '/src/components/users/UsersGovernanceWorkspace.tsx';
-            sessionStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
+            localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
             const model = { authorization: { can: () => true } };
             createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(RegistrationApplications, { model })));
           `;

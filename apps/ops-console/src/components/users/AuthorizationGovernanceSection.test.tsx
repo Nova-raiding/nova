@@ -130,7 +130,7 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
             import { createRoot } from 'react-dom/client';
             import { App } from 'antd';
             import { AuthorizationGovernanceSection } from '/src/components/users/AuthorizationGovernanceSection.tsx';
-            sessionStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
+            localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
             const model = {
               authorization: { can: capability => ['authorization.grant.read', 'authorization.grant.manage'].includes(capability) },
               clearAuthorizationScopedData() {}, async load() {},

@@ -51,6 +51,7 @@ describe("alert poll authorization boundary", () => {
     export const rpcForWorkspace = (workspaceId, method, params) => call(method, params);
     export const opsRestPost = () => Promise.resolve(undefined);
     export const managedOpsSession = false;
+    export const cookieOpsSession = true;
     export const hasOpsConnection = () => true;
     export const describeOpsError = error => (error && error.message) || '运营数据加载失败，请重试。';
     export const readOpsConnectionConfig = () => ({ apiBase: 'http://ops.test', workspaceId: 'ws-1', actorId: '', token: '', workbench: 'workspace' });
