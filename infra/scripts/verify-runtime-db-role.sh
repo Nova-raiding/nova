@@ -48,6 +48,16 @@ platform_acl_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
     WHERE has_table_privilege(current_user, 'public.' || name, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')")
 [ -z "$platform_acl_exposure" ] || { echo "tenant runtime role can access platform control-plane tables: $platform_acl_exposure" >&2; exit 1; }
 
+# Local plugin connection and installation records are operations-only, even
+# where a record carries workspace_id. They must not be treated as ordinary
+# tenant tables by the workspace RLS policy check below.
+plugin_install_acl_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT coalesce(string_agg(name, ',' ORDER BY name), '')
+     FROM unnest(ARRAY['local_plugin_connection_requests','local_plugin_install_instances','local_plugin_install_challenges','local_plugin_install_audit']) AS name
+    WHERE to_regclass('public.' || name) IS NOT NULL
+      AND has_table_privilege(current_user, 'public.' || name, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')")
+[ -z "$plugin_install_acl_exposure" ] || { echo "tenant runtime role can access plugin installation records: $plugin_install_acl_exposure" >&2; exit 1; }
+
 # Shared platform rules are read by the tenant role on purpose (migration 219
 # grants SELECT), but they are maintained by the operations role. Check DML
 # only, and check it against the whole class of workspace-free tables rather
@@ -104,7 +114,7 @@ rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
        JOIN pg_attribute a ON a.attrelid = c.oid
         AND a.attname = 'workspace_id' AND NOT a.attisdropped
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
-        AND c.relname NOT IN ('commercial_rollouts', 'workspace_members', 'workspace_identity_bindings', 'workspace_commercial_settings', 'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events', 'authorization_execution_reservations', 'mcp_oauth_authorization_codes', 'mcp_oauth_tokens')
+        AND c.relname NOT IN ('commercial_rollouts', 'workspace_members', 'workspace_identity_bindings', 'workspace_commercial_settings', 'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events', 'authorization_execution_reservations', 'mcp_oauth_authorization_codes', 'mcp_oauth_tokens', 'local_plugin_connection_requests', 'local_plugin_install_instances', 'local_plugin_install_audit')
    ), scoped_policies AS (
      SELECT schemaname, tablename, count(*) AS policy_count,
             bool_or(
@@ -377,9 +387,15 @@ EOF
        JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
         AND has_table_privilege(current_user, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
-        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_password_accounts','platform_password_sessions','platform_password_reset_tokens','platform_media_specs','platform_media_spec_audit','platform_authorization_audit','public_platform_rule_versions','public_platform_rule_audits','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events','workspace_customer_deliveries','workspace_customer_delivery_videos','workspace_customer_delivery_checklist_items','manual_publish_evidence','mcp_oauth_authorization_codes','mcp_oauth_tokens','commercial_offers','commercial_addons','commercial_coupons','commercial_rollouts','model_markup_policy','commercial_catalog_skus','commercial_catalog_sku_versions','commercial_catalog_sku_benefits','commercial_catalog_events_v2')
+        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_password_accounts','platform_password_sessions','platform_password_reset_tokens','platform_media_specs','platform_media_spec_audit','platform_authorization_audit','public_platform_rule_versions','public_platform_rule_audits','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events','workspace_customer_deliveries','workspace_customer_delivery_videos','workspace_customer_delivery_checklist_items','manual_publish_evidence','mcp_oauth_authorization_codes','mcp_oauth_tokens','commercial_offers','commercial_addons','commercial_coupons','commercial_rollouts','model_markup_policy','commercial_catalog_skus','commercial_catalog_sku_versions','commercial_catalog_sku_benefits','commercial_catalog_events_v2','local_plugin_connection_requests','local_plugin_install_instances','local_plugin_install_challenges','local_plugin_install_audit')
         AND NOT (c.relname = 'workspace_operation_audit' AND NOT has_table_privilege(current_user, c.oid, 'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))")
   [ -z "$ops_tenant_access" ] || { echo "Ops database role has unexpected tenant write access: $ops_tenant_access" >&2; exit 1; }
+  ops_plugin_delete_exposure=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+    "SELECT coalesce(string_agg(name, ',' ORDER BY name), '')
+       FROM unnest(ARRAY['local_plugin_connection_requests','local_plugin_install_instances','local_plugin_install_challenges','local_plugin_install_audit']) AS name
+      WHERE to_regclass('public.' || name) IS NOT NULL
+        AND has_table_privilege(current_user, 'public.' || name, 'DELETE,TRUNCATE')")
+  [ -z "$ops_plugin_delete_exposure" ] || { echo "Ops database role can delete plugin installation records: $ops_plugin_delete_exposure" >&2; exit 1; }
   ops_alert_receipt_exposure=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
     "SELECT CASE WHEN has_table_privilege(current_user, 'public.alert_webhook_receipts', 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
                  THEN 'alert_webhook_receipts' ELSE '' END")
