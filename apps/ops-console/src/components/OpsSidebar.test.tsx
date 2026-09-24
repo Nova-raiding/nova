@@ -17,7 +17,8 @@ describe("OpsSidebar navigation", () => {
     );
     expect(markup).toContain("Store Nova");
     expect(markup).not.toContain("平台运营控制面");
-    expect(markup).not.toContain("平台治理");
+    expect(markup).toContain('aria-labelledby="ops-nav-group-governance"');
+    expect(markup).toContain('id="ops-nav-group-governance" class="sr-only">平台治理</h2>');
     expect(markup).not.toContain("商家工作区治理");
     expect(markup).not.toContain(">商家运营</h2>");
     expect(markup).not.toContain("模型与计费");
@@ -107,11 +108,10 @@ describe("OpsSidebar navigation", () => {
     );
     // No `visibleDomains` here, so this is the unfiltered navigation.
     expect(markup).toContain("账务与退款");
-    // Records the owner's group-label choice. Note this is a data assertion,
-    // not a visual one: `OpsSidebar` renders no heading for a navigation group
-    // (it maps `group.items` and uses `group.label` nowhere), so renaming the
-    // group changes nothing an operator sees. Asserting it here keeps the
-    // decision written down rather than letting it drift.
+    // Keep the real group name available to assistive technology without
+    // adding another visible heading to the sidebar.
+    expect(markup).toContain('aria-labelledby="ops-nav-group-model-billing"');
+    expect(markup).toContain('id="ops-nav-group-model-billing" class="sr-only">财务</h2>');
     expect(navigationGroups.find(({ key }) => key === "model-billing")?.label).toBe("财务");
     expect(markup).not.toContain("模型与计费");
   });
@@ -159,7 +159,7 @@ describe("OpsSidebar navigation", () => {
       />,
     );
     expect(markup).not.toContain("当前操作范围");
-    expect(markup).not.toContain("平台治理");
+    expect(markup).toContain('id="ops-nav-group-governance" class="sr-only">平台治理</h2>');
     expect(markup).not.toContain("模型与计费");
     expect(markup).not.toContain("商家工作区治理");
     expect(markup).not.toContain("风险与系统");

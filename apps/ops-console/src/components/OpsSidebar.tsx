@@ -100,7 +100,9 @@ export function OpsSidebar({
         {navigationGroups.map((group) => {
           const groupItems = group.items.map((domain) => itemsByDomain.get(domain)).filter(Boolean) as typeof visibleItems;
           if (!groupItems.length) return null;
-          return <section className="ops-nav-group" key={group.key} aria-label="运营导航分组">
+          const headingId = `ops-nav-group-${group.key}`;
+          return <section className="ops-nav-group" key={group.key} aria-labelledby={headingId}>
+            <h2 id={headingId} className="sr-only">{group.label}</h2>
             {groupItems.map((item) => <button key={item.domain} className={`sider-item${activeDomain === item.domain ? " active" : ""}`} type="button" aria-label={item.label} title={`${item.label}：${item.description}`} aria-description={item.description} aria-current={activeDomain === item.domain ? "page" : undefined} onClick={() => navigate(item.domain)}>{item.icon}<span className="sider-item-copy">{item.label}</span></button>)}
           </section>;
         })}
