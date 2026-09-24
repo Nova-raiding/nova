@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { customerDeliveryWorkspaceOptions, isCustomerDeliveryRevisionConflict, withChecklistRevision } from "./CustomerDeliveryPage.js";
+import { customerDeliveryWorkspaceOptions, isCustomerDeliveryRevisionConflict, waitForUsableDeliveryAsset, withChecklistRevision } from "./CustomerDeliveryPage.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -9,6 +9,19 @@ import { chromium, type Browser, type Page } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 
 const pageSource = readFileSync(new URL("./CustomerDeliveryPage.tsx", import.meta.url), "utf8");
+
+describe("customer delivery contract readiness", () => {
+  const input = { targetWorkspaceId: "ws_demo", deliveryId: "delivery_demo", signal: new AbortController().signal, purpose: "contract" as const, label: "合同文件" };
+  const asset = { assetRef: "asset_demo", name: "contract.pdf", mimeType: "application/pdf", sizeBytes: 10, ready: true };
+
+  it("accepts a ready unscanned contract without polling", async () => {
+    await expect(waitForUsableDeliveryAsset({ ...asset, scanStatus: "unscanned" }, input)).resolves.toMatchObject({ assetRef: "asset_demo", scanStatus: "unscanned" });
+  });
+
+  it("still rejects a blocked contract", async () => {
+    await expect(waitForUsableDeliveryAsset({ ...asset, scanStatus: "blocked" }, input)).rejects.toThrow("尚不可用");
+  });
+});
 
 async function closeBrowserWithDeadline(instance?: Browser) {
   if (!instance) return;

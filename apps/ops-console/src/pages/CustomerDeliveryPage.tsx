@@ -15,7 +15,7 @@ import { waitForDeliveryScan } from "../components/delivery/CustomerDeliveryUplo
 export function isCustomerDeliveryRevisionConflict(cause: unknown) {
   return /revision(?:[_ ]changed|[_ ]conflict)|版本.*(?:变化|冲突)/iu.test(describeOpsError(cause));
 }
-async function waitForCleanDeliveryAsset(initialAsset: CustomerDeliveryAsset, input: {
+export async function waitForUsableDeliveryAsset(initialAsset: CustomerDeliveryAsset, input: {
   targetWorkspaceId: string;
   deliveryId: string;
   signal: AbortSignal;
@@ -29,7 +29,7 @@ async function waitForCleanDeliveryAsset(initialAsset: CustomerDeliveryAsset, in
     await waitForDeliveryScan(2000, input.signal);
     asset = await customerDeliveryClient.getAsset({ ...input, assetRef: asset.assetRef }, input.signal);
   }
-  if (asset.scanStatus !== "clean") throw new Error(`${input.label}缺少可信安全检查结果，暂时无法创建客户`);
+  if (asset.scanStatus !== "clean" && asset.scanStatus !== "unscanned") throw new Error(`${input.label}尚不可用，暂时无法创建客户`);
   return asset;
 }
 
@@ -253,7 +253,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       }
       if (!attempt.contract || attempt.contract.file !== uploadedContractFile) {
         const uploaded = await customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: attempt.record.id, purpose: "contract", file: uploadedContractFile }, controller.signal);
-        const asset = await waitForCleanDeliveryAsset(uploaded, { targetWorkspaceId, deliveryId: attempt.record.id, signal: controller.signal, purpose: "contract", label: "合同文件" });
+        const asset = await waitForUsableDeliveryAsset(uploaded, { targetWorkspaceId, deliveryId: attempt.record.id, signal: controller.signal, purpose: "contract", label: "合同文件" });
         attempt.contract = { file: uploadedContractFile, assetRef: asset.assetRef };
       }
       attempt.record = await saveProfile({
