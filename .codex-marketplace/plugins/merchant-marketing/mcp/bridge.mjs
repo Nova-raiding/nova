@@ -241,7 +241,7 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   // Current merchant scope is content production, review and export.
   // Keep server compatibility and audit records; do not expose store sync or
   // publishing actions through this merchant bridge.
-  'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm',
+  'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm', 'workspace.bootstrap',
   'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'sync.retry_failed',
   'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
   'automation.scan', 'automation.tick', 'automation.pause',
@@ -305,7 +305,7 @@ const reasonProperty = boundedString(1000, 3, '当前交互写操作的可审计
 const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   ...READ_ONLY_METHODS,
   'merchant.start',
-  'content.export', 'catalog.image.review', 'catalog.image.select', 'workspace.bootstrap',
+  'content.export', 'catalog.image.review', 'catalog.image.select',
   // The merchant explicitly supplied the image and requested an unpublished
   // preview. Uploading the source and invoking candidate generation are part
   // of that same non-publishing workflow; binding/publishing remains gated.
@@ -1655,13 +1655,17 @@ function toolErrorPresentation(method, args, code, details) {
     const missing = Array.isArray(details?.missing) && details.missing.length
       ? details.missing.join('、')
       : '服务地址或工作区配置'
+    const workspaceBindingMissing = Array.isArray(details?.missing) && details.missing.includes('MERCHANT_WORKSPACE_ID')
     return {
-      text: `Store Nova连接配置未加载（缺少${missing}）。请重新加载插件连接或重启 ChatGPT；已保存的商品、SKU 和素材不会丢失。本次未向后端发送请求。`,
+      text: workspaceBindingMissing
+        ? '尚未绑定工作区，本次未向后端发送请求。请联系平台管理员获取已分配的 ws_... 工作区 ID，再在插件安装目录运行：runtime/node scripts/login-local-macos.mjs --base-url https://yxsona.com --workspace ws_<管理员分配的工作区>。Windows 请运行 runtime\\node.exe scripts\\login-local-windows.mjs --base-url https://yxsona.com --workspace ws_<管理员分配的工作区>。按提示完成浏览器授权后重启 ChatGPT。商家不能自行创建工作区。'
+        : `Store Nova连接配置未加载（缺少${missing}）。请重新加载插件连接或重启 ChatGPT；已保存的商品、SKU 和素材不会丢失。本次未向后端发送请求。`,
       recovery: {
-        state: 'configuration_required',
+        state: workspaceBindingMissing ? 'workspace_binding_required' : 'configuration_required',
         user_action_required: true,
         preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
-        resume_message: '继续',
+        resume_message: workspaceBindingMissing ? '管理员分配的工作区绑定完成后重试' : '继续',
+        ...(workspaceBindingMissing ? { next_action: { label: '联系平台管理员获取已分配的工作区 ID，然后运行本地插件登录脚本。', target: 'local_plugin_login', workspace_id_format: 'ws_...' } } : {}),
       },
     }
   }
@@ -2368,8 +2372,9 @@ function toolContent(method, result) {
       }
       return content
     }
-    if (status === 'clean') return [{ type: 'text', text: `图片检查已通过。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${sanitizeMerchantAction(result.next_step)}` : ''}`.trim() }]
-    if (status === 'blocked') return [{ type: 'text', text: '这张图片暂时不能继续使用。素材已安全保留；平台会在你重新提交图片时自动复检，无需人工处理或提交扫描结果。' }]
+     if (status === 'clean') return [{ type: 'text', text: `图片检查已通过。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${sanitizeMerchantAction(result.next_step)}` : ''}`.trim() }]
+    if (status === 'unscanned') return [{ type: 'text', text: `文件已上传，可继续使用。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${sanitizeMerchantAction(result.next_step)}` : ''}`.trim() }]
+     if (status === 'blocked') return [{ type: 'text', text: '这张图片暂时不能继续使用。素材已安全保留；平台会在你重新提交图片时自动复检，无需人工处理或提交扫描结果。' }]
     return [{ type: 'text', text: '图片已收到，正在自动检查。检查通过后会等待你的确认再生成。' }]
   }
   if (method === 'content.export') return materializeExportArtifact(result).content
@@ -2782,14 +2787,9 @@ async function resolveGeneratedImagePreview(method, initialResult) {
 }
 
 async function callRemote(method, params) {
-  // A new Codex conversation must not force a merchant to understand
-  // workspace IDs or environment variables. Bootstrap is still explicit at
-  // the API boundary, but the bridge performs it once before the first
-  // merchant-facing entry point. Production never falls back to ws_demo.
+  // Workspace IDs are assigned by the platform administrator. Never create
+  // one from the merchant plugin; missing bindings fail closed below.
   assertTransportConfiguration()
-  if (method === 'merchant.start' && !configuredEnv('MERCHANT_WORKSPACE_ID') && !loadWorkspaceBinding() && !allowsLocalFixtureFallback()) {
-    await callRemote('workspace.bootstrap', { display_name: 'Store Nova商家工作区' })
-  }
   const scopedWorkspaceId = method === 'workspace.bootstrap' ? '' : workspaceId()
   const requestedWorkspaceId = typeof params?.workspace_id === 'string' ? params.workspace_id.trim() : ''
   if (scopedWorkspaceId && requestedWorkspaceId && requestedWorkspaceId !== scopedWorkspaceId) {
@@ -2977,10 +2977,14 @@ async function callRemote(method, params) {
 
 function assetScanStatus(value) {
   const status = String(value?.scanStatus ?? value?.scan_status ?? '').trim().toLowerCase()
-  if (status === 'blocked') return status
+  if (status === 'blocked' || status === 'unscanned') return status
   if (value?.display?.primaryStatus === 'awaiting_scan' || value?.display?.primary_status === 'awaiting_scan') return 'quarantined'
   if (status === 'clean' || status === 'blocked' || status === 'quarantined') return status
   return 'quarantined'
+}
+
+function assetUploadUsable(status) {
+  return status === 'clean' || status === 'unscanned'
 }
 
 function safeImageSubjectLabel(result, job, candidate) {
@@ -3178,11 +3182,11 @@ function merchantAssetSummary(asset) {
   const rawReadiness = typeof asset.readiness?.status === 'string' ? asset.readiness.status : typeof asset.status === 'string' ? asset.status : undefined
   const display = asset.display && typeof asset.display === 'object' && !Array.isArray(asset.display)
     ? {
-        primary_status: blocked ? 'scan_blocked' : rightsBlocked ? 'rights_blocked' : scanStatus !== 'clean' ? 'awaiting_scan' : typeof asset.display.primaryStatus === 'string' ? asset.display.primaryStatus : 'unknown',
-        label: blocked ? '安全检查未通过' : rightsBlocked ? '使用权益受限' : scanStatus !== 'clean' ? '正在安全检查' : typeof asset.display.label === 'string' ? asset.display.label : '当前暂不可用',
+        primary_status: blocked ? 'scan_blocked' : rightsBlocked ? 'rights_blocked' : !assetUploadUsable(scanStatus) ? 'awaiting_scan' : typeof asset.display.primaryStatus === 'string' && asset.display.primaryStatus !== 'awaiting_scan' ? asset.display.primaryStatus : 'unknown',
+        label: blocked ? '安全检查未通过' : rightsBlocked ? '使用权益受限' : !assetUploadUsable(scanStatus) ? '正在安全检查' : scanStatus === 'unscanned' ? '已上传，可继续使用' : typeof asset.display.label === 'string' ? asset.display.label : '当前暂不可用',
         source_state: blocked || rightsBlocked ? 'blocked' : typeof asset.display.sourceState === 'string' ? asset.display.sourceState : undefined,
         reasons: blocked || rightsBlocked ? [] : Array.isArray(asset.display.reasons) ? asset.display.reasons.filter(reason => typeof reason === 'string').map(sanitizeMerchantAction) : [],
-        next_action: scanStatus === 'clean' && !rightsBlocked && asset.display.nextAction && typeof asset.display.nextAction === 'object' ? {
+        next_action: assetUploadUsable(scanStatus) && !rightsBlocked && asset.display.nextAction && typeof asset.display.nextAction === 'object' ? {
           method: typeof asset.display.nextAction.method === 'string' ? asset.display.nextAction.method : undefined,
           label: typeof asset.display.nextAction.label === 'string' ? sanitizeMerchantAction(asset.display.nextAction.label) : undefined,
           allowed: asset.display.nextAction.allowed === true,
@@ -3222,12 +3226,12 @@ function merchantAssetStructuredContent(method, result) {
         Object.hasOwn(action, 'scanStatus') || Object.hasOwn(action, 'scan_status')
         || action.display?.primaryStatus === 'awaiting_scan' || action.display?.primary_status === 'awaiting_scan'
       )
-      if (summary.scan_status !== 'blocked' && actionHasScanEvidence && actionSummary.scan_status !== 'clean') summary.scan_status = 'quarantined'
+      if (summary.scan_status !== 'blocked' && actionHasScanEvidence && !assetUploadUsable(actionSummary.scan_status)) summary.scan_status = 'quarantined'
       if (actionSummary.rights_status === 'rejected') summary.rights_status = 'rejected'
       if (actionSummary.rights_scope === 'unusable') summary.rights_scope = 'unusable'
       const scanBlocked = summary.scan_status === 'blocked'
       const rightsBlocked = summary.rights_status === 'rejected' || summary.rights_scope === 'unusable'
-      const awaitingScan = !scanBlocked && (summary.scan_status !== 'clean' || summary.display?.primary_status === 'awaiting_scan')
+      const awaitingScan = !scanBlocked && (!assetUploadUsable(summary.scan_status) || summary.display?.primary_status === 'awaiting_scan' && summary.scan_status !== 'unscanned')
       const readinessStatus = scanBlocked || rightsBlocked || currentAsset?.readiness_status === 'blocked' || actionSummary.readiness_status === 'blocked'
         ? 'blocked'
         : awaitingScan && summary.readiness_status === 'ready' ? 'draft' : summary.readiness_status
@@ -3292,23 +3296,23 @@ function merchantAssetStructuredContent(method, result) {
   const blocked = scanStatus === 'blocked'
   const rightsBlocked = summary.rights_status === 'rejected' || summary.rights_scope === 'unusable'
   const continuationState = result?.generationContinuation && typeof result.generationContinuation === 'object' ? result.generationContinuation.state : undefined
-  const awaitingConfirmation = scanStatus === 'clean' && !rightsBlocked && continuationState === 'awaiting_confirmation'
+  const awaitingConfirmation = assetUploadUsable(scanStatus) && !rightsBlocked && continuationState === 'awaiting_confirmation'
   return {
     ...summary,
     scanStatus,
     scan_status: scanStatus,
     scanAutomation: {
-      state: blocked ? 'blocked' : rightsBlocked ? 'rights_blocked' : awaitingConfirmation ? 'awaiting_confirmation' : scanStatus === 'clean' ? 'completed' : 'pending',
+      state: blocked ? 'blocked' : rightsBlocked ? 'rights_blocked' : awaitingConfirmation ? 'awaiting_confirmation' : assetUploadUsable(scanStatus) ? 'completed' : 'pending',
       userActionRequired: blocked || rightsBlocked || awaitingConfirmation,
-      message: blocked ? '这张图片暂时不能继续使用；重新提交后由平台自动复检，无需人工处理。' : rightsBlocked ? summary.next_step : awaitingConfirmation ? '图片已通过自动安全检查。请确认图片商用权与 AI 编辑授权后再开始生成。' : scanStatus === 'clean' ? '图片检查已通过。' : '图片已收到，正在自动检查。',
+      message: blocked ? '这张图片暂时不能继续使用；重新提交后由平台自动复检，无需人工处理。' : rightsBlocked ? summary.next_step : awaitingConfirmation ? scanStatus === 'unscanned' ? '图片已上传。请确认图片商用权与 AI 编辑授权后再开始生成。' : '图片已通过自动安全检查。请确认图片商用权与 AI 编辑授权后再开始生成。' : scanStatus === 'unscanned' ? '文件已上传，可继续使用。' : scanStatus === 'clean' ? '图片检查已通过。' : '图片已收到，正在自动检查。',
     },
     scan_wait: {
-      state: blocked ? 'blocked' : rightsBlocked ? 'rights_blocked' : awaitingConfirmation ? 'awaiting_confirmation' : scanStatus === 'clean' ? 'completed' : 'processing',
+      state: blocked ? 'blocked' : rightsBlocked ? 'rights_blocked' : awaitingConfirmation ? 'awaiting_confirmation' : assetUploadUsable(scanStatus) ? 'completed' : 'processing',
       user_action_required: blocked || rightsBlocked || awaitingConfirmation,
       timed_out: result.scan_wait?.timed_out === true,
-      next_step: blocked || rightsBlocked ? summary.next_step : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : sanitizeMerchantAction(String(result.scan_wait?.next_step ?? result.next_step ?? (scanStatus === 'clean' ? '继续当前任务' : '平台会继续自动检查，你无需操作'))),
+      next_step: blocked || rightsBlocked ? summary.next_step : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : sanitizeMerchantAction(String(result.scan_wait?.next_step ?? result.next_step ?? (assetUploadUsable(scanStatus) ? '继续当前任务' : '平台会继续自动检查，你无需操作'))),
     },
-    next_step: blocked || rightsBlocked ? summary.next_step : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : sanitizeMerchantAction(String(result.next_step ?? (scanStatus === 'clean' ? '继续当前任务' : '平台会继续自动检查，你无需操作'))),
+    next_step: blocked || rightsBlocked ? summary.next_step : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : sanitizeMerchantAction(String(result.next_step ?? (assetUploadUsable(scanStatus) ? '继续当前任务' : '平台会继续自动检查，你无需操作'))),
     ...(!rightsBlocked && (continuationState !== 'awaiting_confirmation' || awaitingConfirmation) && result.generationContinuation && typeof result.generationContinuation === 'object' && typeof result.generationContinuation.state === 'string'
       ? { generation_continuation: { state: result.generationContinuation.state, ...(typeof result.generationContinuation.job_id === 'string' ? { job_id: result.generationContinuation.job_id } : {}), ...(typeof result.generationContinuation.jobId === 'string' ? { jobId: result.generationContinuation.jobId } : {}) } }
       : {}),
@@ -3359,16 +3363,17 @@ function assetScanResult(uploadResult, asset, assetAction, timedOut = false) {
   // but never upgrade the upload's pending rights from a later approval.
   const rightsRejected = [uploadResult, asset, assetAction].some(value => value?.rightsStatus === 'rejected' || value?.rights_status === 'rejected')
   const rightsUnusable = [uploadResult, asset, assetAction].some(value => value?.rightsScope === 'unusable' || value?.rights_scope === 'unusable')
-  const nextStep = scanStatus === 'clean'
+  const nextStep = assetUploadUsable(scanStatus)
     ? (typeof assetAction?.next_step === 'string' ? assetAction.next_step : '继续当前任务')
     : scanStatus === 'blocked'
       ? '重新提交这张图片即可触发平台自动复检，无需人工处理'
       : '平台会继续自动检查，你无需操作'
   const scanAutomation = {
-    state: scanStatus === 'clean' ? 'completed' : scanStatus === 'blocked' ? 'blocked' : 'pending',
-    mode: uploadResult?.scanAutomation?.mode ?? 'platform_worker',
+    state: assetUploadUsable(scanStatus) ? 'completed' : scanStatus === 'blocked' ? 'blocked' : 'pending',
+    mode: scanStatus === 'unscanned' ? 'deferred' : uploadResult?.scanAutomation?.mode ?? 'platform_worker',
     userActionRequired: scanStatus === 'blocked',
-    message: scanStatus === 'clean'
+    message: scanStatus === 'unscanned' ? '文件已上传，可继续使用。'
+      : scanStatus === 'clean'
       ? '图片检查已通过，可以继续当前任务。'
       : scanStatus === 'blocked'
         ? '这张图片暂时不能继续使用，未用于生成或发布。重新提交后平台会自动复检，无需人工处理。'
@@ -3394,7 +3399,7 @@ function assetScanResult(uploadResult, asset, assetAction, timedOut = false) {
     scan_status: scanStatus,
     scanAutomation,
     scan_wait: {
-      state: scanStatus === 'clean' ? 'completed' : scanStatus === 'blocked' ? 'blocked' : 'processing',
+      state: assetUploadUsable(scanStatus) ? 'completed' : scanStatus === 'blocked' ? 'blocked' : 'processing',
       user_action_required: scanStatus === 'blocked',
       timed_out: timedOut,
       next_step: nextStep,
@@ -3408,7 +3413,7 @@ async function waitForAssetScan(uploadResult) {
     ? uploadResult.id
     : typeof uploadResult?.asset_id === 'string' ? uploadResult.asset_id : ''
   const initialStatus = assetScanStatus(uploadResult)
-  if (!assetId || initialStatus === 'clean' || initialStatus === 'blocked') return assetScanResult(uploadResult, undefined, undefined)
+  if (!assetId || assetUploadUsable(initialStatus) || initialStatus === 'blocked') return assetScanResult(uploadResult, undefined, undefined)
 
   const deadline = Date.now() + ASSET_SCAN_POLL_TIMEOUT_MS
   let latestAsset
@@ -3425,7 +3430,7 @@ async function waitForAssetScan(uploadResult) {
     latestAsset = Array.isArray(listing?.assets) ? listing.assets.find(asset => asset?.id === assetId) : undefined
     latestAction = Array.isArray(listing?.asset_actions) ? listing.asset_actions.find(action => action?.asset_id === assetId) : undefined
     const status = assetScanStatus(latestAsset)
-    if (status === 'clean' || status === 'blocked') return assetScanResult(uploadResult, latestAsset, latestAction)
+    if (assetUploadUsable(status) || status === 'blocked') return assetScanResult(uploadResult, latestAsset, latestAction)
   } while (Date.now() < deadline)
 
   return assetScanResult(uploadResult, latestAsset, latestAction, true)
