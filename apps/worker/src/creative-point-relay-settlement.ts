@@ -40,7 +40,7 @@ const receiptHash = (value: Record<string, unknown>) => createHash('sha256').upd
 /**
  * Bridges relay evidence to the creative-point reservation that was frozen in
  * the durable commercial access snapshot. A successful reservation must be
- * settled before the generation result can be delivered. Unknown provider
+ * settled only after the generation result is accepted. Unknown provider
  * outcomes only append evidence and deliberately leave the reservation open.
  */
 export class CreativePointRelaySettlement {
@@ -59,12 +59,12 @@ export class CreativePointRelaySettlement {
     return reservation
   }
 
-  async recordSucceeded(event: DurableOutboxEvent, usage: RelayUsageRecord): Promise<string | undefined> {
-    const reservation = await this.reservation(event)
+  async recordSucceeded(event: DurableOutboxEvent, usage: RelayUsageRecord, operation: 'generation.execute' | 'image_generation.execute' = 'generation.execute'): Promise<string | undefined> {
+    const reservation = await this.reservation(event, operation)
     if (!reservation) return undefined
     const providerRequestId = identity(usage.providerRequestId) ?? identity(usage.providerAttemptId)
     if (!validUsageEvidence(usage, true) || !providerRequestId || !finiteNonNegative(usage.costCny)) throw Object.assign(new Error('verified relay identity, usage and finite non-negative cost are required before creative point settlement'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', providerSucceeded: true })
-    const usageEvidence = { modality: usage.modality, model: usage.model, input_tokens: usage.inputTokens ?? null, output_tokens: usage.outputTokens ?? null, total_tokens: usage.totalTokens ?? null }
+    const usageEvidence = { modality: usage.modality, model: usage.model, ...(usage.inputTokens !== undefined ? { input_tokens: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { output_tokens: usage.outputTokens } : {}), ...(usage.totalTokens !== undefined ? { total_tokens: usage.totalTokens } : {}) }
     const costEvidence = { currency: 'CNY', actual: usage.costCny }
     const at = usage.observedAt
     await this.receipts.recordProviderReceipt({ workspaceId: event.workspaceId, operationId: reservation.operationId, provider: this.provider, providerRequestId, outcome: 'succeeded', usage: usageEvidence, cost: costEvidence, receiptHash: receiptHash({ workspace_id: event.workspaceId, operation_id: reservation.operationId, provider: this.provider, provider_request_id: providerRequestId, outcome: 'succeeded', usage: usageEvidence, cost: costEvidence, verified_at: at }), verifiedAt: at, at })
@@ -76,13 +76,15 @@ export class CreativePointRelaySettlement {
     if (!reservation) return
     const identities = [...new Set(providerRequestIds.map(identity).filter((value): value is string => Boolean(value)))].sort()
     if (identities.length === 0) throw Object.assign(new Error('verified relay receipt is required before creative point settlement'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', providerSucceeded: true })
+    const verifiedAt: string[] = []
     for (const providerRequestId of identities) {
       const receipt = await this.receipts.getProviderReceipt({ workspaceId: event.workspaceId, operationId: reservation.operationId, provider: this.provider, providerRequestId })
       if (!receipt || receipt.outcome !== 'succeeded' || !validUsageEvidence(receipt.usage) || !validCostEvidence(receipt.cost) || !receipt.verifiedAt || Number.isNaN(Date.parse(receipt.verifiedAt))) {
         throw Object.assign(new Error('verified succeeded relay receipt with usage and cost is required before creative point settlement'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', providerSucceeded: true, providerRequestId })
       }
+      verifiedAt.push(receipt.verifiedAt)
     }
-    const at = new Date().toISOString()
+    const at = verifiedAt.sort()[verifiedAt.length - 1]!
     const settlementIdentity = createHash('sha256').update(identities.join('\n'), 'utf8').digest('hex')
     await this.points.settle({ workspaceId: event.workspaceId, reservationId: reservation.id, actualPoints: reservation.points, idempotencyKey: `relay-settle:${settlementIdentity}`, metadata: { provider: this.provider, provider_request_ids: identities, receipt_verified_at: at }, at })
   }
@@ -99,6 +101,17 @@ export class CreativePointRelaySettlement {
     if (providerRequestId) await this.receipts.recordProviderReceipt({ workspaceId: event.workspaceId, operationId: reservation.operationId, provider: this.provider, providerRequestId, outcome: 'failed', receiptHash: receiptHash({ workspace_id: event.workspaceId, operation_id: reservation.operationId, provider: this.provider, provider_request_id: providerRequestId, outcome: 'failed', error_code: identity(error.code) ?? 'MODEL_PROVIDER_REQUEST_FAILED' }), at })
     await this.points.release({ workspaceId: event.workspaceId, reservationId: reservation.id, idempotencyKey: `relay-release:${providerRequestId ?? event.id}`, at })
   }
+}
+
+export async function deliverGenerationResultWithPointSettlement(hasContent: boolean, deliver: () => Promise<void>, settle: () => Promise<void>): Promise<void> {
+  await deliver()
+  if (hasContent) await settle()
+}
+
+export function requiresCreativePointSettlement(event: DurableOutboxEvent): boolean {
+  const snapshot = event.payload.commercial_access_snapshot
+  if (!isRecord(snapshot)) return false
+  return snapshot.access_mode === 'POINT_CHARGED' && typeof snapshot.reservation_id === 'string' && Boolean(snapshot.reservation_id.trim())
 }
 
 export function relayProviderIdentity(source: Record<string, string | undefined>): string {

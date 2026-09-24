@@ -38,7 +38,7 @@ import { assertClamAvExecutionAdmission } from '../../../packages/workers/src/sc
 import { planSupportSlaReportSchedule } from '../../../packages/workers/src/support-sla-scan.js'
 import { isGenerationJobExecutable, isGenerationJobFinished, validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
 import { assertGenerationInput } from './generation-input.js'
-import { CreativePointRelaySettlement, relayProviderIdentity } from './creative-point-relay-settlement.js'
+import { CreativePointRelaySettlement, deliverGenerationResultWithPointSettlement, relayProviderIdentity, requiresCreativePointSettlement } from './creative-point-relay-settlement.js'
 import { PostgresKnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
 import { indexApprovedKnowledge } from '../../../packages/application/src/knowledge-lexical-index.js'
 
@@ -2031,7 +2031,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
     mappingPreflight: createPersistentWorkerMappingPreflightAdapter({ approvals: mappingApprovals, scopes: createPostgresWorkerMappingScopeLoader(pool), execution: mappingExecution }),
   })
   const generationUsageContexts = new Map<string, { runKey: string; contextHash: string; contextLinkId?: string; taskId: string; campaignItemId?: string; event: DurableOutboxEvent; providerRequestIds: string[]; signal?: AbortSignal }>()
-  const imageUsageContexts = new Map<string, { runKey: string; contextHash: string; signal?: AbortSignal; providerRequestId?: string }>()
+  const imageUsageContexts = new Map<string, { runKey: string; contextHash: string; event: DurableOutboxEvent; signal?: AbortSignal; providerRequestId?: string }>()
   const contentGenerator = createContentGeneratorFromEnv(process.env, async usage => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for model usage settlement')
     const execution = usage.actionId ? generationUsageContexts.get(usage.actionId) : undefined
@@ -2070,6 +2070,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         formula_version: quote.metadata.formula_version,
       })
     }
+    if (execution) await creativePointSettlement.recordSucceeded(execution.event, enriched, 'image_generation.execute')
     return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
   }, providerDispatchAdmission.beforeModelRequest)
   const requireImageProviderRequestId = (actionId: string) => {
@@ -2192,9 +2193,9 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
           return providerDispatchAdmission.run({ event, operation: 'generation.execute', signal, providerRequests: 0 }, () => contentGenerator.generate(validatedInput, { signal }))
         },
       })
-      await creativePointSettlement.settleForDelivery(event, usageContext.providerRequestIds)
       return content
     } catch (error) {
+      generationUsageContexts.delete(actionId)
       if (error instanceof WorkerExecutionAuthorizationError && usageContext.providerRequestIds.length > 0) {
         // A schema-repair attempt can be denied after an earlier response
         // already produced real usage. Preserve that evidence and reservation
@@ -2213,7 +2214,6 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
       }
       throw error
     }
-    finally { generationUsageContexts.delete(actionId) }
   }
   const imageGenerationRequested = async (event: DurableOutboxEvent, _projection: unknown, signal?: AbortSignal) => {
     signal?.throwIfAborted()
@@ -2240,7 +2240,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
       await executionAuthorization.assertAuthorized(event, 'image_generation.execute', signal)
       await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'begin_provider_dispatch', ownerToken, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
     } catch (error) { return closeRejected(error) }
-    imageUsageContexts.set(actionId, { runKey, contextHash: intentHash, ...(signal ? { signal } : {}) })
+    imageUsageContexts.set(actionId, { runKey, contextHash: intentHash, event, ...(signal ? { signal } : {}) })
     // Keep asset IDs and resolved pixels on their respective relay fields.
     // Passing IDs through `sourceImages` silently dropped the reference image
     // in the image generator's data-URL validation, so the provider generated
@@ -2365,7 +2365,25 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
   }
   const onGenerationResult = async (event: DurableOutboxEvent, result: { content?: GeneratedContent; error?: { code: string; message: string } }, _projection: unknown, signal?: AbortSignal) => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for generation result')
-    await postGenerationResult({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, result, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+    const actionId = typeof event.payload.action_id === 'string' ? event.payload.action_id : undefined
+    const execution = actionId ? generationUsageContexts.get(actionId) : undefined
+    const requiresPointSettlement = requiresCreativePointSettlement(event)
+    try {
+      await deliverGenerationResultWithPointSettlement(result.content !== undefined,
+        () => postGenerationResult({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, event, result, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }),
+        async () => {
+          if (!execution && requiresPointSettlement) throw Object.assign(new Error('provider execution context is missing; creative point settlement must be reconciled'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', reconciliationRequired: true })
+          if (execution) await creativePointSettlement.settleForDelivery(event, execution.providerRequestIds)
+        })
+    } catch (error) {
+      if (result.content !== undefined) throw Object.assign(error instanceof Error ? error : new Error('generation result delivery or settlement is pending'), { code: 'MODEL_USAGE_SETTLEMENT_PENDING', providerSucceeded: true, reconciliationRequired: true })
+      throw error
+    } finally {
+      // Keep the in-memory provider evidence when delivery or settlement fails.
+      // The durable outbox retry can then retry this callback without losing
+      // the only linkage from a successful relay call to its verified receipt.
+      if (actionId && !(result.content !== undefined && requiresPointSettlement && !execution)) generationUsageContexts.delete(actionId)
+    }
   }
   const onGenerationDeferred = async (event: DurableOutboxEvent, error: { retryAfterSeconds: number; code: string; message: string }, _projection: unknown, signal?: AbortSignal) => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for generation defer')

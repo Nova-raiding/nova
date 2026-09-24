@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { MemoryCreativePointRepository } from '../../../packages/persistence/src/creative-point-repository.js'
 import type { DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
-import { CreativePointRelaySettlement, relayProviderIdentity } from './creative-point-relay-settlement.js'
+import { CreativePointRelaySettlement, deliverGenerationResultWithPointSettlement, relayProviderIdentity, requiresCreativePointSettlement } from './creative-point-relay-settlement.js'
 
 const at = '2026-09-02T00:00:00.000Z'
 
-async function fixture() {
+async function fixture(operation: 'generation.execute' | 'image_generation.execute' = 'generation.execute') {
   const points = new MemoryCreativePointRepository()
   await points.grant({ workspaceId: 'ws_a', idempotencyKey: 'grant_1', sourceType: 'test', sourceId: 'grant_1', points: 10, at })
-  const reserved = await points.reserve({ workspaceId: 'ws_a', idempotencyKey: 'reserve_1', actionKey: 'generation.execute', points: 3, rateCardVersion: 'rate_1', at })
+  const reserved = await points.reserve({ workspaceId: 'ws_a', idempotencyKey: 'reserve_1', actionKey: operation, points: 3, rateCardVersion: 'rate_1', at })
   const receiptRows = new Map<string, { operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; verifiedAt: string | null }>()
   const receipts = {
     recordProviderReceipt: vi.fn(async (input: { operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage?: Record<string, unknown>; cost?: Record<string, unknown>; verifiedAt?: string }) => {
@@ -20,10 +20,10 @@ async function fixture() {
     }),
   }
   const event: DurableOutboxEvent = {
-    id: 'evt_generation_1', workspaceId: 'ws_a', aggregateId: 'job_1', eventType: 'generation.requested', sequence: 1, createdAt: at,
+    id: 'evt_generation_1', workspaceId: 'ws_a', aggregateId: 'job_1', eventType: operation === 'image_generation.execute' ? 'image.generation.requested' : 'generation.requested', sequence: 1, createdAt: at,
     payload: {
       commercial_access_snapshot: {
-        schema_version: 1, decision_id: 'decision_1', workspace_id: 'ws_a', operation: 'generation.execute',
+        schema_version: 1, decision_id: 'decision_1', workspace_id: 'ws_a', operation,
         access_mode: 'POINT_CHARGED', access_revision: 'revision_1', balance_state: 'known',
         entitlement_snapshot_id: 'entitlement_1', entitlement_snapshot_checksum: 'a'.repeat(64),
         rate_version: 'rate_1', quoted_points: 3, reservation_id: reserved.value.id, decided_at: at,
@@ -41,6 +41,45 @@ describe('creative point relay settlement', () => {
     expect(receipts.recordProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ operationId: expect.stringMatching(/^cpo_/), outcome: 'succeeded', providerRequestId: 'provider_req_1', usage: expect.objectContaining({ total_tokens: 15 }), cost: { currency: 'CNY', actual: 0.12 }, verifiedAt: at }))
     await settlement.settleForDelivery(event, [requestId!])
     await expect(points.getReservation('ws_a', reservationId)).resolves.toMatchObject({ status: 'settled', settledPoints: 3 })
+  })
+
+  it('does not settle on a failed callback and settles once after callback acceptance', async () => {
+    const order: string[] = []
+    const settle = vi.fn(async () => { order.push('settle') })
+    await expect(deliverGenerationResultWithPointSettlement(true, async () => { order.push('callback'); throw new Error('callback failed') }, settle)).rejects.toThrow('callback failed')
+    expect(settle).not.toHaveBeenCalled()
+    await deliverGenerationResultWithPointSettlement(true, async () => { order.push('accepted') }, settle)
+    expect(order).toEqual(['callback', 'accepted', 'settle'])
+    expect(settle).toHaveBeenCalledTimes(1)
+  })
+
+  it('records and settles image receipt with the configured relay identity and same request id', async () => {
+    const { points, receipts, event, reservationId, settlement } = await fixture('image_generation.execute')
+    const requestId = await settlement.recordSucceeded(event, { modality: 'image', model: 'image-model', providerRequestId: 'image_req_1', costCny: 0.2, observedAt: at }, 'image_generation.execute')
+    expect(requestId).toBe('image_req_1')
+    expect(receipts.recordProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ provider: 'relay.example', providerRequestId: 'image_req_1', outcome: 'succeeded' }))
+    await settlement.settleForDelivery(event, [requestId!], 'image_generation.execute')
+    expect(receipts.getProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ provider: 'relay.example', providerRequestId: 'image_req_1' }))
+    await expect(points.getReservation('ws_a', reservationId)).resolves.toMatchObject({ status: 'settled', settledPoints: 3 })
+  })
+
+  it('keeps delivery blocked when a successful result has lost its provider execution context', async () => {
+    const settle = vi.fn(async () => {})
+    const deliver = vi.fn(async () => {})
+    await expect(deliverGenerationResultWithPointSettlement(true, deliver, async () => {
+      throw Object.assign(new Error('verified relay receipt is required before creative point settlement'), { code: 'MODEL_USAGE_EVIDENCE_MISSING' })
+    })).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING' })
+    expect(deliver).toHaveBeenCalledOnce()
+    expect(settle).not.toHaveBeenCalled()
+  })
+
+  it('detects point charged snapshots that require settlement recovery', async () => {
+    const { event } = await fixture()
+    expect(requiresCreativePointSettlement(event)).toBe(true)
+    event.payload.commercial_access_snapshot = { access_mode: 'POINT_REQUIRED_NO_CHARGE', reservation_id: null }
+    expect(requiresCreativePointSettlement(event)).toBe(false)
+    event.payload.commercial_access_snapshot = null
+    expect(requiresCreativePointSettlement(event)).toBe(false)
   })
 
   it('rejects delivery when the provider request has no current-operation receipt', async () => {
