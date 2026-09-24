@@ -108,6 +108,19 @@ for (const name of ['worker-sync', 'worker-generation', 'worker-publish', 'worke
   if (/(?:ws_demo|workspace_demo|demo-workspace|local-token|local-signing-secret|merchant_app_local_only)/u.test(JSON.stringify(environment))) fail(`${name} contains a local/demo identity`)
 }
 
+// A full production release always runs a workspace-bound canary. Catch a
+// scanner allowlist that silently excludes that workspace before deployment;
+// this validates the rendered scanner scope without widening it.
+const productionCanaryWorkspace = String(process.env.PRODUCTION_CANARY_WORKSPACE_ID ?? '').trim()
+if (productionCanaryWorkspace) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(productionCanaryWorkspace)) fail('PRODUCTION_CANARY_WORKSPACE_ID is invalid')
+  const scannerWorkspaces = String(rendered.services?.['worker-scan']?.environment?.WORKER_WORKSPACES ?? '').trim()
+  const scannerWorkspaceAllowlist = scannerWorkspaces.split(',').map(value => value.trim()).filter(Boolean)
+  if (scannerWorkspaces !== 'auto' && !scannerWorkspaceAllowlist.includes(productionCanaryWorkspace)) {
+    fail('worker-scan.WORKER_WORKSPACES must include the production canary workspace or equal auto')
+  }
+}
+
 const primaryEnvironment = rendered.services?.api?.environment ?? {}
 try {
   const credentials = JSON.parse(String(primaryEnvironment.WORKER_API_CREDENTIALS))

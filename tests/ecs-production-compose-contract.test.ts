@@ -51,12 +51,12 @@ const valid = {
   },
 }
 
-function validate(value: unknown) {
+function validate(value: unknown, env: NodeJS.ProcessEnv = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'ecs-production-compose-'))
   const path = join(dir, 'rendered.json')
   writeFileSync(path, JSON.stringify(value))
   return execFileSync('node', ['infra/scripts/validate-ecs-production-compose.mjs', path], {
-    cwd: process.cwd(), encoding: 'utf8', stdio: 'pipe',
+    cwd: process.cwd(), encoding: 'utf8', stdio: 'pipe', env: { ...process.env, ...env },
   })
 }
 
@@ -150,6 +150,18 @@ describe('ECS production Compose contract', () => {
 
   it('accepts a production render without demo seeding', () => {
     expect(validate(valid)).toContain('contract passed')
+  })
+
+  it('requires the production canary workspace to be covered by the scanner worker scope', () => {
+    const rendered = structuredClone(valid) as any
+    rendered.services['worker-scan'].environment.WORKER_WORKSPACES = 'ws_other, ws_canary'
+    expect(validate(rendered, { PRODUCTION_CANARY_WORKSPACE_ID: 'ws_canary' })).toContain('contract passed')
+
+    rendered.services['worker-scan'].environment.WORKER_WORKSPACES = 'ws_other'
+    expect(() => validate(rendered, { PRODUCTION_CANARY_WORKSPACE_ID: 'ws_canary' })).toThrow(/worker-scan\.WORKER_WORKSPACES must include the production canary workspace/)
+
+    rendered.services['worker-scan'].environment.WORKER_WORKSPACES = 'auto'
+    expect(validate(rendered, { PRODUCTION_CANARY_WORKSPACE_ID: 'ws_canary' })).toContain('contract passed')
   })
 
   it('accepts the real final six-layer production render and proves demo seed removal', () => {
