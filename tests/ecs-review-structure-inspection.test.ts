@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { summarizeReviewBytes } from '../infra/scripts/ecs-review-structure.mjs'
+import { PROTECTED_OPS_PATHS, STRUCTURE_REVIEW_PATHS, summarizeReviewBytes } from '../infra/scripts/ecs-review-structure.mjs'
 
 const digest = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
 const helper = resolve('infra/scripts/inspect-ecs-review-structure.mjs')
@@ -64,6 +64,11 @@ const crypto=require('node:crypto');let input='';process.stdin.setEncoding('utf8
 }
 
 describe('ECS sanitized remote structure review', () => {
+  it('includes candidate port preflight code and regression coverage in protected source review', () => {
+    expect(PROTECTED_OPS_PATHS).toContain('infra/scripts/ecs-compose-published-ports.mjs')
+    expect(STRUCTURE_REVIEW_PATHS).toContain('tests/ecs-compose-published-ports.test.ts')
+  })
+
   it('publishes only redacted structural summaries after exact sync-plan hash verification', () => {
     const value = fixture()
     try {

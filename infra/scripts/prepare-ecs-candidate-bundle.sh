@@ -107,6 +107,7 @@ infra/scripts/launch-ecs-candidate-full-https-gateway.mjs
 infra/scripts/launch-ecs-candidate-full-https-gateway.d.mts
 tests/ecs-candidate-full-https-gateway.test.ts
 infra/scripts/deploy-verified-ecs-compose.sh
+infra/scripts/ecs-compose-published-ports.mjs
 infra/scripts/ecs-external-gateway-handoff.mjs
 infra/scripts/ecs-external-gateway-handoff.d.mts
 tests/ecs-external-gateway-handoff.test.ts
@@ -217,6 +218,7 @@ scripts/scanner-callback-canary.mjs
 scripts/scanner-callback-canary.test.mjs
 scripts/scanner-callback-canary-evidence.ts
 tests/ecs-compose-deploy-runner.test.ts
+tests/ecs-compose-published-ports.test.ts
 tests/ecs-release-images-build.test.ts
 tests/model-relay-contract.test.ts
 tests/plugin-upgrade-path.test.ts
