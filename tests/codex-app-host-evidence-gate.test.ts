@@ -78,6 +78,16 @@ describe('Codex App host evidence gate', () => {
       expectedReleaseId: 'release-1', expectedMcpBaseUrl: 'https://merchant.example.com',
       expectedManifestSha256: '9'.repeat(64), expectedBridgeSha256: 'b'.repeat(64), expectedGitSha: 'c'.repeat(40), expectedImageSetDigest: `sha256:${'d'.repeat(64)}`, artifactRoot: root,
     })).toEqual([])
+    const productionCapture = join(root, 'production-capture.json')
+    writeFileSync(productionCapture, JSON.stringify({
+      release_id: 'release-1', release_git_sha: 'c'.repeat(40), image_set_digest: `sha256:${'d'.repeat(64)}`,
+      manifest_sha256: '9'.repeat(64), environment: 'production', deployment_nonce: 'missing-nonce',
+      host: 'codex-app-macos-arm64', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
+      mcp_base_url: 'https://merchant.example.com', bridge_sha256: 'b'.repeat(64),
+    }))
+    const missingNonce = spawnSync(process.execPath, [resolve('scripts/collect-codex-app-host-evidence.mjs'), '--capture', productionCapture, '--output', join(root, 'production-evidence.json'), '--artifact-root', root], { encoding: 'utf8' })
+    expect(missingNonce.status).toBe(1)
+    expect(missingNonce.stderr).toContain('production capture requires the consumed deployment nonce')
     expect(validateCodexAppHostEvidence(collected, { requireFresh: true, artifactRoot: root, now: new Date('2026-08-29T02:00:00Z'), expectedGitSha: 'a'.repeat(40) })).toContain('candidate_route.expected_git_sha must match the release candidate')
     const oldProbe = structuredClone(collected)
     oldProbe.candidate_route.expected_git_sha = 'a'.repeat(40)
@@ -113,9 +123,10 @@ describe('Codex App host evidence gate', () => {
     expect(validateCodexAppHostEvidence(evidence, { expectedReleaseId: 'release-1', expectedMcpBaseUrl: 'https://merchant.example.com', expectedBridgeSha256: 'b'.repeat(64) })).toEqual([])
   })
 
-  it('production release validation accepts production evidence and rejects preproduction routes and artifacts', () => {
-    const production = { ...structuredClone(evidence), environment: 'production' }
-    expect(validateCodexAppHostEvidence(production, { requireProduction: true })).toEqual([])
+  it('production release validation accepts exact deployed identity and rejects preproduction routes and artifacts', () => {
+    const production = { ...structuredClone(evidence), environment: 'production', release_git_sha: 'b'.repeat(40), image_set_digest: `sha256:${'c'.repeat(64)}`, deployment_nonce: 'a'.repeat(22) }
+    expect(validateCodexAppHostEvidence(production, { requireProduction: true, requireFresh: true, expectedGitSha: 'b'.repeat(40), expectedImageSetDigest: `sha256:${'c'.repeat(64)}`, expectedDeploymentNonce: 'a'.repeat(22), generatedAfter: new Date('2026-08-29T00:59:00Z'), now: new Date('2026-08-29T02:00:00Z') })).toEqual([])
+    expect(validateCodexAppHostEvidence(production, { requireProduction: true, expectedDeploymentNonce: 'b'.repeat(22) })).toContain('deployment_nonce must match the consumed deployment nonce')
 
     expect(validateCodexAppHostEvidence(evidence, { requireProduction: true })).toContain('environment must be production for production release evidence')
 
@@ -180,7 +191,7 @@ describe('Codex App host evidence gate', () => {
       '--expected-bridge-sha256', 'b'.repeat(64),
     ], { encoding: 'utf8' })
     expect(run.status).toBe(2)
-    expect(run.stderr).toContain('--release-id, --expected-mcp-base-url, --expected-bridge-sha256, --expected-git-sha, --expected-manifest-sha256 and --expected-image-set-digest are required')
+    expect(run.stderr).toContain('--release-id, --expected-mcp-base-url, --expected-bridge-sha256, --expected-git-sha')
   })
 
   it('rejects local/fixture evidence and non-clean scenarios', () => {

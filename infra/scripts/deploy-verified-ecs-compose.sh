@@ -28,6 +28,8 @@ readonly ECS_PREIDENTITY_RECOVERY_ENTRYPOINT=/usr/local/libexec/merchant/ecs-pre
 : "${PRODUCTION_CANARY_BEARER_TOKEN:?PRODUCTION_CANARY_BEARER_TOKEN is required}"
 : "${PRODUCTION_CANARY_WORKSPACE_ID:?PRODUCTION_CANARY_WORKSPACE_ID is required}"
 : "${POST_DEPLOY_CANARY_OUTPUT:?POST_DEPLOY_CANARY_OUTPUT is required}"
+: "${POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH:?POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH must receive the real post-cutover ChatGPT/Codex host capture}"
+: "${PRODUCTION_EVIDENCE_ARTIFACT_ROOT:?PRODUCTION_EVIDENCE_ARTIFACT_ROOT is required for post-deploy host evidence}"
 : "${RELEASE_ID:?RELEASE_ID is required}"
 : "${IMAGE_DIGESTS_JSON:?IMAGE_DIGESTS_JSON is required}"
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
@@ -69,7 +71,7 @@ lock_dir=$(CDPATH='' cd -- "$(dirname "$ECS_DEPLOY_LOCK_PATH")" && pwd -P)
 case "$state_dir/" in "$root/"*) echo 'deployment state must be stored outside the mutable repository' >&2; exit 2 ;; esac
 case "$rollback_dir/" in "$root/"*) echo 'rollback entrypoint must be provisioned outside the mutable repository' >&2; exit 2 ;; esac
 case "$lock_dir/" in "$root/"*) echo 'deployment lock must be provisioned outside the mutable repository' >&2; exit 2 ;; esac
-for tool in docker curl node ruby git shasum flock cmp python3; do command -v "$tool" >/dev/null 2>&1 || { echo "ECS deployment requires $tool" >&2; exit 2; }; done
+for tool in docker curl node ruby git shasum flock cmp python3 realpath; do command -v "$tool" >/dev/null 2>&1 || { echo "ECS deployment requires $tool" >&2; exit 2; }; done
 
 owner_of() { if stat -c '%u' "$1" >/dev/null 2>&1; then stat -c '%u' "$1"; else stat -f '%u' "$1"; fi; }
 mode_of() { if stat -c '%a' "$1" >/dev/null 2>&1; then stat -c '%a' "$1"; else stat -f '%Lp' "$1"; fi; }
@@ -395,6 +397,7 @@ EXPECTED_RELEASE_ID="$RELEASE_ID" EXPECTED_RELEASE_GIT_SHA="$git_sha" EXPECTED_M
   node -e 'const body=JSON.parse(require("fs").readFileSync(0,"utf8"));const got=body.data?.release??body.release;const expected={release_id:process.env.EXPECTED_RELEASE_ID,release_git_sha:process.env.EXPECTED_RELEASE_GIT_SHA,manifest_sha256:process.env.EXPECTED_MANIFEST_SHA256,image_set_digest:process.env.EXPECTED_IMAGE_SET_DIGEST};if(!got||Object.entries(expected).some(([key,value])=>got[key]!==value)){throw new Error("releasez does not match the verified ECS candidate")}' <<EOF
 $release_payload
 EOF
+post_cutover_started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 if [ "${DEPLOYMENT_SCOPE:-full}" = full ]; then
   curl --fail --silent --show-error --max-time 20 \
     -H "authorization: Bearer $PRODUCTION_CANARY_BEARER_TOKEN" \
@@ -413,6 +416,24 @@ if [ "${DEPLOYMENT_SCOPE:-full}" = full ]; then
       --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$git_sha" \
       --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
   fi
+  case "$POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH" in /*) ;; *) echo 'post-deploy ChatGPT host evidence path must be absolute' >&2; exit 1 ;; esac
+  printf '%s' "${ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS:-1800}" | grep -Eq '^[1-9][0-9]{0,4}$' || { echo 'invalid ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS' >&2; exit 2; }
+  [ "${ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS:-1800}" -le 3600 ] || { echo 'ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS must be at most 3600' >&2; exit 2; }
+  post_host_deadline=$(( $(date +%s) + ${ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS:-1800} ))
+  while [ ! -f "$POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH" ]; do
+    [ "$(date +%s)" -lt "$post_host_deadline" ] || { echo 'real post-cutover ChatGPT/Codex host smoke evidence did not arrive before the bounded deadline' >&2; exit 1; }
+    sleep 2
+  done
+  [ ! -L "$POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH" ] || { echo 'post-deploy ChatGPT host evidence must not be a symlink' >&2; exit 1; }
+  post_host_real=$(realpath "$POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH")
+  evidence_root_real=$(realpath "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT")
+  case "$post_host_real" in "$evidence_root_real"/*) ;; *) echo 'post-deploy ChatGPT host evidence must be under the production evidence artifact root' >&2; exit 1 ;; esac
+  post_mcp_base_url=$(ruby "$root/infra/scripts/validate-production-config-yaml.rb" "$verified_config" --print-mcp-base-url)
+  post_bridge_sha256=$(shasum -a 256 "$root/apps/plugin/mcp/bridge.mjs" | awk '{print $1}')
+  npx --no-install tsx "$root/tests/codex-app-host-evidence-gate.ts" --file "$post_host_real" --release-id "$RELEASE_ID" \
+    --expected-mcp-base-url "$post_mcp_base_url" --expected-bridge-sha256 "$post_bridge_sha256" --expected-git-sha "$git_sha" \
+    --expected-manifest-sha256 "$manifest_sha256" --expected-image-set-digest "$image_set_digest" --expected-deployment-nonce "$DEPLOYMENT_NONCE" \
+    --generated-after "$post_cutover_started_at" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-artifacts --require-production
 else
   echo "post-deploy business acceptance deferred: deployment_scope=${DEPLOYMENT_SCOPE}"
 fi

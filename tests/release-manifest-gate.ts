@@ -8,8 +8,9 @@ import { validateManualOperationsEvidence } from './manual-operations-evidence-g
 
 type ReleaseManifest = { schemaVersion?: number; releaseId?: string; components?: { repositoryVersion?: string; releaseGitSha?: string }; mcp?: { methodCount?: number; methodListSha256?: string; bridgeSha256?: string }; artifacts?: Array<{ path?: string; sha256?: string; bytes?: number }>; productionEvidenceBundle?: { required?: boolean; schemaVersion?: string }; productionEvidence?: Record<string, string> }
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
-const requiredArtifacts = ['VERSION', 'CHANGELOG.md', 'release-metadata.json', 'scripts/release-manifest.ts', 'scripts/release-identity.ts', 'apps/plugin/.codex-plugin/plugin.json', 'apps/plugin/package.json', 'apps/plugin/skills/merchant-marketing/SKILL.md', 'apps/plugin/mcp/bridge.mjs', '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', 'apps/api/openapi.yaml', 'packages/contracts/src/mcp.ts', 'services/payment-gateway/index.mjs', 'services/payment-gateway/alipay.mjs', 'services/payment-gateway/alipay.d.mts', 'packages/billing/src/callback-envelope.mjs', 'packages/billing/src/callback-envelope.d.mts', 'services/payment-gateway/Dockerfile', 'infra/scripts/render-ecs-production-compose.sh', 'infra/scripts/stage-verified-ecs-release.sh', 'infra/scripts/ecs-build-lock.sh', 'infra/scripts/install-ecs-staging-toolchain.mjs', 'infra/scripts/ecs-one-click-deploy.sh', 'infra/scripts/deploy-verified-ecs-compose.sh', 'infra/scripts/rollback-ecs-compose.sh', 'infra/scripts/invoke-ecs-automatic-rollback.sh', 'infra/scripts/install-ecs-release-controls.mjs', 'infra/scripts/install-ecs-release-controls.d.mts', 'tests/ecs-staging-toolchain-installer.test.mjs', 'tests/ecs-staging-toolchain-installer.container-check.mjs', 'tests/ecs-one-click-deploy.test.ts', 'docs/runbooks/ecs-candidate-safe-sync.md', 'infra/protected/attest-manual-operations-evidence.mjs', 'infra/protected/attest-manual-operations-evidence.d.mts', 'infra/protected/attest-release-evidence-bundle.mjs', 'infra/protected/attest-release-evidence-bundle.d.mts', 'infra/protected/attest-postgres-backup.mjs', 'infra/protected/attest-postgres-backup.d.mts', 'infra/protected/ecs-preidentity-recovery.mjs', 'infra/protected/ecs-preidentity-recovery.d.mts', 'tests/release-evidence-bundle-gate.ts']
+const requiredArtifacts = ['VERSION', 'CHANGELOG.md', 'release-metadata.json', 'scripts/release-manifest.ts', 'scripts/release-identity.ts', 'scripts/collect-codex-app-host-evidence.mjs', 'apps/plugin/.codex-plugin/plugin.json', 'apps/plugin/package.json', 'apps/plugin/skills/merchant-marketing/SKILL.md', 'apps/plugin/mcp/bridge.mjs', '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', 'apps/api/openapi.yaml', 'packages/contracts/src/mcp.ts', 'services/payment-gateway/index.mjs', 'services/payment-gateway/alipay.mjs', 'services/payment-gateway/alipay.d.mts', 'packages/billing/src/callback-envelope.mjs', 'packages/billing/src/callback-envelope.d.mts', 'services/payment-gateway/Dockerfile', 'infra/scripts/render-ecs-production-compose.sh', 'infra/scripts/stage-verified-ecs-release.sh', 'infra/scripts/ecs-build-lock.sh', 'infra/scripts/install-ecs-staging-toolchain.mjs', 'infra/scripts/ecs-one-click-deploy.sh', 'infra/scripts/deploy-verified-ecs-compose.sh', 'infra/scripts/rollback-ecs-compose.sh', 'infra/scripts/invoke-ecs-automatic-rollback.sh', 'infra/scripts/install-ecs-release-controls.mjs', 'infra/scripts/install-ecs-release-controls.d.mts', 'tests/ecs-staging-toolchain-installer.test.mjs', 'tests/ecs-staging-toolchain-installer.container-check.mjs', 'tests/ecs-one-click-deploy.test.ts', 'tests/codex-app-host-evidence-gate.ts', 'tests/release-manifest-gate.ts', 'docs/runbooks/ecs-candidate-safe-sync.md', 'infra/protected/attest-manual-operations-evidence.mjs', 'infra/protected/attest-manual-operations-evidence.d.mts', 'infra/protected/attest-release-evidence-bundle.mjs', 'infra/protected/attest-release-evidence-bundle.d.mts', 'infra/protected/attest-postgres-backup.mjs', 'infra/protected/attest-postgres-backup.d.mts', 'infra/protected/ecs-preidentity-recovery.mjs', 'infra/protected/ecs-preidentity-recovery.d.mts', 'tests/release-evidence-bundle-gate.ts']
 requiredArtifacts.push('infra/scripts/deploy-preflight-ecs.sh', 'infra/scripts/build-ecs-release-images.sh', 'infra/scripts/verify-ecs-ops-auth-mode.sh')
+requiredArtifacts.push('docs/runbooks/chatgpt-candidate-host-route.md', 'docs/runbooks/ecs-verified-compose-deploy.md', 'docs/runbooks/ecs-release-evidence-bundle-attester.md')
 requiredArtifacts.push(
   'infra/protected/ecs-bridge-b-transition.mjs',
   'infra/protected/ecs-bridge-b-transition.d.mts',
@@ -41,7 +42,6 @@ const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'rest
 type EvidenceField = typeof evidenceFields[number]
 const signedEvidenceFields = new Set<EvidenceField>(['capability', 'payment', 'restore', 'objectStorage', 'codexAppHost'])
 const immutableProductionArtifact = /^artifact:\/\/production\/([A-Za-z0-9._/-]+)#([a-f0-9]{64})$/u
-const preproductionArtifactPathPart = /(?:^|[._-])(?:preproduction|preprod)(?:$|[._/-])/iu
 const compare = ([left]: [string, unknown], [right]: [string, unknown]) => left < right ? -1 : left > right ? 1 : 0
 const canonical = (value: unknown): string => Array.isArray(value)
   ? `[${value.map(canonical).join(',')}]`
@@ -62,6 +62,7 @@ type EvidenceBindingOptions = {
   now?: Date
   maxManifestAgeMs?: number
   maxEvidenceAgeMs?: number
+  candidateManifestSha256?: string
 }
 
 function validateInstant(value: unknown, label: string, now: number, maxAgeMs: number, errors: string[]) {
@@ -86,10 +87,6 @@ function validateEvidenceBindings(value: ReleaseManifest, options: EvidenceBindi
     const match = immutableProductionArtifact.exec(reference)
     if (!match) continue
     const relative = match[1]!
-    if (field === 'codexAppHost' && relative.split('/').some(part => preproductionArtifactPathPart.test(part))) {
-      errors.push('productionEvidence.codexAppHost must not reference a preproduction artifact')
-      continue
-    }
     if (relative.split('/').some(part => !part || part === '.' || part === '..')) { errors.push(`productionEvidence.${field} contains an invalid path`); continue }
     try {
       const candidate = resolve(root, relative)
@@ -108,8 +105,16 @@ function validateEvidenceBindings(value: ReleaseManifest, options: EvidenceBindi
       }
       const document = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>
       if (field === 'codexAppHost') {
-        if (document.environment !== 'production') errors.push('productionEvidence.codexAppHost environment must be production')
-        if (Object.hasOwn(document, 'candidate_route')) errors.push('productionEvidence.codexAppHost candidate_route is forbidden in production evidence')
+        if (document.environment !== 'preproduction') errors.push('productionEvidence.codexAppHost must be preproduction candidate-route evidence')
+        const route = document.candidate_route as Record<string, unknown> | undefined
+        if (!route || typeof route !== 'object') errors.push('productionEvidence.codexAppHost candidate_route is required')
+        else {
+          if (route.expected_git_sha !== value.components?.releaseGitSha) errors.push('productionEvidence.codexAppHost candidate Git SHA must match the release manifest')
+          if (route.expected_manifest_sha256 !== options.candidateManifestSha256) errors.push('productionEvidence.codexAppHost candidate manifest SHA must match the deployment binding')
+          if (route.expected_manifest_sha256 !== document.manifest_sha256) errors.push('productionEvidence.codexAppHost candidate manifest SHA must match its host evidence')
+          if (document.manifest_sha256 !== route.expected_manifest_sha256) errors.push('productionEvidence.codexAppHost manifest SHA must match candidate route')
+          if (!/^sha256:[a-f0-9]{64}$/u.test(String(route.expected_image_set_digest ?? ''))) errors.push('productionEvidence.codexAppHost candidate image-set digest must be immutable')
+        }
       }
       if (field === 'capacity') validateCapacityArtifact(document, value.releaseId!, errors, new Date(now))
       if (field === 'capability' && document.schema_version === 'manual-operations-evidence/1') {
@@ -170,12 +175,12 @@ export function validateReleaseManifest(document: unknown, options: { root?: str
 
 function arg(name: string) { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1] }
 function main() {
-  const file = arg('--file'); const releaseId = arg('--release-id'); const artifactRoot = arg('--artifact-root'); const publicKeyPath = arg('--public-key'); const trustedKeyId = arg('--key-id')
+  const file = arg('--file'); const releaseId = arg('--release-id'); const candidateManifestSha256 = arg('--expected-candidate-manifest-sha256'); const artifactRoot = arg('--artifact-root'); const publicKeyPath = arg('--public-key'); const trustedKeyId = arg('--key-id')
   const evidenceFiles = Object.fromEntries(evidenceFields.map(field => [field, arg(`--${field.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}-evidence`)])) as Partial<Record<EvidenceField, string>>
-  if (!file || !releaseId || !artifactRoot || !publicKeyPath || !trustedKeyId || evidenceFields.some(field => !evidenceFiles[field])) { console.error('release manifest, artifact root, all evidence files and fixed production trust anchor are required'); process.exit(2) }
+  if (!file || !releaseId || !candidateManifestSha256 || !artifactRoot || !publicKeyPath || !trustedKeyId || evidenceFields.some(field => !evidenceFiles[field])) { console.error('release manifest, rendered candidate manifest binding, artifact root, all evidence files and fixed production trust anchor are required'); process.exit(2) }
   let document: unknown
   try { document = JSON.parse(readFileSync(file, 'utf8')) } catch (error) { console.error(`unable to read release manifest: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
-  const errors = validateReleaseManifest(document, { expectedReleaseId: releaseId, artifactRoot, evidenceFiles, publicKeyPem: readFileSync(publicKeyPath, 'utf8'), trustedKeyId })
+  const errors = validateReleaseManifest(document, { expectedReleaseId: releaseId, candidateManifestSha256, artifactRoot, evidenceFiles, publicKeyPem: readFileSync(publicKeyPath, 'utf8'), trustedKeyId })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
   console.log(`release manifest gate passed: ${file} (source artifacts and exact production evidence bytes are hash-, freshness- and signature-bound)`)
 }

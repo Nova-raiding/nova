@@ -32,6 +32,11 @@ function boundManifestFixture() {
   mkdirSync(join(artifactRoot, 'evidence'))
   for (const field of evidenceFields) {
     const document: Record<string, unknown> = { schema_version: '2', release_id: fixtureReleaseId, generated_at: '2026-08-29T00:00:00Z', expires_at: '2026-09-02T00:00:00Z', key_id: 'release-security-test', environment: 'production', status: 'pass' }
+    if (field === 'codexAppHost') {
+      document.environment = 'preproduction'
+      document.manifest_sha256 = '9'.repeat(64)
+      document.candidate_route = { expected_git_sha: releaseGitShaForRoot(process.cwd(), fixtureReleaseId), expected_manifest_sha256: '9'.repeat(64), expected_image_set_digest: `sha256:${'a'.repeat(64)}`, candidate_api_container_id: 'b'.repeat(64), gateway_container_id: 'c'.repeat(64), mcp_config_sha256: 'd'.repeat(64), route_file_sha256: 'e'.repeat(64), release_probe_evidence_ref: `artifact://production/evidence/probe.json#${'f'.repeat(64)}` }
+    }
     if (field === 'capability' || field === 'payment' || field === 'restore' || field === 'objectStorage' || field === 'codexAppHost') document.signature_base64 = signProductionEvidence(document, privateKeyPem)
     const contents = JSON.stringify(document)
     const path = join(artifactRoot, 'evidence', `${field}.json`)
@@ -40,7 +45,7 @@ function boundManifestFixture() {
     refs[inputNames[field]] = `artifact://production/evidence/${field}.json#${digest(contents)}`
   }
   const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId, generatedAt: '2026-08-29T01:00:00Z', ...refs })
-  const options = { root: process.cwd(), expectedReleaseId: fixtureReleaseId, artifactRoot, evidenceFiles, publicKeyPem, trustedKeyId: 'release-security-test', now: new Date('2026-08-29T02:00:00Z') }
+  const options = { root: process.cwd(), expectedReleaseId: fixtureReleaseId, candidateManifestSha256: '9'.repeat(64), artifactRoot, evidenceFiles, publicKeyPem, trustedKeyId: 'release-security-test', now: new Date('2026-08-29T02:00:00Z') }
   return { artifactRoot, evidenceFiles, manifest, options, privateKeyPem }
 }
 
@@ -51,6 +56,11 @@ function stagedManifestFixture() {
     const target = join(stagedRoot, artifact.path)
     mkdirSync(dirname(target), { recursive: true })
     copyFileSync(join(process.cwd(), artifact.path), target)
+  }
+  for (const path of ['scripts/collect-codex-app-host-evidence.mjs', 'tests/codex-app-host-evidence-gate.ts', 'tests/release-manifest-gate.ts', 'docs/runbooks/chatgpt-candidate-host-route.md', 'docs/runbooks/ecs-verified-compose-deploy.md']) {
+    const target = join(stagedRoot, path)
+    mkdirSync(dirname(target), { recursive: true })
+    copyFileSync(join(process.cwd(), path), target)
   }
   const navigation = 'apps/ops-console/src/navigation/opsNavigation.ts'
   mkdirSync(dirname(join(stagedRoot, navigation)), { recursive: true })
@@ -82,36 +92,40 @@ describe('release manifest production gate', () => {
     }
   })
 
-  it('production manifest gate rejects preproduction ChatGPT host evidence, candidate routes and preproduction artifact refs', () => {
+  it('manifest gate accepts signed candidate ChatGPT evidence and rejects mismatched identities', () => {
     const fixture = boundManifestFixture()
+    expect(validateReleaseManifest(fixture.manifest, fixture.options)).toEqual([])
     const hostPath = fixture.evidenceFiles.codexAppHost
     const host = JSON.parse(readFileSync(hostPath, 'utf8')) as Record<string, unknown>
     delete host.signature_base64
-    host.environment = 'preproduction'
-    host.signature_base64 = signProductionEvidence(host, fixture.privateKeyPem)
-    const preproductionHost = JSON.stringify(host)
-    writeFileSync(hostPath, preproductionHost)
-    fixture.manifest.productionEvidence!.codexAppHost = `artifact://production/evidence/codexAppHost.json#${digest(preproductionHost)}`
-    expect(validateReleaseManifest(fixture.manifest, fixture.options)).toContain('productionEvidence.codexAppHost environment must be production')
-
-    host.environment = 'production'
-    host.candidate_route = { expected_git_sha: 'c'.repeat(40) }
+    host.candidate_route = { ...(host.candidate_route as object), expected_git_sha: 'c'.repeat(40) }
     delete host.signature_base64
     host.signature_base64 = signProductionEvidence(host, fixture.privateKeyPem)
-    const routedHost = JSON.stringify(host)
-    writeFileSync(hostPath, routedHost)
-    fixture.manifest.productionEvidence!.codexAppHost = `artifact://production/evidence/codexAppHost.json#${digest(routedHost)}`
-    expect(validateReleaseManifest(fixture.manifest, fixture.options)).toContain('productionEvidence.codexAppHost candidate_route is forbidden in production evidence')
+    const mismatchedHost = JSON.stringify(host)
+    writeFileSync(hostPath, mismatchedHost)
+    fixture.manifest.productionEvidence!.codexAppHost = `artifact://production/evidence/codexAppHost.json#${digest(mismatchedHost)}`
+    expect(validateReleaseManifest(fixture.manifest, fixture.options)).toContain('productionEvidence.codexAppHost candidate Git SHA must match the release manifest')
 
-    delete host.candidate_route
+    host.candidate_route = undefined
     delete host.signature_base64
     host.signature_base64 = signProductionEvidence(host, fixture.privateKeyPem)
-    const path = join(fixture.artifactRoot, 'evidence', 'preproduction-codexAppHost.json')
-    const pathHost = JSON.stringify(host)
-    writeFileSync(path, pathHost)
-    fixture.evidenceFiles.codexAppHost = path
-    fixture.manifest.productionEvidence!.codexAppHost = `artifact://production/evidence/preproduction-codexAppHost.json#${digest(pathHost)}`
-    expect(validateReleaseManifest(fixture.manifest, fixture.options)).toContain('productionEvidence.codexAppHost must not reference a preproduction artifact')
+    const missingRouteHost = JSON.stringify(host)
+    writeFileSync(hostPath, missingRouteHost)
+    fixture.manifest.productionEvidence!.codexAppHost = `artifact://production/evidence/codexAppHost.json#${digest(missingRouteHost)}`
+    expect(validateReleaseManifest(fixture.manifest, fixture.options)).toContain('productionEvidence.codexAppHost candidate_route is required')
+  })
+
+  it('rejects signed ChatGPT candidate evidence bound to another rendered deployment manifest', () => {
+    const fixture = boundManifestFixture()
+    const host = JSON.parse(readFileSync(fixture.evidenceFiles.codexAppHost, 'utf8')) as Record<string, any>
+    delete host.signature_base64
+    host.manifest_sha256 = '8'.repeat(64)
+    host.candidate_route.expected_manifest_sha256 = '8'.repeat(64)
+    host.signature_base64 = signProductionEvidence(host, fixture.privateKeyPem)
+    const bytes = JSON.stringify(host)
+    writeFileSync(fixture.evidenceFiles.codexAppHost, bytes)
+    fixture.manifest.productionEvidence!.codexAppHost = `artifact://production/evidence/codexAppHost.json#${digest(bytes)}`
+    expect(validateReleaseManifest(fixture.manifest, fixture.options)).toContain('productionEvidence.codexAppHost candidate manifest SHA must match the deployment binding')
   })
 
   it('rejects a staged identity with the wrong release, duplicate Git SHA, or invalid Git SHA', () => {

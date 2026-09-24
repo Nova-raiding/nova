@@ -7,7 +7,6 @@ export const EVIDENCE_KINDS = ['capability','capacity','modelRelay','payment','r
 type Kind = typeof EVIDENCE_KINDS[number]
 type Bundle = Record<string, unknown> & { artifacts?: Array<{kind?: string; ref?: string}> }
 const REF = /^artifact:\/\/production\/([A-Za-z0-9._/-]+)#([a-f0-9]{64})$/u
-const preproductionArtifactPathPart = /(?:^|[._-])(?:preproduction|preprod)(?:$|[._/-])/iu
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u
 const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]` : value && typeof value === 'object' ? `{${Object.entries(value as Record<string,unknown>).filter(([key]) => key !== 'signature_base64').sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0).map(([key,item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}` : JSON.stringify(value)
 const sha256 = (value: Buffer) => createHash('sha256').update(value).digest('hex')
@@ -17,7 +16,7 @@ function validateCapacityArtifact(document: Record<string, unknown>, releaseId: 
   errors.push(...validateCapacityEvidence(document, { expectedProfile: 'no_load', expectedReleaseId: releaseId, now }))
 }
 
-export function validateReleaseEvidenceBundle(document: unknown, options: { releaseId: string; imageSetDigest: string; manifestSha256: string; releaseGitSha: string; deploymentNonce: string; artifactRoot: string; evidenceFiles: Record<Kind,string>; trustedKeyId: string; publicKeyPem: string; releaseManifestBytes?: Buffer; now?: Date }): string[] {
+export function validateReleaseEvidenceBundle(document: unknown, options: { releaseId: string; imageSetDigest: string; manifestSha256: string; candidateManifestSha256: string; releaseGitSha: string; deploymentNonce: string; artifactRoot: string; evidenceFiles: Record<Kind,string>; trustedKeyId: string; publicKeyPem: string; releaseManifestBytes?: Buffer; now?: Date }): string[] {
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['bundle must be a JSON object']
   const value = document as Bundle, errors: string[] = [], now = (options.now ?? new Date()).getTime()
   const expected = { schema_version:'release-evidence-bundle/1', release_id:options.releaseId, image_set_digest:options.imageSetDigest, manifest_sha256:options.manifestSha256, release_git_sha:options.releaseGitSha, deployment_nonce:options.deploymentNonce, key_id:options.trustedKeyId }
@@ -48,10 +47,6 @@ export function validateReleaseEvidenceBundle(document: unknown, options: { rele
     if (!match) { errors.push(`${kind} ref must be an immutable production artifact`); continue }
     if (seenRefs.has(entry.ref!)) errors.push(`artifact ref is duplicated: ${kind}`); seenRefs.add(entry.ref!)
     const relative = match[1]!
-    if (kind === 'codexAppHost' && relative.split('/').some(part => preproductionArtifactPathPart.test(part))) {
-      errors.push('codexAppHost ref must not reference a preproduction artifact')
-      continue
-    }
     if (relative.split('/').some(part => !part || part === '.' || part === '..')) { errors.push(`${kind} ref contains an invalid path`); continue }
     try {
       const candidate = resolve(root, relative), stat = lstatSync(candidate), real = realpathSync(candidate)
@@ -64,8 +59,15 @@ export function validateReleaseEvidenceBundle(document: unknown, options: { rele
       if (kind === 'codexAppHost') {
         try {
           const evidence = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>
-          if (evidence.environment !== 'production') errors.push('codexAppHost environment must be production')
-          if (Object.hasOwn(evidence, 'candidate_route')) errors.push('codexAppHost candidate_route is forbidden in production evidence')
+          const route = evidence.candidate_route as Record<string, unknown> | undefined
+          if (evidence.environment !== 'preproduction') errors.push('codexAppHost environment must be preproduction')
+          if (!route || typeof route !== 'object') errors.push('codexAppHost candidate_route is required')
+          else {
+            if (route.expected_git_sha !== options.releaseGitSha) errors.push('codexAppHost candidate Git SHA must match the bundle')
+            if (route.expected_image_set_digest !== options.imageSetDigest) errors.push('codexAppHost candidate image-set digest must match the bundle')
+            if (route.expected_manifest_sha256 !== options.candidateManifestSha256) errors.push('codexAppHost candidate manifest SHA must match the deployment binding')
+            if (route.expected_manifest_sha256 !== evidence.manifest_sha256) errors.push('codexAppHost candidate manifest SHA must match host evidence')
+          }
         } catch { errors.push('codexAppHost artifact is invalid JSON') }
       }
       const supplied = options.evidenceFiles[kind]; if (!supplied || lstatSync(supplied).isSymbolicLink() || realpathSync(supplied) !== real) errors.push(`${kind} must reference the exact evidence file passed to deployment`)
@@ -81,10 +83,10 @@ export function validateReleaseEvidenceBundle(document: unknown, options: { rele
 function arg(name:string) { const index=process.argv.indexOf(name); return index<0?undefined:process.argv[index+1] }
 function main() {
   const file=arg('--file'), releaseManifest=arg('--release-manifest'), artifactRoot=arg('--artifact-root'), publicKey=arg('--public-key'), trustedKeyId=arg('--key-id')
-  const bindings={releaseId:arg('--release-id'),imageSetDigest:arg('--image-set-digest'),manifestSha256:arg('--manifest-sha256'),releaseGitSha:arg('--release-git-sha'),deploymentNonce:arg('--deployment-nonce')}
+  const bindings={releaseId:arg('--release-id'),imageSetDigest:arg('--image-set-digest'),manifestSha256:arg('--manifest-sha256'),candidateManifestSha256:arg('--candidate-manifest-sha256'),releaseGitSha:arg('--release-git-sha'),deploymentNonce:arg('--deployment-nonce')}
   const evidenceFiles=Object.fromEntries(EVIDENCE_KINDS.map(kind=>[kind,arg(`--${kind.replace(/[A-Z]/g,letter=>`-${letter.toLowerCase()}`)}-evidence`)])) as Record<Kind,string>
-  if(!file||!releaseManifest||!artifactRoot||!publicKey||!trustedKeyId||Object.values(bindings).some(item=>!item)||Object.values(evidenceFiles).some(item=>!item)){console.error('bundle, release manifest, all eight artifacts, release binding, artifact root and trust anchor are required');process.exit(2)}
-  const errors=validateReleaseEvidenceBundle(JSON.parse(readFileSync(file,'utf8')),{releaseId:bindings.releaseId!,imageSetDigest:bindings.imageSetDigest!,manifestSha256:bindings.manifestSha256!,releaseGitSha:bindings.releaseGitSha!,deploymentNonce:bindings.deploymentNonce!,artifactRoot,evidenceFiles,trustedKeyId,publicKeyPem:readFileSync(publicKey,'utf8'),releaseManifestBytes:readFileSync(releaseManifest)})
+  if(!file||!releaseManifest||!artifactRoot||!publicKey||!trustedKeyId||Object.values(bindings).some(item=>!item)||Object.values(evidenceFiles).some(item=>!item)){console.error('bundle, release manifest, rendered candidate manifest binding, all eight artifacts, release binding, artifact root and trust anchor are required');process.exit(2)}
+  const errors=validateReleaseEvidenceBundle(JSON.parse(readFileSync(file,'utf8')),{releaseId:bindings.releaseId!,imageSetDigest:bindings.imageSetDigest!,manifestSha256:bindings.manifestSha256!,candidateManifestSha256:bindings.candidateManifestSha256!,releaseGitSha:bindings.releaseGitSha!,deploymentNonce:bindings.deploymentNonce!,artifactRoot,evidenceFiles,trustedKeyId,publicKeyPem:readFileSync(publicKey,'utf8'),releaseManifestBytes:readFileSync(releaseManifest)})
   if(errors.length){console.error(errors.join('\n'));process.exit(1)} console.log(`release evidence bundle gate passed: ${file}`)
 }
 if(import.meta.url===`file://${process.argv[1]}`)main()

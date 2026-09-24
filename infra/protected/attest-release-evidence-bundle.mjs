@@ -10,23 +10,26 @@ export const EVIDENCE_KINDS = ['capability','capacity','modelRelay','payment','r
 const HEX = /^[a-f0-9]{64}$/u, IMAGE = /^sha256:[a-f0-9]{64}$/u, GIT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u, NONCE = /^[A-Za-z0-9_-]{22,128}$/u
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u
 const MAX_AGE_MS = 24 * 60 * 60_000
-const PREPRODUCTION_ARTIFACT_PART = /(?:^|[._-])(?:preproduction|preprod)(?:$|[._/-])/iu
 function assert(value, message) { if (!value) throw new Error(message) }
 function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`; if (value && typeof value === 'object') return `{${Object.entries(value).filter(([key]) => key !== 'signature_base64').sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0).map(([key,item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`; return JSON.stringify(value) }
 function readRegular(path, max = 4 * 1024 * 1024) { const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW); try { const st = fstatSync(fd); assert(st.isFile() && st.size > 0 && st.size <= max, 'unsafe evidence file'); return readFileSync(fd) } finally { closeSync(fd) } }
 function option(args, name) { const index = args.indexOf(name); return index < 0 ? undefined : args[index + 1] }
-function artifact(path, root, kind, releaseId, now) {
+function artifact(path, root, kind, releaseId, now, binding) {
   assert(path, `${kind} evidence path is required`)
   const absolute = resolve(path), real = realpathSync(absolute), rootReal = realpathSync(root)
   assert(!lstatSync(absolute).isSymbolicLink() && real.startsWith(`${rootReal}${sep}`), `${kind} evidence escapes artifact root or is a symlink`)
   const name = relative(rootReal, real)
   assert(name && !name.split(sep).some(part => !part || part === '.' || part === '..'), `${kind} evidence path is invalid`)
-  assert(kind !== 'codexAppHost' || !name.split(sep).some(part => PREPRODUCTION_ARTIFACT_PART.test(part)), 'codexAppHost evidence path must not reference a preproduction artifact')
   const bytes = readRegular(real), document = JSON.parse(bytes.toString('utf8'))
   assert((document.release_id ?? document.releaseId) === releaseId, `${kind} evidence release mismatch`)
   if (kind === 'codexAppHost') {
-    assert(document.environment === 'production', 'codexAppHost evidence environment must be production')
-    assert(!Object.hasOwn(document, 'candidate_route'), 'codexAppHost evidence candidate_route is forbidden in production evidence')
+    assert(document.environment === 'preproduction', 'codexAppHost evidence must be preproduction candidate-route evidence')
+    const route = document.candidate_route
+    assert(route && typeof route === 'object', 'codexAppHost evidence must include candidate_route')
+    assert(route.expected_git_sha === binding.releaseGitSha, 'codexAppHost candidate Git SHA does not match the release')
+    assert(route.expected_image_set_digest === binding.imageSetDigest, 'codexAppHost candidate image-set digest does not match the release')
+    assert(route.expected_manifest_sha256 === binding.candidateManifestSha256, 'codexAppHost candidate manifest SHA does not match the deployment manifest')
+    assert(route.expected_manifest_sha256 === document.manifest_sha256, 'codexAppHost candidate manifest SHA does not match the host evidence')
   }
   const timestamp = document.attested_at ?? document.generated_at ?? document.generatedAt ?? document.ended_at
   const instant = typeof timestamp === 'string' && UTC.test(timestamp) ? Date.parse(timestamp) : Number.NaN
@@ -35,7 +38,7 @@ function artifact(path, root, kind, releaseId, now) {
 }
 
 export function createBundle(paths, binding, root, privatePem, publicPem, now = new Date()) {
-  const generatedAt = now.toISOString(), artifacts = EVIDENCE_KINDS.map(kind => artifact(paths[kind], root, kind, binding.releaseId, now.getTime()))
+  const generatedAt = now.toISOString(), artifacts = EVIDENCE_KINDS.map(kind => artifact(paths[kind], root, kind, binding.releaseId, now.getTime(), binding))
   assert(new Set(artifacts.map(item => item.ref)).size === EVIDENCE_KINDS.length, 'duplicate evidence references are forbidden')
   const key = privateKey(privatePem), pub = publicKey(publicPem)
   assert(key.asymmetricKeyType === 'ed25519' && pub.asymmetricKeyType === 'ed25519', 'trust keys must be Ed25519')
@@ -50,9 +53,9 @@ function main(args) {
   assert(process.getuid?.() === 0 && process.geteuid?.() === 0, 'protected attester must run as root')
   assert(args[0] === 'attest', 'attest subcommand required')
   const output = option(args,'--output'), root = output && realpathSync(dirname(output))
-  const binding = { releaseId: option(args,'--release-id'), imageSetDigest: option(args,'--image-set-digest'), manifestSha256: option(args,'--manifest-sha256'), releaseGitSha: option(args,'--release-git-sha'), deploymentNonce: option(args,'--deployment-nonce') }
+  const binding = { releaseId: option(args,'--release-id'), imageSetDigest: option(args,'--image-set-digest'), manifestSha256: option(args,'--manifest-sha256'), candidateManifestSha256: option(args,'--candidate-manifest-sha256'), releaseGitSha: option(args,'--release-git-sha'), deploymentNonce: option(args,'--deployment-nonce') }
   assert(output && root === resolve(dirname(output)) && !lstatSync(root).isSymbolicLink() && (statSync(root).mode & 0o022) === 0, 'output artifact root must be canonical and protected')
-  assert(/^[A-Za-z0-9._:-]{1,128}$/u.test(binding.releaseId ?? '') && IMAGE.test(binding.imageSetDigest ?? '') && HEX.test(binding.manifestSha256 ?? '') && GIT.test(binding.releaseGitSha ?? '') && NONCE.test(binding.deploymentNonce ?? ''), 'release binding is invalid')
+  assert(/^[A-Za-z0-9._:-]{1,128}$/u.test(binding.releaseId ?? '') && IMAGE.test(binding.imageSetDigest ?? '') && HEX.test(binding.manifestSha256 ?? '') && HEX.test(binding.candidateManifestSha256 ?? '') && GIT.test(binding.releaseGitSha ?? '') && NONCE.test(binding.deploymentNonce ?? ''), 'release binding is invalid')
   const trust = '/run/release-security/evidence-trust', privatePath = '/var/lib/merchant-release-security/production-evidence-bundle-private.pem'
   const privateStat = lstatSync(privatePath); assert(privateStat.isFile() && !privateStat.isSymbolicLink() && privateStat.uid === 0 && (privateStat.mode & 0o777) === 0o600, 'protected private key must be root-owned 0600')
   binding.keyId = readRegular(resolve(trust,'production-evidence-key-id'), 128).toString('utf8').trim()

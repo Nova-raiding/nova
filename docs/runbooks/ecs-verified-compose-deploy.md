@@ -1,6 +1,6 @@
 # ECS Compose 受验证部署执行器
 
-`infra/scripts/deploy-verified-ecs-compose.sh` 只在 ECS 宿主的已审查发布目录运行。它不建立 SSH 连接，也不会从开发机复制配置、密钥或生产证据。执行器依次绑定干净提交和 `candidate-identity.txt`、复制并校验 rendered Compose 与生产配置、运行完整 ECS preflight、保存现网容器状态、消费 deployment nonce、执行迁移、通过两个运行角色验证数据库已到候选完整迁移链、启动摘要固定的服务，最后核对 `/livez`、`/readyz`、`/releasez`、数据库支持的鉴权请求和生产 canary。
+`infra/scripts/deploy-verified-ecs-compose.sh` 只在 ECS 宿主的已审查发布目录运行。它不建立 SSH 连接，也不会从开发机复制配置、密钥或生产证据。执行器依次绑定干净提交和 `candidate-identity.txt`、复制并校验 rendered Compose 与生产配置、运行完整 ECS preflight、保存现网容器状态、消费 deployment nonce、执行迁移、通过两个运行角色验证数据库已到候选完整迁移链、启动摘要固定的服务，核对 `/livez`、`/readyz`、`/releasez`、数据库支持的鉴权请求和生产 canary，最后等待并校验真实 ChatGPT/Codex 公网插件宿主 smoke。
 
 完整 ECS preflight 会验证摘要固定的 Ops UI 镜像带有构建时 auth-mode 标签，并要求其值与受保护生产配置中的 API `OPS_AUTH_MODE` 一致。缺少标签或选择了 password/oidc 不匹配的镜像时，preflight 在消费 nonce 或任何运行时变更前退出。
 
@@ -18,6 +18,7 @@
 - 由 root 预创建的绝对规范路径 `ECS_DEPLOY_LOCK_PATH`；部署和回退使用同一文件执行非阻塞 `flock`，Compose project 均使用 `ECS_COMPOSE_PROJECT`（默认 `merchant-production`）；
 - 绝对路径 `ECS_ROLLBACK_ENTRYPOINT`。该程序必须由宿主独立配置，读取 `ECS_DEPLOY_STATE_PATH`，恢复状态文件记录的上一组不可变镜像和路由；
 - `CONFIRM_ECS_DEPLOY=YES`、严格等于生产 API origin 的 `PRODUCTION_APPROVED_ORIGIN`，以及 canary 工作区和 bearer token。
+- `POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH`，指向 `PRODUCTION_EVIDENCE_ARTIFACT_ROOT` 下尚未生成的绝对路径。公网 `/releasez` 和生产 canary 通过后，部署器最多等待 30 分钟；操作者必须在真实桌面 ChatGPT/Codex 中安装未修改的候选插件，对公网重放 15 个 host 场景，生成 production capture，并将 capture 与所有引用 artifact 放到受保护证据根。capture 要绑定当前 release ID、Git SHA、Compose manifest SHA、image-set digest、MCP origin、bridge SHA、deployment nonce，并在切流核验时间之后生成。证据缺失、过期、身份不匹配或场景失败都会触发已有回退路径；候选 route 的 preproduction 证据不能替代此步骤。
 
 示例只描述调用边界，路径和环境值必须来自 ECS 宿主的受保护配置：
 
@@ -36,4 +37,4 @@ sh infra/scripts/deploy-verified-ecs-compose.sh
 
 执行器不会运行 `docker compose down`、`down -v`、删除卷、清空数据库或删除对象存储数据。迁移必须保持向后兼容，因为应用回退不会逆向删除 schema。状态文件保留现网 Compose 容器和镜像信息，也是回退审计记录的一部分，不应在失败后清除。
 
-发布成功的最低证据包括匹配候选的 `/releasez` 四元组、鉴权数据库请求和签名后的 production canary。仅有容器 `healthy` 不能判定上线完成。
+发布成功的最低证据包括匹配候选的 `/releasez` 四元组、鉴权数据库请求、签名后的 production canary，以及 nonce 和切流身份绑定的真实桌面 ChatGPT/Codex production host smoke。仅有容器 `healthy` 不能判定上线完成。

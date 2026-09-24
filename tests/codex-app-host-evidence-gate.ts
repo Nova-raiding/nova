@@ -35,7 +35,7 @@ type ErrorRecoveryEvidence = {
 }
 type Scenario = { id?: ScenarioId; state?: string; evidence_ref?: string; console_errors?: number; network_errors?: number; error_recovery?: ErrorRecoveryEvidence }
 type CandidateRoute = { expected_git_sha?: string; expected_manifest_sha256?: string; expected_image_set_digest?: string; candidate_api_container_id?: string; gateway_container_id?: string; mcp_config_sha256?: string; route_file_sha256?: string; release_probe_evidence_ref?: string }
-type HostEvidence = { schema_version?: string; release_id?: string; manifest_sha256?: string; environment?: string; generated_at?: string; host?: string; app_version?: string; plugin_version?: string; mcp_base_url?: string; bridge_sha256?: string; simulated?: boolean; candidate_route?: CandidateRoute; scenarios?: Scenario[] }
+type HostEvidence = { schema_version?: string; release_id?: string; release_git_sha?: string; image_set_digest?: string; deployment_nonce?: string; manifest_sha256?: string; environment?: string; generated_at?: string; host?: string; app_version?: string; plugin_version?: string; mcp_base_url?: string; bridge_sha256?: string; simulated?: boolean; candidate_route?: CandidateRoute; scenarios?: Scenario[] }
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const forbidden = /(?:fixture|mock|local|localhost|127\.0\.0\.1|test_e2e)/iu
@@ -101,7 +101,7 @@ function validateReleaseProbe(reference: string | undefined, root: string, relea
   return []
 }
 
-export function validateCodexAppHostEvidence(document: unknown, options: { expectedReleaseId?: string; expectedManifestSha256?: string; expectedMcpBaseUrl?: string; expectedBridgeSha256?: string; expectedGitSha?: string; expectedImageSetDigest?: string; artifactRoot?: string; requireFresh?: boolean; requireProduction?: boolean; now?: Date } = {}): string[] {
+export function validateCodexAppHostEvidence(document: unknown, options: { expectedReleaseId?: string; expectedManifestSha256?: string; expectedMcpBaseUrl?: string; expectedBridgeSha256?: string; expectedGitSha?: string; expectedImageSetDigest?: string; expectedDeploymentNonce?: string; generatedAfter?: Date; artifactRoot?: string; requireFresh?: boolean; requireProduction?: boolean; now?: Date } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as HostEvidence
@@ -114,12 +114,16 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
   if (options.requireProduction) {
     if (value.environment !== 'production') errors.push('environment must be production for production release evidence')
     if (Object.hasOwn(value, 'candidate_route')) errors.push('candidate_route is forbidden in production host evidence')
+    if (value.release_git_sha !== options.expectedGitSha) errors.push('release_git_sha must match the deployed release')
+    if (value.image_set_digest !== options.expectedImageSetDigest) errors.push('image_set_digest must match the deployed image set')
+    if (value.deployment_nonce !== options.expectedDeploymentNonce) errors.push('deployment_nonce must match the consumed deployment nonce')
   }
   if (!nonEmpty(value.generated_at) || !strictUtcInstant.test(value.generated_at) || Number.isNaN(Date.parse(value.generated_at))) errors.push('generated_at must be a strict UTC ISO timestamp')
   else if (options.requireFresh) {
     const generatedAt = Date.parse(value.generated_at); const now = (options.now ?? new Date()).getTime()
     if (generatedAt > now + 300_000) errors.push('generated_at must not be more than five minutes in the future')
     if (now - generatedAt > 24 * 3_600_000) errors.push('Codex App host evidence is stale')
+    if (options.generatedAfter && generatedAt < options.generatedAfter.getTime()) errors.push('production host evidence must be generated after the verified cutover')
   }
   for (const [field, label] of [['host', 'host'], ['app_version', 'app_version'], ['plugin_version', 'plugin_version']] as const) {
     if (!nonEmpty(value[field])) errors.push(`${label} is required`)
@@ -153,6 +157,10 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
         if (artifactErrors.length === 0) errors.push(...validateReleaseProbe(route.release_probe_evidence_ref, options.artifactRoot, value.release_id, route))
       }
     }
+  }
+  if (value.environment === 'production' && options.requireFresh) {
+    if (!gitSha.test(value.release_git_sha ?? '')) errors.push('release_git_sha must be a full deployed Git SHA')
+    if (!imageSetDigest.test(value.image_set_digest ?? '')) errors.push('image_set_digest must be a SHA-256 digest')
   }
   if (!Array.isArray(value.scenarios)) return [...errors, 'scenarios is required']
   const seen = new Set<string>()
@@ -213,14 +221,19 @@ function main() {
   const expectedGitSha = gitIndex >= 0 ? args[gitIndex + 1] : undefined
   const imageIndex = args.indexOf('--expected-image-set-digest')
   const expectedImageSetDigest = imageIndex >= 0 ? args[imageIndex + 1] : undefined
+  const nonceIndex = args.indexOf('--expected-deployment-nonce')
+  const expectedDeploymentNonce = nonceIndex >= 0 ? args[nonceIndex + 1] : undefined
+  const afterIndex = args.indexOf('--generated-after')
+  const generatedAfterValue = afterIndex >= 0 ? args[afterIndex + 1] : undefined
+  const generatedAfter = generatedAfterValue ? new Date(generatedAfterValue) : undefined
   const manifestIndex = args.indexOf('--expected-manifest-sha256')
   const expectedManifestSha256 = manifestIndex >= 0 ? args[manifestIndex + 1] : undefined
   if (!path) { console.error('--file is required'); process.exit(2) }
   if (args.includes('--require-artifacts') && !artifactRoot) { console.error('--artifact-root is required for independent host evidence validation'); process.exit(2) }
-  if (args.includes('--require-artifacts') && (!expectedReleaseId || !expectedMcpBaseUrl || !expectedBridgeSha256 || !expectedGitSha || !expectedImageSetDigest || !expectedManifestSha256 || !sha256.test(expectedManifestSha256))) { console.error('--release-id, --expected-mcp-base-url, --expected-bridge-sha256, --expected-git-sha, --expected-manifest-sha256 and --expected-image-set-digest are required for host evidence validation'); process.exit(2) }
+  if (args.includes('--require-artifacts') && (!expectedReleaseId || !expectedMcpBaseUrl || !expectedBridgeSha256 || !expectedGitSha || !expectedImageSetDigest || !expectedManifestSha256 || !sha256.test(expectedManifestSha256) || (args.includes('--require-production') && (!expectedDeploymentNonce || !generatedAfter || Number.isNaN(generatedAfter.getTime()))))) { console.error('--release-id, --expected-mcp-base-url, --expected-bridge-sha256, --expected-git-sha, --expected-manifest-sha256, --expected-image-set-digest, and production deployment nonce/cutover time are required for host evidence validation'); process.exit(2) }
   let document: unknown
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read Codex App host evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
-  const errors = validateCodexAppHostEvidence(document, { expectedReleaseId, expectedManifestSha256, expectedMcpBaseUrl, expectedBridgeSha256, expectedGitSha, expectedImageSetDigest, artifactRoot, requireFresh: args.includes('--require-artifacts'), requireProduction: args.includes('--require-production') })
+  const errors = validateCodexAppHostEvidence(document, { expectedReleaseId, expectedManifestSha256, expectedMcpBaseUrl, expectedBridgeSha256, expectedGitSha, expectedImageSetDigest, expectedDeploymentNonce, generatedAfter, artifactRoot, requireFresh: args.includes('--require-artifacts'), requireProduction: args.includes('--require-production') })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
   console.log(`Codex App host evidence consistency gate passed: ${path} (real ChatGPT/Codex host provenance still requires operator review)`)
 }

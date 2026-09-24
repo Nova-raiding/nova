@@ -179,6 +179,21 @@ describe('verified ECS Compose deployment runner', () => {
     expect(mutation).toBeLessThan(migration)
   })
 
+  it('requires fresh nonce-bound real ChatGPT host evidence after candidate release identity and before declaring success', () => {
+    const script = source()
+    const releasez = script.indexOf('release_payload=$(curl')
+    const hostGate = script.indexOf('tests/codex-app-host-evidence-gate.ts')
+    const verifiedPhase = script.indexOf('--phase runtime_identity_verified')
+    expect(script).toContain('POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH must receive the real post-cutover ChatGPT/Codex host capture')
+    expect(script).toContain('real post-cutover ChatGPT/Codex host smoke evidence did not arrive before the bounded deadline')
+    expect(script).toContain('--expected-deployment-nonce "$DEPLOYMENT_NONCE"')
+    expect(script).toContain('--generated-after "$post_cutover_started_at"')
+    expect(script).toContain('--require-artifacts --require-production')
+    expect(hostGate).toBeGreaterThan(releasez)
+    expect(hostGate).toBeLessThan(verifiedPhase)
+    expect(script).toContain('PRODUCTION_EVIDENCE_ARTIFACT_ROOT')
+  })
+
   it('rejects a rollback capsule that cannot recover every candidate migration prefix before consuming the nonce', () => {
     const script = source()
     const block = script.match(/PLAN="\$ECS_ROLLBACK_PLAN_PATH"[^\n]*\\\n[\s\S]*? node <<'NODE'\n([\s\S]*?)\nNODE/)

@@ -46,6 +46,12 @@ if (capture.simulated !== false) throw new Error('capture.simulated must be fals
 if (capture.environment !== 'preproduction' && capture.environment !== 'production') {
   throw new Error('capture.environment must be preproduction or production')
 }
+if (capture.environment === 'production' && (!/^[a-f0-9]{40}$/u.test(capture.release_git_sha ?? '') || !/^sha256:[a-f0-9]{64}$/u.test(capture.image_set_digest ?? ''))) {
+  throw new Error('production capture requires exact release_git_sha and image_set_digest from the deployed /releasez response')
+}
+if (capture.environment === 'production' && !/^[A-Za-z0-9_-]{22,128}$/u.test(capture.deployment_nonce ?? '')) {
+  throw new Error('production capture requires the consumed deployment nonce for this cutover')
+}
 if (typeof capture.generated_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u.test(capture.generated_at) || Number.isNaN(Date.parse(capture.generated_at))) {
   throw new Error('capture.generated_at must be a strict UTC ISO timestamp from the real host capture')
 }
@@ -141,6 +147,7 @@ for (const id of REQUIRED_SCENARIOS) if (!seenScenarioIds.has(id)) throw new Err
 const evidence = {
   schema_version: '2',
   release_id: String(capture.release_id ?? ''),
+  ...(capture.environment === 'production' ? { release_git_sha: capture.release_git_sha, image_set_digest: capture.image_set_digest, deployment_nonce: capture.deployment_nonce } : {}),
   manifest_sha256: capture.manifest_sha256,
   environment: capture.environment,
   generated_at: capture.generated_at,
