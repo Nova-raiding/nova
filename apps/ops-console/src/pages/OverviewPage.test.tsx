@@ -4,6 +4,7 @@ import { currentCommercialCatalog, formatOverviewMoney, planDistribution } from 
 import { commercialBenefitOptions, readableBenefitItems, readableBenefits } from "../components/commercial/benefitLabels.js";
 
 const overviewSource = readFileSync(new URL("./OverviewPage.tsx", import.meta.url), "utf8");
+const commercialOverviewSource = readFileSync(new URL("../components/sections/overview/CommercialOverviewSection.tsx", import.meta.url), "utf8");
 
 describe("commercial overview helpers", () => {
   it("does not turn missing money into zero", () => {
@@ -73,5 +74,12 @@ describe("overview page structure", () => {
     expect(overviewSource).not.toContain("刷新总览");
     expect(overviewSource).not.toContain("首屏查看平台规模");
     expect(overviewSource).not.toContain('eyebrow="OVERVIEW"');
+  });
+
+  it("renders the tenant ledger with row-level authorization and finance navigation", () => {
+    expect(overviewSource).toContain("<CommercialOverviewSection");
+    expect(commercialOverviewSource).toContain('onNavigateWithQuery?.("finance", { workspace: workspaceId })');
+    expect(commercialOverviewSource).toContain("查看财务");
+    expect(commercialOverviewSource).not.toContain("给企业授权</Button>");
   });
 });

@@ -16,6 +16,7 @@ import { packageDisplayName } from "../../commercial/packageLabels.js";
 interface OverviewSectionProps {
   model: OpsConsoleModel;
   onNavigate: (domain: OpsDomain) => void;
+  onNavigateWithQuery?: (domain: OpsDomain, query: Record<string, string | undefined>) => void;
 }
 
 export const formatOverviewMoney = (value: number | undefined): string =>
@@ -119,7 +120,7 @@ const subscriptionLabels: Record<string, string> = {
   inactive: "未开通",
 };
 
-export function CommercialOverviewSection({ model, onNavigate }: OverviewSectionProps) {
+export function CommercialOverviewSection({ model, onNavigate, onNavigateWithQuery }: OverviewSectionProps) {
   const finance = model.platformFinanceSummary;
   const financeAvailable = Boolean(finance);
   const rows = model.workspaceRows;
@@ -129,6 +130,11 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
   const openAuthorization = (workspaceId?: string) => {
     model.setAuthorizationTargetWorkspaceId(workspaceId ?? "");
     onNavigate("users");
+  };
+  const openWorkspaceFinance = (workspaceId: string) => {
+    model.setAuthorizationTargetWorkspaceId(workspaceId);
+    onNavigateWithQuery?.("finance", { workspace: workspaceId });
+    if (!onNavigateWithQuery) onNavigate("finance");
   };
   const workspaceColumns: ColumnsType<WorkspaceSummary> = [
     {
@@ -163,11 +169,12 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
     {
       title: "操作",
       key: "action",
-      width: 120,
+      width: 210,
       render: (_value: unknown, row: WorkspaceSummary) => (
-        <Button type="link" icon={<ArrowRightOutlined />} onClick={() => openAuthorization(row.workspaceId)}>
-          查看该企业授权
-        </Button>
+        <Space>
+          <Button type="link" icon={<ArrowRightOutlined />} onClick={() => openAuthorization(row.workspaceId)}>查看授权</Button>
+          <Button type="link" icon={<DollarOutlined />} onClick={() => openWorkspaceFinance(row.workspaceId)}>查看财务</Button>
+        </Space>
       ),
     },
   ];
@@ -243,13 +250,8 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
         </Col>
         <Col xs={24} lg={14}>
           <Card title="运营动作">
-            <Space wrap>
-              <Button icon={<TeamOutlined />} onClick={() => openAuthorization()}>
-                给企业授权
-              </Button>
-            </Space>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 16 }}>
-              总览只保留经营决策需要的数据。模型、平台连接、规则、存储和系统风险请在各自工作台处理。
+              企业授权统一从上方「商家经营台账」进入；模型、平台连接、规则、存储和系统风险请在各自工作台处理。
             </Typography.Paragraph>
           </Card>
         </Col>

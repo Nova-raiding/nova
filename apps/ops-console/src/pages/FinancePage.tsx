@@ -210,6 +210,11 @@ export function FinancePage({ model }: FinancePageProps) {
   const commercial = useCommercialOperations(model.authorization, undefined, !isPlatformWorkbench, canReconcileCommercialRefund);
   const [workspaceDraft, setWorkspaceDraft] = useState(commercial.targetWorkspaceId);
   useEffect(() => setWorkspaceDraft(commercial.targetWorkspaceId), [commercial.targetWorkspaceId]);
+  const workspaceOptions = model.workspaceRows.map(row => ({ value: row.workspaceId, label: `${row.enterpriseName || row.workspaceId} · ${row.workspaceId}` }));
+  if (workspaceDraft && !workspaceOptions.some(option => option.value === workspaceDraft)) {
+    workspaceOptions.unshift({ value: workspaceDraft, label: `当前目标 · ${workspaceDraft}` });
+  }
+  const selectedWorkspace = model.workspaceRows.find(row => row.workspaceId === workspaceDraft);
   const canRefresh = model.authorization.can("commercial.access.read") && model.authorization.can(commercialViewCapability[commercial.view]);
   const canSearchFinance = model.authorization.can("billing.platform.read");
   const isWorkspaceWorkbench = !isPlatformWorkbench;
@@ -230,21 +235,20 @@ export function FinancePage({ model }: FinancePageProps) {
         <Space wrap>
           <Button type="primary" icon={<ReloadOutlined />} loading={financeSearch.loading} disabled={!canSearchFinance} onClick={() => void Promise.all([financeSearch.search(), model.load()])}>刷新平台账务</Button>
           {canReconcileCommercialRefund ? <>
-            <Input aria-label="退款目标企业主体 Workspace ID" placeholder="目标 Workspace ID" value={workspaceDraft} onChange={event => setWorkspaceDraft(event.target.value)} onPressEnter={() => commercial.setTargetWorkspace(workspaceDraft)} style={{ width: 210 }} />
-            <Button disabled={!workspaceDraft.trim()} onClick={() => commercial.setTargetWorkspace(workspaceDraft)}>应用退款范围</Button>
+            <Select aria-label="退款目标企业主体" showSearch optionFilterProp="label" placeholder="选择退款企业主体" value={workspaceDraft || undefined} options={workspaceOptions} onChange={value => { setWorkspaceDraft(value); commercial.setTargetWorkspace(value); }} style={{ width: 300 }} />
           </> : null}
         </Space>
       ) : (
         <Space wrap>
           <Typography.Text type="secondary">目标企业主体</Typography.Text>
-          <Input aria-label="商业目标企业主体 Workspace ID" placeholder="例如 ws_demo" value={workspaceDraft} onChange={(event) => setWorkspaceDraft(event.target.value)} onPressEnter={() => commercial.setTargetWorkspace(workspaceDraft)} style={{ width: 180 }} />
-          <Button onClick={() => commercial.setTargetWorkspace(workspaceDraft)} disabled={!workspaceDraft.trim()}>应用范围</Button>
+          <Select aria-label="商业目标企业主体" showSearch optionFilterProp="label" placeholder="从授权企业中选择" value={workspaceDraft || undefined} options={workspaceOptions} onChange={value => { setWorkspaceDraft(value); commercial.setTargetWorkspace(value); }} style={{ width: 300 }} />
           <Button type="primary" disabled={!canRefresh} loading={commercial.summary.status === "loading" || commercial.data[commercial.view].status === "loading"} onClick={() => void Promise.all([commercial.loadSummary(), commercial.loadView()])}>刷新账务</Button>
         </Space>
       )}
       nextStep={isPlatformWorkbench ? undefined : "先处理阻断与待对账事项；支付成功后仍需核验权益发放与新的访问版本。"}
     >
       <div className="ops-finance-page">
+        {workspaceDraft ? <Alert type="info" showIcon title={`当前企业：${selectedWorkspace?.enterpriseName || workspaceDraft}`} description={`财务和商业操作范围：${workspaceDraft}`} style={{ marginBottom: 16 }} /> : null}
         {isPlatformWorkbench ? <>
           {canSearchFinance ? <FinanceSearchSection controller={financeSearch} showProviderStatementStatus={false} compactSummary /> : (
             <Alert
