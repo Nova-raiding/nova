@@ -38,6 +38,17 @@ describe('daily model budget provider boundary', () => {
     expect(catchBranch).toMatch(/if \(providerSucceededButSettlementPending\(error\)\) await markTaskUsageProviderOutcomePending\(workspaceId, usageKey\); else \{ await releaseReservedModelPoints\(/u)
   })
 
+  it('keeps image retry, edit, multimodal and video point releases behind a known-failure guard', () => {
+    for (const reason of ['图片安全重试失败', '图片编辑失败', '多模态生成失败', '视频生成失败']) {
+      const release = `await releaseReservedModelPoints(workspaceId, walletDebitKey, '${reason}')`
+      const releaseAt = source.indexOf(release)
+      expect(releaseAt, reason).toBeGreaterThanOrEqual(0)
+      const branch = source.slice(source.lastIndexOf('} catch (error) {', releaseAt), source.indexOf('throw error', releaseAt))
+      expect(branch, reason).toContain('if (!providerSucceededButSettlementPending(error)) {')
+      expect(branch.indexOf('if (!providerSucceededButSettlementPending(error)) {'), reason).toBeLessThan(branch.indexOf(release))
+    }
+  })
+
   it('reserves async generation before context freezing and releases fixture completion', () => {
     expect(source).toContain("return isProduction() || process.env.LOCAL_COMPOSE === 'true'")
     expect(source).toContain('if (durableContentGenerationEnvironment()) {')

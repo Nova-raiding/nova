@@ -6,6 +6,7 @@ import { alertingSelfMetricLines, jobQueueMetricLines } from './server.js'
 import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, authorizationRepositoryDomainError, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, prioritizeQueueAssets, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requireApprovedAssetForImageGeneration, requirePublishAuthorizationSnapshot } from './server.js'
 import { merchantEntryBillingReadAllowed } from './server.js'
+import { providerSucceededButSettlementPending } from './server.js'
 import { DomainError } from '../../../packages/application/src/service.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import { AUTHZ_POLICY_VERSION, getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
@@ -14,6 +15,21 @@ import type { AuthorizationDecision, PermissionAtom } from '../../../packages/co
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
 import { AuthorizationRepositoryError } from '../../../packages/persistence/src/index.js'
 import { imageReconciliationIdempotencyKey as workerImageReconciliationIdempotencyKey } from '../../../apps/worker/src/main.js'
+
+describe('provider outcome point reservation boundary', () => {
+  it('holds points for unknown outcomes or pending settlement and releases only confirmed pre-provider failure', () => {
+    for (const error of [
+      { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' },
+      { providerOutcome: 'unknown' },
+      { reconciliationRequired: true },
+      { details: { provider_outcome: 'unknown' } },
+      { details: { reconciliation_required: true } },
+      { providerSucceeded: true },
+      { code: 'MODEL_USAGE_SETTLEMENT_PENDING' },
+    ]) expect(providerSucceededButSettlementPending(error)).toBe(true)
+    expect(providerSucceededButSettlementPending({ code: 'IMAGE_EDIT_NOT_CONFIGURED', details: { provider_executed: false } })).toBe(false)
+  })
+})
 
 describe('merchant entry workspace billing projection', () => {
   const direct: PermissionAtom = { capability: 'billing.workspace.read', effect: 'allow', scope: { type: 'workspace', ids: ['ws_entry'] }, source: 'workspace_membership', sourceId: 'membership:ws_entry:owner', obligations: [] }

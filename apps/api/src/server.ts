@@ -7125,10 +7125,12 @@ async function releaseImageReservationOnFailedReconcile(workspaceId: string, job
   imageTrace('reconcile.points_released', { workspace_id: workspaceId, job_id: jobId, reservation_id: reservationId, points: released.value.points })
   return { status: 'released' as const, reservationId, points: released.value.points }
 }
-function providerSucceededButSettlementPending(error: unknown) {
+export function providerSucceededButSettlementPending(error: unknown) {
   if (!error || typeof error !== 'object') return false
-  const candidate = error as { code?: unknown; providerSucceeded?: unknown; details?: Record<string, unknown> }
-  return candidate.providerSucceeded === true || candidate.details?.provider_succeeded === true || candidate.code === 'MODEL_USAGE_SETTLEMENT_PENDING' || candidate.code === 'MODEL_USAGE_COST_MISSING'
+  const candidate = error as { code?: unknown; providerSucceeded?: unknown; providerOutcome?: unknown; reconciliationRequired?: unknown; details?: Record<string, unknown> }
+  return candidate.providerSucceeded === true || candidate.providerOutcome === 'unknown' || candidate.reconciliationRequired === true
+    || candidate.details?.provider_succeeded === true || candidate.details?.provider_outcome === 'unknown' || candidate.details?.reconciliation_required === true
+    || candidate.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN' || candidate.code === 'MODEL_USAGE_SETTLEMENT_PENDING' || candidate.code === 'MODEL_USAGE_COST_MISSING'
 }
 function requiresStrictAuth() {
   if (process.env.AUTH_ENFORCEMENT === 'strict') return true
@@ -18932,9 +18934,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
         return result({ job_id: archived.id, previous_job_id: previous.id, state: archived.state, archive_state: archived.archiveState, retry_count: archived.retryCount ?? 1, creative_points: creativePoints, job: publicImageJob(archived), ...(imageJobOutputsAreClean(archived) ? { images: completed.images } : {}) })
       } catch (error) {
-        await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试失败')
-        if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片安全重试失败' })
-        else if (!existingRetry) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: billingActorId, reason: '图片安全重试失败' })
+        if (!providerSucceededButSettlementPending(error)) {
+          await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试失败')
+          if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片安全重试失败' })
+          else if (!existingRetry) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: billingActorId, reason: '图片安全重试失败' })
+        }
         await persistSnapshot(workspaceId, 'image_generation_job', retried.job, retried.job as unknown as Record<string, unknown>)
         throw error
       }
@@ -20810,8 +20814,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         await persistEvent(workspaceId, archived.id, 'product.image_edit_candidate_generated', archived.revision, { job_id: archived.id, product_id: contextProduct.id, source_asset_id: sourceAsset.id, visual_refs: archived.outputs?.map(output => output.visualRef) ?? [], artifact_role: 'candidate', product_protection: productProtection })
         return result({ ...candidate.value, product_protection: productProtection, images, rendering: 'candidate', platformPublished: false, execution: executionContract('image_edit', true), job: publicImageJob(archived) })
       } catch (error) {
-        await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片编辑失败')
-        if (!providerSucceededButSettlementPending(error)) await refundEditWallet('图片编辑任务或 provider 失败')
+        if (!providerSucceededButSettlementPending(error)) {
+          await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片编辑失败')
+          await refundEditWallet('图片编辑任务或 provider 失败')
+        }
         throw error
       }
     }
@@ -20890,8 +20896,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         }
         if (generatedText) requireRuleSafeGenerationText(rulePreflight, [generatedText], '多模态生成结果命中当前平台规则禁用表达')
       } catch (error) {
-        await releaseReservedModelPoints(workspaceId, walletDebitKey, '多模态生成失败')
-        if (!providerSucceededButSettlementPending(error)) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '多模态生成 provider 调用失败' })
+        if (!providerSucceededButSettlementPending(error)) {
+          await releaseReservedModelPoints(workspaceId, walletDebitKey, '多模态生成失败')
+          await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '多模态生成 provider 调用失败' })
+        }
         throw error
       }
       const providerExecuted = request.value.modality === 'text' || (request.value.modality === 'video' && request.value.output !== 'rendering')
@@ -20971,8 +20979,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         }
         if (generatedPlan) requireRuleSafeGenerationText(rulePreflight, [generatedPlan], '视频脚本或分镜命中当前平台规则禁用表达')
       } catch (error) {
-        await releaseReservedModelPoints(workspaceId, walletDebitKey, '视频生成失败')
-        if (!providerSucceededButSettlementPending(error)) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '视频生成 provider 调用失败' })
+        if (!providerSucceededButSettlementPending(error)) {
+          await releaseReservedModelPoints(workspaceId, walletDebitKey, '视频生成失败')
+          await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '视频生成 provider 调用失败' })
+        }
         throw error
       }
       const execution = { status: rendering ? rendering.status : generatedPlan ? 'completed' as const : 'requested' as const, ...executionContract('video', Boolean(rendering ? videoGenerator : contentGenerator), generatedPlan && contentGenerator ? 'text-relay' : undefined) }
