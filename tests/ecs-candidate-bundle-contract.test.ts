@@ -1,10 +1,32 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('ECS candidate bundle contract', () => {
+  it('retires the legacy Alipay rotation path that bypasses verified ECS deployment', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'retired-alipay-rotation-'))
+    const bin = join(directory, 'bin')
+    const marker = join(directory, 'docker-called')
+    mkdirSync(bin)
+    const docker = join(bin, 'docker')
+    writeFileSync(docker, `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o700 })
+    chmodSync(docker, 0o700)
+    try {
+      const run = spawnSync('/bin/bash', ['infra/scripts/rotate-alipay-secrets.sh', 'private-key-sentinel', 'public-key-sentinel'], {
+        encoding: 'utf8', env: { PATH: `${bin}:/usr/bin:/bin` },
+      })
+      expect(run.status).toBe(2)
+      expect(run.stderr).toContain('standalone Alipay key rotation is retired')
+      expect(run.stderr).not.toContain('private-key-sentinel')
+      expect(run.stderr).not.toContain('public-key-sentinel')
+      expect(existsSync(marker)).toBe(false)
+      expect(readFileSync('infra/scripts/rotate-alipay-secrets.sh', 'utf8')).not.toContain('compose[@]}" up')
+      expect(readFileSync('infra/scripts/ecs-review-structure.mjs', 'utf8')).toContain('infra/scripts/rotate-alipay-secrets.sh')
+    } finally { rmSync(directory, { recursive: true, force: true }) }
+  })
+
   it('stays ECS-only and records that alerts are disabled', () => {
     const script = readFileSync('infra/scripts/prepare-ecs-candidate-bundle.sh', 'utf8')
     const manifest = script.slice(script.indexOf("cat > \"$manifest\" <<'EOF'"), script.indexOf('\nEOF', script.indexOf("cat > \"$manifest\" <<'EOF'")))
