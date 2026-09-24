@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ProductSpreadsheetImport, productImportTemplate } from './ProductSpreadsheetImport.js';
+import { ProductSpreadsheetImport, productImportAssetState, productImportNextStep, productImportTemplate } from './ProductSpreadsheetImport.js';
 import { parseDocumentFacts } from '../../../../../packages/application/src/document-parser.js';
 import { spreadsheetFactsToBatchProducts } from '../../../../../packages/application/src/spreadsheet-batch.js';
 
@@ -36,5 +36,21 @@ describe('product spreadsheet import', () => {
     const upload = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gu)].find((button) => button[2]?.includes('上传商品表格'));
     expect(upload).toBeDefined();
     expect(upload?.[1]).not.toContain('disabled');
+  });
+  it('distinguishes blocked, failed, pending, and completed scan or parse states', () => {
+    expect(productImportAssetState({ id: 'a', scanStatus: 'blocked' })).toBe('scan_blocked');
+    expect(productImportAssetState({ id: 'a', scanStatus: 'failed' })).toBe('scan_failed');
+    expect(productImportAssetState({ id: 'a', scanStatus: 'quarantined' })).toBe('scan_pending');
+    expect(productImportAssetState({ id: 'a', scanStatus: 'unscanned' })).toBe('parse_pending');
+    expect(productImportAssetState({ id: 'a', scanStatus: 'unscanned', parseStatus: 'succeeded', extractedFacts: { products: [] } })).toBe('parse_ready');
+    expect(productImportAssetState({ id: 'a', scanStatus: 'clean', parseStatus: 'failed' })).toBe('parse_failed');
+    expect(productImportAssetState({ id: 'a', scanStatus: 'clean', parseStatus: 'succeeded' })).toBe('parse_incomplete');
+    expect(productImportAssetState({ id: 'a', scanStatus: 'clean', parseStatus: 'processing' })).toBe('parse_processing');
+  });
+  it('gives users a workspace-aware plugin handoff without claiming binding was verified', () => {
+    const next = productImportNextStep('ws_customer', ['product_1', 'product_2']);
+    expect(next.binding).toContain('无法验证插件是否已绑定');
+    expect(next.context).toContain('ws_customer');
+    expect(next.prompt).toContain('product_1、product_2');
   });
 });

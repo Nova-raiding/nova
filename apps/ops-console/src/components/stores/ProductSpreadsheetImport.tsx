@@ -6,6 +6,24 @@ import { rpc } from "../../api/opsClient.js";
 import { spreadsheetFactsToBatchProducts } from "../../../../../packages/application/src/spreadsheet-batch.js";
 
 type Asset = { id: string; scanStatus?: string; parseStatus?: string; extractedFacts?: Record<string, unknown> };
+export function productImportAssetState(asset: Asset | undefined): 'missing' | 'scan_blocked' | 'scan_failed' | 'scan_pending' | 'parse_failed' | 'parse_incomplete' | 'parse_ready' | 'parse_pending' | 'parse_processing' {
+  if (!asset) return 'missing';
+  if (asset.scanStatus === 'blocked') return 'scan_blocked';
+  if (asset.scanStatus === 'failed') return 'scan_failed';
+  if (asset.scanStatus !== 'clean' && asset.scanStatus !== 'unscanned') return 'scan_pending';
+  if (asset.parseStatus === 'failed') return 'parse_failed';
+  if (asset.parseStatus === 'succeeded') return asset.extractedFacts ? 'parse_ready' : 'parse_incomplete';
+  if (asset.parseStatus === 'processing') return 'parse_processing';
+  return 'parse_pending';
+}
+
+export function productImportNextStep(workspaceId: string | undefined, imported: readonly string[]) {
+  return {
+    binding: '在 ChatGPT 中启用 Store Nova 插件并发送“开始使用 Store Nova”。此页面无法验证插件是否已绑定该工作区，请在插件返回的状态中核对。',
+    prompt: `确认插件使用当前工作区后，发送：查看商品 ${imported.join('、')}，选择要制作内容的 SKU。商品事实仍需确认。`,
+    context: `当前导入工作区：${workspaceId || '未选择'}；商品编号：${imported.join('、')}`,
+  };
+}
 type Product = Record<string, unknown> & { skus?: Array<{ id: string; name: string; price: number; stock: number; attributes?: Record<string, string>; images?: string[]; sourceAssetIds?: string[] }> };
 const templateRows = [
   ["平台", "商品货号", "商品名称", "类目", "SKU编码", "SKU名称", "颜色", "尺码", "SKU价格", "SKU库存", "SKU图片链接", "SKU原图素材ID", "素材ID", "店铺账号"],
@@ -41,33 +59,48 @@ export function ProductSpreadsheetImport({ workspaceId, canWrite, platformScope 
   }, [workspaceId]);
   const enabled = Boolean(!platformScope && workspaceId && canWrite);
   const inspect = async (id: string, run: number) => {
-    setPhase("正在自动检查文件，通过后解析商品和 SKU…");
+    setPhase('正在读取上传文件状态…');
+    let parseRequested = false;
     for (let i = 0; i < 40; i += 1) {
       if (run !== epoch.current) return;
       const listing = await rpc<{ assets: Asset[] }>("asset.list");
       const asset = listing?.assets.find(item => item.id === id);
-      if (asset?.scanStatus === "blocked") throw new Error("文件未通过安全检查，请检查文件内容后重新上传。");
-      if (asset?.scanStatus === "clean") {
-        setPhase("正在解析表格…");
-        await rpc("asset.parse", { asset_id: id }, { timeoutMs: 120_000 });
-        const parsed = (await rpc<{ assets: Asset[] }>("asset.list"))?.assets.find(item => item.id === id);
-        if (!parsed?.extractedFacts || parsed.parseStatus !== "succeeded") throw new Error("表格解析尚未完成，请点击继续检查。");
-        const preview = spreadsheetFactsToBatchProducts(parsed.extractedFacts) as Product[];
+      const state = productImportAssetState(asset);
+      if (state === 'missing') throw new Error('找不到这份上传文件，请重新上传。');
+      if (state === 'scan_blocked') throw new Error('文件未通过安全检查，请检查文件内容后重新上传。');
+      if (state === 'scan_failed') throw new Error('文件安全检查失败。请稍后重试；若仍失败，请联系工作区管理员。');
+      if (state === 'parse_failed') throw new Error('表格解析失败，系统不会自动重试解析。请检查文件格式、模板列和必填字段后重新上传。');
+      if (state === 'parse_incomplete') throw new Error('解析已结束但没有可用的商品数据。请检查表格内容后重新上传。');
+      if (state === 'parse_ready') {
+        const preview = spreadsheetFactsToBatchProducts(asset!.extractedFacts!) as Product[];
         if (run !== epoch.current) return;
-        setFacts(parsed.extractedFacts); setProducts(preview); setPhase("请核对下方商品和 SKU，确认后导入当前客户工作区。"); return;
+        setFacts(asset!.extractedFacts!); setProducts(preview); setPhase('请核对下方商品和 SKU，确认后导入当前客户工作区。'); return;
+      }
+      if (state === 'parse_pending') {
+        if (!parseRequested) {
+          setPhase(asset?.scanStatus === 'unscanned' ? '正在启动表格解析…' : '安全检查通过，正在启动表格解析…');
+          await rpc('asset.parse', { asset_id: id }, { timeoutMs: 120_000 });
+          parseRequested = true;
+        } else {
+          setPhase('表格解析正在进行，等待结果…');
+        }
+      } else if (state === 'parse_processing') {
+        setPhase('表格解析正在进行，等待结果…');
+      } else {
+        setPhase(asset?.scanStatus === 'quarantined' ? '文件正在隔离区等待安全扫描…' : '文件安全扫描正在进行，等待结果…');
       }
       await new Promise(resolve => setTimeout(resolve, 1500));
     }
-    throw new Error("文件仍在自动检查中，已保留上传文件。稍后点击继续检查，无需重复上传。");
+    throw new Error('检查尚未完成，上传记录已保留。请稍后点击“继续检查”，无需重复上传。');
   };
   const runInspect = async (id: string) => {
     setBusy(true); setError(""); const run = epoch.current;
-    try { await inspect(id, run); } catch (e) { if (run === epoch.current) setError(e instanceof Error ? e.message : "检查失败"); }
+    try { await inspect(id, run); } catch (e) { if (run === epoch.current) { setPhase(''); setError(e instanceof Error ? e.message : '检查失败'); } }
     finally { if (run === epoch.current) setBusy(false); }
   };
   const upload = async (file: File) => {
     if (!enabled) return false;
-    if (!/\.(xlsx|csv)$/i.test(file.name) || file.size > 10 * 1024 * 1024) { setError("请选择不超过 10MB 的 .xlsx 或 .csv 文件；旧版 .xls 请另存为 .xlsx。"); return false; }
+    if (!/\.(xlsx|csv)$/i.test(file.name) || file.size > 10 * 1024 * 1024) { setPhase(''); setError("请选择不超过 10MB 的 .xlsx 或 .csv 文件；旧版 .xls 请另存为 .xlsx。"); return false; }
     const fingerprint = `${file.name}:${file.size}:${file.lastModified}`;
     if (assetId && fingerprint === fileFingerprint && !imported.length) {
       setError("");
@@ -83,7 +116,7 @@ export function ProductSpreadsheetImport({ workspaceId, canWrite, platformScope 
       if (!asset?.id) throw new Error("上传未返回文件编号，尚未导入商品。");
       if (run !== epoch.current) return false;
       setAssetId(asset.id); await inspect(asset.id, run);
-    } catch (e) { if (run === epoch.current) setError(e instanceof Error ? e.message : "上传失败"); }
+    } catch (e) { if (run === epoch.current) { setPhase(''); setError(e instanceof Error ? e.message : "上传失败"); } }
     finally { if (run === epoch.current) setBusy(false); }
     return false;
   };
@@ -95,11 +128,12 @@ export function ProductSpreadsheetImport({ workspaceId, canWrite, platformScope 
       const result = await rpc<{ products: Array<{ id: string }> }>("catalog.import.batch", { source_asset_id: assetId }, { timeoutMs: 120_000 });
       if (!result?.products?.length) throw new Error("服务端未返回导入结果，请查询商品后再重试。");
       if (run !== epoch.current) return;
-      setImported(result.products.map(item => item.id)); setPhase(`已导入 ${result.products.length} 个商品。同一客户的插件可查询这些商品及 SKU，商品事实仍需确认。`);
-    } catch (e) { if (run === epoch.current) setError(e instanceof Error ? e.message : "导入失败"); }
+      setImported(result.products.map(item => item.id)); setPhase(`已导入 ${result.products.length} 个商品到当前工作区；商品事实仍需确认。`);
+    } catch (e) { if (run === epoch.current) { setPhase(''); setError(e instanceof Error ? e.message : "导入失败"); } }
     finally { if (run === epoch.current) setBusy(false); }
   };
   const rows = products.flatMap((p, index) => p.skus?.length ? p.skus.map(sku => ({ key: `${index}:${sku.id}`, title: String(p.title), productKey: String(p.local_product_key ?? p.remote_id ?? ""), sku: sku.id, color: sku.attributes?.color ?? "—", size: sku.attributes?.size ?? "—", price: sku.price, stock: sku.stock, images: (sku.images?.length ?? 0) + (sku.sourceAssetIds?.length ?? 0) })) : [{ key: String(index), title: String(p.title), productKey: String(p.local_product_key ?? p.remote_id ?? ""), sku: "—", color: "—", size: "—", price: p.price as number, stock: p.stock as number, images: Array.isArray(p.images) ? p.images.length : 0 }]);
+  const nextStep = imported.length ? productImportNextStep(workspaceId, imported) : undefined;
   return <Card title="商品与 SKU · Excel 导入">
     <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
       <Typography.Paragraph style={{ margin: 0 }}>每行填写一个 SKU，相同商品货号自动合并。支持 Excel 和 CSV；先预览，再导入。图片链接和原图素材按 SKU 分别保存，原图素材必须属于当前客户。</Typography.Paragraph>
@@ -113,7 +147,11 @@ export function ProductSpreadsheetImport({ workspaceId, canWrite, platformScope 
       {error && <div role="alert"><Alert type="error" showIcon title={error} /></div>}
       {phase && <div aria-live="polite"><Alert type={imported.length ? "success" : "info"} showIcon title={phase} /></div>}
       {!!rows.length && <><Typography.Text>预览：{products.length} 个商品，{rows.length} 行 SKU / 商品记录</Typography.Text><Table size="small" dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 950 }} columns={[{ title: "商品", dataIndex: "title" }, { title: "货号", dataIndex: "productKey" }, { title: "SKU编码", dataIndex: "sku" }, { title: "颜色", dataIndex: "color" }, { title: "尺码", dataIndex: "size" }, { title: "价格（元）", dataIndex: "price" }, { title: "库存", dataIndex: "stock" }, { title: "图片数", dataIndex: "images" }]} /><Button type="primary" disabled={!enabled || busy || !!imported.length} loading={busy} onClick={() => void commit()}>{imported.length ? "已导入" : "确认预览并导入"}</Button></>}
-      {!!imported.length && <Typography.Paragraph copyable>{`在Store Nova插件中说：查看我的商品，选择需要制作的 SKU。商品编号：${imported.join("、")}`}</Typography.Paragraph>}
+      {!!imported.length && <Alert type="success" showIcon message="导入完成" description={<Space direction="vertical" size={4}>
+        <Typography.Text>{nextStep?.binding}</Typography.Text>
+        <Typography.Text>{nextStep?.prompt}</Typography.Text>
+        <Typography.Text copyable>{nextStep?.context}</Typography.Text>
+      </Space>} />}
     </Space>
   </Card>;
 }

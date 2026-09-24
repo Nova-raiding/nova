@@ -2177,6 +2177,36 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('returns an explicitly unscanned demo upload immediately without claiming a clean scan', async () => {
+    const methods: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      const request = JSON.parse(body)
+      methods.push(request.method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { id: 'asset_demo_1', scanStatus: 'unscanned' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'asset.upload', arguments: { name: 'product.png', mime_type: 'image/png', content_base64: Buffer.from('image').toString('base64') } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(false)
+      expect(response.result.structuredContent).toMatchObject({ scanStatus: 'unscanned', scanAutomation: { state: 'completed' }, scan_wait: { state: 'completed', timed_out: false } })
+      expect(response.result.content[0].text).toContain('已上传，可继续使用')
+      expect(methods).toEqual(['asset.upload'])
+      expect(JSON.stringify(response.result)).not.toContain('检查已通过')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('does not invoke hidden OAuth even when a caller supplies its old parameters', async () => {
     const server = createServer(async (req, res) => {
       for await (const _chunk of req) { /* consume request */ }
