@@ -49,6 +49,8 @@ if [ "$DEPLOYMENT_SCOPE" = full ]; then
   : "${RELEASE_EVIDENCE_BUNDLE_PATH:?RELEASE_EVIDENCE_BUNDLE_PATH is required for full production acceptance}"
 fi
 : "${RENDERED_COMPOSE_PATH:?RENDERED_COMPOSE_PATH is required}"
+: "${ECS_COMPOSE_PROJECT:=merchant-production}"
+node "$root/infra/scripts/validate-ecs-compose-project.mjs" "$RENDERED_COMPOSE_PATH" "$ECS_COMPOSE_PROJECT"
 : "${EXPECTED_MIGRATION_VERSION:?EXPECTED_MIGRATION_VERSION is required}"
 : "${API_IMAGE_REF:?API_IMAGE_REF is required}"
 : "${WORKER_IMAGE_REF:?WORKER_IMAGE_REF is required}"

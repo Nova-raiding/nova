@@ -94,7 +94,7 @@ function renderFinalProductionCompose() {
     env[`WORKER_${role.toUpperCase()}_API_SIGNING_SECRET`] = credentials[role].signing_secret
   }
   return JSON.parse(execFileSync('sh', ['infra/scripts/render-ecs-production-compose.sh'], {
-    cwd: process.cwd(), encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: process.cwd(), encoding: 'utf8', env: { ...env, ECS_COMPOSE_PROJECT: 'compose-contract-test' }, stdio: ['ignore', 'pipe', 'pipe'],
   }))
 }
 
@@ -105,7 +105,8 @@ describe('ECS production Compose contract', () => {
     expect(renderer).toContain('ECS_PRODUCTION_ENV_FILE must be a regular non-symlink file')
     expect(renderer).toContain('ECS_PRODUCTION_ENV_FILE must be root-owned with mode 600')
     expect(renderer).toContain('ECS_PRODUCTION_ENV_FILE must be outside the mutable repository')
-    expect(renderer).toContain('docker compose --env-file "$production_env"')
+    expect(renderer).toContain('docker compose -p "$project" --env-file "$production_env"')
+    expect(renderer).toContain('unsafe ECS_COMPOSE_PROJECT')
   })
 
   it('rejects relative and symlink-parent external env paths before Compose', () => {
@@ -157,6 +158,8 @@ describe('ECS production Compose contract', () => {
     expect(JSON.stringify(migrate.entrypoint)).not.toContain('seed-demo.sql')
     expect(JSON.stringify(migrate.volumes)).not.toContain('seed-demo.sql')
     const gateway = rendered.services['pilot-gateway']
+    expect(rendered.networks.default.name).toBe('compose-contract-test_default')
+    expect(Object.values(rendered.volumes).every((volume: any) => volume.name.startsWith('compose-contract-test_'))).toBe(true)
     expect(gateway.image).toBe(`registry.example/pilot-gateway@sha256:${'a'.repeat(64)}`)
     expect(gateway.ports).toEqual(expect.arrayContaining([
       expect.objectContaining({ published: '80', target: 8080 }),

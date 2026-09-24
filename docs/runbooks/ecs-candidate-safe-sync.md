@@ -144,12 +144,15 @@ ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATAB
 
    ```sh
    umask 077
+   ECS_COMPOSE_PROJECT=merchant-production \
    ECS_PRODUCTION_ENV_FILE=/var/lib/merchant-release-security/config/production.env \
      sh infra/scripts/render-ecs-production-compose.sh \
      > /var/lib/merchant-release-security/config/rendered-compose.json
    node infra/scripts/validate-ecs-production-compose.mjs \
      /var/lib/merchant-release-security/config/rendered-compose.json
    ```
+
+   `ECS_COMPOSE_PROJECT` is frozen into rendered network and volume names. It must exactly match the project passed to deploy/rollback; candidate sidecars must use a distinct reviewed project. The renderer rejects unsafe names rather than inheriting a project name from the checkout or ambient `.env`.
 
    渲染前必须先备齐 release 层的八个固定镜像引用。`infra/local/docker-compose.ecs-pilot-release.yml` 以 `${VAR:?}` 强校验 `MIGRATION_IMAGE_REF`、`API_IMAGE_REF`、`WORKER_IMAGE_REF`、`UI_IMAGE_REF`、`OPS_UI_IMAGE_REF`、`PAYMENT_GATEWAY_IMAGE_REF`、`PILOT_GATEWAY_IMAGE_REF`、`CLAMAV_IMAGE_REF`；生产渲染器用 `--env-file "$ECS_PRODUCTION_ENV_FILE"` 读取受保护配置，缺任一项都会非零退出，而 Compose 最多报告 91 条插值错误，base 层的错误会掩盖 release 层自己的那条。这八个变量的生产者是 `infra/scripts/deploy-preflight-ecs.sh` 的必需清单与 `.env.example` 模板，两者缺一不可。同一条规则覆盖全部五个层（`infra/local/ecs-production-compose.layers`）：任一层里被 `${VAR:?}` 强校验的变量都必须同时出现在这两处，否则 `render-ecs-production-compose.sh` 会在 base 层就非零退出。闭环由 `tests/ecs-compose-release-gate.test.ts` 静态保证（digest 清单要求的每个服务都必须被固定，全部五个层的每个 `${VAR:?}` 变量都必须有这两处生产者），并由 `tests/release-env-closure.invariant.test.ts` 用真实 `docker compose config` 渲染整条链来验证。
 
