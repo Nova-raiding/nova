@@ -154,6 +154,7 @@ describe('verified ECS Compose deployment runner', () => {
 
   it('binds the committed candidate before consuming the nonce or mutating Compose', () => {
     const script = source()
+    const baselineReady = script.indexOf('baseline_ready=$(curl')
     const preflight = script.indexOf('deploy-preflight-ecs.sh')
     const consume = script.indexOf('consume-production-evidence-nonce.sh')
     const localImages = script.indexOf('config --images')
@@ -173,10 +174,25 @@ describe('verified ECS Compose deployment runner', () => {
     expect(localImages).toBeGreaterThan(preflight)
     expect(consume).toBeGreaterThan(preflight)
     expect(localImages).toBeLessThan(consume)
+    expect(baselineReady).toBeGreaterThan(0)
+    expect(baselineReady).toBeLessThan(consume)
+    expect(script).toContain('current production baseline /readyz is not healthy; refusing nonce consumption and migration')
     expect(migration).toBeGreaterThan(consume)
     expect(completeMigrationVerification).toBeGreaterThan(migration)
     expect(completeMigrationVerification).toBeLessThan(rollout)
     expect(rollout).toBeGreaterThan(migration)
+  })
+
+  it('requires a ready old production baseline before consuming the nonce or migrating', () => {
+    const script = source()
+    const baseline = script.indexOf("baseline_ready=$(curl --fail --silent --show-error --max-time 15")
+    const consume = script.indexOf('consume-production-evidence-nonce.sh')
+    const migration = script.indexOf('run --rm --no-deps --pull never migrate')
+    expect(script.slice(baseline, consume)).toContain('/readyz')
+    expect(script.slice(baseline, consume)).toContain('envelope.data?.ready!==true')
+    expect(baseline).toBeGreaterThan(0)
+    expect(baseline).toBeLessThan(consume)
+    expect(baseline).toBeLessThan(migration)
   })
 
   it('preflights every immutable image locally and forbids deploy-time pulls', () => {
