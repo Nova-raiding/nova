@@ -10,7 +10,7 @@ import { alertNotificationReadiness, notifyOperationalAlert } from './alert-noti
 import { Pool } from 'pg'
 import { createClient } from 'redis'
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
-import { MerchantService, MANUAL_STORE_RECORD_TOKEN_STATE, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isManualStoreRecord, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type ProductSku, type Task } from '../../../packages/application/src/service.js'
+import { MerchantService, MANUAL_STORE_RECORD_TOKEN_STATE, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isManualStoreRecord, isTrustedCleanAsset, isUsableAssetWithoutScan, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type ProductSku, type Task } from '../../../packages/application/src/service.js'
 import { confirmedStoreBrandClues } from '../../../packages/application/src/brand-extractor.js'
 import { CommercialAccessService, type CommercialAccessServiceResult } from '../../../packages/application/src/commercial-access-service.js'
 import { CommercialPurchaseError, CommercialPurchaseService } from '../../../packages/application/src/commercial-purchase-service.js'
@@ -149,6 +149,10 @@ import { projectImportedProductsToKnowledge } from '../../../packages/applicatio
 
 const port = Number(process.env.PORT ?? 8787)
 const uploadSessions = new UploadSessionManager()
+
+export function demoUnscannedAssetsEnabled(source: NodeJS.ProcessEnv = process.env): boolean {
+  return source.DEPLOYMENT_PROFILE === 'ecs' && source.ASSET_SCANNER_MODE === 'deferred' && source.DEMO_UNSCANNED_ASSETS_ENABLED === 'true'
+}
 
 const fixtureMode = process.env.CONNECTOR_FIXTURE_MODE === 'true'
 const manualPlatformOperationsMode = process.env.PLATFORM_OPERATIONS_MODE?.trim().toLowerCase() === 'manual'
@@ -510,6 +514,7 @@ export function buildBoundedKnowledgeGenerationContext(input: {
 const service = new MerchantService({
   fixtureMode,
   seedFixture: fixtureMode || process.env.NODE_ENV === 'test',
+  allowUnscannedAssets: demoUnscannedAssetsEnabled(),
   strictAccountScope: true,
   // Manual operations mode is read per call (see `manualPlatformOperations`) so
   // a deployment that switches PLATFORM_OPERATIONS_MODE cannot keep serving the
@@ -3599,7 +3604,7 @@ function durableParseErrorContext(error: unknown): ParseErrorContext {
 
 async function executeDurableAssetParse(workspaceId: string, assetId: string, req: IncomingMessage) {
   const asset = assetForWorkspace(workspaceId, assetId)
-  if (asset.scanStatus !== 'clean') throw new DomainError('ASSET_PARSE_SCAN_REQUIRED', '素材必须完成安全扫描后才能解析', 409)
+  if (!isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())) throw new DomainError('ASSET_PARSE_SCAN_REQUIRED', '素材尚不可用，不能解析', 409)
   if (asset.parseStatus === 'succeeded' && asset.extractedFactsSource === 'manual') throw new DomainError('ASSET_FACTS_MANUAL_LOCKED', '素材事实已由商家人工确认；自动解析不能覆盖或降级人工确认结果', 409)
   const repository = await assetParseRepository()
   const { timeoutMs, maxAttempts } = assetParseRuntimeConfig()
@@ -3626,7 +3631,7 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
       parse: async signal => {
         const ocrDebitKey = `${ocrDebitKeyPrefix}${parseAttempt}`
         try {
-          const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey)
+          const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey, { includeQuarantine: asset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
           extraction = await parseAssetFacts({ name: asset.name, mimeType: asset.mimeType, body: stored.body, usageContext: { workspaceId, actionId: ocrDebitKey, runKey: `asset-parse:${asset.id}` }, signal })
           return extraction.facts
         } catch (error) {
@@ -7160,7 +7165,7 @@ function signedAssetDisplayUrl(workspaceId: string, assetId: string) {
   const config = assetDisplayUrlConfig()
   if (!config) return undefined
   const asset = assetForWorkspace(workspaceId, assetId)
-  if (!isTrustedCleanAsset(asset)) throw new DomainError('QUARANTINE_ACCESS_DENIED', '素材尚未通过可信安全扫描，已阻止签发图片地址', 403)
+  if (!isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())) throw new DomainError('QUARANTINE_ACCESS_DENIED', '素材尚不可用，已阻止签发图片地址', 403)
   const path = `/v1/public/assets/${encodeURIComponent(asset.id)}/display`
   const expires = Math.floor(Date.now() / 1000) + SIGNED_ASSET_URL_TTL_SECONDS
   const version = '1'
@@ -7195,10 +7200,10 @@ async function serveSignedAssetDisplay(req: IncomingMessage, res: ServerResponse
   await enforceRateLimit(req, workspaceId)
   await hydrateWorkspace(workspaceId)
   const asset = assetForWorkspace(workspaceId, assetId)
-  if (!isTrustedCleanAsset(asset) || asset.sha256 !== sha256) throw new DomainError('ASSET_DISPLAY_SNAPSHOT_MISMATCH', '图片安全快照已变化，请在对话中重新读取', 409)
+  if (!isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled()) || asset.sha256 !== sha256) throw new DomainError('ASSET_DISPLAY_SNAPSHOT_MISMATCH', '图片快照已变化，请在对话中重新读取', 409)
   if (!['image/png', 'image/jpeg', 'image/webp'].includes(asset.mimeType.toLowerCase())) throw new DomainError('ASSET_DISPLAY_MIME_NOT_ALLOWED', '该素材类型不能通过图片展示地址读取', 415)
   let stored: Awaited<ReturnType<typeof getStoredObjectWithRetry>>
-  try { stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey) } catch (error) {
+  try { stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey, { includeQuarantine: asset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() }) } catch (error) {
     if (error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND') throw new DomainError('ASSET_BINARY_UNAVAILABLE', '图片文件不可用，请重新生成', 410)
     throw error
   }
@@ -9591,6 +9596,7 @@ function productionReleaseMetadataReadiness(source: NodeJS.ProcessEnv): Producti
 }
 
 function productionAssetScannerReadiness(source: NodeJS.ProcessEnv): ProductionReadinessGate {
+  if (demoUnscannedAssetsEnabled(source)) return { ready: true, reasons: [] }
   const reasons: string[] = []
   if (source.ASSET_SCANNER_MODE !== 'clamav_worker') reasons.push('asset_scanner_mode_must_be_clamav_worker')
   if (!source.ASSET_SCANNER_API_TOKEN?.trim()) reasons.push('asset_scanner_api_token_missing')
@@ -9647,7 +9653,7 @@ function configuredAssetScanMaxAttempts(source: NodeJS.ProcessEnv = process.env)
 }
 
 export function scannerHeartbeatRequiredForProbe(path: string, source: NodeJS.ProcessEnv = process.env): boolean {
-  return path === '/readyz' && controlledScannerEnvironment(source)
+  return path === '/readyz' && controlledScannerEnvironment(source) && !demoUnscannedAssetsEnabled(source)
 }
 
 function scannerMinimumReadyInstances(source: NodeJS.ProcessEnv): number {
@@ -23184,10 +23190,10 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const workspaceId = resolveWorkspace(req)
     const asset = assetForWorkspace(workspaceId, assetDownloadMatch[1]!)
     await enforceAssetAccess(req, workspaceId, asset.id)
-    if (!isTrustedCleanAsset(asset)) throw new DomainError('QUARANTINE_ACCESS_DENIED', '素材尚未通过可信安全扫描，暂不可下载', 403)
+    if (!isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())) throw new DomainError('QUARANTINE_ACCESS_DENIED', '素材尚不可用，暂不可下载', 403)
     let stored: Awaited<ReturnType<typeof getStoredObjectWithRetry>>
     try {
-      stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey)
+      stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey, { includeQuarantine: asset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
     } catch (error) {
       if (error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND') {
         throw new DomainError('ASSET_BINARY_UNAVAILABLE', '素材文件不可用，请重新上传', 410)
@@ -23261,6 +23267,29 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const actualSha256 = createHash('sha256').update(bytes).digest('hex')
     if (expectedSha256 && !/^[a-f0-9]{64}$/iu.test(expectedSha256)) throw new DomainError('ASSET_DIGEST_INVALID', 'x-asset-sha256 必须是 SHA-256 摘要', 400)
     if (expectedSha256 && expectedSha256.toLowerCase() !== actualSha256) throw new DomainError('ASSET_DIGEST_MISMATCH', 'x-asset-sha256 与上传内容不一致', 400)
+    if (demoUnscannedAssetsEnabled()) {
+      const pendingKey = `quarantine/${workspaceId}/pending_${randomBytes(12).toString('hex')}/upload.bin`
+      const asset = service.registerAsset({ workspaceId, name, mimeType: contentType, sizeBytes: bytes.byteLength, sha256: actualSha256, storageKey: pendingKey, scanMode: 'unscanned', uploadedByActorId: requestActor(req) })
+      if (asset.deduplication.mode === 'deduplicated') {
+        if (!isUsableAssetWithoutScan(asset, true)) throw new DomainError('ASSET_EXISTING_SCAN_STATE', '相同文件已存在但尚不可用，请先处理原素材', 409)
+        await persistAssetReference(workspaceId, asset)
+        return send(res, 200, workspaceId, asset, null, req)
+      }
+      let storedKey: string | undefined
+      try {
+        const stored = await putQuarantineObject({ workspaceId, assetId: asset.id, fileName: name, contentType, body: bytes, expectedSha256: actualSha256, expectedSizeBytes: bytes.byteLength })
+        storedKey = stored.key
+        asset.storageKey = stored.key
+        asset.sha256 = stored.sha256
+        asset.sizeBytes = stored.sizeBytes
+        await persistAssetSnapshotAndEvent(workspaceId, asset, 'asset.uploaded_unscanned', { asset_id: asset.id, storage_key: stored.key, size_bytes: stored.sizeBytes, sha256: stored.sha256, scan_status: 'unscanned' }, asset as unknown as Record<string, unknown>)
+        return send(res, 201, workspaceId, asset, null, req)
+      } catch (error) {
+        service.assets.delete(asset.id)
+        if (storedKey) await compensateStoredAsset(workspaceId, asset.id, storedKey, 'unscanned asset persistence failed')
+        throw error
+      }
+    }
     const pendingKey = `quarantine/${workspaceId}/pending_${randomBytes(12).toString('hex')}/upload.bin`
     const provisional = service.registerAsset({ workspaceId, name, mimeType: contentType, sizeBytes: bytes.byteLength, sha256: actualSha256, storageKey: pendingKey, uploadedByActorId: requestActor(req) })
     if (provisional.deduplication.mode === 'deduplicated') {
