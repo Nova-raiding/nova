@@ -22,7 +22,7 @@ function protectedFile(path, label) {
     if (realpathSync(path) !== path) fail(`${label} must be canonical`)
     const file = statSync(path)
     if (!file.isFile()) fail(`${label} must be a regular file`)
-    if (!testFiles && (file.uid !== 0 || (file.mode & 0o777) !== 0o600)) fail(`${label} must be root-owned mode 0600`)
+    if (!testFiles && (file.uid !== 0 || (file.mode & 0o400) === 0 || (file.mode & 0o177) !== 0)) fail(`${label} must be root-owned and readable only by root`)
     for (let parent = dirname(path); parent !== '/'; parent = dirname(parent)) {
       const info = statSync(parent)
       if (!info.isDirectory() || (!testFiles && (info.uid !== 0 || (info.mode & 0o022) !== 0))) fail(`${label} parent chain is unsafe`)
