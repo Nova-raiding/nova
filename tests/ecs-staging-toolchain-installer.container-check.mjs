@@ -148,12 +148,20 @@ for (const name of ['candidate-source.tar', 'candidate-identity.txt', 'files.txt
   copyFileSync(`${bundle}/${name}`, `${testBundle}/${name}`);
   chmodSync(`${testBundle}/${name}`, 0o600);
 }
+const archiveModes = execFileSync('/usr/bin/tar', ['-tvf', `${testBundle}/candidate-source.tar`, 'infra/', 'infra/protected/', 'infra/protected/attest-capability-evidence.mjs'], { encoding: 'utf8' });
+assert.match(archiveModes, /^drwxrwxr-x\s+.*\sinfra\/protected\/$/m, 'fixture must reproduce a group-writable protected directory');
+assert.match(archiveModes, /^-rw-rw-r--\s+.*\sinfra\/protected\/attest-capability-evidence\.mjs$/m, 'fixture must reproduce a group-writable protected file');
 const releases = '/srv/merchant-releases'; mkdirSync(releases, { mode: 0o700 }); chmodSync(releases, 0o700);
 const stageRun = spawnSync('/bin/sh', [staged], { encoding: 'utf8', env: {
   PATH: `${fixedNode.slice(0, fixedNode.lastIndexOf('/'))}:/usr/bin:/bin`,
   ECS_CANDIDATE_BUNDLE_DIR: testBundle, ECS_RELEASES_ROOT: releases, RELEASE_ID: 'runtime-node-check',
 } });
 assert.equal(stageRun.status, 0, stageRun.stderr);
+const stagedRelease = `${releases}/runtime-node-check`;
+for (const sourcePath of ['infra', 'infra/protected', 'infra/protected/attest-capability-evidence.mjs']) {
+  assert.equal(statSync(`${stagedRelease}/${sourcePath}`).mode & 0o022, 0, `${sourcePath} must not be group or other writable after archive extraction`);
+}
+assert.equal(hash(readFileSync(`${stagedRelease}/.candidate-source.tar`)), receipt.source_archive_sha256, 'source archive digest must remain bound after permission normalization');
 const runtimeEvents = readFileSync(runtimeLog, 'utf8').trim().split('\n');
 assert.deepEqual(runtimeEvents.map(line => line.split(':')[0]), ['ci', 'ci', 'build', 'nested', 'tsc']);
 assert(runtimeEvents.every(line => line.includes(':v22.23.2:') && line.endsWith(`:${fixedNode}`)), runtimeEvents.join('\n'));

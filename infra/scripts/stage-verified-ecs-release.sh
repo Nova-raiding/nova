@@ -165,6 +165,12 @@ export npm_config_script_shell
 cp "$archive" "$stage/.candidate-source.tar"; chmod 0400 "$stage/.candidate-source.tar"
 [ "$actual_archive" = "$(shasum -a 256 "$stage/.candidate-source.tar" | awk '{print $1}')" ] || { echo 'candidate archive changed while staging' >&2; exit 1; }
 tar -xf "$stage/.candidate-source.tar" -C "$stage"
+# Git archives can carry group-writable source modes (for example 0775
+# directories and 0664 files). Protected release controls reject those modes
+# even when the archive digest and the root-owned staging path are valid.
+# Tighten the extracted tree before npm creates node_modules; this leaves the
+# bound archive bytes untouched and preserves execute bits on source scripts.
+chmod -R go-w "$stage"
 [ -f "$stage/package.json" ] && [ -f "$stage/package-lock.json" ] || { echo 'candidate archive lacks the locked Node workspace' >&2; exit 2; }
 
 # Runtime credentials and server-only configuration stay outside this tree.
