@@ -11674,7 +11674,7 @@ const ASSET_CONTINUATION_FIELDS = [
 ] as const
 
 function assetContinuationGate(asset: import('../../../packages/application/src/service.js').AssetMetadata): 'waiting_scan' | 'awaiting_rights' | 'ready' | 'failed' {
-  if (asset.scanStatus !== 'clean') return 'waiting_scan'
+  if (!isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())) return 'waiting_scan'
   if (asset.rightsStatus === 'rejected' || asset.rightsScope === 'unusable') return 'failed'
   const now = Date.now()
   const rightsReady = asset.rightsStatus === 'approved'
@@ -11849,6 +11849,34 @@ async function uploadAssetForMcp(workspaceId: string, params: JsonObject, req?: 
   const usageScopes = parseAssetList('usage_scopes_json', '使用范围')
   const rightsScope = typeof params.rights_scope === 'string' ? params.rights_scope as import('../../../packages/application/src/service.js').AssetMetadata['rightsScope'] : undefined
   if (rightsScope && !['owned', 'commercial_authorized', 'limited_use', 'internal_only', 'unknown', 'unusable'].includes(rightsScope)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'rights_scope 无效', 400)
+  if (demoUnscannedAssetsEnabled() && !deliveryContext) {
+    const sha256 = typeof params.sha256 === 'string' && /^[a-f0-9]{64}$/iu.test(params.sha256) ? params.sha256 : createHash('sha256').update(bytes).digest('hex')
+    const asset = service.registerAsset({ workspaceId, name: assetName, mimeType: assetMime, sizeBytes: bytes.byteLength, sha256, storageKey: `quarantine/${workspaceId}/pending/${randomUUID()}/${assetName}`, scanMode: 'unscanned', ...(req ? { uploadedByActorId: requestActor(req) } : {}), ...(rightsScope ? { rightsScope } : {}), ...(applicablePlatforms ? { applicablePlatforms } : {}), ...(applicableRegions ? { applicableRegions } : {}), ...(usageScopes ? { usageScopes } : {}), ...(typeof params.valid_from === 'string' ? { validFrom: params.valid_from } : {}), ...(typeof params.valid_to === 'string' ? { validTo: params.valid_to } : {}), ...(params.ai_modification_allowed === 'true' || params.ai_modification_allowed === 'false' ? { aiModificationAllowed: params.ai_modification_allowed === 'true' } : {}) })
+    if (asset.deduplication.mode === 'deduplicated') {
+      if (!isUsableAssetWithoutScan(asset, true)) throw new DomainError('ASSET_EXISTING_SCAN_STATE', '相同文件已存在但尚不可用，请先处理原素材', 409)
+      const continuation = createAssetGenerationContinuation(workspaceId, asset, params, req ? requestActor(req) : 'merchant')
+      if (continuation) await persistUploadedAssetAndContinuation(workspaceId, asset, 'asset.generation_continuation.unscanned_reused', { asset_id: asset.id, scan_status: 'unscanned' }, continuation)
+      else await persistAssetReference(workspaceId, asset)
+      return { ...asset, ...(continuation ? { generationContinuation: { jobId: continuation.id, state: continuation.continuation!.state } } : {}) }
+    }
+    let storedKey: string | undefined
+    let continuation: ReturnType<typeof createAssetGenerationContinuation>
+    try {
+      continuation = createAssetGenerationContinuation(workspaceId, asset, params, req ? requestActor(req) : 'merchant')
+      const stored = await putQuarantineObject({ workspaceId, assetId: asset.id, fileName: assetName, contentType: assetMime, body: bytes, expectedSizeBytes: bytes.byteLength, expectedSha256: asset.sha256 })
+      storedKey = stored.key
+      asset.storageKey = stored.key
+      asset.sizeBytes = stored.sizeBytes
+      asset.sha256 = stored.sha256
+      await persistUploadedAssetAndContinuation(workspaceId, asset, 'asset.uploaded_unscanned', { asset_id: asset.id, storage_key: stored.key, size_bytes: stored.sizeBytes, sha256: stored.sha256, scan_status: 'unscanned' }, continuation)
+      return { ...asset, ...(continuation ? { generationContinuation: { jobId: continuation.id, state: continuation.continuation!.state } } : {}) }
+    } catch (error) {
+      service.assets.delete(asset.id)
+      if (continuation) service.discardUnpersistedImageGeneration(workspaceId, continuation.id)
+      if (storedKey) await compensateStoredAsset(workspaceId, asset.id, storedKey, 'unscanned MCP asset persistence failed')
+      throw error
+    }
+  }
   const provisional = service.registerAsset({ workspaceId, name: assetName, mimeType: assetMime, sizeBytes: bytes.byteLength, sha256: typeof params.sha256 === 'string' && /^[a-f0-9]{64}$/iu.test(params.sha256) ? params.sha256 : createHash('sha256').update(bytes).digest('hex'), storageKey: `quarantine/${workspaceId}/pending/${randomUUID()}/${assetName}`, ...(req ? { uploadedByActorId: requestActor(req) } : {}), ...(rightsScope ? { rightsScope } : {}), ...(applicablePlatforms ? { applicablePlatforms } : {}), ...(applicableRegions ? { applicableRegions } : {}), ...(usageScopes ? { usageScopes } : {}), ...(typeof params.valid_from === 'string' ? { validFrom: params.valid_from } : {}), ...(typeof params.valid_to === 'string' ? { validTo: params.valid_to } : {}), ...(params.ai_modification_allowed === 'true' || params.ai_modification_allowed === 'false' ? { aiModificationAllowed: params.ai_modification_allowed === 'true' } : {}) })
   const continuation = createAssetGenerationContinuation(workspaceId, provisional, params, req ? requestActor(req) : 'merchant')
   if (provisional.deduplication.mode === 'deduplicated') {
@@ -19719,7 +19747,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!current.continuation) throw new DomainError('IMAGE_CONTINUATION_NOT_FOUND', '图片任务不是素材续跑任务', 404)
       if (current.continuation.state !== 'awaiting_confirmation') throw new DomainError('IMAGE_CONTINUATION_CONFIRMATION_REQUIRED', '图片续跑当前不在等待商家确认状态', 409, { continuation_state: current.continuation.state })
       const asset = assetForWorkspace(workspaceId, current.continuation.sourceAssetId)
-      if (asset.scanStatus !== 'clean') throw new DomainError('IMAGE_CONTINUATION_NOT_READY', '素材尚未完成安全扫描', 409)
+      if (!isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())) throw new DomainError('IMAGE_CONTINUATION_NOT_READY', '素材尚不可用', 409)
       if (imageContinuationGate(asset, current) !== 'ready') throw new DomainError('IMAGE_CONTINUATION_RIGHTS_REQUIRED', '素材权益或适用范围尚未满足图片生成条件', 409)
       const authorizationSnapshot = workerAuthorizationSnapshot(req, workspaceId, asset.id, 'asset.continuation.execute', { method: 'asset.generation.confirm', job_id: current.id, asset_id: asset.id, job_revision: current.revision })
       if (requiresStrictAuth() && !authorizationSnapshot) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '图片续跑缺少持久身份授权快照，已拒绝入队', 503)
