@@ -27,6 +27,7 @@ const environment = (overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
   ASSET_SCANNER_MODE: 'clamav_worker',
   ASSET_SCAN_MIN_DEFINITIONS_VERSION: '28000',
   SCANNER_MINIMUM_READY_INSTANCES: '2',
+  SCANNER_CALLBACK_MAX_AGE_SECONDS: '86400',
   ...overrides,
 })
 
@@ -113,10 +114,39 @@ describe('scanner heartbeat API readiness', () => {
     const input = { redis: { scannerHeartbeats: async () => [recovering] }, env: environment({ NODE_ENV: 'development', SCANNER_MINIMUM_READY_INSTANCES: '1' }), now }
 
     const service = await evaluateScannerHeartbeatReadiness(input)
-    expect(service).toMatchObject({ ready: false, code: 'SCANNER_NOT_READY', summary: { live_instances: 1, ready_instances: 0 } })
+    expect(service).toMatchObject({ ready: false, code: 'SCANNER_CALLBACK_PROOF_STALE', summary: { live_instances: 1, ready_instances: 0, configured: true, recovery_ready: true } })
 
     const recovery = await evaluateScannerRecoveryAdmission(input)
     expect(recovery).toMatchObject({ ready: true, summary: { live_instances: 1, ready_instances: 1 } })
+  })
+
+  it('classifies only callback-proof staleness as recovery-canary eligible', async () => {
+    const callbackStale = { ...heartbeat('scanner-callback-stale'), ready: false, recoveryCapable: true, callback: { configured: true, capable: false }, queue: { backlog: 0, deadLetter: 0 } }
+    const stale = await evaluateScannerHeartbeatReadiness({
+      redis: { scannerHeartbeats: async () => [callbackStale] },
+      env: environment({ DEPLOYMENT_PROFILE: 'ecs', SCANNER_MINIMUM_READY_INSTANCES: '1' }), now,
+    })
+    expect(stale).toMatchObject({ ready: false, code: 'SCANNER_CALLBACK_PROOF_STALE', summary: { configured: true, recovery_ready: true } })
+
+    const dependencyFailure = { ...callbackStale, failure: { code: 'SCANNER_DEPENDENCY_UNAVAILABLE', message: 'database unavailable' } }
+    const dependency = await evaluateScannerHeartbeatReadiness({
+      redis: { scannerHeartbeats: async () => [dependencyFailure] },
+      env: environment({ DEPLOYMENT_PROFILE: 'ecs', SCANNER_MINIMUM_READY_INSTANCES: '1' }), now,
+    })
+    expect(dependency).toMatchObject({ ready: false, code: 'SCANNER_NOT_READY', summary: { configured: true, recovery_ready: false } })
+
+    const definitions = await evaluateScannerHeartbeatReadiness({
+      redis: { scannerHeartbeats: async () => [callbackStale] },
+      env: environment({ DEPLOYMENT_PROFILE: 'ecs', SCANNER_MINIMUM_READY_INSTANCES: '1', ASSET_SCAN_MIN_DEFINITIONS_VERSION: '99999' }), now,
+    })
+    expect(definitions).toMatchObject({ ready: false, code: 'SCANNER_NOT_READY', summary: { recovery_ready: false } })
+
+    const trustDisabled = { ...callbackStale, callback: { configured: false, capable: false } }
+    const unconfigured = await evaluateScannerHeartbeatReadiness({
+      redis: { scannerHeartbeats: async () => [trustDisabled] },
+      env: environment({ DEPLOYMENT_PROFILE: 'ecs', SCANNER_MINIMUM_READY_INSTANCES: '1' }), now,
+    })
+    expect(unconfigured).toMatchObject({ ready: false, code: 'SCANNER_NOT_READY', summary: { configured: false, recovery_ready: false } })
   })
 
   it('never couples /healthz to scanner startup while controlled /readyz is gated', () => {

@@ -140,8 +140,8 @@ test('scanner-only 503 permits one canary upload and verifies callback recovery'
     if (url.pathname === '/api/healthz') return response(envelope({ persistence: { ready: true }, redis: { ready: true } }))
     if (url.pathname === '/api/readyz') {
       readyReads += 1
-      if (readyReads === 1) return response({ data: null, error: { code: 'SCANNER_NOT_READY', details: { scanner: { ready: false, latest_callback_accepted_at: null } } } }, 503)
-      if (readyReads === 2) return response({ data: null, error: { code: 'SCANNER_NOT_READY', details: { scanner: { ready: false, latest_callback_accepted_at: null } } } }, 503)
+      if (readyReads === 1) return response({ data: null, error: { code: 'SCANNER_CALLBACK_PROOF_STALE', details: { scanner: { ready: false, configured: true, recovery_ready: true, latest_callback_accepted_at: null } } } }, 503)
+      if (readyReads === 2) return response({ data: null, error: { code: 'SCANNER_CALLBACK_PROOF_STALE', details: { scanner: { ready: false, configured: true, recovery_ready: true, latest_callback_accepted_at: null } } } }, 503)
       return response(envelope({ scanner: { ready: true, ready_instances: 1, backlog: 0, dead_letter: 0, latest_callback_accepted_at: '2026-09-23T10:00:01Z' } }))
     }
     if (url.pathname === '/api/v1/assets' && options.method === 'GET') return response(envelope({ items: [], storage_quota: { availableBytes: 100_000 } }, 'ws_canary'))
@@ -164,4 +164,36 @@ test('scanner-only 503 permits one canary upload and verifies callback recovery'
     ['/api/v1/assets/upload', 'POST'],
   ])
   assert.equal(readyReads, 3)
+})
+
+test('generic scanner not-ready never uploads a canary asset', async () => {
+  const calls = []
+  await assert.rejects(runScannerCallbackCanary({
+    env,
+    execute: true,
+    fetchImpl: async (url, options) => {
+      calls.push([url.pathname, options.method])
+      if (url.pathname === '/api/releasez') return release
+      if (url.pathname === '/api/healthz') return response(envelope({ persistence: { ready: true }, redis: { ready: true } }))
+      if (url.pathname === '/api/readyz') return response({ data: null, error: { code: 'SCANNER_NOT_READY', details: { scanner: { ready: false, configured: true, recovery_ready: false } } } }, 503)
+      throw new Error(`unexpected ${url.pathname}`)
+    },
+  }), /CANARY_READINESS_BLOCKED/)
+  assert.deepEqual(calls, [['/api/releasez', 'GET'], ['/api/healthz', 'GET'], ['/api/readyz', 'GET']])
+})
+
+test('callback-stale code without recovery quorum cannot upload a canary asset', async () => {
+  const calls = []
+  await assert.rejects(runScannerCallbackCanary({
+    env,
+    execute: true,
+    fetchImpl: async (url, options) => {
+      calls.push([url.pathname, options.method])
+      if (url.pathname === '/api/releasez') return release
+      if (url.pathname === '/api/healthz') return response(envelope({ persistence: { ready: true }, redis: { ready: true } }))
+      if (url.pathname === '/api/readyz') return response({ data: null, error: { code: 'SCANNER_CALLBACK_PROOF_STALE', details: { scanner: { ready: false, configured: true, recovery_ready: false } } } }, 503)
+      throw new Error(`unexpected ${url.pathname}`)
+    },
+  }), /CANARY_READINESS_BLOCKED/)
+  assert.deepEqual(calls, [['/api/releasez', 'GET'], ['/api/healthz', 'GET'], ['/api/readyz', 'GET']])
 })

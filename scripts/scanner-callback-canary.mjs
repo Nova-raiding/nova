@@ -102,7 +102,11 @@ export async function runScannerCallbackCanary({ env = process.env, execute = fa
   // asset that the worker may not be able to process.
   const initialReadyResponse = await fetchImpl(canaryUrl(baseUrl, '/readyz'), { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(10_000) })
   const initialReady = await json(initialReadyResponse)
-  const callbackOnlyBlock = initialReadyResponse.status === 503 && initialReady.error?.code === 'SCANNER_NOT_READY'
+  const scanner = initialReady.error?.details?.scanner
+  const callbackOnlyBlock = initialReadyResponse.status === 503
+    && initialReady.error?.code === 'SCANNER_CALLBACK_PROOF_STALE'
+    && scanner?.configured === true
+    && scanner?.recovery_ready === true
   if (!callbackOnlyBlock && (!initialReadyResponse.ok || initialReady.error != null)) throw new Error('CANARY_READINESS_BLOCKED')
 
   const headers = { authorization: `Bearer ${env.SCANNER_CANARY_API_TOKEN}`, 'x-workspace-id': workspaceId }

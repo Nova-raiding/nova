@@ -9675,10 +9675,12 @@ function isScannerHeartbeat(value: unknown): value is ScannerHeartbeat {
     && Boolean(item.queue && Number.isFinite(item.queue.backlog) && Number.isFinite(item.queue.deadLetter))
 }
 
-export type ScannerReadinessCode = 'SCANNER_HEARTBEAT_MISSING' | 'SCANNER_READY_REPLICA_QUORUM_UNMET' | 'SCANNER_NOT_READY'
+export type ScannerReadinessCode = 'SCANNER_HEARTBEAT_MISSING' | 'SCANNER_READY_REPLICA_QUORUM_UNMET' | 'SCANNER_CALLBACK_PROOF_STALE' | 'SCANNER_NOT_READY'
 export type ScannerReadinessSummary = {
   ready: boolean
   degraded: boolean
+  configured: boolean
+  recovery_ready: boolean
   observed_at: string
   live_instances: number
   ready_instances: number
@@ -9714,9 +9716,35 @@ async function evaluateScannerHeartbeats(input: ScannerHeartbeatReadinessInput, 
     now,
     minimumReadyInstances: scannerMinimumReadyInstances(env),
   })
+  const recoveryHeartbeats = raw.filter(isScannerHeartbeat).map(heartbeat => {
+    const queueValid = Number.isSafeInteger(heartbeat.queue.backlog) && heartbeat.queue.backlog >= 0
+      && Number.isSafeInteger(heartbeat.queue.deadLetter) && heartbeat.queue.deadLetter >= 0
+    return { ...heartbeat, ready: heartbeat.recoveryCapable && heartbeat.callback.configured && queueValid && !heartbeat.failure }
+  }).map(heartbeat => {
+    if (!Number.isSafeInteger(minimumDefinitionsVersion) || minimumDefinitionsVersion <= 0) return heartbeat
+    const actual = Number(heartbeat.clamav.definitionsVersion)
+    return Number.isSafeInteger(actual) && actual >= minimumDefinitionsVersion
+      ? heartbeat
+      : { ...heartbeat, ready: false }
+  })
+  const recoveryAggregate = aggregateScannerHeartbeats(recoveryHeartbeats, {
+    now,
+    minimumReadyInstances: scannerMinimumReadyInstances(env),
+  })
+  const callbackMaxAgeSeconds = Number(env.SCANNER_CALLBACK_MAX_AGE_SECONDS)
+  const callbackFreshInstances = recoveryAggregate.instances.filter(heartbeat => {
+    if (!heartbeat.callback.configured || !heartbeat.callback.capable || !Number.isSafeInteger(callbackMaxAgeSeconds) || callbackMaxAgeSeconds <= 0) return false
+    const acceptedAt = heartbeat.callback.lastAcceptedAt ? Date.parse(heartbeat.callback.lastAcceptedAt) : Number.NaN
+    const ageSeconds = (now.getTime() - acceptedAt) / 1000
+    return Number.isFinite(ageSeconds) && ageSeconds >= 0 && ageSeconds <= callbackMaxAgeSeconds
+  }).length
+  const callbackOnlyBlock = purpose === 'service' && !aggregate.ready && recoveryAggregate.ready
+    && callbackFreshInstances < recoveryAggregate.minimumReadyInstances
   const summary: ScannerReadinessSummary = {
     ready: aggregate.ready,
     degraded: aggregate.degraded,
+    configured: recoveryAggregate.liveInstances > 0 && recoveryAggregate.instances.every(heartbeat => heartbeat.callback.configured),
+    recovery_ready: recoveryAggregate.ready,
     observed_at: aggregate.observedAt,
     live_instances: aggregate.liveInstances,
     ready_instances: aggregate.readyInstances,
@@ -9732,10 +9760,8 @@ async function evaluateScannerHeartbeats(input: ScannerHeartbeatReadinessInput, 
     ? 'SCANNER_HEARTBEAT_MISSING'
     : aggregate.liveInstances < aggregate.minimumReadyInstances
       ? 'SCANNER_READY_REPLICA_QUORUM_UNMET'
-      : 'SCANNER_NOT_READY'
-  const reasons = code === 'SCANNER_NOT_READY'
-    ? ['SCANNER_INSTANCE_NOT_READY']
-    : [code]
+      : callbackOnlyBlock ? 'SCANNER_CALLBACK_PROOF_STALE' : 'SCANNER_NOT_READY'
+  const reasons = code === 'SCANNER_NOT_READY' ? ['SCANNER_INSTANCE_NOT_READY'] : [code]
   return { ready: false, code, summary, reasons }
 }
 
@@ -22132,13 +22158,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const trust = productionAssetScannerReadiness(process.env)
       if (!trust.ready) {
         return fail(res, 503, 'system', 'SCANNER_NOT_READY', '素材安全扫描信任配置未就绪', req, {
-          scanner: { ready: false, configured: false },
+          scanner: { ready: false, configured: false, recovery_ready: false },
           reasons: trust.reasons,
         })
       }
       if (!redisHealth) {
         return fail(res, 503, 'system', 'SCANNER_HEARTBEAT_MISSING', '未发现新鲜的素材安全扫描心跳', req, {
-          scanner: { ready: false, configured: true },
+          scanner: { ready: false, configured: true, recovery_ready: false },
           reasons: ['SCANNER_HEARTBEAT_MISSING'],
         })
       }
