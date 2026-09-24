@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { SCANNER_HEARTBEAT_SCHEMA, type ScannerHeartbeat } from '../../../packages/workers/src/scanner-heartbeat.js'
 import { evaluateScannerHeartbeatReadiness, evaluateScannerRecoveryAdmission, scannerHeartbeatRequiredForProbe } from './server.js'
 
+// This suite only exercises scanner readiness. Keep the unrelated password
+// hashing native addon out of the import graph so the same test runs on the
+// ECS host's glibc as well as inside the Alpine production image.
+vi.mock('argon2', () => ({ default: { argon2id: 2, hash: vi.fn(), verify: vi.fn() } }))
+
 const now = new Date('2026-08-30T06:00:00.000Z')
 
 function heartbeat(instanceId: string, input: { ready?: boolean; expiresInMs?: number; definitionsVersion?: string; databaseReady?: boolean } = {}): ScannerHeartbeat {
