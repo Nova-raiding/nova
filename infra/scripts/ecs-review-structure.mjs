@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 
 export const STRUCTURE_REVIEW_PATHS = Object.freeze([
   'package.json', 'package-lock.json', 'demo/merchant-studio/package.json', 'demo/merchant-studio/package-lock.json', 'apps/ops-console/package.json',
-  'infra/local/docker-compose.ecs-production-api-private.yml',
   'infra/docker/api.Dockerfile', 'infra/docker/worker.Dockerfile', 'infra/docker/pilot-gateway-https.Dockerfile', 'infra/docker/ops-console.Dockerfile', 'infra/docker/ui.Dockerfile',
   'infra/nginx/pilot-gateway-https.conf', 'infra/nginx/merchant-studio.conf', 'infra/nginx/ops-console.conf', 'infra/nginx/pilot-gateway.conf',
   'apps/ops-console/src/styles.css', 'demo/merchant-studio/src/capability.css', 'demo/merchant-studio/src/styles.css',
