@@ -24888,10 +24888,3 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 export { assertUniqueBatchTaskIds, server, service, persistenceReady, memoryMembers as workspaceMembers, memoryOperations as operationAudits, memoryPlatformAuthorizationAudit as platformAuthorizationAuditForTests, memoryCreativePoints as creativePointsForTests, memoryKnowledge as knowledgeDocumentsForTests, memoryAlerts as operationalAlertsForTests }
-  let opsHostname = ''
-  try {
-    const opsUrl = new URL(source.PUBLIC_OPS_BASE_URL ?? '')
-    if (opsUrl.protocol !== 'https:' || opsUrl.username || opsUrl.password || opsUrl.search || opsUrl.hash || opsUrl.pathname !== '/') throw new Error('unsafe Ops origin')
-    opsHostname = opsUrl.hostname.toLowerCase()
-  } catch { reasons.push('public_ops_base_url_invalid') }
-  if (opsHostname && merchantHostname && opsHostname === merchantHostname) reasons.push('ops_and_merchant_hostnames_must_differ')

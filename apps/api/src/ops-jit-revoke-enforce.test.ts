@@ -202,7 +202,7 @@ describe('E1 password-session JIT revoke under enforced durable authorization', 
     expect(audit).toMatchObject({ result: 'allow', capability: 'authorization.grant.manage', workbench: 'platform', policyVersion: AUTHZ_POLICY_VERSION, traceId: revoked.body.trace_id, evidence: { obligations: { required: ['reason', 'revision'], missing: [] } } })
     const afterAccess = await call<Session>(subject, 'ops.session', {}, 'workspace', false, approvalToken, true, workspaceId)
     expect(afterAccess.status).toBe(200)
-    expect(afterAccess.body.data?.result.temporary_grants).toEqual([])
+    expect((afterAccess.body.data?.result as { temporary_grants?: unknown } | undefined)?.temporary_grants).toEqual([])
     const after = await state(grant)
     expect(await repository.consumeGrant({ id: grant.id, subjectIdentityId: subject.identityId, workspaceId, capability: 'customer.content.read', scopeHash: grant.scopeHash, expectedRevision: consumed.grant!.revision, actorId: subject.subject, reason: 'Attempt to reuse the revoked grant snapshot' })).toBeUndefined()
     expect(await state(grant)).toEqual(after)
