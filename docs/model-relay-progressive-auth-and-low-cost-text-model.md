@@ -34,7 +34,7 @@ MODEL_RELAY_TEXT_PRICING_GROUP=VIP
 
 ## 官方鉴权边界
 
-- ChatGPT 宿主登录、插件安装和第三方平台店铺授权，必须使用各平台官方 OAuth/授权页面。
+- 第三方平台店铺授权仅在启用相应官方平台 API 集成时使用平台 OAuth 页面；ChatGPT 插件采用本地直装 stdio，Store Nova 用户通过本地登录流程以账号密码绑定 workspace，不使用 ChatGPT 远程 OAuth。
 - Store Nova 业务模型调用只能走配置的 HTTPS 中转站，禁止直连供应商、借用 ChatGPT 宿主模型结果，或让商家填写模型中转地址和 API Key。
 - 低成本模型只是服务端路由选择，不改变用户身份、租户隔离、官方授权和账务规则。
 - 生产环境缺少 relay 地址、allowlist、服务端 key、模型、usage/cost evidence 任一项时，返回明确阻断；不得用本地规则、fixture 或未计量结果伪造内容版本。

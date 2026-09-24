@@ -75,7 +75,7 @@ jobs:
                 !Array.isArray(lines[1]?.result?.tools) || lines[1].result.tools.length === 0) process.exit(1);
           ' "$RUNNER_TEMP/mcp-responses.jsonl" "$cache/.codex-plugin/plugin.json"
       - name: Keep the verified CI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: merchant-marketing-darwin-x64-ci
           path: |

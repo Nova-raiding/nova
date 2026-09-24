@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 const checkoutCommit = '11d5960a326750d5838078e36cf38b85af677262'
 const setupNodeCommit = '49933ea5288caeca8642d1e84afbd3f7d6820020'
 const setupRubyCommit = '95ef2b042f9d7a56d8268cba8559e2842e2ad01b'
+const uploadArtifactCommit = 'ea165f8d65b6e75b540449e92b4886f43607fa02'
 const nodeDigest = 'sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32'
 const nginxDigest = 'sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0'
 
@@ -34,6 +35,15 @@ function externalBaseImages(source: string, dockerfile = 'Dockerfile') {
 }
 
 describe('supply-chain reproducibility gate', () => {
+  it('pins the macOS Intel plugin artifact action to the reviewed immutable release commit', () => {
+    const workflow = readFileSync('.github/workflows/macos-intel-plugin-package.yml', 'utf8')
+    const actionReferences = [...workflow.matchAll(/^\s+uses:\s*([^\s#]+)/gmu)].map((match) => match[1]!)
+
+    expect(actionReferences).toEqual([`actions/upload-artifact@${uploadArtifactCommit}`])
+    expect(workflow).toContain(`actions/upload-artifact@${uploadArtifactCommit} # v4.6.2`)
+    expect(actionReferences.every((reference) => /@[0-9a-f]{40}$/u.test(reference))).toBe(true)
+  })
+
   it('pins every GitHub Action to an immutable commit and grants only read access to repository contents', () => {
     const workflow = readFileSync('.github/workflows/ci.yml', 'utf8')
     const actionReferences = [...workflow.matchAll(/^\s*- uses:\s*([^\s#]+)/gmu)].map((match) => match[1]!)

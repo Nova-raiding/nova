@@ -30,11 +30,12 @@ const fixture = (): IsolatedOpsFixture => ({
   adminDatabaseUrl: 'must-never-be-inherited', opsDatabaseUrl: 'must-never-be-inherited', redisUrl: 'redis://:generated-redis-password@127.0.0.1:49637/0',
   workspaceId: `ws_ops_fixture_${runId.replaceAll('-', '')}`, subjectIdentityId: 'synthetic-identity',
   workspaceActorSubject: 'synthetic-workspace-actor', approverId: 'synthetic-approver', issuer: 'synthetic-issuer', actorSubject: 'synthetic-actor',
+  platformLogin: 'ops-fixture@example.invalid', platformPassword: 'fixture-pass-123', platformIdentityId: 'synthetic-platform-identity',
   containerEvidence: (['postgres', 'redis'] as const).map((kind, index) => ({
     id: String(index + 1).repeat(64), runId, kind, name: `merchant-ops-fixture-${kind}-${runId}`,
     image: kind === 'postgres' ? ISOLATED_POSTGRES_IMAGE : `redis@sha256:${'b'.repeat(64)}`,
     hostPort: kind === 'postgres' ? 49543 : 49637, autoRemove: true, dataStorage: 'tmpfs',
-    labels: { 'merchant.fixture.purpose': 'isolated-ops-oidc-acceptance', 'merchant.fixture.run-id': runId, 'merchant.fixture.kind': kind },
+    labels: { 'merchant.fixture.purpose': 'isolated-ops-password-acceptance', 'merchant.fixture.run-id': runId, 'merchant.fixture.kind': kind },
   })), dispose: async () => ({ stopped: [], leftRunning: [] }),
 })
 

@@ -12,7 +12,7 @@
 | 插件入口 | `apps/plugin/mcp/bridge.mjs`, `apps/plugin/skills/merchant-marketing/SKILL.md` | tools/list、write confirmation、发布状态门禁 |
 | 生产发布门禁 | `infra/kubernetes`, `infra/scripts`, `docs/production-readiness-evidence-design.md` | rendered manifest、scanner、secret/config evidence |
 | CodeGraph 关系 | `.codegraph/codegraph.db` | nodes/edges/files/project_metadata/unresolved_refs |
-| 真实桌面验收 | `npm run test:browser:ops` | OIDC gateway、真实 API/Postgres/Redis、Playwright |
+| 真实桌面验收 | `npm run test:browser:ops` | 隔离 PostgreSQL 账号密码登录、服务端 Cookie 会话、真实 API/Postgres/Redis、Playwright |
 
 ## 证据强度
 
@@ -20,7 +20,7 @@
 2. 静态契约扫描只证明调用集合的覆盖关系，不证明参数、权限和租户数据正确。
 3. 单元/API 测试证明局部契约。
 4. 真实桌面浏览器测试证明入口、API/MCP、认证、数据库、Redis 和页面状态的组合行为。
-5. 生产证据还必须包含真实渲染配置、外部 OAuth/支付/对象存储/KMS/扫描器、用量成本和发布门禁证据。
+5. 生产证据还必须包含真实渲染配置、支付/对象存储/KMS/扫描器、用量成本和发布门禁证据；六平台 OAuth 只在启用 `official_api` 模式时要求。ChatGPT 侧按本地 stdio 安装和调用链路验收，不要求远程 OAuth 或插件市场证据。
 
 ## 当前不能宣称的事项
 

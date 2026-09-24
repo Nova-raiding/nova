@@ -29,7 +29,7 @@ npm run dev:stack
 
 项目要求 Node 22+、npm，以及已启动的 Docker Desktop（含 Compose v2）；Docker daemon 未启动时 `dev:doctor` 会返回非零状态，这是预期行为，启动 Docker Desktop 后重试即可。`dev:doctor` 会统一检查 Node、npm、Git/worktree、Docker/Compose/buildx、浏览器验收工具、Ops API 地址、模型中转配置、生产配置和本地运行端点，且不会输出密钥。`dev:stack` 会初始化本地扫描器密钥、启动 Compose 栈，并在前台启动 Ops Console；仅启动 API 时可使用 `npm run dev:api`，仅启动运营台可使用 `npm run dev:ops-console`。
 
-这条命令只部署本地服务，不会安装或更新 ChatGPT 插件，也不会注入商家凭据。插件包须已由管理员交付到桌面宿主；当前生产连接仍按[安装与配置手册](docs/store-nova-chatgpt-plugin-install-manual.md)使用本地 CLI。商家后台“一键连接”正在实现，但在 macOS Helper 完成签名、公证和抗协议劫持验收前默认关闭。连接成功后仍须完全重启 ChatGPT、开启新会话并调用只读 `onboarding.status` 验证。
+这条命令只部署本地服务，不会安装或更新 ChatGPT 插件，也不会注入商家凭据。插件包须由管理员交付到桌面宿主，商家工作区也必须由平台管理员预先分配；当前生产绑定路径按[安装与配置手册](docs/store-nova-chatgpt-plugin-install-manual.md)使用本地登录 CLI，并明确传入管理员分配的 `ws_...` ID。没有工作区绑定时应停止并联系管理员分配/核对，不自动创建工作区，不使用 `workspace.bootstrap` 或演示租户补位。生产一键 Helper 默认关闭，独立商家自助后台尚未交付，不能把后台连接按钮当作现行步骤。CLI 绑定成功后完全重启 ChatGPT、开启新会话，再调用只读 `onboarding.status` 验证。
 
 完整仓库验收不是首次启动步骤。准备候选发布时再运行：
 

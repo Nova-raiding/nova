@@ -1,82 +1,41 @@
 # Merchant Ops Console 运行手册
 
-## 部署边界
+## 登录与部署边界
 
-`apps/ops-console` 是独立的 Ant Design 运营后台，不随 Codex 插件打包，也不承担商家端交互。Codex 用户端仍通过插件的 MCP stdio bridge 访问业务 API。
+运营后台只支持 Store Nova 平台账号密码登录。账号由受控平台 bootstrap 流程创建，登录后 API 通过 HttpOnly `damai_session` cookie 识别平台会话。不要配置 SSO、OIDC 或网关身份头登录。
+
+ChatGPT 用户端独立使用本地直装 stdio 插件。商家账号密码绑定发生在 Store Nova 本地安装/登录流程中，插件随后使用工作区受限的短期凭据调用 MCP。
 
 ## 配置
 
-复制 `.env.example` 并设置：
-
 - `VITE_API_BASE`：生产 MCP/API 的 HTTPS 地址。
-- `VITE_OPS_AUTH_MODE=oidc`：生产构建必须启用；运营台使用 SSO 网关提供的 httpOnly secure 会话并携带 `credentials: include`。未设置时仅允许本地/演示 Bearer 调试模式。
-- API 生产环境必须同时配置不同凭据的 `DATABASE_URL` 与 `OPS_DATABASE_URL`。租户请求使用 `merchant_app` 并受 workspace RLS；平台 feature flag 控制面使用 `merchant_ops`，该角色不得访问 tenant tables。两条连接串相同或缺少 `OPS_DATABASE_URL` 时发布门禁必须失败。
-- Kubernetes 生产清单独立部署 `merchant-ops-ui`，访问域名为 `https://ops.merchant.example.com`；API 同时配置 `OPS_AUTH_MODE=oidc`，签名密钥由 `merchant-runtime-secrets` 的 `OIDC_PROXY_SIGNING_SECRET` 注入。商家演示站 `merchant-ui` 与运营台镜像不是同一个应用。
-- 本地/演示环境可在页面输入工作区 ID、操作员 ID 和 Bearer token；token 仅保存在当前浏览器 localStorage，不写入构建产物。生产环境必须由 OIDC/SSO 网关建立短时、httpOnly、secure 会话，禁止让运营人员在页面输入或持久化长期 Bearer token。
-- 网关下发的 Bearer token 必须包含目标工作区 grant，生产环境不能使用 `*` wildcard。
-- OIDC 模式下 API 不信任浏览器直接提交的身份头。SSO 网关必须使用 `OIDC_PROXY_SIGNING_SECRET` 对以下 14 个换行分隔字段做 HMAC-SHA256（hex）签名，顺序不可改变：`HTTP 方法`、`原始 request-target（path 与原始 query，不能重新排序或规范化）`、`workspace_id`、`workbench（platform 或 workspace）`、`issuer`、`subject`、`session_id`、逗号分隔且稳定排序的角色、逗号分隔且稳定排序的 AMR、认证 Unix 秒、会话过期 Unix 秒、请求 Unix 秒、原始请求体 SHA-256（空请求体也必须计算）、一次性随机 nonce。请求必须携带 `X-OIDC-Issuer`、`X-OIDC-Sub`、`X-OIDC-Sid`、`X-OIDC-Workspace`、`X-OIDC-Workbench`、`X-OIDC-Roles`、`X-OIDC-Amr`、`X-OIDC-Auth-Time`、`X-OIDC-Session-Expires-At`、`X-OIDC-Timestamp`、`X-OIDC-Body-SHA256`、`X-OIDC-Nonce`、`X-OIDC-Signature`；请求时间戳容差为 60 秒，会话必须尚未过期，nonce 必须为 16–128 位 URL-safe 随机值并由 Redis 原子消费。query、请求体摘要不一致，nonce 重放或生产 Redis 不可用均拒绝请求。平台工作台可使用空工作区表示全局范围；在 workspace 工作台，首次 `workspace.bootstrap` 是唯一空工作区例外：请求必须携带 `X-Workspace-Bootstrap: true`，此时 `workspace_id` 与 `X-OIDC-Workspace` 为空，并将空值纳入签名。创建成功后所有请求都必须携带已绑定 workspace。API 生产配置需同时设置 `OPS_AUTH_MODE=oidc`、`REDIS_URL` 和该密钥；缺少任一项会拒绝请求。
-- 当商家 UI 与运营台共用 API Service 时，必须额外设置 `MERCHANT_BEARER_HOSTNAME=merchant.example.com`，并在渲染生产配置中声明 `merchant_bearer_hostname`；只有精确匹配该 Host 的生产请求才允许进入商家 Bearer 授权分支，`ops.merchant.example.com` 仍只接受 OIDC 网关断言。该配置不能使用通配符，也不能替代 API token 的工作区授权。
-
-## OIDC 登录账号展示扩展（网关证明 v2）
-
-这不是 OIDC 标准令牌格式变更，而是本项目网关到 API 的 HMAC 证明扩展。外部 SSO 网关必须在认证完成后取可信登录名，不能信任浏览器提交的 `X-OIDC-*` 头；转发前先剥离，再写入以下两个头：
-
-- `X-OIDC-Proof-Version: 2`
-- `X-OIDC-Display-Login: <登录名原始 UTF-8 字节的无 padding base64url>`
-
-将上节原有 14 字段组成的字符串记为 `legacyCanonical`，新签名输入严格为 `['oidc-v2', legacyCanonical, encodedDisplayLogin].join('\n')`，HMAC-SHA256、hex 输出与原密钥不变。版本标记和登录名必须同时纳入证明。两个扩展头都缺失时 API 才使用原 14 字段验证；只有一个头、空值、未知版本、篡改或从 v2 删除扩展头均不能回退验签。
-
-登录名最多 256 个 Unicode 码点且最多 512 字节 UTF-8；不允许前后空白或 Unicode Cc/Cf/Cs/Zl/Zp 字符（包括换行、NUL、双向文字控制和孤立代理项）。编码最多 683 个 ASCII 字符，只接受 `[A-Za-z0-9_-]`，要求解码后 UTF-8 和编码完整往返一致；不自动 NFC 规范化，保留身份提供方认证过的文本。base64url 不是脱敏，不应把该头或证明全文写入日志。
-
-API 验证签名、请求体摘要和一次性 nonce 后，才将登录名作为独立的 `displayAccountLogin` 投影到 `ops.session.account_login`。它不参与主体 ID、成员别名、角色、租户或授权查询；OIDC `sub` 始终是稳定身份依据。旧网关没有此字段时，当前账号显示“账号名称未提供”，不回退显示内部 ID。密码登录仍显示其原有、服务端验证过的账号。
-
-升级顺序：先部署兼容新旧证明的 API，再升级外部网关签名器。仓库内的 `tests/local-oidc-gateway.ts` 仅是回环验收网关，默认发送 v2；测试中可显式关闭扩展验证旧协议。它不替代生产 IdP、TLS、会话或外部网关的部署验收。发布前至少核对合法登录名、刷新、字段篡改／删除、nonce 重放、同名成员不得提权以及两种工作台隔离。
+- `OPS_AUTH_MODE=password`：生产唯一支持的运营后台认证模式。
+- API 生产环境必须配置相互隔离的 `DATABASE_URL` 与 `OPS_DATABASE_URL`。租户请求使用 `merchant_app` 并受 workspace RLS；平台控制面使用 `merchant_ops`，不得访问 tenant tables。
+- ECS 和 Kubernetes 生产配置不得包含 `OIDC_PROXY_SIGNING_SECRET` 或 `OPS_AUTH_MODE=oidc`。发布 readiness 会拒绝非 password 模式。
+- `MERCHANT_BEARER_HOSTNAME` 必须精确匹配商家 API 域名；此设置不授予运营后台权限，也不能替代账号密码会话或 API 的 workspace 授权。
 
 ## 运营能力
 
-当前侧栏和深链接共有 11 个一级域：总览 `overview`、用户与租户 `users`、成员与权限 `members`、任务与内容 `tasks`、商家与店铺 `stores`、规则治理 `rules`、模型服务 `models`、存储与对账 `storage`、账务与退款 `finance`、审计中心 `audit`、知识治理 `knowledge`。功能开关页面已下线，旧地址应返回 404。生产验收必须逐域覆盖角色可见性、直接 URL、刷新、前进/后退、query 保留和错误恢复；历史浏览器结果不能替代当前域验收。
+运营后台的角色、租户、任务、商家店铺、规则、模型、存储、财务、审计和知识操作均由 API 服务端鉴权。隐藏按钮或前端导航限制不构成授权边界。
+
+当前侧栏和深链接共有 11 个一级域：总览 `overview`、用户与租户 `users`、成员与权限 `members`、任务与内容 `tasks`、商家与店铺 `stores`、规则治理 `rules`、模型服务 `models`、存储与对账 `storage`、账务与退款 `finance`、审计中心 `audit`、知识治理 `knowledge`。功能开关页面已下线，旧地址应返回 404。生产验收逐域覆盖角色可见性、直接 URL、刷新、前进/后退、query 保留和错误恢复。
 
 - 调整套餐名称、月价、年价、店铺额度和任务额度，金额单位为元并保留两位小数。
-- 启停京东、淘宝、天猫、拼多多、小红书、抖音及调整店铺别名；小红书/抖音未通过生产 readiness 时只能保持 fixture/API 或只读状态。
+- 启停六个平台及调整店铺别名；尚未通过生产 readiness 的平台只能保持 fixture/API 或只读状态。
 - 查看跨工作区用量、订阅、成员数、钱包余额、充值、消费和退款流水。
 - 创建充值退款；服务端要求 `finance`、`merchant_admin` 或 `workspace_owner` 角色，并记录原因与审计。
 - 创建或调整工作区成员角色；服务端记录操作审计并执行生产角色门禁。
 - 知识治理：查看规则、品牌资产、客户资产、来源、版本、有效期、确认状态和权益状态。
-- 学习建议：查看平台驳回/客户反馈产生的建议证据、作用域和影响范围；确认建议不会自动激活全局规则。
-- 竞品参考治理：查看公开来源、获取时间和权利状态；仅允许差异化参考，不允许复制原文、Logo、包装或受保护图片。
-- 内容生成运营：查看文案、图片、局部编辑、视频脚本/分镜候选的来源快照、模型版本、检查结果和审核状态。
-- 平台驳回队列：按工作区、平台、店铺、商品、任务和内容版本定位原始回执，并关联新修正版；原始写请求不可直接重放。
-- 队列处置：失败生成可执行安全重试；驳回/未知发布可确认异常；驳回内容可创建待审核修正版；generation/publish 队列项可分配负责人，使用 revision 做并发保护。处置、分配都要求原因或操作者上下文并写入操作审计；视觉候选另由 `ops.marketing.visual.review` 执行通过/阻断。
+- 学习建议与竞品参考必须展示证据、作用域和权利状态，不会自动激活全局规则或复制受保护内容。
+- 内容生成运营查看文案、图片、局部编辑、视频脚本/分镜候选的来源快照、模型版本、检查结果和审核状态。
+- 平台驳回队列保留原始回执；修正必须创建新版本，不直接重放旧写请求。
+- 失败任务安全重试、异常确认、修正版创建和队列分配都要求原因/操作者上下文并写操作审计。
 
-## 新增后台模块的推荐操作顺序
+## API 响应与故障诊断
 
-1. 先确认工作区、角色和 Bearer token grant，再进入知识或任务队列。
-2. 对规则/资产/竞品资料先检查来源、版本、有效期和权益状态。
-3. 对学习建议先查看证据和影响范围，再选择确认或驳回；不要把一次反馈直接升级为全局规则。
-4. 对图片、视频和文案候选先查看关联的品牌/商品/规则快照及检查结果，再发起人工审核。
-5. 平台驳回必须保留原始错误码、字段路径和回执；通过新内容版本修正，不能复用旧写请求。
+- 运营台以 `ApiEnvelope` 为传输边界；真实结果、合法空结果、错误和可重试错误必须分别表达。空数组和 JSON-RPC `result: null` 是合法空结果；缺少可识别 envelope/result 的成功响应按 `API_INVALID_RESPONSE` 处理。
+- client 保留 `request_id`、`trace_id`、`workspace_id`、`warnings`、`next_actions`、`error.details`、`error.retryable` 与 `Retry-After`。
+- 仓储不可用错误不等同于“暂无数据”；检查 API 数据源配置，不回退 fixture 或伪造空列表。
+- 只有错误明确可重试、存在有效 `Retry-After`，或 HTTP 状态为 408/425/429/502/503/504 时，client 才标记为可重试。
 
-后台能力分期：商业化/平台/审计/告警为 P0；知识规则和资产审核、学习建议、竞品权利审核、内容候选队列为 P1；跨工作区聚合、批量治理和视频成片运营为 P2。
-
-## API 响应与故障诊断契约
-
-- 运营台以 `ApiEnvelope` 为传输边界：真实结果、合法空结果、错误和可重试错误必须分别可表达。空数组是有效真实结果，不得被当作失败；JSON-RPC `result: null` 是合法空结果；缺少可识别 envelope/result 的成功响应按 `API_INVALID_RESPONSE` 处理。
-- client 必须保留 `request_id`、`trace_id`、`workspace_id`、`warnings`、`next_actions`、`error.details`、`error.retryable` 与 `Retry-After`，用于告警关联、人工处置和有界重试。`next_actions` 兼容文字步骤和结构化动作，不得只按对象解析。
-- `SUPPORT_REPOSITORY_UNAVAILABLE`、`INCIDENT_REPOSITORY_UNAVAILABLE`、`FEATURE_FLAG_REPOSITORY_UNAVAILABLE`、`FINANCE_SEARCH_REPOSITORY_UNAVAILABLE`、`AUDIT_CENTER_REPOSITORY_UNAVAILABLE` 表示对应 PostgreSQL 运营仓储未配置或不可用于该能力，不等同于“暂无数据”。应检查 API 数据源配置，不得回退到 fixture 或伪造空列表。
-- 仅当 `error.retryable=true`、`error.details.retryable=true`、存在有效 `Retry-After`/`retry_after_seconds`，或 HTTP 状态为 408/425/429/502/503/504 时，client 才把错误标记为可重试；业务冲突和响应契约错误默认不可重试。
-
-## 发布前检查
-
-1. API 使用生产 `NODE_ENV=production`，并配置真实 Bearer token 验证和 workspace grants。
-2. `VITE_API_BASE` 使用 HTTPS，CORS 允许运营台域名但不允许任意来源。
-3. 支付使用独立支付网关 provider 模式：本服务只调用统一的 checkout/query/refund HTTPS 合同；支付宝证书签名、微信支付 v3 签名、平台回调验签和商户私钥全部由支付网关负责。生产配置必须提供网关地址、网关 API key、商户 ID、回调地址和本服务与网关之间的回调验签密钥，并通过真实支付/查单/退款证据门禁。
-4. 运营台构建产物只包含 API 地址，不包含 token、支付密钥、OAuth secret 或平台凭证。
-5. 发布前确认运营台 API 已开放知识治理和任务队列所需 MCP 方法，并完成角色矩阵测试；前端不能通过隐藏按钮绕过服务端权限。
-6. 生产环境验证规则、资产和竞品数据在 API 重启后仍可从业务快照/outbox 恢复；不能依赖浏览器缓存或单进程内存。
-7. 运营台显示的是安全投影：不输出模型 Key、平台 access/refresh token、支付密钥或原始生产证据文件。
-
-## 本轮运行核验边界（2026-08-29）
-
-- 当前源码的运营平台和 MCP 平台参数统一覆盖六个平台；若连接到旧的 8787 运行实例仍看不到小红书/抖音，必须先重新部署 API，不得据此判断源码状态。
-- PostgreSQL migration 链已到 069；060/062 使用非事务并发索引操作，063 强制 listing/canonical 的 workspace/brand 组合完整性，069 强制 legacy 商品/任务/发布记录的平台与店铺账号作用域。租户/控制面数据库角色已拆分，但真实云角色、连接池和在线迁移锁等待仍需预生产证据。
-- Codex CLI 插件只读尝试发生模型侧超时，未执行任何写操作；Codex App 可视化连接在当前会话不可用。
+发布前使用生产构建配置验证账号密码登录、HttpOnly 会话、角色矩阵、跨工作区拒绝和 API 健康状态。不得用本地 fixture 结果代替生产身份库、PostgreSQL/RLS 或真实部署证据。

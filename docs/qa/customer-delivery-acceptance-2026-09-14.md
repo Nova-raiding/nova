@@ -162,7 +162,7 @@
 
 ```sh
 TZ=Asia/Shanghai node --import tsx scripts/verify-customer-delivery-postgres.ts
-node --import tsx scripts/run-ops-oidc-e2e.ts dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js
+node --import tsx scripts/run-ops-password-e2e.ts dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js
 ```
 
 ## 尚未完成的上线条件
@@ -203,7 +203,7 @@ node --import tsx scripts/run-ops-oidc-e2e.ts dogfood/chatgpt-all-functions/ops-
 
 ```sh
 OPS_E2E_DELIVERY_SCAN=true OPS_E2E_BROWSER_TIMEOUT_MS=360000 \
-  node --import tsx scripts/run-ops-oidc-e2e.ts dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js
+  node --import tsx scripts/run-ops-password-e2e.ts dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js
 ```
 
 `scan-result.json` 为数据库/对象链路证据，`browser-result.json` 为桌面操作证据；`scanner-readiness.json`、两份 disposal 文件及 shot-scraper PNG/WebM 是对应运行的配套证据。扫描类型识别不等于合同内容语义解析，也不代表真实模型、支付或账号生效联动已验收。

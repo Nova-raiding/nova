@@ -5,7 +5,7 @@
 **状态**：产品、技术与验收基线（账号密码版；不等同于生产上线）
 **适用范围**：ChatGPT App/插件、商家运营后台、平台运营后台、API/MCP、模型中转、商品/SKU、知识库、规则扫描、任务 Worker、钱包/账务、平台发布和生产门禁
 
-> **当前上线口径（2026-09-17）**：本文早期章节保留了官方店铺 OAuth、自动同步和自动发布的目标设计，作为未来 `official_api` 集成参考；当前上线 profile 为 `manual`。六个平台商品资料通过公开链接/商家手工资料进入知识库，运营在官方商家后台人工发布并回填结果，商家只读取本租户的人工发布记录。人工记录不是平台 API 官方回执。ChatGPT/MCP 宿主授权仍是当前正式链路必需项。
+> **当前上线口径（2026-09-25）**：本文早期章节保留了官方店铺 OAuth、自动同步和自动发布的目标设计，作为未来 `official_api` 集成参考；当前上线 profile 为 `manual`。六个平台商品资料通过公开链接/商家手工资料进入知识库，运营在官方商家后台人工发布并回填结果，商家只读取本租户的人工发布记录。人工记录不是平台 API 官方回执。ChatGPT 侧只使用本地直装 stdio 插件；真实 ChatGPT OAuth 和公开/团队插件市场都不是本项目需求。
 
 > **当前上线 profile 的商业与生产前置（2026-09-19 补记，交付前必读）**：商家能否使用业务能力由服务端商业门禁决定，且**三项必须同时成立**——① 创意点余额大于 0；② 存在有效的月付套餐权益快照（公开目录中只有 `monthly` 套餐 `basic` ¥2000 / `growth` ¥5000 会写入 `workspace_entitlement_snapshots_v2`，**只买点数包不能创作**）；③ 生产素材扫描器已按 `ASSET_SCANNER_MODE=clamav_worker` 配置并能签发扫描回执。未满足时分别返回 `CREATIVE_POINTS_EXHAUSTED`（402）/ `CREATIVE_POINTS_UNAVAILABLE`（503）、`COMMERCIAL_ENTITLEMENT_REQUIRED`（402）、`IMAGE_SOURCE_ASSET_INVALID`（409）。零余额判断先于操作分类，除身份/状态、下单、余额与流水、目录、导出等恢复类方法外一律 402——**包括插件入口 `merchant.start` 本身**。未绑店铺时商品同步、正式任务与发布返回 `STORE_ONBOARDING_REQUIRED`（428）。此外，平台运营必须配置支付通道（`COMMERCIAL_PAYMENT_PROVIDER`）并上架可售月付套餐：未配置时下单直接 503 且订单不落库，而运营的人工核验又需要一条已存在的订单（否则 404 `COMMERCIAL_ORDER_NOT_FOUND`），客户与运营都无法推进。上述为当前产品语义，不是待修缺陷；交付文档必须如实告知客户，不得等客户付费后才暴露。
 
@@ -70,7 +70,7 @@ ChatGPT 只是交互入口。权限、商品事实、账务、模型调用、规
 | 编号 | 需求 | 优先级 | 验收结果 |
 | --- | --- | --- | --- |
 | AUTH-01 | 平台运营可在平台侧创建账号；商家使用平台交付账号密码完成登录/登出/重置；平台入口不对商家公开注册 | P0 | 会话、角色和审计可复现，旧会话可撤销 |
-| AUTH-02 | ChatGPT 首用通过Store Nova授权页完成同一 identity 的 OAuth/MCP 授权 | P0 | ChatGPT 不接触密码，token 只能访问商家 workspace |
+| AUTH-02 | 本地 stdio 插件首次使用时，商家以 Store Nova 账号密码通过本地登录 CLI 绑定同一 identity 和管理员分配的 workspace | P0 | 不要求真实 ChatGPT OAuth；本地插件凭据受限于该商家 workspace |
 | ONB-01 | 商家提交账号标识，平台运营绑定企业、合同和批准套餐 | P0 | 未支付/未审核不授予生成和发布 capability |
 | STORE-01 | 商家以官方 OAuth 绑定六类平台店铺并按 `platform + account_id` 管理 | P0 | 授权、同步、撤权、刷新和回查状态可追踪 |
 | CAT-01 | 商品事实、品、Listing、SKU 可导入、确认、修订并隔离多店铺 | P0 | 一行一 SKU 导入无半批、重复可幂等处理 |
@@ -160,14 +160,14 @@ flowchart LR
    → Worker 调用官方平台 API，回查真实回执；同时完成点数结算和审计
 ```
 
-> **当前 `manual` 档与上面这条链路的三处差别**：④ 若未配置 `COMMERCIAL_PAYMENT_PROVIDER`，用户在线支付这一步直接 503 且订单不落库，运营的人工核验也找不到订单，必须由平台运营先完成支付通道与月付套餐上架；⑤ 当前不弹 ChatGPT 远程 OAuth，商家在商家后台用账号密码登录后由安装器注入短期 Bearer；⑥ 与 ⑨ 不执行——六平台不接官方 OAuth，商品资料由运营人工导入，发布由运营在官方商家后台人工完成并回填。只有 ①②③④⑤⑦⑧ 是当前可执行路径。
+> **当前 `manual` 档与上面目标链路的差别**：④ 若未配置 `COMMERCIAL_PAYMENT_PROVIDER`，用户在线支付返回 503 且订单不落库，运营也无法核验不存在的订单；必须先配置支付通道和可售套餐。⑤ 当前不使用 ChatGPT 远程 OAuth；本地安装包通过 CLI 打开 Store Nova 授权页完成账号登录、管理员预分配工作区确认和短期 Bearer 写入。独立生产商家自助后台尚未交付，不能把目标中的后台登录步骤当成当前可用入口。⑥ 与 ⑨ 不执行——六平台不接官方 OAuth，发布由运营在官方商家后台人工完成并回填。⑦ 商家后台上传 Excel/CSV 的目标入口尚未交付；当前可用资料路径是插件支持的公开链接核验或商家在对话中提供资料。⑧ 仅在本地插件已安装绑定、`onboarding.status` 核验通过且商业/模型门禁允许时，才能在 ChatGPT 中继续内容候选流程。安装和绑定按《Store Nova ChatGPT 插件安装与配置手册》A2–A5执行。
 
 三类凭据必须分开：
 
 | 凭据 | 谁输入 | 存在哪里 | 不能做什么 |
 | --- | --- | --- | --- |
 | Store Nova账号密码 | 商家/平台运营本人登录Store Nova页面 | 认证服务端的哈希与会话系统 | 不能传给平台运营、插件工具参数或模型 |
-| ChatGPT 授权码/MCP token | Store Nova授权页与 ChatGPT 宿主协议 | 短期 code + 受限 token 存储 | 不能访问 `ops.*` 或切换工作区 |
+| 本地插件登录凭据 | 商家通过本地登录 CLI 打开 Store Nova 授权页 | 短期 code 经 localhost 回调交换；token 存入 macOS Keychain 或 Windows Credential Manager | 不交给模型；不能访问 `ops.*` 或切换工作区 |
 | 第三方店铺 OAuth 凭据 | 商家在官方平台授权页 | Secret Manager/Vault 的 `credential_ref` | 不能回显到浏览器、聊天、日志或导出 |
 
 平台后台的初始化支线（由平台 Owner 在交付商家前完成）是：
@@ -210,7 +210,7 @@ Store Nova账号 + 密码
 
 平台运营后台、商家运营后台和 ChatGPT 插件都使用Store Nova账号密码。不能使用企业 SSO、手机号验证码、微信登录、支付宝登录、本机自动连接或手工 Token 作为用户登录方式。
 
-ChatGPT 插件底层仍需要标准 OAuth/MCP authorization code 流程，这是宿主识别插件用户所需的协议，不是另一种用户登录方式。用户在Store Nova授权页输入的仍然是Store Nova账号和密码；密码只在Store Nova认证服务端校验，ChatGPT 不会得到密码。
+ChatGPT 侧使用本地直装的 stdio 插件链路，不要求配置真实 ChatGPT OAuth，也不接入公开或团队插件市场。插件通过 Store Nova 本地登录/授权流程，以账号密码验证用户并绑定管理员分配的工作区；凭据由本地登录流程与 Store Nova 服务端处理，ChatGPT 不会得到用户密码。本地 CLI 使用 Store Nova 自己的一次性授权码和 verifier 绑定安装实例；它不提供 ChatGPT 远程 MCP 的 OAuth authorize/token、discovery 或 OpenAI challenge 服务。
 
 ### 6.2 平台运营登录
 
@@ -243,7 +243,7 @@ https://admin.yxsona.com/login
 
 ### 6.3 商家开通
 
-当前方案是“平台运营创建商家账号”；商家使用平台交付的账号登录商家后台，再通过Store Nova授权页绑定 ChatGPT 插件。平台运营也可以邀请已有账号加入企业工作区，但邀请不授予平台角色、不绕过审核。
+目标方案是“平台运营创建商家账号”；当前没有已交付的独立商家自助后台。商家使用平台交付的 Store Nova 账号，通过安装包内本地登录 CLI 打开 Store Nova 授权页登录并确认管理员预先分配的 `ws_...` 工作区，以完成 ChatGPT 插件绑定。商家不得创建或猜测工作区；缺少分配或绑定时必须停止并联系平台管理员，不能调用 `workspace.bootstrap` 自动建租户。平台运营也可以邀请已有账号加入企业工作区，但邀请不授予平台角色、不绕过审核。
 
 平台运营创建商家账号：
 
@@ -288,21 +288,22 @@ registered
 | `POST /v1/auth/password/reset-confirm` | 一次性重置密码 | 成功后撤销旧会话 |
 | `POST /v1/invitations/accept` | 接受企业工作区邀请 | 仅激活已存在身份的成员关系，不创建商家账号、不绕过平台运营开通 |
 
-**当前实现差距**：仓库目前可证实的是 OIDC/Bearer、平台身份会话和本地 OIDC fixture；生产环境缺少可交付的账号密码开通、重置和登录链路闭环（当前 `POST /v1/auth/register` 为兼容历史/测试保留且默认关闭）。上述接口是 P0 目标，未完成前 §24 门禁必须保持 NO-GO。
+**当前实现状态（2026-09-25）**：Ops Console 使用 Store Nova 账号密码登录；生产配置、ECS 发布门禁和 API production readiness 只接受 `OPS_AUTH_MODE=password`。平台初始账号通过受控 bootstrap 创建，登录使用服务端 HttpOnly 会话。ChatGPT 本地 stdio 插件通过登录 CLI 打开 Store Nova 密码页，绑定管理员预分配的工作区，并把短期凭据存入本机凭据库；此流程不要求 ChatGPT OAuth。`POST /v1/auth/register` 仍默认关闭。生产自助开通、忘记/重置密码及独立商家 Web 工作台尚未证明在真实生产环境完成，相关能力继续保持 NO-GO，不能将本地浏览器/API 测试视为生产验收。
 
-### 6.4 插件授权流程
+### 6.4 本地插件登录与绑定流程
 
 ```text
-ChatGPT 安装“Store Nova”
- → 插件打开Store Nova授权页
+安装本地直装“Store Nova” stdio 插件
+ → 商家运行包内登录 CLI
+ → CLI 打开 Store Nova 密码登录/授权页
  → 输入Store Nova账号密码
- → 选择允许访问的工作区
- → 服务端签发一次性 authorization code
- → ChatGPT 交换受限 MCP token
- → Bridge 调用 /mcp
+ → 确认管理员已分配的工作区
+ → Store Nova 服务端签发一次性 code 到 CLI 的 localhost 回调
+ → CLI 交换受限插件凭据并存入本机凭据库
+ → 重启 ChatGPT 后由本地 Bridge 通过 stdio 调用 Store Nova API
 ```
 
-插件 token 必须绑定 identity、workspace、客户端、过期时间和撤销状态。插件不能用 token 切换到平台工作台，也不能调用 `ops.*` 方法。
+本地插件凭据必须绑定 identity、workspace、客户端、过期时间和撤销状态。插件不能用凭据切换到平台工作台，也不能调用 `ops.*` 方法。该流程是 Store Nova 本地 CLI 的账号授权，不是 ChatGPT 远程 MCP OAuth。
 
 ### 6.5 密码安全要求
 
@@ -1089,7 +1090,7 @@ quote
 
 | 工具组 | 示例 | 用途 | 商家 Bridge 可达性 |
 | --- | --- | --- | --- |
-| 身份/工作区 | `merchant.start`、`workspace.health`、`workspace.bootstrap` | 启动会话、健康和工作区 | 可达；`merchant.start` 受 `POINT_REQUIRED_NO_CHARGE` 门禁，零余额/无权益返回 402，余额未知返回 503 |
+| 身份/工作区 | `onboarding.status`、`merchant.start`、`workspace.health` | 绑定后的状态核验、启动会话和健康状态 | `onboarding.status`、`workspace.health` 用于只读核验；`merchant.start` 受 `POINT_REQUIRED_NO_CHARGE` 门禁，零余额/无权益返回 402，余额未知返回 503。商家首用必须先用本地 CLI 绑定管理员分配的工作区；`workspace.bootstrap` 不属于商家自助建租户路径 |
 | 店铺/商品 | `platform.connect`、`catalog.sync.start`、`catalog.search` | 授权、同步、检索 | `platform.connect`、`catalog.sync.start` **隐藏**（调用得到 `Unknown tool`）；`catalog.search` 可达且**不属于店铺边界**——它在 `STORE_BOUNDARY_EXEMPT_METHODS` 内，未绑店铺时不会返回 428，只受商业门禁约束（零余额 402、余额未知 503） |
 | 品和 SKU | `brand-unit.list`、`brand-unit.product.create`、`catalog.sku.update` | 维护品、商品和变体 | 可达，但属平台写入边界，未绑店铺时 428 |
 | 素材/知识 | `asset.list`、`asset.parse`、`knowledge.asset.list`、`knowledge.rule.list` | 素材、品牌和规则 | 可达（素材上传/解析在店铺边界之外） |

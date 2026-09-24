@@ -1,4 +1,4 @@
-/** Owner-run real desktop/OIDC/API/PG/ClamAV acceptance. Importing is inert.
+/** Owner-run real desktop/password/API/PG/ClamAV acceptance. Importing is inert.
  * node --import tsx scripts/verify-customer-delivery-contract-link.ts
  * Only fresh runner-owned tmpfs fixtures. Never reads .env, seeds receipts,
  * changes scan gates, calls a model/payment provider, or touches StoryForge.
@@ -12,7 +12,7 @@ import { Pool, type PoolClient } from 'pg'
 import { downloadCustomerDeliveryContract } from '../apps/api/src/customer-delivery-contract-download.js'
 import { LocalObjectStorage } from '../packages/storage/src/object-storage.js'
 import { CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS } from '../packages/persistence/src/customer-delivery-repository.js'
-import { runOpsE2e, type OpsE2eContext } from './run-ops-oidc-e2e.js'
+import { runOpsE2e, type OpsE2eContext } from './run-ops-password-e2e.js'
 
 const scriptFile = fileURLToPath(import.meta.url), projectRoot = resolve(dirname(scriptFile), '..')
 const publicPdf = { url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', sha256: '3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4', sizeBytes: 13264 }
@@ -31,8 +31,8 @@ const sourceFiles = [
   'packages/security/src/asset-scan-receipt.ts', 'packages/security/src/request-security.ts', 'packages/security/src/oidc-login-proof.ts',
   'packages/persistence/src/migration.ts', 'packages/persistence/src/customer-delivery-repository.ts', 'packages/persistence/src/business-repository.ts',
   'packages/persistence/src/asset-scan-repository.ts', 'packages/persistence/src/asset-scan-attempt-repository.ts', 'packages/storage/src/object-storage.ts',
-  'infra/local/ensure-app-role.sql', 'release-metadata.json', 'tests/isolated-ops-fixture.ts', 'tests/local-oidc-gateway.ts',
-  'scripts/run-ops-oidc-e2e.ts', 'scripts/ops-e2e-child-monitor.ts', 'scripts/customer-delivery-scan-fixture.ts', 'scripts/customer-delivery-scan-evidence.ts',
+  'infra/local/ensure-app-role.sql', 'release-metadata.json', 'tests/isolated-ops-fixture.ts', 'scripts/run-ops-password-e2e.ts',
+  'scripts/ops-e2e-child-monitor.ts', 'scripts/customer-delivery-scan-fixture.ts', 'scripts/customer-delivery-scan-evidence.ts',
   'dogfood/chatgpt-all-functions/ops-auth.js', 'dogfood/chatgpt-all-functions/ops-delivery-contract-link.spec.js', 'scripts/verify-customer-delivery-contract-link.ts',
 ]
 export async function contractLinkSourceFingerprint() {

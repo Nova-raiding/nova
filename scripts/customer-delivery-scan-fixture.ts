@@ -196,7 +196,7 @@ export function validateCustomerDeliveryScanBindings(input: ScanEnvironmentBindi
     try { url = new URL(value) } catch { return fail('FIXTURE_ENDPOINT_INVALID') }
     if (candidates.length !== 1 || !item || item.runId !== fixture.runId || !ID.test(item.id) || item.autoRemove !== true || item.dataStorage !== 'tmpfs'
       || item.name !== `merchant-ops-fixture-${kind}-${fixture.runId}` || !Number.isSafeInteger(item.hostPort) || item.hostPort < 1 || item.hostPort > 65_535
-      || item.labels['merchant.fixture.purpose'] !== 'isolated-ops-oidc-acceptance' || item.labels['merchant.fixture.run-id'] !== fixture.runId
+      || item.labels['merchant.fixture.purpose'] !== 'isolated-ops-password-acceptance' || item.labels['merchant.fixture.run-id'] !== fixture.runId
       || item.labels['merchant.fixture.kind'] !== kind || url.protocol !== protocol || url.hostname !== '127.0.0.1'
       || url.port !== String(item.hostPort) || url.username !== username || !url.password || url.pathname !== pathname || url.search || url.hash) fail('FIXTURE_ENDPOINT_INVALID')
   }

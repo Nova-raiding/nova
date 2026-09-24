@@ -17,8 +17,6 @@ import { createIsolatedOpsFixture, type IsolatedFixtureDisposal, type IsolatedOp
 
 const scriptFile = fileURLToPath(import.meta.url)
 const projectRoot = resolve(dirname(scriptFile), '..')
-const clientId = 'isolated-creative-point-access'
-const redirectUri = 'http://127.0.0.1:19093/oauth/callback'
 const sourceFiles = [
   'apps/api/src/server.ts', 'packages/contracts/src/authz.ts', 'packages/contracts/src/mcp.ts',
   'packages/contracts/src/commercial-operation-registry.ts', 'packages/contracts/src/http-authz.ts',
@@ -149,7 +147,7 @@ export async function verifyCreativePointAccess() {
       await rls.query('COMMIT')
     } finally { await rls.query('ROLLBACK').catch(() => undefined); rls.release() }
     stage = 'api_startup'
-    const startApi = async (oauth: boolean) => {
+    const startApi = async (localPlugin: boolean) => {
       const environment: NodeJS.ProcessEnv = {
         PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C.UTF-8',
         NODE_ENV: 'development', AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres', PORT: '0', API_BIND_HOST: '127.0.0.1',
@@ -157,7 +155,7 @@ export async function verifyCreativePointAccess() {
         RUN_MIGRATIONS_ON_STARTUP: 'false', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
         CONNECTOR_FIXTURE_MODE: 'false', REQUEST_OBSERVABILITY_LOGS: 'false', SESSION_ID_HASH_SECRET: randomBytes(32).toString('hex'),
         ASSET_STORAGE_ROOT: join(evidenceDir, 'local-objects'), VERIFY_POINTS_CHILD: 'isolated-fixture',
-        ...(oauth ? { MCP_OAUTH_REQUIRED: 'true', MCP_OAUTH_CLIENTS: JSON.stringify({ [clientId]: [redirectUri] }) } : {}),
+        ...(localPlugin ? { MCP_INTEGRATION_MODE: 'local_stdio' } : {}),
       }
       // IPC exposes only the owned loopback port; never collect raw credentials/logs.
       const child = spawn(process.execPath, ['--import', 'tsx', scriptFile, '--api-child'], { cwd: projectRoot, env: environment, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
@@ -168,7 +166,7 @@ export async function verifyCreativePointAccess() {
         child.once('exit', () => { clearTimeout(timer); reject(new Error('VERIFY_POINTS_API_EXITED')) })
         child.on('message', value => {
           if (object(value) && value.kind === 'failure') {
-            childFailureCodes.push({ api: oauth ? 'merchant' : 'ops', code: safeChildCode(value.code) })
+            childFailureCodes.push({ api: localPlugin ? 'merchant' : 'ops', code: safeChildCode(value.code) })
             clearTimeout(timer); reject(new Error('VERIFY_POINTS_API_CHILD_FAILED'))
           }
           if (object(value) && value.kind === 'ready' && Number.isInteger(value.port) && value.port > 0 && value.port <= 65535) { clearTimeout(timer); done(value.port) }
@@ -184,7 +182,7 @@ export async function verifyCreativePointAccess() {
     const merchantBase = await startApi(true), opsBase = await startApi(false)
     assert.notEqual(merchantBase, opsBase, 'VERIFY_POINTS_API_ORIGIN_COLLISION')
     runtime = { runId: fixture.runId, api: 'two-real-loopback-servers', persistence: 'postgres-17', redis: 'ready',
-      authentication: ['password-session-cookie', 'OAuth-PKCE-S256'], authorization: 'strict-enforce-durable', runtimeRole: flags, rlsCrossTenantRows: 0 }
+      authentication: ['password-session-cookie', 'local-plugin-workspace-bearer'], authorization: 'strict-enforce-durable', runtimeRole: flags, rlsCrossTenantRows: 0 }
     stage = 'real_authentication'
     for (const actor of actors) {
       const login = await request(`${merchantBase}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' },
@@ -193,22 +191,12 @@ export async function verifyCreativePointAccess() {
       actor.cookie = login.headers.getSetCookie().find(cookie => cookie.startsWith('damai_session='))?.split(';')[0]
       assert(actor.cookie, 'VERIFY_POINTS_PASSWORD_COOKIE_MISSING')
       await login.body?.cancel()
-      const verifier = randomBytes(48).toString('base64url'), state = randomUUID(), resource = `${merchantBase}/mcp`
-      const form = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: redirectUri, state,
-        code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', scope: 'merchant', resource,
-        login: actor.login, password: actor.password })
-      const authorized = await request(`${merchantBase}/oauth/authorize`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form })
-      assert.equal(authorized.status, 302, 'VERIFY_POINTS_OAUTH_AUTHORIZE_FAILED')
-      const location = new URL(authorized.headers.get('location') ?? '')
-      assert.equal(`${location.origin}${location.pathname}`, redirectUri, 'VERIFY_POINTS_OAUTH_REDIRECT_MISMATCH')
-      assert.equal(location.searchParams.get('state'), state, 'VERIFY_POINTS_OAUTH_STATE_MISMATCH')
-      const code = location.searchParams.get('code'); assert(code, 'VERIFY_POINTS_OAUTH_CODE_MISSING'); await authorized.body?.cancel()
-      const exchanged = await request(`${merchantBase}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ grant_type: 'authorization_code', client_id: clientId, redirect_uri: redirectUri, code, code_verifier: verifier, resource }) })
-      assert.equal(exchanged.status, 200, 'VERIFY_POINTS_OAUTH_EXCHANGE_FAILED')
+      const exchanged = await request(`${merchantBase}/v1/auth/mcp-token`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: actor.cookie! },
+        body: JSON.stringify({ workspace_id: actor.workspaceId }) })
+      assert.equal(exchanged.status, 200, 'VERIFY_POINTS_LOCAL_PLUGIN_TOKEN_ISSUE_FAILED')
       const token = await exchanged.json() as Json
-      assert(typeof token.access_token === 'string' && token.access_token.length > 20, 'VERIFY_POINTS_OAUTH_TOKEN_MISSING')
-      actor.token = token.access_token
+      assert(typeof token.data?.access_token === 'string' && token.data.access_token.length > 20, 'VERIFY_POINTS_LOCAL_PLUGIN_TOKEN_MISSING')
+      actor.token = token.data.access_token
     }
     const call = async (surface: 'http' | 'native-mcp', name: string, actor?: Actor, options: { workspace?: string; params?: Json; tool?: string; query?: string } = {}) => {
       const workspace = options.workspace ?? actor?.workspaceId ?? workspaceA

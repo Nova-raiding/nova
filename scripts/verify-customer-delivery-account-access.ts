@@ -1,4 +1,4 @@
-/** Owner-run desktop + real HTTP/PKCE + PG/Redis/ClamAV acceptance.
+/** Owner-run desktop + real password/local-plugin HTTP + PG/Redis/ClamAV acceptance.
  * node --import tsx scripts/verify-customer-delivery-account-access.ts
  * Importing is inert. Only the fresh runner-owned fixture may be mutated.
  * Synthetic checklist/payment documents are NOT commercial/provider evidence.
@@ -14,14 +14,13 @@ import { Pool } from 'pg'
 import { downloadCustomerDeliveryContract } from '../apps/api/src/customer-delivery-contract-download.js'
 import { contractLinkSourceFingerprint } from './verify-customer-delivery-contract-link.js'
 import { disposeOpsE2eChild, monitorOpsE2eChild } from './ops-e2e-child-monitor.js'
-import { runOpsE2e, type OpsE2eContext } from './run-ops-oidc-e2e.js'
+import { runOpsE2e, type OpsE2eContext } from './run-ops-password-e2e.js'
 
 type Json = Record<string, any>
 type Actor = { label: string; login: string; password: string; accountId: string; identityId: string; cookie?: string; token?: string }
 type Observation = { phase: string; actor: string; surface: string; method: string; status: number; code: string | null; dataPresent: boolean; requestId: string | null }
 const scriptFile = fileURLToPath(import.meta.url), projectRoot = resolve(dirname(scriptFile), '..')
 const sha = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex')
-const clientId = 'isolated-customer-delivery-access', redirectUri = 'http://127.0.0.1:19093/oauth/callback'
 const publicPdf = { url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', sha256: '3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4', sizeBytes: 13264 }
 const additionalSources = [
   'scripts/verify-customer-delivery-account-access.ts', 'dogfood/chatgpt-all-functions/ops-delivery-account-access.spec.js',
@@ -147,12 +146,12 @@ async function verifyRuntime(context: OpsE2eContext, report: Json) {
       required(Object.values(counts).every(value => value === 0), 'POINTS_OR_PROVIDER_ACTIVITY_DETECTED'); return counts
     }
     const ledgerBefore = await ledger()
-    report.stage = 'strict-oauth-sidecar'
+    report.stage = 'strict-local-plugin-sidecar'
     const environment: NodeJS.ProcessEnv = { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C.UTF-8', NODE_ENV: 'development',
       AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres', PORT: '0', API_BIND_HOST: '127.0.0.1', DATABASE_URL: fixture.databaseUrl, OPS_DATABASE_URL: fixture.opsDatabaseUrl,
       REDIS_URL: fixture.redisUrl, RUN_MIGRATIONS_ON_STARTUP: 'false', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true', CONNECTOR_FIXTURE_MODE: 'false',
       REQUEST_OBSERVABILITY_LOGS: 'false', SESSION_ID_HASH_SECRET: randomBytes(32).toString('hex'), ASSET_STORAGE_ROOT: join(evidenceDir, 'local-objects'),
-      MCP_OAUTH_REQUIRED: 'true', MCP_OAUTH_CLIENTS: JSON.stringify({ [clientId]: [redirectUri] }), ACCOUNT_ACCESS_CHILD: 'isolated-fixture' }
+      MCP_INTEGRATION_MODE: 'local_stdio', ACCOUNT_ACCESS_CHILD: 'isolated-fixture' }
     child = spawn(process.execPath, ['--import', 'tsx', scriptFile, '--api-child'], { cwd: projectRoot, env: environment, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
     monitor = monitorOpsE2eChild(child)
     const port = await monitor.guard(new Promise<number>((done, reject) => {
@@ -174,20 +173,11 @@ async function verifyRuntime(context: OpsE2eContext, report: Json) {
       const body = await response.json() as Json
       required(response.status === 200 && body.data?.account?.identityId === actor.identityId && body.data.account.id === actor.accountId, 'PASSWORD_IDENTITY_MISMATCH')
       actor.cookie = response.headers.getSetCookie().find(value => value.startsWith('damai_session='))?.split(';')[0]; required(actor.cookie, 'PASSWORD_COOKIE_MISSING')
-      const verifier = randomBytes(48).toString('base64url'), state = randomUUID(), resource = `${base}/mcp`
-      const authorization = await fetchOwn('/oauth/authorize', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({
-        response_type: 'code', client_id: clientId, redirect_uri: redirectUri, state, code_challenge: createHash('sha256').update(verifier).digest('base64url'),
-        code_challenge_method: 'S256', scope: 'merchant', resource, login: actor.login, password: actor.password }) })
-      required(authorization.status === 302, 'PKCE_AUTHORIZE_FAILED')
-      const location = new URL(authorization.headers.get('location') ?? '')
-      required(`${location.origin}${location.pathname}` === redirectUri && location.searchParams.get('state') === state && location.searchParams.get('code'), 'PKCE_REDIRECT_MISMATCH')
-      await authorization.body?.cancel()
-      const exchange = await fetchOwn('/oauth/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({
-        grant_type: 'authorization_code', client_id: clientId, redirect_uri: redirectUri, code: location.searchParams.get('code')!, code_verifier: verifier, resource }) })
+      const exchange = await fetchOwn('/v1/auth/mcp-token', { method: 'POST', headers: { 'content-type': 'application/json', cookie: actor.cookie! }, body: JSON.stringify({ workspace_id: workspaceId }) })
       const token = await exchange.json() as Json
-      required(exchange.status === 200 && typeof token.access_token === 'string' && token.access_token.length > 20, 'PKCE_EXCHANGE_FAILED'); actor.token = token.access_token
+      required(exchange.status === 200 && typeof token.data?.access_token === 'string' && token.data.access_token.length > 20, 'LOCAL_PLUGIN_TOKEN_ISSUE_FAILED'); actor.token = token.data.access_token
       const persisted = (await admin.query("SELECT account_id,identity_id,workspace_id FROM mcp_oauth_tokens WHERE token_hash=$1 AND token_kind='access'", [sha(actor.token!)])).rows
-      assert.deepEqual(persisted, [{ account_id: actor.accountId, identity_id: actor.identityId, workspace_id: workspaceId }], 'ACCOUNT_ACCESS_OAUTH_IDENTITY_MISMATCH')
+      assert.deepEqual(persisted, [{ account_id: actor.accountId, identity_id: actor.identityId, workspace_id: workspaceId }], 'ACCOUNT_ACCESS_LOCAL_PLUGIN_IDENTITY_MISMATCH')
     }
     const observe = async (actor: Actor, phase: string, surface: 'http' | 'native-mcp', method = 'catalog.search'): Promise<Observation> => {
       const response = await fetchOwn(surface === 'http' ? '/v1/products?scope=workspace' : '/mcp', { method: surface === 'http' ? 'GET' : 'POST',
@@ -242,7 +232,7 @@ async function verifyRuntime(context: OpsE2eContext, report: Json) {
       }
     }
     for (const actor of actors) await login(actor)
-    report.passwordAndOAuthIdentityBindingVerified = true
+    report.passwordAndLocalPluginIdentityBindingVerified = true
     report.stage = 'ready-original-gates'; await oldGates('ready'); await recover('ready-recovery')
     const cookie = await platformCookie(context)
     const ops = async (method: string, params: Json) => {
@@ -316,7 +306,7 @@ async function verifyRuntime(context: OpsE2eContext, report: Json) {
     monitor.assertHealthy()
   } finally {
     monitor?.stop()
-    try { if (child) { await disposeOpsE2eChild(child); report.oauthSidecarCleanup = { stopped: child.exitCode !== null || child.signalCode !== null, ownProcessOnly: true } } }
+    try { if (child) { await disposeOpsE2eChild(child); report.localPluginSidecarCleanup = { stopped: child.exitCode !== null || child.signalCode !== null, ownProcessOnly: true } } }
     finally { await admin.end() }
   }
 }
@@ -342,7 +332,7 @@ export async function verifyCustomerDeliveryAccountAccess() {
       await verifyRuntime(current, report)
       assert.deepEqual(await accountAccessSourceFingerprint(), before, 'ACCOUNT_ACCESS_SOURCE_CHANGED')
     })
-    required(code === 0 && context && report.persistence?.status === 'passed' && report.oauthSidecarCleanup?.stopped === true, 'RUNNER_OR_RUNTIME_FAILED')
+    required(code === 0 && context && report.persistence?.status === 'passed' && report.localPluginSidecarCleanup?.stopped === true, 'RUNNER_OR_RUNTIME_FAILED')
     report.stage = 'owned-container-cleanup'
     const disposal = await jsonFile(join(context.evidenceDir, `fixture-disposal-${context.fixture.runId}.json`)), runtime = await jsonFile(join(context.evidenceDir, 'runtime.json'))
     required(disposal.runId === context.fixture.runId && disposal.leftRunning.length === 0 && disposal.externalContainersTouched === false, 'FIXTURE_CLEANUP_FAILED')

@@ -38,8 +38,8 @@ function deferred() {
 type Envelope = { data: { result?: { rendering?: { status: string; providerJobId: string } } } | null; error: { code: string; message?: string } | null }
 let api: typeof import('./server.js')
 let base = ''
-const clientId = 'dispatch-recheck-client'
-const redirectUri = 'http://127.0.0.1:19091/oauth/callback'
+const clientId = 'local-desktop'
+const redirectUri = 'http://127.0.0.1:19091/merchant-mcp-callback'
 const verifier = 'dispatch-recheck-pkce-verifier-only-for-controlled-test-000000000000'
 
 beforeAll(async () => {
@@ -49,8 +49,7 @@ beforeAll(async () => {
   vi.stubEnv('NODE_ENV', 'test')
   vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
   vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
-  vi.stubEnv('MCP_OAUTH_REQUIRED', 'true')
-  vi.stubEnv('MCP_OAUTH_CLIENTS', JSON.stringify({ [clientId]: [redirectUri] }))
+  vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
   vi.stubEnv('SESSION_ID_HASH_SECRET', 'dispatch-recheck-controlled-session-secret')
   vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true')
   vi.stubEnv('MERCHANT_TEST_APPROVED_RATES', 'true')
@@ -82,7 +81,7 @@ afterAll(async () => {
   }
 })
 
-// Real loopback HTTP -> real OAuth bearer authentication -> MCP capability and
+// Real loopback HTTP -> real local-plugin bearer authentication -> MCP capability and
 // commercial fixture admission -> real final dispatch hook. Identity/member/
 // authz repositories and approved points/rules are isolated test fixtures;
 // these assertions are not live PostgreSQL, payment or provider acceptance.
@@ -99,13 +98,14 @@ describe('inline API dispatch rechecks the current membership capability', () =>
     const member = await api.workspaceMembers.upsert({ workspaceId, externalSubject: login, displayName: 'Controlled member', role: 'workspace_owner', status: 'active', invitedBy: 'dispatch-test' })
     await api.workspaceMembers.bindIdentity({ workspaceId, externalSubject: login, identityId: account.identityId })
     const resource = `${base}/mcp`
-    const code = await passwordRepository.issueMcpAuthorizationCode({ account, clientId, redirectUri, codeChallenge: createHash('sha256').update(verifier).digest('base64url'), issuer: base, audience: resource, resource, scope: ['merchant'] })
-    const exchanged = await fetch(`${base}/oauth/token`, {
+    const code = await passwordRepository.issueMcpAuthorizationCode({ account, clientId, redirectUri, codeChallenge: createHash('sha256').update(verifier).digest('base64url'), issuer: base, audience: resource, resource, scope: ['merchant'], workspaceId })
+    const exchanged = await fetch(`${base}/v1/auth/local-plugin/token`, {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'authorization_code', client_id: clientId, redirect_uri: redirectUri, code: code.code, code_verifier: verifier, resource }),
+      body: new URLSearchParams({ grant_type: 'authorization_code', client_id: clientId, redirect_uri: redirectUri, code: code.code, code_verifier: verifier, resource, workspace_id: workspaceId }),
     })
     expect(exchanged.status).toBe(200)
-    const tokens = await exchanged.json() as { access_token: string }
+    const envelope = await exchanged.json() as { data: { access_token: string } }
+    const tokens = envelope.data
     expect(await passwordRepository.authenticateMcpAccessToken({ accessToken: tokens.access_token, clientId, issuer: base, audience: resource, resource, scope: ['merchant'] })).toMatchObject({ identityId: account.identityId, accountLogin: login, workspaceId })
     const store = api.service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `controlled-store-${suffix}`, credentialRef: `fixture://${workspaceId}/taobao` })
     const product = api.service.importProduct({ workspaceId, platform: 'taobao', accountId: store.id, localProductKey: `product-${suffix}`, title: '真实事实测试商品', category: '外套', stock: 1 })

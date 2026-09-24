@@ -7,6 +7,8 @@
 
 > **版本关系（2026-09-09）**：产品主链路以 [《Store Nova商家营销平台产品总文档》](store-nova-product-master-document.md) v2.0 为准。本文 v1.0 保留为领域需求和历史实现参考；其中关于 OIDC/企业 SSO、邀请制和“已有向量索引”的表述已被 v2.0 的账号密码、开通后待审核和“向量能力待实现”决策覆盖。
 
+> **认证与验收口径更新（2026-09-25）**：本文中的远程 ChatGPT OAuth、marketplace 安装和 OIDC 内容属于历史方案，不是当前实现、操作步骤或发布门禁。当前 ChatGPT 插件只采用本地直装 stdio；Ops Console 只使用 Store Nova 账号密码登录。六个平台 OAuth 仅属于未来 `official_api` 平台集成，不属于当前 `manual` 档要求。
+
 ## 1. 产品定义
 
 Store Nova商家营销是一个安装在 ChatGPT 中、面向电商商家的内容生产与平台运营产品。商家通过 ChatGPT 选择商品并提出自然语言需求；Store Nova服务端在商家授权范围内读取商品、SKU、素材、品牌和规则知识，调用Store Nova自有模型中转站生成商品主图、详情页和视频，随后在商家运营后台进行审核、下载或一键发布。
@@ -577,8 +579,8 @@ publish.prepare
 
 以下任一项未通过，生产保持 NO-GO：
 
-- ChatGPT App Host/marketplace 安装证据；
-- 生产账号密码认证、ChatGPT authorization code 和宿主回调证据；
+- 本地直装 stdio 插件发现、Store Nova 账号密码绑定、受限 workspace 凭据和真实 API/MCP 调用证据；
+- Ops Console 账号密码登录、服务端会话、角色边界和退出证据；
 - 六平台真实 OAuth、API 和发布 canary；
 - 微信/支付宝真实 checkout、签名回调和对账；
 - Store Nova relay 五模态真实鉴权、用量和成本证据；
@@ -598,7 +600,7 @@ publish.prepare
 
 仍必须在正式商用前补齐或验证：
 
-1. ChatGPT App 市场真实安装和 OAuth 宿主证据；
+1. 本地直装 stdio 插件安装、工具发现、账号密码绑定和 API/MCP 运行证据；
 2. 平台创建商家账号、企业绑定、角色分配、权益开通的完整状态机；
 3. 微信/支付宝真实支付到权益授予的闭环；
 4. 六平台真实 OAuth/API/canary，而不是 fixture 连接；

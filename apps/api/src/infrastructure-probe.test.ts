@@ -10,7 +10,7 @@ import { server } from './server.js'
  * The API matched `GET` only, so every HEAD fell through to the 404 fallthrough.
  * A load balancer or uptime monitor probing with HEAD would have marked a
  * perfectly healthy origin down. Nothing covered this: the gateway config tests
- * slice the alert/challenge/releasez blocks and never assert the healthz
+ * slice the releasez block and never assert the healthz
  * locations, and no test issued a HEAD at all.
  *
  * The property asserted here is the one a probe depends on: for every

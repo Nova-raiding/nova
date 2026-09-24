@@ -4,9 +4,9 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Pool, type PoolClient } from 'pg'
 import { PostgresCustomerDeliveryRepository, loadMigrations, migrationChecksum } from '../packages/persistence/src/index.js'
-import { runOpsE2e, type OpsE2eContext } from './run-ops-oidc-e2e.js'
+import { runOpsE2e, type OpsE2eContext } from './run-ops-password-e2e.js'
 
-// Runs only the runner-owned PG/Redis/OIDC/ClamAV fixture. The scanner collector
+// Runs only the runner-owned PG/Redis/password-session/ClamAV fixture. The scanner collector
 // must pass before this additional adverse probe touches an uploaded asset.
 // No receipt/admission/clean verdict is synthesized or restored by this script.
 const sources = [
@@ -19,7 +19,7 @@ const sources = [
   'apps/ops-console/src/api/customerDeliveryClient.ts',
   'apps/ops-console/src/pages/CustomerDeliveryPage.tsx',
   'dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js',
-  'scripts/run-ops-oidc-e2e.ts',
+  'scripts/run-ops-password-e2e.ts',
   'scripts/ops-e2e-child-monitor.ts',
   'scripts/customer-delivery-scan-fixture.ts',
   'scripts/customer-delivery-scan-evidence.ts', 'scripts/verify-customer-delivery-owner.ts',

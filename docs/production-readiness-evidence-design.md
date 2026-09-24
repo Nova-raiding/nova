@@ -1,5 +1,7 @@
 # 生产 readiness 与 evidence 的状态设计
 
+> **认证口径更新（2026-09-25）**：本文早期审计记录中提到的 OIDC runner、ChatGPT 远程 OAuth 和宿主授权证据是历史状态，已由 [桌面端本地插件身份 ADR](architecture/desktop-only-auth-adr.md) 取代。当前 Ops 登录只使用账号密码，ChatGPT 侧只使用本地直装 stdio 插件；不得将下方旧审计记录当成当前登录或上线要求。
+
 生产状态由两个独立维度组成：
 
 1. **Runtime readiness**：当前部署是否使用真实依赖并能安全处理请求。它检查运行模式、支付 provider、平台操作模式（当前上线为人工运营；`official_api` 才要求平台 OAuth）、对象存储/KMS、scanner、告警、数据库/RLS、宿主 bridge 和模型 relay 配置。

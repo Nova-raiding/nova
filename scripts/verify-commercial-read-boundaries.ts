@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { join, resolve } from 'node:path'
 import { Pool } from 'pg'
 import { readOwnCommercialPaymentStatus } from '../apps/api/src/commercial-payment-status-reader.js'
 import { PostgresCommercialContractRepository, type CommercialCatalogSkuSnapshot } from '../packages/persistence/src/index.js'
+import { PostgresPasswordAuthRepository } from '../packages/persistence/src/password-auth-repository.js'
 import { createIsolatedOpsFixture, isolatedFixtureSpawnEnvironment, type IsolatedOpsFixture } from '../tests/isolated-ops-fixture.js'
 import { validateCustomerDeliveryScanBindings } from './customer-delivery-scan-fixture.js'
-import { opsChildEnvironment } from './run-ops-oidc-e2e.js'
 
 // This executable owns a fresh tmpfs fixture. It never accepts a database URL,
 // imports a .env, calls a payment gateway, starts a worker, or grants points.
@@ -32,7 +32,6 @@ let admin: Pool | undefined, seed: Pool | undefined, reader: Pool | undefined
 let api: ChildProcess | undefined, apiError = false
 let passed = false, stage = 'fixture', errorCode: string | undefined
 let disposal: unknown, runtimeEvidence: unknown
-const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 
 async function reserveLoopbackPort(): Promise<number> {
   const socket = createServer()
@@ -78,13 +77,21 @@ try {
     FROM pg_roles WHERE rolname=current_user`)).rows[0]
   assert.deepEqual(flags, { role: 'merchant_app', database: 'merchant', read_only: 'on', rolsuper: false, rolbypassrls: false })
   const workspaceId = fixture.workspaceId, otherWorkspaceId = `ws_commercial_read_${fixture.runId}`
-  const creator = fixture.workspaceActorSubject, otherActor = `commercial-read-other-${fixture.runId}`
-  const otherIdentity = randomUUID()
   await admin.query("INSERT INTO workspaces(id,status) VALUES ($1,'active')", [otherWorkspaceId])
-  await admin.query('INSERT INTO platform_identities(id,issuer,external_subject,display_name) VALUES ($1,$2,$3,$4)', [otherIdentity, fixture.issuer, otherActor, 'Synthetic other merchant'])
-  for (const [workspace, actor, identity] of [[workspaceId, otherActor, otherIdentity], [otherWorkspaceId, creator, fixture.subjectIdentityId]]) {
+  const authPool = new Pool({ connectionString: fixture.opsDatabaseUrl, max: 1, connectionTimeoutMillis: 2000, statement_timeout: 5000, query_timeout: 6000 })
+  let creatorAccount: Awaited<ReturnType<PostgresPasswordAuthRepository['createMerchantAccount']>>
+  let otherAccount: Awaited<ReturnType<PostgresPasswordAuthRepository['createMerchantAccount']>>
+  const creatorLogin = `commercial-read-owner-${fixture.runId}@fixture.invalid`, creatorPassword = `OwnerA1!${randomBytes(18).toString('hex')}`
+  const otherLogin = `commercial-read-other-${fixture.runId}@fixture.invalid`, otherPassword = `OtherA1!${randomBytes(18).toString('hex')}`
+  try {
+    const accounts = new PostgresPasswordAuthRepository(authPool)
+    creatorAccount = await accounts.createMerchantAccount({ login: creatorLogin, password: creatorPassword, enterpriseName: 'Commercial read owner', contactName: 'Owner', workspaceIds: [workspaceId, otherWorkspaceId], actorId: 'isolated-fixture-bootstrap', reason: 'isolated commercial read boundary' })
+    otherAccount = await accounts.createMerchantAccount({ login: otherLogin, password: otherPassword, enterpriseName: 'Commercial read colleague', contactName: 'Colleague', workspaceIds: [workspaceId], actorId: 'isolated-fixture-bootstrap', reason: 'isolated commercial read boundary' })
+  } finally { await authPool.end() }
+  const creator = creatorAccount.identityId, otherActor = otherAccount.identityId
+  for (const [workspace, account, login] of [[workspaceId, creatorAccount, creatorLogin], [otherWorkspaceId, creatorAccount, creatorLogin], [workspaceId, otherAccount, otherLogin]] as const) {
     await admin.query(`INSERT INTO workspace_members(id,workspace_id,external_subject,display_name,role,status,invited_by,identity_id)
-      VALUES ($1,$2,$3,'Synthetic read-boundary merchant','merchant_admin','active','isolated-commercial-read-seed',$4)`, [randomUUID(), workspace, actor, identity])
+      VALUES ($1,$2,$3,'Synthetic read-boundary merchant','merchant_admin','active','isolated-commercial-read-seed',$4)`, [randomUUID(), workspace, login, account.identityId])
   }
   const sku: CommercialCatalogSkuSnapshot = {
     id: `sku_read_${fixture.runId}`, code: `read_${fixture.runId.replaceAll('-', '')}`, kind: 'monthly', visibility: 'public', requiredCapability: null,
@@ -161,14 +168,13 @@ try {
 
   stage = 'real-api-startup'
   interrupted.signal.throwIfAborted()
-  const oidcSecret = randomBytes(32).toString('hex')
-  const environment = opsChildEnvironment(isolatedFixtureSpawnEnvironment(), {
+  const environment = { ...isolatedFixtureSpawnEnvironment(),
     NODE_ENV: 'development', AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres', PORT: String(port), API_BIND_HOST: '127.0.0.1',
-    OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: oidcSecret, SESSION_ID_HASH_SECRET: randomBytes(32).toString('hex'),
+    OPS_AUTH_MODE: 'password', MCP_INTEGRATION_MODE: 'local_stdio', SESSION_ID_HASH_SECRET: randomBytes(32).toString('hex'),
     DATABASE_URL: fixture.databaseUrl, OPS_DATABASE_URL: fixture.opsDatabaseUrl, REDIS_URL: fixture.redisUrl,
     RUN_MIGRATIONS_ON_STARTUP: 'false', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
     CONNECTOR_FIXTURE_MODE: 'false', REQUEST_OBSERVABILITY_LOGS: 'false', ASSET_STORAGE_ROOT: join(evidenceDir, 'local-objects'),
-  })
+  }
   // Do not collect raw API logs: bounded chunks can bisect credentials before
   // redaction. Responses are asserted in memory; evidence stores safe facts.
   api = spawn(process.execPath, ['--import', 'tsx', 'apps/api/src/server.ts'], { env: environment, stdio: 'ignore' })
@@ -188,27 +194,47 @@ try {
   assert.equal(health?.data?.persistence?.ready, true)
   assert.equal(health?.data?.redis?.ready, true)
   runtimeEvidence = { runId: fixture.runId, postgres: 'real-17', redis: 'ready', api: 'loopback-real-server',
-    auth: 'strict-signed-oidc', authorization: 'enforce-durable', role: flags, sharedContainersTouched: false }
-  const sessions = new Map<string, string>()
-  const authTime = String(Math.floor(Date.now() / 1000) - 1), expires = String(Number(authTime) + 900)
+    auth: 'strict-password-session-and-local-plugin-bearer', authorization: 'enforce-durable', role: flags, sharedContainersTouched: false }
+  const passwordSessions = new Map<string, string>()
+  const pluginTokens = new Map<string, string>()
+  const credentials = new Map([[creator, { login: creatorLogin, password: creatorPassword }], [otherActor, { login: otherLogin, password: otherPassword }]])
+  const authenticate = async (actorId: string, workspace: string) => {
+    const key = `${actorId}:${workspace}`
+    const existing = pluginTokens.get(key)
+    if (existing) return existing
+    const account = credentials.get(actorId)
+    assert(account, 'COMMERCIAL_READ_TEST_ACCOUNT_MISSING')
+    let cookie = passwordSessions.get(actorId)
+    if (!cookie) {
+      const loggedIn = await fetch(`${baseUrl}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login: account.login, password: account.password, account_type: 'merchant' }), redirect: 'error', signal: AbortSignal.timeout(10_000) })
+      const loginBody = await loggedIn.json() as any
+      assert.equal(loggedIn.status, 200)
+      assert.equal(loginBody.data?.account?.identityId, actorId)
+      cookie = loggedIn.headers.getSetCookie().find(value => value.startsWith('damai_session='))?.split(';')[0]
+      assert(cookie, 'COMMERCIAL_READ_PASSWORD_SESSION_MISSING')
+      passwordSessions.set(actorId, cookie)
+    }
+    const response = await fetch(`${baseUrl}/v1/auth/mcp-token`, { method: 'POST', headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ workspace_id: workspace }), redirect: 'error', signal: AbortSignal.timeout(10_000) })
+    const tokenBody = await response.json() as any
+    assert.equal(response.status, 200)
+    assert(typeof tokenBody.data?.access_token === 'string' && tokenBody.data.access_token.length > 20)
+    pluginTokens.set(key, tokenBody.data.access_token)
+    return tokenBody.data.access_token as string
+  }
   const call = async (surface: 'http' | 'mcp', test: { workspaceId: string; orderId: string; actorId?: string | null }) => {
     interrupted.signal.throwIfAborted()
     const method = surface === 'http' ? 'GET' : 'POST'
     const target = surface === 'http' ? `/v1/commercial/orders/${encodeURIComponent(test.orderId)}/payment` : '/mcp'
-    const nonce = randomUUID(), timestamp = String(Math.floor(Date.now() / 1000))
+    const nonce = randomUUID()
     const body = surface === 'http' ? '' : JSON.stringify({ jsonrpc: '2.0', id: nonce, method: 'tools/call', params: {
       name: 'commercial.order.payment.get', arguments: { order_id: test.orderId },
     } })
     const headers: Record<string, string> = { 'content-type': 'application/json', 'x-workspace-id': test.workspaceId }
     if (test.actorId) {
-      const sid = sessions.get(test.actorId) ?? randomBytes(24).toString('base64url'); sessions.set(test.actorId, sid)
-      const digest = hash(body), roles = 'merchant_admin', amr = 'mfa,pwd'
-      const canonical = [method, target, test.workspaceId, 'workspace', fixture!.issuer, test.actorId, sid, roles, amr,
-        authTime, expires, timestamp, digest, nonce].join('\n')
-      Object.assign(headers, { 'x-oidc-workbench': 'workspace', 'x-oidc-workspace': test.workspaceId, 'x-oidc-issuer': fixture!.issuer,
-        'x-oidc-sub': test.actorId, 'x-oidc-sid': sid, 'x-oidc-roles': roles, 'x-oidc-amr': amr,
-        'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': expires, 'x-oidc-timestamp': timestamp,
-        'x-oidc-body-sha256': digest, 'x-oidc-nonce': nonce, 'x-oidc-signature': createHmac('sha256', oidcSecret).update(canonical).digest('hex') })
+      if (surface === 'http') headers.cookie = passwordSessions.get(test.actorId) ?? (await authenticate(test.actorId, test.workspaceId), passwordSessions.get(test.actorId)!)
+      else headers.authorization = `Bearer ${await authenticate(test.actorId, test.workspaceId)}`
     }
     const response = await fetch(`${baseUrl}${target}`, { method, headers, ...(body ? { body } : {}), redirect: 'error', signal: AbortSignal.timeout(10_000) })
     return { status: response.status, body: await response.json() as any }
@@ -250,7 +276,7 @@ try {
   passed = true
 } catch (error) {
   // Do not expose native assertions (which may contain response/checkout URLs),
-  // connection strings, generated OIDC secrets, or raw child-process errors.
+  // connection strings, generated password credentials, or raw child-process errors.
   const code = (error as { code?: unknown })?.code
   errorCode = typeof code === 'string' && /^[A-Z0-9_]{2,80}$/u.test(code) ? code : 'COMMERCIAL_READ_RUNTIME_ASSERTION_FAILED'
 } finally {
