@@ -96,6 +96,18 @@ describe("UserDirectorySection sorting", () => {
     expect(source).toContain('aria-describedby="bulk-suspend-error-description"');
   });
 
+  it("does not present a static, unbacked monthly spend chart as business data", () => {
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain("ops-usage-chart");
+    expect(source).not.toContain("2026年用户总消耗金额");
+  });
+
+  it("retains account provisioning and authorized directory export controls", () => {
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain('onClick={() => setProvisionOpen(true)} disabled={!model.canPlatformOps}>开通商家账号</Button>');
+    expect(source).toContain('onClick={() => void model.exportUsers(form.getFieldsValue())} disabled={!model.canUserGovernance || model.userExporting}');
+  });
+
   it("gives desktop directory controls stable, row-specific accessible names", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`}');

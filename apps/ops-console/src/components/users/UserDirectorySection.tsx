@@ -184,7 +184,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   return <>
     {!canReadUserDirectory && <Alert showIcon type="warning" title="当前角色不能读取用户目录" description="跨租户身份与成员关系需要 identity.read；权限由服务端策略决定。" />}
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
-    <Card title="已接入用户" extra={<Typography.Text type="secondary">共 {model.userDirectory.workspaceCount} 家接入用户</Typography.Text>} aria-busy={model.userDirectoryLoading}>
+    <Card title="已接入用户" extra={<Space><Typography.Text type="secondary">共 {model.userDirectory.workspaceCount} 家接入用户</Typography.Text><Button onClick={() => setProvisionOpen(true)} disabled={!model.canPlatformOps}>开通商家账号</Button></Space>} aria-busy={model.userDirectoryLoading}>
       <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "", attribute: "" }} onFinish={(values) => { const { attribute, ...filters } = values; setAttributeFilter(attribute || ""); void model.loadUsers({ ...filters, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
         <Form.Item name="query" label="搜索"><Input allowClear maxLength={64} aria-label="按关键词筛选用户目录" /></Form.Item>
         <Form.Item name="status" label="激活状态">
@@ -199,6 +199,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         </Form.Item>
         <Form.Item><Space>
           <Button type="primary" htmlType="submit" loading={model.userDirectoryLoading}>查询</Button>
+          <Button onClick={() => void model.exportUsers(form.getFieldsValue())} disabled={!model.canUserGovernance || model.userExporting} loading={model.userExporting}>导出当前筛选</Button>
           <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
       </Form>
@@ -360,16 +361,6 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "剩余创意点", key: "remaining", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "—" },
             { title: "更新时间", key: "updated", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
-          <div><Typography.Title level={5}>2026年用户总消耗金额</Typography.Title><div className="ops-usage-chart" role="img" aria-label="2026年用户总消耗金额月度折线图">
-            <svg viewBox="0 0 720 170" preserveAspectRatio="none" aria-hidden="true">
-              <line x1="48" y1="18" x2="48" y2="142" className="ops-usage-chart-axis" /><line x1="48" y1="142" x2="700" y2="142" className="ops-usage-chart-axis" />
-              {[18, 49, 80, 111].map((y) => <line key={y} x1="48" y1={y} x2="700" y2={y} className="ops-usage-chart-grid" />)}
-              <text x="6" y="24" className="ops-usage-chart-tick">2000元</text><text x="6" y="56" className="ops-usage-chart-tick">1500元</text><text x="6" y="88" className="ops-usage-chart-tick">1000元</text><text x="6" y="120" className="ops-usage-chart-tick">500元</text>
-              <polyline points="48,142 178,142 308,142 438,142 568,142 698,142" className="ops-usage-chart-line" />
-              <circle cx="698" cy="142" r="5" className="ops-usage-chart-point" />
-            </svg>
-            <div className="ops-usage-chart-labels"><span>1月</span><span>2月</span><span>3月</span><span>4月</span><span>5月</span><span>6月</span><span>7月</span><span>8月</span><span>9月</span><span>10月</span><span>11月</span><span>12月</span></div>
-          </div></div>
         </Space>}
       </Spin>
     </Drawer>

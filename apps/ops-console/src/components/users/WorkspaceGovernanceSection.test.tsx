@@ -23,6 +23,9 @@ const model = (overrides: Record<string, unknown> = {}) => ({
   workspaceDirectoryError: "",
   dataSetError: () => undefined,
   loadWorkspaceDirectory: async () => true,
+  authorization: { can: (capability: string) => capability === "workspace.status.update" },
+  opsSession: { workspace_id: "ws_other" },
+  changeWorkspaceStatus: async () => true,
   ...overrides,
 }) as unknown as OpsConsoleModel;
 
@@ -79,5 +82,17 @@ describe("monthly workspace directory states", () => {
     const markup = render({ workspaceRows: [row], workspaceDirectoryError: "运营 API 请求超时。请检查 API 和数据库状态后重试。" });
     expect(markup).toContain("青禾商贸");
     expect(countLabel(markup)).toBe("工作区数量未知：月费工作区列表读取失败");
+  });
+
+  it("keeps status governance available with permission and disables self lockout", () => {
+    const markup = render({ workspaceRows: [{ ...row, workspaceId: "ws_other" }] });
+    expect(markup).toContain("停用租户");
+    expect(markup).toContain("不能从当前路由工作区停用自身");
+  });
+
+  it("does not expose status changes without the server capability", () => {
+    const markup = render({ workspaceRows: [row], authorization: { can: () => false } });
+    expect(markup).toContain("当前角色只有租户目录读取权限");
+    expect(markup).toContain("disabled=\"\"");
   });
 });
