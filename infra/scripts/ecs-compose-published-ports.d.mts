@@ -40,7 +40,7 @@ export interface PublishedPortConflict {
 }
 
 export declare function findPublishedPortConflicts(
-  compose: RenderedCompose,
+  compose: unknown,
   containers: RuntimeContainer[],
   candidateProject: string,
   replacementServices?: string[],
