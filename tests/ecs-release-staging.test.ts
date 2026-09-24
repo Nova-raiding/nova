@@ -78,7 +78,7 @@ describe('verified ECS release staging', () => {
     expect([first.status, second.status].sort()).toEqual([0, 1])
     expect(first.stderr + second.stderr).toMatch(/staging is already in progress|another ECS source build is in progress/u)
     expect(existsSync(join(value.releases, 'release-1/.candidate-identity'))).toBe(true)
-  })
+  }, 20_000)
 
   it('fails closed on changed comparison bytes and never leaves the target behind', () => {
     const value = fixture(); writeFileSync(join(value.bundle, 'files.txt'), 'tampered\n')

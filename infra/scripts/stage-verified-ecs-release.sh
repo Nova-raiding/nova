@@ -5,15 +5,14 @@ set -eu
 # release checkout. Deployment remains a separate operator action.
 script_dir=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
 root=$(CDPATH='' cd -- "$script_dir/../.." && pwd -P)
-if [ -f "$script_dir/ecs-build-lock.sh" ] && [ ! -L "$script_dir/ecs-build-lock.sh" ]; then
-  # The verified staging entrypoint is also installed as a standalone,
-  # root-owned host control on ECS. Keep the lock helper beside it so that
-  # standalone execution cannot accidentally resolve a mutable or unrelated
-  # repository root.
-  . "$script_dir/ecs-build-lock.sh"
-else
-  . "$root/infra/scripts/ecs-build-lock.sh"
-fi
+# The verified staging entrypoint is installed as a standalone host control.
+# Its lock helper must be beside it and independently protected; falling back
+# to a mutable repository path would silently change the trust boundary.
+[ -f "$script_dir/ecs-build-lock.sh" ] && [ ! -L "$script_dir/ecs-build-lock.sh" ] || {
+  echo 'verified staging requires ecs-build-lock.sh beside the entrypoint' >&2
+  exit 2
+}
+. "$script_dir/ecs-build-lock.sh"
 : "${ECS_CANDIDATE_BUNDLE_DIR:?ECS_CANDIDATE_BUNDLE_DIR is required}"
 : "${ECS_RELEASES_ROOT:?ECS_RELEASES_ROOT is required}"
 : "${RELEASE_ID:?RELEASE_ID is required}"
