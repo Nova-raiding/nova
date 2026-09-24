@@ -9716,10 +9716,17 @@ async function evaluateScannerHeartbeats(input: ScannerHeartbeatReadinessInput, 
     now,
     minimumReadyInstances: scannerMinimumReadyInstances(env),
   })
+  const maxDefinitionsAgeSeconds = Number(env.SCANNER_DEFINITIONS_MAX_AGE_SECONDS ?? '86400')
+  const maxEicarAgeSeconds = Number(env.SCANNER_EICAR_MAX_AGE_SECONDS ?? '900')
+  const validAge = (age: unknown, maximum: number) => Number.isSafeInteger(maximum) && maximum > 0
+    && typeof age === 'number' && Number.isFinite(age) && age >= 0 && age <= maximum
   const recoveryHeartbeats = raw.filter(isScannerHeartbeat).map(heartbeat => {
     const queueValid = Number.isSafeInteger(heartbeat.queue.backlog) && heartbeat.queue.backlog >= 0
       && Number.isSafeInteger(heartbeat.queue.deadLetter) && heartbeat.queue.deadLetter >= 0
-    return { ...heartbeat, ready: heartbeat.recoveryCapable && heartbeat.callback.configured && queueValid && !heartbeat.failure }
+    const dependenciesReady = heartbeat.checks.databaseReady && heartbeat.checks.redisReady && heartbeat.checks.apiReady
+    const scannerReady = heartbeat.clamav.reachable && validAge(heartbeat.clamav.definitionsAgeSeconds, maxDefinitionsAgeSeconds)
+      && heartbeat.eicar.passed && validAge(heartbeat.eicar.ageSeconds, maxEicarAgeSeconds)
+    return { ...heartbeat, ready: heartbeat.recoveryCapable && dependenciesReady && scannerReady && heartbeat.callback.configured && queueValid && !heartbeat.failure }
   }).map(heartbeat => {
     if (!Number.isSafeInteger(minimumDefinitionsVersion) || minimumDefinitionsVersion <= 0) return heartbeat
     const actual = Number(heartbeat.clamav.definitionsVersion)
@@ -9731,7 +9738,7 @@ async function evaluateScannerHeartbeats(input: ScannerHeartbeatReadinessInput, 
     now,
     minimumReadyInstances: scannerMinimumReadyInstances(env),
   })
-  const callbackMaxAgeSeconds = Number(env.SCANNER_CALLBACK_MAX_AGE_SECONDS)
+  const callbackMaxAgeSeconds = Number(env.SCANNER_CALLBACK_MAX_AGE_SECONDS ?? '86400')
   const callbackFreshInstances = recoveryAggregate.instances.filter(heartbeat => {
     if (!heartbeat.callback.configured || !heartbeat.callback.capable || !Number.isSafeInteger(callbackMaxAgeSeconds) || callbackMaxAgeSeconds <= 0) return false
     const acceptedAt = heartbeat.callback.lastAcceptedAt ? Date.parse(heartbeat.callback.lastAcceptedAt) : Number.NaN

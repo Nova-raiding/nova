@@ -147,6 +147,21 @@ describe('scanner heartbeat API readiness', () => {
       env: environment({ DEPLOYMENT_PROFILE: 'ecs', SCANNER_MINIMUM_READY_INSTANCES: '1' }), now,
     })
     expect(unconfigured).toMatchObject({ ready: false, code: 'SCANNER_NOT_READY', summary: { configured: false, recovery_ready: false } })
+
+    const inconsistent = [
+      { ...callbackStale, checks: { ...callbackStale.checks, databaseReady: false } },
+      { ...callbackStale, clamav: { ...callbackStale.clamav, reachable: false } },
+      { ...callbackStale, eicar: { ...callbackStale.eicar, passed: false } },
+      { ...callbackStale, eicar: { ...callbackStale.eicar, ageSeconds: 901 } },
+      { ...callbackStale, clamav: { ...callbackStale.clamav, definitionsAgeSeconds: 86_401 } },
+    ]
+    for (const invalidHeartbeat of inconsistent) {
+      const invalid = await evaluateScannerHeartbeatReadiness({
+        redis: { scannerHeartbeats: async () => [invalidHeartbeat] },
+        env: environment({ DEPLOYMENT_PROFILE: 'ecs', SCANNER_MINIMUM_READY_INSTANCES: '1' }), now,
+      })
+      expect(invalid).toMatchObject({ ready: false, code: 'SCANNER_NOT_READY', summary: { recovery_ready: false } })
+    }
   })
 
   it('never couples /healthz to scanner startup while controlled /readyz is gated', () => {
