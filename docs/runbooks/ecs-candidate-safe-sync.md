@@ -41,7 +41,7 @@ shasum -a 256 "$tmpdir/from-archive.mjs"
 
 只有 `cmp` 成功且摘要记录进候选审查后，才把该 bootstrap 文件放入同一候选目录下一个以其 SHA 命名的新文件；不得覆盖其他候选或历史安装器。候选 bundle、身份文件、归档和 bootstrap 均须 root-owned、0600、父目录 canonical 且不可由 group/other 写入。执行前先人工确认没有正在运行的旧版 staging `npm ci`/build 或 ECS image build；旧 helper 不遵守新共享锁，锁文件本身不能证明旧进程已退出。
 
-`/srv/release-candidates` 必须是 root-owned 0700；`/var/lib/merchant-release-security/locks` 必须是 root-owned 0700，`ecs-source-build.lock` 是 root-owned 0600 普通文件。安装器只使用固定 Node `/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node`，清空继承环境并固定 `PATH=/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin:/usr/bin:/bin`。它逐项确认固定 Node、`/usr/bin/npm`、git、python3、shasum、tar 和 flock 的真实目标均 root-owned 且不可由 group/other 写入，并用固定 Node 执行 `/usr/bin/npm --version` 兼容性探针；不使用 `/usr/local/bin` 中由 uid 1001 所有的 node/npm 链接。
+`/srv/release-candidates` 必须是 root-owned 0700；`/var/lib/merchant-release-security/locks` 必须是 root-owned 0700，`ecs-source-build.lock` 是 root-owned 0600 普通文件。安装器只使用固定 Node `/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node`，清空继承环境并固定 `PATH=/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin:/usr/bin:/bin`。它逐项确认固定 Node、`/usr/lib/node_modules/npm/bin/npm-cli.js`、git、python3、shasum、tar 和 flock 的真实目标均 root-owned 且不可由 group/other 写入，并直接用固定 Node 执行 npm CLI 的 `--version` 探针；不执行 `/usr/bin/npm`（其 shebang 使用 Node 20），也不使用 `/usr/local/bin` 中由 uid 1001 所有的 node/npm 链接。
 
 将经过上述摘要核对的 bootstrap 和候选 bundle 放入 `/srv/release-candidates/<candidate>` 后，管理员运行：
 
@@ -68,7 +68,7 @@ env -i PATH=/usr/bin:/bin \
 
 首次 bootstrap 不会恢复不安全的旧 standalone helper；若没有上一个已验证 generation，回滚会拒绝。该工具链切换只更新仓库外 staging 控制文件，不安装 release、不构建/推送镜像、不启动容器、不迁移数据库、不切换线上流量。安装后仍须完成候选三方审阅、全部生产发布门禁和后续独立部署审批。
 
-staging 执行器会重新校验身份文件中源码归档、比较清单和同步计划的 SHA-256，并核对 Git archive 内嵌提交 SHA；含路径穿越、链接或特殊文件的归档会被拒绝。它只在 releases 根目录内创建随机临时目录，以 `npm ci --ignore-scripts` 从锁文件安装，保留只读的 `.candidate-source.tar` 和 `.candidate-identity` 供部署器重新核验，最后原子改名为全新的 release 目录。目标已存在时拒绝覆盖。生产 `.env`、密钥和运行时凭据不得进入候选包或 release checkout，仍由受保护的主机路径在渲染和部署阶段注入。
+staging 执行器会重新校验身份文件中源码归档、比较清单和同步计划的 SHA-256，并核对 Git archive 内嵌提交 SHA；含路径穿越、链接或特殊文件的归档会被拒绝。顶层 `npm ci`、嵌套 `npm` 命令和 `npm run` 都经受保护 Node 22 与受保护 npm CLI 运行；脚本 shell 将私有 npm shim 和受保护 Node 放在 PATH 前面，因此 `tsc` 的 `env node` shebang 也使用 Node 22。它以 `npm ci --ignore-scripts` 从锁文件安装，保留只读的 `.candidate-source.tar` 和 `.candidate-identity` 供部署器重新核验，最后原子改名为全新的 release 目录。目标已存在时拒绝覆盖。生产 `.env`、密钥和运行时凭据不得进入候选包或 release checkout，仍由受保护的主机路径在渲染和部署阶段注入。
 
 ## 一键部署与磁盘上限
 

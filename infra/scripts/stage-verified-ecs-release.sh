@@ -18,7 +18,19 @@ root=$(CDPATH='' cd -- "$script_dir/../.." && pwd -P)
 : "${RELEASE_ID:?RELEASE_ID is required}"
 
 printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' || { echo 'unsafe RELEASE_ID' >&2; exit 2; }
-for tool in git shasum python3 tar npm; do command -v "$tool" >/dev/null 2>&1 || { echo "release staging requires $tool" >&2; exit 2; }; done
+STAGING_NODE=/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node
+STAGING_NODE_BIN=/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin
+STAGING_NPM_CLI=/usr/lib/node_modules/npm/bin/npm-cli.js
+PATH="$STAGING_NODE_BIN:/usr/bin:/bin"
+export PATH
+unset NODE_OPTIONS NODE_PATH
+for tool in git shasum python3 tar; do command -v "$tool" >/dev/null 2>&1 || { echo "release staging requires $tool" >&2; exit 2; }; done
+[ -x "$STAGING_NODE" ] && [ -f "$STAGING_NPM_CLI" ] || { echo 'release staging requires the protected Node 22 runtime and root-owned npm CLI' >&2; exit 2; }
+node_version=$("$STAGING_NODE" --version)
+[ "$node_version" = v22.23.2 ] || { echo 'release staging requires protected Node v22.23.2' >&2; exit 2; }
+npm_version=$("$STAGING_NODE" "$STAGING_NPM_CLI" --version)
+printf '%s' "$npm_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo 'protected npm CLI is incompatible with Node 22' >&2; exit 2; }
+export PATH
 [ -d "$ECS_CANDIDATE_BUNDLE_DIR" ] && [ ! -L "$ECS_CANDIDATE_BUNDLE_DIR" ] || { echo 'candidate bundle must be a non-symlink directory' >&2; exit 2; }
 [ -d "$ECS_RELEASES_ROOT" ] && [ ! -L "$ECS_RELEASES_ROOT" ] || { echo 'releases root must be an existing non-symlink directory' >&2; exit 2; }
 bundle=$(CDPATH='' cd -- "$ECS_CANDIDATE_BUNDLE_DIR" && pwd -P)
@@ -131,6 +143,25 @@ PY
 
 umask 077
 stage=$(mktemp -d "$releases/.${RELEASE_ID}.staging.XXXXXXXX")
+STAGING_NPM_SHIM_DIR="$stage/.host-runtime-bin"
+mkdir -m 0700 "$STAGING_NPM_SHIM_DIR"
+cat > "$STAGING_NPM_SHIM_DIR/npm" <<'EOF'
+#!/bin/sh
+exec /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node /usr/lib/node_modules/npm/bin/npm-cli.js "$@"
+EOF
+cat > "$STAGING_NPM_SHIM_DIR/sh" <<'EOF'
+#!/bin/sh
+script_path=$PATH
+shim_dir=${0%/*}
+PATH="$shim_dir:/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin:$script_path"
+export PATH
+exec /bin/sh "$@"
+EOF
+chmod 0500 "$STAGING_NPM_SHIM_DIR/npm" "$STAGING_NPM_SHIM_DIR/sh"
+PATH="$STAGING_NPM_SHIM_DIR:$STAGING_NODE_BIN:/usr/bin:/bin"
+export PATH
+npm_config_script_shell="$STAGING_NPM_SHIM_DIR/sh"
+export npm_config_script_shell
 cp "$archive" "$stage/.candidate-source.tar"; chmod 0400 "$stage/.candidate-source.tar"
 [ "$actual_archive" = "$(shasum -a 256 "$stage/.candidate-source.tar" | awk '{print $1}')" ] || { echo 'candidate archive changed while staging' >&2; exit 1; }
 tar -xf "$stage/.candidate-source.tar" -C "$stage"
@@ -140,7 +171,7 @@ tar -xf "$stage/.candidate-source.tar" -C "$stage"
 # Build workspace packages after the locked install so staged source tests and
 # image builds resolve package exports from the candidate itself, while still
 # keeping lifecycle scripts disabled during npm ci.
-(cd "$stage" && npm ci --ignore-scripts --no-audit --no-fund && npm ci --prefix demo/merchant-studio --ignore-scripts --no-audit --no-fund && npm run build)
+(cd "$stage" && "$STAGING_NODE" "$STAGING_NPM_CLI" ci --ignore-scripts --no-audit --no-fund && "$STAGING_NODE" "$STAGING_NPM_CLI" ci --prefix demo/merchant-studio --ignore-scripts --no-audit --no-fund && "$STAGING_NODE" "$STAGING_NPM_CLI" run build)
 cat > "$stage/.candidate-identity" <<EOF
 release_id=$RELEASE_ID
 git_sha=$git_sha

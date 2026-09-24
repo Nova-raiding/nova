@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const STAGING = 'infra/scripts/stage-verified-ecs-release.sh';
 const LOCK = 'infra/scripts/ecs-build-lock.sh';
 const STAGING_NODE = '/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node';
+const STAGING_NPM_CLI = '/usr/lib/node_modules/npm/bin/npm-cli.js';
 const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 const LAUNCHER = `#!/bin/sh
 set -eu
@@ -122,11 +123,24 @@ function assertTrustedExecutable(path) {
     cursor = dirname(cursor);
   }
 }
+function assertTrustedRuntimeFile(path) {
+  const resolved = realpathSync(path);
+  const st = lstatSync(resolved);
+  ensure(st.isFile() && st.uid === 0 && (st.mode & 0o022) === 0, 'required release runtime file is not root-owned and protected');
+  let cursor = dirname(resolved);
+  while (true) {
+    const parent = lstatSync(cursor);
+    ensure(parent.isDirectory() && !parent.isSymbolicLink() && parent.uid === 0 && (parent.mode & 0o022) === 0, 'required release runtime path is not protected');
+    if (cursor === '/') break;
+    cursor = dirname(cursor);
+  }
+}
 function assertHostStagingToolchain() {
   assertTrustedExecutable(STAGING_NODE);
-  for (const tool of ['npm', 'git', 'python3', 'shasum', 'tar', 'flock']) assertTrustedExecutable(`/usr/bin/${tool}`);
-  const npmCheck = spawnSync('/usr/bin/npm', ['--version'], { encoding: 'utf8', env: { PATH: '/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin:/usr/bin:/bin' } });
-  ensure(npmCheck.status === 0 && /^\d+\.\d+\.\d+\s*$/.test(npmCheck.stdout), 'root-owned npm CLI is incompatible with the protected Node runtime');
+  assertTrustedRuntimeFile(STAGING_NPM_CLI);
+  for (const tool of ['git', 'python3', 'shasum', 'tar', 'flock']) assertTrustedExecutable(`/usr/bin/${tool}`);
+  const npmCheck = spawnSync(STAGING_NODE, [STAGING_NPM_CLI, '--version'], { encoding: 'utf8', env: { PATH: '/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin:/usr/bin:/bin' } });
+  ensure(npmCheck.status === 0 && /^\d+\.\d+\.\d+\s*$/.test(npmCheck.stdout), 'protected npm CLI is incompatible with the protected Node runtime');
 }
 async function sha256File(path) {
   const digest = createHash('sha256');

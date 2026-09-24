@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { dirname } from 'node:path';
 
 assert(existsSync('/.dockerenv'), 'isolated container required');
 assert.equal(process.getuid(), 0, 'root-owned path rehearsal required');
@@ -14,12 +15,42 @@ const controlRoot = '/srv/release-candidates';
 const lockDir = '/var/lib/merchant-release-security/locks';
 const fixedNode = '/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node';
 const installerSource = `${sourceRoot}/infra/scripts/install-ecs-staging-toolchain.mjs`;
+const npmCli = '/usr/lib/node_modules/npm/bin/npm-cli.js';
+const runtimeLog = `${controlRoot}/runtime-node-versions.log`;
 const hash = value => createHash('sha256').update(value).digest('hex');
 const bootstrapSha = hash(readFileSync(installerSource));
 const installer = `${controlRoot}/install-ecs-staging-toolchain.${bootstrapSha}.mjs`;
 
 mkdirSync('/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin', { recursive: true, mode: 0o755 });
 copyFileSync(process.execPath, fixedNode); chmodSync(fixedNode, 0o755);
+mkdirSync(dirname(npmCli), { recursive: true, mode: 0o755 });
+writeFileSync(npmCli, `
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+const log = ${JSON.stringify(runtimeLog)};
+const record = label => fs.appendFileSync(log, label + ':' + process.version + ':' + process.execPath + '\\n');
+if (args[0] === '--version') { process.stdout.write('10.9.4\\n'); process.exit(0); }
+if (args[0] === 'ci') {
+  record('ci');
+  if (!args.includes('--prefix')) {
+    fs.mkdirSync('node_modules/.bin', { recursive: true });
+    fs.writeFileSync('node_modules/.bin/tsc', '#!/usr/bin/env node\\nrequire("node:fs").appendFileSync(${JSON.stringify(runtimeLog)}, "tsc:" + process.version + ":" + process.execPath + "\\\\n")\\n');
+    fs.chmodSync('node_modules/.bin/tsc', 0o755);
+  }
+  process.exit(0);
+}
+if (args[0] === 'run' && args[1] === 'build') {
+  record('build');
+  const shell = process.env.npm_config_script_shell;
+  const env = { ...process.env, PATH: process.cwd() + '/node_modules/.bin:' + process.env.PATH };
+  const result = spawnSync(shell, ['-c', 'npm run nested && tsc --version'], { encoding: 'utf8', env });
+  if (result.status !== 0) { process.stderr.write(result.stderr || 'script shell failed\\n'); process.exit(result.status || 1); }
+  process.exit(0);
+}
+if (args[0] === 'run' && args[1] === 'nested') { record('nested'); process.exit(0); }
+process.stderr.write('unexpected fake npm invocation: ' + args.join(' ') + '\\n'); process.exit(3);
+`); chmodSync(npmCli, 0o644);
 mkdirSync(controlRoot, { recursive: true, mode: 0o700 }); chmodSync(controlRoot, 0o700);
 mkdirSync(lockDir, { recursive: true, mode: 0o700 }); chmodSync(lockDir, 0o700);
 const sharedLock = `${lockDir}/ecs-source-build.lock`;
@@ -33,16 +64,15 @@ writeFileSync('/usr/bin/git', `#!/bin/sh
 dd bs=512 skip=1 count=1 2>/dev/null | sed -nE 's/^[0-9]+ comment=([a-f0-9]{40})$/\\1/p'
 `, { mode: 0o755 }); chmodSync('/usr/bin/git', 0o755);
 writeFileSync('/usr/bin/python3', `#!/bin/sh
-[ "$1" = -c ] || exit 2
+[ "$1" = -c ] || { cat >/dev/null; exit 0; }
 archive=$3; first=$4; second=$5
 a=$(tar -xOf "$archive" "$first" | base64 | tr -d '\\n') || exit 2
 b=$(tar -xOf "$archive" "$second" | base64 | tr -d '\\n') || exit 2
 printf '{"%s":"%s","%s":"%s"}\\n' "$first" "$a" "$second" "$b"
 `, { mode: 0o755 }); chmodSync('/usr/bin/python3', 0o755);
-for (const tool of ['shasum', 'npm']) {
-  writeFileSync(`/usr/bin/${tool}`, tool === 'npm' ? '#!/bin/sh\nprintf "10.9.4\\n"\n' : '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-  chmodSync(`/usr/bin/${tool}`, 0o755);
-}
+writeFileSync('/usr/bin/shasum', '#!/bin/sh\n[ "$1" = -a ] && shift 2\nexec /usr/bin/sha256sum "$@"\n', { mode: 0o755 });
+chmodSync('/usr/bin/shasum', 0o755);
+writeFileSync('/usr/bin/npm', `#!/bin/sh\necho system-npm-should-not-run >> '${runtimeLog}'\nexit 90\n`, { mode: 0o755 }); chmodSync('/usr/bin/npm', 0o755);
 if (!existsSync('/usr/bin/tar')) execFileSync('/bin/ln', ['-s', '/bin/tar', '/usr/bin/tar']);
 
 const archive = `${controlRoot}/candidate-source.tar`;
@@ -110,4 +140,22 @@ const rollback = spawnSync(fixedNode, [installer, 'rollback', controlRoot, boots
 assert.equal(rollback.status, 0, rollback.stderr);
 assert.equal(JSON.parse(rollback.stdout).to_git_sha, gitSha);
 assert.equal(execFileSync('/usr/bin/readlink', [`${controlRoot}/staging-toolchain/current`], { encoding: 'utf8' }).trim(), `versions/${gitSha}`);
+
+copyFileSync(`${sourceRoot}/infra/scripts/stage-verified-ecs-release.sh`, staged); chmodSync(staged, 0o555);
+const testBundle = `${controlRoot}/test-bundle`;
+mkdirSync(testBundle, { mode: 0o700 }); chmodSync(testBundle, 0o700);
+for (const name of ['candidate-source.tar', 'candidate-identity.txt', 'files.txt', 'sync-plan.tsv']) {
+  copyFileSync(`${bundle}/${name}`, `${testBundle}/${name}`);
+  chmodSync(`${testBundle}/${name}`, 0o600);
+}
+const releases = '/srv/merchant-releases'; mkdirSync(releases, { mode: 0o700 }); chmodSync(releases, 0o700);
+const stageRun = spawnSync('/bin/sh', [staged], { encoding: 'utf8', env: {
+  PATH: `${fixedNode.slice(0, fixedNode.lastIndexOf('/'))}:/usr/bin:/bin`,
+  ECS_CANDIDATE_BUNDLE_DIR: testBundle, ECS_RELEASES_ROOT: releases, RELEASE_ID: 'runtime-node-check',
+} });
+assert.equal(stageRun.status, 0, stageRun.stderr);
+const runtimeEvents = readFileSync(runtimeLog, 'utf8').trim().split('\n');
+assert.deepEqual(runtimeEvents.map(line => line.split(':')[0]), ['ci', 'ci', 'build', 'nested', 'tsc']);
+assert(runtimeEvents.every(line => line.includes(':v22.23.2:') && line.endsWith(`:${fixedNode}`)), runtimeEvents.join('\n'));
+assert(!runtimeEvents.includes('system-npm-should-not-run'), 'staging must not use the Node 20 /usr/bin/npm wrapper');
 console.log(`PASS: root-owned /srv staging pair installed from candidate ${gitSha}; fixed dispatcher, SHA binding, lock, permissions and atomic pointer verified`);
