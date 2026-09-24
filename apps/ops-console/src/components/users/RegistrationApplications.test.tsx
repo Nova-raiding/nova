@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page, type Route } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
+import { authorizeRegistrationWorkspaces } from "./UsersGovernanceWorkspace.js";
 
 const application = {
   application_id: "app_1",
@@ -169,4 +170,26 @@ describe("registration applications error state", () => {
       expect(requestedOffsets).toEqual(["0", "20"]);
     } finally { await page.close(); }
   }, 45_000);
+});
+
+describe("registration authorization retry", () => {
+  it("remembers partial success and skips already bound workspaces on retry", async () => {
+    const calls: string[] = [];
+    const stored: string[][] = [];
+    await expect(authorizeRegistrationWorkspaces({ applicationId: "app-1", login: "merchant@example.com", workspaceIds: ["ws-a", "ws-b"], alreadyBound: [], reason: "合同已核验", skuCode: "sku-monthly-2000", amountFen: 200000, memberRole: "merchant_admin" }, async request => {
+      calls.push(request.workspaceId);
+      if (request.workspaceId === "ws-b") return null;
+      expect(request.idempotencyKey).toBe("registration-authorize-app-1-ws-a");
+      return { entitlement_status: "pending_payment_verification" };
+    }, values => stored.push(values))).rejects.toThrow("工作区 ws-b 的角色和套餐绑定未完成");
+    expect(stored).toEqual([["ws-a"]]);
+
+    const selected = await authorizeRegistrationWorkspaces({ applicationId: "app-1", login: "merchant@example.com", workspaceIds: ["ws-a", "ws-b"], alreadyBound: stored.at(-1) ?? [], reason: "合同已核验", skuCode: "sku-monthly-2000", amountFen: 200000, memberRole: "merchant_admin" }, async request => {
+      calls.push(request.workspaceId);
+      expect(request.idempotencyKey).toBe(`registration-authorize-app-1-${request.workspaceId}`);
+      return { entitlement_status: "pending_payment_verification" };
+    }, values => stored.push(values));
+    expect(selected).toEqual(["ws-a", "ws-b"]);
+    expect(calls).toEqual(["ws-a", "ws-b", "ws-b"]);
+  });
 });
