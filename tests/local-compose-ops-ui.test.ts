@@ -64,13 +64,13 @@ describe('local Compose Ops UI', () => {
     }
   })
 
-  it('does not report the scanner healthy before its fail-closed readiness heartbeat is proven', () => {
+  it('uses the recovery-aware scanner container probe without changing API business readiness', () => {
     const scanner = renderedCompose().services['worker-scan']
     const healthcheck = scanner?.healthcheck?.test?.join(' ') ?? ''
 
-    expect(healthcheck).toContain('test -s /tmp/merchant-worker-$${WORKER_ROLE}-ready')
+    expect(healthcheck).toContain('dist/apps/worker/src/scanner-container-healthcheck.js')
     expect(healthcheck).toContain('process.kill(1, 0)')
-    expect(healthcheck).not.toMatch(/process\.kill\(1, 0\).*\|\| exit 1$/)
+    expect(healthcheck).not.toContain('/readyz')
   })
 
   it('keeps the removed feature-flags page unavailable at the served nginx boundary', () => {

@@ -102,6 +102,23 @@ describe('scanner heartbeat API readiness', () => {
     expect(denied).toMatchObject({ ready: false, code: 'SCANNER_NOT_READY' })
   })
 
+  it('keeps service readiness fail-closed while a recovery-capable scanner awaits its first accepted callback', async () => {
+    const recovering = {
+      ...heartbeat('scanner-bootstrap'),
+      ready: false,
+      recoveryCapable: true,
+      callback: { configured: true, capable: false },
+      queue: { backlog: 0, deadLetter: 0 },
+    }
+    const input = { redis: { scannerHeartbeats: async () => [recovering] }, env: environment({ NODE_ENV: 'development', SCANNER_MINIMUM_READY_INSTANCES: '1' }), now }
+
+    const service = await evaluateScannerHeartbeatReadiness(input)
+    expect(service).toMatchObject({ ready: false, code: 'SCANNER_NOT_READY', summary: { live_instances: 1, ready_instances: 0 } })
+
+    const recovery = await evaluateScannerRecoveryAdmission(input)
+    expect(recovery).toMatchObject({ ready: true, summary: { live_instances: 1, ready_instances: 1 } })
+  })
+
   it('never couples /healthz to scanner startup while controlled /readyz is gated', () => {
     const env = environment({ NODE_ENV: 'staging' })
     expect(scannerHeartbeatRequiredForProbe('/healthz', env)).toBe(false)

@@ -56,6 +56,7 @@ cat > "$manifest" <<'EOF'
 package.json
 package-lock.json
 apps/api/src/server.ts
+apps/api/src/scanner-health.test.ts
 apps/api/src/connector-capability-evidence-trust.ts
 apps/api/src/connector-capability-evidence-trust.test.ts
 apps/api/src/ops/csv-cell.ts
@@ -74,6 +75,7 @@ infra/scripts/apply-migrations.sh
 infra/scripts/verify-runtime-db-role.sh
 infra/scripts/generate-container-source-manifest.mjs
 infra/local/ensure-app-role.sql
+infra/local/docker-compose.yml
 infra/local/docker-compose.ecs-pilot.yml
 infra/local/docker-compose.ecs-oss-cutover.yml
 infra/local/docker-compose.ecs-production-migration.yml
@@ -219,6 +221,7 @@ docs/runbooks/scanner-callback-canary.md
 AGENTS.md
 infra/scripts/prepare-ecs-candidate-bundle.sh
 tests/ecs-candidate-bundle-contract.test.ts
+tests/local-compose-ops-ui.test.ts
 tests/test-entrypoint-coverage.ts
 tests/scanner-callback-canary-evidence.test.ts
 docs/chatgpt-host-canary-runbook.md
@@ -231,6 +234,8 @@ tests/codex-app-host-evidence-gate.test.ts
 tests/codex-app-host-evidence-gate.ts
 tests/operations-scripts.test.ts
 apps/worker/src/scanner-heartbeat.ts
+apps/worker/src/scanner-container-healthcheck.ts
+apps/worker/src/scanner-container-healthcheck.test.ts
 demo/merchant-studio/src/manual-platform-account-discovery.test.ts
 infra/scripts/validate-production-config-yaml.rb
 infra/protected/ecs-bridge-b-journal-store.mjs

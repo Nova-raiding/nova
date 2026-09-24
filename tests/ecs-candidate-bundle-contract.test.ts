@@ -100,6 +100,7 @@ describe('ECS candidate bundle contract', () => {
     const manifest = script.slice(start, script.indexOf('\nEOF', start))
 
     for (const path of [
+      'apps/api/src/scanner-health.test.ts',
       'apps/api/src/connector-capability-evidence-trust.ts',
       'apps/api/src/connector-capability-evidence-trust.test.ts',
       'apps/api/src/ops/csv-cell.ts',
@@ -171,6 +172,10 @@ describe('ECS candidate bundle contract', () => {
       'tests/codex-app-host-evidence-gate.ts',
       'tests/operations-scripts.test.ts',
       'apps/worker/src/scanner-heartbeat.ts',
+      'apps/worker/src/scanner-container-healthcheck.ts',
+      'apps/worker/src/scanner-container-healthcheck.test.ts',
+      'infra/local/docker-compose.yml',
+      'tests/local-compose-ops-ui.test.ts',
       'demo/merchant-studio/src/manual-platform-account-discovery.test.ts',
       'infra/scripts/validate-production-config-yaml.rb',
       'infra/protected/ecs-bridge-b-journal-store.mjs',
