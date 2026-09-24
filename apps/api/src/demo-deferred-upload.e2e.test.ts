@@ -37,7 +37,7 @@ describe('ECS demo upload without malware scanning', () => {
     const env = { NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', ASSET_SCANNER_MODE: 'deferred', DEMO_UNSCANNED_ASSETS_ENABLED: 'true' }
     expect(api.demoUnscannedAssetsEnabled(env)).toBe(true)
     expect(api.productionReadinessDiagnostics(env).gates.asset_scanner).toEqual({ ready: true, reasons: [] })
-    expect(api.productionReadinessDiagnostics({ ...env, DEMO_UNSCANNED_ASSETS_ENABLED: 'false' }).gates.asset_scanner.ready).toBe(false)
+    expect(api.productionReadinessDiagnostics({ ...env, DEMO_UNSCANNED_ASSETS_ENABLED: 'false' }).gates.asset_scanner?.ready).toBe(false)
     expect(api.scannerHeartbeatRequiredForProbe('/readyz', env)).toBe(false)
   })
 
