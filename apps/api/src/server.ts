@@ -6277,8 +6277,8 @@ async function publishMediaPayload(workspaceId: string, job: import('../../../pa
     const output = imageJob.outputs?.find(candidate => candidate.visualRef === selected.visualRef)
     if (!output) throw new DomainError('VISUAL_NOT_FOUND', `发布媒体候选 ${selected.visualRef} 不存在`, 404)
     const asset = output.assetId ? assetForWorkspace(workspaceId, output.assetId) : undefined
-    if (!asset || asset.scanStatus !== 'clean' || output.storageKey.startsWith('quarantine/')) throw new DomainError('GENERATED_IMAGE_SCAN_REQUIRED', '生成图片仍在隔离区，平台自动安全扫描通过后才能交付', 409, { visual_ref: selected.visualRef, asset_id: output.assetId ?? null, user_action_required: false, next_step: '平台正在自动执行安全扫描；商家和运营人员无需提交扫描证据' })
-    const stored = await getStoredObjectWithRetry(workspaceId, output.storageKey)
+    if (!asset || !isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())) throw new DomainError('GENERATED_IMAGE_SCAN_REQUIRED', '生成图片尚不可交付', 409, { visual_ref: selected.visualRef, asset_id: output.assetId ?? null })
+    const stored = await getStoredObjectWithRetry(workspaceId, output.storageKey, { includeQuarantine: asset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
     media.push({ visual_ref: selected.visualRef, role: selected.role, ...(selected.skuIds?.length ? { sku_ids: [...selected.skuIds] } : {}), mime_type: output.mimeType, sha256: output.sha256, content_base64: Buffer.from(stored.body).toString('base64') })
   }
   return media
@@ -10904,7 +10904,7 @@ async function archiveCompletedVideo(workspaceId: string, rendering: { status: '
   if (rendering.status === 'queued') return rendering
   if (!rendering.videoUrl || !rendering.providerJobId) throw new DomainError('VIDEO_ARTIFACT_REFERENCE_INCOMPLETE', '视频 provider 已标记完成，但缺少可归档的 HTTPS artifact URL 或 provider job id', 502)
   const existing = service.findAssetBySourceProviderJobId(workspaceId, rendering.providerJobId)
-  if (existing) return { ...rendering, assetId: existing.id, archiveState: existing.scanStatus === 'clean' ? 'archived' as const : 'quarantined' as const }
+  if (existing) return { ...rendering, assetId: existing.id, archiveState: isUsableAssetWithoutScan(existing, demoUnscannedAssetsEnabled()) ? 'archived' as const : 'quarantined' as const }
   await assertVideoArtifactUrl(rendering.videoUrl)
   const response = await (videoArtifactFetcherForTests ?? fetch)(rendering.videoUrl, { method: 'GET', headers: { accept: 'video/mp4, video/webm, video/quicktime' }, redirect: 'error', signal: artifactDownloadSignal() }).catch((error: unknown) => artifactDownloadFailure(error, '视频归档下载失败'))
   if (!response.ok) throw new DomainError('VIDEO_ARTIFACT_DOWNLOAD_FAILED', `视频归档下载失败（HTTP ${response.status}）`, 502)
@@ -10916,10 +10916,10 @@ async function archiveCompletedVideo(workspaceId: string, rendering: { status: '
   if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(mimeType) || !videoSignatureMatches(mimeType, body)) throw new DomainError('VIDEO_ARTIFACT_SIGNATURE_INVALID', '视频 provider 返回的 MIME 类型或文件签名无法验证，已阻断归档', 502)
   const sha256 = createHash('sha256').update(body).digest('hex')
   const name = `provider-${rendering.providerJobId}.mp4`
-  const provisional = service.registerAsset({ workspaceId, name, mimeType, sizeBytes: body.byteLength, sha256, storageKey: `quarantine/${workspaceId}/video_pending_${randomBytes(12).toString('hex')}/${name}`, sourceProviderJobId: rendering.providerJobId })
+  const provisional = service.registerAsset({ workspaceId, name, mimeType, sizeBytes: body.byteLength, sha256, storageKey: `quarantine/${workspaceId}/video_pending_${randomBytes(12).toString('hex')}/${name}`, sourceProviderJobId: rendering.providerJobId, ...(demoUnscannedAssetsEnabled() ? { scanMode: 'unscanned' as const } : {}) })
   if (provisional.deduplication.mode === 'deduplicated') {
     await persistAssetReference(workspaceId, provisional)
-    return { ...rendering, assetId: provisional.id, archiveState: provisional.scanStatus === 'clean' ? 'archived' as const : 'quarantined' as const }
+    return { ...rendering, assetId: provisional.id, archiveState: isUsableAssetWithoutScan(provisional, demoUnscannedAssetsEnabled()) ? 'archived' as const : 'quarantined' as const }
   }
   let storedKey: string | undefined
   try {
@@ -10932,8 +10932,8 @@ async function archiveCompletedVideo(workspaceId: string, rendering: { status: '
     if (!archiveReference.restorable) {
       throw new DomainError('VIDEO_ARCHIVE_CONTRACT_INVALID', '视频已写入隔离对象，但归档引用不满足恢复契约，已阻断结果收敛', 502, { reasons: archiveReference.reasons, asset_id: provisional.id, provider_job_id: rendering.providerJobId })
     }
-    await persistAssetSnapshotAndEvent(workspaceId, provisional, 'asset.video_quarantined', { asset_id: provisional.id, provider_job_id: rendering.providerJobId, storage_key: stored.key, sha256: stored.sha256, size_bytes: stored.sizeBytes, revision: provisional.revision, next_action: 'asset.scan' }, provisional as unknown as Record<string, unknown>)
-    return { ...rendering, assetId: provisional.id, archiveState: 'quarantined' as const }
+    await persistAssetSnapshotAndEvent(workspaceId, provisional, demoUnscannedAssetsEnabled() ? 'asset.video_unscanned' : 'asset.video_quarantined', { asset_id: provisional.id, provider_job_id: rendering.providerJobId, storage_key: stored.key, sha256: stored.sha256, size_bytes: stored.sizeBytes, revision: provisional.revision, scan_status: provisional.scanStatus, ...(demoUnscannedAssetsEnabled() ? {} : { next_action: 'asset.scan' }) }, provisional as unknown as Record<string, unknown>)
+    return { ...rendering, assetId: provisional.id, archiveState: demoUnscannedAssetsEnabled() ? 'archived' as const : 'quarantined' as const }
   } catch (error) {
     service.assets.delete(provisional.id)
     if (storedKey) await compensateStoredAsset(workspaceId, provisional.id, storedKey, 'video archive metadata or event persistence failed')
@@ -10965,7 +10965,7 @@ async function archiveGeneratedImages(workspaceId: string, jobId: string, images
     if (!generatedImageSignatureMatches(mimeType, body)) throw new DomainError('GENERATED_IMAGE_SIGNATURE_INVALID', '图片生成服务返回的 MIME 类型与文件内容不匹配', 502)
     totalBytes += body.byteLength
     if (!body.byteLength || body.byteLength > 15 * 1024 * 1024 || totalBytes > 50 * 1024 * 1024) throw new DomainError('GENERATED_IMAGE_TOO_LARGE', '生成图片超过归档大小限制', 413)
-    const asset = service.registerAsset({ workspaceId, name: `candidate-${index + 1}.${extension}`, mimeType, sizeBytes: body.byteLength, sha256: createHash('sha256').update(body).digest('hex'), storageKey: `quarantine/${workspaceId}/generated_pending_${randomBytes(12).toString('hex')}/candidate-${index + 1}.${extension}` })
+    const asset = service.registerAsset({ workspaceId, name: `candidate-${index + 1}.${extension}`, mimeType, sizeBytes: body.byteLength, sha256: createHash('sha256').update(body).digest('hex'), storageKey: `quarantine/${workspaceId}/generated_pending_${randomBytes(12).toString('hex')}/candidate-${index + 1}.${extension}`, ...(demoUnscannedAssetsEnabled() ? { scanMode: 'unscanned' as const } : {}) })
     createdAssetIds.push(asset.id)
     const stored = await putQuarantineObject({ workspaceId, assetId: asset.id, fileName: `candidate-${index + 1}.${extension}`, contentType: mimeType, body, expectedSizeBytes: body.byteLength })
       storedAssets.push({ assetId: asset.id, objectKey: stored.key })
@@ -10974,10 +10974,10 @@ async function archiveGeneratedImages(workspaceId: string, jobId: string, images
       asset.sizeBytes = stored.sizeBytes
       const archiveReceiptId = `image_archive_${randomUUID()}`
       const archiveReceiptDigest = imageArchiveReceiptDigest({ archiveReceiptId, workspaceId, jobId, assetId: asset.id, objectSha256: stored.sha256, sizeBytes: stored.sizeBytes, mimeType, createdAt: stored.createdAt })
-      await persistAssetSnapshotAndEvent(workspaceId, asset, 'asset.generated_quarantined', { asset_id: asset.id, job_id: jobId, archive_receipt_id: archiveReceiptId, archive_receipt_digest: archiveReceiptDigest, storage_key: stored.key, sha256: stored.sha256, size_bytes: stored.sizeBytes, next_action: 'asset.scan' }, asset as unknown as Record<string, unknown>)
+      await persistAssetSnapshotAndEvent(workspaceId, asset, demoUnscannedAssetsEnabled() ? 'asset.generated_unscanned' : 'asset.generated_quarantined', { asset_id: asset.id, job_id: jobId, archive_receipt_id: archiveReceiptId, archive_receipt_digest: archiveReceiptDigest, storage_key: stored.key, sha256: stored.sha256, size_bytes: stored.sizeBytes, scan_status: asset.scanStatus, ...(demoUnscannedAssetsEnabled() ? {} : { next_action: 'asset.scan' }) }, asset as unknown as Record<string, unknown>)
       outputs.push({ visualRef: `dvis_${randomBytes(18).toString('base64url')}`, assetId: asset.id, archiveReceiptId, archiveReceiptDigest, ordinal: index + 1, storageKey: stored.key, mimeType, sizeBytes: stored.sizeBytes, sha256: stored.sha256, createdAt: stored.createdAt, reviewStatus: 'unreviewed' })
     }
-    const archiveState = outputs.length === images.length ? (process.env.NODE_ENV === 'test' ? 'archived' : 'pending') : outputs.length ? 'partial' : 'external_unarchived'
+    const archiveState = outputs.length === images.length ? (process.env.NODE_ENV === 'test' || demoUnscannedAssetsEnabled() ? 'archived' : 'pending') : outputs.length ? 'partial' : 'external_unarchived'
     if (!outputs.length) throw new DomainError('GENERATED_IMAGE_ARCHIVE_EMPTY', '图片模型已返回但没有可安全归档的候选，已停止自动重试并等待对账', 502)
     const archived = service.archiveImageGenerationOutputs(workspaceId, jobId, outputs, archiveState)
     for (const output of outputs) {
@@ -10986,7 +10986,10 @@ async function archiveGeneratedImages(workspaceId: string, jobId: string, images
       await automaticallyScanLocalFixture(workspaceId, asset)
     }
     const current = service.imageGenerationJobs.get(jobId)
-    if (current && (current.outputs ?? []).length === outputs.length && (current.outputs ?? []).every(output => output.assetId && output.archiveReceiptId && output.archiveReceiptDigest && service.assets.get(output.assetId)?.scanStatus === 'clean')) {
+    if (current && (current.outputs ?? []).length === outputs.length && (current.outputs ?? []).every(output => {
+      const asset = output.assetId ? service.assets.get(output.assetId) : undefined
+      return Boolean(asset && output.archiveReceiptId && output.archiveReceiptDigest && isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled()))
+    })) {
       return service.archiveImageGenerationOutputs(workspaceId, jobId, current.outputs ?? outputs, 'archived')
     }
     return service.imageGenerationJobs.get(jobId) ?? archived
@@ -11003,13 +11006,13 @@ async function readArchivedGeneratedImages(workspaceId: string, job: import('../
   const outputs = [...(job.outputs ?? [])].filter(output => !visualRef || output.visualRef === visualRef).sort((left, right) => left.ordinal - right.ordinal)
   for (const output of outputs) {
     const asset = output.assetId ? assetForWorkspace(workspaceId, output.assetId) : undefined
-    const usability = imageGenerationCandidateUsability({ workspaceId, job, output, asset })
+    const usability = imageGenerationCandidateUsability({ workspaceId, job, output, asset, allowUnscannedAssets: demoUnscannedAssetsEnabled() })
     if (!usability.currentlyUsable) {
       if (usability.reason === 'asset_scan_required' || usability.reason === 'asset_missing_or_scope_mismatch') throw new DomainError('GENERATED_IMAGE_SCAN_REQUIRED', '生成候选仍在平台自动安全扫描中，完成前不会向 ChatGPT 返回图片内容', 409, { job_id: job.id, visual_ref: output.visualRef, user_action_required: false })
       throw new DomainError('GENERATED_IMAGE_INTEGRITY_FAILED', '历史生成图片归档完整性校验失败', 500, { job_id: job.id, visual_ref: output.visualRef, reason: usability.reason })
     }
     if (!asset) throw new DomainError('GENERATED_IMAGE_INTEGRITY_FAILED', '历史生成图片缺少可验证的素材归档引用', 500, { job_id: job.id, visual_ref: output.visualRef })
-    const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey)
+    const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey, { includeQuarantine: asset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
     const digest = createHash('sha256').update(stored.body).digest('hex')
     if (stored.metadata.sha256 !== output.sha256 || stored.metadata.sizeBytes !== output.sizeBytes || stored.metadata.contentType !== output.mimeType || digest !== output.sha256 || asset.sha256 !== output.sha256) throw new DomainError('GENERATED_IMAGE_INTEGRITY_FAILED', '历史生成图片完整性校验失败', 500)
     images.push(`data:${output.mimeType};base64,${Buffer.from(stored.body).toString('base64')}`)
@@ -11021,7 +11024,7 @@ function imageJobOutputsAreClean(job: import('../../../packages/application/src/
   const outputs = job.outputs?.filter(output => !visualRef || output.visualRef === visualRef) ?? []
   return job.archiveState === 'archived' && Boolean(outputs.length) && outputs.every(output => {
     const asset = output.assetId ? service.assets.get(output.assetId) : undefined
-    return imageGenerationCandidateUsability({ workspaceId: job.workspaceId, job, output, asset }).currentlyUsable
+    return imageGenerationCandidateUsability({ workspaceId: job.workspaceId, job, output, asset, allowUnscannedAssets: demoUnscannedAssetsEnabled() }).currentlyUsable
   })
 }
 
@@ -11029,7 +11032,7 @@ async function sourceImagesForImageJob(workspaceId: string, job: import('../../.
   if (!job.sourceAssetIds?.length) return []
   return Promise.all(job.sourceAssetIds.map(async assetId => {
     const asset = assetForWorkspace(workspaceId, assetId)
-    const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey)
+    const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey, { includeQuarantine: asset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
     return `data:${asset.mimeType};base64,${Buffer.from(stored.body).toString('base64')}`
   }))
 }
@@ -11097,7 +11100,7 @@ function assetForWorkspace(workspaceId: string, assetId: string) {
 function assetDisplayProjection(asset: ReturnType<MerchantService['listAssets']>[number]) {
   const base = { sourceState: asset.readiness.status, reasons: asset.readiness.reasons }
   if (asset.scanStatus === 'blocked') return { ...base, primaryStatus: 'scan_blocked', label: '安全检查未通过', nextAction: { method: 'asset.upload', label: '重新上传素材', allowed: true } }
-  if (!isTrustedCleanAsset(asset)) return { ...base, primaryStatus: 'awaiting_scan', label: '正在安全检查', nextAction: { method: 'asset.list', label: '刷新状态', allowed: true } }
+  if (!isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())) return { ...base, primaryStatus: 'awaiting_scan', label: '正在安全检查', nextAction: { method: 'asset.list', label: '刷新状态', allowed: true } }
   if (asset.parseStatus === 'failed') return { ...base, primaryStatus: 'parse_failed', label: '内容读取失败', nextAction: { method: 'asset.facts.confirm', label: '人工确认素材事实', allowed: true } }
   if (asset.parseStatus !== 'succeeded') return { ...base, primaryStatus: 'awaiting_parse', label: '正在读取内容', nextAction: { method: 'asset.parse', label: '读取素材内容', allowed: true } }
   if (asset.rightsStatus === 'rejected' || asset.rightsScope === 'unusable') return { ...base, primaryStatus: 'rights_blocked', label: '使用权益受限', nextAction: { method: 'asset.rights.update', label: '重新确认使用权', allowed: true } }
@@ -17013,7 +17016,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!output.archiveReceiptId || !output.archiveReceiptDigest) codes.push('ARCHIVE_RECEIPT_MISSING')
         else if (!/^[a-f0-9]{64}$/u.test(output.archiveReceiptDigest)) codes.push('ARCHIVE_RECEIPT_DIGEST_INVALID')
         else if (asset && imageArchiveReceiptDigest({ archiveReceiptId: output.archiveReceiptId, workspaceId, jobId: job.id, assetId: asset.id, objectSha256: asset.sha256, sizeBytes: asset.sizeBytes, mimeType: asset.mimeType, createdAt: output.createdAt }) !== output.archiveReceiptDigest.toLowerCase()) codes.push('ARCHIVE_RECEIPT_DIGEST_MISMATCH')
-        if (!asset || asset.scanStatus !== 'clean' || output.storageKey.startsWith('quarantine/')) codes.push('ASSET_NOT_CLEAN_ARCHIVED')
+        if (!asset || !isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())) codes.push('ASSET_NOT_USABLE_ARCHIVED')
         if (codes.length && findings.length < requestedLimit) findings.push({ jobId: job.id, visualRef: output.visualRef, assetId: output.assetId ?? null, jobState: job.state, archiveState: job.archiveState, codes })
       }
       const resultPayload = { workspaceId, auditedAt: new Date().toISOString(), candidateCount, findingCount: findings.length, truncated: findings.length < candidateCount && findings.length >= requestedLimit, counts: { jobs: jobs.length, candidates: candidateCount, findings: findings.length }, findings, nextAction: findings.length ? '补齐归档 receipt、资产绑定或扫描状态后重新审计；禁止直接标记 completed' : '未发现当前工作区候选级归档证据缺口' }
@@ -19247,7 +19250,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const cleanOutputs = job.outputs ?? []
       const outputsClean = cleanOutputs.length > 0 && cleanOutputs.every(output => {
         const asset = output.assetId ? service.assets.get(output.assetId) : undefined
-        return Boolean(asset && asset.scanStatus === 'clean' && !asset.storageKey.startsWith('quarantine/'))
+        return Boolean(asset && isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled()))
       })
       if (job.archiveState !== 'archived' && outputsClean) {
         job = service.archiveImageGenerationOutputs(workspaceId, job.id, job.outputs ?? [], 'archived')
@@ -21269,7 +21272,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       } catch (error) {
         if (error instanceof DomainError) throw error
         const archived = service.findAssetBySourceProviderJobId(workspaceId, providerJobId)
-        if (archived) return result({ provider_job_id: providerJobId, status: 'completed', asset_id: archived.id, archive_state: archived.scanStatus === 'clean' ? 'archived' : 'quarantined', ...(archived.scanStatus === 'clean' ? { download_path: `/v1/assets/${encodeURIComponent(archived.id)}/download` } : { availabilityWarning: '视频已安全归档到隔离区，平台自动安全扫描通过后才可下载或发布；无需商家或运营人员操作' }), execution: executionContract('video', false) })
+        if (archived) return result({ provider_job_id: providerJobId, status: 'completed', asset_id: archived.id, archive_state: isUsableAssetWithoutScan(archived, demoUnscannedAssetsEnabled()) ? 'archived' : 'quarantined', ...(isUsableAssetWithoutScan(archived, demoUnscannedAssetsEnabled()) ? { download_path: `/v1/assets/${encodeURIComponent(archived.id)}/download` } : { availabilityWarning: '视频已安全归档到隔离区，平台自动安全扫描通过后才可下载或发布；无需商家或运营人员操作' }), execution: executionContract('video', false) })
         const providerFailure = modelSettlementDomainError(error)
         if (providerFailure) throw providerFailure
         throw new DomainError('VIDEO_PROVIDER_STATUS_FAILED', error instanceof Error ? error.message : '视频 provider 状态查询失败', 503)
@@ -24092,7 +24095,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     // does not remain stuck on a queued task after scanning completes.
     const outputsClean = (job.outputs ?? []).length > 0 && (job.outputs ?? []).every(output => {
       const asset = output.assetId ? service.assets.get(output.assetId) : undefined
-      return Boolean(asset && asset.scanStatus === 'clean' && !asset.storageKey.startsWith('quarantine/'))
+      return Boolean(asset && isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled()))
     })
     if (job.archiveState !== 'archived' && outputsClean) {
       job = service.archiveImageGenerationOutputs(workspaceId, job.id, job.outputs ?? [], 'archived')
