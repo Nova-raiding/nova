@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFileSync } from 'node:fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { requiresCustomerDeliveryAccess } from '../../../packages/contracts/src/customer-delivery-access.js'
+import { loadConnectorCapabilityEvidenceTrust } from './connector-capability-evidence-trust.js'
 import { inspectStoreLinks } from '../../../packages/domain/src/onboarding.js'
 import { readCustomerDeliveryAccess, assertCustomerDeliveryAllowed, pendingCustomerDeliveryProjection } from './customer-delivery-access.js'
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
@@ -747,7 +748,7 @@ const connectorMappingPreflight = createApiConnectorMappingPreflightAdapter({
   },
 })
 const credentialRefreshLock = createRedisCredentialRefreshLock(process.env.REDIS_URL)
-export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', credentialProvider: createVaultCredentialProviderFromEnv(), ...(credentialRefreshLock ? { refreshLock: credentialRefreshLock } : {}), beforeRequest: recheckDeliveryBeforeProvider, mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
+export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', configSource: process.env, capabilityEvidenceTrust: loadConnectorCapabilityEvidenceTrust(process.env), credentialProvider: createVaultCredentialProviderFromEnv(), ...(credentialRefreshLock ? { refreshLock: credentialRefreshLock } : {}), beforeRequest: recheckDeliveryBeforeProvider, mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
 export const oauthStates = new OAuthStateStore()
 const redisOAuthPort = createRedisOAuthPort(process.env.REDIS_URL)
 type OAuthStateRuntimeStore = Pick<OAuthStateStore, 'issue' | 'consume' | 'consumeCallback'> | Pick<RedisOAuthStateStore, 'issue' | 'consume' | 'consumeCallback'>
