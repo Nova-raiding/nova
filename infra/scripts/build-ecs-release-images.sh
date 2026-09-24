@@ -54,46 +54,12 @@ for command_name in docker shasum tar node; do
 done
 [ ! -e "$output_dir" ] && [ ! -L "$output_dir" ] || { echo 'ECS release image output directory must not already exist' >&2; exit 2; }
 ecs_build_lock_acquire
-# Refuse a pre-created target and validate every existing ancestor before any
-# registry write. This prevents a privileged build account from following a
-# planted symlink or writing through a group/world-writable handoff directory.
-output_dir=$(OUTPUT_DIR=$output_dir node <<'NODE'
-const fs = require('node:fs')
-const path = require('node:path')
-const output = path.resolve(process.env.OUTPUT_DIR)
-if (fs.existsSync(output)) throw new Error('ECS release image output directory must not already exist')
-let cursor = path.dirname(output)
-const missing = []
-while (!fs.existsSync(cursor)) {
-  missing.push(cursor)
-  const parent = path.dirname(cursor)
-  if (parent === cursor) throw new Error('no existing output directory ancestor')
-  cursor = parent
-}
-const anchor = cursor
-const anchorStat = fs.lstatSync(anchor)
-if (!anchorStat.isDirectory()) throw new Error(`unsafe output ancestor: ${anchor}`)
-if (typeof process.getuid === 'function' && anchorStat.uid !== process.getuid()) throw new Error(`output ancestor is not owned by the build user: ${anchor}`)
-if ((anchorStat.mode & 0o022) !== 0) throw new Error(`output ancestor is group/world writable: ${anchor}`)
-// Canonicalize trusted system aliases such as macOS /var -> /private/var, then
-// create every missing child ourselves below the owned, non-writable anchor.
-const canonicalAnchor = fs.realpathSync(anchor)
-let canonicalOutput = canonicalAnchor
-for (const directory of missing.reverse()) {
-  canonicalOutput = path.join(canonicalOutput, path.basename(directory))
-  fs.mkdirSync(canonicalOutput, { mode: 0o700 })
-}
-canonicalOutput = path.join(canonicalOutput, path.basename(output))
-fs.mkdirSync(canonicalOutput, { mode: 0o700 })
-process.stdout.write(canonicalOutput)
-NODE
-)
-
 archive=$(mktemp "${TMPDIR:-/tmp}/ecs-release-source.XXXXXXXX")
 context=$(mktemp -d "${TMPDIR:-/tmp}/ecs-release-context.XXXXXXXX")
 records=$(mktemp "${TMPDIR:-/tmp}/ecs-release-images.XXXXXXXX.tsv")
 built_tags=''
 build_started=NO
+output_created=NO
 cleanup() {
   rm -f "$archive" "$records"
   rm -rf "$context"
@@ -106,6 +72,9 @@ cleanup() {
     fi
     docker builder prune -f --keep-storage "$cache_limit" >/dev/null 2>&1 || true
   fi
+  # Remove only the empty directory this invocation created. rmdir fails closed
+  # if another process or a failed build left any artifact inside it.
+  if [ "$output_created" = YES ]; then rmdir "$output_dir" 2>/dev/null || true; fi
   ecs_build_lock_cleanup
 }
 trap cleanup EXIT HUP INT TERM
@@ -148,6 +117,45 @@ else
 fi
 source_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
 tar -xf "$archive" -C "$context"
+
+# Validate the protected output path only after candidate identity and archive
+# checks succeed. Otherwise an input-preflight failure leaves an empty directory
+# that blocks a corrected retry. Existing output is still never replaced.
+# Refuse a pre-created target and validate every existing ancestor before any
+# registry write. This prevents a privileged build account from following a
+# planted symlink or writing through a group/world-writable handoff directory.
+output_dir=$(OUTPUT_DIR=$output_dir node <<'NODE'
+const fs = require('node:fs')
+const path = require('node:path')
+const output = path.resolve(process.env.OUTPUT_DIR)
+if (fs.existsSync(output)) throw new Error('ECS release image output directory must not already exist')
+let cursor = path.dirname(output)
+const missing = []
+while (!fs.existsSync(cursor)) {
+  missing.push(cursor)
+  const parent = path.dirname(cursor)
+  if (parent === cursor) throw new Error('no existing output directory ancestor')
+  cursor = parent
+}
+const anchor = cursor
+const anchorStat = fs.lstatSync(anchor)
+if (!anchorStat.isDirectory()) throw new Error(`unsafe output ancestor: ${anchor}`)
+if (typeof process.getuid === 'function' && anchorStat.uid !== process.getuid()) throw new Error(`output ancestor is not owned by the build user: ${anchor}`)
+if ((anchorStat.mode & 0o022) !== 0) throw new Error(`output ancestor is group/world writable: ${anchor}`)
+// Canonicalize trusted system aliases such as macOS /var -> /private/var, then
+// create every missing child ourselves below the owned, non-writable anchor.
+const canonicalAnchor = fs.realpathSync(anchor)
+let canonicalOutput = canonicalAnchor
+for (const directory of missing.reverse()) {
+  canonicalOutput = path.join(canonicalOutput, path.basename(directory))
+  fs.mkdirSync(canonicalOutput, { mode: 0o700 })
+}
+canonicalOutput = path.join(canonicalOutput, path.basename(output))
+fs.mkdirSync(canonicalOutput, { mode: 0o700 })
+process.stdout.write(canonicalOutput)
+NODE
+)
+output_created=YES
 
 build_image() {
   artifact=$1

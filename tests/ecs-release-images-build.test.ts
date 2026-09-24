@@ -68,6 +68,8 @@ describe('bounded ECS release image builder', () => {
 
   it('refuses a pre-created output path before pushing images', () => {
     const directory = mkdtempSync(join(tmpdir(), 'ecs-release-existing-output-'))
+    const marker = join(directory, 'keep-existing-output-data')
+    writeFileSync(marker, 'preserve this pre-existing content')
     const result = spawnSync('sh', [script], {
       env: {
         ...process.env,
@@ -81,6 +83,7 @@ describe('bounded ECS release image builder', () => {
     })
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain('output directory must not already exist')
+    expect(readFileSync(marker, 'utf8')).toBe('preserve this pre-existing content')
   })
 
   it('rejects an unsafe Ops login build URL without guessing an auth route', () => {
@@ -139,7 +142,7 @@ describe('bounded ECS release image builder', () => {
     const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim()
     const log = join(directory, 'docker.log')
     const digest = `sha256:${'d'.repeat(64)}`
-    writeFileSync(join(bin, 'docker'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\ncase "$1 $2" in\n  'builder prune'|'build --pull=false'|'push registry.example.com/storenova/merchant-api:${releaseId}'|'push registry.example.com/storenova/merchant-worker:${releaseId}'|'push registry.example.com/storenova/merchant-ui:${releaseId}'|'push registry.example.com/storenova/merchant-ops-ui:${releaseId}'|'push registry.example.com/storenova/payment-gateway:${releaseId}'|'push registry.example.com/storenova/pilot-gateway:${releaseId}'|'image rm') exit 0;;\n  'image inspect')\n    case "$*" in\n      *org.opencontainers.image.revision*) printf '%s\\n' '${revision}' ;;\n      *com.storenova.release.id*) printf '%s\\n' '${releaseId}' ;;\n      *com.storenova.release.source_sha256*) printf '%s\\n' "$SOURCE_SHA" ;;\n      *RepoDigests*) printf '%s@${digest}\\n' "${'$'}{5%:${releaseId}}" ;;\n    esac\n    exit 0;;\nesac\nexit 1\n`)
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\ncase "$1 $2" in\n  'builder prune') [ "${'$'}{MOCK_DOCKER_FAIL_PRUNE:-NO}" != YES ] || exit 1; exit 0;;\n  'build --pull=false'|'push registry.example.com/storenova/merchant-api:${releaseId}'|'push registry.example.com/storenova/merchant-worker:${releaseId}'|'push registry.example.com/storenova/merchant-ui:${releaseId}'|'push registry.example.com/storenova/merchant-ops-ui:${releaseId}'|'push registry.example.com/storenova/payment-gateway:${releaseId}'|'push registry.example.com/storenova/pilot-gateway:${releaseId}'|'image rm') exit 0;;\n  'image inspect')\n    case "$*" in\n      *org.opencontainers.image.revision*) printf '%s\\n' '${revision}' ;;\n      *com.storenova.release.id*) printf '%s\\n' '${releaseId}' ;;\n      *com.storenova.release.source_sha256*) printf '%s\\n' "$SOURCE_SHA" ;;\n      *RepoDigests*) printf '%s@${digest}\\n' "${'$'}{5%:${releaseId}}" ;;\n    esac\n    exit 0;;\nesac\nexit 1\n`)
     chmodSync(join(bin, 'docker'), 0o755)
     const archive = spawnSync('git', ['archive', '--format=tar', revision], { cwd: root }).stdout
     const sha = spawnSync('shasum', ['-a', '256'], { input: archive, encoding: 'utf8' }).stdout.split(/\s/u)[0]
@@ -165,6 +168,30 @@ describe('bounded ECS release image builder', () => {
     expect(mismatchedIdentity.status).not.toBe(0)
     expect(mismatchedIdentity.stderr).toContain('candidate identity release ID does not match RELEASE_ID')
     expect(existsSync(log)).toBe(false)
+    expect(existsSync(join(directory, 'mismatch-output'))).toBe(false)
+
+    const wrongArchive = join(directory, 'wrong-source.tar')
+    writeFileSync(wrongArchive, 'not the identity-bound candidate archive')
+    const archiveMismatchOutput = join(directory, 'archive-mismatch-output')
+    const mismatchedArchive = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-release-images.sh')], {
+      cwd: directory,
+      env: { ...buildEnv, RELEASE_ID: releaseId, ECS_RELEASE_IMAGE_OUTPUT_DIR: archiveMismatchOutput, ECS_RELEASE_SOURCE_ARCHIVE: wrongArchive },
+      encoding: 'utf8',
+    })
+    expect(mismatchedArchive.status).not.toBe(0)
+    expect(mismatchedArchive.stderr).toContain('candidate source archive digest mismatch')
+    expect(existsSync(log)).toBe(false)
+    expect(existsSync(archiveMismatchOutput)).toBe(false)
+
+    const pruneFailureOutput = join(directory, 'prune-failure-output')
+    const pruneFailure = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-release-images.sh')], {
+      cwd: directory,
+      env: { ...buildEnv, RELEASE_ID: releaseId, ECS_RELEASE_IMAGE_OUTPUT_DIR: pruneFailureOutput, MOCK_DOCKER_FAIL_PRUNE: 'YES' },
+      encoding: 'utf8',
+    })
+    expect(pruneFailure.status).not.toBe(0)
+    expect(existsSync(pruneFailureOutput)).toBe(false)
+    expect(readFileSync(log, 'utf8')).not.toContain('build --pull=false')
 
     const result = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-release-images.sh')], {
       cwd: directory,
@@ -178,7 +205,7 @@ describe('bounded ECS release image builder', () => {
     expect(Object.keys(manifest.image_digests)).toHaveLength(6)
     expect(Object.values(manifest.image_digests)).toEqual(Array(6).fill(digest))
     const dockerLog = readFileSync(log, 'utf8')
-    expect(dockerLog.match(/builder prune -f --keep-storage 1GB/gu)).toHaveLength(2)
+    expect(dockerLog.match(/builder prune -f --keep-storage 1GB/gu)).toHaveLength(4)
     expect(dockerLog).toContain('--label org.opencontainers.image.revision=')
     expect(dockerLog).toContain('--label com.storenova.ops-auth-mode=oidc')
     expect(dockerLog).toContain('--build-arg VITE_OPS_LOGIN_URL=https://sso.example.test/authorize?client_id=ops')
