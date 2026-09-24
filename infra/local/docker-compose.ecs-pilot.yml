@@ -256,10 +256,7 @@ services:
       CONNECTOR_FIXTURE_MODE: "false"
       MERCHANT_TEST_APPROVED_RATES: "false"
       ALLOW_LOCAL_PAYMENT_FIXTURE: "false"
-      OPS_AUTH_MODE: ${OPS_AUTH_MODE:?OPS_AUTH_MODE must be password or oidc}
-      # Empty is valid only for password mode; API readiness requires this
-      # secret when and only when OPS_AUTH_MODE=oidc.
-      OIDC_PROXY_SIGNING_SECRET: ${OIDC_PROXY_SIGNING_SECRET:-}
+      OPS_AUTH_MODE: password
       OPS_LOCAL_SESSION_ENABLED: "false"
       OPS_LOCAL_SESSION_TOKEN: ""
       OPS_LOCAL_SESSION_WORKSPACE_ID: ""
@@ -310,8 +307,8 @@ services:
       VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-}
       VAULT_CREDENTIAL_PATH_PREFIX: ${VAULT_CREDENTIAL_PATH_PREFIX:-}
       PUBLIC_APP_BASE_URL: ${PUBLIC_APP_BASE_URL:-https://yxsona.com}
+      PUBLIC_OPS_BASE_URL: ${PUBLIC_OPS_BASE_URL:-https://ops.yxsona.com}
       MCP_INTEGRATION_MODE: local_stdio
-      MCP_OAUTH_REQUIRED: "false"
       PUBLIC_ASSET_BASE_URL: ${PUBLIC_ASSET_BASE_URL:-https://yxsona.com}
       PUBLIC_OAUTH_REDIRECT_URI: ${PUBLIC_OAUTH_REDIRECT_URI:-https://yxsona.com/v1/oauth/callback/{platform}}
       MERCHANT_BEARER_HOSTNAME: ${MERCHANT_BEARER_HOSTNAME:-yxsona.com}
