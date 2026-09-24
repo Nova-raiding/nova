@@ -21,6 +21,20 @@ describe('verified ECS Compose deployment runner', () => {
     }
   })
 
+  it('requires post-deploy outputs only for full scope and validates the wait bound before any mutation', () => {
+    const script = source()
+    const fullGate = script.indexOf('if [ "${DEPLOYMENT_SCOPE:-full}" = full ]; then')
+    const firstClose = script.indexOf('\nfi', fullGate)
+    const requiredBlock = script.slice(fullGate, firstClose)
+    expect(requiredBlock).toContain('POST_DEPLOY_CANARY_OUTPUT')
+    expect(requiredBlock).toContain('POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH')
+    expect(requiredBlock).toContain('PRODUCTION_EVIDENCE_ARTIFACT_ROOT')
+    expect(requiredBlock).toContain('ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS')
+    expect(fullGate).toBeGreaterThanOrEqual(0)
+    expect(fullGate).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
+    expect(firstClose).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
+  })
+
   it.each(['password', 'oidc'])('accepts matching API and Ops UI %s auth modes', mode => {
     const directory = mkdtempSync(join(tmpdir(), 'ecs-ops-auth-mode-'))
     const docker = join(directory, 'docker')

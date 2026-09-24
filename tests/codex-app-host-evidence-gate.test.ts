@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -70,6 +70,8 @@ describe('Codex App host evidence gate', () => {
     ], { encoding: 'utf8' })
     expect(run.status, run.stderr).toBe(0)
     const collected = JSON.parse(readFileSync(outputPath, 'utf8'))
+    expect(statSync(outputPath).mode & 0o777).toBe(0o600)
+    expect(readdirSync(root).some(name => name.startsWith('evidence.json.') && name.endsWith('.tmp'))).toBe(false)
     expect(collected.scenarios[0].evidence_ref).toMatch(/^artifact:\/\/production\/real-host-captures\//u)
     expect(collected.candidate_route.release_probe_evidence_ref).toMatch(/^artifact:\/\/production\/real-host-captures\/releasez\.json#/u)
     expect(collected.manifest_sha256).toBe('9'.repeat(64))
@@ -102,6 +104,16 @@ describe('Codex App host evidence gate', () => {
     expect(mismatchedRun.status).toBe(1)
     expect(mismatchedRun.stderr).toContain('candidate route probe does not match the frozen release')
     writeFileSync(probePath, releaseProbeBytes)
+
+    const existingBytes = readFileSync(outputPath)
+    const changedCapture = JSON.parse(readFileSync(capturePath, 'utf8'))
+    changedCapture.generated_at = '2026-08-29T01:01:00Z'
+    writeFileSync(capturePath, JSON.stringify(changedCapture))
+    const overwriteRun = spawnSync(process.execPath, [resolve('scripts/collect-codex-app-host-evidence.mjs'), '--capture', capturePath, '--output', outputPath, '--artifact-root', root], { encoding: 'utf8' })
+    expect(overwriteRun.status).toBe(1)
+    expect(overwriteRun.stderr).toContain('refusing to overwrite existing host evidence')
+    expect(readFileSync(outputPath)).toEqual(existingBytes)
+    expect(readdirSync(root).some(name => name.startsWith('evidence.json.') && name.endsWith('.tmp'))).toBe(false)
   })
 
   it('rejects missing candidate route and reused scenario or reconciliation files', () => {

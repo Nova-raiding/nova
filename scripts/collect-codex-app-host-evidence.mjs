@@ -7,8 +7,8 @@
  * hashes artifact files supplied by the operator and emits an immutable
  * evidence document for tests/codex-app-host-evidence-gate.ts.
  */
-import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import { closeSync, existsSync, fchmodSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, relative, sep } from 'node:path'
 
 const REQUIRED_SCENARIOS = [
@@ -163,10 +163,35 @@ const evidence = {
 mkdirSync(dirname(resolve(outputPath)), { recursive: true })
 const serialized = `${JSON.stringify(evidence, null, 2)}\n`
 const absoluteOutput = resolve(outputPath)
-if (existsSync(absoluteOutput)) {
+const verifyExistingOutput = () => {
+  const stat = lstatSync(absoluteOutput)
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`refusing to use a non-regular or symlink evidence output: ${outputPath}`)
   const existing = readFileSync(absoluteOutput, 'utf8')
   if (existing !== serialized) throw new Error(`refusing to overwrite existing host evidence: ${outputPath}`)
+}
+if (existsSync(absoluteOutput)) {
+  verifyExistingOutput()
 } else {
-  writeFileSync(absoluteOutput, serialized, { mode: 0o600 })
+  const temporaryOutput = `${absoluteOutput}.${process.pid}.${randomBytes(12).toString('hex')}.tmp`
+  let descriptor
+  try {
+    descriptor = openSync(temporaryOutput, 'wx', 0o600)
+    fchmodSync(descriptor, 0o600)
+    writeFileSync(descriptor, serialized)
+    fsyncSync(descriptor)
+    closeSync(descriptor)
+    descriptor = undefined
+    try {
+      // linkSync publishes complete, flushed bytes atomically and refuses to
+      // replace an output another collector created in the meantime.
+      linkSync(temporaryOutput, absoluteOutput)
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+      verifyExistingOutput()
+    }
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor)
+    try { unlinkSync(temporaryOutput) } catch (error) { if (error?.code !== 'ENOENT') throw error }
+  }
 }
 console.log(`wrote real ChatGPT/Codex host evidence: ${outputPath}`)

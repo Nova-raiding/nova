@@ -58,10 +58,15 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(69)
+    expect(manifest.artifacts).toHaveLength(75)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',
+      'scripts/collect-codex-app-host-evidence.mjs',
+      'tests/codex-app-host-evidence-gate.ts',
+      'tests/release-manifest-gate.ts',
+      'docs/runbooks/chatgpt-candidate-host-route.md',
+      'docs/runbooks/ecs-verified-compose-deploy.md',
       'services/payment-gateway/index.mjs',
       'services/payment-gateway/alipay.mjs',
       'services/payment-gateway/alipay.d.mts',

@@ -27,13 +27,17 @@ readonly ECS_PREIDENTITY_RECOVERY_ENTRYPOINT=/usr/local/libexec/merchant/ecs-pre
 : "${PRODUCTION_APPROVED_ORIGIN:?PRODUCTION_APPROVED_ORIGIN is required}"
 : "${PRODUCTION_CANARY_BEARER_TOKEN:?PRODUCTION_CANARY_BEARER_TOKEN is required}"
 : "${PRODUCTION_CANARY_WORKSPACE_ID:?PRODUCTION_CANARY_WORKSPACE_ID is required}"
-: "${POST_DEPLOY_CANARY_OUTPUT:?POST_DEPLOY_CANARY_OUTPUT is required}"
-: "${POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH:?POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH must receive the real post-cutover ChatGPT/Codex host capture}"
-: "${PRODUCTION_EVIDENCE_ARTIFACT_ROOT:?PRODUCTION_EVIDENCE_ARTIFACT_ROOT is required for post-deploy host evidence}"
 : "${RELEASE_ID:?RELEASE_ID is required}"
 : "${IMAGE_DIGESTS_JSON:?IMAGE_DIGESTS_JSON is required}"
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
 : "${EXPECTED_MIGRATION_VERSION:?EXPECTED_MIGRATION_VERSION is required}"
+if [ "${DEPLOYMENT_SCOPE:-full}" = full ]; then
+  : "${POST_DEPLOY_CANARY_OUTPUT:?POST_DEPLOY_CANARY_OUTPUT is required}"
+  : "${POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH:?POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH must receive the real post-cutover ChatGPT/Codex host capture}"
+  : "${PRODUCTION_EVIDENCE_ARTIFACT_ROOT:?PRODUCTION_EVIDENCE_ARTIFACT_ROOT is required for post-deploy host evidence}"
+  printf '%s' "${ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS:-1800}" | grep -Eq '^[1-9][0-9]{0,3}$' || { echo 'invalid ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS' >&2; exit 2; }
+  [ "${ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS:-1800}" -le 3600 ] || { echo 'ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS must be at most 3600' >&2; exit 2; }
+fi
 
 [ "$CONFIRM_ECS_DEPLOY" = YES ] || { echo 'ECS deployment refused: confirmation must equal YES' >&2; exit 2; }
 printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo 'unsafe RELEASE_ID' >&2; exit 2; }
@@ -417,8 +421,6 @@ if [ "${DEPLOYMENT_SCOPE:-full}" = full ]; then
       --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
   fi
   case "$POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH" in /*) ;; *) echo 'post-deploy ChatGPT host evidence path must be absolute' >&2; exit 1 ;; esac
-  printf '%s' "${ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS:-1800}" | grep -Eq '^[1-9][0-9]{0,4}$' || { echo 'invalid ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS' >&2; exit 2; }
-  [ "${ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS:-1800}" -le 3600 ] || { echo 'ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS must be at most 3600' >&2; exit 2; }
   post_host_deadline=$(( $(date +%s) + ${ECS_POST_DEPLOY_HOST_EVIDENCE_TIMEOUT_SECONDS:-1800} ))
   while [ ! -f "$POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH" ]; do
     [ "$(date +%s)" -lt "$post_host_deadline" ] || { echo 'real post-cutover ChatGPT/Codex host smoke evidence did not arrive before the bounded deadline' >&2; exit 1; }

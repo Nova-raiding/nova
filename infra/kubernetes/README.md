@@ -1,4 +1,6 @@
-# Kubernetes 生产部署基线
+# Kubernetes 生产部署基线（已停用）
+
+本仓库当前受支持的生产部署目标是 ECS 主机 `101` 上的 Docker Compose。Kubernetes 配置和校验器保留为历史参考与离线兼容材料，不属于当前部署、验收或上线门禁。`infra/scripts/deploy-verified-manifest.sh` 已停用并会拒绝执行；不得用 Kubernetes manifest、集群或云服务的静态配置证明 ECS 上线。
 
 这里是云厂商无关的部署合同，适用于 ACK、EKS、GKE、AKS 或其他兼容 Kubernetes 的托管集群。它不创建 PostgreSQL、Redis、KMS、Secret Manager、WAF、DNS 或证书；这些依赖必须使用托管服务，并通过 `merchant-runtime-secrets` 注入。
 
@@ -7,7 +9,7 @@
 1. 将 `overlays/pilot-50/kustomization.yaml` 中的 `REPLACE_ME` 替换为不可变镜像仓库，并把最终镜像渲染为带 64 位 `@sha256:` digest 的引用；仅固定 tag 不满足生产门禁。
 2. 通过云 Secret Manager/External Secrets 创建 `merchant-runtime-secrets` 和独立的 `merchant-alert-receiver-secrets`。后者的 `DATABASE_URL` 必须使用仅可执行告警回执安全函数的 `merchant_alert_receiver` 角色，不得复用租户或运营凭据。字段契约见 `secret-contract.example.yaml`（只做文档，不可 apply）；API、Merchant UI 和各 worker 只通过 `secretKeyRef` 注入自身所需字段，禁止 `envFrom.secretRef`。Secret 的完整必填 key 以该契约为准；bucket/region/endpoint 等非密配置由 `merchant-runtime` ConfigMap 提供。发布门禁拒绝内嵌 Secret、Secret 整体注入、越权 key 与未绑定到同一渲染清单的 ConfigMap。
 3. 配置托管 PostgreSQL HA、Redis HA、对象存储/KMS、WAF/L7 LB、DNS 和 TLS；数据库与 Redis 不应暴露公网。当前项目域名为 `yxsona.com`，DNS/TLS 需同时覆盖 `yxsona.com` 和 `ops.yxsona.com`，后者提供独立运营台。
-4. 先用与部署完全相同的参数生成渲染清单：`kubectl kustomize infra/kubernetes/overlays/pilot-50 > /secure/release/rendered.yaml`。先运行 `ruby infra/kubernetes/validate-scanner-contract.rb /secure/release/rendered.yaml`，确认 scanner 身份白名单、病毒库最低版本、双副本 quorum 与仅内部 Service 的未就绪地址发布契约完整；再通过 `infra/scripts/deploy-verified-manifest.sh` 原子执行其余门禁并 `kubectl apply -f "$RENDERED_MANIFEST_PATH"`。禁止门禁后再次 `apply -k` 或重新渲染；部署必须使用被签名证据和 SHA-256 绑定的同一份字节。
+4. 以下旧 Kubernetes 命令仅为历史记录，当前已停用，不得执行：`kubectl kustomize ...`、`infra/scripts/deploy-verified-manifest.sh`、`kubectl apply`。该入口会在任何 Kubernetes 或 nonce 操作前以退出码 2 拒绝。当前发布流程见 [`ecs-verified-compose-deploy.md`](../runbooks/ecs-verified-compose-deploy.md)。
 5. 以 `/healthz`、迁移版本、队列队龄、平台 capability evidence 和容量报告完成 Go/No-Go；Kubernetes manifest 本身不等价于真实云验收。
 
 ## 支付拓扑

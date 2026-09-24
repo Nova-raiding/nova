@@ -96,6 +96,10 @@ describe('supply-chain reproducibility gate', () => {
     expect(releaseGateCommand).toContain('packages/persistence/src/migration-079.test.ts')
     expect(releaseGateCommand).toContain('packages/persistence/src/migration-080.test.ts')
     for (const gate of readdirSync('tests').filter(file => /-gates?\.test\.ts$/u.test(file))) {
+      if (gate === 'kubernetes-release-gate.test.ts') {
+        expect(releaseGates.scripts?.['test:kubernetes-release-gate']).toContain('--config vitest.kubernetes.config.ts --no-file-parallelism tests/kubernetes-release-gate.test.ts tests/rendered-kubernetes-config.test.ts')
+        continue
+      }
       if (gate === 'local-docker-release-gate.test.ts') {
         expect(releaseGates.scripts?.['test:local-release-gate']).toContain('--config vitest.runtime.config.ts tests/local-docker-release-gate.test.ts')
         continue

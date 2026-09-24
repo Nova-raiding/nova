@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 
 const deployPath = 'infra/scripts/deploy-verified-manifest.sh'
@@ -7,7 +7,19 @@ const rollbackPath = 'infra/scripts/rollback.sh'
 const source = (path: string) => readFileSync(path, 'utf8')
 
 describe('scanner release and rollback gates', () => {
-  it.each([deployPath, rollbackPath])('%s rolls out and accepts the real scanner topology', path => {
+  it('refuses the retired Kubernetes production deploy entrypoint', () => {
+    const script = source(deployPath)
+    expect(script).toContain('deploy-verified-manifest.sh is retired')
+    expect(script).toContain('exit 2')
+    expect(script).not.toContain('kubectl')
+    expect(execFileSync('sh', ['-n', deployPath], { encoding: 'utf8' })).toBe('')
+    const result = spawnSync('sh', [deployPath], { encoding: 'utf8', env: { PATH: process.env.PATH } })
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain('is retired')
+  })
+
+  it('keeps scanner compatibility checks in the legacy rollback script', () => {
+    const path = rollbackPath
     const script = source(path)
     expect(script).toMatch(/merchant-worker-reconcile merchant-worker-automation merchant-worker-scan/)
     expect(script).toContain('deployment/merchant-worker-generation')
@@ -24,11 +36,11 @@ describe('scanner release and rollback gates', () => {
   })
 
   it('exercises the current scanner request-proof contract for GET and callback POST', () => {
-    const script = source(deployPath)
+    const script = source(rollbackPath)
     for (const header of ['x-scanner-timestamp', 'x-scanner-nonce', 'x-scanner-body-sha256', 'x-scanner-workspace-signature']) expect(script).toContain(header)
     expect(script).toContain('verifyProof("GET"')
     expect(script).toContain('verifyProof("POST"')
-    expect(script).toContain('[method, path, workspaceId, timestamp, nonce, digest].join("\\n")')
+    expect(script).toContain('[method, path, workspaceId, timestamp, nonce, digest].join("\\\\n")')
     expect(script).toContain('observed[0] === observed[1]')
   })
 
