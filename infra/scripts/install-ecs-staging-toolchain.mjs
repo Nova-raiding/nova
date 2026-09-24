@@ -2,7 +2,7 @@
 // Install the candidate-bound staging script and its shared build lock as one
 // immutable generation. A single current symlink switches both files.
 import { createHash, randomUUID } from 'node:crypto';
-import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { constants, closeSync, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readlinkSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream } from 'node:fs';
@@ -77,6 +77,38 @@ function assertProtectedFile(path, ownerUid, maxBytes) {
   }
   const st = lstatSync(path);
   ensure(st.isFile() && !st.isSymbolicLink() && st.uid === ownerUid && (st.mode & 0o077) === 0 && st.size > 0 && st.size <= maxBytes, 'input must be a private regular file owned by the operator');
+}
+export function snapshotProtectedArchive(sourcePath, controlRoot, ownerUid = process.getuid()) {
+  assertProtectedFile(sourcePath, ownerUid, MAX_ARCHIVE_BYTES);
+  assertDirectory(controlRoot, ownerUid);
+  const sourceFd = openSync(sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const snapshotPath = join(controlRoot, `.candidate-source-${randomUUID()}.tar`);
+  let snapshotFd;
+  try {
+    const before = fstatSync(sourceFd, { bigint: true });
+    ensure(before.isFile() && before.uid === BigInt(ownerUid) && (before.mode & 0o077n) === 0n && before.size > 0n && before.size <= BigInt(MAX_ARCHIVE_BYTES), 'candidate archive changed or is unsafe');
+    snapshotFd = openSync(snapshotPath, 'wx', 0o600);
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let copied = 0n;
+    while (true) {
+      const count = readSync(sourceFd, buffer, 0, buffer.length, null);
+      if (count === 0) break;
+      copied += BigInt(count);
+      ensure(copied <= BigInt(MAX_ARCHIVE_BYTES), 'candidate archive exceeds the size limit');
+      let offset = 0;
+      while (offset < count) offset += writeSync(snapshotFd, buffer, offset, count - offset);
+    }
+    const after = fstatSync(sourceFd, { bigint: true });
+    ensure(copied === before.size && before.dev === after.dev && before.ino === after.ino && before.size === after.size && before.mtimeNs === after.mtimeNs && before.ctimeNs === after.ctimeNs, 'candidate archive changed while being snapshotted');
+    fsyncSync(snapshotFd);
+    return snapshotPath;
+  } catch (error) {
+    try { unlinkSync(snapshotPath); } catch (cleanupError) { if (cleanupError.code !== 'ENOENT') throw cleanupError; }
+    throw error;
+  } finally {
+    if (snapshotFd !== undefined) closeSync(snapshotFd);
+    closeSync(sourceFd);
+  }
 }
 function assertTrustedExecutable(path) {
   const resolved = realpathSync(path);
@@ -208,10 +240,12 @@ export async function installStagingToolchain({ archivePath, identityPath, contr
   assertProtectedFile(archivePath, ownerUid, MAX_ARCHIVE_BYTES);
   assertProtectedFile(identityPath, ownerUid, 64 * 1024);
   const identity = parseCandidateIdentity(readFileSync(identityPath, 'utf8'));
-  const actualArchiveSha = await sha256File(archivePath);
+  const snapshotPath = snapshotProtectedArchive(archivePath, controlRoot, ownerUid);
+  try {
+  const actualArchiveSha = await sha256File(snapshotPath);
   ensure(identity.source_sha256 === `sha256:${actualArchiveSha}`, 'candidate archive checksum does not match identity');
-  ensure(await gitArchiveCommit(archivePath) === identity.git_sha, 'candidate archive commit does not match identity');
-  const pair = extractPair(archivePath);
+  ensure(await gitArchiveCommit(snapshotPath) === identity.git_sha, 'candidate archive commit does not match identity');
+  const pair = extractPair(snapshotPath);
   const toolchainRoot = join(controlRoot, 'staging-toolchain');
   mkdirPrivate(toolchainRoot);
   const versions = join(toolchainRoot, 'versions');
@@ -272,6 +306,9 @@ export async function installStagingToolchain({ archivePath, identityPath, contr
   const launcherCheck = spawnSync('/bin/sh', ['-n', launcherPath], { encoding: 'utf8' });
   ensure(launcherCheck.status === 0, 'dispatcher failed shell syntax validation');
   return { schema_version: 'ecs-staging-toolchain-install/1', git_sha: identity.git_sha, source_archive_sha256: actualArchiveSha, staging_helper_sha256: active.staging_helper_sha256, build_lock_sha256: active.build_lock_sha256, previous_git_sha: (() => { try { const target = readlinkSyncSafe(previousPath); return target.split('/')[1]; } catch { return null; } })() };
+  } finally {
+    unlinkSync(snapshotPath);
+  }
 }
 
 function readlinkSyncSafe(path) {

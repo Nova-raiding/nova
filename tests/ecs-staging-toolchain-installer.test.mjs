@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { installStagingToolchain, rollbackStagingToolchain } from '../infra/scripts/install-ecs-staging-toolchain.mjs';
+import { installStagingToolchain, rollbackStagingToolchain, snapshotProtectedArchive } from '../infra/scripts/install-ecs-staging-toolchain.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
 const stagePath = 'infra/scripts/stage-verified-ecs-release.sh';
@@ -76,4 +76,18 @@ test('rejects archive identity mismatch without switching the active pair', asyn
   writeFileSync(invalid.identityPath, readFileSync(invalid.identityPath, 'utf8').replace(/source_sha256=sha256:[a-f0-9]{64}/, `source_sha256=sha256:${'0'.repeat(64)}`), { mode: 0o600 });
   await assert.rejects(installStagingToolchain({ ...invalid, controlRoot }), /candidate archive checksum/);
   assert.equal(execFileSync('/bin/sh', [join(controlRoot, 'stage-verified-ecs-release.sh')], { encoding: 'utf8', env: { ...process.env, ECS_CANDIDATE_BUNDLE_DIR: '/candidate', ECS_RELEASES_ROOT: '/releases', RELEASE_ID: 'test' } }).trim(), 'valid');
+});
+
+test('snapshots the private archive once so later source replacement cannot change validated bytes', t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-staging-toolchain-snapshot-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  chmodSync(root, 0o700);
+  const controlRoot = join(root, 'controls');
+  mkdirSync(controlRoot, { mode: 0o700 });
+  const item = candidate(root, 'snapshot');
+  const original = readFileSync(item.archivePath);
+  const snapshot = snapshotProtectedArchive(item.archivePath, controlRoot);
+  assert.equal(statSync(snapshot).mode & 0o777, 0o600);
+  writeFileSync(item.archivePath, Buffer.from('replacement archive'), { mode: 0o600 });
+  assert.deepEqual(readFileSync(snapshot), original);
 });
