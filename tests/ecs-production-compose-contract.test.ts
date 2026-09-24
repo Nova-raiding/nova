@@ -62,7 +62,19 @@ function validate(value: unknown, env: NodeJS.ProcessEnv = {}) {
 
 function renderFinalProductionCompose() {
   const files = readFileSync('infra/local/ecs-production-compose.layers', 'utf8').trim().split('\n')
+  const renderRoot = mkdtempSync(join(tmpdir(), 'ecs-production-compose-render-'))
+  const localDir = join(renderRoot, 'infra/local')
+  const scriptsDir = join(renderRoot, 'infra/scripts')
+  mkdirSync(localDir, { recursive: true })
+  mkdirSync(scriptsDir, { recursive: true })
+  for (const file of files) writeFileSync(join(renderRoot, file), readFileSync(file, 'utf8'))
+  const rendererPath = join(scriptsDir, 'render-ecs-production-compose.sh')
+  writeFileSync(rendererPath, readFileSync('infra/scripts/render-ecs-production-compose.sh', 'utf8'), { mode: 0o700 })
+  writeFileSync(join(renderRoot, '.env'), '')
   const env: NodeJS.ProcessEnv = { ...process.env }
+  delete env.NODE_ENV
+  delete env.DEPLOYMENT_PROFILE
+  delete env.ECS_PRODUCTION_ENV_FILE
   for (const file of files) {
     const source = readFileSync(file, 'utf8')
     for (const match of source.matchAll(/\$\{([A-Z0-9_]+):\?[^}]+\}/gu)) {
@@ -93,8 +105,8 @@ function renderFinalProductionCompose() {
     env[`WORKER_${role.toUpperCase()}_API_TOKEN`] = credentials[role].token
     env[`WORKER_${role.toUpperCase()}_API_SIGNING_SECRET`] = credentials[role].signing_secret
   }
-  return JSON.parse(execFileSync('sh', ['infra/scripts/render-ecs-production-compose.sh'], {
-    cwd: process.cwd(), encoding: 'utf8', env: { ...env, ECS_COMPOSE_PROJECT: 'compose-contract-test' }, stdio: ['ignore', 'pipe', 'pipe'],
+  return JSON.parse(execFileSync('sh', [rendererPath], {
+    cwd: renderRoot, encoding: 'utf8', env: { ...env, ECS_COMPOSE_PROJECT: 'compose-contract-test' }, stdio: ['ignore', 'pipe', 'pipe'],
   }))
 }
 
