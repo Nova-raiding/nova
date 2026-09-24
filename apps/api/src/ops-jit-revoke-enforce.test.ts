@@ -1,8 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createHash, createHmac, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import argon2 from 'argon2'
 import { AUTHZ_POLICY_VERSION, evaluateAuthorizationDecision, evaluatePermissionAtoms, getMcpMethodPolicy, type AuthorizationObligation, type PermissionAtom } from '../../../packages/contracts/src/authz.js'
 import { MemoryAuthorizationRepository, type AuthorizationGrant, type IssueAuthorizationGrantInput, type RevokeAuthorizationGrantInput, type PlatformAssignedRole } from '../../../packages/persistence/src/authorization-repository.js'
-import { MemoryIdentityLifecycleRepository } from '../../../packages/persistence/src/identity-lifecycle-repository.js'
+import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import { MemoryPlatformAuthorizationAuditRepository } from '../../../packages/persistence/src/platform-authorization-audit-repository.js'
 
 // Deliberate security-contract change. These tests used to reach the `approval`
@@ -26,15 +27,13 @@ const approverActorId = 'independent-security-approver'
 
 const issueMethod = 'ops.authorization.grant.issue'
 const revokeMethod = 'ops.authorization.grant.revoke'
-const signingSecret = 'jit-revoke-http-fixture-signing-secret'
-const sessionSecret = 'jit-revoke-http-fixture-session-secret'
 type Envelope<T = unknown> = { request_id: string; trace_id: string; data: { result: T } | null; error: { code: string; details?: Record<string, unknown> } | null }
-type Actor = { subject: string; sessionId: string; identityId: string; roles: string[] }
+type Actor = { subject: string; sessionId: string; identityId: string; roles: string[]; cookie: string }
 type Session = { identity_id: string; roles: string[]; capabilities: string[]; authorization_revision: number; temporary_grants: Array<{ id: string; revision: number }> }
 
-// E1: real signed loopback HTTP, real policy/route/Memory repository methods.
+// E1: real password-cookie loopback HTTP, real policy/route/Memory repository methods.
 // This observer records successful mutations only; it is NOT the PostgreSQL
-// ops_access_grant_events table or evidence of PG/RLS or an external OIDC IdP.
+// ops_access_grant_events table or evidence of PostgreSQL/RLS.
 class ObservedAuthorizationRepository extends MemoryAuthorizationRepository {
   readonly successfulMutations: Array<{ type: 'issued' | 'revoked'; grant: AuthorizationGrant }> = []
   readonly revokeFailures: string[] = []
@@ -55,12 +54,12 @@ class ObservedAuthorizationRepository extends MemoryAuthorizationRepository {
   }
 }
 
-describe('E1 signed OIDC JIT revoke under enforced durable authorization', () => {
+describe('E1 password-session JIT revoke under enforced durable authorization', () => {
   let api: typeof import('./server.js')
   let persistence: Awaited<typeof import('./server.js').persistenceReady>
-  let originals: Pick<typeof persistence, 'authorization' | 'identities' | 'platformAuthorizationAudit'>
+  let originals: Pick<typeof persistence, 'authorization' | 'platformAuthorizationAudit'>
   let repository: ObservedAuthorizationRepository
-  let identities: MemoryIdentityLifecycleRepository
+  let passwordAuth: MemoryPasswordAuthRepository
   let audits: MemoryPlatformAuthorizationAuditRepository
   let base: string
   let issuer: string
@@ -74,25 +73,23 @@ describe('E1 signed OIDC JIT revoke under enforced durable authorization', () =>
     for (const key of ['DATABASE_URL', 'OPS_DATABASE_URL', 'REDIS_URL', 'MERCHANT_BEARER_HOSTNAME', 'API_AUTH_TOKENS', 'MODEL_RELAY_API_KEY', 'VIDEO_MODEL_RELAY_API_KEY']) vi.stubEnv(key, undefined)
     vi.stubEnv('NODE_ENV', 'test')
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
-    vi.stubEnv('OPS_AUTH_MODE', 'oidc')
-    vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', signingSecret)
-    vi.stubEnv('SESSION_ID_HASH_SECRET', sessionSecret)
+    vi.stubEnv('OPS_AUTH_MODE', 'password')
     vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
     vi.stubEnv('AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED', 'true')
     vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
     api = await import('./server.js')
     persistence = await api.persistenceReady
     expect(persistence.mode).toBe('memory')
-    originals = { authorization: persistence.authorization, identities: persistence.identities, platformAuthorizationAudit: persistence.platformAuthorizationAudit }
+    originals = { authorization: persistence.authorization, platformAuthorizationAudit: persistence.platformAuthorizationAudit }
   })
 
   beforeEach(async () => {
     repository = new ObservedAuthorizationRepository()
-    identities = new MemoryIdentityLifecycleRepository()
+    passwordAuth = new MemoryPasswordAuthRepository()
     audits = new MemoryPlatformAuthorizationAuditRepository()
     persistence.authorization = repository
-    persistence.identities = identities
     persistence.platformAuthorizationAudit = audits
+    api.setPasswordAuthRepositoryForTests(passwordAuth)
     api.setAuthorizationRepositoryForTests(repository)
     const runId = randomUUID()
     issuer = `https://jit-fixture.invalid/${runId}`
@@ -122,35 +119,34 @@ describe('E1 signed OIDC JIT revoke under enforced durable authorization', () =>
     } finally {
       if (persistence && originals) Object.assign(persistence, originals)
       api?.setAuthorizationRepositoryForTests()
+      api?.setPasswordAuthRepositoryForTests()
       vi.restoreAllMocks()
     }
   })
   afterAll(() => { vi.unstubAllEnvs() })
 
-  async function actor(role: PlatformAssignedRole, assigned = true, gatewayRoles: string[] = [role]): Promise<Actor> {
-    const subjectId = `${role}-${randomUUID()}`
-    const sessionId = `session-${randomUUID()}`
-    const observed = await identities.observeAuthenticatedSession({ issuer, externalSubject: subjectId, sessionHash: createHmac('sha256', sessionSecret).update(sessionId).digest('hex'), kind: 'oidc', issuedAt: new Date(Date.now() - 10_000).toISOString(), expiresAt: new Date(Date.now() + 3_600_000).toISOString(), mfaVerified: true })
-    if (assigned) await repository.assignPlatformRole({ subjectIdentityId: observed.identity.id, role, assignedBy: 'isolated-test-bootstrap', reason: 'Seed a canonical durable role for this fixture only', expectedAuthorizationRevision: 0 })
-    return { subject: subjectId, sessionId, identityId: observed.identity.id, roles: gatewayRoles }
+  async function actor(role: PlatformAssignedRole, assigned = true, _gatewayRoles: string[] = [role]): Promise<Actor> {
+    const login = `${role}-${randomUUID()}@example.test`
+    const password = 'JitFixturePassword123!'
+    await passwordAuth.ensurePlatformAccount({ login, passwordHash: await argon2.hash(password), roles: [] })
+    const account = (await passwordAuth.listAccounts()).find(value => value.login === login)!
+    if (assigned) await repository.assignPlatformRole({ subjectIdentityId: account.identityId, role, assignedBy: 'isolated-test-bootstrap', reason: 'Seed a canonical durable role for this fixture only', expectedAuthorizationRevision: 0 })
+    const loginResponse = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'platform' }) })
+    expect(loginResponse.status).toBe(200)
+    const cookie = loginResponse.headers.get('set-cookie')?.split(';')[0]
+    expect(cookie).toBeTruthy()
+    return { subject: account.identityId, sessionId: '', identityId: account.identityId, roles: assigned ? [role] : [], cookie: cookie! }
   }
 
   // `approvalTokenHeader` defaults to the valid server-issued token; pass `null`
   // to send no approval evidence at all, or another value to present a token the
   // registry does not bind to this operation.
-  async function call<T = unknown>(who: Actor, method: string, params: Record<string, unknown> = {}, workbench: 'platform' | 'workspace' = 'platform', tamperSignature = false, approvalTokenHeader: string | null = approvalToken) {
-    const nonce = randomUUID().replaceAll('-', '')
-    const timestamp = String(Math.floor(Date.now() / 1000))
-    const authTime = String(Number(timestamp) - 10)
-    const expiresAt = String(Number(timestamp) + 3600)
-    const selectedWorkspace = workbench === 'workspace' ? workspaceId : ''
-    const body = JSON.stringify({ jsonrpc: '2.0', id: nonce, method, params })
-    const digest = createHash('sha256').update(body).digest('hex')
-    const canonical = ['POST', '/mcp', selectedWorkspace, workbench, issuer, who.subject, who.sessionId, [...who.roles].sort().join(','), 'mfa', authTime, expiresAt, timestamp, digest, nonce].join('\n')
-    const signature = createHmac('sha256', signingSecret).update(canonical).digest('hex')
+  async function call<T = unknown>(who: Actor, method: string, params: Record<string, unknown> = {}, workbench: 'platform' | 'workspace' = 'platform', tamperSignature = false, approvalTokenHeader: string | null = approvalToken, includeCookie = true, workspaceHeader?: string) {
+    const selectedWorkspace = workspaceHeader ?? (workbench === 'workspace' ? workspaceId : '')
+    const body = JSON.stringify({ jsonrpc: '2.0', id: randomUUID(), method, params })
     const response = await fetch(`${base}/mcp`, {
       method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000), body,
-      headers: { 'content-type': 'application/json', 'x-oidc-workbench': workbench, 'x-oidc-issuer': issuer, 'x-oidc-sub': who.subject, 'x-oidc-sid': who.sessionId, 'x-oidc-roles': who.roles.join(','), 'x-oidc-amr': 'mfa', 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': expiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-body-sha256': digest, 'x-oidc-nonce': nonce, 'x-oidc-signature': tamperSignature ? '0'.repeat(64) : signature, ...(approvalTokenHeader ? { 'x-authorization-approval-token': approvalTokenHeader } : {}), ...(selectedWorkspace ? { 'x-workspace-id': selectedWorkspace, 'x-oidc-workspace': selectedWorkspace } : {}) },
+      headers: { 'content-type': 'application/json', ...(includeCookie ? { cookie: who.cookie } : {}), origin: base, 'x-ops-workbench': workbench, ...(tamperSignature ? { 'x-oidc-signature': '0'.repeat(64), 'x-oidc-sub': 'forged', 'x-oidc-roles': 'platform_admin' } : {}), ...(approvalTokenHeader ? { 'x-authorization-approval-token': approvalTokenHeader } : {}), ...(selectedWorkspace ? { 'x-workspace-id': selectedWorkspace } : {}) },
     })
     return { status: response.status, body: await response.json() as Envelope<T> }
   }
@@ -174,34 +170,41 @@ describe('E1 signed OIDC JIT revoke under enforced durable authorization', () =>
     return { grant: await repository.getGrant(grant.id, subject.identityId), revision: await repository.getAuthorizationRevision(subject.identityId), active: await repository.listActiveGrants(subject.identityId, workspaceId), mutations: structuredClone(repository.successfulMutations) }
   }
 
-  it.each(['platform_admin', 'security_admin'] as const)('%s revokes without approval over signed HTTP, increments revisions, audits, and invalidates old access', async role => {
+  it.each(['platform_admin', 'security_admin'] as const)('%s revokes without approval over password-session HTTP, increments revisions, audits, and invalidates old access', async role => {
     const who = role === 'platform_admin' ? admin : await actor(role)
     const session = await call<Session>(who, 'ops.session')
     expect(session.status, JSON.stringify(session.body)).toBe(200)
     expect(session.body.data?.result).toMatchObject({ identity_id: who.identityId, roles: [role], authorization_revision: 1 })
     expect(session.body.data?.result.capabilities).toContain('authorization.grant.manage')
     expect(who.identityId).not.toBe(subject.identityId)
+    const beforeGrantAccess = await call<Session>(subject, 'ops.session', {}, 'workspace', false, approvalToken, true, workspaceId)
+    expect(beforeGrantAccess.status, JSON.stringify(beforeGrantAccess.body)).toBe(200)
+    expect(beforeGrantAccess.body.data?.result.temporary_grants).toEqual([])
     const grant = await issue(who)
-    const beforeAccess = await call<Session>(subject, 'ops.session', {}, 'workspace')
-    expect(beforeAccess.status, JSON.stringify(beforeAccess.body)).toBe(200)
-    expect(beforeAccess.body.data?.result.temporary_grants).toContainEqual(expect.objectContaining({ id: grant.id, revision: 1 }))
-    const params = revokeParams(grant)
+    expect(await repository.listActiveGrants(subject.identityId, workspaceId)).toContainEqual(expect.objectContaining({ id: grant.id, revision: 1 }))
+    const before = await state(grant)
+    expect(await repository.consumeGrant({ id: grant.id, subjectIdentityId: subject.identityId, workspaceId, capability: 'customer.content.read', scopeHash: grant.scopeHash, expectedRevision: grant.revision, actorId: subject.subject, reason: 'Simulate an authorized resource access before revocation' })).toMatchObject({ id: grant.id, useCount: 1 })
+    const consumed = await state(grant)
+    const grantedAccess = await call<Session>(subject, 'ops.session', {}, 'workspace', false, approvalToken, true, workspaceId)
+    expect(grantedAccess.status, JSON.stringify(grantedAccess.body)).toBe(200)
+    expect(grantedAccess.body.data?.result.temporary_grants).toEqual([])
+    const params = { ...revokeParams(grant), expected_revision: String(consumed.grant!.revision), expected_authorization_revision: String(consumed.revision) }
     expect(params).not.toHaveProperty('approved_by')
     expect(params).not.toHaveProperty('approved_at')
     const revoked = await call<AuthorizationGrant>(who, revokeMethod, params)
     expect(revoked.status, JSON.stringify(revoked.body)).toBe(200)
     expect(revoked.body.error).toBeNull()
-    expect(revoked.body.data?.result).toMatchObject({ id: grant.id, revokedBy: who.subject, revokedAt: expect.any(String), revision: grant.revision + 1, authorizationRevision: grant.authorizationRevision + 1 })
-    expect(await repository.getAuthorizationRevision(subject.identityId)).toBe(grant.authorizationRevision + 1)
+    expect(revoked.body.data?.result).toMatchObject({ id: grant.id, revokedBy: who.subject, revokedAt: expect.any(String), revision: consumed.grant!.revision + 1, authorizationRevision: consumed.revision + 1 })
+    expect(await repository.getAuthorizationRevision(subject.identityId)).toBe(consumed.revision + 1)
     expect(await repository.listActiveGrants(subject.identityId, workspaceId)).toEqual([])
     expect(repository.successfulMutations.map(event => event.type)).toEqual(['issued', 'revoked'])
     const audit = (await audits.list({ actorId: who.subject, method: revokeMethod })).find(row => row.requestId === revoked.body.request_id)
     expect(audit).toMatchObject({ result: 'allow', capability: 'authorization.grant.manage', workbench: 'platform', policyVersion: AUTHZ_POLICY_VERSION, traceId: revoked.body.trace_id, evidence: { obligations: { required: ['reason', 'revision'], missing: [] } } })
-    const afterAccess = await call(subject, 'ops.session', {}, 'workspace')
-    expect(afterAccess.status).toBe(403)
-    expect(afterAccess.body.error?.code).toBe('WORKSPACE_MEMBERSHIP_REQUIRED')
+    const afterAccess = await call(subject, 'ops.session', {}, 'workspace', false, approvalToken, true, workspaceId)
+    expect(afterAccess.status).toBe(200)
+    expect(afterAccess.body.data?.result.temporary_grants).toEqual([])
     const after = await state(grant)
-    expect(await repository.consumeGrant({ id: grant.id, subjectIdentityId: subject.identityId, workspaceId, capability: 'customer.content.read', scopeHash: grant.scopeHash, expectedRevision: grant.revision, actorId: subject.subject, reason: 'Attempt to reuse the revoked grant snapshot' })).toBeUndefined()
+    expect(await repository.consumeGrant({ id: grant.id, subjectIdentityId: subject.identityId, workspaceId, capability: 'customer.content.read', scopeHash: grant.scopeHash, expectedRevision: consumed.grant!.revision, actorId: subject.subject, reason: 'Attempt to reuse the revoked grant snapshot' })).toBeUndefined()
     expect(await state(grant)).toEqual(after)
   })
 
@@ -295,8 +298,7 @@ describe('E1 signed OIDC JIT revoke under enforced durable authorization', () =>
     expect(revoked.status, JSON.stringify(revoked.body)).toBe(200)
     expect(revoked.body.data?.result).toMatchObject({ id: grant.id, revision: grant.revision + 1, authorizationRevision: grant.authorizationRevision + 1 })
     const after = await state(grant)
-    // Use a new valid OIDC nonce/signature: this must reach the repository's
-    // revoked-state check, not merely fail the gateway nonce replay guard.
+    // A fresh password-cookie request must reach the repository's revoked-state check.
     const replay = await call(admin, revokeMethod, params)
     expect(replay.status).toBe(404)
     expect(replay.body.error?.code).toBe('AUTHORIZATION_GRANT_NOT_FOUND')
@@ -334,20 +336,21 @@ describe('E1 signed OIDC JIT revoke under enforced durable authorization', () =>
     expect(audit).toMatchObject({ actorId: who.subject, method: revokeMethod, result: 'deny', reasonCode: 'AUTHZ_CAPABILITY_MISSING', requestId: denied.body.request_id, policyVersion: AUTHZ_POLICY_VERSION })
   })
 
-  it('rejects the workspace workbench before attempting platform grant mutation', async () => {
+  it('rejects a password account with no platform role before grant mutation', async () => {
     const grant = await issue()
     const before = await state(grant)
-    const denied = await call(admin, revokeMethod, revokeParams(grant), 'workspace')
+    const unassigned = await actor('auditor', false)
+    const denied = await call(unassigned, revokeMethod, revokeParams(grant))
     expect(denied.status).toBe(403)
-    expect(denied.body.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
+    expect(denied.body.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_CAPABILITY_MISSING' } })
     expect(await state(grant)).toEqual(before)
     expect(repository.revokeFailures).toEqual([])
   })
 
-  it('rejects an invalid OIDC signature before authorization and grant mutation', async () => {
+  it('does not accept legacy OIDC identity headers without a password session', async () => {
     const grant = await issue()
     const before = await state(grant)
-    const denied = await call(admin, revokeMethod, revokeParams(grant), 'platform', true)
+    const denied = await call(admin, revokeMethod, revokeParams(grant), 'platform', true, approvalToken, false)
     expect(denied.status).toBe(401)
     expect(denied.body.error?.code).toBe('UNAUTHENTICATED')
     expect(await state(grant)).toEqual(before)
