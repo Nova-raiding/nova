@@ -79,7 +79,7 @@ for (const name of databaseServices) {
     try { url = new URL(value) } catch { fail(`${name} ${key} is invalid`) }
     if (!['postgres:', 'postgresql:'].includes(url.protocol) || url.hostname !== 'postgres' ||
         (url.port && url.port !== '5432')) fail(`${name} ${key} must target the isolated Compose postgres service`)
-    if (name === 'api') {
+    if ((name === 'api' && key !== 'ALERT_RECEIVER_DATABASE_URL') || (name === 'migrate' && key === 'ALERT_RECEIVER_DATABASE_URL')) {
       const expectedRole = { DATABASE_URL: 'merchant_app', OPS_DATABASE_URL: 'merchant_ops', ALERT_RECEIVER_DATABASE_URL: 'merchant_alert_receiver' }[key]
       if (url.username !== expectedRole || !/^[0-9a-f]{48}$/.test(url.password) || url.pathname !== '/merchant') fail(`${key} must use a fresh isolated runtime role and database`)
       runtimeRoles.set(expectedRole, url.password)
@@ -88,6 +88,9 @@ for (const name of databaseServices) {
   if (name === 'migrate' && env.PGHOST !== 'postgres') fail('migration PGHOST must target isolated Compose postgres')
 }
 if (runtimeRoles.size !== 3) fail('candidate API requires three isolated database roles')
+for (const key of ['DATABASE_URL', 'OPS_DATABASE_URL']) {
+  if (services.migrate.environment?.[key] !== api.environment[key]) fail(`migration ${key} must match candidate API`)
+}
 if (JSON.stringify(services.migrate).includes('seed-demo')) fail('candidate migration must not seed demo data')
 let redisUrl
 try { redisUrl = new URL(api.environment.REDIS_URL) } catch { fail('API REDIS_URL is invalid') }

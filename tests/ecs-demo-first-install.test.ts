@@ -34,7 +34,12 @@ function fixture() {
     REDIS_URL: 'redis://redis:6379', PLUGIN_WRITE_ENABLED: 'false',
     ASSET_STORAGE_PREFIX: 'demo-candidate/release-check',
   }
-  compose.services.migrate.environment = { PGHOST: 'postgres' }
+  compose.services.migrate.environment = {
+    PGHOST: 'postgres',
+    DATABASE_URL: compose.services.api.environment.DATABASE_URL,
+    OPS_DATABASE_URL: compose.services.api.environment.OPS_DATABASE_URL,
+    ALERT_RECEIVER_DATABASE_URL: compose.services.api.environment.ALERT_RECEIVER_DATABASE_URL,
+  }
   compose.services.postgres.volumes = ['pgdata:/var/lib/postgresql/data']
   compose.services.redis.volumes = ['redisdata:/data']
   const run = (selected = project) => {
@@ -69,6 +74,9 @@ describe('isolated ECS demo candidate first install', () => {
     expect(() => readFileSync(externalDb.marker)).toThrow()
 
     const shared = fixture()
+    shared.compose.services.api.environment.DATABASE_URL = `postgres://merchant_app:${'a'.repeat(48)}@postgres:5432/merchant`
+    shared.compose.services.api.environment.OPS_DATABASE_URL = `postgres://merchant_ops:${'b'.repeat(48)}@postgres:5432/merchant`
+    shared.compose.services.api.environment.ALERT_RECEIVER_DATABASE_URL = `postgres://merchant_alert_receiver:${'c'.repeat(48)}@postgres:5432/merchant`
     shared.compose.volumes.pgdata = { external: true }
     const volumeResult = shared.run()
     expect(volumeResult.status).not.toBe(0)
