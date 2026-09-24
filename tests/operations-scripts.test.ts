@@ -548,10 +548,17 @@ describe('deployment operation scripts', () => {
       'canonical-product-cutover-evidence-gate.ts',
       'release-manifest-gate.ts',
     ]) expect(fullAcceptanceBlock).toContain(gate)
+    const bundleGate = preflight.indexOf('tests/release-evidence-bundle-gate.ts')
+    expect(bundleGate).toBeGreaterThan(preflight.indexOf('release-manifest-gate.ts'))
+    expect(bundleGate).toBeGreaterThan(preflight.indexOf('tests/production-evidence-gate.ts --kind restore'))
+    expect(bundleGate).toBeGreaterThan(preflight.indexOf('scope=infra (business acceptance evidence deferred)'))
+    expect(bundleGate).toBeLessThan(preflight.indexOf('echo "ecs deploy preflight passed:'))
     expect(preflight).toContain('if [ "$DEPLOYMENT_SCOPE" = full ]; then\n  release_manifest_sha256=')
     expect(preflight).toContain('shasum -a 256 "$RELEASE_MANIFEST_PATH"')
     expect(fullAcceptanceBlock.trimEnd().endsWith('fi')).toBe(true)
     expect(preflight.indexOf('if [ "$DEPLOYMENT_SCOPE" = infra ]; then')).toBeGreaterThan(preflight.indexOf('verify-container-source-freshness.sh'))
+    const verifiedRunner = readFileSync('infra/scripts/deploy-verified-ecs-compose.sh', 'utf8')
+    expect(verifiedRunner.indexOf('deploy-preflight-ecs.sh')).toBeLessThan(verifiedRunner.indexOf('consume-production-evidence-nonce.sh'))
   })
 
   it('requires explicit production schema-owner connection fields for the ECS migration', () => {

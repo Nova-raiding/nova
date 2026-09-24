@@ -40,7 +40,12 @@ requiredArtifacts.push(
 )
 const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'restore', 'objectStorage', 'codexAppHost', 'canonicalCutover'] as const
 type EvidenceField = typeof evidenceFields[number]
-const signedEvidenceFields = new Set<EvidenceField>(['capability', 'payment', 'restore', 'objectStorage', 'codexAppHost'])
+// ChatGPT host evidence is emitted by the real desktop host and is not signed
+// by a server-side evidence producer. Its trust boundary is the signed release
+// evidence bundle, which binds the exact artifact bytes to the candidate,
+// release, image set, manifest, and deployment nonce. The standard full ECS
+// deployment preflight must run the bundle gate before any deployment mutation.
+const signedEvidenceFields = new Set<EvidenceField>(['capability', 'payment', 'restore', 'objectStorage'])
 const immutableProductionArtifact = /^artifact:\/\/production\/([A-Za-z0-9._/-]+)#([a-f0-9]{64})$/u
 const compare = ([left]: [string, unknown], [right]: [string, unknown]) => left < right ? -1 : left > right ? 1 : 0
 const canonical = (value: unknown): string => Array.isArray(value)

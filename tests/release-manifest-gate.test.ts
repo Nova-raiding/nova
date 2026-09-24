@@ -278,7 +278,7 @@ describe('release manifest production gate', () => {
     const unsignedHostContents = JSON.stringify(host)
     writeFileSync(unsignedHost.evidenceFiles.codexAppHost, unsignedHostContents)
     unsignedHost.manifest.productionEvidence.codexAppHost = `artifact://production/evidence/codexAppHost.json#${digest(unsignedHostContents)}`
-    expect(validateReleaseManifest(unsignedHost.manifest, unsignedHost.options)).toContain('productionEvidence.codexAppHost signature_base64 must be a canonical Ed25519 signature')
+    expect(validateReleaseManifest(unsignedHost.manifest, unsignedHost.options)).toEqual([])
 
     const unsignedStorage = boundManifestFixture()
     const storage = JSON.parse(readFileSync(unsignedStorage.evidenceFiles.objectStorage, 'utf8')) as Record<string, unknown>
