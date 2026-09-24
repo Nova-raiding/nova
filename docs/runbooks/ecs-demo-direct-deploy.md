@@ -1,0 +1,30 @@
+# ECS demo 直接部署与上线验收
+
+适用范围：`101` 上的 Store Nova 本地 ChatGPT stdio 插件 demo。此流程记录 2026-09-25 已实际运行的 `merchant-demo-85575f9c` 隔离 Compose 项目和公网接管方式。它与需要旧版回滚胶囊、扫描回调和 15 场景预发布证据的正式生产部署器分开；那些旧版门禁不作为本次 demo 修复发布的前置条件。**每项修复先提交、从精确提交构建并部署，然后在公网和服务端验证该项；失败则继续修复和重新部署。**
+
+## 1. 锁定本次改动
+
+- 本地只用 `codex/windows-plugin-bundle` 一个分支、一个 Git worktree。每项独立修复做最小相关检查，通过后单独提交；不要把其他 agent 同时修改的文件一起暂存。
+- 从提交的完整 SHA 用 `git archive` 生成干净源码快照，传到 `/srv/merchant-releases/release-<sha>`。不得从带有未提交改动的共享工作目录构建镜像。记录快照 SHA、目标组件、镜像 digest 和构建结果。
+- 仅为改动的组件构建镜像。API、Ops UI、gateway、worker 各自有独立镜像；若运行中的组件来自不同提交，记录每个组件的真实提交及 digest，不把统一 release 标识误写成所有组件的源码版本。
+- 密钥、数据库连接和部署环境只放 ECS 受保护目录 `/var/lib/merchant-release-security/demo-first-install/release-85575f9c`；不要进入 Git、源码归档、日志、聊天或客户包。修改受保护 Compose 时保存新文件、核对目标服务和镜像 digest，并记录文件 SHA-256。
+
+## 2. 更新目标服务并接管公网
+
+本次 demo 的运行配置采用 `MCP_INTEGRATION_MODE=local_stdio`、`PUBLIC_OPS_BASE_URL=https://ops.yxsona.com`、`ASSET_SCANNER_MODE=deferred` 和 `DEMO_UNSCANNED_ASSETS_ENABLED=true`。本地直装不使用 ChatGPT 市场/OAuth；从 API、replica 和其受保护环境中**移除** `MCP_OAUTH_REQUIRED`、`OIDC_PROXY_SIGNING_SECRET` 等退役外部认证变量，不要以 `false` 或空值冒充删除。模型中转仍须真实鉴权和用量回执；缺少配置时保持阻断。
+
+使用该 release 的受保护 Compose 文件、`candidate.local-stdio.env` 和固定项目名，只指定本次变更的服务，例如 API 修复只更新 `api api-replica`，Ops 修复只更新 `ops-ui`；确实修改 worker 或 gateway 才更新对应服务。执行前先核对 `docker compose config` 中目标服务的镜像、环境和持久卷，再运行带**明确服务列表**的 `docker compose up -d --no-deps <services>`。不得运行无服务名的 `up -d`，以免启动 `worker-scan`、ClamAV 或无关旧服务。本 demo 的素材可保留 `unscanned` 状态直接使用；如有其他 Compose 项目的扫描容器仍在运行，不应称整台主机已关闭扫描。
+
+公网接管只操作事先核对完整 ID 的旧 gateway 容器，保留容器、卷和业务数据；新 gateway 在 80/443 生效后核对公网身份。不要用删除数据库、对象存储或容器卷掩盖问题。上传所需的持久对象目录是 `/var/lib/merchant-assets/objects`。
+
+## 3. 部署后验收与判定
+
+先确认新容器已经启动并承载公网，再进行下列与本次改动相关的最小回归；已通过且未改动的功能不重复测试。记录请求时间、目标域名、容器 ID、组件 digest、响应码和可脱敏的业务 ID。
+
+1. `https://yxsona.com/releasez`：`ready=true`，manifest SHA 和 image-set digest 对应实际运行容器；`https://yxsona.com/api/healthz` 与 `https://ops.yxsona.com/healthz` 返回 200。仅健康探针通过不代表业务上线。
+2. 从桌面浏览器真实登录运营后台和商家工作区 `ws_guirenniaoniao`，验证租户、角色和目标操作。Ops 前端用 `/ops/build-meta.json` 对照镜像提交。
+3. 对修改过的上传/交付路径，通过公网完成上传、读取和下载，校验文件字节或 SHA-256；demo `unscanned` 资产应能正常用于授权的工作流。无需等待扫描回调。
+4. 对修改过的 MCP/模型路径，从实际本地 stdio 插件入口发请求，核对中转鉴权、真实 provider 回执、模型用量与成本、创意点预留/结算。仅 `/v1/models` 或简单 JSON 探针成功，不代表完整商家生成任务成功。provider 结果未知时保留待核对的预留，不盲目退款或重放；余额/点数不足时拒绝新请求。
+5. 若任何一项失败，记录具体错误和证据，修复该项，单独提交并从新提交构建、部署该组件，再只复测失败项及受影响邻接路径。不得用旧版响应、静态代码或未完成的本地包证明上线。
+
+本次已观察到：公网 `release-7193bcd7` 健康与身份、商家/运营登录、REST/MCP 上传和客户交付可用；公网 `merchant.first_value` 未绑定候选生成返回 200、`provider_executed=true`，对应 Qwen 中转 750 tokens、成本 ¥0.003511、1 个创意点已结算。此前一次上游结果未知的预留仍待核对，不能擅自释放。Mac 包为未签名候选，Windows 客户包缺失，不能宣称“客户可直接安装”；打包另需绑定最终提交并做目标系统安装验收。
