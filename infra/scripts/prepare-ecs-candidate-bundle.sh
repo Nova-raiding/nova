@@ -80,6 +80,7 @@ infra/scripts/pilot-compose-preflight.sh
 infra/scripts/render-ecs-production-compose.sh
 infra/scripts/stage-verified-ecs-release.sh
 infra/scripts/ecs-build-lock.sh
+infra/scripts/install-ecs-staging-toolchain.mjs
 infra/scripts/ecs-one-click-deploy.sh
 infra/scripts/check-ecs-storage-budget.sh
 infra/scripts/build-ecs-release-images.sh
@@ -98,6 +99,9 @@ infra/scripts/invoke-ecs-automatic-rollback.sh
 infra/scripts/install-ecs-release-controls.mjs
 infra/scripts/install-ecs-release-controls.d.mts
 infra/scripts/test-ecs-release-control-installer.sh
+tests/ecs-staging-toolchain-installer.test.mjs
+tests/ecs-staging-toolchain-installer.container-check.mjs
+tests/ecs-one-click-deploy.test.ts
 infra/scripts/consume-production-evidence-nonce.sh
 infra/protected/consume-production-evidence-nonce.py
 tests/protected-nonce-consumer-smoke.py

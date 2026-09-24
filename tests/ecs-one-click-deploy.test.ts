@@ -35,6 +35,18 @@ describe('ECS one-click deployment storage policy', () => {
     expect(source).toContain("sed -n 's/^RELEASE_ID=//p'")
   })
 
+  it('stages only through the fixed candidate-bound host pair', () => {
+    const source = readFileSync(script, 'utf8')
+    expect(source).toContain('staging_entrypoint="$staging_control_root/stage-verified-ecs-release.sh"')
+    expect(source).toContain('generation_sha=${generation##*/}')
+    expect(source).toContain('[ "$generation_sha" = "$candidate_sha" ]')
+    expect(source).toContain('[ "$bound_source_sha" = "$candidate_source_sha" ]')
+    expect(source).toContain("sed 's/^sha256://'")
+    expect(source).toContain('env -i PATH=/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin:/usr/bin:/bin')
+    expect(source).toContain('ECS_CANDIDATE_BUNDLE_DIR="$ECS_CANDIDATE_BUNDLE_DIR" ECS_RELEASES_ROOT="$releases" RELEASE_ID="$RELEASE_ID"')
+    expect(source).not.toContain('sh "$root/infra/scripts/stage-verified-ecs-release.sh"')
+  })
+
   it('dry-runs by default, keeps the newest two, and protects explicit releases', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-retention-')))
     chmodSync(root, 0o700)

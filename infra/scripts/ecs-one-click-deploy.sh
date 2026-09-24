@@ -224,8 +224,43 @@ done
 [ -z "$missing" ] || { echo "one-click deployment configuration is incomplete; missing:$missing" >&2; exit 2; }
 sh "$root/infra/scripts/check-ecs-storage-budget.sh"
 if [ ! -d "$destination" ]; then
-  ECS_CANDIDATE_BUNDLE_DIR="$ECS_CANDIDATE_BUNDLE_DIR" ECS_RELEASES_ROOT="$releases" RELEASE_ID="$RELEASE_ID" \
-    sh "$root/infra/scripts/stage-verified-ecs-release.sh"
+  : "${ECS_CANDIDATE_BUNDLE_DIR:?ECS_CANDIDATE_BUNDLE_DIR is required}"
+  staging_control_root=/srv/release-candidates
+  staging_entrypoint="$staging_control_root/stage-verified-ecs-release.sh"
+  toolchain_root="$staging_control_root/staging-toolchain"
+  candidate_identity="$ECS_CANDIDATE_BUNDLE_DIR/candidate-identity.txt"
+  [ -f "$candidate_identity" ] && [ ! -L "$candidate_identity" ] || { echo 'candidate identity is missing or unsafe before staging' >&2; exit 2; }
+  [ -f "$staging_entrypoint" ] && [ ! -L "$staging_entrypoint" ] || { echo 'protected staging dispatcher is missing or unsafe' >&2; exit 2; }
+  [ -L "$toolchain_root/current" ] || { echo 'candidate-bound staging toolchain is not installed' >&2; exit 2; }
+  candidate_sha=$(sed -n 's/^git_sha=//p' "$candidate_identity")
+  candidate_source_sha=$(sed -n 's/^source_sha256=//p' "$candidate_identity" | sed 's/^sha256://')
+  printf '%s' "$candidate_source_sha" | grep -Eq '^[a-f0-9]{64}$' || { echo 'candidate identity source archive SHA is invalid' >&2; exit 2; }
+  printf '%s' "$candidate_sha" | grep -Eq '^[a-f0-9]{40}$' || { echo 'candidate identity Git SHA is invalid' >&2; exit 2; }
+  generation=$(readlink -f "$toolchain_root/current")
+  case "$generation" in "$toolchain_root"/versions/*) ;; *) echo 'active staging generation is outside the protected root' >&2; exit 2 ;; esac
+  generation_sha=${generation##*/}
+  [ "$generation_sha" = "$candidate_sha" ] || { echo 'staging toolchain Git SHA does not match candidate identity' >&2; exit 2; }
+  generation_manifest="$generation/toolchain-identity.json"
+  stage_helper="$generation/infra/scripts/stage-verified-ecs-release.sh"
+  build_lock_helper="$generation/infra/scripts/ecs-build-lock.sh"
+  for path in "$generation_manifest" "$stage_helper" "$build_lock_helper"; do
+    [ -f "$path" ] && [ ! -L "$path" ] || { echo 'active staging generation is incomplete' >&2; exit 2; }
+    [ "$(owner_of "$path")" = 0 ] || { echo 'active staging generation must be root-owned' >&2; exit 2; }
+    file_mode=$(mode_of "$path"); case "$file_mode" in *[2367][0-7]|*[2367]) echo 'active staging generation must not be writable by group or other users' >&2; exit 2 ;; esac
+  done
+  bound_sha=$(env -i PATH=/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin:/usr/bin:/bin \
+    /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); for (const k of ["git_sha","source_archive_sha256","staging_helper_sha256","build_lock_sha256"]) { if (typeof d[k] !== "string" || /[\r\n]/.test(d[k])) process.exit(2); console.log(d[k]); }' "$generation_manifest") || { echo 'active staging generation identity is invalid' >&2; exit 2; }
+  bound_git_sha=$(printf '%s\n' "$bound_sha" | sed -n '1p')
+  bound_source_sha=$(printf '%s\n' "$bound_sha" | sed -n '2p')
+  bound_stage_sha=$(printf '%s\n' "$bound_sha" | sed -n '3p')
+  bound_lock_sha=$(printf '%s\n' "$bound_sha" | sed -n '4p')
+  [ "$bound_git_sha" = "$candidate_sha" ] && [ "$bound_source_sha" = "$candidate_source_sha" ] || { echo 'staging toolchain candidate binding does not match candidate archive identity' >&2; exit 2; }
+  actual_stage_sha=$(sha256sum "$stage_helper" | awk '{print $1}')
+  actual_lock_sha=$(sha256sum "$build_lock_helper" | awk '{print $1}')
+  [ "$bound_stage_sha" = "$actual_stage_sha" ] && [ "$bound_lock_sha" = "$actual_lock_sha" ] || { echo 'staging helper or build-lock checksum differs from active generation identity' >&2; exit 2; }
+  env -i PATH=/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin:/usr/bin:/bin \
+    ECS_CANDIDATE_BUNDLE_DIR="$ECS_CANDIDATE_BUNDLE_DIR" ECS_RELEASES_ROOT="$releases" RELEASE_ID="$RELEASE_ID" \
+    "$staging_entrypoint"
 fi
 [ -f "$destination/.candidate-identity" ] || { echo 'staged release identity is missing' >&2; exit 2; }
 echo "deploying verified release $RELEASE_ID from $destination"

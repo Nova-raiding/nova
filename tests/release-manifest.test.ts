@@ -49,7 +49,7 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(38)
+    expect(manifest.artifacts).toHaveLength(44)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',
@@ -61,6 +61,8 @@ describe('release manifest', () => {
       'services/payment-gateway/Dockerfile',
       'infra/scripts/render-ecs-production-compose.sh',
       'infra/scripts/stage-verified-ecs-release.sh',
+      'infra/scripts/ecs-build-lock.sh',
+      'infra/scripts/install-ecs-staging-toolchain.mjs',
       'infra/scripts/ecs-one-click-deploy.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/deploy-preflight-ecs.sh',
@@ -70,6 +72,10 @@ describe('release manifest', () => {
       'infra/scripts/invoke-ecs-automatic-rollback.sh',
       'infra/scripts/install-ecs-release-controls.mjs',
       'infra/scripts/install-ecs-release-controls.d.mts',
+      'tests/ecs-staging-toolchain-installer.test.mjs',
+      'tests/ecs-staging-toolchain-installer.container-check.mjs',
+      'tests/ecs-one-click-deploy.test.ts',
+      'docs/runbooks/ecs-candidate-safe-sync.md',
       'infra/protected/attest-postgres-backup.mjs',
       'infra/protected/attest-postgres-backup.d.mts',
       'infra/protected/ecs-preidentity-recovery.mjs',

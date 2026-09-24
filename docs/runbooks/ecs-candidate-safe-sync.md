@@ -12,16 +12,61 @@ sh infra/scripts/prepare-ecs-candidate-bundle.sh
 
 脚本只接受干净且已提交的工作树。产物包含远端比较文件清单、逐文件本地/远端 SHA-256、提交源码归档 `candidate-source.tar`、归档摘要及 `candidate-identity.txt`。源码归档统一排除 `artifacts/`、`screenshots/` 中的历史交付物和验收产物，保留构建、迁移和测试输入，包括发布测试直接依赖的 `dogfood/` 脚本与退役断言记录；这些排除规则必须同时用于候选包、门禁镜像、业务镜像和部署时的源码摘要校验。此操作不删除仓库或服务器上的任何历史文件。身份文件绑定完整 Git SHA、源码归档 SHA-256、比较清单 SHA-256 和同步计划 SHA-256；其中源码摘要必须与候选门禁镜像的 `com.storenova.candidate.source_sha256` OCI 标签一致。脚本对 SSH 目标仅执行 `cd`、文件存在性判断和 `sha256sum`。
 
-审核完成后，不得把归档覆盖解压到现有 checkout。先在 ECS 主机预创建仓库外、仅发布操作者可写的 releases 根目录，然后执行：
+审核完成后，不得把归档覆盖解压到现有 checkout。若 `/srv/release-candidates/stage-verified-ecs-release.sh` 是旧的 standalone copy，先按下面的“staging 工具链安装/升级”步骤用候选归档绑定的 staging+lock pair 更新它；不能直接覆盖旧文件，也不能让旧 helper 在共享构建锁之外继续执行。随后在 ECS 主机预创建仓库外、仅发布操作者可写的 releases 根目录，再执行：
 
 ```sh
-ECS_CANDIDATE_BUNDLE_DIR=/srv/release-candidates/<candidate> \
-ECS_RELEASES_ROOT=/srv/merchant-releases \
-RELEASE_ID=<release-id> \
-sh infra/scripts/stage-verified-ecs-release.sh
+env -i PATH=/usr/bin:/bin \
+  ECS_CANDIDATE_BUNDLE_DIR=/srv/release-candidates/<candidate> \
+  ECS_RELEASES_ROOT=/srv/merchant-releases \
+  RELEASE_ID=<release-id> \
+  /srv/release-candidates/stage-verified-ecs-release.sh
 ```
 
-该 staging 入口依赖同目录的 `infra/scripts/ecs-build-lock.sh`。从候选 checkout 运行时，两者必须来自同一个已审查的候选归档；如果将入口安装为独立主机控制程序，必须通过受信主机安装流程成对安装入口和锁 helper，并分别核对源码摘要、root-owned 固定目录及不可由 group/other 写入的父目录。缺少 helper 或 helper 是符号链接时，入口会 fail-closed；不得让它回退到可变仓库路径。当前 protected-control installer 不负责安装这两个 staging 文件，不能把单独复制入口脚本视为完成安装。
+该 staging 入口依赖同目录的 `infra/scripts/ecs-build-lock.sh`。从候选 checkout 运行时，两者必须来自同一个已审查的候选归档；standalone control path 使用下面的 candidate-bound installer 成对安装。缺少 helper 或 helper 是符号链接时，入口会 fail-closed；不得让它回退到可变仓库路径。
+
+### Staging 工具链安装/升级
+
+Standalone staging helper 曾独立复制到 `/srv/release-candidates`，不一定与候选源码同步。安装器 `infra/scripts/install-ecs-staging-toolchain.mjs` 从完整 `candidate-source.tar` 中提取 `stage-verified-ecs-release.sh` 和 `ecs-build-lock.sh`，验证四字段 `candidate-identity.txt`、归档 SHA-256、Git archive 内嵌提交 SHA、tar 路径/成员类型及两份脚本语法。它不接受人工填写的脚本摘要，也不执行生产切换。两份脚本进入同一个只读 generation；稳定 dispatcher 的 `current` symlink 原子切换整对文件。更新会先保存上一个已验证 generation 到 `previous`，`rollback` 在共享构建锁内原子恢复该 pair。旧 standalone 文件只以 root-only 字节备份保留用于审计；它不是安全回滚目标。首次 bootstrap 没有已验证的旧 pair 可回退，若在 dispatcher 安装后、current 指针激活前中断，入口会 fail closed；重新运行同一安装命令即可完成激活。
+
+安装器本身是 bootstrap trust root，不能从未校验的候选执行。owner 在已审查的干净候选提交上，从归档提取安装器并独立核对它与该提交 blob 完全相同：
+
+```sh
+candidate_sha=$(sed -n 's/^git_sha=//p' "$BUNDLE/candidate-identity.txt")
+tmpdir=$(mktemp -d)
+tar -xOf "$BUNDLE/candidate-source.tar" infra/scripts/install-ecs-staging-toolchain.mjs > "$tmpdir/from-archive.mjs"
+git show "$candidate_sha:infra/scripts/install-ecs-staging-toolchain.mjs" > "$tmpdir/from-commit.mjs"
+cmp "$tmpdir/from-archive.mjs" "$tmpdir/from-commit.mjs"
+shasum -a 256 "$tmpdir/from-archive.mjs"
+```
+
+只有 `cmp` 成功且摘要记录进候选审查后，才把该 bootstrap 文件放入同一候选目录下一个以其 SHA 命名的新文件；不得覆盖其他候选或历史安装器。候选 bundle、身份文件、归档和 bootstrap 均须 root-owned、0600、父目录 canonical 且不可由 group/other 写入。执行前先人工确认没有正在运行的旧版 staging `npm ci`/build 或 ECS image build；旧 helper 不遵守新共享锁，锁文件本身不能证明旧进程已退出。
+
+`/srv/release-candidates` 必须是 root-owned 0700；`/var/lib/merchant-release-security/locks` 必须是 root-owned 0700，`ecs-source-build.lock` 是 root-owned 0600 普通文件。安装器只使用固定 Node `/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node`，清空继承环境并固定 `PATH=/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin:/usr/bin:/bin`。它逐项确认固定 Node、`/usr/bin/npm`、git、python3、shasum、tar 和 flock 的真实目标均 root-owned 且不可由 group/other 写入，并用固定 Node 执行 `/usr/bin/npm --version` 兼容性探针；不使用 `/usr/local/bin` 中由 uid 1001 所有的 node/npm 链接。
+
+将经过上述摘要核对的 bootstrap 和候选 bundle 放入 `/srv/release-candidates/<candidate>` 后，管理员运行：
+
+```sh
+env -i PATH=/usr/bin:/bin \
+  /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+  /srv/release-candidates/<candidate>/install-ecs-staging-toolchain.<installer-sha256>.mjs \
+  install /srv/release-candidates/<candidate>/candidate-source.tar \
+  /srv/release-candidates/<candidate>/candidate-identity.txt \
+  /srv/release-candidates \
+  <installer-sha256>
+```
+
+成功回执绑定 Git SHA、候选归档 SHA、staging helper SHA 与 build-lock helper SHA。若共享锁正被 staging/build 持有，安装会立即拒绝。安装后只允许通过固定入口运行 staging；入口只保留 `ECS_CANDIDATE_BUNDLE_DIR`、`ECS_RELEASES_ROOT`、`RELEASE_ID` 三个非 secret 输入，并清除 `NODE_OPTIONS`/`NODE_PATH`，随后由 generation helper 在同一把构建锁下执行。
+
+更新到新候选后，如 staging 行为需回退，使用新候选目录中另一个已核验的 bootstrap 对 `/srv/release-candidates` 执行 `rollback`：
+
+```sh
+env -i PATH=/usr/bin:/bin \
+  /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+  /srv/release-candidates/<candidate>/install-ecs-staging-toolchain.<installer-sha256>.mjs \
+  rollback /srv/release-candidates <installer-sha256>
+```
+
+首次 bootstrap 不会恢复不安全的旧 standalone helper；若没有上一个已验证 generation，回滚会拒绝。该工具链切换只更新仓库外 staging 控制文件，不安装 release、不构建/推送镜像、不启动容器、不迁移数据库、不切换线上流量。安装后仍须完成候选三方审阅、全部生产发布门禁和后续独立部署审批。
 
 staging 执行器会重新校验身份文件中源码归档、比较清单和同步计划的 SHA-256，并核对 Git archive 内嵌提交 SHA；含路径穿越、链接或特殊文件的归档会被拒绝。它只在 releases 根目录内创建随机临时目录，以 `npm ci --ignore-scripts` 从锁文件安装，保留只读的 `.candidate-source.tar` 和 `.candidate-identity` 供部署器重新核验，最后原子改名为全新的 release 目录。目标已存在时拒绝覆盖。生产 `.env`、密钥和运行时凭据不得进入候选包或 release checkout，仍由受保护的主机路径在渲染和部署阶段注入。
 
@@ -33,7 +78,7 @@ staging 执行器会重新校验身份文件中源码归档、比较清单和同
 
 只有另行配置了真实 OIDC 网关的部署才选择 `oidc`：构建必须提供 `ECS_OPS_UI_LOGIN_URL`，API 必须提供对应签名 secret。签名 secret 本身不等于存在登录网关；不得把未实现的 `/auth/login` 猜作入口。上线验收需从匿名登录页完成真实登录，再验证平台角色、会话和退出，不能用健康端点代替。
 
-生产镜像、rendered Compose、回滚 capsule 和真实证据准备完毕后，在 ECS 宿主执行一条命令完成安全 staging、受验证切换、健康验收和成功后的空间回收：
+一键流程在隐式 staging 前只调用固定 `/srv/release-candidates/stage-verified-ecs-release.sh` dispatcher，并检查 `/srv/release-candidates/staging-toolchain/current` 的 generation Git SHA、归档 SHA 和两份脚本 SHA 必须与当前候选身份完全匹配；它不会调用 checkout 内的 staging 脚本。不匹配时先按上面的流程从该候选归档安装对应 pair。生产镜像、rendered Compose、回滚 capsule 和真实证据准备完毕后，在 ECS 宿主执行一条命令完成安全 staging、受验证切换、健康验收和成功后的空间回收：
 
 ```sh
 ECS_CANDIDATE_BUNDLE_DIR=/srv/release-candidates/<candidate> \
