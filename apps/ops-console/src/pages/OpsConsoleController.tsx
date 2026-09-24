@@ -335,7 +335,7 @@ function Dashboard({
           <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
             {loadingMessage}
           </span>
-          {model.error && sessionGate !== "blocked" ? (
+          {model.error ? (
             <Alert
               className="ops-global-load-warning"
               role="status"
