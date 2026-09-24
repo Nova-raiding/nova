@@ -169,7 +169,7 @@ async function main() {
   const beforeSources = await fingerprint()
   let probePassed = false
   const code = await runOpsE2e(['dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js'], process.env,
-    async context => {
+    async (context: OpsE2eContext) => {
       let collectorPassed = false
       try { collectorPassed = JSON.parse(await readFile(join(context.evidenceDir, 'scan-result.json'), 'utf8')).status === 'passed' }
       catch (error) { if ((error as { code?: unknown })?.code !== 'ENOENT') throw error }
