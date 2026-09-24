@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App as AntApp, Form } from "antd";
-import { clearOpsConnectionConfig, describeOpsError, hasOpsConnection, managedOpsSession, opsRestPost, readOpsConnectionConfig, recordOpsBootstrapTrace, rpc, rpcForWorkspace } from "../api/opsClient.js";
+import { clearExpiredOpsSession, describeOpsError, hasOpsConnection, managedOpsSession, opsRestPost, readOpsConnectionConfig, recordOpsBootstrapTrace, rpc, rpcForWorkspace } from "../api/opsClient.js";
 import type {
   Platform,
   Settings,
@@ -738,7 +738,7 @@ export function useOpsConsoleModel() {
     setLoading(true);
     setModelStatusLoading(true);
     setError("");
-    if (!managedOpsSession && !hasOpsConnection()) {
+    if (!hasOpsConnection()) {
       setLoading(false);
       setModelStatusLoading(false);
       return;
@@ -796,12 +796,10 @@ export function useOpsConsoleModel() {
         recordOpsBootstrapTrace("session_received", { hasActor: typeof (value as Record<string, unknown>).actor_id === "string", hasCapabilities: Array.isArray((value as Record<string, unknown>).capabilities), workbench: (value as Record<string, unknown>).workbench });
         resolvedSession = value as unknown as OpsSession;
         loadCoordinatorRef.current.commit(loadRequest, () => { acceptLoadedSession(resolvedSession!); });
-      } else if (firstOptionalError && ["SESSION_EXPIRED", "UNAUTHENTICATED"].includes(String((firstOptionalError as { code?: string }).code))) {
-        // The session is gone: the local bearer that produced this request must
-        // not stay in localStorage, or every later refresh keeps sending a
-        // credential the gateway already rejected. Managed sessions are
-        // untouched (clearOpsConnectionConfig is a no-op for them).
-        clearOpsConnectionConfig();
+      } else if (firstOptionalError && ["AUTH_SESSION_INVALID", "SESSION_EXPIRED", "UNAUTHENTICATED"].includes(String((firstOptionalError as { code?: string }).code))) {
+        // The session is gone: clear its local activity hint and authorization
+        // projection so later refreshes return to the password login form.
+        clearExpiredOpsSession();
         loadCoordinatorRef.current.commit(loadRequest, () => {
           // Clearing the authorization boundary invalidates this load. Commit
           // its terminal authentication error here, before the stale-load guard
@@ -1232,10 +1230,9 @@ export function useOpsConsoleModel() {
   const opsRoleKey = opsSession?.roles.join("|") ?? "";
   useEffect(() => {
     recordOpsBootstrapTrace("load_effect", { managed: managedOpsSession, roleKey: Boolean(opsRoleKey) });
-    // The OIDC gateway is the connection boundary in managed mode; it does
-    // not require a bearer token or a persisted local connection record.
-    // Local bearer mode keeps the explicit connection guard.
-    if (!managedOpsSession && !hasOpsConnection()) {
+    // The password session is the production connection boundary; it does
+    // not require a bearer token. Local bearer mode keeps the explicit guard.
+    if (!hasOpsConnection()) {
       recordOpsBootstrapTrace("load_skipped", { reason: "no_connection" });
       setLoading(false);
       setModelStatusLoading(false);
@@ -1645,7 +1642,7 @@ export function useOpsConsoleModel() {
       anchor.click();
       // Keep the anchor alive long enough for Chromium's download observer to
       // consume the blob URL. Immediate cleanup can drop the download event in
-      // isolated OIDC browser runs even though the file was generated.
+      // isolated browser runs even though the file was generated.
       window.setTimeout(() => {
         anchor.remove();
         URL.revokeObjectURL(url);

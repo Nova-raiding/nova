@@ -39,14 +39,13 @@ describe("top-level refresh coordination", () => {
     expect(source).not.toContain("if (loadInFlightKeysRef.current.has(loadKey)) return;");
   });
 
-  it("clears the local bearer when the gateway rejects the session", async () => {
-    // A 401/SESSION_EXPIRED probe means the stored bearer is dead. Leaving it
-    // in localStorage kept sending `authorization: Bearer …` and let the next
-    // onRefresh() succeed on a credential the gateway had already rejected.
+  it("clears browser session state when the gateway rejects the session", async () => {
+    // A 401/AUTH_SESSION_INVALID probe invalidates both persisted bearer credentials
+    // and the password-session hint before the login flow is shown again.
     const source = await modelSource();
-    const branch = source.slice(source.indexOf('"SESSION_EXPIRED", "UNAUTHENTICATED"'));
+    const branch = source.slice(source.indexOf('"AUTH_SESSION_INVALID", "SESSION_EXPIRED", "UNAUTHENTICATED"'));
     expect(branch.length).toBeGreaterThan(0);
-    expect(branch.slice(0, 600)).toContain("clearOpsConnectionConfig()");
+    expect(branch.slice(0, 600)).toContain("clearExpiredOpsSession()");
   });
 });
 
