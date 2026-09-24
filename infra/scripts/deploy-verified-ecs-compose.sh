@@ -265,6 +265,13 @@ assert_inputs_unchanged() {
 image_set_digest=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$verified_compose" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 manifest_sha256=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$verified_compose" "$IMAGE_DIGESTS_JSON" --print-manifest-sha256)
 project=${ECS_COMPOSE_PROJECT:-merchant-production}
+runtime_services='api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway'
+check_published_ports() {
+  docker compose -p "$project" -f "$verified_compose" config --format json \
+    | node "$root/infra/scripts/ecs-compose-published-ports.mjs" "$project" "$runtime_services" "${ECS_EXTERNAL_GATEWAY_ID:-}"
+}
+# Check every fixed host binding against other running containers before any
+# release mutation. Recheck immediately before cutover to catch host drift.
 docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" config --format json \
   | node "$root/infra/scripts/validate-ecs-compose-project.mjs" - "$project" || {
     echo 'rollback Compose resources do not belong to the selected ECS project' >&2
@@ -284,6 +291,7 @@ if [ -n "${ECS_EXTERNAL_GATEWAY_ID:-}" ]; then
 else
   node "$root/infra/scripts/ecs-external-gateway-handoff.mjs" check-ports --candidate-project "$project"
 fi
+check_published_ports
 release_images=$(docker compose -p "$project" -f "$verified_compose" config --images) || {
   echo 'could not enumerate verified release images' >&2; exit 1;
 }
@@ -401,14 +409,14 @@ assert_inputs_unchanged
 MIGRATION_CHAIN_MODE=complete sh "$root/infra/scripts/verify-database-migration-chain.sh"
 "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase migration_complete
 assert_inputs_unchanged
+check_published_ports
 "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase runtime_cutover_started
 runtime_cutover_started=true
 if [ -n "$external_gateway_state" ]; then
   external_gateway_handoff_started=true
   external_gateway_action stop
 fi
-docker compose -p "$project" -f "$verified_compose" up -d --no-build --pull never --remove-orphans --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
-  api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway
+docker compose -p "$project" -f "$verified_compose" up -d --no-build --pull never --remove-orphans --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" $runtime_services
 
 health_deadline=$(( $(date +%s) + ${ECS_POST_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300} ))
 while ! curl --fail --silent --show-error --max-time 15 "${PRODUCTION_API_BASE_URL%/}/livez" >/dev/null 2>&1 || \

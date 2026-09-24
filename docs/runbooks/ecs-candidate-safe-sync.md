@@ -169,6 +169,8 @@ ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATAB
 
 如果 80/443 由目标 Compose project 外的旧网关占用，部署器默认拒绝继续。先只读核验容器完整 ID、镜像、端口、只读证书挂载及网络，再在受保护发布配置中明确设置 `ECS_EXTERNAL_GATEWAY_ID` 和 `ECS_EXTERNAL_GATEWAY_PROJECT`。只有确认旧容器确实没有任何 Compose project/service 标签时，后者才设置为 `legacy-unmanaged`；这不是允许忽略已有标签的开关。
 
+部署器还会在 nonce/迁移前检查候选 Compose 的所有固定宿主端口，与 `docker ps` 中其他项目的绑定及宿主 `ss` 监听交叉核对，并在 runtime cutover 前复查。只有本次明确替换的同项目服务，以及已通过快照身份核验的外部网关 80/443 绑定会被视为可释放端口。其他本机容器或进程占用（例如 `127.0.0.1:8787`）会在数据库迁移和切流前 fail-closed；不得通过停止不属于发布项目的容器来绕过。
+
 部署器在同一生产锁内保存 root-only 快照，记录配置与证书内容摘要而非原始凭据。迁移完成后才停止这个精确旧容器，再启动候选服务。旧容器不删除、不重建。启动失败时，仅在候选网关的 project/service/release/image 身份全部一致后停止候选网关，然后核对快照并启动原旧容器。
 
 快照还要求旧网关已经连接候选 API 与网关共享的 production network；不能只依据旧网关曾经通过 demo network 访问旧 API 就认为回退可达。按 Compose 重建 API 会丢失手工添加的旧网络 attachment。缺少共同网络时部署在 nonce 消费和停机之前阻断，先审查并准备可恢复的过渡网络拓扑，再重新捕获快照。

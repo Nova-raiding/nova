@@ -8,6 +8,21 @@ const path = 'infra/scripts/deploy-verified-ecs-compose.sh'
 const source = () => readFileSync(path, 'utf8')
 
 describe('verified ECS Compose deployment runner', () => {
+  it('checks all candidate host bindings before nonce/migration and rechecks before runtime cutover', () => {
+    const script = source()
+    expect(script).toContain('node "$root/infra/scripts/ecs-compose-published-ports.mjs" "$project" "$runtime_services" "${ECS_EXTERNAL_GATEWAY_ID:-}"')
+    const firstCheck = script.indexOf('\ncheck_published_ports\n')
+    const nonce = script.indexOf('consume-production-evidence-nonce.sh')
+    const migration = script.indexOf('run --rm --no-deps --pull never migrate')
+    const recheck = script.indexOf('\ncheck_published_ports\n', firstCheck + 1)
+    const cutover = script.indexOf('up -d --no-build --pull never --remove-orphans')
+    expect(firstCheck).toBeGreaterThanOrEqual(0)
+    expect(firstCheck).toBeLessThan(nonce)
+    expect(firstCheck).toBeLessThan(migration)
+    expect(recheck).toBeGreaterThan(migration)
+    expect(recheck).toBeLessThan(cutover)
+  })
+
   it('rejects infra scope before required inputs, nonce consumption, migrations, or Compose mutation', () => {
     const result = spawnSync('sh', [path], { env: { PATH: process.env.PATH, DEPLOYMENT_SCOPE: 'infra' }, encoding: 'utf8' })
     expect(result.status).toBe(2)
