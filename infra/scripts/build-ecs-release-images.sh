@@ -21,8 +21,8 @@ ops_auth_mode=${ECS_OPS_AUTH_MODE:-}
 printf '%s' "$revision" | grep -Eq '^[0-9a-f]{40}$' || {
   echo 'ECS_RELEASE_GIT_SHA must be a full commit SHA' >&2; exit 2;
 }
-printf '%s' "$release_id" | grep -Eq '^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' || {
-  echo 'RELEASE_ID must be a safe release-* identifier' >&2; exit 2;
+printf '%s' "$release_id" | grep -Eq '^(release|ecs)-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' || {
+  echo 'RELEASE_ID must be a safe release-* or ecs-* identifier' >&2; exit 2;
 }
 printf '%s' "$repository" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9.:_-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)+$' || {
   echo 'ECS_RELEASE_IMAGE_REPOSITORY must be a registry/repository prefix without a tag or digest' >&2; exit 2;
@@ -93,16 +93,19 @@ archive=$(mktemp "${TMPDIR:-/tmp}/ecs-release-source.XXXXXXXX")
 context=$(mktemp -d "${TMPDIR:-/tmp}/ecs-release-context.XXXXXXXX")
 records=$(mktemp "${TMPDIR:-/tmp}/ecs-release-images.XXXXXXXX.tsv")
 built_tags=''
+build_started=NO
 cleanup() {
   rm -f "$archive" "$records"
   rm -rf "$context"
-  if [ -n "$built_tags" ]; then
-    # Pushed immutable references are the release artifact. Local mutable tags
-    # are transient build handles and otherwise retain duplicate image graphs.
-    # shellcheck disable=SC2086
-    docker image rm $built_tags >/dev/null 2>&1 || true
+  if [ "$build_started" = YES ]; then
+    if [ -n "$built_tags" ]; then
+      # Pushed immutable references are the release artifact. Local mutable tags
+      # are transient build handles and otherwise retain duplicate image graphs.
+      # shellcheck disable=SC2086
+      docker image rm $built_tags >/dev/null 2>&1 || true
+    fi
+    docker builder prune -f --keep-storage "$cache_limit" >/dev/null 2>&1 || true
   fi
-  docker builder prune -f --keep-storage "$cache_limit" >/dev/null 2>&1 || true
   ecs_build_lock_cleanup
 }
 trap cleanup EXIT HUP INT TERM
@@ -176,6 +179,7 @@ build_image() {
 # Prune before and after the build. The dedicated upper bound prevents an
 # interrupted sequence of releases from accumulating an unbounded BuildKit
 # cache while still retaining the hottest shared npm and compiler layers.
+build_started=YES
 docker builder prune -f --keep-storage "$cache_limit" >/dev/null
 
 build_image merchant-api infra/docker/api.Dockerfile

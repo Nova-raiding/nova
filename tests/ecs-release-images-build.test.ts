@@ -1,4 +1,4 @@
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -45,7 +45,7 @@ describe('bounded ECS release image builder', () => {
       encoding: 'utf8',
     })
     expect(result.status).not.toBe(0)
-    expect(result.stderr).toContain('RELEASE_ID must be a safe release-* identifier')
+    expect(result.stderr).toContain('RELEASE_ID must be a safe release-* or ecs-* identifier')
   })
 
   it('refuses a pre-created output path before pushing images', () => {
@@ -104,6 +104,7 @@ describe('bounded ECS release image builder', () => {
     const root = join(directory, 'repo')
     const bin = join(directory, 'bin')
     const output = join(directory, 'output')
+    const releaseId = 'ecs-00154548'
     mkdirSync(join(root, 'infra/scripts'), { recursive: true })
     mkdirSync(join(root, 'infra/docker'), { recursive: true })
     mkdirSync(join(root, 'services/payment-gateway'), { recursive: true })
@@ -120,30 +121,41 @@ describe('bounded ECS release image builder', () => {
     const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim()
     const log = join(directory, 'docker.log')
     const digest = `sha256:${'d'.repeat(64)}`
-    writeFileSync(join(bin, 'docker'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\ncase "$1 $2" in\n  'builder prune'|'build --pull=false'|'push registry.example.com/storenova/merchant-api:release-test'|'push registry.example.com/storenova/merchant-worker:release-test'|'push registry.example.com/storenova/merchant-ui:release-test'|'push registry.example.com/storenova/merchant-ops-ui:release-test'|'push registry.example.com/storenova/payment-gateway:release-test'|'push registry.example.com/storenova/pilot-gateway:release-test'|'image rm') exit 0;;\n  'image inspect')\n    case "$*" in\n      *org.opencontainers.image.revision*) printf '%s\\n' '${revision}' ;;\n      *com.storenova.release.id*) printf '%s\\n' 'release-test' ;;\n      *com.storenova.release.source_sha256*) printf '%s\\n' "$SOURCE_SHA" ;;\n      *RepoDigests*) printf '%s@${digest}\\n' "${'$'}{5%:release-test}" ;;\n    esac\n    exit 0;;\nesac\nexit 1\n`)
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\ncase "$1 $2" in\n  'builder prune'|'build --pull=false'|'push registry.example.com/storenova/merchant-api:${releaseId}'|'push registry.example.com/storenova/merchant-worker:${releaseId}'|'push registry.example.com/storenova/merchant-ui:${releaseId}'|'push registry.example.com/storenova/merchant-ops-ui:${releaseId}'|'push registry.example.com/storenova/payment-gateway:${releaseId}'|'push registry.example.com/storenova/pilot-gateway:${releaseId}'|'image rm') exit 0;;\n  'image inspect')\n    case "$*" in\n      *org.opencontainers.image.revision*) printf '%s\\n' '${revision}' ;;\n      *com.storenova.release.id*) printf '%s\\n' '${releaseId}' ;;\n      *com.storenova.release.source_sha256*) printf '%s\\n' "$SOURCE_SHA" ;;\n      *RepoDigests*) printf '%s@${digest}\\n' "${'$'}{5%:${releaseId}}" ;;\n    esac\n    exit 0;;\nesac\nexit 1\n`)
     chmodSync(join(bin, 'docker'), 0o755)
     const archive = spawnSync('git', ['archive', '--format=tar', revision], { cwd: root }).stdout
     const sha = spawnSync('shasum', ['-a', '256'], { input: archive, encoding: 'utf8' }).stdout.split(/\s/u)[0]
+    writeFileSync(join(root, '.candidate-source.tar'), archive)
+    writeFileSync(join(root, '.candidate-identity'), `release_id=${releaseId}\ngit_sha=${revision}\nsource_sha256=sha256:${sha}\n`)
+
+    const buildEnv = {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH ?? ''}`,
+      SOURCE_SHA: `sha256:${sha}`,
+      ECS_RELEASE_GIT_SHA: revision,
+      ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
+      ECS_BUILD_LOCK_PATH: join(directory, 'build.lock'),
+      ECS_BUILD_CACHE_KEEP_STORAGE: '1GB',
+      ECS_OPS_AUTH_MODE: 'oidc',
+      ECS_OPS_UI_LOGIN_URL: 'https://sso.example.test/authorize?client_id=ops',
+    }
+    const mismatchedIdentity = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-release-images.sh')], {
+      cwd: directory,
+      env: { ...buildEnv, RELEASE_ID: 'release-00154548', ECS_RELEASE_IMAGE_OUTPUT_DIR: join(directory, 'mismatch-output') },
+      encoding: 'utf8',
+    })
+    expect(mismatchedIdentity.status).not.toBe(0)
+    expect(mismatchedIdentity.stderr).toContain('candidate identity release ID does not match RELEASE_ID')
+    expect(existsSync(log)).toBe(false)
 
     const result = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-release-images.sh')], {
       cwd: directory,
-      env: {
-        ...process.env,
-        PATH: `${bin}:${process.env.PATH ?? ''}`,
-        SOURCE_SHA: `sha256:${sha}`,
-        ECS_RELEASE_GIT_SHA: revision,
-        RELEASE_ID: 'release-test',
-        ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
-        ECS_RELEASE_IMAGE_OUTPUT_DIR: output,
-        ECS_BUILD_LOCK_PATH: join(directory, 'build.lock'),
-        ECS_BUILD_CACHE_KEEP_STORAGE: '1GB',
-        ECS_OPS_AUTH_MODE: 'oidc',
-        ECS_OPS_UI_LOGIN_URL: 'https://sso.example.test/authorize?client_id=ops',
-      },
+      env: { ...buildEnv, RELEASE_ID: releaseId, ECS_RELEASE_IMAGE_OUTPUT_DIR: output },
       encoding: 'utf8',
     })
     expect(result.status, result.stderr).toBe(0)
     const manifest = JSON.parse(readFileSync(join(output, 'release-images.json'), 'utf8'))
+    expect(manifest.release_id).toBe(releaseId)
     expect(manifest.release_git_sha).toBe(revision)
     expect(Object.keys(manifest.image_digests)).toHaveLength(6)
     expect(Object.values(manifest.image_digests)).toEqual(Array(6).fill(digest))
