@@ -29,9 +29,12 @@ requiredArtifacts.push(
   'infra/nginx/pilot-gateway-https.conf',
   'infra/scripts/launch-ecs-candidate-tls-gateway.mjs',
   'infra/scripts/launch-ecs-candidate-tls-gateway.d.mts',
+  'infra/scripts/launch-ecs-candidate-full-https-gateway.mjs',
+  'infra/scripts/launch-ecs-candidate-full-https-gateway.d.mts',
   'infra/scripts/ecs-external-gateway-handoff.mjs',
   'infra/scripts/ecs-external-gateway-handoff.d.mts',
   'tests/ecs-candidate-tls-gateway.test.ts',
+  'tests/ecs-candidate-full-https-gateway.test.ts',
   'tests/ecs-external-gateway-handoff.test.ts',
 )
 const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'restore', 'objectStorage', 'codexAppHost', 'canonicalCutover'] as const

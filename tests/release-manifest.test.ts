@@ -49,7 +49,7 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(66)
+    expect(manifest.artifacts).toHaveLength(69)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',
@@ -63,9 +63,12 @@ describe('release manifest', () => {
       'infra/nginx/pilot-gateway-https.conf',
       'infra/scripts/launch-ecs-candidate-tls-gateway.mjs',
       'infra/scripts/launch-ecs-candidate-tls-gateway.d.mts',
+      'infra/scripts/launch-ecs-candidate-full-https-gateway.mjs',
+      'infra/scripts/launch-ecs-candidate-full-https-gateway.d.mts',
       'infra/scripts/ecs-external-gateway-handoff.mjs',
       'infra/scripts/ecs-external-gateway-handoff.d.mts',
       'tests/ecs-candidate-tls-gateway.test.ts',
+      'tests/ecs-candidate-full-https-gateway.test.ts',
       'tests/ecs-external-gateway-handoff.test.ts',
       'infra/scripts/render-ecs-production-compose.sh',
       'infra/scripts/stage-verified-ecs-release.sh',

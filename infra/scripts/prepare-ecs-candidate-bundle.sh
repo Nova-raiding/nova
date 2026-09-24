@@ -101,6 +101,9 @@ infra/scripts/candidate-api-docker-request.mjs
 infra/scripts/launch-ecs-candidate-api.mjs
 infra/scripts/launch-ecs-candidate-tls-gateway.mjs
 infra/scripts/launch-ecs-candidate-tls-gateway.d.mts
+infra/scripts/launch-ecs-candidate-full-https-gateway.mjs
+infra/scripts/launch-ecs-candidate-full-https-gateway.d.mts
+tests/ecs-candidate-full-https-gateway.test.ts
 infra/scripts/deploy-verified-ecs-compose.sh
 infra/scripts/ecs-external-gateway-handoff.mjs
 infra/scripts/ecs-external-gateway-handoff.d.mts
