@@ -4,3 +4,8 @@
 services:
   api:
     ports: !override []
+    environment:
+      AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: "true"
+  api-replica:
+    environment:
+      AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: "true"

@@ -184,6 +184,8 @@ describe('ECS production Compose contract', () => {
     expect(JSON.stringify(migrate.volumes)).not.toContain('seed-demo.sql')
     const gateway = rendered.services['pilot-gateway']
     expect(rendered.services.api.ports ?? []).toEqual([])
+    expect(rendered.services.api.environment.AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED).toBe('true')
+    expect(rendered.services['api-replica'].environment.AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED).toBe('true')
     expect(rendered.networks.default.name).toBe('compose-contract-test_default')
     expect(Object.values(rendered.volumes).every((volume: any) => volume.name.startsWith('compose-contract-test_'))).toBe(true)
     expect(gateway.image).toBe(`registry.example/pilot-gateway@sha256:${'a'.repeat(64)}`)
