@@ -11867,12 +11867,16 @@ async function uploadAssetForMcp(workspaceId: string, params: JsonObject, req?: 
   const usageScopes = parseAssetList('usage_scopes_json', '使用范围')
   const rightsScope = typeof params.rights_scope === 'string' ? params.rights_scope as import('../../../packages/application/src/service.js').AssetMetadata['rightsScope'] : undefined
   if (rightsScope && !['owned', 'commercial_authorized', 'limited_use', 'internal_only', 'unknown', 'unusable'].includes(rightsScope)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'rights_scope 无效', 400)
-  if (demoUnscannedAssetsEnabled() && !deliveryContext) {
+  if (demoUnscannedAssetsEnabled()) {
     const sha256 = typeof params.sha256 === 'string' && /^[a-f0-9]{64}$/iu.test(params.sha256) ? params.sha256 : createHash('sha256').update(bytes).digest('hex')
     const asset = service.registerAsset({ workspaceId, name: assetName, mimeType: assetMime, sizeBytes: bytes.byteLength, sha256, storageKey: `quarantine/${workspaceId}/pending/${randomUUID()}/${assetName}`, scanMode: 'unscanned', ...(req ? { uploadedByActorId: requestActor(req) } : {}), ...(rightsScope ? { rightsScope } : {}), ...(applicablePlatforms ? { applicablePlatforms } : {}), ...(applicableRegions ? { applicableRegions } : {}), ...(usageScopes ? { usageScopes } : {}), ...(typeof params.valid_from === 'string' ? { validFrom: params.valid_from } : {}), ...(typeof params.valid_to === 'string' ? { validTo: params.valid_to } : {}), ...(params.ai_modification_allowed === 'true' || params.ai_modification_allowed === 'false' ? { aiModificationAllowed: params.ai_modification_allowed === 'true' } : {}) })
     if (asset.deduplication.mode === 'deduplicated') {
       if (!isUsableAssetWithoutScan(asset, true)) throw new DomainError('ASSET_EXISTING_SCAN_STATE', '相同文件已存在但尚不可用，请先处理原素材', 409)
-      const continuation = createAssetGenerationContinuation(workspaceId, asset, params, req ? requestActor(req) : 'merchant')
+      if (deliveryContext && req) {
+        const admission = deliveryUploadAdmission(req, workspaceId, asset, deliveryContext)
+        await persistEvent(workspaceId, deliveryUploadBindingId(workspaceId, deliveryContext.deliveryId, deliveryContext.purpose, asset.id), 'customer_delivery.asset.upload_reused', asset.sourceRevision ?? 1, { asset_id: asset.id, delivery_id: deliveryContext.deliveryId, purpose: deliveryContext.purpose, actor_id: admission.actor_id, decision_id: admission.decision_id })
+      }
+      const continuation = deliveryContext ? undefined : createAssetGenerationContinuation(workspaceId, asset, params, req ? requestActor(req) : 'merchant')
       if (continuation) await persistUploadedAssetAndContinuation(workspaceId, asset, 'asset.generation_continuation.unscanned_reused', { asset_id: asset.id, scan_status: 'unscanned' }, continuation)
       else await persistAssetReference(workspaceId, asset)
       return { ...asset, ...(continuation ? { generationContinuation: { jobId: continuation.id, state: continuation.continuation!.state } } : {}) }
@@ -11880,13 +11884,17 @@ async function uploadAssetForMcp(workspaceId: string, params: JsonObject, req?: 
     let storedKey: string | undefined
     let continuation: ReturnType<typeof createAssetGenerationContinuation>
     try {
-      continuation = createAssetGenerationContinuation(workspaceId, asset, params, req ? requestActor(req) : 'merchant')
+      continuation = deliveryContext ? undefined : createAssetGenerationContinuation(workspaceId, asset, params, req ? requestActor(req) : 'merchant')
       const stored = await putQuarantineObject({ workspaceId, assetId: asset.id, fileName: assetName, contentType: assetMime, body: bytes, expectedSizeBytes: bytes.byteLength, expectedSha256: asset.sha256 })
       storedKey = stored.key
       asset.storageKey = stored.key
       asset.sizeBytes = stored.sizeBytes
       asset.sha256 = stored.sha256
       await persistUploadedAssetAndContinuation(workspaceId, asset, 'asset.uploaded_unscanned', { asset_id: asset.id, storage_key: stored.key, size_bytes: stored.sizeBytes, sha256: stored.sha256, scan_status: 'unscanned' }, continuation)
+      if (deliveryContext && req) {
+        const admission = deliveryUploadAdmission(req, workspaceId, asset, deliveryContext)
+        await persistEvent(workspaceId, deliveryUploadBindingId(workspaceId, deliveryContext.deliveryId, deliveryContext.purpose, asset.id), 'customer_delivery.asset.upload_reused', asset.sourceRevision ?? 1, { asset_id: asset.id, delivery_id: deliveryContext.deliveryId, purpose: deliveryContext.purpose, actor_id: admission.actor_id, decision_id: admission.decision_id })
+      }
       return { ...asset, ...(continuation ? { generationContinuation: { jobId: continuation.id, state: continuation.continuation!.state } } : {}) }
     } catch (error) {
       service.assets.delete(asset.id)
@@ -13623,7 +13631,7 @@ async function assertCustomerDeliveryAssetBound(workspaceId: string, deliveryId:
 
 async function requireBoundCustomerDeliveryAsset(workspaceId: string, deliveryId: string, purpose: CustomerDeliveryUploadPurpose, assetRef: string) {
   await assertCustomerDeliveryAssetBound(workspaceId, deliveryId, purpose, assetRef)
-  await requireCustomerDeliveryAsset({ workspaceId, assetRef, purpose, business: persistence.business, memoryAssets: service.assets })
+  await requireCustomerDeliveryAsset({ workspaceId, assetRef, purpose, business: persistence.business, memoryAssets: service.assets, allowUnscannedAssets: demoUnscannedAssetsEnabled() })
 }
 
 function evidenceRefs(value: unknown, label: string): string[] {
@@ -15058,7 +15066,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         content_base64: requiredStringValue(fileParams, 'content_base64'), sha256: validated.sha256,
         rights_scope: 'internal_only', usage_scopes_json: JSON.stringify([`customer_delivery_${validated.purpose}`]),
       }, req, undefined, false, { deliveryId, purpose: validated.purpose })
-      const view = customerDeliveryUploadView(asset, validated.purpose)
+      const view = customerDeliveryUploadView(asset, validated.purpose, demoUnscannedAssetsEnabled())
       await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'customer_delivery.asset.upload', resourceType: 'customer_delivery', resourceId: deliveryId, before: {}, after: { asset_ref: view.assetRef, purpose: validated.purpose, sha256: validated.sha256, size_bytes: view.sizeBytes, scan_status: view.scanStatus, source_kind: params.source_url === undefined ? 'file' : 'https_download' }, reason: '上传客户交付文件到隔离区，扫描通过后才可登记使用' })
       return result(view)
     }
@@ -15071,7 +15079,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const purpose = customerDeliveryUploadPurpose(params.purpose)
       await assertCustomerDeliveryAssetBound(workspaceId, deliveryId, purpose, assetRef)
       const asset = await loadCustomerDeliveryAsset({ workspaceId, assetRef, business: persistence.business, memoryAssets: service.assets })
-      return result(customerDeliveryUploadView(asset, purpose))
+      return result(customerDeliveryUploadView(asset, purpose, demoUnscannedAssetsEnabled()))
     }
     case 'ops.customer-delivery.get': {
       const deliveryId = requiredStringValue(params, 'deliveryId', 'delivery_id')
@@ -22056,13 +22064,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     // storage key, so this branch is unreachable for a real request.
     if (!asset || typeof asset.storageKey !== 'string' || typeof asset.mimeType !== 'string') throw new DomainError('CUSTOMER_DELIVERY_UPLOAD_NOT_FOUND', '交付文件不存在、不属于当前工作区或尚未通过可信安全扫描', 404)
     let stored: Awaited<ReturnType<typeof getStoredObjectWithRetry>>
-    try { stored = await getStoredObjectWithRetry(targetWorkspaceId, asset.storageKey) } catch (error) {
+    try { stored = await getStoredObjectWithRetry(targetWorkspaceId, asset.storageKey, { includeQuarantine: asset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() }) } catch (error) {
       if (error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND') throw new DomainError('ASSET_BINARY_UNAVAILABLE', '交付文件不可用，请重新上传', 410)
       throw error
     }
     const storedDigest = createHash('sha256').update(stored.body).digest('hex')
     if (stored.metadata.sha256 !== asset.sha256 || stored.metadata.sizeBytes !== asset.sizeBytes || stored.metadata.contentType.toLowerCase() !== asset.mimeType.toLowerCase() || storedDigest !== asset.sha256) throw new DomainError('ASSET_BINARY_INTEGRITY_FAILED', '交付文件对象与已扫描快照不一致，已阻止下载', 409)
-    return sendAssetDownload(res, customerDeliveryUploadView(asset, purpose), stored, req)
+    return sendAssetDownload(res, customerDeliveryUploadView(asset, purpose, demoUnscannedAssetsEnabled()), stored, req)
   }
   if (req.method === 'GET' && path === '/v1/commercial/access') {
     const workspaceId = resolveWorkspace(req)

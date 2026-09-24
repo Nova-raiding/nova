@@ -72,7 +72,7 @@ export interface CustomerDeliveryAsset {
   name: string;
   mimeType: string;
   sizeBytes: number;
-  scanStatus: "pending" | "clean" | "blocked";
+  scanStatus: "pending" | "clean" | "unscanned" | "blocked";
   ready: boolean;
 }
 export const CUSTOMER_DELIVERY_MAX_FILE_BYTES = 50 * 1024 * 1024;
@@ -111,7 +111,7 @@ export function validateCustomerDeliveryFile(file: Pick<File, "name" | "size" | 
 }
 
 export function parseCustomerDeliveryAsset(value: unknown): CustomerDeliveryAsset {
-  if (!object(value) || !text(value.assetRef) || !/^asset[:_]\S+$/u.test(value.assetRef) || !text(value.name) || !value.name.trim() || !text(value.mimeType) || !value.mimeType.trim() || !Number.isSafeInteger(value.sizeBytes) || Number(value.sizeBytes) <= 0 || Number(value.sizeBytes) > CUSTOMER_DELIVERY_MAX_FILE_BYTES || !["pending", "clean", "blocked"].includes(String(value.scanStatus)) || !bool(value.ready) || (value.ready && value.scanStatus !== "clean")) {
+  if (!object(value) || !text(value.assetRef) || !/^asset[:_]\S+$/u.test(value.assetRef) || !text(value.name) || !value.name.trim() || !text(value.mimeType) || !value.mimeType.trim() || !Number.isSafeInteger(value.sizeBytes) || Number(value.sizeBytes) <= 0 || Number(value.sizeBytes) > CUSTOMER_DELIVERY_MAX_FILE_BYTES || !["pending", "clean", "unscanned", "blocked"].includes(String(value.scanStatus)) || !bool(value.ready) || (value.ready && value.scanStatus !== "clean" && value.scanStatus !== "unscanned")) {
     throw new Error("客户交付素材接口返回了无效的文件或安全检查状态");
   }
   return value as unknown as CustomerDeliveryAsset;

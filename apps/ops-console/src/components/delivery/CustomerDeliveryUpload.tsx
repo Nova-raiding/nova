@@ -71,7 +71,7 @@ export async function runCustomerDeliveryUploadBatch(items: DeliveryUploadItem[]
         if (checkedAsset.assetRef !== assetRef) throw new Error("安全检查素材不匹配，已阻止登记");
         asset = checkedAsset;
       }
-      if (asset.scanStatus !== "clean") throw new Error("文件缺少可信安全检查结果，不能使用");
+      if (!asset.ready || (asset.scanStatus !== "clean" && asset.scanStatus !== "unscanned")) throw new Error("文件尚不可用");
       options.signal.throwIfAborted();
       options.onReady(asset);
       options.onChange({ ...item, asset, status: "ready", error: undefined });

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { DomainError, isTrustedCleanAsset, type AssetMetadata } from '../../../packages/application/src/service.js'
+import { DomainError, isTrustedCleanAsset, isUsableAssetWithoutScan, type AssetMetadata } from '../../../packages/application/src/service.js'
 
 export const CUSTOMER_DELIVERY_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 const documentMimes = new Set(['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/png', 'image/jpeg'])
@@ -28,13 +28,14 @@ export function validateCustomerDeliveryUpload(input: Record<string, unknown>) {
   return { purpose, mimeType, sha256: digest }
 }
 
-export function customerDeliveryUploadView(asset: Partial<AssetMetadata> | undefined, purpose: CustomerDeliveryUploadPurpose) {
+export function customerDeliveryUploadView(asset: Partial<AssetMetadata> | undefined, purpose: CustomerDeliveryUploadPurpose, allowUnscannedAssets = false) {
   const mimeType = typeof asset?.mimeType === 'string' ? asset.mimeType.trim().toLowerCase() : ''
   if (!asset || typeof asset.id !== 'string' || typeof asset.name !== 'string' || typeof asset.sizeBytes !== 'number'
     || !(purpose === 'video' ? videoMimes : documentMimes).has(mimeType)) throw new DomainError('CUSTOMER_DELIVERY_UPLOAD_NOT_FOUND', '文件不存在、不属于当前工作区或上传用途不匹配', 404)
   const trusted = typeof asset.workspaceId === 'string' && typeof asset.storageKey === 'string'
     && typeof asset.scanReceiptId === 'string' && typeof asset.scanReceiptDigest === 'string'
     && isTrustedCleanAsset(asset as AssetMetadata)
-  const scanStatus = trusted ? 'clean' : asset.scanStatus === 'blocked' || asset.scanStatus === 'clean' ? 'blocked' : 'pending'
-  return { assetRef: asset.id, name: asset.name, mimeType, sizeBytes: asset.sizeBytes, scanStatus, ready: trusted }
+  const unscanned = allowUnscannedAssets && isUsableAssetWithoutScan(asset as AssetMetadata, true)
+  const scanStatus = trusted ? 'clean' : unscanned ? 'unscanned' : asset.scanStatus === 'blocked' || asset.scanStatus === 'clean' ? 'blocked' : 'pending'
+  return { assetRef: asset.id, name: asset.name, mimeType, sizeBytes: asset.sizeBytes, scanStatus, ready: trusted || unscanned }
 }

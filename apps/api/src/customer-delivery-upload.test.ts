@@ -10,6 +10,11 @@ const metadata = (overrides: Partial<AssetMetadata> = {}): Partial<AssetMetadata
 })
 
 describe('customer delivery upload admission and public projection (no scanner execution)', () => {
+  it('projects explicit unscanned demo assets as ready only when enabled', () => {
+    const asset = metadata({ storageKey: 'quarantine/ws_delivery/asset_delivery/source', scanStatus: 'unscanned', scanVerdict: undefined, scanReceiptId: undefined, scanReceiptDigest: undefined })
+    expect(customerDeliveryUploadView(asset, 'contract')).toMatchObject({ scanStatus: 'pending', ready: false })
+    expect(customerDeliveryUploadView(asset, 'contract', true)).toMatchObject({ scanStatus: 'unscanned', ready: true })
+  })
   it('computes the actual SHA256 and normalizes MIME', () => {
     const params = upload()
     const sha256 = createHash('sha256').update(Buffer.from(params.content_base64, 'base64')).digest('hex')

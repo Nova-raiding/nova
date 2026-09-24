@@ -33,6 +33,7 @@ async function closeBrowserWithDeadline(instance?: Browser) {
 const video = new File([new Uint8Array([1, 2, 3])], "交付片段.mp4", { type: "video/mp4" });
 const pending: CustomerDeliveryAsset = { assetRef: "asset:upload-one", name: video.name, mimeType: video.type, sizeBytes: video.size, scanStatus: "pending", ready: false };
 const ready: CustomerDeliveryAsset = { ...pending, scanStatus: "clean", ready: true };
+const unscanned: CustomerDeliveryAsset = { ...pending, scanStatus: "unscanned", ready: true };
 const item = (id = "one"): Extract<DeliveryUploadItem, { file: File }> => ({ id, file: video, status: "queued" });
 const options = () => ({ purpose: "video" as const, signal: new AbortController().signal, upload: vi.fn().mockResolvedValue(pending), getAsset: vi.fn().mockResolvedValue(ready), onChange: vi.fn(), onReady: vi.fn(), pollDelayMs: 0 });
 
@@ -82,10 +83,20 @@ describe("delivery upload file boundary", () => {
 
   it("rejects malformed or contradictory scan responses", () => {
     expect(parseCustomerDeliveryAsset(ready)).toEqual(ready);
+    expect(parseCustomerDeliveryAsset(unscanned)).toEqual(unscanned);
     expect(parseCustomerDeliveryAsset(pending)).toEqual(pending);
     for (const bad of [null, {}, { ...ready, sizeBytes: -1 }, { ...ready, scanStatus: "pending" }, { ...ready, scanStatus: "blocked" }, { ...ready, ready: "true" }, { ...ready, assetRef: "https://example.test/file" }]) {
       expect(() => parseCustomerDeliveryAsset(bad)).toThrow("安全检查状态");
     }
+  });
+
+  it("uses an immediately ready unscanned demo upload without polling", async () => {
+    const upload = vi.fn().mockResolvedValue(unscanned);
+    const getAsset = vi.fn();
+    const onReady = vi.fn();
+    await runCustomerDeliveryUploadBatch([item()], { ...options(), upload, getAsset, onReady });
+    expect(onReady).toHaveBeenCalledExactlyOnceWith(unscanned);
+    expect(getAsset).not.toHaveBeenCalled();
   });
 
   it("sends actual file bytes with explicit tenant, delivery, purpose and cancellation context", async () => {

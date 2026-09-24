@@ -43,6 +43,15 @@ function notReady(purpose: typeof purposes[number]) {
 }
 
 describe('customer delivery asset source boundary (unit fixtures, no scanner)', () => {
+  it('accepts an explicit unscanned demo asset only with the demo admission flag and matching storage workspace', async () => {
+    const unscanned = cleanFixture({ scanStatus: 'unscanned', scanVerdict: undefined, scanReceiptId: undefined, scanReceiptDigest: undefined, storageKey: `quarantine/${workspaceId}/${assetRef}/source`, mimeType: 'application/pdf' })
+    const cache = memoryCache(unscanned)
+    const input = { workspaceId, assetRef, purpose: 'contract' as const, memoryAssets: cache.assets }
+    await expect(requireCustomerDeliveryAsset(input)).rejects.toMatchObject(notReady('contract'))
+    await expect(requireCustomerDeliveryAsset({ ...input, allowUnscannedAssets: true })).resolves.toBeUndefined()
+    cache.assets.set(assetRef, { ...unscanned, storageKey: `quarantine/ws_other/${assetRef}/source` })
+    await expect(requireCustomerDeliveryAsset({ ...input, allowUnscannedAssets: true })).rejects.toMatchObject(notReady('contract'))
+  })
   it.each(purposes)('accepts fresh durable %s evidence without reading a stale rejected cache entry', async purpose => {
     const cache = memoryCache(cleanFixture({ scanStatus: 'blocked', scanVerdict: 'malicious' }))
     const asset = cleanFixture(purpose === 'contract' ? { mimeType: 'application/pdf' } : {})
