@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { App as AntApp } from "antd";
-import { OpsAntAppBoundary, OpsSessionRecoveryGuidance, accessDeniedEvidence, accessDeniedReasonCode, isExpectedUnauthenticatedSessionError, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
+import { OpsAntAppBoundary, accessDeniedEvidence, accessDeniedReasonCode, isExpectedUnauthenticatedSessionError, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
 import { opsLoadWarningPresentation } from "../components/opsErrorPresentation.js";
 import { openBrandStore } from "./StoresPage.js";
 
@@ -56,35 +56,38 @@ describe("desktop keyboard navigation", () => {
   });
 });
 
-describe("managed session gate", () => {
-  it("uses the same account/password recovery path for every deployment mode", () => {
-    const managed = renderToStaticMarkup(createElement(OpsSessionRecoveryGuidance, { managed: true, error: "AUTHZ_WORKBENCH_FORBIDDEN" }));
-    expect(managed).toContain("顶部“平台运营账号登录”");
-    expect(managed).toContain("管理员提供的平台运营账号和密码");
-    expect(managed).not.toContain("组织 SSO");
-    expect(managed).not.toContain("组织登录入口");
-    const local = renderToStaticMarkup(createElement(OpsSessionRecoveryGuidance, { managed: false, error: "AUTHZ_WORKBENCH_FORBIDDEN" }));
-    expect(local).toContain("顶部“平台运营账号登录”");
-    expect(local).toContain("商家登录凭据不能用于平台运营控制台");
-    expect(local).toContain("<details>");
-    expect(local).toContain("AUTHZ_WORKBENCH_FORBIDDEN");
-  });
-  it("blocks deep links when ops.session failed instead of treating them as loading or empty", () => {
-    expect(opsSessionGateState(true, false, "OIDC session projection failed")).toBe("blocked");
+describe("password session gate", () => {
+  it("shows a retryable error when password session validation fails", () => {
+    expect(opsSessionGateState(true, false, "session projection failed")).toBe("error");
     expect(opsSessionGateState(true, false)).toBe("loading");
     expect(opsSessionGateState(true, true, "stale error")).toBe("ready");
-    expect(opsSessionGateState(false, false, "local connection error")).toBe("blocked");
+    expect(opsSessionGateState(false, false, "local connection error")).toBe("error");
   });
 
-  it("keeps the permission recovery action keyboard reachable", async () => {
+  it("keeps a visible retry action for session transport failures", async () => {
     const { readFile } = await import("node:fs/promises");
     const source = await readFile(new URL("./OpsConsoleController.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain('aria-label="重试权限验证"');
-    expect(source).toContain("style={{ minHeight: 44 }}");
-    expect(source).toContain('className="ops-session-error" role="alert" aria-live="assertive" aria-atomic="true" tabIndex={-1}');
-    expect(source).toContain('sessionErrorRef.current?.focus({ preventScroll: true })');
-    expect(source).toContain('title={<h1 id="ops-session-error-title" className="ops-result-heading">');
+    expect(source).toContain('sessionGate === "error"');
+    expect(source).toContain('title="无法验证运营会话"');
+    expect(source).toContain('onClick={() => void model.load()}');
+  });
+
+  it("restores the password workbench from the same local storage used by the API client", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(new URL("./OpsConsoleController.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('const stored = localStorage.getItem("ops_workbench")');
+    expect(source).not.toContain('sessionStorage.getItem("ops_workbench")');
+  });
+
+  it("routes unauthenticated operators to the keyboard-accessible password form", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(new URL("./OpsConsoleController.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("<PlatformOpsLoginPage");
+    expect(source).toContain("expectedUnauthenticated");
+    expect(source).toContain('managedSession={false}');
   });
 });
 

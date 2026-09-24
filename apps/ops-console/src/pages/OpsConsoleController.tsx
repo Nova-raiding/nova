@@ -1,14 +1,13 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
-import { Alert, App as AntApp, Button, Layout, Modal, Result, Skeleton } from "antd";
+import { Alert, App as AntApp, Button, Layout, Modal, Skeleton } from "antd";
 import { OpsHeader } from "../components/OpsHeader";
-import { ManagedOpsReauthentication } from "../components/ManagedOpsReauthentication.js";
 import { PlatformOpsLoginPage } from "../components/PlatformOpsLogin.js";
 import { mainItems, OpsSidebar } from "../components/OpsSidebar";
 import { useOpsConsoleModel, type OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { useOpsNavigation } from "../navigation/useOpsNavigation";
 import { opsPageRegistry } from "../navigation/opsPageRegistry.js";
 import { platformLabels } from "../types/ops";
-import { abortOpsRequests, hasOpsConnection, managedOpsLoginUrl, managedOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
+import { abortOpsRequests, hasOpsConnection, managedOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
 import { OpsPageBoundary } from "../components/OpsPageBoundary";
 import { canViewOpsDomain, domainFromLocation, requiredWorkbenchForDomain, urlForDomain, visibleOpsDomains, type OpsDomain } from "../navigation/opsNavigation.js";
 import { AuthorizationProvider } from "../authz/AuthorizationProvider.js";
@@ -20,18 +19,6 @@ import { UnsavedChangesProvider, useUnsavedChangesState } from "../components/au
 import { normalizeDiagnosticTokens, opsLoadWarningPresentation } from "../components/opsErrorPresentation.js";
 
 const { Content } = Layout;
-
-export function OpsSessionRecoveryGuidance({ managed: _managed, error }: { managed: boolean; error?: string }) {
-  return <div>
-    <p>当前身份尚未通过运营权限验证，暂时无法打开运营页面或执行操作。</p>
-    <p>请点击顶部“平台运营账号登录”，使用管理员提供的平台运营账号和密码登录。商家登录凭据不能用于平台运营控制台。</p>
-    <p><strong>账号分配方式：</strong>平台运营账号采用预配或邀请制；请由平台管理员在“用户与成员”中完成账号和角色配置。</p>
-    <p><strong>绑定 ChatGPT 插件：</strong>在 ChatGPT 中启用“Store Nova商家营销”后回复“开始使用Store Nova”。插件会用当前登录身份创建或恢复工作区，并返回绑定状态；不要手工填写他人的工作区 ID 或 Token。</p>
-    <p>若刚刚恢复网络或管理员已更新权限，可直接重试。</p>
-    <details><summary>查看失败详情（供管理员排查）</summary><p>{error ?? "权限会话加载失败"}</p></details>
-  </div>;
-}
-
 
 export function commitOpsWorkbenchTransition(
   next: OpsWorkbench,
@@ -132,13 +119,12 @@ export function initialOpsWorkbench(
 }
 
 export function opsSessionGateState(
-  managed: boolean,
+  _managed: boolean,
   sessionLoaded: boolean,
   sessionError?: string,
-): "ready" | "loading" | "blocked" {
+): "ready" | "loading" | "error" {
   if (sessionLoaded) return "ready";
-  if (sessionError) return "blocked";
-  if (!managed) return "blocked";
+  if (sessionError) return "error";
   return "loading";
 }
 
@@ -228,18 +214,15 @@ function Dashboard({
   const sessionDataSetError = model.dataSetError("ops.session");
   const expectedUnauthenticated = isExpectedUnauthenticatedSessionError(sessionErrorEvidence);
   const sessionError = !model.opsSession && !expectedUnauthenticated
-    ? sessionDataSetError ?? (managedOpsSession && !hasOpsConnection() ? "尚未登录组织运营账号" : undefined)
+    ? sessionDataSetError ?? (!hasOpsConnection() ? "尚未登录平台运营账号" : undefined)
     : undefined;
-  // The managed SSO surface must not reuse `sessionDataSetError`: every message
-  // the client has for an unauthenticated session is written for the password
-  // path ("请使用平台运营账号和密码重新登录"), which is the advice that cannot
-  // work there. The server's own code and request id are mode-neutral.
+  // Keep the service diagnostic mode-neutral; user guidance always points to
+  // the supported account/password login path.
   const sessionDiagnostic = sessionErrorEvidence?.code
     ? `服务端返回 ${sessionErrorEvidence.code}${sessionErrorEvidence.requestId ? `，请求 ${sessionErrorEvidence.requestId}` : ""}`
     : undefined;
   const sessionAccessDeniedEvidence = accessDeniedEvidence(sessionErrorEvidence);
   const sessionGate = opsSessionGateState(managedOpsSession, Boolean(model.opsSession), sessionError);
-  const sessionErrorRef = useRef<HTMLDivElement>(null);
   const loadingMessage = opsContentLoadingMessage(sessionGate, switchingWorkbench, model.loading);
   const sessionReady = sessionGate === "ready";
   // The operations landing page is the stable read-only entry point for every
@@ -291,31 +274,10 @@ function Dashboard({
     }
   }, [activeDomain, canAutoLoadModelMarkup, model.canUserGovernance, model.opsSession?.actor_id]);
 
-  useEffect(() => {
-    if (sessionGate !== "blocked") return;
-    const focusTimer = window.requestAnimationFrame(() => sessionErrorRef.current?.focus({ preventScroll: true }));
-    return () => window.cancelAnimationFrame(focusTimer);
-  }, [sessionGate]);
-
-  if (managedOpsSession && expectedUnauthenticated) {
-    // A managed deployment has no working password path, so it must not be
-    // offered one: the operator gets gateway re-entry instead of a form that
-    // can only report success and fail again.
-    return (
-      <ManagedOpsReauthentication
-        detail={sessionDiagnostic}
-        loading={model.loading}
-        onReauthenticate={managedOpsLoginUrl ? () => window.location.assign(managedOpsLoginUrl!) : undefined}
-      />
-    );
-  }
-
-  if (!managedOpsSession && (sessionGate === "blocked" || expectedUnauthenticated)) {
+  if (expectedUnauthenticated) {
     return (
       <PlatformOpsLoginPage
-        // Only a password-backed deployment reaches this branch; a managed
-        // session was routed to the SSO re-authentication surface above.
-        managedSession={managedOpsSession}
+        managedSession={false}
         error={sessionError}
         loading={model.loading}
         onRetry={() => void model.load()}
@@ -389,17 +351,17 @@ function Dashboard({
               })()}
             />
           ) : null}
-          {sessionGate === "blocked" ? (
-            <div ref={sessionErrorRef} className="ops-session-error" role="alert" aria-live="assertive" aria-atomic="true" tabIndex={-1} aria-labelledby="ops-session-error-title">
-              <Result
-                status="error"
-                title={<h1 id="ops-session-error-title" className="ops-result-heading">无法验证运营权限</h1>}
-                subTitle={<OpsSessionRecoveryGuidance managed={managedOpsSession} error={sessionError} />}
-                extra={<Button type="primary" aria-label="重试权限验证" style={{ minHeight: 44 }} loading={model.loading} disabled={model.loading} onClick={() => void model.load()}>重试权限验证</Button>}
-              />
-            </div>
-          ) : sessionGate === "loading" ? (
+          {sessionGate === "loading" ? (
             <Skeleton active paragraph={{ rows: 8 }} aria-label="正在验证运营权限" />
+          ) : sessionGate === "error" ? (
+            <Alert
+              type="error"
+              showIcon
+              role="alert"
+              title="无法验证运营会话"
+              description={sessionError ?? "请检查网络后重试"}
+              action={<Button onClick={() => void model.load()} loading={model.loading}>重试</Button>}
+            />
           ) : authorized ? (
             <OpsPageBoundary resetKey={activeDomain}>
               <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} aria-label="正在加载页面" />}>
@@ -437,7 +399,7 @@ function OpsConsoleControllerContent() {
     // The gateway workbench is part of the signed route boundary. Bootstrap
     // from the route-scoped context before the first MCP call so a workspace
     // gateway is never probed with the platform workbench by default.
-    const stored = sessionStorage.getItem("ops_workbench") || localStorage.getItem("ops_workbench");
+    const stored = localStorage.getItem("ops_workbench");
     return initialOpsWorkbench(window.location, stored);
   });
   const [contextReady, setContextReady] = useState(false);
