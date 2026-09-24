@@ -168,7 +168,9 @@ for (const name of ['postgres', 'redis']) {
 const roleSql = [...runtimeRoles].map(([role, password]) =>
   `CREATE ROLE ${role} LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;`).join('\n')
 docker([...composeArgs, 'exec', '-T', 'postgres', 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', 'merchant', '-d', 'merchant'], { input: `${roleSql}\n` })
-docker([...composeArgs, 'run', '--rm', '--no-deps', '--pull', 'never', 'migrate'])
+// This host's Compose CLI does not support `run --pull`; every image was
+// resolved and inspected locally above, so run cannot fetch another image.
+docker([...composeArgs, 'run', '--rm', '--no-deps', 'migrate'])
 const appServices = required.filter(name => !['postgres', 'redis', 'migrate'].includes(name))
 docker([...composeArgs, 'up', '-d', '--no-deps', '--no-build', '--pull', 'never', ...appServices])
 for (const name of ['postgres', 'redis', ...appServices]) {

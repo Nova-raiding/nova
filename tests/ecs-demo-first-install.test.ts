@@ -130,5 +130,6 @@ describe('isolated ECS demo candidate first install', () => {
     expect(source).not.toContain("docker(['rm'")
     expect(source).toContain("const appServices = required.filter")
     expect(source).toContain("const required = ['postgres', 'redis', 'migrate', 'api']")
+    expect(source).toContain("'run', '--rm', '--no-deps', 'migrate'")
   })
 })
