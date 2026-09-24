@@ -84,6 +84,7 @@ infra/local/docker-compose.ecs-pilot-release.yml
 infra/local/ecs-production-compose.layers
 infra/scripts/pilot-compose-preflight.sh
 infra/scripts/render-ecs-production-compose.sh
+infra/scripts/validate-ecs-compose-project.mjs
 infra/scripts/stage-verified-ecs-release.sh
 infra/scripts/ecs-build-lock.sh
 infra/scripts/install-ecs-staging-toolchain.mjs
@@ -115,6 +116,7 @@ infra/scripts/install-ecs-release-controls.d.mts
 infra/scripts/test-ecs-release-control-installer.sh
 tests/ecs-staging-toolchain-installer.test.mjs
 tests/ecs-staging-toolchain-installer.container-check.mjs
+tests/ecs-production-compose-contract.test.ts
 tests/ecs-one-click-deploy.test.ts
 infra/scripts/consume-production-evidence-nonce.sh
 infra/protected/consume-production-evidence-nonce.py

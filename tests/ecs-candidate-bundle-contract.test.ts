@@ -44,6 +44,7 @@ describe('ECS candidate bundle contract', () => {
     const manifest = script.slice(script.indexOf("cat > \"$manifest\" <<'EOF'"), script.indexOf('\nEOF', script.indexOf("cat > \"$manifest\" <<'EOF'")))
     for (const path of [
       'infra/scripts/render-ecs-production-compose.sh',
+      'infra/scripts/validate-ecs-compose-project.mjs',
       'infra/scripts/stage-verified-ecs-release.sh',
       'infra/scripts/ecs-build-lock.sh',
       'infra/scripts/install-ecs-staging-toolchain.mjs',
@@ -61,6 +62,8 @@ describe('ECS candidate bundle contract', () => {
       'tests/ecs-staging-toolchain-installer.test.mjs',
       'tests/ecs-staging-toolchain-installer.container-check.mjs',
       'tests/ecs-one-click-deploy.test.ts',
+      'tests/ecs-compose-deploy-runner.test.ts',
+      'tests/ecs-production-compose-contract.test.ts',
       'docs/runbooks/ecs-candidate-safe-sync.md',
       'infra/scripts/consume-production-evidence-nonce.sh',
       'infra/protected/consume-production-evidence-nonce.py',
@@ -154,6 +157,7 @@ describe('ECS candidate bundle contract', () => {
       'packages/persistence/src/migrations/245_local_plugin_authorized_timestamp.sql',
       'scripts/model-relay-canary.ts',
       'scripts/release-manifest.ts',
+      'infra/scripts/validate-ecs-compose-project.mjs',
       'scripts/scanner-callback-canary.mjs',
       'scripts/scanner-callback-canary-evidence.ts',
       'tests/ecs-compose-deploy-runner.test.ts',

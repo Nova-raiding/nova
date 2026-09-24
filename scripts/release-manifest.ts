@@ -111,6 +111,7 @@ export function buildReleaseManifest(input: {
     resolve(root, 'tests/ecs-candidate-full-https-gateway.test.ts'),
     resolve(root, 'tests/ecs-external-gateway-handoff.test.ts'),
     resolve(root, 'infra/scripts/render-ecs-production-compose.sh'),
+    resolve(root, 'infra/scripts/validate-ecs-compose-project.mjs'),
     resolve(root, 'infra/scripts/stage-verified-ecs-release.sh'),
     resolve(root, 'infra/scripts/ecs-build-lock.sh'),
     resolve(root, 'infra/scripts/install-ecs-staging-toolchain.mjs'),
