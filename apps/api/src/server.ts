@@ -3681,7 +3681,7 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
 
 async function confirmDurableAssetFacts(input: { workspaceId: string; assetId: string; facts: Record<string, unknown>; reason: string; req: IncomingMessage }) {
   const asset = assetForWorkspace(input.workspaceId, input.assetId)
-  if (asset.scanStatus !== 'clean') throw new DomainError('ASSET_FACTS_SCAN_REQUIRED', '素材完成安全扫描后才能人工确认事实', 409)
+  if (!isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())) throw new DomainError('ASSET_FACTS_SCAN_REQUIRED', '素材尚不可用，不能人工确认事实', 409)
   await (await assetParseRepository()).confirm({ workspaceId: input.workspaceId, assetId: asset.id, facts: input.facts })
   const confirmed = service.updateAssetParse({ workspaceId: input.workspaceId, assetId: asset.id, state: 'succeeded', facts: input.facts, source: 'manual', confirmedBy: requestActor(input.req) })
   await persistSnapshot(input.workspaceId, 'asset', confirmed, confirmed as unknown as Record<string, unknown>)
@@ -11340,7 +11340,7 @@ export function requireApprovedAssetForImageGeneration(workspaceId: string, prod
     for (const assetId of requestedAssetIds) {
       const asset = assetForWorkspace(workspaceId, assetId)
       const valid = asset.mimeType.toLowerCase().startsWith('image/')
-        && isTrustedCleanAsset(asset)
+        && isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())
         // A requested unbound draft is not a commercial-rights attestation.
         // Preserve unknown rights; only explicit restrictions block drafts.
         && (unboundCandidate ? asset.rightsStatus !== 'rejected' : asset.rightsStatus === 'approved')
@@ -11358,7 +11358,7 @@ export function requireApprovedAssetForImageGeneration(workspaceId: string, prod
   }
   if (process.env.REQUIRE_APPROVED_ASSET_FOR_GENERATION !== 'true') return
   const candidates = [...service.assets.values()].filter(asset => asset.workspaceId === workspaceId && asset.mimeType.toLowerCase().startsWith('image/'))
-  const eligible = candidates.filter(asset => asset.scanStatus === 'clean'
+  const eligible = candidates.filter(asset => isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())
     && asset.rightsStatus === 'approved'
     && asset.aiModificationAllowed === true
     && asset.applicablePlatforms?.includes(platform))
@@ -19021,7 +19021,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!authorizationSnapshot) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '图片生成缺少持久身份授权快照，已拒绝入队', 503)
         const sourceAssetDataUrls = await Promise.all((job.sourceAssetIds ?? []).map(async assetId => {
           const asset = assetForWorkspace(workspaceId, assetId)
-          const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey)
+          const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey, { includeQuarantine: asset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
           return `data:${asset.mimeType};base64,${Buffer.from(stored.body).toString('base64')}`
         }))
         const eventPayload: Record<string, unknown> = {
@@ -21011,7 +21011,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const productProtection = protectedProductConclusion(protectedProductValidation)
       const sourceAsset = assetForWorkspace(workspaceId, candidate.value.sourceImageId)
       const sourceReady = sourceAsset.mimeType.toLowerCase().startsWith('image/')
-        && sourceAsset.scanStatus === 'clean'
+        && isUsableAssetWithoutScan(sourceAsset, demoUnscannedAssetsEnabled())
         && sourceAsset.rightsStatus === 'approved'
         && sourceAsset.rightsScope !== 'unusable'
         && sourceAsset.aiModificationAllowed === true
@@ -21019,7 +21019,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         && (!sourceAsset.validFrom || Date.parse(sourceAsset.validFrom) <= Date.now())
         && (!sourceAsset.validTo || Date.parse(sourceAsset.validTo) >= Date.now())
       if (!sourceReady) throw new DomainError('IMAGE_SOURCE_ASSET_INVALID', '图片编辑必须使用当前工作区内已通过扫描、权益和 AI 修改许可的素材', 409, { asset_id: sourceAsset.id, scan_status: sourceAsset.scanStatus, rights_status: sourceAsset.rightsStatus, scan_user_action_required: false, next_step: '平台会自动完成安全扫描；扫描通过后仅需确认权益和 AI 修改许可' })
-      const sourceStored = await getStoredObjectWithRetry(workspaceId, sourceAsset.storageKey)
+      const sourceStored = await getStoredObjectWithRetry(workspaceId, sourceAsset.storageKey, { includeQuarantine: sourceAsset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
       const contextProduct = service.products.get(candidate.value.context.product.id)
       if ((await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') {
         if (!contextProduct || contextProduct.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '图片编辑引用的商品不存在或不属于当前工作区', 404)
@@ -21168,7 +21168,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         for (const assetId of sourceProduct.sourceAssetIds) await enforceAssetAccess(req, workspaceId, assetId, 'viewer')
         requireApprovedAssetForImageGeneration(workspaceId, sourceProduct, sourceProduct.sourceAssetIds, true)
         const sourceAsset = assetForWorkspace(workspaceId, sourceProduct.sourceAssetIds[0]!)
-        const sourceObject = await getStoredObjectWithRetry(workspaceId, sourceAsset.storageKey)
+        const sourceObject = await getStoredObjectWithRetry(workspaceId, sourceAsset.storageKey, { includeQuarantine: sourceAsset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
         sourceImage = `data:${sourceAsset.mimeType};base64,${Buffer.from(sourceObject.body).toString('base64')}`
       } else await enforceProductBrandAccess(req, workspaceId, context.product.id)
       if (!candidateOnly && (await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') {
