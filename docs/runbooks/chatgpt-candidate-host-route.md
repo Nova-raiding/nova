@@ -35,3 +35,43 @@ The official local stdio plugin keeps `MERCHANT_MCP_BASE_URL=https://yxsona.com`
 6. Tear down only the exact isolated gateway, tunnel, and temporary acceptance copy. Use `node infra/scripts/launch-ecs-candidate-tls-gateway.mjs stop` with the same seven start arguments followed by the captured full gateway ID; the launcher rechecks frozen gateway image, API binding, network and loopback publication before stopping that ID. Do not use `docker compose down` or remove containers/volumes. After production cutover, install the **unmodified** release plugin and replay host smoke against public DNS and the new `/releasez`; capture separate `production` evidence. The preproduction run is not proof of post-cutover routing.
 
 The launcher and fail-closed process adapter are code and tests only. The isolated gateway has not been launched by this document, and no real desktop host scenario is claimed passed.
+
+## Full HTTPS gateway routing check
+
+The API-only route above exercises the ChatGPT MCP path through a small, candidate-only Nginx config. To validate the release image's unchanged `pilot-gateway-https.conf` and all four Docker DNS upstreams, start the actual immutable gateway image on the candidate Compose network with a loopback-only host binding. Do this only after `api-replica`, `ui`, `ops-ui`, and `payment-gateway` are running from the same frozen candidate project and their release images and service aliases have been verified. Use an isolated preproduction database and downstream credentials for any authenticated or mutating checks.
+
+On the ECS host, with root-owned mode `0600` canonical rendered Compose and environment files, run:
+
+```sh
+gateway_id=$(node infra/scripts/launch-ecs-candidate-full-https-gateway.mjs start \
+  "$RENDERED_COMPOSE" "$CANDIDATE_ENV" "$COMPOSE_PROJECT" \
+  "$PILOT_GATEWAY_IMAGE_REF" "$RELEASE_ID" 18443)
+```
+
+The launcher requires the exact digest-pinned gateway and upstream images, one running container for each expected upstream, the Compose service labels and aliases on the frozen default network, and a read-only certificate directory. It runs the unmodified HTTPS gateway image and its baked Nginx configuration; it does not bind host 80/443, override the Nginx config, attach to a second network, or stop the existing gateway. It prints the new full Docker ID only after `/releasez` passes trusted TLS and matches the frozen release identity.
+
+Forward the high port to the desktop on loopback and probe the real routes without disabling certificate validation:
+
+```sh
+ssh -N -L 127.0.0.1:18443:127.0.0.1:18443 101
+curl --noproxy '*' --resolve yxsona.com:18443:127.0.0.1 \
+  https://yxsona.com:18443/releasez
+curl --noproxy '*' --resolve yxsona.com:18443:127.0.0.1 \
+  https://yxsona.com:18443/healthz
+curl --noproxy '*' --resolve yxsona.com:18443:127.0.0.1 \
+  https://yxsona.com:18443/ops/
+curl --noproxy '*' --resolve yxsona.com:18443:127.0.0.1 \
+  https://yxsona.com:18443/payment-gateway/healthz
+curl --noproxy '*' --resolve yxsona.com:18443:127.0.0.1 \
+  https://yxsona.com:18443/
+```
+
+Check `/api/readyz` separately; a non-200 response is an application readiness block, even if the gateway container and its `/healthz` are healthy. The route check does not rehearse the public listener handoff or prove rollback. Stop only the exact loopback gateway after the probes:
+
+```sh
+node infra/scripts/launch-ecs-candidate-full-https-gateway.mjs stop \
+  "$RENDERED_COMPOSE" "$CANDIDATE_ENV" "$COMPOSE_PROJECT" \
+  "$PILOT_GATEWAY_IMAGE_REF" "$RELEASE_ID" 18443 "$gateway_id"
+```
+
+This canary leaves the existing 80/443 listener and public DNS unchanged. It does not replace the post-cutover public route and business acceptance.
