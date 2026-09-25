@@ -4,6 +4,7 @@ import {
   alertListParams,
   canonicalOpsWorkspaceId,
   workspaceAuditListParams,
+  canGovernWorkspaceStatus,
   dataSetErrorFor,
   dataSetErrorEvidenceFor,
   IdempotencyOperationKeys,
@@ -15,6 +16,14 @@ import {
 import { createAuthorizationProjection } from "../authz/authorization.js";
 
 describe("Ops Console model helpers", () => {
+  it("requires the workspace status capability for workspace governance", () => {
+    const identityWriter = createAuthorizationProjection({ capabilities: ["identity.update"], scope: { type: "platform" } } as never, true);
+    const workspaceStatusGovernor = createAuthorizationProjection({ capabilities: ["workspace.status.update"], scope: { type: "platform" } } as never, true);
+
+    expect(canGovernWorkspaceStatus(identityWriter)).toBe(false);
+    expect(canGovernWorkspaceStatus(workspaceStatusGovernor)).toBe(true);
+  });
+
   it("requests only ops.session for a managed raw-role session without a projection", () => {
     const authorization = createAuthorizationProjection({
       roles: ["platform_ops"],

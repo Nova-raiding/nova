@@ -64,6 +64,13 @@ describe("customer delivery completion", () => {
     ]);
   });
 
+  it("preserves uploaded evidence references in checklist payloads and rejects malformed references", () => {
+    expect(buildChecklistItems(["订单回调"], ["订单回调"], { "订单回调": "交易记录" }, { "订单回调": ["asset:delivery-proof-1"] })).toEqual([
+      { itemKey: "订单回调", completed: true, evidence: "交易记录", evidenceAssetRefs: ["asset:delivery-proof-1"] },
+    ]);
+    expect(() => buildChecklistItems(["订单回调"], ["订单回调"], {}, { "订单回调": ["https://example.com/proof"] })).toThrow("凭证必须是有效素材编号数组");
+  });
+
   it("fails closed for malformed form values instead of marking items complete", () => {
     expect(buildChecklistItems(INTEGRATION_ITEMS, undefined, undefined).every((item) => !item.completed && item.evidence === "")).toBe(true);
   });

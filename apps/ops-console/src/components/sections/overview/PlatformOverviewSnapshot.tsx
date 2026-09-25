@@ -8,17 +8,20 @@ interface PlatformOverviewSnapshotProps {
 }
 
 export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProps) {
-  const merchantWorkspaceCount = model.workspaceDirectory.merchantWorkspaceCount;
+  const directoryReadFailed = Boolean(model.dataSetError("ops.workspaces.list"));
+  const financeReadFailed = Boolean(model.dataSetError("ops.finance.search"));
+  const usageReadFailed = Boolean(model.dataSetError("ops.model-usage.summary"));
+  const merchantWorkspaceCount = directoryReadFailed ? undefined : model.workspaceDirectory.merchantWorkspaceCount;
   // `undefined` until `ops.workspaces.list` resolves: an unread directory is
   // unknown, so the tile reads "—" instead of a measured "0 家".
-  const totalWorkspaceCount = model.workspaceDirectory.total;
+  const totalWorkspaceCount = directoryReadFailed ? undefined : model.workspaceDirectory.total;
   // The server returns no gifted-customer semantics (the directory query is
   // merchant-only and exposes no grant marker), so the previous
   // `total - merchantWorkspaceCount` subtraction was an invented metric. It is
   // reported as not-integrated until a real data source exists.
   const giftedMerchantCount = undefined;
-  const finance = model.platformFinanceSummary;
-  const usage = model.platformModelUsageSummary;
+  const finance = financeReadFailed ? undefined : model.platformFinanceSummary;
+  const usage = usageReadFailed ? undefined : model.platformModelUsageSummary;
   const basicSales = finance?.subscriptionOrderBySku?.basic?.orderCount;
   const growthSales = finance?.subscriptionOrderBySku?.growth?.orderCount;
   // Provider cost is only meaningful when the server marked the cost evidence
@@ -32,7 +35,6 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   // figure on this page is a whole-ledger snapshot. Claiming a "本月" window
   // would state a range the query never asked for; the panel states the
   // cumulative scope it actually has and discloses the missing window instead.
-  const monthLabel = `${new Date().getMonth() + 1}月`;
   // Passing `undefined` renders an explicit unknown. A literal 0 is
   // indistinguishable from a measured zero, so a failed or absent API read must
   // not be displayed as one.
@@ -46,8 +48,8 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   return (
     <section className="ops-overview-snapshot" aria-label="平台运营数据">
       <section className="ops-dashboard-hero" aria-label="核心经营指标">
-        <Typography.Title level={2} id="ops-overview-snapshot-title">平台运营实时概况</Typography.Title>
-        <div className="ops-dashboard-current-month">当前月份：<strong>{monthLabel}</strong></div>
+        <Typography.Title level={2} id="ops-overview-snapshot-title">平台运营概况</Typography.Title>
+        <div className="ops-dashboard-current-month">财务与模型用量按累计口径展示</div>
       </section>
       <section className="ops-dashboard-panel-grid">
         <article className="ops-dashboard-panel ops-dashboard-total"><header><div><h3>平台累计总览</h3></div><small>全部</small></header><div className="ops-dashboard-metric-list">{metric("客户总数", totalWorkspaceCount, "家", "primary")}{metric("有效客户数", merchantWorkspaceCount, "家", "primary")}{metric("赠送客户数", giftedMerchantCount, "家")}{metric("接入费总收入", finance?.onboardingOrderCny, "元", "revenue")}{metric("累计客户消耗创意点", undefined, "点")}{metric("累计平台消耗金额", platformProviderCost, "元", "revenue")}</div></article>

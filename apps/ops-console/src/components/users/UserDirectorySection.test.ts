@@ -45,7 +45,7 @@ describe("UserDirectorySection sorting", () => {
   });
 
   it("retains active filters when pagination changes", () => {
-    expect(userDirectoryPageRequest({ query: "Alice", status: "active", workspaceId: "workspace-1", attribute: "正常版本" }, 3, 50)).toEqual({
+    expect(userDirectoryPageRequest({ query: "Alice", status: "active", workspaceId: "workspace-1" }, 3, 50)).toEqual({
       query: "Alice",
       status: "active",
       workspaceId: "workspace-1",
@@ -117,7 +117,13 @@ describe("UserDirectorySection sorting", () => {
     // The column was renamed 成员状态 -> 激活状态 (7f6cf3f4); the filter has to
     // carry the same name as the column it filters.
     expect(source).toContain('aria-label="按激活状态筛选用户目录"');
-    expect(source).toContain('aria-label="按用户属性筛选用户目录"');
+    expect(source).not.toContain('aria-label="按用户属性筛选用户目录"');
+    expect(source).not.toContain("userAttributeLabel");
+    expect(source).not.toContain("monthlyEffectivePeriod");
+    expect(source).not.toContain('title: "充值金额"');
+    expect(source).not.toContain('title: "实际到账创意点"');
+    expect(source).not.toContain('title: "充值时间"');
+    expect(source).toContain("实际收款请核对财务流水");
   });
 
   it("does not manufacture member approval from a browser-selected name", () => {

@@ -141,6 +141,10 @@ export type MerchantAccountAuthorizationResult = {
   replayed?: boolean;
 };
 
+export function canGovernWorkspaceStatus(authorization: Pick<AuthorizationProjection, "can">): boolean {
+  return authorization.can("workspace.status.update");
+}
+
 export function dataSetErrorEvidenceFor(
   errors: OpsDataSetErrorEvidence,
   methods: readonly string[],
@@ -1783,7 +1787,7 @@ export function useOpsConsoleModel() {
     } catch (cause) { message.error(describeOpsError(cause)); return false; }
   };
   const changeWorkspaceStatus = async (targetWorkspaceId: string, target: "active" | "disabled", reason: string) => {
-    if (!canUserGovernance) { message.error("当前会话缺少跨租户治理权限"); return false; }
+    if (!canGovernWorkspaceStatus(authorization)) { message.error("当前会话缺少企业主体状态治理权限"); return false; }
     try {
       await rpcForWorkspace(targetWorkspaceId, target === "disabled" ? "workspace.deactivate" : "workspace.activate", { reason: reason.trim() });
       message.success(target === "disabled" ? "租户已停用，业务数据仍保留" : "租户已恢复");

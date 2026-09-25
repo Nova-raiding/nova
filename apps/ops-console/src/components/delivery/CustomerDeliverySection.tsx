@@ -18,6 +18,7 @@ import {
 import { deliveryDateTimeInputValue } from "./deliveryDateTime.js";
 import { confirmPolicyPropsFor } from "../../utils/destructiveConfirm.js";
 import { CustomerDeliveryUpload } from "./CustomerDeliveryUpload.js";
+import { parseCustomerDeliveryEvidenceRefs } from "../../api/customerDeliveryClient.js";
 import { CustomerDeliveryAccountBinding } from "./CustomerDeliveryAccountBinding.js";
 import { useUnsavedChanges } from "../authz/UnsavedChangesContext.js";
 import type {
@@ -140,6 +141,7 @@ export function buildChecklistItems(
   itemKeys: string[],
   selectedItems: unknown,
   evidence: unknown,
+  evidenceAssetRefs: unknown = {},
 ): CustomerDeliveryChecklistItem[] {
   const selected = Array.isArray(selectedItems)
     ? selectedItems.filter(
@@ -150,6 +152,9 @@ export function buildChecklistItems(
     evidence && typeof evidence === "object" && !Array.isArray(evidence)
       ? (evidence as Record<string, unknown>)
       : {};
+  const assetMap = evidenceAssetRefs && typeof evidenceAssetRefs === "object" && !Array.isArray(evidenceAssetRefs)
+    ? evidenceAssetRefs as Record<string, unknown>
+    : {};
   return itemKeys.map((itemKey) => ({
     itemKey,
     completed: selected.includes(itemKey),
@@ -157,7 +162,7 @@ export function buildChecklistItems(
       typeof evidenceMap[itemKey] === "string"
         ? evidenceMap[itemKey].trim()
         : "",
-    evidenceAssetRefs: [],
+    evidenceAssetRefs: parseCustomerDeliveryEvidenceRefs(assetMap[itemKey], `${checklistDisplayLabel(itemKey)}凭证`),
   }));
 }
 
@@ -356,6 +361,8 @@ export function CustomerDeliverySection({
       acceptanceItems: row.acceptanceItems ?? [],
       integrationEvidence: row.integrationEvidence ?? {},
       acceptanceEvidence: row.acceptanceEvidence ?? {},
+      integrationEvidenceAssetRefs: row.integrationEvidenceAssetRefs ?? {},
+      acceptanceEvidenceAssetRefs: row.acceptanceEvidenceAssetRefs ?? {},
     });
     if ((next === "integration" || next === "acceptance") && onChecklistLoad) {
       const key =
@@ -377,10 +384,11 @@ export function CustomerDeliverySection({
       const evidence = Object.fromEntries(
         items.map((item) => [item.itemKey, item.evidence]),
       );
+      const evidenceAssetRefs = Object.fromEntries(items.map((item) => [item.itemKey, item.evidenceAssetRefs]));
       form.setFieldsValue(
         next === "integration"
-          ? { integrationItems: selectedItems, integrationEvidence: evidence }
-          : { acceptanceItems: selectedItems, acceptanceEvidence: evidence },
+          ? { integrationItems: selectedItems, integrationEvidence: evidence, integrationEvidenceAssetRefs: evidenceAssetRefs }
+          : { acceptanceItems: selectedItems, acceptanceEvidence: evidence, acceptanceEvidenceAssetRefs: evidenceAssetRefs },
       );
     }
     try { await onOpen?.(row, next); }
@@ -442,7 +450,8 @@ export function CustomerDeliverySection({
             ? values.integrationEvidence
             : values.acceptanceEvidence
         ) as Record<string, unknown> | undefined;
-        const items = buildChecklistItems(itemKeys, selectedItems, evidence);
+        const evidenceAssetRefs = (step === "integration" ? values.integrationEvidenceAssetRefs : values.acceptanceEvidenceAssetRefs) as Record<string, unknown> | undefined;
+        const items = buildChecklistItems(itemKeys, selectedItems, evidence, evidenceAssetRefs);
         persisted = await onChecklistSave({
           record: next,
           checklistKey:
@@ -469,6 +478,25 @@ export function CustomerDeliverySection({
     } finally {
       setSaving(false);
     }
+  };
+  const evidenceUpload = (purpose: CustomerDeliveryAssetPurpose, field: string | string[]) => {
+    if (!selected || readOnly || !onAssetUpload || !onAssetGet) return null;
+    const request = detailRequest.current;
+    const recordId = selected.id;
+    return <CustomerDeliveryUpload
+      key={`${recordId}:${step}:${request}:${JSON.stringify(field)}`}
+      purpose={purpose}
+      disabled={loadingStep || saving}
+      onUpload={(source, assetPurpose, signal) => onAssetUpload(selected, source, assetPurpose, signal)}
+      onGetAsset={(assetRef, assetPurpose, signal) => onAssetGet(selected, assetRef, assetPurpose, signal)}
+      onReady={(asset) => {
+        if (request !== detailRequest.current || selected.id !== recordId) return;
+        const current = form.getFieldValue(field);
+        const refs = Array.isArray(current) ? current.filter((value): value is string => typeof value === "string") : [];
+        form.setFieldValue(field, [...new Set([...refs, asset.assetRef])]);
+      }}
+      onBusyChange={(busy) => { if (request === detailRequest.current) setUploading(busy); }}
+    />;
   };
   const toggleTraining = async (row: CustomerDeliveryRecord, completed: boolean) => {
     if (!onTrainingSave) {
@@ -896,13 +924,15 @@ export function CustomerDeliverySection({
                     为已完成项填写证据（链接、截图说明或记录编号）。
                   </Typography.Text>
                   {INTEGRATION_ITEMS.map((item) => (
-                    <Form.Item
-                      key={item}
-                      name={["integrationEvidence", item]}
-                      label={`${checklistDisplayLabel(item)} · 证据`}
-                    >
-                      <Input placeholder="可填写链接、截图说明或记录编号" />
-                    </Form.Item>
+                    <Space key={item} orientation="vertical" className="full-width">
+                      <Form.Item name={["integrationEvidence", item]} label={`${checklistDisplayLabel(item)} · 证据说明`}>
+                        <Input placeholder="可填写链接、单号或补充说明" />
+                      </Form.Item>
+                      <Form.Item name={["integrationEvidenceAssetRefs", item]} label="已上传凭证">
+                        <Select mode="tags" open={false} disabled placeholder="尚未上传" />
+                      </Form.Item>
+                      {evidenceUpload("system_integration", ["integrationEvidenceAssetRefs", item])}
+                    </Space>
                   ))}
                 </>
               )}
@@ -920,13 +950,15 @@ export function CustomerDeliverySection({
                     为已完成项填写证据（链接、截图说明或记录编号）。
                   </Typography.Text>
                   {ACCEPTANCE_ITEMS.map((item) => (
-                    <Form.Item
-                      key={item}
-                      name={["acceptanceEvidence", item]}
-                      label={`${checklistDisplayLabel(item)} · 证据`}
-                    >
-                      <Input placeholder="可填写链接、截图说明或记录编号" />
-                    </Form.Item>
+                    <Space key={item} orientation="vertical" className="full-width">
+                      <Form.Item name={["acceptanceEvidence", item]} label={`${checklistDisplayLabel(item)} · 证据说明`}>
+                        <Input placeholder="可填写链接、单号或补充说明" />
+                      </Form.Item>
+                      <Form.Item name={["acceptanceEvidenceAssetRefs", item]} label="已上传凭证">
+                        <Select mode="tags" open={false} disabled placeholder="尚未上传" />
+                      </Form.Item>
+                      {evidenceUpload("functional_acceptance", ["acceptanceEvidenceAssetRefs", item])}
+                    </Space>
                   ))}
                 </>
               )}

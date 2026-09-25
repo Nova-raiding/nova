@@ -11,6 +11,7 @@ const model = (overrides: Record<string, unknown> = {}) => ({
   workspaceDirectory: { total: 0, merchantWorkspaceCount: 0 },
   platformFinanceSummary: undefined,
   platformModelUsageSummary: undefined,
+  dataSetError: () => undefined,
   ...overrides,
 }) as unknown as OpsConsoleModel;
 
@@ -84,6 +85,19 @@ describe("PlatformOverviewSnapshot money honesty", () => {
     expect(tile(html, "累计平台消耗金额")).toContain("—");
   });
 
+  it("does not show stale dashboard values after a dataset refresh failure", () => {
+    const html = render({
+      workspaceDirectory: { total: 12, merchantWorkspaceCount: 9, items: [], offset: 0, limit: 20, hasMore: false },
+      platformFinanceSummary: { onboardingOrderCny: 900, subscriptionOrderCny: 1200, subscriptionOrderWorkspaceCount: 4 },
+      platformModelUsageSummary: usage({ providerCostStatus: "verified" }),
+      dataSetError: (method: string) => method === "ops.workspaces.list" || method === "ops.finance.search" || method === "ops.model-usage.summary" ? "refresh failed" : undefined,
+    });
+    expect(tile(html, "客户总数")).toContain("—");
+    expect(tile(html, "接入费总收入")).toContain("—");
+    expect(tile(html, "套餐销售额")).toContain("—");
+    expect(tile(html, "累计平台消耗金额")).toContain("—");
+  });
+
   it("never renders an unresolved directory as a measured customer count", () => {
     // Nothing has been read from `ops.workspaces.list`, so no count exists.
     // The seed the hook actually installs is pinned in
@@ -116,6 +130,9 @@ describe("PlatformOverviewSnapshot money honesty", () => {
     // figure here is cumulative. The panel used to be titled 「{N}月经营数据」.
     const html = render({ platformFinanceSummary: { onboardingOrderCny: 1288 } });
     expect(html).toContain("经营数据（累计口径）");
+    expect(html).toContain("平台运营概况");
+    expect(html).not.toContain("平台运营实时概况");
+    expect(html).not.toContain("当前月份");
     expect(html).not.toContain(`${new Date().getMonth() + 1}月经营数据`);
     expect(html).not.toContain("<small>本月</small>");
     expect(html).toContain("累计口径而非本月");
