@@ -36,6 +36,8 @@ export interface ContentGenerationInput {
   promotions?: Array<{ kind: string; label: string; skuIds: string[]; validFrom?: string; validTo?: string; originalPriceCny?: number; priceCny?: number; couponPriceCny?: number; depositCny?: number; balanceCny?: number; giftDescription?: string; giftValueCny?: number }>
   knowledgeContext?: {
     rules: Array<{ id: string; content: string; version: string; sourceReference: string; effectiveFrom?: string; effectiveTo?: string }>
+    /** Approved, product-scoped facts frozen before generation; never silently omit these. */
+    documents?: Array<{ id: string; title: string; content: string; revision: number }>
     assets: Array<{ id: string; kind: 'brand' | 'customer'; name: string; content: string | Record<string, unknown>; revision: number; confirmed: false }>
     confirmedLearningSuggestions: Array<{ id: string; summary: string; proposedRule: { content: string; scope: string; version: string } }>
     competitorReferences?: Array<{ competitorAnalysisId: string; structuralObservations: string[]; expressionObservations: string[]; differentiationAngles: string[]; safeExpressionGuidance: string[]; compliance: { originalTextCopied: false; competitorBrandReused: false } }>
@@ -341,7 +343,7 @@ function prompt(input: ContentGenerationInput) {
       brief: { platform: '目标 platform', placement: '非空字符串', targetDimensions: '非空字符串', visualHierarchy: ['非空字符串'], productImageGuidance: '非空字符串', logoSafety: '非空字符串', headline: '非空字符串', subheadline: '非空字符串', coreSellingPoint: '非空字符串', cta: '非空字符串', textDensity: '非空字符串', safeArea: '非空字符串', protectedAreas: ['非空字符串'] },
     },
     outputShapePolicy: 'outputShape 仅描述字段结构，不是商品事实；必须填写真实内容，绝不能照抄示意字符串。没有可引用的 confirmedFactSourceIds 时不要编造来源或生成事实模块。claim.validUntil 仅在已确认事实有有效期时填写。',
-    knowledgePolicy: 'knowledgeContext.rules are frozen task rules; knowledgeContext.assets have confirmed=false and are reference-only, never product facts; confirmedLearningSuggestions are suggestions and never bypass rule approval; competitorReferences are structured observations only and must not be copied into product claims or verbatim expression.',
+    knowledgePolicy: 'knowledgeContext.rules are frozen task rules; knowledgeContext.documents are approved product-scoped facts with frozen revisions, but never invent factSourceIds; knowledgeContext.assets have confirmed=false and are reference-only, never product facts; confirmedLearningSuggestions are suggestions and never bypass rule approval; competitorReferences are structured observations only and must not be copied into product claims or verbatim expression.',
     instruction: '根据商品事实生成合规电商营销内容。不得编造事实，不得使用绝对化或最高级宣传；promotion 只能使用输入中已确认且仍在 validFrom/validTo 内的价格/优惠，必须按 skuIds 限定，不得自行合并不同 SKU 价格。product.id 是商品 ID，绝不是 SKU ID；所有 claim.skuIds 和 referencedSkuIds 只能逐字引用 product.skuIds 中的值，product.skuIds 为空时必须省略 SKU 引用。brandVisualRules 是商家已确认的强约束，必须原样遵守，不得改色、变形、重绘 Logo，不得使用禁用色或未批准字体，也不得出现 restrictedSubjects 中列明的禁用内容、人物、代言人或 IP。referenceAssets 中 excellent 素材及原因只用于风格参考，不得把参考素材内容当作当前商品事实；disliked 素材不得进入参考集合。competitorReferences 只用于差异化结构和表达方向，禁止复制竞品原文、品牌或未经确认的卖点。只返回 JSON：title、detail、sellingPoints、modules、brief。modules 中每项必须包含 key、title、purpose、body、factSourceIds、contentKind 和 decisionContract。每个模块 factSourceIds 及其 decisionContract.claim.factSourceIds 都必须非空且只能引用输入 confirmedFactSourceIds；找不到已确认来源时必须删除整个模块，不得编造 source ID。decisionContract 必须明确 buyerQuestion、pageTask、claim（text、factSourceIds、skuIds、platforms、regions、validUntil、limitations）、evidence（type、sourceIds、status）、visualContract（requiredElements、protectedElements、prohibitedImplications、accessibilityText）、priority、optional。evidence.type 只能是 real_image、parameter、test_report、comparison、usage_result、manual_review 之一；evidence.status 只能是 verified、missing、expired、conflict 之一；verified 证据必须有 sourceIds，缺失、过期或冲突证据不得标记 verified。contentKind=pending 时必须填写 pendingReason；可选 referencedSkuIds 和 imageGuidance；claim.skuIds 非空时，模块 referencedSkuIds 必须存在并逐个包含相同的 SKU ID，不能用一个值代表多个 SKU；没有事实的模块省略。brief 必须包含 platform、placement、targetDimensions、visualHierarchy、productImageGuidance、logoSafety、headline、subheadline、coreSellingPoint、cta、textDensity、safeArea、protectedAreas，所有必填字符串都不得为空；输入未提供精确尺寸时 targetDimensions 必须填写“按目标平台版位规范配置，未配置时由设计确认”；价格没有输入时不要输出 priceExpression。',
     input: providerInput,
   })
@@ -378,10 +380,10 @@ export function budgetContentGenerationInput(input: ContentGenerationInput, maxI
     ...(input.confirmedFactSourceIds?.length ? { confirmedFactSourceIds: input.confirmedFactSourceIds } : {}),
     ...(input.brandVisualRules ? { brandVisualRules: input.brandVisualRules } : {}),
     ...(input.promotions ? { promotions: input.promotions } : {}),
-    ...(input.knowledgeContext ? { knowledgeContext: { rules: input.knowledgeContext.rules, assets: [], confirmedLearningSuggestions: [] } } : {}),
+    ...(input.knowledgeContext ? { knowledgeContext: { rules: input.knowledgeContext.rules, ...(input.knowledgeContext.documents?.length ? { documents: input.knowledgeContext.documents } : {}), assets: [], confirmedLearningSuggestions: [] } } : {}),
     ...(input.usageContext ? { usageContext: input.usageContext } : {}),
   }
-  if (estimateContentGenerationRequestTokens(hardContext) > maxInputTokens) throw new Error(`CONTEXT_BUDGET_EXCEEDED: 固定指令、商品硬事实和适用规则超过 ${maxInputTokens} 输入 Token 预算`)
+  if (estimateContentGenerationRequestTokens(hardContext) > maxInputTokens) throw new Error(`CONTEXT_BUDGET_EXCEEDED: 固定指令、商品硬事实、已审核知识文档和适用规则超过 ${maxInputTokens} 输入 Token 预算`)
 
   const bounded: ContentGenerationInput = structuredClone(hardContext)
   const addIfFits = (mutate: () => void, rollback: () => void) => { mutate(); if (estimateContentGenerationRequestTokens(bounded) > maxInputTokens) rollback() }

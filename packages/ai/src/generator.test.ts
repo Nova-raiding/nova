@@ -321,6 +321,54 @@ describe('content generator', () => {
     expect(bounded.knowledgeContext?.assets.length).toBeLessThan(20)
   })
 
+  // Regression: ISSUE-004 — approved product documents were frozen in the task but dropped from the provider envelope.
+  // Found by /qa on 2026-09-15
+  // Report: .gstack/qa-reports/qa-report-store-nova-2026-09-15.md
+  it('preserves every approved document and revision in the budgeted provider request', async () => {
+    const documents = [
+      { id: 'doc_material', title: '面料说明', content: '面料为聚酯纤维。', revision: 3 },
+      { id: 'doc_care', title: '洗护说明', content: '只能手洗，不能漂白。', revision: 7 },
+    ]
+    const input = budgetContentGenerationInput({
+      platform: 'taobao', directionId: 'A', product: { title: '女装外套', stock: 2, skuCount: 1 },
+      confirmedFactSourceIds: ['product:p:v1'],
+      knowledgeContext: { rules: [], documents, assets: [], confirmedLearningSuggestions: [] },
+    }, 3_000)
+    expect(input.knowledgeContext?.documents).toEqual(documents)
+    const calls: RequestInit[] = []
+    const generator = new OpenAICompatibleContentGenerator({
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => ({ recorded: true, costEvidence: true }), maxInputTokens: 3_000,
+      fetch: async (_url, init = {}) => {
+        calls.push(init)
+        return new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify(validGeneratedContent()) } }] }), { status: 200 })
+      },
+    })
+    await generator.generate(input)
+    const body = JSON.parse(String(calls[0]?.body)) as { messages: Array<{ content: string }> }
+    const prompt = JSON.parse(body.messages[0]!.content) as { knowledgePolicy: string; input: { knowledgeContext: { documents: typeof documents } } }
+    expect(prompt.input.knowledgeContext.documents).toEqual(documents)
+    expect(prompt.knowledgePolicy).toContain('knowledgeContext.documents')
+    expect(prompt.knowledgePolicy).toContain('approved')
+  })
+
+  it('fails closed instead of dropping or truncating an over-budget approved document', () => {
+    const document = { id: 'doc_oversized', title: '大文档', content: '已确认商品事实'.repeat(2_000), revision: 5 }
+    expect(() => budgetContentGenerationInput({
+      platform: 'taobao', directionId: 'A', product: { title: '女装外套', stock: 2, skuCount: 1 },
+      knowledgeContext: { rules: [], documents: [document], assets: [], confirmedLearningSuggestions: [] },
+    }, 3_000)).toThrow('CONTEXT_BUDGET_EXCEEDED')
+  })
+
+  it('keeps approved documents while pruning oversized optional reference assets', () => {
+    const documents = [{ id: 'doc_scope', title: '商品参数', content: '面料为聚酯纤维。', revision: 2 }]
+    const bounded = budgetContentGenerationInput({
+      platform: 'taobao', directionId: 'A', product: { title: '女装外套', stock: 2, skuCount: 1 },
+      knowledgeContext: { rules: [], documents, assets: Array.from({ length: 20 }, (_, index) => ({ id: `asset_${index}`, kind: 'brand' as const, name: '参考资料', content: '可选风格参考'.repeat(2_000), revision: 1, confirmed: false as const })), confirmedLearningSuggestions: [] },
+    }, 3_000)
+    expect(bounded.knowledgeContext?.documents).toEqual(documents)
+    expect(bounded.knowledgeContext?.assets.length).toBeLessThan(20)
+  })
+
   it('reuses an application-budgeted envelope without changing the provider request', async () => {
     const calls: RequestInit[] = []
     const input = budgetContentGenerationInput({
