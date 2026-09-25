@@ -139,7 +139,7 @@ describe('PostgresCommercialCatalogRepository', () => {
       version: 3, checksum: 'a'.repeat(64),
     })
     expect(client.calls[1]?.text).toContain("r.action_code = 'ocr.extract'")
-    expect(client.calls[1]?.text).toContain("r.pricing_mode = 'variable'")
+    expect(client.calls[1]?.text).toContain('r.pricing_mode AS "pricingMode"')
   })
 
   it('rejects an altered OCR formula even when the rate card claims approved', async () => {
@@ -150,5 +150,38 @@ describe('PostgresCommercialCatalogRepository', () => {
     }])
     const repository = new PostgresCommercialCatalogRepository(new FakePool(client))
     await expect(repository.resolveApprovedOcrCostRate()).rejects.toMatchObject({ code: 'RATE_CARD_UNAVAILABLE' })
+  })
+
+  it('resolves the exact v4 OCR free threshold without falling back to v3', async () => {
+    const formula = { kind: 'cost_cny_threshold_x2_ceil_v1', free_when_cost_cny_lte: 0.3, multiplier: 2, min_paid_points: 1 }
+    const row = {
+      id: 'rate-ocr-extract-cost-v4', rateCardId: 'rate-card-ocr-cost-v4', version: 4,
+      actionCode: 'ocr.extract', unit: 'request', integerPoints: null, pricingMode: 'variable',
+      variableFormula: formula, lifecycle: 'approved', approvalStatus: 'approved',
+      executable: true, ruleExecutable: true, checksum: 'b'.repeat(64), effectiveAt: '2026-09-25T01:00:00.000Z', blockers: [],
+    }
+    const client = new FakeClient([row])
+    const repository = new PostgresCommercialCatalogRepository(new FakePool(client))
+    expect(await repository.listRates()).toEqual([expect.objectContaining({ variableFormula: formula })])
+    expect(await repository.resolveApprovedOcrCostRate()).toMatchObject({ version: 4, variableFormula: formula })
+    expect(client.calls[1]?.text).toContain('ORDER BY c.effective_at DESC, c.version DESC')
+    expect(client.calls[1]?.text).not.toContain("r.pricing_mode = 'variable'")
+  })
+
+  it('blocks a changed v4 threshold and a newer unsupported OCR rule', async () => {
+    const base = {
+      rateCardId: 'rate-card-ocr-cost-v4', version: 4, actionCode: 'ocr.extract', unit: 'request',
+      integerPoints: null, pricingMode: 'variable', ruleExecutable: true,
+      checksum: 'b'.repeat(64), effectiveAt: '2026-09-25T01:00:00.000Z',
+    }
+    for (const override of [
+      { variableFormula: { kind: 'cost_cny_threshold_x2_ceil_v1', free_when_cost_cny_lte: 0.31, multiplier: 2, min_paid_points: 1 } },
+      { variableFormula: { kind: 'unsupported_future_formula' } },
+      { pricingMode: 'fixed', integerPoints: 1, variableFormula: null },
+    ]) {
+      const client = new FakeClient([{ ...base, ...override }])
+      const repository = new PostgresCommercialCatalogRepository(new FakePool(client))
+      await expect(repository.resolveApprovedOcrCostRate()).rejects.toMatchObject({ code: 'RATE_CARD_UNAVAILABLE' })
+    }
   })
 })

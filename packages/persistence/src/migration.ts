@@ -698,6 +698,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const localPluginAuthorizedTimestamp = await readFile(new URL('./migrations/245_local_plugin_authorized_timestamp.sql', import.meta.url), 'utf8')
   const demoEvaluationEntitlement = await readFile(new URL('./migrations/246_demo_evaluation_entitlement.sql', import.meta.url), 'utf8')
   const ocrCostRateV3 = await readFile(new URL('./migrations/247_ocr_cost_rate_v3.sql', import.meta.url), 'utf8')
+  const ocrFreeThresholdRateV4 = await readFile(new URL('./migrations/248_ocr_free_threshold_rate_v4.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -946,6 +947,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 245, name: 'local_plugin_authorized_timestamp', sql: localPluginAuthorizedTimestamp },
     { version: 246, name: 'demo_evaluation_entitlement', sql: demoEvaluationEntitlement },
     { version: 247, name: 'ocr_cost_rate_v3', sql: ocrCostRateV3 },
+    { version: 248, name: 'ocr_free_threshold_rate_v4', sql: ocrFreeThresholdRateV4 },
   ]
 }
 

@@ -52,7 +52,12 @@ export interface ApprovedOcrCostRate {
   actionCode: 'ocr.extract'
   unit: 'request'
   pricingMode: 'variable'
-  variableFormula: { kind: 'cost_cny_x2_ceil_min1' }
+  variableFormula: { kind: 'cost_cny_x2_ceil_min1' } | {
+    kind: 'cost_cny_threshold_x2_ceil_v1'
+    free_when_cost_cny_lte: 0.3
+    multiplier: 2
+    min_paid_points: 1
+  }
   checksum: string
   effectiveAt: string
 }
@@ -113,9 +118,14 @@ export class CreativePointRateUnavailableError extends Error {
 }
 
 function isOcrCostFormula(value: unknown): value is ApprovedOcrCostRate['variableFormula'] {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    && Object.keys(value).length === 1
-    && (value as Record<string, unknown>).kind === 'cost_cny_x2_ceil_min1'
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const formula = value as Record<string, unknown>
+  if (formula.kind === 'cost_cny_x2_ceil_min1') return Object.keys(formula).length === 1
+  return formula.kind === 'cost_cny_threshold_x2_ceil_v1'
+    && Object.keys(formula).length === 4
+    && formula.free_when_cost_cny_lte === 0.3
+    && formula.multiplier === 2
+    && formula.min_paid_points === 1
 }
 
 export interface CommercialCatalogRepository {
@@ -430,7 +440,7 @@ export class PostgresCommercialCatalogRepository implements CommercialCatalogRep
       return result.rows.map(row => ({
         id: row.id!, rateCardId: row.rateCardId, version: row.version, actionCode: row.actionCode,
         unit: row.unit, integerPoints: ratePoints(row.integerPoints), pricingMode: row.pricingMode!,
-        variableFormula: row.variableFormula === null ? null : isOcrCostFormula(row.variableFormula) ? { kind: 'cost_cny_x2_ceil_min1' } : null,
+        variableFormula: row.variableFormula === null ? null : isOcrCostFormula(row.variableFormula) ? structuredClone(row.variableFormula) : null,
         lifecycle: row.lifecycle!, approvalStatus: row.approvalStatus!, executable: row.executable!,
         ruleExecutable: row.ruleExecutable!, checksum: row.checksum, effectiveAt: iso(row.effectiveAt),
         blockers: rateBlockers(row.blockers),
@@ -471,24 +481,25 @@ export class PostgresCommercialCatalogRepository implements CommercialCatalogRep
     try {
       const result = await client.query<RateRow>(`
         SELECT c.id AS "rateCardId", c.version, r.action_code AS "actionCode",
-          r.unit, r.pricing_mode AS "pricingMode", r.variable_formula AS "variableFormula",
+          r.unit, r.integer_points AS "integerPoints", r.executable AS "ruleExecutable",
+          r.pricing_mode AS "pricingMode", r.variable_formula AS "variableFormula",
           c.checksum, c.effective_at AS "effectiveAt"
         FROM creative_point_rate_card_versions_v2 c
         JOIN creative_point_rate_rules_v2 r ON r.rate_card_version_id = c.id
         WHERE r.action_code = 'ocr.extract'
           AND c.lifecycle = 'approved' AND c.approval_status = 'approved'
           AND c.executable = true AND c.effective_at IS NOT NULL AND c.effective_at <= now()
-          AND r.executable = true AND r.pricing_mode = 'variable' AND r.integer_points IS NULL
         ORDER BY c.effective_at DESC, c.version DESC
         LIMIT 1
       `)
       const row = result.rows[0]
       if (!row || row.actionCode !== 'ocr.extract' || row.unit !== 'request' || row.pricingMode !== 'variable'
+        || row.ruleExecutable !== true || row.integerPoints !== null
         || !isOcrCostFormula(row.variableFormula) || !row.rateCardId || !Number.isSafeInteger(row.version)
         || !/^[0-9a-f]{64}$/u.test(row.checksum) || !row.effectiveAt) throw new CreativePointRateUnavailableError()
       return {
         rateCardId: row.rateCardId, version: row.version, actionCode: 'ocr.extract', unit: 'request',
-        pricingMode: 'variable', variableFormula: { kind: 'cost_cny_x2_ceil_min1' },
+        pricingMode: 'variable', variableFormula: structuredClone(row.variableFormula),
         checksum: row.checksum, effectiveAt: approvedRateEffectiveAt(row.effectiveAt),
       }
     } catch (error) {
