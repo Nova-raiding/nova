@@ -10476,6 +10476,29 @@ export function imageMcpRuntime() {
   }
 }
 
+function multimodalMcpRuntime(req: IncomingMessage, workspaceId: string, result: (value: unknown) => unknown) {
+  return {
+    req, workspaceId, result, observeLegacyWalletShadow, required, DomainError, ERROR_CODES,
+    createImageEditCandidate, requireProtectedProductIntent, protectedProductConclusion,
+    assetForWorkspace, isUsableAssetWithoutScan, demoUnscannedAssetsEnabled,
+    getStoredObjectWithRetry, service, canonicalProductReadControl, resolveCanonicalTaskScope,
+    requireGenerationRulePreflight, requireRuleSafeGenerationText, enforceMcpCommercialAccess,
+    requirePlatformModelCostGate, reserveCreativePointsForModel, requestActor,
+    refundPluginWalletDebit, persistEvent, isProduction, executionContract,
+    imageEditGenerator, appendProtectedProductConstraints, archiveGeneratedImages,
+    persistSnapshot, providerSucceededButSettlementPending, releaseReservedModelPoints,
+    generationRulePreflight, enforceProductBrandAccess, createOneSentenceGenerationRequest,
+    evaluateStoryboardBeforeRendering, requireVideoModelCostPreflight, contentGenerator,
+    imageGenerator, createHash, sourceImagesForImageJob, imageJobOutputsAreClean,
+    readArchivedGeneratedImages, createVideoRenderingRequest, createVideoGenerationRequest,
+    videoGenerator, header, isExemptUnboundImageCandidateProduct, enforceAssetAccess,
+    requireApprovedAssetForImageGeneration, recordActionSettlement, randomUUID,
+    assertVideoProviderJobScope, archiveCompletedVideo, modelSettlementDomainError,
+    publicImageJob,
+  }
+}
+export type MultimodalMcpRuntime = ReturnType<typeof multimodalMcpRuntime>
+
 function publishMcpContext(req: IncomingMessage, workspaceId: string, params: JsonObject, result: (value: unknown) => void) {
   return {
     req, workspaceId, params, result, required, scopeTask, assertCanonicalTaskScopeForAction,
@@ -13477,25 +13500,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'multimodal.generate':
     case 'multimodal.video.request':
     case 'multimodal.video.get':
-      return handleMultimodalMcpMethod(method, params, {
-        req, workspaceId, result, observeLegacyWalletShadow, required, DomainError, ERROR_CODES,
-        createImageEditCandidate, requireProtectedProductIntent, protectedProductConclusion,
-        assetForWorkspace, isUsableAssetWithoutScan, demoUnscannedAssetsEnabled,
-        getStoredObjectWithRetry, service, canonicalProductReadControl, resolveCanonicalTaskScope,
-        requireGenerationRulePreflight, requireRuleSafeGenerationText, enforceMcpCommercialAccess,
-        requirePlatformModelCostGate, reserveCreativePointsForModel, requestActor,
-        refundPluginWalletDebit, persistEvent, isProduction, executionContract,
-        imageEditGenerator, appendProtectedProductConstraints, archiveGeneratedImages,
-        persistSnapshot, providerSucceededButSettlementPending, releaseReservedModelPoints,
-        generationRulePreflight, enforceProductBrandAccess, createOneSentenceGenerationRequest,
-        evaluateStoryboardBeforeRendering, requireVideoModelCostPreflight, contentGenerator,
-        imageGenerator, createHash, sourceImagesForImageJob, imageJobOutputsAreClean,
-        readArchivedGeneratedImages, createVideoRenderingRequest, createVideoGenerationRequest,
-        videoGenerator, header, isExemptUnboundImageCandidateProduct, enforceAssetAccess,
-        requireApprovedAssetForImageGeneration, recordActionSettlement, randomUUID,
-        assertVideoProviderJobScope, archiveCompletedVideo, modelSettlementDomainError,
-        publicImageJob,
-      })
+      return handleMultimodalMcpMethod(method, params, multimodalMcpRuntime(req, workspaceId, result))
   }
 }
 

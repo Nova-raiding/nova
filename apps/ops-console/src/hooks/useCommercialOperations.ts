@@ -300,23 +300,39 @@ export function useCommercialOperations(
       } else if (target === "timeline") {
         result = await client.timeline(targetWorkspaceId, controller.signal);
       } else if (target === "blocks" || target === "entitlements" || target === "orders") {
-        const cursor = commercialPageCursorsRef.current[target]?.[queryState.page];
-        if (queryState.page > 1 && !cursor) {
-          setData((current) => ({ ...current, [target]: { status: "ready", data: current[target].data } }));
-          return;
-        }
         if (queryState.page === 1) {
           commercialPageCursorsRef.current[target] = {};
           commercialPageItemsRef.current[target] = {};
         }
-        const paged = await client[target](targetWorkspaceId, { limit: 20, ...(cursor ? { cursor } : {}) }, controller.signal);
-        if (paged.nextCursor) {
-          commercialPageCursorsRef.current[target] = { ...(commercialPageCursorsRef.current[target] ?? {}), [queryState.page + 1]: paged.nextCursor };
+        let firstPageToFetch = queryState.page;
+        while (firstPageToFetch > 1 && !commercialPageCursorsRef.current[target]?.[firstPageToFetch]) firstPageToFetch -= 1;
+        let paged: CommercialPage<unknown> | undefined;
+        let lastFetchedPage = firstPageToFetch - 1;
+        for (let pageNumber = firstPageToFetch; pageNumber <= queryState.page; pageNumber += 1) {
+          const cursor = pageNumber === 1 ? undefined : commercialPageCursorsRef.current[target]?.[pageNumber];
+          if (pageNumber > 1 && !cursor) break;
+          paged = await client[target](targetWorkspaceId, { limit: 20, ...(cursor ? { cursor } : {}) }, controller.signal);
+          if (request !== requestRef.current) return;
+          lastFetchedPage = pageNumber;
+          const cursors = { ...(commercialPageCursorsRef.current[target] ?? {}) };
+          if (paged.nextCursor) cursors[pageNumber + 1] = paged.nextCursor;
+          else for (const key of Object.keys(cursors)) if (Number(key) > pageNumber) delete cursors[Number(key)];
+          commercialPageCursorsRef.current[target] = cursors;
+          const pageItems = commercialPageItemsRef.current[target] ?? {};
+          pageItems[pageNumber] = paged.items;
+          commercialPageItemsRef.current[target] = pageItems;
+          if (!paged.nextCursor && pageNumber < queryState.page) break;
+        }
+        if (!paged) {
+          setData((current) => ({ ...current, [target]: { status: "ready", data: current[target].data } }));
+          return;
+        }
+        if (lastFetchedPage !== queryState.page) {
+          setQueryState((current) => ({ ...current, page: lastFetchedPage }));
+          if (typeof window !== "undefined") window.history.replaceState({}, "", commercialQueryUrl(window.location, { page: lastFetchedPage }));
         }
         const pageItems = commercialPageItemsRef.current[target] ?? {};
-        pageItems[queryState.page] = paged.items;
-        commercialPageItemsRef.current[target] = pageItems;
-        const items = Array.from({ length: queryState.page }, (_, index) => pageItems[index + 1] ?? []).flat() as typeof paged.items;
+        const items = Array.from({ length: lastFetchedPage }, (_, index) => pageItems[index + 1] ?? []).flat() as typeof paged.items;
         result = { ...paged, items, total: items.length + (paged.truncated ? 1 : 0) } as CommercialDataMap[typeof target];
       } else {
         result = await client[target](targetWorkspaceId, controller.signal);

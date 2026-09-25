@@ -1,8 +1,7 @@
 import type { GenerationContext } from '../../../packages/multimodal/src/index.js'
+import type { MultimodalMcpRuntime } from './server.js'
 
-type Dependencies = Record<string, any>
-
-export async function handleMultimodalMcpMethod(method: string, params: Record<string, unknown>, dependencies: Dependencies): Promise<unknown> {
+export async function handleMultimodalMcpMethod(method: string, params: Record<string, unknown>, dependencies: MultimodalMcpRuntime): Promise<unknown> {
   const {
     req, workspaceId, result, observeLegacyWalletShadow, required, DomainError, ERROR_CODES,
     createImageEditCandidate, requireProtectedProductIntent, protectedProductConclusion,
