@@ -20909,7 +20909,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       try {
         await persistEvent(workspaceId, `multimodal_${randomUUID()}`, rendering || generatedImages || generatedText ? 'multimodal.generation.completed' : 'multimodal.generation.requested', 1, { ...request.value as unknown as Record<string, unknown>, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(imageJob ? { image_job_id: imageJob.id } : {}), ...(generatedText ? { content: generatedText } : {}), ...(generatedImages ? { images: generatedImages } : {}), ...(rendering ? { rendering } : {}) })
       } catch (error) {
-        await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '多模态结果记录失败' })
+        if (!providerExecuted) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '多模态结果记录失败' })
         throw error
       }
       return result({ ...request.value, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedText ? { content: generatedText } : {}), ...(imageJob ? { image_job_id: imageJob.id } : {}), ...(generatedImages ? { images: generatedImages } : {}), ...(rendering ? { rendering } : {}) })
@@ -20985,11 +20985,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         }
         throw error
       }
-      const execution = { status: rendering ? rendering.status : generatedPlan ? 'completed' as const : 'requested' as const, ...executionContract('video', Boolean(rendering ? videoGenerator : contentGenerator), generatedPlan && contentGenerator ? 'text-relay' : undefined) }
+      const providerExecuted = Boolean(rendering ? videoGenerator : generatedPlan && contentGenerator)
+      const execution = { status: rendering ? rendering.status : generatedPlan ? 'completed' as const : 'requested' as const, ...executionContract('video', providerExecuted, generatedPlan && contentGenerator ? 'text-relay' : undefined) }
       try {
         await persistEvent(workspaceId, `video_${randomUUID()}`, rendering || generatedPlan ? 'multimodal.video_completed' : 'multimodal.video.requested', 1, { ...request.value as unknown as Record<string, unknown>, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering } : {}) })
       } catch (error) {
-        await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '视频结果记录失败' })
+        if (!providerExecuted) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '视频结果记录失败' })
         throw error
       }
       return result({ ...request.value, candidate_only: candidateOnly, ...(candidateOnly ? { candidate_status: '未绑定商品、仅候选、不可发布' } : {}), execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering } : {}) })

@@ -49,6 +49,16 @@ describe('daily model budget provider boundary', () => {
     }
   })
 
+  it('does not refund a successful provider call when multimodal or video event persistence fails', () => {
+    for (const reason of ['多模态结果记录失败', '视频结果记录失败']) {
+      const refund = `await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '${reason}' })`
+      const refundAt = source.indexOf(refund)
+      expect(refundAt, reason).toBeGreaterThanOrEqual(0)
+      const branch = source.slice(source.lastIndexOf('} catch (error) {', refundAt), source.indexOf('throw error', refundAt))
+      expect(branch, reason).toContain(`if (!providerExecuted) ${refund}`)
+    }
+  })
+
   it('reserves async generation before context freezing and releases fixture completion', () => {
     expect(source).toContain("return isProduction() || process.env.LOCAL_COMPOSE === 'true'")
     expect(source).toContain('if (durableContentGenerationEnvironment()) {')
