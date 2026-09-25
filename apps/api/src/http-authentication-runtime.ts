@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http'
 import { DomainError } from '../../../packages/application/src/service.js'
-import { ERROR_CODES, type CapabilityId, type MemberRole, type OpsWorkbench } from '../../../packages/contracts/src/index.js'
+import { ERROR_CODES, type CapabilityId, type OpsWorkbench } from '../../../packages/contracts/src/index.js'
+import type { MemberRole } from '../../../packages/persistence/src/index.js'
 import type { RequestPrincipal, AuthenticationRuntime } from './server.js'
 
 export async function authenticateRequest(req: IncomingMessage, dependencies: AuthenticationRuntime): Promise<void> {

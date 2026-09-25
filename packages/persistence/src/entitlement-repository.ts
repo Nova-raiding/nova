@@ -29,6 +29,8 @@ export interface EntitlementRepository {
   list(workspaceId: string): Promise<SubscriptionEntitlement[]>
   consume(input: { workspaceId: string; kind: EntitlementKind; units: number; idempotencyKey: string }): Promise<EntitlementConsumption | undefined>
   refund(input: { workspaceId: string; idempotencyKey: string }): Promise<{ refunded: boolean; consumption?: EntitlementConsumption }>
+  /** Atomically refunds the entitlement consumption and its action ledger row. */
+  refundWithActionLedger?(input: { workspaceId: string; idempotencyKey: string; reason: string }): Promise<{ refunded: boolean; consumption?: EntitlementConsumption }>
 }
 
 export class EntitlementConsumptionIdempotencyConflictError extends Error {
@@ -127,6 +129,49 @@ export class PostgresEntitlementRepository implements EntitlementRepository {
       if (!result.rows[0]) return { refunded: false }
       await client.query('UPDATE subscription_entitlements SET used_units=used_units-$2 WHERE id=$1', [result.rows[0].entitlementId, result.rows[0].units])
       return { refunded: true, consumption: result.rows[0] }
+    })
+  }
+  async refundWithActionLedger(input: { workspaceId: string; idempotencyKey: string; reason: string }) {
+    requireWorkspaceScope(input.workspaceId)
+    return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
+      const action = await client.query<{ state: string; action_kind: string; settlement_status: string | null; provider_request_id: string | null }>(
+        `SELECT state, action_kind, settlement_status, provider_request_id FROM action_ledger WHERE workspace_id=$1 AND action_key=$2 FOR UPDATE`,
+        [input.workspaceId, input.idempotencyKey],
+      )
+      const ledger = action.rows[0]
+      if (!ledger) return { refunded: false }
+      const ledgerAlreadyRefunded = ledger.state === 'refunded'
+      const ledgerCanBeRefunded = ledger.state === 'settled' && ledger.provider_request_id === null
+        && (!['model_text', 'model_image', 'model_ocr', 'model_video', 'image_edit'].includes(ledger.action_kind) || ledger.settlement_status === 'authorized')
+      if (!ledgerAlreadyRefunded && !ledgerCanBeRefunded) return { refunded: false }
+
+      const consumption = await client.query<EntitlementConsumption>(
+        `SELECT c.id, c.workspace_id AS "workspaceId", c.entitlement_id AS "entitlementId", c.idempotency_key AS "idempotencyKey", c.units, c.created_at AS "createdAt", c.refunded_at AS "refundedAt" FROM subscription_entitlement_consumptions c JOIN subscription_entitlements e ON e.id=c.entitlement_id AND e.workspace_id=c.workspace_id WHERE c.workspace_id=$1 AND c.idempotency_key=$2 FOR UPDATE OF c, e`,
+        [input.workspaceId, input.idempotencyKey],
+      )
+      const consumed = consumption.rows[0]
+      if (!consumed || consumed.refundedAt) return { refunded: false, ...(consumed ? { consumption: consumed } : {}) }
+
+      // All participating rows are locked and present before either side changes.
+      // A failure below aborts this transaction, so callers never observe a one-sided refund.
+      if (!ledgerAlreadyRefunded) {
+        const updatedAction = await client.query(
+          `UPDATE action_ledger SET state='refunded', settlement_status='refunded', refunded_at=now(), refund_reason=$3 WHERE workspace_id=$1 AND action_key=$2 AND state='settled' AND provider_request_id IS NULL AND (action_kind NOT IN ('model_text','model_image','model_ocr','model_video','image_edit') OR settlement_status='authorized')`,
+          [input.workspaceId, input.idempotencyKey, input.reason],
+        )
+        if (updatedAction.rowCount !== 1) throw new Error('ACTION_LEDGER_ATOMIC_REFUND_CONFLICT')
+      }
+      const updatedConsumption = await client.query(
+        `UPDATE subscription_entitlement_consumptions SET refunded_at=now() WHERE workspace_id=$1 AND idempotency_key=$2 AND refunded_at IS NULL`,
+        [input.workspaceId, input.idempotencyKey],
+      )
+      if (updatedConsumption.rowCount !== 1) throw new Error('ENTITLEMENT_ATOMIC_REFUND_CONFLICT')
+      const updatedEntitlement = await client.query(
+        `UPDATE subscription_entitlements SET used_units=used_units-$2 WHERE id=$1 AND workspace_id=$3 AND used_units >= $2`,
+        [consumed.entitlementId, consumed.units, input.workspaceId],
+      )
+      if (updatedEntitlement.rowCount !== 1) throw new Error('ENTITLEMENT_ATOMIC_REFUND_BALANCE_CONFLICT')
+      return { refunded: true, consumption: { ...consumed, refundedAt: new Date().toISOString() } }
     })
   }
 }

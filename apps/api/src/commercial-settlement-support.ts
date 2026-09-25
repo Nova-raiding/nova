@@ -50,10 +50,11 @@ export async function refundEntitlement(input: { workspaceId: string; actionKey:
   refundActionSettlement: (input: { workspaceId: string; actionKey: string; reason: string }) => Promise<unknown>
 }) {
   await dependencies.ready
-  if (!dependencies.actionLedger()) throw new DomainError('ACTION_LEDGER_UNAVAILABLE', '账务动作台账不可用，已阻断退款以避免权益与账务不一致', 503)
-  const refunded = await dependencies.entitlements().refund({ workspaceId: input.workspaceId, idempotencyKey: input.actionKey })
-  if (refunded.refunded) await dependencies.refundActionSettlement(input)
-  return refunded
+  const actionLedger = dependencies.actionLedger()
+  if (!actionLedger) throw new DomainError('ACTION_LEDGER_UNAVAILABLE', '账务动作台账不可用，已阻断退款以避免权益与账务不一致', 503)
+  const entitlements = dependencies.entitlements()
+  if (!entitlements.refundWithActionLedger) throw new DomainError('ATOMIC_REFUND_UNAVAILABLE', '权益与账务仓储不支持原子退款，已阻断操作以避免单边退款', 503)
+  return entitlements.refundWithActionLedger({ workspaceId: input.workspaceId, idempotencyKey: input.actionKey, reason: input.reason })
 }
 
 export async function currentWalletBalanceFen(workspaceId: string, dependencies: {
