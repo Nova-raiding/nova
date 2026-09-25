@@ -47,9 +47,14 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='merchant_app') THEN
     GRANT EXECUTE ON FUNCTION public.merchant_entitlement_snapshots_v3(integer,timestamptz,text) TO merchant_app;
   END IF;
+  -- Local Compose runs the API as the single `merchant` login role. Keep its
+  -- explicit grant aligned with the production app role without widening the
+  -- function to PUBLIC.
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='merchant') THEN
+    GRANT EXECUTE ON FUNCTION public.merchant_entitlement_snapshots_v3(integer,timestamptz,text) TO merchant;
+  END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='merchant_ops') THEN
     GRANT EXECUTE ON FUNCTION public.merchant_entitlement_snapshots_v3(integer,timestamptz,text) TO merchant_ops;
   END IF;
 END
 $grant$;
-

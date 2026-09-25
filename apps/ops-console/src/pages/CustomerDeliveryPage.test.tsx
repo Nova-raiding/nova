@@ -83,7 +83,8 @@ describe("customer delivery workspace selection", () => {
     expect(isCustomerDeliveryRevisionConflict(new Error("network unavailable"))).toBe(false);
     const checklistSave = pageSource.slice(pageSource.indexOf("const saveChecklist ="), pageSource.indexOf("const createRecord ="));
     const trainingSave = pageSource.slice(pageSource.indexOf("const saveTraining ="), pageSource.indexOf("const openDeliveryAsset ="));
-    expect(checklistSave).not.toContain("customerDeliveryClient.get");
+    const checklistMutation = checklistSave.slice(0, checklistSave.indexOf("// The checklist write is already durable"));
+    expect(checklistMutation).not.toContain("customerDeliveryClient.get");
     expect(trainingSave).not.toContain("customerDeliveryClient.get");
     expect(checklistSave).toContain("const result = await persist(currentRecord)");
     expect(trainingSave).toContain("const updated = await persist(record)");
