@@ -1432,12 +1432,20 @@ async function hydrateDurableKnowledgeForGeneration(task: { id: string; workspac
     productId: product.id,
     limit: 8,
   })
-  service.setDurableKnowledgeDocuments(task.id, results.map(({ document, chunks }) => ({
-    id: document.id,
-    title: document.title,
-    content: (chunks.length ? chunks.map(chunk => chunk.content).join('\n') : document.extractedText).slice(0, 8_000),
-    revision: document.revision,
-  })))
+  if (results.length === 0) {
+    const readyDocuments = await repository.listDocuments(task.workspaceId, { productId: product.id, indexState: 'ready' })
+    if (readyDocuments.some(document => document.approvalStatus === 'approved' && document.rightsStatus === 'cleared')) {
+      throw new DomainError('KNOWLEDGE_CONTEXT_UNAVAILABLE', '商品知识已就绪，但检索未返回可用知识；请检查知识与商品、店铺及账号的绑定和索引状态，修复后重试', 409, { product_id: product.id, next_action: 'catalog.search' })
+    }
+  }
+  const selectedDocuments = results.map(({ document, chunks }) => {
+    const content = chunks.length ? chunks.map(chunk => chunk.content).join('\n') : document.extractedText
+    if (content.length > 8_000) {
+      throw new DomainError('KNOWLEDGE_CONTEXT_TOO_LARGE', '商品知识内容超过单份生成上下文上限（8000 字符）；请缩短或拆分知识来源并完成重新审核、索引后重试', 413, { product_id: product.id, document_id: document.id, content_length: content.length, limit: 8_000, next_action: null })
+    }
+    return { id: document.id, title: document.title, content, revision: document.revision }
+  })
+  service.setDurableKnowledgeDocuments(task.id, selectedDocuments)
 }
 const memoryStorageQuota = new MemoryStorageQuotaRepository()
 const memoryStorageReconciliation = new MemoryReconciliationStatusStore()
