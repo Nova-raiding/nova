@@ -16,6 +16,7 @@ export type CreativePointReversalInput = MutationInput & { reservationId: string
 export type CreativePointExpiryInput = MutationInput & { grantId: string }
 export type CreativePointAdjustmentInput = MutationInput & { approvalId: string; pointsDelta: number; expectedAccessRevision: number; actorId: string; approvedByActorId: string; reason: string; evidence: Record<string, unknown>; expiresAt?: string | null }
 export type CreativePointProviderReceiptInput = { workspaceId: string; operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage?: Record<string, unknown>; cost?: Record<string, unknown>; receiptHash: string; verifiedAt?: string; at: string }
+export type ModelUsageDeliverySettlementInput = { workspaceId: string; reservationId: string; actionId: string; providerRequestId: string; relayProvider: string }
 
 function required(value: string, field: string): string { if (!value || value.trim() !== value) throw new TypeError(`${field} is required`); return value }
 function at(value: string): string { const parsed = new Date(value); if (Number.isNaN(parsed.valueOf())) throw new TypeError('at must be an ISO timestamp'); return parsed.toISOString() }
@@ -150,6 +151,60 @@ export class PostgresCreativePointLifecycleRepository {
       const row = result.rows[0]
       if (!row) return null
       return { ...row, verifiedAt: row.verifiedAt instanceof Date ? row.verifiedAt.toISOString() : row.verifiedAt }
+    })
+  }
+
+  /** Verify the API-owned usage and point settlement before worker delivery. */
+  async verifyModelUsageDeliverySettlement(input: ModelUsageDeliverySettlementInput): Promise<boolean> {
+    const workspaceId = requireWorkspaceScope(input.workspaceId)
+    required(input.reservationId, 'reservationId'); required(input.actionId, 'actionId'); required(input.providerRequestId, 'providerRequestId'); required(input.relayProvider, 'relayProvider')
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const result = await client.query<{ matched: number | string }>(`
+        SELECT count(*)::int AS matched
+          FROM creative_point_reservations r
+          JOIN action_ledger a ON a.workspace_id=r.workspace_id AND a.action_key=r.action_key
+          JOIN model_usage_ledger m ON m.workspace_id=r.workspace_id AND m.action_id=r.action_key AND m.provider_request_id=$4
+          JOIN creative_point_provider_receipts_v2 api_receipt ON api_receipt.workspace_id=r.workspace_id
+            AND api_receipt.operation_id=r.operation_id AND api_receipt.provider='model-relay' AND api_receipt.provider_request_id=$4
+          JOIN creative_point_provider_receipts_v2 worker_receipt ON worker_receipt.workspace_id=r.workspace_id
+            AND worker_receipt.operation_id=r.operation_id AND worker_receipt.provider=$5 AND worker_receipt.provider_request_id=$4
+          JOIN creative_point_ledger_events ledger ON ledger.workspace_id=r.workspace_id
+            AND ledger.event_type='settled' AND ledger.metadata->>'reservation_id'=r.id
+          JOIN creative_point_operations settlement ON settlement.workspace_id=ledger.workspace_id AND settlement.id=ledger.operation_id
+         WHERE r.workspace_id=$1 AND r.id=$2 AND r.action_key=$3
+           AND r.status='settled' AND r.settled_points=r.points
+           AND a.state='settled' AND a.settlement_status='settled' AND a.provider_request_id=$4
+           AND m.settlement_status='settled' AND m.cost_cny IS NOT NULL
+           AND api_receipt.outcome='succeeded' AND api_receipt.verified_at IS NOT NULL
+           AND worker_receipt.outcome='succeeded' AND worker_receipt.verified_at IS NOT NULL
+           AND api_receipt.cost->>'currency'='CNY' AND worker_receipt.cost->>'currency'='CNY'
+           AND api_receipt.cost->'actual'=to_jsonb(m.cost_cny)
+           AND worker_receipt.cost->'actual'=api_receipt.cost->'actual'
+           AND api_receipt.usage->>'modality'=m.modality AND worker_receipt.usage->>'modality'=m.modality
+           AND api_receipt.usage->>'model'=m.model AND worker_receipt.usage->>'model'=m.model
+           AND COALESCE(api_receipt.usage->'input_tokens','null'::jsonb)=to_jsonb(m.input_tokens)
+           AND COALESCE(api_receipt.usage->'output_tokens','null'::jsonb)=to_jsonb(m.output_tokens)
+           AND COALESCE(api_receipt.usage->'total_tokens','null'::jsonb)=to_jsonb(m.total_tokens)
+           AND COALESCE(worker_receipt.usage->'input_tokens','null'::jsonb)=COALESCE(api_receipt.usage->'input_tokens','null'::jsonb)
+           AND COALESCE(worker_receipt.usage->'output_tokens','null'::jsonb)=COALESCE(api_receipt.usage->'output_tokens','null'::jsonb)
+           AND COALESCE(worker_receipt.usage->'total_tokens','null'::jsonb)=COALESCE(api_receipt.usage->'total_tokens','null'::jsonb)
+           AND ledger.metadata->>'provider_request_id'=$4
+           AND ledger.metadata->>'receipt_hash'=api_receipt.receipt_hash
+           AND ledger.metadata->'cost_cny'=to_jsonb(m.cost_cny)
+           AND ledger.metadata->>'modality'=m.modality
+           AND settlement.kind='settle' AND settlement.status='completed'
+           AND settlement.idempotency_key='commercial.settle:' || r.action_key
+           AND settlement.request->>'reservation_id'=r.id
+           AND settlement.request->'actual_points'=to_jsonb(r.points)
+           AND settlement.request->'metadata'->>'provider_request_id'=$4
+           AND settlement.request->'metadata'->>'receipt_hash'=api_receipt.receipt_hash
+           AND settlement.request->'metadata'->'cost_cny'=to_jsonb(m.cost_cny)
+           AND settlement.request->'metadata'->>'modality'=m.modality
+           AND (SELECT count(*) FROM model_usage_ledger all_usage WHERE all_usage.workspace_id=$1 AND all_usage.provider_request_id=$4)=1
+           AND (SELECT count(*) FROM creative_point_ledger_events all_settlements WHERE all_settlements.workspace_id=$1 AND all_settlements.event_type='settled' AND all_settlements.metadata->>'reservation_id'=r.id)=1
+           AND NOT EXISTS (SELECT 1 FROM creative_point_reversals_v2 reversal WHERE reversal.workspace_id=$1 AND reversal.original_reservation_id=r.id)
+      `, [workspaceId, input.reservationId, input.actionId, input.providerRequestId, input.relayProvider])
+      return Number(result.rows[0]?.matched ?? 0) === 1
     })
   }
 

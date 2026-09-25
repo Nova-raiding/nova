@@ -45,8 +45,8 @@ const receiptHash = (value: Record<string, unknown>) => createHash('sha256').upd
  */
 export class CreativePointRelaySettlement {
   constructor(
-    private readonly points: Pick<CreativePointRepository, 'getReservation' | 'settle' | 'release'>,
-    private readonly receipts: Pick<PostgresCreativePointLifecycleRepository, 'recordProviderReceipt' | 'getProviderReceipt'>,
+    private readonly points: Pick<CreativePointRepository, 'getReservation' | 'release'>,
+    private readonly receipts: Pick<PostgresCreativePointLifecycleRepository, 'recordProviderReceipt' | 'getProviderReceipt' | 'verifyModelUsageDeliverySettlement'>,
     private readonly provider: string,
   ) {}
 
@@ -75,18 +75,18 @@ export class CreativePointRelaySettlement {
     const reservation = await this.reservation(event, operation)
     if (!reservation) return
     const identities = [...new Set(providerRequestIds.map(identity).filter((value): value is string => Boolean(value)))].sort()
-    if (identities.length === 0) throw Object.assign(new Error('verified relay receipt is required before creative point settlement'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', providerSucceeded: true })
-    const verifiedAt: string[] = []
+    if (identities.length !== 1) throw Object.assign(new Error('exactly one verified relay request is required for the original creative-point settlement'), { code: 'MODEL_USAGE_SETTLEMENT_EVIDENCE_MISMATCH', providerSucceeded: true, reconciliationRequired: true })
+    if (this.provider === 'model-relay') throw Object.assign(new Error('worker relay identity must differ from the API settlement owner'), { code: 'MODEL_USAGE_SETTLEMENT_EVIDENCE_MISMATCH', providerSucceeded: true, reconciliationRequired: true })
+    const actionId = identity(event.payload.action_id)
+    if (!actionId || actionId !== reservation.actionKey) throw Object.assign(new Error('generation action does not match the frozen creative-point reservation'), { code: 'MODEL_USAGE_SETTLEMENT_EVIDENCE_MISMATCH', providerSucceeded: true, reconciliationRequired: true })
     for (const providerRequestId of identities) {
       const receipt = await this.receipts.getProviderReceipt({ workspaceId: event.workspaceId, operationId: reservation.operationId, provider: this.provider, providerRequestId })
       if (!receipt || receipt.outcome !== 'succeeded' || !validUsageEvidence(receipt.usage) || !validCostEvidence(receipt.cost) || !receipt.verifiedAt || Number.isNaN(Date.parse(receipt.verifiedAt))) {
         throw Object.assign(new Error('verified succeeded relay receipt with usage and cost is required before creative point settlement'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', providerSucceeded: true, providerRequestId })
       }
-      verifiedAt.push(receipt.verifiedAt)
     }
-    const at = verifiedAt.sort()[verifiedAt.length - 1]!
-    const settlementIdentity = createHash('sha256').update(identities.join('\n'), 'utf8').digest('hex')
-    await this.points.settle({ workspaceId: event.workspaceId, reservationId: reservation.id, actualPoints: reservation.points, idempotencyKey: `relay-settle:${settlementIdentity}`, metadata: { provider: this.provider, provider_request_ids: identities, receipt_verified_at: at }, at })
+    const verified = await this.receipts.verifyModelUsageDeliverySettlement({ workspaceId: event.workspaceId, reservationId: reservation.id, actionId, providerRequestId: identities[0]!, relayProvider: this.provider })
+    if (!verified) throw Object.assign(new Error('the API-owned provider usage and creative-point settlement evidence is incomplete or mismatched'), { code: 'MODEL_USAGE_SETTLEMENT_EVIDENCE_MISMATCH', providerSucceeded: true, reconciliationRequired: true, providerRequestId: identities[0] })
   }
 
   async recordProviderOutcome(event: DurableOutboxEvent, error: OutcomeError): Promise<void> {

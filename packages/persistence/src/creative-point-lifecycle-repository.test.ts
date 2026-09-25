@@ -24,6 +24,34 @@ const completedOperation = (stored: Record<string, unknown>, balance: Record<str
 const pool = (client: SqlClient): SqlPool => ({ connect: async () => client })
 
 describe('PostgresCreativePointLifecycleRepository', () => {
+  it('verifies API-owned delivery settlement evidence in a workspace-scoped read transaction', async () => {
+    const client = new Client(sql => sql.includes('SELECT count(*)::int AS matched') ? { rows: [{ matched: 1 }] } : { rows: [] })
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    await expect(repository.verifyModelUsageDeliverySettlement({ workspaceId: 'ws-1', reservationId: 'reservation-1', actionId: 'action-1', providerRequestId: 'provider-1', relayProvider: 'relay.example' })).resolves.toBe(true)
+    const query = client.sql.find(sql => sql.includes('SELECT count(*)::int AS matched'))!
+    expect(query).toContain('JOIN model_usage_ledger')
+    expect(query).toContain('JOIN creative_point_provider_receipts_v2 api_receipt')
+    expect(query).toContain('JOIN creative_point_provider_receipts_v2 worker_receipt')
+    expect(query).toContain("settlement.idempotency_key='commercial.settle:' || r.action_key")
+    expect(query).toContain('NOT EXISTS (SELECT 1 FROM creative_point_reversals_v2')
+    expect(client.values[client.sql.indexOf(query)]).toEqual(['ws-1', 'reservation-1', 'action-1', 'provider-1', 'relay.example'])
+    expect(client.sql).toContain('COMMIT')
+    expect(client.sql.some(sql => /\b(INSERT|UPDATE|DELETE)\b/iu.test(sql))).toBe(false)
+  })
+
+  it('returns false when the original API usage and point settlement evidence is incomplete', async () => {
+    const client = new Client(sql => sql.includes('SELECT count(*)::int AS matched') ? { rows: [{ matched: 0 }] } : { rows: [] })
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    await expect(repository.verifyModelUsageDeliverySettlement({ workspaceId: 'ws-1', reservationId: 'reservation-1', actionId: 'action-1', providerRequestId: 'provider-1', relayProvider: 'relay.example' })).resolves.toBe(false)
+  })
+
+  it('rejects missing delivery settlement identities before querying', async () => {
+    const client = new Client()
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    await expect(repository.verifyModelUsageDeliverySettlement({ workspaceId: 'ws-1', reservationId: 'reservation-1', actionId: 'action-1', providerRequestId: 'provider-1', relayProvider: ' ' })).rejects.toThrow('relayProvider is required')
+    expect(client.sql).toEqual([])
+  })
+
   it('expires a due grant by appending an expiry operation/event and advancing revision', async () => {
     const client = new Client(sql => {
       if (sql.includes('SELECT g.points-COALESCE')) return { rows: [{ remaining: 20 }] }

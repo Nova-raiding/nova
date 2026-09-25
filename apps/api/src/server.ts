@@ -7421,6 +7421,73 @@ async function releaseImageReservationOnFailedReconcile(workspaceId: string, job
   imageTrace('reconcile.points_released', { workspace_id: workspaceId, job_id: jobId, reservation_id: reservationId, points: released.value.points })
   return { status: 'released' as const, reservationId, points: released.value.points }
 }
+
+/** A Provider result is deliverable only after its original point charge,
+ * relay usage receipt, and worker settlement receipt all agree. */
+async function requireChargedImageDeliveryEvidence(workspaceId: string, jobId: string, requested: OutboxEvent, providerRequestId: string) {
+  const payload = requested.payload
+  const actionId = typeof payload.action_id === 'string' ? payload.action_id.trim() : ''
+  const reservation = actionId ? await persistence.creativePoints?.getReservationByActionKey?.(workspaceId, actionId) : undefined
+  const rawSnapshot = payload.commercial_access_snapshot
+  const snapshot = rawSnapshot && typeof rawSnapshot === 'object' && !Array.isArray(rawSnapshot) ? rawSnapshot as Record<string, unknown> : undefined
+  const charged = Boolean(reservation) || snapshot?.access_mode === 'POINT_CHARGED' || snapshot?.classification === 'POINT_CHARGED'
+  if (!charged) {
+    if (isProduction() && snapshot?.access_mode !== 'POINT_REQUIRED_NO_CHARGE') throw new DomainError('IMAGE_GENERATION_COMMERCIAL_SNAPSHOT_INVALID', '图片请求缺少可验证的原始商业执行快照，Provider 结果保持待对账', 409, { reconciliation_required: true, provider_succeeded: true })
+    return
+  }
+
+  const runKey = typeof payload.run_key === 'string' ? payload.run_key.trim() : ''
+  const reservationId = typeof snapshot?.reservation_id === 'string' ? snapshot.reservation_id.trim() : ''
+  const job = service.getImageGenerationJob(workspaceId, jobId)
+  if (!actionId || runKey !== actionId || !reservationId || payload.job_id !== jobId || payload.workspace_id !== workspaceId || payload.product_id !== job.productId || payload.intent_hash !== job.intentHash
+    || (snapshot?.workspace_id !== undefined && snapshot.workspace_id !== workspaceId)
+    || (snapshot?.operation !== undefined && snapshot.operation !== 'image_generation.execute')) {
+    throw new DomainError('IMAGE_GENERATION_COMMERCIAL_BINDING_INVALID', '图片回执未绑定原始工作区、任务、扣费动作和创意点预留', 409, { reconciliation_required: true, provider_succeeded: true })
+  }
+  if (!persistence.creativePoints?.getReservationByActionKey || !persistence.creativePointLifecycle || !persistence.modelUsage) {
+    throw new DomainError('IMAGE_GENERATION_SETTLEMENT_REPOSITORY_UNAVAILABLE', '图片用量与创意点持久化结算核验尚未配置', 503, { reconciliation_required: true, provider_succeeded: true })
+  }
+  const usage = await persistence.modelUsage.listByAction(workspaceId, actionId)
+  if (!reservation || reservation.id !== reservationId || reservation.actionKey !== actionId || reservation.status !== 'settled'
+    || (isProduction() && (snapshot?.access_mode !== 'POINT_CHARGED' || snapshot?.rate_version !== reservation.rateCardVersion || snapshot?.quoted_points !== reservation.points))
+    || usage.length !== 1 || usage[0]?.providerRequestId !== providerRequestId || usage[0]?.modality !== 'image'
+    || usage[0]?.settlementStatus !== 'settled' || usage[0]?.costCny === undefined || !Number.isFinite(usage[0].costCny)) {
+    throw new DomainError('IMAGE_GENERATION_SETTLEMENT_EVIDENCE_PENDING', '图片 Provider 已返回，但原始创意点预留、图片用量或成本回执尚未完成唯一结算；候选保持待对账', 409, { reconciliation_required: true, provider_succeeded: true, retryable: false })
+  }
+  const relayProvider = (() => {
+    const configured = process.env.MODEL_RELAY_PROVIDER?.trim()
+    if (configured) return configured
+    try { return process.env.MODEL_RELAY_BASE_URL?.trim() ? new URL(process.env.MODEL_RELAY_BASE_URL).hostname : 'configured-relay' }
+    catch { return 'configured-relay' }
+  })()
+  const verified = await persistence.creativePointLifecycle.verifyModelUsageDeliverySettlement({ workspaceId, reservationId, actionId, providerRequestId, relayProvider })
+  if (!verified) throw new DomainError('IMAGE_GENERATION_SETTLEMENT_EVIDENCE_PENDING', '图片 Provider 已返回，但原始扣费动作、双回执与结算操作证据不一致；候选保持待对账', 409, { reconciliation_required: true, provider_succeeded: true, retryable: false })
+}
+
+async function chargedImageCandidatesReadable(workspaceId: string, job: import('../../../packages/application/src/service.js').ImageGenerationJob, events?: OutboxEvent[], providerRequestId?: string): Promise<boolean> {
+  if (persistence.mode === 'memory' && !isProduction()) return true
+  const requested = (events ?? await persistence.outbox?.listAggregateEvents(workspaceId, job.id, 100) ?? []).find(event => event.eventType === 'image.generation.requested')
+  if (!requested) {
+    const historicalReservation = await persistence.creativePoints?.getReservationByActionKey?.(workspaceId, `image:${job.idempotencyKey}`)
+    return !isProduction() && !historicalReservation
+  }
+  const actionId = typeof requested.payload.action_id === 'string' ? requested.payload.action_id.trim() : ''
+  const reservation = actionId ? await persistence.creativePoints?.getReservationByActionKey?.(workspaceId, actionId) : undefined
+  const rawSnapshot = requested.payload.commercial_access_snapshot
+  const snapshot = rawSnapshot && typeof rawSnapshot === 'object' && !Array.isArray(rawSnapshot) ? rawSnapshot as Record<string, unknown> : undefined
+  const charged = Boolean(reservation) || snapshot?.access_mode === 'POINT_CHARGED' || snapshot?.classification === 'POINT_CHARGED'
+  if (!charged && !isProduction()) return true
+  const identity = providerRequestId ?? (await persistence.imageGenerationExecutions?.get({ workspaceId, jobId: job.id }))?.providerRequestId
+  if (!identity) return false
+  try {
+    await requireChargedImageDeliveryEvidence(workspaceId, job.id, requested, identity)
+    return true
+  } catch (error) {
+    if (error instanceof DomainError && ['IMAGE_GENERATION_COMMERCIAL_SNAPSHOT_INVALID', 'IMAGE_GENERATION_COMMERCIAL_BINDING_INVALID', 'IMAGE_GENERATION_SETTLEMENT_REPOSITORY_UNAVAILABLE', 'IMAGE_GENERATION_SETTLEMENT_EVIDENCE_PENDING'].includes(error.code)) return false
+    throw error
+  }
+}
+
 export function providerSucceededButSettlementPending(error: unknown) {
   if (!error || typeof error !== 'object') return false
   const candidate = error as { code?: unknown; providerSucceeded?: unknown; providerOutcome?: unknown; reconciliationRequired?: unknown; details?: Record<string, unknown> }
@@ -11105,6 +11172,11 @@ function publicImageJob(job: import('../../../packages/application/src/service.j
     ...(job.preferredSelection ? { preferredCandidate: { visualRef: job.preferredSelection.visualRef, selectedAt: job.preferredSelection.selectedAt, status: 'preferred', reviewRequired: true, approvalRequired: true, platformPublished: false } } : {}),
     platformUsage: { status: 'not_submitted', observed: false }, selectionRequired: true,
   }
+}
+
+function publicImageJobForCommercialRead(job: import('../../../packages/application/src/service.js').ImageGenerationJob, candidatesReadable: boolean) {
+  const projected = publicImageJob(job)
+  return candidatesReadable ? projected : { ...projected, archiveState: 'pending', candidateCount: 0, candidates: [], preferredCandidate: undefined, commercialDeliveryBlocked: true }
 }
 
 async function publicImageJobExecutionProjection(workspaceId: string, jobId: string) {
@@ -19319,6 +19391,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         await persistSnapshot(workspaceId, 'image_generation_job', job, job as unknown as Record<string, unknown>)
       }
       const execution = await persistence.imageGenerationExecutions?.get({ workspaceId, jobId: job.id })
+      const commercialReady = await chargedImageCandidatesReadable(workspaceId, job, aggregateEvents, execution?.providerRequestId)
       // A scan callback can make quarantined outputs clean after the provider
       // callback originally left the job in `pending`. Promote that durable
       // state on read so the next ChatGPT request receives the real image.
@@ -19327,11 +19400,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const asset = output.assetId ? service.assets.get(output.assetId) : undefined
         return Boolean(asset && isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled()))
       })
-      if (job.archiveState !== 'archived' && outputsClean) {
+      if (commercialReady && job.archiveState !== 'archived' && outputsClean) {
         job = service.archiveImageGenerationOutputs(workspaceId, job.id, job.outputs ?? [], 'archived')
         await persistSnapshot(workspaceId, 'image_generation_job', job, job as unknown as Record<string, unknown>)
       }
-      const images = imageJobOutputsAreClean(job, visualRef) ? await readArchivedGeneratedImages(workspaceId, job, visualRef) : []
+      const images = commercialReady && imageJobOutputsAreClean(job, visualRef) ? await readArchivedGeneratedImages(workspaceId, job, visualRef) : []
       const selectedImages = images
       const selectedOutputs = selectedImages.length
         ? (job.outputs ?? []).filter(output => !visualRef || output.visualRef === visualRef)
@@ -19343,31 +19416,17 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const selectionTickets = selectedOutputs.length === selectedImages.length && selectedImages.length
         ? await issueImageSelectionTickets(req, workspaceId, job, selectedOutputs)
         : []
-      const reconciliationRequired = execution?.state === 'provider_reserved' || execution?.state === 'provider_dispatching' || execution?.state === 'provider_started' || execution?.state === 'outcome_unknown'
-      // A provider result can be accepted and archived before an older worker
-      // finishes its usage callback. Repair that exact successful delivery on
-      // read using the durable provider request id and the frozen event
-      // context. recordRelayUsage is idempotent and derives cost only from
-      // the configured relay pricing snapshot; it never charges an image
-      // without a real archived result and provider identity.
-      const requestedEvent = aggregateEvents?.find(event => event.eventType === 'image.generation.requested')
-      const pointActionId = typeof requestedEvent?.payload.action_id === 'string' ? requestedEvent.payload.action_id.trim() : ''
-      const pointRunKey = typeof requestedEvent?.payload.run_key === 'string' ? requestedEvent.payload.run_key.trim() : ''
-      const beforeRepair = await imageCreativePointsEvidence(workspaceId, undefined, `image:${job.idempotencyKey}`)
-      if (selectedImages.length > 0 && (execution?.state === 'provider_started' || execution?.state === 'completed') && execution.providerRequestId && pointActionId && pointRunKey && beforeRepair.point_reservation_status === 'active') {
-        try {
-          await recordRelayUsage({ workspaceId, actionId: pointActionId, runKey: pointRunKey, modality: 'image', model: process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || 'configured-image-model', providerRequestId: execution.providerRequestId, observedAt: new Date().toISOString(), metadata: { usage_observed: true, billing_units: selectedImages.length, image_job: true, settlement_repair: true } })
-        } catch { /* keep the image visible while the normal reconciliation loop retries settlement */ }
-      }
+      const reconciliationRequired = !commercialReady || execution?.state === 'provider_reserved' || execution?.state === 'provider_dispatching' || execution?.state === 'provider_started' || execution?.state === 'outcome_unknown'
       const creativePoints = await imageCreativePointsEvidence(workspaceId, undefined, `image:${job.idempotencyKey}`)
-      imageTrace('get.result', { workspace_id: workspaceId, job_id: job.id, state: job.state, archive_state: job.archiveState, execution_state: execution?.state ?? 'none', selected_image_count: selectedImages.length, candidate_count: job.outputs?.length ?? 0, reconciliation_required: reconciliationRequired })
-      return result({ job_id: job.id, creative_points: creativePoints, execution: executionContract('image', Boolean(imageGenerator)), execution_state: execution?.state ?? null, provider_request_id: execution?.providerRequestId ?? null, execution_attempt: execution?.attempt ?? null, reconciliation_required: reconciliationRequired, ...(execution?.errorCode ? { error_code: execution.errorCode, error_message: execution.errorMessage ?? null } : {}), next_action: execution?.state === 'outcome_unknown' || execution?.state === 'provider_started' ? { type: 'reconcile', label: '中转结果待对账，暂不重试', allowed: true } : { type: 'refresh_status', label: '刷新任务状态', allowed: true }, ...(selectedImages.length ? { images: selectedImages, ...(imageUrls.length ? { image_urls: imageUrls, download_urls: imageUrls } : {}), selection_tickets: selectionTickets, review: reviewProductImagesForMcp(selectedImages) } : { availabilityWarning: execution?.state === 'outcome_unknown' ? '中转服务返回结果不确定，已停止自动重试，等待对账；不会重复扣费。' : '平台正在自动执行交付前安全扫描，完成前不会返回图片内容，商家无需操作。' }), job: publicImageJob(job), historicalCandidate: true, platformPublished: false })
+      imageTrace('get.result', { workspace_id: workspaceId, job_id: job.id, state: job.state, archive_state: job.archiveState, execution_state: execution?.state ?? 'none', selected_image_count: selectedImages.length, candidate_count: commercialReady ? job.outputs?.length ?? 0 : 0, reconciliation_required: reconciliationRequired })
+      return result({ job_id: job.id, creative_points: creativePoints, execution: executionContract('image', Boolean(imageGenerator)), execution_state: execution?.state ?? null, provider_request_id: execution?.providerRequestId ?? null, execution_attempt: execution?.attempt ?? null, reconciliation_required: reconciliationRequired, ...(execution?.errorCode ? { error_code: execution.errorCode, error_message: execution.errorMessage ?? null } : {}), next_action: !commercialReady || execution?.state === 'outcome_unknown' || execution?.state === 'provider_started' ? { type: 'reconcile', label: '中转结果与结算证据待对账，暂不重试', allowed: true } : { type: 'refresh_status', label: '刷新任务状态', allowed: true }, ...(selectedImages.length ? { images: selectedImages, ...(imageUrls.length ? { image_urls: imageUrls, download_urls: imageUrls } : {}), selection_tickets: selectionTickets, review: reviewProductImagesForMcp(selectedImages) } : { availabilityWarning: !commercialReady ? '图片结果尚未通过原始用量、成本与创意点结算核验；已保留待对账，不会返回候选或自动重复扣费。' : execution?.state === 'outcome_unknown' ? '中转服务返回结果不确定，已停止自动重试，等待对账；不会重复扣费。' : '平台正在自动执行交付前安全扫描，完成前不会返回图片内容，商家无需操作。' }), job: publicImageJobForCommercialRead(job, commercialReady), historicalCandidate: true, platformPublished: false })
     }
     case 'catalog.image.select': {
       const jobId = required(params, 'job_id')
       const visualRef = required(params, 'visual_ref')
       const current = service.getImageGenerationJob(workspaceId, jobId)
       await enforceProductBrandAccess(req, workspaceId, current.productId, 'editor')
+      if (!(await chargedImageCandidatesReadable(workspaceId, current))) throw new DomainError('IMAGE_GENERATION_SETTLEMENT_EVIDENCE_PENDING', '图片候选尚未通过原始用量、成本与创意点结算核验，禁止选择旧候选', 409, { reconciliation_required: true, retryable: false })
       if ((await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') {
         const product = service.products.get(current.productId)
         if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
@@ -19424,6 +19483,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         for (const visualRef of visualRefs) {
           const job = service.resolveImageGenerationByVisualRef(workspaceId, visualRef)
           if (job.productId !== product.id) throw new DomainError('VISUAL_SELECTION_SCOPE_MISMATCH', '图片候选不属于当前商品', 409)
+          if (!(await chargedImageCandidatesReadable(workspaceId, job))) throw new DomainError('IMAGE_GENERATION_SETTLEMENT_EVIDENCE_PENDING', '图片候选尚未通过原始用量、成本与创意点结算核验，禁止读取或审阅旧候选', 409, { reconciliation_required: true, retryable: false })
           const archived = await readArchivedGeneratedImages(workspaceId, job)
           const index = job.outputs?.findIndex(output => output.visualRef === visualRef) ?? -1
           if (index < 0 || !archived[index]) throw new DomainError('VISUAL_NOT_READY', '图片候选不可读取', 409)
@@ -19449,6 +19509,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!Array.isArray(parsed) || !parsed.length || parsed.length > 6 || parsed.some(value => typeof value !== 'string') || new Set(parsed).size !== parsed.length) throw new Error('invalid')
         visualRefs = parsed
       } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'visual_refs_json 必须是 1 至 6 个不重复候选引用的 JSON 数组', 400) }
+      for (const visualRef of visualRefs) {
+        const job = service.resolveImageGenerationByVisualRef(workspaceId, visualRef)
+        if (!(await chargedImageCandidatesReadable(workspaceId, job))) throw new DomainError('IMAGE_GENERATION_SETTLEMENT_EVIDENCE_PENDING', '图片候选尚未通过原始用量、成本与创意点结算核验，禁止绑定到内容版本', 409, { reconciliation_required: true, retryable: false })
+      }
       requireSelectedVisualAuthenticity(workspaceId, visualRefs)
       const expectedRevision = Number(required(params, 'expected_revision'))
       const idempotencyKey = (typeof params.idempotency_key === 'string' && params.idempotency_key.trim()) || header(req, 'idempotency-key')?.trim()
@@ -22338,6 +22402,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     if (requested.payload.intent_hash !== intentHash) throw new DomainError('IMAGE_GENERATION_EVENT_INVALID', '图片生成回执的请求事件意图不匹配', 409)
     const execution = persistence.imageGenerationExecutions ? await persistence.imageGenerationExecutions.get({ workspaceId, jobId }) : undefined
     if (job.state === 'succeeded' && job.archiveState === 'archived' && job.outputs?.length) {
+      await requireChargedImageDeliveryEvidence(workspaceId, job.id, requested, callback.provider_request_id ?? execution?.providerRequestId ?? '')
       await persistImageGenerationCompletion(workspaceId, job)
       if (execution?.state === 'provider_started' && execution.eventId === eventId && execution.ownerToken === ownerToken) await persistence.imageGenerationExecutions!.markCompleted({ workspaceId, jobId, ownerToken })
       return send(res, 200, workspaceId, { job_id: job.id, state: job.state, archive_state: job.archiveState, already_completed: true }, null, req)
@@ -22358,6 +22423,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       return send(res, 200, workspaceId, { job_id: job.id, state: job.state, archive_state: job.archiveState, accepted: true }, null, req)
     }
     const images = callback.images!
+    await requireChargedImageDeliveryEvidence(workspaceId, job.id, requested, providerRequestId)
     const archived = await archiveGeneratedImages(workspaceId, job.id, images)
     await persistImageGenerationCompletion(workspaceId, archived)
     if (archived.archiveState === 'archived' && imageJobOutputsAreClean(archived)) await persistence.imageGenerationExecutions!.markCompleted({ workspaceId, jobId, ownerToken })
@@ -22568,6 +22634,12 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       return send(res, 200, workspaceId, { ...repaired, execution: settled, reconciliation_required: false }, null, req)
     }
     if (providerStateValue === 'succeeded' && images?.length) {
+      try {
+        await requireChargedImageDeliveryEvidence(workspaceId, job.id, requested, providerRequestId)
+      } catch (error) {
+        if (!(error instanceof DomainError) || !['IMAGE_GENERATION_COMMERCIAL_SNAPSHOT_INVALID', 'IMAGE_GENERATION_COMMERCIAL_BINDING_INVALID', 'IMAGE_GENERATION_SETTLEMENT_REPOSITORY_UNAVAILABLE', 'IMAGE_GENERATION_SETTLEMENT_EVIDENCE_PENDING'].includes(error.code)) throw error
+        return send(res, 200, workspaceId, { ...repaired, archive_state: 'pending', candidate_count: 0, reconciliation_required: true, settlement_error_code: error.code, next_action: 'Provider 成功证据已保存；等待原始图片用量、成本与创意点扣费双回执核对，禁止自动重试或交付候选' }, null, req)
+      }
       const archived = await archiveGeneratedImages(workspaceId, job.id, images)
       if (archived.archiveState === 'archived' && imageJobOutputsAreClean(archived) && billingEvidenceReady) {
         const settled = await repository.reconcileCompleted({ workspaceId, jobId: job.id })
@@ -24095,13 +24167,18 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       && (!state || job.state === state),
     )
     const page = paginationRequest(url)
-    const items = await Promise.all(all.slice(page.offset, page.offset + page.limit).map(async job => ({
-      ...publicImageJob(job),
-      ...await publicImageJobExecutionProjection(workspaceId, job.id),
-      productTitle: service.products.get(job.productId)?.title ?? null,
-      platform: service.products.get(job.productId)?.platform ?? null,
-      storeName: service.products.get(job.productId)?.storeName ?? null,
-    })))
+    const items = await Promise.all(all.slice(page.offset, page.offset + page.limit).map(async job => {
+      const candidatesReadable = await chargedImageCandidatesReadable(workspaceId, job)
+      const executionProjection = await publicImageJobExecutionProjection(workspaceId, job.id)
+      return {
+        ...publicImageJobForCommercialRead(job, candidatesReadable),
+        ...executionProjection,
+        reconciliationRequired: !candidatesReadable || executionProjection.reconciliationRequired,
+        productTitle: service.products.get(job.productId)?.title ?? null,
+        platform: service.products.get(job.productId)?.platform ?? null,
+        storeName: service.products.get(job.productId)?.storeName ?? null,
+      }
+    }))
     return send(res, 200, workspaceId, { items, total: all.length, ...page }, null, req)
   }
   const imageGenerationJobGetMatch = path.match(/^\/v1\/image-generation-jobs\/([^/]+)$/u)
@@ -24109,6 +24186,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const workspaceId = resolveWorkspace(req)
     await hydrateWorkspace(workspaceId)
     let job = service.getImageGenerationJob(workspaceId, decodeURIComponent(imageGenerationJobGetMatch[1]!))
+    const candidatesReadable = await chargedImageCandidatesReadable(workspaceId, job)
     enrichRequestObservation(req, { jobId: job.id })
     // `catalog.image.get` is workspace scoped, so the brand boundary has to be
     // enforced here (the MCP read does the same, through the same predicate).
@@ -24125,17 +24203,17 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const asset = output.assetId ? service.assets.get(output.assetId) : undefined
       return Boolean(asset && isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled()))
     })
-    if (job.archiveState !== 'archived' && outputsClean) {
+    if (candidatesReadable && job.archiveState !== 'archived' && outputsClean) {
       job = service.archiveImageGenerationOutputs(workspaceId, job.id, job.outputs ?? [], 'archived')
       await persistSnapshot(workspaceId, 'image_generation_job', job, job as unknown as Record<string, unknown>)
     }
     const execution = await persistence.imageGenerationExecutions?.get({ workspaceId, jobId: job.id })
-    const images = imageJobOutputsAreClean(job) ? await readArchivedGeneratedImages(workspaceId, job) : []
+    const images = candidatesReadable && imageJobOutputsAreClean(job) ? await readArchivedGeneratedImages(workspaceId, job) : []
     return send(res, 200, workspaceId, {
       job_id: job.id,
       revision: job.revision,
       state: job.state,
-      archive_state: job.archiveState,
+      archive_state: candidatesReadable ? job.archiveState : 'pending',
       product_id: job.productId,
       task_id: job.taskId ?? null,
       content_version_id: job.contentVersionId ?? null,
@@ -24148,13 +24226,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       execution_state: execution?.state ?? null,
       provider_request_id: execution?.providerRequestId ?? null,
       execution_attempt: execution?.attempt ?? null,
-      reconciliation_required: execution?.state === 'provider_reserved' || execution?.state === 'provider_dispatching' || execution?.state === 'provider_started' || execution?.state === 'outcome_unknown' || job.archiveState !== 'archived',
+      reconciliation_required: !candidatesReadable || execution?.state === 'provider_reserved' || execution?.state === 'provider_dispatching' || execution?.state === 'provider_started' || execution?.state === 'outcome_unknown' || job.archiveState !== 'archived',
       error_code: job.errorCode ?? null,
       error_message: job.errorMessage ?? null,
       updated_at: job.updatedAt,
       created_at: job.createdAt,
-      ...(job.preferredSelection ? { preferred_candidate: { visual_ref: job.preferredSelection.visualRef, selected_at: job.preferredSelection.selectedAt, status: 'preferred', review_required: true, approval_required: true, platform_published: false } } : {}),
-      outputs: (job.outputs ?? []).map(output => {
+      ...(candidatesReadable && job.preferredSelection ? { preferred_candidate: { visual_ref: job.preferredSelection.visualRef, selected_at: job.preferredSelection.selectedAt, status: 'preferred', review_required: true, approval_required: true, platform_published: false } } : {}),
+      outputs: (candidatesReadable ? job.outputs ?? [] : []).map(output => {
         const asset = output.assetId ? service.assets.get(output.assetId) : undefined
         const blockers = [
           ...(job.archiveState !== 'archived' ? ['候选尚未完整归档'] : []),
@@ -24184,8 +24262,8 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         }
       }),
       ...(images.length ? { images } : {}),
-      ...(images.length ? {} : { availability_warning: job.archiveState === 'archived' ? '候选已归档，安全扫描或真实性检查尚未完成。' : '图片任务尚未形成可交付候选。' }),
-      next_action: execution?.state === 'outcome_unknown' || execution?.state === 'provider_started' ? { type: 'reconcile', label: '等待对账或查看执行证据', allowed: true } : job.state === 'failed' ? { type: 'review_error', label: '查看失败原因', allowed: true } : job.state === 'succeeded' && images.length ? { type: 'review_candidates', label: '查看候选', allowed: true } : { type: 'refresh_status', label: '刷新任务状态', allowed: true },
+      ...(images.length ? {} : { availability_warning: !candidatesReadable ? '图片结果尚未通过原始用量、成本与创意点结算核验；候选暂不显示，等待对账。' : job.archiveState === 'archived' ? '候选已归档，安全扫描或真实性检查尚未完成。' : '图片任务尚未形成可交付候选。' }),
+      next_action: !candidatesReadable || execution?.state === 'outcome_unknown' || execution?.state === 'provider_started' ? { type: 'reconcile', label: '等待结算证据对账或查看执行状态', allowed: true } : job.state === 'failed' ? { type: 'review_error', label: '查看失败原因', allowed: true } : job.state === 'succeeded' && images.length ? { type: 'review_candidates', label: '查看候选', allowed: true } : { type: 'refresh_status', label: '刷新任务状态', allowed: true },
     }, null, req)
   }
   const generationJobDeferMatch = path.match(/^\/v1\/generation-jobs\/([^/]+)\/defer$/)

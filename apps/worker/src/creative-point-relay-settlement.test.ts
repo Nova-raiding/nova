@@ -18,10 +18,12 @@ async function fixture(operation: 'generation.execute' | 'image_generation.execu
       const row = receiptRows.get(input.providerRequestId)
       return row?.operationId === input.operationId && row.provider === input.provider ? row : null
     }),
+    verifyModelUsageDeliverySettlement: vi.fn(async () => false),
   }
   const event: DurableOutboxEvent = {
     id: 'evt_generation_1', workspaceId: 'ws_a', aggregateId: 'job_1', eventType: operation === 'image_generation.execute' ? 'image.generation.requested' : 'generation.requested', sequence: 1, createdAt: at,
     payload: {
+      action_id: operation,
       commercial_access_snapshot: {
         schema_version: 1, decision_id: 'decision_1', workspace_id: 'ws_a', operation,
         access_mode: 'POINT_CHARGED', access_revision: 'revision_1', balance_state: 'known',
@@ -34,12 +36,17 @@ async function fixture(operation: 'generation.execute' | 'image_generation.execu
 }
 
 describe('creative point relay settlement', () => {
-  it('records verified provider evidence and settles before delivery', async () => {
+  it('verifies API-owned settlement before delivery without settling points a second time', async () => {
     const { points, receipts, event, reservationId, settlement } = await fixture()
     const requestId = await settlement.recordSucceeded(event, { modality: 'text', model: 'model-1', providerRequestId: 'provider_req_1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny: 0.12, observedAt: at })
     expect(requestId).toBe('provider_req_1')
     expect(receipts.recordProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ operationId: expect.stringMatching(/^cpo_/), outcome: 'succeeded', providerRequestId: 'provider_req_1', usage: expect.objectContaining({ total_tokens: 15 }), cost: { currency: 'CNY', actual: 0.12 }, verifiedAt: at }))
+    await points.settle({ workspaceId: 'ws_a', reservationId, actualPoints: 3, idempotencyKey: 'commercial.settle:generation.execute', metadata: { provider_request_id: requestId }, at })
+    receipts.verifyModelUsageDeliverySettlement.mockResolvedValue(true)
+    const settle = vi.spyOn(points, 'settle')
     await settlement.settleForDelivery(event, [requestId!])
+    expect(settle).not.toHaveBeenCalled()
+    expect(receipts.verifyModelUsageDeliverySettlement).toHaveBeenCalledWith({ workspaceId: 'ws_a', reservationId, actionId: 'generation.execute', providerRequestId: 'provider_req_1', relayProvider: 'relay.example' })
     await expect(points.getReservation('ws_a', reservationId)).resolves.toMatchObject({ status: 'settled', settledPoints: 3 })
   })
 
@@ -53,14 +60,30 @@ describe('creative point relay settlement', () => {
     expect(settle).toHaveBeenCalledTimes(1)
   })
 
-  it('records and settles image receipt with the configured relay identity and same request id', async () => {
+  it('records and verifies the image receipt after API settlement without a second point settlement', async () => {
     const { points, receipts, event, reservationId, settlement } = await fixture('image_generation.execute')
     const requestId = await settlement.recordSucceeded(event, { modality: 'image', model: 'image-model', providerRequestId: 'image_req_1', costCny: 0.2, observedAt: at }, 'image_generation.execute')
     expect(requestId).toBe('image_req_1')
     expect(receipts.recordProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ provider: 'relay.example', providerRequestId: 'image_req_1', outcome: 'succeeded' }))
+    await points.settle({ workspaceId: 'ws_a', reservationId, actualPoints: 3, idempotencyKey: 'commercial.settle:image_generation.execute', metadata: { provider_request_id: requestId }, at })
+    receipts.verifyModelUsageDeliverySettlement.mockResolvedValue(true)
+    const settle = vi.spyOn(points, 'settle')
     await settlement.settleForDelivery(event, [requestId!], 'image_generation.execute')
     expect(receipts.getProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ provider: 'relay.example', providerRequestId: 'image_req_1' }))
+    expect(receipts.verifyModelUsageDeliverySettlement).toHaveBeenCalledWith({ workspaceId: 'ws_a', reservationId, actionId: 'image_generation.execute', providerRequestId: 'image_req_1', relayProvider: 'relay.example' })
+    expect(settle).not.toHaveBeenCalled()
     await expect(points.getReservation('ws_a', reservationId)).resolves.toMatchObject({ status: 'settled', settledPoints: 3 })
+  })
+
+  it('fails closed when durable API settlement evidence does not match', async () => {
+    const { points, receipts, event, reservationId, settlement } = await fixture()
+    const requestId = await settlement.recordSucceeded(event, { modality: 'text', model: 'model-1', providerRequestId: 'provider_req_mismatch', costCny: 0.12, observedAt: at })
+    await points.settle({ workspaceId: 'ws_a', reservationId, actualPoints: 3, idempotencyKey: 'other-owner', at })
+    receipts.verifyModelUsageDeliverySettlement.mockResolvedValue(false)
+    const settle = vi.spyOn(points, 'settle')
+    await expect(settlement.settleForDelivery(event, [requestId!])).rejects.toMatchObject({ code: 'MODEL_USAGE_SETTLEMENT_EVIDENCE_MISMATCH', providerSucceeded: true, reconciliationRequired: true })
+    expect(receipts.verifyModelUsageDeliverySettlement).toHaveBeenCalledOnce()
+    expect(settle).not.toHaveBeenCalled()
   })
 
   it('keeps delivery blocked when a successful result has lost its provider execution context', async () => {
@@ -85,6 +108,22 @@ describe('creative point relay settlement', () => {
   it('rejects delivery when the provider request has no current-operation receipt', async () => {
     const { event, settlement } = await fixture()
     await expect(settlement.settleForDelivery(event, ['provider_missing'])).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', providerRequestId: 'provider_missing' })
+  })
+
+  it('rejects ambiguous provider request identities and mismatched action bindings', async () => {
+    const { event, settlement, receipts } = await fixture()
+    await expect(settlement.settleForDelivery(event, ['provider_a', 'provider_b'])).rejects.toMatchObject({ code: 'MODEL_USAGE_SETTLEMENT_EVIDENCE_MISMATCH' })
+    event.payload.action_id = 'other-action'
+    await expect(settlement.settleForDelivery(event, ['provider_a'])).rejects.toMatchObject({ code: 'MODEL_USAGE_SETTLEMENT_EVIDENCE_MISMATCH' })
+    expect(receipts.verifyModelUsageDeliverySettlement).not.toHaveBeenCalled()
+  })
+
+  it('rejects a worker relay identity that collides with the API receipt owner', async () => {
+    const { points, receipts, event, reservationId } = await fixture()
+    const settlement = new CreativePointRelaySettlement(points, receipts, 'model-relay')
+    await expect(settlement.settleForDelivery(event, ['provider_req_1'])).rejects.toMatchObject({ code: 'MODEL_USAGE_SETTLEMENT_EVIDENCE_MISMATCH' })
+    expect(receipts.verifyModelUsageDeliverySettlement).not.toHaveBeenCalled()
+    await expect(points.getReservation('ws_a', reservationId)).resolves.toMatchObject({ status: 'active' })
   })
 
   it('rejects delivery when the current-operation receipt is not succeeded with complete evidence', async () => {
