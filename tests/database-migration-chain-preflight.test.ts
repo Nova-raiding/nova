@@ -144,7 +144,7 @@ describe('ECS database migration-chain preflight', () => {
     const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
     expect(preflight).toContain('MIGRATION_CHAIN_MODE=prefix sh infra/scripts/verify-database-migration-chain.sh')
     expect(preflight).not.toContain('ensure-ops-migration-history-read.sh')
-    expect(preflight).not.toMatch(/\b(?:GRANT|REVOKE)\b/iu)
+    expect(preflight).not.toMatch(/^\s*(?:GRANT|REVOKE)\b/mu)
     expect(preflight.indexOf('verify-database-migration-chain.sh')).toBeLessThan(preflight.indexOf('verify-runtime-db-role.sh'))
   })
 

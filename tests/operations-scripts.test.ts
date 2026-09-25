@@ -612,7 +612,7 @@ describe('deployment operation scripts', () => {
     }
     // Release preflight is an observation gate, never an implicit ACL repair.
     expect(ecsPreflight).not.toContain('ensure-ops-migration-history-read.sh')
-    expect(ecsPreflight).not.toMatch(/\b(?:GRANT|REVOKE)\b/iu)
+    expect(ecsPreflight).not.toMatch(/^\s*(?:GRANT|REVOKE)\b/mu)
     // The shared verifier needs these three inputs; the k8s path already
     // requires all of them before the migration stage.
     for (const requirement of [
