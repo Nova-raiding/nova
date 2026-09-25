@@ -247,6 +247,8 @@ describe("customer delivery read-only desktop interaction", () => {
     onVideoAdd?: (params: Record<string, string>) => Promise<void>;
     onGet?: (params: Record<string, string>) => Promise<unknown>;
     onList?: (workspaceId: string) => unknown[];
+    projectOwnerOptions?: string[];
+    supportOwnerOptions?: string[];
     onMutation?: (method: string, params: Record<string, string>) => Promise<unknown>;
     failVideoRefresh?: boolean;
   } = {}) {
@@ -256,7 +258,7 @@ describe("customer delivery read-only desktop interaction", () => {
       const request = route.request().postDataJSON() as { id: string; method: string; params: Record<string, string> };
       methods.push(request.method);
       let result: unknown;
-      if (request.method === "ops.customer-delivery.list") { const items = options.onList?.(request.params.target_workspace_id!) ?? [{ ...record, videos, paymentStatus: options.unpaid ? "unpaid" : "paid" }]; result = { items, total: items.length, offset: Number(request.params.offset), limit: Number(request.params.limit), hasMore: false }; }
+      if (request.method === "ops.customer-delivery.list") { const items = options.onList?.(request.params.target_workspace_id!) ?? [{ ...record, videos, paymentStatus: options.unpaid ? "unpaid" : "paid" }]; result = { items, total: items.length, offset: Number(request.params.offset), limit: Number(request.params.limit), hasMore: false, project_owner_options: options.projectOwnerOptions ?? ["API 销售甲"], support_owner_options: options.supportOwnerOptions ?? ["API 售后乙"] }; }
       else if (request.method === "ops.customer-delivery.checklist-items.list") result = { items: [{ itemKey: request.params.checklist_key === "system_integration" ? "插件账号" : "文案生成", completed: true, evidence: { note: "已保存的检查记录", asset_refs: ["asset:checklist"] } }] };
       else if (request.method === "ops.customer-delivery.videos.list") result = { items: videos };
       else if (request.method === "ops.customer-delivery.get" && options.failVideoRefresh) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "SERVICE_UNAVAILABLE", message: "测试中的详情读取暂时不可用" } }) });
@@ -338,6 +340,22 @@ describe("customer delivery read-only desktop interaction", () => {
       await create.evaluate(element => (element as HTMLButtonElement).click());
       await settle(page);
       expect(methods).toEqual(["ops.customer-delivery.list"]);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("populates owner filters from the server response and leaves empty API lists empty", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await prepare(page, { projectOwnerOptions: ["服务端销售候选"], supportOwnerOptions: [] });
+      const sales = page.getByRole("combobox", { name: "销售负责人筛选", exact: true });
+      await sales.click();
+      expect(await page.getByRole("option", { name: "服务端销售候选", exact: true }).count()).toBe(1);
+      expect(await page.getByRole("option", { name: "姜伟", exact: true }).count()).toBe(0);
+      await page.keyboard.press("Escape");
+      const afterSales = page.getByRole("combobox", { name: "售后负责人筛选", exact: true });
+      await afterSales.click();
+      expect(await page.getByRole("option", { name: "API 售后乙", exact: true }).count()).toBe(0);
+      expect(await page.getByRole("option", { name: "韩先晓", exact: true }).count()).toBe(0);
     } finally { await page.close(); }
   }, 45_000);
 

@@ -80,6 +80,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   // commercial-overview selector is no longer mounted in the converged console.
   const targetWorkspaceId = model.authorizationTargetWorkspaceId?.trim() ?? "";
   const [records, setRecords] = useState<import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord[]>([]);
+  const [projectOwnerOptions, setProjectOwnerOptions] = useState<string[]>([]);
+  const [supportOwnerOptions, setSupportOwnerOptions] = useState<string[]>([]);
   const [listQuery, setListQuery] = useState({ page: 1, pageSize: 20, keyword: "", owner: "", afterSalesOwner: "" });
   const [listTotal, setListTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -151,9 +153,14 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       const result = await customerDeliveryClient.list({ targetWorkspaceId, offset: (query.page - 1) * query.pageSize, limit: query.pageSize,
         query: query.keyword, projectOwner: query.owner, supportOwner: query.afterSalesOwner }, request.controller.signal);
       if (result === null) throw new Error("客户交付 API 未返回数据");
-      if (request.isCurrent()) { setRecords(result.items); setListTotal(result.total); }
+      if (request.isCurrent()) {
+        setRecords(result.items);
+        setListTotal(result.total);
+        setProjectOwnerOptions(result.projectOwnerOptions);
+        setSupportOwnerOptions(result.supportOwnerOptions);
+      }
     }
-    catch (cause) { if (request.isCurrent()) { setRecords([]); setError(describeOpsError(cause)); } }
+    catch (cause) { if (request.isCurrent()) { setRecords([]); setProjectOwnerOptions([]); setSupportOwnerOptions([]); setError(describeOpsError(cause)); } }
     finally { if (request.isCurrent()) setLoading(false); }
   };
   useEffect(() => {
@@ -167,6 +174,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   }, [canRead]);
   useEffect(() => {
     setRecords([]);
+    setProjectOwnerOptions([]);
+    setSupportOwnerOptions([]);
     setListTotal(0);
     const initialQuery = { page: 1, pageSize: 20, keyword: "", owner: "", afterSalesOwner: "" };
     setListQuery(initialQuery);
@@ -458,6 +467,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         disabled={!canRead || !targetWorkspaceId}
         readOnly={canRead && !canUpdate}
         records={records}
+        projectOwnerOptions={projectOwnerOptions}
+        supportOwnerOptions={supportOwnerOptions}
         total={listTotal}
         page={listQuery.page}
         pageSize={listQuery.pageSize}

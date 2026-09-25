@@ -32,7 +32,15 @@ export interface CustomerDeliveryClient {
   addVideo(input: { targetWorkspaceId: string; deliveryId: string; title: string; assetRef: string; sortOrder?: number }, signal?: AbortSignal): Promise<unknown>;
   downloadAsset(input: { targetWorkspaceId: string; deliveryId: string; purpose: "contract" | "video"; assetRef: string }, signal?: AbortSignal): Promise<{ blob: Blob; fileName: string }>;
 }
-export interface CustomerDeliveryPage { items: CustomerDeliveryRecord[]; total: number; offset: number; limit: number; hasMore: boolean }
+export interface CustomerDeliveryPage {
+  items: CustomerDeliveryRecord[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  projectOwnerOptions: string[];
+  supportOwnerOptions: string[];
+}
 
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const text = (value: unknown): value is string => typeof value === "string";
@@ -189,7 +197,7 @@ export function buildChecklistUpdateParams(input: {
 }
 
 function parseRecord(value: unknown): CustomerDeliveryRecord {
-  const rows = parseCustomerDeliveryList({ items: [value], total: 1, offset: 0, limit: 1, hasMore: false });
+  const rows = parseCustomerDeliveryList({ items: [value], total: 1, offset: 0, limit: 1, hasMore: false, project_owner_options: [], support_owner_options: [] });
   const row = rows.items[0];
   if (!row) throw new Error("客户交付接口返回了空记录");
   return row;
@@ -229,7 +237,9 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryPage 
   if (!object(value) || !Array.isArray(value.items) || !Number.isSafeInteger(value.total) || Number(value.total) < 0
     || !Number.isSafeInteger(value.offset) || Number(value.offset) < 0 || !Number.isSafeInteger(value.limit)
     || Number(value.limit) < 1 || Number(value.limit) > 100 || typeof value.hasMore !== "boolean"
-    || value.items.length > Number(value.limit) || value.hasMore !== (Number(value.offset) + Number(value.limit) < Number(value.total)))
+    || value.items.length > Number(value.limit) || value.hasMore !== (Number(value.offset) + Number(value.limit) < Number(value.total))
+    || !Array.isArray(value.project_owner_options) || !value.project_owner_options.every(nonempty)
+    || !Array.isArray(value.support_owner_options) || !value.support_owner_options.every(nonempty))
     throw new Error("客户交付接口返回了无效响应（分页）");
   const items: CustomerDeliveryRecord[] = value.items.map((row, index): CustomerDeliveryRecord => {
     if (!object(row) || !text(row.id) || !text(row.companyName ?? row.company_name)) throw new Error(`客户交付接口返回了无效响应（第 ${index + 1} 条）`);
@@ -279,7 +289,15 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryPage 
       ...(object(row.acceptanceEvidence) ? { acceptanceEvidence: Object.fromEntries(Object.entries(row.acceptanceEvidence).filter(([,v]) => text(v)).map(([k,v]) => [k, String(v)])) } : {}),
     };
   });
-  return { items, total: Number(value.total), offset: Number(value.offset), limit: Number(value.limit), hasMore: value.hasMore };
+  return {
+    items,
+    total: Number(value.total),
+    offset: Number(value.offset),
+    limit: Number(value.limit),
+    hasMore: value.hasMore,
+    projectOwnerOptions: [...new Set(value.project_owner_options as string[])],
+    supportOwnerOptions: [...new Set(value.support_owner_options as string[])],
+  };
 }
 
 export const customerDeliveryClient: CustomerDeliveryClient = {

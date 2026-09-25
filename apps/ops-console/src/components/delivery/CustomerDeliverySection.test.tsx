@@ -100,6 +100,21 @@ describe("customer delivery completion", () => {
     expect(filterCustomerDeliveryRecords(records, { keyword: "贸易", owner: "姜伟" })).toEqual([]);
   });
 
+  it("uses only API-provided owner options and keeps both selectors empty when the API returns no options", () => {
+    const html = renderToStaticMarkup(<CustomerDeliverySection
+      records={[base]}
+      projectOwnerOptions={[]}
+      supportOwnerOptions={[]}
+    />);
+    const source = readFileSync(new URL("./CustomerDeliverySection.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain('["姜伟", "韩先晓", "李风"]');
+    expect(source).not.toContain('["姜伟", "韩先晓"]');
+    expect(source).toContain("options={projectOwnerOptions.map");
+    expect(source).toContain("options={supportOwnerOptions.map");
+    expect(html).toContain('aria-label="销售负责人筛选"');
+    expect(html).toContain('aria-label="售后负责人筛选"');
+  });
+
   it("keeps durable keys while using the delivery brief's display labels", () => {
     expect(checklistDisplayLabel("插件账号")).toBe("插件账户");
     expect(checklistDisplayLabel("知识库")).toBe("知识库功能");

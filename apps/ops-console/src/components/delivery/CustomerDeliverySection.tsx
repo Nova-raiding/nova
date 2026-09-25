@@ -248,6 +248,8 @@ export function CustomerDeliverySection({
   readOnly = false,
   disabled = false,
   records = [],
+  projectOwnerOptions = [],
+  supportOwnerOptions = [],
   onOpen,
   onSave,
   onCreate,
@@ -272,6 +274,8 @@ export function CustomerDeliverySection({
   readOnly?: boolean;
   disabled?: boolean;
   records?: CustomerDeliveryRecord[];
+  projectOwnerOptions?: string[];
+  supportOwnerOptions?: string[];
   onOpen?: (
     record: CustomerDeliveryRecord,
     step: DeliveryStepKey,
@@ -632,7 +636,7 @@ export function CustomerDeliverySection({
             aria-label="销售负责人筛选"
             placeholder="请选择"
             style={{ width: 140 }}
-            options={["姜伟", "韩先晓", "李风"].map((value) => ({ value, label: value }))}
+            options={projectOwnerOptions.map((value) => ({ value, label: value }))}
           />
         </Form.Item>
         <Form.Item name="afterSalesOwner" label="售后负责人">
@@ -641,7 +645,7 @@ export function CustomerDeliverySection({
             aria-label="售后负责人筛选"
             placeholder="请选择"
             style={{ width: 140 }}
-            options={["姜伟", "韩先晓"].map((value) => ({ value, label: value }))}
+            options={supportOwnerOptions.map((value) => ({ value, label: value }))}
           />
         </Form.Item>
         <Form.Item>

@@ -5,7 +5,7 @@ import { rpc } from "./opsClient.js";
 vi.mock("./opsClient.js", () => ({ rpc: vi.fn() }));
 afterEach(() => vi.clearAllMocks());
 const delivery = { id: "cd_1", companyName: "Acme", paymentStatus: "paid", profile: true, integration: true, acceptance: true, training: false, videos: 0 };
-const deliveryPage = (items: unknown[]) => ({ items, total: items.length, offset: 0, limit: 20, hasMore: false });
+const deliveryPage = (items: unknown[]) => ({ items, total: items.length, offset: 0, limit: 20, hasMore: false, project_owner_options: [], support_owner_options: [] });
 
 describe("customer delivery client", () => {
   const account = { workspaceId: "workspace-1", accountId: "account-1", identityId: "identity-1", login: "merchant@example.test" };
@@ -31,11 +31,16 @@ describe("customer delivery client", () => {
     expect(rpc).toHaveBeenCalledExactlyOnceWith("ops.customer-delivery.accounts.list", { target_workspace_id: "workspace-1", search: "merchant", cursor: "page-1", limit: "50" }, { signal });
   });
   it("requests one bounded delivery page with server filters and rejects inconsistent metadata", async () => {
-    vi.mocked(rpc).mockResolvedValue({ items: [delivery], total: 21, offset: 20, limit: 20, hasMore: false });
-    await expect(customerDeliveryClient.list({ targetWorkspaceId: "workspace-1", offset: 20, limit: 20, query: " Acme ", projectOwner: " 姜伟 " })).resolves.toMatchObject({ total: 21, offset: 20, items: [expect.objectContaining({ id: "cd_1" })] });
+    vi.mocked(rpc).mockResolvedValue({ items: [delivery], total: 21, offset: 20, limit: 20, hasMore: false, project_owner_options: ["API 销售甲"], support_owner_options: ["API 售后乙"] });
+    await expect(customerDeliveryClient.list({ targetWorkspaceId: "workspace-1", offset: 20, limit: 20, query: " Acme ", projectOwner: " 姜伟 " })).resolves.toMatchObject({ total: 21, offset: 20, items: [expect.objectContaining({ id: "cd_1" })], projectOwnerOptions: ["API 销售甲"], supportOwnerOptions: ["API 售后乙"] });
     expect(rpc).toHaveBeenCalledWith("ops.customer-delivery.list", { target_workspace_id: "workspace-1", query: "Acme", project_owner: "姜伟", offset: "20", limit: "20" }, { signal: undefined });
-    vi.mocked(rpc).mockResolvedValue({ items: [], total: 21, offset: 0, limit: 20, hasMore: false });
+    vi.mocked(rpc).mockResolvedValue({ items: [], total: 21, offset: 0, limit: 20, hasMore: false, project_owner_options: [], support_owner_options: [] });
     await expect(customerDeliveryClient.list({ targetWorkspaceId: "workspace-1" })).rejects.toThrow("分页");
+  });
+  it("requires server owner option arrays and preserves empty arrays as empty", () => {
+    expect(parseCustomerDeliveryList(deliveryPage([]))).toMatchObject({ projectOwnerOptions: [], supportOwnerOptions: [] });
+    expect(() => parseCustomerDeliveryList({ ...deliveryPage([]), project_owner_options: undefined })).toThrow("分页");
+    expect(() => parseCustomerDeliveryList({ ...deliveryPage([]), support_owner_options: [""] })).toThrow("分页");
   });
   it.each([null, {}, { items: null }, { items: [], nextCursor: "" }, { items: [{ ...account, workspaceId: "other" }] }, { items: [{ ...account, login: "" }] }, { items: [account, account] }, { items: [account, { ...account, accountId: "other" }] }])("rejects unsafe directory responses %j", (value) => {
     expect(() => parseCustomerDeliveryAccounts(value, "workspace-1")).toThrow();
