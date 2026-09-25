@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, workerDatabasePoolOptions, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
-import { loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, workerDatabasePoolOptions, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
+import { contextEnvelopeHash, loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
+import { generationKnowledgeReceiptHash } from '../../../packages/application/src/knowledge-execution-fence.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
 import type { WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
@@ -748,6 +749,65 @@ describe('worker production entry', () => {
     })
     await expect(handler({ event, attempt: 2, now: Date.now() })).rejects.toMatchObject({ error: { code: 'GENERATION_JOB_TERMINAL', retryable: false } })
     expect(reported).toEqual([])
+  })
+
+  it('signs a per-attempt knowledge recheck and validates the receipt binding before dispatch', async () => {
+    const checkedAt = new Date().toISOString()
+    const documents = [{ id: 'doc_1', title: '材质', content: '棉', revision: 2 }]
+    const frozenInput = { platform: 'taobao', product: { id: 'product_1' }, knowledgeContext: { documents } }
+    const contextHash = contextEnvelopeHash(frozenInput)
+    const event: DurableOutboxEvent = {
+      id: 'evt_knowledge_fence', workspaceId: 'ws_knowledge_fence', aggregateId: 'gen_knowledge_fence',
+      eventType: 'generation.requested', sequence: 1, createdAt: checkedAt,
+      payload: { task_id: 'task_knowledge_fence', context_hash: contextHash, input: frozenInput },
+    }
+    const proof = { attempt: 1, providerAttemptKey: `mm-${'d'.repeat(64)}`, requestBodySha256: 'e'.repeat(64) }
+    const fetcher = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input))
+      expect(url.pathname).toBe('/v1/worker-events/evt_knowledge_fence/execution-check')
+      expect(url.searchParams.get('aggregate_id')).toBe(event.aggregateId)
+      expect(url.searchParams.get('operation')).toBe('generation.execute')
+      expect(url.searchParams.get('attempt')).toBe('1')
+      expect(url.searchParams.get('provider_attempt_key')).toBe(proof.providerAttemptKey)
+      expect(url.searchParams.get('request_body_sha256')).toBe(proof.requestBodySha256)
+      expect(url.searchParams.get('request_nonce')).toMatch(/^[0-9a-f-]{36}$/iu)
+      expect(init?.headers).toMatchObject({ 'x-worker-id': expect.any(String), 'x-worker-workspace-signature': expect.stringMatching(/^[a-f0-9]{64}$/u) })
+      return new Response(JSON.stringify({ data: { knowledge_recheck: {
+        ready: true, event_id: event.id, aggregate_id: event.aggregateId, workspace_id: event.workspaceId,
+        task_id: event.payload.task_id, product_id: 'product_1', context_hash: contextHash,
+        attempt: 1, provider_attempt_key: proof.providerAttemptKey, request_body_sha256: proof.requestBodySha256,
+        request_nonce: url.searchParams.get('request_nonce'), document_count: documents.length,
+        content_hash: generationKnowledgeReceiptHash(documents), checked_at: checkedAt,
+      } } }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    await expect(assertGenerationKnowledgeExecution({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token', signingSecret: 'worker-secret', event, proof, fetcher }))
+      .resolves.toMatchObject({ ready: true, attempt: 1, provider_attempt_key: proof.providerAttemptKey })
+  })
+
+  it('fails closed on a receipt replayed across logical provider attempts', async () => {
+    const checkedAt = new Date().toISOString()
+    const documents: Array<{ id: string; title: string; content: string; revision: number }> = []
+    const frozenInput = { platform: 'taobao', product: { id: 'product_1' }, knowledgeContext: { documents } }
+    const contextHash = contextEnvelopeHash(frozenInput)
+    const event: DurableOutboxEvent = {
+      id: 'evt_knowledge_fence_replay', workspaceId: 'ws_knowledge_fence', aggregateId: 'gen_knowledge_fence',
+      eventType: 'generation.requested', sequence: 1, createdAt: checkedAt,
+      payload: { task_id: 'task_knowledge_fence', context_hash: contextHash, input: frozenInput },
+    }
+    await expect(assertGenerationKnowledgeExecution({
+      apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token', signingSecret: 'worker-secret', event,
+      proof: { attempt: 0, providerAttemptKey: `mm-${'a'.repeat(64)}`, requestBodySha256: 'b'.repeat(64) },
+      fetcher: async input => {
+        const url = new URL(String(input))
+        return new Response(JSON.stringify({ data: { knowledge_recheck: {
+          ready: true, event_id: event.id, aggregate_id: event.aggregateId, workspace_id: event.workspaceId,
+          task_id: event.payload.task_id, product_id: 'product_1', context_hash: contextHash,
+          attempt: 0, provider_attempt_key: `mm-${'c'.repeat(64)}`, request_body_sha256: 'b'.repeat(64),
+          request_nonce: url.searchParams.get('request_nonce'), document_count: 0,
+          content_hash: generationKnowledgeReceiptHash(documents), checked_at: checkedAt,
+        } } }), { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    })).rejects.toMatchObject({ code: 'KNOWLEDGE_EXECUTION_RECHECK_UNAVAILABLE' })
   })
 
   it('accepts Redis auto-discovery configuration without changing the safe default', () => {

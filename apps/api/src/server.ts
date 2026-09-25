@@ -149,6 +149,7 @@ import { projectPlatformCapabilityEvidence } from './platform-capability-respons
 import { MemoryPasswordAuthRepository, PostgresPasswordAuthRepository, type PasswordAccount, type PasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import { MemoryKnowledgeRepository, PostgresKnowledgeRepository, type KnowledgeDocument, type KnowledgeRepository, type KnowledgeSearchResult } from '../../../packages/persistence/src/knowledge.js'
 import { projectImportedProductsToKnowledge } from '../../../packages/application/src/knowledge-import.js'
+import { generationKnowledgeReceiptHash, MAX_FROZEN_GENERATION_KNOWLEDGE_DOCUMENTS } from '../../../packages/application/src/knowledge-execution-fence.js'
 
 const port = Number(process.env.PORT ?? 8787)
 const uploadSessions = new UploadSessionManager()
@@ -1516,6 +1517,89 @@ async function hydrateDurableKnowledgeForGeneration(task: { id: string; workspac
   })
   if (commit) service.setDurableKnowledgeDocuments(task.id, selectedDocuments)
   return selectedDocuments
+}
+
+async function recheckWorkerGenerationKnowledge(event: {
+  id: string
+  workspaceId: string
+  aggregateId: string
+  payload: Record<string, unknown>
+}, attempt: { number: number; key: string; bodyHash: string; nonce: string }) {
+  const rawInput = event.payload.input
+  const input = rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput) ? rawInput as Record<string, unknown> : undefined
+  const rawProduct = input?.product
+  const productInput = rawProduct && typeof rawProduct === 'object' && !Array.isArray(rawProduct) ? rawProduct as Record<string, unknown> : undefined
+  const productId = typeof productInput?.id === 'string' ? productInput.id.trim() : ''
+  const platform = typeof input?.platform === 'string' ? input.platform.trim() : ''
+  const taskId = typeof event.payload.task_id === 'string' ? event.payload.task_id.trim() : ''
+  const contextHash = typeof event.payload.context_hash === 'string' ? event.payload.context_hash : ''
+  const rawKnowledge = input?.knowledgeContext
+  const knowledge = rawKnowledge && typeof rawKnowledge === 'object' && !Array.isArray(rawKnowledge) ? rawKnowledge as Record<string, unknown> : undefined
+  const frozen = knowledge?.documents === undefined ? [] : knowledge.documents
+  const attemptBound = Number.isSafeInteger(attempt.number) && attempt.number >= 0
+    && /^mm-[a-f0-9]{64}$/u.test(attempt.key)
+    && /^[a-f0-9]{64}$/u.test(attempt.bodyHash)
+    && /^[A-Za-z0-9_-]{22,128}$/u.test(attempt.nonce)
+  if (!input || !productId || !platform || !taskId || !/^[a-f0-9]{64}$/u.test(contextHash)
+    || contextEnvelopeHash(input) !== contextHash || !Array.isArray(frozen)
+    || frozen.length > MAX_FROZEN_GENERATION_KNOWLEDGE_DOCUMENTS || !attemptBound) {
+    throw new DomainError('KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID', '生成事件缺少有效的冻结知识或 provider attempt 身份，已阻止模型调用', 409)
+  }
+  if (frozen.some(document => !document || typeof document !== 'object' || Array.isArray(document)
+    || typeof (document as Record<string, unknown>).id !== 'string'
+    || typeof (document as Record<string, unknown>).title !== 'string'
+    || typeof (document as Record<string, unknown>).content !== 'string'
+    || !Number.isSafeInteger((document as Record<string, unknown>).revision))) {
+    throw new DomainError('KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID', '生成事件中的冻结知识文档无效，已阻止模型调用', 409)
+  }
+
+  try { await hydrateWorkspace(event.workspaceId, { readOnly: true }) }
+  catch { throw new DomainError('KNOWLEDGE_EXECUTION_RECHECK_UNAVAILABLE', '商品知识执行复核无法加载工作区状态，已阻止模型调用', 503) }
+  let task: Task
+  try {
+    const job = service.getGenerationJob(event.workspaceId, event.aggregateId)
+    task = service.getTask(job.taskId)
+    const product = service.products.get(productId)
+    if (!product || job.taskId !== taskId || task.id !== taskId || task.workspaceId !== event.workspaceId
+      || task.productId !== productId || task.platform !== platform || product.workspaceId !== event.workspaceId
+      || product.platform !== platform) {
+      throw new DomainError('KNOWLEDGE_EXECUTION_CHANGED', '生成事件与当前任务、商品或工作区的绑定不一致，已阻止模型调用', 409)
+    }
+  } catch (error) {
+    if (error instanceof DomainError && error.code === 'KNOWLEDGE_EXECUTION_CHANGED') throw error
+    throw new DomainError('KNOWLEDGE_EXECUTION_CHANGED', '生成事件与当前任务、商品或工作区的绑定不一致，已阻止模型调用', 409)
+  }
+  let selected: Awaited<ReturnType<typeof hydrateDurableKnowledgeForGeneration>>
+  try { selected = await hydrateDurableKnowledgeForGeneration(task, false) }
+  catch (error) {
+    if (error instanceof DomainError && /^KNOWLEDGE_(?:REVIEW|INDEX|CONTEXT)/u.test(error.code)) throw error
+    throw new DomainError('KNOWLEDGE_EXECUTION_RECHECK_UNAVAILABLE', '商品知识执行复核失败，已阻止模型调用', 503)
+  }
+  if (!selected) throw new DomainError('KNOWLEDGE_EXECUTION_RECHECK_UNAVAILABLE', '商品知识持久仓储不可用，已阻止模型调用', 503)
+  if (selected.length !== frozen.length || frozen.some((old, index) => {
+    const current = selected![index]
+    const previous = old as Record<string, unknown>
+    return !current || current.id !== previous.id || current.revision !== previous.revision
+      || current.title !== previous.title || current.content !== previous.content
+  })) {
+    throw new DomainError('KNOWLEDGE_EXECUTION_CHANGED', '商品知识在任务入队后发生变化，已阻止模型调用', 409)
+  }
+  return {
+    ready: true,
+    event_id: event.id,
+    aggregate_id: event.aggregateId,
+    workspace_id: event.workspaceId,
+    task_id: taskId,
+    product_id: productId,
+    context_hash: contextHash,
+    document_count: frozen.length,
+    content_hash: generationKnowledgeReceiptHash(frozen as Array<{ id: string; title: string; content: string; revision: number }>),
+    attempt: attempt.number,
+    provider_attempt_key: attempt.key,
+    request_body_sha256: attempt.bodyHash,
+    request_nonce: attempt.nonce,
+    checked_at: new Date().toISOString(),
+  }
 }
 const memoryStorageQuota = new MemoryStorageQuotaRepository()
 const memoryStorageReconciliation = new MemoryReconciliationStatusStore()
@@ -24415,11 +24499,20 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     }
     const requestedOperation = url.searchParams.get('operation')?.trim() as CriticalWorkerOperation
     if (!aggregateId || !Object.values(workerEventOperations).includes(requestedOperation)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'aggregate_id 或 operation 无效', 400)
+    if (requestedOperation === 'generation.execute' && requiresStrictAuth() && verifiedWorkerRequestRoles.get(req) !== 'generation') throw new DomainError(ERROR_CODES.FORBIDDEN, '知识生成执行复核只允许已验证签名的 generation worker', 403)
     if (!persistence.outbox) throw new DomainError('AUTHORIZATION_EVENT_REPOSITORY_UNAVAILABLE', '持久事件仓储不可用，已拒绝执行', 503)
     const event = (await persistence.outbox.listAggregateEvents(workspaceId, aggregateId, 1000)).find(candidate => candidate.id === workerExecutionCheckMatch[1])
     if (!event) throw new DomainError('AUTHORIZATION_EVENT_NOT_FOUND', '执行授权事件不存在或不属于当前工作区', 404)
     const expectedOperation = workerEventOperations[event.eventType]
     if (!expectedOperation || expectedOperation !== requestedOperation) throw new DomainError('AUTHZ_EXECUTION_OPERATION_MISMATCH', '事件类型与执行操作不匹配', 403)
+    const knowledgeRecheck = requestedOperation === 'generation.execute'
+      ? await recheckWorkerGenerationKnowledge(event, {
+        number: Number(url.searchParams.get('attempt')),
+        key: url.searchParams.get('provider_attempt_key') ?? '',
+        bodyHash: url.searchParams.get('request_body_sha256') ?? '',
+        nonce: url.searchParams.get('request_nonce') ?? '',
+      })
+      : undefined
     const commercialOnlySystemScan = !requiresWorkerActorAuthorization(event.eventType, requestedOperation)
     let commercialSnapshot: WorkerCommercialAccessSnapshot
     try {
@@ -24441,7 +24534,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, event.aggregateId, { eventId: event.id }),
       recheckWorkerCommercialAccess(event, commercialSnapshot),
     ])
-    return send(res, 200, workspaceId, { authorization_recheck: authorizationRecheck, commercial_access_recheck: serializedWorkerCommercialRecheck(commercialRecheck) }, null, req)
+    return send(res, 200, workspaceId, { authorization_recheck: authorizationRecheck, commercial_access_recheck: serializedWorkerCommercialRecheck(commercialRecheck), ...(knowledgeRecheck ? { knowledge_recheck: knowledgeRecheck } : {}) }, null, req)
   }
   if (req.method === 'GET' && publishExecutionCheckMatch) {
     await requireWorkerCredentialAuthorization(req)

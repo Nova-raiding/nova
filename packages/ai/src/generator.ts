@@ -43,6 +43,15 @@ export interface ContentGenerationInput {
     competitorReferences?: Array<{ competitorAnalysisId: string; structuralObservations: string[]; expressionObservations: string[]; differentiationAngles: string[]; safeExpressionGuidance: string[]; compliance: { originalTextCopied: false; competitorBrandReused: false } }>
   }
   usageContext?: RelayUsageContext
+  /** Runtime-only knowledge/action fence run once per logical provider attempt. */
+  beforeProviderRequest?: (proof: {
+    workspaceId?: string
+    actionId?: string
+    model: string
+    attempt: number
+    providerAttemptKey: string
+    requestBodySha256: string
+  }) => Promise<void>
 }
 
 export interface GeneratedContent {
@@ -328,7 +337,7 @@ function validate(value: unknown, input: ContentGenerationInput): GeneratedConte
 }
 
 function prompt(input: ContentGenerationInput) {
-  const { usageContext: _usageContext, ...providerInput } = input
+  const { usageContext: _usageContext, beforeProviderRequest: _beforeProviderRequest, ...providerInput } = input
   if (input.candidateOnly) return JSON.stringify({
     role: 'commerce-content-candidate',
     outputShape: { title: '非空字符串', detail: '非空字符串', sellingPoints: ['非空字符串'], brief: { platform: '目标 platform', placement: '非空字符串', targetDimensions: '按目标平台版位规范配置，未配置时由设计确认', visualHierarchy: ['非空字符串'], productImageGuidance: '非空字符串', logoSafety: '非空字符串', headline: '非空字符串', subheadline: '非空字符串', coreSellingPoint: '非空字符串', cta: '非空字符串', textDensity: '非空字符串', safeArea: '非空字符串', protectedAreas: ['非空字符串'] } },
@@ -447,6 +456,18 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
           ? `mm-${createHash('sha256').update(JSON.stringify([input.usageContext.workspaceId?.trim() ?? '', input.usageContext.actionId.trim(), this.options.model.trim(), attempt, requestBody]), 'utf8').digest('hex')}`
           : providerIdempotencyKey({ operation: 'text_generate', model: this.options.model, workspaceId: input.usageContext?.workspaceId, requestBody })
         assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
+        // Run once per logical model attempt (including each schema repair),
+        // before transport retries. HTTP retries keep the same key and body.
+        if (input.beforeProviderRequest) {
+          await input.beforeProviderRequest({
+            workspaceId: input.usageContext?.workspaceId,
+            actionId: input.usageContext?.actionId,
+            model: this.options.model,
+            attempt,
+            providerAttemptKey: logicalAttemptKey,
+            requestBodySha256: createHash('sha256').update(requestBody, 'utf8').digest('hex'),
+          })
+        }
         const response = await withProviderRequestRetry(async () => {
           if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
           if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'text_generate', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })

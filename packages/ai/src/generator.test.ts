@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { budgetContentGenerationInput, MAX_CONTENT_INPUT_TOKENS, OpenAICompatibleContentGenerator, createContentGeneratorFromEnv, resolveTokenBudget, validateContentSchema } from './generator.js'
 import { relayUsageReceiptKey, type RelayUsageRecord } from './relay-usage.js'
@@ -62,18 +63,36 @@ describe('content generator', () => {
   it('retries a rate-limited text request with the same idempotency key', async () => {
     let attempts = 0
     const keys: string[] = []
+    const bodies: string[] = []
+    const proofs: Array<{ workspaceId?: string; actionId?: string; model: string; attempt: number; providerAttemptKey: string; requestBodySha256: string }> = []
     const generator = new OpenAICompatibleContentGenerator({
       baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init = {}) => {
         attempts += 1
         keys.push(String((init.headers as Record<string, string>)['idempotency-key']))
+        bodies.push(String(init.body))
         if (attempts === 1) return new Response('', { status: 429, headers: { 'retry-after': '0' } })
         return new Response(JSON.stringify({ id: 'retry-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify(validGeneratedContent()) } }] }), { status: 200 })
       },
     })
-    await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_retry', actionId: 'action_retry' } })).resolves.toMatchObject({ title: '标题' })
+    await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_retry', actionId: 'action_retry' }, beforeProviderRequest: async proof => { proofs.push(proof) } })).resolves.toMatchObject({ title: '标题' })
     expect(attempts).toBe(2)
     expect(keys[0]).toBe(keys[1])
+    expect(proofs).toHaveLength(1)
+    expect(proofs[0]).toMatchObject({ workspaceId: 'ws_retry', actionId: 'action_retry', model: 'pinned-model', attempt: 0, providerAttemptKey: keys[0], requestBodySha256: createHash('sha256').update(bodies[0]!, 'utf8').digest('hex') })
+    expect(bodies[0]).toBe(bodies[1])
+    expect(bodies[0]).not.toContain('beforeProviderRequest')
+  })
+
+  it('stops before provider I/O when the logical-attempt fence rejects', async () => {
+    let providerCalls = 0
+    const generator = new OpenAICompatibleContentGenerator({
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
+      fetch: async () => { providerCalls += 1; throw new Error('provider must not run') },
+    })
+    const denied = Object.assign(new Error('knowledge approval revoked'), { code: 'KNOWLEDGE_EXECUTION_CHANGED' })
+    await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_1', actionId: 'action_1' }, beforeProviderRequest: async () => { throw denied } })).rejects.toBe(denied)
+    expect(providerCalls).toBe(0)
   })
 
   it('accepts a single full-response JSON fence but does not extract JSON from prose', async () => {
@@ -181,6 +200,8 @@ describe('content generator', () => {
 
   it('records every structure-repair provider attempt under a stable distinct receipt identity', async () => {
     const usage: RelayUsageRecord[] = []
+    const proofs: Array<{ attempt: number; providerAttemptKey: string; requestBodySha256: string }> = []
+    const posted: Array<{ key: string; body: string }> = []
     const replies = [
       { title: '标题', detail: '详情', sellingPoints: [] },
       validGeneratedContent(),
@@ -188,15 +209,23 @@ describe('content generator', () => {
     const generator = new OpenAICompatibleContentGenerator({
       baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
       usageSink: value => { usage.push(structuredClone(value)); return { recorded: true, costEvidence: true } },
-      fetch: async () => new Response(JSON.stringify({ usage: { input_tokens: 2, output_tokens: 3, cost_cny: 0.01 }, choices: [{ message: { content: JSON.stringify(replies.shift()) } }] }), { status: 200 }),
+      fetch: async (_url, init = {}) => {
+        posted.push({ key: String((init.headers as Record<string, string>)['idempotency-key']), body: String(init.body) })
+        return new Response(JSON.stringify({ usage: { input_tokens: 2, output_tokens: 3, cost_cny: 0.01 }, choices: [{ message: { content: JSON.stringify(replies.shift()) } }] }), { status: 200 })
+      },
     })
-    await generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_1', actionId: 'text:repair' } })
+    await generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_1', actionId: 'text:repair' }, beforeProviderRequest: async proof => { proofs.push(proof) } })
     expect(usage).toHaveLength(2)
     expect(usage[0]?.providerRequestId).toBeUndefined()
     expect(usage[0]?.providerAttemptId).toMatch(/^mm-[a-f0-9]{64}$/u)
     expect(usage[1]?.providerAttemptId).toMatch(/^mm-[a-f0-9]{64}$/u)
     expect(usage[1]?.providerAttemptId).not.toBe(usage[0]?.providerAttemptId)
     expect(relayUsageReceiptKey(usage[0]!)).not.toBe(relayUsageReceiptKey(usage[1]!))
+    expect(proofs).toHaveLength(2)
+    for (const [index, proof] of proofs.entries()) {
+      expect(proof).toMatchObject({ attempt: index, providerAttemptKey: posted[index]?.key, requestBodySha256: createHash('sha256').update(posted[index]!.body, 'utf8').digest('hex') })
+    }
+    expect(posted[0]?.key).not.toBe(posted[1]?.key)
   })
 
   it('reserves a full structured-output budget for repair responses', async () => {

@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { unlink, utimes, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { Pool, type PoolConfig } from 'pg'
@@ -41,6 +41,7 @@ import { assertGenerationInput } from './generation-input.js'
 import { CreativePointRelaySettlement, deliverGenerationResultWithPointSettlement, relayProviderIdentity, requiresCreativePointSettlement } from './creative-point-relay-settlement.js'
 import { PostgresKnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
 import { indexApprovedKnowledge } from '../../../packages/application/src/knowledge-lexical-index.js'
+import { GenerationKnowledgeReceiptError, validateGenerationKnowledgeReceipt, type FrozenGenerationKnowledgeDocument } from '../../../packages/application/src/knowledge-execution-fence.js'
 
 export interface WorkerConfig {
   databaseUrl: string
@@ -1572,6 +1573,82 @@ export async function assertGenerationExecution(input: { apiBaseUrl: string; api
   }
 }
 
+/** Re-read and validate the API's signed knowledge receipt immediately before
+ * text provider dispatch. This is a final read check, not an atomic lock: a
+ * concurrent approval/content change may still race after the check. */
+export async function assertGenerationKnowledgeExecution(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; proof: { attempt: number; providerAttemptKey: string; requestBodySha256: string }; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+  if (!input.signingSecret?.trim()) throw new GenerationKnowledgeReceiptError('signed knowledge execution recheck is not configured')
+  const requestNonce = randomUUID()
+  const query = new URLSearchParams({
+    aggregate_id: input.event.aggregateId,
+    operation: 'generation.execute',
+    attempt: String(input.proof.attempt),
+    provider_attempt_key: input.proof.providerAttemptKey,
+    request_body_sha256: input.proof.requestBodySha256,
+    request_nonce: requestNonce,
+  })
+  const path = `/v1/worker-events/${encodeURIComponent(input.event.id)}/execution-check?${query.toString()}`
+  let response: Response
+  try {
+    response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+      headers: { accept: 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.event.workspaceId, ...workerAuthIntent(input.signingSecret) },
+      redirect: 'error',
+      signal: input.signal,
+    })
+  } catch (error) {
+    if (input.signal?.aborted) throw input.signal.reason ?? error
+    throw new GenerationKnowledgeReceiptError('signed knowledge execution recheck is unavailable')
+  }
+  if (!response.ok) {
+    let apiCode: unknown
+    try { apiCode = (await parseWorkerApiJson(response) as { error?: { code?: unknown } }).error?.code } catch { /* keep the fail-closed generic code */ }
+    const code = typeof apiCode === 'string' && /^KNOWLEDGE_EXECUTION_[A-Z_]{3,48}$/u.test(apiCode) ? apiCode : 'KNOWLEDGE_EXECUTION_RECHECK_UNAVAILABLE'
+    throw Object.assign(new Error(`knowledge execution recheck returned ${response.status}`), { code })
+  }
+
+  const envelope = await parseWorkerApiJson(response) as { data?: { knowledge_recheck?: unknown } }
+  const rawInput = input.event.payload.input
+  const frozenInput = rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput) ? rawInput as Record<string, unknown> : undefined
+  const rawProduct = frozenInput?.product
+  const product = rawProduct && typeof rawProduct === 'object' && !Array.isArray(rawProduct) ? rawProduct as Record<string, unknown> : undefined
+  const rawKnowledge = frozenInput?.knowledgeContext
+  const knowledge = rawKnowledge && typeof rawKnowledge === 'object' && !Array.isArray(rawKnowledge) ? rawKnowledge as Record<string, unknown> : undefined
+  const rawDocuments = knowledge?.documents === undefined ? [] : knowledge.documents
+  const taskId = input.event.payload.task_id
+  const contextHash = input.event.payload.context_hash
+  if (!frozenInput || !product || typeof product.id !== 'string' || !product.id
+    || typeof taskId !== 'string' || !taskId
+    || typeof contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(contextHash)
+    || !Array.isArray(rawDocuments)
+    || rawDocuments.some(document => !document || typeof document !== 'object' || Array.isArray(document)
+      || typeof (document as Record<string, unknown>).id !== 'string'
+      || typeof (document as Record<string, unknown>).title !== 'string'
+      || typeof (document as Record<string, unknown>).content !== 'string'
+      || !Number.isSafeInteger((document as Record<string, unknown>).revision))
+    || contextEnvelopeHash(frozenInput) !== contextHash) {
+    throw new GenerationKnowledgeReceiptError('generation event has no valid frozen knowledge scope')
+  }
+  try {
+    return validateGenerationKnowledgeReceipt({
+      receipt: envelope.data?.knowledge_recheck,
+      eventId: input.event.id,
+      aggregateId: input.event.aggregateId,
+      workspaceId: input.event.workspaceId,
+      taskId,
+      productId: product.id,
+      contextHash,
+      attempt: input.proof.attempt,
+      providerAttemptKey: input.proof.providerAttemptKey,
+      requestBodySha256: input.proof.requestBodySha256,
+      requestNonce,
+      documents: rawDocuments as FrozenGenerationKnowledgeDocument[],
+    })
+  } catch (error) {
+    if (error instanceof GenerationKnowledgeReceiptError) throw error
+    throw new GenerationKnowledgeReceiptError('signed knowledge execution evidence could not be validated')
+  }
+}
+
 export async function postGenerationDeferred(input: {
   apiBaseUrl: string
   apiToken: string
@@ -2190,7 +2267,18 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         preflight: async () => { await quotaAdmission.admit(quotaAdmissionForEvent(event, 'model', modelKey, config.modelQuotaPerMinute)) },
         invoke: () => {
           generationUsageContexts.set(actionId, usageContext)
-          return providerDispatchAdmission.run({ event, operation: 'generation.execute', signal, providerRequests: 0 }, () => contentGenerator.generate(validatedInput, { signal }))
+          const generationInput = {
+            ...validatedInput,
+            beforeProviderRequest: async (proof: { workspaceId?: string; actionId?: string; model: string; attempt: number; providerAttemptKey: string; requestBodySha256: string }) => {
+              if (proof.workspaceId !== event.workspaceId || proof.actionId !== actionId || proof.model !== modelKey
+                || !Number.isSafeInteger(proof.attempt) || proof.attempt < 0
+                || !/^mm-[a-f0-9]{64}$/u.test(proof.providerAttemptKey) || !/^[a-f0-9]{64}$/u.test(proof.requestBodySha256)) {
+                throw new GenerationKnowledgeReceiptError('text provider attempt has invalid frozen generation identity')
+              }
+              await assertGenerationKnowledgeExecution({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, event, proof, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+            },
+          }
+          return providerDispatchAdmission.run({ event, operation: 'generation.execute', signal, providerRequests: 0 }, () => contentGenerator.generate(generationInput, { signal }))
         },
       })
       return content

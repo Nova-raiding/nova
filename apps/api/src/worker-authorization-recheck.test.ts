@@ -1,13 +1,14 @@
 import { afterAll, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { createHash, randomUUID } from 'node:crypto'
+import { contextEnvelopeHash } from '../../../packages/persistence/src/context-snapshot-repository.js'
 import { persistenceReady, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests } from './server.js'
-import { MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCreativePointRepository, MemoryMembersRepository } from '../../../packages/persistence/src/index.js'
+import { MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCreativePointRepository, MemoryKnowledgeRepository, MemoryMembersRepository } from '../../../packages/persistence/src/index.js'
 import { InMemoryOutbox, type OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { createWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
 import type { WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
 import { buildCanonicalExecutionBinding } from '../../../packages/application/src/canonical-execution-binding.js'
 import { assertPublishExecution } from '../../../apps/worker/src/main.js'
-import type { PublishJob, Task } from '../../../packages/application/src/service.js'
+import type { GenerationJob, PublishJob, Task } from '../../../packages/application/src/service.js'
 
 // The composition root reads these at import time. Keep this suite offline
 // even when the invoking shell has a development DB/Redis configuration.
@@ -260,6 +261,7 @@ type ExecutionEnvelope = {
     allowed?: boolean
     authorization_recheck?: { authorized: boolean; resource_id: string; reservation_id: string; event_id: string }
     commercial_access_recheck?: { allowed: boolean; ready: boolean }
+    knowledge_recheck?: Record<string, unknown>
   } | null
   error: { code: string } | null
 }
@@ -283,7 +285,8 @@ async function withHttpExecutionFixture(operation: HttpOperation, test: (fixture
   expect(persistence.mode).toBe('memory')
   const originalOutbox = persistence.outbox
   const originalCreativePoints = persistence.creativePoints
-  const fixtureMaps = [service.products, service.tasks, service.platformAccounts, service.publishJobs] as const
+  const originalKnowledge = persistence.knowledge
+  const fixtureMaps = [service.products, service.tasks, service.platformAccounts, service.publishJobs, service.generationJobs] as const
   const initialIds = fixtureMaps.map(map => new Set(map.keys()))
   vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({
     generation: { token: 'test-authz-generation-token', signing_secret: 'test-authz-generation-secret' },
@@ -292,6 +295,7 @@ async function withHttpExecutionFixture(operation: HttpOperation, test: (fixture
     scan: { token: 'test-authz-scan-token', signing_secret: 'test-authz-scan-secret' },
   }))
   vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+  persistence.knowledge = new MemoryKnowledgeRepository()
   try {
     const fixture = await createFixture(operation)
     await test(fixture)
@@ -304,6 +308,7 @@ async function withHttpExecutionFixture(operation: HttpOperation, test: (fixture
     } finally {
       persistence.outbox = originalOutbox
       persistence.creativePoints = originalCreativePoints
+      persistence.knowledge = originalKnowledge
       setAuthorizationRepositoryForTests()
       fixtureMaps.forEach((map, index) => { for (const id of map.keys()) if (!initialIds[index]!.has(id)) map.delete(id) })
       vi.restoreAllMocks()
@@ -351,6 +356,8 @@ async function createFixture(operation: HttpOperation) {
     authorized: true, decidedAt: now.toISOString(),
   }
   let job: PublishJob | undefined
+  let generationTaskId: string | undefined
+  let generationProductId: string | undefined
   if (operation === 'publish.execute') {
     // Seed a controlled queued job, but use the real service getters and all
     // execution-time tenant/account/canonical-binding/state checks over it.
@@ -372,11 +379,23 @@ async function createFixture(operation: HttpOperation) {
     }
     service.publishJobs.set(job.id, job)
   }
+  if (operation === 'generation.execute') {
+    const product = { ...structuredClone(service.products.get('prod_fixture_1')!), id: `product_${suffix}`, workspaceId }
+    service.products.set(product.id, product)
+    generationProductId = product.id
+    const task: Task = { id: `task_${suffix}`, workspaceId, productId: product.id, platform: 'taobao', state: 'plan_confirmed', inputSnapshotId: `input_${suffix}`, answers: {}, missingQuestions: [], deferredQuestionIds: [], deferredQuestions: [], version: 1, createdAt: now.toISOString() }
+    service.tasks.set(task.id, task)
+    generationTaskId = task.id
+    const generationJob: GenerationJob = { id: resourceId, workspaceId, taskId: task.id, state: 'queued', idempotencyKey: suffix, attempt: 0, createdAt: now.toISOString(), updatedAt: now.toISOString(), revision: 1 }
+    service.generationJobs.set(generationJob.id, generationJob)
+  }
   const eventType = operation === 'publish.execute' ? 'publish.requested'
     : operation === 'asset.scan.execute' ? 'asset.uploaded'
       : operation === 'asset.continuation.execute' ? 'asset.generation_continuations.ready'
         : 'generation.requested'
+  const generationInput = generationProductId ? { platform: 'taobao', product: { id: generationProductId, title: 'Controlled fixture' }, knowledgeContext: { documents: [] } } : undefined
   const event = outbox.append({ workspaceId, aggregateId: resourceId, eventType, sequence: 1, payload: {
+    ...(generationInput ? { task_id: generationTaskId, input: generationInput, context_hash: contextEnvelopeHash(generationInput) } : {}),
     authorization_snapshot: serializeSnapshot(snapshot),
     commercial_access_snapshot: {
       schema_version: 1, decision_id: `commercial_${suffix}`, workspace_id: workspaceId, operation,
@@ -393,24 +412,61 @@ async function createFixture(operation: HttpOperation) {
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('HTTP fixture failed to bind loopback')
   const baseUrl = `http://127.0.0.1:${address.port}`
-  const request = async (options: { workspaceId?: string; eventId?: string; resourceId?: string; operation?: HttpOperation; invalidProof?: boolean } = {}) => {
+  const request = async (options: { workspaceId?: string; eventId?: string; resourceId?: string; operation?: HttpOperation; invalidProof?: boolean; omitAttemptProof?: boolean } = {}) => {
     const requestedWorkspace = options.workspaceId ?? workspaceId
     const requestedResource = options.resourceId ?? resourceId
+    const nonce = randomUUID().replaceAll('-', '')
+    const attemptQuery = operation === 'generation.execute' && !options.omitAttemptProof
+      ? `&attempt=0&provider_attempt_key=mm-${'a'.repeat(64)}&request_body_sha256=${'b'.repeat(64)}&request_nonce=${nonce}`
+      : ''
     const target = operation === 'publish.execute'
       ? `/v1/publish-jobs/${requestedResource}/execution-check?event_id=${options.eventId ?? event.id}`
-      : `/v1/worker-events/${options.eventId ?? event.id}/execution-check?aggregate_id=${requestedResource}&operation=${options.operation ?? operation}`
+      : `/v1/worker-events/${options.eventId ?? event.id}/execution-check?aggregate_id=${requestedResource}&operation=${options.operation ?? operation}${attemptQuery}`
     const role = operation === 'publish.execute' ? 'publish' : operation === 'asset.scan.execute' ? 'scan' : 'generation'
     const proof = createWorkerRequestProof({ secret: `test-authz-${role}-secret`, role, workerId: 'authz-http-fixture', method: 'GET', requestTarget: target, workspaceId: requestedWorkspace })
     const response = await fetch(`http://127.0.0.1:${address.port}${target}`, { headers: {
       authorization: `Bearer test-authz-${role}-token`, 'x-workspace-id': requestedWorkspace, ...proof.headers,
       ...(options.invalidProof ? { 'x-worker-workspace-signature': '0'.repeat(64) } : {}),
     } })
-    return { status: response.status, body: await response.json() as ExecutionEnvelope }
+    return { status: response.status, body: await response.json() as ExecutionEnvelope, nonce }
   }
   return { baseUrl, workspaceId, identityId, resourceId, repository, grant, reserve, outbox, event, snapshot, job, listEvents, request }
 }
 
 describe('E1 worker execution-check: real signed HTTP with controlled memory repositories', () => {
+  it('binds the knowledge recheck to the exact bounded text attempt and rejects changed knowledge before reserving auth', async () => {
+    await withHttpExecutionFixture('generation.execute', async fixture => {
+      const first = await fixture.request()
+      expect(first).toMatchObject({ status: 200, body: { data: { knowledge_recheck: {
+        ready: true, event_id: fixture.event.id, aggregate_id: fixture.resourceId, workspace_id: fixture.workspaceId,
+        task_id: fixture.event.payload.task_id, product_id: (fixture.event.payload.input as { product: { id: string } }).product.id,
+        attempt: 0, provider_attempt_key: `mm-${'a'.repeat(64)}`, request_body_sha256: 'b'.repeat(64), request_nonce: first.nonce,
+        document_count: 0,
+      } } } })
+      expect(fixture.reserve).toHaveBeenCalledOnce()
+
+      const runtime = await persistenceReady
+      const productId = (fixture.event.payload.input as { product: { id: string } }).product.id
+      const content = '新出现的已审批商品事实'
+      await runtime.knowledge!.createDocument({
+        workspaceId: fixture.workspaceId, productId, knowledgeType: 'product_facts', title: '测试事实',
+        contentHash: createHash('sha256').update(content).digest('hex'), extractedText: content,
+        approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready',
+      })
+      expect(await fixture.request()).toMatchObject({ status: 409, body: { error: { code: 'KNOWLEDGE_EXECUTION_CHANGED' }, data: null } })
+      expect(fixture.reserve).toHaveBeenCalledOnce()
+
+      expect(await fixture.request({ omitAttemptProof: true })).toMatchObject({ status: 409, body: { error: { code: 'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID' }, data: null } })
+      expect(fixture.reserve).toHaveBeenCalledOnce()
+
+      const target = `/v1/worker-events/${fixture.event.id}/execution-check?aggregate_id=${fixture.resourceId}&operation=generation.execute&attempt=0&provider_attempt_key=mm-${'a'.repeat(64)}&request_body_sha256=${'b'.repeat(64)}&request_nonce=${randomUUID().replaceAll('-', '')}`
+      const proof = createWorkerRequestProof({ secret: 'test-authz-publish-secret', role: 'publish', workerId: 'authz-http-fixture', method: 'GET', requestTarget: target, workspaceId: fixture.workspaceId })
+      const wrongRole = await fetch(`${fixture.baseUrl}${target}`, { headers: { authorization: 'Bearer test-authz-publish-token', 'x-workspace-id': fixture.workspaceId, ...proof.headers } })
+      expect(wrongRole.status).toBe(403)
+      expect(fixture.reserve).toHaveBeenCalledOnce()
+    })
+  })
+
   it.each([
     { operation: 'asset.scan.execute', expectedAuthorization: false },
     { operation: 'asset.continuation.execute', expectedAuthorization: true },
@@ -555,16 +611,20 @@ describe('E1 worker execution-check: real signed HTTP with controlled memory rep
         fixture.event.payload.authorization_snapshot = serializeSnapshot(changed)
         fixture.event.aggregateId = changed.resourceId
         if (fixture.job) service.publishJobs.set(changed.resourceId, { ...fixture.job, id: changed.resourceId, authorizationSnapshot: { ...changed, capability: 'publish.execute' } })
-        expect(await fixture.request({ resourceId: changed.resourceId })).toMatchObject({ status: 403, body: { error: { code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }, data: null } })
-        expect(fixture.reserve).toHaveBeenCalledTimes(2)
-        await expect(fixture.reserve.mock.results[1]!.value).rejects.toMatchObject({ code: 'AUTHORIZATION_EXECUTION_RESERVATION_CONFLICT' })
+        const knowledgeBindingChanged = operation === 'generation.execute' && field === 'resource'
+        expect(await fixture.request({ resourceId: changed.resourceId })).toMatchObject({
+          status: knowledgeBindingChanged ? 409 : 403,
+          body: { error: { code: knowledgeBindingChanged ? 'KNOWLEDGE_EXECUTION_CHANGED' : 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }, data: null },
+        })
+        expect(fixture.reserve).toHaveBeenCalledTimes(knowledgeBindingChanged ? 1 : 2)
+        if (!knowledgeBindingChanged) await expect(fixture.reserve.mock.results[1]!.value).rejects.toMatchObject({ code: 'AUTHORIZATION_EXECUTION_RESERVATION_CONFLICT' })
         expect(originalReservation).toMatchObject({ eventId: fixture.event.id, resourceId: fixture.resourceId, decisionId: fixture.snapshot.decisionId })
         expect(await fixture.repository.getGrant(fixture.grant.id, fixture.identityId)).toMatchObject({ useCount: 1, revision: fixture.grant.revision })
         fixture.event.payload.authorization_snapshot = serializeSnapshot(fixture.snapshot)
         fixture.event.aggregateId = fixture.resourceId
         if (fixture.job) service.publishJobs.set(fixture.job.id, fixture.job)
         expect(await fixture.request()).toMatchObject({ status: 200, body: { data: { authorization_recheck: { reservation_id: `worker-execution:${fixture.event.id}:${operation}` } } } })
-        await expect(fixture.reserve.mock.results[2]!.value).resolves.toEqual(originalReservation)
+        await expect(fixture.reserve.mock.results[knowledgeBindingChanged ? 1 : 2]!.value).resolves.toEqual(originalReservation)
       })
     })
   }
