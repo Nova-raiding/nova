@@ -155,6 +155,10 @@ export const HTTP_OPERATION_POLICIES = [
   // plus request signing, exactly like the reconciliation routes around them.
   machine('POST', '/v1/internal/knowledge-embeddings/admission', 'worker'),
   machine('POST', '/v1/internal/knowledge-embeddings/outcome', 'worker'),
+  // Generation claims use the signed generation-worker boundary. A claim is
+  // created on the collection and transitioned through its own resource URL.
+  machine('POST', '/v1/internal/knowledge/generation-claims', 'worker'),
+  machine('PATCH', '/v1/internal/knowledge/generation-claims/{claimId}', 'worker'),
   machine('POST', '/v1/internal/storage/reconciliation', 'worker'),
   machine('POST', '/v1/internal/support/sla-scan', 'worker'),
   machine('POST', '/v1/internal/support/sla-report', 'worker'),

@@ -454,7 +454,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('commercial.access.read', 'platform', 'finance', ['ops.commercial.access.summary', 'ops.commercial.access-blocks.list', 'ops.commercial.timeline.list']),
   read('commercial.entitlement.read', 'platform', 'finance', ['ops.commercial.entitlements.list']),
   read('commercial.point.read', 'platform', 'finance', ['ops.commercial.points-ledger.list']),
-  write('commercial.point.adjust', 'platform', 'finance', ['ops.commercial.points.adjust.propose'], 'mutation', ['reason', 'revision', 'idempotency']),
+  write('commercial.point.adjust', 'platform', 'finance', ['ops.commercial.points.adjust.propose', 'ops.marketing.generation.no_delivery.refund'], 'mutation', ['reason', 'revision', 'idempotency']),
   write('commercial.point.adjust.approve', 'platform', 'finance', ['ops.commercial.points.adjust.decide'], 'mutation', ['reason', 'idempotency']),
   read('commercial.catalog.read', 'platform', 'finance', ['ops.commercial.catalog-v2.list']),
   write('commercial.catalog.draft', 'platform', 'finance', ['ops.commercial.catalog-v2.mutate'], 'mutation', ['reason', 'idempotency']),

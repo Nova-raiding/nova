@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
+import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, relayUsageReceiptKey, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { inspectOutboundUrl } from '../../connectors/src/outbound-security.js'
 import { assertRelayBaseUrl, assertRelayUrl, relaySecurityFromEnv, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
@@ -43,15 +43,29 @@ export interface ContentGenerationInput {
     competitorReferences?: Array<{ competitorAnalysisId: string; structuralObservations: string[]; expressionObservations: string[]; differentiationAngles: string[]; safeExpressionGuidance: string[]; compliance: { originalTextCopied: false; competitorBrandReused: false } }>
   }
   usageContext?: RelayUsageContext
-  /** Runtime-only knowledge/action fence run once per logical provider attempt. */
-  beforeProviderRequest?: (proof: {
+  /** Charged actions keep one settled provider receipt until multi-receipt billing is supported. */
+  allowSchemaRepair?: boolean
+  /** Legacy read-only fence; it does not replace a durable provider claim. */
+  beforeProviderRequest?: (proof: { workspaceId?: string; actionId?: string; model: string; attempt: number; providerAttemptKey: string; requestBodySha256: string }) => Promise<void>
+  /** Runtime-only durable knowledge claim, created once for each physical provider request. */
+  claimProviderAttempt?: (proof: {
     workspaceId?: string
     actionId?: string
     model: string
     attempt: number
+    transportAttempt: number
     providerAttemptKey: string
     requestBodySha256: string
-  }) => Promise<void>
+  }) => Promise<unknown>
+  /** CAS the claim to provider_started immediately before each outbound request. */
+  startProviderAttempt?: (proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }, claim: unknown) => Promise<void>
+  markProviderAttemptUnknown?: (proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }, claim: unknown, providerRequestId?: string) => Promise<void>
+  /** Usage evidence has been durably recorded for this physical response. */
+  recordProviderResponse?: (proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }, claim: unknown, providerRequestId: string) => Promise<void>
+  /** A recorded response failed schema validation and authorizes one repair attempt. */
+  markProviderRepairRequired?: (proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }, claim: unknown) => Promise<void>
+  /** Close only conclusive attempts; ambiguous outcomes intentionally keep claims active. */
+  settleProviderAttempt?: (proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }, claim: unknown, outcome: 'completed' | 'rejected') => Promise<void>
 }
 
 export interface GeneratedContent {
@@ -337,7 +351,7 @@ function validate(value: unknown, input: ContentGenerationInput): GeneratedConte
 }
 
 function prompt(input: ContentGenerationInput) {
-  const { usageContext: _usageContext, beforeProviderRequest: _beforeProviderRequest, ...providerInput } = input
+  const { usageContext: _usageContext, allowSchemaRepair: _allowSchemaRepair, beforeProviderRequest: _beforeProviderRequest, claimProviderAttempt: _claimProviderAttempt, startProviderAttempt: _startProviderAttempt, markProviderAttemptUnknown: _markProviderAttemptUnknown, recordProviderResponse: _recordProviderResponse, markProviderRepairRequired: _markProviderRepairRequired, settleProviderAttempt: _settleProviderAttempt, ...providerInput } = input
   if (input.candidateOnly) return JSON.stringify({
     role: 'commerce-content-candidate',
     outputShape: { title: '非空字符串', detail: '非空字符串', sellingPoints: ['非空字符串'], brief: { platform: '目标 platform', placement: '非空字符串', targetDimensions: '按目标平台版位规范配置，未配置时由设计确认', visualHierarchy: ['非空字符串'], productImageGuidance: '非空字符串', logoSafety: '非空字符串', headline: '非空字符串', subheadline: '非空字符串', coreSellingPoint: '非空字符串', cta: '非空字符串', textDensity: '非空字符串', safeArea: '非空字符串', protectedAreas: ['非空字符串'] } },
@@ -429,6 +443,10 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
   }
 
   async generate(input: ContentGenerationInput, options: { signal?: AbortSignal } = {}): Promise<GeneratedContent> {
+    const durableClaimHooks = [input.claimProviderAttempt, input.startProviderAttempt, input.markProviderAttemptUnknown, input.settleProviderAttempt]
+    if (durableClaimHooks.some(Boolean) && durableClaimHooks.some(hook => !hook)) {
+      throw new Error('KNOWLEDGE_CLAIM_HOOKS_INCOMPLETE: durable provider claim hooks must be configured together')
+    }
     const controller = new AbortController()
     const callerSignal = options.signal
     const abortFromCaller = () => controller.abort(callerSignal?.reason)
@@ -456,24 +474,40 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
           ? `mm-${createHash('sha256').update(JSON.stringify([input.usageContext.workspaceId?.trim() ?? '', input.usageContext.actionId.trim(), this.options.model.trim(), attempt, requestBody]), 'utf8').digest('hex')}`
           : providerIdempotencyKey({ operation: 'text_generate', model: this.options.model, workspaceId: input.usageContext?.workspaceId, requestBody })
         assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
-        // Run once per logical model attempt (including each schema repair),
-        // before transport retries. HTTP retries keep the same key and body.
-        if (input.beforeProviderRequest) {
-          await input.beforeProviderRequest({
+        const requestBodySha256 = createHash('sha256').update(requestBody, 'utf8').digest('hex')
+        // Keep the legacy read-only hook for callers that still need its
+        // receipt; worker dispatch safety is enforced by the durable claim
+        // hooks below at every physical provider request.
+        if (input.beforeProviderRequest) await input.beforeProviderRequest({ workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, model: this.options.model, attempt, providerAttemptKey: logicalAttemptKey, requestBodySha256 })
+        let transportAttempt = 0
+        let successfulProviderAttempt: { proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }; claim: unknown } | undefined
+        let response: Response
+        response = await withProviderRequestRetry(async () => {
+          transportAttempt += 1
+          const providerProof = { attempt, transportAttempt, providerAttemptKey: logicalAttemptKey, requestBodySha256 }
+          const claim = input.claimProviderAttempt ? await input.claimProviderAttempt({
             workspaceId: input.usageContext?.workspaceId,
             actionId: input.usageContext?.actionId,
             model: this.options.model,
-            attempt,
-            providerAttemptKey: logicalAttemptKey,
-            requestBodySha256: createHash('sha256').update(requestBody, 'utf8').digest('hex'),
-          })
-        }
-        const response = await withProviderRequestRetry(async () => {
-          if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
-          if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'text_generate', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
-          controller.signal.throwIfAborted()
+            ...providerProof,
+          }) : undefined
+          if (input.startProviderAttempt && claim === undefined) throw new Error('KNOWLEDGE_CLAIM_MISSING: provider attempt claim was not created')
+          if (claim !== undefined) {
+            try { await input.startProviderAttempt?.(providerProof, claim) }
+            catch (error) {
+              // No provider fetch has started. A best-effort CAS release is
+              // safe even if the start acknowledgement was lost in transit.
+              if (input.settleProviderAttempt) await input.settleProviderAttempt(providerProof, claim, 'rejected').catch(() => undefined)
+              throw error
+            }
+          }
           let candidate: Response
+          let dispatched = false
           try {
+            if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
+            if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'text_generate', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
+            controller.signal.throwIfAborted()
+            dispatched = true
             candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/, '')}/chat/completions`, {
               method: 'POST',
               headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': logicalAttemptKey },
@@ -481,28 +515,91 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
               signal: controller.signal,
               redirect: 'error',
             })
-          } catch (error) { rethrowProviderTransportFailure(error, logicalAttemptKey, 'text provider request') }
-          assertProviderResponseAccepted(candidate, logicalAttemptKey, 'text provider')
+          } catch (error) {
+            if (!dispatched && claim !== undefined) {
+              await input.settleProviderAttempt?.(providerProof, claim, 'rejected')
+              throw error
+            }
+            if (claim !== undefined) await input.markProviderAttemptUnknown?.(providerProof, claim)
+            rethrowProviderTransportFailure(error, logicalAttemptKey, 'text provider request')
+          }
+          const providerRequestId = candidate.headers.get('x-oneapi-request-id')?.trim() || undefined
+          try { assertProviderResponseAccepted(candidate, logicalAttemptKey, 'text provider') }
+          catch (error) {
+            if ((error as { providerOutcome?: unknown })?.providerOutcome === 'failed' && claim !== undefined) {
+              await input.settleProviderAttempt?.(providerProof, claim, 'rejected')
+            } else if ((error as { providerOutcome?: unknown })?.providerOutcome === 'unknown' && claim !== undefined) {
+              await input.markProviderAttemptUnknown?.(providerProof, claim, providerRequestId)
+            }
+            throw error
+          }
+          if (claim !== undefined) successfulProviderAttempt = { proof: providerProof, claim }
           return candidate
         }, { signal: controller.signal })
         let responseText: string
         try { responseText = await readBoundedResponseText(response, MAX_TEXT_RELAY_RESPONSE_BYTES, 'model response') }
-        catch (error) { rethrowProviderTransportFailure(error, logicalAttemptKey, 'text provider response') }
+        catch (error) {
+          if (successfulProviderAttempt) await input.markProviderAttemptUnknown?.(successfulProviderAttempt.proof, successfulProviderAttempt.claim)
+          rethrowProviderTransportFailure(error, logicalAttemptKey, 'text provider response')
+        }
         let payload: unknown
         try { payload = JSON.parse(responseText) as unknown }
-        catch (error) { throwProviderOutcomeUnknown(logicalAttemptKey, 'text provider response parsing', error) }
-        await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'text', model: this.options.model, context: { ...input.usageContext, providerAttemptId: logicalAttemptKey } })
+        catch (error) {
+          if (successfulProviderAttempt) await input.markProviderAttemptUnknown?.(successfulProviderAttempt.proof, successfulProviderAttempt.claim)
+          throwProviderOutcomeUnknown(logicalAttemptKey, 'text provider response parsing', error)
+        }
+        let usageReceipt: Awaited<ReturnType<typeof emitRelayUsage>>
+        try { usageReceipt = await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'text', model: this.options.model, context: { ...input.usageContext, providerAttemptId: logicalAttemptKey } }) }
+        catch (error) {
+          if (successfulProviderAttempt) await input.markProviderAttemptUnknown?.(successfulProviderAttempt.proof, successfulProviderAttempt.claim)
+          throw error
+        }
+        const afterProviderClaim = async (transition: () => Promise<void>) => {
+          try { await transition() }
+          catch (error) {
+            if (successfulProviderAttempt) await input.markProviderAttemptUnknown?.(successfulProviderAttempt.proof, successfulProviderAttempt.claim).catch(() => undefined)
+            throw Object.assign(new Error('provider succeeded but durable dispatch state is uncertain'), {
+              code: 'CHARGED_TEXT_DISPATCH_SETTLEMENT_UNKNOWN', providerOutcome: 'unknown',
+              providerSucceeded: true, reconciliationRequired: true, cause: error,
+            })
+          }
+        }
+        // The response belongs to the physical retry that returned 2xx. Keep
+        // its dispatch claim active until schema validation chooses completion
+        // or an explicitly authorized repair attempt.
+        if (successfulProviderAttempt && input.recordProviderResponse) {
+          await afterProviderClaim(() => input.recordProviderResponse!(successfulProviderAttempt!.proof, successfulProviderAttempt!.claim, relayUsageReceiptKey(usageReceipt)))
+        }
         const content = normalizeProviderStructure(readContent(payload), boundedInput)
-        try { return validate(content, boundedInput) } catch (error) {
-          if (attempt === 2 || !(error instanceof Error) || !error.message.includes('CONTENT_SCHEMA_INVALID')) throw error
+        let validContent: GeneratedContent
+        try {
+          validContent = validate(content, boundedInput)
+        } catch (error) {
+          if (attempt === 2 || input.allowSchemaRepair === false || !(error instanceof Error) || !error.message.includes('CONTENT_SCHEMA_INVALID')) {
+            if (successfulProviderAttempt && input.settleProviderAttempt) await afterProviderClaim(() => input.settleProviderAttempt!(successfulProviderAttempt!.proof, successfulProviderAttempt!.claim, 'completed'))
+            if (input.allowSchemaRepair === false && error instanceof Error && error.message.includes('CONTENT_SCHEMA_INVALID')) {
+              throw Object.assign(new Error('charged generation provider returned invalid structured content; manual reconciliation is required'), {
+                code: 'CHARGED_TEXT_SCHEMA_REPAIR_DISABLED', providerSucceeded: true, reconciliationRequired: true,
+                providerOutcome: 'unknown', cause: error,
+              })
+            }
+            throw error
+          }
           const repairMessage = boundedInput.candidateOnly
             ? `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。只返回完整 JSON：title、detail、sellingPoints、brief；不得返回 modules 或任何未经确认的商品事实。逐字段核对初始 outputShape，勿照抄示意值。`
             : `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。重新返回完整 JSON，逐字段核对初始消息中的 outputShape。尤其每个模块必须有 factSourceIds、decisionContract.claim.factSourceIds、decisionContract.visualContract.requiredElements、decisionContract.priority 和 decisionContract.optional；claim.validUntil 只在输入事实有真实有效期时填写，不得虚构时间。仅使用输入 confirmedFactSourceIds 中的真实 ID；缺少来源则删除该模块，不能复制 outputShape 的示意值。只修复结构和缺失字段，不增加未确认事实。evidence.type 仅允许 real_image、parameter、test_report、comparison、usage_result、manual_review；evidence.status 仅允许 verified、missing、expired、conflict；product.id 不是 SKU ID，claim.skuIds 和 referencedSkuIds 只能使用 product.skuIds 中的值。不要复述上一份响应。`
           const nextRepairMessages = [...repairMessages, repairMessage]
-          if (estimateRequestTokensFromPrompt(initialPrompt, nextRepairMessages) > (this.options.maxInputTokens ?? 4_000)) throw new Error('CONTEXT_BUDGET_EXCEEDED: 累计结构修复消息加入后超过输入 Token 预算')
+          if (estimateRequestTokensFromPrompt(initialPrompt, nextRepairMessages) > (this.options.maxInputTokens ?? 4_000)) {
+            if (successfulProviderAttempt && input.settleProviderAttempt) await afterProviderClaim(() => input.settleProviderAttempt!(successfulProviderAttempt!.proof, successfulProviderAttempt!.claim, 'completed'))
+            throw new Error('CONTEXT_BUDGET_EXCEEDED: 累计结构修复消息加入后超过输入 Token 预算')
+          }
+          if (successfulProviderAttempt && input.markProviderRepairRequired) await afterProviderClaim(() => input.markProviderRepairRequired!(successfulProviderAttempt!.proof, successfulProviderAttempt!.claim))
           repairMessages.push(repairMessage)
           messages.push({ role: 'user', content: repairMessage })
+          continue
         }
+        if (successfulProviderAttempt && input.settleProviderAttempt) await afterProviderClaim(() => input.settleProviderAttempt!(successfulProviderAttempt!.proof, successfulProviderAttempt!.claim, 'completed'))
+        return validContent
       }
       throw Object.assign(new Error('CONTENT_SCHEMA_INVALID: 模型结构化内容修复失败'), { code: 'CONTENT_SCHEMA_INVALID' })
     } finally {

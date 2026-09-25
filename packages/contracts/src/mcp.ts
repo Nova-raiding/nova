@@ -186,6 +186,7 @@ export const MCP_METHODS = [
   'ops.marketing.image.billing.audit',
   'ops.marketing.visual.review',
   'ops.marketing.generation.retry',
+  'ops.marketing.generation.no_delivery.refund',
   'ops.marketing.asset_scan.retry',
   'ops.marketing.publish.acknowledge',
   'ops.marketing.revision.create',
@@ -895,6 +896,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.marketing.image.billing.audit', description: '审计单个图片任务的 Provider request、action ledger 与 model usage 关联和结算状态；只读返回账务缺口，不自动扣费、退款或改写结算。', params: params({ job_id: boundedString(256) }, ['job_id']) },
   { method: 'ops.marketing.visual.review', description: 'Review archived visual candidates. Requires an active workspace role or explicitly granted support role; platform_ops alone is denied.', params: params({ visual_refs_json: { type: 'string' }, status: { type: 'string', enum: ['passed', 'blocked'] }, expected_revision: { type: 'string' }, reason: { type: 'string' } }, ['visual_refs_json', 'status', 'reason']) },
   { method: 'ops.marketing.generation.retry', description: 'Safely requeue one failed generation job. Requires an active workspace role or explicitly granted support role; platform_ops alone is denied.', params: params({ job_id: { type: 'string' }, reason: { type: 'string' } }, ['job_id', 'reason']) },
+  { method: 'ops.marketing.generation.no_delivery.refund', description: 'Finance review of one paid text response that produced no deliverable. Requires durable provider usage and settlement evidence; refunds customer creative points once and closes the generation job. Unknown cost or provider outcome remains locked.', params: params({ action_key: boundedString(255), job_revision: { type: 'string', pattern: '^[1-9][0-9]*$' }, reason: reasonProperty, evidence_ref: boundedString(255) }, ['action_key', 'job_revision', 'reason', 'evidence_ref']) },
   {
     method: 'ops.marketing.asset_scan.retry',
     description: 'Queue one auditable retry for a retryable, workspace-scoped asset scan failure. This never marks an asset clean; only the signed platform scanner callback may apply a terminal verdict.',

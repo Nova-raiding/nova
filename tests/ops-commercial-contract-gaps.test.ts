@@ -3,16 +3,18 @@ import { describe, expect, it } from "vitest";
 
 const model = readFileSync(new URL("../apps/ops-console/src/hooks/useOpsConsoleModel.ts", import.meta.url), "utf8");
 const api = readFileSync(new URL("../apps/api/src/server.ts", import.meta.url), "utf8");
+const workspaceLifecycle = readFileSync(new URL("../apps/api/src/mcp-workspace-lifecycle-handlers.ts", import.meta.url), "utf8");
 const offerTable = readFileSync(new URL("../apps/ops-console/src/components/finance/OfferTable.tsx", import.meta.url), "utf8");
 
 describe("bounded Ops commercial contract gaps", () => {
   it("requires and audits an operator reason for both workspace lifecycle transitions", () => {
     expect(model).toContain('{ reason: reason.trim() }');
-    const deactivate = api.slice(api.indexOf("case 'workspace.deactivate':"), api.indexOf("case 'workspace.activate':"));
-    const activate = api.slice(api.indexOf("case 'workspace.activate':"), api.indexOf("case 'workspace.data.export.request':"));
+    expect(api).toContain('handleWorkspaceLifecycleMethod(method');
+    const deactivate = workspaceLifecycle.slice(workspaceLifecycle.indexOf("if (method === 'workspace.deactivate')"), workspaceLifecycle.indexOf("if (method === 'workspace.activate')"));
+    const activate = workspaceLifecycle.slice(workspaceLifecycle.indexOf("if (method === 'workspace.activate')"), workspaceLifecycle.indexOf("if (method === 'workspace.data.export.request')"));
     for (const transition of [deactivate, activate]) {
-      expect(transition).toContain("required(params, 'reason')");
-      expect(transition).toContain("recordOperationAudit");
+      expect(transition).toContain("deps.required('reason')");
+      expect(transition).toContain('deps.audit(');
     }
   });
 

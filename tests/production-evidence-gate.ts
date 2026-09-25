@@ -70,13 +70,13 @@ function validatePaymentArtifact(content: Buffer, name: string, document: Eviden
   return { errors, ...(sha256Hex(artifact.order_id_sha256) ? { orderHash: artifact.order_id_sha256 } : {}) }
 }
 
-function validateRestoreCapture(bytes: Buffer | undefined, evidence: Evidence, options: { releaseId: string; imageSetDigest: string; manifestSha256: string; releaseGitSha: string; deploymentNonce: string }): string[] {
+function validateRestoreCapture(bytes: Buffer | undefined, evidence: Evidence, options: { releaseId: string; imageSetDigest: string; manifestSha256: string; releaseGitSha: string; deploymentNonce: string; expectedMigrationVersion: number }): string[] {
   const label = 'checks.isolated_restore.evidence_ref'
   if (!bytes || bytes.length > 1024 * 1024) return [`${label} must contain a bounded PG17 capture`]
   let capture: Record<string, unknown>
   try { capture = JSON.parse(bytes.toString('utf8')) as Record<string, unknown> } catch { return [`${label} must contain JSON`] }
   if (!capture || typeof capture !== 'object' || Array.isArray(capture)) return [`${label} must contain a JSON object`]
-  const expected: Record<string, unknown> = { schema_version: 'pg17-isolated-restore-capture/1', status: 'pass', simulated: false, release_id: options.releaseId, release_git_sha: options.releaseGitSha, image_set_digest: options.imageSetDigest, manifest_sha256: options.manifestSha256, deployment_nonce_sha256: createHash('sha256').update(options.deploymentNonce).digest('hex'), backup_sha256: evidence.backup_sha256, restored_migration_prefix: '1:242:242', migrated_prefix: '1:245:245' }
+  const expected: Record<string, unknown> = { schema_version: 'pg17-isolated-restore-capture/2', status: 'pass', simulated: false, release_id: options.releaseId, release_git_sha: options.releaseGitSha, image_set_digest: options.imageSetDigest, manifest_sha256: options.manifestSha256, migration_target_version: options.expectedMigrationVersion, deployment_nonce_sha256: createHash('sha256').update(options.deploymentNonce).digest('hex'), backup_sha256: evidence.backup_sha256, restored_migration_prefix: '1:242:242', migrated_prefix: `1:${options.expectedMigrationVersion}:${options.expectedMigrationVersion}` }
   const errors = Object.entries(expected).filter(([key, value]) => capture[key] !== value).map(([key]) => `${label} ${key} does not match the protected restore capture`)
   for (const key of ['source_database_id_sha256', 'target_database_id_sha256', 'migration_chain_sha256', 'postgres_image_id', 'container_id', 'network_id'] as const) {
     const value = capture[key]
@@ -86,7 +86,8 @@ function validateRestoreCapture(bytes: Buffer | undefined, evidence: Evidence, o
   if (!/postgres:17-alpine@sha256:[a-f0-9]{64}$/u.test(String(capture.postgres_image_ref ?? ''))) errors.push(`${label} PostgreSQL image is not pinned PG17`)
   if (!/^merchant_restore_data_[a-f0-9]{24}$/u.test(String(capture.volume_name ?? ''))) errors.push(`${label} isolated volume identity is invalid`)
   if (capture.source_database_id_sha256 === capture.target_database_id_sha256) errors.push(`${label} target database is not isolated`)
-  if (!Array.isArray(capture.migration_chain_rows) || capture.migration_chain_rows.length !== 245 || capture.migration_chain_rows.some((row, index) => typeof row !== 'string' || !row.startsWith(`${index + 1}|`))) errors.push(`${label} migration chain is incomplete`)
+  if (!Number.isSafeInteger(options.expectedMigrationVersion) || options.expectedMigrationVersion < 242) errors.push(`${label} expected migration version is invalid`)
+  if (!Array.isArray(capture.migration_chain_rows) || capture.migration_chain_rows.length !== options.expectedMigrationVersion || capture.migration_chain_rows.some((row, index) => typeof row !== 'string' || !row.startsWith(`${index + 1}|`))) errors.push(`${label} migration chain is incomplete`)
   else if (createHash('sha256').update(capture.migration_chain_rows.join('\n')).digest('hex') !== capture.migration_chain_sha256) errors.push(`${label} migration chain digest is invalid`)
   if (!iso(capture.captured_at) || Date.parse(String(capture.captured_at)) > Date.parse(String(evidence.generated_at))) errors.push(`${label} capture timestamp is invalid`)
   if (iso(capture.captured_at) && Date.parse(String(capture.captured_at)) < Date.parse(String(evidence.source_backup_created_at))) errors.push(`${label} capture precedes the backup`)
@@ -95,7 +96,7 @@ function validateRestoreCapture(bytes: Buffer | undefined, evidence: Evidence, o
 /** Used by the independent evidence pipeline and tests; preflight receives no private key. */
 export const signProductionEvidence = (value: unknown, privateKeyPem: string) => sign(null, payload(value), privateKeyPem).toString('base64')
 
-export function validateProductionEvidence(document: unknown, options: { kind: ProductionEvidenceKind; releaseId: string; imageSetDigest: string; manifestSha256: string; releaseGitSha: string; deploymentNonce: string; artifactRoot: string; trustedKeyId: string; publicKeyPem: string; now?: Date }): string[] {
+export function validateProductionEvidence(document: unknown, options: { kind: ProductionEvidenceKind; releaseId: string; imageSetDigest: string; manifestSha256: string; releaseGitSha: string; deploymentNonce: string; artifactRoot: string; trustedKeyId: string; publicKeyPem: string; expectedMigrationVersion?: number; now?: Date }): string[] {
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as Evidence; const errors: string[] = []; const now = options.now ?? new Date()
   const expected: Record<string, string> = { schema_version: '2', kind: options.kind, release_id: options.releaseId, image_set_digest: options.imageSetDigest, manifest_sha256: options.manifestSha256, release_git_sha: options.releaseGitSha, environment: 'production', status: 'pass', key_id: options.trustedKeyId }
@@ -128,7 +129,10 @@ export function validateProductionEvidence(document: unknown, options: { kind: P
         paymentOrderHash ??= payment.orderHash
       }
     }
-    if (options.kind === 'restore' && name === 'isolated_restore' && artifact.errors.length === 0) errors.push(...validateRestoreCapture(artifact.content, value, options))
+    if (options.kind === 'restore' && name === 'isolated_restore' && artifact.errors.length === 0) {
+      if (!Number.isSafeInteger(options.expectedMigrationVersion)) errors.push('checks.isolated_restore.evidence_ref expected migration version must be supplied from release metadata')
+      else errors.push(...validateRestoreCapture(artifact.content, value, { ...options, expectedMigrationVersion: options.expectedMigrationVersion! }))
+    }
     if (text(check?.evidence_ref)) {
       const previous = seenArtifactRefs.get(check.evidence_ref)
       if (previous) errors.push(`checks.${name}.evidence_ref must differ from checks.${previous}.evidence_ref`)
@@ -154,11 +158,19 @@ export function validateProductionEvidence(document: unknown, options: { kind: P
 
 function arg(name: string) { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1] }
 function main() {
-  const kind = arg('--kind') as ProductionEvidenceKind; const file = arg('--file'); const releaseId = arg('--release-id'); const imageSetDigest = arg('--image-set-digest'); const manifestSha256 = arg('--manifest-sha256'); const releaseGitSha = arg('--release-git-sha'); const deploymentNonce = arg('--deployment-nonce'); const artifactRoot = arg('--artifact-root'); const publicKeyPath = arg('--public-key'); const trustedKeyId = arg('--key-id')
-  if (!checksByKind[kind] || !file || !releaseId || !imageSetDigest || !manifestSha256 || !releaseGitSha || !deploymentNonce || !artifactRoot || !publicKeyPath || !trustedKeyId) { console.error('release, canonical image set, manifest, commit, deployment nonce, artifact root and fixed trust anchor are required'); process.exit(2) }
+  const kind = arg('--kind') as ProductionEvidenceKind; const file = arg('--file'); const releaseId = arg('--release-id'); const imageSetDigest = arg('--image-set-digest'); const manifestSha256 = arg('--manifest-sha256'); const releaseGitSha = arg('--release-git-sha'); const deploymentNonce = arg('--deployment-nonce'); const artifactRoot = arg('--artifact-root'); const publicKeyPath = arg('--public-key'); const trustedKeyId = arg('--key-id'); const expectedMigrationVersionValue = arg('--expected-migration-version'); const releaseMetadataPath = arg('--release-metadata')
+  const expectedMigrationVersionFromArg = expectedMigrationVersionValue && /^[1-9][0-9]*$/u.test(expectedMigrationVersionValue) ? Number(expectedMigrationVersionValue) : undefined
+  let expectedMigrationVersion: number | undefined
+  if (kind === 'restore' && releaseMetadataPath) {
+    try {
+      const metadata = JSON.parse(readFileSync(releaseMetadataPath, 'utf8')) as { expectedMigrationVersion?: unknown }
+      if (Number.isSafeInteger(metadata.expectedMigrationVersion) && Number(metadata.expectedMigrationVersion) > 0) expectedMigrationVersion = Number(metadata.expectedMigrationVersion)
+    } catch { /* fail closed below */ }
+  }
+  if (!checksByKind[kind] || !file || !releaseId || !imageSetDigest || !manifestSha256 || !releaseGitSha || !deploymentNonce || !artifactRoot || !publicKeyPath || !trustedKeyId || (kind === 'restore' && (!expectedMigrationVersion || expectedMigrationVersionFromArg !== expectedMigrationVersion))) { console.error('release, canonical image set, manifest, commit, deployment nonce, artifact root, fixed trust anchor, and matching release metadata migration target are required'); process.exit(2) }
   const publicKeyPem = readFileSync(publicKeyPath, 'utf8'); if (publicKeyPem.includes('UNPROVISIONED') || trustedKeyId === 'UNPROVISIONED') { console.error('production evidence trust anchor is not provisioned'); process.exit(1) }
   const document = JSON.parse(readFileSync(file, 'utf8')) as unknown
-  const errors = validateProductionEvidence(document, { kind, releaseId, imageSetDigest, manifestSha256, releaseGitSha, deploymentNonce, artifactRoot, publicKeyPem, trustedKeyId })
+  const errors = validateProductionEvidence(document, { kind, releaseId, imageSetDigest, manifestSha256, releaseGitSha, deploymentNonce, artifactRoot, publicKeyPem, trustedKeyId, ...(expectedMigrationVersion ? { expectedMigrationVersion } : {}) })
   if (errors.length) { console.error(errors.join('\n')); process.exit(1) }
   console.log(`${kind} production evidence gate passed: ${file}`)
 }

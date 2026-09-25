@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync, sign } from 'node:crypto'
-import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -119,12 +119,15 @@ describe('protected PostgreSQL 17 isolated restore input contract', () => {
     const wrongDigest = fixture(); wrongDigest.imageSetDigest = `sha256:${'0'.repeat(64)}`
     expect(() => validateRestoreInputs(wrongDigest)).toThrow(/digest mismatch/)
   })
-  it('requires exactly the frozen 001–245 migration chain with named 243/244/245 files', () => {
+  it('requires the complete contiguous migration chain declared by release metadata', () => {
     const migrationNames = readdirSync('packages/persistence/src/migrations')
-    expect(() => validateMigrationAssets(migrationNames)).not.toThrow()
-    expect(() => validateMigrationAssets(migrationNames.filter(name => !name.startsWith('243_')))).toThrow(/245 SQL files/)
-    expect(() => validateMigrationAssets([...migrationNames.slice(0, -1), '245_arbitrary.sql'])).toThrow(/243\/244\/245 migration identity/)
-    expect(() => validateMigrationAssets([...migrationNames.slice(0, -1), '../escape.sql'])).toThrow(/gap or unsafe/)
+    const expectedVersion = (JSON.parse(readFileSync('release-metadata.json', 'utf8')) as { expectedMigrationVersion: number }).expectedMigrationVersion
+    const candidateChain = migrationNames.filter(name => Number(name.slice(0, 3)) <= expectedVersion)
+    expect(() => validateMigrationAssets(candidateChain, expectedVersion)).not.toThrow()
+    if (migrationNames.length > expectedVersion) expect(() => validateMigrationAssets(migrationNames, expectedVersion)).toThrow(new RegExp(`exactly ${expectedVersion} SQL files`))
+    expect(() => validateMigrationAssets(migrationNames, expectedVersion - 1)).toThrow(new RegExp(`exactly ${expectedVersion - 1} SQL files`))
+    expect(() => validateMigrationAssets(migrationNames.filter(name => !name.startsWith('243_')), expectedVersion)).toThrow(/exactly \d+ SQL files|gap or unsafe filename/)
+    expect(() => validateMigrationAssets([...candidateChain.slice(0, -1), '../escape.sql'], expectedVersion)).toThrow(/gap or unsafe/)
   })
   it('rejects a public port, foreign network, changed image or unexpected bind mount', () => {
     const options = { id: '1'.repeat(64), expectedImageId: `sha256:${'2'.repeat(64)}`, expectedNetwork: 'merchant_restore_net_test', expectedVolume: 'merchant_restore_data_test' }

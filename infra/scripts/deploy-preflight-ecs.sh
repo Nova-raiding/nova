@@ -52,6 +52,8 @@ fi
 : "${ECS_COMPOSE_PROJECT:=merchant-production}"
 node "$root/infra/scripts/validate-ecs-compose-project.mjs" "$RENDERED_COMPOSE_PATH" "$ECS_COMPOSE_PROJECT"
 : "${EXPECTED_MIGRATION_VERSION:?EXPECTED_MIGRATION_VERSION is required}"
+release_metadata_migration_version=$(RELEASE_METADATA_PATH="$root/release-metadata.json" node -e 'const fs=require("node:fs");const m=JSON.parse(fs.readFileSync(process.env.RELEASE_METADATA_PATH,"utf8"));if(!Number.isSafeInteger(m.expectedMigrationVersion)||m.expectedMigrationVersion<1)throw new Error("release-metadata expectedMigrationVersion is invalid");process.stdout.write(String(m.expectedMigrationVersion))')
+[ "$release_metadata_migration_version" = "$EXPECTED_MIGRATION_VERSION" ] || { echo "EXPECTED_MIGRATION_VERSION does not match release-metadata.json: expected $release_metadata_migration_version" >&2; exit 1; }
 : "${API_IMAGE_REF:?API_IMAGE_REF is required}"
 : "${WORKER_IMAGE_REF:?WORKER_IMAGE_REF is required}"
 : "${UI_IMAGE_REF:?UI_IMAGE_REF is required}"
@@ -262,7 +264,7 @@ npx --no-install tsx tests/object-storage-evidence-gate.ts \
   --expected-encryption "$storage_encryption" \
   --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx tests/production-evidence-gate.ts --kind payment --file "$PAYMENT_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
-npx --no-install tsx tests/production-evidence-gate.ts --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
+npx --no-install tsx tests/production-evidence-gate.ts --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --release-metadata "$root/release-metadata.json" --expected-migration-version "$EXPECTED_MIGRATION_VERSION" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx tests/release-evidence-bundle-gate.ts --file "$RELEASE_EVIDENCE_BUNDLE_PATH" \
   --release-manifest "$RELEASE_MANIFEST_PATH" \
   --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$release_manifest_sha256" \

@@ -4,13 +4,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, workerDatabasePoolOptions, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
 import { contextEnvelopeHash, loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { generationKnowledgeReceiptHash } from '../../../packages/application/src/knowledge-execution-fence.js'
+import { verifyWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
 import type { WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
 import type { WorkerCommercialAccessGuard } from '../../../packages/workers/src/commercial-access.js'
+import { ChargedTextDispatchAdmissionError } from '../../../packages/persistence/src/charged-text-dispatch-repository.js'
 
 const baseEnv = { DATABASE_URL: 'postgres://worker', WORKER_WORKSPACES: 'ws_a, ws_b,ws_a' }
 const testExecutionAuthorization = {
@@ -726,6 +728,56 @@ describe('worker production entry', () => {
     expect(reported).toEqual([])
   })
 
+  it('never reports a charged schema-invalid provider response as a free terminal failure', async () => {
+    const reported: unknown[] = []
+    const handler = createAuthorizedOutboxHandler({
+      generationRequested: async () => { throw Object.assign(new Error('charged schema repair is disabled'), {
+        code: 'CHARGED_TEXT_SCHEMA_REPAIR_DISABLED', providerSucceeded: true,
+        reconciliationRequired: true, providerOutcome: 'unknown',
+      }) },
+      onGenerationResult: async (_event, result) => { reported.push(result) },
+    })
+    await expect(handler({ event: { id: 'evt_charged_schema', workspaceId: 'ws_a', aggregateId: 'job_charged_schema', eventType: 'generation.requested', sequence: 1, payload: { input: {} }, createdAt: new Date().toISOString() }, attempt: 1, now: Date.now() }))
+      .rejects.toMatchObject({ error: { code: 'CHARGED_TEXT_SCHEMA_REPAIR_DISABLED', retryable: false, unknown: true } })
+    expect(reported).toEqual([])
+  })
+
+  it('does not fail a charged job when another worker owns its physical dispatch', async () => {
+    const reported: unknown[] = []
+    const handler = createAuthorizedOutboxHandler({
+      generationRequested: async () => { throw new ChargedTextDispatchAdmissionError() },
+      onGenerationResult: async (_event, result) => { reported.push(result) },
+    })
+    await expect(handler({ event: { id: 'evt_dispatch_busy', workspaceId: 'ws_a', aggregateId: 'job_dispatch_busy', eventType: 'generation.requested', sequence: 1, payload: { input: {} }, createdAt: new Date().toISOString() }, attempt: 1, now: Date.now() }))
+      .rejects.toMatchObject({ error: { code: 'CHARGED_TEXT_DISPATCH_DENIED', retryable: false, unknown: true } })
+    expect(reported).toEqual([])
+  })
+
+  it('recovers the next persisted transport ordinal when a worker restarts after a rejected request', async () => {
+    const requests: Array<{ logicalAttempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }> = []
+    const claim = await claimChargedTextDispatchWithRetryRecovery({
+      workspaceId: 'ws_a', actionKey: 'model:generation:replay', eventId: 'evt_replay',
+      logicalAttempt: 1, transportAttempt: 1, providerAttemptKey: `mm-${'a'.repeat(64)}`, requestBodySha256: 'b'.repeat(64),
+      dispatch: {
+        claim: async input => {
+          requests.push(input)
+          // Simulate a prior worker durably recording transport attempt 1 as
+          // rejected before crashing; replay starts its local counter at 1.
+          if (input.transportAttempt === 1) throw new ChargedTextDispatchAdmissionError()
+          return {
+            id: 'dispatch_retry_2', workspaceId: input.workspaceId, actionKey: input.actionKey, eventId: input.eventId,
+            logicalAttempt: input.logicalAttempt, transportAttempt: input.transportAttempt,
+            providerAttemptKey: input.providerAttemptKey, requestBodySha256: input.requestBodySha256,
+            ownerToken: 'dispatch_owner', state: 'claimed',
+          }
+        },
+      },
+    })
+    expect(requests.map(request => request.transportAttempt)).toEqual([1, 2])
+    expect(requests[0]).toMatchObject({ logicalAttempt: 1, providerAttemptKey: requests[1]?.providerAttemptKey, requestBodySha256: requests[1]?.requestBodySha256 })
+    expect(claim).toMatchObject({ transportAttempt: 2, claim: { state: 'claimed', logicalAttempt: 1, transportAttempt: 2 } })
+  })
+
   it('blocks a stale generation event before another provider call', async () => {
     const event = { id: 'evt_stale', workspaceId: 'ws_a', aggregateId: 'gen_stale', eventType: 'generation.requested', sequence: 1, payload: { task_id: 'task_stale', input: {} }, createdAt: new Date().toISOString() }
     await expect(assertGenerationExecution({
@@ -782,6 +834,104 @@ describe('worker production entry', () => {
     }
     await expect(assertGenerationKnowledgeExecution({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token', signingSecret: 'worker-secret', event, proof, fetcher }))
       .resolves.toMatchObject({ ready: true, attempt: 1, provider_attempt_key: proof.providerAttemptKey })
+  })
+
+  it('uses only the generation intent proof for knowledge claim lifecycle routes and binds method, path, body, and fresh nonce', async () => {
+    const now = new Date().toISOString()
+    const frozenInput = { platform: 'taobao', product: { id: 'product_claim_fence' }, knowledgeContext: { documents: [{ id: 'doc_claim_fence', title: '材质', content: '棉', revision: 2 }] } }
+    const contextHash = contextEnvelopeHash(frozenInput)
+    const event: DurableOutboxEvent = {
+      id: 'evt_claim_fence', workspaceId: 'ws_claim_fence', aggregateId: 'gen_claim_fence',
+      eventType: 'generation.requested', sequence: 1, createdAt: now,
+      payload: { task_id: 'task_claim_fence', context_hash: contextHash, input: frozenInput },
+    }
+    const proof = { attempt: 2, transportAttempt: 1, providerAttemptKey: `mm-${'f'.repeat(64)}`, requestBodySha256: 'e'.repeat(64) }
+    const signingSecret = 'knowledge-claim-worker-secret'
+    const nonces: string[] = []
+    const requests: Array<{ method: string; path: string; role: string | null }> = []
+    const claimBodies: string[] = []
+    const fetcher = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input))
+      const method = init?.method ?? 'GET'
+      const body = typeof init?.body === 'string' ? init.body : ''
+      const headers = new Headers(init?.headers)
+      const role = headers.get('x-worker-role')
+      const proofNonce = headers.get('x-worker-nonce') ?? ''
+      requests.push({ method, path: `${url.pathname}${url.search}`, role })
+      if (method === 'POST') claimBodies.push(body)
+      nonces.push(proofNonce)
+      expect(verifyWorkerRequestProof({
+        secret: signingSecret,
+        role: role as 'generation',
+        workerId: headers.get('x-worker-id') ?? '',
+        method,
+        requestTarget: `${url.pathname}${url.search}`,
+        workspaceId: headers.get('x-workspace-id') ?? '',
+        body,
+        timestamp: headers.get('x-worker-timestamp') ?? '',
+        nonce: proofNonce,
+        bodySha256: headers.get('x-worker-body-sha256') ?? '',
+        signature: headers.get('x-worker-workspace-signature') ?? '',
+      })).toBe(true)
+
+      const identity = JSON.parse(body) as Record<string, unknown>
+      const claimId = 'claim_fence_1'
+      const state = method === 'POST' ? 'claimed' : identity.to
+      const claim = {
+        ok: true,
+        claim_id: claimId,
+        ...identity,
+        document_count: (identity.expected_documents as unknown[]).length,
+        claim_state: state,
+        claimed_at: now,
+      }
+      return new Response(JSON.stringify({ data: claim }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+
+    expect(workerRoleForRequest('POST', '/v1/internal/knowledge/generation-claims')).toBe('generation')
+    expect(workerRoleForRequest('PATCH', '/v1/internal/knowledge/generation-claims/claim_fence_1')).toBe('generation')
+    const claim = await claimGenerationKnowledgeAttempt({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token', signingSecret, event, proof, fetcher })
+    expect(claim.identity.logical_attempt).toBe(proof.attempt + 1)
+    await claimGenerationKnowledgeAttempt({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token', signingSecret, event, proof, fetcher })
+    await transitionGenerationKnowledgeClaim({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token', signingSecret, event, claim, to: 'provider_started', fetcher })
+
+    expect(claimBodies[1]).toBe(claimBodies[0])
+    expect(JSON.parse(claimBodies[0]!).provider_attempt_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/u)
+    expect(JSON.parse(claimBodies[0]!).request_nonce).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/u)
+    expect(requests.map(request => ({ method: request.method, path: request.path, role: request.role }))).toEqual([
+      { method: 'POST', path: '/v1/internal/knowledge/generation-claims', role: 'generation' },
+      { method: 'POST', path: '/v1/internal/knowledge/generation-claims', role: 'generation' },
+      { method: 'PATCH', path: '/v1/internal/knowledge/generation-claims/claim_fence_1', role: 'generation' },
+    ])
+    expect(nonces[0]).toMatch(/^[A-Za-z0-9_-]{16,128}$/u)
+    expect(nonces[1]).toMatch(/^[A-Za-z0-9_-]{16,128}$/u)
+    expect(nonces[1]).not.toBe(nonces[0])
+  })
+
+  it('claims an empty frozen document set and rejects malformed supplied snapshots before the API call', async () => {
+    const now = new Date().toISOString()
+    const frozenInput = { platform: 'taobao', product: { id: 'product_empty_claim' }, knowledgeContext: { documents: [] } }
+    const makeEvent = (input: Record<string, unknown>): DurableOutboxEvent => ({
+      id: 'evt_empty_claim', workspaceId: 'ws_empty_claim', aggregateId: 'gen_empty_claim',
+      eventType: 'generation.requested', sequence: 1, createdAt: now,
+      payload: { task_id: 'task_empty_claim', context_hash: contextEnvelopeHash(input), input },
+    })
+    const proof = { attempt: 0, transportAttempt: 1, providerAttemptKey: `mm-${'a'.repeat(64)}`, requestBodySha256: 'b'.repeat(64) }
+    const calls: Record<string, unknown>[] = []
+    const fetcher = async (_input: string | URL | Request, init?: RequestInit) => {
+      const identity = JSON.parse(String(init?.body)) as Record<string, unknown>
+      calls.push(identity)
+      return new Response(JSON.stringify({ data: { ok: true, claim_id: 'claim_empty_1', ...identity, document_count: 0, claim_state: 'claimed', claimed_at: now } }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    const options = { apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token', signingSecret: 'worker-secret', proof, fetcher }
+    const claim = await claimGenerationKnowledgeAttempt({ ...options, event: makeEvent(frozenInput) })
+    expect(claim.document_count).toBe(0)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.expected_documents).toEqual([])
+    for (const knowledgeContext of [{ documents: {} }, { documents: [{ id: '', content: '棉', revision: 1 }] }, { malformed: true }]) {
+      await expect(claimGenerationKnowledgeAttempt({ ...options, event: makeEvent({ ...frozenInput, knowledgeContext }) })).rejects.toThrow('generation event has no valid bounded frozen knowledge claim scope')
+    }
+    expect(calls).toHaveLength(1)
   })
 
   it('fails closed on a receipt replayed across logical provider attempts', async () => {

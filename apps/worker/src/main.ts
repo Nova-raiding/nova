@@ -40,6 +40,7 @@ import { isGenerationJobExecutable, isGenerationJobFinished, validateImageGenera
 import { assertGenerationInput } from './generation-input.js'
 import { CreativePointRelaySettlement, deliverGenerationResultWithPointSettlement, relayProviderIdentity, requiresCreativePointSettlement } from './creative-point-relay-settlement.js'
 import { PostgresKnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
+import { ChargedTextDispatchAdmissionError, PostgresChargedTextDispatchRepository, type ChargedTextDispatchAttempt } from '../../../packages/persistence/src/charged-text-dispatch-repository.js'
 import { indexApprovedKnowledge } from '../../../packages/application/src/knowledge-lexical-index.js'
 import { GenerationKnowledgeReceiptError, validateGenerationKnowledgeReceipt, type FrozenGenerationKnowledgeDocument } from '../../../packages/application/src/knowledge-execution-fence.js'
 
@@ -743,6 +744,7 @@ export function workerRoleForRequest(method: string, requestTarget: string, body
   // outcome and usage callbacks must use that worker's isolated credential;
   // generation remains accepted server-side only for already-deployed callers.
   if (path === '/v1/internal/knowledge-embeddings/admission' || path === '/v1/internal/knowledge-embeddings/outcome') return 'automation'
+  if (/^\/v1\/internal\/knowledge\/generation-claims(?:\/[^/]+)?$/u.test(path)) return 'generation'
   if (path === '/v1/internal/model-usage') {
     try {
       return JSON.parse(typeof body === 'string' ? body : Buffer.from(body ?? []).toString('utf8')).modality === 'embedding' ? 'automation' : 'generation'
@@ -1649,6 +1651,179 @@ export async function assertGenerationKnowledgeExecution(input: { apiBaseUrl: st
   }
 }
 
+interface GenerationKnowledgeClaim {
+  claim_id: string
+  workspace_id: string
+  event_id: string
+  aggregate_id: string
+  task_id: string
+  logical_attempt: number
+  provider_attempt_id: string
+  provider_attempt_key: string
+  request_body_sha256: string
+  request_nonce: string
+  product_id: string
+  context_hash: string
+  document_count: number
+  claim_state: 'claimed' | 'provider_started' | 'outcome_unknown' | 'completed' | 'rejected'
+  claimed_at: string
+  /** Exact signed request fields reused for CAS transitions. */
+  identity: Record<string, unknown>
+}
+
+function generationKnowledgeClaimBody(event: DurableOutboxEvent, proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }) {
+  const payload = event.payload
+  const inputValue = payload.input
+  const frozenInput = inputValue && typeof inputValue === 'object' && !Array.isArray(inputValue) ? inputValue as Record<string, unknown> : undefined
+  const productValue = frozenInput?.product
+  const product = productValue && typeof productValue === 'object' && !Array.isArray(productValue) ? productValue as Record<string, unknown> : undefined
+  const knowledgeValue = frozenInput?.knowledgeContext
+  const knowledge = knowledgeValue && typeof knowledgeValue === 'object' && !Array.isArray(knowledgeValue) ? knowledgeValue as Record<string, unknown> : undefined
+  // An omitted knowledge context means an empty frozen selection. A supplied
+  // context must carry an explicit document array, including an empty one.
+  const rawDocuments = knowledgeValue === undefined ? [] : knowledge?.documents
+  const taskId = payload.task_id
+  const contextHash = payload.context_hash
+  if (!frozenInput || typeof product?.id !== 'string' || !product.id || typeof taskId !== 'string' || !taskId
+    || typeof contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(contextHash)
+    || !Array.isArray(rawDocuments) || rawDocuments.length > 8
+    || rawDocuments.some(document => !document || typeof document !== 'object' || Array.isArray(document)
+      || typeof (document as Record<string, unknown>).id !== 'string' || !String((document as Record<string, unknown>).id).trim()
+      || typeof (document as Record<string, unknown>).content !== 'string'
+      || !Number.isSafeInteger((document as Record<string, unknown>).revision) || ((document as Record<string, unknown>).revision as number) < 1)
+    || contextEnvelopeHash(frozenInput) !== contextHash
+    || !Number.isSafeInteger(proof.attempt) || proof.attempt < 0
+    || !Number.isSafeInteger(proof.transportAttempt) || proof.transportAttempt < 1
+    || !/^mm-[a-f0-9]{64}$/u.test(proof.providerAttemptKey) || !/^[a-f0-9]{64}$/u.test(proof.requestBodySha256)) {
+    throw new GenerationKnowledgeReceiptError('generation event has no valid bounded frozen knowledge claim scope')
+  }
+  const expectedDocuments = (rawDocuments as Array<Record<string, unknown>>).map(document => ({
+    document_id: document.id as string,
+    revision: document.revision as number,
+    content_sha256: createHash('sha256').update(document.content as string, 'utf8').digest('hex'),
+  }))
+  if (new Set(expectedDocuments.map(document => document.document_id)).size !== expectedDocuments.length) {
+    throw new GenerationKnowledgeReceiptError('generation event repeats a frozen knowledge document')
+  }
+  const attemptSeed = JSON.stringify([event.workspaceId, event.id, event.aggregateId, taskId, proof.attempt + 1, proof.transportAttempt, proof.providerAttemptKey, proof.requestBodySha256])
+  const deterministicUuid = (domain: string) => {
+    const hex = createHash('sha256').update(`${domain}\0${attemptSeed}`, 'utf8').digest('hex')
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+  }
+  const providerAttemptId = deterministicUuid('knowledge-provider-attempt-v1')
+  const requestNonce = deterministicUuid('knowledge-provider-nonce-v1')
+  return {
+    workspace_id: event.workspaceId,
+    event_id: event.id,
+    aggregate_id: event.aggregateId,
+    task_id: taskId,
+    // Public generator attempts are zero-based; the database contract stores
+    // strictly positive attempt ordinals.
+    logical_attempt: proof.attempt + 1,
+    transport_attempt: proof.transportAttempt,
+    provider_attempt_id: providerAttemptId,
+    provider_attempt_key: proof.providerAttemptKey,
+    request_body_sha256: proof.requestBodySha256,
+    request_nonce: requestNonce,
+    product_id: product.id,
+    context_hash: contextHash,
+    expected_documents: expectedDocuments,
+  }
+}
+
+function validateGenerationKnowledgeClaim(value: unknown, identity: Record<string, unknown>, state: GenerationKnowledgeClaim['claim_state']): GenerationKnowledgeClaim {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new GenerationKnowledgeReceiptError('generation knowledge claim response is missing')
+  const claim = value as Record<string, unknown>
+  const expectedDocuments = identity.expected_documents as unknown[]
+  const matches = Object.entries(identity).every(([key, expected]) => key === 'expected_documents'
+    ? claim.document_count === expectedDocuments.length
+    : claim[key] === expected)
+  if (claim.ok !== true || typeof claim.claim_id !== 'string' || !claim.claim_id.trim()
+    || !matches || claim.claim_state !== state || typeof claim.claimed_at !== 'string' || !Number.isFinite(Date.parse(claim.claimed_at))) {
+    throw new GenerationKnowledgeReceiptError('generation knowledge claim response does not bind this provider attempt')
+  }
+  return { ...(claim as unknown as GenerationKnowledgeClaim), identity }
+}
+
+/** Create a persistent per-physical-request knowledge claim. The API's
+ * product lock and mutation triggers provide the linearization point. */
+export async function claimGenerationKnowledgeAttempt(input: {
+  apiBaseUrl: string; apiToken: string; signingSecret: string; event: DurableOutboxEvent
+  proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }
+  fetcher?: typeof fetch; signal?: AbortSignal
+}): Promise<GenerationKnowledgeClaim> {
+  if (!input.signingSecret.trim()) throw new GenerationKnowledgeReceiptError('signed generation knowledge claims are not configured')
+  const identity = generationKnowledgeClaimBody(input.event, input.proof)
+  const url = `${input.apiBaseUrl.replace(/\/$/u, '')}/v1/internal/knowledge/generation-claims`
+  let response: Response
+  try {
+    response = await fetchWorkerApi(input.fetcher ?? fetch, url, {
+      method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.event.workspaceId, ...workerAuthIntent(input.signingSecret) },
+      body: JSON.stringify(identity), redirect: 'error', signal: input.signal,
+    })
+  } catch (error) {
+    if (input.signal?.aborted) throw input.signal.reason ?? error
+    throw new GenerationKnowledgeReceiptError('generation knowledge claim endpoint is unavailable')
+  }
+  if (!response.ok) throw new GenerationKnowledgeReceiptError(`generation knowledge claim was denied (${response.status})`)
+  const envelope = await parseWorkerApiJson(response) as { data?: unknown }
+  return validateGenerationKnowledgeClaim(envelope.data, identity, 'claimed')
+}
+
+/** CAS a claim to provider_started or a conclusive terminal state. Unknown
+ * provider outcomes deliberately do not call this; their active claim blocks
+ * knowledge mutation pending audited reconciliation. */
+export async function transitionGenerationKnowledgeClaim(input: {
+  apiBaseUrl: string; apiToken: string; signingSecret: string; event: DurableOutboxEvent
+  claim: GenerationKnowledgeClaim; to: 'provider_started' | 'outcome_unknown' | 'completed' | 'rejected'
+  fetcher?: typeof fetch; signal?: AbortSignal
+}): Promise<GenerationKnowledgeClaim> {
+  if (!input.signingSecret.trim()) throw new GenerationKnowledgeReceiptError('signed generation knowledge claims are not configured')
+  const body = { ...input.claim.identity, to: input.to }
+  const url = `${input.apiBaseUrl.replace(/\/$/u, '')}/v1/internal/knowledge/generation-claims/${encodeURIComponent(input.claim.claim_id)}`
+  let response: Response
+  try {
+    response = await fetchWorkerApi(input.fetcher ?? fetch, url, {
+      method: 'PATCH', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.event.workspaceId, ...workerAuthIntent(input.signingSecret) },
+      body: JSON.stringify(body), redirect: 'error', signal: input.signal,
+    })
+  } catch (error) {
+    if (input.signal?.aborted) throw input.signal.reason ?? error
+    throw new GenerationKnowledgeReceiptError('generation knowledge claim transition is unavailable')
+  }
+  if (!response.ok) throw new GenerationKnowledgeReceiptError(`generation knowledge claim transition was denied (${response.status})`)
+  const envelope = await parseWorkerApiJson(response) as { data?: unknown }
+  const updated = validateGenerationKnowledgeClaim(envelope.data, input.claim.identity, input.to)
+  if (updated.claim_id !== input.claim.claim_id) throw new GenerationKnowledgeReceiptError('generation knowledge claim transition changed claim identity')
+  return updated
+}
+
+/** Reconstruct a rejected transport retry ordinal after worker redelivery.
+ * Rejected means the provider conclusively did not accept the request, so the
+ * same immutable body and idempotency key may advance to the next bounded
+ * transport attempt. Other durable states remain fail-closed. */
+export async function claimChargedTextDispatchWithRetryRecovery(input: {
+  dispatch: Pick<PostgresChargedTextDispatchRepository, 'claim'>
+  workspaceId: string; actionKey: string; eventId: string; logicalAttempt: number
+  transportAttempt: number; providerAttemptKey: string; requestBodySha256: string
+}): Promise<{ claim: ChargedTextDispatchAttempt; transportAttempt: number }> {
+  let lastDenied: ChargedTextDispatchAdmissionError | undefined
+  for (let transportAttempt = input.transportAttempt; transportAttempt <= 3; transportAttempt += 1) {
+    try {
+      const claim = await input.dispatch.claim({
+        workspaceId: input.workspaceId, actionKey: input.actionKey, eventId: input.eventId,
+        logicalAttempt: input.logicalAttempt, transportAttempt,
+        providerAttemptKey: input.providerAttemptKey, requestBodySha256: input.requestBodySha256,
+      })
+      return { claim, transportAttempt }
+    } catch (error) {
+      if (!(error instanceof ChargedTextDispatchAdmissionError) || error.code !== 'CHARGED_TEXT_DISPATCH_DENIED') throw error
+      lastDenied = error
+    }
+  }
+  throw lastDenied ?? new ChargedTextDispatchAdmissionError()
+}
+
 export async function postGenerationDeferred(input: {
   apiBaseUrl: string
   apiToken: string
@@ -2079,6 +2254,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
   const onboardingGrantDispatch = new PostgresOnboardingGrantDispatchRepository(sqlPool)
   const scanAttempts = new PostgresAssetScanAttemptRepository(sqlPool)
   const creativePointSettlement = new CreativePointRelaySettlement(new PostgresCreativePointRepository(sqlPool), new PostgresCreativePointLifecycleRepository(sqlPool), relayProviderIdentity(process.env))
+  const chargedTextDispatch = new PostgresChargedTextDispatchRepository(sqlPool)
   const knowledgeRepository = new PostgresKnowledgeRepository(sqlPool)
   const relayPricing = createRelayPricingClientFromEnv(process.env)
   // Share the OAuth refresh single-flight across replicas; without it the
@@ -2267,17 +2443,69 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         preflight: async () => { await quotaAdmission.admit(quotaAdmissionForEvent(event, 'model', modelKey, config.modelQuotaPerMinute)) },
         invoke: () => {
           generationUsageContexts.set(actionId, usageContext)
-          const generationInput = {
-            ...validatedInput,
-            beforeProviderRequest: async (proof: { workspaceId?: string; actionId?: string; model: string; attempt: number; providerAttemptKey: string; requestBodySha256: string }) => {
+          // Claim every physical provider attempt, including an empty frozen
+          // document set, so a concurrent document add cannot race the prompt.
+          type CombinedClaim = { knowledge: GenerationKnowledgeClaim; charged?: ChargedTextDispatchAttempt }
+          const charged = requiresCreativePointSettlement(event)
+          const knowledgeClaimHooks = {
+            claimProviderAttempt: async (proof: { workspaceId?: string; actionId?: string; model: string; attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }) => {
               if (proof.workspaceId !== event.workspaceId || proof.actionId !== actionId || proof.model !== modelKey
                 || !Number.isSafeInteger(proof.attempt) || proof.attempt < 0
+                || !Number.isSafeInteger(proof.transportAttempt) || proof.transportAttempt < 1
                 || !/^mm-[a-f0-9]{64}$/u.test(proof.providerAttemptKey) || !/^[a-f0-9]{64}$/u.test(proof.requestBodySha256)) {
                 throw new GenerationKnowledgeReceiptError('text provider attempt has invalid frozen generation identity')
               }
-              await assertGenerationKnowledgeExecution({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, event, proof, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+              if (!config.apiSigningSecret) throw new GenerationKnowledgeReceiptError('signed generation knowledge claims are not configured')
+              const chargedAllocation = charged ? await claimChargedTextDispatchWithRetryRecovery({
+                dispatch: chargedTextDispatch,
+                workspaceId: event.workspaceId, actionKey: actionId, eventId: event.id,
+                logicalAttempt: proof.attempt + 1, transportAttempt: proof.transportAttempt,
+                providerAttemptKey: proof.providerAttemptKey, requestBodySha256: proof.requestBodySha256,
+              }) : undefined
+              const chargedClaim = chargedAllocation?.claim
+              try {
+                const knowledgeProof = chargedAllocation ? { ...proof, transportAttempt: chargedAllocation.transportAttempt } : proof
+                const knowledge = await claimGenerationKnowledgeAttempt({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, signingSecret: config.apiSigningSecret, event, proof: knowledgeProof, signal })
+                return { knowledge, ...(chargedClaim ? { charged: chargedClaim } : {}) } satisfies CombinedClaim
+              } catch (error) {
+                if (chargedClaim) await chargedTextDispatch.transition({ workspaceId: event.workspaceId, id: chargedClaim.id, ownerToken: chargedClaim.ownerToken, to: 'rejected' }).catch(() => undefined)
+                throw error
+              }
+            },
+            startProviderAttempt: async (_proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }, claim: unknown) => {
+              const combined = claim as CombinedClaim
+              if (combined.charged) await chargedTextDispatch.transition({ workspaceId: event.workspaceId, id: combined.charged.id, ownerToken: combined.charged.ownerToken, to: 'provider_started' })
+              await transitionGenerationKnowledgeClaim({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, signingSecret: config.apiSigningSecret!, event, claim: combined.knowledge, to: 'provider_started', signal })
+            },
+            markProviderAttemptUnknown: async (_proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }, claim: unknown, providerRequestId?: string) => {
+              const combined = claim as CombinedClaim
+              const results = await Promise.allSettled([
+                ...(combined.charged ? [chargedTextDispatch.transition({ workspaceId: event.workspaceId, id: combined.charged.id, ownerToken: combined.charged.ownerToken, to: 'outcome_unknown', ...(providerRequestId ? { providerRequestId } : {}) })] : []),
+                transitionGenerationKnowledgeClaim({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, signingSecret: config.apiSigningSecret!, event, claim: combined.knowledge, to: 'outcome_unknown', signal }),
+              ])
+              const rejected = results.find(result => result.status === 'rejected')
+              if (rejected?.status === 'rejected') throw rejected.reason
+            },
+            recordProviderResponse: async (_proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }, claim: unknown, providerRequestId: string) => {
+              const combined = claim as CombinedClaim
+              if (combined.charged) await chargedTextDispatch.transition({ workspaceId: event.workspaceId, id: combined.charged.id, ownerToken: combined.charged.ownerToken, to: 'response_recorded', providerRequestId })
+            },
+            markProviderRepairRequired: async (_proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }, claim: unknown) => {
+              const combined = claim as CombinedClaim
+              if (combined.charged) await chargedTextDispatch.transition({ workspaceId: event.workspaceId, id: combined.charged.id, ownerToken: combined.charged.ownerToken, to: 'repair_required' })
+              await transitionGenerationKnowledgeClaim({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, signingSecret: config.apiSigningSecret!, event, claim: combined.knowledge, to: 'completed', signal })
+            },
+            settleProviderAttempt: async (_proof: { attempt: number; transportAttempt: number; providerAttemptKey: string; requestBodySha256: string }, claim: unknown, outcome: 'completed' | 'rejected') => {
+              const combined = claim as CombinedClaim
+              const results = await Promise.allSettled([
+                ...(combined.charged ? [chargedTextDispatch.transition({ workspaceId: event.workspaceId, id: combined.charged.id, ownerToken: combined.charged.ownerToken, to: outcome })] : []),
+                transitionGenerationKnowledgeClaim({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, signingSecret: config.apiSigningSecret!, event, claim: combined.knowledge, to: outcome, signal }),
+              ])
+              const rejected = results.find(result => result.status === 'rejected')
+              if (rejected?.status === 'rejected') throw rejected.reason
             },
           }
+          const generationInput = { ...validatedInput, allowSchemaRepair: !charged, ...knowledgeClaimHooks }
           return providerDispatchAdmission.run({ event, operation: 'generation.execute', signal, providerRequests: 0 }, () => contentGenerator.generate(generationInput, { signal }))
         },
       })

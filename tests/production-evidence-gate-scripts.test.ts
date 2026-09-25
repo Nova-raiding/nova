@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash, generateKeyPairSync } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -34,6 +34,28 @@ const nonceEnvironment = (directory: string, consumer: string) => ({
   DEPLOYMENT_NONCE: 'deployment_nonce_abcdefghijklmnop', RELEASE_ID: 'release-1', IMAGE_DIGEST: `sha256:${'a'.repeat(64)}`,
   PRODUCTION_EVIDENCE_MANIFEST_SHA256: 'b'.repeat(64), RELEASE_GIT_SHA: 'c'.repeat(40),
 })
+
+const deployPreflightEnvironment = (directory: string, overrides: Record<string, string> = {}) => {
+  const placeholder = join(directory, 'placeholder.json')
+  writeFileSync(placeholder, '{}')
+  const imageDigest = (letter: string) => `sha256:${letter.repeat(64)}`
+  return {
+    NODE_ENV: 'test', VITEST: 'true',
+    PRODUCTION_CONFIG_PATH: join(directory, 'production.yml'),
+    RELEASE_ID: 'candidate-test-1',
+    IMAGE_DIGESTS_JSON: JSON.stringify({ 'merchant-api': imageDigest('a'), 'merchant-worker': imageDigest('b'), 'merchant-ui': imageDigest('c'), 'merchant-ops-ui': imageDigest('d'), clamav: imageDigest('e') }),
+    DATABASE_URL: 'postgresql://merchant_app:local@db.example.test/merchant?sslmode=verify-full',
+    OPS_DATABASE_URL: 'postgresql://merchant_ops:local@db.example.test/merchant?sslmode=verify-full',
+    ALERT_RECEIVER_DATABASE_URL: 'postgresql://merchant_alert:local@db.example.test/merchant?sslmode=verify-full',
+    REDIS_URL: 'rediss://redis.example.test:6379', SECRET_PROVIDER: 'ecs-protected-env',
+    CAPABILITY_EVIDENCE_PATH: placeholder, CAPACITY_REPORT_PATH: placeholder,
+    MODEL_RELAY_EVIDENCE_PATH: placeholder, CODEX_APP_HOST_EVIDENCE_PATH: placeholder,
+    OBJECT_STORAGE_EVIDENCE_PATH: placeholder, CANONICAL_CUTOVER_EVIDENCE_PATH: placeholder,
+    EXPECTED_MIGRATION_VERSION: '248', RELEASE_MANIFEST_PATH: placeholder, PAYMENT_EVIDENCE_PATH: placeholder,
+    RESTORE_EVIDENCE_PATH: placeholder, RENDERED_MANIFEST_PATH: placeholder, PRODUCTION_EVIDENCE_ARTIFACT_ROOT: directory,
+    ...overrides,
+  }
+}
 
 describe('production evidence trust and replay scripts', () => {
   it('accepts a secure test bundle and rejects repository-local or environment-selected anchors', () => {
@@ -82,6 +104,50 @@ describe('production evidence trust and replay scripts', () => {
     expect(() => run('infra/scripts/deploy-preflight.sh', [], { NODE_ENV: 'test', PRODUCTION_EVIDENCE_TEST_TRUST_DIR: '/tmp/anchor' })).toThrow(/test paths are forbidden/)
     expect(() => run('infra/scripts/deploy-preflight.sh', [], { NODE_ENV: 'test', PRODUCTION_EVIDENCE_TEST_NONCE_CONSUMER: '/tmp/consumer' })).toThrow(/test paths are forbidden/)
     expect(() => run('infra/scripts/deploy-preflight.sh', [], { NODE_ENV: 'production', VITEST: 'true' })).toThrow(/VITEST.*NODE_ENV=test/)
+  })
+
+  it('fails closed when the capability or capacity evidence path is missing or unreadable', () => {
+    const directory = temporaryDirectory()
+    const config = join(directory, 'production.yml')
+    writeFileSync(config, 'platform_operations_mode: manual\n')
+    const missingCapability = join(directory, 'missing-capability.json')
+    const unreadableCapability = join(directory, 'unreadable-capability.json')
+    symlinkSync(join(directory, 'absent-target.json'), unreadableCapability)
+    const missingCapacity = join(directory, 'missing-capacity.json')
+    const unreadableCapacity = join(directory, 'unreadable-capacity.json')
+    symlinkSync(join(directory, 'absent-capacity-target.json'), unreadableCapacity)
+
+    for (const [field, path, expected] of [
+      ['CAPABILITY_EVIDENCE_PATH', missingCapability, 'capability evidence file not found'],
+      ['CAPABILITY_EVIDENCE_PATH', unreadableCapability, 'capability evidence file not found'],
+      ['CAPACITY_REPORT_PATH', missingCapacity, 'capacity report not found'],
+      ['CAPACITY_REPORT_PATH', unreadableCapacity, 'capacity report not found'],
+    ] as const) {
+      const result = spawnSync('sh', ['infra/scripts/deploy-preflight.sh'], {
+        cwd: resolve('.'), encoding: 'utf8', timeout: 30_000,
+        env: { ...process.env, ...deployPreflightEnvironment(directory, { [field]: path, PRODUCTION_CONFIG_PATH: config }) },
+      })
+      expect(result.error).toBeUndefined()
+      expect(result.status, result.stderr).toBe(1)
+      expect(result.stderr).toContain(expected)
+      expect(result.stdout + result.stderr).not.toContain('deploy preflight passed')
+    }
+  })
+
+  it('keeps capability evidence and the capacity artifact under the exact candidate release binding', () => {
+    const preflight = readFileSync('infra/scripts/deploy-preflight.sh', 'utf8').replace(/\\\n\s*/gu, ' ')
+    const bundleGate = readFileSync('tests/release-evidence-bundle-gate.ts', 'utf8')
+    expect(preflight).toContain('manual-operations-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"')
+    expect(preflight).toContain('capability-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID"')
+    expect(preflight).toContain('--require-signed-production --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256"')
+    expect(preflight).toContain('--release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE"')
+    expect(preflight).toContain('--capability-evidence "$CAPABILITY_EVIDENCE_PATH" --capacity-evidence "$CAPACITY_REPORT_PATH"')
+    expect(preflight).toContain('--release-id "$RELEASE_ID" --image-set-digest "$image_set_digest"')
+    expect(preflight).toContain('--release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE"')
+    expect(bundleGate).toContain('image_set_digest:options.imageSetDigest, manifest_sha256:options.manifestSha256, release_git_sha:options.releaseGitSha')
+    expect(bundleGate).toContain('if (kind === \'capacity\')')
+    expect(bundleGate).toContain('if (sha256(bytes) !== match[2]) errors.push(`${kind} artifact SHA-256 mismatch`)')
+    expect(bundleGate).toContain('manifest.productionEvidence?.[kind] !== bundleRefs.get(kind)')
   })
 
   it('rejects writable trust directories, symlinked files, and public-key fingerprint mismatch', () => {

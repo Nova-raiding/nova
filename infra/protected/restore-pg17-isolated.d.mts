@@ -13,7 +13,7 @@ export function validateRestoreInputs(input: {
   deploymentNonce: string
   now?: Date
 }): { backupSha256: string; sourceDatabaseIdSha256: string; postgresImage: string }
-export function validateMigrationAssets(names: string[]): void
+export function validateMigrationAssets(names: string[], expectedMigrationVersion: number): void
 export function validateArchiveCommit(actual: string, expected: string): void
 export function retainedNonceBinding(nonce: string): { deployment_nonce_sha256: string }
 export function composeDigestArgument(digestFile: Record<string, string>, imageDigests: Record<string, string>): string

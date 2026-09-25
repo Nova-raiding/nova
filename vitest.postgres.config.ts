@@ -5,6 +5,7 @@ import { DEFAULT_SUITE_PENDING_ALLOWANCES, NON_HERMETIC_TEST_FILES } from './tes
 
 export const ISOLATED_POSTGRES_TEST_FILES = NON_HERMETIC_TEST_FILES.filter(file => (
   file.startsWith('packages/persistence/src/')
+  || file === 'apps/api/src/content-generation-action-owner.postgres.test.ts'
   || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts'
   || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts'
 ) && file.endsWith('.postgres.test.ts'))
@@ -18,7 +19,7 @@ function discover(directory: string, prefix = ''): string[] {
   }).sort()
 }
 /** Every `*.postgres.test.ts` under the directories that own them. */
-export const DISCOVERED_POSTGRES_TEST_FILES = ['packages/persistence', 'apps/worker', 'tests'].flatMap(directory => discover(directory)).sort()
+export const DISCOVERED_POSTGRES_TEST_FILES = ['packages/persistence', 'apps/api', 'apps/worker', 'tests'].flatMap(directory => discover(directory)).sort()
 
 /**
  * Database-gated files whose name does not end in `.postgres.test.ts`, taken

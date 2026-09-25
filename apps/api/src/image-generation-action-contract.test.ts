@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { projectImageGenerationActions } from '../../../packages/application/src/image-generation-action-contract.js'
 
-const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+const source = readFileSync(new URL('./mcp-image-handlers.ts', import.meta.url), 'utf8')
 
 describe('image generation API action contract', () => {
   it('fails closed when durable image execution is not configured', () => {
@@ -22,7 +22,7 @@ describe('image generation API action contract', () => {
     }
 
     const admission = generate.slice(generate.indexOf('const durableImageGeneration'))
-    expect(admission.indexOf('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED')).toBeLessThan(admission.indexOf("return result({ job_id"))
+    expect(admission.indexOf('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED')).toBeLessThan(admission.indexOf("return ({ job_id"))
     // Configuration failure must happen before any creative-point reservation;
     // otherwise a failed enqueue can strand an active reservation.
     expect(generate.indexOf('const durableImageGeneration')).toBeGreaterThanOrEqual(0)
@@ -109,8 +109,9 @@ describe('image generation API action contract', () => {
     const evidence = generate.indexOf('creativePoints = await imageCreativePointsEvidence')
     expect(reservation).toBeGreaterThanOrEqual(0)
     expect(evidence).toBeGreaterThan(reservation)
-    expect(source).toContain('getReservationByActionKey')
-    expect(source).toContain('deducted_points: reservation?.status === \'settled\'')
-    expect(source).toContain('point_reservation_points: reservation?.points ?? null')
+    const serverSource = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    expect(serverSource).toContain('getReservationByActionKey')
+    expect(serverSource).toContain('deducted_points: reservation?.status === \'settled\'')
+    expect(serverSource).toContain('point_reservation_points: reservation?.points ?? null')
   })
 })

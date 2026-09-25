@@ -128,6 +128,44 @@ describe('developer doctor runtime checks', () => {
     })
   })
 
+  it('accepts ready manual platform operations without requiring platform OAuth', () => {
+    const rows = Object.fromEntries(['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']
+      .map(platform => [platform, { oauthConfigured: false, ready: true, mode: 'manual_operations' }]))
+    expect(commercialRuntimeAudit({ data: { setup: {
+      platformOperations: { mode: 'manual', ready: true },
+      platforms: rows,
+    } } })?.platforms).toEqual({
+      mode: 'manual', ready: true, missingOAuthPlatforms: [], blockedPlatforms: [],
+    })
+  })
+
+  it('keeps optional embedding out of five-model relay readiness and requires release evidence', () => {
+    const modelReadiness: Record<string, { ready: boolean; providerConfigured: boolean }> = Object.fromEntries(
+      ['text', 'image', 'image_edit', 'ocr', 'video'].map(modality => [modality, { ready: true, providerConfigured: true }]),
+    )
+    modelReadiness.embedding = { ready: false, providerConfigured: false }
+    expect(commercialRuntimeReadiness({ data: { setup: {
+      mode: 'production', ai: { costGate: 'ready' }, modelReadiness,
+      productionEvidence: {
+        capability: { state: 'blocked', configured: false },
+        capacity: { state: 'blocked', configured: false },
+      },
+    } } })).toMatchObject({
+      modelRelayReady: true,
+      capabilityEvidenceReady: false,
+      capacityEvidenceReady: false,
+    })
+  })
+
+  it('fails closed for official API mode without configured OAuth', () => {
+    const rows = Object.fromEntries(['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']
+      .map(platform => [platform, { oauthConfigured: platform === 'jd', ready: true }]))
+    expect(commercialRuntimeAudit({ data: { setup: {
+      platformOperations: { mode: 'official_api', ready: true },
+      platforms: rows,
+    } } })?.platforms).toMatchObject({ ready: false, missingOAuthPlatforms: ['taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] })
+  })
+
   it('detects relay 503 and missing usage/cost/provider evidence as blocked release evidence', () => {
     expect(modelRelayEvidenceAudit({
       results: [

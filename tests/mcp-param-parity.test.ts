@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { MCP_METHODS, MCP_METHOD_SCHEMAS, validateMcpRequest } from '../packages/contracts/src/mcp.js'
 import { methodScopedParams } from '../apps/api/src/server.js'
@@ -25,6 +25,13 @@ import { methodScopedParams } from '../apps/api/src/server.js'
  */
 
 const serverSource = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
+const apiDirectory = new URL('../apps/api/src/', import.meta.url)
+const handlerSources = readdirSync(apiDirectory)
+  // Extracted handlers do not all use the `*-handlers.ts` suffix. Match every
+  // imported MCP module so compact files such as `mcp-catalog-title.ts` cannot
+  // silently fall back to scanning only the server's routing declaration.
+  .filter(name => /^mcp-[^.]+\.ts$/u.test(name) && serverSource.includes(`'./${name.slice(0, -3)}.js'`))
+  .map(name => readFileSync(new URL(name, apiDirectory), 'utf8'))
 const bridgeSource = readFileSync(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url), 'utf8')
 const merchantApiSource = readFileSync(new URL('../demo/merchant-studio/src/api.ts', import.meta.url), 'utf8')
 
@@ -70,11 +77,11 @@ function matchingBrace(source: string, openIndex: number): number {
  * `case` labels share one block, which is exactly how a sibling method's
  * fields leak into another method's handler.
  */
-function dispatchBlocks(): DispatchBlock[] {
-  const lines = serverSource.split('\n')
+function dispatchBlocks(source: string, requireScope: boolean): DispatchBlock[] {
+  const lines = source.split('\n')
   const header = lines.findIndex(line => /^  params = methodScopedParams\(method, params\)$/u.test(line))
-  const switchLine = lines.findIndex((line, index) => index > header && /^  switch \(method\) \{$/u.test(line))
-  if (header < 0 || switchLine < 0) throw new Error('the MCP dispatch switch (and its parameter scoping) must stay recognizable')
+  const switchLine = lines.findIndex((line, index) => (!requireScope || index > header) && /^  switch \(method\) \{$/u.test(line))
+  if ((requireScope && header < 0) || switchLine < 0) return []
   let switchEnd = lines.length
   {
     let depth = 0
@@ -117,7 +124,39 @@ function dispatchBlocks(): DispatchBlock[] {
   })
 }
 
-const blocks = dispatchBlocks()
+const serverBlocks = dispatchBlocks(serverSource, true)
+const handlerSwitchBlocks = handlerSources.flatMap(source => dispatchBlocks(source, false))
+
+function functionBlocks(source: string): DispatchBlock[] {
+  // A module can export several handlers with different contracts. Scan each
+  // function separately so campaign create fields cannot leak into pause.
+  if (/^  switch \(method\) \{$/mu.test(source)) return []
+  const functions = [...source.matchAll(/^export async function (\w+)\(/gmu)]
+  return functions.flatMap((declaration, index) => {
+    const body = source.slice(declaration.index, functions[index + 1]?.index ?? source.length)
+    const name = declaration[1]!
+    const delegated = serverBlocks.flatMap(block => block.body.includes(`${name}(`) ? block.methods : [])
+    const compared = [...body.matchAll(/\bmethod === '([^']+)'/gu)].map(match => match[1]!)
+    const methods = [...new Set([...delegated, ...compared])]
+      .filter(method => MCP_METHODS.includes(method as typeof MCP_METHODS[number]))
+    if (!methods.length) return []
+    const helperCalls = [...body.matchAll(/(\w+)\s*\(\s*params\s*,\s*'([^']+)'(?:\s*,\s*'([^']+)')?/gu)]
+      .map(match => ({ camel: match[2]!, ...(match[3] ? { snake: match[3] } : {}) }))
+    const helperKeys = new Set(helperCalls.flatMap(call => [call.camel, ...(call.snake ? [call.snake] : [])]))
+    const direct = new Set([...body.matchAll(/\bparams(?:Object)?\.([A-Za-z_][A-Za-z0-9_]*)\b/gu)]
+      .map(match => match[1]!).filter(key => !NON_PARAMETER_PROPERTIES.has(key) && !helperKeys.has(key)))
+    for (const match of body.matchAll(/\bparams(?:Object)?\[\s*'([^']+)'\s*\]/gu)) direct.add(match[1]!)
+    return [{ methods, line: source.slice(0, declaration.index).split('\n').length, body, helperCalls, direct }]
+  })
+}
+
+const handlerFunctionBlocks = handlerSources.flatMap(functionBlocks)
+// The server's case remains a routing declaration after extraction. Prefer
+// the handler body for parameter reads, then keep one block per MCP method.
+const preferred = [...handlerSwitchBlocks, ...handlerFunctionBlocks, ...serverBlocks]
+const chosen = new Map<string, DispatchBlock>()
+for (const block of preferred) for (const method of block.methods) if (!chosen.has(method)) chosen.set(method, block)
+const blocks = [...new Set(chosen.values())].map(block => ({ ...block, methods: block.methods.filter(method => chosen.get(method) === block) }))
 const blockFor = (method: string): DispatchBlock | undefined => blocks.find(block => block.methods.includes(method))
 
 function columns(value: unknown): Record<string, unknown> {
@@ -143,6 +182,10 @@ function merchantClientCallSites(): Array<{ method: string; keys: Set<string> }>
 
 describe('MCP handler/contract parameter parity', () => {
   it('covers every method exactly once', () => {
+    const routed = serverBlocks.flatMap(block => block.methods)
+    expect(new Set(routed).size).toBe(routed.length)
+    const implemented = [...handlerSwitchBlocks, ...handlerFunctionBlocks].flatMap(block => block.methods)
+    expect(new Set(implemented).size).toBe(implemented.length)
     const covered = blocks.flatMap(block => block.methods)
     expect([...covered].sort()).toEqual([...MCP_METHODS].sort())
     expect(new Set(covered).size).toBe(covered.length)
@@ -214,7 +257,12 @@ describe('MCP handler/contract parameter parity', () => {
     const header = serverSource.split('\n').findIndex(line => /^  params = methodScopedParams\(method, params\)$/u.test(line))
     const switchLine = serverSource.split('\n').findIndex((line, index) => index > header && /^  switch \(method\) \{$/u.test(line))
     expect(header).toBeGreaterThan(-1)
-    expect(switchLine).toBe(header + 1)
+    expect(switchLine).toBeGreaterThan(header)
+    for (const source of handlerSources) {
+      const imported = [...source.matchAll(/\bcase '([^']+)'\s*:|\bmethod === '([^']+)'/gu)]
+        .some(match => MCP_METHODS.includes((match[1] ?? match[2]) as typeof MCP_METHODS[number]))
+      if (imported) expect(serverSource.split('\n').slice(header, switchLine).join('\n')).toMatch(/MCP_[A-Z_]+_METHODS\.has\(method\)/u)
+    }
 
     // Declared keys survive; a sibling method's fields and dead aliases do not.
     expect(columns(methodScopedParams('ops.audit.export', { workspace_id: 'ws', text: 'q', cursor: 'c', limit: '10' }))).toEqual({ workspace_id: 'ws', text: 'q' })

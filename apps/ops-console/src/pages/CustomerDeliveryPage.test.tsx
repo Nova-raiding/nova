@@ -77,12 +77,16 @@ describe("customer delivery workspace selection", () => {
     expect(pageSource).toContain("poll >= 15");
   });
 
-  it("recognizes stale-record conflicts so checklist and training saves can refresh once", () => {
+  it("recognizes stale-record conflicts without replaying stale checklist or training writes", () => {
     expect(isCustomerDeliveryRevisionConflict(new Error("revision changed"))).toBe(true);
     expect(isCustomerDeliveryRevisionConflict(new Error("REVISION_CONFLICT"))).toBe(true);
     expect(isCustomerDeliveryRevisionConflict(new Error("network unavailable"))).toBe(false);
-    expect(pageSource).toContain("currentRecord = await customerDeliveryClient.get");
-    expect(pageSource).toContain("const latest = await customerDeliveryClient.get");
+    const checklistSave = pageSource.slice(pageSource.indexOf("const saveChecklist ="), pageSource.indexOf("const createRecord ="));
+    const trainingSave = pageSource.slice(pageSource.indexOf("const saveTraining ="), pageSource.indexOf("const openDeliveryAsset ="));
+    expect(checklistSave).not.toContain("customerDeliveryClient.get");
+    expect(trainingSave).not.toContain("customerDeliveryClient.get");
+    expect(checklistSave).toContain("const result = await persist(currentRecord)");
+    expect(trainingSave).toContain("const updated = await persist(record)");
   });
 
   it("never erases a known record revision when the checklist save reports none", () => {

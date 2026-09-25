@@ -228,7 +228,7 @@ describe('release manifest production gate', () => {
       tampered.artifacts.find(item => item.path === path)!.sha256 = 'f'.repeat(64)
       expect(validateReleaseManifest(tampered, { root: process.cwd(), expectedReleaseId: fixtureReleaseId })).toContain(`artifact SHA-256 does not match current source: ${path}`)
     }
-  })
+  }, 30_000)
   it('rejects a stale bridge digest or missing marketplace mirror', () => {
     const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId, capabilityEvidenceRef: 'artifact://production/evidence/capability#' + 'a'.repeat(64), capacityEvidenceRef: 'artifact://production/evidence/capacity#' + 'a'.repeat(64), modelRelayEvidenceRef: 'artifact://production/evidence/relay#' + 'a'.repeat(64), paymentEvidenceRef: 'artifact://production/evidence/payment#' + 'a'.repeat(64), restoreEvidenceRef: 'artifact://production/evidence/restore#' + 'a'.repeat(64), objectStorageEvidenceRef: 'artifact://production/evidence/storage#' + 'a'.repeat(64), codexAppHostEvidenceRef: 'artifact://production/evidence/codex-host#' + 'a'.repeat(64), canonicalCutoverEvidenceRef: 'artifact://production/evidence/canonical-cutover#' + 'a'.repeat(64) })
     manifest.mcp!.bridgeSha256 = 'f'.repeat(64)

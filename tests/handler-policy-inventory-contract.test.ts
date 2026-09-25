@@ -4,6 +4,24 @@ import { MCP_METHOD_POLICIES } from '../packages/contracts/src/authz.js'
 import { MCP_METHOD_CONTRACTS, MCP_METHODS } from '../packages/contracts/src/mcp.js'
 
 const serverSource = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
+const apiDirectory = new URL('../apps/api/src/', import.meta.url)
+function dispatchSources(server = serverSource): string[] {
+  const sources = [routeMcpSource(server)]
+  const queue = [server]
+  const visited = new Set<string>()
+  while (queue.length) {
+    const source = queue.shift()!
+    for (const match of source.matchAll(/\bfrom\s+['"]\.\/(mcp-[a-z0-9-]+-handlers)\.js['"]/gu)) {
+      const name = match[1]!
+      if (visited.has(name)) continue
+      visited.add(name)
+      const moduleSource = readFileSync(new URL(`${name}.ts`, apiDirectory), 'utf8')
+      sources.push(moduleSource)
+      queue.push(moduleSource)
+    }
+  }
+  return sources
+}
 
 type Inventory = {
   readonly methods: readonly string[]
@@ -28,16 +46,20 @@ function unique(values: readonly string[], label: string): string[] {
 }
 
 function parseDispatchInventory(source: string): Inventory {
-  const route = routeMcpSource(source)
-  const cases = [...route.matchAll(/\bcase\s+(['"])([^'"\n]+)\1\s*:/gu)].map(match => match[2]!)
-  const guards = [...route.matchAll(/\bmethod\s*===\s*(['"])([^'"\n]+)\1/gu)].map(match => match[2]!)
+  const sources = dispatchSources(source)
+  const casesBySource = sources.map(item => [...item.matchAll(/\bcase\s+(['"])([^'"\n]+)\1\s*:/gu)].map(match => match[2]!))
+  // Repeated labels in the route are a registration error. A delegated
+  // handler may repeat a label in separate internal switches for validation.
+  const routeCases = unique(casesBySource[0]!, 'case')
+  const cases = [...new Set([...routeCases, ...casesBySource.slice(1).flat()])]
+  const guards = sources.flatMap(item => [...item.matchAll(/\bmethod\s*===\s*(['"])([^'"\n]+)\1/gu)].map(match => match[2]!))
   const nonMethodStringLiterals = new Set(['string'])
   const unsupportedGuards = guards.filter(method => nonMethodStringLiterals.has(method))
   const dispatchGuards = guards.filter(method => !nonMethodStringLiterals.has(method))
-  if (unsupportedGuards.length !== 1) throw new Error('HANDLER_INVENTORY_UNEXPECTED_NON_METHOD_LITERAL')
+  if (unsupportedGuards.length < 1) throw new Error('HANDLER_INVENTORY_UNEXPECTED_NON_METHOD_LITERAL')
   if (cases.length === 0) throw new Error('HANDLER_INVENTORY_EMPTY_DISPATCH')
 
-  const caseMethods = unique(cases, 'case')
+  const caseMethods = cases
   const guardMethods = [...new Set(dispatchGuards)]
   const methods = [...new Set([...caseMethods, ...guardMethods])]
   if (methods.some(method => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(method))) {
@@ -92,6 +114,9 @@ describe('Ops RBAC handler/policy inventory contract', () => {
   it('fails closed when the dispatch inventory cannot be parsed or contains duplicate handlers', () => {
     expect(() => parseDispatchInventory(serverSource.replace(routeStartMarker, 'async function routeMcpMissing('))).toThrow(/ROUTE_BOUNDARY_INVALID/u)
     expect(() => parseDispatchInventory(serverSource.replace("case 'merchant.first_value':", "case 'merchant.first_value':\n    case 'merchant.first_value':"))).toThrow(/DUPLICATE:case:merchant\.first_value/u)
-    expect(() => parseDispatchInventory(serverSource.replace("case 'merchant.first_value':", "case 'not-registered.method':"))).toThrow(/toEqual|HANDLER/u)
+    expect(() => parseDispatchInventory(serverSource.replace("case 'merchant.first_value':", "case 'not-registered.method':"))).toThrow(/HANDLER/u)
+    expect(parseDispatchInventory(serverSource).methods).toContain('ops.users.list')
+    expect(parseDispatchInventory(serverSource.replace("from './mcp-ops-users-handlers.js'", "from './not-a-dispatch-module.js'")).methods).not.toContain('ops.users.list')
+    expect(() => parseDispatchInventory(serverSource.replace("from './mcp-ops-users-handlers.js'", "from './mcp-missing-handlers.js'"))).toThrow()
   })
 })

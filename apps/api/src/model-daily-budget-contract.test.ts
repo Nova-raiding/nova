@@ -2,6 +2,11 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+const budgetSource = readFileSync(new URL('./model-budget-runtime.ts', import.meta.url), 'utf8')
+const relayUsageSource = readFileSync(new URL('./model-relay-usage-runtime.ts', import.meta.url), 'utf8')
+const reconciliationSource = readFileSync(new URL('./model-usage-reconciliation.ts', import.meta.url), 'utf8')
+const imageHandlersSource = readFileSync(new URL('./mcp-image-handlers.ts', import.meta.url), 'utf8')
+const generationRoutesSource = readFileSync(new URL('./http-generation-job-create.ts', import.meta.url), 'utf8')
 
 describe('daily model budget provider boundary', () => {
   it('wraps every provider modality with budget reservation before invocation', () => {
@@ -11,25 +16,29 @@ describe('daily model budget provider boundary', () => {
       ['ocr', 'rawImageFactsExtractor.extract'],
       ['image_edit', 'rawImageEditGenerator.generate'],
       ['video', 'rawVideoGenerator.generate'],
-    ] as const) expect(source).toContain(`withDailyModelBudget('${kind}', input.usageContext, () => ${provider}(`)
+    ] as const) {
+      if (kind === 'ocr') expect(source).toContain("withDailyModelBudget('ocr', input.usageContext, async () =>")
+      else expect(source).toContain(`withDailyModelBudget('${kind}', input.usageContext, () => ${provider}(`)
+    }
     expect(source).toContain('direction: appendProtectedProductConstraints(input.direction)')
-    expect(source).toContain('await reserveDailyModelBudget(workspaceId, actionId, runKey, kind)')
-    const budget = source.slice(source.indexOf('async function withDailyModelBudget'), source.indexOf('type PluginWalletDebitInput'))
+    expect(source).toContain('createModelBudgetRuntime({')
+    const budget = budgetSource.slice(budgetSource.indexOf('async function withDailyModelBudget'))
     const reserve = budget.indexOf('await reserveDailyModelBudget(workspaceId, actionId, runKey, kind)')
-    const finalCheck = budget.indexOf('await recheckDeliveryBeforeProvider({ operation: kind, workspaceId }, false)')
+    const finalCheck = budget.indexOf('await deps.recheckBeforeProvider({ operation: kind, workspaceId }, false)')
     const invoke = budget.indexOf('return await invoke()')
     expect(reserve).toBeGreaterThanOrEqual(0)
     expect(finalCheck).toBeGreaterThan(reserve)
     expect(invoke).toBeGreaterThan(finalCheck)
-    expect(source).toContain("if (!workspaceId || !actionId || !runKey) throw new DomainError('MODEL_COST_BUDGET_CONTEXT_REQUIRED'")
+    expect(budgetSource).toContain("if (!workspaceId || !actionId || !runKey) throw new DomainError('MODEL_COST_BUDGET_CONTEXT_REQUIRED'")
   })
 
   it('settles provider actuals and only releases failures that did not succeed upstream', () => {
-    expect(source).toContain('recordUsageAndSettleBudget({ ...usageInput, budgetReservationKey: usage.actionId, budgetRunKey: usage.runKey!, costCny: usage.costCny')
-    expect(source).toContain("...(usage.metadata || usage.runKey ? { metadata: { ...(usage.metadata ?? {}), ...(usage.runKey ? { run_key: usage.runKey } : {}) } } : {})")
-    expect(source).not.toContain('const actionActualCostCny =')
-    expect(source).toContain("if (!providerSucceededButSettlementPending(error)) await releaseDailyModelBudget(workspaceId, actionId)")
-    expect(source).toContain("alertKey: `model-budget-overrun:${usage.actionId}`")
+    expect(source).toContain('createRelayUsageRuntime({')
+    expect(relayUsageSource).toContain('recordUsageAndSettleBudget({ ...usageInput, budgetReservationKey: usage.actionId, budgetRunKey: usage.runKey!, costCny: usage.costCny')
+    expect(relayUsageSource).toContain("...(usage.metadata || usage.runKey ? { metadata: { ...(usage.metadata ?? {}), ...(usage.runKey ? { run_key: usage.runKey } : {}) } } : {})")
+    expect(relayUsageSource).not.toContain('const actionActualCostCny =')
+    expect(budgetSource).toContain("if (!deps.providerSucceededButSettlementPending(error)) await releaseDailyModelBudget(workspaceId, actionId)")
+    expect(relayUsageSource).toContain("alertKey: `model-budget-overrun:${usage.actionId}`")
   })
 
   it('preserves synchronous content point reservations when provider outcome needs reconciliation', () => {
@@ -40,10 +49,11 @@ describe('daily model budget provider boundary', () => {
 
   it('keeps image retry, edit, multimodal and video point releases behind a known-failure guard', () => {
     for (const reason of ['图片安全重试失败', '图片编辑失败', '多模态生成失败', '视频生成失败']) {
-      const release = `await releaseReservedModelPoints(workspaceId, walletDebitKey, '${reason}')`
-      const releaseAt = source.indexOf(release)
+      const release = `await releaseReservedModelPoints(workspaceId, walletDebitKey, '${reason}'`
+      const region = imageHandlersSource.includes(release) ? imageHandlersSource : source
+      const releaseAt = region.indexOf(release)
       expect(releaseAt, reason).toBeGreaterThanOrEqual(0)
-      const branch = source.slice(source.lastIndexOf('} catch (error) {', releaseAt), source.indexOf('throw error', releaseAt))
+      const branch = region.slice(region.lastIndexOf('} catch (error) {', releaseAt), region.indexOf('throw error', releaseAt))
       expect(branch, reason).toContain('if (!providerSucceededButSettlementPending(error)) {')
       expect(branch.indexOf('if (!providerSucceededButSettlementPending(error)) {'), reason).toBeLessThan(branch.indexOf(release))
     }
@@ -59,37 +69,45 @@ describe('daily model budget provider boundary', () => {
     }
   })
 
-  it('reserves async generation before context freezing and releases fixture completion', () => {
+  it('reserves async generation before enqueue and releases fixture completion', () => {
     expect(source).toContain("return isProduction() || process.env.LOCAL_COMPOSE === 'true'")
     expect(source).toContain('if (durableContentGenerationEnvironment()) {')
     const mcpCreate = source.slice(source.indexOf("case 'content.generate'"), source.indexOf("case 'content.codex.prepare'"))
-    const restCreate = source.slice(source.indexOf("const generationJobCreateMatch"))
-    for (const region of [mcpCreate, restCreate]) {
-      expect(region).toContain('await reserveDailyModelBudget(')
-      expect(region.indexOf('await reserveDailyModelBudget(')).toBeLessThan(region.indexOf('const prepared = await service.prepareGenerationContext'))
-    }
+    const restCreate = generationRoutesSource.slice(generationRoutesSource.indexOf("const generationJobCreateMatch"))
+    const mcpPrepare = mcpCreate.indexOf('const prepared = await service.prepareGenerationContext')
+    const mcpReserve = mcpCreate.indexOf('await reserveDailyModelBudget(')
+    const mcpEnqueue = mcpCreate.indexOf('const job = service.enqueueGeneration(')
+    expect(mcpPrepare).toBeGreaterThanOrEqual(0)
+    expect(mcpReserve).toBeGreaterThan(mcpPrepare)
+    expect(mcpEnqueue).toBeGreaterThan(mcpReserve)
+    const restReserve = restCreate.indexOf('await reserveDailyModelBudget(')
+    const restPrepare = restCreate.indexOf('const prepared = await service.prepareGenerationContext')
+    const restEnqueue = restCreate.indexOf('const job = service.enqueueGeneration(')
+    expect(restReserve).toBeGreaterThanOrEqual(0)
+    expect(restPrepare).toBeGreaterThan(restReserve)
+    expect(restEnqueue).toBeGreaterThan(restPrepare)
     expect(source).toContain('await releaseDailyModelBudget(workspaceId, `model:generation:${completed.job.idempotencyKey}`)')
   })
 
   it('keeps synchronous multimodal, video plans, and image retries on their reserved run identity', () => {
     expect(source).toContain("const modelRunKey = request.value.modality === 'video' && request.value.output === 'rendering'")
     expect(source).toContain("const modelRunKey = request.value.output === 'rendering' ? `video:${walletDebitKey}` : walletDebitKey")
-    expect(source).toMatch(/service\.completeImageGeneration\(\{ workspaceId, jobId: retried\.job\.id, runKey: imageRunKey(?:,|\s*\})/u)
+    expect(imageHandlersSource).toMatch(/service\.completeImageGeneration\(\{ workspaceId, jobId: retried\.job\.id, runKey: imageRunKey(?:,|\s*\})/u)
     expect(source).toMatch(/service\.completeImageGeneration\(\{ workspaceId, jobId: imageJob\.id, runKey: modelRunKey(?:,|\s*\})/u)
     expect(source).toContain('usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey }')
   })
 
   it('keeps legacy image entitlement as read-only shadow and retains historical settlement compatibility', () => {
     expect(source).not.toContain('image-addon:')
-    expect(source.match(/observeLegacyImageEntitlementShadow\(\{ workspaceId, kind: 'image_generation' \}\)/gu)).toHaveLength(3)
+    expect((source + imageHandlersSource).match(/observeLegacyImageEntitlementShadow\(\{ workspaceId, kind: 'image_generation' \}\)/gu)).toHaveLength(3)
     expect(source).not.toContain('consumeEntitlement(')
     expect(source).not.toContain('debitPluginWallet(')
-    expect(source).toContain("const zeroCustomerChargeAuthorization = durableAuthorization?.settlement === 'included_quota' || durableAuthorization?.settlement === 'entitlement'")
-    expect(source).toContain('if (usage.costCny === undefined && relayPricing)')
-    expect(source).toContain('if (usage.costCny === undefined)')
-    expect(source).toContain("action.settlement === 'entitlement' || action.settlement === 'included_quota'")
-    expect(source).toContain('const durableZeroChargeAuthorization = zeroCustomerChargeAuthorization ? durableAuthorization : undefined')
-    expect(source).toContain('settleProviderUsage({ workspaceId: input.workspaceId, actionKey, actualAmountFen: 0')
+    expect(relayUsageSource).toContain("const zeroCustomerChargeAuthorization = durableAuthorization?.settlement === 'included_quota' || durableAuthorization?.settlement === 'entitlement'")
+    expect(relayUsageSource).toContain('if (usage.costCny === undefined && relayPricing)')
+    expect(relayUsageSource).toContain('if (usage.costCny === undefined)')
+    expect(reconciliationSource).toContain("action.settlement === 'entitlement' || action.settlement === 'included_quota'")
+    expect(relayUsageSource).toContain('const durableZeroChargeAuthorization = zeroCustomerChargeAuthorization ? durableAuthorization : undefined')
+    expect(reconciliationSource).toContain('settleProviderUsage({ workspaceId: input.workspaceId, actionKey, actualAmountFen: 0')
     expect(source).toContain('await releaseDailyModelBudget(input.workspaceId, input.actionKey)')
     expect(source).not.toContain('amountFen: 0, idempotencyKey: walletDebitKey')
   })

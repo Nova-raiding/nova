@@ -703,6 +703,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const knowledgeGenerationClaimFence = await readFile(new URL('./migrations/250_knowledge_generation_claim_fence.sql', import.meta.url), 'utf8')
   const creativePointActionClaims = await readFile(new URL('./migrations/251_creative_point_action_claims.sql', import.meta.url), 'utf8')
   const chargedTextDispatchAttempts = await readFile(new URL('./migrations/252_charged_text_dispatch_attempts.sql', import.meta.url), 'utf8')
+  const chargedTextNoDeliveryResolution = await readFile(new URL('./migrations/253_charged_text_no_delivery_resolution.sql', import.meta.url), 'utf8')
+  const merchantEntitlementSnapshotCursor = await readFile(new URL('./migrations/254_merchant_entitlement_snapshot_cursor.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -956,6 +958,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 250, name: 'knowledge_generation_claim_fence', sql: knowledgeGenerationClaimFence },
     { version: 251, name: 'creative_point_action_claims', sql: creativePointActionClaims },
     { version: 252, name: 'charged_text_dispatch_attempts', sql: chargedTextDispatchAttempts },
+    { version: 253, name: 'charged_text_no_delivery_resolution', sql: chargedTextNoDeliveryResolution },
+    { version: 254, name: 'merchant_entitlement_snapshot_cursor', sql: merchantEntitlementSnapshotCursor },
   ]
 }
 

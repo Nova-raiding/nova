@@ -11,6 +11,14 @@ import {
   MCP_RECOVERY_ENABLED_METHODS,
 } from '../packages/contracts/src/commercial-operation-registry.js'
 
+function apiSurfaceSource(): string {
+  const server = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
+  const directory = new URL('../apps/api/src/', import.meta.url)
+  const modules = [...server.matchAll(/from '\.\/(mcp-[^']+|http-[^']+|model-relay-usage-runtime)\.js'/gu)]
+    .map(match => readFileSync(new URL(`${match[1]}.ts`, directory), 'utf8'))
+  return [server, ...modules].join('\n')
+}
+
 /**
  * Methods the entry skill names that are reachable only when the deployment
  * turns their producer on. Unlike a hidden tool, the skill is not lying: it
@@ -293,7 +301,7 @@ describe('MCP surface coverage', () => {
   it('keeps every allowlisted method represented by API/OpenAPI while hiding operations tools from the merchant plugin', () => {
     const internalOperationsMethods = new Set(['billing.model-usage.reconciliation.run', 'billing.model-usage.resolve'])
     const contracts = readFileSync(new URL('../packages/contracts/src/mcp.ts', import.meta.url), 'utf8')
-    const api = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
+    const api = apiSurfaceSource()
     const openapi = readFileSync(new URL('../apps/api/openapi.yaml', import.meta.url), 'utf8')
     const bridge = readFileSync(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url), 'utf8')
     const installedBridge = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', import.meta.url), 'utf8')
@@ -331,7 +339,7 @@ describe('MCP surface coverage', () => {
 
   it('keeps campaign controls unique across API, OpenAPI, source bridge, and installed bridge', () => {
     const contracts = readFileSync(new URL('../packages/contracts/src/mcp.ts', import.meta.url), 'utf8')
-    const api = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
+    const api = apiSurfaceSource()
     const openapi = readFileSync(new URL('../apps/api/openapi.yaml', import.meta.url), 'utf8')
     const bridge = readFileSync(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url), 'utf8')
     const installedBridge = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', import.meta.url), 'utf8')
@@ -348,14 +356,14 @@ describe('MCP surface coverage', () => {
 
   it('keeps multi-target campaign and reverse product-asset relations reachable across surfaces', () => {
     const contracts = readFileSync(new URL('../packages/contracts/src/mcp.ts', import.meta.url), 'utf8')
-    const api = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
+    const api = apiSurfaceSource()
     const openapi = readFileSync(new URL('../apps/api/openapi.yaml', import.meta.url), 'utf8')
     const bridge = readFileSync(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url), 'utf8')
     const ui = readFileSync(new URL('../demo/merchant-studio/src/api.ts', import.meta.url), 'utf8')
 
     for (const method of ['brand-unit.product.create', 'brand-unit.listing.create', 'brand-unit.listing.list', 'campaign.batch.create', 'campaign.batch.generate', 'publish.batch.prepare', 'publish.batch.confirm']) {
       expect(contracts).toContain(`method: '${method}'`)
-      expect(api).toContain(`case '${method}'`)
+      expect(api.includes(`case '${method}'`) || api.includes(`method === '${method}'`), `${method} missing API handler`).toBe(true)
       expect(bridge).toContain(`'${method}':`)
     }
     for (const method of ['brand-unit.product.create', 'brand-unit.listing.create', 'brand-unit.listing.list', 'campaign.batch.create', 'campaign.batch.generate', 'publish.batch.prepare', 'publish.batch.confirm']) expect(openapi).toContain(method)
@@ -375,7 +383,7 @@ describe('MCP surface coverage', () => {
 
   it('keeps preflight, batch target identity, reverse asset lookup, and customer-data permissions aligned', () => {
     const contracts = readFileSync(new URL('../packages/contracts/src/mcp.ts', import.meta.url), 'utf8')
-    const api = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
+    const api = apiSurfaceSource()
     const openapi = readFileSync(new URL('../apps/api/openapi.yaml', import.meta.url), 'utf8')
     const bridge = readFileSync(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url), 'utf8')
     const studioApi = readFileSync(new URL('../demo/merchant-studio/src/api.ts', import.meta.url), 'utf8')
@@ -384,7 +392,7 @@ describe('MCP surface coverage', () => {
     const opsCampaign = readFileSync(new URL('../apps/ops-console/src/components/tasks/knowledge/CampaignLifecycleControl.tsx', import.meta.url), 'utf8')
 
     expect(contracts).toContain("method: 'platform.mapping.preflight'")
-    expect(api).toContain("case 'platform.mapping.preflight'")
+    expect(api).toContain("method === 'platform.mapping.preflight'")
     expect(bridge).toContain("'platform.mapping.preflight':")
     expect(openapi).toContain("platform.mapping.preflight: '#/components/schemas/McpPlatformMappingPreflightParams'")
     expect(api).toContain('PLATFORM_MAPPING_PREFLIGHT_REQUIRED')
@@ -409,7 +417,7 @@ describe('MCP surface coverage', () => {
 
   it('keeps video evidence and model usage settlement fields aligned across relay surfaces', () => {
     const contracts = readFileSync(new URL('../packages/contracts/src/mcp.ts', import.meta.url), 'utf8')
-    const api = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
+    const api = apiSurfaceSource()
     const openapi = readFileSync(new URL('../apps/api/openapi.yaml', import.meta.url), 'utf8')
     const bridge = readFileSync(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url), 'utf8')
     const installedBridge = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', import.meta.url), 'utf8')
@@ -420,7 +428,7 @@ describe('MCP surface coverage', () => {
 
     for (const method of ['multimodal.video.request', 'multimodal.video.get']) {
       expect(contracts).toContain(`method: '${method}'`)
-      expect(api).toContain(`case '${method}'`)
+      expect(api.includes(`case '${method}'`) || api.includes(`method === '${method}'`), `${method} missing API handler`).toBe(true)
       expect(bridge).toContain(`'${method}':`)
       expect(openapi).toContain(method)
     }

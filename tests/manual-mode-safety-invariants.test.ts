@@ -18,12 +18,20 @@
  * after it ships. Its assertions deliberately pin the *invariant*, not the
  * prose around it: the label values 真实授权 only has to belong to `connected`.
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '..')
 const read = (relative: string) => readFileSync(resolve(root, relative), 'utf8')
+function mcpHandlerSource(method: string): string {
+  const server = read('apps/api/src/server.ts')
+  const files = ['server.ts', ...readdirSync(resolve(root, 'apps/api/src'))
+    .filter(name => /^mcp-.*handlers\.ts$/u.test(name) && server.includes(`'./${name.slice(0, -3)}.js'`))]
+  const matches = files.map(name => read(`apps/api/src/${name}`)).filter(source => source.includes(`case '${method}':`))
+  expect(matches, `${method} needs exactly one dispatch handler`).toHaveLength(1)
+  return matches[0]!
+}
 
 const METHOD = 'ops.platform.store.record.create'
 const NO_CREDENTIAL_REF_PREFIX = 'manual-store-record:no-credential:'
@@ -105,7 +113,7 @@ describe('manual store record is never marked as authorised', () => {
   })
 
   it('reports the connection honestly instead of a receipt', () => {
-    const handler = sliceBetween(read('apps/api/src/server.ts'), `case '${METHOD}': {`, "case 'ops.brand-units.summary': {")
+    const handler = sliceBetween(mcpHandlerSource(METHOD), `case '${METHOD}': {`, "case 'ops.brand-units.summary': {")
     expect(handler).toContain("mode: 'manual_store_record'")
     expect(handler).toContain('credential_free: true')
     expect(handler).toContain('authorization_receipt: null')
@@ -115,7 +123,7 @@ describe('manual store record is never marked as authorised', () => {
 
 describe('manual registration stays platform-operations only', () => {
   it('is refused for a merchant principal by the operations-role guard', () => {
-    const handler = sliceBetween(read('apps/api/src/server.ts'), `case '${METHOD}': {`, "case 'ops.brand-units.summary': {")
+    const handler = sliceBetween(mcpHandlerSource(METHOD), `case '${METHOD}': {`, "case 'ops.brand-units.summary': {")
     expect(handler).toContain("requireOperationsRole(req, ['platform_ops'])")
   })
 

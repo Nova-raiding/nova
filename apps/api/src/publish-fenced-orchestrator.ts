@@ -29,6 +29,8 @@ export type PublishPersistOutcome<T> =
 export interface PublishFencedOrchestratorInput<T> {
   ticketRepository: PublishTicketRepository
   ticket: ReserveInteractiveConfirmationTicketInput
+  /** Reservation already acquired by the API request; pass it through unchanged. */
+  reservation?: InteractiveConfirmationTicketReservation
   consumedOperationId: string
   /** Optional legacy compensation port. Point-required/no-charge publish omits it. */
   wallet?: PublishWalletCompensation
@@ -77,8 +79,14 @@ export class PublishCommitStatusUnknownError extends Error {
  * slot, or ticket compensation is safe after a connection-level failure.
  */
 export async function runFencedSinglePublish<T>(input: PublishFencedOrchestratorInput<T>): Promise<T> {
-  const reservation = await input.ticketRepository.reserve(input.ticket)
+  const reservation = input.reservation ?? await input.ticketRepository.reserve(input.ticket)
   if (!reservation) throw new PublishTicketReservationUnavailableError()
+  if (reservation.reservationId !== input.ticket.reservationId
+    || reservation.reservationToken !== input.ticket.reservationToken
+    || !Number.isSafeInteger(reservation.reservationRevision)
+    || reservation.reservationRevision < 1) {
+    throw new PublishTicketReservationUnavailableError()
+  }
 
   let walletDebited = false
   let slotReserved = false

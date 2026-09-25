@@ -1029,10 +1029,10 @@ quote
 
 | 步骤 | 操作面 | 演示动作 | 必须看到的结果/证据 |
 | --- | --- | --- | --- |
-| 1 | ChatGPT 桌面 App | 在市场搜索并安装“Store Nova”，打开插件 | 真实 App/插件标识、版本、MCP 工具发现和宿主 trace；没有宿主证据则标记不可演示 |
+| 1 | ChatGPT 桌面 App | 按本地直装/stdio 安装手册安装“Store Nova”，重启桌面 ChatGPT 并打开插件 | 本地插件标识、版本、MCP 工具发现和真实宿主 trace；不要求公开/团队市场上架或 ChatGPT OAuth；没有宿主证据则标记不可演示 |
 | 2 | Store Nova授权页 | 用测试商家账号密码登录 | 同一 identity、workspace 和受限 token；ChatGPT/日志中没有密码 |
 | 3 | 平台运营后台 | 按登录账号查商家，展示企业、订单、权益与 capability | 未支付保持 pending；支付/核验后才变 active；操作有审计。**当前 `manual` 档必须先配好 `COMMERCIAL_PAYMENT_PROVIDER` 并上架月付套餐，否则 `commercial.order.create` 返回 503 且订单不落库，人工核验也无单可核，本步只能演示阻断** |
-| 4 | 商家后台 | 官方 OAuth 连接一间店铺并同步 | 平台/account、授权 revision、同步游标、远端 request ID；Fixture 必须明显标识。**当前 `manual` 档不可演示：不接六平台 OAuth，改为演示运营建立人工店铺记录并导入商品资料；商家侧调用同步类方法返回 428 `STORE_ONBOARDING_REQUIRED`** |
+| 4 | 桌面运营后台 | 运营建立人工店铺记录并导入/核验商品资料，再在官方商家后台人工发布并回填结果 | 人工操作人、店铺/商品记录、审核及回填结果；标明人工回执不是平台 API 官方回执。**当前 `manual` 档不接六平台 OAuth；商家侧调用同步类方法返回 428 `STORE_ONBOARDING_REQUIRED`** |
 | 5 | 商家后台 | 上传一份“一行一 SKU”Excel 和一张原图 | 扫描、解析预览、错误行、事实确认、知识绑定和容量变化 |
 | 6 | ChatGPT 插件 | 输入商品名和指定 SKU，请求生成主图 | 命中当前工作区的事实/知识来源与规则版本；插件不显示数值扣点 |
 | 7 | API/Worker/中转证据 | 等待生成 | relay request ID、usage/cost、任务状态、对象 quarantine→signed scan→clean |
@@ -1302,9 +1302,9 @@ created_at
 | 商品/SKU 批量导入 | `apps/api/src/spreadsheet-batch-import.e2e.test.ts`、`packages/application/src/spreadsheet-batch.test.ts` | 商家后台 1000+ SKU 浏览器导入、facts confirm、知识资产绑定和跨副本恢复 |
 | 知识消费 | `apps/api/src/knowledge-consumption.e2e.test.ts`、`apps/api/src/mcp-content-knowledge-http.e2e.test.ts` | 持久 documents/chunks/embedding、RLS、索引重建/删除和语义检索准确率 |
 | 图片候选与审核 | `apps/api/src/product-image-review.e2e.test.ts`、`apps/api/src/image-generation-action-contract.test.ts` | 真实 relay + scanner 签名回调 + clean artifact + ChatGPT 宿主展示 |
-| 多平台授权/同步 | `apps/api/src/four-platform-authorization.e2e.test.ts`、`sync-job.e2e.test.ts` | 六个平台真实 OAuth、读写/media canary、撤权和回查 |
+| 多平台授权/同步 | `apps/api/src/four-platform-authorization.e2e.test.ts`、`sync-job.e2e.test.ts` | 当前按人工运营模式验收六个平台流程；仅在明确启用某平台自动化时，才要求该平台真实 OAuth/API、读写/media canary、撤权和回查 |
 | 点数和模型计费 | `apps/api/src/video-cost-preflight.e2e.test.ts`、relay evidence tests、账本测试 | 当前 release 的五模态 request/usage/cost、支付回调、退款和对账 |
-| 插件主流程 | `apps/plugin/mcp/merchant-conversation-flow.test.ts`、`bridge.test.ts`、`host-evidence-contract.test.ts` | ChatGPT App 市场安装、账号密码授权、真实 MCP transport 和无假数据失败路径 |
+| 插件主流程 | `apps/plugin/mcp/merchant-conversation-flow.test.ts`、`bridge.test.ts`、`host-evidence-contract.test.ts` | 本地直装/stdio 插件的真实 ChatGPT 桌面宿主、Store Nova 账号授权、真实 MCP transport 和无假数据失败路径；不要求公开/团队市场安装或 ChatGPT OAuth |
 | 分页/性能 | Ops/Merchant 页面测试与 API 分页测试 | 每个后台列表真实 `limit=20` + cursor/total、1000+ 数据、并发和长稳 |
 
 本地历史报告中的“通过”只代表对应 fixture、隔离数据库或本地服务通过；必须在 release 冻结后重新运行，并附 URL、commit、请求/响应摘要、截图、trace 和外部回执。任何 skipped 场景都不能计入通过率。
@@ -1315,9 +1315,9 @@ created_at
 
 1. 真实账号密码认证、密码重置、会话撤销和平台角色开通。
 2. 生产环境没有默认账号、本机会话、Fixture 或 token 登录入口。
-3. ChatGPT App 市场安装和真实宿主 MCP 证据。
+3. 本地直装/stdio 插件在真实 ChatGPT 桌面宿主中的 MCP 证据；不要求公开/团队插件市场上架或 ChatGPT OAuth。
 4. 商家账号开通、企业绑定、订单/支付、权益和创意点完整闭环。
-5. 六平台真实 OAuth、商品读取、写入、媒体和回查 canary。
+5. 六个平台的人工运营工作流及其权限、审核、结果记录和失败处理通过验收；平台 OAuth/API、读取、写入、媒体和回查 canary 仅作为明确启用对应平台自动化能力时的门禁，不作为默认发布条件。
 6. Excel、素材、知识库、向量和规则扫描在真实存储/RLS 下通过。
 7. Store Nova relay 五模态有当前 release 的 request/usage/cost/evidence。
 8. 微信/支付宝支付、重复回调、退款和对账通过。
@@ -1332,7 +1332,7 @@ created_at
 
 | 能力 | 当前可证实状态 | 判定 |
 | --- | --- | --- |
-| 插件/MCP | Bridge、共享工具注册表、商家 Skill 和本地 MCP 测试存在 | 部分闭环；真实 ChatGPT 市场/宿主证据不足 |
+| 插件/MCP | Bridge、共享工具注册表、商家 Skill 和本地 MCP 测试存在 | 部分闭环；本地直装/stdio 插件的真实 ChatGPT 桌面宿主证据不足；不要求市场上架或 ChatGPT OAuth |
 | 账号密码 | 已有账号密码 register/login/session/logout/refresh、密码重置与修改接口；本地账号开通→平台审核→绑定工作区的 API/E2E 已验证，生产身份源、密钥、邮件/找回链路和真实部署证据仍未完成 | **部分闭环；生产发布阻断** |
 | 商品/SKU | Product、品牌、Listing 和导入测试存在；SKU 仍主要位于 JSON，未规范化落表 | 部分闭环 |
 | 商家 Excel | API/批量解析测试存在；完整入口在受控 Ops 页面，Merchant Studio 无正式 Excel→SKU→facts confirm 页面 | **生产阻断** |
@@ -1342,7 +1342,7 @@ created_at
 | 商业/点数 | 目录、订单快照、预占/结算/释放和 ledger 基础存在 | 部分闭环 |
 | 微信/支付宝 | 旧充值入口被禁用；V2 `commercial.order.create` 尚无正式 checkout UI/resource | **生产阻断** |
 | 插件点数展示 | 当前 Skill/Bridge 仍可能展示预估/实际扣点，与“插件不显示实际扣点”目标冲突 | 待修改与回归 |
-| 平台/发布 | 六平台 fixture/适配器与状态机存在；真实 OAuth、读取、写入、媒体和回查 canary 不完整 | **生产阻断** |
+| 平台/发布 | 六平台 fixture/适配器与状态机存在；当前人工运营流程及其生产证据仍须验收；自动化平台 OAuth、读取、写入、媒体和回查 canary 不完整 | 人工运营模式按实际工作流验收；仅对明确启用的平台自动化能力构成生产阻断 |
 | 后台分页 | 部分表格已显示 20 行；若干接口仍无真实 cursor，部分页面全量拉取/内存切片 | 待全量整改 |
 | 平台财务 | 账本和页面骨架存在；真实 checkout/对账/收入证据及 canonical capability/revision 交互仍待闭环 | 部分闭环 |
 | 基础设施 | PostgreSQL 迁移、强制 RLS、Outbox、Redis、多角色 Worker 和本地容器存在 | 部分闭环；托管存储/KMS/备份/告警/容量缺生产证据 |
@@ -1360,7 +1360,7 @@ created_at
 
 - `codegraph status --json` 在 2026-09-10 owner 复核后报告 1,229 files、17,187 nodes、64,983 edges，索引状态 `complete`，末次探针仍显示 1 个新增和 3 个修改文件待同步（共享工作区有并发改动）；因此它是关系线索，不是冻结 release 的完整证明。
 - 本地 `dev:doctor -- --json` 在 2026-09-10 owner 复核为 40 pass / 13 warning / 0 failure，容器、API readiness、迁移 180、商业目录和点数 RLS 可检查；这些通过项不证明外部生产链路。
-- 生产 doctor 最近探针为 39 pass / 1 warning / 13 failure，失败集中在插件 bridge/宿主证据、生产配置、支付、六平台 OAuth、五模态成本证据、对象存储、扫描器、告警和 release readiness。
+- 生产 doctor 历史探针（2026-09-10）为 39 pass / 1 warning / 13 failure；当时失败涉及插件 bridge/宿主证据、生产配置、支付、五模态成本证据、对象存储、扫描器、告警和 release readiness。探针数字及其结论须按当前候选重新采集；公开/团队市场上架、ChatGPT OAuth 和默认启用六平台 OAuth 均不是项目门禁。
 
 本次 owner 复核（2026-09-10）还执行了：
 
@@ -1368,7 +1368,7 @@ created_at
 - `npx vitest run apps/plugin/mcp/bridge.test.ts apps/plugin/mcp/merchant-conversation-flow.test.ts`：2 个文件、148/148 通过；
 - `npm run test:merchant-studio-smoke`：`PASS`，仅做生产只读 smoke，完整写入流程明确为 `SKIPPED_READ_ONLY_PRODUCTION`。
 
-这些测试证明本地契约和只读界面行为，不能替代账号密码生产认证、真实 ChatGPT 宿主、支付、六平台 OAuth、relay 成本回执、对象存储或扫描器证据。
+这些测试证明本地契约和只读界面行为，不能替代账号密码生产认证、真实 ChatGPT 桌面宿主、支付、已启用的平台自动化凭据与 canary、relay 成本回执、对象存储或扫描器证据；不要求公开/团队市场上架或 ChatGPT OAuth。
 
 任何状态数字都必须绑定命令、时间、工作区 commit/dirty 状态和 artifact；共享工作区继续变化后需要重新执行。
 
@@ -1396,13 +1396,13 @@ created_at
 
 - 平台和商家账号密码登录、重置、会话；
 - 平台/商家工作台隔离；
-- 插件 OAuth 授权页接入账号密码登录；
+- 本地插件账号授权流程接入账号密码登录（不是 ChatGPT OAuth）；
 - 生产移除本机自动会话和 SSO 文案；
 - API、RLS、插件和 Worker 认证回归。
 
 ### Phase 2：商家数据和知识库
 
-- 店铺 OAuth、商品同步、Excel、素材、扫描、embedding；
+- 按实际启用范围配置店铺授权/同步（人工运营模式不要求平台 OAuth）、Excel、素材、扫描、embedding；
 - SKU/品/Listing 关系和多店铺隔离；
 - 插件按商品名检索知识并返回来源/版本；
 - 规则扫描结果进入生成和发布门禁。

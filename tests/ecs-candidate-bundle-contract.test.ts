@@ -1,4 +1,5 @@
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -42,6 +43,8 @@ describe('ECS candidate bundle contract', () => {
 
     expect(script).toContain("status --porcelain --untracked-files=normal")
     expect(script).toContain('candidate bundle requires a clean committed source tree')
+    expect(script).toContain('revision=$(git -C "$root" rev-parse HEAD)')
+    expect(script).toContain("grep -Eq '^[0-9a-f]{40}$'")
     expect(script).toContain("git -C \"$root\" archive --format=tar \"$revision\" \\")
     expect(script).toContain("':(exclude)artifacts'")
     expect(script).not.toContain("':(exclude)dogfood'")
@@ -60,6 +63,56 @@ describe('ECS candidate bundle contract', () => {
       "git -C \"$root\" archive --format=tar \"$git_sha\" \\",
     )
   })
+
+  it('writes candidate identity from the exact committed SHA and archive bytes', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'ecs-candidate-identity-e2e-'))
+    const root = join(sandbox, 'repo')
+    const bin = join(sandbox, 'bin')
+    const output = join(sandbox, 'candidate')
+    mkdirSync(join(root, 'infra/scripts'), { recursive: true })
+    mkdirSync(bin)
+
+    const sourceScript = readFileSync('infra/scripts/prepare-ecs-candidate-bundle.sh', 'utf8')
+    const manifestStart = sourceScript.indexOf("cat > \"$manifest\" <<'EOF'\n")
+    const manifestEnd = sourceScript.indexOf('\nEOF', manifestStart)
+    const manifestBody = sourceScript.slice(manifestStart + "cat > \"$manifest\" <<'EOF'\n".length, manifestEnd)
+    const sourcePaths = [
+      'infra/scripts/prepare-ecs-candidate-bundle.sh',
+      ...manifestBody.split('\n').filter(Boolean),
+    ]
+    for (const sourcePath of sourcePaths) {
+      const destination = join(root, sourcePath)
+      mkdirSync(join(destination, '..'), { recursive: true })
+      writeFileSync(destination, sourcePath === 'infra/scripts/prepare-ecs-candidate-bundle.sh' ? sourceScript : `fixture:${sourcePath}\n`)
+    }
+    writeFileSync(join(bin, 'ssh'), '#!/bin/sh\nwhile IFS= read -r path; do printf "MISSING  %s\\n" "$path"; done\n', { mode: 0o700 })
+    chmodSync(join(bin, 'ssh'), 0o700)
+    execFileSync('git', ['init', '-q'], { cwd: root })
+    execFileSync('git', ['add', '.'], { cwd: root })
+    execFileSync('git', ['-c', 'user.name=Candidate Test', '-c', 'user.email=candidate@example.invalid', 'commit', '-qm', 'candidate'], { cwd: root })
+    const expectedSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
+
+    try {
+      const result = spawnSync('sh', [join(root, 'infra/scripts/prepare-ecs-candidate-bundle.sh'), output], {
+        cwd: sandbox,
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, ECS_CANDIDATE_REMOTE_ALIAS: 'fake-host' },
+        encoding: 'utf8',
+      })
+      expect(result.status, result.stderr).toBe(0)
+
+      const archive = readFileSync(join(output, 'candidate-source.tar'))
+      const identity = readFileSync(join(output, 'candidate-identity.txt'), 'utf8')
+      const manifest = readFileSync(join(output, 'files.txt'))
+      const syncPlan = readFileSync(join(output, 'sync-plan.tsv'))
+      expect(identity).toContain(`git_sha=${expectedSha}\n`)
+      expect(identity).toContain(`source_sha256=sha256:${createHash('sha256').update(archive).digest('hex')}\n`)
+      expect(identity).toContain(`comparison_manifest_sha256=sha256:${createHash('sha256').update(manifest).digest('hex')}\n`)
+      expect(identity).toContain(`sync_plan_sha256=sha256:${createHash('sha256').update(syncPlan).digest('hex')}\n`)
+      expect(execFileSync('sh', ['-c', 'git get-tar-commit-id < "$1"', 'candidate-archive', join(output, 'candidate-source.tar')], { encoding: 'utf8' }).trim()).toBe(expectedSha)
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  }, 30_000)
 
   it('puts the verified ECS deployment and evidence trust chain in the review manifest', () => {
     const script = readFileSync('infra/scripts/prepare-ecs-candidate-bundle.sh', 'utf8')

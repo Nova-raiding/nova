@@ -36,6 +36,10 @@ import { auditCenterClient, financeSearchClient } from '../apps/ops-console/src/
 const root = process.cwd()
 const contractsSource = readFileSync(resolve(root, 'packages/contracts/src/mcp.ts'), 'utf8')
 const serverSource = readFileSync(resolve(root, 'apps/api/src/server.ts'), 'utf8')
+const mcpHandlerSource = readdirSync(resolve(root, 'apps/api/src'))
+  .filter(name => /^mcp-.*handlers\.ts$/u.test(name) && serverSource.includes(`'./${name.slice(0, -3)}.js'`))
+  .map(name => readFileSync(resolve(root, 'apps/api/src', name), 'utf8')).join('\n')
+const apiDispatchSource = `${serverSource}\n${mcpHandlerSource}`
 const openapiSource = readFileSync(resolve(root, 'apps/api/openapi.yaml'), 'utf8')
 
 function productionSources(directory: string): string[] {
@@ -59,8 +63,8 @@ function openapiMethods(): string[] {
 }
 
 function hasServerHandler(method: string): boolean {
-  return serverSource.includes(`case '${method}'`)
-    || serverSource.includes(`method === '${method}'`)
+  return apiDispatchSource.includes(`case '${method}'`)
+    || apiDispatchSource.includes(`method === '${method}'`)
 }
 
 function schema(method: keyof typeof MCP_METHOD_SCHEMAS) {
@@ -108,7 +112,7 @@ describe('Ops control-plane parity gate', () => {
       'ops.feature-flags.emergency',
       'ops.feature-flags.events',
     ]
-    const surfaces = { opsUiSource, contractsSource, serverSource, openapiSource }
+    const surfaces = { opsUiSource, contractsSource, apiDispatchSource, openapiSource }
     for (const method of deprecated) {
       for (const [surface, source] of Object.entries(surfaces)) {
         expect(source, `${surface} still contains deprecated ${method}`).not.toContain(`'${method}'`)

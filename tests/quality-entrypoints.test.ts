@@ -233,6 +233,7 @@ describe('quality entrypoint coverage', () => {
       'ops.feature-flag.emergency.set',
       'ops.feature-flag.events',
       'ops.feature-flag.evaluate',
+      'ops.marketing.generation.no_delivery.refund',
       'ops.platform.store.record.create',
     ]
     for (const method of serverOnly) expect(auditSource).toContain(`'${method}'`)
@@ -251,11 +252,12 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(38)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(39)
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/kubernetes-release-gate.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/rendered-kubernetes-config.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/support-repository-sla-filter.postgres.test.ts')
+    expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/content-generation-action-owner.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
     expect(script('test:runtime:isolated')).toContain('--config vitest.runtime.config.ts')
     expect(script('test:postgres:isolated')).toContain('scripts/run-isolated-postgres-tests.ts')

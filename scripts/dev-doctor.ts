@@ -251,8 +251,8 @@ try {
     : `支付 mode=${readiness?.paymentMode ?? 'unknown'}, ready=${String(readiness?.paymentReady)}${paymentReasons.length ? `, reasons=${paymentReasons.join(',')}` : ''}`
   add('commercial:payment', level(readiness?.paymentReady), paymentMessage, '将 PAYMENT_MODE=provider 与真实 checkout/query/refund、商户号、回调验签、对账和退款配置注入 API；fixture 不得标记生产 ready。')
   add('commercial:platform_oauth', level(runtimeAudit?.platforms.ready), runtimeAudit
-    ? `平台 OAuth ready=${String(runtimeAudit.platforms.ready)}, missing=${runtimeAudit.platforms.missingOAuthPlatforms.join(',') || 'none'}, blocked=${runtimeAudit.platforms.blockedPlatforms.join(',') || 'none'}`
-    : '平台 OAuth readiness 不可解析', '补齐六平台官方 OAuth、回调地址、凭据提供器与只读/写入授权；未配置时保持 fail-closed。')
+    ? `平台运营 mode=${runtimeAudit.platforms.mode ?? 'unknown'}, ready=${String(runtimeAudit.platforms.ready)}, missingOAuth=${runtimeAudit.platforms.missingOAuthPlatforms.join(',') || 'none'}, blocked=${runtimeAudit.platforms.blockedPlatforms.join(',') || 'none'}`
+    : '平台运营 readiness 不可解析', 'manual 模式验收人工导入/审核/回填；仅 official_api 模式要求已启用平台的 OAuth、回调、凭据和 canary。')
   const relayRuntimeReady = runtimeAudit?.relay.ready === true
   const relayCheckReady = readiness?.mode === 'fixture' ? relayRuntimeReady : readiness?.modelRelayReady
   const relayMessage = readiness?.mode === 'fixture'
@@ -267,6 +267,8 @@ try {
   const alertsReady = alertNotificationReady(readiness?.alertEnabled, readiness?.alertReady)
   add('commercial:alerts', level(alertsReady), `可选告警通知 enabled=${String(readiness?.alertEnabled)}, ready=${String(readiness?.alertReady)}, scopeReady=${String(alertsReady)}`, '如启用告警通知，必须注入安全的 webhook/secret 并验证真实投递；未启用不阻断上线。')
   add('commercial:production_gate', level(readiness?.productionGate), `mode=${readiness?.mode ?? 'unknown'}, writes=${String(readiness?.writesEnabled)}, productionGate=${String(readiness?.productionGate)}`, '未满足真实支付、模型中转、存储、容量、人工运营或所选官方接口模式证据前保持 writes disabled / NO-GO。')
+  const productionEvidenceReady = readiness?.capabilityEvidenceReady === true && readiness.capacityEvidenceReady === true
+  add('commercial:production_evidence', level(productionEvidenceReady), `capability=${String(readiness?.capabilityEvidenceReady)}, capacity=${String(readiness?.capacityEvidenceReady)}`, '为当前 release 提供可读取且签名/绑定正确的能力与容量证据；/readyz 的运行就绪不替代发布验收。')
 } catch {
   add('commercial:runtime', production ? 'fail' : 'warn', '无法读取商业运行时 readiness', ecsProduction ? '确认 PRODUCTION_API_BASE_URL 指向当前 ECS release，且 /readyz 返回非敏感商业门禁状态。' : '启动 API，并确认 /readyz 返回非敏感的支付、五模态、存储和生产门禁状态。')
 }

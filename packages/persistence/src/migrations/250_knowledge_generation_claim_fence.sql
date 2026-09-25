@@ -326,6 +326,10 @@ END $$;
 
 REVOKE ALL ON FUNCTION claim_knowledge_generation(text,text,text,text,text,integer,text,text,text,text,text,text,jsonb) FROM PUBLIC;
 REVOKE ALL ON FUNCTION settle_knowledge_generation_claim(text,text,text,text,text,text,text) FROM PUBLIC;
+-- Internal trigger helpers must not become standalone cross-tenant claim
+-- probes or advisory-lock denial-of-service entry points.
+REVOKE ALL ON FUNCTION public.knowledge_generation_assert_mutable(text,text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.knowledge_generation_lock_products(text,text[]) FROM PUBLIC;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='merchant_app') THEN
     EXECUTE 'GRANT EXECUTE ON FUNCTION claim_knowledge_generation(text,text,text,text,text,integer,text,text,text,text,text,text,jsonb) TO merchant_app';

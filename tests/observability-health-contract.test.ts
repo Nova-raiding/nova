@@ -5,6 +5,8 @@ import { buildRequestLogEvent, getRequestCorrelation, serializeRequestLogEvent }
 import { attachCorrelation, createRequestCorrelation, isolateSensitiveFields } from '../packages/security/src/request-security.js'
 
 const serverSource = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
+const requestObservationSource = readFileSync(new URL('../apps/api/src/http-request-observation.ts', import.meta.url), 'utf8')
+const healthRoutesSource = readFileSync(new URL('../apps/api/src/http-health-routes.ts', import.meta.url), 'utf8')
 
 function request(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
   return { headers: {}, method: 'POST', url: '/mcp?access_token=must-not-log', ...overrides } as IncomingMessage
@@ -41,12 +43,8 @@ describe('observability and health contracts', () => {
   })
 
   it('requires health and readiness to report dependency failures as non-healthy', () => {
-    // The health route now reads `probeRead && ...` so it can answer HEAD probes
-    // (nginx proxies /healthz here, and the documented check is `curl -I`). The
-    // slice must still start at this route, not earlier: starting at `probeRead`
-    // would pull in the /livez branch, whose 200 would then satisfy the
-    // `success` ordering assertion below.
-    const health = serverSource.slice(serverSource.indexOf("if (probeRead && (path === '/healthz' || path === '/readyz'))"), serverSource.indexOf("if (req.method === 'POST' && path === '/v1/internal/automation/tick')"))
+    expect(serverSource).toContain('handleHttpHealthRoute(req, res, path')
+    const health = healthRoutesSource.slice(healthRoutesSource.indexOf("if (path === '/healthz' || path === '/readyz')"))
     expect(health).toContain("if (persistenceError) return send(res, 503")
     expect(health).toContain("return send(res, 503, 'system', { ...runtimeHealth(), persistence: { mode: persistence.mode, ready: false } }")
     expect(health).toContain("{ code: 'REDIS_UNAVAILABLE'")
@@ -63,7 +61,8 @@ describe('observability and health contracts', () => {
   })
 
   it('keeps request observation terminal events singular and status-derived', () => {
-    const observation = serverSource.slice(serverSource.indexOf('function completeRequestObservation'), serverSource.indexOf('function requestId'))
+    expect(serverSource).toContain('createRequestObservation({ isProduction, requiresStrictAuth, actorId: req => requestPrincipals.get(req)?.actorId })')
+    const observation = requestObservationSource.slice(requestObservationSource.indexOf('function completeRequestObservation'), requestObservationSource.indexOf('return { beginRequestObservation'))
     expect(observation).toContain('if (!state || state.failed) return')
     expect(observation).toContain('if (res.statusCode >= 400)')
     expect(observation).toContain("failRequestObservation(req, res.statusCode")

@@ -43,6 +43,59 @@ describe('runFencedSinglePublish', () => {
     expect(h.ticketRepository.release).not.toHaveBeenCalled()
   })
 
+  it('reuses the API-owned reservation without attempting a second reservation', async () => {
+    const h = harness()
+    h.ticketRepository.reserve.mockRejectedValue(new Error('active reservation cannot be acquired twice'))
+    const result = await runFencedSinglePublish({
+      ticketRepository: h.ticketRepository, ticket, reservation, consumedOperationId: 'job-1', wallet: h.wallet, slot: h.slot,
+      persist: async ({ reservation: actual, finalizeInTransaction }) => {
+        expect(actual).toEqual(reservation)
+        await finalizeInTransaction(client)
+        return { status: 'committed', value: 'committed-with-owner-reservation' }
+      },
+    })
+
+    expect(result).toBe('committed-with-owner-reservation')
+    expect(h.ticketRepository.reserve).not.toHaveBeenCalled()
+    expect(h.ticketRepository.finalizeInTransaction).toHaveBeenCalledWith(client, expect.objectContaining({ ...reservation, consumedOperationId: 'job-1' }))
+  })
+
+  it.each([
+    ['reservation id', { ...reservation, reservationId: 'publish:other-job' }],
+    ['reservation token', { ...reservation, reservationToken: 'd'.repeat(64) }],
+    ['reservation revision', { ...reservation, reservationRevision: 0 }],
+  ] as const)('rejects a mismatched %s before side effects', async (_field, mismatchedReservation) => {
+    const h = harness()
+    await expect(runFencedSinglePublish({
+      ticketRepository: h.ticketRepository,
+      ticket,
+      reservation: mismatchedReservation,
+      consumedOperationId: 'job-1',
+      wallet: h.wallet,
+      slot: h.slot,
+      persist: vi.fn(),
+    })).rejects.toBeInstanceOf(PublishTicketReservationUnavailableError)
+    expect(h.ticketRepository.reserve).not.toHaveBeenCalled()
+    expect(h.wallet.debit).not.toHaveBeenCalled()
+    expect(h.slot.reserve).not.toHaveBeenCalled()
+  })
+
+  it('releases the exact owner reservation after a known non-commit', async () => {
+    const h = harness()
+    const error = new Error('validation failed')
+    await expect(runFencedSinglePublish({
+      ticketRepository: h.ticketRepository,
+      ticket,
+      reservation,
+      consumedOperationId: 'job-1',
+      slot: h.slot,
+      persist: async () => ({ status: 'not_committed', error }),
+    })).rejects.toBe(error)
+
+    expect(h.ticketRepository.reserve).not.toHaveBeenCalled()
+    expect(h.ticketRepository.release).toHaveBeenCalledWith(expect.objectContaining({ ...ticket, ...reservation }))
+  })
+
   it('fails closed when reservation is unavailable without side effects', async () => {
     const h = harness()
     h.ticketRepository.reserve.mockImplementation(async () => undefined as never)

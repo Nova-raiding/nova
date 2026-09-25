@@ -60,6 +60,8 @@ export type CommercialRuntimeReadiness = {
   alertEnabled?: boolean
   alertReady?: boolean
   productionGate?: boolean
+  capabilityEvidenceReady?: boolean
+  capacityEvidenceReady?: boolean
 }
 
 /**
@@ -78,7 +80,7 @@ export type CommercialRuntimeAudit = {
   mode?: string
   writesEnabled?: boolean
   payment: { ready: boolean; mode?: string; reasons: string[] }
-  platforms: { ready: boolean; missingOAuthPlatforms: string[]; blockedPlatforms: string[] }
+  platforms: { ready: boolean; mode?: string; missingOAuthPlatforms: string[]; blockedPlatforms: string[] }
   relay: { ready: boolean; costGateReady: boolean; blockedModalities: string[]; missingProviderConfigured: string[]; reasons: string[] }
   productionGate?: boolean
 }
@@ -120,7 +122,10 @@ export function commercialRuntimeReadiness(payload: unknown): CommercialRuntimeR
   const scanner = objectRecord(setup.assetScanner)
   const alerts = objectRecord(setup.alertNotifications)
   const persistence = objectRecord(data.persistence)
-  const modelRows = modelReadiness ? Object.values(modelReadiness).map(objectRecord).filter(Boolean) as Record<string, unknown>[] : []
+  const requiredModelRows = REQUIRED_RELAY_MODALITIES.map(modality => objectRecord(modelReadiness?.[modality]))
+  const productionEvidence = objectRecord(setup.productionEvidence)
+  const capabilityEvidence = objectRecord(productionEvidence?.capability)
+  const capacityEvidence = objectRecord(productionEvidence?.capacity)
   const paymentMode = typeof payment?.mode === 'string' ? payment.mode : undefined
   const paymentConfigured = payment?.configured === true
   const objectStorageMode = typeof objectStorage?.mode === 'string' ? objectStorage.mode : undefined
@@ -130,13 +135,15 @@ export function commercialRuntimeReadiness(payload: unknown): CommercialRuntimeR
     ...(typeof persistence?.ready === 'boolean' ? { persistenceReady: persistence.ready } : {}),
     paymentReady: paymentMode === 'provider' && paymentConfigured,
     ...(paymentMode ? { paymentMode } : {}),
-    modelRelayReady: setup.mode === 'production' && ai?.costGate === 'ready' && modelRows.length === 5 && modelRows.every(row => row.ready === true),
+    modelRelayReady: setup.mode === 'production' && ai?.costGate === 'ready' && requiredModelRows.every(row => row?.ready === true),
     objectStorageReady: objectStorage?.configured === true && objectStorageMode !== 'local',
     ...(objectStorageMode ? { objectStorageMode } : {}),
     scannerReady: scanner?.ready === true && scanner?.mode !== 'fixture' && scanner?.mode !== 'local',
     ...(typeof alerts?.enabled === 'boolean' ? { alertEnabled: alerts.enabled } : {}),
     alertReady: alerts?.ready === true,
     ...(typeof setup.productionGate === 'boolean' ? { productionGate: setup.productionGate } : {}),
+    ...(capabilityEvidence ? { capabilityEvidenceReady: capabilityEvidence.state === 'ready' && capabilityEvidence.configured === true } : {}),
+    ...(capacityEvidence ? { capacityEvidenceReady: capacityEvidence.state === 'ready' && capacityEvidence.configured === true } : {}),
   }
 }
 
@@ -190,11 +197,18 @@ export function commercialRuntimeAudit(payload: unknown): CommercialRuntimeAudit
   if (!data || !setup) return undefined
   const payment = objectRecord(setup.payment)
   const platforms = objectRecord(setup.platforms)
+  const platformOperations = objectRecord(setup.platformOperations)
   const ai = objectRecord(setup.ai)
   const modelReadiness = objectRecord(setup.modelReadiness)
 
-  const missingOAuthPlatforms = REQUIRED_PLATFORM_KEYS.filter(platform => objectRecord(platforms?.[platform])?.oauthConfigured !== true)
+  const platformMode = typeof platformOperations?.mode === 'string' ? platformOperations.mode : undefined
+  const missingOAuthPlatforms = platformMode === 'manual'
+    ? []
+    : REQUIRED_PLATFORM_KEYS.filter(platform => objectRecord(platforms?.[platform])?.oauthConfigured !== true)
   const blockedPlatforms = REQUIRED_PLATFORM_KEYS.filter(platform => objectRecord(platforms?.[platform])?.ready !== true)
+  const platformModeReady = platformMode === 'manual'
+    ? platformOperations?.ready === true
+    : platformMode === 'official_api' && missingOAuthPlatforms.length === 0
 
   const blockedModalities: string[] = []
   const missingProviderConfigured: string[] = []
@@ -221,7 +235,8 @@ export function commercialRuntimeAudit(payload: unknown): CommercialRuntimeAudit
       reasons: stringArray(payment?.reasons),
     },
     platforms: {
-      ready: missingOAuthPlatforms.length === 0 && blockedPlatforms.length === 0,
+      ...(platformMode ? { mode: platformMode } : {}),
+      ready: platformModeReady && blockedPlatforms.length === 0,
       missingOAuthPlatforms,
       blockedPlatforms,
     },

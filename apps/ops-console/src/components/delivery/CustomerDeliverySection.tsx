@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -190,7 +190,7 @@ export function deliveryCompletion(record: CustomerDeliveryRecord) {
   return {
     completed,
     total: 4,
-    ready: completed === 4,
+    ready: completed === 4 && Number.isFinite(Date.parse(record.goLiveAt ?? "")),
   };
 }
 
@@ -242,11 +242,37 @@ export function isDeliveryChecklistComplete(record: CustomerDeliveryRecord, key:
   return Array.isArray(selected) && expected.every((item) => selected.includes(item));
 }
 
-export function deliveryLaunchDateLabel(record: Pick<CustomerDeliveryRecord, "createdAt">) {
-  const value = record.createdAt;
-  if (!value) return "未填写";
+export function deliveryLaunchDateLabel(record: Pick<CustomerDeliveryRecord, "goLiveAt">) {
+  const value = record.goLiveAt;
+  if (!value || !Number.isFinite(Date.parse(value))) return "未填写";
   const local = deliveryDateTimeInputValue(value);
-  return local ? local.slice(0, 10) : value;
+  return local ? local.slice(0, 10) : "未填写";
+}
+
+export function createDeliveryUploadTracker() {
+  let scope = "";
+  const busyUploaders = new Set<string>();
+  return {
+    beginScope(nextScope = "") { scope = nextScope; busyUploaders.clear(); },
+    isCurrent(candidate: string) { return candidate === scope; },
+    setBusy(candidate: string, uploader: string, busy: boolean) {
+      if (candidate !== scope) return undefined;
+      if (busy) busyUploaders.add(uploader);
+      else busyUploaders.delete(uploader);
+      return busyUploaders.size > 0;
+    },
+  };
+}
+
+export function isCurrentDeliveryWriteScope(input: {
+  mounted: boolean;
+  request: number;
+  currentRequest: number;
+  scopeMatches: boolean;
+  disabled: boolean;
+  readOnly: boolean;
+}) {
+  return input.mounted && input.request === input.currentRequest && input.scopeMatches && !input.disabled && !input.readOnly;
 }
 
 export function CustomerDeliverySection({
@@ -324,6 +350,11 @@ export function CustomerDeliverySection({
   const [uploading, setUploading] = useState(false);
   const [bindingAccount, setBindingAccount] = useState(false);
   const detailRequest = useRef(0);
+  const detailsRequest = useRef(0);
+  const uploadTracker = useRef(createDeliveryUploadTracker());
+  const mounted = useRef(true);
+  const currentAccess = useRef({ disabled, readOnly });
+  currentAccess.current = { disabled, readOnly };
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createDirty, setCreateDirty] = useState(false);
@@ -332,15 +363,36 @@ export function CustomerDeliverySection({
   const [filterForm] = Form.useForm<CustomerDeliveryFilters>();
   const [createForm] = Form.useForm();
   const [form] = Form.useForm();
-  useEffect(() => {
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      detailRequest.current++;
+      detailsRequest.current++;
+      uploadTracker.current.beginScope();
+    };
+  }, []);
+  useLayoutEffect(() => {
     if (!disabled) return;
     detailRequest.current++;
+    detailsRequest.current++;
+    uploadTracker.current.beginScope();
     setSelected(undefined);
     setDetailsRecord(undefined);
     setLoadingStep(false);
     setUploading(false);
     setBindingAccount(false);
+    setShowCreate(false);
+    setCreateDirty(false);
+    form.resetFields();
+    createForm.resetFields();
   }, [disabled]);
+  useLayoutEffect(() => {
+    if (!readOnly) return;
+    setShowCreate(false);
+    setCreateDirty(false);
+    createForm.resetFields();
+  }, [readOnly]);
   const filteredRecords = useMemo(
     () => filterCustomerDeliveryRecords(records ?? [], filters),
     [filters, records],
@@ -349,7 +401,9 @@ export function CustomerDeliverySection({
     row: CustomerDeliveryRecord,
     next: DeliveryStepKey,
   ) => {
+    if (disabled || saving) return;
     const request = ++detailRequest.current;
+    uploadTracker.current.beginScope(`${row.id}:${next}:${request}`);
     setUploading(false);
     setLoadingStep(true);
     setSelected(row);
@@ -392,13 +446,18 @@ export function CustomerDeliverySection({
       );
     }
     try { await onOpen?.(row, next); }
-    finally { if (request === detailRequest.current) setLoadingStep(false); }
+    finally { if (mounted.current && request === detailRequest.current) setLoadingStep(false); }
   };
   const create = async (values: { companyName?: string }) => {
-    if (!onCreate || !values.companyName?.trim()) return;
+    if (disabled || readOnly || !onCreate || !values.companyName?.trim()) return;
+    const createRequest = detailRequest.current;
     setCreating(true);
     try {
       const record = await onCreate(values.companyName.trim());
+      const access = currentAccess.current;
+      if (!mounted.current || createRequest !== detailRequest.current || access.disabled || access.readOnly) return;
+      const request = ++detailRequest.current;
+      uploadTracker.current.beginScope(`${record.id}:profile:${request}`);
       setSelected(record);
       setStep("profile");
       form.resetFields();
@@ -408,13 +467,13 @@ export function CustomerDeliverySection({
       setShowCreate(false);
       message.success("客户档案已创建");
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "客户档案创建失败");
+      if (mounted.current && createRequest === detailRequest.current && !currentAccess.current.disabled && !currentAccess.current.readOnly) message.error(error instanceof Error ? error.message : "客户档案创建失败");
     } finally {
-      setCreating(false);
+      if (mounted.current) setCreating(false);
     }
   };
   const save = async (values: Record<string, unknown>) => {
-    if (!selected || uploading) return;
+    if (!selected || disabled || readOnly || uploading) return;
     const request = detailRequest.current;
     const next = {
       ...selected,
@@ -471,17 +530,21 @@ export function CustomerDeliverySection({
       }
       const finalRecord =
         persisted && typeof persisted === "object" ? persisted : next;
-      if (request === detailRequest.current) setSelected((current) => current?.id === selected.id ? finalRecord : current);
-      message.success("已保存");
+      if (mounted.current && request === detailRequest.current) {
+        setSelected((current) => current?.id === selected.id ? finalRecord : current);
+        message.success("已保存");
+      }
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "客户交付保存失败");
+      if (mounted.current && request === detailRequest.current) message.error(error instanceof Error ? error.message : "客户交付保存失败");
     } finally {
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
   };
   const evidenceUpload = (purpose: CustomerDeliveryAssetPurpose, field: string | string[]) => {
-    if (!selected || readOnly || !onAssetUpload || !onAssetGet) return null;
+    if (!selected || disabled || readOnly || !onAssetUpload || !onAssetGet) return null;
     const request = detailRequest.current;
+    const scope = `${selected.id}:${step}:${request}`;
+    const uploader = JSON.stringify(field);
     const recordId = selected.id;
     return <CustomerDeliveryUpload
       key={`${recordId}:${step}:${request}:${JSON.stringify(field)}`}
@@ -490,15 +553,20 @@ export function CustomerDeliverySection({
       onUpload={(source, assetPurpose, signal) => onAssetUpload(selected, source, assetPurpose, signal)}
       onGetAsset={(assetRef, assetPurpose, signal) => onAssetGet(selected, assetRef, assetPurpose, signal)}
       onReady={(asset) => {
-        if (request !== detailRequest.current || selected.id !== recordId) return;
+        const access = currentAccess.current;
+        if (!isCurrentDeliveryWriteScope({ mounted: mounted.current, request, currentRequest: detailRequest.current, scopeMatches: uploadTracker.current.isCurrent(scope), ...access }) || selected.id !== recordId) return;
         const current = form.getFieldValue(field);
         const refs = Array.isArray(current) ? current.filter((value): value is string => typeof value === "string") : [];
         form.setFieldValue(field, [...new Set([...refs, asset.assetRef])]);
       }}
-      onBusyChange={(busy) => { if (request === detailRequest.current) setUploading(busy); }}
+      onBusyChange={(busy) => {
+        const pending = uploadTracker.current.setBusy(scope, uploader, busy);
+        if (pending !== undefined && mounted.current) setUploading(pending);
+      }}
     />;
   };
   const toggleTraining = async (row: CustomerDeliveryRecord, completed: boolean) => {
+    if (disabled || readOnly) return;
     if (!onTrainingSave) {
       await openStep(row, "training");
       return;
@@ -519,6 +587,8 @@ export function CustomerDeliverySection({
     }
   };
   const openDetails = async (row: CustomerDeliveryRecord) => {
+    if (disabled) return;
+    detailsRequest.current++;
     setDetailsRecord(row);
   };
   const columns = useMemo(
@@ -548,7 +618,7 @@ export function CustomerDeliverySection({
           render: (_value: boolean, row: CustomerDeliveryRecord) => {
             const value = key === "profile" ? isCustomerProfileFilled(row) : isDeliveryChecklistComplete(row, key);
             const label = value ? "已完成" : "未完成";
-            return <Button type="link" size="small" onClick={() => void openStep(row, key)}>{label}</Button>;
+            return <Button type="link" size="small" disabled={disabled || saving} onClick={() => void openStep(row, key)}>{label}</Button>;
           },
         }),
       ),
@@ -562,7 +632,7 @@ export function CustomerDeliverySection({
             size="small"
             aria-label={`${row.companyName}客户培训状态`}
             value={value ? "trained" : "untrained"}
-            disabled={saving || !onTrainingSave}
+            disabled={disabled || readOnly || saving || !onTrainingSave}
             style={{ width: 94 }}
             options={[
               { value: "trained", label: "已培训" },
@@ -594,16 +664,23 @@ export function CustomerDeliverySection({
       },
       {
         title: "操作",
-        width: 92,
+        width: 164,
         align: "center" as const,
         fixed: "right" as const,
         render: (_: unknown, row: CustomerDeliveryRecord) => (
-          <Button size="small" onClick={() => void openDetails(row)}>查看详情</Button>
+          <Space>
+            {!readOnly && onSave ? (
+              <Button size="small" disabled={disabled || saving} onClick={() => void openStep(row, "profile")}>编辑档案</Button>
+            ) : null}
+            <Button size="small" disabled={disabled} onClick={() => void openDetails(row)}>查看详情</Button>
+          </Space>
         ),
       },
     ],
-    [onTrainingSave, openStep, saving],
+    [onTrainingSave, openStep, saving, disabled, readOnly],
   );
+  const contractUploadRequest = detailRequest.current;
+  const contractUploadScope = selected ? `${selected.id}:profile:${contractUploadRequest}` : "";
   return (
     <Card
       title="客户建档"
@@ -626,10 +703,10 @@ export function CustomerDeliverySection({
     >
       <Drawer
         title="新建客户档案"
-        open={showCreate}
+        open={showCreate && !disabled && !readOnly}
         onClose={() => { setCreateDirty(false); setShowCreate(false); }}
         size={480}
-        extra={<Button type="primary" loading={creating} onClick={() => createForm.submit()}>创建</Button>}
+        extra={<Button type="primary" loading={creating} disabled={disabled || readOnly} onClick={() => createForm.submit()}>创建</Button>}
       >
         <Form form={createForm} layout="vertical" onFinish={create} onValuesChange={() => setCreateDirty(true)}>
           <Form.Item
@@ -707,13 +784,14 @@ export function CustomerDeliverySection({
       <Drawer
         title={detailsRecord ? `${detailsRecord.companyName} · 客户详情` : "客户详情"}
         open={Boolean(detailsRecord)}
-        onClose={() => setDetailsRecord(undefined)}
+        onClose={() => { detailsRequest.current++; setDetailsRecord(undefined); }}
         size={620}
       >
         {detailsRecord ? (
           <>
           <Descriptions bordered column={1} size="small">
             <Descriptions.Item label="公司名称">{detailsRecord.companyName}</Descriptions.Item>
+            <Descriptions.Item label="生效账号">{detailsRecord.targetAccountLogin || "未关联"}</Descriptions.Item>
             <Descriptions.Item label="合同编号">{detailsRecord.contractNo || "未填写"}</Descriptions.Item>
             <Descriptions.Item label="付款形式">{detailsRecord.paymentStatus === "paid" ? "接入费" : "赠送"}</Descriptions.Item>
             <Descriptions.Item label="付款时间">{detailsRecord.paymentDate || "未填写"}</Descriptions.Item>
@@ -738,14 +816,16 @@ export function CustomerDeliverySection({
             onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(detailsRecord, assetRef, purpose, signal) : undefined}
             onConfirm={async refs => {
               if (!onTrainingSave) return;
+              const request = detailsRequest.current;
+              const recordId = detailsRecord.id;
               const saved = await onTrainingSave(detailsRecord, true, refs);
-              if (saved) setDetailsRecord(saved);
+              if (saved && mounted.current && request === detailsRequest.current && !currentAccess.current.disabled && !currentAccess.current.readOnly && detailsRecord.id === recordId) setDetailsRecord(saved);
             }}
-            onClose={() => setDetailsRecord(undefined)}
+            onClose={() => { detailsRequest.current++; setDetailsRecord(undefined); }}
           />
           </>
         ) : null}
-        {detailsRecord && onArchive ? (
+        {detailsRecord && onArchive && !readOnly && !disabled ? (
           <div style={{ marginTop: 24, textAlign: "right" }}>
             <Button
               danger
@@ -758,9 +838,14 @@ export function CustomerDeliverySection({
                   // 记录会立刻从列表消失，只能由管理员恢复：焦点默认落在“取消”。
                   ...confirmPolicyPropsFor("delivery.record.archive"),
                   onOk: async () => {
+                    if (currentAccess.current.disabled || currentAccess.current.readOnly) return;
+                    const request = detailsRequest.current;
+                    const recordId = detailsRecord.id;
                     await onArchive(detailsRecord);
-                    setDetailsRecord(undefined);
-                    message.success("记录已停用并从列表移除");
+                    if (mounted.current && request === detailsRequest.current && detailsRecord.id === recordId && !currentAccess.current.disabled && !currentAccess.current.readOnly) {
+                      setDetailsRecord(undefined);
+                      message.success("记录已停用并从列表移除");
+                    }
                   },
                 })
               }
@@ -777,7 +862,7 @@ export function CustomerDeliverySection({
             : "客户交付详情"
         }
         open={Boolean(selected)}
-        onClose={() => { detailRequest.current++; setLoadingStep(false); setSelected(undefined); }}
+        onClose={() => { detailRequest.current++; uploadTracker.current.beginScope(); setUploading(false); setLoadingStep(false); setSelected(undefined); form.resetFields(); }}
         size={560}
       >
         {selected ? (
@@ -804,7 +889,7 @@ export function CustomerDeliverySection({
             <Form
               form={form}
               layout="vertical"
-              disabled={readOnly || loadingStep || saving || bindingAccount}
+              disabled={disabled || readOnly || loadingStep || saving || bindingAccount}
               aria-busy={loadingStep}
               onFinish={save}
             >
@@ -885,11 +970,17 @@ export function CustomerDeliverySection({
                   <CustomerDeliveryUpload
                     key={`${selected.id}:contract:${detailRequest.current}`}
                     purpose="contract"
-                    disabled={readOnly || loadingStep || saving}
+                    disabled={disabled || readOnly || loadingStep || saving}
                     onUpload={onAssetUpload ? (file, purpose, signal) => onAssetUpload(selected, file, purpose, signal) : undefined}
                     onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(selected, assetRef, purpose, signal) : undefined}
-                    onReady={(asset) => form.setFieldValue("contractFile", asset.assetRef)}
-                    onBusyChange={setUploading}
+                    onReady={(asset) => {
+                      const access = currentAccess.current;
+                      if (isCurrentDeliveryWriteScope({ mounted: mounted.current, request: contractUploadRequest, currentRequest: detailRequest.current, scopeMatches: uploadTracker.current.isCurrent(contractUploadScope), ...access })) form.setFieldValue("contractFile", asset.assetRef);
+                    }}
+                    onBusyChange={(busy) => {
+                      const pending = uploadTracker.current.setBusy(contractUploadScope, "contract", busy);
+                      if (pending !== undefined && mounted.current) setUploading(pending);
+                    }}
                   />
                   <Typography.Text type="secondary">
                     素材编号须通过服务端安全核验；HTTPS 链接作为外部合同凭证保存，不代表已完成平台扫描。

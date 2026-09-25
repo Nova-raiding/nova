@@ -45,6 +45,20 @@ describe('complete commercial operation registry E1 totality', () => {
     )).toThrow('missing classifications: MCP:new.method.requires.review')
   })
 
+  it('classifies only the signed knowledge claim worker routes as machine infrastructure', () => {
+    for (const operation of [
+      'http:POST:/v1/internal/knowledge/generation-claims',
+      'http:PATCH:/v1/internal/knowledge/generation-claims/{claimId}',
+    ]) {
+      expect(resolveHttp(operation)).toMatchObject({
+        outcome: 'REGISTERED',
+        policy: { domain: 'MACHINE_INFRASTRUCTURE', enabled: true, classification: null, rate_action: null },
+      })
+    }
+    expect(resolveHttp('http:POST:/v1/internal/knowledge/generation-claims/{claimId}')).toMatchObject({ outcome: 'DENY_UNCLASSIFIED' })
+    expect(resolveHttp('http:PATCH:/v1/internal/knowledge/generation-claims')).toMatchObject({ outcome: 'DENY_UNCLASSIFIED' })
+  })
+
   it('publishes exact personal-commercial and workspace-creative-point policies for the four V2 recovery reads', () => {
     const expectedPolicies = {
       'commercial.access.get': { effect: 'read', scope: 'self', capability: 'billing.self.read' },

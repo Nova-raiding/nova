@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(252)
+    expect(latestVersion).toBe(254)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -53,6 +53,8 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(219)?.sql).toContain('CREATE TABLE IF NOT EXISTS public_platform_rule_audits')
     expect(byVersion.get(219)?.sql).toContain('GRANT SELECT ON public_platform_rule_versions TO merchant_app')
     expect(byVersion.get(219)?.sql).toContain('public_platform_rule_audits_append_only')
+    expect(byVersion.get(250)?.sql).toContain('REVOKE ALL ON FUNCTION public.knowledge_generation_assert_mutable(text,text) FROM PUBLIC')
+    expect(byVersion.get(250)?.sql).toContain('REVOKE ALL ON FUNCTION public.knowledge_generation_lock_products(text,text[]) FROM PUBLIC')
     expect(byVersion.get(224)).toMatchObject({ name: 'public_platform_rule_audit_truncate_guard' })
     expect(byVersion.get(224)?.sql).toContain('public_platform_rule_audits_no_truncate')
     expect(byVersion.get(220)).toMatchObject({ name: 'commercial_refund_cumulative_bound' })

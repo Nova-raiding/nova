@@ -34,7 +34,7 @@ async function discoverPostgresTests(directory: string, prefix = ''): Promise<st
 
 let allPostgresTestsPromise: Promise<string[]> | undefined
 function allPostgresTests(): Promise<string[]> {
-  allPostgresTestsPromise ??= Promise.all(['packages/persistence', 'apps/worker', 'tests'].map(directory => discoverPostgresTests(directory))).then(groups => groups.flat().sort())
+  allPostgresTestsPromise ??= Promise.all(['packages/persistence', 'apps/api', 'apps/worker', 'tests'].map(directory => discoverPostgresTests(directory))).then(groups => groups.flat().sort())
   return allPostgresTestsPromise
 }
 

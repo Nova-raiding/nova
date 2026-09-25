@@ -299,17 +299,39 @@ describe('API model usage settlement invariants', () => {
     const runKey = `task:worker-${Date.now()}`
     const providerRequestId = `worker-relay-${Date.now()}`
     await authorizeAction(workspaceId, actionId, 'included_quota', runKey)
+    await api.grantCreativePointsForTests(workspaceId)
+    const persistence = await api.persistenceReady
+    const reservation = await persistence.creativePoints!.reserve({
+      workspaceId,
+      idempotencyKey: `commercial.reserve:${actionId}`,
+      actionKey: actionId,
+      points: 3,
+      rateCardVersion: 'test-v1',
+    })
+    const previousLifecycle = persistence.creativePointLifecycle
+    const apiProviderReceipts: Array<Record<string, unknown>> = []
+    const lifecycle = {
+      recordProviderReceipt: vi.fn(async (input: Record<string, unknown>) => { apiProviderReceipts.push(input) }),
+    } as unknown as NonNullable<typeof persistence.creativePointLifecycle>
+    persistence.creativePointLifecycle = lifecycle
     const base = await startApi()
     try {
       const payload = { workspaceId, actionId, runKey, contextLinkId: 'context_link_worker', contextHash: 'a'.repeat(64), modality: 'text', model: 'relay-text', providerRequestId, inputTokens: 20, outputTokens: 8, totalTokens: 28, costCny: 0.04, observedAt: '2026-08-28T00:00:00.000Z' }
       const first = await postWorkerUsage(base, workspaceId, payload)
-      const replay = await postWorkerUsage(base, workspaceId, payload)
       expect(first).toMatchObject({ status: 200, body: { error: null } })
+      await expect(persistence.creativePoints!.getReservation(workspaceId, reservation.value.id)).resolves.toMatchObject({ status: 'settled', settledPoints: 3 })
+      const replay = await postWorkerUsage(base, workspaceId, payload)
       expect(replay).toMatchObject({ status: 200, body: { error: null } })
       const rows = await harness.modelUsage!.list(workspaceId, 10)
       expect(rows).toHaveLength(1)
       expect(rows[0]).toMatchObject({ receiptKey: providerRequestId, actionId, budgetRunKey: runKey, contextLinkId: 'context_link_worker', contextHash: 'a'.repeat(64), totalTokens: 28, costCny: 0.04, settlementStatus: 'settled' })
+      await expect(persistence.creativePoints!.getReservation(workspaceId, reservation.value.id)).resolves.toMatchObject({ status: 'settled', settledPoints: 3 })
+      const pointEvents = (await persistence.creativePoints!.listStatement(workspaceId)).items.filter(item => item.intent.action_key === actionId || item.intent.reservation_id === reservation.value.id)
+      expect(pointEvents.map(item => item.eventType).sort()).toEqual(['reserved', 'settled'])
+      expect(apiProviderReceipts).toHaveLength(1)
+      expect(apiProviderReceipts[0]).toMatchObject({ provider: 'model-relay', providerRequestId, outcome: 'succeeded', cost: { currency: 'CNY', actual: 0.04 } })
     } finally {
+      persistence.creativePointLifecycle = previousLifecycle
       await new Promise<void>(resolve => api.server.close(() => resolve()))
     }
   })

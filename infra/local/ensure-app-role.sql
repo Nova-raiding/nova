@@ -78,6 +78,12 @@ BEGIN
   IF to_regclass('public.local_plugin_install_instances') IS NOT NULL THEN
     EXECUTE 'REVOKE ALL ON TABLE local_plugin_install_instances, local_plugin_install_challenges, local_plugin_install_audit FROM merchant_app';
   END IF;
+  -- Migration 250 exposes the claim ledger through SECURITY DEFINER functions.
+  -- The broad compatibility grant above runs during bootstrap and after migrate,
+  -- so keep direct table access revoked on every replay.
+  IF to_regclass('public.knowledge_generation_claims') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE knowledge_generation_claims FROM merchant_app';
+  END IF;
 END
 $$;
 -- The broad compatibility grant above is deliberately followed by the
@@ -219,6 +225,9 @@ BEGIN
   END IF;
   IF to_regclass('public.charged_text_dispatch_attempts') IS NOT NULL THEN
     REVOKE ALL ON public.charged_text_dispatch_attempts FROM PUBLIC, merchant_app, merchant_ops;
+    IF to_regclass('public.charged_text_no_delivery_resolutions') IS NOT NULL THEN
+      GRANT SELECT (workspace_id,action_key,event_id,state,provider_request_id) ON public.charged_text_dispatch_attempts TO merchant_app;
+    END IF;
   END IF;
   IF to_regprocedure('public.claim_charged_text_dispatch_attempt(text,text,text,integer,integer,text,text)') IS NOT NULL THEN
     REVOKE ALL ON FUNCTION public.claim_charged_text_dispatch_attempt(text,text,text,integer,integer,text,text) FROM PUBLIC;
@@ -227,6 +236,17 @@ BEGIN
   IF to_regprocedure('public.transition_charged_text_dispatch_attempt(text,text,text,text,text)') IS NOT NULL THEN
     REVOKE ALL ON FUNCTION public.transition_charged_text_dispatch_attempt(text,text,text,text,text) FROM PUBLIC;
     GRANT EXECUTE ON FUNCTION public.transition_charged_text_dispatch_attempt(text,text,text,text,text) TO merchant_app;
+  END IF;
+  IF to_regclass('public.charged_text_no_delivery_resolutions') IS NOT NULL THEN
+    REVOKE ALL ON public.charged_text_no_delivery_resolutions FROM PUBLIC, merchant_app, merchant_ops;
+  END IF;
+  IF to_regprocedure('public.get_charged_text_no_delivery_resolution(text,text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.get_charged_text_no_delivery_resolution(text,text) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.get_charged_text_no_delivery_resolution(text,text) TO merchant_app;
+  END IF;
+  IF to_regprocedure('public.insert_charged_text_no_delivery_resolution(text,text,text,text,text,text,text,text,text,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.insert_charged_text_no_delivery_resolution(text,text,text,text,text,text,text,text,text,integer) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.insert_charged_text_no_delivery_resolution(text,text,text,text,text,text,text,text,text,integer) TO merchant_app;
   END IF;
 END
 $$;

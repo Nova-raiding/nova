@@ -114,6 +114,24 @@ function renderFinalProductionCompose() {
 }
 
 describe('ECS production Compose contract', () => {
+  it('renders every release layer from one candidate checkout and deploys one frozen Compose input', () => {
+    const renderer = readFileSync('infra/scripts/render-ecs-production-compose.sh', 'utf8')
+    const deployer = readFileSync('infra/scripts/deploy-verified-ecs-compose.sh', 'utf8')
+
+    expect(renderer).toContain('root=$(CDPATH=\'\' cd -- "$(dirname "$0")/../.." && pwd)')
+    expect(renderer).toContain('cd "$root"')
+    expect(renderer).toContain('layers_file=infra/local/ecs-production-compose.layers')
+    expect(renderer).toContain('done < "$layers_file"')
+    expect(renderer).toContain('set -- "$@" -f "$layer"')
+    expect(renderer).toContain('docker compose -p "$project" --env-file "$production_env" "$@" config --format json')
+    expect(renderer).toContain('ECS_PRODUCTION_COMPOSE_LAYERS_FILE override is forbidden')
+
+    expect(deployer).toContain('cp "$RENDERED_COMPOSE_PATH" "$verified_compose"')
+    expect(deployer).toContain('chmod 0400 "$verified_compose" "$verified_config"')
+    expect(deployer).toContain('docker compose -p "$project" -f "$verified_compose" config --format json')
+    expect(deployer).not.toContain('docker compose -p "$project" "$@" config')
+  })
+
   it('requires an explicit root-owned 0600 env file when the production override is used', () => {
     const renderer = readFileSync('infra/scripts/render-ecs-production-compose.sh', 'utf8')
     expect(renderer).toContain('ECS_PRODUCTION_ENV_FILE must be an absolute path')

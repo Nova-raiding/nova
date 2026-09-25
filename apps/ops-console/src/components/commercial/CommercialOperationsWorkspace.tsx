@@ -184,7 +184,7 @@ function filteredRows<T>(items: readonly T[], controller: CommercialOperationsCo
   });
 }
 
-function TableToolbar({ total, controller, onRefresh, showStatus = false }: { total: number; controller: CommercialOperationsController; onRefresh: () => void; showStatus?: boolean }) {
+function TableToolbar({ total, controller, onRefresh, showStatus = false, truncated = false }: { total: number; controller: CommercialOperationsController; onRefresh: () => void; showStatus?: boolean; truncated?: boolean }) {
   return <div className="commercial-filter-bar">
     <Space wrap>
       <Input.Search
@@ -204,7 +204,7 @@ function TableToolbar({ total, controller, onRefresh, showStatus = false }: { to
         options={["EXHAUSTED", "INSUFFICIENT", "UNAVAILABLE", "STALE", "RATE_CARD_UNAVAILABLE", "PAID_BUT_UNGRANTED", "RECOVERED"].map(value => ({ value, label: value }))}
         className="commercial-status-filter"
       /> : null}
-      <Typography.Text type="secondary" aria-live="polite">当前显示 {total} 条</Typography.Text>
+      <Typography.Text type={truncated ? "warning" : "secondary"} aria-live="polite">{truncated ? `当前显示 ${total} 条，服务端仍有未加载记录` : `当前显示 ${total} 条`}</Typography.Text>
     </Space>
     <Button icon={<ReloadOutlined aria-hidden="true" />} onClick={onRefresh}>刷新</Button>
   </div>;
@@ -217,8 +217,8 @@ function emptyForFilter(controller: CommercialOperationsController, label: strin
   </Empty>;
 }
 
-function tablePagination(controller: CommercialOperationsController) {
-  return { current: controller.query.page, pageSize: 20, showSizeChanger: false };
+function tablePagination(controller: CommercialOperationsController, total?: number) {
+  return { current: controller.query.page, pageSize: 20, ...(total === undefined ? {} : { total }), showSizeChanger: false };
 }
 
 function updateTableState(controller: CommercialOperationsController, pagination: { current?: number }, _filters: unknown, sorter: unknown) {
@@ -261,8 +261,8 @@ function BlockTable({ state, controller }: { state: CommercialOperationsControll
   const selected = selection.selected;
   return <DataBoundary state={state} capability={commercialViewCapability.blocks} onRetry={() => void controller.loadView("blocks")}>{page => <>
     <MissingRecordAlert record={selection.missingRecord} controller={controller} />
-    <TableToolbar total={items.length} controller={controller} showStatus onRefresh={() => void controller.loadView("blocks")} />
-    <Table rowKey="id" size="small" sticky pagination={tablePagination(controller)} onChange={(pagination, filters, sorter) => updateTableState(controller, pagination, filters, sorter)} locale={{ emptyText: emptyForFilter(controller, "商业阻断记录") }} dataSource={items} scroll={{ x: 1460 }} columns={[
+    <TableToolbar total={items.length} truncated={state.data?.truncated === true} controller={controller} showStatus onRefresh={() => void controller.loadView("blocks")} />
+    <Table rowKey="id" size="small" sticky pagination={tablePagination(controller, state.data?.total)} onChange={(pagination, filters, sorter) => updateTableState(controller, pagination, filters, sorter)} locale={{ emptyText: emptyForFilter(controller, "商业阻断记录") }} dataSource={items} scroll={{ x: 1460 }} columns={[
       { title: "状态", dataIndex: "state", fixed: "left", width: 190, sorter: (a, b) => commercialBlockDisplayState(a).localeCompare(commercialBlockDisplayState(b)), ...controlledSort(controller, "state"), render: (_, row) => <StateTag value={commercialBlockDisplayState(row)} /> },
       { title: "Workspace", dataIndex: "workspaceId", fixed: "left", width: 190, sorter: (a, b) => a.workspaceId.localeCompare(b.workspaceId), ...controlledSort(controller, "workspaceId"), render: value => <Typography.Text className="ops-token" copyable>{value}</Typography.Text> },
       { title: "原因 code", dataIndex: "errorCode", width: 230, render: value => <Typography.Text code>{value}</Typography.Text> },
@@ -296,7 +296,7 @@ function EntitlementTable({ state, controller }: { state: CommercialOperationsCo
   const reload = () => void controller.loadView("entitlements");
   return <DataBoundary state={state} capability={commercialViewCapability.entitlements} onRetry={reload}>{() => <><MissingRecordAlert record={selection.missingRecord} controller={controller} />
     <Alert type="info" showIcon title="标准套餐权益由订单自动授予" description="这里展示服务端已经授予企业工作区的权益快照。正常购买不需要运营逐项勾选权限；只有赠送、补偿、退款回收或定制合同等例外，才进入单独的人工审批流程。" />
-    <TableToolbar total={items.length} controller={controller} onRefresh={reload} /><Table rowKey="id" size="small" sticky pagination={tablePagination(controller)} onChange={(pagination, filters, sorter) => updateTableState(controller, pagination, filters, sorter)} locale={{ emptyText: emptyForFilter(controller, "企业工作区权益快照") }} dataSource={items} scroll={{ x: 1530 }} columns={[
+    <TableToolbar total={items.length} truncated={state.data?.truncated === true} controller={controller} onRefresh={reload} /><Table rowKey="id" size="small" sticky pagination={tablePagination(controller, state.data?.total)} onChange={(pagination, filters, sorter) => updateTableState(controller, pagination, filters, sorter)} locale={{ emptyText: emptyForFilter(controller, "企业工作区权益快照") }} dataSource={items} scroll={{ x: 1530 }} columns={[
     { title: "企业工作区", dataIndex: "workspaceId", fixed: "left", width: 190, sorter: (a, b) => a.workspaceId.localeCompare(b.workspaceId), ...controlledSort(controller, "workspaceId"), render: value => <Typography.Text code>{value}</Typography.Text> },
     { title: "套餐", dataIndex: "skuCode", width: 190, render: value => <Space orientation="vertical" size={0}><Typography.Text>{packageDisplayName(value)}</Typography.Text><Typography.Text type="secondary" code>{value}</Typography.Text></Space> },
     { title: "快照版本", dataIndex: "snapshotVersion", width: 150, render: value => <Typography.Text code>{value}</Typography.Text> },
@@ -378,7 +378,7 @@ function CatalogTable({ state, controller, catalogGovernanceHref }: { state: Com
 function OrdersTable({ state, controller }: { state: CommercialOperationsController["data"]["orders"]; controller: CommercialOperationsController }) {
   const items = useMemo(() => filteredRows(state.data?.items ?? [], controller), [state.data?.items, controller.query.query]);
   const selection = useDeepLinkedSelection(items, controller);
-  return <DataBoundary state={state} capability={commercialViewCapability.orders} onRetry={() => void controller.loadView("orders")}>{() => <><MissingRecordAlert record={selection.missingRecord} controller={controller} /><TableToolbar total={items.length} controller={controller} onRefresh={() => void controller.loadView("orders")} /><Table rowKey="id" size="small" sticky pagination={tablePagination(controller)} onChange={(pagination, filters, sorter) => updateTableState(controller, pagination, filters, sorter)} locale={{ emptyText: emptyForFilter(controller, "订单与支付记录") }} dataSource={items} scroll={{ x: 1600 }} columns={[
+  return <DataBoundary state={state} capability={commercialViewCapability.orders} onRetry={() => void controller.loadView("orders")}>{() => <><MissingRecordAlert record={selection.missingRecord} controller={controller} /><TableToolbar total={items.length} truncated={state.data?.truncated === true} controller={controller} onRefresh={() => void controller.loadView("orders")} /><Table rowKey="id" size="small" sticky pagination={tablePagination(controller, state.data?.total)} onChange={(pagination, filters, sorter) => updateTableState(controller, pagination, filters, sorter)} locale={{ emptyText: emptyForFilter(controller, "订单与支付记录") }} dataSource={items} scroll={{ x: 1600 }} columns={[
     { title: "订单号", dataIndex: "id", fixed: "left", width: 210, sorter: (a, b) => a.id.localeCompare(b.id), ...controlledSort(controller, "id"), render: value => <Typography.Text code copyable>{value}</Typography.Text> },
     { title: "企业工作区", dataIndex: "workspaceId", width: 190, render: value => <Typography.Text code>{value}</Typography.Text> }, { title: "套餐 / 版本", width: 230, render: (_, row) => <Space orientation="vertical" size={0}><Typography.Text>{packageDisplayName(row.skuCode)}</Typography.Text><Typography.Text type="secondary" code>{row.skuCode} / {row.skuVersion}</Typography.Text></Space> },
     { title: "购买点数", dataIndex: "purchasedPoints", width: 110, align: "right", render: point }, { title: "金额", dataIndex: "amountLabel", width: 130, align: "right" },

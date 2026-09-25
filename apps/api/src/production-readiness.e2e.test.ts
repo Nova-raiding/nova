@@ -180,7 +180,7 @@ describe('production readiness fail-closed', () => {
     const body = await response.json() as Envelope & { data: { setup: { productionEvidence: { capacity: Record<string, unknown> } } } }
     expect([200, 503]).toContain(response.status)
     if (body.data) expect(body.data.setup.productionEvidence.capacity).toMatchObject({ state: 'not_performed', configured: true, profile: 'no_load', releaseId: 'release-current' })
-    else expect(runtimeHealth({ commercialReadiness: { ready: true, reasons: [] } }).setup.productionEvidence.capacity).toMatchObject({ state: 'not_performed', configured: true, profile: 'no_load', releaseId: 'release-current' })
+    else expect(runtimeHealth({ commercialReadiness: { ready: true, reasons: [] } })).toMatchObject({ setup: { productionEvidence: { capacity: { state: 'not_performed', configured: true, profile: 'no_load', releaseId: 'release-current' } } } })
   })
 
   it('requires persistence-backed executable catalog, approved rates, and an enabled charged registry operation', async () => {
@@ -523,7 +523,7 @@ describe('production readiness fail-closed', () => {
         ready: false,
         reasons: ['commercial_executable_catalog_missing'],
       },
-    }).setup
+    }).setup as { commercialReadiness: { ready: boolean; reasons: string[] } }
     expect(setup.commercialReadiness.ready).toBe(false)
     expect(setup.commercialReadiness.reasons).toContain('commercial_executable_catalog_missing')
     expect(setup.commercialReadiness.reasons).not.toContain('commercial_readiness_not_checked')

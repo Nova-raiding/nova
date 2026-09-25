@@ -121,6 +121,16 @@ export interface CommercialAccessDecisionFactV2 {
   decidedAt: string
 }
 
+export interface CommercialContractListCursor {
+  createdAt: string
+  id: string
+}
+
+export interface CommercialContractPage<T> {
+  items: T[]
+  hasMore: boolean
+}
+
 type OrderRow = {
   id: string
   workspaceId: string
@@ -359,8 +369,12 @@ function resolvedOnboardingSchedule(sku: CommercialCatalogSkuSnapshot, paidAt: s
 export class PostgresCommercialContractRepository {
   constructor(private readonly pool: SqlPool) {}
 
-  async listOrders(workspaceId: string, limit = 100): Promise<CommercialOrderListItemV2[]> {
+  async listOrders(workspaceId: string, limit?: number): Promise<CommercialOrderListItemV2[]>
+  async listOrders(workspaceId: string, options: { limit?: number; cursor?: CommercialContractListCursor }): Promise<CommercialContractPage<CommercialOrderListItemV2>>
+  async listOrders(workspaceId: string, input: number | { limit?: number; cursor?: CommercialContractListCursor } = 100): Promise<CommercialOrderListItemV2[] | CommercialContractPage<CommercialOrderListItemV2>> {
     const scope = requireWorkspaceScope(workspaceId)
+    const options = typeof input === 'number' ? { limit: input } : input
+    const limit = options.limit ?? 100
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new RangeError('limit must be between 1 and 200')
     return withWorkspaceTransaction(this.pool, scope, async client => {
       // `skuCode` comes from the immutable order snapshot, never from the
@@ -373,14 +387,22 @@ export class PostgresCommercialContractRepository {
       const result = await client.query<OrderRow & { skuCode: string }>(
         `SELECT ${aliasedOrderProjection('o')},s.snapshot->'sku'->>'code' AS "skuCode"
            FROM commercial_orders_v2 o JOIN commercial_order_snapshots_v2 s ON s.workspace_id=o.workspace_id AND s.order_id=o.id
-          WHERE o.workspace_id=$1 ORDER BY o.created_at DESC,o.id DESC LIMIT $2`, [scope, limit],
+          WHERE o.workspace_id=$1
+            AND ($2::timestamptz IS NULL OR (o.created_at,o.id) < ($2::timestamptz,$3::text))
+          ORDER BY o.created_at DESC,o.id DESC LIMIT $4`, [scope, options.cursor?.createdAt ?? null, options.cursor?.id ?? null, limit + 1],
       )
-      return result.rows.map(row => ({ ...mapOrder(row), skuCode: row.skuCode }))
+      const items = result.rows.slice(0, limit).map(row => ({ ...mapOrder(row), skuCode: row.skuCode }))
+      if (typeof input === 'number') return items
+      return { items, hasMore: result.rows.length > limit }
     })
   }
 
-  async listEntitlementSnapshots(workspaceId: string, limit = 100): Promise<CommercialEntitlementSnapshotV2[]> {
+  async listEntitlementSnapshots(workspaceId: string, limit?: number): Promise<CommercialEntitlementSnapshotV2[]>
+  async listEntitlementSnapshots(workspaceId: string, options: { limit?: number; cursor?: CommercialContractListCursor }): Promise<CommercialContractPage<CommercialEntitlementSnapshotV2>>
+  async listEntitlementSnapshots(workspaceId: string, input: number | { limit?: number; cursor?: CommercialContractListCursor } = 100): Promise<CommercialEntitlementSnapshotV2[] | CommercialContractPage<CommercialEntitlementSnapshotV2>> {
     const scope = requireWorkspaceScope(workspaceId)
+    const options = typeof input === 'number' ? { limit: input } : input
+    const limit = options.limit ?? 100
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new RangeError('limit must be between 1 and 200')
     return withWorkspaceTransaction(this.pool, scope, async client => {
       type Row = { id: string; workspaceId: string; subscriptionPeriodId: string; periodStart: string | Date; periodEnd: string | Date; periodStatus: string; catalogVersionId: string; skuCode: string; resolvedBenefits: unknown; unresolvedBlockers: unknown; executable: boolean; checksum: string; createdAt: string | Date }
@@ -398,18 +420,22 @@ export class PostgresCommercialContractRepository {
                 period_start AS "periodStart", period_end AS "periodEnd", period_status AS "periodStatus",
                 catalog_version_id AS "catalogVersionId", sku_code AS "skuCode", resolved_benefits AS "resolvedBenefits",
                 unresolved_blockers AS "unresolvedBlockers", executable, checksum, created_at AS "createdAt"
-           FROM public.merchant_entitlement_snapshots_v2($1)`, [limit],
+           FROM public.merchant_entitlement_snapshots_v3($1, $2::timestamptz, $3::text)`, [limit + 1, options.cursor?.createdAt ?? null, options.cursor?.id ?? null],
       )
-      return result.rows.map(row => {
+      const items = result.rows.slice(0, limit).map(row => {
         if (!Array.isArray(row.resolvedBenefits) || !Array.isArray(row.unresolvedBlockers) || !row.unresolvedBlockers.every(item => typeof item === 'string')) {
           throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'entitlement snapshot payload is invalid')
         }
         return { ...row, periodStart: timestamp(row.periodStart)!, periodEnd: timestamp(row.periodEnd)!, createdAt: timestamp(row.createdAt)!, resolvedBenefits: row.resolvedBenefits, unresolvedBlockers: row.unresolvedBlockers as string[] }
       })
+      if (typeof input === 'number') return items
+      return { items, hasMore: result.rows.length > limit }
     })
   }
 
-  async listAccessDecisions(workspaceId: string, options: { blockedOnly?: boolean; limit?: number } = {}): Promise<CommercialAccessDecisionFactV2[]> {
+  async listAccessDecisions(workspaceId: string): Promise<CommercialAccessDecisionFactV2[]>
+  async listAccessDecisions(workspaceId: string, options: { blockedOnly?: boolean; limit?: number; cursor?: CommercialContractListCursor }): Promise<CommercialContractPage<CommercialAccessDecisionFactV2>>
+  async listAccessDecisions(workspaceId: string, options: { blockedOnly?: boolean; limit?: number; cursor?: CommercialContractListCursor } = {}): Promise<CommercialAccessDecisionFactV2[] | CommercialContractPage<CommercialAccessDecisionFactV2>> {
     const scope = requireWorkspaceScope(workspaceId)
     const limit = options.limit ?? 100
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new RangeError('limit must be between 1 and 200')
@@ -422,9 +448,10 @@ export class PostgresCommercialContractRepository {
                 rate_card_version AS "rateCardVersion",allowed,code,next_actions AS "nextActions",decided_at AS "decidedAt"
            FROM commercial_access_decisions_v2
           WHERE workspace_id=$1 AND ($2::boolean=false OR allowed=false)
-          ORDER BY decided_at DESC,id DESC LIMIT $3`, [scope, options.blockedOnly === true, limit],
+            AND ($3::timestamptz IS NULL OR (decided_at,id) < ($3::timestamptz,$4::text))
+          ORDER BY decided_at DESC,id DESC LIMIT $5`, [scope, options.blockedOnly === true, options.cursor?.createdAt ?? null, options.cursor?.id ?? null, limit + 1],
       )
-      return result.rows.map(row => {
+      const items = result.rows.slice(0, limit).map(row => {
         if (!Array.isArray(row.nextActions) || !row.nextActions.every(item => typeof item === 'string')) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'access decision next actions are invalid')
         return {
           ...row,
@@ -436,6 +463,7 @@ export class PostgresCommercialContractRepository {
           decidedAt: timestamp(row.decidedAt)!,
         }
       })
+      return options.cursor ? { items, hasMore: result.rows.length > limit } : items
     })
   }
 

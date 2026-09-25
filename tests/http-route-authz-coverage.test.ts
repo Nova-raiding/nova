@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   HTTP_OPERATION_POLICIES,
@@ -22,6 +22,8 @@ import {
  */
 
 const SERVER_SOURCE_URL = new URL('../apps/api/src/server.ts', import.meta.url)
+const API_DIRECTORY_URL = new URL('../apps/api/src/', import.meta.url)
+const HTTP_MODULE_END = '// __HTTP_MODULE_END__'
 
 const HTTP_METHODS: readonly HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 /** Sentinel standing in for a path parameter while a pattern is expanded. */
@@ -58,7 +60,11 @@ const DISPATCH_REGIONS: readonly { label: string, start: string, ends: readonly 
 ]
 
 function readServerSource(): string {
-  return readFileSync(SERVER_SOURCE_URL, 'utf8')
+  const server = readFileSync(SERVER_SOURCE_URL, 'utf8')
+  const modules = readdirSync(API_DIRECTORY_URL)
+    .filter(name => /^http-.*routes\.ts$/u.test(name) && server.includes(`'./${name.slice(0, -3)}.js'`))
+    .map(name => readFileSync(new URL(name, API_DIRECTORY_URL), 'utf8'))
+  return [server, ...modules.map(module => `${module}\n${HTTP_MODULE_END}`)].join('\n')
 }
 
 function sliceRegion(lines: string[], start: string, ends: readonly string[]): { startIndex: number, lines: string[] } {
@@ -75,6 +81,14 @@ function sliceRegion(lines: string[], start: string, ends: readonly string[]): {
 function methodsIn(text: string): HttpMethod[] {
   const found = new Set<HttpMethod>()
   for (const match of text.matchAll(/req\.method\s*===\s*'([A-Z]+)'/gu)) {
+    if (HTTP_METHODS.includes(match[1] as HttpMethod)) found.add(match[1] as HttpMethod)
+  }
+  return [...found]
+}
+
+function methodsInWorkerGuard(text: string): HttpMethod[] {
+  const found = new Set<HttpMethod>(methodsIn(text))
+  for (const match of text.matchAll(/\bmethod\s*===\s*'([A-Z]+)'/gu)) {
     if (HTTP_METHODS.includes(match[1] as HttpMethod)) found.add(match[1] as HttpMethod)
   }
   return [...found]
@@ -103,15 +117,23 @@ interface RawOccurrence {
 
 function collectOccurrences(lines: string[]): RawOccurrence[] {
   const occurrences: RawOccurrence[] = []
-  for (const region of DISPATCH_REGIONS) {
+  const moduleRegions = lines.flatMap(line => {
+    const declaration = /^export (?:async )?function ((?:handle|route)[A-Za-z]+)\(/u.exec(line)
+    return declaration ? [{ label: declaration[1]!, start: declaration[0], ends: [HTTP_MODULE_END], idioms: ['literal', 'match'] as const }] : []
+  })
+  for (const region of [...DISPATCH_REGIONS, ...moduleRegions]) {
     const sliced = sliceRegion(lines, region.start, region.ends)
     for (const [offset, line] of sliced.lines.entries()) {
       const lineIndex = sliced.startIndex + offset
       const lineNumber = lineIndex + 1
       const windowMethods = region.idioms.includes('literal') ? methodsIn(guardWindow(lines, lineIndex)) : []
       if (region.idioms.includes('literal')) {
+        const directMethods = new Map<string, HttpMethod[]>()
+        for (const paired of line.matchAll(/req\.method\s*===\s*'([A-Z]+)'\s*&&\s*path\s*===\s*'([^']+)'/gu)) {
+          if (HTTP_METHODS.includes(paired[1] as HttpMethod)) directMethods.set(paired[2]!, [...(directMethods.get(paired[2]!) ?? []), paired[1] as HttpMethod])
+        }
         for (const match of line.matchAll(/path\s*===\s*'([^']+)'/gu)) {
-          occurrences.push({ source: match[1]!, isRegex: false, methods: windowMethods, lineNumber })
+          occurrences.push({ source: match[1]!, isRegex: false, methods: directMethods.get(match[1]!) ?? windowMethods, lineNumber })
         }
       }
       if (region.idioms.includes('match')) {
@@ -124,7 +146,7 @@ function collectOccurrences(lines: string[]): RawOccurrence[] {
       }
       if (region.idioms.includes('test')) {
         for (const match of line.matchAll(/\/\^[^\n]*?\/[a-z]*\.test\(path\)/gu)) {
-          occurrences.push({ source: match[0].replace(/\.test\(path\)$/u, ''), isRegex: true, methods: methodsIn(line), lineNumber })
+          occurrences.push({ source: match[0].replace(/\.test\(path\)$/u, ''), isRegex: true, methods: methodsInWorkerGuard(line), lineNumber })
         }
       }
     }
@@ -142,9 +164,11 @@ function collectOccurrences(lines: string[]): RawOccurrence[] {
 function methodsForVariable(lines: string[], name: string): HttpMethod[] {
   const found = new Set<HttpMethod>()
   const namePattern = new RegExp(`\\b${name}\\b`, 'u')
+  const pairedPattern = new RegExp(`req\\.method\\s*===\\s*'([A-Z]+)'\\s*&&\\s*${name}\\b`, 'gu')
   for (const line of lines) {
     if (!namePattern.test(line) || !/req\.method/u.test(line)) continue
-    for (const method of methodsIn(line)) found.add(method)
+    const paired = [...line.matchAll(pairedPattern)].map(match => match[1] as HttpMethod).filter(method => HTTP_METHODS.includes(method))
+    for (const method of paired.length ? paired : methodsIn(line)) found.add(method)
   }
   return [...found]
 }
@@ -315,6 +339,11 @@ describe('HTTP route authorization coverage', () => {
       expect(getHttpOperationPolicy('POST', path), path).toMatchObject({ authentication: 'worker' })
       expect(getHttpOperationPolicy('GET', path), `${path} must stay POST-only`).toBeUndefined()
     }
+    expect(getHttpOperationPolicy('POST', '/v1/internal/knowledge/generation-claims')).toMatchObject({ authentication: 'worker' })
+    expect(getHttpOperationPolicy('PATCH', '/v1/internal/knowledge/generation-claims/claim-1')).toMatchObject({ authentication: 'worker' })
+    expect(getHttpOperationPolicy('PATCH', '/v1/internal/knowledge/generation-claims')).toBeUndefined()
+    expect(getHttpOperationPolicy('POST', '/v1/internal/knowledge/generation-claims/claim-1')).toBeUndefined()
+    expect(getHttpOperationPolicy('GET', '/v1/internal/knowledge/generation-claims/claim-1')).toBeUndefined()
   })
 
   it('keeps the newly registered routes on authentication kinds that add no enforcement', () => {

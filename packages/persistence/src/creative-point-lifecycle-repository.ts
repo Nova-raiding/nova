@@ -16,7 +16,7 @@ export type CreativePointReversalInput = MutationInput & { reservationId: string
 export type CreativePointExpiryInput = MutationInput & { grantId: string }
 export type CreativePointAdjustmentInput = MutationInput & { approvalId: string; pointsDelta: number; expectedAccessRevision: number; actorId: string; approvedByActorId: string; reason: string; evidence: Record<string, unknown>; expiresAt?: string | null }
 export type CreativePointProviderReceiptInput = { workspaceId: string; operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage?: Record<string, unknown>; cost?: Record<string, unknown>; receiptHash: string; verifiedAt?: string; at: string }
-export type ModelUsageDeliverySettlementInput = { workspaceId: string; reservationId: string; actionId: string; providerRequestId: string; relayProvider: string }
+export type ModelUsageDeliverySettlementInput = { workspaceId: string; reservationId: string; actionId: string; providerRequestId: string; relayProvider: string; allowPartialPoints?: boolean; requireText?: boolean }
 
 function required(value: string, field: string): string { if (!value || value.trim() !== value) throw new TypeError(`${field} is required`); return value }
 function at(value: string): string { const parsed = new Date(value); if (Number.isNaN(parsed.valueOf())) throw new TypeError('at must be an ISO timestamp'); return parsed.toISOString() }
@@ -44,7 +44,13 @@ export class PostgresCreativePointLifecycleRepository {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const observedAt = at(input.at); points(input.points)
     required(input.idempotencyKey, 'idempotencyKey'); required(input.reservationId, 'reservationId'); required(input.actorId, 'actorId'); required(input.reason, 'reason'); evidence(input.evidence)
     const request = { reservation_id: input.reservationId, points: input.points, reason: input.reason, actor_id: input.actorId, evidence: input.evidence }
-    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+    return withWorkspaceTransaction(this.pool, workspaceId, client => this.reverseSettlementInTransaction(client, input, observedAt, request))
+  }
+
+  /** Used when a generation outcome and its point refund must commit together. */
+  async reverseSettlementInTransaction(client: SqlClient, input: CreativePointReversalInput, observedAt = at(input.at), request = { reservation_id: input.reservationId, points: input.points, reason: input.reason, actor_id: input.actorId, evidence: input.evidence }): Promise<CreativePointBalance> {
+    const workspaceId = requireWorkspaceScope(input.workspaceId); points(input.points)
+    required(input.idempotencyKey, 'idempotencyKey'); required(input.reservationId, 'reservationId'); required(input.actorId, 'actorId'); required(input.reason, 'reason'); evidence(input.evidence)
       // The state lock is taken before the replay lookup, as `expireGrant`
       // already does: a concurrent retry of one idempotency key that read the
       // operation before the winner committed used to block here, re-read the
@@ -68,7 +74,6 @@ export class PostgresCreativePointLifecycleRepository {
       await this.ledger(client, workspaceId, operationId, input.kind === 'refund' ? 'refunded' : 'reversed', input.points, result, { reservation_id: input.reservationId, actor_id: input.actorId, reason: input.reason }, observedAt)
       await this.complete(client, workspaceId, operationId, result, observedAt)
       return result
-    })
   }
 
   async expireGrant(input: CreativePointExpiryInput): Promise<CreativePointBalance> {
@@ -158,7 +163,12 @@ export class PostgresCreativePointLifecycleRepository {
   async verifyModelUsageDeliverySettlement(input: ModelUsageDeliverySettlementInput): Promise<boolean> {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     required(input.reservationId, 'reservationId'); required(input.actionId, 'actionId'); required(input.providerRequestId, 'providerRequestId'); required(input.relayProvider, 'relayProvider')
-    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+    return withWorkspaceTransaction(this.pool, workspaceId, client => this.verifyModelUsageDeliverySettlementInTransaction(client, input))
+  }
+
+  async verifyModelUsageDeliverySettlementInTransaction(client: SqlClient, input: ModelUsageDeliverySettlementInput): Promise<boolean> {
+    const workspaceId = requireWorkspaceScope(input.workspaceId)
+    required(input.reservationId, 'reservationId'); required(input.actionId, 'actionId'); required(input.providerRequestId, 'providerRequestId'); required(input.relayProvider, 'relayProvider')
       const result = await client.query<{ matched: number | string }>(`
         SELECT count(*)::int AS matched
           FROM creative_point_reservations r
@@ -172,9 +182,10 @@ export class PostgresCreativePointLifecycleRepository {
             AND ledger.event_type='settled' AND ledger.metadata->>'reservation_id'=r.id
           JOIN creative_point_operations settlement ON settlement.workspace_id=ledger.workspace_id AND settlement.id=ledger.operation_id
          WHERE r.workspace_id=$1 AND r.id=$2 AND r.action_key=$3
-           AND r.status='settled' AND r.settled_points=r.points
+           AND r.status='settled' AND r.settled_points>0
+           AND (r.settled_points=r.points OR $6::boolean)
            AND a.state='settled' AND a.settlement_status='settled' AND a.provider_request_id=$4
-           AND m.settlement_status='settled' AND m.cost_cny IS NOT NULL
+           AND (NOT $7::boolean OR m.modality='text') AND m.settlement_status='settled' AND m.cost_cny IS NOT NULL
            AND api_receipt.outcome='succeeded' AND api_receipt.verified_at IS NOT NULL
            AND worker_receipt.outcome='succeeded' AND worker_receipt.verified_at IS NOT NULL
            AND api_receipt.cost->>'currency'='CNY' AND worker_receipt.cost->>'currency'='CNY'
@@ -195,7 +206,7 @@ export class PostgresCreativePointLifecycleRepository {
            AND settlement.kind='settle' AND settlement.status='completed'
            AND settlement.idempotency_key='commercial.settle:' || r.action_key
            AND settlement.request->>'reservation_id'=r.id
-           AND settlement.request->'actual_points'=to_jsonb(r.points)
+           AND settlement.request->'actual_points'=to_jsonb(r.settled_points)
            AND settlement.request->'metadata'->>'provider_request_id'=$4
            AND settlement.request->'metadata'->>'receipt_hash'=api_receipt.receipt_hash
            AND settlement.request->'metadata'->'cost_cny'=to_jsonb(m.cost_cny)
@@ -203,9 +214,8 @@ export class PostgresCreativePointLifecycleRepository {
            AND (SELECT count(*) FROM model_usage_ledger all_usage WHERE all_usage.workspace_id=$1 AND all_usage.provider_request_id=$4)=1
            AND (SELECT count(*) FROM creative_point_ledger_events all_settlements WHERE all_settlements.workspace_id=$1 AND all_settlements.event_type='settled' AND all_settlements.metadata->>'reservation_id'=r.id)=1
            AND NOT EXISTS (SELECT 1 FROM creative_point_reversals_v2 reversal WHERE reversal.workspace_id=$1 AND reversal.original_reservation_id=r.id)
-      `, [workspaceId, input.reservationId, input.actionId, input.providerRequestId, input.relayProvider])
+      `, [workspaceId, input.reservationId, input.actionId, input.providerRequestId, input.relayProvider, input.allowPartialPoints === true, input.requireText === true])
       return Number(result.rows[0]?.matched ?? 0) === 1
-    })
   }
 
   private async lockState(client: SqlClient, workspaceId: string) { await client.query(`SELECT workspace_id FROM creative_point_access_state WHERE workspace_id=$1 FOR UPDATE`, [workspaceId]) }

@@ -1506,11 +1506,11 @@ describe('security and access-control acceptance gates', () => {
     const generationBeforeRecharge = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'content.generate', params: { task_id: taskId } }) }).then(response => response.json() as Promise<Envelope>)
     expect(generationBeforeRecharge.error?.code).toBe('MODEL_RELAY_NOT_CONFIGURED')
     const restGenerationBeforeRecharge = await fetch(`${base}/v1/tasks/${taskId}/content`, { method: 'POST', headers }).then(async response => ({ status: response.status, body: await response.json() as Envelope }))
-    expect(restGenerationBeforeRecharge.status).toBe(400)
-    expect(restGenerationBeforeRecharge.body.error?.code).toBe('IDEMPOTENCY_KEY_REQUIRED')
+    expect(restGenerationBeforeRecharge.status).toBe(503)
+    expect(restGenerationBeforeRecharge.body.error?.code).toBe('CREATIVE_ACTION_PROTOCOL_UNAVAILABLE')
     const asyncGenerationBeforeRecharge = await fetch(`${base}/v1/tasks/${taskId}/content-jobs`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'security-generation-before-recharge' }, body: JSON.stringify({}) }).then(async response => ({ status: response.status, body: await response.json() as Envelope }))
     expect(asyncGenerationBeforeRecharge.status).toBe(503)
-    expect(asyncGenerationBeforeRecharge.body.error?.code).toBe('MODEL_RELAY_NOT_CONFIGURED')
+    expect(asyncGenerationBeforeRecharge.body.error?.code).toBe('CREATIVE_ACTION_PROTOCOL_UNAVAILABLE')
     await fetch(`${base}/v1/tasks/${taskId}/directions`, { method: 'POST', headers, body: JSON.stringify({ direction_id: 'A' }) })
     // Seed the content version directly after the mandatory production-plan
     // confirmation: model configuration is a separate gate, while this test
@@ -1939,7 +1939,10 @@ describe('security and access-control acceptance gates', () => {
     vi.stubEnv('OPS_AUTH_MODE', 'oidc')
     vi.stubEnv('MERCHANT_BEARER_HOSTNAME', 'merchant.example.com')
     vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', 'worker-oidc-secret')
-    vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ generation: { token: 'worker-token', signing_secret: 'worker-signing-secret' } }))
+    vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({
+      generation: { token: 'worker-token', signing_secret: 'worker-signing-secret' },
+      publish: { token: 'publish-worker-token', signing_secret: 'publish-worker-secret' },
+    }))
     await configureTrustedPlatformRule('ws_worker', 'taobao')
     const productId = `prod_worker_${Date.now()}`
     service.products.set(productId, { ...service.products.get('prod_fixture_1')!, id: productId, workspaceId: 'ws_worker' })
@@ -1980,6 +1983,26 @@ describe('security and access-control acceptance gates', () => {
     expect((await oidc.json() as Envelope).error?.code).toBe('FORBIDDEN')
 
     const proof = workerProofHeaders({ role: 'generation', secret: 'worker-signing-secret', method: 'POST', path, workspaceId: 'ws_worker', body })
+    const wrongMethodProof = workerProofHeaders({ role: 'generation', secret: 'worker-signing-secret', method: 'GET', path, workspaceId: 'ws_worker', body })
+    const wrongMethod = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', ...wrongMethodProof }, body })
+    expect(wrongMethod.status).toBe(403)
+    expect((await wrongMethod.json() as Envelope).error?.code).toBe('FORBIDDEN')
+
+    const wrongPath = await fetch(`${base}${path}?attempt=other`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', ...proof }, body })
+    expect(wrongPath.status).toBe(403)
+    expect((await wrongPath.json() as Envelope).error?.code).toBe('FORBIDDEN')
+
+    const signedNonce = proof['x-worker-nonce']
+    const changedNonce = `${signedNonce.slice(0, -1)}${signedNonce.endsWith('A') ? 'B' : 'A'}`
+    const wrongNonce = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', ...proof, 'x-worker-nonce': changedNonce }, body })
+    expect(wrongNonce.status).toBe(403)
+    expect((await wrongNonce.json() as Envelope).error?.code).toBe('FORBIDDEN')
+
+    const crossRoleProof = workerProofHeaders({ role: 'publish', secret: 'publish-worker-secret', method: 'POST', path, workspaceId: 'ws_worker', body })
+    const crossRole = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer publish-worker-token', ...crossRoleProof }, body })
+    expect(crossRole.status).toBe(403)
+    expect((await crossRole.json() as Envelope).error?.code).toBe('FORBIDDEN')
+
     const forgedIdentity = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', ...proof, 'x-worker-id': 'worker-forged' }, body })
     expect(forgedIdentity.status).toBe(403)
     expect((await forgedIdentity.json() as Envelope).error?.code).toBe('FORBIDDEN')

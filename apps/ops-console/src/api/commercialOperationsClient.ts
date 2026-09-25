@@ -130,12 +130,37 @@ function requiredText(row: RecordValue, method: string, label: string, ...keys: 
   return text(value) ? value : invalid(method, `${label} 缺失`);
 }
 
-function pageRows(value: unknown, method: string): { rows: RecordValue[]; total: number } {
+function pageRows(value: unknown, method: string): { rows: RecordValue[]; total: number; truncated: boolean; nextCursor: string | null } {
   const rows = Array.isArray(value) ? value : object(value) && Array.isArray(value.items) ? value.items : null;
   if (!rows || !rows.every(object)) invalid(method, "items 必须是对象数组");
   const rawTotal = object(value) ? finiteNumber(value.total) : null;
-  return { rows, total: rawTotal ?? rows.length };
+  const total = rawTotal ?? rows.length;
+  if (!Number.isSafeInteger(total) || total < rows.length) invalid(method, "total 必须是不小于当前页条数的整数");
+  const nextCursor = object(value) && value.next_cursor !== undefined
+    ? (value.next_cursor === null ? null : text(value.next_cursor) ? value.next_cursor : invalid(method, "next_cursor 必须是字符串或 null"))
+    : null;
+  const truncated = object(value) && value.truncated !== undefined
+    ? (typeof value.truncated === "boolean" ? value.truncated : invalid(method, "truncated 必须是布尔值"))
+    : false;
+  if (total > rows.length && !truncated && !nextCursor) invalid(method, "服务端返回了不完整 total，但没有分页继续证据");
+  return { rows, total, truncated, nextCursor };
 }
+
+export interface CommercialPageRequest { cursor?: string; limit?: number }
+export type CommercialPageInput = CommercialPageRequest | AbortSignal | undefined;
+
+function pageRequest(input: CommercialPageInput, signal?: AbortSignal): { params: Record<string, string>; signal?: AbortSignal } {
+  const isSignal = typeof AbortSignal !== "undefined" && input instanceof AbortSignal;
+  const options: CommercialPageRequest = isSignal ? {} : (input as CommercialPageRequest | undefined) ?? {};
+  const limit = options.limit ?? 100;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("商业运营分页 limit 必须是 1 到 100 的整数");
+  return {
+    params: { limit: String(limit), ...(options.cursor?.trim() ? { cursor: options.cursor.trim() } : {}) },
+    ...(isSignal ? { signal: input } : signal ? { signal } : {}),
+  };
+}
+
+const pageMeta = (page: { total: number; truncated: boolean; nextCursor: string | null }) => ({ total: page.total, truncated: page.truncated, nextCursor: page.nextCursor });
 
 export interface CommercialAccessSummary {
   decisionId: string;
@@ -318,7 +343,12 @@ export interface CommercialReadinessReport {
   creativePoints: RecordValue;
 }
 
-export interface CommercialPage<T> { items: T[]; total: number }
+export interface CommercialPage<T> {
+  items: T[]
+  total: number
+  truncated?: boolean
+  nextCursor?: string | null
+}
 
 export function parseCommercialAccessSummary(value: unknown): CommercialAccessSummary {
   const method = commercialOperationsMethods.accessSummary;
@@ -351,7 +381,7 @@ export function parseCommercialAccessSummary(value: unknown): CommercialAccessSu
 export function parseAccessBlocks(value: unknown): CommercialPage<CommercialAccessBlock> {
   const method = commercialOperationsMethods.accessBlocks;
   const page = pageRows(value, method);
-  return { total: page.total, items: page.rows.map((row) => ({
+  return { ...pageMeta(page), items: page.rows.map((row) => ({
     id: requiredText(row, method, "id", "id", "decision_id"),
     workspaceId: requiredText(row, method, "workspace_id", "workspace_id", "workspaceId"),
     state: requiredText(row, method, "state", "state", "status"),
@@ -371,7 +401,7 @@ export function parseAccessBlocks(value: unknown): CommercialPage<CommercialAcce
 export function parseEntitlements(value: unknown): CommercialPage<CommercialEntitlement> {
   const method = commercialOperationsMethods.entitlements;
   const page = pageRows(value, method);
-  return { total: page.total, items: page.rows.map((row) => ({
+  return { ...pageMeta(page), items: page.rows.map((row) => ({
     id: requiredText(row, method, "id", "id", "snapshot_id"),
     workspaceId: requiredText(row, method, "workspace_id", "workspace_id", "workspaceId"),
     skuCode: requiredText(row, method, "sku_code", "sku_code", "skuCode"),
@@ -390,7 +420,7 @@ export function parseEntitlements(value: unknown): CommercialPage<CommercialEnti
 export function parseLedger(value: unknown): CommercialPage<CreativePointLedgerEntry> {
   const method = commercialOperationsMethods.ledger;
   const page = pageRows(value, method);
-  return { total: page.total, items: page.rows.map((row) => {
+  return { ...pageMeta(page), items: page.rows.map((row) => {
     const pointsDelta = finiteNumber(pick(row, "points_delta", "pointsDelta"));
     if (pointsDelta === null) invalid(method, "points_delta 缺失");
     return {
@@ -408,7 +438,7 @@ export function parseLedger(value: unknown): CommercialPage<CreativePointLedgerE
 export function parseCatalog(value: unknown): CommercialPage<CommercialCatalogItem> {
   const method = commercialOperationsMethods.catalog;
   const page = pageRows(value, method);
-  return { total: page.total, items: page.rows.map((row) => ({
+  return { ...pageMeta(page), items: page.rows.map((row) => ({
     id: requiredText(row, method, "id", "id", "sku_id"), skuCode: requiredText(row, method, "sku_code", "sku_code", "skuCode", "code"),
     name: requiredText(row, method, "name", "name"), type: requiredText(row, method, "type", "type", "sku_type"),
     visibility: requiredText(row, method, "visibility", "visibility"), version: requiredText(row, method, "version", "version", "sku_version"),
@@ -441,7 +471,7 @@ export function provisionableCatalogItems(items: readonly CommercialCatalogItem[
 export function parseOrders(value: unknown): CommercialPage<CommercialOrderItem> {
   const method = commercialOperationsMethods.orders;
   const page = pageRows(value, method);
-  return { total: page.total, items: page.rows.map((row) => ({
+  return { ...pageMeta(page), items: page.rows.map((row) => ({
     id: requiredText(row, method, "id", "id", "order_id"), workspaceId: requiredText(row, method, "workspace_id", "workspace_id", "workspaceId"),
     skuCode: requiredText(row, method, "sku_code", "sku_code", "skuCode"), skuVersion: requiredText(row, method, "sku_version", "sku_version", "skuVersion"),
     purchasedPoints: finiteNumber(pick(row, "purchased_points", "purchasedPoints")), amountLabel: requiredText(row, method, "amount_label", "amount_label", "amountLabel"),
@@ -456,7 +486,7 @@ export function parseCommercialRefunds(value: unknown): CommercialPage<Commercia
   const method = commercialOperationsMethods.refundList;
   const page = pageRows(value, method);
   const kinds: CommercialRefundKind[] = ["onboarding_pre_deployment", "monthly_unused_points", "point_pack_unused_points", "outage_compensation", "custom_milestone"];
-  return { total: page.total, items: page.rows.map((row) => {
+  return { ...pageMeta(page), items: page.rows.map((row) => {
     const revision = finiteNumber(row.revision);
     const amountFen = finiteNumber(pick(row, "amount_fen", "amountFen"));
     const pointsToRevoke = finiteNumber(pick(row, "points_to_revoke", "pointsToRevoke"));
@@ -479,7 +509,7 @@ export function parseCommercialRefunds(value: unknown): CommercialPage<Commercia
 export function parseRates(value: unknown): CommercialPage<CreativePointRateItem> {
   const method = commercialOperationsMethods.rates;
   const page = pageRows(value, method);
-  return { total: page.total, items: page.rows.map((row) => ({
+  return { ...pageMeta(page), items: page.rows.map((row) => ({
     id: requiredText(row, method, "id", "id", "rule_id"), actionCode: requiredText(row, method, "action_code", "action_code", "actionCode"),
     actionLabel: requiredText(row, method, "action_label", "action_label", "actionLabel"), unitLabel: requiredText(row, method, "unit_label", "unit_label", "unitLabel"),
     pointsRule: requiredText(row, method, "points_rule", "points_rule", "pointsRule"), version: requiredText(row, method, "version", "version", "rate_card_version"),
@@ -492,7 +522,7 @@ export function parseRates(value: unknown): CommercialPage<CreativePointRateItem
 export function parseServices(value: unknown): CommercialPage<ServiceFulfillmentItem> {
   const method = commercialOperationsMethods.services;
   const page = pageRows(value, method);
-  return { total: page.total, items: page.rows.map((row) => ({
+  return { ...pageMeta(page), items: page.rows.map((row) => ({
     id: requiredText(row, method, "id", "id"), workspaceId: requiredText(row, method, "workspace_id", "workspace_id", "workspaceId"),
     serviceType: requiredText(row, method, "service_type", "service_type", "serviceType"), allocationLabel: requiredText(row, method, "allocation_label", "allocation_label", "allocationLabel"),
     usedLabel: requiredText(row, method, "used_label", "used_label", "usedLabel"), scheduleAt: optionalText(pick(row, "schedule_at", "scheduleAt")),
@@ -504,7 +534,7 @@ export function parseServices(value: unknown): CommercialPage<ServiceFulfillment
 export function parseCommercialTimeline(value: unknown): CommercialPage<CommercialTimelineEvent> {
   const method = commercialOperationsMethods.timeline;
   const page = pageRows(value, method);
-  return { total: page.total, items: page.rows.map((row) => ({
+  return { ...pageMeta(page), items: page.rows.map((row) => ({
     id: requiredText(row, method, "id", "id"), workspaceId: requiredText(row, method, "workspace_id", "workspace_id", "workspaceId"),
     kind: requiredText(row, method, "kind", "kind", "event_type", "eventType"), status: requiredText(row, method, "status", "status"),
     occurredAt: requiredText(row, method, "occurred_at", "occurred_at", "occurredAt", "created_at", "createdAt"),
@@ -549,12 +579,12 @@ export function parseCommercialReadiness(value: unknown): CommercialReadinessRep
 
 export const commercialOperationsClient = {
   summary: async (targetWorkspaceId: string, signal?: AbortSignal) => parseCommercialAccessSummary(await rpc(commercialOperationsMethods.accessSummary, { target_workspace_id: targetWorkspaceId }, { signal })),
-  blocks: async (targetWorkspaceId: string, signal?: AbortSignal) => parseAccessBlocks(await rpc(commercialOperationsMethods.accessBlocks, { target_workspace_id: targetWorkspaceId, status: "open", limit: "100" }, { signal })),
-  entitlements: async (targetWorkspaceId: string, signal?: AbortSignal) => parseEntitlements(await rpc(commercialOperationsMethods.entitlements, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
+  blocks: async (targetWorkspaceId: string, input?: CommercialPageInput, signal?: AbortSignal) => { const page = pageRequest(input, signal); return parseAccessBlocks(await rpc(commercialOperationsMethods.accessBlocks, { target_workspace_id: targetWorkspaceId, status: "open", ...page.params }, { signal: page.signal })); },
+  entitlements: async (targetWorkspaceId: string, input?: CommercialPageInput, signal?: AbortSignal) => { const page = pageRequest(input, signal); return parseEntitlements(await rpc(commercialOperationsMethods.entitlements, { target_workspace_id: targetWorkspaceId, ...page.params }, { signal: page.signal })); },
   ledger: async (targetWorkspaceId: string, signal?: AbortSignal) => parseLedger(await rpc(commercialOperationsMethods.ledger, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
   catalog: async (_targetWorkspaceId: string, includePrivate: boolean, signal?: AbortSignal) => parseCatalog(await rpc(commercialOperationsMethods.catalog, { limit: "100", include_private: String(includePrivate) }, { signal })),
   mutateCatalog: (input: { action: "create" | "approve" | "publish" | "retire"; code: string; kind?: string; visibility?: string; priceFen?: number | null; priceMode?: string; durationDays?: number | null; payload?: Record<string, unknown>; benefits?: unknown[]; reason: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.catalogMutate, { action: input.action, code: input.code, ...(input.kind ? { kind: input.kind } : {}), ...(input.visibility ? { visibility: input.visibility } : {}), ...(input.priceFen !== undefined && input.priceFen !== null ? { price_fen: String(input.priceFen) } : {}), ...(input.priceMode ? { price_mode: input.priceMode } : {}), ...(input.durationDays ? { duration_days: String(input.durationDays) } : {}), ...(input.payload ? { payload_json: JSON.stringify(input.payload) } : {}), ...(input.benefits ? { benefits_json: JSON.stringify(input.benefits) } : {}), idempotency_key: operationId("catalog_mutation"), reason: input.reason, evidence_json: JSON.stringify({ source: "ops_console", action: input.action }) }, { signal }),
-  orders: async (targetWorkspaceId: string, signal?: AbortSignal) => parseOrders(await rpc(commercialOperationsMethods.orders, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
+  orders: async (targetWorkspaceId: string, input?: CommercialPageInput, signal?: AbortSignal) => { const page = pageRequest(input, signal); return parseOrders(await rpc(commercialOperationsMethods.orders, { target_workspace_id: targetWorkspaceId, ...page.params }, { signal: page.signal })); },
   rates: async (_targetWorkspaceId: string, signal?: AbortSignal) => parseRates(await rpc(commercialOperationsMethods.rates, { limit: "100" }, { signal })),
   services: async (targetWorkspaceId: string, signal?: AbortSignal) => parseServices(await rpc(commercialOperationsMethods.services, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
   timeline: async (targetWorkspaceId: string, inputOrSignal?: { from?: string; to?: string; status?: string } | AbortSignal, signal?: AbortSignal) => {

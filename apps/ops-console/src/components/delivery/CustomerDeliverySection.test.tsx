@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, CustomerDeliverySection, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, deliveryCompletion, deliveryLaunchDateLabel, deliveryStatusLabel, filterCustomerDeliveryRecords, isDeliveryChecklistComplete, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
+import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, CustomerDeliverySection, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, createDeliveryUploadTracker, deliveryCompletion, deliveryLaunchDateLabel, deliveryStatusLabel, filterCustomerDeliveryRecords, isCurrentDeliveryWriteScope, isDeliveryChecklistComplete, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
 
 const base: CustomerDeliveryRecord = {
   id: "c-1", companyName: "示例企业", paymentStatus: "paid", profile: true,
@@ -49,6 +49,11 @@ describe("customer delivery completion", () => {
     expect(deliveryCompletion({ ...base, paymentStatus: "unpaid" })).toEqual({ completed: 4, total: 4, ready: true });
   });
 
+  it("does not claim completion without a valid server go-live timestamp", () => {
+    expect(deliveryCompletion({ ...base, goLiveAt: undefined })).toEqual({ completed: 4, total: 4, ready: false });
+    expect(deliveryCompletion({ ...base, goLiveAt: "not-a-date" }).ready).toBe(false);
+  });
+
   it("never blocks delivery steps based on the manually verified payment state", () => {
     for (const step of ["integration", "acceptance", "training"] as const) {
       expect(isDeliveryStepBlocked("unpaid", step)).toBe(false);
@@ -80,10 +85,54 @@ describe("customer delivery completion", () => {
     expect(isDeliveryChecklistComplete({ ...base, acceptance: false, acceptanceItems: [...ACCEPTANCE_ITEMS] }, "acceptance")).toBe(true);
   });
 
-  it("shows the requested launch date before the customer is actually live", () => {
-    expect(deliveryLaunchDateLabel({ createdAt: "2026-09-16T00:00:00.000Z" })).toBe("2026-09-16");
-    expect(deliveryLaunchDateLabel({ createdAt: undefined })).toBe("未填写");
+  it("shows only the server-recorded live date", () => {
+    expect(deliveryLaunchDateLabel({ goLiveAt: "2026-09-16T00:00:00.000Z" })).toBe("2026-09-16");
+    expect(deliveryLaunchDateLabel({ goLiveAt: "not-a-date" })).toBe("未填写");
     expect(deliveryLaunchDateLabel({})).toBe("未填写");
+  });
+
+  it("ignores a late upload callback after the drawer scope changes", async () => {
+    const tracker = createDeliveryUploadTracker();
+    tracker.beginScope("record-a:profile:1");
+    let complete!: (asset: string) => void;
+    const uploaded = new Promise<string>(resolve => { complete = resolve; });
+    const accepted: string[] = [];
+    const callback = uploaded.then(result => {
+      if (isCurrentDeliveryWriteScope({ mounted: true, request: 1, currentRequest: 2, scopeMatches: tracker.isCurrent("record-a:profile:1"), disabled: false, readOnly: false })) accepted.push(result);
+    });
+    tracker.beginScope("record-b:profile:2");
+    complete("asset:late-a");
+    await callback;
+    expect(accepted).toEqual([]);
+    expect(tracker.setBusy("record-a:profile:1", "contract", false)).toBeUndefined();
+  });
+
+  it("keeps upload busy while another uploader in the current scope is still active", () => {
+    const tracker = createDeliveryUploadTracker();
+    tracker.beginScope("record-a:integration:1");
+    expect(tracker.setBusy("record-a:integration:1", "item-a", true)).toBe(true);
+    expect(tracker.setBusy("record-a:integration:1", "item-b", true)).toBe(true);
+    expect(tracker.setBusy("record-a:integration:1", "item-a", false)).toBe(true);
+    expect(tracker.setBusy("record-a:integration:1", "item-b", false)).toBe(false);
+  });
+
+  it.each([
+    { disabled: true, readOnly: false },
+    { disabled: false, readOnly: true },
+  ])("ignores an upload callback after write access is revoked: %j", async access => {
+    const tracker = createDeliveryUploadTracker();
+    tracker.beginScope("record-a:profile:1");
+    let complete!: (asset: string) => void;
+    const pending = new Promise<string>(resolve => { complete = resolve; });
+    const latestAccess = { disabled: false, readOnly: false };
+    const saved: string[] = [];
+    const callback = pending.then(asset => {
+      if (isCurrentDeliveryWriteScope({ mounted: true, request: 1, currentRequest: 1, scopeMatches: tracker.isCurrent("record-a:profile:1"), ...latestAccess })) saved.push(asset);
+    });
+    Object.assign(latestAccess, access);
+    complete("asset:pending");
+    await callback;
+    expect(saved).toEqual([]);
   });
 
   it("exposes training evidence without making read-only sessions writable", () => {
@@ -95,6 +144,28 @@ describe("customer delivery completion", () => {
     const source = readFileSync(new URL("./CustomerDeliverySection.tsx", import.meta.url), "utf8");
     expect(source).toContain("客户培训凭证");
     expect(source).toContain("已上传培训凭证");
+  });
+
+  it("keeps read-only records visible and removes mutation controls", () => {
+    const html = renderToStaticMarkup(<CustomerDeliverySection readOnly records={[base]} onCreate={async () => base} onArchive={async () => {}} onTrainingSave={async () => base} />);
+    expect(html).toContain("示例企业");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*><span>新建客户<\/span><\/button>/u);
+    expect(html).not.toContain("停用并删除记录");
+    expect(html).toContain("查看详情");
+  });
+
+  it("offers profile editing only to writable sessions with a save handler", () => {
+    const writable = renderToStaticMarkup(<CustomerDeliverySection records={[base]} onSave={async record => record} />);
+    const readOnly = renderToStaticMarkup(<CustomerDeliverySection readOnly records={[base]} onSave={async record => record} />);
+    const source = readFileSync(new URL("./CustomerDeliverySection.tsx", import.meta.url), "utf8");
+    expect(writable).toContain("编辑档案");
+    expect(readOnly).not.toContain("编辑档案");
+    expect(source).toContain('onClick={() => void openStep(row, "profile")}');
+  });
+
+  it("shows the bound account login in customer details and an explicit fallback", () => {
+    const source = readFileSync(new URL("./CustomerDeliverySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain('<Descriptions.Item label="生效账号">{detailsRecord.targetAccountLogin || "未关联"}</Descriptions.Item>');
   });
 
   it("filters records by company name and configured owners", () => {

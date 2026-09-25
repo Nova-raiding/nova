@@ -169,7 +169,10 @@ describe('API HTTP vertical slice', () => {
         body: JSON.stringify({ workspace_id: 'ws_admin_assigned' }),
       })
       expect(tokenResponse.status).toBe(200)
-      const token = await tokenResponse.json() as { access_token: string; refresh_token: string }
+      const tokenEnvelope = await tokenResponse.json() as Envelope<{ access_token: string; refresh_token: string }>
+      expect(tokenEnvelope.error).toBeNull()
+      const token = tokenEnvelope.data!
+      expect(token.access_token).toBeTruthy()
       const mcpHeaders = { authorization: `Bearer ${token.access_token}`, 'content-type': 'application/json' }
 
       const mismatched = await fetch(`${base}/mcp`, {

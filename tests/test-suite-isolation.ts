@@ -43,6 +43,7 @@ export const NON_HERMETIC_TEST_FILES = [
   // inside a bounded scan. It needs its own database and its own clock, so it
   // is owned-fixture acceptance rather than a hermetic unit test.
   'packages/persistence/src/support-repository-sla-filter.postgres.test.ts',
+  'apps/api/src/content-generation-action-owner.postgres.test.ts',
   'apps/api/src/canonical-backfill-contract.test.ts',
   // These two are `REDIS_URL` gated. They carry no default-suite assertion at
   // all when the variable is absent (`describe.skipIf` reports every test as
@@ -150,6 +151,11 @@ export const DEFAULT_SUITE_PENDING_ALLOWANCES: readonly DefaultSuitePendingAllow
   { file: 'packages/persistence/src/migration-219-release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/migration-231-release.postgres.test.ts', pending: 3, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/migration-232-release.postgres.test.ts', pending: 5, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/knowledge-generation-claim-boundary.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/migration-250-role-replay.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/creative-point-action-claim.release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/charged-text-dispatch.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/charged-text-no-delivery.release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/migration-integrity-release.postgres.test.ts', pending: 3, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/migration-rls-integrity-release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/object-orphan-repository.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },

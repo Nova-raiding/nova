@@ -25,7 +25,8 @@ const repositorySource = readFileSync(
   new URL('../../../packages/persistence/src/creative-point-repository.ts', import.meta.url),
   'utf8',
 )
-const serverSource = readFileSync(new URL('../../../apps/api/src/server.ts', import.meta.url), 'utf8')
+const commercialMcpSource = readFileSync(new URL('../../../apps/api/src/mcp-commercial-handlers.ts', import.meta.url), 'utf8')
+const commercialHttpSource = readFileSync(new URL('../../../apps/api/src/http-commercial-routes.ts', import.meta.url), 'utf8')
 
 /** Field names of the producing repository DTO, in declaration order. */
 function producerEntryFields(): string[] {
@@ -51,14 +52,14 @@ describe('the statement capture is the shape the server produces', () => {
   })
 
   it('is emitted verbatim by both statement surfaces, so the wire shape is the DTO', () => {
-    const mcpStart = serverSource.indexOf("case 'creative-points.statement.list':")
+    const mcpStart = commercialMcpSource.indexOf("case 'creative-points.statement.list':")
     expect(mcpStart, 'the MCP statement handler must exist').toBeGreaterThan(-1)
-    const mcpCase = serverSource.slice(mcpStart, serverSource.indexOf("case 'commercial.catalog.get':", mcpStart))
+    const mcpCase = commercialMcpSource.slice(mcpStart, commercialMcpSource.indexOf("case 'commercial.catalog.get':", mcpStart))
     expect(mcpCase).toContain('entries: statement.items')
-    const httpStart = serverSource.indexOf("path === '/v1/creative-points/statement'")
+    const httpStart = commercialHttpSource.indexOf("path === '/v1/creative-points/statement'")
     expect(httpStart, 'the HTTP statement handler must exist').toBeGreaterThan(-1)
-    const httpCase = serverSource.slice(httpStart, serverSource.indexOf("path === '/v1/commercial/catalog'", httpStart))
-    expect(httpCase).toContain('persistence.creativePoints.listStatement')
+    const httpCase = commercialHttpSource.slice(httpStart, commercialHttpSource.indexOf("path === '/v1/commercial/catalog'", httpStart))
+    expect(httpCase).toContain('creativePoints.listStatement')
   })
 })
 

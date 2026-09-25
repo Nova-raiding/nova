@@ -108,11 +108,12 @@ export function readArchiveCommit(path) {
   return result.stdout.trim()
 }
 function lines(text) { return Object.fromEntries(text.trim().split('\n').map(line => { const at = line.indexOf('='); requireValue(at > 0, 'candidate identity malformed'); return [line.slice(0, at), line.slice(at + 1)] })) }
-export function validateMigrationAssets(names) {
-  requireValue(Array.isArray(names) && names.length === 245, 'candidate migration chain must contain exactly 245 SQL files')
+export function validateMigrationAssets(names, expectedMigrationVersion) {
+  requireValue(Number.isSafeInteger(expectedMigrationVersion) && expectedMigrationVersion >= 1, 'candidate release metadata has an invalid expected migration version')
+  requireValue(Array.isArray(names) && names.length === expectedMigrationVersion, `candidate migration chain must contain exactly ${expectedMigrationVersion} SQL files`)
   const ordered = [...names].sort()
   for (let index = 0; index < ordered.length; index++) requireValue(new RegExp(`^${String(index + 1).padStart(3, '0')}_[a-z0-9][a-z0-9_]*\\.sql$`, 'u').test(ordered[index]), 'candidate migration chain has a gap or unsafe filename')
-  requireValue(ordered[242] === '243_local_plugin_connection_requests.sql' && ordered[243] === '244_local_plugin_install_instances.sql' && ordered[244] === '245_local_plugin_authorized_timestamp.sql', 'candidate 243/244/245 migration identity mismatch')
+  if (expectedMigrationVersion >= 245) requireValue(ordered[242] === '243_local_plugin_connection_requests.sql' && ordered[243] === '244_local_plugin_install_instances.sql' && ordered[244] === '245_local_plugin_authorized_timestamp.sql', 'candidate 243/244/245 migration identity mismatch')
 }
 async function hashFile(path, maxBytes) {
   const st = statSync(path); requireValue(st.size > 0 && st.size <= maxBytes, 'input size is invalid')
@@ -183,13 +184,18 @@ async function main(args) {
   const output = join(RESTORE_ROOT, `${options['--release-id']}-${nonce}.json`)
   const extraction = join(RESTORE_ROOT, `${options['--release-id']}-${nonce}-source`)
   mkdirSync(extraction, { mode: 0o700 })
-  const tar = spawnSync('/usr/bin/tar', ['--no-same-owner', '--no-same-permissions', '-xf', join(root, '.candidate-source.tar'), '-C', extraction, 'packages/persistence/src/migrations', 'infra/scripts/apply-migrations.sh', 'infra/scripts/validate-ecs-compose-release.rb'], { encoding: 'utf8', timeout: 120_000, maxBuffer: 8192, env: { PATH: '/usr/bin:/bin' } })
+  const tar = spawnSync('/usr/bin/tar', ['--no-same-owner', '--no-same-permissions', '-xf', join(root, '.candidate-source.tar'), '-C', extraction, 'release-metadata.json', 'packages/persistence/src/migrations', 'infra/scripts/apply-migrations.sh', 'infra/scripts/validate-ecs-compose-release.rb'], { encoding: 'utf8', timeout: 120_000, maxBuffer: 8192, env: { PATH: '/usr/bin:/bin' } })
   requireValue(!tar.error && tar.status === 0, 'candidate migration assets could not be extracted from verified archive')
   requireValue(await hashFile(join(root, '.candidate-source.tar'), 4 * 1024 * 1024 * 1024) === identity.source_sha256.slice(7), 'staged source archive changed during extraction')
   const migrations = join(extraction, 'packages/persistence/src/migrations'), script = join(extraction, 'infra/scripts/apply-migrations.sh')
+  const releaseMetadataPath = join(extraction, 'release-metadata.json')
   protectedPath(migrations, 'directory'); protectedPath(script)
+  protectedPath(releaseMetadataPath)
+  const releaseMetadata = JSON.parse(readRegular(releaseMetadataPath, 16 * 1024).toString())
+  const expectedMigrationVersion = releaseMetadata.expectedMigrationVersion
+  requireValue(Number.isSafeInteger(expectedMigrationVersion) && expectedMigrationVersion > 0, 'candidate release metadata has no valid expected migration version')
   const migrationNames = readdirSync(migrations)
-  validateMigrationAssets(migrationNames)
+  validateMigrationAssets(migrationNames, expectedMigrationVersion)
   for (const name of migrationNames) protectedPath(join(migrations, name))
   const composeGate = join(extraction, 'infra/scripts/validate-ecs-compose-release.rb')
   protectedPath(composeGate); protectedPath('/usr/bin/ruby'); protectedPath('/usr/bin/tar')
@@ -223,15 +229,15 @@ async function main(args) {
   const migrationContainer = docker(migrationContainerArgs({ migrationName, containerName, network, migrations, script, image: binding.postgresImage }), undefined, 3_600_000, { PGPASSWORD: isolatedPassword })
   requireValue(migrationContainer.length < 64 * 1024, 'migration diagnostics exceeded limit')
   const after = query(containerId, "select min(version)||':'||max(version)||':'||count(*) from public.schema_migrations")
-  requireValue(after === '1:245:245', 'candidate migrations did not end at complete 245 prefix')
+  requireValue(after === `1:${expectedMigrationVersion}:${expectedMigrationVersion}`, 'candidate migrations did not end at the release metadata migration prefix')
   const migrationRows = docker(['exec', '-u', 'postgres', containerId, 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'merchant', '-c', 'select version, name, checksum from public.schema_migrations order by version'])
-  requireValue(migrationRows.split('\n').length === 245, 'migration chain row count changed')
+  requireValue(migrationRows.split('\n').length === expectedMigrationVersion, 'migration chain row count changed')
   for (const [version, name] of [[243, 'local_plugin_connection_requests'], [244, 'local_plugin_install_instances'], [245, 'local_plugin_authorized_timestamp']]) {
     const fileName = readRegular(join(migrations, `${version}_${name}.sql`), 4 * 1024 * 1024)
     requireValue(migrationRows.split('\n')[version - 1]?.split('|')[2] === sha(fileName), `migration ${version} checksum mismatch`)
   }
   inspectContainer(containerId, imageId, network, volume)
-  record(output, { schema_version: 'pg17-isolated-restore-capture/1', status: 'pass', simulated: false, release_id: options['--release-id'], release_git_sha: options['--git-sha'], image_set_digest: options['--image-set-digest'], manifest_sha256: options['--manifest-sha256'], ...retainedNonceBinding(options['--deployment-nonce']), source_archive_sha256: identity.source_sha256, migration_script_sha256: sha(readRegular(script, 256 * 1024)), backup_sha256: binding.backupSha256, source_database_id_sha256: binding.sourceDatabaseIdSha256, target_database_id_sha256: sha(dbIdentity), postgres_image_ref: binding.postgresImage, postgres_image_id: imageId, network_id: networkId, container_id: containerId, volume_name: volume, restored_migration_prefix: before, migrated_prefix: after, migration_chain_sha256: sha(migrationRows), migration_chain_rows: migrationRows.split('\n'), migration_command_output_sha256: sha(migrationContainer), captured_at: new Date().toISOString() })
+  record(output, { schema_version: 'pg17-isolated-restore-capture/2', status: 'pass', simulated: false, release_id: options['--release-id'], release_git_sha: options['--git-sha'], image_set_digest: options['--image-set-digest'], manifest_sha256: options['--manifest-sha256'], migration_target_version: expectedMigrationVersion, ...retainedNonceBinding(options['--deployment-nonce']), source_archive_sha256: identity.source_sha256, migration_script_sha256: sha(readRegular(script, 256 * 1024)), backup_sha256: binding.backupSha256, source_database_id_sha256: binding.sourceDatabaseIdSha256, target_database_id_sha256: sha(dbIdentity), postgres_image_ref: binding.postgresImage, postgres_image_id: imageId, network_id: networkId, container_id: containerId, volume_name: volume, restored_migration_prefix: before, migrated_prefix: after, migration_chain_sha256: sha(migrationRows), migration_chain_rows: migrationRows.split('\n'), migration_command_output_sha256: sha(migrationContainer), captured_at: new Date().toISOString() })
   process.stdout.write(`PG17 isolated restore captured: ${output}\n`)
   } catch (error) {
     try { docker(['rm', '-f', migrationName], undefined, 10_000) } catch {}
@@ -240,7 +246,7 @@ async function main(args) {
       try { docker(['rm', containerId], undefined, 10_000) } catch {}
     }
     if (networkId && /^[a-f0-9]{64}$/u.test(networkId)) { try { docker(['network', 'rm', networkId], undefined, 10_000) } catch {} }
-    try { record(output, { schema_version: 'pg17-isolated-restore-capture/1', status: 'fail', release_id: options['--release-id'], backup_sha256: binding.backupSha256, network_id: networkId ?? null, container_id: containerId ?? null, volume_name: volume, captured_at: new Date().toISOString() }) } catch {}
+    try { record(output, { schema_version: 'pg17-isolated-restore-capture/2', status: 'fail', release_id: options['--release-id'], backup_sha256: binding.backupSha256, network_id: networkId ?? null, container_id: containerId ?? null, volume_name: volume, captured_at: new Date().toISOString() }) } catch {}
     throw error
   }
 }

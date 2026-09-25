@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchManualPublishRecords, fetchPlatformModelStatus, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTaskPage, fetchTasks, generateCampaignBatch, importProduct, MERCHANT_TASK_PAGE_SIZE, registerMerchantAccount, requestApi, type Product } from './src/api.js'
+import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchManualPublishRecords, fetchPlatformAccounts, fetchPlatformModelStatus, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTaskPage, fetchTasks, generateCampaignBatch, importProduct, MERCHANT_TASK_PAGE_SIZE, registerMerchantAccount, requestApi, type Product } from './src/api.js'
+import { buildCatalogPlatforms } from './src/catalog-data.js'
 import { resolveLibraryData } from './src/library-data.js'
 import { resolveTaskDirections } from './src/task-evidence.js'
+import platformAccountsCapture from './src/fixtures/platform-accounts.capture.json'
 
 const envelope = (data: unknown, status = 200) => new Response(JSON.stringify({
   request_id: 'merchant-api-unit',
@@ -73,6 +75,34 @@ describe('merchant product response normalization', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1/products?limit=50&offset=0')
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/v1/products?limit=50&offset=1')
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/v1/tasks?limit=50&offset=0')
+  })
+
+  it('maps the captured platform-account API contract into merchant store facts', async () => {
+    vi.stubGlobal('window', globalThis)
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(platformAccountsCapture), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await fetchPlatformAccounts('/api')
+    const platforms = buildCatalogPlatforms(response.items, [])
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1/platform-accounts')
+    expect(platforms?.map((platform) => platform.id)).toEqual(['taobao', 'tmall', 'jd', 'douyin', 'pinduoduo', 'xiaohongshu'])
+    expect(platforms?.flatMap((platform) => platform.stores)).toMatchObject([{
+      id: 'fixture-store-ws_demo-taobao',
+      name: '淘宝 Fixture 店',
+      dataModeLabel: '演示数据',
+      connectionLabel: '演示连接',
+      readable: true,
+      realConnected: false,
+    }])
+    expect(platforms?.find((platform) => platform.id === 'jd')).toMatchObject({
+      stores: [],
+      connected: false,
+      statusLabel: '未接入',
+    })
   })
 
   it('uses the desktop task page size for task page requests and offsets', async () => {

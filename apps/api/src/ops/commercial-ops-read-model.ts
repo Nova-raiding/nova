@@ -44,6 +44,8 @@ export interface CommercialCatalogAuthorization {
 }
 
 type PageCursor = { kind: 'catalog' | 'rate'; afterId: string }
+export type CommercialContractPageCursorKind = 'orders' | 'entitlements' | 'access-blocks'
+export interface CommercialContractPageCursor { kind: CommercialContractPageCursorKind; createdAt: string; afterId: string }
 type CommercialOpsReadModelErrorCode = 'COMMERCIAL_OPS_CURSOR_INVALID' | 'COMMERCIAL_OPS_PAGE_LIMIT_INVALID'
 type CommercialOpsReadDecisionOutcome = 'DECISION' | 'DENY_DISABLED' | 'DENY_UNCLASSIFIED' | 'DENY_NON_COMMERCIAL'
 
@@ -125,6 +127,20 @@ function decodePageCursor(value: unknown, kind: PageCursor['kind']): PageCursor 
   const parsed = decode(value, 'COMMERCIAL_OPS_CURSOR_INVALID')
   if (parsed.kind !== kind || !text(parsed.afterId)) throw new CommercialOpsReadModelError('COMMERCIAL_OPS_CURSOR_INVALID', '分页游标与数据集不匹配')
   return { kind, afterId: parsed.afterId.trim() }
+}
+
+export function decodeCommercialContractPageCursor(value: unknown, kind: CommercialContractPageCursorKind): { createdAt: string; id: string } | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  if (!text(value)) throw new CommercialOpsReadModelError('COMMERCIAL_OPS_CURSOR_INVALID', '分页游标无效')
+  const parsed = decode(value, 'COMMERCIAL_OPS_CURSOR_INVALID')
+  if (parsed.kind !== kind || !text(parsed.createdAt) || !Number.isFinite(Date.parse(parsed.createdAt)) || !text(parsed.afterId)) {
+    throw new CommercialOpsReadModelError('COMMERCIAL_OPS_CURSOR_INVALID', '分页游标与数据集不匹配')
+  }
+  return { createdAt: new Date(parsed.createdAt).toISOString(), id: parsed.afterId.trim() }
+}
+
+export function encodeCommercialContractPageCursor(kind: CommercialContractPageCursorKind, createdAt: string, id: string): string {
+  return encode({ kind, createdAt: new Date(createdAt).toISOString(), afterId: id } satisfies CommercialContractPageCursor)
 }
 
 export function paginateCommercialRows<T extends { id: string }>(rows: readonly T[], input: { kind: PageCursor['kind']; cursor?: unknown; limit?: unknown }) {

@@ -26,6 +26,13 @@ const SERVER_ONLY_METHODS = new Set([
   'ops.feature-flag.emergency.set',
   'ops.feature-flag.events',
   'ops.feature-flag.evaluate',
+  // The no-delivery resolution is an audited finance mutation with mandatory
+  // provider, usage and settlement proof. It is currently reachable through
+  // the authenticated finance MCP surface, not the desktop queue: the queue
+  // read model does not expose durable action/evidence facts needed to make a
+  // safe one-click decision. Do not infer that the operation is absent; adding
+  // a desktop action requires an evidence-backed finance review workflow.
+  'ops.marketing.generation.no_delivery.refund',
   // Registering the credential-free manual store record is a narrow
   // platform-operations control plane: it decides which merchant workspace owns
   // which platform store scope, it is the only writer of

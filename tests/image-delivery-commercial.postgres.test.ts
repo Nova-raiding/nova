@@ -170,6 +170,12 @@ describe('charged image callback commercial delivery fence (real isolated PG17/R
     const accepted = await signedPost(callbackPath, callbackBody)
     expect(accepted.status, JSON.stringify(accepted.body)).toBe(200)
     expect(accepted.body.data?.candidate_count).toBe(1)
+    const candidateAssetEvents = await scopedRead<{ asset_id: string }>(
+      `SELECT payload->>'asset_id' AS asset_id FROM outbox_events
+       WHERE workspace_id=$1 AND event_type LIKE 'asset.generated_%' AND payload->>'job_id'=$2`,
+      [fixture.workspaceId, job.id],
+    )
+    expect(candidateAssetEvents).toHaveLength(1)
     const reservation = await persistence.creativePoints!.getReservation(fixture.workspaceId, reserved.value.id)
     const usages = await scopedRead<{ settlement_status: string; cost_cny: string }>('SELECT settlement_status,cost_cny FROM model_usage_ledger WHERE workspace_id=$1 AND action_id=$2', [fixture.workspaceId, actionKey])
     expect(reservation?.status).toBe('settled')
@@ -178,9 +184,25 @@ describe('charged image callback commercial delivery fence (real isolated PG17/R
     expect(Number(usages[0]?.cost_cny)).toBe(0.5)
     const merchant = await fetch(`${base}/v1/image-generation-jobs/${encodeURIComponent(job.id)}`, { headers: { authorization: `Bearer ${merchantToken}`, 'x-workspace-id': fixture.workspaceId } }).then(response => response.json()) as Envelope
     expect(merchant.data?.outputs).toHaveLength(1)
+    // Model a second API replica whose in-memory projection predates the
+    // accepted callback. The result handler must refresh the durable snapshot
+    // before deciding whether this delivery needs a new archive.
+    const staleJob = structuredClone(api.service.getImageGenerationJob(fixture.workspaceId, job.id))
+    staleJob.outputs = undefined
+    staleJob.state = 'running'
+    staleJob.archiveState = 'pending'
+    staleJob.revision -= 1
+    api.service.imageGenerationJobs.set(job.id, staleJob)
     const replay = await signedPost(callbackPath, callbackBody)
     expect(replay.status, JSON.stringify(replay.body)).toBe(200)
     expect(replay.body.data?.already_completed).toBe(true)
+    const durableJob = await persistence.business!.get(fixture.workspaceId, 'image_generation_job', job.id)
+    expect((durableJob.payload as { outputs?: unknown[] }).outputs).toHaveLength(1)
+    expect((await scopedRead<{ asset_id: string }>(
+      `SELECT payload->>'asset_id' AS asset_id FROM outbox_events
+       WHERE workspace_id=$1 AND event_type LIKE 'asset.generated_%' AND payload->>'job_id'=$2`,
+      [fixture.workspaceId, job.id],
+    ))).toEqual(candidateAssetEvents)
     const mismatchedReplay = await signedPost(callbackPath, { ...callbackBody, provider_request_id: 'different-provider-request' })
     expect(mismatchedReplay.status).toBe(409)
     expect(mismatchedReplay.body.error?.code).toBe('IMAGE_GENERATION_CALLBACK_REPLAY_MISMATCH')

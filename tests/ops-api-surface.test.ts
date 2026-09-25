@@ -26,6 +26,14 @@ function literalRpcMethods(): string[] {
  */
 function routeMethods(): string[] {
   const source = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
+  const directory = new URL('../apps/api/src/', import.meta.url)
+  const importedHandlers = new Map<string, string>()
+  for (const match of source.matchAll(/import\s*\{([^}]+)\}\s*from\s*'\.\/(mcp-[^']+-handlers)\.js'/gu)) {
+    const handler = readFileSync(new URL(`${match[2]}.ts`, directory), 'utf8')
+    for (const symbol of match[1]!.split(',').map(part => part.trim().split(/\s+as\s+/u)[0]!.trim())) {
+      importedHandlers.set(symbol, handler)
+    }
+  }
   const lines = source.split('\n')
   const switchLine = lines.findIndex(line => /^\s+switch \(method\) \{\s*$/u.test(line))
   if (switchLine < 0) throw new Error('the MCP dispatch switch must stay recognizable')
@@ -41,7 +49,31 @@ function routeMethods(): string[] {
   const methods = lines
     .slice(switchLine, end)
     .flatMap(line => [...line.matchAll(/case ['"]([^'"]+)['"]\s*:/gu)].map(match => match[1]!))
-  return [...new Set(methods)]
+  // Before the switch, some domains dispatch through an imported method Set.
+  // Read the actual Set declaration rather than treating every method check in
+  // its handler as a second route (the switch-based handlers have both).
+  const guardedMethods = [...source.slice(source.indexOf('async function routeMcp'), source.indexOf('switch (method)')).matchAll(/\b([A-Z][A-Z0-9_]*METHODS)\.has\(method\)/gu)]
+    .filter(match => importedHandlers.has(match[1]!))
+    .flatMap(match => {
+    const symbol = match[1]!
+    const handler = importedHandlers.get(symbol)
+    if (!handler) throw new Error(`MCP guard ${symbol} has no imported handler`)
+    const declaration = handler.match(new RegExp(`export const ${symbol} = new Set\\(\\[([\\s\\S]*?)\\]\\)`, 'u'))
+    if (!declaration) throw new Error(`MCP guard ${symbol} has no literal method Set`)
+    return [...declaration[1]!.matchAll(/['"]([^'"]+)['"]/gu)].map(item => item[1]!)
+  })
+  const all = [...methods, ...guardedMethods]
+  expect(new Set(all).size, 'each MCP method needs one dispatch branch').toBe(all.length)
+  const routed = new Set(all)
+  // Every imported handler participates in this audit. Its method literals
+  // must be reachable through either a switch case or an imported Set guard.
+  for (const handler of new Set(importedHandlers.values())) {
+    const implemented = [...handler.matchAll(/\bcase '([^']+)'\s*:|\bmethod === '([^']+)'/gu)]
+      .map(match => match[1] ?? match[2]!)
+      .filter(method => MCP_METHODS.includes(method as typeof MCP_METHODS[number]))
+    expect(implemented.filter(method => !routed.has(method))).toEqual([])
+  }
+  return all
 }
 
 describe('operations console API surface', () => {

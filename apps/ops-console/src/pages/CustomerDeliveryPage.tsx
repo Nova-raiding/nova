@@ -201,13 +201,10 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
           expectedRevision: record.revision as number,
         });
       };
-      let result;
-      try { result = await persist(currentRecord); }
-      catch (cause) {
-        if (!isCustomerDeliveryRevisionConflict(cause)) throw cause;
-        currentRecord = await customerDeliveryClient.get(mutationWorkspaceId, payload.record.id);
-        result = await persist(currentRecord);
-      }
+      // Batch writes replace the full checklist. Replaying payload.items with a
+      // newly fetched revision would silently overwrite another operator's
+      // changes, so a conflict must return to the editor for an explicit reload.
+      const result = await persist(currentRecord);
       revision = result.revision;
     } catch (cause) {
       const message = describeOpsError(cause);
@@ -338,13 +335,9 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       return customerDeliveryClient.completeTraining({ targetWorkspaceId, deliveryId: candidate.id, completed, evidenceAssetRefs, expectedRevision: candidate.revision as number });
     };
     try {
-      let updated;
-      try { updated = await persist(record); }
-      catch (cause) {
-        if (!isCustomerDeliveryRevisionConflict(cause)) throw cause;
-        const latest = await customerDeliveryClient.get(targetWorkspaceId, record.id);
-        updated = await persist(latest);
-      }
+      // The completion flag and evidence refs are an atomic replacement. Do
+      // not replay stale refs after a revision conflict.
+      const updated = await persist(record);
       await load();
       return updated;
     }

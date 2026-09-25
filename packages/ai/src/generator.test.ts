@@ -84,6 +84,86 @@ describe('content generator', () => {
     expect(bodies[0]).not.toContain('beforeProviderRequest')
   })
 
+  it('claims and settles every physical provider request, keeping ambiguous attempts active', async () => {
+    const claims: Array<{ attempt: number; transportAttempt: number }> = []
+    const starts: unknown[] = []
+    const settlements: Array<{ claim: unknown; outcome: string }> = []
+    let request = 0
+    const retried = new OpenAICompatibleContentGenerator({
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async () => ++request === 1
+        ? new Response('', { status: 429, headers: { 'retry-after': '0' } })
+        : new Response(JSON.stringify({ id: 'retry-claim', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify(validGeneratedContent()) } }] }), { status: 200 }),
+    })
+    await retried.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_claim', actionId: 'action_claim' },
+      claimProviderAttempt: async proof => { claims.push({ attempt: proof.attempt, transportAttempt: proof.transportAttempt }); return `claim-${proof.transportAttempt}` },
+      startProviderAttempt: async (_proof, claim) => { starts.push(claim) },
+      markProviderAttemptUnknown: async () => undefined,
+      settleProviderAttempt: async (_proof, claim, outcome) => { settlements.push({ claim, outcome }) },
+    })
+    expect(claims).toEqual([{ attempt: 0, transportAttempt: 1 }, { attempt: 0, transportAttempt: 2 }])
+    expect(starts).toEqual(['claim-1', 'claim-2'])
+    expect(settlements).toEqual([{ claim: 'claim-1', outcome: 'rejected' }, { claim: 'claim-2', outcome: 'completed' }])
+
+    const unknown: Array<{ claim: string; providerRequestId?: string }> = []
+    const ambiguous = new OpenAICompatibleContentGenerator({ baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', fetch: async () => new Response('', { status: 502, headers: { 'x-oneapi-request-id': 'req-ambiguous-42' } }) })
+    await expect(ambiguous.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 },
+      claimProviderAttempt: async () => 'unknown-claim', startProviderAttempt: async () => undefined,
+      markProviderAttemptUnknown: async (_proof, claim, providerRequestId) => { unknown.push({ claim: String(claim), providerRequestId }) },
+      settleProviderAttempt: async () => undefined,
+    })).rejects.toMatchObject({ providerOutcome: 'unknown' })
+    expect(unknown).toEqual([{ claim: 'unknown-claim', providerRequestId: 'req-ambiguous-42' }])
+
+    let providerCalls = 0
+    let releasedBeforeDispatch = false
+    const notStarted = new OpenAICompatibleContentGenerator({ baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', fetch: async () => { providerCalls += 1; throw new Error('must not dispatch') } })
+    await expect(notStarted.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 },
+      claimProviderAttempt: async () => 'start-ack-lost',
+      startProviderAttempt: async () => { throw new Error('start response lost') },
+      markProviderAttemptUnknown: async () => undefined,
+      settleProviderAttempt: async (_proof, _claim, outcome) => { releasedBeforeDispatch = outcome === 'rejected' },
+    })).rejects.toThrow('start response lost')
+    expect(providerCalls).toBe(0)
+    expect(releasedBeforeDispatch).toBe(true)
+  })
+
+  it('records a charged malformed response once and stops before a second paid request', async () => {
+    let providerCalls = 0
+    let usageCalls = 0
+    const transitions: string[] = []
+    const generator = new OpenAICompatibleContentGenerator({
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
+      usageSink: async () => { usageCalls += 1; return { recorded: true, costEvidence: true } },
+      fetch: async () => {
+        providerCalls += 1
+        return new Response(JSON.stringify({ id: 'charged-malformed-1', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: '{}' } }] }), { status: 200, headers: { 'x-oneapi-request-id': 'charged-malformed-1' } })
+      },
+    })
+    await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 },
+      usageContext: { workspaceId: 'ws_charged', actionId: 'charged_action' }, allowSchemaRepair: false,
+      claimProviderAttempt: async () => 'charged-claim',
+      startProviderAttempt: async () => { transitions.push('started') },
+      markProviderAttemptUnknown: async () => undefined,
+      recordProviderResponse: async (_proof, _claim, id) => { transitions.push(`recorded:${id}`) },
+      settleProviderAttempt: async (_proof, _claim, outcome) => { transitions.push(outcome) },
+    })).rejects.toMatchObject({ code: 'CHARGED_TEXT_SCHEMA_REPAIR_DISABLED', providerSucceeded: true, reconciliationRequired: true, providerOutcome: 'unknown' })
+    expect(providerCalls).toBe(1)
+    expect(usageCalls).toBe(1)
+    expect(transitions).toEqual(['started', 'recorded:charged-malformed-1', 'completed'])
+  })
+
+  it('fails before provider I/O when durable provider claim hooks are incomplete', async () => {
+    let providerCalls = 0
+    const generator = new OpenAICompatibleContentGenerator({ baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', fetch: async () => {
+      providerCalls += 1
+      return new Response('{}')
+    } })
+    await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 },
+      claimProviderAttempt: async () => 'claim', startProviderAttempt: async () => undefined,
+    })).rejects.toThrow('KNOWLEDGE_CLAIM_HOOKS_INCOMPLETE')
+    expect(providerCalls).toBe(0)
+  })
+
   it('stops before provider I/O when the logical-attempt fence rejects', async () => {
     let providerCalls = 0
     const generator = new OpenAICompatibleContentGenerator({

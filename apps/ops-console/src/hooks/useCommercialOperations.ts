@@ -199,6 +199,8 @@ export function useCommercialOperations(
   const [refunds, setRefunds] = useState<CommercialDataState<CommercialPage<CommercialRefundEvent>>>({ status: "idle" });
   const requestRef = useRef(0);
   const controllerRef = useRef<AbortController | undefined>(undefined);
+  const commercialPageCursorsRef = useRef<Partial<Record<CommercialView, Record<number, string>>>>({});
+  const commercialPageItemsRef = useRef<Partial<Record<CommercialView, Record<number, unknown[]>>>>({});
   const summaryRequestRef = useRef(0);
   const summaryControllerRef = useRef<AbortController | undefined>(undefined);
   const refundRequestRef = useRef(0);
@@ -240,6 +242,8 @@ export function useCommercialOperations(
     requestRef.current += 1;
     summaryRequestRef.current += 1;
     refundRequestRef.current += 1;
+    commercialPageCursorsRef.current = {};
+    commercialPageItemsRef.current = {};
     setSummary({ status: "idle" });
     setData(initialDataStates());
     setRefunds({ status: "idle" });
@@ -295,6 +299,25 @@ export function useCommercialOperations(
         result = privateSkuReadable ? catalog : { ...catalog, items: catalog.items.filter((item) => item.visibility !== "private") };
       } else if (target === "timeline") {
         result = await client.timeline(targetWorkspaceId, controller.signal);
+      } else if (target === "blocks" || target === "entitlements" || target === "orders") {
+        const cursor = commercialPageCursorsRef.current[target]?.[queryState.page];
+        if (queryState.page > 1 && !cursor) {
+          setData((current) => ({ ...current, [target]: { status: "ready", data: current[target].data } }));
+          return;
+        }
+        if (queryState.page === 1) {
+          commercialPageCursorsRef.current[target] = {};
+          commercialPageItemsRef.current[target] = {};
+        }
+        const paged = await client[target](targetWorkspaceId, { limit: 20, ...(cursor ? { cursor } : {}) }, controller.signal);
+        if (paged.nextCursor) {
+          commercialPageCursorsRef.current[target] = { ...(commercialPageCursorsRef.current[target] ?? {}), [queryState.page + 1]: paged.nextCursor };
+        }
+        const pageItems = commercialPageItemsRef.current[target] ?? {};
+        pageItems[queryState.page] = paged.items;
+        commercialPageItemsRef.current[target] = pageItems;
+        const items = Array.from({ length: queryState.page }, (_, index) => pageItems[index + 1] ?? []).flat() as typeof paged.items;
+        result = { ...paged, items, total: items.length + (paged.truncated ? 1 : 0) } as CommercialDataMap[typeof target];
       } else {
         result = await client[target](targetWorkspaceId, controller.signal);
       }
@@ -307,7 +330,7 @@ export function useCommercialOperations(
         ? { status: "forbidden", error }
         : { status: "error", data: current[target].data, error } }));
     }
-  }, [authorization, client, enabled, privateSkuReadable, targetWorkspaceId, view]);
+  }, [authorization, client, enabled, privateSkuReadable, queryState.page, targetWorkspaceId, view]);
 
   const loadRefunds = useCallback(async () => {
     refundControllerRef.current?.abort();
@@ -337,7 +360,7 @@ export function useCommercialOperations(
     return () => summaryControllerRef.current?.abort();
   }, [loadSummary]);
 
-  useEffect(() => { void loadView(view); }, [loadView, view]);
+  useEffect(() => { void loadView(view); }, [loadView, view, queryState.page]);
   useEffect(() => { void loadRefunds(); }, [loadRefunds]);
   useEffect(() => () => { controllerRef.current?.abort(); refundControllerRef.current?.abort(); }, []);
 

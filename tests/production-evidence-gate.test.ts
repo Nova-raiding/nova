@@ -12,26 +12,27 @@ const otherPublicKey = generateKeyPairSync('ed25519').publicKey.export({ format:
 const rsaPublicKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey.export({ format: 'pem', type: 'spki' }).toString()
 const imageSetDigest = `sha256:${'a'.repeat(64)}`; const manifestSha256 = 'd'.repeat(64); const releaseGitSha = 'e'.repeat(40); const now = new Date('2026-08-28T06:00:00Z')
 const deploymentNonce = 'deployment_nonce_abcdefghijklmnop'
+const expectedMigrationVersion = (JSON.parse(readFileSync('release-metadata.json', 'utf8')) as { expectedMigrationVersion: number }).expectedMigrationVersion
 const artifactRoot = mkdtempSync(join(tmpdir(), 'production-evidence-artifacts-'))
 afterAll(() => rmSync(artifactRoot, { recursive: true, force: true }))
-const options = (kind: ProductionEvidenceKind) => ({ kind, releaseId: 'release-1', imageSetDigest, manifestSha256, releaseGitSha, deploymentNonce, artifactRoot, trustedKeyId: 'release-security-2026', publicKeyPem, now })
+const options = (kind: ProductionEvidenceKind) => ({ kind, releaseId: 'release-1', imageSetDigest, manifestSha256, releaseGitSha, deploymentNonce, artifactRoot, trustedKeyId: 'release-security-2026', publicKeyPem, expectedMigrationVersion, now })
 
 function artifactReference(kind: ProductionEvidenceKind, name: string) {
   const relative = `${kind}/${name}.json`; const path = join(artifactRoot, relative)
-  const migrationRows = Array.from({ length: 245 }, (_, index) => `${index + 1}|migration|${'a'.repeat(64)}`)
+  const migrationRows = Array.from({ length: expectedMigrationVersion }, (_, index) => `${index + 1}|migration|${'a'.repeat(64)}`)
   const content = kind === 'payment' ? JSON.stringify({
     kind, operation: name, release_id: 'release-1', deployment_nonce: deploymentNonce,
     order_id_sha256: 'f'.repeat(64), provider_trade_id_sha256: 'b'.repeat(64),
     amount_fen: 1, observed_at: '2026-08-28T05:10:00Z', provider_request_id: `request-${name}`, simulated: false,
     outcome: ({ checkout: 'created', callback: 'accepted', callback_replay: 'idempotent', provider_query: 'paid', reconciliation: 'balanced', refund: 'succeeded' } as Record<string, string>)[name],
   }) : kind === 'restore' && name === 'isolated_restore' ? JSON.stringify({
-    schema_version: 'pg17-isolated-restore-capture/1', status: 'pass', simulated: false, release_id: 'release-1', release_git_sha: releaseGitSha,
+    schema_version: 'pg17-isolated-restore-capture/2', status: 'pass', simulated: false, release_id: 'release-1', release_git_sha: releaseGitSha, migration_target_version: expectedMigrationVersion,
     image_set_digest: imageSetDigest, manifest_sha256: manifestSha256, deployment_nonce_sha256: createHash('sha256').update(deploymentNonce).digest('hex'),
     backup_sha256: 'c'.repeat(64), source_database_id_sha256: '1'.repeat(64), target_database_id_sha256: '2'.repeat(64),
     source_archive_sha256: `sha256:${'3'.repeat(64)}`, migration_chain_sha256: createHash('sha256').update(migrationRows.join('\n')).digest('hex'),
     postgres_image_ref: `registry.example/postgres:17-alpine@sha256:${'4'.repeat(64)}`, postgres_image_id: `sha256:${'4'.repeat(64)}`,
     container_id: '5'.repeat(64), network_id: '6'.repeat(64), volume_name: `merchant_restore_data_${'7'.repeat(24)}`,
-    restored_migration_prefix: '1:242:242', migrated_prefix: '1:245:245', migration_chain_rows: migrationRows,
+    restored_migration_prefix: '1:242:242', migrated_prefix: `1:${expectedMigrationVersion}:${expectedMigrationVersion}`, migration_chain_rows: migrationRows,
     captured_at: '2026-08-28T05:10:00Z',
   }) : JSON.stringify({ kind, name, provider_request_id: `request-${name}` })
   mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content)
@@ -155,6 +156,15 @@ describe('production payment and restore evidence gates', () => {
       'checks.isolated_restore.evidence_ref deployment_nonce_sha256 does not match the protected restore capture',
       'checks.isolated_restore.evidence_ref backup_sha256 does not match the protected restore capture',
       'checks.isolated_restore.evidence_ref target database is not isolated',
+    ]))
+  })
+
+  it('rejects an isolated restore captured for a different release migration target', () => {
+    const value = evidence('restore')
+    expect(validateProductionEvidence(value, { ...options('restore'), expectedMigrationVersion: expectedMigrationVersion + 1 })).toEqual(expect.arrayContaining([
+      'checks.isolated_restore.evidence_ref migration_target_version does not match the protected restore capture',
+      'checks.isolated_restore.evidence_ref migrated_prefix does not match the protected restore capture',
+      'checks.isolated_restore.evidence_ref migration chain is incomplete',
     ]))
   })
 
