@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline/promises'
 import { verifyChatGPTMacApp } from './verify-chatgpt-macos.mjs'
+import { launchVerifiedChatGPT } from './launch-verified-chatgpt-macos.mjs'
 
 if (process.platform !== 'darwin') throw new Error('此安装入口仅支持 macOS。')
 
@@ -58,4 +59,7 @@ if (!installer.error && installer.status === 42) {
   process.exitCode = 42
 } else if (installer.error || installer.status !== 0) {
   throw new Error(`插件安装或登录失败：${installer.error?.message ?? installer.status}`)
+} else {
+  const launch = launchVerifiedChatGPT(appPath)
+  process.stdout.write(launch.launched ? 'ChatGPT 已打开。\n' : `${launch.reason}\n`)
 }

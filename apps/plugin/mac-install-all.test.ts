@@ -3,8 +3,44 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } fro
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import { launchVerifiedChatGPT } from './scripts/launch-verified-chatgpt-macos.mjs'
 
 const verifier = resolve(process.cwd(), 'apps/plugin/scripts/verify-chatgpt-macos.mjs')
+describe('Mac installer launch handoff', () => {
+  it('does not interrupt a running ChatGPT session', () => {
+    const calls: string[] = []
+    const result = launchVerifiedChatGPT('/Applications/ChatGPT.app', {
+      verify: () => ({ ok: true }),
+      spawn: (command: string) => { calls.push(command); return { status: 0 } },
+    })
+    expect(result).toMatchObject({ launched: false })
+    expect(result.reason).toContain('自行退出')
+    expect(calls).toEqual(['/usr/bin/pgrep'])
+  })
+
+  it('opens a verified app when ChatGPT is not running', () => {
+    const calls: string[][] = []
+    const result = launchVerifiedChatGPT('/Applications/ChatGPT.app', {
+      verify: () => ({ ok: true }),
+      spawn: (command: string, args: string[]) => {
+        calls.push([command, ...args])
+        return { status: calls.length === 1 ? 1 : 0 }
+      },
+    })
+    expect(result).toEqual({ launched: true })
+    expect(calls).toEqual([
+      ['/usr/bin/pgrep', '-U', String(process.getuid?.() ?? 0), '-x', 'ChatGPT'],
+      ['/usr/bin/open', '-a', '/Applications/ChatGPT.app'],
+    ])
+  })
+
+  it('refuses to open an app that fails verification', () => {
+    expect(() => launchVerifiedChatGPT('/Applications/ChatGPT.app', {
+      verify: () => ({ ok: false, reason: 'bad signature' }),
+      spawn: () => { throw new Error('should not run') },
+    })).toThrow('bad signature')
+  })
+})
 function verify(appPath: string) {
   const result = spawnSync(process.execPath, ['--input-type=module', '-e',
     'const { verifyChatGPTMacApp } = await import(process.argv[1]); console.log(JSON.stringify(verifyChatGPTMacApp(process.argv[2])))',

@@ -129,7 +129,7 @@ const required = [
   'scripts/install-local-plugin.mjs', 'scripts/login-local-macos.mjs', 'scripts/login-local-windows.mjs', 'scripts/upgrade-installed-plugin.mjs',
   'scripts/windows-installation-binding.mjs',
   'scripts/verify-installed-bridge.mjs', 'scripts/verify-marketplace-source.mjs',
-  'scripts/install-chatgpt-bundled.mjs', 'scripts/install-all-macos.mjs', 'scripts/verify-chatgpt-macos.mjs',
+  'scripts/install-chatgpt-bundled.mjs', 'scripts/install-all-macos.mjs', 'scripts/verify-chatgpt-macos.mjs', 'scripts/launch-verified-chatgpt-macos.mjs',
   'scripts/bundle-provenance.mjs', 'scripts/verify-bundle-provenance.mjs',
   'scheduled/daily-store-risk-scan.json', 'scheduled/weekly-six-platform-digest.json',
   'skills/ecommerce-video-marketing/SKILL.md', 'skills/merchant-marketing/SKILL.md',
