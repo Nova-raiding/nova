@@ -184,41 +184,53 @@ export function projectCreativePointLedgerEntry(entry: CreativePointStatementEnt
   return { id: entry.id, workspace_id: entry.workspaceId, event_type: entry.eventType, points_delta: entry.pointsDelta, balance_after: entry.availableAfter, source: entry.grantSourceType ?? entry.eventType, operation_id: entry.operationId, status: entry.eventType, occurred_at: entry.createdAt, evidence: { reserved_after: entry.reservedAfter, settled_after: entry.settledAfter, access_revision: entry.accessRevision, grant_source_id: entry.grantSourceId, intent: entry.intent } }
 }
 
+function ocrCostRateVersion(rate: CreativePointRateSnapshot): 3 | 4 | null {
+  if (rate.actionCode !== 'ocr.extract' || rate.unit !== 'request'
+    || rate.pricingMode !== 'variable' || rate.integerPoints !== null
+    || rate.variableFormula === null || rate.variableFormula === undefined) return null
+  const formula = rate.variableFormula
+  if (Object.keys(formula).length === 1 && formula.kind === 'cost_cny_x2_ceil_min1') return 3
+  if (Object.keys(formula).length === 4
+    && formula.kind === 'cost_cny_threshold_x2_ceil_v1'
+    && formula.free_when_cost_cny_lte === 0.3
+    && formula.multiplier === 2
+    && formula.min_paid_points === 1) return 4
+  return null
+}
+
 export function projectCreativePointRate(rate: CreativePointRateSnapshot) {
-  const ocrCostRate = rate.actionCode === 'ocr.extract' && rate.unit === 'request'
-    && rate.pricingMode === 'variable' && rate.integerPoints === null
-    && rate.variableFormula !== null && rate.variableFormula !== undefined
-    && Object.keys(rate.variableFormula).length === 1
-    && rate.variableFormula.kind === 'cost_cny_x2_ceil_min1'
+  const ocrVersion = ocrCostRateVersion(rate)
   return {
     id: rate.id,
     action_code: rate.actionCode,
     action_label: rate.actionCode,
     unit_label: rate.unit,
-    points_rule: ocrCostRate ? '⌈实际模型成本（CNY）× 2⌉ 点，最低 1 点' : rate.pricingMode === 'fixed' && rate.integerPoints !== null ? `${rate.integerPoints} 点/${rate.unit}` : rate.pricingMode,
+    points_rule: ocrVersion === 4 ? '实际模型成本 ≤ ¥0.30 免费；超过 ¥0.30 按 ⌈成本（CNY）× 2⌉ 扣点，最低 1 点' : ocrVersion === 3 ? '⌈实际模型成本（CNY）× 2⌉ 点，最低 1 点' : rate.pricingMode === 'fixed' && rate.integerPoints !== null ? `${rate.integerPoints} 点/${rate.unit}` : rate.pricingMode,
     version: `${rate.rateCardId}:v${rate.version}:${rate.checksum}`,
     approval_state: rate.approvalStatus,
     valid_from: rate.effectiveAt,
     valid_to: null,
-    blocking_reason: rate.blockers.length ? rate.blockers.join('；') : rate.pricingMode === 'variable' && !ocrCostRate ? 'RATE_FORMULA_UNSUPPORTED' : rate.executable && rate.ruleExecutable ? null : 'RATE_NOT_EXECUTABLE',
+    blocking_reason: rate.blockers.length ? rate.blockers.join('；') : rate.pricingMode === 'variable' && !ocrVersion ? 'RATE_FORMULA_UNSUPPORTED' : rate.executable && rate.ruleExecutable ? null : 'RATE_NOT_EXECUTABLE',
     lifecycle: rate.lifecycle,
-    executable: rate.executable && rate.ruleExecutable && (rate.pricingMode !== 'variable' || ocrCostRate),
+    executable: rate.executable && rate.ruleExecutable && (rate.pricingMode !== 'variable' || ocrVersion !== null),
   }
 }
 
 export function projectReadinessRate(rates: readonly CreativePointRateSnapshot[], actionCode: string, now = new Date()) {
   const matching = rates.filter(rate => rate.actionCode === actionCode)
+  const current = matching.filter(rate => rate.effectiveAt !== null && Date.parse(rate.effectiveAt) <= now.getTime())
+    .sort((a, b) => b.version - a.version)[0]
   const approved = matching.filter(rate => rate.lifecycle === 'approved'
     && rate.approvalStatus === 'approved' && rate.executable && rate.ruleExecutable
     && ((rate.pricingMode === 'fixed' && rate.integerPoints !== null && rate.integerPoints > 0)
-      || (rate.actionCode === 'ocr.extract' && rate.unit === 'request' && rate.pricingMode === 'variable'
-        && rate.integerPoints === null && rate.variableFormula !== null && rate.variableFormula !== undefined
-        && Object.keys(rate.variableFormula).length === 1 && rate.variableFormula.kind === 'cost_cny_x2_ceil_min1'))
+      || ocrCostRateVersion(rate) !== null)
     && rate.effectiveAt !== null && Date.parse(rate.effectiveAt) <= now.getTime())
-  const latest = (approved.length ? approved : matching).sort((a, b) => b.version - a.version)[0]
+  const latest = current?.lifecycle === 'approved' && current.approvalStatus === 'approved'
+    ? current
+    : (approved.length ? approved : matching).sort((a, b) => b.version - a.version)[0]
   if (!latest) return { action_code: actionCode, approval_state: 'missing', executable: false, blocking_reason: 'RATE_CARD_MISSING' }
   const projected = projectCreativePointRate(latest)
-  return approved.length ? projected : { ...projected, executable: false, blocking_reason: projected.blocking_reason ?? 'RATE_NOT_APPROVED' }
+  return approved.includes(latest) ? projected : { ...projected, executable: false, blocking_reason: projected.blocking_reason ?? 'RATE_NOT_APPROVED' }
 }
 
 type ResolvedBenefit = { code: string; quantity: number | null; rawValue: string | null; rawUnit: string | null }

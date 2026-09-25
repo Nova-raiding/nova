@@ -51,6 +51,23 @@ describe('commercial readiness rate', () => {
     expect(projectReadinessRate([rate(3, { ...variable, variableFormula: { kind: 'cost_cny_x3_ceil_min1' } })], 'ocr.extract'))
       .toMatchObject({ executable: false, blocking_reason: 'RATE_FORMULA_UNSUPPORTED' })
   })
+
+  it('shows the approved OCR free threshold and blocks malformed or unsupported newer rates', () => {
+    const v3 = rate(3, { integerPoints: null, pricingMode: 'variable', variableFormula: { kind: 'cost_cny_x2_ceil_min1' } })
+    const v4 = rate(4, { integerPoints: null, pricingMode: 'variable', variableFormula: {
+      kind: 'cost_cny_threshold_x2_ceil_v1', free_when_cost_cny_lte: 0.3, multiplier: 2, min_paid_points: 1,
+    } })
+    expect(projectReadinessRate([v3, v4], 'ocr.extract')).toMatchObject({
+      executable: true, version: `card_4:v4:${'a'.repeat(64)}`,
+      points_rule: '实际模型成本 ≤ ¥0.30 免费；超过 ¥0.30 按 ⌈成本（CNY）× 2⌉ 扣点，最低 1 点',
+    })
+    expect(projectCreativePointRate(rate(4, { ...v4, variableFormula: {
+      kind: 'cost_cny_threshold_x2_ceil_v1', free_when_cost_cny_lte: 0.31, multiplier: 2, min_paid_points: 1,
+    } })))
+      .toMatchObject({ executable: false, blocking_reason: 'RATE_FORMULA_UNSUPPORTED' })
+    expect(projectReadinessRate([v3, rate(5, { ...v4, variableFormula: { kind: 'unknown' } })], 'ocr.extract'))
+      .toMatchObject({ executable: false, blocking_reason: 'RATE_FORMULA_UNSUPPORTED' })
+  })
 })
 
 describe('commercial Ops read model', () => {
