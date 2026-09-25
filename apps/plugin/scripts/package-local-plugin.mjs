@@ -16,7 +16,6 @@ const git = (args) => {
   return result.stdout.trim()
 }
 const gitCommit = git(['rev-parse', '--verify', 'HEAD'])
-const sourceDirty = Boolean(git(['status', '--porcelain', '--untracked-files=all']))
 const manifest = JSON.parse(readFileSync(resolve(pluginRoot, '.codex-plugin/plugin.json'), 'utf8'))
 const packageJson = JSON.parse(readFileSync(resolve(pluginRoot, 'package.json'), 'utf8'))
 const version = String(manifest.version ?? '')
@@ -153,6 +152,15 @@ const required = [
 for (const relativePath of required) {
   if (!existsSync(resolve(pluginRoot, relativePath))) throw new Error(`local plugin input is missing: ${relativePath}`)
 }
+// Only source files copied into the bundle and build-time code that determines
+// its contents affect the package's Git provenance. Other applications may be
+// edited concurrently in the same worktree without changing this artifact.
+const sourceProvenanceInputs = [...new Set([
+  ...required,
+  'scripts/package-local-plugin.mjs',
+  'scripts/verify-chatgpt-macos.mjs',
+])].map(relativePath => `apps/plugin/${relativePath}`)
+const sourceDirty = Boolean(git(['status', '--porcelain', '--untracked-files=all', '--', ...sourceProvenanceInputs]))
 
 const staging = mkdtempSync(resolve(repositoryRoot, '.local-plugin-package-'))
 try {
