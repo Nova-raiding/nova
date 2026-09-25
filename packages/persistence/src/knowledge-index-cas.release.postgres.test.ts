@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { indexApprovedKnowledge } from '../../application/src/knowledge-lexical-index.js'
 import { loadMigrations, MigrationRunner } from './migration.js'
 import { PostgresKnowledgeRepository } from './knowledge.js'
+import { withWorkspaceTransaction } from './repository.js'
 
 const databaseUrl = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const sha = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex')
@@ -44,14 +45,14 @@ describe.skipIf(!databaseUrl)('PostgreSQL knowledge index CAS acceptance', () =>
   async function document(workspaceId: string, value: string) {
     const created = await repository.createDocument({ workspaceId, knowledgeType: 'product_facts', extractedText: value, contentHash: sha(value), approvalStatus: 'approved', rightsStatus: 'cleared' })
     await repository.replaceChunks(workspaceId, created.id, [{ ordinal: 0, content: value }])
-    await database!.query("UPDATE knowledge_documents SET approval_status='approved',rights_status='cleared',revision=revision+1 WHERE workspace_id=$1 AND id=$2", [workspaceId, created.id])
+    await withWorkspaceTransaction(database!, workspaceId, client => client.query("UPDATE knowledge_documents SET approval_status='approved',rights_status='cleared',revision=revision+1 WHERE workspace_id=$1 AND id=$2", [workspaceId, created.id]))
     return (await repository.listDocuments(workspaceId)).find(item => item.id === created.id)!
   }
 
   it('rejects a stale ready promotion after rights revocation and keeps the document invisible', async () => {
     const scope = await workspace()
     const queued = await document(scope, '原版商品事实')
-    await database!.query("UPDATE knowledge_documents SET rights_status='restricted',revision=revision+1 WHERE workspace_id=$1 AND id=$2", [scope, queued.id])
+    await withWorkspaceTransaction(database!, scope, client => client.query("UPDATE knowledge_documents SET rights_status='restricted',revision=revision+1 WHERE workspace_id=$1 AND id=$2", [scope, queued.id]))
     expect(await repository.transitionQueuedIndexState(scope, queued.id, 'ready', { revision: queued.revision, contentHash: queued.contentHash })).toBeUndefined()
     expect(await indexApprovedKnowledge({ repository, workspaceId: scope })).toMatchObject({ ready: 0, blocked: 1 })
     expect(await repository.search({ workspaceId: scope, query: '原版商品事实' })).toEqual([])
@@ -65,7 +66,7 @@ describe.skipIf(!databaseUrl)('PostgreSQL knowledge index CAS acceptance', () =>
     await repository.upsertEmbedding(scope, oldInput)
     await repository.createDocument({ id: old.id, workspaceId: scope, knowledgeType: 'product_facts', extractedText: '新版向量内容', contentHash: sha('新版向量内容') })
     await repository.replaceChunks(scope, old.id, [{ ordinal: 0, content: '新版向量内容' }])
-    await database!.query("UPDATE knowledge_documents SET approval_status='approved',rights_status='cleared',revision=revision+1 WHERE workspace_id=$1 AND id=$2", [scope, old.id])
+    await withWorkspaceTransaction(database!, scope, client => client.query("UPDATE knowledge_documents SET approval_status='approved',rights_status='cleared',revision=revision+1 WHERE workspace_id=$1 AND id=$2", [scope, old.id]))
     await expect(repository.upsertEmbedding(scope, oldInput)).rejects.toThrow('KNOWLEDGE_EMBEDDING_STALE')
     const count = await database!.query<{ count: string }>('SELECT count(*)::text AS count FROM knowledge_embeddings WHERE workspace_id=$1 AND document_id=$2', [scope, old.id])
     expect(count.rows[0]?.count).toBe('0')
@@ -90,13 +91,13 @@ describe.skipIf(!databaseUrl)('PostgreSQL knowledge index CAS acceptance', () =>
     expect(await repository.transitionQueuedIndexState(scope, queued.id, 'ready', { revision: queued.revision, contentHash: queued.contentHash })).toBeUndefined()
     const restarted = new PostgresKnowledgeRepository(database!)
     expect(await indexApprovedKnowledge({ repository: restarted, workspaceId: scope })).toMatchObject({ blocked: 1, ready: 0 })
-    await database!.query("UPDATE knowledge_documents SET approval_status='approved',rights_status='cleared',revision=revision+1 WHERE workspace_id=$1 AND id=$2", [scope, queued.id])
+    await withWorkspaceTransaction(database!, scope, client => client.query("UPDATE knowledge_documents SET approval_status='approved',rights_status='cleared',revision=revision+1 WHERE workspace_id=$1 AND id=$2", [scope, queued.id]))
     expect(await indexApprovedKnowledge({ repository: restarted, workspaceId: scope })).toMatchObject({ ready: 1 })
     expect(await restarted.search({ workspaceId: scope, query: '第二版内容' })).toHaveLength(1)
     await restarted.replaceChunks(scope, queued.id, [{ ordinal: 0, content: '篡改片段', contentHash: sha('非同一片段') }])
     expect(await restarted.search({ workspaceId: scope, query: '第二版内容' })).toEqual([])
     expect(await indexApprovedKnowledge({ repository: restarted, workspaceId: scope })).toMatchObject({ blocked: 1, ready: 0 })
-    await database!.query("UPDATE knowledge_documents SET approval_status='approved',rights_status='cleared',revision=revision+1 WHERE workspace_id=$1 AND id=$2", [scope, queued.id])
+    await withWorkspaceTransaction(database!, scope, client => client.query("UPDATE knowledge_documents SET approval_status='approved',rights_status='cleared',revision=revision+1 WHERE workspace_id=$1 AND id=$2", [scope, queued.id]))
     expect(await indexApprovedKnowledge({ repository: restarted, workspaceId: scope })).toMatchObject({ failed: 1 })
   })
 
