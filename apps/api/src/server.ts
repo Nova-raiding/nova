@@ -14270,7 +14270,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (claimedSubject && claimedSubject !== actorId && claimedSubject !== externalSubject) throw new DomainError(ERROR_CODES.FORBIDDEN, '新工作区 owner 只能绑定当前认证身份；external_subject 不能替代认证主体', 403)
       const strictAuth = requiresStrictAuth()
       const trustedIssuer = principal?.workspaceIdentityIssuer ?? principal?.issuer
-      if (strictAuth && (!trustedIssuer || !principal.externalSubject || !principal.identityId || principal.workbench !== 'workspace')) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '解析管理员分配的工作区需要可信认证凭据提供 issuer、subject 和 workspace workbench', 401)
+      if (strictAuth && (!principal || !trustedIssuer || !principal.externalSubject || !principal.identityId || principal.workbench !== 'workspace')) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '解析管理员分配的工作区需要可信认证凭据提供 issuer、subject 和 workspace workbench', 401)
       const issuer = trustedIssuer ?? (fixtureMode ? 'urn:merchant:fixture' : 'urn:merchant:local')
       try {
         const allowCreate = !strictAuth
