@@ -185,7 +185,7 @@ describe('content.generate action ownership over HTTP and PostgreSQL', () => {
         expect(activeHold.status, JSON.stringify(activeHold.body)).toBe(409)
         expect(activeHold.body.error?.code).toBe('CHARGED_TEXT_NO_DELIVERY_EVIDENCE_MISMATCH')
         expect((await resolveNoDelivery(7, 'finance-ops-token')).body.error?.code).toBe('CHARGED_TEXT_NO_DELIVERY_EVIDENCE_MISMATCH')
-        expect((await database.query('SELECT id FROM charged_text_no_delivery_resolutions WHERE workspace_id=$1', [workspaceId])).rows).toHaveLength(0)
+        expect((await database.query('SELECT action_key FROM charged_text_no_delivery_resolutions WHERE workspace_id=$1', [workspaceId])).rows).toHaveLength(0)
 
         const providerId = `provider_${fixtureId}`
         const actionKey = 'model:generation:same-client-action'
