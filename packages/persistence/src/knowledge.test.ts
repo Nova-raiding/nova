@@ -600,7 +600,10 @@ describe('knowledge persistence contract', () => {
     const settlementIdentity = { workspaceId: 'ws-a', claimId: claim.claimId!, providerAttemptId: input.providerAttemptId, providerAttemptKey: input.providerAttemptKey, requestBodySha256: input.requestBodySha256, requestNonce: input.requestNonce }
     expect(await memory.settleGenerationKnowledgeClaim({ ...settlementIdentity, to: 'provider_started' })).toMatchObject({ state: 'provider_started', claimedAt: claim.claimedAt })
     expect(await memory.settleGenerationKnowledgeClaim({ ...settlementIdentity, to: 'outcome_unknown' })).toMatchObject({ state: 'outcome_unknown', claimedAt: claim.claimedAt })
+    expect(await memory.claimGenerationKnowledge(input)).toEqual({ claimed: true, claimId: claim.claimId, state: 'outcome_unknown', claimedAt: claim.claimedAt })
+    expect(await memory.settleGenerationKnowledgeClaim({ ...settlementIdentity, to: 'completed' })).toBeUndefined()
     await expect(memory.createDocument({ id: document.id, workspaceId: 'ws-a', productId: 'product-a', knowledgeType: 'product_facts', title: 'facts', extractedText: 'revoked', contentHash: 'd'.repeat(64) })).rejects.toThrow('KNOWLEDGE_GENERATION_ACTIVE')
+    expect(await memory.claimGenerationKnowledge({ ...input, providerAttemptId: 'attempt-a-retry', requestNonce: '00000000-0000-4000-8000-000000000001' })).toEqual({ claimed: false, reason: 'active_claim' })
 
     const secondDocument = await memory.createDocument({ workspaceId: 'ws-a', productId: 'product-b', knowledgeType: 'product_facts', extractedText: content, contentHash: sha, approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready' })
     const preDispatch = await memory.claimGenerationKnowledge({ ...input, eventId: 'event-b', aggregateId: 'aggregate-b', taskId: 'task-b', providerAttemptId: 'attempt-b', productId: 'product-b', expectedDocuments: [{ documentId: secondDocument.id, revision: secondDocument.revision, contentSha256: sha }] })
