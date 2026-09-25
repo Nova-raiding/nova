@@ -699,6 +699,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const demoEvaluationEntitlement = await readFile(new URL('./migrations/246_demo_evaluation_entitlement.sql', import.meta.url), 'utf8')
   const ocrCostRateV3 = await readFile(new URL('./migrations/247_ocr_cost_rate_v3.sql', import.meta.url), 'utf8')
   const ocrFreeThresholdRateV4 = await readFile(new URL('./migrations/248_ocr_free_threshold_rate_v4.sql', import.meta.url), 'utf8')
+  const creativePointActionKeyUnique = await readFile(new URL('./migrations/249_creative_point_action_key_unique.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -948,6 +949,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 246, name: 'demo_evaluation_entitlement', sql: demoEvaluationEntitlement },
     { version: 247, name: 'ocr_cost_rate_v3', sql: ocrCostRateV3 },
     { version: 248, name: 'ocr_free_threshold_rate_v4', sql: ocrFreeThresholdRateV4 },
+    { version: 249, name: 'creative_point_action_key_unique', sql: creativePointActionKeyUnique },
   ]
 }
 

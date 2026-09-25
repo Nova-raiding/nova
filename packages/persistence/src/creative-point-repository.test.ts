@@ -19,7 +19,7 @@ describe('creative point repository', () => {
     const released = await repository.release({ workspaceId: 'ws-a', idempotencyKey: 'release-1', reservationId: first.value.id })
     expect(released.balance).toMatchObject({ availablePoints: 500, reservedPoints: 0, settledPoints: 0, revision: 3 })
 
-    const second = await repository.reserve({ workspaceId: 'ws-a', idempotencyKey: 'reserve-2', actionKey: 'image.generate', rateCardVersion: 'image-v1', points: 90 })
+    const second = await repository.reserve({ workspaceId: 'ws-a', idempotencyKey: 'reserve-2', actionKey: 'image.generate.second', rateCardVersion: 'image-v1', points: 90 })
     const settled = await repository.settle({ workspaceId: 'ws-a', idempotencyKey: 'settle-1', reservationId: second.value.id, actualPoints: 80 })
     expect(settled.value).toMatchObject({ status: 'settled', settledPoints: 80 })
     expect(settled.balance).toMatchObject({ availablePoints: 420, reservedPoints: 0, settledPoints: 80, revision: 5 })
@@ -84,9 +84,10 @@ describe('creative point repository', () => {
     await repository.grant({ workspaceId: 'ws-a', idempotencyKey: 'grant-1', sourceType: 'paid_order', sourceId: 'order-1', points: 100 })
     const input = { workspaceId: 'ws-a', idempotencyKey: 'reserve-1', actionKey: 'image.generate', rateCardVersion: 'image-v1', points: 40 }
     const reserved = await repository.reserve(input)
+    expect(reserved.replayed).toBe(false)
 
     // An active hold is still replayed verbatim: the retry path is unchanged.
-    await expect(repository.reserve(input)).resolves.toMatchObject({ value: { id: reserved.value.id, status: 'active', points: 40 }, balance: { availablePoints: 60, reservedPoints: 40 } })
+    await expect(repository.reserve(input)).resolves.toMatchObject({ value: { id: reserved.value.id, status: 'active', points: 40 }, balance: { availablePoints: 60, reservedPoints: 40 }, replayed: true })
 
     const released = await repository.release({ workspaceId: 'ws-a', idempotencyKey: 'release-1', reservationId: reserved.value.id })
     expect(released.value.status).toBe('released')
@@ -94,9 +95,10 @@ describe('creative point repository', () => {
     // The replay must not hand back a consumed hold, nor silently mint a new one.
     await expect(repository.getBalance('ws-a')).resolves.toMatchObject({ availablePoints: 100, reservedPoints: 0 })
 
-    const second = await repository.reserve({ ...input, idempotencyKey: 'reserve-2' })
+    await expect(repository.reserve({ ...input, idempotencyKey: 'reserve-2' })).rejects.toMatchObject({ code: 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT' })
+    const second = await repository.reserve({ ...input, idempotencyKey: 'reserve-2', actionKey: 'image.generate.second' })
     await repository.settle({ workspaceId: 'ws-a', idempotencyKey: 'settle-1', reservationId: second.value.id, actualPoints: 30 })
-    await expect(repository.reserve({ ...input, idempotencyKey: 'reserve-2' })).rejects.toMatchObject({ code: 'CREATIVE_POINT_RESERVATION_TERMINAL' })
+    await expect(repository.reserve({ ...input, idempotencyKey: 'reserve-2', actionKey: 'image.generate.second' })).rejects.toMatchObject({ code: 'CREATIVE_POINT_RESERVATION_TERMINAL' })
     await expect(repository.getBalance('ws-a')).resolves.toMatchObject({ availablePoints: 70, reservedPoints: 0, settledPoints: 30 })
   })
 
@@ -124,7 +126,7 @@ describe('creative point repository', () => {
     const input = { workspaceId: 'ws-a', idempotencyKey: 'reserve-1', actionKey: 'image.generate', rateCardVersion: 'image-v1', points: 40 }
     // Equivalence: a recorded reservation that is still active replays with a live hold.
     const activeCalls: string[] = []
-    await expect(new PostgresCreativePointRepository(scriptedPool('active', activeCalls)).reserve(input)).resolves.toMatchObject({ value: { id: 'cpr_recorded', status: 'active', points: 40 }, balance: { availablePoints: 60, reservedPoints: 40 } })
+    await expect(new PostgresCreativePointRepository(scriptedPool('active', activeCalls)).reserve(input)).resolves.toMatchObject({ value: { id: 'cpr_recorded', status: 'active', points: 40 }, balance: { availablePoints: 60, reservedPoints: 40 }, replayed: true })
 
     // A terminal hold must be rejected before any allocation, ledger or balance
     // write, and must not be handed back as if it were consumable.
