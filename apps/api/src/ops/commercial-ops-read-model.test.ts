@@ -42,6 +42,15 @@ describe('commercial readiness rate', () => {
     expect(projectReadinessRate([rate(4, { effectiveAt: '2027-01-01T00:00:00.000Z' })], 'ocr.extract', new Date('2026-09-25T00:00:00.000Z')))
       .toMatchObject({ executable: false, blocking_reason: 'RATE_NOT_APPROVED' })
   })
+
+  it('shows only the approved OCR cost formula as executable', () => {
+    const variable = rate(3, { integerPoints: null, pricingMode: 'variable', variableFormula: { kind: 'cost_cny_x2_ceil_min1' } })
+    expect(projectReadinessRate([variable], 'ocr.extract')).toMatchObject({
+      executable: true, points_rule: '⌈实际模型成本（CNY）× 2⌉ 点，最低 1 点',
+    })
+    expect(projectReadinessRate([rate(3, { ...variable, variableFormula: { kind: 'cost_cny_x3_ceil_min1' } })], 'ocr.extract'))
+      .toMatchObject({ executable: false, blocking_reason: 'RATE_FORMULA_UNSUPPORTED' })
+  })
 })
 
 describe('commercial Ops read model', () => {

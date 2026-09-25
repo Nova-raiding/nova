@@ -185,19 +185,24 @@ export function projectCreativePointLedgerEntry(entry: CreativePointStatementEnt
 }
 
 export function projectCreativePointRate(rate: CreativePointRateSnapshot) {
+  const ocrCostRate = rate.actionCode === 'ocr.extract' && rate.unit === 'request'
+    && rate.pricingMode === 'variable' && rate.integerPoints === null
+    && rate.variableFormula !== null && rate.variableFormula !== undefined
+    && Object.keys(rate.variableFormula).length === 1
+    && rate.variableFormula.kind === 'cost_cny_x2_ceil_min1'
   return {
     id: rate.id,
     action_code: rate.actionCode,
     action_label: rate.actionCode,
     unit_label: rate.unit,
-    points_rule: rate.pricingMode === 'fixed' && rate.integerPoints !== null ? `${rate.integerPoints} 点/${rate.unit}` : rate.pricingMode,
+    points_rule: ocrCostRate ? '⌈实际模型成本（CNY）× 2⌉ 点，最低 1 点' : rate.pricingMode === 'fixed' && rate.integerPoints !== null ? `${rate.integerPoints} 点/${rate.unit}` : rate.pricingMode,
     version: `${rate.rateCardId}:v${rate.version}:${rate.checksum}`,
     approval_state: rate.approvalStatus,
     valid_from: rate.effectiveAt,
     valid_to: null,
-    blocking_reason: rate.blockers.length ? rate.blockers.join('；') : rate.executable && rate.ruleExecutable ? null : 'RATE_NOT_EXECUTABLE',
+    blocking_reason: rate.blockers.length ? rate.blockers.join('；') : rate.pricingMode === 'variable' && !ocrCostRate ? 'RATE_FORMULA_UNSUPPORTED' : rate.executable && rate.ruleExecutable ? null : 'RATE_NOT_EXECUTABLE',
     lifecycle: rate.lifecycle,
-    executable: rate.executable && rate.ruleExecutable,
+    executable: rate.executable && rate.ruleExecutable && (rate.pricingMode !== 'variable' || ocrCostRate),
   }
 }
 
@@ -205,7 +210,10 @@ export function projectReadinessRate(rates: readonly CreativePointRateSnapshot[]
   const matching = rates.filter(rate => rate.actionCode === actionCode)
   const approved = matching.filter(rate => rate.lifecycle === 'approved'
     && rate.approvalStatus === 'approved' && rate.executable && rate.ruleExecutable
-    && rate.pricingMode === 'fixed' && rate.integerPoints !== null && rate.integerPoints > 0
+    && ((rate.pricingMode === 'fixed' && rate.integerPoints !== null && rate.integerPoints > 0)
+      || (rate.actionCode === 'ocr.extract' && rate.unit === 'request' && rate.pricingMode === 'variable'
+        && rate.integerPoints === null && rate.variableFormula !== null && rate.variableFormula !== undefined
+        && Object.keys(rate.variableFormula).length === 1 && rate.variableFormula.kind === 'cost_cny_x2_ceil_min1'))
     && rate.effectiveAt !== null && Date.parse(rate.effectiveAt) <= now.getTime())
   const latest = (approved.length ? approved : matching).sort((a, b) => b.version - a.version)[0]
   if (!latest) return { action_code: actionCode, approval_state: 'missing', executable: false, blocking_reason: 'RATE_CARD_MISSING' }
