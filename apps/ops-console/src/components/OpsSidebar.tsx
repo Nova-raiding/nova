@@ -2,6 +2,7 @@ import {
   DashboardOutlined,
   DollarOutlined,
   RobotOutlined,
+  ShopOutlined,
   TeamOutlined,
   MenuOutlined,
 } from "@ant-design/icons";
@@ -43,13 +44,14 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; description: s
     { domain: "overview", label: "总览", description: "查看平台健康与待处理事项", icon: <DashboardOutlined /> },
     { domain: "users", label: "用户中心", description: "管理企业账号与授权范围", icon: <TeamOutlined /> },
     { domain: "customer-delivery", label: "客户交付", description: "管理客户建档、接入、验收与上线", icon: <TeamOutlined /> },
-    // Kept for backwards-compatible tests/bookmarks; intentionally omitted from navigationGroups.
+    { domain: "stores", label: "平台与店铺", description: "查看平台连接并登记人工运营店铺", icon: <ShopOutlined /> },
+    // Kept for backwards-compatible tests/bookmarks; the privileged store route is role-filtered below.
     { domain: "models", label: "模型服务", description: "查看模型状态与计费设置", icon: <RobotOutlined /> },
     { domain: "finance", label: "账务与退款", description: "核对收款、创意点与退款", icon: <DollarOutlined /> },
   ];
 
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
-  { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery"] },
+  { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery", "stores"] },
   // Restored 2026-09-20 by product decision (see retired-ops-assertions.md).
   // Label is 财务 rather than the historical 模型与计费: `models` is still
   // withdrawn, so a group named for models would contain none.

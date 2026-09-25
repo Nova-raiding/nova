@@ -27,6 +27,7 @@ import { describeApiError, type AssetMetadata } from './api'
  */
 
 export type StoreMaterialCategory =
+  | '品牌资料'
   | '商品主图'
   | '详情页图'
   | 'SKU 图'
@@ -59,6 +60,7 @@ export const MATERIAL_UNREAD = '未读取'
 
 export const materialStoreCategories: Array<'全部' | StoreMaterialCategory> = [
   '全部',
+  '品牌资料',
   '商品主图',
   '详情页图',
   'SKU 图',

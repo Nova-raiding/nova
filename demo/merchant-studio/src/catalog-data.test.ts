@@ -117,6 +117,13 @@ describe('the store page renders the server catalogue', () => {
     // A completed read that returned nothing is a real answer, not "unread".
     expect(buildCatalogPlatforms([], null)).toEqual([])
   })
+
+  it('labels manual platform placeholders as requiring operator registration', () => {
+    const manualPlatforms = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'].map((platform) => ({ platform, state: 'manual_operations', dataMode: 'manual_upload' })) as unknown as PlatformAccount[]
+    const rows = buildCatalogPlatforms(manualPlatforms, null)!
+    expect(rows).toHaveLength(6)
+    expect(rows.every((platform) => platform.stores.length === 0 && platform.statusLabel === '需运营登记')).toBe(true)
+  })
 })
 
 describe('product facts come from the server', () => {
@@ -166,6 +173,13 @@ describe('the page cannot fall back to a hardcoded catalogue', () => {
     expect(catalogComponent).toContain('catalogProductsForStore(products, selectedStore.id')
   })
 
+  it('offers a platform choice and operations handoff without exposing merchant OAuth in manual mode', () => {
+    expect(catalogComponent).toContain('Object.entries(platformNames).map')
+    expect(catalogComponent).toContain('前往运营后台登记店铺')
+    expect(catalogComponent).toContain('当前版本不提供商家自行授权连接')
+    expect(catalogComponent).not.toContain('authorizePlatform(baseUrl, platform)')
+  })
+
   it('no longer carries the invented product template table or its per-store copy', () => {
     // The values themselves are pinned by the mapper tests above; these are the
     // two source constructs that used to hand the page a fake catalogue. They are
@@ -190,6 +204,6 @@ describe('the page cannot fall back to a hardcoded catalogue', () => {
   it('does not claim 已连接 for a store the server did not connect', () => {
     // The pill text is the connection word the server's state implies.
     expect(catalogComponent).toContain('{store.connectionLabel}')
-    expect(catalogComponent).toContain('{platform.statusLabel}')
+    expect(catalogComponent).toContain('platform?.statusLabel ?? \'未登记\'')
   })
 })

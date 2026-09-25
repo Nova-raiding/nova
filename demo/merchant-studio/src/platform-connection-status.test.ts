@@ -23,4 +23,14 @@ describe('merchant connection presentation', () => {
     expect(merchantConnectionPresentation({ state: 'not_configured', readEnabled: false })).toMatchObject({ status: '平台暂未配置', sync: '暂不可读取', canSync: false })
     expect(merchantConnectionPresentation({ state: 'revoked', readEnabled: false })).toMatchObject({ status: '已撤销', canReauthorize: true })
   })
+
+  it('keeps a manually registered record distinct from platform authorization', () => {
+    expect(merchantConnectionPresentation({ state: 'manually_registered', readEnabled: false, dataMode: 'account_record_only' })).toMatchObject({ status: '人工登记（未授权）', sync: '不可读取', canSync: false, canReauthorize: false })
+    expect(isRealReadableStore({ readable: true, state: 'manually_registered', dataMode: 'manual_upload' })).toBe(false)
+  })
+
+  it('does not report a credential-free manual record as an authorized store', () => {
+    expect(merchantConnectionPresentation({ state: 'manually_registered', readEnabled: false, dataMode: 'account_record_only' })).toMatchObject({ status: '人工登记（未授权）', sync: '不可读取', canSync: false, canReauthorize: false })
+    expect(isRealReadableStore({ readable: true, state: 'manually_registered', dataMode: 'manual_upload' })).toBe(false)
+  })
 })

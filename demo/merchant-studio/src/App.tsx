@@ -5329,7 +5329,6 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
   // products. It is an organisational label only — the server publishes no
   // series, and this never claims a server write.
   const [seriesOverrides, setSeriesOverrides] = useState<Record<string, string>>({})
-
   useEffect(() => {
     if (!baseUrl) {
       setAccounts(null)
@@ -5343,12 +5342,10 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
     setProducts(null)
     setCatalogReadNote('正在读取平台与店铺…')
     setProductsNote('正在读取商品…')
-    // Independent reads: a failed product read must not hide the stores the
-    // server did return, and neither read falls back to a demo catalogue.
-    if (isManualPlatformOperationsMode(apiMode)) {
-      setAccounts([])
-      setCatalogReadNote('')
-    } else if (shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
+    // This is a workspace-scoped read of records already registered by Ops,
+    // not OAuth discovery. Manual mode must still show the stores Ops assigned.
+    // It never starts authorization, sync or a platform write.
+    if (isManualPlatformOperationsMode(apiMode) || shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
       fetchPlatformAccounts(baseUrl)
         .then((page) => { if (active) setAccounts(Array.isArray(page.items) ? page.items : []) })
         .catch((cause) => { if (active) { setAccounts(null); setCatalogReadNote(`平台与店铺读取失败：${describeApiError(cause)}`) } })
@@ -5467,7 +5464,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
           <span className="catalog-disconnected-state"><i />未连接</span>
           <AlertCircle size={32} aria-hidden="true" />
           <h1>店铺尚未连接</h1>
-          <p>请联系工作人员完成链接店铺操作。</p>
+          <p>请联系平台运营确认店铺登记和资料导入状态。</p>
           <button onClick={() => setSelectedStoreId(null)}>返回店铺选择</button>
         </section>
       </div>
@@ -5612,31 +5609,32 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
           <div className="catalog-platform-list">
           {platforms === null && catalogReadNote ? (
             <p className="muted" role="status">{catalogReadNote}</p>
-          ) : platforms?.map((platform) => (
-            <button className={`${selectedPlatform === platform.id ? 'active ' : ''}${platform.connected ? 'connected' : 'disconnected'}`} type="button" aria-pressed={selectedPlatform === platform.id} key={platform.id} onClick={() => setSelectedPlatform(platform.id)}>
-              <span className="catalog-platform-mark" aria-hidden="true">{platform.mark}</span><span className="catalog-platform-list-copy"><strong>{platform.label}</strong><small>{platform.stores.length} 家店铺</small></span><span className="catalog-platform-connection"><i />{platform.statusLabel}</span><ChevronRight size={16} aria-hidden="true" />
+          ) : Object.entries(platformNames).map(([id, label]) => {
+            const platform = platforms?.find((item) => item.id === id)
+            return <button className={`${selectedPlatform === id ? 'active ' : ''}${platform?.connected ? 'connected' : 'disconnected'}`} type="button" aria-pressed={selectedPlatform === id} key={id} onClick={() => setSelectedPlatform(id)}>
+              <span className="catalog-platform-mark" aria-hidden="true">{platform?.mark ?? label.slice(0, 1)}</span><span className="catalog-platform-list-copy"><strong>{platform?.label ?? label}</strong><small>{platform?.stores.length ?? 0} 家店铺</small></span><span className="catalog-platform-connection"><i />{platform?.statusLabel ?? '未登记'}</span><ChevronRight size={16} aria-hidden="true" />
             </button>
-          ))}
+          })}
           </div>
         </aside>
         <section className="catalog-platform-result" aria-live="polite">
-          {!selectedPlatformView ? (
-            <div className="catalog-platform-empty"><span><Store size={28} /></span><strong>请选择平台</strong><p>请点击左侧平台，选择店铺后进入商品页。</p></div>
+          {!selectedPlatform ? (
+            <div className="catalog-platform-empty"><span><Store size={28} /></span><strong>请选择平台</strong><p>选择平台后查看当前工作区的店铺。当前版本由平台运营人员登记店铺，商家暂不能自行授权连接。</p><a href="https://ops.yxsona.com/ops/stores" target="_blank" rel="noreferrer">前往运营后台登记店铺</a></div>
           ) : selectedPlatformStores.length ? (
             <>
-              <div className="catalog-platform-result-heading"><div><span className="section-kicker">SELECT STORE</span><h2>{selectedPlatformView.label}店铺</h2><p>选择要查看的店铺。</p></div><span>{selectedPlatformStores.length} 家店铺 · {selectedPlatformView.connectedCount} 家已接入</span></div>
+              <div className="catalog-platform-result-heading"><div><span className="section-kicker">SELECT STORE</span><h2>{selectedPlatformView?.label ?? platformNames[selectedPlatform ?? '']}店铺</h2><p>选择要查看的店铺。</p></div><span>{selectedPlatformStores.length} 家店铺 · {selectedPlatformView?.connectedCount ?? 0} 家已接入</span></div>
               <div className={`catalog-store-grid catalog-store-results-grid ${selectedPlatformStores.length === 1 ? 'single' : selectedPlatformStores.length === 2 ? 'pair' : ''}`}>
                 {selectedPlatformStores.map((store) => (
                   <article className={`catalog-store-card ${store.tone} ${store.readable ? 'connected' : 'disconnected'}`} key={store.id}>
                     <header className="catalog-store-identity"><span className="catalog-store-mark" aria-hidden="true">{store.mark}</span><div><h3>{store.name}</h3><small>{store.dataModeLabel}</small></div><span className={`catalog-live-state ${store.realConnected ? '' : 'disconnected'}`}><i />{store.connectionLabel}</span></header>
                     <div className="catalog-store-summary">{store.readable ? <><strong>{store.products === null ? '商品数量未读取' : <><b>{store.products}</b> 件商品</>}</strong><span>{store.syncLabel ? `最近同步：${store.syncLabel}` : '尚无同步记录'}</span></> : <><strong>连接后可查看商品</strong><span>商品数据暂不可读</span></>}</div>
-                    <footer className="catalog-store-action"><button type="button" onClick={() => openStore(store.id)}>{store.readable ? '进入商品库' : '去连接'} <ArrowRight size={15} /></button></footer>
+                    <footer className="catalog-store-action"><button type="button" onClick={() => openStore(store.id)}>{store.readable ? '进入商品库' : '查看状态'} <ArrowRight size={15} /></button></footer>
                   </article>
                 ))}
               </div>
             </>
           ) : (
-            <div className="catalog-platform-empty disconnected"><span><AlertCircle size={28} /></span><strong>{selectedPlatformView.label}尚未接入</strong><p>请联系工作人员完成平台接入。</p></div>
+            <div className="catalog-platform-empty disconnected"><span><AlertCircle size={28} /></span><strong>{selectedPlatformView?.label ?? platformNames[selectedPlatform] ?? '所选平台'}尚未登记</strong><p>当前版本不提供商家自行授权连接。请由平台运营人员为当前工作区登记店铺。</p><a href="https://ops.yxsona.com/ops/stores" target="_blank" rel="noreferrer">前往运营后台登记店铺</a></div>
           )}
         </section>
       </section>
@@ -5986,6 +5984,8 @@ export function MaterialLibraryWorkspace({
         : stores,
     [stores, view],
   )
+  const unclassifiedUploadStore: CatalogStore = { id: 'unclassified', mark: '未', logoUrl: '', name: '未归属工作区素材', platform: '工作区' }
+  const uploadTargets = materialStores.some((store) => store.id === 'unclassified') ? materialStores : [...materialStores, unclassifiedUploadStore]
   const [activeStoreId, setActiveStoreId] = useState(materialStores[0]?.id ?? '')
   // The initial render happens before `/v1/platform-accounts` answers, so the
   // selection starts on the local 未分类 bucket. Remember whether the merchant
@@ -6111,8 +6111,8 @@ export function MaterialLibraryWorkspace({
       document.removeEventListener('keydown', closeSeriesManagerWithKeyboard)
     }
   }, [seriesManagerOpen])
-  const activeStore = materialStores.find((store) => store.id === activeStoreId) ?? materialStores[0]
-  const uploadStore = (materialStores.find((store) => store.id === uploadStoreId) ?? activeStore)!
+  const activeStore = materialStores.find((store) => store.id === activeStoreId) ?? materialStores[0] ?? (view === 'brands' ? unclassifiedUploadStore : undefined)
+  const uploadStore = uploadTargets.find((store) => store.id === uploadStoreId) ?? activeStore ?? unclassifiedUploadStore
   const uploadAvailableSeries = seriesByStore[uploadStoreId] ?? initialSeriesForStore(uploadStoreId)
   // The listed inventory is the workspace read plus whatever this browser
   // actually selected during the session. `GET /v1/assets` is workspace-scoped
@@ -6490,19 +6490,21 @@ export function MaterialLibraryWorkspace({
           <div><span className="section-kicker">BRAND SETTINGS</span><h2>品牌配置</h2><p>统一维护全局、店铺、系列与单图品牌信息，生成内容时自动按优先级应用。</p></div>
           <div className="material-brand-priority" aria-label="资产应用原则"><strong>资产应用原则：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div>
         </div>
+        <div className="material-brand-upload-entry"><div><strong>上传品牌资料</strong><span>通过服务端素材上传器添加图片或文档；品牌配置本身和资料分类暂未由服务端持久化。</span></div><button type="button" className="material-upload-button" onClick={() => { setUploadStoreId('unclassified'); setUploadCategory('品牌资料'); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传品牌资料</span></button></div>
+        {stores.length === 0 && <p className="material-brand-no-store">{catalogStores === null ? '正在读取店铺列表；品牌资料可先上传到工作区素材库。' : '当前没有已登记店铺；品牌资料可先上传到工作区素材库。'}</p>}
         <div className="material-brand-stack">
           <article className="material-brand-row">
             <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>所有系列与图片的默认品牌资产</small></div></div><MaterialBrandFields value={globalBrand} label="全局" onChange={setGlobalBrand} /></div>
             <MaterialBrandOutput value={effectiveGlobalBrand} label="全局配置" enabled={globalBrandEnabled} onEnabledChange={setGlobalBrandEnabled} />
           </article>
-          <article className="material-brand-row">
+          {stores.length > 0 && <article className="material-brand-row">
             <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>02</span><div><strong>店铺配置</strong><small>覆盖全局配置并应用到当前店铺</small></div></div><MaterialBrandFields value={activeStoreBrand} label={activeStore.name} logoLabel="店铺 Logo" onChange={(next) => setStoreBrands((current) => ({ ...current, [activeStoreId]: next }))} leadingCard={<div className="material-brand-series-card material-brand-store-card"><span className="material-brand-store-label">选择店铺</span><MaterialCategoryDropdown ariaLabel="选择配置店铺" value={activeStoreId} options={stores.map((store) => ({ value: store.id, label: store.name }))} onChange={switchBrandStore} /></div>} /></div>
             <MaterialBrandOutput value={effectiveStoreBrand} label="店铺配置" enabled={activeStoreBrandEnabled} onEnabledChange={(enabled) => setStoreBrandEnabled((current) => ({ ...current, [activeStoreId]: enabled }))} context={{ label: '当前店铺', value: activeStore.name }} transitionLabel={storeBrandTransition} />
-          </article>
-          <article className="material-brand-row">
+          </article>}
+          {stores.length > 0 && <article className="material-brand-row">
             <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用到当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} onChange={(next) => setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next }))} leadingCard={<div className="material-brand-series-card" ref={seriesManagerRef}><div className="material-brand-series-current"><span>当前系列</span><strong>{activeBrandSeries}</strong></div><button type="button" aria-haspopup="dialog" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>创建、选择或删除当前店铺系列</strong></div><label><span>新系列名称</span><div><input autoFocus value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={createBrandSeries} disabled={!newSeriesName.trim()}>创建</button></div></label><div className="material-brand-series-list"><span>已有系列</span>{availableSeries.map((item) => <div className={item === activeBrandSeries ? 'active' : ''} key={item}><button type="button" className="material-brand-series-select" onClick={() => switchBrandSeries(item)}><span>{item}</span>{item === activeBrandSeries && <Check size={14} />}</button><button type="button" className="material-brand-series-delete" aria-label={`删除${item}系列`} disabled={availableSeries.length === 1} onClick={() => deleteBrandSeries(item)}><Trash2 size={13} /></button></div>)}</div></div>}</div>} /></div>
             <MaterialBrandOutput value={effectiveSeriesBrand} label="系列配置" enabled={activeSeriesBrandEnabled} onEnabledChange={(enabled) => setSeriesBrandEnabled((current) => ({ ...current, [activeSeriesKey]: enabled }))} context={{ label: '当前系列', value: activeBrandSeries }} transitionLabel={seriesBrandTransition} />
-          </article>
+          </article>}
           <article className="material-brand-row material-brand-single-row">
             <a className="material-brand-single-banner" href={`${window.location.pathname}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(window.location.search)), section: 'knowledge' }).toString()}`}><span>04</span><span className="material-brand-single-copy"><strong>单图配置请前往素材库进行配置</strong><small>优先级最高，只应用于指定图片</small></span><ArrowRight size={18} /></a>
           </article>
@@ -6566,7 +6568,7 @@ export function MaterialLibraryWorkspace({
           )}
         </section>
       )}
-      {activeStore && uploadDialogOpen && (
+      {uploadDialogOpen && (
         <DialogFrame
           title="上传素材"
           kicker="MATERIAL UPLOAD"
@@ -6579,10 +6581,10 @@ export function MaterialLibraryWorkspace({
         >
           <div className="material-upload-dialog">
             <div className="material-upload-top">
-              <div className="material-upload-store"><MaterialCategoryDropdown ariaLabel="选择上传店铺" value={uploadStore.id} options={materialStores.map((store) => ({ value: store.id, label: store.name }))} onChange={(value) => { setUploadStoreId(value); setUploadSeries('') }} searchable searchPlaceholder="搜索店铺" triggerContent={<span className="material-upload-store-trigger"><span className="catalog-store-logo" aria-hidden="true">{uploadStore.logoUrl ? <img src={uploadStore.logoUrl} alt="" /> : uploadStore.mark}</span><span className="material-upload-store-copy"><small>上传到店铺</small><strong>{uploadStore.name}</strong><em>{uploadStore.platform} · 素材仅归属于所选店铺</em></span></span>} /></div>
-              <button type="button" className="material-upload-picker" data-dialog-initial-focus disabled={pendingFiles.length >= 50} onClick={() => uploadInput.current?.click()}><Upload size={18} /><span><strong>{pendingFiles.length ? '继续选择' : '选择图片或视频'}</strong><small>最多 50 个文件</small></span></button>
+              <div className="material-upload-store"><MaterialCategoryDropdown ariaLabel="选择上传目标" value={uploadStore.id} options={uploadTargets.map((store) => ({ value: store.id, label: store.name }))} onChange={(value) => { setUploadStoreId(value); setUploadSeries('') }} searchable searchPlaceholder="搜索店铺" triggerContent={<span className="material-upload-store-trigger"><span className="catalog-store-logo" aria-hidden="true">{uploadStore.logoUrl ? <img src={uploadStore.logoUrl} alt="" /> : uploadStore.mark}</span><span className="material-upload-store-copy"><small>上传目标</small><strong>{uploadStore.name}</strong><em>{uploadStore.platform} · 服务端资产按工作区保存</em></span></span>} /></div>
+              <button type="button" className="material-upload-picker" data-dialog-initial-focus disabled={pendingFiles.length >= 50} onClick={() => uploadInput.current?.click()}><Upload size={18} /><span><strong>{pendingFiles.length ? '继续选择' : view === 'brands' ? '选择图片或文档' : '选择图片或视频'}</strong><small>最多 50 个文件</small></span></button>
             </div>
-            <input ref={uploadInput} className="sr-only" type="file" accept="image/*,video/*" multiple onChange={(event) => addPendingFiles(event.target.files)} />
+            <input ref={uploadInput} className="sr-only" type="file" accept={view === 'brands' ? '.png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.docx,.xlsx,.csv,.txt,.md,.json,.ai,.eps' : 'image/*,video/*'} multiple onChange={(event) => addPendingFiles(event.target.files)} />
             <div className="material-upload-controls">
               <div className="material-upload-category"><span>素材分类</span><MaterialCategoryDropdown ariaLabel="素材分类" value={uploadCategory} options={materialStoreCategories.filter((item): item is StoreMaterialCategory => item !== '全部').map((item) => ({ value: item, label: item }))} onChange={(value) => setUploadCategory(value as StoreMaterialCategory)} /></div>
               <div className="material-upload-category"><span>所属系列</span><MaterialCategoryDropdown ariaLabel="所属系列" value={uploadSeries} options={[{ value: '', label: '请选择系列' }, ...uploadAvailableSeries.map((item) => ({ value: item, label: item }))]} onChange={(value) => setUploadSeries(value)} /></div>
@@ -6600,7 +6602,7 @@ export function MaterialLibraryWorkspace({
                 </article>
               }) : <div><ImageIcon size={30} /><strong>尚未选择素材</strong><span>点击上方按钮，可一次选择或继续追加多张图片。</span></div>}
             </div>
-            <p className="material-upload-note">本次文件将上传至“{uploadStore.name}”，统一归入“{uploadCategory}”{uploadSeries ? `，所属“${uploadSeries}”系列` : '；请选择所属系列'}。上传通过服务端素材接口写入，服务端未接受的素材不会出现在素材库中。</p>
+            <p className="material-upload-note">{uploadCategory === '品牌资料' ? '文件写入当前工作区的服务端素材库；品牌资料分类、店铺归属与系列暂不由服务端持久化。上传文件仍需完成安全与权益确认后才能使用。' : `文件上传至当前工作区素材服务；“${uploadCategory}”${uploadSeries ? ` / ${uploadSeries}` : ''}仅作为本次会话分类，服务端未接受的文件不会出现在素材库中。`}</p>
             {uploadError && <p className="material-download-error" role="alert" data-testid="material-upload-error">{uploadError}</p>}
             {pendingPreviewIndex !== null && pendingPreviews[pendingPreviewIndex] && <button type="button" className="material-upload-lightbox" aria-label="关闭图片预览" onClick={() => setPendingPreviewIndex(null)}><span>{pendingPreviews[pendingPreviewIndex].file.type.startsWith('image/') ? <img src={pendingPreviews[pendingPreviewIndex].url} alt={pendingPreviews[pendingPreviewIndex].file.name} /> : <span className="material-upload-video-preview"><Play size={52} fill="currentColor" /></span>}<strong>{pendingPreviews[pendingPreviewIndex].file.name}</strong><small>点击任意位置关闭</small></span></button>}
           </div>

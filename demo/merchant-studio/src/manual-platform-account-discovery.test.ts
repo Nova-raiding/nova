@@ -5,12 +5,14 @@ import { isManualPlatformOperationsMode, platformOperationsModeFromHealth, shoul
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 
 describe('manual platform account discovery', () => {
-  it('does not request platform accounts while the server is in manual mode', () => {
+  it('reads operator-registered workspace stores in manual mode without enabling OAuth or sync', () => {
     expect(shouldDiscoverPlatformAccounts('/api', 'manual')).toBe(false)
     expect(isManualPlatformOperationsMode(' MANUAL ')).toBe(true)
     expect(shouldDiscoverPlatformAccounts('/api', ' MANUAL ')).toBe(false)
-    expect(app).not.toContain('当前为人工运营模式')
-    expect(app).not.toContain('人工运营模式不执行平台店铺发现')
+    expect(app).toContain('if (isManualPlatformOperationsMode(apiMode) || shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {\n      fetchPlatformAccounts(baseUrl)')
+    expect(app).toContain('前往运营后台登记店铺')
+    expect(app).toContain('当前版本不提供商家自行授权连接')
+    expect(app).toContain("Object.entries(platformNames).map")
     expect(app).toContain('const requestId = ++syncJobsRequestId.current')
     expect(app).toContain('if (!baseUrl) {\n      setSyncJobs(null)')
     expect(app).toContain('if (!shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {\n      setSyncJobs(null)')

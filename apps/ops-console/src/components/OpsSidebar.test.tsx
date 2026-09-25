@@ -4,7 +4,7 @@ import { mainItems, navigationGroups, OpsSidebar } from "./OpsSidebar.js";
 
 describe("OpsSidebar navigation", () => {
   it("uses Store Nova branding for platform operations", () => {
-    expect(mainItems.map(({ domain }) => domain)).not.toEqual(expect.arrayContaining(["tasks", "stores", "rules"]));
+    expect(mainItems.map(({ domain }) => domain)).not.toEqual(expect.arrayContaining(["tasks", "rules"]));
     const markup = renderToStaticMarkup(
       <OpsSidebar
         activeDomain="users"
@@ -30,6 +30,11 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("京东一店");
     expect(markup).not.toContain("我的店铺");
     expect(markup).not.toContain("Store Nova商家中心");
+  });
+
+  it("makes the platform and store registration page discoverable", () => {
+    expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toContainEqual({ domain: "stores", label: "平台与店铺" });
+    expect(navigationGroups.flatMap(({ items }) => [...items])).toContain("stores");
   });
 
   it("exposes the independent model services destination", () => {
@@ -66,7 +71,7 @@ describe("OpsSidebar navigation", () => {
         stores={[]}
         platformLabels={{}}
         selectedStoreScope=""
-        visibleDomains={["users", "audit"]}
+        visibleDomains={["users", "stores", "audit"]}
         onNavigate={() => undefined}
         onSelectStore={() => undefined}
       />,
@@ -75,7 +80,7 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("事故中心");
     expect(markup).not.toContain("账务与退款");
     expect(markup).not.toContain("任务与内容");
-    expect(markup).not.toContain("平台连接");
+    expect(markup).toContain('aria-label="平台与店铺"');
     expect(markup).not.toContain("平台规则");
     expect(markup).not.toContain("功能开关");
     expect(markup).not.toContain("风险与系统");

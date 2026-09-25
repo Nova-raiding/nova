@@ -76,10 +76,11 @@ describe('the material library may not claim a catalogue it did not read', () =>
     // The store list is a read now, so a workspace with no store is reachable.
     // The brand view used to dereference `activeStore.name` unconditionally.
     const brands = renderLibrary({ accounts: [], products: null, view: 'brands' })
-    expect(brands).toContain('当前工作区没有可管理的店铺')
+    expect(brands).toContain('当前没有已登记店铺')
+    expect(brands).toContain('上传品牌资料')
     expect(brands).not.toMatch(/Store Nova/u)
     const unreadBrands = renderLibrary({ baseUrl: 'http://127.0.0.1:9', accounts: null, products: null, view: 'brands' })
-    expect(unreadBrands).toContain('店铺列表尚未从服务端读取')
+    expect(unreadBrands).toContain('上传品牌资料')
   })
 
   it('renders the reviewed workspace landmarks, not a rebuilt page', () => {

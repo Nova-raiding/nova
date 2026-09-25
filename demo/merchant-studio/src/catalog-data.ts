@@ -139,6 +139,8 @@ export function buildCatalogPlatforms(accounts: PlatformAccount[] | null, produc
   ].filter((platform, index, list) => list.indexOf(platform) === index)
   return ordered.map((platform) => {
     const platformStores = stores.filter((store) => store.platformId === platform)
+    const platformRecord = accounts!.find((account) => account.platform === platform)
+    const operationsRegistrationRequired = platformRecord?.state === 'manual_operations' || platformRecord?.dataMode === 'manual_upload'
     const connectedCount = platformStores.filter((store) => store.realConnected).length
     return {
       id: platform,
@@ -146,7 +148,7 @@ export function buildCatalogPlatforms(accounts: PlatformAccount[] | null, produc
       mark: catalogPlatformMark(platform),
       stores: platformStores,
       connectedCount,
-      statusLabel: connectedCount > 0 ? '已接入' : platformStores.length ? platformStores[0]!.connectionLabel : '未接入',
+      statusLabel: connectedCount > 0 ? '已接入' : platformStores.length ? platformStores[0]!.connectionLabel : operationsRegistrationRequired ? '需运营登记' : '未接入',
       connected: connectedCount > 0,
     }
   })
