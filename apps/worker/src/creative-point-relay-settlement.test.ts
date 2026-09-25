@@ -62,9 +62,9 @@ describe('creative point relay settlement', () => {
 
   it('records and verifies the image receipt after API settlement without a second point settlement', async () => {
     const { points, receipts, event, reservationId, settlement } = await fixture('image_generation.execute')
-    const requestId = await settlement.recordSucceeded(event, { modality: 'image', model: 'image-model', providerRequestId: 'image_req_1', costCny: 0.2, observedAt: at }, 'image_generation.execute')
+    const requestId = await settlement.recordSucceeded(event, { modality: 'image', model: 'image-model', providerRequestId: 'image_req_1', costCny: 0.2, observedAt: at, metadata: { usage_observed: true, billing_units: 2 } }, 'image_generation.execute')
     expect(requestId).toBe('image_req_1')
-    expect(receipts.recordProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ provider: 'relay.example', providerRequestId: 'image_req_1', outcome: 'succeeded' }))
+    expect(receipts.recordProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ provider: 'relay.example', providerRequestId: 'image_req_1', outcome: 'succeeded', cost: { currency: 'CNY', actual: 0.2, cost_source: 'relay_reported_cny', billing_units: 2 } }))
     await points.settle({ workspaceId: 'ws_a', reservationId, actualPoints: 3, idempotencyKey: 'commercial.settle:image_generation.execute', metadata: { provider_request_id: requestId }, at })
     receipts.verifyModelUsageDeliverySettlement.mockResolvedValue(true)
     const settle = vi.spyOn(points, 'settle')
@@ -73,6 +73,39 @@ describe('creative point relay settlement', () => {
     expect(receipts.verifyModelUsageDeliverySettlement).toHaveBeenCalledWith({ workspaceId: 'ws_a', reservationId, actionId: 'image_generation.execute', providerRequestId: 'image_req_1', relayProvider: 'relay.example' })
     expect(settle).not.toHaveBeenCalled()
     await expect(points.getReservation('ws_a', reservationId)).resolves.toMatchObject({ status: 'settled', settledPoints: 3 })
+  })
+
+  it.each([
+    { metadata: { billing_units: 1 }, providerRequestId: 'image_req_1' },
+    { metadata: { usage_observed: true, billing_units: 0 }, providerRequestId: 'image_req_1' },
+    { metadata: { usage_observed: true, billing_units: 1 }, providerRequestId: undefined, providerAttemptId: 'attempt_only' },
+    { metadata: { usage_observed: true, billing_units: 1, cost_source: 'relay_pricing_snapshot' }, providerRequestId: 'image_req_1' },
+  ])('rejects incomplete image usage, cost provenance, or provider identity: %j', async invalid => {
+    const { receipts, event, settlement } = await fixture('image_generation.execute')
+    await expect(settlement.recordSucceeded(event, {
+      modality: 'image', model: 'image-model', ...invalid,
+      costCny: 0.2, observedAt: at,
+    }, 'image_generation.execute')).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', providerSucceeded: true })
+    expect(receipts.recordProviderReceipt).not.toHaveBeenCalled()
+  })
+
+  it('requires complete pricing provenance on a derived image cost', async () => {
+    const { receipts, event, settlement } = await fixture('image_generation.execute')
+    await expect(settlement.recordSucceeded(event, {
+      modality: 'image', model: 'image-model', providerRequestId: 'image_priced_1', costCny: 0.2, observedAt: at,
+      metadata: { usage_observed: true, billing_units: 2, cost_source: 'relay_pricing_snapshot', pricing_version: 'pricing-v1', pricing_group: 'image', formula_version: 'formula-v1' },
+    }, 'image_generation.execute')).resolves.toBe('image_priced_1')
+    expect(receipts.recordProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ cost: { currency: 'CNY', actual: 0.2, cost_source: 'relay_pricing_snapshot', billing_units: 2, pricing_version: 'pricing-v1', pricing_group: 'image', formula_version: 'formula-v1' } }))
+  })
+
+  it('rejects persisted image receipts with missing billing or cost provenance before settlement verification', async () => {
+    const { receipts, event, settlement } = await fixture('image_generation.execute')
+    receipts.getProviderReceipt.mockResolvedValue({
+      operationId: 'cpo_test', provider: 'relay.example', providerRequestId: 'image_unproven_1', outcome: 'succeeded',
+      usage: { modality: 'image', model: 'image-model' }, cost: { currency: 'CNY', actual: 0.2 }, verifiedAt: at,
+    })
+    await expect(settlement.settleForDelivery(event, ['image_unproven_1'], 'image_generation.execute')).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', providerRequestId: 'image_unproven_1' })
+    expect(receipts.verifyModelUsageDeliverySettlement).not.toHaveBeenCalled()
   })
 
   it('fails closed when durable API settlement evidence does not match', async () => {

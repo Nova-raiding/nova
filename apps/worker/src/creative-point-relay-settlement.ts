@@ -35,6 +35,38 @@ function validCostEvidence(value: unknown): boolean {
   return isRecord(value) && value.currency === 'CNY' && finiteNonNegative(value.actual)
 }
 
+function validImageUsageEvidence(usage: RelayUsageRecord): boolean {
+  const units = usage.metadata?.billing_units
+  return usage.modality === 'image'
+    && usage.metadata?.usage_observed === true
+    && typeof units === 'number'
+    && Number.isSafeInteger(units)
+    && units > 0
+    && Boolean(identity(usage.providerRequestId))
+}
+
+function imageCostProvenance(usage: RelayUsageRecord): Record<string, unknown> | undefined {
+  if (!validImageUsageEvidence(usage)) return undefined
+  const metadata = usage.metadata ?? {}
+  const source = metadata.cost_source ?? 'relay_reported_cny'
+  if (source === 'relay_reported_cny') return { cost_source: source, billing_units: metadata.billing_units }
+  if (source !== 'relay_pricing_snapshot' || !identity(metadata.pricing_version) || !identity(metadata.pricing_group) || !identity(metadata.formula_version)) return undefined
+  return {
+    cost_source: source,
+    billing_units: metadata.billing_units,
+    pricing_version: metadata.pricing_version,
+    pricing_group: metadata.pricing_group,
+    formula_version: metadata.formula_version,
+  }
+}
+
+function validImageCostEvidence(value: unknown): boolean {
+  if (!validCostEvidence(value) || !isRecord(value) || typeof value.billing_units !== 'number' || !Number.isSafeInteger(value.billing_units) || value.billing_units < 1) return false
+  if (value.cost_source === 'relay_reported_cny') return true
+  return value.cost_source === 'relay_pricing_snapshot'
+    && Boolean(identity(value.pricing_version) && identity(value.pricing_group) && identity(value.formula_version))
+}
+
 const receiptHash = (value: Record<string, unknown>) => createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex')
 
 /**
@@ -62,10 +94,13 @@ export class CreativePointRelaySettlement {
   async recordSucceeded(event: DurableOutboxEvent, usage: RelayUsageRecord, operation: 'generation.execute' | 'image_generation.execute' = 'generation.execute'): Promise<string | undefined> {
     const reservation = await this.reservation(event, operation)
     if (!reservation) return undefined
-    const providerRequestId = identity(usage.providerRequestId) ?? identity(usage.providerAttemptId)
-    if (!validUsageEvidence(usage, true) || !providerRequestId || !finiteNonNegative(usage.costCny)) throw Object.assign(new Error('verified relay identity, usage and finite non-negative cost are required before creative point settlement'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', providerSucceeded: true })
+    const providerRequestId = operation === 'image_generation.execute'
+      ? identity(usage.providerRequestId)
+      : identity(usage.providerRequestId) ?? identity(usage.providerAttemptId)
+    const imageProvenance = operation === 'image_generation.execute' ? imageCostProvenance(usage) : undefined
+    if (!validUsageEvidence(usage, true) || !providerRequestId || !finiteNonNegative(usage.costCny) || (operation === 'image_generation.execute' && !imageProvenance)) throw Object.assign(new Error('verified relay identity, usage and finite non-negative cost are required before creative point settlement'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', providerSucceeded: true })
     const usageEvidence = { modality: usage.modality, model: usage.model, ...(usage.inputTokens !== undefined ? { input_tokens: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { output_tokens: usage.outputTokens } : {}), ...(usage.totalTokens !== undefined ? { total_tokens: usage.totalTokens } : {}) }
-    const costEvidence = { currency: 'CNY', actual: usage.costCny }
+    const costEvidence = { currency: 'CNY', actual: usage.costCny, ...(imageProvenance ?? {}) }
     const at = usage.observedAt
     await this.receipts.recordProviderReceipt({ workspaceId: event.workspaceId, operationId: reservation.operationId, provider: this.provider, providerRequestId, outcome: 'succeeded', usage: usageEvidence, cost: costEvidence, receiptHash: receiptHash({ workspace_id: event.workspaceId, operation_id: reservation.operationId, provider: this.provider, provider_request_id: providerRequestId, outcome: 'succeeded', usage: usageEvidence, cost: costEvidence, verified_at: at }), verifiedAt: at, at })
     return providerRequestId
@@ -81,7 +116,7 @@ export class CreativePointRelaySettlement {
     if (!actionId || actionId !== reservation.actionKey) throw Object.assign(new Error('generation action does not match the frozen creative-point reservation'), { code: 'MODEL_USAGE_SETTLEMENT_EVIDENCE_MISMATCH', providerSucceeded: true, reconciliationRequired: true })
     for (const providerRequestId of identities) {
       const receipt = await this.receipts.getProviderReceipt({ workspaceId: event.workspaceId, operationId: reservation.operationId, provider: this.provider, providerRequestId })
-      if (!receipt || receipt.outcome !== 'succeeded' || !validUsageEvidence(receipt.usage) || !validCostEvidence(receipt.cost) || !receipt.verifiedAt || Number.isNaN(Date.parse(receipt.verifiedAt))) {
+      if (!receipt || receipt.outcome !== 'succeeded' || !validUsageEvidence(receipt.usage) || !validCostEvidence(receipt.cost) || (operation === 'image_generation.execute' && (!isRecord(receipt.usage) || receipt.usage.modality !== 'image' || !validImageCostEvidence(receipt.cost))) || !receipt.verifiedAt || Number.isNaN(Date.parse(receipt.verifiedAt))) {
         throw Object.assign(new Error('verified succeeded relay receipt with usage and cost is required before creative point settlement'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', providerSucceeded: true, providerRequestId })
       }
     }
