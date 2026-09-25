@@ -238,10 +238,9 @@ npx --no-install tsx tests/release-manifest-gate.ts --file "$RELEASE_MANIFEST_PA
 fi
 workspace_latest_migration=$(find packages/persistence/src/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_*.sql' -exec basename {} \; | sed 's/_.*//' | sort -n | tail -1)
 [ "$workspace_latest_migration" = "$EXPECTED_MIGRATION_VERSION" ] || { echo "release migration chain tail mismatch: expected $EXPECTED_MIGRATION_VERSION, workspace has $workspace_latest_migration" >&2; exit 1; }
-# The dedicated Ops credential is intentionally restricted to its control-plane
-# tables. Grant only read access to the release migration ledger so preflight can
-# compare its schema history with the tenant runtime role before migration.
-sh infra/scripts/ensure-ops-migration-history-read.sh
+# The dedicated Ops credential must already have SELECT on schema_migrations.
+# Preflight is a read-only gate: a missing grant must fail verification rather
+# than mutate production ACLs as a side effect.
 MIGRATION_CHAIN_MODE=prefix sh infra/scripts/verify-database-migration-chain.sh
 sh infra/scripts/verify-runtime-db-role.sh
 api_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const x=JSON.parse(process.env.IMAGE_DIGESTS_JSON);process.stdout.write(x["merchant-api"]||"")')

@@ -610,6 +610,9 @@ describe('deployment operation scripts', () => {
       expect(preflight).toContain('verify-database-migration-chain.sh')
       expect(preflight.indexOf('verify-database-migration-chain.sh')).toBeLessThan(preflight.indexOf('verify-runtime-db-role.sh'))
     }
+    // Release preflight is an observation gate, never an implicit ACL repair.
+    expect(ecsPreflight).not.toContain('ensure-ops-migration-history-read.sh')
+    expect(ecsPreflight).not.toMatch(/\b(?:GRANT|REVOKE)\b/iu)
     // The shared verifier needs these three inputs; the k8s path already
     // requires all of them before the migration stage.
     for (const requirement of [

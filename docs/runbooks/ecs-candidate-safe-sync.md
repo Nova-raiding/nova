@@ -143,6 +143,8 @@ sh infra/scripts/ecs-one-click-deploy.sh cleanup
 
 ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATABASE_URL` 核对 `schema_migrations`。迁移前允许数据库处于当前候选迁移链的任一不可变前缀：已应用版本必须从 1 连续、名称和 SQL SHA-256 与候选源码一致、不得出现候选之外的超前版本，且两个运行角色必须看到逐行完全相同的历史。随后才执行租户、Ops 的非 superuser／非 BYPASSRLS、表所有权、ACL 和动态 RLS 边界探针。任一凭据连接失败、历史缺口、角色视图差异、未知或超前版本、名称或 checksum 漂移都会阻断发布；不得通过修改生产迁移记录绕过门禁。
 
+`merchant_ops` 必须在执行 preflight 前已由受控 provisioning 授予 `public.schema_migrations` 的最小 `SELECT` 权限。若缺失，preflight 应以只读方式失败，不得自动修复 ACL。仅在明确的 operator/bootstrap 步骤中，使用 schema-owner 凭据单独运行 `infra/scripts/ensure-ops-migration-history-read.sh`；将执行人与结果留入变更审计。该幂等 helper 仅执行 `REVOKE ALL` 后授予该表的 `SELECT`，不属于候选 preflight，也不修改迁移记录。正式迁移生命周期中的 `ensure-app-role.sql` 保留同一最小 ACL 作为 bootstrap/迁移阶段的保障，但不能替代 preflight 前的 provisioning。
+
 部署执行器消费 nonce 后使用固定摘要的 PostgreSQL 17 迁移镜像执行前向迁移；迁移命令成功并不足以切流。执行器必须再次通过 `DATABASE_URL` 和 `OPS_DATABASE_URL` 运行完整链校验，确认两个运行角色都精确包含 1 到 `EXPECTED_MIGRATION_VERSION` 的候选链，才允许重建 API、Worker、UI 或网关容器。完整链校验失败会在业务容器切换前中止并进入受保护回退流程；数据库仍遵循 forward-only 策略，不执行 schema downgrade。
 
 ### 当前 242→254 过渡发布阻断条件
