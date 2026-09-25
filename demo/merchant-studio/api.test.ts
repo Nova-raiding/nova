@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchManualPublishRecords, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTaskPage, fetchTasks, generateCampaignBatch, importProduct, MERCHANT_TASK_PAGE_SIZE, registerMerchantAccount, requestApi, type Product } from './src/api.js'
+import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchManualPublishRecords, fetchPlatformModelStatus, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTaskPage, fetchTasks, generateCampaignBatch, importProduct, MERCHANT_TASK_PAGE_SIZE, registerMerchantAccount, requestApi, type Product } from './src/api.js'
 import { resolveLibraryData } from './src/library-data.js'
 import { resolveTaskDirections } from './src/task-evidence.js'
 
@@ -170,6 +170,56 @@ describe('merchant product response normalization', () => {
       applicationId: 'app_123',
       login: 'merchant@example.com',
       status: 'merchant_pending',
+    })
+  })
+})
+
+describe('merchant model readiness projection', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', globalThis)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelope({
+      status: 'ok',
+      writesEnabled: false,
+      connectors: {},
+      setup: {
+        ai: { costGate: 'ready', relay: { configured: true, host: 'relay.example.test' } },
+        modelReadiness: {
+          text: { ready: true },
+          image: { ready: true },
+          image_edit: { ready: true },
+          ocr: { ready: true },
+          video: { ready: true },
+          embedding: { ready: false, reasons: ['embedding_not_configured'] },
+        },
+      },
+    })))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('keeps image generation ready when an unrelated embedding modality is blocked', async () => {
+    await expect(fetchPlatformModelStatus('/api')).resolves.toMatchObject({
+      state: 'ready',
+      capabilities: { image_generation: true },
+      cost_control_ready: true,
+      next_actions: [],
+    })
+  })
+
+  it('keeps image generation blocked when the shared model cost gate is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelope({
+      status: 'ok',
+      connectors: {},
+      setup: {
+        ai: { costGate: 'blocked' },
+        modelReadiness: { image: { ready: true } },
+      },
+    })))
+
+    await expect(fetchPlatformModelStatus('/api')).resolves.toMatchObject({
+      state: 'blocked',
+      capabilities: { image_generation: true },
+      cost_control_ready: false,
+      next_actions: ['配置并审批平台模型 RPM、TPM 和每日人民币成本上限'],
     })
   })
 })

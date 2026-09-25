@@ -1055,9 +1055,14 @@ export const fetchPlatformModelStatus = async (baseUrl: string): Promise<Platfor
   // and older fixtures (setup.ai.modelReadiness).
   const readiness = setup?.modelReadiness ?? ai?.modelReadiness
   if (readiness) {
-    const ready = Object.values(readiness).every(item => item.ready === true)
+    // This status is consumed by the image-generation surface. Unrelated
+    // modalities (for example embeddings or video) must not block image work.
+    // Keep the shared model cost gate fail-closed because image requests incur
+    // provider cost even when the image model itself is configured.
+    const costControlReady = ai?.costGate === 'ready'
+    const imageReady = readiness.image?.ready === true
     return {
-      state: ready ? 'ready' : 'blocked',
+      state: imageReady && costControlReady ? 'ready' : 'blocked',
       relay: ai?.relay,
       capabilities: {
         text_generation: readiness.text?.ready === true,
@@ -1066,8 +1071,11 @@ export const fetchPlatformModelStatus = async (baseUrl: string): Promise<Platfor
         image_fact_ocr: readiness.ocr?.ready === true,
         video_rendering: readiness.video?.ready === true,
       },
-      next_actions: Object.values(readiness).flatMap(item => item.reasons ?? []),
-      cost_control_ready: ai?.costGate === 'ready',
+      next_actions: [
+        ...(readiness.image?.reasons ?? []),
+        ...(!costControlReady ? ['配置并审批平台模型 RPM、TPM 和每日人民币成本上限'] : []),
+      ],
+      cost_control_ready: costControlReady,
     }
   }
   return requestMcp<PlatformModelStatus>(baseUrl, 'platform.model.status')
