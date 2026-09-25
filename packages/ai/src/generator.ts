@@ -516,8 +516,12 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
               redirect: 'error',
             })
           } catch (error) {
-            if (!dispatched && claim !== undefined) {
-              await input.settleProviderAttempt?.(providerProof, claim, 'rejected')
+            // A trusted admission hook can reject before any provider bytes
+            // leave the process. Preserve that local denial verbatim; wrapping
+            // it as an ambiguous provider outcome would incorrectly trigger
+            // reconciliation and hide the real authorization failure.
+            if (!dispatched) {
+              if (claim !== undefined) await input.settleProviderAttempt?.(providerProof, claim, 'rejected')
               throw error
             }
             if (claim !== undefined) await input.markProviderAttemptUnknown?.(providerProof, claim)

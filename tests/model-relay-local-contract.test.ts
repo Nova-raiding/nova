@@ -71,9 +71,12 @@ describe('local model relay contract', () => {
 
   it.each(modalities)('requires complete usage/cost/request identity evidence for %s', async modality => {
     const sinkRecords: unknown[] = []
+    const meteringEvidence = modality === 'image' || modality === 'image_edit'
+      ? { output_image_count: 1, cost_cny: 0.01 }
+      : { total_tokens: 3, cost_cny: 0.01 }
     const usage = await emitRelayUsage(
       record => { sinkRecords.push(record); return { recorded: true, costEvidence: true } },
-      { id: `completion-${modality}`, provider_request_id: `provider-${modality}`, usage: { total_tokens: 3, cost_cny: 0.01 } },
+      { id: `completion-${modality}`, provider_request_id: `provider-${modality}`, usage: meteringEvidence },
       new Headers(),
       { modality, model: `${modality}-v1`, context: { workspaceId: 'ws-test', providerAttemptId: `attempt-${modality}` } },
     )
@@ -83,10 +86,11 @@ describe('local model relay contract', () => {
       model: `${modality}-v1`,
       providerRequestId: `provider-${modality}`,
       providerAttemptId: `attempt-${modality}`,
-      totalTokens: 3,
       costCny: 0.01,
       metadata: { usage_observed: true, settlement: 'recorded' },
     })
+    if (modality !== 'image' && modality !== 'image_edit') expect(usage.totalTokens).toBe(3)
+    else expect(usage.metadata).toMatchObject({ billing_units: 1, billing_units_evidence: 'provider_usage' })
     expect(sinkRecords).toHaveLength(1)
   })
 

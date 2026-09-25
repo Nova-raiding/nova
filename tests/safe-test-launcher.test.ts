@@ -82,15 +82,38 @@ describe('safe default test launcher', () => {
     expect(NON_HERMETIC_TEST_FILES).toContain('apps/worker/src/redis-queue-transport.test.ts')
   })
 
-  it('serializes shared runners and recovers a lock owned by a dead process', async () => {
+  it('serializes shared runners and fails closed on a lock owned by a dead process', async () => {
     const root = await mkdtemp(join(tmpdir(), 'safe-test-lock-'))
     const lockPath = join(root, 'runner.lock')
     try {
       await writeFile(lockPath, JSON.stringify({ pid: Number.MAX_SAFE_INTEGER, startedAt: new Date().toISOString() }))
-      const release = await acquireSafeTestLock({ path: lockPath, timeoutMs: 1_000 })
-      expect(JSON.parse(await readFile(lockPath, 'utf8'))).toMatchObject({ pid: process.pid })
-      await release()
-      await expect(readFile(lockPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(acquireSafeTestLock({ path: lockPath, timeoutMs: 1_000 })).rejects.toThrow(/stale .*verify no runner is active/u)
+      expect(JSON.parse(await readFile(lockPath, 'utf8'))).toMatchObject({ pid: Number.MAX_SAFE_INTEGER })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('never replaces a live runner lock while waiting for the owner', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'safe-test-lock-live-'))
+    const lockPath = join(root, 'runner.lock')
+    const owner = { pid: process.pid, startedAt: new Date().toISOString() }
+    try {
+      await writeFile(lockPath, JSON.stringify(owner))
+      await expect(acquireSafeTestLock({ path: lockPath, timeoutMs: 20 })).rejects.toThrow(`pid ${process.pid}`)
+      expect(JSON.parse(await readFile(lockPath, 'utf8'))).toEqual(owner)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('fails closed on a corrupt runner lock without replacing it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'safe-test-lock-corrupt-'))
+    const lockPath = join(root, 'runner.lock')
+    try {
+      await writeFile(lockPath, '{invalid')
+      await expect(acquireSafeTestLock({ path: lockPath, timeoutMs: 20 })).rejects.toThrow(/unreadable; verify no runner is active/u)
+      expect(await readFile(lockPath, 'utf8')).toBe('{invalid')
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -101,6 +124,7 @@ describe('safe default test launcher', () => {
       createStorageRoot: vi.fn(async () => '/test/tmp/merchant-safe-tests-owned'),
       runVitest: vi.fn(async () => 0),
       removeStorageRoot: vi.fn(async () => undefined),
+      acquireLock: vi.fn(async () => async () => undefined),
     }
     return runtime
   }
@@ -124,6 +148,18 @@ describe('safe default test launcher', () => {
     vi.mocked(runtime.runVitest).mockRejectedValue(new Error('spawn failed'))
     await expect(runSafeTests([], { ASSET_STORAGE_ROOT: '/shared/assets' }, runtime)).rejects.toThrow('spawn failed')
     expect(runtime.removeStorageRoot).toHaveBeenCalledExactlyOnceWith('/test/tmp/merchant-safe-tests-owned')
+  })
+
+  it('releases the runner lock if creating its isolated storage root fails', async () => {
+    const runtime = fixture()
+    const release = vi.fn(async () => undefined)
+    vi.mocked(runtime.acquireLock).mockResolvedValue(release)
+    vi.mocked(runtime.createStorageRoot).mockRejectedValue(new Error('storage root failed'))
+    await expect(runSafeTests([], {}, runtime)).rejects.toThrow('storage root failed')
+    expect(runtime.acquireLock).toHaveBeenCalledOnce()
+    expect(release).toHaveBeenCalledOnce()
+    expect(runtime.runVitest).not.toHaveBeenCalled()
+    expect(runtime.removeStorageRoot).not.toHaveBeenCalled()
   })
 
   it('fails before filesystem or child activity for a forbidden explicit selection', async () => {
