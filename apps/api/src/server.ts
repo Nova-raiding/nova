@@ -7639,6 +7639,10 @@ const authorizationGovernanceCapabilities = new Set<CapabilityId>([
 ])
 
 function canonicalRoleMethodAccess(role: CanonicalRole, policy: (typeof MCP_METHOD_POLICIES)[keyof typeof MCP_METHOD_POLICIES]) {
+  // Workspace status is a tenant lifecycle control. Platform roles may inspect
+  // its governance policy, but only the tenant owner can activate or deactivate
+  // a workspace, including while MCP authorization is in shadow mode.
+  if (policy.capability === 'workspace.status.update' && role !== 'workspace_owner') return 'hidden' as const
   if (!capabilitiesForRoles([role]).includes(policy.capability)) return 'hidden' as const
   if (policy.effect === 'read') return 'read' as const
   return authorizationGovernanceCapabilities.has(policy.capability) ? 'govern' as const : 'operate' as const
@@ -17881,7 +17885,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result({ scope, wallet_scope: 'workspace', balance_cny: (walletBalanceFen(workspaceId) / 100).toFixed(2), transactions: walletTransactions.filter(item => item.workspaceId === workspaceId && (scope === 'workspace' || item.actorId === actorId)).slice(-limit).reverse().map(publicMoneyRecord), legacy_unattributed_hidden: scope === 'mine' })
     }
     case 'billing.refund': {
-      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'finance'])
+      const actorId = requireOperationsRole(req, ['platform_admin', 'ops_admin', 'finance_ops', 'platform_ops'])
       const orderId = required(params, 'order_id')
       const reason = required(params, 'reason')
       await persistenceReady
@@ -18016,7 +18020,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result({ currency: 'CNY', statement: { from_at: fromAt ?? null, to_at: toAt ?? null, scope: billingScope.scope, balance_scope: 'workspace', transaction_scope: billingScope.scope, model_usage_scope: billingScope.scope, wallet_scope: 'workspace', source: 'model_usage_ledger' }, balance_scope: 'workspace', transaction_scope: billingScope.scope, model_usage_scope: billingScope.scope, balance_cny: (balanceFen / 100).toFixed(2), recharge_cny: ((totals.recharge ?? 0) / 100).toFixed(2), debit_cny: ((totals.debit ?? 0) / 100).toFixed(2), refund_cny: ((totals.refund ?? 0) / 100).toFixed(2), transaction_count: periodTransactions.length, returned_transaction_count: transactions.length, transaction_limit: limit, has_more_transactions: periodTransactions.length > transactions.length, transactions: transactions.map(publicMoneyRecord), model_usage: { record_count: modelUsage.length, total_tokens: modelUsageTotals.totalTokens, provider_cost_cny: canViewProviderCosts && billingScope.scope === 'workspace' && missingCostEvidenceCount === 0 ? modelUsageTotals.costCny.toFixed(6) : null, missing_cost_evidence_count: missingCostEvidenceCount, customer_charge_cny: modelUsageTotals.customerChargeCny.toFixed(6), unsettled_records: unsettledModelUsage.length, reconciliation_status: reconciliationStatus, reconciliation_checks: { unknown_actor_count: unknownActorCount, orphan_action_count: orphanActionCount, wallet_amount_mismatch_count: walletMismatchCount, missing_run_key_count: missingRunKeyCount, budget_link_mismatch_count: budgetLinkMismatchCount }, external_provider_statement: externalProviderStatement, by_actor: byActor, unsettled: billingScope.scope === 'workspace' ? unsettledModelUsage.slice(0, 100).map(item => ({ id: item.id, revision: item.revision, action_id: item.actionId ?? null, run_key: item.budgetRunKey ?? null, modality: item.modality, model: item.model, settlement_status: item.settlementStatus, allowed_decisions: allowedModelUsageSettlementDecisions(item), attempt_count: item.attemptCount, provider_request_id: canViewProviderCosts ? item.providerRequestId ?? null : null, observed_at: item.observedAt, next_attempt_at: item.nextAttemptAt ?? null, last_error: item.lastError ?? null, settlement_reason: typeof item.metadata?.settlement_reason === 'string' ? item.metadata.settlement_reason : item.settlementStatus })) : [], by_modality: modelUsageTotals.byModality }, action_ledger: { record_count: actionLedger.length, by_kind_settlement_state: actionSummary }, provider: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', ready: process.env.PAYMENT_MODE === 'provider' && provider.ready, reasons: provider.reasons } })
     }
     case 'billing.reconciliation.run': {
-      const actorId = requireOperationsRole(req, ['finance', 'finance_ops', 'ops_admin', 'platform_admin', 'platform_ops'])
+      const actorId = requireOperationsRole(req, ['finance_ops', 'ops_admin', 'platform_admin', 'platform_ops'])
       // Existing desktop clients request 50; cap each shared provider batch at
       // 20 without breaking the public string-valued MCP contract.
       const limit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Math.min(20, Math.max(1, Number(params.limit))) : 10
@@ -18077,7 +18081,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result({ scope, filename: `${filenameBase}.csv`, contentType: 'text/csv; charset=utf-8', content })
     }
     case 'workspace.deactivate': {
-      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'platform_ops'])
+      const actorId = requireOperationsRole(req, ['workspace_owner'])
       const reason = required(params, 'reason')
       const before = await getWorkspaceStatus(workspaceId)
       if (before !== 'disabled') {
@@ -18088,7 +18092,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result({ workspaceId, status: 'disabled', dataRetained: true, reason })
     }
     case 'workspace.activate': {
-      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'platform_ops'])
+      const actorId = requireOperationsRole(req, ['workspace_owner'])
       const reason = required(params, 'reason').trim()
       const before = await getWorkspaceStatus(workspaceId)
       if (before !== 'active') {

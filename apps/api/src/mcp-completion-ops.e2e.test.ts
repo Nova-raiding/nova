@@ -95,6 +95,24 @@ afterEach(async () => {
 })
 
 describe('MCP completion operations per-method HTTP evidence', () => {
+  it('keeps provider refunds and reconciliation platform-only when MCP policy is shadowed', async () => {
+    vi.stubEnv('MCP_AUTHZ_MODE', 'shadow')
+    const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
+    const workspaceId = `ws_billing_shadow_${suffix}`
+    const token = `finance-shadow-${suffix}`
+    await configureBearerMembers([{ token, workspaceId, actorId: token, role: 'finance' }])
+    const base = await start()
+
+    for (const [method, params] of [
+      ['billing.refund', { order_id: 'missing-order', reason: 'shadow authorization regression' }],
+      ['billing.reconciliation.run', { limit: '1' }],
+    ] as const) {
+      const denied = await callMcp(base, token, workspaceId, method, params, workspaceId, { 'x-ops-workbench': 'workspace' })
+      expect(denied.status, `${method}: ${JSON.stringify(denied.body)}`).toBe(403)
+      expect(denied.body.error?.code, method).toBe('FORBIDDEN')
+    }
+  })
+
   it('executes enabled completion methods and proves disabled commercial methods, contracts, authorization, tenant isolation, and idempotency', async () => {
     const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const workspaceA = `ws_mcp_completion_a_${suffix}`
