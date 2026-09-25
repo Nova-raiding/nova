@@ -287,7 +287,7 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
   // A sink may be implemented outside this package (or arrive through a
   // JavaScript boundary), so the TypeScript receipt type is not enough at
   // runtime. Never turn a malformed receipt into a successful settlement.
-  if (settlementReceipt?.recorded !== true || settlementReceipt?.costEvidence !== true) {
+  if (settlementReceipt === undefined || settlementReceipt.recorded !== true || settlementReceipt.costEvidence !== true) {
     // Prefer the actionable financial-evidence diagnostic when the provider
     // omitted currency; settlement is still rejected below this boundary.
     if (settlementReceipt === undefined && usage.costCny === undefined) throw new ModelUsageEvidenceMissingError('cost')
