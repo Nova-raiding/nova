@@ -109,11 +109,20 @@ export class PostgresReconciliationEvidenceRepository implements ReconciliationE
   async append(input: Omit<ReconciliationEvidence, 'id' | 'createdAt'>) {
     const workspaceId = workspace(input.workspaceId); const idempotencyKey = text(input.idempotencyKey, 'RECONCILIATION_EVIDENCE_IDEMPOTENCY_KEY_REQUIRED')
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const existing = await client.query<EvidenceRow>(`SELECT ${projection} FROM reconciliation_evidence WHERE workspace_id=$1 AND idempotency_key=$2 FOR UPDATE`, [workspaceId, idempotencyKey])
+      // Evidence is append-only: merchant_app has SELECT/INSERT, deliberately
+      // not UPDATE. SELECT FOR UPDATE would require UPDATE privilege and turn
+      // a signed reconciliation request into 42501. The unique key serializes
+      // concurrent inserts; a losing writer reads back the committed winner.
+      const existing = await client.query<EvidenceRow>(`SELECT ${projection} FROM reconciliation_evidence WHERE workspace_id=$1 AND idempotency_key=$2`, [workspaceId, idempotencyKey])
       if (existing.rows[0]) { const row = map(existing.rows[0]); if (comparable(row) !== JSON.stringify(input)) throw new ReconciliationEvidenceIdempotencyConflictError(); return row }
       const value = validate(input)
-      const result = await client.query<EvidenceRow>(`INSERT INTO reconciliation_evidence (id,workspace_id,job_id,execution_attempt,provider_request_id,query_attempt,idempotency_key,provider_state,provider_status,response_digest,artifact_digest,usage_ledger_id,action_ledger_id,usage,cost,observed_at,next_attempt_at,error_code,error_message) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16::timestamptz,$17::timestamptz,$18,$19) RETURNING ${projection}`, [randomUUID(), value.workspaceId, value.jobId, value.executionAttempt, value.providerRequestId, value.queryAttempt, value.idempotencyKey, value.providerState, value.providerStatus ?? null, value.responseDigest ?? null, value.artifactDigest ?? null, value.usageLedgerId ?? null, value.actionLedgerId ?? null, value.usage ? JSON.stringify(value.usage) : null, value.cost ? JSON.stringify(value.cost) : null, value.observedAt, value.nextAttemptAt ?? null, value.errorCode ?? null, value.errorMessage ?? null])
-      return map(result.rows[0]!)
+      const result = await client.query<EvidenceRow>(`INSERT INTO reconciliation_evidence (id,workspace_id,job_id,execution_attempt,provider_request_id,query_attempt,idempotency_key,provider_state,provider_status,response_digest,artifact_digest,usage_ledger_id,action_ledger_id,usage,cost,observed_at,next_attempt_at,error_code,error_message) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16::timestamptz,$17::timestamptz,$18,$19) ON CONFLICT (workspace_id,idempotency_key) DO NOTHING RETURNING ${projection}`, [randomUUID(), value.workspaceId, value.jobId, value.executionAttempt, value.providerRequestId, value.queryAttempt, value.idempotencyKey, value.providerState, value.providerStatus ?? null, value.responseDigest ?? null, value.artifactDigest ?? null, value.usageLedgerId ?? null, value.actionLedgerId ?? null, value.usage ? JSON.stringify(value.usage) : null, value.cost ? JSON.stringify(value.cost) : null, value.observedAt, value.nextAttemptAt ?? null, value.errorCode ?? null, value.errorMessage ?? null])
+      if (result.rows[0]) return map(result.rows[0])
+      const winner = await client.query<EvidenceRow>(`SELECT ${projection} FROM reconciliation_evidence WHERE workspace_id=$1 AND idempotency_key=$2`, [workspaceId, idempotencyKey])
+      if (!winner.rows[0]) throw new Error('RECONCILIATION_EVIDENCE_CONFLICT_WINNER_MISSING')
+      const row = map(winner.rows[0])
+      if (comparable(row) !== JSON.stringify(input)) throw new ReconciliationEvidenceIdempotencyConflictError()
+      return row
     })
   }
   async getByIdempotencyKey(input: { workspaceId: string; idempotencyKey: string }) { const workspaceId = workspace(input.workspaceId); const key = text(input.idempotencyKey, 'RECONCILIATION_EVIDENCE_IDEMPOTENCY_KEY_REQUIRED'); return withWorkspaceTransaction(this.pool, workspaceId, async client => { const result = await client.query<EvidenceRow>(`SELECT ${projection} FROM reconciliation_evidence WHERE workspace_id=$1 AND idempotency_key=$2`, [workspaceId, key]); return result.rows[0] ? map(result.rows[0]) : undefined }) }
