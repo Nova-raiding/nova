@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { PENDING_GATE_REPORTER, buildSafeTestEnvironment, buildSafeVitestArgs, runSafeTests, type SafeTestRuntime, validateExplicitTestFiles } from '../scripts/run-safe-tests.js'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { PENDING_GATE_REPORTER, acquireSafeTestLock, buildSafeTestEnvironment, buildSafeVitestArgs, runSafeTests, type SafeTestRuntime, validateExplicitTestFiles } from '../scripts/run-safe-tests.js'
 import { NON_HERMETIC_TEST_FILES } from './test-suite-isolation.js'
 
 describe('safe default test launcher', () => {
@@ -69,14 +72,28 @@ describe('safe default test launcher', () => {
   })
 
   it('keeps the explicit isolation manifest unique and limited to the audited files', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(38)
-    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(38)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(39)
+    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(39)
     expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/canonical-backfill-contract.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/local-creative-points-seed-runtime.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/workers/src/durable-redis-recovery.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('apps/worker/src/redis-queue-transport.test.ts')
+  })
+
+  it('serializes shared runners and recovers a lock owned by a dead process', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'safe-test-lock-'))
+    const lockPath = join(root, 'runner.lock')
+    try {
+      await writeFile(lockPath, JSON.stringify({ pid: Number.MAX_SAFE_INTEGER, startedAt: new Date().toISOString() }))
+      const release = await acquireSafeTestLock({ path: lockPath, timeoutMs: 1_000 })
+      expect(JSON.parse(await readFile(lockPath, 'utf8'))).toMatchObject({ pid: process.pid })
+      await release()
+      await expect(readFile(lockPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   const fixture = () => {

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -78,6 +78,61 @@ export interface SafeTestRuntime {
 }
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const SAFE_TEST_LOCK_PATH = join(projectRoot, '.safe-tests.lock')
+
+type SafeTestLock = { pid: number; startedAt: string }
+
+function holderIsAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try { process.kill(pid, 0); return true } catch { return false }
+}
+
+/**
+ * The safe runner edits/creates shared test fixtures and starts a child process.
+ * A shared main worktree must never run two such runners concurrently: Vitest
+ * itself can be isolated while the build outputs, temp databases and wrapper
+ * signals are still shared. The lock is PID-aware so a killed runner does not
+ * strand the worktree forever.
+ */
+export async function acquireSafeTestLock(options: { path?: string; timeoutMs?: number } = {}): Promise<() => Promise<void>> {
+  const path = options.path ?? SAFE_TEST_LOCK_PATH
+  const timeoutMs = options.timeoutMs ?? 30 * 60 * 1_000
+  const deadline = Date.now() + timeoutMs
+  while (true) {
+    const tempPath = `${path}.${process.pid}.tmp`
+    try {
+      await writeFile(tempPath, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      await rename(tempPath, path)
+      let released = false
+      return async () => {
+        if (released) return
+        released = true
+        try {
+          const current = await readSafeTestLockAt(path)
+          if (current?.pid === process.pid) await unlink(path)
+        } catch { /* a terminated/stale owner may already have reclaimed it */ }
+      }
+    } catch (error) {
+      try { await unlink(tempPath) } catch { /* no temporary lock was created */ }
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      const current = await readSafeTestLockAt(path)
+      if (!current || !holderIsAlive(current.pid)) {
+        try { await unlink(path) } catch { /* another waiter may have won the race */ }
+        continue
+      }
+      if (Date.now() >= deadline) throw new Error(`another safe test run holds ${path} (pid ${current.pid}); refusing to run concurrently`)
+      await new Promise(resolve => setTimeout(resolve, 250))
+    }
+  }
+}
+
+async function readSafeTestLockAt(path: string): Promise<SafeTestLock | undefined> {
+  try {
+    const value = JSON.parse(await readFile(path, 'utf8')) as Partial<SafeTestLock>
+    if (typeof value.pid !== 'number' || typeof value.startedAt !== 'string') return undefined
+    return { pid: value.pid, startedAt: value.startedAt }
+  } catch { return undefined }
+}
 
 const EXPLICIT_TEST_FILE = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/u
 
@@ -158,11 +213,12 @@ const defaultRuntime: SafeTestRuntime = {
 export async function runSafeTests(args: readonly string[], source: NodeJS.ProcessEnv = process.env, runtime: SafeTestRuntime = defaultRuntime): Promise<number> {
   const vitestArgs = buildSafeVitestArgs(args)
   validateExplicitTestFiles(args)
+  const releaseLock = await acquireSafeTestLock()
   const storageRoot = await runtime.createStorageRoot()
   try {
     return await runtime.runVitest(vitestArgs, buildSafeTestEnvironment(source, storageRoot))
   } finally {
-    await runtime.removeStorageRoot(storageRoot)
+    try { await runtime.removeStorageRoot(storageRoot) } finally { await releaseLock() }
   }
 }
 
