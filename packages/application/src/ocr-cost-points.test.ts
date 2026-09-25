@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ocrCreativePointsFromCost } from './ocr-cost-points.js'
+import { ocrCreativePointsFromCost, ocrCreativePointsFromCostWithFreeThreshold } from './ocr-cost-points.js'
 
 describe('OCR actual CNY cost to creative points', () => {
   it.each([
@@ -19,5 +19,25 @@ describe('OCR actual CNY cost to creative points', () => {
   it('rejects point arithmetic beyond the safe integer range', () => {
     expect(() => ocrCreativePointsFromCost(4503599627370496)).toThrow('OCR_CREATIVE_POINTS_OVERFLOW')
     expect(() => ocrCreativePointsFromCost(Number.MAX_VALUE)).toThrow('OCR_CREATIVE_POINTS_OVERFLOW')
+  })
+})
+
+describe('OCR v4 actual CNY cost to creative points', () => {
+  it.each([
+    [0, 0], [0.000001, 0], [0.299999, 0], [0.3, 0],
+    [0.30000000000000004, 1], [0.300001, 1], [0.5, 1],
+    [0.5000000000000001, 2], [1.01, 3],
+  ])('charges %s CNY as %s point(s)', (costCny, expected) => {
+    expect(ocrCreativePointsFromCostWithFreeThreshold(costCny)).toBe(expected)
+  })
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '0.3', null, undefined])(
+    'rejects invalid actual CNY cost: %s', costCny => {
+      expect(() => ocrCreativePointsFromCostWithFreeThreshold(costCny)).toThrow('OCR_COST_CNY_INVALID')
+    },
+  )
+
+  it('rejects point arithmetic beyond the safe integer range', () => {
+    expect(() => ocrCreativePointsFromCostWithFreeThreshold(4503599627370496)).toThrow('OCR_CREATIVE_POINTS_OVERFLOW')
   })
 })
