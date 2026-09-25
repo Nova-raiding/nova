@@ -1330,6 +1330,7 @@ const memoryContextSnapshots = new MemoryContextSnapshotRepository()
 const memoryIdentities = new MemoryIdentityLifecycleRepository()
 const memoryPasswordAuth = new MemoryPasswordAuthRepository()
 let passwordAuthRepository: PasswordAuthRepository = memoryPasswordAuth
+let workspaceBootstrapRepositoryOverride: WorkspaceBootstrapRepository | undefined
 const memoryLocalPluginConnections = new MemoryLocalPluginConnectionRepository()
 let localPluginConnections: LocalPluginConnectionRepository = memoryLocalPluginConnections
 const memoryLocalPluginInstallInstances = new MemoryLocalPluginInstallInstanceRepository()
@@ -1338,6 +1339,10 @@ let localPluginInstallInstances: LocalPluginInstallInstanceRepository = memoryLo
 export function setPasswordAuthRepositoryForTests(repository?: PasswordAuthRepository) {
   if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('PASSWORD_AUTH_REPOSITORY_OVERRIDE_TEST_ONLY')
   passwordAuthRepository = repository ?? memoryPasswordAuth
+}
+export function setWorkspaceBootstrapRepositoryForTests(repository?: WorkspaceBootstrapRepository) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('WORKSPACE_BOOTSTRAP_REPOSITORY_OVERRIDE_TEST_ONLY')
+  workspaceBootstrapRepositoryOverride = repository
 }
 export function setLocalPluginConnectionRepositoryForTests(repository?: LocalPluginConnectionRepository) {
   if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('LOCAL_PLUGIN_CONNECTION_REPOSITORY_OVERRIDE_TEST_ONLY')
@@ -7141,6 +7146,8 @@ function requiresStrictAuth() {
 
 type RequestPrincipal = {
   actorId: string
+  /** Identity subject from the trusted credential store, never request headers. */
+  externalSubject?: string
   accountLogin?: string
   /** Verified display metadata only; never use for membership or identity lookup. */
   displayAccountLogin?: string
@@ -7150,6 +7157,8 @@ type RequestPrincipal = {
   roles: string[]
   workbench: OpsWorkbench
   availableWorkbenches?: OpsWorkbench[]
+  /** Trusted credential-store namespace used for workspace binding only. */
+  workspaceIdentityIssuer?: string
   issuer?: string
   sessionSubject?: string
   sessionKind?: 'api_token'
@@ -7812,7 +7821,7 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   if (['workspace.invitations.list', 'workspace.invitation.accept'].includes(method) && await hasPendingInvitationForPrincipal(req, workspaceId)) return policy
   if (method === 'workspace.bootstrap' && !bootstrapPrincipal?.memberRole
     && bootstrapPrincipal?.workbench === 'workspace'
-    && Boolean(bootstrapPrincipal.issuer && bootstrapPrincipal.identityId)) {
+    && Boolean((bootstrapPrincipal.workspaceIdentityIssuer || bootstrapPrincipal.issuer) && bootstrapPrincipal.identityId)) {
     const bootstrapDecision = { ...decision, authorized: true, allowed: true, result: 'shadow_allow' as const, reason_code: 'AUTHZ_ALLOWED' as const }
     await recordAuthorizationDecision(req, workspaceId, bootstrapDecision)
     return policy
@@ -8002,12 +8011,13 @@ async function observeAuthenticatedPrincipal(req: IncomingMessage, principal: Re
   await persistenceReady
   const identityRepository = persistence.identities ?? memoryIdentities
   const sessionHash = authenticatedSessionHash(principal.sessionSubject)
-  const flightKey = `${principal.issuer}\u0000${principal.actorId}\u0000${principal.sessionKind}\u0000${sessionHash}`
+  const externalSubject = principal.externalSubject ?? principal.actorId
+  const flightKey = `${principal.issuer}\u0000${externalSubject}\u0000${principal.sessionKind}\u0000${sessionHash}`
   try {
     const inFlightObservation = authenticatedObservationFlights.get(flightKey)
     const observation = inFlightObservation ?? identityRepository.observeAuthenticatedSession({
         issuer: principal.issuer,
-        externalSubject: principal.actorId,
+        externalSubject,
         sessionHash,
         kind: principal.sessionKind,
         issuedAt: principal.sessionIssuedAt,
@@ -8126,7 +8136,7 @@ async function authenticate(req: IncomingMessage) {
           // may contain characters such as "@", which are intentionally rejected
           // by the operation-audit identity grammar and must never become the
           // authorization actor principal.
-          const principal: RequestPrincipal = { actorId: session.account.identityId, accountLogin: session.account.login, identityId: session.account.identityId, sessionId: session.sessionId, sessionSubject: session.sessionId, sessionKind: 'api_token', sessionIssuedAt: session.issuedAt, sessionExpiresAt: session.expiresAt, roles: session.account.roles, workspaces: session.account.workspaceIds, workbench: platform ? 'platform' : 'workspace', availableWorkbenches: platform ? ['platform', 'workspace'] : ['workspace'], identityStatus: 'active', mfaVerified: false }
+          const principal: RequestPrincipal = { actorId: session.account.identityId, externalSubject: session.account.login, workspaceIdentityIssuer: 'damai-password', accountLogin: session.account.login, identityId: session.account.identityId, sessionId: session.sessionId, sessionSubject: session.sessionId, sessionKind: 'api_token', sessionIssuedAt: session.issuedAt, sessionExpiresAt: session.expiresAt, roles: session.account.roles, workspaces: session.account.workspaceIds, workbench: platform ? 'platform' : 'workspace', availableWorkbenches: platform ? ['platform', 'workspace'] : ['workspace'], identityStatus: 'active', mfaVerified: false }
           requestPrincipals.set(req, principal)
           await hydrateDurableAuthorizationContext(req, principal)
           return
@@ -8179,7 +8189,7 @@ async function authenticate(req: IncomingMessage) {
       if (!oauthPrincipal) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '本地插件 MCP token 无效或已过期', 401)
       const requestedWorkspace = header(req, 'x-workspace-id')?.trim()
       if (requestedWorkspace && requestedWorkspace !== oauthPrincipal.workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, '本地插件 token 无权切换到其他工作区', 403)
-      const principal: RequestPrincipal = { credentialSource: 'mcp_oauth', actorId: oauthPrincipal.identityId, accountLogin: oauthPrincipal.accountLogin, identityId: oauthPrincipal.identityId, sessionId: oauthPrincipal.tokenId, sessionSubject: oauthPrincipal.tokenId, sessionKind: 'api_token', sessionIssuedAt: oauthPrincipal.issuedAt, sessionExpiresAt: oauthPrincipal.expiresAt, roles: ['merchant'], workspaces: [oauthPrincipal.workspaceId], workbench: 'workspace', availableWorkbenches: ['workspace'], identityStatus: 'active', mfaVerified: false }
+      const principal: RequestPrincipal = { credentialSource: 'mcp_oauth', actorId: oauthPrincipal.identityId, externalSubject: oauthPrincipal.accountLogin, workspaceIdentityIssuer: 'damai-password', accountLogin: oauthPrincipal.accountLogin, identityId: oauthPrincipal.identityId, sessionId: oauthPrincipal.tokenId, sessionSubject: oauthPrincipal.tokenId, sessionKind: 'api_token', sessionIssuedAt: oauthPrincipal.issuedAt, sessionExpiresAt: oauthPrincipal.expiresAt, roles: ['merchant'], workspaces: [oauthPrincipal.workspaceId], workbench: 'workspace', availableWorkbenches: ['workspace'], identityStatus: 'active', mfaVerified: false }
       requestPrincipals.set(req, principal)
       await hydrateDurableAuthorizationContext(req, principal)
       return
@@ -13639,7 +13649,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
   }
   let workspaceId = method === 'workspace.bootstrap'
-    ? ''
+    ? (() => {
+        const principal = requestPrincipals.get(req)
+        const assignedWorkspaces = principal?.workspaces.map(value => value.trim()).filter(Boolean) ?? []
+        return principal?.credentialSource === 'mcp_oauth' && principal.workbench === 'workspace' && assignedWorkspaces.length === 1
+          ? assignedWorkspaces[0]!
+          : ''
+      })()
     : requestWorkbench === 'platform'
       ? header(req, 'x-workspace-id')?.trim()
         || (typeof params.target_workspace_id === 'string' ? params.target_workspace_id.trim() : '')
@@ -14250,16 +14266,18 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const actorId = principal?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant_owner'
       if (!actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '创建工作区需要可识别的商家身份', 401)
       const claimedSubject = typeof params.external_subject === 'string' && params.external_subject.trim() ? params.external_subject.trim() : undefined
-      if (claimedSubject && claimedSubject !== actorId) throw new DomainError(ERROR_CODES.FORBIDDEN, '新工作区 owner 只能绑定当前认证身份；external_subject 不能替代认证主体', 403)
+      const externalSubject = principal?.externalSubject ?? actorId
+      if (claimedSubject && claimedSubject !== actorId && claimedSubject !== externalSubject) throw new DomainError(ERROR_CODES.FORBIDDEN, '新工作区 owner 只能绑定当前认证身份；external_subject 不能替代认证主体', 403)
       const strictAuth = requiresStrictAuth()
-      if (strictAuth && (!principal?.issuer || !principal.identityId || principal.workbench !== 'workspace')) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '解析管理员分配的工作区需要可信身份网关提供 issuer、subject 和 workspace workbench', 401)
-      const issuer = principal?.issuer ?? (fixtureMode ? 'urn:merchant:fixture' : 'urn:merchant:local')
+      const trustedIssuer = principal?.workspaceIdentityIssuer ?? principal?.issuer
+      if (strictAuth && (!trustedIssuer || !principal.externalSubject || !principal.identityId || principal.workbench !== 'workspace')) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '解析管理员分配的工作区需要可信认证凭据提供 issuer、subject 和 workspace workbench', 401)
+      const issuer = trustedIssuer ?? (fixtureMode ? 'urn:merchant:fixture' : 'urn:merchant:local')
       try {
         const allowCreate = !strictAuth
-        const bootstrapped = await (persistence.workspaceBootstrap ?? memoryWorkspaceBootstrap).bootstrap({ issuer, externalSubject: actorId, ...(principal?.identityId ? { identityId: principal.identityId } : {}), ...(allowCreate ? { candidateWorkspaceId: `ws_${randomUUID().replaceAll('-', '').slice(0, 24)}` } : {}), displayName, actorId, allowCreate })
+        const bootstrapped = await (workspaceBootstrapRepositoryOverride ?? persistence.workspaceBootstrap ?? memoryWorkspaceBootstrap).bootstrap({ issuer, externalSubject, ...(principal?.identityId ? { identityId: principal.identityId } : {}), ...(allowCreate ? { candidateWorkspaceId: `ws_${randomUUID().replaceAll('-', '').slice(0, 24)}` } : {}), displayName, actorId, allowCreate })
         workspaceId = bootstrapped.workspaceId
         knownWorkspaces.add(workspaceId)
-        return result({ workspaceId, displayName: bootstrapped.displayName, status: 'active', reused: !bootstrapped.created, owner: { issuer, externalSubject: actorId, actorId }, binding: { environmentVariable: 'MERCHANT_WORKSPACE_ID', requiredValue: workspaceId, nextStep: '将该值绑定到 Codex 插件后重新调用 workspace.health' } })
+        return result({ workspaceId, displayName: bootstrapped.displayName, status: 'active', reused: !bootstrapped.created, owner: { issuer, externalSubject, actorId }, binding: { environmentVariable: 'MERCHANT_WORKSPACE_ID', requiredValue: workspaceId, nextStep: '将该值绑定到 Codex 插件后重新调用 workspace.health' } })
       } catch (error) {
         if (error instanceof WorkspaceBootstrapError) {
           if (error.code === 'WORKSPACE_BOOTSTRAP_BINDING_INACTIVE') throw new DomainError(error.code, '该身份已有工作区绑定，但工作区或 owner 成员已停用；请联系管理员恢复，不能另建工作区绕过停用', 409)

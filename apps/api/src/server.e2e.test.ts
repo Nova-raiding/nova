@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
+import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setWorkspaceBootstrapRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
 import type { McpCanonicalProductConsistencyResult } from '../../../packages/contracts/src/index.js'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
@@ -128,6 +128,71 @@ describe('API HTTP vertical slice', () => {
     } finally {
       setPasswordAuthRepositoryForTests()
       setAuthorizationRepositoryForTests()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('resolves a preassigned workspace from the verified password identity in strict auth', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('SESSION_ID_HASH_SECRET', 'password-workspace-bootstrap-e2e-secret')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+    const auth = new MemoryPasswordAuthRepository()
+    const account = await auth.createMerchantAccount({
+      login: 'merchant-workspace-binding@example.com',
+      password: 'MerchantPassword123',
+      enterpriseName: '已分配工作区企业',
+      contactName: '绑定管理员',
+      workspaceIds: ['ws_admin_assigned'],
+      actorId: 'platform-admin',
+      reason: '验证密码身份恢复管理员分配的工作区',
+    })
+    let observedBinding: Record<string, unknown> | undefined
+    setPasswordAuthRepositoryForTests(auth)
+    setWorkspaceBootstrapRepositoryForTests({
+      bootstrap: async input => {
+        observedBinding = input as unknown as Record<string, unknown>
+        return { workspaceId: 'ws_admin_assigned', displayName: input.displayName, created: false }
+      },
+    })
+    const base = await start()
+    try {
+      const login = await fetch(`${base}/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login: account.login, password: 'MerchantPassword123', account_type: 'merchant' }),
+      })
+      expect(login.status).toBe(200)
+      const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]!
+      const tokenResponse = await fetch(`${base}/v1/auth/mcp-token`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ workspace_id: 'ws_admin_assigned' }),
+      })
+      expect(tokenResponse.status).toBe(200)
+      const token = await tokenResponse.json() as { access_token: string; refresh_token: string }
+      const mcpHeaders = { authorization: `Bearer ${token.access_token}`, 'content-type': 'application/json' }
+
+      const mismatched = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: mcpHeaders,
+        body: JSON.stringify({ jsonrpc: '2.0', id: 'workspace-bootstrap-mismatch', method: 'workspace.bootstrap', params: { display_name: '不允许替换主体', external_subject: 'another-merchant' } }),
+      }).then(json)
+      expect(mismatched.error).toMatchObject({ code: 'FORBIDDEN' })
+
+      const bootstrap = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: mcpHeaders,
+        body: JSON.stringify({ jsonrpc: '2.0', id: 'workspace-bootstrap-password', method: 'workspace.bootstrap', params: { display_name: '已分配工作区', external_subject: account.login } }),
+      }).then(json)
+      expect(bootstrap.error).toBeNull()
+      expect(bootstrap.data?.result).toMatchObject({ workspaceId: 'ws_admin_assigned', reused: true, owner: { issuer: 'damai-password', externalSubject: account.login } })
+      expect(observedBinding).toMatchObject({ issuer: 'damai-password', externalSubject: account.login, displayName: '已分配工作区', allowCreate: false })
+      expect(observedBinding?.candidateWorkspaceId).toBeUndefined()
+      const revoked = await fetch(`${base}/v1/auth/mcp-token/revoke`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: token.refresh_token }) })
+      expect(revoked.status).toBe(200)
+    } finally {
+      setWorkspaceBootstrapRepositoryForTests()
+      setPasswordAuthRepositoryForTests()
       vi.unstubAllEnvs()
     }
   })
