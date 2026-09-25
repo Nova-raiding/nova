@@ -6,6 +6,7 @@ import { loadConnectorCapabilityEvidenceTrust } from './connector-capability-evi
 import { inspectStoreLinks } from '../../../packages/domain/src/onboarding.js'
 import { readCustomerDeliveryAccess, assertCustomerDeliveryAllowed, pendingCustomerDeliveryProjection } from './customer-delivery-access.js'
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { unknownModelProviderReceipt } from './model-unknown-receipt.js'
 import { alertNotificationReadiness, notifyOperationalAlert } from './alert-notifier.js'
 import { Pool } from 'pg'
 import { createClient } from 'redis'
@@ -12086,7 +12087,15 @@ async function merchantFirstValuePreview(workspaceId: string, params: JsonObject
       await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'content.draft.generate', resourceType: 'content_draft_candidate', resourceId: actionId, before: {}, after: { candidate_only: true, platform, title }, reason: '生成未绑定内容候选；不创建正式版本、不允许发布' })
       generated = await contentGenerator.generate({ platform, candidateOnly: true, directionId: prompt, product: { title, stock: 0, skuCount: 0 }, usageContext: { workspaceId, actionId, runKey: actionId } })
     } catch (error) {
-      if (!providerSucceededButSettlementPending(error)) await releaseReservedModelPoints(workspaceId, actionId, '文案候选生成失败')
+      if (providerSucceededButSettlementPending(error)) {
+        const reservation = await persistence.creativePoints?.getReservationByActionKey?.(workspaceId, actionId)
+        const receipt = reservation && unknownModelProviderReceipt(error, workspaceId, reservation.operationId)
+        if (receipt) {
+          if (!persistence.creativePointLifecycle) throw new DomainError('MODEL_UNKNOWN_RECEIPT_STORE_UNAVAILABLE', '模型结果未知且对账回执仓储不可用，创意点仍保持预留', 503)
+          await persistence.creativePointLifecycle.recordProviderReceipt(receipt)
+        }
+        await persistence.actionLedger?.transitionSettlementStatus({ workspaceId, actionKey: actionId, from: ['authorized'], to: 'pending_receipt' })
+      } else await releaseReservedModelPoints(workspaceId, actionId, '文案候选生成失败')
       throw error
     }
     await requireSettledContentExecutionEvidence(workspaceId, actionId)
