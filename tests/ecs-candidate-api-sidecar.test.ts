@@ -51,6 +51,7 @@ describe('ECS candidate API sidecar', () => {
     const compose = calls.find(call => call[2] === 'compose')!
     expect(compose).toContain('--no-deps')
     expect(compose).not.toContain('--pull')
+    expect(compose).not.toContain('--no-tty')
     expect(compose).not.toContain('--service-ports')
     expect(compose).not.toContain('--publish')
     expect(compose.at(-1)).toBe('api')

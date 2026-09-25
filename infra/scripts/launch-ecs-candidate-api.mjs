@@ -83,7 +83,9 @@ if (action === 'stop') {
       !environment.DATABASE_URL || !environment.OPS_DATABASE_URL) fail('candidate API does not match the frozen production configuration')
   const name = `merchant-candidate-api-${releaseId}-${randomBytes(5).toString('hex')}`
   docker(['compose', '--project-name', project, '--env-file', envPath, '-f', composePath,
-    'run', '--no-deps', '--no-tty', '--detach', '--name', name, 'api'])
+    // Compose v2.27 on the ECS host has no `run --no-tty` flag. This command
+    // is detached and launched over non-interactive SSH, so no TTY is allocated.
+    'run', '--no-deps', '--detach', '--name', name, 'api'])
   const container = inspect(name)
   try {
     assertOneOff(container, imageId)
