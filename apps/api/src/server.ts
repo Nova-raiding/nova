@@ -147,7 +147,7 @@ import { evaluatePlatformFieldMapping, type PlatformFieldMappingGateInput, type 
 import { buildDeliveryBundleManifest, evaluateVideoStoryboardQuality, evaluateVisualAuthenticity, verifyDeliveryBundle, type DeliveryBundleFile, type DeliveryBundleManifest, type DeliveryBundleManifestInput, type VideoStoryboardQualityInput, type VisualAuthenticityGateInput } from '../../../packages/multimodal/src/index.js'
 import { projectPlatformCapabilityEvidence } from './platform-capability-response.js'
 import { MemoryPasswordAuthRepository, PostgresPasswordAuthRepository, type PasswordAccount, type PasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
-import { MemoryKnowledgeRepository, PostgresKnowledgeRepository, type KnowledgeRepository, type KnowledgeSearchResult } from '../../../packages/persistence/src/knowledge.js'
+import { MemoryKnowledgeRepository, PostgresKnowledgeRepository, type KnowledgeDocument, type KnowledgeRepository, type KnowledgeSearchResult } from '../../../packages/persistence/src/knowledge.js'
 import { projectImportedProductsToKnowledge } from '../../../packages/application/src/knowledge-import.js'
 
 const port = Number(process.env.PORT ?? 8787)
@@ -1420,10 +1420,78 @@ let durableKnowledgeRepository: KnowledgeRepository | undefined
  * index-state boundaries; this function only projects the bounded result into
  * the application snapshot and never mutates durable data.
  */
-async function hydrateDurableKnowledgeForGeneration(task: { id: string; workspaceId: string; productId: string }): Promise<void> {
+function durableKnowledgeBlocker(documents: readonly KnowledgeDocument[]) {
+  const live = documents.filter(document => document.indexState !== 'deleted')
+  const review = live.filter(document => document.approvalStatus !== 'approved' || document.rightsStatus !== 'cleared')
+  const failed = live.filter(document => document.indexState === 'failed')
+  const pending = live.filter(document => document.indexState !== 'ready')
+  const blocked = review.length ? review : failed.length ? failed : pending
+  if (!blocked.length) return undefined
+  return {
+    code: review.length ? 'KNOWLEDGE_REVIEW_REQUIRED' : failed.length ? 'KNOWLEDGE_INDEX_FAILED' : 'KNOWLEDGE_INDEX_PENDING',
+    message: review.length
+      ? '商品知识尚未通过审批或权益确认，请先完成知识资产审核，再生成内容。'
+      : failed.length
+        ? '商品知识索引失败，请联系平台检查真实索引链路并完成重试；无需重复审批，索引成功前不能生成内容。'
+        : '商品知识仍在等待索引，请由平台完成真实索引链路；无需重复审批，索引就绪前不能生成内容。',
+  }
+}
+
+function sameKnowledgeDocumentVersion(left: KnowledgeDocument, right: KnowledgeDocument) {
+  return left.id === right.id
+    && left.workspaceId === right.workspaceId
+    && left.productId === right.productId
+    && left.revision === right.revision
+    && left.contentHash === right.contentHash
+    && left.indexState === right.indexState
+    && left.approvalStatus === right.approvalStatus
+    && left.rightsStatus === right.rightsStatus
+}
+
+function requireUnchangedKnowledgeContext(input: {
+  workspaceId: string
+  productId: string
+  first: readonly KnowledgeDocument[]
+  final: readonly KnowledgeDocument[]
+  candidates: readonly KnowledgeDocument[]
+}) {
+  const scoped = (documents: readonly KnowledgeDocument[]) => documents
+    .filter(document => document.workspaceId === input.workspaceId && document.productId === input.productId && document.indexState !== 'deleted')
+  const first = scoped(input.first)
+  const final = scoped(input.final)
+  const blocker = durableKnowledgeBlocker(final)
+  if (blocker) throw new DomainError(blocker.code, blocker.message, 409, { ...blocker, product_id: input.productId })
+  const finalById = new Map(final.map(document => [document.id, document]))
+  const firstById = new Map(first.map(document => [document.id, document]))
+  const unchanged = firstById.size === first.length
+    && finalById.size === final.length
+    && firstById.size === finalById.size
+    && first.every(document => {
+      const current = finalById.get(document.id)
+      return current !== undefined && sameKnowledgeDocumentVersion(document, current)
+    })
+    && new Set(input.candidates.map(document => document.id)).size === input.candidates.length
+    && input.candidates.every(document => {
+      const current = finalById.get(document.id)
+      return current !== undefined
+        && document.workspaceId === input.workspaceId
+        && document.productId === input.productId
+        && current.indexState === 'ready'
+        && current.approvalStatus === 'approved'
+        && current.rightsStatus === 'cleared'
+        && sameKnowledgeDocumentVersion(document, current)
+    })
+  if (!unchanged) throw new DomainError('KNOWLEDGE_CONTEXT_CHANGED', '商品知识在生成前发生变化，请重新查询知识状态后重试', 409, { product_id: input.productId, next_action: 'catalog.search' })
+}
+
+async function hydrateDurableKnowledgeForGeneration(task: { id: string; workspaceId: string; productId: string }, commit = true): Promise<ReadonlyArray<{ id: string; title: string; content: string; revision: number }> | undefined> {
   const repository = persistence.knowledge ?? durableKnowledgeRepository
   const product = service.products.get(task.productId)
   if (!repository || !product || product.workspaceId !== task.workspaceId) return
+  const documents = (await repository.listDocuments(task.workspaceId, { productId: product.id }))
+    .filter(document => document.workspaceId === task.workspaceId && document.productId === product.id)
+  const blocker = durableKnowledgeBlocker(documents)
+  if (blocker) throw new DomainError(blocker.code, blocker.message, 409, { ...blocker, product_id: product.id })
   const results = await repository.search({
     workspaceId: task.workspaceId,
     platform: product.platform,
@@ -1432,9 +1500,10 @@ async function hydrateDurableKnowledgeForGeneration(task: { id: string; workspac
     productId: product.id,
     limit: 8,
   })
+  const finalDocuments = await repository.listDocuments(task.workspaceId, { productId: product.id })
+  requireUnchangedKnowledgeContext({ workspaceId: task.workspaceId, productId: product.id, first: documents, final: finalDocuments, candidates: results.map(result => result.document) })
   if (results.length === 0) {
-    const readyDocuments = await repository.listDocuments(task.workspaceId, { productId: product.id, indexState: 'ready' })
-    if (readyDocuments.some(document => document.approvalStatus === 'approved' && document.rightsStatus === 'cleared')) {
+    if (documents.some(document => document.indexState === 'ready' && document.approvalStatus === 'approved' && document.rightsStatus === 'cleared')) {
       throw new DomainError('KNOWLEDGE_CONTEXT_UNAVAILABLE', '商品知识已就绪，但检索未返回可用知识；请检查知识与商品、店铺及账号的绑定和索引状态，修复后重试', 409, { product_id: product.id, next_action: 'catalog.search' })
     }
   }
@@ -1445,7 +1514,8 @@ async function hydrateDurableKnowledgeForGeneration(task: { id: string; workspac
     }
     return { id: document.id, title: document.title, content, revision: document.revision }
   })
-  service.setDurableKnowledgeDocuments(task.id, selectedDocuments)
+  if (commit) service.setDurableKnowledgeDocuments(task.id, selectedDocuments)
+  return selectedDocuments
 }
 const memoryStorageQuota = new MemoryStorageQuotaRepository()
 const memoryStorageReconciliation = new MemoryReconciliationStatusStore()
@@ -17007,6 +17077,22 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const jobId = required(params, 'job_id')
       const previous = service.getGenerationJob(workspaceId, jobId)
       const task = service.getTask(previous.taskId)
+      const currentKnowledge = await hydrateDurableKnowledgeForGeneration(task, false)
+      const frozenSnapshot = task.inputSnapshotId
+        ? service.taskInputSnapshots.get(task.inputSnapshotId) ?? task.inputSnapshot
+        : task.inputSnapshot
+      const frozenKnowledge = frozenSnapshot?.knowledgeContext?.documents ?? []
+      const currentDocuments = currentKnowledge ?? []
+      // An ops retry belongs to the original task. Never let changed, revoked,
+      // or newly imported knowledge silently alter its frozen provider input.
+      if (frozenKnowledge.length !== currentDocuments.length
+        || frozenKnowledge.some(old => !currentDocuments.some(current => current.id === old.id
+          && current.revision === old.revision
+          && current.title === old.title
+          && current.content === old.content))) {
+        throw new DomainError('KNOWLEDGE_CONTEXT_CHANGED', '商品知识已与上次冻结的生成上下文不一致，请重新创建任务并完成知识就绪检查', 409, { product_id: task.productId, next_action: 'catalog.search' })
+      }
+      if (currentKnowledge) service.setDurableKnowledgeDocuments(task.id, [...currentDocuments])
       const usageKey = `${workspaceId}:${jobId}:retry:${previous.revision + 1}`
       const actionId = `model:${usageKey}`
       const prepared = await service.prepareGenerationContext(task.id, actionId)
