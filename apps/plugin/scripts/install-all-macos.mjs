@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline/promises'
@@ -10,16 +10,29 @@ import { verifyChatGPTMacApp } from './verify-chatgpt-macos.mjs'
 if (process.platform !== 'darwin') throw new Error('此安装入口仅支持 macOS。')
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const appPaths = ['/Applications/ChatGPT.app', resolve(homedir(), 'Applications/ChatGPT.app')]
+const userApplications = resolve(homedir(), 'Applications')
+const appPaths = [resolve(userApplications, 'ChatGPT.app'), '/Applications/ChatGPT.app', resolve(userApplications, 'Store Nova/ChatGPT.app')]
 const bundled = resolve(root, 'ChatGPT.app.zip')
-if (existsSync(bundled) && !appPaths.some(existsSync)) {
-  mkdirSync('/Applications', { recursive: true })
-  const expanded = spawnSync('/usr/bin/ditto', ['-x', '-k', bundled, '/Applications'], { stdio: 'inherit' })
-  if (expanded.error || expanded.status !== 0) throw new Error('随包 ChatGPT.app 解压失败。')
+let appPath = appPaths.find(path => existsSync(path) && verifyChatGPTMacApp(path).ok)
+if (!appPath && existsSync(bundled)) {
+  const temporary = mkdtempSync(resolve(tmpdir(), 'storenova-chatgpt-'))
+  try {
+    const expanded = spawnSync('/usr/bin/ditto', ['-x', '-k', bundled, temporary], { stdio: 'inherit' })
+    if (expanded.error || expanded.status !== 0) throw new Error('随包 ChatGPT.app 解压失败。')
+    const source = resolve(temporary, 'ChatGPT.app')
+    const checked = verifyChatGPTMacApp(source)
+    if (!checked.ok) throw new Error(`随包 ChatGPT.app 校验失败：${checked.reason}`)
+    const target = appPaths[0] && !existsSync(appPaths[0]) ? appPaths[0] : appPaths[2]
+    if (existsSync(target)) throw new Error(`安装位置 ${target} 已存在无效应用；请先手动移走该应用。`)
+    mkdirSync(dirname(target), { recursive: true })
+    const copied = spawnSync('/usr/bin/ditto', [source, target], { stdio: 'inherit' })
+    if (copied.error || copied.status !== 0) throw new Error(`随包 ChatGPT.app 安装到 ${target} 失败。`)
+    const installed = verifyChatGPTMacApp(target)
+    if (!installed.ok) throw new Error(`安装后的 ChatGPT.app 校验失败：${installed.reason}`)
+    appPath = target
+  } finally { rmSync(temporary, { recursive: true, force: true }) }
 }
-const existing = appPaths.find(existsSync)
 const downloadPage = 'https://chatgpt.com/download/'
-let appPath = existing
 
 if (!appPath) {
   process.stdout.write(`请从 OpenAI 官方页面下载适合这台 Mac 的 ChatGPT，安装到“应用程序”文件夹：\n${downloadPage}\n`)
@@ -30,7 +43,7 @@ if (!appPath) {
     while (!appPath) {
       const answer = (await prompt.question('官方 ChatGPT 安装完成后按回车继续；输入 q 退出：')).trim().toLowerCase()
       if (answer === 'q') process.exit(1)
-      appPath = appPaths.find(existsSync)
+      appPath = appPaths.find(path => existsSync(path) && verifyChatGPTMacApp(path).ok)
       if (!appPath) process.stdout.write('仍未在“应用程序”文件夹找到 ChatGPT.app。请完成官方安装后重试。\n')
     }
   } finally { prompt.close() }
