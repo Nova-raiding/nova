@@ -10,7 +10,7 @@ export function productImportAssetState(asset: Asset | undefined): 'missing' | '
   if (!asset) return 'missing';
   if (asset.scanStatus === 'blocked') return 'scan_blocked';
   if (asset.scanStatus === 'failed') return 'scan_failed';
-  if (asset.scanStatus !== 'clean' && asset.scanStatus !== 'unscanned') return 'scan_pending';
+  if (asset.scanStatus !== 'clean') return 'scan_pending';
   if (asset.parseStatus === 'failed') return 'parse_failed';
   if (asset.parseStatus === 'succeeded') return asset.extractedFacts ? 'parse_ready' : 'parse_incomplete';
   if (asset.parseStatus === 'processing') return 'parse_processing';

@@ -37,12 +37,13 @@ describe('product spreadsheet import', () => {
     expect(upload).toBeDefined();
     expect(upload?.[1]).not.toContain('disabled');
   });
-  it('distinguishes blocked, failed, pending, and completed scan or parse states', () => {
+  it('only allows parsing after a clean scan and blocks unscanned, failed, or quarantined assets', () => {
     expect(productImportAssetState({ id: 'a', scanStatus: 'blocked' })).toBe('scan_blocked');
     expect(productImportAssetState({ id: 'a', scanStatus: 'failed' })).toBe('scan_failed');
     expect(productImportAssetState({ id: 'a', scanStatus: 'quarantined' })).toBe('scan_pending');
-    expect(productImportAssetState({ id: 'a', scanStatus: 'unscanned' })).toBe('parse_pending');
-    expect(productImportAssetState({ id: 'a', scanStatus: 'unscanned', parseStatus: 'succeeded', extractedFacts: { products: [] } })).toBe('parse_ready');
+    expect(productImportAssetState({ id: 'a', scanStatus: 'unscanned' })).toBe('scan_pending');
+    expect(productImportAssetState({ id: 'a', scanStatus: 'unscanned', parseStatus: 'succeeded', extractedFacts: { products: [] } })).toBe('scan_pending');
+    expect(productImportAssetState({ id: 'a', scanStatus: 'clean' })).toBe('parse_pending');
     expect(productImportAssetState({ id: 'a', scanStatus: 'clean', parseStatus: 'failed' })).toBe('parse_failed');
     expect(productImportAssetState({ id: 'a', scanStatus: 'clean', parseStatus: 'succeeded' })).toBe('parse_incomplete');
     expect(productImportAssetState({ id: 'a', scanStatus: 'clean', parseStatus: 'processing' })).toBe('parse_processing');
