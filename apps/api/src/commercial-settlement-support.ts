@@ -38,15 +38,19 @@ export async function refundActionSettlement(input: { workspaceId: string; actio
   actionLedger: () => ActionLedgerRepository | undefined
 }) {
   await dependencies.ready
-  return dependencies.actionLedger()?.refund(input) ?? { refunded: false }
+  const ledger = dependencies.actionLedger()
+  if (!ledger) throw new DomainError('ACTION_LEDGER_UNAVAILABLE', '账务动作台账不可用，已阻断退款以避免产生无审计退款', 503)
+  return ledger.refund(input)
 }
 
 export async function refundEntitlement(input: { workspaceId: string; actionKey: string; reason: string }, dependencies: {
   ready: Promise<unknown>
   entitlements: () => EntitlementRepository
+  actionLedger: () => ActionLedgerRepository | undefined
   refundActionSettlement: (input: { workspaceId: string; actionKey: string; reason: string }) => Promise<unknown>
 }) {
   await dependencies.ready
+  if (!dependencies.actionLedger()) throw new DomainError('ACTION_LEDGER_UNAVAILABLE', '账务动作台账不可用，已阻断退款以避免权益与账务不一致', 503)
   const refunded = await dependencies.entitlements().refund({ workspaceId: input.workspaceId, idempotencyKey: input.actionKey })
   if (refunded.refunded) await dependencies.refundActionSettlement(input)
   return refunded

@@ -1387,7 +1387,7 @@ async function observeLegacyImageEntitlementShadow(input: { workspaceId: string;
 }
 
 async function refundEntitlement(input: { workspaceId: string; actionKey: string; reason: string }) {
-  return refundEntitlementWithRepository(input, { ready: persistenceReady, entitlements: () => persistence.entitlements ?? memoryEntitlements, refundActionSettlement })
+  return refundEntitlementWithRepository(input, { ready: persistenceReady, entitlements: () => persistence.entitlements ?? memoryEntitlements, actionLedger: () => persistence.actionLedger, refundActionSettlement })
 }
 
 async function refundModelEntitlement(input: { workspaceId: string; actionKey: string; reason: string }) {
