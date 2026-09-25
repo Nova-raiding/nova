@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
+import { describe, expect, it, vi } from 'vitest'
 import { MemoryKnowledgeRepository, PostgresKnowledgeRepository } from './knowledge.js'
 import type { SqlClient, SqlPool } from './repository.js'
 
@@ -581,5 +582,94 @@ describe('knowledge persistence contract', () => {
     expect(memoryBatch).toEqual(memorySingles)
     expect(memoryBatch.map(item => item.document.id)).toEqual(['doc-a1', 'doc-b1'])
     expect(await memory.search({ workspaceId: 'ws-a', query: '锦纶', productIds: [] })).toEqual([])
+  })
+
+  it('holds generation claim fences across provider unknown and releases only a proven pre-dispatch rejection', async () => {
+    const memory = new MemoryKnowledgeRepository()
+    const content = 'approved generation facts'
+    const sha = createHash('sha256').update(content).digest('hex')
+    const document = await memory.createDocument({ workspaceId: 'ws-a', productId: 'product-a', knowledgeType: 'product_facts', title: 'facts', extractedText: content, contentHash: sha, approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready' })
+    const input = {
+      workspaceId: 'ws-a', eventId: 'event-a', aggregateId: 'aggregate-a', taskId: 'task-a', logicalAttempt: 1,
+      providerAttemptId: 'attempt-a', providerAttemptKey: `mm-${'a'.repeat(64)}`, requestBodySha256: 'b'.repeat(64), requestNonce: '00000000-0000-4000-8000-000000000000',
+      productId: 'product-a', contextHash: 'c'.repeat(64), expectedDocuments: [{ documentId: document.id, revision: document.revision, contentSha256: sha }],
+    }
+    const claim = await memory.claimGenerationKnowledge(input)
+    expect(claim).toMatchObject({ claimed: true, state: 'claimed' })
+    await expect(memory.createDocument({ id: document.id, workspaceId: 'ws-a', productId: 'product-a', knowledgeType: 'product_facts', title: 'facts', extractedText: 'revoked', contentHash: 'd'.repeat(64) })).rejects.toThrow('KNOWLEDGE_GENERATION_ACTIVE')
+    const settlementIdentity = { workspaceId: 'ws-a', claimId: claim.claimId!, providerAttemptId: input.providerAttemptId, providerAttemptKey: input.providerAttemptKey, requestBodySha256: input.requestBodySha256, requestNonce: input.requestNonce }
+    expect(await memory.settleGenerationKnowledgeClaim({ ...settlementIdentity, to: 'provider_started' })).toMatchObject({ state: 'provider_started', claimedAt: claim.claimedAt })
+    expect(await memory.settleGenerationKnowledgeClaim({ ...settlementIdentity, to: 'outcome_unknown' })).toMatchObject({ state: 'outcome_unknown', claimedAt: claim.claimedAt })
+    await expect(memory.createDocument({ id: document.id, workspaceId: 'ws-a', productId: 'product-a', knowledgeType: 'product_facts', title: 'facts', extractedText: 'revoked', contentHash: 'd'.repeat(64) })).rejects.toThrow('KNOWLEDGE_GENERATION_ACTIVE')
+
+    const secondDocument = await memory.createDocument({ workspaceId: 'ws-a', productId: 'product-b', knowledgeType: 'product_facts', extractedText: content, contentHash: sha, approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready' })
+    const preDispatch = await memory.claimGenerationKnowledge({ ...input, eventId: 'event-b', aggregateId: 'aggregate-b', taskId: 'task-b', providerAttemptId: 'attempt-b', productId: 'product-b', expectedDocuments: [{ documentId: secondDocument.id, revision: secondDocument.revision, contentSha256: sha }] })
+    expect(preDispatch.claimed).toBe(true)
+    expect(await memory.settleGenerationKnowledgeClaim({ ...settlementIdentity, claimId: preDispatch.claimId!, providerAttemptId: 'attempt-b', to: 'rejected' })).toMatchObject({ state: 'rejected' })
+    await memory.createDocument({ id: secondDocument.id, workspaceId: 'ws-a', productId: 'product-b', knowledgeType: 'product_facts', extractedText: 'updated after proven no-dispatch', contentHash: 'e'.repeat(64) })
+  })
+
+  it('keeps memory generation claims aligned with postgres snapshot and creation-time semantics', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-25T04:00:00.000Z'))
+    try {
+      const memory = new MemoryKnowledgeRepository()
+      const docs = []
+      for (let index = 0; index < 9; index += 1) {
+        const content = `approved-${index}`
+        docs.push(await memory.createDocument({ id: `doc-parity-${index}`, workspaceId: 'ws-parity', productId: 'product-parity', knowledgeType: 'product_facts', extractedText: content, contentHash: createHash('sha256').update(content).digest('hex'), approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready' }))
+      }
+      const claimInput = {
+        workspaceId: 'ws-parity', eventId: 'event-parity', aggregateId: 'aggregate-parity', taskId: 'task-parity', logicalAttempt: 1,
+        providerAttemptId: 'attempt-parity', providerAttemptKey: `mm-${'a'.repeat(64)}`, requestBodySha256: 'b'.repeat(64), requestNonce: '00000000-0000-4000-8000-000000000000',
+        productId: 'product-parity', contextHash: 'c'.repeat(64),
+        expectedDocuments: [{ documentId: docs[0]!.id, revision: docs[0]!.revision, contentSha256: docs[0]!.contentHash }],
+      }
+      expect(await memory.claimGenerationKnowledge(claimInput)).toEqual({ claimed: false, reason: 'snapshot_changed' })
+
+      const single = new MemoryKnowledgeRepository()
+      const content = 'one approved document'
+      const document = await single.createDocument({ id: 'doc-single-parity', workspaceId: 'ws-parity', productId: 'product-single', knowledgeType: 'product_facts', extractedText: content, contentHash: createHash('sha256').update(content).digest('hex'), approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready' })
+      const singleInput = { ...claimInput, eventId: 'event-single', aggregateId: 'aggregate-single', taskId: 'task-single', providerAttemptId: 'attempt-single', productId: 'product-single', expectedDocuments: [{ documentId: document.id, revision: document.revision, contentSha256: document.contentHash }] }
+      const claim = await single.claimGenerationKnowledge(singleInput)
+      expect(claim.claimed).toBe(true)
+      vi.setSystemTime(new Date('2026-09-25T04:00:01.000Z'))
+      const settlement = { workspaceId: 'ws-parity', claimId: claim.claimId!, providerAttemptId: 'attempt-single', providerAttemptKey: singleInput.providerAttemptKey, requestBodySha256: singleInput.requestBodySha256, requestNonce: singleInput.requestNonce }
+      await single.settleGenerationKnowledgeClaim({ ...settlement, to: 'provider_started' })
+      expect(await single.claimGenerationKnowledge(singleInput)).toMatchObject({ claimed: true, state: 'provider_started', claimedAt: '2026-09-25T04:00:00.000Z' })
+
+      const expired = new MemoryKnowledgeRepository()
+      const expiredDocument = await expired.createDocument({ id: 'doc-expired-parity', workspaceId: 'ws-parity', productId: 'product-expired', knowledgeType: 'product_facts', extractedText: content, contentHash: createHash('sha256').update(content).digest('hex'), approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready', expiresAt: '2026-09-25T03:59:59.000Z' })
+      expect(await expired.claimGenerationKnowledge({ ...singleInput, eventId: 'event-expired', aggregateId: 'aggregate-expired', taskId: 'task-expired', providerAttemptId: 'attempt-expired', productId: 'product-expired', expectedDocuments: [{ documentId: expiredDocument.id, revision: expiredDocument.revision, contentSha256: expiredDocument.contentHash }] })).toEqual({ claimed: false, reason: 'snapshot_changed' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('claims an empty knowledge snapshot only while the product has no documents', async () => {
+    const input = {
+      workspaceId: 'ws-a', eventId: 'event-empty', aggregateId: 'aggregate-empty', taskId: 'task-empty', logicalAttempt: 1,
+      providerAttemptId: 'attempt-empty', providerAttemptKey: `mm-${'a'.repeat(64)}`, requestBodySha256: 'b'.repeat(64),
+      requestNonce: '00000000-0000-4000-8000-000000000000', productId: 'product-empty', contextHash: 'c'.repeat(64),
+      expectedDocuments: [],
+    }
+    const memory = new MemoryKnowledgeRepository()
+    expect(await memory.claimGenerationKnowledge(input)).toMatchObject({ claimed: true, state: 'claimed' })
+
+    const changed = new MemoryKnowledgeRepository()
+    await changed.createDocument({ workspaceId: 'ws-a', productId: 'product-empty', knowledgeType: 'product_facts',
+      extractedText: 'new facts', contentHash: 'd'.repeat(64), approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready' })
+    expect(await changed.claimGenerationKnowledge(input)).toEqual({ claimed: false, reason: 'snapshot_changed' })
+
+    const unapproved = new MemoryKnowledgeRepository()
+    await unapproved.createDocument({ workspaceId: 'ws-a', productId: 'product-empty', knowledgeType: 'product_facts',
+      extractedText: 'awaiting review', contentHash: 'e'.repeat(64), approvalStatus: 'pending', rightsStatus: 'cleared', indexState: 'queued' })
+    expect(await unapproved.claimGenerationKnowledge(input)).toEqual({ claimed: false, reason: 'snapshot_changed' })
+
+    const pool = new RecordingKnowledgePool({}, {})
+    expect(await new PostgresKnowledgeRepository(pool).claimGenerationKnowledge(input)).toEqual({ claimed: false, reason: 'snapshot_changed' })
+    const claimIndex = pool.statements.findIndex(statement => statement.includes('claim_knowledge_generation('))
+    expect(claimIndex).toBeGreaterThanOrEqual(0)
+    expect(pool.parameters[claimIndex]?.at(-1)).toBe('[]')
   })
 })

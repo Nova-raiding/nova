@@ -187,6 +187,47 @@ export interface KnowledgeDeletionProof {
   deletionDigest: string
 }
 
+export interface KnowledgeGenerationExpectedDocument {
+  documentId: string
+  revision: number
+  /** SHA-256 of the exact extracted text frozen into the generation input. */
+  contentSha256: string
+}
+
+export interface KnowledgeGenerationClaimInput {
+  workspaceId: string
+  claimId?: string
+  eventId: string
+  aggregateId: string
+  taskId: string
+  logicalAttempt: number
+  providerAttemptId: string
+  providerAttemptKey: string
+  requestBodySha256: string
+  requestNonce: string
+  productId: string
+  contextHash: string
+  expectedDocuments: readonly KnowledgeGenerationExpectedDocument[]
+}
+
+export interface KnowledgeGenerationClaimResult {
+  claimed: boolean
+  claimId?: string
+  state?: 'claimed' | 'provider_started' | 'outcome_unknown' | 'completed' | 'rejected'
+  claimedAt?: string
+  reason?: 'snapshot_changed' | 'active_claim' | 'attempt_conflict'
+}
+
+export interface KnowledgeGenerationClaimSettlement {
+  workspaceId: string
+  claimId: string
+  providerAttemptId: string
+  providerAttemptKey: string
+  requestBodySha256: string
+  requestNonce: string
+  to: 'provider_started' | 'outcome_unknown' | 'completed' | 'rejected'
+}
+
 export interface KnowledgeRepository {
   createAsset(input: KnowledgeAssetInput): Promise<KnowledgeAsset>
   getAsset(workspaceId: string, assetId: string): Promise<KnowledgeAsset | undefined>
@@ -204,6 +245,8 @@ export interface KnowledgeRepository {
   transitionQueuedIndexState(workspaceId: string, documentId: string, state: 'ready' | 'failed', expected: { revision: number; contentHash: string }, reason?: string): Promise<KnowledgeDocument | undefined>
   rebuildIndex(workspaceId: string, documentId?: string, reason?: string): Promise<number>
   deleteDocument(workspaceId: string, documentId: string, reason?: string): Promise<KnowledgeDeletionProof>
+  claimGenerationKnowledge(input: KnowledgeGenerationClaimInput): Promise<KnowledgeGenerationClaimResult>
+  settleGenerationKnowledgeClaim(input: KnowledgeGenerationClaimSettlement): Promise<{ state: KnowledgeGenerationClaimResult['state']; claimedAt: string; updatedAt: string } | undefined>
   search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]>
 }
 
@@ -259,9 +302,15 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
   private readonly chunks = new Map<string, KnowledgeChunk>()
   private readonly embeddings = new Map<string, KnowledgeEmbedding>()
   private readonly proofs = new Map<string, KnowledgeDeletionProof>()
+  private readonly generationClaims = new Map<string, { input: KnowledgeGenerationClaimInput; state: NonNullable<KnowledgeGenerationClaimResult['state']>; claimedAt: string; updatedAt: string }>()
+
+  private assertGenerationMutable(workspaceId: string, productId: string | undefined) {
+    if (productId && [...this.generationClaims.values()].some(item => item.input.workspaceId === workspaceId && item.input.productId === productId && ['claimed', 'provider_started', 'outcome_unknown'].includes(item.state))) throw new Error('KNOWLEDGE_GENERATION_ACTIVE')
+  }
 
   async createAsset(input: KnowledgeAssetInput): Promise<KnowledgeAsset> {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
+    this.assertGenerationMutable(workspaceId, input.productId)
     const asset: KnowledgeAsset = { ...input, id: input.id ?? `knowledge_asset_${randomUUID()}`, workspaceId, name: text(input.name, 'KNOWLEDGE_ASSET_NAME'), sourceVersion: positive(input.sourceVersion, 'KNOWLEDGE_SOURCE_VERSION'), approvalStatus: input.approvalStatus ?? 'pending', rightsStatus: input.rightsStatus ?? 'unknown', indexState: input.indexState ?? 'queued', revision: 1, createdAt: now(), updatedAt: now() }
     if (this.assets.has(asset.id)) return clone(this.assets.get(asset.id)!)
     this.assets.set(asset.id, asset); return clone(asset)
@@ -275,6 +324,8 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
     const scope = requireWorkspaceScope(workspaceId)
     const current = this.assets.get(assetId)
     if (!current || current.workspaceId !== scope) throw new Error('KNOWLEDGE_ASSET_NOT_FOUND')
+    this.assertGenerationMutable(scope, current.productId)
+    for (const document of this.documents.values()) if (document.workspaceId === scope && document.knowledgeAssetId === assetId) this.assertGenerationMutable(scope, document.productId)
     if (patch.name !== undefined) current.name = text(patch.name, 'KNOWLEDGE_ASSET_NAME')
     if (patch.content !== undefined) current.content = clone(patch.content)
     if (patch.approvalStatus !== undefined) current.approvalStatus = patch.approvalStatus
@@ -298,6 +349,7 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const knowledgeAssetId = text(input.knowledgeAssetId, 'KNOWLEDGE_ASSET_ID')
     const asset = this.assets.get(knowledgeAssetId)
     if (!asset || asset.workspaceId !== workspaceId) throw new Error('KNOWLEDGE_ASSET_NOT_FOUND')
+    this.assertGenerationMutable(workspaceId, input.productId)
     const key = `${workspaceId}:${knowledgeAssetId}:${input.sourceAssetId ?? ''}:${input.productId ?? ''}:${input.skuId ?? ''}`
     const existing = this.bindings.get(key); if (existing) return clone(existing)
     const timestamp = now(); const binding: KnowledgeAssetBinding = { ...input, workspaceId, knowledgeAssetId, bindingId: `knowledge_binding_${randomUUID()}`, sourceVersion: positive(input.sourceVersion, 'KNOWLEDGE_SOURCE_VERSION'), bindingType: input.bindingType ?? 'spreadsheet_facts', approvalStatus: input.approvalStatus ?? 'pending', createdAt: timestamp, updatedAt: timestamp }
@@ -305,6 +357,7 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
   }
   async createDocument(input: KnowledgeDocumentInput): Promise<KnowledgeDocument> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const id = input.id ?? `knowledge_document_${randomUUID()}`
+    this.assertGenerationMutable(workspaceId, input.productId)
     if (input.knowledgeAssetId) { const asset = this.assets.get(input.knowledgeAssetId); if (!asset || asset.workspaceId !== workspaceId) throw new Error('KNOWLEDGE_ASSET_NOT_FOUND') }
     const existing = this.documents.get(id); if (existing) {
       if (existing.indexState === 'deleted') throw new Error('KNOWLEDGE_DOCUMENT_DELETED')
@@ -325,6 +378,7 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
   async listChunks(workspaceId: string, documentId: string): Promise<KnowledgeChunk[]> { const scope = requireWorkspaceScope(workspaceId); return [...this.chunks.values()].filter(item => item.workspaceId === scope && item.documentId === documentId).sort((a, b) => a.ordinal - b.ordinal).map(clone) }
   async replaceChunks(workspaceId: string, documentId: string, chunks: readonly KnowledgeChunkInput[]): Promise<KnowledgeChunk[]> {
     const scope = requireWorkspaceScope(workspaceId); const document = this.documents.get(documentId); if (!document || document.workspaceId !== scope) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND'); if (document.indexState === 'deleted') throw new Error('KNOWLEDGE_DOCUMENT_DELETED')
+    this.assertGenerationMutable(scope, document.productId)
     const previous = await this.listChunks(scope, documentId)
     if (previous.length === chunks.length && previous.every((item, index) => item.ordinal === chunks[index]?.ordinal && item.content === chunks[index]?.content && item.contentHash === (chunks[index]?.contentHash ?? contentHash(chunks[index]!.content)) && item.tokenCount === chunks[index]?.tokenCount && JSON.stringify(item.metadata) === JSON.stringify(chunks[index]?.metadata ?? {}))) return previous
     for (const chunk of [...this.chunks.values()]) if (chunk.workspaceId === scope && chunk.documentId === documentId) { this.chunks.delete(chunk.id); for (const embedding of [...this.embeddings.values()]) if (embedding.chunkId === chunk.id) this.embeddings.delete(embedding.id) }
@@ -332,11 +386,63 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
     this.documents.set(documentId, { ...document, approvalStatus: 'pending', rightsStatus: 'unknown', indexState: 'queued', indexError: undefined, revision: document.revision + 1, updatedAt: now() })
     return clone(output)
   }
-  async upsertEmbedding(workspaceId: string, input: KnowledgeEmbeddingInput): Promise<KnowledgeEmbedding> { const scope = requireWorkspaceScope(workspaceId); const document = this.documents.get(input.documentId); const chunk = this.chunks.get(input.chunkId); if (!document || document.workspaceId !== scope || !chunk || chunk.workspaceId !== scope || chunk.documentId !== input.documentId) throw new Error('KNOWLEDGE_EMBEDDING_SCOPE_INVALID'); if (document.revision !== input.expectedDocumentRevision || document.contentHash !== input.expectedDocumentContentHash || chunk.contentHash !== input.expectedChunkContentHash || document.approvalStatus !== 'approved' || document.rightsStatus !== 'cleared' || document.indexState === 'deleted') throw new Error('KNOWLEDGE_EMBEDDING_STALE'); if (!input.embedding.length || input.embedding.some(item => !Number.isFinite(item))) throw new Error('KNOWLEDGE_EMBEDDING_INVALID'); const existing = [...this.embeddings.values()].find(item => item.workspaceId === scope && item.chunkId === input.chunkId && item.embeddingModel === input.embeddingModel && item.embeddingVersion === input.embeddingVersion); const result: KnowledgeEmbedding = { id: existing?.id ?? input.id ?? `knowledge_embedding_${randomUUID()}`, workspaceId: scope, documentId: input.documentId, chunkId: input.chunkId, embedding: [...input.embedding], embeddingModel: input.embeddingModel, embeddingVersion: input.embeddingVersion, vectorMetadata: clone(input.vectorMetadata ?? {}), indexState: input.indexState ?? 'queued', createdAt: existing?.createdAt ?? now(), updatedAt: now() }; assertState(result.indexState); this.embeddings.set(result.id, result); return clone(result) }
-  async transitionIndexState(workspaceId: string, documentId: string, state: KnowledgeIndexState, reason = ''): Promise<KnowledgeDocument> { const scope = requireWorkspaceScope(workspaceId); assertState(state); const current = this.documents.get(documentId); if (!current || current.workspaceId !== scope) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND'); const next = { ...current, indexState: state, indexError: state === 'failed' ? reason : undefined, revision: current.revision + 1, updatedAt: now() }; this.documents.set(documentId, next); return clone(next) }
-  async transitionQueuedIndexState(workspaceId: string, documentId: string, state: 'ready' | 'failed', expected: { revision: number; contentHash: string }, reason = ''): Promise<KnowledgeDocument | undefined> { const scope = requireWorkspaceScope(workspaceId); const current = this.documents.get(documentId); if (!current || current.workspaceId !== scope || current.indexState !== 'queued' || current.revision !== expected.revision || current.contentHash !== expected.contentHash || (state === 'ready' && (current.approvalStatus !== 'approved' || current.rightsStatus !== 'cleared'))) return undefined; const next = { ...current, indexState: state, indexError: state === 'failed' ? reason : undefined, revision: current.revision + 1, updatedAt: now() }; this.documents.set(documentId, next); return clone(next) }
-  async rebuildIndex(workspaceId: string, documentId?: string, _reason = 'rebuild requested'): Promise<number> { const scope = requireWorkspaceScope(workspaceId); const targets = [...this.documents.values()].filter(item => item.workspaceId === scope && (!documentId || item.id === documentId) && item.indexState !== 'deleted'); for (const item of targets) { item.indexState = 'queued'; item.revision += 1; item.updatedAt = now() } return targets.length }
-  async deleteDocument(workspaceId: string, documentId: string, _reason = 'document deleted'): Promise<KnowledgeDeletionProof> { const scope = requireWorkspaceScope(workspaceId); const document = this.documents.get(documentId); if (!document || document.workspaceId !== scope) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND'); const chunks = [...this.chunks.values()].filter(item => item.workspaceId === scope && item.documentId === documentId); const embeddings = [...this.embeddings.values()].filter(item => item.workspaceId === scope && item.documentId === documentId); chunks.forEach(item => this.chunks.delete(item.id)); embeddings.forEach(item => this.embeddings.delete(item.id)); document.indexState = 'deleted'; document.revision += 1; document.updatedAt = now(); const proof: KnowledgeDeletionProof = { id: `knowledge_deletion_${randomUUID()}`, workspaceId: scope, documentId, deletedAt: now(), chunksDeleted: chunks.length, embeddingsDeleted: embeddings.length, deletionDigest: digest({ scope, documentId, chunks: chunks.map(item => item.id), embeddings: embeddings.map(item => item.id) }) }; this.proofs.set(proof.id, proof); return clone(proof) }
+  async upsertEmbedding(workspaceId: string, input: KnowledgeEmbeddingInput): Promise<KnowledgeEmbedding> { const scope = requireWorkspaceScope(workspaceId); const document = this.documents.get(input.documentId); const chunk = this.chunks.get(input.chunkId); if (!document || document.workspaceId !== scope || !chunk || chunk.workspaceId !== scope || chunk.documentId !== input.documentId) throw new Error('KNOWLEDGE_EMBEDDING_SCOPE_INVALID'); this.assertGenerationMutable(scope, document.productId); if (document.revision !== input.expectedDocumentRevision || document.contentHash !== input.expectedDocumentContentHash || chunk.contentHash !== input.expectedChunkContentHash || document.approvalStatus !== 'approved' || document.rightsStatus !== 'cleared' || document.indexState === 'deleted') throw new Error('KNOWLEDGE_EMBEDDING_STALE'); if (!input.embedding.length || input.embedding.some(item => !Number.isFinite(item))) throw new Error('KNOWLEDGE_EMBEDDING_INVALID'); const existing = [...this.embeddings.values()].find(item => item.workspaceId === scope && item.chunkId === input.chunkId && item.embeddingModel === input.embeddingModel && item.embeddingVersion === input.embeddingVersion); const result: KnowledgeEmbedding = { id: existing?.id ?? input.id ?? `knowledge_embedding_${randomUUID()}`, workspaceId: scope, documentId: input.documentId, chunkId: input.chunkId, embedding: [...input.embedding], embeddingModel: input.embeddingModel, embeddingVersion: input.embeddingVersion, vectorMetadata: clone(input.vectorMetadata ?? {}), indexState: input.indexState ?? 'queued', createdAt: existing?.createdAt ?? now(), updatedAt: now() }; assertState(result.indexState); this.embeddings.set(result.id, result); return clone(result) }
+  async transitionIndexState(workspaceId: string, documentId: string, state: KnowledgeIndexState, reason = ''): Promise<KnowledgeDocument> { const scope = requireWorkspaceScope(workspaceId); assertState(state); const current = this.documents.get(documentId); if (!current || current.workspaceId !== scope) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND'); this.assertGenerationMutable(scope, current.productId); const next = { ...current, indexState: state, indexError: state === 'failed' ? reason : undefined, revision: current.revision + 1, updatedAt: now() }; this.documents.set(documentId, next); return clone(next) }
+  async transitionQueuedIndexState(workspaceId: string, documentId: string, state: 'ready' | 'failed', expected: { revision: number; contentHash: string }, reason = ''): Promise<KnowledgeDocument | undefined> { const scope = requireWorkspaceScope(workspaceId); const current = this.documents.get(documentId); if (!current || current.workspaceId !== scope || current.indexState !== 'queued' || current.revision !== expected.revision || current.contentHash !== expected.contentHash || (state === 'ready' && (current.approvalStatus !== 'approved' || current.rightsStatus !== 'cleared'))) return undefined; this.assertGenerationMutable(scope, current.productId); const next = { ...current, indexState: state, indexError: state === 'failed' ? reason : undefined, revision: current.revision + 1, updatedAt: now() }; this.documents.set(documentId, next); return clone(next) }
+  async rebuildIndex(workspaceId: string, documentId?: string, _reason = 'rebuild requested'): Promise<number> { const scope = requireWorkspaceScope(workspaceId); const targets = [...this.documents.values()].filter(item => item.workspaceId === scope && (!documentId || item.id === documentId) && item.indexState !== 'deleted'); for (const item of targets) this.assertGenerationMutable(scope, item.productId); for (const item of targets) { item.indexState = 'queued'; item.revision += 1; item.updatedAt = now() } return targets.length }
+  async deleteDocument(workspaceId: string, documentId: string, _reason = 'document deleted'): Promise<KnowledgeDeletionProof> { const scope = requireWorkspaceScope(workspaceId); const document = this.documents.get(documentId); if (!document || document.workspaceId !== scope) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND'); this.assertGenerationMutable(scope, document.productId); const chunks = [...this.chunks.values()].filter(item => item.workspaceId === scope && item.documentId === documentId); const embeddings = [...this.embeddings.values()].filter(item => item.workspaceId === scope && item.documentId === documentId); chunks.forEach(item => this.chunks.delete(item.id)); embeddings.forEach(item => this.embeddings.delete(item.id)); document.indexState = 'deleted'; document.revision += 1; document.updatedAt = now(); const proof: KnowledgeDeletionProof = { id: `knowledge_deletion_${randomUUID()}`, workspaceId: scope, documentId, deletedAt: now(), chunksDeleted: chunks.length, embeddingsDeleted: embeddings.length, deletionDigest: digest({ scope, documentId, chunks: chunks.map(item => item.id), embeddings: embeddings.map(item => item.id) }) }; this.proofs.set(proof.id, proof); return clone(proof) }
+  async claimGenerationKnowledge(input: KnowledgeGenerationClaimInput): Promise<KnowledgeGenerationClaimResult> {
+    const scope = requireWorkspaceScope(input.workspaceId)
+    if (!input.productId.trim() || !input.eventId.trim() || !input.providerAttemptId.trim() || input.expectedDocuments.length > 8) throw new Error('KNOWLEDGE_GENERATION_CLAIM_INVALID')
+    const claimId = input.claimId ?? `knowledge_claim_${randomUUID()}`
+    const key = `${scope}:${input.eventId}:${input.logicalAttempt}:${input.providerAttemptId}`
+    const existing = this.generationClaims.get(key)
+    if (existing) {
+      const { claimId: _storedClaimId, ...storedInput } = existing.input
+      const { claimId: _requestedClaimId, ...requestedInput } = input
+      if (JSON.stringify(storedInput) !== JSON.stringify(requestedInput)) return { claimed: false, reason: 'attempt_conflict' }
+      return { claimed: true, claimId: existing.input.claimId, state: existing.state, claimedAt: existing.claimedAt }
+    }
+    if ([...this.generationClaims.values()].some(item => item.input.workspaceId === scope && item.input.productId === input.productId && ['claimed', 'provider_started', 'outcome_unknown'].includes(item.state))) return { claimed: false, reason: 'active_claim' }
+    const productDocuments = [...this.documents.values()].filter(document => document.workspaceId === scope
+      && document.productId === input.productId && document.indexState !== 'deleted')
+    if (productDocuments.some(document => document.indexState !== 'ready'
+      || document.approvalStatus !== 'approved' || document.rightsStatus !== 'cleared')) return { claimed: false, reason: 'snapshot_changed' }
+    const selected = productDocuments.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)
+      || left.id.localeCompare(right.id)).slice(0, 8)
+    if (selected.length !== input.expectedDocuments.length
+      || new Set(input.expectedDocuments.map(item => item.documentId)).size !== input.expectedDocuments.length) {
+      return { claimed: false, reason: 'snapshot_changed' }
+    }
+    const selectedById = new Map(selected.map(document => [document.id, document]))
+    const valid = input.expectedDocuments.every(expected => {
+      const document = selectedById.get(expected.documentId)
+      const chunks = document && [...this.chunks.values()].filter(chunk => chunk.workspaceId === scope && chunk.documentId === document.id)
+        .sort((left, right) => left.ordinal - right.ordinal)
+      const frozenContent = chunks?.length ? chunks.map(chunk => chunk.content).join('\n') : document?.extractedText
+      return document && document.revision === expected.revision
+        && contentHash(frozenContent ?? '') === expected.contentSha256
+        && (!document.expiresAt || Date.parse(document.expiresAt) > Date.now())
+    })
+    if (!valid) return { claimed: false, reason: 'snapshot_changed' }
+    const claimedAt = now()
+    this.generationClaims.set(key, { input: clone({ ...input, claimId }), state: 'claimed', claimedAt, updatedAt: claimedAt })
+    return { claimed: true, claimId, state: 'claimed', claimedAt }
+  }
+  async settleGenerationKnowledgeClaim(input: KnowledgeGenerationClaimSettlement): Promise<{ state: KnowledgeGenerationClaimResult['state']; claimedAt: string; updatedAt: string } | undefined> {
+    const scope = requireWorkspaceScope(input.workspaceId)
+    const claim = [...this.generationClaims.values()].find(item => item.input.workspaceId === scope && item.input.claimId === input.claimId
+      && item.input.providerAttemptId === input.providerAttemptId && item.input.providerAttemptKey === input.providerAttemptKey
+      && item.input.requestBodySha256 === input.requestBodySha256 && item.input.requestNonce === input.requestNonce)
+    if (!claim) return undefined
+    if (claim.state === input.to) return { state: claim.state, claimedAt: claim.claimedAt, updatedAt: claim.updatedAt }
+    const allowed = (claim.state === 'claimed' && ['provider_started', 'rejected'].includes(input.to))
+      || (claim.state === 'provider_started' && ['outcome_unknown', 'completed', 'rejected'].includes(input.to))
+    if (claim.state !== input.to && !allowed) return undefined
+    claim.state = input.to
+    claim.updatedAt = now()
+    return { state: claim.state, claimedAt: claim.claimedAt, updatedAt: claim.updatedAt }
+  }
   async search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]> {
     const scope = requireWorkspaceScope(input.workspaceId)
     const limit = Math.min(Math.max(input.limit ?? 20, 1), 100)
@@ -368,6 +474,38 @@ const documentProjection = `id, workspace_id, knowledge_asset_id, source_asset_i
 
 export class PostgresKnowledgeRepository implements KnowledgeRepository {
   constructor(private readonly pool: SqlPool) {}
+  async claimGenerationKnowledge(input: KnowledgeGenerationClaimInput): Promise<KnowledgeGenerationClaimResult> {
+    const scope = requireWorkspaceScope(input.workspaceId)
+    if (!input.productId.trim() || !input.eventId.trim() || !input.aggregateId.trim() || !input.taskId.trim()
+      || !input.providerAttemptId.trim() || !input.providerAttemptKey.trim()
+      || !/^[a-f0-9]{64}$/u.test(input.requestBodySha256) || !/^[a-f0-9]{64}$/u.test(input.contextHash)
+      || !/^[0-9a-f-]{36}$/iu.test(input.requestNonce) || !Number.isSafeInteger(input.logicalAttempt) || input.logicalAttempt < 1
+      || input.expectedDocuments.length > 8
+      || new Set(input.expectedDocuments.map(document => document.documentId)).size !== input.expectedDocuments.length
+      || input.expectedDocuments.some(document => !document.documentId.trim() || !Number.isSafeInteger(document.revision) || document.revision < 1 || !/^[a-f0-9]{64}$/u.test(document.contentSha256))) {
+      throw new Error('KNOWLEDGE_GENERATION_CLAIM_INVALID')
+    }
+    const claimId = input.claimId ?? `knowledge_claim_${randomUUID()}`
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const expected = input.expectedDocuments.map(document => ({ document_id: document.documentId, revision: document.revision, content_sha256: document.contentSha256 }))
+      const result = await client.query<Row>(`SELECT * FROM claim_knowledge_generation($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)`, [
+        scope, claimId, input.eventId, input.aggregateId, input.taskId, input.logicalAttempt, input.providerAttemptId,
+        input.providerAttemptKey, input.requestBodySha256, input.requestNonce, input.productId, input.contextHash, JSON.stringify(expected),
+      ])
+      const row = result.rows[0]
+      if (!row) return { claimed: false, reason: 'snapshot_changed' }
+      if (row.refusal) return { claimed: false, reason: row.refusal as KnowledgeGenerationClaimResult['reason'] }
+      return { claimed: true, claimId: row.claim_id, state: row.claim_state, claimedAt: iso(row.claimed_at) }
+    })
+  }
+  async settleGenerationKnowledgeClaim(input: KnowledgeGenerationClaimSettlement): Promise<{ state: KnowledgeGenerationClaimResult['state']; claimedAt: string; updatedAt: string } | undefined> {
+    const scope = requireWorkspaceScope(input.workspaceId)
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const result = await client.query<Row>(`SELECT * FROM settle_knowledge_generation_claim($1,$2,$3,$4,$5,$6,$7)`, [scope, input.claimId, input.providerAttemptId, input.providerAttemptKey, input.requestBodySha256, input.requestNonce, input.to])
+      const row = result.rows[0]
+      return row ? { state: row.claim_state, claimedAt: iso(row.claimed_at), updatedAt: iso(row.updated_at) } : undefined
+    })
+  }
   async createAsset(input: KnowledgeAssetInput): Promise<KnowledgeAsset> { const scope = requireWorkspaceScope(input.workspaceId); const id = input.id ?? `knowledge_asset_${randomUUID()}`; return withWorkspaceTransaction(this.pool, scope, async client => { const result = await client.query<Row>(`INSERT INTO knowledge_assets (id,workspace_id,kind,name,content,source_asset_id,product_id,sku_id,source_version,approval_status,rights_status,index_state) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (workspace_id,id) DO UPDATE SET updated_at=knowledge_assets.updated_at RETURNING *`, [id, scope, input.kind, text(input.name, 'KNOWLEDGE_ASSET_NAME'), JSON.stringify(input.content), input.sourceAssetId ?? null, input.productId ?? null, input.skuId ?? null, positive(input.sourceVersion, 'KNOWLEDGE_SOURCE_VERSION'), input.approvalStatus ?? 'pending', input.rightsStatus ?? 'unknown', input.indexState ?? 'queued']); return mapAsset(result.rows[0]!) }) }
   async getAsset(workspaceId: string, assetId: string): Promise<KnowledgeAsset | undefined> { const scope = requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, scope, async client => { const result = await client.query<Row>('SELECT * FROM knowledge_assets WHERE workspace_id=$1 AND id=$2', [scope, assetId]); return result.rows[0] ? mapAsset(result.rows[0]) : undefined }) }
   async updateAsset(workspaceId: string, assetId: string, patch: { name?: string; content?: unknown; approvalStatus?: KnowledgeApprovalStatus; rightsStatus?: KnowledgeRightsStatus; indexState?: KnowledgeIndexState; indexError?: string }): Promise<KnowledgeAsset> {

@@ -700,6 +700,9 @@ export async function loadMigrations(): Promise<Migration[]> {
   const ocrCostRateV3 = await readFile(new URL('./migrations/247_ocr_cost_rate_v3.sql', import.meta.url), 'utf8')
   const ocrFreeThresholdRateV4 = await readFile(new URL('./migrations/248_ocr_free_threshold_rate_v4.sql', import.meta.url), 'utf8')
   const creativePointActionKeyUnique = await readFile(new URL('./migrations/249_creative_point_action_key_unique.sql', import.meta.url), 'utf8')
+  const knowledgeGenerationClaimFence = await readFile(new URL('./migrations/250_knowledge_generation_claim_fence.sql', import.meta.url), 'utf8')
+  const creativePointActionClaims = await readFile(new URL('./migrations/251_creative_point_action_claims.sql', import.meta.url), 'utf8')
+  const chargedTextDispatchAttempts = await readFile(new URL('./migrations/252_charged_text_dispatch_attempts.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -950,6 +953,9 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 247, name: 'ocr_cost_rate_v3', sql: ocrCostRateV3 },
     { version: 248, name: 'ocr_free_threshold_rate_v4', sql: ocrFreeThresholdRateV4 },
     { version: 249, name: 'creative_point_action_key_unique', sql: creativePointActionKeyUnique },
+    { version: 250, name: 'knowledge_generation_claim_fence', sql: knowledgeGenerationClaimFence },
+    { version: 251, name: 'creative_point_action_claims', sql: creativePointActionClaims },
+    { version: 252, name: 'charged_text_dispatch_attempts', sql: chargedTextDispatchAttempts },
   ]
 }
 

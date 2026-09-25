@@ -188,6 +188,46 @@ BEGIN
     REVOKE ALL ON FUNCTION public.merchant_onboarding_sku_v2() FROM PUBLIC;
     GRANT EXECUTE ON FUNCTION public.merchant_onboarding_sku_v2() TO merchant_app;
   END IF;
+
+  -- The migrate service runs this role bootstrap again after migration 250.
+  -- Restore only its two tenant-scoped SECURITY DEFINER entry points after
+  -- the blanket function EXECUTE revoke above.
+  IF to_regprocedure('public.claim_knowledge_generation(text,text,text,text,text,integer,text,text,text,text,text,text,jsonb)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.claim_knowledge_generation(text,text,text,text,text,integer,text,text,text,text,text,text,jsonb) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.claim_knowledge_generation(text,text,text,text,text,integer,text,text,text,text,text,text,jsonb) TO merchant_app;
+  END IF;
+
+  IF to_regprocedure('public.settle_knowledge_generation_claim(text,text,text,text,text,text,text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.settle_knowledge_generation_claim(text,text,text,text,text,text,text) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.settle_knowledge_generation_claim(text,text,text,text,text,text,text) TO merchant_app;
+  END IF;
+
+  IF to_regclass('public.creative_point_action_claims') IS NOT NULL THEN
+    REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.creative_point_action_claims FROM merchant_app;
+  END IF;
+  IF to_regprocedure('public.claim_creative_point_action(text,text,text,bigint)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.claim_creative_point_action(text,text,text,bigint) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.claim_creative_point_action(text,text,text,bigint) TO merchant_app;
+  END IF;
+  IF to_regprocedure('public.bind_creative_point_action(text,text,text,bigint,text,text,text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.bind_creative_point_action(text,text,text,bigint,text,text,text) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.bind_creative_point_action(text,text,text,bigint,text,text,text) TO merchant_app;
+  END IF;
+  IF to_regprocedure('public.release_unbound_creative_point_action(text,text,text,bigint)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.release_unbound_creative_point_action(text,text,text,bigint) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.release_unbound_creative_point_action(text,text,text,bigint) TO merchant_app;
+  END IF;
+  IF to_regclass('public.charged_text_dispatch_attempts') IS NOT NULL THEN
+    REVOKE ALL ON public.charged_text_dispatch_attempts FROM PUBLIC, merchant_app, merchant_ops;
+  END IF;
+  IF to_regprocedure('public.claim_charged_text_dispatch_attempt(text,text,text,integer,integer,text,text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.claim_charged_text_dispatch_attempt(text,text,text,integer,integer,text,text) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.claim_charged_text_dispatch_attempt(text,text,text,integer,integer,text,text) TO merchant_app;
+  END IF;
+  IF to_regprocedure('public.transition_charged_text_dispatch_attempt(text,text,text,text,text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.transition_charged_text_dispatch_attempt(text,text,text,text,text) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.transition_charged_text_dispatch_attempt(text,text,text,text,text) TO merchant_app;
+  END IF;
 END
 $$;
 
