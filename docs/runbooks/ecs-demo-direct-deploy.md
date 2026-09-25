@@ -4,7 +4,7 @@
 
 ## 1. 锁定本次改动
 
-- 本地只用 `codex/windows-plugin-bundle` 一个分支、一个 Git worktree。每项独立修复做最小相关检查，通过后单独提交；不要把其他 agent 同时修改的文件一起暂存。
+- 本地只用 `main` 分支和唯一主工作目录。每项独立修复做最小相关检查，通过后单独提交；不要把其他 agent 同时修改的文件一起暂存。发布前确认工作目录干净，并从已提交的精确 SHA 构建。
 - 从提交的完整 SHA 用 `git archive` 生成干净源码快照，传到 `/srv/merchant-releases/release-<sha>`。不得从带有未提交改动的共享工作目录构建镜像。记录快照 SHA、目标组件、镜像 digest 和构建结果。
 - 仅为改动的组件构建镜像。API、Ops UI、gateway、worker 各自有独立镜像；若运行中的组件来自不同提交，记录每个组件的真实提交及 digest，不把统一 release 标识误写成所有组件的源码版本。
 - 密钥、数据库连接和部署环境只放 ECS 受保护目录 `/var/lib/merchant-release-security/demo-first-install/release-85575f9c`；不要进入 Git、源码归档、日志、聊天或客户包。修改受保护 Compose 时保存新文件、核对目标服务和镜像 digest，并记录文件 SHA-256。
