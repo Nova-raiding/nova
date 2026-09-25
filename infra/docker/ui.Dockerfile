@@ -7,7 +7,7 @@ ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
 # This step was being SIGKILLed (137), which left API/worker images pushed but
 # prevented the six-image manifest from being completed.
 ENV npm_config_maxsockets=2 NODE_OPTIONS=--max-old-space-size=1024
-RUN npm ci --prefer-offline --no-audit --fund=false --maxsockets=2
+RUN --mount=type=cache,id=merchant-ui-npm-cache,target=/root/.npm npm ci --prefer-offline --no-audit --fund=false --maxsockets=2
 COPY demo/merchant-studio ./
 # Product spreadsheet import reuses the browser-safe parsing helpers from the
 # workspace application package. Keep the package outside the demo app's npm

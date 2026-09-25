@@ -12,12 +12,15 @@ staging 和镜像构建共用 `infra/scripts/ecs-build-lock.sh`，避免不同 r
 
 本地构建显式设置 `ECS_BUILD_LOCK_PATH`，其父目录必须预先存在、归当前用户所有、不可被其他用户写入且使用真实路径（macOS 可先用 `pwd -P` 确认）。复制 staging/build 脚本到宿主控制目录时，须同时复制经审核的共用 helper。此锁降低并发峰值，不代替磁盘预算或保证单个构建一定有足够内存；不自动创建 swap、停止业务容器或删卷。
 
+商家 UI 与运营 UI 安装依赖时使用独立 BuildKit npm 缓存挂载，避免后续候选重复从网络下载。默认 registry 为 `https://registry.npmjs.org/`；构建机访问官方源较慢时，可通过 `ECS_NPM_REGISTRY` 指定 HTTPS npm 镜像，例如 `https://registry.npmmirror.com/`。`release-images.json` 会记录实际使用的 registry。不要在 URL 中放凭据；私有仓库认证须通过受保护的构建凭据配置。npm 仍按锁文件的 integrity 校验包内容。
+
 ```sh
 ECS_RELEASE_GIT_SHA="$(git rev-parse HEAD)" \
 RELEASE_ID="release-$(git rev-parse --short=12 HEAD)" \
 ECS_RELEASE_IMAGE_REPOSITORY=registry.internal.example/storenova \
 ECS_RELEASE_IMAGE_OUTPUT_DIR="$PWD/artifacts/release-images/release-candidate" \
 ECS_BUILD_CACHE_KEEP_STORAGE=2GB \
+ECS_NPM_REGISTRY=https://registry.npmjs.org/ \
 sh infra/scripts/build-ecs-release-images.sh
 ```
 

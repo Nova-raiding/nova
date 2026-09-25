@@ -16,6 +16,7 @@ cache_limit=${ECS_BUILD_CACHE_KEEP_STORAGE:-2GB}
 source_archive=${ECS_RELEASE_SOURCE_ARCHIVE:-}
 source_identity=${ECS_RELEASE_SOURCE_IDENTITY:-}
 ops_auth_mode=${ECS_OPS_AUTH_MODE:-password}
+npm_registry=${ECS_NPM_REGISTRY:-https://registry.npmjs.org/}
 
 printf '%s' "$revision" | grep -Eq '^[0-9a-f]{40}$' || {
   echo 'ECS_RELEASE_GIT_SHA must be a full commit SHA' >&2; exit 2;
@@ -35,6 +36,14 @@ case "$output_dir" in /*) ;; *) echo 'ECS_RELEASE_IMAGE_OUTPUT_DIR must be absol
 [ "$ops_auth_mode" = password ] || {
   echo 'ECS_OPS_AUTH_MODE must be password' >&2; exit 2;
 }
+NPM_REGISTRY=$npm_registry node <<'NODE'
+const value = process.env.NPM_REGISTRY
+let registry
+try { registry = new URL(value) } catch { throw new Error('ECS_NPM_REGISTRY must be an HTTPS registry URL') }
+if (registry.protocol !== 'https:' || registry.username || registry.password || registry.search || registry.hash) {
+  throw new Error('ECS_NPM_REGISTRY must be an HTTPS URL without credentials, query, or fragment')
+}
+NODE
 
 for command_name in docker shasum tar node; do
   command -v "$command_name" >/dev/null 2>&1 || { echo "$command_name is required" >&2; exit 2; }
@@ -185,15 +194,18 @@ else
 fi
 if [ -n "${ECS_MERCHANT_UI_WORKSPACE_ID:-}" ]; then
   build_image merchant-ui infra/docker/ui.Dockerfile \
+    --build-arg "NPM_CONFIG_REGISTRY=$npm_registry" \
     --build-arg "RELEASE_ID=$release_id" --build-arg "RELEASE_GIT_SHA=$revision" \
     --build-arg "VITE_API_BASE_URL=${ECS_MERCHANT_UI_API_BASE_URL:-/api}" \
     --build-arg "VITE_WORKSPACE_ID=$ECS_MERCHANT_UI_WORKSPACE_ID"
 else
   build_image merchant-ui infra/docker/ui.Dockerfile \
+    --build-arg "NPM_CONFIG_REGISTRY=$npm_registry" \
     --build-arg "RELEASE_ID=$release_id" --build-arg "RELEASE_GIT_SHA=$revision" \
     --build-arg "VITE_API_BASE_URL=${ECS_MERCHANT_UI_API_BASE_URL:-/api}"
 fi
 build_image merchant-ops-ui infra/docker/ops-console.Dockerfile \
+  --build-arg "NPM_CONFIG_REGISTRY=$npm_registry" \
   --build-arg OPS_CONSOLE_BUILD_MODE=production \
   --build-arg "OPS_CONSOLE_AUTH_MODE=$ops_auth_mode" \
   --label "com.storenova.ops-auth-mode=$ops_auth_mode" \
@@ -202,7 +214,7 @@ build_image merchant-ops-ui infra/docker/ops-console.Dockerfile \
 build_image payment-gateway services/payment-gateway/Dockerfile
 build_image pilot-gateway infra/docker/pilot-gateway-https.Dockerfile
 
-RECORDS_PATH=$records OUTPUT_DIR=$output_dir RELEASE_REVISION=$revision RELEASE_NAME=$release_id SOURCE_DIGEST="sha256:$source_sha" node <<'NODE'
+RECORDS_PATH=$records OUTPUT_DIR=$output_dir RELEASE_REVISION=$revision RELEASE_NAME=$release_id SOURCE_DIGEST="sha256:$source_sha" NPM_REGISTRY=$npm_registry node <<'NODE'
 const fs = require('node:fs')
 const path = require('node:path')
 const rows = fs.readFileSync(process.env.RECORDS_PATH, 'utf8').trim().split('\n').map(line => line.split('\t'))
@@ -214,6 +226,7 @@ const metadata = {
   release_id: process.env.RELEASE_NAME,
   release_git_sha: process.env.RELEASE_REVISION,
   source_sha256: process.env.SOURCE_DIGEST,
+  npm_registry: process.env.NPM_REGISTRY,
   image_digests: digests,
   image_references: references,
 }

@@ -28,9 +28,12 @@ describe('bounded ECS release image builder', () => {
   it('builds the complete repository-owned image set, binds source identity, and bounds cache', () => {
     const source = readFileSync(script, 'utf8')
     const merchantUiDockerfile = readFileSync('infra/docker/ui.Dockerfile', 'utf8')
+    const opsUiDockerfile = readFileSync('infra/docker/ops-console.Dockerfile', 'utf8')
     expect(merchantUiDockerfile).toContain('npm_config_maxsockets=2')
     expect(merchantUiDockerfile).toContain('NODE_OPTIONS=--max-old-space-size=1024')
     expect(merchantUiDockerfile).toContain('npm ci --prefer-offline --no-audit --fund=false --maxsockets=2')
+    expect(merchantUiDockerfile).toContain('id=merchant-ui-npm-cache,target=/root/.npm')
+    expect(opsUiDockerfile).toContain('id=merchant-ops-ui-npm-cache,target=/root/.npm')
     for (const artifact of ['merchant-api', 'merchant-worker', 'merchant-ui', 'merchant-ops-ui', 'payment-gateway', 'pilot-gateway']) {
       expect(source).toContain(`build_image ${artifact} `)
     }
@@ -51,6 +54,8 @@ describe('bounded ECS release image builder', () => {
     expect(source).toContain('ECS release image output directory must not already exist')
     expect(source).toContain('ECS_OPS_AUTH_MODE')
     expect(source).toContain('--build-arg "OPS_CONSOLE_AUTH_MODE=$ops_auth_mode"')
+    expect(source).toContain('--build-arg "NPM_CONFIG_REGISTRY=$npm_registry"')
+    expect(source).toContain('npm_registry: process.env.NPM_REGISTRY')
     expect(source).toContain('--label "com.storenova.ops-auth-mode=$ops_auth_mode"')
     expect(source).not.toContain('VITE_OPS_LOGIN_URL')
   })
@@ -148,6 +153,7 @@ describe('bounded ECS release image builder', () => {
       ECS_BUILD_LOCK_PATH: join(directory, 'build.lock'),
       ECS_BUILD_CACHE_KEEP_STORAGE: '1GB',
       ECS_OPS_AUTH_MODE: 'password',
+      ECS_NPM_REGISTRY: 'https://registry.npmmirror.com/',
     }
     const mismatchedIdentity = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-release-images.sh')], {
       cwd: directory,
@@ -191,12 +197,14 @@ describe('bounded ECS release image builder', () => {
     const manifest = JSON.parse(readFileSync(join(output, 'release-images.json'), 'utf8'))
     expect(manifest.release_id).toBe(releaseId)
     expect(manifest.release_git_sha).toBe(revision)
+    expect(manifest.npm_registry).toBe('https://registry.npmmirror.com/')
     expect(Object.keys(manifest.image_digests)).toHaveLength(6)
     expect(Object.values(manifest.image_digests)).toEqual(Array(6).fill(digest))
     const dockerLog = readFileSync(log, 'utf8')
     expect(dockerLog.match(/builder prune -f --keep-storage 1GB/gu)).toHaveLength(4)
     expect(dockerLog).toContain('--label org.opencontainers.image.revision=')
     expect(dockerLog).toContain('--label com.storenova.ops-auth-mode=password')
+    expect(dockerLog).toContain('--build-arg NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/')
     expect(dockerLog).not.toContain('VITE_OPS_LOGIN_URL')
     expect(dockerLog).toContain('infra/docker/pilot-gateway-https.Dockerfile')
     expect(dockerLog).not.toMatch(/compose| run /u)

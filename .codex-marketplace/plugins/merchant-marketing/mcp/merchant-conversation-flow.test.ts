@@ -145,7 +145,7 @@ describe('Codex App merchant conversation flow', () => {
       expect(content).toContain('您好，感谢您使用 Store Nova')
       expectContentProductionIntroduction(content)
       expect(content).toContain('有效登录、当前工作区权限、服务端准入')
-      expect(content).toContain('真实模型配置、创意点和安全检查')
+      expect(content).toContain('真实模型配置、创意点和成本证据')
       expect(result.structuredContent.initialization).toEqual(initialization)
       expect(result.structuredContent).not.toHaveProperty('onboarding_card')
       expect(calls.map(call => call.method)).toEqual(['onboarding.status'])

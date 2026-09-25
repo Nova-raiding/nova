@@ -34,7 +34,7 @@ ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
 COPY package.json package-lock.json ./
 COPY tsconfig.json tsconfig.json
 COPY apps/ops-console/package.json apps/ops-console/package.json
-RUN npm ci --workspace apps/ops-console --include-workspace-root --prefer-offline --no-audit --fund=false
+RUN --mount=type=cache,id=merchant-ops-ui-npm-cache,target=/root/.npm npm ci --workspace apps/ops-console --include-workspace-root --prefer-offline --no-audit --fund=false
 COPY packages/contracts packages/contracts
 COPY packages/application/src/spreadsheet-batch.ts packages/application/src/spreadsheet-batch.ts
 COPY apps/ops-console apps/ops-console
