@@ -29,8 +29,8 @@ export function RulesPage({ model }: RulesPageProps) {
       <Alert
         type="info"
         showIcon
-        title="平台规则只接受签名清单同步"
-        description="页面中的 manual:// 记录是本地演示或人工草稿，不代表任何平台官方规则，也不会作为插件知识。请先配置签名清单地址和验签密钥，再点击“立即更新”。"
+        title="平台规则支持自动同步或人工上传"
+        description="签名清单用于自动同步；运营也可以上传带有官方依据的 Markdown，系统会先生成待审核草稿。人工草稿在独立审批并激活前不会进入商家插件，也不会被当作已验证规则。"
         style={{ marginBottom: 16 }}
       />
       <RuleSyncStatusSection

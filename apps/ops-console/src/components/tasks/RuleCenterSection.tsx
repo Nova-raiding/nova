@@ -34,6 +34,30 @@ export function hasRuleDraftChanges(values: Readonly<Record<string, unknown>>) {
     || (typeof values.checksJson === "string" && values.checksJson !== initialChecksJson);
 }
 
+export function parseMarkdownDraftInputs(markdown: string, fileName: string) {
+  const cards = [...markdown.matchAll(/^##\s+(PDD-[A-Z0-9-]+)｜(.+)$/gmu)];
+  if (!cards.length) throw new Error("未识别到规则卡片；请使用 ## PDD-xxx｜规则名称 格式");
+  const version = markdown.match(/知识库\s+v([\w.-]+)/u)?.[1] ?? "imported";
+  return cards.map((card, index) => {
+    const cardId = card[1] ?? `PDD-${index + 1}`;
+    const body = markdown.slice((card.index ?? 0) + card[0].length, cards[index + 1]?.index ?? markdown.length).trim();
+    const platform = body.match(/^- 平台：([^；\n]+)/mu)?.[1]?.trim();
+    const source = body.match(/^- 官方依据：(.+)$/mu)?.[1]?.trim();
+    if (!platform || !source) throw new Error(`${cardId} 缺少平台或官方依据字段`);
+    return {
+      packId: `${platform.toLowerCase()}-manual-${cardId.toLowerCase()}`,
+      name: card[2]?.trim() || cardId,
+      version,
+      category: "platform" as const,
+      publicScope: "platform" as const,
+      targetId: platform === "拼多多" ? "pinduoduo" : platform,
+      sourceReference: `manual://${fileName}#${cardId}`,
+      checksJson: JSON.stringify({ platform, source, content: `${card[0]}\n${body}` }),
+      reason: `运营上传平台规则草稿：${fileName}`,
+    };
+  });
+}
+
 export function RuleCenterSection({ model }: RuleCenterSectionProps) {
   const { canRules, ruleMutationKey, rules, updateRuleStatus, publishRuleDraft } =
     model;
@@ -68,26 +92,11 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
     setMarkdownImporting(true);
     try {
       const markdown = await file.text();
-      const cards = [...markdown.matchAll(/^##\s+(PDD-[A-Z0-9-]+)｜(.+)$/gmu)];
-      if (!cards.length) throw new Error("未识别到规则卡片；请使用 ## PDD-xxx｜规则名称 格式");
-      const version = markdown.match(/知识库\s+v([\w.-]+)/u)?.[1] ?? "imported";
-      for (const [index, card] of cards.entries()) {
-        const cardId = card[1] ?? `PDD-${index + 1}`;
-        const body = markdown.slice((card.index ?? 0) + card[0].length, cards[index + 1]?.index ?? markdown.length).trim();
-        const platform = body.match(/^- 平台：([^；\n]+)/mu)?.[1]?.trim();
-        const source = body.match(/^- 官方依据：(.+)$/mu)?.[1]?.trim();
-        if (!platform || !source) throw new Error(`${cardId} 缺少平台或官方依据字段`);
-        const ok = await publishRuleDraft({
-          packId: `${platform.toLowerCase()}-manual-${cardId.toLowerCase()}`,
-          name: card[2]?.trim() || cardId,
-          version,
-          category: "platform",
-          publicScope: "platform",
-          targetId: platform === "拼多多" ? "pinduoduo" : platform,
-          sourceReference: `manual://${file.name}#${cardId}`,
-          checksJson: JSON.stringify({ platform, source, content: `${card[0]}\n${body}` }),
-          reason: `运营上传平台规则草稿：${file.name}`,
-        });
+      // Parse and validate the complete document before the first write. A
+      // malformed later card must not leave an earlier card persisted.
+      const drafts = parseMarkdownDraftInputs(markdown, file.name);
+      for (const draft of drafts) {
+        const ok = await publishRuleDraft(draft);
         if (!ok) break;
       }
     } catch (error) {
@@ -129,12 +138,12 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
           style={{ marginBottom: 16 }}
         />
       ) : null}
-      <Alert type="info" showIcon title="平台官方限制规则" description="平台、品类、广告发布及大促规则须来自可验证的官方来源；本页不创建商家自定义规则。商家运营约束请在工作区知识库维护，不能替代平台限制。" style={{ marginBottom: 16 }} />
+      <Alert type="info" showIcon title="平台规则人工导入说明" description="上传文件只会创建带官方依据的公共平台规则草稿；规则管理员必须完成独立审批并激活，激活后才会对所有商家工作区可见。商家自己的运营约束仍应在工作区知识库维护，不能替代平台限制。" style={{ marginBottom: 16 }} />
       <Table
         rowKey="id"
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={rules}
-        locale={{ emptyText: "暂无平台规则；可配置官方签名清单，或上传 Markdown 生成待审核草稿" }}
+        locale={{ emptyText: "暂无平台规则；可配置签名清单，或上传带官方依据的 Markdown 生成待审核草稿" }}
         scroll={{ x: 900 }}
         columns={[
           { title: "规则包", dataIndex: "packId" },
