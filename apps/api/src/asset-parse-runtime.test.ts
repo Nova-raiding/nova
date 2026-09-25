@@ -29,6 +29,21 @@ describe('executeAssetParse', () => {
     await expect(repository.get({ workspaceId: 'ws_a', assetId: 'asset_timeout' })).resolves.toMatchObject({ state: 'failed', errorCode: 'ASSET_PARSE_TIMEOUT' })
   })
 
+  it('records a terminal deadline after provider dispatch so a second claim cannot replay it', async () => {
+    vi.useFakeTimers()
+    const repository = new MemoryAssetParseRepository()
+    const expire = vi.spyOn(repository, 'expire')
+    const fail = vi.spyOn(repository, 'fail')
+    const execution = executeAssetParse({ repository, workspaceId: 'ws_a', assetId: 'asset_dispatched_timeout', timeoutMs: 50,
+      parse: async () => await new Promise(() => undefined), timeoutRetryable: () => false, maxAttempts: 3 })
+    const assertion = expect(execution).rejects.toMatchObject({ code: 'ASSET_PARSE_TIMEOUT', record: { state: 'failed', retryable: false } })
+    await vi.advanceTimersByTimeAsync(50)
+    await assertion
+    expect(expire).not.toHaveBeenCalled()
+    expect(fail).toHaveBeenCalledWith(expect.objectContaining({ errorCode: 'ASSET_PARSE_TIMEOUT', retryable: false }))
+    await expect(repository.claim({ workspaceId: 'ws_a', assetId: 'asset_dispatched_timeout', leaseMs: 1_000, maxAttempts: 3 })).rejects.toMatchObject({ code: 'ASSET_PARSE_ATTEMPTS_EXHAUSTED' })
+  })
+
   it('records classified non-retryable corruption without exposing the original error object', async () => {
     const repository = new MemoryAssetParseRepository()
     const expire = vi.spyOn(repository, 'expire')

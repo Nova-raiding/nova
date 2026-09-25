@@ -18,6 +18,8 @@ export interface ExecuteAssetParseInput {
   onClaim?: (record: Extract<AssetParseRecord, { state: 'processing' }>) => Promise<void>
   parse: (signal: AbortSignal) => Promise<Record<string, unknown>>
   classifyFailure?: (error: unknown) => { code: string; message: string; retryable: boolean }
+  /** Called when the deadline fires; false records a terminal timeout. */
+  timeoutRetryable?: () => boolean
 }
 
 // The execution deadline and the durable lease serve different purposes. Keep
@@ -47,10 +49,10 @@ export async function executeAssetParse(input: ExecuteAssetParseInput): Promise<
   } catch (error) {
     if (error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_LEASE_LOST') throw error
     const timedOut = error instanceof DOMException && error.name === 'TimeoutError'
-    const failure = timedOut ? defaultFailure(error) : input.classifyFailure?.(error) ?? defaultFailure(error)
+    const failure = timedOut ? { ...defaultFailure(error), retryable: input.timeoutRetryable?.() ?? true } : input.classifyFailure?.(error) ?? defaultFailure(error)
     let record: Extract<AssetParseRecord, { state: 'failed' }> | undefined
     try {
-      record = timedOut
+      record = timedOut && failure.retryable
         ? await input.repository.expire({ workspaceId: input.workspaceId, assetId: input.assetId, leaseToken: lease.leaseToken, now: lease.leaseUntil })
         : await input.repository.fail({ workspaceId: input.workspaceId, assetId: input.assetId, leaseToken: lease.leaseToken, errorCode: failure.code, errorMessage: failure.message, retryable: failure.retryable })
     } catch (failureWriteError) {

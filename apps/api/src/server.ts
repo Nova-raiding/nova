@@ -34,7 +34,7 @@ import { customerDeliveryUploadPurpose, customerDeliveryUploadView, validateCust
 import { downloadCustomerDeliveryContract } from './customer-delivery-contract-download.js'
 import { CUSTOMER_DELIVERY_SCAN_EVENT, CUSTOMER_DELIVERY_SCAN_OPERATION, parseDeliveryScanAdmission, type DeliveryScanAdmission } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
 import type { SqlClient } from '../../../packages/persistence/src/repository.js'
-import { CommercialCatalogUnavailableError, type CommercialCatalogMutationInput } from '../../../packages/persistence/src/commercial-catalog-repository.js'
+import { CommercialCatalogUnavailableError, type ApprovedOcrCostRate, type CommercialCatalogMutationInput } from '../../../packages/persistence/src/commercial-catalog-repository.js'
 import { PostgresMerchantJobQueueMetricsRepository, type MerchantJobQueueGroup, type MerchantJobQueueMetricsRepository } from '../../../packages/persistence/src/job-queue-metrics-repository.js'
 import { IdentityLifecycleError, MemoryIdentityLifecycleRepository, PostgresIdentityLifecycleRepository, type IdentityAuthorizationSnapshot, type IdentityLifecycleRepository, type IdentityOperationsDetail } from '../../../packages/persistence/src/identity-lifecycle-repository.js'
 import { MemoryReconciliationStatusRepository, PostgresReconciliationStatusRepository, type ReconciliationStatusRepository } from '../../../packages/persistence/src/reconciliation-status-repository.js'
@@ -70,12 +70,14 @@ import { createContentGeneratorFromEnv, validateContentSchema, type ContentModul
 import { createImageGeneratorFromEnv } from '../../../packages/ai/src/image-generator.js'
 import { createImageEditGeneratorFromEnv } from '../../../packages/ai/src/image-editor.js'
 import { createImageFactsExtractorFromEnv } from '../../../packages/ai/src/image-facts.js'
+import { ProviderRequestFailedError } from '../../../packages/ai/src/provider-request.js'
 import { createVideoGeneratorFromEnv, videoDurationSeconds } from '../../../packages/ai/src/video-generator.js'
 import { relayUsageReceiptKey, type RelayUsageRecord } from '../../../packages/ai/src/relay-usage.js'
 import { createNewApiSelfLogClientFromEnv } from '../../../packages/ai/src/provider-usage-log.js'
 import { createRelayPricingClientFromEnv } from '../../../packages/ai/src/relay-pricing.js'
 import { evaluatePlatformModelBudgetEstimate, evaluatePlatformModelCostGate, evaluatePlatformModelGate, evaluatePlatformModelRelayGate, evaluatePlatformModelTaskCostLimit, evaluatePlatformModelTaskRequestCost, type PlatformModelKind } from '../../../packages/ai/src/platform-model-gate.js'
 import { DocumentParseError, parseDocumentFacts, type ParseErrorContext } from '../../../packages/application/src/document-parser.js'
+import { decideOcrPointFinalization, quoteOcrPointHold } from '../../../packages/application/src/ocr-point-lifecycle.js'
 import { spreadsheetFactsToBatchProducts, SpreadsheetBatchImportError } from '../../../packages/application/src/spreadsheet-batch.js'
 import { validateProtectedProductIntent, type ProtectedProductIntentValidation } from '../../../packages/application/src/protected-product-intent.js'
 import { projectCommercialEntitlement } from '../../../packages/application/src/commercial-entitlement-projection.js'
@@ -330,11 +332,25 @@ async function recordRelayUsage(usage: RelayUsageRecord, options: { deferCreativ
     if (!persistence.creativePointLifecycle || usage.costCny === undefined) throw new DomainError('POINT_SETTLEMENT_EVIDENCE_UNAVAILABLE', '模型回执缺少创意点结算所需的持久化用量、成本或 provider 回执仓储', 503)
     const providerRequestId = usage.providerRequestId ?? usage.providerAttemptId
     if (!providerRequestId) throw new DomainError('MODEL_USAGE_RECEIPT_IDENTITY_MISSING', '模型回执缺少真实 provider request id，创意点保持预留并等待对账', 409)
+    if (usage.modality === 'ocr') {
+      const taskCap = evaluatePlatformModelTaskCostLimit(process.env)
+      const rate = creativeReservation.rateCardVersion
+      const validRate = rate.startsWith('ocr.cost_cny_x2_ceil_min1.v1:')
+      const decision = decideOcrPointFinalization({ reservedPoints: creativeReservation.points, providerOutcome: 'succeeded',
+        verifiedReceipt: Boolean(recordedUsage && usage.providerRequestId && validRate && taskCap.ready && usage.costCny <= taskCap.limitCny), actualCostCny: usage.costCny })
+      if (decision.action !== 'settle') throw Object.assign(new Error('OCR provider succeeded but cost, approved rate, task limit, or receipt requires reconciliation'), { code: 'MODEL_USAGE_SETTLEMENT_PENDING', providerSucceeded: true, reconciliationRequired: true, receiptKey })
+      const usageEvidence = { modality: 'ocr', model: usage.model, ...(usage.inputTokens !== undefined ? { input_tokens: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { output_tokens: usage.outputTokens } : {}), ...(usage.totalTokens !== undefined ? { total_tokens: usage.totalTokens } : {}) }
+      const costEvidence = { currency: 'CNY', actual: usage.costCny }
+      const receiptHash = createHash('sha256').update(JSON.stringify({ providerRequestId, usage: usageEvidence, cost: costEvidence, observedAt: usage.observedAt, rate })).digest('hex')
+      await persistence.creativePointLifecycle.recordProviderReceipt({ workspaceId, operationId: creativeReservation.operationId, provider: 'model-relay', providerRequestId, outcome: 'succeeded', usage: usageEvidence, cost: costEvidence, receiptHash, verifiedAt: usage.observedAt, at: usage.observedAt })
+      await creativePointsRepository!.settle({ workspaceId, reservationId: creativeReservation.id, idempotencyKey: `commercial.settle:${usage.actionId}`, actualPoints: decision.actualPoints, metadata: { provider_request_id: providerRequestId, receipt_hash: receiptHash, cost_cny: usage.costCny, modality: 'ocr', rate_card_version: rate }, at: usage.observedAt })
+    } else {
     const usageEvidence = { modality: usage.modality, model: usage.model, ...(usage.inputTokens !== undefined ? { input_tokens: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { output_tokens: usage.outputTokens } : {}), ...(usage.totalTokens !== undefined ? { total_tokens: usage.totalTokens } : {}) }
     const costEvidence = { currency: 'CNY', actual: usage.costCny }
     const receiptHash = createHash('sha256').update(JSON.stringify({ providerRequestId, usage: usageEvidence, cost: costEvidence, observedAt: usage.observedAt })).digest('hex')
     await persistence.creativePointLifecycle.recordProviderReceipt({ workspaceId, operationId: creativeReservation.operationId, provider: 'model-relay', providerRequestId, outcome: 'succeeded', usage: usageEvidence, cost: costEvidence, receiptHash, verifiedAt: usage.observedAt, at: usage.observedAt })
     await creativePointsRepository!.settle({ workspaceId, reservationId: creativeReservation.id, idempotencyKey: `commercial.settle:${usage.actionId}`, actualPoints: creativeReservation.points, metadata: { provider_request_id: providerRequestId, receipt_hash: receiptHash, cost_cny: usage.costCny, modality: usage.modality }, at: usage.observedAt })
+    }
   }
   if (recordedUsage.settlementStatus === 'settled' || recordedUsage.settlementStatus === 'waived') return { recorded: true as const, costEvidence: true as const }
   const reservation = usage.actionId ? modelBillingReservations.get(`${workspaceId}:${usage.actionId}`) : undefined
@@ -580,7 +596,24 @@ function invalidateWorkspaceHydration(workspaceId: string) {
 const rawImageFactsExtractor = createImageFactsExtractorFromEnv(process.env, recordRelayUsage, recheckDeliveryBeforeProvider)
 const rawImageEditGenerator = createImageEditGeneratorFromEnv(process.env, recordRelayUsage, recheckDeliveryBeforeProvider)
 const rawVideoGenerator = createVideoGeneratorFromEnv(process.env, recordRelayUsage, recheckDeliveryBeforeProvider)
-const imageFactsExtractor = rawImageFactsExtractor ? { extract: (input: Parameters<typeof rawImageFactsExtractor.extract>[0]) => withDailyModelBudget('ocr', input.usageContext, () => rawImageFactsExtractor.extract(input)) } : undefined
+let ocrPreDispatchFailureForTests: (() => never) | undefined
+const ocrProviderEntered = new Set<string>()
+const imageFactsExtractor = rawImageFactsExtractor ? { extract: async (input: Parameters<typeof rawImageFactsExtractor.extract>[0]) => {
+  let enteredExtractor = false
+  try {
+    if (ocrPreDispatchFailureForTests) ocrPreDispatchFailureForTests()
+    return await withDailyModelBudget('ocr', input.usageContext, async () => {
+      enteredExtractor = true
+      const actionKey = input.usageContext?.workspaceId && input.usageContext?.actionId ? `${input.usageContext.workspaceId}:${input.usageContext.actionId}` : undefined
+      if (actionKey) ocrProviderEntered.add(actionKey)
+      try { return await rawImageFactsExtractor.extract(input) }
+      finally { if (actionKey) ocrProviderEntered.delete(actionKey) }
+    })
+  } catch (error) {
+    if (!enteredExtractor) throw Object.assign(error instanceof Error ? error : new Error('OCR pre-dispatch failed'), { ocrPreDispatch: true })
+    throw error
+  }
+} } : undefined
 const imageEditGenerator = rawImageEditGenerator ? { generate: (input: Parameters<typeof rawImageEditGenerator.generate>[0]) => withDailyModelBudget('image_edit', input.usageContext, () => rawImageEditGenerator.generate(input)) } : undefined
 const videoGenerator = rawVideoGenerator ? { generate: (input: Parameters<typeof rawVideoGenerator.generate>[0]) => withDailyModelBudget('video', input.usageContext, () => rawVideoGenerator.generate(input)), getStatus: rawVideoGenerator.getStatus.bind(rawVideoGenerator) } : undefined
 let paymentProvider = createPaymentProviderFromEnv()
@@ -3547,6 +3580,24 @@ async function putQuarantineObject(input: PutQuarantineObjectInput) {
 type AssetFactExtraction = { facts: Record<string, unknown>; source: 'parser' | 'model_ocr' }
 let assetFactParserForTests: ((input: { name: string; mimeType: string; body: Uint8Array; usageContext?: { workspaceId?: string; actionId?: string; runKey?: string }; signal?: AbortSignal }) => Promise<AssetFactExtraction>) | undefined
 let assetParseRepositoryForTests: AssetParseRepository | undefined
+let approvedOcrRateForTests: ApprovedOcrCostRate | undefined
+let ocrParseDeadlineForTests: number | undefined
+
+export function setApprovedOcrRateForTests(rate?: ApprovedOcrCostRate) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('OCR_RATE_TEST_ONLY')
+  approvedOcrRateForTests = rate
+}
+
+export function setOcrPreDispatchFailureForTests(failure?: () => never) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('OCR_PREFLIGHT_TEST_ONLY')
+  ocrPreDispatchFailureForTests = failure
+}
+
+export function setOcrParseDeadlineForTests(timeoutMs?: number) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('OCR_DEADLINE_TEST_ONLY')
+  if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1)) throw new Error('OCR_DEADLINE_TEST_INVALID')
+  ocrParseDeadlineForTests = timeoutMs
+}
 
 export function setAssetParseRuntimeForTests(input?: { repository?: AssetParseRepository; parse?: typeof assetFactParserForTests }) {
   if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('ASSET_PARSE_RUNTIME_TEST_ONLY')
@@ -3554,16 +3605,58 @@ export function setAssetParseRuntimeForTests(input?: { repository?: AssetParseRe
   assetFactParserForTests = input?.parse
 }
 
-async function parseAssetFacts(input: { name: string; mimeType: string; body: Uint8Array; usageContext?: { workspaceId?: string; actionId?: string; runKey?: string }; signal?: AbortSignal }): Promise<AssetFactExtraction> {
+async function parseAssetFacts(input: { name: string; mimeType: string; body: Uint8Array; usageContext?: { workspaceId?: string; actionId?: string; runKey?: string }; actorId?: string; signal?: AbortSignal }): Promise<AssetFactExtraction> {
   if (assetFactParserForTests) return assetFactParserForTests(input)
   try {
     return { facts: await parseDocumentFacts(input), source: 'parser' as const }
   } catch (error) {
     const image = input.mimeType.toLowerCase().startsWith('image/')
     if (!(error instanceof DocumentParseError) || !image || !imageFactsExtractor) throw error
-    // Local parsing is free. OCR has no approved creative-point rate yet, so
-    // never dispatch its provider with only a positive-balance check.
-    throw new DomainError('OCR_CREATIVE_POINT_RATE_UNAVAILABLE', '图片 OCR 尚无已批准的创意点费率，已阻断模型调用；请人工确认素材事实', 503, { next_actions: ['asset.facts.confirm', 'commercial.catalog.get'] })
+    // The local parser is free. Only this fallback can reserve points or call OCR.
+    await persistenceReady
+    const workspaceId = input.usageContext?.workspaceId
+    const actionKey = input.usageContext?.actionId
+    const runKey = input.usageContext?.runKey
+    if (!workspaceId || !actionKey || !runKey || !persistence.creativePoints || !persistence.actionLedger || !persistence.commercialCatalog) throw new DomainError('OCR_BILLING_CONTEXT_UNAVAILABLE', '图片 OCR 缺少工作区、持久化动作或创意点仓储，已阻断模型调用', 503)
+    let rate: ApprovedOcrCostRate
+    try { rate = approvedOcrRateForTests ?? await persistence.commercialCatalog.resolveApprovedOcrCostRate() }
+    catch { throw new DomainError('OCR_CREATIVE_POINT_RATE_UNAVAILABLE', '图片 OCR 尚无已批准的创意点费率，已阻断模型调用；请人工确认素材事实', 503, { next_actions: ['asset.facts.confirm', 'commercial.catalog.get'] }) }
+    if (rate.variableFormula.kind !== 'cost_cny_x2_ceil_min1') throw new DomainError('OCR_CREATIVE_POINT_RATE_UNAVAILABLE', '图片 OCR 费率规则未批准，已阻断模型调用', 503)
+    const taskCap = evaluatePlatformModelTaskCostLimit(process.env)
+    if (!taskCap.ready) throw new DomainError('OCR_TASK_COST_LIMIT_UNAVAILABLE', '图片 OCR 缺少有效单任务成本上限，已阻断模型调用', 503, { reasons: taskCap.reasons })
+    const quote = quoteOcrPointHold(taskCap.limitCny)
+    const rateVersion = `${quote.policyVersion}:${rate.rateCardId}:${rate.version}:${rate.checksum}`
+    let reservation
+    try {
+      reservation = (await persistence.creativePoints.reserve({ workspaceId, actionKey, idempotencyKey: `commercial.reserve:${actionKey}`, points: quote.points, rateCardVersion: rateVersion })).value
+    } catch (reserveError) {
+      const code = (reserveError as { code?: string })?.code
+      if (code === 'CREATIVE_POINT_INSUFFICIENT') throw new DomainError(code, '创意点不足，请先充值后再解析图片', 402, { required_points: quote.points, next_actions: ['commercial.order.create', 'creative-points.balance.get'] })
+      if (code === 'CREATIVE_POINT_BALANCE_UNKNOWN') throw new DomainError(code, '创意点余额暂不可用，已阻断 OCR 模型调用', 503)
+      throw reserveError
+    }
+    try {
+      await recordActionSettlement({ workspaceId, actionKey, actionKind: 'model_ocr', settlement: 'included_quota', amountFen: 0, actorId: input.actorId ?? 'merchant', description: '商品图片 OCR 候选事实解析', settlementStatus: 'authorized' })
+    } catch (ledgerError) {
+      await persistence.creativePoints.release({ workspaceId, reservationId: reservation.id, idempotencyKey: `commercial.release:${actionKey}`, at: new Date().toISOString() })
+      throw ledgerError
+    }
+    try {
+      return { facts: await imageFactsExtractor.extract({ name: input.name, mimeType: input.mimeType, body: input.body, usageContext: { workspaceId, actionId: actionKey, runKey } }), source: 'model_ocr' }
+    } catch (providerError) {
+      const preDispatch = (providerError as { ocrPreDispatch?: boolean })?.ocrPreDispatch === true
+      const definitelyFailed = providerError instanceof ProviderRequestFailedError && providerError.providerOutcome === 'failed'
+      if (preDispatch || definitelyFailed) {
+        const decision = decideOcrPointFinalization({ reservedPoints: reservation.points, providerOutcome: 'failed', definitiveFailure: true })
+        if (decision.action !== 'release') throw new Error('OCR known-failure point release decision was rejected')
+        await persistence.creativePoints.release({ workspaceId, reservationId: reservation.id, idempotencyKey: `commercial.release:${actionKey}`, at: new Date().toISOString() })
+        await persistence.actionLedger.transitionSettlementStatus({ workspaceId, actionKey, from: ['authorized', 'pending_receipt'], to: 'released' })
+        throw providerError
+      }
+      // A dispatched call with a lost response or settlement failure may have
+      // incurred cost. Keep the hold and make the parse lease non-retryable.
+      throw Object.assign(new Error('OCR provider outcome or settlement requires reconciliation'), { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerOutcome: 'unknown', reconciliationRequired: true, cause: providerError })
+    }
   }
 }
 
@@ -3604,8 +3697,29 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
   const repository = await assetParseRepository()
   const { timeoutMs, maxAttempts } = assetParseRuntimeConfig()
   const ocrCandidate = asset.mimeType.toLowerCase().startsWith('image/')
+  const ocrTimeoutMs = Number(process.env.OCR_TIMEOUT_MS ?? 90_000)
+  const minimumOcrParseTimeoutMs = ocrTimeoutMs + 10_000
+  if (ocrCandidate && imageFactsExtractor && (!Number.isSafeInteger(ocrTimeoutMs) || ocrTimeoutMs < 1 || minimumOcrParseTimeoutMs > MAX_ASSET_PARSE_TIMEOUT_MS)) {
+    throw new DomainError('OCR_PARSE_TIMEOUT_CONFIG_INVALID', 'OCR 模型超时与素材解析期限不兼容，已阻断模型调用', 503)
+  }
+  const effectiveTimeoutMs = ocrCandidate && imageFactsExtractor ? ocrParseDeadlineForTests ?? Math.max(timeoutMs, minimumOcrParseTimeoutMs) : timeoutMs
   const ocrDebitKeyPrefix = `asset-parse:${asset.id}:attempt:`
   if (ocrCandidate && imageFactsExtractor) requirePlatformModelCostGate('ocr')
+  if (ocrCandidate && imageFactsExtractor) {
+    const previousParse = await repository.get({ workspaceId, assetId: asset.id })
+    // A previous provider call can outlive this API process. The parse lease
+    // alone cannot prove that it was free to retry after a crash or timeout.
+    if (previousParse?.state !== 'succeeded') {
+      const points = persistence.creativePoints
+      if (!points?.getReservationByActionKey) throw new DomainError('OCR_RESERVATION_HISTORY_UNAVAILABLE', 'OCR 历史预留不可读取，已阻断重复模型调用', 503)
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const reservation = await points.getReservationByActionKey(workspaceId, `${ocrDebitKeyPrefix}${attempt}`)
+        if (reservation?.status === 'active' || reservation?.status === 'settled') {
+          throw new DomainError('OCR_PREVIOUS_ATTEMPT_RECONCILIATION_REQUIRED', '上次 OCR 请求可能已产生模型费用，需先核对回执，当前不会重复调用', 409, { asset_id: asset.id, attempt, reservation_status: reservation.status, reconciliation_required: true, retryable: false, next_actions: ['billing.reconciliation', 'asset.facts.confirm'] })
+        }
+      }
+    }
+  }
   let extraction: AssetFactExtraction | undefined
   let parserFailure: unknown
   let parseAttempt = 0
@@ -3615,8 +3729,9 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
       repository,
       workspaceId,
       assetId: asset.id,
-      timeoutMs,
+      timeoutMs: effectiveTimeoutMs,
       maxAttempts,
+      timeoutRetryable: () => !ocrProviderEntered.has(`${workspaceId}:${ocrDebitKeyPrefix}${parseAttempt}`),
       onClaim: async lease => {
         parseAttempt = lease.attempts
         const processing = service.updateAssetParse({ workspaceId, assetId: asset.id, state: 'processing', source: 'parser' })
@@ -3627,14 +3742,19 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
         const ocrDebitKey = `${ocrDebitKeyPrefix}${parseAttempt}`
         try {
           const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey, { includeQuarantine: asset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
-          extraction = await parseAssetFacts({ name: asset.name, mimeType: asset.mimeType, body: stored.body, usageContext: { workspaceId, actionId: ocrDebitKey, runKey: `asset-parse:${asset.id}` }, signal })
+          extraction = await parseAssetFacts({ name: asset.name, mimeType: asset.mimeType, body: stored.body, usageContext: { workspaceId, actionId: ocrDebitKey, runKey: `asset-parse:${asset.id}` }, actorId: requestActor(req), signal })
           return extraction.facts
         } catch (error) {
           parserFailure = error
           throw error
         }
       },
-      classifyFailure: error => ({ code: error instanceof DomainError && error.code === 'OCR_CREATIVE_POINT_RATE_UNAVAILABLE' ? error.code : error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? error.code : 'ASSET_PARSE_FAILED', message: error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? 'asset parser returned no facts' : error instanceof Error ? error.message.slice(0, 1_000) : '素材解析失败', retryable: !(error instanceof DomainError && error.code === 'OCR_CREATIVE_POINT_RATE_UNAVAILABLE') }),
+      classifyFailure: error => {
+        const code = (error as { code?: string })?.code
+        const knownCode = ['OCR_CREATIVE_POINT_RATE_UNAVAILABLE', 'OCR_BILLING_CONTEXT_UNAVAILABLE', 'OCR_TASK_COST_LIMIT_UNAVAILABLE', 'CREATIVE_POINT_INSUFFICIENT', 'CREATIVE_POINT_BALANCE_UNKNOWN', 'MODEL_PROVIDER_OUTCOME_UNKNOWN', 'MODEL_USAGE_SETTLEMENT_PENDING', 'MODEL_COST_BUDGET_PREFLIGHT_UNAVAILABLE', 'MODEL_DAILY_COST_BUDGET_EXCEEDED', 'MODEL_TASK_COST_LIMIT_EXCEEDED', 'AUTHZ_EXECUTION_REVOKED'].includes(code ?? '')
+        const nonRetryable = ['MODEL_PROVIDER_OUTCOME_UNKNOWN', 'MODEL_USAGE_SETTLEMENT_PENDING'].includes(code ?? '')
+        return { code: code && knownCode ? code : error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? error.code : 'ASSET_PARSE_FAILED', message: error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? 'asset parser returned no facts' : error instanceof Error ? error.message.slice(0, 1_000) : '素材解析失败', retryable: !nonRetryable }
+      },
     })
     await assertDurableParseRecordCurrent(repository, executed.record)
     const source = extraction?.source ?? (asset.extractedFactsSource === 'model_ocr' ? 'model_ocr' : 'parser')
@@ -3667,7 +3787,7 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
         await persistSnapshot(workspaceId, 'asset', failed, failed as unknown as Record<string, unknown>)
         await persistEvent(workspaceId, asset.id, 'asset.parse_failed', failed.revision, { asset_id: asset.id, error_code: error.code, retryable: error.record.retryable, attempts: error.record.attempts })
       }
-      const status = error.code === 'ASSET_PARSE_TIMEOUT' ? 504 : error.code === 'OCR_CREATIVE_POINT_RATE_UNAVAILABLE' ? 503 : 422
+      const status = error.code === 'ASSET_PARSE_TIMEOUT' ? 504 : error.code === 'CREATIVE_POINT_INSUFFICIENT' ? 402 : ['OCR_CREATIVE_POINT_RATE_UNAVAILABLE', 'OCR_BILLING_CONTEXT_UNAVAILABLE', 'OCR_TASK_COST_LIMIT_UNAVAILABLE', 'MODEL_PROVIDER_OUTCOME_UNKNOWN', 'MODEL_USAGE_SETTLEMENT_PENDING'].includes(error.code) ? 503 : 422
       throw new DomainError(error.code, error.message, status, { asset_id: asset.id, asset_persisted: true, retryable: error.record.retryable, attempts: error.record.attempts, next_actions: error.record.retryable ? ['asset.parse', 'asset.facts.confirm'] : ['asset.facts.confirm'] })
     }
     throw error
@@ -24608,4 +24728,4 @@ if (process.env.NODE_ENV !== 'test') {
   })
 }
 
-export { assertUniqueBatchTaskIds, server, service, persistenceReady, memoryMembers as workspaceMembers, memoryOperations as operationAudits, memoryPlatformAuthorizationAudit as platformAuthorizationAuditForTests, memoryCreativePoints as creativePointsForTests, memoryKnowledge as knowledgeDocumentsForTests, memoryAlerts as operationalAlertsForTests }
+export { assertUniqueBatchTaskIds, server, service, persistenceReady, memoryMembers as workspaceMembers, memoryOperations as operationAudits, memoryPlatformAuthorizationAudit as platformAuthorizationAuditForTests, memoryCreativePoints as creativePointsForTests, memoryActionLedger as actionLedgerForTests, memoryKnowledge as knowledgeDocumentsForTests, memoryAlerts as operationalAlertsForTests }
