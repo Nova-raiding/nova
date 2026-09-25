@@ -201,6 +201,18 @@ export function projectCreativePointRate(rate: CreativePointRateSnapshot) {
   }
 }
 
+export function projectReadinessRate(rates: readonly CreativePointRateSnapshot[], actionCode: string, now = new Date()) {
+  const matching = rates.filter(rate => rate.actionCode === actionCode)
+  const approved = matching.filter(rate => rate.lifecycle === 'approved'
+    && rate.approvalStatus === 'approved' && rate.executable && rate.ruleExecutable
+    && rate.pricingMode === 'fixed' && rate.integerPoints !== null && rate.integerPoints > 0
+    && rate.effectiveAt !== null && Date.parse(rate.effectiveAt) <= now.getTime())
+  const latest = (approved.length ? approved : matching).sort((a, b) => b.version - a.version)[0]
+  if (!latest) return { action_code: actionCode, approval_state: 'missing', executable: false, blocking_reason: 'RATE_CARD_MISSING' }
+  const projected = projectCreativePointRate(latest)
+  return approved.length ? projected : { ...projected, executable: false, blocking_reason: projected.blocking_reason ?? 'RATE_NOT_APPROVED' }
+}
+
 type ResolvedBenefit = { code: string; quantity: number | null; rawValue: string | null; rawUnit: string | null }
 
 function resolvedBenefits(value: readonly unknown[]): ResolvedBenefit[] {

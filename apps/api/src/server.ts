@@ -111,7 +111,7 @@ import { IncidentsService, IncidentServiceError } from './ops/incidents-service.
 import { FeatureFlagAuthorizationError, FeatureFlagsService } from './ops/feature-flags-service.js'
 import { FinanceSearchService, FinanceSearchServiceError } from './ops/finance-search-service.js'
 import { AuditCenterService, AuditCenterServiceError } from './ops/audit-center-service.js'
-import { CommercialOpsReadModelError, authorizeCommercialCatalogRead, commercialOpsPageLimit, decodeCreativePointStatementCursor, paginateCommercialRows, projectCommercialAccessBlocks, projectCommercialAccessSummary, projectCommercialCatalogItem, projectCommercialEntitlement as projectCommercialOpsEntitlement, projectCommercialOpsCapabilities, projectCommercialOrder, projectCreativePointLedgerEntry, projectCreativePointRate, projectServiceFulfillment } from './ops/commercial-ops-read-model.js'
+import { CommercialOpsReadModelError, authorizeCommercialCatalogRead, commercialOpsPageLimit, decodeCreativePointStatementCursor, paginateCommercialRows, projectCommercialAccessBlocks, projectCommercialAccessSummary, projectCommercialCatalogItem, projectCommercialEntitlement as projectCommercialOpsEntitlement, projectCommercialOpsCapabilities, projectCommercialOrder, projectCreativePointLedgerEntry, projectCreativePointRate, projectReadinessRate, projectServiceFulfillment } from './ops/commercial-ops-read-model.js'
 import { CommercialPointAdjustmentCommandError, decideCommercialPointAdjustment, proposeCommercialPointAdjustment } from './ops/commercial-point-adjustment.js'
 import { csvCell } from './ops/csv-cell.js'
 import { supportRolePermissions, type SupportPermission, type SupportRole, type SupportTicketContract, type SupportTicketPageCursor, type SupportTicketPriority, type SupportTicketStatus } from '../../../packages/contracts/src/ops/support.js'
@@ -16111,17 +16111,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         persistence.commercialCatalog.listRates(),
         persistence.commercialCatalog.list({ includePrivate: true, capabilities: ['commercial.private_sku.read'] }),
       ])
-      const rateFor = (actionCode: string) => rates.find(rate => rate.actionCode === actionCode)
-      const rateStatus = (actionCode: string) => {
-        const rate = rateFor(actionCode)
-        return rate ? projectCreativePointRate(rate) : { action_code: actionCode, approval_state: 'missing', executable: false, blocking_reason: 'RATE_CARD_MISSING' }
-      }
+      const rateStatus = (actionCode: string) => projectReadinessRate(rates, actionCode)
       const modelGates = { text: evaluatePlatformModelGate(process.env, 'text'), image: evaluatePlatformModelGate(process.env, 'image'), image_edit: evaluatePlatformModelGate(process.env, 'image_edit'), ocr: evaluatePlatformModelGate(process.env, 'ocr'), video: evaluatePlatformModelGate(process.env, 'video') }
       const relay = evaluatePlatformModelRelayGate(process.env)
       const costEvidence = modelCostEvidenceByModality()
       const providerEvidence = Object.fromEntries(Object.entries(modelGates).map(([modality, gate]) => [modality, { configured: gate.ready, https: gate.https, reasons: gate.reasons, cost_evidence: costEvidence[modality as keyof typeof costEvidence] ?? false }]))
       const settlement = { point_balance_repository: Boolean(persistence.creativePoints), reservation_and_settlement_repository: Boolean(persistence.creativePointLifecycle), provider_receipt_repository: Boolean(persistence.creativePointLifecycle), model_usage_repository: Boolean(persistence.modelUsage), auditable: Boolean(persistence.creativePoints && persistence.creativePointLifecycle && persistence.modelUsage) }
-      const capabilities = { image: rateStatus('image.generate.standard'), image_edit: rateStatus('image.edit.annotation'), video: rateStatus('video.generate.standard_15s'), text: rateStatus('text.generate') }
+      const capabilities = { image: rateStatus('image.generate.standard'), image_edit: rateStatus('image.edit.annotation'), ocr: rateStatus('ocr.extract'), video: rateStatus('video.generate.standard_15s'), text: rateStatus('text.generate') }
       // `list()` returns immutable history. Readiness must select the current
       // executable approved snapshot per code, not whichever historical row
       // happens to be last in the result.

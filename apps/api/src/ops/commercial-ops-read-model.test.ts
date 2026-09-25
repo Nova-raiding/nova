@@ -13,8 +13,36 @@ import {
   projectCommercialOpsCapabilities,
   projectCommercialOrder,
   projectCreativePointRate,
+  projectReadinessRate,
   projectServiceFulfillment,
 } from './commercial-ops-read-model.js'
+
+describe('commercial readiness rate', () => {
+  const rate = (version: number, overrides: Record<string, unknown> = {}) => ({
+    id: `rate_${version}`, rateCardId: `card_${version}`, version, actionCode: 'ocr.extract', unit: 'request' as const,
+    integerPoints: 1, pricingMode: 'fixed' as const, lifecycle: 'approved' as const, approvalStatus: 'approved' as const,
+    executable: true, ruleExecutable: true, checksum: 'a'.repeat(64), effectiveAt: '2026-01-01T00:00:00.000Z', blockers: [], ...overrides,
+  })
+
+  it('blocks OCR when no approved rate exists', () => {
+    expect(projectReadinessRate([], 'ocr.extract')).toMatchObject({ executable: false, blocking_reason: 'RATE_CARD_MISSING' })
+    expect(projectReadinessRate([rate(3, { lifecycle: 'pending_business_approval', approvalStatus: 'pending_business_approval', executable: false, ruleExecutable: false, integerPoints: null, pricingMode: 'unresolved' })], 'ocr.extract'))
+      .toMatchObject({ executable: false, blocking_reason: 'RATE_NOT_EXECUTABLE' })
+  })
+
+  it('uses the newest effective approved rate, not list order or a newer pending draft', () => {
+    const projected = projectReadinessRate([
+      rate(3, { lifecycle: 'pending_business_approval', approvalStatus: 'pending_business_approval', executable: false }),
+      rate(1), rate(2),
+    ], 'ocr.extract', new Date('2026-09-25T00:00:00.000Z'))
+    expect(projected).toMatchObject({ executable: true, version: `card_2:v2:${'a'.repeat(64)}` })
+  })
+
+  it('blocks a future effective rate', () => {
+    expect(projectReadinessRate([rate(4, { effectiveAt: '2027-01-01T00:00:00.000Z' })], 'ocr.extract', new Date('2026-09-25T00:00:00.000Z')))
+      .toMatchObject({ executable: false, blocking_reason: 'RATE_NOT_APPROVED' })
+  })
+})
 
 describe('commercial Ops read model', () => {
   it('projects only effective fine-grained commercial read capabilities', () => {

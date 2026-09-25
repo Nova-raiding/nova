@@ -240,6 +240,8 @@ describe('central commercial access gate', () => {
     expect(report).toContain("persistence.creativePointLifecycle")
     expect(report).toContain("modelCostEvidenceByModality()")
     expect(report).toContain("ocr: evaluatePlatformModelGate(process.env, 'ocr')")
+    expect(report).toContain("ocr: rateStatus('ocr.extract')")
+    expect(report).toContain('projectReadinessRate(rates, actionCode)')
     expect(report).toContain("video.generate.standard_15s")
     expect(report).toContain("COMMERCIAL_READINESS_REPOSITORY_UNAVAILABLE")
     expect(report).toContain("不会修改费率、余额、注册表或执行状态")
