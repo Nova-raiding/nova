@@ -46,6 +46,17 @@ export interface ApprovedCreativePointRate {
   effectiveAt: string
 }
 
+export interface ApprovedOcrCostRate {
+  rateCardId: string
+  version: number
+  actionCode: 'ocr.extract'
+  unit: 'request'
+  pricingMode: 'variable'
+  variableFormula: { kind: 'cost_cny_x2_ceil_min1' }
+  checksum: string
+  effectiveAt: string
+}
+
 export interface CreativePointRateSnapshot {
   id: string
   rateCardId: string
@@ -53,7 +64,8 @@ export interface CreativePointRateSnapshot {
   actionCode: string
   unit: ApprovedCreativePointRate['unit']
   integerPoints: number | null
-  pricingMode: 'fixed' | 'starts_at' | 'unresolved'
+  pricingMode: 'fixed' | 'starts_at' | 'unresolved' | 'variable'
+  variableFormula?: Record<string, unknown> | null
   lifecycle: CommercialCatalogLifecycle
   approvalStatus: 'pending_business_approval' | 'approved' | 'rejected'
   executable: boolean
@@ -100,12 +112,19 @@ export class CreativePointRateUnavailableError extends Error {
   }
 }
 
+function isOcrCostFormula(value: unknown): value is ApprovedOcrCostRate['variableFormula'] {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).length === 1
+    && (value as Record<string, unknown>).kind === 'cost_cny_x2_ceil_min1'
+}
+
 export interface CommercialCatalogRepository {
   list(options?: CommercialCatalogReadOptions): Promise<CommercialCatalogSkuSnapshot[]>
   get(code: string, options?: CommercialCatalogReadOptions): Promise<CommercialCatalogSkuSnapshot | undefined>
   resolveApprovedExecutableSku(code: string, options?: CommercialCatalogReadOptions): Promise<CommercialCatalogSkuSnapshot>
   listRates(): Promise<CreativePointRateSnapshot[]>
   resolveApprovedRate(actionCode: string): Promise<ApprovedCreativePointRate>
+  resolveApprovedOcrCostRate(): Promise<ApprovedOcrCostRate>
   mutate(input: CommercialCatalogMutationInput): Promise<CommercialCatalogSkuSnapshot>
 }
 
@@ -172,6 +191,10 @@ export class MemoryCommercialCatalogRepository implements CommercialCatalogRepos
     if (candidates.length !== 1) throw new CreativePointRateUnavailableError()
     const { lifecycle: _lifecycle, executable: _executable, ...rate } = candidates[0]!
     return structuredClone(rate)
+  }
+
+  async resolveApprovedOcrCostRate(): Promise<ApprovedOcrCostRate> {
+    throw new CreativePointRateUnavailableError()
   }
 
   async mutate(input: CommercialCatalogMutationInput): Promise<CommercialCatalogSkuSnapshot> {
@@ -243,6 +266,7 @@ interface RateRow {
   unit: ApprovedCreativePointRate['unit']
   integerPoints: number | string | null
   pricingMode?: CreativePointRateSnapshot['pricingMode']
+  variableFormula?: unknown
   lifecycle?: CommercialCatalogLifecycle
   approvalStatus?: CreativePointRateSnapshot['approvalStatus']
   executable?: boolean
@@ -395,6 +419,7 @@ export class PostgresCommercialCatalogRepository implements CommercialCatalogRep
       const result = await client.query<RateRow>(`
         SELECT r.id, c.id AS "rateCardId", c.version, r.action_code AS "actionCode",
           r.unit, r.integer_points AS "integerPoints", r.pricing_mode AS "pricingMode",
+          r.variable_formula AS "variableFormula",
           c.lifecycle, c.approval_status AS "approvalStatus", c.executable,
           r.executable AS "ruleExecutable", c.checksum, c.effective_at AS "effectiveAt",
           r.blockers
@@ -405,6 +430,7 @@ export class PostgresCommercialCatalogRepository implements CommercialCatalogRep
       return result.rows.map(row => ({
         id: row.id!, rateCardId: row.rateCardId, version: row.version, actionCode: row.actionCode,
         unit: row.unit, integerPoints: ratePoints(row.integerPoints), pricingMode: row.pricingMode!,
+        variableFormula: row.variableFormula === null ? null : isOcrCostFormula(row.variableFormula) ? { kind: 'cost_cny_x2_ceil_min1' } : null,
         lifecycle: row.lifecycle!, approvalStatus: row.approvalStatus!, executable: row.executable!,
         ruleExecutable: row.ruleExecutable!, checksum: row.checksum, effectiveAt: iso(row.effectiveAt),
         blockers: rateBlockers(row.blockers),
@@ -435,6 +461,39 @@ export class PostgresCommercialCatalogRepository implements CommercialCatalogRep
       const integerPoints = approvedRatePoints(row.integerPoints!)
       const effectiveAt = approvedRateEffectiveAt(row.effectiveAt!)
       return { ...row, integerPoints, effectiveAt }
+    } finally {
+      client.release?.()
+    }
+  }
+
+  async resolveApprovedOcrCostRate(): Promise<ApprovedOcrCostRate> {
+    const client = await this.pool.connect()
+    try {
+      const result = await client.query<RateRow>(`
+        SELECT c.id AS "rateCardId", c.version, r.action_code AS "actionCode",
+          r.unit, r.pricing_mode AS "pricingMode", r.variable_formula AS "variableFormula",
+          c.checksum, c.effective_at AS "effectiveAt"
+        FROM creative_point_rate_card_versions_v2 c
+        JOIN creative_point_rate_rules_v2 r ON r.rate_card_version_id = c.id
+        WHERE r.action_code = 'ocr.extract'
+          AND c.lifecycle = 'approved' AND c.approval_status = 'approved'
+          AND c.executable = true AND c.effective_at IS NOT NULL AND c.effective_at <= now()
+          AND r.executable = true AND r.pricing_mode = 'variable' AND r.integer_points IS NULL
+        ORDER BY c.effective_at DESC, c.version DESC
+        LIMIT 1
+      `)
+      const row = result.rows[0]
+      if (!row || row.actionCode !== 'ocr.extract' || row.unit !== 'request' || row.pricingMode !== 'variable'
+        || !isOcrCostFormula(row.variableFormula) || !row.rateCardId || !Number.isSafeInteger(row.version)
+        || !/^[0-9a-f]{64}$/u.test(row.checksum) || !row.effectiveAt) throw new CreativePointRateUnavailableError()
+      return {
+        rateCardId: row.rateCardId, version: row.version, actionCode: 'ocr.extract', unit: 'request',
+        pricingMode: 'variable', variableFormula: { kind: 'cost_cny_x2_ceil_min1' },
+        checksum: row.checksum, effectiveAt: approvedRateEffectiveAt(row.effectiveAt),
+      }
+    } catch (error) {
+      if (error instanceof CreativePointRateUnavailableError) throw error
+      throw new CreativePointRateUnavailableError()
     } finally {
       client.release?.()
     }

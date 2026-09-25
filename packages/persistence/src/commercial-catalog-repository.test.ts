@@ -120,4 +120,35 @@ describe('PostgresCommercialCatalogRepository', () => {
     const repository = new PostgresCommercialCatalogRepository(new FakePool(client))
     await expect(repository.resolveApprovedRate('image.generate.standard')).rejects.toMatchObject({ code: 'RATE_CARD_UNAVAILABLE' })
   })
+
+  it('reads and resolves only the approved OCR cost multiplier snapshot', async () => {
+    const row = {
+      id: 'rate-ocr-extract-cost-v3', rateCardId: 'rate-card-ocr-cost-v3', version: 3,
+      actionCode: 'ocr.extract', unit: 'request', integerPoints: null, pricingMode: 'variable',
+      variableFormula: { kind: 'cost_cny_x2_ceil_min1' }, lifecycle: 'approved', approvalStatus: 'approved',
+      executable: true, ruleExecutable: true, checksum: 'a'.repeat(64), effectiveAt: '2026-09-25T00:00:00.000Z', blockers: [],
+    }
+    const client = new FakeClient([row])
+    const repository = new PostgresCommercialCatalogRepository(new FakePool(client))
+    expect(await repository.listRates()).toEqual([expect.objectContaining({
+      actionCode: 'ocr.extract', pricingMode: 'variable', integerPoints: null,
+      variableFormula: { kind: 'cost_cny_x2_ceil_min1' },
+    })])
+    expect(await repository.resolveApprovedOcrCostRate()).toMatchObject({
+      actionCode: 'ocr.extract', pricingMode: 'variable', variableFormula: { kind: 'cost_cny_x2_ceil_min1' },
+      version: 3, checksum: 'a'.repeat(64),
+    })
+    expect(client.calls[1]?.text).toContain("r.action_code = 'ocr.extract'")
+    expect(client.calls[1]?.text).toContain("r.pricing_mode = 'variable'")
+  })
+
+  it('rejects an altered OCR formula even when the rate card claims approved', async () => {
+    const client = new FakeClient([{
+      rateCardId: 'rate-card-ocr-cost-v3', version: 3, actionCode: 'ocr.extract', unit: 'request',
+      pricingMode: 'variable', variableFormula: { kind: 'cost_cny_x3_ceil_min1' },
+      checksum: 'a'.repeat(64), effectiveAt: '2026-09-25T00:00:00.000Z',
+    }])
+    const repository = new PostgresCommercialCatalogRepository(new FakePool(client))
+    await expect(repository.resolveApprovedOcrCostRate()).rejects.toMatchObject({ code: 'RATE_CARD_UNAVAILABLE' })
+  })
 })
