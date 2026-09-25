@@ -12,6 +12,7 @@ export interface ImageFactsExtractorOptions {
   baseUrl: string
   apiKey: string
   model: string
+  maxOutputTokens?: number
   timeoutMs?: number
   fetch?: typeof fetch
   beforeRequest?: ProviderBeforeRequest
@@ -20,6 +21,18 @@ export interface ImageFactsExtractorOptions {
 }
 
 const MAX_OCR_RELAY_RESPONSE_BYTES = 4 * 1024 * 1024
+const DEFAULT_OCR_MAX_OUTPUT_TOKENS = 512
+const MAX_OCR_OUTPUT_TOKENS = 4096
+
+function resolveOcrMaxOutputTokens(value: string | undefined, environment: string | undefined): number {
+  if (value === undefined || value.trim() === '') {
+    if (environment === 'production') throw new Error('OCR_MAX_OUTPUT_TOKENS_REQUIRED')
+    return DEFAULT_OCR_MAX_OUTPUT_TOKENS
+  }
+  const parsed = Number(value)
+  if (!/^\d+$/u.test(value.trim()) || !Number.isSafeInteger(parsed) || parsed < 1 || parsed > MAX_OCR_OUTPUT_TOKENS) throw new Error('OCR_MAX_OUTPUT_TOKENS_INVALID')
+  return parsed
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -51,6 +64,7 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
 
   constructor(private readonly options: ImageFactsExtractorOptions) {
     if (!options.baseUrl.trim() || !options.apiKey.trim() || !options.model.trim()) throw new Error('OCR relay URL, API key and model are required')
+    if (options.maxOutputTokens !== undefined && (!Number.isSafeInteger(options.maxOutputTokens) || options.maxOutputTokens < 1 || options.maxOutputTokens > MAX_OCR_OUTPUT_TOKENS)) throw new Error('OCR_MAX_OUTPUT_TOKENS_INVALID')
     assertRelayBaseUrl(options.baseUrl)
     this.fetchImpl = options.fetch ?? fetch
   }
@@ -62,6 +76,7 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
       const dataUrl = `data:${input.mimeType};base64,${Buffer.from(input.body).toString('base64')}`
       const requestBody = JSON.stringify({
           model: this.options.model,
+          max_tokens: this.options.maxOutputTokens ?? DEFAULT_OCR_MAX_OUTPUT_TOKENS,
           temperature: 0,
           response_format: { type: 'json_object' },
           messages: [{ role: 'user', content: [
@@ -101,5 +116,5 @@ export function createImageFactsExtractorFromEnv(source: Record<string, string |
   if (!relayUrl || !apiKey || !model || isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey) || isPlaceholderModelConfiguration(model)) return undefined
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined
-  return new OpenAICompatibleImageFactsExtractor({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: resolveProviderTimeoutMs(source.OCR_TIMEOUT_MS, 90_000, 'OCR_TIMEOUT_MS'), ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) })
+  return new OpenAICompatibleImageFactsExtractor({ baseUrl: relayUrl, apiKey, model, relaySecurity, maxOutputTokens: resolveOcrMaxOutputTokens(source.OCR_MAX_OUTPUT_TOKENS, source.NODE_ENV), timeoutMs: resolveProviderTimeoutMs(source.OCR_TIMEOUT_MS, 90_000, 'OCR_TIMEOUT_MS'), ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) })
 }
