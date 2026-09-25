@@ -59,6 +59,9 @@ describe('canonical password identity and local plugin authentication', () => {
     await expect(initialized.json()).resolves.toMatchObject({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: expect.any(String) } } })
     const switched = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'x-workspace-id': 'ws_other', 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} }) })
     expect(switched.status).toBe(403)
+    const opsSession = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'x-workspace-id': workspaceId, 'x-ops-workbench': 'platform', 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'ops.session', params: {} }) })
+    expect(opsSession.status).toBe(403)
+    await expect(opsSession.json()).resolves.toMatchObject({ error: { code: 'FORBIDDEN', message: '商家 OAuth 会话不能访问平台运营工作台' } })
     const rotated = await fetch(`${base}/v1/auth/mcp-token/refresh`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: refreshToken }) })
     expect(rotated.status).toBe(200)
     const rotatedEnvelope = await rotated.json() as { data?: { result?: Record<string, unknown> } }
