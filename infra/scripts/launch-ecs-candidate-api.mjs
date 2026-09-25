@@ -76,13 +76,14 @@ if (action === 'stop') {
   const api = compose?.services?.api
   const environment = api?.environment ?? {}
   if (api?.image !== imageRef || environment.RELEASE_ID !== releaseId ||
+      api?.pull_policy !== 'never' ||
       environment.NODE_ENV !== 'production' || environment.DEPLOYMENT_PROFILE !== 'ecs' ||
       environment.RUN_MIGRATIONS_ON_STARTUP !== 'false' ||
       environment.CONNECTOR_FIXTURE_MODE !== 'false' ||
       !environment.DATABASE_URL || !environment.OPS_DATABASE_URL) fail('candidate API does not match the frozen production configuration')
   const name = `merchant-candidate-api-${releaseId}-${randomBytes(5).toString('hex')}`
   docker(['compose', '--project-name', project, '--env-file', envPath, '-f', composePath,
-    'run', '--no-deps', '--no-tty', '--pull', 'never', '--detach', '--name', name, 'api'])
+    'run', '--no-deps', '--no-tty', '--detach', '--name', name, 'api'])
   const container = inspect(name)
   try {
     assertOneOff(container, imageId)

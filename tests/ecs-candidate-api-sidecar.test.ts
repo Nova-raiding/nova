@@ -15,7 +15,7 @@ function fixture(bindPort = false) {
   const env = join(dir, 'candidate.env')
   const calls = join(dir, 'calls.jsonl')
   const binary = join(dir, 'docker.cjs')
-  writeFileSync(compose, JSON.stringify({ services: { api: { image: imageRef, environment: {
+  writeFileSync(compose, JSON.stringify({ services: { api: { image: imageRef, pull_policy: 'never', environment: {
     RELEASE_ID: 'release-test', NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs',
     RUN_MIGRATIONS_ON_STARTUP: 'false', CONNECTOR_FIXTURE_MODE: 'false',
     DATABASE_URL: 'postgres://app@db/merchant', OPS_DATABASE_URL: 'postgres://ops@db/merchant',
@@ -50,11 +50,11 @@ describe('ECS candidate API sidecar', () => {
     const calls = readFileSync(value.calls, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[])
     const compose = calls.find(call => call[2] === 'compose')!
     expect(compose).toContain('--no-deps')
-    expect(compose).toContain('--pull')
-    expect(compose).toContain('never')
+    expect(compose).not.toContain('--pull')
     expect(compose).not.toContain('--service-ports')
     expect(compose).not.toContain('--publish')
     expect(compose.at(-1)).toBe('api')
+    expect(calls.findIndex(call => call[2] === 'image' && call[3] === 'inspect')).toBeLessThan(calls.indexOf(compose))
 
     const stop = spawnSync('node', [script, 'stop', value.args[2]!, value.args[3]!, 'merchant-production', imageRef, 'release-test', containerId], { env: value.processEnv, encoding: 'utf8' })
     expect(stop.status).toBe(0)
