@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { RuleCenterSection, isOfficialPlatformRule } from "./RuleCenterSection";
+import { RuleCenterSection, isOfficialPlatformRule, parseMarkdownDraftInputs } from "./RuleCenterSection";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 
 describe("official platform rule boundary", () => {
@@ -14,9 +14,25 @@ describe("official platform rule boundary", () => {
   });
   it("does not expose an internal draft creation form on the official rules page", () => {
     const html = renderToStaticMarkup(<RuleCenterSection model={{ canRules: true, rules: [], updateRuleStatus: async () => true } as unknown as OpsConsoleModel} />);
-    expect(html).toContain("平台官方限制规则");
+    expect(html).toContain("平台规则人工导入说明");
     expect(html).not.toContain("rule-draft-create");
     expect(html).not.toContain("创建规则草稿");
+  });
+
+  it("validates every Markdown card before any upload can be started", () => {
+    const markdown = [
+      "# 知识库 v2026.09",
+      "## PDD-001｜标题规则",
+      "- 平台：拼多多",
+      "- 官方依据：https://official.example/pdd/title",
+      "标题不得夸大",
+      "## PDD-002｜图片规则",
+      "- 平台：拼多多",
+      "- 官方依据：https://official.example/pdd/image",
+      "图片需清晰",
+    ].join("\n");
+    expect(parseMarkdownDraftInputs(markdown, "pdd.md")).toHaveLength(2);
+    expect(() => parseMarkdownDraftInputs(markdown.replace("- 官方依据：https://official.example/pdd/title", "- 依据缺失"), "pdd.md")).toThrow("PDD-001 缺少平台或官方依据字段");
   });
 });
 
