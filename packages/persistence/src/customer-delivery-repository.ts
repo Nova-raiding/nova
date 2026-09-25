@@ -112,6 +112,10 @@ export interface CustomerDeliveryPage {
   limit: number;
   hasMore: boolean;
 }
+export interface CustomerDeliveryOwnerOptions {
+  projectOwnerOptions: string[];
+  supportOwnerOptions: string[];
+}
 export interface CustomerDeliveryAccountDirectory {
   /** Returns only active merchant / identity / membership / workspace intersections. */
   list(input: CustomerDeliveryAccountListInput): Promise<CustomerDeliveryAccountPage>;
@@ -158,6 +162,7 @@ export const CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS = {
 } as const;
 export interface CustomerDeliveryRepository {
   list(input: CustomerDeliveryListInput): Promise<CustomerDeliveryPage>;
+  listOwnerOptions(workspaceId: string): Promise<CustomerDeliveryOwnerOptions>;
   get(workspaceId: string, id: string): Promise<CustomerDelivery | null>;
   getByIdentity(workspaceId: string, identityId: string): Promise<CustomerDelivery | null>;
   listBindableAccounts(input: CustomerDeliveryAccountListInput): Promise<CustomerDeliveryAccountPage>;
@@ -395,6 +400,20 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
     return { items: await Promise.all(rows.slice(offset, offset + limit).map(row => this.readable(row))),
       total: rows.length, offset, limit, hasMore: offset + limit < rows.length };
+  }
+  async listOwnerOptions(workspaceIdInput: string): Promise<CustomerDeliveryOwnerOptions> {
+    const workspaceId = requireWorkspaceScope(workspaceIdInput)
+    const projectOwners = new Set<string>()
+    const supportOwners = new Set<string>()
+    for (const row of this.rows.values()) {
+      if (row.workspaceId !== workspaceId || row.archivedAt) continue
+      if (row.projectOwner?.trim()) projectOwners.add(row.projectOwner.trim())
+      if (row.supportOwner?.trim()) supportOwners.add(row.supportOwner.trim())
+    }
+    return {
+      projectOwnerOptions: [...projectOwners].sort((a, b) => a.localeCompare(b, 'zh-CN')),
+      supportOwnerOptions: [...supportOwners].sort((a, b) => a.localeCompare(b, 'zh-CN')),
+    }
   }
   async get(workspaceId: string, id: string) {
     const r = this.rows.get(`${requireWorkspaceScope(workspaceId)}:${id}`);
@@ -1278,6 +1297,22 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       if (delivery) result.push(delivery);
     }
     return { items: result, total: page.total, offset, limit, hasMore: offset + limit < page.total };
+  }
+  async listOwnerOptions(workspaceIdInput: string): Promise<CustomerDeliveryOwnerOptions> {
+    const workspaceId = requireWorkspaceScope(workspaceIdInput)
+    const rows = await withWorkspaceTransaction(this.pool, workspaceId, async c => (await c.query<{ owner_type: 'project' | 'support'; owner_name: string }>(
+      `SELECT 'project'::text AS owner_type, btrim(project_owner) AS owner_name
+         FROM workspace_customer_deliveries
+        WHERE workspace_id=$1 AND archived_at IS NULL AND project_owner IS NOT NULL AND btrim(project_owner) <> ''
+       UNION
+       SELECT 'support'::text AS owner_type, btrim(support_owner) AS owner_name
+         FROM workspace_customer_deliveries
+        WHERE workspace_id=$1 AND archived_at IS NULL AND support_owner IS NOT NULL AND btrim(support_owner) <> ''
+       ORDER BY owner_type, owner_name /* delivery_owner_options */`, [workspaceId])).rows)
+    return {
+      projectOwnerOptions: rows.filter(row => row.owner_type === 'project').map(row => row.owner_name).sort((a, b) => a.localeCompare(b, 'zh-CN')),
+      supportOwnerOptions: rows.filter(row => row.owner_type === 'support').map(row => row.owner_name).sort((a, b) => a.localeCompare(b, 'zh-CN')),
+    }
   }
   async get(workspaceId: string, id: string) {
     const scope = requireWorkspaceScope(workspaceId);

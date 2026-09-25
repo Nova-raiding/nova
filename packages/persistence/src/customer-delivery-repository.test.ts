@@ -6,10 +6,12 @@ import type { CustomerDelivery, CustomerDeliveryPatch } from './customer-deliver
 class RecordingClient implements SqlClient {
   readonly calls: Array<{ text: string; values?: readonly unknown[] }> = []
   private readonly responses: Array<{ rows: Record<string, unknown>[] }> = []
+  ownerOptionRows?: Record<string, unknown>[]
   preflight?: { parent: Record<string, unknown>; videos?: Record<string, unknown>[]; items?: Record<string, unknown>[] }
   enqueue(...rows: Record<string, unknown>[]) { this.responses.push({ rows }) }
   async query<T = Record<string, unknown>>(text: string, values?: readonly unknown[]) {
     this.calls.push({ text, values })
+    if (text.includes('delivery_owner_options')) return { rows: this.ownerOptionRows ?? [] } as { rows: T[] }
     // Preflight is additional read-only work; retain the original body FIFO so
     // its persisted before/after audit snapshots still have independent values.
     if (text.includes('delivery_evidence_preflight_parent') || text.includes('delivery_evidence_recheck */'))
@@ -751,6 +753,28 @@ describe('Canonical evidence writes and profile withdrawal', () => {
 })
 
 describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
+  it('lists distinct owner values for one workspace and excludes archived rows', async () => {
+    const repo = new MemoryCustomerDeliveryRepository()
+    const first = await repo.create({ workspaceId: 'ws_owner_options', companyName: 'Alpha', actorId: 'creator' })
+    await repo.update({ workspaceId: first.workspaceId, id: first.id, actorId: 'operator', expectedRevision: first.revision,
+      patch: { projectOwner: ' 项目负责人甲 ', supportOwner: '售后负责人甲' } })
+    const duplicate = await repo.create({ workspaceId: 'ws_owner_options', companyName: 'Beta', actorId: 'creator' })
+    await repo.update({ workspaceId: duplicate.workspaceId, id: duplicate.id, actorId: 'operator', expectedRevision: duplicate.revision,
+      patch: { projectOwner: '项目负责人甲', supportOwner: '售后负责人乙' } })
+    const archived = await repo.create({ workspaceId: 'ws_owner_options', companyName: 'Archived', actorId: 'creator' })
+    await repo.update({ workspaceId: archived.workspaceId, id: archived.id, actorId: 'operator', expectedRevision: archived.revision,
+      patch: { projectOwner: '已归档负责人', supportOwner: '已归档售后', archivedAt: '2026-09-15T12:00:00.000Z' } })
+    const other = await repo.create({ workspaceId: 'ws_owner_options_other', companyName: 'Other tenant', actorId: 'creator' })
+    await repo.update({ workspaceId: other.workspaceId, id: other.id, actorId: 'operator', expectedRevision: other.revision,
+      patch: { projectOwner: '其他租户负责人', supportOwner: '其他租户售后' } })
+
+    await expect(repo.listOwnerOptions('ws_owner_options')).resolves.toEqual({
+      projectOwnerOptions: ['项目负责人甲'],
+      supportOwnerOptions: ['售后负责人乙', '售后负责人甲'].sort((a, b) => a.localeCompare(b, 'zh-CN')),
+    })
+    await expect(repo.listOwnerOptions('')).rejects.toThrow('workspace scope is required')
+  })
+
   it('returns bounded server pages with stable metadata and scoped filters', async () => {
     const repo = new MemoryCustomerDeliveryRepository()
     await repo.create({ workspaceId: 'ws_page', companyName: 'Alpha', actorId: 'creator' })
@@ -782,6 +806,26 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     expect(result.items).toEqual([])
     expect(client.calls.find(call => call.text.includes('delivery_evidence_list_ids'))?.text)
       .toContain('archived_at IS NULL')
+  })
+
+  it('loads only distinct scoped PostgreSQL owner names with one query and no evidence reads', async () => {
+    const client = new RecordingClient()
+    client.ownerOptionRows = [
+      { owner_type: 'project', owner_name: '项目负责人甲' },
+      { owner_type: 'support', owner_name: '售后负责人乙' },
+      { owner_type: 'support', owner_name: '售后负责人甲' },
+    ]
+    const result = await new PostgresCustomerDeliveryRepository(new RecordingPool(client)).listOwnerOptions('ws_owner_options')
+    expect(result).toEqual({
+      projectOwnerOptions: ['项目负责人甲'],
+      supportOwnerOptions: ['售后负责人乙', '售后负责人甲'].sort((a, b) => a.localeCompare(b, 'zh-CN')),
+    })
+    const ownerQuery = client.calls.filter(call => call.text.includes('delivery_owner_options'))
+    expect(ownerQuery).toHaveLength(1)
+    expect(ownerQuery[0]?.values).toEqual(['ws_owner_options'])
+    expect(ownerQuery[0]?.text).toContain('workspace_id=$1 AND archived_at IS NULL')
+    expect(client.calls.filter(call => call.text.includes('delivery_evidence_'))).toEqual([])
+    expect(client.calls.at(-1)?.text).toBe('COMMIT')
   })
 
   it('preserves PostgreSQL DATE calendar values separately from timestamp instants', async () => {

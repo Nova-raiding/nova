@@ -14892,15 +14892,22 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result(await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).listBindableAccounts({ workspaceId, ...(typeof params.search === 'string' ? { search: params.search } : {}), ...(typeof params.cursor === 'string' ? { cursor: params.cursor } : {}), ...(params.limit !== undefined ? { limit: Number(params.limit) } : {}) })))
     case 'ops.customer-delivery.account.bind':
       return result(await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).bindAccount({ workspaceId, deliveryId: requiredStringValue(params, 'delivery_id'), targetAccountId: requiredStringValue(params, 'target_account_id'), expectedRevision: Number(requiredStringValue(params, 'expected_revision')), reason: requiredStringValue(params, 'reason'), actorId: requestActor(req) })))
-    case 'ops.customer-delivery.list':
-      return result(await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).list({
+    case 'ops.customer-delivery.list': {
+      const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
+      const page = await invokeCustomerDeliveryDomain(() => repository.list({
         workspaceId,
         ...(typeof params.query === 'string' ? { query: params.query } : {}),
         ...(typeof params.project_owner === 'string' ? { projectOwner: params.project_owner } : {}),
         ...(typeof params.support_owner === 'string' ? { supportOwner: params.support_owner } : {}),
         ...(params.offset !== undefined ? { offset: Number(params.offset) } : {}),
         ...(params.limit !== undefined ? { limit: Number(params.limit) } : {}),
-      })))
+      }))
+      const options = await invokeCustomerDeliveryDomain(() => repository.listOwnerOptions(workspaceId))
+      return result({ ...page,
+        project_owner_options: options.projectOwnerOptions,
+        support_owner_options: options.supportOwnerOptions,
+      })
+    }
     case 'ops.customer-delivery.assets.upload': {
       await persistenceReady
       const deliveryId = requiredStringValue(params, 'deliveryId', 'delivery_id')
