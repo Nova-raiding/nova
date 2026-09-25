@@ -21,7 +21,11 @@ vi.mock('../../../packages/ai/src/image-facts.js', async importOriginal => ({
       await transport.waiting
       if (!beforeRequest) throw new Error('Actual OCR beforeRequest hook was not wired')
       try { await beforeRequest({ operation: 'ocr', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId }) }
-      catch (error) { transport.denied(error); throw error }
+      catch (error) {
+        transport.denied(error)
+        if (error && typeof error === 'object') Object.assign(error, { ocrPreDispatch: true })
+        throw error
+      }
       return transport.provider()
     },
   }),
@@ -50,11 +54,11 @@ beforeAll(async () => {
   vi.stubEnv('MERCHANT_TEST_APPROVED_RATES', 'true')
   vi.stubEnv('MODEL_DAILY_CNY_LIMIT', '20')
   vi.stubEnv('MODEL_MAX_TASK_COST_CNY', '2')
+  vi.stubEnv('MODEL_COST_ESTIMATE_VERSION', 'resource-recheck-test-v1')
+  vi.stubEnv('MODEL_OCR_MAX_REQUEST_CNY', '0.10')
   vi.stubEnv('DEPLOYMENT_PROFILE', 'local_acceptance')
   vi.stubEnv('LOCAL_COMPOSE', 'true')
   vi.stubEnv('ALLOW_LOCAL_ASSET_SCAN_FIXTURE', 'true')
-  vi.stubEnv('MODEL_MAX_TASK_COST_CNY', '2')
-  vi.stubEnv('MODEL_DAILY_CNY_LIMIT', '20')
   vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
   api = await import('./server.js')
   await api.persistenceReady

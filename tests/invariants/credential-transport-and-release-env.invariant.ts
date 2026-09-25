@@ -99,7 +99,7 @@ export const mutations: InvariantFragment['mutations'] = [
         {
           pattern: 'request\\.url = ',
           sample: 'request.url = url.toString()',
-          allow: ['packages/connectors/src/platform-adapters/signed-request.ts', RULE_DECLARATION_SITE, 'scripts/scanner-callback-canary.mjs'],
+          allow: ['packages/connectors/src/platform-adapters/signed-request.ts', RULE_DECLARATION_SITE],
           why: 'writing the request URL is the transport decision itself; a second file that assembles a signed request URL has left the chokepoint.',
         },
         {

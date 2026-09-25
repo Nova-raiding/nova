@@ -88,7 +88,18 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
       assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
       const response = await withProviderRequestRetry(async () => {
         if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
-        if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'ocr', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
+        if (this.options.beforeRequest) {
+          try {
+            await this.options.beforeRequest({ operation: 'ocr', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
+          } catch (error) {
+            // The admission hook runs before the relay request. Preserve the
+            // original denial while marking it so the caller can release a
+            // local hold instead of treating it as an ambiguous provider
+            // outcome requiring reconciliation.
+            if (error && typeof error === 'object') Object.assign(error, { ocrPreDispatch: true })
+            throw error
+          }
+        }
         controller.signal.throwIfAborted()
         let candidate: Response
         try {
