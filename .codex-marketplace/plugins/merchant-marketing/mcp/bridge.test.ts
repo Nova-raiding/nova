@@ -3301,7 +3301,7 @@ describe('Codex stdio MCP bridge', () => {
   })
 
   it.each([
-    [401, 'MCP_AUTH_REQUIRED', '当前 ChatGPT 桌面插件没有可用的 Store Nova 工作区绑定，或旧的本地开发绑定已失效。请在商家后台的“连接本地插件”重新绑定当前工作区后重启 ChatGPT；这不是六个平台授权，也不会触发扣费或发布。'],
+    [401, 'MCP_AUTH_REQUIRED', '当前插件的 Store Nova 工作区登录已失效。本次未完成请求；请联系平台管理员确认分配给你的 ws_... 工作区 ID，在插件安装目录运行 macOS 的 login.sh --workspace ws_... 或 Windows 的 login.cmd --workspace ws_...，按提示完成登录后重启 ChatGPT。此操作只登录当前工作区，不会连接店铺、扣费或发布。'],
     [403, 'PERMISSION_DENIED', '当前账号没有执行这一步的权限。任务和已有内容已保留。'],
   ])('maps a bare HTTP %s gateway response to the stable plugin error contract', async (status, code, message) => {
     const server = createServer((_req, res) => {
@@ -3326,9 +3326,10 @@ describe('Codex stdio MCP bridge', () => {
         expect(response.result.structuredContent.recovery).toMatchObject({
           state: 'authentication_required',
           user_action_required: true,
-          resume_message: '重新绑定后继续',
-          next_action: { label: '重新绑定当前 Store Nova 工作区', target: 'merchant_studio_local_plugin_connection' },
+          resume_message: '本地登录完成后继续',
+          next_action: { label: '运行插件安装目录中的本地登录脚本', target: 'local_plugin_login', workspace_id_format: 'ws_...' },
         })
+        expect(response.result.content[0].text).not.toContain('连接本地插件')
       }
     } finally {
       child.kill()
