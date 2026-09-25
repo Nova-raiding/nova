@@ -44,11 +44,47 @@ const approvedOcrRate = { rateCardId: 'ocr-test-approved', version: 1, actionCod
   unit: 'request' as const, pricingMode: 'variable' as const, variableFormula: { kind: 'cost_cny_x2_ceil_min1' as const },
   checksum: 'a'.repeat(64), effectiveAt: '2026-09-25T00:00:00.000Z' }
 
+const approvedThresholdOcrRate = { ...approvedOcrRate, rateCardId: 'ocr-test-threshold-approved', version: 4,
+  variableFormula: { kind: 'cost_cny_threshold_x2_ceil_v1' as const, free_when_cost_cny_lte: 0.3 as const,
+    multiplier: 2 as const, min_paid_points: 1 as const }, checksum: 'b'.repeat(64) }
+
 async function uploadOcrImage(workspaceId: string) {
   const response = await fetch(`${base}/v1/assets/upload`, { method: 'POST', headers: { 'x-workspace-id': workspaceId, 'content-type': 'image/png', 'x-asset-name': 'label.png' }, body: Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex') as BodyInit })
   expect(response.status).toBe(201)
   return (await response.json() as { data: { id: string } }).data.id
 }
+
+it('keeps a v4 OCR hold and blocks replay when receipt settlement is unavailable', async () => {
+  api.setApprovedOcrRateForTests(approvedThresholdOcrRate)
+  const workspaceId = `ws_ocr_threshold_receipt_${Date.now()}`
+  await api.grantCreativePointsForTests(workspaceId, 5)
+  api.grantContinuousFeatureEntitlementForTests(workspaceId)
+  const imageId = await uploadOcrImage(workspaceId)
+  const actionKey = `asset-parse:${imageId}:attempt:1`
+  let relayRequests = 0
+  relayHandler = async () => {
+    relayRequests += 1
+    expect(await api.creativePointsForTests.getReservationByActionKey(workspaceId, actionKey)).toMatchObject({ status: 'active', points: 4 })
+    expect((await api.creativePointsForTests.getBalance(workspaceId)).availablePoints).toBe(1)
+    return new Response(JSON.stringify({
+      id: 'ocr-threshold-receipt',
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost_cny: 0.3 },
+      choices: [{ message: { content: JSON.stringify({ facts: { product_name: '费率边界测试商品' }, ocr_text: '费率边界测试商品' }) } }],
+    }), { status: 200, headers: { 'content-type': 'application/json', 'x-request-id': 'ocr-threshold-receipt' } })
+  }
+  const endpoint = `${base}/v1/assets/${imageId}/parse`
+  const response = await fetch(endpoint, { method: 'POST', headers: { 'x-workspace-id': workspaceId } })
+  expect(response.status).toBe(503)
+  expect(await response.json()).toMatchObject({ error: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', details: { retryable: false } } })
+  expect(relayRequests).toBe(1)
+  expect(await api.creativePointsForTests.getReservationByActionKey(workspaceId, actionKey)).toMatchObject({ status: 'active', points: 4, settledPoints: null })
+  expect((await api.creativePointsForTests.getBalance(workspaceId)).availablePoints).toBe(1)
+  const replay = await fetch(endpoint, { method: 'POST', headers: { 'x-workspace-id': workspaceId } })
+  expect(replay.status).toBe(409)
+  expect(await replay.json()).toMatchObject({ error: { code: 'OCR_PREVIOUS_ATTEMPT_RECONCILIATION_REQUIRED' } })
+  expect(relayRequests).toBe(1)
+  expect((await api.creativePointsForTests.getBalance(workspaceId)).availablePoints).toBe(1)
+})
 
 it('requires the full OCR hold, then lets the same asset resume after recharge', async () => {
   api.setApprovedOcrRateForTests(approvedOcrRate)

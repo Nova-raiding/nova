@@ -77,7 +77,7 @@ import { createNewApiSelfLogClientFromEnv } from '../../../packages/ai/src/provi
 import { createRelayPricingClientFromEnv } from '../../../packages/ai/src/relay-pricing.js'
 import { evaluatePlatformModelBudgetEstimate, evaluatePlatformModelCostGate, evaluatePlatformModelGate, evaluatePlatformModelRelayGate, evaluatePlatformModelTaskCostLimit, evaluatePlatformModelTaskRequestCost, type PlatformModelKind } from '../../../packages/ai/src/platform-model-gate.js'
 import { DocumentParseError, parseDocumentFacts, type ParseErrorContext } from '../../../packages/application/src/document-parser.js'
-import { decideOcrPointFinalization, quoteOcrPointHold } from '../../../packages/application/src/ocr-point-lifecycle.js'
+import { decideOcrPointFinalization, quoteOcrPointHold, OCR_COST_POINT_POLICY_VERSION, OCR_FREE_THRESHOLD_POINT_POLICY_VERSION } from '../../../packages/application/src/ocr-point-lifecycle.js'
 import { spreadsheetFactsToBatchProducts, SpreadsheetBatchImportError } from '../../../packages/application/src/spreadsheet-batch.js'
 import { validateProtectedProductIntent, type ProtectedProductIntentValidation } from '../../../packages/application/src/protected-product-intent.js'
 import { projectCommercialEntitlement } from '../../../packages/application/src/commercial-entitlement-projection.js'
@@ -335,9 +335,12 @@ async function recordRelayUsage(usage: RelayUsageRecord, options: { deferCreativ
     if (usage.modality === 'ocr') {
       const taskCap = evaluatePlatformModelTaskCostLimit(process.env)
       const rate = creativeReservation.rateCardVersion
-      const validRate = rate.startsWith('ocr.cost_cny_x2_ceil_min1.v1:')
+      const policyVersion = rate.startsWith(`${OCR_FREE_THRESHOLD_POINT_POLICY_VERSION}:`)
+        ? OCR_FREE_THRESHOLD_POINT_POLICY_VERSION
+        : OCR_COST_POINT_POLICY_VERSION
+      const validRate = rate.startsWith(`${policyVersion}:`)
       const decision = decideOcrPointFinalization({ reservedPoints: creativeReservation.points, providerOutcome: 'succeeded',
-        verifiedReceipt: Boolean(recordedUsage && usage.providerRequestId && validRate && taskCap.ready && usage.costCny <= taskCap.limitCny), actualCostCny: usage.costCny })
+        verifiedReceipt: Boolean(recordedUsage && usage.providerRequestId && validRate && taskCap.ready && usage.costCny <= taskCap.limitCny), actualCostCny: usage.costCny, policyVersion })
       if (decision.action !== 'settle') throw Object.assign(new Error('OCR provider succeeded but cost, approved rate, task limit, or receipt requires reconciliation'), { code: 'MODEL_USAGE_SETTLEMENT_PENDING', providerSucceeded: true, reconciliationRequired: true, receiptKey })
       const usageEvidence = { modality: 'ocr', model: usage.model, ...(usage.inputTokens !== undefined ? { input_tokens: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { output_tokens: usage.outputTokens } : {}), ...(usage.totalTokens !== undefined ? { total_tokens: usage.totalTokens } : {}) }
       const costEvidence = { currency: 'CNY', actual: usage.costCny }
@@ -3621,10 +3624,15 @@ async function parseAssetFacts(input: { name: string; mimeType: string; body: Ui
     let rate: ApprovedOcrCostRate
     try { rate = approvedOcrRateForTests ?? await persistence.commercialCatalog.resolveApprovedOcrCostRate() }
     catch { throw new DomainError('OCR_CREATIVE_POINT_RATE_UNAVAILABLE', '图片 OCR 尚无已批准的创意点费率，已阻断模型调用；请人工确认素材事实', 503, { next_actions: ['asset.facts.confirm', 'commercial.catalog.get'] }) }
-    if (rate.variableFormula.kind !== 'cost_cny_x2_ceil_min1') throw new DomainError('OCR_CREATIVE_POINT_RATE_UNAVAILABLE', '图片 OCR 费率规则未批准，已阻断模型调用', 503)
+    const policyVersion = rate.variableFormula.kind === 'cost_cny_threshold_x2_ceil_v1'
+      ? OCR_FREE_THRESHOLD_POINT_POLICY_VERSION
+      : rate.variableFormula.kind === 'cost_cny_x2_ceil_min1'
+        ? OCR_COST_POINT_POLICY_VERSION
+        : undefined
+    if (!policyVersion) throw new DomainError('OCR_CREATIVE_POINT_RATE_UNAVAILABLE', '图片 OCR 费率规则未批准，已阻断模型调用', 503)
     const taskCap = evaluatePlatformModelTaskCostLimit(process.env)
     if (!taskCap.ready) throw new DomainError('OCR_TASK_COST_LIMIT_UNAVAILABLE', '图片 OCR 缺少有效单任务成本上限，已阻断模型调用', 503, { reasons: taskCap.reasons })
-    const quote = quoteOcrPointHold(taskCap.limitCny)
+    const quote = quoteOcrPointHold(taskCap.limitCny, policyVersion)
     const rateVersion = `${quote.policyVersion}:${rate.rateCardId}:${rate.version}:${rate.checksum}`
     let reservation
     try {
