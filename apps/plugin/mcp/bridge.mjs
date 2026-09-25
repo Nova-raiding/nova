@@ -1623,7 +1623,7 @@ function userFacingErrorText(code, details) {
     return '图片已保存并通过自动安全检查，但没有读出可靠的商品信息。请先告诉我商品名称；我会继续使用当前图片记录你的确认，无需重新连接工作区或重复上传。'
   }
   if (code === 'PERMISSION_DENIED') return '当前账号没有执行这一步的权限。任务和已有内容已保留。'
-  if (code === 'MCP_AUTH_REQUIRED') return '当前 ChatGPT 桌面插件没有可用的 Store Nova 工作区绑定，或旧的本地开发绑定已失效。请在商家后台的“连接本地插件”重新绑定当前工作区后重启 ChatGPT；这不是六个平台授权，也不会触发扣费或发布。'
+  if (code === 'MCP_AUTH_REQUIRED') return '当前插件的 Store Nova 工作区登录已失效。本次未完成请求；请联系平台管理员确认分配给你的 ws_... 工作区 ID，在插件安装目录运行 macOS 的 login.sh --workspace ws_... 或 Windows 的 login.cmd --workspace ws_...，按提示完成登录后重启 ChatGPT。此操作只登录当前工作区，不会连接店铺、扣费或发布。'
   if (code === 'MCP_GATEWAY_BAD_REQUEST') return '插件请求被网关拒绝。当前任务和已有产物已保留；请根据请求 ID 排查网关路由、请求格式或插件连接配置。'
   if (code === 'MODEL_RELAY_EVIDENCE_REQUIRED') {
     const missing = Array.isArray(details?.missing) ? details.missing : []
@@ -1671,13 +1671,13 @@ function toolErrorPresentation(method, args, code, details) {
   }
   if (code === 'MCP_AUTH_REQUIRED') {
     return {
-      text: '当前 ChatGPT 桌面插件没有可用的 Store Nova 工作区绑定，或旧的本地开发绑定已失效。请在商家后台的“连接本地插件”重新绑定当前工作区后重启 ChatGPT；这不是六个平台授权，也不会触发扣费或发布。',
+      text: '当前插件的 Store Nova 工作区登录已失效。本次未完成请求；请联系平台管理员确认分配给你的 ws_... 工作区 ID，在插件安装目录运行 macOS 的 login.sh --workspace ws_... 或 Windows 的 login.cmd --workspace ws_...，按提示完成登录后重启 ChatGPT。此操作只登录当前工作区，不会连接店铺、扣费或发布。',
       recovery: {
         state: 'authentication_required',
         user_action_required: true,
         preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
-        resume_message: '重新绑定后继续',
-        next_action: { label: '重新绑定当前 Store Nova 工作区', target: 'merchant_studio_local_plugin_connection' },
+        resume_message: '本地登录完成后继续',
+        next_action: { label: '运行插件安装目录中的本地登录脚本', target: 'local_plugin_login', workspace_id_format: 'ws_...' },
       },
     }
   }
