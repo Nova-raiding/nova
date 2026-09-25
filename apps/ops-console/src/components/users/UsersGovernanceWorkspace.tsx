@@ -100,9 +100,9 @@ export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConso
   }
 
   const tabs: Array<{ key: string; label: string; children: ReactElement }> = [];
-  if (sectionKeys.includes("directory")) tabs.push({ key: "directory", label: "接入详情", children: <section id="user-directory" className="ops-users-section" aria-labelledby="user-directory-heading"><OpsPageError error={model.userDirectoryError} onRetry={() => void model.loadUsers()} /><UserDirectorySection model={model} /></section> });
-  if (sectionKeys.includes("workspaces")) tabs.push({ key: "workspaces", label: "月费详情", children: <section id="workspace-governance" className="ops-users-section"><WorkspaceGovernanceSection model={model} /></section> });
-  if (sectionKeys.includes("members")) tabs.push({ key: "members", label: "创意点详情", children: <section id="member-governance" className="ops-users-section"><MembersSection model={model} /></section> });
+  if (sectionKeys.includes("directory")) tabs.push({ key: "directory", label: "已入驻用户", children: <section id="user-directory" className="ops-users-section" aria-labelledby="user-directory-heading"><OpsPageError error={model.userDirectoryError} onRetry={() => void model.loadUsers()} /><UserDirectorySection model={model} /></section> });
+  if (sectionKeys.includes("workspaces")) tabs.push({ key: "workspaces", label: "商家工作区", children: <section id="workspace-governance" className="ops-users-section"><WorkspaceGovernanceSection model={model} /></section> });
+  if (sectionKeys.includes("members")) tabs.push({ key: "members", label: "成员", children: <section id="member-governance" className="ops-users-section"><MembersSection model={model} /></section> });
   if (sectionKeys.includes("registrations")) tabs.push({ key: "registrations", label: "入驻申请", children: <section className="ops-users-section"><RegistrationApplications model={model} /></section> });
   if (sectionKeys.includes("authorization")) tabs.push({ key: "authorization", label: "权限与授权", children: <section id="authorization-governance" className="ops-users-section"><AuthorizationGovernanceSection model={model} /></section> });
 

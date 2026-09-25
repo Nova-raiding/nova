@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -53,5 +54,18 @@ describe("visibleUsersGovernanceSections", () => {
     }));
     expect(markup).toContain('role="tab"');
     expect(markup).toContain("权限与授权");
+  });
+
+  it("uses labels that describe the data in each user governance tab", () => {
+    const markup = renderToStaticMarkup(createElement(UsersGovernanceWorkspace, {
+      model: { authorization: authorization(["workspace.directory.read", "workspace.member.read"]) } as never,
+    }));
+    expect(markup).toContain("商家工作区");
+    expect(markup).toContain(">成员<");
+    expect(markup).not.toContain("月费详情");
+    expect(markup).not.toContain("创意点详情");
+    const source = readFileSync(new URL("./UsersGovernanceWorkspace.tsx", import.meta.url), "utf8");
+    expect(source).toContain('key: "directory", label: "已入驻用户"');
+    expect(source).not.toContain('label: "接入详情"');
   });
 });
