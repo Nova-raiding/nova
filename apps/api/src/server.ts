@@ -12088,13 +12088,22 @@ async function merchantFirstValuePreview(workspaceId: string, params: JsonObject
       generated = await contentGenerator.generate({ platform, candidateOnly: true, directionId: prompt, product: { title, stock: 0, skuCount: 0 }, usageContext: { workspaceId, actionId, runKey: actionId } })
     } catch (error) {
       if (providerSucceededButSettlementPending(error)) {
-        const reservation = await persistence.creativePoints?.getReservationByActionKey?.(workspaceId, actionId)
-        const receipt = reservation && unknownModelProviderReceipt(error, workspaceId, reservation.operationId)
-        if (receipt) {
-          if (!persistence.creativePointLifecycle) throw new DomainError('MODEL_UNKNOWN_RECEIPT_STORE_UNAVAILABLE', '模型结果未知且对账回执仓储不可用，创意点仍保持预留', 503)
-          await persistence.creativePointLifecycle.recordProviderReceipt(receipt)
+        if ((error as { code?: unknown })?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {
+          try {
+            const reservation = await persistence.creativePoints?.getReservationByActionKey?.(workspaceId, actionId)
+            const receipt = reservation && unknownModelProviderReceipt(error, workspaceId, reservation.operationId)
+            if (reservation && !receipt) throw new Error('MODEL_UNKNOWN_CORRELATION_ID_MISSING')
+            if (receipt) {
+              if (!persistence.creativePointLifecycle) throw new Error('MODEL_UNKNOWN_RECEIPT_STORE_UNAVAILABLE')
+              await persistence.creativePointLifecycle.recordProviderReceipt(receipt)
+            }
+            await persistence.actionLedger?.transitionSettlementStatus({ workspaceId, actionKey: actionId, from: ['authorized'], to: 'pending_receipt' })
+          } catch (recordError) {
+            // Preserve the provider's unknown outcome and its active holds; a
+            // failed evidence write must not be misreported as a model failure.
+            console.error('model unknown correlation persistence failed', { workspaceId, actionId, code: (recordError as { code?: unknown })?.code ?? 'MODEL_UNKNOWN_RECEIPT_WRITE_FAILED' })
+          }
         }
-        await persistence.actionLedger?.transitionSettlementStatus({ workspaceId, actionKey: actionId, from: ['authorized'], to: 'pending_receipt' })
       } else await releaseReservedModelPoints(workspaceId, actionId, '文案候选生成失败')
       throw error
     }
