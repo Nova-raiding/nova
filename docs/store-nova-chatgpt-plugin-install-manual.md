@@ -184,15 +184,14 @@ ChatGPT 宿主已经加载或验收通过。
 3. 由平台运营先为该商家建立人工店铺记录并导入商品资料，商家在插件中选择被分配的店铺与商品。**当前上线档为 `manual`，不接入六平台 OAuth，插件内没有“经平台官方页面授权”这一步**（`platform.connect`、`platform.store.list` 已从商家工具面隐藏，调用得到 `Unknown tool`）；
 4. 需要生成、审核、批准时按对话中的一次性确认继续；需要内容上线时，由运营在官方商家后台人工发布并回填结果，插件不提供 `publish.*` 工具。
 
-商家在花钱之前就应知道三类硬前置条件，缺任何一项都会被服务端拒绝：
+商家在花钱之前应确认创意点和套餐权益；缺少时服务端会拒绝：
 
 | 前置条件 | 未满足时返回 |
 | --- | --- |
 | 创意点余额**已知**且大于 0 | `CREATIVE_POINTS_UNAVAILABLE`（503，工作区没有点数状态记录、余额未知；全新工作区即此状态）/ `CREATIVE_POINTS_EXHAUSTED`（402，余额为 0）/ `CREATIVE_POINTS_INSUFFICIENT`（402，余额不足） |
 | 有效月付套餐权益 | `COMMERCIAL_ENTITLEMENT_REQUIRED`（402） |
-| 生产素材扫描器已配置 | `IMAGE_SOURCE_ASSET_INVALID`（409，素材未通过扫描）；`GENERATED_IMAGE_SCAN_REQUIRED`（409，生成结果仍在隔离区） |
 
-**只买创意点包不能创作**：点包只增加余额，公开目录中只有月付套餐 `basic`（¥2000）/ `growth`（¥5000）才产生套餐权益快照（`packages/persistence/src/commercial-contract-repository.ts` 的 `validatePeriod` 与核销路径）。店铺绑定也仍然必要：未绑定店铺时商品同步、正式任务与发布返回 `STORE_ONBOARDING_REQUIRED`（428）。扫描器由平台配置（`ASSET_SCANNER_MODE=clamav_worker` + 签名回执），商家无需也不能提交扫描证据。
+**只买创意点包不能创作**：点包只增加余额，公开目录中只有月付套餐 `basic`（¥2000）/ `growth`（¥5000）才产生套餐权益快照（`packages/persistence/src/commercial-contract-repository.ts` 的 `validatePeriod` 与核销路径）。店铺绑定也仍然必要：未绑定店铺时商品同步、正式任务与发布返回 `STORE_ONBOARDING_REQUIRED`（428）。当前 101 demo 使用 `ASSET_SCANNER_MODE=deferred` 和 `DEMO_UNSCANNED_ASSETS_ENABLED=true`，授权上传的 `unscanned` 素材可进入 demo 工作流，无需等待 ClamAV 回执。其他启用扫描的正式环境仍按其配置处理；素材的访问权限、商用权益、模型鉴权、创意点和成本门禁不会因 deferred 模式取消。
 
 商家不会把平台登录密码交给插件，插件也不会保存平台 access token。店铺选择始终以“平台 + 店铺账号”为范围，同名店铺不会自动选第一家。
 
@@ -228,7 +227,7 @@ ChatGPT 宿主已经加载或验收通过。
 | `CREATIVE_POINTS_EXHAUSTED`（402） | 创意点余额为 0，零余额先于操作分类，除恢复类方法外全部拒绝 | 在商家后台购买创意点包或月付套餐；不要绕过门禁 |
 | `COMMERCIAL_ENTITLEMENT_REQUIRED`（402） | 余额可能够，但没有有效月付套餐权益快照 | 购买月付套餐（`basic` ¥2000 / `growth` ¥5000）。只买点包不会产生权益 |
 | `COMMERCIAL_PAYMENT_PROVIDER_UNAVAILABLE`（503） | 服务端未配置 `COMMERCIAL_PAYMENT_PROVIDER`，订单未创建、未落库 | 平台管理员配置支付通道；这是平台侧缺失，商家重试无效 |
-| `IMAGE_SOURCE_ASSET_INVALID`（409） | 素材未通过生产安全扫描、商用权益或 AI 修改许可 | 平台会自动扫描，等待即可；扫描通过后按提示确认权益。不要手工改扫描状态 |
+| `IMAGE_SOURCE_ASSET_INVALID`（409） | 素材不符合当前环境的来源、访问权限、商用权益或 AI 修改许可；启用扫描的环境也可能因扫描状态拒绝 | 查看服务端返回的具体原因并补齐授权资料；只有实际启用扫描且显示待扫描时才等待回执，不要手工改扫描状态 |
 | 生成/支付按钮不可用 | 创意点准入、套餐权益、模型成本证据或支付 provider 未通过 | 只查看服务端返回的阻断原因；不要改前端金额或绕过门禁 |
 
 ## F. 安全边界
@@ -252,7 +251,7 @@ ChatGPT 宿主已经加载或验收通过。
 - [ ] 新会话调用 `onboarding.status` 能返回真实工作区/引导状态，而不是 MCP 配置缺失。
 - [ ] 如启用宿主中转，`npm run codex:relay:validate` 通过，且密钥没有写入 `config.toml`。
 - [ ] 服务端已配置 `COMMERCIAL_PAYMENT_PROVIDER`，且商业目录中已有可售的月付套餐（`basic` / `growth`）。**未配置时商家下单返回 503 且订单不落库，运营的人工核验也找不到订单，交付后客户将无法自助开通。**
-- [ ] 生产素材扫描器已按 `ASSET_SCANNER_MODE=clamav_worker` 配置并能签发扫描回执；否则素材永远停在隔离区。
+- [ ] 101 demo 的上传模式为 `ASSET_SCANNER_MODE=deferred`、`DEMO_UNSCANNED_ASSETS_ENABLED=true`，已用授权素材验证 `unscanned` 上传与读取；其他正式环境按其实际扫描配置单独验收。
 - [ ] 模型 usage/cost evidence、支付回调和发布 canary 仍按生产门禁单独验收；当前人工平台流程不要求六平台 OAuth。
 
 相关文档：
