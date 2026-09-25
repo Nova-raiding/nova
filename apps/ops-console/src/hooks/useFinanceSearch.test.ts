@@ -41,6 +41,15 @@ describe("finance search hook helpers", () => {
     expect(financeErrorMessage({ code: "INVALID_REQUEST" }, "财务记录加载失败，请重试。"))
       .toBe("财务记录加载失败，请重试。");
   });
+
+  it("classifies finance access, session, and network failures", () => {
+    const errorWithCode = (code: string) => Object.assign(new Error("request failed"), { code });
+    expect(financeErrorMessage(errorWithCode("FORBIDDEN"), "fallback")).toContain("财务读取权限");
+    expect(financeErrorMessage(errorWithCode("UNAUTHENTICATED"), "fallback")).toContain("重新登录");
+    expect(financeErrorMessage(errorWithCode("SESSION_EXPIRED"), "fallback")).toContain("重新登录");
+    expect(financeErrorMessage(errorWithCode("API_NETWORK_ERROR"), "fallback")).toContain("财务接口");
+    expect(financeErrorMessage(new TypeError("Failed to fetch"), "fallback")).toContain("财务接口");
+  });
 });
 
 const memoryStorage = () => {
