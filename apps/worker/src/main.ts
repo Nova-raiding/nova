@@ -2371,6 +2371,11 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
       const providerRequestId = requireImageProviderRequestId(actionId)
       imageWorkerTrace('provider_result', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, provider_request_id: providerRequestId, image_count: images.length })
       await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'provider_started', ownerToken, providerRequestId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+      // The usage callback has already recorded the relay receipt. Verify its
+      // API-owned settlement and our receipt before asking the API to expose
+      // the generated image; the callback enforces the same delivery gate.
+      await creativePointSettlement.settleForDelivery(event, [providerRequestId], 'image_generation.execute')
+      imageWorkerTrace('creative_points_settled', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, provider_request_id: providerRequestId })
       try {
         await postImageGenerationResult({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, result: { intent_hash: intentHash, owner_token: ownerToken, provider_request_id: providerRequestId, images }, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
         imageWorkerTrace('callback_accepted', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, provider_request_id: providerRequestId, image_count: images.length })
@@ -2379,14 +2384,6 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'outcome_unknown', ownerToken, errorCode: 'IMAGE_GENERATION_CALLBACK_UNCERTAIN', errorMessage: error instanceof Error ? error.message : 'image callback outcome unknown', ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }).catch(() => undefined)
         throw error
       }
-      // Image generation has the same commercial delivery boundary as text
-      // generation: a provider result may be archived, but the reserved
-      // creative points must not remain active after a successful delivery.
-      // The image usage sink records the provider receipt while the provider
-      // response is being parsed; settle only after the API accepted the
-      // archived result, so a failed callback cannot charge the merchant.
-      await creativePointSettlement.settleForDelivery(event, [providerRequestId], 'image_generation.execute')
-      imageWorkerTrace('creative_points_settled', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, provider_request_id: providerRequestId })
       // The callback proves application acceptance; complete the execution
       // lease only after that boundary succeeds. A failed completion remains
       // replayable/reconcilable and must not be acknowledged as completed.

@@ -22417,11 +22417,18 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     if (!requested) throw new DomainError('IMAGE_GENERATION_EVENT_INVALID', '图片生成回执未绑定有效的请求事件', 409)
     if (requested.payload.intent_hash !== intentHash) throw new DomainError('IMAGE_GENERATION_EVENT_INVALID', '图片生成回执的请求事件意图不匹配', 409)
     const execution = persistence.imageGenerationExecutions ? await persistence.imageGenerationExecutions.get({ workspaceId, jobId }) : undefined
-    if (job.state === 'succeeded' && job.archiveState === 'archived' && job.outputs?.length) {
-      await requireChargedImageDeliveryEvidence(workspaceId, job.id, requested, callback.provider_request_id ?? execution?.providerRequestId ?? '')
+    // A successful provider callback can leave archived assets pending their
+    // scan. The job is not yet `succeeded`, but its outputs already belong to
+    // this callback and must not be archived a second time on replay.
+    if (job.outputs?.length) {
+      if (callback.error || !ownerToken || execution?.eventId !== eventId || execution.ownerToken !== ownerToken
+        || !callback.provider_request_id || callback.provider_request_id !== execution.providerRequestId) {
+        throw new DomainError('IMAGE_GENERATION_CALLBACK_REPLAY_MISMATCH', '重复图片回执与已接受的执行身份或 Provider 请求不一致', 409)
+      }
+      await requireChargedImageDeliveryEvidence(workspaceId, job.id, requested, callback.provider_request_id)
       await persistImageGenerationCompletion(workspaceId, job)
-      if (execution?.state === 'provider_started' && execution.eventId === eventId && execution.ownerToken === ownerToken) await persistence.imageGenerationExecutions!.markCompleted({ workspaceId, jobId, ownerToken })
-      return send(res, 200, workspaceId, { job_id: job.id, state: job.state, archive_state: job.archiveState, already_completed: true }, null, req)
+      if (execution.state === 'provider_started' && job.archiveState === 'archived' && imageJobOutputsAreClean(job)) await persistence.imageGenerationExecutions!.markCompleted({ workspaceId, jobId, ownerToken })
+      return send(res, 200, workspaceId, { job_id: job.id, state: job.state, archive_state: job.archiveState, already_completed: true, reconciliation_required: job.archiveState !== 'archived' || !imageJobOutputsAreClean(job) }, null, req)
     }
     if (!ownerToken || !execution || execution.eventId !== eventId || execution.ownerToken !== ownerToken || execution.state !== 'provider_started') throw new DomainError('IMAGE_GENERATION_EXECUTION_LEASE_LOST', '图片生成回执没有有效的 provider 执行租约', 409, { retryable: false, reconciliation_required: true })
     const providerRequestId = callback.provider_request_id ?? ''
@@ -22707,10 +22714,12 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   }
   if (req.method === 'POST' && path === '/v1/internal/model-usage') {
     await requireWorkerAuthorization(req)
-    const deferCreativePointSettlementToWorker = verifiedWorkerRequestRoles.get(req) === 'generation'
     const workspaceId = headerRequired(req, 'x-workspace-id')
     const input = await body(req)
     const modality = input.modality
+    // Image delivery checks the settled charge in its result callback. Finish
+    // the image charge when the verified usage arrives, before that callback.
+    const deferCreativePointSettlementToWorker = verifiedWorkerRequestRoles.get(req) === 'generation' && modality !== 'image'
     const model = typeof input.model === 'string' ? input.model.trim() : ''
     const actionId = typeof input.actionId === 'string' ? input.actionId.trim() : undefined
     const runKey = typeof input.runKey === 'string' ? input.runKey.trim() : undefined

@@ -38,17 +38,17 @@ describe('creative point relay settlement PostgreSQL E2', () => {
       const receipts = new PostgresCreativePointLifecycleRepository(app)
       await points.grant({ workspaceId: 'ws_relay', idempotencyKey: 'grant', sourceType: 'test_approved_adjustment', sourceId: 'relay-e2', points: 10 })
       const reservation = await points.reserve({ workspaceId: 'ws_relay', idempotencyKey: 'reserve-success', actionKey: 'generation.execute', rateCardVersion: 'rate-v1', points: 3 })
-      const unknownReservation = await points.reserve({ workspaceId: 'ws_relay', idempotencyKey: 'reserve-unknown', actionKey: 'generation.execute', rateCardVersion: 'rate-v1', points: 2 })
-      const event = (reservationId: string, quotedPoints: number, id: string): DurableOutboxEvent => ({
+      const unknownReservation = await points.reserve({ workspaceId: 'ws_relay', idempotencyKey: 'reserve-unknown', actionKey: 'generation.execute.unknown', rateCardVersion: 'rate-v1', points: 2 })
+      const event = (reservationId: string, quotedPoints: number, id: string, actionId = 'generation.execute'): DurableOutboxEvent => ({
         id, workspaceId: 'ws_relay', aggregateId: id, eventType: 'generation.requested', sequence: 1, createdAt: new Date().toISOString(),
-        payload: { action_id: 'generation.execute', commercial_access_snapshot: { schema_version: 1, decision_id: id, workspace_id: 'ws_relay', operation: 'generation.execute', access_mode: 'POINT_CHARGED', access_revision: 'revision-1', balance_state: 'known', entitlement_snapshot_id: 'entitlement-1', entitlement_snapshot_checksum: 'b'.repeat(64), rate_version: 'rate-v1', quoted_points: quotedPoints, reservation_id: reservationId, decided_at: new Date().toISOString() } },
+        payload: { action_id: actionId, commercial_access_snapshot: { schema_version: 1, decision_id: id, workspace_id: 'ws_relay', operation: 'generation.execute', access_mode: 'POINT_CHARGED', access_revision: 'revision-1', balance_state: 'known', entitlement_snapshot_id: 'entitlement-1', entitlement_snapshot_checksum: 'b'.repeat(64), rate_version: 'rate-v1', quoted_points: quotedPoints, reservation_id: reservationId, decided_at: new Date().toISOString() } },
       })
       const bridge = new CreativePointRelaySettlement(points, receipts, 'relay.e2')
 
       const succeededEvent = event(reservation.value.id, 3, 'evt_success')
       const providerRequestId = await bridge.recordSucceeded(succeededEvent, { modality: 'text', model: 'model-e2', providerRequestId: 'provider-success-e2', inputTokens: 4, outputTokens: 6, totalTokens: 10, costCny: 0.08, observedAt: new Date().toISOString() })
       await expect(bridge.settleForDelivery(succeededEvent, [providerRequestId!])).rejects.toMatchObject({ code: 'MODEL_USAGE_SETTLEMENT_EVIDENCE_MISMATCH', providerSucceeded: true, reconciliationRequired: true })
-      await bridge.recordProviderOutcome(event(unknownReservation.value.id, 2, 'evt_unknown'), { providerOutcome: 'unknown', providerRequestId: 'provider-unknown-e2' })
+      await bridge.recordProviderOutcome(event(unknownReservation.value.id, 2, 'evt_unknown', 'generation.execute.unknown'), { providerOutcome: 'unknown', providerRequestId: 'provider-unknown-e2' })
 
       const states = await database.query<{ id: string; status: string }>(`SELECT id,status FROM creative_point_reservations WHERE workspace_id='ws_relay' ORDER BY id`)
       expect(Object.fromEntries(states.rows.map(row => [row.id, row.status]))).toMatchObject({ [reservation.value.id]: 'active', [unknownReservation.value.id]: 'active' })
