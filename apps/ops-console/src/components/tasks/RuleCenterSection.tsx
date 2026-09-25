@@ -138,12 +138,12 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
           style={{ marginBottom: 16 }}
         />
       ) : null}
-      <Alert type="info" showIcon title="平台规则人工导入说明" description="上传文件只会创建带官方依据的公共平台规则草稿；规则管理员必须完成独立审批并激活，激活后才会对所有商家工作区可见。商家自己的运营约束仍应在工作区知识库维护，不能替代平台限制。" style={{ marginBottom: 16 }} />
+      <Alert type="info" showIcon title="平台规则人工导入说明" description="上传文件只会创建未验证的内部草稿，不会进入商家规则、生成预检或发布前复检；普通审批不能把人工材料激活为平台限制。正式平台规则必须从核验的官方来源整理为受信签名清单，再由规则同步服务验证并导入。商家自己的运营约束仍应在工作区知识库维护，不能替代平台限制。" style={{ marginBottom: 16 }} />
       <Table
         rowKey="id"
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={rules}
-        locale={{ emptyText: "暂无平台规则；可配置签名清单，或上传带官方依据的 Markdown 生成待审核草稿" }}
+        locale={{ emptyText: "暂无已生效平台规则；可配置签名清单同步，或上传 Markdown 保存内部待核验草稿（不会进入商家插件）" }}
         scroll={{ x: 900 }}
         columns={[
           { title: "规则包", dataIndex: "packId" },

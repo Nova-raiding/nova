@@ -15,6 +15,9 @@ describe("official platform rule boundary", () => {
   it("does not expose an internal draft creation form on the official rules page", () => {
     const html = renderToStaticMarkup(<RuleCenterSection model={{ canRules: true, rules: [], updateRuleStatus: async () => true } as unknown as OpsConsoleModel} />);
     expect(html).toContain("平台规则人工导入说明");
+    expect(html).toContain("不会进入商家规则、生成预检或发布前复检");
+    expect(html).toContain("受信签名清单");
+    expect(html).not.toContain("独立审批并激活");
     expect(html).not.toContain("rule-draft-create");
     expect(html).not.toContain("创建规则草稿");
   });
