@@ -39,7 +39,7 @@ export function OpsPage({
       tabIndex={-1}
     >
       <Space orientation="vertical" size={20} className="content-stack">
-        {!hideTitle || actions ? <header className="ops-page-header">
+        {!hideTitle || actions ? <header className={`ops-page-header${hideTitle ? " ops-page-header-actions-only" : ""}`}>
           {!hideTitle ? <div className="ops-page-heading">
             {eyebrow ? <Typography.Text className="ops-page-eyebrow">{eyebrow}</Typography.Text> : null}
             <HeadingTag className="ops-page-title">{title}</HeadingTag>
