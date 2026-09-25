@@ -149,6 +149,7 @@ import { projectPlatformCapabilityEvidence } from './platform-capability-respons
 import { MemoryPasswordAuthRepository, PostgresPasswordAuthRepository, type PasswordAccount, type PasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import { MemoryKnowledgeRepository, PostgresKnowledgeRepository, type KnowledgeDocument, type KnowledgeRepository, type KnowledgeSearchResult } from '../../../packages/persistence/src/knowledge.js'
 import { projectImportedProductsToKnowledge } from '../../../packages/application/src/knowledge-import.js'
+import { creativePointRequestOwnership, mayReleaseCreativePointReservation } from '../../../packages/application/src/creative-point-reservation-ownership.js'
 import { generationKnowledgeReceiptHash, MAX_FROZEN_GENERATION_KNOWLEDGE_DOCUMENTS } from '../../../packages/application/src/knowledge-execution-fence.js'
 
 const port = Number(process.env.PORT ?? 8787)
@@ -3797,8 +3798,12 @@ async function parseAssetFacts(input: { name: string; mimeType: string; body: Ui
     const quote = quoteOcrPointHold(taskCap.limitCny, policyVersion)
     const rateVersion = `${quote.policyVersion}:${rate.rateCardId}:${rate.version}:${rate.checksum}`
     let reservation
+    let reservationOwnership: ReturnType<typeof creativePointRequestOwnership> | undefined
     try {
-      reservation = (await persistence.creativePoints.reserve({ workspaceId, actionKey, idempotencyKey: `commercial.reserve:${actionKey}`, points: quote.points, rateCardVersion: rateVersion })).value
+      const reserved = await persistence.creativePoints.reserve({ workspaceId, actionKey, idempotencyKey: `commercial.reserve:${actionKey}`, points: quote.points, rateCardVersion: rateVersion })
+      reservation = reserved.value
+      reservationOwnership = creativePointRequestOwnership(reserved)
+      if (reserved.replayed) throw new DomainError('CREATIVE_ACTION_BUSY', '相同收费动作已有请求持有创意点预留；当前请求不会重复派发或释放该预留', 409, { action_key: actionKey, reservation_id: reservation.id, provider_dispatched: false, retryable: false, reconciliation_required: true })
     } catch (reserveError) {
       const code = (reserveError as { code?: string })?.code
       if (code === 'CREATIVE_POINT_INSUFFICIENT') throw new DomainError(code, '创意点不足，请先充值后再解析图片', 402, { required_points: quote.points, next_actions: ['commercial.order.create', 'creative-points.balance.get'] })
@@ -3808,7 +3813,7 @@ async function parseAssetFacts(input: { name: string; mimeType: string; body: Ui
     try {
       await recordActionSettlement({ workspaceId, actionKey, actionKind: 'model_ocr', settlement: 'included_quota', amountFen: 0, actorId: input.actorId ?? 'merchant', description: '商品图片 OCR 候选事实解析', settlementStatus: 'authorized' })
     } catch (ledgerError) {
-      await persistence.creativePoints.release({ workspaceId, reservationId: reservation.id, idempotencyKey: `commercial.release:${actionKey}`, at: new Date().toISOString() })
+      if (mayReleaseCreativePointReservation(reservationOwnership, reservation)) await persistence.creativePoints.release({ workspaceId, reservationId: reservation.id, idempotencyKey: `commercial.release:${actionKey}:${reservation.id}`, at: new Date().toISOString() })
       throw ledgerError
     }
     try {
@@ -3819,7 +3824,7 @@ async function parseAssetFacts(input: { name: string; mimeType: string; body: Ui
       if (preDispatch || definitelyFailed) {
         const decision = decideOcrPointFinalization({ reservedPoints: reservation.points, providerOutcome: 'failed', definitiveFailure: true })
         if (decision.action !== 'release') throw new Error('OCR known-failure point release decision was rejected')
-        await persistence.creativePoints.release({ workspaceId, reservationId: reservation.id, idempotencyKey: `commercial.release:${actionKey}`, at: new Date().toISOString() })
+        if (mayReleaseCreativePointReservation(reservationOwnership, reservation)) await persistence.creativePoints.release({ workspaceId, reservationId: reservation.id, idempotencyKey: `commercial.release:${actionKey}:${reservation.id}`, at: new Date().toISOString() })
         await persistence.actionLedger.transitionSettlementStatus({ workspaceId, actionKey, from: ['authorized', 'pending_receipt'], to: 'released' })
         throw providerError
       }
@@ -4578,7 +4583,17 @@ async function reserveCreativePointsForModel(workspaceId: string, actionKey: str
   if (!decision || decision.classification !== 'POINT_CHARGED') return null
   if (!persistence.creativePoints || decision.quoted_points === null || !decision.rate_card_version) throw new DomainError('CREATIVE_POINT_BALANCE_REPOSITORY_UNAVAILABLE', '创意点预留仓储或费率快照未配置，已拒绝调用模型', 503)
   try {
-    return (await persistence.creativePoints.reserve({ workspaceId, actionKey, idempotencyKey: `commercial.reserve:${actionKey}`, points: decision.quoted_points, rateCardVersion: decision.rate_card_version })).value
+    const reserved = await persistence.creativePoints.reserve({ workspaceId, actionKey, idempotencyKey: `commercial.reserve:${actionKey}`, points: decision.quoted_points, rateCardVersion: decision.rate_card_version })
+    if (reserved.replayed) {
+      throw new DomainError('CREATIVE_ACTION_BUSY', '相同收费动作已有请求持有创意点预留；当前请求不会重复派发或释放该预留', 409, {
+        action_key: actionKey,
+        reservation_id: reserved.value.id,
+        provider_dispatched: false,
+        retryable: false,
+        reconciliation_required: true,
+      })
+    }
+    return { ...reserved.value, ...creativePointRequestOwnership(reserved) }
   } catch (error) {
     const code = (error as { code?: string })?.code
     if (code === 'CREATIVE_POINT_INSUFFICIENT' || code === 'CREATIVE_POINT_BALANCE_UNKNOWN') throw new DomainError(code, code === 'CREATIVE_POINT_INSUFFICIENT' ? '创意点不足，请先购买创意点包后再生成' : '创意点余额暂不可用，请稍后重试', code === 'CREATIVE_POINT_INSUFFICIENT' ? 402 : 503, { next_actions: ['commercial.order.create', 'commercial.catalog.get', 'creative-points.balance.get'] })
@@ -4586,11 +4601,12 @@ async function reserveCreativePointsForModel(workspaceId: string, actionKey: str
   }
 }
 
-async function releaseReservedModelPoints(workspaceId: string, actionKey: string, reason: string) {
+async function releaseReservedModelPoints(workspaceId: string, actionKey: string, reason: string, owner?: ReturnType<typeof creativePointRequestOwnership> | null) {
+  if (!owner?.requestOwnsReservation) return
   const repository = persistence.creativePoints
   const reservation = repository?.getReservationByActionKey ? await repository.getReservationByActionKey(workspaceId, actionKey) : null
-  if (!reservation || reservation.status !== 'active') return
-  await repository!.release({ workspaceId, reservationId: reservation.id, idempotencyKey: `commercial.release:${actionKey}`, at: new Date().toISOString() }).catch(() => undefined)
+  if (!reservation || !mayReleaseCreativePointReservation(owner, reservation)) return
+  await repository!.release({ workspaceId, reservationId: reservation.id, idempotencyKey: `commercial.release:${actionKey}:${reservation.id}`, at: new Date().toISOString() }).catch(() => undefined)
   void reason
 }
 
@@ -12446,7 +12462,7 @@ async function merchantFirstValuePreview(workspaceId: string, params: JsonObject
     const actionId = `content-draft:${createHash('sha256').update(`${workspaceId}:${idempotencyKey}`).digest('hex')}`
     const decision = await enforceMcpCommercialAccess(req, workspaceId, 'content.draft.generate')
     await assertProviderActionCanStart(workspaceId, actionId)
-    await reserveCreativePointsForModel(workspaceId, actionId, decision)
+    const creativeReservation = await reserveCreativePointsForModel(workspaceId, actionId, decision)
     let generated
     try {
       await recordActionSettlement({ workspaceId, actionKey: actionId, actionKind: 'model_text', settlement: 'included_quota', amountFen: 0, actorId: requestActor(req), description: '未绑定商品文案候选生成', settlementStatus: 'authorized' })
@@ -12470,7 +12486,7 @@ async function merchantFirstValuePreview(workspaceId: string, params: JsonObject
             console.error('model unknown correlation persistence failed', { workspaceId, actionId, code: (recordError as { code?: unknown })?.code ?? 'MODEL_UNKNOWN_RECEIPT_WRITE_FAILED' })
           }
         }
-      } else await releaseReservedModelPoints(workspaceId, actionId, '文案候选生成失败')
+      } else await releaseReservedModelPoints(workspaceId, actionId, '文案候选生成失败', creativeReservation)
       throw error
     }
     await requireSettledContentExecutionEvidence(workspaceId, actionId)
@@ -19182,7 +19198,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       try {
         job = service.enqueueImageGeneration({ workspaceId, productId, idempotencyKey, imageMode, ...(typeof params.size === 'string' ? { size: params.size } : {}), ...(skuIds ? { skuIds } : {}), ...(effectiveSourceAssetIds ? { sourceAssetIds: effectiveSourceAssetIds } : {}), ...(typeof params.task_id === 'string' && params.task_id.trim() ? { taskId: params.task_id.trim() } : {}), ...(typeof params.content_version_id === 'string' && params.content_version_id.trim() ? { contentVersionId: params.content_version_id.trim() } : {}), ...(typeof params.direction === 'string' ? { direction: params.direction } : {}), ...(typeof params.count === 'string' && /^\d+$/u.test(params.count) ? { count: Number(params.count) } : {}), ...(marketingBrief ? { marketingBrief } : {}) })
       } catch (error) {
-        await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片任务创建失败')
+        await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片任务创建失败', creativeReservation)
         if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片任务创建失败' })
         else if (billingRequired) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: billingActorId, reason: '图片任务创建失败' })
         throw error
@@ -19323,14 +19339,14 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       try {
         retried = service.retryImageGeneration({ workspaceId, jobId, idempotencyKey: retryKey, ...(typeof params.expected_revision === 'string' && /^\d+$/u.test(params.expected_revision) ? { expectedRevision: Number(params.expected_revision) } : {}) })
       } catch (error) {
-        await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试未创建任务')
+          await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试未创建任务', creativeReservation)
         if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片安全重试未创建任务' })
         else await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: billingActorId, reason: '图片安全重试未创建任务' })
         throw error
       }
       const retryAuthorizationSnapshot = durableRetry ? workerAuthorizationSnapshot(req, workspaceId, retried.job.id, 'image_generation.execute', { method: 'catalog.image.retry', product_id: retried.job.productId, source_product_version: retried.job.sourceProductVersion, intent_hash: retried.job.intentHash }) : undefined
       if (durableRetry && !retryAuthorizationSnapshot) {
-        await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试缺少身份授权快照')
+        await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试缺少身份授权快照', creativeReservation)
         throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '图片安全重试缺少新任务的持久身份授权快照，已停止入队', 503)
       }
       if (!retried.alreadyExists) {
@@ -19339,7 +19355,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       }
       if (durableRetry) {
         if (!persistence.persistSnapshotAndEvent || !persistence.outbox || !persistence.imageGenerationExecutions) {
-          await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试持久化未配置')
+          await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试持久化未配置', creativeReservation)
           throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '图片安全重试的 Durable Worker 尚未完成生产配置', 503)
         }
         if (!existingRetry) {
@@ -19356,7 +19372,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         return result({ job_id: archived.id, previous_job_id: previous.id, state: archived.state, archive_state: archived.archiveState, retry_count: archived.retryCount ?? 1, creative_points: creativePoints, job: publicImageJob(archived), ...(imageJobOutputsAreClean(archived) ? { images: completed.images } : {}) })
       } catch (error) {
         if (!providerSucceededButSettlementPending(error)) {
-          await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试失败')
+          await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试失败', creativeReservation)
           if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片安全重试失败' })
           else if (!existingRetry) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: billingActorId, reason: '图片安全重试失败' })
         }
@@ -20381,17 +20397,17 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           }
           return result(jobWithQueueMetadata(job, workspaceId, 'generation'))
         } catch (error) {
-          await releaseReservedModelPoints(workspaceId, `model:${usageKey}`, '内容生成任务创建失败')
+          await releaseReservedModelPoints(workspaceId, `model:${usageKey}`, '内容生成任务创建失败', creativeReservation)
           if ((usage.charged || usage.walletDebited) && !existing) await refundTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? 'merchant', '异步生成任务创建失败')
           if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId)
           throw error
         }
       }
       const usageKey = `content.generate:${task.id}`
-      await reserveCreativePointsForModel(workspaceId, `model:${usageKey}`, commercialDecision)
+      const creativeReservation = await reserveCreativePointsForModel(workspaceId, `model:${usageKey}`, commercialDecision)
       const usage = await observeLegacyTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant')
       let draft
-      try { draft = await service.generateDraft(task.id, undefined, `model:${usageKey}`) } catch (error) { if (providerSucceededButSettlementPending(error)) await markTaskUsageProviderOutcomePending(workspaceId, usageKey); else { await releaseReservedModelPoints(workspaceId, `model:${usageKey}`, '内容生成失败'); if (usage.charged || usage.walletDebited) await refundTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? 'merchant', '内容生成失败') } throw error }
+      try { draft = await service.generateDraft(task.id, undefined, `model:${usageKey}`) } catch (error) { if (providerSucceededButSettlementPending(error)) await markTaskUsageProviderOutcomePending(workspaceId, usageKey); else { await releaseReservedModelPoints(workspaceId, `model:${usageKey}`, '内容生成失败', creativeReservation); if (usage.charged || usage.walletDebited) await refundTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? 'merchant', '内容生成失败') } throw error }
       const execution = await requireSettledContentExecutionEvidence(workspaceId, 'model:' + usageKey)
       await persistSnapshot(workspaceId, 'content_version', draft, draft as unknown as Record<string, unknown>)
       await persistSnapshot(workspaceId, 'task', service.getTask(task.id), service.getTask(task.id) as unknown as Record<string, unknown>)
@@ -21200,7 +21216,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const commercialDecision = await enforceMcpCommercialAccess(req, workspaceId, method)
       requirePlatformModelCostGate('image_edit')
       const walletDebitKey = `image-edit:${candidate.value.id}`
-      await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
+      const creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
       await observeLegacyWalletShadow(workspaceId)
       let walletRefunded = false
       const refundEditWallet = async (reason: string) => {
@@ -21228,7 +21244,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         return result({ ...candidate.value, product_protection: productProtection, images, rendering: 'candidate', platformPublished: false, execution: executionContract('image_edit', true), job: publicImageJob(archived) })
       } catch (error) {
         if (!providerSucceededButSettlementPending(error)) {
-          await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片编辑失败')
+          await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片编辑失败', creativeReservation)
           await refundEditWallet('图片编辑任务或 provider 失败')
         }
         throw error
@@ -21273,7 +21289,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const modelRunKey = request.value.modality === 'video' && request.value.output === 'rendering'
         ? `video:${walletDebitKey}`
         : walletDebitKey
-      await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
+      const creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
       await observeLegacyWalletShadow(workspaceId)
       let rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>> | undefined
       let generatedImages: string[] | undefined
@@ -21310,7 +21326,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (generatedText) requireRuleSafeGenerationText(rulePreflight, [generatedText], '多模态生成结果命中当前平台规则禁用表达')
       } catch (error) {
         if (!providerSucceededButSettlementPending(error)) {
-          await releaseReservedModelPoints(workspaceId, walletDebitKey, '多模态生成失败')
+          await releaseReservedModelPoints(workspaceId, walletDebitKey, '多模态生成失败', creativeReservation)
           await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '多模态生成 provider 调用失败' })
         }
         throw error
@@ -21367,7 +21383,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const videoRequestKey = suppliedVideoRequestKey || randomUUID()
       const walletDebitKey = `video:${videoRequestKey}`
       const modelRunKey = request.value.output === 'rendering' ? `video:${walletDebitKey}` : walletDebitKey
-      await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
+      const creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
       // Persist the authorization before calling the provider. Model usage
       // receipts carry this action key and the ledger enforces the FK, so a
       // successful provider request can be settled durably and idempotently.
