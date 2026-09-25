@@ -158,6 +158,14 @@ describe('runtime database role verification', () => {
     expect(bootstrap).toContain('GRANT UPDATE (consumed_at,consumed_operation_id,reservation_id,reservation_token,reserved_at,reservation_expires_at,reservation_revision) ON TABLE interactive_confirmation_tickets TO merchant_app')
   })
 
+  it('re-grants the paged entitlement projection after the migration role reset', () => {
+    const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
+
+    expect(bootstrap).toContain("to_regprocedure('public.merchant_entitlement_snapshots_v3(integer,timestamptz,text)') IS NOT NULL")
+    expect(bootstrap).toContain('REVOKE ALL ON FUNCTION public.merchant_entitlement_snapshots_v3(integer,timestamptz,text) FROM PUBLIC')
+    expect(bootstrap).toContain('GRANT EXECUTE ON FUNCTION public.merchant_entitlement_snapshots_v3(integer,timestamptz,text) TO merchant_app')
+  })
+
   it('bootstraps the local receiver role and re-applies its deny-by-default boundary', () => {
     const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
 
