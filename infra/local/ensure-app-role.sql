@@ -293,6 +293,17 @@ $$;
 GRANT CONNECT ON DATABASE merchant TO merchant_ops;
 GRANT USAGE ON SCHEMA public TO merchant_ops;
 
+-- Release preflight compares migration history through both runtime roles. Keep
+-- this one metadata table readable without opening any business tables.
+DO $$
+BEGIN
+  IF to_regclass('public.schema_migrations') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL PRIVILEGES ON TABLE public.schema_migrations FROM merchant_ops';
+    EXECUTE 'GRANT SELECT ON TABLE public.schema_migrations TO merchant_ops';
+  END IF;
+END
+$$;
+
 -- Keep this bootstrap script usable by migrations <= 051. Later feature-flag
 -- tables receive the same grants once they exist; older fresh databases must
 -- not fail merely because those relations have not been created yet.

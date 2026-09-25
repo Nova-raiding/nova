@@ -143,6 +143,18 @@ describe('ECS database migration-chain preflight', () => {
   it('is wired before the runtime role/RLS boundary gate', () => {
     const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
     expect(preflight).toContain('MIGRATION_CHAIN_MODE=prefix sh infra/scripts/verify-database-migration-chain.sh')
+    expect(preflight.indexOf('ensure-ops-migration-history-read.sh')).toBeLessThan(preflight.indexOf('verify-database-migration-chain.sh'))
     expect(preflight.indexOf('verify-database-migration-chain.sh')).toBeLessThan(preflight.indexOf('verify-runtime-db-role.sh'))
+  })
+
+  it('grants the Ops role read-only access to the migration ledger', () => {
+    const preflightGrant = readFileSync('infra/scripts/ensure-ops-migration-history-read.sh', 'utf8')
+    const roleBootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
+    for (const source of [preflightGrant, roleBootstrap]) {
+      expect(source).toContain('public.schema_migrations')
+      expect(source).toContain('GRANT SELECT ON TABLE public.schema_migrations TO merchant_ops')
+      expect(source).toContain('REVOKE ALL PRIVILEGES ON TABLE public.schema_migrations FROM merchant_ops')
+    }
+    expect(preflightGrant).not.toMatch(/GRANT\s+ALL\s+ON\s+(?:TABLE|ALL\s+TABLES)/iu)
   })
 })
