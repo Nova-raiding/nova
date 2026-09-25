@@ -3,7 +3,11 @@ WORKDIR /app
 COPY demo/merchant-studio/package.json demo/merchant-studio/package-lock.json ./
 ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
-RUN npm ci --prefer-offline --no-audit --fund=false
+# Bound npm's parallel network and Node heap use on the small ECS build host.
+# This step was being SIGKILLed (137), which left API/worker images pushed but
+# prevented the six-image manifest from being completed.
+ENV npm_config_maxsockets=2 NODE_OPTIONS=--max-old-space-size=1024
+RUN npm ci --prefer-offline --no-audit --fund=false --maxsockets=2
 COPY demo/merchant-studio ./
 # Product spreadsheet import reuses the browser-safe parsing helpers from the
 # workspace application package. Keep the package outside the demo app's npm

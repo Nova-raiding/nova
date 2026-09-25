@@ -27,6 +27,10 @@ function releaseRevision(): string {
 describe('bounded ECS release image builder', () => {
   it('builds the complete repository-owned image set, binds source identity, and bounds cache', () => {
     const source = readFileSync(script, 'utf8')
+    const merchantUiDockerfile = readFileSync('infra/docker/ui.Dockerfile', 'utf8')
+    expect(merchantUiDockerfile).toContain('npm_config_maxsockets=2')
+    expect(merchantUiDockerfile).toContain('NODE_OPTIONS=--max-old-space-size=1024')
+    expect(merchantUiDockerfile).toContain('npm ci --prefer-offline --no-audit --fund=false --maxsockets=2')
     for (const artifact of ['merchant-api', 'merchant-worker', 'merchant-ui', 'merchant-ops-ui', 'payment-gateway', 'pilot-gateway']) {
       expect(source).toContain(`build_image ${artifact} `)
     }
