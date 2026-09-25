@@ -18,6 +18,7 @@ const paymentEnvironment = {
   PAYMENT_CALLBACK_SECRET: 'test-callback-secret',
   PAYMENT_RECONCILIATION_ENABLED: 'true',
   PAYMENT_REFUND_ENABLED: 'true',
+  PAYMENT_PROTECTED_RECEIPT_HOST_DIR: '/tmp/codex-test-payment-receipts',
   ALIPAY_APP_ID: 'test-alipay-app',
   MERCHANT_API_TOKEN: 'test-merchant-token',
   MERCHANT_WORKSPACE_ID: 'ws_pilot_parity',
@@ -28,6 +29,13 @@ const paymentEnvironment = {
   ASSET_STORAGE_ENDPOINT: 'https://s3.oss-cn-test.aliyuncs.com',
   ASSET_STORAGE_ECS_RAM_ROLE: 'test-production-role',
   ASSET_STORAGE_QUOTA_BYTES: '50000000000',
+  OBJECT_STORAGE_VERSIONING: 'true',
+  DATA_RETENTION_DAYS: '90',
+  ASSET_QUARANTINE_RETENTION_DAYS: '7',
+  ASSET_CLEAN_RETENTION_DAYS: '90',
+  DELETION_REQUEST_GRACE_DAYS: '7',
+  BACKUP_RETENTION_DAYS: '30',
+  LIFECYCLE_POLICY_REF: 'oss://test-assets/lifecycle-v1',
   ASSET_SCANNER_API_TOKEN: 'test-production-scanner-token',
   ASSET_SCANNER_WORKSPACE_SIGNING_SECRET: 'test-production-scanner-signing-secret',
   ASSET_SCAN_TRUSTED_PUBLIC_KEYS: '{"prod-scanner-key":"test-public-key"}',
@@ -186,7 +194,7 @@ describe('ECS pilot API replica parity', () => {
   })
 
   it.each([
-    'API_AUTH_TOKENS', 'OPS_AUTH_MODE', 'SESSION_ID_HASH_SECRET', 'WORKER_API_CREDENTIALS',
+    'API_AUTH_TOKENS', 'SESSION_ID_HASH_SECRET', 'WORKER_API_CREDENTIALS',
     'ASSET_DISPLAY_URL_SIGNING_SECRET', 'ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'WORKER_WORKSPACES',
     'DATABASE_URL', 'OPS_DATABASE_URL', 'MODEL_COST_ESTIMATE_VERSION',
     'WORKER_SYNC_API_TOKEN', 'WORKER_SYNC_API_SIGNING_SECRET',

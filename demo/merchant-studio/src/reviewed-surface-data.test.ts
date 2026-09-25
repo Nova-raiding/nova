@@ -29,15 +29,15 @@ import productsCapture from './fixtures/products.capture.json'
  */
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 /**
- * `App.tsx` with its own comments removed, line by line.
+ * `App.tsx` with its own block comments removed, line by line.
  *
  * The "must stay deleted" assertions below are about code, and the comments that
  * explain why a fabrication was removed have to be able to name it. Without this
  * the explanation would be the thing the test failed on.
  *
  * It is a line-based state machine rather than `/\/\*[\s\S]*?\*\//g` on purpose.
- * That regex is what this helper was first written with, and `accept="image/*,video/*"`
- * in the upload dialog opened a "comment" that swallowed the next 200 000
+ * That regex is what this helper was first written with, and the upload
+ * dialog's wildcard image/video MIME attribute opened a "comment" that swallowed the next 200 000
  * characters of the file — so every "not.toContain" below was quietly asserting
  * over a hole instead of over the code. The mutation run caught it; the
  * `appCode.length` floor below is what stops it coming back.
@@ -102,7 +102,7 @@ describe('the source helper this file asserts through', () => {
     // Markers from both ends of the file, so a truncated `appCode` fails loudly.
     expect(appCode).toContain("import { Fragment")
     expect(appCode).toContain('material-upload-note')
-    expect(appSource).toContain('accept="image/*,video/*"')
+    expect(appSource).toContain("'image/*,video/*'")
     // Comments really were removed (otherwise the assertions are on the wrong text).
     // The probe is a token that survives only in a comment, so this stays a test
     // of the stripper rather than of the code's contents.

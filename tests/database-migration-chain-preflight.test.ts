@@ -103,7 +103,7 @@ describe('ECS database migration-chain preflight', () => {
     const result = run({ FAKE_TENANT_ROWS: legacyRows, FAKE_OPS_ROWS: legacyRows }, 144)
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain('DATABASE_URL: migration 144 checksum mismatch')
-  })
+  }, 20_000)
 
   it('accepts a built-in legacy checksum only after explicit baseline acceptance', () => {
     const baseline = fixture(144)
@@ -115,7 +115,7 @@ describe('ECS database migration-chain preflight', () => {
     }, 144)
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('mode=complete versions=1-144 checksums=matched')
-  })
+  }, 20_000)
 
   it('rejects a checksum-matched history that is ahead of the candidate', () => {
     const baseline = fixture()

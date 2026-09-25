@@ -277,6 +277,11 @@ jobs:
           packages/persistence/src/data-lifecycle-repository.postgres.test.ts
           packages/persistence/src/image-generation-before-provider.release.postgres.test.ts
           packages/persistence/src/knowledge-index-cas.release.postgres.test.ts
+          packages/persistence/src/knowledge-generation-claim-boundary.postgres.test.ts
+          packages/persistence/src/migration-250-role-replay.postgres.test.ts
+          packages/persistence/src/creative-point-action-claim.release.postgres.test.ts
+          packages/persistence/src/charged-text-dispatch.postgres.test.ts
+          packages/persistence/src/charged-text-no-delivery.release.postgres.test.ts
           packages/persistence/src/migration-106-release.postgres.test.ts
           packages/persistence/src/migration-109-release.postgres.test.ts
           packages/persistence/src/migration-127-release.postgres.test.ts

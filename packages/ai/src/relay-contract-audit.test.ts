@@ -53,18 +53,24 @@ describe('five-modality relay contract audit', () => {
   })
 
   it.each(['text', 'image', 'image_edit', 'ocr', 'video'] as const)('requires durable cost evidence for %s usage', async modality => {
+    const payload = modality === 'image' || modality === 'image_edit'
+      ? { usage: { output_image_count: 1 } }
+      : { usage: { total_tokens: 3 } }
     await expect(emitRelayUsage(
       async () => {},
-      { id: `audit-${modality}`, usage: { total_tokens: 3 } },
+      { id: `audit-${modality}`, ...payload },
       new Headers(),
       { modality, model: `${modality}-model`, context: { providerAttemptId: `attempt-${modality}` } },
     )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'cost' })
   })
 
   it.each(['text', 'image', 'image_edit', 'ocr', 'video'] as const)('does not settle %s when request identity exists but cost evidence is absent', async modality => {
+    const usage = modality === 'image' || modality === 'image_edit'
+      ? { output_image_count: 1 }
+      : { total_tokens: 3 }
     await expect(emitRelayUsage(
       async () => {},
-      { data: { request_id: `relay-${modality}-usage`, usage: { total_tokens: 3 } } },
+      { data: { request_id: `relay-${modality}-usage`, usage } },
       new Headers(),
       { modality, model: `${modality}-model`, context: { providerAttemptId: `attempt-${modality}` } },
     )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'cost', providerSucceeded: true })

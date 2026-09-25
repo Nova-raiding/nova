@@ -56,6 +56,7 @@ describe("alert poll authorization boundary", () => {
     export const describeOpsError = error => (error && error.message) || '运营数据加载失败，请重试。';
     export const readOpsConnectionConfig = () => ({ apiBase: 'http://ops.test', workspaceId: 'ws-1', actorId: '', token: '', workbench: 'workspace' });
     export const clearOpsConnectionConfig = () => undefined;
+    export const clearExpiredOpsSession = () => undefined;
     export const recordOpsBootstrapTrace = () => undefined;
     export const MAX_OPS_EXPORT_RESPONSE_BYTES = 16777216;
     export const OPS_EXPORT_TIMEOUT_MS = 30000;
