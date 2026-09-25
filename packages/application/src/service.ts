@@ -4274,7 +4274,7 @@ export class MerchantService {
       ],
       ...(verifiedPublishReceipt ? { publishReceipt: verifiedPublishReceipt } : {}),
     })
-    if (!deliveryBuild.ok) throw new DomainError('DELIVERY_BUNDLE_INVALID', '交付包 manifest 构建失败，已停止导出不可校验文件', 409, { errors: deliveryBuild.errors.map(error => ({ code: error.code, path: error.path, message: error.message })) })
+    if ('errors' in deliveryBuild) throw new DomainError('DELIVERY_BUNDLE_INVALID', '交付包 manifest 构建失败，已停止导出不可校验文件', 409, { errors: deliveryBuild.errors.map(error => ({ code: error.code, path: error.path, message: error.message })) })
     const deliveryVerification = verifyDeliveryBundle(deliveryBuild.manifest, deliveryBuild.files, deliveryBuild.manifestHash)
     if (!deliveryVerification.valid) throw new DomainError('DELIVERY_BUNDLE_VERIFICATION_FAILED', '交付包自校验失败，已停止导出', 500, { errors: deliveryVerification.errors })
     const compatibleManifest = { ...manifest, delivery_bundle_schema_version: deliveryBuild.manifest.schemaVersion, delivery_bundle_manifest_hash: deliveryBuild.manifestHash, delivery_bundle_verification: deliveryVerification, delivery_bundle: deliveryBuild.manifest }
