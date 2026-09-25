@@ -103,8 +103,21 @@ export interface CommercialQueryState {
 
 const positiveInteger = (value: string | null): number => {
   const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
 };
+
+const maxUncachedPageRecoveryHops = 5;
+
+export function commercialPageRecoveryPlan(requestedPage: number, cursors: Record<number, string> | undefined) {
+  const safePage = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const firstPageToFetch = Math.max(1, ...Object.keys(cursors ?? {})
+    .map(Number)
+    .filter((page) => Number.isSafeInteger(page) && page > 1 && page <= safePage && Boolean(cursors?.[page])));
+  return {
+    firstPageToFetch,
+    targetPage: safePage - firstPageToFetch > maxUncachedPageRecoveryHops ? firstPageToFetch : safePage,
+  };
+}
 
 export function readCommercialQuery(search: string): CommercialQueryState {
   const params = new URLSearchParams(search);
@@ -304,8 +317,13 @@ export function useCommercialOperations(
           commercialPageCursorsRef.current[target] = {};
           commercialPageItemsRef.current[target] = {};
         }
-        let firstPageToFetch = queryState.page;
-        while (firstPageToFetch > 1 && !commercialPageCursorsRef.current[target]?.[firstPageToFetch]) firstPageToFetch -= 1;
+        const pagePlan = commercialPageRecoveryPlan(queryState.page, commercialPageCursorsRef.current[target]);
+        if (pagePlan.targetPage !== queryState.page) {
+          setQueryState((current) => ({ ...current, page: pagePlan.targetPage }));
+          if (typeof window !== "undefined") window.history.replaceState({}, "", commercialQueryUrl(window.location, { page: pagePlan.targetPage }));
+          return;
+        }
+        const firstPageToFetch = pagePlan.firstPageToFetch;
         let paged: CommercialPage<unknown> | undefined;
         let lastFetchedPage = firstPageToFetch - 1;
         for (let pageNumber = firstPageToFetch; pageNumber <= queryState.page; pageNumber += 1) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canLoadCommercialView, commercialQueryUrl, commercialTargetWorkspaceUrl, commercialViewUrl, readCommercialQuery, readCommercialTargetWorkspace, readCommercialView } from "./useCommercialOperations.js";
+import { canLoadCommercialView, commercialPageRecoveryPlan, commercialQueryUrl, commercialTargetWorkspaceUrl, commercialViewUrl, readCommercialQuery, readCommercialTargetWorkspace, readCommercialView } from "./useCommercialOperations.js";
 import type { AuthorizationProjection } from "../authz/authorization.js";
 
 describe("commercial operations deep links", () => {
@@ -49,5 +49,13 @@ describe("commercial operations deep links", () => {
 
   it("normalizes invalid pagination and sorting rather than trusting the deep link", () => {
     expect(readCommercialQuery("?view=ledger&page=-4&order=sideways")).toMatchObject({ view: "ledger", page: 1, order: "" });
+    expect(readCommercialQuery("?view=orders&page=9007199254740992").page).toBe(1);
+  });
+
+  it("bounds uncached deep-page recovery while preserving cached cursor navigation", () => {
+    expect(commercialPageRecoveryPlan(1_000_000_000, undefined)).toEqual({ firstPageToFetch: 1, targetPage: 1 });
+    expect(commercialPageRecoveryPlan(3, undefined)).toEqual({ firstPageToFetch: 1, targetPage: 3 });
+    expect(commercialPageRecoveryPlan(1_000_000_000, { 5: "cursor-5" })).toEqual({ firstPageToFetch: 5, targetPage: 5 });
+    expect(commercialPageRecoveryPlan(100, { 100: "cursor-100" })).toEqual({ firstPageToFetch: 100, targetPage: 100 });
   });
 });
