@@ -153,10 +153,10 @@ describe('safe default test launcher', () => {
   it('releases the runner lock if creating its isolated storage root fails', async () => {
     const runtime = fixture()
     const release = vi.fn(async () => undefined)
-    vi.mocked(runtime.acquireLock).mockResolvedValue(release)
+    vi.mocked(runtime.acquireLock!).mockResolvedValue(release)
     vi.mocked(runtime.createStorageRoot).mockRejectedValue(new Error('storage root failed'))
     await expect(runSafeTests([], {}, runtime)).rejects.toThrow('storage root failed')
-    expect(runtime.acquireLock).toHaveBeenCalledOnce()
+    expect(runtime.acquireLock!).toHaveBeenCalledOnce()
     expect(release).toHaveBeenCalledOnce()
     expect(runtime.runVitest).not.toHaveBeenCalled()
     expect(runtime.removeStorageRoot).not.toHaveBeenCalled()
