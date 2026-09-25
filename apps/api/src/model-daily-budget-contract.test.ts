@@ -6,6 +6,7 @@ const budgetSource = readFileSync(new URL('./model-budget-runtime.ts', import.me
 const relayUsageSource = readFileSync(new URL('./model-relay-usage-runtime.ts', import.meta.url), 'utf8')
 const reconciliationSource = readFileSync(new URL('./model-usage-reconciliation.ts', import.meta.url), 'utf8')
 const imageHandlersSource = readFileSync(new URL('./mcp-image-handlers.ts', import.meta.url), 'utf8')
+const multimodalHandlersSource = readFileSync(new URL('./mcp-multimodal-handlers.ts', import.meta.url), 'utf8')
 const generationRoutesSource = readFileSync(new URL('./http-generation-job-create.ts', import.meta.url), 'utf8')
 
 describe('daily model budget provider boundary', () => {
@@ -50,7 +51,7 @@ describe('daily model budget provider boundary', () => {
   it('keeps image retry, edit, multimodal and video point releases behind a known-failure guard', () => {
     for (const reason of ['图片安全重试失败', '图片编辑失败', '多模态生成失败', '视频生成失败']) {
       const release = `await releaseReservedModelPoints(workspaceId, walletDebitKey, '${reason}'`
-      const region = imageHandlersSource.includes(release) ? imageHandlersSource : source
+      const region = imageHandlersSource.includes(release) ? imageHandlersSource : multimodalHandlersSource.includes(release) ? multimodalHandlersSource : source
       const releaseAt = region.indexOf(release)
       expect(releaseAt, reason).toBeGreaterThanOrEqual(0)
       const branch = region.slice(region.lastIndexOf('} catch (error) {', releaseAt), region.indexOf('throw error', releaseAt))
@@ -62,9 +63,10 @@ describe('daily model budget provider boundary', () => {
   it('does not refund a successful provider call when multimodal or video event persistence fails', () => {
     for (const reason of ['多模态结果记录失败', '视频结果记录失败']) {
       const refund = `await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '${reason}' })`
-      const refundAt = source.indexOf(refund)
+      const region = multimodalHandlersSource.includes(refund) ? multimodalHandlersSource : source
+      const refundAt = region.indexOf(refund)
       expect(refundAt, reason).toBeGreaterThanOrEqual(0)
-      const branch = source.slice(source.lastIndexOf('} catch (error) {', refundAt), source.indexOf('throw error', refundAt))
+      const branch = region.slice(region.lastIndexOf('} catch (error) {', refundAt), region.indexOf('throw error', refundAt))
       expect(branch, reason).toContain(`if (!providerExecuted) ${refund}`)
     }
   })
@@ -90,11 +92,11 @@ describe('daily model budget provider boundary', () => {
   })
 
   it('keeps synchronous multimodal, video plans, and image retries on their reserved run identity', () => {
-    expect(source).toContain("const modelRunKey = request.value.modality === 'video' && request.value.output === 'rendering'")
-    expect(source).toContain("const modelRunKey = request.value.output === 'rendering' ? `video:${walletDebitKey}` : walletDebitKey")
+    expect(multimodalHandlersSource).toContain("const modelRunKey = request.value.modality === 'video' && request.value.output === 'rendering'")
+    expect(multimodalHandlersSource).toContain("const modelRunKey = request.value.output === 'rendering' ? `video:${walletDebitKey}` : walletDebitKey")
     expect(imageHandlersSource).toMatch(/service\.completeImageGeneration\(\{ workspaceId, jobId: retried\.job\.id, runKey: imageRunKey(?:,|\s*\})/u)
-    expect(source).toMatch(/service\.completeImageGeneration\(\{ workspaceId, jobId: imageJob\.id, runKey: modelRunKey(?:,|\s*\})/u)
-    expect(source).toContain('usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey }')
+    expect(multimodalHandlersSource).toMatch(/service\.completeImageGeneration\(\{ workspaceId, jobId: imageJob\.id, runKey: modelRunKey(?:,|\s*\})/u)
+    expect(multimodalHandlersSource).toContain('usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey }')
   })
 
   it('keeps legacy image entitlement as read-only shadow and retains historical settlement compatibility', () => {

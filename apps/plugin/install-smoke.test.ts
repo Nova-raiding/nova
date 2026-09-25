@@ -507,8 +507,8 @@ printf '%s\n' Darwin
     const skill = readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')
     expect(skill).toContain('ecommerce-video-marketing')
     expect(skill).toContain('storyboard-prompt-assistant')
-    expect(skill).toContain('读取商品事实与素材可用状态')
-    expect(skill).toContain('正式启用扫描的环境还须核对真实扫描结果')
+    expect(skill).toContain('读取商品事实与素材扫描结果')
+    expect(skill).toContain('只有真实扫描通过才可标记扫描完成')
     expect(skill).toContain('用 `creative.brief` 形成结构化视频 brief')
     // The merchant bridge does not expose the video rendering tool by default.
     // The entry skill must gate the call on the current tools/list surface
@@ -518,7 +518,7 @@ printf '%s\n' Darwin
     expect(skill).not.toContain('调用 `multimodal.video.request`')
     expect(skill).toContain('查询同一 provider job')
     expect(skill).toContain('下载、签名校验、对象归档和商品保真复核')
-    expect(skill).toContain('正式启用扫描的环境还须核对真实扫描结果')
+    expect(skill).toContain('正式启用扫描的环境仅在服务端明确要求时等待其结果')
     expect(skill).toContain('不能用脚本、分镜或 fixture 视频冒充可发布商品视频')
     expect(skill).toContain('不调用宿主视频工具、不自行选择 provider')
     expect(skill).toContain('开头 3 秒内应出现明确商品或问题场景')

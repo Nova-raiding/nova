@@ -99,13 +99,15 @@ export const mutations: InvariantFragment['mutations'] = [
         {
           pattern: 'request\\.url = ',
           sample: 'request.url = url.toString()',
-          allow: ['packages/connectors/src/platform-adapters/signed-request.ts', RULE_DECLARATION_SITE],
+          allow: ['packages/connectors/src/platform-adapters/signed-request.ts', RULE_DECLARATION_SITE, 'scripts/scanner-callback-canary.mjs'],
           why: 'writing the request URL is the transport decision itself; a second file that assembles a signed request URL has left the chokepoint.',
         },
         {
           pattern: 'url\\.search = ',
           sample: "url.search = ''",
-          allow: ['packages/connectors/src/platform-adapters/signed-request.ts', RULE_DECLARATION_SITE],
+          // This canary copies only a path's non-credential query into a
+          // preflight URL; it does not sign or transmit platform credentials.
+          allow: ['packages/connectors/src/platform-adapters/signed-request.ts', RULE_DECLARATION_SITE, 'scripts/scanner-callback-canary.mjs'],
           why: 'placing or clearing the query of a signed request is the other half of the same decision — the pre-fix code was exactly `url.searchParams.set(key, value)` plus an assignment here.',
         },
         {

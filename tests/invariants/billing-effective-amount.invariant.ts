@@ -150,7 +150,7 @@ export const mutations: InvariantMutation[] = [
     },
     evidenceFailsWith: 'the effective amount of a reversal-first debit key',
     uniqueness: {
-      callers: ['apps/api/src/server.ts'],
+      callers: ['apps/api/src/server.ts', 'apps/api/src/wallet-amount-helpers.ts'],
       noSecondImplementation: [
         {
           pattern: 'finalAmountFen - [A-Za-z_$][\\w.$]*amountFen',

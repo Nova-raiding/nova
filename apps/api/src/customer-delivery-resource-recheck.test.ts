@@ -36,6 +36,9 @@ function deferred() {
 type Envelope = { data: { id?: string; scanStatus?: string; result?: { parseStatus: string; extractedFacts?: Record<string, unknown> } } | null; error: { code: string; message?: string } | null }
 let api: typeof import('./server.js')
 let base = ''
+const approvedOcrRate = { rateCardId: 'resource-recheck-ocr-approved', version: 1, actionCode: 'ocr.extract' as const,
+  unit: 'request' as const, pricingMode: 'variable' as const, variableFormula: { kind: 'cost_cny_x2_ceil_min1' as const },
+  checksum: 'c'.repeat(64), effectiveAt: '2026-09-25T00:00:00.000Z' }
 
 beforeAll(async () => {
   for (const key of ['DATABASE_URL', 'OPS_DATABASE_URL', 'REDIS_URL', 'PGHOST']) if (process.env[key]) throw new Error(`Use safe-tests: inherited ${key} is forbidden`)
@@ -45,9 +48,13 @@ beforeAll(async () => {
   vi.stubEnv('SESSION_ID_HASH_SECRET', 'resource-recheck-controlled-session-secret')
   vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true')
   vi.stubEnv('MERCHANT_TEST_APPROVED_RATES', 'true')
+  vi.stubEnv('MODEL_DAILY_CNY_LIMIT', '20')
+  vi.stubEnv('MODEL_MAX_TASK_COST_CNY', '2')
   vi.stubEnv('DEPLOYMENT_PROFILE', 'local_acceptance')
   vi.stubEnv('LOCAL_COMPOSE', 'true')
   vi.stubEnv('ALLOW_LOCAL_ASSET_SCAN_FIXTURE', 'true')
+  vi.stubEnv('MODEL_MAX_TASK_COST_CNY', '2')
+  vi.stubEnv('MODEL_DAILY_CNY_LIMIT', '20')
   vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
   api = await import('./server.js')
   await api.persistenceReady
@@ -79,6 +86,7 @@ describe('inline OCR rechecks exact resource permissions after preflight', () =>
     const token = `operator_token_${suffix}`
     const brandId = `brand_${suffix}`
     const persistence = await api.persistenceReady
+    api.setApprovedOcrRateForTests(approvedOcrRate)
     expect(persistence.mode).toBe('memory')
     const previousBrands = persistence.brandUnits
     const brands = new MemoryBrandUnitRepository()

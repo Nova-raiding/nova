@@ -137,8 +137,8 @@ describe('manual registration stays platform-operations only', () => {
   })
 
   it('can never be admitted under a shadow-only authorization rollout', () => {
-    const server = read('apps/api/src/server.ts')
-    const enforced = sliceBetween(server, 'const alwaysEnforcedMcpMethods = new Set([', '])')
+    const authorizationRuntime = read('apps/api/src/authorization-policy-runtime.ts')
+    const enforced = sliceBetween(authorizationRuntime, 'const alwaysEnforcedMcpMethods = new Set([', '])')
     expect(enforced).toContain(`'${METHOD}'`)
   })
 
