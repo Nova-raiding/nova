@@ -63,7 +63,7 @@ describe('canonical password identity and local plugin authentication', () => {
     expect(rotated.status).toBe(200)
     const rotatedEnvelope = await rotated.json() as { data?: { result?: Record<string, unknown> } }
     const rotatedResult = (rotatedEnvelope.data?.result ?? rotatedEnvelope.data ?? {}) as Record<string, unknown>
-    expect(rotatedResult).toMatchObject({ token_type: 'Bearer', expires_in: 600 })
+    expect(rotatedResult).toMatchObject({ token_type: 'Bearer', expires_in: 600, scope: 'merchant', workspace_id: workspaceId })
     const revoke = await fetch(`${base}/v1/auth/mcp-token/revoke`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: rotatedResult?.refresh_token }) })
     expect(revoke.status).toBe(200)
     await expect(repository.authenticateMcpAccessToken({ accessToken: String(rotatedResult?.access_token), clientId: 'local-desktop', issuer: base, audience: `${base}/mcp`, resource: `${base}/mcp`, scope: ['merchant'] })).resolves.toBeUndefined()

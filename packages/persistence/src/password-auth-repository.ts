@@ -67,6 +67,7 @@ export interface McpOAuthTokenPair {
   refreshToken: string
   expiresIn: number
   scope: string[]
+  workspaceId: string
 }
 export interface PasswordAuthRepository {
   register(input: { login: string; password: string; enterpriseName: string; contactName: string; termsAgreed: boolean }): Promise<{ account: PasswordAccount; applicationId: string }>
@@ -297,7 +298,7 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
     const access: McpTokenRecord = { ...common, id: randomUUID(), kind: 'access', tokenHash: tokenDigest(accessToken), expiresAt: now + MCP_ACCESS_MS }
     const refresh: McpTokenRecord = { ...common, id: randomUUID(), kind: 'refresh', tokenHash: tokenDigest(refreshToken), expiresAt: now + MCP_REFRESH_MS }
     this.mcpTokens.set(access.tokenHash, access); this.mcpTokens.set(refresh.tokenHash, refresh)
-    return { accessToken, refreshToken, expiresIn: MCP_ACCESS_MS / 1000, scope: [...code.scope] }
+    return { accessToken, refreshToken, expiresIn: MCP_ACCESS_MS / 1000, scope: [...code.scope], workspaceId: code.workspaceId }
   }
   async exchangeMcpAuthorizationCode(input: McpOAuthContext & { redirectUri: string; code: string; codeVerifier: string }) {
     if (!validPkceVerifier(input.codeVerifier)) throw mcpOAuthError('MCP_OAUTH_INVALID_GRANT')
@@ -590,7 +591,7 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
   private async insertMcpTokenPair(client: SqlClient, input: McpOAuthContext & { accountId: string; identityId: string; workspaceId: string; accountAuthEpoch: number; identityAuthEpoch: number }, familyId: string = randomUUID()): Promise<McpOAuthTokenPair> {
     const now = new Date(); const accessToken = newOpaqueToken(); const refreshToken = newOpaqueToken(); const accessId = randomUUID(); const refreshId = randomUUID()
     await client.query(`INSERT INTO mcp_oauth_tokens (id,family_id,token_kind,token_hash,client_id,account_id,identity_id,workspace_id,scope,issuer,audience,resource,account_auth_epoch,identity_auth_epoch,issued_at,expires_at) VALUES ($1,$2,'access',$3,$4,$5,$6,$7,$8::text[],$9,$10,$11,$12,$13,$14,$15),($16,$2,'refresh',$17,$4,$5,$6,$7,$8::text[],$9,$10,$11,$12,$13,$14,$18)`, [accessId, familyId, tokenDigest(accessToken), input.clientId, input.accountId, input.identityId, input.workspaceId, input.scope, input.issuer, input.audience, input.resource, input.accountAuthEpoch, input.identityAuthEpoch, now.toISOString(), new Date(now.getTime() + MCP_ACCESS_MS).toISOString(), refreshId, tokenDigest(refreshToken), new Date(now.getTime() + MCP_REFRESH_MS).toISOString()])
-    return { accessToken, refreshToken, expiresIn: MCP_ACCESS_MS / 1000, scope: [...input.scope] }
+    return { accessToken, refreshToken, expiresIn: MCP_ACCESS_MS / 1000, scope: [...input.scope], workspaceId: input.workspaceId }
   }
   async exchangeMcpAuthorizationCode(input: McpOAuthContext & { redirectUri: string; code: string; codeVerifier: string }) {
     if (!validPkceVerifier(input.codeVerifier)) throw mcpOAuthError('MCP_OAUTH_INVALID_GRANT')

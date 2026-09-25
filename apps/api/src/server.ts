@@ -21304,7 +21304,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const context = { clientId: 'local-desktop', issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
       try {
         const pair = await passwordAuthRepository.refreshMcpOAuthToken({ ...context, refreshToken })
-        return send(res, 200, 'unknown', { access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' ') }, null, req)
+        return send(res, 200, pair.workspaceId, { access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' '), workspace_id: pair.workspaceId }, null, req)
       } catch { throw new DomainError('MCP_OAUTH_INVALID_GRANT', '本地连接凭据已失效，请重新登录商家后台', 401) }
     }
     if (req.method === 'POST' && path === '/v1/auth/mcp-token/revoke') {
