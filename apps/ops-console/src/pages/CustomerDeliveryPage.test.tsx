@@ -562,7 +562,8 @@ describe("customer delivery read-only desktop interaction", () => {
       await closeDrawer(page);
       for (const index of [1, 2]) {
         await overview.getByRole("button", { name: "已完成", exact: true }).nth(index).click();
-        await expect.poll(() => page.getByRole("dialog").getByPlaceholder("可填写链接、截图说明或记录编号").first().inputValue()).toBe("已保存的检查记录");
+        const evidenceLabel = index === 1 ? "插件账户 · 证据说明" : "文案生成 · 证据说明";
+        await expect.poll(() => page.getByRole("dialog").getByLabel(evidenceLabel, { exact: true }).inputValue()).toBe("已保存的检查记录");
         await assertNoWrites(page, methods);
         await closeDrawer(page);
       }
@@ -667,7 +668,7 @@ describe("customer delivery read-only desktop interaction", () => {
         return [{ itemKey: "插件账号", completed: true, evidence: {} }];
       } });
       await row(page).getByRole("button", { name: "已完成", exact: true }).nth(1).click();
-      await expect.poll(() => page.getByPlaceholder("可填写链接、截图说明或记录编号").first().inputValue()).toBe("已保存的检查记录");
+      await expect.poll(() => page.getByLabel("插件账户 · 证据说明", { exact: true }).inputValue()).toBe("已保存的检查记录");
       // The antd button keeps a leaving loading icon whose label hides it from
       // an exact accessible-name match, so match on its text.
       const saveStep = page.getByRole("dialog").locator('button:has-text("保存当前环节")');
