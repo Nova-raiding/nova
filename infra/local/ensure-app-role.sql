@@ -190,6 +190,11 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.merchant_entitlement_snapshots_v2(integer) TO merchant_app;
   END IF;
 
+  IF to_regprocedure('public.merchant_entitlement_snapshots_v3(integer,timestamptz,text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.merchant_entitlement_snapshots_v3(integer,timestamptz,text) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.merchant_entitlement_snapshots_v3(integer,timestamptz,text) TO merchant_app;
+  END IF;
+
   IF to_regprocedure('public.merchant_onboarding_sku_v2()') IS NOT NULL THEN
     REVOKE ALL ON FUNCTION public.merchant_onboarding_sku_v2() FROM PUBLIC;
     GRANT EXECUTE ON FUNCTION public.merchant_onboarding_sku_v2() TO merchant_app;
