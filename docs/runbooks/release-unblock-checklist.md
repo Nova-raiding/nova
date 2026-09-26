@@ -95,8 +95,10 @@ sh infra/scripts/capture-ecs-capacity-evidence.sh plan
 release ID、Git SHA 和 ready 身份均与候选一致时才发送负载；身份请求与容量请求均不跟随重定向。
 隔离环境必须预先创建该 profile 所需的 `ws_capacity_0..N` 工作区，并为每个工作区绑定淘宝测试账号；采集会真实执行任务创建与 job admission，缺少账号时必须失败，不能把零任务报告当作覆盖证据。
 该入口只采集 API HTTP 与 job admission 原始观测，强制保留 `cloud_gate=false`，
-不能替代平台真实流量、故障注入、租户噪声隔离、六小时稳态和人工签署；最终
-capacity evidence 仍必须独立生成并通过 `deploy-preflight-ecs.sh` 的 cloud gate。
+不能替代平台真实流量、故障注入、租户噪声隔离、六小时稳态和人工签署。对
+`pilot_50` 等实际负载 profile，最终 capacity evidence 仍必须独立生成并通过
+`deploy-preflight-ecs.sh` 的 cloud gate；`no_load` profile 则按上文验证并签署
+未执行声明，不代表容量已验证，也不要求通过负载 cloud gate。
 
 ## 4.2 告警通道（当前未成立，NO-GO 前置条件）
 
