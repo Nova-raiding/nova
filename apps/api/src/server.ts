@@ -13349,9 +13349,8 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   // Local Compose runs over HTTP, where browsers correctly reject a Secure
   // cookie. Keep the production invariant while allowing the documented
   // local account/password flow to round-trip through Chromium.
-  const passwordCookie = (token: string, maxAge = 8 * 60 * 60) => `damai_session=${encodeURIComponent(token)}; Path=/; HttpOnly${isProduction() || publicRequestOrigin(req).startsWith('https://') || (req.socket as { encrypted?: boolean }).encrypted === true ? '; Secure' : ''}; SameSite=Lax; Max-Age=${maxAge}`
   if (req.method === 'OPTIONS') return send(res, 204, isProduction() ? 'unknown' : 'ws_demo', null, null, req)
-  if (await handlePasswordAuthRoute(req, res, path, { repository: passwordAuthRepository, readBody: limit => body(req, limit), send: (status, workspaceId, data) => send(res, status, workspaceId, data, null, req), production: isProduction(), publicOrigin: publicRequestOrigin(req), workspaceBootstrap: persistence.workspaceBootstrap ?? memoryWorkspaceBootstrap, onWorkspaceCreated: id => knownWorkspaces.add(id) })) return
+  if (await handlePasswordAuthRoute(req, res, path, { repository: passwordAuthRepository, readBody: limit => body(req, limit), send: (status, workspaceId, data) => send(res, status, workspaceId, data, null, req), production: isProduction(), publicOrigin: publicRequestOrigin(req), workspaceBootstrap: workspaceBootstrapRepositoryOverride ?? persistence.workspaceBootstrap ?? memoryWorkspaceBootstrap, onWorkspaceCreated: id => knownWorkspaces.add(id) })) return
   if (await handleLocalPluginConnectionRoute(req, res, path, url, { passwordAuth: passwordAuthRepository, connections: localPluginConnections, installInstances: localPluginInstallInstances, readBody: limit => body(req, limit), send: (status, workspaceId, data) => send(res, status, workspaceId || 'unknown', data, null, req) as void, production: isProduction(), integrationMode: mcpIntegrationMode(), publicOrigin: publicRequestOrigin(req) })) return
   if (isPasswordAuthRoute) {
     res.setHeader('cache-control', 'no-store')

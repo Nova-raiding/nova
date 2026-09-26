@@ -41,6 +41,9 @@ export async function handleLocalPluginConnectionRoute(req: IncomingMessage, res
     return current
   }
   res.setHeader('cache-control', 'no-store')
+  // The bridge image is allowed to run before 243/244. Never let its newer
+  // one-click branches query missing tables or issue a code before failing.
+  if (process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE) throw new DomainError('LOCAL_PLUGIN_BRIDGE_UNAVAILABLE', '本地插件一键连接将在数据库升级后开放', 503)
   if (req.method === 'POST' && path === '/v1/auth/local-plugin/install-instances/register') {
     if (process.env.LOCAL_PLUGIN_ONE_CLICK_ENABLED !== 'true') throw new DomainError('LOCAL_PLUGIN_ONE_CLICK_UNAVAILABLE', '本地插件一键连接尚未启用', 503)
     const input = await deps.readBody(16 * 1024)
