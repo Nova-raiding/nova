@@ -169,7 +169,22 @@ export class PostgresRuleRepository {
     })
   }
 
-  async transitionPublicStatus(input: { platform: string; packId: string; version: string; status: string; actorId: string; reason: string; occurredAt: string }): Promise<PersistedRuleVersion> {
+  async getPublicVersion(platform: string, packId: string, requestedVersion: string): Promise<PersistedRuleVersion | undefined> {
+    return withWorkspaceTransaction(this.publicWritePool, '__platform_rules__', async client => {
+      const result = await client.query<RuleVersionRow>(
+        `SELECT id, '__platform_rules__'::text AS workspace_id, pack_id, name, version, 'platform' AS scope,
+                NULL::text AS category, status, source_kind, source_reference, source_checked_at,
+                checksum, checks, created_at, updated_at, created_by, revision,
+                effective_from, effective_to, severity, action, NULL::text AS target_id,
+                platform AS scope_value, activated_at, deactivated_at
+           FROM public_platform_rule_versions
+          WHERE platform = $1 AND pack_id = $2 AND version = $3`, [platform, packId, requestedVersion],
+      )
+      return result.rows[0] ? version(result.rows[0]) : undefined
+    })
+  }
+
+  async transitionPublicStatus(input: { platform: string; packId: string; version: string; status: string; actorId: string; reason: string; occurredAt: string; auditData?: Record<string, unknown> }): Promise<PersistedRuleVersion> {
     return withWorkspaceTransaction(this.publicWritePool, '__platform_rules__', async client => {
       const updated = await client.query<RuleVersionRow>(
         `UPDATE public_platform_rule_versions
@@ -188,8 +203,8 @@ export class PostgresRuleRepository {
       if (!row) throw new Error('PUBLIC_RULE_VERSION_NOT_FOUND')
       await client.query(
         `INSERT INTO public_platform_rule_audits (id, rule_version_id, platform, version, action, actor_id, reason, occurred_at, data)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'{}'::jsonb)`,
-        [`public_rule_audit_${randomUUID()}`, row.id, input.platform, row.version, input.status === 'active' ? 'activated' : input.status === 'expired' ? 'expired' : 'deactivated', input.actorId, input.reason, input.occurredAt],
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,
+        [`public_rule_audit_${randomUUID()}`, row.id, input.platform, row.version, input.status === 'active' ? 'activated' : input.status === 'expired' ? 'expired' : 'deactivated', input.actorId, input.reason, input.occurredAt, JSON.stringify(input.auditData ?? {})],
       )
       return version(row)
     })

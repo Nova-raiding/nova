@@ -824,8 +824,9 @@ export function redactStorageReconciliation(report?: ReconciliationReport) {
 export interface RuleRepositoryPort {
   list(workspaceId: string, packId?: string): Promise<PersistedRuleVersion[]>
   listPublic?(workspaceId: string, platform?: string): Promise<PersistedRuleVersion[]>
+  getPublicVersion?(platform: string, packId: string, version: string): Promise<PersistedRuleVersion | undefined>
   insertPublicVersionWithAudit?(input: { version: Omit<PersistedRuleVersion, 'workspaceId' | 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }; audit: Omit<PersistedRuleAudit, 'workspaceId'> }): Promise<{ version: PersistedRuleVersion; audit: PersistedRuleAudit }>
-  transitionPublicStatus?(input: { platform: string; packId: string; version: string; status: string; actorId: string; reason: string; occurredAt: string }): Promise<PersistedRuleVersion>
+  transitionPublicStatus?(input: { platform: string; packId: string; version: string; status: string; actorId: string; reason: string; occurredAt: string; auditData?: Record<string, unknown> }): Promise<PersistedRuleVersion>
   insertVersion(input: Omit<PersistedRuleVersion, 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }): Promise<PersistedRuleVersion>
   appendAudit(input: PersistedRuleAudit): Promise<PersistedRuleAudit>
   listAudit(workspaceId: string, packId?: string): Promise<PersistedRuleAudit[]>

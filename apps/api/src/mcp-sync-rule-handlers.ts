@@ -166,7 +166,7 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
           if (status === 'active') throw new DomainError('RULE_ACTIVATION_REQUIRES_APPROVAL', '公共平台规则必须先创建草稿，再通过独立审批激活', 409)
           const publicId = `public_rule_${randomBytes(12).toString('hex')}`
           const publicVersion = await repository.insertPublicVersionWithAudit({
-            version: { id: publicId, packId, name, version: versionValue, scope, status: 'draft', sourceKind, sourceReference, sourceCheckedAt: new Date(sourceCheckedAt).toISOString(), checksum, checks, createdBy: principal.actorId, revision: 1, targetId: params.target_id, severity, action, ...(effectiveFrom ? { effectiveFrom } : {}), ...(effectiveTo ? { effectiveTo } : {}) },
+            version: { id: publicId, packId, name, version: versionValue, scope, status: 'draft', sourceKind, sourceReference, sourceCheckedAt: new Date(sourceCheckedAt).toISOString(), checksum, checks, createdBy: principal.actorId, revision: 1, scopeValue: params.target_id, severity, action, ...(effectiveFrom ? { effectiveFrom } : {}), ...(effectiveTo ? { effectiveTo } : {}) },
             audit: { id: `public_rule_audit_${randomBytes(12).toString('hex')}`, rulePackId: packId, ruleVersionId: publicId, version: versionValue, action: 'created', actorId: principal.actorId, reason, occurredAt: at, data: { checksum } },
           })
           return result(publicVersion.version)
@@ -193,7 +193,25 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
         if (params.public_scope === 'platform') {
           if (!repository.transitionPublicStatus || typeof params.platform !== 'string' || !SUPPORTED_PLATFORMS.includes(params.platform as Platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '公共平台规则状态变更缺少平台或公共规则仓储', 400)
           if (status === 'active' && !approval) throw new DomainError('RULE_ACTIVATION_REQUIRES_APPROVAL', '公共平台规则激活需要独立审批凭证', 409)
-          return result(await repository.transitionPublicStatus({ platform: params.platform, packId, version: versionValue, status, actorId: principal.actorId, reason, occurredAt: new Date().toISOString() }))
+          if (status === 'active') {
+            if (!repository.getPublicVersion) throw new DomainError('RULE_REPOSITORY_NOT_CONFIGURED', '公共平台规则无法读取待审批版本', 503)
+            const target = await repository.getPublicVersion(params.platform, packId, versionValue)
+            if (!target) throw new DomainError('RULE_VERSION_NOT_FOUND', '公共平台规则版本不存在', 404)
+            if (target.sourceKind !== 'official' || target.createdBy !== 'signed-rule-sync' || target.sourceReference.startsWith('manual://')) {
+              throw new DomainError('OFFICIAL_RULE_IMPORT_REQUIRED', '人工或未验证的公共规则草稿不能激活；请使用受信签名清单同步', 409)
+            }
+            if (approval?.approvedBy === target.createdBy) throw new DomainError('RULE_SEPARATION_OF_DUTIES_REQUIRED', '公共规则创建人与审批人必须分离', 409)
+          }
+          return result(await repository.transitionPublicStatus({
+            platform: params.platform,
+            packId,
+            version: versionValue,
+            status,
+            actorId: principal.actorId,
+            reason,
+            occurredAt: new Date().toISOString(),
+            ...(approval ? { auditData: { approval_ref: approval.approvalRef, approved_by: approval.approvedBy, approved_at: approval.approvedAt } } : {}),
+          }))
         }
         const rows = await repository.list(workspaceId, packId); const target = rows.find(row => row.version === versionValue)
         if (!target) throw new DomainError('RULE_VERSION_NOT_FOUND', '规则版本不存在', 404)
