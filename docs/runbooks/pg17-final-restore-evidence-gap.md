@@ -1,6 +1,6 @@
 # PG17 隔离恢复到最终签名证据：当前缺口
 
-状态：**NO-GO**。`restore-pg17-isolated.mjs` 的成功 JSON 是原始恢复记录，不是 `kind=restore` 的最终生产证据。它证明签名的 242 备份在新建 PG17 内部网络和卷中恢复，并执行候选 243/244 迁移；它没有执行或见证下列数据与应用验收。不得把这份 JSON 复制成其他检查的附件，也不得把本地 fixture、静态 `status=pass` 或容器健康状态签成生产恢复成功。
+状态：**NO-GO**。`restore-pg17-isolated.mjs` 的成功 JSON 是原始恢复记录，不是 `kind=restore` 的最终生产证据。它证明签名的 242 备份在新建 PG17 内部网络和卷中恢复，并执行候选归档声明的连续迁移（当前目标 254）；它没有执行或见证下列数据与应用验收。不得把这份 JSON 复制成其他检查的附件，也不得把本地 fixture、静态 `status=pass` 或容器健康状态签成生产恢复成功。
 
 ## 最小真实验收合同
 
@@ -21,7 +21,11 @@
 
 上述四项没有实际配置并在 101 上复核之前，owner 只能保留原始 PG17 capture，不能签发最终 `restore` 证据或继续生产迁移/切流。本文件是执行边界，不是成功证明。
 
-`infra/protected/compare-pg17-data-integrity.mjs` 可以比较两份独立取得的 `pg17-rowset-inventory/1` JSON：一份 `kind=live-backup-baseline`，一份 `kind=isolated-restore-observation`。每份必须绑定相同发布与备份摘要、各自数据库身份、UTC 观察时间，并为每张表提供 `name`、`row_count`、`canonical_rows_sha256`、`rls_policy_sha256`。调用者以 `--baseline`、`--restored`、`--capture`、`--output` 给出四个互异的绝对或相对路径；输出用 `O_EXCL` 创建的 0600 原始比较 JSON，失败仍留档。比较器只对已经取得的行摘要做确定性核对，**不负责从数据库采样、验证采样者身份或签发最终证据**。缺少受保护的备份前采样器与冻结基线时，不能用恢复后的数据反推一份 baseline。隔离 API/worker 的只读凭据、独立 Redis/队列、副作用阻断与真实桌面宿主入口也尚未配置，故目前没有安全的自动应用冒烟 runner。
+`infra/protected/compare-pg17-data-integrity.mjs` 可以比较两份独立取得的 `pg17-rowset-inventory/1` JSON：一份 `kind=live-backup-baseline`，一份 `kind=isolated-restore-observation`。每份必须绑定相同发布与备份摘要、各自数据库身份、UTC 观察时间，并为每张表提供 `name`、`row_count`、`canonical_rows_sha256`、`rls_policy_sha256`。调用者以 `--baseline`、`--restored`、`--capture`、`--output` 给出四个互异的绝对或相对路径；输出用 `O_EXCL` 创建的 0600 原始比较 JSON，失败仍留档。输入结构一致时结果状态为 `review_consistent`，它只表示给定摘要之间结构一致，**不负责从数据库采样、验证采样者身份或签发/接受最终证据**；结果始终保留 `final_production_evidence=false`。缺少受保护的备份前采样器与冻结基线时，不能用恢复后的数据反推一份 baseline。隔离 API/worker 的只读凭据、独立 Redis/队列、副作用阻断与真实桌面宿主入口也尚未配置，故目前没有安全的自动应用冒烟 runner。
+
+每份清单还必须声明 `row_canonicalization=pg17-canonical-rows/1` 和 `rls_canonicalization=pg17-rls-policy/1`。`infra/protected/pg17-rowset-canonical.mjs` 定义摘要的字节合同：行是数据库以预先固定的列顺序、类型输出规则生成的 UTF-8 JSON 字节，不在 Node 中重新解析或格式化；把所有行按原始字节排序，连同重复行逐条以 8 字节大端长度帧输入 SHA-256，先输入带零终止符的域分隔字节 `pg17-canonical-rows/1`。RLS 摘要先输入 `pg17-rls-policy/1` 域分隔符，再对启用/强制标记、逐条策略的规范 JSON 做同样的长度帧；策略按规范字节排序，策略角色排序。不同 PostgreSQL 主版本的 JSON、类型文本和策略表达式输出若有差异会导致保守失败，不能通过改写摘要消除。完整采样器还必须固定被采样表清单、记录每列类型/顺序、使用 `SET TRANSACTION SNAPSHOT` 加入备份程序保持的 `pg_export_snapshot()`，并在该快照释放前完成基线读取。当前程序只定义算法，**没有进行生产采样，也没有生成任何通过证据**。
+
+备份签发器的 `produceBackup()` 提供成对的 `reviewOnlyObserveSnapshot` / `reviewOnlyBindBackup` 内部适配器接口：前者在真实 `pg_dump` 完成后、导出快照事务释放前运行，后者在备份文件 SHA 和签名文档生成后、备份文件正式落地前运行。任一回调失败会中止该备份并释放快照。生产 CLI 不配置这两个回调，故当前既不运行采样，也不输出 baseline；适配器不接受调用方提交的备份 SHA。只有固定安装且摘要钉住的采集器、冻结表清单和列编码、只读角色及隔离复测俱全时才能启用该接口，仍需独立复核来源后才能签发最终 restore 证据。
 
 `infra/protected/preflight-pg17-application-smoke.mjs` 是恢复拓扑预检及单项 worker 原始探针入口。它要求 root-owned/0600 的 capture、候选环境、镜像库存与角色观察文件；候选镜像库存必须绑定 capture 中的 release ID、Git SHA、manifest 和 image-set digest，携带固定八镜像集合，并让 worker 引用与 `merchant-worker` digest 一致。Postgres 与 Redis 的 Docker `NetworkSettings.Networks` 必须仅含 capture 指定的内部 bridge network ID，Redis 无挂载/无端口。API/worker 的 DB 与 Redis URL 只能指向这些容器，环境变量采用严格白名单，镜像必须是不可变 digest；角色观察必须显示独立只读、无超级用户/绕过 RLS/写权限。**角色观察文件仍须由独立受保护的数据库查询采集，预检本身不能证明其真实性。**拓扑通过后，它只调用候选 worker 镜像中的 `dist/apps/worker/src/restore-smoke.js`，输出 `status=incomplete`、`final_production_evidence=false` 的不可变原始记录，并继续退出非零。它不启动正式 worker poll loop，不启动 API，也不签发最终证据。生产 Compose/env 不得直接用于此入口。
 

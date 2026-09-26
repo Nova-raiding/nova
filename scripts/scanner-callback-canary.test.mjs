@@ -6,10 +6,11 @@ import { canaryAdmission, canaryPng, runScannerCallbackCanary } from './scanner-
 const sha = 'a'.repeat(40)
 const env = {
   SCANNER_CANARY_API_BASE_URL: 'https://candidate.example/api',
+  SCANNER_CANARY_EXPECTED_API_ORIGIN: 'https://candidate.example',
   SCANNER_CANARY_RELEASE_ID: 'release-20260923-test',
   SCANNER_CANARY_RELEASE_GIT_SHA: sha,
   SCANNER_CANARY_WORKSPACE_ID: 'ws_canary',
-  SCANNER_CANARY_CONFIRM: 'release-20260923-test:ws_canary',
+  SCANNER_CANARY_CONFIRM: 'release-20260923-test:ws_canary:https://candidate.example',
   SCANNER_CANARY_WORKER_SCOPE_VERIFIED: 'true',
   SCANNER_CANARY_RECOVERY_VERIFIED: 'true',
   SCANNER_CANARY_ENTITLEMENT_VERIFIED: 'true',
@@ -38,6 +39,14 @@ test('execution requires workspace, worker scope, recovery, entitlement and rele
     assert.throws(() => canaryAdmission({ ...env, [field]: '' }, true))
   }
   assert.throws(() => canaryAdmission({ ...env, SCANNER_CANARY_API_BASE_URL: 'http://remote.example/api' }, false), /HTTPS/)
+})
+
+test('execution independently binds the HTTPS origin before sending any bearer token', async () => {
+  const calls = []
+  await assert.rejects(runScannerCallbackCanary({ env: { ...env, SCANNER_CANARY_API_BASE_URL: 'https://attacker.example/api' }, execute: true,
+    fetchImpl: async (...args) => { calls.push(args); return release } }), /SCANNER_CANARY_API_ORIGIN_MISMATCH/)
+  assert.equal(calls.length, 0)
+  assert.throws(() => canaryAdmission({ ...env, SCANNER_CANARY_CONFIRM: 'release-20260923-test:ws_canary' }, true), /exactly bind release, workspace, and API origin/)
 })
 
 test('release mismatch aborts before upload', async () => {
@@ -97,10 +106,10 @@ test('old callback never counts as this run even when /readyz is green', async (
     if (url.pathname === '/api/v1/assets/upload') return response(envelope({ id: 'ast_canary', scanStatus: 'quarantined', sha256: options.headers['x-asset-sha256'] }, 'ws_canary'), 201)
     throw new Error(`unexpected ${url.pathname}`)
   }
-  await assert.rejects(runScannerCallbackCanary({ env, execute: true, fetchImpl, now: () => time, sleep: async ms => { time += ms } }), /CALLBACK_OR_ASSET_PROOF_MISSING/)
+  await assert.rejects(runScannerCallbackCanary({ env, execute: true, fetchImpl, now: () => time, sleep: async ms => { time += ms } }), /CANARY_POST_UPLOAD_FAILED name=scanner-canary-[a-f0-9]+\.png sha256=[a-f0-9]{64} asset=ast_canary reason=callback_or_asset_proof_missing/u)
 })
 
-test('upload timeout is unknown outcome and is never retried', async () => {
+test('upload timeout preserves reconciliation name/SHA and is never retried', async () => {
   let posts = 0
   const fetchImpl = async (url, options) => {
     if (url.pathname === '/api/releasez') return release
@@ -110,8 +119,32 @@ test('upload timeout is unknown outcome and is never retried', async () => {
     if (url.pathname === '/api/v1/assets/upload') { posts++; throw new Error('connection reset') }
     throw new Error(`unexpected ${url.pathname}`)
   }
-  await assert.rejects(runScannerCallbackCanary({ env, execute: true, fetchImpl }), /CANARY_UPLOAD_OUTCOME_UNKNOWN name=scanner-canary-[a-f0-9]+\.png sha256=[a-f0-9]{64}/u)
+  await assert.rejects(runScannerCallbackCanary({ env, execute: true, fetchImpl }), /CANARY_UPLOAD_OUTCOME_UNKNOWN name=scanner-canary-[a-f0-9]+\.png sha256=[a-f0-9]{64} asset=unknown/u)
   assert.equal(posts, 1)
+})
+
+test('every post-upload response or verification failure retains reconciliation identity and does not retry', async () => {
+  for (const responseBody of [
+    { status: 201, json: async () => { throw new Error('raw provider detail') } },
+    response(envelope({ id: 'ast_uncertain', scanStatus: 'pending', sha256: '0'.repeat(64) }, 'ws_canary'), 500),
+    response(envelope({ id: 'ast_bad\nforged-log', scanStatus: 'pending', sha256: '0'.repeat(64) }, 'ws_canary'), 201),
+  ]) {
+    let posts = 0
+    const fetchImpl = async (url, options) => {
+      if (url.pathname === '/api/releasez') return release
+      if (url.pathname === '/api/healthz') return response(envelope({ persistence: { ready: true }, redis: { ready: true } }))
+      if (url.pathname === '/api/readyz') return response(envelope({ scanner: { ready: true } }))
+      if (url.pathname === '/api/v1/assets' && options.method === 'GET') return response(envelope({ items: [], storage_quota: { availableBytes: 100_000 } }, 'ws_canary'))
+      if (url.pathname === '/api/v1/assets/upload') { posts++; return responseBody }
+      throw new Error(`unexpected ${url.pathname}`)
+    }
+    await assert.rejects(runScannerCallbackCanary({ env, execute: true, fetchImpl }), error => {
+      assert.match(error.message, /^CANARY_POST_UPLOAD_FAILED name=scanner-canary-[a-f0-9]+\.png sha256=[a-f0-9]{64} asset=(?:ast_uncertain|unknown) reason=(?:response_invalid|upload_not_quarantined)$/u)
+      assert.doesNotMatch(error.message, /raw provider detail/u)
+      return true
+    })
+    assert.equal(posts, 1)
+  }
 })
 
 test('API dependency failure blocks before any canary upload', async () => {
@@ -180,6 +213,37 @@ test('generic scanner not-ready never uploads a canary asset', async () => {
     },
   }), /CANARY_READINESS_BLOCKED/)
   assert.deepEqual(calls, [['/api/releasez', 'GET'], ['/api/healthz', 'GET'], ['/api/readyz', 'GET']])
+})
+
+test('historical generic scanner failure needs a separate recovery probe before one upload', async () => {
+  const calls = []
+  let time = Date.parse('2026-09-23T10:00:00Z')
+  let uploaded
+  let readyReads = 0
+  const fetchImpl = async (url, options) => {
+    calls.push([url.pathname, options.method])
+    if (url.pathname === '/api/releasez') return release
+    if (url.pathname === '/api/healthz') return response(envelope({ persistence: { ready: true }, redis: { ready: true } }))
+    if (url.pathname === '/api/readyz') {
+      readyReads++
+      return readyReads === 1
+        ? response({ data: null, error: { code: 'SCANNER_NOT_READY', details: { scanner: { ready: false, live_instances: 1, ready_instances: 0, minimum_ready_instances: 1, backlog: 0, dead_letter: 0, latest_callback_accepted_at: null } } } }, 503)
+        : response(envelope({ scanner: { ready: true, ready_instances: 1, backlog: 0, dead_letter: 0, latest_callback_accepted_at: '2026-09-23T10:00:01Z' } }))
+    }
+    if (url.pathname === '/api/v1/assets') return response(envelope({ items: [], storage_quota: { availableBytes: 100_000 } }, 'ws_canary'))
+    if (url.pathname === '/api/v1/assets/upload') {
+      uploaded = Buffer.from(options.body)
+      return response(envelope({ id: 'ast_old', scanStatus: 'quarantined', sha256: options.headers['x-asset-sha256'] }, 'ws_canary'), 201)
+    }
+    if (url.pathname === '/api/v1/assets/ast_old/download') return response(uploaded.buffer.slice(uploaded.byteOffset, uploaded.byteOffset + uploaded.byteLength))
+    throw new Error(`unexpected ${url.pathname}`)
+  }
+  const result = await runScannerCallbackCanary({ env, execute: true, fetchImpl, legacyRecoveryProbe: async () => true,
+    now: () => time, sleep: async ms => { time += ms }, nonce: Buffer.from([1, 2, 3]) })
+  assert.equal(result.assetId, 'ast_old')
+  assert.equal(result.proof, false)
+  assert.equal(calls.filter(([, method]) => method === 'POST').length, 1)
+  assert.equal(readyReads, 2)
 })
 
 test('callback-stale code without recovery quorum cannot upload a canary asset', async () => {

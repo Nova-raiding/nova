@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readBoundedResponseText } from '../packages/connectors/src/bounded-response.js'
@@ -99,10 +99,29 @@ export function writeRelayTokenQuotaArtifact(root: string, release: string, quot
   const directory = resolve(root, 'relay', release)
   const target = resolve(directory, `token-${quota.credential}-${digest.slice(0, 16)}.json`)
   mkdirSync(directory, { recursive: true, mode: 0o700 })
-  if (existsSync(target)) {
-    if (readFileSync(target, 'utf8') !== body) throw new Error('relay token quota artifact hash collision')
-  } else writeFileSync(target, body, { mode: 0o600, flag: 'wx' })
+  writeImmutableRelayArtifact(target, body)
   return `artifact://production/${relative(resolve(root), target).split('\\').join('/')}#${digest}`
+}
+
+function writeImmutableRelayArtifact(target: string, body: string): void {
+  try { writeFileSync(target, body, { mode: 0o600, flag: 'wx' }) }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    let descriptor: number | undefined
+    try {
+      descriptor = openSync(target, constants.O_RDONLY | constants.O_NOFOLLOW)
+      const stat = fstatSync(descriptor)
+      if (!stat.isFile() || stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o600
+        || readFileSync(descriptor, 'utf8') !== body) {
+        throw new Error('relay artifact already exists with different content, owner, mode or type')
+      }
+    } catch (reuseError) {
+      if (reuseError instanceof Error && reuseError.message.startsWith('relay artifact already exists')) throw reuseError
+      throw new Error('relay artifact already exists with different content, owner, mode or type')
+    } finally {
+      if (descriptor !== undefined) closeSync(descriptor)
+    }
+  }
 }
 
 export function requireCanaryBudget(value: string | undefined): CanaryBudget {
@@ -305,12 +324,13 @@ export function writeRelayResponseArtifact(root: string, release: string, modali
   // different response must never silently overwrite the prior receipt.
   let target = canonicalTarget
   if (existsSync(canonicalTarget)) {
+    if (!lstatSync(canonicalTarget).isFile()) throw new Error('relay artifact already exists with different content or type')
     const existing = readFileSync(canonicalTarget, 'utf8')
     const existingDigest = createHash('sha256').update(existing).digest('hex')
     if (existingDigest !== digest) target = resolve(directory, `${modality}-${digest.slice(0, 16)}.json`)
   }
   mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
-  if (!existsSync(target)) writeFileSync(target, body, { mode: 0o600 })
+  writeImmutableRelayArtifact(target, body)
   const relativePath = relative(resolve(root), target).split('\\').join('/')
   return `artifact://production/${relativePath}#${digest}`
 }

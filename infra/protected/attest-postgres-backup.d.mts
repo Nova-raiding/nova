@@ -9,4 +9,11 @@ export function assertSourcePolicy(identity: Pick<SnapshotIdentity, 'systemIdent
 export function parseCreateArguments(args: string[]): { backupPath: string; checksumPath: string; attestationPath: string }
 export function hashRegularFile(path: string): { sha256: string; bytes: number }
 export function signBackupAttestation(input: { backupBytes: Buffer; backupFileName: string; systemIdentifier: string; databaseOid: number; databaseName: string; migrationVersion: number; snapshot: string; backupStartedAt: string; snapshotExportObservedAt: string; dumpCompletedAt: string; keyId: string; privatePem: string | Buffer; publicPem: string | Buffer; validitySeconds?: number }): Record<string, unknown>
-export function produceBackup(input: { backupPath: string; attestationPath: string; checksumPath?: string; validitySeconds?: number; privatePem: string | Buffer; publicPem: string | Buffer; keyId: string; sourcePolicy: BackupSourcePolicy; clock?: () => Date }, adapter?: { snapshot(): Promise<SnapshotIdentity>; dump(snapshot: string, path: string): Promise<void> }): Promise<Record<string, unknown>>
+export type ReviewOnlySnapshotIdentity = Readonly<Pick<SnapshotIdentity, 'systemIdentifier' | 'databaseOid' | 'databaseName' | 'migrationVersion'>>
+export type BackupAdapter = {
+  snapshot(): Promise<SnapshotIdentity>
+  dump(snapshot: string, path: string): Promise<void>
+  reviewOnlyObserveSnapshot?(snapshot: string, identity: ReviewOnlySnapshotIdentity): Promise<unknown>
+  reviewOnlyBindBackup?(observation: unknown, signedBackup: Readonly<Record<string, unknown>>): Promise<void>
+}
+export function produceBackup(input: { backupPath: string; attestationPath: string; checksumPath?: string; validitySeconds?: number; privatePem: string | Buffer; publicPem: string | Buffer; keyId: string; sourcePolicy: BackupSourcePolicy; clock?: () => Date }, adapter?: BackupAdapter): Promise<Record<string, unknown>>

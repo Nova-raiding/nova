@@ -3,6 +3,8 @@ export type Pg17RowsetInventory = {
   schema_version: 'pg17-rowset-inventory/1'
   kind: 'live-backup-baseline' | 'isolated-restore-observation'
   simulated: boolean
+  row_canonicalization: 'pg17-canonical-rows/1'
+  rls_canonicalization: 'pg17-rls-policy/1'
   release_id: string
   backup_sha256: string
   database_id_sha256: string
@@ -32,4 +34,4 @@ export function comparePg17DataIntegrity(
   baseline: Pg17RowsetInventory,
   restored: Pg17RowsetInventory,
   capture: Pg17RestoreCaptureIdentity,
-): { status: 'pass' | 'fail'; compared_table_count: number; mismatched_tables: string[] }
+): { status: 'review_consistent' | 'fail'; compared_table_count: number; mismatched_tables: string[] }

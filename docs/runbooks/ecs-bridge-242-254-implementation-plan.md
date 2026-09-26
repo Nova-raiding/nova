@@ -38,6 +38,8 @@ node infra/scripts/overlay-ecs-bridge-254-review.mjs \
 
 B 的 API/worker 源码通过 `BRIDGE_SCHEMA_COMPATIBILITY_MODE` 环境变量透传模式到共享校验器，本身未固定模式值；但旧 `infra/scripts/deploy-preflight-ecs.sh` 只放行 `prefix_242_or_244`，`infra/scripts/verify-bridge-b-package.mjs` 要求八个服务的已渲染 Compose 环境均为该旧值。旧 `infra/local/docker-compose.ecs-pilot-release.yml` 只是强制变量存在。因而该覆盖层**不能**沿用旧 B 的预检、包校验或发布证据；必须单独编写并审查 242→254 Compose/预检/包校验合同及测试，严格保留旧 B 合同不变。新的模式还必须在 API 与六 worker 的实际容器环境中逐一核对。
 
+已增加只读静态检查 `infra/scripts/inspect-ecs-bridge-254-rendered-compose.mjs`。在隔离环境将 `docker compose config --format json` 输出传入其标准输入时，它核对八个运行服务、`prefix_242_or_254`、固定镜像、相同 API/worker 镜像、API 发布身份及禁止启动时迁移，输出恒为 `status=review_only`、`deployable=false`、`runtime_verified=false`。它未接入旧 B 或 C 的部署执行器，不能验证候选归档、回滚 capsule、签名或真实容器环境，也不能签发上线证据。完整的独立预检与包校验仍未完成。
+
 ## 2. 数据库与运行时兼容审计
 
 - 在签名的生产 242 备份所恢复的隔离 PG17 中，逐版运行 243–254，并记录每一个完整前缀的名称/SQL SHA/数据库历史 SHA。审查 245 的授权时间约束、247/248 的 OCR 可变费率和历史预留、249 的重复 `workspace_id/action_key` 拒绝、250–253 的新 claim/attempt 表及函数、254 的 entitlement v3 函数。B 基线只认识 `fixed`、`starts_at`、`unresolved` 费率且调用 entitlement v2；要证明其在 254 上读取新增费率时按审定策略处理，旧 entitlement v2 仍可用，不能靠 TypeScript 类型断言。

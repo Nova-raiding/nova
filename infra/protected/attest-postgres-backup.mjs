@@ -231,6 +231,10 @@ function realDump(snapshot, path) {
 
 export async function produceBackup({ backupPath, attestationPath, checksumPath = `${backupPath}.sha256`, validitySeconds = MAX_VALIDITY_SECONDS, privatePem, publicPem, keyId, sourcePolicy, clock = () => new Date() }, adapter = { snapshot: captureSnapshot, dump: realDump }) {
   assert(new Set([resolve(backupPath), resolve(attestationPath), resolve(checksumPath)]).size === 3, 'backup outputs must be distinct')
+  // Review-only extension point. The production CLI does not configure these
+  // callbacks. A future fixed, digest-pinned collector must provide both and
+  // must sample using this exact exported snapshot before it is released.
+  assert(Boolean(adapter.reviewOnlyObserveSnapshot) === Boolean(adapter.reviewOnlyBindBackup), 'review-only baseline callbacks must be paired')
   const tempBackup = `${backupPath}.${process.pid}.${randomBytes(12).toString('hex')}.dump.tmp`
   try { lstatSync(tempBackup); throw new Error('temporary backup path already exists') } catch (error) { if (error?.code !== 'ENOENT') throw error }
   let held
@@ -243,10 +247,14 @@ export async function produceBackup({ backupPath, attestationPath, checksumPath 
     const snapshotExportObservedAt = held.snapshotExportObservedAt
     assert(observedTime(backupStartedAt, 'backup_started_at') <= observedTime(snapshotExportObservedAt, 'snapshot_export_observed_at'), 'snapshot observation predates backup start')
     await adapter.dump(snapshot, tempBackup)
+    const reviewOnlyObservation = adapter.reviewOnlyObserveSnapshot
+      ? await adapter.reviewOnlyObserveSnapshot(snapshot, Object.freeze({ systemIdentifier: held.systemIdentifier, databaseOid: held.databaseOid, databaseName: held.databaseName, migrationVersion: held.migrationVersion }))
+      : undefined
     const dumpCompletedAt = clock().toISOString()
     syncPath(tempBackup)
     const { sha256 } = hashRegularFile(tempBackup)
     const document = signBackupAttestationDigest({ backupSha256: sha256, backupFileName: basename(backupPath), systemIdentifier: held.systemIdentifier, databaseOid: held.databaseOid, databaseName: held.databaseName, migrationVersion: held.migrationVersion, snapshot, backupStartedAt, snapshotExportObservedAt, dumpCompletedAt, keyId, privatePem, publicPem, validitySeconds })
+    if (adapter.reviewOnlyBindBackup) await adapter.reviewOnlyBindBackup(reviewOnlyObservation, Object.freeze({ ...document }))
     linkSync(tempBackup, backupPath)
     syncParent(backupPath)
     atomicExclusive(checksumPath, Buffer.from(`${document.backup_sha256}  ${backupPath}\n`))

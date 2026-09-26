@@ -35,6 +35,7 @@ function exactArgs(args) {
 function inventory(value, kind, capture) {
   requireValue(value && typeof value === 'object' && !Array.isArray(value), `${kind} must be an object`)
   requireValue(value.schema_version === 'pg17-rowset-inventory/1' && value.kind === kind && value.simulated === false, `${kind} schema or provenance invalid`)
+  requireValue(value.row_canonicalization === 'pg17-canonical-rows/1' && value.rls_canonicalization === 'pg17-rls-policy/1', `${kind} canonicalization contract invalid`)
   requireValue(value.release_id === capture.release_id && value.backup_sha256 === capture.backup_sha256, `${kind} release or backup mismatch`)
   const expectedDatabase = kind === 'live-backup-baseline' ? capture.source_database_id_sha256 : capture.target_database_id_sha256
   requireValue(value.database_id_sha256 === expectedDatabase && HEX.test(value.database_id_sha256 ?? ''), `${kind} database identity mismatch`)
@@ -62,7 +63,10 @@ export function comparePg17DataIntegrity(baseline, restored, capture) {
     const left = before.get(name), right = after.get(name)
     return !left || !right || left.row_count !== right.row_count || left.canonical_rows_sha256 !== right.canonical_rows_sha256 || left.rls_policy_sha256 !== right.rls_policy_sha256
   })
-  return { status: mismatches.length === 0 ? 'pass' : 'fail', compared_table_count: names.length, mismatched_tables: mismatches }
+  // A match means only that the supplied structures agree. The comparator
+  // does not authenticate the capture or inventory producers, so it must not
+  // emit a success label that can be mistaken for an accepted restore gate.
+  return { status: mismatches.length === 0 ? 'review_consistent' : 'fail', compared_table_count: names.length, mismatched_tables: mismatches }
 }
 function main(args) {
   const paths = exactArgs(args)
@@ -74,7 +78,7 @@ function main(args) {
   requireValue(dirname(paths['--output']) !== '/', 'output path must be scoped')
   writeFileSync(paths['--output'], `${JSON.stringify(artifact, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
   process.stdout.write(`PG17 raw data comparison: ${artifact.status}; artifact=${paths['--output']}\n`)
-  if (artifact.status !== 'pass') process.exitCode = 1
+  if (artifact.status !== 'review_consistent') process.exitCode = 1
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { main(process.argv.slice(2)) } catch (error) { process.stderr.write(`PG17 data comparison rejected: ${error.message}\n`); process.exitCode = 1 }

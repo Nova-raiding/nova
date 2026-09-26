@@ -93,6 +93,36 @@ describe('synthetic protected postgres backup attester', () => {
     expect(readFileSync(backupPath, 'utf8')).toBe('synthetic-pg-dump')
   })
 
+  it('keeps a review-only baseline observer inside the held dump snapshot and binds its result to the actual dump hash', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'synthetic-baseline-observer-'))), backupPath = join(root, 'db.dump'), attestationPath = join(root, 'db.json')
+    const pair = keys(), events: string[] = [], bytes = Buffer.from('snapshot-bound-dump')
+    const document = await produceBackup({ backupPath, attestationPath, ...pair, sourcePolicy, keyId: 'synthetic-test-key', clock: vi.fn().mockReturnValueOnce(new Date(snapshotTimes.backupStartedAt)).mockReturnValueOnce(new Date(snapshotTimes.dumpCompletedAt)) }, {
+      snapshot: async () => ({ ...snapshotIdentity, release: () => { events.push('release') } }),
+      dump: async (_snapshot, path) => { events.push('dump'); writeFileSync(path, bytes) },
+      reviewOnlyObserveSnapshot: async (snapshot, identity) => { events.push('observe'); expect(snapshot).toBe(snapshotIdentity.snapshot); expect(identity.databaseOid).toBe(sourcePolicy.database_oid); return { observed: 'from-held-snapshot' } },
+      reviewOnlyBindBackup: async (observation, signed) => { events.push('bind'); expect(observation).toEqual({ observed: 'from-held-snapshot' }); expect(signed.backup_sha256).toBe(createHash('sha256').update(bytes).digest('hex')); expect(signed.signature_base64).toBeTruthy() },
+    })
+    expect(events).toEqual(['dump', 'observe', 'bind', 'release'])
+    expect(document.backup_sha256).toBe(createHash('sha256').update(bytes).digest('hex'))
+    expect(readFileSync(backupPath)).toEqual(bytes)
+  })
+
+  it('rejects an unpaired or failing review-only observer without finalizing backup', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'synthetic-baseline-fail-'))), backupPath = join(root, 'db.dump'), attestationPath = join(root, 'db.json')
+    const pair = keys(), release = vi.fn(), dump = vi.fn(async (_snapshot: string, path: string) => { writeFileSync(path, 'uncommitted-dump') })
+    const input = { backupPath, attestationPath, ...pair, sourcePolicy, keyId: 'synthetic-test-key', clock: vi.fn().mockReturnValueOnce(new Date(snapshotTimes.backupStartedAt)).mockReturnValueOnce(new Date(snapshotTimes.dumpCompletedAt)) }
+    await expect(produceBackup(input, { snapshot: async () => ({ ...snapshotIdentity, release }), dump, reviewOnlyObserveSnapshot: async () => undefined })).rejects.toThrow(/callbacks must be paired/u)
+    expect(dump).not.toHaveBeenCalled()
+    await expect(produceBackup(input, { snapshot: async () => ({ ...snapshotIdentity, release }), dump, reviewOnlyObserveSnapshot: async () => { throw new Error('read-only sampling failed') }, reviewOnlyBindBackup: async () => {} })).rejects.toThrow(/read-only sampling failed/u)
+    expect(release).toHaveBeenCalledOnce()
+    expect(() => readFileSync(backupPath)).toThrow()
+    expect(() => readFileSync(attestationPath)).toThrow()
+    await expect(produceBackup({ ...input, clock: vi.fn().mockReturnValueOnce(new Date(snapshotTimes.backupStartedAt)).mockReturnValueOnce(new Date(snapshotTimes.dumpCompletedAt)) }, { snapshot: async () => ({ ...snapshotIdentity, release }), dump, reviewOnlyObserveSnapshot: async () => ({ source: 'held-snapshot' }), reviewOnlyBindBackup: async () => { throw new Error('baseline binding failed') } })).rejects.toThrow(/baseline binding failed/u)
+    expect(release).toHaveBeenCalledTimes(2)
+    expect(() => readFileSync(backupPath)).toThrow()
+    expect(() => readFileSync(attestationPath)).toThrow()
+  })
+
   it('rejects every protected source identity mismatch before dump', async () => {
     expect(parseSourcePolicy(Buffer.from(JSON.stringify(sourcePolicy)))).toEqual(sourcePolicy)
     expect(assertSourcePolicy(snapshotIdentity, sourcePolicy)).toBe(sourcePolicy.system_identifier_sha256)

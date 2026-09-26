@@ -52,6 +52,17 @@ function canaryUrl(base, path) {
   return url
 }
 
+function canonicalApiOrigin(value) {
+  let url
+  try { url = new URL(value) } catch { throw new Error('SCANNER_CANARY_EXPECTED_API_ORIGIN_INVALID') }
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash
+    || !['https:', 'http:'].includes(url.protocol)
+    || (url.protocol === 'http:' && !['127.0.0.1', 'localhost', '[::1]', '::1'].includes(url.hostname))) {
+    throw new Error('SCANNER_CANARY_EXPECTED_API_ORIGIN_INVALID')
+  }
+  return url.origin
+}
+
 function requireIdentity(envelope, expectedReleaseId, expectedSha) {
   const release = envelope?.data?.release
   if (release?.release_id !== expectedReleaseId || release?.release_git_sha !== expectedSha || envelope?.data?.ready !== true) throw new Error('CANARY_RELEASE_IDENTITY_MISMATCH')
@@ -65,25 +76,28 @@ function scannerSummary(envelope) {
 export function canaryAdmission(env, execute) {
   const baseUrl = requireValue(env.SCANNER_CANARY_API_BASE_URL, 'SCANNER_CANARY_API_BASE_URL')
   canaryUrl(baseUrl, '/releasez')
+  const baseOrigin = new URL(baseUrl).origin
   const expectedReleaseId = requireValue(env.SCANNER_CANARY_RELEASE_ID, 'SCANNER_CANARY_RELEASE_ID')
   const expectedSha = requireValue(env.SCANNER_CANARY_RELEASE_GIT_SHA, 'SCANNER_CANARY_RELEASE_GIT_SHA')
   if (!/^[a-f0-9]{40}$/u.test(expectedSha)) throw new Error('SCANNER_CANARY_RELEASE_GIT_SHA must be a complete Git SHA')
   const workspaceId = requireValue(env.SCANNER_CANARY_WORKSPACE_ID, 'SCANNER_CANARY_WORKSPACE_ID')
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(workspaceId)) throw new Error('SCANNER_CANARY_WORKSPACE_ID is invalid')
   if (execute) {
-    if (env.SCANNER_CANARY_CONFIRM !== `${expectedReleaseId}:${workspaceId}`) throw new Error('SCANNER_CANARY_CONFIRM must exactly bind release and workspace')
+    const expectedOrigin = canonicalApiOrigin(requireValue(env.SCANNER_CANARY_EXPECTED_API_ORIGIN, 'SCANNER_CANARY_EXPECTED_API_ORIGIN'))
+    if (expectedOrigin !== baseOrigin) throw new Error('SCANNER_CANARY_API_ORIGIN_MISMATCH')
+    if (env.SCANNER_CANARY_CONFIRM !== `${expectedReleaseId}:${workspaceId}:${expectedOrigin}`) throw new Error('SCANNER_CANARY_CONFIRM must exactly bind release, workspace, and API origin')
     if (env.SCANNER_CANARY_WORKER_SCOPE_VERIFIED !== 'true') throw new Error('scanner worker workspace scope must be independently verified')
     if (env.SCANNER_CANARY_RECOVERY_VERIFIED !== 'true') throw new Error('scanner recovery capability must be independently verified')
     if (env.SCANNER_CANARY_ENTITLEMENT_VERIFIED !== 'true') throw new Error('canary workspace asset.upload entitlement must be independently verified')
     requireValue(env.SCANNER_CANARY_API_TOKEN, 'SCANNER_CANARY_API_TOKEN')
   }
-  return { baseUrl, expectedReleaseId, expectedSha, workspaceId }
+  return { baseUrl, baseOrigin, expectedReleaseId, expectedSha, workspaceId }
 }
 
 /** No production I/O is performed on import. Only --execute enables one upload. */
-export async function runScannerCallbackCanary({ env = process.env, execute = false, fetchImpl = fetch, now = Date.now, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), nonce = randomBytes(3) } = {}) {
+export async function runScannerCallbackCanary({ env = process.env, execute = false, fetchImpl = fetch, legacyRecoveryProbe, now = Date.now, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), nonce = randomBytes(3) } = {}) {
   const admission = canaryAdmission(env, execute)
-  const { baseUrl, expectedReleaseId, expectedSha, workspaceId } = admission
+  const { baseUrl, baseOrigin, expectedReleaseId, expectedSha, workspaceId } = admission
   const released = await json(await fetchImpl(canaryUrl(baseUrl, '/releasez'), { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(10_000) }))
   requireIdentity(released, expectedReleaseId, expectedSha)
   if (!execute) return { status: 'dry_run', evidenceType: 'unsigned_observation', releaseId: expectedReleaseId, workspaceId, writes: 0, proof: false }
@@ -107,7 +121,18 @@ export async function runScannerCallbackCanary({ env = process.env, execute = fa
     && initialReady.error?.code === 'SCANNER_CALLBACK_PROOF_STALE'
     && scanner?.configured === true
     && scanner?.recovery_ready === true
-  if (!callbackOnlyBlock && (!initialReadyResponse.ok || initialReady.error != null)) throw new Error('CANARY_READINESS_BLOCKED')
+  // The historical formal API cannot distinguish a callback-only failure in
+  // its response. Its separately pinned worker marker must prove that case.
+  // The ordinary candidate path never supplies this probe.
+  const oldCallbackOnlyBlock = initialReadyResponse.status === 503
+    && initialReady.error?.code === 'SCANNER_NOT_READY'
+    && scanner?.ready === false && scanner?.live_instances === 1
+    && scanner?.ready_instances === 0 && scanner?.minimum_ready_instances === 1
+    && scanner?.backlog === 0 && scanner?.dead_letter === 0
+    && scanner?.latest_callback_accepted_at == null
+    && typeof legacyRecoveryProbe === 'function'
+    && await legacyRecoveryProbe()
+  if (!callbackOnlyBlock && !oldCallbackOnlyBlock && (!initialReadyResponse.ok || initialReady.error != null)) throw new Error('CANARY_READINESS_BLOCKED')
 
   const headers = { authorization: `Bearer ${env.SCANNER_CANARY_API_TOKEN}`, 'x-workspace-id': workspaceId }
   // A read proves this exact token can access this exact workspace, and checks
@@ -129,32 +154,41 @@ export async function runScannerCallbackCanary({ env = process.env, execute = fa
       body: bytes, redirect: 'error', signal: AbortSignal.timeout(30_000),
     })
   } catch {
-    throw new Error(`CANARY_UPLOAD_OUTCOME_UNKNOWN name=${name} sha256=${digest}; reconcile before another run`)
+    throw new Error(`CANARY_UPLOAD_OUTCOME_UNKNOWN name=${name} sha256=${digest} asset=unknown; reconcile before another run`)
   }
-  const uploaded = await json(uploadResponse)
-  const assetId = uploaded?.data?.id
-  if (uploadResponse.status !== 201 || uploaded.workspace_id !== workspaceId || typeof assetId !== 'string' || uploaded?.data?.scanStatus !== 'quarantined' || uploaded?.data?.sha256 !== digest) throw new Error(`CANARY_UPLOAD_NOT_QUARANTINED asset=${assetId ?? 'unknown'} sha256=${digest}`)
+  let assetId
+  try {
+    let uploaded
+    try { uploaded = await json(uploadResponse) } catch { throw new Error('response_invalid') }
+    const candidateAssetId = uploaded?.data?.id
+    assetId = typeof candidateAssetId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(candidateAssetId) ? candidateAssetId : undefined
+    if (uploadResponse.status !== 201 || uploaded.workspace_id !== workspaceId || typeof assetId !== 'string' || uploaded?.data?.scanStatus !== 'quarantined' || uploaded?.data?.sha256 !== digest) throw new Error('upload_not_quarantined')
 
-  const deadline = now() + 120_000
-  while (now() < deadline) {
-    const readyResponse = await fetchImpl(canaryUrl(baseUrl, '/readyz'), { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(10_000) })
-    const ready = await json(readyResponse)
-    const scanner = scannerSummary(ready)
-    const callbackAt = Date.parse(scanner?.latest_callback_accepted_at ?? '')
-    if (readyResponse.ok && Number.isFinite(callbackAt) && callbackAt >= Date.parse(uploadStartedAt)
-      && scanner?.ready === true && scanner?.ready_instances >= 1 && scanner?.backlog === 0 && scanner?.dead_letter === 0) {
-      const downloaded = await fetchImpl(canaryUrl(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/download`), { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(10_000) })
-      if (downloaded.ok && sha256(Buffer.from(await downloaded.arrayBuffer())) === digest) {
-        // The public readiness aggregate is not an asset-bound signed receipt;
-        // even a fresh callback could belong to another concurrent upload.
-        // The exact downloaded bytes prove this asset became clean, but the
-        // protected signer and durable scan-attempt record remain separate gates.
-        return { status: 'observed', evidenceType: 'unsigned_observation', releaseId: expectedReleaseId, workspaceId, assetId, sha256: digest, callbackAcceptedAt: new Date(callbackAt).toISOString(), writes: 1, proof: false }
+    const deadline = now() + 120_000
+    while (now() < deadline) {
+      const readyResponse = await fetchImpl(canaryUrl(baseUrl, '/readyz'), { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(10_000) })
+      const ready = await json(readyResponse)
+      const scanner = scannerSummary(ready)
+      const callbackAt = Date.parse(scanner?.latest_callback_accepted_at ?? '')
+      if (readyResponse.ok && Number.isFinite(callbackAt) && callbackAt >= Date.parse(uploadStartedAt)
+        && scanner?.ready === true && scanner?.ready_instances >= 1 && scanner?.backlog === 0 && scanner?.dead_letter === 0) {
+        const downloaded = await fetchImpl(canaryUrl(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/download`), { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(10_000) })
+        if (downloaded.ok && sha256(Buffer.from(await downloaded.arrayBuffer())) === digest) {
+          // The public readiness aggregate is not an asset-bound signed receipt;
+          // even a fresh callback could belong to another concurrent upload.
+          // The exact downloaded bytes prove this asset became clean, but the
+          // protected signer and durable scan-attempt record remain separate gates.
+          return { status: 'observed', evidenceType: 'unsigned_observation', releaseId: expectedReleaseId, workspaceId, apiOrigin: baseOrigin, assetId, uploadName: name, sha256: digest, callbackAcceptedAt: new Date(callbackAt).toISOString(), writes: 1, proof: false }
+        }
       }
+      await sleep(5_000)
     }
-    await sleep(5_000)
+    throw new Error(`callback_or_asset_proof_missing`)
+  } catch (error) {
+    const reason = error instanceof Error && ['response_invalid', 'upload_not_quarantined', 'callback_or_asset_proof_missing'].includes(error.message)
+      ? error.message : 'post_processing_failed'
+    throw new Error(`CANARY_POST_UPLOAD_FAILED name=${name} sha256=${digest} asset=${typeof assetId === 'string' ? assetId : 'unknown'} reason=${reason}`)
   }
-  throw new Error(`CANARY_SIGNED_CALLBACK_OR_ASSET_PROOF_MISSING asset=${assetId} sha256=${digest}`)
 }
 
 if (process.argv[1] && new URL(`file://${process.argv[1]}`).href === import.meta.url) {

@@ -1,8 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { RuleCenterSection, isTrustedPlatformRule, parseMarkdownDraftInputs, ruleTrustLabel } from "./RuleCenterSection";
+import { RuleCenterSection, canActivateOfficialPlatformRule, isTrustedPlatformRule, parseMarkdownDraftInputs, ruleTrustLabel, uploadMarkdownDrafts } from "./RuleCenterSection";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
+import type { Platform, Rule } from "../../types/ops";
+
+const markdownCard = (id: string, platform: string) => [
+  `## PDD-${id}｜规则 ${id}`,
+  `- 平台：${platform}`,
+  `- 官方依据：https://official.example/${id}`,
+  "规则内容",
+].join("\n");
+
+const platformRule = (overrides: Partial<Rule> = {}): Rule => ({
+  id: "rule-1", packId: "pack-1", name: "标题规范", version: "v1", status: "draft", scope: "platform", revision: 1,
+  activationEligible: false,
+  source: { kind: "internal", trust: "unverified", reference: "manual://rules.md#PDD-001", checkedAt: "2026-09-01" },
+  ...overrides,
+});
 
 describe("trusted platform rule boundary", () => {
   it("distinguishes approved internal rules from untrusted material", () => {
@@ -50,6 +65,58 @@ describe("trusted platform rule boundary", () => {
     ].join("\n");
     expect(parseMarkdownDraftInputs(markdown, "pdd.md")).toHaveLength(2);
     expect(() => parseMarkdownDraftInputs(markdown.replace("- 官方依据：https://official.example/pdd/title", "- 依据缺失"), "pdd.md")).toThrow("PDD-001 缺少平台或官方依据字段");
+  });
+
+  it("maps all six platform ids and Chinese names to canonical ids", () => {
+    const platforms: Array<[Platform, string]> = [
+      ["jd", "京东"], ["taobao", "淘宝"], ["tmall", "天猫"],
+      ["pinduoduo", "拼多多"], ["xiaohongshu", "小红书"], ["douyin", "抖音"],
+    ];
+    for (const [id, label] of platforms) {
+      expect(parseMarkdownDraftInputs(markdownCard("001", id), "rules.md")[0]?.targetId).toBe(id);
+      expect(parseMarkdownDraftInputs(markdownCard("001", label), "rules.md")[0]?.targetId).toBe(id);
+    }
+  });
+
+  it("rejects an unknown platform in a later card before any draft write", () => {
+    const publish = vi.fn(async () => true);
+    expect(() => {
+      const drafts = parseMarkdownDraftInputs(`${markdownCard("001", "京东")}\n${markdownCard("002", "火星商城")}`, "rules.md");
+      void uploadMarkdownDrafts(drafts, publish);
+    }).toThrow("PDD-002 的平台“火星商城”不受支持");
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("reports completed cards and the first failed card without attempting later writes", async () => {
+    const drafts = parseMarkdownDraftInputs(`${markdownCard("001", "jd")}\n${markdownCard("002", "taobao")}\n${markdownCard("003", "tmall")}`, "rules.md");
+    const publish = vi.fn(async (draft: typeof drafts[number]) => !draft.packId.includes("pdd-002"));
+    expect(await uploadMarkdownDrafts(drafts, publish)).toEqual({
+      succeeded: 1,
+      failedCard: "pdd-002",
+      reason: "规则服务拒绝了该卡片；请查看规则服务错误提示并核对官方依据。",
+    });
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(publish.mock.calls.map(([draft]) => draft.packId)).toEqual(["jd-manual-pdd-001", "taobao-manual-pdd-002"]);
+    const component = readFileSync(new URL("./RuleCenterSection.tsx", import.meta.url), "utf8");
+    expect(component).toContain("Markdown 导入未完成");
+    expect(component).toContain("成功 ${markdownImportResult.succeeded} 张");
+    expect(component).toContain("失败卡片 ${markdownImportResult.failedCard}");
+  });
+
+  it("offers activation for a server-eligible manual draft but not a forged official manual source", () => {
+    const approvedPath = platformRule({ id: "reviewed-manual", activationEligible: true });
+    const forgedSource = platformRule({
+      id: "forged-official", activationEligible: false,
+      source: { kind: "official", trust: "verified", reference: "manual://forged", checkedAt: "2026-09-01" },
+    });
+    expect(canActivateOfficialPlatformRule(approvedPath)).toBe(true);
+    expect(canActivateOfficialPlatformRule(forgedSource)).toBe(false);
+    expect(isTrustedPlatformRule(forgedSource)).toBe(false);
+    const html = renderToStaticMarkup(<RuleCenterSection model={{
+      canRules: true, rules: [approvedPath, forgedSource], updateRuleStatus: async () => true,
+    } as unknown as OpsConsoleModel} />);
+    expect(html.match(/审批并激活/g)).toHaveLength(1);
+    expect(html).toContain("来源类型不匹配");
   });
 });
 

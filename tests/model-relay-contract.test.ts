@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, chownSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
@@ -654,6 +654,46 @@ describe('production model relay contract', () => {
       expect(second).not.toBe(first)
       expect(readFileSync(join(root, 'relay/release-1/text.json'), 'utf8')).toContain('req-first')
       expect(second).toMatch(/^artifact:\/\/production\/relay\/release-1\/text-[a-f0-9]{16}\.json#[a-f0-9]{64}$/u)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('rejects a pre-existing symlink in the canonical relay receipt slot', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-symlink-artifacts-'))
+    try {
+      const directory = join(root, 'relay/release-1')
+      mkdirSync(directory, { recursive: true })
+      const target = join(root, 'outside.json')
+      writeFileSync(target, 'untouched')
+      symlinkSync(target, join(directory, 'text.json'))
+      expect(() => writeRelayResponseArtifact(root, 'release-1', 'text', {
+        status: 200,
+        headers: new Headers({ 'x-request-id': 'req-first' }),
+        payload: { choices: [{ message: { content: 'OK' } }], usage: { total_tokens: 2 } },
+        result: { ...completeProbe('text'), state: 'ready' },
+      })).toThrow('different content or type')
+      expect(readFileSync(target, 'utf8')).toBe('untouched')
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('rejects a reused relay quota artifact with permissive file mode', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-permissive-artifacts-'))
+    try {
+      const quota = { credential: 'model' as const, observed_at: '2026-09-27T00:00:00Z', total_granted: 1000, total_used: 200, total_available: 800, expires_at: 0, unlimited_quota: false as const }
+      writeRelayTokenQuotaArtifact(root, 'release-1', quota)
+      const artifact = join(root, 'relay/release-1/token-model-' + createHash('sha256').update(JSON.stringify({ schema_version: '1', release_id: 'release-1', token_quota: quota }, null, 2) + '\n').digest('hex').slice(0, 16) + '.json')
+      chmodSync(artifact, 0o644)
+      expect(() => writeRelayTokenQuotaArtifact(root, 'release-1', quota)).toThrow('owner, mode or type')
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it.skipIf(typeof process.getuid !== 'function' || process.getuid() !== 0)('rejects a reused relay quota artifact owned by another user', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-wrong-owner-artifacts-'))
+    try {
+      const quota = { credential: 'model' as const, observed_at: '2026-09-27T00:00:00Z', total_granted: 1000, total_used: 200, total_available: 800, expires_at: 0, unlimited_quota: false as const }
+      writeRelayTokenQuotaArtifact(root, 'release-1', quota)
+      const artifact = join(root, 'relay/release-1/token-model-' + createHash('sha256').update(JSON.stringify({ schema_version: '1', release_id: 'release-1', token_quota: quota }, null, 2) + '\n').digest('hex').slice(0, 16) + '.json')
+      chownSync(artifact, process.getuid() + 1, process.getgid())
+      expect(() => writeRelayTokenQuotaArtifact(root, 'release-1', quota)).toThrow('owner, mode or type')
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 })
