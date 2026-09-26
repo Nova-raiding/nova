@@ -100,16 +100,16 @@ release ID、Git SHA 和 ready 身份均与候选一致时才发送负载；身�
 `deploy-preflight-ecs.sh` 的 cloud gate；`no_load` profile 则按上文验证并签署
 未执行声明，不代表容量已验证，也不要求通过负载 cloud gate。
 
-## 4.2 告警通道（当前未成立，NO-GO 前置条件）
+## 4.2 告警通道（本次发布不作为门禁）
 
-发布前 Go/No-Go 清单里的「告警接收人、升级电话、值班工程师」这一项**当前不成立**，必须按未满足处理，不得勾选：
+按本次发布范围，告警接收人、升级电话、值班工程师和 paging 演练不作为上线阻断项；不得把未部署的告警写成已配置或已演练。运行时健康、发布身份、模型、权限、支付、对象存储和恢复等其他门禁仍按各自要求验收：
 
 - 仓库没有部署 Prometheus / Alertmanager / Grafana，`infra/observability/prometheus-alerts.example.yaml` 是**未部署的规则模板**，一条规则都不在生效。
 - 没有真实 paging 通道：全仓没有任何邮件/短信/IM/on-call 适配器；API 的 `notifyOperationalAlert` 只把 HMAC 告警报文投给 `apps/alert-receiver`，而 receiver 的终点是 `alert_webhook_receipts` 表。receiver 的 README 自己声明它不是 pager、不是升级策略、也不是「有人确认」的证据。
 - 没有值班表和演练记录。ECS pilot 环境默认 `OPS_ALERT_NOTIFICATIONS_ENABLED: "false"`、`OPS_ALERT_WEBHOOK_URL: ""`，连落库这一段都是关闭的。
 - 规则与指标的逐条对照（哪些依赖当前不存在、哪些即使加载也永远为假）见规则文件头部的「指标可用性矩阵」；缺口清单、要补齐的六项以及最小可行方案的代价，见 [`doc/todo/release/production-ops-runbook.md`](../../doc/todo/release/production-ops-runbook.md) 的「3.4 告警通道现状」。
 
-判定：**在部署监控栈 + 接入真实 paging 通道 + 值班表 + 至少一次触发/送达/人工确认演练记录齐备之前，这一项保持 NO-GO**；不得用「已配置 webhook」或「规则文件已提交」替代。
+当前观测栈、paging、值班表和演练仍未建立；如后续发布要求启用告警，需另行补齐并提供真实证据。此记录不构成告警能力已就绪的声明。
 
 ## 5. 最终门禁
 
