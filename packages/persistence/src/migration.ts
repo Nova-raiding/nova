@@ -224,7 +224,7 @@ export function verifyBridgeMigrationPrefix(
   mode: string | undefined,
 ): 242 | 244 {
   if (mode !== 'prefix_242_or_244') throw new Error('bridge schema compatibility mode is not enabled')
-  if (expected.length !== 244 || expected.some((migration, index) => migration.version !== index + 1)) {
+  if (expected.length < 244 || expected.some((migration, index) => migration.version !== index + 1)) {
     throw new Error('bridge release must carry the complete migration chain through 244')
   }
   if (applied.length !== 242 && applied.length !== 244) throw new Error('bridge database migration prefix must be exactly 242 or 244')

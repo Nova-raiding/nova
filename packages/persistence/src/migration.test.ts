@@ -19,7 +19,7 @@ describe('MigrationRunner', () => {
     const migrations = await loadMigrations()
     const rows = migrations.map(({ version, name, sql }) => ({ version, name, checksum: migrationChecksum(sql) }))
     expect(verifyBridgeMigrationPrefix(rows.slice(0, 242), migrations, 'prefix_242_or_244')).toBe(242)
-    expect(verifyBridgeMigrationPrefix(rows, migrations, 'prefix_242_or_244')).toBe(244)
+    expect(verifyBridgeMigrationPrefix(rows.slice(0, 244), migrations, 'prefix_242_or_244')).toBe(244)
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 243), migrations, 'prefix_242_or_244')).toThrow('exactly 242 or 244')
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242), migrations, undefined)).toThrow('not enabled')
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242).map((row, index) => index === 241 ? { ...row, checksum: 'bad' } : row), migrations, 'prefix_242_or_244')).toThrow('checksum mismatch')
