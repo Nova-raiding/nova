@@ -1,9 +1,11 @@
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { parseSmokeEnv, validatePg17SmokeTopology } from '../infra/protected/preflight-pg17-application-smoke.mjs'
 
 const h = (char: string) => char.repeat(64)
-const capture = { schema_version: 'pg17-isolated-restore-capture/1', status: 'pass', simulated: false, network_id: h('a'), container_id: h('b'), postgres_image_id: `sha256:${h('c')}`, volume_name: 'merchant_restore_data_0123456789abcdef01234567' }
+const migrationChainRows = Array.from({ length: 254 }, (_, index) => `${index + 1}|migration_${index + 1}|${h('6')}`)
+const capture = { schema_version: 'pg17-isolated-restore-capture/2', status: 'pass', simulated: false, release_id: 'release-1', release_git_sha: '1'.repeat(40), image_set_digest: `sha256:${h('2')}`, manifest_sha256: h('3'), deployment_nonce_sha256: h('4'), backup_sha256: h('5'), source_database_id_sha256: h('7'), target_database_id_sha256: h('8'), migration_target_version: 254, restored_migration_prefix: '1:242:242', migrated_prefix: '1:254:254', migration_chain_sha256: createHash('sha256').update(migrationChainRows.join('\n')).digest('hex'), migration_chain_rows: migrationChainRows, network_id: h('a'), container_id: h('b'), postgres_image_id: `sha256:${h('c')}`, volume_name: 'merchant_restore_data_0123456789abcdef01234567' }
 const network = { Id: capture.network_id, Name: 'merchant_restore_net_0123456789abcdef01234567', Internal: true, Ingress: false, Driver: 'bridge', Containers: { [capture.container_id]: {}, [h('d')]: {} } }
 const postgres = { Id: capture.container_id, Name: '/merchant_restore_0123456789abcdef01234567', State: { Running: true }, HostConfig: { NetworkMode: network.Name, PortBindings: {} }, Image: capture.postgres_image_id, Mounts: [{ Type: 'volume', Name: capture.volume_name }] }
 const redis = { Id: h('d'), Name: '/merchant_restore_redis_0123456789abcdef01234567', State: { Running: true }, HostConfig: { NetworkMode: network.Name, PortBindings: {} }, Image: `sha256:${h('e')}`, Mounts: [] }
@@ -19,6 +21,12 @@ const input = () => ({ capture, network, postgres, redis, images, apiEnv, worker
 describe('PG17 application smoke read-only preflight', () => {
   it('never calls a runtime smoke success on a structurally safe topology', () => {
     expect(validatePg17SmokeTopology(input())).toEqual(['worker no-dispatch restore smoke mode is not implemented'])
+  })
+  it('rejects legacy captures or a migration target mismatch', () => {
+    expect(validatePg17SmokeTopology({ ...input(), capture: { ...capture, schema_version: 'pg17-isolated-restore-capture/1' } })).toContain('valid protected PG17 v2 capture required')
+    expect(validatePg17SmokeTopology({ ...input(), capture: { ...capture, image_set_digest: h('2') } })).toContain('valid protected PG17 v2 capture required')
+    expect(validatePg17SmokeTopology({ ...input(), capture: { ...capture, migrated_prefix: '1:253:253' } })).toContain('restore capture migration binding invalid')
+    expect(validatePg17SmokeTopology({ ...input(), capture: { ...capture, migration_chain_rows: migrationChainRows.slice(1) } })).toContain('restore capture migration chain invalid')
   })
   it('rejects an egress-capable network and production Redis or DB URL', () => {
     const changed: Parameters<typeof validatePg17SmokeTopology>[0] = input()

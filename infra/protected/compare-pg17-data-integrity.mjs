@@ -49,8 +49,11 @@ function inventory(value, kind, capture) {
   return new Map(value.tables.map(table => [table.name, table]))
 }
 export function comparePg17DataIntegrity(baseline, restored, capture) {
-  requireValue(capture?.schema_version === 'pg17-isolated-restore-capture/1' && capture.status === 'pass' && capture.simulated === false && RELEASE.test(capture.release_id ?? '') && HEX.test(capture.backup_sha256 ?? ''), 'verified PG17 capture required')
+  requireValue(capture?.schema_version === 'pg17-isolated-restore-capture/2' && capture.status === 'pass' && capture.simulated === false && RELEASE.test(capture.release_id ?? '') && /^[a-f0-9]{40}$/u.test(capture.release_git_sha ?? '') && /^sha256:[a-f0-9]{64}$/u.test(capture.image_set_digest ?? '') && HEX.test(capture.manifest_sha256 ?? '') && HEX.test(capture.deployment_nonce_sha256 ?? '') && HEX.test(capture.backup_sha256 ?? ''), 'verified PG17 v2 capture required')
+  requireValue(Number.isSafeInteger(capture.migration_target_version) && capture.migration_target_version >= 242 && capture.restored_migration_prefix === '1:242:242' && capture.migrated_prefix === `1:${capture.migration_target_version}:${capture.migration_target_version}` && HEX.test(capture.migration_chain_sha256 ?? ''), 'capture migration binding invalid')
+  requireValue(Array.isArray(capture.migration_chain_rows) && capture.migration_chain_rows.length === capture.migration_target_version && capture.migration_chain_rows.every((row, index) => typeof row === 'string' && row.startsWith(`${index + 1}|`)) && sha(capture.migration_chain_rows.join('\n')) === capture.migration_chain_sha256, 'capture migration chain invalid')
   requireValue(HEX.test(capture.source_database_id_sha256 ?? '') && HEX.test(capture.target_database_id_sha256 ?? '') && capture.source_database_id_sha256 !== capture.target_database_id_sha256, 'capture database identities invalid')
+  requireValue(typeof capture.captured_at === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(capture.captured_at) && Number.isFinite(Date.parse(capture.captured_at)), 'capture timestamp invalid')
   const before = inventory(baseline, 'live-backup-baseline', capture)
   const after = inventory(restored, 'isolated-restore-observation', capture)
   requireValue(Date.parse(baseline.observed_at) <= Date.parse(capture.captured_at) && Date.parse(restored.observed_at) >= Date.parse(capture.captured_at), 'inventory chronology invalid')
@@ -67,7 +70,7 @@ function main(args) {
   const restored = readBounded(paths['--restored'])
   const capture = readBounded(paths['--capture'])
   const result = comparePg17DataIntegrity(baseline.value, restored.value, capture.value)
-  const artifact = { schema_version: 'pg17-data-integrity-comparison/1', simulated: false, release_id: capture.value.release_id, backup_sha256: capture.value.backup_sha256, capture_sha256: capture.sha256, baseline_sha256: baseline.sha256, restored_sha256: restored.sha256, ...result, compared_at: new Date().toISOString(), comparison_id: randomBytes(12).toString('hex'), final_production_evidence: false }
+  const artifact = { schema_version: 'pg17-data-integrity-comparison/1', simulated: false, release_id: capture.value.release_id, release_git_sha: capture.value.release_git_sha, image_set_digest: capture.value.image_set_digest, manifest_sha256: capture.value.manifest_sha256, deployment_nonce_sha256: capture.value.deployment_nonce_sha256, migration_target_version: capture.value.migration_target_version, backup_sha256: capture.value.backup_sha256, capture_sha256: capture.sha256, baseline_sha256: baseline.sha256, restored_sha256: restored.sha256, ...result, compared_at: new Date().toISOString(), comparison_id: randomBytes(12).toString('hex'), final_production_evidence: false }
   requireValue(dirname(paths['--output']) !== '/', 'output path must be scoped')
   writeFileSync(paths['--output'], `${JSON.stringify(artifact, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
   process.stdout.write(`PG17 raw data comparison: ${artifact.status}; artifact=${paths['--output']}\n`)

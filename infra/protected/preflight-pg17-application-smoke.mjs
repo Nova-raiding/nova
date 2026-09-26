@@ -2,11 +2,13 @@
 // Read-only topology/configuration preflight. Deliberately does not start an
 // API/worker, write a pass artifact, or issue production restore evidence.
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { constants, closeSync, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HEX = /^[a-f0-9]{64}$/u
+const RELEASE = /^[A-Za-z0-9._:-]{1,128}$/u
 const IMAGE = /^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$/u
 const requireValue = (ok, message) => { if (!ok) throw new Error(message) }
 function protectedFile(path) {
@@ -44,7 +46,9 @@ function host(url, schemes, user, database) {
 export function validatePg17SmokeTopology({ capture, network, postgres, redis, images, apiEnv, workerEnv, roles }) {
   const errors = []
   const check = (condition, message) => { if (!condition) errors.push(message) }
-  check(capture?.schema_version === 'pg17-isolated-restore-capture/1' && capture.status === 'pass' && capture.simulated === false && HEX.test(capture.network_id ?? '') && HEX.test(capture.container_id ?? ''), 'valid protected PG17 capture required')
+  check(capture?.schema_version === 'pg17-isolated-restore-capture/2' && capture.status === 'pass' && capture.simulated === false && RELEASE.test(capture.release_id ?? '') && /^[a-f0-9]{40}$/u.test(capture.release_git_sha ?? '') && /^sha256:[a-f0-9]{64}$/u.test(capture.image_set_digest ?? '') && HEX.test(capture.manifest_sha256 ?? '') && HEX.test(capture.deployment_nonce_sha256 ?? '') && HEX.test(capture.backup_sha256 ?? '') && HEX.test(capture.source_database_id_sha256 ?? '') && HEX.test(capture.target_database_id_sha256 ?? '') && capture.source_database_id_sha256 !== capture.target_database_id_sha256 && HEX.test(capture.network_id ?? '') && HEX.test(capture.container_id ?? ''), 'valid protected PG17 v2 capture required')
+  check(Number.isSafeInteger(capture?.migration_target_version) && capture.migration_target_version >= 242 && capture.restored_migration_prefix === '1:242:242' && capture.migrated_prefix === `1:${capture.migration_target_version}:${capture.migration_target_version}` && HEX.test(capture.migration_chain_sha256 ?? ''), 'restore capture migration binding invalid')
+  check(Array.isArray(capture?.migration_chain_rows) && capture.migration_chain_rows.length === capture.migration_target_version && capture.migration_chain_rows.every((row, index) => typeof row === 'string' && row.startsWith(`${index + 1}|`)) && createHash('sha256').update(capture.migration_chain_rows.join('\n')).digest('hex') === capture.migration_chain_sha256, 'restore capture migration chain invalid')
   check(network?.Id === capture?.network_id && network?.Internal === true && network?.Ingress !== true && network?.Driver === 'bridge', 'restore network must be exact internal bridge')
   check(postgres?.Id === capture?.container_id && postgres?.State?.Running === true && postgres?.HostConfig?.NetworkMode === network?.Name && postgres?.Image === capture?.postgres_image_id, 'restore Postgres identity/network mismatch')
   check(postgres?.Mounts?.length === 1 && postgres?.Mounts?.[0]?.Type === 'volume' && postgres?.Mounts?.[0]?.Name === capture?.volume_name, 'restore Postgres volume mismatch')

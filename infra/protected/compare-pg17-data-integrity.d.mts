@@ -10,10 +10,19 @@ export type Pg17RowsetInventory = {
   tables: Pg17RowsetTable[]
 }
 export type Pg17RestoreCaptureIdentity = {
-  schema_version: 'pg17-isolated-restore-capture/1'
+  schema_version: 'pg17-isolated-restore-capture/2'
   status: string
   simulated: boolean
   release_id: string
+  release_git_sha: string
+  image_set_digest: string
+  manifest_sha256: string
+  deployment_nonce_sha256: string
+  migration_target_version: number
+  restored_migration_prefix: string
+  migrated_prefix: string
+  migration_chain_sha256: string
+  migration_chain_rows: string[]
   backup_sha256: string
   source_database_id_sha256: string
   target_database_id_sha256: string

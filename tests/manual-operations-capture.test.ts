@@ -22,10 +22,12 @@ const actualManualRecord = {
   evidenceAssetIds: [], idempotencyKey: 'manual-record-1', evidenceBoundary: 'manual_unverified', recordedAt: '2026-09-25T10:00:00.000Z', revision: 1,
 } satisfies ManualPublishRecord
 
-function fixture(isolationStatus = '403', releaseIdentity = candidateIdentity, containerImageId = candidateImageId, reportBoundary = 'manual_unverified', reportState = 'manual_publish_reported', isolationError: unknown = { code: 'FORBIDDEN' }, reportOverrides: Record<string, unknown> = {}) {
+function fixture(isolationStatus = '403', releaseIdentity = candidateIdentity, containerImageId = candidateImageId, reportBoundary = 'manual_unverified', reportState = 'manual_publish_reported', isolationError: unknown = { code: 'FORBIDDEN' }, reportOverrides: Record<string, unknown> = {}, newerReportCount = 0) {
   const report = { ...actualManualRecord, evidenceBoundary: reportBoundary, state: reportState, ...reportOverrides }
   const reportJson = JSON.stringify({ result: report })
-  const listJson = JSON.stringify({ result: { items: [actualManualRecord], total: 1, limit: 20, offset: 0 } })
+  const newerReports = Array.from({ length: newerReportCount }, (_, index) => ({ ...actualManualRecord, id: `newer-report-${index}` }))
+  const listJson = JSON.stringify({ result: { items: newerReports.length ? newerReports.slice(0, 20) : [actualManualRecord], total: newerReports.length + 1, limit: 20, offset: 0 } })
+  const secondPageJson = JSON.stringify({ result: { items: [...newerReports.slice(20), actualManualRecord], total: newerReports.length + 1, limit: 20, offset: 20 } })
   const isolationJson = JSON.stringify({ error: isolationError })
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'manual-evidence-capture-')))
   const bin = join(directory, 'bin')
@@ -56,6 +58,7 @@ if [ "$workspace" = foreign-workspace ]; then
 fi
 case "$data" in
   *publish.manual.get*) printf '%s' '${reportJson}' >"$output" ;;
+  *'"offset":"20"'*) printf '%s' '${secondPageJson}' >"$output" ;;
   *) printf '%s' '${listJson}' >"$output" ;;
 esac
 printf 200
@@ -126,6 +129,16 @@ describe('manual operations evidence capture', () => {
     expect(JSON.stringify(evidence)).not.toContain('secret-token')
     expect(existsSync(env.FAKE_AUTH_HEADER_VERIFIED)).toBe(true)
     expect(existsSync(env.FAKE_CURL_ARG_LEAK)).toBe(false)
+    expect(validateManualOperationsEvidence(evidence, 'release-test')).toEqual([])
+  })
+
+  it('finds an older report on the second tenant-scoped list page', () => {
+    const { output, env } = fixture('403', candidateIdentity, candidateImageId, 'manual_unverified', 'manual_publish_reported', { code: 'FORBIDDEN' }, {}, 20)
+    execFileSync('sh', ['infra/scripts/capture-manual-operations-evidence.sh'], { env, stdio: 'pipe' })
+    const evidence = JSON.parse(readFileSync(output, 'utf8'))
+    expect(evidence.capture_journal.observations.find((observation: { name: string }) => observation.name === 'target_list').material).toEqual({
+      expected_report_visible: true, visible_report_id: 'report-1', total: 21, returned_count: 1,
+    })
     expect(validateManualOperationsEvidence(evidence, 'release-test')).toEqual([])
   })
 

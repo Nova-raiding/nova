@@ -113,8 +113,33 @@ rpc() {
   fi
 }
 
-rpc "$PRODUCTION_CANARY_WORKSPACE_ID" \
-  '{"jsonrpc":"2.0","id":"manual-evidence-list","method":"publish.manual.list","params":{"limit":"20","offset":"0"}}' target-list
+page_offset=0
+while :; do
+  rpc "$PRODUCTION_CANARY_WORKSPACE_ID" \
+    "{\"jsonrpc\":\"2.0\",\"id\":\"manual-evidence-list\",\"method\":\"publish.manual.list\",\"params\":{\"limit\":\"20\",\"offset\":\"$page_offset\"}}" target-list
+  page_result=$(WORKDIR="$workdir" REPORT_ID="$PRODUCTION_MANUAL_REPORT_ID" PAGE_OFFSET="$page_offset" node <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const dir = process.env.WORKDIR;
+const fail = message => { throw new Error(message); };
+if (fs.readFileSync(path.join(dir, 'target-list.status'), 'utf8') !== '200') fail('manual report list did not return HTTP 200');
+const response = JSON.parse(fs.readFileSync(path.join(dir, 'target-list.json'), 'utf8'));
+const list = response?.data?.result ?? response?.result;
+const offset = Number(process.env.PAGE_OFFSET);
+if (!list || !Array.isArray(list.items) || !Number.isSafeInteger(list.total) || list.total < 0
+  || Number(list.offset) !== offset || list.items.length < 1 || list.items.length > 20
+  || offset + list.items.length > list.total
+  || (offset + list.items.length < list.total && list.items.length !== 20)) fail('manual report pagination contract is invalid');
+process.stdout.write(list.items.some(item => item?.id === process.env.REPORT_ID) ? 'found' : offset + list.items.length >= list.total ? 'absent' : 'next');
+NODE
+  )
+  case "$page_result" in
+    found) break ;;
+    absent) echo 'expected manual report is absent from the tenant-scoped list' >&2; exit 1 ;;
+    next) page_offset=$((page_offset + 20)) ;;
+    *) echo 'manual report pagination returned an invalid result' >&2; exit 1 ;;
+  esac
+done
 rpc "$PRODUCTION_CANARY_WORKSPACE_ID" \
   "{\"jsonrpc\":\"2.0\",\"id\":\"manual-evidence-get\",\"method\":\"publish.manual.get\",\"params\":{\"manual_publish_report_id\":$(node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$PRODUCTION_MANUAL_REPORT_ID")}}" target-get
 rpc "$PRODUCTION_CANARY_ISOLATION_WORKSPACE_ID" \
