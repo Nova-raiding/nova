@@ -3,6 +3,7 @@ import { OpsPageError } from "../components/OpsPageError";
 import { RuleCenterSection } from "../components/tasks/RuleCenterSection";
 import { RuleSyncStatusSection } from "../components/rules/RuleSyncStatusSection";
 import { WorkspaceRuleAuditPanel } from "../components/rules/WorkspaceRuleAuditPanel";
+import { PublicRuleDraftReviewPanel } from "../components/rules/PublicRuleDraftReviewPanel";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { Alert, Button } from "antd";
 
@@ -42,7 +43,12 @@ export function RulesPage({ model }: RulesPageProps) {
         onSyncNow={() => void model.syncRulesNow()}
       />
       <RuleCenterSection model={model} />
-      <WorkspaceRuleAuditPanel />
+      {model.authorization.scope.kind === "platform" && <PublicRuleDraftReviewPanel authorization={model.authorization} />}
+      <WorkspaceRuleAuditPanel
+        rules={model.rules}
+        canRead={model.authorization.scope.kind !== "platform" && model.authorization.can("rule.read")}
+        workspaceId={model.authorization.scope.id}
+      />
       </div>
     </OpsPage>
   );

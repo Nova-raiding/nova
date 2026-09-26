@@ -664,6 +664,55 @@ describe('API HTTP vertical slice', () => {
   })
   afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())); setPaymentProviderForTests(); setRuleRepositoryForTests(); vi.unstubAllEnvs() })
 
+  it('creates an unbound candidate task through strict-auth MCP without a store', async () => {
+    const workspaceId = `ws_candidate_${Date.now()}`
+    const actorId = `candidate-owner-${Date.now()}`
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('SESSION_ID_HASH_SECRET', 'candidate-task-session-secret')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ 'candidate-owner-token': { workspaces: [workspaceId], actor_id: actorId, roles: ['workspace_owner'] } }))
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: '候选任务所有者', role: 'workspace_owner', status: 'active', invitedBy: 'test' })
+    const productId = `prod_candidate_${Date.now()}`
+    const product = structuredClone(service.products.get('prod_fixture_1')!)
+    Object.assign(product, { id: productId, workspaceId, remoteId: undefined, accountId: undefined, brandId: undefined, factsConfirmed: true })
+    service.products.set(productId, product)
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer candidate-owner-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'task.create.draft', params: { workspace_id: workspaceId, product_id: productId, platform: 'taobao', request_text: '生成商品介绍候选' } }),
+    }).then(json)
+    expect(response.error).toBeNull()
+    expect(response.data?.result).toMatchObject({ candidateOnly: true, candidate_only: true, productId })
+    expect(response.data?.result).not.toHaveProperty('accountId')
+    expect(service.listPlatformAccounts(workspaceId)).toHaveLength(0)
+    const taskId = (response.data?.result as { id: string }).id
+    const attemptedPublish = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer candidate-owner-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'publish.prepare', params: { workspace_id: workspaceId, task_id: taskId } }),
+    }).then(json)
+    expect(attemptedPublish.error?.code).toBe('CANDIDATE_TASK_NOT_PUBLISHABLE')
+    const reboundAnswer = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer candidate-owner-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'task.answer', params: { workspace_id: workspaceId, task_id: taskId, answers_json: JSON.stringify({ product_id: `prod_other_${Date.now()}` }) } }),
+    }).then(json)
+    expect(reboundAnswer.error?.code).toBe('CANDIDATE_TASK_SCOPE_INVALID')
+    const reboundClone = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer candidate-owner-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'task.clone', params: { workspace_id: workspaceId, task_id: taskId, target_account_id: 'some-bound-account' } }),
+    }).then(json)
+    expect(reboundClone.error?.code).toBe('CANDIDATE_TASK_SCOPE_INVALID')
+    const unboundClone = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer candidate-owner-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'task.clone', params: { workspace_id: workspaceId, task_id: taskId } }),
+    }).then(json)
+    expect(unboundClone.error).toBeNull()
+    expect(unboundClone.data?.result).toMatchObject({ task: { candidateOnly: true, productId } })
+  })
+
   it('defaults billing reads to the authenticated member and restricts workspace scope to billing administrators', async () => {
     const workspaceId = `ws_personal_billing_${Date.now()}`
     const ownerId = `billing-owner-${Date.now()}`

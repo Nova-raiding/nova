@@ -106,6 +106,8 @@ export interface DeliveryPublishReceiptInput {
 }
 
 export interface DeliveryBundleManifestInput {
+  /** Marks output from an unbound candidate task that must never be published. */
+  readonly candidate_only?: boolean
   readonly scope: DeliveryBundleScope
   readonly entities: DeliveryBundleEntities
   readonly version: DeliveryBundleVersion
@@ -130,6 +132,7 @@ export interface DeliveryManifestFile {
 
 export interface DeliveryBundleManifest {
   readonly schemaVersion: '1.0'
+  readonly candidate_only?: boolean
   readonly generatedAt: string
   readonly scope: DeliveryBundleScope
   readonly entities: DeliveryBundleEntities
@@ -517,7 +520,7 @@ export function buildDeliveryBundleManifest(input: DeliveryBundleManifestInput):
   ].sort()
   const blocked = findings.some(item => item.status === 'blocked') || input.assetPreviews.some(item => item.blocked)
   const manifest: DeliveryBundleManifest = {
-    schemaVersion: '1.0', generatedAt, scope: clone(scope), entities: clone(entities),
+    schemaVersion: '1.0', ...(input.candidate_only ? { candidate_only: true } : {}), generatedAt, scope: clone(scope), entities: clone(entities),
     version: { ...clone(input.version), generatedAt }, factSources, ruleVersions, files: fileMetadata,
     deliveryVariants, assetPreviews: assetPreviews as DeliveryBundleManifest['assetPreviews'],
     review: { findingsFile: 'review-findings.json', findings, waivers },

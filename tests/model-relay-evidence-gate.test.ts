@@ -7,7 +7,7 @@ import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 const evidence = {
   schema_version: '1', release_id: 'release-1', generated_at: '2026-08-26T01:00:00Z', environment: 'production', simulated: false, relay: 'https://relay.example.com',
-  results: ['text', 'image', 'image_edit', 'ocr', 'video'].map((modality, index) => ({ modality, state: 'ready', endpoint: '/probe', model: `merchant-${modality}-v1`, providerRequestId: `req-${modality}`, usageObserved: true, usage: modality === 'text' || modality === 'ocr' ? { totalTokens: 1 } : modality === 'video' ? { durationSeconds: 5 } : { billingUnits: 1 }, usageProviderRequestId: `req-${modality}`, costObserved: true, costCny: index === 0 ? 0.01 : 0.02 })),
+  results: ['text', 'image', 'image_edit', 'ocr', 'video'].map((modality, index) => ({ modality, state: 'ready', endpoint: '/probe', model: `merchant-${modality}-v1`, httpStatus: 200, providerRequestId: `req-${modality}`, usageObserved: true, usage: modality === 'text' || modality === 'ocr' ? { totalTokens: 1 } : modality === 'video' ? { durationSeconds: 5 } : { billingUnits: 1 }, usageProviderRequestId: `req-${modality}`, costObserved: true, costCny: index === 0 ? 0.01 : 0.02 })),
 }
 
 describe('model relay evidence gate', () => {
@@ -28,6 +28,16 @@ describe('model relay evidence gate', () => {
       'image.usageObserved must be true',
       'ocr.costObserved must be true',
       'image.costCny must be a non-negative observed number',
+    ]))
+  })
+
+  it('requires every ready modality to carry a successful HTTP status', () => {
+    const invalid = structuredClone(evidence)
+    invalid.results[0]!.httpStatus = 503
+    ;(invalid.results[1] as { httpStatus?: number }).httpStatus = undefined
+    expect(validateModelRelayEvidence(invalid)).toEqual(expect.arrayContaining([
+      'text.httpStatus must be a successful 2xx status',
+      'image.httpStatus must be a successful 2xx status',
     ]))
   })
 
@@ -178,12 +188,12 @@ describe('model relay evidence gate', () => {
     bound.results = bound.results.map(result => {
       const summarizedResult = { ...result, costSource: 'provider_receipt' }
       const receiptResult = { ...summarizedResult, ...(result.modality === 'text' ? { costObserved: false, costCny: 0 } : {}) }
-      const body = JSON.stringify({ schema_version: '1', release_id: bound.release_id, modality: result.modality, result: receiptResult })
+      const body = JSON.stringify({ schema_version: '1', release_id: bound.release_id, modality: result.modality, http_status: result.httpStatus, result: receiptResult })
       const digest = createHash('sha256').update(body).digest('hex')
       writeFileSync(join(root, 'relay', `${result.modality}.json`), body)
       return { ...summarizedResult, evidence_ref: `artifact://production/relay/${result.modality}.json#${digest}` }
     })
-    expect(validateModelRelayEvidence(bound, { requireProduction: true, artifactRoot: root, now: new Date('2026-08-26T02:00:00Z') })).toContain('text.evidence_ref receipt must match the summarized request, model, state, endpoint, usage and cost')
+    expect(validateModelRelayEvidence(bound, { requireProduction: true, artifactRoot: root, now: new Date('2026-08-26T02:00:00Z') })).toContain('text.evidence_ref receipt must bind successful HTTP status and summarized request, model, state, endpoint, usage and cost')
   })
 
   it('rejects immutable receipts copied from another release', () => {
@@ -195,7 +205,7 @@ describe('model relay evidence gate', () => {
     }
     bound.results = bound.results.map(result => {
       const summarizedResult = { ...result, costSource: 'provider_receipt' }
-      const body = JSON.stringify({ schema_version: '1', release_id: result.modality === 'text' ? 'older-release' : bound.release_id, modality: result.modality, result: summarizedResult })
+      const body = JSON.stringify({ schema_version: '1', release_id: result.modality === 'text' ? 'older-release' : bound.release_id, modality: result.modality, http_status: result.httpStatus, result: summarizedResult })
       const digest = createHash('sha256').update(body).digest('hex')
       writeFileSync(join(root, 'relay', `${result.modality}.json`), body)
       return { ...summarizedResult, evidence_ref: `artifact://production/relay/${result.modality}.json#${digest}` }

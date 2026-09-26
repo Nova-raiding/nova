@@ -98,6 +98,54 @@ const productionVisualEvidence = (candidateHash: string) => ({
 })
 
 describe('MerchantService', () => {
+  it('keeps candidate task identity durable and rejects every publish entry point', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.products.get('prod_fixture_1')!
+    product.factsConfirmed = true
+    product.remoteId = undefined
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao', candidateOnly: true })
+    expect(task.candidateOnly).toBe(true)
+    expect(task).not.toHaveProperty('accountId')
+    expect(task).not.toHaveProperty('brandId')
+    expect(() => service.preparePublish(task.id)).toThrowError(expect.objectContaining({ code: 'CANDIDATE_TASK_NOT_PUBLISHABLE' }))
+    expect(() => service.confirmPublish({ workspaceId: 'ws_demo', taskId: task.id, contentVersionId: 'version_missing', confirmationHash: 'h', remoteSnapshotHash: 'r', idempotencyKey: 'candidate-publish' }))
+      .toThrowError(expect.objectContaining({ code: 'CANDIDATE_TASK_NOT_PUBLISHABLE' }))
+    expect(() => service.hydrateSnapshot({ entityType: 'task', entity: { ...task, accountId: 'account_bound' } }))
+      .toThrowError(expect.objectContaining({ code: 'CANDIDATE_TASK_SCOPE_INVALID' }))
+    const restarted = new MerchantService({ fixtureMode: true })
+    restarted.hydrateSnapshot({ entityType: 'task', entity: structuredClone(task) })
+    expect(restarted.tasks.get(task.id)?.candidateOnly).toBe(true)
+    expect(() => restarted.hydrateSnapshot({ entityType: 'task', entity: { ...task, campaignId: 'campaign', campaignItemId: 'item' } }))
+      .toThrowError(expect.objectContaining({ code: 'CANDIDATE_TASK_SCOPE_INVALID' }))
+    const cloned = service.cloneTask('ws_demo', task.id)
+    expect(cloned.candidateOnly).toBe(true)
+    expect(cloned).not.toHaveProperty('accountId')
+    expect(() => service.cloneTask('ws_demo', task.id, undefined, { accountId: 'account_bound' }))
+      .toThrowError(expect.objectContaining({ code: 'CANDIDATE_TASK_SCOPE_INVALID' }))
+    const alternateProduct = { ...product, id: 'prod_candidate_alternate', title: '另一个商品' }
+    service.products.set(alternateProduct.id, alternateProduct)
+    expect(() => service.answerTask('ws_demo', task.id, { product_id: alternateProduct.id }))
+      .toThrowError(expect.objectContaining({ code: 'CANDIDATE_TASK_SCOPE_INVALID' }))
+    expect(() => service.answerTask('ws_demo', task.id, { brand_id: 'brand_1' }))
+      .toThrowError(expect.objectContaining({ code: 'CANDIDATE_TASK_SCOPE_INVALID' }))
+    expect(service.tasks.get(task.id)?.productId).toBe(product.id)
+    service.selectDirection(task.id, 'A')
+    const version = service.createDraft(task.id)
+    const markdown = service.exportContent('ws_demo', version.id, 'markdown')
+    expect(markdown.body).toMatch(/^> 候选任务导出：仅供内部审核，不可发布到平台。\n\n/u)
+    expect(markdown.body).not.toContain('\\n')
+  })
+
+  it('rejects candidate creation when product already carries store or brand scope', () => {
+    for (const binding of [{ accountId: 'account_existing' }, { brandId: 'brand_existing' }, { remoteId: 'remote_existing' }]) {
+      const service = new MerchantService({ fixtureMode: true })
+      const product = service.products.get('prod_fixture_1')!
+      Object.assign(product, binding)
+      expect(() => service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao', candidateOnly: true }))
+        .toThrowError(expect.objectContaining({ code: 'CANDIDATE_TASK_SCOPE_INVALID' }))
+    }
+  })
+
   it('reuses a deterministic campaign task id and rejects a different scope', () => {
     const service = new MerchantService({ fixtureMode: true })
     const input = { workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' as const, brandId: 'brand_1', campaignId: 'campaign_1', campaignItemId: 'item_1', taskId: 'task_campaign_fixed' }

@@ -95,6 +95,7 @@ describe('local plugin install RLS PostgreSQL release acceptance', () => {
       legacyDatabaseCreated = true
       legacyDatabase = new Pool({ connectionString: connection(base, legacyDatabaseName) })
       const prefix = migrations.filter(migration => migration.version <= 244)
+      const through245 = migrations.filter(migration => migration.version <= 245)
       expect(await new MigrationRunner(legacyDatabase, prefix).run()).toEqual(prefix.map(migration => migration.version))
       const legacyIdentityId = randomUUID()
       const legacyAccountId = randomUUID()
@@ -116,7 +117,7 @@ describe('local plugin install RLS PostgreSQL release acceptance', () => {
       // A reviewed legacy-state correction makes the forward-only migration
       // applicable; the resulting constraint rejects future invalid writes.
       await legacyDatabase.query(`UPDATE local_plugin_connection_requests SET status='expired' WHERE id=$1`, [legacyRequestId])
-      expect(await new MigrationRunner(legacyDatabase, migrations).run()).toEqual([245])
+      expect(await new MigrationRunner(legacyDatabase, through245).run()).toEqual([245])
       await expect(legacyDatabase.query(`INSERT INTO local_plugin_connection_requests (id,account_id,identity_id,workspace_id,status,expires_at,authorized_at,exchanged_at) VALUES ($1,$2,$3,'plugin_migration_245','authorized',now()+interval '5 minutes',NULL,NULL)`, [randomUUID(), legacyAccountId, legacyIdentityId]))
         .rejects.toMatchObject({ code: '23514', constraint: 'local_plugin_connection_requests_authorized_timestamp_check' })
     } catch (error) {

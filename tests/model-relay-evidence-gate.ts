@@ -5,7 +5,7 @@ import { resolve, sep } from 'node:path'
 export const REQUIRED_RELAY_MODALITIES = ['text', 'image', 'image_edit', 'ocr', 'video'] as const
 type Modality = typeof REQUIRED_RELAY_MODALITIES[number]
 type RelayUsage = { inputTokens?: number; outputTokens?: number; totalTokens?: number; billingUnits?: number; durationSeconds?: number }
-type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; evidence_ref?: string }
+type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; httpStatus?: number; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; evidence_ref?: string }
 type RelayErrorRecovery = { verified?: boolean; failure_status?: number; failure_observed_at?: string; recovered_at?: string; failed_request_id?: string; recovery_request_id?: string; evidence_ref?: string }
 type RelayTokenQuota = { credential?: 'model' | 'video'; observed_at?: string; total_granted?: number; total_used?: number; total_available?: number; expires_at?: number; unlimited_quota?: boolean; evidence_ref?: string }
 type RelayEvidence = { schema_version?: string; release_id?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; token_quota?: RelayTokenQuota[]; results?: RelayResult[]; error_recovery?: RelayErrorRecovery }
@@ -20,6 +20,33 @@ const relayOrigin = (value: string): string | undefined => {
 }
 const immutableArtifact = /^artifact:\/\/production\/[A-Za-z0-9._/-]+#([a-f0-9]{64})$/u
 type ExpectedArtifact = { releaseId?: string; result?: RelayResult; recovery?: RelayErrorRecovery; tokenQuota?: RelayTokenQuota; relay?: string }
+function videoResponseIsComplete(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
+  const root = payload as Record<string, unknown>
+  const data = root.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data as Record<string, unknown> : root
+  const nestedData = data.data && typeof data.data === 'object' && !Array.isArray(data.data) ? data.data as Record<string, unknown> : {}
+  const nestedOutput = nestedData.output && typeof nestedData.output === 'object' && !Array.isArray(nestedData.output) ? nestedData.output as Record<string, unknown> : {}
+  const statuses = [nestedOutput.task_status, nestedData.task_status, nestedData.status, data.status]
+    .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+    .map(value => value.trim().toLowerCase())
+  if (new Set(statuses).size > 1 || !statuses.length || !['completed', 'succeeded', 'success'].includes(statuses[0]!)) return false
+  const isStrictHttpsUrl = (value: unknown): boolean => {
+    if (typeof value !== 'string' || value !== value.trim() || !/^https:\/\//iu.test(value)) return false
+    const authority = /^https:\/\/([^/?#]*)/iu.exec(value)?.[1]
+    if (!authority || authority.includes('@')) return false
+    try { const url = new URL(value); return url.protocol === 'https:' && Boolean(url.hostname) && !url.username && !url.password } catch { return false }
+  }
+  const hasHttpsOutput = (value: unknown, depth = 0): boolean => {
+    if (depth > 2) return false
+    if (typeof value === 'string') return isStrictHttpsUrl(value)
+    if (Array.isArray(value)) return value.some(item => hasHttpsOutput(item, depth + 1))
+    if (!value || typeof value !== 'object') return false
+    const output = value as Record<string, unknown>
+    return ['result_url', 'video_url', 'output_url', 'url', 'output'].some(key => hasHttpsOutput(output[key], depth + 1))
+  }
+  return [data.result_url, data.video_url, data.output_url, data.url, nestedData.result_url, nestedData.video_url, nestedData.output_url, nestedData.url]
+    .some(isStrictHttpsUrl) || hasHttpsOutput(nestedData.output)
+}
 function validateArtifact(reference: string | undefined, root: string, label: string, expected?: ExpectedArtifact): string[] {
   const match = immutableArtifact.exec(reference ?? '')
   if (!match) return [`${label} must be an immutable production artifact with SHA-256 fragment`]
@@ -73,8 +100,11 @@ function validateArtifact(reference: string | undefined, root: string, label: st
       } else if (expected.result) {
         if (artifactValue.modality !== expected.result.modality) return [`${label} modality must match ${expected.result.modality}`]
         const receipt = artifactValue.result
-        if (!receipt || typeof receipt !== 'object' || ['providerRequestId', 'providerJobId', 'model', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result.usage)) {
-          return [`${label} receipt must match the summarized request, model, state, endpoint, usage and cost`]
+        if (artifactValue.http_status !== expected.result.httpStatus || !receipt || typeof receipt !== 'object' || receipt.httpStatus !== expected.result.httpStatus || ['providerRequestId', 'providerJobId', 'model', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result.usage)) {
+          return [`${label} receipt must bind successful HTTP status and summarized request, model, state, endpoint, usage and cost`]
+        }
+        if (expected.result.modality === 'video' && !videoResponseIsComplete(artifactValue.relay_response)) {
+          return [`${label} video receipt must prove a completed task with an HTTPS artifact`]
         }
       }
     }
@@ -148,6 +178,7 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
     const result = byModality.get(modality)
     if (!result) { errors.push(`${modality} result is required`); continue }
     if (result.state !== 'ready') errors.push(`${modality} state must be ready`)
+    if (!Number.isSafeInteger(result.httpStatus) || (result.httpStatus ?? 0) < 200 || (result.httpStatus ?? 0) > 299) errors.push(`${modality}.httpStatus must be a successful 2xx status`)
     if (!nonEmpty(result.endpoint)) errors.push(`${modality}.endpoint is required`)
     else if (!result.endpoint.startsWith('/') || result.endpoint.startsWith('//') || result.endpoint.includes('\\') || result.endpoint.includes('?') || result.endpoint.includes('#') || result.endpoint.includes('%') || result.endpoint.split('/').some(segment => segment === '.' || segment === '..') || /[\u0000-\u001f\u007f]/u.test(result.endpoint)) errors.push(`${modality}.endpoint must be a safe relative path`)
     if (!nonEmpty(result.model)) errors.push(`${modality}.model is required`)

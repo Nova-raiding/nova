@@ -7,6 +7,10 @@ import type { PublishBatch, PublishMcpContext } from './server.js'
 
 export type PublishMcpMethod = 'publish.prepare' | 'publish.batch.prepare' | 'publish.batch.confirm' | 'publish.batch.get' | 'publish.batch.pause' | 'publish.batch.resume' | 'publish.batch.retry_failed' | 'publish.confirm' | 'publish.get'
 
+function rejectCandidateTask(task: { id: string; candidateOnly?: boolean }) {
+  if (task.candidateOnly === true) throw new DomainError('CANDIDATE_TASK_NOT_PUBLISHABLE', '候选任务只允许生成、审核和导出，不能发布到平台', 409, { task_id: task.id, candidate_only: true })
+}
+
 export async function handlePublishMcpMethod(method: PublishMcpMethod, context: PublishMcpContext): Promise<void> {
   const { req, workspaceId, params, result, required, scopeTask, assertCanonicalTaskScopeForAction,
     requireEnabledPlatform, requireCurrentPlatformMapping, isProduction, fixtureMode,
@@ -25,6 +29,7 @@ export async function handlePublishMcpMethod(method: PublishMcpMethod, context: 
     case 'publish.prepare': {
       const taskId = required(params, 'task_id')
       const task = scopeTask(req, taskId)
+      rejectCandidateTask(task)
       const canonicalProof = await assertCanonicalTaskScopeForAction(task)
       await requireEnabledPlatform(workspaceId, task.platform)
       const mappingPreflight = await requireCurrentPlatformMapping(task)
@@ -53,6 +58,7 @@ export async function handlePublishMcpMethod(method: PublishMcpMethod, context: 
       const batchId = 'batch_' + randomUUID()
       for (const taskId of taskIds) {
         const task = scopeTask(req, taskId)
+        rejectCandidateTask(task)
         await enforceTaskBrandAccess(req, task, 'publisher')
         await assertCanonicalTaskScopeForAction(task)
         await requireEnabledPlatform(workspaceId, task.platform)
@@ -108,6 +114,10 @@ export async function handlePublishMcpMethod(method: PublishMcpMethod, context: 
         confirmations = parsed as Array<Record<string, unknown>>
       } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'confirmations_json 必须是 1 至 50 个确认对象的 JSON 数组', 400) }
       assertUniqueBatchTaskIds(confirmations)
+      for (const confirmation of confirmations) {
+        const candidateTaskId = typeof confirmation.task_id === 'string' ? confirmation.task_id.trim() : ''
+        if (candidateTaskId) rejectCandidateTask(scopeTask(req, candidateTaskId))
+      }
       const items: Array<Record<string, unknown>> = []
       for (const confirmation of confirmations) {
         const taskId = typeof confirmation.task_id === 'string' ? confirmation.task_id.trim() : ''
@@ -272,6 +282,7 @@ export async function handlePublishMcpMethod(method: PublishMcpMethod, context: 
       if (!key) throw new DomainError(ERROR_CODES.IDEMPOTENCY_KEY_REQUIRED, '发布确认必须携带 Idempotency-Key', 400)
       const taskId = required(params, 'task_id')
       const task = scopeTask(req, taskId)
+      rejectCandidateTask(task)
       await requireEnabledPlatform(workspaceId, task.platform)
       await requireCurrentPlatformMapping(task)
       const contentVersionId = required(params, 'content_version_id')

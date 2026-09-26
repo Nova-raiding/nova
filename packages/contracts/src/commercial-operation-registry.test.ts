@@ -45,6 +45,13 @@ describe('complete commercial operation registry E1 totality', () => {
     )).toThrow('missing classifications: MCP:new.method.requires.review')
   })
 
+  it('registers public rule draft review as enabled, uncharged read capability', () => {
+    for (const operation of ['ops.rules.public.drafts.list', 'ops.rules.public.drafts.get']) {
+      expect(resolveMcp(operation)).toMatchObject({ outcome: 'REGISTERED', policy: { enabled: true, domain: 'OPS_CONTROL', classification: null, rate_action: null } })
+      expect(getMcpMethodPolicy(operation)).toMatchObject({ capability: 'rule.read', scope: 'platform', workbench: 'platform', effect: 'read' })
+    }
+  })
+
   it('classifies only the signed knowledge claim worker routes as machine infrastructure', () => {
     for (const operation of [
       'http:POST:/v1/internal/knowledge/generation-claims',

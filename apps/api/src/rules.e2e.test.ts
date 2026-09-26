@@ -25,7 +25,9 @@ class MemoryRuleRepository implements RuleRepositoryPort {
   }
 
   async listPublic(workspaceId: string, platform?: string) {
-    return this.publicVersions.filter(item => item.status === 'active' && item.workspaceId === workspaceId && (!platform || item.scopeValue === platform))
+    return this.publicVersions
+      .filter(item => item.status === 'active' && (!platform || (item.scopeValue ?? item.targetId) === platform))
+      .map(item => ({ ...item, workspaceId }))
   }
 
   async getPublicVersion(platform: string, packId: string, version: string) {
@@ -43,7 +45,7 @@ class MemoryRuleRepository implements RuleRepositoryPort {
   async transitionPublicStatus(input: Parameters<NonNullable<RuleRepositoryPort['transitionPublicStatus']>>[0]) {
     const row = this.publicVersions.find(item => item.scopeValue === input.platform && item.packId === input.packId && item.version === input.version)
     if (!row) throw new Error('PUBLIC_RULE_VERSION_NOT_FOUND')
-    if (input.status === 'active' && (row.sourceKind !== 'official' || row.createdBy !== 'signed-rule-sync' || row.sourceReference.startsWith('manual://'))) throw new Error('PUBLIC_RULE_SOURCE_NOT_VERIFIED')
+    if (row.revision !== input.expectedRevision) throw Object.assign(new Error('PUBLIC_RULE_REVISION_CONFLICT'), { code: 'PUBLIC_RULE_REVISION_CONFLICT' })
     row.status = input.status
     row.revision += 1
     this.audits.push({ id: `public-audit-${this.audits.length + 1}`, workspaceId: '__platform_rules__', rulePackId: input.packId, ruleVersionId: row.id, version: row.version, action: input.status === 'active' ? 'activated' : 'deactivated', actorId: input.actorId, reason: input.reason, occurredAt: input.occurredAt, data: input.auditData ?? {} })
@@ -141,7 +143,7 @@ describe('durable rule-center HTTP boundary', () => {
     expect(repository.audits).toHaveLength(0)
   })
 
-  it('keeps manual public Markdown drafts out of active merchant rules even with a separate approval token', async () => {
+  it('requires an independently approved manual public rule before it reaches active merchant rules', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)
     const base = await start()
@@ -149,7 +151,7 @@ describe('durable rule-center HTTP boundary', () => {
     const headers = { 'x-workspace-id': workspaceId, 'x-actor-id': 'rules_admin_1', 'x-role': 'rules_admin', 'x-ops-workbench': 'platform', 'content-type': 'application/json' }
     const draft = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({
       jsonrpc: '2.0', id: 1, method: 'rule.publish', params: {
-        pack_id: 'manual-public', name: '人工平台规则', version: '1', scope: 'platform', public_scope: 'platform', target_id: 'pinduoduo',
+        pack_id: 'manual-public', name: '人工平台规则', version: '1', scope: 'platform', category: 'platform', public_scope: 'platform', target_id: 'pinduoduo',
         source_kind: 'internal', source_reference: 'manual://rules.md#PDD-1', source_checked_at: new Date().toISOString(),
         checks_json: JSON.stringify({ content: '不得使用未验证承诺' }), reason: 'manual import',
       },
@@ -161,13 +163,28 @@ describe('durable rule-center HTTP boundary', () => {
     const approval = { approval_ref: 'approval://manual-test', approved_by: 'reviewer_2', approved_at: new Date().toISOString() }
     const activation = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({
       jsonrpc: '2.0', id: 2, method: 'rule.status', params: {
-        pack_id: 'manual-public', version: '1', status: 'active', public_scope: 'platform', platform: 'pinduoduo', reason: 'test activation', approval_json: JSON.stringify(approval),
+        pack_id: 'manual-public', version: '1', status: 'active', public_scope: 'platform', platform: 'pinduoduo', expected_revision: '1', reason: 'test activation', approval_json: JSON.stringify(approval),
       },
     }) }).then(json)
-    expect(activation.error?.code).toBe('OFFICIAL_RULE_IMPORT_REQUIRED')
-    expect(repository.publicVersions[0]?.status).toBe('draft')
-    expect(repository.audits.map(item => item.action)).toEqual(['created'])
-    expect(await repository.listPublic(workspaceId, 'pinduoduo')).toEqual([])
+    expect(activation.error).toBeNull()
+    expect(repository.publicVersions[0]?.status).toBe('active')
+    expect(repository.publicVersions[0]?.revision).toBe(2)
+    expect(repository.audits.map(item => item.action)).toEqual(['created', 'activated'])
+    const stale = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({
+      jsonrpc: '2.0', id: 3, method: 'rule.status', params: {
+        pack_id: 'manual-public', version: '1', status: 'inactive', public_scope: 'platform', platform: 'pinduoduo', expected_revision: '1', reason: 'stale review',
+      },
+    }) }).then(json)
+    expect(stale.error?.code).toBe('RULE_REVISION_CONFLICT')
+    expect(repository.publicVersions[0]?.status).toBe('active')
+    expect(repository.publicVersions[0]?.revision).toBe(2)
+    const missingRevision = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({
+      jsonrpc: '2.0', id: 4, method: 'rule.status', params: {
+        pack_id: 'manual-public', version: '1', status: 'inactive', public_scope: 'platform', platform: 'pinduoduo', reason: 'no CAS',
+      },
+    }) }).then(json)
+    expect(missingRevision.error?.code).toBe('INVALID_REQUEST')
+    expect(await repository.listPublic(workspaceId, 'pinduoduo')).toHaveLength(1)
   })
 
   it('enforces token-bound tenant/admin/approver identities and appends readable audit', async () => {

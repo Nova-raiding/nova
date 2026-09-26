@@ -92,18 +92,12 @@ test('operates the platform user directory without destructive confirmation', as
   await page.keyboard.press('Enter')
   const detailDrawer = page.getByRole('dialog', { name: /用户详情/u })
   await expect(detailDrawer).toBeVisible()
-  // RETIRED (f84b9561 `ui: remove sessions and simplify store details`, 1b7d8799
-  // `ui: simplify user detail drawer`): the drawer is now a per-workspace
-  // commercial view. The masked-session list, the identity lifecycle section,
-  // the tenant/role summary and the member operation history are gone from it,
-  // so this asserts what the drawer renders today: the identity header plus the
-  // store / monthly-fee / wallet / usage tables of every membership it loaded.
-  // Registered as entry 9 in ./retired-ops-assertions.md — those four sections
-  // have no carrier left anywhere in the user center, they are not renames.
-  await expect(detailDrawer.getByRole('heading', { name: '店铺详情' })).toBeVisible({ timeout: 20_000 })
-  await expect(detailDrawer.getByRole('heading', { name: '月费详情' })).toBeVisible()
-  await expect(detailDrawer.getByRole('heading', { name: '钱包' })).toBeVisible()
-  await expect(detailDrawer.getByRole('heading', { name: '当月消耗表' })).toBeVisible()
+  // The current drawer shows membership/workspace facts and a plan/task quota
+  // snapshot. It intentionally does not claim to contain billing-cycle or
+  // payment evidence; those remain in Finance.
+  await expect(detailDrawer.getByRole('heading', { name: '成员与工作区' })).toBeVisible({ timeout: 20_000 })
+  await expect(detailDrawer.getByRole('heading', { name: '套餐与任务额度' })).toBeVisible()
+  await expect(detailDrawer.getByText('此处显示套餐状态与任务额度快照，不包含支付凭证或账单周期；实际收款请核对财务流水。')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(detailDrawer).toBeHidden()
   await expect(detailButton).toBeFocused()

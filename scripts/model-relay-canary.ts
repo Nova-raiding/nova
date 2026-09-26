@@ -445,15 +445,19 @@ export function evaluateVideoProbePayload(payload: unknown): { ready: boolean; p
   // provider's task status as first-class evidence so an accepted/running job
   // remains explicitly pending and a completed job can be validated once it
   // carries an HTTPS artifact.
-  const status = (nonEmptyText(data.status) ?? nonEmptyText(nestedData.status) ?? nonEmptyText(nestedData.task_status) ?? nonEmptyText(nestedOutput.task_status))?.toLowerCase()
-  const artifact = [data.result_url, data.video_url, data.output_url, data.url, nestedData.result_url, nestedData.video_url, nestedData.output_url, nestedData.url].some(value => typeof value === 'string' && /^https:\/\//u.test(value)) || hasHttpsOutput(nestedData.output)
+  const statuses = [nestedOutput.task_status, nestedData.task_status, nestedData.status, data.status]
+    .map(nonEmptyText).filter((value): value is string => Boolean(value)).map(value => value.toLowerCase())
+  if (new Set(statuses).size > 1) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_state_conflict' }
+  const status = statuses[0]
+  const artifact = [data.result_url, data.video_url, data.output_url, data.url, nestedData.result_url, nestedData.video_url, nestedData.output_url, nestedData.url].some(isStrictHttpsUrl) || hasHttpsOutput(nestedData.output)
   if (status && ['failed', 'failure', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(status)) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_failed' }
   // Wormhole's async wrapper reports the provider state as IN_PROGRESS while
   // the nested output uses RUNNING. Treat both as pending; otherwise a valid
   // job is incorrectly classified as "state missing" before it has finished.
   if (status && ['queued', 'pending', 'processing', 'running', 'in_progress', 'submitted'].includes(status)) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_pending' }
-  if (status && ['completed', 'succeeded', 'success'].includes(status) && !artifact) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_completed_without_https_artifact' }
-  if (artifact) return { ready: true, ...(providerJobId ? { providerJobId } : {}) }
+  if (!status) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: providerJobId ? 'video_async_state_missing' : 'video_response_missing_job_or_artifact' }
+  if (['completed', 'succeeded', 'success'].includes(status) && !artifact) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_completed_without_https_artifact' }
+  if (['completed', 'succeeded', 'success'].includes(status) && artifact) return { ready: true, ...(providerJobId ? { providerJobId } : {}) }
   return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: providerJobId ? 'video_async_state_missing' : 'video_response_missing_job_or_artifact' }
 }
 
@@ -465,6 +469,7 @@ export function evaluateVideoProbePayload(payload: unknown): { ready: boolean; p
  */
 export function finalizeSuccessfulProbe(input: SuccessfulProbe): ProbeResult {
   const { responseValid, responseFailure, ...result } = input
+  if (!Number.isSafeInteger(result.httpStatus) || (result.httpStatus ?? 0) < 200 || (result.httpStatus ?? 0) > 299) return { ...result, state: 'blocked', detail: 'successful_http_status_missing' }
   if (!responseValid) return { ...result, state: 'blocked', detail: responseFailure ?? 'response_contract_invalid' }
   if (!result.providerRequestId) return { ...result, state: 'blocked', detail: 'provider_request_id_missing' }
   if (result.usageObserved !== true) return { ...result, state: 'blocked', detail: 'usage_evidence_missing' }
@@ -515,11 +520,21 @@ export function blockHttpProbe(
 
 function hasHttpsOutput(value: unknown, depth = 0): boolean {
   if (depth > 2) return false
-  if (typeof value === 'string') return /^https:\/\//u.test(value)
+  if (typeof value === 'string') return isStrictHttpsUrl(value)
   if (Array.isArray(value)) return value.some(item => hasHttpsOutput(item, depth + 1))
   if (!value || typeof value !== 'object') return false
   const output = value as Record<string, unknown>
   return ['result_url', 'video_url', 'output_url', 'url', 'output'].some(key => hasHttpsOutput(output[key], depth + 1))
+}
+
+function isStrictHttpsUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || value !== value.trim() || !/^https:\/\//iu.test(value)) return false
+  const authority = /^https:\/\/([^/?#]*)/iu.exec(value)?.[1]
+  if (!authority || authority.includes('@')) return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && Boolean(url.hostname) && !url.username && !url.password
+  } catch { return false }
 }
 
 async function probe(modality: ProbeResult['modality'], budget: CanaryBudget): Promise<ProbeResult> {

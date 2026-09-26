@@ -12,9 +12,9 @@ export const mutations: InvariantMutation[] = [
     replace: 'rule.targetId === source.platform',
     evidence: 'packages/review/src/platform-rule-sync.test.ts',
     overRejection: {
-      find: '(rule.targetId ?? rule.scopeValue) === source.platform && !rule.source.reference.startsWith(\'manual://\')',
-      replace: 'false',
-      why: 'a rule that matches no platform at all reports every platform `not_configured`, which is the same outage as the original defect and must be caught by the same evidence',
+      find: 'const platformRules = manifestConfigured ? [...trustedManualRules, ...verifiedSignedRules] : trustedManualRules',
+      replace: 'const platformRules = []',
+      why: 'rejecting every imported platform rule reports every platform `not_configured`; the signed scopeValue and approved manual fixtures must continue to catch that outage',
     },
     evidenceFailsWith: 'finds a signed public rule that carries its platform only in scopeValue',
     uniqueness: {

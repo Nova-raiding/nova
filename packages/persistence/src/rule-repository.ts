@@ -42,6 +42,16 @@ export interface PersistedRuleAudit {
   data: Record<string, unknown>
 }
 
+export interface PublicRuleReviewCursor {
+  createdAt: string
+  id: string
+}
+
+export interface PublicRuleReviewPage {
+  items: PersistedRuleVersion[]
+  nextCursor?: PublicRuleReviewCursor
+}
+
 type RuleVersionRow = {
   id: string; workspace_id: string; pack_id: string; name: string; version: string; scope: string; category?: string | null; status: string
   source_kind: string; source_reference: string; source_checked_at: string | Date; checksum: string
@@ -59,7 +69,7 @@ const version = (row: RuleVersionRow): PersistedRuleVersion => ({
   id: row.id, workspaceId: row.workspace_id, packId: row.pack_id, name: row.name, version: row.version,
   scope: row.scope, ...(row.category ? { category: row.category } : {}), status: row.status, sourceKind: row.source_kind, sourceReference: row.source_reference,
   sourceCheckedAt: asIso(row.source_checked_at), checksum: row.checksum, checks: row.checks,
-  createdAt: asIso(row.created_at), updatedAt: asIso(row.updated_at), createdBy: row.created_by, revision: row.revision,
+  createdAt: asIso(row.created_at), updatedAt: asIso(row.updated_at), createdBy: row.created_by, revision: Number(row.revision),
   ...(row.effective_from ? { effectiveFrom: asIso(row.effective_from) } : {}), ...(row.effective_to ? { effectiveTo: asIso(row.effective_to) } : {}),
   ...(row.severity ? { severity: row.severity } : {}), ...(row.action ? { action: row.action } : {}), ...(row.target_id ? { targetId: row.target_id } : {}), ...(row.scope_value ? { scopeValue: row.scope_value } : {}),
   ...(row.activated_at ? { activatedAt: asIso(row.activated_at) } : {}),
@@ -132,6 +142,67 @@ export class PostgresRuleRepository {
     })
   }
 
+  /** Platform-only governance read. Keep separate from listPublic(), whose
+   * tenant-facing contract intentionally exposes active policy only. */
+  async listPublicDraftsForReview(input: { platform?: string; limit: number; cursor?: PublicRuleReviewCursor }): Promise<PublicRuleReviewPage> {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100) throw new Error('PUBLIC_RULE_REVIEW_LIMIT_INVALID')
+    return withWorkspaceTransaction(this.publicWritePool, '__platform_rules__', async client => {
+      const result = await client.query<RuleVersionRow>(
+        `SELECT id, '__platform_rules__'::text AS workspace_id, pack_id, name, version, 'platform' AS scope,
+                NULL::text AS category, status, source_kind, source_reference, source_checked_at,
+                checksum, checks, created_at, updated_at, created_by, revision, effective_from,
+                effective_to, severity, action, NULL::text AS target_id, platform AS scope_value,
+                activated_at, deactivated_at
+           FROM public_platform_rule_versions
+          WHERE status = 'draft'
+            AND ($1::text IS NULL OR platform = $1)
+            AND ($2::timestamptz IS NULL OR (created_at, id) < ($2::timestamptz, $3::text))
+          ORDER BY created_at DESC, id DESC
+          LIMIT $4`, [input.platform ?? null, input.cursor?.createdAt ?? null, input.cursor?.id ?? null, input.limit + 1],
+      )
+      const hasMore = result.rows.length > input.limit
+      const pageRows = hasMore ? result.rows.slice(0, input.limit) : result.rows
+      const items = pageRows.map(version)
+      const last = items.at(-1)
+      return {
+        items,
+        ...(hasMore && last ? { nextCursor: { createdAt: asIso(last.createdAt), id: last.id } } : {}),
+      }
+    })
+  }
+
+  /** Exact platform/pack/version preview. It intentionally includes lifecycle
+   * state so reviewers can re-open the same immutable version after approval. */
+  async getPublicRuleForReview(platform: string, packId: string, requestedVersion: string): Promise<PersistedRuleVersion | undefined> {
+    return withWorkspaceTransaction(this.publicWritePool, '__platform_rules__', async client => {
+      const result = await client.query<RuleVersionRow>(
+        `SELECT id, '__platform_rules__'::text AS workspace_id, pack_id, name, version, 'platform' AS scope,
+                NULL::text AS category, status, source_kind, source_reference, source_checked_at,
+                checksum, checks, created_at, updated_at, created_by, revision, effective_from,
+                effective_to, severity, action, NULL::text AS target_id, platform AS scope_value,
+                activated_at, deactivated_at
+           FROM public_platform_rule_versions
+          WHERE platform = $1 AND pack_id = $2 AND version = $3`, [platform, packId, requestedVersion],
+      )
+      return result.rows[0] ? version(result.rows[0]) : undefined
+    })
+  }
+
+  async listPublicRuleAuditForReview(platform: string, packId: string, requestedVersion: string): Promise<PersistedRuleAudit[]> {
+    return withWorkspaceTransaction(this.publicWritePool, '__platform_rules__', async client => {
+      const result = await client.query<RuleAuditRow>(
+        `SELECT a.id, '__platform_rules__'::text AS workspace_id, v.pack_id AS rule_pack_id,
+                a.rule_version_id, a.version, a.action, a.actor_id, a.reason, a.occurred_at, a.data
+           FROM public_platform_rule_audits a
+           JOIN public_platform_rule_versions v ON v.id = a.rule_version_id
+          WHERE v.platform = $1 AND v.pack_id = $2 AND v.version = $3
+            AND a.platform = v.platform AND a.version = v.version
+          ORDER BY a.occurred_at ASC, a.id ASC`, [platform, packId, requestedVersion],
+      )
+      return result.rows.map(audit)
+    })
+  }
+
   async insertPublicVersionWithAudit(input: {
     version: Omit<PersistedRuleVersion, 'workspaceId' | 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }
     audit: Omit<PersistedRuleAudit, 'workspaceId'>
@@ -184,23 +255,32 @@ export class PostgresRuleRepository {
     })
   }
 
-  async transitionPublicStatus(input: { platform: string; packId: string; version: string; status: string; actorId: string; reason: string; occurredAt: string; auditData?: Record<string, unknown> }): Promise<PersistedRuleVersion> {
+  async transitionPublicStatus(input: { platform: string; packId: string; version: string; expectedRevision: number; status: string; actorId: string; reason: string; occurredAt: string; auditData?: Record<string, unknown> }): Promise<PersistedRuleVersion> {
     return withWorkspaceTransaction(this.publicWritePool, '__platform_rules__', async client => {
       const updated = await client.query<RuleVersionRow>(
         `UPDATE public_platform_rule_versions
             SET status = $4, revision = revision + 1, updated_at = $5,
                 activated_at = CASE WHEN $4 = 'active' THEN $5 ELSE activated_at END,
                 deactivated_at = CASE WHEN $4 <> 'active' THEN $5 ELSE NULL END
-          WHERE platform = $1 AND pack_id = $2 AND version = $3
+          WHERE platform = $1 AND pack_id = $2 AND version = $3 AND revision = $6
           RETURNING id, '__platform_rules__'::text AS workspace_id, pack_id, name, version, 'platform' AS scope,
                     NULL::text AS category, status, source_kind, source_reference, source_checked_at,
                     checksum, checks, created_at, updated_at, created_by, revision, effective_from,
                     effective_to, severity, action, NULL::text AS target_id, platform AS scope_value,
                     activated_at, deactivated_at`,
-        [input.platform, input.packId, input.version, input.status, input.occurredAt],
+        [input.platform, input.packId, input.version, input.status, input.occurredAt, input.expectedRevision],
       )
       const row = updated.rows[0]
-      if (!row) throw new Error('PUBLIC_RULE_VERSION_NOT_FOUND')
+      if (!row) {
+        const current = await client.query<{ revision: number }>(
+          `SELECT revision FROM public_platform_rule_versions WHERE platform = $1 AND pack_id = $2 AND version = $3`,
+          [input.platform, input.packId, input.version],
+        )
+        const conflict = current.rows[0]
+          ? Object.assign(new Error('PUBLIC_RULE_REVISION_CONFLICT'), { code: 'PUBLIC_RULE_REVISION_CONFLICT' })
+          : Object.assign(new Error('PUBLIC_RULE_VERSION_NOT_FOUND'), { code: 'PUBLIC_RULE_VERSION_NOT_FOUND' })
+        throw conflict
+      }
       await client.query(
         `INSERT INTO public_platform_rule_audits (id, rule_version_id, platform, version, action, actor_id, reason, occurred_at, data)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,

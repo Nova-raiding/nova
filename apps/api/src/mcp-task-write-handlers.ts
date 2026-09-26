@@ -37,6 +37,20 @@ export interface McpTaskWriteDependencies {
 export async function handleMcpTaskWrite(method: string, params: JsonObject, req: IncomingMessage, workspaceId: string, deps: McpTaskWriteDependencies): Promise<unknown> {
   const { service, required, supportedPlatforms: SUPPORTED_PLATFORMS, fixtureMode, isProduction, requireEnabledPlatform, resolveTaskAccountId, taskCreationBrand, enforceProductBrandAccess, requireProductionTaskStore, resolveCanonicalTaskScope, persistSnapshot, persistEvent, workspaceStoreDirectory, scopeTask, persistTaskAnswerFactConfirmation, enforceTaskRequestCandidates, taskUnderstandingProductIds, resolveTaskWriteBrands, assignTaskWriteBrands, requireProductionRequestStores, header, resolveCanonicalTaskEntries, assertCanonicalTaskScopeForAction } = deps
   switch (method) {
+    case 'task.create.draft': {
+      const taskPlatform = required(params, 'platform') as Platform
+      if (!SUPPORTED_PLATFORMS.includes(taskPlatform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '不支持的候选任务平台', 400)
+      await requireEnabledPlatform(workspaceId, taskPlatform)
+      const productId = required(params, 'product_id')
+      const product = service.products.get(productId)
+      if (!product || product.workspaceId !== workspaceId || product.platform !== taskPlatform) throw new DomainError('PRODUCT_NOT_FOUND', '已确认商品资料不存在或与平台不匹配', 404)
+      if (product.factsConfirmed !== true) throw new DomainError('PRODUCT_FACTS_NOT_CONFIRMED', '商品事实尚未确认，暂不能创建候选任务', 409, { product_id: productId })
+      if (product.accountId || product.brandId || product.remoteId) throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务商品已带店铺、品牌或远端商品绑定，不能作为未绑定候选', 409, { product_id: productId })
+      const task = service.createTask({ workspaceId, productId, platform: taskPlatform, candidateOnly: true, ...(typeof params.request_text === 'string' ? { requestText: params.request_text } : {}) })
+      await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
+      await persistEvent(workspaceId, task.id, 'task.created', task.version, task as unknown as Record<string, unknown>)
+      return { ...task, task_id: task.id, product_id: task.productId, candidate_only: true, storeContext: null }
+    }
     case 'task.create': {
       const taskPlatform = required(params, 'platform') as Platform
       await requireEnabledPlatform(workspaceId, taskPlatform)

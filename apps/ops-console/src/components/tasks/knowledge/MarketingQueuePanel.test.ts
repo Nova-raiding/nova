@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { parsePublishBatchDetail, publishBatchItemKey, publishBatchItemScope, queueStateLabel, visualEvidenceState } from './MarketingQueuePanel.js'
+import { hasAmbiguousManualPublishJob, parsePublishBatchDetail, publishBatchItemKey, publishBatchItemScope, queueStateLabel, visualEvidenceState } from './MarketingQueuePanel.js'
 
 const panelSource = readFileSync(new URL('./MarketingQueuePanel.tsx', import.meta.url), 'utf8')
 const imageEvidenceModalSource = readFileSync(new URL('./ImageExecutionEvidenceModal.tsx', import.meta.url), 'utf8')
@@ -31,6 +31,21 @@ describe('marketing queue delivery evidence', () => {
     expect(panelSource).toContain('writeCapability?.writable !== true')
     const formOptions = panelSource.slice(panelSource.indexOf('name="status"'), panelSource.indexOf('name="deliveryBundleHash"'))
     expect(formOptions).not.toContain('platform_verified')
+  })
+
+  it('blocks manual evidence when multiple publish jobs share the same task and content version', () => {
+    const first = { id: 'publish-1', taskId: 'task-1', contentVersionId: 'version-1', platform: 'taobao', accountId: 'shop-1' }
+    const sameDestination = { id: 'publish-2', taskId: 'task-1', contentVersionId: 'version-1', platform: 'taobao', accountId: 'shop-1' }
+    const otherAccount = { id: 'publish-3', taskId: 'task-1', contentVersionId: 'version-1', platform: 'taobao', accountId: 'shop-2' }
+    const otherPlatform = { id: 'publish-4', taskId: 'task-1', contentVersionId: 'version-1', platform: 'jd', accountId: 'shop-1' }
+    const otherVersion = { id: 'publish-5', taskId: 'task-1', contentVersionId: 'version-2', platform: 'taobao', accountId: 'shop-1' }
+    expect(hasAmbiguousManualPublishJob(first, [first, sameDestination])).toBe(true)
+    expect(hasAmbiguousManualPublishJob(first, [first, otherAccount, otherPlatform, otherVersion])).toBe(false)
+    expect(hasAmbiguousManualPublishJob({ ...first, accountId: null }, [{ ...first, accountId: null }])).toBe(true)
+    expect(hasAmbiguousManualPublishJob(first, [first, { ...sameDestination, accountId: null }])).toBe(true)
+    expect(panelSource).toContain('无法确定人工证据所属的发布任务')
+    expect(panelSource).toContain('disabled={manualPublishAmbiguous}')
+    expect(panelSource).toContain('hasAmbiguousManualPublishJob(manualPublishTarget, marketingQueue.publish)')
   })
 
   it('never promotes manual visual review to authenticity verified', () => {

@@ -287,6 +287,8 @@ export type Rule = {
   version: string;
   status: string;
   lifecycleStatus?: string;
+  /** Server-computed eligibility for independent-approval activation. */
+  activationEligible?: boolean;
   scope: string;
   scopeValue?: string;
   source: { kind: string; reference: string; checkedAt: string; trust?: "verified" | "unverified" };

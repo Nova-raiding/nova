@@ -57,6 +57,13 @@ describe('deterministic delivery bundle manifest builder', () => {
     expect(result.manifest.files.some(file => file.path === 'manifest.json')).toBe(false)
   })
 
+  it('persists candidate-only status into the verified primary manifest', () => {
+    const result = built(baseInput({ candidate_only: true }))
+    expect(result.manifest.candidate_only).toBe(true)
+    expect(JSON.parse(String(result.files.find(file => file.path === 'manifest.json')?.content))).toMatchObject({ candidate_only: true })
+    expect(verifyDeliveryBundle(result.manifest, result.files, result.manifestHash)).toMatchObject({ valid: true })
+  })
+
   it('omits publish receipt when unpublished and includes only a verified published receipt', () => {
     const unpublished = built()
     expect(unpublished.manifest).not.toHaveProperty('publishReceipt')

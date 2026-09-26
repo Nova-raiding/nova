@@ -253,6 +253,10 @@ describe('production model relay contract', () => {
     expect(evaluateVideoProbePayload({ task_id: 'job_failed', status: 'failed' })).toMatchObject({ ready: false, providerJobId: 'job_failed', reason: 'video_async_failed' })
     expect(evaluateVideoProbePayload({ task_id: 'job_failure', status: 'FAILURE', result_url: 'task failed' })).toMatchObject({ ready: false, providerJobId: 'job_failure', reason: 'video_async_failed' })
     expect(evaluateVideoProbePayload({ task_id: 'job_done', status: 'completed', output_url: 'https://cdn.example/video.mp4' })).toEqual({ ready: true, providerJobId: 'job_done' })
+    expect(evaluateVideoProbePayload({ task_id: 'job_no_status', output_url: 'https://cdn.example/video.mp4' })).toMatchObject({ ready: false, providerJobId: 'job_no_status', reason: 'video_async_state_missing' })
+    expect(evaluateVideoProbePayload({ data: { task_id: 'job_conflict', status: 'SUCCESS', data: { task_status: 'RUNNING', output: { url: 'https://cdn.example/video.mp4' } } } })).toMatchObject({ ready: false, providerJobId: 'job_conflict', reason: 'video_async_state_conflict' })
+    expect(evaluateVideoProbePayload({ task_id: 'job_bad_url', status: 'SUCCESS', output_url: 'https://' })).toMatchObject({ ready: false, providerJobId: 'job_bad_url', reason: 'video_completed_without_https_artifact' })
+    expect(evaluateVideoProbePayload({ task_id: 'job_userinfo_url', status: 'SUCCESS', output_url: 'https://user:secret@cdn.example/video.mp4' })).toMatchObject({ ready: false, providerJobId: 'job_userinfo_url', reason: 'video_completed_without_https_artifact' })
     expect(evaluateVideoProbePayload({ code: 0, message: 'ok', data: { task_id: 'job_nested', status: 'SUCCESS', result_url: 'https://cdn.example/result.mp4', quota: 123, data: { request_id: 'request_nested', usage: { duration_seconds: 5 } } } })).toEqual({ ready: true, providerJobId: 'job_nested' })
     expect(evaluateVideoProbePayload({ code: 'success', data: { task_id: 'job_string_success', status: 'SUCCESS', result_url: 'https://cdn.example/result.mp4' } })).toEqual({ ready: true, providerJobId: 'job_string_success' })
     expect(evaluateVideoProbePayload({ data: { task_id: 'job_output', status: 'SUCCESS', data: { output: { url: 'https://cdn.example/output.mp4' } } } })).toEqual({ ready: true, providerJobId: 'job_output' })
@@ -292,6 +296,11 @@ describe('production model relay contract', () => {
       responseValid: false,
       responseFailure: 'video_async_pending',
     })).toMatchObject({ state: 'blocked', providerJobId: 'job_pending', detail: 'video_async_pending' })
+  })
+
+  it('keeps a nominally valid probe blocked unless HTTP status is successful', () => {
+    expect(finalizeSuccessfulProbe({ ...completeProbe('text'), httpStatus: 503 })).toMatchObject({ state: 'blocked', detail: 'successful_http_status_missing' })
+    expect(finalizeSuccessfulProbe({ ...completeProbe('text'), httpStatus: undefined })).toMatchObject({ state: 'blocked', detail: 'successful_http_status_missing' })
   })
 
   it('keeps OCR 503 as an explicit HTTP failure rather than success evidence', () => {
@@ -520,6 +529,48 @@ describe('production model relay contract', () => {
       }, { expectedReleaseId: 'release-1', requireProduction: true, artifactRoot: root })).toEqual(expect.arrayContaining([
         'image result is required', 'image_edit result is required', 'ocr result is required', 'video result is required',
       ]))
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('rejects a ready summary whose artifact has a different HTTP status', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-http-status-binding-'))
+    try {
+      const result = completeProbe('text')
+      const reference = writeRelayResponseArtifact(root, 'release-1', 'text', {
+        status: 503,
+        headers: new Headers({ 'x-request-id': 'req-text' }),
+        payload: { choices: [{ message: { content: 'OK' } }], usage: { total_tokens: 2 } },
+        result: { ...result, state: 'ready' },
+      })
+      const errors = validateModelRelayEvidence({
+        schema_version: '1', release_id: 'release-1', generated_at: new Date().toISOString(),
+        environment: 'production', simulated: false, relay: 'https://relay.example.com',
+        results: [{ ...result, evidence_ref: reference }],
+      }, { requireProduction: true, artifactRoot: root })
+      expect(errors).toContain('text.evidence_ref receipt must bind successful HTTP status and summarized request, model, state, endpoint, usage and cost')
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it.each([
+    ['outer success with nested running state', { data: { status: 'SUCCESS', data: { task_status: 'RUNNING', output: { url: 'https://cdn.example/video.mp4' } } } }],
+    ['completed task with HTTPS userinfo URL', { task_id: 'job-userinfo', status: 'SUCCESS', output_url: 'https://user:secret@cdn.example/video.mp4' }],
+    ['completed task with only an unrelated metadata docs URL', { data: { status: 'SUCCESS', data: { output: { metadata: { docs_url: 'https://docs.example/provider' } } } } }],
+  ])('rejects video receipts with %s', (_label, payload) => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-video-completion-binding-'))
+    try {
+      const result = completeProbe('video')
+      const reference = writeRelayResponseArtifact(root, 'release-1', 'video', {
+        status: 200,
+        headers: new Headers({ 'x-request-id': 'req-video' }),
+        payload,
+        result: { ...result, state: 'ready' },
+      })
+      const errors = validateModelRelayEvidence({
+        schema_version: '1', release_id: 'release-1', generated_at: new Date().toISOString(),
+        environment: 'production', simulated: false, relay: 'https://relay.example.com',
+        results: [{ ...result, state: 'ready', evidence_ref: reference }],
+      }, { requireProduction: true, artifactRoot: root })
+      expect(errors).toContain('video.evidence_ref video receipt must prove a completed task with an HTTPS artifact')
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 

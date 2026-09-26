@@ -250,6 +250,8 @@ export const MCP_METHODS = [
   'rule.sync.now',
   'rule.history',
   'rule.audit',
+  'ops.rules.public.drafts.list',
+  'ops.rules.public.drafts.get',
   'rule.publish',
   'rule.status',
   'asset.list',
@@ -280,6 +282,7 @@ export const MCP_METHODS = [
   'feedback.submit',
   'platform.revoke',
   'task.create',
+  'task.create.draft',
   'task.answer',
   'task.understand',
   'task.request.create',
@@ -1128,6 +1131,16 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     params: params({ pack_id: { type: 'string' } }),
   },
   {
+    method: 'ops.rules.public.drafts.list',
+    description: 'List pending shared platform-rule drafts for authorized platform reviewers; never exposed to merchant workspaces.',
+    params: params({ platform: platformProperty, limit: { type: 'string', pattern: '^(?:[1-9]|[1-9][0-9]|100)$' }, cursor: boundedString(512, 1) }),
+  },
+  {
+    method: 'ops.rules.public.drafts.get',
+    description: 'Read one exact shared platform-rule version and its append-only audit trail for authorized platform reviewers.',
+    params: params({ platform: platformProperty, pack_id: boundedString(128, 1), version: boundedString(128, 1) }, ['platform', 'pack_id', 'version']),
+  },
+  {
     method: 'ops.rules.workspace.audit',
     description: 'Read auditable rule publication and status-change events for the explicitly selected workspace. Workspace operations only.',
     params: params({ pack_id: boundedString(256) }),
@@ -1140,7 +1153,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'rule.status',
     description: 'Change a rule version to active, inactive or expired with an audit reason; activation requires approval_json with approval_ref, approved_by, and approved_at.',
-    params: params({ pack_id: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive', 'expired'] }, public_scope: { type: 'string', enum: ['platform'] }, platform: platformProperty, reason: { type: 'string' }, approval_json: { type: 'string' } }, ['pack_id', 'version', 'status', 'reason']),
+    params: params({ pack_id: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive', 'expired'] }, public_scope: { type: 'string', enum: ['platform'] }, platform: platformProperty, expected_revision: positiveIntegerString, reason: { type: 'string' }, approval_json: { type: 'string' } }, ['pack_id', 'version', 'status', 'reason']),
   },
   {
     method: 'asset.list',
@@ -1292,6 +1305,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
       { product_id: { type: 'string' }, brand_id: { type: 'string', description: '受限成员必须选择其拥有编辑权限的品。' }, platform: platformProperty, account_id: { type: 'string' }, region: { type: 'string', description: '素材权益匹配用的明确地区/市场代码或名称。' } },
       ['product_id', 'platform'],
     ),
+  },
+  {
+    method: 'task.create.draft',
+    description: 'Create an unbound candidate-only task from a merchant-confirmed product. It can use normal generation, review and export, but can never publish to a platform.',
+    params: params({ product_id: { type: 'string' }, platform: platformProperty, request_text: boundedString(2_000, 1, 'The merchant goal for this candidate task.') }, ['product_id', 'platform']),
   },
   {
     method: 'task.answer',

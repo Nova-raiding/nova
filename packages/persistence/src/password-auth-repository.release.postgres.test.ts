@@ -256,7 +256,7 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
       const first = await bootstrapRepository.bootstrap({
         issuer: 'damai-password', externalSubject: merchantBootstrapLogin, identityId: bootstrapAccount.identityId,
         candidateWorkspaceId: `bootstrap_ws_${randomUUID().replaceAll('-', '')}`,
-        displayName: '专用测试工作区', actorId: bootstrapAccount.identityId,
+        displayName: '专用测试工作区', actorId: bootstrapAccount.identityId, allowCreate: true,
       })
       expect(first.created).toBe(true)
       await database.query(`UPDATE platform_identities SET access_status='suspended', suspended_at=now(), suspended_by='security-e2e', suspension_reason='first workspace gate test' WHERE id=$1`, [bootstrapAccount.identityId])

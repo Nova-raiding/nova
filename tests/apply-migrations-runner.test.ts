@@ -9,6 +9,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const stateFile = process.env.FAKE_PSQL_STATE
 const lockFile = stateFile + '.lock'
+const releaseFile = process.env.FAKE_PSQL_RELEASE_FILE
 const readState = () => fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, 'utf8')) : { events: [], failUsed: false }
 const writeState = state => fs.writeFileSync(stateFile, JSON.stringify(state))
 const state = readState()
@@ -40,6 +41,7 @@ if (sql.includes('pg_advisory_lock') || sql.includes('pg_advisory_xact_lock')) {
   }
   const holdMs = Number(process.env.FAKE_PSQL_HOLD_MS || 0)
   if (holdMs > 0) { const until = Date.now() + holdMs; while (Date.now() < until) {} }
+  if (releaseFile) { const until = Date.now() + 10_000; while (!fs.existsSync(releaseFile) && Date.now() < until) {} }
   const included = sql.match(/\\\\i '([^']+)'/)
   if (included) event('applied:' + path.basename(included[1]))
   if (process.env.FAKE_PSQL_MODE === 'invalid-index' && sql.includes('invalid_concurrent_indexes')) {
@@ -193,13 +195,17 @@ describe('apply-migrations.sh shell runner', () => {
   it('serializes concurrent runners and leaves no lock after contention', async () => {
     const testFixture = fixture([['001_initial.sql', 'select 1;']])
     try {
-      const first = runAsync(testFixture, { FAKE_PSQL_HOLD_MS: '250' })
-      await new Promise(resolve => setTimeout(resolve, 30))
+      const releaseFile = join(testFixture.root, 'release-first-runner')
+      const first = runAsync(testFixture, { FAKE_PSQL_RELEASE_FILE: releaseFile })
+      const waitForLockUntil = Date.now() + 5_000
+      while (!existsSync(`${testFixture.state}.lock`) && Date.now() < waitForLockUntil) await new Promise(resolve => setTimeout(resolve, 10))
+      expect(existsSync(`${testFixture.state}.lock`)).toBe(true)
       const second = await runAsync(testFixture)
+      writeFileSync(releaseFile, 'release')
       const firstResult = await first
       expect([firstResult.status, second.status].sort()).toEqual([0, 1])
       expect(`${second.stdout}${second.stderr}`).toContain('already held')
       expect(existsSync(`${testFixture.state}.lock`)).toBe(false)
     } finally { dispose(testFixture) }
-  }, 10_000)
+  }, 15_000)
 })

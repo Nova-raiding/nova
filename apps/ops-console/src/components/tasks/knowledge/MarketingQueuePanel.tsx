@@ -49,6 +49,16 @@ export function publishBatchItemKey(item: PublishBatchDetail["items"][number]) {
   return JSON.stringify([item.taskId, item.platform ?? null, item.accountId ?? null, item.productId ?? null, item.contentVersionId ?? null]);
 }
 
+export function hasAmbiguousManualPublishJob<T extends { id: string; taskId: string; contentVersionId: string; platform: string; accountId?: string | null }>(job: T, jobs: readonly T[]) {
+  // Without an account binding there is no safe destination key for manual
+  // evidence, even if the currently loaded queue contains only one match.
+  if (!job.accountId) return true;
+  return jobs.some(candidate => candidate.id !== job.id
+    && candidate.taskId === job.taskId
+    && candidate.contentVersionId === job.contentVersionId
+    && (!candidate.accountId || (candidate.platform === job.platform && candidate.accountId === job.accountId)));
+}
+
 export function parsePublishBatchDetail(value: unknown): PublishBatchDetail {
   if (!value || typeof value !== "object") throw new Error("批次详情响应格式无效");
   const candidate = value as Record<string, unknown>;
@@ -289,7 +299,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
     manualPublishForm.resetFields();
   };
   const submitManualPublish = async (values: Omit<RecordManualPublishEvidenceInput, "targetWorkspaceId" | "publishJobId" | "taskId" | "contentVersionId" | "platform" | "accountId" | "expectedRevision" | "idempotencyKey">) => {
-    if (!manualPublishTarget?.manualPublish?.writeCapability?.writable) return;
+    if (!manualPublishTarget?.manualPublish?.writeCapability?.writable || hasAmbiguousManualPublishJob(manualPublishTarget, marketingQueue.publish)) return;
     setManualPublishSubmitting(true);
     try {
       if (await model.recordManualPublishEvidence(manualPublishTarget, values)) closeManualPublish();
@@ -422,16 +432,19 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
         </Space>
       ),
     })),
-    ...marketingQueue.publish.map((job) => ({
+    ...marketingQueue.publish.map((job) => {
+      const manualPublishAmbiguous = hasAmbiguousManualPublishJob(job, marketingQueue.publish);
+      return ({
       id: `publish:${job.id}`,
       kind: `发布 · ${job.platform}`,
       taskId: job.taskId,
       state: job.manualPublish?.status || job.remoteState || job.state,
-      detail: `${job.assignedOperatorId ? `负责人：${job.assignedOperatorId}；` : "未分配负责人；"}${job.manualPublish ? `人工交付：${queueStateLabel(job.manualPublish.status)}；证据 ${job.manualPublish.evidence.length} 条；交付包哈希：${job.manualPublish.deliveryBundleHash ?? "未绑定"}` : job.rejection?.rawCode || job.rejection?.message || "等待平台回执"}`,
+      detail: `${job.assignedOperatorId ? `负责人：${job.assignedOperatorId}；` : "未分配负责人；"}${manualPublishAmbiguous ? "同一任务和内容版本存在多个发布任务，人工证据归属不明确；" : ""}${job.manualPublish ? `人工交付：${queueStateLabel(job.manualPublish.status)}；证据 ${job.manualPublish.evidence.length} 条；交付包哈希：${job.manualPublish.deliveryBundleHash ?? "未绑定"}` : job.rejection?.rawCode || job.rejection?.message || "等待平台回执"}`,
       updatedAt: job.createdAt,
       action: (
         <Space wrap>
-          <Button type="link" onClick={() => openManualPublish(job)}>人工发布与证据</Button>
+          {manualPublishAmbiguous && <Typography.Text type="danger">证据归属不明确，禁止回填</Typography.Text>}
+          <Button type="link" disabled={manualPublishAmbiguous} title={manualPublishAmbiguous ? "同一任务和内容版本对应多个发布任务；请先明确证据所属发布任务" : undefined} onClick={() => openManualPublish(job)}>人工发布与证据</Button>
           <Button
             type="link"
             onClick={() =>
@@ -462,7 +475,8 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
           {["rejected", "unknown", "manual_attention", "blocked"].includes(job.remoteState || job.state) && <Button type="link" onClick={() => openSupportTicket({ kind: `平台发布 · ${job.platform}`, taskId: job.taskId, state: job.remoteState || job.state, detail: job.rejection?.message || "平台回执需要人工处理" })}>转客服工单</Button>}
         </Space>
       ),
-    })),
+    });
+    }),
     ...marketingQueue.visuals.map((visual) => ({
       id: `visual:${visual.visualRef}`,
       kind: "视觉候选",
@@ -596,13 +610,19 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
         okText="保存人工报告"
         cancelText="关闭"
         confirmLoading={manualPublishSubmitting}
-        okButtonProps={{ disabled: manualPublishTarget?.manualPublish?.writeCapability?.writable !== true }}
+        okButtonProps={{ disabled: manualPublishTarget?.manualPublish?.writeCapability?.writable !== true || (manualPublishTarget ? hasAmbiguousManualPublishJob(manualPublishTarget, marketingQueue.publish) : false) }}
         onCancel={closeManualPublish}
         onOk={() => manualPublishForm.submit()}
         width={760}
         destroyOnHidden
       >
         {manualPublishTarget && <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+          {hasAmbiguousManualPublishJob(manualPublishTarget, marketingQueue.publish) && <Alert
+            type="error"
+            showIcon
+            title="无法确定人工证据所属的发布任务"
+            description="同一任务和内容版本匹配多个发布任务。为避免证据关联到错误任务，已禁止提交；请先通过唯一的发布任务关联完成消歧。"
+          />}
           <Alert
             type="warning"
             showIcon
@@ -633,7 +653,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
             title="人工证据写入尚未接通"
             description={manualPublishTarget.manualPublish?.writeCapability?.blockingReason ?? "服务端未返回可写 capability。以下字段仅展示操作要求，提交保持禁用，不会在浏览器中伪造保存。"}
           />}
-          <Form form={manualPublishForm} layout="vertical" requiredMark onFinish={(values) => void submitManualPublish(values)} disabled={manualPublishTarget.manualPublish?.writeCapability?.writable !== true}>
+          <Form form={manualPublishForm} layout="vertical" requiredMark onFinish={(values) => void submitManualPublish(values)} disabled={manualPublishTarget.manualPublish?.writeCapability?.writable !== true || hasAmbiguousManualPublishJob(manualPublishTarget, marketingQueue.publish)}>
             <Form.Item name="status" label="人工状态" rules={[{ required: true }]}>
               <Select options={[
                 { value: "manual_publish_in_progress", label: "人工发布中" },

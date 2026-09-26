@@ -147,7 +147,7 @@ describe('creative-point PostgreSQL E2 release gate', () => {
       }
 
       const reservations = await Promise.allSettled(Array.from({ length: 200 }, (_, index) => repository.reserve({
-        workspaceId: 'creative_ws_a', idempotencyKey: `reserve-${index}`, actionKey: 'image.generate.standard',
+        workspaceId: 'creative_ws_a', idempotencyKey: `reserve-${index}`, actionKey: `image.generate.standard:${index}`,
         rateCardVersion: 'rate-approved-v1', points: 1, at: '2026-09-02T00:00:00.000Z',
       })))
       expect(reservations.filter(result => result.status === 'fulfilled')).toHaveLength(200)
@@ -164,7 +164,7 @@ describe('creative-point PostgreSQL E2 release gate', () => {
         { sourceId: 'order-later', allocated: '100' },
       ])
       const overflow = await Promise.allSettled(Array.from({ length: 20 }, (_, index) => repository.reserve({
-        workspaceId: 'creative_ws_a', idempotencyKey: `overflow-${index}`, actionKey: 'image.generate.standard',
+        workspaceId: 'creative_ws_a', idempotencyKey: `overflow-${index}`, actionKey: `image.generate.standard:overflow:${index}`,
         rateCardVersion: 'rate-approved-v1', points: 1, at: '2026-09-02T00:00:01.000Z',
       })))
       expect(overflow.every(result => result.status === 'rejected')).toBe(true)

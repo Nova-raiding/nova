@@ -19,6 +19,8 @@ export interface RuleSource {
   kind: 'official' | 'internal' | 'legal_review'
   reference: string
   checkedAt: string
+  /** Server-supplied trust projection; it is not caller-authored provenance. */
+  trust?: 'verified' | 'unverified'
 }
 
 export interface RuleChecks {

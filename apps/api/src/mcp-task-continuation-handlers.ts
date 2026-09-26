@@ -32,6 +32,9 @@ export async function handleMcpTaskContinuation(method: string, params: JsonObje
       if (typeof params.target_platform === 'string' && !targetPlatform) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'target_platform 不是支持的平台', 400)
       if (targetPlatform && !targetProductId) throw new DomainError('TARGET_PRODUCT_REQUIRED', '跨平台复制必须指定目标商品 ID，以重新加载目标平台商品事实和规则', 400)
       const targetAccountId = typeof params.target_account_id === 'string' && params.target_account_id.trim() ? params.target_account_id.trim() : undefined
+      if (source.candidateOnly === true && (targetAccountId || (targetProductId && targetProductId !== source.productId))) {
+        throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务不能复制到其他商品或绑定店铺', 409, { task_id: source.id })
+      }
       const targetProduct = targetProductId ? service.listProducts(workspaceId).find(product => product.id === targetProductId) : service.listProducts(workspaceId).find(product => product.id === source.productId)
       const effectiveTargetPlatform = targetPlatform ?? targetProduct?.platform ?? source.platform
       const effectiveTargetAccountId = targetAccountId ?? targetProduct?.accountId

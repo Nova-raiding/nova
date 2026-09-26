@@ -103,6 +103,7 @@ export { scaleCnyToFen, chargeFenFromCny } from './wallet-money.js'
 import { parseCampaignProductIds, parseCampaignTargets } from './campaign-params.js'
 import { CUSTOMER_DELIVERY_MCP_METHODS, handleCustomerDeliveryMcpMethod } from './mcp-customer-delivery-handlers.js'
 import { MCP_SYNC_RULE_METHODS, handleSyncRuleMcpMethod } from './mcp-sync-rule-handlers.js'
+import { handlePublicRuleDraftsGet, handlePublicRuleDraftsList, type PublicRuleGovernanceDependencies } from './mcp-public-rule-governance-handlers.js'
 import { handleHttpSyncJobRead } from './http-sync-job-read-routes.js'
 import { handleHttpTaskRoutes } from './http-task-routes.js'
 import { createWorkflowProjections } from './workflow-projections.js'
@@ -827,13 +828,16 @@ export interface RuleRepositoryPort {
   listPublic?(workspaceId: string, platform?: string): Promise<PersistedRuleVersion[]>
   getPublicVersion?(platform: string, packId: string, version: string): Promise<PersistedRuleVersion | undefined>
   insertPublicVersionWithAudit?(input: { version: Omit<PersistedRuleVersion, 'workspaceId' | 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }; audit: Omit<PersistedRuleAudit, 'workspaceId'> }): Promise<{ version: PersistedRuleVersion; audit: PersistedRuleAudit }>
-  transitionPublicStatus?(input: { platform: string; packId: string; version: string; status: string; actorId: string; reason: string; occurredAt: string; auditData?: Record<string, unknown> }): Promise<PersistedRuleVersion>
+  transitionPublicStatus?(input: { platform: string; packId: string; version: string; expectedRevision: number; status: string; actorId: string; reason: string; occurredAt: string; auditData?: Record<string, unknown> }): Promise<PersistedRuleVersion>
   insertVersion(input: Omit<PersistedRuleVersion, 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }): Promise<PersistedRuleVersion>
   appendAudit(input: PersistedRuleAudit): Promise<PersistedRuleAudit>
   listAudit(workspaceId: string, packId?: string): Promise<PersistedRuleAudit[]>
   updateStatus(input: { workspaceId: string; id: string; status: string; revision: number; updatedAt?: string; activatedAt?: string | null; deactivatedAt?: string | null }): Promise<PersistedRuleVersion>
   insertVersionWithAudit?(input: { version: Omit<PersistedRuleVersion, 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }; audit: PersistedRuleAudit }): Promise<{ version: PersistedRuleVersion; audit: PersistedRuleAudit }>
   transitionStatusWithAudit?(input: { workspaceId: string; packId: string; targetId: string; status: string; actorId: string; reason: string; occurredAt: string; targetAuditId: string; currentAuditId?: string; auditData?: Record<string, unknown> }): Promise<{ version: PersistedRuleVersion; audits: PersistedRuleAudit[] }>
+  listPublicDraftsForReview?(input: { platform?: string; limit: number; cursor?: import('../../../packages/persistence/src/index.js').PublicRuleReviewCursor }): Promise<import('../../../packages/persistence/src/index.js').PublicRuleReviewPage>
+  getPublicRuleForReview?(platform: string, packId: string, version: string): Promise<PersistedRuleVersion | undefined>
+  listPublicRuleAuditForReview?(platform: string, packId: string, version: string): Promise<PersistedRuleAudit[]>
 }
 
 const memoryWorkspaceStatuses = new Map<string, 'active' | 'disabled'>()
@@ -990,12 +994,14 @@ function requireUnchangedKnowledgeContext(input: {
   if (!unchanged) throw new DomainError('KNOWLEDGE_CONTEXT_CHANGED', '商品知识在生成前发生变化，请重新查询知识状态后重试', 409, { product_id: input.productId, next_action: 'catalog.search' })
 }
 
-async function hydrateDurableKnowledgeForGeneration(task: { id: string; workspaceId: string; productId: string }, commit = true): Promise<ReadonlyArray<{ id: string; title: string; content: string; revision: number }> | undefined> {
+async function hydrateDurableKnowledgeForGeneration(task: { id: string; workspaceId: string; productId: string; candidateOnly?: boolean }, commit = true): Promise<ReadonlyArray<{ id: string; title: string; content: string; revision: number }> | undefined> {
   const repository = persistence.knowledge ?? durableKnowledgeRepository
+  if (task.candidateOnly && !repository) throw new DomainError('KNOWLEDGE_REPOSITORY_UNAVAILABLE', '候选任务需要可验证的商品知识仓储；当前未配置，已停止生成', 503, { product_id: task.productId })
   const product = service.products.get(task.productId)
   if (!repository || !product || product.workspaceId !== task.workspaceId) return
   const documents = (await repository.listDocuments(task.workspaceId, { productId: product.id }))
     .filter(document => document.workspaceId === task.workspaceId && document.productId === product.id)
+  if (task.candidateOnly && !documents.some(document => document.indexState !== 'deleted')) throw new DomainError('KNOWLEDGE_CONTEXT_NOT_READY', '候选商品没有可用的已审核知识资料，索引就绪前不能生成内容', 409, { product_id: product.id, next_action: 'knowledge.asset.list' })
   const blocker = durableKnowledgeBlocker(documents)
   if (blocker) throw new DomainError(blocker.code, blocker.message, 409, { ...blocker, product_id: product.id })
   const results = await repository.search({
@@ -2081,6 +2087,23 @@ function isVerifiedOfficialRule(version: Pick<PersistedRuleVersion, 'sourceKind'
   return version.sourceKind === 'official' && version.createdBy === 'signed-rule-sync' && !version.sourceReference.startsWith('manual://')
 }
 
+function isAllowedManualPublicRule(version: Pick<PersistedRuleVersion, 'scope' | 'scopeValue' | 'targetId' | 'sourceKind' | 'sourceReference' | 'checks' | 'checksum' | 'createdBy'>) {
+  const platform = version.scopeValue ?? version.targetId
+  // Public platform rule storage does not persist category; the private marker
+  // and checksum are the durable provenance contract for this manual path.
+  if (version.scope !== 'platform' || version.sourceKind !== 'internal'
+    || !version.sourceReference.startsWith('manual://') || version.checks.__public_scope !== 'platform'
+    || !version.createdBy || !platform || !SUPPORTED_PLATFORMS.includes(platform as Platform)) return false
+  const { __public_scope: _scopeMarker, ...checks } = version.checks
+  const checksum = createHash('sha256').update(canonicalJson(checks)).digest('hex')
+  return checksum === version.checksum
+}
+
+/** Trusted for merchant/plugin projections: verified official imports plus approved manual uploads. */
+function isTrustedPublicRule(version: PersistedRuleVersion) {
+  return isVerifiedOfficialRule(version) || (version.status === 'active' && isAllowedManualPublicRule(version))
+}
+
 function assertManualRuleSource(sourceKind: string, category: unknown, publicScope?: unknown) {
   // Official classifications cannot be asserted by a browser or MCP caller.
   // Only the signature-verified importer may persist those classifications.
@@ -2097,13 +2120,14 @@ function assertRuleActivationSource(version: PersistedRuleVersion) {
 
 function publicRule(version: PersistedRuleVersion) {
   const lifecycleStatus = version.status === 'active' ? 'published' : version.status === 'inactive' ? 'disabled' : version.status
-  const verified = isVerifiedOfficialRule(version)
-  return { id: version.id, workspaceId: version.workspaceId, packId: version.packId, name: version.name, version: version.version, scope: version.scope, status: version.status, lifecycleStatus, createdBy: version.createdBy, updatedAt: iso(version.updatedAt), source: { kind: version.sourceKind, reference: version.sourceReference, checkedAt: iso(version.sourceCheckedAt), trust: verified ? 'verified' : 'unverified' }, checksum: version.checksum, revision: version.revision, ...(version.category ? { category: version.category } : {}), ...(version.effectiveFrom ? { effectiveFrom: iso(version.effectiveFrom) } : {}), ...(version.effectiveTo ? { effectiveTo: iso(version.effectiveTo) } : {}), ...(version.severity ? { severity: version.severity } : {}), ...(version.action ? { action: version.action } : {}), ...(version.targetId ? { targetId: version.targetId } : {}), ...(version.scopeValue ? { scopeValue: version.scopeValue } : {}), ...(version.activatedAt ? { activatedAt: iso(version.activatedAt) } : {}), ...(version.deactivatedAt ? { deactivatedAt: iso(version.deactivatedAt) } : {}) }
+  const verified = isTrustedPublicRule(version)
+  const activationEligible = isVerifiedOfficialRule(version) || isAllowedManualPublicRule(version)
+  return { id: version.id, workspaceId: version.workspaceId, packId: version.packId, name: version.name, version: version.version, scope: version.scope, status: version.status, lifecycleStatus, activationEligible, createdBy: version.createdBy, updatedAt: iso(version.updatedAt), source: { kind: version.sourceKind, reference: version.sourceReference, checkedAt: iso(version.sourceCheckedAt), trust: verified ? 'verified' : 'unverified' }, checksum: version.checksum, revision: version.revision, ...(version.category ? { category: version.category } : {}), ...(version.effectiveFrom ? { effectiveFrom: iso(version.effectiveFrom) } : {}), ...(version.effectiveTo ? { effectiveTo: iso(version.effectiveTo) } : {}), ...(version.severity ? { severity: version.severity } : {}), ...(version.action ? { action: version.action } : {}), ...(version.targetId ? { targetId: version.targetId } : {}), ...(version.scopeValue ? { scopeValue: version.scopeValue } : {}), ...(version.activatedAt ? { activatedAt: iso(version.activatedAt) } : {}), ...(version.deactivatedAt ? { deactivatedAt: iso(version.deactivatedAt) } : {}) }
 }
 
 function rulePackProjection(version: PersistedRuleVersion): RulePack {
   const category = version.category === 'platform' || version.category === 'category' || version.category === 'advertising_publish' || version.category === 'big_promotion' ? version.category : undefined
-  return { id: version.id, name: version.name, version: version.version, scope: version.scope as RulePack['scope'], status: version.status as RulePack['status'], updatedAt: iso(version.updatedAt), source: { kind: version.sourceKind as RulePack['source']['kind'], reference: version.sourceReference, checkedAt: iso(version.sourceCheckedAt) }, checksum: version.checksum, revision: version.revision, ...(category ? { category } : {}), ...(version.effectiveFrom ? { effectiveFrom: iso(version.effectiveFrom) } : {}), ...(version.effectiveTo ? { effectiveTo: iso(version.effectiveTo) } : {}), ...(version.severity ? { severity: version.severity as RulePack['severity'] } : {}), ...(version.action ? { action: version.action as RulePack['action'] } : {}), ...(version.targetId ? { targetId: version.targetId } : {}), ...(version.scopeValue ? { scopeValue: version.scopeValue } : {}), ...(version.activatedAt ? { activatedAt: iso(version.activatedAt) } : {}), ...(version.deactivatedAt ? { deactivatedAt: iso(version.deactivatedAt) } : {}) }
+  return { id: version.id, name: version.name, version: version.version, scope: version.scope as RulePack['scope'], status: version.status as RulePack['status'], updatedAt: iso(version.updatedAt), source: { kind: version.sourceKind as RulePack['source']['kind'], reference: version.sourceReference, checkedAt: iso(version.sourceCheckedAt), ...(isTrustedPublicRule(version) ? { trust: 'verified' as const } : {}) }, checksum: version.checksum, revision: version.revision, ...(category ? { category } : {}), ...(version.effectiveFrom ? { effectiveFrom: iso(version.effectiveFrom) } : {}), ...(version.effectiveTo ? { effectiveTo: iso(version.effectiveTo) } : {}), ...(version.severity ? { severity: version.severity as RulePack['severity'] } : {}), ...(version.action ? { action: version.action as RulePack['action'] } : {}), ...(version.targetId ? { targetId: version.targetId } : {}), ...(version.scopeValue ? { scopeValue: version.scopeValue } : {}), ...(version.activatedAt ? { activatedAt: iso(version.activatedAt) } : {}), ...(version.deactivatedAt ? { deactivatedAt: iso(version.deactivatedAt) } : {}) }
 }
 
 async function rulePacksForWorkspace(workspaceId: string): Promise<RulePack[]> {
@@ -2135,7 +2159,7 @@ async function trustedPlatformRuleSyncStatuses(workspaceId: string, intervalHour
   const trustedRules = repository
     ? ([...(await repository.list(workspaceId)), ...(repository.listPublic ? await repository.listPublic(workspaceId) : [])]
       .filter((row, index, all) => all.findIndex(candidate => candidate.packId === row.packId && candidate.version === row.version) === index))
-      .filter(row => row.status === 'active' && row.sourceKind === 'official' && row.createdBy === 'signed-rule-sync')
+      .filter(row => row.status === 'active' && (isVerifiedOfficialRule(row) || isAllowedManualPublicRule(row)))
       .map(rulePackProjection)
     : []
   return platformRuleSyncStatus(trustedRules, {
@@ -3613,13 +3637,13 @@ function assertCommercialDecisionAllowed(req: IncomingMessage, result: Commercia
   return result.decision
 }
 
-export async function enforceMcpCommercialAccess(req: IncomingMessage, workspaceId: string, operation: string, requiredAccessRevision?: string) {
+export async function enforceMcpCommercialAccess(req: IncomingMessage, workspaceId: string, operation: string, requiredAccessRevision?: string, params?: Record<string, unknown>) {
   // Credential-free creation, uploads, read-only catalog views and the
   // commercial recovery entry points are reachable before a store is bound;
   // syncing, formal content tasks and publishing retain the store boundary.
   // `requireStoreOnboarding` owns the exemption list so this call site cannot
   // drift from it again.
-  requireStoreOnboarding(workspaceId, operation)
+  await requireStoreOnboarding(workspaceId, operation, params)
   await ensureLocalFixtureCreativePoints(workspaceId)
   const result = await commercialAccessService.decide({
     surface: 'MCP', operation, workspace_id: workspaceId,
@@ -4138,6 +4162,10 @@ async function requireActiveWorkspace(workspaceId: string, method: string) {
  *    sees, never restore a capability.
  */
 const STORE_BOUNDARY_EXEMPT_METHODS = new Set([
+  // The dedicated unbound task entry is safe only because its handler requires
+  // workspace-owned, facts-confirmed, unbound product data and persists the
+  // candidateOnly marker before any follow-up action is accepted.
+  'task.create.draft',
   // Store-less content creation from merchant-supplied material. `catalog.image.get`
   // is part of this flow, not an extra: the merchant skill polls it after a
   // `queued` response from `catalog.image.generate`, and the durable execution
@@ -4251,11 +4279,58 @@ function storeGrantsPlatformScope(tokenState: string) {
   return manualPlatformOperations() && tokenState === MANUAL_STORE_RECORD_TOKEN_STATE
 }
 
-function requireStoreOnboarding(workspaceId: string, method: string) {
+async function requireStoreOnboarding(workspaceId: string, method: string, params?: Record<string, unknown>) {
   // Local fixture workflows intentionally support unbound planning data. The
   // production App flow must bind at least one live store before any catalog,
   // asset, task, sync, generation, or publishing operation is reachable.
   if (!isProduction() || ONBOARDING_METHODS.has(method) || COMMERCIAL_READ_ONLY_METHODS.has(method) || STORE_BOUNDARY_EXEMPT_METHODS.has(method) || method.startsWith('ops.') || method.startsWith('knowledge.') || method.startsWith('rule.')) return
+  if (CANDIDATE_PUBLISH_METHODS.has(method)) {
+    const taskIds = new Set<string>()
+    if (typeof params?.task_id === 'string') taskIds.add(params.task_id)
+    if (typeof params?.task_ids_json === 'string') {
+      try { for (const value of JSON.parse(params.task_ids_json)) if (typeof value === 'string') taskIds.add(value) } catch { /* normal schema/handler validation reports malformed input */ }
+    }
+    const batchId = typeof params?.batch_id === 'string' ? params.batch_id : undefined
+    if (batchId) for (const item of publishBatches.get(batchId)?.items ?? []) taskIds.add(item.taskId)
+    for (const taskId of taskIds) {
+      const task = service.tasks.get(taskId)
+      if (task?.workspaceId === workspaceId && task.candidateOnly) throw new DomainError('CANDIDATE_TASK_NOT_PUBLISHABLE', '候选任务只允许生成、审核和导出，不能发布到平台', 409, { task_id: task.id, candidate_only: true })
+    }
+  }
+  // A persisted candidate task may continue through generation, review and
+  // export without a store. Resolve by task or content version; never infer
+  // candidate status from request parameters alone.
+  if (CANDIDATE_CONTINUATION_METHODS.has(method)) {
+    const taskId = typeof params?.task_id === 'string' ? params.task_id : undefined
+    const versionId = typeof params?.content_version_id === 'string' ? params.content_version_id : undefined
+    let task = taskId ? service.tasks.get(taskId) : undefined
+    if (!task && taskId && persistence.business) {
+      try {
+        const snapshot = await persistence.business.get(workspaceId, 'task', taskId)
+        service.hydrateSnapshot({ entityType: 'task', entity: snapshot.payload })
+        task = service.tasks.get(taskId)
+      } catch { /* preserve the normal onboarding response for absent or unreadable tasks */ }
+    }
+    if (!task && versionId) {
+      try {
+        let version = service.contentVersions.get(versionId)
+        if (!version && persistence.business) {
+          const snapshot = await persistence.business.get(workspaceId, 'content_version', versionId)
+          service.hydrateSnapshot({ entityType: 'content_version', entity: snapshot.payload })
+          version = service.contentVersions.get(versionId)
+        }
+        if (version) {
+          task = service.tasks.get(version.taskId)
+          if (!task && persistence.business) {
+            const snapshot = await persistence.business.get(workspaceId, 'task', version.taskId)
+            service.hydrateSnapshot({ entityType: 'task', entity: snapshot.payload })
+            task = service.tasks.get(version.taskId)
+          }
+        }
+      } catch { /* preserve the normal onboarding response for absent or unreadable tasks */ }
+    }
+    if (task?.workspaceId === workspaceId && task.candidateOnly === true && !task.accountId) return
+  }
   // The one shared fact, asked over the account records directly: a store
   // directory entry's `state` is exactly the account's `tokenState`.
   const hasBoundStore = service.listPlatformAccounts(workspaceId).some(account => storeGrantsPlatformScope(account.tokenState))
@@ -4276,6 +4351,9 @@ function requireStoreOnboarding(workspaceId: string, method: string) {
     ],
   })
 }
+
+const CANDIDATE_CONTINUATION_METHODS = new Set(['task.select_direction', 'task.plan.confirm', 'content.generate', 'content.review', 'content.review.decide', 'content.approve', 'content.export'])
+const CANDIDATE_PUBLISH_METHODS = new Set(['publish.prepare', 'publish.confirm', 'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.retry_failed'])
 
 /**
  * Store-boundary scope for an HTTP request.
@@ -6348,6 +6426,18 @@ function requireRuleAdmin(req: IncomingMessage): RequestPrincipal {
   const claimedActor = header(req, 'x-actor-id')?.trim()
   if (requiresStrictAuth() && claimedActor && claimedActor !== principal.actorId) throw new DomainError(ERROR_CODES.FORBIDDEN, 'X-Actor-Id 与认证身份不一致', 403)
   return principal
+}
+
+function requirePlatformRuleReviewer(req: IncomingMessage): { actorId: string; workbench: string } {
+  const principal = requestPrincipals.get(req)
+  // Public rule drafts are shared control-plane policy. Do not let the caller
+  // widen a workspace principal by asserting x-ops-workbench=platform.
+  if (!principal || principal.workbench !== 'platform'
+    || !canonicalAuthorizationRolesForRequest(req).includes('rules_admin')
+    || !principal.actorId) {
+    throw new DomainError(ERROR_CODES.FORBIDDEN, '公共规则草稿审阅需要平台工作台和 rules_admin 身份', 403)
+  }
+  return { actorId: principal.actorId, workbench: principal.workbench }
 }
 
 function requireOperationsRole(req: IncomingMessage, allowed: readonly string[]) {
@@ -9155,7 +9245,11 @@ async function invalidateCanonicalFactsAfterSync(workspaceId: string, products: 
   }
 }
 
-async function assertCanonicalTaskScopeForAction(task: Pick<Task, 'workspaceId' | 'productId' | 'platform' | 'accountId' | 'brandId' | 'canonicalProductId' | 'listingId'>) {
+async function assertCanonicalTaskScopeForAction(task: Pick<Task, 'workspaceId' | 'productId' | 'platform' | 'accountId' | 'brandId' | 'canonicalProductId' | 'listingId' | 'campaignId' | 'campaignItemId' | 'candidateOnly'>) {
+  if (task.candidateOnly === true) {
+    if (task.accountId || task.brandId || task.canonicalProductId || task.listingId || task.campaignId || task.campaignItemId) throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务快照包含正式店铺或商品链绑定，已拒绝继续', 409)
+    return undefined
+  }
   const scope = await resolveCanonicalTaskScope({ workspaceId: task.workspaceId, productId: task.productId, platform: task.platform, ...(task.accountId ? { accountId: task.accountId } : {}), ...(task.brandId ? { brandId: task.brandId } : {}), requireListing: true })
   if (!scope) return undefined
   if (task.canonicalProductId && task.canonicalProductId !== scope.canonicalProductId) throw new DomainError('CANONICAL_PRODUCT_SCOPE_MISMATCH', '任务绑定的规范商品与当前商品链不一致，已阻断后续动作', 409, { task_id: (task as { id?: string }).id ?? null, expected: scope.canonicalProductId, provided: task.canonicalProductId })
@@ -10369,7 +10463,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   // A health scan writes durable operational alerts. It therefore needs the
   // same real-store boundary as other merchant operations before its
   // commercial decision is evaluated.
-  if (method === 'automation.scan' && workspaceId && !bypassWorkspaceLifecycleGate) requireStoreOnboarding(workspaceId, method)
+  if (method === 'automation.scan' && workspaceId && !bypassWorkspaceLifecycleGate) await requireStoreOnboarding(workspaceId, method)
   // Keep MCP and REST onboarding semantics identical: a production business
   // request without any bound store must first explain how to complete store
   // authorization. Commercial balance is evaluated only after that boundary;
@@ -10386,13 +10480,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   // bind a real store before commercial facts can authorize catalog, task, or
   // publishing work.
   if (method !== 'workspace.bootstrap' && workspaceId && !isOpsDomainMethod && !commercialValidationDeferred && !commercialBeforeOnboarding) {
-    await enforceMcpCommercialAccess(req, workspaceId, method)
+    await enforceMcpCommercialAccess(req, workspaceId, method, undefined, params)
   }
   // Credential-free creation may start from a merchant-uploaded asset before
   // any store is bound. Store authorization remains mandatory for sync, formal
   // content tasks, and every publish operation; `requireStoreOnboarding` owns
   // the exemption list.
-  if (method !== 'workspace.bootstrap' && workspaceId && !bypassWorkspaceLifecycleGate && (commercialValidationDeferred || commercialBeforeOnboarding)) requireStoreOnboarding(workspaceId, method)
+  if (method !== 'workspace.bootstrap' && workspaceId && !bypassWorkspaceLifecycleGate && (commercialValidationDeferred || commercialBeforeOnboarding)) await requireStoreOnboarding(workspaceId, method, params)
   if (shouldHydrateKnowledgeForMethod(method, bypassWorkspaceLifecycleGate, isOpsDomainMethod)) await hydrateKnowledge(workspaceId)
   const workspaceBillingMethod = method === 'billing.usage.consume' || method === 'billing.usage.refund'
   if (typeof params.task_id === 'string' && params.task_id.trim()) {
@@ -10680,6 +10774,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       requireRuleAdmin,
       publicRule,
       assertManualRuleSource,
+      isAllowedManualPublicRule,
       assertRuleActivationSource,
       parseJsonObjectParameter,
       parseApprovalGrant,
@@ -10688,7 +10783,19 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     })
   }
   if (MCP_IMAGE_METHODS.has(method)) return result(await handleImageMcpMethod(method, params, workspaceId, req, imageMcpRuntime()))
+  const publicRuleGovernanceDependencies: PublicRuleGovernanceDependencies = {
+    result,
+    required,
+    ruleRepository,
+    requirePlatformRuleReviewer,
+    supportedPlatforms: SUPPORTED_PLATFORMS,
+    canonicalJson,
+  }
   switch (method) {
+    case 'ops.rules.public.drafts.list':
+      return handlePublicRuleDraftsList(req, params, publicRuleGovernanceDependencies)
+    case 'ops.rules.public.drafts.get':
+      return handlePublicRuleDraftsGet(req, params, publicRuleGovernanceDependencies)
     case 'merchant.first_value':
       return result(await merchantFirstValuePreview(workspaceId, params, req))
     case 'campaign.batch.create':
@@ -12963,6 +13070,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       }
       return result({ platform, accountId: account.id, state: account.tokenState, remoteRevoked: true })
     }
+    case 'task.create.draft':
     case 'task.create':
     case 'task.answer':
     case 'task.understand':
@@ -13043,7 +13151,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await assertCanonicalTaskScopeForAction(task)
       await observeLegacyWalletShadow(workspaceId)
       await requireGenerationRulePreflight(workspaceId, task.productId)
-      const commercialDecision = await enforceMcpCommercialAccess(req, workspaceId, method)
+      const commercialDecision = await enforceMcpCommercialAccess(req, workspaceId, method, undefined, params)
       await hydrateDurableKnowledgeForGeneration(task)
       if (durableContentGenerationEnvironment()) {
         requirePlatformModelCostGate('text')
@@ -13674,7 +13782,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   if (requestWorkspace !== 'unknown' && requestPrincipals.get(req)?.workbench !== 'platform' && !testWorkspaceFixture && !workerRoute && !assetScannerRoute && !infrastructureProbe && !isOAuthCallback && !isOAuthAuthorization && !paymentCallbackMatch && !isHttpOnboardingExempt(path)) {
     // Resolve the registered MCP method so both surfaces consult the same
     // exemption table; `httpOperationPolicy` is already computed above.
-    requireStoreOnboarding(requestWorkspace, storeBoundaryScopeForHttp(httpOperationPolicy, path))
+    await requireStoreOnboarding(requestWorkspace, storeBoundaryScopeForHttp(httpOperationPolicy, path))
   }
   const httpCommercialValidationDeferred = (req.method === 'PUT' && /^\/v1\/assets\/[^/]+\/preference$/u.test(path))
     || (req.method === 'POST' && path === '/v1/brand-profile/extract')

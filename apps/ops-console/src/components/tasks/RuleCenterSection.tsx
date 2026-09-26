@@ -1,17 +1,42 @@
 import { useRef, useState } from "react";
 import { Alert, Button, Card, Form, Input, message, Modal, Space, Table, Tag, Typography } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
-import type { Rule } from "../../types/ops";
+import { platformLabels, platforms, type Platform, type Rule } from "../../types/ops";
 
 interface RuleCenterSectionProps {
   model: OpsConsoleModel;
 }
 
 const initialChecksJson = '{"forbiddenTerms":[]}';
+const platformByMarkdownName = new Map<string, Platform>(
+  platforms.flatMap((platform) => [
+    [platform, platform] as const,
+    [platformLabels[platform], platform] as const,
+  ]),
+);
 
-export function isOfficialPlatformRule(rule: Pick<Rule, "source">) {
-  return rule.source.kind === "official" && rule.source.trust === "verified"
-    && !rule.source.reference.startsWith("manual://");
+function resolveMarkdownPlatform(value: string, cardId: string): Platform {
+  const normalized = value.trim();
+  const platform = platformByMarkdownName.get(normalized) ?? platformByMarkdownName.get(normalized.toLowerCase());
+  if (!platform) throw new Error(`${cardId} 的平台“${normalized}”不受支持；请使用受支持的平台英文 id 或中文名称`);
+  return platform;
+}
+
+export function isTrustedPlatformRule(rule: Pick<Rule, "source">) {
+  return rule.source.trust === "verified"
+    && ((rule.source.kind === "official" && !rule.source.reference.startsWith("manual://"))
+      || (rule.source.kind === "internal" && rule.source.reference.startsWith("manual://")));
+}
+
+export function ruleTrustLabel(rule: Pick<Rule, "source">) {
+  if (rule.source.trust !== "verified") return "未核验";
+  if (rule.source.kind === "official" && !rule.source.reference.startsWith("manual://")) return "签名来源已验证";
+  if (rule.source.kind === "internal" && rule.source.reference.startsWith("manual://")) return "人工已审批";
+  return "来源类型不匹配";
+}
+
+export function canActivateOfficialPlatformRule(rule: Pick<Rule, "source" | "status" | "activationEligible">) {
+  return rule.status !== "active" && rule.status !== "expired" && rule.activationEligible === true;
 }
 
 function ruleStatusLabel(value: string | undefined): string {
@@ -44,13 +69,14 @@ export function parseMarkdownDraftInputs(markdown: string, fileName: string) {
     const platform = body.match(/^- 平台：([^；\n]+)/mu)?.[1]?.trim();
     const source = body.match(/^- 官方依据：(.+)$/mu)?.[1]?.trim();
     if (!platform || !source) throw new Error(`${cardId} 缺少平台或官方依据字段`);
+    const targetId = resolveMarkdownPlatform(platform, cardId);
     return {
-      packId: `${platform.toLowerCase()}-manual-${cardId.toLowerCase()}`,
+      packId: `${targetId}-manual-${cardId.toLowerCase()}`,
       name: card[2]?.trim() || cardId,
       version,
       category: "platform" as const,
       publicScope: "platform" as const,
-      targetId: platform === "拼多多" ? "pinduoduo" : platform,
+      targetId,
       sourceReference: `manual://${fileName}#${cardId}`,
       checksJson: JSON.stringify({ platform, source, content: `${card[0]}\n${body}` }),
       reason: `运营上传平台规则草稿：${fileName}`,
@@ -58,14 +84,33 @@ export function parseMarkdownDraftInputs(markdown: string, fileName: string) {
   });
 }
 
+export async function uploadMarkdownDrafts(
+  drafts: ReturnType<typeof parseMarkdownDraftInputs>,
+  publishRuleDraft: (draft: ReturnType<typeof parseMarkdownDraftInputs>[number]) => Promise<boolean>,
+) {
+  let succeeded = 0;
+  for (const draft of drafts) {
+    if (!(await publishRuleDraft(draft))) {
+      return {
+        succeeded,
+        failedCard: draft.packId.replace(/^.*-manual-/u, ""),
+        reason: "规则服务拒绝了该卡片；请查看规则服务错误提示并核对官方依据。",
+      };
+    }
+    succeeded += 1;
+  }
+  return { succeeded, failedCard: undefined, reason: undefined };
+}
+
 export function RuleCenterSection({ model }: RuleCenterSectionProps) {
   const { canRules, ruleMutationKey, rules, updateRuleStatus, publishRuleDraft } =
     model;
   const markdownInputRef = useRef<HTMLInputElement>(null);
   const [markdownImporting, setMarkdownImporting] = useState(false);
+  const [markdownImportResult, setMarkdownImportResult] = useState<{ succeeded: number; failedCard?: string; reason?: string }>();
   const [activationTarget, setActivationTarget] = useState<Rule>();
   const [activationForm] = Form.useForm<{ approvalRef: string; approvedBy: string; approvedAt: string; reason: string; approvalToken: string }>();
-  const unverifiedRules = rules.filter((rule) => !isOfficialPlatformRule(rule));
+  const unverifiedRules = rules.filter((rule) => !isTrustedPlatformRule(rule));
   const verifiedRules = rules.filter((rule) => !unverifiedRules.includes(rule));
 
   const activateRule = async () => {
@@ -90,17 +135,17 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
   const importMarkdownDrafts = async (file: File) => {
     if (!canRules || markdownImporting) return;
     setMarkdownImporting(true);
+    setMarkdownImportResult(undefined);
     try {
       const markdown = await file.text();
       // Parse and validate the complete document before the first write. A
       // malformed later card must not leave an earlier card persisted.
       const drafts = parseMarkdownDraftInputs(markdown, file.name);
-      for (const draft of drafts) {
-        const ok = await publishRuleDraft(draft);
-        if (!ok) break;
-      }
+      setMarkdownImportResult(await uploadMarkdownDrafts(drafts, publishRuleDraft));
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "平台规则文件导入失败");
+      const reason = error instanceof Error ? error.message : "平台规则文件导入失败";
+      setMarkdownImportResult({ succeeded: 0, failedCard: reason.match(/^(PDD-[A-Z0-9-]+)/u)?.[1], reason });
+      message.error(reason);
     } finally {
       setMarkdownImporting(false);
       if (markdownInputRef.current) markdownInputRef.current.value = "";
@@ -125,7 +170,7 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
           type="warning"
           showIcon
           title="当前列表含本地演示/人工录入规则，不是平台官方规则"
-          description="manual:// 来源只用于本地测试或人工草稿；不会作为插件的可信知识，也不会证明平台同步成功。只有通过签名规则清单导入的版本才会标记为“已验证”。"
+          description="未审批的 manual:// 来源只是人工草稿，不会进入商家插件。独立审批只表示平台运营审核过提交材料，不代表系统已独立核验来源网站；生效范围为所有商家。"
           style={{ marginBottom: 16 }}
         />
       ) : null}
@@ -138,7 +183,17 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
           style={{ marginBottom: 16 }}
         />
       ) : null}
-      <Alert type="info" showIcon title="平台规则人工导入说明" description="上传文件只会创建未验证的内部草稿，不会进入商家规则、生成预检或发布前复检；普通审批不能把人工材料激活为平台限制。正式平台规则必须从核验的官方来源整理为受信签名清单，再由规则同步服务验证并导入。商家自己的运营约束仍应在工作区知识库维护，不能替代平台限制。" style={{ marginBottom: 16 }} />
+      <Alert type="info" showIcon title="平台规则人工导入说明" description="上传文件只会创建带官方依据的公共草稿；规则管理员完成独立审批后才会进入商家规则、生成预检和发布前复检。未审批或来源不匹配的人工材料始终保持阻断。商家自己的运营约束仍应在工作区知识库维护，不能替代平台限制。" style={{ marginBottom: 16 }} />
+      {markdownImportResult ? (
+        <Alert
+          showIcon
+          type={markdownImportResult.failedCard ? "error" : "success"}
+          role="status"
+          title={markdownImportResult.failedCard ? "Markdown 导入未完成" : "Markdown 草稿导入完成"}
+          description={`成功 ${markdownImportResult.succeeded} 张${markdownImportResult.failedCard ? `；失败卡片 ${markdownImportResult.failedCard}：${markdownImportResult.reason}` : "；没有失败卡片"}`}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
       <Table
         rowKey="id"
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
@@ -154,14 +209,14 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
             render: (_: unknown, row: Rule) => (
               <Space size={4}>
                 <Tag color={row.lifecycleStatus === "published" ? "green" : "orange"}>{ruleStatusLabel(row.lifecycleStatus ?? row.status)}</Tag>
-                {row.source.trust !== "verified" || row.source.reference.startsWith("manual://") ? <Tag color="orange">未验证</Tag> : <Tag color="green">已验证</Tag>}
+                <Tag color={row.source.trust !== "verified" ? "orange" : row.source.kind === "internal" && row.source.reference.startsWith("manual://") ? "blue" : ruleTrustLabel(row) === "签名来源已验证" ? "green" : "red"}>{ruleTrustLabel(row)}</Tag>
               </Space>
             ),
           },
           {
             title: "来源",
             render: (_: unknown, row: Rule) =>
-              `${row.source.trust === "verified" ? "已验证" : "未验证"} · ${row.source.kind} / ${row.source.reference}`,
+              `${ruleTrustLabel(row)} · ${row.source.kind} / ${row.source.reference}`,
           },
           {
             title: "有效期",
@@ -172,7 +227,7 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
             title: "操作",
             render: (_: unknown, row: Rule) => (
               <Space>
-                {row.status !== "active" && row.status !== "expired" ? (
+                {canActivateOfficialPlatformRule(row) ? (
                   <Button
                     disabled={!canRules || Boolean(ruleMutationKey)}
                     loading={ruleMutationKey === `${row.id}:active`}

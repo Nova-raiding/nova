@@ -64,6 +64,14 @@ describe('MCP method contract', () => {
     expect(isMcpMethod('admin.raw_sql')).toBe(false)
   })
 
+  it('declares exact bounded public rule draft review inputs', () => {
+    expect(getMcpMethodContract('ops.rules.public.drafts.list')?.params.required).toBeUndefined()
+    expect(MCP_METHOD_SCHEMAS['ops.rules.public.drafts.list'].properties?.limit).toMatchObject({ pattern: '^(?:[1-9]|[1-9][0-9]|100)$' })
+    expect(MCP_METHOD_SCHEMAS['ops.rules.public.drafts.get']).toMatchObject({ required: ['platform', 'pack_id', 'version'] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'ops.rules.public.drafts.get', params: { platform: 'pinduoduo', pack_id: 'pdd-copy', version: '3' } }).valid).toBe(true)
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'ops.rules.public.drafts.get', params: { pack_id: 'pdd-copy', version: '3' } }).valid).toBe(false)
+  })
+
   it('documents workspace bootstrap as lookup of an existing administrator binding', () => {
     const contract = getMcpMethodContract('workspace.bootstrap')
     expect(contract?.description).toContain('existing administrator-assigned workspace binding')
@@ -299,6 +307,7 @@ describe('MCP method contract', () => {
     expect(getMcpMethodContract('merchant.first_value')?.description).toMatch(/safe first-value preview bundle.*never publishes/iu)
     expect(MCP_METHOD_SCHEMAS['brand-unit.bind-store'].required).toEqual(['brand_id', 'platform', 'account_id'])
     expect(MCP_METHOD_SCHEMAS['brand-unit.bind-store'].properties.expected_revision).toEqual({ type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 })
+    expect(MCP_METHOD_SCHEMAS['rule.status'].properties.expected_revision).toEqual({ type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 })
     // The Ops console always sends an auditable reason and the handler reads it
     // (server.ts brand-unit.bind-store -> recordOperationAudit). Declaring the
     // optional key is what keeps that write from being rejected as off-contract.

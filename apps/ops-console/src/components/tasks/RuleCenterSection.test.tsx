@@ -1,25 +1,39 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { RuleCenterSection, isOfficialPlatformRule, parseMarkdownDraftInputs } from "./RuleCenterSection";
+import { RuleCenterSection, isTrustedPlatformRule, parseMarkdownDraftInputs, ruleTrustLabel } from "./RuleCenterSection";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 
-describe("official platform rule boundary", () => {
-  it("never presents internal or unverified rules as platform restrictions", () => {
+describe("trusted platform rule boundary", () => {
+  it("distinguishes approved internal rules from untrusted material", () => {
     const source = { kind: "official", trust: "verified", reference: "https://rules.example/rule" };
-    expect(isOfficialPlatformRule({ source } as Parameters<typeof isOfficialPlatformRule>[0])).toBe(true);
+    expect(isTrustedPlatformRule({ source } as Parameters<typeof isTrustedPlatformRule>[0])).toBe(true);
+    expect(isTrustedPlatformRule({ source: { kind: "internal", trust: "verified", reference: "manual://reviewed" } } as Parameters<typeof isTrustedPlatformRule>[0])).toBe(true);
     for (const override of [{ kind: "internal" }, { trust: "unverified" }, { reference: "manual://rule" }]) {
-      expect(isOfficialPlatformRule({ source: { ...source, ...override } } as Parameters<typeof isOfficialPlatformRule>[0])).toBe(false);
+      expect(isTrustedPlatformRule({ source: { ...source, ...override } } as Parameters<typeof isTrustedPlatformRule>[0])).toBe(false);
     }
+  });
+  it("does not label mismatched provenance as signed or approved", () => {
+    expect(ruleTrustLabel({ source: { kind: "official", trust: "verified", reference: "manual://misclassified" } } as Parameters<typeof ruleTrustLabel>[0])).toBe("来源类型不匹配");
+    expect(ruleTrustLabel({ source: { kind: "internal", trust: "verified", reference: "https://unreviewed.example" } } as Parameters<typeof ruleTrustLabel>[0])).toBe("来源类型不匹配");
   });
   it("does not expose an internal draft creation form on the official rules page", () => {
     const html = renderToStaticMarkup(<RuleCenterSection model={{ canRules: true, rules: [], updateRuleStatus: async () => true } as unknown as OpsConsoleModel} />);
     expect(html).toContain("平台规则人工导入说明");
-    expect(html).toContain("不会进入商家规则、生成预检或发布前复检");
-    expect(html).toContain("受信签名清单");
-    expect(html).not.toContain("独立审批并激活");
+    expect(html).toContain("不会进入商家插件");
+    expect(html).toContain("独立审批");
     expect(html).not.toContain("rule-draft-create");
     expect(html).not.toContain("创建规则草稿");
+  });
+
+  it("does not describe an approved manual source as independently verified", () => {
+    const html = renderToStaticMarkup(<RuleCenterSection model={{
+      canRules: false,
+      rules: [{ id: "manual", packId: "pdd", name: "平台条款", version: "1", status: "active", scope: "platform", revision: 2, source: { kind: "internal", reference: "manual://rules.md#PDD-1", checkedAt: "2026-08-26T06:00:00.000Z", trust: "verified" } }],
+      updateRuleStatus: async () => true,
+    } as unknown as OpsConsoleModel} />);
+    expect(html).toContain("人工已审批");
+    expect(html).not.toContain("签名来源已验证");
   });
 
   it("validates every Markdown card before any upload can be started", () => {

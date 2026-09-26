@@ -414,6 +414,8 @@ export interface Task {
   productId: string
   platform: Platform
   accountId?: string
+  /** Workspace-owned content candidate; this task cannot be published. */
+  candidateOnly?: boolean
   brandId?: string
   canonicalProductId?: string
   listingId?: string
@@ -1032,6 +1034,7 @@ export interface ContentExport {
   deliveryManifest?: DeliveryBundleManifest
   deliveryManifestHash?: string
   deliveryVerification?: DeliveryBundleVerificationResult
+  candidateOnly?: boolean
 }
 
 function crc32(input: Uint8Array): number {
@@ -1990,6 +1993,9 @@ export class MerchantService {
   cloneTask(workspaceId: string, taskId: string, requestText?: string, target?: { productId?: string; platform?: Platform; accountId?: string; region?: string; brandId?: string; canonicalProductId?: string; listingId?: string }) {
     const source = this.mustTask(taskId)
     if (source.workspaceId !== workspaceId) throw new DomainError('TENANT_SCOPE_DENIED', '无权访问该任务', 403)
+    if (source.candidateOnly === true && (target?.accountId?.trim() || target?.brandId?.trim() || target?.canonicalProductId?.trim() || target?.listingId?.trim())) {
+      throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务不能通过复制绑定店铺、品牌或规范商品', 409, { task_id: source.id })
+    }
     const product = this.products.get(source.productId)
     if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
     const targetProductId = target?.productId?.trim() || source.productId
@@ -2008,7 +2014,7 @@ export class MerchantService {
       ...(target?.canonicalProductId ? { canonicalProductId: target.canonicalProductId } : {}),
       ...(target?.listingId ? { listingId: target.listingId } : {}),
     }
-    return this.createTask({ workspaceId, productId: targetProductId, platform: targetPlatform, ...(accountId ? { accountId } : {}), ...inheritedScope, ...(target?.region?.trim() ? { region: target.region.trim() } : source.region ? { region: source.region } : {}), requestText: requestText?.trim() || `从任务 ${source.id} 创建的${targetPlatform === source.platform ? '' : `${targetPlatform} `}副本` })
+    return this.createTask({ workspaceId, productId: targetProductId, platform: targetPlatform, ...(accountId ? { accountId } : {}), ...(source.candidateOnly ? { candidateOnly: true } : {}), ...inheritedScope, ...(target?.region?.trim() ? { region: target.region.trim() } : source.region ? { region: source.region } : {}), requestText: requestText?.trim() || `从任务 ${source.id} 创建的${targetPlatform === source.platform ? '' : `${targetPlatform} `}副本` })
   }
   listCreativeDirections(workspaceId: string, taskId: string): CreativeDirection[] {
     const task = this.mustTask(taskId)
@@ -2375,6 +2381,7 @@ export class MerchantService {
     if (input.entityType === 'task') {
       const task = input.entity as Task
       const normalizedTask = { ...task, inputSnapshotId: task.inputSnapshotId || `task:${task.id}:v${task.version || 1}`, answers: task.answers ?? {}, missingQuestions: task.missingQuestions ?? [], deferredQuestionIds: task.deferredQuestionIds ?? [], deferredQuestions: task.deferredQuestions ?? [] }
+      if (normalizedTask.candidateOnly && (normalizedTask.accountId || normalizedTask.brandId || normalizedTask.canonicalProductId || normalizedTask.listingId || normalizedTask.campaignId || normalizedTask.campaignItemId)) throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务快照不能包含店铺、品牌、规范商品或活动绑定', 409, { task_id: normalizedTask.id })
       this.validateHydratedTask(normalizedTask)
       const prior = this.tasks.get(entity.id)
       if (prior && (normalizedTask.version < prior.version || (normalizedTask.version === prior.version && !isDeepStrictEqual(prior, normalizedTask)))) throw new DomainError('VERSION_CONFLICT', '同一任务快照 ID 对应了冲突内容，已拒绝覆盖', 409, { task_id: entity.id, current_version: prior.version, incoming_version: normalizedTask.version })
@@ -4141,6 +4148,7 @@ export class MerchantService {
     }
     const readme = [
       `# ${version.body.title}`,
+      ...(task.candidateOnly ? ['', '> 候选任务导出：仅供内部审核，不可发布到平台。'] : []),
       '',
       `平台：${task.platform}`,
       `任务：${task.id}`,
@@ -4160,6 +4168,7 @@ export class MerchantService {
     if (publishReceipt) deliveryFiles.push('publish-receipt.json')
     const manifest = {
       schema_version: '1.0',
+      candidate_only: task.candidateOnly === true,
       workspace_id: workspaceId,
       task_id: task.id,
       content_version_id: version.id,
@@ -4248,6 +4257,7 @@ export class MerchantService {
       ? { workspaceId, taskId: task.id, productId: product.id, contentVersionId: version.id, status: 'published' as const, platform: latestPublish.platform, requestId: latestPublish.requestId, remoteProductId: latestPublish.remoteId, observedAt: latestPublish.remoteObservedAt, verified: true as const }
       : undefined
     const deliveryBuild = buildDeliveryBundleManifest({
+      ...(task.candidateOnly ? { candidate_only: true } : {}),
       scope: { workspaceId, taskId: task.id, productId: product.id, brandId },
       entities: {
         workspace: { id: workspaceId, version: 'current' },
@@ -4278,17 +4288,19 @@ export class MerchantService {
     const deliveryVerification = verifyDeliveryBundle(deliveryBuild.manifest, deliveryBuild.files, deliveryBuild.manifestHash)
     if (!deliveryVerification.valid) throw new DomainError('DELIVERY_BUNDLE_VERIFICATION_FAILED', '交付包自校验失败，已停止导出', 500, { errors: deliveryVerification.errors })
     const compatibleManifest = { ...manifest, delivery_bundle_schema_version: deliveryBuild.manifest.schemaVersion, delivery_bundle_manifest_hash: deliveryBuild.manifestHash, delivery_bundle_verification: deliveryVerification, delivery_bundle: deliveryBuild.manifest }
-    if (format === 'markdown') return { fileName: `content-v${version.version}.md`, contentType: 'text/markdown; charset=utf-8', body: markdown }
-    if (format === 'manifest') return { fileName: `manifest-v${version.version}.json`, contentType: 'application/json; charset=utf-8', body: JSON.stringify(compatibleManifest, null, 2), deliveryManifest: deliveryBuild.manifest, deliveryManifestHash: deliveryBuild.manifestHash, deliveryVerification }
-    if (format === 'json') return { fileName: `content-v${version.version}.json`, contentType: 'application/json; charset=utf-8', body: JSON.stringify(content, null, 2) }
-    return { fileName: `content-v${version.version}-bundle.zip`, contentType: 'application/zip', body: '', binaryBody: zipStored(Object.fromEntries(deliveryBuild.files.map(file => [file.path, file.content]))), deliveryManifest: deliveryBuild.manifest, deliveryManifestHash: deliveryBuild.manifestHash, deliveryVerification }
+    const candidateOnly = task.candidateOnly === true
+    if (format === 'markdown') return { fileName: `content-v${version.version}.md`, contentType: 'text/markdown; charset=utf-8', body: `${candidateOnly ? '> 候选任务导出：仅供内部审核，不可发布到平台。\n\n' : ''}${markdown}`, candidateOnly }
+    if (format === 'manifest') return { fileName: `manifest-v${version.version}.json`, contentType: 'application/json; charset=utf-8', body: JSON.stringify(compatibleManifest, null, 2), deliveryManifest: deliveryBuild.manifest, deliveryManifestHash: deliveryBuild.manifestHash, deliveryVerification, candidateOnly }
+    if (format === 'json') return { fileName: `content-v${version.version}.json`, contentType: 'application/json; charset=utf-8', body: JSON.stringify({ ...content, candidate_only: candidateOnly }, null, 2), candidateOnly }
+    return { fileName: `content-v${version.version}-bundle.zip`, contentType: 'application/zip', body: '', binaryBody: zipStored(Object.fromEntries(deliveryBuild.files.map(file => [file.path, file.content]))), deliveryManifest: deliveryBuild.manifest, deliveryManifestHash: deliveryBuild.manifestHash, deliveryVerification, candidateOnly }
   }
 
-  createTask(input: { workspaceId: string; productId: string; platform: Platform; accountId?: string; region?: string; requestText?: string; brandId?: string; canonicalProductId?: string; listingId?: string; campaignId?: string; campaignItemId?: string; taskId?: string; answers?: Record<string, string | number | boolean | string[]> }) {
+  createTask(input: { workspaceId: string; productId: string; platform: Platform; accountId?: string; candidateOnly?: boolean; region?: string; requestText?: string; brandId?: string; canonicalProductId?: string; listingId?: string; campaignId?: string; campaignItemId?: string; taskId?: string; answers?: Record<string, string | number | boolean | string[]> }) {
     const product = this.products.get(input.productId)
     if (!product || product.workspaceId !== input.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
     if (product.disabledAt) throw new DomainError('PRODUCT_DISABLED', '商品已停用，不能创建新任务；历史任务仍可审计', 409, { product_id: product.id, disabled_at: product.disabledAt, reason: product.disabledReason ?? '' })
     if (product.platform !== input.platform) throw new DomainError('PLATFORM_SCOPE_MISMATCH', '任务平台必须与商品快照一致')
+    if (input.candidateOnly && (!product.factsConfirmed || product.accountId || product.brandId || product.remoteId || input.accountId || input.brandId || input.canonicalProductId || input.listingId || input.campaignId || input.campaignItemId)) throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务必须使用已确认且未绑定店铺/品牌/远端商品的资料，且不能带规范商品或活动绑定', 409, { product_id: product.id, facts_confirmed: product.factsConfirmed, account_bound: Boolean(product.accountId), brand_bound: Boolean(product.brandId), remote_product_bound: Boolean(product.remoteId) })
     if (product.accountId && input.accountId && product.accountId !== input.accountId) throw new DomainError('STORE_CONTEXT_MISMATCH', '任务店铺必须与商品所属店铺一致', 409)
     const accountId = product.accountId ?? input.accountId
     if (this.options.strictAccountScope && accountId) this.getActionablePlatformAccount(input.workspaceId, accountId, input.platform)
@@ -4318,10 +4330,10 @@ export class MerchantService {
     const requestedBrand = requestedBrandId ? this.brandProfiles.get(requestedBrandId) : undefined
     if (requestedBrand && requestedBrand.workspaceId !== input.workspaceId) throw new DomainError('BRAND_PROFILE_NOT_FOUND', '品牌档案不存在或不属于当前工作区', 404)
     const brand = requestedBrandId ? requestedBrand : this.getBrandProfile(input.workspaceId)
-    const useBrandAudience = Boolean(brand?.audience?.trim() && !requiresAudienceConfirmation(input.requestText ?? '') && !intentAware?.merchantIntent.brand.audience)
-    const resolvedBrandId = requestedBrandId ?? brand?.id
+    const useBrandAudience = !input.candidateOnly && Boolean(brand?.audience?.trim() && !requiresAudienceConfirmation(input.requestText ?? '') && !intentAware?.merchantIntent.brand.audience)
+    const resolvedBrandId = input.candidateOnly ? undefined : requestedBrandId ?? brand?.id
     if ((input.campaignId === undefined) !== (input.campaignItemId === undefined)) throw new DomainError('TASK_CAMPAIGN_SCOPE_INVALID', '批次任务必须同时绑定 campaignId 和 campaignItemId', 400)
-    const task: Task = { id: taskId, workspaceId: input.workspaceId, productId: input.productId, platform: input.platform, ...(accountId ? { accountId } : {}), ...(resolvedBrandId ? { brandId: resolvedBrandId } : {}), ...(input.canonicalProductId ? { canonicalProductId: input.canonicalProductId } : {}), ...(input.listingId ? { listingId: input.listingId } : {}), ...(input.campaignId ? { campaignId: input.campaignId, campaignItemId: input.campaignItemId! } : {}), ...(region ? { region } : {}), ...(input.requestText ? { requestText: input.requestText.trim() } : {}), inputSnapshotId: `task:${taskId}:v1`, answers: { ...(useBrandAudience ? { audience: brand!.audience!.trim() } : {}), ...inferredAnswers, ...(brand ? { brand_id: brand.id } : {}), ...explicitAnswers }, missingQuestions: [], deferredQuestionIds: [], deferredQuestions: [], state: product.factsConfirmed ? 'ready_for_direction' : 'draft', version: 1, createdAt: now() }
+    const task: Task = { id: taskId, workspaceId: input.workspaceId, productId: input.productId, platform: input.platform, ...(accountId ? { accountId } : {}), ...(input.candidateOnly ? { candidateOnly: true } : {}), ...(resolvedBrandId ? { brandId: resolvedBrandId } : {}), ...(input.canonicalProductId ? { canonicalProductId: input.canonicalProductId } : {}), ...(input.listingId ? { listingId: input.listingId } : {}), ...(input.campaignId ? { campaignId: input.campaignId, campaignItemId: input.campaignItemId! } : {}), ...(region ? { region } : {}), ...(input.requestText ? { requestText: input.requestText.trim() } : {}), inputSnapshotId: `task:${taskId}:v1`, answers: { ...(useBrandAudience ? { audience: brand!.audience!.trim() } : {}), ...inferredAnswers, ...(brand && !input.candidateOnly ? { brand_id: brand.id } : {}), ...explicitAnswers }, missingQuestions: [], deferredQuestionIds: [], deferredQuestions: [], state: product.factsConfirmed ? 'ready_for_direction' : 'draft', version: 1, createdAt: now() }
     validateMerchantIntentAnswer(task.answers.merchant_intent_json)
     if (task.answers.competitor_reference_json !== undefined) parseCompetitorReference(task.answers.competitor_reference_json, { workspaceId: task.workspaceId, ...(typeof task.answers.brand_id === 'string' && task.answers.brand_id.trim() ? { brandId: task.answers.brand_id.trim() } : {}), productId: task.productId, platform: task.platform })
     this.parsePromotionSnapshot(task, product)
@@ -4494,6 +4506,13 @@ export class MerchantService {
     if (['plan_confirmed', 'review_required', 'approved', 'publish_prepared', 'publishing', 'delivered'].includes(task.state)) throw new DomainError('TASK_INPUT_LOCKED', '方案确认后不能修改任务输入，请复制任务后重新生成', 409)
     this.assertExpectedTaskVersion(task, expectedVersion)
     for (const key of Object.keys(answers)) if (!taskAnswerFields.has(key)) throw new DomainError('TASK_ANSWER_INVALID', `不支持的任务字段: ${key}`, 400)
+    const requestedProductId = typeof answers.product_id === 'string' ? answers.product_id.trim() : ''
+    if (task.candidateOnly === true && requestedProductId && requestedProductId !== task.productId) {
+      throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务不能更换商品资料', 409, { task_id: task.id, product_id: task.productId })
+    }
+    if (task.candidateOnly === true && typeof answers.brand_id === 'string' && answers.brand_id.trim()) {
+      throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务不能绑定品牌档案', 409, { task_id: task.id })
+    }
     if (typeof answers.brand_id === 'string' && answers.brand_id.trim()) {
       const brand = this.brandProfiles.get(answers.brand_id.trim())
       if (!brand || brand.workspaceId !== workspaceId) throw new DomainError('BRAND_PROFILE_NOT_FOUND', '品牌档案不存在或不属于当前工作区', 404)
@@ -4521,7 +4540,6 @@ export class MerchantService {
       ...requestedDeferrals.map(questionId => currentQuestions.get(questionId) ?? deferredQuestions.get(questionId) ?? ({ id: questionId, kind: deferredQuestionKinds[questionId] ?? 'optional', prompt: `请补充任务信息：${questionId}`, why: '该信息会影响内容方案和审核结果。', ifSkipped: '继续保持暂缓，系统不会猜测该信息。' } as TaskQuestion)),
     ]
     const { defer_questions: _deferQuestions, ...persistedAnswers } = answers
-    const requestedProductId = typeof answers.product_id === 'string' ? answers.product_id.trim() : ''
     const product = this.products.get(requestedProductId || task.productId)
     if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
     if (product.platform !== task.platform) throw new DomainError('TASK_PRODUCT_PLATFORM_MISMATCH', '任务商品必须属于当前任务平台', 409, { task_platform: task.platform, product_platform: product.platform, product_id: product.id })
@@ -4931,6 +4949,7 @@ export class MerchantService {
 
   preparePublish(taskId: string) {
     const task = this.mustTask(taskId)
+    if (task.candidateOnly) throw new DomainError('CANDIDATE_TASK_NOT_PUBLISHABLE', '候选任务只允许生成、审核和导出，不能发布到平台', 409, { task_id: task.id, candidate_only: true })
     if (!['approved', 'publish_prepared'].includes(task.state) || !task.contentVersionId) throw new DomainError('CONTENT_NOT_APPROVED', '内容未批准，不能准备发布')
     const version = this.contentVersions.get(task.contentVersionId)
     if (!version || version.state !== 'approved') throw new DomainError('CONTENT_VERSION_NOT_FOUND', '已批准内容版本不存在', 404)
@@ -5063,6 +5082,8 @@ export class MerchantService {
   }
 
   confirmPublish(input: { workspaceId: string; taskId: string; batchId?: string; contentVersionId: string; confirmationHash: string; remoteSnapshotHash: string; idempotencyKey: string; accountId?: string; mediaAdapterReady?: boolean; deferCommit?: boolean; authorizationSnapshot?: PublishAuthorizationSnapshot }) {
+    const candidateTask = this.mustTask(input.taskId)
+    if (candidateTask.workspaceId === input.workspaceId && candidateTask.candidateOnly) throw new DomainError('CANDIDATE_TASK_NOT_PUBLISHABLE', '候选任务只允许生成、审核和导出，不能发布到平台', 409, { task_id: candidateTask.id, candidate_only: true })
     const existingId = this.idempotency.get(`${input.workspaceId}:${input.idempotencyKey}`)
     if (existingId) {
       const existing = this.publishJobs.get(existingId)!

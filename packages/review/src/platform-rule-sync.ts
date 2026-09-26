@@ -43,10 +43,11 @@ export function platformRuleSyncStatus(
 ): PlatformRuleSyncStatus[] {
   const now = Date.parse(options.now ?? new Date().toISOString())
   const intervalHours = Number.isFinite(options.intervalHours) && (options.intervalHours ?? 0) > 0 ? options.intervalHours! : 168
-  const configured = Boolean(options.manifestUrl?.trim()) && options.signingSecretConfigured === true
+  const manifestConfigured = Boolean(options.manifestUrl?.trim()) && options.signingSecretConfigured === true
   return PLATFORM_RULE_SOURCES.map(source => {
-    // A manual:// row is a fixture or human draft. It must never make a
-    // platform look synced; only a signed-manifest source is eligible here.
+    // Signed rules require the manifest verifier. An approved manual platform
+    // rule is a separate, auditable source of usable policy and can satisfy
+    // readiness without claiming that the signed-manifest sync is configured.
     // A signed public platform rule carries its platform in `scopeValue`, not
     // `targetId`: `PostgresRuleRepository.listPublic` projects the shared table
     // as `NULL::text AS target_id, platform AS scope_value`. Matching on
@@ -55,8 +56,12 @@ export function platformRuleSyncStatus(
     // production generation preflight 503s on exactly that state. Both fields
     // are the same concept elsewhere in the rule center (`rule-center.ts`,
     // `server.ts`), so accept either.
-    const platformRules = rules.filter(rule => rule.status === 'active' && rule.scope === 'platform' && (rule.targetId ?? rule.scopeValue) === source.platform && !rule.source.reference.startsWith('manual://'))
+    const matchingPlatformRules = rules.filter(rule => rule.status === 'active' && rule.scope === 'platform' && (rule.targetId ?? rule.scopeValue) === source.platform)
+    const trustedManualRules = matchingPlatformRules.filter(rule => rule.source.kind === 'internal' && rule.source.reference.startsWith('manual://') && rule.source.trust === 'verified')
+    const verifiedSignedRules = matchingPlatformRules.filter(rule => rule.source.kind === 'official' && rule.source.trust === 'verified' && !rule.source.reference.startsWith('manual://'))
+    const platformRules = manifestConfigured ? [...trustedManualRules, ...verifiedSignedRules] : trustedManualRules
     const latest = [...platformRules].sort((a, b) => Date.parse(b.source.checkedAt) - Date.parse(a.source.checkedAt))[0]
+    const configured = manifestConfigured || trustedManualRules.length > 0
     const checkedAt = validDate(latest?.source.checkedAt)
     const ageHours = checkedAt ? Math.max(0, (now - Date.parse(checkedAt)) / 3_600_000) : null
     const stale = !checkedAt || ageHours === null || ageHours > intervalHours
@@ -75,7 +80,7 @@ export function platformRuleSyncStatus(
           ? `尚未导入可验证的${source.label}平台规则，商户与插件不能消费该平台规则`
           : stale
             ? `规则来源已超过 ${intervalHours} 小时未检查`
-            : '规则来源在检查窗口内',
+            : latest.source.reference.startsWith('manual://') ? '规则来源由平台运营人工复核并审批' : '规则来源在检查窗口内',
     }
   })
 }

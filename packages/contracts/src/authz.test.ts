@@ -27,6 +27,16 @@ describe('authorization policy registry', () => {
     expect(() => requireMcpMethodPolicy('unknown.future.method')).toThrow('AUTHZ_POLICY_NOT_REGISTERED:unknown.future.method')
   })
 
+  it('keeps public rule-draft preview platform scoped and read-only, with a handler-level reviewer role check', () => {
+    for (const method of ['ops.rules.public.drafts.list', 'ops.rules.public.drafts.get'] as const) {
+      expect(getMcpMethodPolicy(method)).toMatchObject({ capability: 'rule.read', scope: 'platform', workbench: 'platform', effect: 'read' })
+    }
+    expect(capabilitiesForRoles(['rules_admin'])).toContain('rule.read')
+    // The role capability map is intentionally broader than this control-plane
+    // workflow; the API also requires an authenticated platform rules_admin.
+    expect(capabilitiesForRoles(['operator'])).toContain('rule.read')
+  })
+
   it('keeps ambiguous allow_and_deny obligation gaps explicit and reviewable', () => {
     const missing = Object.values(MCP_METHOD_POLICIES).filter(policy => policy.audit === 'allow_and_deny' && policy.obligations.length === 0)
     expect(missing.every(policy => policy.audit === 'allow_and_deny' && policy.obligations.length === 0)).toBe(true)

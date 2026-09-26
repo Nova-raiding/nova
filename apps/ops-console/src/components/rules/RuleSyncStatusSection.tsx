@@ -104,7 +104,7 @@ export function RuleSyncStatusSection({
               ? "六个平台规则均在检查窗口内"
               : `${blocked} 个平台未通过规则新鲜度门禁`
         }
-        description="平台规则来自各平台官方签名清单，服务端 worker 默认每 7 天自动检查一次；规则管理员也可立即更新。未配置或过期时必须保持阻断或人工复核，不能把旧规则视为有效。"
+        description="平台规则可以来自官方签名清单，也可以由运营上传官方依据并完成独立审批；服务端 worker 默认每 7 天检查签名清单。未配置、未审批或过期时必须保持阻断或人工复核，不能把旧规则视为有效。"
       />
       <Table<RuleSyncStatus>
         rowKey="platform"

@@ -307,6 +307,7 @@ jobs:
           packages/persistence/src/migration-247-ocr-rate.postgres.test.ts
           packages/persistence/src/payment-callback-repository.postgres.test.ts
           packages/persistence/src/product-rls-tenant-boundary.postgres.test.ts
+          packages/persistence/src/rule-governance-review.postgres.test.ts
           packages/persistence/src/resource-id-scope.postgres.test.ts
           packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts
           packages/persistence/src/support-repository-sla-filter.postgres.test.ts

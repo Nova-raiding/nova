@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { RulesPage } from "./RulesPage.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel.js";
 
-function rulesModel(options: { consoleError?: string; ruleError?: string } = {}) {
+function rulesModel(options: { consoleError?: string; ruleError?: string; platform?: boolean; canReadRules?: boolean } = {}) {
   return {
     // The console-level error is written by *any* failing optional dataset and
     // cleared whenever `loadRules` succeeds; it is not rule-scoped.
@@ -14,6 +14,7 @@ function rulesModel(options: { consoleError?: string; ruleError?: string } = {})
     ruleSyncLoading: false,
     ruleSyncStatuses: [],
     rules: [],
+    authorization: { scope: { kind: options.platform ? "platform" : "workspace", id: "ws-1" }, can: (capability: string) => capability === "rule.read" && options.canReadRules === true },
     ruleMutationKey: undefined,
     canRules: false,
     loadRules: async () => undefined,
@@ -23,7 +24,7 @@ function rulesModel(options: { consoleError?: string; ruleError?: string } = {})
   } as unknown as OpsConsoleModel;
 }
 
-const render = (options: { consoleError?: string; ruleError?: string } = {}) =>
+const render = (options: { consoleError?: string; ruleError?: string; platform?: boolean; canReadRules?: boolean } = {}) =>
   renderToStaticMarkup(<RulesPage model={rulesModel(options)} />);
 
 describe("rules page error scope", () => {
@@ -40,5 +41,10 @@ describe("rules page error scope", () => {
     const html = render({ ruleError: "规则数据加载失败，请重试；空列表不代表没有平台规则。" });
     expect(html).toContain("规则同步状态读取失败");
     expect(html).toContain("规则数据加载失败，请重试");
+  });
+
+  it("mounts public draft review only in the platform workbench", () => {
+    expect(render()).not.toContain("公共平台规则草稿审核");
+    expect(render({ platform: true, canReadRules: true })).toContain("公共平台规则草稿审核");
   });
 });

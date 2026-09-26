@@ -2,9 +2,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
+import { contextEnvelopeHash } from './context-snapshot-repository.js'
 import { PostgresKnowledgeRepository } from './knowledge.js'
 import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
-import { SqlClient, SqlPool, SqlQueryResult, withWorkspaceTransaction } from './repository.js'
+import { PostgresOutboxRepository, SqlClient, SqlPool, SqlQueryResult, withWorkspaceTransaction } from './repository.js'
 import { loadMigrations, MigrationRunner } from './migration.js'
 
 const databaseUrl = process.env.PERSISTENCE_RELEASE_DATABASE_URL
@@ -62,12 +63,24 @@ describe('migration 250 knowledge generation claim boundary', () => {
       }
       app = new Pool({ connectionString: databaseConnection(base, databaseName, 'merchant_app', 'merchant_app_local_only', raceApplication), max: 6 })
       const knowledge = new PostgresKnowledgeRepository(app)
+      const outbox = new PostgresOutboxRepository(app)
+      const bindGenerationRequest = async (suffix: string, targetProductId: string, selected: { id: string; title: string; extractedText: string; revision: number }) => {
+        const taskId = `task_${suffix}`
+        const jobId = `job_${suffix}`
+        const input = { platform: 'taobao', product: { id: targetProductId }, knowledgeContext: { documents: [{ id: selected.id, title: selected.title, content: selected.extractedText, revision: selected.revision }] } }
+        const contextHash = contextEnvelopeHash(input)
+        await database!.query(`INSERT INTO tasks (id,workspace_id,product_id,platform,platform_account_id,state) VALUES ($1,$2,$3,'taobao',$4,'generating')`, [taskId, workspaceId, targetProductId, accountId])
+        await database!.query(`INSERT INTO generation_jobs (id,workspace_id,task_id,idempotency_key,state) VALUES ($1,$2,$3,$4,'queued')`, [jobId, workspaceId, taskId, `idem_${suffix}`])
+        const event = await outbox.append({ workspaceId, aggregateId: jobId, eventType: 'generation.requested', sequence: 1, payload: { job_id: jobId, task_id: taskId, context_hash: contextHash, input } })
+        return { taskId, jobId, aggregateId: jobId, eventId: event.id, contextHash }
+      }
       const content = 'approved claim fence fact'
       const document = await knowledge.createDocument({ workspaceId, productId, knowledgeType: 'product_facts', title: 'claim fence', extractedText: content, contentHash: hash(content), approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready' })
+      const execution = await bindGenerationRequest(randomUUID().replaceAll('-', ''), productId, document)
       const claimInput = {
-        workspaceId, eventId: `event_${randomUUID()}`, aggregateId: `job_${randomUUID()}`, taskId: `task_${randomUUID()}`, logicalAttempt: 1,
+        workspaceId, ...execution, logicalAttempt: 1,
         providerAttemptId: randomUUID(), providerAttemptKey: `mm-${'a'.repeat(64)}`, requestBodySha256: 'b'.repeat(64), requestNonce: randomUUID(),
-        productId, contextHash: 'c'.repeat(64), expectedDocuments: [{ documentId: document.id, revision: document.revision, contentSha256: hash(content) }],
+        productId, expectedDocuments: [{ documentId: document.id, revision: document.revision, contentSha256: hash(content) }],
       }
       const claim = await knowledge.claimGenerationKnowledge(claimInput)
       expect(claim).toMatchObject({ claimed: true, state: 'claimed' })
@@ -111,10 +124,11 @@ describe('migration 250 knowledge generation claim boundary', () => {
       // commits and the claim sees the new document revision/state.
       const raceContent = 'before concurrent reindex'
       const raceDocument = await knowledge.createDocument({ workspaceId, productId: concurrentProductId, knowledgeType: 'product_facts', title: 'race doc', extractedText: raceContent, contentHash: hash(raceContent), approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready' })
+      const raceExecution = await bindGenerationRequest(randomUUID().replaceAll('-', ''), concurrentProductId, raceDocument)
       const raceInput = {
-        workspaceId, eventId: `event_${randomUUID()}`, aggregateId: `job_${randomUUID()}`, taskId: `task_${randomUUID()}`, logicalAttempt: 1,
+        workspaceId, ...raceExecution, logicalAttempt: 1,
         providerAttemptId: randomUUID(), providerAttemptKey: `mm-${'d'.repeat(64)}`, requestBodySha256: 'e'.repeat(64), requestNonce: randomUUID(),
-        productId: concurrentProductId, contextHash: 'f'.repeat(64), expectedDocuments: [{ documentId: raceDocument.id, revision: raceDocument.revision, contentSha256: hash(raceContent) }],
+        productId: concurrentProductId, expectedDocuments: [{ documentId: raceDocument.id, revision: raceDocument.revision, contentSha256: hash(raceContent) }],
       }
       let mutationHeldResolve!: () => void
       let releaseMutationResolve!: () => void

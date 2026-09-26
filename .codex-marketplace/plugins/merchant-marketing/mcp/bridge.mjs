@@ -745,7 +745,7 @@ const METHODS = {
   },
   'rule.status': {
     description: '变更规则版本状态并留下审计记录；激活时 approval_json 需包含 approval_ref、approved_by、approved_at。',
-    inputSchema: { type: 'object', properties: { pack_id: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive', 'expired'] }, public_scope: { type: 'string', enum: ['platform'], description: '声明变更公共平台规则状态；需同时提供 platform。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'], description: '公共平台规则所属平台；仅与 public_scope=platform 同时使用。' }, reason: { type: 'string' }, approval_json: { type: 'string' } }, required: ['pack_id', 'version', 'status', 'reason'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { pack_id: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive', 'expired'] }, public_scope: { type: 'string', enum: ['platform'], description: '声明变更公共平台规则状态；需同时提供 platform。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'], description: '公共平台规则所属平台；仅与 public_scope=platform 同时使用。' }, expected_revision: { type: 'string', description: '公共规则草稿变更必须与读取时的 revision 一致。' }, reason: { type: 'string' }, approval_json: { type: 'string' } }, required: ['pack_id', 'version', 'status', 'reason'], additionalProperties: false },
   },
   'asset.list': {
     description: '查看工作区素材、扫描和权益状态。',
@@ -888,6 +888,10 @@ const METHODS = {
       required: ['product_id', 'platform'],
       additionalProperties: false,
     },
+  },
+  'task.create.draft': {
+    description: '创建未绑定店铺的候选内容任务；仅接受已确认商品资料，后续可生成、审核和导出，永久禁止平台发布。',
+    inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, request_text: { type: 'string' } }, required: ['product_id', 'platform'], additionalProperties: false },
   },
   'task.answer': {
     description: '回答任务理解问题并保存可恢复的输入快照；answers_json 可包含 promotion_json，金额为人民币元且最多两位小数。',
@@ -1249,6 +1253,7 @@ const MERCHANT_ACTION_LABELS = {
   'subscription.change': '调整店铺额度',
   'billing.recharge.create': '创建充值订单',
   'task.create': '创建营销任务',
+  'task.create.draft': '创建未绑定候选任务',
   'task.resume': '恢复任务并回答问题',
   'asset.facts.confirm': '确认商品事实',
   'content.generate': '生成内容',
