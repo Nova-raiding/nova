@@ -1,5 +1,27 @@
 # Changelog
 
+## 未发布（2026-09-23 至 2026-09-26 并入 main）
+
+以下条目记录 9/23 并行任务线与其后 main 演进合并回主线的内容（原存于 19 个 -923 工作区，已全部收拢，详见 archive 合并提交）。
+
+### Added
+
+- B 桥代码切换与两阶段恢复：`bridge_recovery_started -> bridge_runtime_recovery_verified -> bridge_recovery_verified` 状态机、签名 unlabeled 七容器接管、root-only 旧运行时证据与镜像归档绑定、外部网关拓扑契约拒绝，以及 `ecs-bridge-old-runtime-evidence` 门禁与其 node:test 入口。
+- 云端 v2 候选发布链：插件发布描述符 Ed25519 签名/校验、双平台（macOS/Windows）本地测试证明、云发布清单 schema v2 `pluginReleases`、`verify-staged-plugin-release-v2` 与 cloud-only 构件校验。
+- 商家首工作区受保护引导：`/v1/auth/workspace-bootstrap`（会话+CSRF+资格校验）、`createMerchantAccount` 显式 bootstrap 意图、`assertBootstrapEligible` 风控门禁与 Postgres 工作区引导仓储。
+- 支付证据链：网关操作来源回执捕获、回调重放数据库快照 fail-closed 生产者；中继只读候选会话与密钥预检；PG17 恢复拓扑只读预检（未达标 NO-GO）。
+
+### Changed
+
+- Ops 鉴权收敛为 password-only（`ECS_OPS_AUTH_MODE=password`，镜像标签与部署期双重校验）；ECS 镜像构建增加 npm registry HTTPS 输入校验。
+- 迁移链 242/244 桥兼容：`verifyBridgeMigrationPrefix` 接受“携带完整链至 244”的更长主链；部署预检主机证据门禁绑定候选清单摘要。
+- 商家钱包回归测试对齐打包副本（充值入账读路径与订单展示双断言）。
+
+### Fixed
+
+- 修复合并期间丢失的本地插件桥模式 503 门禁（四条连接路由 fail-closed）与部署预检 `--expected-manifest-sha256` 绑定。
+- 注册 `payment-callback-replay` 与 `ecs-ops-auth-mode-gate` 测试入口，消除未收集测试台账漂移。
+
 ## 0.2.1 - 2026-09-15
 
 以下 Added/Changed/Removed 条目覆盖 2026-09-16 至 2026-09-19 期间累积到本候选版本的变更（`release-metadata.json` 为准）。
