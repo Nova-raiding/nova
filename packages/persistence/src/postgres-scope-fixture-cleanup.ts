@@ -10,6 +10,7 @@ interface DrainClock { now(): number; wait(milliseconds: number): Promise<unknow
 /** Exact prefixes inventoried from independently created PostgreSQL test databases. */
 export const POSTGRES_SCOPE_FIXTURE_PREFIXES = [
   'brand_profile_assoc_',
+  'release_claim_fence_',
   'business_repository_',
   'campaign_lifecycle_',
   'catalog_146_',
