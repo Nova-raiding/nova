@@ -142,7 +142,10 @@ describe('protected ECS pre-identity recovery', () => {
     const partiallyRestored = { ...input, observed: { ...partial, containers: [{ ...observed.containers[0]!, id: 'f'.repeat(64) }, observed.containers[1]!], inventory: [{ ...observed.inventory[0]!, id: 'f'.repeat(64) }, observed.inventory[1]!] } }
     expect(verifyBridgeRecoveryAuthorization(recovering, partiallyRestored, keys.publicKey, now)).toEqual({ authorized: true, targetMigration: 242 })
     expect(() => verifyBridgeRecoveryAuthorization(journal, partiallyRestored, keys.publicKey, now)).toThrow(/neither original nor/u)
-    const verified = transitionJournal(recovering, 'bridge_recovery_verified', keys.privateKey, keys.publicKey, now)
+    expect(() => transitionJournal(recovering, 'bridge_recovery_verified', keys.privateKey, keys.publicKey, now)).toThrow(/transition/u)
+    const runtimeVerified = transitionJournal(recovering, 'bridge_runtime_recovery_verified', keys.privateKey, keys.publicKey, now)
+    expect(verifyBridgeRecoveryAuthorization(runtimeVerified, partiallyRestored, keys.publicKey, now)).toEqual({ authorized: true, targetMigration: 242 })
+    const verified = transitionJournal(runtimeVerified, 'bridge_recovery_verified', keys.privateKey, keys.publicKey, now)
     expect(() => verifyBridgeRecoveryAuthorization(verified, input, keys.publicKey, now)).toThrow(/phase/u)
   })
   it('normalizes safe HTTPS API prefixes and rejects unsafe URLs before recovery mutation', () => {

@@ -57,6 +57,13 @@ docker exec "$CONTAINER" touch /state/bridge-up-fail
 if docker exec "$CONTAINER" sh -lc "$bridge_recover"; then echo 'injected bridge Compose failure unexpectedly passed' >&2; exit 1; fi
 docker exec "$CONTAINER" rm /state/bridge-up-fail
 docker exec "$CONTAINER" sh -lc "$bridge_recover"
+docker exec "$CONTAINER" sh -lc 'node -e '\''const fs=require("fs");const journal=JSON.parse(fs.readFileSync("/state/bridge-journal.json"));if(journal.phase!=="bridge_runtime_recovery_verified"||!journal.signature_base64)process.exit(1)'\'''
+bridge_finalize="$base bridge-finalize --state /state/bridge-journal.json --lock-path /state/lock --service-map /state/map.json --compose-project merchant-production --deployment-nonce nonce_abcdefghijklmnopqr --recovery-plan /state/bridge-plan.json --production-api-base-url https://yxsona.com/api"
+docker exec "$CONTAINER" touch /state/bridge-public
+if docker exec "$CONTAINER" sh -lc "$bridge_finalize"; then echo 'candidate public identity unexpectedly finalized old recovery' >&2; exit 1; fi
+docker exec "$CONTAINER" sh -lc 'node -e '\''const fs=require("fs");const journal=JSON.parse(fs.readFileSync("/state/bridge-journal.json"));if(journal.phase!=="bridge_runtime_recovery_verified")process.exit(1)'\'''
+docker exec "$CONTAINER" rm /state/bridge-public
+docker exec "$CONTAINER" sh -lc "$bridge_finalize"
 docker exec "$CONTAINER" sh -lc 'node -e '\''const fs=require("fs");const journal=JSON.parse(fs.readFileSync("/state/bridge-journal.json"));if(journal.phase!=="bridge_recovery_verified"||!journal.signature_base64)process.exit(1);const commands=fs.readFileSync("/state/docker-argv.jsonl","utf8").split("\n").filter(Boolean).map(JSON.parse);if(commands.some(args=>args[0]==="compose"&&args.includes("migrate")))process.exit(1)'\'''
 
 # Successful B cutover also requires real observed image/health checks: a

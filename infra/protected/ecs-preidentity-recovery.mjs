@@ -17,7 +17,7 @@ const PRIVATE_KEY_PATH = '/var/lib/merchant-release-security/production-capabili
 const NONCE_LEDGER = '/var/lib/merchant-release-security/production-nonces.sqlite3'
 const BIN = Object.freeze({ docker: '/usr/bin/docker', psql: '/usr/bin/psql', flock: '/usr/bin/flock', curl: '/usr/bin/curl', sha256sum: '/usr/bin/sha256sum' })
 const TRANSITIONS = Object.freeze({ captured: ['nonce_consumed'], nonce_consumed: ['migration_started'], migration_started: ['migration_complete', 'recovery_started'], migration_complete: ['runtime_cutover_started', 'recovery_started'], runtime_cutover_started: ['runtime_identity_verified'], recovery_started: ['recovery_verified'], runtime_identity_verified: [], recovery_verified: [] })
-const BRIDGE_TRANSITIONS = Object.freeze({ captured: ['nonce_consumed'], nonce_consumed: ['bridge_cutover_started'], bridge_cutover_started: ['bridge_identity_verified', 'bridge_recovery_started'], bridge_recovery_started: ['bridge_recovery_verified'], bridge_identity_verified: [], bridge_recovery_verified: [] })
+const BRIDGE_TRANSITIONS = Object.freeze({ captured: ['nonce_consumed'], nonce_consumed: ['bridge_cutover_started'], bridge_cutover_started: ['bridge_identity_verified', 'bridge_recovery_started'], bridge_recovery_started: ['bridge_runtime_recovery_verified'], bridge_runtime_recovery_verified: ['bridge_recovery_verified'], bridge_identity_verified: [], bridge_recovery_verified: [] })
 const BRIDGE_UNLABELED_TRANSITIONS = Object.freeze({ captured: ['nonce_consumed'], nonce_consumed: ['bridge_cutover_started'], bridge_cutover_started: ['bridge_identity_verified', 'bridge_recovery_started'], bridge_recovery_started: ['bridge_runtime_recovery_verified'], bridge_runtime_recovery_verified: ['bridge_recovery_verified'], bridge_identity_verified: [], bridge_recovery_verified: [] })
 const HEX = /^[a-f0-9]{64}$/u, IMAGE = /^sha256:[a-f0-9]{64}$/u, GIT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u
 const UNLABELED_SERVICES = Object.freeze(['api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync'])
@@ -157,7 +157,7 @@ export function verifyBridgeRecoveryAuthorization(document, input, publicPem, no
     if (after.missing === true) continue
     assert(/^[a-f0-9]{12,64}$/u.test(after.id ?? '') && IMAGE.test(after.imageId ?? '') && HEX.test(after.configHash ?? '') && ['running', 'stopped'].includes(after.state), `invalid bridge container observation: ${after.service}`)
     if (after.id === before.id && after.imageId === before.image_id && after.configHash === before.config_hash) continue
-    if (document.phase === 'bridge_recovery_started' && after.imageId === before.image_id && after.configHash === before.config_hash) continue
+    if (['bridge_recovery_started', 'bridge_runtime_recovery_verified'].includes(document.phase) && after.imageId === before.image_id && after.configHash === before.config_hash) continue
     assert(document.candidate_service_image_ids?.[after.service] === after.imageId, `bridge service is neither original nor its reviewed candidate: ${after.service}`)
     if (after.service === 'api' || after.service === 'api-replica') {
       const identity = after.releaseIdentity
@@ -636,14 +636,9 @@ function main(args) {
     const reviewedIds = new Set(document.predeployment_workload.services.map(item => item.id))
     const restoredByName = new Map(restoredInventory.map(item => [item.name, item]))
     for (const item of document.predeployment_inventory) if (!reviewedIds.has(item.id)) assert(canonical(restoredByName.get(item.name)) === canonical(item), `unreviewed container changed during bridge recovery: ${item.name}`)
-    cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/livez`])
-    cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/readyz`])
-    const release = jsonCommand(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/releasez`])
-    const identity = release.data?.release ?? release.release
-    assert(identity?.release_id === recovery.releaseId && identity?.release_git_sha === recovery.gitSha && identity?.manifest_sha256 === recovery.manifestSha256 && identity?.image_set_digest === recovery.imageSetDigest, 'bridge recovery public identity mismatch; signed journal remains retryable')
     const started = JSON.parse(readRegular(statePath).toString('utf8'))
-    writeAtomic(statePath, transitionJournal(started, 'bridge_recovery_verified', privatePem, publicPem), true)
-    process.stdout.write('bridge code recovery verified without migration\n'); return
+    if (started.phase === 'bridge_recovery_started') writeAtomic(statePath, transitionJournal(started, 'bridge_runtime_recovery_verified', privatePem, publicPem), true)
+    process.stdout.write('bridge old runtime restored without migration; public identity still requires finalization\n'); return
   }
   const planPath = get('--recovery-plan'), mapPath = get('--service-map')
   protectedPath(planPath, 'recovery plan'); protectedPath(mapPath, 'reviewed service map')
