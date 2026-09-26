@@ -2,7 +2,8 @@
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { Pool } from 'pg'
-import { createClient } from 'redis'
+import { createClient, type RedisClientType } from 'redis'
+import { closeRedisClient } from './redis-transport.js'
 
 const HEX = /^[a-f0-9]{64}$/u
 const WORKSPACE = /^[A-Za-z0-9._:-]{1,128}$/u
@@ -56,7 +57,7 @@ async function main(): Promise<void> {
   const redisTarget = new URL(redisUrl)
   if (!['postgres:', 'postgresql:'].includes(pg.protocol) || pg.username !== 'restore_app' || redisTarget.protocol !== 'redis:' || redisTarget.username !== 'restore') throw new Error('isolated restore credentials required')
   const pool = new Pool({ connectionString: databaseUrl, max: 1, connectionTimeoutMillis: 5_000, query_timeout: 10_000, statement_timeout: 10_000 })
-  const redis = createClient({ url: redisUrl, socket: { reconnectStrategy: false, connectTimeout: 5_000 } })
+  const redis = createClient({ url: redisUrl, socket: { reconnectStrategy: false, connectTimeout: 5_000 } }) as RedisClientType
   try {
     const client = await pool.connect()
     try {
@@ -69,7 +70,7 @@ async function main(): Promise<void> {
       process.stdout.write(`${JSON.stringify(result)}\n`)
     } finally { client.release() }
   } finally {
-    redis.destroy()
+    await closeRedisClient(redis)
     await pool.end()
   }
 }

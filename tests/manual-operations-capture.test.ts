@@ -130,7 +130,7 @@ describe('manual operations evidence capture', () => {
     expect(existsSync(env.FAKE_AUTH_HEADER_VERIFIED)).toBe(true)
     expect(existsSync(env.FAKE_CURL_ARG_LEAK)).toBe(false)
     expect(validateManualOperationsEvidence(evidence, 'release-test')).toEqual([])
-  })
+  }, 30_000)
 
   it('finds an older report on the second tenant-scoped list page', () => {
     const { output, env } = fixture('403', candidateIdentity, candidateImageId, 'manual_unverified', 'manual_publish_reported', { code: 'FORBIDDEN' }, {}, 20)

@@ -84,7 +84,7 @@ const mutations: InvariantMutation[] = [
       // connection for its lease scenarios and closes it through this
       // chokepoint too: a raw `quit()` there had no timeout, so a fixture Redis
       // that stopped answering parked the script's `finally` forever.
-      callers: ['apps/worker/src/quota-transport.ts', 'scripts/verify-payment-reconciliation.ts'],
+      callers: ['apps/worker/src/quota-transport.ts', 'apps/worker/src/restore-smoke.ts', 'scripts/verify-payment-reconciliation.ts'],
       noSecondImplementation: [
         {
           pattern: '\\b(?:client|redis|redisClient)\\??\\.(?:destroy|disconnect|quit)\\(|redis\\??\\.quit\\(',
