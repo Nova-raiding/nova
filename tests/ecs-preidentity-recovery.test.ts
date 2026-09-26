@@ -59,9 +59,18 @@ describe('protected ECS pre-identity recovery', () => {
       unlabeledGateway: { id: sha('9'), image_id: image('7'), config_sha256: sha('8'), host_sha256: sha('9'), nginx_config_sha256: sha('a'), networks: [{ name: 'merchant-production_default', id: sha('4'), aliases: [] }] },
     }
     const sevenBinding = { ...binding, mode: 'bridge_unlabeled_code_only' as const,
-      recovery: { ...binding.recovery, migrationTail: 242, allowedPrefixSha256: { 242: sha('5') }, services } }
+      recovery: { ...binding.recovery, planSha256: sha('a'), evidenceSha256: sha('b'), archiveSha256: sha('c'), migrationTail: 242, allowedPrefixSha256: { 242: sha('5') }, services } }
     const snapshot = createSignedSnapshot(sevenObserved, sevenBinding, keys.privateKey, keys.publicKey, now)
     expect(snapshot.unlabeled_takeover).toEqual(pairs)
+    expect(snapshot.recovery_target.evidence_sha256).toBe(sha('b'))
+    expect(snapshot.recovery_target.archive_sha256).toBe(sha('c'))
+    expect(snapshot.recovery_target.plan_sha256).toBe(sha('a'))
+    expect(snapshot.recovery_target.compose_sha256).toBeUndefined()
+    let journal = transitionJournal(snapshot, 'nonce_consumed', keys.privateKey, keys.publicKey, now)
+    journal = transitionJournal(journal, 'bridge_cutover_started', keys.privateKey, keys.publicKey, now)
+    const authorization = { observed: { composeProject: 'merchant-production', containers: sevenObserved.containers, inventory: sevenObserved.inventory }, database: sevenObserved.database, deploymentNonce: binding.deploymentNonce, recovery: sevenBinding.recovery }
+    expect(verifyBridgeRecoveryAuthorization(journal, authorization, keys.publicKey, now).authorized).toBe(true)
+    expect(() => verifyBridgeRecoveryAuthorization(journal, { ...authorization, recovery: { ...sevenBinding.recovery, archiveSha256: sha('d') } }, keys.publicKey, now)).toThrow(/capsule mismatch/u)
     expect(() => createSignedSnapshot({ ...sevenObserved, unlabeledTakeover: pairs.slice(1) }, sevenBinding, keys.privateKey, keys.publicKey, now)).toThrow(/seven frozen/u)
     const state = () => new Map(pairs.flatMap(pair => [[pair.old.id, { name: pair.old_name, running: true }], [pair.candidate.id, { name: pair.candidate_name, running: false }]]))
     const actions = (containers: ReturnType<typeof state>, faultAt = Infinity, after = false) => {

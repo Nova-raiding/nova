@@ -1,8 +1,9 @@
 # Bridge B immutable package, before any 242 → 244 migration
 
-Bridge B is a temporary release built from the live business commit
-`ec3d69e37809c0d622c8f38057a072245217004f` plus only the 243/244
-migration metadata and the 242-or-244 compatibility guard. The first cutover
+Bridge B is a temporary release built from the reviewed cloud-v2 candidate
+with the strict 242-or-244 compatibility guard. The historical rollback
+target is the live business commit `ec3d69e37809c0d622c8f38057a072245217004f`.
+The first cutover
 must change code **without** running a migration. This is not achievable with
 `deploy-verified-ecs-compose.sh` as currently written, because that runner
 executes the candidate migration step before switching services. Use the
@@ -20,12 +21,14 @@ manually remove the migration step.
    `prepare-ecs-eight-image-set.mjs`. Do not use mutable image tags as rollout
    or rollback inputs.
 3. Render the B Compose file with `BRIDGE_SCHEMA_COMPATIBILITY_MODE=prefix_242_or_244`.
-   Freeze the old 242 Compose, environment file and eight-image digest JSON
-   under the protected rollback root. The B-to-old rollback capsule must name
-   the old live Git SHA, the current B release identity, migration version 242,
-   target tail 242, forward-only schema and preserved volumes. It expires
-   within 24 hours and must be generated from exact frozen bytes.
-4. Before the code-only cutover, run the read-only package gate with all nine
+   Freeze root-only old-runtime evidence for the exact seven unlabeled container
+   IDs/configurations and unchanged external gateway. Retain a root-only
+   `docker save` archive of the exact old API, worker and gateway image IDs;
+   verify its config and layer hashes. The B-only
+   `ecs-unlabeled-id-recovery-capsule` binds the evidence and archive SHA-256,
+   old IDs, target identity, DB 242 checksum, preserved volumes and a 24-hour
+   expiry. Do not fabricate registry manifest digests from Docker image IDs.
+4. Before the code-only cutover, run the read-only package gate with eight
    absolute inputs:
 
    ```sh
@@ -36,14 +39,15 @@ manually remove the migration step.
      --eight-image-set /path/to/B/eight-image-set.json \
      --rendered-compose /path/to/B/rendered-compose.yml \
      --rollback-plan /protected/B-to-old/plan.json \
-     --rollback-compose /protected/B-to-old/compose.yml \
-     --rollback-env /protected/B-to-old/runtime.env \
-     --rollback-image-digests-json /protected/B-to-old/image-digests.json
+     --old-runtime-evidence /protected/B-to-old/old-runtime.json \
+     --old-image-archive /protected/B-to-old/old-images.tar
    ```
 
 The gate checks source hash, six/eight-image binding, rendered Compose image
 and release identities, explicit API/worker compatibility mode, and old-242
-rollback plan hashes and time window. It does not verify registry availability,
+rollback plan hashes and time window. The dedicated old-runtime verifier also
+checks live old IDs, gateway, image archive contents and layer hashes before
+nonce consumption. The package gate does not verify registry availability,
 OCI labels on the deployment host, live production health, protected signatures,
 the real database version or authorization. The two-stage runner and production
 preflight must verify those independently. Only after B is healthy on schema

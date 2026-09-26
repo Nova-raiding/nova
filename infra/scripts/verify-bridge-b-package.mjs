@@ -23,7 +23,7 @@ function args() {
     if (!key?.startsWith('--') || !value || result[key]) fail(`invalid or duplicate argument: ${key}`)
     result[key] = value
   }
-  const required = ['--candidate-identity', '--source-archive', '--release-images', '--eight-image-set', '--rendered-compose', '--rollback-plan', '--rollback-compose', '--rollback-env', '--rollback-image-digests-json']
+  const required = ['--candidate-identity', '--source-archive', '--release-images', '--eight-image-set', '--rendered-compose', '--rollback-plan', '--old-runtime-evidence', '--old-image-archive']
   for (const key of required) if (!result[key]) fail(`${key} is required`)
   if (Object.keys(result).length !== required.length) fail('unknown argument')
   return result
@@ -42,6 +42,11 @@ function json(path, label) {
 }
 function exactKeys(value, expected, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join('\n') !== [...expected].sort().join('\n')) fail(`${label} key set is not exact`)
+}
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (value && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`
+  return JSON.stringify(value)
 }
 function rubyDigest(compose, digests, mode) {
   return execFileSync('ruby', [resolve(ROOT, 'infra/scripts/validate-ecs-compose-release.rb'), compose, JSON.stringify(digests), mode], { encoding: 'utf8' }).trim()
@@ -75,7 +80,7 @@ try {
   const images = json(paths['--release-images'], 'six-image metadata')
   const eight = json(paths['--eight-image-set'], 'eight-image set')
   const rollback = json(paths['--rollback-plan'], 'rollback capsule')
-  const rollbackDigests = json(paths['--rollback-image-digests-json'], 'rollback image digests')
+  const oldEvidence = json(paths['--old-runtime-evidence'], 'old runtime evidence')
   for (const record of [images, eight]) {
     same(record.schema_version, 1, 'image metadata schema')
     same(record.release_id, candidate.release_id, 'image release ID')
@@ -110,28 +115,36 @@ try {
   execFileSync('ruby', ['-e', modeCheck, paths['--rendered-compose'], ...services], { encoding: 'utf8' })
 
   same(rollback.schema_version, '1', 'rollback schema')
-  same(rollback.kind, 'ecs-compose-rollback-capsule', 'rollback kind')
+  same(rollback.kind, 'ecs-unlabeled-id-recovery-capsule', 'rollback kind')
   if (!/^[a-z0-9][a-z0-9_-]{0,62}$/u.test(rollback.compose_project ?? '')) fail('rollback Compose project is invalid')
   same(rollback.current?.release_id, candidate.release_id, 'rollback current release')
   same(rollback.current?.git_sha, candidate.git_sha, 'rollback current Git SHA')
   same(rollback.current?.manifest_sha256, manifestSha, 'rollback current manifest')
   same(rollback.current?.image_set_digest, imageSetDigest, 'rollback current image set')
   same(rollback.target?.git_sha, OLD_GIT_SHA, 'rollback target old live Git SHA')
-  same(rollback.target?.compose_sha256, fileHash(paths['--rollback-compose']), 'rollback target Compose digest')
-  same(rollback.target?.env_sha256, fileHash(paths['--rollback-env']), 'rollback target environment digest')
-  same(rollback.target?.image_digests_sha256, fileHash(paths['--rollback-image-digests-json']), 'rollback target image digest document')
+  same(JSON.stringify(rollback.target?.services), JSON.stringify(['api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync']), 'old seven-service target')
+  same(oldEvidence.schema_version, 'ecs-bridge-old-runtime/1', 'old runtime evidence schema')
+  same(oldEvidence.signed, false, 'old runtime evidence authority')
+  same(oldEvidence.cutover_authorized, false, 'old runtime evidence cutover authority')
+  same(oldEvidence.runtime?.source_git_sha, OLD_GIT_SHA, 'frozen old Git SHA')
+  same(rollback.old_runtime?.evidence_sha256, fileHash(paths['--old-runtime-evidence']), 'old runtime evidence digest')
+  const archiveHash = execFileSync('shasum', ['-a', '256', paths['--old-image-archive']], { encoding: 'utf8' }).trim().split(/\s+/u)[0]
+  same(rollback.old_runtime?.archive_sha256, archiveHash, 'old image archive digest')
+  same(oldEvidence.backup?.kind, 'docker-save-three-image', 'old Docker save archive kind')
+  same(oldEvidence.backup?.archive_sha256, archiveHash, 'old Docker save archive evidence digest')
+  same(canonical(rollback.old_runtime?.image_ids), canonical(oldEvidence.runtime?.preserved_image_ids), 'old image IDs')
+  same(rollback.old_runtime?.gateway_id, oldEvidence.runtime?.gateway?.id, 'old external gateway ID')
+  same(canonical(rollback.old_runtime?.container_ids), canonical(Object.fromEntries(oldEvidence.runtime.services.map(item => [item.service, item.id]))), 'old seven-container IDs')
+  same(canonical(rollback.old_runtime?.config_sha256), canonical(Object.fromEntries(oldEvidence.runtime.services.map(item => [item.service, item.config_sha256]))), 'old seven-container configurations')
+  exactKeys(rollback.old_runtime?.container_ids, ['api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync'], 'old seven container IDs')
+  for (const id of Object.values(rollback.old_runtime.container_ids)) if (!SHA.test(id)) fail('old container ID must be full length')
   same(rollback.database?.strategy, 'forward_only', 'rollback database strategy')
   same(rollback.database?.schema_downgrade, false, 'rollback schema downgrade flag')
   same(rollback.database?.live_migration_version, 242, 'code-only cutover live migration version')
   same(rollback.database?.target_migration_tail, 242, 'old rollback image migration tail')
+  if (!SHA.test(rollback.database?.allowed_prefix_sha256?.[242] ?? '') || Object.keys(rollback.database.allowed_prefix_sha256).length !== 1) fail('old recovery must allow only checksummed schema 242')
   same(rollback.volumes?.preserve, true, 'rollback volume preservation')
-  exactKeys(rollbackDigests, ALL, 'rollback eight-image digests')
-  for (const value of Object.values(rollbackDigests)) if (!DIGEST.test(value)) fail('rollback image digest is invalid')
-  same(rollback.target?.image_set_digest, rubyDigest(paths['--rollback-compose'], rollbackDigests, '--print-image-set-digest'), 'rollback target image set')
-  same(rollback.target?.manifest_sha256, rubyDigest(paths['--rollback-compose'], rollbackDigests, '--print-manifest-sha256'), 'rollback target manifest')
-  execFileSync('ruby', [resolve(ROOT, 'infra/scripts/validate-ecs-compose-release.rb'), paths['--rollback-compose'], JSON.stringify(rollbackDigests)], {
-    encoding: 'utf8', env: { ...process.env, RELEASE_ID: rollback.target.release_id, RELEASE_GIT_SHA: OLD_GIT_SHA },
-  })
+  if (!SHA.test(rollback.target?.manifest_sha256 ?? '') || !DIGEST.test(rollback.target?.image_set_digest ?? '')) fail('old public release identity is invalid')
   const created = Date.parse(rollback.created_at ?? '')
   const expires = Date.parse(rollback.expires_at ?? '')
   if (!Number.isFinite(created) || !Number.isFinite(expires) || rollback.created_at !== new Date(created).toISOString() || rollback.expires_at !== new Date(expires).toISOString() || created > Date.now() + 300_000 || expires <= Date.now() || expires - created > 86_400_000) fail('rollback capsule time window is invalid')

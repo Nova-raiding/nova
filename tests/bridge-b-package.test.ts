@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -67,23 +67,26 @@ function fixture() {
   }
   const current = compose('release-bridge-b', gitSha, true)
   const previous = compose('release-old', oldGitSha, false)
-  const rollbackEnv = path('rollback.env')
-  writeFileSync(rollbackEnv, 'FIXTURE_ONLY=true\n')
-  const rollbackDigests = path('rollback-digests.json')
-  writeFileSync(rollbackDigests, JSON.stringify(digests))
+  const oldArchive = path('old-images.tar')
+  writeFileSync(oldArchive, 'fixture archive verified separately by old-runtime evidence gate')
+  const oldEvidence = path('old-runtime.json')
+  const oldServices = ['api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync']
+  const oldRuntime = { source_git_sha: oldGitSha, services: oldServices.map((service, index) => ({ service, id: String(index + 1).padStart(64, '0'), config_sha256: String(index + 1).repeat(64) })), gateway: { id: 'e'.repeat(64) }, preserved_image_ids: [digest('a'), digest('b'), digest('c')] }
+  writeFileSync(oldEvidence, JSON.stringify({ schema_version: 'ecs-bridge-old-runtime/1', runtime: oldRuntime, backup: { kind: 'docker-save-three-image', archive_sha256: sha(readFileSync(oldArchive)) }, signed: false, cutover_authorized: false }))
   const rollbackPlan = path('rollback-plan.json')
   const now = Date.now()
   const plan = {
-    schema_version: '1', kind: 'ecs-compose-rollback-capsule', created_at: new Date(now - 60_000).toISOString(), expires_at: new Date(now + 3_600_000).toISOString(), compose_project: 'merchant-production',
+    schema_version: '1', kind: 'ecs-unlabeled-id-recovery-capsule', created_at: new Date(now - 60_000).toISOString(), expires_at: new Date(now + 3_600_000).toISOString(), compose_project: 'merchant-production',
     current: { release_id: 'release-bridge-b', git_sha: gitSha, manifest_sha256: current.manifest, image_set_digest: current.imageSet },
-    target: { release_id: 'release-old', git_sha: oldGitSha, manifest_sha256: previous.manifest, image_set_digest: previous.imageSet, compose_sha256: sha(readFileSync(previous.file)), env_sha256: sha(readFileSync(rollbackEnv)), image_digests_sha256: sha(readFileSync(rollbackDigests)) },
-    database: { strategy: 'forward_only', schema_downgrade: false, live_migration_version: 242, target_migration_tail: 242 }, volumes: { preserve: true },
+    target: { release_id: 'release-old', git_sha: oldGitSha, manifest_sha256: previous.manifest, image_set_digest: previous.imageSet, services: oldServices },
+    old_runtime: { evidence_sha256: sha(readFileSync(oldEvidence)), archive_sha256: sha(readFileSync(oldArchive)), container_ids: Object.fromEntries(oldRuntime.services.map(item => [item.service, item.id])), config_sha256: Object.fromEntries(oldRuntime.services.map(item => [item.service, item.config_sha256])), gateway_id: oldRuntime.gateway.id, image_ids: oldRuntime.preserved_image_ids },
+    database: { strategy: 'forward_only', schema_downgrade: false, live_migration_version: 242, target_migration_tail: 242, allowed_prefix_sha256: { 242: 'd'.repeat(64) } }, volumes: { preserve: true },
   }
   const writePlan = () => writeFileSync(rollbackPlan, JSON.stringify(plan))
   writePlan()
-  const argumentsList = ['--candidate-identity', identity, '--source-archive', source, '--release-images', releaseImages, '--eight-image-set', eightImages, '--rendered-compose', current.file, '--rollback-plan', rollbackPlan, '--rollback-compose', previous.file, '--rollback-env', rollbackEnv, '--rollback-image-digests-json', rollbackDigests]
+  const argumentsList = ['--candidate-identity', identity, '--source-archive', source, '--release-images', releaseImages, '--eight-image-set', eightImages, '--rendered-compose', current.file, '--rollback-plan', rollbackPlan, '--old-runtime-evidence', oldEvidence, '--old-image-archive', oldArchive]
   const run = () => execFileSync('node', [script, ...argumentsList], { encoding: 'utf8', stdio: 'pipe' })
-  return { run, plan, writePlan, identity, source, current }
+  return { run, plan, writePlan, identity, source, current, oldArchive, oldEvidence }
 }
 
 describe('bridge B code-only package gate', () => {
@@ -113,5 +116,26 @@ describe('bridge B code-only package gate', () => {
     delete doc.services['worker-scan'].environment.BRIDGE_SCHEMA_COMPATIBILITY_MODE
     writeFileSync(item.current.file, JSON.stringify(doc))
     expect(item.run).toThrow()
+  })
+  it('rejects missing or tampered old evidence and archive', () => {
+    const item = fixture()
+    writeFileSync(item.oldEvidence, '{}')
+    expect(item.run).toThrow()
+    const other = fixture()
+    writeFileSync(other.oldArchive, 'tampered old image bytes')
+    expect(other.run).toThrow()
+    const missing = fixture()
+    unlinkSync(missing.oldArchive)
+    expect(missing.run).toThrow()
+  })
+  it('rejects a substituted historical container ID or generic Compose rollback plan', () => {
+    const item = fixture()
+    item.plan.old_runtime.container_ids['worker-sync'] = 'f'.repeat(64)
+    item.writePlan()
+    expect(item.run).toThrow()
+    const generic = fixture()
+    generic.plan.kind = 'ecs-compose-rollback-capsule'
+    generic.writePlan()
+    expect(generic.run).toThrow()
   })
 })

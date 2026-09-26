@@ -34,6 +34,10 @@ describe('signed seven-container B takeover runner', () => {
     expect(script).toContain('bridge-finalize')
     expect(script).not.toContain('--remove-orphans')
     expect(script).not.toContain('docker compose -p merchant-production')
+    expect(script).not.toContain('ECS_ROLLBACK_COMPOSE_PATH')
+    expect(script).not.toContain('ECS_ROLLBACK_ENV_FILE')
+    expect(script).not.toContain('ECS_ROLLBACK_IMAGE_DIGESTS_PATH')
+    expect(script).toContain('--old-runtime-evidence "$ECS_OLD_RUNTIME_EVIDENCE_PATH" --old-image-archive "$ECS_OLD_IMAGE_ARCHIVE_PATH"')
   })
 
   it('accepts only a seven-service immutable scoped Compose with exact reviewed runtime', () => {
