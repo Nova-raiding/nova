@@ -1,5 +1,7 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { constants } from 'node:fs'
+import { lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { dirname, resolve } from 'node:path'
 
 export interface ProviderUsageRecord {
   providerRecordId: string
@@ -40,6 +42,17 @@ export interface NewApiSelfLogClientOptions {
 
 const MAX_PAGE_SIZE = 100
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+
+async function secureSessionDirectory(path: string): Promise<void> {
+  await mkdir(path, { recursive: true, mode: 0o700 })
+  const stat = await lstat(path)
+  if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.()) throw new Error('PROVIDER_USAGE_SESSION_DIRECTORY_UNSAFE')
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  const directory = await open(path, constants.O_RDONLY)
+  try { await directory.sync() } finally { await directory.close() }
+}
 
 function integer(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value
@@ -106,54 +119,92 @@ export class NewApiSelfLogClient {
     if (this.origin.protocol !== 'https:' && this.origin.hostname !== 'localhost' && this.origin.hostname !== '127.0.0.1') throw new Error('PROVIDER_USAGE_BASE_URL_MUST_BE_HTTPS')
     this.userToken = options.userToken?.trim() ?? ''
     this.refreshCookie = options.refreshCookie?.trim() ?? ''
-    this.sessionFile = options.sessionFile?.trim() ?? ''
+    this.sessionFile = options.sessionFile?.trim() ? resolve(options.sessionFile.trim()) : ''
     if ((!this.userToken && !this.refreshCookie && !this.sessionFile) || !options.userId.trim()) throw new Error('PROVIDER_USAGE_USER_CREDENTIALS_REQUIRED')
     this.fetcher = options.fetcher ?? fetch
     this.pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(options.pageSize ?? MAX_PAGE_SIZE)))
   }
 
-  private async loadPersistedSession() {
-    if (this.sessionLoaded) return
-    this.sessionLoaded = true
-    if (!this.sessionFile) return
+  private async readPersistedSession(): Promise<{ userToken?: string; refreshCookie?: string } | undefined> {
+    if (!this.sessionFile) return undefined
+    await secureSessionDirectory(dirname(this.sessionFile))
     try {
+      const stat = await lstat(this.sessionFile)
+      if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.()) throw new Error('PROVIDER_USAGE_SESSION_FILE_UNSAFE')
       const parsed = JSON.parse(await readFile(this.sessionFile, 'utf8')) as unknown
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('PROVIDER_USAGE_SESSION_FILE_INVALID')
       const value = parsed as Record<string, unknown>
       const userToken = text(value.userToken)
       const refreshCookie = text(value.refreshCookie)
-      if (!userToken && !refreshCookie) throw new Error('PROVIDER_USAGE_SESSION_FILE_INVALID')
-      if (userToken) this.userToken = userToken
-      if (refreshCookie) this.refreshCookie = refreshCookie
+      if (String(value.userId ?? '') !== this.options.userId.trim() || (!userToken && !refreshCookie) || (refreshCookie && !/^new_api_refresh=[^;\s]+$/u.test(refreshCookie))) throw new Error('PROVIDER_USAGE_SESSION_FILE_INVALID')
+      return { ...(userToken ? { userToken } : {}), ...(refreshCookie ? { refreshCookie } : {}) }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      throw error
     }
   }
 
+  private async loadPersistedSession() {
+    if (this.sessionLoaded) return
+    const persisted = await this.readPersistedSession()
+    if (persisted?.userToken) this.userToken = persisted.userToken
+    if (persisted?.refreshCookie) this.refreshCookie = persisted.refreshCookie
+    this.sessionLoaded = true
+  }
+
   private async persistSession() {
-    if (!this.sessionFile) return
     const directory = dirname(this.sessionFile)
-    const temporary = `${this.sessionFile}.${process.pid}.tmp`
-    await mkdir(directory, { recursive: true, mode: 0o700 })
-    await writeFile(temporary, JSON.stringify({ userToken: this.userToken, refreshCookie: this.refreshCookie }), { encoding: 'utf8', mode: 0o600 })
+    const temporary = `${this.sessionFile}.${process.pid}.${randomUUID()}.tmp`
+    const file = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600)
+    try {
+      await file.writeFile(`${JSON.stringify({ userToken: this.userToken, refreshCookie: this.refreshCookie, userId: this.options.userId.trim() })}\n`)
+      await file.sync()
+    } finally { await file.close() }
     await rename(temporary, this.sessionFile)
-    await chmod(this.sessionFile, 0o600)
+    await syncDirectory(directory)
   }
 
   private async performRefresh() {
-    if (!this.refreshCookie) throw new Error('PROVIDER_USAGE_USER_TOKEN_EXPIRED')
-    const url = new URL('/api/user/auth/refresh', this.origin)
-    const response = await this.fetcher(url, { method: 'POST', headers: { accept: 'application/json', cookie: this.refreshCookie }, redirect: 'error', signal: AbortSignal.timeout(10_000) })
-    if (!response.ok) throw new Error(`PROVIDER_USAGE_REFRESH_HTTP_${response.status}`)
-    const payload = await boundedJson(response)
-    const root = payload && typeof payload === 'object' ? payload as Record<string, unknown> : undefined
-    const data = root?.data && typeof root.data === 'object' ? root.data as Record<string, unknown> : undefined
-    const accessToken = text(data?.access_token)
-    if (!accessToken) throw new Error('PROVIDER_USAGE_REFRESH_RESPONSE_INVALID')
-    this.userToken = accessToken
-    const rotated = response.headers.getSetCookie?.().find(value => value.startsWith('new_api_refresh='))
-    if (rotated) this.refreshCookie = rotated.split(';', 1)[0] ?? this.refreshCookie
-    await this.persistSession()
+    if (!this.sessionFile) throw new Error('PROVIDER_USAGE_SESSION_FILE_REQUIRED_FOR_REFRESH')
+    const directory = dirname(this.sessionFile)
+    await secureSessionDirectory(directory)
+    const lockPath = `${this.sessionFile}.lock`
+    const lock = await open(lockPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600)
+    try {
+      await lock.writeFile(`${process.pid}\n`)
+      await lock.sync()
+      await syncDirectory(directory)
+      const previousToken = this.userToken
+      const persisted = await this.readPersistedSession()
+      if (persisted?.userToken) this.userToken = persisted.userToken
+      if (persisted?.refreshCookie) this.refreshCookie = persisted.refreshCookie
+      if (persisted?.userToken && persisted.userToken !== previousToken) {
+        await unlink(lockPath)
+        await syncDirectory(directory)
+        return
+      }
+      if (!this.refreshCookie) throw new Error('PROVIDER_USAGE_USER_TOKEN_EXPIRED')
+      const url = new URL('/api/user/auth/refresh', this.origin)
+      const response = await this.fetcher(url, { method: 'POST', headers: { accept: 'application/json', cookie: this.refreshCookie, origin: this.origin.origin }, redirect: 'error', signal: AbortSignal.timeout(10_000) })
+      if (!response.ok) throw new Error(`PROVIDER_USAGE_REFRESH_HTTP_${response.status}`)
+      const payload = await boundedJson(response)
+      const root = payload && typeof payload === 'object' ? payload as Record<string, unknown> : undefined
+      const data = root?.data && typeof root.data === 'object' ? root.data as Record<string, unknown> : undefined
+      const accessToken = text(data?.access_token)
+      const user = data?.user && typeof data.user === 'object' ? data.user as Record<string, unknown> : undefined
+      if (!accessToken || String(user?.id ?? '') !== this.options.userId.trim()) throw new Error('PROVIDER_USAGE_REFRESH_IDENTITY_INVALID')
+      const cookies = response.headers.getSetCookie().filter(value => value.startsWith('new_api_refresh='))
+      const rotated = cookies.length === 1 ? cookies[0] : undefined
+      if (!rotated || !/^new_api_refresh=[^;\s]+(?:;|$)/u.test(rotated) || !/;\s*HttpOnly(?:;|$)/iu.test(rotated) || !/;\s*Secure(?:;|$)/iu.test(rotated) || !/;\s*Path=\/api\/user\/auth(?:;|$)/iu.test(rotated)) throw new Error('PROVIDER_USAGE_REFRESH_ROTATION_INVALID')
+      this.userToken = accessToken
+      this.refreshCookie = rotated.split(';', 1)[0]!
+      await this.persistSession()
+      await unlink(lockPath)
+      await syncDirectory(directory)
+    } finally {
+      await lock.close()
+      // Any uncertain remote response or crash keeps the lock. Recovery is manual.
+    }
   }
 
   private async refreshUserToken() {
