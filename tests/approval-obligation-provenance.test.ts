@@ -30,6 +30,7 @@ import { describe, expect, it } from 'vitest'
  */
 
 const serverSource = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
+const responseHelpersSource = readFileSync(new URL('../apps/api/src/http-response-helpers.ts', import.meta.url), 'utf8')
 const grantsMigration = readFileSync(new URL('../packages/persistence/src/migrations/105_durable_authorization_grants.sql', import.meta.url), 'utf8')
 
 /**
@@ -39,7 +40,7 @@ const grantsMigration = readFileSync(new URL('../packages/persistence/src/migrat
  * brace-balancing parser that can be confused by braces in string literals.
  */
 function topLevelFunction(source: string, name: string, label: string): string {
-  const pattern = new RegExp(`\\n(?:async )?function ${name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\(`, 'u')
+  const pattern = new RegExp(`\\n(?:export )?(?:async )?function ${name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\(`, 'u')
   const match = pattern.exec(source)
   expect(match, `${label}: no top-level function ${name}`).not.toBeNull()
   if (!match) return ''
@@ -105,7 +106,7 @@ describe('approval obligation provenance', () => {
     expect(resolver).toContain('if (!token) return undefined')
     // The workspace the operation targets must reach the resolver, or the token
     // cannot be bound to the tenant it approves.
-    const calls = serverSource.match(/satisfiedAuthorizationObligations\(params, req, workspaceId\)/gu) ?? []
+    const calls = serverSource.match(/satisfiedAuthorizationObligations\(params, req, workspaceId(?:, \w+[.\w]*)?\)/gu) ?? []
     expect(calls).toHaveLength(1)
   })
 
@@ -133,7 +134,7 @@ describe('approval obligation provenance', () => {
     // fabricated approver would still be persisted while the policy "observes".
     expect(enforce).toContain("if (!decision.allowed || decision.obligations.missing.includes('approval')) throw new DomainError(ERROR_CODES.FORBIDDEN")
     // The browser has to be allowed to present the evidence the resolver reads.
-    expect(serverSource).toMatch(/access-control-allow-headers.*x-authorization-approval-token/u)
+    expect(responseHelpersSource).toMatch(/access-control-allow-headers.*x-authorization-approval-token/u)
   })
 
   it('keeps the database backstop a string floor, never the separation control', () => {
