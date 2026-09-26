@@ -39,6 +39,8 @@ RUN npm ci --omit=dev --prefer-offline --no-audit --fund=false
 # The worker runtime needs only its own compiled entrypoints and shared
 # packages. Do not ship compiled local-plugin or host-side test code.
 COPY --from=build /app/dist/apps/worker ./dist/apps/worker
+# Includes dist/apps/worker/src/restore-smoke.js: a separate, read-only
+# PG17 recovery probe that never enters main.js's durable outbox poll loop.
 COPY --from=build /app/dist/packages ./dist/packages
 # Keep the release migration inventory at the same stable path as the API
 # image so the freshness gate can inspect both images without starting them.
