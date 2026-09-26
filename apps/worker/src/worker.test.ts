@@ -350,17 +350,21 @@ describe('worker production entry', () => {
   })
 
   it('permits only exact 242 or 244 checksummed bridge histories while keeping default readiness strict', async () => {
-    // The bridge artifact ships the chain through 244; slice the fixture to that world.
-    const expectedMigrations = (await loadMigrations()).slice(0, 244)
-    const rows = expectedMigrations.map(item => ({ version: item.version, name: item.name, checksum: createHash('sha256').update(item.sql).digest('hex') }))
+    const fullMigrations = await loadMigrations()
+    const expectedMigrations = fullMigrations.slice(0, 244)
+    const rows = fullMigrations.map(item => ({ version: item.version, name: item.name, checksum: createHash('sha256').update(item.sql).digest('hex') }))
     const database = (selected: typeof rows) => ({ query: async () => ({ rows: selected }) })
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 242)), expectedMigrations, bridgeMode: 'prefix_242_or_244', bridgeMigrations: expectedMigrations }))
       .resolves.toEqual({ migrationVersion: 242, apiReady: false })
-    await expect(assertWorkerReadinessDependencies({ database: database(rows), expectedMigrations, bridgeMode: 'prefix_242_or_244', bridgeMigrations: expectedMigrations }))
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 244)), expectedMigrations, bridgeMode: 'prefix_242_or_244', bridgeMigrations: expectedMigrations }))
       .resolves.toEqual({ migrationVersion: 244, apiReady: false })
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 242)), expectedMigrations }))
       .rejects.toThrow('expected complete migration chain through 244')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 243)), expectedMigrations, bridgeMode: 'prefix_242_or_244', bridgeMigrations: expectedMigrations }))
+      .rejects.toThrow('exactly 242 or 244')
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 245)), expectedMigrations, bridgeMode: 'prefix_242_or_244', bridgeMigrations: expectedMigrations }))
+      .rejects.toThrow('exactly 242 or 244')
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations, bridgeMode: 'prefix_242_or_244', bridgeMigrations: expectedMigrations }))
       .rejects.toThrow('exactly 242 or 244')
   })
 

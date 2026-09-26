@@ -2,7 +2,16 @@
 
 `api-replica-credentials.mjs` is a local, non-mutating dry-run. It accepts a
 0600 JSON array containing the two full `docker inspect` objects and a 0600
-JSON object containing the current `API_AUTH_TOKENS` mapping:
+JSON object containing the current `API_AUTH_TOKENS` mapping. Both files must
+be regular, non-symlink files owned by the current user with permissions
+exactly `0600`; other owner-only modes such as `0400` and `0700` are rejected.
+
+The full inspect file contains container configuration and environment values,
+including credentials unrelated to `API_AUTH_TOKENS`. Create and store it only
+in a protected location, never print it or place it in shell history, logs,
+support bundles, or ordinary build artifacts, and apply the organization's
+secret-retention procedure after the dry run. This dry-run neither changes
+containers nor rotates any credential.
 
 ```sh
 node infra/scripts/rotation/api-replica-credentials.mjs --dry-run \
@@ -37,4 +46,7 @@ it never auto-reverts to compromised grants.
 An isolated local Docker clone and start/health round trip pass for a
 two-network test container, including the unpublished green replicas.
 Production-specific parity and the public gateway handoff remain unproven.
-The dry-run also blocks an old token embedded in another environment variable.
+This tool rotates only `API_AUTH_TOKENS`; checking other environment entries
+only detects references to those old API token strings. It does not rotate
+other credential classes. The dry-run also blocks an old token embedded in
+another environment variable.

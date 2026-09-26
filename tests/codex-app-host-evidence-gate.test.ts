@@ -9,7 +9,7 @@ import { validateCodexAppHostEvidence } from './codex-app-host-evidence-gate.js'
 const artifact = (name: string) => `artifact://production/codex-host/${name}#${'a'.repeat(64)}`
 const evidence = {
   schema_version: '2', release_id: 'release-1', manifest_sha256: '9'.repeat(64), environment: 'preproduction', generated_at: '2026-08-29T01:00:00Z',
-  host: 'codex-app-macos-arm64', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
+  host: 'chatgpt', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
   mcp_base_url: 'https://merchant.example.com', bridge_sha256: 'b'.repeat(64),
   scenarios: [
     'plugin_discovery',
@@ -30,7 +30,7 @@ const evidence = {
   ].map(id => ({ id, state: 'passed', evidence_ref: artifact(id), console_errors: 0, network_errors: 0, ...(id === 'error_recovery' ? { error_recovery: { trigger_http_status: 503, trigger_error_code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', request_id: 'request-503', trace_id: 'trace-503', recovery_action: 'query_provider' as const, retry_allowed: false, before_state: 'outcome_unknown' as const, after_state: 'reconciled_failed' as const, reconciliation_required: true, outcome_evidence_ref: artifact('error-recovery-outcome') } } : {}) })),
 }
 
-describe('Codex App host evidence gate', () => {
+describe('ChatGPT Desktop host evidence gate', () => {
   it('collector emits references relative to the configured artifact root that the gate can verify', () => {
     const root = mkdtempSync(join(tmpdir(), 'codex-host-evidence-'))
     const captureDir = join(root, 'real-host-captures')
@@ -59,7 +59,7 @@ describe('Codex App host evidence gate', () => {
     writeFileSync(probePath, JSON.stringify({ data: { ready: true, release: { release_id: 'release-1', release_git_sha: 'c'.repeat(40), manifest_sha256: '9'.repeat(64), image_set_digest: `sha256:${'d'.repeat(64)}` } } }))
     writeFileSync(capturePath, JSON.stringify({
       release_id: 'release-1', manifest_sha256: '9'.repeat(64), environment: 'preproduction', generated_at: '2026-08-29T01:00:00Z',
-      host: 'codex-app-macos-arm64', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
+      host: 'chatgpt', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
       mcp_base_url: 'https://merchant.example.com', bridge_sha256: 'b'.repeat(64), scenarios,
       candidate_route: { expected_git_sha: 'c'.repeat(40), expected_manifest_sha256: '9'.repeat(64), expected_image_set_digest: `sha256:${'d'.repeat(64)}`, candidate_api_container_id: 'e'.repeat(64), gateway_container_id: 'f'.repeat(64), mcp_config_sha256: '1'.repeat(64), route_file_sha256: '2'.repeat(64), release_probe_artifact_path: probePath },
     }))
@@ -80,11 +80,29 @@ describe('Codex App host evidence gate', () => {
       expectedReleaseId: 'release-1', expectedMcpBaseUrl: 'https://merchant.example.com',
       expectedManifestSha256: '9'.repeat(64), expectedBridgeSha256: 'b'.repeat(64), expectedGitSha: 'c'.repeat(40), expectedImageSetDigest: `sha256:${'d'.repeat(64)}`, artifactRoot: root,
     })).toEqual([])
+    const codexCapture = join(root, 'codex-only-capture.json')
+    writeFileSync(codexCapture, JSON.stringify({ ...JSON.parse(readFileSync(capturePath, 'utf8')), host: 'codex-app-macos-arm64' }))
+    const codexRun = spawnSync(process.execPath, [
+      resolve('scripts/collect-codex-app-host-evidence.mjs'), '--capture', codexCapture,
+      '--output', join(root, 'codex-only-evidence.json'), '--artifact-root', root,
+    ], { encoding: 'utf8' })
+    expect(codexRun.status).toBe(1)
+    expect(codexRun.stderr).toContain('capture.host must be exactly chatgpt for the real ChatGPT Desktop app')
+    for (const [index, host] of ['chatgpt-codex-app', 'chatgpt-ci-arm64'].entries()) {
+      const alteredHostCapture = join(root, `altered-host-${index}.json`)
+      writeFileSync(alteredHostCapture, JSON.stringify({ ...JSON.parse(readFileSync(capturePath, 'utf8')), host }))
+      const alteredHostRun = spawnSync(process.execPath, [
+        resolve('scripts/collect-codex-app-host-evidence.mjs'), '--capture', alteredHostCapture,
+        '--output', join(root, `altered-host-${index}-evidence.json`), '--artifact-root', root,
+      ], { encoding: 'utf8' })
+      expect(alteredHostRun.status).toBe(1)
+      expect(alteredHostRun.stderr).toContain('capture.host must be exactly chatgpt for the real ChatGPT Desktop app')
+    }
     const productionCapture = join(root, 'production-capture.json')
     writeFileSync(productionCapture, JSON.stringify({
       release_id: 'release-1', release_git_sha: 'c'.repeat(40), image_set_digest: `sha256:${'d'.repeat(64)}`,
       manifest_sha256: '9'.repeat(64), environment: 'production', deployment_nonce: 'missing-nonce',
-      host: 'codex-app-macos-arm64', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
+      host: 'chatgpt', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
       mcp_base_url: 'https://merchant.example.com', bridge_sha256: 'b'.repeat(64),
     }))
     const missingNonce = spawnSync(process.execPath, [resolve('scripts/collect-codex-app-host-evidence.mjs'), '--capture', productionCapture, '--output', join(root, 'production-evidence.json'), '--artifact-root', root], { encoding: 'utf8' })
@@ -184,7 +202,7 @@ describe('Codex App host evidence gate', () => {
 
   it('rejects stale or future host captures when used by the production preflight', () => {
     const now = new Date('2026-08-30T02:00:00Z')
-    expect(validateCodexAppHostEvidence(evidence, { requireFresh: true, now })).toContain('Codex App host evidence is stale')
+    expect(validateCodexAppHostEvidence(evidence, { requireFresh: true, now })).toContain('ChatGPT Desktop host evidence is stale')
     expect(validateCodexAppHostEvidence({ ...evidence, generated_at: '2026-08-30T02:05:01Z' }, { requireFresh: true, now })).toContain('generated_at must not be more than five minutes in the future')
   })
 
@@ -213,14 +231,14 @@ describe('Codex App host evidence gate', () => {
     invalid.scenarios[0]!.evidence_ref = 'artifact://production/codex-host/plugin_discovery#not-a-sha'
     invalid.scenarios[0]!.console_errors = 1
     expect(validateCodexAppHostEvidence(invalid)).toEqual(expect.arrayContaining([
-      'host must identify a real Codex App host, not fixture/local evidence',
+      'host must identify a real ChatGPT Desktop host, not fixture/local evidence',
       'plugin_discovery.evidence_ref must be an immutable production artifact',
       'plugin_discovery.console_errors must be 0',
     ]))
   })
 
-  it.each(['chrome-desktop', 'electron-shell', 'ios-app', 'arbitrary-external-host'])('rejects a non-ChatGPT host label: %s', host => {
-    expect(validateCodexAppHostEvidence({ ...evidence, host })).toContain('host must identify a supported ChatGPT/Codex App host')
+  it.each(['codex-app-macos-arm64', 'chatgpt-codex-app', 'chatgpt-ci-arm64', 'chrome-desktop', 'electron-shell', 'ios-app', 'arbitrary-external-host'])('rejects a non-ChatGPT host label: %s', host => {
+    expect(validateCodexAppHostEvidence({ ...evidence, host })).toContain('host must be exactly chatgpt for the real ChatGPT Desktop app')
   })
 
   it('rejects host evidence that omits the ChatGPT image selection journey', () => {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Build release-bound ChatGPT/Codex App host evidence from a real host capture.
+ * Build release-bound ChatGPT Desktop host evidence from a real host capture.
  *
  * This tool intentionally refuses local/fixture/browser captures. It only
  * hashes artifact files supplied by the operator and emits an immutable
@@ -39,8 +39,8 @@ if (!inputPath || !outputPath || !artifactRoot) {
 const capture = JSON.parse(readFileSync(resolve(inputPath), 'utf8'))
 const forbidden = /(?:fixture|mock|local|localhost|127\.0\.0\.1|test_e2e)/iu
 const host = String(capture.host ?? '').trim()
-if (!/^(?:codex-app|chatgpt)(?:[-_.][A-Za-z0-9][A-Za-z0-9._-]*)?$/u.test(host) || forbidden.test(host)) {
-  throw new Error('capture.host must identify the real ChatGPT/Codex App host')
+if (host !== 'chatgpt') {
+  throw new Error('capture.host must be exactly chatgpt for the real ChatGPT Desktop app')
 }
 if (capture.simulated !== false) throw new Error('capture.simulated must be false')
 if (capture.environment !== 'preproduction' && capture.environment !== 'production') {
@@ -194,4 +194,4 @@ if (existsSync(absoluteOutput)) {
     try { unlinkSync(temporaryOutput) } catch (error) { if (error?.code !== 'ENOENT') throw error }
   }
 }
-console.log(`wrote real ChatGPT/Codex host evidence: ${outputPath}`)
+console.log(`wrote real ChatGPT Desktop host evidence: ${outputPath}`)

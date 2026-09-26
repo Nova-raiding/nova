@@ -6824,16 +6824,32 @@ export function validateCapacityEvidenceRuntime(document: unknown, options: { ex
   if (value.schema_version !== '1') errors.push('schema_version must be 1')
   const noLoad = value.profile === 'no_load'
   if (noLoad) {
-    for (const field of ['software_version', 'config_version', 'data_version'] as const) if (typeof value[field] !== 'string' || !value[field].trim()) errors.push(`${field} is required for no_load evidence`)
+    const noLoadAllowedFields = new Set([
+      'schema_version', 'status', 'release_id', 'software_version', 'config_version', 'data_version',
+      'environment', 'target_url', 'started_at', 'ended_at', 'expires_at', 'generated_at',
+      'profile', 'cloud_gate', 'scope', 'capacity_commitment', 'reason', 'sign_off',
+    ])
+    const unsupportedFields = Object.keys(value).filter(field => !noLoadAllowedFields.has(field)).sort()
+    if (unsupportedFields.length) errors.push(`no_load evidence contains unsupported fields: ${unsupportedFields.join(', ')}`)
+    for (const field of ['software_version', 'config_version', 'data_version', 'target_url'] as const) if (typeof value[field] !== 'string' || !value[field].trim()) errors.push(`${field} is required for no_load evidence`)
     if (value.status !== 'not_performed') errors.push('status must be not_performed for no_load evidence')
     if (value.environment !== 'production') errors.push('environment must be production for no_load evidence')
     if (value.cloud_gate !== false) errors.push('cloud_gate must be false for no_load evidence')
     if (value.scope !== 'no_load') errors.push('scope must be no_load')
     if (value.capacity_commitment !== 'none') errors.push('capacity_commitment must be none')
     if (value.reason !== 'load_testing_excluded_by_release_scope') errors.push('reason must declare load testing excluded by release scope')
+    try {
+      const target = new URL(String(value.target_url))
+      if (target.protocol !== 'https:' || target.username || target.password || target.hash) errors.push('no_load target_url must be HTTPS without credentials or a fragment')
+    } catch { errors.push('target_url must be a valid URL') }
     for (const field of ['started_at', 'ended_at'] as const) if (!isIsoInstant(value[field])) errors.push(`${field} must be an ISO instant`)
     if (isIsoInstant(value.started_at) && isIsoInstant(value.ended_at) && Date.parse(value.ended_at) < Date.parse(value.started_at)) errors.push('ended_at must not be before started_at')
-    if (value.metrics !== undefined || value.duration !== undefined || value.tenant !== undefined || value.fault !== undefined || value.steady_state !== undefined || value.raw_metrics_ref !== undefined) errors.push('no_load evidence must not contain load measurements')
+    const signOff = value.sign_off
+    if (signOff && typeof signOff === 'object' && !Array.isArray(signOff)) {
+      const signOffValue = signOff as Record<string, unknown>
+      const unsupportedSignOffFields = Object.keys(signOffValue).filter(field => !['verified_by', 'verified_at'].includes(field)).sort()
+      if (unsupportedSignOffFields.length) errors.push(`no_load sign_off contains unsupported fields: ${unsupportedSignOffFields.join(', ')}`)
+    }
   } else {
     if (value.status !== 'pass') errors.push('status must be pass')
     if (value.cloud_gate !== true) errors.push('cloud_gate must be true')
@@ -6843,7 +6859,7 @@ export function validateCapacityEvidenceRuntime(document: unknown, options: { ex
   if (!noLoad && (value.platform_mock_ratio !== 0 || value.model_mock_ratio !== 0)) errors.push('platform/model mock ratio must be 0')
   if (typeof value.profile !== 'string' || !value.profile.trim()) errors.push('profile is required')
   const signOff = value.sign_off
-  if (!signOff || typeof signOff !== 'object' || Array.isArray(signOff) || typeof (signOff as Record<string, unknown>).verified_by !== 'string' || !isIsoInstant((signOff as Record<string, unknown>).verified_at)) errors.push('sign_off is incomplete')
+  if (!signOff || typeof signOff !== 'object' || Array.isArray(signOff) || typeof (signOff as Record<string, unknown>).verified_by !== 'string' || !(signOff as Record<string, unknown>).verified_by?.toString().trim() || !isIsoInstant((signOff as Record<string, unknown>).verified_at)) errors.push('sign_off is incomplete')
   const expiresAt = isIsoInstant(value.expires_at) ? Date.parse(value.expires_at) : Number.NaN
   if (!Number.isFinite(expiresAt)) errors.push('expires_at must be an ISO instant')
   else if (expiresAt <= (options.now ?? new Date()).getTime()) errors.push('capacity evidence is expired')
@@ -6863,8 +6879,11 @@ export function validateManualOperationsEvidenceRuntime(document: unknown, optio
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['manual operations evidence must be a JSON object']
   const value = document as Record<string, unknown>
   if (value.schema_version !== 'manual-operations-evidence/1') errors.push('schema_version must be manual-operations-evidence/1')
+  if (typeof value.release_id !== 'string' || !value.release_id.trim()) errors.push('release_id is required')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push('release_id must match RELEASE_ID')
   if (typeof value.workspace_id !== 'string' || !value.workspace_id.trim()) errors.push('workspace_id is required')
+  if (typeof value.isolation_probe_workspace_id !== 'string' || !value.isolation_probe_workspace_id.trim()) errors.push('isolation_probe_workspace_id is required')
+  else if (value.isolation_probe_workspace_id === value.workspace_id) errors.push('isolation probe workspace must differ from target workspace')
   if (typeof value.manual_publish_report_id !== 'string' || !value.manual_publish_report_id.trim()) errors.push('manual_publish_report_id is required')
   if (typeof value.verified_by !== 'string' || !value.verified_by.trim()) errors.push('verified_by is required')
   if (value.environment !== 'production') errors.push('environment must be production')
@@ -6872,6 +6891,60 @@ export function validateManualOperationsEvidenceRuntime(document: unknown, optio
   if (value.official_api_receipt !== false) errors.push('official_api_receipt must be false')
   if (value.tenant_isolation_verified !== true) errors.push('tenant_isolation_verified must be true')
   if (value.simulated !== false) errors.push('simulated must be false')
+  if (value.manual_evidence_boundary !== 'manual_unverified') errors.push('manual_evidence_boundary must be manual_unverified')
+  if (!['manual_publish_in_progress', 'manual_publish_reported', 'manual_review_required'].includes(String(value.manual_publish_state ?? ''))) errors.push('manual_publish_state must be a recognized manual workflow state')
+  const canonicalEvidence = (item: unknown): string => Array.isArray(item)
+    ? `[${item.map(canonicalEvidence).join(',')}]`
+    : item && typeof item === 'object'
+      ? `{${Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, nested]) => `${JSON.stringify(key)}:${canonicalEvidence(nested)}`).join(',')}}`
+      : JSON.stringify(item)
+  const objectRecord = (item: unknown): Record<string, unknown> | undefined => item && typeof item === 'object' && !Array.isArray(item) ? item as Record<string, unknown> : undefined
+  const identityPattern = { release_git_sha: /^[a-f0-9]{40}$/u, manifest_sha256: /^[a-f0-9]{64}$/u, image_set_digest: /^sha256:[a-f0-9]{64}$/u }
+  const requiredObservations = ['release', 'target_list', 'target_get', 'isolation']
+  const journal = objectRecord(value.capture_journal)
+  if (!journal) errors.push('capture_journal is required')
+  else {
+    if (journal.schema_version !== 'manual-operations-capture-journal/1') errors.push('capture_journal schema_version is invalid')
+    if (Object.keys(journal).sort().join(',') !== 'candidate_identity,captured_at,observations,schema_version') errors.push('capture_journal fields are invalid')
+    if (journal.captured_at !== value.generated_at) errors.push('capture_journal captured_at must match generated_at')
+    const identity = objectRecord(journal.candidate_identity)
+    if (!identity || identity.release_id !== value.release_id
+      || !identityPattern.release_git_sha.test(String(identity.release_git_sha ?? ''))
+      || !identityPattern.manifest_sha256.test(String(identity.manifest_sha256 ?? ''))
+      || !identityPattern.image_set_digest.test(String(identity.image_set_digest ?? ''))) errors.push('capture_journal candidate identity is invalid or not release-bound')
+    if (identity && Object.keys(identity).sort().join(',') !== 'image_set_digest,manifest_sha256,release_git_sha,release_id') errors.push('capture_journal candidate identity fields are invalid')
+    const observations = Array.isArray(journal.observations) ? journal.observations : []
+    const names = observations.map(item => objectRecord(item)?.name)
+    if (observations.length !== requiredObservations.length || new Set(names).size !== names.length || requiredObservations.some(name => !names.includes(name))) errors.push('capture_journal observation set is incomplete or invalid')
+    for (const item of observations) {
+      const observation = objectRecord(item)
+      const material = objectRecord(observation?.material)
+      if (!observation || !material) { errors.push('capture_journal observation material is invalid'); continue }
+      if (Object.keys(observation).sort().join(',') !== 'material,name,observation_sha256,status') errors.push('capture_journal observation fields are invalid')
+      if (typeof observation.observation_sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(observation.observation_sha256)) errors.push('capture_journal observation hash is invalid')
+      if (['release', 'target_list', 'target_get'].includes(String(observation.name)) && observation.status !== 200) errors.push(`capture_journal ${String(observation.name)} observation must return HTTP 200`)
+      else if (observation.name === 'isolation' && ![401, 403].includes(Number(observation.status))) errors.push('capture_journal isolation observation must be rejected')
+      const keys = Object.keys(material).sort().join(',')
+      if (observation.name === 'release') {
+        if (keys !== 'image_set_digest,manifest_sha256,ready,release_git_sha,release_id' || material.release_id !== identity?.release_id
+          || material.release_git_sha !== identity?.release_git_sha || material.manifest_sha256 !== identity?.manifest_sha256
+          || material.image_set_digest !== identity?.image_set_digest || material.ready !== true) errors.push('capture_journal release material is invalid or not identity-bound')
+      } else if (observation.name === 'target_list') {
+        if (keys !== 'expected_report_visible,returned_count,total,visible_report_id' || material.expected_report_visible !== true
+          || material.visible_report_id !== value.manual_publish_report_id
+          || !Number.isInteger(material.total) || Number(material.total) < 1 || !Number.isInteger(material.returned_count)
+          || Number(material.returned_count) < 1 || Number(material.returned_count) > 20 || Number(material.returned_count) > Number(material.total)) errors.push('capture_journal target list material is invalid')
+      } else if (observation.name === 'target_get') {
+        if (keys !== 'evidence_boundary,manual_publish_report_id,state' || material.manual_publish_report_id !== value.manual_publish_report_id
+          || material.state !== value.manual_publish_state || material.evidence_boundary !== value.manual_evidence_boundary) errors.push('capture_journal target report material does not match evidence')
+      } else if (observation.name === 'isolation') {
+        if (keys !== 'code_present,error_envelope' || material.error_envelope !== true || material.code_present !== true) errors.push('capture_journal isolation material is invalid')
+      } else errors.push('capture_journal contains an unknown observation')
+      if (typeof observation.observation_sha256 === 'string'
+        && createHash('sha256').update(canonicalEvidence({ name: observation.name, status: observation.status, material })).digest('hex') !== observation.observation_sha256) errors.push(`capture_journal ${String(observation.name ?? 'unknown')} observation hash does not match material`)
+    }
+    if (typeof value.capture_journal_sha256 !== 'string' || createHash('sha256').update(canonicalEvidence(journal)).digest('hex') !== value.capture_journal_sha256) errors.push('capture_journal_sha256 does not match capture_journal')
+  }
   const generatedAt = isIsoInstant(value.generated_at) ? Date.parse(value.generated_at) : Number.NaN
   const expiresAt = isIsoInstant(value.expires_at) ? Date.parse(value.expires_at) : Number.NaN
   if (!Number.isFinite(generatedAt)) errors.push('generated_at must be a strict UTC ISO timestamp')
@@ -6879,9 +6952,15 @@ export function validateManualOperationsEvidenceRuntime(document: unknown, optio
   if (!Number.isFinite(expiresAt)) errors.push('expires_at must be a strict UTC ISO timestamp')
   else if (expiresAt <= now.getTime() || (Number.isFinite(generatedAt) && (expiresAt <= generatedAt || expiresAt > generatedAt + 86_400_000))) errors.push('manual operations evidence is expired or has an invalid validity window')
   const checks = Array.isArray(value.checks) ? value.checks : []
-  const required = ['tenant_scope', 'manual_report', 'merchant_visibility']
-  const names = checks.map(check => check && typeof check === 'object' ? (check as Record<string, unknown>).name : undefined)
-  if (checks.some(check => !check || typeof check !== 'object' || (check as Record<string, unknown>).status !== 'pass') || required.some(name => !names.includes(name))) errors.push('required manual workflow checks must pass')
+  const requiredChecks = ['tenant_scope', 'manual_report', 'merchant_visibility']
+  if (checks.length !== requiredChecks.length) errors.push('checks must contain exactly three workflow checks')
+  const checkRecords = checks.map(objectRecord)
+  if (checkRecords.some(check => !check || Object.keys(check).sort().join(',') !== 'name,observation,status' || check.status !== 'pass' || typeof check.name !== 'string' || !check.name.trim())) errors.push('every workflow check must have a name and pass status')
+  const names = checkRecords.map(check => check?.name)
+  if (new Set(names).size !== names.length) errors.push('workflow check names must be unique')
+  for (const required of requiredChecks) if (!names.includes(required)) errors.push(`${required} workflow check is required`)
+  const requiredObservationsByCheck: Record<string, string> = { tenant_scope: 'foreign_workspace_rejected', manual_report: 'human_evidence_boundary_preserved', merchant_visibility: 'expected_report_visible' }
+  for (const check of checkRecords) if (check && requiredObservationsByCheck[check.name as string] !== check.observation) errors.push(`${String(check.name)} workflow check observation is invalid`)
   return errors
 }
 
@@ -10772,6 +10851,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       syncSignedPlatformRules,
       isProduction,
       requireRuleAdmin,
+      requirePlatformRuleReviewer,
       publicRule,
       assertManualRuleSource,
       isAllowedManualPublicRule,

@@ -34,6 +34,7 @@ export interface SyncRuleMcpDependencies {
   syncSignedPlatformRules: (workspaceId: string, options: { force: true }) => Promise<unknown>
   isProduction: () => boolean
   requireRuleAdmin: (request: IncomingMessage) => { actorId: string }
+  requirePlatformRuleReviewer: (request: IncomingMessage) => { actorId: string; workbench: string }
   publicRule: (version: PersistedRuleVersion) => unknown
   assertManualRuleSource: (sourceKind: string, category: unknown, publicScope?: unknown) => void
   assertRuleActivationSource: (version: PersistedRuleVersion) => void
@@ -45,7 +46,7 @@ export interface SyncRuleMcpDependencies {
 }
 
 export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessage, workspaceId: string, params: JsonObject, dependencies: SyncRuleMcpDependencies) {
-  const { service, result, required, getAutomationPolicy, workerAuthorizationSnapshot, serializedWorkerAuthorizationSnapshot, requiresStrictAuth, persistSnapshot, persistEvent, ruleRepository, canViewRuleLifecycle, supportedPlatforms: SUPPORTED_PLATFORMS, rulePacksForWorkspace, trustedPlatformRuleSyncStatuses, syncSignedPlatformRules, isProduction, requireRuleAdmin, publicRule, assertManualRuleSource, assertRuleActivationSource, isAllowedManualPublicRule, parseJsonObjectParameter, parseApprovalGrant, canonicalJson, ensureWorkspace } = dependencies
+  const { service, result, required, getAutomationPolicy, workerAuthorizationSnapshot, serializedWorkerAuthorizationSnapshot, requiresStrictAuth, persistSnapshot, persistEvent, ruleRepository, canViewRuleLifecycle, supportedPlatforms: SUPPORTED_PLATFORMS, rulePacksForWorkspace, trustedPlatformRuleSyncStatuses, syncSignedPlatformRules, isProduction, requireRuleAdmin, requirePlatformRuleReviewer, publicRule, assertManualRuleSource, assertRuleActivationSource, isAllowedManualPublicRule, parseJsonObjectParameter, parseApprovalGrant, canonicalJson, ensureWorkspace } = dependencies
   switch (method) {
     case 'sync.retry_failed': {
       let failureIds: string[] | undefined
@@ -171,6 +172,8 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
       const repository = ruleRepository()
       if (repository) {
         if (params.public_scope === 'platform') {
+          // Write authority must equal read authority: public drafts are only readable from the platform workbench.
+          requirePlatformRuleReviewer(req)
           if (scope !== 'platform' || !repository.insertPublicVersionWithAudit || typeof params.target_id !== 'string' || !SUPPORTED_PLATFORMS.includes(params.target_id as Platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '公共平台规则必须指定受支持的平台和公共规则仓储', 400)
           if (sourceKind !== 'internal' || !sourceReference.startsWith('manual://') || governanceCategory !== 'platform') throw new DomainError('OFFICIAL_RULE_IMPORT_REQUIRED', '人工公共平台规则必须使用平台类别和人工来源标记', 409)
           if (status === 'active') throw new DomainError('RULE_ACTIVATION_REQUIRES_APPROVAL', '公共平台规则必须先创建草稿，再通过独立审批激活', 409)
@@ -201,6 +204,8 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
       const repository = ruleRepository()
       if (repository) {
         if (params.public_scope === 'platform') {
+          // Deactivation is a platform-wide write too; tenant rules_admin must not reach it.
+          requirePlatformRuleReviewer(req)
           if (!repository.transitionPublicStatus || typeof params.platform !== 'string' || !SUPPORTED_PLATFORMS.includes(params.platform as Platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '公共平台规则状态变更缺少平台或公共规则仓储', 400)
           const expectedRevision = typeof params.expected_revision === 'string' && /^[1-9][0-9]*$/u.test(params.expected_revision) && Number.isSafeInteger(Number(params.expected_revision))
             ? Number(params.expected_revision)

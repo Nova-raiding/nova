@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { productionCommercialReadiness, productionReadinessDiagnostics, route, runtimeHealth, validateCapacityEvidenceRuntime, validateManualOperationsEvidenceRuntime } from './server.js'
 import { MemoryCommercialCatalogRepository } from '../../../packages/persistence/src/commercial-catalog-repository.js'
+import { manualCaptureJournal, manualCaptureJournalSha256, manualCaptureObservationSha256 } from '../../../tests/manual-operations-evidence-fixture.js'
 
 type Envelope = {
   data: unknown
@@ -124,17 +125,37 @@ afterEach(async () => {
 
 describe('production readiness fail-closed', () => {
   it('validates the manual operations evidence contract independently of the official API canary', () => {
+    const generatedAt = '2026-09-22T01:00:00Z'
+    const reportId = 'manual-report-current'
+    const journal = manualCaptureJournal({ release_id: 'release-current', release_git_sha: 'a'.repeat(40), manifest_sha256: 'b'.repeat(64), image_set_digest: `sha256:${'c'.repeat(64)}` }, generatedAt, { manualPublishReportId: reportId })
     const evidence = {
       schema_version: 'manual-operations-evidence/1', release_id: 'release-current', environment: 'production',
-      workspace_id: 'workspace-current', manual_publish_report_id: 'manual-report-current', verified_by: 'release-operator',
-      workflow: 'public_import_manual_publish', official_api_receipt: false, tenant_isolation_verified: true, simulated: false,
-      generated_at: '2026-09-22T01:00:00Z', expires_at: '2026-09-23T01:00:00Z',
-      checks: [{ name: 'tenant_scope', status: 'pass' }, { name: 'manual_report', status: 'pass' }, { name: 'merchant_visibility', status: 'pass' }],
+      workflow: 'public_import_manual_publish', workspace_id: 'workspace-current', isolation_probe_workspace_id: 'workspace-isolation',
+      manual_publish_report_id: reportId, verified_by: 'release-operator', manual_evidence_boundary: 'manual_unverified',
+      manual_publish_state: 'manual_publish_reported',
+      official_api_receipt: false, tenant_isolation_verified: true, simulated: false,
+      generated_at: generatedAt, expires_at: '2026-09-23T01:00:00Z', capture_journal: journal, capture_journal_sha256: manualCaptureJournalSha256(journal),
+      checks: [
+        { name: 'tenant_scope', status: 'pass', observation: 'foreign_workspace_rejected' },
+        { name: 'manual_report', status: 'pass', observation: 'human_evidence_boundary_preserved' },
+        { name: 'merchant_visibility', status: 'pass', observation: 'expected_report_visible' },
+      ],
     }
     expect(validateManualOperationsEvidenceRuntime(evidence, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toEqual([])
     expect(validateManualOperationsEvidenceRuntime({ ...evidence, release_id: 'release-other', simulated: true }, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toEqual(expect.arrayContaining([
       'release_id must match RELEASE_ID', 'simulated must be false',
     ]))
+    const missingJournal = { ...evidence, capture_journal: undefined }
+    expect(validateManualOperationsEvidenceRuntime(missingJournal, { now: new Date('2026-09-22T02:00:00Z') })).toContain('capture_journal is required')
+    expect(validateManualOperationsEvidenceRuntime({ ...evidence, manual_evidence_boundary: 'unknown' }, { now: new Date('2026-09-22T02:00:00Z') })).toContain('manual_evidence_boundary must be manual_unverified')
+    expect(validateManualOperationsEvidenceRuntime({ ...evidence, manual_publish_state: 'published' }, { now: new Date('2026-09-22T02:00:00Z') })).toContain('manual_publish_state must be a recognized manual workflow state')
+    expect(validateManualOperationsEvidenceRuntime({ ...evidence, isolation_probe_workspace_id: 'workspace-current' }, { now: new Date('2026-09-22T02:00:00Z') })).toContain('isolation probe workspace must differ from target workspace')
+    const wrongVisibleReportJournal = structuredClone(journal)
+    const listObservation = wrongVisibleReportJournal.observations.find(observation => observation.name === 'target_list')!
+    listObservation.material.visible_report_id = 'different-report'
+    listObservation.observation_sha256 = manualCaptureObservationSha256(listObservation.name, listObservation.status, listObservation.material)
+    expect(validateManualOperationsEvidenceRuntime({ ...evidence, capture_journal: wrongVisibleReportJournal, capture_journal_sha256: manualCaptureJournalSha256(wrongVisibleReportJournal) }, { now: new Date('2026-09-22T02:00:00Z') }))
+      .toContain('capture_journal target list material is invalid')
   })
 
   it('rejects stale or differently-bound capacity evidence at runtime', () => {
@@ -153,14 +174,71 @@ describe('production readiness fail-closed', () => {
     const noLoad = {
       schema_version: '1', status: 'not_performed', cloud_gate: false, environment: 'production',
       release_id: 'release-current', software_version: 'release-current', config_version: 'config-current', data_version: 'migration-242', profile: 'no_load',
-      started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z',
+      target_url: 'https://yxsona.com', started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z',
       scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope',
+      generated_at: '2026-09-22T01:00:00Z',
       sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' },
       expires_at: '2026-09-23T01:00:00Z',
     }
     expect(validateCapacityEvidenceRuntime(noLoad, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toEqual([])
     expect(validateCapacityEvidenceRuntime({ ...noLoad, release_id: 'release-other' }, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toContain('release_id must match RELEASE_ID')
     expect(validateCapacityEvidenceRuntime({ ...noLoad, status: 'pass' }, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toContain('status must be not_performed for no_load evidence')
+  })
+
+  it.each([
+    ['metrics', {}],
+    ['duration', {}],
+    ['tenant', {}],
+    ['fault', {}],
+    ['steady_state', {}],
+    ['raw_metrics_ref', 'artifact://metrics/1'],
+    ['platform_mock_ratio', 0],
+    ['model_mock_ratio', 0],
+    ['accepted_jobs', 0],
+    ['completeness', { observations_valid: true }],
+    ['p95_ms', 100],
+    ['future_measurement', 100],
+  ])('rejects no-load runtime evidence containing unsupported field %s', (field, fieldValue) => {
+    const noLoad = {
+      schema_version: '1', status: 'not_performed', cloud_gate: false, environment: 'production',
+      release_id: 'release-current', software_version: 'release-current', config_version: 'config-current', data_version: 'migration-242', profile: 'no_load',
+      target_url: 'https://yxsona.com', started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z',
+      scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope',
+      sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' }, expires_at: '2026-09-23T01:00:00Z',
+    }
+    expect(validateCapacityEvidenceRuntime({ ...noLoad, [field]: fieldValue }, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') }))
+      .toContain(`no_load evidence contains unsupported fields: ${field}`)
+  })
+
+  it.each([
+    ['http://yxsona.com', 'no_load target_url must be HTTPS without credentials or a fragment'],
+    ['https://user:secret@yxsona.com', 'no_load target_url must be HTTPS without credentials or a fragment'],
+    ['https://yxsona.com/#fragment', 'no_load target_url must be HTTPS without credentials or a fragment'],
+    ['not-a-url', 'target_url must be a valid URL'],
+  ])('rejects invalid no-load runtime target URL %s', (targetUrl, expectedError) => {
+    const noLoad = {
+      schema_version: '1', status: 'not_performed', cloud_gate: false, environment: 'production',
+      release_id: 'release-current', software_version: 'release-current', config_version: 'config-current', data_version: 'migration-242', profile: 'no_load',
+      target_url: targetUrl, started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z',
+      scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope',
+      sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' }, expires_at: '2026-09-23T01:00:00Z',
+    }
+    expect(validateCapacityEvidenceRuntime(noLoad, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toContain(expectedError)
+  })
+
+  it.each([
+    ['metrics', {}],
+    ['future_signoff_field', 'unexpected'],
+  ])('rejects no-load runtime sign_off containing unsupported field %s', (field, fieldValue) => {
+    const noLoad = {
+      schema_version: '1', status: 'not_performed', cloud_gate: false, environment: 'production',
+      release_id: 'release-current', software_version: 'release-current', config_version: 'config-current', data_version: 'migration-242', profile: 'no_load',
+      target_url: 'https://yxsona.com', started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z',
+      scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope',
+      sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' }, expires_at: '2026-09-23T01:00:00Z',
+    }
+    expect(validateCapacityEvidenceRuntime({ ...noLoad, sign_off: { ...noLoad.sign_off, [field]: fieldValue } }, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') }))
+      .toContain(`no_load sign_off contains unsupported fields: ${field}`)
   })
 
   it('projects a valid file-backed no-load report as not_performed over HTTP', async () => {

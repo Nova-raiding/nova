@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { validateManualOperationsEvidence } from './manual-operations-evidence-gate.js'
+import { manualCaptureJournal, manualCaptureJournalSha256 } from './manual-operations-evidence-fixture.js'
 
 const script = join(process.cwd(), 'infra/scripts/validate-production-config.sh')
 const flags = [
@@ -111,7 +112,9 @@ function run(value: string) {
 describe('production config gate', () => {
   it('requires release-bound manual workflow evidence to reject official receipt claims', () => {
     const now = new Date('2026-09-21T08:00:00Z')
-    const evidence = { schema_version: 'manual-operations-evidence/1', release_id: 'release-1', workspace_id: 'workspace-1', manual_publish_report_id: 'manual-report-1', verified_by: 'release-operator', environment: 'production', workflow: 'public_import_manual_publish', official_api_receipt: false, tenant_isolation_verified: true, simulated: false, generated_at: '2026-09-21T07:00:00Z', expires_at: '2026-09-22T07:00:00Z', checks: [{ name: 'tenant_scope', status: 'pass' }, { name: 'manual_report', status: 'pass' }, { name: 'merchant_visibility', status: 'pass' }] }
+    const generatedAt = '2026-09-21T07:00:00Z'
+    const captureJournal = manualCaptureJournal({ release_id: 'release-1', release_git_sha: 'a'.repeat(40), manifest_sha256: 'b'.repeat(64), image_set_digest: `sha256:${'c'.repeat(64)}` }, generatedAt)
+    const evidence = { schema_version: 'manual-operations-evidence/1', release_id: 'release-1', workspace_id: 'workspace-1', isolation_probe_workspace_id: 'foreign-workspace', manual_publish_report_id: 'manual-report-1', verified_by: 'release-operator', environment: 'production', workflow: 'public_import_manual_publish', official_api_receipt: false, manual_evidence_boundary: 'manual_unverified', manual_publish_state: 'manual_publish_reported', tenant_isolation_verified: true, simulated: false, generated_at: generatedAt, expires_at: '2026-09-22T07:00:00Z', capture_journal: captureJournal, capture_journal_sha256: manualCaptureJournalSha256(captureJournal), checks: [{ name: 'tenant_scope', status: 'pass', observation: 'foreign_workspace_rejected' }, { name: 'manual_report', status: 'pass', observation: 'human_evidence_boundary_preserved' }, { name: 'merchant_visibility', status: 'pass', observation: 'expected_report_visible' }] }
     expect(validateManualOperationsEvidence(evidence, 'release-1', now)).toEqual([])
     expect(validateManualOperationsEvidence({ ...evidence, official_api_receipt: true }, 'release-1', now)).toContain('official_api_receipt must be false')
   })

@@ -112,6 +112,45 @@ describe('authenticated public rule draft preview MCP boundary', () => {
     expect(get).not.toHaveBeenCalled()
   })
 
+  it('denies a tenant rules_admin from creating or deactivating public platform rules', async () => {
+    const insertPublicVersionWithAudit = vi.fn(async () => { throw new Error('public rule write must not be reached') })
+    const transitionPublicStatus = vi.fn(async () => { throw new Error('public rule status write must not be reached') })
+    setRuleRepositoryForTests({
+      list: async () => [],
+      insertPublicVersionWithAudit,
+      transitionPublicStatus,
+    } as unknown as RuleRepositoryPort)
+    vi.stubEnv('NODE_ENV', 'staging')
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('SESSION_ID_HASH_SECRET', 'public-rule-review-session-secret')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ tenant_admin: { workspaces: ['ws_public_rule_review'], roles: ['rules_admin'], workbenches: ['workspace'], actor_id: 'tenant-user' } }))
+    const base = await start()
+    const createParams = {
+      pack_id: 'tenant-public-attempt', name: 'Tenant attempted public rule', version: '1',
+      scope: 'platform', category: 'platform', public_scope: 'platform', target_id: 'pinduoduo',
+      source_reference: 'manual://rules.md#tenant-attempt', source_checked_at: '2026-09-25T10:00:00.000Z',
+      checks_json: JSON.stringify({ forbiddenTerms: ['claim'] }), reason: 'tenant public rule attempt',
+    }
+    const deactivateParams = {
+      pack_id: 'tenant-public-attempt', version: '1', status: 'inactive', public_scope: 'platform',
+      platform: 'pinduoduo', expected_revision: '1', reason: 'tenant deactivate attempt',
+    }
+
+    // Spoofed platform workbench is rejected by token-bound workbench authorization.
+    const spoofedCreate = await call(base, 'tenant_admin', 'platform', 'rule.publish', createParams)
+    const spoofedDeactivate = await call(base, 'tenant_admin', 'platform', 'rule.status', deactivateParams)
+    expect(spoofedCreate.error?.code).toBeTruthy()
+    expect(spoofedDeactivate.error?.code).toBeTruthy()
+
+    // With the real workspace principal selected, the handler's platform reviewer guard must also deny these public writes.
+    const workspaceCreate = await call(base, 'tenant_admin', 'workspace', 'rule.publish', createParams)
+    const workspaceDeactivate = await call(base, 'tenant_admin', 'workspace', 'rule.status', deactivateParams)
+    expect(workspaceCreate.error?.code).toBeTruthy()
+    expect(workspaceDeactivate.error?.code).toBeTruthy()
+    expect(insertPublicVersionWithAudit).not.toHaveBeenCalled()
+    expect(transitionPublicStatus).not.toHaveBeenCalled()
+  })
+
   it('denies an authenticated platform role without rules_admin before repository access', async () => {
     const get = vi.fn(async () => fixtureRule())
     setRuleRepositoryForTests({ list: async () => [], getPublicRuleForReview: get } as unknown as RuleRepositoryPort)

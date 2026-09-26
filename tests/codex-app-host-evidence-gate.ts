@@ -39,11 +39,10 @@ type HostEvidence = { schema_version?: string; release_id?: string; release_git_
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const forbidden = /(?:fixture|mock|local|localhost|127\.0\.0\.1|test_e2e)/iu
-// A non-local hostname is not sufficient proof that the capture came from the
-// supported ChatGPT/Codex host. Keep the accepted identifier deliberately
-// narrow so a browser, arbitrary desktop shell, or another app cannot be
-// relabelled as host evidence.
-const supportedHostIdentifier = /^(?:codex-app|chatgpt)(?:[-_.][A-Za-z0-9][A-Za-z0-9._-]*)?$/u
+// This release gate is specifically for the project's ChatGPT Desktop entry
+// point. The exact value prevents Codex/CI/arbitrary suffixes from being
+// relabelled as ChatGPT evidence.
+const supportedHostIdentifier = 'chatgpt'
 const immutableArtifact = /^artifact:\/\/production\/[A-Za-z0-9._/-]+#[a-f0-9]{64}$/u
 const sha256 = /^[a-f0-9]{64}$/u
 const imageSetDigest = /^sha256:[a-f0-9]{64}$/u
@@ -122,14 +121,14 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
   else if (options.requireFresh) {
     const generatedAt = Date.parse(value.generated_at); const now = (options.now ?? new Date()).getTime()
     if (generatedAt > now + 300_000) errors.push('generated_at must not be more than five minutes in the future')
-    if (now - generatedAt > 24 * 3_600_000) errors.push('Codex App host evidence is stale')
+    if (now - generatedAt > 24 * 3_600_000) errors.push('ChatGPT Desktop host evidence is stale')
     if (options.generatedAfter && generatedAt < options.generatedAfter.getTime()) errors.push('production host evidence must be generated after the verified cutover')
   }
   for (const [field, label] of [['host', 'host'], ['app_version', 'app_version'], ['plugin_version', 'plugin_version']] as const) {
     if (!nonEmpty(value[field])) errors.push(`${label} is required`)
-    else if (forbidden.test(value[field]!)) errors.push(`${label} must identify a real Codex App host, not fixture/local evidence`)
+    else if (forbidden.test(value[field]!)) errors.push(`${label} must identify a real ChatGPT Desktop host, not fixture/local evidence`)
   }
-  if (nonEmpty(value.host) && !forbidden.test(value.host) && !supportedHostIdentifier.test(value.host.trim())) errors.push('host must identify a supported ChatGPT/Codex App host')
+  if (nonEmpty(value.host) && !forbidden.test(value.host) && value.host.trim() !== supportedHostIdentifier) errors.push('host must be exactly chatgpt for the real ChatGPT Desktop app')
   if (value.simulated !== false) errors.push('simulated must be false')
   const mcpOrigin = canonicalPublicOrigin(value.mcp_base_url)
   if (!mcpOrigin || value.mcp_base_url !== mcpOrigin) errors.push('mcp_base_url must be a canonical public HTTPS root origin')
@@ -232,10 +231,10 @@ function main() {
   if (args.includes('--require-artifacts') && !artifactRoot) { console.error('--artifact-root is required for independent host evidence validation'); process.exit(2) }
   if (args.includes('--require-artifacts') && (!expectedReleaseId || !expectedMcpBaseUrl || !expectedBridgeSha256 || !expectedGitSha || !expectedImageSetDigest || !expectedManifestSha256 || !sha256.test(expectedManifestSha256) || (args.includes('--require-production') && (!expectedDeploymentNonce || !generatedAfter || Number.isNaN(generatedAfter.getTime()))))) { console.error('--release-id, --expected-mcp-base-url, --expected-bridge-sha256, --expected-git-sha, --expected-manifest-sha256, --expected-image-set-digest, and production deployment nonce/cutover time are required for host evidence validation'); process.exit(2) }
   let document: unknown
-  try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read Codex App host evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
+  try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read ChatGPT Desktop host evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
   const errors = validateCodexAppHostEvidence(document, { expectedReleaseId, expectedManifestSha256, expectedMcpBaseUrl, expectedBridgeSha256, expectedGitSha, expectedImageSetDigest, expectedDeploymentNonce, generatedAfter, artifactRoot, requireFresh: args.includes('--require-artifacts'), requireProduction: args.includes('--require-production') })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
-  console.log(`Codex App host evidence consistency gate passed: ${path} (real ChatGPT/Codex host provenance still requires operator review)`)
+  console.log(`ChatGPT Desktop host evidence consistency gate passed: ${path} (real host provenance still requires operator review)`)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main()

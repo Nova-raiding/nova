@@ -7,6 +7,7 @@
 - 记录正式 `release_id`、插件版本、已安装 bridge 的 SHA-256。
 - `mcp_base_url` 必须是正式公网 DNS 域名的 HTTPS 根 origin，不含 `/mcp`、凭据、query、localhost 或 IP 字面量。
 - 宿主必须标识为真实 macOS ChatGPT.app；`simulated=false`。
+- `capture.host` 必须精确为 `chatgpt`；应用版本由 `app_version` 单独记录。Codex App、Codex CLI、CI runner 或带任意后缀的 host 标签均不能满足 ChatGPT Desktop 门禁。采集器只校验提交的身份字段和 artifact 完整性；仍须人工核对截图及宿主日志确由真实 ChatGPT.app 产生。
 - 每个场景保存不可变 artifact 引用，且 console/network errors 均为 0。
 - 预生产验收必须另外保存隔离 `/releasez` 的原始 JSON；记录候选 API 与 TLS gateway 的完整 Docker ID、临时 `.mcp.json` 与 route 文件的 SHA-256，并与冻结 Git SHA、image-set digest 一起写入 `candidate_route`。每个场景和错误恢复对账使用不同的 artifact 文件。
 - `manifest_sha256` 使用本次冻结 rendered ECS Compose contract 的 SHA-256（由 `validate-ecs-compose-release.rb --print-manifest-sha256` 计算）；capture、`candidate_route.expected_manifest_sha256`、隔离 `/releasez` 和 preflight `--expected-manifest-sha256` 必须完全相同。不要使用 `release-metadata.json` 文件摘要、source comparison manifest 或 evidence manifest 的文件摘要替代。

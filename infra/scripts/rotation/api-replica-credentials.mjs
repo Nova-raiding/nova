@@ -288,7 +288,7 @@ export async function rotateWithGateway({ engine, gateway, source, plan, expecte
 function readProtected(path) {
   ensure(isAbsolute(path) && resolve(path) === path && realpathSync(path) === path, 'INVALID_INPUT_PATH')
   const stat = lstatSync(path)
-  ensure(stat.isFile() && !stat.isSymbolicLink() && stat.uid === process.getuid() && (stat.mode & 0o077) === 0, 'UNPROTECTED_INPUT')
+  ensure(stat.isFile() && !stat.isSymbolicLink() && stat.uid === process.getuid() && (stat.mode & 0o7777) === 0o600, 'UNPROTECTED_INPUT')
   return readFileSync(path, 'utf8').trimEnd()
 }
 

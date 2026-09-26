@@ -8,6 +8,7 @@ import { releaseGitShaForRoot } from '../scripts/release-identity.js'
 import { signProductionEvidence } from './production-evidence-gate.js'
 import { signManualCandidate } from '../infra/protected/attest-manual-operations-evidence.mjs'
 import { validateReleaseManifest } from './release-manifest-gate.js'
+import { manualCaptureJournal, manualCaptureJournalSha256 } from './manual-operations-evidence-fixture.js'
 
 const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'restore', 'objectStorage', 'codexAppHost', 'canonicalCutover'] as const
 const inputNames = { capability: 'capabilityEvidenceRef', capacity: 'capacityEvidenceRef', modelRelay: 'modelRelayEvidenceRef', payment: 'paymentEvidenceRef', restore: 'restoreEvidenceRef', objectStorage: 'objectStorageEvidenceRef', codexAppHost: 'codexAppHostEvidenceRef', canonicalCutover: 'canonicalCutoverEvidenceRef' } as const
@@ -296,14 +297,16 @@ describe('release manifest production gate', () => {
     const candidate = {
       schema_version: 'manual-operations-evidence/1', release_id: fixtureReleaseId, environment: 'production', workflow: 'public_import_manual_publish',
       workspace_id: 'workspace-1', isolation_probe_workspace_id: 'foreign-workspace', manual_publish_report_id: 'report-1',
-      official_api_receipt: false, tenant_isolation_verified: true, simulated: false, generated_at: '2026-08-29T00:00:00Z',
+      official_api_receipt: false, manual_evidence_boundary: 'manual_unverified', manual_publish_state: 'manual_publish_reported', tenant_isolation_verified: true, simulated: false, generated_at: '2026-08-29T00:00:00Z',
       expires_at: '2026-08-30T00:00:00Z', verified_by: 'release-operator',
+      capture_journal: manualCaptureJournal({ release_id: fixtureReleaseId, release_git_sha: 'c'.repeat(40), manifest_sha256: 'b'.repeat(64), image_set_digest: `sha256:${'a'.repeat(64)}` }, '2026-08-29T00:00:00Z', { manualPublishReportId: 'report-1' }),
       checks: [
         { name: 'tenant_scope', status: 'pass', observation: 'foreign_workspace_rejected' },
         { name: 'manual_report', status: 'pass', observation: 'human_evidence_boundary_preserved' },
         { name: 'merchant_visibility', status: 'pass', observation: 'expected_report_visible' },
       ],
     }
+    Object.assign(candidate, { capture_journal_sha256: manualCaptureJournalSha256(candidate.capture_journal) })
     const signed = signManualCandidate(candidate, { releaseId: fixtureReleaseId, imageSetDigest: `sha256:${'a'.repeat(64)}`, manifestSha256: 'b'.repeat(64), releaseGitSha: 'c'.repeat(40), deploymentNonce: 'n'.repeat(22), keyId: 'release-security-test' }, privatePem, publicKeyPem, new Date('2026-08-29T02:00:00Z'))
     const bytes = JSON.stringify(signed)
     writeFileSync(fixture.evidenceFiles.capability, bytes)

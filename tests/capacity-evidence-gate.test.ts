@@ -17,7 +17,7 @@ const base = {
 
 describe('capacity evidence gate', () => {
   it('accepts an explicit no-load declaration for subsequent signed bundle binding', () => {
-    const value = { schema_version: '1', status: 'not_performed', release_id: 'release-1', software_version: 'sha-1', config_version: 'config-1', data_version: 'migration-242', environment: 'production', target_url: 'https://yxsona.com', started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z', profile: 'no_load', cloud_gate: false, scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope', sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' } }
+    const value = { schema_version: '1', status: 'not_performed', release_id: 'release-1', software_version: 'sha-1', config_version: 'config-1', data_version: 'migration-242', environment: 'production', target_url: 'https://yxsona.com', started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z', profile: 'no_load', cloud_gate: false, scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope', sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' }, generated_at: '2026-09-22T01:00:00Z' }
     const declaration = { ...value, expires_at: '2026-09-23T01:00:00Z' }
     const options = { expectedReleaseId: 'release-1', expectedProfile: 'no_load' as const, now: new Date('2026-09-22T02:00:00Z') }
     expect(validateCapacityEvidence(declaration, options)).toEqual([])
@@ -28,14 +28,39 @@ describe('capacity evidence gate', () => {
       { expires_at: '2026-09-22T01:30:00Z' },
       { reason: 'arbitrary' },
       { target_url: 'https://user:secret@example.com' },
+      { target_url: 'http://yxsona.com' },
+      { target_url: 'https://yxsona.com/#fragment' },
+      { target_url: 'not-a-url' },
       { sign_off: { verified_by: 'owner', verified_at: 'invalid' } },
       { ended_at: '2026-09-24T00:00:00Z' },
     ]) expect(validateCapacityEvidence({ ...declaration, ...mutation }, options).length).toBeGreaterThan(0)
     expect(validateCapacityEvidence(value, { requireCloudGate: true, expectedReleaseId: 'release-1', expectedProfile: 'no_load' })).toContain('no_load evidence cannot satisfy cloud gate')
   })
-  it('rejects no-load declarations that smuggle load measurements', () => {
-    const value = { schema_version: '1', status: 'not_performed', release_id: 'release-1', software_version: 'sha-1', config_version: 'migration-242', data_version: 'migration-242', environment: 'production', target_url: 'https://yxsona.com', started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z', profile: 'no_load', cloud_gate: false, scope: 'no_load', capacity_commitment: 'none', reason: 'excluded', sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' }, metrics: {} }
-    expect(validateCapacityEvidence(value)).toContain('no_load evidence must not contain load measurements')
+  it.each([
+    ['metrics', {}],
+    ['duration', {}],
+    ['tenant', {}],
+    ['fault', {}],
+    ['steady_state', {}],
+    ['raw_metrics_ref', 'artifact://metrics/1'],
+    ['platform_mock_ratio', 0],
+    ['model_mock_ratio', 0],
+    ['accepted_jobs', 0],
+    ['completeness', { observations_valid: true }],
+    ['p95_ms', 100],
+    ['future_measurement', 100],
+  ])('rejects no-load declarations containing unsupported field %s', (field, fieldValue) => {
+    const declaration = { schema_version: '1', status: 'not_performed', release_id: 'release-1', software_version: 'sha-1', config_version: 'migration-242', data_version: 'migration-242', environment: 'production', target_url: 'https://yxsona.com', started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z', profile: 'no_load', cloud_gate: false, scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope', sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' }, expires_at: '2026-09-23T01:00:00Z' }
+    expect(validateCapacityEvidence({ ...declaration, [field]: fieldValue }, { expectedReleaseId: 'release-1', expectedProfile: 'no_load', now: new Date('2026-09-22T02:00:00Z') }))
+      .toContain(`no_load evidence contains unsupported fields: ${field}`)
+  })
+  it.each([
+    ['metrics', {}],
+    ['future_signoff_field', 'unexpected'],
+  ])('rejects no-load sign_off containing unsupported field %s', (field, fieldValue) => {
+    const declaration = { schema_version: '1', status: 'not_performed', release_id: 'release-1', software_version: 'sha-1', config_version: 'migration-242', data_version: 'migration-242', environment: 'production', target_url: 'https://yxsona.com', started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z', profile: 'no_load', cloud_gate: false, scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope', sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' }, expires_at: '2026-09-23T01:00:00Z' }
+    expect(validateCapacityEvidence({ ...declaration, sign_off: { ...declaration.sign_off, [field]: fieldValue } }, { expectedReleaseId: 'release-1', expectedProfile: 'no_load', now: new Date('2026-09-22T02:00:00Z') }))
+      .toContain(`no_load sign_off contains unsupported fields: ${field}`)
   })
   it('requires software and data bindings when evidence is used as a release input', () => {
     const value = { ...base, software_version: undefined, data_version: undefined }

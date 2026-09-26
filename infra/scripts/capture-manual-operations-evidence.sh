@@ -11,10 +11,16 @@ set -eu
 : "${PRODUCTION_MANUAL_REPORT_ID:?PRODUCTION_MANUAL_REPORT_ID is required}"
 : "${MANUAL_OPERATIONS_EVIDENCE_OUTPUT:?MANUAL_OPERATIONS_EVIDENCE_OUTPUT is required}"
 : "${MANUAL_OPERATIONS_VERIFIED_BY:?MANUAL_OPERATIONS_VERIFIED_BY is required}"
+: "${MANUAL_OPERATIONS_EXPECTED_RELEASE_GIT_SHA:?expected release Git SHA is required}"
+: "${MANUAL_OPERATIONS_EXPECTED_MANIFEST_SHA256:?expected manifest SHA-256 is required}"
+: "${MANUAL_OPERATIONS_EXPECTED_IMAGE_SET_DIGEST:?expected image-set digest is required}"
 
 case "$RELEASE_ID" in *[!A-Za-z0-9._-]*|'') echo 'RELEASE_ID contains unsafe characters' >&2; exit 1 ;; esac
 case "$PRODUCTION_CANARY_WORKSPACE_ID:$PRODUCTION_CANARY_ISOLATION_WORKSPACE_ID" in *[!A-Za-z0-9._:-]*) echo 'workspace id contains unsafe characters' >&2; exit 1 ;; esac
 [ "$PRODUCTION_CANARY_WORKSPACE_ID" != "$PRODUCTION_CANARY_ISOLATION_WORKSPACE_ID" ] || { echo 'isolation workspace must differ from the target workspace' >&2; exit 1; }
+printf '%s' "$MANUAL_OPERATIONS_EXPECTED_RELEASE_GIT_SHA" | grep -Eq '^[a-f0-9]{40}$' || { echo 'expected release Git SHA is invalid' >&2; exit 1; }
+printf '%s' "$MANUAL_OPERATIONS_EXPECTED_MANIFEST_SHA256" | grep -Eq '^[a-f0-9]{64}$' || { echo 'expected manifest SHA-256 is invalid' >&2; exit 1; }
+printf '%s' "$MANUAL_OPERATIONS_EXPECTED_IMAGE_SET_DIGEST" | grep -Eq '^sha256:[a-f0-9]{64}$' || { echo 'expected image-set digest is invalid' >&2; exit 1; }
 if [ -n "${MANUAL_OPERATIONS_CANDIDATE_API_BASE_URL:-}" ]; then
   echo 'candidate loopback URL mode is disabled; use the exact Docker container transport' >&2
   exit 1
@@ -43,6 +49,7 @@ output_dir=$(dirname "$MANUAL_OPERATIONS_EVIDENCE_OUTPUT")
 [ ! -e "$MANUAL_OPERATIONS_EVIDENCE_OUTPUT" ] && [ ! -L "$MANUAL_OPERATIONS_EVIDENCE_OUTPUT" ] || { echo 'evidence output already exists' >&2; exit 1; }
 
 workdir=$(mktemp -d "${TMPDIR:-/tmp}/manual-operations-evidence.XXXXXX")
+chmod 700 "$workdir"
 trap 'rm -rf "$workdir"' EXIT HUP INT TERM
 capture_http() {
   curl -q --proto '=https' --silent --show-error --max-time 20 "$@"
@@ -68,9 +75,9 @@ fi
 # Authenticate the running candidate's immutable identity before the first
 # Bearer-bearing request. A wrong listener must never receive the canary token.
 RELEASE_ID="$RELEASE_ID" WORKDIR="$workdir" CANDIDATE_MODE="$candidate_mode" \
-EXPECTED_GIT_SHA="${MANUAL_OPERATIONS_EXPECTED_RELEASE_GIT_SHA:-}" \
-EXPECTED_MANIFEST_SHA256="${MANUAL_OPERATIONS_EXPECTED_MANIFEST_SHA256:-}" \
-EXPECTED_IMAGE_SET_DIGEST="${MANUAL_OPERATIONS_EXPECTED_IMAGE_SET_DIGEST:-}" \
+EXPECTED_GIT_SHA="$MANUAL_OPERATIONS_EXPECTED_RELEASE_GIT_SHA" \
+EXPECTED_MANIFEST_SHA256="$MANUAL_OPERATIONS_EXPECTED_MANIFEST_SHA256" \
+EXPECTED_IMAGE_SET_DIGEST="$MANUAL_OPERATIONS_EXPECTED_IMAGE_SET_DIGEST" \
 node <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
@@ -82,13 +89,17 @@ try { body = JSON.parse(fs.readFileSync(path.join(workdir, 'release.json'), 'utf
 catch { fail('release identity endpoint returned invalid JSON'); }
 const identity = body?.data?.release ?? body?.release;
 if (identity?.release_id !== process.env.RELEASE_ID) fail('API release identity does not match RELEASE_ID');
-if (process.env.CANDIDATE_MODE === 'true' && (
-  identity?.release_git_sha !== process.env.EXPECTED_GIT_SHA
+if (identity?.release_git_sha !== process.env.EXPECTED_GIT_SHA
   || identity?.manifest_sha256 !== process.env.EXPECTED_MANIFEST_SHA256
   || identity?.image_set_digest !== process.env.EXPECTED_IMAGE_SET_DIGEST
-  || body?.data?.ready !== true
-)) fail('candidate API release identity or readiness does not match the reviewed image set');
+  || body?.data?.ready !== true) fail('API release identity or readiness does not match the expected image set');
 NODE
+
+if [ "$candidate_mode" = false ]; then
+  auth_header="$workdir/authorization.header"
+  (umask 077; printf 'authorization: Bearer %s\n' "$PRODUCTION_CANARY_BEARER_TOKEN" >"$auth_header")
+  chmod 600 "$auth_header"
+fi
 
 rpc() {
   workspace=$1; body=$2; name=$3
@@ -96,7 +107,7 @@ rpc() {
     capture_candidate "$name" "$workspace" "$body"
   else
     capture_http --output "$workdir/$name.json" --write-out '%{http_code}' \
-      -H "authorization: Bearer $PRODUCTION_CANARY_BEARER_TOKEN" \
+      -H "@$auth_header" \
       -H "x-workspace-id: $workspace" -H 'content-type: application/json' \
       --data "$body" "$origin/mcp" >"$workdir/$name.status"
   fi
@@ -119,6 +130,7 @@ EXPECTED_IMAGE_SET_DIGEST="${MANUAL_OPERATIONS_EXPECTED_IMAGE_SET_DIGEST:-}" \
 node <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const fail = message => { throw new Error(message); };
 const read = name => JSON.parse(fs.readFileSync(path.join(process.env.WORKDIR, `${name}.json`), 'utf8'));
 const status = name => Number(fs.readFileSync(path.join(process.env.WORKDIR, `${name}.status`), 'utf8'));
@@ -126,13 +138,11 @@ if (status('release') !== 200) fail('release identity endpoint did not return HT
 const release = read('release');
 const releaseId = release.release_id ?? release.data?.release_id ?? release.data?.release?.release_id;
 if (releaseId !== process.env.RELEASE_ID) fail('deployed release identity does not match RELEASE_ID');
-if (process.env.CANDIDATE_MODE === 'true') {
-  const identity = release.data?.release ?? release.release;
-  if (!identity || identity.release_git_sha !== process.env.EXPECTED_GIT_SHA
-    || identity.manifest_sha256 !== process.env.EXPECTED_MANIFEST_SHA256
-    || identity.image_set_digest !== process.env.EXPECTED_IMAGE_SET_DIGEST
-    || release.data?.ready !== true) fail('candidate API release identity or readiness does not match the reviewed image set');
-}
+const identity = release.data?.release ?? release.release;
+if (!identity || identity.release_git_sha !== process.env.EXPECTED_GIT_SHA
+  || identity.manifest_sha256 !== process.env.EXPECTED_MANIFEST_SHA256
+  || identity.image_set_digest !== process.env.EXPECTED_IMAGE_SET_DIGEST
+  || release.data?.ready !== true) fail('API release identity or readiness does not match the expected image set');
 if (status('target-list') !== 200 || status('target-get') !== 200) fail('target workspace manual evidence reads did not return HTTP 200');
 const unwrap = value => value?.data?.result ?? value?.result;
 const list = unwrap(read('target-list'));
@@ -140,20 +150,52 @@ const report = unwrap(read('target-get'));
 if (!list || !Array.isArray(list.items) || !Number.isInteger(list.total)) fail('manual report list contract is invalid');
 if (!report || report.id !== process.env.REPORT_ID) fail('expected manual report is not visible to the merchant');
 if (!list.items.some(item => item?.id === process.env.REPORT_ID)) fail('expected manual report is absent from the tenant-scoped list');
-const forbiddenStates = new Set(['platform_verified', 'published', 'remote_published']);
-if (forbiddenStates.has(report.state) || report.evidenceBoundary === 'official_api' || report.official_api_receipt === true) fail('manual report claims official platform verification');
+if (report.evidenceBoundary !== 'manual_unverified') fail('manual report is not explicitly in the manual_unverified evidence boundary');
+if (!['manual_publish_in_progress', 'manual_publish_reported', 'manual_review_required'].includes(report.state)) fail('manual report state is not a recognized manual workflow state');
+if (report.official_api_receipt === true) fail('manual report claims an official platform receipt');
 if (![401, 403].includes(status('isolation'))) fail('foreign workspace isolation probe was not rejected');
 const isolation = read('isolation');
-if (!isolation?.error) fail('foreign workspace isolation response lacks an error envelope');
+const isolationError = isolation?.error;
+if (!isolationError || typeof isolationError !== 'object' || Array.isArray(isolationError)
+  || Object.getPrototypeOf(isolationError) !== Object.prototype || typeof isolationError.code !== 'string' || !isolationError.code.trim()) {
+  fail('foreign workspace isolation response lacks a structured non-empty error code');
+}
 const generated = new Date();
+const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(',')}]` : value && typeof value === 'object' ? `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}` : JSON.stringify(value);
+const sha256 = value => createHash('sha256').update(value).digest('hex');
+const observed = (name, probeName, material) => {
+  const probe = { name, status: status(probeName), material };
+  return { ...probe, observation_sha256: sha256(Buffer.from(canonical(probe))) };
+};
+const journal = {
+  schema_version: 'manual-operations-capture-journal/1',
+  captured_at: generated.toISOString(),
+  candidate_identity: {
+    release_id: process.env.RELEASE_ID,
+    release_git_sha: process.env.EXPECTED_GIT_SHA,
+    manifest_sha256: process.env.EXPECTED_MANIFEST_SHA256,
+    image_set_digest: process.env.EXPECTED_IMAGE_SET_DIGEST,
+  },
+  observations: [
+    observed('release', 'release', {
+      release_id: identity.release_id, release_git_sha: identity.release_git_sha, manifest_sha256: identity.manifest_sha256,
+      image_set_digest: identity.image_set_digest, ready: release.data?.ready === true,
+    }),
+    observed('target_list', 'target-list', { expected_report_visible: true, visible_report_id: process.env.REPORT_ID, total: list.total, returned_count: list.items.length }),
+    observed('target_get', 'target-get', { manual_publish_report_id: report.id, state: report.state, evidence_boundary: report.evidenceBoundary }),
+    observed('isolation', 'isolation', { error_envelope: true, code_present: true }),
+  ],
+};
 const evidence = {
   schema_version: 'manual-operations-evidence/1', release_id: process.env.RELEASE_ID,
   environment: 'production', workflow: 'public_import_manual_publish',
   workspace_id: process.env.TARGET_WORKSPACE, isolation_probe_workspace_id: process.env.ISOLATION_WORKSPACE,
   manual_publish_report_id: process.env.REPORT_ID, official_api_receipt: false,
+  manual_evidence_boundary: report.evidenceBoundary, manual_publish_state: report.state,
   tenant_isolation_verified: true, simulated: false, generated_at: generated.toISOString(),
   expires_at: new Date(generated.getTime() + 24 * 60 * 60_000).toISOString(),
   verified_by: process.env.VERIFIED_BY,
+  capture_journal: journal, capture_journal_sha256: sha256(Buffer.from(canonical(journal))),
   checks: [
     { name: 'tenant_scope', status: 'pass', observation: 'foreign_workspace_rejected' },
     { name: 'manual_report', status: 'pass', observation: 'human_evidence_boundary_preserved' },

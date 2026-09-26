@@ -29,12 +29,15 @@ const approved = (...entries: Array<[number, string]>) => migrationChecksumBasel
 
 describe('bridge-only migration compatibility', () => {
   it('accepts exactly the checksummed 242 and 244 prefixes and rejects partial or altered history', async () => {
-    // The bridge artifact ships the chain through 244; slice the fixture to that world.
-    const expected = (await loadMigrations()).slice(0, 244)
+    // The verifier receives the current migration chain but accepts only the
+    // two reviewed compatibility prefixes.
+    const expected = await loadMigrations()
     const rows = expected.map(item => ({ version: item.version, name: item.name, checksum: migrationChecksum(item.sql) }))
     expect(verifyBridgeMigrationPrefix(rows.slice(0, 242), expected, 'prefix_242_or_244')).toBe(242)
-    expect(verifyBridgeMigrationPrefix(rows, expected, 'prefix_242_or_244')).toBe(244)
+    expect(verifyBridgeMigrationPrefix(rows.slice(0, 244), expected, 'prefix_242_or_244')).toBe(244)
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 243), expected, 'prefix_242_or_244')).toThrow('exactly 242 or 244')
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 245), expected, 'prefix_242_or_244')).toThrow('exactly 242 or 244')
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 254), expected, 'prefix_242_or_244')).toThrow('exactly 242 or 244')
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242), expected, undefined)).toThrow('not enabled')
     expect(() => verifyBridgeMigrationPrefix([{ ...rows[0]!, checksum: '0'.repeat(64) }, ...rows.slice(1, 242)], expected, 'prefix_242_or_244')).toThrow('checksum mismatch')
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242), expected.slice(0, 243), 'prefix_242_or_244')).toThrow('complete migration chain through 244')

@@ -44,6 +44,29 @@ describe('object storage schema v2 evidence producer', () => {
     expect(() => produceObjectStorageEvidence(badCheck.input)).toThrow('OBJECT_STORAGE_EVIDENCE_CHECK_ORPHAN_RECOVERY_INVALID')
   })
 
+  it('requires the exact OSS control-plane checks and their expected observed values', () => {
+    const valid = {
+      versioning_enabled: { state: 'passed', observed: true },
+      lifecycle_enabled_rules: { state: 'passed', observed: 1 },
+      public_access_blocked: { state: 'passed', observed: true },
+    }
+    const invalidCheckSets = [
+      { owner_access: { state: 'passed', observed: true }, lifecycle: { state: 'passed', observed: 1 }, public_access: { state: 'passed', observed: true } },
+      { ...valid, unexpected_check: { state: 'passed', observed: true } },
+      { versioning_enabled: valid.versioning_enabled, lifecycle_enabled_rules: valid.lifecycle_enabled_rules },
+      { ...valid, versioning_enabled: { state: 'passed', observed: false } },
+      { ...valid, lifecycle_enabled_rules: { state: 'passed', observed: 0 } },
+      { ...valid, public_access_blocked: { state: 'passed', observed: false } },
+    ]
+
+    for (const checks of invalidCheckSets) {
+      const value = fixture()
+      const control = JSON.parse(readFileSync(value.input.controlPlanePath, 'utf8')) as Record<string, unknown>
+      writeFileSync(value.input.controlPlanePath, JSON.stringify({ ...control, checks }))
+      expect(() => produceObjectStorageEvidence(value.input)).toThrow('OBJECT_STORAGE_EVIDENCE_CONTROL_PLANE_CHECKS_INCOMPLETE')
+    }
+  })
+
   it('rejects artifacts outside the immutable artifact root and refuses output overwrite', () => {
     const value = fixture(); const outside = join(mkdtempSync(join(tmpdir(), 'oss-outside-')), 'canary.json'); writeFileSync(outside, '{}')
     expect(() => produceObjectStorageEvidence({ ...value.input, canaryPath: outside })).toThrow('OBJECT_STORAGE_EVIDENCE_ARTIFACT_OUTSIDE_ROOT')

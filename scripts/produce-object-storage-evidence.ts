@@ -9,6 +9,11 @@ import type { ObjectStorageCanaryEvidence } from './object-storage-canary.js'
 const REQUIRED_CHECKS = ['quarantine_clean_metadata', 'version_restore', 'integrity_sample', 'deletion_protection', 'orphan_recovery', 'generated_video_archive'] as const
 type RequiredCheck = typeof REQUIRED_CHECKS[number]
 type RawCheck = { schema_version?: string; id?: string; state?: string; release_id?: string; environment?: string; simulated?: boolean }
+const REQUIRED_CONTROL_PLANE_CHECKS = {
+  versioning_enabled: true,
+  lifecycle_enabled_rules: 1,
+  public_access_blocked: true,
+} as const
 
 export type ObjectStorageEvidenceProducerInput = {
   artifactRoot: string
@@ -63,6 +68,18 @@ function requireFreshInstant(value: unknown, nowMs: number, code: string) {
   requireValue(nowMs - timestamp <= 24 * 3_600_000, `${code}_STALE`)
 }
 
+function validateControlPlaneChecks(value: unknown) {
+  requireValue(value !== null && typeof value === 'object' && !Array.isArray(value), 'CONTROL_PLANE_CHECKS_INCOMPLETE')
+  const checks = value as Record<string, { state?: unknown; observed?: unknown }>
+  const actualKeys = Object.keys(checks).sort()
+  const requiredKeys = Object.keys(REQUIRED_CONTROL_PLANE_CHECKS).sort()
+  requireValue(actualKeys.length === requiredKeys.length && actualKeys.every((key, index) => key === requiredKeys[index]), 'CONTROL_PLANE_CHECKS_INCOMPLETE')
+  for (const [id, expectedObserved] of Object.entries(REQUIRED_CONTROL_PLANE_CHECKS)) {
+    const check = checks[id]
+    requireValue(check?.state === 'passed' && check.observed === expectedObserved, 'CONTROL_PLANE_CHECKS_INCOMPLETE')
+  }
+}
+
 export function produceObjectStorageEvidence(input: ObjectStorageEvidenceProducerInput) {
   const now = (input.now ?? (() => new Date()))().toISOString()
   const nowMs = Date.parse(now)
@@ -82,7 +99,7 @@ export function produceObjectStorageEvidence(input: ObjectStorageEvidenceProduce
   requireValue(control.endpoint_sha256 === createHash('sha256').update(input.endpoint).digest('hex'), 'CONTROL_PLANE_ENDPOINT_MISMATCH')
   requireValue(control.lifecycle_rule_id_sha256 === createHash('sha256').update(input.lifecyclePolicyId).digest('hex'), 'CONTROL_PLANE_LIFECYCLE_MISMATCH')
   requireFreshInstant(control.observed_at, nowMs, 'CONTROL_PLANE')
-  requireValue(Object.values(control.checks ?? {}).length === 3 && Object.values(control.checks).every(check => check.state === 'passed'), 'CONTROL_PLANE_CHECKS_INCOMPLETE')
+  validateControlPlaneChecks(control.checks)
 
   const restoreArtifact = readArtifact(input.artifactRoot, input.restorePath)
   const restore = restoreArtifact.value as { schema_version?: string; release_id?: string; environment?: string; simulated?: boolean; target_isolated?: boolean; restored_at?: string; backup_checksum_sha256?: string }
