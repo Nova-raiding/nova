@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -78,20 +78,29 @@ const MERCHANT_HIDDEN_METHODS = new Set([
 function nextLine(stream: NodeJS.ReadableStream): Promise<any> {
   return new Promise((resolve, reject) => {
     let buffer = ''
-    const onError = (error: Error) => {
+    const cleanup = () => {
       stream.off('data', onData)
+      stream.off('error', onError)
+      stream.off('end', onEnd)
+    }
+    const onError = (error: Error) => {
+      cleanup()
       reject(error)
+    }
+    const onEnd = () => {
+      cleanup()
+      reject(new Error('MCP bridge stdout ended before a complete response line'))
     }
     const onData = (chunk: Buffer | string) => {
       buffer += chunk.toString()
       const newline = buffer.indexOf('\n')
       if (newline < 0) return
-      stream.off('data', onData)
-      stream.off('error', onError)
+      cleanup()
       resolve(JSON.parse(buffer.slice(0, newline)))
     }
     stream.on('data', onData)
     stream.once('error', onError)
+    stream.once('end', onEnd)
   })
 }
 
@@ -3150,11 +3159,15 @@ describe('Codex stdio MCP bridge', () => {
     // forces the merchant to re-bind by hand.
     const launchdDirectory = await mkdtemp(join(TEST_ARTIFACT_DIR, 'fake-launchd-'))
     const callsFile = join(launchdDirectory, 'calls.log')
+    const setenvAttemptsFile = join(launchdDirectory, 'setenv-attempts.log')
     const counterFile = join(launchdDirectory, 'setenv.count')
     const launchdPath = join(launchdDirectory, 'launchctl')
+    let refreshRequests = 0
+    const mcpRequests: Array<{ url: string | undefined; authorization: string | undefined }> = []
     await writeFile(launchdPath, [
       '#!/bin/sh',
       'op="$1"; name="$2"; value="$3"',
+      `printf "getenv %s\\n" "$name" >> "${callsFile}"`,
       'if [ "$op" = "getenv" ]; then',
       '  case "$name" in',
       '    MERCHANT_MCP_BASE_URL) printf %s "$FAKE_LAUNCHD_BASE_URL" ;;',
@@ -3165,12 +3178,13 @@ describe('Codex stdio MCP bridge', () => {
       '  exit 0',
       'fi',
       'if [ "$op" = "setenv" ]; then',
+      `  printf "%s\\n" "$name" >> "${setenvAttemptsFile}"`,
       '  count=0',
       `  [ -f "${counterFile}" ] && count=$(cat "${counterFile}")`,
       '  count=$((count + 1))',
       `  printf %s "$count" > "${counterFile}"`,
-      '  # Second write fails: the mirror stops part way through.',
-      '  [ "$count" -gt 1 ] && exit 1',
+      '  # The access-token write fails after the refresh token was persisted.',
+      '  [ "$name" = "MERCHANT_MCP_TOKEN" ] && exit 1',
       `  printf "setenv %s %s\\n" "$name" "$value" >> "${callsFile}"`,
       '  exit 0',
       'fi',
@@ -3179,36 +3193,69 @@ describe('Codex stdio MCP bridge', () => {
     ].join('\n'), { mode: 0o755 })
     const server = createServer((req, res) => {
       if (req.url === '/v1/auth/mcp-token/refresh') {
+        refreshRequests += 1
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ data: { result: { access_token: 'rotated-access', refresh_token: 'rotated-refresh' } } }))
         return
       }
+      mcpRequests.push({ url: req.url, authorization: req.headers.authorization })
       if (req.headers.authorization !== 'Bearer rotated-access') { res.writeHead(401, { 'content-type': 'application/json' }).end('{}'); return }
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ready: true } }))
     })
     const address = await listen(server)
+    const childEnvironment = {
+      ...TEST_PROCESS_ENV,
+      PATH: `${launchdDirectory}:${process.env.PATH ?? ''}`,
+      FAKE_LAUNCHD_BASE_URL: `http://127.0.0.1:${address.port}`,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+      MERCHANT_WORKSPACE_ID: 'ws_test',
+      MERCHANT_MCP_TOKEN_SOURCE: 'launchd',
+    }
+    // Validate the PATH-injected launchctl stub before launching the bridge.
+    // This also keeps the first executable lookup out of the bridge's four
+    // sequential credential reads, where a cold macOS script launch can exceed
+    // the bridge's intentionally short per-command timeout.
+    try {
+      expect(execFileSync('launchctl', ['getenv', 'MERCHANT_MCP_BASE_URL'], {
+        encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: childEnvironment, timeout: 10_000,
+      })).toBe(childEnvironment.FAKE_LAUNCHD_BASE_URL)
+    } catch (error) {
+      await close(server)
+      throw error
+    }
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: {
-        ...TEST_PROCESS_ENV,
-        PATH: `${launchdDirectory}:${process.env.PATH ?? ''}`,
-        FAKE_LAUNCHD_BASE_URL: `http://127.0.0.1:${address.port}`,
-        MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
-        MERCHANT_WORKSPACE_ID: 'ws_test',
-        MERCHANT_MCP_TOKEN_SOURCE: 'launchd',
-      },
+      env: childEnvironment,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    const stderr: string[] = []
+    child.stderr.on('data', chunk => stderr.push(chunk.toString()))
+    const childExit = new Promise<string>(resolve => child.once('exit', (code, signal) => resolve(`code=${code} signal=${signal}`)))
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
-      await nextLine(child.stdout)
-      expect(await readFile(callsFile, 'utf8')).toContain('setenv MERCHANT_MCP_REFRESH_TOKEN rotated-refresh')
+      let response
+      try {
+        response = await nextLine(child.stdout)
+      } catch (error) {
+        const calls = existsSync(callsFile) ? await readFile(callsFile, 'utf8') : '(missing)'
+        throw new Error(`${error instanceof Error ? error.message : String(error)}; bridge ${await childExit}; stderr=${stderr.join('').trim() || '(empty)'}; launchctl_calls=${calls.trim() || '(empty)'}`)
+      }
+      expect(response?.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_AUTH_REQUIRED' } })
+      expect(refreshRequests).toBe(1)
+      expect(mcpRequests).toEqual([{ url: '/mcp', authorization: 'Bearer launchd-access' }])
+      expect(await readFile(counterFile, 'utf8')).toBe('2')
+      expect((await readFile(setenvAttemptsFile, 'utf8')).trim().split('\n')).toEqual([
+        'MERCHANT_MCP_REFRESH_TOKEN',
+        'MERCHANT_MCP_TOKEN',
+      ])
+      const setenvCalls = (await readFile(callsFile, 'utf8')).split('\n').filter(line => line.startsWith('setenv '))
+      expect(setenvCalls).toEqual(['setenv MERCHANT_MCP_REFRESH_TOKEN rotated-refresh'])
     } finally {
       child.kill()
       await close(server)
     }
-  })
+  }, 10_000)
 
   it.each([401, 409, 500])('fails closed without replaying the MCP request when token refresh returns HTTP %s', async refreshStatus => {
     let mcpRequests = 0

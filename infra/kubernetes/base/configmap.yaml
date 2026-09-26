@@ -146,8 +146,8 @@ data:
   IMAGE_EDIT_MODEL: merchant-main-image-edit
   OCR_MODEL: merchant-vision-ocr
   VIDEO_MODEL: merchant-video
-  EMBEDDING_MODEL: merchant-embedding
-  EMBEDDING_DIMENSIONS: "1536"
+  EMBEDDING_MODEL: qwen3.7-text-embedding-flash
+  EMBEDDING_DIMENSIONS: "1024"
   EMBEDDING_VERSION: "v1"
   KNOWLEDGE_VECTOR_INDEX_ENABLED: "false"
   IMAGE_RESPONSE_FORMAT: url

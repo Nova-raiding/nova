@@ -78,7 +78,9 @@ function fixture(options: FixtureOptions = {}) {
 }
 
 function run(env: NodeJS.ProcessEnv) {
-  return spawnSync("/bin/sh", [guard], { env, encoding: "utf8" });
+  const result = spawnSync("/bin/sh", [guard], { env, encoding: "utf8", timeout: 12_000 });
+  if (result.error) throw result.error;
+  return result;
 }
 
 describe("local proxy health guard", () => {
@@ -100,7 +102,7 @@ describe("local proxy health guard", () => {
     expect(failed.stdout).toContain("reason=stale");
     expect(failed.stdout).not.toContain("health.invalid");
     expect(failed.stdout).not.toContain("top-secret");
-  });
+  }, 45_000);
 
   it("fails closed for a high-FD xray when no restart owner is configured", () => {
     const highFd = fixture({ fdCount: 220 });

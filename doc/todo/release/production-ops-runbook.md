@@ -19,11 +19,11 @@
 1. `npm run check`、`npm run build`、`npm run infra:validate` 通过。
 2. `tests/compose-resource-gate.ts` 通过，且目标环境的资源规格、镜像 digest、连接池和副本数已记录。
 3. 预生产 HTTP 容量门禁通过：`CAPACITY_GATE_MODE=real_cloud`、目标为 HTTPS、环境为 `preproduction`，并保存原始输出和云监控报告。`local_fake`/Compose 结果不能替代云门禁。
-4. 运营后台的“生产证据 readiness”必须显示六平台 capability 与容量报告均为 `ready`，并可看到脱敏的 release、环境、profile/schema、核验人和核验时间。`example`、`fixture`、`test_e2e`、本地容量报告不会被计为生产通过；小红书/抖音在自身 capability 未就绪前必须保持只读或 fixture/API。
+4. 运营后台的“生产证据 readiness”必须按 `platform_operations_mode` 显示对应门禁与容量状态，并可看到脱敏的 release、环境、profile/schema、核验人和核验时间。`manual` 模式须显示人工流程证据 ready，且平台官方 API 写能力保持关闭；`official_api` 模式要求六个平台的 capability canary ready。`example`、`fixture`、`test_e2e`、本地容量报告不会被计为生产通过。
 5. 生产订阅下单、升级补差价和支付回调要求 `PAYMENT_MODE=provider`、HTTPS `PAYMENT_CALLBACK_BASE_URL` 与 `PAYMENT_CALLBACK_SECRET`；支付回调必须通过 HMAC 验签和订单金额快照校验。
 6. 数据库备份成功，备份校验和可验证；迁移已在预生产执行并记录版本。
 7. API、Worker、PostgreSQL、Redis 的健康检查为 healthy；队列老任务年龄和 Outbox backlog 在预算内。
-8. `platform-capability-evidence.json` 通过 `npm run evidence:validate -- --file <证据文档>`（`--file` 为必需参数，省略时门禁以退出码 2 失败关闭）；正式 preflight 还必须让六个平台十项能力（`authorize`、`refresh`、`read`、`full_sync`、`incremental_sync`、`create`、`update`、`query_status`、`revoke`、`media_upload`）全部达到 `production_canary`，否则保持 read/write feature flag 关闭。
+8. capability 证据按 `platform_operations_mode` 验收。`manual` 模式使用受保护 attester 签发的 `manual-operations-evidence/1`，证明本租户可见指定的真实手工发布报告、外工作区请求被拒绝，并明确 `official_api_receipt=false`；证据须绑定本次 release、image set、manifest、Git 和 deployment nonce，未验证的平台 API 能力继续关闭。`official_api` 模式使用 `platform-capability-evidence.json`，先以 `npm run evidence:validate -- --file <证据文档>` 校验 schema（`--file` 为必需参数，省略时退出码 2 失败关闭），正式 preflight 要求六个平台各自的十项能力（`authorize`、`refresh`、`read`、`full_sync`、`incremental_sync`、`create`、`update`、`query_status`、`revoke`、`media_upload`）达到 `production_canary` 并由受保护 attester 签名。不得把 manual 证据写成官方 API 成功。
 9. `model-relay-release-1.json` 必须由五类真实中转探测生成，且 `environment=production`、`simulated=false`；每类都要有 provider request ID、usage 和 cost 证据，不能用 fixture 或“已配置”替代真实成功。正式 preflight 会以 `--require-production` 强制该边界。
 10. **告警通道（本次发布不作为门禁）**：按 owner 对本次发布范围的决定，不要求告警接收人、升级电话、值班表或 paging 演练作为 Go/No-Go 条件。当前交付没有已部署的 Prometheus/Alertmanager、真实 paging 通道、值班表或告警演练；`infra/observability/prometheus-alerts.example.yaml` 仍只是未部署模板，不得写成已配置或已演练。若后续发布单独要求告警能力，需另行补齐「3.4 告警通道现状」所列证据。
 11. `DATABASE_URL` 与 `OPS_DATABASE_URL` 使用不同的非 owner、非 superuser、非 `BYPASSRLS` 凭据；两者都必须使用 `postgres://`/`postgresql://` 并且恰好包含一个 `sslmode=require`、`verify-ca` 或 `verify-full`。Preflight 会在 URL 规范化后拒绝 `localhost`、IPv4/IPv6 loopback 和未指定本机地址。运行探针必须证明 tenant role 无 feature flag 表权限、Ops role 仅有 feature flag 控制面权限且无 tenant table 权限。`infra/scripts/deploy-preflight.sh` 会强制调用 `verify-runtime-db-role.sh`；URL 门禁、真实 PostgreSQL 连接或任一隔离断言失败时直接拒绝发布。
@@ -31,7 +31,7 @@
 13. `RELEASE_MANIFEST_PATH` 必须通过 `npx tsx tests/release-manifest-gate.ts --file <manifest> --release-id "$RELEASE_ID"`；manifest 必须绑定当前 API OpenAPI、MCP contract、插件 bridge/Skill/manifest 摘要，以及 capability、capacity、relay、payment、restore、object storage 和桌面 ChatGPT host 的同一 release 生产证据引用。缺少新 API/MCP 摘要或任一引用为 `not-provided` 时直接拒绝。
 14. `OBJECT_STORAGE_EVIDENCE_PATH` 必须证明 quarantine/clean/metadata、版本恢复、完整性抽样、删除保护、orphan recovery 和 `generated_video_archive`；只有 provider job、外部 URL 或 PostgreSQL 元数据不算视频归档证据。
 
-部署前先执行只读 preflight，必须使用已渲染的生产配置、六个平台能力证据 JSON、真实云容量报告和不可变镜像摘要：
+部署前先执行只读 preflight，必须使用已渲染的生产配置、与 `platform_operations_mode` 匹配的 capability/manual evidence、真实云容量报告和不可变镜像摘要。以下命令示例针对 `official_api`；`manual` 模式须改用 manual evidence 路径与 attester，不得提供或伪造平台 API canary：
 
 ```sh
 PRODUCTION_CONFIG_PATH="$RENDERED_PRODUCTION_CONFIG" \
@@ -45,6 +45,7 @@ OPS_DATABASE_URL="$PRODUCTION_OPS_DATABASE_URL" \
 REDIS_URL="$PRODUCTION_REDIS_URL" \
 SECRET_PROVIDER="managed-secret-store" \
 CAPACITY_PROFILE="pilot_50" \
+PLATFORM_OPERATIONS_MODE="official_api" \
 CAPABILITY_EVIDENCE_PATH=/secure/evidence/platform-capability-evidence.json \
 CAPACITY_REPORT_PATH=/secure/evidence/pilot-50-capacity-report.json \
 MODEL_RELAY_EVIDENCE_PATH=/secure/evidence/model-relay-release-1.json \

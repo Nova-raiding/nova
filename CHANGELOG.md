@@ -29,6 +29,9 @@
 - ops-console 规则中心增加 `activationEligible` 展示与公共草稿评审面板。
 - 未验证公共规则激活保持阻断（57501ee5）。
 - `release-unblock-checklist` 文档澄清（183fc04e）。
+- 知识向量嵌入候选改为中转站 Qwen `qwen3.7-text-embedding-flash`、1024 维；单条输入使用字符串契约。向量索引默认保持关闭，真实鉴权与计价验证仍是启用前置条件。
+- 向量索引关闭时模型状态明确标记为未就绪且不暴露配置模型；补充对应 API 与模拟中转请求契约回归。
+- 修正 manual 与 official API 平台证据门禁的 runbook 说明；补强本地插件 launchd 轮换中途失败的 fail-closed 回归断言。
 
 ## 0.2.1 - 2026-09-15
 

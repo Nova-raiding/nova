@@ -38,8 +38,16 @@ export class OpenAICompatibleEmbeddingClient implements EmbeddingClient {
   }
   async embed(input: { texts: readonly string[]; usageContext?: RelayUsageContext }): Promise<EmbeddingResult> {
     if (!input.texts.length || input.texts.length > MAX_EMBEDDING_INPUTS || input.texts.some(text => typeof text !== 'string' || !text.trim() || text.length > MAX_EMBEDDING_INPUT_CHARS)) throw new Error('EMBEDDING_INPUT_INVALID')
-    const body = JSON.stringify({ model: this.options.model, input: input.texts, encoding_format: 'float', ...(this.options.dimensions ? { dimensions: this.options.dimensions } : {}) })
-    const attemptKey = providerIdempotencyKey({ operation: 'embedding', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody: body })
+    const requestInput = input.texts.length === 1 ? input.texts[0] : input.texts
+    const requestOptions = { model: this.options.model, encoding_format: 'float', ...(this.options.dimensions ? { dimensions: this.options.dimensions } : {}) }
+    const body = JSON.stringify({ ...requestOptions, input: requestInput })
+    // Keep the durable provider identity stable with pre-scalar releases. An
+    // ambiguous charged attempt may be re-enqueued after deployment, so changing
+    // this identity with the wire shape could cause the relay to charge twice.
+    // Preserve the exact historical property order too: the durable key hashes
+    // raw JSON bytes, not a canonicalized object.
+    const identityBody = JSON.stringify({ model: this.options.model, input: input.texts, encoding_format: 'float', ...(this.options.dimensions ? { dimensions: this.options.dimensions } : {}) })
+    const attemptKey = providerIdempotencyKey({ operation: 'embedding', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody: identityBody })
     assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
     const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 90_000)
     try {
