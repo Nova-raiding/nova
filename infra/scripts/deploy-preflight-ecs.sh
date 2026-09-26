@@ -90,6 +90,8 @@ release_metadata_migration_version=$(RELEASE_METADATA_PATH="$root/release-metada
 # that requires it. Keeping the list here is what makes the preflight able to
 # name a missing value before the render, which is the whole point of it.
 : "${WORKER_API_CREDENTIALS:?WORKER_API_CREDENTIALS is required}"
+# BRIDGE_SCHEMA_COMPATIBILITY_MODE stays unset for ordinary (254-era) releases;
+# the bridge code-only runner enforces prefix_242_or_244 at its own layer.
 : "${WORKER_WORKSPACES:?WORKER_WORKSPACES=auto or an explicit production workspace allowlist is required}"
 : "${WORKER_SYNC_API_TOKEN:?WORKER_SYNC_API_TOKEN is required}"
 : "${WORKER_SYNC_API_SIGNING_SECRET:?WORKER_SYNC_API_SIGNING_SECRET is required}"

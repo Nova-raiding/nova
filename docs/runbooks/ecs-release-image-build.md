@@ -8,6 +8,8 @@
 
 每次修改候选归档路径或运行镜像拷贝边界后，运行 `npm run test:ecs-source-archive-contract` 核对生产路径契约；该测试不能替代镜像构建与容器内容检查。
 
+候选源码归档与运行镜像是不同制品。B 桥版本的 API、worker 最终镜像只复制各自编译入口和共享包，不复制本地插件编译树；这不表示云端源码归档已合规。只有启用经签名的云端 v2 候选身份，且候选包、门禁镜像、六镜像构建与发布校验使用同一排除 `apps/plugin/`、`.codex-marketplace/` 的归档摘要，才能满足“插件前端仅本地安装”的边界。旧 v1 包不得因镜像选择性 COPY 而放行。
+
 staging 和镜像构建共用 `infra/scripts/ecs-build-lock.sh`，避免不同 release 的 TypeScript 编译与 Docker build 同时耗尽宿主内存。ECS 上须预建 root-owned、0700、canonical 的 `/var/lib/merchant-release-security/locks`；默认锁为其中的 `ecs-source-build.lock`，与生产切换 FD9 锁独立。Linux 使用 FD7/flock，退出释放；无 flock 的本地环境使用 mkdir 锁。已有构建时立即拒绝，不等待、不停止其他进程。异常断电留下的 mkdir 锁必须先核对没有构建进程再由 owner 处理，不自动删除。旧版本脚本或其他会话不会自动遵守此锁，首次启用仍须确认它们已结束。
 
 本地构建显式设置 `ECS_BUILD_LOCK_PATH`，其父目录必须预先存在、归当前用户所有、不可被其他用户写入且使用真实路径（macOS 可先用 `pwd -P` 确认）。复制 staging/build 脚本到宿主控制目录时，须同时复制经审核的共用 helper。此锁降低并发峰值，不代替磁盘预算或保证单个构建一定有足够内存；不自动创建 swap、停止业务容器或删卷。
