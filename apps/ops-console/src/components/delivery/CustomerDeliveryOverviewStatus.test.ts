@@ -24,6 +24,7 @@ const record: CustomerDeliveryRecord = {
   owner: "项目负责人",
   afterSalesOwner: "售后负责人",
   requiredLaunchAt: "2026-09-30",
+  goLiveAt: "2026-09-29T10:00:00.000Z",
 };
 
 describe("customer delivery overview status", () => {

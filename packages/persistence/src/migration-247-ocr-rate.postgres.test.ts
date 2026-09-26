@@ -18,7 +18,7 @@ describe('migration 248 OCR free threshold rate', () => {
     const databaseName = `release_fresh_${randomUUID().replaceAll('-', '')}`
     let database: Pool | undefined
     let app: Pool | undefined
-    let failure: unknown
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolated = new URL(databaseUrl)
@@ -79,14 +79,14 @@ describe('migration 248 OCR free threshold rate', () => {
       await expect(database.query(`UPDATE creative_point_rate_rules_v2 SET variable_formula='{}'::jsonb WHERE id='rate-ocr-extract-cost-v3'`)).rejects.toThrow()
       await expect(database.query(`INSERT INTO creative_point_rate_rules_v2 (id,rate_card_version_id,action_code,unit,integer_points,pricing_mode,variable_formula,executable,blockers) VALUES ('invalid-variable','rate-card-ocr-cost-v3','text.generate','request',NULL,'variable','{"kind":"cost_cny_x2_ceil_min1"}'::jsonb,true,'[]'::jsonb)`)).rejects.toThrow()
     } catch (error) {
-      failure = error
+      primaryFailure = error
       throw error
     } finally {
       await withPostgresFixtureCleanup(async () => {
         await app?.end()
         await database?.end()
         await dropDrainedPostgresFixture(admin, databaseName)
-      }, failure, [() => admin.end()])
+      }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)
 })

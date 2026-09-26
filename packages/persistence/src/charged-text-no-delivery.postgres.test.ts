@@ -27,7 +27,7 @@ describe('253 charged text no-delivery finance resolution', () => {
     const base = new URL(process.env.PERSISTENCE_RELEASE_DATABASE_URL!)
     const name = `release_fresh_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
-    let db: Pool | undefined; let app: Pool | undefined; let failure: unknown
+    let db: Pool | undefined; let app: Pool | undefined; let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${name}"`)
       db = new Pool({ connectionString: urlFor(base, name), max: 4 })
@@ -134,9 +134,9 @@ describe('253 charged text no-delivery finance resolution', () => {
       expect((await db.query('SELECT count(*) AS count FROM creative_point_reversals_v2 WHERE original_reservation_id=$1', [imageReservation.value.id])).rows[0]?.count).toBe('0')
       await expect(db.query("UPDATE generation_jobs SET state='queued' WHERE id='job-253'")).rejects.toMatchObject({ code: '23514' })
       await expect(resolver.resolve({ ...claim, workspaceId: 'ws_other_253' })).rejects.toMatchObject({ code: 'CHARGED_TEXT_POINT_ACCESS_MISSING' })
-    } catch (error) { failure = error; throw error }
+    } catch (error) { primaryFailure = error; throw error }
     finally {
-      await withPostgresFixtureCleanup(async () => { await app?.end(); await db?.end(); await dropDrainedPostgresFixture(admin, name) }, failure, [() => admin.end()])
+      await withPostgresFixtureCleanup(async () => { await app?.end(); await db?.end(); await dropDrainedPostgresFixture(admin, name) }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)
 })

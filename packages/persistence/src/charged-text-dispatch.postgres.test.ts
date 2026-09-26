@@ -28,7 +28,7 @@ describe('migration 252 charged text physical dispatch fence', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let db: Pool | undefined
     let app: Pool | undefined
-    let failure: unknown
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${name}"`)
       db = new Pool({ connectionString: urlFor(base, name), max: 4 })
@@ -94,11 +94,11 @@ describe('migration 252 charged text physical dispatch fence', () => {
         .rejects.toMatchObject({ code: 'CHARGED_TEXT_DISPATCH_TRANSITION_DENIED' })
       expect((await db.query("SELECT state FROM charged_text_dispatch_attempts ORDER BY logical_attempt,transport_attempt")).rows)
         .toEqual([{ state: 'rejected' }, { state: 'repair_required' }, { state: 'outcome_unknown' }])
-    } catch (error) { failure = error; throw error }
+    } catch (error) { primaryFailure = error; throw error }
     finally {
       await withPostgresFixtureCleanup(async () => {
         await app?.end(); await db?.end(); await dropDrainedPostgresFixture(admin, name)
-      }, failure, [() => admin.end()])
+      }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)
 })

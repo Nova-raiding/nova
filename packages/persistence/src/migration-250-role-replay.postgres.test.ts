@@ -19,7 +19,7 @@ describe('migration 250 runtime role replay', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
     let app: Pool | undefined
-    let failure: unknown
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolated = new URL(base)
@@ -72,14 +72,14 @@ describe('migration 250 runtime role replay', () => {
         client.release()
       }
     } catch (error) {
-      failure = error
+      primaryFailure = error
       throw error
     } finally {
       await withPostgresFixtureCleanup(async () => {
         await app?.end()
         await database?.end()
         await dropDrainedPostgresFixture(admin, databaseName)
-      }, failure, [() => admin.end()])
+      }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)
 })

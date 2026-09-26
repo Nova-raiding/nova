@@ -100,6 +100,9 @@ export const CI_POSTGRES_ACCEPTANCE_STEP = 'Run PostgreSQL migration acceptance 
 export const DEFAULT_SUITE_PENDING_ALLOWANCES: readonly DefaultSuitePendingAllowance[] = [
   // PERSISTENCE_RELEASE_DATABASE_URL
   { file: 'apps/worker/src/creative-point-relay-settlement.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'apps/worker/src/knowledge-generation-worker-fence.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/charged-text-no-delivery.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/first-workspace-provisioning-repository.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/application-rls-allow-scope-mismatch.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/authorization-audit-rls.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },

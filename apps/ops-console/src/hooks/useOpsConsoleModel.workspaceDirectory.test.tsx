@@ -47,6 +47,7 @@ describe("workspace directory read failure", () => {
             import { App } from 'antd';
             import { useOpsConsoleModel } from '/src/hooks/useOpsConsoleModel.ts';
             localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
+            localStorage.setItem('ops_password_session_active', 'true');
             function Probe() {
               const model = useOpsConsoleModel();
               useEffect(() => { if (model.opsSession) void model.loadWorkspaceDirectory(); }, [model.opsSession]);

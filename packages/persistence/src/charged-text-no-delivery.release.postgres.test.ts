@@ -28,7 +28,7 @@ describe('migration 253 charged text no-delivery resolution', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let db: Pool | undefined
     let app: Pool | undefined
-    let failure: unknown
+    let primaryFailure: unknown
     let rejectAudit = false
     try {
       await admin.query(`CREATE DATABASE "${name}"`)
@@ -134,12 +134,12 @@ describe('migration 253 charged text no-delivery resolution', () => {
       expect(after.settledPoints).toBe(0)
       expect((await db.query(`SELECT count(*)::int AS count FROM creative_point_reversals_v2 WHERE workspace_id=$1 AND original_reservation_id=$2`, [workspaceId, reservation.id])).rows[0]?.count).toBe(1)
       await expect(db.query(`UPDATE generation_jobs SET state='succeeded' WHERE workspace_id=$1 AND id=$2`, [workspaceId, jobId])).rejects.toMatchObject({ code: '23514' })
-    } catch (error) { failure = error; throw error }
+    } catch (error) { primaryFailure = error; throw error }
     finally {
       await withPostgresFixtureCleanup(async () => {
         if (rejectAudit) await db?.query('DROP TRIGGER IF EXISTS reject_no_delivery_audit ON workspace_operation_audit').catch(() => undefined)
         await app?.end(); await db?.end(); await dropDrainedPostgresFixture(admin, name)
-      }, failure, [() => admin.end()])
+      }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)
 })
