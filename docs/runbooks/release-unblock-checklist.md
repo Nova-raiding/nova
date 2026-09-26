@@ -53,6 +53,8 @@ image_edit，最后执行最短 3 秒 video。媒体探针不得自动重跑；�
 `1080P`），不能仅凭应用运行时的 `MODEL_*_MAX_REQUEST_CNY` 额度放行。
 该请求前预算不是 relay 账户的服务端硬额度；执行前仍应核对账户级限额及
 实际定价，生成后以 provider usage/cost 收据结算，不把预估写成实付。
+五模态均执行后，采集器会先按正式生产证据门禁验证请求、额度、回执和恢复原件；
+任一项未通过时只在标准输出标为 `partial`，不占用不可覆盖的正式 evidence 路径。
 生产探针现在还会以相同的模型/视频 Bearer token 只读查询
 `GET /api/usage/token/`，要求两者 `unlimited_quota=false`、有限正剩余额度和
 未过期状态；查询结果进入带 SHA-256 的不可变 artifact，并由发布证据门禁复核。

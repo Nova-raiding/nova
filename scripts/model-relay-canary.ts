@@ -7,6 +7,7 @@ import { createRelayPricingClientFromEnv, type RelayPricingMetadata } from '../p
 import { parseRelayUsage, type RelayUsageRecord } from '../packages/ai/src/relay-usage.js'
 import { retryAfterMilliseconds } from '../packages/ai/src/provider-request.js'
 import { assertRelayUrl, relaySecurityFromEnv } from '../packages/ai/src/relay-security.js'
+import { validateModelRelayEvidence } from '../tests/model-relay-evidence-gate.js'
 
 export type ProbeResult = {
   modality: 'text' | 'image' | 'image_edit' | 'ocr' | 'video'
@@ -205,19 +206,24 @@ export function readRelayErrorRecovery(path: string | undefined): Record<string,
   return value as Record<string, unknown>
 }
 
-/** Persist final evidence only for a production run that covered each required
- * modality exactly once. Partial production probes remain visible as partial
- * stdout results, but cannot occupy the canonical evidence path. */
+/** Keep invalid production probes out of the immutable final evidence path. */
 export function persistRelayCanaryEvidence(input: {
   path?: string
   environment?: string
   modalities: readonly ProbeResult['modality'][]
   evidence: Record<string, unknown>
+  artifactRoot?: string
 }): { evidence: Record<string, unknown>; state: 'partial' | 'complete'; written: boolean; exitCode: 0 | 1 } {
   const required: ProbeResult['modality'][] = ['text', 'image', 'image_edit', 'ocr', 'video']
   const isComplete = input.modalities.length === required.length
     && required.every(modality => input.modalities.filter(item => item === modality).length === 1)
-  const partialProduction = input.environment?.trim() === 'production' && !isComplete
+  const production = input.environment?.trim() === 'production'
+  const partialProduction = production && (!isComplete || !input.artifactRoot
+    || validateModelRelayEvidence(input.evidence, {
+      expectedReleaseId: typeof input.evidence.release_id === 'string' ? input.evidence.release_id : undefined,
+      requireProduction: true,
+      artifactRoot: input.artifactRoot,
+    }).length > 0)
   const evidence = partialProduction ? { ...input.evidence, state: 'partial' } : input.evidence
   const shouldWrite = Boolean(input.path?.trim()) && !partialProduction
   if (shouldWrite) writeFileSync(input.path!.trim(), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
@@ -705,7 +711,7 @@ export async function main() {
           ...(errorRecovery ? { error_recovery: errorRecovery } : {}),
         }
         const evidencePath = process.env.MODEL_RELAY_EVIDENCE_PATH?.trim()
-        const persisted = persistRelayCanaryEvidence({ path: evidencePath, environment: process.env.NODE_ENV, modalities, evidence })
+        const persisted = persistRelayCanaryEvidence({ path: evidencePath, environment: process.env.NODE_ENV, modalities, evidence, artifactRoot })
         console.log(JSON.stringify(persisted.evidence, null, 2))
         if (persisted.exitCode !== 0) process.exitCode = persisted.exitCode
         if (results.some(result => result.state !== 'ready' || result.providerRequestId === undefined || result.usageObserved !== true || result.costObserved !== true)) process.exitCode = 1

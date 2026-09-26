@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
@@ -63,12 +63,57 @@ describe('production model relay contract', () => {
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })
 
-  it('writes the final production evidence path only when all five modalities are requested once', () => {
+  it('does not occupy the final path when all five probes ran but evidence is blocked', () => {
     const directory = mkdtempSync(join(tmpdir(), 'relay-complete-evidence-'))
     const path = join(directory, 'final-evidence.json')
     const evidence = { schema_version: '1', release_id: 'release-1', results: [] }
     try {
-      const persisted = persistRelayCanaryEvidence({ path, environment: 'production', modalities: ['text', 'image', 'image_edit', 'ocr', 'video'], evidence })
+      const persisted = persistRelayCanaryEvidence({ path, environment: 'production', modalities: ['text', 'image', 'image_edit', 'ocr', 'video'], evidence, artifactRoot: directory })
+      expect(persisted).toEqual({ evidence: { ...evidence, state: 'partial' }, state: 'partial', written: false, exitCode: 1 })
+      expect(() => readFileSync(path, 'utf8')).toThrow()
+    } finally { rmSync(directory, { recursive: true, force: true }) }
+  })
+
+  it('writes the final production path after the complete evidence gate passes', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'relay-valid-evidence-'))
+    const path = join(directory, 'final-evidence.json')
+    const releaseId = 'release-1'
+    const relay = 'https://relay.example.test'
+    const now = Date.now()
+    const generatedAt = new Date(now).toISOString()
+    const observedAt = new Date(now - 60_000).toISOString()
+    const failureAt = new Date(now - 120_000).toISOString()
+    const saveReceipt = (name: string, receipt: Record<string, unknown>) => {
+      const body = JSON.stringify(receipt)
+      const target = join(directory, 'relay', name)
+      writeFileSync(target, body)
+      return `artifact://production/relay/${name}#${createHash('sha256').update(body).digest('hex')}`
+    }
+    try {
+      mkdirSync(join(directory, 'relay'))
+      const results = (['text', 'image', 'image_edit', 'ocr', 'video'] as const).map(modality => {
+        const result = { ...completeProbe(modality), state: 'ready' as const }
+        const evidence_ref = saveReceipt(`${modality}.json`, {
+          schema_version: '1', release_id: releaseId, modality, http_status: 200, result,
+          ...(modality === 'video' ? { relay_response: { status: 'completed', output_url: 'https://cdn.example.test/video.mp4' } } : {}),
+        })
+        return { ...result, evidence_ref }
+      })
+      const token_quota = (['model', 'video'] as const).map(credential => {
+        const quota = { credential, observed_at: observedAt, total_granted: 1000, total_used: 200, total_available: 800, expires_at: 0, unlimited_quota: false as const }
+        return { ...quota, evidence_ref: saveReceipt(`token-${credential}.json`, { schema_version: '1', release_id: releaseId, token_quota: quota }) }
+      })
+      const error_recovery = {
+        verified: true, failure_status: 503, failure_observed_at: failureAt, recovered_at: observedAt,
+        failed_request_id: 'req-failed', recovery_request_id: 'req-recovered',
+        evidence_ref: saveReceipt('recovery.json', {
+          schema_version: '1', release_id: releaseId,
+          failure: { release_id: releaseId, observed_at: failureAt, http_status: 503, error_code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', relay_response: { error: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' } }, provider_request_id: 'req-failed', relay, endpoint: '/probe' },
+          recovery: { release_id: releaseId, observed_at: observedAt, http_status: 200, provider_request_id: 'req-recovered', relay, endpoint: '/probe' },
+        }),
+      }
+      const evidence = { schema_version: '1', release_id: releaseId, generated_at: generatedAt, expires_at: new Date(now + 3_600_000).toISOString(), environment: 'production', simulated: false, relay, token_quota, results, error_recovery }
+      const persisted = persistRelayCanaryEvidence({ path, environment: 'production', modalities: ['text', 'image', 'image_edit', 'ocr', 'video'], evidence, artifactRoot: directory })
       expect(persisted).toEqual({ evidence, state: 'complete', written: true, exitCode: 0 })
       expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(evidence)
     } finally { rmSync(directory, { recursive: true, force: true }) }
