@@ -6,7 +6,7 @@
 
 历史快照（2026-09-19）：当时的候选为 `main` / `3e3522ab024102d0b451785928bd71fa89051a87`，101 上候选容器为更旧的 `53721389bf6d3399b264642bc0c5969302ad39e8`。这些 SHA、差异文件数和缺失文件数不代表当前状态，不能直接用于后续 staging 或发布。
 
-当前插件包候选在 `codex/windows-plugin-bundle` 分支；正式发布前从最终审核提交读取完整 Git SHA、`release-metadata.json`、包及镜像摘要，并与目标主机 `/releasez` 身份逐项核对。生产 `/releasez` 若属于旧提交，即使返回 ready，也不能证明当前候选已上线。
+当前工作在 `main` 唯一主工作目录；正式发布前从最终审核提交读取完整 Git SHA、`release-metadata.json`、包及镜像摘要，并与目标主机 `/releasez` 身份逐项核对。生产 `/releasez` 若属于旧提交，即使返回 ready，也不能证明当前候选已上线。
 
 发布前必须把以下字段绑定到同一 `RELEASE_ID`，不得现场修改或复用旧证据：Git SHA、源码归档摘要、镜像摘要、渲染 Compose 摘要、deployment nonce、capability/capacity evidence。
 

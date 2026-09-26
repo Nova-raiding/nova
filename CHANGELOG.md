@@ -22,6 +22,14 @@
 - 修复合并期间丢失的本地插件桥模式 503 门禁（四条连接路由 fail-closed）与部署预检 `--expected-manifest-sha256` 绑定。
 - 注册 `payment-callback-replay` 与 `ecs-ops-auth-mode-gate` 测试入口，消除未收集测试台账漂移。
 
+### 2026-09-26 追加
+
+- 已审批人工公共平台规则激活链：`manual://` 来源、`checks.__public_scope` 服务端印记、`sha256(canonicalJson(checks))` 溯源校验、独立审批与创建人/审批人分离。
+- 平台规则同步状态将已审批人工上传视为 ready（含 staleness）。
+- ops-console 规则中心增加 `activationEligible` 展示与公共草稿评审面板。
+- 未验证公共规则激活保持阻断（57501ee5）。
+- `release-unblock-checklist` 文档澄清（183fc04e）。
+
 ## 0.2.1 - 2026-09-15
 
 以下 Added/Changed/Removed 条目覆盖 2026-09-16 至 2026-09-19 期间累积到本候选版本的变更（`release-metadata.json` 为准）。
