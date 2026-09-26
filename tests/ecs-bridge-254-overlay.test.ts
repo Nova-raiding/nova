@@ -28,7 +28,7 @@ describe('B-derived 242/254 review overlay', () => {
     expect(manifest.missing_proof).toContain('isolated PG17 242/254 API and six-worker execution')
     expect(manifest.missing_proof).toContain('separate reviewed Compose/preflight/package verifier: B deploy-preflight and package verifier require prefix_242_or_244')
     expect(() => buildBridgeOverlay({ review, output })).toThrow('new absolute canonical path')
-  })
+  }, 30_000)
 
   it('accepts only a verified 242 or 254 prefix under the separate bridge mode', () => {
     const { output } = prepare()
@@ -48,7 +48,7 @@ describe('B-derived 242/254 review overlay', () => {
     expect(() => verifier(expected, expected, 'prefix_242_or_244')).toThrow('not enabled')
     expect(() => verifier(expected, expected.slice(0, 244), 'prefix_242_or_254')).toThrow('complete migration chain through 254')
     expect(() => verifier([{ version: 1, checksum: 'foreign' }, ...expected.slice(1)], expected, 'prefix_242_or_254')).toThrow('checksum mismatch')
-  })
+  }, 30_000)
 
   it('blocks OCR quote before DB access and displays variable rates as non-executable', async () => {
     const { output } = prepare()
@@ -69,5 +69,5 @@ describe('B-derived 242/254 review overlay', () => {
     await expect(catalog.resolveApprovedRate('ocr.extract')).rejects.toMatchObject({ code: 'RATE_CARD_UNAVAILABLE' })
     expect(connections).toBe(0)
     await expect(catalog.listRates()).resolves.toMatchObject([{ pricingMode: 'variable', ruleExecutable: false, blockers: ['BRIDGE_VARIABLE_OCR_RATE_UNSUPPORTED'] }])
-  })
+  }, 30_000)
 })

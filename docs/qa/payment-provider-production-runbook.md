@@ -84,7 +84,7 @@
 
 退款提交来源收据产生后、订单仍为 `paid` 且钱包预留已存在时，其 `before` 模式可读取退款来源收据；支付宝最终退款查单已验签为 `REFUND_SUCCESS` 且账务订单关闭后，`after` 模式可读取退款查询来源收据及之前的快照。工具要求同单、同租户、同金额、同交易和退款请求，核对唯一充值与预留流水、没有预留释放，并要求前后流水身份一致及订单从 `paid` 转为 `closed`。输出保留**精确来源收据字节的 SHA-256**，只将绑定文件的版本信息写作 `claimed_release_id` / `claimed_deployment_nonce`，并标记 `source_provenance_verified=false`、`release_binding_verified=false`、`final_evidence=false`；CLI 同时显示 `REVIEW_ONLY`。它既不发起退款，也不签发六阶段最终支付证据。
 
-正式运行前仍需解决两项阻断。第一，网关把来源收据写在 UID 100、0700 的私有目录，采证进程不能直接读取；必须设计可审计的受保护转移，核对原文件的所有者、权限、路径、精确哈希，并将副本交给独立采证身份，不能把只读数据库凭据交给网关 UID。第二，当前网关收据没有 release ID 和 deployment nonce；绑定文件由操作者提供，不能证明收据来自当前候选。需让网关从已验证的部署身份记录这两个值，并与候选镜像、受保护转移记录交叉核对。两项都通过且配置了生产只读 RLS 角色后，才能将该工具的快照作为最终签发器的输入。
+正式运行前仍需解决两项阻断。第一，网关把来源收据写在 UID 100、0700 的私有目录，采证进程不能直接读取；必须设计可审计的受保护转移，核对原文件的所有者、权限、路径、精确哈希，并将副本交给独立采证身份，不能把只读数据库凭据交给网关 UID。第二，当前网关收据没有 release ID 和 deployment nonce；绑定文件由操作者提供，不能证明收据来自当前候选。需让网关从已验证的部署身份记录这两个值，并与候选镜像、受保护转移记录交叉核对。工具还需在真实数据库中核对两张账表的适用 SELECT RLS policy 各只有一条，且都是原始的 `workspace_id = current_setting('app.workspace_id', true)` 策略；代码中的条件查询和测试桩不能替代生产角色与策略验证。两项都通过且配置了生产只读 RLS 角色后，才能将该工具的快照作为最终签发器的输入。
 
 当前部署契约核对：`infra/local/docker-compose.ecs-pilot-release.yml` 只向 `api` 和 `api-replica` 注入 release 四元组，`payment-gateway` 只有不可变镜像引用；`infra/scripts/validate-ecs-compose-release.rb` 也只验证 API 两个服务的 release 环境。`DEPLOYMENT_NONCE` 由 `deploy-preflight-ecs.sh`、`deploy-verified-ecs-compose.sh` 的受保护执行环境使用，没有出现在任何 Compose 服务环境。已验证的候选身份文件含 release ID、Git SHA 与源码摘要，但不含 deployment nonce。因此网关当前拿不到同时经过部署验证的 release ID 和 nonce。不能直接在网关收据里加入可由普通环境任意设置的这两个字段，也不能用事后填写的绑定文件补足来源证明。需要先在候选身份校验、渲染 Compose、部署前验证和网关运行时之间定义并测试同一份受保护身份契约，再设计转移工具；此前该退款快照保持 `REVIEW_ONLY`。
 

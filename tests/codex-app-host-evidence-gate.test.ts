@@ -237,6 +237,12 @@ describe('ChatGPT Desktop host evidence gate', () => {
     ]))
   })
 
+  it('rejects unknown scenario IDs even when all required scenarios are present', () => {
+    const withUnknown = structuredClone(evidence)
+    withUnknown.scenarios.push({ id: 'merchant_everything_passed', state: 'passed', evidence_ref: artifact('unknown'), console_errors: 0, network_errors: 0 })
+    expect(validateCodexAppHostEvidence(withUnknown)).toContain('unknown scenario: merchant_everything_passed')
+  })
+
   it.each(['codex-app-macos-arm64', 'chatgpt-codex-app', 'chatgpt-ci-arm64', 'chrome-desktop', 'electron-shell', 'ios-app', 'arbitrary-external-host'])('rejects a non-ChatGPT host label: %s', host => {
     expect(validateCodexAppHostEvidence({ ...evidence, host })).toContain('host must be exactly chatgpt for the real ChatGPT Desktop app')
   })

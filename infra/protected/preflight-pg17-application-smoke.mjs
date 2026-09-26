@@ -38,6 +38,30 @@ function protectedDirectory(path) {
     cursor = dirname(cursor)
   }
 }
+export function createFailureRecord({ capture, captureBytes, imageInventoryBytes, stage, capturedAt = new Date().toISOString() }) {
+  // Persist only a bounded failure classification and identity hashes. Never
+  // copy child stdout/stderr, exception messages, env values, or credentials.
+  const allowedStages = new Set(['topology_preflight', 'worker_probe', 'post_probe_topology'])
+  requireValue(allowedStages.has(stage), 'failure record stage invalid')
+  const record = {
+    schema_version: 'pg17-worker-restore-capture/1', status: 'incomplete', final_production_evidence: false,
+    release_id: RELEASE.test(capture?.release_id ?? '') ? capture.release_id : null,
+    release_git_sha: /^[a-f0-9]{40}$/u.test(capture?.release_git_sha ?? '') ? capture.release_git_sha : null,
+    image_set_digest: /^sha256:[a-f0-9]{64}$/u.test(capture?.image_set_digest ?? '') ? capture.image_set_digest : null,
+    manifest_sha256: HEX.test(capture?.manifest_sha256 ?? '') ? capture.manifest_sha256 : null,
+    deployment_nonce_sha256: HEX.test(capture?.deployment_nonce_sha256 ?? '') ? capture.deployment_nonce_sha256 : null,
+    restore_capture_sha256: createHash('sha256').update(captureBytes).digest('hex'),
+    image_inventory_sha256: createHash('sha256').update(imageInventoryBytes).digest('hex'),
+    failure: { stage, code: 'probe_failed' }, captured_at: capturedAt,
+  }
+  return record
+}
+function writeFailureRecord(output, input) {
+  const record = createFailureRecord(input)
+  const serialized = `${JSON.stringify(record, null, 2)}\n`
+  requireValue(Buffer.byteLength(serialized) <= 8192, 'failure record exceeds size limit')
+  writeFileSync(output, serialized, { flag: 'wx', mode: 0o600 })
+}
 export function parseSmokeEnv(source) {
   const values = {}
   for (const line of source.split(/\r?\n/u)) {
@@ -206,24 +230,35 @@ function main(args) {
   const inputs = {}
   for (let i = 0; i < args.length; i += 2) { requireValue(names.includes(args[i]) && !Object.hasOwn(inputs, args[i]) && args[i + 1], 'unknown or duplicate argument'); inputs[args[i]] = args[i + 1] }
   requireValue(names.every(name => inputs[name]), 'missing preflight argument')
-  const capture = JSON.parse(protectedFile(inputs['--capture']).toString())
+  const captureBytes = protectedFile(inputs['--capture'])
+  const capture = JSON.parse(captureBytes.toString())
   const imageInventoryBytes = protectedFile(inputs['--images'])
   const images = JSON.parse(imageInventoryBytes.toString())
   const roles = JSON.parse(protectedFile(inputs['--roles']).toString())
   const apiEnv = parseSmokeEnv(protectedFile(inputs['--api-env']).toString())
   const workerEnv = parseSmokeEnv(protectedFile(inputs['--worker-env']).toString())
-  const network = dockerInspect('network', capture.network_id)
-  const postgres = dockerInspect('container', capture.container_id)
-  const redis = dockerInspect('container', inputs['--redis-id'])
-  const errors = validatePg17SmokeTopology({ capture, network, postgres, redis, images, apiEnv, workerEnv, roles })
-  requireValue(errors.length === 0, errors.join('; '))
   const output = inputs['--worker-output']
   requireValue(output === resolve(output) && dirname(output) === RESTORE_ROOT, 'worker output must be in protected restore root')
   protectedDirectory(RESTORE_ROOT)
   try { lstatSync(output); throw new Error('worker output already exists') }
   catch (error) { if (error?.code !== 'ENOENT') throw error }
-  const probe = runWorkerProbe({ workerEnvPath: inputs['--worker-env'], images, network, capture, workspaceId: workerEnv.RESTORE_SMOKE_WORKSPACE_ID })
-  const after = verifyPostProbeTopology({ capture, images, apiEnv, workerEnv, roles, redisId: inputs['--redis-id'], containerName: probe.containerName, before: { network, postgres, redis } })
+  let stage = 'topology_preflight'
+  let network, postgres, redis, probe, after
+  try {
+    network = dockerInspect('network', capture.network_id)
+    postgres = dockerInspect('container', capture.container_id)
+    redis = dockerInspect('container', inputs['--redis-id'])
+    const errors = validatePg17SmokeTopology({ capture, network, postgres, redis, images, apiEnv, workerEnv, roles })
+    requireValue(errors.length === 0, errors.join('; '))
+    stage = 'worker_probe'
+    probe = runWorkerProbe({ workerEnvPath: inputs['--worker-env'], images, network, capture, workspaceId: workerEnv.RESTORE_SMOKE_WORKSPACE_ID })
+    stage = 'post_probe_topology'
+    after = verifyPostProbeTopology({ capture, images, apiEnv, workerEnv, roles, redisId: inputs['--redis-id'], containerName: probe.containerName, before: { network, postgres, redis } })
+  } catch (error) {
+    try { writeFailureRecord(output, { capture, captureBytes, imageInventoryBytes, stage }) }
+    catch { /* Keep the original NO-GO; never replace it with a record-write error. */ }
+    throw error
+  }
   writeFileSync(output, `${JSON.stringify({ schema_version: 'pg17-worker-restore-capture/1', status: 'incomplete', final_production_evidence: false, release_id: capture.release_id, release_git_sha: capture.release_git_sha, image_set_digest: capture.image_set_digest, manifest_sha256: capture.manifest_sha256, deployment_nonce_sha256: capture.deployment_nonce_sha256, restore_capture_sha256: createHash('sha256').update(protectedFile(inputs['--capture'])).digest('hex'), image_inventory_sha256: createHash('sha256').update(imageInventoryBytes).digest('hex'), restore_container_id: after.postgres.Id, redis_container_id: after.redis.Id, network_id: after.network.Id, worker_image_reference: images.worker, worker_image_id: images.worker_id, worker_container_name: probe.containerName, worker_probe: probe.observation, captured_at: new Date().toISOString() }, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
   // The worker probe is only one raw application observation. API, Desktop,
   // data integrity and independent attestation remain separate hard gates.

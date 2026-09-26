@@ -6817,7 +6817,7 @@ type EvidenceReadiness = {
 export function validateCapacityEvidenceRuntime(document: unknown, options: { expectedReleaseId?: string; now?: Date } = {}): string[] {
   const errors: string[] = []
   const isIsoInstant = (value: unknown): value is string => typeof value === 'string'
-    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u.test(value)
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/u.test(value)
     && Number.isFinite(Date.parse(value))
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['capacity evidence must be a JSON object']
   const value = document as Record<string, unknown>
@@ -6831,7 +6831,7 @@ export function validateCapacityEvidenceRuntime(document: unknown, options: { ex
     ])
     const unsupportedFields = Object.keys(value).filter(field => !noLoadAllowedFields.has(field)).sort()
     if (unsupportedFields.length) errors.push(`no_load evidence contains unsupported fields: ${unsupportedFields.join(', ')}`)
-    for (const field of ['software_version', 'config_version', 'data_version', 'target_url'] as const) if (typeof value[field] !== 'string' || !value[field].trim()) errors.push(`${field} is required for no_load evidence`)
+    for (const field of ['release_id', 'software_version', 'config_version', 'data_version', 'target_url'] as const) if (typeof value[field] !== 'string' || !value[field].trim()) errors.push(`${field} is required for no_load evidence`)
     if (value.status !== 'not_performed') errors.push('status must be not_performed for no_load evidence')
     if (value.environment !== 'production') errors.push('environment must be production for no_load evidence')
     if (value.cloud_gate !== false) errors.push('cloud_gate must be false for no_load evidence')
@@ -6844,11 +6844,15 @@ export function validateCapacityEvidenceRuntime(document: unknown, options: { ex
     } catch { errors.push('target_url must be a valid URL') }
     for (const field of ['started_at', 'ended_at'] as const) if (!isIsoInstant(value[field])) errors.push(`${field} must be an ISO instant`)
     if (isIsoInstant(value.started_at) && isIsoInstant(value.ended_at) && Date.parse(value.ended_at) < Date.parse(value.started_at)) errors.push('ended_at must not be before started_at')
+    const now = (options.now ?? new Date()).getTime()
+    if (isIsoInstant(value.ended_at) && Date.parse(value.ended_at) > now + 300_000) errors.push('no_load declaration must not be future dated')
     const signOff = value.sign_off
     if (signOff && typeof signOff === 'object' && !Array.isArray(signOff)) {
       const signOffValue = signOff as Record<string, unknown>
       const unsupportedSignOffFields = Object.keys(signOffValue).filter(field => !['verified_by', 'verified_at'].includes(field)).sort()
       if (unsupportedSignOffFields.length) errors.push(`no_load sign_off contains unsupported fields: ${unsupportedSignOffFields.join(', ')}`)
+      if (typeof signOffValue.verified_by !== 'string' || !signOffValue.verified_by.trim() || !isIsoInstant(signOffValue.verified_at)) errors.push('sign_off is incomplete')
+      else if (isIsoInstant(value.started_at) && isIsoInstant(value.ended_at) && (Date.parse(signOffValue.verified_at) < Date.parse(value.started_at) || Date.parse(signOffValue.verified_at) > Date.parse(value.ended_at))) errors.push('sign_off.verified_at must fall within the declaration interval')
     }
   } else {
     if (value.status !== 'pass') errors.push('status must be pass')

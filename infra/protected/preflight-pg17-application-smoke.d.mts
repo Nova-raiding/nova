@@ -1,4 +1,5 @@
 export function parseSmokeEnv(source: string): Record<string, string>
+export function createFailureRecord(input: { capture: Record<string, any>; captureBytes: Buffer; imageInventoryBytes: Buffer; stage: string; capturedAt?: string }): Record<string, any>
 export function validateSmokeImageInventory(images: Record<string, any>, capture: Record<string, any>): void
 export function validateWorkerRestoreSmokeResult(result: Record<string, any>, capture: Record<string, any>, workspaceId: string): void
 export function ownsWorkerProbeContainer(container: Record<string, any>, ownership: { containerName: string; nonce: string; imageId: string; network: Record<string, any> }): boolean

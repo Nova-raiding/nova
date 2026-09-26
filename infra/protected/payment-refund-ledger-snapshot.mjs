@@ -62,7 +62,14 @@ export async function readRefundLedgerSnapshot(client, binding, phase) {
       EXISTS (SELECT 1 FROM pg_auth_members WHERE member = r.oid) AS role_membership,
       has_table_privilege(current_user, 'billing_orders', 'INSERT') OR has_table_privilege(current_user, 'billing_orders', 'UPDATE') OR has_table_privilege(current_user, 'billing_orders', 'DELETE') OR has_table_privilege(current_user, 'billing_orders', 'TRUNCATE') OR
       has_table_privilege(current_user, 'billing_transactions', 'INSERT') OR has_table_privilege(current_user, 'billing_transactions', 'UPDATE') OR has_table_privilege(current_user, 'billing_transactions', 'DELETE') OR has_table_privilege(current_user, 'billing_transactions', 'TRUNCATE') AS can_mutate,
-      (SELECT bool_and(relrowsecurity AND relforcerowsecurity) FROM pg_class WHERE oid IN ('billing_orders'::regclass, 'billing_transactions'::regclass)) AS forced_rls
+      (SELECT bool_and(c.relrowsecurity AND c.relforcerowsecurity AND c.relowner <> r.oid AND
+        (SELECT count(*) = 1 AND bool_and(
+          p.polname = c.relname || '_workspace_isolation' AND p.polpermissive
+          AND p.polcmd = '*' AND p.polroles = ARRAY[0]::oid[]
+          AND pg_get_expr(p.polqual, p.polrelid) = '(workspace_id = current_setting(''app.workspace_id''::text, true))'
+        ) FROM pg_policy p WHERE p.polrelid = c.oid AND p.polcmd IN ('r', '*')
+          AND (0 = ANY(p.polroles) OR r.oid = ANY(p.polroles)))
+      ) FROM pg_class c WHERE c.oid IN ('billing_orders'::regclass, 'billing_transactions'::regclass)) AS forced_rls
       FROM pg_roles r WHERE r.rolname = current_user`)).rows[0]
     if (!guard || guard.role_name !== 'payment_evidence_reader' || guard.read_only !== 'on' || guard.row_security !== 'on' || guard.rolsuper || guard.rolbypassrls || guard.rolcreaterole || guard.rolcreatedb || guard.rolreplication || guard.role_membership || guard.can_mutate || guard.forced_rls !== true) throw new Error('dedicated read-only RLS evidence role is not verified')
     await client.query("SELECT set_config('app.workspace_id', $1, true)", [binding.workspace_id])
@@ -84,7 +91,7 @@ export function validateRefundSnapshotPair(before, after, binding) {
   for (const snapshot of [before, after]) {
     if (snapshot?.claimed_release_id !== binding.release_id || snapshot.claimed_deployment_nonce !== binding.deployment_nonce || snapshot.release_binding_verified !== false || snapshot.source_provenance_verified !== false || snapshot.final_evidence !== false || !hex64(snapshot.source_receipt_sha256) || snapshot.order_id_sha256 !== sha256(binding.order_id) || snapshot.workspace_id_sha256 !== sha256(binding.workspace_id) || snapshot.provider_trade_id_sha256 !== sha256(binding.provider_trade_id) || snapshot.refund_request_id_sha256 !== sha256(binding.refund_request_id) || snapshot.reservation_key_sha256 !== sha256(binding.reservation_key) || snapshot.amount_fen !== binding.amount_fen || snapshot.release_count !== 0 || !hex64(snapshot.recharge_transaction_sha256) || !hex64(snapshot.reservation_transaction_sha256) || !identifier(snapshot.source_request_id) || !Number.isFinite(Date.parse(snapshot.observed_at)) || !Number.isFinite(Date.parse(snapshot.source_observed_at))) throw new Error('refund snapshot binding or ledger facts are incomplete')
   }
-  if (before.phase !== 'before' || before.order_state !== 'paid' || after.phase !== 'after' || after.order_state !== 'closed' || before.recharge_transaction_sha256 !== after.recharge_transaction_sha256 || before.reservation_transaction_sha256 !== after.reservation_transaction_sha256 || before.source_request_id === after.source_request_id || Date.parse(before.source_observed_at) > Date.parse(before.observed_at) || Date.parse(after.source_observed_at) <= Date.parse(before.observed_at) || Date.parse(after.source_observed_at) > Date.parse(after.observed_at)) throw new Error('refund snapshots do not prove one reserved wallet debit and closed order')
+  if (before.phase !== 'before' || before.order_state !== 'paid' || before.source_operation !== 'refund' || after.phase !== 'after' || after.order_state !== 'closed' || after.source_operation !== 'refund_query' || before.recharge_transaction_sha256 !== after.recharge_transaction_sha256 || before.reservation_transaction_sha256 !== after.reservation_transaction_sha256 || before.source_request_id === after.source_request_id || Date.parse(before.source_observed_at) > Date.parse(before.observed_at) || Date.parse(after.source_observed_at) <= Date.parse(before.observed_at) || Date.parse(after.source_observed_at) > Date.parse(after.observed_at)) throw new Error('refund snapshots do not prove one reserved wallet debit and closed order')
   return true
 }
 

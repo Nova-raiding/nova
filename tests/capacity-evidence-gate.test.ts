@@ -21,6 +21,7 @@ describe('capacity evidence gate', () => {
     const declaration = { ...value, expires_at: '2026-09-23T01:00:00Z' }
     const options = { expectedReleaseId: 'release-1', expectedProfile: 'no_load' as const, now: new Date('2026-09-22T02:00:00Z') }
     expect(validateCapacityEvidence(declaration, options)).toEqual([])
+    expect(validateCapacityEvidence({ ...declaration, started_at: '2026-09-22T01:00:00+01:00', ended_at: '2026-09-22T02:00:00+01:00', sign_off: { verified_by: 'owner', verified_at: '2026-09-22T02:00:00+01:00' }, expires_at: '2026-09-24T01:00:00+01:00' }, options)).toEqual([])
     expect(validateCapacityEvidence(declaration, { ...options, expectedProfile: undefined })).toContain('no_load evidence requires explicit expected profile no_load')
     for (const mutation of [
       { release_id: 'different-release' },

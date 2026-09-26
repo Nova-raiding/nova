@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { cleanupWorkerProbeContainer, parseSmokeEnv, runWorkerProbe, validatePg17SmokeTopology, validatePostProbeTopology, validateSmokeImageInventory, validateWorkerRestoreSmokeResult } from '../infra/protected/preflight-pg17-application-smoke.mjs'
+import { cleanupWorkerProbeContainer, createFailureRecord, parseSmokeEnv, runWorkerProbe, validatePg17SmokeTopology, validatePostProbeTopology, validateSmokeImageInventory, validateWorkerRestoreSmokeResult } from '../infra/protected/preflight-pg17-application-smoke.mjs'
 
 const h = (char: string) => char.repeat(64)
 const artifactKeys = ['clamav', 'merchant-api', 'merchant-ops-ui', 'merchant-ui', 'merchant-worker', 'payment-gateway', 'pilot-gateway', 'postgres-migration']
@@ -23,6 +23,13 @@ const role = (name: string) => ({ name, rolcanlogin: true, rolsuper: false, rolc
 const input = () => ({ capture, network, postgres, redis, images, apiEnv, workerEnv, roles: [role('restore_app'), role('restore_ops')] })
 
 describe('PG17 application smoke read-only preflight', () => {
+  it('records bounded, redacted failure evidence that can never be final production evidence', () => {
+    const record = createFailureRecord({ capture, captureBytes: Buffer.from('capture'), imageInventoryBytes: Buffer.from('inventory'), stage: 'worker_probe', capturedAt: '2026-09-26T00:00:00.000Z' })
+    expect(record).toMatchObject({ schema_version: 'pg17-worker-restore-capture/1', status: 'incomplete', final_production_evidence: false, failure: { stage: 'worker_probe', code: 'probe_failed' } })
+    expect(JSON.stringify(record)).not.toMatch(/stdout|stderr|DATABASE_URL|password|secret|credential|token/iu)
+    expect(JSON.stringify(record).length).toBeLessThan(8192)
+    expect(() => createFailureRecord({ capture, captureBytes: Buffer.from('x'), imageInventoryBytes: Buffer.from('y'), stage: 'invalid' })).toThrow(/stage invalid/u)
+  })
   it('allows only a structurally safe topology to attempt the separate worker probe', () => {
     expect(validatePg17SmokeTopology(input())).toEqual([])
   })

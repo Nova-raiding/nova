@@ -181,6 +181,11 @@ describe('production readiness fail-closed', () => {
       expires_at: '2026-09-23T01:00:00Z',
     }
     expect(validateCapacityEvidenceRuntime(noLoad, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toEqual([])
+    const offsetTimestamps = { ...noLoad, started_at: '2026-09-22T01:00:00+01:00', ended_at: '2026-09-22T02:00:00+01:00', sign_off: { verified_by: 'owner', verified_at: '2026-09-22T02:00:00+01:00' }, expires_at: '2026-09-24T01:00:00+01:00' }
+    expect(validateCapacityEvidenceRuntime(offsetTimestamps, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toEqual([])
+    expect(validateCapacityEvidenceRuntime({ ...noLoad, release_id: '' }, { now: new Date('2026-09-22T02:00:00Z') })).toContain('release_id is required for no_load evidence')
+    expect(validateCapacityEvidenceRuntime({ ...noLoad, sign_off: { ...noLoad.sign_off, verified_at: '2026-09-22T01:01:00Z' } }, { now: new Date('2026-09-22T02:00:00Z') })).toContain('sign_off.verified_at must fall within the declaration interval')
+    expect(validateCapacityEvidenceRuntime({ ...noLoad, ended_at: '2026-09-22T03:00:00Z' }, { now: new Date('2026-09-22T02:00:00Z') })).toContain('no_load declaration must not be future dated')
     expect(validateCapacityEvidenceRuntime({ ...noLoad, release_id: 'release-other' }, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toContain('release_id must match RELEASE_ID')
     expect(validateCapacityEvidenceRuntime({ ...noLoad, status: 'pass' }, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toContain('status must be not_performed for no_load evidence')
   })

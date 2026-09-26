@@ -6,9 +6,9 @@ import { readRefundLedgerSnapshot, validateRefundBinding, validateRefundSnapshot
 const hash = value => createHash('sha256').update(value).digest('hex')
 const binding = { release_id: 'release-20260926', deployment_nonce: 'abcdefghijklmnopqrstuv', order_id: 'order-123', workspace_id: 'ws-test', provider_trade_id: 'trade-123', refund_request_id: 'refund-123', reservation_key: 'recharge-refund:order-123:1', amount_fen: 100 }
 const source = (operation, requestId, observedAt) => ({ schema_version: 'payment-gateway-operation-source-receipt.v1', source: 'alipay_verified_response', operation, request_id: requestId, observed_at: observedAt, provider_response_signature_verified: true, raw_body_stored: false, final_evidence: false, order_id_sha256: hash(binding.order_id), workspace_id_sha256: hash(binding.workspace_id), provider_trade_id_sha256: hash(binding.provider_trade_id), provider_response_reference_sha256: hash(binding.provider_trade_id), refund_request_id_sha256: hash(binding.refund_request_id), amount_fen: 100, outcome: operation === 'refund' ? 'processing' : 'succeeded', ...(operation === 'refund_query' ? { provider_native_status: 'REFUND_SUCCESS', signed_response_sha256: hash('signed-response'), ledger_state_observed: false } : {}) })
-const snapshot = (phase, requestId, sourceAt, observedAt) => ({ phase, claimed_release_id: binding.release_id, claimed_deployment_nonce: binding.deployment_nonce, release_binding_verified: false, source_provenance_verified: false, final_evidence: false, source_receipt_sha256: hash('source-receipt'), order_id_sha256: hash(binding.order_id), workspace_id_sha256: hash(binding.workspace_id), provider_trade_id_sha256: hash(binding.provider_trade_id), refund_request_id_sha256: hash(binding.refund_request_id), reservation_key_sha256: hash(binding.reservation_key), amount_fen: 100, release_count: 0, recharge_transaction_sha256: hash('recharge-row'), reservation_transaction_sha256: hash('reservation-row'), source_request_id: requestId, source_observed_at: sourceAt, observed_at: observedAt, order_state: phase === 'before' ? 'paid' : 'closed' })
+const snapshot = (phase, requestId, sourceAt, observedAt) => ({ phase, source_operation: phase === 'before' ? 'refund' : 'refund_query', claimed_release_id: binding.release_id, claimed_deployment_nonce: binding.deployment_nonce, release_binding_verified: false, source_provenance_verified: false, final_evidence: false, source_receipt_sha256: hash('source-receipt'), order_id_sha256: hash(binding.order_id), workspace_id_sha256: hash(binding.workspace_id), provider_trade_id_sha256: hash(binding.provider_trade_id), refund_request_id_sha256: hash(binding.refund_request_id), reservation_key_sha256: hash(binding.reservation_key), amount_fen: 100, release_count: 0, recharge_transaction_sha256: hash('recharge-row'), reservation_transaction_sha256: hash('reservation-row'), source_request_id: requestId, source_observed_at: sourceAt, observed_at: observedAt, order_state: phase === 'before' ? 'paid' : 'closed' })
 
-test('fixed refund binding and real signed source receipts are required', () => {
+test('fixed refund binding and source-receipt contract shape are required (synthetic fixtures)', () => {
   assert.deepEqual(validateRefundBinding(binding), binding)
   assert.equal(validateRefundSourceReceipt(source('refund', 'request-1', '2026-09-26T01:00:00Z'), binding, 'before').operation, 'refund')
   assert.equal(validateRefundSourceReceipt(source('refund_query', 'request-2', '2026-09-26T01:10:00Z'), binding, 'after').operation, 'refund_query')
@@ -29,6 +29,7 @@ test('refund pair requires same wallet reservation and paid to closed transition
     { source_observed_at: '2026-09-26T01:00:30Z' }, { source_observed_at: '2026-09-26T01:12:00Z' },
     { workspace_id_sha256: hash('other-workspace') }, { refund_request_id_sha256: hash('other-refund') },
     { release_binding_verified: true }, { source_receipt_sha256: 'missing' },
+    { source_operation: 'provider_query' },
   ]) assert.throws(() => validateRefundSnapshotPair(before, { ...after, ...changed }, binding))
 })
 
@@ -54,6 +55,10 @@ test('read-only RLS role captures bounded before and after facts', async () => {
     const captured = await readRefundLedgerSnapshot(client, binding, phase)
     assert.equal(captured.order_state, phase === 'before' ? 'paid' : 'closed')
     assert.equal(captured.reservation_transaction_sha256, hash('reservation-row'))
+    const policyGuardSql = client.calls.find(item => item.sql.startsWith('SELECT current_user'))?.sql
+    assert.match(policyGuardSql, /count\(\*\) = 1 AND bool_and/u)
+    assert.match(policyGuardSql, /p\.polroles = ARRAY\[0\]::oid\[\]/u)
+    assert.match(policyGuardSql, /pg_get_expr\(p\.polqual, p\.polrelid\) =/u)
     assert.deepEqual(client.calls.find(item => item.sql.includes("set_config('app.workspace_id'"))?.params, [binding.workspace_id])
     assert.equal(client.calls.at(-1).sql, 'COMMIT')
     assert.equal(client.calls.every(item => !/\b(?:INSERT|UPDATE|DELETE|TRUNCATE)\s+(?:INTO\s+)?(?:billing_orders|billing_transactions)\b/iu.test(item.sql)), true)
@@ -65,6 +70,7 @@ test('snapshot rejects writer role, mismatched money and released reservation', 
   await assert.rejects(readRefundLedgerSnapshot(writer, binding, 'before'), /dedicated read-only RLS/)
   assert.equal(writer.calls.at(-1).sql, 'ROLLBACK')
   assert.equal(writer.calls.some(item => item.sql.includes('FROM billing_orders WHERE')), false)
+  await assert.rejects(readRefundLedgerSnapshot(clientFor('before', { guard: { ...guard, forced_rls: false } }), binding, 'before'), /dedicated read-only RLS/)
   for (const change of [
     { order: [{ id: binding.order_id, workspace_id: binding.workspace_id, state: 'paid', payment_mode: 'fixture', channel: 'alipay', amount_fen: '100', provider_trade_id: binding.provider_trade_id }] },
     { reservation: [{ id: 'reservation-row', workspace_id: binding.workspace_id, order_id: binding.reservation_key, type: 'debit', amount_fen: '101' }] },

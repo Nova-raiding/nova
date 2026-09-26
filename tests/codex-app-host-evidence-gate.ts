@@ -166,6 +166,7 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
   const usedArtifacts = new Set<string>(value.candidate_route?.release_probe_evidence_ref ? [value.candidate_route.release_probe_evidence_ref] : [])
   for (const scenario of value.scenarios) {
     if (!scenario || typeof scenario !== 'object' || !nonEmpty(scenario.id)) { errors.push('each scenario must have an id'); continue }
+    if (!(REQUIRED_SCENARIOS as readonly string[]).includes(scenario.id)) errors.push(`unknown scenario: ${scenario.id}`)
     if (seen.has(scenario.id)) errors.push(`duplicate scenario: ${scenario.id}`)
     seen.add(scenario.id)
     if (scenario.state !== 'passed') errors.push(`${scenario.id}.state must be passed`)
