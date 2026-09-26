@@ -352,6 +352,7 @@ export function refundQueryResponseMatchesRequest(response, orderId, refundReque
   }
   const returnedAmountFen = alipayAmountFen(response.refund_amount)
   if (response.refund_amount !== undefined && returnedAmountFen === undefined) return false
+  if (normalizeRefundQueryState(response) === 'succeeded' && returnedAmountFen === undefined) return false
   if (returnedAmountFen !== undefined && returnedAmountFen !== amountFen) return false
   return true
 }
@@ -365,8 +366,8 @@ export function normalizeRefundSubmissionState(response) {
 
 export function normalizeRefundQueryState(response) {
   if (!response || typeof response !== 'object' || Array.isArray(response)) return 'unknown'
-  const status = String(response.refund_status ?? response.status ?? '').trim().toUpperCase()
-  if (['REFUND_SUCCESS', 'SUCCESS', 'SUCCEEDED', 'COMPLETED'].includes(status)) return 'succeeded'
+  const status = String(response.refund_status ?? '').trim().toUpperCase()
+  if (String(response.code ?? '') === '10000' && status === 'REFUND_SUCCESS') return 'succeeded'
   if (['PROCESSING', 'PENDING', 'REFUND_PROCESSING', 'WAIT', 'WAITING'].includes(status)) return 'pending'
   // Alipay documents only REFUND_SUCCESS as final success. A successful query
   // response without that field may mean the refund was not received, failed,
