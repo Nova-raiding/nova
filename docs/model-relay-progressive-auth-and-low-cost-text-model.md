@@ -34,10 +34,16 @@ MODEL_RELAY_TEXT_PRICING_GROUP=VIP
 
 ## 官方鉴权边界
 
-- 第三方平台店铺授权仅在启用相应官方平台 API 集成时使用平台 OAuth 页面；ChatGPT 插件采用本地直装 stdio，Store Nova 用户通过本地登录流程以账号密码绑定 workspace，不使用 ChatGPT 远程 OAuth。
+- 第三方平台店铺授权仅在启用相应官方平台 API 集成时使用平台 OAuth 页面；ChatGPT 插件采用本地直装 stdio，不以 ChatGPT OAuth 或插件市场作为上线前提；Store Nova 用户通过本地登录流程以账号密码绑定 workspace，不使用 ChatGPT 远程 OAuth。
 - Store Nova 业务模型调用只能走配置的 HTTPS 中转站，禁止直连供应商、借用 ChatGPT 宿主模型结果，或让商家填写模型中转地址和 API Key。
 - 低成本模型只是服务端路由选择，不改变用户身份、租户隔离、官方授权和账务规则。
 - 生产环境缺少 relay 地址、allowlist、服务端 key、模型、usage/cost evidence 任一项时，返回明确阻断；不得用本地规则、fixture 或未计量结果伪造内容版本。
+
+## 中转管理会话与用量采集
+
+模型调用密钥不能代替中转站的用户管理凭据。创建有限额度、限定模型的候选密钥以及读取真实用量时，先通过受保护的管理账号核对身份和权限；不得把刷新 Cookie 放入命令行、日志或插件包。
+
+多 API 副本共用管理会话时，`MODEL_RELAY_LOG_SESSION_FILE` 必须位于同一路径、同一 UID 可访问的持久 POSIX 文件系统：父目录归该 UID 所有且为 0700，文件为 0600；当前 101 的 0755 目录不满足条件。刷新前用独占锁防止两个副本同时轮换，成功后将新会话写入 0600 临时文件并 fsync，再原子替换、fsync 目录。网络、响应或落盘结果不确定时保留锁并停止自动重试，必须人工核对上游会话与本地文件。远端 Cookie 轮换与本地落盘不可能成为同一事务，不能把这套防重机制称为自动恢复保证。
 
 ## 变更与验收
 

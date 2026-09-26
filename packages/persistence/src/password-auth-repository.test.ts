@@ -16,6 +16,19 @@ describe('password authentication', () => {
     await expect(auth.bootstrapFirstPlatformAdmin({ login: 'first@example.com', passwordHash: otherHash })).rejects.toThrow('PLATFORM_ADMIN_BOOTSTRAP_CONFLICT')
     await expect(new MemoryPasswordAuthRepository().bootstrapFirstPlatformAdmin({ login: 'broken@example.com', passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$invalid$invalid' })).rejects.toThrow('PLATFORM_ACCOUNT_PASSWORD_HASH_INVALID')
   })
+
+  it('requires an explicit operator bootstrap intent and binds only the same merchant identity once', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    const input = { login: 'first-workspace@example.com', password: 'FirstWorkspace1234!', enterpriseName: '测试企业', contactName: '管理员', workspaceIds: [], actorId: 'platform-operator', reason: '受保护的首次工作区引导' }
+    await expect(auth.createMerchantAccount(input)).rejects.toMatchObject({ code: 'AUTH_ACCOUNT_PROVISIONING_INVALID' })
+    const account = await auth.createMerchantAccount({ ...input, bootstrapWorkspace: true })
+    expect(account.workspaceIds).toEqual([])
+    await expect(auth.bindBootstrappedWorkspace({ login: input.login, identityId: 'wrong-identity', workspaceId: 'ws_first' })).rejects.toMatchObject({ code: 'AUTH_BOOTSTRAP_ACCOUNT_CHANGED' })
+    const bound = await auth.bindBootstrappedWorkspace({ login: input.login, identityId: account.identityId, workspaceId: 'ws_first' })
+    expect(bound.workspaceIds).toEqual(['ws_first'])
+    expect((await auth.bindBootstrappedWorkspace({ login: input.login, identityId: account.identityId, workspaceId: 'ws_first' })).revision).toBe(bound.revision)
+    await expect(auth.bindBootstrappedWorkspace({ login: input.login, identityId: account.identityId, workspaceId: 'ws_other' })).rejects.toMatchObject({ code: 'AUTH_BOOTSTRAP_ACCOUNT_CHANGED' })
+  })
   it('requires eight characters with letters and numbers', async () => {
     const auth = new MemoryPasswordAuthRepository()
     await expect(auth.register({ login: 'short@example.com', password: 'test123', enterpriseName: '企业', contactName: '管理员', termsAgreed: true })).rejects.toMatchObject({ code: 'AUTH_PASSWORD_POLICY_INVALID' })

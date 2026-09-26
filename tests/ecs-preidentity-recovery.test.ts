@@ -5,7 +5,10 @@ import { describe, expect, it } from 'vitest'
 import {
   createSignedSnapshot,
   productionApiBaseUrl,
+  recoverUnlabeledPairs,
+  switchUnlabeledPairs,
   transitionJournal,
+  verifyBridgeRecoveryAuthorization,
   verifyRecoveryAuthorization,
 } from '../infra/protected/ecs-preidentity-recovery.mjs'
 
@@ -38,6 +41,101 @@ const binding = {
 }
 
 describe('protected ECS pre-identity recovery', () => {
+  it('signs only the bounded seven-container unlabeled takeover and recovers every partial action', () => {
+    const services = ['api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync']
+    const pairs = services.map((service, index) => {
+      const oldId = (index + 1).toString(16).padStart(64, '0')
+      const candidateId = (index + 17).toString(16).padStart(64, '0')
+      const oldName = `merchant-production-${service}-1`
+      return { service, old_name: oldName, candidate_name: `bridge-${service}-1`, parked_name: `${oldName}.parked.release-a9`,
+        old: { id: oldId, image_id: image('1'), config_sha256: sha('2'), host_sha256: sha('3'), networks: [{ name: 'merchant-production_default', id: sha('4'), aliases: [] }] },
+        candidate: { id: candidateId, image_id: image('c'), config_sha256: sha('5'), host_sha256: sha('6'), networks: [{ name: 'merchant-production_default', id: sha('4'), aliases: [] }] } }
+    })
+    const sevenObserved = {
+      ...observed, database: { version: 242, historySha256: sha('5'), invalidConcurrentIndexes: [] },
+      containers: pairs.map(pair => ({ service: pair.service, id: pair.old.id, imageId: pair.old.image_id, configHash: sha('2'), state: 'running' })),
+      inventory: [...pairs.map(pair => ({ id: pair.old.id, name: pair.old_name, image_id: pair.old.image_id, config_hash: sha('2') })), { id: sha('9'), name: 'external-gateway', image_id: image('7'), config_hash: sha('8') }],
+      candidateImageIds: [image('c')], candidateServiceImageIds: Object.fromEntries(services.map(service => [service, image('c')])), unlabeledTakeover: pairs,
+      unlabeledGateway: { id: sha('9'), image_id: image('7'), config_sha256: sha('8'), host_sha256: sha('9'), nginx_config_sha256: sha('a'), networks: [{ name: 'merchant-production_default', id: sha('4'), aliases: [] }] },
+    }
+    const sevenBinding = { ...binding, mode: 'bridge_unlabeled_code_only' as const,
+      recovery: { ...binding.recovery, migrationTail: 242, allowedPrefixSha256: { 242: sha('5') }, services } }
+    const snapshot = createSignedSnapshot(sevenObserved, sevenBinding, keys.privateKey, keys.publicKey, now)
+    expect(snapshot.unlabeled_takeover).toEqual(pairs)
+    expect(() => createSignedSnapshot({ ...sevenObserved, unlabeledTakeover: pairs.slice(1) }, sevenBinding, keys.privateKey, keys.publicKey, now)).toThrow(/seven frozen/u)
+    const state = () => new Map(pairs.flatMap(pair => [[pair.old.id, { name: pair.old_name, running: true }], [pair.candidate.id, { name: pair.candidate_name, running: false }]]))
+    const actions = (containers: ReturnType<typeof state>, faultAt = Infinity, after = false) => {
+      let count = 0
+      const apply = (fn: () => void) => {
+        count += 1
+        if (!after && count === faultAt) throw new Error('injected Docker fault')
+        fn()
+        if (after && count === faultAt) throw new Error('injected Docker fault after mutation')
+      }
+      return {
+        inspect: (id: string) => ({ ...containers.get(id)! }),
+        stop: (id: string) => apply(() => { containers.get(id)!.running = false }),
+        start: (id: string) => apply(() => { containers.get(id)!.running = true }),
+        rename: (id: string, name: string) => apply(() => {
+          if ([...containers].some(([other, value]) => other !== id && value.name === name)) throw new Error('Docker name conflict')
+          containers.get(id)!.name = name
+        }),
+      }
+    }
+    for (const after of [false, true]) for (let position = 1; position <= 28; position += 1) {
+      const containers = state()
+      expect(() => switchUnlabeledPairs(pairs, actions(containers, position, after))).toThrow(/injected Docker fault/u)
+      recoverUnlabeledPairs(pairs, actions(containers))
+      for (const pair of pairs) {
+        expect(containers.get(pair.old.id)).toEqual({ name: pair.old_name, running: true })
+        expect(containers.get(pair.candidate.id)).toEqual({ name: pair.candidate_name, running: false })
+      }
+    }
+    const switched = state()
+    switchUnlabeledPairs(pairs, actions(switched))
+    expect(switched.get(pairs[0]!.candidate.id)).toEqual({ name: pairs[0]!.old_name, running: true })
+    recoverUnlabeledPairs(pairs, actions(switched))
+    expect(switched.get(pairs[0]!.old.id)).toEqual({ name: pairs[0]!.old_name, running: true })
+  })
+  it('signs a separate code-only 242 bridge state machine and authorizes bounded partial restore', () => {
+    const bridgeObserved = {
+      ...observed,
+      database: { version: 242, historySha256: sha('5'), invalidConcurrentIndexes: [] },
+      candidateServiceImageIds: { api: image('c'), 'worker-sync': image('d') },
+      candidateImageIds: [image('c'), image('d')],
+    }
+    const bridgeBinding = { ...binding, mode: 'bridge_code_only' as const, recovery: { ...binding.recovery, migrationTail: 242, allowedPrefixSha256: { 242: sha('5') } } }
+    let journal = createSignedSnapshot(bridgeObserved, bridgeBinding, keys.privateKey, keys.publicKey, now)
+    expect(journal.deployment_mode).toBe('bridge_code_only')
+    expect(journal.candidate_service_image_ids).toEqual(bridgeObserved.candidateServiceImageIds)
+    journal = transitionJournal(journal, 'nonce_consumed', keys.privateKey, keys.publicKey, now)
+    expect(() => transitionJournal(journal, 'migration_started', keys.privateKey, keys.publicKey, now)).toThrow(/transition/u)
+    journal = transitionJournal(journal, 'bridge_cutover_started', keys.privateKey, keys.publicKey, now)
+    const partial = {
+      composeProject: 'merchant-production',
+      containers: [
+        { service: 'api', id: 'e'.repeat(64), imageId: image('c'), configHash: sha('a'), state: 'running', releaseIdentity: { release_id: binding.candidate.releaseId, release_git_sha: binding.candidate.gitSha, manifest_sha256: binding.candidate.manifestSha256, image_set_digest: binding.candidate.imageSetDigest } },
+        observed.containers[1]!,
+      ],
+      inventory: [
+        { ...observed.inventory[0], id: 'e'.repeat(64), image_id: image('c'), config_hash: sha('a') },
+        observed.inventory[1]!,
+      ],
+    }
+    const input = { observed: partial, database: bridgeObserved.database, deploymentNonce: binding.deploymentNonce, recovery: bridgeBinding.recovery }
+    expect(verifyBridgeRecoveryAuthorization(journal, input, keys.publicKey, now)).toEqual({ authorized: true, targetMigration: 242 })
+    expect(verifyBridgeRecoveryAuthorization(journal, { ...input, observed: { ...partial, containers: [{ service: 'api', missing: true }, observed.containers[1]!], inventory: [observed.inventory[1]!] } }, keys.publicKey, now)).toEqual({ authorized: true, targetMigration: 242 })
+    expect(() => verifyBridgeRecoveryAuthorization(journal, { ...input, database: { ...bridgeObserved.database, version: 243 } }, keys.publicKey, now)).toThrow(/schema 242/u)
+    expect(() => verifyBridgeRecoveryAuthorization(journal, { ...input, observed: { ...partial, containers: [{ ...partial.containers[0]!, imageId: image('9') }, partial.containers[1]!] } }, keys.publicKey, now)).toThrow(/neither original nor/u)
+    expect(() => verifyBridgeRecoveryAuthorization(journal, { ...input, observed: { ...partial, inventory: [...partial.inventory, { id: 'f'.repeat(64), name: 'unknown', image_id: image('f'), config_hash: sha('f') }] } }, keys.publicKey, now)).toThrow(/unknown running/u)
+    const recovering = transitionJournal(journal, 'bridge_recovery_started', keys.privateKey, keys.publicKey, now)
+    expect(verifyBridgeRecoveryAuthorization(recovering, input, keys.publicKey, now)).toEqual({ authorized: true, targetMigration: 242 })
+    const partiallyRestored = { ...input, observed: { ...partial, containers: [{ ...observed.containers[0]!, id: 'f'.repeat(64) }, observed.containers[1]!], inventory: [{ ...observed.inventory[0]!, id: 'f'.repeat(64) }, observed.inventory[1]!] } }
+    expect(verifyBridgeRecoveryAuthorization(recovering, partiallyRestored, keys.publicKey, now)).toEqual({ authorized: true, targetMigration: 242 })
+    expect(() => verifyBridgeRecoveryAuthorization(journal, partiallyRestored, keys.publicKey, now)).toThrow(/neither original nor/u)
+    const verified = transitionJournal(recovering, 'bridge_recovery_verified', keys.privateKey, keys.publicKey, now)
+    expect(() => verifyBridgeRecoveryAuthorization(verified, input, keys.publicKey, now)).toThrow(/phase/u)
+  })
   it('normalizes safe HTTPS API prefixes and rejects unsafe URLs before recovery mutation', () => {
     expect(productionApiBaseUrl('https://yxsona.com/api')).toBe('https://yxsona.com/api')
     expect(productionApiBaseUrl('https://yxsona.com/api/')).toBe('https://yxsona.com/api')
@@ -82,7 +180,7 @@ describe('protected ECS pre-identity recovery', () => {
     expect(replay).toContain("node@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32")
     expect(replay).toContain('--network none')
     expect(replay).not.toContain('/var/run/docker.sock')
-    expect(replay).toContain('Docker/psql deterministic stubs; no real Docker recovery claimed')
+    expect(replay).toContain('Docker/psql stubs; no real Docker recovery claimed')
   })
   it('signs only independently observed workload and database state', () => {
     const snapshot = createSignedSnapshot(observed, binding, keys.privateKey, keys.publicKey, now)

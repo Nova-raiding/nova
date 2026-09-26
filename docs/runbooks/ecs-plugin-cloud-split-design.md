@@ -1,6 +1,6 @@
-# 本地插件与 ECS 云端源码的双制品边界（设计，尚未启用）
+# 本地插件与 ECS 云端源码的双制品边界（分阶段实施，尚未上线）
 
-状态：**NO-GO**。本文不改变现有部署器或生产身份格式。当前 `candidate-source.tar` 约 48.9 MB，已排除已跟踪的 `artifacts/`、`screenshots/`；再排除 `apps/plugin/`、`.codex-marketplace/` 后约 46.7 MB，只节省约 2.2 MB。此变更的主要目的不是解决 101 磁盘占用，而是落实“插件前端只在用户桌面安装”的边界。不能以裸 `git archive HEAD`（约 528 MB）的大小衡量现有生产候选包。
+状态：**NO-GO**。v2 双制品的打包、签名记录、云端清单、候选归档及云端门禁镜像已在隔离分支实现定向验证，但尚无生产 macOS/Windows 双平台原生安装与真实 ChatGPT host 证据，也没有切换 101。执行云端测试的操作入口是先在可信本地发布机生成、签名并核验双平台制品和测试记录，再于无插件源码的候选归档目录运行 `npm run test:cloud-release-gates`；此命令不能替代本地安装验收。当前 `candidate-source.tar` 约 48.9 MB，已排除已跟踪的 `artifacts/`、`screenshots/`；再排除 `apps/plugin/`、`.codex-marketplace/` 后约 46.7 MB，只节省约 2.2 MB。此变更的主要目的不是解决 101 磁盘占用，而是落实“插件前端只在用户桌面安装”的边界。不能以裸 `git archive HEAD`（约 528 MB）的大小衡量现有生产候选包。
 
 ## 现状中的直接依赖
 
@@ -32,3 +32,13 @@ CodeGraph 对 `buildReleaseManifest` 的调用关系指向 `tests/release-manife
 5. 用独立候选链做全流程验证：云端归档不含插件路径；本地已签安装包由真实 ChatGPT macOS/Windows host 安装并走 stdio→API/MCP→模型中转；候选 API/worker/商家/运营 UI 健康；Host 证据、插件签名、云端 Git/镜像/发布清单身份闭环一致。保留可回退的 v1/桥版本，且不得为缩包删除业务数据或旧回滚制品。
 
 上线前缺少上述任一项时，**不得**把排除了插件目录的源码包送到 101，也不得声称插件前端没有暂存于 101。当前可证明的只是运行镜像拷贝边界；现行 v1 staging 源码仍含插件测试输入。
+
+## B 桥接候选的最短重建顺序
+
+旧 B 源包只排除 `artifacts/` 与 `screenshots/`，因此仍包含本地插件目录；旧 B API/worker Dockerfile 还把整个编译 `dist/` 拷入运行镜像。`deploy-ecs-bridge-unlabeled.sh` 现在于 nonce 消费前扫描归档和固定 API/worker 镜像的最终文件系统，并要求各镜像的源码摘要标签等于云端归档摘要；旧 B 必须失败关闭。这是阻止误切流的控制，不是 v2 已完成的证明。
+
+1. 从同一干净 Git SHA 在**本地**完成 macOS/Windows 整包签名、插件描述符与真实 ChatGPT stdio host 证据；101 只接收签名描述符及公钥，不接收插件源码或安装包。
+2. 回补 `candidate-identity/2`、`release-manifest/2`、云端独立 workspace/类型检查/测试入口，以及 host 证据对描述符 bridge 摘要的验证。先离线跑全套正负例，不能在 v1 校验器中简单跳过插件文件。
+3. 候选包、候选门禁镜像、六业务镜像构建、stage/deploy 摘要校验统一改用排除 `artifacts/`、`screenshots/`、`apps/plugin/`、`.codex-marketplace/` 的固定 Git archive pathspec。任何一个生产者未同步则拒绝混用 v1/v2。
+4. 将 selective API/worker runtime `COPY` 修复回补到 B；以新的云端归档摘要和新 Git SHA 重建并重新签名全部固定镜像、发布清单与证据，不得沿用旧 B 的镜像摘要或 nonce。离线解包扫描归档和最终镜像，确认无插件前端路径及 `dist/tests/`。
+5. 最后才重新构造 B 的旧版回滚 capsule、七容器映射和候选源包，并跑完整 PG17＋Docker 失败恢复与桌面 ChatGPT host 验收；未通过前维持 NO-GO，不在 101 执行切流。

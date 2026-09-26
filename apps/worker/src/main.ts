@@ -7,6 +7,7 @@ import { Pool, type PoolConfig } from 'pg'
 import type { RedisClientType } from 'redis'
 import { contextEnvelopeHash, loadMigrations, PostgresAssetScanAttemptRepository, PostgresCreativePointLifecycleRepository, PostgresCreativePointRepository, PostgresOnboardingGrantDispatchRepository, PostgresOutboxRepository, withWorkspaceTransaction, type AssetScanAttemptRecord, type AssetScanAttemptRepository, type Migration, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { PostgresMappingPreflightApprovalRepository } from '../../../packages/persistence/src/mapping-preflight-approval-repository.js'
+import { verifyBridgeMigrationPrefix } from '../../../packages/persistence/src/migration.js'
 import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type QueuePort, type RedisQueueTransport, type WorkerDispatchObservation } from '../../../packages/workers/src/durable.js'
 import { buildWorkerDispatchLogRecord, workerDispatchTraceId, writeWorkerDispatchLog, type WorkerDispatchLogEvent } from '../../../packages/workers/src/dispatch-observability.js'
 import { createOutboxHandler, createWorkerProjection } from './handler.js'
@@ -611,7 +612,7 @@ export async function readBoundedAssetScanContent(response: Response, maxBytes =
 }
 
 type WorkerReadinessDatabase = {
-  query(text: string, values?: readonly unknown[]): Promise<{ rows: Array<{ version: number; name: string }> }>
+  query(text: string, values?: readonly unknown[]): Promise<{ rows: Array<{ version: number; name: string; checksum?: string | null }> }>
 }
 
 /** A worker is ready only when its database schema exactly matches the shipped
@@ -622,21 +623,28 @@ export async function assertWorkerReadinessDependencies(input: {
   apiHealthPath?: '/healthz' | '/readyz'
   fetcher?: typeof fetch
   expectedMigrations?: readonly Pick<Migration, 'version' | 'name'>[]
+  bridgeMode?: string
+  bridgeMigrations?: readonly Migration[]
 }): Promise<{ migrationVersion: number; apiReady: boolean }> {
   const expected = input.expectedMigrations ?? await loadMigrations()
-  const result = await input.database.query('SELECT version, name FROM schema_migrations ORDER BY version ASC')
+  const result = await input.database.query(input.bridgeMode
+    ? 'SELECT version, name, checksum FROM schema_migrations ORDER BY version ASC'
+    : 'SELECT version, name FROM schema_migrations ORDER BY version ASC')
   const actual = result.rows.map(row => ({ version: Number(row.version), name: row.name }))
-  const mismatch = actual.length !== expected.length || expected.some((migration, index) => {
+  const bridgeVersion = input.bridgeMode
+    ? verifyBridgeMigrationPrefix(result.rows, input.bridgeMigrations ?? await loadMigrations(), input.bridgeMode)
+    : undefined
+  const mismatch = bridgeVersion === undefined && (actual.length !== expected.length || expected.some((migration, index) => {
     const applied = actual[index]
     return !applied || applied.version !== migration.version || applied.name !== migration.name
-  })
+  }))
   if (mismatch) {
     const expectedTail = expected.at(-1)?.version ?? 0
     const actualTail = actual.at(-1)?.version ?? 0
     throw new Error(`worker database schema mismatch: expected complete migration chain through ${expectedTail}, found ${actual.length} migrations through ${actualTail}`)
   }
 
-  if (!input.apiBaseUrl) return { migrationVersion: expected.at(-1)?.version ?? 0, apiReady: false }
+  if (!input.apiBaseUrl) return { migrationVersion: bridgeVersion ?? expected.at(-1)?.version ?? 0, apiReady: false }
   const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${input.apiHealthPath ?? '/readyz'}`, {
     headers: { accept: 'application/json' },
     redirect: 'error',
@@ -646,7 +654,7 @@ export async function assertWorkerReadinessDependencies(input: {
   if (envelope.error != null || envelope.data?.persistence?.ready !== true || envelope.data?.redis?.ready !== true) {
     throw new Error('worker API readiness dependency returned an invalid or incomplete readiness envelope')
   }
-  return { migrationVersion: expected.at(-1)?.version ?? 0, apiReady: true }
+  return { migrationVersion: bridgeVersion ?? expected.at(-1)?.version ?? 0, apiReady: true }
 }
 
 export function assetScanReceiptPrivateKeyPem(env: NodeJS.ProcessEnv): string | undefined {
@@ -2783,7 +2791,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         intervalMs: heartbeatIntervalMs,
         callbackConfigured: hasCompleteScanCallbackCredentials(config, process.env),
         dependencyProbe: async () => {
-          const state = await assertWorkerReadinessDependencies({ database: pool, ...(config.apiBaseUrl ? { apiBaseUrl: config.apiBaseUrl } : {}), apiHealthPath: '/healthz', expectedMigrations })
+          const state = await assertWorkerReadinessDependencies({ database: pool, ...(config.apiBaseUrl ? { apiBaseUrl: config.apiBaseUrl } : {}), apiHealthPath: '/healthz', expectedMigrations, ...(process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE ? { bridgeMode: process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE, bridgeMigrations: expectedMigrations } : {}) })
           return { databaseReady: true, apiReady: state.apiReady }
         },
         queueProbe: async () => {
@@ -2862,7 +2870,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
       try {
         if (!dependenciesReady || startedAt >= nextDependencyCheckAt) {
           dependenciesReady = false
-          const dependencyState = await assertWorkerReadinessDependencies({ database: pool, ...(config.apiBaseUrl ? { apiBaseUrl: config.apiBaseUrl } : {}), ...(scannerHeartbeat ? { apiHealthPath: '/healthz' as const } : {}), expectedMigrations })
+          const dependencyState = await assertWorkerReadinessDependencies({ database: pool, ...(config.apiBaseUrl ? { apiBaseUrl: config.apiBaseUrl } : {}), ...(scannerHeartbeat ? { apiHealthPath: '/healthz' as const } : {}), expectedMigrations, ...(process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE ? { bridgeMode: process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE, bridgeMigrations: expectedMigrations } : {}) })
           if (clamavReadiness && !scannerHeartbeat) await clamavReadiness.ping()
           dependenciesReady = true
           nextDependencyCheckAt = startedAt + config.dependencyCheckIntervalMs

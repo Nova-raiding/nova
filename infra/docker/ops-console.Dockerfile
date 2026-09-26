@@ -43,9 +43,11 @@ RUN if [ "$OPS_CONSOLE_BUILD_MODE" = production ]; then auth_mode="$OPS_CONSOLE_
 ARG RELEASE_ID=unbound
 ARG RELEASE_GIT_SHA=unbound
 # Non-secret, build-time identity. Never infer UI freshness from its API proxy.
-RUN printf '{"surface":"ops-ui","release_id":"%s","release_git_sha":"%s"}\n' "$RELEASE_ID" "$RELEASE_GIT_SHA" > apps/ops-console/dist/build-meta.json
+RUN printf '{"surface":"ops-ui","release_id":"%s","release_git_sha":"%s","auth_mode":"%s"}\n' "$RELEASE_ID" "$RELEASE_GIT_SHA" "$OPS_CONSOLE_AUTH_MODE" > apps/ops-console/dist/build-meta.json
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
+ARG OPS_CONSOLE_AUTH_MODE
+LABEL com.storenova.ops.auth_mode=$OPS_CONSOLE_AUTH_MODE
 ENV OPS_API_UPSTREAM=http://127.0.0.1:8787
 ENV OPS_API_RESOLVER=127.0.0.11
 COPY infra/nginx/ops-console.conf /etc/nginx/templates/default.conf.template

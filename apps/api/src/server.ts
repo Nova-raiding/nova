@@ -150,6 +150,7 @@ import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, 
 import { AssetScanRedriveError, AuthorizationRepositoryError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, compareMembersByRecency, DEFAULT_MEMBER_ENTERPRISE_NAME, loadMigrations, reversalOrderId, settlementOrderId, visibleProductIds, memberIdentityKey, memberMatchesQuery, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type WorkspaceMember, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { PostgresDemoEvaluationEntitlementRepository } from '../../../packages/persistence/src/demo-evaluation-entitlement-repository.js'
+import { verifyBridgeMigrationPrefix } from '../../../packages/persistence/src/migration.js'
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import { CustomerDeliveryError, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository, normalizeCustomerDeliveryAccountListInput, customerDeliveryAccountCursor, type CustomerDeliveryRepository } from '../../../packages/persistence/src/customer-delivery-repository.js'
 import { loadCustomerDeliveryAsset, requireCustomerDeliveryAsset } from './customer-delivery-assets.js'
@@ -3075,6 +3076,10 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const opsSqlPool = (opsPool ?? pool) as unknown as SqlPool
     const migrations = await loadMigrations()
     const expectedMigrationVersion = migrations.at(-1)?.version ?? 0
+    const bridgeSchemaMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
+    if (bridgeSchemaMode && (bridgeSchemaMode !== 'prefix_242_or_244' || process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false')) {
+      throw new Error('bridge runtime requires prefix_242_or_244 and RUN_MIGRATIONS_ON_STARTUP=false')
+    }
     if (process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') await runMigrations(sqlPool, migrations)
     const outbox = new PostgresOutboxRepository(sqlPool)
     const business = new PostgresBusinessRepository(sqlPool, { normalizedProjection: true })
@@ -3291,8 +3296,13 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const checkHealth = async () => {
       const client = await pool.connect()
       try {
-        const migrationState = await client.query<{ version: number | null }>('SELECT max(version)::int AS version FROM schema_migrations')
-        if ((migrationState.rows[0]?.version ?? 0) < expectedMigrationVersion) throw new Error('database schema is behind the application migrations')
+        if (bridgeSchemaMode) {
+          const migrationState = await client.query<{ version: number; name: string; checksum: string | null }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version ASC')
+          verifyBridgeMigrationPrefix(migrationState.rows, migrations, bridgeSchemaMode)
+        } else {
+          const migrationState = await client.query<{ version: number | null }>('SELECT max(version)::int AS version FROM schema_migrations')
+          if ((migrationState.rows[0]?.version ?? 0) < expectedMigrationVersion) throw new Error('database schema is behind the application migrations')
+        }
       } finally { client.release() }
       if (opsPool) {
         const opsClient = await opsPool.connect()
@@ -13325,7 +13335,12 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   const url = new URL(req.url ?? '/', `${publicRequestOrigin(req)}/`)
   const path = url.pathname
   const isLocalPluginConnectionRoute = path === '/v1/auth/local-plugin/connect-requests' || path === '/v1/auth/local-plugin/install-instances/register' || path === '/v1/auth/local-plugin/install-instances/pair' || /^\/v1\/auth\/local-plugin\/connect-requests\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/status$/iu.test(path)
-  const isPasswordAuthRoute = isLocalPluginConnectionRoute || path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke' || path === '/v1/auth/local-plugin/authorize' || path === '/v1/auth/local-plugin/token'
+  // The bridge image is allowed to run before 243/244. Never let its newer
+  // one-click branches query missing tables or issue a code before failing.
+  const bridgeNewTableRouteUnavailable = () => {
+    if (process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE) throw new DomainError('LOCAL_PLUGIN_BRIDGE_UNAVAILABLE', '本地插件一键连接将在数据库升级后开放', 503)
+  }
+  const isPasswordAuthRoute = isLocalPluginConnectionRoute || path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/workspace-bootstrap' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke' || path === '/v1/auth/local-plugin/authorize' || path === '/v1/auth/local-plugin/token'
   const passwordSessionToken = () => {
     const encoded = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
     if (!encoded) return ''
@@ -13336,7 +13351,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   // local account/password flow to round-trip through Chromium.
   const passwordCookie = (token: string, maxAge = 8 * 60 * 60) => `damai_session=${encodeURIComponent(token)}; Path=/; HttpOnly${isProduction() || publicRequestOrigin(req).startsWith('https://') || (req.socket as { encrypted?: boolean }).encrypted === true ? '; Secure' : ''}; SameSite=Lax; Max-Age=${maxAge}`
   if (req.method === 'OPTIONS') return send(res, 204, isProduction() ? 'unknown' : 'ws_demo', null, null, req)
-  if (await handlePasswordAuthRoute(req, res, path, { repository: passwordAuthRepository, readBody: limit => body(req, limit), send: (status, workspaceId, data) => send(res, status, workspaceId, data, null, req), production: isProduction(), publicOrigin: publicRequestOrigin(req) })) return
+  if (await handlePasswordAuthRoute(req, res, path, { repository: passwordAuthRepository, readBody: limit => body(req, limit), send: (status, workspaceId, data) => send(res, status, workspaceId, data, null, req), production: isProduction(), publicOrigin: publicRequestOrigin(req), workspaceBootstrap: persistence.workspaceBootstrap ?? memoryWorkspaceBootstrap, onWorkspaceCreated: id => knownWorkspaces.add(id) })) return
   if (await handleLocalPluginConnectionRoute(req, res, path, url, { passwordAuth: passwordAuthRepository, connections: localPluginConnections, installInstances: localPluginInstallInstances, readBody: limit => body(req, limit), send: (status, workspaceId, data) => send(res, status, workspaceId || 'unknown', data, null, req) as void, production: isProduction(), integrationMode: mcpIntegrationMode(), publicOrigin: publicRequestOrigin(req) })) return
   if (isPasswordAuthRoute) {
     res.setHeader('cache-control', 'no-store')
@@ -13359,6 +13374,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         if (error instanceof LocalPluginAuthorizationRequestError) throw new DomainError(`LOCAL_PLUGIN_AUTH_${error.code}`, '本地插件授权请求无效', 400)
         throw error
       }
+      if (authorization.requestId || authorization.installInstanceId) bridgeNewTableRouteUnavailable()
       const current = await passwordAuthRepository.authenticate(passwordSessionToken())
       if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') {
         if (req.method === 'GET') {
@@ -13410,6 +13426,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         if (error instanceof LocalPluginAuthorizationRequestError) throw new DomainError(`LOCAL_PLUGIN_TOKEN_${error.code}`, '本地插件 token 请求无效', 400)
         throw error
       }
+      if (input.requestId || input.installInstanceId) bridgeNewTableRouteUnavailable()
       const origin = publicRequestOrigin(req)
       if (input.resource !== `${origin}/mcp`) throw new DomainError('LOCAL_PLUGIN_TOKEN_INVALID_RESOURCE', '本地插件 token resource 无效', 400)
       const context = { clientId: LOCAL_PLUGIN_CLIENT_ID, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
@@ -13553,7 +13570,8 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     requireOperationsRole(req, ['platform_ops', 'platform_admin', 'ops_admin'])
     const input = await body(req, 64 * 1024)
     const workspaceIds = Array.isArray(input.workspace_ids) ? input.workspace_ids.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).map(value => value.trim()) : []
-    if (!workspaceIds.length) throw new DomainError('AUTH_ACCOUNT_PROVISIONING_INVALID', '至少绑定一个有效企业工作区', 400)
+    const bootstrapWorkspace = input.bootstrap_workspace === true
+    if ((!workspaceIds.length && !bootstrapWorkspace) || (workspaceIds.length && bootstrapWorkspace)) throw new DomainError('AUTH_ACCOUNT_PROVISIONING_INVALID', '须绑定现有工作区，或显式开启首次工作区引导', 400)
     try {
       const account = await passwordAuthRepository.createMerchantAccount({
         login: String(input.login ?? ''),
@@ -13561,6 +13579,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         enterpriseName: String(input.enterprise_name ?? input.enterpriseName ?? ''),
         contactName: String(input.contact_name ?? input.contactName ?? ''),
         workspaceIds,
+        bootstrapWorkspace,
         actorId: requestPrincipals.get(req)?.actorId ?? 'platform_ops',
         reason: String(input.reason ?? ''),
       })
@@ -13583,7 +13602,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
           reason: String(input.reason ?? '').trim(),
         })
       }
-      return send(res, 201, 'unknown', { account: { ...account, workspaceIds: account.workspaceIds }, onboarding_fee_fen: 500000, vip_access: 'pending_billing_verification' }, null, req)
+      return send(res, 201, 'unknown', { account: { ...account, workspaceIds: account.workspaceIds }, onboarding_fee_fen: 500000, vip_access: 'pending_billing_verification', ...(bootstrapWorkspace ? { next_action: 'workspace_bootstrap' } : {}) }, null, req)
     } catch (error) {
       const code = (error as { code?: string }).code
       const status = code === 'AUTH_LOGIN_ALREADY_EXISTS' ? 409 : code === 'AUTH_PASSWORD_POLICY_INVALID' || code === 'AUTH_ACCOUNT_PROVISIONING_INVALID' || code === 'AUTH_LOGIN_INVALID' || code === 'AUTH_WORKSPACE_NOT_FOUND' ? 400 : 500

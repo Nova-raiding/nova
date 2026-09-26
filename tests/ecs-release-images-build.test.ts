@@ -53,6 +53,7 @@ describe('bounded ECS release image builder', () => {
     expect(source).toContain("flag: 'wx'")
     expect(source).toContain('ECS release image output directory must not already exist')
     expect(source).toContain('ECS_OPS_AUTH_MODE')
+    expect(source).toContain('com.storenova.ops.auth_mode')
     expect(source).toContain('--build-arg "OPS_CONSOLE_AUTH_MODE=$ops_auth_mode"')
     expect(source).toContain('--build-arg "NPM_CONFIG_REGISTRY=$npm_registry"')
     expect(source).toContain('npm_registry: process.env.NPM_REGISTRY')
@@ -86,6 +87,7 @@ describe('bounded ECS release image builder', () => {
         ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
         ECS_RELEASE_IMAGE_OUTPUT_DIR: directory,
         ECS_OPS_AUTH_MODE: 'password',
+        OPS_AUTH_MODE: 'password',
       },
       encoding: 'utf8',
     })
@@ -137,7 +139,8 @@ describe('bounded ECS release image builder', () => {
     const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim()
     const log = join(directory, 'docker.log')
     const digest = `sha256:${'d'.repeat(64)}`
-    writeFileSync(join(bin, 'docker'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\ncase "$1 $2" in\n  'builder prune') [ "${'$'}{MOCK_DOCKER_FAIL_PRUNE:-NO}" != YES ] || exit 1; exit 0;;\n  'build --pull=false'|'push registry.example.com/storenova/merchant-api:${releaseId}'|'push registry.example.com/storenova/merchant-worker:${releaseId}'|'push registry.example.com/storenova/merchant-ui:${releaseId}'|'push registry.example.com/storenova/merchant-ops-ui:${releaseId}'|'push registry.example.com/storenova/payment-gateway:${releaseId}'|'push registry.example.com/storenova/pilot-gateway:${releaseId}'|'image rm') exit 0;;\n  'image inspect')\n    case "$*" in\n      *org.opencontainers.image.revision*) printf '%s\\n' '${revision}' ;;\n      *com.storenova.release.id*) printf '%s\\n' '${releaseId}' ;;\n      *com.storenova.release.source_sha256*) printf '%s\\n' "$SOURCE_SHA" ;;\n      *RepoDigests*) printf '%s@${digest}\\n' "${'$'}{5%:${releaseId}}" ;;\n    esac\n    exit 0;;\nesac\nexit 1\n`)
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\ncase "$1 $2" in\n  'builder prune') [ "${'$'}{MOCK_DOCKER_FAIL_PRUNE:-NO}" != YES ] || exit 1; exit 0;;\n  'build --pull=false'|'push registry.example.com/storenova/merchant-api:${releaseId}'|'push registry.example.com/storenova/merchant-worker:${releaseId}'|'push registry.example.com/storenova/merchant-ui:${releaseId}'|'push registry.example.com/storenova/merchant-ops-ui:${releaseId}'|'push registry.example.com/storenova/payment-gateway:${releaseId}'|'push registry.example.com/storenova/pilot-gateway:${releaseId}'|'image rm') exit 0;;\n  'image inspect')\n    case "$*" in\n      *org.opencontainers.image.revision*) printf '%s\\n' '${revision}' ;;\n      *com.storenova.release.id*) printf '%s\\n' '${releaseId}' ;;\n      *com.storenova.release.source_sha256*) printf '%s\\n' "$SOURCE_SHA" ;;
+      *com.storenova.ops.auth_mode*) printf '%s\\n' 'password' ;;\n      *RepoDigests*) printf '%s@${digest}\\n' "${'$'}{5%:${releaseId}}" ;;\n    esac\n    exit 0;;\nesac\nexit 1\n`)
     chmodSync(join(bin, 'docker'), 0o755)
     const archive = spawnSync('git', ['archive', '--format=tar', revision], { cwd: root }).stdout
     const sha = spawnSync('shasum', ['-a', '256'], { input: archive, encoding: 'utf8' }).stdout.split(/\s/u)[0]

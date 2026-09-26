@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFile, readdir } from 'node:fs/promises'
-import { loadInitialMigration, loadMigrations, MigrationRunner, migrationChecksum } from './migration.js'
+import { loadInitialMigration, loadMigrations, MigrationRunner, migrationChecksum, verifyBridgeMigrationPrefix } from './migration.js'
 import { SqlClient, SqlPool } from './repository.js'
 
 class MigrationClient implements SqlClient {
@@ -15,6 +15,15 @@ class MigrationClient implements SqlClient {
 }
 
 describe('MigrationRunner', () => {
+  it('admits only complete checksummed 242 and 244 bridge histories', async () => {
+    const migrations = await loadMigrations()
+    const rows = migrations.map(({ version, name, sql }) => ({ version, name, checksum: migrationChecksum(sql) }))
+    expect(verifyBridgeMigrationPrefix(rows.slice(0, 242), migrations, 'prefix_242_or_244')).toBe(242)
+    expect(verifyBridgeMigrationPrefix(rows, migrations, 'prefix_242_or_244')).toBe(244)
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 243), migrations, 'prefix_242_or_244')).toThrow('exactly 242 or 244')
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242), migrations, undefined)).toThrow('not enabled')
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242).map((row, index) => index === 241 ? { ...row, checksum: 'bad' } : row), migrations, 'prefix_242_or_244')).toThrow('checksum mismatch')
+  })
   it('loads the executable 001 SQL asset', async () => {
     const migration = await loadInitialMigration()
     expect(migration).toMatchObject({ version: 1, name: 'initial' })

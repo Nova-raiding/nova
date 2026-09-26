@@ -1,11 +1,13 @@
 import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { createHash, randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
 import argon2 from 'argon2'
 import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner } from './migration.js'
 import { PostgresPasswordAuthRepository } from './password-auth-repository.js'
 import { runFirstInstall } from '../../../scripts/bootstrap-first-install.js'
+import { PostgresWorkspaceBootstrapRepository } from './workspace-bootstrap-repository.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const postgresIt = databaseUrlValue ? it : it.skip
@@ -34,6 +36,9 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
       const migrations = await loadMigrations()
       expect(await new MigrationRunner(database, migrations).run()).toEqual(migrations.map(item => item.version))
       expect(await new MigrationRunner(database, migrations).run()).toEqual([])
+      // This test creates its own database; role grants in the launcher's
+      // template database do not follow CREATE DATABASE into this one.
+      await database.query(await readFile(new URL('../../../infra/local/ensure-app-role.sql', import.meta.url), 'utf8'))
 
       const workspaceId = `registration_ws_${randomUUID().replaceAll('-', '')}`
       const untouchedWorkspaceId = `registration_other_${randomUUID().replaceAll('-', '')}`
@@ -232,6 +237,44 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
         { eventType: 'auth.merchant_activated', actorId: 'platform-reviewer-e2e', reason: '通过真实注册审核并绑定企业工作区' },
         { eventType: 'auth.login_succeeded', actorId: login, reason: 'password authentication succeeded' },
       ])
+
+      // A deliberately provisioned workspace-less merchant gets exactly one
+      // identity-bound workspace before any workspace-scoped token is possible.
+      const merchantBootstrapLogin = `bootstrap-${randomUUID().replaceAll('-', '')}@example.com`
+      const bootstrapAccount = await repository.createMerchantAccount({
+        login: merchantBootstrapLogin, password: 'CorrectHorse123', enterpriseName: '专用测试企业',
+        contactName: '首个工作区用户', workspaceIds: [], bootstrapWorkspace: true,
+        actorId: 'platform-reviewer-e2e', reason: '核验首次工作区引导',
+      })
+      expect(bootstrapAccount.workspaceIds).toEqual([])
+      await database.query(`UPDATE platform_identities SET risk_decision='block' WHERE id=$1`, [bootstrapAccount.identityId])
+      await expect(repository.assertBootstrapEligible({ login: merchantBootstrapLogin, identityId: bootstrapAccount.identityId })).rejects.toMatchObject({ code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' })
+      expect((await database.query(`SELECT count(*)::int AS count FROM workspace_identity_bindings WHERE identity_id=$1`, [bootstrapAccount.identityId])).rows[0]?.count).toBe(0)
+      await database.query(`UPDATE platform_identities SET risk_decision='allow' WHERE id=$1`, [bootstrapAccount.identityId])
+      await repository.assertBootstrapEligible({ login: merchantBootstrapLogin, identityId: bootstrapAccount.identityId })
+      const bootstrapRepository = new PostgresWorkspaceBootstrapRepository(app, ops)
+      const first = await bootstrapRepository.bootstrap({
+        issuer: 'damai-password', externalSubject: merchantBootstrapLogin, identityId: bootstrapAccount.identityId,
+        candidateWorkspaceId: `bootstrap_ws_${randomUUID().replaceAll('-', '')}`,
+        displayName: '专用测试工作区', actorId: bootstrapAccount.identityId,
+      })
+      expect(first.created).toBe(true)
+      await database.query(`UPDATE platform_identities SET access_status='suspended', suspended_at=now(), suspended_by='security-e2e', suspension_reason='first workspace gate test' WHERE id=$1`, [bootstrapAccount.identityId])
+      await expect(repository.bindBootstrappedWorkspace({ login: merchantBootstrapLogin, identityId: bootstrapAccount.identityId, workspaceId: first.workspaceId })).rejects.toMatchObject({ code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' })
+      expect((await repository.listAccounts()).find(account => account.login === merchantBootstrapLogin)?.workspaceIds).toEqual([])
+      await database.query(`UPDATE platform_identities SET access_status='active', suspended_at=NULL, suspended_by=NULL, suspension_reason=NULL, risk_decision='block' WHERE id=$1`, [bootstrapAccount.identityId])
+      await expect(repository.bindBootstrappedWorkspace({ login: merchantBootstrapLogin, identityId: bootstrapAccount.identityId, workspaceId: first.workspaceId })).rejects.toMatchObject({ code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' })
+      await database.query(`UPDATE platform_identities SET risk_decision='allow' WHERE id=$1`, [bootstrapAccount.identityId])
+      const bound = await repository.bindBootstrappedWorkspace({ login: merchantBootstrapLogin, identityId: bootstrapAccount.identityId, workspaceId: first.workspaceId })
+      expect(bound.workspaceIds).toEqual([first.workspaceId])
+      expect((await repository.bindBootstrappedWorkspace({ login: merchantBootstrapLogin, identityId: bootstrapAccount.identityId, workspaceId: first.workspaceId })).workspaceIds).toEqual([first.workspaceId])
+      await expect(repository.bindBootstrappedWorkspace({ login: merchantBootstrapLogin, identityId: bootstrapAccount.identityId, workspaceId: untouchedWorkspaceId })).rejects.toMatchObject({ code: 'AUTH_BOOTSTRAP_ACCOUNT_CHANGED' })
+      const again = await bootstrapRepository.bootstrap({
+        issuer: 'damai-password', externalSubject: merchantBootstrapLogin, identityId: bootstrapAccount.identityId,
+        candidateWorkspaceId: `bootstrap_ws_${randomUUID().replaceAll('-', '')}`,
+        displayName: '不应创建第二个工作区', actorId: bootstrapAccount.identityId,
+      })
+      expect(again).toMatchObject({ workspaceId: first.workspaceId, created: false })
 
       // Exercise the OAuth row locks through two independent repository
       // instances. This is deliberately PostgreSQL-only evidence: the memory

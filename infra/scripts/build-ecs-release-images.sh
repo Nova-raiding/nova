@@ -101,6 +101,7 @@ if [ -n "$source_archive" ] || [ -n "$source_identity" ]; then
   [ "$actual_source" = "$identity_source" ] || { echo 'candidate source archive digest mismatch' >&2; exit 2; }
   cp "$source_archive" "$archive"
 else
+  [ "${ECS_CLOUD_SOURCE_V2:-0}" != 1 ] || { echo 'cloud v2 release images require the exact staged candidate archive and identity' >&2; exit 2; }
   command -v git >/dev/null 2>&1 || { echo 'git is required when no staged candidate archive is supplied' >&2; exit 2; }
   [ "$(git -C "$root" rev-parse HEAD)" = "$revision" ] || {
     echo 'release revision does not match HEAD' >&2; exit 2;
@@ -172,6 +173,12 @@ build_image() {
   [ "$image_revision" = "$revision" ] && [ "$image_release" = "$release_id" ] && [ "$image_source" = "sha256:$source_sha" ] || {
     echo "release image labels do not match committed source: $artifact" >&2; exit 1;
   }
+  if [ "$artifact" = merchant-ops-ui ]; then
+    image_ops_auth_mode=$(docker image inspect --format '{{index .Config.Labels "com.storenova.ops.auth_mode"}}' "$tag")
+    [ "$image_ops_auth_mode" = "$ops_auth_mode" ] || {
+      echo 'ops UI image auth mode label does not match the API runtime mode' >&2; exit 1;
+    }
+  fi
   immutable_ref=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$tag" | awk -v prefix="$repository/$artifact@sha256:" 'index($0, prefix) == 1 { print; exit }')
   printf '%s' "$immutable_ref" | grep -Eq '^.+@sha256:[0-9a-f]{64}$' || {
     echo "registry did not return an immutable digest for $artifact" >&2; exit 1;

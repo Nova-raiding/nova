@@ -23,6 +23,32 @@ describe('local plugin connect request HTTP contract', () => {
     vi.unstubAllEnvs()
   })
 
+  it('fails all new-table HTTP branches closed in bridge mode even when one-click is enabled', async () => {
+    vi.stubEnv('BRIDGE_SCHEMA_COMPATIBILITY_MODE', 'prefix_242_or_244')
+    vi.stubEnv('LOCAL_PLUGIN_ONE_CLICK_ENABLED', 'true')
+    const base = await startApi()
+    const requests: Array<[string, RequestInit]> = [
+      ['/v1/auth/local-plugin/connect-requests', { method: 'POST' }],
+      ['/v1/auth/local-plugin/install-instances/register', { method: 'POST' }],
+      ['/v1/auth/local-plugin/install-instances/pair', { method: 'POST' }],
+      ['/v1/auth/local-plugin/connect-requests/00000000-0000-4000-8000-000000000000/status', { method: 'GET' }],
+    ]
+    for (const [path, options] of requests) {
+      const response = await fetch(`${base}${path}`, options)
+      expect(response.status).toBe(503)
+      await expect(response.json()).resolves.toMatchObject({ error: { code: 'LOCAL_PLUGIN_BRIDGE_UNAVAILABLE' } })
+    }
+    const requestId = '00000000-0000-4000-8000-000000000000'
+    const authorization = new URLSearchParams({ response_type: 'code', client_id: 'local-desktop', redirect_uri: 'http://127.0.0.1:8765/merchant-mcp-callback', state: 'x'.repeat(43), code_challenge: 'y'.repeat(43), code_challenge_method: 'S256', scope: 'merchant', resource: `${base}/mcp`, workspace_id: 'ws_bridge', connection_request_id: requestId })
+    const authorize = await fetch(`${base}/v1/auth/local-plugin/authorize`, { method: 'POST', headers: { origin: base, 'content-type': 'application/x-www-form-urlencoded' }, body: authorization })
+    expect(authorize.status).toBe(503)
+    await expect(authorize.json()).resolves.toMatchObject({ error: { code: 'LOCAL_PLUGIN_BRIDGE_UNAVAILABLE' } })
+    const token = new URLSearchParams({ grant_type: 'authorization_code', client_id: 'local-desktop', redirect_uri: 'http://127.0.0.1:8765/merchant-mcp-callback', code: 'unused', code_verifier: 'v'.repeat(43), resource: `${base}/mcp`, workspace_id: 'ws_bridge', connection_request_id: requestId })
+    const exchange = await fetch(`${base}/v1/auth/local-plugin/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: token })
+    expect(exchange.status).toBe(503)
+    await expect(exchange.json()).resolves.toMatchObject({ error: { code: 'LOCAL_PLUGIN_BRIDGE_UNAVAILABLE' } })
+  })
+
   it('fails closed while the one-click prototype feature gate is disabled', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
     vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
