@@ -50,19 +50,27 @@ describe('model relay evidence gate', () => {
     const options = { requireEmbedding: true, expectedEmbeddingModel: 'qwen3.7-text-embedding-flash', requireCandidateBinding: true, expectedCandidate, artifactRoot: root }
     expect(validateModelRelayEvidence(bound, options)).toEqual([])
 
-    const snapshot = { pricing: { pricing_version: 'pricing-v1', group_ratio: { default: 1 }, data: [{ model_name: 'qwen3.7-text-embedding-flash', quota_type: 0, model_ratio: 1, model_price: 0, completion_ratio: 1, enable_groups: ['default'] }] }, status: { quota_per_unit: 500000, usd_exchange_rate: 7.2 } }
+    const snapshot = { pricing: { pricing_version: 'pricing-v1', group_ratio: { default: 1 }, data: [{ model_name: 'qwen3.7-text-embedding-flash', quota_type: 0, model_ratio: 43.375, model_price: 0, completion_ratio: 1, enable_groups: ['default'] }] }, status: { quota_per_unit: 500000, usd_exchange_rate: 7.2 } }
     const snapshotDigest = createHash('sha256').update(JSON.stringify(snapshot), 'utf8').digest('hex')
     const snapshotArtifact = { schema_version: '1', release_id: 'release-1', modality: 'embedding', observed_at: '2026-08-26T01:00:00Z', http_status: 200, response_headers: {},
-      result: { modality: 'embedding', state: 'ready', endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024, httpStatus: 200, providerRequestId: 'req-embedding', usageObserved: true, usage: { inputTokens: 16, totalTokens: 16 }, usageProviderRequestId: 'req-embedding', costObserved: true, costCny: 0.01, costSource: 'relay_pricing_snapshot', pricingVersion: 'pricing-v1', pricingGroup: 'default', pricingSnapshotSha256: snapshotDigest },
+      result: { modality: 'embedding', state: 'ready', endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024, httpStatus: 200, providerRequestId: 'req-embedding', usageObserved: true, usage: { inputTokens: 16, totalTokens: 16 }, usageProviderRequestId: 'req-embedding', costObserved: true, costCny: 0.0099936, costSource: 'relay_pricing_snapshot', pricingVersion: 'pricing-v1', pricingGroup: 'default', pricingSnapshotSha256: snapshotDigest },
       candidate_binding: candidateBinding,
       embedding_response: { input_sha256: createHash('sha256').update(input, 'utf8').digest('hex'), embedding_sha256: createHash('sha256').update(JSON.stringify(vector), 'utf8').digest('hex'), data_count: 1, dimensions: 1024 },
       pricing_snapshot: snapshot }
     const snapshotBody = JSON.stringify(snapshotArtifact)
     writeFileSync(join(root, 'relay', 'embedding-snapshot.json'), snapshotBody)
     const snapshotEvidence = structuredClone(bound)
-    Object.assign(snapshotEvidence.results[5]!, { costSource: 'relay_pricing_snapshot', pricingVersion: 'pricing-v1', pricingGroup: 'default', pricingSnapshotSha256: snapshotDigest,
+    Object.assign(snapshotEvidence.results[5]!, { costSource: 'relay_pricing_snapshot', costCny: 0.0099936, pricingVersion: 'pricing-v1', pricingGroup: 'default', pricingSnapshotSha256: snapshotDigest,
       evidence_ref: `artifact://production/relay/embedding-snapshot.json#${createHash('sha256').update(snapshotBody).digest('hex')}` })
     expect(validateModelRelayEvidence(snapshotEvidence, options)).toEqual([])
+    const tamperedCost = structuredClone(snapshotEvidence)
+    ;(tamperedCost.results[5] as any).costCny += 0.0001
+    const tamperedCostArtifact = JSON.parse(snapshotBody)
+    tamperedCostArtifact.result.costCny = (tamperedCost.results[5] as any).costCny
+    const tamperedCostBody = JSON.stringify(tamperedCostArtifact)
+    writeFileSync(join(root, 'relay', 'embedding-snapshot.json'), tamperedCostBody)
+    ;(tamperedCost.results[5] as any).evidence_ref = `artifact://production/relay/embedding-snapshot.json#${createHash('sha256').update(tamperedCostBody).digest('hex')}`
+    expect(validateModelRelayEvidence(tamperedCost, options)).toContain('embedding.evidence_ref embedding receipt must contain only input/vector SHA-256, data_count 1, and 1024 dimensions (no raw vector)')
     const unsafeSnapshot = structuredClone(snapshotEvidence)
     const unsafeSnapshotArtifact = JSON.parse(snapshotBody)
     unsafeSnapshotArtifact.pricing_snapshot.api_key = 'must-not-be-stored'
