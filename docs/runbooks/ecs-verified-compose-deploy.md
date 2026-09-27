@@ -17,7 +17,7 @@
 - 绝对路径 `ECS_DEPLOY_STATE_DIR`，用于保留权限为 `0600` 的切换前状态；
 - 由 root 预创建的绝对规范路径 `ECS_DEPLOY_LOCK_PATH`；部署和回退使用同一文件执行非阻塞 `flock`，Compose project 均使用 `ECS_COMPOSE_PROJECT`（默认 `merchant-production`）；
 - 绝对路径 `ECS_ROLLBACK_ENTRYPOINT`。该程序必须由宿主独立配置，读取 `ECS_DEPLOY_STATE_PATH`，恢复状态文件记录的上一组不可变镜像和路由；
-- `CONFIRM_ECS_DEPLOY=YES`、严格等于生产 API origin 的 `PRODUCTION_APPROVED_ORIGIN`，以及 canary 工作区和 bearer token。
+- `CONFIRM_ECS_DEPLOY=YES`、固定为 `https://yxsona.com` 的 `PRODUCTION_APPROVED_ORIGIN`、固定为 `https://yxsona.com/api` 的 `PRODUCTION_API_BASE_URL`，以及 canary 工作区和 bearer token。部署器拒绝其他 origin 或 API 路径，确保切流后的公网探测不会因调用者把两个值一起指向非生产服务而误报成功。
 - `POST_DEPLOY_CODEX_APP_HOST_EVIDENCE_PATH`，指向 `PRODUCTION_EVIDENCE_ARTIFACT_ROOT` 下尚未生成的绝对路径。公网 `/releasez` 和生产 canary 通过后，部署器最多等待 30 分钟；操作者必须在真实桌面 ChatGPT 中安装未修改的候选插件，以 `capture.host=chatgpt` 对公网重放 15 个 host 场景，生成 production capture，并将 capture 与所有引用 artifact 放到受保护证据根。capture 要绑定当前 release ID、Git SHA、Compose manifest SHA、image-set digest、MCP origin、bridge SHA、deployment nonce，并在切流核验时间之后生成。证据缺失、过期、身份不匹配或场景失败都会触发已有回退路径；候选 route 的 preproduction 证据不能替代此步骤。
 
 示例只描述调用边界，路径和环境值必须来自 ECS 宿主的受保护配置：

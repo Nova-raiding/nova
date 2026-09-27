@@ -65,9 +65,8 @@ APP_URL="$PRODUCTION_API_BASE_URL" APPROVED_ORIGIN="$PRODUCTION_APPROVED_ORIGIN"
   const app=new URL(process.env.APP_URL),approved=new URL(process.env.APPROVED_ORIGIN)
   const exactOrigin=url=>url.protocol==="https:"&&!url.username&&!url.password&&!url.search&&!url.hash&&url.pathname==="/"&&url.href===url.origin+"/"
   const safeBase=url=>url.protocol==="https:"&&!url.username&&!url.password&&!url.search&&!url.hash&&(url.pathname==="/"||/^\/(?:[A-Za-z0-9_-]+)(?:\/[A-Za-z0-9_-]+)*\/?$/.test(url.pathname))
-  const prefix=app.pathname==="/"?"":app.pathname.replace(/\/$/,"")
-  if(!exactOrigin(approved)||!safeBase(app)||app.origin!==approved.origin||![app.origin+prefix,app.origin+prefix+"/"].includes(process.env.APP_URL)) throw new Error("production API URL must be a canonical path under the approved HTTPS origin")
-' || { echo 'PRODUCTION_API_BASE_URL must be a canonical HTTPS path under PRODUCTION_APPROVED_ORIGIN' >&2; exit 2; }
+  if(!exactOrigin(approved)||approved.origin!=="https://yxsona.com"||!safeBase(app)||app.origin!==approved.origin||![app.origin+"/api",app.origin+"/api/"].includes(process.env.APP_URL)) throw new Error("production API URL must be https://yxsona.com/api under the fixed production origin")
+' || { echo 'PRODUCTION_API_BASE_URL must be https://yxsona.com/api and PRODUCTION_APPROVED_ORIGIN must be https://yxsona.com' >&2; exit 2; }
 for path in "$PRODUCTION_CONFIG_PATH" "$RENDERED_COMPOSE_PATH" "$ECS_CANDIDATE_IDENTITY_PATH"; do
   [ -f "$path" ] && [ ! -L "$path" ] || { echo "deployment input must be a regular non-symlink file: $path" >&2; exit 2; }
 done

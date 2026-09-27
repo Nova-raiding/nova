@@ -159,8 +159,31 @@ describe('verified ECS Compose deployment runner', () => {
     expect(script).toContain('flock -n 9')
     expect(script).toContain('const safeBase=url=>')
     expect(script).toContain('app.origin!==approved.origin')
-    expect(script).toContain('app.origin+prefix')
-    expect(script).toContain('PRODUCTION_API_BASE_URL must be a canonical HTTPS path under PRODUCTION_APPROVED_ORIGIN')
+    expect(script).toContain('approved.origin!=="https://yxsona.com"')
+    expect(script).toContain('app.origin+"/api"')
+    expect(script).toContain('PRODUCTION_API_BASE_URL must be https://yxsona.com/api and PRODUCTION_APPROVED_ORIGIN must be https://yxsona.com')
+  })
+
+  it('pins post-cutover health and canary probes to the production API origin and path', () => {
+    const script = source()
+    const assignment = 'APP_URL="$PRODUCTION_API_BASE_URL" APPROVED_ORIGIN="$PRODUCTION_APPROVED_ORIGIN" node -e \'\n'
+    const start = script.indexOf(assignment)
+    const codeStart = start + assignment.length
+    const end = script.indexOf("\n' || { echo", codeStart)
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(codeStart)
+    const validator = script.slice(codeStart, end)
+    const accepts = (apiUrl: string, approvedOrigin: string) => spawnSync('node', ['-e', validator], {
+      env: { PATH: process.env.PATH, APP_URL: apiUrl, APPROVED_ORIGIN: approvedOrigin }, encoding: 'utf8',
+    })
+    expect(accepts('https://yxsona.com/api', 'https://yxsona.com').status).toBe(0)
+    expect(accepts('https://yxsona.com/api/', 'https://yxsona.com').status).toBe(0)
+    for (const [apiUrl, origin] of [
+      ['https://attacker.example/api', 'https://attacker.example'],
+      ['https://yxsona.com/api', 'https://attacker.example'],
+      ['https://yxsona.com/', 'https://yxsona.com'],
+      ['https://yxsona.com/attacker', 'https://yxsona.com'],
+    ]) expect(accepts(apiUrl, origin).status).not.toBe(0)
   })
 
   it('validates frozen network and volume names against the selected project', () => {
