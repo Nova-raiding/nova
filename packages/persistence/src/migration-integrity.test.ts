@@ -42,6 +42,27 @@ describe('bridge-only migration compatibility', () => {
     expect(() => verifyBridgeMigrationPrefix([{ ...rows[0]!, checksum: '0'.repeat(64) }, ...rows.slice(1, 242)], expected, 'prefix_242_or_244')).toThrow('checksum mismatch')
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242), expected.slice(0, 243), 'prefix_242_or_244')).toThrow('complete migration chain through 244')
   })
+
+  it('accepts only verified 242 or 254 prefixes for the independent 242-to-254 bridge mode', async () => {
+    const expected = await loadMigrations()
+    expect(expected).toHaveLength(254)
+    const rows = expected.map(item => ({ version: item.version, name: item.name, checksum: migrationChecksum(item.sql) }))
+
+    expect(verifyBridgeMigrationPrefix(rows.slice(0, 242), expected, 'prefix_242_or_254')).toBe(242)
+    expect(verifyBridgeMigrationPrefix(rows, expected, 'prefix_242_or_254')).toBe(254)
+    for (const version of [243, 244, 245, 253]) {
+      expect(() => verifyBridgeMigrationPrefix(rows.slice(0, version), expected, 'prefix_242_or_254'))
+        .toThrow('exactly 242 or 254')
+    }
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242), expected.slice(0, 253), 'prefix_242_or_254'))
+      .toThrow('complete migration chain through 254')
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242), expected, 'prefix_242_or_244'))
+      .not.toThrow()
+    expect(() => verifyBridgeMigrationPrefix(rows, expected, 'prefix_242_or_244'))
+      .toThrow('exactly 242 or 244')
+    expect(() => verifyBridgeMigrationPrefix(rows.map((row, index) => index === 253 ? { ...row, checksum: '0'.repeat(64) } : row), expected, 'prefix_242_or_254'))
+      .toThrow('checksum mismatch')
+  })
 })
 
 class IntegrityClient implements SqlClient {

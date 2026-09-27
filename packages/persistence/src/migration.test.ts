@@ -24,6 +24,19 @@ describe('MigrationRunner', () => {
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242), migrations, undefined)).toThrow('not enabled')
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242).map((row, index) => index === 241 ? { ...row, checksum: 'bad' } : row), migrations, 'prefix_242_or_244')).toThrow('checksum mismatch')
   })
+  it('supports a separate 242-or-254 verifier without widening the existing 242-or-244 contract', async () => {
+    const migrations = await loadMigrations()
+    const rows = migrations.map(({ version, name, sql }) => ({ version, name, checksum: migrationChecksum(sql) }))
+
+    expect(verifyBridgeMigrationPrefix(rows.slice(0, 242), migrations, 'prefix_242_or_254')).toBe(242)
+    expect(verifyBridgeMigrationPrefix(rows, migrations, 'prefix_242_or_254')).toBe(254)
+    for (const version of [243, 244, 245, 253]) {
+      expect(() => verifyBridgeMigrationPrefix(rows.slice(0, version), migrations, 'prefix_242_or_254'))
+        .toThrow('exactly 242 or 254')
+    }
+    expect(() => verifyBridgeMigrationPrefix(rows, migrations, 'prefix_242_or_244'))
+      .toThrow('exactly 242 or 244')
+  })
   it('loads the executable 001 SQL asset', async () => {
     const migration = await loadInitialMigration()
     expect(migration).toMatchObject({ version: 1, name: 'initial' })

@@ -216,18 +216,27 @@ export function verifyAppliedMigrations(
   }
 }
 
-/** Reviewed bridge artifact only: accept a complete, checksummed 242 or 244
- * prefix. A partially applied 243 migration must never make the code ready. */
+/** Reviewed bridge artifacts only: each mode accepts its explicitly approved
+ * complete migration prefixes. Intervening database states fail readiness. */
 export function verifyBridgeMigrationPrefix(
   applied: readonly AppliedMigration[],
   expected: readonly Migration[],
   mode: string | undefined,
-): 242 | 244 {
-  if (mode !== 'prefix_242_or_244') throw new Error('bridge schema compatibility mode is not enabled')
-  if (expected.length < 244 || expected.some((migration, index) => migration.version !== index + 1)) {
-    throw new Error('bridge release must carry the complete migration chain through 244')
+): 242 | 244 | 254 {
+  if (mode === 'prefix_242_or_244') {
+    if (expected.length < 244 || expected.some((migration, index) => migration.version !== index + 1)) {
+      throw new Error('bridge release must carry the complete migration chain through 244')
+    }
+    if (applied.length !== 242 && applied.length !== 244) throw new Error('bridge database migration prefix must be exactly 242 or 244')
+    verifyAppliedMigrations(applied, expected, migrationChecksumBaseline())
+    return applied.length
   }
-  if (applied.length !== 242 && applied.length !== 244) throw new Error('bridge database migration prefix must be exactly 242 or 244')
+
+  if (mode !== 'prefix_242_or_254') throw new Error('bridge schema compatibility mode is not enabled')
+  if (expected.length !== 254 || expected.some((migration, index) => migration.version !== index + 1)) {
+    throw new Error('242-to-254 bridge release must carry exactly the complete migration chain through 254')
+  }
+  if (applied.length !== 242 && applied.length !== 254) throw new Error('242-to-254 bridge database migration prefix must be exactly 242 or 254')
   verifyAppliedMigrations(applied, expected, migrationChecksumBaseline())
   return applied.length
 }
