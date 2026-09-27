@@ -372,6 +372,17 @@ describe('production readiness fail-closed', () => {
     expect(result.gates.cost).toMatchObject({ ready: true })
   })
 
+  it('blocks vector indexing until semantic queries have independent authorization and settlement', () => {
+    const environment = productionEnvironment()
+    environment.KNOWLEDGE_VECTOR_INDEX_ENABLED = 'true'
+    environment.EMBEDDING_DIMENSIONS = '1024'
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.ready).toBe(false)
+    expect(result.gates.knowledge_vector_query).toEqual({ ready: false, reasons: ['semantic_query_authorization_budget_settlement_unavailable'] })
+    environment.KNOWLEDGE_VECTOR_INDEX_ENABLED = 'false'
+    expect(productionReadinessDiagnostics(environment).gates.knowledge_vector_query).toEqual({ ready: true, reasons: [] })
+  })
+
   it.each([
     ['OPS_AUTH_MODE', 'oidc', 'ops_auth_mode_must_be_password'],
     ['MCP_INTEGRATION_MODE', 'remote_oauth', 'mcp_integration_mode_must_be_local_stdio'],

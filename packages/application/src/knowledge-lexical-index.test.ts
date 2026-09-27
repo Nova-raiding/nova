@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { MemoryKnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
 import { projectImportedProductsToKnowledge } from './knowledge-import.js'
@@ -39,6 +39,23 @@ describe('reviewed knowledge lexical index', () => {
     expect(events.slice(1)).toEqual(['provider', 'outcome:unknown'])
     expect((await repository.listDocuments('ws-billed'))[0]).toMatchObject({ indexState: 'queued' })
     expect(await repository.search({ workspaceId: 'ws-billed', queryEmbedding: vector(), embeddingModel: 'embed-v1', embeddingVersion: '2026-09' })).toEqual([])
+  })
+
+  it('does not call the embedding relay when signed admission is blocked', async () => {
+    const repository = new MemoryKnowledgeRepository()
+    const text = '需审核的商品事实'
+    const asset = await repository.createAsset({ id: 'asset-admission', workspaceId: 'ws-admission', kind: 'product_facts', name: '商品事实', content: {}, approvalStatus: 'approved', rightsStatus: 'cleared' })
+    const document = await repository.createDocument({ id: 'doc-admission', workspaceId: 'ws-admission', knowledgeAssetId: asset.id, sourceVersion: 1, knowledgeType: 'product_facts', contentHash: sha(text), extractedText: text, approvalStatus: 'approved', rightsStatus: 'cleared' })
+    await repository.replaceChunks('ws-admission', document.id, [{ ordinal: 0, content: text }])
+    await repository.updateAsset('ws-admission', asset.id, { approvalStatus: 'approved', rightsStatus: 'cleared' })
+    const embed = vi.fn(async () => ({ embeddings: [vector()], dimensions: 1024 }))
+    expect(await indexApprovedKnowledge({ repository, workspaceId: 'ws-admission', embedding: {
+      model: 'qwen3.7-text-embedding-flash', version: 'v1',
+      admit: async () => { throw Object.assign(new Error('semantic query gate blocked'), { code: 'KNOWLEDGE_EMBEDDING_ADMISSION_UNAVAILABLE' }) },
+      embed,
+    } })).toEqual({ ready: 0, blocked: 0, failed: 1 })
+    expect(embed).not.toHaveBeenCalled()
+    expect((await repository.listDocuments('ws-admission'))[0]?.indexState).toBe('queued')
   })
 
   it('holds pending import, then indexes hash-verified product and SKU after approval and rights clearance', async () => {

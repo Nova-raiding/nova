@@ -62,7 +62,8 @@ describe('model relay evidence gate', () => {
     const snapshotEvidence = structuredClone(bound)
     Object.assign(snapshotEvidence.results[5]!, { costSource: 'relay_pricing_snapshot', costCny: 0.0099936, pricingVersion: 'pricing-v1', pricingGroup: 'default', pricingSnapshotSha256: snapshotDigest,
       evidence_ref: `artifact://production/relay/embedding-snapshot.json#${createHash('sha256').update(snapshotBody).digest('hex')}` })
-    expect(validateModelRelayEvidence(snapshotEvidence, options)).toEqual([])
+    const strictSnapshotErrors = validateModelRelayEvidence(snapshotEvidence, { ...options, requireProduction: true, now: new Date('2026-08-26T02:00:00Z') })
+    expect(strictSnapshotErrors.filter(error => error.includes('embedding.cost') || error.includes('embedding.pricing'))).toEqual([])
     const tamperedCost = structuredClone(snapshotEvidence)
     ;(tamperedCost.results[5] as any).costCny += 0.0001
     const tamperedCostArtifact = JSON.parse(snapshotBody)
@@ -78,6 +79,24 @@ describe('model relay evidence gate', () => {
     writeFileSync(join(root, 'relay', 'embedding-snapshot.json'), unsafeSnapshotBody)
     ;(unsafeSnapshot.results[5] as any).evidence_ref = `artifact://production/relay/embedding-snapshot.json#${createHash('sha256').update(unsafeSnapshotBody).digest('hex')}`
     expect(validateModelRelayEvidence(unsafeSnapshot, options)).toContain('embedding.evidence_ref embedding receipt must contain only input/vector SHA-256, data_count 1, and 1024 dimensions (no raw vector)')
+
+    const unavailableGroup = structuredClone(snapshotEvidence)
+    const unavailableGroupArtifact = JSON.parse(snapshotBody)
+    unavailableGroupArtifact.pricing_snapshot.pricing.data[0].enable_groups = ['another-group']
+    const unavailableGroupBody = JSON.stringify(unavailableGroupArtifact)
+    writeFileSync(join(root, 'relay', 'embedding-snapshot.json'), unavailableGroupBody)
+    ;(unavailableGroup.results[5] as any).evidence_ref = `artifact://production/relay/embedding-snapshot.json#${createHash('sha256').update(unavailableGroupBody).digest('hex')}`
+    expect(validateModelRelayEvidence(unavailableGroup, options)).toContain('embedding.evidence_ref embedding receipt must contain only input/vector SHA-256, data_count 1, and 1024 dimensions (no raw vector)')
+
+    const missingSnapshotDigest = structuredClone(snapshotEvidence)
+    delete (missingSnapshotDigest.results[5] as any).pricingSnapshotSha256
+    const missingDigestArtifact = JSON.parse(snapshotBody)
+    delete missingDigestArtifact.result.pricingSnapshotSha256
+    const missingDigestBody = JSON.stringify(missingDigestArtifact)
+    writeFileSync(join(root, 'relay', 'embedding-snapshot.json'), missingDigestBody)
+    ;(missingSnapshotDigest.results[5] as any).evidence_ref = `artifact://production/relay/embedding-snapshot.json#${createHash('sha256').update(missingDigestBody).digest('hex')}`
+    expect(validateModelRelayEvidence(missingSnapshotDigest, { ...options, requireProduction: true, now: new Date('2026-08-26T02:00:00Z') }))
+      .toContain('embedding.pricingSnapshotSha256 must bind the authenticated sanitized pricing snapshot')
 
     const nonFlashModel = structuredClone(bound)
     ;(nonFlashModel.results[5] as any).model = 'qwen3.7-text-embedding'
@@ -97,11 +116,6 @@ describe('model relay evidence gate', () => {
     const wrongDimension = structuredClone(bound)
     ;(wrongDimension.results[5] as any).dimensions = 1536
     expect(validateModelRelayEvidence(wrongDimension, options)).toContain('embedding.dimensions must be 1024')
-
-    const quotedCost = structuredClone(bound)
-    ;(quotedCost.results[5] as any).costSource = 'relay_pricing_snapshot'
-    expect(validateModelRelayEvidence(quotedCost, { ...options, requireProduction: true }))
-      .toContain('embedding.costSource must be a provider receipt')
 
     const wrongObservedDimensions = JSON.parse(readFileSync(join(root, 'relay', 'embedding.json'), 'utf8'))
     wrongObservedDimensions.embedding_response.dimensions = 1536

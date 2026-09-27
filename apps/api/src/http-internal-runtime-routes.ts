@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { DomainError, type ImageGenerationJob } from '../../../packages/application/src/service.js'
 import { ERROR_CODES, validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
 import { evaluatePlatformModelGate } from '../../../packages/ai/src/platform-model-gate.js'
+import { knowledgeVectorQueryReadiness } from './health-readiness.js'
 import type { RelayUsageRecord } from '../../../packages/ai/src/relay-usage.js'
 import { contextEnvelopeHash } from '../../../packages/persistence/src/context-snapshot-repository.js'
 import { ReconciliationEvidenceIdempotencyConflictError, type ReconciliationEvidenceRepository } from '../../../packages/persistence/src/reconciliation-evidence-repository.js'
@@ -316,6 +317,11 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     const expectedActionId = `knowledge-embedding:${documentId}:${documentRevision}`
     const expectedRunKey = `knowledge-index:${documentId}:${documentRevision}`
     if (actionId !== expectedActionId || runKey !== expectedRunKey) throw new DomainError('KNOWLEDGE_EMBEDDING_BINDING_INVALID', '知识向量动作标识未绑定文档版本', 409, { expected_action_id: expectedActionId, expected_run_key: expectedRunKey })
+    if (path.endsWith('/admission')) {
+      const queryGate = knowledgeVectorQueryReadiness(process.env)
+      const embeddingGate = evaluatePlatformModelGate(process.env, 'embedding')
+      if (!queryGate.ready || !embeddingGate.ready || process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED !== 'true') throw new DomainError('KNOWLEDGE_EMBEDDING_PROVIDER_NOT_READY', '知识向量检索和中转配置未通过生产门禁', 503, { reasons: [...queryGate.reasons, ...embeddingGate.reasons], vector_index_enabled: process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true' })
+    }
     await persistenceReady
     const repository = persistence.knowledge ?? durableKnowledgeRepository ?? (!requiresStrictAuth() ? memoryKnowledge : undefined)
     if (!repository) throw new DomainError('KNOWLEDGE_DURABLE_NOT_CONFIGURED', '知识库持久化仓储未配置，已阻断向量调用', 503)
@@ -324,8 +330,6 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     if (document.revision !== documentRevision || document.contentHash !== contentHash) throw new DomainError('KNOWLEDGE_EMBEDDING_DOCUMENT_STALE', '知识文档版本或内容摘要已变化，已阻断向量调用', 409)
     if (document.approvalStatus !== 'approved' || document.rightsStatus !== 'cleared' || !['queued', 'indexing'].includes(document.indexState)) throw new DomainError('KNOWLEDGE_EMBEDDING_DOCUMENT_NOT_ELIGIBLE', '知识文档未完成审批、权利确认或不在待索引状态', 409, { approval_status: document.approvalStatus, rights_status: document.rightsStatus, index_state: document.indexState })
     if (path.endsWith('/admission')) {
-      const embeddingGate = evaluatePlatformModelGate(process.env, 'embedding')
-      if (!embeddingGate.ready || process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED !== 'true') throw new DomainError('KNOWLEDGE_EMBEDDING_PROVIDER_NOT_READY', '知识向量中转配置未通过生产门禁', 503, { reasons: embeddingGate.reasons, vector_index_enabled: process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true' })
       const existingAuthorization = await persistence.actionLedger?.get(workspaceId, actionId)
       if (existingAuthorization && ['released', 'refunded', 'manual_attention'].includes(existingAuthorization.settlementStatus ?? existingAuthorization.state ?? '')) throw new DomainError('KNOWLEDGE_EMBEDDING_AUTHORIZATION_INACTIVE', '知识向量动作授权已失效，禁止再次调用上游', 409)
       if (!existingAuthorization) await recordActionSettlement({ workspaceId, actionKey: actionId, actionKind: 'other', settlement: 'included_quota', amountFen: 0, actorId: requestActor(req), description: '知识向量索引模型调用', settlementStatus: 'authorized' })

@@ -4,6 +4,7 @@ import type { Platform } from '../../../packages/application/src/service.js'
 import type { ConnectorRuntime } from '../../../packages/application/src/connector-runtime.js'
 import type { PaymentChannel } from '../../../packages/billing/src/payment-provider.js'
 import type { paymentCapabilityStatus as paymentCapabilityStatusType } from './server.js'
+import { knowledgeVectorQueryReadiness } from './health-readiness.js'
 
 type Gate = { ready: boolean; reasons: string[] }
 type PaymentReadiness = {
@@ -58,7 +59,9 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
   // lexical until the dedicated durable authorization/budget workflow is
   // explicitly enabled for the release.
   const vectorIndexEnabled = process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true'
-  const embeddingProviderConfigured = vectorIndexEnabled && embeddingModelGate.ready
+  const vectorQueryGate = knowledgeVectorQueryReadiness(process.env)
+  const embeddingProviderConfigured = embeddingModelGate.ready
+  const embeddingReady = vectorIndexEnabled && embeddingProviderConfigured && vectorQueryGate.ready
   const modelCostGateConfigured = evaluatePlatformModelCostGate(process.env).ready && Object.values(requiredModelCostEvidenceByModality()).every(Boolean)
   const vaultConfigured = connectorRuntime.credentialProviderConfigured && !fixtureMode
   const localAcceptanceObjectStorage = production && process.env.DEPLOYMENT_PROFILE === 'local_acceptance' && process.env.ALLOW_LOCAL_DURABLE_OBJECT_STORAGE === 'true' && (process.env.ASSET_STORAGE_ROOT?.startsWith('/var/lib/merchant-assets/') ?? false)
@@ -94,7 +97,7 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
   if (!imageEditProviderConfigured) nextActions.push('配置 IMAGE_EDIT_MODEL（或复用 IMAGE_MODEL）和图片编辑中转 provider 后启用局部图片编辑；未配置时保留原图并阻断编辑请求')
   if (!imageFactsConfigured) nextActions.push('配置平台模型中转站、MODEL_RELAY_API_KEY 和 OCR_MODEL 后启用图片 OCR 候选；未配置时继续要求商家人工确认图片事实')
   if (!videoProviderConfigured) nextActions.push('配置平台模型中转站、MODEL_RELAY_API_KEY、VIDEO_MODEL 和视频 provider 后启用视频渲染；未配置时只能生成无渲染分镜')
-  if (process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true' && !embeddingProviderConfigured) nextActions.push('知识库向量索引已显式启用但未通过门禁：需配置 EMBEDDING_MODEL/EMBEDDING_DIMENSIONS，并完成后台索引专用授权、预算预留和用量结算；当前保持阻断')
+  if (vectorIndexEnabled && !embeddingReady) nextActions.push('知识库向量索引已显式启用但未通过门禁：需配置 EMBEDDING_MODEL/EMBEDDING_DIMENSIONS，并完成查询授权、预算预留和用量结算；当前保持阻断')
   if (!modelCostGateConfigured) nextActions.push('配置平台模型 RPM、TPM 和每日人民币成本上限；成本门禁未通过时生产模型请求保持阻断')
   if (production && !paymentReadiness.ready) nextActions.push('配置支付宝/微信服务端 checkout provider、商户号、回调验签、对账和退款能力：' + paymentReadiness.reasons.join('、'))
   if (platformOperationsMode === 'official_api' && !vaultConfigured) nextActions.push('official_api 模式需配置 VAULT_ADDR 和 VAULT_TOKEN（或接入外部凭据服务），让服务端安全读取商家授权凭据；不要把平台 token 放进插件参数')
@@ -135,7 +138,7 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
       image_edit: { ...imageEditModelGate, providerConfigured: imageEditProviderConfigured },
       ocr: { ...ocrModelGate, providerConfigured: imageFactsConfigured },
       video: { ...videoModelGate, providerConfigured: videoProviderConfigured },
-      embedding: { ...embeddingModelGate, providerConfigured: embeddingProviderConfigured },
+      embedding: { ...embeddingModelGate, ready: embeddingReady, reasons: vectorIndexEnabled ? [...embeddingModelGate.reasons, ...vectorQueryGate.reasons] : ['knowledge_vector_indexing_disabled', ...embeddingModelGate.reasons], providerConfigured: embeddingProviderConfigured },
     },
     objectStorage: { configured: objectStorageConfigured, mode: localAcceptanceObjectStorage ? 'local_acceptance_durable' : production ? 's3_compatible' : 'local' },
     alertNotifications,
@@ -151,4 +154,3 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
     nextActions,
   }
 }
-

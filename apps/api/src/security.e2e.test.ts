@@ -2076,6 +2076,16 @@ describe('security and access-control acceptance gates', () => {
         expect(response.status, `${role} ${path}`).toBe(403)
       }
     }
+    vi.stubEnv('KNOWLEDGE_VECTOR_INDEX_ENABLED', 'true')
+    vi.stubEnv('MODEL_RELAY_BASE_URL', 'https://ai.wormholexyz.xyz/v1')
+    vi.stubEnv('MODEL_RELAY_ALLOWED_HOSTS', 'ai.wormholexyz.xyz')
+    vi.stubEnv('MODEL_RELAY_API_KEY', 'embedding-test-relay-key')
+    vi.stubEnv('EMBEDDING_MODEL', 'qwen3.7-text-embedding-flash')
+    const admissionPath = '/v1/internal/knowledge-embeddings/admission'
+    const admissionBody = JSON.stringify({ document_id: 'doc-a', document_revision: 1, content_hash: 'a'.repeat(64), action_id: 'knowledge-embedding:doc-a:1', run_key: 'knowledge-index:doc-a:1' })
+    const blockedAdmission = await fetch(`${base}${admissionPath}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, authorization: `Bearer ${credentials.automation.token}`, ...workerProofHeaders({ role: 'automation', secret: credentials.automation.signing_secret, method: 'POST', path: admissionPath, workspaceId, body: admissionBody }) }, body: admissionBody })
+    expect(blockedAdmission.status).toBe(503)
+    expect((await blockedAdmission.json() as Envelope).error).toMatchObject({ code: 'KNOWLEDGE_EMBEDDING_PROVIDER_NOT_READY', details: { reasons: ['semantic_query_authorization_budget_settlement_unavailable'] } })
     const usagePath = '/v1/internal/model-usage'
     const usageBody = JSON.stringify({ modality: 'embedding' })
     const usageHeaders = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }

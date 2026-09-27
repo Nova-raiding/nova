@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { canonicalProductReadModeFromFlag } from '../packages/application/src/canonical-product-consistency.js'
+import { evaluateStoredFeatureFlag, type StoredFeatureFlag, type StoredFlagTarget } from '../packages/persistence/src/feature-flags-repository.js'
 import { CAPTURE_SQL, resolveCanonicalSafeState, summarizeCanonicalSafeState, validateCandidateBinding } from '../infra/protected/canonical-safe-state-snapshot.mjs'
 
 const binding = {
@@ -27,6 +29,37 @@ describe('canonical safe-state snapshot collector contract', () => {
     expect(resolveCanonicalSafeState({ ...flag, emergency_disabled: true, value_json: 'canonical_read' }, [], 'ws-a', '2026-09-27T00:00:00.000Z')).toBe('legacy_shadow')
     expect(resolveCanonicalSafeState({ ...flag, valid_from: '2026-09-28T00:00:00.000Z', value_json: 'canonical_read' }, [], 'ws-a', '2026-09-27T00:00:00.000Z')).toBe('legacy_shadow')
     expect(resolveCanonicalSafeState(flag, [{ target_type: 'percentage', target_value: '10000', enabled: true, value_json: 'canonical_read' }], 'ws-a', '2026-09-27T00:00:00.000Z')).toBe('canonical_read')
+  })
+
+  it('stays behaviorally identical to the production workspace feature-flag evaluator', () => {
+    const at = '2026-09-27T00:00:00.000Z'
+    type SafeFlagFixture = { flag_key: string; environment: string; value_type: string; value_json: string; enabled: boolean; emergency_disabled: boolean; valid_from?: string }
+    type SafeTargetFixture = { target_type: 'identity' | 'workspace' | 'percentage'; target_value: string; enabled: boolean; value_json: string }
+    const cases: Array<{ flag?: SafeFlagFixture; targets: SafeTargetFixture[]; workspace: string }> = [
+      { flag: undefined, targets: [], workspace: 'ws-a' },
+      { flag: { flag_key: 'canonical.product.read_mode', environment: 'production', value_type: 'string', value_json: 'canonical_read', enabled: false, emergency_disabled: false }, targets: [], workspace: 'ws-a' },
+      { flag: { flag_key: 'canonical.product.read_mode', environment: 'production', value_type: 'string', value_json: 'legacy_shadow', enabled: true, emergency_disabled: true }, targets: [], workspace: 'ws-a' },
+      { flag: { flag_key: 'canonical.product.read_mode', environment: 'production', value_type: 'string', value_json: 'legacy_shadow', enabled: true, emergency_disabled: false, valid_from: '2026-09-28T00:00:00.000Z' }, targets: [], workspace: 'ws-a' },
+      { flag: { flag_key: 'canonical.product.read_mode', environment: 'production', value_type: 'string', value_json: 'legacy_shadow', enabled: true, emergency_disabled: false }, targets: [{ target_type: 'workspace', target_value: 'ws-a', enabled: true, value_json: 'dual_verify' }], workspace: 'ws-a' },
+      { flag: { flag_key: 'canonical.product.read_mode', environment: 'production', value_type: 'string', value_json: 'legacy_shadow', enabled: true, emergency_disabled: false }, targets: [{ target_type: 'workspace', target_value: 'ws-a', enabled: false, value_json: 'canonical_read' }], workspace: 'ws-a' },
+      { flag: { flag_key: 'canonical.product.read_mode', environment: 'production', value_type: 'string', value_json: 'legacy_shadow', enabled: true, emergency_disabled: false }, targets: [{ target_type: 'percentage', target_value: '10000', enabled: true, value_json: 'canonical_read' }], workspace: 'ws-a' },
+      { flag: { flag_key: 'canonical.product.read_mode', environment: 'production', value_type: 'string', value_json: 'legacy_shadow', enabled: true, emergency_disabled: false }, targets: [{ target_type: 'percentage', target_value: '1', enabled: true, value_json: 'canonical_read' }], workspace: 'ws-a' },
+      { flag: { flag_key: 'canonical.product.read_mode', environment: 'production', value_type: 'string', value_json: 'legacy_shadow', enabled: true, emergency_disabled: false }, targets: [{ target_type: 'identity', target_value: 'identity-a', enabled: true, value_json: 'canonical_read' }], workspace: 'ws-a' },
+    ]
+
+    for (const item of cases) {
+      const productionFlag: StoredFeatureFlag | undefined = item.flag && {
+        id: 'flag-id', key: item.flag.flag_key, environment: item.flag.environment,
+        description: '', defaultValue: { type: 'string', value: item.flag.value_json },
+        enabled: item.flag.enabled, emergencyDisabled: item.flag.emergency_disabled,
+        targets: item.targets.map(target => ({ type: target.target_type, value: target.target_value, enabled: target.enabled, ...(target.value_json ? { override: { type: 'string' as const, value: target.value_json } } : {}) })) as StoredFlagTarget[],
+        ...(item.flag.valid_from ? { validFrom: item.flag.valid_from } : {}), revision: 1,
+        createdBy: 'test', updatedBy: 'test', createdAt: at, updatedAt: at,
+      }
+      const expected = canonicalProductReadModeFromFlag(evaluateStoredFeatureFlag(productionFlag, { flagKey: 'canonical.product.read_mode', environment: 'production', workspaceId: item.workspace, at }))
+      const actual = resolveCanonicalSafeState(item.flag as Record<string, unknown> | undefined, item.targets as Array<Record<string, unknown>>, item.workspace, at)
+      expect(actual).toBe(expected)
+    }
   })
 
   it('blocks non-legacy modes and leaves identity/signing limitations explicit', () => {

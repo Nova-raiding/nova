@@ -542,14 +542,15 @@ describe('deployment operation scripts', () => {
       expect(preflight).toContain('YAML.safe_load(File.read(ARGV.fetch(0), encoding: "UTF-8"), aliases: false)')
       expect(preflight).toContain('config["knowledge_vector_index_enabled"]')
       expect(preflight).toContain('unless [true, false].include?(value)')
-      expect(preflight).toContain('config["embedding_model"]')
-      expect(preflight).toMatch(/if \[ "\$embedding_enabled" = true \]; then[\s\S]*model-relay-evidence-gate\.ts[^\n]*--embedding-enabled --embedding-model "\$rendered_embedding_model"[\s\S]*else[\s\S]*model-relay-evidence-gate\.ts/)
+      expect(preflight).toContain('if [ "$embedding_enabled" = true ]; then')
+      expect(preflight).toContain('knowledge_vector_index_enabled=true is blocked: runtime readiness remains fail-closed until semantic query authorization, budget reservation and cost settlement are implemented')
+      expect(preflight).not.toContain('config["embedding_model"]')
       expect(preflight).not.toContain('KNOWLEDGE_VECTOR_INDEX_ENABLED')
       const relayInvocations = preflight.match(/^\s*npx --no-install tsx .*model-relay-evidence-gate\.ts[^\n]*$/gmu) ?? []
-      expect(relayInvocations).toHaveLength(2)
-      expect(relayInvocations[0]).toContain('--embedding-enabled --embedding-model "$rendered_embedding_model"')
-      expect(relayInvocations[1]).not.toContain('--embedding-enabled')
-      expect(relayInvocations[1]).not.toContain('--embedding-model')
+      expect(relayInvocations).toHaveLength(1)
+      expect(relayInvocations[0]).not.toContain('--embedding-enabled')
+      expect(relayInvocations[0]).not.toContain('--embedding-model')
+      expect(preflight.indexOf('knowledge_vector_index_enabled=true is blocked')).toBeLessThan(preflight.indexOf('model-relay-evidence-gate.ts'))
     }
     for (const binding of ['--artifact-root', '--public-key', '--key-id', '--capability-evidence', '--capacity-evidence', '--model-relay-evidence', '--payment-evidence', '--restore-evidence', '--object-storage-evidence', '--codex-app-host-evidence', '--canonical-cutover-evidence']) expect(deployPreflight).toContain(binding)
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found' })).toThrow()
@@ -558,12 +559,15 @@ describe('deployment operation scripts', () => {
     expect(() => run('infra/scripts/deploy-preflight.sh', [], { VITEST: 'true', NODE_ENV: 'production' })).toThrow(/VITEST.*NODE_ENV=test/)
   })
 
-  it('keeps ECS infra scope independent of full business acceptance artifacts', () => {
+  it('blocks vector indexing before either ECS infra or full production deployment', () => {
     const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
-    const infraEmbeddingGuard = preflight.indexOf('if [ "$DEPLOYMENT_SCOPE" != full ] && [ "$embedding_enabled" = true ]; then')
-    expect(infraEmbeddingGuard).toBeGreaterThan(preflight.indexOf('sh infra/scripts/validate-production-config.sh "$config_path"'))
-    expect(infraEmbeddingGuard).toBeLessThan(preflight.indexOf('knowledge vector indexing requires full production acceptance and relay evidence'))
-    expect(infraEmbeddingGuard).toBeLessThan(preflight.indexOf('echo "ecs infra preflight passed:'))
+    const embeddingGuard = preflight.indexOf('if [ "$embedding_enabled" = true ]; then')
+    expect(embeddingGuard).toBeGreaterThan(preflight.indexOf('sh infra/scripts/validate-production-config.sh "$config_path"'))
+    expect(embeddingGuard).toBeLessThan(preflight.indexOf('node infra/scripts/validate-ecs-production-compose.mjs'))
+    expect(preflight).toContain('knowledge_vector_index_enabled=true is blocked: runtime readiness remains fail-closed until semantic query authorization, budget reservation and cost settlement are implemented')
+    expect(preflight.indexOf('knowledge_vector_index_enabled=true is blocked')).toBeLessThan(preflight.indexOf('model-relay-evidence-gate.ts'))
+    expect(preflight).not.toContain('config["embedding_model"]')
+    expect(preflight.match(/^\s*npx --no-install tsx .*model-relay-evidence-gate\.ts[^\n]*$/gmu)).toHaveLength(1)
     const fullAcceptanceBlock = preflight.slice(
       preflight.indexOf('if [ "$DEPLOYMENT_SCOPE" = full ]; then\nplatform_operations_mode='),
       preflight.indexOf('workspace_latest_migration=')

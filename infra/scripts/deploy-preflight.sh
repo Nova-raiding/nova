@@ -74,6 +74,11 @@ case "$DATABASE_URL $OPS_DATABASE_URL $REDIS_URL" in
 esac
 
 PRODUCTION_CONFIG_PATH="$config_path" sh "$(dirname "$0")/validate-production-config.sh" "$config_path"
+embedding_enabled=$(ruby -ryaml -e 'config = YAML.safe_load(File.read(ARGV.fetch(0), encoding: "UTF-8"), aliases: false); value = config.is_a?(Hash) ? config["knowledge_vector_index_enabled"] : nil; abort("knowledge_vector_index_enabled must be a boolean in rendered production config") unless [true, false].include?(value); puts(value ? "true" : "false")' "$config_path")
+if [ "$embedding_enabled" = true ]; then
+  echo 'knowledge_vector_index_enabled=true is blocked: runtime readiness remains fail-closed until semantic query authorization, budget reservation and cost settlement are implemented' >&2
+  exit 1
+fi
 # The current launch contract uses manual operations for the six commerce
 # platforms; official API canaries remain an explicit future opt-in profile.
 platform_operations_mode=$(awk '/^[[:space:]]*platform_operations_mode:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
@@ -118,13 +123,7 @@ fi
 npx --no-install tsx "$(dirname "$0")/../../tests/capacity-evidence-gate.ts" --file "$CAPACITY_REPORT_PATH" --require-cloud-gate --release-id "$RELEASE_ID" --profile "$profile"
 model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
 [ -n "$model_relay_url" ] || { echo "model_relay_base_url is required for relay evidence binding" >&2; exit 1; }
-embedding_enabled=$(ruby -ryaml -e 'config = YAML.safe_load(File.read(ARGV.fetch(0), encoding: "UTF-8"), aliases: false); value = config.is_a?(Hash) ? config["knowledge_vector_index_enabled"] : nil; abort("knowledge_vector_index_enabled must be a boolean in rendered production config") unless [true, false].include?(value); puts(value ? "true" : "false")' "$config_path")
-if [ "$embedding_enabled" = true ]; then
-  rendered_embedding_model=$(ruby -ryaml -e 'config = YAML.safe_load(File.read(ARGV.fetch(0), encoding: "UTF-8"), aliases: false); model = config.is_a?(Hash) ? config["embedding_model"] : nil; abort("embedding_model must be a string in rendered production config") unless model.is_a?(String) && !model.strip.empty?; print model' "$config_path")
-  npx --no-install tsx "$(dirname "$0")/../../tests/model-relay-evidence-gate.ts" --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --expected-release-git-sha "$release_git_sha" --expected-image-set-digest "$image_set_digest" --expected-manifest-sha256 "$manifest_sha256" --expected-deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts --embedding-enabled --embedding-model "$rendered_embedding_model"
-else
-  npx --no-install tsx "$(dirname "$0")/../../tests/model-relay-evidence-gate.ts" --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --expected-release-git-sha "$release_git_sha" --expected-image-set-digest "$image_set_digest" --expected-manifest-sha256 "$manifest_sha256" --expected-deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
-fi
+npx --no-install tsx "$(dirname "$0")/../../tests/model-relay-evidence-gate.ts" --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --expected-release-git-sha "$release_git_sha" --expected-image-set-digest "$image_set_digest" --expected-manifest-sha256 "$manifest_sha256" --expected-deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
 mcp_base_url=$(ruby "$(dirname "$0")/validate-production-config-yaml.rb" "$config_path" --print-mcp-base-url)
 [ -n "$mcp_base_url" ] || { echo "mcp_base_url is required for Codex host evidence binding" >&2; exit 1; }
 bridge_sha256=$(shasum -a 256 "$repo_root/apps/plugin/mcp/bridge.mjs" | awk '{print $1}')

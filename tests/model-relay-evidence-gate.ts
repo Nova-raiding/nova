@@ -41,9 +41,11 @@ function embeddingSnapshotCostMatches(snapshot: any, result: RelayResult): boole
     || (usage.outputTokens !== undefined && (!Number.isSafeInteger(usage.outputTokens) || usage.outputTokens !== 0))
     || (usage.totalTokens !== undefined && usage.totalTokens !== usage.inputTokens)) return false
   const model = snapshot.pricing.data.find((entry: any) => entry.model_name === result.model)
-  const groupRatio = snapshot.pricing.group_ratio[result.pricingGroup ?? '']
+  const group = result.pricingGroup ?? ''
+  const groupRatio = snapshot.pricing.group_ratio[group]
   if (!model || model.quota_type !== 0 || !Number.isFinite(model.model_ratio) || model.model_ratio < 0
     || !Number.isFinite(model.completion_ratio) || model.completion_ratio < 0
+    || (!model.enable_groups.includes(group) && !model.enable_groups.includes('all'))
     || typeof groupRatio !== 'number' || !Number.isFinite(groupRatio) || groupRatio <= 0) return false
   const rawQuota = ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) * model.completion_ratio) * model.model_ratio * groupRatio
   if (!Number.isFinite(rawQuota) || rawQuota < 0) return false
@@ -161,6 +163,7 @@ function validateArtifact(reference: string | undefined, root: string, label: st
           const pricingSnapshot = artifactValue.pricing_snapshot
           const pricingValid = expected.result.costSource === 'relay_pricing_snapshot'
             ? isSafeEmbeddingPricingSnapshot(pricingSnapshot)
+              && pricingSnapshot.pricing.pricing_version === expected.result.pricingVersion
               && pricingSnapshot.pricing.data.some((model: any) => model.model_name === expected.result?.model)
               && typeof pricingSnapshot.pricing.group_ratio[expected.result.pricingGroup ?? ''] === 'number'
               && pricingSnapshot.pricing.group_ratio[expected.result.pricingGroup ?? ''] > 0
@@ -302,7 +305,6 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
     if (result.costObserved !== true) errors.push(`${modality}.costObserved must be true`)
     if (typeof result.costCny !== 'number' || !Number.isFinite(result.costCny) || result.costCny < 0) errors.push(`${modality}.costCny must be a non-negative observed number`)
     if (options.requireProduction && result.costSource !== 'provider_receipt' && result.costSource !== 'relay_pricing_snapshot') errors.push(`${modality}.costSource must identify provider_receipt or relay_pricing_snapshot`)
-    if (options.requireProduction && modality === EMBEDDING_RELAY_MODALITY && result.costSource !== 'provider_receipt') errors.push('embedding.costSource must be a provider receipt')
     if (options.requireProduction && result.costSource === 'relay_pricing_snapshot') {
       if (!nonEmpty(result.pricingVersion)) errors.push(`${modality}.pricingVersion is required for relay_pricing_snapshot`)
       if (!nonEmpty(result.pricingGroup)) errors.push(`${modality}.pricingGroup is required for relay_pricing_snapshot`)

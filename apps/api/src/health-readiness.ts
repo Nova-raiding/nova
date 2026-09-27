@@ -4,6 +4,16 @@ import { COMMERCIAL_OPERATION_REGISTRY } from '../../../packages/contracts/src/i
 import type { CommercialCatalogRepository } from '../../../packages/persistence/src/index.js'
 
 type ProductionReadinessGate = { ready: boolean; reasons: string[] }
+
+/** Background vectors are not a usable merchant capability until a query
+ * request has its own authorization, budget reservation and cost settlement.
+ * `catalog.search` is a read-only contract and must not silently dispatch a
+ * billable embedding request. */
+export function knowledgeVectorQueryReadiness(source: NodeJS.ProcessEnv): ProductionReadinessGate {
+  return source.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true'
+    ? { ready: false, reasons: ['semantic_query_authorization_budget_settlement_unavailable'] }
+    : { ready: true, reasons: [] }
+}
 export interface ProductionReadinessDependencies {
   requiredModelCostEvidenceByModality: (source?: NodeJS.ProcessEnv) => Record<string, boolean>
   productionAuthorizationReadiness: (source: NodeJS.ProcessEnv, production: boolean) => ProductionReadinessGate
@@ -58,6 +68,7 @@ export function productionReadinessDiagnostics(source: NodeJS.ProcessEnv = proce
     payment: productionPaymentReadiness(source),
     rule_sync: productionRuleSyncReadiness(source),
     cost,
+    knowledge_vector_query: knowledgeVectorQueryReadiness(source),
     alerts: (() => {
       const readiness = alertNotificationReadiness(source)
       return { ready: readiness.ready, reasons: readiness.ready ? [] : [readiness.reason ?? 'alert_notification_not_ready'] }
@@ -100,4 +111,3 @@ export async function productionCommercialReadiness(repository: CommercialCatalo
     charged_methods: { enabled: enabledChargedMethods.length },
   }
 }
-
