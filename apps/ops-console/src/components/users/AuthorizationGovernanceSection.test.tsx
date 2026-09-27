@@ -64,6 +64,8 @@ describe("AuthorizationGovernanceSection", () => {
     expect(source).toContain('label="审批人身份"');
     expect(source).not.toContain('label="审批人"');
     expect(source).toContain("审批证据来自令牌");
+    expect(source).toContain('aria-label="到期时间（读≤15m / 写≤5m）"');
+    expect(source).toContain('aria-label="授权原因"');
   });
 
   it("keeps role and JIT recovery keyboard reachable while retaining form input", () => {
@@ -86,11 +88,13 @@ describe("AuthorizationGovernanceSection", () => {
   it("keeps the revoke receipt and renders governance sections in one page", () => {
     const workspaceSource = readFileSync(new URL("./UsersGovernanceWorkspace.tsx", import.meta.url), "utf8");
     const modelSource = readFileSync(new URL("../../hooks/useOpsConsoleModel.ts", import.meta.url), "utf8");
+    const styleSource = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
     expect(source).toContain("model.recordJitRevocation");
     expect(source).not.toContain("<Tabs");
     expect(workspaceSource).toContain("<Tabs");
     expect(workspaceSource).toContain('className="ops-users-tabs"');
     expect(workspaceSource).toContain('label: "权限与授权"');
+    expect(styleSource).not.toMatch(/\.ops-users-tabs \.ant-tabs-nav\s*\{\s*display:\s*none/u);
     expect(workspaceSource).not.toContain("用户与权限工作台");
     expect(modelSource).toContain("jitRevocationReceipt");
   });

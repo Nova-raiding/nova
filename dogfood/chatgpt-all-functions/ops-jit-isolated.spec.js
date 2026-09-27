@@ -19,6 +19,7 @@ const config = {
   workspaceId: requiredEnvironment('OPS_E2E_WORKSPACE_ID').trim(),
   subjectIdentityId: requiredEnvironment('OPS_E2E_SUBJECT_IDENTITY_ID').trim(),
   approverId: requiredEnvironment('OPS_E2E_APPROVER_ID').trim(),
+  approvalToken: requiredEnvironment('OPS_E2E_APPROVAL_TOKEN'),
   outputDir: requiredEnvironment('OPS_E2E_OUTPUT_DIR').trim(),
 }
 const gatewayUrl = new URL(config.baseUrl)
@@ -165,18 +166,17 @@ async function login(page, evidence) {
     sessionStorage.setItem('ops_workbench', 'platform')
   }, { workspaceId: config.workspaceId })
   await page.goto(new URL('/ops/users?workbench=platform', gatewayUrl).toString(), { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('textbox', { name: '运营账号', exact: true })).toBeVisible()
-  await page.getByRole('textbox', { name: '运营账号', exact: true }).fill(config.username)
-  await page.getByLabel('密码', { exact: true }).fill(config.password)
-  const [{ result: session }] = await rpcThroughUi(page, ['ops.session'], () => page.getByRole('button', { name: '安全登录', exact: true }).click(), evidence)
+  await expect(page.getByPlaceholder('例如 ops@example.com', { exact: true })).toBeVisible()
+  await page.getByPlaceholder('例如 ops@example.com', { exact: true }).fill(config.username)
+  await page.getByPlaceholder('请输入平台运营密码', { exact: true }).fill(config.password)
+  const [{ result: session }] = await rpcThroughUi(page, ['ops.session'], () => page.getByRole('button', { name: '登录平台运营后台', exact: true }).click(), evidence)
   expect(session.actor_id).toBe(config.actorId)
   expect(session.actor_id).not.toBe(config.approverId)
   expect(session.workbench).toBe('platform')
   expect(session.capabilities).toEqual(expect.arrayContaining(['authorization.grant.read', 'authorization.grant.manage']))
   await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('已由服务端验证', { timeout: 30_000 })
   await expect(page.getByRole('heading', { name: '用户中心', exact: true })).toBeVisible()
-  await page.getByRole('tab', { name: '权限与角色', exact: true }).click()
-  await page.getByRole('tab', { name: 'JIT 授权', exact: true }).click()
+  await page.getByRole('tab', { name: '权限与授权', exact: true }).click()
 }
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }]) {
@@ -205,7 +205,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       step('password_login_and_grant_capabilities')
       await login(page, evidence)
       await page.getByRole('textbox', { name: 'JIT 目标身份 ID', exact: true }).fill(config.subjectIdentityId)
-      await page.getByRole('textbox', { name: 'JIT 目标工作区 ID', exact: true }).fill(config.workspaceId)
+      await page.getByRole('textbox', { name: 'JIT 目标商家主体 ID', exact: true }).fill(config.workspaceId)
       // Ant Design prefixes the accessible name with "loading" while the
       // request is in flight. Match the stable merchant action label while
       // keeping the explicit loading assertion below.
@@ -222,7 +222,8 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       await form.getByLabel('能力（逗号分隔）', { exact: true }).fill('customer.content.read')
       await form.getByLabel('工单/事故', { exact: true }).fill(caseId)
       await form.getByLabel('最大使用次数', { exact: true }).fill('2')
-      await form.getByLabel('审批人', { exact: true }).fill(config.approverId)
+      await form.getByLabel('审批人身份', { exact: true }).fill(config.approverId)
+      await form.getByLabel('审批人令牌', { exact: true }).fill(config.approvalToken)
       const approvedAt = new Date().toISOString()
       const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString()
       await form.getByLabel('审批时间（ISO UTC）', { exact: true }).fill(approvedAt)
@@ -256,11 +257,12 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       const [{ result: refreshed }] = await rpcThroughUi(page, ['ops.authorization.grants.list'], () => readGrants.click(), evidence)
       const persisted = refreshed.grants.find(grant => grant.id === issued.id)
       expect(persisted).toBeDefined()
+      expect(persisted.capabilities).toEqual(['customer.content.read'])
       expect(persisted.resourceScope).toEqual({ workspace_ids: [config.workspaceId] })
       expect(refreshed.authorization_revision).toBe(issued.authorizationRevision)
       const row = page.getByRole('row').filter({ has: page.getByRole('cell', { name: caseId, exact: true }) })
       await expect(row).toBeVisible()
-      await expect(row).toContainText('customer.content.read')
+      await expect(row).toContainText('查看商品内容')
       await expect(row).toContainText('0/2')
       await row.scrollIntoViewIfNeeded()
       await screenshot('issued-and-refreshed')
@@ -287,6 +289,9 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       expect(revokedRefresh.result.grants.map(grant => grant.id)).not.toContain(issued.id)
       await expect(dialog).toBeHidden({ timeout: 30_000 })
       await expect(row).toHaveCount(0)
+      // Clearing authorization-scoped datasets may remount the workspace at
+      // its first permitted section while the API session is revalidated.
+      await page.getByRole('tab', { name: '权限与授权', exact: true }).click()
       await expect(page.getByText('最近一次 JIT 已撤销', { exact: true })).toBeVisible()
       await screenshot('revoked-and-removed')
       evidence.status = 'passed'

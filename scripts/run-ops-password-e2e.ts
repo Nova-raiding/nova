@@ -221,11 +221,16 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const scanEnvironment = scanner ? prepareCustomerDeliveryScanEnvironment(scanner, { fixture, apiBaseUrl: `http://127.0.0.1:${apiPort}`, apiPort }) : undefined
     const username = fixture.platformLogin
     const password = fixture.platformPassword
+    // Seed a run-unique approval credential in this isolated API only. The
+    // desktop spec receives it for the approver form; it is never written to
+    // runtime/evidence artifacts or inherited from ambient environment.
+    const approvalToken = randomBytes(32).toString('base64url')
     const apiEnvironment = opsChildEnvironment(source, {
       NODE_ENV: 'development', AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres',
       PORT: String(apiPort), OPS_AUTH_MODE: 'password',
       API_BIND_HOST: '127.0.0.1',
       SESSION_ID_HASH_SECRET: randomBytes(32).toString('hex'),
+      AUTHORIZATION_APPROVAL_TOKENS: JSON.stringify({ [approvalToken]: { actor_id: fixture.approverId, workspaces: [fixture.workspaceId] } }),
       DATABASE_URL: fixture.databaseUrl, OPS_DATABASE_URL: fixture.opsDatabaseUrl, REDIS_URL: fixture.redisUrl,
       RUN_MIGRATIONS_ON_STARTUP: 'false', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
       CONNECTOR_FIXTURE_MODE: 'false', REQUEST_OBSERVABILITY_LOGS: 'true',
@@ -257,6 +262,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       OPS_NO_AUTH_BASE_URL: `http://127.0.0.1:${uiPort}/`,
       OPS_ACTOR_ID: fixture.actorSubject, OPS_E2E_WORKSPACE_ID: fixture.workspaceId,
       OPS_E2E_SUBJECT_IDENTITY_ID: fixture.subjectIdentityId, OPS_E2E_APPROVER_ID: fixture.approverId,
+      OPS_E2E_APPROVAL_TOKEN: approvalToken,
       OPS_E2E_OUTPUT_DIR: evidenceDir, PLAYWRIGHT_JSON_OUTPUT_NAME: resolve(evidenceDir, 'playwright.json'),
       ...(scanner ? { OPS_E2E_REAL_DELIVERY_SCAN: 'true' } : {}),
     })
