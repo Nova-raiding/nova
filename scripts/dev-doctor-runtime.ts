@@ -41,10 +41,18 @@ export function composeServiceHealth(rows: ComposeServiceState[], service: strin
 export function releaseReadiness(payload: unknown) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined
   const record = payload as Record<string, unknown>
-  if (typeof record.ready === 'boolean') return record.ready
   if (!record.data || typeof record.data !== 'object' || Array.isArray(record.data)) return undefined
-  const ready = (record.data as Record<string, unknown>).ready
-  return typeof ready === 'boolean' ? ready : undefined
+  const data = record.data as Record<string, unknown>
+  if (typeof data.ready !== 'boolean') return undefined
+  if (!data.ready) return false
+  const release = objectRecord(data.release)
+  return Boolean(
+    release
+    && typeof release.release_id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(release.release_id)
+    && typeof release.release_git_sha === 'string' && /^[0-9a-f]{40}$/u.test(release.release_git_sha)
+    && typeof release.manifest_sha256 === 'string' && /^[0-9a-f]{64}$/u.test(release.manifest_sha256)
+    && typeof release.image_set_digest === 'string' && /^sha256:[0-9a-f]{64}$/u.test(release.image_set_digest),
+  )
 }
 
 export type CommercialRuntimeReadiness = {

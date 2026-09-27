@@ -26,7 +26,17 @@ describe('developer doctor runtime checks', () => {
 
   it('reads release readiness from the API envelope', () => {
     expect(releaseReadiness({ data: { ready: false } })).toBe(false)
-    expect(releaseReadiness({ ready: true })).toBe(true)
+    const release = {
+      release_id: 'release-2026-09',
+      release_git_sha: 'a'.repeat(40),
+      manifest_sha256: 'b'.repeat(64),
+      image_set_digest: `sha256:${'c'.repeat(64)}`,
+    }
+    expect(releaseReadiness({ data: { ready: true, release } })).toBe(true)
+    expect(releaseReadiness({ ready: true, data: { ready: true, release } })).toBe(true)
+    expect(releaseReadiness({ ready: true })).toBeUndefined()
+    expect(releaseReadiness({ data: { ready: true } })).toBe(false)
+    expect(releaseReadiness({ data: { ready: true, release: { ...release, manifest_sha256: 'invalid' } } })).toBe(false)
     expect(releaseReadiness({ data: {} })).toBeUndefined()
   })
 
