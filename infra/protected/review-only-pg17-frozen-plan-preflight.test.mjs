@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, generateKeyPairSync, sign } from 'node:crypto'
-import { reviewOnlyPreSignSnapshotCheck, reviewOnlyVerifyFrozenPlan, signFrozenPlanFromObservedCatalog } from './review-only-pg17-frozen-plan-preflight.mjs'
+import * as frozenPlanPreflight from './review-only-pg17-frozen-plan-preflight.mjs'
+import { reviewOnlyPreSignSnapshotCheck, reviewOnlyVerifyFrozenPlan } from './review-only-pg17-frozen-plan-preflight.mjs'
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const releaseId = 'release-39fc097d-review'
@@ -36,10 +37,11 @@ test('accepts a candidate/source-bound signed plan but never emits production ev
   assert.equal(result.source_provenance_verified, false)
 })
 
-test('signer round-trip accepts only a reviewed catalog and separate Ed25519 key', () => {
-  const bytes = signFrozenPlanFromObservedCatalog({ tablePlan, sourcePolicyBytes, releaseId, gitSha, migrationVersion: 242, keyId, privateKeyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }), publicKeyPem: trustedPublicKey, signedAt: '2026-09-27T00:00:00.000Z', expiresAt: '2026-09-28T00:00:00.000Z' })
-  assert.deepEqual(reviewOnlyVerifyFrozenPlan(args(bytes)).table_plan, tablePlan)
-  assert.throws(() => signFrozenPlanFromObservedCatalog({ tablePlan: [{ ...tablePlan[0], name: 'bad;table' }], sourcePolicyBytes, releaseId, gitSha, migrationVersion: 242, keyId, privateKeyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }), publicKeyPem: trustedPublicKey, signedAt: '2026-09-27T00:00:00.000Z', expiresAt: '2026-09-28T00:00:00.000Z' }), /identifier/u)
+test('review-only frozen-plan preflight exposes no signer capability', () => {
+  assert.equal(typeof frozenPlanPreflight.signFrozenPlanFromObservedCatalog, 'undefined')
+  const result = reviewOnlyVerifyFrozenPlan(args(signedBytes()))
+  assert.equal(result.final_production_evidence, false)
+  assert.equal(result.source_provenance_verified, false)
 })
 
 test('rejects modified bytes, invalid signature, wrong source, candidate, and key', () => {
