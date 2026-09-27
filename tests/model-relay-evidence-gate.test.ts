@@ -30,12 +30,12 @@ describe('model relay evidence gate', () => {
     const vector = Array.from({ length: 1024 }, () => 0.125)
     const input = 'release evidence synthetic embedding input'
     const results: any[] = structuredClone(evidence.results).map((result: any) => ({ ...result, costSource: 'provider_receipt' }))
-    const embeddingResult = { modality: 'embedding', state: 'ready', endpoint: '/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024,
+    const embeddingResult = { modality: 'embedding', state: 'ready', endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024,
       httpStatus: 200, providerRequestId: 'req-embedding', usageObserved: true, usage: { inputTokens: 16, totalTokens: 16 },
       usageProviderRequestId: 'req-embedding', costObserved: true, costCny: 0.01, costSource: 'provider_receipt' }
     results.push(embeddingResult)
     for (const result of results) {
-      const artifact = { schema_version: '1', release_id: 'release-1', modality: result.modality, http_status: result.httpStatus,
+      const artifact = { schema_version: '1', release_id: 'release-1', modality: result.modality, observed_at: '2026-08-26T01:00:00Z', http_status: result.httpStatus, response_headers: {},
         result, ...(result.modality === 'video' ? { relay_response: { data: { status: 'completed', video_url: 'https://relay.example.com/output.mp4' } } } : {}),
         ...(result.modality === 'embedding' ? { candidate_binding: candidateBinding,
           embedding_response: { input_sha256: createHash('sha256').update(input, 'utf8').digest('hex'),
@@ -49,6 +49,27 @@ describe('model relay evidence gate', () => {
       manifest_sha256: expectedCandidate.manifestSha256, deployment_nonce_sha256: candidateBinding.deployment_nonce_sha256, results }
     const options = { requireEmbedding: true, expectedEmbeddingModel: 'qwen3.7-text-embedding-flash', requireCandidateBinding: true, expectedCandidate, artifactRoot: root }
     expect(validateModelRelayEvidence(bound, options)).toEqual([])
+
+    const snapshot = { pricing: { pricing_version: 'pricing-v1', group_ratio: { default: 1 }, data: [{ model_name: 'qwen3.7-text-embedding-flash', quota_type: 0, model_ratio: 1, model_price: 0, completion_ratio: 1, enable_groups: ['default'] }] }, status: { quota_per_unit: 500000, usd_exchange_rate: 7.2 } }
+    const snapshotDigest = createHash('sha256').update(JSON.stringify(snapshot), 'utf8').digest('hex')
+    const snapshotArtifact = { schema_version: '1', release_id: 'release-1', modality: 'embedding', observed_at: '2026-08-26T01:00:00Z', http_status: 200, response_headers: {},
+      result: { modality: 'embedding', state: 'ready', endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024, httpStatus: 200, providerRequestId: 'req-embedding', usageObserved: true, usage: { inputTokens: 16, totalTokens: 16 }, usageProviderRequestId: 'req-embedding', costObserved: true, costCny: 0.01, costSource: 'relay_pricing_snapshot', pricingVersion: 'pricing-v1', pricingGroup: 'default', pricingSnapshotSha256: snapshotDigest },
+      candidate_binding: candidateBinding,
+      embedding_response: { input_sha256: createHash('sha256').update(input, 'utf8').digest('hex'), embedding_sha256: createHash('sha256').update(JSON.stringify(vector), 'utf8').digest('hex'), data_count: 1, dimensions: 1024 },
+      pricing_snapshot: snapshot }
+    const snapshotBody = JSON.stringify(snapshotArtifact)
+    writeFileSync(join(root, 'relay', 'embedding-snapshot.json'), snapshotBody)
+    const snapshotEvidence = structuredClone(bound)
+    Object.assign(snapshotEvidence.results[5]!, { costSource: 'relay_pricing_snapshot', pricingVersion: 'pricing-v1', pricingGroup: 'default', pricingSnapshotSha256: snapshotDigest,
+      evidence_ref: `artifact://production/relay/embedding-snapshot.json#${createHash('sha256').update(snapshotBody).digest('hex')}` })
+    expect(validateModelRelayEvidence(snapshotEvidence, options)).toEqual([])
+    const unsafeSnapshot = structuredClone(snapshotEvidence)
+    const unsafeSnapshotArtifact = JSON.parse(snapshotBody)
+    unsafeSnapshotArtifact.pricing_snapshot.api_key = 'must-not-be-stored'
+    const unsafeSnapshotBody = JSON.stringify(unsafeSnapshotArtifact)
+    writeFileSync(join(root, 'relay', 'embedding-snapshot.json'), unsafeSnapshotBody)
+    ;(unsafeSnapshot.results[5] as any).evidence_ref = `artifact://production/relay/embedding-snapshot.json#${createHash('sha256').update(unsafeSnapshotBody).digest('hex')}`
+    expect(validateModelRelayEvidence(unsafeSnapshot, options)).toContain('embedding.evidence_ref embedding receipt must contain only input/vector SHA-256, data_count 1, and 1024 dimensions (no raw vector)')
 
     const nonFlashModel = structuredClone(bound)
     ;(nonFlashModel.results[5] as any).model = 'qwen3.7-text-embedding'
@@ -69,6 +90,11 @@ describe('model relay evidence gate', () => {
     ;(wrongDimension.results[5] as any).dimensions = 1536
     expect(validateModelRelayEvidence(wrongDimension, options)).toContain('embedding.dimensions must be 1024')
 
+    const quotedCost = structuredClone(bound)
+    ;(quotedCost.results[5] as any).costSource = 'relay_pricing_snapshot'
+    expect(validateModelRelayEvidence(quotedCost, { ...options, requireProduction: true }))
+      .toContain('embedding.costSource must be a provider receipt')
+
     const wrongObservedDimensions = JSON.parse(readFileSync(join(root, 'relay', 'embedding.json'), 'utf8'))
     wrongObservedDimensions.embedding_response.dimensions = 1536
     let changedBody = JSON.stringify(wrongObservedDimensions)
@@ -86,6 +112,24 @@ describe('model relay evidence gate', () => {
     ;(rawVectorEvidence.results[5] as any).evidence_ref = `artifact://production/relay/embedding.json#${createHash('sha256').update(changedBody).digest('hex')}`
     expect(validateModelRelayEvidence(rawVectorEvidence, options)).toContain('embedding.evidence_ref embedding receipt must contain only input/vector SHA-256, data_count 1, and 1024 dimensions (no raw vector)')
 
+    const promptArtifact = JSON.parse(changedBody)
+    delete promptArtifact.relay_response
+    promptArtifact.result.prompt = input
+    changedBody = JSON.stringify(promptArtifact)
+    writeFileSync(join(root, 'relay', 'embedding.json'), changedBody)
+    const promptEvidence = structuredClone(bound)
+    ;(promptEvidence.results[5] as any).evidence_ref = `artifact://production/relay/embedding.json#${createHash('sha256').update(changedBody).digest('hex')}`
+    expect(validateModelRelayEvidence(promptEvidence, options)).toContain('embedding.evidence_ref embedding receipt must contain only input/vector SHA-256, data_count 1, and 1024 dimensions (no raw vector)')
+
+    const extraTopLevel = JSON.parse(changedBody)
+    delete extraTopLevel.result.prompt
+    extraTopLevel.raw_prompt = input
+    changedBody = JSON.stringify(extraTopLevel)
+    writeFileSync(join(root, 'relay', 'embedding.json'), changedBody)
+    const extraEvidence = structuredClone(bound)
+    ;(extraEvidence.results[5] as any).evidence_ref = `artifact://production/relay/embedding.json#${createHash('sha256').update(changedBody).digest('hex')}`
+    expect(validateModelRelayEvidence(extraEvidence, options)).toContain('embedding.evidence_ref embedding receipt must contain only input/vector SHA-256, data_count 1, and 1024 dimensions (no raw vector)')
+
     const missingUsage = structuredClone(bound)
     ;(missingUsage.results[5] as any).usageProviderRequestId = 'other-request'
     expect(validateModelRelayEvidence(missingUsage, options)).toContain('embedding.usageProviderRequestId must match providerRequestId')
@@ -93,6 +137,17 @@ describe('model relay evidence gate', () => {
     const noTokenUsage = structuredClone(bound)
     ;(noTokenUsage.results[5] as any).usage = { billingUnits: 1 }
     expect(validateModelRelayEvidence(noTokenUsage, options)).toContain('embedding.usage must contain token units')
+
+    for (const endpoint of ['/chat/completions', '/v1/models']) {
+      const wrongEndpoint = structuredClone(bound)
+      ;(wrongEndpoint.results[5] as any).endpoint = endpoint
+      expect(validateModelRelayEvidence(wrongEndpoint, options)).toContain('embedding.endpoint must be an embeddings API path')
+    }
+    for (const usage of [{ outputTokens: 16 }, { inputTokens: 0, totalTokens: 0 }, { inputTokens: 16, outputTokens: 1, totalTokens: 17 }, { inputTokens: 16, totalTokens: 17 }]) {
+      const wrongUsage = structuredClone(bound)
+      ;(wrongUsage.results[5] as any).usage = usage
+      expect(validateModelRelayEvidence(wrongUsage, options).some(error => error.startsWith('embedding.usage.'))).toBe(true)
+    }
 
     const wrongCandidate = structuredClone(bound)
     const artifactPath = join(root, 'relay', 'embedding.json')

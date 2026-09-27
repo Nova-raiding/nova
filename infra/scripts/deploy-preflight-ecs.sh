@@ -200,6 +200,7 @@ if [ "$DEPLOYMENT_SCOPE" != full ] && [ "$embedding_enabled" = true ]; then
   exit 1
 fi
 node infra/scripts/validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"
+ruby infra/scripts/validate-ecs-embedding-config-binding.rb "$config_path" "$RENDERED_COMPOSE_PATH"
 image_set_digest=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 sh infra/scripts/verify-ecs-ops-ui-auth-mode.sh "$OPS_UI_IMAGE_REF" "$OPS_AUTH_MODE"
 manifest_sha256=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-manifest-sha256)

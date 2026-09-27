@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, isPrivateRelayArtifact, persistRelayCanaryEvidence, readRelayErrorRecovery, requireCanaryBudget, requireFiniteRelayTokenQuota, requireProductionCandidateBinding, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
+import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, embeddingResponseMatchesModel, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, isPrivateRelayArtifact, persistRelayCanaryEvidence, readRelayErrorRecovery, requireCanaryBudget, requireEmbeddingProbePreflight, requireFiniteRelayTokenQuota, requireProductionCandidateBinding, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -34,7 +34,7 @@ describe('production model relay contract', () => {
     expect(() => readRelayErrorRecovery(path)).toThrow('must contain one JSON object')
   })
 
-  it.each(['image', 'image_edit', 'video'] as const)('requires explicit cost confirmation before billable %s probes', modality => {
+  it.each(['image', 'image_edit', 'video', 'embedding'] as const)('requires explicit cost confirmation before billable %s probes', modality => {
     expect(shouldBlockForCostGuard({ modality, confirmCost: false })).toBe(true)
     expect(shouldBlockForCostGuard({ modality, confirmCost: true })).toBe(false)
   })
@@ -248,6 +248,59 @@ describe('production model relay contract', () => {
     expect(canaryIdempotencyKey({ releaseId: 'release-1', modality: 'video', model: 'video-v1', existingVideoTaskId: 'job-1' })).toBe(first)
     expect(canaryIdempotencyKey({ releaseId: 'release-2', modality: 'video', model: 'video-v1', existingVideoTaskId: 'job-1' })).not.toBe(first)
     expect(canaryIdempotencyKey({ releaseId: 'release-1', modality: 'video', model: 'video-v1', existingVideoTaskId: 'job-2' })).not.toBe(first)
+  })
+
+  it('binds embedding idempotency to the exact candidate and request body', () => {
+    const candidateBinding = { release_git_sha: 'a'.repeat(40), image_set_digest: `sha256:${'b'.repeat(64)}`, manifest_sha256: 'c'.repeat(64), deployment_nonce_sha256: 'd'.repeat(64) }
+    const input = { releaseId: 'release-embed', modality: 'embedding' as const, model: 'qwen3.7-text-embedding-flash', requestBody: '{"input":"one"}', candidateBinding }
+    const first = canaryIdempotencyKey(input)
+    expect(canaryIdempotencyKey(input)).toBe(first)
+    expect(canaryIdempotencyKey({ ...input, requestBody: '{"input":"two"}' })).not.toBe(first)
+    expect(canaryIdempotencyKey({ ...input, candidateBinding: { ...candidateBinding, deployment_nonce_sha256: 'e'.repeat(64) } })).not.toBe(first)
+    expect(canaryIdempotencyKey({ ...input, candidateBinding: { ...candidateBinding, release_git_sha: 'f'.repeat(40) } })).not.toBe(first)
+    expect(() => canaryIdempotencyKey({ releaseId: 'release-1', modality: 'embedding', model: 'qwen3.7-text-embedding-flash' })).toThrow('embedding idempotency requires the canonical request body')
+  })
+
+  it('rejects invalid embedding inputs before any probe can start', () => {
+    const valid = { enabled: true, baseUrl: 'https://ai.wormholexyz.xyz/v1', model: 'qwen3.7-text-embedding-flash', expectedModel: 'qwen3.7-text-embedding-flash', dimensions: '1024', confirmCost: true, confirmEmbedding: true }
+    expect(() => requireEmbeddingProbePreflight(valid)).not.toThrow()
+    expect(() => requireEmbeddingProbePreflight({ ...valid, baseUrl: 'https://other.example/v1' })).toThrow('embedding_relay_invalid')
+    expect(() => requireEmbeddingProbePreflight({ ...valid, model: 'other' })).toThrow('embedding_model_invalid')
+    expect(() => requireEmbeddingProbePreflight({ ...valid, dimensions: '768' })).toThrow('embedding_dimensions_invalid')
+    expect(() => requireEmbeddingProbePreflight({ ...valid, confirmEmbedding: false })).toThrow('embedding_cost_confirmation_missing')
+    expect(() => requireEmbeddingProbePreflight({ ...valid, confirmCost: false })).toThrow('embedding_cost_confirmation_missing')
+  })
+
+  it('requires the relay response to identify the configured embedding model', () => {
+    expect(embeddingResponseMatchesModel({ model: 'qwen3.7-text-embedding-flash' }, 'qwen3.7-text-embedding-flash')).toBe(true)
+    expect(embeddingResponseMatchesModel({ model: 'other' }, 'qwen3.7-text-embedding-flash')).toBe(false)
+    expect(embeddingResponseMatchesModel({}, 'qwen3.7-text-embedding-flash')).toBe(false)
+  })
+
+  it('does not promote an unverifiable embedding price quote to actual cost', async () => {
+    const pricing = { quote: vi.fn() }
+    const payload = { model: 'qwen3.7-text-embedding-flash', usage: { prompt_tokens: 12, total_tokens: 12 } }
+    await expect(evaluateRelayUsageEvidence(payload, new Headers({ 'x-request-id': 'req-embed' }), 'embedding', 'qwen3.7-text-embedding-flash', { pricing }))
+      .resolves.toMatchObject({ usageObserved: true, costObserved: false })
+    await expect(evaluateRelayUsageEvidence({ ...payload, cost: 0.003 }, new Headers({ 'x-request-id': 'req-embed' }), 'embedding', 'qwen3.7-text-embedding-flash', { pricing }))
+      .resolves.toMatchObject({ usageObserved: true, costObserved: false })
+    expect(pricing.quote).not.toHaveBeenCalled()
+    await expect(evaluateRelayUsageEvidence({ ...payload, cost_cny: 0.003 }, new Headers({ 'x-request-id': 'req-embed' }), 'embedding', 'qwen3.7-text-embedding-flash', { pricing }))
+      .resolves.toMatchObject({ usageObserved: true, costObserved: true, costSource: 'provider_receipt', costCny: 0.003 })
+  })
+
+  it('accepts observed prompt=total=42 usage when cost is settled by a bound relay pricing snapshot', async () => {
+    const pricingSnapshot = { pricing: { pricing_version: 'pricing-v1', group_ratio: { default: 1 }, data: [{ model_name: 'qwen3.7-text-embedding-flash', quota_type: 0, model_ratio: 1, model_price: 0, completion_ratio: 1, enable_groups: ['default'] }] }, status: { quota_per_unit: 500000, usd_exchange_rate: 7.2 } }
+    const pricing = { quote: vi.fn(async () => ({ costCny: 0.001, metadata: { pricing_version: 'pricing-v1', pricing_group: 'default' } as any })) }
+    const digest = createHash('sha256').update(JSON.stringify(pricingSnapshot), 'utf8').digest('hex')
+    const measured = await evaluateRelayUsageEvidence(
+      { model: 'qwen3.7-text-embedding-flash', usage: { prompt_tokens: 42, total_tokens: 42 } },
+      new Headers({ 'x-request-id': 'req-embed-snapshot' }), 'embedding', 'qwen3.7-text-embedding-flash', { pricing, pricingSnapshot },
+    )
+    expect(measured).toMatchObject({ usageObserved: true, usage: { inputTokens: 42, outputTokens: 0, totalTokens: 42 }, costObserved: true, costSource: 'relay_pricing_snapshot', costCny: 0.001, pricingSnapshotSha256: digest })
+    const finalized = finalizeSuccessfulProbe({ modality: 'embedding', endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024, httpStatus: 200, providerRequestId: 'req-embed-snapshot', ...measured, responseValid: true })
+    expect(finalized).toMatchObject({ state: 'ready', costSource: 'relay_pricing_snapshot', pricingSnapshotSha256: digest })
+    expect(finalizeSuccessfulProbe({ modality: 'embedding', endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024, httpStatus: 200, providerRequestId: 'req-embed-snapshot', ...measured, pricingSnapshotSha256: undefined, responseValid: true })).toMatchObject({ state: 'blocked', detail: 'embedding_pricing_snapshot_missing_or_unbound' })
   })
 
   it('does not disguise a response or async job id as a provider request id', () => {
@@ -602,6 +655,39 @@ describe('production model relay contract', () => {
         results: [{ ...result, evidence_ref: reference }],
       }, { requireProduction: true, artifactRoot: root })
       expect(errors).toContain('text.evidence_ref receipt must bind successful HTTP status and summarized request, model, state, endpoint, usage and cost')
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('persists embedding evidence as candidate-bound hashes without prompt, vector, or raw response', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-embedding-redacted-artifact-'))
+    try {
+      const prompt = 'private synthetic embedding input'
+      const vector = Array.from({ length: 1024 }, (_, index) => index / 1024)
+      const candidateBinding = { release_git_sha: 'a'.repeat(40), image_set_digest: `sha256:${'b'.repeat(64)}`, manifest_sha256: 'c'.repeat(64), deployment_nonce_sha256: 'd'.repeat(64) }
+      const result = { modality: 'embedding' as const, endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024, state: 'ready' as const, httpStatus: 200, providerRequestId: 'req-embed-safe', usageObserved: true, usage: { inputTokens: 42, outputTokens: 0, totalTokens: 42 }, usageProviderRequestId: 'req-embed-safe', costObserved: true, costSource: 'provider_receipt' as const, costCny: 0.001 }
+      expect(() => writeRelayResponseArtifact(root, 'release-embed', 'embedding', {
+        status: 200, headers: new Headers(), payload: { data: [{ embedding: vector }] }, result, candidateBinding,
+      })).toThrow('embedding artifact requires the exact non-empty input text in memory')
+      const reference = writeRelayResponseArtifact(root, 'release-embed', 'embedding', {
+        status: 200, headers: new Headers({ 'x-request-id': 'req-embed-safe' }),
+        payload: { data: [{ embedding: vector, index: 0 }], usage: { prompt_tokens: 42, total_tokens: 42 } },
+        result, inputText: prompt, candidateBinding,
+      })
+      const artifactPath = join(root, 'relay/release-embed/embedding.json')
+      const body = readFileSync(artifactPath, 'utf8')
+      const artifact = JSON.parse(body)
+      expect(reference).toContain('artifact://production/relay/release-embed/embedding.json#')
+      expect(body).not.toContain(prompt)
+      expect(body).not.toContain(JSON.stringify(vector))
+      expect(artifact.relay_response).toBeUndefined()
+      expect(artifact.embedding_response).toEqual({
+        input_sha256: createHash('sha256').update(prompt, 'utf8').digest('hex'),
+        embedding_sha256: createHash('sha256').update(JSON.stringify(vector), 'utf8').digest('hex'),
+        data_count: 1, dimensions: 1024,
+      })
+      expect(artifact.candidate_binding).toEqual(candidateBinding)
+      expect(Object.keys(artifact).sort()).toEqual(['candidate_binding', 'embedding_response', 'http_status', 'modality', 'observed_at', 'release_id', 'response_headers', 'result', 'schema_version'].sort())
+      expect(artifact.response_headers).toEqual({})
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 

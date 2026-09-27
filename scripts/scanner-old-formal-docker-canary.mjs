@@ -89,7 +89,7 @@ export function createOldFormalDockerTransport({ env, docker = actualDocker, now
     if (remaining <= 0) throw new Error('OLD_SCANNER_REQUEST_TIMEOUT')
     return docker(args, input, remaining)
   }
-  const inspect = (id, expectedImage, expectedName, expectedTag, deadline) => {
+  const inspect = (id, expectedImage, expectedName, expectedTag, deadline, allowExtraNetworks = false) => {
     const parts = timedDocker(['inspect', '--type', 'container', '--format', inspectFormat, id], undefined, deadline).split('|')
     if (parts.length !== 6 || parts[0] !== id || parts[1] !== expectedImage
       || parts[2] !== 'true' || parts[3] !== expectedName || parts[4] !== expectedTag
@@ -98,15 +98,19 @@ export function createOldFormalDockerTransport({ env, docker = actualDocker, now
     }
     let networks
     try { networks = JSON.parse(parts[5]) } catch { throw new Error('OLD_SCANNER_NETWORK_MISMATCH') }
+    // The historical formal API also has a demo-gateway network attachment.
+    // Requests still use docker exec into the exact API container and its
+    // loopback listener; only the formal network is shared with the worker.
     if (!networks || typeof networks !== 'object' || Array.isArray(networks)
-      || Object.keys(networks).length !== 1 || Object.keys(networks)[0] !== expectedNetworkName
+      || !Object.hasOwn(networks, expectedNetworkName)
+      || (!allowExtraNetworks && Object.keys(networks).length !== 1)
       || !fullId.test(networks[expectedNetworkName]?.NetworkID ?? '')) {
       throw new Error('OLD_SCANNER_NETWORK_MISMATCH')
     }
     return networks[expectedNetworkName].NetworkID
   }
   const assertContainers = deadline => {
-    const apiNetwork = inspect(apiId, apiImageId, '/merchant-production-api-replica-1', `storenova-api:${OLD_FORMAL_RELEASE_ID}`, deadline)
+    const apiNetwork = inspect(apiId, apiImageId, '/merchant-production-api-replica-1', `storenova-api:${OLD_FORMAL_RELEASE_ID}`, deadline, true)
     const workerNetwork = inspect(workerId, workerImageId, '/merchant-production-worker-scan-1', `storenova-worker:${OLD_FORMAL_RELEASE_ID}`, deadline)
     if (apiNetwork !== workerNetwork) throw new Error('OLD_SCANNER_NETWORK_MISMATCH')
   }

@@ -7,13 +7,14 @@ import { createRelayPricingClientFromEnv, type RelayPricingMetadata } from '../p
 import { parseRelayUsage, type RelayUsageRecord } from '../packages/ai/src/relay-usage.js'
 import { retryAfterMilliseconds } from '../packages/ai/src/provider-request.js'
 import { assertRelayUrl, relaySecurityFromEnv } from '../packages/ai/src/relay-security.js'
-import { validateModelRelayEvidence } from '../tests/model-relay-evidence-gate.js'
+import { ALLOWED_EMBEDDING_MODELS, validateModelRelayEvidence } from '../tests/model-relay-evidence-gate.js'
 
 export type ProbeResult = {
-  modality: 'text' | 'image' | 'image_edit' | 'ocr' | 'video'
+  modality: 'text' | 'image' | 'image_edit' | 'ocr' | 'video' | 'embedding'
   state: 'ready' | 'blocked' | 'not_run_cost_guard' | 'skipped_input'
   endpoint: string
   model: string
+  dimensions?: number
   httpStatus?: number
   providerRequestId?: string
   providerJobId?: string
@@ -25,6 +26,7 @@ export type ProbeResult = {
   costCny?: number
   pricingVersion?: string
   pricingGroup?: string
+  pricingSnapshotSha256?: string
   evidence_ref?: string
   detail?: string
 }
@@ -47,7 +49,43 @@ const videoDurationSeconds = Number.isFinite(rawVideoDurationSeconds) ? Math.max
 const videoCanaryPrompt = process.env.MODEL_RELAY_CANARY_VIDEO_PROMPT?.trim()
   || 'A simple blue geometric cube on a plain white background, no people, no text.'
 const base = source.replace(/\/+$/u, '')
-const pricingClient = createRelayPricingClientFromEnv(process.env)
+type SanitizedEmbeddingPricingSnapshot = {
+  pricing: { pricing_version: string; group_ratio: Record<string, number>; data: Array<Record<string, unknown>> }
+  status: { quota_per_unit: number; usd_exchange_rate: number }
+}
+const embeddingPricingSnapshot: { value?: SanitizedEmbeddingPricingSnapshot; pricing?: SanitizedEmbeddingPricingSnapshot['pricing']; status?: SanitizedEmbeddingPricingSnapshot['status']; digest?: string } = {}
+const pricingFetch: typeof fetch = async (resource, init) => {
+  const response = await fetch(resource, init)
+  const url = new URL(typeof resource === 'string' ? resource : resource instanceof URL ? resource.href : resource.url)
+  if (url.origin === new URL(base || 'https://invalid.example').origin && (url.pathname === '/api/pricing' || url.pathname === '/api/status')) {
+    const text = await readBoundedResponseText(response.clone(), url.pathname === '/api/status' ? 16 * 1024 : 2 * 1024 * 1024, 'relay pricing snapshot')
+    const parsed = JSON.parse(text) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('relay pricing snapshot is invalid')
+    const root = parsed as Record<string, unknown>
+    if (url.pathname === '/api/pricing') {
+      const groups = root.group_ratio
+      const records = root.data
+      if (typeof root.pricing_version !== 'string' || !groups || typeof groups !== 'object' || Array.isArray(groups) || !Array.isArray(records)) throw new Error('relay pricing snapshot is incomplete')
+      const data = records.filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object' && !Array.isArray(entry)
+        && ALLOWED_EMBEDDING_MODELS.includes(String((entry as Record<string, unknown>).model_name) as typeof ALLOWED_EMBEDDING_MODELS[number]))
+        .map(entry => Object.fromEntries(['model_name', 'quota_type', 'model_ratio', 'model_price', 'completion_ratio', 'enable_groups', 'pricing_version', 'billing_mode']
+          .filter(field => field in entry).map(field => [field, entry[field]])))
+      const safeGroups = Object.fromEntries(Object.entries(groups as Record<string, unknown>).filter(([, value]) => typeof value === 'number' && Number.isFinite(value))) as Record<string, number>
+      embeddingPricingSnapshot.pricing = { pricing_version: root.pricing_version, group_ratio: safeGroups, data }
+    } else {
+      const data = root.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data as Record<string, unknown> : undefined
+      if (!data || typeof data.quota_per_unit !== 'number' || !Number.isFinite(data.quota_per_unit) || typeof data.usd_exchange_rate !== 'number' || !Number.isFinite(data.usd_exchange_rate)) throw new Error('relay status snapshot is incomplete')
+      embeddingPricingSnapshot.status = { quota_per_unit: data.quota_per_unit, usd_exchange_rate: data.usd_exchange_rate }
+    }
+    if (embeddingPricingSnapshot.pricing && embeddingPricingSnapshot.status) {
+      embeddingPricingSnapshot.value = { pricing: embeddingPricingSnapshot.pricing, status: embeddingPricingSnapshot.status }
+      const canonical = JSON.stringify(embeddingPricingSnapshot.value)
+      embeddingPricingSnapshot.digest = createHash('sha256').update(canonical, 'utf8').digest('hex')
+    }
+  }
+  return response
+}
+const pricingClient = createRelayPricingClientFromEnv(process.env, pricingFetch)
 const relaySecurity = relaySecurityFromEnv(process.env)
 const artifactRoot = process.env.MODEL_RELAY_ARTIFACT_ROOT?.trim()
 const releaseId = process.env.RELEASE_ID?.trim() || ''
@@ -152,8 +190,8 @@ export async function reserveCanaryCost(input: {
   }
   const estimate = await input.pricing.estimateRequestCost({
     modality, model, observedAt: new Date().toISOString(),
-    ...(modality === 'text' || modality === 'ocr'
-      ? { inputTokens: Buffer.byteLength(JSON.stringify(requestBody), 'utf8'), outputTokens: Number(requestBody.max_tokens) }
+    ...(modality === 'text' || modality === 'ocr' || modality === 'embedding'
+      ? { inputTokens: Buffer.byteLength(JSON.stringify(requestBody), 'utf8'), outputTokens: modality === 'embedding' ? 0 : Number(requestBody.max_tokens) }
       : {}),
     metadata: modality === 'image' || modality === 'image_edit'
       ? { billing_units: 1 }
@@ -189,9 +227,26 @@ export function resolveBoundedInteger(value: string | undefined, fallback: numbe
   return parsed
 }
 
-export function canaryIdempotencyKey(input: { releaseId: string; modality: ProbeResult['modality']; model: string; existingVideoTaskId?: string }): string {
-  const identity = JSON.stringify([input.releaseId.trim(), input.modality, input.model.trim(), input.existingVideoTaskId?.trim() ?? ''])
+export function canaryIdempotencyKey(input: { releaseId: string; modality: ProbeResult['modality']; model: string; existingVideoTaskId?: string; requestBody?: string; candidateBinding?: { release_git_sha: string; image_set_digest: string; manifest_sha256: string; deployment_nonce_sha256: string } }): string {
+  if (input.modality === 'embedding' && (typeof input.requestBody !== 'string' || !input.requestBody.trim())) throw new Error('embedding idempotency requires the canonical request body')
+  const identity = JSON.stringify([input.releaseId.trim(), input.modality, input.model.trim(), input.existingVideoTaskId?.trim() ?? '',
+    ...(input.modality === 'embedding' ? [input.requestBody === undefined ? '' : createHash('sha256').update(input.requestBody).digest('hex'), input.candidateBinding ?? null] : [])])
   return `model_relay_canary_${createHash('sha256').update(identity, 'utf8').digest('hex')}`
+}
+
+export function requireEmbeddingProbePreflight(input: { enabled: boolean; baseUrl: string; model: string; expectedModel?: string; dimensions?: string; confirmCost: boolean; confirmEmbedding: boolean }): void {
+  if (!input.enabled) return
+  if (!ALLOWED_EMBEDDING_MODELS.includes(input.model as typeof ALLOWED_EMBEDDING_MODELS[number]) || input.model !== input.expectedModel) throw new Error('embedding_model_invalid')
+  if (input.dimensions !== '1024') throw new Error('embedding_dimensions_invalid')
+  let url: URL
+  try { url = new URL(input.baseUrl) } catch { throw new Error('embedding_relay_invalid') }
+  if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'ai.wormholexyz.xyz' || url.port || url.username || url.password || url.search || url.hash || !['/v1', '/v1/'].includes(url.pathname)) throw new Error('embedding_relay_invalid')
+  if (!input.confirmCost || !input.confirmEmbedding) throw new Error('embedding_cost_confirmation_missing')
+}
+
+export function embeddingResponseMatchesModel(payload: unknown, expectedModel: string): boolean {
+  return !!payload && typeof payload === 'object' && !Array.isArray(payload)
+    && (payload as Record<string, unknown>).model === expectedModel
 }
 
 export function canRetryCanaryResponse(status: number, attempt: number, maximumAttempts = 3): boolean {
@@ -210,7 +265,7 @@ export function shouldBlockForCostGuard(input: {
   existingVideoTaskId?: string
 }): boolean {
   return !input.confirmCost
-    && (input.modality === 'image' || input.modality === 'image_edit' || (input.modality === 'video' && !input.existingVideoTaskId))
+    && (input.modality === 'image' || input.modality === 'image_edit' || input.modality === 'embedding' || (input.modality === 'video' && !input.existingVideoTaskId))
 }
 
 export function requireProductionReleaseBinding(input: { environment?: string; releaseId: string }): void {
@@ -253,8 +308,10 @@ export function persistRelayCanaryEvidence(input: {
   evidence: Record<string, unknown>
   artifactRoot?: string
   expectedCandidate?: { releaseGitSha?: string; imageSetDigest?: string; manifestSha256?: string; deploymentNonce?: string }
+  requireEmbedding?: boolean
+  expectedEmbeddingModel?: string
 }): { evidence: Record<string, unknown>; state: 'partial' | 'complete'; written: boolean; exitCode: 0 | 1 } {
-  const required: ProbeResult['modality'][] = ['text', 'image', 'image_edit', 'ocr', 'video']
+  const required: ProbeResult['modality'][] = input.requireEmbedding ? ['text', 'image', 'image_edit', 'ocr', 'video', 'embedding'] : ['text', 'image', 'image_edit', 'ocr', 'video']
   const isComplete = input.modalities.length === required.length
     && required.every(modality => input.modalities.filter(item => item === modality).length === 1)
   const production = input.environment?.trim() === 'production'
@@ -262,6 +319,8 @@ export function persistRelayCanaryEvidence(input: {
     || validateModelRelayEvidence(input.evidence, {
       expectedReleaseId: typeof input.evidence.release_id === 'string' ? input.evidence.release_id : undefined,
       expectedCandidate: input.expectedCandidate,
+      requireEmbedding: input.requireEmbedding,
+      expectedEmbeddingModel: input.expectedEmbeddingModel,
       requireCandidateBinding: true,
       requireProduction: true,
       artifactRoot: input.artifactRoot,
@@ -277,7 +336,8 @@ function modelFor(modality: ProbeResult['modality']) {
   if (modality === 'image') return process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || ''
   if (modality === 'image_edit') return process.env.IMAGE_EDIT_MODEL?.trim() || process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || ''
   if (modality === 'ocr') return process.env.OCR_MODEL?.trim() || process.env.AI_VISION_MODEL?.trim() || ''
-  return process.env.VIDEO_MODEL?.trim() || process.env.AI_VIDEO_MODEL?.trim() || ''
+  if (modality === 'video') return process.env.VIDEO_MODEL?.trim() || process.env.AI_VIDEO_MODEL?.trim() || ''
+  return process.env.EMBEDDING_MODEL?.trim() || ''
 }
 
 function keyFor(modality: ProbeResult['modality']) {
@@ -288,6 +348,7 @@ function endpointFor(modality: ProbeResult['modality']) {
   if (modality === 'text' || modality === 'ocr') return '/chat/completions'
   if (modality === 'image') return process.env.IMAGE_GENERATION_PATH?.trim() || '/images/generations'
   if (modality === 'image_edit') return process.env.IMAGE_EDIT_PATH?.trim() || '/images/generations'
+  if (modality === 'embedding') return '/embeddings'
   return process.env.VIDEO_GENERATION_PATH?.trim()
     || (process.env.VIDEO_REQUEST_FORMAT?.trim() === 'openai-video' ? '/videos' : '/video/generations')
 }
@@ -331,14 +392,42 @@ function nonEmptyText(value: unknown): string | undefined {
 }
 
 /** Persist only the real relay response and probe metadata; never credentials. */
-export function writeRelayResponseArtifact(root: string, release: string, modality: ProbeResult['modality'], response: { status: number; headers: Headers; payload: unknown; result: ProbeResult }): string {
+export function writeRelayResponseArtifact(root: string, release: string, modality: ProbeResult['modality'], response: { status: number; headers: Headers; payload: unknown; result: ProbeResult; inputText?: string; candidateBinding?: { release_git_sha: string; image_set_digest: string; manifest_sha256: string; deployment_nonce_sha256: string } }): string {
   if (!/^[A-Za-z0-9._-]+$/u.test(release)) throw new Error('RELEASE_ID must be a safe artifact path component')
+  let relayResponse: unknown = response.payload
+  let resultSummary: unknown = response.result
+  let responseHeaders: Record<string, string> = Object.fromEntries([...response.headers].filter(([name]) => /request-id|usage|cost|quota/iu.test(name)))
+  if (modality === 'embedding') {
+    if (typeof response.inputText !== 'string' || !response.inputText.trim()) throw new Error('embedding artifact requires the exact non-empty input text in memory')
+    if (!response.candidateBinding) throw new Error('embedding artifact requires complete candidate binding')
+    const rootPayload = response.payload && typeof response.payload === 'object' && !Array.isArray(response.payload) ? response.payload as Record<string, unknown> : {}
+    const data = Array.isArray(rootPayload.data) ? rootPayload.data : []
+    const vector = data.length === 1 && data[0] && typeof data[0] === 'object' && Array.isArray((data[0] as Record<string, unknown>).embedding)
+      ? (data[0] as { embedding: unknown[] }).embedding : undefined
+    const finiteVector = vector?.every(value => typeof value === 'number' && Number.isFinite(value)) ? vector as number[] : undefined
+    relayResponse = {
+      embedding_response: {
+        input_sha256: createHash('sha256').update(response.inputText, 'utf8').digest('hex'),
+        ...(finiteVector ? { embedding_sha256: createHash('sha256').update(JSON.stringify(finiteVector), 'utf8').digest('hex') } : {}),
+        data_count: data.length,
+        ...(finiteVector ? { dimensions: finiteVector.length } : {}),
+      },
+      ...(response.candidateBinding ? { candidate_binding: response.candidateBinding } : {}),
+    }
+    if (response.result.costSource === 'relay_pricing_snapshot') {
+      if (!embeddingPricingSnapshot.value || !embeddingPricingSnapshot.digest || response.result.pricingSnapshotSha256 !== embeddingPricingSnapshot.digest) throw new Error('embedding settlement pricing snapshot is missing or does not match the probe result')
+      ;(relayResponse as Record<string, unknown>).pricing_snapshot = embeddingPricingSnapshot.value
+    }
+    const fields = ['modality', 'state', 'endpoint', 'model', 'dimensions', 'httpStatus', 'providerRequestId', 'usageObserved', 'usage', 'usageProviderRequestId', 'costObserved', 'costSource', 'costCny', 'pricingVersion', 'pricingGroup', 'pricingSnapshotSha256'] as const
+    resultSummary = Object.fromEntries(fields.filter(field => response.result[field] !== undefined).map(field => [field, response.result[field]]))
+    responseHeaders = {}
+  }
   const body = JSON.stringify({
     schema_version: '1', release_id: release, modality,
     observed_at: new Date().toISOString(), http_status: response.status,
-    response_headers: Object.fromEntries([...response.headers].filter(([name]) => /request-id|usage|cost|quota/iu.test(name))),
-    result: response.result,
-    relay_response: response.payload,
+    response_headers: responseHeaders,
+    result: resultSummary,
+    ...(modality === 'embedding' ? relayResponse as Record<string, unknown> : { relay_response: relayResponse }),
   }, null, 2) + '\n'
   const digest = createHash('sha256').update(body).digest('hex')
   const directory = resolve(root, 'relay', release)
@@ -384,7 +473,7 @@ export async function evaluateRelayUsageEvidence(
   headers: Headers,
   modality: ProbeResult['modality'],
   model: string,
-  options: { pricing?: PricingClient; durationSeconds?: number; resolution?: string } = {},
+  options: { pricing?: PricingClient; pricingSnapshot?: SanitizedEmbeddingPricingSnapshot; durationSeconds?: number; resolution?: string } = {},
 ) {
   const record = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : {}
   const nested = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
@@ -462,7 +551,9 @@ export async function evaluateRelayUsageEvidence(
   // numeric units are release evidence; requested media duration/count is not.
   const usageObserved = Object.keys(usage).length > 0
   const metering = usageObserved ? { usage, ...(parsed?.providerRequestId ? { usageProviderRequestId: parsed.providerRequestId } : {}) } : {}
-  const rawCost = parsed?.costCny ?? record.cost ?? headers.get('x-model-cost-cny')
+  const rawCost = modality === 'embedding'
+    ? parsed?.costCny ?? headers.get('x-model-cost-cny')
+    : parsed?.costCny ?? record.cost ?? headers.get('x-model-cost-cny')
   const providerCost = typeof rawCost === 'number'
     ? rawCost
     : typeof rawCost === 'string' && /^\d+(?:\.\d+)?$/u.test(rawCost.trim()) ? Number(rawCost) : undefined
@@ -470,14 +561,21 @@ export async function evaluateRelayUsageEvidence(
     return { usageObserved, ...metering, costObserved: true, costSource: 'provider_receipt' as const, costCny: providerCost }
   }
   const quoteClient = options.pricing ?? pricingClient
+  if (modality === 'embedding' && options.pricing && !options.pricingSnapshot) return { usageObserved, ...metering, costObserved: false }
   if (quoteClient && parsed && usageObserved && (modality !== 'video' || (reportedDuration !== undefined && !invalidReportedResolution))) {
     const { resolution: _requestResolution, ...providerNeutralMetadata } = parsed.metadata ?? {}
     const pricingUsage = modality === 'video' && reportedDuration !== undefined
       ? { ...parsed, metadata: { ...providerNeutralMetadata, duration_seconds: reportedDuration, duration_evidence: 'provider_usage', ...(reportedResolution ? { resolution: reportedResolution } : {}) } }
       : parsed
     const quote = await quoteClient.quote(pricingUsage)
-    return { usageObserved: true, ...metering, costObserved: true, costSource: 'relay_pricing_snapshot' as const, costCny: quote.costCny, pricingVersion: quote.metadata.pricing_version, pricingGroup: quote.metadata.pricing_group }
+    const snapshot = options.pricingSnapshot ?? embeddingPricingSnapshot.value
+    const pricingSnapshotSha256 = modality === 'embedding' && snapshot
+      ? createHash('sha256').update(JSON.stringify(snapshot), 'utf8').digest('hex')
+      : undefined
+    if (modality === 'embedding' && (!pricingSnapshotSha256 || (!options.pricingSnapshot && embeddingPricingSnapshot.digest !== pricingSnapshotSha256))) return { usageObserved: true, ...metering, costObserved: false }
+    return { usageObserved: true, ...metering, costObserved: true, costSource: 'relay_pricing_snapshot' as const, costCny: quote.costCny, pricingVersion: quote.metadata.pricing_version, pricingGroup: quote.metadata.pricing_group, ...(pricingSnapshotSha256 ? { pricingSnapshotSha256 } : {}) }
   }
+  if (modality === 'embedding') return { usageObserved, ...metering, costObserved: false }
   return { usageObserved, ...metering, costObserved: false }
 }
 
@@ -526,9 +624,12 @@ export function finalizeSuccessfulProbe(input: SuccessfulProbe): ProbeResult {
   if (!result.usage || !numericUsage?.length || numericUsage.some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
     return { ...result, state: 'blocked', detail: 'numeric_usage_evidence_missing' }
   }
-  if ((result.modality === 'text' || result.modality === 'ocr')
+  if ((result.modality === 'text' || result.modality === 'ocr' || result.modality === 'embedding')
     && result.usage.inputTokens === undefined && result.usage.outputTokens === undefined && result.usage.totalTokens === undefined) {
     return { ...result, state: 'blocked', detail: 'token_usage_evidence_missing' }
+  }
+  if (result.modality === 'embedding' && (result.dimensions !== 1024 || !Number.isSafeInteger(result.usage.inputTokens) || (result.usage.inputTokens ?? 0) <= 0 || (result.usage.outputTokens !== undefined && result.usage.outputTokens !== 0))) {
+    return { ...result, state: 'blocked', detail: 'embedding_dimensions_or_input_usage_invalid' }
   }
   if ((result.modality === 'image' || result.modality === 'image_edit')
     && (!Number.isSafeInteger(result.usage.billingUnits) || (result.usage.billingUnits ?? 0) <= 0)) {
@@ -548,6 +649,8 @@ export function finalizeSuccessfulProbe(input: SuccessfulProbe): ProbeResult {
   if (result.costSource === 'relay_pricing_snapshot' && (!result.pricingVersion || !result.pricingGroup)) {
     return { ...result, state: 'blocked', detail: 'pricing_snapshot_identity_missing' }
   }
+  if (result.modality === 'embedding' && result.costSource === 'relay_pricing_snapshot'
+    && !/^[a-f0-9]{64}$/u.test(result.pricingSnapshotSha256 ?? '')) return { ...result, state: 'blocked', detail: 'embedding_pricing_snapshot_missing_or_unbound' }
   return { ...result, state: 'ready' }
 }
 
@@ -586,12 +689,13 @@ function isStrictHttpsUrl(value: unknown): value is string {
   } catch { return false }
 }
 
-async function probe(modality: ProbeResult['modality'], budget: CanaryBudget): Promise<ProbeResult> {
+async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, candidateBinding?: { release_git_sha: string; image_set_digest: string; manifest_sha256: string; deployment_nonce_sha256: string }): Promise<ProbeResult> {
   const model = modelFor(modality)
   const existingVideoTaskId = modality === 'video' ? process.env.MODEL_RELAY_CANARY_VIDEO_TASK_ID?.trim() : undefined
   const endpoint = existingVideoTaskId ? process.env.VIDEO_STATUS_PATH?.trim() || '/video/generations/{job_id}' : endpointFor(modality)
   const common = { modality, endpoint, model }
   if (!model) return { ...common, state: 'blocked', detail: 'model_missing' }
+  if (modality === 'embedding' && !ALLOWED_EMBEDDING_MODELS.includes(model as typeof ALLOWED_EMBEDDING_MODELS[number])) return { ...common, state: 'blocked', detail: 'embedding_model_not_allowlisted' }
   if (!keyFor(modality)) return { ...common, state: 'blocked', detail: modality === 'video' ? 'VIDEO_MODEL_RELAY_API_KEY missing' : 'MODEL_RELAY_API_KEY missing' }
   if (shouldBlockForCostGuard({ modality, confirmCost, ...(existingVideoTaskId ? { existingVideoTaskId } : {}) })) return { ...common, state: 'not_run_cost_guard', detail: 'set MODEL_RELAY_CANARY_CONFIRM=true to run potentially billable media probes' }
   const controller = new AbortController()
@@ -599,8 +703,19 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget): P
   try {
     assertSafeRelativePath(endpoint)
     await assertRelayUrl(base, relaySecurity ?? {})
+    if (modality === 'embedding') {
+      const relayUrl = new URL(base)
+      if (relayUrl.protocol !== 'https:' || relayUrl.hostname.toLowerCase() !== 'ai.wormholexyz.xyz' || relayUrl.port || relayUrl.username || relayUrl.password || relayUrl.search || relayUrl.hash || !['/v1', '/v1/'].includes(relayUrl.pathname)) throw new Error('embedding relay must use the pinned HTTPS /v1 endpoint')
+      if (process.env.EMBEDDING_DIMENSIONS?.trim() !== '1024') throw new Error('embedding dimensions must be 1024')
+      if (process.env.EMBEDDING_CANARY_CONFIRM !== 'true') return { ...common, state: 'not_run_cost_guard', detail: 'set EMBEDDING_CANARY_CONFIRM=true to run a billable embedding probe' }
+    }
+    const embeddingInput = modality === 'embedding'
+      ? process.env.EMBEDDING_CANARY_INPUT ?? 'Embedding candidate canary: verify the configured model relay returns one vector with auditable usage and cost.'
+      : undefined
     const body = modality === 'text'
       ? { model, temperature: 0, max_tokens: 8, messages: [{ role: 'user', content: '只返回 OK' }] }
+      : modality === 'embedding'
+        ? { model, input: embeddingInput, encoding_format: 'float', dimensions: 1024 }
       : modality === 'ocr'
         ? { model, temperature: 0, max_tokens: 32, messages: [{ role: 'user', content: [{ type: 'text', text: '只返回 JSON：{"ocr_text":"OK"}' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFklEQVR4nGP4TyFgGDVg1IBRA4aLAQBdePwur/3haQAAAABJRU5ErkJggg==' } }] }] }
         : modality === 'image'
@@ -626,7 +741,9 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget): P
       })
     }
     const requestBody = !existingVideoTaskId ? videoRequest?.body ?? JSON.stringify(body) : usesVideoStatusPath ? undefined : JSON.stringify({ job_id: existingVideoTaskId })
-    const idempotencyKey = canaryIdempotencyKey({ releaseId, modality, model, ...(existingVideoTaskId ? { existingVideoTaskId } : {}) })
+    if (modality === 'embedding' && typeof requestBody !== 'string') throw new Error('embedding_request_body_missing')
+    const idempotencyKey = canaryIdempotencyKey({ releaseId, modality, model, ...(existingVideoTaskId ? { existingVideoTaskId } : {}),
+      ...(modality === 'embedding' ? { requestBody: requestBody as string, ...(candidateBinding ? { candidateBinding } : {}) } : {}) })
     let response: Response | undefined
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       response = await fetch(`${base}${requestEndpoint}`, {
@@ -661,6 +778,7 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget): P
       if (artifactRoot) {
         blocked.evidence_ref = writeRelayResponseArtifact(artifactRoot, releaseId, modality, {
           status: response.status, headers: response.headers, payload, result: blocked,
+          ...(modality === 'embedding' ? { inputText: embeddingInput, ...(candidateBinding ? { candidateBinding } : {}) } : {}),
         })
       }
       return blocked
@@ -673,24 +791,33 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget): P
         ...common, state: 'blocked', httpStatus: response.status,
         ...(providerRequestId ? { providerRequestId } : {}),
         ...measured,
-        detail: `pricing evidence failed: ${(error as { code?: string })?.code ?? (error instanceof Error ? error.message : 'unknown')}`,
+        detail: 'pricing_evidence_failed',
       }
       if (artifactRoot) {
         blocked.evidence_ref = writeRelayResponseArtifact(artifactRoot, releaseId, modality, {
           status: response.status, headers: response.headers, payload, result: blocked,
+          ...(modality === 'embedding' ? { inputText: embeddingInput, ...(candidateBinding ? { candidateBinding } : {}) } : {}),
         })
       }
       return blocked
     }
     const videoEvaluation = modality === 'video' ? evaluateVideoProbePayload(payload) : undefined
+    const embeddingData = modality === 'embedding' && payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).data)
+      ? (payload as { data: unknown[] }).data : undefined
+    const embeddingVector = embeddingData?.length === 1 && embeddingData[0] && typeof embeddingData[0] === 'object' && Array.isArray((embeddingData[0] as Record<string, unknown>).embedding)
+      ? (embeddingData[0] as { embedding: unknown[] }).embedding : undefined
+    const validEmbeddingVector = embeddingVector?.length === 1024 && embeddingVector.every(value => typeof value === 'number' && Number.isFinite(value))
     const valid = modality === 'text' || modality === 'ocr'
       ? Boolean(payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).choices))
+      : modality === 'embedding'
+        ? validEmbeddingVector === true && embeddingResponseMatchesModel(payload, model)
       : modality === 'video'
         ? videoEvaluation?.ready === true
         : Boolean(payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).data))
     const finalized = finalizeSuccessfulProbe({
       ...common,
       httpStatus: response.status,
+      ...(modality === 'embedding' ? { dimensions: validEmbeddingVector ? 1024 : undefined } : {}),
       ...(providerRequestId ? { providerRequestId } : {}),
       ...(videoEvaluation?.providerJobId ? { providerJobId: videoEvaluation.providerJobId } : {}),
       ...measured,
@@ -698,26 +825,38 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget): P
       ...(valid ? {} : { responseFailure: videoEvaluation?.reason ?? 'response_shape_incompatible' }),
     })
     // A successful transport can still be blocked by an async/payload/usage
-    // contract. Preserve that raw response as immutable evidence too; without
-    // it an accepted-but-pending provider job would be unauditable.
+    // contract. Preserve the real response for ordinary modalities; embedding
+    // artifacts are intentionally reduced to candidate-bound hashes and shape.
     if (artifactRoot) {
       finalized.evidence_ref = writeRelayResponseArtifact(artifactRoot, releaseId, modality, {
         status: response.status, headers: response.headers, payload, result: finalized,
+        ...(modality === 'embedding' ? { inputText: embeddingInput, ...(candidateBinding ? { candidateBinding } : {}) } : {}),
       })
     }
     return finalized
   } catch (error) {
-    return { ...common, state: 'blocked', detail: error instanceof Error ? error.name === 'AbortError' ? 'timeout' : error.message : 'probe_failed' }
+    return { ...common, state: 'blocked', detail: error instanceof Error && error.name === 'AbortError' ? 'timeout' : 'probe_failed' }
   } finally { clearTimeout(timer) }
 }
 
 export async function main() {
   if (process.argv.includes('--probe')) {
     const results: ProbeResult[] = []
-    const requestedModalities = process.argv.find((argument) => argument.startsWith('--modalities='))?.slice('--modalities='.length).split(',').map(value => value.trim()).filter(Boolean) ?? ['text', 'image', 'image_edit', 'ocr', 'video']
-    const modalities = requestedModalities.filter((modality): modality is ProbeResult['modality'] => ['text', 'image', 'image_edit', 'ocr', 'video'].includes(modality))
+    const embeddingEnabled = process.argv.includes('--embedding-enabled')
+    const embeddingModelArgIndex = process.argv.indexOf('--embedding-model')
+    const expectedEmbeddingModel = embeddingModelArgIndex >= 0 ? process.argv[embeddingModelArgIndex + 1]?.trim() : undefined
+    const modalitiesArg = process.argv.find((argument) => argument.startsWith('--modalities='))
+    const requestedModalities = modalitiesArg
+      ? modalitiesArg.slice('--modalities='.length).split(',').map(value => value.trim()).filter(Boolean)
+      : ['text', 'image', 'image_edit', 'ocr', 'video', ...(embeddingEnabled ? ['embedding'] : [])]
+    const modalities = requestedModalities.filter((modality): modality is ProbeResult['modality'] => ['text', 'image', 'image_edit', 'ocr', 'video', 'embedding'].includes(modality))
     if (modalities.length !== requestedModalities.length || modalities.length === 0) {
-      console.error(JSON.stringify({ state: 'blocked', reason: 'modalities must be a non-empty comma-separated subset of text,image,image_edit,ocr,video' }))
+      console.error(JSON.stringify({ state: 'blocked', reason: 'modalities must be a non-empty comma-separated subset of text,image,image_edit,ocr,video,embedding' }))
+      process.exitCode = 2
+      return
+    }
+    if (modalities.includes('embedding') !== embeddingEnabled) {
+      console.error(JSON.stringify({ state: 'blocked', reason: 'embedding modality and --embedding-enabled must be selected together' }))
       process.exitCode = 2
       return
     }
@@ -728,6 +867,8 @@ export async function main() {
       try {
         requireProductionReleaseBinding({ environment: process.env.NODE_ENV, releaseId })
         const candidateBinding = process.env.NODE_ENV?.trim() === 'production' ? requireProductionCandidateBinding() : undefined
+        requireEmbeddingProbePreflight({ enabled: embeddingEnabled, baseUrl: base, model: process.env.EMBEDDING_MODEL?.trim() ?? '', expectedModel: expectedEmbeddingModel,
+          dimensions: process.env.EMBEDDING_DIMENSIONS?.trim(), confirmCost, confirmEmbedding: process.env.EMBEDDING_CANARY_CONFIRM === 'true' })
         if (!relaySecurity) throw new Error('MODEL_RELAY_BASE_URL/ALLOWED_HOSTS 不满足 relay 安全配置')
         if (process.env.NODE_ENV?.trim() === 'production' && !artifactRoot) throw new Error('MODEL_RELAY_ARTIFACT_ROOT is required before production relay requests')
         await assertRelayUrl(base, relaySecurity)
@@ -740,7 +881,7 @@ export async function main() {
           const quota = await requireFiniteRelayTokenQuota({ baseUrl: base, ...credential })
           return artifactRoot ? { ...quota, evidence_ref: writeRelayTokenQuotaArtifact(artifactRoot, releaseId, quota) } : quota
         }))
-        for (const modality of modalities) results.push(await probe(modality, budget))
+        for (const modality of modalities) results.push(await probe(modality, budget, candidateBinding))
         // The evidence contract stores the relay origin; each result carries its
         // endpoint path. This keeps /v1 configuration paths out of the origin
         // field and makes generated evidence compatible with its validator.
@@ -757,6 +898,7 @@ export async function main() {
         }
         const evidencePath = process.env.MODEL_RELAY_EVIDENCE_PATH?.trim()
         const persisted = persistRelayCanaryEvidence({ path: evidencePath, environment: process.env.NODE_ENV, modalities, evidence, artifactRoot,
+          requireEmbedding: embeddingEnabled, ...(embeddingEnabled ? { expectedEmbeddingModel } : {}),
           ...(candidateBinding ? { expectedCandidate: { releaseGitSha: candidateBinding.release_git_sha, imageSetDigest: candidateBinding.image_set_digest, manifestSha256: candidateBinding.manifest_sha256, deploymentNonce: process.env.DEPLOYMENT_NONCE?.trim() } } : {}) })
         console.log(JSON.stringify(persisted.evidence, null, 2))
         if (persisted.exitCode !== 0) process.exitCode = persisted.exitCode
@@ -764,7 +906,7 @@ export async function main() {
         if (process.env.NODE_ENV?.trim() === 'production' && (!artifactRoot || results.some(result => !result.evidence_ref))) process.exitCode = 1
         if (process.env.NODE_ENV?.trim() === 'production' && !errorRecovery) process.exitCode = 1
       } catch (error) {
-        console.error(JSON.stringify({ state: 'blocked', reason: error instanceof Error ? error.message : 'relay_probe_failed' }))
+        console.error(JSON.stringify({ state: 'blocked', reason: 'relay_probe_failed' }))
         process.exitCode = 1
       }
     }

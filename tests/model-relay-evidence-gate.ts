@@ -7,12 +7,50 @@ export const EMBEDDING_RELAY_MODALITY = 'embedding' as const
 export const ALLOWED_EMBEDDING_MODELS = ['qwen3.7-text-embedding-flash', 'qwen3.7-text-embedding'] as const
 type Modality = typeof REQUIRED_RELAY_MODALITIES[number] | typeof EMBEDDING_RELAY_MODALITY
 type RelayUsage = { inputTokens?: number; outputTokens?: number; totalTokens?: number; billingUnits?: number; durationSeconds?: number }
-type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; dimensions?: number; httpStatus?: number; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; evidence_ref?: string }
+type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; dimensions?: number; httpStatus?: number; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; pricingSnapshotSha256?: string; evidence_ref?: string }
 type RelayErrorRecovery = { verified?: boolean; failure_status?: number; failure_observed_at?: string; recovered_at?: string; failed_request_id?: string; recovery_request_id?: string; evidence_ref?: string }
 type RelayTokenQuota = { credential?: 'model' | 'video'; observed_at?: string; total_granted?: number; total_used?: number; total_available?: number; expires_at?: number; unlimited_quota?: boolean; evidence_ref?: string }
 type RelayEvidence = { schema_version?: string; release_id?: string; release_git_sha?: string; image_set_digest?: string; manifest_sha256?: string; deployment_nonce_sha256?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; token_quota?: RelayTokenQuota[]; results?: RelayResult[]; error_recovery?: RelayErrorRecovery }
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+const exactObjectKeys = (value: unknown, keys: readonly string[]) => !!value && typeof value === 'object' && !Array.isArray(value)
+  && Object.keys(value).sort().join(',') === [...keys].sort().join(',')
+function isSafeEmbeddingPricingSnapshot(value: any): boolean {
+  if (!exactObjectKeys(value, ['pricing', 'status'])
+    || !exactObjectKeys(value.pricing, ['pricing_version', 'group_ratio', 'data'])
+    || typeof value.pricing.pricing_version !== 'string' || !value.pricing.pricing_version.trim()
+    || !value.pricing.group_ratio || typeof value.pricing.group_ratio !== 'object' || Array.isArray(value.pricing.group_ratio)
+    || Object.values(value.pricing.group_ratio).some((ratio: unknown) => typeof ratio !== 'number' || !Number.isFinite(ratio))
+    || !Array.isArray(value.pricing.data)
+    || !exactObjectKeys(value.status, ['quota_per_unit', 'usd_exchange_rate'])
+    || typeof value.status.quota_per_unit !== 'number' || !Number.isFinite(value.status.quota_per_unit) || value.status.quota_per_unit <= 0
+    || typeof value.status.usd_exchange_rate !== 'number' || !Number.isFinite(value.status.usd_exchange_rate) || value.status.usd_exchange_rate <= 0) return false
+  const fields = ['model_name', 'quota_type', 'model_ratio', 'model_price', 'completion_ratio', 'enable_groups', 'pricing_version', 'billing_mode']
+  return value.pricing.data.every((model: any) => !!model && typeof model === 'object' && !Array.isArray(model)
+    && Object.keys(model).every(key => fields.includes(key))
+    && ALLOWED_EMBEDDING_MODELS.includes(model.model_name)
+    && Number.isSafeInteger(model.quota_type)
+    && ['model_ratio', 'model_price', 'completion_ratio'].every(key => typeof model[key] === 'number' && Number.isFinite(model[key]))
+    && Array.isArray(model.enable_groups) && model.enable_groups.every((group: unknown) => typeof group === 'string')
+    && (model.pricing_version === undefined || typeof model.pricing_version === 'string')
+    && (model.billing_mode === undefined || typeof model.billing_mode === 'string'))
+}
+function embeddingSnapshotCostMatches(snapshot: any, result: RelayResult): boolean {
+  const usage = result.usage
+  if (!usage || !Number.isSafeInteger(usage.inputTokens) || (usage.inputTokens ?? 0) <= 0
+    || (usage.outputTokens !== undefined && (!Number.isSafeInteger(usage.outputTokens) || usage.outputTokens !== 0))
+    || (usage.totalTokens !== undefined && usage.totalTokens !== usage.inputTokens)) return false
+  const model = snapshot.pricing.data.find((entry: any) => entry.model_name === result.model)
+  const groupRatio = snapshot.pricing.group_ratio[result.pricingGroup ?? '']
+  if (!model || model.quota_type !== 0 || !Number.isFinite(model.model_ratio) || model.model_ratio < 0
+    || !Number.isFinite(model.completion_ratio) || model.completion_ratio < 0
+    || typeof groupRatio !== 'number' || !Number.isFinite(groupRatio) || groupRatio <= 0) return false
+  const rawQuota = ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) * model.completion_ratio) * model.model_ratio * groupRatio
+  if (!Number.isFinite(rawQuota) || rawQuota < 0) return false
+  const roundedQuota = Math.floor(rawQuota + 0.5)
+  const expectedCost = Number((roundedQuota / snapshot.status.quota_per_unit * snapshot.status.usd_exchange_rate).toFixed(12))
+  return Number.isFinite(expectedCost) && result.costCny === expectedCost
+}
 const isIsoInstant = (value: unknown): value is string => nonEmpty(value) && !Number.isNaN(Date.parse(value)) && /^\d{4}-\d{2}-\d{2}T/.test(value)
 const relayOrigin = (value: string): string | undefined => {
   try {
@@ -103,7 +141,7 @@ function validateArtifact(reference: string | undefined, root: string, label: st
       } else if (expected.result) {
         if (artifactValue.modality !== expected.result.modality) return [`${label} modality must match ${expected.result.modality}`]
         const receipt = artifactValue.result
-        if (artifactValue.http_status !== expected.result.httpStatus || !receipt || typeof receipt !== 'object' || receipt.httpStatus !== expected.result.httpStatus || ['providerRequestId', 'providerJobId', 'model', 'dimensions', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result.usage)) {
+        if (artifactValue.http_status !== expected.result.httpStatus || !receipt || typeof receipt !== 'object' || receipt.httpStatus !== expected.result.httpStatus || ['providerRequestId', 'providerJobId', 'model', 'dimensions', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup', 'pricingSnapshotSha256'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result.usage)) {
           return [`${label} receipt must bind successful HTTP status and summarized request, model, state, endpoint, usage and cost`]
         }
         if (expected.candidate) {
@@ -118,7 +156,22 @@ function validateArtifact(reference: string | undefined, root: string, label: st
           const response = artifactValue.embedding_response
           const requiredFields = ['input_sha256', 'embedding_sha256', 'data_count', 'dimensions']
           const validDigest = (value: unknown): value is string => typeof value === 'string' && sha256Digest.test(value)
+          const expectedArtifactKeys = ['schema_version', 'release_id', 'modality', 'observed_at', 'http_status', 'response_headers', 'result', 'candidate_binding', 'embedding_response', ...(expected.result.costSource === 'relay_pricing_snapshot' ? ['pricing_snapshot'] : [])]
+          const resultFields = ['modality', 'state', 'endpoint', 'model', 'dimensions', 'httpStatus', 'providerRequestId', 'usageObserved', 'usage', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup', 'pricingSnapshotSha256']
+          const pricingSnapshot = artifactValue.pricing_snapshot
+          const pricingValid = expected.result.costSource === 'relay_pricing_snapshot'
+            ? isSafeEmbeddingPricingSnapshot(pricingSnapshot)
+              && pricingSnapshot.pricing.data.some((model: any) => model.model_name === expected.result?.model)
+              && typeof pricingSnapshot.pricing.group_ratio[expected.result.pricingGroup ?? ''] === 'number'
+              && pricingSnapshot.pricing.group_ratio[expected.result.pricingGroup ?? ''] > 0
+              && embeddingSnapshotCostMatches(pricingSnapshot, expected.result)
+              && createHash('sha256').update(JSON.stringify(pricingSnapshot), 'utf8').digest('hex') === expected.result.pricingSnapshotSha256
+            : !Object.prototype.hasOwnProperty.call(artifactValue, 'pricing_snapshot') && !Object.prototype.hasOwnProperty.call(receipt, 'pricingSnapshotSha256')
           if (!response || typeof response !== 'object' || Array.isArray(response)
+            || Object.keys(artifactValue).sort().join(',') !== expectedArtifactKeys.sort().join(',')
+            || !artifactValue.response_headers || typeof artifactValue.response_headers !== 'object' || Array.isArray(artifactValue.response_headers) || Object.keys(artifactValue.response_headers).length !== 0
+            || !receipt || typeof receipt !== 'object' || Object.keys(receipt).some(field => !resultFields.includes(field))
+            || !pricingValid
             || Object.keys(response).sort().join(',') !== [...requiredFields].sort().join(',')
             || !validDigest(response.input_sha256) || !validDigest(response.embedding_sha256)
             || response.data_count !== 1 || response.dimensions !== 1024
@@ -224,6 +277,7 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
     else if (!result.endpoint.startsWith('/') || result.endpoint.startsWith('//') || result.endpoint.includes('\\') || result.endpoint.includes('?') || result.endpoint.includes('#') || result.endpoint.includes('%') || result.endpoint.split('/').some(segment => segment === '.' || segment === '..') || /[\u0000-\u001f\u007f]/u.test(result.endpoint)) errors.push(`${modality}.endpoint must be a safe relative path`)
     if (!nonEmpty(result.model)) errors.push(`${modality}.model is required`)
     if (modality === EMBEDDING_RELAY_MODALITY) {
+      if (result.endpoint !== '/embeddings' && result.endpoint !== '/v1/embeddings') errors.push('embedding.endpoint must be an embeddings API path')
       if (!nonEmpty(options.expectedEmbeddingModel) || result.model !== options.expectedEmbeddingModel) errors.push('embedding.model must match the explicitly rendered embedding model')
       if (result.dimensions !== 1024) errors.push('embedding.dimensions must be 1024')
     }
@@ -234,6 +288,11 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
     const numericUsage = usage && Object.entries(usage).filter(([, amount]) => amount !== undefined)
     if (!usage || !numericUsage?.length || numericUsage.some(([, amount]) => typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0)) errors.push(`${modality}.usage must contain finite non-negative numeric units`)
     else {
+      if (modality === EMBEDDING_RELAY_MODALITY) {
+        if (!Number.isSafeInteger(usage.inputTokens) || (usage.inputTokens ?? 0) <= 0) errors.push('embedding.usage.inputTokens must be a positive observed integer')
+        if (usage.outputTokens !== undefined && usage.outputTokens !== 0) errors.push('embedding.usage.outputTokens must be zero when reported')
+        if (usage.totalTokens !== undefined && usage.totalTokens !== usage.inputTokens) errors.push('embedding.usage.totalTokens must equal inputTokens')
+      }
       if ((modality === 'text' || modality === 'ocr' || modality === EMBEDDING_RELAY_MODALITY) && usage.inputTokens === undefined && usage.outputTokens === undefined && usage.totalTokens === undefined) errors.push(`${modality}.usage must contain token units`)
       if ((modality === 'image' || modality === 'image_edit') && (!Number.isSafeInteger(usage.billingUnits) || (usage.billingUnits ?? 0) <= 0)) errors.push(`${modality}.usage must contain positive integer billingUnits`)
       if (modality === 'video' && (typeof usage.durationSeconds !== 'number' || usage.durationSeconds <= 0)) errors.push(`${modality}.usage must contain positive durationSeconds`)
@@ -243,9 +302,11 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
     if (result.costObserved !== true) errors.push(`${modality}.costObserved must be true`)
     if (typeof result.costCny !== 'number' || !Number.isFinite(result.costCny) || result.costCny < 0) errors.push(`${modality}.costCny must be a non-negative observed number`)
     if (options.requireProduction && result.costSource !== 'provider_receipt' && result.costSource !== 'relay_pricing_snapshot') errors.push(`${modality}.costSource must identify provider_receipt or relay_pricing_snapshot`)
+    if (options.requireProduction && modality === EMBEDDING_RELAY_MODALITY && result.costSource !== 'provider_receipt') errors.push('embedding.costSource must be a provider receipt')
     if (options.requireProduction && result.costSource === 'relay_pricing_snapshot') {
       if (!nonEmpty(result.pricingVersion)) errors.push(`${modality}.pricingVersion is required for relay_pricing_snapshot`)
       if (!nonEmpty(result.pricingGroup)) errors.push(`${modality}.pricingGroup is required for relay_pricing_snapshot`)
+      if (modality === EMBEDDING_RELAY_MODALITY && options.requireEmbedding && !sha256Digest.test(result.pricingSnapshotSha256 ?? '')) errors.push(`${modality}.pricingSnapshotSha256 must bind the authenticated sanitized pricing snapshot`)
     }
     if (options.requireProduction || options.artifactRoot) {
       const embeddingCandidate = modality === EMBEDDING_RELAY_MODALITY && options.requireEmbedding

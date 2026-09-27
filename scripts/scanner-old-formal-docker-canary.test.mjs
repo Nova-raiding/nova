@@ -7,6 +7,7 @@ const workerId = 'b'.repeat(64)
 const apiImageId = `sha256:${'c'.repeat(64)}`
 const workerImageId = `sha256:${'d'.repeat(64)}`
 const networkId = 'e'.repeat(64)
+const demoNetworkId = 'f'.repeat(64)
 const current = Date.parse('2026-09-27T02:00:00Z')
 const env = {
   OLD_SCANNER_API_CONTAINER_ID: apiId,
@@ -47,8 +48,11 @@ function fakeDocker({ markerValue = marker(), apiImage = apiImageId, apiNetworks
   return { docker, calls }
 }
 
-test('exact Docker transport checks full IDs and marker before one upload, with token only on stdin', async () => {
-  const { docker, calls } = fakeDocker()
+test('exact Docker transport allows API demo attachment but routes only through the formal network and container loopback', async () => {
+  const { docker, calls } = fakeDocker({ apiNetworks: {
+    'merchant-production_default': { NetworkID: networkId },
+    'storenova-demo-e0': { NetworkID: demoNetworkId },
+  } })
   const transport = createOldFormalDockerTransport({ env, docker, now: () => current })
   assert.equal(await transport.legacyRecoveryProbe(), true)
   const response = await transport.fetchImpl(new URL('http://127.0.0.1:8787/v1/assets/upload'), {
@@ -59,6 +63,8 @@ test('exact Docker transport checks full IDs and marker before one upload, with 
   assert.equal(calls.filter(call => call.args[0] === 'inspect').length, 6)
   assert.equal(calls.filter(call => call.args[0] === 'exec' && call.args[4] === workerId).length, 2)
   assert.equal(calls.filter(call => call.args[0] === 'exec' && call.args[4] === apiId).length, 1)
+  assert.equal(calls.filter(call => call.args[0] === 'exec' && call.args[4] === apiId)
+    .every(call => JSON.parse(call.input).path === '/v1/assets/upload'), true)
   assert.equal(calls.some(call => call.args.join(' ').includes('secret')), false)
   assert.equal(calls.some(call => call.input?.includes('Bearer secret')), true)
 })
@@ -67,7 +73,9 @@ test('container image drift, network drift, and stale worker marker block before
   for (const setup of [
     { apiImage: `sha256:${'f'.repeat(64)}` },
     { workerNetworks: { 'merchant-production_default': { NetworkID: 'f'.repeat(64) } } },
-    { apiNetworks: { 'merchant-production_default': { NetworkID: networkId }, 'unexpected-egress': { NetworkID: 'f'.repeat(64) } } },
+    { apiNetworks: { 'storenova-demo-e0': { NetworkID: demoNetworkId } } },
+    { apiNetworks: { 'merchant-production_default': { NetworkID: demoNetworkId }, 'storenova-demo-e0': { NetworkID: networkId } } },
+    { workerNetworks: { 'storenova-demo-e0': { NetworkID: demoNetworkId } } },
     { workerNetworks: { 'merchant-production_default': { NetworkID: networkId }, 'unexpected-egress': { NetworkID: 'f'.repeat(64) } } },
     { markerValue: { ...marker(), observedAt: new Date(current - 20_000).toISOString() } },
     { markerValue: { ...marker(), scopeExplicit: false } },
