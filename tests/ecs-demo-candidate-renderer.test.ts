@@ -18,14 +18,18 @@ function fixture() {
   const source = join(root, 'source')
   const migrations = join(source, 'packages/persistence/src/migrations')
   const scripts = join(source, 'infra/scripts')
+  const local = join(source, 'infra/local')
   const output = join(root, 'protected-output')
   mkdirSync(migrations, { recursive: true, mode: 0o700 })
   mkdirSync(scripts, { recursive: true, mode: 0o700 })
+  mkdirSync(local, { recursive: true, mode: 0o700 })
   mkdirSync(output, { mode: 0o700 })
   writeFileSync(join(migrations, '001_candidate.sql'), 'SELECT 1;\n', { mode: 0o600 })
   writeFileSync(join(scripts, 'apply-migrations.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o600 })
+  writeFileSync(join(local, 'ensure-app-role.sql'), 'SELECT 1;\n', { mode: 0o600 })
+  writeFileSync(join(scripts, 'verify-runtime-db-role.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o600 })
   // Git archives include the migrations directory entry as well as SQL files.
-  spawnSync('tar', ['-cf', join(source, '.candidate-source.tar'), '-C', source, 'packages/persistence/src/migrations', 'infra/scripts/apply-migrations.sh'])
+  spawnSync('tar', ['-cf', join(source, '.candidate-source.tar'), '-C', source, 'packages/persistence/src/migrations', 'infra/scripts/apply-migrations.sh', 'infra/local/ensure-app-role.sql', 'infra/scripts/verify-runtime-db-role.sh'])
   sourceSha = `sha256:${createHash('sha256').update(readFileSync(join(source, '.candidate-source.tar'))).digest('hex')}`
   const identity = join(source, '.candidate-identity')
   const eightImages = {
@@ -91,7 +95,10 @@ describe('protected isolated ECS demo candidate renderer', () => {
     expect(compose.services.migrate.volumes).toEqual([
       { type: 'bind', source: join(value.source, 'packages/persistence/src/migrations'), target: '/migrations', read_only: true },
       { type: 'bind', source: join(value.source, 'infra/scripts/apply-migrations.sh'), target: '/ops/apply-migrations.sh', read_only: true },
+      { type: 'bind', source: join(value.source, 'infra/local/ensure-app-role.sql'), target: '/ops/ensure-app-role.sql', read_only: true },
+      { type: 'bind', source: join(value.source, 'infra/scripts/verify-runtime-db-role.sh'), target: '/ops/verify-runtime-db-role.sh', read_only: true },
     ])
+    expect(compose.services.migrate.entrypoint[2]).toContain('verify-runtime-db-role.sh')
     const roleUrls = ['DATABASE_URL', 'OPS_DATABASE_URL', 'ALERT_RECEIVER_DATABASE_URL'].map(key => new URL(compose.services.api.environment[key]))
     expect(roleUrls.map(url => url.username).sort()).toEqual(['merchant_alert_receiver', 'merchant_app', 'merchant_ops'])
     expect(new Set(roleUrls.map(url => url.password)).size).toBe(3)
