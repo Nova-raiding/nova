@@ -173,7 +173,7 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
   }
 
   const beginConnection = async (pairedInstallationId?: string) => {
-    if (!oneClickAvailable || !workspaceId || !connectTargetAvailable || !installationKey || connectionState === 'requesting') return
+    if ((!oneClickAvailable && !pairedInstallationId) || !workspaceId || !connectTargetAvailable || !installationKey || connectionState === 'requesting') return
     const installationId = pairedInstallationId ?? window.localStorage.getItem(installationKey)
     if (!installationId) {
       const enrollUrl = localPluginEnrollUrl(apiBaseUrl, account.workspaceIds, workspaceId, account.id)
