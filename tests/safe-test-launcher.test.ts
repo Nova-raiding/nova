@@ -72,8 +72,8 @@ describe('safe default test launcher', () => {
   })
 
   it('keeps the explicit isolation manifest unique and limited to the audited files', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(39)
-    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(39)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(40)
+    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(40)
     expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/canonical-backfill-contract.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/local-creative-points-seed-runtime.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')

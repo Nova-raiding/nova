@@ -14,7 +14,7 @@ const evidence: EmbeddingCandidateEvidence = {
   generated_at: '2026-09-27T00:00:00.000Z', relay_origin: 'https://ai.wormholexyz.xyz', endpoint: '/v1/embeddings',
   model: 'qwen3.7-text-embedding-flash', http_status: 200, provider_request_id: 'req-safe-id',
   usage: { input_tokens: 42, output_tokens: 0, total_tokens: 42 },
-  cost: { currency: 'CNY', actual: 0.0001, source: 'provider_receipt' },
+  cost: { currency: 'CNY', actual: 0.0001, source: 'provider_receipt', evidence_kind: 'provider_reported_actual' },
   embedding_response: { input_sha256: 'd'.repeat(64), embedding_sha256: 'e'.repeat(64), data_count: 1, dimensions: 1024 },
 }
 
@@ -24,7 +24,7 @@ describe('embedding candidate evidence gate', () => {
   })
 
   it('accepts actual pricing snapshot provenance and rejects estimate-shaped costs', () => {
-    const snapshot: EmbeddingCandidateEvidence = { ...evidence, cost: { currency: 'CNY', actual: 0.0002, source: 'relay_pricing_snapshot', pricing_version: 'v1', pricing_group: 'default', formula_version: 'new-api-quota-v1', pricing_snapshot_sha256: 'f'.repeat(64) } }
+    const snapshot: EmbeddingCandidateEvidence = { ...evidence, cost: { currency: 'CNY', actual: 0.0002, source: 'relay_pricing_snapshot', evidence_kind: 'pricing_derived_from_observed_usage', pricing_version: 'v1', pricing_group: 'default', formula_version: 'new-api-quota-v1', pricing_snapshot_sha256: 'f'.repeat(64) } }
     expect(validateEmbeddingCandidateEvidence(snapshot, expected)).toEqual([])
     const estimate = { ...snapshot, cost: { ...snapshot.cost, source: 'relay_pricing_snapshot_estimate' } }
     expect(validateEmbeddingCandidateEvidence(estimate, expected)).toContain('cost.source must be provider_receipt or relay_pricing_snapshot')

@@ -158,6 +158,21 @@ export function buildReleaseManifest(input: {
     resolve(root, 'tests/ecs-compose-published-ports.test.ts'),
     resolve(root, 'scripts/collect-codex-app-host-evidence.mjs'),
     resolve(root, 'tests/codex-app-host-evidence-gate.ts'),
+    // The ordinary-release safe-state branch independently verifies a
+    // source-signed all-workspaces legacy-shadow assertion; the cutover branch
+    // retains its separate shadow-cycle and rollback requirements.
+    resolve(root, 'infra/protected/canonical-safe-state-attestation.mjs'),
+    resolve(root, 'infra/protected/canonical-safe-state-attestation.d.mts'),
+    resolve(root, 'infra/protected/canonical-safe-state-snapshot.mjs'),
+    resolve(root, 'infra/protected/canonical-safe-state-snapshot.d.mts'),
+    resolve(root, 'infra/protected/canonical-safe-state-reader-bootstrap.sql'),
+    resolve(root, 'infra/scripts/verify-canonical-safe-state-reader.sh'),
+    resolve(root, 'tests/canonical-product-cutover-evidence-gate.ts'),
+    resolve(root, 'tests/canonical-safe-state-attestation.test.ts'),
+    resolve(root, 'tests/canonical-safe-state-reader.test.ts'),
+    resolve(root, 'tests/canonical-safe-state-snapshot.test.ts'),
+    resolve(root, 'tests/canonical-safe-state-column-acl.postgres.sh'),
+    resolve(root, 'docs/runbooks/canonical-safe-state-reader-bootstrap.md'),
     resolve(root, 'tests/release-manifest-gate.ts'),
     resolve(root, 'docs/runbooks/chatgpt-candidate-host-route.md'),
     resolve(root, 'docs/runbooks/ecs-verified-compose-deploy.md'),

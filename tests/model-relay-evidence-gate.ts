@@ -7,7 +7,7 @@ export const EMBEDDING_RELAY_MODALITY = 'embedding' as const
 export const ALLOWED_EMBEDDING_MODELS = ['qwen3.7-text-embedding-flash', 'qwen3.7-text-embedding'] as const
 type Modality = typeof REQUIRED_RELAY_MODALITIES[number] | typeof EMBEDDING_RELAY_MODALITY
 type RelayUsage = { inputTokens?: number; outputTokens?: number; totalTokens?: number; billingUnits?: number; durationSeconds?: number }
-type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; dimensions?: number; httpStatus?: number; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; pricingSnapshotSha256?: string; evidence_ref?: string }
+type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; dimensions?: number; httpStatus?: number; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costEvidenceKind?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; pricingSnapshotSha256?: string; evidence_ref?: string }
 type RelayErrorRecovery = { verified?: boolean; failure_status?: number; failure_observed_at?: string; recovered_at?: string; failed_request_id?: string; recovery_request_id?: string; evidence_ref?: string }
 type RelayTokenQuota = { credential?: 'model' | 'video'; observed_at?: string; total_granted?: number; total_used?: number; total_available?: number; expires_at?: number; unlimited_quota?: boolean; evidence_ref?: string }
 type RelayEvidence = { schema_version?: string; release_id?: string; release_git_sha?: string; image_set_digest?: string; manifest_sha256?: string; deployment_nonce_sha256?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; token_quota?: RelayTokenQuota[]; results?: RelayResult[]; error_recovery?: RelayErrorRecovery }
@@ -143,7 +143,7 @@ function validateArtifact(reference: string | undefined, root: string, label: st
       } else if (expected.result) {
         if (artifactValue.modality !== expected.result.modality) return [`${label} modality must match ${expected.result.modality}`]
         const receipt = artifactValue.result
-        if (artifactValue.http_status !== expected.result.httpStatus || !receipt || typeof receipt !== 'object' || receipt.httpStatus !== expected.result.httpStatus || ['providerRequestId', 'providerJobId', 'model', 'dimensions', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup', 'pricingSnapshotSha256'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result.usage)) {
+        if (artifactValue.http_status !== expected.result.httpStatus || !receipt || typeof receipt !== 'object' || receipt.httpStatus !== expected.result.httpStatus || ['providerRequestId', 'providerJobId', 'model', 'dimensions', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'costEvidenceKind', 'pricingVersion', 'pricingGroup', 'pricingSnapshotSha256'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result.usage)) {
           return [`${label} receipt must bind successful HTTP status and summarized request, model, state, endpoint, usage and cost`]
         }
         if (expected.candidate) {
@@ -159,7 +159,7 @@ function validateArtifact(reference: string | undefined, root: string, label: st
           const requiredFields = ['input_sha256', 'embedding_sha256', 'data_count', 'dimensions']
           const validDigest = (value: unknown): value is string => typeof value === 'string' && sha256Digest.test(value)
           const expectedArtifactKeys = ['schema_version', 'release_id', 'modality', 'observed_at', 'http_status', 'response_headers', 'result', 'candidate_binding', 'embedding_response', ...(expected.result.costSource === 'relay_pricing_snapshot' ? ['pricing_snapshot'] : [])]
-          const resultFields = ['modality', 'state', 'endpoint', 'model', 'dimensions', 'httpStatus', 'providerRequestId', 'usageObserved', 'usage', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup', 'pricingSnapshotSha256']
+          const resultFields = ['modality', 'state', 'endpoint', 'model', 'dimensions', 'httpStatus', 'providerRequestId', 'usageObserved', 'usage', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'costEvidenceKind', 'pricingVersion', 'pricingGroup', 'pricingSnapshotSha256']
           const pricingSnapshot = artifactValue.pricing_snapshot
           const pricingValid = expected.result.costSource === 'relay_pricing_snapshot'
             ? isSafeEmbeddingPricingSnapshot(pricingSnapshot)
@@ -309,6 +309,11 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
       if (!nonEmpty(result.pricingVersion)) errors.push(`${modality}.pricingVersion is required for relay_pricing_snapshot`)
       if (!nonEmpty(result.pricingGroup)) errors.push(`${modality}.pricingGroup is required for relay_pricing_snapshot`)
       if (modality === EMBEDDING_RELAY_MODALITY && options.requireEmbedding && !sha256Digest.test(result.pricingSnapshotSha256 ?? '')) errors.push(`${modality}.pricingSnapshotSha256 must bind the authenticated sanitized pricing snapshot`)
+    }
+    if (options.requireEmbedding && modality === EMBEDDING_RELAY_MODALITY) {
+      const expectedKind = result.costSource === 'provider_receipt' ? 'provider_reported_actual'
+        : result.costSource === 'relay_pricing_snapshot' ? 'pricing_derived_from_observed_usage' : undefined
+      if (!expectedKind || result.costEvidenceKind !== expectedKind) errors.push(`${modality}.costEvidenceKind must distinguish provider-reported actual cost from pricing-derived cost`)
     }
     if (options.requireProduction || options.artifactRoot) {
       const embeddingCandidate = modality === EMBEDDING_RELAY_MODALITY && options.requireEmbedding

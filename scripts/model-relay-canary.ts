@@ -23,6 +23,7 @@ export type ProbeResult = {
   usageProviderRequestId?: string
   costObserved?: boolean
   costSource?: 'provider_receipt' | 'relay_pricing_snapshot'
+  costEvidenceKind?: 'provider_reported_actual' | 'pricing_derived_from_observed_usage'
   costCny?: number
   pricingVersion?: string
   pricingGroup?: string
@@ -418,7 +419,7 @@ export function writeRelayResponseArtifact(root: string, release: string, modali
       if (!embeddingPricingSnapshot.value || !embeddingPricingSnapshot.digest || response.result.pricingSnapshotSha256 !== embeddingPricingSnapshot.digest) throw new Error('embedding settlement pricing snapshot is missing or does not match the probe result')
       ;(relayResponse as Record<string, unknown>).pricing_snapshot = embeddingPricingSnapshot.value
     }
-    const fields = ['modality', 'state', 'endpoint', 'model', 'dimensions', 'httpStatus', 'providerRequestId', 'usageObserved', 'usage', 'usageProviderRequestId', 'costObserved', 'costSource', 'costCny', 'pricingVersion', 'pricingGroup', 'pricingSnapshotSha256'] as const
+    const fields = ['modality', 'state', 'endpoint', 'model', 'dimensions', 'httpStatus', 'providerRequestId', 'usageObserved', 'usage', 'usageProviderRequestId', 'costObserved', 'costSource', 'costEvidenceKind', 'costCny', 'pricingVersion', 'pricingGroup', 'pricingSnapshotSha256'] as const
     resultSummary = Object.fromEntries(fields.filter(field => response.result[field] !== undefined).map(field => [field, response.result[field]]))
     responseHeaders = {}
   }
@@ -558,7 +559,7 @@ export async function evaluateRelayUsageEvidence(
     ? rawCost
     : typeof rawCost === 'string' && /^\d+(?:\.\d+)?$/u.test(rawCost.trim()) ? Number(rawCost) : undefined
   if (providerCost !== undefined && Number.isFinite(providerCost) && providerCost >= 0) {
-    return { usageObserved, ...metering, costObserved: true, costSource: 'provider_receipt' as const, costCny: providerCost }
+    return { usageObserved, ...metering, costObserved: true, costSource: 'provider_receipt' as const, ...(modality === 'embedding' ? { costEvidenceKind: 'provider_reported_actual' as const } : {}), costCny: providerCost }
   }
   const quoteClient = options.pricing ?? pricingClient
   if (modality === 'embedding' && options.pricing && !options.pricingSnapshot) return { usageObserved, ...metering, costObserved: false }
@@ -573,7 +574,7 @@ export async function evaluateRelayUsageEvidence(
       ? createHash('sha256').update(JSON.stringify(snapshot), 'utf8').digest('hex')
       : undefined
     if (modality === 'embedding' && (!pricingSnapshotSha256 || (!options.pricingSnapshot && embeddingPricingSnapshot.digest !== pricingSnapshotSha256))) return { usageObserved: true, ...metering, costObserved: false }
-    return { usageObserved: true, ...metering, costObserved: true, costSource: 'relay_pricing_snapshot' as const, costCny: quote.costCny, pricingVersion: quote.metadata.pricing_version, pricingGroup: quote.metadata.pricing_group, ...(pricingSnapshotSha256 ? { pricingSnapshotSha256 } : {}) }
+    return { usageObserved: true, ...metering, costObserved: true, costSource: 'relay_pricing_snapshot' as const, ...(modality === 'embedding' ? { costEvidenceKind: 'pricing_derived_from_observed_usage' as const } : {}), costCny: quote.costCny, pricingVersion: quote.metadata.pricing_version, pricingGroup: quote.metadata.pricing_group, ...(pricingSnapshotSha256 ? { pricingSnapshotSha256 } : {}) }
   }
   if (modality === 'embedding') return { usageObserved, ...metering, costObserved: false }
   return { usageObserved, ...metering, costObserved: false }
@@ -649,6 +650,8 @@ export function finalizeSuccessfulProbe(input: SuccessfulProbe): ProbeResult {
   if (result.costSource === 'relay_pricing_snapshot' && (!result.pricingVersion || !result.pricingGroup)) {
     return { ...result, state: 'blocked', detail: 'pricing_snapshot_identity_missing' }
   }
+  if (result.modality === 'embedding' && result.costSource === 'provider_receipt' && result.costEvidenceKind !== 'provider_reported_actual') return { ...result, state: 'blocked', detail: 'embedding_cost_evidence_kind_mismatch' }
+  if (result.modality === 'embedding' && result.costSource === 'relay_pricing_snapshot' && result.costEvidenceKind !== 'pricing_derived_from_observed_usage') return { ...result, state: 'blocked', detail: 'embedding_cost_evidence_kind_mismatch' }
   if (result.modality === 'embedding' && result.costSource === 'relay_pricing_snapshot'
     && !/^[a-f0-9]{64}$/u.test(result.pricingSnapshotSha256 ?? '')) return { ...result, state: 'blocked', detail: 'embedding_pricing_snapshot_missing_or_unbound' }
   return { ...result, state: 'ready' }

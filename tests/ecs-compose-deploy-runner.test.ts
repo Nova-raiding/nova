@@ -310,8 +310,8 @@ describe('verified ECS Compose deployment runner', () => {
       expires_at: new Date(Date.now() + 60_000).toISOString(), compose_project: 'merchant-production', current: candidate,
       target: { release_id: 'bridge', git_sha: 'd'.repeat(40), manifest_sha256: hash('e'), image_set_digest: `sha256:${hash('f')}`,
         compose_sha256: hash('1'), env_sha256: hash('2'), image_digests_sha256: hash('3') },
-      database: { strategy: 'forward_only', schema_downgrade: false, live_migration_version: 242, target_migration_tail: 245,
-        allowed_prefix_sha256: { 242: hash('4'), 243: hash('5'), 244: hash('6'), 245: hash('7') } }, volumes: { preserve: true },
+      database: { strategy: 'forward_only', schema_downgrade: false, live_migration_version: 245, target_migration_tail: 245,
+        allowed_prefix_sha256: { 245: hash('7') } }, volumes: { preserve: true },
     }
     const verify = (database: Record<string, unknown>) => {
       writeFileSync(planPath, JSON.stringify({ ...base, database }))
@@ -323,7 +323,11 @@ describe('verified ECS Compose deployment runner', () => {
     }
     expect(verify(base.database).status).toBe(0)
     expect(verify({ ...base.database, target_migration_tail: 242 }).stderr).toContain('rollback target must contain exactly the candidate migration chain')
-    expect(verify({ ...base.database, allowed_prefix_sha256: { 242: hash('4'), 244: hash('6') } }).stderr).toContain('lacks an approved migration prefix at 243')
+    expect(verify({ ...base.database, allowed_prefix_sha256: {} }).stderr).toContain('rollback capsule lacks an approved migration prefix at 245')
+    const behindCandidate = { ...base.database, live_migration_version: 242, allowed_prefix_sha256: { 242: hash('4'), 243: hash('5'), 244: hash('6'), 245: hash('7') } }
+    expect(verify(behindCandidate).stderr).toContain('ordinary C deployment requires the live database at migration 245')
+    expect(verify(behindCandidate).stderr).toContain('independently signed and verified compatibility bridge')
+    expect(script.indexOf('ordinary C deployment requires the live database at migration')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('rollback target must contain exactly the candidate migration chain')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('forward-compatible rollback bridge is not the current public release')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('rollback capsule live migration version differs from signed predeploy observation')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))

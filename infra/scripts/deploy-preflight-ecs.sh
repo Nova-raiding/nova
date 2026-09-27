@@ -259,15 +259,27 @@ case "$plugin_source_schema" in
   *) echo 'candidate plugin source schema is unsupported' >&2; exit 2 ;;
 esac
 npx --no-install tsx tests/codex-app-host-evidence-gate.ts --file "$CODEX_APP_HOST_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-mcp-base-url "$mcp_base_url" --expected-bridge-sha256 "$bridge_sha256" --expected-git-sha "$release_git_sha" --expected-manifest-sha256 "$manifest_sha256" --expected-image-set-digest "$image_set_digest" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-artifacts
-npx --no-install tsx tests/canonical-product-cutover-evidence-gate.ts --file "$CANONICAL_CUTOVER_EVIDENCE_PATH" --release-id "$RELEASE_ID" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT"
+CANONICAL_EXPECTED_RELEASE_GIT_SHA="$release_git_sha" \
+CANONICAL_EXPECTED_CANDIDATE_MANIFEST_SHA256="$manifest_sha256" \
+CANONICAL_EXPECTED_RELEASE_MANIFEST_SHA256="$release_manifest_sha256" \
+CANONICAL_EXPECTED_IMAGE_SET_DIGEST="$image_set_digest" \
+  npx --no-install tsx tests/canonical-product-cutover-evidence-gate.ts --file "$CANONICAL_CUTOVER_EVIDENCE_PATH" --release-id "$RELEASE_ID" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT"
 npx --no-install tsx tests/release-manifest-gate.ts --file "$RELEASE_MANIFEST_PATH" --release-id "$RELEASE_ID" --expected-candidate-manifest-sha256 "$manifest_sha256" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id" --capability-evidence "$CAPABILITY_EVIDENCE_PATH" --capacity-evidence "$CAPACITY_REPORT_PATH" --model-relay-evidence "$MODEL_RELAY_EVIDENCE_PATH" --payment-evidence "$PAYMENT_EVIDENCE_PATH" --restore-evidence "$RESTORE_EVIDENCE_PATH" --object-storage-evidence "$OBJECT_STORAGE_EVIDENCE_PATH" --codex-app-host-evidence "$CODEX_APP_HOST_EVIDENCE_PATH" --canonical-cutover-evidence "$CANONICAL_CUTOVER_EVIDENCE_PATH"
 fi
 workspace_latest_migration=$(find packages/persistence/src/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_*.sql' -exec basename {} \; | sed 's/_.*//' | sort -n | tail -1)
 [ "$workspace_latest_migration" = "$EXPECTED_MIGRATION_VERSION" ] || { echo "release migration chain tail mismatch: expected $EXPECTED_MIGRATION_VERSION, workspace has $workspace_latest_migration" >&2; exit 1; }
 # The dedicated Ops credential must already have SELECT on schema_migrations.
-# Preflight is a read-only gate: a missing grant must fail verification rather
-# than mutate production ACLs as a side effect.
-MIGRATION_CHAIN_MODE=prefix sh infra/scripts/verify-database-migration-chain.sh
+# Full ordinary C releases must already be at the candidate schema tail: the
+# deploy runner has no independently signed compatibility-bridge evidence for
+# an online forward migration. Infra-only checks remain prefix-tolerant, and
+# the isolated legacy B takeover keeps its exact 242/244 bridge contract.
+migration_chain_mode=complete
+case "$DEPLOYMENT_SCOPE:${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}:${EXPECTED_MIGRATION_VERSION}" in
+  infra:*) migration_chain_mode=prefix ;;
+  full:prefix_242_or_244:244) migration_chain_mode=prefix ;;
+esac
+# Preflight is read-only: a missing Ops grant must fail rather than mutate ACLs.
+MIGRATION_CHAIN_MODE="$migration_chain_mode" sh infra/scripts/verify-database-migration-chain.sh
 sh infra/scripts/verify-runtime-db-role.sh
 api_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const x=JSON.parse(process.env.IMAGE_DIGESTS_JSON);process.stdout.write(x["merchant-api"]||"")')
 worker_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const x=JSON.parse(process.env.IMAGE_DIGESTS_JSON);process.stdout.write(x["merchant-worker"]||"")')

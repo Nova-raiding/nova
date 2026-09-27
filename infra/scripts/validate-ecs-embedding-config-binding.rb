@@ -69,7 +69,24 @@ def validate(config, rendered)
     flag = env['KNOWLEDGE_VECTOR_INDEX_ENABLED']
     fail_binding("#{name}.KNOWLEDGE_VECTOR_INDEX_ENABLED must be absent or false") unless flag.nil? || flag == 'false'
   end
-  return unless enabled
+  unless enabled
+    # A disabled vector feature may still carry the reviewed embedding model
+    # for operator visibility. Bind those optional values across the future
+    # API/worker runtime without requiring a bearer key or a cost cap.
+    configured_model = config['embedding_model']
+    configured_dimensions = config['embedding_dimensions']
+    if configured_model || configured_dimensions
+      fail_binding('disabled embedding model must be approved') unless %w[qwen3.7-text-embedding-flash qwen3.7-text-embedding].include?(configured_model)
+      fail_binding('disabled embedding dimensions must equal 1024') unless configured_dimensions.to_s == '1024'
+      { 'api' => api, 'api-replica' => replica, 'worker-automation' => automation }.each do |name, env|
+        matching(env, name, 'EMBEDDING_MODEL', configured_model)
+        matching(env, name, 'EMBEDDING_DIMENSIONS', '1024')
+        fail_binding("#{name}.EMBEDDING_VERSION is required") if runtime_string(env, name, 'EMBEDDING_VERSION').strip.empty?
+        matching(env, name, 'EMBEDDING_VERSION', runtime_string(api, 'api', 'EMBEDDING_VERSION'))
+      end
+    end
+    return
+  end
 
   model = config['embedding_model']
   fail_binding('embedding_model must be an approved model') unless %w[qwen3.7-text-embedding-flash qwen3.7-text-embedding].include?(model)

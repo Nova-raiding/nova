@@ -32,7 +32,7 @@ describe('model relay evidence gate', () => {
     const results: any[] = structuredClone(evidence.results).map((result: any) => ({ ...result, costSource: 'provider_receipt' }))
     const embeddingResult = { modality: 'embedding', state: 'ready', endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024,
       httpStatus: 200, providerRequestId: 'req-embedding', usageObserved: true, usage: { inputTokens: 16, totalTokens: 16 },
-      usageProviderRequestId: 'req-embedding', costObserved: true, costCny: 0.01, costSource: 'provider_receipt' }
+      usageProviderRequestId: 'req-embedding', costObserved: true, costCny: 0.01, costSource: 'provider_receipt', costEvidenceKind: 'provider_reported_actual' }
     results.push(embeddingResult)
     for (const result of results) {
       const artifact = { schema_version: '1', release_id: 'release-1', modality: result.modality, observed_at: '2026-08-26T01:00:00Z', http_status: result.httpStatus, response_headers: {},
@@ -50,20 +50,23 @@ describe('model relay evidence gate', () => {
     const options = { requireEmbedding: true, expectedEmbeddingModel: 'qwen3.7-text-embedding-flash', requireCandidateBinding: true, expectedCandidate, artifactRoot: root }
     expect(validateModelRelayEvidence(bound, options)).toEqual([])
 
-    const snapshot = { pricing: { pricing_version: 'pricing-v1', group_ratio: { default: 1 }, data: [{ model_name: 'qwen3.7-text-embedding-flash', quota_type: 0, model_ratio: 43.375, model_price: 0, completion_ratio: 1, enable_groups: ['default'] }] }, status: { quota_per_unit: 500000, usd_exchange_rate: 7.2 } }
+    const snapshot = { pricing: { pricing_version: 'pricing-v1', group_ratio: { default: 1 }, data: [{ model_name: 'qwen3.7-text-embedding-flash', quota_type: 0, model_ratio: 0, model_price: 0, completion_ratio: 1, enable_groups: ['default'] }] }, status: { quota_per_unit: 500000, usd_exchange_rate: 7.2 } }
     const snapshotDigest = createHash('sha256').update(JSON.stringify(snapshot), 'utf8').digest('hex')
     const snapshotArtifact = { schema_version: '1', release_id: 'release-1', modality: 'embedding', observed_at: '2026-08-26T01:00:00Z', http_status: 200, response_headers: {},
-      result: { modality: 'embedding', state: 'ready', endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024, httpStatus: 200, providerRequestId: 'req-embedding', usageObserved: true, usage: { inputTokens: 16, totalTokens: 16 }, usageProviderRequestId: 'req-embedding', costObserved: true, costCny: 0.0099936, costSource: 'relay_pricing_snapshot', pricingVersion: 'pricing-v1', pricingGroup: 'default', pricingSnapshotSha256: snapshotDigest },
+      result: { modality: 'embedding', state: 'ready', endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024, httpStatus: 200, providerRequestId: 'req-embedding', usageObserved: true, usage: { inputTokens: 16, totalTokens: 16 }, usageProviderRequestId: 'req-embedding', costObserved: true, costCny: 0, costSource: 'relay_pricing_snapshot', costEvidenceKind: 'pricing_derived_from_observed_usage', pricingVersion: 'pricing-v1', pricingGroup: 'default', pricingSnapshotSha256: snapshotDigest },
       candidate_binding: candidateBinding,
       embedding_response: { input_sha256: createHash('sha256').update(input, 'utf8').digest('hex'), embedding_sha256: createHash('sha256').update(JSON.stringify(vector), 'utf8').digest('hex'), data_count: 1, dimensions: 1024 },
       pricing_snapshot: snapshot }
     const snapshotBody = JSON.stringify(snapshotArtifact)
     writeFileSync(join(root, 'relay', 'embedding-snapshot.json'), snapshotBody)
     const snapshotEvidence = structuredClone(bound)
-    Object.assign(snapshotEvidence.results[5]!, { costSource: 'relay_pricing_snapshot', costCny: 0.0099936, pricingVersion: 'pricing-v1', pricingGroup: 'default', pricingSnapshotSha256: snapshotDigest,
+    Object.assign(snapshotEvidence.results[5]!, { costSource: 'relay_pricing_snapshot', costEvidenceKind: 'pricing_derived_from_observed_usage', costCny: 0, pricingVersion: 'pricing-v1', pricingGroup: 'default', pricingSnapshotSha256: snapshotDigest,
       evidence_ref: `artifact://production/relay/embedding-snapshot.json#${createHash('sha256').update(snapshotBody).digest('hex')}` })
     const strictSnapshotErrors = validateModelRelayEvidence(snapshotEvidence, { ...options, requireProduction: true, now: new Date('2026-08-26T02:00:00Z') })
     expect(strictSnapshotErrors.filter(error => error.includes('embedding.cost') || error.includes('embedding.pricing'))).toEqual([])
+    const falseActualClaim = structuredClone(snapshotEvidence)
+    ;(falseActualClaim.results[5] as any).costEvidenceKind = 'provider_reported_actual'
+    expect(validateModelRelayEvidence(falseActualClaim, options)).toContain('embedding.costEvidenceKind must distinguish provider-reported actual cost from pricing-derived cost')
     const tamperedCost = structuredClone(snapshotEvidence)
     ;(tamperedCost.results[5] as any).costCny += 0.0001
     const tamperedCostArtifact = JSON.parse(snapshotBody)

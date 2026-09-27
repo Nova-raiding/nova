@@ -49,6 +49,23 @@ describe('ECS embedding config and rendered Compose binding', () => {
     expect(verify(candidate).status).toBe(0)
   })
 
+  it('binds configured model, dimensions and version even while indexing is disabled', () => {
+    for (const [name, key, value] of [
+      ['api', 'EMBEDDING_MODEL', 'qwen3.7-text-embedding'],
+      ['api-replica', 'EMBEDDING_DIMENSIONS', '1536'],
+      ['worker-automation', 'EMBEDDING_VERSION', 'v2'],
+    ] as const) {
+      const candidate = fixture(false)
+      candidate.compose.services[name]!.environment[key] = value
+      const result = verify(candidate)
+      expect(result.status).toBe(1)
+      expect(result.stderr).not.toContain('redacted-test-token')
+    }
+    const lexical = fixture(false)
+    lexical.config = `knowledge_vector_index_enabled: false\nmodel_relay_base_url: ${relay}\n`
+    expect(verify(lexical).status).toBe(0)
+  })
+
   it.each(['api', 'api-replica', 'worker-automation'])('blocks config false with %s runtime enabled', name => {
     const candidate = fixture(false)
     candidate.compose.services[name]!.environment.KNOWLEDGE_VECTOR_INDEX_ENABLED = 'true'

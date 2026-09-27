@@ -189,12 +189,12 @@ async function providerProbe(input: { config: ReturnType<typeof validateCandidat
     usageSink: async record => {
       usageProof.usage = record
       if (record.costCny !== undefined) {
-        usageProof.cost = { currency: 'CNY', actual: record.costCny, source: 'provider_receipt' }
+        usageProof.cost = { currency: 'CNY', actual: record.costCny, source: 'provider_receipt', evidence_kind: 'provider_reported_actual' }
       } else {
         const quote = await pricing.quote(record)
         if (!pricingResponseDigests['/api/pricing'] || !pricingResponseDigests['/api/status']) throw new Error('relay pricing snapshot bytes were not observed')
         const snapshotDigest = sha256(JSON.stringify({ pricing: pricingResponseDigests['/api/pricing'], status: pricingResponseDigests['/api/status'] }))
-        usageProof.cost = { currency: 'CNY', actual: quote.costCny, source: 'relay_pricing_snapshot', pricing_version: quote.metadata.pricing_version, pricing_group: quote.metadata.pricing_group, formula_version: quote.metadata.formula_version, pricing_snapshot_sha256: snapshotDigest }
+        usageProof.cost = { currency: 'CNY', actual: quote.costCny, source: 'relay_pricing_snapshot', evidence_kind: 'pricing_derived_from_observed_usage', pricing_version: quote.metadata.pricing_version, pricing_group: quote.metadata.pricing_group, formula_version: quote.metadata.formula_version, pricing_snapshot_sha256: snapshotDigest }
       }
       return { recorded: true, costEvidence: true }
     },

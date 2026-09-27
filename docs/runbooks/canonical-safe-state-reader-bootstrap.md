@@ -82,3 +82,31 @@ workspace and flag state; it does not prove two shadow cycles of canonical
 product consistency. Those cycles require a separately scoped collector with
 the complete data and independent source verification described in
 `canonical-shadow-cycle-evidence-gap.md`.
+
+## Ordinary release versus cutover
+
+The canonical preflight accepts an ordinary-release assertion only when the
+document is tagged `ordinary_release_safe_state` and passes the separate
+Ed25519 attestation contract. It binds the same release ID, Git SHA, rendered
+candidate manifest hash, release manifest hash, image-set digest and hashed
+deployment nonce used by ECS preflight. It also compares the observed
+PostgreSQL cluster system-identifier hash, database OID/name hash and approved
+endpoint hash against a root-protected source policy, and pins the signing
+collector digest. Every workspace must resolve to `legacy_shadow` in one
+repeatable-read, read-only snapshot.
+
+The verifier reads these fixed host trust files; missing or unsafe files are a
+hard failure:
+
+- `/run/release-security/evidence-trust/canonical-safe-state-source-policy.json`
+- `/run/release-security/evidence-trust/canonical-safe-state-collector-sha256`
+- `/run/release-security/evidence-trust/canonical-safe-state-public.pem`
+- `/run/release-security/evidence-trust/canonical-safe-state-key-id`
+
+The current snapshot script remains review-only and cannot produce that
+signed proof. No source-signing key or reviewed cluster policy is provisioned
+by this code. Until a protected producer independently verifies the selected
+database against that policy and signs its own capture, ordinary full releases
+remain blocked. A tagged ordinary proof cannot satisfy an actual cutover: the
+existing cutover evidence path still requires two independently collected
+shadow cycles and rollback evidence and retains its provenance blocker.

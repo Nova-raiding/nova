@@ -2,25 +2,28 @@ import { describe, expect, it } from 'vitest'
 import { inspectBridge254Compose } from '../infra/scripts/inspect-ecs-bridge-254-rendered-compose.mjs'
 
 const runtime = ['api', 'api-replica', 'worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan']
+const support = ['ui', 'ops-ui', 'payment-gateway', 'pilot-gateway', 'clamav']
+const allowedServices = [...runtime, ...support]
 const sha = 'a'.repeat(64)
 const release = { RELEASE_ID: 'release-bridge-review', RELEASE_GIT_SHA: 'b'.repeat(40), RELEASE_MANIFEST_SHA256: sha, RELEASE_IMAGE_SET_DIGEST: `sha256:${sha}` }
+type RenderedService = { image: string; environment: Record<string, string>; build?: unknown; depends_on?: string[] | Record<string, unknown>; command?: string | string[]; entrypoint?: string | string[] }
 
-function rendered() {
-  return { services: Object.fromEntries(runtime.map(name => [name, {
+function rendered(): { services: Record<string, RenderedService> } {
+  return { services: Object.fromEntries([...runtime.map(name => [name, {
     image: `${name.startsWith('api') ? 'api' : 'worker'}@sha256:${sha}`,
     environment: {
       BRIDGE_SCHEMA_COMPATIBILITY_MODE: 'prefix_242_or_254',
       RUN_MIGRATIONS_ON_STARTUP: 'false',
-      ...(name.startsWith('api') ? release : {}),
+      ...release,
     },
-  }])) }
+  }] as const), ...support.map(name => [name, { image: `${name}@sha256:${sha}`, environment: {} }] as const)]) }
 }
 
 describe('242/254 rendered Compose review inspection', () => {
   it('reports a complete static inspection as review-only', () => {
     expect(inspectBridge254Compose(rendered())).toMatchObject({
       status: 'review_only', deployable: false, runtime_verified: false,
-      release_id: release.RELEASE_ID, inspected_services: runtime,
+      release_id: release.RELEASE_ID, inspected_services: allowedServices,
     })
   })
 
@@ -65,5 +68,41 @@ describe('242/254 rendered Compose review inspection', () => {
     const input = rendered()
     input.services['worker-scan']!.image = `worker@sha256:${'c'.repeat(64)}`
     expect(() => inspectBridge254Compose(input)).toThrow('worker-scan worker image differs')
+  })
+
+  it('requires every runtime identity and rejects migration containers or startup dependencies', () => {
+    const missingIdentity = rendered()
+    Reflect.deleteProperty(missingIdentity.services['worker-scan']!.environment, 'RELEASE_GIT_SHA')
+    expect(() => inspectBridge254Compose(missingIdentity)).toThrow('worker-scan RELEASE_GIT_SHA differs from api')
+
+    const migrationService = rendered()
+    migrationService.services['postgres-migration'] = { image: `postgres@sha256:${sha}`, environment: {} }
+    expect(() => inspectBridge254Compose(migrationService)).toThrow('must not contain a migration service')
+
+    const dependency = rendered()
+    dependency.services.api!.depends_on = { migrate: { condition: 'service_completed_successfully' } }
+    expect(() => inspectBridge254Compose(dependency)).toThrow('api depends on a migration service')
+
+    const command = rendered()
+    command.services['worker-generation']!.command = ['sh', '/app/apply-migrations.sh']
+    expect(() => inspectBridge254Compose(command)).toThrow('worker-generation contains a migration startup command')
+  })
+
+  it('accepts only the explicit runtime and support service set', () => {
+    const extra = rendered()
+    extra.services['debug-shell'] = { image: `debug@sha256:${sha}`, environment: {} }
+    expect(() => inspectBridge254Compose(extra)).toThrow('outside the reviewed allowlist: debug-shell')
+
+    const missingSupport = rendered()
+    delete missingSupport.services.clamav
+    expect(() => inspectBridge254Compose(missingSupport)).toThrow('missing allowlisted services: clamav')
+
+    const mutableSupport = rendered()
+    mutableSupport.services['pilot-gateway']!.build = { context: '.' }
+    expect(() => inspectBridge254Compose(mutableSupport)).toThrow('pilot-gateway retains a mutable build')
+
+    const unpinnedSupport = rendered()
+    unpinnedSupport.services['ops-ui']!.image = 'ops-ui:latest'
+    expect(() => inspectBridge254Compose(unpinnedSupport)).toThrow('ops-ui image is not digest pinned')
   })
 })

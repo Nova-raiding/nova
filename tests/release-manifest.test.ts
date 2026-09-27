@@ -58,12 +58,24 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(79)
+    expect(manifest.artifacts).toHaveLength(91)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',
       'scripts/collect-codex-app-host-evidence.mjs',
       'tests/codex-app-host-evidence-gate.ts',
+      'infra/protected/canonical-safe-state-attestation.mjs',
+      'infra/protected/canonical-safe-state-attestation.d.mts',
+      'infra/protected/canonical-safe-state-snapshot.mjs',
+      'infra/protected/canonical-safe-state-snapshot.d.mts',
+      'infra/protected/canonical-safe-state-reader-bootstrap.sql',
+      'infra/scripts/verify-canonical-safe-state-reader.sh',
+      'tests/canonical-product-cutover-evidence-gate.ts',
+      'tests/canonical-safe-state-attestation.test.ts',
+      'tests/canonical-safe-state-reader.test.ts',
+      'tests/canonical-safe-state-snapshot.test.ts',
+      'tests/canonical-safe-state-column-acl.postgres.sh',
+      'docs/runbooks/canonical-safe-state-reader-bootstrap.md',
       'tests/release-manifest-gate.ts',
       'docs/runbooks/chatgpt-candidate-host-route.md',
       'docs/runbooks/ecs-verified-compose-deploy.md',

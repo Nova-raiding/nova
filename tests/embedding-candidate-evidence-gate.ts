@@ -18,7 +18,7 @@ export type EmbeddingCandidateEvidence = {
   http_status: number
   provider_request_id: string
   usage: { input_tokens: number; output_tokens?: number; total_tokens?: number }
-  cost: { currency: 'CNY'; actual: number; source: 'provider_receipt' | 'relay_pricing_snapshot'; pricing_version?: string; pricing_group?: string; formula_version?: string; pricing_snapshot_sha256?: string }
+  cost: { currency: 'CNY'; actual: number; source: 'provider_receipt' | 'relay_pricing_snapshot'; evidence_kind: 'provider_reported_actual' | 'pricing_derived_from_observed_usage'; pricing_version?: string; pricing_group?: string; formula_version?: string; pricing_snapshot_sha256?: string }
   embedding_response: { input_sha256: string; embedding_sha256: string; data_count: 1; dimensions: 1024 }
 }
 
@@ -65,8 +65,10 @@ export function validateEmbeddingCandidateEvidence(document: unknown, expected: 
   if (value.usage?.total_tokens !== undefined && (!Number.isSafeInteger(value.usage.total_tokens) || value.usage.total_tokens !== value.usage.input_tokens)) errors.push('usage.total_tokens must equal observed embedding input tokens')
   if (!value.cost || typeof value.cost !== 'object' || value.cost.currency !== 'CNY' || typeof value.cost.actual !== 'number' || !Number.isFinite(value.cost.actual) || value.cost.actual < 0) errors.push('cost must be observed non-negative CNY')
   if (value.cost?.source === 'provider_receipt') {
-    if (Object.keys(value.cost).some(key => !['currency', 'actual', 'source'].includes(key))) errors.push('provider receipt cost contains unsupported pricing fields')
+    if (value.cost.evidence_kind !== 'provider_reported_actual') errors.push('provider receipt cost must be labelled provider-reported actual')
+    if (Object.keys(value.cost).some(key => !['currency', 'actual', 'source', 'evidence_kind'].includes(key))) errors.push('provider receipt cost contains unsupported pricing fields')
   } else if (value.cost?.source === 'relay_pricing_snapshot') {
+    if (value.cost.evidence_kind !== 'pricing_derived_from_observed_usage') errors.push('pricing snapshot cost must be labelled as derived from observed usage, not provider-reported actual')
     if (!value.cost.pricing_version?.trim() || !value.cost.pricing_group?.trim() || !value.cost.formula_version?.trim() || !sha.test(value.cost.pricing_snapshot_sha256 ?? '')) errors.push('settlement pricing snapshot identity and digest are required')
   } else errors.push('cost.source must be provider_receipt or relay_pricing_snapshot')
   if (!exactKeys(value.embedding_response, ['input_sha256', 'embedding_sha256', 'data_count', 'dimensions'])) errors.push('embedding_response must contain only redacted hashes and shape')

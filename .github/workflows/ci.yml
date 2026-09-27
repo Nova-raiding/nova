@@ -282,6 +282,7 @@ jobs:
           packages/persistence/src/creative-point-action-claim.release.postgres.test.ts
           packages/persistence/src/charged-text-dispatch.postgres.test.ts
           packages/persistence/src/charged-text-no-delivery.release.postgres.test.ts
+          packages/persistence/src/bridge-242-254-forward-migrations.postgres.test.ts
           packages/persistence/src/migration-106-release.postgres.test.ts
           packages/persistence/src/migration-109-release.postgres.test.ts
           packages/persistence/src/migration-127-release.postgres.test.ts

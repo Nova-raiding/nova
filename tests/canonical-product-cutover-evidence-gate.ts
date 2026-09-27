@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
-import { closeSync, lstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs'
-import { resolve, sep } from 'node:path'
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs'
+import { dirname, resolve, sep } from 'node:path'
+import { canonicalSafeStateBindingFromEnvironment, validateCanonicalSafeStateAttestation, type CanonicalSafeStateBinding, type CanonicalSafeStateSourcePolicy } from '../infra/protected/canonical-safe-state-attestation.mjs'
 
 const artifact = /^artifact:\/\/production\/[A-Za-z0-9._/-]+#[a-f0-9]{64}$/u
 const hex = /^[a-f0-9]{64}$/u
@@ -59,10 +60,22 @@ function sameCounts(left: unknown, right: unknown): boolean {
   return countNames.every(name => (left as Record<string, unknown>)[name] === (right as Record<string, unknown>)[name])
 }
 
-export function validateCanonicalProductCutoverEvidence(document: unknown, options: { expectedReleaseId?: string; artifactRoot?: string; now?: Date } = {}): string[] {
+type SafeStateTrust = {
+  expectedBinding: CanonicalSafeStateBinding
+  expectedSourcePolicy: CanonicalSafeStateSourcePolicy
+  trustedKeyId: string
+  publicKeyPem: string
+}
+export function validateCanonicalProductCutoverEvidence(document: unknown, options: { expectedReleaseId?: string; artifactRoot?: string; safeStateTrust?: SafeStateTrust; now?: Date } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as CutoverEvidence
+  if ((document as Record<string, unknown>).evidence_purpose === 'ordinary_release_safe_state') {
+    if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
+    if (!options.safeStateTrust) errors.push('ordinary release requires protected source policy, candidate binding, and independent Ed25519 source attestation')
+    else errors.push(...validateCanonicalSafeStateAttestation(document, { ...options.safeStateTrust, ...(options.now ? { now: options.now } : {}) }))
+    return errors
+  }
   if (value.schema_version !== '1') errors.push('schema_version must be 1')
   if (typeof value.release_id !== 'string' || !value.release_id.trim()) errors.push('release_id is required')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
@@ -122,12 +135,56 @@ export function validateCanonicalProductCutoverEvidence(document: unknown, optio
 }
 
 function arg(name: string) { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1] }
+
+function readProtectedTrustFile(path: string, limit: number): Buffer {
+  if (!path.startsWith('/run/release-security/evidence-trust/') || realpathSync(path) !== path) throw new Error('canonical safe-state trust path is not fixed and canonical')
+  let sawTrustRoot = false
+  for (let current = path; current !== '/'; current = dirname(current)) {
+    const stat = lstatSync(current)
+    if (stat.isSymbolicLink() || stat.uid !== 0 || (stat.mode & 0o022) !== 0) throw new Error('canonical safe-state trust path is not root-protected')
+    if (current === '/run/release-security/evidence-trust') sawTrustRoot = true
+  }
+  const filesystemRoot = lstatSync('/')
+  if (!sawTrustRoot || filesystemRoot.uid !== 0 || (filesystemRoot.mode & 0o022) !== 0) throw new Error('canonical safe-state trust path is not rooted under protected evidence-trust')
+  const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const stat = fstatSync(descriptor)
+    if (!stat.isFile() || stat.uid !== 0 || (stat.mode & 0o022) !== 0 || stat.size < 1 || stat.size > limit) throw new Error('canonical safe-state trust file is invalid')
+    const bytes = readFileSync(descriptor)
+    if (bytes.length !== stat.size) throw new Error('canonical safe-state trust file changed while reading')
+    return bytes
+  } finally { closeSync(descriptor) }
+}
+
+function safeStateTrustFromHost(): SafeStateTrust {
+  const root = '/run/release-security/evidence-trust'
+  const policyBytes = readProtectedTrustFile(`${root}/canonical-safe-state-source-policy.json`, 16_384)
+  const collectorDigest = readProtectedTrustFile(`${root}/canonical-safe-state-collector-sha256`, 128).toString('utf8').trim()
+  const keyBytes = readProtectedTrustFile(`${root}/canonical-safe-state-public.pem`, 8_192)
+  const keyId = readProtectedTrustFile(`${root}/canonical-safe-state-key-id`, 128).toString('utf8').trim()
+  const policy = JSON.parse(policyBytes.toString('utf8')) as Record<string, unknown>
+  if (policy.schema_version !== 'canonical-safe-state-source-policy/1'
+    || Object.keys(policy).sort().join(',') !== 'collector_sha256,database_identity,schema_version'
+    || !policy.database_identity || typeof policy.database_identity !== 'object'
+    || Object.keys(policy.database_identity as Record<string, unknown>).sort().join(',') !== 'database_name_sha256,database_oid,endpoint_sha256,system_identifier_sha256'
+    || !/^[a-f0-9]{64}$/u.test(collectorDigest)
+    || policy.collector_sha256 !== collectorDigest) throw new Error('protected canonical safe-state source policy or installed collector digest is invalid')
+  const expectedBinding = canonicalSafeStateBindingFromEnvironment(process.env)
+  const expectedSourcePolicy = { ...policy, source_policy_sha256: createHash('sha256').update(policyBytes).digest('hex') } as CanonicalSafeStateSourcePolicy
+  return { expectedBinding, expectedSourcePolicy, trustedKeyId: keyId, publicKeyPem: keyBytes.toString('utf8') }
+}
+
 function main() {
   const file = arg('--file'); const releaseId = arg('--release-id'); const artifactRoot = arg('--artifact-root')
   if (!file || !releaseId || !artifactRoot) { console.error('--file, --release-id and --artifact-root are required'); process.exit(2) }
   let document: unknown
   try { document = JSON.parse(readFileSync(file, 'utf8')) } catch (error) { console.error(`unable to read canonical cutover evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
-  const errors = validateCanonicalProductCutoverEvidence(document, { expectedReleaseId: releaseId, artifactRoot })
+  let safeStateTrust: SafeStateTrust | undefined
+  if (document && typeof document === 'object' && (document as Record<string, unknown>).evidence_purpose === 'ordinary_release_safe_state') {
+    try { safeStateTrust = safeStateTrustFromHost() }
+    catch (error) { console.error(`unable to load protected ordinary-release safe-state trust: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
+  }
+  const errors = validateCanonicalProductCutoverEvidence(document, { expectedReleaseId: releaseId, artifactRoot, ...(safeStateTrust ? { safeStateTrust } : {}) })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
   console.log(`canonical product cutover evidence gate passed: ${file} (current release remains legacy_shadow; no cutover claim)`)
 }

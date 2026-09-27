@@ -140,9 +140,14 @@ describe('ECS database migration-chain preflight', () => {
     expect(result.stderr).toContain('MIGRATION_CHAIN_MODE must be prefix or complete')
   })
 
-  it('is wired before the runtime role/RLS boundary gate', () => {
+  it('requires the complete live chain for ordinary ECS releases while preserving infra and B modes', () => {
     const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
-    expect(preflight).toContain('MIGRATION_CHAIN_MODE=prefix sh infra/scripts/verify-database-migration-chain.sh')
+    expect(preflight).toContain('migration_chain_mode=complete')
+    expect(preflight).toContain('case "$DEPLOYMENT_SCOPE:${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}:${EXPECTED_MIGRATION_VERSION}" in')
+    expect(preflight).toContain('infra:*) migration_chain_mode=prefix ;;')
+    expect(preflight).toContain('full:prefix_242_or_244:244) migration_chain_mode=prefix ;;')
+    expect(preflight).toContain('MIGRATION_CHAIN_MODE="$migration_chain_mode" sh infra/scripts/verify-database-migration-chain.sh')
+    expect(preflight).not.toContain('MIGRATION_CHAIN_MODE=prefix sh infra/scripts/verify-database-migration-chain.sh')
     expect(preflight).not.toContain('ensure-ops-migration-history-read.sh')
     expect(preflight).not.toMatch(/^\s*(?:GRANT|REVOKE)\b/mu)
     expect(preflight.indexOf('verify-database-migration-chain.sh')).toBeLessThan(preflight.indexOf('verify-runtime-db-role.sh'))

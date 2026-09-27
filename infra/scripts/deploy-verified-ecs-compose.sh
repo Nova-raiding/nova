@@ -384,7 +384,10 @@ const rollbackTail=plan.database?.target_migration_tail
 required(Number.isSafeInteger(candidateTail)&&candidateTail>0,'candidate migration tail is invalid')
 required(Number.isSafeInteger(liveVersion)&&liveVersion>0&&liveVersion<=candidateTail,'rollback capsule live migration version is invalid')
 if(process.env.ECS_BRIDGE_CODE_ONLY==='YES') required(candidateTail===244&&liveVersion===242&&rollbackTail===242,'B code-only capsule requires old schema 242 and candidate tail 244')
-else required(Number.isSafeInteger(rollbackTail)&&rollbackTail===candidateTail,'rollback target must contain exactly the candidate migration chain')
+else {
+  required(Number.isSafeInteger(rollbackTail)&&rollbackTail===candidateTail,'rollback target must contain exactly the candidate migration chain')
+  required(liveVersion===candidateTail,`ordinary C deployment requires the live database at migration ${candidateTail}; forward schema migration requires an independently signed and verified compatibility bridge`)
+}
 const approved=plan.database?.allowed_prefix_sha256
 required(approved&&Object.getPrototypeOf(approved)===Object.prototype,'rollback capsule approved migration prefixes are missing')
 for(let version=liveVersion;version<=rollbackTail;version+=1){

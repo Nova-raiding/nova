@@ -4,6 +4,10 @@
 import { readFileSync } from 'node:fs'
 
 const runtime = ['api', 'api-replica', 'worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan']
+// Supporting runtime services explicitly present in the reviewed release
+// Compose. Migration services are intentionally absent from this allowlist.
+const support = ['ui', 'ops-ui', 'payment-gateway', 'pilot-gateway', 'clamav']
+const allowedServices = [...runtime, ...support]
 const releaseFields = ['RELEASE_ID', 'RELEASE_GIT_SHA', 'RELEASE_MANIFEST_SHA256', 'RELEASE_IMAGE_SET_DIGEST']
 const imagePattern = /^[^\s]+@sha256:[0-9a-f]{64}$/u
 
@@ -13,6 +17,18 @@ export function inspectBridge254Compose(config) {
   requireValue(config && typeof config === 'object' && !Array.isArray(config), 'rendered Compose must be an object')
   const services = config.services
   requireValue(services && typeof services === 'object' && !Array.isArray(services), 'rendered Compose services are missing')
+  const migrationServices = Object.keys(services).filter(name => /(?:^|[-_])(migrat(?:e|ion)|schema[-_]?(?:upgrade|migrat(?:e|ion)))(?:$|[-_])/iu.test(name))
+  requireValue(migrationServices.length === 0, `runtime Compose must not contain a migration service: ${migrationServices.join(',')}`)
+  const unknownServices = Object.keys(services).filter(name => !allowedServices.includes(name))
+  requireValue(unknownServices.length === 0, `runtime Compose contains services outside the reviewed allowlist: ${unknownServices.join(',')}`)
+  const missingServices = allowedServices.filter(name => !Object.hasOwn(services, name))
+  requireValue(missingServices.length === 0, `runtime Compose is missing allowlisted services: ${missingServices.join(',')}`)
+  for (const name of support) {
+    const service = services[name]
+    requireValue(service && typeof service === 'object', `${name} service is missing`)
+    requireValue(service.build === undefined || service.build === null, `${name} retains a mutable build`)
+    requireValue(typeof service.image === 'string' && imagePattern.test(service.image), `${name} image is not digest pinned`)
+  }
   const apiEnv = services.api?.environment
   requireValue(apiEnv && typeof apiEnv === 'object' && !Array.isArray(apiEnv), 'api environment is missing')
   for (const field of releaseFields) requireValue(typeof apiEnv[field] === 'string' && apiEnv[field].trim(), `api ${field} is missing`)
@@ -28,7 +44,12 @@ export function inspectBridge254Compose(config) {
     requireValue(environment && typeof environment === 'object' && !Array.isArray(environment), `${name} environment is missing`)
     requireValue(environment.BRIDGE_SCHEMA_COMPATIBILITY_MODE === 'prefix_242_or_254', `${name} bridge mode must be prefix_242_or_254`)
     requireValue(environment.RUN_MIGRATIONS_ON_STARTUP === 'false', `${name} startup migrations must be disabled`)
-    if (name.startsWith('api')) for (const field of releaseFields) requireValue(environment[field] === apiEnv[field], `${name} ${field} differs from api`)
+    for (const field of releaseFields) requireValue(environment[field] === apiEnv[field], `${name} ${field} differs from api`)
+    const dependencies = service.depends_on
+    const dependencyNames = Array.isArray(dependencies) ? dependencies : dependencies && typeof dependencies === 'object' ? Object.keys(dependencies) : []
+    requireValue(!dependencyNames.some(dependency => /(?:migrat|schema[-_]?(?:upgrade|migration))/iu.test(dependency)), `${name} depends on a migration service`)
+    const startup = [service.command, service.entrypoint].flat().filter(value => typeof value === 'string').join(' ')
+    requireValue(!/(?:apply-migrations|npm\s+run\s+migrate|node\s+.*\/migrate(?:\.js|\.mjs)?\b)/iu.test(startup), `${name} contains a migration startup command`)
     if (name.startsWith('worker-')) requireValue(service.image === services['worker-sync'].image, `${name} worker image differs`)
     if (name.startsWith('api')) requireValue(service.image === services.api.image, `${name} API image differs`)
   }
@@ -36,7 +57,7 @@ export function inspectBridge254Compose(config) {
     schema_version: 'ecs-bridge-254-compose-inspection/1',
     status: 'review_only', deployable: false, runtime_verified: false,
     release_id: apiEnv.RELEASE_ID, release_git_sha: apiEnv.RELEASE_GIT_SHA,
-    inspected_services: runtime,
+    inspected_services: allowedServices,
   }
 }
 

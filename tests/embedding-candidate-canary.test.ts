@@ -14,7 +14,7 @@ const usage = { modality: 'embedding' as const, model: 'qwen3.7-text-embedding-f
 const vector = Array.from({ length: 1024 }, (_, index) => index / 1024)
 const sha = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex')
 
-function provider(cost: { currency: 'CNY'; actual: number; source: 'provider_receipt' | 'relay_pricing_snapshot'; pricing_version?: string; pricing_group?: string; formula_version?: string; pricing_snapshot_sha256?: string } = { currency: 'CNY', actual: 0.0001, source: 'provider_receipt' }) {
+function provider(cost: { currency: 'CNY'; actual: number; source: 'provider_receipt' | 'relay_pricing_snapshot'; evidence_kind: 'provider_reported_actual' | 'pricing_derived_from_observed_usage'; pricing_version?: string; pricing_group?: string; formula_version?: string; pricing_snapshot_sha256?: string } = { currency: 'CNY', actual: 0.0001, source: 'provider_receipt', evidence_kind: 'provider_reported_actual' }) {
   return async () => ({ embedding: vector, model: usage.model, dimensions: 1024, httpStatus: 200, endpoint: '/v1/embeddings', usage, cost })
 }
 
@@ -129,7 +129,7 @@ describe('candidate embedding canary evidence', () => {
       deployment_nonce_sha256: sha(expected.deploymentNonce),
       provider_request_id: usage.providerRequestId, http_status: 200,
       usage: { input_tokens: 42, output_tokens: 0, total_tokens: 42 },
-      cost: { currency: 'CNY', actual: 0.0001, source: 'provider_receipt' },
+      cost: { currency: 'CNY', actual: 0.0001, source: 'provider_receipt', evidence_kind: 'provider_reported_actual' },
       embedding_response: { input_sha256: sha(base.prompt), embedding_sha256: sha(JSON.stringify(vector)), data_count: 1, dimensions: 1024 },
     })
     const serialized = JSON.stringify(evidence)
@@ -139,11 +139,11 @@ describe('candidate embedding canary evidence', () => {
   })
 
   it('accepts only an actual settlement pricing snapshot, never an estimate', async () => {
-    const cost = { currency: 'CNY' as const, actual: 0.001, source: 'relay_pricing_snapshot' as const, pricing_version: 'pricing-v1', pricing_group: 'default', formula_version: 'new-api-quota-v1', pricing_snapshot_sha256: 'd'.repeat(64) }
+    const cost = { currency: 'CNY' as const, actual: 0, source: 'relay_pricing_snapshot' as const, evidence_kind: 'pricing_derived_from_observed_usage' as const, pricing_version: 'pricing-v1', pricing_group: 'default', formula_version: 'new-api-quota-v1', pricing_snapshot_sha256: 'd'.repeat(64) }
     await expect(runEmbeddingCandidateProbe({ ...base, provider: provider(cost) })).resolves.toMatchObject({ cost })
     const incomplete = { ...cost, pricing_snapshot_sha256: undefined }
     await expect(runEmbeddingCandidateProbe({ ...base, provider: provider(incomplete) })).rejects.toThrow()
-    const estimate = { currency: 'CNY' as const, actual: 0.001, source: 'relay_pricing_snapshot_estimate' as 'relay_pricing_snapshot' }
+    const estimate = { currency: 'CNY' as const, actual: 0.001, source: 'relay_pricing_snapshot_estimate' as 'relay_pricing_snapshot', evidence_kind: 'pricing_derived_from_observed_usage' as const }
     await expect(runEmbeddingCandidateProbe({ ...base, provider: provider(estimate) })).rejects.toThrow()
   })
 

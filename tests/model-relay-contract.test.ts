@@ -297,10 +297,20 @@ describe('production model relay contract', () => {
       { model: 'qwen3.7-text-embedding-flash', usage: { prompt_tokens: 42, total_tokens: 42 } },
       new Headers({ 'x-request-id': 'req-embed-snapshot' }), 'embedding', 'qwen3.7-text-embedding-flash', { pricing, pricingSnapshot },
     )
-    expect(measured).toMatchObject({ usageObserved: true, usage: { inputTokens: 42, outputTokens: 0, totalTokens: 42 }, costObserved: true, costSource: 'relay_pricing_snapshot', costCny: 0.001, pricingSnapshotSha256: digest })
+    expect(measured).toMatchObject({ usageObserved: true, usage: { inputTokens: 42, outputTokens: 0, totalTokens: 42 }, costObserved: true, costSource: 'relay_pricing_snapshot', costEvidenceKind: 'pricing_derived_from_observed_usage', costCny: 0.001, pricingSnapshotSha256: digest })
     const finalized = finalizeSuccessfulProbe({ modality: 'embedding', endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024, httpStatus: 200, providerRequestId: 'req-embed-snapshot', ...measured, responseValid: true })
-    expect(finalized).toMatchObject({ state: 'ready', costSource: 'relay_pricing_snapshot', pricingSnapshotSha256: digest })
+    expect(finalized).toMatchObject({ state: 'ready', costSource: 'relay_pricing_snapshot', costEvidenceKind: 'pricing_derived_from_observed_usage', pricingSnapshotSha256: digest })
     expect(finalizeSuccessfulProbe({ modality: 'embedding', endpoint: '/v1/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024, httpStatus: 200, providerRequestId: 'req-embed-snapshot', ...measured, pricingSnapshotSha256: undefined, responseValid: true })).toMatchObject({ state: 'blocked', detail: 'embedding_pricing_snapshot_missing_or_unbound' })
+  })
+
+  it('labels a zero-priced embedding quote as derived rather than a provider-reported debit', async () => {
+    const pricingSnapshot = { pricing: { pricing_version: 'pricing-v1', group_ratio: { default: 1 }, data: [{ model_name: 'qwen3.7-text-embedding-flash', quota_type: 0, model_ratio: 0, model_price: 0, completion_ratio: 1, enable_groups: ['default'] }] }, status: { quota_per_unit: 500000, usd_exchange_rate: 7.2 } }
+    const pricing = { quote: vi.fn(async () => ({ costCny: 0, metadata: { pricing_version: 'pricing-v1', pricing_group: 'default' } as any })) }
+    const measured = await evaluateRelayUsageEvidence(
+      { model: 'qwen3.7-text-embedding-flash', usage: { prompt_tokens: 42, total_tokens: 42 } },
+      new Headers({ 'x-request-id': 'req-embed-zero' }), 'embedding', 'qwen3.7-text-embedding-flash', { pricing, pricingSnapshot },
+    )
+    expect(measured).toMatchObject({ costCny: 0, costSource: 'relay_pricing_snapshot', costEvidenceKind: 'pricing_derived_from_observed_usage' })
   })
 
   it('does not disguise a response or async job id as a provider request id', () => {

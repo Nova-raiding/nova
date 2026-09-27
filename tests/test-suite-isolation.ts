@@ -39,6 +39,7 @@ export const NON_HERMETIC_TEST_FILES = [
   'packages/persistence/src/image-generation-before-provider.release.postgres.test.ts',
   'packages/persistence/src/knowledge-index-cas.release.postgres.test.ts',
   'packages/persistence/src/commercial-refund-repository.release.postgres.test.ts',
+  'packages/persistence/src/bridge-242-254-forward-migrations.postgres.test.ts',
   // Seeds a 5,000-ticket workspace to assert that an SLA-state filter stays
   // inside a bounded scan. It needs its own database and its own clock, so it
   // is owned-fixture acceptance rather than a hermetic unit test.
