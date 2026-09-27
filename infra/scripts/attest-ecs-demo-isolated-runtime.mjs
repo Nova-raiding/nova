@@ -161,13 +161,16 @@ export function verifyIsolatedRuntime({ compose, identity, manifest, manifestSha
       const body = JSON.parse(readiness.body)
       return body?.error?.code === 'PRODUCTION_READINESS_BLOCKED' &&
         body.error.details?.gates && typeof body.error.details.gates === 'object' &&
-        !Array.isArray(body.error.details.gates)
+        !Array.isArray(body.error.details.gates) &&
+        Object.values(body.error.details.gates).some(gate => gate?.ready === false)
     } catch { return false }
   })(), 'isolated API readyz did not report the expected production gate block')
   return { schema: 'ecs-demo-isolated-runtime-attestation/1', status: 'review_only', scope: 'isolated',
     deployable: false, production_go: false, project, release_id: identity.release_id, git_sha: identity.git_sha,
     manifest_sha256: `sha256:${manifestSha256}`, containers: details,
-    postgres: { migration_prefix: 254, roles_verified: true, tenant_rls_verified: true },
+    postgres: { migration_prefix: 254, roles_verified: true,
+      workspace_rls: { scope: 'public_workspace_id_tables_excluding_special_policy_tables',
+        checked_table_count: database.tenant_count, verified: true } },
     api: { healthz_status: 200, readyz_status: 503 } }
 }
 

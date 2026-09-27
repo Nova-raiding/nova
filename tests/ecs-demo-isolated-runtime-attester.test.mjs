@@ -49,6 +49,10 @@ test('records exact three-container isolated observation without claiming produc
   assert.equal(result.production_go, false)
   assert.deepEqual(Object.keys(result.containers).sort(), ['api', 'postgres', 'redis'])
   assert.equal(result.api.readyz_status, 503)
+  assert.deepEqual(result.postgres.workspace_rls, {
+    scope: 'public_workspace_id_tables_excluding_special_policy_tables', checked_table_count: 47, verified: true,
+  })
+  assert.equal(Object.hasOwn(result.postgres, 'tenant_rls_verified'), false)
   assert.doesNotMatch(JSON.stringify(result), /password|DATABASE_URL|secret/u)
 })
 
@@ -101,6 +105,8 @@ test('rejects published ports, incomplete migration, unsafe roles/RLS and ready 
     x => { x.readiness.status = 200 },
     x => { x.readiness.body = '{}' },
     x => { x.readiness.body = JSON.stringify({ error: { code: 'DATABASE_UNAVAILABLE' } }) },
+    x => { x.readiness.body = JSON.stringify({ error: { code: 'PRODUCTION_READINESS_BLOCKED', details: { gates: {} } } }) },
+    x => { x.readiness.body = JSON.stringify({ error: { code: 'PRODUCTION_READINESS_BLOCKED', details: { gates: { relay: { ready: true } } } } }) },
   ]) {
     const value = fixture(); mutate(value)
     assert.throws(() => verifyIsolatedRuntime(value))
