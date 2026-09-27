@@ -107,7 +107,9 @@ export function StoreDirectorySection({
       }
     >
       <Table
-        rowKey={(row: StoreDirectory) => `${row.platform}:${row.accountId}`}
+        rowKey={(row: StoreDirectory) => row.aggregate === true
+          ? `summary:${row.platform}:${row.state}:${row.dataMode}:${Number(row.readable)}:${Number(row.writeEnabled)}`
+          : `${row.platform}:${row.accountId}`}
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         loading={loading}
         dataSource={storeDirectory}
@@ -131,9 +133,7 @@ export function StoreDirectorySection({
             render: (_: unknown, row: StoreDirectory) => (
               <Space orientation="vertical" size={0}>
                 <Typography.Text strong>{row.label}</Typography.Text>
-                <Typography.Text type="secondary">
-                  {row.accountId}
-                </Typography.Text>
+                {row.aggregate !== true && <Typography.Text type="secondary">{row.accountId}</Typography.Text>}
               </Space>
             ),
           },

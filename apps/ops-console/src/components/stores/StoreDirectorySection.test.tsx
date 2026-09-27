@@ -56,6 +56,14 @@ describe("StoreDirectorySection", () => {
     expect(markup).not.toContain("真实授权");
   });
 
+  it("does not expose an internal aggregate identifier in the platform directory", () => {
+    const markup = render({ storeDirectory: [{ ...store, accountId: "platform-aggregate:taobao:connected:official_api", label: "1 个淘宝店铺", aggregate: true }] });
+
+    expect(markup).toContain("1 个淘宝店铺");
+    expect(markup).not.toContain("platform-aggregate:");
+    expect(render()).toContain("store-1");
+  });
+
   it("keeps the last successful rows visible while a refresh is loading", () => {
     const markup = render({ loading: true });
 
