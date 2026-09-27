@@ -17,7 +17,8 @@ const STATE = '/var/lib/merchant-release-security'
 const RELEASES = '/srv/merchant-releases'
 const HEX = /^[a-f0-9]{64}$/u
 const RELEASE = /^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u
-const ATTEMPT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/u
+const DOCKER_SOCKET = 'unix:///var/run/docker.sock'
+const PRODUCTION_POSTGRES = 'merchant-production-postgres-1'
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
 function canonical(value) {
@@ -60,14 +61,36 @@ function argsOf(args) {
   check(names.every(name => values[name]) && RELEASE.test(values['--release-id']) && /^[a-f0-9]{40}$/u.test(values['--git-sha']), 'candidate identity invalid')
   return { mode, values }
 }
+export function assertLocalDockerTarget(environment = process.env) {
+  check(!environment.DOCKER_CONTEXT && !environment.DOCKER_CONFIG
+    && (!environment.DOCKER_HOST || environment.DOCKER_HOST === DOCKER_SOCKET), 'remote or user-configured Docker target is forbidden')
+}
+export function validateProductionPostgresInspection(value) {
+  check(value?.Name === `/${PRODUCTION_POSTGRES}`
+    && value?.State?.Running === true
+    && /^[a-f0-9]{64}$/u.test(value.Id ?? '')
+    && /(?:^|\/)postgres:16(?:[-@]|$)/u.test(value.Config?.Image ?? '')
+    && value.Config?.Labels?.['com.docker.compose.project'] === 'merchant-production'
+    && value.Config?.Labels?.['com.docker.compose.service'] === 'postgres', 'reviewed production PG16 container identity mismatch')
+  const networks = Object.entries(value.NetworkSettings?.Networks ?? {})
+  check(networks.length === 1 && networks[0][0] === 'merchant-production_default'
+    && /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(networks[0][1]?.IPAddress ?? ''), 'production Postgres network ambiguous')
+  return { networkHost: networks[0][1].IPAddress, environment: value.Config.Env ?? [] }
+}
+export function inspectProductionPostgres({ run = execFileSync, environment = process.env } = {}) {
+  assertLocalDockerTarget(environment)
+  const raw = run('/usr/bin/docker', ['--host', DOCKER_SOCKET, 'inspect', PRODUCTION_POSTGRES], {
+    encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', DOCKER_HOST: DOCKER_SOCKET }, timeout: 30_000, maxBuffer: 2 * 1024 * 1024
+  })
+  const result = JSON.parse(raw)
+  check(Array.isArray(result) && result.length === 1, 'reviewed production PG16 container unavailable')
+  return validateProductionPostgresInspection(result[0])
+}
 function liveSource() {
-  const value = JSON.parse(execFileSync('/usr/bin/docker', ['inspect', 'merchant-production-postgres-1'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 30_000, maxBuffer: 2 * 1024 * 1024 }))[0]
-  check(value?.State?.Running === true && /^[a-f0-9]{64}$/u.test(value.Id ?? '') && /postgres:16/u.test(value.Config?.Image ?? ''), 'reviewed production PG16 container unavailable')
-  const networks = Object.values(value.NetworkSettings?.Networks ?? {}).map(item => item.IPAddress).filter(Boolean)
-  check(networks.length === 1 && /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(networks[0]), 'production Postgres network ambiguous')
-  const config = Object.fromEntries((value.Config.Env ?? []).map(line => { const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)] }))
+  const source = inspectProductionPostgres()
+  const config = Object.fromEntries(source.environment.map(line => { const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)] }))
   check(config.POSTGRES_DB && config.POSTGRES_USER && config.POSTGRES_PASSWORD, 'production database credentials unavailable')
-  return { host: networks[0], port: 5432, user: config.POSTGRES_USER, password: config.POSTGRES_PASSWORD, database: config.POSTGRES_DB, connectionTimeoutMillis: 10_000, statement_timeout: 30_000 }
+  return { host: source.networkHost, port: 5432, user: config.POSTGRES_USER, password: config.POSTGRES_PASSWORD, database: config.POSTGRES_DB, connectionTimeoutMillis: 10_000, statement_timeout: 30_000 }
 }
 export async function runProtectedPlanSigner(args) {
   const { mode, values } = argsOf(args), releaseId = values['--release-id'], gitSha = values['--git-sha']
