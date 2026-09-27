@@ -19,24 +19,37 @@ const NAMES = Object.freeze({
   'external-gateway': 'merchant-demo-85575f9c-pilot-gateway-1',
 })
 const SHA = /^[a-f0-9]{64}$/u
+const GIT = /^[a-f0-9]{40}$/u
+const IMAGE = /^sha256:[a-f0-9]{64}$/u
+const RELEASE = /^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u
 const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
   : value && typeof value === 'object'
     ? `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`
     : JSON.stringify(value)
 const sha = value => createHash('sha256').update(canonical(value)).digest('hex')
 function requireValue(value, message) { if (!value) throw new Error(message) }
+function validIdentity(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).sort().join('\0') === ['release_id', 'git_sha', 'manifest_sha256', 'image_set_digest'].sort().join('\0')
+    && RELEASE.test(value.release_id ?? '') && GIT.test(value.git_sha ?? '')
+    && SHA.test(value.manifest_sha256 ?? '') && IMAGE.test(value.image_set_digest ?? '')
+}
 function exactIdentity(value) {
   const identity = value?.data?.release ?? value?.release
   requireValue(identity && typeof identity === 'object' && !Array.isArray(identity), 'public release identity is absent')
-  return {
+  const projected = {
     release_id: identity.release_id,
     git_sha: identity.release_git_sha,
     manifest_sha256: identity.manifest_sha256,
     image_set_digest: identity.image_set_digest,
   }
+  requireValue(validIdentity(projected), 'public release identity fields are invalid')
+  return projected
 }
 
 export function reviewBridge254LiveCaptureIdentity({ capture, expected, run = execFileSync }) {
+  requireValue(validIdentity(capture?.public_release) && validIdentity(expected?.oldRuntime),
+    'capture and independently approved old release identities are invalid')
   const captureSha = assertBridge254FrozenCapture(capture, expected)
   requireValue(!expected.old_runtime || canonical(expected.old_runtime) === canonical(expected.oldRuntime),
     'maintenance and signed-state old identities differ')

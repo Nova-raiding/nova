@@ -92,3 +92,15 @@ test('missing Docker identities or malformed capture fail closed before any muta
   assert.throws(() => reviewBridge254LiveCaptureIdentity({ capture: conflicting.capture, expected: conflicting.expected, run: runner(conflicting, noObservation) }), /signed-state old identities differ/u)
   assert.equal(noObservation.length, 0)
 })
+
+test('matching malformed release values cannot pass as a frozen or live identity', () => {
+  const frozen = fixture(), calls = []
+  frozen.capture.public_release.git_sha = 'not-a-git-sha'
+  frozen.expected.oldRuntime.git_sha = 'not-a-git-sha'
+  assert.throws(() => reviewBridge254LiveCaptureIdentity({ capture: frozen.capture, expected: frozen.expected, run: runner(frozen, calls) }), /old release identities are invalid/u)
+  assert.equal(calls.length, 0)
+
+  const live = fixture()
+  live.publicRelease.data.release.manifest_sha256 = 'invalid'
+  assert.throws(() => reviewBridge254LiveCaptureIdentity({ capture: live.capture, expected: live.expected, run: runner(live, []) }), /public release identity fields are invalid/u)
+})
