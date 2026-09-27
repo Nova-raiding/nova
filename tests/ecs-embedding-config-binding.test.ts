@@ -10,6 +10,7 @@ const relay = 'https://ai.wormholexyz.xyz/v1'
 const apiEnvironment = {
   KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true', EMBEDDING_MODEL: model, EMBEDDING_DIMENSIONS: '1024', EMBEDDING_VERSION: 'v1',
   MODEL_RELAY_BASE_URL: relay, MODEL_RELAY_ALLOWED_HOSTS: 'ai.wormholexyz.xyz', MODEL_RELAY_API_KEY: 'redacted-test-token',
+  MODEL_RELAY_PRICING_DERIVATION_ENABLED: 'true', MODEL_RELAY_PRICING_GROUP: 'VIP', MODEL_RELAY_EMBEDDING_PRICING_GROUP: 'VIP',
   MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10', MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'true',
 }
 const automationEnvironment = Object.fromEntries(Object.entries(apiEnvironment).filter(([key]) => !['MODEL_EMBEDDING_MAX_REQUEST_CNY', 'MODEL_RELAY_EMBEDDING_COST_EVIDENCE'].includes(key)))
@@ -90,6 +91,27 @@ describe('ECS embedding config and rendered Compose binding', () => {
       const result = verify(candidate)
       expect(result.status).toBe(1)
       expect(result.stderr).not.toContain('redacted-test-token')
+    }
+  })
+
+  it('rejects a coherently redirected relay and unavailable pricing fallback', () => {
+    const redirected = fixture()
+    redirected.config = redirected.config.replace(relay, 'https://attacker.example/v1')
+    for (const name of ['api', 'api-replica', 'worker-automation']) {
+      redirected.compose.services[name]!.environment.MODEL_RELAY_BASE_URL = 'https://attacker.example/v1'
+      redirected.compose.services[name]!.environment.MODEL_RELAY_ALLOWED_HOSTS = 'attacker.example'
+    }
+    expect(verify(redirected).status).toBe(1)
+
+    for (const [key, value] of [
+      ['MODEL_RELAY_PRICING_DERIVATION_ENABLED', 'false'],
+      ['MODEL_RELAY_PRICING_GROUP', ''],
+      ['MODEL_RELAY_EMBEDDING_PRICING_GROUP', ''],
+    ] as const) {
+      const missing = fixture()
+      missing.compose.services.api!.environment[key] = value
+      missing.compose.services['api-replica']!.environment[key] = value
+      expect(verify(missing).status).toBe(1)
     }
   })
 

@@ -77,12 +77,13 @@ def validate(config, rendered)
   fail_binding('embedding_dimensions must equal 1024') unless dimension == '1024'
   budget = positive_money(config['embedding_max_request_cny'])
   relay = config['model_relay_base_url']
-  fail_binding('model_relay_base_url must be a non-empty string') unless relay.is_a?(String) && !relay.empty?
+  fail_binding('model_relay_base_url must be the pinned Wormhole HTTPS /v1 endpoint') unless ['https://ai.wormholexyz.xyz/v1', 'https://ai.wormholexyz.xyz/v1/'].include?(relay)
 
   { 'api' => api, 'api-replica' => replica, 'worker-automation' => automation }.each do |name, env|
     matching(env, name, 'EMBEDDING_MODEL', model)
     matching(env, name, 'EMBEDDING_DIMENSIONS', dimension)
     matching(env, name, 'MODEL_RELAY_BASE_URL', relay)
+    matching(env, name, 'MODEL_RELAY_ALLOWED_HOSTS', 'ai.wormholexyz.xyz')
     fail_binding("#{name}.EMBEDDING_VERSION is required") if runtime_string(env, name, 'EMBEDDING_VERSION').strip.empty?
     fail_binding("#{name}.MODEL_RELAY_API_KEY is required") if runtime_string(env, name, 'MODEL_RELAY_API_KEY').strip.empty?
   end
@@ -92,6 +93,11 @@ def validate(config, rendered)
   end
   %w[api api-replica].each do |name|
     env = name == 'api' ? api : replica
+    matching(env, name, 'MODEL_RELAY_PRICING_DERIVATION_ENABLED', 'true')
+    fail_binding("#{name}.MODEL_RELAY_PRICING_GROUP is required") if runtime_string(env, name, 'MODEL_RELAY_PRICING_GROUP').strip.empty?
+    fail_binding("#{name}.MODEL_RELAY_EMBEDDING_PRICING_GROUP is required") if runtime_string(env, name, 'MODEL_RELAY_EMBEDDING_PRICING_GROUP').strip.empty?
+    matching(env, name, 'MODEL_RELAY_PRICING_GROUP', runtime_string(api, 'api', 'MODEL_RELAY_PRICING_GROUP'))
+    matching(env, name, 'MODEL_RELAY_EMBEDDING_PRICING_GROUP', runtime_string(api, 'api', 'MODEL_RELAY_EMBEDDING_PRICING_GROUP'))
     actual_budget = positive_money(runtime_string(env, name, 'MODEL_EMBEDDING_MAX_REQUEST_CNY'))
     fail_binding("#{name}.MODEL_EMBEDDING_MAX_REQUEST_CNY differs from production config") unless actual_budget == budget
     matching(env, name, 'MODEL_RELAY_EMBEDDING_COST_EVIDENCE', 'true')
