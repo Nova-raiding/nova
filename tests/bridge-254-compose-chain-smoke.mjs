@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { Pool } from 'pg'
 import { createIsolatedOpsFixture } from './isolated-ops-fixture.ts'
+import { createBridgeDockerClient } from './bridge-docker-target.mjs'
 import { loadMigrations, MigrationRunner } from '../packages/persistence/src/migration.ts'
 
 const run = promisify(execFile)
@@ -30,13 +31,18 @@ function inventory(directory, prefix = '') {
 }
 const source = join(overlay, 'overlay-source')
 if (`sha256:${sha(inventory(source).map(([path, digest]) => `${path}\t${digest}\n`).join(''))}` !== manifest.overlay_tree_sha256) throw new Error('overlay tree digest mismatch')
-const docker = async (...args) => (await run('docker', args, { encoding: 'utf8', timeout: 90_000, maxBuffer: 2 * 1024 * 1024 })).stdout.trim()
+let dockerClient
+const docker = async (...args) => {
+  if (!dockerClient) throw new Error('isolated local Docker client was not initialized')
+  try { return (await run('docker', [...dockerClient.args, ...args], { encoding: 'utf8', timeout: 90_000, maxBuffer: 2 * 1024 * 1024, env: dockerClient.environment })).stdout.trim() }
+  catch { throw new Error(`local review Docker command failed: ${args[0] ?? 'command'}`) }
+}
 async function imageId(reference) {
   const body = JSON.parse(await docker('image', 'inspect', reference, '--format', '{{json .}}'))
   if (!/^sha256:[a-f0-9]{64}$/u.test(body.Id ?? '') || body.Config?.Labels?.['com.storenova.bridge-review.tree-sha256'] !== manifest.overlay_tree_sha256) throw new Error('image is not bound to the B-derived overlay')
   return body.Id
 }
-const [apiImage, workerImage] = await Promise.all([imageId(apiReference), imageId(workerReference)])
+let apiImage, workerImage
 const marker = randomUUID(), project = `bridge254${marker.replaceAll('-', '')}`
 const network = `merchant-bridge-254-compose-${marker}`
 const evidenceDir = await mkdtemp(join(tmpdir(), 'bridge-254-compose-chain-'))
@@ -68,6 +74,10 @@ async function waitForApiReady() {
   throw new Error('B-derived API did not become ready at valid prefix')
 }
 try {
+  dockerClient = await createBridgeDockerClient()
+  const imageIds = await Promise.all([imageId(apiReference), imageId(workerReference)])
+  apiImage = imageIds[0]
+  workerImage = imageIds[1]
   fixture = await createIsolatedOpsFixture({ evidenceDir })
   pool = new Pool({ connectionString: fixture.acceptanceDatabaseUrls.legacyBackfill, max: 2 })
   const migrations = await loadMigrations()
@@ -79,8 +89,10 @@ try {
   const pg = fixture.containerEvidence.find(value => value.kind === 'postgres')
   const redis = fixture.containerEvidence.find(value => value.kind === 'redis')
   if (!pg || !redis) throw new Error('fixture PG17/Redis missing')
-  await docker('network', 'create', network)
+  await docker('network', 'create', '--internal', network)
   networkCreated = true
+  const networkInfo = JSON.parse(await docker('network', 'inspect', '--format', '{{json .}}', network))
+  if (networkInfo.Name !== network || networkInfo.Internal !== true) throw new Error('review bridge network is not internal')
   await docker('network', 'connect', '--alias', 'bridge-pg', network, pg.id)
   await docker('network', 'connect', '--alias', 'bridge-redis', network, redis.id)
   const databaseUrl = inNetwork(fixture.acceptanceDatabaseUrls.legacyBackfill, 'bridge-pg', 5432)
@@ -154,5 +166,6 @@ try {
     try { await docker('network', 'rm', network) } catch (error) { failures.push(error) }
   }
   if (fixture) try { if ((await fixture.dispose()).leftRunning.length) failures.push(new Error('fixture containers require cleanup review')) } catch (error) { failures.push(error) }
+  try { await dockerClient?.dispose() } catch (error) { failures.push(error) }
   if (failures.length) throw new Error(`bridge Compose cleanup requires inspection: ${failures.length} failure(s)`)
 }
