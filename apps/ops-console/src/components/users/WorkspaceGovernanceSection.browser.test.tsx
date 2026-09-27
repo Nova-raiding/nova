@@ -36,10 +36,11 @@ describe("workspace directory detail and governance dialogs", () => {
               workspaceDirectory: { items: [row], total: 1, offset: 0, limit: 20, hasMore: false },
               workspaceDirectoryLoading: false, workspaceDirectoryError: '',
               dataSetError() { return ''; }, loadWorkspaceDirectory: async () => true,
-              authorization: { can: capability => capability === 'workspace.status.update' },
+              authorization: { can: capability => capability === 'workspace.status.update' || capability === 'commercial.entitlement.read' },
               opsSession: { workspace_id: 'ws_other' }, changeWorkspaceStatus: async () => true,
             };
-            createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(WorkspaceGovernanceSection, { model })));
+            const entitlementClient = { entitlements: async workspaceId => ({ items: [{ id: 'ces_live_growth', workspaceId, skuCode: 'growth', snapshotVersion: 'v1', status: 'active', periodLabel: '2026-09-01 / 2026-10-01', brandLimit: 1, storeLimit: 1, storageLabel: null, serviceSummary: null, sourceOrderId: null, updatedAt: '2026-09-01' }], total: 1, truncated: false, nextCursor: null }) };
+            createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(WorkspaceGovernanceSection, { model, entitlementClient })));
           `;
         },
         configureServer(server) {
@@ -80,6 +81,10 @@ describe("workspace directory detail and governance dialogs", () => {
       const detail = page.getByRole("dialog", { name: "工作区详情" });
       await detail.waitFor();
       expect(await detail.getByText("旧版套餐快照").count()).toBe(1);
+      await detail.getByText("V2 权益快照（服务端）").waitFor();
+      await detail.getByText("成长版（growth）").waitFor();
+      expect(await detail.getByText("生效中").count()).toBe(1);
+      expect(await detail.getByText("ces_live_growth").count()).toBe(1);
       expect(await page.getByRole("dialog", { name: "停用租户" }).count()).toBe(0);
       await detail.getByRole("button", { name: "关闭" }).click();
       await page.getByRole("button", { name: "停用租户" }).click();

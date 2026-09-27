@@ -1,18 +1,53 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Button, Card, Descriptions, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
+import { commercialOperationsClient, type CommercialEntitlement, type CommercialOperationsClient } from "../../api/commercialOperationsClient.js";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { WorkspaceSummary } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
 import { OpsPageError } from "../OpsPageError.js";
+import { packageDisplayName } from "../commercial/packageLabels.js";
 
 const subscriptionLabels: Record<string, string> = { active: "订阅中", trialing: "试用中", inactive: "未订阅", canceled: "已取消" };
+const entitlementLabels: Record<string, string> = { active: "生效中", expired: "已到期", canceled: "已取消", blocked: "不可执行", pending: "待生效" };
+
+function WorkspaceEntitlementFacts({ workspaceId, canRead, client }: { workspaceId: string; canRead: boolean; client: Pick<CommercialOperationsClient, "entitlements"> }) {
+  const [state, setState] = useState<{ loading: boolean; items: CommercialEntitlement[]; total: number; incomplete: boolean; error: string }>({ loading: canRead, items: [], total: 0, incomplete: false, error: "" });
+  useEffect(() => {
+    if (!canRead) return;
+    const controller = new AbortController();
+    void client.entitlements(workspaceId, { limit: 20 }, controller.signal).then(page => {
+      if (!controller.signal.aborted) setState({ loading: false, items: page.items, total: page.total, incomplete: Boolean(page.truncated || page.nextCursor || page.total > page.items.length), error: "" });
+    }).catch(error => {
+      if (!controller.signal.aborted) setState({ loading: false, items: [], total: 0, incomplete: false, error: error instanceof Error ? error.message : "权益读取失败" });
+    });
+    return () => controller.abort();
+  }, [workspaceId, canRead, client]);
+  return <section aria-label="V2 权益快照" style={{ marginTop: 16 }}>
+    <Typography.Title level={5}>V2 权益快照（服务端）</Typography.Title>
+    {!canRead ? <Alert type="warning" showIcon title="当前角色无权益读取权限，无法核对实际开通状态。" />
+      : state.loading ? <Typography.Text>正在读取权益记录…</Typography.Text>
+        : state.error ? <Alert type="error" showIcon title="权益读取失败，实际开通状态未知" description={state.error} />
+          : state.items.length === 0 ? <Alert type="info" showIcon title="未找到 V2 权益快照，实际开通状态需要核对。" />
+            : <>
+              <Typography.Text type="secondary">最近 {state.items.length} 条，共 {state.total} 条。状态由服务端权益记录给出；订单支付和权益发放仍需分别核对。</Typography.Text>
+              {state.items.map(item => <Descriptions key={item.id} column={1} size="small" bordered style={{ marginTop: 10 }}>
+                <Descriptions.Item label="套餐">{packageDisplayName(item.skuCode)}（{item.skuCode}）</Descriptions.Item>
+                <Descriptions.Item label="权益状态"><Tag color={item.status === "active" ? "green" : item.status === "blocked" ? "red" : "default"}>{entitlementLabels[item.status] ?? item.status}</Tag></Descriptions.Item>
+                <Descriptions.Item label="服务期间">{item.periodLabel ?? "未提供"}</Descriptions.Item>
+                <Descriptions.Item label="权益 ID"><Typography.Text code copyable>{item.id}</Typography.Text></Descriptions.Item>
+              </Descriptions>)}
+              {state.incomplete ? <Alert type="warning" showIcon title="这里只显示前 20 条，请到「账务与退款」查看完整权益记录。" style={{ marginTop: 10 }} /> : null}
+            </>}
+  </section>;
+}
 
 export function workspaceDirectoryPageRequest(query: string, status: "active" | "disabled" | undefined, page: number, pageSize: number) {
   return { query: query.trim() || undefined, status, merchantOnly: true, page, pageSize };
 }
 
-export function WorkspaceGovernanceSection({ model }: { model: OpsConsoleModel }) {
+export function WorkspaceGovernanceSection({ model, entitlementClient = commercialOperationsClient }: { model: OpsConsoleModel; entitlementClient?: Pick<CommercialOperationsClient, "entitlements"> }) {
   const canUpdateWorkspaceStatus = model.authorization.can("workspace.status.update");
+  const canReadEntitlements = model.authorization.can("commercial.entitlement.read");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [query, setQuery] = useState("");
@@ -71,6 +106,6 @@ export function WorkspaceGovernanceSection({ model }: { model: OpsConsoleModel }
         <Input.TextArea id="workspace-status-reason" autoFocus rows={4} maxLength={500} showCount value={reason} onChange={(event) => setReason(event.target.value)} placeholder="填写工单号、风险证据或客户请求" />
       </Space>
     </Modal>
-    {detailTarget ? <div className="ops-modal-overlay" role="presentation" onClick={() => setDetailTarget(undefined)}><div className="ops-modal-card" role="dialog" aria-modal="true" aria-label="工作区详情" onClick={(event) => event.stopPropagation()}><div className="ops-modal-card-header"><strong>工作区详情</strong><Button type="text" onClick={() => setDetailTarget(undefined)}>关闭</Button></div><Descriptions column={1} size="small"><Descriptions.Item label="企业主体"><EnterpriseIdentity name={detailTarget.enterpriseName} workspaceId={detailTarget.workspaceId} /></Descriptions.Item><Descriptions.Item label="旧版套餐快照">{detailTarget.planName}</Descriptions.Item><Descriptions.Item label="旧版标价（元/月）">¥{detailTarget.monthlyPriceCny.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</Descriptions.Item><Descriptions.Item label="旧版订阅状态">{subscriptionLabels[detailTarget.subscriptionStatus] ?? detailTarget.subscriptionStatus}</Descriptions.Item><Descriptions.Item label="企业状态">{detailTarget.status === "active" ? "正常" : "已停用"}</Descriptions.Item><Descriptions.Item label="旧版任务用量">{detailTarget.usedTasks} / {detailTarget.includedTasks}</Descriptions.Item><Descriptions.Item label="成员">{detailTarget.memberCount}</Descriptions.Item></Descriptions></div></div> : null}
+    {detailTarget ? <div className="ops-modal-overlay" role="presentation" onClick={() => setDetailTarget(undefined)}><div className="ops-modal-card" role="dialog" aria-modal="true" aria-label="工作区详情" style={{ width: "min(680px, 100%)", maxHeight: "85vh", overflowY: "auto" }} onClick={(event) => event.stopPropagation()}><div className="ops-modal-card-header"><strong>工作区详情</strong><Button type="text" onClick={() => setDetailTarget(undefined)}>关闭</Button></div><Descriptions column={1} size="small"><Descriptions.Item label="企业主体"><EnterpriseIdentity name={detailTarget.enterpriseName} workspaceId={detailTarget.workspaceId} /></Descriptions.Item><Descriptions.Item label="旧版套餐快照">{detailTarget.planName}</Descriptions.Item><Descriptions.Item label="旧版标价（元/月）">¥{detailTarget.monthlyPriceCny.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</Descriptions.Item><Descriptions.Item label="旧版订阅状态">{subscriptionLabels[detailTarget.subscriptionStatus] ?? detailTarget.subscriptionStatus}</Descriptions.Item><Descriptions.Item label="企业状态">{detailTarget.status === "active" ? "正常" : "已停用"}</Descriptions.Item><Descriptions.Item label="旧版任务用量">{detailTarget.usedTasks} / {detailTarget.includedTasks}</Descriptions.Item><Descriptions.Item label="成员">{detailTarget.memberCount}</Descriptions.Item></Descriptions><WorkspaceEntitlementFacts workspaceId={detailTarget.workspaceId} canRead={canReadEntitlements} client={entitlementClient} /></div></div> : null}
   </>;
 }
