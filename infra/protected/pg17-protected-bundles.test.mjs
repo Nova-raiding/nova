@@ -5,12 +5,18 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { build } from 'esbuild'
+import { backupAttemptDirectoryName } from './attest-pg17-backup-baseline.mjs'
 
 const entries = [
   ['attest-pg17-frozen-plan', 'PG17 frozen plan rejected'],
   ['attest-pg17-backup-baseline', 'PG17 baseline backup rejected'],
 ]
 const banner = 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);'
+
+test('backup attempt path meets the installed isolated restore runner contract', () => {
+  assert.equal(backupAttemptDirectoryName('release-39fc097d-review', '20260927t1200z'), 'release-39fc097d-review-attempt-20260927t1200z')
+  assert.throws(() => backupAttemptDirectoryName('release-39fc097d-review', '../escape'), /identity invalid/u)
+})
 
 for (const [name, rejection] of entries) test(`${name} bundles reproducibly and enters only its protected CLI`, async () => {
   const entryPoints = [`infra/protected/${name}.mjs`]

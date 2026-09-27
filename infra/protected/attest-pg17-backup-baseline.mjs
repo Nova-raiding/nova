@@ -93,6 +93,10 @@ function connectSource() {
   const client = new pg.Client({ host: env.PGHOST, port: 5432, user: env.PGUSER, password: env.PGPASSWORD, database: env.PGDATABASE, connectionTimeoutMillis: 10_000, statement_timeout: 6 * 60 * 60_000 })
   return client.connect().then(() => client)
 }
+export function backupAttemptDirectoryName(releaseId, attemptId) {
+  check(RELEASE.test(releaseId ?? '') && ATTEMPT.test(attemptId ?? ''), 'backup attempt identity invalid')
+  return `${releaseId}-attempt-${attemptId}`
+}
 export async function runProtectedPg17BaselineBackup(args) {
   assertInstalled()
   const { releaseId, gitSha, attemptId, planSha, maxRows } = options(args)
@@ -107,7 +111,8 @@ export async function runProtectedPg17BaselineBackup(args) {
   const publicPem = protectedPath(join(TRUST, 'production-evidence-public.pem'), 0o444)
   const keyId = protectedPath(join(TRUST, 'production-evidence-key-id')).toString('utf8').trim()
   const privatePem = protectedPath(join(STATE, 'production-capability-private.pem'), 0o600)
-  const outputRoot = join(STATE, 'backups', `${releaseId}-${attemptId}`)
+  // The installed PG17 isolated restore runner accepts release-attempt-* only.
+  const outputRoot = join(STATE, 'backups', backupAttemptDirectoryName(releaseId, attemptId))
   protectedDirectory(join(STATE, 'backups'))
   mkdirSync(outputRoot, { mode: 0o700 })
   protectedDirectory(outputRoot)
