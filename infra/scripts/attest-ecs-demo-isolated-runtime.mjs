@@ -14,6 +14,17 @@ const SERVICES = ['api', 'postgres', 'redis']
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
 const requireValue = (value, message) => { if (!value) throw new Error(message) }
 
+// Docker reports RepoDigests without a tag even when inspect was requested as
+// repository:tag@sha256. Remove only the final path component's tag; a registry
+// port remains part of the repository identity.
+export function canonicalRepoDigest(reference) {
+  requireValue(IMAGE.test(reference ?? ''), 'image reference is not immutable')
+  const [repository, digest] = reference.split('@')
+  const slash = repository.lastIndexOf('/')
+  const tag = repository.lastIndexOf(':')
+  return `${tag > slash ? repository.slice(0, tag) : repository}@${digest}`
+}
+
 function protectedJson(path, label) {
   requireValue(typeof path === 'string' && path.startsWith('/') && resolve(path) === path && realpathSync(path) === path, `${label} path is unsafe`)
   const file = statSync(path)
@@ -115,7 +126,7 @@ export function verifyIsolatedRuntime({ compose, identity, manifest, manifestSha
     requireValue(FULL_ID.test(container?.Id ?? '') && DIGEST.test(container?.Image ?? '') &&
       container.State?.Running === true && container.Config?.Labels?.['com.docker.compose.project'] === project &&
       container.Config?.Labels?.['com.docker.compose.service'] === service &&
-      container.Image === image?.Id && image?.RepoDigests?.includes(config.image), `${service} container/image identity differs`)
+      container.Image === image?.Id && image?.RepoDigests?.includes(canonicalRepoDigest(config.image)), `${service} container/image identity differs`)
     requireValue(!Object.values(container.HostConfig?.PortBindings ?? {}).some(value => value?.length) &&
       !Object.values(container.NetworkSettings?.Ports ?? {}).some(value => value?.length) &&
       container.HostConfig?.NetworkMode === `${project}_private` &&

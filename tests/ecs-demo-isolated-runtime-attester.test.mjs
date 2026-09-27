@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { verifyIsolatedRuntime } from '../infra/scripts/attest-ecs-demo-isolated-runtime.mjs'
+import { canonicalRepoDigest, verifyIsolatedRuntime } from '../infra/scripts/attest-ecs-demo-isolated-runtime.mjs'
 
 const project = 'merchant-demo-proof'
 const sha = 'a'.repeat(40)
@@ -8,7 +8,7 @@ const source = `sha256:${'b'.repeat(64)}`
 const manifestSha = 'c'.repeat(64)
 const ids = { api: '1'.repeat(64), postgres: '2'.repeat(64), redis: '3'.repeat(64) }
 const imageIds = { api: `sha256:${'4'.repeat(64)}`, postgres: `sha256:${'5'.repeat(64)}`, redis: `sha256:${'6'.repeat(64)}` }
-const refs = { api: `registry.invalid/api@sha256:${'7'.repeat(64)}`, postgres: `registry.invalid/postgres@sha256:${'8'.repeat(64)}`, redis: `registry.invalid/redis@sha256:${'9'.repeat(64)}` }
+const refs = { api: `registry.invalid/api@sha256:${'7'.repeat(64)}`, postgres: `postgres:17-alpine@sha256:${'8'.repeat(64)}`, redis: `redis:7-alpine@sha256:${'9'.repeat(64)}` }
 
 function fixture() {
   const compose = { name: project, services: {
@@ -28,7 +28,7 @@ function fixture() {
         ...(service === 'api' ? { 'com.storenova.release.id': identity.release_id } : {}) } },
       HostConfig: { NetworkMode: `${project}_private`, PortBindings: {} },
       NetworkSettings: { Networks: { [`${project}_private`]: {} }, Ports: { '5432/tcp': null } } }
-    images[service] = { Id: imageIds[service], RepoDigests: [refs[service]], Config: { Labels: service === 'api' ? {
+    images[service] = { Id: imageIds[service], RepoDigests: [canonicalRepoDigest(refs[service])], Config: { Labels: service === 'api' ? {
       'com.storenova.release.id': identity.release_id, 'org.opencontainers.image.revision': sha,
       'com.storenova.release.source_sha256': source } : {} } }
     members[id] = { Name: `${project}-${service}-1` }
@@ -52,10 +52,21 @@ test('records exact three-container isolated observation without claiming produc
   assert.doesNotMatch(JSON.stringify(result), /password|DATABASE_URL|secret/u)
 })
 
+test('accepts Docker tag-less RepoDigests while preserving repository and registry port', () => {
+  assert.equal(canonicalRepoDigest(refs.redis), `redis@sha256:${'9'.repeat(64)}`)
+  assert.equal(canonicalRepoDigest(refs.postgres), `postgres@sha256:${'8'.repeat(64)}`)
+  assert.equal(canonicalRepoDigest(`registry.invalid:5000/team/api:v3@sha256:${'7'.repeat(64)}`),
+    `registry.invalid:5000/team/api@sha256:${'7'.repeat(64)}`)
+  assert.equal(verifyIsolatedRuntime(fixture()).scope, 'isolated')
+})
+
 test('rejects image, identity, project and network substitution', () => {
   for (const mutate of [
     x => { x.containers.api.Id = 'f'.repeat(64) },
     x => { x.images.api.Config.Labels['org.opencontainers.image.revision'] = 'f'.repeat(40) },
+    x => { x.images.redis.RepoDigests = [`other/redis@sha256:${'9'.repeat(64)}`] },
+    x => { x.images.redis.RepoDigests = [`redis@sha256:${'f'.repeat(64)}`] },
+    x => { x.images.redis.Id = `sha256:${'f'.repeat(64)}` },
     x => { x.manifest.image_references['merchant-api'] = refs.redis },
     x => { x.compose.services.api.environment.RELEASE_MANIFEST_SHA256 = 'f'.repeat(64) },
     x => { x.network.Name = 'merchant-production_default' },
