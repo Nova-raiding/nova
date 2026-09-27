@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { build } from 'esbuild'
-import { backupAttemptDirectoryName } from './attest-pg17-backup-baseline.mjs'
+import { assertLocalDockerTarget, backupAttemptDirectoryName, inspectProductionPostgres, validateProductionPostgresInspection } from './attest-pg17-backup-baseline.mjs'
 
 const entries = [
   ['attest-pg17-frozen-plan', 'PG17 frozen plan rejected'],
@@ -16,6 +16,49 @@ const banner = 'import { createRequire } from "node:module"; const require = cre
 test('backup attempt path meets the installed isolated restore runner contract', () => {
   assert.equal(backupAttemptDirectoryName('release-39fc097d-review', '20260927t1200z'), 'release-39fc097d-review-attempt-20260927t1200z')
   assert.throws(() => backupAttemptDirectoryName('release-39fc097d-review', '../escape'), /identity invalid/u)
+})
+
+function productionPostgresInspection() {
+  return {
+    Id: 'a'.repeat(64), Name: '/merchant-production-postgres-1', State: { Running: true },
+    Config: {
+      Image: 'postgres:16-alpine',
+      Labels: { 'com.docker.compose.project': 'merchant-production', 'com.docker.compose.service': 'postgres' },
+      Env: ['POSTGRES_DB=merchant', 'POSTGRES_USER=merchant', 'POSTGRES_PASSWORD=secret'],
+    },
+    NetworkSettings: { Networks: { 'merchant-production_default': { IPAddress: '172.20.0.4' } } },
+  }
+}
+
+test('PG17 baseline Docker target rejects ambient remote contexts and hosts', () => {
+  assertLocalDockerTarget({})
+  assertLocalDockerTarget({ DOCKER_HOST: 'unix:///var/run/docker.sock' })
+  assert.throws(() => assertLocalDockerTarget({ DOCKER_CONTEXT: 'production' }), /Docker target is forbidden/u)
+  assert.throws(() => assertLocalDockerTarget({ DOCKER_HOST: 'tcp://docker.example:2376' }), /Docker target is forbidden/u)
+  assert.throws(() => assertLocalDockerTarget({ DOCKER_CONFIG: '/tmp/attacker-config' }), /Docker target is forbidden/u)
+})
+
+test('PG17 baseline Docker inspection pins the local socket and rejects wrong production container identity', () => {
+  const inspection = productionPostgresInspection()
+  let invocation
+  const source = inspectProductionPostgres({
+    environment: {},
+    run: (...args) => { invocation = args; return JSON.stringify([inspection]) },
+  })
+  assert.equal(source.networkHost, '172.20.0.4')
+  assert.equal(invocation[0], '/usr/bin/docker')
+  assert.deepEqual(invocation[1], ['--host', 'unix:///var/run/docker.sock', 'inspect', 'merchant-production-postgres-1'])
+  assert.deepEqual(invocation[2].env, { PATH: '/usr/bin:/bin', HOME: '/nonexistent', DOCKER_HOST: 'unix:///var/run/docker.sock' })
+
+  for (const mutate of [
+    value => { value.Name = '/attacker-postgres-1' },
+    value => { value.Config.Labels['com.docker.compose.project'] = 'candidate' },
+    value => { value.Config.Labels['com.docker.compose.service'] = 'postgres-copy' },
+  ]) {
+    const incorrect = structuredClone(inspection)
+    mutate(incorrect)
+    assert.throws(() => validateProductionPostgresInspection(incorrect), /identity mismatch/u)
+  }
 })
 
 for (const [name, rejection] of entries) test(`${name} bundles reproducibly and enters only its protected CLI`, async () => {

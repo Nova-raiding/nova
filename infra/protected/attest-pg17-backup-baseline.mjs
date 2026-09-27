@@ -21,6 +21,8 @@ const HEX = /^[a-f0-9]{64}$/u
 const RELEASE = /^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u
 const ATTEMPT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/u
 const MAX_ROWS_PER_TABLE = 1_000_000
+const DOCKER_SOCKET = 'unix:///var/run/docker.sock'
+const PRODUCTION_POSTGRES = 'merchant-production-postgres-1'
 const BACKUP_WALL_CLOCK_MS = 30 * 60_000
 const DUMP_TIMEOUT_MS = 15 * 60_000
 const STATEMENT_TIMEOUT_MS = 60_000
@@ -71,12 +73,35 @@ function assertInstalled() {
   protectedPath('/usr/pgsql-16/bin/psql')
   protectedPath('/usr/pgsql-16/bin/pg_dump')
 }
+export function assertLocalDockerTarget(environment = process.env) {
+  check(!environment.DOCKER_CONTEXT && !environment.DOCKER_CONFIG
+    && (!environment.DOCKER_HOST || environment.DOCKER_HOST === DOCKER_SOCKET), 'remote or user-configured Docker target is forbidden')
+}
+export function validateProductionPostgresInspection(value) {
+  check(value?.Name === `/${PRODUCTION_POSTGRES}`
+    && value?.State?.Running === true
+    && /^[a-f0-9]{64}$/u.test(value.Id ?? '')
+    && /(?:^|\/)postgres:16(?:[-@]|$)/u.test(value.Config?.Image ?? '')
+    && value.Config?.Labels?.['com.docker.compose.project'] === 'merchant-production'
+    && value.Config?.Labels?.['com.docker.compose.service'] === 'postgres', 'reviewed production PG16 container identity mismatch')
+  const networks = Object.entries(value.NetworkSettings?.Networks ?? {})
+  check(networks.length === 1 && networks[0][0] === 'merchant-production_default'
+    && /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(networks[0][1]?.IPAddress ?? ''), 'production Postgres network ambiguous')
+  return { networkHost: networks[0][1].IPAddress, environment: value.Config.Env ?? [] }
+}
+export function inspectProductionPostgres({ run = execFileSync, environment = process.env } = {}) {
+  assertLocalDockerTarget(environment)
+  const raw = run('/usr/bin/docker', ['--host', DOCKER_SOCKET, 'inspect', PRODUCTION_POSTGRES], {
+    encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', DOCKER_HOST: DOCKER_SOCKET }, timeout: 30_000, maxBuffer: 2 * 1024 * 1024
+  })
+  const result = JSON.parse(raw)
+  check(Array.isArray(result) && result.length === 1, 'reviewed production PG16 container unavailable')
+  return validateProductionPostgresInspection(result[0])
+}
 function configureLiveSource() {
-  const value = JSON.parse(execFileSync('/usr/bin/docker', ['inspect', 'merchant-production-postgres-1'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 30_000, maxBuffer: 2 * 1024 * 1024 }))[0]
-  check(value?.State?.Running === true && /^[a-f0-9]{64}$/u.test(value.Id ?? '') && /postgres:16/u.test(value.Config?.Image ?? ''), 'reviewed production PG16 container unavailable')
-  const networks = Object.values(value.NetworkSettings?.Networks ?? {}).map(item => item.IPAddress).filter(Boolean)
-  check(networks.length === 1 && /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(networks[0]), 'production Postgres network ambiguous')
-  const config = Object.fromEntries((value.Config.Env ?? []).map(line => { const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)] }))
+  const source = inspectProductionPostgres()
+  const config = Object.fromEntries(source.environment.map(line => { const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)] }))
+  const networks = [source.networkHost]
   check(config.POSTGRES_DB && config.POSTGRES_USER && config.POSTGRES_PASSWORD, 'production database credentials unavailable')
   for (const key of Object.keys(process.env)) if (key.startsWith('PG')) delete process.env[key]
   Object.assign(process.env, { PGHOST: networks[0], PGPORT: '5432', PGDATABASE: config.POSTGRES_DB, PGUSER: config.POSTGRES_USER, PGPASSWORD: config.POSTGRES_PASSWORD, PGCONNECT_TIMEOUT: '10', NODE_ENV: 'production' })
