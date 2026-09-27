@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { Alert, Badge, Breadcrumb, Button, Card, Checkbox, DatePicker, Dropdown, Form, Input, InputNumber, List, Modal, Select, Space, Statistic, Table, Tag } from 'antd'
 import zhCN from 'antd/es/date-picker/locale/zh_CN'
 import dayjs from 'dayjs'
@@ -112,6 +112,7 @@ import {
   fetchCatalogCategories,
   fetchContentVersions,
   fetchPlatformAccounts,
+  registerManualStoreRecord,
   fetchPlatformModelStatus,
   fetchMerchantSession,
   fetchManualPublishRecords,
@@ -1421,14 +1422,6 @@ function Sidebar({
             )
           })}
         </nav>
-        <button
-          className="sidebar-contact-manager"
-          type="button"
-          onClick={(event) => closeForAction(() => onOpenUtility('support', event.currentTarget))}
-        >
-          <CircleHelp size={18} />
-          <span>联系客服经理</span>
-        </button>
         <nav aria-label="新会话入口" className="sr-only" aria-hidden="true" />
       </aside>
     </>
@@ -5314,6 +5307,11 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
   const [catalogPage, setCatalogPage] = useState(1)
   const [catalogSelectedIds, setCatalogSelectedIds] = useState<string[]>([])
   const [catalogSeriesRevision, setCatalogSeriesRevision] = useState(0)
+  const [manualStoreId, setManualStoreId] = useState('')
+  const [manualStoreName, setManualStoreName] = useState('')
+  const [manualStoreSubmitting, setManualStoreSubmitting] = useState(false)
+  const [manualStoreError, setManualStoreError] = useState('')
+  const [manualStoreMessage, setManualStoreMessage] = useState('')
   // This page owns no catalogue data of its own. Stores come from
   // `/v1/platform-accounts` and products from `/v1/products`; `null` means the
   // read has not answered and must be reported as unread rather than as an empty
@@ -5358,6 +5356,45 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
       .catch((cause) => { if (active) { setProducts(null); setProductsNote(`商品读取失败：${describeApiError(cause)}`) } })
     return () => { active = false }
   }, [baseUrl, apiMode])
+
+  const submitManualStore = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!baseUrl || !isManualPlatformOperationsMode(apiMode) || !selectedPlatform || !(selectedPlatform in platformNames)) return
+    const accountId = manualStoreId.trim()
+    const storeName = manualStoreName.trim()
+    if (!accountId || !storeName) {
+      setManualStoreError('请填写平台店铺 ID 和店铺名称。')
+      setManualStoreMessage('')
+      return
+    }
+    setManualStoreSubmitting(true)
+    setManualStoreError('')
+    setManualStoreMessage('')
+    try {
+      const result = await registerManualStoreRecord(baseUrl, selectedPlatform as PlatformId, { accountId, storeName })
+      if (result.connection?.mode !== 'manual_store_record'
+        || result.connection.token_state !== 'manually_registered'
+        || result.connection.credential_free !== true
+        || result.connection.authorization_receipt !== null
+        || result.store?.state !== 'manually_registered'
+        || result.store.accountId !== accountId) {
+        throw new Error('服务端未确认这是仅登记、未授权的店铺记录；列表未更新。')
+      }
+      const refreshed = await fetchPlatformAccounts(baseUrl)
+      const saved = refreshed.items.find(account => account.accountId === accountId && account.platform === selectedPlatform)
+      if (!saved || saved.state !== 'manually_registered' || saved.readEnabled || saved.writeEnabled) {
+        throw new Error('登记请求已返回，但店铺列表未确认该记录为未授权状态；请刷新列表核对后再试。')
+      }
+      setAccounts(refreshed.items)
+      setManualStoreId('')
+      setManualStoreName('')
+      setManualStoreMessage('店铺资料已登记，状态为“人工登记（未授权）”。此记录不会建立平台授权或开放平台数据读取。')
+    } catch (cause) {
+      setManualStoreError(describeApiError(cause))
+    } finally {
+      setManualStoreSubmitting(false)
+    }
+  }
 
   // `null` while the account read is unresolved.
   const platforms = useMemo(() => buildCatalogPlatforms(accounts, products), [accounts, products])
@@ -5619,7 +5656,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
         </aside>
         <section className="catalog-platform-result" aria-live="polite">
           {!selectedPlatform ? (
-            <div className="catalog-platform-empty"><span><Store size={28} /></span><strong>请选择平台</strong><p>选择平台后查看当前工作区的店铺。当前版本由平台运营人员登记店铺，商家暂不能自行授权连接。</p><a href="https://ops.yxsona.com/ops/stores" target="_blank" rel="noreferrer">前往运营后台登记店铺</a></div>
+            <div className="catalog-platform-empty"><span><Store size={28} /></span><strong>请选择平台</strong><p>选择一个平台后查看当前工作区登记的店铺。人工登记只保存店铺识别信息，不代表平台授权。</p></div>
           ) : selectedPlatformStores.length ? (
             <>
               <div className="catalog-platform-result-heading"><div><span className="section-kicker">SELECT STORE</span><h2>{selectedPlatformView?.label ?? platformNames[selectedPlatform ?? '']}店铺</h2><p>选择要查看的店铺。</p></div><span>{selectedPlatformStores.length} 家店铺 · {selectedPlatformView?.connectedCount ?? 0} 家已接入</span></div>
@@ -5627,14 +5664,32 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
                 {selectedPlatformStores.map((store) => (
                   <article className={`catalog-store-card ${store.tone} ${store.readable ? 'connected' : 'disconnected'}`} key={store.id}>
                     <header className="catalog-store-identity"><span className="catalog-store-mark" aria-hidden="true">{store.mark}</span><div><h3>{store.name}</h3><small>{store.dataModeLabel}</small></div><span className={`catalog-live-state ${store.realConnected ? '' : 'disconnected'}`}><i />{store.connectionLabel}</span></header>
-                    <div className="catalog-store-summary">{store.readable ? <><strong>{store.products === null ? '商品数量未读取' : <><b>{store.products}</b> 件商品</>}</strong><span>{store.syncLabel ? `最近同步：${store.syncLabel}` : '尚无同步记录'}</span></> : <><strong>连接后可查看商品</strong><span>商品数据暂不可读</span></>}</div>
+                    <div className="catalog-store-summary">{store.readable ? <><strong>{store.products === null ? '商品数量未读取' : <><b>{store.products}</b> 件商品</>}</strong><span>{store.syncLabel ? `最近同步：${store.syncLabel}` : '尚无同步记录'}</span></> : store.connectionLabel === '人工登记（未授权）' ? <><strong>店铺资料已登记</strong><span>未获得平台授权，平台商品数据不可读取</span></> : <><strong>店铺尚不可读取</strong><span>商品数据暂不可读</span></>}</div>
                     <footer className="catalog-store-action"><button type="button" onClick={() => openStore(store.id)}>{store.readable ? '进入商品库' : '查看状态'} <ArrowRight size={15} /></button></footer>
                   </article>
                 ))}
               </div>
             </>
           ) : (
-            <div className="catalog-platform-empty disconnected"><span><AlertCircle size={28} /></span><strong>{selectedPlatformView?.label ?? platformNames[selectedPlatform] ?? '所选平台'}尚未登记</strong><p>当前版本不提供商家自行授权连接。请由平台运营人员为当前工作区登记店铺。</p><a href="https://ops.yxsona.com/ops/stores" target="_blank" rel="noreferrer">前往运营后台登记店铺</a></div>
+            <div className="catalog-platform-empty disconnected"><span><AlertCircle size={28} /></span><strong>{selectedPlatformView?.label ?? platformNames[selectedPlatform] ?? '所选平台'}尚无店铺记录</strong><p>{isManualPlatformOperationsMode(apiMode) ? '可以登记店铺 ID 和名称作为工作区内的人工记录；登记不会连接平台、读取商品或授予发布权限。' : '当前工作区尚无此平台店铺记录。'}</p></div>
+          )}
+          {selectedPlatform && isManualPlatformOperationsMode(apiMode) && (
+            <Card size="small" title={selectedPlatformStores.length ? '登记另一家店铺' : '登记店铺'} style={{ marginTop: 24 }}>
+              <p>仅登记店铺识别信息，不会建立 OAuth 授权，也不会读取店铺数据。请勿在此输入平台密码、Cookie、Token 或验证码。</p>
+              <form onSubmit={event => void submitManualStore(event)}>
+                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                  <label htmlFor="merchant-manual-store-id">{selectedPlatformView?.label ?? platformNames[selectedPlatform]}店铺 ID</label>
+                  <Input id="merchant-manual-store-id" value={manualStoreId} onChange={event => { setManualStoreId(event.target.value); setManualStoreError(''); setManualStoreMessage('') }} maxLength={256} autoComplete="off" disabled={manualStoreSubmitting} />
+                  <label htmlFor="merchant-manual-store-name">店铺名称</label>
+                  <Input id="merchant-manual-store-name" value={manualStoreName} onChange={event => { setManualStoreName(event.target.value); setManualStoreError(''); setManualStoreMessage('') }} maxLength={40} autoComplete="off" disabled={manualStoreSubmitting} />
+                  <Button type="primary" htmlType="submit" loading={manualStoreSubmitting} disabled={!manualStoreId.trim() || !manualStoreName.trim() || manualStoreSubmitting}>
+                    {manualStoreSubmitting ? '登记中…' : '登记店铺资料'}
+                  </Button>
+                </Space>
+              </form>
+              {manualStoreError && <Alert role="alert" type="error" showIcon message={manualStoreError} style={{ marginTop: 16 }} />}
+              {manualStoreMessage && <Alert role="status" type="success" showIcon message={manualStoreMessage} style={{ marginTop: 16 }} />}
+            </Card>
           )}
         </section>
       </section>

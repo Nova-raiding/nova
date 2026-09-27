@@ -35,6 +35,9 @@ export interface PlatformAccountRouteDependencies {
   storeDirectory: (workspaceId: string, platform?: Platform) => Array<{ accountId: string; label: string }>
   platformAccountAccessItems: (workspaceId: string) => unknown
   grantedScopes: (scope?: string) => string[] | undefined
+  manualPlatformOperations: () => boolean
+  requestActor: () => string
+  recordOperationAudit: (input: { workspaceId: string; actorId: string; action: string; resourceType: string; resourceId: string; before: Record<string, unknown>; after: Record<string, unknown>; reason: string }) => Promise<void>
 }
 
 export async function handlePlatformAccountRoute(req: IncomingMessage, res: ServerResponse, path: string, url: URL, deps: PlatformAccountRouteDependencies): Promise<boolean> {
@@ -50,6 +53,51 @@ export async function handlePlatformAccountRoute(req: IncomingMessage, res: Serv
     const workspaceId = deps.resolveWorkspace()
     const result = await deps.beginAuthorization(platform, input, workspaceId)
     deps.send(200, workspaceId, result)
+    return true
+  }
+  const manualRecordMatch = path.match(/^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/manual-record$/)
+  if (req.method === 'POST' && manualRecordMatch) {
+    if (!deps.manualPlatformOperations()) throw new DomainError('MANUAL_STORE_RECORDS_DISABLED', '当前部署未启用人工店铺登记；请由运营完成平台授权或联系管理员', 409)
+    const input = await deps.readBody()
+    const allowedFields = new Set(['account_id', 'store_name'])
+    const unknownFields = Object.keys(input).filter(key => !allowedFields.has(key))
+    if (unknownFields.length) throw new DomainError('MANUAL_STORE_RECORD_INPUT_INVALID', '请求只允许 account_id 和 store_name，不接受工作区或凭据字段', 400, { fields: unknownFields })
+    const accountId = typeof input.account_id === 'string' ? input.account_id.trim() : ''
+    const storeName = typeof input.store_name === 'string' ? input.store_name.trim() : ''
+    if (!accountId || accountId.length > 256 || /[\u0000-\u001f\u007f]/u.test(accountId)) throw new DomainError('MANUAL_STORE_ACCOUNT_ID_INVALID', 'account_id 必须是有效的平台店铺账号标识', 400)
+    if (!storeName || storeName.length > 40 || /[\u0000-\u001f\u007f\p{Cf}]/u.test(storeName)) throw new DomainError('MANUAL_STORE_NAME_INVALID', 'store_name 必须是 1 到 40 个可见字符', 400)
+    const workspaceId = deps.resolveWorkspace()
+    const platform = manualRecordMatch[1] as Platform
+    // Never replace an existing account through self-service, even if a
+    // revoked OAuth row is no longer active. That preserves its authorization
+    // history and prevents the manual placeholder from masking old secrets.
+    try {
+      const existing = deps.service.getPlatformAccount(workspaceId, accountId, platform)
+      throw new DomainError(isManualStoreRecord(existing) ? 'MANUAL_STORE_RECORD_ALREADY_EXISTS' : 'PLATFORM_ACCOUNT_ALREADY_EXISTS', '该平台店铺账号已登记；请勿重复创建或覆盖已有授权记录', 409)
+    } catch (error) {
+      if (!(error instanceof DomainError) || error.code !== 'PLATFORM_ACCOUNT_NOT_FOUND') throw error
+    }
+    const account = deps.service.registerManualPlatformAccount({ workspaceId, platform, remoteAccountId: accountId, storeAlias: storeName })
+    await deps.persistSnapshot(workspaceId, 'platform_account', account)
+    await deps.persistEvent(workspaceId, account.id, 'platform_account.manual_record_created', account.revision, { platform, account_id: account.id, token_state: account.tokenState, credential_free: true, source: 'merchant_self_service' })
+    await deps.recordOperationAudit({
+      workspaceId,
+      actorId: deps.requestActor(),
+      action: 'platform.store.manual_record.create',
+      resourceType: 'platform_account',
+      resourceId: account.id,
+      before: {},
+      after: { platform, account_id: account.id, store_name: account.storeAlias ?? storeName, token_state: account.tokenState, credential_free: true },
+      reason: '商家通过已认证工作区会话登记人工店铺',
+    })
+    const store = deps.storeDirectory(workspaceId, platform).find(item => item.accountId === account.id)
+    deps.send(201, workspaceId, {
+      workspace_id: workspaceId,
+      store,
+      selectionKey: { platform, accountId: account.id },
+      connection: { mode: 'manual_store_record', token_state: account.tokenState, credential_free: true, authorization_receipt: null },
+      applies_to_store_boundary: true,
+    })
     return true
   }
   const syncMatch = path.match(/^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/sync$/)

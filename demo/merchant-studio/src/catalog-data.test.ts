@@ -118,11 +118,11 @@ describe('the store page renders the server catalogue', () => {
     expect(buildCatalogPlatforms([], null)).toEqual([])
   })
 
-  it('labels manual platform placeholders as requiring operator registration', () => {
+  it('labels manual platform placeholders as available for merchant self-registration', () => {
     const manualPlatforms = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'].map((platform) => ({ platform, state: 'manual_operations', dataMode: 'manual_upload' })) as unknown as PlatformAccount[]
     const rows = buildCatalogPlatforms(manualPlatforms, null)!
     expect(rows).toHaveLength(6)
-    expect(rows.every((platform) => platform.stores.length === 0 && platform.statusLabel === '需运营登记')).toBe(true)
+    expect(rows.every((platform) => platform.stores.length === 0 && platform.statusLabel === '可自助登记')).toBe(true)
   })
 })
 
@@ -173,10 +173,12 @@ describe('the page cannot fall back to a hardcoded catalogue', () => {
     expect(catalogComponent).toContain('catalogProductsForStore(products, selectedStore.id')
   })
 
-  it('offers a platform choice and operations handoff without exposing merchant OAuth in manual mode', () => {
+  it('offers merchant store registration without an Ops handoff or OAuth credential flow in manual mode', () => {
     expect(catalogComponent).toContain('Object.entries(platformNames).map')
-    expect(catalogComponent).toContain('前往运营后台登记店铺')
-    expect(catalogComponent).toContain('当前版本不提供商家自行授权连接')
+    expect(catalogComponent).toContain('登记店铺资料')
+    expect(catalogComponent).toContain('人工登记（未授权）')
+    expect(catalogComponent).not.toContain('前往运营后台登记店铺')
+    expect(catalogComponent).not.toContain('ops.yxsona.com/ops/stores')
     expect(catalogComponent).not.toContain('authorizePlatform(baseUrl, platform)')
   })
 

@@ -89,6 +89,11 @@ export const HTTP_OPERATION_POLICIES = [
   machine('GET', '/v1/internal/assets/{assetId}/scan-content', 'asset_scanner'),
   machine('POST', '/v1/internal/assets/{assetId}/scan-result', 'asset_scanner'),
   identity('GET', '/v1/platform-accounts', 'platform.store.list'),
+  // Merchant self-service manual registration uses the same workspace-scoped
+  // store.connection.update capability as the existing connection entrypoint.
+  // The route handler additionally fails closed unless manual mode is enabled
+  // and accepts only account_id/store_name (tenant scope is session-derived).
+  identity('POST', '/v1/platform-accounts/{platform}/manual-record', 'platform.connect'),
   identity('POST', '/v1/platform-accounts/{platform}/authorize', 'platform.connect'),
   identity('DELETE', '/v1/platform-accounts/{platform}', 'platform.revoke'),
   identity('POST', '/v1/platform-accounts/{platform}/sync', 'catalog.sync'),

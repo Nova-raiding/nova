@@ -1095,6 +1095,21 @@ export const fetchCommercialPurchaseOrder = async (baseUrl: string, orderId: str
 export const optimizeProductTitle = (baseUrl: string, input: { product_id: string; platform?: PlatformId; keyword?: string; objective?: string }) => requestMcp<{ product_id: string; platform: PlatformId; suggestions: Array<{ title: string; score: { seo: number; geo: number; total: number }; keywords: string[]; evidence: Array<{ source: string; value: string }>; risks: string[]; rankingGuarantee: false }>; humanConfirmationRequired: boolean; rankingGuarantee: false }>(baseUrl, 'catalog.title.optimize', input)
 
 export const fetchPlatformAccounts = (baseUrl: string) => requestApi<{ items: PlatformAccount[] }>(baseUrl, '/v1/platform-accounts')
+export interface ManualStoreRecordRegistration {
+  store: PlatformAccount
+  connection: {
+    mode: 'manual_store_record' | string
+    token_state: 'manually_registered' | string
+    credential_free: boolean
+    authorization_receipt: null
+  }
+}
+/** Register a store identity in the authenticated merchant workspace; this never starts OAuth. */
+export const registerManualStoreRecord = (baseUrl: string, platform: PlatformId, input: { accountId: string; storeName: string }) =>
+  requestApi<ManualStoreRecordRegistration>(baseUrl, `/v1/platform-accounts/${encodeURIComponent(platform)}/manual-record`, {
+    method: 'POST',
+    body: JSON.stringify({ account_id: input.accountId.trim(), store_name: input.storeName.trim() }),
+  })
 export const fetchPlatformCapabilities = (baseUrl: string) => requestApi<{ items: PlatformCapability[] }>(baseUrl, '/v1/platform-capabilities')
 export const fetchDeliveryReadiness = (baseUrl: string) => requestApi<DeliveryReadinessSnapshot>(baseUrl, '/v1/delivery-readiness')
 /** Execute the server-owned mapping gate; callers must provide the full evidence envelope. */

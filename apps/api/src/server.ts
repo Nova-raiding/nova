@@ -13870,6 +13870,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     await requireStoreOnboarding(requestWorkspace, storeBoundaryScopeForHttp(httpOperationPolicy, path))
   }
   const httpCommercialValidationDeferred = (req.method === 'PUT' && /^\/v1\/assets\/[^/]+\/preference$/u.test(path))
+    || (req.method === 'POST' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/manual-record$/u.test(path))
     || (req.method === 'POST' && path === '/v1/brand-profile/extract')
     // Charged REST generation is intentionally refused in production until
     // reservation ownership, job/outbox admission and provider dispatch share
@@ -14198,6 +14199,9 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     storeDirectory: workspaceStoreDirectory,
     platformAccountAccessItems,
     grantedScopes,
+    manualPlatformOperations,
+    requestActor: () => requestActor(req),
+    recordOperationAudit,
   })) return
   const syncJobRouteDeps = {
     service,

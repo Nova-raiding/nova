@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
-import { canCreateBrandUnit, canonicalNextActionCommand, StoresPage } from "./StoresPage.js";
+import { canCreateBrandUnit, StoresPage } from "./StoresPage.js";
 import { createAuthorizationProjection } from "../authz/authorization.js";
 
 const workspaceAuthorization = createAuthorizationProjection({ actor_id: "owner", workspace_id: "ws_a", roles: [], workspace_granted: true, capabilities: ["store.connection.read", "store.connection.update", "automation.read", "automation.update", "customer.content.read"] }, true);
@@ -30,20 +30,6 @@ const model = (overrides: Partial<OpsConsoleModel> = {}) => ({
 }) as unknown as OpsConsoleModel;
 
 describe("StoresPage", () => {
-  it("maps only supported canonical next actions to their real MCP command shape", () => {
-    const base = {
-      legacyProductId: "legacy-1", productId: "legacy-1", status: "legacy_only" as const, codes: [], listingIds: [], campaignItemIds: [], taskIds: [], publishJobIds: [],
-      scope: { brandId: "brand-1", platform: "taobao", accountId: "store-1", listingId: null },
-    };
-    expect(canonicalNextActionCommand({ ...base, nextAction: { id: "create", method: "brand-unit.product.create", label: "创建", reason: "缺失", permission: { allowed: true, requiredRole: null }, requiredInputs: [], confirmation: "interactive_confirmation" } }, { brand_id: "brand-1", source_product_id: "legacy-1", title: "真实标题", workspace_id: "ws-1" })).toEqual({ method: "brand-unit.product.create", params: { brand_id: "brand-1", source_product_id: "legacy-1", title: "真实标题" } });
-    expect(canonicalNextActionCommand({ ...base, canonicalProductId: "canonical-1", nextAction: { id: "listing", method: "brand-unit.listing.create", label: "映射", reason: "listing 缺失", permission: { allowed: true, requiredRole: null }, requiredInputs: [], confirmation: "interactive_confirmation" } }, { brand_id: "brand-1", canonical_product_id: "canonical-1", platform: "taobao", account_id: "store-1" })).toEqual({ method: "brand-unit.listing.create", params: { brand_id: "brand-1", canonical_product_id: "canonical-1", platform: "taobao", account_id: "store-1", reason: "listing 缺失" } });
-  });
-
-  it("fails closed for unknown canonical actions and missing server-required inputs", () => {
-    const finding = { legacyProductId: "legacy-1", status: "legacy_only" as const, codes: [], listingIds: [], campaignItemIds: [], taskIds: [], publishJobIds: [], nextAction: { id: "unknown", method: "unsafe.force", label: "强制", reason: "", permission: { allowed: true, requiredRole: null }, requiredInputs: [], confirmation: "none" as const } };
-    expect(() => canonicalNextActionCommand(finding, {})).toThrow("不支持的一致性动作");
-    expect(() => canonicalNextActionCommand({ ...finding, nextAction: { ...finding.nextAction, method: "brand-unit.product.create" } }, { brand_id: "brand-1" })).toThrow("source_product_id");
-  });
   it("only exposes brand creation to roles accepted by the server gate", () => {
     expect(canCreateBrandUnit(["merchant_admin"])).toBe(true);
     expect(canCreateBrandUnit(["workspace_owner"])).toBe(true);
@@ -171,13 +157,22 @@ describe("StoresPage", () => {
     expect(markup).toContain("平台级脱敏");
   });
 
-  it("does not mount the platform-only canonical conflict queue in a workspace session", () => {
-    const markup = renderToStaticMarkup(<StoresPage model={model({
+  it("keeps advanced canonical consistency and backfill tools off ordinary store management", () => {
+    const workspaceMarkup = renderToStaticMarkup(<StoresPage model={model({
       authorization: createAuthorizationProjection({ workspace_id: "ws_a", roles: [], actor_id: "owner", workspace_granted: true, capabilities: ["canonical.backfill.read", "canonical.backfill.update", "customer.content.read"] }, true),
       brandNavigation: [{ id: "brand-1", title: "山野品牌", platforms: [] }],
     })} onNavigate={vi.fn()} />);
+    const platformMarkup = renderToStaticMarkup(<StoresPage model={model({
+      authorization: createAuthorizationProjection({ workspace_id: "ops", roles: ["platform_ops"], canonical_roles: ["ops_admin"], actor_id: "operator", workspace_granted: true, capabilities: ["canonical.backfill.read", "canonical.backfill.update", "customer.content.read"] }, true),
+    })} onNavigate={vi.fn()} />);
 
-    expect(markup).not.toContain("Canonical 回填人工冲突队列");
+    for (const markup of [workspaceMarkup, platformMarkup]) {
+      expect(markup).not.toContain("Canonical 回填人工冲突队列");
+      expect(markup).not.toContain("规范商品一致性");
+      expect(markup).not.toContain("暂无待处理冲突");
+      expect(markup).toContain("平台连接与授权健康");
+      expect(markup).toContain("登记人工店铺");
+    }
   });
 
   it("keeps a brand tree API failure distinct from an empty workspace", () => {
