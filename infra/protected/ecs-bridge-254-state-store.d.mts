@@ -15,3 +15,5 @@ export function createBridge254StateStore(options: {
   consume?: ((nonce: string, journal: any) => void) | null
 }): Bridge254StateStore
 export function openProtectedBridge254StateStore(): Bridge254StateStore
+export function invocationOwnsFlockRecord(procLocks: string, deviceInode: string, ownerPids: number[]): boolean
+export function assertReviewOnlyMutationAllowed(requireProductionLock: boolean): void

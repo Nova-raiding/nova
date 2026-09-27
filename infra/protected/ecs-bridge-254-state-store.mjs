@@ -138,6 +138,27 @@ function observedPair(value) {
   return { version: value.version, history_sha256: value.history_sha256 }
 }
 
+export function invocationOwnsFlockRecord(procLocks, deviceInode, ownerPids) {
+  if (typeof procLocks !== 'string' || typeof deviceInode !== 'string' || !Array.isArray(ownerPids)) return false
+  const allowed = new Set(ownerPids.filter(Number.isSafeInteger))
+  return procLocks.split('\n').some(line => {
+    const match = /^\s*\d+:\s+FLOCK\s+ADVISORY\s+WRITE\s+(\d+)\s+([0-9a-f]+:[0-9a-f]+:\d+)\s+/u.exec(line)
+    return match && allowed.has(Number(match[1])) && match[2] === deviceInode
+  })
+}
+
+function linuxDeviceInode(stat) {
+  const device = BigInt(stat.dev)
+  const major = ((device >> 8n) & 0xfffn) | ((device >> 32n) & 0xfffff000n)
+  const minor = (device & 0xffn) | ((device >> 12n) & 0xffffff00n)
+  return `${major.toString(16)}:${minor.toString(16)}:${stat.ino}`
+}
+
+export function assertReviewOnlyMutationAllowed(requireProductionLock) {
+  assert(!requireProductionLock,
+    'production bridge-254 signing and nonce mutation are disabled until an independent trusted capture and identity verifier is installed')
+}
+
 export function createBridge254StateStore({ directory, ledgerPath, consumerPath, privateKeyPem, publicKeyPem,
   trustedKeyId, expectedUid = 0, requireProductionLock = true, consume = null }) {
   assert(typeof privateKeyPem === 'string' && typeof publicKeyPem === 'string', 'protected Ed25519 keys are required')
@@ -165,8 +186,19 @@ export function createBridge254StateStore({ directory, ledgerPath, consumerPath,
         && (lockStat.mode & 0o022) === 0, 'production deployment lock is unsafe')
       const fd = fstatSync(9), st = statSync(LOCK)
       assert(fd.dev === st.dev && fd.ino === st.ino, 'FD 9 is not the production deployment lock')
-      assert(spawnSync('/usr/bin/flock', ['-n', '9'], { env: {}, stdio: ['ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 9] }).status === 0,
-        'production deployment lock is held elsewhere')
+      const deviceInode = linuxDeviceInode(st)
+      const probeFd = openSync(LOCK, constants.O_RDONLY | constants.O_NOFOLLOW)
+      try {
+        const probe = fstatSync(probeFd)
+        assert(probe.dev === st.dev && probe.ino === st.ino, 'production lock changed while opening independent probe')
+        const contention = spawnSync('/usr/bin/flock', ['-n', '10', '/bin/true'], {
+          env: {}, stdio: ['ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', probeFd],
+        })
+        assert(contention.status === 1, 'FD 9 does not hold the production deployment lock')
+      } finally { closeSync(probeFd) }
+      const procLocks = readFileSync('/proc/locks', 'utf8')
+      assert(invocationOwnsFlockRecord(procLocks, deviceInode, [process.pid, process.ppid]),
+        'FD 9 lock is not owned by the deploy invocation')
     }
   }
   const paths = attemptId => {
@@ -193,6 +225,7 @@ export function createBridge254StateStore({ directory, ledgerPath, consumerPath,
     return { journal, capture: snapshot, bytes }
   }
   const capture = ({ attemptId, journalBody, frozenCapture, expected }) => {
+    assertReviewOnlyMutationAllowed(requireProductionLock)
     guard()
     trustExpected(expected)
     const path = paths(attemptId)
@@ -215,6 +248,7 @@ export function createBridge254StateStore({ directory, ledgerPath, consumerPath,
     return document
   }
   const advance = ({ attemptId, fromPhase, toPhase, observedPrefix, observationDigest, expected, deploymentNonce }) => {
+    assertReviewOnlyMutationAllowed(requireProductionLock)
     const current = read({ attemptId, expected }), { journal } = current
     assert(journal.phase === fromPhase, 'signed journal phase changed before CAS')
     const now = new Date()
@@ -252,6 +286,7 @@ export function createBridge254StateStore({ directory, ledgerPath, consumerPath,
     return { journal: next, observation_digest: observationDigest, deployable: false }
   }
   const recordPrefix = ({ attemptId, expectedVersion, observedPrefix, observationDigest, expected }) => {
+    assertReviewOnlyMutationAllowed(requireProductionLock)
     const current = read({ attemptId, expected }), { journal } = current
     const now = new Date()
     assert(now.getTime() >= Date.parse(journal.updated_at), 'host clock moved behind signed journal')

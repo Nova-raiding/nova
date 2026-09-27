@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { after, test } from 'node:test'
-import { createBridge254StateStore } from '../infra/protected/ecs-bridge-254-state-store.mjs'
+import { assertReviewOnlyMutationAllowed, createBridge254StateStore, invocationOwnsFlockRecord } from '../infra/protected/ecs-bridge-254-state-store.mjs'
 
 const temp = mkdtempSync(join(realpathSync(tmpdir()), 'merchant-bridge-254-state-'))
 after(() => rmSync(temp, { recursive: true, force: true }))
@@ -71,6 +71,20 @@ function commitNonce(ledgerPath, nonceValue, journal, operation = 'bridge-254') 
 }
 const step = (store, fromPhase, toPhase, version, extra = {}) => store.advance({ attemptId, fromPhase, toPhase,
   observedPrefix: observed(version), observationDigest: sha(`observed-${version}-${toPhase}`), expected, deploymentNonce: nonce, ...extra })
+
+test('production bridge-254 signer refuses caller-supplied identity and observation mutation', () => {
+  assert.throws(() => assertReviewOnlyMutationAllowed(true), /independent trusted capture and identity verifier/u)
+  assert.doesNotThrow(() => assertReviewOnlyMutationAllowed(false), 'isolated review fixtures may exercise journal mechanics')
+})
+
+test('FD9 flock proof requires an exclusive lock record owned by this invocation and exact inode', () => {
+  const record = '7: FLOCK ADVISORY WRITE 1234 08:01:98765 0 EOF\n'
+  assert.equal(invocationOwnsFlockRecord(record, '08:01:98765', [1234, 5678]), true)
+  assert.equal(invocationOwnsFlockRecord(record, '08:01:98766', [1234, 5678]), false)
+  assert.equal(invocationOwnsFlockRecord(record, '08:01:98765', [5678]), false, 'a different process holding the path is not inherited FD9 ownership')
+  assert.equal(invocationOwnsFlockRecord('7: POSIX ADVISORY WRITE 1234 08:01:98765 0 EOF\n', '08:01:98765', [1234]), false)
+  assert.equal(invocationOwnsFlockRecord('7: FLOCK ADVISORY READ 1234 08:01:98765 0 EOF\n', '08:01:98765', [1234]), false)
+})
 
 test('capture persists signed exact old topology and refuses tampering or duplicate capture', () => {
   const { store, dir } = fixture(() => {})
