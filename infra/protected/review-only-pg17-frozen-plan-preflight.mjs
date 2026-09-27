@@ -1,6 +1,6 @@
 // Review-only verifier for a separately approved PG17 rowset plan.
 // It does not sign a plan, read protected host paths, or enable backup CLI callbacks.
-import { createHash, createPublicKey, verify } from 'node:crypto'
+import { createHash, createPrivateKey, createPublicKey, sign, verify } from 'node:crypto'
 import { observeReviewOnlySnapshot, validateFrozenTablePlan } from './review-only-pg17-snapshot-baseline.mjs'
 
 const HEX = /^[a-f0-9]{64}$/u
@@ -62,4 +62,16 @@ export async function reviewOnlyPreSignSnapshotCheck({ snapshot, identity, conne
   const observation = await observeReviewOnlySnapshot({ snapshot, identity, sourcePolicy, tablePlan: plan.table_plan, connect, streamRows, observedAt, maxRowsPerTable })
   check(observation.table_plan_sha256 === sha(JSON.stringify(plan.table_plan)), 'sampled table plan changed')
   return Object.freeze({ schema_version: 'pg17-review-only-pre-sign-snapshot-check/1', final_production_evidence: false, source_provenance_verified: false, plan_sha256: plan.plan_sha256, source_policy_sha256: plan.source_policy_sha256, snapshot_id_sha256: observation.snapshot_id_sha256, observation })
+}
+
+export function signFrozenPlanFromObservedCatalog({ tablePlan, sourcePolicyBytes, releaseId, gitSha, migrationVersion, keyId, privateKeyPem, publicKeyPem, signedAt, expiresAt }) {
+  validateFrozenTablePlan(tablePlan)
+  const policy = parseExact(sourcePolicyBytes, 4096, 'source policy')
+  const privateKey = createPrivateKey(privateKeyPem)
+  check(privateKey.asymmetricKeyType === 'ed25519', 'plan signing key must be Ed25519')
+  const unsigned = { schema_version: 'pg17-frozen-table-plan/1', kind: 'rowset_plan', release_id: releaseId, release_git_sha: gitSha, source_policy_sha256: sha(sourcePolicyBytes), source_database_id_sha256: policy.system_identifier_sha256, migration_version: migrationVersion, row_canonicalization: 'pg17-canonical-rows/1', rls_canonicalization: 'pg17-rls-policy/1', signed_at: signedAt, expires_at: expiresAt, key_id: keyId, table_plan: tablePlan }
+  const payload = Buffer.concat([Buffer.from('merchant/pg17-frozen-table-plan/1\0'), Buffer.from(canonical(unsigned))])
+  const planBytes = Buffer.from(`${canonical({ ...unsigned, signature_base64: sign(null, payload, privateKey).toString('base64') })}\n`)
+  reviewOnlyVerifyFrozenPlan({ planBytes, sourcePolicyBytes, trustedPublicKey: publicKeyPem, trustedKeyId: keyId, expectedReleaseId: releaseId, expectedGitSha: gitSha, expectedMigrationVersion: migrationVersion, now: new Date(signedAt) })
+  return planBytes
 }
