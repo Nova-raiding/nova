@@ -20,6 +20,8 @@ trap 'rm -f -- "$filtered_config_path"' EXIT
 sed -E '/^[[:space:]]*#/d; s/[[:space:]]+#.*$//' "$config_path" > "$filtered_config_path"
 : "${RELEASE_ID:?RELEASE_ID is required}"
 printf '%s\n' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo "RELEASE_ID contains unsafe characters" >&2; exit 1; }
+: "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
+printf '%s\n' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo "DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters" >&2; exit 1; }
 : "${IMAGE_DIGESTS_JSON:?IMAGE_DIGESTS_JSON is required with merchant-api, merchant-worker, merchant-ui, merchant-ops-ui and clamav digests}"
 : "${DATABASE_URL:?DATABASE_URL is required}"
 : "${OPS_DATABASE_URL:?OPS_DATABASE_URL is required}"
@@ -116,7 +118,7 @@ fi
 npx --no-install tsx "$(dirname "$0")/../../tests/capacity-evidence-gate.ts" --file "$CAPACITY_REPORT_PATH" --require-cloud-gate --release-id "$RELEASE_ID" --profile "$profile"
 model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
 [ -n "$model_relay_url" ] || { echo "model_relay_base_url is required for relay evidence binding" >&2; exit 1; }
-npx --no-install tsx "$(dirname "$0")/../../tests/model-relay-evidence-gate.ts" --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
+npx --no-install tsx "$(dirname "$0")/../../tests/model-relay-evidence-gate.ts" --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --expected-release-git-sha "$release_git_sha" --expected-image-set-digest "$image_set_digest" --expected-manifest-sha256 "$manifest_sha256" --expected-deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
 mcp_base_url=$(ruby "$(dirname "$0")/validate-production-config-yaml.rb" "$config_path" --print-mcp-base-url)
 [ -n "$mcp_base_url" ] || { echo "mcp_base_url is required for Codex host evidence binding" >&2; exit 1; }
 bridge_sha256=$(shasum -a 256 "$repo_root/apps/plugin/mcp/bridge.mjs" | awk '{print $1}')
@@ -160,8 +162,6 @@ api_image_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const value
 worker_image_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const value=JSON.parse(process.env.IMAGE_DIGESTS_JSON); process.stdout.write(value["merchant-worker"] ?? "")')
 sh "$(dirname "$0")/verify-container-source-freshness.sh" \
   "$API_IMAGE_REF" "$WORKER_IMAGE_REF" "$api_image_digest" "$worker_image_digest"
-: "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
-printf '%s\n' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo "DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters" >&2; exit 1; }
 if [ "$platform_operations_mode" = manual ]; then
   npx --no-install tsx "$(dirname "$0")/../../tests/manual-operations-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID" \
     --require-signed-production --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" \

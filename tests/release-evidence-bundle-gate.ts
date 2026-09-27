@@ -56,6 +56,15 @@ export function validateReleaseEvidenceBundle(document: unknown, options: { rele
         try { validateCapacityArtifact(JSON.parse(bytes.toString('utf8')) as Record<string, unknown>, options.releaseId, errors, new Date(now)) }
         catch { errors.push('capacity artifact is invalid JSON') }
       }
+      if (kind === 'modelRelay') {
+        try {
+          const evidence = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>
+          if (evidence.release_git_sha !== options.releaseGitSha) errors.push('modelRelay Git SHA must match the bundle')
+          if (evidence.image_set_digest !== options.imageSetDigest) errors.push('modelRelay image-set digest must match the bundle')
+          if (evidence.manifest_sha256 !== options.candidateManifestSha256) errors.push('modelRelay candidate manifest SHA must match the bundle')
+          if (evidence.deployment_nonce_sha256 !== createHash('sha256').update(options.deploymentNonce).digest('hex')) errors.push('modelRelay deployment nonce must match the bundle')
+        } catch { errors.push('modelRelay artifact is invalid JSON') }
+      }
       if (kind === 'codexAppHost') {
         try {
           const evidence = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>

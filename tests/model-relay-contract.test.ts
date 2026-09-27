@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { chmodSync, chownSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, persistRelayCanaryEvidence, readRelayErrorRecovery, requireCanaryBudget, requireFiniteRelayTokenQuota, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
+import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, isPrivateRelayArtifact, persistRelayCanaryEvidence, readRelayErrorRecovery, requireCanaryBudget, requireFiniteRelayTokenQuota, requireProductionCandidateBinding, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -46,6 +46,13 @@ describe('production model relay contract', () => {
   it('requires an explicit per-run budget before any model request', () => {
     for (const value of [undefined, '', '0', '-1', 'NaN', 'Infinity']) expect(() => requireCanaryBudget(value)).toThrow('MODEL_RELAY_CANARY_MAX_TOTAL_CNY')
     expect(requireCanaryBudget('1.25')).toEqual({ limitCny: 1.25, reservedCny: 0 })
+  })
+
+  it('requires the frozen candidate identity before production relay requests', () => {
+    expect(() => requireProductionCandidateBinding({} as NodeJS.ProcessEnv)).toThrow(/exact candidate/u)
+    const deploymentNonce = 'nonce_candidate_identity_123456'
+    const binding = requireProductionCandidateBinding({ RELEASE_GIT_SHA: 'a'.repeat(40), IMAGE_SET_DIGEST: `sha256:${'b'.repeat(64)}`, MANIFEST_SHA256: 'c'.repeat(64), DEPLOYMENT_NONCE: deploymentNonce } as NodeJS.ProcessEnv)
+    expect(binding).toEqual({ release_git_sha: 'a'.repeat(40), image_set_digest: `sha256:${'b'.repeat(64)}`, manifest_sha256: 'c'.repeat(64), deployment_nonce_sha256: createHash('sha256').update(deploymentNonce).digest('hex') })
   })
 
   it('keeps partial production modality runs out of the final evidence path', () => {
@@ -112,8 +119,10 @@ describe('production model relay contract', () => {
           recovery: { release_id: releaseId, observed_at: observedAt, http_status: 200, provider_request_id: 'req-recovered', relay, endpoint: '/probe' },
         }),
       }
-      const evidence = { schema_version: '1', release_id: releaseId, generated_at: generatedAt, expires_at: new Date(now + 3_600_000).toISOString(), environment: 'production', simulated: false, relay, token_quota, results, error_recovery }
-      const persisted = persistRelayCanaryEvidence({ path, environment: 'production', modalities: ['text', 'image', 'image_edit', 'ocr', 'video'], evidence, artifactRoot: directory })
+      const deploymentNonce = 'nonce_candidate_identity_123456'
+      const candidate = { releaseGitSha: 'a'.repeat(40), imageSetDigest: `sha256:${'b'.repeat(64)}`, manifestSha256: 'c'.repeat(64), deploymentNonce }
+      const evidence = { schema_version: '1', release_id: releaseId, release_git_sha: candidate.releaseGitSha, image_set_digest: candidate.imageSetDigest, manifest_sha256: candidate.manifestSha256, deployment_nonce_sha256: createHash('sha256').update(deploymentNonce).digest('hex'), generated_at: generatedAt, expires_at: new Date(now + 3_600_000).toISOString(), environment: 'production', simulated: false, relay, token_quota, results, error_recovery }
+      const persisted = persistRelayCanaryEvidence({ path, environment: 'production', modalities: ['text', 'image', 'image_edit', 'ocr', 'video'], evidence, artifactRoot: directory, expectedCandidate: candidate })
       expect(persisted).toEqual({ evidence, state: 'complete', written: true, exitCode: 0 })
       expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(evidence)
     } finally { rmSync(directory, { recursive: true, force: true }) }
@@ -686,15 +695,13 @@ describe('production model relay contract', () => {
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
-  it.skipIf(process.getuid?.() !== 0)('rejects a reused relay quota artifact owned by another user', () => {
-    const root = mkdtempSync(join(tmpdir(), 'relay-wrong-owner-artifacts-'))
-    try {
-      const quota = { credential: 'model' as const, observed_at: '2026-09-27T00:00:00Z', total_granted: 1000, total_used: 200, total_available: 800, expires_at: 0, unlimited_quota: false as const }
-      writeRelayTokenQuotaArtifact(root, 'release-1', quota)
-      const artifact = join(root, 'relay/release-1/token-model-' + createHash('sha256').update(JSON.stringify({ schema_version: '1', release_id: 'release-1', token_quota: quota }, null, 2) + '\n').digest('hex').slice(0, 16) + '.json')
-      chownSync(artifact, (process.getuid?.() ?? 0) + 1, process.getgid?.() ?? 0)
-      expect(() => writeRelayTokenQuotaArtifact(root, 'release-1', quota)).toThrow('owner, mode or type')
-    } finally { rmSync(root, { recursive: true, force: true }) }
+  it('checks private artifact owner, regular-file type and exact mode without OS privilege', () => {
+    const regular = { isFile: () => true, uid: 501 }
+    expect(isPrivateRelayArtifact(regular, 0o100600, 501)).toBe(true)
+    expect(isPrivateRelayArtifact(regular, 0o100600, 502)).toBe(false)
+    expect(isPrivateRelayArtifact(regular, 0o100644, 501)).toBe(false)
+    expect(isPrivateRelayArtifact({ isFile: () => false, uid: 501 }, 0o120600, 501)).toBe(false)
+    expect(isPrivateRelayArtifact(regular, 0o100600, undefined)).toBe(false)
   })
 
 })

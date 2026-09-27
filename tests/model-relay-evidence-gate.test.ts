@@ -68,6 +68,22 @@ describe('model relay evidence gate', () => {
     expect(validateModelRelayEvidence(evidence, { expectedRelay: 'https://other-relay.example.com/v1' })).toContain('relay must match the rendered production model_relay_base_url origin')
   })
 
+  it('requires exact candidate identity in strict release validation and rejects same-release replay', () => {
+    const nonce = 'nonce_candidate_abcdefghijkl'
+    const expectedCandidate = { releaseGitSha: 'a'.repeat(40), imageSetDigest: `sha256:${'b'.repeat(64)}`, manifestSha256: 'c'.repeat(64), deploymentNonce: nonce }
+    const bound = { ...evidence, release_git_sha: expectedCandidate.releaseGitSha, image_set_digest: expectedCandidate.imageSetDigest,
+      manifest_sha256: expectedCandidate.manifestSha256, deployment_nonce_sha256: createHash('sha256').update(nonce).digest('hex') }
+    expect(validateModelRelayEvidence(bound, { requireCandidateBinding: true, expectedCandidate })).toEqual([])
+    expect(validateModelRelayEvidence(bound, { requireCandidateBinding: true, expectedCandidate: { ...expectedCandidate, releaseGitSha: 'd'.repeat(40) } }))
+      .toContain('release_git_sha must match the expected candidate')
+    expect(validateModelRelayEvidence(bound, { requireCandidateBinding: true, expectedCandidate: { ...expectedCandidate, deploymentNonce: 'nonce_another_candidate_123456' } }))
+      .toContain('deployment_nonce_sha256 must match the expected candidate nonce')
+    expect(validateModelRelayEvidence(evidence, { requireCandidateBinding: true, expectedCandidate })).toEqual(expect.arrayContaining([
+      'release_git_sha must match the expected candidate', 'image_set_digest must match the expected candidate',
+      'manifest_sha256 must match the expected candidate', 'deployment_nonce_sha256 must match the expected candidate nonce',
+    ]))
+  })
+
   it('rejects a provider request id reused by multiple modalities', () => {
     const invalid = structuredClone(evidence)
     invalid.results[1]!.providerRequestId = invalid.results[0]!.providerRequestId

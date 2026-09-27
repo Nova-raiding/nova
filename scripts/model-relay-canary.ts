@@ -103,6 +103,10 @@ export function writeRelayTokenQuotaArtifact(root: string, release: string, quot
   return `artifact://production/${relative(resolve(root), target).split('\\').join('/')}#${digest}`
 }
 
+export function isPrivateRelayArtifact(stat: { isFile(): boolean; uid: number }, mode: number, currentUid: number | undefined): boolean {
+  return stat.isFile() && currentUid !== undefined && stat.uid === currentUid && (mode & 0o777) === 0o600
+}
+
 function writeImmutableRelayArtifact(target: string, body: string): void {
   try { writeFileSync(target, body, { mode: 0o600, flag: 'wx' }) }
   catch (error) {
@@ -112,7 +116,7 @@ function writeImmutableRelayArtifact(target: string, body: string): void {
       descriptor = openSync(target, constants.O_RDONLY | constants.O_NOFOLLOW)
       const stat = fstatSync(descriptor)
       const currentUid = process.getuid?.()
-      if (!stat.isFile() || currentUid === undefined || stat.uid !== currentUid || (stat.mode & 0o777) !== 0o600
+      if (!isPrivateRelayArtifact(stat, stat.mode, currentUid)
         || readFileSync(descriptor, 'utf8') !== body) {
         throw new Error('relay artifact already exists with different content, owner, mode or type')
       }
@@ -218,6 +222,21 @@ export function requireProductionReleaseBinding(input: { environment?: string; r
   }
 }
 
+export function requireProductionCandidateBinding(input: NodeJS.ProcessEnv = process.env) {
+  const releaseGitSha = input.RELEASE_GIT_SHA?.trim() ?? ''
+  const imageSetDigest = input.IMAGE_SET_DIGEST?.trim() ?? ''
+  const manifestSha256 = input.MANIFEST_SHA256?.trim() ?? ''
+  const deploymentNonce = input.DEPLOYMENT_NONCE?.trim() ?? ''
+  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(releaseGitSha)
+    || !/^sha256:[a-f0-9]{64}$/u.test(imageSetDigest)
+    || !/^[a-f0-9]{64}$/u.test(manifestSha256)
+    || !/^[A-Za-z0-9_-]{22,128}$/u.test(deploymentNonce)) {
+    throw new Error('production relay canary requires RELEASE_GIT_SHA, IMAGE_SET_DIGEST, MANIFEST_SHA256 and DEPLOYMENT_NONCE for the exact candidate')
+  }
+  return { release_git_sha: releaseGitSha, image_set_digest: imageSetDigest, manifest_sha256: manifestSha256,
+    deployment_nonce_sha256: createHash('sha256').update(deploymentNonce).digest('hex') }
+}
+
 export function readRelayErrorRecovery(path: string | undefined): Record<string, unknown> | undefined {
   const sourcePath = path?.trim()
   if (!sourcePath) return undefined
@@ -233,6 +252,7 @@ export function persistRelayCanaryEvidence(input: {
   modalities: readonly ProbeResult['modality'][]
   evidence: Record<string, unknown>
   artifactRoot?: string
+  expectedCandidate?: { releaseGitSha?: string; imageSetDigest?: string; manifestSha256?: string; deploymentNonce?: string }
 }): { evidence: Record<string, unknown>; state: 'partial' | 'complete'; written: boolean; exitCode: 0 | 1 } {
   const required: ProbeResult['modality'][] = ['text', 'image', 'image_edit', 'ocr', 'video']
   const isComplete = input.modalities.length === required.length
@@ -241,6 +261,8 @@ export function persistRelayCanaryEvidence(input: {
   const partialProduction = production && (!isComplete || !input.artifactRoot
     || validateModelRelayEvidence(input.evidence, {
       expectedReleaseId: typeof input.evidence.release_id === 'string' ? input.evidence.release_id : undefined,
+      expectedCandidate: input.expectedCandidate,
+      requireCandidateBinding: true,
       requireProduction: true,
       artifactRoot: input.artifactRoot,
     }).length > 0)
@@ -705,6 +727,7 @@ export async function main() {
     } else {
       try {
         requireProductionReleaseBinding({ environment: process.env.NODE_ENV, releaseId })
+        const candidateBinding = process.env.NODE_ENV?.trim() === 'production' ? requireProductionCandidateBinding() : undefined
         if (!relaySecurity) throw new Error('MODEL_RELAY_BASE_URL/ALLOWED_HOSTS 不满足 relay 安全配置')
         if (process.env.NODE_ENV?.trim() === 'production' && !artifactRoot) throw new Error('MODEL_RELAY_ARTIFACT_ROOT is required before production relay requests')
         await assertRelayUrl(base, relaySecurity)
@@ -727,12 +750,14 @@ export async function main() {
         const errorRecovery = readRelayErrorRecovery(process.env.MODEL_RELAY_ERROR_RECOVERY_PATH)
         const evidence = {
           schema_version: '1', release_id: releaseId, generated_at: generatedAt.toISOString(),
+          ...(candidateBinding ?? {}),
           expires_at: new Date(generatedAt.getTime() + ttlSeconds * 1000).toISOString(),
           environment: process.env.NODE_ENV?.trim() || '', simulated: false, relay: relayOrigin, token_quota: tokenQuota, results,
           ...(errorRecovery ? { error_recovery: errorRecovery } : {}),
         }
         const evidencePath = process.env.MODEL_RELAY_EVIDENCE_PATH?.trim()
-        const persisted = persistRelayCanaryEvidence({ path: evidencePath, environment: process.env.NODE_ENV, modalities, evidence, artifactRoot })
+        const persisted = persistRelayCanaryEvidence({ path: evidencePath, environment: process.env.NODE_ENV, modalities, evidence, artifactRoot,
+          ...(candidateBinding ? { expectedCandidate: { releaseGitSha: candidateBinding.release_git_sha, imageSetDigest: candidateBinding.image_set_digest, manifestSha256: candidateBinding.manifest_sha256, deploymentNonce: process.env.DEPLOYMENT_NONCE?.trim() } } : {}) })
         console.log(JSON.stringify(persisted.evidence, null, 2))
         if (persisted.exitCode !== 0) process.exitCode = persisted.exitCode
         if (results.some(result => result.state !== 'ready' || result.providerRequestId === undefined || result.usageObserved !== true || result.costObserved !== true)) process.exitCode = 1

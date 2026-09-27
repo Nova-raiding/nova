@@ -31,6 +31,12 @@ function artifact(path, root, kind, releaseId, now, binding) {
     assert(route.expected_manifest_sha256 === binding.candidateManifestSha256, 'codexAppHost candidate manifest SHA does not match the deployment manifest')
     assert(route.expected_manifest_sha256 === document.manifest_sha256, 'codexAppHost candidate manifest SHA does not match the host evidence')
   }
+  if (kind === 'modelRelay') {
+    assert(document.release_git_sha === binding.releaseGitSha, 'modelRelay Git SHA does not match the release')
+    assert(document.image_set_digest === binding.imageSetDigest, 'modelRelay image-set digest does not match the release')
+    assert(document.manifest_sha256 === binding.candidateManifestSha256, 'modelRelay candidate manifest SHA does not match the deployment manifest')
+    assert(document.deployment_nonce_sha256 === hash('sha256').update(binding.deploymentNonce).digest('hex'), 'modelRelay deployment nonce does not match the release')
+  }
   const timestamp = document.attested_at ?? document.generated_at ?? document.generatedAt ?? document.ended_at
   const instant = typeof timestamp === 'string' && UTC.test(timestamp) ? Date.parse(timestamp) : Number.NaN
   assert(Number.isFinite(instant) && instant <= now + 300_000 && now - instant <= MAX_AGE_MS, `${kind} evidence is stale or has an invalid timestamp`)

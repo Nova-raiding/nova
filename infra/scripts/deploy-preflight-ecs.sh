@@ -233,7 +233,7 @@ else
   npx --no-install tsx tests/capacity-evidence-gate.ts --file "$CAPACITY_REPORT_PATH" --require-cloud-gate --release-id "$RELEASE_ID" --profile "$capacity_profile"
 fi
 model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$config_path")
-npx --no-install tsx tests/model-relay-evidence-gate.ts --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
+npx --no-install tsx tests/model-relay-evidence-gate.ts --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --expected-release-git-sha "$release_git_sha" --expected-image-set-digest "$image_set_digest" --expected-manifest-sha256 "$manifest_sha256" --expected-deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
 mcp_base_url=$(ruby infra/scripts/validate-production-config-yaml.rb "$config_path" --print-mcp-base-url)
 plugin_source_schema=$(sed -n 's/^schema_version=//p' "$root/.candidate-identity" 2>/dev/null || true)
 case "$plugin_source_schema" in

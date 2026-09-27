@@ -8,7 +8,7 @@ type RelayUsage = { inputTokens?: number; outputTokens?: number; totalTokens?: n
 type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; httpStatus?: number; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; evidence_ref?: string }
 type RelayErrorRecovery = { verified?: boolean; failure_status?: number; failure_observed_at?: string; recovered_at?: string; failed_request_id?: string; recovery_request_id?: string; evidence_ref?: string }
 type RelayTokenQuota = { credential?: 'model' | 'video'; observed_at?: string; total_granted?: number; total_used?: number; total_available?: number; expires_at?: number; unlimited_quota?: boolean; evidence_ref?: string }
-type RelayEvidence = { schema_version?: string; release_id?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; token_quota?: RelayTokenQuota[]; results?: RelayResult[]; error_recovery?: RelayErrorRecovery }
+type RelayEvidence = { schema_version?: string; release_id?: string; release_git_sha?: string; image_set_digest?: string; manifest_sha256?: string; deployment_nonce_sha256?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; token_quota?: RelayTokenQuota[]; results?: RelayResult[]; error_recovery?: RelayErrorRecovery }
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const isIsoInstant = (value: unknown): value is string => nonEmpty(value) && !Number.isNaN(Date.parse(value)) && /^\d{4}-\d{2}-\d{2}T/.test(value)
@@ -112,7 +112,10 @@ function validateArtifact(reference: string | undefined, root: string, label: st
   return []
 }
 
-export function validateModelRelayEvidence(document: unknown, options: { expectedReleaseId?: string; expectedRelay?: string; requireProduction?: boolean; artifactRoot?: string; now?: Date } = {}): string[] {
+export type RelayCandidateBinding = { releaseGitSha?: string; imageSetDigest?: string; manifestSha256?: string; deploymentNonce?: string }
+const sha256Digest = /^[a-f0-9]{64}$/u
+const validGitSha = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u
+export function validateModelRelayEvidence(document: unknown, options: { expectedReleaseId?: string; expectedRelay?: string; expectedCandidate?: RelayCandidateBinding; requireCandidateBinding?: boolean; requireProduction?: boolean; artifactRoot?: string; now?: Date } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as RelayEvidence
@@ -121,6 +124,17 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
   if (options.requireProduction && value.environment !== 'production') errors.push('environment must be production')
   if (options.requireProduction && value.simulated !== false) errors.push('simulated must be false')
+  if (options.requireCandidateBinding) {
+    const candidate = options.expectedCandidate
+    if (!candidate || !validGitSha.test(candidate.releaseGitSha ?? '') || !/^sha256:[a-f0-9]{64}$/u.test(candidate.imageSetDigest ?? '') || !sha256Digest.test(candidate.manifestSha256 ?? '') || !/^[A-Za-z0-9_-]{22,128}$/u.test(candidate.deploymentNonce ?? '')) {
+      errors.push('production relay gate requires complete expected candidate identity (Git SHA, image-set digest, manifest SHA and deployment nonce)')
+    }
+    if (!validGitSha.test(value.release_git_sha ?? '') || value.release_git_sha !== candidate?.releaseGitSha) errors.push('release_git_sha must match the expected candidate')
+    if (!/^sha256:[a-f0-9]{64}$/u.test(value.image_set_digest ?? '') || value.image_set_digest !== candidate?.imageSetDigest) errors.push('image_set_digest must match the expected candidate')
+    if (!sha256Digest.test(value.manifest_sha256 ?? '') || value.manifest_sha256 !== candidate?.manifestSha256) errors.push('manifest_sha256 must match the expected candidate')
+    const nonceHash = candidate?.deploymentNonce ? createHash('sha256').update(candidate.deploymentNonce).digest('hex') : undefined
+    if (!sha256Digest.test(value.deployment_nonce_sha256 ?? '') || value.deployment_nonce_sha256 !== nonceHash) errors.push('deployment_nonce_sha256 must match the expected candidate nonce')
+  }
   if (!isIsoInstant(value.generated_at)) errors.push('generated_at must be an ISO instant')
   if (options.requireProduction) {
     if (isIsoInstant(value.generated_at)) {
@@ -232,11 +246,21 @@ function main() {
   const expectedRelay = relayIndex >= 0 ? args[relayIndex + 1] : undefined
   const artifactIndex = args.indexOf('--artifact-root')
   const artifactRoot = artifactIndex >= 0 ? args[artifactIndex + 1] : undefined
+  const candidateValue = (flag: string) => { const index = args.indexOf(flag); return index < 0 ? undefined : args[index + 1] }
+  const requireProduction = args.includes('--require-production')
+  const expectedCandidate: RelayCandidateBinding = {
+    releaseGitSha: candidateValue('--expected-release-git-sha'), imageSetDigest: candidateValue('--expected-image-set-digest'),
+    manifestSha256: candidateValue('--expected-manifest-sha256'), deploymentNonce: candidateValue('--expected-deployment-nonce'),
+  }
   if (!path) { console.error('--file is required'); process.exit(2) }
   if (args.includes('--require-artifacts') && !artifactRoot) { console.error('--artifact-root is required for independent relay evidence validation'); process.exit(2) }
+  if (requireProduction && Object.values(expectedCandidate).some(item => !item)) {
+    console.error('--require-production requires --expected-release-git-sha, --expected-image-set-digest, --expected-manifest-sha256 and --expected-deployment-nonce')
+    process.exit(2)
+  }
   let document: unknown
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read JSON relay evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
-  const errors = validateModelRelayEvidence(document, { expectedReleaseId, expectedRelay, requireProduction: args.includes('--require-production'), artifactRoot })
+  const errors = validateModelRelayEvidence(document, { expectedReleaseId, expectedRelay, requireProduction, requireCandidateBinding: requireProduction, ...(requireProduction ? { expectedCandidate } : {}), artifactRoot })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
   console.log(`model relay evidence gate passed: ${path}`)
 }

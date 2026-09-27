@@ -14,17 +14,24 @@ function fixture(){
   const root=mkdtempSync(join(tmpdir(),'bundle-gate-')), now=new Date('2026-09-16T08:00:00.000Z'), paths={} as Record<string,string>
   for(const kind of EVIDENCE_KINDS){const path=join(root,`${kind}.json`);writeFileSync(path,JSON.stringify({release_id:releaseId,generated_at:'2026-09-16T07:30:00.000Z',kind}));paths[kind]=path}
   if(paths.codexAppHost)writeFileSync(paths.codexAppHost,JSON.stringify({release_id:releaseId,generated_at:'2026-09-16T07:30:00.000Z',kind:'codexAppHost',environment:'preproduction',manifest_sha256:'9'.repeat(64),candidate_route:{expected_git_sha:releaseGitSha,expected_manifest_sha256:'9'.repeat(64),expected_image_set_digest:imageSetDigest}}))
+  const candidateManifestSha256='9'.repeat(64)
+  writeFileSync(paths.modelRelay!,JSON.stringify({release_id:releaseId,release_git_sha:releaseGitSha,image_set_digest:imageSetDigest,manifest_sha256:candidateManifestSha256,deployment_nonce_sha256:createHash('sha256').update(deploymentNonce).digest('hex'),generated_at:'2026-09-16T07:30:00.000Z'}))
   const productionEvidence=Object.fromEntries(EVIDENCE_KINDS.map(kind=>{const bytes=readFileSync(paths[kind]!);return [kind,`artifact://production/${kind}.json#${createHash('sha256').update(bytes).digest('hex')}`]}))
   const releaseManifestBytes=Buffer.from(JSON.stringify({schemaVersion:1,releaseId,components:{releaseGitSha},productionEvidenceBundle:{required:true,schemaVersion:'release-evidence-bundle/1'},productionEvidence}))
   const manifestSha256=createHash('sha256').update(releaseManifestBytes).digest('hex')
   const {privateKey,publicKey}=generateKeyPairSync('ed25519');const privatePem=privateKey.export({type:'pkcs8',format:'pem'}).toString(),publicPem=publicKey.export({type:'spki',format:'pem'}).toString()
-  const candidateManifestSha256='9'.repeat(64)
   const options={releaseId,imageSetDigest,manifestSha256,candidateManifestSha256,releaseGitSha,deploymentNonce,artifactRoot:root,evidenceFiles:paths as any,trustedKeyId:keyId,publicKeyPem:publicPem,releaseManifestBytes,now}
   const bundle=createBundle(paths,{releaseId,imageSetDigest,manifestSha256,candidateManifestSha256,releaseGitSha,deploymentNonce,keyId},root,privatePem,publicPem,now)
   return {root,paths,options,bundle,privatePem,publicPem,now}
 }
 describe('release evidence bundle gate',()=>{
   it('accepts exactly eight fresh hash-bound artifacts under one signed release binding',()=>{const f=fixture();expect(validateReleaseEvidenceBundle(f.bundle,f.options)).toEqual([])})
+  it('refuses to attest model relay evidence from a different candidate even when release_id is reused',()=>{
+    const f=fixture(), document=JSON.parse(readFileSync(f.paths.modelRelay!,'utf8')) as Record<string,unknown>
+    document.image_set_digest=`sha256:${'f'.repeat(64)}`
+    writeFileSync(f.paths.modelRelay!,JSON.stringify(document))
+    expect(()=>createBundle(f.paths,{releaseId,imageSetDigest,manifestSha256:f.options.manifestSha256,candidateManifestSha256:f.options.candidateManifestSha256,releaseGitSha,deploymentNonce,keyId},f.root,f.privatePem,f.publicPem,f.now)).toThrow('modelRelay image-set digest does not match the release')
+  })
   it('accepts unsigned ChatGPT capture only while its exact bytes are in the signed bundle',()=>{const f=fixture();expect(validateReleaseEvidenceBundle(f.bundle,f.options)).toEqual([]);writeFileSync(f.paths.codexAppHost!,JSON.stringify({tampered:true}));expect(validateReleaseEvidenceBundle(f.bundle,f.options).join('\n')).toContain('codexAppHost artifact SHA-256 mismatch')})
   it('rejects a changed artifact and a duplicate reference',()=>{const f=fixture();writeFileSync(f.paths.capability!,'changed');expect(validateReleaseEvidenceBundle(f.bundle,f.options).join('\n')).toContain('SHA-256 mismatch');const duplicate=structuredClone(f.bundle) as any;duplicate.artifacts[1].ref=duplicate.artifacts[0].ref;expect(validateReleaseEvidenceBundle(duplicate,f.options).join('\n')).toContain('duplicated')})
   it('rejects wrong common bindings, stale bundles and invalid signatures',()=>{const f=fixture();const changed=structuredClone(f.bundle) as any;changed.release_id='another';changed.generated_at='2026-09-14T08:00:00.000Z';changed.signature_base64='A'.repeat(86)+'==';const errors=validateReleaseEvidenceBundle(changed,f.options).join('\n');expect(errors).toContain('release_id');expect(errors).toContain('stale');expect(errors).toContain('signature')})
@@ -53,6 +60,17 @@ describe('release evidence bundle gate',()=>{
     const bundle=structuredClone(f.bundle) as any;bundle.manifest_sha256=manifestSha256;bundle.artifacts.find((entry:any)=>entry.kind==='codexAppHost').ref=ref
     resignBundle(bundle,f.privatePem)
     expect(validateReleaseEvidenceBundle(bundle,{...f.options,manifestSha256,releaseManifestBytes}).join('\\n')).toContain('candidate manifest SHA must match the deployment binding')
+  })
+  it('rejects a signed bundle that rebinds same-release relay evidence to another image set',()=>{
+    const f=fixture(),relay=JSON.parse(readFileSync(f.paths.modelRelay!,'utf8')) as Record<string,unknown>
+    relay.image_set_digest=`sha256:${'f'.repeat(64)}`
+    const bytes=JSON.stringify(relay);writeFileSync(f.paths.modelRelay!,bytes)
+    const ref=`artifact://production/modelRelay.json#${digest(bytes)}`
+    const manifest=JSON.parse(f.options.releaseManifestBytes!.toString()) as any;manifest.productionEvidence.modelRelay=ref
+    const releaseManifestBytes=Buffer.from(JSON.stringify(manifest)),manifestSha256=digest(releaseManifestBytes)
+    const bundle=structuredClone(f.bundle) as any;bundle.manifest_sha256=manifestSha256;bundle.artifacts.find((entry:any)=>entry.kind==='modelRelay').ref=ref
+    resignBundle(bundle,f.privatePem)
+    expect(validateReleaseEvidenceBundle(bundle,{...f.options,manifestSha256,releaseManifestBytes}).join('\\n')).toContain('modelRelay image-set digest must match the bundle')
   })
   it('allows a release-bound candidate artifact path under the production evidence root',()=>{
     const f=fixture(),bytes=readFileSync(f.paths.codexAppHost!),preprodDir=join(f.root,'preproduction')
