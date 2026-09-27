@@ -109,6 +109,8 @@ describe('ECS candidate bundle contract', () => {
       expect(identity).toContain(`comparison_manifest_sha256=sha256:${createHash('sha256').update(manifest).digest('hex')}\n`)
       expect(identity).toContain(`sync_plan_sha256=sha256:${createHash('sha256').update(syncPlan).digest('hex')}\n`)
       expect(execFileSync('sh', ['-c', 'git get-tar-commit-id < "$1"', 'candidate-archive', join(output, 'candidate-source.tar')], { encoding: 'utf8' }).trim()).toBe(expectedSha)
+      const bridgeReview = JSON.parse(execFileSync('node', [resolve('infra/scripts/verify-ecs-bridge-254-review-package.mjs'), '--bundle', output], { encoding: 'utf8' })) as { status: string; deployable: boolean; review_files_verified: number }
+      expect(bridgeReview).toMatchObject({ status: 'review_only', deployable: false, review_files_verified: 30 })
     } finally {
       rmSync(sandbox, { recursive: true, force: true })
     }
