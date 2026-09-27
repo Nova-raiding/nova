@@ -37,6 +37,8 @@ describe('bounded ECS release image builder', () => {
     for (const artifact of ['merchant-api', 'merchant-worker', 'merchant-ui', 'merchant-ops-ui', 'payment-gateway', 'pilot-gateway']) {
       expect(source).toContain(`build_image ${artifact} `)
     }
+    expect(source).toContain('build_image merchant-api infra/docker/api.Dockerfile --build-arg "NPM_CONFIG_REGISTRY=$npm_registry"')
+    expect(source).toContain('build_image merchant-worker infra/docker/worker.Dockerfile --build-arg "NPM_CONFIG_REGISTRY=$npm_registry"')
     expect(source).toContain("git -C \"$root\" archive --format=tar \"$revision\" \\")
     expect(source).toContain("':(exclude)artifacts'")
     expect(source).not.toContain("':(exclude)dogfood'")

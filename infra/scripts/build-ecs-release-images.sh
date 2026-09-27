@@ -193,11 +193,11 @@ build_image() {
 build_started=YES
 docker builder prune -f --keep-storage "$cache_limit" >/dev/null
 
-build_image merchant-api infra/docker/api.Dockerfile
+build_image merchant-api infra/docker/api.Dockerfile --build-arg "NPM_CONFIG_REGISTRY=$npm_registry"
 if [ -n "${APK_REPOSITORY:-}" ]; then
-  build_image merchant-worker infra/docker/worker.Dockerfile --build-arg "APK_REPOSITORY=$APK_REPOSITORY"
+  build_image merchant-worker infra/docker/worker.Dockerfile --build-arg "NPM_CONFIG_REGISTRY=$npm_registry" --build-arg "APK_REPOSITORY=$APK_REPOSITORY"
 else
-  build_image merchant-worker infra/docker/worker.Dockerfile
+  build_image merchant-worker infra/docker/worker.Dockerfile --build-arg "NPM_CONFIG_REGISTRY=$npm_registry"
 fi
 if [ -n "${ECS_MERCHANT_UI_WORKSPACE_ID:-}" ]; then
   build_image merchant-ui infra/docker/ui.Dockerfile \

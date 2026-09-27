@@ -1,4 +1,5 @@
 FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps ./apps
@@ -36,6 +37,7 @@ RUN npm run build --workspace @merchant-marketing/contracts
 RUN npm run build
 
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 ENV NODE_ENV=production
 ENV PORT=8787
 WORKDIR /app

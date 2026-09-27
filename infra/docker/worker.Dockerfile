@@ -1,4 +1,5 @@
 FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps ./apps
@@ -20,6 +21,7 @@ RUN --mount=type=cache,id=merchant-npm-cache,target=/root/.npm npm ci --prefer-o
 RUN npm run build:packages && npx tsc -p apps/worker/tsconfig.build.json
 
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 ENV NODE_ENV=production
 WORKDIR /app
 ARG APK_REPOSITORY=""

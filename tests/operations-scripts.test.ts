@@ -835,6 +835,7 @@ describe('deployment operation scripts', () => {
     expect(readFileSync('package-lock.json', 'utf8')).toContain('packages/multimodal')
     expect(workerDockerfile).toContain('COPY scripts ./scripts')
     for (const runtimeDockerfile of [dockerfile, workerDockerfile]) {
+      expect(runtimeDockerfile.match(/ARG NPM_CONFIG_REGISTRY=https:\/\/registry\.npmjs\.org\//gu)).toHaveLength(2)
       expect(runtimeDockerfile).toContain('npm ci --omit=dev --include=optional --libc=musl')
       expect(runtimeDockerfile).toContain('node -e "require(\'@napi-rs/canvas\')"')
       expect(runtimeDockerfile).toContain('COPY --from=build /app/packages ./packages')
