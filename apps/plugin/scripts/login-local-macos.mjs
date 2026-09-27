@@ -2,7 +2,9 @@
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const CALLBACK_PATH = '/merchant-mcp-callback'
@@ -61,7 +63,7 @@ export function credentialFromResponse(payload, target) {
 }
 
 /** The verifier and tokens never leave memory except through the credential store. */
-export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, openBrowser, storeCredential, configureSession,
+export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, openBrowser, storeCredential, configureSession, launchChatGPT,
   fetchImpl = fetch, timeoutMs = 300000, signal, credentialSource = 'keychain' }) {
   const target = validateLoginTarget(baseUrl, workspaceId)
   if (requestId !== undefined && (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/u.test(requestId))) {
@@ -135,8 +137,9 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, openBr
     }
     await storeCredential(target, bundle)
     await configureSession(target)
+    const chatGPT = typeof launchChatGPT === 'function' ? await launchChatGPT() : { launched: false, reason: 'ChatGPT 启动由安装器负责' }
     return { ok: true, mode: 'local_stdio', workspace_id: target.workspaceId, api_origin: target.apiOrigin,
-      credential_source: credentialSource, restart_required: true, host_verified: false }
+      credential_source: credentialSource, restart_required: !chatGPT.launched, chatgpt_launched: chatGPT.launched, host_verified: false }
   } catch (error) {
     if (error instanceof Error && error.message === 'LOCAL_PLUGIN_LOGIN_CANCEL_REVOKE_FAILED') throw error
     if (signal?.aborted) throw fail('CANCELLED')
@@ -186,11 +189,18 @@ async function main() {
   process.once('SIGINT', cancel)
   process.once('SIGTERM', cancel)
   try {
+    const { launchVerifiedChatGPT } = await import('./launch-verified-chatgpt-macos.mjs')
+    const { verifyChatGPTMacApp } = await import('./verify-chatgpt-macos.mjs')
+    const appPaths = [resolve(homedir(), 'Applications/ChatGPT.app'), '/Applications/ChatGPT.app', resolve(homedir(), 'Applications/Store Nova/ChatGPT.app')]
+    const launchChatGPT = async () => {
+      const appPath = appPaths.find(path => existsSync(path) && verifyChatGPTMacApp(path).ok)
+      return appPath ? launchVerifiedChatGPT(appPath) : { launched: false, reason: '未找到已验证的 ChatGPT.app' }
+    }
     const result = await loginLocalPlugin({ baseUrl: options.get('--base-url'), workspaceId: options.get('--workspace'), requestId: options.get('--request-id'),
       openBrowser: url => options.get('--no-open') ? process.stdout.write(`请在商家浏览器打开此授权地址（不含 token）：\n${url}\n`)
         : execFileSync('/usr/bin/open', [url], { stdio: 'ignore', timeout: 5000 }),
-      storeCredential: writeKeychainCredential, configureSession: configureLaunchd, signal: controller.signal })
-    process.stdout.write(`${JSON.stringify(result)}\n请重启 ChatGPT 并在新会话调用 onboarding.status 验证，当前不宣称宿主连接已通过。\n`)
+      storeCredential: writeKeychainCredential, configureSession: configureLaunchd, launchChatGPT, signal: controller.signal })
+    process.stdout.write(`${JSON.stringify(result)}\n${result.chatgpt_launched ? 'ChatGPT 已打开；请在新会话调用 onboarding.status 验证。' : '凭据已保存；请打开或重启 ChatGPT，并在新会话调用 onboarding.status 验证。'}\n`)
   } finally { process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel) }
 }
 

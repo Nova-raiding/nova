@@ -164,7 +164,7 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
       <Button onClick={(event) => { event.stopPropagation(); setOpenScope(null) }}>关闭</Button>
     }>
       <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-        <Alert type={localPrototypeAvailable ? 'info' : 'warning'} title={localPrototypeAvailable ? '一键连接需要已安装的 Store Nova Helper' : '生产一键连接尚未开放'} showIcon description={localPrototypeAvailable ? '主按钮只会通过 storenova:// 协议唤起本机助手；链接中没有密码、token 或授权码。点击按钮不代表插件已经安装或连接成功。' : '生产连接必须由已配对的安装实例提供持有证明；当前网页没有安装实例 ID，因此连接按钮已禁用。请在可信插件目录使用下方本地登录命令完成工作区授权，并在 ChatGPT 内验证连接。'} />
+        <Alert type={localPrototypeAvailable ? 'info' : 'warning'} title={localPrototypeAvailable ? '先安装 Store Nova 插件包，再一键连接' : '请先安装 Store Nova 本地插件包'} showIcon description={localPrototypeAvailable ? '本地插件包就是 Store Nova 的桌面安装程序。安装后，主按钮会唤起本机连接助手；过程中不会把密码、token 或授权码放进网页链接，点击按钮也不会假装连接已经完成。' : '本地插件包是随 Store Nova 提供的 macOS/Windows 桌面安装程序，不是浏览器脚本。当前网页无法确认电脑上是否已安装并配对该程序，因此连接按钮暂不可用；请先在可信安装包中完成安装，再按下方步骤登录当前工作区。'} />
         <Space orientation="vertical" size={4} style={{ width: '100%' }}>
           <Typography.Text>安装包系统</Typography.Text>
           <Select aria-label="选择安装包系统" placeholder="选择 macOS 或 Windows" style={{ width: '100%' }} value={platform === 'other' ? undefined : platform} options={[{ label: 'macOS', value: 'macos' }, { label: 'Windows', value: 'windows' }]} onChange={(value: LocalPluginPlatform) => setSelectedPlatform(value)} />
@@ -176,8 +176,8 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
           { key: 'credential-store', label: '凭据保存位置', children: credentialStore },
         ]} />
         {command ? <>
-          <Typography.Paragraph style={{ margin: 0 }}>请先确认本地插件来自可信安装包，再在安装包目录运行工作区登录命令：</Typography.Paragraph>
-          <Typography.Paragraph copyable={false} style={{ margin: 0 }}><Typography.Text code>{command}</Typography.Text></Typography.Paragraph>
+          <Typography.Paragraph style={{ margin: 0 }}>安装包完成安装后，在安装包目录运行下面的“工作区登录”命令：</Typography.Paragraph>
+          <Typography.Paragraph copyable={{ text: command }} style={{ margin: 0 }}><Typography.Text code>{command}</Typography.Text></Typography.Paragraph>
           <Typography.Paragraph style={{ margin: 0 }}>命令会打开商家浏览器完成授权，并把凭据写入{credentialStore}。完成后仍需重启 ChatGPT，并在新会话中调用 <Typography.Text code>onboarding.status</Typography.Text> 验证；验证通过前不要视为已连接。</Typography.Paragraph>
         </> : <Alert type="warning" showIcon title="无法生成安全的本地登录命令" description={platform === 'other' ? '请先选择 macOS 或 Windows 安装包系统，再选择已授权的工作区。' : '请选择已授权的工作区，并确认 HTTPS API 地址有效。'} />}
         <Typography.Text type="secondary">不要从此页面下载脚本，不要执行远程 curl 管道命令，也不要把 token、密码或授权地址粘贴到聊天或配置文件。</Typography.Text>
