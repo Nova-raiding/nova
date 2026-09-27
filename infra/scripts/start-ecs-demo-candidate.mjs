@@ -184,7 +184,7 @@ for (const name of ['postgres', 'redis', ...appServices]) {
       container?.Image !== docker(['image', 'inspect', '--format', '{{.Id}}', services[name].image], { capture: true })) fail(`${name} runtime identity is wrong`)
   if (Object.values(container?.HostConfig?.PortBindings ?? {}).some(value => value?.length)) fail(`${name} unexpectedly publishes a host port`)
   if (name === 'api') {
-    const deadline = Date.now() + 60_000
+    const deadline = Date.now() + 180_000
     let healthy = false
     while (Date.now() < deadline) {
       const check = spawnSync(dockerBinary, ['--host', 'unix:///var/run/docker.sock', 'exec', id,
