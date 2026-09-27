@@ -2,6 +2,7 @@
 // No CLI, file writer, production adapter, or evidence signer is provided.
 import { createHash } from 'node:crypto'
 import { canonicalRowsDigest, rlsPolicyDigest } from './pg17-rowset-canonical.mjs'
+import { sortedRowsetSql } from './pg17-streamed-rowset.mjs'
 
 const SNAPSHOT = /^[A-Za-z0-9:-]{1,256}$/u
 const IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/u
@@ -34,7 +35,7 @@ function exactlyOne(result, label) {
   return result.rows[0]
 }
 
-export async function observeReviewOnlySnapshot({ snapshot, identity, sourcePolicy, tablePlan, connect, maxRowsPerTable = 10_000, observedAt = () => new Date().toISOString() }) {
+export async function observeReviewOnlySnapshot({ snapshot, identity, sourcePolicy, tablePlan, connect, streamRows, maxRowsPerTable = 10_000, observedAt = () => new Date().toISOString() }) {
   check(typeof snapshot === 'string' && SNAPSHOT.test(snapshot), 'exported snapshot identifier invalid')
   check(identity && /^\d{1,32}$/u.test(identity.systemIdentifier ?? '') && Number.isInteger(identity.databaseOid) && identity.databaseOid > 0 && typeof identity.databaseName === 'string' && Number.isSafeInteger(identity.migrationVersion), 'runner source identity invalid')
   check(sourcePolicy?.system_identifier_sha256 === hash(identity.systemIdentifier) && sourcePolicy.database_oid === identity.databaseOid && sourcePolicy.database_name === identity.databaseName, 'reviewed source policy mismatch')
@@ -42,7 +43,7 @@ export async function observeReviewOnlySnapshot({ snapshot, identity, sourcePoli
   // Copy before the first await so a caller cannot change the reviewed plan
   // while the database transaction is sampling it.
   const frozenPlan = tablePlan.map(table => ({ schema: table.schema, name: table.name, columns: table.columns.map(column => ({ name: column.name, data_type: column.data_type, not_null: column.not_null })) }))
-  check(Number.isSafeInteger(maxRowsPerTable) && maxRowsPerTable > 0 && maxRowsPerTable <= 100_000, 'row bound invalid')
+  check(Number.isSafeInteger(maxRowsPerTable) && maxRowsPerTable > 0 && maxRowsPerTable <= (streamRows ? 100_000_000 : 100_000) && (!streamRows || typeof streamRows === 'function'), 'row bound or stream adapter invalid')
   check(typeof connect === 'function', 'isolated database connector required')
   const client = await connect()
   check(client && typeof client.query === 'function' && typeof client.end === 'function', 'database connector invalid')
@@ -71,20 +72,28 @@ export async function observeReviewOnlySnapshot({ snapshot, identity, sourcePoli
       check(JSON.stringify(actualColumns) === JSON.stringify(table.columns), `frozen column contract changed: ${relation}`)
       const flags = exactlyOne(await client.query('SELECT relrowsecurity AS enabled, relforcerowsecurity AS forced FROM pg_class WHERE oid = to_regclass($1) AND relkind IN (\'r\', \'p\')', [relation]), `RLS flags for ${relation}`)
       const policies = (await client.query("SELECT polname AS name, polcmd AS cmd, polpermissive AS permissive, pg_get_expr(polqual, polrelid) AS qual, pg_get_expr(polwithcheck, polrelid) AS with_check, ARRAY(SELECT CASE WHEN role_id = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(role_id) END FROM unnest(polroles) AS policy_role(role_id) ORDER BY 1) AS roles FROM pg_policy WHERE polrelid = to_regclass($1) ORDER BY polname", [relation])).rows
-      const expressions = table.columns.map(column => `t.${quote(column.name)}`).join(', ')
-      const result = await client.query(`SELECT json_build_array(${expressions})::text AS canonical_row FROM ${quote(table.schema)}.${quote(table.name)} AS t LIMIT $1`, [maxRowsPerTable + 1])
-      check(Array.isArray(result?.rows) && result.rows.length <= maxRowsPerTable, `row bound exceeded: ${relation}`)
-      const rows = result.rows.map(item => {
-        check(typeof item.canonical_row === 'string', `row encoding invalid: ${relation}`)
-        return Buffer.from(item.canonical_row, 'utf8')
-      })
-      tables.push({ name: relation, ...canonicalRowsDigest(rows), rls_policy_sha256: rlsPolicyDigest({ enabled: flags.enabled, forced: flags.forced, policies }) })
+      let rowset
+      if (streamRows) {
+        const sql = sortedRowsetSql(table.schema, table.name, table.columns.map(column => column.name), maxRowsPerTable)
+        rowset = await streamRows(client, sql, { maxRows: maxRowsPerTable })
+        check(Number.isSafeInteger(rowset?.row_count) && rowset.row_count >= 0 && rowset.row_count <= maxRowsPerTable && HEX.test(rowset.canonical_rows_sha256 ?? ''), `streamed rowset invalid: ${relation}`)
+      } else {
+        const expressions = table.columns.map(column => `t.${quote(column.name)}`).join(', ')
+        const result = await client.query(`SELECT json_build_array(${expressions})::text AS canonical_row FROM ${quote(table.schema)}.${quote(table.name)} AS t LIMIT $1`, [maxRowsPerTable + 1])
+        check(Array.isArray(result?.rows) && result.rows.length <= maxRowsPerTable, `row bound exceeded: ${relation}`)
+        const rows = result.rows.map(item => {
+          check(typeof item.canonical_row === 'string', `row encoding invalid: ${relation}`)
+          return Buffer.from(item.canonical_row, 'utf8')
+        })
+        rowset = canonicalRowsDigest(rows)
+      }
+      tables.push({ name: relation, ...rowset, rls_policy_sha256: rlsPolicyDigest({ enabled: flags.enabled, forced: flags.forced, policies }) })
     }
     const time = observedAt()
     check(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(time) && Number.isFinite(Date.parse(time)), 'observation time invalid')
     await client.query('ROLLBACK')
     begun = false
-    return Object.freeze({ schema_version: 'pg17-review-only-snapshot-baseline/1', final_production_evidence: false, source_provenance_verified: false, snapshot_id_sha256: hash(snapshot), database_id_sha256: hash(identity.systemIdentifier), migration_version: identity.migrationVersion, table_plan_sha256: hash(JSON.stringify(frozenPlan)), row_canonicalization: 'pg17-canonical-rows/1', rls_canonicalization: 'pg17-rls-policy/1', observed_at: time, tables })
+    return Object.freeze({ schema_version: 'pg17-review-only-snapshot-baseline/1', final_production_evidence: false, source_provenance_verified: false, sampling_mode: streamRows ? 'streamed_pg_rows' : 'bounded_batch', snapshot_id_sha256: hash(snapshot), database_id_sha256: hash(identity.systemIdentifier), migration_version: identity.migrationVersion, table_plan_sha256: hash(JSON.stringify(frozenPlan)), row_canonicalization: 'pg17-canonical-rows/1', rls_canonicalization: 'pg17-rls-policy/1', observed_at: time, tables })
   } finally {
     if (begun) try { await client.query('ROLLBACK') } catch { /* Preserve the original failure. */ }
     await client.end()

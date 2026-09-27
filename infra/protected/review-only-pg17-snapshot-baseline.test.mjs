@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { bindReviewOnlyBaseline, observeReviewOnlySnapshot, validateFrozenTablePlan } from './review-only-pg17-snapshot-baseline.mjs'
+import { digestSortedPgRows } from './pg17-streamed-rowset.mjs'
 
 const sha = value => createHash('sha256').update(value).digest('hex')
 const snapshot = '00000004-00000027-1'
@@ -13,6 +14,7 @@ function database({ rows = ['["a","one"]', '["b","two"]'], source = {}, columns 
   let ended = false
   const client = {
     async query(sql, params) {
+      if (typeof sql === 'object') { queueMicrotask(() => { for (const row of rows) sql.emit('row', [row]); sql.emit('end') }); return }
       calls.push({ sql, params })
       if (sql.startsWith('SELECT (pg_control_system())')) return { rows: [{ system_identifier: identity.systemIdentifier, database_oid: identity.databaseOid, database_name: identity.databaseName, migration_version: 242, read_only: 'on', ...source }] }
       if (sql.startsWith('SELECT n.nspname')) return { rows: catalog }
@@ -86,4 +88,13 @@ test('copies the frozen plan before awaiting the connector', async () => {
   const result = await observeReviewOnlySnapshot(input(db, { tablePlan: mutable, connect: async () => { mutable[0].columns[0].name = 'attacker_column'; return db.client } }))
   assert.equal(result.table_plan_sha256, sha(JSON.stringify(tablePlan)))
   assert.match(db.calls.find(call => call.sql.startsWith('SELECT json_build_array')).sql, /t\."id"/u)
+})
+
+test('uses the C-ordered streaming adapter for a held snapshot without a batch row query', async () => {
+  const db = database({ rows: ['["a","one"]', '["a","one"]', '["b","two"]'] })
+  const observation = await observeReviewOnlySnapshot(input(db, { streamRows: digestSortedPgRows, maxRowsPerTable: 1_000_000 }))
+  assert.equal(observation.sampling_mode, 'streamed_pg_rows')
+  assert.equal(observation.tables[0].row_count, 3)
+  assert.equal(db.calls.some(call => call.sql.startsWith('SELECT json_build_array')), false)
+  assert.equal(db.ended(), true)
 })
