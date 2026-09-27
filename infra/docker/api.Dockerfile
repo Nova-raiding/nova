@@ -37,7 +37,6 @@ RUN npm run build --workspace @merchant-marketing/contracts
 RUN npm run build
 
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
-ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 ENV NODE_ENV=production
 ENV PORT=8787
 WORKDIR /app
@@ -45,6 +44,7 @@ RUN apk add --no-cache postgresql16-client \
   && addgroup -g 10001 -S merchant && adduser -u 10001 -S -D -H -G merchant merchant \
   && mkdir -p /var/lib/merchant-assets \
   && chown 10001:10001 /var/lib/merchant-assets
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --include=optional --libc=musl --prefer-offline --no-audit --fund=false \
   && node -e "require('@napi-rs/canvas')"
