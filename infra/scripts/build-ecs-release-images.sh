@@ -17,6 +17,23 @@ source_archive=${ECS_RELEASE_SOURCE_ARCHIVE:-}
 source_identity=${ECS_RELEASE_SOURCE_IDENTITY:-}
 ops_auth_mode=${ECS_OPS_AUTH_MODE:-password}
 npm_registry=${ECS_NPM_REGISTRY:-https://registry.npmjs.org/}
+components=${ECS_RELEASE_COMPONENTS-all}
+all_components='merchant-api merchant-worker merchant-ui merchant-ops-ui payment-gateway pilot-gateway'
+if [ "$components" = all ]; then
+  components=$all_components
+  partial=NO
+else
+  partial=YES
+  seen=' '
+  [ -n "$components" ] || { echo 'ECS_RELEASE_COMPONENTS must not be empty' >&2; exit 2; }
+  for component in $components; do
+    case " $all_components " in *" $component "*) ;; *) echo 'unknown ECS_RELEASE_COMPONENTS entry' >&2; exit 2 ;; esac
+    case "$seen" in *" $component "*) echo 'duplicate ECS_RELEASE_COMPONENTS entry' >&2; exit 2 ;; esac
+    seen="$seen$component "
+  done
+  [ "$seen" != ' ' ] || { echo 'ECS_RELEASE_COMPONENTS must not be whitespace' >&2; exit 2; }
+  components=$seen
+fi
 
 printf '%s' "$revision" | grep -Eq '^[0-9a-f]{40}$' || {
   echo 'ECS_RELEASE_GIT_SHA must be a full commit SHA' >&2; exit 2;
@@ -156,6 +173,7 @@ output_created=YES
 
 build_image() {
   artifact=$1
+  case " $components " in *" $artifact "*) ;; *) return 0 ;; esac
   dockerfile=$2
   shift 2
   [ -f "$context/$dockerfile" ] || { echo "release Dockerfile is absent: $dockerfile" >&2; exit 2; }
@@ -221,11 +239,12 @@ build_image merchant-ops-ui infra/docker/ops-console.Dockerfile \
 build_image payment-gateway services/payment-gateway/Dockerfile
 build_image pilot-gateway infra/docker/pilot-gateway-https.Dockerfile
 
-RECORDS_PATH=$records OUTPUT_DIR=$output_dir RELEASE_REVISION=$revision RELEASE_NAME=$release_id SOURCE_DIGEST="sha256:$source_sha" NPM_REGISTRY=$npm_registry node <<'NODE'
+SELECTED_COMPONENTS="$components" PARTIAL_BUILD=$partial RECORDS_PATH=$records OUTPUT_DIR=$output_dir RELEASE_REVISION=$revision RELEASE_NAME=$release_id SOURCE_DIGEST="sha256:$source_sha" NPM_REGISTRY=$npm_registry node <<'NODE'
 const fs = require('node:fs')
 const path = require('node:path')
 const rows = fs.readFileSync(process.env.RECORDS_PATH, 'utf8').trim().split('\n').map(line => line.split('\t'))
-if (rows.length !== 6 || rows.some(row => row.length !== 3)) throw new Error('release image record set is incomplete')
+const selected = process.env.SELECTED_COMPONENTS.trim().split(/\s+/u)
+if (rows.some(row => row.length !== 3) || rows.map(row => row[0]).sort().join(',') !== selected.sort().join(',')) throw new Error('release image record set is incomplete')
 const digests = Object.fromEntries(rows.map(([artifact, digest]) => [artifact, digest]))
 const references = Object.fromEntries(rows.map(([artifact, , reference]) => [artifact, reference]))
 const metadata = {
@@ -245,8 +264,13 @@ function atomicWrite(name, value) {
 }
 // This is intentionally not named image-digests.json: the deployment manifest
 // requires two additional externally maintained images (Postgres and ClamAV).
-atomicWrite('repository-image-digests.json', `${JSON.stringify(digests, null, 2)}\n`)
-atomicWrite('release-images.json', `${JSON.stringify(metadata, null, 2)}\n`)
+if (process.env.PARTIAL_BUILD === 'YES') {
+  // Partial sets must not be mistaken for a complete production manifest.
+  atomicWrite('component-images.json', `${JSON.stringify({ ...metadata, build_scope: 'components' }, null, 2)}\n`)
+} else {
+  atomicWrite('repository-image-digests.json', `${JSON.stringify(digests, null, 2)}\n`)
+  atomicWrite('release-images.json', `${JSON.stringify(metadata, null, 2)}\n`)
+}
 NODE
 
-echo "ECS release images published: release=$release_id revision=$revision output=$output_dir"
+echo "ECS release images published: release=$release_id revision=$revision components=$components output=$output_dir"

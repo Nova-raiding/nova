@@ -58,6 +58,8 @@
     "evidence:object-storage:produce": "tsx scripts/produce-object-storage-evidence.ts",
     "codex:relay:configure": "tsx scripts/configure-codex-relay.ts",
     "codex:host:evidence": "node scripts/collect-codex-app-host-evidence.mjs",
+    "deploy:101:status": "node infra/scripts/ecs-fast-status.mjs",
+    "test:deploy:fast": "node --test tests/ecs-fast-status.test.mjs && node --import tsx scripts/run-safe-tests.ts tests/ecs-release-images-build.test.ts tests/ecs-eight-image-set.test.ts --no-file-parallelism",
     "release:manifest": "tsx scripts/release-manifest.ts",
     "release:bump": "tsx scripts/bump-release-version.ts --apply",
     "release:metadata:validate": "tsx tests/release-metadata-gate.ts",

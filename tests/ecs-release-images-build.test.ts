@@ -213,5 +213,34 @@ describe('bounded ECS release image builder', () => {
     expect(dockerLog).not.toContain('VITE_OPS_LOGIN_URL')
     expect(dockerLog).toContain('infra/docker/pilot-gateway-https.Dockerfile')
     expect(dockerLog).not.toMatch(/compose| run /u)
+
+    writeFileSync(log, '')
+    const partialOutput = join(directory, 'partial-output')
+    const partial = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-release-images.sh')], {
+      cwd: directory,
+      env: { ...buildEnv, RELEASE_ID: releaseId, ECS_RELEASE_IMAGE_OUTPUT_DIR: partialOutput, ECS_RELEASE_COMPONENTS: 'merchant-ops-ui' },
+      encoding: 'utf8',
+    })
+    expect(partial.status, partial.stderr).toBe(0)
+    const componentManifest = JSON.parse(readFileSync(join(partialOutput, 'component-images.json'), 'utf8'))
+    expect(componentManifest.build_scope).toBe('components')
+    expect(Object.keys(componentManifest.image_references)).toEqual(['merchant-ops-ui'])
+    expect(existsSync(join(partialOutput, 'release-images.json'))).toBe(false)
+    expect(existsSync(join(partialOutput, 'repository-image-digests.json'))).toBe(false)
+    const partialLog = readFileSync(log, 'utf8')
+    expect(partialLog.match(/^build /gmu)).toHaveLength(1)
+    expect(partialLog.match(/^push /gmu)).toHaveLength(1)
+    expect(partialLog).toContain('infra/docker/ops-console.Dockerfile')
+
+    for (const selection of ['', '   ', 'unknown', 'merchant-api merchant-api', 'merchant-api;echo']) {
+      writeFileSync(log, '')
+      const invalid = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-release-images.sh')], {
+        cwd: directory,
+        env: { ...buildEnv, RELEASE_ID: releaseId, ECS_RELEASE_COMPONENTS: selection },
+        encoding: 'utf8',
+      })
+      expect(invalid.status).not.toBe(0)
+      expect(readFileSync(log, 'utf8')).toBe('')
+    }
   })
 })
