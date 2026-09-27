@@ -15,6 +15,7 @@ export function createBridge254StateStore(options: {
   consume?: ((nonce: string, journal: any) => void) | null
 }): Bridge254StateStore
 export function openProtectedBridge254StateStore(): Bridge254StateStore
+export function assertBridge254NonceConsumerSupportsOperation(path: string): void
 export function invocationOwnsFlockRecord(procLocks: string, deviceInode: string, ownerPids: number[]): boolean
 export function assertReviewOnlyMutationAllowed(requireProductionLock: boolean): void
 export function linuxDeviceInode(stat: { dev: number | bigint; ino: number | bigint }): string

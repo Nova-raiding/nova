@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { after, test } from 'node:test'
-import { assertReviewOnlyMutationAllowed, createBridge254StateStore, invocationOwnsFlockRecord, linuxDeviceInode } from '../infra/protected/ecs-bridge-254-state-store.mjs'
+import { assertBridge254NonceConsumerSupportsOperation, assertReviewOnlyMutationAllowed, createBridge254StateStore, invocationOwnsFlockRecord, linuxDeviceInode } from '../infra/protected/ecs-bridge-254-state-store.mjs'
 import { executeBridge254Maintenance, resumeBridge254ForwardMaintenance } from '../infra/protected/ecs-bridge-254-maintenance-core.mjs'
 
 const temp = mkdtempSync(join(realpathSync(tmpdir()), 'merchant-bridge-254-state-'))
@@ -42,6 +42,14 @@ const expected = { project: 'merchant-production', prefixes, oldRuntime: old_run
   trustedKeyId: 'isolated-key', publicKeyPem,
   nonceOwner: { namespace: 'merchant-production-deploy', operation: 'bridge-254', attempt_id: attemptId,
     ...bridge, nonce_sha256: sha(nonce) } }
+
+test('installed nonce consumer must advertise bridge-254 before state store opens', () => {
+  const current = join(temp, 'consumer-current.sh'), old = join(temp, 'consumer-old.sh')
+  writeFileSync(current, '#!/bin/sh\necho "--operation {deployment,bridge-b,bridge-254}"\n', { mode: 0o700 })
+  writeFileSync(old, '#!/bin/sh\necho "--operation {deployment,bridge-b}"\n', { mode: 0o700 })
+  assert.doesNotThrow(() => assertBridge254NonceConsumerSupportsOperation(current))
+  assert.throws(() => assertBridge254NonceConsumerSupportsOperation(old), /does not advertise/)
+})
 function body() {
   const now = Date.now()
   return { schema_version: 'ecs-bridge-254-review-journal/2', purpose: 'bridge_242_to_254_protected',
@@ -223,4 +231,49 @@ test('maintenance core and signed store resume one committed but unsigned prefix
   assert.equal(final.phase, 'migration_254_verified')
   assert.equal(final.database_prefix.version, 254)
   assert.equal(final.observation_sha256, prefixes['254'])
+})
+
+test('real signed store resumes consumed captured and bridge-verified 242 states', async () => {
+  for (const initialPhase of ['captured', 'bridge_verified']) {
+    let ledgerPath
+    let consumeCalls = 0
+    const { store, ledgerPath: path } = fixture((nonceValue, journal) => {
+      consumeCalls += 1
+      commitNonce(ledgerPath, nonceValue, journal)
+    })
+    ledgerPath = path
+    const captured = store.capture({ attemptId, journalBody: body(), frozenCapture: snapshot, expected })
+    if (initialPhase === 'captured') commitNonce(ledgerPath, nonce, captured)
+    else {
+      step(store, 'captured', 'nonce_consumed', 242)
+      step(store, 'nonce_consumed', 'bridge_mutation_started', 242)
+      step(store, 'bridge_mutation_started', 'bridge_verified', 242)
+    }
+    let version = 242
+    const runtime = {
+      assertProtectedLock: async () => {},
+      observePrefix: async () => observed(version),
+      fenceIngressAndCallbacks: async () => ({ ingress_fenced: true, callbacks_fenced: true }),
+      observeDrain: async () => ({ ingress_fenced: true, callbacks_fenced: true, fence_observed_from_gateway: true,
+        in_flight_requests: 0, active_worker_cycles: 0, active_outbox_leases: 0,
+        provider_started_unresolved: 0, observation_sha256: sha('resume-drain') }),
+      stopOldRuntimeGracefully: async () => ({ all_eight_stopped: true, gateway_fenced: true, no_active_processes: true }),
+      backupAndRestore242: async () => ({ restored_prefix: observed(242), archive_sha256: sha('resume-backup'), signed: true }),
+      startBridgeAt242: async () => ({ all_eight_running: true, ingress_fenced: true }),
+      verifyBridgeAt242: async () => ({ identity_verified: true, api_ready: true, six_workers_ready: true,
+        observation_sha256: sha('resume-bridge242') }),
+      stopBridgeForMigration: async () => {},
+      observeStoppedTraffic: async () => ({ all_runtime_stopped: true, ingress_fenced: true, callbacks_fenced: true }),
+      applySingleMigration: async target => { assert.equal(target, version + 1); version = target },
+      keepIngressFencedForForwardRecovery: async () => {},
+      startBridgeAt254: async () => ({ all_eight_running: true, ingress_fenced: true }),
+      verifyBridgeAt254: async () => ({ identity_verified: true, api_ready: true, six_workers_ready: true,
+        public_release_verified: true, observation_sha256: sha('resume-bridge254') }),
+    }
+    const result = await resumeBridge254ForwardMaintenance({ control: store, runtime, attemptId, expected, deploymentNonce: nonce })
+    assert.equal(result.migration_version, 254, initialPhase)
+    assert.equal(result.release_authorized, false, initialPhase)
+    assert.equal(store.read({ attemptId, expected }).journal.phase, 'migration_254_verified', initialPhase)
+    assert.equal(consumeCalls, initialPhase === 'captured' ? 0 : 1, 'captured resume must reuse exact ledger binding')
+  }
 })

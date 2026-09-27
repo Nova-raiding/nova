@@ -59,6 +59,7 @@ try {
     deployable: false, production_evidence: false, signed_state_verified: false, old_capture_real: false,
     network: 'internal_no_published_ports', resumed_from_signed_version: 242, initial_live_version: 243,
     final_prefix: prefix, journal_phase: journal.phase, api_ready: runtime.api_ready, worker_observations: runtime.workers,
+    worker_diagnostics: runtime.diagnostics,
     public_release_verified: runtime.public_release_verified, refusal }, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
   process.stdout.write(`PASS isolated forward resume to 254 remains fenced at incomplete scanner/public identity; output=${output}\n`)
 } finally {

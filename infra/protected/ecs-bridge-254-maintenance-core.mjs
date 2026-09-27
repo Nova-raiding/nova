@@ -190,8 +190,10 @@ export async function resumeBridge254ForwardMaintenance({ control, runtime, atte
     required(state?.ingress_fenced === true && state?.callbacks_fenced === true, 'RESUME_INGRESS_FENCE_LOST')
   }
   const advance = async (phase, observed) => {
+    const observationDigest = phase === 'bridge_mutation_started' || phase === 'migration_started'
+      ? journal.baseline_inventory_sha256 : observed.history_sha256
     const result = await control.advance({ attemptId, fromPhase: journal.phase, toPhase: phase,
-      observedPrefix: observed, observationDigest: observed.history_sha256, expected, deploymentNonce })
+      observedPrefix: observed, observationDigest, expected, deploymentNonce })
     journal = result.journal ?? result
     required(journal.phase === phase && journal.database_prefix.version === observed.version, 'RESUME_JOURNAL_ADVANCE_FAILED')
   }

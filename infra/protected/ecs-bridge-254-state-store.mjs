@@ -344,6 +344,12 @@ export function createBridge254StateStore({ directory, ledgerPath, consumerPath,
 
 export const BRIDGE_254_PROTECTED_STATE_PATHS = Object.freeze({ directory: ROOT, ledgerPath: LEDGER, consumerPath: CONSUMER, lockPath: LOCK })
 
+export function assertBridge254NonceConsumerSupportsOperation(path) {
+  const result = spawnSync(path, ['consume', '--help'], { encoding: 'utf8', env: {}, timeout: 5000, maxBuffer: 8192 })
+  assert(result.status === 0 && /--operation \{deployment,bridge-b,bridge-254\}/u.test(result.stdout ?? ''),
+    'installed nonce consumer does not advertise the independently reviewed bridge-254 operation')
+}
+
 export function openProtectedBridge254StateStore() {
   assert(process.getuid?.() === 0 && process.geteuid?.() === 0, 'protected bridge state requires root')
   assert(fileURLToPath(import.meta.url) === INSTALLED, 'bridge state must run from its fixed installed path')
@@ -355,6 +361,7 @@ export function openProtectedBridge254StateStore() {
   exactDigest(INSTALLED, `${TRUST}/production-bridge-254-state-store-sha256`)
   exactDigest(REVIEW_INSTALLED, `${TRUST}/production-bridge-254-review-state-sha256`)
   exactDigest(CONSUMER, `${TRUST}/production-evidence-nonce-consumer-sha256`)
+  assertBridge254NonceConsumerSupportsOperation(CONSUMER)
   const privateKeyPem = readTrust(PRIVATE_KEY, 8192).toString('utf8')
   const publicKeyPem = readTrust(`${TRUST}/production-evidence-public.pem`, 8192).toString('utf8')
   const trustedKeyId = readTrust(`${TRUST}/production-evidence-key-id`, 128).toString('utf8').trim()
