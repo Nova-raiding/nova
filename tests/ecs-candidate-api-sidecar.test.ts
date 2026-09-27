@@ -8,6 +8,7 @@ const script = 'infra/scripts/launch-ecs-candidate-api.mjs'
 const imageRef = `registry.example.test/api@sha256:${'b'.repeat(64)}`
 const containerId = 'a'.repeat(64)
 const imageId = `sha256:${'c'.repeat(64)}`
+const project = 'merchant-demo-release-test'
 
 function fixture(bindPort = false) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'candidate-api-sidecar-')))
@@ -15,10 +16,16 @@ function fixture(bindPort = false) {
   const env = join(dir, 'candidate.env')
   const calls = join(dir, 'calls.jsonl')
   const binary = join(dir, 'docker.cjs')
-  writeFileSync(compose, JSON.stringify({ services: { api: { image: imageRef, pull_policy: 'never', environment: {
+  writeFileSync(compose, JSON.stringify({ networks: { default: { name: `${project}_private`, external: false } }, volumes: {
+    postgres_data: { name: `${project}_postgres_data`, external: false }, redis_data: { name: `${project}_redis_data`, external: false },
+  }, services: {
+    postgres: { volumes: [{ type: 'volume', source: 'postgres_data', target: '/var/lib/postgresql/data' }] },
+    redis: { volumes: [{ type: 'volume', source: 'redis_data', target: '/data' }] }, migrate: {},
+    api: { image: imageRef, pull_policy: 'never', environment: {
     RELEASE_ID: 'release-test', NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs',
     RUN_MIGRATIONS_ON_STARTUP: 'false', CONNECTOR_FIXTURE_MODE: 'false',
-    DATABASE_URL: 'postgres://app@db/merchant', OPS_DATABASE_URL: 'postgres://ops@db/merchant',
+    DATABASE_URL: 'postgres://app:secret@postgres/merchant', OPS_DATABASE_URL: 'postgres://ops:secret@postgres/merchant',
+    REDIS_URL: 'redis://redis:6379', PLUGIN_WRITE_ENABLED: 'false', ASSET_STORAGE_PREFIX: 'demo-candidate/release-test',
   } } } }))
   writeFileSync(env, 'RELEASE_ID=release-test\n')
   writeFileSync(binary, `#!/usr/bin/env node
@@ -29,14 +36,14 @@ if(op==='image'){process.stdout.write(${JSON.stringify(imageId)}+'\\n');process.
 if(op==='compose'){const name=args[args.indexOf('--name')+1];fs.writeFileSync(${JSON.stringify(join(dir, 'name'))},name);process.stdout.write('started\\n');process.exit(0)}
 if(op==='inspect'){const name=fs.readFileSync(${JSON.stringify(join(dir, 'name'))},'utf8');process.stdout.write(JSON.stringify([{
   Id:${JSON.stringify(containerId)},Name:'/'+name,Image:${JSON.stringify(imageId)},State:{Running:true},
-  Config:{Labels:{'com.docker.compose.project':'merchant-production','com.docker.compose.service':'api','com.docker.compose.oneoff':'True'}},
+  Config:{Labels:{'com.docker.compose.project':${JSON.stringify(project)},'com.docker.compose.service':'api','com.docker.compose.oneoff':'True'}},
   HostConfig:{PortBindings:${bindPort ? "{'8787/tcp':[{HostPort:'8787'}]}" : '{}'}}
 }]));process.exit(0)}
 if(op==='stop'){process.stdout.write(${JSON.stringify(containerId)}+'\\n');process.exit(0)}
 process.exit(1);
 `)
   chmodSync(binary, 0o700)
-  const args = [script, 'start', compose, env, 'merchant-production', imageRef, 'release-test']
+  const args = [script, 'start', compose, env, project, imageRef, 'release-test']
   const processEnv = { ...process.env, NODE_ENV: 'test', VITEST: 'true', CANDIDATE_SIDECAR_TEST_DOCKER_BINARY: binary, CANDIDATE_SIDECAR_TEST_UNPROTECTED_FILES: 'true' }
   return { dir, calls, args, processEnv }
 }
@@ -57,7 +64,7 @@ describe('ECS candidate API sidecar', () => {
     expect(compose.at(-1)).toBe('api')
     expect(calls.findIndex(call => call[2] === 'image' && call[3] === 'inspect')).toBeLessThan(calls.indexOf(compose))
 
-    const stop = spawnSync('node', [script, 'stop', value.args[2]!, value.args[3]!, 'merchant-production', imageRef, 'release-test', containerId], { env: value.processEnv, encoding: 'utf8' })
+    const stop = spawnSync('node', [script, 'stop', value.args[2]!, value.args[3]!, project, imageRef, 'release-test', containerId], { env: value.processEnv, encoding: 'utf8' })
     expect(stop.status).toBe(0)
     expect(stop.stdout.trim()).toBe(containerId)
     const after = readFileSync(value.calls, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[])
@@ -72,5 +79,34 @@ describe('ECS candidate API sidecar', () => {
     expect(start.stdout).toBe('')
     const calls = readFileSync(value.calls, 'utf8')
     expect(calls).toContain('"stop"')
+  })
+
+  it('rejects production database targets before any Docker mutation', () => {
+    const value = fixture()
+    const compose = JSON.parse(readFileSync(value.args[2]!, 'utf8'))
+    compose.services.api.environment.DATABASE_URL = 'postgres://app@db/merchant'
+    writeFileSync(value.args[2]!, JSON.stringify(compose))
+    const result = spawnSync('node', value.args, { env: value.processEnv, encoding: 'utf8' })
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('database, cache, or network is not mechanically isolated')
+    expect(readFileSync(value.calls, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[]).some(call => call[2] === 'compose')).toBe(false)
+  })
+
+  it('rejects shared networks, external data volumes and enabled plugin writes before Docker mutation', () => {
+    const mutations: Array<(compose: any) => void> = [
+      compose => { compose.networks.default.external = true },
+      compose => { compose.volumes.postgres_data.external = true },
+      compose => { compose.services.api.environment.PLUGIN_WRITE_ENABLED = 'true' },
+    ]
+    for (const mutate of mutations) {
+      const value = fixture()
+      const compose = JSON.parse(readFileSync(value.args[2]!, 'utf8'))
+      mutate(compose)
+      writeFileSync(value.args[2]!, JSON.stringify(compose))
+      const result = spawnSync('node', value.args, { env: value.processEnv, encoding: 'utf8' })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('database, cache, or network is not mechanically isolated')
+      expect(readFileSync(value.calls, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[]).some(call => call[2] === 'compose')).toBe(false)
+    }
   })
 })
