@@ -52,7 +52,7 @@ describe('242/254 rendered Compose review inspection', () => {
   it('rejects omitted or enabled startup migrations on every worker', () => {
     for (const name of runtime.filter(service => service.startsWith('worker-'))) {
       const omitted = rendered()
-      delete omitted.services[name]!.environment.RUN_MIGRATIONS_ON_STARTUP
+      Reflect.deleteProperty(omitted.services[name]!.environment, 'RUN_MIGRATIONS_ON_STARTUP')
       expect(() => inspectBridge254Compose(omitted), `${name} omitted`).toThrow(`${name} startup migrations must be disabled`)
 
       const enabled = rendered()

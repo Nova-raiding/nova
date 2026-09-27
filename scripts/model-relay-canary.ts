@@ -111,7 +111,8 @@ function writeImmutableRelayArtifact(target: string, body: string): void {
     try {
       descriptor = openSync(target, constants.O_RDONLY | constants.O_NOFOLLOW)
       const stat = fstatSync(descriptor)
-      if (!stat.isFile() || stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o600
+      const currentUid = process.getuid?.()
+      if (!stat.isFile() || currentUid === undefined || stat.uid !== currentUid || (stat.mode & 0o777) !== 0o600
         || readFileSync(descriptor, 'utf8') !== body) {
         throw new Error('relay artifact already exists with different content, owner, mode or type')
       }
