@@ -35,7 +35,8 @@ RUN set -eu; \
   apk add --no-cache font-noto-cjk
 RUN addgroup -g 10001 -S merchant && adduser -u 10001 -S -D -H -G merchant merchant
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --prefer-offline --no-audit --fund=false
+RUN npm ci --omit=dev --include=optional --libc=musl --prefer-offline --no-audit --fund=false \
+  && node -e "require('@napi-rs/canvas')"
 # The worker runtime needs only its own compiled entrypoints and shared
 # packages. Do not ship compiled local-plugin or host-side test code.
 COPY --from=build /app/dist/apps/worker ./dist/apps/worker

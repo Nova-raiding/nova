@@ -44,7 +44,8 @@ RUN apk add --no-cache postgresql16-client \
   && mkdir -p /var/lib/merchant-assets \
   && chown 10001:10001 /var/lib/merchant-assets
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --prefer-offline --no-audit --fund=false
+RUN npm ci --omit=dev --include=optional --libc=musl --prefer-offline --no-audit --fund=false \
+  && node -e "require('@napi-rs/canvas')"
 # Keep the local ChatGPT plugin and host-side test/script output out of the
 # production API image. The API imports only its own compiled tree and shared
 # packages; the release gate still sees the full candidate source separately.
