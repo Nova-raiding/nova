@@ -52,7 +52,7 @@ export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate
     <OpsPage
       eyebrow="STORE OPERATIONS"
       title="平台连接汇总"
-      description="平台运营查看平台级连接健康。"
+      description="查看平台连接状态，并按授权范围为人工登记店铺导入商品。"
       actions={<Button type="primary" loading={model.loading} onClick={() => void model.load()}>刷新连接</Button>}
     >
       <div className="ops-stores-page">

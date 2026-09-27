@@ -45,7 +45,7 @@ export function PlatformSummarySection({ stores, loading = false, error, onRetry
       title={<Space><GlobalOutlined aria-hidden="true" />平台连接汇总</Space>}
     >
       <Typography.Paragraph type="secondary">
-        平台运营只查看连接健康与汇总指标；客户店铺、商品和素材详情仅通过客服工单按授权范围受控处理。
+        这里汇总各平台的店铺连接状态。人工登记店铺的商品可在下方选择商家工作区后，按资料来源和操作原因代为导入；其他客户详情仍按授权范围处理。
       </Typography.Paragraph>
       <div aria-busy={loading || undefined}>
         {loading && <div role="status" aria-live="polite" aria-label="正在更新平台连接汇总" style={{ marginBottom: 12 }}>正在更新平台连接汇总；上次可信数据仍保留。</div>}
