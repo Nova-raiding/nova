@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto'
 
 const SHA = /^[a-f0-9]{64}$/u
 const ID = /^[a-f0-9]{64}$/u
-const LOCK = '/var/lock/merchant/ecs-compose-mutation.lock'
+const BRIDGE_LOCK = '/var/lib/merchant-release-security/production-deploy.lock'
+const GATEWAY_LOCK = '/var/lock/merchant/ecs-compose-mutation.lock'
 const PREFIX = '/var/lib/merchant-release-security/gateway-fence'
 const fail = (reasons, code, ok) => { if (!ok) reasons.push(code) }
 const digest = text => createHash('sha256').update(text).digest('hex')
@@ -16,7 +17,9 @@ export function reviewGatewayFenceHostInstall(input, host) {
   const { manifest = {}, capsule = {}, callbacks = {} } = input ?? {}
   fail(reasons, 'REVIEW_ONLY_MODE_REQUIRED', manifest.schema_version === 'ecs-gateway-fence-host-review/1'
     && manifest.mode === 'review_only' && manifest.production_mutation_enabled === false)
-  fail(reasons, 'PROTECTED_PATHS_INVALID', manifest.lock_path === LOCK
+  fail(reasons, 'PROTECTED_PATHS_INVALID', manifest.bridge_lock_path === BRIDGE_LOCK
+    && manifest.gateway_lock_path === GATEWAY_LOCK
+    && manifest.lock_acquisition_order?.join(',') === `${BRIDGE_LOCK},${GATEWAY_LOCK}`
     && manifest.journal_dir === PREFIX && manifest.controller_path === '/usr/local/libexec/merchant/gateway-fence'
     && manifest.watchdog_path === '/usr/local/libexec/merchant/gateway-fence-watchdog')
   fail(reasons, 'CODE_DIGEST_INVALID', SHA.test(manifest.controller_sha256 ?? '')
@@ -28,10 +31,16 @@ export function reviewGatewayFenceHostInstall(input, host) {
     && SHA.test(capsule.config_sha256 ?? '') && SHA.test(capsule.effective_config_sha256 ?? '')
     && callbacks.gateway_id === capsule.gateway_id
     && Array.isArray(callbacks.exact_paths) && callbacks.exact_paths.length > 0)
-  const lock = host?.observeLock?.()
-  fail(reasons, 'PROTECTED_LOCK_NOT_HELD', lock?.path === LOCK && protectedObject(lock, 0o600, 'file')
-    && lock.fd9_dev === lock.dev && lock.fd9_ino === lock.ino
-    && lock.flock_owner_pid === lock.invocation_pid)
+  // Bridge migration and legacy gateway handoff use different existing locks.
+  // A future installer must hold both, always bridge first, gateway second.
+  const locks = host?.observeLocks?.()
+  const owns = (lock, path, fd) => lock?.path === path && protectedObject(lock, 0o600, 'file')
+    && lock[`fd${fd}_dev`] === lock.dev && lock[`fd${fd}_ino`] === lock.ino
+    && lock.flock_owner_pid === lock.invocation_pid
+  fail(reasons, 'PROTECTED_LOCKS_NOT_HELD', owns(locks?.bridge, BRIDGE_LOCK, 9)
+    && owns(locks?.gateway, GATEWAY_LOCK, 8)
+    && locks.bridge.invocation_pid === locks.gateway.invocation_pid
+    && locks.acquisition_order?.join(',') === `${BRIDGE_LOCK},${GATEWAY_LOCK}`)
   const paths = host?.observeInstalledPaths?.() ?? {}
   fail(reasons, 'INSTALL_PATHS_UNPROTECTED', protectedObject(paths.controller, 0o500, 'file')
     && protectedObject(paths.watchdog, 0o500, 'file')
@@ -82,6 +91,9 @@ export function reviewGatewayFenceCrash(journal, observed, verifySigned) {
     && observed.db_prefix >= 242 && observed.db_prefix <= 254)
   if (journal?.phase === 'captured' || journal?.phase === 'recovered') {
     fail(reasons, 'JOURNAL_CONFIG_PHASE_MISMATCH', observed?.config_sha256 === journal.baseline_sha256)
+  }
+  if (journal?.phase === 'fenced') {
+    fail(reasons, 'JOURNAL_CONFIG_PHASE_MISMATCH', observed?.config_sha256 === journal.fenced_sha256)
   }
   if (journal?.phase === 'bridge_mutation_started' || observed?.db_prefix > 242) {
     fail(reasons, 'INGRESS_OPEN_DURING_MUTATION', observed?.config_sha256 === journal.fenced_sha256)

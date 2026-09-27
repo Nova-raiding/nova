@@ -7,7 +7,11 @@ const sha = x => createHash('sha256').update(x).digest('hex')
 const id = 'a'.repeat(64), image = `sha256:${'b'.repeat(64)}`
 const source = 'exact running nginx config'
 const manifest = () => ({ schema_version: 'ecs-gateway-fence-host-review/1', mode: 'review_only',
-  production_mutation_enabled: false, lock_path: '/var/lock/merchant/ecs-compose-mutation.lock',
+  production_mutation_enabled: false,
+  bridge_lock_path: '/var/lib/merchant-release-security/production-deploy.lock',
+  gateway_lock_path: '/var/lock/merchant/ecs-compose-mutation.lock',
+  lock_acquisition_order: ['/var/lib/merchant-release-security/production-deploy.lock',
+    '/var/lock/merchant/ecs-compose-mutation.lock'],
   journal_dir: '/var/lib/merchant-release-security/gateway-fence',
   controller_path: '/usr/local/libexec/merchant/gateway-fence',
   watchdog_path: '/usr/local/libexec/merchant/gateway-fence-watchdog',
@@ -19,8 +23,12 @@ const regular = (mode, digest) => ({ uid: 0, mode, type: 'file', symlink: false,
   ...(digest ? { sha256: digest } : {}) })
 const host = () => ({
   verifySigned: () => true,
-  observeLock: () => ({ ...regular(0o600), path: '/var/lock/merchant/ecs-compose-mutation.lock',
-    dev: 1, ino: 2, fd9_dev: 1, fd9_ino: 2, flock_owner_pid: 123, invocation_pid: 123 }),
+  observeLocks: () => ({ acquisition_order: ['/var/lib/merchant-release-security/production-deploy.lock',
+    '/var/lock/merchant/ecs-compose-mutation.lock'],
+  bridge: { ...regular(0o600), path: '/var/lib/merchant-release-security/production-deploy.lock',
+    dev: 1, ino: 2, fd9_dev: 1, fd9_ino: 2, flock_owner_pid: 123, invocation_pid: 123 },
+  gateway: { ...regular(0o600), path: '/var/lock/merchant/ecs-compose-mutation.lock',
+    dev: 1, ino: 3, fd8_dev: 1, fd8_ino: 3, flock_owner_pid: 123, invocation_pid: 123 } }),
   observeInstalledPaths: () => ({ controller: regular(0o500, 'c'.repeat(64)),
     watchdog: regular(0o500, 'd'.repeat(64)),
     journal_dir: { uid: 0, mode: 0o700, type: 'directory', symlink: false } }),
@@ -41,14 +49,23 @@ test('complete isolated host evidence is reviewable but cannot install or mutate
 test('missing signature, lock ownership, and watchdog fail closed', () => {
   const h = host()
   h.verifySigned = () => false
-  h.observeLock = () => ({ ...host().observeLock(), fd9_ino: 9 })
+  h.observeLocks = () => ({ ...host().observeLocks(), bridge: { ...host().observeLocks().bridge, fd9_ino: 9 } })
   h.observeWatchdog = () => ({ installed: false })
   const result = reviewGatewayFenceHostInstall({ manifest: manifest(), capsule: capsule(),
     callbacks: callbacks() }, h)
   assert.ok(result.reasons.includes('CAPSULE_UNVERIFIED'))
-  assert.ok(result.reasons.includes('PROTECTED_LOCK_NOT_HELD'))
+  assert.ok(result.reasons.includes('PROTECTED_LOCKS_NOT_HELD'))
   assert.ok(result.reasons.includes('WATCHDOG_NOT_INSTALLED'))
   assert.equal(result.production_mutation_allowed, false)
+})
+
+test('bridge and gateway locks require one owner and fixed acquisition order', () => {
+  const h = host()
+  h.observeLocks = () => ({ ...host().observeLocks(), acquisition_order: [
+    '/var/lock/merchant/ecs-compose-mutation.lock',
+    '/var/lib/merchant-release-security/production-deploy.lock' ] })
+  assert.ok(reviewGatewayFenceHostInstall({ manifest: manifest(), capsule: capsule(),
+    callbacks: callbacks() }, h).reasons.includes('PROTECTED_LOCKS_NOT_HELD'))
 })
 
 const journal = () => ({ schema_version: 'ecs-gateway-fence-journal/1', phase: 'fenced',
@@ -82,4 +99,12 @@ test('unsigned, drifted, or incomplete recovery evidence holds and pages', () =>
   assert.ok(reviewGatewayFenceCrash(journal(), q, () => true).reasons.includes('BASELINE_RESTORE_PRECONDITIONS_MISSING'))
   const j = journal(); j.phase = 'captured'
   assert.ok(reviewGatewayFenceCrash(j, observation(), () => true).reasons.includes('JOURNAL_CONFIG_PHASE_MISMATCH'))
+})
+
+test('signed fenced journal with baseline config is an incident, not a clean recovery', () => {
+  const o = observation(); o.config_sha256 = '1'.repeat(64)
+  const result = reviewGatewayFenceCrash(journal(), o, () => true)
+  assert.equal(result.recommendation, 'hold_and_page')
+  assert.ok(result.reasons.includes('JOURNAL_CONFIG_PHASE_MISMATCH'))
+  assert.equal(result.production_mutation_allowed, false)
 })
