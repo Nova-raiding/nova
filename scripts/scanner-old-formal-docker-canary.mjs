@@ -11,10 +11,6 @@ export const OLD_FORMAL_RELEASE_SHA = 'ec3d69e37809c0d622c8f38057a072245217004f'
 const fullId = /^[a-f0-9]{64}$/u
 const imageId = /^sha256:[a-f0-9]{64}$/u
 const safeWorkspace = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
-// The 2026-09-27 read-only formal DB audit found only these existing
-// workspaces. None had independently verified dedicated canary provenance.
-// A new, separately provisioned workspace is required for this one-off path.
-const existingNonCanaryWorkspaces = new Set(['ws_demo', 'ws_guirenniaoniao', 'ws_storenova_fashion'])
 const dockerBinary = '/usr/bin/docker'
 
 function actualDocker(args, input, timeoutMs = 10_000) {
@@ -90,7 +86,6 @@ export function createOldFormalDockerTransport({ env, docker = actualDocker, now
     || !imageId.test(apiImageId ?? '') || !imageId.test(workerImageId ?? '')
     || (apiSecondaryNetworkId !== undefined && !fullId.test(apiSecondaryNetworkId))
     || !safeWorkspace.test(workspace ?? '')) throw new Error('OLD_SCANNER_IDENTITY_INPUT_INVALID')
-  if (existingNonCanaryWorkspaces.has(workspace)) throw new Error('OLD_SCANNER_DEDICATED_WORKSPACE_REQUIRED')
 
   const timedDocker = (args, input, deadline) => {
     const remaining = deadline - Date.now()
@@ -164,6 +159,10 @@ export function createOldFormalDockerTransport({ env, docker = actualDocker, now
       || (method === 'GET' && /^\/v1\/assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\/download$/u.test(path))
       || (method === 'POST' && path === '/v1/assets/upload')
     if (!allowed) throw new Error('OLD_SCANNER_ROUTE_INVALID')
+    // No independently verifiable source currently proves that a workspace is
+    // dedicated to this production canary. Operator VERIFIED flags and a name
+    // outside the known business list are insufficient authorization to write.
+    if (method === 'POST') throw new Error('OLD_SCANNER_DEDICATED_WORKSPACE_PROVENANCE_MISSING')
     // spawnSync cannot observe the caller's AbortSignal while blocked. Share
     // one hard deadline across identity checks, worker proof and the request.
     const deadline = Date.now() + (method === 'POST' ? 30_000 : 10_000)
@@ -183,6 +182,7 @@ export function createOldFormalDockerTransport({ env, docker = actualDocker, now
 }
 
 export async function runOldFormalScannerCanary({ env = process.env, docker = actualDocker, execute = false, now = Date.now, sleep } = {}) {
+  if (execute) throw new Error('OLD_SCANNER_DEDICATED_WORKSPACE_PROVENANCE_MISSING')
   const exactEnv = { ...env, SCANNER_CANARY_API_BASE_URL: 'http://127.0.0.1:8787',
     SCANNER_CANARY_EXPECTED_API_ORIGIN: 'http://127.0.0.1:8787',
     SCANNER_CANARY_RELEASE_ID: OLD_FORMAL_RELEASE_ID, SCANNER_CANARY_RELEASE_GIT_SHA: OLD_FORMAL_RELEASE_SHA }

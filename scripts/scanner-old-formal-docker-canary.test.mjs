@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { assertOldFormalSignedEvidence, createOldFormalDockerTransport, scannerEvidenceChildEnv } from './scanner-old-formal-docker-canary.mjs'
+import { assertOldFormalSignedEvidence, createOldFormalDockerTransport, runOldFormalScannerCanary, scannerEvidenceChildEnv } from './scanner-old-formal-docker-canary.mjs'
 
 const apiId = 'a'.repeat(64)
 const workerId = 'b'.repeat(64)
@@ -48,12 +48,18 @@ function fakeDocker({ markerValue = marker(), apiImage = apiImageId, apiNetworks
   return { docker, calls }
 }
 
-test('old formal canary refuses every pre-existing unverified workspace before Docker access', () => {
-  for (const workspace of ['ws_demo', 'ws_guirenniaoniao', 'ws_storenova_fashion']) {
+test('old formal execute and direct POST fail before Docker for any workspace or self-asserted verification', async () => {
+  for (const workspace of ['ws_storenova_fashion', 'ws_arbitrary_new']) {
     const { docker, calls } = fakeDocker()
-    assert.throws(() => createOldFormalDockerTransport({
-      env: { ...env, SCANNER_CANARY_WORKSPACE_ID: workspace }, docker, now: () => current,
-    }), /OLD_SCANNER_DEDICATED_WORKSPACE_REQUIRED/)
+    const input = { ...env, SCANNER_CANARY_WORKSPACE_ID: workspace,
+      SCANNER_CANARY_WORKER_SCOPE_VERIFIED: 'true', SCANNER_CANARY_RECOVERY_VERIFIED: 'true',
+      SCANNER_CANARY_ENTITLEMENT_VERIFIED: 'true' }
+    await assert.rejects(runOldFormalScannerCanary({ env: input, docker, execute: true, now: () => current }),
+      /OLD_SCANNER_DEDICATED_WORKSPACE_PROVENANCE_MISSING/)
+    const transport = createOldFormalDockerTransport({ env: input, docker, now: () => current })
+    await assert.rejects(transport.fetchImpl(new URL('http://127.0.0.1:8787/v1/assets/upload'), {
+      method: 'POST', body: Buffer.from('one-image'),
+    }), /OLD_SCANNER_DEDICATED_WORKSPACE_PROVENANCE_MISSING/)
     assert.equal(calls.length, 0)
   }
 })
@@ -65,16 +71,16 @@ test('exact Docker transport allows only the pinned API demo attachment and rout
   } })
   const transport = createOldFormalDockerTransport({ env: { ...env, OLD_SCANNER_API_SECONDARY_NETWORK_ID: demoNetworkId }, docker, now: () => current })
   assert.equal(await transport.legacyRecoveryProbe(), true)
-  const response = await transport.fetchImpl(new URL('http://127.0.0.1:8787/v1/assets/upload'), {
-    method: 'POST', headers: { authorization: 'Bearer secret', 'x-workspace-id': 'ws_dedicated' }, body: Buffer.from('one-image'),
+  const response = await transport.fetchImpl(new URL('http://127.0.0.1:8787/releasez'), {
+    method: 'GET', headers: { authorization: 'Bearer secret', 'x-workspace-id': 'ws_dedicated' },
   })
-  assert.equal(response.status, 201)
-  assert.equal((await response.json()).data.received, '/v1/assets/upload')
-  assert.equal(calls.filter(call => call.args[0] === 'inspect').length, 6)
-  assert.equal(calls.filter(call => call.args[0] === 'exec' && call.args[4] === workerId).length, 2)
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).data.received, '/releasez')
+  assert.equal(calls.filter(call => call.args[0] === 'inspect').length, 4)
+  assert.equal(calls.filter(call => call.args[0] === 'exec' && call.args[4] === workerId).length, 1)
   assert.equal(calls.filter(call => call.args[0] === 'exec' && call.args[4] === apiId).length, 1)
   assert.equal(calls.filter(call => call.args[0] === 'exec' && call.args[4] === apiId)
-    .every(call => JSON.parse(call.input).path === '/v1/assets/upload'), true)
+    .every(call => JSON.parse(call.input).path === '/releasez'), true)
   assert.equal(calls.some(call => call.args.join(' ').includes('secret')), false)
   assert.equal(calls.some(call => call.input?.includes('Bearer secret')), true)
 })
@@ -94,7 +100,7 @@ test('container image drift, network drift, and stale worker marker block before
   ]) {
     const { docker, calls } = fakeDocker(setup)
     const transport = createOldFormalDockerTransport({ env, docker, now: () => current })
-    await assert.rejects(transport.fetchImpl(new URL('http://127.0.0.1:8787/v1/assets/upload'), { method: 'POST', body: Buffer.from('x') }))
+    await assert.rejects(transport.legacyRecoveryProbe())
     assert.equal(calls.some(call => call.args[0] === 'exec' && call.args[4] === apiId), false)
   }
 })
