@@ -8,3 +8,17 @@ export function verifyProducedBackupV2(
   keyId: string,
   now?: Date,
 ): void
+
+export function validateProductionPostgresInspection(value: unknown): {
+  networkHost: string
+  environment: string[]
+}
+
+export function inspectProductionPostgres(
+  run?: (command: string, args: string[], options: {
+    encoding: 'utf8'
+    env: Record<string, string>
+    timeout: number
+    maxBuffer: number
+  }) => string,
+): { networkHost: string; environment: string[] }
