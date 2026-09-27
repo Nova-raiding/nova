@@ -146,6 +146,7 @@ export function validateDemoCompose(compose, project) {
   if (networks.default.internal === true) fail('candidate network must allow outbound provider TLS while remaining unpublished')
   const api = services.api
   const env = api.environment ?? {}
+  if (JSON.stringify(api.healthcheck?.test) !== JSON.stringify(['CMD-SHELL', 'wget -qO- http://127.0.0.1:8787/healthz >/dev/null || exit 1'])) fail('isolated API healthcheck must measure liveness')
   if (env.KNOWLEDGE_VECTOR_INDEX_ENABLED !== 'false' || env.EMBEDDING_DIMENSIONS !== '1024' || !approvedModels.includes(env.EMBEDDING_MODEL)) fail('embedding must remain disabled with an approved Qwen 1024 configuration')
   if (env.PLUGIN_WRITE_ENABLED !== 'false' || env.ASSET_STORAGE_PREFIX !== `demo-candidate/${env.RELEASE_ID}`) fail('candidate API writes must be disabled and release-scoped')
   if (env.RELEASE_ID !== api.labels?.['com.storenova.release.id'] || env.RELEASE_GIT_SHA !== api.labels?.['org.opencontainers.image.revision'] || env.RELEASE_GIT_SHA.length !== 40 || !/^sha256:[0-9a-f]{64}$/u.test(api.labels?.['com.storenova.release.source_sha256'] ?? '')) fail('candidate API environment and immutable image identity differ')
@@ -225,6 +226,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
       },
       api: {
         image: apiImage, restart: 'no', env_file: [{ path: envPath, required: true }], expose: ['8787'],
+        healthcheck: { test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8787/healthz >/dev/null || exit 1'], interval: '10s', timeout: '3s', retries: 6, start_period: '30s' },
         labels: { 'com.storenova.release.id': identity.release_id, 'org.opencontainers.image.revision': identity.git_sha, 'com.storenova.release.source_sha256': identity.source_sha256 },
         environment: {
           RELEASE_ID: identity.release_id, RELEASE_GIT_SHA: identity.git_sha,

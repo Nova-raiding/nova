@@ -80,6 +80,7 @@ describe('protected isolated ECS demo candidate renderer', () => {
     })
     expect(compose.services.api.environment.MODEL_RELAY_API_KEY).toBeUndefined()
     expect(compose.services.api.env_file).toEqual([{ path: join(value.output, 'candidate.env'), required: true }])
+    expect(compose.services.api.healthcheck.test).toEqual(['CMD-SHELL', 'wget -qO- http://127.0.0.1:8787/healthz >/dev/null || exit 1'])
     expect(compose.services.api.environment.RELEASE_IMAGE_SET_DIGEST).toMatch(/^sha256:[0-9a-f]{64}$/u)
     expect(compose.services.api.environment.RELEASE_MANIFEST_SHA256).toBe(createHash('sha256').update(readFileSync(join(value.output, 'candidate-manifest.json'))).digest('hex'))
     expect(JSON.parse(readFileSync(join(value.output, 'candidate-manifest.json'), 'utf8')).renderer_sha256).toMatch(/^[0-9a-f]{64}$/u)
@@ -129,6 +130,9 @@ describe('protected isolated ECS demo candidate renderer', () => {
     const writableHostBind = structuredClone(compose)
     writableHostBind.services.migrate.volumes[0].read_only = false
     expect(() => validateDemoCompose(writableHostBind, project)).toThrow(/writable host bind/u)
+    const readinessAsLiveness = structuredClone(compose)
+    readinessAsLiveness.services.api.healthcheck.test[1] = 'wget -qO- http://127.0.0.1:8787/readyz || exit 1'
+    expect(() => validateDemoCompose(readinessAsLiveness, project)).toThrow(/healthcheck must measure liveness/u)
   })
 
   it('rejects a mismatched identity, incomplete image set, unapproved model, and non-dedicated root env', () => {
