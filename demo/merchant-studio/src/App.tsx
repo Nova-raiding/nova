@@ -5789,13 +5789,13 @@ export function MaterialBrandOutput({ value, label, enabled, onEnabledChange, co
   const documentFacts = resolveBrandDocumentFacts(value.assetFileName)
   const logoFacts = resolveBrandLogoFacts(value.logoUrl)
   return <aside className={`material-brand-output${enabled ? '' : ' disabled'}${transitionLabel ? ' switching' : ''}`} aria-label={`${label}${enabled ? '已经启用' : '已经停用'}的配置`}>
-    <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前品牌资产</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}启用状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>停用{label}</button></div> : <small className="material-brand-output-live">本地预览，不会写入服务端</small>}</div>
+    <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前本地预览</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}本页预览状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>本页启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>本页停用{label}</button></div> : <small className="material-brand-output-live">本地预览，不会写入服务端</small>}</div>
     <div className={`material-brand-output-card${context ? ' has-context' : ''}`} style={{ '--brand-preview-color': colorFacts.value || 'transparent' } as CSSProperties}>
       {context && <div className="material-brand-output-context"><span>{context.label}</span><strong>{context.value}</strong></div>}
       <div className="material-brand-output-item material-brand-output-logo"><span>品牌 Logo</span><div>{logoFacts.picked ? <><img src={value.logoUrl} alt={`${label} ${logoFacts.imageAlt}`} /><small>{logoFacts.label}</small></> : <><ImageIcon size={24} /><small>{BRAND_UNCONFIGURED}</small></>}</div></div>
       <div className="material-brand-output-item material-brand-output-color"><span>品牌主色</span><div>{colorFacts.configured ? <><i /><strong>{colorFacts.value}</strong></> : <small>{colorFacts.label}</small>}</div></div>
-      <div className="material-brand-output-item material-brand-output-copy"><span>用户画像</span><p>{value.persona.trim() || '尚未填写，将在生成内容时使用上一级配置。'}</p></div>
-      <div className="material-brand-output-item material-brand-output-copy"><span>品牌卖点</span><p>{value.sellingPoints.trim() || '尚未填写，将在生成内容时使用上一级配置。'}</p></div>
+      <div className="material-brand-output-item material-brand-output-copy"><span>用户画像</span><p>{value.persona.trim() || '尚未填写，本页预览显示上一级配置。'}</p></div>
+      <div className="material-brand-output-item material-brand-output-copy"><span>品牌卖点</span><p>{value.sellingPoints.trim() || '尚未填写，本页预览显示上一级配置。'}</p></div>
       <div className={`material-brand-output-document${documentFacts.pending ? ' pending' : ''}`}><FileCheck2 size={18} /><div><span>品牌资产文档</span><strong>{documentFacts.fileName || BRAND_DOCUMENT_NONE}</strong></div><small>{documentFacts.label}</small></div>
     </div>
     {transitionLabel && <div className="material-brand-output-transition" role="status" aria-live="polite"><span>{transitionLabel}</span></div>}
@@ -6538,7 +6538,7 @@ export function MaterialLibraryWorkspace({
         <div className="material-detail-info"><span className="section-kicker">MATERIAL DETAILS</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.name}</dd></div><div><dt>平台</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.platform}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div><div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div><div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
       </section>
       <section className="material-image-brand-settings">
-        <div className="material-brand-panel-heading"><div><span className="section-kicker">IMAGE BRAND SETTINGS</span><h2>单图品牌配置</h2><p>此处设置只应用于当前图片，并覆盖“{detailMaterial.series}”系列、店铺和全局品牌设置。</p></div><div className="material-brand-priority" aria-label="资产应用原则"><strong>资产应用原则：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
+        <div className="material-brand-panel-heading"><div><span className="section-kicker">IMAGE BRAND SETTINGS</span><h2>单图品牌配置预览</h2><p>此处试填的设置只在本页预览当前图片；刷新后会丢失，也不会用于内容生成。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
         <article className="material-brand-row material-image-brand-row">
           <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" onChange={(next) => setImageBrands((current) => ({ ...current, [detailMaterial.id]: next }))} /></div>
           <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} onEnabledChange={(enabled) => setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled }))} context={{ label: '当前图片', value: detailMaterial.name }} />
@@ -6560,14 +6560,14 @@ export function MaterialLibraryWorkspace({
 
       {view === 'brands' && <section className="material-brand-assets-panel" aria-label="品牌资产配置">
         <div className="material-brand-panel-heading">
-          <div><span className="section-kicker">BRAND SETTINGS</span><h2>品牌配置</h2><p>统一维护全局、店铺、系列与单图品牌信息，生成内容时自动按优先级应用。</p></div>
-          <div className="material-brand-priority" aria-label="资产应用原则"><strong>资产应用原则：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div>
+          <div><span className="section-kicker">BRAND SETTINGS</span><h2>品牌配置预览</h2><p>可在本页试填全局、店铺、系列与单图信息；这些配置尚未保存，刷新后会丢失，也不会用于内容生成。</p></div>
+          <div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div>
         </div>
         <div className="material-brand-upload-entry"><div><strong>上传品牌资料</strong><span>通过服务端素材上传器添加图片或文档；品牌配置本身和资料分类暂未由服务端持久化。</span></div><button type="button" className="material-upload-button" onClick={() => { setUploadStoreId('unclassified'); setUploadCategory('品牌资料'); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传品牌资料</span></button></div>
         {stores.length === 0 && <p className="material-brand-no-store">{catalogStores === null ? '正在读取店铺列表；品牌资料可先上传到工作区素材库。' : catalogStores.length > 0 ? '已登记店铺尚未取得可读取授权；店铺品牌配置将在授权后开放。品牌资料可先上传到工作区素材库。' : '当前没有已登记店铺；品牌资料可先上传到工作区素材库。'}</p>}
         <div className="material-brand-stack">
           <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>所有系列与图片的默认品牌资产</small></div></div><MaterialBrandFields value={globalBrand} label="全局" onChange={setGlobalBrand} /></div>
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>本页所有系列与图片的预览默认值</small></div></div><MaterialBrandFields value={globalBrand} label="全局" onChange={setGlobalBrand} /></div>
             <MaterialBrandOutput value={effectiveGlobalBrand} label="全局配置" enabled={globalBrandEnabled} onEnabledChange={setGlobalBrandEnabled} />
           </article>
           {stores.length > 0 && <article className="material-brand-row">

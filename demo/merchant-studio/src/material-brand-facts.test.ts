@@ -225,5 +225,7 @@ describe('a default colour is not a brand colour', () => {
     expect(brands).not.toContain('已接收')
     expect(brands).toContain('上传品牌资料')
     expect(brands).toContain('品牌配置本身和资料分类暂未由服务端持久化')
+    expect(brands).toContain('刷新后会丢失，也不会用于内容生成')
+    expect(brands).not.toContain('生成内容时自动按优先级应用')
   })
 })
