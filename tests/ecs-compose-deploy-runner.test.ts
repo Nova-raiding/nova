@@ -183,7 +183,7 @@ describe('verified ECS Compose deployment runner', () => {
       ['https://yxsona.com/api', 'https://attacker.example'],
       ['https://yxsona.com/', 'https://yxsona.com'],
       ['https://yxsona.com/attacker', 'https://yxsona.com'],
-    ]) expect(accepts(apiUrl, origin).status).not.toBe(0)
+    ] as const) expect(accepts(apiUrl, origin).status).not.toBe(0)
   })
 
   it('validates frozen network and volume names against the selected project', () => {
