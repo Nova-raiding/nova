@@ -20,15 +20,24 @@ import { signPaymentCallback } from '../../packages/billing/src/callback-envelop
 import { captureGatewayOperationReceipt, captureVerifiedNotifyReceipt } from './protected-receipt.mjs'
 
 const env = name => { const value = process.env[name]?.trim(); if (!value) throw new Error(`${name} is required`); return value }
+// Isolated candidates may prove that this image starts without carrying live
+// payment credentials. No request in this mode may reach signing, the API,
+// the provider, or receipt capture.
+const healthOnly = (() => {
+  const value = process.env.PAYMENT_GATEWAY_HEALTH_ONLY
+  if (value === undefined || value === 'false') return false
+  if (value === 'true') return true
+  throw new Error('PAYMENT_GATEWAY_HEALTH_ONLY must be true or false')
+})()
 const port = Number(process.env.PORT || 8790)
-const appId = env('ALIPAY_APP_ID')
+const appId = healthOnly ? '' : env('ALIPAY_APP_ID')
 const readSecret = (valueName, pathName) => process.env[pathName]?.trim() ? fs.readFileSync(process.env[pathName].trim(), 'utf8') : env(valueName).replace(/\\n/g, '\n')
-const privateKey = readSecret('ALIPAY_APP_PRIVATE_KEY', 'ALIPAY_APP_PRIVATE_KEY_PATH')
-const publicKey = normalizePublicKey(readSecret('ALIPAY_PUBLIC_KEY', 'ALIPAY_PUBLIC_KEY_PATH'))
+const privateKey = healthOnly ? '' : readSecret('ALIPAY_APP_PRIVATE_KEY', 'ALIPAY_APP_PRIVATE_KEY_PATH')
+const publicKey = healthOnly ? '' : normalizePublicKey(readSecret('ALIPAY_PUBLIC_KEY', 'ALIPAY_PUBLIC_KEY_PATH'))
 const gateway = process.env.ALIPAY_GATEWAY_URL || 'https://openapi.alipay.com/gateway.do'
-const serviceKey = env('PAYMENT_GATEWAY_API_KEY')
-const callbackSecret = env('PAYMENT_CALLBACK_SECRET')
-const apiBase = env('PAYMENT_API_BASE_URL').replace(/\/$/, '')
+const serviceKey = healthOnly ? '' : env('PAYMENT_GATEWAY_API_KEY')
+const callbackSecret = healthOnly ? '' : env('PAYMENT_CALLBACK_SECRET')
+const apiBase = healthOnly ? '' : env('PAYMENT_API_BASE_URL').replace(/\/$/, '')
 const publicBaseUrl = (process.env.PUBLIC_BASE_URL || 'https://yxsona.com').replace(/\/$/, '')
 const alipayRequestTimeoutMs = (() => {
   const raw = process.env.ALIPAY_REQUEST_TIMEOUT_MS?.trim()
@@ -87,6 +96,10 @@ async function forward(input) {
   }
 }
 async function handle(req, res) {
+  if (healthOnly) {
+    if (req.method === 'GET' && req.url === '/healthz') return json(res, 200, { ok: true, mode: 'health_only', supported_channels: [], channel_readiness: { alipay: { ready: false } } })
+    return json(res, 503, { error: 'PAYMENT_GATEWAY_HEALTH_ONLY' })
+  }
   if (req.method === 'GET' && req.url === '/healthz') return json(res, 200, { ok: true, supported_channels: ['alipay'], channel_readiness: { alipay: { ready: true } } })
   if (req.url !== '/v1/notify/alipay' && req.headers.authorization !== `Bearer ${serviceKey}`) return json(res, 401, { error: 'UNAUTHORIZED' })
   if (req.method === 'POST' && req.url === '/v1/checkout') { const input = await body(req); if (input.channel !== 'alipay') return json(res, 503, { error: 'UNSUPPORTED_PAYMENT_CHANNEL' }); const amountFen = Number(input.amount_fen); if (!input.order_id || !input.workspace_id || !Number.isSafeInteger(amountFen) || amountFen <= 0) return json(res, 400, { error: 'INVALID_CHECKOUT' }); let callbackPath = '/v1/billing/callback/alipay'; try { const callback = new URL(String(input.callback_url || `${publicBaseUrl}${callbackPath}`)); if (callback.protocol !== 'https:' || callback.origin !== publicBaseUrl || !['/v1/billing/callback/alipay', '/v1/subscriptions/callback/alipay', '/v1/commercial/callback/alipay'].includes(callback.pathname)) return json(res, 400, { error: 'INVALID_CALLBACK_URL' }); callbackPath = callback.pathname } catch { return json(res, 400, { error: 'INVALID_CALLBACK_URL' }) } const notify = new URL('/payment-gateway/v1/notify/alipay', publicBaseUrl).toString(); const params = signedParams('alipay.trade.page.pay', { out_trade_no: String(input.order_id), total_amount: (amountFen / 100).toFixed(2), subject: String(input.description || 'merchant-marketing').slice(0, 256), product_code: 'FAST_INSTANT_TRADE_PAY', passback_params: encodePassbackParams({ workspace_id: String(input.workspace_id), callback_path: callbackPath }) }, notify); captureGatewayOperationReceipt({ directory: process.env.PAYMENT_PROTECTED_RECEIPT_DIR, operation: 'checkout', orderId: String(input.order_id), workspaceId: String(input.workspace_id), amountFen, signedCheckoutParams: encodeAlipayParams(params), outcome: 'created' }); return json(res, 200, { payment_url: urlFor(params), provider_order_id: String(input.order_id), order_id: String(input.order_id), workspace_id: String(input.workspace_id), amount_fen: amountFen }) }
