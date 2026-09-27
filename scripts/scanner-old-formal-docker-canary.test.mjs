@@ -48,12 +48,12 @@ function fakeDocker({ markerValue = marker(), apiImage = apiImageId, apiNetworks
   return { docker, calls }
 }
 
-test('exact Docker transport allows API demo attachment but routes only through the formal network and container loopback', async () => {
+test('exact Docker transport allows only the pinned API demo attachment and routes through container loopback', async () => {
   const { docker, calls } = fakeDocker({ apiNetworks: {
     'merchant-production_default': { NetworkID: networkId },
     'storenova-demo-e0': { NetworkID: demoNetworkId },
   } })
-  const transport = createOldFormalDockerTransport({ env, docker, now: () => current })
+  const transport = createOldFormalDockerTransport({ env: { ...env, OLD_SCANNER_API_SECONDARY_NETWORK_ID: demoNetworkId }, docker, now: () => current })
   assert.equal(await transport.legacyRecoveryProbe(), true)
   const response = await transport.fetchImpl(new URL('http://127.0.0.1:8787/v1/assets/upload'), {
     method: 'POST', headers: { authorization: 'Bearer secret', 'x-workspace-id': 'ws_dedicated' }, body: Buffer.from('one-image'),
@@ -75,6 +75,7 @@ test('container image drift, network drift, and stale worker marker block before
     { workerNetworks: { 'merchant-production_default': { NetworkID: 'f'.repeat(64) } } },
     { apiNetworks: { 'storenova-demo-e0': { NetworkID: demoNetworkId } } },
     { apiNetworks: { 'merchant-production_default': { NetworkID: demoNetworkId }, 'storenova-demo-e0': { NetworkID: networkId } } },
+    { apiNetworks: { 'merchant-production_default': { NetworkID: networkId }, 'unexpected-egress': { NetworkID: 'f'.repeat(64) } } },
     { workerNetworks: { 'storenova-demo-e0': { NetworkID: demoNetworkId } } },
     { workerNetworks: { 'merchant-production_default': { NetworkID: networkId }, 'unexpected-egress': { NetworkID: 'f'.repeat(64) } } },
     { markerValue: { ...marker(), observedAt: new Date(current - 20_000).toISOString() } },
@@ -86,6 +87,28 @@ test('container image drift, network drift, and stale worker marker block before
     await assert.rejects(transport.fetchImpl(new URL('http://127.0.0.1:8787/v1/assets/upload'), { method: 'POST', body: Buffer.from('x') }))
     assert.equal(calls.some(call => call.args[0] === 'exec' && call.args[4] === apiId), false)
   }
+})
+
+test('secondary API network requires an exact protected NetworkID binding', async () => {
+  const apiNetworks = {
+    'merchant-production_default': { NetworkID: networkId },
+    'storenova-demo-e0': { NetworkID: demoNetworkId },
+  }
+  for (const expectedNetworkId of [undefined, '1'.repeat(64)]) {
+    const { docker, calls } = fakeDocker({ apiNetworks })
+    const transport = createOldFormalDockerTransport({
+      env: { ...env, ...(expectedNetworkId ? { OLD_SCANNER_API_SECONDARY_NETWORK_ID: expectedNetworkId } : {}) },
+      docker, now: () => current,
+    })
+    await assert.rejects(transport.legacyRecoveryProbe(), /OLD_SCANNER_NETWORK_MISMATCH/)
+    assert.equal(calls.some(call => call.args[0] === 'exec'), false)
+  }
+
+  const { docker, calls } = fakeDocker({ apiNetworks })
+  assert.throws(() => createOldFormalDockerTransport({
+    env: { ...env, OLD_SCANNER_API_SECONDARY_NETWORK_ID: 'not-a-network-id' }, docker, now: () => current,
+  }), /OLD_SCANNER_IDENTITY_INPUT_INVALID/)
+  assert.equal(calls.length, 0)
 })
 
 test('route allowlist rejects gateway, remote host, and unrelated writes before Docker', async () => {
