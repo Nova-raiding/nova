@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { BRIDGE_254_MAINTENANCE_SERVICES, assertBridge254Drain, assertBridge254FrozenCapture, executeBridge254Maintenance } from '../infra/protected/ecs-bridge-254-maintenance-core.mjs'
+import { BRIDGE_254_MAINTENANCE_SERVICES, assertBridge254Drain, assertBridge254FrozenCapture, executeBridge254Maintenance, resumeBridge254ForwardMaintenance } from '../infra/protected/ecs-bridge-254-maintenance-core.mjs'
 
 const hex = digit => digit.repeat(64)
 const identity = name => ({ release_id: name, git_sha: 'a'.repeat(40), manifest_sha256: hex('b'), image_set_digest: `sha256:${hex('c')}` })
 const prefixes = Object.fromEntries(Array.from({ length: 13 }, (_, index) => [String(index + 242), hex((index % 10).toString())]))
-const expected = { project: 'merchant-production', prefixes, oldRuntime: identity('old'), bridge: identity('bridge') }
+const expected = { project: 'merchant-production', prefixes, oldRuntime: identity('old'), old_runtime: identity('old'), bridge: identity('bridge') }
 const capture = () => ({
   schema_version: 'ecs-bridge-254-capture/1', database: { runtime: { version: 242, history_sha256: prefixes['242'] }, ops: { version: 242, history_sha256: prefixes['242'] } },
   containers: [...BRIDGE_254_MAINTENANCE_SERVICES.filter(role => role !== 'api'), 'external-gateway'].map((role, index) => ({ role, id: (index + 1).toString(16).repeat(64), image_id: `sha256:${hex('a')}`, inspect_sha256: hex('b'), network_sha256: hex('c'), running: true })),
@@ -61,8 +61,12 @@ function ports(failAt = null) {
       assert.equal(journal.database_prefix.version, expectedVersion)
       return (journal = { ...journal, database_prefix: observedPrefix })
     },
+    read: async () => ({ journal, capture: capture() }),
   }
-  return { runtime, control, calls, get fenced() { return fenced }, get bridge254Started() { return bridge254Started } }
+  return { runtime, control, calls, seed(phase, signedVersion, liveVersion = signedVersion) {
+    version = liveVersion
+    journal = { phase, database_prefix: prefix(signedVersion), baseline_inventory_sha256: assertBridge254FrozenCapture(capture(), expected), allowed_prefix_sha256: prefixes }
+  }, get fenced() { return fenced }, get bridge254Started() { return bridge254Started } }
 }
 
 test('core sequences every forward prefix and keeps ingress fenced after 254', async () => {
@@ -78,4 +82,44 @@ test('an intermediate failure never starts 254 and requests forward-only fence',
   await assert.rejects(executeBridge254Maintenance({ ...p, attemptId: 'bridgeattempt0002', expected, deploymentNonce: 'n'.repeat(22) }), /synthetic migration failure/u)
   assert.equal(p.fenced, true)
   assert.equal(p.bridge254Started, false)
+})
+
+test('resume signs the one SQL-committed prefix and continues forward', async () => {
+  const p = ports(); p.seed('forward_recovery_started', 247, 248)
+  const result = await resumeBridge254ForwardMaintenance({ ...p, attemptId: 'bridgeattempt0003', expected, deploymentNonce: 'n'.repeat(22) })
+  assert.equal(result.migration_version, 254)
+  assert.equal(result.release_authorized, false)
+  assert.deepEqual(p.calls.filter(value => value.startsWith('migrate-')), Array.from({ length: 6 }, (_, index) => `migrate-${index + 249}`))
+})
+
+test('resume catches a committed 243 before phase fsync', async () => {
+  const p = ports(); p.seed('migration_started', 242, 243)
+  await resumeBridge254ForwardMaintenance({ ...p, attemptId: 'bridgeattempt0004', expected, deploymentNonce: 'n'.repeat(22) })
+  assert.equal(p.calls.includes('migrate-243'), false)
+  assert.equal(p.calls.includes('migrate-244'), true)
+})
+
+test('resume refuses database ahead of its signed journal by two prefixes', async () => {
+  const p = ports(); p.seed('forward_recovery_started', 247, 249)
+  await assert.rejects(resumeBridge254ForwardMaintenance({ ...p, attemptId: 'bridgeattempt0005', expected, deploymentNonce: 'n'.repeat(22) }), /RESUME_LIVE_PREFIX_DRIFT/u)
+  assert.equal(p.fenced, true)
+  assert.equal(p.bridge254Started, false)
+})
+
+test('captured journal resumes after a nonce commit without recapturing', async () => {
+  const p = ports(); p.seed('captured', 242)
+  const result = await resumeBridge254ForwardMaintenance({ ...p, attemptId: 'bridgeattempt0006', expected, deploymentNonce: 'n'.repeat(22) })
+  assert.equal(result.migration_version, 254)
+  assert.equal(p.calls.includes('migrate-243'), true)
+})
+
+test('254 restart accepts an already-started bridge only while ingress stays fenced', async () => {
+  const p = ports(); p.seed('migration_254_verified', 254)
+  p.runtime.observeStoppedTraffic = async () => ({ all_runtime_stopped: false, ingress_fenced: true, callbacks_fenced: true })
+  const result = await resumeBridge254ForwardMaintenance({ ...p, attemptId: 'bridgeattempt0007', expected, deploymentNonce: 'n'.repeat(22) })
+  assert.equal(result.migration_version, 254)
+  assert.equal(p.bridge254Started, true)
+  const blocked = ports(); blocked.seed('migration_254_verified', 254)
+  blocked.runtime.observeStoppedTraffic = async () => ({ all_runtime_stopped: false, ingress_fenced: false, callbacks_fenced: true })
+  await assert.rejects(resumeBridge254ForwardMaintenance({ ...blocked, attemptId: 'bridgeattempt0008', expected, deploymentNonce: 'n'.repeat(22) }), /RESUME_INGRESS_FENCE_LOST/u)
 })

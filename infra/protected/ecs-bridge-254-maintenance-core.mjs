@@ -158,3 +158,115 @@ export async function executeBridge254Maintenance({ control, runtime, attemptId,
     throw error
   }
 }
+
+/** Resume only from a protected, already consumed journal. Never recapture or
+ * consume a second nonce. A database one prefix ahead of its signed journal
+ * is the one allowed crash point after SQL commit and before journal fsync. */
+export async function resumeBridge254ForwardMaintenance({ control, runtime, attemptId, expected, deploymentNonce }) {
+  required(typeof attemptId === 'string' && /^[A-Za-z0-9_-]{16,128}$/u.test(attemptId), 'ATTEMPT_INVALID')
+  required(typeof deploymentNonce === 'string' && /^[A-Za-z0-9_-]{22,128}$/u.test(deploymentNonce), 'NONCE_INVALID')
+  await runtime.assertProtectedLock()
+  const frozen = await control.read({ attemptId, expected })
+  let journal = frozen?.journal
+  required(journal && ['captured', 'nonce_consumed', 'bridge_mutation_started', 'bridge_verified', 'migration_started', 'forward_recovery_started', 'migration_254_verified'].includes(journal.phase),
+  'RESUME_PHASE_INVALID')
+  required(expected?.oldRuntime?.release_id === expected?.old_runtime?.release_id
+    && expected.oldRuntime.git_sha === expected.old_runtime.git_sha
+    && expected.oldRuntime.manifest_sha256 === expected.old_runtime.manifest_sha256
+    && expected.oldRuntime.image_set_digest === expected.old_runtime.image_set_digest,
+  'RESUME_OLD_IDENTITY_MISMATCH')
+  required(assertBridge254FrozenCapture(frozen.capture, expected) === journal.baseline_inventory_sha256,
+  'RESUME_CAPTURE_MISMATCH')
+  required(Object.keys(journal.allowed_prefix_sha256 ?? {}).length === 13
+    && Object.entries(expected.prefixes ?? {}).every(([version, digest]) => journal.allowed_prefix_sha256[version] === digest),
+  'RESUME_PREFIX_PLAN_MISMATCH')
+  const stopped = async () => {
+    const state = await runtime.observeStoppedTraffic()
+    required(state?.all_runtime_stopped === true && state?.ingress_fenced === true && state?.callbacks_fenced === true,
+    'RESUME_TRAFFIC_NOT_STOPPED')
+  }
+  const fenced = async () => {
+    const state = await runtime.observeStoppedTraffic()
+    required(state?.ingress_fenced === true && state?.callbacks_fenced === true, 'RESUME_INGRESS_FENCE_LOST')
+  }
+  const advance = async (phase, observed) => {
+    const result = await control.advance({ attemptId, fromPhase: journal.phase, toPhase: phase,
+      observedPrefix: observed, observationDigest: observed.history_sha256, expected, deploymentNonce })
+    journal = result.journal ?? result
+    required(journal.phase === phase && journal.database_prefix.version === observed.version, 'RESUME_JOURNAL_ADVANCE_FAILED')
+  }
+  try {
+    if (['captured', 'nonce_consumed', 'bridge_mutation_started'].includes(journal.phase)) {
+      const observed242 = await runtime.observePrefix()
+      assertBridge254Prefix(observed242, 242, expected.prefixes)
+      const fence = await runtime.fenceIngressAndCallbacks()
+      required(fence?.ingress_fenced === true && fence?.callbacks_fenced === true, 'RESUME_FENCE_FAILED')
+      assertBridge254Drain(await runtime.observeDrain())
+      const stoppedOld = await runtime.stopOldRuntimeGracefully(frozen.capture)
+      required(stoppedOld?.all_eight_stopped === true && stoppedOld?.gateway_fenced === true
+        && stoppedOld?.no_active_processes === true, 'RESUME_OLD_RUNTIME_NOT_STOPPED')
+      assertBridge254Drain(await runtime.observeDrain())
+      const backup = await runtime.backupAndRestore242()
+      required(backup?.restored_prefix?.version === 242 && backup.restored_prefix.history_sha256 === expected.prefixes['242']
+        && SHA.test(backup.archive_sha256 ?? '') && backup.signed === true, 'RESUME_BACKUP_RESTORE_NOT_ATTESTED')
+      if (journal.phase === 'captured') await advance('nonce_consumed', observed242)
+      if (journal.phase === 'nonce_consumed') await advance('bridge_mutation_started', observed242)
+      const started242 = await runtime.startBridgeAt242()
+      required(started242?.all_eight_running === true && started242?.ingress_fenced === true, 'RESUME_BRIDGE_242_START_FAILED')
+      const verified242 = await runtime.verifyBridgeAt242()
+      required(verified242?.identity_verified === true && verified242?.api_ready === true
+        && verified242?.six_workers_ready === true, 'RESUME_BRIDGE_242_VERIFY_FAILED')
+      await advance('bridge_verified', observed242)
+    }
+    if (journal.phase === 'bridge_verified') {
+      const bridge = await runtime.verifyBridgeAt242()
+      required(bridge?.identity_verified === true && bridge?.api_ready === true && bridge?.six_workers_ready === true,
+      'RESUME_BRIDGE_242_INVALID')
+      const observed = await runtime.observePrefix()
+      assertBridge254Prefix(observed, 242, expected.prefixes)
+      await runtime.stopBridgeForMigration()
+      await stopped()
+      await advance('migration_started', observed)
+    }
+    if (journal.phase === 'migration_254_verified') await fenced()
+    else await stopped()
+    while (journal.database_prefix.version < 254) {
+      await runtime.assertProtectedLock()
+      await stopped()
+      const signedPrefix = journal.database_prefix.version
+      const live = await runtime.observePrefix()
+      required(live?.version === signedPrefix || live?.version === signedPrefix + 1,
+      'RESUME_LIVE_PREFIX_DRIFT')
+      if (live.version === signedPrefix) {
+        assertBridge254Prefix(live, signedPrefix, expected.prefixes)
+        await runtime.applySingleMigration(signedPrefix + 1)
+      }
+      const after = await runtime.observePrefix()
+      assertBridge254Prefix(after, signedPrefix + 1, expected.prefixes)
+      if (signedPrefix === 242) await advance('forward_recovery_started', after)
+      else {
+        const result = await control.recordPrefix({ attemptId, expectedVersion: signedPrefix,
+          observedPrefix: after, observationDigest: after.history_sha256, expected })
+        journal = result.journal ?? result
+        required(journal.database_prefix.version === after.version && journal.database_prefix.history_sha256 === after.history_sha256,
+        'RESUME_PREFIX_NOT_SIGNED')
+      }
+    }
+    const live254 = await runtime.observePrefix()
+    assertBridge254Prefix(live254, 254, expected.prefixes)
+    if (journal.phase !== 'migration_254_verified') await advance('migration_254_verified', live254)
+    if (journal.phase === 'migration_254_verified') await fenced()
+    else await stopped()
+    const started = await runtime.startBridgeAt254()
+    required(started?.all_eight_running === true && started?.ingress_fenced === true, 'RESUME_BRIDGE_254_START_FAILED')
+    const verified = await runtime.verifyBridgeAt254()
+    required(verified?.identity_verified === true && verified?.api_ready === true && verified?.six_workers_ready === true
+      && verified?.public_release_verified === true, 'RESUME_BRIDGE_254_VERIFY_FAILED')
+    return { status: 'verified_fenced', migration_version: 254, ingress_fenced: true, release_authorized: false,
+      journal_phase: journal.phase, runtime_observation_sha256: verified.observation_sha256 }
+  } catch (error) {
+    try { await runtime.keepIngressFencedForForwardRecovery() }
+    catch (fenceError) { throw new AggregateError([error, fenceError], 'bridge resume failed and ingress fence requires incident review') }
+    throw error
+  }
+}
