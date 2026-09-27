@@ -1,6 +1,6 @@
 import { createHash, generateKeyPairSync } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { buildCanonicalSafeStateEvidence, candidateBinding, endpointDigest, validateSourcePolicy } from '../infra/protected/attest-canonical-safe-state.mjs'
+import { backupSourcePolicyPath, buildCanonicalSafeStateEvidence, candidateBinding, endpointDigest, validateBackupSourcePolicy, validateSourcePolicy } from '../infra/protected/attest-canonical-safe-state.mjs'
 import { summarizeCanonicalSafeState } from '../infra/protected/canonical-safe-state-snapshot.mjs'
 import { validateCanonicalSafeStateAttestation } from '../infra/protected/canonical-safe-state-attestation.mjs'
 
@@ -26,11 +26,14 @@ const databaseIdentity = {
 }
 const policyBytes = Buffer.from(JSON.stringify({ schema_version: 'canonical-safe-state-source-policy/1', collector_sha256: collectorDigest, database_identity: databaseIdentity }))
 const policy = validateSourcePolicy(policyBytes, collectorDigest, databaseIdentity.endpoint_sha256)
+const backupPolicy = { system_identifier_sha256: databaseIdentity.system_identifier_sha256, database_oid: databaseIdentity.database_oid, database_name: snapshot.database_name }
+const backupPolicyBytes = Buffer.from(`${JSON.stringify(backupPolicy)}\n`)
+const backupSourcePolicyDigest = validateBackupSourcePolicy(backupPolicyBytes, policy)
 const keys = generateKeyPairSync('ed25519')
 const privatePem = keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
 const publicPem = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
 const args = () => ({ snapshot, summary: summarizeCanonicalSafeState(snapshot), binding: candidateBinding(env), policy,
-  collectorDigest, privatePem, publicPem, keyId: 'canonical-source-key', now: new Date('2026-09-27T01:01:00.000Z') })
+  backupSourcePolicyDigest, collectorDigest, privatePem, publicPem, keyId: 'canonical-source-key', now: new Date('2026-09-27T01:01:00.000Z') })
 
 describe('protected canonical safe-state producer', () => {
   it('signs a live-shaped, pinned, legacy-shadow snapshot accepted by the actual release verifier', () => {
@@ -38,8 +41,21 @@ describe('protected canonical safe-state producer', () => {
     expect(evidence.source).toBe('production_database')
     expect(evidence.simulated).toBe(false)
     expect(evidence.workspace_count).toBe(2)
+    expect(evidence.backup_source_policy_sha256).toBe(sha(backupPolicyBytes))
     expect(validateCanonicalSafeStateAttestation(evidence, { expectedBinding: candidateBinding(env), expectedSourcePolicy: policy,
       trustedKeyId: 'canonical-source-key', publicKeyPem: publicPem, now: new Date('2026-09-27T01:02:00.000Z') })).toEqual([])
+  })
+
+  it('requires a release-specific protected backup policy and the same cluster, OID and name', () => {
+    expect(backupSourcePolicyPath('release-1')).toBe('/run/release-security/evidence-trust/production-backup-source-release-1.json')
+    expect(() => backupSourcePolicyPath('../production-backup-source')).toThrow(/release ID/u)
+    expect(() => backupSourcePolicyPath('release:1')).toThrow(/release ID/u)
+    expect(() => validateBackupSourcePolicy(Buffer.from(JSON.stringify(backupPolicy)), policy)).toThrow(/canonical/u)
+    expect(() => validateBackupSourcePolicy(Buffer.from(`${JSON.stringify({ ...backupPolicy, database_oid: 9 })}\n`), policy)).toThrow(/independently reviewed/u)
+    expect(() => validateBackupSourcePolicy(Buffer.from(`${JSON.stringify({ ...backupPolicy, database_name: 'other' })}\n`), policy)).toThrow(/independently reviewed/u)
+    expect(() => validateBackupSourcePolicy(Buffer.from(`${JSON.stringify({ ...backupPolicy, system_identifier_sha256: 'f'.repeat(64) })}\n`), policy)).toThrow(/independently reviewed/u)
+    expect(() => validateBackupSourcePolicy(Buffer.from(`${JSON.stringify({ ...backupPolicy, extra: true })}\n`), policy)).toThrow(/fields/u)
+    expect(() => buildCanonicalSafeStateEvidence({ ...args(), backupSourcePolicyDigest: undefined as unknown as string })).toThrow(/verified collection/u)
   })
 
   it('binds the protected service bytes and name to the reviewed endpoint', () => {

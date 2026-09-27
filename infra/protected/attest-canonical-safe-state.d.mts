@@ -22,11 +22,14 @@ export type CanonicalSafeStatePolicy = {
 export function candidateBinding(environment: Record<string, string | undefined>): CanonicalSafeStateBinding
 export function endpointDigest(serviceBytes: Buffer, serviceName: string): string
 export function validateSourcePolicy(bytes: Buffer, collectorDigest: string, endpointDigest: string): CanonicalSafeStatePolicy
+export function backupSourcePolicyPath(releaseId: string): string
+export function validateBackupSourcePolicy(bytes: Buffer, policy: CanonicalSafeStatePolicy): string
 export function buildCanonicalSafeStateEvidence(input: {
   snapshot: { workspaces: unknown[] }
   summary: Record<string, any>
   binding: CanonicalSafeStateBinding
   policy: CanonicalSafeStatePolicy
+  backupSourcePolicyDigest: string
   collectorDigest: string
   privatePem: string | Buffer
   publicPem: string | Buffer

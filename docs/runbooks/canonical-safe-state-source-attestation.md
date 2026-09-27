@@ -46,6 +46,14 @@ The following independent protected inputs are required before execution:
   `canonical-safe-state-endpoint/1\0`, then the exact service-file bytes,
   then `\0` and the selected service name. The policy's collector digest is
   the **installed** attester digest, not the repository source digest.
+- A fresh, root-owned `0444` backup source policy at
+  `/run/release-security/evidence-trust/production-backup-source-${RELEASE_ID}.json`,
+  created exclusively by the reviewed live-backup producer for this release.
+  The attester derives this path from `RELEASE_ID`; it does not accept a caller
+  path or the stale unscoped `production-backup-source.json`. Its exact
+  canonical bytes must independently identify the same cluster hash,
+  database OID and database name as the canonical source policy. The signed
+  evidence records `backup_source_policy_sha256` for audit.
 - Root-owned `0600`
   `/var/lib/merchant-release-security/canonical-safe-state-private.pem`,
   matching the public key and key ID at
@@ -65,8 +73,11 @@ without running that verifier.
 
 ## Current deployment boundary
 
-As of the repository implementation, host `101` has not installed the
-dedicated reader, source policy, signing key, service file, or these two
-controls. The repository tests prove contract, installation and failure
-behavior in isolation; they do not claim a production capture. Do not copy
-test keys, fixture service files or synthetic JSON to `101`.
+As of the repository implementation, host `101` has several prior
+release-scoped backup source policies that match the live database, but the
+unscoped policy is stale and a new candidate needs its own source policy.
+The dedicated reader, canonical source policy, canonical signing key, service
+file and these two controls remain uninstalled. The repository tests prove
+contract, installation and failure behavior in isolation; they do not claim
+a production capture. Do not copy test keys, fixture service files or
+synthetic JSON to `101`.

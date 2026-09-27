@@ -66,6 +66,26 @@ export function validateSourcePolicy(bytes, collectorDigest, endpointDigest) {
   return { ...value, source_policy_sha256: sha256(bytes) }
 }
 
+export function backupSourcePolicyPath(releaseId) {
+  assert(typeof releaseId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(releaseId), 'release-scoped backup source policy release ID invalid')
+  return join(TRUST, `production-backup-source-${releaseId}.json`)
+}
+
+export function validateBackupSourcePolicy(bytes, policy) {
+  const value = JSON.parse(bytes.toString('utf8'))
+  exactObject(value, ['system_identifier_sha256', 'database_oid', 'database_name'], 'backup source policy')
+  assert(HEX.test(value.system_identifier_sha256), 'backup source policy cluster hash invalid')
+  assert(Number.isInteger(value.database_oid) && value.database_oid > 0 && value.database_oid <= 4_294_967_295, 'backup source policy database OID invalid')
+  assert(typeof value.database_name === 'string' && value.database_name.length > 0
+    && Buffer.byteLength(value.database_name, 'utf8') <= 63 && !value.database_name.includes('\0'), 'backup source policy database name invalid')
+  assert(bytes.equals(Buffer.from(`${JSON.stringify(value)}\n`, 'utf8')), 'backup source policy bytes are not canonical')
+  const identity = policy.database_identity
+  assert(value.system_identifier_sha256 === identity.system_identifier_sha256
+    && value.database_oid === identity.database_oid
+    && sha256(value.database_name) === identity.database_name_sha256, 'canonical source policy differs from independently reviewed backup source')
+  return sha256(bytes)
+}
+
 export function endpointDigest(serviceBytes, serviceName) {
   assert(Buffer.isBuffer(serviceBytes) && serviceBytes.length > 0, 'protected service bytes required')
   assert(/^[A-Za-z0-9._-]{1,64}$/u.test(serviceName), 'protected service name invalid')
@@ -90,8 +110,8 @@ export function candidateBinding(environment) {
   }
 }
 
-export function buildCanonicalSafeStateEvidence({ snapshot, summary, binding, policy, collectorDigest, privatePem, publicPem, keyId, now = new Date() }) {
-  assert(snapshot && summary && binding && policy && HEX.test(collectorDigest), 'verified collection inputs required')
+export function buildCanonicalSafeStateEvidence({ snapshot, summary, binding, policy, backupSourcePolicyDigest, collectorDigest, privatePem, publicPem, keyId, now = new Date() }) {
+  assert(snapshot && summary && binding && policy && HEX.test(collectorDigest) && HEX.test(backupSourcePolicyDigest), 'verified collection inputs required')
   assert(Array.isArray(snapshot.workspaces) && summary.workspace_count === snapshot.workspaces.length && summary.workspace_count > 0, 'workspace coverage invalid')
   assert(summary.blockers?.length === 0 && summary.mode_counts?.legacy_shadow === summary.workspace_count
     && summary.mode_counts?.dual_verify === 0 && summary.mode_counts?.canonical_read === 0, 'one or more workspaces are not in legacy_shadow')
@@ -110,7 +130,7 @@ export function buildCanonicalSafeStateEvidence({ snapshot, summary, binding, po
     schema_version: 'canonical-safe-state-attestation/1', evidence_purpose: 'ordinary_release_safe_state',
     environment: 'production', source: 'production_database', simulated: false,
     ...binding,
-    source_policy_sha256: policy.source_policy_sha256, collector_sha256: collectorDigest,
+    source_policy_sha256: policy.source_policy_sha256, backup_source_policy_sha256: backupSourcePolicyDigest, collector_sha256: collectorDigest,
     database_identity: identity, database_identity_sha256: sha256(canonical(identity)),
     observed_at: summary.observed_at, generated_at: now.toISOString(), expires_at: new Date(generated + 3_600_000).toISOString(),
     read_only_transaction: true, transaction_isolation: 'repeatable read', all_workspaces_included: true,
@@ -155,6 +175,7 @@ async function main(args) {
   const policyBytes = readProtected(join(TRUST, 'canonical-safe-state-source-policy.json'), 16_384)
   const policy = validateSourcePolicy(policyBytes, collectorDigest, endpointDigest(serviceBytes, serviceName))
   const binding = candidateBinding(process.env)
+  const backupSourcePolicyDigest = validateBackupSourcePolicy(readProtected(backupSourcePolicyPath(binding.release_id), 16_384, 0o444), policy)
   const { CAPTURE_SQL, summarizeCanonicalSafeState } = await import(pathToFileURL(LIBRARY).href)
   const result = spawnSync(PSQL, [`service=${serviceName}`, '-X', '-qAt', '-v', 'ON_ERROR_STOP=1'], {
     input: `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\n${CAPTURE_SQL}`,
@@ -168,7 +189,7 @@ async function main(args) {
   const privatePem = readProtected(PRIVATE, 8_192, 0o600)
   const publicPem = readProtected(join(TRUST, 'canonical-safe-state-public.pem'), 8_192)
   const keyId = readProtected(join(TRUST, 'canonical-safe-state-key-id'), 128).toString('utf8').trim()
-  const document = buildCanonicalSafeStateEvidence({ snapshot, summary, binding, policy, collectorDigest, privatePem, publicPem, keyId })
+  const document = buildCanonicalSafeStateEvidence({ snapshot, summary, binding, policy, backupSourcePolicyDigest, collectorDigest, privatePem, publicPem, keyId })
   writeExclusive(output, Buffer.from(`${JSON.stringify(document, null, 2)}\n`))
   process.stdout.write(`canonical safe-state production evidence written: ${basename(output)}\n`)
 }
