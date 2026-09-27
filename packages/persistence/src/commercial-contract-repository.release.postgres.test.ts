@@ -155,6 +155,10 @@ describe('commercial contract PostgreSQL E2', () => {
         ['2026-10-02T00:00:00.000Z', '2026-11-02T00:00:00.000Z', 'active'],
         ['2026-09-02T00:00:00.000Z', '2026-10-02T00:00:00.000Z', 'active'],
       ])
+      const linked = await repository.listEntitlementSnapshots('ws-renewal', { limit: 20, includeSourceOrder: true })
+      const paidOrders = await database.query<{ id: string }>(`SELECT id FROM commercial_orders_v2 WHERE workspace_id='ws-renewal' AND status='paid'`)
+      expect(new Set(linked.items.map(item => item.sourceOrderId))).toEqual(new Set(paidOrders.rows.map(row => row.id)))
+      expect(linked.items.every(item => item.sourceOrderStatus === 'paid')).toBe(true)
 
       // The property that actually matters: the paying customer is not locked
       // out. Two overlapping windows made `decide` return

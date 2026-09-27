@@ -91,6 +91,8 @@ export interface CommercialEntitlementSnapshotV2 {
   id: string
   workspaceId: string
   subscriptionPeriodId: string
+  sourceOrderId: string | null
+  sourceOrderStatus: string | null
   periodStart: string
   periodEnd: string
   periodStatus: string
@@ -398,14 +400,14 @@ export class PostgresCommercialContractRepository {
   }
 
   async listEntitlementSnapshots(workspaceId: string, limit?: number): Promise<CommercialEntitlementSnapshotV2[]>
-  async listEntitlementSnapshots(workspaceId: string, options: { limit?: number; cursor?: CommercialContractListCursor }): Promise<CommercialContractPage<CommercialEntitlementSnapshotV2>>
-  async listEntitlementSnapshots(workspaceId: string, input: number | { limit?: number; cursor?: CommercialContractListCursor } = 100): Promise<CommercialEntitlementSnapshotV2[] | CommercialContractPage<CommercialEntitlementSnapshotV2>> {
+  async listEntitlementSnapshots(workspaceId: string, options: { limit?: number; cursor?: CommercialContractListCursor; includeSourceOrder?: boolean }): Promise<CommercialContractPage<CommercialEntitlementSnapshotV2>>
+  async listEntitlementSnapshots(workspaceId: string, input: number | { limit?: number; cursor?: CommercialContractListCursor; includeSourceOrder?: boolean } = 100): Promise<CommercialEntitlementSnapshotV2[] | CommercialContractPage<CommercialEntitlementSnapshotV2>> {
     const scope = requireWorkspaceScope(workspaceId)
     const options = typeof input === 'number' ? { limit: input } : input
     const limit = options.limit ?? 100
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new RangeError('limit must be between 1 and 200')
     return withWorkspaceTransaction(this.pool, scope, async client => {
-      type Row = { id: string; workspaceId: string; subscriptionPeriodId: string; periodStart: string | Date; periodEnd: string | Date; periodStatus: string; catalogVersionId: string; skuCode: string; resolvedBenefits: unknown; unresolvedBlockers: unknown; executable: boolean; checksum: string; createdAt: string | Date }
+      type Row = { id: string; workspaceId: string; subscriptionPeriodId: string; sourceOrderId: string | null; sourceOrderStatus: string | null; periodStart: string | Date; periodEnd: string | Date; periodStatus: string; catalogVersionId: string; skuCode: string; resolvedBenefits: unknown; unresolvedBlockers: unknown; executable: boolean; checksum: string; createdAt: string | Date }
       // `merchant_entitlement_snapshots_v2` is a SECURITY DEFINER projection
       // owned by migration 223. It resolves `sku_code` on the function owner's
       // side because migration 146 revokes every privilege on
@@ -415,14 +417,26 @@ export class PostgresCommercialContractRepository {
       // workspace itself (`row_security = off` stops the RLS policy from doing
       // it), so `scope` is passed through the transaction-local
       // `app.workspace_id` setting set by `withWorkspaceTransaction`.
+      const includeSourceOrder = typeof input !== 'number' && input.includeSourceOrder === true
+      const sourceOrderColumns = includeSourceOrder ? 'o.id AS "sourceOrderId", o.status AS "sourceOrderStatus"' : 'NULL::text AS "sourceOrderId", NULL::text AS "sourceOrderStatus"'
+      const sourceOrderJoins = includeSourceOrder ? `
+           LEFT JOIN workspace_subscription_periods_v2 AS p
+             ON p.workspace_id=f.workspace_id AND p.id=f.subscription_period_id
+           LEFT JOIN commercial_order_snapshots_v2 AS os
+             ON os.workspace_id=p.workspace_id AND os.id=p.order_snapshot_id
+           LEFT JOIN commercial_orders_v2 AS o
+             ON o.workspace_id=os.workspace_id AND o.id=os.order_id` : ''
       const result = await client.query<Row>(
-        `SELECT id, workspace_id AS "workspaceId", subscription_period_id AS "subscriptionPeriodId",
-                period_start AS "periodStart", period_end AS "periodEnd", period_status AS "periodStatus",
-                catalog_version_id AS "catalogVersionId", sku_code AS "skuCode", resolved_benefits AS "resolvedBenefits",
-                unresolved_blockers AS "unresolvedBlockers", executable, checksum, created_at AS "createdAt"
-           FROM public.merchant_entitlement_snapshots_v3($1, $2::timestamptz, $3::text)`, [limit + 1, options.cursor?.createdAt ?? null, options.cursor?.id ?? null],
+        `SELECT f.id, f.workspace_id AS "workspaceId", f.subscription_period_id AS "subscriptionPeriodId",
+                ${sourceOrderColumns},
+                f.period_start AS "periodStart", f.period_end AS "periodEnd", f.period_status AS "periodStatus",
+                f.catalog_version_id AS "catalogVersionId", f.sku_code AS "skuCode", f.resolved_benefits AS "resolvedBenefits",
+                f.unresolved_blockers AS "unresolvedBlockers", f.executable, f.checksum, f.created_at AS "createdAt"
+           FROM public.merchant_entitlement_snapshots_v3($1, $2::timestamptz, $3::text) AS f
+           ${sourceOrderJoins}`, [limit + 1, options.cursor?.createdAt ?? null, options.cursor?.id ?? null],
       )
       const items = result.rows.slice(0, limit).map(row => {
+        if (includeSourceOrder && (!row.sourceOrderId || !row.sourceOrderStatus)) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'entitlement source order is unavailable')
         if (!Array.isArray(row.resolvedBenefits) || !Array.isArray(row.unresolvedBlockers) || !row.unresolvedBlockers.every(item => typeof item === 'string')) {
           throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'entitlement snapshot payload is invalid')
         }

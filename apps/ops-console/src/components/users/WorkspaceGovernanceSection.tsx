@@ -9,6 +9,7 @@ import { packageDisplayName } from "../commercial/packageLabels.js";
 
 const subscriptionLabels: Record<string, string> = { active: "订阅中", trialing: "试用中", inactive: "未订阅", canceled: "已取消" };
 const entitlementLabels: Record<string, string> = { active: "生效中", expired: "已到期", canceled: "已取消", blocked: "不可执行", pending: "待生效" };
+const orderStatusLabels: Record<string, string> = { paid: "已支付", pending: "待支付", refunded: "已退款", reconciliation_required: "待核对", failed: "支付失败", closed: "已关闭" };
 
 function WorkspaceEntitlementFacts({ workspaceId, canRead, client }: { workspaceId: string; canRead: boolean; client: Pick<CommercialOperationsClient, "entitlements"> }) {
   const [state, setState] = useState<{ loading: boolean; items: CommercialEntitlement[]; total: number; incomplete: boolean; error: string }>({ loading: canRead, items: [], total: 0, incomplete: false, error: "" });
@@ -35,6 +36,8 @@ function WorkspaceEntitlementFacts({ workspaceId, canRead, client }: { workspace
                 <Descriptions.Item label="权益状态"><Tag color={item.status === "active" ? "green" : item.status === "blocked" ? "red" : "default"}>{entitlementLabels[item.status] ?? item.status}</Tag></Descriptions.Item>
                 <Descriptions.Item label="服务期间">{item.periodLabel ?? "未提供"}</Descriptions.Item>
                 <Descriptions.Item label="权益 ID"><Typography.Text code copyable>{item.id}</Typography.Text></Descriptions.Item>
+                <Descriptions.Item label="来源订单"><Typography.Text code copyable>{item.sourceOrderId ?? "未提供"}</Typography.Text></Descriptions.Item>
+                <Descriptions.Item label="订单状态">{item.sourceOrderStatus ? orderStatusLabels[item.sourceOrderStatus] ?? item.sourceOrderStatus : "未知"}</Descriptions.Item>
               </Descriptions>)}
               {state.incomplete ? <Alert type="warning" showIcon title="这里只显示前 20 条，请到「账务与退款」查看完整权益记录。" style={{ marginTop: 10 }} /> : null}
             </>}

@@ -207,6 +207,7 @@ export interface CommercialEntitlement {
   serviceSummary: string | null;
   periodLabel: string | null;
   sourceOrderId: string | null;
+  sourceOrderStatus: string | null;
   updatedAt: string | null;
 }
 
@@ -413,6 +414,7 @@ export function parseEntitlements(value: unknown): CommercialPage<CommercialEnti
     serviceSummary: optionalText(pick(row, "service_summary", "serviceSummary")),
     periodLabel: optionalText(pick(row, "period_label", "periodLabel")),
     sourceOrderId: optionalText(pick(row, "source_order_id", "sourceOrderId")),
+    sourceOrderStatus: optionalText(pick(row, "source_order_status", "sourceOrderStatus")),
     updatedAt: optionalText(pick(row, "updated_at", "updatedAt")),
   })) };
 }

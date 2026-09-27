@@ -39,7 +39,7 @@ describe("workspace directory detail and governance dialogs", () => {
               authorization: { can: capability => capability === 'workspace.status.update' || capability === 'commercial.entitlement.read' },
               opsSession: { workspace_id: 'ws_other' }, changeWorkspaceStatus: async () => true,
             };
-            const entitlementClient = { entitlements: async workspaceId => ({ items: [{ id: 'ces_live_growth', workspaceId, skuCode: 'growth', snapshotVersion: 'v1', status: 'active', periodLabel: '2026-09-01 / 2026-10-01', brandLimit: 1, storeLimit: 1, storageLabel: null, serviceSummary: null, sourceOrderId: null, updatedAt: '2026-09-01' }], total: 1, truncated: false, nextCursor: null }) };
+            const entitlementClient = { entitlements: async workspaceId => ({ items: [{ id: 'ces_live_growth', workspaceId, skuCode: 'growth', snapshotVersion: 'v1', status: 'active', periodLabel: '2026-09-01 / 2026-10-01', brandLimit: 1, storeLimit: 1, storageLabel: null, serviceSummary: null, sourceOrderId: 'order_live_growth', sourceOrderStatus: 'paid', updatedAt: '2026-09-01' }], total: 1, truncated: false, nextCursor: null }) };
             createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(WorkspaceGovernanceSection, { model, entitlementClient })));
           `;
         },
@@ -85,6 +85,8 @@ describe("workspace directory detail and governance dialogs", () => {
       await detail.getByText("成长版（growth）").waitFor();
       expect(await detail.getByText("生效中").count()).toBe(1);
       expect(await detail.getByText("ces_live_growth").count()).toBe(1);
+      expect(await detail.getByText("order_live_growth").count()).toBe(1);
+      expect(await detail.getByText("已支付").count()).toBe(1);
       expect(await page.getByRole("dialog", { name: "停用租户" }).count()).toBe(0);
       await detail.getByRole("button", { name: "关闭" }).click();
       await page.getByRole("button", { name: "停用租户" }).click();

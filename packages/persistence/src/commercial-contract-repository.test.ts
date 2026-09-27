@@ -26,6 +26,28 @@ class ScriptedClient implements SqlClient {
 const pool = (client: SqlClient): SqlPool => ({ connect: async () => client })
 
 describe('PostgresCommercialContractRepository', () => {
+  it('requires the tenant-scoped source order for Ops entitlement reads without changing the feature guard query', async () => {
+    const baseRow = {
+      id: 'ent_1', workspaceId: 'ws-1', subscriptionPeriodId: 'period_1',
+      periodStart: '2026-09-01T00:00:00Z', periodEnd: '2026-10-01T00:00:00Z', periodStatus: 'active',
+      catalogVersionId: 'sku_v1', skuCode: 'growth', resolvedBenefits: [], unresolvedBlockers: [],
+      executable: true, checksum: 'a'.repeat(64), createdAt: '2026-09-01T00:00:00Z',
+    }
+    const client = new ScriptedClient(sql => sql.includes('merchant_entitlement_snapshots_v3')
+      ? { rows: [{ ...baseRow, sourceOrderId: sql.includes('commercial_orders_v2') ? 'order_1' : null, sourceOrderStatus: sql.includes('commercial_orders_v2') ? 'paid' : null }] }
+      : { rows: [] })
+    const repository = new PostgresCommercialContractRepository(pool(client))
+    await expect(repository.listEntitlementSnapshots('ws-1')).resolves.toMatchObject([{ id: 'ent_1', sourceOrderId: null }])
+    await expect(repository.listEntitlementSnapshots('ws-1', { limit: 20, includeSourceOrder: true })).resolves.toMatchObject({ items: [{ id: 'ent_1', sourceOrderId: 'order_1', sourceOrderStatus: 'paid' }] })
+    const query = client.calls.filter(call => call.sql.includes('merchant_entitlement_snapshots_v3'))
+    expect(query[0]?.sql).not.toContain('JOIN commercial_orders_v2')
+    expect(query[1]?.sql).toContain('LEFT JOIN commercial_orders_v2')
+    expect(query[1]?.values).toEqual([21, null, null])
+
+    const missing = new PostgresCommercialContractRepository(pool(new ScriptedClient(sql => sql.includes('merchant_entitlement_snapshots_v3') ? { rows: [{ ...baseRow, sourceOrderId: null, sourceOrderStatus: null }] } : { rows: [] })))
+    await expect(missing.listEntitlementSnapshots('ws-1', { limit: 20, includeSourceOrder: true })).rejects.toMatchObject({ code: 'COMMERCIAL_POLICY_UNRESOLVED' })
+  })
+
   it('creates an order and immutable server SKU snapshot in one workspace transaction', async () => {
     const sku = approvedSku()
     const client = new ScriptedClient((sql, values) => {

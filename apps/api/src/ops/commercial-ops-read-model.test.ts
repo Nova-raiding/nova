@@ -191,9 +191,9 @@ describe('commercial Ops read model', () => {
 
   it('projects V2 entitlement, order and service facts without legacy wallet/task fallbacks', () => {
     expect(projectCommercialEntitlement({
-      id: 'ent_1', workspaceId: 'ws_1', subscriptionPeriodId: 'period_1', periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-10-01T00:00:00.000Z', periodStatus: 'active', catalogVersionId: 'sku_v1', skuCode: 'monthly_basic',
+      id: 'ent_1', workspaceId: 'ws_1', subscriptionPeriodId: 'period_1', sourceOrderId: 'order_1', sourceOrderStatus: 'paid', periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-10-01T00:00:00.000Z', periodStatus: 'active', catalogVersionId: 'sku_v1', skuCode: 'monthly_basic',
       resolvedBenefits: [{ code: 'max_brands', quantity: 1, rawValue: null, rawUnit: 'brand' }, { code: 'cloud_storage', quantity: 50, rawValue: '50g', rawUnit: 'g' }], unresolvedBlockers: ['STORAGE_UNIT_UNRESOLVED'], executable: false, checksum: 'ent_checksum', createdAt: '2026-09-01T00:00:00.000Z',
-    })).toMatchObject({ id: 'ent_1', workspace_id: 'ws_1', sku_code: 'monthly_basic', status: 'blocked', brand_limit: 1, storage_label: '50g', unresolved: ['STORAGE_UNIT_UNRESOLVED'] })
+    })).toMatchObject({ id: 'ent_1', workspace_id: 'ws_1', sku_code: 'monthly_basic', status: 'blocked', brand_limit: 1, storage_label: '50g', source_order_id: 'order_1', source_order_status: 'paid', unresolved: ['STORAGE_UNIT_UNRESOLVED'] })
 
     expect(projectCommercialOrder({
       id: 'order_1', workspaceId: 'ws_1', skuId: 'sku_1', skuVersionId: 'sku_v1', skuCode: 'points_500', amountFen: 30_000, currency: 'CNY', paymentProvider: 'wechat', status: 'paid', idempotencyKey: 'order-key', requestHash: 'hash', createdByActorId: 'actor_1', providerOrderId: 'provider_1', checkoutUrl: null, checkoutExpiresAt: null, checkoutIdempotencyKey: null, createdAt: '2026-09-01T00:00:00.000Z', paidAt: '2026-09-01T00:01:00.000Z',

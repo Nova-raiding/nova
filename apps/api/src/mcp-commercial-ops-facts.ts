@@ -45,7 +45,7 @@ export async function handleCommercialOpsFactMethod(method: string, params: Para
       if (!persistence.commercialContracts) throw new DomainError('COMMERCIAL_ENTITLEMENT_V2_REPOSITORY_UNAVAILABLE', 'V2 权益快照仓储尚未配置，不能回退到旧任务额度', 503)
       const targetWorkspaceId = required(params, 'target_workspace_id')
       const limit = commercialOpsReadInput(() => commercialOpsPageLimit(params.limit, 100))
-      const page = await persistence.commercialContracts.listEntitlementSnapshots(targetWorkspaceId, { limit, cursor: decodeCommercialContractPageCursor(params.cursor, 'entitlements') })
+      const page = await persistence.commercialContracts.listEntitlementSnapshots(targetWorkspaceId, { limit, cursor: decodeCommercialContractPageCursor(params.cursor, 'entitlements'), includeSourceOrder: true })
       const items = page.items.map(projectCommercialEntitlement)
       const last = page.items.at(-1)
       return { schema_version: 'commercial.entitlements.v2', items, total: items.length, next_cursor: page.hasMore && last ? encodeCommercialContractPageCursor('entitlements', last.createdAt, last.id) : null, truncated: page.hasMore }

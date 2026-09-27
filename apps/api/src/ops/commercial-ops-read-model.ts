@@ -282,9 +282,10 @@ export function projectCommercialEntitlement(item: CommercialEntitlementSnapshot
     storage_label: storage?.rawValue ?? (storage?.quantity !== null && storage?.quantity !== undefined ? `${storage.quantity}${storage.rawUnit ? ` ${storage.rawUnit}` : ''}` : null),
     service_summary: serviceSummary,
     period_label: `${item.periodStart} / ${item.periodEnd}`,
-    // The persisted entitlement snapshot currently references its subscription
-    // period, not the originating order. Do not relabel that fact as an order.
-    source_order_id: null,
+    // The repository follows entitlement → subscription period → immutable
+    // order snapshot → order inside the same tenant-scoped transaction.
+    source_order_id: item.sourceOrderId,
+    source_order_status: item.sourceOrderStatus,
     updated_at: item.createdAt,
     unresolved: [...item.unresolvedBlockers],
     executable: item.executable,

@@ -33,4 +33,11 @@ describe("commercial operations pagination contract", () => {
     expect(parseEntitlements(response)).toMatchObject({ total: 100, truncated: true, nextCursor: null });
     expect(parseOrders(response)).toMatchObject({ total: 100, truncated: true, nextCursor: null });
   });
+
+  it("preserves the verified entitlement source order facts", () => {
+    expect(parseEntitlements({ items: [{
+      id: "ent_1", workspace_id: "ws_1", sku_code: "growth", snapshot_version: "v1", status: "active",
+      source_order_id: "order_1", source_order_status: "paid",
+    }] }).items[0]).toMatchObject({ sourceOrderId: "order_1", sourceOrderStatus: "paid" });
+  });
 });
