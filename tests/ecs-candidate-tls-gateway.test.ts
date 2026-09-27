@@ -18,12 +18,25 @@ const gitSha = '1'.repeat(40)
 const manifestSha256 = '3'.repeat(64)
 const imageSetDigest = `sha256:${'2'.repeat(64)}`
 const port = '18443'
+const regularProject = 'merchant-demo-candidate-v2'
+const sourceSha256 = `sha256:${'9'.repeat(64)}`
 
 function apiContainer() {
   return {
     Id: apiId, Image: apiImageId, Name: `/merchant-candidate-api-${releaseId}-abcde`, State: { Running: true },
     Config: { Labels: { 'com.docker.compose.project': 'merchant_production', 'com.docker.compose.service': 'api', 'com.docker.compose.oneoff': 'True' } },
     HostConfig: { PortBindings: {} }, NetworkSettings: { Networks: { [network]: { IPAddress: '172.20.0.8' } } },
+  }
+}
+function regularApiContainer() {
+  return {
+    ...apiContainer(), Name: `/${regularProject}-api-1`,
+    Config: { Labels: {
+      'com.docker.compose.project': regularProject, 'com.docker.compose.service': 'api',
+      'com.docker.compose.oneoff': 'False', 'com.docker.compose.container-number': '1',
+      'com.storenova.release.id': releaseId, 'org.opencontainers.image.revision': gitSha,
+      'com.storenova.release.source_sha256': sourceSha256,
+    } },
   }
 }
 function gatewayContainer(name: string) {
@@ -34,7 +47,7 @@ function gatewayContainer(name: string) {
     NetworkSettings: { Networks: { [network]: { IPAddress: '172.20.0.9' } } },
   }
 }
-function fixture() {
+function fixture({ regular = false } = {}) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'candidate-tls-')))
   const compose = join(dir, 'compose.json')
   const env = join(dir, 'candidate.env')
@@ -45,8 +58,9 @@ function fixture() {
   spawnSync('mkdir', ['-p', certDir])
   writeFileSync(join(certDir, 'fullchain.pem'), 'test certificate placeholder')
   writeFileSync(join(certDir, 'privkey.pem'), 'test key placeholder')
-  writeFileSync(compose, JSON.stringify({ networks: { default: { name: network } }, services: {
-    api: { image: apiRef, environment: { RELEASE_ID: releaseId, RELEASE_GIT_SHA: gitSha, RELEASE_MANIFEST_SHA256: manifestSha256, RELEASE_IMAGE_SET_DIGEST: imageSetDigest } },
+  writeFileSync(compose, JSON.stringify({ ...(regular ? { name: regularProject } : {}), networks: { default: { name: network } }, services: {
+    api: { image: apiRef, ...(regular ? { labels: { 'com.storenova.release.source_sha256': sourceSha256 } } : {}),
+      environment: { RELEASE_ID: releaseId, RELEASE_GIT_SHA: gitSha, RELEASE_MANIFEST_SHA256: manifestSha256, RELEASE_IMAGE_SET_DIGEST: imageSetDigest } },
     'pilot-gateway': { image: gatewayRef },
   } }))
   writeFileSync(env, 'RELEASE_ID=release-test\n')
@@ -58,14 +72,14 @@ if(op==='image'){process.stdout.write(args.at(-1)===${JSON.stringify(apiRef)}?${
 if(op==='run'){fs.writeFileSync(${JSON.stringify(nameFile)},args[args.indexOf('--name')+1]);process.stdout.write(${JSON.stringify(gatewayId)});process.exit(0)}
 if(op==='inspect'){
  const id=args.at(-1);
- const value=id===${JSON.stringify(apiId)}?${JSON.stringify(apiContainer())}:{...${JSON.stringify(gatewayContainer('placeholder'))},Name:'/'+fs.readFileSync(${JSON.stringify(nameFile)},'utf8')};
+ const value=id===${JSON.stringify(apiId)}?${JSON.stringify(regular ? regularApiContainer() : apiContainer())}:{...${JSON.stringify(gatewayContainer('placeholder'))},Name:'/'+fs.readFileSync(${JSON.stringify(nameFile)},'utf8')};
  process.stdout.write(JSON.stringify([value]));process.exit(0)
 }
 if(op==='stop'){process.stdout.write(${JSON.stringify(gatewayId)});process.exit(0)}
 process.exit(1);
 `)
   chmodSync(binary, 0o700)
-  const args = [script, 'start', compose, env, 'merchant_production', gatewayRef, releaseId, apiId, port]
+  const args = [script, 'start', compose, env, regular ? regularProject : 'merchant_production', gatewayRef, releaseId, apiId, port]
   const processEnv = { ...process.env, NODE_ENV: 'test', VITEST: 'true', CANDIDATE_TLS_TEST_DOCKER_BINARY: binary,
     CANDIDATE_TLS_TEST_CERT_DIR: certDir, CANDIDATE_TLS_TEST_UNPROTECTED_FILES: 'true', CANDIDATE_TLS_TEST_SKIP_PROBE: 'true' }
   return { args, processEnv, calls, nameFile, compose, env }
@@ -114,6 +128,25 @@ describe('isolated ECS candidate TLS gateway', () => {
     expect(() => assertCandidateApi({ ...apiContainer(), NetworkSettings: { Networks: {} } }, expected)).toThrow()
   })
 
+  it('accepts only one exact regular API from the protected isolated project', () => {
+    const expected = { id: apiId, imageId: apiImageId, project: regularProject, releaseId, network,
+      manifestProject: regularProject, gitSha, sourceSha256 }
+    const actual = regularApiContainer()
+    expect(assertCandidateApi(actual, expected)).toBe('172.20.0.8')
+    for (const changed of [
+      { ...actual, Id: '0'.repeat(64) },
+      { ...actual, Name: `/${regularProject}-api-2` },
+      { ...actual, Image: gatewayImageId },
+      { ...actual, HostConfig: { PortBindings: { '8787/tcp': [{ HostIp: '127.0.0.1', HostPort: '18787' }] } } },
+      { ...actual, NetworkSettings: { Networks: { ...actual.NetworkSettings.Networks, production: { IPAddress: '172.21.0.5' } } } },
+      { ...actual, Config: { Labels: { ...actual.Config.Labels, 'com.storenova.release.id': 'release-other' } } },
+      { ...actual, Config: { Labels: { ...actual.Config.Labels, 'org.opencontainers.image.revision': '0'.repeat(40) } } },
+      { ...actual, Config: { Labels: { ...actual.Config.Labels, 'com.docker.compose.container-number': '2' } } },
+    ]) expect(() => assertCandidateApi(changed, expected)).toThrow('candidate API identity or isolation mismatch')
+    expect(() => assertCandidateApi(actual, { ...expected, manifestProject: 'merchant-demo-other' })).toThrow()
+    expect(() => assertCandidateApi(actual, { ...expected, project: 'merchant-production' })).toThrow()
+  })
+
   it('rejects any non-loopback or extra gateway publication', () => {
     const name = `merchant-candidate-tls-${releaseId}-abcde`
     const expected = { id: gatewayId, imageId: gatewayImageId, name, network, port: Number(port), apiId }
@@ -143,5 +176,16 @@ describe('isolated ECS candidate TLS gateway', () => {
     const after = readFileSync(value.calls, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[])
     expect(after.at(-1)).toEqual(['--host', 'unix:///var/run/docker.sock', 'stop', '--time', '10', gatewayId])
     expect(after.some(call => call.includes('rm') || call.includes('down'))).toBe(false)
+  })
+
+  it('launches the same loopback gateway for a pinned regular isolated API', () => {
+    const value = fixture({ regular: true })
+    const start = spawnSync('node', value.args, { env: value.processEnv, encoding: 'utf8' })
+    expect(start.status, start.stderr).toBe(0)
+    const calls = readFileSync(value.calls, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[])
+    const run = calls.find(call => call[2] === 'run')!
+    expect(run).toContain(`127.0.0.1:${port}:8443`)
+    expect(run).toContain(network)
+    expect(run).not.toContain('0.0.0.0:443:8443')
   })
 })

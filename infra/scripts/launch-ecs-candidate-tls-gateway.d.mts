@@ -17,7 +17,8 @@ export interface CandidateApiDescriptor {
 
 export function assertCandidateApi(
   container: CandidateApiDescriptor,
-  expected: { id: string; imageId: string; project: string; releaseId: string; network: string },
+  expected: { id: string; imageId: string; project: string; releaseId: string; network: string;
+    manifestProject?: string; gitSha?: string; sourceSha256?: string },
 ): string
 
 export interface CandidateGatewayDescriptor {

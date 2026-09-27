@@ -54,14 +54,27 @@ export function candidateGatewayConfig(ip) {
 }\n`
 }
 
-export function assertCandidateApi(container, { id, imageId, project, releaseId, network }) {
+export function assertCandidateApi(container, { id, imageId, project, releaseId, network, manifestProject, gitSha, sourceSha256 }) {
   const labels = container?.Config?.Labels ?? {}
   const bindings = container?.HostConfig?.PortBindings ?? {}
-  const address = container?.NetworkSettings?.Networks?.[network]?.IPAddress
+  const networks = container?.NetworkSettings?.Networks ?? {}
+  const address = networks[network]?.IPAddress
+  const oneOff = labels['com.docker.compose.oneoff'] === 'True' &&
+    container.Name?.replace(/^\//, '').startsWith(`merchant-candidate-api-${releaseId}-`)
+  // A regular API is accepted only from an isolated, frozen demo project.
+  // The existing one-off acceptance path remains unchanged.
+  const regular = labels['com.docker.compose.oneoff'] === 'False' &&
+    /^merchant-demo-[a-z0-9][a-z0-9_-]{0,25}$/.test(project) &&
+    manifestProject === project && container.Name === `/${project}-api-1` &&
+    labels['com.docker.compose.container-number'] === '1' &&
+    labels['com.storenova.release.id'] === releaseId &&
+    /^[0-9a-f]{40}$/.test(gitSha ?? '') && labels['org.opencontainers.image.revision'] === gitSha &&
+    /^sha256:[0-9a-f]{64}$/.test(sourceSha256 ?? '') &&
+    labels['com.storenova.release.source_sha256'] === sourceSha256 &&
+    Object.keys(networks).length === 1
   if (container?.Id !== id || container.Image !== imageId || container.State?.Running !== true ||
       labels['com.docker.compose.project'] !== project || labels['com.docker.compose.service'] !== 'api' ||
-      labels['com.docker.compose.oneoff'] !== 'True' ||
-      !container.Name?.replace(/^\//, '').startsWith(`merchant-candidate-api-${releaseId}-`) ||
+      !(oneOff || regular) ||
       Object.values(bindings).some(value => value?.length) || !address) throw new Error('candidate API identity or isolation mismatch')
   candidateGatewayConfig(address)
   return address
@@ -171,7 +184,8 @@ async function main() {
   const apiImageId = docker(binary, ['image', 'inspect', '--format', '{{.Id}}', api.image])
   if (!/^sha256:[0-9a-f]{64}$/.test(apiImageId)) throw new Error('candidate API image ID is invalid')
   const apiContainer = inspect(binary, apiId)
-  const ip = assertCandidateApi(apiContainer, { id: apiId, imageId: apiImageId, project, releaseId, network })
+  const ip = assertCandidateApi(apiContainer, { id: apiId, imageId: apiImageId, project, releaseId, network,
+    manifestProject: compose.name, gitSha, sourceSha256: api?.labels?.['com.storenova.release.source_sha256'] })
   const certDir = process.env.CANDIDATE_TLS_TEST_CERT_DIR || '/opt/merchant-deploy/deploy/certs'
   if (realpathSync(certDir) !== certDir || !statSync(certDir).isDirectory() ||
       !statSync(join(certDir, 'fullchain.pem')).isFile() || !statSync(join(certDir, 'privkey.pem')).isFile()) throw new Error('candidate TLS certificate mount is unavailable')
