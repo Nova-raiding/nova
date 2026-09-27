@@ -6,6 +6,8 @@
 
 当前公网 gateway 的运行配置位于容器内 `/etc/nginx/conf.d/default.conf`，不是宿主配置 bind mount；唯一观察到的 bind mount 是只读证书目录。现有 nginx 配置的 `/v1/`、`/api/` 和 `/payment-gateway/` 路由各有上游。原型在 HTTP 层添加精确 `POST` 回调路径的 `map`，仅在公网 HTTPS server 中对其他新请求返回 503；它不改 `listen 8080/8443`，不停止容器。必须以实际运行配置 SHA、容器 ID、镜像 ID、Compose 标签、网络 ID 和主机 80/443 映射绑定签名 capsule。
 
+101 的 Docker healthcheck 实际为 `wget --no-check-certificate --header='Host: yxsona.com' -qO- https://127.0.0.1:8443/healthz`。配置只对 `GET /healthz` 且 socket peer 为 `127.0.0.1`、Host 为 `yxsona.com` 放行；公网请求同一路径仍返回 503。必须验证完整 nginx 有效配置没有 `real_ip` 头映射，避免外部请求伪装本机来源。调用方还必须从容器内和公网分别探测健康路径，结果分别为 200 和 503，否则回滚。
+
 代码可从受保护回滚 capsule 与已签名的精确回调清单生成候选配置，并要求先持久保存原配置。注入的宿主端口随后写入候选、验证读回 SHA、执行 `nginx -t`、reload，并从外部确认 80/443 仍在监听、新业务请求被拒绝、每条批准回调进入 API。任何一步失败时尝试写回原配置、校验、reload 和基线探测；回滚无法确认则抛出复合错误，不能宣称可继续发布。排空证据要求两次相隔至少 30 秒且签名、绑定同一 gateway/fence SHA 的零值快照。
 
 ## 安装生产控制器前的代码级缺口

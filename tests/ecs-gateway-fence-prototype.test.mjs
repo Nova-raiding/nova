@@ -8,6 +8,7 @@ const id = 'a'.repeat(64), image = `sha256:${'b'.repeat(64)}`, networkId = 'e'.r
 const baseline = `map $http_upgrade $connection_upgrade { default upgrade; }\nserver { listen 8080; server_name yxsona.com; }\nserver {\n  listen 8443 ssl;\n  server_name yxsona.com www.yxsona.com admin.yxsona.com ops.yxsona.com;\n  location ^~ /v1/ { proxy_pass http://pilot_api; }\n}\n`
 const capsule = () => ({ gateway_id: id, image_id: image, project: 'merchant-demo-85575f9c',
   service: 'pilot-gateway', host_ports: [80, 443], network_id: networkId, config_sha256: sha(baseline),
+  effective_config_sha256: 'f'.repeat(64),
   rollback: { gateway_id: id, config_sha256: sha(baseline), db_prefix: 242, archive_sha256: 'c'.repeat(64) } })
 const callbacks = () => ({ gateway_id: id, exact_paths: ['/v1/billing/callback/alipay', '/v1/billing/callback/wechat'] })
 const harness = ({ failAt } = {}) => {
@@ -16,26 +17,33 @@ const harness = ({ failAt } = {}) => {
     state: () => ({ config, reloads, saved }),
     port: {
       assertLock: async () => {},
-      inspect: async () => ({ Id: id, Image: image, State: { Running: true }, Config: { Labels: {
+      inspect: async () => ({ Id: id, Image: image, State: { Running: true }, Config: { Healthcheck: {
+        Test: ['CMD-SHELL', "wget --no-check-certificate --header='Host: yxsona.com' -qO- https://127.0.0.1:8443/healthz >/dev/null || exit 1"],
+      }, Labels: {
         'com.docker.compose.project': 'merchant-demo-85575f9c', 'com.docker.compose.service': 'pilot-gateway' } },
       HostConfig: { PortBindings: { '8080/tcp': [{ HostPort: '80' }], '8443/tcp': [{ HostPort: '443' }] } },
       NetworkSettings: { Networks: { 'merchant-demo-85575f9c_default': { NetworkID: networkId } } } }),
       readConfig: async () => config,
+      assertNoRealIpModules: async digest => digest === 'f'.repeat(64),
       saveOriginal: async (text, digest) => { saved = text === baseline && digest === sha(baseline); return saved },
       writeConfig: async text => { config = text },
       nginxTest: async () => failAt === 'test' && config.includes('merchant_maintenance_block') ? false : true,
       reload: async () => { reloads += 1 },
       probe: async paths => ({ gateway_id: id, ports: [80, 443], new_business_status: 503,
-        callback_paths: paths, callbacks_reached_api: failAt !== 'probe' }),
+        callback_paths: paths, callbacks_reached_api: failAt !== 'probe',
+        container_local_health_status: 200, public_health_status: failAt === 'public-health' ? 200 : 503 }),
       probeBaseline: async () => config === baseline,
     },
   }
 }
 
-test('renders one exact server fence and preserves listener declarations', () => {
+test('renders one exact server fence, container-local health, and public callback rules', () => {
   const value = renderGatewayFence(baseline, callbacks().exact_paths)
-  assert.match(value.config, /map "\$request_method:\$uri" \$merchant_maintenance_block/)
+  assert.match(value.config, /map "\$request_method:\$uri" \$merchant_callback_block/)
   assert.match(value.config, /"POST:\/v1\/billing\/callback\/alipay" 0;/)
+  assert.match(value.config, /"GET:\/healthz:127\.0\.0\.1:yxsona\.com" 0;/)
+  assert.doesNotMatch(value.config, /"GET:\/healthz" 0;/)
+  assert.doesNotMatch(value.config, /"GET:\/healthz:203\.0\.113\.10:yxsona\.com" 0;/)
   assert.match(value.config, /if \(\$merchant_maintenance_block\) \{ return 503; \}/)
   assert.equal(value.config.split('listen 8443 ssl;').length, 2)
   assert.equal(value.config.split('listen 8080;').length, 2)
@@ -68,6 +76,14 @@ test('post-reload callback probe failure reloads original config', async () => {
   assert.equal(h.state().reloads, 2)
 })
 
+test('public /healthz bypass refuses fence and rolls back', async () => {
+  const h = harness({ failAt: 'public-health' })
+  await assert.rejects(applyGatewayFencePrototype({ capsule: capsule(), callbacks: callbacks(),
+    verify: () => true, port: h.port }), /FENCE_PROBE_FAILED/)
+  assert.equal(h.state().config, baseline)
+  assert.equal(h.state().reloads, 2)
+})
+
 test('unsigned or stale capsule refuses before any write', async () => {
   const h = harness()
   await assert.rejects(applyGatewayFencePrototype({ capsule: capsule(), callbacks: callbacks(),
@@ -77,6 +93,24 @@ test('unsigned or stale capsule refuses before any write', async () => {
   await assert.rejects(applyGatewayFencePrototype({ capsule: wrong, callbacks: callbacks(),
     verify: () => true, port: h.port }), /CAPSULE_IDENTITY_MISMATCH/)
   assert.equal(h.state().saved, false)
+})
+
+test('healthcheck or real-IP trust drift refuses before writing config', async () => {
+  const h = harness()
+  const inspect = h.port.inspect
+  h.port.inspect = async () => {
+    const live = await inspect()
+    live.Config.Healthcheck.Test[1] = 'curl https://127.0.0.1:8443/healthz'
+    return live
+  }
+  await assert.rejects(applyGatewayFencePrototype({ capsule: capsule(), callbacks: callbacks(),
+    verify: () => true, port: h.port }), /CAPSULE_IDENTITY_MISMATCH/)
+  assert.equal(h.state().saved, false)
+  const q = harness()
+  q.port.assertNoRealIpModules = async () => false
+  await assert.rejects(applyGatewayFencePrototype({ capsule: capsule(), callbacks: callbacks(),
+    verify: () => true, port: q.port }), /REAL_IP_TRUST_UNVERIFIED/)
+  assert.equal(q.state().saved, false)
 })
 
 test('signed double drain snapshot requires exact binding, interval, and zero counters', () => {
