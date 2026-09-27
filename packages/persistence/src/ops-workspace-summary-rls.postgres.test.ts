@@ -47,6 +47,14 @@ describe('merchant_ops workspace summary RLS boundary', () => {
           ('brand_ops_summary_b', 'ops_summary_b', 'B brand')
       `)
       await database.query(`
+        INSERT INTO platform_accounts (id, workspace_id, platform, remote_account_id, credential_ref, token_state)
+        VALUES ('ops_summary_store_a', 'ops_summary_a', 'jd', 'remote-a', 'fixture-ref', 'manually_registered')
+      `)
+      await database.query(`
+        INSERT INTO brand_store_bindings (workspace_id, brand_id, platform, platform_account_id)
+        VALUES ('ops_summary_a', 'brand_ops_summary_a', 'jd', 'ops_summary_store_a')
+      `)
+      await database.query(`
         INSERT INTO workspace_subscriptions (workspace_id, status, plan_code, plan_name)
         VALUES ('ops_summary_a', 'active', 'pro', 'Pro'), ('ops_summary_b', 'trialing', 'trial', 'Trial')
       `)
@@ -78,11 +86,11 @@ describe('merchant_ops workspace summary RLS boundary', () => {
       expect((await app.query('SELECT id FROM brands')).rows).toEqual([])
       const brandUnits = new PostgresBrandUnitRepository(app)
       expect(await brandUnits.listPlatformSummary(['ops_summary_a'])).toMatchObject([
-        { workspaceId: 'ops_summary_a', brandCount: 1, unboundBrandCount: 1 },
+        { workspaceId: 'ops_summary_a', brandCount: 1, boundStoreCount: 1, unboundBrandCount: 0 },
       ])
       expect(await brandUnits.listPlatformSummary(['ops_summary_a', 'ops_summary_b'])).toMatchObject([
-        { workspaceId: 'ops_summary_a', brandCount: 1 },
-        { workspaceId: 'ops_summary_b', brandCount: 1 },
+        { workspaceId: 'ops_summary_a', brandCount: 1, boundStoreCount: 1, unboundBrandCount: 0 },
+        { workspaceId: 'ops_summary_b', brandCount: 1, boundStoreCount: 0, unboundBrandCount: 1 },
       ])
       expect((await app.query('SELECT id FROM brands')).rows).toEqual([])
 
