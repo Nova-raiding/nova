@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { FinanceSearchController } from "../../hooks/useFinanceSearch.js";
 import { FinanceSearchSection } from "./FinanceSearchSection.js";
+import { financeDetailAttributeLabel, financeDetailAttributeValue, financeRecordCostEvidence } from "./FinanceDetailDrawer.js";
 
 function controller(overrides: Partial<FinanceSearchController> = {}): FinanceSearchController {
   return {
@@ -16,6 +17,19 @@ function controller(overrides: Partial<FinanceSearchController> = {}): FinanceSe
 const render = (value: FinanceSearchController) => renderToStaticMarkup(createElement(FinanceSearchSection, { controller: value }));
 
 describe("FinanceSearchSection", () => {
+  it("explains the paid cash subscription without hiding audit values", () => {
+    expect(financeDetailAttributeLabel("sku_code")).toBe("套餐代码");
+    expect(financeDetailAttributeLabel("sku_version_id")).toBe("套餐版本");
+    expect(financeDetailAttributeLabel("payment_provider")).toBe("支付方式");
+    expect(financeDetailAttributeLabel("created_by_actor_id")).toBe("登记操作人");
+    expect(financeDetailAttributeValue("payment_provider", "owner_attested_cash")).toBe("现金收款（负责人核验） · owner_attested_cash");
+    expect(financeDetailAttributeValue("payment_provider", "alipay")).toBe("支付宝 · alipay");
+    expect(financeDetailAttributeValue("sku_code", "growth")).toBe("growth");
+    expect(financeRecordCostEvidence("subscription_order", undefined)).toBe("不适用");
+    expect(financeRecordCostEvidence("recharge_order", undefined)).toBe("不适用");
+    expect(financeRecordCostEvidence("model_usage", undefined)).toBe("待核验");
+    expect(financeRecordCostEvidence("model_usage", 0.003511)).toBe("¥0.003511");
+  });
   it("renders labeled filters and an accessible empty state", () => {
     const html = render(controller());
     expect(html).toContain("财务检索筛选");
