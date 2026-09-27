@@ -538,6 +538,19 @@ describe('deployment operation scripts', () => {
     expect(deployPreflight).toContain('validate-scanner-contract.rb')
     expect(deployPreflight.indexOf('validate-rendered-production-config.rb')).toBeLessThan(deployPreflight.indexOf('capability-evidence-gate.ts'))
     expect(deployPreflight.indexOf('validate-scanner-contract.rb')).toBeLessThan(deployPreflight.indexOf('capability-evidence-gate.ts'))
+    for (const preflight of [deployPreflight, ecsDeployPreflight]) {
+      expect(preflight).toContain('YAML.safe_load(File.read(ARGV.fetch(0), encoding: "UTF-8"), aliases: false)')
+      expect(preflight).toContain('config["knowledge_vector_index_enabled"]')
+      expect(preflight).toContain('unless [true, false].include?(value)')
+      expect(preflight).toContain('config["embedding_model"]')
+      expect(preflight).toMatch(/if \[ "\$embedding_enabled" = true \]; then[\s\S]*model-relay-evidence-gate\.ts[^\n]*--embedding-enabled --embedding-model "\$rendered_embedding_model"[\s\S]*else[\s\S]*model-relay-evidence-gate\.ts/)
+      expect(preflight).not.toContain('KNOWLEDGE_VECTOR_INDEX_ENABLED')
+      const relayInvocations = preflight.match(/^\s*npx --no-install tsx .*model-relay-evidence-gate\.ts[^\n]*$/gmu) ?? []
+      expect(relayInvocations).toHaveLength(2)
+      expect(relayInvocations[0]).toContain('--embedding-enabled --embedding-model "$rendered_embedding_model"')
+      expect(relayInvocations[1]).not.toContain('--embedding-enabled')
+      expect(relayInvocations[1]).not.toContain('--embedding-model')
+    }
     for (const binding of ['--artifact-root', '--public-key', '--key-id', '--capability-evidence', '--capacity-evidence', '--model-relay-evidence', '--payment-evidence', '--restore-evidence', '--object-storage-evidence', '--codex-app-host-evidence', '--canonical-cutover-evidence']) expect(deployPreflight).toContain(binding)
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found' })).toThrow()
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found', SKIP_LOCAL_OPS_GATE: 'true', NODE_ENV: 'production' })).toThrow(/SKIP_LOCAL_OPS_GATE/)
@@ -547,6 +560,10 @@ describe('deployment operation scripts', () => {
 
   it('keeps ECS infra scope independent of full business acceptance artifacts', () => {
     const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
+    const infraEmbeddingGuard = preflight.indexOf('if [ "$DEPLOYMENT_SCOPE" != full ] && [ "$embedding_enabled" = true ]; then')
+    expect(infraEmbeddingGuard).toBeGreaterThan(preflight.indexOf('sh infra/scripts/validate-production-config.sh "$config_path"'))
+    expect(infraEmbeddingGuard).toBeLessThan(preflight.indexOf('knowledge vector indexing requires full production acceptance and relay evidence'))
+    expect(infraEmbeddingGuard).toBeLessThan(preflight.indexOf('echo "ecs infra preflight passed:'))
     const fullAcceptanceBlock = preflight.slice(
       preflight.indexOf('if [ "$DEPLOYMENT_SCOPE" = full ]; then\nplatform_operations_mode='),
       preflight.indexOf('workspace_latest_migration=')

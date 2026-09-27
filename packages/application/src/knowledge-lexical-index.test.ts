@@ -5,6 +5,7 @@ import { projectImportedProductsToKnowledge } from './knowledge-import.js'
 import { indexApprovedKnowledge } from './knowledge-lexical-index.js'
 
 const sha = (value: string) => createHash('sha256').update(value).digest('hex')
+const vector = () => [0.1, 0.2, ...Array<number>(1022).fill(0)]
 
 describe('reviewed knowledge lexical index', () => {
   it('persists relay embeddings with revision/hash fencing before marking ready', async () => {
@@ -14,9 +15,9 @@ describe('reviewed knowledge lexical index', () => {
     const document = await repository.createDocument({ id: 'doc-vector', workspaceId: 'ws-vector', knowledgeAssetId: asset.id, sourceVersion: 1, knowledgeType: 'brand', contentHash: sha(text), extractedText: text, approvalStatus: 'approved', rightsStatus: 'cleared' })
     await repository.replaceChunks('ws-vector', document.id, [{ id: 'chunk-vector', ordinal: 0, content: text }])
     await repository.updateAsset('ws-vector', asset.id, { approvalStatus: 'approved', rightsStatus: 'cleared' })
-    const embed = async () => ({ embeddings: [[0.1, 0.2]], dimensions: 2 })
+    const embed = async () => ({ embeddings: [vector()], dimensions: 1024 })
     expect(await indexApprovedKnowledge({ repository, workspaceId: 'ws-vector', embedding: { model: 'embed-v1', version: '2026-09', embed } })).toEqual({ ready: 1, blocked: 0, failed: 0 })
-    expect((await repository.search({ workspaceId: 'ws-vector', queryEmbedding: [0.1, 0.2] }))[0]).toMatchObject({ document: { id: 'doc-vector' }, score: 1 })
+    expect((await repository.search({ workspaceId: 'ws-vector', queryEmbedding: vector(), embeddingModel: 'embed-v1', embeddingVersion: '2026-09' }))[0]).toMatchObject({ document: { id: 'doc-vector' }, score: 1 })
   })
 
   it('admits before dispatch and never writes vectors when settlement is unknown', async () => {
@@ -37,7 +38,7 @@ describe('reviewed knowledge lexical index', () => {
     expect(events[0]).toMatch(/^admit:knowledge-index:doc-billed:\d+$/u)
     expect(events.slice(1)).toEqual(['provider', 'outcome:unknown'])
     expect((await repository.listDocuments('ws-billed'))[0]).toMatchObject({ indexState: 'queued' })
-    expect(await repository.search({ workspaceId: 'ws-billed', queryEmbedding: [0.1, 0.2] })).toEqual([])
+    expect(await repository.search({ workspaceId: 'ws-billed', queryEmbedding: vector(), embeddingModel: 'embed-v1', embeddingVersion: '2026-09' })).toEqual([])
   })
 
   it('holds pending import, then indexes hash-verified product and SKU after approval and rights clearance', async () => {

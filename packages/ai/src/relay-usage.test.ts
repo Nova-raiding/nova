@@ -149,6 +149,52 @@ describe('relay usage normalization', () => {
     expect(usage).not.toHaveProperty('totalTokens')
   })
 
+  it('derives zero embedding output tokens only from an exact provider total/input equality', () => {
+    const equal = parseRelayUsage(
+      { usage: { prompt_tokens: 42, total_tokens: 42 } },
+      new Headers(),
+      { modality: 'embedding', model: 'qwen3.7-text-embedding-flash' },
+    )
+    expect(equal).toMatchObject({ inputTokens: 42, outputTokens: 0, totalTokens: 42, metadata: { usage_observed: true, output_tokens_derivation: 'embedding_total_equals_prompt_tokens' } })
+
+    const inconsistent = parseRelayUsage(
+      { usage: { prompt_tokens: 42, total_tokens: 43 } },
+      new Headers(),
+      { modality: 'embedding', model: 'qwen3.7-text-embedding-flash' },
+    )
+    expect(inconsistent).toMatchObject({ inputTokens: 42, totalTokens: 43, metadata: { usage_observed: true } })
+    expect(inconsistent).not.toHaveProperty('outputTokens')
+    expect(inconsistent?.metadata).not.toHaveProperty('output_tokens_derivation')
+
+    const malformedExplicitOutput = parseRelayUsage(
+      { usage: { prompt_tokens: 42, total_tokens: 42, completion_tokens: null } },
+      new Headers(),
+      { modality: 'embedding', model: 'qwen3.7-text-embedding-flash' },
+    )
+    expect(malformedExplicitOutput).not.toHaveProperty('outputTokens')
+    expect(malformedExplicitOutput?.metadata).not.toHaveProperty('output_tokens_derivation')
+
+    // This narrowly handles the embedding contract; do not reinterpret a
+    // missing completion count for text generations as a zero-token answer.
+    const text = parseRelayUsage(
+      { usage: { prompt_tokens: 42, total_tokens: 42 } },
+      new Headers(),
+      { modality: 'text', model: 'chat-model' },
+    )
+    expect(text).not.toHaveProperty('outputTokens')
+  })
+
+  it('passes the derived zero through durable settlement for embedding usage', async () => {
+    const sink = vi.fn(async () => ({ recorded: true as const, costEvidence: true as const }))
+    await expect(emitRelayUsage(
+      sink,
+      { usage: { prompt_tokens: 42, total_tokens: 42 } },
+      new Headers({ 'x-provider-request-id': 'embed-42' }),
+      { modality: 'embedding', model: 'qwen3.7-text-embedding-flash', context: { workspaceId: 'ws_qwen' } },
+    )).resolves.toMatchObject({ inputTokens: 42, outputTokens: 0, totalTokens: 42, metadata: { output_tokens_derivation: 'embedding_total_equals_prompt_tokens', cost_evidence: 'settlement_sink', settlement: 'recorded' } })
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ outputTokens: 0, totalTokens: 42 }))
+  })
+
   it('marks usage as recorded only after the sink succeeds', async () => {
     let metadataAtSink: Record<string, unknown> | undefined
     const usage = await emitRelayUsage(

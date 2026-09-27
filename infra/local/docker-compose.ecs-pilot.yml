@@ -273,6 +273,18 @@ services:
       ASSET_DISPLAY_URL_SIGNING_KEY_ID: ${ASSET_DISPLAY_URL_SIGNING_KEY_ID:?ASSET_DISPLAY_URL_SIGNING_KEY_ID is required}
       ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON: ${ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON:-}
       MODEL_COST_ESTIMATE_VERSION: ${MODEL_COST_ESTIMATE_VERSION:?MODEL_COST_ESTIMATE_VERSION production value is required}
+      # Embedding remains disabled until the live relay, cost, and signed
+      # indexing evidence gates pass. Keep these values wired in production so
+      # both API instances evaluate the same explicit candidate configuration.
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-qwen3.7-text-embedding-flash}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+      EMBEDDING_VERSION: ${EMBEDDING_VERSION:-v1}
+      MODEL_EMBEDDING_MAX_REQUEST_CNY: ${MODEL_EMBEDDING_MAX_REQUEST_CNY:-}
+      KNOWLEDGE_VECTOR_INDEX_ENABLED: ${KNOWLEDGE_VECTOR_INDEX_ENABLED:-false}
+      MODEL_RELAY_BASE_URL: ${MODEL_RELAY_BASE_URL:-https://ai.wormholexyz.xyz/v1}
+      MODEL_RELAY_ALLOWED_HOSTS: ${MODEL_RELAY_ALLOWED_HOSTS:-ai.wormholexyz.xyz}
+      MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:-}
+      MODEL_RELAY_EMBEDDING_COST_EVIDENCE: ${MODEL_RELAY_EMBEDDING_COST_EVIDENCE:-false}
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: "false"
       ALLOW_LOCAL_ASSET_SCAN_FIXTURE: "false"
       ASSET_SCANNER_MODE: clamav_worker
@@ -609,6 +621,16 @@ services:
       <<: *ecs-worker-environment
       WORKER_API_TOKEN: ${WORKER_AUTOMATION_API_TOKEN:?WORKER_AUTOMATION_API_TOKEN is required}
       WORKER_API_SIGNING_SECRET: ${WORKER_AUTOMATION_API_SIGNING_SECRET:?WORKER_AUTOMATION_API_SIGNING_SECRET is required}
+      # Only the automation worker performs knowledge embedding. It receives
+      # the relay settings only through the protected production env file; the
+      # feature flag defaults off, so missing optional embedding config is sane.
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-qwen3.7-text-embedding-flash}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+      EMBEDDING_VERSION: ${EMBEDDING_VERSION:-v1}
+      KNOWLEDGE_VECTOR_INDEX_ENABLED: ${KNOWLEDGE_VECTOR_INDEX_ENABLED:-false}
+      MODEL_RELAY_BASE_URL: ${MODEL_RELAY_BASE_URL:-https://ai.wormholexyz.xyz/v1}
+      MODEL_RELAY_ALLOWED_HOSTS: ${MODEL_RELAY_ALLOWED_HOSTS:-ai.wormholexyz.xyz}
+      MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:-}
 
   worker-scan:
     <<: *ecs-node-hardening

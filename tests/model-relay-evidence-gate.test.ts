@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -13,6 +13,95 @@ const evidence = {
 describe('model relay evidence gate', () => {
   it('requires a release-bound, five-modality real relay receipt', () => {
     expect(validateModelRelayEvidence(evidence, { expectedReleaseId: 'release-1' })).toEqual([])
+  })
+
+  it('preserves five-modality eligibility when embedding indexing is disabled', () => {
+    expect(validateModelRelayEvidence(evidence, { expectedReleaseId: 'release-1', requireEmbedding: false })).toEqual([])
+    expect(validateModelRelayEvidence(evidence, { expectedReleaseId: 'release-1', requireEmbedding: true })).toContain('embedding result is required')
+  })
+
+  it('requires embedding dimensions, provider accounting, and candidate-bound response evidence when enabled', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-embedding-binding-'))
+    mkdirSync(join(root, 'relay'), { recursive: true })
+    const nonce = 'nonce_embedding_candidate_abcdefghijkl'
+    const expectedCandidate = { releaseGitSha: 'a'.repeat(40), imageSetDigest: `sha256:${'b'.repeat(64)}`, manifestSha256: 'c'.repeat(64), deploymentNonce: nonce }
+    const candidateBinding = { release_git_sha: expectedCandidate.releaseGitSha, image_set_digest: expectedCandidate.imageSetDigest,
+      manifest_sha256: expectedCandidate.manifestSha256, deployment_nonce_sha256: createHash('sha256').update(nonce).digest('hex') }
+    const vector = Array.from({ length: 1024 }, () => 0.125)
+    const input = 'release evidence synthetic embedding input'
+    const results: any[] = structuredClone(evidence.results).map((result: any) => ({ ...result, costSource: 'provider_receipt' }))
+    const embeddingResult = { modality: 'embedding', state: 'ready', endpoint: '/embeddings', model: 'qwen3.7-text-embedding-flash', dimensions: 1024,
+      httpStatus: 200, providerRequestId: 'req-embedding', usageObserved: true, usage: { inputTokens: 16, totalTokens: 16 },
+      usageProviderRequestId: 'req-embedding', costObserved: true, costCny: 0.01, costSource: 'provider_receipt' }
+    results.push(embeddingResult)
+    for (const result of results) {
+      const artifact = { schema_version: '1', release_id: 'release-1', modality: result.modality, http_status: result.httpStatus,
+        result, ...(result.modality === 'video' ? { relay_response: { data: { status: 'completed', video_url: 'https://relay.example.com/output.mp4' } } } : {}),
+        ...(result.modality === 'embedding' ? { candidate_binding: candidateBinding,
+          embedding_response: { input_sha256: createHash('sha256').update(input, 'utf8').digest('hex'),
+            embedding_sha256: createHash('sha256').update(JSON.stringify(vector), 'utf8').digest('hex'), data_count: 1, dimensions: 1024 } } : {}) }
+      const body = JSON.stringify(artifact)
+      const name = `${result.modality}.json`
+      writeFileSync(join(root, 'relay', name), body)
+      result.evidence_ref = `artifact://production/relay/${name}#${createHash('sha256').update(body).digest('hex')}`
+    }
+    const bound = { ...evidence, release_git_sha: expectedCandidate.releaseGitSha, image_set_digest: expectedCandidate.imageSetDigest,
+      manifest_sha256: expectedCandidate.manifestSha256, deployment_nonce_sha256: candidateBinding.deployment_nonce_sha256, results }
+    const options = { requireEmbedding: true, expectedEmbeddingModel: 'qwen3.7-text-embedding-flash', requireCandidateBinding: true, expectedCandidate, artifactRoot: root }
+    expect(validateModelRelayEvidence(bound, options)).toEqual([])
+
+    const nonFlashModel = structuredClone(bound)
+    ;(nonFlashModel.results[5] as any).model = 'qwen3.7-text-embedding'
+    expect(validateModelRelayEvidence(nonFlashModel, { ...options, expectedEmbeddingModel: 'qwen3.7-text-embedding' }))
+      .not.toContain('embedding.model must match the explicitly rendered embedding model')
+    expect(validateModelRelayEvidence(bound, { ...options, expectedEmbeddingModel: 'provider-selected-model' }))
+      .toEqual(expect.arrayContaining([
+        'embedding-enabled relay gate requires --embedding-model to be one of: qwen3.7-text-embedding-flash, qwen3.7-text-embedding',
+        'embedding.model must match the explicitly rendered embedding model',
+      ]))
+    expect(validateModelRelayEvidence(bound, { ...options, expectedEmbeddingModel: undefined }))
+      .toEqual(expect.arrayContaining([
+        'embedding-enabled relay gate requires --embedding-model to be one of: qwen3.7-text-embedding-flash, qwen3.7-text-embedding',
+        'embedding.model must match the explicitly rendered embedding model',
+      ]))
+
+    const wrongDimension = structuredClone(bound)
+    ;(wrongDimension.results[5] as any).dimensions = 1536
+    expect(validateModelRelayEvidence(wrongDimension, options)).toContain('embedding.dimensions must be 1024')
+
+    const wrongObservedDimensions = JSON.parse(readFileSync(join(root, 'relay', 'embedding.json'), 'utf8'))
+    wrongObservedDimensions.embedding_response.dimensions = 1536
+    let changedBody = JSON.stringify(wrongObservedDimensions)
+    writeFileSync(join(root, 'relay', 'embedding.json'), changedBody)
+    const wrongObservedDimensionEvidence = structuredClone(bound)
+    ;(wrongObservedDimensionEvidence.results[5] as any).evidence_ref = `artifact://production/relay/embedding.json#${createHash('sha256').update(changedBody).digest('hex')}`
+    expect(validateModelRelayEvidence(wrongObservedDimensionEvidence, options)).toContain('embedding.evidence_ref embedding receipt must contain only input/vector SHA-256, data_count 1, and 1024 dimensions (no raw vector)')
+
+    const rawVectorArtifact = JSON.parse(changedBody)
+    rawVectorArtifact.embedding_response.dimensions = 1024
+    rawVectorArtifact.relay_response = { data: [{ embedding: vector }] }
+    changedBody = JSON.stringify(rawVectorArtifact)
+    writeFileSync(join(root, 'relay', 'embedding.json'), changedBody)
+    const rawVectorEvidence = structuredClone(bound)
+    ;(rawVectorEvidence.results[5] as any).evidence_ref = `artifact://production/relay/embedding.json#${createHash('sha256').update(changedBody).digest('hex')}`
+    expect(validateModelRelayEvidence(rawVectorEvidence, options)).toContain('embedding.evidence_ref embedding receipt must contain only input/vector SHA-256, data_count 1, and 1024 dimensions (no raw vector)')
+
+    const missingUsage = structuredClone(bound)
+    ;(missingUsage.results[5] as any).usageProviderRequestId = 'other-request'
+    expect(validateModelRelayEvidence(missingUsage, options)).toContain('embedding.usageProviderRequestId must match providerRequestId')
+
+    const noTokenUsage = structuredClone(bound)
+    ;(noTokenUsage.results[5] as any).usage = { billingUnits: 1 }
+    expect(validateModelRelayEvidence(noTokenUsage, options)).toContain('embedding.usage must contain token units')
+
+    const wrongCandidate = structuredClone(bound)
+    const artifactPath = join(root, 'relay', 'embedding.json')
+    const original = JSON.parse(readFileSync(artifactPath, 'utf8'))
+    original.candidate_binding.manifest_sha256 = 'd'.repeat(64)
+    const tamperedBody = JSON.stringify(original)
+    writeFileSync(artifactPath, tamperedBody)
+    ;(wrongCandidate.results[5] as any).evidence_ref = `artifact://production/relay/embedding.json#${createHash('sha256').update(tamperedBody).digest('hex')}`
+    expect(validateModelRelayEvidence(wrongCandidate, options)).toContain('embedding.evidence_ref receipt must bind the exact release candidate identity')
   })
 
   it('rejects skipped probes and missing accounting evidence', () => {

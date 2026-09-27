@@ -3,9 +3,11 @@ import { closeSync, lstatSync, openSync, readFileSync, readSync, realpathSync } 
 import { resolve, sep } from 'node:path'
 
 export const REQUIRED_RELAY_MODALITIES = ['text', 'image', 'image_edit', 'ocr', 'video'] as const
-type Modality = typeof REQUIRED_RELAY_MODALITIES[number]
+export const EMBEDDING_RELAY_MODALITY = 'embedding' as const
+export const ALLOWED_EMBEDDING_MODELS = ['qwen3.7-text-embedding-flash', 'qwen3.7-text-embedding'] as const
+type Modality = typeof REQUIRED_RELAY_MODALITIES[number] | typeof EMBEDDING_RELAY_MODALITY
 type RelayUsage = { inputTokens?: number; outputTokens?: number; totalTokens?: number; billingUnits?: number; durationSeconds?: number }
-type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; httpStatus?: number; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; evidence_ref?: string }
+type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; dimensions?: number; httpStatus?: number; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; evidence_ref?: string }
 type RelayErrorRecovery = { verified?: boolean; failure_status?: number; failure_observed_at?: string; recovered_at?: string; failed_request_id?: string; recovery_request_id?: string; evidence_ref?: string }
 type RelayTokenQuota = { credential?: 'model' | 'video'; observed_at?: string; total_granted?: number; total_used?: number; total_available?: number; expires_at?: number; unlimited_quota?: boolean; evidence_ref?: string }
 type RelayEvidence = { schema_version?: string; release_id?: string; release_git_sha?: string; image_set_digest?: string; manifest_sha256?: string; deployment_nonce_sha256?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; token_quota?: RelayTokenQuota[]; results?: RelayResult[]; error_recovery?: RelayErrorRecovery }
@@ -19,7 +21,8 @@ const relayOrigin = (value: string): string | undefined => {
   } catch { return undefined }
 }
 const immutableArtifact = /^artifact:\/\/production\/[A-Za-z0-9._/-]+#([a-f0-9]{64})$/u
-type ExpectedArtifact = { releaseId?: string; result?: RelayResult; recovery?: RelayErrorRecovery; tokenQuota?: RelayTokenQuota; relay?: string }
+type ExpectedCandidateArtifactBinding = { release_git_sha?: string; image_set_digest?: string; manifest_sha256?: string; deployment_nonce_sha256?: string }
+type ExpectedArtifact = { releaseId?: string; result?: RelayResult; recovery?: RelayErrorRecovery; tokenQuota?: RelayTokenQuota; relay?: string; candidate?: ExpectedCandidateArtifactBinding; requireEmbeddingResponse?: boolean }
 function videoResponseIsComplete(payload: unknown): boolean {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
   const root = payload as Record<string, unknown>
@@ -100,8 +103,28 @@ function validateArtifact(reference: string | undefined, root: string, label: st
       } else if (expected.result) {
         if (artifactValue.modality !== expected.result.modality) return [`${label} modality must match ${expected.result.modality}`]
         const receipt = artifactValue.result
-        if (artifactValue.http_status !== expected.result.httpStatus || !receipt || typeof receipt !== 'object' || receipt.httpStatus !== expected.result.httpStatus || ['providerRequestId', 'providerJobId', 'model', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result.usage)) {
+        if (artifactValue.http_status !== expected.result.httpStatus || !receipt || typeof receipt !== 'object' || receipt.httpStatus !== expected.result.httpStatus || ['providerRequestId', 'providerJobId', 'model', 'dimensions', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result.usage)) {
           return [`${label} receipt must bind successful HTTP status and summarized request, model, state, endpoint, usage and cost`]
+        }
+        if (expected.candidate) {
+          const capturedCandidate = artifactValue.candidate_binding
+          if (!capturedCandidate || typeof capturedCandidate !== 'object' || Array.isArray(capturedCandidate)
+            || Object.keys(capturedCandidate).sort().join(',') !== ['deployment_nonce_sha256', 'image_set_digest', 'manifest_sha256', 'release_git_sha'].sort().join(',')
+            || Object.entries(expected.candidate).some(([field, value]) => capturedCandidate[field] !== value)) {
+            return [`${label} receipt must bind the exact release candidate identity`]
+          }
+        }
+        if (expected.requireEmbeddingResponse) {
+          const response = artifactValue.embedding_response
+          const requiredFields = ['input_sha256', 'embedding_sha256', 'data_count', 'dimensions']
+          const validDigest = (value: unknown): value is string => typeof value === 'string' && sha256Digest.test(value)
+          if (!response || typeof response !== 'object' || Array.isArray(response)
+            || Object.keys(response).sort().join(',') !== [...requiredFields].sort().join(',')
+            || !validDigest(response.input_sha256) || !validDigest(response.embedding_sha256)
+            || response.data_count !== 1 || response.dimensions !== 1024
+            || Object.prototype.hasOwnProperty.call(artifactValue, 'relay_response')) {
+            return [`${label} embedding receipt must contain only input/vector SHA-256, data_count 1, and 1024 dimensions (no raw vector)`]
+          }
         }
         if (expected.result.modality === 'video' && !videoResponseIsComplete(artifactValue.relay_response)) {
           return [`${label} video receipt must prove a completed task with an HTTPS artifact`]
@@ -115,11 +138,14 @@ function validateArtifact(reference: string | undefined, root: string, label: st
 export type RelayCandidateBinding = { releaseGitSha?: string; imageSetDigest?: string; manifestSha256?: string; deploymentNonce?: string }
 const sha256Digest = /^[a-f0-9]{64}$/u
 const validGitSha = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u
-export function validateModelRelayEvidence(document: unknown, options: { expectedReleaseId?: string; expectedRelay?: string; expectedCandidate?: RelayCandidateBinding; requireCandidateBinding?: boolean; requireProduction?: boolean; artifactRoot?: string; now?: Date } = {}): string[] {
+export function validateModelRelayEvidence(document: unknown, options: { expectedReleaseId?: string; expectedRelay?: string; expectedCandidate?: RelayCandidateBinding; requireCandidateBinding?: boolean; requireProduction?: boolean; requireEmbedding?: boolean; expectedEmbeddingModel?: string; artifactRoot?: string; now?: Date } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as RelayEvidence
   if (value.schema_version !== '1') errors.push('schema_version must be 1')
+  if (options.requireEmbedding && !ALLOWED_EMBEDDING_MODELS.includes(options.expectedEmbeddingModel as typeof ALLOWED_EMBEDDING_MODELS[number])) {
+    errors.push(`embedding-enabled relay gate requires --embedding-model to be one of: ${ALLOWED_EMBEDDING_MODELS.join(', ')}`)
+  }
   if (!nonEmpty(value.release_id)) errors.push('release_id is required')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
   if (options.requireProduction && value.environment !== 'production') errors.push('environment must be production')
@@ -188,7 +214,8 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
       else byProviderRequestId.set(result.providerRequestId, result.modality)
     }
   }
-  for (const modality of REQUIRED_RELAY_MODALITIES) {
+  const requiredModalities: readonly Modality[] = options.requireEmbedding ? [...REQUIRED_RELAY_MODALITIES, EMBEDDING_RELAY_MODALITY] : REQUIRED_RELAY_MODALITIES
+  for (const modality of requiredModalities) {
     const result = byModality.get(modality)
     if (!result) { errors.push(`${modality} result is required`); continue }
     if (result.state !== 'ready') errors.push(`${modality} state must be ready`)
@@ -196,6 +223,10 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
     if (!nonEmpty(result.endpoint)) errors.push(`${modality}.endpoint is required`)
     else if (!result.endpoint.startsWith('/') || result.endpoint.startsWith('//') || result.endpoint.includes('\\') || result.endpoint.includes('?') || result.endpoint.includes('#') || result.endpoint.includes('%') || result.endpoint.split('/').some(segment => segment === '.' || segment === '..') || /[\u0000-\u001f\u007f]/u.test(result.endpoint)) errors.push(`${modality}.endpoint must be a safe relative path`)
     if (!nonEmpty(result.model)) errors.push(`${modality}.model is required`)
+    if (modality === EMBEDDING_RELAY_MODALITY) {
+      if (!nonEmpty(options.expectedEmbeddingModel) || result.model !== options.expectedEmbeddingModel) errors.push('embedding.model must match the explicitly rendered embedding model')
+      if (result.dimensions !== 1024) errors.push('embedding.dimensions must be 1024')
+    }
     if (!nonEmpty(result.providerRequestId)) errors.push(`${modality}.providerRequestId is required`)
     if (nonEmpty(result.providerJobId) && result.providerJobId === result.providerRequestId) errors.push(`${modality}.providerRequestId must not reuse providerJobId`)
     if (result.usageObserved !== true) errors.push(`${modality}.usageObserved must be true`)
@@ -203,7 +234,7 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
     const numericUsage = usage && Object.entries(usage).filter(([, amount]) => amount !== undefined)
     if (!usage || !numericUsage?.length || numericUsage.some(([, amount]) => typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0)) errors.push(`${modality}.usage must contain finite non-negative numeric units`)
     else {
-      if ((modality === 'text' || modality === 'ocr') && usage.inputTokens === undefined && usage.outputTokens === undefined && usage.totalTokens === undefined) errors.push(`${modality}.usage must contain token units`)
+      if ((modality === 'text' || modality === 'ocr' || modality === EMBEDDING_RELAY_MODALITY) && usage.inputTokens === undefined && usage.outputTokens === undefined && usage.totalTokens === undefined) errors.push(`${modality}.usage must contain token units`)
       if ((modality === 'image' || modality === 'image_edit') && (!Number.isSafeInteger(usage.billingUnits) || (usage.billingUnits ?? 0) <= 0)) errors.push(`${modality}.usage must contain positive integer billingUnits`)
       if (modality === 'video' && (typeof usage.durationSeconds !== 'number' || usage.durationSeconds <= 0)) errors.push(`${modality}.usage must contain positive durationSeconds`)
       if (usage.totalTokens !== undefined && usage.inputTokens !== undefined && usage.outputTokens !== undefined && usage.totalTokens !== usage.inputTokens + usage.outputTokens) errors.push(`${modality}.usage token totals must be consistent`)
@@ -216,7 +247,22 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
       if (!nonEmpty(result.pricingVersion)) errors.push(`${modality}.pricingVersion is required for relay_pricing_snapshot`)
       if (!nonEmpty(result.pricingGroup)) errors.push(`${modality}.pricingGroup is required for relay_pricing_snapshot`)
     }
-    if (options.requireProduction || options.artifactRoot) errors.push(...validateArtifact(result.evidence_ref, options.artifactRoot ?? '', `${modality}.evidence_ref`, { releaseId: value.release_id, result }))
+    if (options.requireProduction || options.artifactRoot) {
+      const embeddingCandidate = modality === EMBEDDING_RELAY_MODALITY && options.requireEmbedding
+        ? options.expectedCandidate && {
+          release_git_sha: options.expectedCandidate.releaseGitSha,
+          image_set_digest: options.expectedCandidate.imageSetDigest,
+          manifest_sha256: options.expectedCandidate.manifestSha256,
+          deployment_nonce_sha256: options.expectedCandidate.deploymentNonce ? createHash('sha256').update(options.expectedCandidate.deploymentNonce).digest('hex') : undefined,
+        }
+        : undefined
+      if (modality === EMBEDDING_RELAY_MODALITY && options.requireEmbedding && (!embeddingCandidate
+        || !validGitSha.test(embeddingCandidate.release_git_sha ?? '')
+        || !/^sha256:[a-f0-9]{64}$/u.test(embeddingCandidate.image_set_digest ?? '')
+        || !sha256Digest.test(embeddingCandidate.manifest_sha256 ?? '')
+        || !sha256Digest.test(embeddingCandidate.deployment_nonce_sha256 ?? ''))) errors.push('embedding.evidence_ref requires complete expected candidate identity')
+      errors.push(...validateArtifact(result.evidence_ref, options.artifactRoot ?? '', `${modality}.evidence_ref`, { releaseId: value.release_id, result, ...(embeddingCandidate ? { candidate: embeddingCandidate, requireEmbeddingResponse: true } : {}) }))
+    }
   }
   if (options.requireProduction) {
     const recovery = value.error_recovery
@@ -248,6 +294,8 @@ function main() {
   const artifactRoot = artifactIndex >= 0 ? args[artifactIndex + 1] : undefined
   const candidateValue = (flag: string) => { const index = args.indexOf(flag); return index < 0 ? undefined : args[index + 1] }
   const requireProduction = args.includes('--require-production')
+  const requireEmbedding = args.includes('--embedding-enabled')
+  const expectedEmbeddingModel = candidateValue('--embedding-model')
   const expectedCandidate: RelayCandidateBinding = {
     releaseGitSha: candidateValue('--expected-release-git-sha'), imageSetDigest: candidateValue('--expected-image-set-digest'),
     manifestSha256: candidateValue('--expected-manifest-sha256'), deploymentNonce: candidateValue('--expected-deployment-nonce'),
@@ -260,7 +308,7 @@ function main() {
   }
   let document: unknown
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read JSON relay evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
-  const errors = validateModelRelayEvidence(document, { expectedReleaseId, expectedRelay, requireProduction, requireCandidateBinding: requireProduction, ...(requireProduction ? { expectedCandidate } : {}), artifactRoot })
+  const errors = validateModelRelayEvidence(document, { expectedReleaseId, expectedRelay, requireProduction, requireEmbedding, ...(expectedEmbeddingModel ? { expectedEmbeddingModel } : {}), requireCandidateBinding: requireProduction, ...(requireProduction ? { expectedCandidate } : {}), artifactRoot })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
   console.log(`model relay evidence gate passed: ${path}`)
 }

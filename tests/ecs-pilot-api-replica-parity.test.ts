@@ -163,6 +163,75 @@ function render(overrides: NodeJS.ProcessEnv = {}): ComposeConfig {
 }
 
 describe('ECS pilot API replica parity', () => {
+  it('wires the disabled embedding candidate consistently to both APIs and only the automation worker', () => {
+    const services = render({
+      MODEL_RELAY_API_KEY: '',
+      MODEL_RELAY_BASE_URL: 'https://ai.wormholexyz.xyz/v1',
+      MODEL_RELAY_ALLOWED_HOSTS: 'ai.wormholexyz.xyz',
+      EMBEDDING_MODEL: 'qwen3.7-text-embedding-flash',
+      EMBEDDING_DIMENSIONS: '1024',
+      EMBEDDING_VERSION: 'v1',
+      MODEL_EMBEDDING_MAX_REQUEST_CNY: '',
+      KNOWLEDGE_VECTOR_INDEX_ENABLED: 'false',
+      MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'false',
+    }).services
+    const apiExpected = {
+      EMBEDDING_MODEL: 'qwen3.7-text-embedding-flash',
+      EMBEDDING_DIMENSIONS: '1024',
+      EMBEDDING_VERSION: 'v1',
+      MODEL_EMBEDDING_MAX_REQUEST_CNY: '',
+      KNOWLEDGE_VECTOR_INDEX_ENABLED: 'false',
+      MODEL_RELAY_BASE_URL: 'https://ai.wormholexyz.xyz/v1',
+      MODEL_RELAY_ALLOWED_HOSTS: 'ai.wormholexyz.xyz',
+      MODEL_RELAY_API_KEY: '',
+      MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'false',
+    }
+    const apiEnv = services.api?.environment ?? {}
+    const replicaEnv = services['api-replica']?.environment ?? {}
+    for (const key of Object.keys(apiExpected)) {
+      expect(apiEnv[key as keyof typeof apiEnv]).toBe(replicaEnv[key as keyof typeof replicaEnv])
+    }
+    expect(apiEnv).toMatchObject(apiExpected)
+    expect(replicaEnv).toMatchObject(apiExpected)
+    expect(services['worker-automation']?.environment).toMatchObject({
+      EMBEDDING_MODEL: apiExpected.EMBEDDING_MODEL,
+      EMBEDDING_DIMENSIONS: apiExpected.EMBEDDING_DIMENSIONS,
+      EMBEDDING_VERSION: apiExpected.EMBEDDING_VERSION,
+      KNOWLEDGE_VECTOR_INDEX_ENABLED: 'false',
+      MODEL_RELAY_BASE_URL: apiExpected.MODEL_RELAY_BASE_URL,
+      MODEL_RELAY_ALLOWED_HOSTS: apiExpected.MODEL_RELAY_ALLOWED_HOSTS,
+      MODEL_RELAY_API_KEY: '',
+    })
+    expect(services['worker-automation']?.environment).not.toHaveProperty('MODEL_EMBEDDING_MAX_REQUEST_CNY')
+    expect(services['worker-automation']?.environment).not.toHaveProperty('MODEL_RELAY_EMBEDDING_COST_EVIDENCE')
+
+    const explicitlyEnabled = render({
+      MODEL_RELAY_API_KEY: 'test-only-redacted-relay-key',
+      MODEL_RELAY_BASE_URL: 'https://ai.wormholexyz.xyz/v1',
+      MODEL_RELAY_ALLOWED_HOSTS: 'ai.wormholexyz.xyz',
+      EMBEDDING_MODEL: 'qwen3.7-text-embedding-flash',
+      EMBEDDING_DIMENSIONS: '1024',
+      EMBEDDING_VERSION: 'v1',
+      MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10',
+      KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true',
+      MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'true',
+    }).services
+    expect(explicitlyEnabled.api?.environment).toMatchObject({
+      KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true',
+      MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10',
+      MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'true',
+    })
+    expect(explicitlyEnabled['api-replica']?.environment).toMatchObject({
+      KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true',
+      MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10',
+      MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'true',
+    })
+    expect(explicitlyEnabled['worker-automation']?.environment).toMatchObject({
+      KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true',
+      MODEL_RELAY_API_KEY: 'test-only-redacted-relay-key',
+    })
+  })
+
   it('removes every local bootstrap identity from the fully rendered production services', () => {
     const services = render().services
     for (const service of ['api', 'api-replica']) {

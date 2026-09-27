@@ -26,7 +26,7 @@ class RecordingKnowledgePool implements SqlPool {
             created_at: '2026-09-10T00:00:00.000Z',
           }] as Row[],
         }
-        if (text.includes('FROM knowledge_embeddings')) return { rows: [this.embeddingRow] as Row[] }
+        if (text.includes('FROM knowledge_embeddings')) return { rows: this.embeddingRow.embedding_model === values[2] && this.embeddingRow.embedding_version === values[3] && Array.isArray(this.embeddingRow.embedding) && this.embeddingRow.embedding.length === 1024 ? [this.embeddingRow] as Row[] : [] as Row[] }
         return { rows: [] as Row[] }
       },
       release: () => {},
@@ -35,6 +35,7 @@ class RecordingKnowledgePool implements SqlPool {
 }
 
 type PgRow = Record<string, any>
+const vector = (x: number, y: number): number[] => [x, y, ...Array<number>(1022).fill(0)]
 
 const compareValues = (left: unknown, right: unknown): number => typeof left === 'number' && typeof right === 'number'
   ? left - right
@@ -47,7 +48,7 @@ function childRows(rows: readonly PgRow[], values: readonly unknown[], order: re
   const selector = values[1]
   const documentIds = Array.isArray(selector) ? selector.map(String) : [String(selector)]
   return rows
-    .filter(row => documentIds.includes(String(row.document_id)) && (!readyOnly || row.index_state === 'ready'))
+    .filter(row => documentIds.includes(String(row.document_id)) && (!readyOnly || row.index_state === 'ready' && row.embedding_model === values[2] && row.embedding_version === values[3] && Array.isArray(row.embedding) && row.embedding.length === 1024))
     .map(row => ({ ...row }))
     .sort((left, right) => order.reduce((result, key) => result || compareValues(left[key], right[key]), 0))
 }
@@ -204,7 +205,7 @@ const semanticEmbeddingRow = {
   workspace_id: 'ws-a',
   document_id: 'doc-semantic',
   chunk_id: 'chunk-semantic',
-  embedding: [0, 1],
+  embedding: vector(0, 1),
   embedding_model: 'test',
   embedding_version: '1',
   vector_metadata: {},
@@ -297,7 +298,7 @@ describe('knowledge persistence contract', () => {
     const results = await repository.search({
       workspaceId: 'ws-a',
       query: '轻薄防风外套',
-      queryEmbedding: [0, 1],
+      queryEmbedding: vector(0, 1), embeddingModel: 'test', embeddingVersion: '1',
       productId: 'product-a',
     })
 
@@ -309,6 +310,36 @@ describe('knowledge persistence contract', () => {
     const documentQuery = pool.statements.find(statement => statement.includes('FROM knowledge_documents'))
     expect(documentQuery).toBeDefined()
     expect(documentQuery).not.toContain('ILIKE')
+  })
+
+  it('requires a complete 1024-dimensional query identity before vector search', async () => {
+    const memory = new MemoryKnowledgeRepository()
+    const postgres = new PostgresKnowledgeRepository(new RecordingKnowledgePool(semanticDocumentRow, semanticEmbeddingRow))
+    for (const repository of [memory, postgres]) {
+      await expect(repository.search({ workspaceId: 'ws-a', queryEmbedding: vector(0, 1) })).rejects.toThrow('KNOWLEDGE_QUERY_EMBEDDING_INVALID')
+      await expect(repository.search({ workspaceId: 'ws-a', queryEmbedding: [0, 1], embeddingModel: 'test', embeddingVersion: '1' })).rejects.toThrow('KNOWLEDGE_QUERY_EMBEDDING_INVALID')
+    }
+  })
+
+  it('rejects vectors from another model or version while keeping lexical search available', async () => {
+    const memory = new MemoryKnowledgeRepository()
+    const asset = await memory.createAsset({ workspaceId: 'ws-a', kind: 'material', name: '向量资料', content: {}, approvalStatus: 'approved', rightsStatus: 'cleared' })
+    const document = await memory.createDocument({ id: 'doc-model', workspaceId: 'ws-a', knowledgeAssetId: asset.id, knowledgeType: 'material', contentHash: 'hash', extractedText: '锦纶事实', approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready' })
+    const [chunk] = await memory.replaceChunks('ws-a', document.id, [{ ordinal: 0, content: '锦纶事实' }])
+    await memory.updateAsset('ws-a', asset.id, { approvalStatus: 'approved', rightsStatus: 'cleared' })
+    const current = (await memory.listDocuments('ws-a')).find(item => item.id === document.id)!
+    await memory.upsertEmbedding('ws-a', { documentId: document.id, chunkId: chunk!.id, expectedDocumentRevision: current.revision, expectedDocumentContentHash: current.contentHash, expectedChunkContentHash: chunk!.contentHash, embedding: vector(0, 1), embeddingModel: 'old-model', embeddingVersion: 'v1', indexState: 'ready' })
+    await memory.transitionIndexState('ws-a', document.id, 'ready')
+    expect(await memory.search({ workspaceId: 'ws-a', query: '陌生词', queryEmbedding: vector(0, 1), embeddingModel: 'new-model', embeddingVersion: 'v1' })).toEqual([])
+    expect((await memory.search({ workspaceId: 'ws-a', query: '锦纶' })).map(item => item.document.id)).toEqual([document.id])
+    expect((await memory.search({ workspaceId: 'ws-a', query: '陌生词', queryEmbedding: vector(0, 1), embeddingModel: 'old-model', embeddingVersion: 'v1' }))[0]?.score).toBe(1)
+
+    const pool = new RecordingKnowledgePool(semanticDocumentRow, { ...semanticEmbeddingRow, embedding_version: 'old' })
+    const results = await new PostgresKnowledgeRepository(pool).search({ workspaceId: 'ws-a', query: '锦纶', queryEmbedding: vector(0, 1), embeddingModel: 'test', embeddingVersion: '1' })
+    expect(results[0]?.score).toBe(1)
+    const embeddingQuery = pool.statements.find(statement => statement.includes('FROM knowledge_embeddings'))!
+    expect(embeddingQuery).toContain('embedding_model=$3 AND embedding_version=$4 AND jsonb_array_length(embedding)=1024')
+    expect(pool.parameters[pool.statements.indexOf(embeddingQuery)]).toEqual(['ws-a', ['doc-semantic'], 'test', '1'])
   })
 
   it('applies workspace, store and SKU scope before returning durable knowledge', async () => {
@@ -342,14 +373,14 @@ describe('knowledge persistence contract', () => {
       pgChunk('chunk-2a', 'doc-2', 1, '锦纶 面料'),
     ]
     const embeddings = [
-      pgEmbedding('embedding-1a', 'doc-1', 'chunk-1a', [1, 0]),
-      pgEmbedding('embedding-2a', 'doc-2', 'chunk-2a', [0, 1]),
-      pgEmbedding('embedding-2b', 'doc-2', 'chunk-2b', [0.5, 0.5]),
-      pgEmbedding('embedding-3a', 'doc-3', 'chunk-3a', [0, 1], 'stale'),
+      pgEmbedding('embedding-1a', 'doc-1', 'chunk-1a', vector(1, 0)),
+      pgEmbedding('embedding-2a', 'doc-2', 'chunk-2a', vector(0, 1)),
+      pgEmbedding('embedding-2b', 'doc-2', 'chunk-2b', vector(0.5, 0.5)),
+      pgEmbedding('embedding-3a', 'doc-3', 'chunk-3a', vector(0, 1), 'stale'),
     ]
     // The candidate set grows with the workspace, the round trips must not.
     const single = new BatchedKnowledgePool([pgDocument('doc-1', { extracted_text: '锦纶 88%' })], chunks, embeddings)
-    await new PostgresKnowledgeRepository(single).search({ workspaceId: 'ws-a', query: '锦纶', queryEmbedding: [0, 1] })
+    await new PostgresKnowledgeRepository(single).search({ workspaceId: 'ws-a', query: '锦纶', queryEmbedding: vector(0, 1), embeddingModel: 'test', embeddingVersion: '1' })
     expect(childQueries(single)).toEqual({ documents: 1, chunks: 1, embeddings: 1 })
 
     const many = new BatchedKnowledgePool(
@@ -357,12 +388,12 @@ describe('knowledge persistence contract', () => {
       chunks,
       embeddings,
     )
-    expect(await new PostgresKnowledgeRepository(many).search({ workspaceId: 'ws-a', query: '锦纶', queryEmbedding: [0, 1] })).toHaveLength(3)
+    expect(await new PostgresKnowledgeRepository(many).search({ workspaceId: 'ws-a', query: '锦纶', queryEmbedding: vector(0, 1), embeddingModel: 'test', embeddingVersion: '1' })).toHaveLength(3)
     expect(childQueries(many)).toEqual({ documents: 1, chunks: 1, embeddings: 1 })
 
     // No candidate documents: never issue an empty `= ANY('{}')` child read.
     const none = new BatchedKnowledgePool([], chunks, embeddings)
-    expect(await new PostgresKnowledgeRepository(none).search({ workspaceId: 'ws-a', queryEmbedding: [0, 1] })).toEqual([])
+    expect(await new PostgresKnowledgeRepository(none).search({ workspaceId: 'ws-a', queryEmbedding: vector(0, 1), embeddingModel: 'test', embeddingVersion: '1' })).toEqual([])
     expect(childQueries(none)).toEqual({ documents: 1, chunks: 0, embeddings: 0 })
   })
 
@@ -371,13 +402,13 @@ describe('knowledge persistence contract', () => {
       [pgDocument('doc-1', { extracted_text: '锦纶 88%' }), pgDocument('doc-2'), pgDocument('doc-3', { extracted_text: '无关内容' })],
       [pgChunk('chunk-1a', 'doc-1', 0, '锦纶 88%'), pgChunk('chunk-2b', 'doc-2', 0, '其他'), pgChunk('chunk-2a', 'doc-2', 1, '锦纶 面料')],
       [
-        pgEmbedding('embedding-1a', 'doc-1', 'chunk-1a', [1, 0]),
-        pgEmbedding('embedding-2a', 'doc-2', 'chunk-2a', [0, 1]),
-        pgEmbedding('embedding-2b', 'doc-2', 'chunk-2b', [0.5, 0.5]),
-        pgEmbedding('embedding-3a', 'doc-3', 'chunk-3a', [0, 1], 'stale'),
+        pgEmbedding('embedding-1a', 'doc-1', 'chunk-1a', vector(1, 0)),
+        pgEmbedding('embedding-2a', 'doc-2', 'chunk-2a', vector(0, 1)),
+        pgEmbedding('embedding-2b', 'doc-2', 'chunk-2b', vector(0.5, 0.5)),
+        pgEmbedding('embedding-3a', 'doc-3', 'chunk-3a', vector(0, 1), 'stale'),
       ],
     )
-    const results = await new PostgresKnowledgeRepository(pool).search({ workspaceId: 'ws-a', query: '锦纶', queryEmbedding: [0, 1] })
+    const results = await new PostgresKnowledgeRepository(pool).search({ workspaceId: 'ws-a', query: '锦纶', queryEmbedding: vector(0, 1), embeddingModel: 'test', embeddingVersion: '1' })
 
     expect(results.map(item => ({ id: item.document.id, chunks: item.chunks.map(chunk => chunk.id), score: item.score }))).toEqual([
       { id: 'doc-1', chunks: ['chunk-1a'], score: 1 },
@@ -510,16 +541,16 @@ describe('knowledge persistence contract', () => {
     ]
     const chunks = [pgChunk('chunk-a1', 'doc-a1', 0, '锦纶 88%'), pgChunk('chunk-b1', 'doc-b1', 0, '锦纶 外套')]
     const embeddings = [
-      pgEmbedding('embedding-a1', 'doc-a1', 'chunk-a1', [1, 0]),
-      pgEmbedding('embedding-a2', 'doc-a2', 'chunk-a1', [0, 1]),
-      pgEmbedding('embedding-b1', 'doc-b1', 'chunk-b1', [0, 1]),
+      pgEmbedding('embedding-a1', 'doc-a1', 'chunk-a1', vector(1, 0)),
+      pgEmbedding('embedding-a2', 'doc-a2', 'chunk-a1', vector(0, 1)),
+      pgEmbedding('embedding-b1', 'doc-b1', 'chunk-b1', vector(0, 1)),
     ]
 
     const batched = new BatchedKnowledgePool(documents, chunks, embeddings)
     const batchedResults = await new PostgresKnowledgeRepository(batched).search({
       workspaceId: 'ws-a',
       query: '锦纶',
-      queryEmbedding: [0, 1],
+      queryEmbedding: vector(0, 1), embeddingModel: 'test', embeddingVersion: '1',
       productIds: ['product-c', 'product-a', 'product-b'],
       limit: 2,
     })
@@ -529,7 +560,7 @@ describe('knowledge persistence contract', () => {
       singles.push(...await new PostgresKnowledgeRepository(new BatchedKnowledgePool(documents, chunks, embeddings)).search({
         workspaceId: 'ws-a',
         query: '锦纶',
-        queryEmbedding: [0, 1],
+        queryEmbedding: vector(0, 1), embeddingModel: 'test', embeddingVersion: '1',
         productId,
         limit: 2,
       }))

@@ -157,8 +157,21 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   const metadata = record(root.metadata) ? root.metadata : undefined
   const usage = record(root.usage) ? root.usage : data && record(data.usage) ? data.usage : nestedData && record(nestedData.usage) ? nestedData.usage : result && record(result.usage) ? result.usage : metadata && record(metadata.usage) ? metadata.usage : undefined
   const inputTokens = tokenFrom(usage?.prompt_tokens) ?? tokenFrom(usage?.input_tokens) ?? tokenFrom(usage?.inputTokens)
-  const outputTokens = tokenFrom(usage?.completion_tokens) ?? tokenFrom(usage?.output_tokens) ?? tokenFrom(usage?.outputTokens)
+  const rawOutputTokenFields = [usage?.completion_tokens, usage?.output_tokens, usage?.outputTokens]
+  const reportedOutputTokens = tokenFrom(usage?.completion_tokens) ?? tokenFrom(usage?.output_tokens) ?? tokenFrom(usage?.outputTokens)
   const reportedTotal = tokenFrom(usage?.total_tokens) ?? tokenFrom(usage?.totalTokens)
+  // Some embedding relays report prompt_tokens and total_tokens but omit the
+  // completion field. Embeddings produce no completion tokens; record zero
+  // only when the provider's total exactly equals its reported input. Do not
+  // infer from a missing total, an inconsistent total, or malformed explicit
+  // output field. The metadata keeps this mathematical derivation auditable.
+  const outputTokensDerivedFromEmbeddingTotal = defaults.modality === 'embedding'
+    && reportedOutputTokens === undefined
+    && rawOutputTokenFields.every(value => value === undefined)
+    && inputTokens !== undefined
+    && reportedTotal !== undefined
+    && reportedTotal === inputTokens
+  const outputTokens = reportedOutputTokens ?? (outputTokensDerivedFromEmbeddingTotal ? 0 : undefined)
   const totalTokens = reportedTotal !== undefined && inputTokens !== undefined && outputTokens !== undefined && reportedTotal !== inputTokens + outputTokens
     ? undefined
     : reportedTotal ?? (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined)
@@ -250,6 +263,7 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     observedAt: new Date().toISOString(),
     metadata: {
       usage_observed: usageObserved,
+      ...(outputTokensDerivedFromEmbeddingTotal ? { output_tokens_derivation: 'embedding_total_equals_prompt_tokens' } : {}),
       ...(videoRequestAccepted ? { video_request_accepted: true } : {}),
       // Persist the relay's durable video job id. When settlement cannot be
       // recorded the usage receipt is still the only durable record of the

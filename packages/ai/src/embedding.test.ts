@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createEmbeddingClientFromEnv, OpenAICompatibleEmbeddingClient } from './embedding.js'
 import { ModelUsageEvidenceMissingError } from './relay-usage.js'
 import { providerIdempotencyKey } from './provider-request.js'
+import { RelayPricingClient } from './relay-pricing.js'
 
 const response = (body: unknown, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json', ...headers } })
 const body = { data: [{ index: 0, embedding: [0.1, 0.2] }, { index: 1, embedding: [0.3, 0.4] }], usage: { prompt_tokens: 4, total_tokens: 4, cost_cny: 0.002 } }
@@ -52,6 +53,47 @@ describe('relay embedding client', () => {
       .resolves.toMatchObject({ model: 'qwen3.7-text-embedding-flash', dimensions: 1024, embeddings: [vector] })
     expect(fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({ 'idempotency-key': historicalIdentity })
     expect(sink).toHaveBeenCalledOnce()
+  })
+
+  it('settles Wormhole prompt-only embedding usage from the authenticated pricing snapshot', async () => {
+    const model = 'qwen3.7-text-embedding-flash'
+    const pricingSnapshot = {
+      pricing_version: 'wormhole-pricing-snapshot',
+      group_ratio: { VIP: 0.85 },
+      data: [{ model_name: model, quota_type: 0, model_ratio: 0.005417276721, model_price: 0, completion_ratio: 1.986486486425, enable_groups: ['VIP'] }],
+    }
+    const pricing = new RelayPricingClient({
+      baseUrl: 'https://ai.wormholexyz.xyz/v1', apiKey: 'test-relay-key', group: 'VIP', modalityGroups: { embedding: 'VIP' },
+      fetch: async url => new Response(JSON.stringify(String(url).endsWith('/api/pricing')
+        ? pricingSnapshot
+        : { data: { quota_per_unit: 500_000, usd_exchange_rate: 6.83 } })),
+    })
+    let quote: Awaited<ReturnType<typeof pricing.quote>> | undefined
+    const sink = vi.fn(async usage => {
+      quote = await pricing.quote(usage)
+      return { recorded: true as const, costEvidence: true as const }
+    })
+    const vector = [0.1, 0.2]
+    const client = new OpenAICompatibleEmbeddingClient({
+      baseUrl: 'https://ai.wormholexyz.xyz/v1', apiKey: 'test-relay-key', model,
+      fetch: async () => response({ data: [{ index: 0, embedding: vector }], usage: { prompt_tokens: 42, total_tokens: 42 } }, { 'x-provider-request-id': 'wormhole_embed_42' }),
+      usageSink: sink,
+    })
+
+    await expect(client.embed({ texts: ['embedding input'], usageContext: { workspaceId: 'ws_qwen' } })).resolves.toMatchObject({ embeddings: [vector] })
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+      modality: 'embedding', model, providerRequestId: 'wormhole_embed_42',
+      inputTokens: 42, outputTokens: 0, totalTokens: 42,
+      metadata: expect.objectContaining({ usage_observed: true, output_tokens_derivation: 'embedding_total_equals_prompt_tokens' }),
+    }))
+    expect(quote).toMatchObject({
+      costCny: 0,
+      metadata: {
+        cost_source: 'relay_pricing_snapshot', pricing_version: 'wormhole-pricing-snapshot', pricing_group: 'VIP',
+        group_ratio: 0.85, quota_type: 0, model_ratio: 0.005417276721, completion_ratio: 1.986486486425,
+        raw_quota: 0.19339677893969998, rounded_quota: 0, formula_version: 'new-api-quota-v1',
+      },
+    })
   })
 
   it('reuses the pre-scalar idempotency identity after an ambiguous provider result', async () => {

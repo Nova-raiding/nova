@@ -194,6 +194,11 @@ case "$MCP_INTEGRATION_MODE" in
 esac
 node infra/scripts/check-mcp-integration-production.mjs --config
 sh infra/scripts/validate-production-config.sh "$config_path"
+embedding_enabled=$(ruby -ryaml -e 'config = YAML.safe_load(File.read(ARGV.fetch(0), encoding: "UTF-8"), aliases: false); value = config.is_a?(Hash) ? config["knowledge_vector_index_enabled"] : nil; abort("knowledge_vector_index_enabled must be a boolean in rendered production config") unless [true, false].include?(value); puts(value ? "true" : "false")' "$config_path")
+if [ "$DEPLOYMENT_SCOPE" != full ] && [ "$embedding_enabled" = true ]; then
+  echo 'knowledge vector indexing requires full production acceptance and relay evidence; infra-only deployment is blocked' >&2
+  exit 1
+fi
 node infra/scripts/validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"
 image_set_digest=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 sh infra/scripts/verify-ecs-ops-ui-auth-mode.sh "$OPS_UI_IMAGE_REF" "$OPS_AUTH_MODE"
@@ -233,7 +238,12 @@ else
   npx --no-install tsx tests/capacity-evidence-gate.ts --file "$CAPACITY_REPORT_PATH" --require-cloud-gate --release-id "$RELEASE_ID" --profile "$capacity_profile"
 fi
 model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$config_path")
-npx --no-install tsx tests/model-relay-evidence-gate.ts --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --expected-release-git-sha "$release_git_sha" --expected-image-set-digest "$image_set_digest" --expected-manifest-sha256 "$manifest_sha256" --expected-deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
+if [ "$embedding_enabled" = true ]; then
+  rendered_embedding_model=$(ruby -ryaml -e 'config = YAML.safe_load(File.read(ARGV.fetch(0), encoding: "UTF-8"), aliases: false); model = config.is_a?(Hash) ? config["embedding_model"] : nil; abort("embedding_model must be a string in rendered production config") unless model.is_a?(String) && !model.strip.empty?; print model' "$config_path")
+  npx --no-install tsx tests/model-relay-evidence-gate.ts --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --expected-release-git-sha "$release_git_sha" --expected-image-set-digest "$image_set_digest" --expected-manifest-sha256 "$manifest_sha256" --expected-deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts --embedding-enabled --embedding-model "$rendered_embedding_model"
+else
+  npx --no-install tsx tests/model-relay-evidence-gate.ts --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --expected-release-git-sha "$release_git_sha" --expected-image-set-digest "$image_set_digest" --expected-manifest-sha256 "$manifest_sha256" --expected-deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
+fi
 mcp_base_url=$(ruby infra/scripts/validate-production-config-yaml.rb "$config_path" --print-mcp-base-url)
 plugin_source_schema=$(sed -n 's/^schema_version=//p' "$root/.candidate-identity" 2>/dev/null || true)
 case "$plugin_source_schema" in

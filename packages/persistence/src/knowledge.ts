@@ -157,6 +157,9 @@ export interface KnowledgeSearchInput {
   knowledgeTypes?: readonly KnowledgeType[]
   limit?: number
   queryEmbedding?: readonly number[]
+  /** Required with queryEmbedding. Never compare vectors from another model or index version. */
+  embeddingModel?: string
+  embeddingVersion?: string
 }
 
 export interface KnowledgeDocumentFilters {
@@ -293,6 +296,13 @@ const vectorScore = (left: readonly number[], right: readonly number[]): number 
   let dot = 0; let leftNorm = 0; let rightNorm = 0
   left.forEach((item, index) => { dot += item * right[index]!; leftNorm += item * item; rightNorm += right[index]! * right[index]! })
   return leftNorm && rightNorm ? dot / Math.sqrt(leftNorm * rightNorm) : 0
+}
+const requireVectorSearchIdentity = (input: KnowledgeSearchInput): { model: string; version: string } | undefined => {
+  if (input.queryEmbedding === undefined) return undefined
+  const model = input.embeddingModel?.trim()
+  const version = input.embeddingVersion?.trim()
+  if (!model || !version || input.queryEmbedding.length !== 1024 || input.queryEmbedding.some(value => !Number.isFinite(value))) throw new Error('KNOWLEDGE_QUERY_EMBEDDING_INVALID')
+  return { model, version }
 }
 
 export class MemoryKnowledgeRepository implements KnowledgeRepository {
@@ -445,12 +455,13 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
   }
   async search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]> {
     const scope = requireWorkspaceScope(input.workspaceId)
+    const vectorIdentity = requireVectorSearchIdentity(input)
     const limit = Math.min(Math.max(input.limit ?? 20, 1), 100)
     const terms = (input.query ?? '').trim().toLocaleLowerCase()
     const batch = input.productIds
     const rank = (documents: readonly KnowledgeDocument[]): KnowledgeSearchResult[] => rankResults(documents.map(document => {
       const chunks = [...this.chunks.values()].filter(chunk => chunk.workspaceId === scope && chunk.documentId === document.id)
-      const embeddings = [...this.embeddings.values()].filter(embedding => embedding.workspaceId === scope && embedding.documentId === document.id && embedding.indexState === 'ready')
+      const embeddings = vectorIdentity ? [...this.embeddings.values()].filter(embedding => embedding.workspaceId === scope && embedding.documentId === document.id && embedding.indexState === 'ready' && embedding.embeddingModel === vectorIdentity.model && embedding.embeddingVersion === vectorIdentity.version && embedding.embedding.length === 1024) : []
       const lexical = terms ? (document.extractedText.toLocaleLowerCase().includes(terms) ? 1 : chunks.some(chunk => chunk.content.toLocaleLowerCase().includes(terms)) ? .5 : 0) : 0
       const score = input.queryEmbedding ? Math.max(lexical, ...embeddings.map(embedding => vectorScore(input.queryEmbedding!, embedding.embedding)), 0) : lexical
       return { document: clone(document), chunks: clone(chunks), score }
@@ -557,7 +568,7 @@ export class PostgresKnowledgeRepository implements KnowledgeRepository {
    * document inside a single transaction. */
   async rebuildIndex(workspaceId: string, documentId?: string, reason = 'rebuild requested'): Promise<number> { const scope = requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, scope, async client => { const result = await client.query<{ document_id: string }>(`WITH rebuilt AS (UPDATE knowledge_documents SET index_state='queued',index_error=NULL,revision=revision+1,updated_at=now() WHERE workspace_id=$1 AND index_state <> 'deleted' AND ($2::text IS NULL OR id=$2) RETURNING id) INSERT INTO knowledge_index_events (id,workspace_id,document_id,operation,previous_state,next_state,reason) SELECT 'knowledge_index_event_'||pg_catalog.gen_random_uuid()::text,$1,rebuilt.id,'rebuild','stale','queued',$3 FROM rebuilt RETURNING document_id`, [scope, documentId ?? null, reason]); return result.rows.length }) }
   async deleteDocument(workspaceId: string, documentId: string, reason = 'document deleted'): Promise<KnowledgeDeletionProof> { const scope = requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, scope, async client => { const document = await client.query<Row>(`SELECT id,index_state FROM knowledge_documents WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, [scope, documentId]); if (!document.rows[0]) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND'); const counts = await client.query<{ chunks: number; embeddings: number }>(`SELECT (SELECT count(*)::int FROM knowledge_chunks WHERE workspace_id=$1 AND document_id=$2) AS chunks,(SELECT count(*)::int FROM knowledge_embeddings WHERE workspace_id=$1 AND document_id=$2) AS embeddings`, [scope, documentId]); const chunksDeleted = Number(counts.rows[0]?.chunks ?? 0); const embeddingsDeleted = Number(counts.rows[0]?.embeddings ?? 0); const chunkIds = await client.query<{ id: string }>(`SELECT id FROM knowledge_chunks WHERE workspace_id=$1 AND document_id=$2 ORDER BY id`, [scope, documentId]); const embeddingIds = await client.query<{ id: string }>(`SELECT id FROM knowledge_embeddings WHERE workspace_id=$1 AND document_id=$2 ORDER BY id`, [scope, documentId]); const deletionDigest = digest({ scope, documentId, chunks: chunkIds.rows.map(item => item.id), embeddings: embeddingIds.rows.map(item => item.id) }); await client.query(`DELETE FROM knowledge_chunks WHERE workspace_id=$1 AND document_id=$2`, [scope, documentId]); await client.query(`UPDATE knowledge_documents SET index_state='deleted',index_error=$3,revision=revision+1,updated_at=now() WHERE workspace_id=$1 AND id=$2`, [scope, documentId, reason]); const result = await client.query<Row>(`INSERT INTO knowledge_deletion_proofs (id,workspace_id,document_id,chunks_deleted,embeddings_deleted,deletion_digest) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [`knowledge_deletion_${randomUUID()}`, scope, documentId, chunksDeleted, embeddingsDeleted, deletionDigest]); await client.query(`INSERT INTO knowledge_index_events (id,workspace_id,document_id,operation,previous_state,next_state,reason) VALUES ($1,$2,$3,'deleted',$4,'deleted',$5)`, [`knowledge_index_event_${randomUUID()}`, scope, documentId, document.rows[0].index_state, reason]); return { id: result.rows[0]!.id, workspaceId: result.rows[0]!.workspace_id, documentId: result.rows[0]!.document_id, deletedAt: iso(result.rows[0]!.deleted_at), chunksDeleted: Number(result.rows[0]!.chunks_deleted), embeddingsDeleted: Number(result.rows[0]!.embeddings_deleted), deletionDigest: result.rows[0]!.deletion_digest } }) }
-  async search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]> { const scope = requireWorkspaceScope(input.workspaceId); const limit = Math.min(Math.max(input.limit ?? 20, 1), 100); const batch = input.productIds; return withWorkspaceTransaction(this.pool, scope, async client => { const values: unknown[] = [scope]; const where = [`d.workspace_id=$1`, `d.index_state='ready'`, `d.approval_status='approved'`, `d.rights_status='cleared'`]; if (input.productId) { values.push(input.productId); where.push(`d.product_id=$${values.length}`) } // Batch form: ANDed with the single value, so passing both intersects. Absent, the statement below is byte-identical to the historical one.
+  async search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]> { const scope = requireWorkspaceScope(input.workspaceId); const vectorIdentity = requireVectorSearchIdentity(input); const limit = Math.min(Math.max(input.limit ?? 20, 1), 100); const batch = input.productIds; return withWorkspaceTransaction(this.pool, scope, async client => { const values: unknown[] = [scope]; const where = [`d.workspace_id=$1`, `d.index_state='ready'`, `d.approval_status='approved'`, `d.rights_status='cleared'`]; if (input.productId) { values.push(input.productId); where.push(`d.product_id=$${values.length}`) } // Batch form: ANDed with the single value, so passing both intersects. Absent, the statement below is byte-identical to the historical one.
       if (batch) { values.push([...batch]); where.push(`d.product_id = ANY($${values.length}::text[])`) }
       if (input.skuId) { values.push(input.skuId); where.push(`d.sku_id=$${values.length}`) } if (input.knowledgeTypes?.length) { values.push(input.knowledgeTypes); where.push(`d.knowledge_type = ANY($${values.length}::text[])`) } const terms = input.query?.trim().toLocaleLowerCase() ?? ''; // With an embedding, lexical matching is only a ranking signal. Applying ILIKE here would discard semantically relevant documents before the JSONB vectors are scored. Keep the SQL pre-filter only for lexical-only searches.
       if (input.platform?.trim()) { values.push(input.platform.trim()); where.push(`EXISTS (SELECT 1 FROM products p WHERE p.workspace_id=d.workspace_id AND p.id=d.product_id AND p.platform=$${values.length})`) }
@@ -582,8 +593,8 @@ export class PostgresKnowledgeRepository implements KnowledgeRepository {
       // per-document loop cost up to 200 round trips inside one transaction.
       const documentIds = result.rows.map(row => row.id)
       const chunks = await client.query<Row>(`SELECT * FROM knowledge_chunks WHERE workspace_id=$1 AND document_id = ANY($2::text[]) ORDER BY document_id, ordinal`, [scope, documentIds])
-      const embeddings = input.queryEmbedding
-        ? await client.query<Row>(`SELECT * FROM knowledge_embeddings WHERE workspace_id=$1 AND document_id = ANY($2::text[]) AND index_state='ready'`, [scope, documentIds])
+      const embeddings = vectorIdentity
+        ? await client.query<Row>(`SELECT * FROM knowledge_embeddings WHERE workspace_id=$1 AND document_id = ANY($2::text[]) AND index_state='ready' AND embedding_model=$3 AND embedding_version=$4 AND jsonb_array_length(embedding)=1024`, [scope, documentIds, vectorIdentity.model, vectorIdentity.version])
         : { rows: [] as Row[] }
       const chunksByDocument = groupByDocument(chunks.rows)
       const embeddingsByDocument = groupByDocument(embeddings.rows)
