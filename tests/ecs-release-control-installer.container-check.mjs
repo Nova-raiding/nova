@@ -69,6 +69,30 @@ for (const [control, executable, digestName] of [
   assert.equal(statSync(`${bin}/${executable}`).mode & 0o777, 0o755);
 }
 console.log('PASS: PG17 plan and same-snapshot backup controls have fixed, digest-bound install targets');
+for (const [control, sourceName, installedName, digestName] of [
+  ['canonicalSnapshot', 'canonical-safe-state-snapshot.mjs', 'canonical-safe-state-snapshot.mjs', 'canonical-safe-state-library-sha256'],
+  ['canonicalAttester', 'attest-canonical-safe-state.mjs', 'attest-canonical-safe-state', 'canonical-safe-state-collector-sha256'],
+]) {
+  const source = `/source/infra/protected/${sourceName}`;
+  const bytes = readFileSync(source);
+  const installedResult = run([installer, '--control', control, '--source', source, '--source-sha256', hash(bytes),
+    '--node', runtime, '--node-sha256', hash(readFileSync(runtime))]);
+  assert.equal(installedResult.status, 0, installedResult.stderr);
+  const receiptCanonical = JSON.parse(installedResult.stdout);
+  assert.equal(hash(readFileSync(`${bin}/${installedName}`)), receiptCanonical.installed_sha256);
+  assert.equal(readFileSync(`${trust}/${digestName}`, 'utf8').trim(), receiptCanonical.installed_sha256);
+  assert.equal(readFileSync(`${bin}/${installedName}`, 'utf8').startsWith(`#!${runtime}\n`), true);
+}
+const noSourceAttestation = run([`${bin}/attest-canonical-safe-state`, '--output', `${root}/canonical-safe-state/cannot-write.json`]);
+assert.notEqual(noSourceAttestation.status, 0);
+assert.match(noSourceAttestation.stderr, /canonical safe-state attestation refused/u);
+mkdirSync('/usr/pgsql-16/bin', { recursive: true, mode: 0o755 });
+writeFileSync('/usr/pgsql-16/bin/psql', '#!/bin/sh\nexit 1\n', { mode: 0o755, flag: 'wx' });
+writeFileSync(`${trust}/canonical-safe-state-library-sha256`, `${'0'.repeat(64)}\n`, { mode: 0o444 });
+const tamperedLibrary = run([`${bin}/attest-canonical-safe-state`, '--output', `${root}/canonical-safe-state/cannot-write.json`]);
+assert.notEqual(tamperedLibrary.status, 0);
+assert.match(tamperedLibrary.stderr, /installed snapshot library digest mismatch/u);
+console.log('PASS: canonical source attester and snapshot library install with independent digests and fail closed without source trust');
 for (const [control, filename, digestName] of [
   ['bridge254Review', 'ecs-bridge-254-review-state.mjs', 'production-bridge-254-review-state-sha256'],
   ['bridge254State', 'ecs-bridge-254-state-store.mjs', 'production-bridge-254-state-store-sha256'],

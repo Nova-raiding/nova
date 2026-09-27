@@ -11,6 +11,8 @@ export const CONTROLS = Object.freeze({
   restore: Object.freeze({ executable: 'restore-pg17-isolated', digest: 'production-pg17-restore-runner-sha256' }),
   pg17Plan: Object.freeze({ executable: 'attest-pg17-frozen-plan', digest: 'production-pg17-plan-signer-sha256' }),
   pg17BaselineBackup: Object.freeze({ executable: 'attest-pg17-backup-baseline', digest: 'production-pg17-baseline-backup-sha256' }),
+  canonicalSnapshot: Object.freeze({ executable: 'canonical-safe-state-snapshot.mjs', digest: 'canonical-safe-state-library-sha256' }),
+  canonicalAttester: Object.freeze({ executable: 'attest-canonical-safe-state', digest: 'canonical-safe-state-collector-sha256' }),
   preidentity: Object.freeze({ executable: 'ecs-preidentity-recovery', digest: 'production-preidentity-recovery-sha256' }),
   capability: Object.freeze({ executable: 'attest-capability-evidence', digest: 'production-capability-attester-sha256' }),
   manual: Object.freeze({ executable: 'attest-manual-operations-evidence', digest: 'production-manual-operations-attester-sha256' }),
