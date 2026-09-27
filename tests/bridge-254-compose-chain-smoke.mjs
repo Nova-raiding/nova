@@ -3,7 +3,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { existsSync, lstatSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -50,7 +50,15 @@ const composeFile = join(evidenceDir, 'compose.json')
 const roles = ['sync', 'generation', 'publish', 'reconcile', 'automation', 'scan']
 let fixture, pool, networkCreated = false, composeCreated = false
 const inNetwork = (value, host, port) => { const url = new URL(value); url.hostname = host; url.port = String(port); return url.toString() }
-const compose = async (...args) => docker('compose', '-p', project, '-f', composeFile, ...args)
+const compose = async (...args) => {
+  if (!dockerClient) throw new Error('isolated local Docker client was not initialized')
+  try {
+    return (await run('docker-compose', ['-p', project, '-f', composeFile, ...args], {
+      encoding: 'utf8', timeout: 90_000, maxBuffer: 2 * 1024 * 1024,
+      env: { ...dockerClient.environment, DOCKER_HOST: `unix://${dockerClient.socket}`, DOCKER_CONFIG: dockerClient.configPath },
+    })).stdout.trim()
+  } catch { throw new Error(`local review Compose command failed: ${args[0] ?? 'command'}`) }
+}
 async function serviceContainer(service) {
   const id = await compose('ps', '-a', '-q', service)
   if (!/^[a-f0-9]{64}$/u.test(id)) throw new Error(`missing owned Compose service ${service}`)
@@ -104,6 +112,7 @@ try {
   for (const role of roles) services[`worker-${role}`] = { image: workerImage, environment: { ...common, WORKER_ROLE: role, WORKER_WORKSPACES: fixture.workspaceId, WORKER_API_BASE_URL: 'http://api:8787' }, labels: { 'merchant.bridge-254-review': marker }, networks: [network] }
   writeFileSync(composeFile, JSON.stringify({ services, networks: { [network]: { external: true } } }), { mode: 0o600, flag: 'wx' })
   const observations = []
+  let backupRestore = null
   for (let prefix = 242; prefix <= 254; prefix += 1) {
     await new MigrationRunner(pool, migrations.slice(0, prefix)).run()
     const rows = (await pool.query('SELECT version, name, checksum FROM schema_migrations ORDER BY version')).rows
@@ -154,8 +163,29 @@ try {
     process.stdout.write(`review prefix ${prefix}: ${api.ready ? 'ready' : 'blocked'}\n`)
     await compose('down', '--remove-orphans', '--timeout', '10')
     composeCreated = false
+    if (prefix === 242) {
+      // After all owned runtime containers are stopped, prove this exact
+      // synthetic 242 snapshot can be restored to a second isolated PG17 DB.
+      const archive = join(evidenceDir, 'prefix-242.dump')
+      const sourceUrl = fixture.acceptanceDatabaseUrls.legacyBackfill
+      const targetUrl = fixture.acceptanceDatabaseUrls.workspaceCatalog
+      const pgBin = ['/opt/homebrew/opt/postgresql@17/bin', '/usr/local/opt/postgresql@17/bin', '/usr/lib/postgresql/17/bin'].find(path => existsSync(join(path, 'pg_dump')) && existsSync(join(path, 'pg_restore')))
+      if (!pgBin) throw new Error('isolated backup requires explicit PostgreSQL 17 client binaries')
+      const version = (await run(join(pgBin, 'pg_dump'), ['--version'], { encoding: 'utf8' })).stdout
+      if (!/PostgreSQL\) 17\./u.test(version)) throw new Error('isolated backup requires pg_dump 17')
+      await run(join(pgBin, 'pg_dump'), ['--format=custom', '--file', archive, sourceUrl], { timeout: 120_000, maxBuffer: 1024 * 1024 })
+      if (!statSync(archive).isFile() || statSync(archive).size <= 0) throw new Error('isolated 242 archive is empty')
+      await run(join(pgBin, 'pg_restore'), ['--exit-on-error', '--no-owner', '--no-privileges', '--dbname', targetUrl, archive], { timeout: 120_000, maxBuffer: 1024 * 1024 })
+      const restored = new Pool({ connectionString: targetUrl, max: 1 })
+      try {
+        const restoredRows = (await restored.query('SELECT version, name, checksum FROM schema_migrations ORDER BY version')).rows
+        const restoredHistory = `sha256:${sha(restoredRows.map(row => `${row.version}\t${row.name}\t${row.checksum}\n`).join(''))}`
+        if (restoredRows.length !== 242 || restoredHistory !== observations[0].history_sha256) throw new Error('isolated 242 restore history differs from backup source')
+        backupRestore = { archive_sha256: `sha256:${sha(readFileSync(archive))}`, archive_bytes: statSync(archive).size, restored_history_sha256: restoredHistory }
+      } finally { await restored.end() }
+    }
   }
-  writeFileSync(output, `${JSON.stringify({ schema_version: 'bridge-254-compose-chain-review/1', status: 'review_only', deployable: false, production_evidence: false, bridge_base_commit: manifest.bridge_base_commit, migration_commit: manifest.migration_commit, overlay_tree_sha256: manifest.overlay_tree_sha256, api_image_id: apiImage, worker_image_id: workerImage, postgres_image: pg.image, observations }, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
+  writeFileSync(output, `${JSON.stringify({ schema_version: 'bridge-254-compose-chain-review/1', status: 'review_only', deployable: false, production_evidence: false, ingress_fenced: false, task_drain_verified: false, bridge_base_commit: manifest.bridge_base_commit, migration_commit: manifest.migration_commit, overlay_tree_sha256: manifest.overlay_tree_sha256, api_image_id: apiImage, worker_image_id: workerImage, postgres_image: pg.image, backup_restore: backupRestore, observations }, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
   process.stdout.write(`PASS review-only isolated Compose bridge 242..254; output=${output}\n`)
 } finally {
   const failures = []
@@ -167,5 +197,5 @@ try {
   }
   if (fixture) try { if ((await fixture.dispose()).leftRunning.length) failures.push(new Error('fixture containers require cleanup review')) } catch (error) { failures.push(error) }
   try { await dockerClient?.dispose() } catch (error) { failures.push(error) }
-  if (failures.length) throw new Error(`bridge Compose cleanup requires inspection: ${failures.length} failure(s)`)
+  if (failures.length) throw new Error(`bridge Compose cleanup requires inspection: ${failures.map(error => error.message).join('; ')}`)
 }
