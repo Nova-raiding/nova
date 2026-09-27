@@ -167,11 +167,11 @@ export function invocationOwnsFlockRecord(procLocks, deviceInode, ownerPids) {
   })
 }
 
-function linuxDeviceInode(stat) {
+export function linuxDeviceInode(stat) {
   const device = BigInt(stat.dev)
   const major = ((device >> 8n) & 0xfffn) | ((device >> 32n) & 0xfffff000n)
   const minor = (device & 0xffn) | ((device >> 12n) & 0xffffff00n)
-  return `${major.toString(16)}:${minor.toString(16)}:${stat.ino}`
+  return `${major.toString(16).padStart(2, '0')}:${minor.toString(16).padStart(2, '0')}:${stat.ino}`
 }
 
 export function assertReviewOnlyMutationAllowed(requireProductionLock) {

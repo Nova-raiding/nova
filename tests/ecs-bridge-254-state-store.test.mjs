@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { after, test } from 'node:test'
-import { assertReviewOnlyMutationAllowed, createBridge254StateStore, invocationOwnsFlockRecord } from '../infra/protected/ecs-bridge-254-state-store.mjs'
+import { assertReviewOnlyMutationAllowed, createBridge254StateStore, invocationOwnsFlockRecord, linuxDeviceInode } from '../infra/protected/ecs-bridge-254-state-store.mjs'
 import { executeBridge254Maintenance, resumeBridge254ForwardMaintenance } from '../infra/protected/ecs-bridge-254-maintenance-core.mjs'
 
 const temp = mkdtempSync(join(realpathSync(tmpdir()), 'merchant-bridge-254-state-'))
@@ -92,6 +92,12 @@ test('FD9 flock proof requires an exclusive lock record owned by this invocation
   assert.equal(invocationOwnsFlockRecord(record, '08:01:98765', [5678]), false, 'a different process holding the path is not inherited FD9 ownership')
   assert.equal(invocationOwnsFlockRecord('7: POSIX ADVISORY WRITE 1234 08:01:98765 0 EOF\n', '08:01:98765', [1234]), false)
   assert.equal(invocationOwnsFlockRecord('7: FLOCK ADVISORY READ 1234 08:01:98765 0 EOF\n', '08:01:98765', [1234]), false)
+})
+
+test('formats low Linux device majors with proc-locks two-digit hexadecimal padding', () => {
+  assert.equal(linuxDeviceInode({ dev: 0x1000bd, ino: 3 }), '00:1bd:3')
+  assert.equal(invocationOwnsFlockRecord('7: FLOCK ADVISORY WRITE 1234 00:1bd:3 0 EOF\n',
+    linuxDeviceInode({ dev: 0x1000bd, ino: 3 }), [1234]), true)
 })
 
 test('capture persists signed exact old topology and refuses tampering or duplicate capture', () => {

@@ -17,3 +17,4 @@ export function createBridge254StateStore(options: {
 export function openProtectedBridge254StateStore(): Bridge254StateStore
 export function invocationOwnsFlockRecord(procLocks: string, deviceInode: string, ownerPids: number[]): boolean
 export function assertReviewOnlyMutationAllowed(requireProductionLock: boolean): void
+export function linuxDeviceInode(stat: { dev: number | bigint; ino: number | bigint }): string
