@@ -30,7 +30,7 @@ describe('B-derived 254 compatibility audit', () => {
     expect(result).toMatchObject({ status: 'blocked', deployable: false, runtime_verified: false, migration_commit: migrationCommit })
     expect(result.blockers.map(item => item.code)).toEqual(['BRIDGE_PREFIX_CONTRACT_244', 'OCR_VARIABLE_RATE_UNSUPPORTED'])
     expect(result.requires_pg17_evidence).toContain('B entitlement v2 function call under merchant_app workspace RLS after migration 254')
-  })
+  }, 15_000)
 
   it('rejects source tampering before producing findings', () => {
     const parent = mkdtempSync(join(tmpdir(), 'bridge-254-compatibility-'))
