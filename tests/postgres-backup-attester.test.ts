@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { assertSourcePolicy, createProtectedEnvironment, hashRegularFile, parseCreateArguments, parseSourcePolicy, produceBackup, pgDumpArguments, signBackupAttestation, SNAPSHOT_SQL } from '../infra/protected/attest-postgres-backup.mjs'
-import { verifyProducedBackupV2 } from '../infra/protected/produce-protected-live-backup.mjs'
+import { inspectProductionPostgres, validateProductionPostgresInspection, verifyProducedBackupV2 } from '../infra/protected/produce-protected-live-backup.mjs'
 import { validateBackupAttestation } from './backup-attestation-gate.js'
 
 const keys = () => {
@@ -17,6 +17,34 @@ const snapshotIdentity = { systemIdentifier, databaseOid: sourcePolicy.database_
 const snapshotTimes = { backupStartedAt: '2026-09-21T12:00:00.000Z', snapshotExportObservedAt: snapshotIdentity.snapshotExportObservedAt, dumpCompletedAt: '2026-09-21T12:00:02.000Z' }
 
 describe('synthetic protected postgres backup attester', () => {
+  it('pins the live-backup producer to the local production Docker daemon and exact PG16 identity', () => {
+    const inspected = {
+      Id: 'a'.repeat(64), Name: '/merchant-production-postgres-1', State: { Running: true },
+      Config: {
+        Image: 'postgres:16-alpine',
+        Labels: { 'com.docker.compose.project': 'merchant-production', 'com.docker.compose.service': 'postgres' },
+        Env: ['POSTGRES_DB=merchant', 'POSTGRES_USER=merchant', 'POSTGRES_PASSWORD=secret'],
+      },
+      NetworkSettings: { Networks: { 'merchant-production_default': { IPAddress: '172.29.0.2' } } },
+    }
+    const run = vi.fn(() => JSON.stringify([inspected]))
+    expect(inspectProductionPostgres(run)).toEqual({ networkHost: '172.29.0.2', environment: inspected.Config.Env })
+    expect(run).toHaveBeenCalledWith('/usr/bin/docker', ['--host', 'unix:///var/run/docker.sock', 'inspect', 'merchant-production-postgres-1'], {
+      encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', DOCKER_HOST: 'unix:///var/run/docker.sock' }, timeout: 30_000, maxBuffer: 2 * 1024 * 1024,
+    })
+    for (const mutate of [
+      (value: typeof inspected) => { value.Name = '/candidate-postgres-1' },
+      (value: typeof inspected) => { value.Config.Image = 'postgres:17-alpine' },
+      (value: typeof inspected) => { value.Config.Labels['com.docker.compose.project'] = 'candidate' },
+      (value: typeof inspected) => { value.Config.Labels['com.docker.compose.service'] = 'postgres-copy' },
+      (value: typeof inspected) => { Object.assign(value.NetworkSettings.Networks, { candidate_default: { IPAddress: '172.29.0.2' } }) },
+    ]) {
+      const wrong = structuredClone(inspected)
+      mutate(wrong)
+      expect(() => validateProductionPostgresInspection(wrong)).toThrow(/identity mismatch|network ambiguous/u)
+    }
+    expect(() => inspectProductionPostgres(() => JSON.stringify([inspected, inspected]))).toThrow('unavailable')
+  })
   it('accepts only signed v2 producer output bound to reviewed source, migration and dump', () => {
     const pair = keys(), bytes = Buffer.from('synthetic-dump'), now = new Date('2026-09-21T12:00:03.000Z')
     const document = signBackupAttestation({ backupBytes: bytes, backupFileName: 'before-upgrade-233.dump', ...snapshotIdentity, ...snapshotTimes, keyId: 'synthetic-test-key', ...pair, validitySeconds: 3600 })

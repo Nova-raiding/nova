@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url'
 
 const hash = value => createHash('sha256').update(value).digest('hex')
 const ATTESTER_TIMEOUT_MS = 6 * 60 * 60_000 + 60_000
+const DOCKER_SOCKET = 'unix:///var/run/docker.sock'
+const PRODUCTION_POSTGRES = 'merchant-production-postgres-1'
 
 function hashRegularFile(path) {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
@@ -62,11 +64,34 @@ export function verifyProducedBackupV2(document, backupSha256, backupName, polic
   assert(publicKey.asymmetricKeyType === 'ed25519' && verify(null, Buffer.from(canonical(document)), publicKey, Buffer.from(document.signature_base64, 'base64')), 'protected backup signature is invalid')
 }
 
+export function validateProductionPostgresInspection(value) {
+  assert(value?.Name === `/${PRODUCTION_POSTGRES}`
+    && value?.State?.Running === true
+    && /^[a-f0-9]{64}$/.test(value.Id ?? '')
+    && /(?:^|\/)postgres:16(?:[-@]|$)/.test(value.Config?.Image ?? '')
+    && value.Config?.Labels?.['com.docker.compose.project'] === 'merchant-production'
+    && value.Config?.Labels?.['com.docker.compose.service'] === 'postgres', 'reviewed production PG16 container identity mismatch')
+  const networks = Object.entries(value.NetworkSettings?.Networks ?? {})
+  assert(networks.length === 1 && networks[0][0] === 'merchant-production_default'
+    && /^\d{1,3}(?:\.\d{1,3}){3}$/.test(networks[0][1]?.IPAddress ?? ''), 'production Postgres network ambiguous')
+  assert(Array.isArray(value.Config.Env), 'production Postgres environment missing')
+  return { networkHost: networks[0][1].IPAddress, environment: value.Config.Env }
+}
+
+export function inspectProductionPostgres(run = execFileSync) {
+  const raw = run('/usr/bin/docker', ['--host', DOCKER_SOCKET, 'inspect', PRODUCTION_POSTGRES], {
+    encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', DOCKER_HOST: DOCKER_SOCKET }, timeout: 30_000, maxBuffer: 2 * 1024 * 1024,
+  })
+  const result = JSON.parse(raw)
+  assert(Array.isArray(result) && result.length === 1, 'reviewed production PG16 container unavailable')
+  return validateProductionPostgresInspection(result[0])
+}
+
 function main() {
 const expectedMigrationVersion = Number(process.env.EXPECTED_MIGRATION_VERSION ?? '')
 assert(Number.isSafeInteger(expectedMigrationVersion) && expectedMigrationVersion > 0, 'EXPECTED_MIGRATION_VERSION must be a positive integer')
 const postgresContainer = process.env.PRODUCTION_POSTGRES_CONTAINER ?? ''
-assert(/^merchant-production-postgres-[1-9][0-9]*$/.test(postgresContainer), 'PRODUCTION_POSTGRES_CONTAINER must identify the reviewed production PostgreSQL container')
+assert(postgresContainer === PRODUCTION_POSTGRES, 'PRODUCTION_POSTGRES_CONTAINER must identify the reviewed production PostgreSQL container')
 const releaseId = process.env.RELEASE_ID ?? ''
 assert(/^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(releaseId), 'RELEASE_ID must identify the reviewed release')
 const attemptId = process.env.BACKUP_ATTEMPT_ID ?? ''
@@ -77,13 +102,10 @@ assert.equal(process.getuid(), 0)
 const mode = process.argv[2]
 assert(['inspect', 'create'].includes(mode))
 for (const path of [fileURLToPath(import.meta.url), '/usr/bin/docker', '/usr/pgsql-16/bin/psql', dirname(policyPath), '/var/lib/merchant-release-security/backups']) protect(path)
-const inspected = JSON.parse(execFileSync('/usr/bin/docker', ['inspect', postgresContainer], { encoding: 'utf8', env: {} }))[0]
-assert(inspected?.State?.Running === true && inspected.Config.Image && inspected.Id)
-const config = Object.fromEntries(inspected.Config.Env.map(line => { const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)] }))
-const networks = Object.values(inspected.NetworkSettings.Networks).map(value => value.IPAddress).filter(Boolean)
-assert(networks.length === 1 && /^\d+\.\d+\.\d+\.\d+$/.test(networks[0]))
+const inspected = inspectProductionPostgres()
+const config = Object.fromEntries(inspected.environment.map(line => { const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)] }))
 assert(config.POSTGRES_USER && config.POSTGRES_DB && config.POSTGRES_PASSWORD, 'source database credentials unavailable')
-const pg = { PGHOST: networks[0], PGPORT: '5432', PGDATABASE: config.POSTGRES_DB, PGUSER: config.POSTGRES_USER, PGPASSWORD: config.POSTGRES_PASSWORD, PGCONNECT_TIMEOUT: '10' }
+const pg = { PGHOST: inspected.networkHost, PGPORT: '5432', PGDATABASE: config.POSTGRES_DB, PGUSER: config.POSTGRES_USER, PGPASSWORD: config.POSTGRES_PASSWORD, PGCONNECT_TIMEOUT: '10' }
 const query = "SELECT json_build_object('system_identifier',system_identifier::text,'database_oid',(SELECT oid FROM pg_database WHERE datname=current_database()),'database_name',current_database(),'migration_version',(SELECT max(version) FROM public.schema_migrations),'server_version_num',current_setting('server_version_num')) FROM pg_control_system();"
 let value
 try { value = JSON.parse(execFileSync('/usr/pgsql-16/bin/psql', ['-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-c', query], { encoding: 'utf8', env: pg, stdio: ['ignore', 'pipe', 'pipe'] })) }
