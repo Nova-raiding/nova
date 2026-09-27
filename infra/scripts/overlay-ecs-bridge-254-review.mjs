@@ -8,6 +8,7 @@ import { auditBridgeReview } from './audit-ecs-bridge-254-review.mjs'
 
 const MIGRATION = 'packages/persistence/src/migration.ts'
 const CATALOG = 'packages/persistence/src/commercial-catalog-repository.ts'
+const API = 'apps/api/src/server.ts'
 const sha = value => createHash('sha256').update(value).digest('hex')
 function files(directory, prefix = '') {
   const result = new Map()
@@ -83,9 +84,23 @@ export function buildBridgeOverlay({ review, output }) {
         }
       })`, 'variable rate projection')
     writeFileSync(catalogPath, catalog)
+
+    // The B API defaults to running migrations when this variable is omitted.
+    // In the 242/254 bridge, an accidental omission would advance the live
+    // database through unsupported intermediate prefixes before readiness.
+    const apiPath = join(sourceRoot, API)
+    let api = readFileSync(apiPath, 'utf8')
+    api = replaceOnce(api,
+      `    const bridgeSchemaMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
+    if (process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') await runMigrations(sqlPool, migrations)`,
+      `    const bridgeSchemaMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
+    if (bridgeSchemaMode === 'prefix_242_or_254' && process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') throw new Error('242-to-254 bridge forbids API startup migrations')
+    if (process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') await runMigrations(sqlPool, migrations)`,
+      '242/254 API startup migration guard')
+    writeFileSync(apiPath, api)
     const after = files(sourceRoot)
     const changed = [...new Set([...before.keys(), ...after.keys()])].filter(path => before.get(path) !== after.get(path)).sort()
-    if (JSON.stringify(changed) !== JSON.stringify([CATALOG, MIGRATION].sort())) throw new Error('overlay changed outside the two-file allowlist')
+    if (JSON.stringify(changed) !== JSON.stringify([API, CATALOG, MIGRATION].sort())) throw new Error('overlay changed outside the three-file allowlist')
     const manifest = {
       schema_version: 'ecs-bridge-254-compatibility-overlay/1', status: 'review_only', deployable: false, runtime_verified: false,
       source_review_tree_sha256: audit.review_tree_sha256, bridge_base_commit: audit.bridge_base_commit,

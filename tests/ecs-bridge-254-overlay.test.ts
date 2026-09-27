@@ -24,10 +24,23 @@ describe('B-derived 242/254 review overlay', () => {
   it('changes only the verifier and catalog, and remains non-deployable', () => {
     const { review, output, manifest } = prepare()
     expect(manifest).toMatchObject({ status: 'review_only', deployable: false, runtime_verified: false })
-    expect(manifest.changed_paths).toEqual(['packages/persistence/src/commercial-catalog-repository.ts', 'packages/persistence/src/migration.ts'])
+    expect(manifest.changed_paths).toEqual(['apps/api/src/server.ts', 'packages/persistence/src/commercial-catalog-repository.ts', 'packages/persistence/src/migration.ts'])
     expect(manifest.missing_proof).toContain('isolated PG17 242/254 API and six-worker execution')
     expect(manifest.missing_proof).toContain('separate reviewed Compose/preflight/package verifier: B deploy-preflight and package verifier require prefix_242_or_244')
     expect(() => buildBridgeOverlay({ review, output })).toThrow('new absolute canonical path')
+  }, 30_000)
+
+  it('forbids startup migrations in 242/254 API mode before migration runner dispatch', () => {
+    const { output } = prepare()
+    const source = readFileSync(join(output, 'overlay-source/apps/api/src/server.ts'), 'utf8')
+    const guard = "if (bridgeSchemaMode === 'prefix_242_or_254' && process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') throw new Error('242-to-254 bridge forbids API startup migrations')"
+    const migration = "if (process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') await runMigrations(sqlPool, migrations)"
+    expect(source.indexOf(guard)).toBeGreaterThan(0)
+    expect(source.indexOf(migration)).toBeGreaterThan(source.indexOf(guard))
+    const check = new Function('bridgeSchemaMode', 'process', `${guard}; return true`) as (mode: string, process: { env: Record<string, string | undefined> }) => boolean
+    expect(() => check('prefix_242_or_254', { env: {} })).toThrow('forbids API startup migrations')
+    expect(() => check('prefix_242_or_254', { env: { RUN_MIGRATIONS_ON_STARTUP: 'true' } })).toThrow('forbids API startup migrations')
+    expect(check('prefix_242_or_254', { env: { RUN_MIGRATIONS_ON_STARTUP: 'false' } })).toBe(true)
   }, 30_000)
 
   it('accepts only a verified 242 or 254 prefix under the separate bridge mode', () => {
