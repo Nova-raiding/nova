@@ -3,7 +3,7 @@
 // Inspect is read-only; sign writes only a scoped source policy and plan file.
 import { createHash, createPrivateKey, sign } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { constants, closeSync, fchmodSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
@@ -104,7 +104,12 @@ export async function runProtectedPlanSigner(args) {
   const bytes = signFrozenPlanFromObservedCatalog({ tablePlan: observed.table_plan, sourcePolicyBytes: policyBytes, releaseId, gitSha, migrationVersion: 242, keyId, privateKeyPem: privatePem, publicKeyPem: publicPem, signedAt, expiresAt })
   const policyPath = join(TRUST, `production-backup-source-${releaseId}.json`)
   try { check(protectedPath(policyPath, 0o444).equals(policyBytes), 'existing protected source policy changed') }
-  catch (error) { if (error?.code !== 'ENOENT') throw error; writeFileSync(policyPath, policyBytes, { flag: 'wx', mode: 0o444 }) }
+  catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+    const fd = openSync(policyPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
+    try { writeFileSync(fd, policyBytes); fchmodSync(fd, 0o444); fsyncSync(fd) }
+    finally { closeSync(fd) }
+  }
   const root = join(STATE, 'pg17-plans')
   try { mkdirSync(root, { mode: 0o700 }) } catch (error) { if (error?.code !== 'EEXIST') throw error }
   protectedDirectory(root)
