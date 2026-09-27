@@ -1,0 +1,160 @@
+import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { lstatSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { validateDemoCompose } from '../infra/scripts/render-ecs-demo-candidate.mjs'
+
+const entry = resolve('infra/scripts/render-ecs-demo-candidate.mjs')
+const project = 'merchant-demo-b77-check'
+const gitSha = 'a'.repeat(40)
+let sourceSha = ''
+const imageKeys = ['merchant-api', 'merchant-worker', 'merchant-ui', 'merchant-ops-ui', 'payment-gateway', 'pilot-gateway']
+const images = Object.fromEntries(imageKeys.map((key, index) => [key, `registry.invalid/merchant/${key}@sha256:${String(index + 1).repeat(64)}`]))
+
+function fixture() {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-demo-candidate-render-')))
+  const source = join(root, 'source')
+  const migrations = join(source, 'packages/persistence/src/migrations')
+  const scripts = join(source, 'infra/scripts')
+  const output = join(root, 'protected-output')
+  mkdirSync(migrations, { recursive: true, mode: 0o700 })
+  mkdirSync(scripts, { recursive: true, mode: 0o700 })
+  mkdirSync(output, { mode: 0o700 })
+  writeFileSync(join(migrations, '001_candidate.sql'), 'SELECT 1;\n', { mode: 0o600 })
+  writeFileSync(join(scripts, 'apply-migrations.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o600 })
+  spawnSync('tar', ['-cf', join(source, '.candidate-source.tar'), '-C', source, 'packages/persistence/src/migrations/001_candidate.sql', 'infra/scripts/apply-migrations.sh'])
+  sourceSha = `sha256:${createHash('sha256').update(readFileSync(join(source, '.candidate-source.tar'))).digest('hex')}`
+  const identity = join(source, '.candidate-identity')
+  const eightImages = {
+    ...images,
+    'postgres-migration': `registry.invalid/postgres:17-alpine@sha256:${'c'.repeat(64)}`,
+    clamav: `registry.invalid/merchant/clamav@sha256:${'d'.repeat(64)}`,
+  }
+  const releaseImages = join(root, 'release-images.json')
+  const eightImageSet = join(root, 'eight-image-set.json')
+  const rootEnv = join(root, 'relay.env')
+  writeFileSync(releaseImages, `${JSON.stringify({
+    schema_version: 1, release_id: 'release-b77b551a-review', release_git_sha: gitSha, source_sha256: sourceSha,
+    image_digests: Object.fromEntries(Object.entries(images).map(([key, ref]) => [key, ref.slice(ref.lastIndexOf('@') + 1)])), image_references: images,
+  })}\n`, { mode: 0o600 })
+  writeFileSync(eightImageSet, `${JSON.stringify({
+    schema_version: 1, release_id: 'release-b77b551a-review', release_git_sha: gitSha, source_sha256: sourceSha,
+    image_digests: Object.fromEntries(Object.entries(eightImages).map(([key, ref]) => [key, ref.slice(ref.lastIndexOf('@') + 1)])), image_references: eightImages,
+  })}\n`, { mode: 0o600 })
+  writeFileSync(rootEnv, 'MODEL_RELAY_API_KEY=relay-private-test-key\n', { mode: 0o600 })
+  writeFileSync(identity, `release_id=release-b77b551a-review\ngit_sha=${gitSha}\nsource_sha256=${sourceSha}\n`, { mode: 0o600 })
+  const args = ['--identity', identity, '--release-images', releaseImages, '--eight-image-set', eightImageSet, '--root-env', rootEnv, '--source-root', source,
+    '--output-dir', output, '--project', project,
+    '--redis-image', `registry.invalid/redis:7-alpine@sha256:${'e'.repeat(64)}`]
+  const run = (extra: string[] = [], target = output) => {
+    const actual = [...args]
+    actual[actual.indexOf('--output-dir') + 1] = target
+    return spawnSync(process.execPath, [entry, ...actual, ...extra], {
+      encoding: 'utf8', env: { ...process.env, NODE_ENV: 'test', VITEST: 'true', DEMO_CANDIDATE_TEST_UNPROTECTED_FILES: 'true' },
+    })
+  }
+  return { root, source, output, identity, releaseImages, eightImageSet, rootEnv, args, run }
+}
+
+describe('protected isolated ECS demo candidate renderer', () => {
+  it('renders only four private services, fresh scoped state, pinned six-image identity, and disabled Qwen1024 configuration', () => {
+    const value = fixture()
+    const result = value.run()
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).not.toContain('relay-private-test-key')
+    const composeText = readFileSync(join(value.output, 'candidate.compose.json'), 'utf8')
+    const compose = JSON.parse(composeText)
+    expect(Object.keys(compose.services).sort()).toEqual(['api', 'migrate', 'postgres', 'redis'])
+    expect(compose.services.api.environment).toMatchObject({
+      RELEASE_ID: 'release-b77b551a-review', RELEASE_GIT_SHA: gitSha, NODE_ENV: 'production',
+      PUBLIC_BASE_URL: 'https://candidate.yxsona.com', EMBEDDING_VERSION: 'v1',
+      KNOWLEDGE_VECTOR_INDEX_ENABLED: 'false', EMBEDDING_MODEL: 'qwen3.7-text-embedding-flash', EMBEDDING_DIMENSIONS: '1024',
+      PLUGIN_WRITE_ENABLED: 'false', ASSET_STORAGE_PREFIX: 'demo-candidate/release-b77b551a-review',
+    })
+    expect(compose.services.api.environment.MODEL_RELAY_API_KEY).toBeUndefined()
+    expect(compose.services.api.env_file).toEqual([{ path: join(value.output, 'candidate.env'), required: true }])
+    expect(compose.services.api.environment.RELEASE_IMAGE_SET_DIGEST).toMatch(/^sha256:[0-9a-f]{64}$/u)
+    expect(compose.services.api.environment.RELEASE_MANIFEST_SHA256).toBe(createHash('sha256').update(readFileSync(join(value.output, 'candidate-manifest.json'))).digest('hex'))
+    expect(JSON.parse(readFileSync(join(value.output, 'candidate-manifest.json'), 'utf8')).renderer_sha256).toMatch(/^[0-9a-f]{64}$/u)
+    for (const service of Object.values(compose.services) as any[]) expect(service.ports ?? []).toEqual([])
+    expect(Object.values(compose.volumes).map((entry: any) => entry.name).sort()).toEqual([
+      `${project}_postgres_data`, `${project}_redis_data`,
+    ])
+    expect(compose.networks.default).toMatchObject({ name: `${project}_private`, external: false })
+    expect(compose.services.migrate.image).toContain('postgres:17-alpine@sha256:')
+    expect(compose.services.migrate.environment.PGHOST).toBe('postgres')
+    expect(compose.services.migrate.environment.DATABASE_URL).toBe(compose.services.api.environment.DATABASE_URL)
+    expect(compose.services.migrate.environment.OPS_DATABASE_URL).toBe(compose.services.api.environment.OPS_DATABASE_URL)
+    expect(compose.services.migrate.volumes).toEqual([
+      { type: 'bind', source: join(value.source, 'packages/persistence/src/migrations'), target: '/migrations', read_only: true },
+      { type: 'bind', source: join(value.source, 'infra/scripts/apply-migrations.sh'), target: '/ops/apply-migrations.sh', read_only: true },
+    ])
+    const roleUrls = ['DATABASE_URL', 'OPS_DATABASE_URL', 'ALERT_RECEIVER_DATABASE_URL'].map(key => new URL(compose.services.api.environment[key]))
+    expect(roleUrls.map(url => url.username).sort()).toEqual(['merchant_alert_receiver', 'merchant_app', 'merchant_ops'])
+    expect(new Set(roleUrls.map(url => url.password)).size).toBe(3)
+    expect(roleUrls.every(url => url.hostname === 'postgres' && /^[0-9a-f]{48}$/u.test(url.password))).toBe(true)
+    expect(readFileSync(join(value.output, 'candidate.env'), 'utf8')).toBe('MODEL_RELAY_API_KEY=relay-private-test-key\n')
+    expect(composeText).not.toContain('relay-private-test-key')
+    for (const name of ['candidate.env', 'candidate.compose.json', 'candidate-identity.txt', 'candidate-manifest.json']) {
+      expect(lstatSync(join(value.output, name)).mode & 0o777).toBe(0o600)
+    }
+    expect(validateDemoCompose(compose, project)).toBe(true)
+    const composeCheck = spawnSync('docker', ['compose', '--project-name', project, '--env-file', join(value.output, 'candidate.env'), '-f', join(value.output, 'candidate.compose.json'), 'config', '--quiet'], { encoding: 'utf8' })
+    expect(composeCheck.status, composeCheck.stderr).toBe(0)
+  })
+
+  it('rejects ports, shared volumes/networks, and writable absolute host mounts', () => {
+    const value = fixture()
+    expect(value.run().status).toBe(0)
+    const compose = JSON.parse(readFileSync(join(value.output, 'candidate.compose.json'), 'utf8'))
+    const withPorts = structuredClone(compose)
+    withPorts.services.api.ports = [{ target: 8787, published: '80' }]
+    expect(() => validateDemoCompose(withPorts, project)).toThrow(/host ports/u)
+    const sharedVolume = structuredClone(compose)
+    sharedVolume.volumes.postgres_data.name = 'merchant-postgres'
+    expect(() => validateDemoCompose(sharedVolume, project)).toThrow(/project-scoped/u)
+    const sharedNetwork = structuredClone(compose)
+    sharedNetwork.networks.default = { name: 'merchant-production_default', external: true }
+    expect(() => validateDemoCompose(sharedNetwork, project)).toThrow(/project-scoped private network/u)
+    const writableHostBind = structuredClone(compose)
+    writableHostBind.services.migrate.volumes[0].read_only = false
+    expect(() => validateDemoCompose(writableHostBind, project)).toThrow(/writable host bind/u)
+  })
+
+  it('rejects a mismatched identity, incomplete image set, unapproved model, and non-dedicated root env', () => {
+    const mismatch = fixture()
+    const manifest = JSON.parse(readFileSync(mismatch.releaseImages, 'utf8'))
+    manifest.release_git_sha = 'f'.repeat(40)
+    writeFileSync(mismatch.releaseImages, JSON.stringify(manifest), { mode: 0o600 })
+    expect(mismatch.run().stderr).toContain('does not match the candidate identity')
+
+    const incomplete = fixture()
+    const partial = JSON.parse(readFileSync(incomplete.releaseImages, 'utf8'))
+    delete partial.image_references['pilot-gateway']
+    delete partial.image_digests['pilot-gateway']
+    writeFileSync(incomplete.releaseImages, JSON.stringify(partial), { mode: 0o600 })
+    expect(incomplete.run().stderr).toContain('exactly the approved six images')
+
+    const model = fixture()
+    expect(model.run(['--embedding-model', 'not-qwen']).stderr).toContain('not an approved Qwen model')
+
+    const env = fixture()
+    writeFileSync(env.rootEnv, 'MODEL_RELAY_API_KEY=relay-private-test-key\nDATABASE_URL=forbidden\n', { mode: 0o600 })
+    const rejected = env.run()
+    expect(rejected.stderr).toContain('only one MODEL_RELAY_API_KEY assignment')
+    expect(rejected.stderr).not.toContain('relay-private-test-key')
+  })
+
+  it('uses O_EXCL and refuses to overwrite a previous candidate', () => {
+    const value = fixture()
+    expect(value.run().status).toBe(0)
+    const composePath = join(value.output, 'candidate.compose.json')
+    const before = readFileSync(composePath)
+    const retry = value.run()
+    expect(retry.status).not.toBe(0)
+    expect(retry.stderr).toContain('candidate output already exists')
+    expect(readFileSync(composePath)).toEqual(before)
+  })
+})
