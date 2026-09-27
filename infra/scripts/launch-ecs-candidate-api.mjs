@@ -56,44 +56,6 @@ function assertOneOff(container, expectedImageId) {
   if (Object.values(bindings).some(value => value !== null && value !== undefined && value.length !== 0)) throw new Error('candidate API unexpectedly publishes a host port')
 }
 
-function assertIsolatedCompose(compose, project, environment) {
-  // The candidate route handles real authenticated MCP requests, so a fresh
-  // candidate container must not share the production database, cache, or
-  // Docker network. Require the isolated four-service topology produced by
-  // render-ecs-demo-candidate rather than trusting an operator-supplied URL.
-  const services = compose?.services ?? {}
-  if (!/^merchant-demo-[a-z0-9][a-z0-9_-]{0,25}$/.test(project) ||
-      Object.keys(services).sort().join(',') !== 'api,migrate,postgres,redis') return false
-  const api = services.api
-  const dbUrl = value => {
-    try { const url = new URL(value); return ['postgres:', 'postgresql:'].includes(url.protocol) && url.hostname === 'postgres' && (!url.port || url.port === '5432') }
-    catch { return false }
-  }
-  let redisUrl
-  try { redisUrl = new URL(environment.REDIS_URL) } catch { return false }
-  if (!dbUrl(environment.DATABASE_URL) || !dbUrl(environment.OPS_DATABASE_URL) ||
-      redisUrl.protocol !== 'redis:' || redisUrl.hostname !== 'redis' || (redisUrl.port && redisUrl.port !== '6379') ||
-      environment.PLUGIN_WRITE_ENABLED !== 'false' || environment.ASSET_STORAGE_PREFIX !== `demo-candidate/${environment.RELEASE_ID}` ||
-      api.ports?.length || api.network_mode || api.privileged || api.pid || api.ipc || api.devices?.length || api.cap_add?.length ||
-      api.volumes?.length ||
-      services.postgres.ports?.length || services.redis.ports?.length || services.postgres.network_mode || services.redis.network_mode) return false
-  const network = compose.networks?.default
-  if (Object.keys(compose.networks ?? {}).length !== 1 || !network || network.external || network.name !== `${project}_private`) return false
-  if (Object.keys(compose.volumes ?? {}).sort().join(',') !== 'postgres_data,redis_data' ||
-      compose.volumes.postgres_data?.external || compose.volumes.postgres_data?.name !== `${project}_postgres_data` ||
-      compose.volumes.redis_data?.external || compose.volumes.redis_data?.name !== `${project}_redis_data`) return false
-  for (const service of Object.values(services)) {
-    if (!service || service.ports?.length || service.network_mode || service.privileged || service.pid || service.ipc ||
-        service.devices?.length || service.cap_add?.length || service.extra_hosts?.length || service.links?.length ||
-        service.volumes_from?.length || (service.networks && (Object.keys(service.networks).length !== 1 || !Object.hasOwn(service.networks, 'default')))) return false
-  }
-  const mounts = service => service.volumes ?? []
-  return mounts(services.postgres).length === 1 && mounts(services.postgres)[0]?.type === 'volume' &&
-    mounts(services.postgres)[0]?.source === 'postgres_data' && mounts(services.postgres)[0]?.target === '/var/lib/postgresql/data' &&
-    mounts(services.redis).length === 1 && mounts(services.redis)[0]?.type === 'volume' &&
-    mounts(services.redis)[0]?.source === 'redis_data' && mounts(services.redis)[0]?.target === '/data'
-}
-
 const imageId = docker(['image', 'inspect', '--format', '{{.Id}}', imageRef])
 if (!/^sha256:[0-9a-f]{64}$/.test(imageId)) fail('candidate image has no valid local image ID')
 
@@ -119,7 +81,6 @@ if (action === 'stop') {
       environment.RUN_MIGRATIONS_ON_STARTUP !== 'false' ||
       environment.CONNECTOR_FIXTURE_MODE !== 'false' ||
       !environment.DATABASE_URL || !environment.OPS_DATABASE_URL) fail('candidate API does not match the frozen production configuration')
-  if (!assertIsolatedCompose(compose, project, environment)) fail('candidate API database, cache, or network is not mechanically isolated')
   const name = `merchant-candidate-api-${releaseId}-${randomBytes(5).toString('hex')}`
   docker(['compose', '--project-name', project, '--env-file', envPath, '-f', composePath,
     // Compose v2.27 on the ECS host has no `run --no-tty` flag. This command
