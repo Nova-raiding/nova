@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { canonicalProductReadModeFromFlag } from '../packages/application/src/canonical-product-consistency.js'
 import { evaluateStoredFeatureFlag, type StoredFeatureFlag, type StoredFlagTarget } from '../packages/persistence/src/feature-flags-repository.js'
@@ -70,11 +71,24 @@ describe('canonical safe-state snapshot collector contract', () => {
     })
     expect(summary.mode_counts).toEqual({ legacy_shadow: 0, dual_verify: 0, canonical_read: 2 })
     expect(summary.blockers).toContain('one or more workspaces are not in legacy_shadow')
+    expect(summary.blockers).toContain('database identity is incomplete')
     expect(summary).not.toHaveProperty('workspace_ids')
+  })
+
+  it('hashes the observed PostgreSQL cluster system identifier without exposing it in the summary', () => {
+    const summary = summarizeCanonicalSafeState({
+      observed_at: '2026-09-27T00:00:00.000Z', database_name: 'merchant', database_oid: '16384',
+      system_identifier: '7690056768680984617',
+      workspaces: [{ id: 'ws-a', status: 'active' }], flags: [], targets: [],
+    })
+    expect(summary.system_identifier_sha256).toBe(createHash('sha256').update('7690056768680984617').digest('hex'))
+    expect(summary).not.toHaveProperty('system_identifier')
+    expect(summary.blockers).toEqual([])
   })
 
   it('collects only inside an explicit read-only transaction and never claims a signature', () => {
     expect(CAPTURE_SQL).toContain('public.platform_feature_flag_targets')
+    expect(CAPTURE_SQL).toContain("'system_identifier', (SELECT system_identifier::text FROM pg_catalog.pg_control_system())")
     expect(CAPTURE_SQL).toContain('workspaces_canonical_safe_state_reader')
     expect(CAPTURE_SQL).toContain('has_any_column_privilege(current_user, relation_name,')
     expect(CAPTURE_SQL).toContain('has_any_column_privilege(current_user, c.oid,')

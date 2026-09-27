@@ -59,7 +59,8 @@ SQL
   capture_sql="/tmp/canonical-safe-state-capture-${major}-${run_id}.sql"
   node --input-type=module -e "import {writeFileSync} from 'node:fs'; import {CAPTURE_SQL} from '$repo/infra/protected/canonical-safe-state-snapshot.mjs'; writeFileSync('$capture_sql', 'SET SESSION AUTHORIZATION canonical_safe_state_reader;\\nBEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\\n'+CAPTURE_SQL)"
   docker cp "$capture_sql" "$container:/tmp/capture.sql" >/dev/null
-  docker exec "$container" psql -U postgres -d postgres -X -qAt -v ON_ERROR_STOP=1 -f /tmp/capture.sql >/dev/null
+  capture_output=$(docker exec "$container" psql -U postgres -d postgres -X -qAt -v ON_ERROR_STOP=1 -f /tmp/capture.sql)
+  printf '%s' "$capture_output" | node --input-type=module -e 'let raw=""; for await (const chunk of process.stdin) raw += chunk; const snapshot=JSON.parse(raw); if (!/^\d{1,20}$/.test(snapshot.system_identifier ?? "")) throw new Error("read-only collector omitted PostgreSQL cluster system identifier"); if (!/^\d+$/.test(snapshot.database_oid ?? "")) throw new Error("read-only collector omitted database OID")'
 
   docker exec "$container" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c 'GRANT UPDATE(status) ON public.workspaces TO canonical_safe_state_reader' >/dev/null
   if docker exec "$container" env PGSERVICEFILE=/tmp/reader.pg_service CANONICAL_SAFE_STATE_PGSERVICE=localreader sh /tmp/verify-reader.sh >/dev/null 2>&1; then

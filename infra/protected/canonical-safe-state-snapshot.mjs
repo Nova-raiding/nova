@@ -209,6 +209,7 @@ SELECT jsonb_build_object(
   'observed_at', to_char(transaction_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
   'database_name', current_database(),
   'database_oid', (SELECT oid::text FROM pg_database WHERE datname = current_database()),
+  'system_identifier', (SELECT system_identifier::text FROM pg_catalog.pg_control_system()),
   'workspaces', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', id, 'status', status) ORDER BY id) FROM public.workspaces), '[]'::jsonb),
   'flags', COALESCE((SELECT jsonb_agg(jsonb_build_object('flag_key', flag_key, 'environment', environment, 'value_type', value_type, 'value_json', value_json, 'enabled', enabled, 'emergency_disabled', emergency_disabled, 'valid_from', valid_from, 'valid_to', valid_to, 'revision', revision) ORDER BY id) FROM public.platform_feature_flags WHERE flag_key = 'canonical.product.read_mode' AND environment = 'production'), '[]'::jsonb),
   'targets', COALESCE((SELECT jsonb_agg(jsonb_build_object('target_type', t.target_type, 'target_value', t.target_value, 'enabled', t.enabled, 'value_json', t.value_json) ORDER BY t.target_type, t.target_value, t.id) FROM public.platform_feature_flag_targets t JOIN public.platform_feature_flags f ON f.id = t.flag_id WHERE f.flag_key = 'canonical.product.read_mode' AND f.environment = 'production'), '[]'::jsonb)
@@ -231,10 +232,11 @@ export function summarizeCanonicalSafeState(snapshot) {
   const counts = Object.fromEntries(['legacy_shadow', 'dual_verify', 'canonical_read'].map(mode => [mode, modes.filter(item => item.mode === mode).length]))
   const blockers = []
   if (counts.dual_verify || counts.canonical_read) blockers.push('one or more workspaces are not in legacy_shadow')
-  if (typeof snapshot.database_name !== 'string' || !snapshot.database_name || !/^\d+$/u.test(snapshot.database_oid ?? '')) blockers.push('database identity is incomplete')
+  if (typeof snapshot.database_name !== 'string' || !snapshot.database_name || !/^\d+$/u.test(snapshot.database_oid ?? '') || !/^\d{1,20}$/u.test(snapshot.system_identifier ?? '')) blockers.push('database identity is incomplete')
   return {
     observed_at: observedAt,
     source: 'production_postgres_read_only_role_claim',
+    system_identifier_sha256: typeof snapshot.system_identifier === 'string' ? sha256(snapshot.system_identifier) : null,
     database_name_sha256: typeof snapshot.database_name === 'string' ? sha256(snapshot.database_name) : null,
     database_oid: snapshot.database_oid ?? null,
     workspace_count: modes.length,
