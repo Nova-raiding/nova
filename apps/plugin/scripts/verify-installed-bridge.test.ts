@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -63,4 +63,20 @@ describe('installed MCP bridge verification', () => {
       rmSync(directory, { recursive: true, force: true })
     }
   })
+
+  it.each(['scripts/verify-chatgpt-macos.mjs', 'scripts/launch-verified-chatgpt-macos.mjs'])(
+    'rejects an installed plugin missing login dependency %s', missingPath => {
+      const directory = mkdtempSync(resolve(tmpdir(), 'merchant-login-dependency-missing-'))
+      const installed = resolve(directory, 'installed')
+      try {
+        cpSync(pluginRoot, installed, { recursive: true })
+        unlinkSync(resolve(installed, missingPath))
+        const result = spawnSync(process.execPath, [verifier, '--source', pluginRoot, '--installed', installed], { encoding: 'utf8' })
+        expect(result.status).toBe(1)
+        expect(JSON.parse(result.stdout).runtime_inventory.missing).toContain(missingPath)
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
+  )
 })
