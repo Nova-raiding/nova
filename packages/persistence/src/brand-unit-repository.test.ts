@@ -11,6 +11,21 @@ class Client implements SqlClient {
 }
 
 describe('PostgresBrandUnitRepository', () => {
+  it('reads platform counts through workspace RLS in a read-only transaction', async () => {
+    const client = new Client()
+    client.enqueue() // BEGIN READ ONLY
+    client.enqueue() // workspace scope
+    client.enqueue({ workspaceId: 'ws_1', brandCount: 1, boundStoreCount: 0, unboundBrandCount: 1, canonicalProductCount: 0, listingCount: 0 })
+    client.enqueue() // COMMIT
+    const result = await new PostgresBrandUnitRepository({ connect: async () => client } satisfies SqlPool).listPlatformSummary(['ws_1', 'ws_1'])
+    expect(result).toHaveLength(1)
+    expect(result[0]?.brandCount).toBe(1)
+    expect(client.calls[0]).toBe('BEGIN READ ONLY')
+    expect(client.calls[1]).toContain("set_config('app.workspace_id', $1, true)")
+    expect(client.calls[2]).toContain('WHERE b.workspace_id=$1 AND b.status=\'active\'')
+    expect(client.calls.join(' ')).not.toContain('app.platform_scope')
+  })
+
   it('rejects an incomplete canonical identity before opening a transaction', async () => {
     const client = new Client()
     await expect(new PostgresBrandUnitRepository({ connect: async () => client } satisfies SqlPool).createCanonicalProduct({

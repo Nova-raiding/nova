@@ -199,8 +199,9 @@ export async function handleOpsOverviewMcpMethod(method: string, params: Record<
       requirePlatformReadRole(req)
       if (params.platform_scope !== 'platform') throw new DomainError(ERROR_CODES.INVALID_REQUEST, '平台品牌汇总必须显式声明 platform_scope=platform', 400)
       const repository = dependencies.brandUnits()
-      const summaries = await repository.listPlatformSummary()
-      return ({ scope: 'platform', workspaceCount: persistence.listWorkspaceIds ? (await persistence.listWorkspaceIds()).length : summaries.length, brandCount: summaries.reduce((sum, row) => sum + row.brandCount, 0), boundStoreCount: summaries.reduce((sum, row) => sum + row.boundStoreCount, 0), unboundBrandCount: summaries.reduce((sum, row) => sum + row.unboundBrandCount, 0), canonicalProductCount: summaries.reduce((sum, row) => sum + row.canonicalProductCount, 0), listingCount: summaries.reduce((sum, row) => sum + row.listingCount, 0) })
+      const workspaceIds = [...new Set(persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : knownWorkspaces())]
+      const summaries = await repository.listPlatformSummary(workspaceIds)
+      return ({ scope: 'platform', workspaceCount: workspaceIds.length, brandCount: summaries.reduce((sum, row) => sum + row.brandCount, 0), boundStoreCount: summaries.reduce((sum, row) => sum + row.boundStoreCount, 0), unboundBrandCount: summaries.reduce((sum, row) => sum + row.unboundBrandCount, 0), canonicalProductCount: summaries.reduce((sum, row) => sum + row.canonicalProductCount, 0), listingCount: summaries.reduce((sum, row) => sum + row.listingCount, 0) })
     }
     case 'ops.tasks.summary': {
       requirePlatformReadRole(req)

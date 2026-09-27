@@ -64,7 +64,7 @@ export interface CampaignLifecycleTransitionInput {
   itemIds?: string[]
 }
 export interface BrandUnitRepository {
-  listPlatformSummary(): Promise<BrandUnitPlatformSummary[]>
+  listPlatformSummary(workspaceIds: readonly string[]): Promise<BrandUnitPlatformSummary[]>
   listBrands(input: { workspaceId: string; brandId?: string; platform?: BrandUnitPlatform; accountId?: string }): Promise<BrandUnitRow[]>
   createBrand(input: { workspaceId: string; id: string; name: string }): Promise<BrandUnitRow>
   bindStore(input: { workspaceId: string; brandId: string; platform: BrandUnitPlatform; accountId: string; expectedRevision?: number }): Promise<BrandUnitRow>
@@ -163,12 +163,13 @@ export class MemoryBrandUnitRepository implements BrandUnitRepository {
   async listBrands(input: { workspaceId: string; brandId?: string; platform?: BrandUnitPlatform; accountId?: string }) {
     return [...this.brands.values()].filter(row => row.workspaceId === input.workspaceId && (!input.brandId || row.id === input.brandId)).map(row => ({ ...row, storeBindings: row.storeBindings.filter(binding => (!input.platform || binding.platform === input.platform) && (!input.accountId || binding.accountId === input.accountId)) })).filter(row => !input.platform || row.storeBindings.length > 0)
   }
-  async listPlatformSummary(): Promise<BrandUnitPlatformSummary[]> {
-    const workspaceIds = new Set<string>()
-    for (const row of this.brands.values()) workspaceIds.add(row.workspaceId)
-    for (const row of this.canonicalProducts.values()) workspaceIds.add(row.workspaceId)
-    for (const row of this.listings.values()) workspaceIds.add(row.workspaceId)
-    return [...workspaceIds].sort().map(workspaceId => {
+  async listPlatformSummary(workspaceIds: readonly string[]): Promise<BrandUnitPlatformSummary[]> {
+    const requested = new Set(workspaceIds.map(id => requireWorkspaceScope(id)))
+    const discovered = new Set<string>()
+    for (const row of this.brands.values()) discovered.add(row.workspaceId)
+    for (const row of this.canonicalProducts.values()) discovered.add(row.workspaceId)
+    for (const row of this.listings.values()) discovered.add(row.workspaceId)
+    return [...discovered].filter(workspaceId => requested.has(workspaceId)).sort().map(workspaceId => {
       const brands = [...this.brands.values()].filter(row => row.workspaceId === workspaceId)
       const brandIds = new Set(brands.map(row => row.id))
       return {
@@ -296,12 +297,16 @@ function brandRoleLevel(role: BrandAccessRole) { return ({ viewer: 1, editor: 2,
 export class PostgresBrandUnitRepository implements BrandUnitRepository {
   constructor(private readonly pool: SqlPool) {}
 
-  async listPlatformSummary(): Promise<BrandUnitPlatformSummary[]> {
-    const client = await this.pool.connect()
-    try {
-      await client.query('BEGIN READ ONLY')
-      await client.query(`SELECT set_config('app.platform_scope', 'platform_ops', true)`)
-      const result = await client.query<BrandUnitPlatformSummary>(`SELECT b.workspace_id AS "workspaceId",
+  async listPlatformSummary(workspaceIds: readonly string[]): Promise<BrandUnitPlatformSummary[]> {
+    const scopedIds = [...new Set(workspaceIds.map(id => requireWorkspaceScope(id)))].sort()
+    const summarizeWorkspace = async (workspaceId: string): Promise<BrandUnitPlatformSummary | undefined> => {
+      const client = await this.pool.connect()
+      try {
+        // Customer tables have workspace RLS even for platform operators. Keep
+        // each read in its own transaction and aggregate only the counts.
+        await client.query('BEGIN READ ONLY')
+        await client.query(`SELECT set_config('app.workspace_id', $1, true)`, [workspaceId])
+        const result = await client.query<BrandUnitPlatformSummary>(`SELECT b.workspace_id AS "workspaceId",
         COUNT(DISTINCT b.id)::integer AS "brandCount",
         COUNT(DISTINCT (s.platform, s.platform_account_id)) FILTER (WHERE s.status='active')::integer AS "boundStoreCount",
         COUNT(DISTINCT b.id) FILTER (WHERE NOT EXISTS (SELECT 1 FROM brand_store_bindings sb WHERE sb.workspace_id=b.workspace_id AND sb.brand_id=b.id AND sb.status='active'))::integer AS "unboundBrandCount",
@@ -311,14 +316,21 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
       LEFT JOIN brand_store_bindings s ON s.workspace_id=b.workspace_id AND s.brand_id=b.id
       LEFT JOIN canonical_products cp ON cp.workspace_id=b.workspace_id AND cp.brand_id=b.id
       LEFT JOIN product_listings pl ON pl.workspace_id=b.workspace_id AND pl.brand_id=b.id
-      WHERE b.status='active'
-      GROUP BY b.workspace_id ORDER BY b.workspace_id`)
-      await client.query('COMMIT')
-      return result.rows
-    } catch (error) {
-      try { await client.query('ROLLBACK') } catch { /* preserve original */ }
-      throw error
-    } finally { client.release?.() }
+      WHERE b.workspace_id=$1 AND b.status='active'
+      GROUP BY b.workspace_id`, [workspaceId])
+        await client.query('COMMIT')
+        return result.rows[0]
+      } catch (error) {
+        try { await client.query('ROLLBACK') } catch { /* preserve original */ }
+        throw error
+      } finally { client.release?.() }
+    }
+    const summaries: BrandUnitPlatformSummary[] = []
+    for (let offset = 0; offset < scopedIds.length; offset += 8) {
+      const chunk = await Promise.all(scopedIds.slice(offset, offset + 8).map(summarizeWorkspace))
+      summaries.push(...chunk.filter((row): row is BrandUnitPlatformSummary => row !== undefined))
+    }
+    return summaries
   }
   async listBrands(input: { workspaceId: string; brandId?: string; platform?: BrandUnitPlatform; accountId?: string }) {
     requireWorkspaceScope(input.workspaceId)

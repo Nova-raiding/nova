@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner } from './migration.js'
+import { PostgresBrandUnitRepository } from './brand-unit-repository.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const postgresIt = databaseUrlValue ? it : it.skip
@@ -22,6 +23,7 @@ describe('merchant_ops workspace summary RLS boundary', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
     let ops: Pool | undefined
+    let app: Pool | undefined
 
     let primaryFailure: unknown
     try {
@@ -38,6 +40,11 @@ describe('merchant_ops workspace summary RLS boundary', () => {
         INSERT INTO workspace_commercial_settings
           (workspace_id, plan_code, plan_name, monthly_price_cny, included_tasks)
         VALUES ('ops_summary_a', 'pro', 'Pro', 399, 100), ('ops_summary_b', 'starter', 'Starter', 199, 30)
+      `)
+      await database.query(`
+        INSERT INTO brands (id, workspace_id, name) VALUES
+          ('brand_ops_summary_a', 'ops_summary_a', 'A brand'),
+          ('brand_ops_summary_b', 'ops_summary_b', 'B brand')
       `)
       await database.query(`
         INSERT INTO workspace_subscriptions (workspace_id, status, plan_code, plan_name)
@@ -63,8 +70,21 @@ describe('merchant_ops workspace summary RLS boundary', () => {
       // probe. The aggregate contract must remain safe even if an ACL drifts:
       // FORCE RLS is the final customer-data boundary, not the role grant.
       await database.query('GRANT SELECT ON products, tasks, content_versions TO merchant_ops')
+      await database.query('GRANT SELECT ON brands, brand_store_bindings, canonical_products, product_listings TO merchant_app')
 
       ops = new Pool({ connectionString: connection(base, databaseName, 'merchant_ops', 'merchant_ops_local_only'), max: 1 })
+      app = new Pool({ connectionString: connection(base, databaseName, 'merchant_app', 'merchant_app_local_only'), max: 2 })
+
+      expect((await app.query('SELECT id FROM brands')).rows).toEqual([])
+      const brandUnits = new PostgresBrandUnitRepository(app)
+      expect(await brandUnits.listPlatformSummary(['ops_summary_a'])).toMatchObject([
+        { workspaceId: 'ops_summary_a', brandCount: 1, unboundBrandCount: 1 },
+      ])
+      expect(await brandUnits.listPlatformSummary(['ops_summary_a', 'ops_summary_b'])).toMatchObject([
+        { workspaceId: 'ops_summary_a', brandCount: 1 },
+        { workspaceId: 'ops_summary_b', brandCount: 1 },
+      ])
+      expect((await app.query('SELECT id FROM brands')).rows).toEqual([])
 
       expect((await ops.query('SELECT workspace_id FROM ops_workspace_summaries')).rows).toEqual([])
       await ops.query('BEGIN')
@@ -100,6 +120,7 @@ describe('merchant_ops workspace summary RLS boundary', () => {
     } finally {
       await withPostgresFixtureCleanup(async () => {
         await ops?.end()
+        await app?.end()
         await database?.end()
         await dropDrainedPostgresFixture(admin, databaseName)
       }, primaryFailure, [
