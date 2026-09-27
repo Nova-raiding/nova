@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canonicalRepoDigest, verifyIsolatedRuntime } from '../infra/scripts/attest-ecs-demo-isolated-runtime.mjs'
+import { canonicalRepoDigest, PG_SQL, verifyIsolatedRuntime } from '../infra/scripts/attest-ecs-demo-isolated-runtime.mjs'
 
 const project = 'merchant-demo-proof'
 const sha = 'a'.repeat(40)
@@ -37,7 +37,7 @@ function fixture() {
   const database = { server_version_num: 170006, history_count: 254, history_first: 1, history_last: 254, history_distinct: 254,
     checksums: true, role_count: 3, roles_safe: true, tenant_count: 47, unsafe_tenant_count: 0 }
   const health = { status: 200, body: JSON.stringify({ data: { persistence: { ready: true } } }) }
-  const readiness = { status: 503, body: '{}' }
+  const readiness = { status: 503, body: JSON.stringify({ error: { code: 'PRODUCTION_READINESS_BLOCKED', details: { gates: { relay: { ready: false } } } } }) }
   return { compose, identity, manifest, manifestSha256: manifestSha, containers, images, network, database, health, readiness }
 }
 
@@ -60,6 +60,16 @@ test('accepts Docker tag-less RepoDigests while preserving repository and regist
   assert.equal(verifyIsolatedRuntime(fixture()).scope, 'isolated')
 })
 
+test('PG observation evaluates every policy and rejects inherited privileges', () => {
+  assert.match(PG_SQL, /bool_or\(permissive <> 'PERMISSIVE' OR roles <> ARRAY\['public'\]::name\[\]/u)
+  assert.match(PG_SQL, /cmd NOT IN \('ALL','SELECT','INSERT','UPDATE','DELETE'\)/u)
+  assert.match(PG_SQL, /with_check IS NOT NULL AND with_check <>/u)
+  assert.match(PG_SQL, /coalesce\(p\.policy_count,0\)=0 OR coalesce\(p\.unsafe_policy,true\)/u)
+  assert.match(PG_SQL, /NOT rolinherit/u)
+  assert.match(PG_SQL, /NOT EXISTS \(SELECT 1 FROM pg_auth_members m WHERE m\.member=pg_roles\.oid\)/u)
+  assert.doesNotMatch(PG_SQL, /OR NOT EXISTS \(SELECT 1 FROM pg_policies/u)
+})
+
 test('rejects image, identity, project and network substitution', () => {
   for (const mutate of [
     x => { x.containers.api.Id = 'f'.repeat(64) },
@@ -70,6 +80,7 @@ test('rejects image, identity, project and network substitution', () => {
     x => { x.manifest.image_references['merchant-api'] = refs.redis },
     x => { x.compose.services.api.environment.RELEASE_MANIFEST_SHA256 = 'f'.repeat(64) },
     x => { x.network.Name = 'merchant-production_default' },
+    x => { x.network.Containers['f'.repeat(64)] = { Name: 'foreign-container' } },
     x => { x.containers.api.HostConfig.NetworkMode = 'host' },
     x => { x.containers.extra = x.containers.redis },
   ]) {
@@ -88,6 +99,8 @@ test('rejects published ports, incomplete migration, unsafe roles/RLS and ready 
     x => { x.database.unsafe_tenant_count = 1 },
     x => { x.health.status = 503 },
     x => { x.readiness.status = 200 },
+    x => { x.readiness.body = '{}' },
+    x => { x.readiness.body = JSON.stringify({ error: { code: 'DATABASE_UNAVAILABLE' } }) },
   ]) {
     const value = fixture(); mutate(value)
     assert.throws(() => verifyIsolatedRuntime(value))

@@ -70,22 +70,31 @@ const parseDocker = (args, input) => {
   try { return JSON.parse(docker(args, input)) } catch { throw new Error(`isolated Docker response is invalid: ${args[0]}`) }
 }
 
-const PG_SQL = `WITH history AS (
+export const PG_SQL = `WITH history AS (
   SELECT count(*) AS total, min(version) AS first, max(version) AS last,
          count(DISTINCT version) AS distinct_versions,
          bool_and(name IS NOT NULL AND length(name)>0 AND checksum ~ '^[a-f0-9]{64}$') AS checksums
     FROM schema_migrations
 ), roles AS (
   SELECT count(*) AS total,
-         bool_and(rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolbypassrls) AS safe
+         bool_and(rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole
+           AND NOT rolbypassrls AND NOT rolinherit
+           AND NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member=pg_roles.oid)) AS safe
     FROM pg_roles WHERE rolname IN ('merchant_app','merchant_ops','merchant_alert_receiver')
 ), tenant AS (
   SELECT count(*) AS total,
          count(*) FILTER (WHERE NOT c.relrowsecurity OR NOT c.relforcerowsecurity
-           OR NOT EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname='public' AND p.tablename=c.relname
-             AND p.qual = '(workspace_id = current_setting(''app.workspace_id''::text, true))')) AS unsafe
+           OR coalesce(p.policy_count,0)=0 OR coalesce(p.unsafe_policy,true)) AS unsafe
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='workspace_id' AND NOT a.attisdropped
+    LEFT JOIN LATERAL (
+      SELECT count(*) AS policy_count,
+             bool_or(permissive <> 'PERMISSIVE' OR roles <> ARRAY['public']::name[]
+               OR cmd NOT IN ('ALL','SELECT','INSERT','UPDATE','DELETE')
+               OR coalesce(qual,'') <> '(workspace_id = current_setting(''app.workspace_id''::text, true))'
+               OR (with_check IS NOT NULL AND with_check <> '(workspace_id = current_setting(''app.workspace_id''::text, true))')) AS unsafe_policy
+        FROM pg_policies WHERE schemaname='public' AND tablename=c.relname
+    ) p ON true
    WHERE n.nspname='public' AND c.relkind IN ('r','p')
      AND c.relname NOT IN ('commercial_rollouts','workspace_members','workspace_identity_bindings',
        'workspace_commercial_settings','workspace_subscriptions','ops_access_grants','ops_access_grant_events',
@@ -117,6 +126,8 @@ export function verifyIsolatedRuntime({ compose, identity, manifest, manifestSha
   requireValue(Object.keys(containers).sort().join(',') === SERVICES.slice().sort().join(','), 'candidate project has unexpected running or stopped containers')
   requireValue(network?.Name === `${project}_private` && network?.Labels?.['com.docker.compose.project'] === project &&
     network?.Internal === false, 'candidate project network differs')
+  requireValue(Object.keys(network.Containers ?? {}).sort().join(',') ===
+    SERVICES.map(service => containers[service]?.Id).sort().join(','), 'candidate private network has an unexpected endpoint')
   const details = {}
   for (const service of SERVICES) {
     const config = compose.services?.[service], container = containers[service], image = images[service]
@@ -145,7 +156,14 @@ export function verifyIsolatedRuntime({ compose, identity, manifest, manifestSha
   'PG17 migration, role or RLS observation failed')
   requireValue(health?.status === 200 && (() => { try { return JSON.parse(health.body)?.data?.persistence?.ready === true } catch { return false } })(),
     'isolated API healthz is unhealthy')
-  requireValue(readiness?.status === 503, 'isolated API readyz unexpectedly admitted traffic')
+  requireValue(readiness?.status === 503 && (() => {
+    try {
+      const body = JSON.parse(readiness.body)
+      return body?.error?.code === 'PRODUCTION_READINESS_BLOCKED' &&
+        body.error.details?.gates && typeof body.error.details.gates === 'object' &&
+        !Array.isArray(body.error.details.gates)
+    } catch { return false }
+  })(), 'isolated API readyz did not report the expected production gate block')
   return { schema: 'ecs-demo-isolated-runtime-attestation/1', status: 'review_only', scope: 'isolated',
     deployable: false, production_go: false, project, release_id: identity.release_id, git_sha: identity.git_sha,
     manifest_sha256: `sha256:${manifestSha256}`, containers: details,
