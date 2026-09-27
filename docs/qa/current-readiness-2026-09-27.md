@@ -11,7 +11,7 @@
 ## 真实运行观察
 
 - `npm run deploy:101:status` 在 101 返回 0：应用容器运行且 healthy，公网 `/releasez`、`/api/readyz` 和运营后台 `/healthz` 均为 HTTP 200。
-- 101 当前运行的 release 为 `release-0fa18b78-fast-20260927-v2`，服务 Git SHA 为 `0fa18b78a65de8c5b07f09488f416a6ed08bfe08`；它不是本轮提交 `6ab140e0`，因此不能声称本轮代码已部署。
+- 101 当前公网 release 为 `release-89c4ce1c`，`ops-ui` 已运行本轮 `89c4ce1c3a5e1da59d6908578bb855b6f0ed0065`；API、worker 和支付网关仍运行旧 `0fa18b78a65de8c5b07f09488f416a6ed08bfe08`，因此这是受限的运营台组件更新，不是完整候选上线。
 - `https://yxsona.com/api/healthz` 和 `https://ops.yxsona.com/healthz` 均返回 `status=ok`，但健康不等价于候选发布通过。
 - API 与 Ops 响应仍报告 `productionEvidence.capability` 和 `productionEvidence.capacity` 为 `blocked`，原因分别为 `CAPABILITY_EVIDENCE_PATH cannot be read` 与 `CAPACITY_REPORT_PATH cannot be read`。
 - embedding 仍为可选 fail-closed 状态，原因包含 `knowledge_vector_indexing_disabled` 和 `model_missing`；词法检索不能被描述成向量检索已上线。
