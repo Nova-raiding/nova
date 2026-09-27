@@ -60,6 +60,63 @@ def main():
         other_attempt_replay = subprocess.run(bridge_other_attempt, stdout=subprocess.PIPE,
                                               stderr=subprocess.PIPE, universal_newlines=True)
         assert other_attempt_replay.returncode != 0
+        fresh_254 = list(args)
+        fresh_254[fresh_254.index('--nonce') + 1] = 'E' * 24
+        fresh_254 += ['--operation', 'bridge-254', '--attempt-id', 'attempt_Bridge254_abcdefgh']
+        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
+            bridge_254_results = list(pool.map(
+                lambda _: subprocess.run(fresh_254, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                         universal_newlines=True), range(24)))
+        assert sum(item.returncode == 0 for item in bridge_254_results) == 1, [item.stderr for item in bridge_254_results]
+        assert all('nonce rejected' in item.stderr for item in bridge_254_results if item.returncode != 0)
+        with sqlite3.connect(str(ledger_dir / 'production-nonces.sqlite3')) as ledger:
+            bound = ledger.execute('''SELECT consumed_nonces.release_id, nonce_owners.operation,
+                nonce_owners.attempt_id FROM consumed_nonces JOIN nonce_owners USING(namespace, nonce)
+                WHERE namespace=? AND nonce=?''', ('merchant-production-deploy', 'E' * 24)).fetchall()
+            assert bound == [('candidate-nonce-test', 'bridge-254', 'attempt_Bridge254_abcdefgh')], bound
+            assert ledger.execute('SELECT COUNT(*) FROM consumed_nonces WHERE nonce=?', ('E' * 24,)).fetchone()[0] == 1
+            assert ledger.execute('SELECT COUNT(*) FROM nonce_owners WHERE nonce=?', ('E' * 24,)).fetchone()[0] == 1
+        for operation in ('deployment', 'bridge-b', 'bridge-254'):
+            cross = list(args)
+            cross[cross.index('--nonce') + 1] = 'E' * 24
+            if operation != 'deployment':
+                cross += ['--operation', operation, '--attempt-id', 'attempt_Other_abcdefghijkl']
+            result = subprocess.run(cross, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    universal_newlines=True)
+            assert result.returncode != 0, 'consumed bridge-254 nonce must reject replay or cross-operation takeover'
+        bridge_254_on_b = list(fresh_254)
+        bridge_254_on_b[bridge_254_on_b.index('--nonce') + 1] = 'C' * 24
+        assert subprocess.run(bridge_254_on_b, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True).returncode != 0
+        bridge_254_on_deployment = list(fresh_254)
+        bridge_254_on_deployment[bridge_254_on_deployment.index('--nonce') + 1] = 'A' * 24
+        assert subprocess.run(bridge_254_on_deployment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True).returncode != 0
+        no_attempt = fresh_254[:-2]
+        assert subprocess.run(no_attempt, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True).returncode != 0
+        invalid_attempt = list(fresh_254)
+        invalid_attempt[invalid_attempt.index('--attempt-id') + 1] = 'short'
+        assert subprocess.run(invalid_attempt, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True).returncode != 0
+        competing_254 = list(fresh_254)
+        competing_254[competing_254.index('--nonce') + 1] = 'F' * 24
+        competing_b = list(fresh_bridge)
+        competing_b[competing_b.index('--nonce') + 1] = 'F' * 24
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            contenders = list(pool.map(lambda command: subprocess.run(
+                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True),
+                (competing_254, competing_b)))
+        assert sum(item.returncode == 0 for item in contenders) == 1, [item.stderr for item in contenders]
+        with sqlite3.connect(str(ledger_dir / 'production-nonces.sqlite3')) as ledger:
+            records = ledger.execute('''SELECT consumed_nonces.release_id, nonce_owners.operation,
+                nonce_owners.attempt_id FROM consumed_nonces JOIN nonce_owners USING(namespace, nonce)
+                WHERE namespace=? AND nonce=?''', ('merchant-production-deploy', 'F' * 24)).fetchall()
+            assert len(records) == 1 and records[0][1:] in (
+                ('bridge-254', 'attempt_Bridge254_abcdefgh'),
+                ('bridge-b', 'attempt_BridgeB_abcdefghijkl')), records
+            assert ledger.execute('SELECT COUNT(*) FROM consumed_nonces WHERE nonce=?', ('F' * 24,)).fetchone()[0] == 1
+            assert ledger.execute('SELECT COUNT(*) FROM nonce_owners WHERE nonce=?', ('F' * 24,)).fetchone()[0] == 1
         # A legacy consumed row without a nonce_owners row cannot be adopted by B.
         legacy_nonce = 'D' * 24
         with sqlite3.connect(str(ledger_dir / 'production-nonces.sqlite3')) as ledger:
@@ -113,7 +170,7 @@ def main():
         (ledger_dir / 'saved-ledger.sqlite3').rename(ledger)
         ledger.write_bytes(b'corrupt sqlite bytes')
         assert unique_run(27).returncode != 0
-        print('isolated nonce candidate: deployment and bridge-b owners atomically recorded; deployment-to-bridge promotion, same-attempt replay, cross-attempt replay, and legacy-row adoption rejected; unique deployment nonces 24/24 accepted; replay, changed binding, invalid nonce, insecure directory/file mode, wrong owner, symlink and corrupt ledger rejected')
+        print('isolated nonce candidate: deployment, bridge-b, and bridge-254 owners atomically recorded; bridge-254 same-attempt 24-way race has one winner; replay, cross-operation takeover, invalid attempt, legacy-row adoption, insecure ledger and corrupt ledger rejected')
 
 
 if __name__ == '__main__':

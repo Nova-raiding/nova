@@ -58,12 +58,12 @@ def consume(ledger_path, namespace, nonce, release_id, image_digest, manifest_sh
     """Atomically consume a nonce and bind it to exactly one operation/attempt."""
     if os.geteuid() != 0:
         raise RuntimeError('nonce consumer must run as root')
-    if operation not in ('deployment', 'bridge-b'):
-        raise RuntimeError('operation must be deployment or bridge-b')
+    if operation not in ('deployment', 'bridge-b', 'bridge-254'):
+        raise RuntimeError('operation must be deployment, bridge-b, or bridge-254')
     if operation == 'deployment' and attempt_id:
         raise RuntimeError('deployment operation must not include an attempt ID')
-    if operation == 'bridge-b' and not re.fullmatch(r'[A-Za-z0-9_-]{16,128}', attempt_id):
-        raise RuntimeError('bridge-b operation requires a valid attempt ID')
+    if operation in ('bridge-b', 'bridge-254') and not re.fullmatch(r'[A-Za-z0-9_-]{16,128}', attempt_id):
+        raise RuntimeError('bridge operation requires a valid attempt ID')
     secure_parent('/var')
     secure_parent('/var/lib')
     secure_directory(os.path.dirname(ledger_path))
@@ -114,7 +114,7 @@ def parse_args(argv):
     command = subcommands.add_parser('consume')
     for name in ('namespace', 'nonce', 'release-id', 'image-digest', 'manifest-sha256', 'release-git-sha'):
         command.add_argument('--' + name, required=True)
-    command.add_argument('--operation', choices=('deployment', 'bridge-b'))
+    command.add_argument('--operation', choices=('deployment', 'bridge-b', 'bridge-254'))
     command.add_argument('--attempt-id')
     args = parser.parse_args(argv)
     if args.command != 'consume':
@@ -139,7 +139,7 @@ def main(argv):
     operation = args.operation or 'deployment'
     attempt_id = args.attempt_id or ''
     if args.operation is None and args.attempt_id is not None:
-        raise RuntimeError('--attempt-id requires --operation bridge-b')
+        raise RuntimeError('--attempt-id requires an explicit bridge operation')
     consume(LEDGER_PATH, args.namespace, args.nonce, args.release_id,
             args.image_digest, args.manifest_sha256, args.release_git_sha,
             operation, attempt_id)
