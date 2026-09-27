@@ -6919,13 +6919,15 @@ export function Products({
   }, [baseUrl])
   const loadAccounts = () => {
     const requestId = ++accountsRequestId.current
-    if (!baseUrl || isManualPlatformOperationsMode(apiMode)) {
+    if (!baseUrl) {
       setAccounts([])
       setAccountsLoading(false)
       setAccountsError('')
       return
     }
-    if (!shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
+    // Manual operations still expose credential-free registered store records.
+    // Reading those records does not enable sync or platform API access.
+    if (!isManualPlatformOperationsMode(apiMode) && !shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
       setAccounts(null)
       setAccountsLoading(false)
       setAccountsError('')
