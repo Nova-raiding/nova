@@ -1710,7 +1710,9 @@ const READ_FAILED_METRIC = '读取失败'
 
 /** Storage bytes are only rendered from the server quota projection. */
 function formatStorageGb(bytes: number) {
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+  // Commercial plans specify GB_DECIMAL; binary conversion made a 50 GB
+  // entitlement appear as only 46.6 GB in the merchant workspace.
+  return `${(bytes / 1_000_000_000).toFixed(1)} GB`
 }
 
 function formatRuleUpdatedAt(value: string | undefined) {
@@ -6238,7 +6240,7 @@ export function MaterialLibraryWorkspace({
   }
   // The quota uses the same server read as overview and finance. A failed read
   // remains unknown; session upload bytes are never presented as total usage.
-  const uploadedGb = uploadedBytes / 1024 / 1024 / 1024
+  const uploadedGb = uploadedBytes / 1_000_000_000
   const allVisibleSelected = visibleMaterials.length > 0 && visibleMaterials.every((item) => selectedIds.includes(item.id))
   const selectedMaterials = activeMaterials.filter((item) => selectedIds.includes(item.id))
   const detailMaterial = activeMaterials.find((item) => item.id === detailMaterialId)
