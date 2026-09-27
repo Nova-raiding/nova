@@ -12,13 +12,15 @@ export interface CandidateApiDescriptor {
   State?: { Running?: boolean }
   Config?: { Labels?: Record<string, string> }
   HostConfig?: { PortBindings?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null> }
-  NetworkSettings?: { Networks?: Record<string, { IPAddress?: string }> }
+  NetworkSettings?: { Networks?: Record<string, { IPAddress?: string; NetworkID?: string }> }
 }
 
 export function assertCandidateApi(
   container: CandidateApiDescriptor,
   expected: { id: string; imageId: string; project: string; releaseId: string; network: string;
-    manifestProject?: string; gitSha?: string; sourceSha256?: string },
+    manifestProject?: string; gitSha?: string; sourceSha256?: string;
+    routeBinding?: { schema_version: string; api_container_id: string; api_image_id: string;
+      api_network_id: string; host: string; port: number } },
 ): string
 
 export interface CandidateGatewayDescriptor {

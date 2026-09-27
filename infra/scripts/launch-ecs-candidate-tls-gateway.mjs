@@ -54,7 +54,7 @@ export function candidateGatewayConfig(ip) {
 }\n`
 }
 
-export function assertCandidateApi(container, { id, imageId, project, releaseId, network, manifestProject, gitSha, sourceSha256 }) {
+export function assertCandidateApi(container, { id, imageId, project, releaseId, network, manifestProject, gitSha, sourceSha256, routeBinding }) {
   const labels = container?.Config?.Labels ?? {}
   const bindings = container?.HostConfig?.PortBindings ?? {}
   const networks = container?.NetworkSettings?.Networks ?? {}
@@ -71,7 +71,12 @@ export function assertCandidateApi(container, { id, imageId, project, releaseId,
     /^[0-9a-f]{40}$/.test(gitSha ?? '') && labels['org.opencontainers.image.revision'] === gitSha &&
     /^sha256:[0-9a-f]{64}$/.test(sourceSha256 ?? '') &&
     labels['com.storenova.release.source_sha256'] === sourceSha256 &&
-    Object.keys(networks).length === 1
+    Object.keys(networks).length === 1 &&
+    routeBinding?.schema_version === 'ecs-candidate-tls-route/1' &&
+    routeBinding.api_container_id === id && routeBinding.api_image_id === imageId &&
+    fullId.test(routeBinding.api_network_id ?? '') &&
+    routeBinding.api_network_id === networks[network]?.NetworkID &&
+    routeBinding.host === '127.0.0.1' && routeBinding.port === 18443
   if (container?.Id !== id || container.Image !== imageId || container.State?.Running !== true ||
       labels['com.docker.compose.project'] !== project || labels['com.docker.compose.service'] !== 'api' ||
       !(oneOff || regular) ||
@@ -172,6 +177,8 @@ async function main() {
       !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(network ?? '')) throw new Error('candidate frozen Compose identity is incomplete')
   const imageId = docker(binary, ['image', 'inspect', '--format', '{{.Id}}', gatewayImageRef])
   if (!/^sha256:[0-9a-f]{64}$/.test(imageId) || !imageRefPattern.test(api?.image ?? '')) throw new Error('candidate image identities are invalid')
+  if (compose.x_candidate_tls_route && (compose.x_candidate_tls_route.gateway_image_id !== imageId ||
+      compose.x_candidate_tls_route.gateway_image_ref !== gatewayImageRef)) throw new Error('candidate route gateway image binding mismatch')
   const port = Number(portText)
   if (action === 'stop') {
     const container = inspect(binary, gatewayId)
@@ -185,7 +192,8 @@ async function main() {
   if (!/^sha256:[0-9a-f]{64}$/.test(apiImageId)) throw new Error('candidate API image ID is invalid')
   const apiContainer = inspect(binary, apiId)
   const ip = assertCandidateApi(apiContainer, { id: apiId, imageId: apiImageId, project, releaseId, network,
-    manifestProject: compose.name, gitSha, sourceSha256: api?.labels?.['com.storenova.release.source_sha256'] })
+    manifestProject: compose.name, gitSha, sourceSha256: api?.labels?.['com.storenova.release.source_sha256'],
+    routeBinding: port === 18443 ? compose.x_candidate_tls_route : undefined })
   const certDir = process.env.CANDIDATE_TLS_TEST_CERT_DIR || '/opt/merchant-deploy/deploy/certs'
   if (realpathSync(certDir) !== certDir || !statSync(certDir).isDirectory() ||
       !statSync(join(certDir, 'fullchain.pem')).isFile() || !statSync(join(certDir, 'privkey.pem')).isFile()) throw new Error('candidate TLS certificate mount is unavailable')

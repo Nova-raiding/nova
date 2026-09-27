@@ -20,6 +20,10 @@ const imageSetDigest = `sha256:${'2'.repeat(64)}`
 const port = '18443'
 const regularProject = 'merchant-demo-candidate-v2'
 const sourceSha256 = `sha256:${'9'.repeat(64)}`
+const networkId = '8'.repeat(64)
+const routeBinding = { schema_version: 'ecs-candidate-tls-route/1', api_container_id: apiId,
+  api_image_id: apiImageId, api_network_id: networkId, gateway_image_id: gatewayImageId,
+  gateway_image_ref: gatewayRef, host: '127.0.0.1', port: 18443 }
 
 function apiContainer() {
   return {
@@ -31,6 +35,7 @@ function apiContainer() {
 function regularApiContainer() {
   return {
     ...apiContainer(), Name: `/${regularProject}-api-1`,
+    NetworkSettings: { Networks: { [network]: { IPAddress: '172.20.0.8', NetworkID: networkId } } },
     Config: { Labels: {
       'com.docker.compose.project': regularProject, 'com.docker.compose.service': 'api',
       'com.docker.compose.oneoff': 'False', 'com.docker.compose.container-number': '1',
@@ -58,7 +63,7 @@ function fixture({ regular = false } = {}) {
   spawnSync('mkdir', ['-p', certDir])
   writeFileSync(join(certDir, 'fullchain.pem'), 'test certificate placeholder')
   writeFileSync(join(certDir, 'privkey.pem'), 'test key placeholder')
-  writeFileSync(compose, JSON.stringify({ ...(regular ? { name: regularProject } : {}), networks: { default: { name: network } }, services: {
+  writeFileSync(compose, JSON.stringify({ ...(regular ? { name: regularProject, x_candidate_tls_route: routeBinding } : {}), networks: { default: { name: network } }, services: {
     api: { image: apiRef, ...(regular ? { labels: { 'com.storenova.release.source_sha256': sourceSha256 } } : {}),
       environment: { RELEASE_ID: releaseId, RELEASE_GIT_SHA: gitSha, RELEASE_MANIFEST_SHA256: manifestSha256, RELEASE_IMAGE_SET_DIGEST: imageSetDigest } },
     'pilot-gateway': { image: gatewayRef },
@@ -130,7 +135,7 @@ describe('isolated ECS candidate TLS gateway', () => {
 
   it('accepts only one exact regular API from the protected isolated project', () => {
     const expected = { id: apiId, imageId: apiImageId, project: regularProject, releaseId, network,
-      manifestProject: regularProject, gitSha, sourceSha256 }
+      manifestProject: regularProject, gitSha, sourceSha256, routeBinding }
     const actual = regularApiContainer()
     expect(assertCandidateApi(actual, expected)).toBe('172.20.0.8')
     for (const changed of [
@@ -145,6 +150,11 @@ describe('isolated ECS candidate TLS gateway', () => {
     ]) expect(() => assertCandidateApi(changed, expected)).toThrow('candidate API identity or isolation mismatch')
     expect(() => assertCandidateApi(actual, { ...expected, manifestProject: 'merchant-demo-other' })).toThrow()
     expect(() => assertCandidateApi(actual, { ...expected, project: 'merchant-production' })).toThrow()
+    expect(() => assertCandidateApi(actual, { ...expected, routeBinding: { ...routeBinding, api_container_id: '0'.repeat(64) } })).toThrow()
+    expect(() => assertCandidateApi(actual, { ...expected, routeBinding: { ...routeBinding, api_network_id: '0'.repeat(64) } })).toThrow()
+    expect(() => assertCandidateApi({ ...actual, NetworkSettings: { Networks: { [network]: { IPAddress: '172.20.0.8' } } } },
+      { ...expected, routeBinding: { ...routeBinding, api_network_id: undefined as unknown as string } })).toThrow()
+    expect(() => assertCandidateApi(actual, { ...expected, routeBinding: { ...routeBinding, host: '0.0.0.0' } })).toThrow()
   })
 
   it('rejects any non-loopback or extra gateway publication', () => {
