@@ -40,7 +40,8 @@ describe('local plugin connection entry', () => {
     expect(markup).not.toMatch(/login-local|login\.cmd|runtime\/node/u)
     expect(component).toContain('install-instances/pair')
     expect(component).toContain('installation_id: installationId')
-    expect(component).toContain('onboarding.status')
+    expect(component).toContain('检查 Store Nova 插件是否已连接')
+    expect(component).not.toContain('onboarding.status')
   })
 
   it('uses platform hints for guidance only', () => {

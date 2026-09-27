@@ -77,7 +77,7 @@ const connectionStatePresentation: Record<ConnectionUiState, { color: string; la
   requesting: { color: 'processing', label: '正在创建安全连接' },
   launching: { color: 'processing', label: '正在唤起连接助手' },
   install_required: { color: 'warning', label: '等待本地助手完成' },
-  connected: { color: 'success', label: '本地凭据已就绪，待重启验证' },
+  connected: { color: 'success', label: '授权已完成，请重启 ChatGPT' },
   expired: { color: 'warning', label: '连接请求已过期' },
   failed: { color: 'error', label: '连接失败，请重试' },
 }
@@ -122,8 +122,6 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
     typeof navigator === 'undefined' ? '' : navigator.platform,
   ) === 'macos'
   const presentation = connectionStatePresentation[connectionState]
-  const stateLabel = connectionState === 'connected' ? '本地凭据已保存，待 ChatGPT 验证'
-    : connectionState === 'failed' ? '连接失败，请重试' : presentation.label
 
   useEffect(() => {
     connectionAttempt.current += 1
@@ -237,7 +235,7 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
         onChange={id => { connectionAttempt.current += 1; if (launchTimer.current) clearTimeout(launchTimer.current); setSelectedWorkspaceId(id); setConnectionState('idle') }}
       />}
       <Button type="primary" disabled={!oneClickAvailable || !connectTargetAvailable || connectionState === 'requesting' || connectionState === 'launching'} loading={connectionState === 'requesting'} onClick={() => { void beginConnection() }}>连接 ChatGPT 本地插件</Button>
-      <Tag color={presentation.color}>{stateLabel}</Tag>
+      <Tag color={presentation.color}>{presentation.label}</Tag>
       <Button type="link" onClick={() => setOpenScope(scope)}>安装与故障帮助</Button>
     </Space>
     <Modal title="连接本地插件" wrapClassName="merchant-local-plugin-modal" open={openScope === scope} onCancel={() => setOpenScope(null)} destroyOnHidden footer={
@@ -248,13 +246,13 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
           ? <Alert type="info" title="确认连接这台电脑" showIcon description={`将工作区 ${pairing.workspace_id} 授权给刚打开的 Store Nova 本地插件。`} />
           : oneClickAvailable
             ? <Alert type="info" title="点击连接并按浏览器提示打开本地插件" showIcon description="首次连接需确认这台电脑。若浏览器提示没有应用可打开，请先安装平台提供的桌面插件包。" />
-            : <Alert type="warning" title="一键授权暂未开放" showIcon description="平台需先发布并启用已签名的本地插件安装包。完成后可直接点击连接，无需输入命令。" />}
+            : <Alert type="warning" title="一键授权暂未开放" showIcon description="桌面插件安装包仍在验证中。开放后，可直接点击连接，无需输入命令。" />}
         <Descriptions size="small" column={1} items={[
           { key: 'account', label: '当前登录账号', children: account.login },
           { key: 'workspace', label: '目标工作区', children: workspaceId ?? '请先选择当前账号已授权的工作区' },
         ]} />
         {pairing && <Button type="primary" onClick={() => { void completePairing() }}>确认连接这台电脑</Button>}
-        <Typography.Paragraph style={{ margin: 0 }}>连接完成后重启 ChatGPT，在新会话中使用 <Typography.Text code>onboarding.status</Typography.Text> 检查连接结果。</Typography.Paragraph>
+        <Typography.Paragraph style={{ margin: 0 }}>连接完成后重启 ChatGPT。在新对话中说“检查 Store Nova 插件是否已连接”即可。</Typography.Paragraph>
       </Space>
     </Modal>
   </>
