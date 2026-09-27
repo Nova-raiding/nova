@@ -186,13 +186,14 @@ export function createPlatformWorkspaceRuntime(deps: {
   function workspaceStoreDirectory(workspaceId: string, platformFilter?: Platform) {
     const products = deps.service.listProducts(workspaceId)
     const syncJobs = deps.service.listSyncJobs(workspaceId)
-    const productsByAccount = new Map<string, { storeNames: Set<string>; hasFixtureProduct: boolean }>()
+    const productsByAccount = new Map<string, { storeNames: Set<string>; hasFixtureProduct: boolean; hasImportedProduct: boolean }>()
     for (const product of products) {
       if (!product.accountId) continue
       const key = `${product.platform}:${product.accountId}`
-      const grouped = productsByAccount.get(key) ?? { storeNames: new Set<string>(), hasFixtureProduct: false }
+      const grouped = productsByAccount.get(key) ?? { storeNames: new Set<string>(), hasFixtureProduct: false, hasImportedProduct: false }
       if (product.storeName) grouped.storeNames.add(product.storeName)
       if (product.source === 'fixture') grouped.hasFixtureProduct = true
+      if (product.source === 'csv') grouped.hasImportedProduct = true
       productsByAccount.set(key, grouped)
     }
     const syncByAccount = new Map<string, { latestAttempt?: typeof syncJobs[number]; lastSuccessful?: typeof syncJobs[number]; lastUsable?: typeof syncJobs[number] }>()
@@ -213,7 +214,7 @@ export function createPlatformWorkspaceRuntime(deps: {
         const state = account.tokenState
         const access = platformAccessFlags(account.platform, account)
         const simulated = deps.fixtureMode || Boolean(productGroup?.hasFixtureProduct)
-        const dataMode = simulated ? 'fixture' : access.readEnabled ? 'official_api' : 'account_record_only'
+        const dataMode = simulated ? 'fixture' : access.readEnabled ? 'official_api' : productGroup?.hasImportedProduct ? 'manual_upload' : 'account_record_only'
         const syncGroup = syncByAccount.get(`${account.platform}:${account.id}`)
         const latestAttempt = syncGroup?.latestAttempt
         const lastSuccessful = syncGroup?.lastSuccessful

@@ -22,6 +22,8 @@ type SpreadsheetProduct = {
   category?: string
   price?: number
   stock?: number
+  attributes?: Record<string, string>
+  selling_points?: Array<{ text: string; source_ids: string[] }>
   skus?: Array<{ id: string; name: string; price: number; stock: number; attributes?: Record<string, string> }>
 }
 
@@ -58,8 +60,8 @@ const spreadsheetMime = (name: string) => name.toLowerCase().endsWith('.csv') ? 
  */
 export function spreadsheetPreviewRows(products: SpreadsheetProduct[], mode: SpreadsheetImportMode) {
   return products.flatMap((product, index) => (product.skus?.length
-    ? product.skus.map((sku) => ({ key: `${index}-${sku.id}`, title: product.title, sku: sku.id, price: sku.price, stock: sku.stock, accountId: product.account_id ?? '' }))
-    : [{ key: `${index}`, title: product.title, sku: '—', price: product.price, stock: product.stock, accountId: product.account_id ?? '' }]))
+    ? product.skus.map((sku) => ({ key: `${index}-${sku.id}`, title: product.title, sku: sku.id, price: sku.price, stock: sku.stock, accountId: product.account_id ?? '', brand: product.attributes?.brand ?? '—', material: product.attributes?.material ?? '—', specification: sku.attributes?.specification ?? product.attributes?.specification ?? '—', sellingPointCount: product.selling_points?.length ?? 0 }))
+    : [{ key: `${index}`, title: product.title, sku: '—', price: product.price, stock: product.stock, accountId: product.account_id ?? '', brand: product.attributes?.brand ?? '—', material: product.attributes?.material ?? '—', specification: product.attributes?.specification ?? '—', sellingPointCount: product.selling_points?.length ?? 0 }]))
     .map((row) => ({ ...row, storeLabel: row.accountId || (mode === 'draft_only' ? '仅草稿' : '待填写') }))
 }
 
@@ -182,7 +184,7 @@ export function ProductSpreadsheetImport({
       {asset && <p className="source-note">当前文件：<b>{asset.name}</b> · revision {asset.revision} · 已确认素材事实后才能提交</p>}
       {error && <div ref={errorRef} id="merchant-spreadsheet-import-error" className="error-notice" role="alert" tabIndex={-1} aria-live="assertive"><b>无法导入</b><span>{error}</span></div>}
       {phase && <div className="info-notice" role="status" aria-live="polite">{phase}</div>}
-      {!!rows.length && <><div className="import-preview-summary"><b>预览：{products.length} 个商品，{rows.length} 个 SKU / 商品记录</b><span>{mode === 'draft_only' ? '草稿模式：不会写入任何平台店铺' : '真实店铺模式：按表格中的店铺账号绑定'}</span></div><div className="table-wrap"><table><thead><tr><th>商品</th><th>SKU</th><th>店铺账号</th><th>价格（元）</th><th>库存</th></tr></thead><tbody>{rows.map((row) => <tr key={row.key}><td>{row.title}</td><td>{row.sku}</td><td>{row.storeLabel}</td><td>{row.price}</td><td>{row.stock}</td></tr>)}</tbody></table></div><button className="primary" type="button" onClick={() => void commit()} disabled={busy || !!importedIds.length || !canWrite}>{importedIds.length ? '已提交' : mode === 'draft_only' ? '确认并创建草稿' : '确认并导入真实店铺'}</button></>}
+      {!!rows.length && <><div className="import-preview-summary"><b>预览：{products.length} 个商品，{rows.length} 个 SKU / 商品记录</b><span>{mode === 'draft_only' ? '草稿模式：不会写入任何平台店铺' : '真实店铺模式：按表格中的店铺账号绑定'}</span></div><div className="table-wrap"><table><thead><tr><th>商品</th><th>SKU</th><th>品牌</th><th>材质</th><th>规格</th><th>待确认卖点数</th><th>店铺账号</th><th>价格（元）</th><th>库存</th></tr></thead><tbody>{rows.map((row) => <tr key={row.key}><td>{row.title}</td><td>{row.sku}</td><td>{row.brand}</td><td>{row.material}</td><td>{row.specification}</td><td>{row.sellingPointCount}</td><td>{row.storeLabel}</td><td>{row.price}</td><td>{row.stock}</td></tr>)}</tbody></table></div><button className="primary" type="button" onClick={() => void commit()} disabled={busy || !!importedIds.length || !canWrite}>{importedIds.length ? '已提交' : mode === 'draft_only' ? '确认并创建草稿' : '确认并导入真实店铺'}</button></>}
       {!!importedIds.length && <p className="source-note">商品编号：{importedIds.join('、')}。请在商品目录中继续审核事实、知识权益和索引状态。</p>}
     </div>
   </section>

@@ -8,6 +8,7 @@ describe('product spreadsheet import', () => {
   it('creates a real XLSX template that the backend parses into one product with two SKUs', async () => {
     const file = await productImportTemplate();
     const facts = await parseDocumentFacts({ name: 'template.xlsx', mimeType: file.type, body: new Uint8Array(await file.arrayBuffer()) });
+    expect(Array.isArray(facts.rows) ? facts.rows[0] : undefined).toMatchObject({ O: '平台商品ID', R: '商品图片', U: '品牌', AD: '卖点3来源ID' });
     const rows = spreadsheetFactsToBatchProducts(facts);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ local_product_key: 'JACKET-001', sku_count: 2, skus: [{ id: 'JACKET-BLUE-M' }, { id: 'JACKET-BLUE-L' }] });

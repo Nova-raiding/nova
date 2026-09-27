@@ -26,10 +26,20 @@ export function productImportNextStep(workspaceId: string | undefined, imported:
 }
 type Product = Record<string, unknown> & { skus?: Array<{ id: string; name: string; price: number; stock: number; attributes?: Record<string, string>; images?: string[]; sourceAssetIds?: string[] }> };
 const templateRows = [
-  ["平台", "商品货号", "商品名称", "类目", "SKU编码", "SKU名称", "颜色", "尺码", "SKU价格", "SKU库存", "SKU图片链接", "SKU原图素材ID", "素材ID", "店铺账号"],
-  ["jd", "JACKET-001", "女士防风冲锋衣", "服装", "JACKET-BLUE-M", "浅蓝色 M码", "浅蓝色", "M", "199", "20", "", "", "", ""],
-  ["jd", "JACKET-001", "女士防风冲锋衣", "服装", "JACKET-BLUE-L", "浅蓝色 L码", "浅蓝色", "L", "199", "15", "", "", "", ""],
+  ["平台", "商品货号", "商品名称", "类目", "SKU编码", "SKU名称", "颜色", "尺码", "SKU价格", "SKU库存", "SKU图片链接", "SKU原图素材ID", "素材ID", "店铺账号", "平台商品ID", "商品价格", "商品库存", "商品图片", "店铺名称", "店铺差异化", "品牌", "材质", "商品规格", "SKU规格", "卖点1", "卖点1来源ID", "卖点2", "卖点2来源ID", "卖点3", "卖点3来源ID"],
+  ["jd", "JACKET-001", "女士防风冲锋衣", "服装", "JACKET-BLUE-M", "浅蓝色 M码", "浅蓝色", "M", "199", "20", ...Array(20).fill("")],
+  ["jd", "JACKET-001", "女士防风冲锋衣", "服装", "JACKET-BLUE-L", "浅蓝色 L码", "浅蓝色", "L", "199", "15", ...Array(20).fill("")],
 ];
+function excelColumn(index: number): string {
+  let value = index + 1;
+  let label = "";
+  while (value > 0) {
+    value -= 1;
+    label = String.fromCharCode(65 + value % 26) + label;
+    value = Math.floor(value / 26);
+  }
+  return label;
+}
 export async function productImportTemplate(): Promise<Blob> {
   const zip = new JSZip();
   const xml = (text: string) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -37,7 +47,7 @@ export async function productImportTemplate(): Promise<Blob> {
   zip.file("_rels/.rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
   zip.file("xl/workbook.xml", '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="商品与SKU" sheetId="1" r:id="rId1"/></sheets></workbook>');
   zip.file("xl/_rels/workbook.xml.rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
-  zip.file("xl/worksheets/sheet1.xml", '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + templateRows.map((row, i) => `<row r="${i + 1}">${row.map((value, j) => `<c r="${String.fromCharCode(65 + j)}${i + 1}" t="inlineStr"><is><t>${xml(value)}</t></is></c>`).join("")}</row>`).join("") + '</sheetData></worksheet>');
+  zip.file("xl/worksheets/sheet1.xml", '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + templateRows.map((row, i) => `<row r="${i + 1}">${row.map((value, j) => `<c r="${excelColumn(j)}${i + 1}" t="inlineStr"><is><t>${xml(value)}</t></is></c>`).join("")}</row>`).join("") + '</sheetData></worksheet>');
   return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
@@ -132,12 +142,18 @@ export function ProductSpreadsheetImport({ workspaceId, canWrite, platformScope 
     } catch (e) { if (run === epoch.current) { setPhase(''); setError(e instanceof Error ? e.message : "导入失败"); } }
     finally { if (run === epoch.current) setBusy(false); }
   };
-  const rows = products.flatMap((p, index) => p.skus?.length ? p.skus.map(sku => ({ key: `${index}:${sku.id}`, title: String(p.title), productKey: String(p.local_product_key ?? p.remote_id ?? ""), sku: sku.id, color: sku.attributes?.color ?? "—", size: sku.attributes?.size ?? "—", price: sku.price, stock: sku.stock, images: (sku.images?.length ?? 0) + (sku.sourceAssetIds?.length ?? 0) })) : [{ key: String(index), title: String(p.title), productKey: String(p.local_product_key ?? p.remote_id ?? ""), sku: "—", color: "—", size: "—", price: p.price as number, stock: p.stock as number, images: Array.isArray(p.images) ? p.images.length : 0 }]);
+  const productKnowledge = (p: Product) => {
+    const attributes = p.attributes as Record<string, string> | undefined;
+    return { brand: attributes?.brand ?? "—", material: attributes?.material ?? "—", specification: attributes?.specification ?? "—", sellingPoints: Array.isArray(p.selling_points) ? p.selling_points.length : 0 };
+  };
+  const rows = products.flatMap((p, index) => p.skus?.length ? p.skus.map(sku => ({ key: `${index}:${sku.id}`, title: String(p.title), productKey: String(p.local_product_key ?? p.remote_id ?? ""), sku: sku.id, color: sku.attributes?.color ?? "—", size: sku.attributes?.size ?? "—", skuSpecification: sku.attributes?.specification ?? "—", price: sku.price, stock: sku.stock, images: (sku.images?.length ?? 0) + (sku.sourceAssetIds?.length ?? 0), ...productKnowledge(p) })) : [{ key: String(index), title: String(p.title), productKey: String(p.local_product_key ?? p.remote_id ?? ""), sku: "—", color: "—", size: "—", skuSpecification: "—", price: p.price as number, stock: p.stock as number, images: Array.isArray(p.images) ? p.images.length : 0, ...productKnowledge(p) }]);
   const nextStep = imported.length ? productImportNextStep(workspaceId, imported) : undefined;
+  const unboundProducts = products.filter(product => typeof product.account_id !== 'string' || !product.account_id.trim());
   return <Card title="商品与 SKU · Excel 导入">
     <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-      <Typography.Paragraph style={{ margin: 0 }}>每行填写一个 SKU，相同商品货号自动合并。支持 Excel 和 CSV；先预览，再导入。图片链接和原图素材按 SKU 分别保存，原图素材必须属于当前客户。</Typography.Paragraph>
+      <Typography.Paragraph style={{ margin: 0 }}>每行填写一个 SKU，相同商品货号自动合并。支持 Excel 和 CSV；先预览，再导入。商品知识列支持品牌、材质、规格和最多 3 条带来源 ID 的卖点；品牌规则、禁用词和资质请在知识库与素材流程单独录入。图片链接和原图素材按 SKU 分别保存，原图素材必须属于当前客户。</Typography.Paragraph>
       <Typography.Paragraph type="secondary" style={{ margin: 0 }}>导入商品资料无需先连接店铺，仅导入当前已授权工作区，可先预览草稿。真实平台同步和发布仍需连接对应店铺，并具备相应操作权限。</Typography.Paragraph>
+      <Alert type="info" showIcon title="给商家导入店铺商品时，请在表格填写已登记的“店铺账号”列；商家商品库会读取工作区导入结果，并标明人工来源。该流程不会读取电商平台数据。" />
       {platformScope ? <Alert type="info" showIcon title="请先进入对应客户的授权工作区，再导入该客户商品。平台工作台不能直接向任意用户写入商品。" /> : <Typography.Text>归属工作区：<Typography.Text code>{workspaceId || "未选择"}</Typography.Text></Typography.Text>}
       {!platformScope && !canWrite && <Alert type="warning" showIcon title="当前账号没有商品导入权限，可联系该客户工作区管理员授权。" />}
       <Space wrap><Button icon={<DownloadOutlined />} onClick={async () => { const blob = await productImportTemplate(); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "商品-SKU导入模板.xlsx"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>下载 Excel 模板</Button>
@@ -146,7 +162,7 @@ export function ProductSpreadsheetImport({ workspaceId, canWrite, platformScope 
       {fileName && <Typography.Text type="secondary">当前文件：{fileName}</Typography.Text>}
       {error && <div role="alert"><Alert type="error" showIcon title={error} /></div>}
       {phase && <div aria-live="polite"><Alert type={imported.length ? "success" : "info"} showIcon title={phase} /></div>}
-      {!!rows.length && <><Typography.Text>预览：{products.length} 个商品，{rows.length} 行 SKU / 商品记录</Typography.Text><Table size="small" dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 950 }} columns={[{ title: "商品", dataIndex: "title" }, { title: "货号", dataIndex: "productKey" }, { title: "SKU编码", dataIndex: "sku" }, { title: "颜色", dataIndex: "color" }, { title: "尺码", dataIndex: "size" }, { title: "价格（元）", dataIndex: "price" }, { title: "库存", dataIndex: "stock" }, { title: "图片数", dataIndex: "images" }]} /><Button type="primary" disabled={!enabled || busy || !!imported.length} loading={busy} onClick={() => void commit()}>{imported.length ? "已导入" : "确认预览并导入"}</Button></>}
+      {!!rows.length && <><Typography.Text>预览：{products.length} 个商品，{rows.length} 行 SKU / 商品记录</Typography.Text>{!!unboundProducts.length && <Alert type="warning" showIcon title={`${unboundProducts.length} 个商品未填写店铺账号，生产环境导入会被拒绝；请填写已登记的账号后重新上传。`} />}<Table size="small" dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 1450 }} columns={[{ title: "商品", dataIndex: "title" }, { title: "货号", dataIndex: "productKey" }, { title: "SKU编码", dataIndex: "sku" }, { title: "颜色", dataIndex: "color" }, { title: "尺码", dataIndex: "size" }, { title: "SKU规格", dataIndex: "skuSpecification" }, { title: "品牌", dataIndex: "brand" }, { title: "材质", dataIndex: "material" }, { title: "商品规格", dataIndex: "specification" }, { title: "待确认卖点数", dataIndex: "sellingPoints" }, { title: "价格（元）", dataIndex: "price" }, { title: "库存", dataIndex: "stock" }, { title: "图片数", dataIndex: "images" }]} /><Button type="primary" disabled={!enabled || busy || !!imported.length || !!unboundProducts.length} loading={busy} onClick={() => void commit()}>{imported.length ? "已导入" : "确认预览并导入"}</Button></>}
       {!!imported.length && <Alert type="success" showIcon message="导入完成" description={<Space direction="vertical" size={4}>
         <Typography.Text>{nextStep?.binding}</Typography.Text>
         <Typography.Text>{nextStep?.prompt}</Typography.Text>

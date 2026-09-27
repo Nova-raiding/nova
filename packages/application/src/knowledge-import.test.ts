@@ -24,4 +24,12 @@ describe('projectImportedProductsToKnowledge', () => {
     await projectImportedProductsToKnowledge({ repository, workspaceId: 'ws_2', products: [{ id: 'p_2', workspaceId: 'ws_2', title: '商品', platform: 'jd' }] })
     expect(await repository.search({ workspaceId: 'ws_2', query: '商品' })).toEqual([])
   })
+
+  it('projects material, specifications and pending selling points from product facts', async () => {
+    const repository = new MemoryKnowledgeRepository()
+    const result = await projectImportedProductsToKnowledge({ repository, workspaceId: 'ws_3', products: [{ id: 'p_3', workspaceId: 'ws_3', title: '运动鞋', platform: 'jd', attributes: { brand: '贵人鸟', material: '网布', specification: '42码' }, sellingPoints: [{ id: 'sp_1', text: '轻便', proofStatus: 'pending' }] }] })
+    expect(result.documents[0]?.extractedText).toContain('material')
+    expect(result.documents[0]?.extractedText).toContain('轻便（pending）')
+    expect(result.documents[0]?.approvalStatus).toBe('pending')
+  })
 })

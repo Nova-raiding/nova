@@ -29,6 +29,28 @@ describe('spreadsheet batch import mapping', () => {
     expect(facts).toMatchObject({ format: 'csv', rows: [{ platform: 'platform', title: 'title' }, { platform: 'taobao', title: '轻云,外套' }] })
     expect(spreadsheetFactsToBatchProducts(facts)).toEqual([{ platform: 'taobao', title: '轻云,外套', price: 99, stock: 5 }])
   })
+
+  it('maps a product image column in the downloadable product template', () => {
+    const products = spreadsheetFactsToBatchProducts({ format: 'xlsx', rows: [
+      { A: '平台', B: '商品名称', C: '商品图片' },
+      { A: 'jd', B: '贵人鸟运动鞋', C: 'https://example.com/shoe.jpg' },
+    ] })
+    expect(products[0]).toMatchObject({ images: ['https://example.com/shoe.jpg'] })
+  })
+
+  it('maps material, brand, specifications and evidenced selling points into product knowledge facts', () => {
+    const products = spreadsheetFactsToBatchProducts({ format: 'xlsx', rows: [
+      { A: '平台', B: '商品货号', C: '商品名称', D: 'SKU编码', E: 'SKU价格', F: 'SKU库存', G: '品牌', H: '材质', I: '商品规格', J: 'SKU规格', K: '卖点1', L: '卖点1来源ID' },
+      { A: 'jd', B: 'shoe-1', C: '贵人鸟运动鞋', D: 'jd-sku-1', E: 99, F: 3, G: '贵人鸟', H: '网布', I: '运动鞋', J: '42码', K: '轻便', L: 'asset-proof-1' },
+      { A: 'jd', B: 'shoe-1', C: '贵人鸟运动鞋', D: 'jd-sku-2', E: 99, F: 2, G: '贵人鸟', H: '网布', I: '运动鞋', J: '43码', K: '轻便', L: 'asset-proof-1' },
+    ] })
+    expect(products).toMatchObject([{ attributes: { brand: '贵人鸟', material: '网布', specification: '运动鞋' }, selling_points: [{ text: '轻便', proof_status: 'pending', source_ids: ['asset-proof-1'] }], skus: [{ attributes: { specification: '42码' } }, { attributes: { specification: '43码' } }] }])
+  })
+
+  it('rejects unsupported columns and selling points without a source', () => {
+    expect(() => spreadsheetFactsToBatchProducts({ format: 'xlsx', rows: [{ A: '平台', B: '商品名称', C: '资质证书' }, { A: 'jd', B: '运动鞋', C: '有' }] })).toThrow('不支持表头“资质证书”')
+    expect(() => spreadsheetFactsToBatchProducts({ format: 'xlsx', rows: [{ A: '平台', B: '商品名称', C: '卖点1' }, { A: 'jd', B: '运动鞋', C: '防滑' }] })).toThrow('第 2 行卖点1必须填写来源ID')
+  })
 })
 
 it('groups SKU rows by product key and preserves per-SKU price, images and attributes', () => {

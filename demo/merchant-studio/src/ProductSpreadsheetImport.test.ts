@@ -48,6 +48,11 @@ describe('Merchant Studio spreadsheet import', () => {
     expect(spreadsheetPreviewRows([{ platform: 'jd', title: '商品' }], 'store').map((row) => row.storeLabel)).toEqual(['待填写'])
   })
 
+  it('shows imported product knowledge and SKU specifications in the preview', () => {
+    const [row] = spreadsheetPreviewRows([{ platform: 'jd', title: '运动鞋', attributes: { brand: '贵人鸟', material: '网布', specification: '运动鞋' }, selling_points: [{ text: '轻便', source_ids: ['asset-1'] }], skus: [{ id: 'jd-1', name: '蓝色 42', price: 99, stock: 2, attributes: { specification: '42码' } }] }], 'draft_only')
+    expect(row).toMatchObject({ brand: '贵人鸟', material: '网布', specification: '42码', sellingPointCount: 1 })
+  })
+
   it('exposes preview and failure recovery semantics', () => {
     const html = renderToStaticMarkup(React.createElement(ProductSpreadsheetImport, { baseUrl: '/api', accounts, canWrite: true }))
     expect(html).toContain('安全检查')

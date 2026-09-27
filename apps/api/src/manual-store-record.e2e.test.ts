@@ -230,6 +230,11 @@ describe('manual operations store records', () => {
     expect(imported.body.error, JSON.stringify(imported.body.error)).toBeNull()
     const product = imported.body.data!.result as { id: string; accountId?: string }
     expect(product.accountId).toBe(storeKey)
+    const directoryEntry = workspaceStoreDirectory(workspaceId).find(store => store.accountId === storeKey)
+    expect(directoryEntry?.dataMode).toBe('manual_upload')
+    expect(directoryEntry?.state).toBe(MANUAL_STORE_RECORD_TOKEN_STATE)
+    const merchantProducts = await fetch(`${base}/v1/products?limit=50&offset=0`, { headers: ownerHeaders }).then(response => response.json()) as { data?: { items?: Array<{ id: string; accountId?: string; title: string }> } }
+    expect(merchantProducts.data?.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: product.id, accountId: storeKey })]))
 
     // And the next platform-side step, which is what the deadlock made
     // unreachable. `task.create` is derived from the imported product, so the

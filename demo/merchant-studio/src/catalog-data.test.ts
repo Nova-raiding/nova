@@ -124,6 +124,15 @@ describe('the store page renders the server catalogue', () => {
     expect(rows).toHaveLength(6)
     expect(rows.every((platform) => platform.stores.length === 0 && platform.statusLabel === '可自助登记')).toBe(true)
   })
+
+  it('shows workspace imported products under a manual store without claiming platform access', () => {
+    const manual = { ...accounts[0], platform: 'jd', accountId: 'jd:42169', state: 'manually_registered', readEnabled: false, dataMode: 'manual_upload' } as PlatformAccount
+    const imported = { ...products[0], accountId: 'jd:42169', platform: 'jd' } as Product
+    const store = buildCatalogPlatforms([manual], [imported])!.flatMap(platform => platform.stores)[0]!
+    expect(store).toMatchObject({ products: 1, readable: false, realConnected: false, dataModeLabel: '人工上传数据', connectionLabel: '人工登记（未授权）' })
+    expect(catalogComponent).toContain('件工作区导入商品')
+    expect(catalogComponent).toContain('不代表平台同步')
+  })
 })
 
 describe('product facts come from the server', () => {

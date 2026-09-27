@@ -48,4 +48,11 @@ describe('document parser', () => {
     const facts = await parseDocumentFacts({ name: 'products.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: await zip.generateAsync({ type: 'uint8array' }) })
     expect(facts).toMatchObject({ format: 'xlsx', rows: [{ A: '商品标题', B: '轻量外套' }] })
   })
+
+  it('reads namespace-prefixed XLSX cells produced by standard workbook writers', async () => {
+    const zip = new JSZip()
+    zip.file('xl/worksheets/sheet1.xml', '<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData><x:row r="1"><x:c r="A1" t="str"><x:v>平台</x:v></x:c><x:c r="B1" t="str"><x:v>商品名称</x:v></x:c></x:row><x:row r="2"><x:c r="A2" t="str"><x:v>jd</x:v></x:c><x:c r="C2" s="1" /><x:c r="B2" t="str"><x:v>外套</x:v></x:c></x:row></x:sheetData></x:worksheet>')
+    const facts = await parseDocumentFacts({ name: 'products.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: await zip.generateAsync({ type: 'uint8array' }) })
+    expect(facts).toMatchObject({ format: 'xlsx', rows: [{ A: '平台', B: '商品名称' }, { A: 'jd', B: '外套' }] })
+  })
 })

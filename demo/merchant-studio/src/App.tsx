@@ -5588,7 +5588,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
           {/* The count is the store's products as the server returned them, and
               it is reported as unread until that read answers. It used to be a
               fixed 9 「已上架商品」 for every connected store. */}
-          <div className="catalog-store-stat"><strong>{storeItemsRead ? storeProducts.length : UNREAD_METRIC}</strong><span>件商品</span></div>
+          <div className="catalog-store-stat"><strong>{storeItemsRead ? storeProducts.length : UNREAD_METRIC}</strong><span>件商品{selectedStore.dataModeLabel === '人工上传数据' ? ' · 工作区导入' : ''}</span></div>
         </section>
         <section className="catalog-products-panel">
           <div className="catalog-products-toolbar">
@@ -5664,8 +5664,8 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
                 {selectedPlatformStores.map((store) => (
                   <article className={`catalog-store-card ${store.tone} ${store.readable ? 'connected' : 'disconnected'}`} key={store.id}>
                     <header className="catalog-store-identity"><span className="catalog-store-mark" aria-hidden="true">{store.mark}</span><div><h3>{store.name}</h3><small>{store.dataModeLabel}</small></div><span className={`catalog-live-state ${store.realConnected ? '' : 'disconnected'}`}><i />{store.connectionLabel}</span></header>
-                    <div className="catalog-store-summary">{store.readable ? <><strong>{store.products === null ? '商品数量未读取' : <><b>{store.products}</b> 件商品</>}</strong><span>{store.syncLabel ? `最近同步：${store.syncLabel}` : '尚无同步记录'}</span></> : store.connectionLabel === '人工登记（未授权）' ? <><strong>店铺资料已登记</strong><span>未获得平台授权，平台商品数据不可读取</span></> : <><strong>店铺尚不可读取</strong><span>商品数据暂不可读</span></>}</div>
-                    <footer className="catalog-store-action"><button type="button" onClick={() => openStore(store.id)}>{store.readable ? '进入商品库' : '查看状态'} <ArrowRight size={15} /></button></footer>
+                    <div className="catalog-store-summary">{store.readable ? <><strong>{store.products === null ? '商品数量未读取' : <><b>{store.products}</b> 件商品</>}</strong><span>{store.syncLabel ? `最近同步：${store.syncLabel}` : '尚无同步记录'}</span></> : store.connectionLabel === '人工登记（未授权）' ? <><strong>{store.products === null ? '商品数量未读取' : store.products > 0 ? <><b>{store.products}</b> 件工作区导入商品</> : '店铺资料已登记'}</strong><span>平台未授权；商品资料由工作区人工导入，不代表平台同步</span></> : <><strong>店铺尚不可读取</strong><span>商品数据暂不可读</span></>}</div>
+                    <footer className="catalog-store-action"><button type="button" onClick={() => openStore(store.id)}>{store.readable || (store.connectionLabel === '人工登记（未授权）' && (store.products ?? 0) > 0) ? '进入商品库' : '查看状态'} <ArrowRight size={15} /></button></footer>
                   </article>
                 ))}
               </div>

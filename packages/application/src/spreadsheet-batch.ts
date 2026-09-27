@@ -23,13 +23,23 @@ const aliases: Record<string, string> = {
   local_product_key: 'local_product_key', 商品货号: 'local_product_key', 货号: 'local_product_key',
   title: 'title', 商品标题: 'title', 商品名称: 'title',
   category: 'category', 类目: 'category',
-  price: 'price', 价格: 'price',
-  stock: 'stock', 库存: 'stock',
+  price: 'price', 价格: 'price', 商品价格: 'price',
+  stock: 'stock', 库存: 'stock', 商品库存: 'stock',
   sku_count: 'sku_count', sku数量: 'sku_count',
   asset_ids: 'asset_ids', 素材id: 'asset_ids', 素材ids: 'asset_ids',
-  images: 'images', 图片: 'images',
+  images: 'images', 图片: 'images', 商品图片: 'images', 商品图片链接: 'images',
   store_name: 'store_name', 店铺名称: 'store_name',
   store_differentiation: 'store_differentiation', 店铺差异化: 'store_differentiation',
+  brand: 'brand', 品牌: 'brand',
+  material: 'material', 材质: 'material',
+  specification: 'specification', 商品规格: 'specification', 规格: 'specification',
+  sku_specification: 'sku_specification', sku规格: 'sku_specification',
+  selling_point_1: 'selling_point_1', 卖点1: 'selling_point_1',
+  selling_point_2: 'selling_point_2', 卖点2: 'selling_point_2',
+  selling_point_3: 'selling_point_3', 卖点3: 'selling_point_3',
+  selling_point_source_ids_1: 'selling_point_source_ids_1', 卖点1来源id: 'selling_point_source_ids_1',
+  selling_point_source_ids_2: 'selling_point_source_ids_2', 卖点2来源id: 'selling_point_source_ids_2',
+  selling_point_source_ids_3: 'selling_point_source_ids_3', 卖点3来源id: 'selling_point_source_ids_3',
 }
 
 function normalizeHeader(value: unknown): string {
@@ -55,14 +65,14 @@ function nonNegativeNumber(value: unknown, row: number, field: string, integer =
   return result
 }
 
-const productIdentityFields = ['title', 'category', 'local_product_key', 'remote_id', 'store_name', 'store_differentiation']
+const productIdentityFields = ['title', 'category', 'local_product_key', 'remote_id', 'store_name', 'store_differentiation', 'attributes', 'selling_points']
 
 /** Merge one row's product-level fields into the group that already holds the
  * same platform identity. Two rows of the same product may only disagree on
  * fields that are stored per SKU. */
 function mergeProductFields(existing: Record<string, unknown>, product: Record<string, unknown>, rowNumber: number, fields: readonly string[]): void {
   for (const field of fields) {
-    if (existing[field] !== undefined && product[field] !== undefined && existing[field] !== product[field]) throw new SpreadsheetBatchImportError(rowNumber, `同一商品的 ${field} 不一致`)
+    if (existing[field] !== undefined && product[field] !== undefined && JSON.stringify(existing[field]) !== JSON.stringify(product[field])) throw new SpreadsheetBatchImportError(rowNumber, `同一商品的 ${field} 不一致`)
     if (existing[field] === undefined && product[field] !== undefined) existing[field] = product[field]
   }
   for (const field of ['images', 'asset_ids']) {
@@ -79,7 +89,9 @@ export function spreadsheetFactsToBatchProducts(facts: Record<string, unknown>):
   const headers = new Map<string, string>()
   for (const [reference, value] of Object.entries(sourceRows[0]!)) {
     const key = facts.format === 'csv' ? reference : reference.replace(/\d+$/u, '')
-    const mapped = aliases[normalizeHeader(facts.format === 'csv' ? reference : value)]
+    const label = String(facts.format === 'csv' ? reference : value ?? '').trim()
+    const mapped = aliases[normalizeHeader(label)]
+    if (label && !mapped) throw new SpreadsheetBatchImportError(1, `不支持表头“${label}”，请使用当前模板中的列名`)
     if (mapped) {
       if ([...headers.values()].includes(mapped)) throw new SpreadsheetBatchImportError(1, `存在重复表头 ${mapped}`)
       headers.set(key, mapped)
@@ -108,10 +120,20 @@ export function spreadsheetFactsToBatchProducts(facts: Record<string, unknown>):
     const price = nonNegativeNumber(row.price, rowNumber, 'price')
     const stock = nonNegativeNumber(row.stock, rowNumber, 'stock', true)
     const skuCount = nonNegativeNumber(row.sku_count, rowNumber, 'sku_count', true)
+    const productAttributes = Object.fromEntries(['brand', 'material', 'specification'].filter(field => text(field)).map(field => [field, text(field)]))
+    const sellingPoints = [1, 2, 3].flatMap(number => {
+      const point = text(`selling_point_${number}`)
+      const sourceIds = splitList(row[`selling_point_source_ids_${number}`])
+      if (point && !sourceIds) throw new SpreadsheetBatchImportError(rowNumber, `卖点${number}必须填写来源ID`)
+      if (!point && sourceIds) throw new SpreadsheetBatchImportError(rowNumber, `卖点${number}来源ID缺少卖点内容`)
+      return point ? [{ id: `sp_${number}`, text: point, proof_status: 'pending', source_ids: sourceIds! }] : []
+    })
     const product: Record<string, unknown> = { platform, title,
       ...Object.fromEntries(['account_id', 'remote_id', 'local_product_key', 'category', 'store_name', 'store_differentiation'].filter(field => text(field)).map(field => [field, text(field)])),
       ...(price === undefined ? {} : { price }), ...(stock === undefined ? {} : { stock }),
-      ...(skuCount === undefined ? {} : { sku_count: skuCount }), ...(assetIds ? { asset_ids: assetIds } : {}), ...(images ? { images } : {}) }
+      ...(skuCount === undefined ? {} : { sku_count: skuCount }), ...(assetIds ? { asset_ids: assetIds } : {}), ...(images ? { images } : {}),
+      ...(Object.keys(productAttributes).length ? { attributes: productAttributes } : {}),
+      ...(sellingPoints.length ? { selling_points: sellingPoints } : {}) }
     // A product-level row carries the same platform identity as its SKU rows,
     // so it has to join the same group. Emitting it directly left the group
     // empty (or stale) and a later SKU row for the same product produced a
@@ -119,7 +141,7 @@ export function spreadsheetFactsToBatchProducts(facts: Record<string, unknown>):
     // wholesale as a duplicate platform identity.
     const remoteIdentity = text('remote_id') || text('local_product_key')
     const key = JSON.stringify([platform, text('account_id'), remoteIdentity])
-    const hasSku = ['sku_id', 'sku_name', 'color', 'size', 'sku_price', 'sku_stock', 'sku_images', 'sku_asset_ids'].some(field => text(field))
+    const hasSku = ['sku_id', 'sku_name', 'color', 'size', 'sku_specification', 'sku_price', 'sku_stock', 'sku_images', 'sku_asset_ids'].some(field => text(field))
     if (!hasSku) {
       // Without an explicit product identity the row is identified by its
       // title, so grouping on an empty key would collapse unrelated products
@@ -137,7 +159,7 @@ export function spreadsheetFactsToBatchProducts(facts: Record<string, unknown>):
     const skuPrice = nonNegativeNumber(text('sku_price') || row.price, rowNumber, 'SKU价格')
     const skuStock = nonNegativeNumber(text('sku_stock') || row.stock, rowNumber, 'SKU库存', true)
     if (skuPrice === undefined || skuStock === undefined) throw new SpreadsheetBatchImportError(rowNumber, 'SKU 行必须填写价格和库存，0 是有效值')
-    const attributes = Object.fromEntries(['color', 'size'].filter(field => text(field)).map(field => [field, text(field)]))
+    const attributes = Object.fromEntries(['color', 'size', 'sku_specification'].filter(field => text(field)).map(field => [field === 'sku_specification' ? 'specification' : field, text(field)]))
     const skuImages = splitList(row.sku_images)
     const skuAssetIds = splitList(row.sku_asset_ids)
     const sku = { ...(skuAssetIds ? { sourceAssetIds: skuAssetIds } : {}), id: text('sku_id'), name: text('sku_name') || [text('color'), text('size')].filter(Boolean).join(' / ') || text('sku_id'), price: skuPrice, stock: skuStock, ...(Object.keys(attributes).length ? { attributes } : {}), ...(skuImages ? { images: skuImages } : images ? { images } : {}) }

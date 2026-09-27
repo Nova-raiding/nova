@@ -69,15 +69,15 @@ function parseCsvRows(text: string): ParsedDocumentFacts {
 async function parseXlsx(bytes: Uint8Array): Promise<ParsedDocumentFacts> {
   const zip = await JSZip.loadAsync(bytes)
   const sharedXml = zip.file('xl/sharedStrings.xml') ? await zip.file('xl/sharedStrings.xml')!.async('text') : ''
-  const sharedStrings = [...sharedXml.matchAll(/<si[\s\S]*?<\/si>/giu)].map(match => xmlText(match[0]))
+  const sharedStrings = [...sharedXml.matchAll(/<(?:[\w.-]+:)?si\b[\s\S]*?<\/(?:[\w.-]+:)?si>/giu)].map(match => xmlText(match[0]))
   const sheetName = Object.keys(zip.files).find(name => /^xl\/worksheets\/sheet\d+\.xml$/u.test(name))
   if (!sheetName) throw new Error('XLSX 缺少工作表')
   const sheetXml = await zip.file(sheetName)!.async('text')
-  const rows = [...sheetXml.matchAll(/<row\b[\s\S]*?<\/row>/giu)].map(rowMatch => {
-    const cells = [...rowMatch[0].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/giu)].map(cellMatch => {
+  const rows = [...sheetXml.matchAll(/<(?:[\w.-]+:)?row\b[\s\S]*?<\/(?:[\w.-]+:)?row>/giu)].map(rowMatch => {
+    const cells = [...rowMatch[0].matchAll(/<(?:[\w.-]+:)?c\b([^>]*?)(?<!\/)>([\s\S]*?)<\/(?:[\w.-]+:)?c>/giu)].map(cellMatch => {
       const attributes = cellMatch[1] ?? ''
       const reference = /\br="([A-Z]+)\d+"/u.exec(attributes)?.[1] ?? ''
-      const raw = /<v>([\s\S]*?)<\/v>/iu.exec(cellMatch[2] ?? '')?.[1] ?? /<t[^>]*>([\s\S]*?)<\/t>/iu.exec(cellMatch[2] ?? '')?.[1] ?? ''
+      const raw = /<(?:[\w.-]+:)?v>([\s\S]*?)<\/(?:[\w.-]+:)?v>/iu.exec(cellMatch[2] ?? '')?.[1] ?? /<(?:[\w.-]+:)?t\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?t>/iu.exec(cellMatch[2] ?? '')?.[1] ?? ''
       const value = /\bt="s"/u.test(attributes) ? sharedStrings[Number(raw)] ?? '' : decodeXml(raw)
       return { reference, value }
     })
