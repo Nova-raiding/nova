@@ -48,6 +48,16 @@ function fakeDocker({ markerValue = marker(), apiImage = apiImageId, apiNetworks
   return { docker, calls }
 }
 
+test('old formal canary refuses every pre-existing unverified workspace before Docker access', () => {
+  for (const workspace of ['ws_demo', 'ws_guirenniaoniao', 'ws_storenova_fashion']) {
+    const { docker, calls } = fakeDocker()
+    assert.throws(() => createOldFormalDockerTransport({
+      env: { ...env, SCANNER_CANARY_WORKSPACE_ID: workspace }, docker, now: () => current,
+    }), /OLD_SCANNER_DEDICATED_WORKSPACE_REQUIRED/)
+    assert.equal(calls.length, 0)
+  }
+})
+
 test('exact Docker transport allows only the pinned API demo attachment and routes through container loopback', async () => {
   const { docker, calls } = fakeDocker({ apiNetworks: {
     'merchant-production_default': { NetworkID: networkId },

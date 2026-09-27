@@ -11,6 +11,10 @@ export const OLD_FORMAL_RELEASE_SHA = 'ec3d69e37809c0d622c8f38057a072245217004f'
 const fullId = /^[a-f0-9]{64}$/u
 const imageId = /^sha256:[a-f0-9]{64}$/u
 const safeWorkspace = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
+// The 2026-09-27 read-only formal DB audit found only these existing
+// workspaces. None had independently verified dedicated canary provenance.
+// A new, separately provisioned workspace is required for this one-off path.
+const existingNonCanaryWorkspaces = new Set(['ws_demo', 'ws_guirenniaoniao', 'ws_storenova_fashion'])
 const dockerBinary = '/usr/bin/docker'
 
 function actualDocker(args, input, timeoutMs = 10_000) {
@@ -86,6 +90,7 @@ export function createOldFormalDockerTransport({ env, docker = actualDocker, now
     || !imageId.test(apiImageId ?? '') || !imageId.test(workerImageId ?? '')
     || (apiSecondaryNetworkId !== undefined && !fullId.test(apiSecondaryNetworkId))
     || !safeWorkspace.test(workspace ?? '')) throw new Error('OLD_SCANNER_IDENTITY_INPUT_INVALID')
+  if (existingNonCanaryWorkspaces.has(workspace)) throw new Error('OLD_SCANNER_DEDICATED_WORKSPACE_REQUIRED')
 
   const timedDocker = (args, input, deadline) => {
     const remaining = deadline - Date.now()
