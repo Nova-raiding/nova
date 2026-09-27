@@ -85,6 +85,13 @@ protect() {
 }
 
 for value in ${ECS_PROTECTED_RELEASE_IDS:-}; do protect "$value"; done
+protect_compose_path() {
+  path=$1
+  case "$path" in /*) ;; *) return 0 ;; esac
+  directory=${path%/*}
+  release_name=${directory##*/}
+  case "$release_name" in release-*) protect "$release_name" ;; esac
+}
 if command -v docker >/dev/null 2>&1; then
   # A failed or interrupted rollout can leave a created/stopped container whose
   # Compose metadata still points at its release checkout. Preserve those
@@ -95,6 +102,16 @@ if command -v docker >/dev/null 2>&1; then
     container_git=$(printf '%s\n' "$container_env" | sed -n 's/^RELEASE_GIT_SHA=//p' | head -1)
     protect "$container_release"
     printf '%s' "$container_git" | grep -Eq '^[a-f0-9]{40}$' && printf '%s\n' "$container_git" >> "$protected_git_file"
+    # Data services may have no RELEASE_ID in their environment. Their Compose
+    # config location still identifies the checkout needed to reproduce them.
+    container_compose_files=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$container" 2>/dev/null || true)
+    printf '%s\n' "$container_compose_files" | tr ',' '\n' | while IFS= read -r compose_file; do
+      protect_compose_path "$compose_file"
+    done
+    container_working_dir=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null || true)
+    case "$container_working_dir" in
+      /*) protect_compose_path "$container_working_dir/." ;;
+    esac
   done
 fi
 if [ -n "${PRODUCTION_API_BASE_URL:-}" ] && command -v curl >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then

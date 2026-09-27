@@ -87,6 +87,37 @@ describe('ECS one-click deployment storage policy', () => {
     expect(readFileSync(join(protectedRelease, '.candidate-identity'), 'utf8')).toContain('release-protected')
   })
 
+  it('preserves a data-service checkout identified only by Compose labels', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-compose-label-')))
+    chmodSync(root, 0o700)
+    const dataRelease = release(root, 'release-data', 1)
+    const stale = release(root, 'release-stale', 2)
+    release(root, 'release-current', 3)
+    const bin = join(root, 'bin'); mkdirSync(bin)
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh
+case "$1 $2" in
+  'ps -aq') echo data-container ;;
+  'inspect --format')
+    case "$3" in
+      *project.config_files*) echo '${dataRelease}/candidate.compose.json' ;;
+      *project.working_dir*) echo '${dataRelease}' ;;
+    esac ;;
+esac
+exit 0
+`, { mode: 0o755 })
+    writeFileSync(join(bin, 'flock'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+
+    const result = spawnSync('sh', [script, 'cleanup'], {
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ECS_RELEASES_ROOT: root, ECS_RELEASE_KEEP_COUNT: '1', CONFIRM_ECS_STORAGE_CLEANUP: 'YES' },
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('KEEP\trelease-data')
+    expect(result.stdout).toContain('DELETE\trelease-stale')
+    expect(readFileSync(join(dataRelease, '.candidate-identity'), 'utf8')).toContain('release-data')
+    expect(spawnSync('test', ['-e', stale]).status).not.toBe(0)
+  })
+
   it('forces report to remain read-only even when cleanup confirmation leaks in', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-report-')))
     const bundles = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-candidate-report-')))
