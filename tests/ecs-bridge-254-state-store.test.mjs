@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { after, test } from 'node:test'
 import { assertReviewOnlyMutationAllowed, createBridge254StateStore, invocationOwnsFlockRecord } from '../infra/protected/ecs-bridge-254-state-store.mjs'
+import { executeBridge254Maintenance, resumeBridge254ForwardMaintenance } from '../infra/protected/ecs-bridge-254-maintenance-core.mjs'
 
 const temp = mkdtempSync(join(realpathSync(tmpdir()), 'merchant-bridge-254-state-'))
 after(() => rmSync(temp, { recursive: true, force: true }))
@@ -20,6 +21,7 @@ const identity = (name, git, a, b) => ({ release_id: name, git_sha: git.repeat(4
 const old_runtime = identity('old-242', 'a', '1', '2')
 const bridge = identity('bridge-254', 'b', '3', '4')
 const candidate = identity('candidate-c', 'c', '5', '6')
+const bridgeServices = ['api', 'api-replica', 'worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan']
 const prefixes = Object.fromEntries(Array.from({ length: 13 }, (_, i) => [String(242 + i), sha(`prefix-${242 + i}`)]))
 const prefix = version => ({ version, history_sha256: prefixes[version] })
 const observed = version => ({ ...prefix(version), ops_version: version, ops_history_sha256: prefixes[version] })
@@ -29,12 +31,14 @@ const snapshot = {
   containers: roles.map((role, index) => ({ role, id: sha(`id-${index}`), image_id: `sha256:${sha(`image-${index}`)}`,
     inspect_sha256: sha(`inspect-${index}`), network_sha256: sha(`network-${index}`), running: true })),
   database: { runtime: prefix(242), ops: prefix(242) }, public_release: old_runtime,
-  bridge_artifacts: { image_set_digest: bridge.image_set_digest }, old_recovery: { capsule_sha256: digit('7') },
+  bridge_artifacts: { ...bridge, services: bridgeServices, compose_sha256: digit('a'), env_sha256: digit('b'), image_digests_sha256: digit('c') },
+  old_recovery: { preserve_volumes: true, compose_sha256: digit('d'), env_sha256: digit('e'), image_digests_sha256: digit('f') },
 }
 const { privateKey, publicKey } = generateKeyPairSync('ed25519')
 const privateKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
 const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }).toString()
-const expected = { candidate, bridge, old_runtime, deploymentNonce: nonce, recoveryCapsuleSha256: digit('7'),
+const expected = { project: 'merchant-production', prefixes, oldRuntime: old_runtime, candidate, bridge, old_runtime,
+  deploymentNonce: nonce, recoveryCapsuleSha256: digit('7'),
   trustedKeyId: 'isolated-key', publicKeyPem,
   nonceOwner: { namespace: 'merchant-production-deploy', operation: 'bridge-254', attempt_id: attemptId,
     ...bridge, nonce_sha256: sha(nonce) } }
@@ -70,7 +74,11 @@ function commitNonce(ledgerPath, nonceValue, journal, operation = 'bridge-254') 
   } finally { db.close(); chmodSync(ledgerPath, 0o600) }
 }
 const step = (store, fromPhase, toPhase, version, extra = {}) => store.advance({ attemptId, fromPhase, toPhase,
-  observedPrefix: observed(version), observationDigest: sha(`observed-${version}-${toPhase}`), expected, deploymentNonce: nonce, ...extra })
+  observedPrefix: observed(version),
+  observationDigest: ['bridge_mutation_started', 'migration_started'].includes(toPhase) ? sha(canonical(snapshot))
+    : ['forward_recovery_started', 'migration_254_verified'].includes(toPhase) ? prefixes[version]
+      : sha(`observed-${version}-${toPhase}`),
+  expected, deploymentNonce: nonce, ...extra })
 
 test('production bridge-254 signer refuses caller-supplied identity and observation mutation', () => {
   assert.throws(() => assertReviewOnlyMutationAllowed(true), /independent trusted capture and identity verifier/u)
@@ -90,6 +98,8 @@ test('capture persists signed exact old topology and refuses tampering or duplic
   const { store, dir } = fixture(() => {})
   store.capture({ attemptId, journalBody: body(), frozenCapture: snapshot, expected })
   assert.equal(store.read({ attemptId, expected }).journal.phase, 'captured')
+  assert.throws(() => store.read({ attemptId, expected: { ...expected, prefixes: { ...prefixes, 243: sha('wrong-243') } } }),
+    /signed prefix chain differs/)
   assert.throws(() => store.capture({ attemptId, journalBody: body(), frozenCapture: snapshot, expected }), /already exists/)
   assert.throws(() => store.capture({ attemptId: 'other_attempt_123456', journalBody: { ...body(), attempt_id: 'other_attempt_123456' },
     frozenCapture: { ...snapshot, containers: snapshot.containers.slice(1) }, expected }), /capture/)
@@ -97,7 +107,7 @@ test('capture persists signed exact old topology and refuses tampering or duplic
   chmodSync(capturePath, 0o600)
   writeFileSync(capturePath, `${JSON.stringify({ ...snapshot, public_release: bridge })}\n`)
   chmodSync(capturePath, 0o400)
-  assert.throws(() => store.read({ attemptId, expected }), /capture digest differs/)
+  assert.throws(() => store.read({ attemptId, expected }), /frozen public release differs|capture digest differs/)
 })
 
 test('nonce commit crash retries only the exact attempt and advances the signed journal', () => {
@@ -148,15 +158,63 @@ test('intermediate prefixes persist monotonically, with 242-only old recovery', 
   assert.throws(() => store.recordPrefix({ attemptId, expectedVersion: 242, observedPrefix: observed(244),
     observationDigest: sha('244'), expected }), /signed prefix changed/)
   const recorded = store.recordPrefix({ attemptId, expectedVersion: 243, observedPrefix: observed(244),
-    observationDigest: sha('244'), expected })
+    observationDigest: prefixes[244], expected })
   assert.equal(recorded.journal.database_prefix.version, 244)
-  assert.equal(recorded.journal.observation_sha256, sha('244'))
+  assert.equal(recorded.journal.observation_sha256, prefixes[244])
   assert.throws(() => store.recordPrefix({ attemptId, expectedVersion: 244, observedPrefix: observed(243),
     observationDigest: sha('backward'), expected }), /must advance/)
   assert.throws(() => store.recordPrefix({ attemptId, expectedVersion: 244, observedPrefix: observed(246),
     observationDigest: sha('skip'), expected }), /must advance/)
+  assert.throws(() => store.recordPrefix({ attemptId, expectedVersion: 244, observedPrefix: observed(245),
+    observationDigest: sha('not-the-live-history'), expected }), /must equal the checked live history/)
   for (let version = 245; version <= 254; version += 1) store.recordPrefix({ attemptId, expectedVersion: version - 1,
-    observedPrefix: observed(version), observationDigest: sha(`observed-${version}`), expected })
+    observedPrefix: observed(version), observationDigest: prefixes[version], expected })
   assert.equal(step(store, 'forward_recovery_started', 'migration_254_verified', 254).journal.database_prefix.version, 254)
   assert.throws(() => step(store, 'migration_254_verified', 'old_recovery_started', 254), /bridge phase refused/)
+})
+
+test('maintenance core and signed store resume one committed but unsigned prefix', async () => {
+  let ledgerPath
+  const { store, ledgerPath: path } = fixture((nonceValue, journal) => commitNonce(ledgerPath, nonceValue, journal))
+  ledgerPath = path
+  let version = 242
+  let failAfter248 = true
+  let fenced = false
+  const runtime = {
+    assertProtectedLock: async () => {},
+    captureExactOldRuntime: async () => snapshot,
+    buildCapturedJournalBody: async () => body(),
+    observePrefix: async () => observed(version),
+    fenceIngressAndCallbacks: async () => ({ ingress_fenced: true, callbacks_fenced: true }),
+    observeDrain: async () => ({ ingress_fenced: true, callbacks_fenced: true, fence_observed_from_gateway: true,
+      in_flight_requests: 0, active_worker_cycles: 0, active_outbox_leases: 0,
+      provider_started_unresolved: 0, observation_sha256: sha('drain') }),
+    stopOldRuntimeGracefully: async () => ({ all_eight_stopped: true, gateway_fenced: true, no_active_processes: true }),
+    backupAndRestore242: async () => ({ restored_prefix: observed(242), archive_sha256: sha('backup'), signed: true }),
+    startBridgeAt242: async () => ({ all_eight_running: true, ingress_fenced: true }),
+    verifyBridgeAt242: async () => ({ identity_verified: true, api_ready: true, six_workers_ready: true, observation_sha256: sha('bridge242') }),
+    stopBridgeForMigration: async () => {},
+    observeStoppedTraffic: async () => ({ all_runtime_stopped: true, ingress_fenced: true, callbacks_fenced: true }),
+    applySingleMigration: async target => {
+      assert.equal(target, version + 1)
+      version = target
+      if (target === 248 && failAfter248) { failAfter248 = false; throw new Error('crash after 248 SQL COMMIT') }
+    },
+    keepIngressFencedForForwardRecovery: async () => { fenced = true },
+    startBridgeAt254: async () => ({ all_eight_running: true, ingress_fenced: true }),
+    verifyBridgeAt254: async () => ({ identity_verified: true, api_ready: true, six_workers_ready: true,
+      public_release_verified: true, observation_sha256: sha('bridge254') }),
+  }
+  const args = { control: store, runtime, attemptId, expected, deploymentNonce: nonce }
+  await assert.rejects(executeBridge254Maintenance(args), /crash after 248 SQL COMMIT/)
+  assert.equal(fenced, true)
+  assert.equal(store.read({ attemptId, expected }).journal.database_prefix.version, 247)
+  assert.equal(version, 248)
+  const recovered = await resumeBridge254ForwardMaintenance(args)
+  assert.equal(recovered.migration_version, 254)
+  assert.equal(recovered.release_authorized, false)
+  const final = store.read({ attemptId, expected }).journal
+  assert.equal(final.phase, 'migration_254_verified')
+  assert.equal(final.database_prefix.version, 254)
+  assert.equal(final.observation_sha256, prefixes['254'])
 })

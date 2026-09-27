@@ -115,7 +115,16 @@ function signed(body, privatePem, publicPem) {
   'journal signing key does not match the trusted Ed25519 public key')
   return { ...body, signature_base64: sign(null, Buffer.from(canonical(body)), privateKey).toString('base64') }
 }
-function capturedSnapshot(snapshot) {
+function expectedPlan(expected) {
+  assert(expected?.project === 'merchant-production' && expected?.prefixes
+    && Object.keys(expected.prefixes).sort().join('\0') === Array.from({ length: 13 }, (_, index) => String(index + 242)).sort().join('\0')
+    && Object.values(expected.prefixes).every(value => SHA.test(value)),
+  'independently frozen project and complete 242–254 prefix chain are required')
+  if (expected.oldRuntime) assert(canonical(expected.oldRuntime) === canonical(expected.old_runtime),
+    'maintenance and signed-state old identities differ')
+}
+function capturedSnapshot(snapshot, expected) {
+  expectedPlan(expected)
   assert(snapshot && snapshot.schema_version === 'ecs-bridge-254-capture/1' && Array.isArray(snapshot.containers)
     && snapshot.containers.length === 8 && snapshot.database?.runtime?.version === 242
     && snapshot.database?.ops?.version === 242 && SHA.test(snapshot.database.runtime.history_sha256 ?? '')
@@ -127,7 +136,18 @@ function capturedSnapshot(snapshot) {
     && snapshot.containers.every(item => SHA.test(item.id ?? '') && /^sha256:[a-f0-9]{64}$/u.test(item.image_id ?? '')
       && SHA.test(item.inspect_sha256 ?? '') && SHA.test(item.network_sha256 ?? '') && item.running === true),
   'frozen legacy container identities or full inspect/network hashes are invalid')
-  assert(snapshot.public_release && snapshot.bridge_artifacts && snapshot.old_recovery, 'frozen capture lacks public identity, bridge artifacts, or old recovery binding')
+  assert(snapshot.database.runtime.history_sha256 === expected.prefixes['242'], 'frozen capture database differs from approved 242 prefix')
+  assert(canonical(snapshot.public_release) === canonical(expected.old_runtime),
+    'frozen public release differs from independently approved old identity')
+  const artifacts = snapshot.bridge_artifacts, recovery = snapshot.old_recovery
+  assert(artifacts && ['release_id', 'git_sha', 'manifest_sha256', 'image_set_digest'].every(key => artifacts[key] === expected.bridge?.[key])
+    && Array.isArray(artifacts.services) && artifacts.services.length === 8
+    && ['api', 'api-replica', 'worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan']
+      .every(service => artifacts.services.includes(service))
+    && SHA.test(artifacts.compose_sha256 ?? '') && SHA.test(artifacts.env_sha256 ?? '') && SHA.test(artifacts.image_digests_sha256 ?? '')
+    && recovery?.preserve_volumes === true && SHA.test(recovery.compose_sha256 ?? '')
+    && SHA.test(recovery.env_sha256 ?? '') && SHA.test(recovery.image_digests_sha256 ?? ''),
+  'frozen bridge and recovery bytes are not bound to the independent plan')
   return sha(canonical(snapshot))
 }
 function observedPair(value) {
@@ -210,14 +230,17 @@ export function createBridge254StateStore({ directory, ledgerPath, consumerPath,
   const read = ({ attemptId, expected }) => {
     guard()
     trustExpected(expected)
+    expectedPlan(expected)
     const path = paths(attemptId), bytes = readProtected(path.journal, 0o400, expectedUid)
     const journal = JSON.parse(bytes.toString('utf8'))
     assert(journal.attempt_id === attemptId, 'signed journal attempt differs from protected path')
     assert(journal.schema_version === 'ecs-bridge-254-review-journal/2', 'protected state requires journal v2')
     const result = reviewBridge254SignedJournal(journal, expected)
     assert(result.structure_consistent, `signed journal rejected: ${result.errors.join('; ')}`)
+    assert(canonical(journal.allowed_prefix_sha256) === canonical(expected.prefixes),
+      'signed prefix chain differs from independent expectation')
     const snapshot = JSON.parse(readProtected(path.capture, 0o400, expectedUid).toString('utf8'))
-    assert(capturedSnapshot(snapshot) === journal.baseline_inventory_sha256, 'frozen capture digest differs from signed journal')
+    assert(capturedSnapshot(snapshot, expected) === journal.baseline_inventory_sha256, 'frozen capture digest differs from signed journal')
     if (journal.phase !== 'captured') {
       assert(NONCE.test(expected?.deploymentNonce ?? ''), 'deployment nonce is missing')
       nonceBinding(ledgerPath, expected.deploymentNonce, journal, expectedUid)
@@ -228,12 +251,15 @@ export function createBridge254StateStore({ directory, ledgerPath, consumerPath,
     assertReviewOnlyMutationAllowed(requireProductionLock)
     guard()
     trustExpected(expected)
+    expectedPlan(expected)
     const path = paths(attemptId)
     assert(journalBody.phase === 'captured' && journalBody.attempt_id === attemptId && journalBody.nonce_owner === null,
       'capture requires a fresh unconsumed attempt')
     assert(journalBody.schema_version === 'ecs-bridge-254-review-journal/2'
       && journalBody.purpose === 'bridge_242_to_254_protected', 'protected capture requires journal v2')
-    assert(capturedSnapshot(frozenCapture) === journalBody.baseline_inventory_sha256,
+    assert(canonical(journalBody.allowed_prefix_sha256) === canonical(expected.prefixes),
+      'capture prefix chain differs from independent expectation')
+    assert(capturedSnapshot(frozenCapture, expected) === journalBody.baseline_inventory_sha256,
       'signed baseline digest does not bind exact frozen capture')
     assert(journalBody.observation_sha256 === journalBody.baseline_inventory_sha256,
       'initial observation must bind the exact captured snapshot')
@@ -255,6 +281,14 @@ export function createBridge254StateStore({ directory, ledgerPath, consumerPath,
     assert(now.getTime() >= Date.parse(journal.updated_at), 'host clock moved behind signed journal')
     assert(SHA.test(observationDigest ?? ''), 'independent observation digest is required')
     const compactPrefix = observedPair(observedPrefix)
+    if (['bridge_mutation_started', 'migration_started'].includes(toPhase)) {
+      assert(observationDigest === journal.baseline_inventory_sha256,
+        'mutation phase observation must bind the signed old-runtime capture')
+    }
+    if (['forward_recovery_started', 'migration_254_verified'].includes(toPhase)) {
+      assert(observationDigest === compactPrefix.history_sha256,
+        'migration phase observation must bind the exact live prefix checksum')
+    }
     const result = reviewBridge254NextPhase(journal, toPhase, compactPrefix, expected)
     assert(result.next_phase === toPhase, `bridge phase refused: ${result.errors.join('; ')}`)
     if (toPhase === 'nonce_consumed') {
@@ -297,6 +331,8 @@ export function createBridge254StateStore({ directory, ledgerPath, consumerPath,
       && compactPrefix.history_sha256 === journal.allowed_prefix_sha256[compactPrefix.version],
     'observed prefix must advance within the frozen chain')
     assert(SHA.test(observationDigest ?? ''), 'independent database observation digest is required')
+    assert(observationDigest === compactPrefix.history_sha256,
+      'recorded prefix observation digest must equal the checked live history')
     const next = signed({ ...journal, database_prefix: compactPrefix, observation_sha256: observationDigest, updated_at: now.toISOString(),
       signature_base64: undefined }, privateKeyPem, publicKeyPem)
     assert(reviewBridge254SignedJournal(next, expected).structure_consistent, 'new signed prefix is invalid')
