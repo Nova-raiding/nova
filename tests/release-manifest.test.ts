@@ -58,7 +58,7 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(127)
+    expect(manifest.artifacts).toHaveLength(129)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',
@@ -134,10 +134,12 @@ describe('release manifest', () => {
       'infra/scripts/prepare-ecs-bridge-254-review.mjs',
       'infra/scripts/overlay-ecs-bridge-254-review.mjs',
       'infra/scripts/inspect-ecs-bridge-254-rendered-compose.mjs',
+      'infra/scripts/review-ecs-bridge-254-candidate-preflight.mjs',
       'infra/scripts/verify-ecs-bridge-254-review-package.mjs',
       'infra/protected/ecs-bridge-254-maintenance-core.mjs',
       'infra/protected/ecs-bridge-254-state-store.mjs',
       'tests/ecs-bridge-254-review-package.test.mjs',
+      'tests/ecs-bridge-254-candidate-preflight-review.test.mjs',
       'apps/worker/src/scanner-container-healthcheck.ts',
       'apps/worker/src/scanner-container-healthcheck.test.ts',
       'tests/ecs-staging-toolchain-installer.test.mjs',

@@ -56,6 +56,22 @@ test('254 review package rejects an omitted manifest row even after its manifest
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
+test('254 review package requires the candidate preflight and its contract test', () => {
+  for (const omitted of [
+    'infra/scripts/review-ecs-bridge-254-candidate-preflight.mjs',
+    'tests/ecs-bridge-254-candidate-preflight-review.test.mjs',
+  ]) {
+    const { root, bundle } = fixture()
+    try {
+      const path = join(bundle, 'files.txt')
+      const content = readFileSync(path, 'utf8').replace(`${omitted}\n`, '')
+      writeFileSync(path, content)
+      replaceIdentityDigest(bundle, 'comparison_manifest_sha256', content)
+      assert.throws(() => verifyBridge254ReviewPackage(bundle), error => error.message === `254 review comparison manifest omits ${omitted}`)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  }
+})
+
 test('254 review package rejects a missing source archive member', () => {
   const { root, bundle, archive } = fixture()
   try {
