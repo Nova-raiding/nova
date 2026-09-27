@@ -80,8 +80,10 @@ describe("monthly workspace directory states", () => {
     const markup = render({ workspaceRows: [], workspaceDirectory: { items: [row], offset: 40, limit: 20, hasMore: true, total: 73 } });
     expect(countLabel(markup)).toBe("共 73 个工作区");
     expect(markup).toContain("共 73 条记录");
-    expect(markup).toContain("套餐标价（元/月）");
-    expect(markup).toContain("实际收款以账务流水为准");
+    expect(markup).toContain("旧版套餐快照");
+    expect(markup).toContain("旧版标价（元/月）");
+    expect(markup).toContain("旧版订阅状态");
+    expect(markup).toContain("不能从旧版“试用中”判断付款失败");
     expect(markup).toContain("ant-pagination-item-3 ant-pagination-item-active");
     expect(markup).toContain("青禾商贸");
     expect(markup).not.toContain('data-state="error"');
