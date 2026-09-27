@@ -20,6 +20,10 @@ const RELEASES = '/srv/merchant-releases'
 const HEX = /^[a-f0-9]{64}$/u
 const RELEASE = /^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u
 const ATTEMPT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/u
+const MAX_ROWS_PER_TABLE = 1_000_000
+const BACKUP_WALL_CLOCK_MS = 30 * 60_000
+const DUMP_TIMEOUT_MS = 15 * 60_000
+const STATEMENT_TIMEOUT_MS = 60_000
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
 
@@ -49,7 +53,7 @@ function options(args) {
   for (let i = 0; i < args.length; i += 2) { check(required.includes(args[i]) && !Object.hasOwn(out, args[i]) && args[i + 1], 'unknown or duplicate argument'); out[args[i]] = args[i + 1] }
   check(required.every(name => out[name]) && RELEASE.test(out['--release-id']) && /^[a-f0-9]{40}$/u.test(out['--git-sha']) && ATTEMPT.test(out['--attempt-id']) && HEX.test(out['--approved-plan-sha256']), 'release or plan binding invalid')
   const maxRows = Number(out['--max-rows-per-table'])
-  check(Number.isSafeInteger(maxRows) && maxRows > 0 && maxRows <= 100_000_000, 'reviewed row bound invalid')
+  check(Number.isSafeInteger(maxRows) && maxRows > 0 && maxRows <= MAX_ROWS_PER_TABLE, 'reviewed row bound invalid')
   return { releaseId: out['--release-id'], gitSha: out['--git-sha'], attemptId: out['--attempt-id'], planSha: out['--approved-plan-sha256'], maxRows }
 }
 function candidateIdentity(releaseId, gitSha) {
@@ -81,7 +85,7 @@ function dump(snapshot, path) {
   return new Promise((resolveDump, rejectDump) => {
     const child = spawn('/usr/pgsql-16/bin/pg_dump', pgDumpArguments(snapshot, path), { stdio: ['ignore', 'ignore', 'pipe'], env: createProtectedEnvironment() })
     let errorBytes = 0
-    const timeout = setTimeout(() => { child.kill('SIGTERM'); rejectDump(new Error('protected pg_dump timed out')) }, 6 * 60 * 60_000)
+    const timeout = setTimeout(() => { child.kill('SIGTERM'); rejectDump(new Error('protected pg_dump timed out')) }, DUMP_TIMEOUT_MS)
     child.stderr.on('data', chunk => { errorBytes += chunk.length; if (errorBytes > 64 * 1024) child.kill('SIGTERM') })
     child.on('error', error => { clearTimeout(timeout); rejectDump(error) })
     child.on('exit', code => { clearTimeout(timeout); code === 0 ? resolveDump() : rejectDump(new Error('protected pg_dump failed')) })
@@ -90,7 +94,7 @@ function dump(snapshot, path) {
 function connectSource() {
   const env = process.env
   check(env.PGHOST && env.PGUSER && env.PGDATABASE && env.PGPASSWORD && env.PGPORT === '5432', 'protected PostgreSQL connection is incomplete')
-  const client = new pg.Client({ host: env.PGHOST, port: 5432, user: env.PGUSER, password: env.PGPASSWORD, database: env.PGDATABASE, connectionTimeoutMillis: 10_000, statement_timeout: 6 * 60 * 60_000 })
+  const client = new pg.Client({ host: env.PGHOST, port: 5432, user: env.PGUSER, password: env.PGPASSWORD, database: env.PGDATABASE, connectionTimeoutMillis: 10_000, statement_timeout: STATEMENT_TIMEOUT_MS })
   return client.connect().then(() => client)
 }
 export function backupAttemptDirectoryName(releaseId, attemptId) {
@@ -99,6 +103,7 @@ export function backupAttemptDirectoryName(releaseId, attemptId) {
 }
 export async function runProtectedPg17BaselineBackup(args) {
   assertInstalled()
+  const deadlineAt = Date.now() + BACKUP_WALL_CLOCK_MS
   const { releaseId, gitSha, attemptId, planSha, maxRows } = options(args)
   candidateIdentity(releaseId, gitSha)
   configureLiveSource()
@@ -122,7 +127,7 @@ export async function runProtectedPg17BaselineBackup(args) {
   const adapter = {
     snapshot: captureSnapshot,
     dump,
-    reviewOnlyObserveSnapshot: (snapshot, identity) => reviewOnlyPreSignSnapshotCheck({ snapshot, identity, connect: connectSource, streamRows: digestSortedPgRows, maxRowsPerTable: maxRows, planBytes, sourcePolicyBytes, trustedPublicKey: publicPem, trustedKeyId: keyId, expectedReleaseId: releaseId, expectedGitSha: gitSha, expectedMigrationVersion: 242 }),
+    reviewOnlyObserveSnapshot: (snapshot, identity) => reviewOnlyPreSignSnapshotCheck({ snapshot, identity, connect: connectSource, streamRows: digestSortedPgRows, maxRowsPerTable: maxRows, deadlineAt, planBytes, sourcePolicyBytes, trustedPublicKey: publicPem, trustedKeyId: keyId, expectedReleaseId: releaseId, expectedGitSha: gitSha, expectedMigrationVersion: 242 }),
     reviewOnlyBindBackup: async (observation, signedBackup) => { bound = { ...bindReviewOnlyBaseline(observation.observation, signedBackup), signed_plan_sha256: observation.plan_sha256, source_policy_sha256: observation.source_policy_sha256, release_id: releaseId, release_git_sha: gitSha } },
   }
   const document = await produceBackup({ backupPath, attestationPath, privatePem, publicPem, keyId, sourcePolicy }, adapter)

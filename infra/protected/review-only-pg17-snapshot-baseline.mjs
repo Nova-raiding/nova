@@ -35,7 +35,9 @@ function exactlyOne(result, label) {
   return result.rows[0]
 }
 
-export async function observeReviewOnlySnapshot({ snapshot, identity, sourcePolicy, tablePlan, connect, streamRows, maxRowsPerTable = 10_000, observedAt = () => new Date().toISOString() }) {
+export async function observeReviewOnlySnapshot({ snapshot, identity, sourcePolicy, tablePlan, connect, streamRows, maxRowsPerTable = 10_000, deadlineAt, observedAt = () => new Date().toISOString() }) {
+  const checkDeadline = () => check(deadlineAt === undefined || (Number.isSafeInteger(deadlineAt) && Date.now() < deadlineAt), 'PG17 snapshot observation wall-clock bound exceeded')
+  checkDeadline()
   check(typeof snapshot === 'string' && SNAPSHOT.test(snapshot), 'exported snapshot identifier invalid')
   check(identity && /^\d{1,32}$/u.test(identity.systemIdentifier ?? '') && Number.isInteger(identity.databaseOid) && identity.databaseOid > 0 && typeof identity.databaseName === 'string' && Number.isSafeInteger(identity.migrationVersion), 'runner source identity invalid')
   check(sourcePolicy?.system_identifier_sha256 === hash(identity.systemIdentifier) && sourcePolicy.database_oid === identity.databaseOid && sourcePolicy.database_name === identity.databaseName, 'reviewed source policy mismatch')
@@ -67,6 +69,7 @@ export async function observeReviewOnlySnapshot({ snapshot, identity, sourcePoli
     check(JSON.stringify(observedRelations) === JSON.stringify(plannedRelations), 'frozen table plan does not cover the complete user relation catalog')
     const tables = []
     for (const table of frozenPlan) {
+      checkDeadline()
       const relation = `${table.schema}.${table.name}`
       const actualColumns = (await client.query('SELECT attname AS name, format_type(atttypid, atttypmod) AS data_type, attnotnull AS not_null FROM pg_attribute WHERE attrelid = to_regclass($1) AND attnum > 0 AND NOT attisdropped ORDER BY attnum', [relation])).rows
       check(JSON.stringify(actualColumns) === JSON.stringify(table.columns), `frozen column contract changed: ${relation}`)
@@ -88,6 +91,7 @@ export async function observeReviewOnlySnapshot({ snapshot, identity, sourcePoli
         rowset = canonicalRowsDigest(rows)
       }
       tables.push({ name: relation, ...rowset, rls_policy_sha256: rlsPolicyDigest({ enabled: flags.enabled, forced: flags.forced, policies }) })
+      checkDeadline()
     }
     const time = observedAt()
     check(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(time) && Number.isFinite(Date.parse(time)), 'observation time invalid')

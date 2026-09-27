@@ -55,11 +55,11 @@ export function reviewOnlyVerifyFrozenPlan({ planBytes, sourcePolicyBytes, trust
   return Object.freeze({ schema_version: 'pg17-review-only-frozen-plan-preflight/1', final_production_evidence: false, source_provenance_verified: false, plan_sha256: sha(planBytes), source_policy_sha256: sha(sourcePolicyBytes), release_id: plan.release_id, release_git_sha: plan.release_git_sha, migration_version: plan.migration_version, source_database_id_sha256: plan.source_database_id_sha256, table_plan: plan.table_plan.map(table => ({ schema: table.schema, name: table.name, columns: table.columns.map(column => ({ name: column.name, data_type: column.data_type, not_null: column.not_null })) })) })
 }
 
-export async function reviewOnlyPreSignSnapshotCheck({ snapshot, identity, connect, streamRows, observedAt, maxRowsPerTable, ...planInputs }) {
+export async function reviewOnlyPreSignSnapshotCheck({ snapshot, identity, connect, streamRows, observedAt, maxRowsPerTable, deadlineAt, ...planInputs }) {
   const plan = reviewOnlyVerifyFrozenPlan(planInputs)
   check(identity?.migrationVersion === plan.migration_version && sha(identity.systemIdentifier ?? '') === plan.source_database_id_sha256, 'held snapshot source differs from signed plan')
   const sourcePolicy = JSON.parse(planInputs.sourcePolicyBytes.toString('utf8'))
-  const observation = await observeReviewOnlySnapshot({ snapshot, identity, sourcePolicy, tablePlan: plan.table_plan, connect, streamRows, observedAt, maxRowsPerTable })
+  const observation = await observeReviewOnlySnapshot({ snapshot, identity, sourcePolicy, tablePlan: plan.table_plan, connect, streamRows, observedAt, maxRowsPerTable, deadlineAt })
   check(observation.table_plan_sha256 === sha(JSON.stringify(plan.table_plan)), 'sampled table plan changed')
   return Object.freeze({ schema_version: 'pg17-review-only-pre-sign-snapshot-check/1', final_production_evidence: false, source_provenance_verified: false, plan_sha256: plan.plan_sha256, source_policy_sha256: plan.source_policy_sha256, snapshot_id_sha256: observation.snapshot_id_sha256, observation })
 }

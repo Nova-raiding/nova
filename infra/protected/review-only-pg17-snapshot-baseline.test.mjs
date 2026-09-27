@@ -98,3 +98,9 @@ test('uses the C-ordered streaming adapter for a held snapshot without a batch r
   assert.equal(db.calls.some(call => call.sql.startsWith('SELECT json_build_array')), false)
   assert.equal(db.ended(), true)
 })
+
+test('rejects an elapsed wall-clock deadline before connecting', async () => {
+  const db = database()
+  await assert.rejects(observeReviewOnlySnapshot(input(db, { deadlineAt: Date.now() - 1 })), /wall-clock bound exceeded/u)
+  assert.deepEqual(db.calls, [])
+})
