@@ -57,6 +57,18 @@ assert.equal(bridgeReceipt.source_sha256, hash(bridgeBytes));
 assert.equal(readFileSync(bridgeInstalled, 'utf8').startsWith(`#!${runtime}\n`), true);
 assert(!existsSync(`${root}/production-capability-private.pem`), 'installer must not generate keys');
 console.log('PASS: real root installation, bridge target/hash/mode, checksum rejection, concurrent lock rejection and old-control archival');
+for (const [control, executable, digestName] of [
+  ['pg17Plan', 'attest-pg17-frozen-plan', 'production-pg17-plan-signer-sha256'],
+  ['pg17BaselineBackup', 'attest-pg17-backup-baseline', 'production-pg17-baseline-backup-sha256'],
+]) {
+  const installedResult = run([installer, '--control', control, '--source', '/reviewed/control.mjs', '--source-sha256', hash(fixture), '--node', runtime, '--node-sha256', hash(readFileSync(runtime))]);
+  assert.equal(installedResult.status, 0, installedResult.stderr);
+  const receiptPg17 = JSON.parse(installedResult.stdout);
+  assert.equal(hash(readFileSync(`${bin}/${executable}`)), receiptPg17.installed_sha256);
+  assert.equal(readFileSync(`${trust}/${digestName}`, 'utf8').trim(), receiptPg17.installed_sha256);
+  assert.equal(statSync(`${bin}/${executable}`).mode & 0o777, 0o755);
+}
+console.log('PASS: PG17 plan and same-snapshot backup controls have fixed, digest-bound install targets');
 for (const [control, filename, digestName] of [
   ['bridge254Review', 'ecs-bridge-254-review-state.mjs', 'production-bridge-254-review-state-sha256'],
   ['bridge254State', 'ecs-bridge-254-state-store.mjs', 'production-bridge-254-state-store-sha256'],

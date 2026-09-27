@@ -302,6 +302,9 @@ async function main(args) {
   process.stdout.write(`protected postgres backup written: ${basename(backupPath)}\n`)
 }
 
-if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+// A separately installed PG17 baseline control bundles the exported core.
+// Match the fixed executable name as well so the bundle cannot accidentally
+// enter this older CLI when its import.meta.url points at the bundle itself.
+if (process.argv[1] && basename(process.argv[1]) === 'attest-postgres-backup' && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   main(process.argv.slice(2)).catch(error => { process.stderr.write(`backup attestation rejected: ${error.message}\n`); process.exitCode = 1 })
 }
