@@ -10,7 +10,8 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { Pool } from 'pg'
 import { createIsolatedOpsFixture } from './isolated-ops-fixture.ts'
 import { createBridgeDockerClient } from './bridge-docker-target.mjs'
-import { loadMigrations, MigrationRunner } from '../packages/persistence/src/migration.ts'
+import { loadMigrations, migrationChecksum, MigrationRunner } from '../packages/persistence/src/migration.ts'
+import { assertBridge254Prefix } from '../infra/protected/ecs-bridge-254-maintenance-core.mjs'
 
 const run = promisify(execFile)
 const [overlay, apiReference, workerReference, output] = process.argv.slice(2)
@@ -90,6 +91,10 @@ try {
   pool = new Pool({ connectionString: fixture.acceptanceDatabaseUrls.legacyBackfill, max: 2 })
   const migrations = await loadMigrations()
   if (migrations.length !== 254) throw new Error('source must contain migrations 1..254')
+  const frozenPrefixes = Object.fromEntries(Array.from({ length: 13 }, (_, index) => {
+    const prefix = index + 242
+    return [String(prefix), sha(migrations.slice(0, prefix).map(migration => `${migration.version}\t${migration.name}\t${migrationChecksum(migration.sql)}\n`).join(''))]
+  }))
   for (const migration of migrations) {
     const name = `${String(migration.version).padStart(3, '0')}_${migration.name}.sql`
     if (readFileSync(join(source, 'packages/persistence/src/migrations', name), 'utf8') !== migration.sql) throw new Error(`review image migration differs from source: ${name}`)
@@ -117,6 +122,8 @@ try {
     await new MigrationRunner(pool, migrations.slice(0, prefix)).run()
     const rows = (await pool.query('SELECT version, name, checksum FROM schema_migrations ORDER BY version')).rows
     if (rows.length !== prefix || rows.some((row, index) => row.version !== index + 1 || typeof row.checksum !== 'string')) throw new Error(`migration history incomplete at ${prefix}`)
+    assertBridge254Prefix({ version: prefix, history_sha256: sha(rows.map(row => `${row.version}\t${row.name}\t${row.checksum}\n`).join('')),
+      ops_version: prefix, ops_history_sha256: sha(rows.map(row => `${row.version}\t${row.name}\t${row.checksum}\n`).join('')) }, prefix, frozenPrefixes)
     await pool.query('INSERT INTO workspaces (id,status) VALUES ($1,$2) ON CONFLICT (id) DO NOTHING', [fixture.workspaceId, 'active'])
     composeCreated = true
     await compose('up', '-d', '--no-deps', '--pull', 'never')
