@@ -5497,7 +5497,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
     ]))
     setCatalogSelectedIds([])
   }
-  if (selectedStore && !selectedStore.readable) {
+  if (selectedStore && !selectedStore.catalogAccessible) {
     return (
       <div className="store-catalog-page catalog-connection-page">
         <button className="catalog-back" onClick={() => setSelectedStoreId(null)}><ArrowLeft size={17} />返回店铺选择</button>
@@ -5592,8 +5592,9 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
           {/* The count is the store's products as the server returned them, and
               it is reported as unread until that read answers. It used to be a
               fixed 9 「已上架商品」 for every connected store. */}
-          <div className="catalog-store-stat"><strong>{storeItemsRead ? storeProducts.length : UNREAD_METRIC}</strong><span>件商品{selectedStore.dataModeLabel === '人工上传数据' ? ' · 工作区导入' : ''}</span></div>
+          <div className="catalog-store-stat"><strong>{storeItemsRead ? storeProducts.length : UNREAD_METRIC}</strong><span>{selectedStore.readable ? '件商品' : '件工作区导入商品'}</span></div>
         </section>
+        {!selectedStore.readable && <p className="muted" role="status">平台未授权。这里只显示运营人员导入到当前工作区的商品，不代表平台同步。</p>}
         <section className="catalog-products-panel">
           <div className="catalog-products-toolbar">
             <div className="catalog-search-field">
@@ -5623,7 +5624,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
               <div className="catalog-no-results">
                 <PackageSearch size={25} />
                 <strong>{!storeItemsRead ? '商品列表未读取' : storeProducts.length ? '没有找到符合条件的商品' : '该店铺还没有商品'}</strong>
-                <span>{!storeItemsRead ? productsNote : storeProducts.length ? '可以减少筛选条件，或换一个关键词再试。' : '服务端未返回这家店铺的商品事实。'}</span>
+                <span>{!storeItemsRead ? productsNote : storeProducts.length ? '可以减少筛选条件，或换一个关键词再试。' : selectedStore.readable ? '服务端未返回这家店铺的商品事实。' : '平台运营尚未为这家店铺导入商品。'}</span>
                 {storeItemsRead && storeProducts.length > 0 && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSeries('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>清除全部条件</button>}
               </div>
             )}
@@ -5669,7 +5670,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
                   <article className={`catalog-store-card ${store.tone} ${store.readable ? 'connected' : 'disconnected'}`} key={store.id}>
                     <header className="catalog-store-identity"><span className="catalog-store-mark" aria-hidden="true">{store.mark}</span><div><h3>{store.name}</h3><small>{store.dataModeLabel}</small></div><span className={`catalog-live-state ${store.realConnected ? '' : 'disconnected'}`}><i />{store.connectionLabel}</span></header>
                     <div className="catalog-store-summary">{store.readable ? <><strong>{store.products === null ? '商品数量未读取' : <><b>{store.products}</b> 件商品</>}</strong><span>{store.syncLabel ? `最近同步：${store.syncLabel}` : '尚无同步记录'}</span></> : store.connectionLabel === '人工登记（未授权）' ? <><strong>{store.products === null ? '商品数量未读取' : store.products > 0 ? <><b>{store.products}</b> 件工作区导入商品</> : '店铺资料已登记'}</strong><span>平台未授权；商品资料由工作区人工导入，不代表平台同步</span></> : <><strong>店铺尚不可读取</strong><span>商品数据暂不可读</span></>}</div>
-                    <footer className="catalog-store-action"><button type="button" onClick={() => openStore(store.id)}>{store.readable || (store.connectionLabel === '人工登记（未授权）' && (store.products ?? 0) > 0) ? '进入商品库' : '查看状态'} <ArrowRight size={15} /></button></footer>
+                    <footer className="catalog-store-action"><button type="button" onClick={() => openStore(store.id)}>{store.catalogAccessible ? '进入商品库' : '查看状态'} <ArrowRight size={15} /></button></footer>
                   </article>
                 ))}
               </div>

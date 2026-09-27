@@ -129,9 +129,20 @@ describe('the store page renders the server catalogue', () => {
     const manual = { ...accounts[0], platform: 'jd', accountId: 'jd:42169', state: 'manually_registered', readEnabled: false, dataMode: 'manual_upload' } as PlatformAccount
     const imported = { ...products[0], accountId: 'jd:42169', platform: 'jd' } as Product
     const store = buildCatalogPlatforms([manual], [imported])!.flatMap(platform => platform.stores)[0]!
-    expect(store).toMatchObject({ products: 1, readable: false, realConnected: false, dataModeLabel: '人工上传数据', connectionLabel: '人工登记（未授权）' })
+    expect(store).toMatchObject({ products: 1, readable: false, catalogAccessible: true, realConnected: false, dataModeLabel: '人工上传数据', connectionLabel: '人工登记（未授权）' })
     expect(catalogComponent).toContain('件工作区导入商品')
     expect(catalogComponent).toContain('不代表平台同步')
+    expect(catalogComponent).toContain('!selectedStore.catalogAccessible')
+    expect(catalogComponent).toContain("store.catalogAccessible ? '进入商品库' : '查看状态'")
+  })
+
+  it('opens an empty manual store catalog while keeping an unrelated disconnected store blocked', () => {
+    const manual = { ...accounts[0], platform: 'jd', accountId: 'jd:42169', state: 'manually_registered', readEnabled: false, dataMode: 'account_record_only' } as PlatformAccount
+    const disconnected = { ...accounts[0], platform: 'taobao', accountId: 'taobao:offline', state: 'revoked', readEnabled: false } as PlatformAccount
+    const stores = buildCatalogPlatforms([manual, disconnected], [])!.flatMap(platform => platform.stores)
+    expect(stores.find(store => store.id === manual.accountId)).toMatchObject({ products: 0, readable: false, catalogAccessible: true, realConnected: false })
+    expect(stores.find(store => store.id === disconnected.accountId)).toMatchObject({ products: 0, readable: false, catalogAccessible: false, realConnected: false })
+    expect(catalogComponent).toContain('平台运营尚未为这家店铺导入商品。')
   })
 })
 

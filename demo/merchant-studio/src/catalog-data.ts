@@ -77,6 +77,8 @@ export type CatalogStoreView = {
   connectionTone: 'green' | 'amber'
   /** The server exposes this store for reading (fixture accounts included). */
   readable: boolean
+  /** A workspace catalog may be viewed for a manually registered store without platform API access. */
+  catalogAccessible: boolean
   /** A real, non-fixture readable store — what 「已连接」 may be claimed about. */
   realConnected: boolean
   /** `null` while the product read is unresolved: never rendered as 0. */
@@ -105,6 +107,7 @@ const accountStores = (accounts: PlatformAccount[] | null, products: Product[] |
     .map((account) => {
       const presentation = merchantConnectionPresentation(account)
       const readable = account.state === 'connected' && account.readEnabled === true
+      const catalogAccessible = readable || account.state === 'manually_registered'
       const storeProducts = products === null ? null : products.filter((product) => product.accountId === account.accountId)
       return {
         id: String(account.accountId).trim(),
@@ -116,6 +119,7 @@ const accountStores = (accounts: PlatformAccount[] | null, products: Product[] |
         connectionLabel: presentation.status,
         connectionTone: presentation.tone,
         readable,
+        catalogAccessible,
         realConnected: isRealReadableStore({ readable, state: account.state, dataMode: account.dataMode }),
         products: storeProducts === null ? null : storeProducts.length,
         syncLabel: catalogSyncLabel(account),
