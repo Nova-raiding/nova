@@ -214,7 +214,7 @@ function Dashboard({
   const sessionDataSetError = model.dataSetError("ops.session");
   const expectedUnauthenticated = isExpectedUnauthenticatedSessionError(sessionErrorEvidence);
   const sessionError = !model.opsSession
-    ? sessionDataSetError ?? (!hasOpsConnection() ? "尚未登录平台运营账号" : undefined)
+    ? sessionDataSetError
     : undefined;
   // Keep the service diagnostic mode-neutral; user guidance always points to
   // the supported account/password login path.
@@ -284,7 +284,7 @@ function Dashboard({
     }
   }, [activeDomain, canAutoLoadModelMarkup, model.canUserGovernance, model.opsSession?.actor_id]);
 
-  if (!model.opsSession && (expectedUnauthenticated || sessionError)) {
+  if (!model.opsSession && (!hasOpsConnection() || expectedUnauthenticated || sessionError)) {
     return (
       <PlatformOpsLoginPage
         managedSession={false}

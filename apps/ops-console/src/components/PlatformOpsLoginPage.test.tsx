@@ -12,6 +12,15 @@ describe("PlatformOpsLoginPage", () => {
     expect(markup).toContain('id="ops-login-password"');
     expect(markup).toContain("平台管理员分配的运营账号");
     expect(markup).not.toContain("连接诊断");
+    expect(markup).not.toContain('class="ops-login-alert"');
+  });
+
+  it("shows a warning only when an actual session error is provided", () => {
+    const markup = renderToStaticMarkup(
+      <PlatformOpsLoginPage managedSession={false} error="登录状态已失效，请重新登录" onAuthenticated={() => undefined} onRetry={() => undefined} />,
+    );
+    expect(markup).toContain("ops-login-alert");
+    expect(markup).toContain("登录状态已失效，请重新登录");
   });
 
 });
