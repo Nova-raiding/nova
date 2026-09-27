@@ -146,6 +146,16 @@ describe('MerchantService', () => {
     }
   })
 
+  it('accepts a public listing ID on manually imported unbound facts', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.importProduct({ workspaceId: 'ws_demo', platform: 'taobao', remoteId: 'public-listing-1', title: '表格商品' })
+    product.factsConfirmed = true
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao', candidateOnly: true })
+    expect(task.candidateOnly).toBe(true)
+    expect(task.accountId).toBeUndefined()
+    expect(() => service.preparePublish(task.id)).toThrowError(expect.objectContaining({ code: 'CANDIDATE_TASK_NOT_PUBLISHABLE' }))
+  })
+
   it('reuses a deterministic campaign task id and rejects a different scope', () => {
     const service = new MerchantService({ fixtureMode: true })
     const input = { workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' as const, brandId: 'brand_1', campaignId: 'campaign_1', campaignItemId: 'item_1', taskId: 'task_campaign_fixed' }

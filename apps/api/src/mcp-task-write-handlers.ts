@@ -45,7 +45,9 @@ export async function handleMcpTaskWrite(method: string, params: JsonObject, req
       const product = service.products.get(productId)
       if (!product || product.workspaceId !== workspaceId || product.platform !== taskPlatform) throw new DomainError('PRODUCT_NOT_FOUND', '已确认商品资料不存在或与平台不匹配', 404)
       if (product.factsConfirmed !== true) throw new DomainError('PRODUCT_FACTS_NOT_CONFIRMED', '商品事实尚未确认，暂不能创建候选任务', 409, { product_id: productId })
-      if (product.accountId || product.brandId || product.remoteId) throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务商品已带店铺、品牌或远端商品绑定，不能作为未绑定候选', 409, { product_id: productId })
+      // A manually imported public listing ID is source evidence, not a store
+      // authorization. Candidate tasks remain unbound and cannot publish.
+      if (product.accountId || product.brandId || (product.remoteId && product.source !== 'csv')) throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务商品已绑定店铺、品牌或已同步远端商品，不能作为未绑定候选', 409, { product_id: productId })
       const task = service.createTask({ workspaceId, productId, platform: taskPlatform, candidateOnly: true, ...(typeof params.request_text === 'string' ? { requestText: params.request_text } : {}) })
       await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, task.id, 'task.created', task.version, task as unknown as Record<string, unknown>)

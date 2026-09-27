@@ -1636,6 +1636,7 @@ function userFacingErrorText(code, details) {
     return '平台暂时无法确认本次生成结果，已安全停止。当前任务和已有产物已保留，没有重复调用、扣费或发布；平台恢复后可继续。'
   }
   if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '本次图片请求的 Provider 回执暂未确认，系统已转入后台自动核对；创意点仍处于预留状态，确认前不会重复调用、重复扣费或发布，商户无需输入查询指令。'
+  if (code === 'PLATFORM_RULE_DATA_UNAVAILABLE') return '当前平台的签名规则数据尚未就绪，生成已被阻止；请在平台规则状态中检查配置和有效期。本次没有发起模型生成。'
   if (code === 'MODEL_PROVIDER_REQUEST_FAILED') {
     const reason = typeof details?.provider_error_summary === 'string' ? `（${details.provider_error_summary}）` : ''
     return `图片模型请求被中转服务拒绝${reason}。未生成新图片、未重复扣费；请更换可用模型或稍后重试。`
@@ -1934,6 +1935,10 @@ function isProviderChannelUnavailable(method, status, remoteError, rawResponseTe
   if (status !== 503) return false
   const details = remoteError && typeof remoteError === 'object' && remoteError.details && typeof remoteError.details === 'object' && !Array.isArray(remoteError.details) ? remoteError.details : undefined
   if (details?.provider_executed === false) return false
+  const code = remoteError && typeof remoteError === 'object' ? remoteError.code : undefined
+  // A structured application error identifies a failed preflight, not an
+  // ambiguous provider request. Keep its code and its merchant recovery path.
+  if (typeof code === 'string' && code !== 'API_UNAVAILABLE' && code !== 'MODEL_PROVIDER_CHANNEL_UNAVAILABLE' && code !== 'MODEL_PROVIDER_OUTCOME_UNKNOWN' && code !== 'HTTP_503') return false
   const message = typeof remoteError === 'string'
     ? remoteError
     : remoteError && typeof remoteError === 'object'
