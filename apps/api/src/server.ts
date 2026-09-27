@@ -10808,6 +10808,19 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       recordOperationAudit,
       manualPlatformOperations,
       hydrateWorkspace,
+      importManualProducts: (targetWorkspaceId, productsJson, source, request) => handleCatalogBatchImport(targetWorkspaceId, { products_json: productsJson }, {
+        service, supportedPlatforms: SUPPORTED_PLATFORMS, isProduction,
+        knowledgeRepository: persistence.knowledge ?? durableKnowledgeRepository ?? memoryKnowledge,
+        required,
+        enforceAssetAccess: async () => { throw new DomainError('MANUAL_PRODUCT_IMPORT_ASSET_UNSUPPORTED', '人工商品导入不支持引用已有素材', 409) },
+        assetForWorkspace,
+        scanImportedProductRules,
+        persistSnapshotsAndEvent,
+        recordOperationAudit,
+        rollbackBatchProducts,
+        actor: () => requestActor(request),
+        manualSource: source,
+      }),
     }))
   }
   if (CUSTOMER_DELIVERY_MCP_METHODS.has(method)) {

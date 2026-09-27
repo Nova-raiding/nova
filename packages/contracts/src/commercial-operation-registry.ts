@@ -82,6 +82,8 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.workspaces.list',
   'ops.stores.list',
   'ops.platform.store.record.create',
+  'ops.platform.manual-stores.list',
+  'ops.platform.product.import.batch',
   'ops.brand-units.summary',
   'ops.tasks.summary',
   'ops.model-usage.summary',

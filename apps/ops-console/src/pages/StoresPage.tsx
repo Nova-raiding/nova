@@ -4,6 +4,7 @@ import { AutomationPolicySection } from "../components/stores/AutomationPolicySe
 import { AutomationScanSection } from "../components/stores/AutomationScanSection";
 import { PlatformSummarySection } from "../components/stores/PlatformSummarySection";
 import { StoreDirectorySection } from "../components/stores/StoreDirectorySection";
+import { PlatformManualProductImport } from "../components/stores/PlatformManualProductImport";
 import { BrandTreeSection } from "../components/stores/BrandTreeSection";
 import { BrandGovernanceSummary } from "../components/stores/BrandGovernanceSummary";
 import { rpc, rpcForWorkspace } from "../api/opsClient.js";
@@ -82,6 +83,7 @@ export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate
           await model.load();
         }}
       />
+      {platformScope && model.authorization.can("customer.manual_import") && <PlatformManualProductImport workspaces={model.workspaceDirectory?.items ?? []} />}
       <AutomationPolicySection
         automationPolicies={model.automationPolicies}
         loading={model.loading}

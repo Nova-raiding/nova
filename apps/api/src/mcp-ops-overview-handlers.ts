@@ -7,6 +7,7 @@ import type { ApiPersistence, workspaceStoreDirectory } from './server.js'
 
 export const MCP_OPS_OVERVIEW_METHODS = new Set([
   'ops.workspaces.list', 'ops.stores.list', 'ops.platform.store.record.create',
+  'ops.platform.manual-stores.list', 'ops.platform.product.import.batch',
   'ops.brand-units.summary', 'ops.tasks.summary',
 ])
 
@@ -34,6 +35,7 @@ export interface OpsOverviewDependencies {
   recordOperationAudit: (input: Omit<OperationAudit, 'id' | 'createdAt'>) => Promise<unknown>
   manualPlatformOperations: () => boolean
   hydrateWorkspace: (workspaceId: string) => Promise<unknown>
+  importManualProducts: (workspaceId: string, productsJson: string, source: { reference: string; sha256: string; reason: string }, req: IncomingMessage) => Promise<unknown>
 }
 
 export async function handleOpsOverviewMcpMethod(method: string, params: Record<string, unknown>, workspaceId: string, req: IncomingMessage, dependencies: OpsOverviewDependencies): Promise<unknown> {
@@ -43,7 +45,7 @@ export async function handleOpsOverviewMcpMethod(method: string, params: Record<
     platformLabels: PLATFORM_LABELS, supportedPlatforms: SUPPORTED_PLATFORMS,
     loadPlatformWorkspaceEnterpriseNames, workspaceSummary, activeMerchantWorkspaceIds,
     persistSnapshot, persistEvent, recordOperationAudit, manualPlatformOperations,
-    hydrateWorkspace,
+    hydrateWorkspace, importManualProducts,
   } = dependencies
   const persistence = dependencies.persistence()
   switch (method) {
@@ -154,6 +156,44 @@ export async function handleOpsOverviewMcpMethod(method: string, params: Record<
         connection: { mode: 'manual_store_record', token_state: account.tokenState, credential_free: true, authorization_receipt: null },
         applies_to_store_boundary: manualPlatformOperations(),
       })
+    }
+    case 'ops.platform.manual-stores.list':
+    case 'ops.platform.product.import.batch': {
+      const actorId = requireOperationsRole(req, ['platform_ops'])
+      const targetWorkspaceId = required(params, 'workspace_id')
+      const headerWorkspace = header(req, 'x-workspace-id')?.trim()
+      if (headerWorkspace && headerWorkspace !== targetWorkspaceId) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_MISMATCH, '商品导入的工作区范围声明不一致', 403)
+      if (!manualPlatformOperations()) throw new DomainError('MANUAL_PRODUCT_IMPORT_DISABLED', '当前部署未启用人工店铺运营', 409)
+      if (persistence.listWorkspaceIds && !(await persistence.listWorkspaceIds()).includes(targetWorkspaceId)) throw new DomainError('WORKSPACE_NOT_FOUND', '目标商家工作区不存在', 404)
+      if (!(await activeMerchantWorkspaceIds()).has(targetWorkspaceId)) throw new DomainError('MERCHANT_WORKSPACE_REQUIRED', '目标工作区没有已启用的商家账号', 409)
+      await hydrateWorkspace(targetWorkspaceId)
+      const stores = service.listPlatformAccounts(targetWorkspaceId).filter(account => account.tokenState === 'manually_registered')
+      if (method === 'ops.platform.manual-stores.list') return ({ workspace_id: targetWorkspaceId, items: stores.map(account => ({ platform: account.platform, account_id: account.id, store_alias: account.storeAlias ?? null, token_state: account.tokenState })) })
+
+      const platform = required(params, 'platform') as Platform
+      const accountId = required(params, 'account_id')
+      const reason = required(params, 'reason')
+      const sourceReference = required(params, 'source_ref')
+      const sourceSha256 = required(params, 'source_sha256')
+      if (!SUPPORTED_PLATFORMS.includes(platform) || !/^[0-9a-f]{64}$/u.test(sourceSha256)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '平台或源文件摘要无效', 400)
+      if (!stores.some(account => account.platform === platform && account.id === accountId)) throw new DomainError('MANUAL_STORE_NOT_FOUND', '目标店铺未在该商家工作区完成人工登记', 404)
+      let products: unknown
+      try { products = JSON.parse(required(params, 'products_json')) }
+      catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, '商品表格预览数据无效', 400) }
+      if (!Array.isArray(products) || products.length < 1 || products.length > 50) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '一次只能导入 1 至 50 个商品', 400)
+      for (const product of products) {
+        if (!product || typeof product !== 'object' || Array.isArray(product)
+          || product.platform !== platform || product.account_id !== accountId
+          || product.asset_ids !== undefined || product.source_asset_id !== undefined
+          || Array.isArray(product.skus) && product.skus.some((sku: unknown) => sku && typeof sku === 'object' && (sku as Record<string, unknown>).sourceAssetIds !== undefined)) {
+          throw new DomainError('MANUAL_PRODUCT_IMPORT_SCOPE_INVALID', '商品必须全部属于所选店铺，且不能引用未经该工作区确认的素材', 409)
+        }
+      }
+      // Record the operator's intent before any catalog or knowledge write. If
+      // durable auditing is unavailable, the import must not begin.
+      await recordOperationAudit({ workspaceId: targetWorkspaceId, actorId, action: 'platform.catalog.import.batch.attempt', resourceType: 'manual_product_source', resourceId: `${platform}:${accountId}:${sourceSha256}`, before: {}, after: { platform, account_id: accountId, source_ref: sourceReference, source_sha256: sourceSha256, requested_count: products.length }, reason })
+      const imported = await importManualProducts(targetWorkspaceId, JSON.stringify(products), { reference: sourceReference, sha256: sourceSha256, reason }, req)
+      return ({ workspace_id: targetWorkspaceId, platform, account_id: accountId, imported_by: actorId, source_mode: 'platform_manual_upload', result: imported })
     }
     case 'ops.brand-units.summary': {
       requirePlatformReadRole(req)

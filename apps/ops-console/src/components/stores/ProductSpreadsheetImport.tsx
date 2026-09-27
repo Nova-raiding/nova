@@ -154,7 +154,7 @@ export function ProductSpreadsheetImport({ workspaceId, canWrite, platformScope 
       <Typography.Paragraph style={{ margin: 0 }}>每行填写一个 SKU，相同商品货号自动合并。支持 Excel 和 CSV；先预览，再导入。商品知识列支持品牌、材质、规格和最多 3 条带来源 ID 的卖点；品牌规则、禁用词和资质请在知识库与素材流程单独录入。图片链接和原图素材按 SKU 分别保存，原图素材必须属于当前客户。</Typography.Paragraph>
       <Typography.Paragraph type="secondary" style={{ margin: 0 }}>导入商品资料无需先连接店铺，仅导入当前已授权工作区，可先预览草稿。真实平台同步和发布仍需连接对应店铺，并具备相应操作权限。</Typography.Paragraph>
       <Alert type="info" showIcon title="给商家导入店铺商品时，请在表格填写已登记的“店铺账号”列；商家商品库会读取工作区导入结果，并标明人工来源。该流程不会读取电商平台数据。" />
-      {platformScope ? <Alert type="info" showIcon title="请先进入对应客户的授权工作区，再导入该客户商品。平台工作台不能直接向任意用户写入商品。" /> : <Typography.Text>归属工作区：<Typography.Text code>{workspaceId || "未选择"}</Typography.Text></Typography.Text>}
+      {platformScope ? <Alert type="info" showIcon title="运营代商家上传商品请到“平台连接汇总”，选择商家和已登记的人工店铺后上传。" /> : <Typography.Text>归属工作区：<Typography.Text code>{workspaceId || "未选择"}</Typography.Text></Typography.Text>}
       {!platformScope && !canWrite && <Alert type="warning" showIcon title="当前账号没有商品导入权限，可联系该客户工作区管理员授权。" />}
       <Space wrap><Button icon={<DownloadOutlined />} onClick={async () => { const blob = await productImportTemplate(); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "商品-SKU导入模板.xlsx"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>下载 Excel 模板</Button>
         <Upload accept=".xlsx,.csv" showUploadList={false} beforeUpload={upload} disabled={!enabled || busy}><Button icon={<UploadOutlined />} disabled={!enabled || busy} loading={busy}>上传商品表格</Button></Upload>

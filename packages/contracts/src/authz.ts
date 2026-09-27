@@ -1,6 +1,6 @@
 import { exposeNonProductionMethods, MCP_METHODS, MCP_NON_PRODUCTION_METHODS, type McpMethod } from './mcp.js'
 
-export const AUTHZ_POLICY_VERSION = '2026-09-08.v1' as const
+export const AUTHZ_POLICY_VERSION = '2026-09-28.v2' as const
 
 export const CAPABILITIES = [
   'authorization.session.read',
@@ -78,6 +78,7 @@ export const CAPABILITIES = [
   'store.connection.update',
   'customer.content.read',
   'customer.content.update',
+  'customer.manual_import',
   'customer.publish.execute',
   'rule.read',
   'rule.update',
@@ -368,10 +369,10 @@ const commercialFinanceRead: readonly CapabilityId[] = [
 ]
 
 export const ROLE_CAPABILITIES: Readonly<Record<CanonicalRole, readonly CapabilityId[]>> = {
-  platform_admin: [...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export'],
+  platform_admin: [...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'customer.manual_import', 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export'],
   // P0 compatibility: legacy platform_ops resolves here, so existing identity/member/delete
   // enforcement remains intact until durable platform-role assignments replace that alias.
-  ops_admin: [...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
+  ops_admin: [...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'customer.manual_import', 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
   support_agent: ['platform.summary.read', 'workspace.directory.read', 'support.ticket.read', 'support.ticket.update', 'support.sla.update', 'incident.read', 'incident.update', 'audit.read', 'feature_flag.read', 'commercial.access.read', 'commercial.entitlement.read', 'commercial.service_fulfillment.read', 'customer.delivery.read'],
   finance_ops: ['platform.summary.read', 'workspace.directory.read', 'commercial.private_trial.workflow', 'commercial.point.adjust.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export', 'model.cost.read', 'commercial.read', 'audit.read', ...commercialFinanceRead],
   security_admin: ['authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'audit.read', 'audit.export', 'feature_flag.read'],
@@ -519,6 +520,10 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   // itself auditable in `platform_authorization_audit`, and the `reason`
   // obligation refuses an operator who does not state a justification.
   write('store.connection.update', 'platform', 'customer_metadata', ['ops.platform.store.record.create'], 'allow_and_deny', ['reason']),
+  // Only platform operators may upload a merchant's manually supplied catalog.
+  // The handler rechecks the exact target workspace and credential-free store.
+  read('customer.manual_import', 'platform', 'customer_metadata', ['ops.platform.manual-stores.list']),
+  write('customer.manual_import', 'platform', 'customer_content', ['ops.platform.product.import.batch'], 'allow_and_deny', ['reason']),
   write('store.connection.update', 'workspace', 'customer_metadata', ['platform.connect']),
   // Revoke is account-scoped: the caller must identify the exact connected
   // account so HTTP and MCP cannot authorize a different store in the same

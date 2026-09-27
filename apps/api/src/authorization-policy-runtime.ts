@@ -21,6 +21,7 @@ const alwaysEnforcedMcpMethods = new Set([
   'ops.data.delete.cancel', 'ops.data.delete.approve', 'workspace.data.delete.request', 'billing.usage.refund', 'billing.refund',
   'rule.publish', 'publish.confirm', 'publish.batch.confirm', 'catalog.image.select', 'automation.policy.update', 'automation.pause',
   'brand.upsert', 'ops.marketing.asset_scan.retry', 'ops.platform.store.record.create',
+  'ops.platform.manual-stores.list', 'ops.platform.product.import.batch',
 ])
 const knownAuthorizationDomains = new Set(CAPABILITIES.map(capability => capability.split('.')[0]!))
 

@@ -26,7 +26,8 @@ import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
 import { MCP_OPS_CONTROL_METHODS } from '../../../packages/contracts/src/commercial-operation-registry.js'
 import { MCP_METHOD_SCHEMAS } from '../../../packages/contracts/src/mcp.js'
 import { MANUAL_STORE_RECORD_TOKEN_STATE, isManualStoreRecord } from '../../../packages/application/src/service.js'
-import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, operationAudits, platformAuthorizationAuditForTests, server, service, workspaceMembers, workspaceStoreDirectory } from './server.js'
+import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, operationAudits, platformAuthorizationAuditForTests, server, service, setPasswordAuthRepositoryForTests, workspaceMembers, workspaceStoreDirectory } from './server.js'
 
 type Envelope<T = Record<string, any>> = { workspace_id: string; data: T | null; error: { code: string; details?: Record<string, unknown> } | null }
 
@@ -79,10 +80,49 @@ beforeEach(() => vi.stubEnv('SESSION_ID_HASH_SECRET', 'test-session-hash-secret'
 
 afterEach(async () => {
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
+  setPasswordAuthRepositoryForTests()
   vi.unstubAllEnvs()
 })
 
 describe('manual operations store records', () => {
+  it('lets platform operations import audited products only into an active merchant manual store', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('PLATFORM_OPERATIONS_MODE', 'manual')
+    const workspaceId = `ws_manual_ops_import_${Date.now()}`
+    const storeKey = `store_manual_ops_${Date.now()}`
+    const auth = new MemoryPasswordAuthRepository()
+    await auth.createMerchantAccount({ login: `merchant-${Date.now()}@example.test`, password: 'MerchantPass123', enterpriseName: 'QA merchant', contactName: 'QA', workspaceIds: [workspaceId], actorId: 'qa', reason: 'isolated end-to-end merchant setup' })
+    setPasswordAuthRepositoryForTests(auth)
+    await configureMembers([
+      { token: 'import-owner', workspaceId, role: 'workspace_owner' },
+      { token: 'import-ops', workspaceId, role: 'platform_ops' },
+    ])
+    const base = await start()
+    const ops = { authorization: 'Bearer import-ops', 'x-workspace-id': workspaceId }
+    const merchant = { authorization: 'Bearer import-owner', 'x-workspace-id': workspaceId }
+    const registered = await mcpAt(base, ops, MANUAL_RECORD_METHOD, { workspace_id: workspaceId, platform: 'jd', account_id: storeKey, reason: 'QA isolated manual store' })
+    expect(registered.body.error).toBeNull()
+    const listed = await mcpAt(base, ops, 'ops.platform.manual-stores.list', { workspace_id: workspaceId })
+    expect(listed.body.error, JSON.stringify(listed.body.error)).toBeNull()
+    expect(listed.body.data!.result.items).toEqual(expect.arrayContaining([expect.objectContaining({ platform: 'jd', account_id: storeKey, token_state: 'manually_registered' })]))
+    const product = { platform: 'jd', account_id: storeKey, local_product_key: 'QA-OPS-001', title: 'QA isolated product', price: 39, stock: 2 }
+    const input = { workspace_id: workspaceId, platform: 'jd', account_id: storeKey, products_json: JSON.stringify([product]), source_ref: 'qa://isolated-merchant-file', source_sha256: 'a'.repeat(64), reason: 'QA platform-assisted import' }
+    const merchantDenied = await mcpAt(base, merchant, 'ops.platform.product.import.batch', input)
+    expect(merchantDenied.body.error).not.toBeNull()
+    const crossWorkspace = await mcpAt(base, { ...ops, 'x-workspace-id': 'ws_other' }, 'ops.platform.product.import.batch', input)
+    expect(['FORBIDDEN', 'WORKSPACE_SCOPE_MISMATCH']).toContain(crossWorkspace.body.error?.code)
+    const mismatch = await mcpAt(base, ops, 'ops.platform.product.import.batch', { ...input, products_json: JSON.stringify([{ ...product, account_id: 'other-store' }]) })
+    expect(mismatch.body.error?.code).toBe('MANUAL_PRODUCT_IMPORT_SCOPE_INVALID')
+    const imported = await mcpAt(base, ops, 'ops.platform.product.import.batch', input)
+    expect(imported.body.error, JSON.stringify(imported.body.error)).toBeNull()
+    expect(imported.body.data!.result).toMatchObject({ workspace_id: workspaceId, source_mode: 'platform_manual_upload', result: { count: 1, atomic: true, factsConfirmationRequired: true } })
+    const productId = imported.body.data!.result.result.products[0].id as string
+    expect(service.products.get(productId)).toMatchObject({ workspaceId, accountId: storeKey, title: product.title, factsConfirmed: false })
+    const merchantProducts = await fetch(`${base}/v1/products?limit=50&offset=0`, { headers: merchant }).then(response => response.json()) as { data?: { items?: Array<{ id: string; accountId?: string; title: string }> } }
+    expect(merchantProducts.data?.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: productId, accountId: storeKey, title: product.title })]))
+    const audit = await operationAudits.find(workspaceId, 'platform.catalog.import.batch', 'product_import_batch', imported.body.data!.result.result.batchId)
+    expect(audit).toMatchObject({ reason: input.reason, after: { source_ref: input.source_ref, source_sha256: input.source_sha256, import_mode: 'platform_manual_upload' } })
+  })
   it('reproduces the manual-mode deadlock: no bound store, and no operations method that could create one', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('PLATFORM_OPERATIONS_MODE', 'manual')
