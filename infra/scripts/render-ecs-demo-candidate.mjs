@@ -105,7 +105,7 @@ function assertSourceBoundToIdentity(sourceRoot, identityPath, identity) {
     const archived = execFileSync('tar', ['-xOf', archivePath, member], { maxBuffer: 8 * 1024 * 1024 })
     if (!archived.equals(local)) fail('mounted migration input differs from the candidate source archive')
   }
-  const relevant = archiveEntries.filter(entry => entry.startsWith('packages/persistence/src/migrations/') || entry === 'infra/scripts/apply-migrations.sh')
+  const relevant = archiveEntries.filter(entry => /^packages\/persistence\/src\/migrations\/\d{3}_[a-z0-9][a-z0-9_]*\.sql$/u.test(entry) || entry === 'infra/scripts/apply-migrations.sh')
   if (relevant.length !== mountedFiles.length) fail('source archive contains an unreviewed migration input')
 }
 

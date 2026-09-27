@@ -24,7 +24,8 @@ function fixture() {
   mkdirSync(output, { mode: 0o700 })
   writeFileSync(join(migrations, '001_candidate.sql'), 'SELECT 1;\n', { mode: 0o600 })
   writeFileSync(join(scripts, 'apply-migrations.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o600 })
-  spawnSync('tar', ['-cf', join(source, '.candidate-source.tar'), '-C', source, 'packages/persistence/src/migrations/001_candidate.sql', 'infra/scripts/apply-migrations.sh'])
+  // Git archives include the migrations directory entry as well as SQL files.
+  spawnSync('tar', ['-cf', join(source, '.candidate-source.tar'), '-C', source, 'packages/persistence/src/migrations', 'infra/scripts/apply-migrations.sh'])
   sourceSha = `sha256:${createHash('sha256').update(readFileSync(join(source, '.candidate-source.tar'))).digest('hex')}`
   const identity = join(source, '.candidate-identity')
   const eightImages = {
