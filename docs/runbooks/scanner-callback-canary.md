@@ -50,7 +50,7 @@ node --import tsx scripts/scanner-callback-canary-evidence.ts \
 
 旧版正式 API 的 `/readyz` 把所有扫描实例未就绪都写成 `SCANNER_NOT_READY`，没有 `recovery_ready` 字段。正常候选 canary 不接受这个通用错误。Bridge B 又要求旧版正式 `/readyz` 先恢复为 200，因此只能使用独立的 `scripts/scanner-old-formal-docker-canary.mjs` 路径。这个入口固定旧 release ID 和完整 Git SHA，通过 `docker exec` 连接完整 ID 指定的正式 API 容器；不会访问公开 DNS、demo gateway、容器 IP 或宿主端口。
 
-在 101 的受保护、经过复核的源码目录执行。先从旧运行态证据核对并注入完整 API/scan worker Docker ID 和各自的不可变镜像 ID（`sha256:...`）；脚本会逐请求核对容器名称、镜像标签、镜像 ID、运行状态及 `merchant-production_default` 网络 ID。先独立核对专用工作区的真实 `asset.upload` 权益和令牌，以及 scan worker 的显式 `WORKER_WORKSPACES` 范围。自动发现范围不受此一次性入口支持。不要在命令行写令牌或数据库 URL。
+在 101 的受保护、经过复核的源码目录执行。先从旧运行态证据核对并注入完整 API/scan worker Docker ID 和各自的不可变镜像 ID（`sha256:...`）；脚本会逐请求核对容器名称、镜像标签、镜像 ID、运行状态及 `merchant-production_default` 网络 ID。若 API 还连接了已核验的 `storenova-demo-e0` 网络，必须从独立 Docker inspect 快照取得该网络的完整 64 位 NetworkID，通过受保护环境设置 `OLD_SCANNER_API_SECONDARY_NETWORK_ID`。脚本只接受正式网络加这个名称与 ID 完全匹配的第二网络；任何其他附加网络都会阻断。没有第二网络时不要设置此变量。先独立核对专用工作区的真实 `asset.upload` 权益和令牌，以及 scan worker 的显式 `WORKER_WORKSPACES` 范围。自动发现范围不受此一次性入口支持。不要在命令行写令牌或数据库 URL。
 
 此路径仍需设置上述 `SCANNER_CANARY_WORKSPACE_ID`、`SCANNER_CANARY_API_TOKEN`、`SCANNER_CANARY_WORKER_SCOPE_VERIFIED`、`SCANNER_CANARY_RECOVERY_VERIFIED`、`SCANNER_CANARY_ENTITLEMENT_VERIFIED`、`SCANNER_CANARY_EXPECTED_API_ORIGIN=http://127.0.0.1:8787`、`SCANNER_CANARY_CONFIRM=qa-merchant-ec3d69e3:<专用工作区>:http://127.0.0.1:8787`，并从受保护渠道注入 `SCANNER_CANARY_DATABASE_URL`、`SCANNER_CANARY_TRUSTED_KEYRING_FILE` 和 `SCANNER_CANARY_TRUSTED_KEY_ID`。执行前用默认只读模式核对旧 release 身份，再运行一次 `--execute`。入口仅在旧版 `/readyz` 显示单实例、无积压/死信、无已接受回调，且精确 worker 容器的标记在 15 秒内、`recoveryCapable=true`、依赖/ClamAV/EICAR/回调配置有效、显式范围包含专用工作区时允许上传。上传前再次执行全部身份及恢复检查。
 
