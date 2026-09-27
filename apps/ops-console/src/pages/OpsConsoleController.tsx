@@ -109,13 +109,16 @@ export function workbenchSwitchWarning(
 
 export function initialOpsWorkbench(
   location: Pick<Location, "pathname" | "search" | "hash">,
-  storedWorkbench?: string | null,
+  _storedWorkbench?: string | null,
 ): OpsWorkbench {
   const fromUrl = new URLSearchParams(location.search).get("workbench");
-  if (fromUrl === "workspace" || fromUrl === "platform") return fromUrl;
+  if (fromUrl === "platform") return "platform";
   const routeWorkbench = requiredWorkbenchForDomain(domainFromLocation(location));
-  if (routeWorkbench) return routeWorkbench;
-  return storedWorkbench === "workspace" ? "workspace" : "platform";
+  // This console cannot activate a merchant workbench. A bookmarked merchant
+  // route or stale localStorage must not make the first session request ask for
+  // an absent workspace and then incorrectly show the password login form.
+  if (routeWorkbench && canActivateOpsWorkbench(routeWorkbench)) return routeWorkbench;
+  return "platform";
 }
 
 export function opsSessionGateState(
@@ -228,6 +231,7 @@ function Dashboard({
   // The operations landing page is the stable read-only entry point for every
   // authenticated workbench. Its datasets still fail closed independently.
   const visibleDomains = visibleOpsDomains(model.authorization);
+  const blockedDomain = domainNavigationBlockedReason(activeDomain, activeWorkbench);
   const authorized = sessionReady && canViewOpsDomain(activeDomain, model.authorization);
   const ActivePage = opsPageRegistry[activeDomain];
   const navigateToDomain = (domain: Parameters<typeof navigateToRoute>[0]) => {
@@ -372,6 +376,15 @@ function Dashboard({
               description={sessionError ?? "请检查网络后重试"}
               action={<Button onClick={() => void model.load()} loading={model.loading}>重试</Button>}
             />
+          ) : blockedDomain ? (
+            <Alert
+              type="info"
+              showIcon
+              role="status"
+              title="此页面需要商家工作区权限"
+              description={blockedDomain}
+              action={<Button onClick={() => navigateToRoute("overview")}>返回平台总览</Button>}
+            />
           ) : authorized ? (
             <OpsPageBoundary resetKey={activeDomain}>
               <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} aria-label="正在加载页面" />}>
@@ -436,10 +449,9 @@ function OpsConsoleControllerContent() {
   };
 
   useEffect(() => {
-    // Preserve the route-scoped workbench selected during bootstrap. A
-    // workspace gateway rejects platform-scoped MCP calls, so forcing the
-    // default here races the first session request and leaves the UI in a
-    // misleading "not verified" state.
+    // Persist the platform workbench chosen during bootstrap before the first
+    // session request. Merchant-only deep links cannot activate a workspace
+    // context in this console.
     setOpsWorkbenchContext(activeWorkbench);
     setContextReady(true);
   }, [activeWorkbench]);

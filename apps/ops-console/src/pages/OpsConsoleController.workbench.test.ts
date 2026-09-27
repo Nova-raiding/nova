@@ -7,11 +7,11 @@ import { hasRuleDraftChanges, validateRuleChecksJson } from "../components/tasks
 describe("ops workbench transition", () => {
   it("uses the platform workbench for a customer-delivery deep link despite stale workspace state", () => {
     expect(initialOpsWorkbench({ pathname: "/ops/customer-delivery", search: "", hash: "" }, "workspace")).toBe("platform");
-    expect(initialOpsWorkbench({ pathname: "/ops/tasks", search: "", hash: "" }, "platform")).toBe("workspace");
+    expect(initialOpsWorkbench({ pathname: "/ops/tasks", search: "", hash: "" }, "platform")).toBe("platform");
   });
 
-  it("honors an explicit workbench route intent", () => {
-    expect(initialOpsWorkbench({ pathname: "/ops/customer-delivery", search: "?workbench=workspace", hash: "" }, "platform")).toBe("workspace");
+  it("ignores a merchant workbench query this console cannot activate", () => {
+    expect(initialOpsWorkbench({ pathname: "/ops/customer-delivery", search: "?workbench=workspace", hash: "" }, "platform")).toBe("platform");
   });
 
   it("aborts before committing context and URL atomically", () => {
