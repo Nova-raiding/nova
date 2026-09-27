@@ -30,6 +30,7 @@ writeFileSync(resolve(output, 'Contents', 'Info.plist'), `<?xml version="1.0" en
 <key>CFBundleShortVersionString</key><string>${version.split('+')[0]}</string>
 <key>CFBundleVersion</key><string>${version.replace(/[^0-9]/gu, '').slice(0, 18) || '1'}</string>
 <key>CFBundleURLTypes</key><array><dict>
+<key>CFBundleTypeRole</key><string>Editor</string>
 <key>CFBundleURLName</key><string>com.storenova.connect</string>
 <key>CFBundleURLSchemes</key><array><string>storenova</string></array>
 </dict></array>
