@@ -173,6 +173,8 @@ describe('release manifest production gate', () => {
     const deploymentArtifacts = [
       'infra/scripts/render-ecs-production-compose.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
+      'infra/scripts/inspect-payment-gateway-receipt-runtime.mjs',
+      'infra/scripts/inspect-payment-gateway-receipt-runtime.test.mjs',
       'infra/scripts/deploy-preflight-ecs.sh',
       'infra/scripts/stage-verified-ecs-release.sh',
       'infra/scripts/ecs-build-lock.sh',

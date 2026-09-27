@@ -124,6 +124,8 @@ export function buildReleaseManifest(input: {
     resolve(root, 'infra/scripts/install-ecs-staging-toolchain.mjs'),
     resolve(root, 'infra/scripts/ecs-one-click-deploy.sh'),
     resolve(root, 'infra/scripts/deploy-verified-ecs-compose.sh'),
+    resolve(root, 'infra/scripts/inspect-payment-gateway-receipt-runtime.mjs'),
+    resolve(root, 'infra/scripts/inspect-payment-gateway-receipt-runtime.test.mjs'),
     resolve(root, 'infra/scripts/ecs-compose-published-ports.mjs'),
     resolve(root, 'infra/scripts/ecs-compose-published-ports.d.mts'),
     resolve(root, 'infra/scripts/deploy-preflight-ecs.sh'),

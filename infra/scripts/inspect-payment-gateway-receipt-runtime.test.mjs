@@ -12,10 +12,17 @@ function fixture(t) {
   const expectedHostDir = join(intermediate, 'payment-receipts')
   mkdirSync(intermediate, { mode: 0o700 })
   mkdirSync(expectedHostDir, { mode: 0o700 })
-  const inspect = { Config: { User: '100:101' }, State: { Running: true, Health: { Status: 'healthy' } },
+  const expectedContainerId = 'a'.repeat(64)
+  const expectedImageRef = `registry.example/payment-gateway@sha256:${'b'.repeat(64)}`
+  const expectedProject = 'merchant-production'
+  const inspect = { Id: expectedContainerId, Image: `sha256:${'c'.repeat(64)}`,
+    Config: { User: '100:101', Image: expectedImageRef,
+      Labels: { 'com.docker.compose.project': expectedProject, 'com.docker.compose.service': 'payment-gateway' } },
+    State: { Running: true, Health: { Status: 'healthy' } },
     HostConfig: { ReadonlyRootfs: true, Privileged: false },
     Mounts: [{ Type: 'bind', Source: expectedHostDir, Destination: '/run/payment-receipts', RW: true }] }
   const review = () => inspectPaymentGatewayReceiptRuntime({ inspect, expectedHostDir, protectedRoot,
+    expectedContainerId, expectedImageRef, expectedProject,
     rootUid: process.getuid(), gatewayUid: process.getuid() })
   return { protectedRoot, intermediate, expectedHostDir, inspect, review }
 }
@@ -59,4 +66,16 @@ test('unsafe gateway identity, host privileges and symlinked sink are refused', 
   mkdirSync(actual, { mode: 0o700 })
   symlinkSync(actual, value.expectedHostDir)
   assert.throws(value.review, /canonical/)
+})
+
+test('a healthy container from another project or mutable image is refused', t => {
+  const value = fixture(t)
+  value.inspect.Config.Labels['com.docker.compose.project'] = 'other-project'
+  assert.throws(value.review, /frozen Compose service and image/)
+  value.inspect.Config.Labels['com.docker.compose.project'] = 'merchant-production'
+  value.inspect.Config.Image = 'payment-gateway:latest'
+  assert.throws(value.review, /frozen Compose service and image/)
+  value.inspect.Config.Image = `registry.example/payment-gateway@sha256:${'b'.repeat(64)}`
+  value.inspect.Id = 'd'.repeat(64)
+  assert.throws(value.review, /frozen Compose service and image/)
 })

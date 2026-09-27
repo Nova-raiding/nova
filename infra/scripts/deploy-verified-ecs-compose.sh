@@ -475,6 +475,33 @@ else
     api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway
 fi
 
+# Compose --wait checks the gateway health endpoint, which does not write a
+# protected receipt. Bind the exact post-start container and immutable image
+# to the frozen Compose render, then verify the UID 100 sink before treating
+# this runtime as ready. This check is review-only; payment evidence remains a
+# separate six-stage production gate.
+payment_descriptor=$(docker compose -p "$project" -f "$verified_compose" config --format json | node -e '
+  const c=JSON.parse(require("fs").readFileSync(0,"utf8")),g=c.services?.["payment-gateway"]
+  const mounts=g?.volumes?.filter(v=>v.target==="/run/payment-receipts")??[]
+  if(mounts.length!==1||mounts[0].type!=="bind"||!/^\/var\/lib\/merchant-release-security\/[A-Za-z0-9._/-]+$/.test(mounts[0].source??"")||!(/^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$/.test(g?.image??"")))process.exit(1)
+  process.stdout.write(mounts[0].source+"\n"+g.image+"\n")
+') || { echo 'frozen payment gateway receipt mount or image is invalid' >&2; exit 1; }
+payment_receipt_dir=$(printf '%s\n' "$payment_descriptor" | sed -n '1p')
+payment_image_ref=$(printf '%s\n' "$payment_descriptor" | sed -n '2p')
+[ "$payment_receipt_dir" = "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || {
+  echo 'frozen payment gateway receipt mount differs from protected host configuration' >&2; exit 1;
+}
+payment_container_id=$(docker compose -p "$project" -f "$verified_compose" ps -q payment-gateway) || {
+  echo 'candidate payment gateway container lookup failed' >&2; exit 1;
+}
+printf '%s' "$payment_container_id" | grep -Eq '^[a-f0-9]{64}$' || {
+  echo 'candidate payment gateway has no unique full container ID' >&2; exit 1;
+}
+node "$root/infra/scripts/inspect-payment-gateway-receipt-runtime.mjs" \
+  "$payment_container_id" "$payment_receipt_dir" "$payment_image_ref" "$project" >/dev/null || {
+  echo 'candidate payment gateway protected receipt runtime check failed' >&2; exit 1;
+}
+
 health_deadline=$(( $(date +%s) + ${ECS_POST_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300} ))
 while ! curl --fail --silent --show-error --max-time 15 "${PRODUCTION_API_BASE_URL%/}/livez" >/dev/null 2>&1 || \
       ! curl --fail --silent --show-error --max-time 15 "${PRODUCTION_API_BASE_URL%/}/readyz" >/dev/null 2>&1; do

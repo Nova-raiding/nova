@@ -8,6 +8,21 @@ const path = 'infra/scripts/deploy-verified-ecs-compose.sh'
 const source = () => readFileSync(path, 'utf8')
 
 describe('verified ECS Compose deployment runner', () => {
+  it('binds the post-start payment gateway container, image, project and protected receipt sink before release readiness', () => {
+    const script = source()
+    const start = script.indexOf('up -d --no-build --pull never --remove-orphans')
+    const container = script.indexOf('ps -q payment-gateway', start)
+    const inspector = script.indexOf('inspect-payment-gateway-receipt-runtime.mjs', container)
+    const readiness = script.indexOf('health_deadline=', inspector)
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(container).toBeGreaterThan(start)
+    expect(inspector).toBeGreaterThan(container)
+    expect(readiness).toBeGreaterThan(inspector)
+    expect(script).toContain('"$payment_receipt_dir" = "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR"')
+    expect(script).toContain('"$payment_container_id" "$payment_receipt_dir" "$payment_image_ref" "$project"')
+    expect(script).toContain('candidate payment gateway protected receipt runtime check failed')
+  })
+
   it('checks all candidate host bindings before nonce/migration and rechecks before runtime cutover', () => {
     const script = source()
     expect(script).toContain('node "$root/infra/scripts/ecs-compose-published-ports.mjs" "$project" "$runtime_services" "${ECS_EXTERNAL_GATEWAY_ID:-}"')

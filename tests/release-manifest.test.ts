@@ -58,7 +58,7 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(95)
+    expect(manifest.artifacts).toHaveLength(97)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',
@@ -107,6 +107,8 @@ describe('release manifest', () => {
       'infra/scripts/install-ecs-staging-toolchain.mjs',
       'infra/scripts/ecs-one-click-deploy.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
+      'infra/scripts/inspect-payment-gateway-receipt-runtime.mjs',
+      'infra/scripts/inspect-payment-gateway-receipt-runtime.test.mjs',
       'infra/scripts/ecs-compose-published-ports.mjs',
       'infra/scripts/ecs-compose-published-ports.d.mts',
       'infra/scripts/deploy-preflight-ecs.sh',
