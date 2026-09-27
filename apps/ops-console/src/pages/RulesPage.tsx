@@ -12,12 +12,15 @@ interface RulesPageProps {
 }
 
 export function RulesPage({ model }: RulesPageProps) {
+  const platform = model.authorization.scope.kind === "platform";
   // Scope the error to the two datasets this page actually reads. The console
   // level `model.error` is reused across semantics: it is written by any
   // failing optional dataset and cleared whenever `loadRules` succeeds, so
   // using it here both mislabels unrelated outages as rule-sync failures and
   // erases the global staleness warning after a successful rule refresh.
-  const ruleError = model.dataSetError("rule.list", "rule.sync.status");
+  const ruleError = platform
+    ? model.dataSetError("ops.rules.public.sync.status")
+    : model.dataSetError("rule.list", "rule.sync.status");
   return (
     <OpsPage
       eyebrow="PLATFORM RULES"
@@ -42,13 +45,12 @@ export function RulesPage({ model }: RulesPageProps) {
         canSync={model.canRules}
         onSyncNow={() => void model.syncRulesNow()}
       />
-      <RuleCenterSection model={model} />
-      {model.authorization.scope.kind === "platform" && <PublicRuleDraftReviewPanel authorization={model.authorization} />}
-      <WorkspaceRuleAuditPanel
+      {platform ? <><RuleCenterSection model={model} platformOnly /><PublicRuleDraftReviewPanel authorization={model.authorization} /></> : <RuleCenterSection model={model} />}
+      {!platform && <WorkspaceRuleAuditPanel
         rules={model.rules}
         canRead={model.authorization.scope.kind !== "platform" && model.authorization.can("rule.read")}
         workspaceId={model.authorization.scope.id}
-      />
+      />}
       </div>
     </OpsPage>
   );

@@ -2154,10 +2154,10 @@ async function trustedActiveRuleVersionsForWorkspace(workspaceId: string) {
     .sort()
 }
 
-async function trustedPlatformRuleSyncStatuses(workspaceId: string, intervalHours = Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 168)) {
+async function trustedPlatformRuleSyncStatuses(workspaceId: string, intervalHours = Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 168), publicOnly = false) {
   const repository = ruleRepository()
   const trustedRules = repository
-    ? ([...(await repository.list(workspaceId)), ...(repository.listPublic ? await repository.listPublic(workspaceId) : [])]
+    ? ([...(publicOnly ? [] : await repository.list(workspaceId)), ...(repository.listPublic ? await repository.listPublic(workspaceId) : [])]
       .filter((row, index, all) => all.findIndex(candidate => candidate.packId === row.packId && candidate.version === row.version) === index))
       .filter(row => row.status === 'active' && (isVerifiedOfficialRule(row) || isAllowedManualPublicRule(row)))
       .map(rulePackProjection)

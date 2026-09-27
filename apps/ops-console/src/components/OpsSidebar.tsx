@@ -2,6 +2,7 @@ import {
   DashboardOutlined,
   DollarOutlined,
   RobotOutlined,
+  SafetyCertificateOutlined,
   ShopOutlined,
   TeamOutlined,
   MenuOutlined,
@@ -45,13 +46,14 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; description: s
     { domain: "users", label: "用户中心", description: "管理企业账号与授权范围", icon: <TeamOutlined /> },
     { domain: "customer-delivery", label: "客户交付", description: "管理客户建档、接入、验收与上线", icon: <TeamOutlined /> },
     { domain: "stores", label: "平台与店铺", description: "查看平台连接并登记人工运营店铺", icon: <ShopOutlined /> },
+    { domain: "rules", label: "平台规则", description: "查看六平台规则状态并审核公共草稿", icon: <SafetyCertificateOutlined /> },
     // Kept for backwards-compatible tests/bookmarks; the privileged store route is role-filtered below.
     { domain: "models", label: "模型服务", description: "查看模型状态与计费设置", icon: <RobotOutlined /> },
     { domain: "finance", label: "账务与退款", description: "核对收款、创意点与退款", icon: <DollarOutlined /> },
   ];
 
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
-  { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery", "stores"] },
+  { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery", "stores", "rules"] },
   // Restored 2026-09-20 by product decision (see retired-ops-assertions.md).
   // Label is 财务 rather than the historical 模型与计费: `models` is still
   // withdrawn, so a group named for models would contain none.

@@ -61,6 +61,7 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.rules.workspace.audit',
   'ops.rules.public.drafts.list',
   'ops.rules.public.drafts.get',
+  'ops.rules.public.sync.status',
   'ops.audit.list',
   'ops.audit.platform.list',
   'ops.audit.detail',

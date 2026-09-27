@@ -274,7 +274,7 @@ function Dashboard({
     // every time the overview or refresh action runs.
     const canRead = (domain: Parameters<typeof canViewOpsDomain>[0]) =>
       canViewOpsDomain(domain, model.authorization);
-    if (activeDomain === "rules" && activeWorkbench === "workspace" && canRead("rules"))
+    if (activeDomain === "rules" && activeWorkbench === "platform" && canRead("rules"))
       void model.loadRules();
     if (activeDomain === "knowledge" && activeWorkbench === "workspace" && canRead("knowledge"))
       void model.load();

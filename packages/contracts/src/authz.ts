@@ -489,7 +489,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('storage.reconciliation.read', 'platform', 'platform_summary', ['ops.storage.reconciliation.list']),
   read('canonical.backfill.read', 'platform', 'customer_metadata', ['ops.canonical.backfill.get', 'ops.canonical.backfill.conflicts.list']),
   write('canonical.backfill.update', 'platform', 'customer_metadata', ['ops.canonical.backfill.create', 'ops.canonical.backfill.run', 'ops.canonical.backfill.pause', 'ops.canonical.backfill.resume', 'ops.canonical.backfill.conflict.claim', 'ops.canonical.backfill.conflict.resolve'], 'allow_and_deny'),
-  read('rule.read', 'platform', 'customer_metadata', ['rule.audit', 'ops.rules.public.drafts.list', 'ops.rules.public.drafts.get']),
+  read('rule.read', 'platform', 'customer_metadata', ['rule.audit', 'ops.rules.public.drafts.list', 'ops.rules.public.drafts.get', 'ops.rules.public.sync.status']),
   read('rule.read', 'workspace', 'customer_metadata', ['ops.rules.workspace.audit']),
   read('billing.self.read', 'self', 'finance', ['subscription.get', 'subscription.orders.list', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'commercial.access.get', 'commercial.catalog.get', 'commercial.order.payment.get']),
   write('billing.workspace.update', 'workspace', 'finance', ['subscription.order.create', 'subscription.change', 'billing.usage.consume', 'billing.recharge.create', 'commercial.order.create']),

@@ -41,7 +41,7 @@ export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly OpsCapa
   tasks: ["marketing.summary.read", "marketing.queue.read", "customer.content.read"],
   knowledge: ["customer.content.read"],
   stores: ["platform.settings.read", "store.connection.read"],
-  rules: ["rule.read", "platform.media_spec.read"],
+  rules: ["rule.read"],
   models: ["model.status.read", "model.cost.read", "model.policy.update"],
   storage: ["storage.reconciliation.read", "workspace.summary.read"],
   // `canViewDomain` is `canAny`, so any one of these opens 账务与退款. The list is

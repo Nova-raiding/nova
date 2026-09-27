@@ -12,7 +12,7 @@ type SyncAuthorizationSnapshot = WorkerAuthorizationSnapshot & { capability: 'ca
 type RuleApproval = { approvalRef: string; approvedAt: string; approvedBy: string }
 
 export const MCP_SYNC_RULE_METHODS = new Set([
-  'sync.retry_failed', 'rule.list', 'rule.sync.status', 'rule.sync.now', 'rule.history',
+  'sync.retry_failed', 'rule.list', 'rule.sync.status', 'ops.rules.public.sync.status', 'rule.sync.now', 'rule.history',
   'rule.audit', 'ops.rules.workspace.audit', 'rule.publish', 'rule.status',
 ])
 
@@ -30,7 +30,7 @@ export interface SyncRuleMcpDependencies {
   canViewRuleLifecycle: (request: IncomingMessage) => boolean
   supportedPlatforms: readonly Platform[]
   rulePacksForWorkspace: (workspaceId: string) => Promise<RulePack[]>
-  trustedPlatformRuleSyncStatuses: (workspaceId: string, intervalHours?: number) => Promise<unknown>
+  trustedPlatformRuleSyncStatuses: (workspaceId: string, intervalHours?: number, publicOnly?: boolean) => Promise<unknown>
   syncSignedPlatformRules: (workspaceId: string, options: { force: true }) => Promise<unknown>
   isProduction: () => boolean
   requireRuleAdmin: (request: IncomingMessage) => { actorId: string }
@@ -111,6 +111,11 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
     case 'rule.sync.status': {
       const intervalHours = typeof params.interval_hours === 'string' && Number.isFinite(Number(params.interval_hours)) ? Number(params.interval_hours) : Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 168)
       return result(await trustedPlatformRuleSyncStatuses(workspaceId, intervalHours))
+    }
+    case 'ops.rules.public.sync.status': {
+      requirePlatformRuleReviewer(req)
+      const intervalHours = typeof params.interval_hours === 'string' && Number.isFinite(Number(params.interval_hours)) ? Number(params.interval_hours) : Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 168)
+      return result(await trustedPlatformRuleSyncStatuses('__platform_rules__', intervalHours, true))
     }
     case 'rule.sync.now': {
       const sync = await syncSignedPlatformRules(workspaceId, { force: true })

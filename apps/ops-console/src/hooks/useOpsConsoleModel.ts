@@ -1184,17 +1184,19 @@ export function useOpsConsoleModel() {
     if (!hasOpsConnection()) return;
     const request = rulesLoadCoordinatorRef.current.begin();
     setRuleSyncLoading(true);
+    const platformRules = authorization.scope.kind === "platform";
+    const syncMethod = platformRules ? "ops.rules.public.sync.status" : "rule.sync.status";
     const [rulesResult, syncResult] = await Promise.allSettled([
-      rpc("rule.list"),
-      rpc("rule.sync.status"),
+      platformRules ? Promise.resolve([]) : rpc("rule.list"),
+      rpc(syncMethod),
     ]);
     if (!rulesLoadCoordinatorRef.current.isCurrent(request)) return;
     setDataSetErrors(previous => {
       const next = { ...previous };
       if (rulesResult.status === "fulfilled") delete next["rule.list"];
       else next["rule.list"] = describeOpsError(rulesResult.reason);
-      if (syncResult.status === "fulfilled") delete next["rule.sync.status"];
-      else next["rule.sync.status"] = describeOpsError(syncResult.reason);
+      if (syncResult.status === "fulfilled") delete next[syncMethod];
+      else next[syncMethod] = describeOpsError(syncResult.reason);
       return next;
     });
     if (rulesResult.status === "fulfilled") setRules((rulesResult.value ?? []) as unknown as Rule[]);

@@ -33,8 +33,8 @@ const opsRoutePattern = new RegExp(
  * the enterprise-side 账务与商业配置 view. Giving it a workbench would silently
  * drop one of those two faces, so adding it here needs a product decision. */
 export function requiredWorkbenchForDomain(domain: OpsDomain): "platform" | "workspace" | undefined {
-  if (["users", "customer-delivery", "stores", "models", "storage", "audit"].includes(domain)) return "platform";
-  if (["members", "tasks", "knowledge", "rules"].includes(domain)) return "workspace";
+  if (["users", "customer-delivery", "stores", "rules", "models", "storage", "audit"].includes(domain)) return "platform";
+  if (["members", "tasks", "knowledge"].includes(domain)) return "workspace";
   return undefined;
 }
 

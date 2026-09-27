@@ -135,6 +135,7 @@ describe("operations navigation", () => {
     // drop one of those two faces.
     expect(requiredWorkbenchForDomain("finance")).toBeUndefined();
     expect(requiredWorkbenchForDomain("audit")).toBe("platform");
+    expect(requiredWorkbenchForDomain("rules")).toBe("platform");
     expect(requiredWorkbenchForDomain("tasks")).toBe("workspace");
     expect(requiredWorkbenchForDomain("knowledge")).toBe("workspace");
   });
@@ -144,5 +145,10 @@ describe("operations navigation", () => {
     expect(canViewOpsDomain("finance", authorization(["billing.workspace.read", "billing.refund.execute"]))).toBe(true);
     expect(canViewOpsDomain("finance", authorization(["billing.self.read"]))).toBe(true);
     expect(canViewOpsDomain("finance", authorization(["customer.content.read"]))).toBe(false);
+  });
+
+  it("does not open public rule governance with media-spec permission alone", () => {
+    expect(canViewOpsDomain("rules", authorization(["platform.media_spec.read"]))).toBe(false);
+    expect(canViewOpsDomain("rules", authorization(["rule.read"]))).toBe(true);
   });
 });

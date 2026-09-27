@@ -4,7 +4,7 @@ import { mainItems, navigationGroups, OpsSidebar } from "./OpsSidebar.js";
 
 describe("OpsSidebar navigation", () => {
   it("uses Store Nova branding for platform operations", () => {
-    expect(mainItems.map(({ domain }) => domain)).not.toEqual(expect.arrayContaining(["tasks", "rules"]));
+    expect(mainItems.map(({ domain }) => domain)).not.toContain("tasks");
     const markup = renderToStaticMarkup(
       <OpsSidebar
         activeDomain="users"
@@ -55,8 +55,10 @@ describe("OpsSidebar navigation", () => {
   it("exposes platform rules as a first-class operations destination", () => {
     expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toEqual(
       expect.arrayContaining([
+        { domain: "rules", label: "平台规则" },
       ]),
     );
+    expect(navigationGroups.flatMap(({ items }) => [...items])).toContain("rules");
     expect(mainItems.map(({ domain }) => domain)).not.toEqual(expect.arrayContaining(["feature-flags", "storage", "audit"]));
   });
 

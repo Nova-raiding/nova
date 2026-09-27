@@ -5,6 +5,7 @@ import { platformLabels, platforms, type Platform, type Rule } from "../../types
 
 interface RuleCenterSectionProps {
   model: OpsConsoleModel;
+  platformOnly?: boolean;
 }
 
 const initialChecksJson = '{"forbiddenTerms":[]}';
@@ -102,7 +103,7 @@ export async function uploadMarkdownDrafts(
   return { succeeded, failedCard: undefined, reason: undefined };
 }
 
-export function RuleCenterSection({ model }: RuleCenterSectionProps) {
+export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSectionProps) {
   const { canRules, ruleMutationKey, rules, updateRuleStatus, publishRuleDraft } =
     model;
   const markdownInputRef = useRef<HTMLInputElement>(null);
@@ -151,6 +152,13 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
       if (markdownInputRef.current) markdownInputRef.current.value = "";
     }
   };
+
+  if (platformOnly) return <Card title="提交公共平台规则草稿">
+    <Alert type="info" showIcon title="人工资料须独立审核" description="上传 Markdown 只创建公共草稿。规则管理员核对官方依据并完成独立审批后，规则才可能生效。" style={{ marginBottom: 16 }} />
+    <input ref={markdownInputRef} type="file" accept=".md,text/markdown" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importMarkdownDrafts(file); }} />
+    <Button disabled={!canRules || markdownImporting} loading={markdownImporting} onClick={() => markdownInputRef.current?.click()}>上传平台规则 Markdown</Button>
+    {markdownImportResult && <Alert style={{ marginTop: 16 }} type={markdownImportResult.failedCard ? "error" : "success"} role="status" title={markdownImportResult.failedCard ? "Markdown 导入未完成" : "Markdown 草稿导入完成"} description={`成功 ${markdownImportResult.succeeded} 张${markdownImportResult.failedCard ? `；失败卡片 ${markdownImportResult.failedCard}：${markdownImportResult.reason}` : "；没有失败卡片"}`} />}
+  </Card>;
 
   return (
     <Card

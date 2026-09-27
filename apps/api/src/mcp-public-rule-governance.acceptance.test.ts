@@ -96,7 +96,29 @@ describe('authenticated public rule draft preview MCP boundary', () => {
       headers: { authorization: 'Bearer reviewer', 'x-workspace-id': 'ws_public_rule_review', 'x-ops-workbench': 'platform', 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 'list-tools', method: 'tools/list', params: {} }),
     }).then(response => response.json() as Promise<{ result?: { tools?: Array<{ name: string }> } }>)
-    expect(nativeTools.result?.tools?.some(tool => tool.name.startsWith('ops.rules.public.drafts.'))).toBe(false)
+    expect(nativeTools.result?.tools?.some(tool => tool.name.startsWith('ops.rules.public.'))).toBe(false)
+  })
+
+  it('reads public sync status without querying a merchant workspace and rejects workspace callers', async () => {
+    const list = vi.fn(async () => { throw new Error('merchant workspace rule read must not run') })
+    const listPublic = vi.fn(async () => [])
+    setRuleRepositoryForTests({ list, listPublic } as unknown as RuleRepositoryPort)
+    vi.stubEnv('NODE_ENV', 'staging')
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('SESSION_ID_HASH_SECRET', 'public-rule-review-session-secret')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      reviewer: { workspaces: ['ws_public_rule_review'], roles: ['rules_admin'], workbenches: ['platform'], actor_id: 'reviewer-2' },
+      tenant_admin: { workspaces: ['ws_public_rule_review'], roles: ['rules_admin'], workbenches: ['workspace'], actor_id: 'tenant-user' },
+    }))
+    const base = await start()
+    const allowed = await call(base, 'reviewer', 'platform', 'ops.rules.public.sync.status', {})
+    expect(allowed.error).toBeNull()
+    expect(allowed.data?.result ?? allowed.result).toHaveLength(6)
+    expect(list).not.toHaveBeenCalled()
+    expect(listPublic).toHaveBeenCalledWith('__platform_rules__')
+    const denied = await call(base, 'tenant_admin', 'workspace', 'ops.rules.public.sync.status', {})
+    expect(denied.error?.code).toBeTruthy()
+    expect(listPublic).toHaveBeenCalledTimes(1)
   })
 
   it('rejects a workspace rules_admin even when the request spoofs the platform workbench header', async () => {

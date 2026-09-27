@@ -68,7 +68,7 @@ describe("ops workbench transition", () => {
     expect(domainNavigationBlockedReason("members", "platform")).toContain("属于商家工作区");
     expect(domainNavigationBlockedReason("tasks", "platform")).toContain("属于商家工作区");
     expect(domainNavigationBlockedReason("knowledge", "platform")).toContain("属于商家工作区");
-    expect(domainNavigationBlockedReason("rules", "platform")).toContain("属于商家工作区");
+    expect(domainNavigationBlockedReason("rules", "platform")).toBeUndefined();
     expect(domainNavigationBlockedReason("members", "workspace")).toBeUndefined();
     expect(domainNavigationBlockedReason("users", "workspace")).toBeUndefined();
     expect(domainNavigationBlockedReason("overview", "platform")).toBeUndefined();

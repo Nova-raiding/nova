@@ -47,4 +47,11 @@ describe("rules page error scope", () => {
     expect(render()).not.toContain("公共平台规则草稿审核");
     expect(render({ platform: true, canReadRules: true })).toContain("公共平台规则草稿审核");
   });
+
+  it("keeps workspace-only rule lifecycle controls out of platform governance", () => {
+    const html = render({ platform: true, canReadRules: true });
+    expect(html).toContain("上传平台规则 Markdown");
+    expect(html).not.toContain("标记过期");
+    expect(html).not.toContain("工作区规则审计");
+  });
 });

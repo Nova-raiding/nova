@@ -249,6 +249,7 @@ export const MCP_METHODS = [
   'sync.retry_failed',
   'rule.list',
   'rule.sync.status',
+  'ops.rules.public.sync.status',
   'rule.sync.now',
   'rule.history',
   'rule.audit',
@@ -1117,6 +1118,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'rule.sync.status',
     description: 'Show per-platform rule freshness and whether a trusted signed manifest source is configured.',
+    params: params({ interval_hours: { type: 'string' } }),
+  },
+  {
+    method: 'ops.rules.public.sync.status',
+    description: 'Show shared public-platform rule freshness for an authorized platform reviewer without reading a merchant workspace.',
     params: params({ interval_hours: { type: 'string' } }),
   },
   {
