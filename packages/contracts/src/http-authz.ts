@@ -276,6 +276,7 @@ export const HTTP_ROUTE_COVERAGE_EXEMPTIONS: readonly HttpRouteCoverageExemption
   { pathTemplate: '/v1/auth/mcp-token/refresh', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token refresh; authenticated by the refresh token itself' },
   { pathTemplate: '/v1/auth/mcp-token/revoke', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token revocation; authenticated by the token being revoked' },
   { pathTemplate: '/v1/auth/local-plugin/authorize', methods: AUTH_FORM_METHODS, reason: 'local desktop PKCE consent; GET renders explicit consent and POST requires the existing same-origin merchant session' },
+  { pathTemplate: '/v1/auth/local-plugin/connect-capability', methods: ['GET'], reason: 'reports the local plugin feature gate only to an active merchant session without exposing credentials' },
   { pathTemplate: '/v1/auth/local-plugin/token', methods: ['POST'], reason: 'local desktop PKCE code exchange; authenticates the one-time code and verifier, not a ChatGPT OAuth client' },
   { pathTemplate: '/v1/auth/local-plugin/connect-requests', methods: ['POST'], reason: 'creates a browser-session-bound one-click local plugin request after same-origin validation' },
   { pathTemplate: '/v1/auth/local-plugin/connect-requests/{requestId}/status', methods: ['GET'], reason: 'polls only the current merchant session account and workspace request; never returns credentials' },

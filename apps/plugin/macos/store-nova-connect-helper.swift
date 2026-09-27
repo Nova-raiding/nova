@@ -12,18 +12,18 @@ struct StoreNovaConnectHelper {
 
     // The JavaScript entrypoint owns strict parameter validation. Never log or display rawURL:
     // it is untrusted browser input even though the supported contract contains no credentials.
-    let pluginRoot = Bundle.main.bundleURL
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
+    let pluginRoot = Bundle.main.bundleURL.deletingLastPathComponent()
     let script = pluginRoot.appendingPathComponent("scripts/connect-local-macos.mjs").path
-    guard FileManager.default.isReadableFile(atPath: script) else {
+    let node = pluginRoot.appendingPathComponent("runtime/node").path
+    guard FileManager.default.isReadableFile(atPath: script),
+          FileManager.default.isExecutableFile(atPath: node) else {
       showFailure()
       return
     }
 
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    process.arguments = ["node", script, rawURL]
+    process.executableURL = URL(fileURLWithPath: node)
+    process.arguments = [script, rawURL]
     process.standardOutput = FileHandle.nullDevice
     process.standardError = FileHandle.nullDevice
     do {

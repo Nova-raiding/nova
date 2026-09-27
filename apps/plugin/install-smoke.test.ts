@@ -80,7 +80,7 @@ describe('Codex plugin installation package', () => {
     }
   })
 
-  it.skipIf(process.platform !== 'darwin')('packages a standalone macOS runtime and credential helper without shipping an unsigned custom-scheme app', () => {
+  it.skipIf(process.platform !== 'darwin')('packages the macOS runtime and an unregistered candidate helper', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-local-package-'))
     const artifact = resolve(directory, 'merchant-marketing.tar.gz')
     try {
@@ -95,11 +95,11 @@ describe('Codex plugin installation package', () => {
         ready_to_install: false,
         connect_helper: {
           source_included: true,
-          app_bundle_included: false,
-          custom_scheme: 'development_recovery_only',
+          app_bundle_included: true,
+          custom_scheme: 'included_unregistered_until_signed',
           production_ready: false,
           platforms: {
-            darwin: { source_included: true, binary_included: false },
+            darwin: { source_included: true, binary_included: true },
             win32: { source_included: true, binary_included: false, authenticode_required: true },
           },
         },
@@ -136,9 +136,9 @@ describe('Codex plugin installation package', () => {
       writeFileSync(resolve(directory, 'install.command'), macInstaller.stdout)
       writeFileSync(resolve(directory, 'install.sh'), '#!/bin/sh\nexit 0\n')
       writeFileSync(resolve(directory, 'login.sh'), '#!/bin/sh\nexit 0\n')
-      const pendingWorkspace = spawnSync('/bin/sh', [resolve(directory, 'install.command')], { input: '\n', encoding: 'utf8' })
-      expect(pendingWorkspace.status).toBe(42)
-      expect(pendingWorkspace.stdout).toContain('工作区绑定未完成')
+      const installCommandResult = spawnSync('/bin/sh', [resolve(directory, 'install.command')], { encoding: 'utf8' })
+      expect(installCommandResult.status).toBe(0)
+      expect(installCommandResult.stdout).toContain('点击连接 ChatGPT 本地插件完成授权')
       expect(listing.stdout).toContain('scripts/bundle-provenance.mjs')
       expect(listing.stdout).toContain('scripts/verify-bundle-provenance.mjs')
       expect(listing.stdout).toContain('mcp/keychain-credential-helper.build.json')
@@ -169,7 +169,9 @@ describe('Codex plugin installation package', () => {
       expect(installer.stdout).toContain('runtime\\node.exe')
       expect(listing.stdout).not.toContain('StoreNovaCredentialHelper.exe')
       expect(listing.stdout).not.toMatch(/ChatGPT.*\.msix|ChatGPT-License\.xml/iu)
-      expect(listing.stdout).not.toContain('Store Nova Connect.app')
+      expect(listing.stdout).toContain('Store Nova Connect.app/Contents/MacOS/store-nova-connect')
+      expect(listing.stdout).toContain('scripts/enroll-local-macos.mjs')
+      expect(listing.stdout).toContain('scripts/register-connect-helper.mjs')
       expect(listing.stdout).not.toContain('StoreNovaConnectHelper.exe')
       const extracted = resolve(directory, 'extracted')
       const home = resolve(directory, 'clean-home')

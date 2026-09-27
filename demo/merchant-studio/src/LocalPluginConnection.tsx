@@ -38,6 +38,30 @@ export function localPluginConnectUrl(apiBaseUrl: string, workspaceIds: string[]
   return `storenova://connect?${query.toString()}`
 }
 
+export function localPluginEnrollUrl(apiBaseUrl: string, workspaceIds: string[], selectedWorkspaceId?: string, accountId?: string) {
+  const workspaceId = selectedWorkspaceId && workspaceIds.includes(selectedWorkspaceId) ? selectedWorkspaceId : workspaceIds.length === 1 ? workspaceIds[0] : null
+  const origin = localLoginOrigin(apiBaseUrl)
+  if (!origin || !workspaceId || !/^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(workspaceId)
+    || !/^[A-Za-z0-9_-]{1,128}$/u.test(accountId ?? '')) return null
+  return `storenova://enroll?${new URLSearchParams({ api_origin: origin, workspace: workspaceId, account_id: accountId! })}`
+}
+
+type PairingReturn = { installation_id: string; pairing_token: string; workspace_id: string; expires_at: string }
+export function parsePluginPairFragment(hash: string, workspaceIds: string[]): PairingReturn | null {
+  if (!hash.startsWith('#plugin_pair=') || hash.length > 2048) return null
+  try {
+    const encoded = hash.slice('#plugin_pair='.length)
+    if (!/^[A-Za-z0-9_-]+$/u.test(encoded)) return null
+    const json = atob(encoded.replaceAll('-', '+').replaceAll('_', '/'))
+    const pair = JSON.parse(new TextDecoder().decode(Uint8Array.from(json, character => character.charCodeAt(0)))) as PairingReturn
+    if (!/^[0-9a-f-]{36}$/iu.test(pair.installation_id)
+      || !/^[A-Za-z0-9_-]{43}$/u.test(pair.pairing_token)
+      || !workspaceIds.includes(pair.workspace_id)
+      || !Number.isFinite(Date.parse(pair.expires_at)) || Date.parse(pair.expires_at) <= Date.now()) return null
+    return pair
+  } catch { return null }
+}
+
 type ConnectionUiState = 'idle' | 'requesting' | 'launching' | 'install_required' | 'connected' | 'expired' | 'failed'
 export type LocalPluginPlatform = 'macos' | 'windows' | 'other'
 
@@ -63,6 +87,12 @@ interface ConnectRequest {
   launch_url: string
   expires_at: string
   status: 'pending'
+  account_id?: string
+  installation_id?: string
+  challenge_id?: string
+  server_nonce?: string
+  challenge_issued_at?: string
+  challenge_expires_at?: string
 }
 
 interface ConnectRequestStatus {
@@ -77,7 +107,8 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
   const [openScope, setOpenScope] = useState<string | null>(null)
   const [connectionState, setConnectionState] = useState<ConnectionUiState>('idle')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | undefined>(account.workspaceIds.length === 1 ? account.workspaceIds[0] : undefined)
-  const [selectedPlatform, setSelectedPlatform] = useState<LocalPluginPlatform | null>(null)
+  const [pairing, setPairing] = useState<PairingReturn | null>(null)
+  const [oneClickAvailable, setOneClickAvailable] = useState(false)
   const launchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const connectionAttempt = useRef(0)
   const scope = JSON.stringify([apiBaseUrl, account.id, account.login, account.status, account.workspaceIds])
@@ -85,23 +116,14 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
   const candidateWorkspaceId = selectedWorkspaceId && account.workspaceIds.includes(selectedWorkspaceId) ? selectedWorkspaceId : null
   const workspaceId = candidateWorkspaceId && /^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(candidateWorkspaceId) ? candidateWorkspaceId : null
   const connectTargetAvailable = localPluginConnectUrl(apiBaseUrl, account.workspaceIds, undefined, workspaceId ?? undefined) !== null
-  // The browser has no paired installation ID. Production requires instance
-  // ownership and a signed helper challenge, so keep this prototype action
-  // available only against the loopback development API.
-  const localPrototypeAvailable = localLoginOrigin(apiBaseUrl)?.startsWith('http://127.0.0.1') === true
-  const presentation = connectionStatePresentation[connectionState]
-  const detectedPlatform = detectLocalPluginPlatform(
+  const origin = localLoginOrigin(apiBaseUrl)
+  const macosBrowser = detectLocalPluginPlatform(
     typeof navigator === 'undefined' ? '' : navigator.userAgent,
     typeof navigator === 'undefined' ? '' : navigator.platform,
-  )
-  const platform = selectedPlatform ?? detectedPlatform
-  const command = localPluginLoginCommand(apiBaseUrl, account.workspaceIds, workspaceId ?? undefined, platform)
-  const platformLabel = platform === 'macos' ? 'macOS 本地安装版' : platform === 'windows' ? 'Windows 本地安装版' : 'macOS 或 Windows 本地安装版'
-  const credentialStore = platform === 'macos' ? 'macOS 钥匙串（Keychain）'
-    : platform === 'windows' ? 'Windows 凭据管理器（Credential Manager）'
-      : '系统凭据存储（macOS Keychain 或 Windows Credential Manager）'
-  const stateLabel = connectionState === 'connected' ? `${credentialStore}已写入，待重启验证`
-    : connectionState === 'failed' ? `连接失败，请检查 ${credentialStore}` : presentation.label
+  ) === 'macos'
+  const presentation = connectionStatePresentation[connectionState]
+  const stateLabel = connectionState === 'connected' ? '本地凭据已保存，待 ChatGPT 验证'
+    : connectionState === 'failed' ? '连接失败，请重试' : presentation.label
 
   useEffect(() => {
     connectionAttempt.current += 1
@@ -112,18 +134,76 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
     }
   }, [scope])
 
-  const beginConnection = async () => {
-    if (!workspaceId || !connectTargetAvailable || !localPrototypeAvailable || connectionState === 'requesting') return
+  useEffect(() => {
+    let active = true
+    setOneClickAvailable(false)
+    if (eligible && macosBrowser) {
+      void requestApi<{ one_click_available: boolean; supported_platforms: string[] }>(apiBaseUrl,
+        '/v1/auth/local-plugin/connect-capability', {}, workspaceId ?? undefined)
+        .then(result => { if (active) setOneClickAvailable(result.one_click_available === true && result.supported_platforms?.includes('macos') === true) })
+        .catch(() => { if (active) setOneClickAvailable(false) })
+    }
+    return () => { active = false }
+  }, [scope, workspaceId, eligible, macosBrowser, apiBaseUrl])
+
+  useEffect(() => {
+    const fragment = window.location.hash
+    if (!fragment.startsWith('#plugin_pair=')) return
+    const parsed = parsePluginPairFragment(fragment, account.workspaceIds)
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}`)
+    if (parsed) { setPairing(parsed); setOpenScope(scope) }
+    else setConnectionState('failed')
+  }, [scope, account.workspaceIds])
+
+  const installationKey = workspaceId && origin ? `storenova.plugin.installation:${origin}:${account.id}:${workspaceId}` : null
+
+  const completePairing = async () => {
+    if (!pairing || !installationKey) return
+    try {
+      const result = await requestApi<{ installation_id: string; paired: boolean }>(apiBaseUrl,
+        '/v1/auth/local-plugin/install-instances/pair', {
+          method: 'POST', body: JSON.stringify({ installation_id: pairing.installation_id,
+            pairing_token: pairing.pairing_token, workspace_id: pairing.workspace_id }),
+        }, pairing.workspace_id)
+      if (!result.paired || result.installation_id !== pairing.installation_id) throw new Error('PAIRING_INVALID')
+      window.localStorage.setItem(installationKey, result.installation_id)
+      setPairing(null)
+      setOpenScope(null)
+      setConnectionState('idle')
+      void beginConnection(result.installation_id)
+    } catch { setConnectionState('failed') }
+  }
+
+  const beginConnection = async (pairedInstallationId?: string) => {
+    if (!oneClickAvailable || !workspaceId || !connectTargetAvailable || !installationKey || connectionState === 'requesting') return
+    const installationId = pairedInstallationId ?? window.localStorage.getItem(installationKey)
+    if (!installationId) {
+      const enrollUrl = localPluginEnrollUrl(apiBaseUrl, account.workspaceIds, workspaceId, account.id)
+      if (!enrollUrl) { setConnectionState('failed'); return }
+      setConnectionState('launching')
+      window.location.assign(enrollUrl)
+      launchTimer.current = setTimeout(() => setConnectionState('install_required'), 3_000)
+      return
+    }
     const attempt = ++connectionAttempt.current
     if (launchTimer.current) clearTimeout(launchTimer.current)
     setConnectionState('requesting')
     try {
       const created = await requestApi<ConnectRequest>(apiBaseUrl, '/v1/auth/local-plugin/connect-requests', {
-        method: 'POST', body: JSON.stringify({ workspace_id: workspaceId }),
+        method: 'POST', body: JSON.stringify({ workspace_id: workspaceId, installation_id: installationId }),
       }, workspaceId)
       if (attempt !== connectionAttempt.current) return
-      const expectedLaunchUrl = localPluginConnectUrl(apiBaseUrl, account.workspaceIds, created.request_id, workspaceId)
-      if (!expectedLaunchUrl || created.status !== 'pending' || created.launch_url !== expectedLaunchUrl
+      const expectedBase = localPluginConnectUrl(apiBaseUrl, account.workspaceIds, created.request_id, workspaceId)
+      const expectedLaunch = expectedBase ? new URL(expectedBase) : null
+      if (expectedLaunch && created.account_id === account.id && created.installation_id === installationId
+        && created.challenge_id && created.server_nonce && created.challenge_issued_at && created.challenge_expires_at) {
+        for (const [key, value] of Object.entries({ account_id: created.account_id, installation_id: installationId,
+          challenge_id: created.challenge_id, server_nonce: created.server_nonce,
+          challenge_issued_at: created.challenge_issued_at, challenge_expires_at: created.challenge_expires_at })) {
+          expectedLaunch.searchParams.set(key, value)
+        }
+      }
+      if (!expectedLaunch || created.status !== 'pending' || created.launch_url !== expectedLaunch.toString()
         || !Number.isFinite(new Date(created.expires_at).getTime()) || new Date(created.expires_at).getTime() <= Date.now()) throw new Error('INVALID_CONNECT_REQUEST')
       setConnectionState('launching')
       window.location.assign(created.launch_url)
@@ -156,31 +236,25 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
         options={account.workspaceIds.filter(id => /^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(id)).map(id => ({ label: id, value: id }))}
         onChange={id => { connectionAttempt.current += 1; if (launchTimer.current) clearTimeout(launchTimer.current); setSelectedWorkspaceId(id); setConnectionState('idle') }}
       />}
-      <Button type={localPrototypeAvailable ? 'primary' : 'default'} disabled={!connectTargetAvailable || !localPrototypeAvailable || connectionState === 'requesting' || connectionState === 'launching' || connectionState === 'install_required'} loading={connectionState === 'requesting'} onClick={beginConnection}>连接 ChatGPT 本地插件</Button>
+      <Button type="primary" disabled={!oneClickAvailable || !connectTargetAvailable || connectionState === 'requesting' || connectionState === 'launching'} loading={connectionState === 'requesting'} onClick={() => { void beginConnection() }}>连接 ChatGPT 本地插件</Button>
       <Tag color={presentation.color}>{stateLabel}</Tag>
-      <Button type={localPrototypeAvailable ? 'link' : 'primary'} onClick={() => setOpenScope(scope)}>{localPrototypeAvailable ? '安装与故障帮助' : '查看安装与登录步骤'}</Button>
+      <Button type="link" onClick={() => setOpenScope(scope)}>安装与故障帮助</Button>
     </Space>
     <Modal title="连接本地插件" wrapClassName="merchant-local-plugin-modal" open={openScope === scope} onCancel={() => setOpenScope(null)} destroyOnHidden footer={
       <Button onClick={(event) => { event.stopPropagation(); setOpenScope(null) }}>关闭</Button>
     }>
       <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-        <Alert type={localPrototypeAvailable ? 'info' : 'warning'} title={localPrototypeAvailable ? '先安装 Store Nova 插件包，再一键连接' : '请先安装 Store Nova 本地插件包'} showIcon description={localPrototypeAvailable ? '本地插件包就是 Store Nova 的桌面安装程序。安装后，主按钮会唤起本机连接助手；过程中不会把密码、token 或授权码放进网页链接，点击按钮也不会假装连接已经完成。' : '本地插件包是随 Store Nova 提供的 macOS/Windows 桌面安装程序，不是浏览器脚本。当前网页无法确认电脑上是否已安装并配对该程序，因此连接按钮暂不可用；请先在可信安装包中完成安装，再按下方步骤登录当前工作区。'} />
-        <Space orientation="vertical" size={4} style={{ width: '100%' }}>
-          <Typography.Text>安装包系统</Typography.Text>
-          <Select aria-label="选择安装包系统" placeholder="选择 macOS 或 Windows" style={{ width: '100%' }} value={platform === 'other' ? undefined : platform} options={[{ label: 'macOS', value: 'macos' }, { label: 'Windows', value: 'windows' }]} onChange={(value: LocalPluginPlatform) => setSelectedPlatform(value)} />
-        </Space>
+        {pairing
+          ? <Alert type="info" title="确认连接这台电脑" showIcon description={`将工作区 ${pairing.workspace_id} 授权给刚打开的 Store Nova 本地插件。`} />
+          : oneClickAvailable
+            ? <Alert type="info" title="点击连接并按浏览器提示打开本地插件" showIcon description="首次连接需确认这台电脑。若浏览器提示没有应用可打开，请先安装平台提供的桌面插件包。" />
+            : <Alert type="warning" title="一键授权暂未开放" showIcon description="平台需先发布并启用已签名的本地插件安装包。完成后可直接点击连接，无需输入命令。" />}
         <Descriptions size="small" column={1} items={[
           { key: 'account', label: '当前登录账号', children: account.login },
           { key: 'workspace', label: '目标工作区', children: workspaceId ?? '请先选择当前账号已授权的工作区' },
-          { key: 'platform', label: '安装包系统指引', children: platformLabel },
-          { key: 'credential-store', label: '凭据保存位置', children: credentialStore },
         ]} />
-        {command ? <>
-          <Typography.Paragraph style={{ margin: 0 }}>安装包完成安装后，在安装包目录运行下面的“工作区登录”命令：</Typography.Paragraph>
-          <Typography.Paragraph copyable={{ text: command }} style={{ margin: 0 }}><Typography.Text code>{command}</Typography.Text></Typography.Paragraph>
-          <Typography.Paragraph style={{ margin: 0 }}>命令会打开商家浏览器完成授权，并把凭据写入{credentialStore}。完成后仍需重启 ChatGPT，并在新会话中调用 <Typography.Text code>onboarding.status</Typography.Text> 验证；验证通过前不要视为已连接。</Typography.Paragraph>
-        </> : <Alert type="warning" showIcon title="无法生成安全的本地登录命令" description={platform === 'other' ? '请先选择 macOS 或 Windows 安装包系统，再选择已授权的工作区。' : '请选择已授权的工作区，并确认 HTTPS API 地址有效。'} />}
-        <Typography.Text type="secondary">不要从此页面下载脚本，不要执行远程 curl 管道命令，也不要把 token、密码或授权地址粘贴到聊天或配置文件。</Typography.Text>
+        {pairing && <Button type="primary" onClick={() => { void completePairing() }}>确认连接这台电脑</Button>}
+        <Typography.Paragraph style={{ margin: 0 }}>连接完成后重启 ChatGPT，在新会话中使用 <Typography.Text code>onboarding.status</Typography.Text> 检查连接结果。</Typography.Paragraph>
       </Space>
     </Modal>
   </>

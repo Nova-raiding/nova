@@ -66,6 +66,8 @@ const fixedRuntimeFiles = [
   'scripts/verify-bundle-provenance.mjs',
   'scripts/verify-connect-helper-windows.ps1',
   'scripts/login-local-macos.mjs',
+  'scripts/enroll-local-macos.mjs',
+  'scripts/register-connect-helper.mjs',
   'scripts/login-local-windows.mjs',
   'scripts/windows-installation-binding.mjs',
   'scripts/build-keychain-helper.mjs',

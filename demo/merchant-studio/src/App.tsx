@@ -998,6 +998,9 @@ function Topbar({
   const [passwordForm] = Form.useForm<{ current_password: string; new_password: string; confirm_password: string }>()
   const accountMenuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    if (account?.accountType === 'merchant' && window.location.hash.startsWith('#plugin_pair=')) setAccountMenuOpen(true)
+  }, [account?.id, account?.accountType])
+  useEffect(() => {
     if (!accountMenuOpen) return
     const closeOnOutside = (event: MouseEvent) => {
       // This account-menu child renders into a body portal. Its dialog clicks

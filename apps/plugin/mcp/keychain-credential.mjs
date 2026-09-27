@@ -4,6 +4,7 @@ import { accessSync, constants, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 export const KEYCHAIN_SERVICE = 'com.storenova.merchant-mcp'
+const INSTALLATION_ACCOUNT_PREFIX = 'store-nova-installation-identity\n'
 
 function fail() {
   throw new Error('MCP_KEYCHAIN_CREDENTIAL_INVALID: credential unavailable, malformed, or bound to a different endpoint/workspace.')
@@ -85,4 +86,23 @@ export function readKeychainCredential({ apiOrigin, workspaceId }, options = {})
     || typeof record.refresh_token !== 'string' || !record.refresh_token.trim()
     || typeof record.expires_at !== 'string' || !Number.isFinite(Date.parse(record.expires_at))) fail()
   return record
+}
+
+/** Keep the installation signing key in Keychain, scoped to the API origin. */
+export function installationIdentityStore(apiOrigin, owner, options = {}) {
+  const { origin } = binding(apiOrigin, 'installation')
+  if (!owner || !/^[A-Za-z0-9_-]{1,128}$/u.test(owner.accountId ?? '')
+    || !/^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(owner.workspaceId ?? '')) fail()
+  const account = sha256(`${INSTALLATION_ACCOUNT_PREFIX}${origin}\n${owner.accountId}\n${owner.workspaceId}`)
+  const runHelper = options.runHelper ?? defaultHelper
+  return {
+    load() {
+      const raw = String(runHelper({ operation: 'read_optional', service: KEYCHAIN_SERVICE, account })).trim()
+      const parsed = JSON.parse(raw)
+      return parsed === null ? undefined : parsed
+    },
+    save(identity) {
+      runHelper({ operation: 'write', service: KEYCHAIN_SERVICE, account, data: JSON.stringify(identity) })
+    },
+  }
 }

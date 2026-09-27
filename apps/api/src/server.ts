@@ -13527,7 +13527,7 @@ export function assetHttpRuntime(httpOperationPolicyOperation?: string) {
 async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', `${publicRequestOrigin(req)}/`)
   const path = url.pathname
-  const isLocalPluginConnectionRoute = path === '/v1/auth/local-plugin/connect-requests' || path === '/v1/auth/local-plugin/install-instances/register' || path === '/v1/auth/local-plugin/install-instances/pair' || /^\/v1\/auth\/local-plugin\/connect-requests\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/status$/iu.test(path)
+  const isLocalPluginConnectionRoute = path === '/v1/auth/local-plugin/connect-capability' || path === '/v1/auth/local-plugin/connect-requests' || path === '/v1/auth/local-plugin/install-instances/register' || path === '/v1/auth/local-plugin/install-instances/pair' || /^\/v1\/auth\/local-plugin\/connect-requests\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/status$/iu.test(path)
   // The bridge image is allowed to run before 243/244. Never let its newer
   // one-click branches query missing tables or issue a code before failing.
   const bridgeNewTableRouteUnavailable = () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 // @ts-ignore JavaScript runtime module
-import { KEYCHAIN_SERVICE, readKeychainCredential, writeKeychainCredential } from './keychain-credential.mjs'
+import { KEYCHAIN_SERVICE, installationIdentityStore, readKeychainCredential, writeKeychainCredential } from './keychain-credential.mjs'
 
 const bound = { apiOrigin: 'https://merchant.example.test', workspaceId: 'ws_test' }
 
@@ -34,5 +34,24 @@ describe('macOS keychain credential', () => {
       writeKeychainCredential(value, { schema_version: '1', api_origin: value.apiOrigin, workspace_id: value.workspaceId, access_token: 'a', refresh_token: 'r', expires_at: '2030-01-01T00:00:00Z' }, { runHelper: capture })
     }
     expect(new Set(accounts).size).toBe(3)
+  })
+
+  it('keeps the installation identity separate and refuses a broken optional read', () => {
+    const calls: Array<Record<string, string>> = []
+    const owner = { accountId: 'account_123', workspaceId: bound.workspaceId }
+    const store = installationIdentityStore(bound.apiOrigin, owner, { runHelper: (request: Record<string, string>) => {
+      calls.push(request)
+      return request.operation === 'read_optional' ? 'null' : ''
+    } })
+    expect(store.load()).toBeUndefined()
+    store.save({ installation_id: '11111111-1111-4111-8111-111111111111' })
+    expect(calls.map(call => call.operation)).toEqual(['read_optional', 'write'])
+    expect(calls[0]!.account).toBe(calls[1]!.account)
+    expect(() => installationIdentityStore(bound.apiOrigin, owner, { runHelper: () => { throw new Error('Keychain denied') } }).load()).toThrow('Keychain denied')
+    expect(() => installationIdentityStore(bound.apiOrigin, owner, { runHelper: () => '{broken' }).load()).toThrow()
+    const other = installationIdentityStore(bound.apiOrigin, { accountId: 'account_other', workspaceId: bound.workspaceId },
+      { runHelper: (request: Record<string, string>) => { calls.push(request); return 'null' } })
+    other.load()
+    expect(calls.at(-1)!.account).not.toBe(calls[0]!.account)
   })
 })

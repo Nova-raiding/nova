@@ -14,7 +14,52 @@ describe('local plugin login installer runtime', () => {
     expect(() => credentialFromResponse({ data: { access_token: 'a', refresh_token: 'b', token_type: 'Bearer', scope: 'merchant', expires_in: 600, workspace_id: 'ws_other', account_login: 'test@example.test' } }, { apiOrigin: 'https://example.test', workspaceId: 'ws_test' })).toThrow('RESPONSE_INVALID')
   })
 
-  it('drives the real listener and HTTP exchange, rejects forged callback, then persists before configuring', async () => {
+  it('rejects malformed connection request identifiers before opening the browser', async () => {
+    await expect(loginLocalPlugin({ baseUrl: 'https://example.test', workspaceId: 'ws_test', requestId: 'secret in url',
+      openBrowser: () => {}, storeCredential: () => {}, configureSession: () => {} })).rejects.toThrow('REQUEST_ID_INVALID')
+  })
+
+  it('adds a signed installation challenge to the browser request and token exchange', async () => {
+    let authorization: URL
+    const tokenBodies: URLSearchParams[] = []
+    const provider = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      tokenBodies.push(new URLSearchParams(Buffer.concat(chunks).toString()))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { access_token: 'access', refresh_token: 'refresh', token_type: 'Bearer',
+        scope: 'merchant', expires_in: 600, workspace_id: 'ws_test', account_login: 'merchant@example.test' } }))
+    })
+    await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve))
+    try {
+      const port = (provider.address() as { port: number }).port
+      await loginLocalPlugin({ baseUrl: `http://127.0.0.1:${port}`, workspaceId: 'ws_test',
+        requestId: 'req_1234567890abcdef',
+        createInstallationProof: ({ codeChallenge, redirectUri }: { codeChallenge: string; redirectUri: string }) => {
+          expect(codeChallenge).toMatch(/^[A-Za-z0-9_-]{43}$/u)
+          expect(redirectUri).toContain('/merchant-mcp-callback')
+          return { installationId: '11111111-1111-4111-8111-111111111111',
+            challengeId: '22222222-2222-4222-8222-222222222222', signature: 's'.repeat(86),
+            clientNonce: 'c'.repeat(43), serverNonce: 'n'.repeat(43),
+            issuedAt: '2026-09-28T00:00:00.000Z', expiresAt: '2026-09-28T00:02:00.000Z' }
+        },
+        openBrowser: async (url: string) => {
+          authorization = new URL(url)
+          expect(authorization.searchParams.get('installation_id')).toBe('11111111-1111-4111-8111-111111111111')
+          expect(authorization.searchParams.get('instance_signature')).toBe('s'.repeat(86))
+          const callback = new URL(authorization.searchParams.get('redirect_uri')!)
+          callback.searchParams.set('code', 'one-time-code-long-enough')
+          callback.searchParams.set('state', authorization.searchParams.get('state')!)
+          expect((await fetch(callback)).status).toBe(200)
+        },
+        storeCredential: () => {}, configureSession: () => {}, timeoutMs: 2000,
+      })
+      expect(tokenBodies).toHaveLength(1)
+      expect(tokenBodies[0]!.get('installation_id')).toBe('11111111-1111-4111-8111-111111111111')
+    } finally { provider.closeAllConnections(); await new Promise<void>(resolve => provider.close(() => resolve())) }
+  })
+
+  it.each(['keychain', 'windows_credential_manager'])('drives the real listener for %s, rejects forged callback, then persists before configuring', async credentialSource => {
     let authorization: URL
     let exchanges = 0
     const events: string[] = []
@@ -35,10 +80,11 @@ describe('local plugin login installer runtime', () => {
     await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve))
     try {
       const address = provider.address() as { port: number }
-      const result = await loginLocalPlugin({ baseUrl: `http://127.0.0.1:${address.port}`, workspaceId: 'ws_test',
+      const result = await loginLocalPlugin({ baseUrl: `http://127.0.0.1:${address.port}`, workspaceId: 'ws_test', requestId: 'req_1234567890abcdef', credentialSource,
         openBrowser: async (url: string) => {
           authorization = new URL(url)
           expect(authorization.searchParams.get('code_challenge_method')).toBe('S256')
+          expect(authorization.searchParams.get('connection_request_id')).toBe('req_1234567890abcdef')
           expect(authorization.searchParams.has('code_verifier')).toBe(false)
           const callback = new URL(authorization.searchParams.get('redirect_uri')!)
           callback.searchParams.set('code', 'one-time-code-long-enough')
@@ -56,7 +102,7 @@ describe('local plugin login installer runtime', () => {
       })
       expect(exchanges).toBe(1)
       expect(events).toEqual(['stored', 'configured'])
-      expect(result).toMatchObject({ ok: true, host_verified: false, credential_source: 'keychain', restart_required: true })
+      expect(result).toMatchObject({ ok: true, host_verified: false, credential_source: credentialSource, restart_required: true })
       expect(JSON.stringify(result)).not.toMatch(/synthetic|access_token|refresh_token/u)
     } finally { provider.closeAllConnections(); await new Promise<void>(resolve => provider.close(() => resolve())) }
   })

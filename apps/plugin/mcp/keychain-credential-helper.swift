@@ -33,13 +33,17 @@ case "write":
         item[kSecValueData as String] = value
         guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { fail() }
     } else if status != errSecSuccess { fail() }
-case "read":
+case "read", "read_optional":
     var readQuery = query
     readQuery[kSecReturnData as String] = true
     readQuery[kSecMatchLimit as String] = kSecMatchLimitOne
     var result: CFTypeRef?
-    guard SecItemCopyMatching(readQuery as CFDictionary, &result) == errSecSuccess,
-          let data = result as? Data else { fail() }
+    let status = SecItemCopyMatching(readQuery as CFDictionary, &result)
+    if request.operation == "read_optional" && status == errSecItemNotFound {
+        FileHandle.standardOutput.write(Data("null".utf8))
+        break
+    }
+    guard status == errSecSuccess, let data = result as? Data else { fail() }
     FileHandle.standardOutput.write(data)
 default:
     fail()

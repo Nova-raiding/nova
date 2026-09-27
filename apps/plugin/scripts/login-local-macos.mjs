@@ -63,7 +63,7 @@ export function credentialFromResponse(payload, target) {
 }
 
 /** The verifier and tokens never leave memory except through the credential store. */
-export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, openBrowser, storeCredential, configureSession, launchChatGPT,
+export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, createInstallationProof, openBrowser, storeCredential, configureSession, launchChatGPT,
   fetchImpl = fetch, timeoutMs = 300000, signal, credentialSource = 'keychain' }) {
   const target = validateLoginTarget(baseUrl, workspaceId)
   if (requestId !== undefined && (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/u.test(requestId))) {
@@ -116,6 +116,19 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, openBr
     for (const [name, value] of Object.entries({ response_type: 'code', client_id: 'local-desktop', redirect_uri: redirectUri,
       state, code_challenge: challenge, code_challenge_method: 'S256', scope: 'merchant',
       resource: `${target.apiOrigin}/mcp`, workspace_id: target.workspaceId, ...(requestId ? { connection_request_id: requestId } : {}) })) authorize.searchParams.set(name, value)
+    let installationId
+    if (createInstallationProof) {
+      if (!requestId || typeof createInstallationProof !== 'function') throw fail('INSTALLATION_PROOF_INVALID')
+      const proof = await createInstallationProof({ apiOrigin: target.apiOrigin, workspaceId: target.workspaceId,
+        requestId, codeChallenge: challenge, redirectUri })
+      const fields = { installation_id: proof?.installationId, challenge_id: proof?.challengeId,
+        instance_signature: proof?.signature, client_nonce: proof?.clientNonce,
+        server_nonce: proof?.serverNonce, challenge_issued_at: proof?.issuedAt,
+        challenge_expires_at: proof?.expiresAt }
+      if (Object.values(fields).some(value => typeof value !== 'string' || !value || /[\r\n]/u.test(value))) throw fail('INSTALLATION_PROOF_INVALID')
+      installationId = proof.installationId
+      for (const [name, value] of Object.entries(fields)) authorize.searchParams.set(name, value)
+    }
     timer = setTimeout(() => reject(fail('TIMEOUT')), timeoutMs)
     signal?.addEventListener('abort', cancel, { once: true })
     await openBrowser(authorize.toString())
@@ -128,7 +141,7 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, openBr
       headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
       body: new URLSearchParams({ grant_type: 'authorization_code', client_id: 'local-desktop', redirect_uri: redirectUri,
         code, code_verifier: verifier, resource: `${target.apiOrigin}/mcp`, workspace_id: target.workspaceId,
-        ...(requestId ? { connection_request_id: requestId } : {}) }),
+        ...(requestId ? { connection_request_id: requestId } : {}), ...(installationId ? { installation_id: installationId } : {}) }),
     })
     const bundle = credentialFromResponse(await boundedJson(response), target)
     if (signal?.aborted) {
@@ -170,20 +183,42 @@ async function main() {
     return
   }
   const options = new Map()
+  const installFlags = ['--installation-id', '--account-id', '--challenge-id', '--server-nonce', '--challenge-issued-at', '--challenge-expires-at']
   for (let index = 0; index < args.length; index++) {
     const key = args[index]
-    if (!['--base-url', '--workspace', '--request-id', '--no-open'].includes(key) || options.has(key)) throw fail('ARGUMENTS_INVALID')
+    if (!['--base-url', '--workspace', '--request-id', '--no-open', ...installFlags].includes(key) || options.has(key)) throw fail('ARGUMENTS_INVALID')
     const value = key === '--no-open' ? true : args[++index]
     if (!value || typeof value === 'string' && value.startsWith('--')) throw fail('ARGUMENTS_INVALID')
     options.set(key, value)
   }
   validateLoginTarget(options.get('--base-url'), options.get('--workspace'))
+  const proofValues = installFlags.map(flag => options.get(flag))
+  if (proofValues.some(Boolean) && (!proofValues.every(Boolean) || !options.get('--request-id'))) throw fail('INSTALLATION_PROOF_INVALID')
   if (process.platform !== 'darwin') throw fail('MACOS_REQUIRED')
   const manifest = JSON.parse(readFileSync(new URL('../.codex-plugin/plugin.json', import.meta.url), 'utf8'))
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   if (!manifest.version || manifest.version !== pkg.version) throw fail('PACKAGE_MISMATCH')
-  const { writeKeychainCredential, assertKeychainHelperReady } = await import('../mcp/keychain-credential.mjs')
+  const { writeKeychainCredential, assertKeychainHelperReady, installationIdentityStore } = await import('../mcp/keychain-credential.mjs')
   assertKeychainHelperReady()
+  let createInstallationProof
+  if (proofValues.every(Boolean)) {
+    const { signInstallationTranscript } = await import('../mcp/installation-identity.mjs')
+    const identity = installationIdentityStore(options.get('--base-url'), {
+      accountId: options.get('--account-id'), workspaceId: options.get('--workspace'),
+    }).load()
+    if (!identity || identity.installation_id !== options.get('--installation-id') || identity.platform !== 'macos') throw fail('INSTALLATION_PROOF_INVALID')
+    createInstallationProof = ({ apiOrigin, workspaceId, requestId, codeChallenge, redirectUri }) => {
+      const clientNonce = randomBytes(32).toString('base64url')
+      const transcript = { method: 'POST', path: '/v1/auth/local-plugin/authorize', apiOrigin,
+        requestId, challengeId: options.get('--challenge-id'), accountId: options.get('--account-id'),
+        workspaceId, installationId: identity.installation_id, keyId: identity.key_id, platform: 'macos',
+        pkceChallenge: codeChallenge, redirectUri, clientNonce, serverNonce: options.get('--server-nonce'),
+        issuedAt: options.get('--challenge-issued-at'), expiresAt: options.get('--challenge-expires-at') }
+      return { installationId: identity.installation_id, challengeId: transcript.challengeId,
+        signature: signInstallationTranscript(identity, transcript), clientNonce,
+        serverNonce: transcript.serverNonce, issuedAt: transcript.issuedAt, expiresAt: transcript.expiresAt }
+    }
+  }
   const controller = new AbortController()
   const cancel = () => controller.abort()
   process.once('SIGINT', cancel)
@@ -196,7 +231,7 @@ async function main() {
       const appPath = appPaths.find(path => existsSync(path) && verifyChatGPTMacApp(path).ok)
       return appPath ? launchVerifiedChatGPT(appPath) : { launched: false, reason: '未找到已验证的 ChatGPT.app' }
     }
-    const result = await loginLocalPlugin({ baseUrl: options.get('--base-url'), workspaceId: options.get('--workspace'), requestId: options.get('--request-id'),
+    const result = await loginLocalPlugin({ baseUrl: options.get('--base-url'), workspaceId: options.get('--workspace'), requestId: options.get('--request-id'), createInstallationProof,
       openBrowser: url => options.get('--no-open') ? process.stdout.write(`请在商家浏览器打开此授权地址（不含 token）：\n${url}\n`)
         : execFileSync('/usr/bin/open', [url], { stdio: 'ignore', timeout: 5000 }),
       storeCredential: writeKeychainCredential, configureSession: configureLaunchd, launchChatGPT, signal: controller.signal })

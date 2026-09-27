@@ -6,19 +6,22 @@ import { chromium } from 'playwright'
 import { createServer as createViteServer } from 'vite'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
-import { server as api, setPasswordAuthRepositoryForTests } from './server.js'
+import { server as api, workspaceMembers, setPasswordAuthRepositoryForTests } from './server.js'
 
 const close = (server: ReturnType<typeof createServer>) => new Promise<void>(resolve => server.close(() => resolve()))
 
 it('returns from merchant login to the original local plugin consent in a browser', async () => {
   vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
   vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+  vi.stubEnv('LOCAL_PLUGIN_ONE_CLICK_ENABLED', 'true')
   const repository = new MemoryPasswordAuthRepository()
   setPasswordAuthRepositoryForTests(repository)
   const workspaceId = `ws_login_browser_${Date.now()}`
   const login = `plugin-browser-${Date.now()}@example.test`
   const password = 'PluginBrowser1234!'
   await repository.createMerchantAccount({ login, password, enterpriseName: 'Plugin Login Browser', contactName: 'Owner', workspaceIds: [workspaceId], actorId: 'platform-operator', reason: 'browser consent test' })
+  await workspaceMembers.upsert({ workspaceId, externalSubject: login, displayName: login,
+    role: 'workspace_owner', status: 'active', invitedBy: 'browser-consent-test' })
   await new Promise<void>(resolve => api.listen(0, '127.0.0.1', resolve))
   const apiAddress = api.address()
   if (!apiAddress || typeof apiAddress === 'string') throw new Error('API did not bind')
@@ -63,6 +66,18 @@ it('returns from merchant login to the original local plugin consent in a browse
     expect(new URL(page.url()).searchParams.get('state')).toBe(state)
     expect(await page.getByText(login).count()).toBeGreaterThan(0)
     expect(await page.getByText(workspaceId).count()).toBeGreaterThan(0)
+    await page.getByRole('link', { name: '取消并返回商家后台' }).click()
+    await page.getByRole('button', { name: '打开账号菜单' }).click()
+    const connect = page.getByRole('button', { name: '连接 ChatGPT 本地插件' })
+    await connect.waitFor({ state: 'visible' })
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button =>
+      button.textContent?.includes('连接 ChatGPT 本地插件') && !button.disabled))
+    expect(await connect.isEnabled()).toBe(true)
+    await page.getByRole('button', { name: '安装与故障帮助' }).click()
+    const dialog = page.getByRole('dialog', { name: '连接本地插件' })
+    await dialog.waitFor({ state: 'visible' })
+    expect(await dialog.innerText()).toContain('点击连接并按浏览器提示打开本地插件')
+    expect(await dialog.innerText()).not.toMatch(/login-local|login\.cmd|runtime\/node/u)
   } finally {
     await browser?.close()
     await vite?.close()

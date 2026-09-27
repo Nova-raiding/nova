@@ -2,7 +2,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { detectLocalPluginPlatform, LocalPluginConnection, localPluginConnectUrl, localPluginLoginCommand } from './LocalPluginConnection'
+import { detectLocalPluginPlatform, LocalPluginConnection, localPluginConnectUrl, localPluginEnrollUrl, localPluginLoginCommand, parsePluginPairFragment } from './LocalPluginConnection'
 import type { MerchantAuthAccount } from './api'
 
 const account: MerchantAuthAccount = {
@@ -32,18 +32,15 @@ describe('local plugin connection entry', () => {
     expect(app).toContain("event.target.closest('.merchant-local-plugin-modal')")
   })
 
-  it('points to the installed local CLI without claiming installation or connection', () => {
+  it('presents a one-click entry without showing shell commands to merchants', () => {
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
-    expect(component).toContain('./runtime/node scripts/login-local-macos.mjs --base-url ${apiOrigin} --workspace ${workspaceId}')
-    expect(component).toContain('login.cmd --workspace ${workspaceId}')
-    expect(component).toContain('先安装 Store Nova 插件包，再一键连接')
-    expect(component).toContain('本地插件包就是 Store Nova 的桌面安装程序')
-    expect(component).toContain('本地插件包是随 Store Nova 提供的 macOS/Windows 桌面安装程序')
-    expect(component).toContain('不会把密码、token 或授权码放进网页链接')
-    expect(component).toContain('macOS 钥匙串（Keychain）')
-    expect(component).toContain('Windows 凭据管理器（Credential Manager）')
+    const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account }))
+    expect(markup).toContain('连接 ChatGPT 本地插件')
+    expect(markup).toContain('安装与故障帮助')
+    expect(markup).not.toMatch(/login-local|login\.cmd|runtime\/node/u)
+    expect(component).toContain('install-instances/pair')
+    expect(component).toContain('installation_id: installationId')
     expect(component).toContain('onboarding.status')
-    expect(component).toContain('不要执行远程 curl 管道命令')
   })
 
   it('uses platform hints for guidance only', () => {
@@ -51,7 +48,7 @@ describe('local plugin connection entry', () => {
     expect(detectLocalPluginPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Win32')).toBe('windows')
     expect(detectLocalPluginPlatform('Mozilla/5.0 (X11; Linux x86_64)', 'Linux x86_64')).toBe('other')
     const source = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
-    expect(source).toContain("body: JSON.stringify({ workspace_id: workspaceId })")
+    expect(source).toContain("body: JSON.stringify({ workspace_id: workspaceId, installation_id: installationId })")
     expect(source).not.toMatch(/body:\s*JSON\.stringify\([^)]*(?:platform|userAgent|credentialStore)/u)
   })
 
@@ -61,6 +58,16 @@ describe('local plugin connection entry', () => {
     expect(url).not.toMatch(/token|password|code=/u)
     expect(localPluginConnectUrl('http://yxsona.com/api', ['ws_safe-1'])).toBeNull()
     expect(localPluginConnectUrl('https://yxsona.com/api', ['ws_safe-1'], 'unsafe')).toBeNull()
+    expect(localPluginEnrollUrl('https://yxsona.com/api', ['ws_safe-1'], undefined, 'account_123')).toBe('storenova://enroll?api_origin=https%3A%2F%2Fyxsona.com&workspace=ws_safe-1&account_id=account_123')
+  })
+
+  it('accepts only a current pairing for an authorized workspace', () => {
+    const pair = { installation_id: '11111111-1111-4111-8111-111111111111', pairing_token: 'p'.repeat(43),
+      workspace_id: 'ws_safe-1', expires_at: new Date(Date.now() + 60_000).toISOString() }
+    const fragment = `#plugin_pair=${Buffer.from(JSON.stringify(pair)).toString('base64url')}`
+    expect(parsePluginPairFragment(fragment, ['ws_safe-1'])).toEqual(pair)
+    expect(parsePluginPairFragment(fragment, ['ws_foreign'])).toBeNull()
+    expect(parsePluginPairFragment('#plugin_pair=unsafe', ['ws_safe-1'])).toBeNull()
   })
 
   it('requires explicit selection for multiple authorized workspaces', () => {
@@ -81,11 +88,11 @@ describe('local plugin connection entry', () => {
     expect(localPluginLoginCommand('https://yxsona.com/api', ['ws_first'], undefined, 'other')).toBeNull()
   })
 
-  it('offers an explicit installer platform choice when browser detection cannot identify the target OS', () => {
+  it('keeps installation help brief', () => {
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
-    expect(component).toContain('aria-label="选择安装包系统"')
-    expect(component).toContain('请先选择 macOS 或 Windows 安装包系统')
-    expect(component).toContain('查看安装与登录步骤')
+    expect(component).toContain('点击连接并按浏览器提示打开本地插件')
+    expect(component).toContain('一键授权暂未开放')
+    expect(component).not.toContain('查看安装与登录步骤')
   })
 
   it('keeps account and workspace guidance isolated when identity changes', () => {
@@ -99,10 +106,11 @@ describe('local plugin connection entry', () => {
     expect(component).not.toContain('<API_ORIGIN>')
   })
 
-  it('does not expose browser credential, storage, download, or protocol-handler paths', () => {
+  it('stores only the public installation id in browser state', () => {
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
     expect(component).not.toContain('requestLocalPluginCredential')
     expect(component).not.toContain('/v1/auth/mcp-token')
-    expect(component).not.toMatch(/access_token|refresh_token|localStorage\s*\.|sessionStorage\s*\.|console\.|navigator\.clipboard|createObjectURL|location\.href\s*=|window\.open/u)
+    expect(component).toContain('window.localStorage.setItem(installationKey, result.installation_id)')
+    expect(component).not.toMatch(/access_token|refresh_token|sessionStorage\s*\.|console\.|navigator\.clipboard|createObjectURL|location\.href\s*=|window\.open/u)
   })
 })

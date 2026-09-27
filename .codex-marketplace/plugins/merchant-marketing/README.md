@@ -1,6 +1,6 @@
 # Store Nova Codex 插件
 
-macOS 新安装当前仍使用本地登录 CLI：它在 `127.0.0.1` 随机端口接收 PKCE S256 回调，服务端签发的工作区 access/refresh token 作为一个绑定 API origin 与 workspace 的原子包写入 macOS Keychain。`storenova://` Helper 目前仅为开发与恢复原型，不能作为生产默认入口。launchd 只保存非敏感连接配置。旧 `install-local-macos.sh` 仅用于既有 launchd token 部署的兼容维护，不推荐新用户使用。
+macOS 本地登录在 `127.0.0.1` 随机端口接收 PKCE S256 回调，服务端签发的工作区 access/refresh token 作为一个绑定 API origin 与 workspace 的原子包写入 macOS Keychain。安装包候选已包含一键连接助手；只有 Developer ID 签名、公证、安装实例配对及真实浏览器验收完成后，才启用 101 的一键连接开关。launchd 只保存非敏感连接配置。旧 `install-local-macos.sh` 仅用于既有 launchd token 部署的兼容维护。
 
 当前商家主流程为：**公开链接/手工资料 → 内容生产 → 工具支持时审核、导出**。这是产品范围与目标顺序，每个阶段以实际工具支持和服务端结果为准；未绑定候选的审核/导出缺口见下文。实际工具以当前连接的 `tools/list` 与运行态契约测试为准，不在文档中固化工具数量，也不以数量证明生产就绪。
 
@@ -17,15 +17,15 @@ macOS 新安装当前仍使用本地登录 CLI：它在 `127.0.0.1` 随机端口
 
 在仓库根目录执行 `node apps/plugin/scripts/package-local-plugin.mjs`。打包机会下载 nodejs.org 官方 Node v22.16.0 归档，并同时校验固定在源码中的平台 SHA-256 与官方 SHASUMS，按当前操作系统及架构生成独立包。macOS 构建还会编译 Keychain helper，并把源码、二进制及哈希证明一起放进包；生成的 `.tar.gz` 是未签名验收候选，不能直接作为用户交付物。macOS 正式交付使用已签名、公证并装订票据的 `.dmg`，Windows 正式交付使用签名 helper 的 `.zip`。文件名包含 `darwin-arm64`、`darwin-x64` 或 `win32-x64` 等平台标识。API、数据库、worker、运营后台不进入用户包；bridge 通过 HTTPS 使用云端服务。
 
-有 Developer ID Application 证书的 macOS 发布机设置 `STORENOVA_MAC_SIGNER_THUMBPRINT`、`STORENOVA_MAC_TEAM_ID` 与 `STORENOVA_MAC_NOTARY_PROFILE` 后运行 `node apps/plugin/scripts/build-signed-macos-package.mjs <输出.dmg>`。脚本签名包内 Node、Keychain helper 和 DMG，要求 Apple 公证通过、票据装订，并在只读挂载的最终 DMG 中核验可执行文件签名、摘要与 Gatekeeper 评估，随后输出 `.dmg` 与 `.sha256`。普通 DMG 不包含 ChatGPT.app：正式用户打开该 DMG 并运行 `install-all.command`，入口先核验本机 ChatGPT.app 的 OpenAI 签名、原生架构与 Gatekeeper 公证；若未安装，则打开 OpenAI 官方通用下载页，等待用户完成原版安装后再继续安装插件。另有包含官方 ChatGPT.app 的内部未签名候选包，仅供验收，不能交付客户；它不重签或修改官方应用。随后用户输入管理员分配的工作区并在浏览器确认授权。安装器使用包内 `runtime/node`，写入个人插件源、安装缓存和启用配置，不要求用户安装 Node、Swift 或 Codex CLI。最后完全重启 ChatGPT，在新对话调用 `onboarding.status` 验证。商家账号、工作区、网络以及 ChatGPT 桌面应用仍是使用服务的必要条件。
+有 Developer ID Application 证书的 macOS 发布机设置 `STORENOVA_MAC_SIGNER_THUMBPRINT`、`STORENOVA_MAC_TEAM_ID` 与 `STORENOVA_MAC_NOTARY_PROFILE` 后运行 `node apps/plugin/scripts/build-signed-macos-package.mjs <输出.dmg>`。脚本签名包内 Node、Keychain helper、Store Nova Connect.app 和 DMG，要求 Apple 公证通过、票据装订，并在只读挂载的最终 DMG 中核验可执行文件签名、摘要与 Gatekeeper 评估，随后输出 `.dmg` 与 `.sha256`。普通 DMG 不包含 ChatGPT.app：正式用户打开该 DMG 并运行 `install-all.command`，入口先核验本机 ChatGPT.app 的 OpenAI 签名、原生架构与 Gatekeeper 公证；若未安装，则打开 OpenAI 官方通用下载页，等待用户完成原版安装后再继续安装插件。另有包含官方 ChatGPT.app 的内部未签名候选包，仅供验收，不能交付客户；它不重签或修改官方应用。随后用户输入管理员分配的工作区并在浏览器确认授权。安装器使用包内 `runtime/node`，写入个人插件源、安装缓存和启用配置，不要求用户安装 Node、Swift 或 Codex CLI。最后完全重启 ChatGPT，在新对话调用 `onboarding.status` 验证。商家账号、工作区、网络以及 ChatGPT 桌面应用仍是使用服务的必要条件。
 
 Windows 用户必须同时取得同一发布生成的 `<名称>.zip` 和包外 `<名称>.install.ps1`，先确认包外安装器的 Authenticode 签名来自平台公布的生产发布者，再运行该 `.install.ps1`。签名安装器绑定整个 ZIP 的 SHA-256，先验证整包，随后在已验证的内容中检查本机 ChatGPT 的 OpenAI 发布者、Microsoft Store 签名与 x64 架构；缺失时通过官方 Store/winget 安装原版客户端，再安装插件。ZIP 不包含或修改 ChatGPT 客户端。用户输入管理员分配的工作区并在浏览器确认授权，也可稍后运行 `login.cmd --workspace ws_平台分配的工作区`。不要直接运行 ZIP 内 `install.cmd`、`install-chatgpt.ps1`、`install-plugin.ps1` 或 Node 脚本；这些批处理/PowerShell 安装入口已改为拒绝。重启 ChatGPT 后在新对话验证 `onboarding.status`。Windows 包仅能在真实 Windows 构建及安装环境完成发布验收。
 
 有生产签名证书的 Windows 发布机运行 `powershell.exe -NoProfile -File apps/plugin/scripts/build-signed-windows-package.ps1 -OutputPath <输出.zip> -CertificateThumbprint <证书指纹> -TimestampServer <可信时间戳服务地址>`。证书私钥留在 Windows 证书库或签名硬件中；证书必须包含代码签名用途、处于有效期内，正式包拒绝自签名证书和 CI 测试证书。脚本签名自包含 helper 与包外 `<输出>.install.ps1`，核验两者证书链与时间戳，并核验包内官方 Node 的 Authenticode 发布者和时间戳。包外签名安装器内嵌最终 ZIP 哈希并在执行包内代码前验证；独立 `.sha256` 仅作辅助校验，不是信任根。已有输出不会被覆盖，缺少证书、时间戳或校验失败时不会留下候选交付物。CI 临时测试证书和包只用于 GitHub Actions，不得作为用户交付物。
 
-当前 `storenova://` 连接助手只作为开发与故障恢复原型随包提供源码和本机构建脚本，独立包不会携带 `.app`。在完成签名/公证、安装实例密码学绑定和抗 scheme 劫持验收前，安装与升级脚本不会自动注册该 scheme，也不得把它作为生产“一键连接”路径。生产页面继续使用受约束的手工登录流程；验收器会明确返回 `production_ready=false`，避免把源码存在误报成可发布能力。
+macOS 候选包携带未注册的 `Store Nova Connect.app`。正式签名、公证的 DMG 才会在安装后核验并注册 `storenova://`；商家点击连接后，本地助手向服务端注册安装身份，商家在网页确认一次配对，随后由安装密钥签名一次性挑战、本地登录脚本完成 PKCE 和 Keychain 保存。安装实例证明阻止未配对的协议处理程序完成现有账号的连接。当前发布 Mac 缺 Developer ID 身份，101 的 `LOCAL_PLUGIN_ONE_CLICK_ENABLED` 尚未打开，因此这一流程仍缺真实安装与 101 浏览器验收；不可把候选源码或页面按钮当作可用证明。
 
-`storenova://` 连接助手仍只有源码；它与正式登录所需的凭据 helper 是不同组件。Windows 开发机可设置 `STORENOVA_WINDOWS_CSC_PATH` 后运行 `node scripts/build-connect-helper-windows.mjs`，它只生成未签名的连接助手 EXE 和 SHA-256 文件，不会写注册表、安装协议或访问 Credential Manager。`verify-connect-helper-windows.ps1` 会核对 SHA-256、Authenticode 和签名者；即使签名通过，在安装实例绑定完成前仍返回 `production_ready=false`，不会注册 `storenova://`。
+macOS 候选包内已有 `storenova://` 连接助手应用，但未签名候选不会注册协议。Windows 开发机可设置 `STORENOVA_WINDOWS_CSC_PATH` 后运行 `node scripts/build-connect-helper-windows.mjs`，它只生成未签名的连接助手 EXE 和 SHA-256 文件，不会写注册表、安装协议或访问 Credential Manager。`verify-connect-helper-windows.ps1` 会核对 SHA-256、Authenticode 和签名者；即使签名通过，在安装实例绑定完成前仍返回 `production_ready=false`，不会注册 `storenova://`。
 
 Windows 包内 `install-chatgpt.ps1` 和 `install.cmd` 均拒绝直接安装；包外签名安装器验证整包后才调用包内安装逻辑。打包流程仍核对凭据 helper 的哈希、有效 Authenticode 签名和发布签名者指纹。此检查不代表 `storenova://` 连接助手已通过其独立的安装实例绑定门禁。
 
@@ -73,8 +73,7 @@ node apps/plugin/scripts/install-local-plugin.mjs
 Codex CLI 将本地源码适配器放在 `plugin marketplace` 命令组下，这是本机发现和缓存安装协议，
 不等于发布到公共或团队插件市场。脚本不会上传插件。
 
-安装完成后，在安装后的插件目录使用 CLI 登录。商家后台的一键连接按钮与 Helper 尚未通过生产
-签名、公证、安装实例绑定和 scheme 劫持验收，不作为正式安装路径：
+签名安装包完成安装后，商家回到后台点击“连接 ChatGPT 本地插件”，在网页确认本机配对和授权。当前发布机缺少 Developer ID 身份，101 一键连接开关保持关闭。以下 CLI 仅供本地开发和旧版安装维护：
 
 ```bash
 cd /absolute/path/to/installed/merchant-marketing/<version>
@@ -84,7 +83,7 @@ node scripts/login-local-macos.mjs \
   --workspace ws_<平台分配的工作区>
 ```
 
-浏览器打开后，先登录对应商家账号并确认当前工作区授权。CLI 成功同样只证明凭据已写入
+浏览器打开后，若尚未登录，点击“登录商家账号”；登录成功会返回本次插件授权确认页，再核对账号和工作区并确认。CLI 成功同样只证明凭据已写入
 Keychain 且非敏感连接配置已设置，不代表 ChatGPT 已加载插件。完全退出并重新打开
 ChatGPT/Codex，新建对话后调用只读 `onboarding.status` 验证真实宿主、身份与工作区。
 

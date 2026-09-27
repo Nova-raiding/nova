@@ -18,7 +18,8 @@ export interface LocalPluginConnectionRouteDependencies {
 }
 
 export function isLocalPluginConnectionRoute(path: string): boolean {
-  return path === '/v1/auth/local-plugin/connect-requests'
+  return path === '/v1/auth/local-plugin/connect-capability'
+    || path === '/v1/auth/local-plugin/connect-requests'
     || path === '/v1/auth/local-plugin/install-instances/register'
     || path === '/v1/auth/local-plugin/install-instances/pair'
     || /^\/v1\/auth\/local-plugin\/connect-requests\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/status$/iu.test(path)
@@ -41,6 +42,16 @@ export async function handleLocalPluginConnectionRoute(req: IncomingMessage, res
     return current
   }
   res.setHeader('cache-control', 'no-store')
+  if (req.method === 'GET' && path === '/v1/auth/local-plugin/connect-capability') {
+    const current = await merchantSession()
+    deps.send(200, current.account.workspaceIds[0] ?? 'unknown', {
+      one_click_available: !process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
+        && process.env.LOCAL_PLUGIN_ONE_CLICK_ENABLED === 'true'
+        && (!deps.production || deps.integrationMode === 'local_stdio'),
+      supported_platforms: ['macos'],
+    })
+    return true
+  }
   // The bridge image is allowed to run before 243/244. Never let its newer
   // one-click branches query missing tables or issue a code before failing.
   if (process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE) throw new DomainError('LOCAL_PLUGIN_BRIDGE_UNAVAILABLE', '本地插件一键连接将在数据库升级后开放', 503)
@@ -83,8 +94,8 @@ export async function handleLocalPluginConnectionRoute(req: IncomingMessage, res
     const challenge = installationId ? await deps.installInstances.issueChallenge({ instanceId: installationId, requestId: request.id, accountId: current.account.id, identityId: current.account.identityId, workspaceId }) : undefined
     const launch = new URL('storenova://connect')
     launch.searchParams.set('api_origin', origin); launch.searchParams.set('workspace', workspaceId); launch.searchParams.set('request_id', request.id)
-    if (challenge) { launch.searchParams.set('installation_id', installationId); launch.searchParams.set('challenge_id', challenge.id); launch.searchParams.set('server_nonce', challenge.nonce); launch.searchParams.set('challenge_issued_at', challenge.createdAt); launch.searchParams.set('challenge_expires_at', challenge.expiresAt) }
-    deps.send(201, workspaceId, { request_id: request.id, status: request.status, expires_at: request.expiresAt, launch_url: launch.toString(), ...(challenge ? { installation_id: installationId, challenge_id: challenge.id, server_nonce: challenge.nonce, challenge_issued_at: challenge.createdAt, challenge_expires_at: challenge.expiresAt } : {}) })
+    if (challenge) { launch.searchParams.set('account_id', current.account.id); launch.searchParams.set('installation_id', installationId); launch.searchParams.set('challenge_id', challenge.id); launch.searchParams.set('server_nonce', challenge.nonce); launch.searchParams.set('challenge_issued_at', challenge.createdAt); launch.searchParams.set('challenge_expires_at', challenge.expiresAt) }
+    deps.send(201, workspaceId, { request_id: request.id, status: request.status, expires_at: request.expiresAt, launch_url: launch.toString(), ...(challenge ? { account_id: current.account.id, installation_id: installationId, challenge_id: challenge.id, server_nonce: challenge.nonce, challenge_issued_at: challenge.createdAt, challenge_expires_at: challenge.expiresAt } : {}) })
     return true
   }
   const statusMatch = path.match(/^\/v1\/auth\/local-plugin\/connect-requests\/([^/]+)\/status$/u)
