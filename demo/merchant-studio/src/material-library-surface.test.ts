@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MaterialLibraryWorkspace, MaterialRecycleBinWorkspace } from './App'
+import type { PlatformAccount } from './api'
 
 /**
  * What the reviewed material surfaces actually render.
@@ -81,6 +82,19 @@ describe('the material library may not claim a catalogue it did not read', () =>
     expect(brands).not.toMatch(/Store Nova/u)
     const unreadBrands = renderLibrary({ baseUrl: 'http://127.0.0.1:9', accounts: null, products: null, view: 'brands' })
     expect(unreadBrands).toContain('上传品牌资料')
+  })
+
+  it('distinguishes a registered store without read authorization from no store', () => {
+    const account = {
+      platform: 'jd', accountId: 'jd:42169', alias: '贵人鸟官方旗舰店',
+      state: 'manually_registered', dataMode: 'account_record_only',
+      readable: false, writeEnabled: false,
+    } as PlatformAccount
+    const brands = renderToStaticMarkup(createElement(MaterialLibraryWorkspace, {
+      accounts: [account], products: null, view: 'brands',
+    }))
+    expect(brands).toContain('已登记店铺尚未取得可读取授权')
+    expect(brands).not.toContain('当前没有已登记店铺')
   })
 
   it('renders the reviewed workspace landmarks, not a rebuilt page', () => {

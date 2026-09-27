@@ -323,15 +323,15 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "成员创建时间", key: "createdAt", align: "center", width: 170, render: (_: unknown, row: PlatformUser) => formatKnownDateTime((row as DirectoryUser).createdAt) },
             { title: "成员更新时间", dataIndex: "updatedAt", align: "center", width: 170, render: (value: string) => formatKnownDateTime(value) },
           ]} /></div>
-          <div><Typography.Title level={5}>套餐与任务额度</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial-snapshot`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无套餐与用量数据" }} columns={[
+          <div><Typography.Title level={5}>旧版套餐与任务额度快照</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial-snapshot`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无旧版套餐与用量数据" }} columns={[
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "成员", key: "name", align: "center", width: 180, render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
-            { title: "当前套餐", key: "plan", align: "center", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "未提供" },
-            { title: "订阅状态", key: "subscription", align: "center", width: 140, render: (_: unknown, row: PlatformUser) => row.commercial?.subscriptionStatus ?? "未提供" },
+            { title: "旧版套餐", key: "plan", align: "center", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "未提供" },
+            { title: "旧版订阅状态", key: "subscription", align: "center", width: 140, render: (_: unknown, row: PlatformUser) => row.commercial?.subscriptionStatus ?? "未提供" },
             { title: "任务额度（已用 / 包含）", key: "tasks", align: "center", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial ? `${row.commercial.usedTasks} / ${row.commercial.includedTasks}` : "未提供" },
             { title: "剩余任务", key: "remaining", align: "center", width: 120, render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "未提供" },
           ]} /></div>
-          <Alert type="info" showIcon title="此处显示套餐状态与任务额度快照，不包含支付凭证或账单周期；实际收款请核对财务流水。" />
+          <Alert type="info" showIcon title="此处仅显示旧版套餐与任务额度快照；当前 V2 套餐及权益请到“订单与权益”核对，实收金额请核对财务流水。" />
         </Space>}
       </Spin>
     </Drawer>

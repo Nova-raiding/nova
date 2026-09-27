@@ -147,9 +147,9 @@ export function CommercialOverviewSection({ model, onNavigate, onNavigateWithQue
         </Space>
       ),
     },
-    { title: "套餐", dataIndex: "planName", width: 140, render: (value: string) => value || "未配置" },
+    { title: "旧版套餐快照", dataIndex: "planName", width: 140, render: (value: string) => value || "未配置" },
     {
-      title: "订阅状态",
+      title: "旧版订阅状态",
       dataIndex: "subscriptionStatus",
       width: 130,
       render: (value: string) => (
@@ -159,7 +159,7 @@ export function CommercialOverviewSection({ model, onNavigate, onNavigateWithQue
       ),
     },
     {
-      title: "月费",
+      title: "旧版月费",
       dataIndex: "monthlyPriceCny",
       width: 110,
       align: "right",
@@ -218,7 +218,7 @@ export function CommercialOverviewSection({ model, onNavigate, onNavigateWithQue
         }
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          查看企业主体当前套餐和订阅状态；授权变更统一在用户中心完成，服务端继续保存 SKU 价格、权益和订单数据。企业名称作为主识别信息，Workspace ID 只用于技术范围和审计。
+          此表显示旧版订阅快照；当前 V2 套餐、已授予权益和实收金额请在“订单与权益”及财务流水核对。授权变更统一在用户中心完成。企业名称作为主识别信息，Workspace ID 只用于技术范围和审计。
         </Typography.Paragraph>
         <Table<WorkspaceSummary>
           rowKey="workspaceId"

@@ -6013,6 +6013,7 @@ export function MaterialLibraryWorkspace({
   const [remoteAssets, setRemoteAssets] = useState<AssetMetadata[] | null>(null)
   const [assetsError, setAssetsError] = useState('')
   const [materialDownloadError, setMaterialDownloadError] = useState('')
+  const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
   useEffect(() => {
     if (!baseUrl) {
       setRemoteAssets(null)
@@ -6025,6 +6026,18 @@ export function MaterialLibraryWorkspace({
     fetchAssets(baseUrl)
       .then((assets) => { if (active) setRemoteAssets(assets) })
       .catch((cause) => { if (active) setAssetsError(describeApiError(cause)) })
+    return () => { active = false }
+  }, [baseUrl])
+  useEffect(() => {
+    if (!baseUrl) {
+      setStorageQuota(null)
+      return
+    }
+    let active = true
+    setStorageQuota(null)
+    fetchAssetStorageQuota(baseUrl)
+      .then((quota) => { if (active) setStorageQuota(quota ?? null) })
+      .catch(() => { if (active) setStorageQuota(null) })
     return () => { active = false }
   }, [baseUrl])
   const materialsRead = resolveMaterialRead({ baseUrl, remote: remoteAssets, error: assetsError })
@@ -6218,10 +6231,8 @@ export function MaterialLibraryWorkspace({
       setMaterialDownloadError(`素材下载失败：${describeApiError(cause)}`)
     }
   }
-  // The storage quota is server-owned and this local library has no API base
-  // URL to read it, so it reports only what it can actually observe (the bytes
-  // uploaded in this session) and marks the quota itself as unread. Showing a
-  // fabricated usage/quota pair would be presented to paying merchants.
+  // The quota uses the same server read as overview and finance. A failed read
+  // remains unknown; session upload bytes are never presented as total usage.
   const uploadedGb = uploadedBytes / 1024 / 1024 / 1024
   const allVisibleSelected = visibleMaterials.length > 0 && visibleMaterials.every((item) => selectedIds.includes(item.id))
   const selectedMaterials = activeMaterials.filter((item) => selectedIds.includes(item.id))
@@ -6546,7 +6557,7 @@ export function MaterialLibraryWorkspace({
           <div className="material-brand-priority" aria-label="资产应用原则"><strong>资产应用原则：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div>
         </div>
         <div className="material-brand-upload-entry"><div><strong>上传品牌资料</strong><span>通过服务端素材上传器添加图片或文档；品牌配置本身和资料分类暂未由服务端持久化。</span></div><button type="button" className="material-upload-button" onClick={() => { setUploadStoreId('unclassified'); setUploadCategory('品牌资料'); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传品牌资料</span></button></div>
-        {stores.length === 0 && <p className="material-brand-no-store">{catalogStores === null ? '正在读取店铺列表；品牌资料可先上传到工作区素材库。' : '当前没有已登记店铺；品牌资料可先上传到工作区素材库。'}</p>}
+        {stores.length === 0 && <p className="material-brand-no-store">{catalogStores === null ? '正在读取店铺列表；品牌资料可先上传到工作区素材库。' : catalogStores.length > 0 ? '已登记店铺尚未取得可读取授权；店铺品牌配置将在授权后开放。品牌资料可先上传到工作区素材库。' : '当前没有已登记店铺；品牌资料可先上传到工作区素材库。'}</p>}
         <div className="material-brand-stack">
           <article className="material-brand-row">
             <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>所有系列与图片的默认品牌资产</small></div></div><MaterialBrandFields value={globalBrand} label="全局" onChange={setGlobalBrand} /></div>
@@ -6571,10 +6582,7 @@ export function MaterialLibraryWorkspace({
           <div className="material-workspace-overview">
             <div className="material-workspace-intro"><span className="material-workspace-mark" aria-hidden="true"><FolderOpen size={20} /></span><div><span className="section-kicker">MATERIAL LIBRARY</span><h1>素材库</h1><p>按店铺独立管理图片与视频。</p></div></div>
             <div className="material-workspace-actions-card">
-              {/* No storage-quota read is wired into this view, so the panel
-                  states the unknown instead of drawing an empty track that
-                  reads as 「已使用 0%」. */}
-              <div className="material-workspace-storage" aria-label="共享储存空间"><div><span>共享储存空间</span><strong>{UNREAD_METRIC} <small>服务端配额</small></strong></div><div><small>配额读取未接入，本次会话上传 {uploadedGb.toFixed(1)} GB</small><b>剩余 {UNREAD_METRIC}</b></div></div>
+              <div className="material-workspace-storage" aria-label="共享储存空间"><div><span>共享储存空间</span><strong>{storageQuota ? formatStorageGb(storageQuota.limitBytes) : UNREAD_METRIC} <small>服务端配额</small></strong></div><div><small>{storageQuota ? `已用 ${formatStorageGb(storageQuota.usedBytes)}` : `配额尚未读取，本次会话上传 ${uploadedGb.toFixed(1)} GB`}</small><b>剩余 {storageQuota ? formatStorageGb(storageQuota.availableBytes) : UNREAD_METRIC}</b></div></div>
               <button type="button" className="material-upload-button" onClick={() => { setUploadStoreId(activeStore.id); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传素材</span></button>
             </div>
           </div>
