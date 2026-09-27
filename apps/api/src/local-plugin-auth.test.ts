@@ -27,7 +27,8 @@ describe('local plugin PKCE contract', () => {
   it('keeps the complete authorization transaction on the login-required page without embedding credentials', () => {
     const request = parseLocalPluginAuthorizationRequest(new URLSearchParams({ response_type: 'code', client_id: 'local-desktop', redirect_uri: redirectUri, state, code_challenge: challenge, code_challenge_method: 'S256', scope: 'merchant', resource: 'https://yxsona.com/mcp', workspace_id: 'ws_store' }))
     const html = localPluginLoginRequiredHtml(request)
-    expect(html).toContain('target="_blank"')
+    expect(html).toContain('登录商家账号')
+    expect(html).toContain('plugin_authorize=')
     expect(html).toContain(encodeURIComponent(redirectUri))
     expect(html).toContain(`state=${state}`)
     expect(html).toContain(`code_challenge=${challenge}`)

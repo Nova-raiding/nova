@@ -77,7 +77,9 @@ describe('local plugin browser PKCE', () => {
     const expectedFormAction = ['form-action', "'self'", new URL(base).origin, new URL(redirectUri).origin]
     expect(unauthenticatedFormAction?.split(/\s+/u)).toEqual(expectedFormAction)
     expect(unauthenticatedFormAction).not.toContain('127.0.0.1:*')
-    expect(await unauthenticated.text()).toContain('打开商家后台登录')
+    const loginRequiredHtml = await unauthenticated.text()
+    expect(loginRequiredHtml).toContain('登录商家账号')
+    expect(loginRequiredHtml).toContain('plugin_authorize=')
 
     const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
     const cookie = logged.headers.get('set-cookie')?.split(';')[0]

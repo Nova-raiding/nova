@@ -84,7 +84,7 @@ node scripts/login-local-macos.mjs \
   --workspace ws_<平台分配的工作区>
 ```
 
-浏览器打开后，先登录对应商家账号并确认当前工作区授权。CLI 成功同样只证明凭据已写入
+浏览器打开后，若尚未登录，点击“登录商家账号”；登录成功会返回本次插件授权确认页，再核对账号和工作区并确认。CLI 成功同样只证明凭据已写入
 Keychain 且非敏感连接配置已设置，不代表 ChatGPT 已加载插件。完全退出并重新打开
 ChatGPT/Codex，新建对话后调用只读 `onboarding.status` 验证真实宿主、身份与工作区。
 

@@ -199,6 +199,7 @@ import {
 } from './api'
 import { resolveMerchantEnvironmentStatus } from './environment-status'
 import { MerchantLoginPage } from './MerchantLoginPage'
+import { pluginAuthorizationReturnPath } from './plugin-authorization-return'
 import { LocalPluginConnection } from './LocalPluginConnection'
 import { brandUnitSelectionMessage } from './brand-unit-selection'
 import { imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed, isImageGenerationConfigurationError } from './image-generation-state'
@@ -12691,6 +12692,11 @@ export default function App() {
     fetchMerchantSession(apiBaseUrl)
       .then(account => {
         if (cancelled) return
+        const pluginAuthorization = pluginAuthorizationReturnPath(window.location.search)
+        if (pluginAuthorization) {
+          window.location.assign(pluginAuthorization)
+          return
+        }
         setAuthAccount(account)
         setAuthState('authenticated')
       })
@@ -13192,6 +13198,11 @@ export default function App() {
             })
         }}
         onAuthenticated={(account) => {
+          const pluginAuthorization = pluginAuthorizationReturnPath(window.location.search)
+          if (pluginAuthorization) {
+            window.location.assign(pluginAuthorization)
+            return
+          }
           setAuthAccount(account)
           setAuthState('authenticated')
           setAuthError('')
