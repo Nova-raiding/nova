@@ -57,6 +57,25 @@ assert.equal(bridgeReceipt.source_sha256, hash(bridgeBytes));
 assert.equal(readFileSync(bridgeInstalled, 'utf8').startsWith(`#!${runtime}\n`), true);
 assert(!existsSync(`${root}/production-capability-private.pem`), 'installer must not generate keys');
 console.log('PASS: real root installation, bridge target/hash/mode, checksum rejection, concurrent lock rejection and old-control archival');
+for (const [control, filename, digestName] of [
+  ['bridge254Review', 'ecs-bridge-254-review-state.mjs', 'production-bridge-254-review-state-sha256'],
+  ['bridge254State', 'ecs-bridge-254-state-store.mjs', 'production-bridge-254-state-store-sha256'],
+]) {
+  const source = `/source/infra/protected/${filename}`;
+  const bytes = readFileSync(source);
+  const options = [installer, '--control', control, '--source', source, '--source-sha256', hash(bytes),
+    '--node', runtime, '--node-sha256', hash(readFileSync(runtime))];
+  const installedResult = run(options);
+  assert.equal(installedResult.status, 0, installedResult.stderr);
+  const receipt254 = JSON.parse(installedResult.stdout);
+  assert.equal(hash(readFileSync(`${bin}/${filename}`)), receipt254.installed_sha256);
+  assert.equal(readFileSync(`${trust}/${digestName}`, 'utf8').trim(), receipt254.installed_sha256);
+  assert.equal(statSync(`${bin}/${filename}`).mode & 0o777, 0o755);
+}
+const installedState = await import(`${bin}/ecs-bridge-254-state-store.mjs`);
+assert.equal(installedState.BRIDGE_254_PROTECTED_STATE_PATHS.directory, `${root}/bridge-254`);
+assert.throws(() => installedState.openProtectedBridge254StateStore(), /protected bridge state requires root|protected ancestor|ENOENT|trust/u);
+console.log('PASS: bridge-254 signed state and review verifier install together with independent digest bindings; no trust keys provisioned');
 const preidentitySource = '/source/infra/protected/ecs-preidentity-recovery.mjs';
 const preidentityBytes = readFileSync(preidentitySource);
 const preidentityArgs = [installer, '--control', 'preidentity', '--source', preidentitySource, '--source-sha256', hash(preidentityBytes), '--node', runtime, '--node-sha256', hash(readFileSync(runtime))];

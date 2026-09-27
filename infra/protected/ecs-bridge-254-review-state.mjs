@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Pure, review-only contract for a future independently installed 242→254
 // bridge controller. It verifies a caller-supplied Ed25519 journal signature
 // and monotonic phase shape, but does not establish protected-key provenance,
@@ -24,6 +25,7 @@ const PHASES = Object.freeze({
 const EXACT_JOURNAL_FIELDS = ['schema_version', 'purpose', 'phase', 'attempt_id', 'key_id', 'created_at', 'updated_at', 'expires_at',
   'compose_project', 'candidate', 'bridge', 'old_runtime', 'deployment_nonce_sha256', 'recovery_capsule_sha256',
   'baseline_inventory_sha256', 'allowed_prefix_sha256', 'database_prefix', 'nonce_owner', 'deployable', 'signature_base64']
+const PROTECTED_JOURNAL_FIELDS = [...EXACT_JOURNAL_FIELDS, 'observation_sha256']
 const EXACT_IDENTITY_FIELDS = ['release_id', 'git_sha', 'manifest_sha256', 'image_set_digest']
 const EXACT_NONCE_OWNER_FIELDS = ['namespace', 'operation', 'attempt_id', 'release_id', 'git_sha', 'manifest_sha256', 'image_set_digest', 'nonce_sha256']
 const exact = (value, fields) => value && typeof value === 'object' && !Array.isArray(value)
@@ -44,9 +46,12 @@ const failResult = errors => ({ status: 'review_only', structure_consistent: fal
 export function reviewBridge254SignedJournal(document, expected, now = new Date()) {
   const errors = []
   const add = (ok, reason) => { if (!ok) errors.push(reason) }
-  if (!exact(document, EXACT_JOURNAL_FIELDS)) return failResult(['journal must contain exactly the reviewed fields'])
-  add(document.schema_version === 'ecs-bridge-254-review-journal/1' && document.purpose === 'bridge_242_to_254_review'
+  const protectedJournal = document?.schema_version === 'ecs-bridge-254-review-journal/2'
+  if (!exact(document, protectedJournal ? PROTECTED_JOURNAL_FIELDS : EXACT_JOURNAL_FIELDS)) return failResult(['journal must contain exactly the reviewed fields'])
+  add((protectedJournal && document.purpose === 'bridge_242_to_254_protected'
+    || document.schema_version === 'ecs-bridge-254-review-journal/1' && document.purpose === 'bridge_242_to_254_review')
     && document.deployable === false, 'journal must remain review-only and non-deployable')
+  if (protectedJournal) add(SHA.test(document.observation_sha256), 'protected journal must persist the independent observation digest')
   add(Object.hasOwn(PHASES, document.phase), 'journal phase is unknown')
   add(ATTEMPT.test(document.attempt_id) && ID.test(document.key_id) && document.compose_project === 'merchant-production', 'journal attempt, key, or project is invalid')
   const created = Date.parse(document.created_at), updated = Date.parse(document.updated_at), expires = Date.parse(document.expires_at)

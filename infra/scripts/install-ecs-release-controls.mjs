@@ -14,6 +14,8 @@ export const CONTROLS = Object.freeze({
   manual: Object.freeze({ executable: 'attest-manual-operations-evidence', digest: 'production-manual-operations-attester-sha256' }),
   bundle: Object.freeze({ executable: 'attest-release-evidence-bundle', digest: 'production-evidence-bundle-attester-sha256' }),
   bridgeB: Object.freeze({ executable: 'ecs-bridge-b-transition', digest: 'production-bridge-b-transition-sha256' }),
+  bridge254Review: Object.freeze({ executable: 'ecs-bridge-254-review-state.mjs', digest: 'production-bridge-254-review-state-sha256' }),
+  bridge254State: Object.freeze({ executable: 'ecs-bridge-254-state-store.mjs', digest: 'production-bridge-254-state-store-sha256' }),
 });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const ensure = (condition, message) => { if (!condition) throw new Error(message); };
