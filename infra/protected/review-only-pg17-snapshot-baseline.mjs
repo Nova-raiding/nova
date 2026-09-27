@@ -56,6 +56,14 @@ export async function observeReviewOnlySnapshot({ snapshot, identity, sourcePoli
     await client.query('SET LOCAL row_security = off')
     const source = exactlyOne(await client.query("SELECT (pg_control_system()).system_identifier::text AS system_identifier, (SELECT oid FROM pg_database WHERE datname = current_database())::integer AS database_oid, current_database() AS database_name, (SELECT max(version) FROM public.schema_migrations)::integer AS migration_version, current_setting('transaction_read_only') AS read_only"), 'source identity')
     check(source.read_only === 'on' && source.system_identifier === identity.systemIdentifier && Number(source.database_oid) === identity.databaseOid && source.database_name === identity.databaseName && Number(source.migration_version) === identity.migrationVersion, 'snapshot source identity mismatch')
+    // The declared plan must cover every user-owned stored relation in this
+    // snapshot. Unsupported materialized/foreign relations fail closed.
+    const catalog = await client.query("SELECT n.nspname AS schema, c.relname AS name, c.relkind AS kind FROM pg_class AS c JOIN pg_namespace AS n ON n.oid = c.relnamespace WHERE c.relkind IN ('r', 'p', 'm', 'f') AND n.nspname <> 'information_schema' AND left(n.nspname, 3) <> 'pg_' ORDER BY n.nspname, c.relname")
+    check(Array.isArray(catalog?.rows) && catalog.rows.length > 0, 'user relation catalog missing')
+    check(catalog.rows.every(row => row.kind === 'r' || row.kind === 'p'), 'unsupported user relation kind')
+    const observedRelations = catalog.rows.map(row => `${row.schema}.${row.name}`).sort()
+    const plannedRelations = frozenPlan.map(table => `${table.schema}.${table.name}`).sort()
+    check(JSON.stringify(observedRelations) === JSON.stringify(plannedRelations), 'frozen table plan does not cover the complete user relation catalog')
     const tables = []
     for (const table of frozenPlan) {
       const relation = `${table.schema}.${table.name}`

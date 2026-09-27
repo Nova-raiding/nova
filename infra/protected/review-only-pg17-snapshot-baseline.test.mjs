@@ -8,13 +8,14 @@ const snapshot = '00000004-00000027-1'
 const identity = { systemIdentifier: '1234567890123456789', databaseOid: 16384, databaseName: 'merchant', migrationVersion: 242 }
 const sourcePolicy = { system_identifier_sha256: sha(identity.systemIdentifier), database_oid: identity.databaseOid, database_name: identity.databaseName }
 const tablePlan = [{ schema: 'public', name: 'merchants', columns: [{ name: 'id', data_type: 'uuid', not_null: true }, { name: 'name', data_type: 'text', not_null: true }] }]
-function database({ rows = ['["a","one"]', '["b","two"]'], source = {}, columns = tablePlan[0].columns } = {}) {
+function database({ rows = ['["a","one"]', '["b","two"]'], source = {}, columns = tablePlan[0].columns, catalog = [{ schema: 'public', name: 'merchants', kind: 'r' }] } = {}) {
   const calls = []
   let ended = false
   const client = {
     async query(sql, params) {
       calls.push({ sql, params })
       if (sql.startsWith('SELECT (pg_control_system())')) return { rows: [{ system_identifier: identity.systemIdentifier, database_oid: identity.databaseOid, database_name: identity.databaseName, migration_version: 242, read_only: 'on', ...source }] }
+      if (sql.startsWith('SELECT n.nspname')) return { rows: catalog }
       if (sql.startsWith('SELECT attname')) return { rows: columns }
       if (sql.startsWith('SELECT relrowsecurity')) return { rows: [{ enabled: true, forced: true }] }
       if (sql.startsWith('SELECT polname')) return { rows: [{ name: 'merchant_read', cmd: 'r', permissive: true, qual: 'true', with_check: null, roles: ['PUBLIC'] }] }
@@ -45,6 +46,14 @@ test('joins the held snapshot before any read, freezes columns, and remains revi
 test('rejects changed source, frozen columns, and row overrun while closing the transaction', async () => {
   for (const db of [database({ source: { system_identifier: '999' } }), database({ columns: [{ name: 'id', data_type: 'text', not_null: true }] }), database({ rows: ['[]', '[]', '[]'] })]) {
     await assert.rejects(observeReviewOnlySnapshot(input(db, { maxRowsPerTable: 2 })), /source identity mismatch|column contract changed|row bound exceeded/u)
+    assert.equal(db.calls.at(-1).sql, 'ROLLBACK')
+    assert.equal(db.ended(), true)
+  }
+})
+
+test('refuses omitted or unsupported user relations in the same snapshot', async () => {
+  for (const db of [database({ catalog: [{ schema: 'public', name: 'merchants', kind: 'r' }, { schema: 'public', name: 'orders', kind: 'r' }] }), database({ catalog: [{ schema: 'public', name: 'merchants', kind: 'm' }] })]) {
+    await assert.rejects(observeReviewOnlySnapshot(input(db)), /complete user relation catalog|unsupported user relation kind/u)
     assert.equal(db.calls.at(-1).sql, 'ROLLBACK')
     assert.equal(db.ended(), true)
   }
