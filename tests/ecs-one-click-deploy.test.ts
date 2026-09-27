@@ -198,6 +198,34 @@ exit 0
     expect(readFileSync(join(unmanaged, 'keep'), 'utf8')).toBe('operator data')
   })
 
+  it('preserves candidate bundles belonging to retained releases', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-kept-candidate-')))
+    const bundles = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-candidate-kept-release-')))
+    chmodSync(root, 0o700); chmodSync(bundles, 0o700)
+    const keptGit = 'b'.repeat(40)
+    const staleGit = 'c'.repeat(40)
+    const keptRelease = release(root, 'release-kept', 1)
+    writeFileSync(join(keptRelease, '.candidate-identity'), `release_id=release-kept\ngit_sha=${keptGit}\n`)
+    writeFileSync(join(keptRelease, '.keep'), 'rollback input')
+    release(root, 'release-current', 3)
+    const keptBundle = candidate(bundles, 'candidate-kept', keptGit, 1)
+    const staleBundle = candidate(bundles, 'candidate-stale', staleGit, 2)
+    candidate(bundles, 'candidate-current', 'd'.repeat(40), 3)
+    const bin = join(root, 'bin'); mkdirSync(bin)
+    writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    writeFileSync(join(bin, 'flock'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+
+    const result = spawnSync('sh', [script, 'cleanup'], {
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ECS_RELEASES_ROOT: root, ECS_CANDIDATES_ROOT: bundles, ECS_RELEASE_KEEP_COUNT: '1', ECS_CANDIDATE_KEEP_COUNT: '1', CONFIRM_ECS_STORAGE_CLEANUP: 'YES' },
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain(`KEEP_CANDIDATE\t${keptGit}`)
+    expect(result.stdout).toContain(`DELETE_CANDIDATE\t${staleGit}`)
+    expect(readFileSync(join(keptBundle, 'candidate-identity.txt'), 'utf8')).toContain(keptGit)
+    expect(spawnSync('test', ['-e', staleBundle]).status).not.toBe(0)
+  })
+
   it('serializes cleanup across the full one-click mutation workflow', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-lock-')))
     chmodSync(root, 0o700)

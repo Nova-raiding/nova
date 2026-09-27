@@ -161,6 +161,8 @@ prune_releases() {
     [ -n "$id" ] || continue
     if grep -Fqx "$id" "$protected_file" || [ -f "$path/.keep" ] || [ "$kept" -lt "$ECS_RELEASE_KEEP_COUNT" ]; then
       kept=$((kept + 1))
+      kept_git=$(sed -n 's/^git_sha=//p' "$path/.candidate-identity")
+      printf '%s' "$kept_git" | grep -Eq '^[a-f0-9]{40}$' && printf '%s\n' "$kept_git" >> "$protected_git_file"
       printf 'KEEP\t%s\t%s\n' "$id" "$path"
       continue
     fi
@@ -173,6 +175,7 @@ prune_releases() {
       printf 'WOULD_DELETE\t%s\t%s\n' "$id" "$path"
     fi
   done < "$candidates_file"
+  sort -u "$protected_git_file" -o "$protected_git_file"
 }
 
 enumerate_candidate_bundles() {
