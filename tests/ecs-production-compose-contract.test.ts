@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 const nodeHardening = { user: '10001:10001', read_only: true, security_opt: ['no-new-privileges:true'], cap_drop: ['ALL'], tmpfs: ['/tmp'] }
 const valid = {
   services: {
-    api: { ...nodeHardening, volumes: ['/evidence/capacity.json:/run/release-evidence/capacity-report.json:ro'], environment: {
+    api: { ...nodeHardening, volumes: ['/evidence/capability.json:/run/release-evidence/platform-capability.json:ro', '/evidence/capacity.json:/run/release-evidence/capacity-report.json:ro'], environment: {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
       CONNECTOR_FIXTURE_MODE: 'false', PLATFORM_OPERATIONS_MODE: 'manual', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
@@ -23,9 +23,10 @@ const valid = {
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
       MCP_INTEGRATION_MODE: 'local_stdio',
       OPS_AUTH_MODE: 'password', PUBLIC_OPS_BASE_URL: 'https://ops.yxsona.com',
+      CAPABILITY_EVIDENCE_PATH: '/run/release-evidence/platform-capability.json',
       CAPACITY_REPORT_PATH: '/run/release-evidence/capacity-report.json',
     } },
-    'api-replica': { ...nodeHardening, volumes: ['/evidence/capacity.json:/run/release-evidence/capacity-report.json:ro'], environment: {
+    'api-replica': { ...nodeHardening, volumes: ['/evidence/capability.json:/run/release-evidence/platform-capability.json:ro', '/evidence/capacity.json:/run/release-evidence/capacity-report.json:ro'], environment: {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
       CONNECTOR_FIXTURE_MODE: 'false', PLATFORM_OPERATIONS_MODE: 'manual', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
@@ -41,6 +42,7 @@ const valid = {
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
       MCP_INTEGRATION_MODE: 'local_stdio',
       OPS_AUTH_MODE: 'password', PUBLIC_OPS_BASE_URL: 'https://ops.yxsona.com',
+      CAPABILITY_EVIDENCE_PATH: '/run/release-evidence/platform-capability.json',
       CAPACITY_REPORT_PATH: '/run/release-evidence/capacity-report.json',
     } },
     ...Object.fromEntries(['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan'].map(name => [name, { ...nodeHardening, environment: {
@@ -183,6 +185,16 @@ describe('ECS production Compose contract', () => {
 
   it('accepts a production render without demo seeding', () => {
     expect(validate(valid)).toContain('contract passed')
+  })
+
+  it.each(['api', 'api-replica'] as const)('requires release-bound capability evidence to be mounted read-only in %s', serviceName => {
+    const missing = structuredClone(valid) as any
+    missing.services[serviceName].environment.CAPABILITY_EVIDENCE_PATH = ''
+    expect(() => validate(missing)).toThrow(new RegExp(`${serviceName}\\.CAPABILITY_EVIDENCE_PATH`))
+
+    const writable = structuredClone(valid) as any
+    writable.services[serviceName].volumes[0] = '/evidence/capability.json:/run/release-evidence/platform-capability.json:rw'
+    expect(() => validate(writable)).toThrow(new RegExp(`${serviceName} must mount the release-bound capability evidence read-only`))
   })
 
   it('requires the production canary workspace to be covered by the scanner worker scope', () => {

@@ -153,13 +153,16 @@ export async function resumeBridge255ForwardRecovery({ plan, publicKeyPem, contr
   requireValue(typeof publicKeyPem === 'string', 'PROTECTED_PORTS_MISSING')
   requireResumePorts(control, runtime)
   await assertLocked(runtime)
-  const frozen = await control.readFrozenAttempt({ attemptId: plan.attempt_id })
-  requireValue(frozen?.plan_sha256 === validateBridge255Plan(plan)
-    && ['fenced_254', 'migrating_255'].includes(frozen?.journal?.phase), 'RESUME_JOURNAL_INVALID')
-  const { capture } = frozen
-  let { journal, observation } = frozen
-  reviewBridge255Phase({ plan, capture, journal, publicKeyPem, observation, now })
   try {
+    // Once the protected lock is held, every recovery failure must leave the
+    // ingress fenced. Reading or verifying the frozen journal is itself part
+    // of that recovery attempt and cannot sit outside the fence-on-error path.
+    const frozen = await control.readFrozenAttempt({ attemptId: plan.attempt_id })
+    requireValue(frozen?.plan_sha256 === validateBridge255Plan(plan)
+      && ['fenced_254', 'migrating_255'].includes(frozen?.journal?.phase), 'RESUME_JOURNAL_INVALID')
+    const { capture } = frozen
+    let { journal, observation } = frozen
+    reviewBridge255Phase({ plan, capture, journal, publicKeyPem, observation, now })
     const receipt = await control.readConsumedNonce({ attemptId: plan.attempt_id,
       nonce_sha256: plan.nonce_sha256 })
     assertNonceReceipt(receipt, plan)

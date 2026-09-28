@@ -409,6 +409,31 @@ test('invalid consumed nonce receipt during resume keeps the ingress fence', asy
   assert.ok(f.state.events.includes('keep-fenced'))
 })
 
+test('invalid frozen journal during resume restores ingress fence without replaying SQL or nonce', async () => {
+  const f = fixture(); f.state.crashNonceJournal = true
+  await assert.rejects(executeBridge255ForwardMigration({ plan: f.plan,
+    deploymentNonce: f.nonce, publicKeyPem: f.publicKeyPem,
+    control: f.control, runtime: f.runtime, now: f.now }))
+  f.state.crashNonceJournal = false
+  const priorSql = f.state.sqlCount, priorNonce = f.state.nonceCount
+  f.state.fenced = false
+  f.state.events.splice(0)
+  const readFrozenAttempt = f.control.readFrozenAttempt
+  f.control.readFrozenAttempt = async input => {
+    f.state.events.push('read-frozen')
+    const frozen = await readFrozenAttempt(input)
+    return { ...frozen, journal: { ...frozen.journal, signature_base64: 'invalid-signature' } }
+  }
+
+  await assert.rejects(resumeBridge255ForwardRecovery({ plan: f.plan,
+    publicKeyPem: f.publicKeyPem, control: f.control, runtime: f.runtime, now: f.now }))
+
+  assert.deepEqual(f.state.events, ['lock', 'read-frozen', 'keep-fenced'])
+  assert.equal(f.state.sqlCount, priorSql)
+  assert.equal(f.state.nonceCount, priorNonce)
+  assert.equal(f.state.fenced, true)
+})
+
 test('resume refuses changed plan or database history without mutation', async () => {
   const f = fixture(); f.state.crashAfterSql = true
   await assert.rejects(executeBridge255ForwardMigration({ plan: f.plan,

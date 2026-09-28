@@ -176,6 +176,8 @@ describe('release manifest production gate', () => {
       'infra/scripts/inspect-payment-gateway-receipt-runtime.mjs',
       'infra/scripts/inspect-payment-gateway-receipt-runtime.test.mjs',
       'infra/scripts/deploy-preflight-ecs.sh',
+      'infra/scripts/verify-ecs-evidence-readable-by-api.mjs',
+      'tests/ecs-evidence-readable-by-api.test.mjs',
       'infra/scripts/stage-verified-ecs-release.sh',
       'infra/scripts/ecs-build-lock.sh',
       'infra/scripts/install-ecs-staging-toolchain.mjs',

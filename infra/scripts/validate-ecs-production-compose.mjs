@@ -95,6 +95,8 @@ for (const name of ['api', 'api-replica']) {
   }
   const mounts = (rendered.services?.[name]?.volumes ?? []).map(item => typeof item === 'string' ? item : `${item.source ?? ''}:${item.target ?? ''}`)
   if (mounts.some(item => item.includes('alert_receiver'))) fail(`${name} must not mount alert receiver secrets while alerts are disabled`)
+  if (String(environment.CAPABILITY_EVIDENCE_PATH ?? '') !== '/run/release-evidence/platform-capability.json') fail(`${name}.CAPABILITY_EVIDENCE_PATH must use the release evidence mount`)
+  if (!normalizedMounts(rendered.services?.[name]).some(item => item.target === '/run/release-evidence/platform-capability.json' && item.readOnly)) fail(`${name} must mount the release-bound capability evidence read-only`)
   if (String(environment.CAPACITY_REPORT_PATH ?? '') !== '/run/release-evidence/capacity-report.json') fail(`${name}.CAPACITY_REPORT_PATH must use the release evidence mount`)
   if (!normalizedMounts(rendered.services?.[name]).some(item => item.target === '/run/release-evidence/capacity-report.json' && item.readOnly)) fail(`${name} must mount the release-bound capacity report read-only`)
 }

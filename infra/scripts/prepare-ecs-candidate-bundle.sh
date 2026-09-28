@@ -192,6 +192,8 @@ infra/scripts/install-ecs-release-controls.d.mts
 infra/scripts/test-ecs-release-control-installer.sh
 tests/ecs-staging-toolchain-installer.test.mjs
 tests/ecs-staging-toolchain-installer.container-check.mjs
+infra/scripts/verify-ecs-evidence-readable-by-api.mjs
+tests/ecs-evidence-readable-by-api.test.mjs
 tests/ecs-production-compose-contract.test.ts
 tests/ecs-one-click-deploy.test.ts
 infra/scripts/consume-production-evidence-nonce.sh

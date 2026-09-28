@@ -129,6 +129,8 @@ export function buildReleaseManifest(input: {
     resolve(root, 'infra/scripts/ecs-compose-published-ports.mjs'),
     resolve(root, 'infra/scripts/ecs-compose-published-ports.d.mts'),
     resolve(root, 'infra/scripts/deploy-preflight-ecs.sh'),
+    resolve(root, 'infra/scripts/verify-ecs-evidence-readable-by-api.mjs'),
+    resolve(root, 'tests/ecs-evidence-readable-by-api.test.mjs'),
     resolve(root, 'infra/scripts/build-ecs-release-images.sh'),
     resolve(root, 'infra/scripts/verify-ecs-ops-auth-mode.sh'),
     resolve(root, 'infra/scripts/rollback-ecs-compose.sh'),
