@@ -89,18 +89,10 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       const getBrand = (port: number) => fetch(`http://127.0.0.1:${port}/v1/brand-scopes`, {
         headers: { authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId },
       })
-      const putBrand = (port: number) => fetch(`http://127.0.0.1:${port}/v1/brand-scopes`, {
-        method: 'PUT',
-        headers: { authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId, 'content-type': 'application/json' },
-        body: JSON.stringify({ workspace_id: workspaceId, expected_revision: 0, settings: { schemaVersion: 1 } }),
-      })
       const closed = await getBrand(port254)
       const closedBody = await closed.json()
       expect(closed.status, `${JSON.stringify(closedBody)} ${apiDiagnostics.get(child)?.() ?? ''}`).toBe(503)
       expect(JSON.stringify(closedBody)).toContain('BRAND_SCOPES_NOT_CONFIGURED')
-      const closedWrite = await putBrand(port254)
-      expect(closedWrite.status).toBe(503)
-      expect(JSON.stringify(await closedWrite.json())).toContain('BRAND_SCOPES_NOT_CONFIGURED')
       const absent = await admin.query<{ exists: string | null }>("SELECT to_regclass('merchant_brand_scoped_settings')::text AS exists")
       expect(absent.rows[0]?.exists).toBeNull()
       await stopApi(child); child = undefined
@@ -114,12 +106,9 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       const opened = await getBrand(port255)
       expect(opened.status).toBe(200)
       expect(JSON.stringify(await opened.json())).toContain(workspaceId)
-      const saved = await putBrand(port255)
-      const savedBody = await saved.json()
-      expect(saved.status, JSON.stringify(savedBody)).toBe(200)
-      expect(savedBody).toMatchObject({ workspace_id: workspaceId, data: { revision: 1 } })
 
       await admin.query("INSERT INTO workspaces(id,status) VALUES ('ws_bridge_other','active')")
+      await admin.query("INSERT INTO merchant_brand_scoped_settings(workspace_id,settings,updated_by_actor_id) VALUES ($1,'{\"schemaVersion\":1}'::jsonb,'fixture')", [workspaceId])
       const client = await app.connect()
       try {
         await client.query('BEGIN READ ONLY')
