@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { request } from 'node:http'
 import type { ModelUsageRepository } from '../../../packages/persistence/src/model-usage-repository.js'
 import { createWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
+import { evaluatePlatformModelRelayGate } from '../../../packages/ai/src/platform-model-gate.js'
 
 const harness = vi.hoisted(() => ({
   modelUsage: null as null | {
@@ -222,9 +223,15 @@ beforeAll(async () => {
   vi.stubEnv('MCP_VERSION', '1.0.0-test')
   vi.stubEnv('CONNECTOR_BUILD', '1.0.0-test')
   vi.stubEnv('PROMPT_BUNDLE_VERSION', '1.0.0-test')
-  vi.stubGlobal('fetch', vi.fn(async () => relayResponse()))
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith('/api/usage/token/')) {
+      return new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 1_000_000, total_used: 0, total_available: 1_000_000, expires_at: 0 } }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return relayResponse()
+  }))
 
   api = await import('./server.js')
+  await vi.waitFor(() => expect(evaluatePlatformModelRelayGate(process.env, 'model').ready).toBe(true))
   await api.persistenceReady
   if (!api.server.listening) await new Promise<void>((resolve, reject) => { api.server.once('listening', resolve); api.server.once('error', reject) })
   await new Promise<void>((resolve, reject) => api.server.close(error => error ? reject(error) : resolve()))

@@ -21,6 +21,14 @@ export function assess(snapshot) {
   return blockers.filter(value => !['source_revision_missing:postgres', 'source_revision_missing:redis', 'image_not_pinned:postgres', 'image_not_pinned:redis'].includes(value))
 }
 
+export function inventoryWarnings(snapshot) {
+  const revisions = new Set(snapshot.services
+    .filter(service => !['postgres', 'redis'].includes(service.service)
+      && /^[a-f0-9]{40}$/u.test(service.git_sha ?? ''))
+    .map(service => service.git_sha))
+  return revisions.size > 1 ? ['application_services_have_mixed_source_revisions'] : []
+}
+
 const remote = String.raw`
 import json,subprocess,shutil
 
@@ -54,7 +62,7 @@ async function main() {
   }
   const blockers = assess(snapshot)
   for (const probe of probes) if (probe.status !== 200 || !probe.ready) blockers.push(`public_probe_failed:${probe.url}`)
-  const warnings = snapshot.services.filter(s => ['postgres', 'redis'].includes(s.service) && !s.image.includes('@sha256:')).map(s => `data_service_uses_tag_preserve_running_image_id:${s.service}`)
+  const warnings = [...inventoryWarnings(snapshot), ...snapshot.services.filter(s => ['postgres', 'redis'].includes(s.service) && !s.image.includes('@sha256:')).map(s => `data_service_uses_tag_preserve_running_image_id:${s.service}`)]
   console.log(JSON.stringify({ observed_at: new Date().toISOString(), ...snapshot, probes, blockers, warnings,
     release_approved: false,
     next_step: 'Freeze a target SHA; compare each component revision, verify migration compatibility and required release evidence before updating.',
