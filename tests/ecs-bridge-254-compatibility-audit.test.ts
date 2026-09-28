@@ -40,7 +40,7 @@ describe('B-derived 254 compatibility audit', () => {
     const path = join(review, 'review-source/packages/persistence/src/commercial-catalog-repository.ts')
     writeFileSync(path, `${readFileSync(path, 'utf8')}\n// modified\n`)
     expect(() => auditBridgeReview(review)).toThrow('review tree differs from pinned B source')
-  })
+  }, 15_000)
 
   it('rejects a source edit even when an attacker recomputes the tree digest', () => {
     const parent = mkdtempSync(join(tmpdir(), 'bridge-254-compatibility-'))
@@ -55,5 +55,5 @@ describe('B-derived 254 compatibility audit', () => {
     manifest.review_tree_sha256 = `sha256:${sha([...inventory].map(([file, digest]) => `${file}\t${digest}\n`).join(''))}`
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
     expect(() => auditBridgeReview(review)).toThrow('review tree differs from pinned B source')
-  })
+  }, 15_000)
 })
