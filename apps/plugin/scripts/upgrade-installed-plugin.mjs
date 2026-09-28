@@ -132,5 +132,16 @@ if (!existsSync(installedRoot)) {
 }
 
 const installedEvidence = verifyRuntimeAgainst(installedRoot, 'installed plugin cache')
+if (process.platform === 'darwin') {
+  // The local marketplace copies source files, not the machine-specific
+  // Keychain binary. Build it in the verified cache before declaring the
+  // upgrade usable by ChatGPT; otherwise MCP exits during initialize.
+  const helperBuild = spawnSync(process.execPath, [resolve(installedRoot, 'scripts/build-keychain-helper.mjs')], {
+    encoding: 'utf8', timeout: 120_000,
+  })
+  if (helperBuild.error || helperBuild.status !== 0) {
+    throw new Error(`installed macOS Keychain helper build failed: ${helperBuild.stderr?.trim() || helperBuild.error?.message || 'unknown error'}`)
+  }
+}
 process.stdout.write(`${JSON.stringify(installedEvidence, null, 2)}\n`)
 process.stderr.write(`Verified ${selector} ${version}. Fully restart ChatGPT/Codex and open a new conversation.\n`)

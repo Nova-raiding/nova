@@ -74,9 +74,17 @@ describe('safe local plugin upgrade preflight', () => {
   it('checks the local marketplace and complete source mirror before installing', () => {
     const fixture = setup()
     try {
+      if (process.platform === 'darwin') {
+        rmSync(resolve(fixture.marketplacePlugin, 'mcp/keychain-credential-helper'), { force: true })
+        rmSync(resolve(fixture.marketplacePlugin, 'mcp/keychain-credential-helper.build.json'), { force: true })
+      }
       const result = runUpgrade(fixture)
       expect(result.status, result.stderr).toBe(0)
       expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, plugin_version: version })
+      if (process.platform === 'darwin') {
+        expect(existsSync(resolve(fixture.installed, 'mcp/keychain-credential-helper'))).toBe(true)
+        expect(existsSync(resolve(fixture.installed, 'mcp/keychain-credential-helper.build.json'))).toBe(true)
+      }
       expect(fakeCommands(fixture.callsPath)).toEqual([
         ['plugin', 'marketplace', 'list', '--json'],
         ['plugin', 'add', 'merchant-marketing@merchant-local', '--json'],

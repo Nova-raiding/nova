@@ -2,6 +2,7 @@
 
 ## 环境与结论
 
+- **2026-09-29 07:42 CST 本地插件升级与宿主复验：通过。** 商品货号与 SKU ID 的 Skill、MCP 工具说明已分开，插件本地直装版本为 `0.1.0+codex.20260929074100`，源码与安装缓存 53 个运行文件及 131 个商家工具验真一致。首次升级版本的 macOS 缓存缺少 Keychain helper，App 的 MCP 握手失败并在[失败截图](evidence/2026-09-29-chatgpt-app/16-plugin-helper-startup-failed.png)中明确未伪造商品结果；现已修复升级脚本，使其在已验真缓存中自动编译 helper，相关插件测试 130 项通过。重新安装、完全重启 ChatGPT 后，新 Codex 会话通过 `onboarding.status` 和 `catalog.search` 实际查询生产数据。自然语言只说“货号”即可返回贵人鸟官方旗舰店、`QA测试商品请勿发布`、¥199、库存 3、事实未确认，见[最终 App 截图](evidence/2026-09-29-chatgpt-app/18-final-plugin-natural-query.png)。本轮没有再次导入、生成内容或发布。
 - **2026-09-29 07:22 CST 货号查询修复已部署并在 App 复验。** 线上 API 双副本切至无迁移候选 `fd1ad6a7bd122a391350c185798ac07e92795f8c`，发布 ID `release-demo-product-code-20260929`，只改 6 个源码/测试文件。候选 `npm run typecheck`、完整 `npm run test:release-gates` 通过（Vitest 1325 通过、16 项既有跳过）；受保护部署脚本的候选/回滚 Compose 校验、双副本健康与公网发布身份检查通过，数据库仍为迁移 254。运营用同一 CSV 对同一 QA 商品重新导入，保持商品事实未确认。ChatGPT App 随后以 `catalog.search(scope="workspace", query="QA-DO-NOT-PUBLISH-20260929")` 真实命中 1 件商品，返回 `local_product_key`、`accountId=42169`、正确店铺名、`skuCount=0` 与 `factsConfirmed=false`，见[App 货号查询结果](evidence/2026-09-29-chatgpt-app/15-chatgpt-product-code-search.png)。商品货号现可按普通文本查询，仍与真正的 `sku_id` 区分；没有迁移数据库，也没有确认或发布这条 QA 商品。
 - **2026-09-29 06:55 CST 店铺商品上传复验：桌面和 App 链路通过。** 运营后台选择 `ws_guirenniaoniao` 与人工登记店铺 `jd:42169` 后，[上传入口可用](evidence/2026-09-29-chatgpt-app/10-ops-store-upload-entry.png)。故意把 CSV 的店铺账号写成 `jd:42169` 时，页面提示归属不符并禁用导入；改为实际账号 `42169` 后预览通过。提交一条标为 `QA测试商品请勿发布`、货号 `QA-DO-NOT-PUBLISH-20260929` 的测试记录，填写资料来源与原因，后台明确显示[已导入 1 个商品](evidence/2026-09-29-chatgpt-app/11-ops-csv-import-success.png)。商家账号 `demo@ys.com` 在 1440px 桌面工作台的该店铺[看到这 1 件商品](evidence/2026-09-29-chatgpt-app/14-merchant-imported-product.png)。ChatGPT App 再用 `catalog.search(scope="workspace", query="QA测试商品请勿发布")` 只读查询，返回该商品、`platform=jd`、`accountId=42169`、店铺名“贵人鸟官方旗舰店”、店铺状态 `manually_registered`、`factsConfirmed=false`，见[App 真实结果](evidence/2026-09-29-chatgpt-app/12-chatgpt-imported-product.png)。另用 macOS 原生文件选择器选择含一条 SKU 的 XLSX，[预览 1 个商品](evidence/2026-09-29-chatgpt-app/13-ops-xlsx-preview.png)，未提交该 Excel，故没有第二条测试写入。此 CSV 只有商品货号、未填 `SKU编码`，App 原始结果 `skuCount=0`；首次回复仅按 SKU 找货号而误判“未找到”，随后以商品名重新查询并正确显示。需优化 App 的货号/SKU 提示。
 - **2026-09-29 06:47 CST 复验更新：App 文案候选已真实交付。** 线上 API 双副本已从 schema 254 兼容候选 `2f6b4387329921e91558e332243be1b8901e0ad4` 更新为 `release-demo-draft-preflight-20260929`；没有迁移数据库。ChatGPT App 先读到工作区 `ws_guirenniaoniao`、人工登记店铺 1 家、授权店铺 0 家、未绑定商品 1 件，见[更新后只读结果](evidence/2026-09-29-chatgpt-app/08-postdeploy-read.png)。随后仅调用一次 `content.draft.generate`，返回贵人鸟儿童运动鞋雾霾蓝 42 号的待审核候选，明确未创建正式版本、未批准、未发布，见[App 候选与账务截图](evidence/2026-09-29-chatgpt-app/09-postdeploy-draft-settled.png)。服务端只读账本核对该次 `qwen3.8-flash` 用量为输入 348、输出 403 token，成本 ¥0.001161，`model_usage_ledger` 和 1 点创意点预留均为 `settled`。这证明此次候选生成链路通过，不代表其余 130 个工具或正式商品审核发布流程已全通过。
@@ -28,6 +29,7 @@
 | ChatGPT App 上线复验 | `workspace.interactive.confirm` → `content.draft.generate` → 用量/创意点账本 | 一次真实调用返回待审核候选；模型 348/403 token、成本 ¥0.001161、1 点预留结算为 `settled`。 |
 | 桌面店铺表格与 App 读取 | 错误归属 CSV 拦截、正确 CSV 导入、XLSX 原生选择与预览、App `catalog.search` | 1 条 QA 商品写入 `jd:42169` 后可在 App 查到；XLSX 仅预览，未导入。商品事实未确认、未发布。 |
 | 货号搜索上线复验 | 同一 CSV 重导入 → App `catalog.search(query=商品货号)` | App 返回同一商品的真实 `local_product_key`、店铺归属和未确认状态；普通文本查询命中，SKU 数仍为 0。 |
+| 插件版本升级与新会话 | 本地直装新版 → 缓存 helper 构建 → 完全重启 App → 自然语言货号查询 | 新版本工具成功加载，App 返回真实店铺、商品、价格、库存和未确认状态；升级脚本已加入 helper 构建。 |
 
 本轮未覆盖其余需要素材、店铺授权、审核状态或可能发布/扣费的工具的线上写操作；不能宣称“131 个功能全通过”。
 
@@ -51,6 +53,6 @@
 3. **发布基线管理**：此次仅把 5 文件补丁移植到线上 `bb417660...`，API 双副本更新到 `2f6b4387...`，数据库保持迁移 254；其他服务仍是混合源码版本。后续完整发布不得把含迁移 255 的主分支直接倒灌到 demo。
 4. **App 使用引导**：首次进入先显示当前账号、工作区、人工登记/官方授权店铺数；对未绑定商品提供明确“导入/确认商品事实”入口。`catalog.search(scope=workspace)` 不需要 `platform` 和 `account_id`，修正当前 App 回复中的误导提示。
 5. **工具列表与参数契约**：在商家视角隐藏或标注平台专用读工具；对 `support.customer.replies.list` 和 `catalog.image.get` 补齐必填参数 schema 或给出明确缺参提示。上传 Excel/CSV 的入口与导入后未绑定商品状态需用真实桌面和 App 流程单独验收。
-6. **货号与 SKU 术语**：API 已保存并按 `query` 搜索商品货号，App 已实测命中；插件技能与工具描述仍需明确“商品货号用 `query`，真正的 SKU 编码才用 `sku_id`”，避免首次自然语言回复误判。
+6. **货号与 SKU 术语**：API、插件 Skill 与 MCP 工具说明已按商品货号 `query`、具体变体系统 `sku_id` 区分；最终本地插件版本和 App 自然语言复验已通过。后续仍需在真实 SKU 商品上补充按变体 ID 精确搜索的线上验收。
 
 剩余验收门槛：本轮已通过真实桌面 CSV 导入、XLSX 原生选择与预览、App 读取正确店铺归属。QA 商品尚待商家确认事实，正式审核/导出、需官方授权的店铺写入流程和其余工具仍须按各自前置条件逐项实测。不能以此次候选与导入成功宣称所有流程通过。
