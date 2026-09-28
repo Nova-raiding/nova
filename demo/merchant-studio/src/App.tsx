@@ -8603,7 +8603,7 @@ function ProductDetailPreview({
   const visibleModules = detailModules.filter(
     (module) => moduleFilter === 'all' || moduleKind(module) === moduleFilter,
   )
-  const detailSopSteps = resolveDetailSopSteps(detailModules)
+  const detailSopSteps = resolveDetailSopSteps(detailModules, product?.category)
   const moduleLabels = {
     all: '全部',
     fact: '事实内容',
@@ -8723,11 +8723,12 @@ function ProductDetailPreview({
           <div className="detail-section-head">
             <div>
               <span className="section-kicker">DETAIL PAGE SOP</span>
-              <h4 id="detail-sop-title">按买家问题审阅 8 屏详情页</h4>
+              <h4 id="detail-sop-title">按买家问题审阅详情页</h4>
             </div>
             <small>文字讲卖点，证据负责证明</small>
           </div>
           <ol className="detail-sop-steps">
+            {detailSopSteps.length === 0 && <li className="detail-sop-step sop-pending">当前版本尚无可审阅详情模块</li>}
             {detailSopSteps.map(step => (
               <li key={step.key} className={`detail-sop-step sop-${step.disposition}`}>
                 <span className="detail-sop-number" aria-hidden="true">{step.position}</span>
