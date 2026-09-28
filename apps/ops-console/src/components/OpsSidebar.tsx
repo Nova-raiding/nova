@@ -53,9 +53,6 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; description: s
   ];
 
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
-  // The supplied latest desktop UI keeps the primary rail to the three
-  // day-to-day workbench destinations. Other authorized screens remain
-  // available through their established routes and contextual links.
   { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery"] },
 ];
 

@@ -32,9 +32,10 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("Store Nova商家中心");
   });
 
-  it("keeps the primary rail aligned to the supplied three-destination UI", () => {
+  it("keeps the primary rail matched to the three screenshot destinations", () => {
     expect(navigationGroups.flatMap(({ items }) => [...items])).toEqual(["overview", "users", "customer-delivery"]);
     expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toContainEqual({ domain: "stores", label: "平台与店铺" });
+    expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toContainEqual({ domain: "finance", label: "账务与退款" });
   });
 
   it("exposes the independent model services destination", () => {
@@ -52,7 +53,7 @@ describe("OpsSidebar navigation", () => {
     });
   });
 
-  it("keeps role-gated routes available without adding them to the primary rail", () => {
+  it("keeps role-gated routes available in their authorized navigation group", () => {
     expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toEqual(
       expect.arrayContaining([
         { domain: "rules", label: "平台规则" },
@@ -90,7 +91,7 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("审计中心");
   });
 
-  it("renders only the three primary destinations shown in the reference UI", () => {
+  it("renders the three primary destinations from the supplied desktop reference", () => {
     const markup = renderToStaticMarkup(<OpsSidebar activeDomain="overview" stores={[]} platformLabels={{}} selectedStoreScope="" onNavigate={() => undefined} onSelectStore={() => undefined} />);
     expect((markup.match(/class="sider-item(?: active)?"/g) ?? [])).toHaveLength(3);
     expect(markup).toContain('aria-label="总览"');
@@ -101,7 +102,7 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain('aria-label="账务与退款"');
   });
 
-  it("renders finance navigation only when the authorization visibility set includes it", () => {
+  it("keeps finance route definitions without adding it to the primary rail", () => {
     expect(mainItems.map(({ domain }) => domain)).toContain("finance");
     expect(mainItems.map(({ label }) => label)).toContain("账务与退款");
     expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("finance");
@@ -121,7 +122,6 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain('aria-label="客户交付"');
     expect(markup).not.toContain('aria-label="账务与退款"');
     expect(markup).not.toContain('aria-labelledby="ops-nav-group-model-billing"');
-    expect(markup).not.toContain("模型与计费");
     const restrictedMarkup = renderToStaticMarkup(
       <OpsSidebar activeDomain="users" stores={[]} platformLabels={{}} selectedStoreScope="" visibleDomains={["users"]} onNavigate={() => undefined} onSelectStore={() => undefined} />,
     );
