@@ -135,7 +135,9 @@ export function observeDemo254Topology(execute = run) {
 }
 export function queryDemo254Migrations(snapshot, pg) {
   check(/^[A-Za-z0-9:-]{1,256}$/u.test(snapshot), 'SNAPSHOT_INVALID')
-  const sql = `BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY; SET TRANSACTION SNAPSHOT '${snapshot}'; SELECT json_build_object('name',current_database(),'oid',(SELECT oid FROM pg_database WHERE datname=current_database()),'system_identifier',(SELECT system_identifier::text FROM pg_control_system()),'server_version_num',current_setting('server_version_num')::integer,'migration_rows',(SELECT coalesce(json_agg(json_build_object('version',version,'name',name,'checksum',checksum) ORDER BY version),'[]'::json) FROM public.schema_migrations)); ROLLBACK;`
+  // PostgreSQL serializes the oid type as a JSON string. Cast to bigint so the
+  // snapshot query agrees with captureSnapshot()'s numeric databaseOid.
+  const sql = `BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY; SET TRANSACTION SNAPSHOT '${snapshot}'; SELECT json_build_object('name',current_database(),'oid',(SELECT oid::bigint FROM pg_database WHERE datname=current_database()),'system_identifier',(SELECT system_identifier::text FROM pg_control_system()),'server_version_num',current_setting('server_version_num')::integer,'migration_rows',(SELECT coalesce(json_agg(json_build_object('version',version,'name',name,'checksum',checksum) ORDER BY version),'[]'::json) FROM public.schema_migrations)); ROLLBACK;`
   const result = execFileSync(PSQL, ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-c', sql], { encoding: 'utf8', env: { ...createProtectedEnvironment(pg), PGOPTIONS: '-c default_transaction_read_only=on' }, timeout: 30_000, maxBuffer: 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] })
   const lines = result.trim().split('\n').map(line => line.trim()).filter(Boolean)
   check(lines.length === 1 && lines[0].startsWith('{'), 'SNAPSHOT_QUERY_OUTPUT_INVALID')
