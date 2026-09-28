@@ -44,7 +44,7 @@ function fixture() {
   const capture = { ...captureBody, capture_sha256: digest(captureBody) }
   const state = { version: 254, fenced: false, stopped: false, backup: null, recoveryReady: false,
     sqlCount: 0, nonceCount: 0, crashBeforeSql: false, crashAfterSql: false,
-    crashNonceJournal: false, failBackup: false, badReceipt: false,
+    crashNonceJournal: false, failBackup: false, badReceipt: false, badReadReceipt: false,
     loseFence: false, events: [], journal: null, journalObservation: null }
   const observation = phase => ({ phase, database: prefix(state.version),
     ingress_fenced: state.fenced, callbacks_fenced: state.fenced,
@@ -90,7 +90,7 @@ function fixture() {
     },
     async readFrozenAttempt() { return { plan_sha256: validateBridge255Plan(plan), capture,
       journal: state.journal, observation: state.journalObservation } },
-    async readConsumedNonce() { return { namespace: 'merchant-production-deploy', operation: 'bridge-255',
+    async readConsumedNonce() { return { namespace: 'merchant-production-deploy', operation: state.badReadReceipt ? 'other' : 'bridge-255',
       attempt_id: plan.attempt_id, nonce_sha256: plan.nonce_sha256,
       ...plan.bridge_254_255.identity } },
   }
@@ -212,6 +212,21 @@ test('crash after nonce commit but before migrating journal resumes the same fen
   assert.equal(f.state.nonceCount, 1)
   assert.equal(f.state.fenced, true)
   assert.equal(f.state.journal.phase, 'verified_255')
+})
+
+test('invalid consumed nonce receipt during resume keeps the ingress fence', async () => {
+  const f = fixture(); f.state.crashNonceJournal = true
+  await assert.rejects(executeBridge255ForwardMigration({ plan: f.plan,
+    deploymentNonce: f.nonce, publicKeyPem: f.publicKeyPem,
+    control: f.control, runtime: f.runtime, now: f.now }))
+  f.state.crashNonceJournal = false
+  f.state.badReadReceipt = true
+  await assert.rejects(resumeBridge255ForwardRecovery({ plan: f.plan,
+    publicKeyPem: f.publicKeyPem, control: f.control, runtime: f.runtime, now: f.now }), /NONCE_OWNER_MISMATCH/u)
+  assert.equal(f.state.version, 254)
+  assert.equal(f.state.sqlCount, 0)
+  assert.equal(f.state.fenced, true)
+  assert.ok(f.state.events.includes('keep-fenced'))
 })
 
 test('resume refuses changed plan or database history without mutation', async () => {

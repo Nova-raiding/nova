@@ -130,10 +130,10 @@ export async function resumeBridge255ForwardRecovery({ plan, publicKeyPem, contr
   const { capture } = frozen
   let { journal, observation } = frozen
   reviewBridge255Phase({ plan, capture, journal, publicKeyPem, observation, now })
-  const receipt = await control.readConsumedNonce({ attemptId: plan.attempt_id,
-    nonce_sha256: plan.nonce_sha256 })
-  assertNonceReceipt(receipt, plan)
   try {
+    const receipt = await control.readConsumedNonce({ attemptId: plan.attempt_id,
+      nonce_sha256: plan.nonce_sha256 })
+    assertNonceReceipt(receipt, plan)
     await assertFenced(runtime, plan)
     // A process can die after the durable one-use nonce commit but before the
     // migrating_255 journal rename. Resume that exact attempt by recording the
