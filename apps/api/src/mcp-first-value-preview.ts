@@ -2,7 +2,30 @@ import type { IncomingMessage } from 'node:http'
 import { DomainError } from '../../../packages/application/src/service.js'
 import type { Platform, Product } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
+import type { RelayUsageRecord } from '../../../packages/ai/src/relay-usage.js'
 import type { FirstValuePreviewRuntime } from './server.js'
+
+export async function preflightUnboundContentPricing(input: {
+  production: boolean
+  workspaceId: string
+  textModel?: string
+  relayPricing?: { estimateRequestCost: (usage: RelayUsageRecord) => Promise<unknown> }
+}) {
+  if (!input.production) return
+  if (!input.relayPricing || !input.textModel) throw new DomainError('MODEL_PRICING_PREFLIGHT_UNAVAILABLE', '文案模型价格检查未就绪，未调用模型或预留创意点', 503, { provider_executed: false, points_reserved: false })
+  try {
+    // A one-token estimate validates the active model, group, exchange
+    // rate and relay response without claiming an actual provider cost.
+    // The pricing client caches this snapshot for the subsequent receipt.
+    await input.relayPricing.estimateRequestCost({ workspaceId: input.workspaceId, modality: 'text', model: input.textModel, inputTokens: 1, outputTokens: 1, observedAt: new Date().toISOString() })
+  } catch (error) {
+    throw new DomainError('MODEL_PRICING_PREFLIGHT_UNAVAILABLE', '文案模型价格检查未通过，未调用模型或预留创意点', 503, {
+      provider_executed: false,
+      points_reserved: false,
+      reason_code: typeof (error as { code?: unknown })?.code === 'string' ? (error as { code: string }).code : 'MODEL_PRICING_UNKNOWN',
+    })
+  }
+}
 
 export async function merchantFirstValuePreview(workspaceId: string, params: Record<string, unknown>, req: IncomingMessage, dependencies: FirstValuePreviewRuntime) {
   const {
@@ -10,7 +33,7 @@ export async function merchantFirstValuePreview(workspaceId: string, params: Rec
     assertProviderActionCanStart, reserveCreativePointsForModel, recordActionSettlement, requestActor,
     recordOperationAudit, providerSucceededButSettlementPending, persistence, unknownModelProviderReceipt,
     releaseReservedModelPoints, requireSettledContentExecutionEvidence, validateContentSchema,
-    firstValueExecutionLabel, firstValueNextActions, isProduction, service,
+    firstValueExecutionLabel, firstValueNextActions, isProduction, service, relayPricing, textModel,
   } = dependencies
 
   if (params.draft === 'true') {
@@ -24,6 +47,7 @@ export async function merchantFirstValuePreview(workspaceId: string, params: Rec
     const actionId = `content-draft:${createHash('sha256').update(`${workspaceId}:${idempotencyKey}`).digest('hex')}`
     const decision = await enforceMcpCommercialAccess(req, workspaceId, 'content.draft.generate')
     await assertProviderActionCanStart(workspaceId, actionId)
+    await preflightUnboundContentPricing({ production: isProduction(), workspaceId, relayPricing, textModel })
     const creativeReservation = await reserveCreativePointsForModel(workspaceId, actionId, decision)
     let generated
     try {

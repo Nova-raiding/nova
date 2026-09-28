@@ -9137,6 +9137,7 @@ function firstValuePreviewRuntime() {
     recordOperationAudit, providerSucceededButSettlementPending, persistence, unknownModelProviderReceipt,
     releaseReservedModelPoints, requireSettledContentExecutionEvidence, validateContentSchema,
     firstValueExecutionLabel, firstValueNextActions, isProduction, service,
+    relayPricing, textModel: process.env.AI_MODEL?.trim() || process.env.MODEL_ID?.trim(),
   }
 }
 export type FirstValuePreviewRuntime = ReturnType<typeof firstValuePreviewRuntime>
