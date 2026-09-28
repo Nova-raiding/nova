@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { reviewBridge255HostHandoff } from '../infra/protected/ecs-bridge-255-host-handoff.mjs'
+import { produceBridge255Pg17Restore } from '../infra/protected/ecs-bridge-255-pg17-restore.mjs'
 import { validateBridge255Plan } from '../infra/protected/ecs-bridge-255-review.mjs'
 
 const h = char => char.repeat(64)
@@ -66,6 +67,7 @@ function fixture() {
     migrated_prefix_255_sha256: plan.database.prefix_255_sha256,
     restored_prefix_version: 254, migrated_version: 255,
     postgres_image_ref: plan.pg17_image_ref, postgres_image_id: `sha256:${h('7')}`,
+    container_id: h('a'),
     network_id: h('8'), network_internal: true, published_ports: [],
     volume_name: 'merchant_restore_data_abcdefghijkl', target_database_id_sha256: h('9'),
     migration_255_sql_sha256: h('a'),
@@ -104,5 +106,86 @@ test('rejects expired, fake, exposed, cross-attempt and wrong-prefix restore pro
   ]) {
     const f = fixture(); mutate(f)
     assert.throws(() => reviewBridge255HostHandoff(f), /BRIDGE_255_HOST_/u)
+  }
+})
+
+function restoreFixture() {
+  const f = fixture()
+  const sql = Buffer.from('CREATE TABLE isolated_255_fixture (id bigint);')
+  const expectedRows = Array.from({ length: 255 }, (_, index) => ({
+    version: index + 1, name: `migration_${index + 1}`,
+    checksum: index === 254 ? sha(sql) : sha(`sql-${index + 1}`),
+  }))
+  const historyHash = rows => sha(rows.map(row => `${row.version}\t${row.name}\t${row.checksum}\n`).join(''))
+  f.plan.database.prefix_254_sha256 = historyHash(expectedRows.slice(0, 254))
+  f.plan.database.prefix_255_sha256 = historyHash(expectedRows)
+  f.signedSourcePlan.freeze.database.history_sha256 = f.plan.database.prefix_254_sha256
+  f.signedSourcePlan = signed({ freeze: f.signedSourcePlan.freeze, key_id: f.keyId })
+  f.manifest.migration_history_sha256 = f.plan.database.prefix_254_sha256
+  f.manifest.signed_plan_sha256 = sha(canonical(f.signedSourcePlan))
+  f.manifest = signed({ ...f.manifest, signature_base64: undefined })
+  const events = []
+  const state = { version: 0, exposed: false, failSql: false, quarantined: false }
+  const inspection = () => ({ container_id: h('a'), database_id_sha256: h('9'),
+    image_id: f.plan.pg17_image_ref, network_id: h('8'), network_internal: true,
+    published_ports: state.exposed ? [5432] : [],
+    volume_name: 'merchant_restore_data_abcdefghijkl', volume_preserved: true,
+    source_mounted: false })
+  const isolation = {
+    async create(options) { events.push('create'); assert.equal(options.publishPorts, false) },
+    async inspect() { events.push('inspect'); return inspection() },
+    async restoreDump() { events.push('restore'); state.version = 254 },
+    async readHistory() { events.push(`read:${state.version}`); return expectedRows.slice(0, state.version) },
+    async applyOnly255(options) {
+      events.push('sql255')
+      assert.equal(options.sqlSha256, sha(sql))
+      if (state.failSql) throw new Error('offline SQL failure')
+      state.version = 255
+    },
+    async quarantineAttempt(options) { events.push('quarantine'); state.quarantined = true
+      assert.equal(options.preserveVolume, true) },
+  }
+  return { f, expectedRows, migration255: { version: 255, name: expectedRows[254].name, sql },
+    isolation, events, state }
+}
+
+test('isolated PG17 restore checks exact 254 and 255 histories before signing proof', async () => {
+  const { f, expectedRows, migration255, isolation, events, state } = restoreFixture()
+  const result = await produceBridge255Pg17Restore({ ...f, expectedRows, migration255,
+    privatePem: key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    now: () => now }, isolation)
+  assert.equal(result.status, 'isolated_restore_signed')
+  assert.equal(result.production_authorized, false)
+  assert.equal(result.restore.migrated_prefix_255_sha256, f.plan.database.prefix_255_sha256)
+  assert.equal(state.quarantined, false)
+  assert.deepEqual(events.filter(x => x === 'restore' || x === 'sql255' || x.startsWith('read:')),
+    ['restore', 'read:254', 'sql255', 'read:255'])
+})
+
+test('bad signed source or frozen 255 SQL refuses all isolated operations', async () => {
+  for (const mutate of [
+    x => { x.f.attestation.migration_version = 242 },
+    x => { x.migration255.sql = Buffer.from('ALTER TABLE changed ADD COLUMN unsafe int') },
+    x => { x.expectedRows[0].checksum = h('f') },
+  ]) {
+    const x = restoreFixture(); mutate(x)
+    await assert.rejects(produceBridge255Pg17Restore({ ...x.f, expectedRows: x.expectedRows,
+      migration255: x.migration255,
+      privatePem: key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+      now: () => now }, x.isolation))
+    assert.deepEqual(x.events, [])
+  }
+})
+
+test('lost isolation or SQL failure quarantines attempt and preserves its volume', async () => {
+  for (const failure of ['exposed', 'failSql']) {
+    const x = restoreFixture(); x.state[failure] = true
+    await assert.rejects(produceBridge255Pg17Restore({ ...x.f, expectedRows: x.expectedRows,
+      migration255: x.migration255,
+      privatePem: key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+      now: () => now }, x.isolation))
+    assert.equal(x.state.quarantined, true)
+    assert.equal(x.events.at(-1), 'quarantine')
+    if (failure === 'exposed') assert.equal(x.events.includes('restore'), false)
   }
 })

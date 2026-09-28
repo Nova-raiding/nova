@@ -64,7 +64,7 @@ function verifyRestore(restore, { plan, attestation, publicPem, keyId, now }) {
   check(exact(restore, ['schema_version', 'status', 'simulated', 'attempt_id', 'plan_sha256',
     'backup_sha256', 'source_database_id_sha256', 'source_prefix_254_sha256',
     'migrated_prefix_255_sha256', 'restored_prefix_version', 'migrated_version',
-    'postgres_image_ref', 'postgres_image_id', 'network_id', 'network_internal',
+    'postgres_image_ref', 'postgres_image_id', 'container_id', 'network_id', 'network_internal',
     'published_ports', 'volume_name', 'target_database_id_sha256', 'migration_255_sql_sha256',
     'recovery_image_set_digest', 'captured_at', 'expires_at', 'key_id', 'signature_base64'])
     && restore.schema_version === 'ecs-bridge-255-pg17-restore/1'
@@ -77,6 +77,7 @@ function verifyRestore(restore, { plan, attestation, publicPem, keyId, now }) {
     && restore.migrated_prefix_255_sha256 === plan.database.prefix_255_sha256
     && restore.restored_prefix_version === 254 && restore.migrated_version === 255
     && restore.postgres_image_ref === plan.pg17_image_ref && IMAGE.test(restore.postgres_image_id)
+    && HEX.test(restore.container_id)
     && HEX.test(restore.network_id) && restore.network_internal === true
     && Array.isArray(restore.published_ports) && restore.published_ports.length === 0
     && /^merchant_restore_data_[A-Za-z0-9_-]{12,64}$/u.test(restore.volume_name ?? '')
@@ -93,9 +94,9 @@ function verifyRestore(restore, { plan, attestation, publicPem, keyId, now }) {
   signature(restore, publicPem, 'RESTORE_SIGNATURE_INVALID')
 }
 
-/** Validate a backup/restore handoff supplied by an independently installed collector. */
-export function reviewBridge255HostHandoff({ plan, signedSourcePlan, manifest, attestation,
-  restore, backupPath, publicPem, keyId, now = new Date() }) {
+/** Verify the source before any isolated Docker resource is created. */
+export function reviewBridge255BackupSource({ plan, signedSourcePlan, manifest, attestation,
+  backupPath, publicPem, keyId, now = new Date() }) {
   validateBridge255Plan(plan)
   check(typeof publicPem === 'string' && /^[A-Za-z0-9._:-]{1,128}$/u.test(keyId ?? ''), 'TRUST_ANCHOR_INVALID')
   const frozen = verifyFrozenDemo254Plan(signedSourcePlan, publicPem)
@@ -116,6 +117,16 @@ export function reviewBridge255HostHandoff({ plan, signedSourcePlan, manifest, a
   check(typeof backupPath === 'string' && backupPath.endsWith(`/${attestation.backup_file_name}`)
     && hashRegularFile(backupPath).sha256 === attestation.backup_sha256,
   'BACKUP_BYTES_MISMATCH')
+  return Object.freeze({ plan_sha256: validateBridge255Plan(plan),
+    backup_sha256: attestation.backup_sha256,
+    source_database_id_sha256: attestation.source_database_id_sha256 })
+}
+
+/** Validate a backup/restore handoff supplied by an independently installed collector. */
+export function reviewBridge255HostHandoff({ plan, signedSourcePlan, manifest, attestation,
+  restore, backupPath, publicPem, keyId, now = new Date() }) {
+  reviewBridge255BackupSource({ plan, signedSourcePlan, manifest, attestation,
+    backupPath, publicPem, keyId, now })
   verifyRestore(restore, { plan, attestation, publicPem, keyId, now })
   return Object.freeze({ status: 'review_only', deployable: false, migration_authorized: false,
     production_cutover_authorized: false, plan_sha256: validateBridge255Plan(plan),
