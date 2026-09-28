@@ -87,6 +87,10 @@ test('old runtime archive must bind exact API, worker and gateway image IDs and 
   assert.ok(review(value).errors.includes('RUNTIME_ARCHIVE_INVALID'))
   value = fixture(); value.capsule.runtime_archive.image_ids[2] = value.capsule.runtime_archive.image_ids[1]
   assert.ok(review(value).errors.includes('RUNTIME_ARCHIVE_INVALID'))
+  for (const archive of [null, undefined]) {
+    value = fixture(); value.capsule.runtime_archive = archive
+    assert.ok(review(value).errors.includes('RUNTIME_ARCHIVE_INVALID'))
+  }
 })
 
 test('expiry and hand-added approval field fail closed', () => {

@@ -75,21 +75,21 @@ export function reviewDemo254OldRuntimeCapsule(capsule, observed, expected, now 
     && new Set(managedIds).size === managedIds.length, 'MANAGED_CONTAINER_DUPLICATE')
   check(same(capsule.replace, observed?.replace) && same(capsule.preserve, observed?.preserve), 'CONTAINER_OR_SOURCE_DRIFT')
   const archive = capsule.runtime_archive
-  check(exactKeys(archive, ['kind', 'sha256', 'bytes', 'image_ids'])
+  const archiveValid = exactKeys(archive, ['kind', 'sha256', 'bytes', 'image_ids'])
     && archive.kind === 'docker-save-runtime-images'
     && SHA.test(archive.sha256 ?? '')
     && Number.isSafeInteger(archive.bytes) && archive.bytes > 0 && archive.bytes <= 8 * 1024 ** 3
     && Array.isArray(archive.image_ids) && archive.image_ids.length === 3
     && archive.image_ids.every(value => IMAGE.test(value))
-    && new Set(archive.image_ids).size === archive.image_ids.length,
-  'RUNTIME_ARCHIVE_INVALID')
+    && new Set(archive.image_ids).size === archive.image_ids.length
+  check(archiveValid, 'RUNTIME_ARCHIVE_INVALID')
   const oldApi = Array.isArray(capsule.replace) ? capsule.replace.find(item => item?.role === 'api') : null
   const oldWorker = Array.isArray(capsule.replace) ? capsule.replace.find(item => item?.role === 'worker-sync') : null
   const gateway = Array.isArray(capsule.preserve) ? capsule.preserve.find(item => item?.role === 'pilot-gateway') : null
-  check(archive.image_ids?.includes(oldApi?.image_id) && archive.image_ids?.includes(oldWorker?.image_id)
-    && archive.image_ids?.includes(gateway?.image_id)
-    && archive.image_ids?.length === new Set([oldApi?.image_id, oldWorker?.image_id, gateway?.image_id]).size
-    && same(archive, observed?.runtime_archive), 'RUNTIME_ARCHIVE_DRIFT')
+  check(!archiveValid || (archive.image_ids.includes(oldApi?.image_id) && archive.image_ids.includes(oldWorker?.image_id)
+    && archive.image_ids.includes(gateway?.image_id)
+    && archive.image_ids.length === new Set([oldApi?.image_id, oldWorker?.image_id, gateway?.image_id]).size
+    && same(archive, observed?.runtime_archive)), 'RUNTIME_ARCHIVE_DRIFT')
   check(Array.isArray(capsule.external_consumers) && capsule.external_consumers.length > 0
     && capsule.external_consumers.every(item => exactKeys(item, ['role', 'container_id', 'database_target_sha256', 'queue_target_sha256', 'disposition'])
       && typeof item.role === 'string' && SHA.test(item.container_id)
