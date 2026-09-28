@@ -179,7 +179,7 @@ build_image() {
   [ -f "$context/$dockerfile" ] || { echo "release Dockerfile is absent: $dockerfile" >&2; exit 2; }
   tag="$repository/$artifact:$release_id"
   built_tags="$built_tags $tag"
-  docker build --pull=false \
+  docker build --pull=false --platform linux/amd64 \
     --label "org.opencontainers.image.revision=$revision" \
     --label "com.storenova.release.id=$release_id" \
     --label "com.storenova.release.source_sha256=sha256:$source_sha" \
