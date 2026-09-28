@@ -3,7 +3,7 @@
 // isolated PG17 candidate. Never modifies the base project or production.
 import { createHash, X509Certificate } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { constants, closeSync, lstatSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { constants, closeSync, fchmodSync, lstatSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -23,6 +23,17 @@ function protectedPath(path, kind, mode) {
     const item = lstatSync(parent)
     assert(item.isDirectory() && !item.isSymbolicLink() && (testMode || item.uid === 0) && (item.mode & 0o022) === 0, 'sidecar input parent is unsafe')
   }
+}
+
+export function assertOpsReviewCertificateAccess({ directory, privateKey, fullchain }) {
+  const permissions = item => item.mode & 0o777
+  assert(directory.isDirectory() && directory.uid === 0 && directory.gid === 101 && permissions(directory) === 0o750,
+    'candidate certificate directory must be root:nginx(101) mode 0750')
+  assert(privateKey.isFile() && privateKey.uid === 0 && privateKey.gid === 101 && permissions(privateKey) === 0o640,
+    'candidate private key must be root:nginx(101) mode 0640')
+  assert(fullchain.isFile() && fullchain.uid === 0 && (permissions(fullchain) & 0o022) === 0 &&
+    ((fullchain.gid === 101 && (permissions(fullchain) & 0o040) !== 0) || (permissions(fullchain) & 0o004) !== 0),
+    'candidate certificate chain must be readable by nginx without writable group/other permissions')
 }
 
 function readIdentity(path) {
@@ -143,9 +154,10 @@ function docker(args) {
   }))
 }
 
-function exclusive(path, contents) {
+export function writeReviewOutputFile(path, contents, mode = 0o600) {
+  assert(mode === 0o600 || mode === 0o644, 'sidecar output mode is unsafe')
   const fd = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | (constants.O_NOFOLLOW ?? 0), 0o600)
-  try { writeFileSync(fd, contents) } finally { closeSync(fd) }
+  try { writeFileSync(fd, contents); fchmodSync(fd, mode) } finally { closeSync(fd) }
 }
 
 export function render(argv = process.argv.slice(2)) {
@@ -158,10 +170,13 @@ export function render(argv = process.argv.slice(2)) {
   }
   assert(Object.keys(args).length === names.size, 'sidecar renderer arguments are incomplete')
   for (const name of ['base-compose', 'base-manifest', 'base-identity', 'base-attestation', 'release-images']) protectedPath(args[name], 'file', 0o600)
-  protectedPath(args['cert-dir'], 'directory')
+  protectedPath(args['cert-dir'], 'directory', 0o750)
   protectedPath(args['output-dir'], 'directory', 0o700)
   protectedPath(join(args['cert-dir'], 'fullchain.pem'), 'file')
-  protectedPath(join(args['cert-dir'], 'privkey.pem'), 'file', 0o600)
+  protectedPath(join(args['cert-dir'], 'privkey.pem'), 'file', 0o640)
+  assertOpsReviewCertificateAccess({ directory: lstatSync(args['cert-dir']),
+    privateKey: lstatSync(join(args['cert-dir'], 'privkey.pem')),
+    fullchain: lstatSync(join(args['cert-dir'], 'fullchain.pem')) })
   const certificate = new X509Certificate(readFileSync(join(args['cert-dir'], 'fullchain.pem')))
   assert(certificate.checkHost('ops.yxsona.com') && Date.parse(certificate.validTo) > Date.now(), 'certificate does not cover ops.yxsona.com')
   const compose = JSON.parse(readFileSync(args['base-compose'], 'utf8'))
@@ -188,8 +203,8 @@ export function render(argv = process.argv.slice(2)) {
   const sidecar = createOpsSidecarCompose({ networkName, sidecarProject: args['sidecar-project'], images, identity,
     certDir: args['cert-dir'], configPath })
   assert(sidecar.services['ops-ui'].ports === undefined && sidecar.services['review-gateway'].ports[0].host_ip === '127.0.0.1', 'sidecar port isolation differs')
-  exclusive(configPath, candidateOpsReviewTlsConfig())
-  exclusive(composePath, `${JSON.stringify(sidecar, null, 2)}\n`)
+  writeReviewOutputFile(configPath, candidateOpsReviewTlsConfig(), 0o644)
+  writeReviewOutputFile(composePath, `${JSON.stringify(sidecar, null, 2)}\n`)
   return { status: 'rendered_only', project: args['sidecar-project'], base_project: project, release_id: identity.release_id,
     git_sha: identity.git_sha, network: networkName, loopback_tls_port: 18445, compose: composePath, nginx: configPath }
 }

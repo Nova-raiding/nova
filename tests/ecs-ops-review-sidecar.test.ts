@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { candidateOpsReviewTlsConfig, createOpsSidecarCompose, validateOpsSidecarInputs } from '../infra/scripts/render-ecs-ops-review-sidecar.mjs';
+import { lstatSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { assertOpsReviewCertificateAccess, candidateOpsReviewTlsConfig, createOpsSidecarCompose, validateOpsSidecarInputs, writeReviewOutputFile } from '../infra/scripts/render-ecs-ops-review-sidecar.mjs';
 
 const gitSha = 'd3a3d3faa274fcb41dbd5dad3361eb0a80f1dde4';
 const sourceSha = `sha256:${'a'.repeat(64)}`;
@@ -51,6 +54,32 @@ function fixture() {
 }
 
 describe('isolated Ops review sidecar', () => {
+  it('makes the non-secret Nginx template readable by uid/gid 101 under a restrictive umask', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ops-review-output-'));
+    const path = join(directory, 'ops-review-nginx.conf');
+    const originalUmask = process.umask(0o077);
+    try {
+      writeReviewOutputFile(path, candidateOpsReviewTlsConfig(), 0o644);
+      expect(lstatSync(path).mode & 0o777).toBe(0o644);
+      expect((lstatSync(path).mode & 0o004) !== 0).toBe(true);
+      expect(readFileSync(path, 'utf8')).toContain('listen 8443 ssl');
+    } finally {
+      process.umask(originalUmask);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('requires a root:nginx certificate mount readable by non-root Nginx without exposing the key', () => {
+    const directory = { isDirectory: () => true, uid: 0, gid: 101, mode: 0o750 };
+    const privateKey = { isFile: () => true, uid: 0, gid: 101, mode: 0o640 };
+    const fullchain = { isFile: () => true, uid: 0, gid: 0, mode: 0o644 };
+    expect(() => assertOpsReviewCertificateAccess({ directory, privateKey, fullchain })).not.toThrow();
+    expect(() => assertOpsReviewCertificateAccess({ directory: { ...directory, mode: 0o700 }, privateKey, fullchain })).toThrow(/0750/);
+    expect(() => assertOpsReviewCertificateAccess({ directory, privateKey: { ...privateKey, gid: 0 }, fullchain })).toThrow(/0640/);
+    expect(() => assertOpsReviewCertificateAccess({ directory, privateKey: { ...privateKey, mode: 0o644 }, fullchain })).toThrow(/0640/);
+    expect(() => assertOpsReviewCertificateAccess({ directory, privateKey, fullchain: { ...fullchain, mode: 0o640 } })).toThrow(/certificate chain/);
+  });
+
   it('accepts only the attested PG17 migration-255 candidate and generates loopback TLS', () => {
     const input = fixture();
     expect(validateOpsSidecarInputs(input)).toEqual({ baseProject: project, networkName });
