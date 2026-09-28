@@ -15,7 +15,7 @@
  * and asserts on that run's rows.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { server, setPasswordAuthRepositoryForTests, workspaceMembers } from './server.js'
+import { persistenceReady, server, setPasswordAuthRepositoryForTests, workspaceMembers } from './server.js'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 
 type Envelope<T = Record<string, any>> = { workspace_id: string; data: T | null; error: { code: string; message: string } | null }
@@ -190,6 +190,31 @@ describe('ops.users.list platform directory', () => {
     expect(detail.data?.result).toMatchObject({ identity: { externalSubject: subject, accountType: 'platform', membershipCount: 0, activeMembershipCount: 0 }, memberships: [], audits: [] })
     const byIdentity = await call({ identity_id: detail.data!.result.identity.id })
     expect(byIdentity.data?.result).toMatchObject({ identity: { externalSubject: subject, accountType: 'platform', membershipCount: 0 }, memberships: [] })
+  })
+
+  it('does not attach a different issuer identity with the same login to a platform password account', async () => {
+    const login = `issuer-collision-${runId()}@example.com`
+    const auth = new MemoryPasswordAuthRepository()
+    await auth.ensurePlatformAccount({ login, passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$c2VlZA$c2VlZA', roles: ['platform_admin'] })
+    setPasswordAuthRepositoryForTests(auth)
+    const account = (await auth.listAccounts()).find(item => item.login === login)!
+    const identities = (await persistenceReady).identities!
+    const legacy = await identities.observeAuthenticatedSession({
+      issuer: 'urn:merchant:api-token', externalSubject: login, displayName: '旧 API 凭据身份',
+      sessionHash: 'b'.repeat(64), kind: 'api_token', issuedAt: new Date().toISOString(), mfaVerified: false,
+    })
+    expect(legacy.identity.id).not.toBe(account.identityId)
+    const base = await start()
+    const call = (params: Record<string, string>) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer directory-test', 'x-role': 'platform_admin', 'x-ops-workbench': 'platform', 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ops.user.detail', params }),
+    }).then(async response => await response.json() as Envelope<{ result: any }>)
+    const byLogin = await call({ external_subject: login })
+    expect(byLogin.error).toBeNull()
+    expect(byLogin.data?.result).toMatchObject({ identity: { id: account.identityId, externalSubject: login, accountType: 'platform' }, sessions: [], lifecycleEvents: [] })
+    const byIdentity = await call({ identity_id: account.identityId })
+    expect(byIdentity.data?.result).toMatchObject({ identity: { id: account.identityId, externalSubject: login, accountType: 'platform' }, sessions: [] })
   })
 
   it('exports the same directory and resolves a subject detail across its workspaces', async () => {

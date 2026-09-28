@@ -222,44 +222,31 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
       const accountForRequest = (await passwordAuthRepository.listAccounts()).find(account =>
         (!requestedIdentityId || account.identityId === requestedIdentityId)
         && (!externalSubject || account.login === externalSubject))
-      let identityDetail: IdentityOperationsDetail | undefined
-      try {
-        const repository = persistence.identities ?? memoryIdentities
-        const identity = requestedIdentityId
-          ? undefined
-          : await repository.resolve({ issuer: typeof params.issuer === 'string' && params.issuer.trim() ? params.issuer.trim() : 'urn:merchant:api-token', externalSubject: externalSubject! })
-        if (requestedIdentityId || identity) identityDetail = await repository.detailForOperations(requestedIdentityId ?? identity!.id)
-      } catch (error) {
-        // The in-memory password repository can preseed a platform account
-        // without a lifecycle identity. Its account record is still authoritative.
-        if (!(accountForRequest?.accountType === 'platform' && (error as { code?: string }).code === 'IDENTITY_NOT_FOUND')) mapIdentityLifecycleError(error)
-      }
-      if (!identityDetail && accountForRequest?.identityId) {
-        try {
-          identityDetail = await (persistence.identities ?? memoryIdentities).detailForOperations(accountForRequest.identityId)
-        } catch (error) {
-          if (!(accountForRequest.accountType === 'platform' && (error as { code?: string }).code === 'IDENTITY_NOT_FOUND')) mapIdentityLifecycleError(error)
-        }
-      }
       if (accountForRequest?.accountType === 'platform') {
-        // A platform login must never inherit a historical workspace member
-        // row with the same subject or identity in its account detail.
+        // The password account's identity ID is authoritative. A historical
+        // API-token identity can share its login but belongs to another issuer.
+        let platformDetail: IdentityOperationsDetail | undefined
+        try {
+          platformDetail = await (persistence.identities ?? memoryIdentities).detailForOperations(accountForRequest.identityId)
+        } catch (error) {
+          if ((error as { code?: string }).code !== 'IDENTITY_NOT_FOUND') mapIdentityLifecycleError(error)
+        }
         return ({
           identity: {
-            ...(identityDetail?.identity ?? {}),
-            id: identityDetail?.identity.id ?? accountForRequest.identityId,
+            ...(platformDetail?.identity ?? {}),
+            id: accountForRequest.identityId,
             externalSubject: accountForRequest.login,
-            displayName: identityDetail?.identity.displayName || accountForRequest.contactName || accountForRequest.login,
+            displayName: platformDetail?.identity.displayName || accountForRequest.contactName || accountForRequest.login,
             accountType: 'platform',
             membershipCount: 0,
             activeMembershipCount: 0,
-            firstSeenAt: identityDetail?.identity.firstSeenAt ?? accountForRequest.createdAt,
-            lastUpdatedAt: identityDetail?.identity.updatedAt ?? accountForRequest.updatedAt,
+            firstSeenAt: platformDetail?.identity.firstSeenAt ?? accountForRequest.createdAt,
+            lastUpdatedAt: platformDetail?.identity.updatedAt ?? accountForRequest.updatedAt,
           },
           memberships: [],
           audits: [],
-          sessions: identityDetail?.sessions.map(({ providerSessionHash: _providerSessionHash, ipHash: _ipHash, userAgentHash: _userAgentHash, ...session }) => session) ?? [],
-          lifecycleEvents: identityDetail?.events.map(event => ({
+          sessions: platformDetail?.sessions.map(({ providerSessionHash: _providerSessionHash, ipHash: _ipHash, userAgentHash: _userAgentHash, ...session }) => session) ?? [],
+          lifecycleEvents: platformDetail?.events.map(event => ({
             id: event.id,
             eventType: event.eventType,
             actorId: event.actorId,
@@ -268,6 +255,19 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
             createdAt: event.createdAt,
           })) ?? [],
         })
+      }
+      let identityDetail: IdentityOperationsDetail | undefined
+      try {
+        const repository = persistence.identities ?? memoryIdentities
+        const identity = requestedIdentityId
+          ? undefined
+          : await repository.resolve({ issuer: typeof params.issuer === 'string' && params.issuer.trim() ? params.issuer.trim() : 'urn:merchant:api-token', externalSubject: externalSubject! })
+        if (requestedIdentityId || identity) identityDetail = await repository.detailForOperations(requestedIdentityId ?? identity!.id)
+      } catch (error) { mapIdentityLifecycleError(error) }
+      if (!identityDetail && accountForRequest?.identityId) {
+        try {
+          identityDetail = await (persistence.identities ?? memoryIdentities).detailForOperations(accountForRequest.identityId)
+        } catch (error) { mapIdentityLifecycleError(error) }
       }
       const allWorkspaceIds = persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [...knownWorkspaces]
       const memberRepository = persistence.members ?? memoryMembers
