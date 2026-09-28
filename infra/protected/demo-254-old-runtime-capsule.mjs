@@ -9,7 +9,7 @@ const RELEASE = /^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u
 const PROJECT = 'merchant-demo-85575f9c'
 const REPLACE = Object.freeze(['api', 'api-replica', 'worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation'])
 const PRESERVE = Object.freeze(['pilot-gateway', 'ui', 'ops-ui', 'payment-gateway', 'postgres', 'redis'])
-const FIELDS = Object.freeze(['role', 'container_id', 'image_id', 'image_ref', 'compose_file', 'compose_sha256', 'env_file', 'env_sha256', 'config_hash', 'network_sha256', 'mounts_sha256'])
+const FIELDS = Object.freeze(['role', 'container_id', 'image_id', 'image_ref', 'compose_file', 'compose_sha256', 'env_file', 'env_sha256', 'config_hash', 'rendered_config_hash', 'network_sha256', 'mounts_sha256'])
 const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
   : value && typeof value === 'object' ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
     : JSON.stringify(value)
@@ -31,6 +31,7 @@ function validService(item, role, immutable) {
     && SHA.test(item.compose_sha256) && typeof item.env_file === 'string'
     && item.env_file.startsWith('/var/lib/merchant-release-security/')
     && SHA.test(item.env_sha256) && SHA.test(item.config_hash)
+    && item.rendered_config_hash === item.config_hash
     && SHA.test(item.network_sha256) && SHA.test(item.mounts_sha256)
 }
 

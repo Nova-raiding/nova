@@ -12,7 +12,7 @@ const item = role => ({ role, container_id: d, image_id: `sha256:${d}`,
   image_ref: `127.0.0.1:5000/storenova/${role}@sha256:${d}`,
   compose_file: `/var/lib/merchant-release-security/deployments/release-${role}/candidate.compose.json`,
   compose_sha256: d, env_file: `/var/lib/merchant-release-security/deployments/release-${role}/candidate.env`,
-  env_sha256: d, config_hash: d, network_sha256: d, mounts_sha256: d })
+  env_sha256: d, config_hash: d, rendered_config_hash: d, network_sha256: d, mounts_sha256: d })
 const uniquely = (roles, offset) => roles.map((role, index) => ({ ...item(role), container_id: (index + offset).toString(16).padStart(64, '0') }))
 const now = new Date('2026-09-28T06:00:00.000Z')
 function fixture() {
@@ -47,6 +47,8 @@ test('source drift, missing worker and mutable image fail closed', () => {
   value = fixture(); value.capsule.replace.pop()
   assert.ok(review(value).errors.includes('REPLACE_SET_INVALID'))
   value = fixture(); value.capsule.replace[0].image_ref = 'storenova/merchant-api:latest'
+  assert.ok(review(value).errors.includes('REPLACE_SET_INVALID'))
+  value = fixture(); value.capsule.replace[0].rendered_config_hash = 'f'.repeat(64)
   assert.ok(review(value).errors.includes('REPLACE_SET_INVALID'))
   value = fixture(); value.capsule.preserve[0].container_id = value.capsule.replace[0].container_id
   assert.ok(review(value).errors.includes('MANAGED_CONTAINER_DUPLICATE'))
