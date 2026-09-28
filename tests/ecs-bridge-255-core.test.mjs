@@ -44,7 +44,7 @@ function fixture() {
   const capture = { ...captureBody, capture_sha256: digest(captureBody) }
   const state = { version: 254, fenced: false, stopped: false, backup: null, recoveryReady: false,
     sqlCount: 0, nonceCount: 0, crashBeforeSql: false, crashAfterSql: false,
-    failBackup: false, badReceipt: false,
+    crashNonceJournal: false, failBackup: false, badReceipt: false,
     loseFence: false, events: [], journal: null, journalObservation: null }
   const observation = phase => ({ phase, database: prefix(state.version),
     ingress_fenced: state.fenced, callbacks_fenced: state.fenced,
@@ -75,6 +75,7 @@ function fixture() {
     },
     async advanceSigned({ previous, phase, observation: observed }) {
       state.events.push(`journal:${phase}`)
+      if (phase === 'migrating_255' && state.crashNonceJournal) throw new Error('crash after nonce before journal')
       assert.equal(previous, state.journal)
       state.journal = createJournal(phase, previous)
       state.journalObservation = observed
@@ -193,6 +194,24 @@ test('crash before SQL resumes the same nonce and applies migration once', async
   assert.equal(recovered.database_version, 255)
   assert.equal(f.state.sqlCount, 1)
   assert.equal(f.state.nonceCount, 1)
+})
+
+test('crash after nonce commit but before migrating journal resumes the same fenced attempt', async () => {
+  const f = fixture(); f.state.crashNonceJournal = true
+  await assert.rejects(executeBridge255ForwardMigration({ plan: f.plan,
+    deploymentNonce: f.nonce, publicKeyPem: f.publicKeyPem,
+    control: f.control, runtime: f.runtime, now: f.now }), /crash after nonce before journal/u)
+  assert.equal(f.state.version, 254)
+  assert.equal(f.state.nonceCount, 1)
+  assert.equal(f.state.journal.phase, 'fenced_254')
+  f.state.crashNonceJournal = false
+  const recovered = await resumeBridge255ForwardRecovery({ plan: f.plan,
+    publicKeyPem: f.publicKeyPem, control: f.control, runtime: f.runtime, now: f.now })
+  assert.equal(recovered.status, 'recovery_255_verified_fenced')
+  assert.equal(f.state.sqlCount, 1)
+  assert.equal(f.state.nonceCount, 1)
+  assert.equal(f.state.fenced, true)
+  assert.equal(f.state.journal.phase, 'verified_255')
 })
 
 test('resume refuses changed plan or database history without mutation', async () => {

@@ -126,14 +126,24 @@ export async function resumeBridge255ForwardRecovery({ plan, publicKeyPem, contr
   await assertLocked(runtime)
   const frozen = await control.readFrozenAttempt({ attemptId: plan.attempt_id })
   requireValue(frozen?.plan_sha256 === validateBridge255Plan(plan)
-    && frozen?.journal?.phase === 'migrating_255', 'RESUME_JOURNAL_INVALID')
-  const { capture, journal, observation } = frozen
+    && ['fenced_254', 'migrating_255'].includes(frozen?.journal?.phase), 'RESUME_JOURNAL_INVALID')
+  const { capture } = frozen
+  let { journal, observation } = frozen
   reviewBridge255Phase({ plan, capture, journal, publicKeyPem, observation, now })
   const receipt = await control.readConsumedNonce({ attemptId: plan.attempt_id,
     nonce_sha256: plan.nonce_sha256 })
   assertNonceReceipt(receipt, plan)
   try {
     await assertFenced(runtime, plan)
+    // A process can die after the durable one-use nonce commit but before the
+    // migrating_255 journal rename. Resume that exact attempt by recording the
+    // missing signed phase; never require or consume a replacement nonce.
+    if (journal.phase === 'fenced_254') {
+      const resumed = await advance({ control, runtime, plan, capture, publicKeyPem,
+        previous: journal, previousObservation: observation, phase: 'migrating_255', now })
+      journal = resumed.journal
+      observation = resumed.observation
+    }
     const current = await runtime.observeDatabasePrefix()
     requireValue([254, 255].includes(current?.version)
       && current.history_sha256 === plan.database[`prefix_${current.version}_sha256`]
