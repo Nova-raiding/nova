@@ -20,6 +20,7 @@ import { buildPublishObservationRequest, PublishObservationReportError } from '.
 import { createContentGeneratorFromEnv, type ContentGenerationInput, type GeneratedContent } from '../../../packages/ai/src/generator.js'
 import { createImageGeneratorFromEnv, type ImageGenerationInput, type ImageGenerationStatus } from '../../../packages/ai/src/image-generator.js'
 import { createRelayPricingClientFromEnv } from '../../../packages/ai/src/relay-pricing.js'
+import { evaluatePlatformModelGate, startPlatformRelayTokenQuotaMonitor, type PlatformModelKind } from '../../../packages/ai/src/platform-model-gate.js'
 import { createEmbeddingClientFromEnv } from '../../../packages/ai/src/embedding.js'
 import type { RelayUsageRecord } from '../../../packages/ai/src/relay-usage.js'
 import { FixedWindowQuotaAdmission, type QuotaAdmissionInput } from '../../../packages/quotas/src/admission.js'
@@ -2241,6 +2242,14 @@ export async function refreshScanQueueMetrics(input: {
  * path passes it.
  */
 export async function runWorker(config: WorkerConfig, pool: Pool, options: { readyFileHeartbeatIntervalMs?: number; redisClientFactory?: (url: string) => RedisClientType } = {}): Promise<void> {
+  const modelEnvironment = { ...process.env, NODE_ENV: config.environment }
+  const stopRelayQuotaMonitor = config.environment === 'production' && (config.role === 'generation' || config.role === 'all')
+    ? startPlatformRelayTokenQuotaMonitor(modelEnvironment) : undefined
+  const requireWorkerModelQuota = (kind: PlatformModelKind) => {
+    if (config.environment !== 'production') return
+    const gate = evaluatePlatformModelGate(modelEnvironment, kind)
+    if (!gate.ready) throw Object.assign(new Error(`model relay token or model configuration is unavailable: ${gate.reasons.join(', ')}`), { code: 'MODEL_RELAY_TOKEN_QUOTA_BLOCKED', retryable: true, providerOutcome: 'not_sent' })
+  }
   const repository = new PostgresOutboxRepository(pool as unknown as SqlPool)
   const dispatchers = new Map<string, DurableOutboxDispatcher<DurableOutboxEvent>>()
   // `redisClientFactory` is the same seam the transports already accept, threaded
@@ -2302,7 +2311,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
       if (providerRequestId) execution.providerRequestIds.push(providerRequestId)
     }
     return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
-  }, providerDispatchAdmission.beforeModelRequest)
+  }, async input => { requireWorkerModelQuota('text'); await providerDispatchAdmission.beforeModelRequest(input) })
   const knowledgeVectorIndexEnabled = process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED?.trim() === 'true'
   const embeddingVersion = process.env.EMBEDDING_VERSION?.trim()
   const embeddingClient = knowledgeVectorIndexEnabled ? createEmbeddingClientFromEnv(process.env, async usage => {
@@ -2333,7 +2342,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
     }
     if (execution) await creativePointSettlement.recordSucceeded(execution.event, enriched, 'image_generation.execute')
     return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
-  }, providerDispatchAdmission.beforeModelRequest)
+  }, async input => { requireWorkerModelQuota('image'); await providerDispatchAdmission.beforeModelRequest(input) })
   const requireImageProviderRequestId = (actionId: string) => {
     const providerRequestId = imageUsageContexts.get(actionId)?.providerRequestId?.trim()
     if (!providerRequestId) throw Object.assign(new Error('image provider response did not expose a real provider request id'), { code: 'IMAGE_PROVIDER_REQUEST_ID_MISSING', retryable: false, unknown: true })
@@ -3004,6 +3013,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
       if (!config.once && !stopping) await sleep(!dependenciesReady ? config.dependencyCheckIntervalMs : config.role === 'automation' ? config.automationIntervalMs : config.pollIntervalMs)
     } while (!config.once && !stopping)
   } finally {
+    stopRelayQuotaMonitor?.()
     await workerMetricsServer?.stop()
     await scannerHeartbeat?.stop()
     readyFileHeartbeat.stop()

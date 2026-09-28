@@ -201,7 +201,7 @@ import { createVideoGeneratorFromEnv, videoDurationSeconds } from '../../../pack
 import { relayUsageReceiptKey, type RelayUsageRecord } from '../../../packages/ai/src/relay-usage.js'
 import { createNewApiSelfLogClientFromEnv } from '../../../packages/ai/src/provider-usage-log.js'
 import { createRelayPricingClientFromEnv } from '../../../packages/ai/src/relay-pricing.js'
-import { evaluatePlatformModelBudgetEstimate, evaluatePlatformModelCostGate, evaluatePlatformModelGate, evaluatePlatformModelRelayGate, evaluatePlatformModelTaskCostLimit, evaluatePlatformModelTaskRequestCost, type PlatformModelKind } from '../../../packages/ai/src/platform-model-gate.js'
+import { evaluatePlatformModelBudgetEstimate, evaluatePlatformModelCostGate, evaluatePlatformModelGate, evaluatePlatformModelRelayGate, evaluatePlatformModelTaskCostLimit, evaluatePlatformModelTaskRequestCost, startPlatformRelayTokenQuotaMonitor, type PlatformModelKind } from '../../../packages/ai/src/platform-model-gate.js'
 import { DocumentParseError, parseDocumentFacts, type ParseErrorContext } from '../../../packages/application/src/document-parser.js'
 import { decideOcrPointFinalization, quoteOcrPointHold, OCR_COST_POINT_POLICY_VERSION, OCR_FREE_THRESHOLD_POINT_POLICY_VERSION } from '../../../packages/application/src/ocr-point-lifecycle.js'
 import { spreadsheetFactsToBatchProducts, SpreadsheetBatchImportError } from '../../../packages/application/src/spreadsheet-batch.js'
@@ -5715,6 +5715,7 @@ async function binaryBody(req: IncomingMessage, limit: number): Promise<Uint8Arr
 }
 
 function isProduction() { return process.env.NODE_ENV === 'production' }
+if (isProduction()) startPlatformRelayTokenQuotaMonitor(process.env)
 
 export function signedAssetScanCallbackRequired(source: NodeJS.ProcessEnv = process.env) {
   return ['staging', 'preview', 'production'].includes(source.NODE_ENV ?? '')
@@ -6717,7 +6718,7 @@ function requiredModelCostEvidenceByModality(source: NodeJS.ProcessEnv = process
 
 function requirePlatformModelCostGate(kind: PlatformModelKind) {
   if (!isProduction()) return
-  const relayGate = evaluatePlatformModelRelayGate(process.env)
+  const relayGate = evaluatePlatformModelRelayGate(process.env, kind === 'video' ? 'video' : 'model')
   if (!relayGate.ready) throw new DomainError('MODEL_RELAY_NOT_CONFIGURED', `生产环境必须配置平台模型中转站：${relayGate.reasons.join(', ')}`, 503, { reasons: relayGate.reasons })
   const modelGate = evaluatePlatformModelGate(process.env, kind)
   const costGate = evaluatePlatformModelCostGate(process.env)

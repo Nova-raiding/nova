@@ -10,6 +10,80 @@ export function isPlaceholderModelConfiguration(value: string | undefined): bool
   return /(?:replace[_-]?with|your[_-]?|change[_-]?me|dummy|example\.com|test-secret|<secret>|<value>|\$\{[^}]+\}|由.+注入|你的)/u.test(normalized)
 }
 import { inspectOutboundUrl, isSecureEnvironment, type OutboundSecurityReason } from '../../connectors/src/outbound-security.js'
+import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
+
+type RelayCredential = 'model' | 'video'
+type QuotaState = { checkedAt: number; expiresAt: number; available: number; reason?: string }
+type RelayQuotaMonitor = {
+  baseUrl: string
+  modelKey: string
+  videoKey: string
+  states: Record<RelayCredential, QuotaState>
+  timer: ReturnType<typeof setInterval>
+}
+let relayQuotaMonitor: RelayQuotaMonitor | undefined
+const RELAY_QUOTA_REFRESH_MS = 30_000
+const RELAY_QUOTA_MAX_AGE_MS = 90_000
+
+/** Read-only relay token checks are cached across health and generation calls.
+ * Unknown, stale, unlimited and expired quota always block production traffic. */
+export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fetcher: typeof fetch = fetch): () => void {
+  const baseUrl = source.MODEL_RELAY_BASE_URL?.trim() ?? ''
+  const modelKey = source.MODEL_RELAY_API_KEY?.trim() ?? ''
+  const videoKey = source.VIDEO_MODEL_RELAY_API_KEY?.trim() || modelKey
+  if (relayQuotaMonitor) clearInterval(relayQuotaMonitor.timer)
+  const unknown = (): QuotaState => ({ checkedAt: 0, expiresAt: 0, available: 0, reason: 'relay_token_quota_unknown' })
+  const monitor: RelayQuotaMonitor = { baseUrl, modelKey, videoKey, states: { model: unknown(), video: unknown() }, timer: undefined as unknown as ReturnType<typeof setInterval> }
+  relayQuotaMonitor = monitor
+  const refresh = async (credential: RelayCredential, key: string): Promise<void> => {
+    let state: QuotaState
+    try {
+      const relay = evaluatePlatformModelRelayConfiguration(source)
+      if (!relay.ready || !key) throw new Error('relay_token_configuration_invalid')
+      const response = await fetcher(new URL('/api/usage/token/', baseUrl), {
+        headers: { accept: 'application/json', authorization: `Bearer ${key}` }, redirect: 'error', signal: AbortSignal.timeout(10_000),
+      })
+      if (!response.ok) throw new Error('relay_token_auth_failed')
+      const root = JSON.parse(await readBoundedResponseText(response, 16 * 1024, 'relay token quota')) as { code?: unknown; success?: unknown; data?: Record<string, unknown> }
+      const data = root?.data
+      if ((root?.code !== true && root?.success !== true) || data?.object !== 'token_usage') throw new Error('relay_token_quota_invalid')
+      const granted = data.total_granted
+      const used = data.total_used
+      const available = data.total_available
+      const expiresAt = data.expires_at
+      if (data.unlimited_quota !== false) throw new Error('relay_token_quota_unlimited')
+      if (![granted, used, available, expiresAt].every(value => typeof value === 'number' && Number.isSafeInteger(value))
+        || (granted as number) <= 0 || (used as number) < 0 || (available as number) <= 0
+        || (used as number) + (available as number) !== granted || (expiresAt as number) < 0
+        || ((expiresAt as number) !== 0 && (expiresAt as number) <= Date.now() / 1000)) {
+        throw new Error('relay_token_quota_expired_or_exhausted')
+      }
+      state = { checkedAt: Date.now(), expiresAt: expiresAt as number, available: available as number }
+    } catch (error) {
+      const reason = error instanceof Error && error.message.startsWith('relay_token_') ? error.message : 'relay_token_quota_unavailable'
+      state = { checkedAt: Date.now(), expiresAt: 0, available: 0, reason }
+    }
+    if (relayQuotaMonitor === monitor) monitor.states[credential] = state
+  }
+  const refreshBoth = () => { void refresh('model', modelKey); void refresh('video', videoKey) }
+  refreshBoth()
+  monitor.timer = setInterval(refreshBoth, RELAY_QUOTA_REFRESH_MS)
+  monitor.timer.unref?.()
+  return () => { if (relayQuotaMonitor === monitor) { clearInterval(monitor.timer); relayQuotaMonitor = undefined } }
+}
+
+function relayQuotaReasons(source: ModelEnvironment, credential: RelayCredential): string[] {
+  if (source.NODE_ENV !== 'production') return []
+  if (!relayQuotaMonitor) return ['relay_token_quota_monitor_unavailable']
+  const monitor = relayQuotaMonitor
+  const expectedKey = credential === 'video' ? source.VIDEO_MODEL_RELAY_API_KEY?.trim() || source.MODEL_RELAY_API_KEY?.trim() || '' : source.MODEL_RELAY_API_KEY?.trim() || ''
+  if (source.MODEL_RELAY_BASE_URL?.trim() !== monitor.baseUrl || expectedKey !== (credential === 'video' ? monitor.videoKey : monitor.modelKey)) return ['relay_token_monitor_config_mismatch']
+  const state = monitor.states[credential]
+  if (state.reason) return [state.reason]
+  if (!state.checkedAt || Date.now() - state.checkedAt > RELAY_QUOTA_MAX_AGE_MS) return ['relay_token_quota_stale']
+  if ((state.expiresAt !== 0 && state.expiresAt <= Date.now() / 1000) || state.available <= 0) return ['relay_token_quota_expired_or_exhausted']
+  return []
+}
 
 /**
  * Classify an outbound-security rejection so readiness can report the same
@@ -86,7 +160,7 @@ export function evaluatePlatformModelBudgetEstimate(source: ModelEnvironment, ki
   return { ready: reasons.length === 0, amountCny: Number.isFinite(amountCny) && amountCny > 0 ? Number(amountCny.toFixed(12)) : 0, ...(version ? { version } : {}), reasons }
 }
 
-export function evaluatePlatformModelRelayGate(source: ModelEnvironment): { ready: boolean; reasons: string[]; endpointHost?: string } {
+function evaluatePlatformModelRelayConfiguration(source: ModelEnvironment): { ready: boolean; reasons: string[]; endpointHost?: string } {
   const relay = source.MODEL_RELAY_BASE_URL?.trim()
   if (!relay) return { ready: false, reasons: ['model_relay_endpoint_missing'] }
   try {
@@ -102,6 +176,12 @@ export function evaluatePlatformModelRelayGate(source: ModelEnvironment): { read
     if (rejection) return { ready: false, reasons: ['model_relay_endpoint_invalid'], endpointHost: parsed.host }
     return { ready: true, reasons: [], endpointHost: parsed.host }
   } catch { return { ready: false, reasons: ['model_relay_endpoint_invalid'] } }
+}
+
+export function evaluatePlatformModelRelayGate(source: ModelEnvironment, credential: RelayCredential | 'all' = 'all'): { ready: boolean; reasons: string[]; endpointHost?: string } {
+  const configuration = evaluatePlatformModelRelayConfiguration(source)
+  const reasons = [...configuration.reasons, ...(credential === 'video' ? [] : relayQuotaReasons(source, 'model')), ...(credential === 'model' ? [] : relayQuotaReasons(source, 'video'))]
+  return { ...configuration, ready: reasons.length === 0, reasons }
 }
 
 export function evaluatePlatformModelGate(source: ModelEnvironment, kind: PlatformModelKind): PlatformModelGateResult {
@@ -145,6 +225,7 @@ export function evaluatePlatformModelGate(source: ModelEnvironment, kind: Platfo
   else if (isPlaceholderModelConfiguration(apiKey)) reasons.push('api_key_placeholder')
   if (!model) reasons.push('model_missing')
   else if (isPlaceholderModelConfiguration(model)) reasons.push('model_placeholder')
+  reasons.push(...relayQuotaReasons(source, kind === 'video' ? 'video' : 'model'))
   return { ready: reasons.length === 0, https, ...(endpointHost ? { endpointHost } : {}), reasons }
 }
 

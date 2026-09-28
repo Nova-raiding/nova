@@ -302,13 +302,13 @@ describe('production readiness fail-closed', () => {
     expect(executable.catalog).toEqual({ executable: 1, executable_monthly: 1 })
   })
 
-  it('requires every critical production gate without leaking configured secrets', () => {
+  it('requires live relay quota evidence alongside static critical production gates without leaking secrets', () => {
     const ready = productionReadinessDiagnostics(productionEnvironment())
     expect(ready).toMatchObject({
       required: true,
-      ready: true,
+      ready: false,
       gates: {
-        relay: { ready: true },
+        relay: { ready: false, reasons: expect.arrayContaining(['relay:relay_token_quota_monitor_unavailable']) },
         authorization: { ready: true },
         identity: { ready: true },
         object_storage: { ready: true },
@@ -359,7 +359,7 @@ describe('production readiness fail-closed', () => {
     }
   })
 
-  it('keeps lexical knowledge search production-ready when optional vector indexing is disabled', () => {
+  it('keeps lexical knowledge search independent of embedding while relay quota is unknown', () => {
     const environment = productionEnvironment()
     delete environment.EMBEDDING_MODEL
     delete environment.EMBEDDING_DIMENSIONS
@@ -368,7 +368,8 @@ describe('production readiness fail-closed', () => {
     environment.KNOWLEDGE_VECTOR_INDEX_ENABLED = 'false'
 
     const result = productionReadinessDiagnostics(environment)
-    expect(result.ready).toBe(true)
+    expect(result.ready).toBe(false)
+    expect(result.gates.relay?.reasons).toContain('relay:relay_token_quota_monitor_unavailable')
     expect(result.gates.cost).toMatchObject({ ready: true })
   })
 
@@ -471,7 +472,7 @@ describe('production readiness fail-closed', () => {
     expect(result.gates.object_storage!.reasons).toContain('lifecycle:alert channel is not verifiable: OPS_ALERT_WEBHOOK_SECRET 未配置')
   })
 
-  it('allows alerts to be explicitly disabled without weakening lifecycle or storage controls', () => {
+  it('allows alerts to be explicitly disabled without weakening lifecycle, storage or relay quota controls', () => {
     const environment = productionEnvironment()
     environment.OPS_ALERT_NOTIFICATIONS_ENABLED = 'false'
     delete environment.ALERT_CHANNEL_SECRET_REF
@@ -479,7 +480,8 @@ describe('production readiness fail-closed', () => {
     delete environment.OPS_ALERT_WEBHOOK_ALLOWED_HOSTS
     delete environment.OPS_ALERT_WEBHOOK_SECRET
     const result = productionReadinessDiagnostics(environment)
-    expect(result.ready).toBe(true)
+    expect(result.ready).toBe(false)
+    expect(result.gates.relay?.reasons).toContain('relay:relay_token_quota_monitor_unavailable')
     expect(result.gates.alerts).toEqual({ ready: true, reasons: [] })
     expect(result.gates.object_storage).toEqual({ ready: true, reasons: [] })
 
@@ -517,7 +519,7 @@ describe('production readiness fail-closed', () => {
     expect(productionReadinessDiagnostics(invalidProvider).gates.payment?.reasons).toContain('provider_configuration_invalid')
   })
 
-  it('does not block production when optional alert notifications are entirely disabled', () => {
+  it('keeps optional alert notifications ready while unknown relay quota blocks production', () => {
     const environment = productionEnvironment()
     delete environment.OPS_ALERT_WEBHOOK_URL
     delete environment.OPS_ALERT_WEBHOOK_ALLOWED_HOSTS
@@ -525,7 +527,8 @@ describe('production readiness fail-closed', () => {
     environment.OPS_ALERT_NOTIFICATIONS_ENABLED = 'false'
     const result = productionReadinessDiagnostics(environment)
     expect(result.gates.alerts).toEqual({ ready: true, reasons: [] })
-    expect(result.ready).toBe(true)
+    expect(result.ready).toBe(false)
+    expect(result.gates.relay?.reasons).toContain('relay:relay_token_quota_monitor_unavailable')
   })
 
   it.each([

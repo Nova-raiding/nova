@@ -1,7 +1,50 @@
-import { describe, expect, it } from 'vitest'
-import { evaluatePlatformModelBudgetEstimate, evaluatePlatformModelCostGate, evaluatePlatformModelGate, evaluatePlatformModelRelayGate, evaluatePlatformModelRequestCost, evaluatePlatformModelTaskCostLimit, evaluatePlatformModelTaskRequestCost } from './platform-model-gate.js'
+import { describe, expect, it, vi } from 'vitest'
+import { evaluatePlatformModelBudgetEstimate, evaluatePlatformModelCostGate, evaluatePlatformModelGate, evaluatePlatformModelRelayGate, evaluatePlatformModelRequestCost, evaluatePlatformModelTaskCostLimit, evaluatePlatformModelTaskRequestCost, startPlatformRelayTokenQuotaMonitor } from './platform-model-gate.js'
 
 describe('platform-owned model gate', () => {
+  it('blocks production readiness and dispatch for unknown, unlimited and expired relay tokens', async () => {
+    const source = { NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://relay.example/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example', MODEL_RELAY_API_KEY: 'model-key', VIDEO_MODEL_RELAY_API_KEY: 'video-key', AI_MODEL: 'text-v1', VIDEO_MODEL: 'video-v1' }
+    let resolveModel!: (response: Response) => void
+    let resolveVideo!: (response: Response) => void
+    const fetcher = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>(resolve => {
+      if (init?.headers && (init.headers as Record<string, string>).authorization === 'Bearer model-key') resolveModel = resolve
+      else resolveVideo = resolve
+    })) as unknown as typeof fetch
+    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
+    const quota = (unlimited: boolean, expiresAt: number) => new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: unlimited, total_granted: 100, total_used: 20, total_available: 80, expires_at: expiresAt } }), { status: 200 })
+    try {
+      expect(evaluatePlatformModelRelayGate(source)).toMatchObject({ ready: false, reasons: expect.arrayContaining(['relay_token_quota_unknown']) })
+      expect(evaluatePlatformModelGate(source, 'text')).toMatchObject({ ready: false })
+      resolveModel(quota(true, Math.floor(Date.now() / 1000) + 3600))
+      resolveVideo(quota(false, Math.floor(Date.now() / 1000) - 1))
+      await vi.waitFor(() => expect(evaluatePlatformModelRelayGate(source).reasons).toEqual(expect.arrayContaining(['relay_token_quota_unlimited', 'relay_token_quota_expired_or_exhausted'])))
+      expect(evaluatePlatformModelGate(source, 'text').reasons).toContain('relay_token_quota_unlimited')
+      expect(evaluatePlatformModelGate(source, 'video').reasons).toContain('relay_token_quota_expired_or_exhausted')
+      expect(fetcher).toHaveBeenCalledTimes(2)
+      expect(fetcher).toHaveBeenCalledWith(new URL('https://relay.example/api/usage/token/'), expect.objectContaining({ redirect: 'error' }))
+    } finally { stop() }
+  })
+
+  it('opens only after both current finite token receipts arrive and closes on quota lookup failure', async () => {
+    const source = { NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://relay.example/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example', MODEL_RELAY_API_KEY: 'model-key', VIDEO_MODEL_RELAY_API_KEY: 'video-key', AI_MODEL: 'text-v1', VIDEO_MODEL: 'video-v1' }
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      if ((init?.headers as Record<string, string>)?.authorization === 'Bearer video-key') return new Response('', { status: 401 })
+      return new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 100, total_used: 20, total_available: 80, expires_at: 0 } }), { status: 200 })
+    }) as unknown as typeof fetch
+    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
+    try {
+      await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'text').ready).toBe(true))
+      await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'video').reasons).toContain('relay_token_auth_failed'))
+      expect(evaluatePlatformModelRelayGate(source).ready).toBe(false)
+      expect(evaluatePlatformModelRelayGate(source, 'model').ready).toBe(true)
+      expect(evaluatePlatformModelRelayGate(source, 'video').reasons).toContain('relay_token_auth_failed')
+      expect(fetcher).toHaveBeenCalledTimes(2)
+      const now = Date.now()
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 91_000)
+      try { expect(evaluatePlatformModelRelayGate(source, 'model').reasons).toContain('relay_token_quota_stale') }
+      finally { clock.mockRestore() }
+    } finally { stop() }
+  })
   it('requires an explicit versioned conservative estimate for every modality', () => {
     expect(evaluatePlatformModelBudgetEstimate({}, 'text')).toMatchObject({ ready: false, reasons: ['request_estimate_missing_or_invalid', 'estimate_version_missing'] })
     const source = { MODEL_COST_ESTIMATE_VERSION: 'pricing-2026-08-29', MODEL_TEXT_MAX_REQUEST_CNY: '0.25', MODEL_IMAGE_MAX_REQUEST_CNY: '1.50', MODEL_IMAGE_EDIT_MAX_REQUEST_CNY: '1.75', MODEL_OCR_MAX_REQUEST_CNY: '0.40', MODEL_VIDEO_MAX_REQUEST_CNY: '600' }
@@ -52,15 +95,15 @@ describe('platform-owned model gate', () => {
     // `relaySecurityFromEnv` returns undefined for these endpoints, so no
     // adapter is ever assembled: readiness must not claim otherwise.
     const privateHost = { NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://10.20.30.40/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example', MODEL_RELAY_API_KEY: 'relay-key', AI_MODEL: 'text-v1' }
-    expect(evaluatePlatformModelRelayGate(privateHost)).toMatchObject({ ready: false, reasons: ['model_relay_host_blocked'] })
-    expect(evaluatePlatformModelGate(privateHost, 'text')).toMatchObject({ ready: false, reasons: ['model_relay_host_blocked'] })
+    expect(evaluatePlatformModelRelayGate(privateHost)).toMatchObject({ ready: false, reasons: expect.arrayContaining(['model_relay_host_blocked']) })
+    expect(evaluatePlatformModelGate(privateHost, 'text')).toMatchObject({ ready: false, reasons: expect.arrayContaining(['model_relay_host_blocked']) })
     const metadataHost = { ...privateHost, MODEL_RELAY_BASE_URL: 'https://169.254.169.254/v1' }
     expect(evaluatePlatformModelGate(metadataHost, 'text')).toMatchObject({ ready: false })
     const credentialUrl = { ...privateHost, MODEL_RELAY_BASE_URL: 'https://user:secret@relay.example/v1' }
-    expect(evaluatePlatformModelRelayGate(credentialUrl)).toMatchObject({ ready: false, reasons: ['model_relay_endpoint_invalid'] })
-    expect(evaluatePlatformModelGate(credentialUrl, 'text')).toMatchObject({ ready: false, reasons: ['endpoint_invalid'] })
+    expect(evaluatePlatformModelRelayGate(credentialUrl)).toMatchObject({ ready: false, reasons: expect.arrayContaining(['model_relay_endpoint_invalid']) })
+    expect(evaluatePlatformModelGate(credentialUrl, 'text')).toMatchObject({ ready: false, reasons: expect.arrayContaining(['endpoint_invalid']) })
     // A public allowlisted relay keeps reporting ready.
-    expect(evaluatePlatformModelGate({ ...privateHost, MODEL_RELAY_BASE_URL: 'https://relay.example/v1' }, 'text')).toMatchObject({ ready: true, reasons: [] })
+    expect(evaluatePlatformModelGate({ ...privateHost, MODEL_RELAY_BASE_URL: 'https://relay.example/v1' }, 'text')).toMatchObject({ ready: false, reasons: ['relay_token_quota_monitor_unavailable'] })
   })
 
   it('reports OCR and video model readiness through the same relay gate', () => {
