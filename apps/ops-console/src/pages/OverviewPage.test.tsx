@@ -76,10 +76,11 @@ describe("overview page structure", () => {
     expect(overviewSource).not.toContain('eyebrow="OVERVIEW"');
   });
 
-  it("renders the tenant ledger with row-level authorization and finance navigation", () => {
-    expect(overviewSource).toContain("<CommercialOverviewSection");
+  it("renders only the dashboard shown in the latest overview reference", () => {
+    expect(overviewSource).toContain("hideTitle");
+    expect(overviewSource).toContain("<PlatformOverviewSnapshot");
+    expect(overviewSource).not.toContain("<CommercialOverviewSection");
+    expect(overviewSource).not.toContain("<OperationalAlertsPanel");
     expect(commercialOverviewSource).toContain('onNavigateWithQuery?.("finance", { workspace: workspaceId })');
-    expect(commercialOverviewSource).toContain("查看财务");
-    expect(commercialOverviewSource).not.toContain("给企业授权</Button>");
   });
 });

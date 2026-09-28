@@ -146,7 +146,7 @@ describe("StoresPage", () => {
 
   it("does not render customer brand details for a platform operations session", () => {
     const markup = renderToStaticMarkup(<StoresPage model={model({
-      opsSession: { workspace_id: "ops", roles: ["platform_ops"], actor_id: "operator", workspace_granted: true },
+      opsSession: { workspace_id: "ops", roles: ["platform_ops"], actor_id: "operator", workspace_granted: true, workbench: "platform", capabilities: ["platform.settings.read", "canonical.backfill.read", "canonical.backfill.update", "customer.content.read"] },
       authorization: createAuthorizationProjection({ workspace_id: "ops", roles: ["platform_ops"], canonical_roles: ["ops_admin"], actor_id: "operator", workspace_granted: true, capabilities: ["platform.settings.read", "canonical.backfill.read"] }, true),
       brandNavigation: [{ id: "brand-secret", title: "不应展示", platforms: [] }],
       platformBrandUnitSummary: { scope: "platform", workspaceCount: 1, brandCount: 1, boundStoreCount: 0, unboundBrandCount: 1, canonicalProductCount: 0, listingCount: 0, workspaces: [] },
@@ -157,19 +157,21 @@ describe("StoresPage", () => {
     expect(markup).toContain("平台级脱敏");
   });
 
-  it("keeps advanced canonical consistency and backfill tools off ordinary store management", () => {
+  it("renders canonical consistency and backfill tools only with their real scope permissions", () => {
     const workspaceMarkup = renderToStaticMarkup(<StoresPage model={model({
       authorization: createAuthorizationProjection({ workspace_id: "ws_a", roles: [], actor_id: "owner", workspace_granted: true, capabilities: ["canonical.backfill.read", "canonical.backfill.update", "customer.content.read"] }, true),
       brandNavigation: [{ id: "brand-1", title: "山野品牌", platforms: [] }],
     })} onNavigate={vi.fn()} />);
     const platformMarkup = renderToStaticMarkup(<StoresPage model={model({
-      authorization: createAuthorizationProjection({ workspace_id: "ops", roles: ["platform_ops"], canonical_roles: ["ops_admin"], actor_id: "operator", workspace_granted: true, capabilities: ["canonical.backfill.read", "canonical.backfill.update", "customer.content.read"] }, true),
+      opsSession: { workspace_id: "ops", roles: ["platform_ops"], actor_id: "operator", workspace_granted: true },
+      authorization: createAuthorizationProjection({ workspace_id: "ops", roles: ["platform_ops"], canonical_roles: ["ops_admin"], actor_id: "operator", workspace_granted: true, capabilities: ["platform.settings.read", "canonical.backfill.read", "canonical.backfill.update", "customer.content.read"] }, true),
     })} onNavigate={vi.fn()} />);
 
+    expect(workspaceMarkup).toContain("规范商品一致性");
+    expect(workspaceMarkup).not.toContain("Canonical 回填人工冲突队列");
+    expect(platformMarkup).toContain("规范商品一致性");
+    expect(platformMarkup).toContain("Canonical 回填人工冲突队列");
     for (const markup of [workspaceMarkup, platformMarkup]) {
-      expect(markup).not.toContain("Canonical 回填人工冲突队列");
-      expect(markup).not.toContain("规范商品一致性");
-      expect(markup).not.toContain("暂无待处理冲突");
       expect(markup).toContain("平台连接与授权健康");
       expect(markup).toContain("登记人工店铺");
     }

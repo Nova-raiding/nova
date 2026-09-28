@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
-import { Alert, Button, Card, Drawer, Form, Input, Select, Space, Table, Tabs, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Drawer, Dropdown, Form, Input, Select, Space, Table, Tag, Typography, message } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { OpsPageError } from "../OpsPageError";
 import { UserDirectorySection } from "./UserDirectorySection";
@@ -74,7 +74,7 @@ export function visibleUsersGovernanceSections(authorization: CapabilityReader, 
 export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConsoleModel; onRefresh?: () => void }) {
   const sectionKeys = useMemo(() => visibleUsersGovernanceSections(model.authorization, model.opsSession?.account_login), [model.authorization, model.opsSession?.account_login]);
   const unavailableRef = useRef<HTMLDivElement>(null);
-  const [activeSection, setActiveSection] = useState("directory");
+  const [activeSection, setActiveSection] = useState<string>(sectionKeys[0] ?? "directory");
 
   useEffect(() => {
     if (!sectionKeys.length) unavailableRef.current?.focus({ preventScroll: true });
@@ -104,7 +104,7 @@ export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConso
   }
 
   const tabs: Array<{ key: string; label: string; children: ReactElement }> = [];
-  if (sectionKeys.includes("directory")) tabs.push({ key: "directory", label: "已入驻用户", children: <section id="user-directory" className="ops-users-section" aria-labelledby="user-directory-heading"><OpsPageError error={model.userDirectoryError} onRetry={() => void model.loadUsers()} /><UserDirectorySection model={model} /></section> });
+  if (sectionKeys.includes("directory")) tabs.push({ key: "directory", label: "已接入用户", children: <section id="user-directory" className="ops-users-section" aria-labelledby="user-directory-heading"><OpsPageError error={model.userDirectoryError} onRetry={() => void model.loadUsers()} /><UserDirectorySection model={model} /></section> });
   if (sectionKeys.includes("workspaces")) tabs.push({ key: "workspaces", label: "商家工作区", children: <section id="workspace-governance" className="ops-users-section"><WorkspaceGovernanceSection model={model} /></section> });
   if (sectionKeys.includes("members")) tabs.push({ key: "members", label: "成员", children: <section id="member-governance" className="ops-users-section">{model.opsSession?.workspace_id
     ? <MembersSection model={model} />
@@ -112,14 +112,26 @@ export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConso
   if (sectionKeys.includes("registrations")) tabs.push({ key: "registrations", label: "入驻申请", children: <section className="ops-users-section"><RegistrationApplications model={model} /></section> });
   if (sectionKeys.includes("authorization")) tabs.push({ key: "authorization", label: "权限与授权", children: <section id="authorization-governance" className="ops-users-section"><AuthorizationGovernanceSection model={model} /></section> });
 
+  const currentSection = tabs.find((tab) => tab.key === activeSection) ?? tabs[0]!;
+  const otherSections = tabs.filter((tab) => tab.key !== activeSection);
+  const selectSection = (key: string) => setActiveSection(key);
+  if (currentSection.key === "directory") {
+    const directory = <section id="user-directory" className="ops-users-section" aria-labelledby="user-directory-heading">
+      <OpsPageError error={model.userDirectoryError} onRetry={() => void model.loadUsers()} />
+      <UserDirectorySection model={model} governanceSections={otherSections.map(({ key, label }) => ({ key, label }))} onSelectGovernanceSection={selectSection} />
+    </section>;
+    return <div className="ops-users-workspace" aria-label="用户治理工作区">{directory}</div>;
+  }
+
+  const menuItems = otherSections.map(({ key, label }) => ({ key, label }));
   return (
     <div className="ops-users-workspace" aria-label="用户治理工作区">
-      <Tabs
-        className="ops-users-tabs"
-        activeKey={activeSection}
-        onChange={setActiveSection}
-        items={tabs}
-      />
+      <div className="ops-users-secondary-navigation">
+        {menuItems.length > 0 ? <Dropdown menu={{ items: menuItems, onClick: ({ key }) => selectSection(key) }}>
+          <Button aria-label={`切换用户治理页面；当前为${currentSection.label}；其他页面：${otherSections.map(({ label }) => label).join("、")}`}>更多治理</Button>
+        </Dropdown> : <Typography.Text strong>{currentSection.label}</Typography.Text>}
+      </div>
+      {currentSection.children}
     </div>
   );
 }

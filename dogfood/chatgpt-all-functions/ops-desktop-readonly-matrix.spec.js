@@ -8,7 +8,7 @@ const base = process.env.OPS_BASE_URL
 const actorId = process.env.OPS_ACTOR_ID
 if (!outputRoot || !base || !actorId) throw new Error('ISOLATED_OPS_RUNNER_REQUIRED')
 
-test.use({ channel: 'chrome', viewport: { width: 1440, height: 900 }, timezoneId: 'Asia/Shanghai' })
+test.use({ channel: 'chrome', viewport: { width: 1440, height: 1050 }, timezoneId: 'Asia/Shanghai' })
 test.setTimeout(240_000)
 
 const routes = [
@@ -30,30 +30,29 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
   await openPlatformConsole(page, '/ops/overview')
   // The disposable fixture begins with platform_admin + security_admin. Grant
   // ops_admin through the real isolated API to reach member/authz read tabs.
-  const roleResponse = await page.request.post(new URL('/api/mcp', base).toString(), {
-    headers: { 'x-ops-workbench': 'platform' },
-    data: { jsonrpc: '2.0', id: 1, method: 'ops.authorization.role.assign', params: {
-      subject_identity_id: actorId, role: 'ops_admin', expected_authorization_revision: '2',
-      reason: 'isolated desktop browser read-only matrix',
-    } },
-  })
-  expect(roleResponse.status()).toBe(200)
-  expect((await roleResponse.json()).error).toBeFalsy()
-  const rulesRoleResponse = await page.request.post(new URL('/api/mcp', base).toString(), {
-    headers: { 'x-ops-workbench': 'platform' },
-    data: { jsonrpc: '2.0', id: 2, method: 'ops.authorization.role.assign', params: {
-      subject_identity_id: actorId, role: 'rules_admin', expected_authorization_revision: '3',
-      reason: 'isolated desktop browser platform rule read matrix',
-    } },
-  })
-  expect(rulesRoleResponse.status()).toBe(200)
-  expect((await rulesRoleResponse.json()).error).toBeFalsy()
+  for (const [id, role, expectedRevision, reason] of [
+    [1, 'ops_admin', '2', 'isolated desktop browser read-only matrix'],
+    [2, 'rules_admin', '3', 'isolated desktop browser platform rule read matrix'],
+  ]) {
+    const roleResponsePromise = page.waitForResponse(response => response.url().endsWith('/api/mcp') && response.request().postDataJSON()?.method === 'ops.authorization.role.assign' && response.request().postDataJSON()?.id === id)
+    await page.evaluate(({ actorId, id, role, expectedRevision, reason }) => fetch('/api/mcp', {
+      method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json', 'x-ops-workbench': 'platform' },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method: 'ops.authorization.role.assign', params: { subject_identity_id: actorId, role, expected_authorization_revision: expectedRevision, reason } }),
+    }), { actorId, id, role, expectedRevision, reason })
+    const roleResponse = await roleResponsePromise
+    expect(roleResponse.status()).toBe(200)
+    expect((await roleResponse.json()).error).toBeFalsy()
+  }
   await page.reload()
   await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('已由服务端验证')
   const matrix = []
   for (const [label, domain] of routes) {
     await page.goto(new URL(`/ops/${domain}`, base).toString(), { waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('已由服务端验证', { timeout: 30_000 })
+    if (domain === 'overview') {
+      const customerCount = page.getByText('客户总数', { exact: true }).locator('xpath=..').locator('strong')
+      await expect(customerCount).not.toHaveText('—', { timeout: 10_000 })
+    }
     await page.waitForTimeout(350)
     const headings = await page.locator('h1,h2,h3').allTextContents()
     const tabs = await page.getByRole('tab').allTextContents()
@@ -70,6 +69,26 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
         await page.waitForTimeout(250)
         matrix.push({ label: `${label} → ${tabName}`, domain, headings: (await page.locator('h1,h2,h3').allTextContents()).map(value => value.trim()), alerts: (await page.getByRole('alert').allTextContents()).map(value => value.trim().slice(0, 500)), selected: await tab.getAttribute('aria-selected') })
         await page.screenshot({ path: join(output, `${domain}-tab-${tabs.indexOf(tabName)}.png`), fullPage: true })
+      }
+    }
+    if (domain === 'users') {
+      const governanceMenu = page.getByRole('button', { name: /更多用户治理操作|切换用户治理页面/u })
+      if (await governanceMenu.count() === 1) {
+        await governanceMenu.click()
+        const sectionLabels = new Set(['商家工作区', '成员', '入驻申请', '权限与授权'])
+        const destinations = (await page.getByRole('menuitem').allTextContents()).map(value => value.trim()).filter(value => sectionLabels.has(value))
+        for (const destination of destinations) {
+          const target = page.getByRole('menuitem', { name: destination.trim(), exact: true })
+          if (await target.count() !== 1) continue
+          await target.click()
+          await page.waitForTimeout(250)
+          matrix.push({ label: `${label} → ${destination.trim()}`, domain, headings: (await page.locator('h1,h2,h3').allTextContents()).map(value => value.trim()), alerts: (await page.getByRole('alert').allTextContents()).map(value => value.trim().slice(0, 500)), tables: await page.getByRole('table').count() })
+          await page.screenshot({ path: join(output, `${domain}-governance-${matrix.length}.png`), fullPage: true })
+          const nextMenu = page.getByRole('button', { name: /更多用户治理操作|切换用户治理页面/u })
+          if (await nextMenu.count() !== 1) break
+          await nextMenu.click()
+        }
+        await page.keyboard.press('Escape')
       }
     }
   }

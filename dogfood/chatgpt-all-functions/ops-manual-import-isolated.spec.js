@@ -47,8 +47,8 @@ test('Ops XLSX preview rejects wrong store and imports verified isolated source'
   const itemKey = `QA-${randomUUID().slice(0, 8)}`
   const evidence = { isolated: true, workspace_id: workspaceId, account_id: accountId, wrong_xlsx_rejected: false, wrong_csv_rejected: false, correct_xlsx_imported: false, merchant_visible: false }
   await page.goto(`${baseUrl}/ops/stores?workbench=platform`, { waitUntil: 'domcontentloaded' })
-  await page.getByPlaceholder('例如 ops@example.com', { exact: true }).fill(username)
-  await page.getByPlaceholder('请输入平台运营密码', { exact: true }).fill(password)
+  await page.getByLabel('平台运营账号', { exact: true }).fill(username)
+  await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '登录平台运营后台', exact: true }).click()
   await expect(page.getByRole('heading', { name: '平台连接汇总' })).toBeVisible({ timeout: 30_000 })
   const roleResponse = await page.request.post(`${baseUrl}/api/mcp`, {

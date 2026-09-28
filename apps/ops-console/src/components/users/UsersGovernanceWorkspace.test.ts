@@ -63,20 +63,27 @@ describe("visibleUsersGovernanceSections", () => {
     const markup = renderToStaticMarkup(createElement(UsersGovernanceWorkspace, {
       model: { authorization: authorization(["authorization.grant.read"], ["ops_admin"]), opsSession: { account_login: "hyp@sn.com" } } as never,
     }));
-    expect(markup).toContain('role="tab"');
+    expect(markup).not.toContain("更多治理");
     expect(markup).toContain("权限与授权");
   });
 
   it("uses labels that describe the data in each user governance tab", () => {
     const markup = renderToStaticMarkup(createElement(UsersGovernanceWorkspace, {
-      model: { authorization: authorization(["workspace.directory.read", "workspace.member.read"]) } as never,
+      model: {
+        authorization: authorization(["workspace.directory.read", "workspace.member.read"]),
+        workspaceDirectory: { offset: 0, limit: 20, total: 0, items: [] },
+        workspaceDirectoryLoading: false,
+        workspaceDirectoryError: "",
+        dataSetError: () => "",
+        opsSession: undefined,
+      } as never,
     }));
     expect(markup).toContain("商家工作区");
-    expect(markup).toContain(">成员<");
+    expect(markup).toContain("其他页面：成员");
     expect(markup).not.toContain("月费详情");
     expect(markup).not.toContain("创意点详情");
     const source = readFileSync(new URL("./UsersGovernanceWorkspace.tsx", import.meta.url), "utf8");
-    expect(source).toContain('key: "directory", label: "已入驻用户"');
+    expect(source).toContain('key: "directory", label: "已接入用户"');
     expect(source).not.toContain('label: "接入详情"');
   });
 });

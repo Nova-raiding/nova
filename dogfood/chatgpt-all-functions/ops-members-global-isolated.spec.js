@@ -18,26 +18,29 @@ test('platform global password session shows member context gate without an invi
   page.on('pageerror', error => pageErrors.push(error.message))
 
   await openPlatformConsole(page, '/ops/users')
-  await expect(page.getByRole('heading', { name: '用户中心' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '已接入用户', exact: true })).toBeAttached()
   await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('平台全局')
   // The runner seeds platform_admin + security_admin, which intentionally lacks
   // workspace.member.read. Assign ops_admin through the real isolated MCP API
   // so the member tab is reachable under a genuine server authorization.
-  const response = await page.request.post(new URL('/api/mcp', baseUrl).toString(), {
-    headers: { 'x-ops-workbench': 'platform' },
-    data: { jsonrpc: '2.0', id: 1, method: 'ops.authorization.role.assign', params: {
+  const roleResponsePromise = page.waitForResponse(response => response.url().endsWith('/api/mcp') && response.request().postDataJSON()?.method === 'ops.authorization.role.assign')
+  await page.evaluate(({ actorId }) => {
+    const payload = { jsonrpc: '2.0', id: crypto.randomUUID(), method: 'ops.authorization.role.assign', params: {
       subject_identity_id: actorId, role: 'ops_admin', expected_authorization_revision: '2',
       reason: 'isolated browser verification of platform global member context',
-    } },
-  })
+    } }
+    return fetch('/api/mcp', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json', 'x-ops-workbench': 'platform' }, body: JSON.stringify(payload) })
+  }, { actorId })
+  const response = await roleResponsePromise
   const body = await response.json()
   expect(response.status()).toBe(200)
   expect(body.error ?? body.data?.error).toBeFalsy()
   await page.reload()
   await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('已由服务端验证')
-  const membersTab = page.getByRole('tab', { name: '成员', exact: true })
-  await membersTab.click()
-  await expect(membersTab).toHaveAttribute('aria-selected', 'true')
+  const governanceMenu = page.getByRole('button', { name: /更多用户治理操作|切换用户治理页面/u })
+  await expect(governanceMenu).toBeVisible()
+  await governanceMenu.click()
+  await page.getByRole('menuitem', { name: '成员', exact: true }).click()
   await expect(page.getByText('请先进入商家工作区', { exact: true })).toBeVisible()
   await expect(page.getByText('成员列表和邀请操作只在已授权的商家工作区会话中可用。当前是平台全局会话，无法读取或修改某个工作区的成员。')).toBeVisible()
   await expect(page.getByRole('form', { name: '邀请工作区成员' })).toHaveCount(0)

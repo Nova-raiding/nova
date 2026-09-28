@@ -75,8 +75,8 @@ describe("UserDirectorySection sorting", () => {
 
     const markup = renderToStaticMarkup(createElement(UserDirectorySection, { model }));
     expect(markup).toContain("当前筛选：9 条商户成员记录，涉及 1 个商家工作区");
-    expect(markup).toContain("商户用户");
-    expect(markup).not.toContain("共 1 家接入用户");
+    expect(markup).toContain("已接入用户");
+    expect(markup).not.toContain("涉及 9 个商家工作区");
   });
 
   it("requests 20 users by default while preserving explicit server page sizes", () => {
@@ -134,11 +134,11 @@ describe("UserDirectorySection sorting", () => {
     expect(source).not.toContain("2026年用户总消耗金额");
   });
 
-  it("retains account provisioning and authorized directory export controls", () => {
+  it("retains account provisioning and authorized directory export actions in the secondary menu", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
-    expect(source).toContain('onClick={() => setProvisionOpen(true)} disabled={!model.canPlatformOps}>开通商家账号</Button>');
-    expect(source).toContain('onClick={() => void model.exportUsers(form.getFieldsValue())} disabled={accountType === "platform" || !model.canUserGovernance || model.userExporting}');
-    expect(source).toContain('accountType: value, page: 1');
+    expect(source).toContain('{ key: "provision", label: "开通商家账号", disabled: !model.canPlatformOps }');
+    expect(source).toContain('{ key: "export", label: "导出商户成员", disabled: accountType === "platform" || !model.canUserGovernance || model.userExporting }');
+    expect(source).toContain('accountType: nextAccountType, page: 1');
   });
 
   it("gives desktop directory controls stable, row-specific accessible names", () => {

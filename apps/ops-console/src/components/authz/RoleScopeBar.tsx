@@ -60,7 +60,6 @@ export function RoleScopeBar({
   alerts,
   notifications,
   onAcknowledgeAlert,
-  compact: _compact,
 }: {
   session?: OpsSession;
   authorization: AuthorizationProjection;
@@ -73,7 +72,6 @@ export function RoleScopeBar({
   alerts?: readonly OperationalAlert[];
   notifications?: readonly OperationalAlert[];
   onAcknowledgeAlert?: (alert: OperationalAlert) => void;
-  compact?: boolean;
 }) {
   const roles = authorization.roles;
   const primaryRole = roles[0] ? roleLabels[roles[0]] ?? roles[0] : "权限未验证";

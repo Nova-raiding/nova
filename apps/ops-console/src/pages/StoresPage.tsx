@@ -7,6 +7,9 @@ import { StoreDirectorySection } from "../components/stores/StoreDirectorySectio
 import { PlatformManualProductImport } from "../components/stores/PlatformManualProductImport";
 import { BrandTreeSection } from "../components/stores/BrandTreeSection";
 import { BrandGovernanceSummary } from "../components/stores/BrandGovernanceSummary";
+import { CanonicalProductConsistencySection } from "../components/stores/CanonicalProductConsistencySection";
+import { CanonicalBackfillConflictSection } from "../components/stores/CanonicalBackfillConflictSection";
+import { opsRestPost } from "../api/opsClient.js";
 import { rpc, rpcForWorkspace } from "../api/opsClient.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { platformLabels, platforms, type Platform } from "../types/ops";
@@ -41,6 +44,9 @@ export function canCreateBrandUnit(roles: readonly string[]) {
 export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate: (domain: OpsDomain) => void }) {
   const storeLoadError = model.dataSetError("workspace.health", "ops.stores.list");
   const platformScope = model.authorization.scope.kind === "platform";
+  const canManageCanonicalBackfill = platformScope
+    && model.opsSession?.roles.includes("platform_ops") === true
+    && model.authorization.can("canonical.backfill.read");
   const storeDetailError = storeLoadError && model.storeDirectory.length === 0 ? storeLoadError : undefined;
   const hasAutomationData = Boolean(model.automationPolicy || model.automationScan || model.automationPolicies.length);
   const automationLoadError = model.dataSetError("automation.policy.get", "automation.policy.list", "automation.scan");
@@ -52,7 +58,7 @@ export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate
     <OpsPage
       eyebrow="STORE OPERATIONS"
       title="平台连接汇总"
-      description="查看平台连接状态，并按授权范围为人工登记店铺导入商品。"
+      description="平台运营查看平台级连接健康。"
       actions={<Button type="primary" loading={model.loading} onClick={() => void model.load()}>刷新连接</Button>}
     >
       <div className="ops-stores-page">
@@ -64,6 +70,13 @@ export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate
         return true;
       }} />}
       <BrandGovernanceSummary summary={model.platformBrandUnitSummary} />
+      <CanonicalProductConsistencySection report={model.canonicalProductConsistency} onRefresh={() => void model.load()} loading={model.loading} canRead={canCanonicalRead} />
+      <CanonicalBackfillConflictSection enabled={canManageCanonicalBackfill} canUpdate={canManageCanonicalBackfill && model.authorization.can("canonical.backfill.update")} brands={model.brandNavigation} onScan={canManageCanonicalBackfill && canCanonicalRead ? async () => {
+        const run = await rpc<{ id: string }>("ops.canonical.backfill.create", { dry_run: "true", reason: "刷新 canonical 冲突队列前创建扫描审计批次" });
+        if (!run?.id) throw new Error("扫描审计批次创建失败");
+        await opsRestPost("/v1/canonical-backfill/conflicts/scan", { audit_batch_id: run.id, reason: "刷新 canonical 冲突队列" });
+        await model.load();
+      } : undefined} />
       <StoreDirectorySection
         storeDirectory={model.storeDirectory}
         canPlatformOps={model.canPlatformOps}

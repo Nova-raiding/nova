@@ -52,7 +52,8 @@ export function validateOpsE2eSpecIsolation(args: readonly string[], manualOpera
   if (selectedSpecs.includes(manualImportSpec) && (selectedSpecs.length !== 1 || !manualOperationsMode)) throw new Error('OPS_E2E_MANUAL_IMPORT_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
   if (selectedSpecs.includes(desktopMatrixSpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_DESKTOP_MATRIX_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
   if (selectedSpecs.includes(deliveryReadonlySpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_DELIVERY_READONLY_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
-  return [jitSpec, manualImportSpec, desktopMatrixSpec, deliveryReadonlySpec].includes(selectedSpecs[0] ?? '') ? 'hyp@sn.com' : undefined
+  const designatedAdminSpecs = [jitSpec, manualImportSpec, desktopMatrixSpec, deliveryReadonlySpec, 'dogfood/chatgpt-all-functions/ops-members-global-isolated.spec.js']
+  return designatedAdminSpecs.includes(selectedSpecs[0] ?? '') ? 'hyp@sn.com' : undefined
 }
 
 /** Parse even when scanning is disabled, so a bad explicit configuration never

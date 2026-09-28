@@ -166,9 +166,9 @@ async function login(page, evidence) {
     sessionStorage.setItem('ops_workbench', 'platform')
   }, { workspaceId: config.workspaceId })
   await page.goto(new URL('/ops/users?workbench=platform', gatewayUrl).toString(), { waitUntil: 'domcontentloaded' })
-  await expect(page.getByPlaceholder('例如 ops@example.com', { exact: true })).toBeVisible()
-  await page.getByPlaceholder('例如 ops@example.com', { exact: true }).fill(config.username)
-  await page.getByPlaceholder('请输入平台运营密码', { exact: true }).fill(config.password)
+  await expect(page.getByLabel('平台运营账号', { exact: true })).toBeVisible()
+  await page.getByLabel('平台运营账号', { exact: true }).fill(config.username)
+  await page.getByLabel('密码', { exact: true }).fill(config.password)
   const [{ result: session }] = await rpcThroughUi(page, ['ops.session'], () => page.getByRole('button', { name: '登录平台运营后台', exact: true }).click(), evidence)
   expect(session.actor_id).toBe(config.actorId)
   expect(config.username).toBe('hyp@sn.com')
@@ -177,8 +177,15 @@ async function login(page, evidence) {
   expect(session.workbench).toBe('platform')
   expect(session.capabilities).toEqual(expect.arrayContaining(['authorization.grant.read', 'authorization.grant.manage']))
   await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('已由服务端验证', { timeout: 30_000 })
-  await expect(page.getByRole('heading', { name: '用户中心', exact: true })).toBeVisible()
-  await page.getByRole('tab', { name: '权限与授权', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '已接入用户', exact: true })).toBeAttached()
+  await selectGovernanceSection(page, '权限与授权')
+}
+
+async function selectGovernanceSection(page, label) {
+  const selector = page.getByRole('button', { name: /更多用户治理操作|切换用户治理页面/u })
+  await expect(selector).toBeVisible()
+  await selector.click()
+  await page.getByRole('menuitem', { name: label, exact: true }).click()
 }
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }]) {
@@ -293,7 +300,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       await expect(row).toHaveCount(0)
       // Clearing authorization-scoped datasets may remount the workspace at
       // its first permitted section while the API session is revalidated.
-      await page.getByRole('tab', { name: '权限与授权', exact: true }).click()
+      await selectGovernanceSection(page, '权限与授权')
       await expect(page.getByText('最近一次 JIT 已撤销', { exact: true })).toBeVisible()
       await screenshot('revoked-and-removed')
       evidence.status = 'passed'

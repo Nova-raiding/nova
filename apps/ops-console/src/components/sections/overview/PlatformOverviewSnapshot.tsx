@@ -23,8 +23,6 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   const giftedMerchantCount = undefined;
   const finance = financeReadFailed ? undefined : model.platformFinanceSummary;
   const usage = usageReadFailed ? undefined : model.platformModelUsageSummary;
-  const basicSales = finance?.subscriptionOrderBySku?.basic?.orderCount;
-  const growthSales = finance?.subscriptionOrderBySku?.growth?.orderCount;
   // Provider cost is only meaningful when the server marked the cost evidence
   // verified. `totalTokens` is a token count, not currency: rendering it against
   // 「元」 overstated platform spend by roughly six orders of magnitude on the
@@ -32,10 +30,8 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   const platformProviderCost = usage && usage.providerCostStatus === "verified" && usage.providerCostCny !== null
     ? usage.providerCostCny.toFixed(2)
     : undefined;
-  // `ops.finance.search` is called without `from_at`/`to_at`, so every finance
-  // figure on this page is a whole-ledger snapshot. Claiming a "本月" window
-  // would state a range the query never asked for; the panel states the
-  // cumulative scope it actually has and discloses the missing window instead.
+  // Finance search has no date window; preserve the reference layout while
+  // exposing which figures the API actually returns as cumulative snapshots.
   // Passing `undefined` renders an explicit unknown. A literal 0 is
   // indistinguishable from a measured zero, so a failed or absent API read must
   // not be displayed as one.
@@ -50,20 +46,18 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
     <section className="ops-overview-snapshot" aria-label="平台运营数据">
       <section className="ops-dashboard-hero" aria-label="核心经营指标">
         <div>
-          <span className="ops-dashboard-eyebrow">PLATFORM BRIEFING</span>
-          <Typography.Title level={2} id="ops-overview-snapshot-title">平台运营概况</Typography.Title>
-          <p>汇总客户、收入与模型成本，快速掌握平台经营状态。</p>
+          <Typography.Title level={2} id="ops-overview-snapshot-title">平台运营实时概况</Typography.Title>
         </div>
-        <div className="ops-dashboard-current-month">数据范围 <strong>累计</strong></div>
+        <div className="ops-dashboard-current-month">当前月份：<strong>{new Date().toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric" })}</strong></div>
       </section>
       <section className="ops-dashboard-panel-grid">
-        <article className="ops-dashboard-panel ops-dashboard-total"><header><div><span>ACCOUNT OVERVIEW</span><h3>平台累计总览</h3></div><small>全部</small></header><div className="ops-dashboard-metric-list">{metric("已接入商家工作区", linkedMerchantWorkspaceCount, "家", "primary")}{metric("已付接入费工作区", finance?.onboardingOrderWorkspaceCount, "家", "primary")}{metric("赠送客户数", giftedMerchantCount, "家")}{metric("接入费总收入", finance?.onboardingOrderCny, "元", "revenue")}{metric("累计客户消耗创意点", undefined, "点")}{metric("累计平台消耗金额", platformProviderCost, "元", "revenue")}</div></article>
-        <article className="ops-dashboard-panel"><header><div><h3>经营数据（累计口径）</h3></div><small>累计</small></header><div className="ops-dashboard-monthly-groups">
-          <section><h4>接入</h4><div className="ops-dashboard-metric-list">{metric("接入费订单数", finance?.onboardingOrderCount, "单", "primary")}{metric("接入费销售额", finance?.onboardingOrderCny, "元", "revenue")}</div></section>
-          <section><h4>套餐</h4><div className="ops-dashboard-metric-list">{metric("购买月度套餐工作区", finance?.subscriptionOrderWorkspaceCount, "家")}{metric("套餐销售额", finance?.subscriptionOrderCny, "元", "revenue")}{metric("2000 版本销量", basicSales, "单")}{metric("5000 版本销量", growthSales, "单")}</div></section>
-          <section><h4>创意点</h4><div className="ops-dashboard-metric-list">{metric("客户消耗创意点", undefined, "点")}{metric("平台消耗金额", platformProviderCost, "元", "revenue")}{metric("额外创意点充值", undefined, "点", "full")}</div></section>
+        <article className="ops-dashboard-panel ops-dashboard-total"><header><div><h3>平台累计总览</h3></div><small>全部</small></header><div className="ops-dashboard-metric-list">{metric("客户总数", directoryReadFailed ? undefined : model.workspaceDirectory.total, "家", "primary")}{metric("有效客户数", linkedMerchantWorkspaceCount, "家", "primary")}{metric("赠送客户数", giftedMerchantCount, "家")}{metric("接入费总收入", finance?.onboardingOrderCny, "元", "revenue")}{metric("累计客户消耗创意点", undefined, "点")}{metric("累计平台消耗金额", platformProviderCost, "元", "revenue")}</div></article>
+        <article className="ops-dashboard-panel"><header><div><h3>{new Date().toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric" })}经营数据</h3></div><small>本月</small></header><div className="ops-dashboard-monthly-groups">
+          <section><h4>接入月度</h4><div className="ops-dashboard-metric-list">{metric("接入客户数", undefined, "家", "primary")}{metric("接入费销售额", finance?.onboardingOrderCny, "元", "revenue")}</div></section>
+          <section><h4>套餐月度</h4><div className="ops-dashboard-metric-list">{metric("套餐销量", undefined, "单")}{metric("套餐销售额", finance?.subscriptionOrderCny, "元", "revenue")}{metric("2000 版本销量", undefined, "单")}{metric("5000 版本销量", undefined, "单")}</div></section>
+          <section><h4>创意点月度</h4><div className="ops-dashboard-metric-list">{metric("客户消耗创意点", undefined, "点")}{metric("平台消耗金额", platformProviderCost, "元", "revenue")}{metric("额外创意点充值", undefined, "点", "full")}</div></section>
         </div>
-          <p className="ops-dashboard-panel-note">平台经营数据接口未提供日期窗口（财务检索未传起止时间），以上数值与「平台累计总览」同源，是累计口径而非本月；请勿按月度解读。</p>
+          <p className="ops-dashboard-panel-note">当前财务与模型接口返回累计数据；月度订单、销量和创意点统计暂无可验证的数据源。</p>
         </article>
       </section>
     </section>

@@ -53,11 +53,10 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; description: s
   ];
 
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
-  { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery", "stores", "rules"] },
-  // Restored 2026-09-20 by product decision (see retired-ops-assertions.md).
-  // Label is 财务 rather than the historical 模型与计费: `models` is still
-  // withdrawn, so a group named for models would contain none.
-  { key: "model-billing", label: "财务", items: ["finance"] },
+  // The supplied latest desktop UI keeps the primary rail to the three
+  // day-to-day workbench destinations. Other authorized screens remain
+  // available through their established routes and contextual links.
+  { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery"] },
 ];
 
 export function OpsSidebar({
@@ -79,10 +78,9 @@ export function OpsSidebar({
     onMobileOpenChange?.(!mobileCollapsed && window.matchMedia("(max-width: 991px)").matches);
   }, [mobileCollapsed, onMobileOpenChange]);
   const navigate = (domain: OpsDomain) => { onNavigate(domain); if (window.matchMedia("(max-width: 991px)").matches) setMobileCollapsed(true); };
-  const visibleItems = visibleDomains
-    ? mainItems.filter((item) => visibleDomains.includes(item.domain))
-    : mainItems;
-  const itemsByDomain = new Map(visibleItems.map((item) => [item.domain, item]));
+  const itemsByDomain = new Map(mainItems
+    .filter((item) => !visibleDomains || visibleDomains.includes(item.domain))
+    .map((item) => [item.domain, item]));
   const mobileOpen = !mobileCollapsed;
   return (<>
     <button ref={mobileTriggerRef} className="mobile-menu-trigger" type="button" aria-controls="ops-primary-navigation" aria-expanded={!mobileCollapsed} aria-label={mobileCollapsed ? "打开运营导航" : "关闭运营导航"} onClick={() => { if (mobileCollapsed) { setMobileCollapsed(false); window.setTimeout(() => document.querySelector<HTMLButtonElement>("#ops-primary-navigation button")?.focus({ preventScroll: true }), 250); } else setMobileCollapsed(true); }}>
@@ -102,7 +100,7 @@ export function OpsSidebar({
       </div>
       <nav className="ops-nav-groups" aria-label="平台运营功能导航">
         {navigationGroups.map((group) => {
-          const groupItems = group.items.map((domain) => itemsByDomain.get(domain)).filter(Boolean) as typeof visibleItems;
+          const groupItems = group.items.map((domain) => itemsByDomain.get(domain)).filter(Boolean) as typeof mainItems;
           if (!groupItems.length) return null;
           const headingId = `ops-nav-group-${group.key}`;
           return <section className="ops-nav-group" key={group.key} aria-labelledby={headingId}>

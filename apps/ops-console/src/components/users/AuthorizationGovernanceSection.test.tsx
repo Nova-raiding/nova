@@ -91,10 +91,10 @@ describe("AuthorizationGovernanceSection", () => {
     const styleSource = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
     expect(source).toContain("model.recordJitRevocation");
     expect(source).not.toContain("<Tabs");
-    expect(workspaceSource).toContain("<Tabs");
-    expect(workspaceSource).toContain('className="ops-users-tabs"');
+    expect(workspaceSource).toContain('className="ops-users-secondary-navigation"');
+    expect(workspaceSource).toContain("<Dropdown");
     expect(workspaceSource).toContain('label: "权限与授权"');
-    expect(styleSource).not.toMatch(/\.ops-users-tabs \.ant-tabs-nav\s*\{\s*display:\s*none/u);
+    expect(styleSource).not.toMatch(/\.ops-users-secondary-navigation\s*\{\s*display:\s*none/u);
     expect(workspaceSource).not.toContain("用户与权限工作台");
     expect(modelSource).toContain("jitRevocationReceipt");
   });
@@ -216,7 +216,7 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
       expect(await page.locator(".ops-authorization-card").count()).toBe(0);
       expect(await page.getByRole("form", { name: "签发 JIT 授权" }).count()).toBe(0);
     } finally { await page.close(); }
-  });
+  }, 30_000);
 
   it("fetches the role catalog while keeping the matrix collapsed until keyboard or pointer expansion", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });

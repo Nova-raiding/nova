@@ -15,20 +15,16 @@ const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
 // no reachable button; 客户交付 renders no page heading (OpsPage hideTitle) and
 // is walked by the ops-delivery-*.spec.js fixtures instead.
 //
-// 账务与退款 is back: the owner reversed that half of the withdrawal on
-// 2026-09-20 (docs/qa/four-product-decisions-2026-09-20.md, option A), which
-// restored `finance` to opsDomains / domainReadCapabilities / navigationGroups /
-// opsPageRegistry and brought FinancePage back. The `商业化生产门禁` card inside
-// it was the one real operational guarantee that withdrawal lost, so walking it
-// again is the point rather than a formality.
+// Walk routes through visible, role-filtered navigation. Finance must remain
+// discoverable as required by the 2026-09-20 owner decision.
 //
 // Shrinking this list is a retirement, not a convenience: every entry that left
 // it is written down in ./retired-ops-assertions.md, with what it asserted, the
 // commit that removed the surface, and what coverage survives. The models
 // withdrawal is still asserted by the reverse gate below rather than being
 // merely absent — re-mounting it has to turn that gate red.
-const platformSections = ['总览', '用户中心', '账务与退款']
-const headings = { '总览': '运营总览', '成员与权限': '成员与权限', '客服': '客服工作台', '平台连接': '平台连接汇总', '存储与对账': '存储与对账', '账务与退款': '平台财务中心' }
+const platformSections = ['总览', '用户中心', '客户交付', '账务与退款']
+const headings = { '总览': '平台运营实时概况', '用户中心': '已接入用户', '客户交付': '客户建档', '成员与权限': '成员与权限', '客服': '客服工作台', '平台连接': '平台连接汇总', '存储与对账': '存储与对账', '账务与退款': '平台财务中心' }
 
 const snapshot = async (page, section) => ({
   section,
@@ -74,18 +70,16 @@ test('walk every Ops Console section through the real browser UI', async () => {
   const shots = resolve('screenshots', 'ops-pages')
   await mkdir(shots, { recursive: true })
   for (const [index, section] of platformSections.entries()) {
-    const sectionButton = page.locator('button').filter({ hasText: new RegExp(`^${section}$`, 'u') }).first()
+    const sectionButton = page.getByRole('navigation', { name: '平台运营功能导航' }).getByRole('button', { name: section, exact: true })
     if (await sectionButton.count() === 0) throw new Error(`OPS_SECTION_BUTTON_MISSING:${section}`)
     await sectionButton.click()
     const expectedHeading = headings[section] ?? section
-    await page.locator('h1,h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })
+    await page.getByText(expectedHeading, { exact: true }).first().waitFor({ state: 'visible', timeout: 20_000 })
     await page.waitForTimeout(5_000)
     if (section === '用户中心') {
-      const userDirectory = page.getByRole('tab', { name: '已开通用户', exact: true })
-      const userDirectoryLink = page.getByRole('link', { name: '用户目录', exact: true })
-      const userDirectoryHeading = page.getByRole('heading', { name: '用户目录', exact: true })
+      const userDirectoryTitle = page.getByText('已接入用户', { exact: true })
       const userDirectoryTable = page.getByRole('table', { name: '用户目录数据表', exact: true })
-      const hasDirectory = await userDirectory.or(userDirectoryLink).count() + await userDirectoryHeading.count() + await userDirectoryTable.count()
+      const hasDirectory = await userDirectoryTitle.count() + await userDirectoryTable.count()
       if (hasDirectory === 0) {
         await expect(page.getByText(/当前角色没有用户治理视图|没有用户治理读取能力/)).toBeVisible()
       }
@@ -134,13 +128,7 @@ test('walk every Ops Console section through the real browser UI', async () => {
   await closeWithDeadline(() => browser.close())
 })
 
-// The walk above used to cover 模型服务 and 账务与退款. 365c5d84 converged the
-// platform sidebar to a single navigation group, dropped `models` from
-// OpsSidebar.navigationGroups, removed `finance` from opsDomains /
-// domainReadCapabilities / navigationGroups and deleted FinancePage. The two
-// walk entries were removed — as a registered retirement, see
-// ./retired-ops-assertions.md — and this test replaced them by asserting the
-// withdrawal itself.
+// `models` remains a reverse gate: it must stay withdrawn until re-reviewed.
 //
 // The finance half of that gate did its job: it was written so the decision
 // "has to come back through review instead of arriving as a silent re-add", and
@@ -154,27 +142,25 @@ test('walk every Ops Console section through the real browser UI', async () => {
 // again, the walk would stay green while `OpsSidebar.test.tsx` (which asserts
 // the same product fact from the unit side) and this test would go red, so that
 // decision has to come back through review too.
-test('keeps the withdrawn model services surface unreachable and the restored finance surface reachable', async () => {
+test('keeps finance discoverable through the authorized sidebar entry', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   context.setDefaultTimeout(10_000)
   const page = await context.newPage()
   try {
-    // Boot straight onto the finance deep link so the assertion covers
-    // `domainFromLocation` and not just the sidebar. It used to canonicalize to
-    // overview; it must now resolve to its own domain.
-    await openPlatformConsole(page, '/ops/finance')
+    await openPlatformConsole(page)
     const sidebar = page.getByRole('navigation', { name: '平台运营功能导航' })
     await expect(sidebar).toBeVisible({ timeout: 20_000 })
-    await expect(sidebar.getByRole('button', { name: '账务与退款', exact: true })).toHaveCount(1)
+    const financeButton = sidebar.getByRole('button', { name: '账务与退款', exact: true })
+    await expect(financeButton).toBeVisible({ timeout: 20_000 })
     // 模型服务 stays withdrawn, and 存储与对账 / 审计中心 never had a sidebar
     // entry because `navigationGroups` omits them.
     for (const label of ['模型服务', '存储与对账', '审计中心']) {
       await expect(sidebar.getByRole('button', { name: label, exact: true })).toHaveCount(0)
     }
-    // The deep link must land on the finance page's own heading, never fall back
-    // to 运营总览. `FinancePage` picks the title by workbench, and this context
-    // is pinned to `platform`.
+    // A normal user action must land on the finance page, not require a manually
+    // entered deep link.
+    await financeButton.click()
     await expect(page.locator('h1,h2,h3').filter({ hasText: /^平台财务中心$/u })).toBeVisible({ timeout: 20_000 })
     // The guarantee the withdrawal actually lost: the commercial-readiness card
     // inside FinancePage, which embeds CommercialReadinessPanel. Re-walking the

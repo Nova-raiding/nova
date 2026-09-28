@@ -32,9 +32,9 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("Store Nova商家中心");
   });
 
-  it("makes the platform and store registration page discoverable", () => {
+  it("keeps the primary rail aligned to the supplied three-destination UI", () => {
+    expect(navigationGroups.flatMap(({ items }) => [...items])).toEqual(["overview", "users", "customer-delivery"]);
     expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toContainEqual({ domain: "stores", label: "平台与店铺" });
-    expect(navigationGroups.flatMap(({ items }) => [...items])).toContain("stores");
   });
 
   it("exposes the independent model services destination", () => {
@@ -52,13 +52,13 @@ describe("OpsSidebar navigation", () => {
     });
   });
 
-  it("exposes platform rules as a first-class operations destination", () => {
+  it("keeps role-gated routes available without adding them to the primary rail", () => {
     expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toEqual(
       expect.arrayContaining([
         { domain: "rules", label: "平台规则" },
       ]),
     );
-    expect(navigationGroups.flatMap(({ items }) => [...items])).toContain("rules");
+    expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("rules");
     expect(mainItems.map(({ domain }) => domain)).not.toEqual(expect.arrayContaining(["feature-flags", "storage", "audit"]));
   });
 
@@ -82,7 +82,7 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("事故中心");
     expect(markup).not.toContain("账务与退款");
     expect(markup).not.toContain("任务与内容");
-    expect(markup).toContain('aria-label="平台与店铺"');
+    expect(markup).not.toContain('aria-label="平台与店铺"');
     expect(markup).not.toContain("平台规则");
     expect(markup).not.toContain("功能开关");
     expect(markup).not.toContain("风险与系统");
@@ -90,37 +90,42 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("审计中心");
   });
 
-  // This assertion used to pin the opposite product fact. 365c5d84 removed
-  // `finance` from `opsDomains`, from `domainReadCapabilities` and from
-  // `navigationGroups`, and deleted FinancePage; the gate that replaced it was
-  // written so that "restoring the destination turns this red and forces the
-  // decision back through review". That is exactly what happened: the owner
-  // restored the finance domain on 2026-09-20
-  // (docs/qa/four-product-decisions-2026-09-20.md, option A). The models half
-  // of that withdrawal was NOT reversed, so it stays pinned in the test right
-  // below — only the finance half inverts.
-  it("renders the restored finance destination in the platform navigation", () => {
+  it("renders only the three primary destinations shown in the reference UI", () => {
+    const markup = renderToStaticMarkup(<OpsSidebar activeDomain="overview" stores={[]} platformLabels={{}} selectedStoreScope="" onNavigate={() => undefined} onSelectStore={() => undefined} />);
+    expect((markup.match(/class="sider-item(?: active)?"/g) ?? [])).toHaveLength(3);
+    expect(markup).toContain('aria-label="总览"');
+    expect(markup).toContain('aria-label="用户中心"');
+    expect(markup).toContain('aria-label="客户交付"');
+    expect(markup).not.toContain('aria-label="平台与店铺"');
+    expect(markup).not.toContain('aria-label="平台规则"');
+    expect(markup).not.toContain('aria-label="账务与退款"');
+  });
+
+  it("renders finance navigation only when the authorization visibility set includes it", () => {
     expect(mainItems.map(({ domain }) => domain)).toContain("finance");
     expect(mainItems.map(({ label }) => label)).toContain("账务与退款");
-    expect(navigationGroups.flatMap(({ items }) => [...items])).toContain("finance");
+    expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("finance");
     const markup = renderToStaticMarkup(
       <OpsSidebar
         activeDomain="overview"
         stores={[]}
         platformLabels={{}}
         selectedStoreScope=""
+        visibleDomains={["overview", "finance"]}
         onNavigate={() => undefined}
         onSelectStore={() => undefined}
       />,
     );
-    // No `visibleDomains` here, so this is the unfiltered navigation.
-    expect(markup).toContain("账务与退款");
-    // Keep the real group name available to assistive technology without
-    // adding another visible heading to the sidebar.
-    expect(markup).toContain('aria-labelledby="ops-nav-group-model-billing"');
-    expect(markup).toContain('id="ops-nav-group-model-billing" class="sr-only">财务</h2>');
-    expect(navigationGroups.find(({ key }) => key === "model-billing")?.label).toBe("财务");
+    expect(markup).toContain('aria-label="总览"');
+    expect(markup).not.toContain('aria-label="用户中心"');
+    expect(markup).not.toContain('aria-label="客户交付"');
+    expect(markup).not.toContain('aria-label="账务与退款"');
+    expect(markup).not.toContain('aria-labelledby="ops-nav-group-model-billing"');
     expect(markup).not.toContain("模型与计费");
+    const restrictedMarkup = renderToStaticMarkup(
+      <OpsSidebar activeDomain="users" stores={[]} platformLabels={{}} selectedStoreScope="" visibleDomains={["users"]} onNavigate={() => undefined} onSelectStore={() => undefined} />,
+    );
+    expect(restrictedMarkup).not.toContain('aria-label="账务与退款"');
   });
 
   it("keeps the model services entry out of the rendered platform navigation", () => {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Card, Col, Descriptions, Drawer, Empty, Form, Input, Modal, Row, Select, Space, Spin, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Descriptions, Dropdown, Drawer, Empty, Form, Input, Modal, Row, Select, Space, Spin, Table, Tag, Typography } from "antd";
+import type { MenuProps } from "antd";
 import type { TableProps } from "antd";
 import type { MerchantAccountAuthorizationResult, OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { PlatformUser } from "../../types/ops";
@@ -59,7 +60,11 @@ export function legacyCommercialSnapshotRows(memberships: readonly PlatformUser[
   return memberships.filter((row) => Boolean(row.commercial));
 }
 
-export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
+export function UserDirectorySection({ model, governanceSections = [], onSelectGovernanceSection }: {
+  model: OpsConsoleModel;
+  governanceSections?: Array<{ key: string; label: string }>;
+  onSelectGovernanceSection?: (key: string) => void;
+}) {
   const canReadUserDirectory = model.authorization.can("identity.read");
   const [form] = Form.useForm<UserFilters>();
   const accountType = Form.useWatch("accountType", form) ?? "merchant";
@@ -145,6 +150,26 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const selectedUsers = model.userDirectory.items
     .filter((row) => selectedUserKeys.includes(`${row.accountType ?? "merchant"}:${row.workspaceId}:${row.externalSubject}`))
     .map((row) => ({ workspaceId: row.workspaceId, externalSubject: row.externalSubject, revision: row.revision }));
+  const governanceMenuItems: NonNullable<MenuProps["items"]> = [
+    ...(governanceSections.map(({ key, label }) => ({ key, label }))),
+    { key: "accountType", label: accountType === "merchant" ? "查看运营平台账号" : "返回商户账号" },
+    { key: "export", label: "导出商户成员", disabled: accountType === "platform" || !model.canUserGovernance || model.userExporting },
+    { key: "provision", label: "开通商家账号", disabled: !model.canPlatformOps },
+  ];
+  const handleGovernanceMenuClick: MenuProps["onClick"] = ({ key }) => {
+    if (key === "accountType") {
+      const nextAccountType = accountType === "merchant" ? "platform" : "merchant";
+      setSelectedUserKeys([]);
+      form.setFieldValue("accountType", nextAccountType);
+      void model.loadUsers({ ...form.getFieldsValue(), accountType: nextAccountType, page: 1 });
+    } else if (key === "export") {
+      void model.exportUsers(form.getFieldsValue());
+    } else if (key === "provision") {
+      setProvisionOpen(true);
+    } else {
+      onSelectGovernanceSection?.(key);
+    }
+  };
   const submitBulkSuspend = async () => {
     if (bulkSuspendReason.trim().length < 4 || !selectedUsers.length) {
       setActionError(!selectedUsers.length ? "请至少选择一个可操作成员。" : "请填写至少 4 个字符的操作原因。");
@@ -178,18 +203,22 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   return <>
     {!canReadUserDirectory && <Alert showIcon type="warning" title="当前角色不能读取用户目录" description="跨租户身份与成员关系需要 identity.read；权限由服务端策略决定。" />}
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
-    <Card title={accountType === "platform" ? "运营平台用户" : "商户用户"} extra={<Space><Typography.Text type="secondary">{accountType === "platform" ? `当前筛选：${model.userDirectory.total} 条运营平台账号` : `当前筛选：${model.userDirectory.total} 条商户成员记录，涉及 ${model.userDirectory.workspaceCount} 个商家工作区`}</Typography.Text><Button onClick={() => setProvisionOpen(true)} disabled={!model.canPlatformOps}>开通商家账号</Button></Space>} aria-busy={model.userDirectoryLoading}>
+    <h2 id="user-directory-heading" className="sr-only">{accountType === "platform" ? "运营平台用户" : "已接入用户"}</h2>
+    <Card title={accountType === "platform" ? "运营平台用户" : "已接入用户"} extra={<Space><Typography.Text type="secondary">{accountType === "platform" ? `当前筛选：${model.userDirectory.total} 条运营平台账号` : `当前筛选：${model.userDirectory.total} 条商户成员记录，涉及 ${model.userDirectory.workspaceCount} 个商家工作区`}</Typography.Text><Dropdown menu={{ items: governanceMenuItems, onClick: handleGovernanceMenuClick }}><Button aria-label={`更多用户治理操作${governanceSections.length ? `：${governanceSections.map(({ label }) => label).join("、")}` : ""}`}>更多</Button></Dropdown></Space>} aria-busy={model.userDirectoryLoading}>
       <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "", accountType: "merchant" }} onFinish={(values) => { void model.loadUsers({ ...values, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
-        <Form.Item name="accountType" label="账号归属"><Select aria-label="按账号归属筛选用户目录" style={{ width: 150 }} onChange={(value: "merchant" | "platform") => { setSelectedUserKeys([]); void model.loadUsers({ ...form.getFieldsValue(), accountType: value, page: 1 }); }} options={[{ value: "merchant", label: "商户用户" }, { value: "platform", label: "运营平台用户" }]} /></Form.Item>
         <Form.Item name="query" label="搜索"><Input allowClear maxLength={64} aria-label="按关键词筛选用户目录" /></Form.Item>
-        <Form.Item name="status" label="激活状态">
+        <Form.Item name="status" label="状态">
           <Select aria-label="按激活状态筛选用户目录" style={{ width: 140 }} options={[
             { value: "", label: "全部" }, { value: "active", label: "已激活" }, { value: "suspended", label: "已停用" },
           ]} />
         </Form.Item>
+        <Form.Item name="accountType" label="属性">
+          <Select aria-label="按账号属性筛选用户目录" style={{ width: 140 }} options={[
+            { value: "merchant", label: "商家账号" }, { value: "platform", label: "运营平台账号" },
+          ]} />
+        </Form.Item>
         <Form.Item><Space>
           <Button type="primary" htmlType="submit" loading={model.userDirectoryLoading}>查询</Button>
-          <Button onClick={() => void model.exportUsers(form.getFieldsValue())} disabled={accountType === "platform" || !model.canUserGovernance || model.userExporting} loading={model.userExporting}>导出商户成员</Button>
           <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
       </Form>
@@ -218,10 +247,12 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         onChange={handleDirectoryChange}
         scroll={{ x: "max-content" }}
         columns={[
-          { title: "用户名", dataIndex: "externalSubject", width: 330, render: (value: string) => <Typography.Text className="ops-token ops-token-single-line" copyable>{value}</Typography.Text> },
+          { title: "用户名", dataIndex: "externalSubject", width: 260, render: (value: string) => <Typography.Text className="ops-token ops-token-single-line" copyable>{value}</Typography.Text> },
           { title: "姓名或显示名", dataIndex: "displayName", width: 180, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "未设置" },
-          { title: "账号归属", dataIndex: "accountType", width: 130, render: (value: PlatformUser["accountType"]) => value === "platform" ? "运营平台" : "商户工作区" },
+          { title: "企业主体", dataIndex: "enterpriseName", width: 200, render: (value: string) => value || "未设置" },
+          { title: "工作区 ID", dataIndex: "workspaceId", width: 220, render: (value: string) => <Typography.Text className="ops-token ops-token-single-line" copyable>{value || "未提供"}</Typography.Text> },
           { title: "激活状态", dataIndex: "status", width: 110, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
+          { title: "用户属性", dataIndex: "accountType", width: 130, render: (value: PlatformUser["accountType"]) => value === "platform" ? "运营平台账号" : "商家账号" },
           { title: "操作", key: "actions", width: 150, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailAccountType(row.accountType ?? "merchant"); setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Button size="small" disabled title="平台账号不能停用">停用</Button> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button>}</Space> },
         ]}
       />
