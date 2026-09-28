@@ -83,6 +83,8 @@ test('fails closed for SSH errors and malformed output without echoing remote da
 })
 
 test('remote collector hashes sensitive Docker structures but projects only approved fields', () => {
+  assert.match(REMOTE_INVENTORY_PROGRAM, /universal_newlines=True/u)
+  assert.doesNotMatch(REMOTE_INVENTORY_PROGRAM, /text=True/u)
   assert.match(REMOTE_INVENTORY_PROGRAM, /'env_sha256':digest\(env\)/u)
   assert.match(REMOTE_INVENTORY_PROGRAM, /'config_sha256':digest\(config\)/u)
   assert.match(REMOTE_INVENTORY_PROGRAM, /'host_config_sha256':digest\(host\)/u)

@@ -24,7 +24,7 @@ export const REMOTE_INVENTORY_PROGRAM = String.raw`
 import hashlib,json,subprocess,sys
 DOCKER=['docker','--host','unix:///var/run/docker.sock']
 def call(*args):
-    return subprocess.check_output(DOCKER+list(args),text=True,timeout=45)
+    return subprocess.check_output(DOCKER+list(args),universal_newlines=True,timeout=45)
 def digest(value):
     raw=json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
     return hashlib.sha256(raw).hexdigest()
