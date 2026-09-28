@@ -58,8 +58,11 @@ describe('isolated Ops review sidecar', () => {
       identity: input.identity, certDir: '/protected/certs', configPath: '/protected/ops-review-nginx.conf' });
     expect(sidecar.services['ops-ui'].ports).toBeUndefined();
     expect(sidecar.services['review-gateway'].ports).toEqual([{ target: 8443, published: 18445, host_ip: '127.0.0.1', protocol: 'tcp' }]);
+    expect(sidecar.services['review-gateway'].healthcheck.test[1]).toContain('https://127.0.0.1:8443/healthz');
     expect(sidecar.networks.candidate).toEqual({ external: true, name: networkName });
     const nginx = candidateOpsReviewTlsConfig();
+    expect(nginx).toContain('listen 8080;');
+    expect(nginx).toContain('location = /healthz { access_log off; default_type text/plain; return 200');
     expect(nginx).toContain('proxy_set_header X-Forwarded-Host $http_host');
     expect(nginx).toContain('location ^~ /api/');
     expect(nginx).toContain('location ^~ /ops/');

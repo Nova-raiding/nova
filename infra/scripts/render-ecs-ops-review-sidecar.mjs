@@ -94,6 +94,12 @@ export function validateOpsSidecarInputs({ compose, manifest, identity, images, 
 export function candidateOpsReviewTlsConfig() {
   const headers = 'proxy_set_header Host $http_host; proxy_set_header X-Forwarded-Host $http_host; proxy_set_header X-Forwarded-Proto https; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'
   return `server {
+  listen 8080;
+  server_name _;
+  location = /healthz { access_log off; default_type text/plain; return 200 "ok\\n"; }
+  location / { return 404; }
+}
+server {
   listen 8443 ssl;
   server_name ops.yxsona.com;
   server_tokens off;
@@ -123,6 +129,7 @@ export function createOpsSidecarCompose({ networkName, sidecarProject, images, i
     'review-gateway': { image: images.image_references['pilot-gateway'], restart: 'no', labels,
       depends_on: { 'ops-ui': { condition: 'service_healthy' } },
       ports: [{ target: 8443, published: 18445, host_ip: '127.0.0.1', protocol: 'tcp' }],
+      healthcheck: { test: ['CMD-SHELL', "wget --no-check-certificate --header='Host: ops.yxsona.com' -qO- https://127.0.0.1:8443/healthz >/dev/null || exit 1"], interval: '10s', timeout: '3s', retries: 5 },
       volumes: [{ type: 'bind', source: configPath, target: '/etc/nginx/templates/default.conf.template', read_only: true },
         { type: 'bind', source: certDir, target: '/etc/nginx/certs', read_only: true }],
       networks: { candidate: {} } },
