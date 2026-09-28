@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout } from '../scripts/run-ops-password-e2e.js'
+import { disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout, validateOpsE2eSpecIsolation } from '../scripts/run-ops-password-e2e.js'
 
 const { forbidRuntimeResources } = vi.hoisted(() => ({
   forbidRuntimeResources: vi.fn(() => { throw new Error('OPS_E2E_RESOURCE_CREATION_ATTEMPTED') }),
@@ -67,6 +67,18 @@ describe('Ops browser acceptance isolation', () => {
       expect(() => isolatedManualOperationsMode({ OPS_E2E_MANUAL_OPERATIONS: value })).toThrow('OPS_E2E_MANUAL_OPERATIONS_INVALID')
       await expect(runOpsE2e([], { OPS_E2E_MANUAL_OPERATIONS: value })).rejects.toThrow('OPS_E2E_MANUAL_OPERATIONS_INVALID')
     }
+    expect(forbidRuntimeResources).not.toHaveBeenCalled()
+  })
+  it('requires the manual import browser spec to run alone with isolated manual mode', async () => {
+    const spec = 'dogfood/chatgpt-all-functions/ops-manual-import-isolated.spec.js'
+    const other = 'dogfood/chatgpt-all-functions/ops-users.spec.js'
+    expect(validateOpsE2eArguments([spec], { OPS_E2E_MANUAL_OPERATIONS: 'true' })).toEqual([spec])
+    await expect(runOpsE2e([spec], { OPS_E2E_MANUAL_OPERATIONS: 'false' })).rejects.toThrow('OPS_E2E_MANUAL_OPERATIONS_INVALID')
+    expect(validateOpsE2eSpecIsolation([spec], true)).toBe('hyp@sn.com')
+    expect(validateOpsE2eSpecIsolation([other], false)).toBeUndefined()
+    await expect(runOpsE2e([spec], {})).rejects.toThrow('OPS_E2E_MANUAL_IMPORT_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+    await expect(runOpsE2e([spec, other], { OPS_E2E_MANUAL_OPERATIONS: 'true' })).rejects.toThrow('OPS_E2E_MANUAL_IMPORT_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+    await expect(runOpsE2e(['dogfood/chatgpt-all-functions/ops-delivery-readonly-isolated.spec.js', other], {})).rejects.toThrow('OPS_E2E_DELIVERY_READONLY_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
     expect(forbidRuntimeResources).not.toHaveBeenCalled()
   })
   it('defaults scanner startup to 120 seconds and accepts explicit bounded decimal milliseconds', () => {

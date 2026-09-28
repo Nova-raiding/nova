@@ -37,6 +37,19 @@ export function isolatedManualOperationsMode(source: NodeJS.ProcessEnv): boolean
   return value === 'true'
 }
 
+export function validateOpsE2eSpecIsolation(args: readonly string[], manualOperationsMode: boolean): 'hyp@sn.com' | undefined {
+  const selectedSpecs = args.filter(argument => argument.endsWith('.spec.js'))
+  const jitSpec = 'dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js'
+  const manualImportSpec = 'dogfood/chatgpt-all-functions/ops-manual-import-isolated.spec.js'
+  const desktopMatrixSpec = 'dogfood/chatgpt-all-functions/ops-desktop-readonly-matrix.spec.js'
+  const deliveryReadonlySpec = 'dogfood/chatgpt-all-functions/ops-delivery-readonly-isolated.spec.js'
+  if (selectedSpecs.includes(jitSpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_JIT_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+  if (selectedSpecs.includes(manualImportSpec) && (selectedSpecs.length !== 1 || !manualOperationsMode)) throw new Error('OPS_E2E_MANUAL_IMPORT_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+  if (selectedSpecs.includes(desktopMatrixSpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_DESKTOP_MATRIX_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+  if (selectedSpecs.includes(deliveryReadonlySpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_DELIVERY_READONLY_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+  return [jitSpec, manualImportSpec, desktopMatrixSpec, deliveryReadonlySpec].includes(selectedSpecs[0] ?? '') ? 'hyp@sn.com' : undefined
+}
+
 /** Parse even when scanning is disabled, so a bad explicit configuration never
  * reaches directory creation or any fixture provisioning. No numeric coercion
  * of blank, fractional, exponent, hexadecimal or whitespace-padded values. */
@@ -143,6 +156,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   const args = validateOpsE2eArguments(requested, source)
   const scannerStartupTimeoutMs = validateOpsE2eScannerStartupTimeout(source)
   const manualOperationsMode = isolatedManualOperationsMode(source)
+  const authorizationSuperAdminLogin = validateOpsE2eSpecIsolation(args, manualOperationsMode)
   const evidenceDir = resolve('artifacts/ops-jit-isolation', `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}`)
   mkdirSync(evidenceDir, { recursive: true, mode: 0o700 })
   const children: ChildProcess[] = []
@@ -211,7 +225,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     throw new Error('OPS_E2E_SERVICE_READINESS_TIMEOUT')
   }
   try {
-    fixtureSetup = createIsolatedOpsFixture({ evidenceDir })
+    fixtureSetup = createIsolatedOpsFixture({ evidenceDir, ...(authorizationSuperAdminLogin ? { authorizationSuperAdminLogin } : {}) })
     fixture = await fixtureSetup
     if (stopping) throw new Error('OPS_E2E_INTERRUPTED_DURING_SETUP')
     const apiPort = await freeLoopbackPort()

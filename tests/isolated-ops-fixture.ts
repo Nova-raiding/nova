@@ -8,6 +8,7 @@ import { Pool } from 'pg'
 import { PostgresAuthorizationRepository } from '../packages/persistence/src/authorization-repository.js'
 import { loadMigrations, MigrationRunner, type Migration } from '../packages/persistence/src/migration.js'
 import { PostgresPasswordAuthRepository } from '../packages/persistence/src/password-auth-repository.js'
+import { PostgresMembersRepository } from '../packages/persistence/src/members-repository.js'
 
 export const ISOLATED_POSTGRES_IMAGE = 'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73'
 const PURPOSE = 'isolated-ops-password-acceptance'
@@ -68,6 +69,8 @@ export interface IsolatedOpsFixture {
   actorSubject: string
   platformLogin: string
   platformPassword: string
+  merchantLogin: string
+  merchantPassword: string
   platformIdentityId: string
   containerEvidence: IsolatedContainerEvidence[]
   dispose(): Promise<IsolatedFixtureDisposal>
@@ -150,7 +153,7 @@ async function localDockerSocket(): Promise<string> {
   return sockets[0]!
 }
 
-export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: string }): Promise<IsolatedOpsFixture> {
+export async function createIsolatedOpsFixture({ evidenceDir, authorizationSuperAdminLogin }: { evidenceDir: string; authorizationSuperAdminLogin?: 'hyp@sn.com' }): Promise<IsolatedOpsFixture> {
   const runId = randomUUID()
   const output = resolve(evidenceDir)
   await mkdir(output, { recursive: true, mode: 0o700 })
@@ -176,6 +179,7 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
   })()
   let admin: Pool | undefined
   let ops: Pool | undefined
+  let setupStage = 'container_start'
   try {
     const redisDigests: unknown = JSON.parse(await docker(['image', 'inspect', '--format', '{{json .RepoDigests}}', 'redis:7-alpine']))
     const redisDigest = Array.isArray(redisDigests) ? redisDigests.find((value: unknown) => typeof value === 'string' && /^redis@sha256:[a-f0-9]{64}$/u.test(value)) : undefined
@@ -206,6 +210,7 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
     const serverVersion = String((await admin.query('SHOW server_version')).rows[0]?.server_version ?? '')
     if (!serverVersion.startsWith('17.')) throw new Error('ISOLATED_FIXTURE_POSTGRES_MAJOR_MISMATCH')
     const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
+    setupStage = 'migrations'
     await admin.query(roleSql)
     const migrations = await loadMigrations()
     const releaseMetadata = JSON.parse(await readFile(new URL('../release-metadata.json', import.meta.url), 'utf8')) as { expectedMigrationVersion?: unknown }
@@ -239,9 +244,12 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
     const appUrl = new URL(adminUrl); appUrl.username = 'merchant_app'; appUrl.password = appPassword
     const opsUrl = new URL(adminUrl); opsUrl.username = 'merchant_ops'; opsUrl.password = opsPassword
     ops = new Pool({ connectionString: opsUrl.toString(), connectionTimeoutMillis: 1_000 })
+    const merchantLogin = `merchant-${runId}@fixture.invalid`
+    setupStage = 'merchant_identity'
+    const merchantPassword = `A1${randomBytes(24).toString('hex')}`
     const merchantAccount = await new PostgresPasswordAuthRepository(ops).createMerchantAccount({
-      login: `merchant-${runId}@fixture.invalid`,
-      password: `A1${randomBytes(24).toString('hex')}`,
+      login: merchantLogin,
+      password: merchantPassword,
       enterpriseName: '隔离验收企业',
       contactName: '隔离验收商家',
       workspaceIds: [workspaceId],
@@ -252,7 +260,17 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
       || merchantAccount.workspaceIds.length !== 1 || merchantAccount.workspaceIds[0] !== workspaceId) {
       throw new Error('ISOLATED_FIXTURE_MERCHANT_DIRECTORY_SEED_MISMATCH')
     }
-    const platformLogin = `ops-${runId}@fixture.invalid`
+    // The isolated bootstrap admin owns member seeding; merchant_ops is
+    // intentionally unable to write workspace membership directly.
+    const merchantMembers = new PostgresMembersRepository(admin)
+    setupStage = 'merchant_membership_upsert'
+    await merchantMembers.upsert({ workspaceId, externalSubject: merchantLogin, displayName: '隔离验收商家', role: 'merchant_admin', status: 'active', invitedBy: 'isolated-fixture-bootstrap' })
+    setupStage = 'merchant_membership_bind'
+    if (merchantAccount.identityId) await merchantMembers.bindIdentity({ workspaceId, externalSubject: merchantLogin, identityId: merchantAccount.identityId })
+    // The JIT browser acceptance must exercise the exact account allowlist in
+    // the console. This identity still exists only in this owned tmpfs database.
+    const platformLogin = authorizationSuperAdminLogin ?? `ops-${runId}@fixture.invalid`
+    setupStage = 'platform_identity'
     const platformPassword = `A1${randomBytes(24).toString('hex')}`
     const passwordAuth = new PostgresPasswordAuthRepository(ops)
     await passwordAuth.ensurePlatformAccount({ login: platformLogin, passwordHash: await argon2.hash(platformPassword, { type: argon2.argon2id, memoryCost: 19_456, timeCost: 2, parallelism: 1 }), roles: ['platform_admin'] })
@@ -285,12 +303,12 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
     await writeFile(join(output, `fixture-ready-${runId}.json`), JSON.stringify({ runId, containers: evidence, serverVersion, migrationVersions: applied, workspaceId, actorIdentityId: platformAccount.identityId, subjectIdentityId, approverIdentityId, approverId, issuer, actorSubject: platformAccount.identityId, actorRoles: roles.map(role => role.role), runtimeRoles: roleFlags, acceptanceDatabases: Object.values(ISOLATED_ACCEPTANCE_DATABASES), commercialModelCalls: 0, fixtureOnly: true, authentication: 'password' }, null, 2), { mode: 0o600, flag: 'wx' })
     await ops.end(); ops = undefined
     await admin.end(); admin = undefined
-    return { runId, databaseUrl: appUrl.toString(), adminDatabaseUrl: adminUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: redisUrl.toString(), acceptanceDatabaseUrls, workspaceId, subjectIdentityId, workspaceActorSubject: `ops-fixture-target-${runId}`, approverId, issuer, actorSubject: platformAccount.identityId, platformLogin, platformPassword, platformIdentityId: platformAccount.identityId, containerEvidence: evidence, dispose }
+    return { runId, databaseUrl: appUrl.toString(), adminDatabaseUrl: adminUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: redisUrl.toString(), acceptanceDatabaseUrls, workspaceId, subjectIdentityId, workspaceActorSubject: `ops-fixture-target-${runId}`, approverId, issuer, actorSubject: platformAccount.identityId, platformLogin, platformPassword, merchantLogin, merchantPassword, platformIdentityId: platformAccount.identityId, containerEvidence: evidence, dispose }
   } catch (error) {
     await ops?.end(); ops = undefined
     await admin?.end(); admin = undefined
     const cleanup = await dispose()
-    await writeFile(join(output, `fixture-failed-${runId}.json`), JSON.stringify({ runId, error: error instanceof Error && /^ISOLATED_FIXTURE_[A-Z_]+$/u.test(error.message) ? error.message : 'ISOLATED_FIXTURE_SETUP_FAILED', cleanup }, null, 2), { mode: 0o600, flag: 'wx' })
+    await writeFile(join(output, `fixture-failed-${runId}.json`), JSON.stringify({ runId, stage: setupStage, postgresCode: error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : null, error: error instanceof Error && /^ISOLATED_FIXTURE_[A-Z_]+$/u.test(error.message) ? error.message : 'ISOLATED_FIXTURE_SETUP_FAILED', cleanup }, null, 2), { mode: 0o600, flag: 'wx' })
     throw error instanceof Error && /^ISOLATED_FIXTURE_[A-Z_]+$/u.test(error.message) ? error : new Error('ISOLATED_FIXTURE_SETUP_FAILED')
   }
 }
