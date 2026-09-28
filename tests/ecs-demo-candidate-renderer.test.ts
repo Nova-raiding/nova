@@ -78,6 +78,7 @@ describe('protected isolated ECS demo candidate renderer', () => {
       PUBLIC_BASE_URL: 'https://candidate.yxsona.com', EMBEDDING_VERSION: 'v1',
       KNOWLEDGE_VECTOR_INDEX_ENABLED: 'false', EMBEDDING_MODEL: 'qwen3.7-text-embedding-flash', EMBEDDING_DIMENSIONS: '1024',
       PLUGIN_WRITE_ENABLED: 'false', ASSET_STORAGE_PREFIX: 'demo-candidate/release-b77b551a-review',
+      MCP_AUTHZ_MODE: 'enforce', MCP_AUTHZ_ENFORCE_DOMAINS: '', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
     })
     expect(compose.services.api.environment.MODEL_RELAY_API_KEY).toBeUndefined()
     expect(compose.services.api.env_file).toEqual([{ path: join(value.output, 'candidate.env'), required: true }])
@@ -115,6 +116,12 @@ describe('protected isolated ECS demo candidate renderer', () => {
       expect(lstatSync(join(value.output, name)).mode & 0o777).toBe(0o600)
     }
     expect(validateDemoCompose(compose, project)).toBe(true)
+    const stagedAuthorization = structuredClone(compose)
+    stagedAuthorization.services.api.environment.MCP_AUTHZ_MODE = 'staged'
+    expect(() => validateDemoCompose(stagedAuthorization, project)).toThrow(/enforce all MCP authorization domains/u)
+    const narrowedAuthorization = structuredClone(compose)
+    narrowedAuthorization.services.api.environment.MCP_AUTHZ_ENFORCE_DOMAINS = 'support'
+    expect(() => validateDemoCompose(narrowedAuthorization, project)).toThrow(/enforce all MCP authorization domains/u)
     const composeCheck = spawnSync('docker', ['compose', '--project-name', project, '--env-file', join(value.output, 'candidate.env'), '-f', join(value.output, 'candidate.compose.json'), 'config', '--quiet'], { encoding: 'utf8' })
     expect(composeCheck.status, composeCheck.stderr).toBe(0)
   })
