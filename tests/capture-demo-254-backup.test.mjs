@@ -54,7 +54,7 @@ function inputs() {
   return { options, collector, events, observed, database, signedPlan }
 }
 
-test('signed 254 plan produces same-snapshot PG16 custom dump and bound signed capture manifest', async () => {
+test('signed 254 plan binds a mock dump and migration query to one snapshot', async () => {
   const { options, collector, events, signedPlan } = inputs()
   const { attestation, manifest } = await captureDemo254Backup(options, collector)
   assert.deepEqual(events, ['topology', 'snapshot', 'dump:00000003-0000001B-1', 'history:00000003-0000001B-1', 'topology', 'release'])
