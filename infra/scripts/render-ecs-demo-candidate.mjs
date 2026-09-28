@@ -95,6 +95,7 @@ function assertSourceBoundToIdentity(sourceRoot, identityPath, identity) {
   const migrationScript = join(sourceRoot, 'infra/scripts/apply-migrations.sh')
   const roleScript = join(sourceRoot, 'infra/local/ensure-app-role.sql')
   const roleVerifier = join(sourceRoot, 'infra/scripts/verify-runtime-db-role.sh')
+  const candidateRoles = join(sourceRoot, 'infra/scripts/provision-isolated-candidate-db-roles.sh')
   const migrationNames = readdirSync(migrationDir).filter(name => name.endsWith('.sql')).sort()
   if (!migrationNames.length || migrationNames.some(name => !/^\d{3}_[a-z0-9][a-z0-9_]*\.sql$/u.test(name))) fail('source migration directory has an invalid artifact set')
   const mountedFiles = [
@@ -102,6 +103,7 @@ function assertSourceBoundToIdentity(sourceRoot, identityPath, identity) {
     ['infra/scripts/apply-migrations.sh', migrationScript],
     ['infra/local/ensure-app-role.sql', roleScript],
     ['infra/scripts/verify-runtime-db-role.sh', roleVerifier],
+    ['infra/scripts/provision-isolated-candidate-db-roles.sh', candidateRoles],
   ]
   const archiveEntries = execFileSync('tar', ['-tf', archivePath], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split(/\r?\n/u).filter(Boolean)
   for (const [member, localPath] of mountedFiles) {
@@ -110,7 +112,7 @@ function assertSourceBoundToIdentity(sourceRoot, identityPath, identity) {
     const archived = execFileSync('tar', ['-xOf', archivePath, member], { maxBuffer: 8 * 1024 * 1024 })
     if (!archived.equals(local)) fail('mounted migration input differs from the candidate source archive')
   }
-  const relevant = archiveEntries.filter(entry => /^packages\/persistence\/src\/migrations\/\d{3}_[a-z0-9][a-z0-9_]*\.sql$/u.test(entry) || ['infra/scripts/apply-migrations.sh', 'infra/local/ensure-app-role.sql', 'infra/scripts/verify-runtime-db-role.sh'].includes(entry))
+  const relevant = archiveEntries.filter(entry => /^packages\/persistence\/src\/migrations\/\d{3}_[a-z0-9][a-z0-9_]*\.sql$/u.test(entry) || ['infra/scripts/apply-migrations.sh', 'infra/local/ensure-app-role.sql', 'infra/scripts/verify-runtime-db-role.sh', 'infra/scripts/provision-isolated-candidate-db-roles.sh'].includes(entry))
   if (relevant.length !== mountedFiles.length) fail('source archive contains an unreviewed migration input')
 }
 
@@ -186,7 +188,11 @@ export function validateDemoCompose(compose, project) {
       !/(?:^|\/)postgres:17-alpine@sha256:[0-9a-f]{64}$/u.test(immutableReference(services.migrate.image, 'migration image')) ||
       !/(?:^|\/)redis:7-alpine@sha256:[0-9a-f]{64}$/u.test(immutableReference(services.redis.image, 'redis image'))) fail('candidate database images must use the reviewed immutable PostgreSQL 17 and Redis 7 images')
   const migrationBinds = (services.migrate.volumes ?? []).filter(value => value?.type === 'bind')
-  if (migrationBinds.length !== 4 || migrationBinds.some(value => value.read_only !== true || !value.source?.startsWith('/'))) fail('migration sidecar may bind only the four readonly host inputs')
+  const expectedMigrationTargets = ['/migrations', '/ops/apply-migrations.sh', '/ops/ensure-app-role.sql', '/ops/verify-runtime-db-role.sh', '/ops/provision-isolated-candidate-db-roles.sh'].sort()
+  if (migrationBinds.length !== 5 || migrationBinds.some(value => value.read_only !== true || !value.source?.startsWith('/')) ||
+      migrationBinds.map(value => value.target).sort().join(',') !== expectedMigrationTargets.join(',')) fail('migration sidecar may bind only the five readonly host inputs')
+  const migrationCommand = services.migrate.entrypoint?.[2]
+  if (typeof migrationCommand !== 'string' || !migrationCommand.startsWith('/bin/sh /ops/provision-isolated-candidate-db-roles.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && ')) fail('isolated candidate roles must be provisioned before the first role bootstrap')
   return true
 }
 
@@ -213,6 +219,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
   const migrateScript = join(sourceRoot, 'infra/scripts/apply-migrations.sh')
   const roleScript = join(sourceRoot, 'infra/local/ensure-app-role.sql')
   const roleVerifier = join(sourceRoot, 'infra/scripts/verify-runtime-db-role.sh')
+  const candidateRoles = join(sourceRoot, 'infra/scripts/provision-isolated-candidate-db-roles.sh')
   const compose = {
     name: project,
     'x-eight-image-set-digest': imageSetDigest,
@@ -229,7 +236,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
         healthcheck: { test: ['CMD', 'redis-cli', 'ping'], interval: '2s', timeout: '3s', retries: 60 },
       },
       migrate: {
-        image: migrationImage, restart: 'no', entrypoint: ['/bin/sh', '-c', 'psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/apply-migrations.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/verify-runtime-db-role.sh'],
+        image: migrationImage, restart: 'no', entrypoint: ['/bin/sh', '-c', '/bin/sh /ops/provision-isolated-candidate-db-roles.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/apply-migrations.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/verify-runtime-db-role.sh'],
         environment: {
           PGHOST: 'postgres', PGPORT: '5432', PGDATABASE: 'merchant', PGUSER: 'merchant', PGPASSWORD: adminPassword, MIGRATION_BASELINE_ACCEPTED: 'false',
           DATABASE_URL: urls.merchant_app, OPS_DATABASE_URL: urls.merchant_ops, ALERT_RECEIVER_DATABASE_URL: urls.merchant_alert_receiver,
@@ -239,6 +246,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
           { type: 'bind', source: migrateScript, target: '/ops/apply-migrations.sh', read_only: true },
           { type: 'bind', source: roleScript, target: '/ops/ensure-app-role.sql', read_only: true },
           { type: 'bind', source: roleVerifier, target: '/ops/verify-runtime-db-role.sh', read_only: true },
+          { type: 'bind', source: candidateRoles, target: '/ops/provision-isolated-candidate-db-roles.sh', read_only: true },
         ],
       },
       api: {
@@ -309,10 +317,12 @@ export function main(argv = process.argv.slice(2)) {
   const migrateScript = join(paths.sourceRoot, 'infra/scripts/apply-migrations.sh')
   const roleScript = join(paths.sourceRoot, 'infra/local/ensure-app-role.sql')
   const roleVerifier = join(paths.sourceRoot, 'infra/scripts/verify-runtime-db-role.sh')
+  const candidateRoles = join(paths.sourceRoot, 'infra/scripts/provision-isolated-candidate-db-roles.sh')
   inspectPath(migrationDir, 'migration source', 'directory')
   inspectPath(migrateScript, 'migration runner', 'file')
   inspectPath(roleScript, 'role bootstrap', 'file')
   inspectPath(roleVerifier, 'runtime role verifier', 'file')
+  inspectPath(candidateRoles, 'isolated candidate role provisioner', 'file')
   const envPath = join(paths.outputDir, 'candidate.env')
   const outputs = ['candidate.env', 'candidate.compose.json', 'candidate-identity.txt', 'candidate-manifest.json']
   for (const name of outputs) {

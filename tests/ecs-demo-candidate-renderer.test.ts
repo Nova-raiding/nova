@@ -28,8 +28,9 @@ function fixture() {
   writeFileSync(join(scripts, 'apply-migrations.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o600 })
   writeFileSync(join(local, 'ensure-app-role.sql'), 'SELECT 1;\n', { mode: 0o600 })
   writeFileSync(join(scripts, 'verify-runtime-db-role.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o600 })
+  writeFileSync(join(scripts, 'provision-isolated-candidate-db-roles.sh'), readFileSync('infra/scripts/provision-isolated-candidate-db-roles.sh'), { mode: 0o600 })
   // Git archives include the migrations directory entry as well as SQL files.
-  spawnSync('tar', ['-cf', join(source, '.candidate-source.tar'), '-C', source, 'packages/persistence/src/migrations', 'infra/scripts/apply-migrations.sh', 'infra/local/ensure-app-role.sql', 'infra/scripts/verify-runtime-db-role.sh'])
+  spawnSync('tar', ['-cf', join(source, '.candidate-source.tar'), '-C', source, 'packages/persistence/src/migrations', 'infra/scripts/apply-migrations.sh', 'infra/local/ensure-app-role.sql', 'infra/scripts/verify-runtime-db-role.sh', 'infra/scripts/provision-isolated-candidate-db-roles.sh'])
   sourceSha = `sha256:${createHash('sha256').update(readFileSync(join(source, '.candidate-source.tar'))).digest('hex')}`
   const identity = join(source, '.candidate-identity')
   const eightImages = {
@@ -98,8 +99,12 @@ describe('protected isolated ECS demo candidate renderer', () => {
       { type: 'bind', source: join(value.source, 'infra/scripts/apply-migrations.sh'), target: '/ops/apply-migrations.sh', read_only: true },
       { type: 'bind', source: join(value.source, 'infra/local/ensure-app-role.sql'), target: '/ops/ensure-app-role.sql', read_only: true },
       { type: 'bind', source: join(value.source, 'infra/scripts/verify-runtime-db-role.sh'), target: '/ops/verify-runtime-db-role.sh', read_only: true },
+      { type: 'bind', source: join(value.source, 'infra/scripts/provision-isolated-candidate-db-roles.sh'), target: '/ops/provision-isolated-candidate-db-roles.sh', read_only: true },
     ])
-    expect(compose.services.migrate.entrypoint[2]).toContain('verify-runtime-db-role.sh')
+    const migrateCommand = compose.services.migrate.entrypoint[2]
+    expect(migrateCommand.indexOf('/ops/provision-isolated-candidate-db-roles.sh')).toBeLessThan(migrateCommand.indexOf('/ops/ensure-app-role.sql'))
+    expect(migrateCommand.indexOf('/ops/ensure-app-role.sql')).toBeLessThan(migrateCommand.indexOf('/ops/apply-migrations.sh'))
+    expect(migrateCommand).toContain('verify-runtime-db-role.sh')
     const roleUrls = ['DATABASE_URL', 'OPS_DATABASE_URL', 'ALERT_RECEIVER_DATABASE_URL'].map(key => new URL(compose.services.api.environment[key]))
     expect(roleUrls.map(url => url.username).sort()).toEqual(['merchant_alert_receiver', 'merchant_app', 'merchant_ops'])
     expect(new Set(roleUrls.map(url => url.password)).size).toBe(3)
@@ -133,6 +138,53 @@ describe('protected isolated ECS demo candidate renderer', () => {
     const readinessAsLiveness = structuredClone(compose)
     readinessAsLiveness.services.api.healthcheck.test[1] = 'wget -qO- http://127.0.0.1:8787/readyz || exit 1'
     expect(() => validateDemoCompose(readinessAsLiveness, project)).toThrow(/healthcheck must measure liveness/u)
+  })
+
+  it('requires the isolated role provisioner to match the candidate archive byte for byte', () => {
+    const value = fixture()
+    writeFileSync(join(value.source, 'infra/scripts/provision-isolated-candidate-db-roles.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o600 })
+    const result = value.run()
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('mounted migration input differs from the candidate source archive')
+  })
+
+  it('provisions exactly the three generated roles through psql stdin without credential output or argv', () => {
+    const value = fixture()
+    const bin = join(value.root, 'bin')
+    mkdirSync(bin, { mode: 0o700 })
+    const argvCapture = join(value.root, 'psql-argv')
+    const sqlCapture = join(value.root, 'psql-stdin')
+    writeFileSync(join(bin, 'psql'), '#!/bin/sh\nprintf "%s" "$*" > "$PSQL_ARGV_CAPTURE"\ncat > "$PSQL_STDIN_CAPTURE"\necho "secret-bearing SQL error" >&2\nexit "${PSQL_EXIT_CODE:-0}"\n', { mode: 0o700 })
+    const passwords = ['a'.repeat(48), 'b'.repeat(48), 'c'.repeat(48)]
+    const environment = {
+      ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`,
+      DATABASE_URL: `postgres://merchant_app:${passwords[0]}@postgres:5432/merchant`,
+      OPS_DATABASE_URL: `postgres://merchant_ops:${passwords[1]}@postgres:5432/merchant`,
+      ALERT_RECEIVER_DATABASE_URL: `postgres://merchant_alert_receiver:${passwords[2]}@postgres:5432/merchant`,
+      PSQL_ARGV_CAPTURE: argvCapture, PSQL_STDIN_CAPTURE: sqlCapture,
+    }
+    const script = resolve('infra/scripts/provision-isolated-candidate-db-roles.sh')
+    const good = spawnSync('/bin/sh', [script], { encoding: 'utf8', env: environment })
+    expect(good.status, good.stderr).toBe(0)
+    expect(good.stdout).toBe('')
+    expect(good.stderr).toBe('')
+    const args = readFileSync(argvCapture, 'utf8')
+    const sql = readFileSync(sqlCapture, 'utf8')
+    expect(args).toBe('-X -q -v ON_ERROR_STOP=1')
+    for (const password of passwords) {
+      expect(args).not.toContain(password)
+      expect(sql).toContain(password)
+    }
+    expect(sql).toContain('NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS')
+    expect(sql).toContain('COMMIT;')
+
+    const failed = spawnSync('/bin/sh', [script], { encoding: 'utf8', env: { ...environment, PSQL_EXIT_CODE: '7' } })
+    expect(failed.status).not.toBe(0)
+    expect(failed.stdout).toBe('')
+    expect(failed.stderr).toBe('isolated candidate role provisioning failed\n')
+    const invalid = spawnSync('/bin/sh', [script], { encoding: 'utf8', env: { ...environment, OPS_DATABASE_URL: `postgres://merchant_ops:${passwords[0]}@postgres:5432/merchant` } })
+    expect(invalid.status).not.toBe(0)
+    expect(invalid.stderr).toBe('isolated candidate role credentials are invalid\n')
   })
 
   it('rejects a mismatched identity, incomplete image set, unapproved model, and non-dedicated root env', () => {
