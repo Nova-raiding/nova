@@ -9,7 +9,7 @@ describe('manual platform account discovery', () => {
     expect(shouldDiscoverPlatformAccounts('/api', 'manual')).toBe(false)
     expect(isManualPlatformOperationsMode(' MANUAL ')).toBe(true)
     expect(shouldDiscoverPlatformAccounts('/api', ' MANUAL ')).toBe(false)
-    expect(app).toContain('if (isManualPlatformOperationsMode(apiMode) || shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {\n      fetchPlatformAccounts(baseUrl)')
+    expect(app).toContain('fetchPlatformAccounts(baseUrl)')
     expect(app).toContain('登记店铺资料')
     expect(app).toContain('人工登记（未授权）')
     expect(app).toContain('请勿在此输入平台密码、Cookie、Token 或验证码')
@@ -35,13 +35,18 @@ describe('manual platform account discovery', () => {
     expect(app).not.toContain('return health?.setup?.mode')
   })
 
-  it('waits for the server mode before deciding whether discovery is allowed', () => {
+  it('reads registered workspace stores even when health has not reported the automation mode', () => {
     expect(shouldDiscoverPlatformAccounts('/api', null)).toBe(false)
     expect(shouldDiscoverPlatformAccounts('/api', undefined)).toBe(false)
     expect(platformOperationsModeFromHealth({ status: 'ok', connectors: {}, setup: {} })).toBeNull()
     expect(app).not.toContain('平台运营模式未确认')
     expect(app).not.toContain('已停止自动发现店铺和读取同步任务')
-    expect(app).toContain('} else {\n      setAccounts(null)\n      setCatalogReadNote(\'\')\n    }\n    fetchProducts(baseUrl)')
+    const storePage = app.slice(app.indexOf('function StoreCatalogExperience'), app.indexOf('export function MaterialRecycleBinWorkspace'))
+    const materialPage = app.slice(app.indexOf('export function Products('), app.indexOf('const materialWorkspaceProps ='))
+    expect(storePage).toContain('fetchPlatformAccounts(baseUrl)')
+    expect(storePage).not.toContain('if (isManualPlatformOperationsMode(apiMode) || shouldDiscoverPlatformAccounts(baseUrl, apiMode))')
+    expect(materialPage).toContain('fetchPlatformAccounts(baseUrl)')
+    expect(materialPage).not.toContain('if (!isManualPlatformOperationsMode(apiMode) && !shouldDiscoverPlatformAccounts(baseUrl, apiMode))')
     expect(app).toContain('if (!shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {\n      setSyncJobs(null)')
   })
 

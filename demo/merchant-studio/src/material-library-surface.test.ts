@@ -97,6 +97,15 @@ describe('the material library may not claim a catalogue it did not read', () =>
     expect(brands).not.toContain('当前没有已登记店铺')
   })
 
+  it('shows a failed store read on the brand page instead of indefinite loading', () => {
+    const brands = renderToStaticMarkup(createElement(MaterialLibraryWorkspace, {
+      baseUrl: 'http://127.0.0.1:9', accounts: null, accountsError: '服务暂不可用', products: null, view: 'brands',
+    }))
+    expect(brands).toContain('店铺列表读取失败：服务暂不可用')
+    expect(brands).not.toContain('正在读取店铺列表')
+    expect(brands).toContain('上传品牌资料')
+  })
+
   it('renders the reviewed workspace landmarks, not a rebuilt page', () => {
     // The reviewed UI (fdd6deac / 02b4843a) is unchanged: only the data source
     // moved. These are the landmarks the dogfood suite walks past.

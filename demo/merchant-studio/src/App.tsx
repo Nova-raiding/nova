@@ -5374,17 +5374,12 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
     setProducts(null)
     setCatalogReadNote('正在读取平台与店铺…')
     setProductsNote('正在读取商品…')
-    // This is a workspace-scoped read of records already registered by Ops,
-    // not OAuth discovery. Manual mode must still show the stores Ops assigned.
-    // It never starts authorization, sync or a platform write.
-    if (isManualPlatformOperationsMode(apiMode) || shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
-      fetchPlatformAccounts(baseUrl)
-        .then((page) => { if (active) setAccounts(Array.isArray(page.items) ? page.items : []) })
-        .catch((cause) => { if (active) { setAccounts(null); setCatalogReadNote(`平台与店铺读取失败：${describeApiError(cause)}`) } })
-    } else {
-      setAccounts(null)
-      setCatalogReadNote('')
-    }
+    // GET only returns this workspace's registered records. It does not start
+    // OAuth discovery, authorization, sync or any platform write, so a missing
+    // health mode must not leave the store list permanently unread.
+    fetchPlatformAccounts(baseUrl)
+      .then((page) => { if (active) setAccounts(Array.isArray(page.items) ? page.items : []) })
+      .catch((cause) => { if (active) { setAccounts(null); setCatalogReadNote(`平台与店铺读取失败：${describeApiError(cause)}`) } })
     fetchProducts(baseUrl)
       .then((items) => { if (active) setProducts(items) })
       .catch((cause) => { if (active) { setProducts(null); setProductsNote(`商品读取失败：${describeApiError(cause)}`) } })
@@ -5673,7 +5668,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
             counts come from /v1/platform-accounts, and 「已连接」 is only claimed
             for a real (non-fixture) readable account — the same rule the
             overview uses. Before the read answers the page says so. */}
-        <div className="catalog-hero-summary"><div><strong>{platforms === null ? UNREAD_METRIC : platforms.length}</strong><span>{platforms === null ? '电商平台' : '个电商平台'}</span></div><small>{platforms === null ? '店铺列表尚未从服务端读取' : `${catalogStores.length} 家店铺 · ${realConnectedStores} 家已连接`}</small></div>
+        <div className="catalog-hero-summary"><div><strong>{platforms === null ? UNREAD_METRIC : platforms.length}</strong><span>{platforms === null ? '电商平台' : '个电商平台'}</span></div><small>{platforms === null ? catalogReadNote : `${catalogStores.length} 家店铺 · ${realConnectedStores} 家已连接`}</small></div>
       </section>
       <ProductSpreadsheetImport baseUrl={baseUrl} accounts={accounts ?? []} canWrite={Boolean(baseUrl)} />
       <section className="catalog-platform-store-browser">
@@ -6036,11 +6031,13 @@ export function MaterialRecycleBinWorkspace() {
 export function MaterialLibraryWorkspace({
   baseUrl,
   accounts,
+  accountsError = '',
   products,
   view = 'library',
 }: {
   baseUrl?: string
   accounts: PlatformAccount[] | null
+  accountsError?: string
   products: ApiProduct[] | null
   view?: 'library' | 'brands'
 }) {
@@ -6759,7 +6756,7 @@ export function MaterialLibraryWorkspace({
         </div>
         <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span></div>
         <div className="material-brand-upload-entry"><div><strong>上传品牌资料</strong><span>素材经服务端上传后，需完成扫描、权益和事实确认；文字与品牌色可在上方保存。</span></div><button type="button" className="material-upload-button" onClick={() => { setUploadStoreId('unclassified'); setUploadCategory('品牌资料'); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传品牌资料</span></button></div>
-        {stores.length === 0 && <p className="material-brand-no-store">{catalogStores === null ? '正在读取店铺列表；品牌资料可先上传到工作区素材库。' : catalogStores.length > 0 ? '已登记店铺尚未取得可读取授权；店铺品牌配置将在授权后开放。品牌资料可先上传到工作区素材库。' : '当前没有已登记店铺；品牌资料可先上传到工作区素材库。'}</p>}
+        {stores.length === 0 && <p className="material-brand-no-store">{accountsError ? `店铺列表读取失败：${accountsError}；品牌资料可先上传到工作区素材库。` : catalogStores === null ? '正在读取店铺列表；品牌资料可先上传到工作区素材库。' : catalogStores.length > 0 ? '已登记店铺尚未取得可读取授权；店铺品牌配置将在授权后开放。品牌资料可先上传到工作区素材库。' : '当前没有已登记店铺；品牌资料可先上传到工作区素材库。'}</p>}
         <div className="material-brand-stack">
           <article className="material-brand-row">
             <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>本页所有系列与图片的预览默认值</small></div></div><MaterialBrandFields value={globalBrand} label="全局" onChange={setGlobalBrand} /></div>
@@ -7129,12 +7126,8 @@ export function Products({
     }
     // Manual operations still expose credential-free registered store records.
     // Reading those records does not enable sync or platform API access.
-    if (!isManualPlatformOperationsMode(apiMode) && !shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
-      setAccounts(null)
-      setAccountsLoading(false)
-      setAccountsError('')
-      return
-    }
+    // This workspace-scoped GET is safe regardless of the deployment's
+    // automation mode. Mode still gates sync and authorization actions below.
     setAccountsLoading(true)
     setAccountsError('')
     setAccounts(null)
@@ -7571,7 +7564,7 @@ export function Products({
     // The store rows come from the reads this page already performs, so the
     // material workspace can never disagree with the catalogue about the
     // workspace's stores (it used to read its own eight-store seed instead).
-    const materialWorkspaceProps = { baseUrl, accounts, products: remoteProducts } as const
+    const materialWorkspaceProps = { baseUrl, accounts, accountsError, products: remoteProducts } as const
     return initialEntry === 'knowledge'
       ? <MaterialLibraryWorkspace {...materialWorkspaceProps} view="library" />
       : initialEntry === 'assets'
