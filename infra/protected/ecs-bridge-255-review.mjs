@@ -91,10 +91,11 @@ export function validateBridge255Plan(plan) {
 
 function signedJournal(journal, publicKeyPem, plan, planSha, now) {
   requireValue(exactKeys(journal, ['schema_version', 'attempt_id', 'plan_sha256', 'phase', 'previous_journal_sha256',
-    'nonce_sha256', 'created_at', 'expires_at', 'signature_base64']), 'JOURNAL_SHAPE_INVALID')
+    'nonce_sha256', 'capture_sha256', 'observation_sha256', 'created_at', 'expires_at', 'signature_base64']), 'JOURNAL_SHAPE_INVALID')
   const created = Date.parse(journal.created_at), expires = Date.parse(journal.expires_at)
-  requireValue(journal.schema_version === 'ecs-bridge-255-journal/1' && journal.attempt_id === plan.attempt_id
+  requireValue(journal.schema_version === 'ecs-bridge-255-journal/2' && journal.attempt_id === plan.attempt_id
     && journal.plan_sha256 === planSha && journal.nonce_sha256 === plan.nonce_sha256
+    && HEX.test(journal.capture_sha256 ?? '') && HEX.test(journal.observation_sha256 ?? '')
     && PHASES.includes(journal.phase) && (journal.phase === 'captured_254'
       ? journal.previous_journal_sha256 === null : HEX.test(journal.previous_journal_sha256 ?? ''))
     && Number.isFinite(created) && Number.isFinite(expires)
@@ -118,6 +119,11 @@ export function reviewBridge255Phase({ plan, journal, publicKeyPem, capture, obs
   const planSha = validateBridge255Plan(plan)
   signedJournal(journal, publicKeyPem, plan, planSha, now)
   requireValue(exactKeys(capture, ['project', 'public_release', 'database', 'containers',
+    'compose_services', 'compose_sha256', 'gateway_ports', 'capture_sha256']), 'CAPTURE_INVALID')
+  const { capture_sha256: capturedDigest, ...captureBody } = capture
+  requireValue(HEX.test(capturedDigest ?? '') && capturedDigest === digest(captureBody), 'CAPTURE_DIGEST_INVALID')
+  requireValue(journal.capture_sha256 === capturedDigest, 'JOURNAL_CAPTURE_BINDING_INVALID')
+  requireValue(exactKeys(capture, ['project', 'public_release', 'database', 'containers',
     'compose_services', 'compose_sha256', 'gateway_ports', 'capture_sha256'])
     && capture.project === PROJECT && identity(capture.public_release)
     // The 254/255 bridge must already be the serving public release before
@@ -133,11 +139,10 @@ export function reviewBridge255Phase({ plan, journal, publicKeyPem, capture, obs
   'CAPTURE_INVALID')
   inventory(capture.containers, PROJECT, plan.old_demo_services,
     Object.fromEntries(plan.old_demo_services.map(name => [name, true])))
-  const { capture_sha256: capturedDigest, ...captureBody } = capture
-  requireValue(capturedDigest === digest(captureBody), 'CAPTURE_DIGEST_INVALID')
   requireValue(exactKeys(observation, ['phase', 'database', 'ingress_fenced', 'callbacks_fenced', 'in_flight_requests',
     'active_worker_cycles', 'active_outbox_leases', 'provider_started_unresolved', 'stopped_services',
     'backup', 'runtime', 'gateway']) && observation.phase === journal.phase, 'OBSERVATION_SHAPE_INVALID')
+  requireValue(journal.observation_sha256 === digest(observation), 'JOURNAL_OBSERVATION_BINDING_INVALID')
   const migrated = PHASES.indexOf(journal.phase) >= PHASES.indexOf('verified_255')
   if (journal.phase === 'migrating_255') {
     requireValue([254, 255].includes(observation.database?.version)

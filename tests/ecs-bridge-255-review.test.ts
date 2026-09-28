@@ -48,13 +48,6 @@ function fixture(phase = 'captured_254', candidateHasScan = false) {
   }
   const capture = { ...captureBody, capture_sha256: digest(captureBody) }
   const migrated = ['verified_255', 'candidate_cutover', 'accepted_255'].includes(phase)
-  const journalBody = { schema_version: 'ecs-bridge-255-journal/1', attempt_id: plan.attempt_id,
-    plan_sha256: validateBridge255Plan(plan), phase,
-    previous_journal_sha256: phase === 'captured_254' ? null : h('5'),
-    nonce_sha256: plan.nonce_sha256, created_at: new Date(Date.now() - 1_000).toISOString(),
-    expires_at: new Date(Date.now() + 3_600_000).toISOString() }
-  const journal = { ...journalBody,
-    signature_base64: sign(null, Buffer.from(canonical(journalBody)), key.privateKey).toString('base64') }
   const observation = {
     phase, database: prefix(migrated ? 255 : 254), ingress_fenced: phase === 'captured_254' || phase === 'accepted_255' ? false : true,
     callbacks_fenced: phase === 'captured_254' || phase === 'accepted_255' ? false : true,
@@ -75,6 +68,14 @@ function fixture(phase = 'captured_254', candidateHasScan = false) {
       release_identity_verified: migrated, https_ready: migrated,
     },
   }
+  const journalBody = { schema_version: 'ecs-bridge-255-journal/2', attempt_id: plan.attempt_id,
+    plan_sha256: validateBridge255Plan(plan), phase,
+    previous_journal_sha256: phase === 'captured_254' ? null : h('5'),
+    nonce_sha256: plan.nonce_sha256, capture_sha256: capture.capture_sha256,
+    observation_sha256: digest(observation), created_at: new Date(Date.now() - 1_000).toISOString(),
+    expires_at: new Date(Date.now() + 3_600_000).toISOString() }
+  const journal = { ...journalBody,
+    signature_base64: sign(null, Buffer.from(canonical(journalBody)), key.privateKey).toString('base64') }
   const publicKeyPem = key.publicKey.export({ type: 'spki', format: 'pem' }).toString()
   return { plan, capture, journal, observation, publicKeyPem, privateKey: key.privateKey }
 }
@@ -88,6 +89,7 @@ function transitionFixture(from: string, to: string) {
   const nextObservation = fixture(to).observation
   const { signature_base64: _signature, ...body } = previous.journal
   const nextBody = { ...body, phase: to,
+    observation_sha256: digest(nextObservation),
     previous_journal_sha256: signedJournalDigest(previous.journal),
     created_at: new Date(Date.parse(previous.journal.created_at) + 1_000).toISOString() }
   const next = { ...nextBody,
@@ -100,6 +102,12 @@ function transitionFixture(from: string, to: string) {
 function resignNext(input: ReturnType<typeof transitionFixture>) {
   const { signature_base64: _signature, ...body } = input.next
   input.next.signature_base64 = sign(null, Buffer.from(canonical(body)), input.privateKey).toString('base64')
+}
+
+function resignObservation(input: ReturnType<typeof fixture>) {
+  input.journal.observation_sha256 = digest(input.observation)
+  const { signature_base64: _signature, ...body } = input.journal
+  input.journal.signature_base64 = sign(null, Buffer.from(canonical(body)), input.privateKey).toString('base64')
 }
 
 describe('read-only 254/255 transition review', () => {
@@ -119,6 +127,7 @@ describe('read-only 254/255 transition review', () => {
     expect(input.plan.candidate_255_services.filter(name => name.startsWith('worker-'))).toHaveLength(6)
     expect(reviewBridge255Phase(input)).toMatchObject({ status: 'review_only', deployable: false })
     input.observation.runtime!.workers_ready = 5
+    resignObservation(input)
     expect(() => reviewBridge255Phase(input)).toThrow('RUNTIME_255_NOT_VERIFIED')
   })
 
@@ -135,6 +144,18 @@ describe('read-only 254/255 transition review', () => {
       mutate(input)
       expect(() => reviewBridge255Phase(input)).toThrow()
     }
+  })
+
+  it('binds each signed journal phase to exact capture and observation bytes', () => {
+    const changedCapture = fixture()
+    changedCapture.capture.containers[0]!.name = 'changed'
+    const { capture_sha256: _old, ...captureBody } = changedCapture.capture
+    changedCapture.capture.capture_sha256 = digest(captureBody)
+    expect(() => reviewBridge255Phase(changedCapture)).toThrow('JOURNAL_CAPTURE_BINDING_INVALID')
+
+    const changedObservation = fixture()
+    changedObservation.observation.in_flight_requests = 1
+    expect(() => reviewBridge255Phase(changedObservation)).toThrow('JOURNAL_OBSERVATION_BINDING_INVALID')
   })
 
   it('rejects altered signatures, nonce binding, expired journal and missing predecessor', () => {
@@ -159,11 +180,11 @@ describe('read-only 254/255 transition review', () => {
       const input = fixture('fenced_254'); mutate(input)
       expect(() => reviewBridge255Phase(input)).toThrow()
     }
-    const migrated = fixture('verified_255'); migrated.observation.runtime!.workers_ready = 4
+    const migrated = fixture('verified_255'); migrated.observation.runtime!.workers_ready = 4; resignObservation(migrated)
     expect(() => reviewBridge255Phase(migrated)).toThrow('RUNTIME_255_NOT_VERIFIED')
-    const openEarly = fixture('candidate_cutover'); openEarly.observation.ingress_fenced = false
+    const openEarly = fixture('candidate_cutover'); openEarly.observation.ingress_fenced = false; resignObservation(openEarly)
     expect(() => reviewBridge255Phase(openEarly)).toThrow('FENCE_OR_DRAIN_INCOMPLETE')
-    const noHost = fixture('accepted_255'); noHost.observation.runtime!.codex_stdio_host_passed = false
+    const noHost = fixture('accepted_255'); noHost.observation.runtime!.codex_stdio_host_passed = false; resignObservation(noHost)
     expect(() => reviewBridge255Phase(noHost)).toThrow('POST_CUTOVER_EVIDENCE_INCOMPLETE')
   })
 })

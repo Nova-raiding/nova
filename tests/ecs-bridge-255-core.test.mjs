@@ -57,10 +57,11 @@ function fixture() {
     gateway: state.fenced ? { ingress_fence_verified: true,
       release_identity_verified: state.recoveryReady, https_ready: state.recoveryReady } : null })
   const createJournal = (phase, previous = null) => {
-    const body = { schema_version: 'ecs-bridge-255-journal/1', attempt_id: plan.attempt_id,
+    const body = { schema_version: 'ecs-bridge-255-journal/2', attempt_id: plan.attempt_id,
       plan_sha256: validateBridge255Plan(plan), phase,
       previous_journal_sha256: previous ? signedDigest(previous) : null,
-      nonce_sha256: plan.nonce_sha256,
+      nonce_sha256: plan.nonce_sha256, capture_sha256: capture.capture_sha256,
+      observation_sha256: digest(observation(phase)),
       created_at: new Date(Date.parse('2026-09-28T04:00:00.000Z') + (previous ?
         Date.parse(previous.created_at) - Date.parse('2026-09-28T04:00:00.000Z') + 1_000 : 0)).toISOString(),
       expires_at: '2026-09-28T05:00:00.000Z' }
