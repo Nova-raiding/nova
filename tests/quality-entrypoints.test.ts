@@ -243,7 +243,9 @@ describe('quality entrypoint coverage', () => {
     ]) {
       expect(runtimeReleaseGate.split(/\s+/u).filter(argument => argument === gate)).toHaveLength(1)
     }
-    expect(script('pretest:release-gates')).toBe('npm run test:release-gates:runtime')
+    expect(script('pretest:release-gates')).toContain('npm run test:release-gates:runtime')
+    expect(script('pretest:release-gates')).toContain('npm run test:ecs-bridge-255-store')
+    expect(script('test:ecs-bridge-255-store')).toBe('sh tests/run-ecs-bridge-255-state-store.sh')
 
     // The attack matrix needs a disposable PostgreSQL instance, so the safe
     // default process enforces its dedicated launcher rather than pretending

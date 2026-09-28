@@ -187,6 +187,38 @@ function readNonceForAttempt(ledgerPath, plan, uid) {
   } finally { db.close() }
 }
 
+function verifyProtectedPrerequisites() {
+  protectedChain(ROOT)
+  const state = lstatSync(ROOT)
+  requireValue(realpathSync(ROOT) === ROOT && state.isDirectory() && !state.isSymbolicLink()
+    && state.uid === 0 && (state.mode & 0o777) === 0o700, 'STATE_DIRECTORY_UNSAFE')
+  protectedChain(LOCK)
+  const lock = lstatSync(LOCK)
+  requireValue(realpathSync(LOCK) === LOCK && lock.isFile() && !lock.isSymbolicLink()
+    && lock.uid === 0 && (lock.mode & 0o022) === 0, 'PRODUCTION_LOCK_UNSAFE')
+  for (const [path, mode, label] of [[LEDGER, 0o600, 'NONCE_LEDGER'],
+    [CONSUMER, 0o755, 'NONCE_CONSUMER']]) {
+    protectedChain(path)
+    try { protectedFile(path, mode, 0) } catch { requireValue(false, `${label}_UNSAFE`) }
+  }
+  const db = new DatabaseSync(LEDGER, { readOnly: true })
+  try {
+    const expected = {
+      consumed_nonces: ['namespace', 'nonce', 'release_id', 'image_digest', 'manifest_sha256', 'release_git_sha', 'consumed_at'],
+      nonce_owners: ['namespace', 'nonce', 'operation', 'attempt_id'],
+    }
+    for (const [table, columns] of Object.entries(expected)) {
+      const found = db.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name)
+      requireValue(columns.every(column => found.includes(column)), 'NONCE_LEDGER_SCHEMA_INVALID')
+    }
+    db.prepare(`SELECT c.namespace,c.nonce,c.release_id,c.image_digest,c.manifest_sha256,c.release_git_sha,
+      o.operation,o.attempt_id FROM consumed_nonces c JOIN nonce_owners o USING(namespace,nonce) LIMIT 0`).all()
+  } catch (error) {
+    if (String(error?.message ?? '').includes('NONCE_LEDGER_SCHEMA_INVALID')) throw error
+    requireValue(false, 'NONCE_LEDGER_SCHEMA_INVALID')
+  } finally { db.close() }
+}
+
 /** Construct a journal store. Production paths, key material and approved plan are fixed by openProtectedBridge255StateStore. */
 export function createBridge255StateStore({ directory, ledgerPath, consumerPath, privateKeyPem,
   publicKeyPem, trustedKeyId, approvedPlanSha256, approvedPlan, expectedUid = 0,
@@ -330,6 +362,7 @@ export function openProtectedBridge255StateStore() {
   exactDigest(REVIEW_INSTALLED, `${TRUST}/production-bridge-255-review-sha256`)
   exactDigest(TRANSITION_REVIEW_INSTALLED, `${TRUST}/production-bridge-255-transition-review-sha256`)
   exactDigest(CONSUMER, `${TRUST}/production-evidence-nonce-consumer-sha256`)
+  verifyProtectedPrerequisites()
   return createBridge255StateStore({ directory: ROOT, ledgerPath: LEDGER, consumerPath: CONSUMER,
     privateKeyPem, publicKeyPem, trustedKeyId, approvedPlanSha256: verifiedPlan.plan_sha256,
     approvedPlan: verifiedPlan.plan })
