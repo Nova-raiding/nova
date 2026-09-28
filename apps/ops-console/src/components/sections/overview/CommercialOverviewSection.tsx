@@ -181,9 +181,14 @@ export function CommercialOverviewSection({ model, onNavigate, onNavigateWithQue
 
   return (
     <div className="ops-overview-commercial">
+      <header className="ops-overview-commercial-heading">
+        <span className="ops-overview-commercial-eyebrow">COMMERCIAL OPERATIONS</span>
+        <h2>商业经营与套餐</h2>
+        <p>查看当前商业套餐、商家经营台账与需要跟进的运营事项。</p>
+      </header>
       <Card
+        className="ops-overview-commercial-card"
         title="商业套餐目录"
-        style={{ marginTop: 16 }}
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
           这里维护“卖什么”：价格、周期、面向用户的套餐权益和商业生效状态。订单与实际授予的工作区权益请在“订单与权益”中查看；同一套餐可以对应多笔订单。
@@ -207,8 +212,8 @@ export function CommercialOverviewSection({ model, onNavigate, onNavigateWithQue
       </Card>
 
       <Card
+        className="ops-overview-commercial-card"
         title="商家经营台账"
-        style={{ marginTop: 16 }}
         extra={
           <Space wrap>
             <Button icon={<TeamOutlined />} onClick={() => openAuthorization()}>
@@ -231,9 +236,9 @@ export function CommercialOverviewSection({ model, onNavigate, onNavigateWithQue
         />
       </Card>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Row className="ops-overview-commercial-secondary" gutter={[16, 16]}>
         <Col xs={24} lg={10}>
-          <Card title="当前页套餐分布" extra={<Typography.Text type="secondary">台账页 {rows.length} 家</Typography.Text>}>
+          <Card className="ops-overview-commercial-card" title="当前页套餐分布" extra={<Typography.Text type="secondary">台账页 {rows.length} 家</Typography.Text>}>
             {plans.length ? (
               <Space orientation="vertical" style={{ width: "100%" }} size="middle">
                 {plans.map((plan) => (
@@ -249,7 +254,7 @@ export function CommercialOverviewSection({ model, onNavigate, onNavigateWithQue
           </Card>
         </Col>
         <Col xs={24} lg={14}>
-          <Card title="运营动作">
+          <Card className="ops-overview-commercial-card" title="运营动作">
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 16 }}>
               企业授权统一从上方「商家经营台账」进入；模型、平台连接、规则、存储和系统风险请在各自工作台处理。
             </Typography.Paragraph>
@@ -257,7 +262,7 @@ export function CommercialOverviewSection({ model, onNavigate, onNavigateWithQue
         </Col>
       </Row>
 
-      <Typography.Text type="secondary" style={{ display: "block", marginTop: 12 }}>
+      <Typography.Text className="ops-overview-commercial-footnote" type="secondary">
         财务口径：充值、订阅与创意点核销分开核算；仅展示已支付且完成核验的业务收入。
         {financeAvailable ? " 金额来自跨企业主体财务汇总。" : " 财务汇总尚未取得，金额不解释为 0。"}
         {!catalog.length ? " 套餐目录尚未取得，SKU 数量不解释为 0。" : ""}

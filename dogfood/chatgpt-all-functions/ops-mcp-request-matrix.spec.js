@@ -77,7 +77,7 @@ const workspaceForbidden = new Set([
 // nothing, and neither label is in `opsDomains` nor in the `/ops/...` regex
 // `domainFromLocation` matches, so those paths fall back to `overview`.
 const headingByLabel = {
-  '总览': '平台运营实时概况',
+  '总览': '平台运营概况',
   '用户中心': '用户中心',
   '客户交付': '客户交付',
   '成员与权限': '成员与权限',

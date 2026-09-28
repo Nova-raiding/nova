@@ -143,9 +143,10 @@ export function OperationalAlertsPanel({ model }: OverviewSectionProps) {
   const alertCount = alertCountPresentation(alerts.length, { error: alertsError, loadedAt: alertsReadAt });
   return (
     <Card
-      title="待处理平台告警"
+      className="ops-overview-alert-panel"
+      title={<span className="ops-overview-alert-title"><small>OPERATIONAL ALERTS</small><strong>待处理平台告警</strong></span>}
       extra={
-        <Space>
+        <Space className="ops-overview-alert-actions" wrap>
           <Typography.Text type="secondary" className="ops-alerts-refreshed-at">
             上次刷新：{formatAlertRefreshedAt(alertsReadAt)}
           </Typography.Text>
@@ -170,7 +171,9 @@ export function OperationalAlertsPanel({ model }: OverviewSectionProps) {
         />
       ) : null}
       <Table
+        className="ops-overview-alert-table"
         rowKey="id"
+        scroll={{ x: 900 }}
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={alerts}
         locale={{ emptyText: "当前没有未确认告警；空列表不代表没有告警——请确认上方数据集未报错，或点击刷新告警。" }}

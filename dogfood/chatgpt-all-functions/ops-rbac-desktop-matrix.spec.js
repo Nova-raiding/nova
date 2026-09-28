@@ -94,7 +94,7 @@ async function installSessionProjection(page, { initialWorkbench = 'platform', v
 test('keeps the platform overview scoped to the platform workbench', async ({ page }) => {
   await installSessionProjection(page)
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: '平台运营实时概况' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('heading', { name: '平台运营概况' })).toBeVisible({ timeout: 20_000 })
   await expect(page.getByRole('radiogroup', { name: '当前运营工作台' })).toHaveCount(0)
   await expect(page.getByRole('radio', { name: '平台控制台' })).toHaveCount(0)
   await expect(page.getByRole('radio', { name: '商家工作区' })).toHaveCount(0)

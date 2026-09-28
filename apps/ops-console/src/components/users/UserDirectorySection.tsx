@@ -323,21 +323,21 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           ]} />
           {detailAccountType === "platform" && <Alert type="info" showIcon title="运营平台账号" description="此账号属于运营平台，不计入商家工作区成员、套餐或商品数据。" />}
           {detailAccountType === "merchant" && <>
-          <div><Typography.Title level={5}>成员与工作区</Typography.Title><Table size="small" tableLayout="fixed" scroll={{ x: 760 }} rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} dataSource={model.userDetail.memberships} columns={[
+          <section className="ops-user-detail-section"><Typography.Title level={5}>成员与工作区</Typography.Title><Table size="small" tableLayout="fixed" scroll={{ x: 760 }} rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} dataSource={model.userDetail.memberships} columns={[
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "企业主体", key: "name", align: "center", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
             { title: "工作区状态", key: "status", align: "center", width: 120, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "default"}>{workspaceStatusLabels[row.workspaceStatus] ?? row.workspaceStatus}</Tag> },
             { title: "成员创建时间", key: "createdAt", align: "center", width: 170, render: (_: unknown, row: PlatformUser) => formatKnownDateTime((row as DirectoryUser).createdAt) },
             { title: "成员更新时间", dataIndex: "updatedAt", align: "center", width: 170, render: (value: string) => formatKnownDateTime(value) },
-          ]} /></div>
-          <div><Typography.Title level={5}>旧版套餐与任务额度快照</Typography.Title><Table size="small" tableLayout="fixed" scroll={{ x: 880 }} rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial-snapshot`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无旧版套餐与用量数据" }} columns={[
+          ]} /></section>
+          <section className="ops-user-detail-section"><Typography.Title level={5}>旧版套餐与任务额度快照</Typography.Title><Table size="small" tableLayout="fixed" scroll={{ x: 760 }} rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial-snapshot`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无旧版套餐与用量数据" }} columns={[
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
-            { title: "成员", key: "name", align: "center", width: 180, render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
-            { title: "旧版套餐", key: "plan", align: "center", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "未提供" },
-            { title: "旧版订阅状态", key: "subscription", align: "center", width: 140, render: (_: unknown, row: PlatformUser) => row.commercial?.subscriptionStatus ?? "未提供" },
+            { title: "成员", key: "name", align: "left", width: 150, render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "旧版套餐", key: "plan", align: "left", width: 140, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "未提供" },
+            { title: "旧版订阅状态", key: "subscription", align: "center", width: 130, render: (_: unknown, row: PlatformUser) => row.commercial?.subscriptionStatus ?? "未提供" },
             { title: "任务额度（已用 / 包含）", key: "tasks", align: "center", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial ? `${row.commercial.usedTasks} / ${row.commercial.includedTasks}` : "未提供" },
-            { title: "剩余任务", key: "remaining", align: "center", width: 120, render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "未提供" },
-          ]} /></div>
+            { title: "剩余任务", key: "remaining", align: "center", width: 100, render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "未提供" },
+          ]} /></section>
           <Alert type="info" showIcon title="此处仅显示旧版套餐与任务额度快照；当前 V2 套餐及权益请到“订单与权益”核对，实收金额请核对财务流水。" />
           </>}
         </Space>}

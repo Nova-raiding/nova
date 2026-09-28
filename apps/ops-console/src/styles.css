@@ -370,6 +370,34 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-knowledge-page, .ops-stores-page, .ops-models-page, .ops-finance-page { display: grid; gap: 16px; }
 .ops-overview-page, .ops-users-page, .ops-audit-page, .ops-rules-page, .ops-storage-page, .ops-members-page { display: grid; gap: 16px; }
 .ops-overview-page { gap: 14px; }
+.ops-overview-commercial { display: grid; gap: 16px; min-width: 0; }
+.ops-overview-commercial-heading { padding: 6px 2px 2px; }
+.ops-overview-commercial-eyebrow, .ops-overview-alert-title small { display: block; color: #728b7c; font-size: 11px; font-weight: 800; letter-spacing: .13em; line-height: 1.4; }
+.ops-overview-commercial-heading h2 { margin: 5px 0 6px; color: #1c3026; font-size: 24px; font-weight: 800; line-height: 1.25; }
+.ops-overview-commercial-heading p { margin: 0; color: #667d70; font-size: 13px; line-height: 1.55; }
+.ops-overview-page .ops-overview-commercial-card.ant-card, .ops-overview-page .ops-overview-alert-panel.ant-card { min-width: 0; border: 1px solid #dce7e0; border-radius: 16px; background: #fff; box-shadow: 0 5px 18px rgb(16 44 35 / 5%); }
+.ops-overview-commercial-card .ant-card-head, .ops-overview-alert-panel .ant-card-head { min-height: 66px; padding: 0 22px; border-bottom-color: #e3ebe5; }
+.ops-overview-commercial-card .ant-card-head-title { color: #1c3026; font-size: 18px; font-weight: 800; }
+.ops-overview-commercial-card .ant-card-body, .ops-overview-alert-panel .ant-card-body { padding: 20px 22px; }
+.ops-overview-commercial-card .ant-typography, .ops-overview-alert-panel .ant-typography { line-height: 1.55; }
+.ops-overview-commercial-card .ant-table-wrapper, .ops-overview-alert-table { margin-top: 14px; }
+.ops-overview-commercial-card .ant-table-container, .ops-overview-alert-table .ant-table-container { border: 1px solid #e3ebe5; border-radius: 10px; overflow: hidden; }
+.ops-overview-commercial-card .ant-table-thead > tr > th, .ops-overview-alert-table .ant-table-thead > tr > th { border-bottom-color: #e3ebe5; background: #f4f8f5; color: #365447; font-size: 12px; font-weight: 750; }
+.ops-overview-commercial-card .ant-table-tbody > tr:hover > td, .ops-overview-alert-table .ant-table-tbody > tr:hover > td { background: #f7faf7 !important; }
+.ops-overview-commercial-card .ant-table-tbody > tr > td, .ops-overview-alert-table .ant-table-tbody > tr > td { border-bottom-color: #edf1ed; color: #253a2e; }
+.ops-overview-commercial-card .ant-btn-link, .ops-overview-alert-panel .ant-btn-link { color: #176d50; font-weight: 700; }
+.ops-overview-commercial-card .ant-btn-link:hover, .ops-overview-alert-panel .ant-btn-link:hover { color: #0e5039 !important; }
+.ops-overview-commercial-secondary > .ant-col { min-width: 0; }
+.ops-overview-commercial-secondary .ant-card { height: 100%; }
+.ops-overview-commercial-footnote { display: block; padding: 0 2px 4px; color: #73867b !important; font-size: 12px; }
+.ops-overview-alert-title { display: grid; gap: 4px; }
+.ops-overview-alert-title strong { color: #1c3026; font-size: 20px; font-weight: 800; line-height: 1.2; }
+.ops-overview-alert-actions { justify-content: flex-end; }
+.ops-overview-alert-actions .ant-tag { border-color: #dce7e0; border-radius: 999px; font-weight: 700; }
+.ops-overview-alert-actions .ant-btn { border-color: #cfddd3; border-radius: 8px; color: #176d50; font-weight: 700; }
+.ops-overview-alert-actions .ant-btn:hover { border-color: #176d50 !important; color: #0e5039 !important; }
+.ops-overview-alert-panel .ops-alert-delivery-note { margin-top: 14px; color: #73867b; font-size: 12px; }
+@media (max-width: 1100px) { .ops-overview-alert-panel .ant-card-head { padding-block: 16px; } .ops-overview-alert-panel .ant-card-head-wrapper { align-items: flex-start; flex-direction: column; gap: 12px; } .ops-overview-alert-panel .ant-card-extra { margin: 0; } .ops-overview-alert-actions { justify-content: flex-start; } }
 .ops-overview-snapshot { display: grid; gap: 0; }
 .ops-dashboard-hero { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 28px 34px 24px; border: 1px solid #315147; border-bottom: 0; border-radius: 20px 20px 0 0; background: #112c23; }
 .ops-dashboard-eyebrow { color: #a6c7b9; font-size: 12px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
@@ -530,6 +558,9 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-user-detail-drawer .ant-drawer-body .ant-space-item,
 .ops-user-detail-drawer .ant-drawer-body .ant-table-wrapper { max-width: 100%; min-width: 0; }
 .ops-user-detail-drawer .ant-descriptions-item-content { overflow-wrap: anywhere; }
+.ops-user-detail-section { min-width: 0; padding: 16px; border: 1px solid var(--ops-border); border-radius: 10px; background: var(--ops-surface); }
+.ops-user-detail-section .ant-typography { margin: 0 0 14px; }
+.ops-user-detail-section .ant-table-cell { overflow-wrap: anywhere; }
 .ops-token { min-width: 0; overflow-wrap: anywhere; }
 .ops-token-single-line { display: inline-flex; align-items: center; max-width: 100%; white-space: nowrap; overflow-wrap: normal; word-break: keep-all; }
 .commercial-operations-workspace > .ant-tabs > .ant-tabs-nav { margin-bottom: 8px; }
