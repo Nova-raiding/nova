@@ -49,6 +49,13 @@ const catalogComponent = appSource.slice(
   appSource.indexOf('function StoreCatalogExperience'),
   materialWorkspaceStart,
 )
+
+describe('Merchant Studio catalog import entry', () => {
+  it('exposes the spreadsheet import on the merchant product landing page', () => {
+    expect(appSource).toContain("import { ProductSpreadsheetImport } from './ProductSpreadsheetImport'")
+    expect(catalogComponent).toContain('<ProductSpreadsheetImport baseUrl={baseUrl} accounts={accounts ?? []} canWrite={Boolean(baseUrl)} />')
+  })
+})
 /**
  * The end of the material slice, guarded like its start.
  *

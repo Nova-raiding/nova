@@ -17,6 +17,7 @@ import {
   type CatalogStoreView,
 } from './catalog-data'
 import { DetailDecisionContract } from './DetailDecisionContract'
+import { ProductSpreadsheetImport } from './ProductSpreadsheetImport'
 import {
   formatMaterialFileSize,
   isImageMaterial,
@@ -5674,6 +5675,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
             overview uses. Before the read answers the page says so. */}
         <div className="catalog-hero-summary"><div><strong>{platforms === null ? UNREAD_METRIC : platforms.length}</strong><span>{platforms === null ? '电商平台' : '个电商平台'}</span></div><small>{platforms === null ? '店铺列表尚未从服务端读取' : `${catalogStores.length} 家店铺 · ${realConnectedStores} 家已连接`}</small></div>
       </section>
+      <ProductSpreadsheetImport baseUrl={baseUrl} accounts={accounts ?? []} canWrite={Boolean(baseUrl)} />
       <section className="catalog-platform-store-browser">
         <aside className="catalog-platform-rail" aria-label="平台列表">
           <div className="catalog-platform-rail-heading"><span>平台</span><small>选择后查看店铺</small></div>
