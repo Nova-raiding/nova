@@ -9,6 +9,7 @@ type Environment = Record<string, string | undefined>
 const activeChildren = new Set<ChildProcess>()
 const candidateServices = ['api', 'ui', 'ops-ui', 'postgres', 'redis', 'migrate']
 export const CANDIDATE_POSTGRES_IMAGE = 'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73'
+export const CANDIDATE_REDIS_IMAGE = 'redis:7-alpine@sha256:ca0acbb137c1dc3339c8b147a58fd6f42775d4599327b50e7b116c23de501af2'
 const toolingEnvironmentKeys = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'TERM', 'CI', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST', 'MERCHANT_E2E_LOGIN', 'MERCHANT_E2E_PASSWORD'] as const
 
 export function isolatedCandidateEnvironment(source: Environment): Environment {
@@ -114,7 +115,7 @@ export async function assertUnoccupiedPorts(ports: number[]): Promise<void> {
 
 export function assertContainerOwnership(inspected: { Config: { Labels: Record<string, string>; Image: string } }, candidate: BrowserCandidate, service: string): void {
   if (inspected.Config.Labels['com.docker.compose.project'] !== candidate.project || inspected.Config.Labels['com.docker.compose.service'] !== service) throw new Error(`candidate service ${service} has incorrect Compose ownership labels`)
-  const expectedImage = service === 'api' ? candidate.apiImage : service === 'ops-ui' ? candidate.opsImage : service === 'migrate' ? candidate.migrationImage : service === 'postgres' ? CANDIDATE_POSTGRES_IMAGE : undefined
+  const expectedImage = service === 'api' ? candidate.apiImage : service === 'ops-ui' ? candidate.opsImage : service === 'migrate' ? candidate.migrationImage : service === 'postgres' ? CANDIDATE_POSTGRES_IMAGE : service === 'redis' ? CANDIDATE_REDIS_IMAGE : undefined
   if (expectedImage && inspected.Config.Image !== expectedImage) throw new Error(`candidate service ${service} has incorrect image tag`)
 }
 
@@ -131,7 +132,8 @@ export function assertCandidateComposeRender(rendered: { services?: Record<strin
   }
   const postgres = rendered.services?.postgres
   const migrate = rendered.services?.migrate
-  if (!postgres || !migrate || postgres.image !== CANDIDATE_POSTGRES_IMAGE || migrate.image !== candidate.migrationImage || migrate.volumes?.length) throw new Error('candidate requires pinned PG17 and built migration artifacts without runtime mounts')
+  const redis = rendered.services?.redis
+  if (!postgres || !migrate || !redis || postgres.image !== CANDIDATE_POSTGRES_IMAGE || redis.image !== CANDIDATE_REDIS_IMAGE || migrate.image !== candidate.migrationImage || migrate.volumes?.length) throw new Error('candidate requires pinned PG17/Redis and built migration artifacts without runtime mounts')
 }
 
 export function assertContainerHealthy(inspected: { State?: { Running?: boolean; Health?: { Status?: string } } }, service: string): void {

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { assertCandidateComposeRender, assertContainerOwnership, assertMigrationCompleted, candidateComposeArgs, candidateConfiguration, CANDIDATE_POSTGRES_IMAGE } from '../scripts/merchant-browser-candidate.js'
+import { assertCandidateComposeRender, assertContainerOwnership, assertMigrationCompleted, candidateComposeArgs, candidateConfiguration, CANDIDATE_POSTGRES_IMAGE, CANDIDATE_REDIS_IMAGE } from '../scripts/merchant-browser-candidate.js'
 import { ISOLATED_POSTGRES_IMAGE } from './isolated-ops-fixture.js'
 
 // Regression: ISSUE-001 — Colima saw /private/tmp bind-mounted SQL files as directories.
@@ -17,6 +17,7 @@ describe('candidate frozen migration artifacts', () => {
     expect(rendered.services.migrate.volumes ?? []).toEqual([])
     expect(rendered.services.migrate.build.dockerfile).toBe('infra/docker/browser-candidate-migrate.Dockerfile')
     expect(rendered.services.postgres.image).toBe(ISOLATED_POSTGRES_IMAGE)
+    expect(rendered.services.redis.image).toBe(CANDIDATE_REDIS_IMAGE)
     expect(rendered.services.postgres.environment.POSTGRES_DB).toBe('merchant')
     expect(rendered.services.migrate.environment).toMatchObject({ PGHOST: 'postgres', PGPORT: '5432', PGDATABASE: 'merchant', PGUSER: 'merchant', DATABASE_URL: 'postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant', OPS_DATABASE_URL: 'postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant' })
     const unsafe = structuredClone(rendered)
@@ -27,6 +28,8 @@ describe('candidate frozen migration artifacts', () => {
     expect(() => assertCandidateComposeRender(apiBind, value)).toThrow(/refuses host bind/)
     const pg16 = structuredClone(rendered); pg16.services.postgres.image = 'postgres:16-alpine'
     expect(() => assertCandidateComposeRender(pg16, value)).toThrow(/pinned PG17/)
+    const mutableRedis = structuredClone(rendered); mutableRedis.services.redis.image = 'redis:7-alpine'
+    expect(() => assertCandidateComposeRender(mutableRedis, value)).toThrow(/pinned PG17\/Redis/)
   })
 
   it('bakes all four bootstrap/verification files and frozen migration SQL into the pinned PG17 image', () => {
@@ -43,6 +46,8 @@ describe('candidate frozen migration artifacts', () => {
     const inspected = (service: string, image: string) => ({ Config: { Image: image, Labels: { 'com.docker.compose.project': value.project!, 'com.docker.compose.service': service } }, State: { Running: false, Status: 'exited', ExitCode: 0 } })
     expect(() => assertContainerOwnership(inspected('postgres', CANDIDATE_POSTGRES_IMAGE), value, 'postgres')).not.toThrow()
     expect(() => assertContainerOwnership(inspected('postgres', 'postgres:16-alpine'), value, 'postgres')).toThrow(/incorrect image tag/)
+    expect(() => assertContainerOwnership(inspected('redis', CANDIDATE_REDIS_IMAGE), value, 'redis')).not.toThrow()
+    expect(() => assertContainerOwnership(inspected('redis', 'redis:7-alpine'), value, 'redis')).toThrow(/incorrect image tag/)
     const own = inspected('migrate', value.migrationImage!)
     expect(() => assertMigrationCompleted(own, value)).not.toThrow()
     expect(() => assertMigrationCompleted(inspected('migrate', 'postgres:16-alpine'), value)).toThrow(/incorrect image tag/)
