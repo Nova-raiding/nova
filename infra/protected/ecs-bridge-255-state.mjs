@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Contract for a future protected host controller. This module only verifies
+// Contract for the future production mutation adapter. The installed
+// read-only status controller does not call mutation operations. This module only verifies
 // two externally signed snapshots and independently supplied observations.
 // It never opens a production path or transitions a durable journal itself.
 import { createHash } from 'node:crypto'

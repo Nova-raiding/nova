@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Durable, signed host state for the independent 254→255 transition. This
-// module only owns the journal and nonce boundary; it never runs Docker, SQL,
-// gateway, or service operations. The live adapter must hold FD 9's deploy lock.
+// module owns the journal, nonce boundary, and read-only status snapshot; it
+// never runs Docker, SQL, gateway, or service operations. Mutations require FD9.
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { constants, chmodSync, closeSync, fstatSync, fsyncSync, linkSync, lstatSync,
@@ -167,14 +167,24 @@ function readNonce(ledgerPath, nonce, plan, uid, { allowMissing = false } = {}) 
       manifest_sha256: row.manifest_sha256, image_set_digest: row.image_digest })
   } finally { db.close() }
 }
-function readNonceForAttempt(ledgerPath, plan, uid) {
+function readNonceForAttempt(ledgerPath, plan, uid, { allowMissing = false } = {}) {
   protectedFile(ledgerPath, 0o600, uid)
   const db = new DatabaseSync(ledgerPath, { readOnly: true })
   try {
     const rows = db.prepare(`SELECT c.nonce,c.release_id,c.image_digest,c.manifest_sha256,c.release_git_sha,
       o.operation,o.attempt_id FROM consumed_nonces c JOIN nonce_owners o USING(namespace,nonce)
       WHERE c.namespace=? AND o.attempt_id=?`).all('merchant-production-deploy', plan.attempt_id)
-    requireValue(rows.length === 1, 'NONCE_LEDGER_BINDING_MISSING_OR_DUPLICATE')
+    if (allowMissing && rows.length === 0) {
+      const identity = plan.bridge_254_255.identity
+      const ambiguous = db.prepare(`SELECT c.nonce FROM consumed_nonces c
+        WHERE c.namespace=? AND c.release_id=? AND c.image_digest=? AND c.manifest_sha256=? AND c.release_git_sha=?`)
+        .all('merchant-production-deploy', identity.release_id, identity.image_set_digest,
+          identity.manifest_sha256, identity.git_sha)
+      requireValue(!ambiguous.some(row => sha(row.nonce) === plan.nonce_sha256),
+        'NONCE_LEDGER_OWNER_MISSING_OR_DIFFERENT_ATTEMPT')
+    }
+    requireValue(rows.length === 1 || (allowMissing && rows.length === 0), 'NONCE_LEDGER_BINDING_MISSING_OR_DUPLICATE')
+    if (rows.length === 0) return null
     const row = rows[0], identity = plan.bridge_254_255.identity
     requireValue(row.operation === 'bridge-255' && row.attempt_id === plan.attempt_id
       && sha(row.nonce) === plan.nonce_sha256 && row.release_id === identity.release_id
@@ -225,7 +235,7 @@ function verifyProtectedPrerequisites() {
 /** Construct a journal store. Production paths, key material and approved plan are fixed by openProtectedBridge255StateStore. */
 export function createBridge255StateStore({ directory, ledgerPath, consumerPath, privateKeyPem,
   publicKeyPem, trustedKeyId, approvedPlanSha256, approvedPlan, expectedUid = 0,
-  requireProductionLock = true, now = () => new Date(), consume = null }) {
+  approvedPlanExpiresAt = null, requireProductionLock = true, now = () => new Date(), consume = null }) {
   requireValue(typeof privateKeyPem === 'string' && typeof publicKeyPem === 'string', 'ED25519_KEYS_REQUIRED')
   requireValue(typeof trustedKeyId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(trustedKeyId), 'KEY_ID_INVALID')
   requireValue(SHA.test(approvedPlanSha256 ?? '') && approvedPlanSha256 === validateBridge255Plan(approvedPlan), 'APPROVED_PLAN_HASH_MISMATCH')
@@ -238,13 +248,13 @@ export function createBridge255StateStore({ directory, ledgerPath, consumerPath,
     const isolated = `${realpathSync(tmpdir())}/merchant-bridge-255-state-`
     requireValue(directory.startsWith(isolated) && ledgerPath.startsWith(`${directory}/`), 'TEST_PATH_OUTSIDE_ISOLATED_TMP')
   }
-  const guard = () => {
+  const guard = ({ requireLock = true } = {}) => {
     const st = lstatSync(directory)
     requireValue(realpathSync(directory) === directory && st.isDirectory() && st.uid === expectedUid
       && (st.mode & 0o777) === 0o700, 'STATE_DIRECTORY_UNSAFE')
     if (requireProductionLock) {
       protectedChain(directory); protectedChain(ledgerPath); protectedChain(consumerPath)
-      lockHeld(LOCK)
+      if (requireLock) lockHeld(LOCK)
     }
   }
   const pathFor = attemptId => {
@@ -254,8 +264,8 @@ export function createBridge255StateStore({ directory, ledgerPath, consumerPath,
   const bindPlan = plan => requireValue(validateBridge255Plan(plan) === approvedPlanSha256
     && canonical(plan) === canonical(approvedPlan), 'PLAN_NOT_APPROVED')
   const encode = state => Buffer.from(`${JSON.stringify(state)}\n`)
-  const readState = ({ attemptId, plan, now: at = now() }) => {
-    guard(); bindPlan(plan)
+  const readState = ({ attemptId, plan, now: at = now(), requireLock = true }) => {
+    guard({ requireLock }); bindPlan(plan)
     const bytes = readProtected(pathFor(attemptId), 0o400, expectedUid, 4 * 1024 * 1024)
     const state = JSON.parse(bytes.toString('utf8'))
     requireValue(state?.schema_version === 'ecs-bridge-255-protected-state/1'
@@ -340,7 +350,37 @@ export function createBridge255StateStore({ directory, ledgerPath, consumerPath,
       journal: validated.state.history.at(-1).journal,
       observation: validated.state.history.at(-1).observation }
   }
-  return Object.freeze({ captureSigned, advanceSigned, consumeNonceOnce, readConsumedNonce, readFrozenAttempt })
+  const inspectApprovedAttempt = async () => {
+    guard({ requireLock: false }); bindPlan(approvedPlan)
+    let frozen = null
+    try {
+      const statePath = pathFor(approvedPlan.attempt_id)
+      const stat = lstatSync(statePath)
+      requireValue(stat.isFile() && !stat.isSymbolicLink() && stat.uid === expectedUid
+        && stat.nlink === 1 && (stat.mode & 0o777) === 0o400, 'STATE_FILE_UNSAFE')
+      const validated = readState({ attemptId: approvedPlan.attempt_id, plan: approvedPlan, requireLock: false })
+      const last = validated.state.history.at(-1)
+      frozen = { phase: last.journal.phase, created_at: last.journal.created_at,
+        expires_at: last.journal.expires_at, journal_sha256: journalDigest(last.journal),
+        history_length: validated.state.history.length }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    const nonceReceipt = readNonceForAttempt(ledgerPath, approvedPlan, expectedUid, { allowMissing: true })
+    return Object.freeze({ schema_version: 'ecs-bridge-255-host-status/1',
+      plan_sha256: approvedPlanSha256, key_id: trustedKeyId,
+      attempt_id: approvedPlan.attempt_id, project: approvedPlan.project,
+      plan_expires_at: approvedPlanExpiresAt,
+      phase: frozen?.phase ?? null, journal: frozen,
+      nonce_consumed: nonceReceipt !== null,
+      nonce_owner: nonceReceipt ? { operation: nonceReceipt.operation,
+        attempt_id: nonceReceipt.attempt_id, nonce_sha256: nonceReceipt.nonce_sha256 } : null,
+      production_lock: { path: LOCK, path_verified: true, held_by_invocation: false },
+      production_mutation_authorized: false,
+      blockers: ['NO_PRODUCTION_HOST_CONTROL_ADAPTER', 'NO_REHEARSED_FORWARD_RECOVERY_PATH'] })
+  }
+  return Object.freeze({ captureSigned, advanceSigned, consumeNonceOnce, readConsumedNonce,
+    readFrozenAttempt, inspectApprovedAttempt })
 }
 
 export const BRIDGE_255_PROTECTED_STATE_PATHS = Object.freeze({ directory: ROOT,
@@ -368,5 +408,5 @@ export function openProtectedBridge255StateStore() {
   verifyProtectedPrerequisites()
   return createBridge255StateStore({ directory: ROOT, ledgerPath: LEDGER, consumerPath: CONSUMER,
     privateKeyPem, publicKeyPem, trustedKeyId, approvedPlanSha256: verifiedPlan.plan_sha256,
-    approvedPlan: verifiedPlan.plan })
+    approvedPlan: verifiedPlan.plan, approvedPlanExpiresAt: approvedPlan.expires_at })
 }

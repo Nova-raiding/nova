@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash, generateKeyPairSync, sign } from 'node:crypto'
-import { chmodSync, lstatSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, lstatSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync, readdirSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { DatabaseSync } from 'node:sqlite'
 import { openProtectedBridge255StateStore } from '/usr/local/libexec/merchant/ecs-bridge-255-state-store.mjs'
 
@@ -36,6 +37,7 @@ const storePath = '/usr/local/libexec/merchant/ecs-bridge-255-state-store.mjs'
 const reviewPath = '/usr/local/libexec/merchant/ecs-bridge-255-review.mjs'
 const transitionReviewPath = '/usr/local/libexec/merchant/ecs-bridge-255-state.mjs'
 const consumerPath = '/usr/local/libexec/merchant/consume-production-evidence-nonce'
+const controllerPath = '/usr/local/libexec/merchant/ecs-bridge-255-transition'
 
 writeProtected(`${trust}/production-evidence-public.pem`, publicKeyPem)
 writeProtected(`${trust}/production-evidence-key-id`, 'isolated-key\n')
@@ -44,6 +46,7 @@ writeDigest('production-bridge-255-state-store-sha256', storePath)
 writeDigest('production-bridge-255-review-sha256', reviewPath)
 writeDigest('production-bridge-255-transition-review-sha256', transitionReviewPath)
 writeDigest('production-evidence-nonce-consumer-sha256', consumerPath)
+writeProtected(`${trust}/production-bridge-255-transition-sha256`, `${sha(readFileSync(controllerPath))}\n`, 0o444)
 writeProtected('/var/lib/merchant-release-security/production-capability-private.pem', privateKeyPem, 0o600)
 
 const ledger = new DatabaseSync(ledgerPath)
@@ -58,11 +61,58 @@ ledger.close()
 chmodSync(ledgerPath, 0o600)
 
 const store = openProtectedBridge255StateStore()
-assert.deepEqual(Object.keys(store).sort(), ['advanceSigned', 'captureSigned', 'consumeNonceOnce', 'readConsumedNonce', 'readFrozenAttempt'])
+assert.deepEqual(Object.keys(store).sort(), ['advanceSigned', 'captureSigned', 'consumeNonceOnce',
+  'inspectApprovedAttempt', 'readConsumedNonce', 'readFrozenAttempt'])
 const ledgerStat = lstatSync(ledgerPath)
 await assert.rejects(store.readConsumedNonce({ plan, attemptId: plan.attempt_id, nonce_sha256: plan.nonce_sha256 }), /NONCE_LEDGER_BINDING_MISSING_OR_DUPLICATE/u)
 assert.equal(lstatSync(ledgerPath).mtimeMs, ledgerStat.mtimeMs, 'read-only trust/ledger verification must not write to the nonce ledger')
 assert.deepEqual((await import('node:fs')).readdirSync(journalRoot), [], 'opening and verifying must not create a journal')
+
+const runController = command => spawnSync(process.execPath, [controllerPath, command], {
+  encoding: 'utf8', env: { PATH: process.env.PATH }, stdio: ['ignore', 'pipe', 'pipe'],
+})
+const controllerStatus = runController('status')
+assert.equal(controllerStatus.status, 0, controllerStatus.stderr)
+assert.deepEqual(JSON.parse(controllerStatus.stdout), {
+  schema_version: 'ecs-bridge-255-host-status/1', plan_sha256: sha(canonical(plan)), key_id: 'isolated-key',
+  attempt_id: plan.attempt_id, project: plan.project, plan_expires_at: body.expires_at, phase: null,
+  journal: null, nonce_consumed: false, nonce_owner: null,
+  production_lock: { path: '/var/lib/merchant-release-security/production-deploy.lock', path_verified: true, held_by_invocation: false },
+  production_mutation_authorized: false,
+  blockers: ['NO_PRODUCTION_HOST_CONTROL_ADAPTER', 'NO_REHEARSED_FORWARD_RECOVERY_PATH'],
+  command: 'status', plan_valid: true, controller_mode: 'read_only_preflight',
+})
+const verifyPlan = runController('verify-plan')
+assert.equal(verifyPlan.status, 0, verifyPlan.stderr)
+assert.equal(JSON.parse(verifyPlan.stdout).plan_valid, true)
+const addNonceRecord = ownerAttempt => {
+  const identity = plan.bridge_254_255.identity, db = new DatabaseSync(ledgerPath)
+  db.prepare(`INSERT INTO consumed_nonces(namespace,nonce,release_id,image_digest,manifest_sha256,release_git_sha)
+    VALUES(?,?,?,?,?,?)`).run('merchant-production-deploy', nonce, identity.release_id,
+    identity.image_set_digest, identity.manifest_sha256, identity.git_sha)
+  if (ownerAttempt) db.prepare('INSERT INTO nonce_owners(namespace,nonce,operation,attempt_id) VALUES(?,?,?,?)')
+    .run('merchant-production-deploy', nonce, 'bridge-255', ownerAttempt)
+  db.close(); chmodSync(ledgerPath, 0o600)
+}
+const removeNonceRecord = () => {
+  const db = new DatabaseSync(ledgerPath)
+  db.prepare('DELETE FROM nonce_owners WHERE namespace=? AND nonce=?').run('merchant-production-deploy', nonce)
+  db.prepare('DELETE FROM consumed_nonces WHERE namespace=? AND nonce=?').run('merchant-production-deploy', nonce)
+  db.close(); chmodSync(ledgerPath, 0o600)
+}
+addNonceRecord(null)
+const orphanNonce = runController('status')
+assert.notEqual(orphanNonce.status, 0)
+assert.match(orphanNonce.stderr, /NONCE_LEDGER_OWNER_MISSING_OR_DIFFERENT_ATTEMPT/u)
+removeNonceRecord()
+addNonceRecord('attempt_other_abcdefghijkl')
+const foreignNonce = runController('status')
+assert.notEqual(foreignNonce.status, 0)
+assert.match(foreignNonce.stderr, /NONCE_LEDGER_OWNER_MISSING_OR_DIFFERENT_ATTEMPT/u)
+removeNonceRecord()
+const rejectedExecution = runController('execute')
+assert.notEqual(rejectedExecution.status, 0)
+assert.equal(readdirSync(journalRoot).length, 0, 'unsupported mutation commands must not create journal state')
 
 chmodSync(journalRoot, 0o755)
 assert.throws(() => openProtectedBridge255StateStore(), /STATE_DIRECTORY_UNSAFE/u)

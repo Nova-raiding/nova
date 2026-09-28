@@ -1,7 +1,8 @@
 // 254→255 transition logic with injected protected host ports. There is no
-// production entrypoint or port implementation in this module. A caller must
-// supply independently installed lock, nonce, signing, backup and runtime
-// controls. Until those exist and pass real fault drills, this is NO-GO.
+// read-only status/verify-plan entrypoint exists, but no mutation adapter is
+// implemented here. A caller must supply independently installed lock, nonce,
+// signing, backup and runtime controls. Until those exist and pass real fault
+// drills, production migration/cutover remains NO-GO.
 import { createHash } from 'node:crypto'
 import { reviewBridge255Phase, validateBridge255Plan } from './ecs-bridge-255-review.mjs'
 import { reviewBridge255Transition, BRIDGE_255_HOST_CONTRACT } from './ecs-bridge-255-state.mjs'

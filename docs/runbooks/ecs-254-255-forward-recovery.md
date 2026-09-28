@@ -30,7 +30,19 @@ API 的 `bb417660` 改动为运维手工商品导入 ACL；该一行补丁已包
 
 未来若经独立审查批准 provision，必须在维护窗口外由双人核对的 root-only provisioning 步骤执行，并先检查后创建、绝不覆盖现有目标：journal 根目录必须是 canonical、root-owned、mode `0700`；nonce ledger 必须是已存在的 canonical、root-owned、mode `0600` 普通文件，并由已审 nonce consumer 拥有预期 schema；生产 deploy lock 和固定 nonce consumer 必须与已安装 digest 一致；trust 目录、Ed25519 公钥/key id、执行计划签名、state/review/transition-review/nonce-consumer 摘要文件必须通过固定安装器和独立签名流程投放。生产私钥只能由既有受保护密钥流程提供，不可放入候选归档、shell 参数或普通日志。所有路径须检查 symlink、父目录权限、owner、mode、inode/摘要及 ledger schema；发现任何既有但不匹配的资料即停止，不能删除、重建或迁移 ledger/journal 来消除冲突。
 
-安装后的验收首先只能是只读检查：以 root 身份、空环境运行固定控制器的 `status`/`verify-plan`（该命令尚未实现）；检查项须报告 controller 与依赖摘要、trust/key id、签名计划有效期和摘要、journal 根目录属性、nonce ledger owner/mode/schema、production lock 的固定 inode契约，以及是否存在未终结 attempt。只读验收不得消费 nonce、创建 journal、启动/停止容器或访问生产数据库写连接。只有上述控制器实现、安装映射、真实 Linux lock/nonce 集成测试及故障恢复演练均通过独立审核后，才可补入确切命令并重新评估 NO-GO；本节不是授权 101 预配或迁移。
+安装后的验收首先只能是只读检查。固定入口 `ecs-bridge-255-transition` 现只实现 `status` 和 `verify-plan`；执行命令前须按发布控制安装器分别安装 controller、state store、transition reviewer 和 reviewer，并验证每个 root-owned digest 文件。之后可在 root shell 运行：
+
+```sh
+env -i PATH=/usr/bin:/bin \
+  /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+  /usr/local/libexec/merchant/ecs-bridge-255-transition status
+
+env -i PATH=/usr/bin:/bin \
+  /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+  /usr/local/libexec/merchant/ecs-bridge-255-transition verify-plan
+```
+
+结果绑定 controller/state/reviewer/nonce-consumer 摘要、trust key id、签名计划有效期与摘要、journal 目录和 nonce ledger owner/mode/schema、固定 production lock 路径及当前批准 attempt 的签名 phase/nonce owner。`production_lock.held_by_invocation=false` 明确表示只验证 lock 文件属性，不声称当前持锁。该入口不得消费 nonce、创建 journal、启动/停止容器或连接生产数据库；所有迁移、fence、服务操作命令仍不受支持并 fail-closed。只有完整 host runtime adapter、真实生产 Linux lock/nonce 集成测试及故障恢复演练经过独立审核后，才可开放写操作；本节不是授权 101 预配或迁移。
 
 首选单独发布 **254/255 双前缀兼容桥**：桥接 API、API 副本和公网 demo 项目的五类 worker 必须在完整且校验过的 254 与 255 数据库前缀上均健康，并且在 254 时不得读写迁移 255 新表；其他共享消费者须被明确识别并纳入隔离/恢复计划。桥接版本必须先以 254 数据库完成隔离部署、真实业务及本地 stdio ChatGPT 宿主验收，再成为公网当前身份。迁移期间只有这套经审核的桥接运行时处理流量；旧 254 镜像退出服务路径。桥接的 255 恢复镜像须在迁移前完成构建、固定摘要、隔离 255 数据库演练和恢复验收。
 
