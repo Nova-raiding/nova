@@ -192,7 +192,7 @@ export function validateDemoCompose(compose, project) {
   if (migrationBinds.length !== 5 || migrationBinds.some(value => value.read_only !== true || !value.source?.startsWith('/')) ||
       migrationBinds.map(value => value.target).sort().join(',') !== expectedMigrationTargets.join(',')) fail('migration sidecar may bind only the five readonly host inputs')
   const migrationCommand = services.migrate.entrypoint?.[2]
-  if (typeof migrationCommand !== 'string' || !migrationCommand.startsWith('/bin/sh /ops/provision-isolated-candidate-db-roles.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && ')) fail('isolated candidate roles must be provisioned before the first role bootstrap')
+  if (migrationCommand !== '/bin/sh /ops/provision-isolated-candidate-db-roles.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/apply-migrations.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/verify-runtime-db-role.sh') fail('isolated candidate migration sequence differs')
   return true
 }
 
