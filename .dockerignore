@@ -14,7 +14,9 @@ dist
 coverage
 *.log
 artifacts
-dogfood
+dogfood/**
+!dogfood/chatgpt-all-functions/
+!dogfood/chatgpt-all-functions/package.json
 
 # Local runtime secrets. `.env.example` is the tracked, secret-free template and
 # stays in the context so provenance tooling can still read it.

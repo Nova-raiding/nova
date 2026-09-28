@@ -415,9 +415,12 @@ describe("container source freshness gate", () => {
     expect(preflight).toContain("API_IMAGE_REF");
     expect(preflight).toContain("WORKER_IMAGE_REF");
     const apiDockerfile = readFileSync("infra/docker/api.Dockerfile", "utf8");
+    const dockerignore = readFileSync(".dockerignore", "utf8");
+    expect(dockerignore).toContain("dogfood/**");
+    expect(dockerignore).toContain("!dogfood/chatgpt-all-functions/package.json");
     const [apiBuildStage, apiRuntimeStage] = apiDockerfile.split(" AS runtime");
-    expect(apiBuildStage).toContain("COPY dogfood ./dogfood");
-    expect(apiBuildStage!.indexOf("COPY dogfood ./dogfood")).toBeLessThan(
+    expect(apiBuildStage).toContain("COPY dogfood/chatgpt-all-functions/package.json ./dogfood/chatgpt-all-functions/package.json");
+    expect(apiBuildStage!.indexOf("COPY dogfood/chatgpt-all-functions/package.json")).toBeLessThan(
       apiBuildStage!.indexOf("npm ci --prefer-offline"),
     );
     expect(apiRuntimeStage).not.toContain("COPY dogfood");
