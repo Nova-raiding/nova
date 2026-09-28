@@ -52,6 +52,8 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
       const query = typeof params.query === 'string' ? params.query.trim().toLocaleLowerCase() : ''
       const status = typeof params.status === 'string' && params.status.trim() ? params.status.trim() : undefined
       if (status && !['invited', 'active', 'suspended'].includes(status)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'status 必须是 invited、active 或 suspended', 400)
+      const accountType = params.account_type ?? 'merchant'
+      if (accountType !== 'merchant' && accountType !== 'platform') throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'account_type 必须是 merchant 或 platform', 400)
       const targetWorkspaceId = typeof params.workspace_id === 'string' && params.workspace_id.trim() ? params.workspace_id.trim() : undefined
       const requestedLimit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Number(params.limit) : 20
       const offset = typeof params.offset === 'string' && /^\d+$/u.test(params.offset) ? Number(params.offset) : 0
@@ -60,7 +62,7 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
       const allWorkspaceIds = persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [...knownWorkspaces]
       const scopedWorkspaceIds = targetWorkspaceId ? allWorkspaceIds.filter(id => id === targetWorkspaceId) : allWorkspaceIds
       const memberRepository = persistence.members ?? memoryMembers
-      const platformAccounts = await passwordAuthRepository.listAccounts()
+      const platformAccounts = accountType === 'platform' ? await passwordAuthRepository.listAccounts() : []
       const accountRows = platformAccounts
         .filter(account => account.accountType === 'platform')
         .map(account => ({
@@ -80,10 +82,13 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
           accountType: 'platform' as const,
           scope: 'platform' as const,
         }))
-      // Platform accounts are a second relation in the same directory: they carry
-      // no workspace, they are never scoped to one, and they are small enough to
-      // merge in memory. The member half is the one that grows with the platform.
+      // Platform accounts have no workspace and are returned only for the
+      // explicit platform filter. The default directory contains merchants.
       const visibleAccountRows = targetWorkspaceId ? [] : accountRows.filter(member => (!status || member.status === status) && (!query || memberMatchesQuery(member, query)))
+      if (accountType === 'platform') {
+        const rows = visibleAccountRows.sort(compareMembersByRecency)
+        return ({ items: rows.slice(offset, offset + requestedLimit), total: rows.length, identityCount: rows.length, workspaceCount: 0, offset, limit: requestedLimit, truncated: offset + requestedLimit < rows.length, scanned_workspace_count: 0, scan_truncated: false })
+      }
       let pageRows: Array<typeof accountRows[number] | (WorkspaceMember & { enterpriseName: string; accountType: 'merchant'; scope: 'workspace' })>
       let total: number
       let identityCount: number
@@ -92,10 +97,7 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
       let scanTruncated: boolean
       if (memberRepository.searchWindow) {
         // The repository cuts the window and counts the totals in SQL. Its rows
-        // are sorted and sliced here for the same reason the accounts are: the
-        // two relations only sort correctly together once they are merged, and
-        // `mergeMargin` is what makes the repository hand back a window wide
-        // enough for account rows to push into it.
+        // are sorted and sliced here for parity with the bounded fallback.
         //
         // A `query` matches the enterprise name, so it needs the name projection
         // for every workspace in scope. Without one only the page is rendered, and

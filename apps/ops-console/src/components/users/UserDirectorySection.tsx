@@ -6,7 +6,7 @@ import type { PlatformUser } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
 import { packageCodeLabel } from "../commercial/packageLabels.js";
 
-type UserFilters = { query?: string; status?: string; workspaceId?: string };
+type UserFilters = { query?: string; status?: string; workspaceId?: string; accountType?: "merchant" | "platform" };
 export type UserDirectorySort = { field: "displayName" | "status" | "createdAt"; order: "ascend" | "descend" };
 type DirectoryUser = PlatformUser & { createdAt?: string };
 const roleLabels: Record<string, string> = { workspace_owner: "企业所有者", merchant_admin: "企业管理员", operator: "运营", support: "支持", finance: "财务", platform_ops: "平台运营" };
@@ -58,6 +58,7 @@ export function canWriteLoadedIdentity(model: Pick<OpsConsoleModel, "canUserGove
 export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const canReadUserDirectory = model.authorization.can("identity.read");
   const [form] = Form.useForm<UserFilters>();
+  const accountType = Form.useWatch("accountType", form) ?? "merchant";
   const [accessTarget, setAccessTarget] = useState<PlatformUser>();
   const [suspendReason, setSuspendReason] = useState("");
   const [suspending, setSuspending] = useState(false);
@@ -78,6 +79,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const actionErrorRef = useRef<HTMLDivElement>(null);
   const directoryErrorRef = useRef<HTMLDivElement>(null);
   const [userSort, setUserSort] = useState<UserDirectorySort>();
+  const [detailAccountType, setDetailAccountType] = useState<"merchant" | "platform">("merchant");
   const detailTriggerSubjectRef = useRef<string | undefined>(undefined);
   const detailButtonRefs = useRef(new Map<string, HTMLElement>());
   const sortedUsers = useMemo(() => sortUserDirectoryRows(model.userDirectory.items, userSort), [model.userDirectory.items, userSort]);
@@ -113,6 +115,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   };
   const closeUserDetail = () => {
     setDetailSubject(undefined);
+    setDetailAccountType("merchant");
     model.setUserDetail(undefined);
   };
   const restoreUserDetailFocus = () => {
@@ -171,8 +174,9 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   return <>
     {!canReadUserDirectory && <Alert showIcon type="warning" title="当前角色不能读取用户目录" description="跨租户身份与成员关系需要 identity.read；权限由服务端策略决定。" />}
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
-    <Card title="已接入用户" extra={<Space><Typography.Text type="secondary">当前筛选：{model.userDirectory.total} 条账号记录，涉及 {model.userDirectory.workspaceCount} 个商家工作区</Typography.Text><Button onClick={() => setProvisionOpen(true)} disabled={!model.canPlatformOps}>开通商家账号</Button></Space>} aria-busy={model.userDirectoryLoading}>
-      <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "" }} onFinish={(values) => { void model.loadUsers({ ...values, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
+    <Card title={accountType === "platform" ? "运营平台用户" : "商户用户"} extra={<Space><Typography.Text type="secondary">{accountType === "platform" ? `当前筛选：${model.userDirectory.total} 条运营平台账号` : `当前筛选：${model.userDirectory.total} 条商户成员记录，涉及 ${model.userDirectory.workspaceCount} 个商家工作区`}</Typography.Text><Button onClick={() => setProvisionOpen(true)} disabled={!model.canPlatformOps}>开通商家账号</Button></Space>} aria-busy={model.userDirectoryLoading}>
+      <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "", accountType: "merchant" }} onFinish={(values) => { void model.loadUsers({ ...values, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
+        <Form.Item name="accountType" label="账号归属"><Select aria-label="按账号归属筛选用户目录" style={{ width: 150 }} onChange={(value: "merchant" | "platform") => { setSelectedUserKeys([]); void model.loadUsers({ ...form.getFieldsValue(), accountType: value, page: 1 }); }} options={[{ value: "merchant", label: "商户用户" }, { value: "platform", label: "运营平台用户" }]} /></Form.Item>
         <Form.Item name="query" label="搜索"><Input allowClear maxLength={64} aria-label="按关键词筛选用户目录" /></Form.Item>
         <Form.Item name="status" label="激活状态">
           <Select aria-label="按激活状态筛选用户目录" style={{ width: 140 }} options={[
@@ -181,7 +185,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         </Form.Item>
         <Form.Item><Space>
           <Button type="primary" htmlType="submit" loading={model.userDirectoryLoading}>查询</Button>
-          <Button onClick={() => void model.exportUsers(form.getFieldsValue())} disabled={!model.canUserGovernance || model.userExporting} loading={model.userExporting}>导出当前筛选</Button>
+          <Button onClick={() => void model.exportUsers(form.getFieldsValue())} disabled={accountType === "platform" || !model.canUserGovernance || model.userExporting} loading={model.userExporting}>导出商户成员</Button>
           <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
       </Form>
@@ -211,9 +215,10 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         scroll={{ x: "max-content" }}
         columns={[
           { title: "用户名", dataIndex: "externalSubject", width: 330, render: (value: string) => <Typography.Text className="ops-token ops-token-single-line" copyable>{value}</Typography.Text> },
-          { title: "店铺名", dataIndex: "displayName", width: 180, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "未设置" },
+          { title: "姓名或显示名", dataIndex: "displayName", width: 180, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "未设置" },
+          { title: "账号归属", dataIndex: "accountType", width: 130, render: (value: PlatformUser["accountType"]) => value === "platform" ? "运营平台" : "商户工作区" },
           { title: "激活状态", dataIndex: "status", width: 110, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
-          { title: "操作", key: "actions", width: 150, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Button size="small" disabled title="平台账号不能停用">停用</Button> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button>}</Space> },
+          { title: "操作", key: "actions", width: 150, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailAccountType(row.accountType ?? "merchant"); setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Button size="small" disabled title="平台账号不能停用">停用</Button> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button>}</Space> },
         ]}
       />
     </Card>
@@ -308,7 +313,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         </Row>
       </Form>
     </Modal>
-    <Drawer title="用户详情" aria-label="用户目录详情抽屉" size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden footer={<div style={{ textAlign: "right" }}><Button danger disabled={!model.canUserGovernance || !model.userDetail?.memberships.length} onClick={() => { const row = model.userDetail?.memberships[0]; if (row) { setActionError(""); setAccessTarget(row); } }}>停用</Button></div>}>
+    <Drawer title={detailAccountType === "platform" ? "运营平台账号详情" : "商户用户详情"} aria-label="用户目录详情抽屉" size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden footer={detailAccountType === "platform" ? null : <div style={{ textAlign: "right" }}><Button danger disabled={!model.canUserGovernance || !model.userDetail?.memberships.length} onClick={() => { const row = model.userDetail?.memberships[0]; if (row) { setActionError(""); setAccessTarget(row); } }}>停用</Button></div>}>
       <Spin spinning={model.userDetailLoading} tip="正在加载用户详情…" aria-label="正在加载用户详情">
         {!model.userDetailLoading && !model.userDetail ? <Empty description="用户详情尚未取得，请重试或关闭后重新打开" /> : null}
         {model.userDetail && <Space orientation="vertical" size="middle" className="full-width">
@@ -316,6 +321,8 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { key: "name", label: "用户名", children: model.userDetail.identity.displayName || model.userDetail.identity.externalSubject },
             { key: "first", label: model.userDetail.identity.id ? "身份首次识别时间" : "成员首次记录时间", children: formatKnownDateTime(model.userDetail.identity.firstSeenAt) },
           ]} />
+          {detailAccountType === "platform" && <Alert type="info" showIcon title="运营平台账号" description="此账号属于运营平台，不计入商家工作区成员、套餐或商品数据。" />}
+          {detailAccountType === "merchant" && <>
           <div><Typography.Title level={5}>成员与工作区</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} dataSource={model.userDetail.memberships} columns={[
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "企业主体", key: "name", align: "center", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
@@ -332,6 +339,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "剩余任务", key: "remaining", align: "center", width: 120, render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "未提供" },
           ]} /></div>
           <Alert type="info" showIcon title="此处仅显示旧版套餐与任务额度快照；当前 V2 套餐及权益请到“订单与权益”核对，实收金额请核对财务流水。" />
+          </>}
         </Space>}
       </Spin>
     </Drawer>

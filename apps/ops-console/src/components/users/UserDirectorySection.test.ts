@@ -74,7 +74,8 @@ describe("UserDirectorySection sorting", () => {
     } as unknown as OpsConsoleModel;
 
     const markup = renderToStaticMarkup(createElement(UserDirectorySection, { model }));
-    expect(markup).toContain("当前筛选：9 条账号记录，涉及 1 个商家工作区");
+    expect(markup).toContain("当前筛选：9 条商户成员记录，涉及 1 个商家工作区");
+    expect(markup).toContain("商户用户");
     expect(markup).not.toContain("共 1 家接入用户");
   });
 
@@ -126,7 +127,8 @@ describe("UserDirectorySection sorting", () => {
   it("retains account provisioning and authorized directory export controls", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('onClick={() => setProvisionOpen(true)} disabled={!model.canPlatformOps}>开通商家账号</Button>');
-    expect(source).toContain('onClick={() => void model.exportUsers(form.getFieldsValue())} disabled={!model.canUserGovernance || model.userExporting}');
+    expect(source).toContain('onClick={() => void model.exportUsers(form.getFieldsValue())} disabled={accountType === "platform" || !model.canUserGovernance || model.userExporting}');
+    expect(source).toContain('accountType: value, page: 1');
   });
 
   it("gives desktop directory controls stable, row-specific accessible names", () => {

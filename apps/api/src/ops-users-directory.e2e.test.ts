@@ -90,21 +90,21 @@ describe('ops.users.list platform directory', () => {
     expect(result.limit).toBe(2)
     expect(result.offset).toBe(0)
     expect(result.truncated).toBe(true)
-    // Six members across three workspaces plus the platform account, counted
-    // even though the page holds two rows.
-    expect(result.total).toBe(7)
+    // The default directory counts merchant members only; platform accounts
+    // are queried explicitly through account_type=platform.
+    expect(result.total).toBe(6)
     expect(result.workspaceCount).toBe(3)
-    expect(result.identityCount).toBe(7)
+    expect(result.identityCount).toBe(6)
     expect(result.scanned_workspace_count).toBeGreaterThanOrEqual(3)
     expect(result.scan_truncated).toBe(false)
 
     const next = await call({ limit: '2', offset: '2', query: id })
     expect(next.data?.result.items.map((item: any) => item.externalSubject)).not.toEqual(result.items.map((item: any) => item.externalSubject))
-    expect(next.data?.result.total).toBe(7)
+    expect(next.data?.result.total).toBe(6)
     expect(new Set([...result.items, ...next.data!.result.items].map((item: any) => item.externalSubject)).size).toBe(4)
 
     const beyond = await call({ limit: '2', offset: '99', query: id })
-    expect(beyond.data?.result).toMatchObject({ items: [], truncated: false, total: 7 })
+    expect(beyond.data?.result).toMatchObject({ items: [], truncated: false, total: 6 })
   })
 
   it('filters on status, subject, display name, role, workspace and the enterprise name it renders', async () => {
@@ -118,8 +118,7 @@ describe('ops.users.list platform directory', () => {
     for (const workspaceId of workspaces) await call({ limit: '1', query: id }, workspaceId)
 
     expect((await call({ query: id, status: 'invited' })).data?.result).toMatchObject({ total: 3 })
-    // Three active owners plus the platform account, which is active too.
-    expect((await call({ query: id, status: 'active' })).data?.result).toMatchObject({ total: 4 })
+    expect((await call({ query: id, status: 'active' })).data?.result).toMatchObject({ total: 3 })
     expect((await call({ query: `DIRECTORY-USER-${id.toUpperCase()}-1-1` })).data?.result).toMatchObject({ total: 1 })
     expect((await call({ query: `目录用户 ${id} 2-0` })).data?.result).toMatchObject({ total: 1 })
     // `workspace_id` is what scopes the directory; the header alone does not.
@@ -153,6 +152,25 @@ describe('ops.users.list platform directory', () => {
     expect(scoped.data?.result.items.map((item: any) => item.workspaceId)).toEqual([workspaces[1], workspaces[1]])
     expect(scoped.data?.result.items.some((item: any) => item.accountType === 'platform')).toBe(false)
     expect((await call({ workspace_id: 'ws_dir_missing', limit: '20' })).data?.result).toMatchObject({ total: 0, items: [], scan_truncated: false })
+  })
+
+  it('keeps platform operators separate from merchant members in the directory', async () => {
+    const { id, workspaces } = await seedDirectory()
+    const base = await start()
+    const call = (params: Record<string, string>, workspaceId = workspaces[0]!) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer directory-test', 'x-role': 'platform_admin', 'x-ops-workbench': 'platform', 'x-workspace-id': workspaceId, 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ops.users.list', params }),
+    }).then(async response => await response.json() as Envelope<{ result: any }>)
+    for (const workspaceId of workspaces) await call({ limit: '1', query: id }, workspaceId)
+
+    const merchants = (await call({ query: id, account_type: 'merchant' })).data?.result
+    expect(merchants).toMatchObject({ total: 6, workspaceCount: 3 })
+    expect(merchants.items.every((item: any) => item.accountType === 'merchant')).toBe(true)
+    const operators = (await call({ query: id, account_type: 'platform' })).data?.result
+    expect(operators).toMatchObject({ total: 1, workspaceCount: 0, scanned_workspace_count: 0 })
+    expect(operators.items[0]).toMatchObject({ accountType: 'platform', scope: 'platform', workspaceId: '' })
+    expect((await call({ account_type: 'other' })).error?.code).toBe('INVALID_REQUEST')
   })
 
   it('exports the same directory and resolves a subject detail across its workspaces', async () => {

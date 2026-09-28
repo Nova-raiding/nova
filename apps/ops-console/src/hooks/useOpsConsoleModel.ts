@@ -478,7 +478,7 @@ export function useOpsConsoleModel() {
   const [userDetail, setUserDetail] = useState<PlatformUserDetail>();
   const [userDetailLoading, setUserDetailLoading] = useState(false);
   const userDetailRequestRef = useRef(0);
-  const [userDirectoryFilters, setUserDirectoryFilters] = useState<{ query?: string; status?: string; workspaceId?: string; page?: number; pageSize?: number }>({});
+  const [userDirectoryFilters, setUserDirectoryFilters] = useState<{ query?: string; status?: string; workspaceId?: string; accountType?: "merchant" | "platform"; page?: number; pageSize?: number }>({ accountType: "merchant" });
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceSummary[]>([]);
   const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectoryPage>(UNRESOLVED_WORKSPACE_DIRECTORY);
   const [workspaceDirectoryLoading, setWorkspaceDirectoryLoading] = useState(false);
@@ -1543,7 +1543,7 @@ export function useOpsConsoleModel() {
       message.error(cause instanceof Error ? cause.message : "成员保存失败");
     }
   };
-  const loadUsers = async (filters: { query?: string; status?: string; workspaceId?: string; page?: number; pageSize?: number } = userDirectoryFilters) => {
+  const loadUsers = async (filters: { query?: string; status?: string; workspaceId?: string; accountType?: "merchant" | "platform"; page?: number; pageSize?: number } = userDirectoryFilters) => {
     recordOpsBootstrapTrace("users_load_enter", { connected: hasOpsConnection(), identity: authorization.can("identity.read") });
     if (!hasOpsConnection()) { recordOpsBootstrapTrace("users_load_skipped", { reason: "no_connection" }); return false; }
     const requestKey = JSON.stringify(filters);
@@ -1562,6 +1562,7 @@ export function useOpsConsoleModel() {
         offset: String((page - 1) * pageSize),
         ...(filters.query?.trim() ? { query: filters.query.trim() } : {}),
         ...(filters.status ? { status: filters.status } : {}),
+        account_type: filters.accountType ?? "merchant",
         ...(filters.workspaceId?.trim() ? { workspace_id: filters.workspaceId.trim() } : {}),
       }, { signal: controller.signal, timeoutMs: 30_000 });
       recordOpsBootstrapTrace("users_load_response", { items: Array.isArray((response as { items?: unknown[] } | undefined)?.items) ? (response as { items: unknown[] }).items.length : -1 });
