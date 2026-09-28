@@ -4,7 +4,7 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { captureDemo254Backup, verifyDemo254CaptureManifest } from '../infra/protected/capture-demo-254-backup.mjs'
+import { captureDemo254Backup, verifyDemo254CaptureManifest, signFrozenDemo254Plan, verifyFrozenDemo254Plan } from '../infra/protected/capture-demo-254-backup.mjs'
 
 const sha = value => createHash('sha256').update(value).digest('hex')
 const id = ch => ch.repeat(64)
@@ -98,4 +98,12 @@ test('rejects a gateway switch during the dump', async () => {
   }
   await assert.rejects(captureDemo254Backup(input.options, input.collector), /TOPOLOGY_CHANGED_DURING_DUMP/u)
   assert.throws(() => readFileSync(input.options.backupPath), /ENOENT/u)
+})
+
+test('protected signer creates a verifiable frozen plan and detects plan drift', () => {
+  const input = inputs()
+  const signed = signFrozenDemo254Plan(input.signedPlan.freeze, { privatePem, publicPem, keyId: 'production-evidence' })
+  assert.deepEqual(verifyFrozenDemo254Plan(signed, publicPem), input.signedPlan.freeze)
+  signed.freeze.database.oid = 999
+  assert.throws(() => verifyFrozenDemo254Plan(signed, publicPem), /PLAN_SIGNATURE_INVALID/u)
 })

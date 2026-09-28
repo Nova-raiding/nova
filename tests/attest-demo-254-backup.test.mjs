@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { buildSync } from 'esbuild'
-import { observeDemo254Topology, assertDemo254LocalTarget } from '../infra/protected/attest-demo-254-backup.mjs'
+import { observeDemo254Topology, assertDemo254LocalTarget, consumeDemo254BackupNonce } from '../infra/protected/attest-demo-254-backup.mjs'
 import { CONTROLS, prepareControlBytes } from '../infra/scripts/install-ecs-release-controls.mjs'
 
 const project = 'merchant-demo-85575f9c'
@@ -23,7 +23,8 @@ function fixture() {
   postgres.Mounts = [{ Type: 'volume', Name: `${project}_merchant-postgres`, Destination: '/var/lib/postgresql/data' }]
   const config = `server { listen 8443 ssl; server_name yxsona.com; location ^~ /api/ { proxy_pass http://pilot_api; } }
     upstream pilot_api { resolver 127.0.0.11; server api-replica:8787 resolve; }`
-  const release = { data: { ready: true, release: { release_id: 'release-f48c8454-dual-e2e', release_git_sha: 'f48c84544c519642de7c92615351007c9ac70a99' } } }
+  const release = { data: { ready: true, release: { release_id: 'release-f48c8454-dual-e2e', release_git_sha: 'f48c84544c519642de7c92615351007c9ac70a99',
+    manifest_sha256: id('e'), image_set_digest: `sha256:${id('f')}` } } }
   const source = { [gateway.Name.slice(1)]: gateway, [api.Name.slice(1)]: api, [postgres.Name.slice(1)]: postgres }
   const run = (binary, args) => {
     if (binary === '/usr/bin/docker' && args[2] === 'inspect') return JSON.stringify([source[args[3]]])
@@ -73,4 +74,18 @@ test('protected installer accepts a standalone reviewed bundle with a fixed Node
     '/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node')
   assert.match(installed.toString(), /^#!\/usr\/local\/libexec\/merchant\/runtime\/node-v22\.23\.2-linux-x64\/bin\/node\n/u)
   assert.equal(installed.includes(Buffer.from("from './capture-demo-254-backup.mjs'")), false)
+})
+
+test('one-use nonce is bound to exact public release identity and backup attempt', () => {
+  const releaseIdentity = fixture().release.data.release
+  let invocation
+  consumeDemo254BackupNonce({ nonce: 'N'.repeat(24), attemptId: 'attempt_Demo254_abcdefgh', releaseIdentity }, (binary, args, options) => {
+    invocation = { binary, args, options }
+    return { status: 0, stdout: 'nonce accepted\n' }
+  })
+  assert.equal(invocation.binary, '/usr/local/libexec/merchant/consume-production-evidence-nonce')
+  assert.deepEqual(invocation.args.slice(-4), ['--operation', 'demo-254-backup', '--attempt-id', 'attempt_Demo254_abcdefgh'])
+  assert.equal(invocation.args[invocation.args.indexOf('--manifest-sha256') + 1], releaseIdentity.manifest_sha256)
+  assert.deepEqual(invocation.options.env, {})
+  assert.throws(() => consumeDemo254BackupNonce({ nonce: 'N'.repeat(24), attemptId: 'attempt_Demo254_abcdefgh', releaseIdentity }, () => ({ status: 1, stderr: 'duplicate' })), /NONCE_CONSUMPTION_REJECTED/u)
 })

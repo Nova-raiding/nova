@@ -58,12 +58,12 @@ def consume(ledger_path, namespace, nonce, release_id, image_digest, manifest_sh
     """Atomically consume a nonce and bind it to exactly one operation/attempt."""
     if os.geteuid() != 0:
         raise RuntimeError('nonce consumer must run as root')
-    if operation not in ('deployment', 'bridge-b', 'bridge-254'):
-        raise RuntimeError('operation must be deployment, bridge-b, or bridge-254')
+    if operation not in ('deployment', 'bridge-b', 'bridge-254', 'demo-254-backup'):
+        raise RuntimeError('operation must be deployment, bridge-b, bridge-254, or demo-254-backup')
     if operation == 'deployment' and attempt_id:
         raise RuntimeError('deployment operation must not include an attempt ID')
-    if operation in ('bridge-b', 'bridge-254') and not re.fullmatch(r'[A-Za-z0-9_-]{16,128}', attempt_id):
-        raise RuntimeError('bridge operation requires a valid attempt ID')
+    if operation in ('bridge-b', 'bridge-254', 'demo-254-backup') and not re.fullmatch(r'[A-Za-z0-9_-]{16,128}', attempt_id):
+        raise RuntimeError('protected operation requires a valid attempt ID')
     secure_parent('/var')
     secure_parent('/var/lib')
     secure_directory(os.path.dirname(ledger_path))
@@ -114,7 +114,7 @@ def parse_args(argv):
     command = subcommands.add_parser('consume')
     for name in ('namespace', 'nonce', 'release-id', 'image-digest', 'manifest-sha256', 'release-git-sha'):
         command.add_argument('--' + name, required=True)
-    command.add_argument('--operation', choices=('deployment', 'bridge-b', 'bridge-254'))
+    command.add_argument('--operation', choices=('deployment', 'bridge-b', 'bridge-254', 'demo-254-backup'))
     command.add_argument('--attempt-id')
     args = parser.parse_args(argv)
     if args.command != 'consume':

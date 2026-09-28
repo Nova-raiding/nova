@@ -27,6 +27,16 @@ export function verifyFrozenDemo254Plan(signedPlan, publicPem) {
   return signedPlan.freeze
 }
 
+export function signFrozenDemo254Plan(freeze, { privatePem, publicPem, keyId }) {
+  const privateKey = createPrivateKey(privatePem), publicKey = createPublicKey(publicPem)
+  check(privateKey.asymmetricKeyType === 'ed25519' && publicKey.asymmetricKeyType === 'ed25519'
+    && createPublicKey(privateKey).export({ type: 'spki', format: 'der' }).equals(publicKey.export({ type: 'spki', format: 'der' })), 'PLAN_SIGNING_KEY_MISMATCH')
+  const plan = { freeze, key_id: keyId }
+  plan.signature_base64 = sign(null, Buffer.from(canonical(plan)), privateKey).toString('base64')
+  verifyFrozenDemo254Plan(plan, publicPem)
+  return plan
+}
+
 export function signDemo254CaptureManifest({ review, attestation, signedPlan, privatePem, publicPem, keyId }) {
   check(review?.status === 'review_only_match' && SHA.test(review.migration_history_sha256)
     && SHA.test(review.frozen_sha256) && SHA.test(review.observation_sha256), 'SOURCE_REVIEW_MISSING')

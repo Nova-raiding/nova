@@ -2,12 +2,12 @@
 // Bundle this entry from an exact reviewed commit, then install via the
 // protected control installer. It never accepts a container name or DB URL.
 import { createHash } from 'node:crypto'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { captureSnapshot, createProtectedEnvironment, pgDumpArguments } from './attest-postgres-backup.mjs'
-import { captureDemo254Backup } from './capture-demo-254-backup.mjs'
+import { captureDemo254Backup, verifyFrozenDemo254Plan } from './capture-demo-254-backup.mjs'
 
 const ROOT = '/var/lib/merchant-release-security/backups'
 const TRUST = '/run/release-security/evidence-trust'
@@ -17,6 +17,8 @@ const PLAN = `${TRUST}/production-demo-254-backup-source-plan.json`
 const PRIVATE = '/var/lib/merchant-release-security/production-capability-private.pem'
 const PUBLIC = `${TRUST}/production-evidence-public.pem`
 const KEY_ID = `${TRUST}/production-evidence-key-id`
+const NONCE_CONSUMER = '/usr/local/libexec/merchant/consume-production-evidence-nonce'
+const NONCE_DIGEST = `${TRUST}/production-evidence-nonce-consumer-sha256`
 const DOCKER = '/usr/bin/docker'
 const DOCKER_HOST = 'unix:///var/run/docker.sock'
 const PSQL = '/usr/pgsql-16/bin/psql'
@@ -111,7 +113,8 @@ export function observeDemo254Topology(execute = run) {
   check(release?.data?.ready === true, 'PUBLIC_RELEASE_UNREADY')
   const metadata = release.data.release
   check(/^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(metadata?.release_id ?? '')
-    && /^[a-f0-9]{40}$/u.test(metadata?.release_git_sha ?? ''), 'PUBLIC_RELEASE_INVALID')
+    && /^[a-f0-9]{40}$/u.test(metadata?.release_git_sha ?? '')
+    && SHA.test(metadata?.manifest_sha256 ?? '') && /^sha256:[a-f0-9]{64}$/u.test(metadata?.image_set_digest ?? ''), 'PUBLIC_RELEASE_INVALID')
   const apiEnv = envMap(api)
   const resolved = execute(DOCKER, ['--host', DOCKER_HOST, 'exec', NAMES.api, 'getent', 'hosts', 'postgres'], 4096)
     .trim().split(/\s+/u)[0]
@@ -120,7 +123,7 @@ export function observeDemo254Topology(execute = run) {
     ops: endpoint(apiEnv.get('OPS_DATABASE_URL'), 'merchant_ops', pnet.ipv4) }
   const dbEnv = envMap(postgres)
   check(dbEnv.get('POSTGRES_DB') === 'merchant' && dbEnv.get('POSTGRES_USER') && dbEnv.get('POSTGRES_PASSWORD'), 'POSTGRES_CREDENTIALS_UNAVAILABLE')
-  return { observation: {
+  return { releaseIdentity: metadata, observation: {
     schema_version: 'demo-254-backup-source-observation/1', observed_at: new Date().toISOString(),
     public_route: { origin: 'https://yxsona.com', host: 'yxsona.com', path_prefix: '/api', release_id: metadata.release_id,
       git_sha: metadata.release_git_sha, gateway_id: gateway.Id, api_replica_id: api.Id },
@@ -130,7 +133,7 @@ export function observeDemo254Topology(execute = run) {
       ipv4: pnet.ipv4, volume_name: `${PROJECT}_merchant-postgres` }, connections,
   }, pg: { PGHOST: pnet.ipv4, PGPORT: '5432', PGDATABASE: 'merchant', PGUSER: dbEnv.get('POSTGRES_USER'), PGPASSWORD: dbEnv.get('POSTGRES_PASSWORD'), PGCONNECT_TIMEOUT: '10' } }
 }
-function queryMigrations(snapshot, pg) {
+export function queryDemo254Migrations(snapshot, pg) {
   check(/^[A-Za-z0-9:-]{1,256}$/u.test(snapshot), 'SNAPSHOT_INVALID')
   const sql = `BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY; SET TRANSACTION SNAPSHOT '${snapshot}'; SELECT json_build_object('name',current_database(),'oid',(SELECT oid FROM pg_database WHERE datname=current_database()),'system_identifier',(SELECT system_identifier::text FROM pg_control_system()),'server_version_num',current_setting('server_version_num')::integer,'migration_rows',(SELECT coalesce(json_agg(json_build_object('version',version,'name',name,'checksum',checksum) ORDER BY version),'[]'::json) FROM public.schema_migrations)); ROLLBACK;`
   const result = execFileSync(PSQL, ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-c', sql], { encoding: 'utf8', env: { ...createProtectedEnvironment(pg), PGOPTIONS: '-c default_transaction_read_only=on' }, timeout: 30_000, maxBuffer: 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -150,16 +153,26 @@ function dump(snapshot, path, pg) {
   })
 }
 function parseArgs(args) {
-  check(args.length === 7 && args[0] === 'create', 'EXACT_ARGS_REQUIRED')
+  check(args.length === 9 && args[0] === 'create', 'EXACT_ARGS_REQUIRED')
   const values = new Map()
   for (let i = 1; i < args.length; i += 2) {
-    check(['--release-id', '--attempt-id', '--approved-plan-sha256'].includes(args[i]) && !values.has(args[i]), 'ARG_INVALID')
+    check(['--release-id', '--attempt-id', '--approved-plan-sha256', '--nonce'].includes(args[i]) && !values.has(args[i]), 'ARG_INVALID')
     values.set(args[i], args[i + 1])
   }
   check(/^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(values.get('--release-id') ?? '')
-    && /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/u.test(values.get('--attempt-id') ?? '')
-    && SHA.test(values.get('--approved-plan-sha256') ?? ''), 'ARG_VALUE_INVALID')
-  return { releaseId: values.get('--release-id'), attemptId: values.get('--attempt-id'), planSha: values.get('--approved-plan-sha256') }
+    && /^[A-Za-z0-9_-]{16,39}$/u.test(values.get('--attempt-id') ?? '')
+    && SHA.test(values.get('--approved-plan-sha256') ?? '')
+    && /^[A-Za-z0-9_-]{22,128}$/u.test(values.get('--nonce') ?? ''), 'ARG_VALUE_INVALID')
+  return { releaseId: values.get('--release-id'), attemptId: values.get('--attempt-id'), planSha: values.get('--approved-plan-sha256'), nonce: values.get('--nonce') }
+}
+export function consumeDemo254BackupNonce({ nonce, attemptId, releaseIdentity }, execute = spawnSync) {
+  check(/^[A-Za-z0-9_-]{22,128}$/u.test(nonce) && /^[A-Za-z0-9_-]{16,128}$/u.test(attemptId), 'NONCE_INPUT_INVALID')
+  const args = ['consume', '--namespace', 'merchant-production-deploy', '--nonce', nonce,
+    '--release-id', releaseIdentity.release_id, '--image-digest', releaseIdentity.image_set_digest,
+    '--manifest-sha256', releaseIdentity.manifest_sha256, '--release-git-sha', releaseIdentity.release_git_sha,
+    '--operation', 'demo-254-backup', '--attempt-id', attemptId]
+  const result = execute(NONCE_CONSUMER, args, { encoding: 'utf8', env: {}, timeout: 30_000, maxBuffer: 4096 })
+  check(result.status === 0 && result.stdout?.trim() === 'nonce accepted', 'NONCE_CONSUMPTION_REJECTED')
 }
 async function main(args) {
   check(process.getuid?.() === 0 && process.geteuid?.() === 0, 'ROOT_REQUIRED')
@@ -167,26 +180,29 @@ async function main(args) {
   check(realpathSync(process.argv[1]) === INSTALLED, 'FIXED_INSTALL_REQUIRED')
   check(hash(protectedFile(INSTALLED)) === protectedFile(DIGEST, 128).toString('utf8').trim(), 'INSTALL_DIGEST_MISMATCH')
   for (const path of [process.execPath, DOCKER, PSQL, DUMP, CURL]) protectedFile(path, path === process.execPath ? 256 * 1024 * 1024 : 64 * 1024 * 1024)
-  const { releaseId, attemptId, planSha } = parseArgs(args)
+  const { releaseId, attemptId, planSha, nonce } = parseArgs(args)
   const planBytes = protectedFile(PLAN, 1024 * 1024, 0o444)
   check(hash(planBytes) === planSha, 'PLAN_DIGEST_MISMATCH')
   const signedPlan = JSON.parse(planBytes.toString('utf8'))
   check(signedPlan?.freeze?.public_route?.release_id === releaseId, 'PLAN_RELEASE_MISMATCH')
   const publicPem = protectedFile(PUBLIC), privatePem = protectedFile(PRIVATE, 8192, 0o600)
   const keyId = protectedFile(KEY_ID, 128).toString('utf8').trim()
+  verifyFrozenDemo254Plan(signedPlan, publicPem)
+  check(hash(protectedFile(NONCE_CONSUMER)) === protectedFile(NONCE_DIGEST, 128).toString('utf8').trim(), 'NONCE_CONSUMER_DIGEST_MISMATCH')
   protectedDirectory(ROOT)
   const output = join(ROOT, `${releaseId}-demo254-${attemptId}`)
-  mkdirSync(output, { mode: 0o700 }); protectedDirectory(output)
   const backupPath = join(output, 'before-upgrade-254.dump')
   const first = observeDemo254Topology()
   check(first.observation.public_route.release_id === releaseId, 'PUBLIC_RELEASE_MISMATCH')
+  consumeDemo254BackupNonce({ nonce, attemptId, releaseIdentity: first.releaseIdentity })
+  mkdirSync(output, { mode: 0o700 }); protectedDirectory(output)
   for (const name of Object.keys(process.env)) if (name.startsWith('PG')) delete process.env[name]
   Object.assign(process.env, first.pg)
   const collector = {
     observeTopology: async () => observeDemo254Topology().observation,
     snapshot: captureSnapshot,
     dump: (snapshot, path) => dump(snapshot, path, first.pg),
-    observeMigrations: snapshot => queryMigrations(snapshot, first.pg),
+    observeMigrations: snapshot => queryDemo254Migrations(snapshot, first.pg),
   }
   const result = await captureDemo254Backup({ signedPlan, planPublicPem: publicPem, privatePem, publicPem, keyId,
     backupPath, attestationPath: `${backupPath}.attestation.json`, checksumPath: `${backupPath}.sha256`, manifestPath: `${backupPath}.capture.json` }, collector)

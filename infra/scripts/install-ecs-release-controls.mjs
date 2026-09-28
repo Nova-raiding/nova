@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 export const CONTROLS = Object.freeze({
   backup: Object.freeze({ executable: 'attest-postgres-backup', digest: 'production-backup-attester-sha256' }),
   demo254Backup: Object.freeze({ executable: 'attest-demo-254-backup', digest: 'production-demo-254-backup-attester-sha256' }),
+  demo254Plan: Object.freeze({ executable: 'attest-demo-254-frozen-plan', digest: 'production-demo-254-plan-signer-sha256' }),
   restore: Object.freeze({ executable: 'restore-pg17-isolated', digest: 'production-pg17-restore-runner-sha256' }),
   pg17Plan: Object.freeze({ executable: 'attest-pg17-frozen-plan', digest: 'production-pg17-plan-signer-sha256' }),
   pg17BaselineBackup: Object.freeze({ executable: 'attest-pg17-backup-baseline', digest: 'production-pg17-baseline-backup-sha256' }),
