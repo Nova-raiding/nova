@@ -219,6 +219,9 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
       const requestedIdentityId = typeof params.identity_id === 'string' && params.identity_id.trim() ? params.identity_id.trim() : undefined
       const externalSubject = typeof params.external_subject === 'string' && params.external_subject.trim() ? params.external_subject.trim() : undefined
       if (!requestedIdentityId && !externalSubject) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'identity_id 或 external_subject 至少提供一个', 400)
+      const accountForRequest = (await passwordAuthRepository.listAccounts()).find(account =>
+        (!requestedIdentityId || account.identityId === requestedIdentityId)
+        && (!externalSubject || account.login === externalSubject))
       let identityDetail: IdentityOperationsDetail | undefined
       try {
         const repository = persistence.identities ?? memoryIdentities
@@ -226,17 +229,49 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
           ? undefined
           : await repository.resolve({ issuer: typeof params.issuer === 'string' && params.issuer.trim() ? params.issuer.trim() : 'urn:merchant:api-token', externalSubject: externalSubject! })
         if (requestedIdentityId || identity) identityDetail = await repository.detailForOperations(requestedIdentityId ?? identity!.id)
-      } catch (error) { mapIdentityLifecycleError(error) }
+      } catch (error) {
+        // The in-memory password repository can preseed a platform account
+        // without a lifecycle identity. Its account record is still authoritative.
+        if (!(accountForRequest?.accountType === 'platform' && (error as { code?: string }).code === 'IDENTITY_NOT_FOUND')) mapIdentityLifecycleError(error)
+      }
+      if (!identityDetail && accountForRequest?.identityId) {
+        try {
+          identityDetail = await (persistence.identities ?? memoryIdentities).detailForOperations(accountForRequest.identityId)
+        } catch (error) {
+          if (!(accountForRequest.accountType === 'platform' && (error as { code?: string }).code === 'IDENTITY_NOT_FOUND')) mapIdentityLifecycleError(error)
+        }
+      }
+      if (accountForRequest?.accountType === 'platform') {
+        // A platform login must never inherit a historical workspace member
+        // row with the same subject or identity in its account detail.
+        return ({
+          identity: {
+            ...(identityDetail?.identity ?? {}),
+            id: identityDetail?.identity.id ?? accountForRequest.identityId,
+            externalSubject: accountForRequest.login,
+            displayName: identityDetail?.identity.displayName || accountForRequest.contactName || accountForRequest.login,
+            accountType: 'platform',
+            membershipCount: 0,
+            activeMembershipCount: 0,
+            firstSeenAt: identityDetail?.identity.firstSeenAt ?? accountForRequest.createdAt,
+            lastUpdatedAt: identityDetail?.identity.updatedAt ?? accountForRequest.updatedAt,
+          },
+          memberships: [],
+          audits: [],
+          sessions: identityDetail?.sessions.map(({ providerSessionHash: _providerSessionHash, ipHash: _ipHash, userAgentHash: _userAgentHash, ...session }) => session) ?? [],
+          lifecycleEvents: identityDetail?.events.map(event => ({
+            id: event.id,
+            eventType: event.eventType,
+            actorId: event.actorId,
+            reason: redactAuditReason(event.reason),
+            evidence: redactAuditEvidence(event.evidence),
+            createdAt: event.createdAt,
+          })) ?? [],
+        })
+      }
       const allWorkspaceIds = persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [...knownWorkspaces]
       const memberRepository = persistence.members ?? memoryMembers
-      const accountForSubject = externalSubject
-        ? (await passwordAuthRepository.listAccounts()).find(account => account.login === externalSubject)
-        : undefined
-      if (!identityDetail && accountForSubject?.identityId) {
-        try {
-          identityDetail = await (persistence.identities ?? memoryIdentities).detailForOperations(accountForSubject.identityId)
-        } catch (error) { mapIdentityLifecycleError(error) }
-      }
+      const accountForSubject = accountForRequest
       const resolvedIdentityId = requestedIdentityId ?? identityDetail?.identity.id ?? accountForSubject?.identityId
       // One membership is a point lookup, not a directory read: asking the
       // repository for the subject keeps this endpoint off the path that used to

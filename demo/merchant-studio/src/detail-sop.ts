@@ -19,10 +19,22 @@ export type DetailSopStep = (typeof DETAIL_SOP_STEPS)[number] & {
   statusDetail: string
 }
 
-type SopModule = { key?: unknown; contentKind?: unknown; body?: unknown; decisionContract?: unknown }
+type SopModule = { key?: unknown; title?: unknown; contentKind?: unknown; body?: unknown; decisionContract?: unknown }
 
-export function resolveDetailSopSteps(modules: readonly SopModule[] | undefined): DetailSopStep[] {
-  return DETAIL_SOP_STEPS.map((step, index) => {
+const cookwareCategoryPattern = /(?:锅具|炒锅|煎锅|汤锅|奶锅|蒸锅|炖锅|cookware|frying\s*pan|saucepan|stockpot)/iu
+
+export function resolveDetailSopSteps(modules: readonly SopModule[] | undefined, category?: string): DetailSopStep[] {
+  // The fixed eight buyer questions describe cookware. For other categories,
+  // show only modules the current content version actually contains; a missing
+  // review, FAQ or warranty must never appear as a completed page section.
+  const steps = category && cookwareCategoryPattern.test(category.normalize('NFKC').trim())
+    ? DETAIL_SOP_STEPS
+    : (modules ?? []).filter((module, index, all) => typeof module.key === 'string' && module.key.trim() && all.findIndex(candidate => candidate.key === module.key) === index).map(module => {
+        const presentation = moduleDecisionPresentation(module)
+        const key = (module.key as string).trim()
+        return { key, label: typeof module.title === 'string' && module.title.trim() ? module.title.trim() : key, question: presentation.contract?.buyerQuestion ?? '买家问题待补录' }
+      })
+  return steps.map((step, index) => {
     const module = modules?.find(candidate => candidate.key === step.key)
     const presentation = module ? moduleDecisionPresentation(module) : null
     return { ...step, position: index + 1, disposition: presentation?.disposition ?? 'pending', evidenceStatus: presentation?.evidenceStatus ?? 'pending', statusLabel: presentation?.label ?? '待生成', statusDetail: presentation?.detail ?? '当前内容版本尚未提供这一屏的决策合同。' }

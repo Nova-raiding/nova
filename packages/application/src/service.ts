@@ -2929,8 +2929,13 @@ export class MerchantService {
           ...knowledgeContext.assets.map(asset => `资产[${asset.name}] ${typeof asset.content === 'string' ? asset.content : JSON.stringify(asset.content)}`),
           ...(knowledgeContext.documents ?? []).map(document => `商品知识[${document.title}] ${document.content}`),
           ...knowledgeContext.confirmedLearningSuggestions.map(item => `学习建议 ${item.summary}；拟规则：${item.proposedRule.content}`),
-        ].map(value => value.trim()).filter(Boolean).slice(0, 16)
+        ].map(value => value.trim()).filter(Boolean)
       : []
+    // The context builder retains every blocking rule. Silently taking the
+    // first 16 facts could remove a later rule from the image provider brief.
+    // Require the operator to narrow the approved context before any job or
+    // billable provider attempt is created.
+    if (knowledgeFacts.length > 16 || knowledgeFacts.some(fact => fact.length > 240)) throw new DomainError('IMAGE_KNOWLEDGE_CONTEXT_EXCEEDED', '图片生成知识上下文超过模型输入上限，请缩小适用规则或素材范围后重试', 413, { fact_count: knowledgeFacts.length, max_fact_length: Math.max(0, ...knowledgeFacts.map(fact => fact.length)), limit: 16, max_fact_length_limit: 240 })
     const confirmedSellingPoints = [...new Set([
       ...(task?.productionPlan?.sellingPoints ?? product.sellingPoints?.filter(item => item.proofStatus === 'confirmed').map(item => item.text) ?? []),
       ...(requestedMarketingBrief?.sellingPoints ?? []),

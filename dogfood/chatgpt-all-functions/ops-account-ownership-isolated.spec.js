@@ -4,7 +4,7 @@ import { openPlatformConsole } from './ops-auth.js'
 test.use({ channel: 'chrome' })
 test.setTimeout(120_000)
 
-test('separates platform operators from merchant members', async ({ page }) => {
+test('separates platform operators from merchant members', async ({ page }, testInfo) => {
   const operator = process.env.OPS_TEST_USERNAME
   if (!operator) throw new Error('OPS_TEST_USERNAME is required')
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -12,11 +12,14 @@ test('separates platform operators from merchant members', async ({ page }) => {
   await page.locator('#ops-primary-navigation').getByRole('button', { name: '用户中心', exact: true }).click()
   const filters = page.getByRole('form', { name: '用户目录筛选' })
   await expect(filters).toBeVisible()
+  await expect(page.locator('.ant-card[aria-busy]')).toHaveAttribute('aria-busy', 'false')
   await expect(page.getByText('商户用户', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('table', { name: '用户目录数据表' })).not.toContainText(operator)
+  await testInfo.attach('merchant-directory', { body: await page.screenshot(), contentType: 'image/png' })
 
   await filters.getByRole('combobox', { name: '按账号归属筛选用户目录' }).click()
   await page.locator('.ant-select-dropdown:visible').getByText('运营平台用户', { exact: true }).click()
+  await expect(page.locator('.ant-card[aria-busy]')).toHaveAttribute('aria-busy', 'false')
   const table = page.getByRole('table', { name: '用户目录数据表' })
   await expect(table).toContainText(operator)
   await expect(page.getByText(/当前筛选：\d+ 条运营平台账号/u)).toBeVisible()
@@ -26,4 +29,5 @@ test('separates platform operators from merchant members', async ({ page }) => {
   const detail = page.getByRole('dialog', { name: '运营平台账号详情' })
   await expect(detail).toContainText('此账号属于运营平台')
   await expect(detail.getByRole('heading', { name: '旧版套餐与任务额度快照' })).toHaveCount(0)
+  await testInfo.attach('platform-account-detail', { body: await page.screenshot(), contentType: 'image/png' })
 })

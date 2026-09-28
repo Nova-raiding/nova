@@ -22,6 +22,7 @@ describe('spreadsheet batch import mapping', () => {
     expect(() => spreadsheetFactsToBatchProducts({ format: 'csv', rows: [] })).toThrowError(SpreadsheetBatchImportError)
     expect(() => spreadsheetFactsToBatchProducts({ format: 'xlsx', rows: [{ A1: '平台' }, { A2: 'taobao' }] })).toThrowError('必须包含 platform 和 title 表头')
     expect(() => spreadsheetFactsToBatchProducts({ format: 'xlsx', rows: [{ A1: 'platform', B1: 'title' }, { A2: 'taobao', B2: '' }] })).toThrowError('第 2 行title不能为空')
+    expect(() => spreadsheetFactsToBatchProducts({ format: 'xlsx', rows: [{ A1: '平台', B1: '商品名称' }, { A2: '未知平台', B2: '运动鞋' }] })).toThrowError('第 2 行不支持平台“未知平台”')
   })
 
   it('parses CSV rows and maps quoted cells through the same adapter', async () => {

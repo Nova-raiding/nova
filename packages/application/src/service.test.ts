@@ -571,6 +571,30 @@ describe('MerchantService', () => {
     expect(job.visualBrief?.knowledgeFacts).toEqual(expect.arrayContaining(['规则[v3] 主图不得宣称防水', '资产[材质说明] 面料：再生涤纶']))
   })
 
+  it('blocks image generation before enqueue when approved knowledge would be silently truncated', () => {
+    const service = new MerchantService({
+      fixtureMode: true,
+      knowledgeContextProvider: () => ({
+        rules: Array.from({ length: 17 }, (_, index) => ({ id: `rule-${index}`, content: `图片限制 ${index}`, version: 'v1', sourceReference: `ops://rule/${index}` })),
+        assets: [],
+        confirmedLearningSuggestions: [],
+      }),
+    })
+    const jobsBefore = service.imageGenerationJobs.size
+    expect(() => service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'too-many-image-rules', count: 1 }))
+      .toThrowError(expect.objectContaining({ code: 'IMAGE_KNOWLEDGE_CONTEXT_EXCEEDED' }))
+    expect(service.imageGenerationJobs.size).toBe(jobsBefore)
+  })
+
+  it('rejects an image knowledge fact longer than the relay prompt limit', () => {
+    const service = new MerchantService({ fixtureMode: true, knowledgeContextProvider: () => ({
+      rules: [{ id: 'long-rule', content: '禁止宣称'.repeat(60), version: 'v1', sourceReference: 'ops://long-rule' }],
+      assets: [], confirmedLearningSuggestions: [],
+    }) })
+    expect(() => service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'long-image-rule' }))
+      .toThrowError(expect.objectContaining({ code: 'IMAGE_KNOWLEDGE_CONTEXT_EXCEEDED' }))
+  })
+
   it('keeps the image provider action stable while allowing an explicit shared budget run', async () => {
     const generate = vi.fn(async () => ['data:image/png;base64,aW1hZ2U='])
     const service = new MerchantService({ fixtureMode: true, imageGenerator: { generate } })

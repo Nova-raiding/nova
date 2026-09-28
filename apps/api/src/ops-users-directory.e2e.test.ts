@@ -173,6 +173,25 @@ describe('ops.users.list platform directory', () => {
     expect((await call({ account_type: 'other' })).error?.code).toBe('INVALID_REQUEST')
   })
 
+  it('keeps a platform account detail free of a historical same-subject workspace member', async () => {
+    const { id, workspaces } = await seedDirectory()
+    const subject = `directory-platform-${id}@example.com`
+    // The preseeded account has a password identity but no lifecycle row in
+    // this fixture; a stale member with the same subject must not redefine it.
+    await workspaceMembers.upsert({ workspaceId: workspaces[0]!, externalSubject: subject, displayName: '旧成员记录', role: 'operator', status: 'active', invitedBy: 'directory-test' })
+    const base = await start()
+    const call = (params: Record<string, string>) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer directory-test', 'x-role': 'platform_admin', 'x-ops-workbench': 'platform', 'x-workspace-id': workspaces[0]!, 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ops.user.detail', params }),
+    }).then(async response => await response.json() as Envelope<{ result: any }>)
+    const detail = await call({ external_subject: subject })
+    expect(detail.error).toBeNull()
+    expect(detail.data?.result).toMatchObject({ identity: { externalSubject: subject, accountType: 'platform', membershipCount: 0, activeMembershipCount: 0 }, memberships: [], audits: [] })
+    const byIdentity = await call({ identity_id: detail.data!.result.identity.id })
+    expect(byIdentity.data?.result).toMatchObject({ identity: { externalSubject: subject, accountType: 'platform', membershipCount: 0 }, memberships: [] })
+  })
+
   it('exports the same directory and resolves a subject detail across its workspaces', async () => {
     const { id, workspaces } = await seedDirectory()
     const base = await start()

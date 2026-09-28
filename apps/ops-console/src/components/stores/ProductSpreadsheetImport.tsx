@@ -25,10 +25,28 @@ export function productImportNextStep(workspaceId: string | undefined, imported:
   };
 }
 type Product = Record<string, unknown> & { skus?: Array<{ id: string; name: string; price: number; stock: number; attributes?: Record<string, string>; images?: string[]; sourceAssetIds?: string[] }> };
+export function productImportBatchParams(assetId: string, products: readonly Product[]) {
+  const draftOnly = products.some(product => typeof product.account_id !== 'string' || !product.account_id.trim());
+  if (draftOnly && products.some(product => typeof product.account_id === 'string' && product.account_id.trim())) throw new Error('同一批次不能混合有店铺账号和无店铺账号的商品；请拆成正式店铺导入与知识草稿两份表格。');
+  return { params: { source_asset_id: assetId, ...(draftOnly ? { draft_only: 'true' } : {}) }, draftOnly };
+}
 const templateRows = [
   ["平台", "商品货号", "商品名称", "类目", "SKU编码", "SKU名称", "颜色", "尺码", "SKU价格", "SKU库存", "SKU图片链接", "SKU原图素材ID", "素材ID", "店铺账号", "平台商品ID", "商品价格", "商品库存", "商品图片", "店铺名称", "店铺差异化", "品牌", "材质", "商品规格", "SKU规格", "卖点1", "卖点1来源ID", "卖点2", "卖点2来源ID", "卖点3", "卖点3来源ID"],
-  ["jd", "JACKET-001", "女士防风冲锋衣", "服装", "JACKET-BLUE-M", "浅蓝色 M码", "浅蓝色", "M", "199", "20", ...Array(20).fill("")],
-  ["jd", "JACKET-001", "女士防风冲锋衣", "服装", "JACKET-BLUE-L", "浅蓝色 L码", "浅蓝色", "L", "199", "15", ...Array(20).fill("")],
+  ["jd", "", "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42", "儿童跑步鞋", "10137064435110", "雾霾蓝 42", "雾霾蓝", "42", "399.2", "99", "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg", "", "", "", "10137064435110", "", "", "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg", "贵人鸟母婴旗舰店", "", "贵人鸟", "", "", "雾霾蓝 / 42", "", "", "", "", "", ""],
+];
+const templateRequirements = [
+  "必填", "与平台商品ID二选一（有SKU时）", "必填", "选填", "有SKU时必填", "选填", "选填", "选填", "与商品价格二选一（有SKU时）", "与商品库存二选一（有SKU时）", "选填", "选填，须为当前工作区已审核素材", "选填，须为当前工作区素材", "正式店铺导入必填；知识草稿可留空", "与商品货号二选一（有SKU时）", "选填；可作为SKU价格后备值", "选填；可作为SKU库存后备值", "选填", "选填；应与所选店铺一致", "选填", "选填", "选填，需有来源证据", "选填", "选填", "选填；填写时需来源ID", "填写卖点1时必填", "选填；填写时需来源ID", "填写卖点2时必填", "选填；填写时需来源ID", "填写卖点3时必填",
+];
+const templateNotes = [
+  ["填写说明", "一行一个 SKU。同平台、同店铺账号、同商品货号或平台商品ID 合并为一个商品；首张工作表第 1 行列名请勿修改。"],
+  ["示例来源", "https://item.jd.com/10137064435110.html；商品标题、类目、规格、图片及店铺名称来自此前公开页面核验记录。"],
+  ["价格和库存", "示例中的 399.2 元和 99 件由用户提供，未从京东页面独立核验；导入前请核对适用 SKU 和库存时点。"],
+  ["空白字段", "商家内部货号、店铺账号、工作区素材ID、材质、卖点及来源证据尚未取得，不能编造或写入“待提供”后导入。"],
+  ["草稿与店铺", "店铺账号空白时仅导入待审核知识草稿；正式店铺导入须填写当前工作区已登记且有权限的店铺账号。"],
+  ["知识状态", "导入商品和 SKU 后，知识记录仍为待审核、权益未知、待索引；品牌规则、资质、禁用词等需分别走知识库或素材流程。"],
+  ["图片链接", "图片 URL 只是来源线索，不等于当前工作区已扫描且获得授权的原图素材。"],
+  ["字段", "填写要求"],
+  ...templateRows[0]!.map((header, index) => [header, templateRequirements[index] ?? "选填"]),
 ];
 function excelColumn(index: number): string {
   let value = index + 1;
@@ -43,11 +61,13 @@ function excelColumn(index: number): string {
 export async function productImportTemplate(): Promise<Blob> {
   const zip = new JSZip();
   const xml = (text: string) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-  zip.file("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>');
+  const sheetXml = (rows: string[][]) => '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + rows.map((row, i) => `<row r="${i + 1}">${row.map((value, j) => `<c r="${excelColumn(j)}${i + 1}" t="inlineStr"><is><t>${xml(value)}</t></is></c>`).join("")}</row>`).join("") + '</sheetData></worksheet>';
+  zip.file("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>');
   zip.file("_rels/.rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
-  zip.file("xl/workbook.xml", '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="商品与SKU" sheetId="1" r:id="rId1"/></sheets></workbook>');
-  zip.file("xl/_rels/workbook.xml.rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
-  zip.file("xl/worksheets/sheet1.xml", '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + templateRows.map((row, i) => `<row r="${i + 1}">${row.map((value, j) => `<c r="${excelColumn(j)}${i + 1}" t="inlineStr"><is><t>${xml(value)}</t></is></c>`).join("")}</row>`).join("") + '</sheetData></worksheet>');
+  zip.file("xl/workbook.xml", '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="商品与SKU" sheetId="1" r:id="rId1"/><sheet name="填写说明" sheetId="2" r:id="rId2"/></sheets></workbook>');
+  zip.file("xl/_rels/workbook.xml.rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>');
+  zip.file("xl/worksheets/sheet1.xml", sheetXml(templateRows));
+  zip.file("xl/worksheets/sheet2.xml", sheetXml(templateNotes));
   return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
@@ -135,10 +155,11 @@ export function ProductSpreadsheetImport({ workspaceId, canWrite, platformScope 
     const run = epoch.current; setBusy(true); setError(""); setPhase("正在导入商品和 SKU…");
     try {
       await rpc("asset.facts.confirm", { asset_id: assetId, facts_json: JSON.stringify(facts), reason: "运营核对 Excel 商品与 SKU 预览后确认导入" });
-      const result = await rpc<{ products: Array<{ id: string }> }>("catalog.import.batch", { source_asset_id: assetId }, { timeoutMs: 120_000 });
+      const { params, draftOnly } = productImportBatchParams(assetId, products);
+      const result = await rpc<{ products: Array<{ id: string }> }>("catalog.import.batch", params, { timeoutMs: 120_000 });
       if (!result?.products?.length) throw new Error("服务端未返回导入结果，请查询商品后再重试。");
       if (run !== epoch.current) return;
-      setImported(result.products.map(item => item.id)); setPhase(`已导入 ${result.products.length} 个商品到当前工作区；商品事实仍需确认。`);
+      setImported(result.products.map(item => item.id)); setPhase(`已导入 ${result.products.length} 个商品到当前工作区${draftOnly ? '的待审核知识草稿' : ''}；商品事实仍需确认。`);
     } catch (e) { if (run === epoch.current) { setPhase(''); setError(e instanceof Error ? e.message : "导入失败"); } }
     finally { if (run === epoch.current) setBusy(false); }
   };
@@ -149,6 +170,7 @@ export function ProductSpreadsheetImport({ workspaceId, canWrite, platformScope 
   const rows = products.flatMap((p, index) => p.skus?.length ? p.skus.map(sku => ({ key: `${index}:${sku.id}`, title: String(p.title), productKey: String(p.local_product_key ?? p.remote_id ?? ""), sku: sku.id, color: sku.attributes?.color ?? "—", size: sku.attributes?.size ?? "—", skuSpecification: sku.attributes?.specification ?? "—", price: sku.price, stock: sku.stock, images: (sku.images?.length ?? 0) + (sku.sourceAssetIds?.length ?? 0), ...productKnowledge(p) })) : [{ key: String(index), title: String(p.title), productKey: String(p.local_product_key ?? p.remote_id ?? ""), sku: "—", color: "—", size: "—", skuSpecification: "—", price: p.price as number, stock: p.stock as number, images: Array.isArray(p.images) ? p.images.length : 0, ...productKnowledge(p) }]);
   const nextStep = imported.length ? productImportNextStep(workspaceId, imported) : undefined;
   const unboundProducts = products.filter(product => typeof product.account_id !== 'string' || !product.account_id.trim());
+  const mixedAccountScope = unboundProducts.length > 0 && unboundProducts.length < products.length;
   return <Card title="商品与 SKU · Excel 导入">
     <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
       <Typography.Paragraph style={{ margin: 0 }}>每行填写一个 SKU，相同商品货号自动合并。支持 Excel 和 CSV；先预览，再导入。商品知识列支持品牌、材质、规格和最多 3 条带来源 ID 的卖点；品牌规则、禁用词和资质请在知识库与素材流程单独录入。图片链接和原图素材按 SKU 分别保存，原图素材必须属于当前客户。</Typography.Paragraph>
@@ -162,7 +184,7 @@ export function ProductSpreadsheetImport({ workspaceId, canWrite, platformScope 
       {fileName && <Typography.Text type="secondary">当前文件：{fileName}</Typography.Text>}
       {error && <div role="alert"><Alert type="error" showIcon title={error} /></div>}
       {phase && <div aria-live="polite"><Alert type={imported.length ? "success" : "info"} showIcon title={phase} /></div>}
-      {!!rows.length && <><Typography.Text>预览：{products.length} 个商品，{rows.length} 行 SKU / 商品记录</Typography.Text>{!!unboundProducts.length && <Alert type="warning" showIcon title={`${unboundProducts.length} 个商品未填写店铺账号，生产环境导入会被拒绝；请填写已登记的账号后重新上传。`} />}<Table size="small" dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 1450 }} columns={[{ title: "商品", dataIndex: "title" }, { title: "货号", dataIndex: "productKey" }, { title: "SKU编码", dataIndex: "sku" }, { title: "颜色", dataIndex: "color" }, { title: "尺码", dataIndex: "size" }, { title: "SKU规格", dataIndex: "skuSpecification" }, { title: "品牌", dataIndex: "brand" }, { title: "材质", dataIndex: "material" }, { title: "商品规格", dataIndex: "specification" }, { title: "待确认卖点数", dataIndex: "sellingPoints" }, { title: "价格（元）", dataIndex: "price" }, { title: "库存", dataIndex: "stock" }, { title: "图片数", dataIndex: "images" }]} /><Button type="primary" disabled={!enabled || busy || !!imported.length || !!unboundProducts.length} loading={busy} onClick={() => void commit()}>{imported.length ? "已导入" : "确认预览并导入"}</Button></>}
+      {!!rows.length && <><Typography.Text>预览：{products.length} 个商品，{rows.length} 行 SKU / 商品记录</Typography.Text>{mixedAccountScope ? <Alert type="error" showIcon title="同一批次混合了有店铺账号和无店铺账号的商品，请拆成正式店铺导入与知识草稿两份表格。" /> : !!unboundProducts.length && <Alert type="warning" showIcon title={`${unboundProducts.length} 个商品未填写店铺账号，将整批按待审核知识草稿导入；填写已登记店铺账号后才可导入正式店铺商品。`} />}<Table size="small" dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 1450 }} columns={[{ title: "商品", dataIndex: "title" }, { title: "货号", dataIndex: "productKey" }, { title: "SKU编码", dataIndex: "sku" }, { title: "颜色", dataIndex: "color" }, { title: "尺码", dataIndex: "size" }, { title: "SKU规格", dataIndex: "skuSpecification" }, { title: "品牌", dataIndex: "brand" }, { title: "材质", dataIndex: "material" }, { title: "商品规格", dataIndex: "specification" }, { title: "待确认卖点数", dataIndex: "sellingPoints" }, { title: "价格（元）", dataIndex: "price" }, { title: "库存", dataIndex: "stock" }, { title: "图片数", dataIndex: "images" }]} /><Button type="primary" disabled={!enabled || busy || !!imported.length || mixedAccountScope} loading={busy} onClick={() => void commit()}>{imported.length ? "已导入" : unboundProducts.length ? "确认预览并导入知识草稿" : "确认预览并导入"}</Button></>}
       {!!imported.length && <Alert type="success" showIcon message="导入完成" description={<Space direction="vertical" size={4}>
         <Typography.Text>{nextStep?.binding}</Typography.Text>
         <Typography.Text>{nextStep?.prompt}</Typography.Text>

@@ -66,6 +66,7 @@ function nonNegativeNumber(value: unknown, row: number, field: string, integer =
 }
 
 const productIdentityFields = ['title', 'category', 'local_product_key', 'remote_id', 'store_name', 'store_differentiation', 'attributes', 'selling_points']
+const supportedPlatforms = new Set(['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'])
 
 /** Merge one row's product-level fields into the group that already holds the
  * same platform identity. Two rows of the same product may only disagree on
@@ -114,6 +115,7 @@ export function spreadsheetFactsToBatchProducts(facts: Record<string, unknown>):
     const platformText = text('platform').toLowerCase()
     const platform = platforms[platformText] ?? platformText
     if (!platform) throw new SpreadsheetBatchImportError(rowNumber, 'platform不能为空')
+    if (!supportedPlatforms.has(platform)) throw new SpreadsheetBatchImportError(rowNumber, `不支持平台“${text('platform')}”，请填写京东、淘宝、天猫、拼多多、小红书或抖音`)
     if (!title) throw new SpreadsheetBatchImportError(rowNumber, 'title不能为空')
     const assetIds = splitList(row.asset_ids)
     const images = splitList(row.images)
