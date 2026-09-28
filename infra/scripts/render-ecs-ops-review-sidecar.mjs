@@ -161,7 +161,7 @@ export function render(argv = process.argv.slice(2)) {
   protectedPath(args['cert-dir'], 'directory')
   protectedPath(args['output-dir'], 'directory', 0o700)
   protectedPath(join(args['cert-dir'], 'fullchain.pem'), 'file')
-  protectedPath(join(args['cert-dir'], 'privkey.pem'), 'file')
+  protectedPath(join(args['cert-dir'], 'privkey.pem'), 'file', 0o600)
   const certificate = new X509Certificate(readFileSync(join(args['cert-dir'], 'fullchain.pem')))
   assert(certificate.checkHost('ops.yxsona.com') && Date.parse(certificate.validTo) > Date.now(), 'certificate does not cover ops.yxsona.com')
   const compose = JSON.parse(readFileSync(args['base-compose'], 'utf8'))
