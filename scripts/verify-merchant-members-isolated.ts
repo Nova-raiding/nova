@@ -89,6 +89,17 @@ async function verify(context: OpsE2eContext) {
     await expect(page.getByRole('table', { name: '工作区成员列表' })).toContainText('隔离成员管理员', { timeout: 30_000 })
     await expect(page.getByRole('form', { name: '邀请工作区成员' })).toBeVisible()
     await expect(page.getByRole('alert')).toHaveCount(0)
+    // Exercise the shared HttpOnly password session directly so browser-side
+    // issuance serialization cannot conceal a server token-row deadlock.
+    const concurrentIssuance = await page.evaluate(async (workspaceId) => Promise.all(Array.from({ length: 4 }, async () => {
+      const response = await fetch('/api/v1/auth/mcp-token', {
+        method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workspace_id: workspaceId }),
+      })
+      const payload = await response.json() as { error?: { code?: string } }
+      return { status: response.status, code: payload.error?.code ?? null }
+    })), fixture.workspaceId)
+    expect(concurrentIssuance).toEqual(Array.from({ length: 4 }, () => ({ status: 200, code: null })))
     await page.screenshot({ path: resolve(output, 'merchant-members-read.png'), fullPage: true })
 
     const invited = `invited-${randomUUID()}@fixture.invalid`
@@ -117,7 +128,7 @@ async function verify(context: OpsE2eContext) {
     expect((await members.list(fixture.workspaceId)).find(member => member.externalSubject === invited)?.status).toBe('suspended')
     expect(pageErrors).toEqual([])
     await page.screenshot({ path: resolve(output, 'merchant-members-invited.png'), fullPage: true })
-    await writeFile(resolve(output, 'result.json'), JSON.stringify({ status: 'passed', auth: 'real-isolated-merchant-password-and-scoped-mcp-bearer', workspaceId: fixture.workspaceId, readVisible: true, invitePersisted: true, roleChangePersisted: true, suspendPersisted: true, browserErrors: pageErrors, productionBrowser: false }, null, 2), { mode: 0o600 })
+    await writeFile(resolve(output, 'result.json'), JSON.stringify({ status: 'passed', auth: 'real-isolated-merchant-password-and-scoped-mcp-bearer', workspaceId: fixture.workspaceId, readVisible: true, concurrentIssuance, invitePersisted: true, roleChangePersisted: true, suspendPersisted: true, browserErrors: pageErrors, productionBrowser: false }, null, 2), { mode: 0o600 })
   } finally {
     await browser?.close().catch(() => undefined)
     if (gateway?.listening) await new Promise<void>(resolveClose => gateway!.close(() => resolveClose()))
