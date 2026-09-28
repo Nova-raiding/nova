@@ -29,7 +29,9 @@ async function openIsolatedMerchant(path, entitlement) {
     } else data = { items: [], total: 0, limit: 50, offset: 0 }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(data)) })
   })
-  await page.goto(`${studioUrl}${path}`, { waitUntil: 'domcontentloaded' })
+  // The candidate URL ends with `/`; resolve the route so the browser never
+  // receives a protocol-relative `//merchant/...` path.
+  await page.goto(new URL(path, studioUrl).href, { waitUntil: 'domcontentloaded' })
   return { browser, context, page }
 }
 
