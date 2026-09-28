@@ -12,4 +12,8 @@
 
 隔离浏览器最新运行：`artifacts/ops-jit-isolation/2026-09-28T03-39-04.824Z-e0454b75-00a4-47ee-94fb-1f81312fe275/`。`manual-import-browser-evidence.json` 的 `wrong_xlsx_rejected`、`wrong_csv_rejected`、`correct_xlsx_imported`、`merchant_visible` 均为 `true`；`runtime.json` 记载 `http://127.0.0.1:...`、PG/Redis ready、严格授权；`fixture-disposal-*.json` 记载两容器停止、`leftRunning=[]`、`externalContainersTouched=false`。定向 API/UI/隔离门禁共 54 项通过。
 
-原生 macOS 文件选择器「打开」禁用的根因尚未确定。Playwright `setInputFiles` 已验证真实 Ops 表单在 Chromium 中接受 XLSX/CSV 并触发解析预览；不能以此宣称 macOS 原生 picker 已修复。101 当前运行的 API 为 `f48c8454...`，本轮隔离代码的浏览器正向结果也不能当作 101 已部署验收。
+2026-09-28 12:56 UTC 再次运行专用隔离 runner：`OPS_E2E_MANUAL_OPERATIONS=true node --import tsx scripts/run-ops-password-e2e.ts dogfood/chatgpt-all-functions/ops-manual-import-isolated.spec.js --workers=1`，Playwright 1/1 通过。证据目录为 `artifacts/ops-jit-isolation/2026-09-28T12-56-02.338Z-73561442-fc0f-4ec2-81dc-d6a5e56d9697/`：两个错误店铺文件均被拒绝，正确 XLSX 已导入，隔离商家可见；运行时为 loopback、PostgreSQL/Redis ready、模型未配置且未调用。清理回执记录两个 fixture 容器停止、`leftRunning=[]`、`externalContainersTouched=false`。这是隔离端功能证据，不是生产写入或线上验收。
+
+同日 12:54 UTC 的 `npm run deploy:101:status` 仍为 `release_approved=false`：公网 API 与 Ops health/release 探针成功，但容器库存含多个源码修订（API 双副本 `bb417660…`、商家 UI `f48c8454…`、Ops UI `fccee758…`、worker `ffcda399…`、payment `0fa18b78…`、pilot gateway `3567df1e…`），且正式 capability/capacity evidence 路径不可读。不得把 `/releasez ready=true` 或本次隔离导入通过写成完整部署验收。
+
+原生 macOS 文件选择器「打开」禁用的根因尚未确定。Playwright `setInputFiles` 已验证真实 Ops 表单在 Chromium 中接受 XLSX/CSV 并触发解析预览；不能以此宣称 macOS 原生 picker 已修复。原始 03:39 UTC 记录的 101 API 为 `f48c8454...`；12:54 UTC 复核时 API 双副本已变为 `bb417660...`，但其他组件仍混合多个 SHA，故隔离代码的浏览器正向结果不能当作完整 101 部署验收。
