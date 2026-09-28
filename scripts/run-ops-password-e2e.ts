@@ -320,7 +320,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const baseUrl = `http://127.0.0.1:${gatewayPort}`
     const merchantBaseUrl = merchantGatewayPort ? `http://127.0.0.1:${merchantGatewayPort}` : undefined
     if (scanPurpose) {
-      scannerSetup = startCustomerDeliveryScanFixture({ enabled: true, evidenceDir, startupTimeoutMs: scannerStartupTimeoutMs })
+      scannerSetup = startCustomerDeliveryScanFixture({ enabled: true, evidenceDir, startupTimeoutMs: scannerStartupTimeoutMs,
+        retainForDiagnostics: scanPurpose === 'product_import' })
       scanner = await scannerSetup
       if (stopping) throw new Error('OPS_E2E_INTERRUPTED_DURING_SCANNER_SETUP')
       if (scanner) scannerMonitor = monitorOpsE2eScanner(scanner)

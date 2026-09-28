@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   CUSTOMER_DELIVERY_CLAMAV_IMAGE, customerDeliveryScanRunPlan, customerDeliveryScanTimeout,
   collectCustomerDeliveryScanStartupDiagnostics, projectCustomerDeliveryScanState, sanitizeCustomerDeliveryScanLogs,
-  disposeCustomerDeliveryScanContainer, startCustomerDeliveryScanFixture, stopCustomerDeliveryScanFixture,
+  disposeCustomerDeliveryScanContainer, disposeRetainedCustomerDeliveryScanContainer, startCustomerDeliveryScanFixture, stopCustomerDeliveryScanFixture,
   unidentifiedCustomerDeliveryScanDisposal,
   validateCustomerDeliveryScanBindings, validateCustomerDeliveryScanReadiness, verifyCustomerDeliveryScanContainer,
   type ScanContainerInspection,
@@ -72,6 +72,17 @@ describe('customer delivery real-scan harness safety guards (not live scan accep
     for (const forbidden of ['--volume', '-v', '--mount', '--volumes-from', '--env-file', '--privileged', '--network=host', '--entrypoint']) expect(plan.args).not.toContain(forbidden)
     expect(() => customerDeliveryScanRunPlan({ runId: '../shared', evidenceDir: '/tmp/test' })).toThrow('IDENTITY_INVALID')
   })
+  it('retains only the explicitly requested isolated container for diagnostics', () => {
+    const retained = customerDeliveryScanRunPlan({ runId, evidenceDir: '/tmp/scan-guard-test', retainForDiagnostics: true })
+    expect(retained.args.slice(0, 3)).toEqual(['run', '--detach', '--pull=never'])
+    expect(retained.args).not.toContain('--rm')
+    expect(retained.args).toContain('127.0.0.1::3310')
+    expect(retained.args).toContain(`merchant.fixture.run-id=${runId}`)
+    expect(retained.args).toContain(CUSTOMER_DELIVERY_CLAMAV_IMAGE)
+    for (const forbidden of ['--volume', '-v', '--mount', '--volumes-from', '--env-file', '--privileged']) expect(retained.args).not.toContain(forbidden)
+    expect(verifyCustomerDeliveryScanContainer({ ...inspection(), autoRemove: false }, { ...owned, autoRemove: false })).toMatchObject({ autoRemove: false, hostPort: 49331 })
+    expect(() => verifyCustomerDeliveryScanContainer(inspection(), { ...owned, autoRemove: false })).toThrow('CONTAINER_IDENTITY_MISMATCH')
+  })
   it('accepts exact owned inspection', () => {
     expect(verifyCustomerDeliveryScanContainer(inspection(), owned)).toMatchObject({ hostPort: 49331, dataStorage: 'ephemeral-container-layer', autoRemove: true })
   })
@@ -107,6 +118,40 @@ describe('customer delivery real-scan harness safety guards (not live scan accep
     const failedStop = await disposeCustomerDeliveryScanContainer(owned, { inspect: async () => inspection(), stop: async () => { throw Error('stop failed') } })
     expect(failedStop.stopped).toEqual([])
     expect(failedStop.leftRunning).toHaveLength(1)
+  })
+  it('removes only the retained owned ID after verified inspection and confirms absence', async () => {
+    const retained = { ...owned, autoRemove: false }
+    const inspect = vi.fn(async (_id: string) => ({ ...inspection(), autoRemove: false }))
+    const stop = vi.fn(async (_id: string) => undefined)
+    const remove = vi.fn(async (_id: string) => undefined)
+    const exists = vi.fn(async (_id: string) => false)
+    expect(await disposeRetainedCustomerDeliveryScanContainer(retained, { inspect, stop, remove, exists })).toEqual({ stopped: [owned.id], leftRunning: [] })
+    for (const operation of [inspect, stop, remove, exists]) expect(operation).toHaveBeenCalledExactlyOnceWith(owned.id)
+    stop.mockClear(); remove.mockClear(); exists.mockClear()
+    expect(await disposeRetainedCustomerDeliveryScanContainer(retained, { inspect: async () => ({ ...inspection(), autoRemove: false, running: false }), stop, remove, exists })).toEqual({ stopped: [owned.id], leftRunning: [] })
+    expect(stop).not.toHaveBeenCalled()
+    expect(remove).toHaveBeenCalledExactlyOnceWith(owned.id)
+    expect(exists).toHaveBeenCalledExactlyOnceWith(owned.id)
+  })
+  it('never stops or removes a mismatched retained container and never claims unconfirmed removal', async () => {
+    const retained = { ...owned, autoRemove: false }
+    const stop = vi.fn(async (_id: string) => undefined)
+    const remove = vi.fn(async (_id: string) => undefined)
+    const exists = vi.fn(async (_id: string) => true)
+    for (const changes of [{ id: 'b'.repeat(64) }, { name: '/shared-scanner' }, { autoRemove: true },
+      { labels: { ...inspection().labels, 'merchant.fixture.run-id': 'another-run' } }]) {
+      const result = await disposeRetainedCustomerDeliveryScanContainer(retained, { inspect: async () => ({ ...inspection(), autoRemove: false, ...changes }), stop, remove, exists })
+      expect(result.stopped).toEqual([])
+      expect(result.leftRunning).toHaveLength(1)
+    }
+    expect(stop).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    expect(exists).not.toHaveBeenCalled()
+    const result = await disposeRetainedCustomerDeliveryScanContainer(retained, { inspect: async () => ({ ...inspection(), autoRemove: false }), stop, remove, exists })
+    expect(result.stopped).toEqual([])
+    expect(result.leftRunning).toHaveLength(1)
+    expect(remove).toHaveBeenCalledExactlyOnceWith(owned.id)
+    expect(exists).toHaveBeenCalledExactlyOnceWith(owned.id)
   })
   it('does not claim clean teardown when Docker creation lost its exact ID', () => {
     expect(unidentifiedCustomerDeliveryScanDisposal(false)).toEqual({ stopped: [], leftRunning: [] })
@@ -216,7 +261,7 @@ describe('customer delivery real-scan harness safety guards (not live scan accep
   })
   it('does not inherit secrets, inspect shared config, invoke mock scans or write credentials to evidence', () => {
     const source = readFileSync('scripts/customer-delivery-scan-fixture.ts', 'utf8')
-    for (const forbidden of ['...process.env', '.Config.Env', '--env-file', 'docker-compose', "docker(['rm'", "docker(['prune'", 'MemoryAssetScan', 'signedReceipt(', 'input.scanner']) expect(source).not.toContain(forbidden)
+    for (const forbidden of ['...process.env', '.Config.Env', '--env-file', 'docker-compose', "docker(['prune'", 'MemoryAssetScan', 'signedReceipt(', 'input.scanner']) expect(source).not.toContain(forbidden)
     expect(source).toContain('isolatedFixtureSpawnEnvironment()')
     expect(source).toContain("'--host', `unix://${socket}`, '--config', dockerConfig")
     expect(source).toContain("WORKER_API_CREDENTIALS: JSON.stringify({ scan:")
@@ -226,6 +271,10 @@ describe('customer delivery real-scan harness safety guards (not live scan accep
     expect(source).toContain("readFile(plan.cidFile, 'utf8')")
     expect(source).toContain('disposal ??=')
     expect(source).toContain("docker(['logs', '--tail', '100', id], true, true)")
+    expect(source).toContain("docker(['rm', id], true)")
+    expect(source).toContain('if (identityVerified)')
+    expect(source).toContain("sanitizeCustomerDeliveryScanLogs(await docker(['logs', '--tail', '100', owned.id], true, true))")
+    expect(source).toContain("{ mode: 0o600, flag: 'wx' }")
     expect(source).toContain('timeout: diagnostics ? 5_000')
     expect(source).toContain('verifiedOwned = { ...owned }')
     expect(source).toContain('startup-diagnostics.json')

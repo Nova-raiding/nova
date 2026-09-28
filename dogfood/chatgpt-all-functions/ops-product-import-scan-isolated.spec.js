@@ -51,13 +51,17 @@ test('downloads Ops XLSX, imports merchant draft through real scan, and keeps kn
     await expect(form.getByText('预览：1 个商品，1 个 SKU / 商品记录')).toBeVisible({ timeout: 90_000 })
     await expect(form.getByRole('alert')).toHaveCount(0)
     await form.screenshot({ path: join(evidenceDir, 'merchant-import-preview.png') })
-    const importPromise = studio.waitForResponse(response => response.url().endsWith('/api/v1/products/import/batch') && response.request().method() === 'POST')
+    const importPromise = studio.waitForResponse(response => response.url().endsWith('/api/mcp') && response.request().method() === 'POST'
+      && response.request().postDataJSON()?.method === 'catalog.import.batch')
     await form.getByRole('button', { name: '确认并创建草稿' }).click()
     const imported = await importPromise
     expect(imported.status()).toBe(200)
     const importBody = await imported.json()
-    const productId = importBody.data?.products?.[0]?.id ?? importBody.data?.products?.[0]?.product_id
-    expect(productId).toMatch(/^product_/u)
+    expect(importBody.error).toBeNull()
+    const importedResult = importBody.data?.result
+    expect(importedResult).toMatchObject({ draft_only: true, knowledge: { indexState: 'queued', approvalStatus: 'pending' } })
+    const productId = importedResult?.products?.[0]?.id ?? importedResult?.products?.[0]?.product_id
+    expect(productId).toBe('prod_jd_10137064435110')
     await expect(form.getByText('不可同步或发布')).toBeVisible({ timeout: 30_000 })
     await form.screenshot({ path: join(evidenceDir, 'merchant-import-complete.png') })
 

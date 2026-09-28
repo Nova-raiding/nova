@@ -17,14 +17,14 @@ const MINIMUM_DEFINITIONS_VERSION = 28_000
 const CLEAN_PROBE = Buffer.from('Merchant isolated real ClamAV readiness probe.\n', 'utf8')
 const STARTUP_DIAGNOSTIC_MAX_CHARS = 16_384
 
-export type ScanContainerIdentity = { id: string; name: string; runId: string; image: string }
+export type ScanContainerIdentity = { id: string; name: string; runId: string; image: string; autoRemove?: boolean }
 export type ScanContainerInspection = {
   id: string; name: string; image: string; labels: Record<string, string> | null
   autoRemove: boolean; running: boolean; mounts: { Type: string; Destination: string }[]
   tmpfs: Record<string, string> | null
   ports: Record<string, { HostIp: string; HostPort: string }[] | null> | null
 }
-export type ScanContainerEvidence = ScanContainerIdentity & { hostPort: number; dataStorage: 'ephemeral-container-layer'; autoRemove: true }
+export type ScanContainerEvidence = ScanContainerIdentity & { hostPort: number; dataStorage: 'ephemeral-container-layer'; autoRemove: boolean }
 export type ScanDisposal = { stopped: string[]; leftRunning: { id: string; reason: string }[] }
 export type ScanStartupState = { running: boolean; status: string; exitCode: number; oomKilled: boolean }
 export type ScanStartupDiagnostics = { containerId?: string; state?: ScanStartupState; logs?: string; failures: string[] }
@@ -63,7 +63,7 @@ export function customerDeliveryScanTimeout(value = 120_000): number {
   return value
 }
 
-export function customerDeliveryScanRunPlan(input: { runId: string; evidenceDir: string }) {
+export function customerDeliveryScanRunPlan(input: { runId: string; evidenceDir: string; retainForDiagnostics?: boolean }) {
   if (!UUID.test(input.runId) || !isAbsolute(input.evidenceDir) || /[\u0000-\u001f\u007f]/u.test(input.evidenceDir)) fail('IDENTITY_INVALID')
   const name = `merchant-delivery-scan-${input.runId}`
   const cidFile = join(input.evidenceDir, 'container.id')
@@ -72,7 +72,7 @@ export function customerDeliveryScanRunPlan(input: { runId: string; evidenceDir:
   // Update once before loading clamd: running both concurrently loads multiple
   // databases and caused an observed OOM on the isolated acceptance host.
   // No inherited volume, credentials, Docker network or proxy configuration.
-  return { name, cidFile, args: ['run', '--detach', '--rm', '--pull=never', '--name', name, '--cidfile', cidFile,
+  return { name, cidFile, args: ['run', '--detach', ...(input.retainForDiagnostics ? [] : ['--rm']), '--pull=never', '--name', name, '--cidfile', cidFile,
     '--label', `merchant.fixture.purpose=${PURPOSE}`, '--label', `merchant.fixture.run-id=${input.runId}`,
     '--label', 'merchant.fixture.kind=clamav', '--network', 'bridge', '--publish', '127.0.0.1::3310',
     '--tmpfs', '/tmp:rw,nosuid,size=256m', '--security-opt', 'no-new-privileges:true',
@@ -85,13 +85,13 @@ export function verifyCustomerDeliveryScanContainer(actual: ScanContainerInspect
   if (!UUID.test(expected.runId) || !ID.test(expected.id) || expected.name !== `merchant-delivery-scan-${expected.runId}`
     || expected.image !== CUSTOMER_DELIVERY_CLAMAV_IMAGE || actual.id !== expected.id || actual.name !== `/${expected.name}` || actual.image !== expected.image
     || actual.labels?.['merchant.fixture.purpose'] !== PURPOSE || actual.labels?.['merchant.fixture.run-id'] !== expected.runId
-    || actual.labels?.['merchant.fixture.kind'] !== 'clamav' || actual.autoRemove !== true || actual.running !== true
+    || actual.labels?.['merchant.fixture.kind'] !== 'clamav' || actual.autoRemove !== (expected.autoRemove ?? true) || actual.running !== true
     || !Array.isArray(actual.mounts) || actual.mounts.some(mount => mount.Type !== 'tmpfs' || mount.Destination !== '/tmp')
     || !actual.tmpfs || Object.keys(actual.tmpfs).length !== 1 || !Object.hasOwn(actual.tmpfs, '/tmp')
     || port?.length !== 1 || port[0]?.HostIp !== '127.0.0.1' || !/^\d+$/u.test(port[0]?.HostPort ?? '')
     || Number(port[0]?.HostPort) < 1 || Number(port[0]?.HostPort) > 65_535
     || Object.entries(actual.ports ?? {}).some(([key, value]) => key !== '3310/tcp' && value != null)) fail('CONTAINER_IDENTITY_MISMATCH')
-  return { ...expected, hostPort: Number(port[0]!.HostPort), dataStorage: 'ephemeral-container-layer', autoRemove: true }
+  return { ...expected, hostPort: Number(port[0]!.HostPort), dataStorage: 'ephemeral-container-layer', autoRemove: expected.autoRemove ?? true }
 }
 
 export async function disposeCustomerDeliveryScanContainer(expected: ScanContainerIdentity, operations: {
@@ -103,6 +103,28 @@ export async function disposeCustomerDeliveryScanContainer(expected: ScanContain
     return { stopped: [expected.id], leftRunning: [] }
   } catch {
     return { stopped: [], leftRunning: [{ id: expected.id, reason: 'Exact-ID ownership/stop unconfirmed; no name, label or broad cleanup fallback was attempted.' }] }
+  }
+}
+
+/** Retained diagnostic mode: verify the same exact container before any stop
+ * or remove, and confirm that exact ID is absent after removal. */
+export async function disposeRetainedCustomerDeliveryScanContainer(expected: ScanContainerIdentity, operations: {
+  inspect(id: string): Promise<ScanContainerInspection>; stop(id: string): Promise<void>
+  remove(id: string): Promise<void>; exists(id: string): Promise<boolean>
+}): Promise<ScanDisposal> {
+  try {
+    const actual = await operations.inspect(expected.id)
+    if (!ID.test(expected.id) || actual.id !== expected.id || actual.name !== `/${expected.name}`
+      || actual.image !== expected.image || actual.autoRemove !== false
+      || actual.labels?.['merchant.fixture.run-id'] !== expected.runId
+      || actual.labels?.['merchant.fixture.purpose'] !== PURPOSE
+      || actual.labels?.['merchant.fixture.kind'] !== 'clamav') fail('CONTAINER_IDENTITY_MISMATCH')
+    if (actual.running) await operations.stop(expected.id)
+    await operations.remove(expected.id)
+    if (await operations.exists(expected.id)) fail('CONTAINER_REMOVAL_UNCONFIRMED')
+    return { stopped: [expected.id], leftRunning: [] }
+  } catch {
+    return { stopped: [], leftRunning: [{ id: expected.id, reason: 'Exact-ID retained scanner ownership/removal unconfirmed; shared containers were not touched.' }] }
   }
 }
 
@@ -222,7 +244,7 @@ async function localSocket(): Promise<string> {
  * This starts only ClamAV. The owner launches the real API/worker/browser and
  * must retain their event, signed-receipt and download-gate evidence separately. */
 export async function startCustomerDeliveryScanFixture(input: {
-  enabled?: boolean; evidenceDir?: string; startupTimeoutMs?: number; signal?: AbortSignal
+  enabled?: boolean; evidenceDir?: string; startupTimeoutMs?: number; signal?: AbortSignal; retainForDiagnostics?: boolean
 } = {}): Promise<CustomerDeliveryScanFixture | undefined> {
   if (input.enabled !== true) return undefined
   const timeout = customerDeliveryScanTimeout(input.startupTimeoutMs)
@@ -234,7 +256,8 @@ export async function startCustomerDeliveryScanFixture(input: {
   const evidenceDir = await mkdtemp(join(resolve(input.evidenceDir), 'customer-delivery-scanner-'))
   const dockerConfig = join(evidenceDir, 'docker-client')
   await mkdir(dockerConfig, { mode: 0o700 })
-  const plan = customerDeliveryScanRunPlan({ runId, evidenceDir })
+  const retainForDiagnostics = input.retainForDiagnostics === true
+  const plan = customerDeliveryScanRunPlan({ runId, evidenceDir, retainForDiagnostics })
   const socket = await localSocket()
   const remaining = () => { input.signal?.throwIfAborted(); const value = deadline - Date.now(); if (value <= 0) fail('STARTUP_TIMEOUT'); return value }
   const docker = (args: string[], cleanup = false, diagnostics = false): Promise<string> => new Promise((done, reject) => {
@@ -247,9 +270,46 @@ export async function startCustomerDeliveryScanFixture(input: {
   let verifiedOwned: ScanContainerIdentity | undefined
   let creationStarted = false
   const inspect = (cleanup = false) => docker(['inspect', '--format', '{"id":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},"labels":{{json .Config.Labels}},"autoRemove":{{json .HostConfig.AutoRemove}},"running":{{json .State.Running}},"mounts":{{json .Mounts}},"tmpfs":{{json .HostConfig.Tmpfs}},"ports":{{json .NetworkSettings.Ports}}}', owned!.id], cleanup).then(value => JSON.parse(value) as ScanContainerInspection)
+  const captureRuntimeDiagnostics = async () => {
+    if (!retainForDiagnostics || !owned) return
+    const report: Record<string, unknown> = { runId, containerId: owned.id, observedAt: new Date().toISOString(),
+      exactIdOnly: true, sharedContainersTouched: false, logsSanitized: true }
+    let identityVerified = false
+    try {
+      const actual = JSON.parse(await docker(['inspect', '--format', '{"id":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},"labels":{{json .Config.Labels}},"autoRemove":{{json .HostConfig.AutoRemove}},"state":{"running":{{json .State.Running}},"status":{{json .State.Status}},"exitCode":{{json .State.ExitCode}},"oomKilled":{{json .State.OOMKilled}}}}', owned.id], true, true)) as ScanContainerInspection & { state: unknown }
+      if (actual.id !== owned.id || actual.name !== `/${owned.name}` || actual.image !== owned.image
+        || actual.labels?.['merchant.fixture.run-id'] !== runId || actual.labels?.['merchant.fixture.purpose'] !== PURPOSE
+        || actual.labels?.['merchant.fixture.kind'] !== 'clamav' || actual.autoRemove !== false) fail('DIAGNOSTIC_IDENTITY_MISMATCH')
+      report.state = projectCustomerDeliveryScanState(actual.state)
+      report.identityVerified = true
+      identityVerified = true
+    } catch { report.inspect = 'unavailable_or_identity_mismatch' }
+    if (identityVerified) {
+      try { report.logs = sanitizeCustomerDeliveryScanLogs(await docker(['logs', '--tail', '100', owned.id], true, true)) }
+      catch { report.logs = 'unavailable' }
+      try {
+      const events = await docker(['events', '--since', new Date(Date.now() - 600_000).toISOString(), '--until', new Date().toISOString(),
+        '--filter', `container=${owned.id}`, '--format', '{{json .}}'], true, true)
+      report.events = events.split('\n').filter(Boolean).slice(-30).flatMap(line => {
+        try { const event = JSON.parse(line) as { Action?: string; Actor?: { ID?: string }; time?: number }
+          return event.Actor?.ID === owned!.id ? [{ action: event.Action, time: event.time, containerId: owned!.id }] : [] }
+        catch { return [] }
+      })
+      } catch { report.events = 'unavailable' }
+    }
+    await writeFile(join(evidenceDir, 'runtime-diagnostics.json'), JSON.stringify(report, null, 2), { mode: 0o600, flag: 'wx' }).catch(() => undefined)
+  }
   let disposal: Promise<ScanDisposal> | undefined
   const stop = () => disposal ??= (async () => {
-    const result = owned ? await disposeCustomerDeliveryScanContainer(owned, { inspect: () => inspect(true), stop: async id => { await docker(['stop', '--time', '10', id], true) } })
+    await captureRuntimeDiagnostics()
+    const result = owned ? retainForDiagnostics
+      ? await disposeRetainedCustomerDeliveryScanContainer(owned, {
+        inspect: async id => JSON.parse(await docker(['inspect', '--format', '{"id":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},"labels":{{json .Config.Labels}},"autoRemove":{{json .HostConfig.AutoRemove}},"running":{{json .State.Running}}}', id], true, true)) as ScanContainerInspection,
+        stop: async id => { await docker(['stop', '--time', '10', id], true) },
+        remove: async id => { await docker(['rm', id], true) },
+        exists: async id => (await docker(['ps', '-aq', '--no-trunc', '--filter', `id=${id}`], true, true)).split('\n').some(value => value.trim() === id),
+      })
+      : await disposeCustomerDeliveryScanContainer(owned, { inspect: () => inspect(true), stop: async id => { await docker(['stop', '--time', '10', id], true) } })
       : unidentifiedCustomerDeliveryScanDisposal(creationStarted)
     await writeFile(join(evidenceDir, 'disposal.json'), JSON.stringify({ runId, ...result, sharedContainersTouched: false, evidenceRetained: true }, null, 2), { mode: 0o600, flag: 'wx' })
     return result
@@ -260,7 +320,7 @@ export async function startCustomerDeliveryScanFixture(input: {
     creationStarted = true
     const id = await docker(plan.args)
     if (!ID.test(id)) fail('CREATED_CONTAINER_ID_INVALID')
-    owned = { id, name: plan.name, runId, image: CUSTOMER_DELIVERY_CLAMAV_IMAGE }
+    owned = { id, name: plan.name, runId, image: CUSTOMER_DELIVERY_CLAMAV_IMAGE, autoRemove: !retainForDiagnostics }
     const container = verifyCustomerDeliveryScanContainer(await inspect(), owned)
     verifiedOwned = { ...owned }
     let readiness: ScanReadinessEvidence | undefined
@@ -340,7 +400,7 @@ export async function startCustomerDeliveryScanFixture(input: {
     // A timed-out docker run may still have created the container. Its unique
     // cidfile is the only recovery source; never resolve the generated name.
     if (!owned) {
-      try { const id = (await readFile(plan.cidFile, 'utf8')).trim(); if (ID.test(id)) owned = { id, name: plan.name, runId, image: CUSTOMER_DELIVERY_CLAMAV_IMAGE } } catch { /* no exact identity */ }
+      try { const id = (await readFile(plan.cidFile, 'utf8')).trim(); if (ID.test(id)) owned = { id, name: plan.name, runId, image: CUSTOMER_DELIVERY_CLAMAV_IMAGE, autoRemove: !retainForDiagnostics } } catch { /* no exact identity */ }
     }
     try {
       const diagnostics = await collectCustomerDeliveryScanStartupDiagnostics(verifiedOwned, {
