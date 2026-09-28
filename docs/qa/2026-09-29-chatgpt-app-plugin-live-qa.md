@@ -2,13 +2,15 @@
 
 ## 环境与结论
 
+- **2026-09-29 06:47 CST 复验更新：App 文案候选已真实交付。** 线上 API 双副本已从 schema 254 兼容候选 `2f6b4387329921e91558e332243be1b8901e0ad4` 更新为 `release-demo-draft-preflight-20260929`；没有迁移数据库。ChatGPT App 先读到工作区 `ws_guirenniaoniao`、人工登记店铺 1 家、授权店铺 0 家、未绑定商品 1 件，见[更新后只读结果](evidence/2026-09-29-chatgpt-app/08-postdeploy-read.png)。随后仅调用一次 `content.draft.generate`，返回贵人鸟儿童运动鞋雾霾蓝 42 号的待审核候选，明确未创建正式版本、未批准、未发布，见[App 候选与账务截图](evidence/2026-09-29-chatgpt-app/09-postdeploy-draft-settled.png)。服务端只读账本核对该次 `qwen3.8-flash` 用量为输入 348、输出 403 token，成本 ¥0.001161，`model_usage_ledger` 和 1 点创意点预留均为 `settled`。这证明此次候选生成链路通过，不代表其余 130 个工具或正式商品审核发布流程已全通过。
+- 先前两次失败用量现为 `manual_attention`，各自 1 点预留仍为 `active`，错误仍是 `MODEL_USAGE_COST_MISSING`；没有补成本、退款或重放。必须用逐笔 provider 成本证据对账。
 - 宿主：macOS ChatGPT App 的 Codex 工作区；插件为本地直装、stdio MCP，实际进程运行 `merchant-marketing/mcp/bridge.mjs`。
-- 云端：`https://yxsona.com`，工作区 `ws_guirenniaoniao`。已把当前 demo 镜像的 API 双副本文本模型配置热修为 `qwen3.8-flash`，公网 release 为 `release-demo-priced-text-20260929`，API 和运营后台健康探针正常。没有数据库迁移；授权范围代码修复仍未部署。
+- 云端：`https://yxsona.com`，工作区 `ws_guirenniaoniao`。文本模型配置为 `qwen3.8-flash`，当前公网 release 为 `release-demo-draft-preflight-20260929`，API 双副本和运营后台健康探针正常；数据库仍为迁移 254。
 - **已在 App 中看到真实产出**：`onboarding.status` 返回 1 家人工登记店铺、0 家官方授权店铺；`catalog.search({scope:"workspace",limit:"10"})` 返回 1 件真实商品，并正确提示该商品未绑定店铺。见 [工作区截图](evidence/2026-09-29-chatgpt-app/01-onboarding-success.png)、[商品截图](evidence/2026-09-29-chatgpt-app/02-catalog-success.png)。
-- 本地插件已从当前源码重新加入、重建 macOS Keychain helper；重启后的 ChatGPT App 再次调用 `onboarding.status` 成功，见 [更新后 App 截图](evidence/2026-09-29-chatgpt-app/06-updated-plugin-app-success.png)。云端 API 修复仍未部署。
-- **文案生成尚不能作为成功交付**：`content.draft.generate` 被错误的品牌范围授权挡住；`merchant.first_value` 的一次模型调用返回成本结算缺失，生成结果未交付，1 点创意点仍处于预留状态。见 [授权阻断](evidence/2026-09-29-chatgpt-app/03-draft-scope-block.png)、[模型阻断](evidence/2026-09-29-chatgpt-app/04-draft-cost-block.png)、[积分账本](evidence/2026-09-29-chatgpt-app/05-points-reserved.png)。
-- 配置热修后在 App 中用**新幂等键**验证了一次：`qwen3.8-flash` 返回 341/377 token，但中转价格接口在结算时超过 10 秒超时，仍被 `MODEL_USAGE_COST_MISSING` 阻断；结果未交付。见 [热修后截图](evidence/2026-09-29-chatgpt-app/07-priced-model-cost-timeout.png)。数据库只读核对显示两次尝试各有 1 点 `active` 预留，均未结算；已停止进一步付费生成。
-- 已在本地 API 候选加入价格前置检查：先验证当前文本模型的中转价格、计费组与汇率，再预留创意点和调用模型。价格检查失败时返回 `MODEL_PRICING_PREFLIGHT_UNAVAILABLE`，并明确 `provider_executed=false`、`points_reserved=false`。此修复**尚未部署**，不能用它宣称线上生成已恢复。
+- 本地插件已从当前源码重新加入、重建 macOS Keychain helper；重启后的 ChatGPT App 再次调用 `onboarding.status` 成功，见 [更新后 App 截图](evidence/2026-09-29-chatgpt-app/06-updated-plugin-app-success.png)。云端 API 修复随后按本报告开头记录部署。
+- **历史失败记录**：修复部署前，`content.draft.generate` 被错误的品牌范围授权挡住；`merchant.first_value` 的一次模型调用返回成本结算缺失，生成结果未交付，1 点创意点仍处于预留状态。见 [授权阻断](evidence/2026-09-29-chatgpt-app/03-draft-scope-block.png)、[模型阻断](evidence/2026-09-29-chatgpt-app/04-draft-cost-block.png)、[积分账本](evidence/2026-09-29-chatgpt-app/05-points-reserved.png)。
+- 配置热修后、代码修复部署前，在 App 中用**新幂等键**验证了一次：`qwen3.8-flash` 返回 341/377 token，但中转价格接口在结算时超过 10 秒超时，仍被 `MODEL_USAGE_COST_MISSING` 阻断；结果未交付。见 [热修后截图](evidence/2026-09-29-chatgpt-app/07-priced-model-cost-timeout.png)。两次旧调用各有 1 点 `active` 预留，均未结算；此后仅在代码修复部署后又做了一次受控生成验收并成功结算。
+- API 候选已加入并部署价格前置检查：先验证当前文本模型的中转价格、计费组与汇率，再预留创意点和调用模型。价格检查失败时返回 `MODEL_PRICING_PREFLIGHT_UNAVAILABLE`，并明确 `provider_executed=false`、`points_reserved=false`。App 的一次真实生成与账本结算已通过；价格接口持续稳定性仍需持续观测。
 
 ## 实测覆盖
 
@@ -21,26 +23,29 @@
 | ChatGPT App 商品 | `catalog.search` 工作区范围 | 返回 1 件未绑定商品；返回的历史店铺名与人工登记店铺不同，不能自动合并归属。 |
 | ChatGPT App 内容候选 | `workspace.interactive.confirm` → `content.draft.generate` | 确认成功，生成被 `AUTHZ_SCOPE_MISMATCH` 拦截。 |
 | ChatGPT App 中转/账务 | `merchant.first_value(draft=true)` → 积分账本 | 真实调用一次；服务端第一响应为 `MODEL_USAGE_COST_MISSING`，插件错误重试后变成 `MODEL_ACTION_ALREADY_STARTED`。账本显示 1 点预留，未见结算/释放。 |
+| ChatGPT App 上线复验 | `workspace.interactive.confirm` → `content.draft.generate` → 用量/创意点账本 | 一次真实调用返回待审核候选；模型 348/403 token、成本 ¥0.001161、1 点预留结算为 `settled`。 |
 
 本轮未覆盖其余需要素材、店铺授权、审核状态或可能发布/扣费的工具的线上写操作；不能宣称“131 个功能全通过”。
 
-本地检查：最新前置检查代码经 `npm run typecheck`、`npm run test:release-gates` 通过（Vitest 1387 项通过、16 项跳过，后续 Node/脚本门禁也通过）；前置检查、授权及相关 API 定向测试 18 项通过，其中包含价格超时后不预留积分、不写授权/审计、不调用 provider 的处理器测试。插件 bridge、安装与 manifest 相关 127 项通过。线上 demo 配置热修后 API 双副本均 healthy，公网 `/releasez`、`/api/healthz` 和运营后台 `/healthz` 通过。上述检查不能替代仍被阻断的文案生成验收。
+兼容候选从线上 API 基线 `bb417660402c341df1b0d1debd5778f8b963c568` 临时隔离移植 5 个文件（2 个测试、3 个源码），无 SQL/迁移文件差异。候选类型检查、106 项定向测试、完整 `test:release-gates` 通过（Vitest 1325 项通过、16 项既有跳过，后续脚本门禁退出 0）。新 API 镜像 digest `sha256:a4ffefcf27f6df39dc9191f77f011320afcbda5ab312acf407fe7abe4b10d2d6`；受保护候选、manifest 与当前版本回滚输入逐项核对后，只更新 `api api-replica`，两副本 healthy，公网 `/releasez`、`/api/healthz`、`/api/readyz`、Ops `/healthz` 通过。临时 worktree 需在证据归档后移除。
 
-## 根因与已完成的本地修复
+主分支本地检查：`npm run typecheck`、`npm run test:release-gates` 通过（Vitest 1387 项通过、16 项跳过，后续 Node/脚本门禁也通过）；前置检查、授权及相关 API 定向测试 18 项通过。插件 bridge、安装与 manifest 相关 127 项通过。实际部署的 254 兼容候选另通过 106 项定向测试和完整发布门禁；App 文案生成及账本结算已经按本报告开头的记录复验。
+
+## 根因与已完成的修复
 
 1. `content.draft.generate` 只生成未绑定预览，没有品牌 ID，却在 `packages/contracts/src/authz.ts` 被映射为品牌级。已将**该方法**改为工作区级，正式 `content.generate` 仍为品牌级。新增定向授权测试；本地类型检查与 14 个相关 API 测试通过。
-2. 线上模型用量账本记录：模型 `qwen3.7-plus`，输入 325、输出 402 token，状态 `pending_cost`，错误 `MODEL_PRICING_MODEL_MISSING`。线上中转 `/api/pricing` 不含该模型；其中 `qwen3.8-flash`、`qwen3.8-max` 有 VIP 组价格。**没有**据此推断本次实际成本，也没有释放预留或重放模型调用。
-   - 配置热修的新模型已经列于中转 `/v1/models` 且有 VIP 价格；第二次调用的 `pending_cost` 原因是 `MODEL_PRICING_FETCH_TIMEOUT`。这是价格接口可用性问题，不能把“价格表有模型”误当成整条结算链已通过。
+2. 旧调用的模型用量账本记录：模型 `qwen3.7-plus`，输入 325、输出 402 token，最初状态 `pending_cost`，错误 `MODEL_PRICING_MODEL_MISSING`。线上中转 `/api/pricing` 不含该模型；其中 `qwen3.8-flash`、`qwen3.8-max` 有 VIP 组价格。**没有**据此推断旧调用实际成本，也没有释放预留或重放旧模型调用。两笔旧用量目前转为 `manual_attention`，但点数预留仍为 `active`。
+   - 配置热修的新模型列于中转 `/v1/models` 且有 VIP 价格；第二次旧调用最初的 `pending_cost` 原因是 `MODEL_PRICING_FETCH_TIMEOUT`。这是价格接口可用性问题，不能把“价格表有模型”误当成每次结算都通过。
 3. 插件将带幂等键的模型写请求收到的 503 当作可重试临时错误，掩盖了成本结算阻断。已在本地 bridge 阻止 `MODEL_USAGE_COST_MISSING`、`MODEL_USAGE_SETTLEMENT_PENDING` 和明确需对账的响应重试，并改为提示用户查账、勿重复生成；新增回归测试通过。
 4. App 曾显示笼统 `UNAUTHENTICATED`。失效凭据的刷新端点返回 `MCP_OAUTH_INVALID_GRANT`；本地重新登录并重启 App 后查询成功。已在本地 bridge 为服务端 `UNAUTHENTICATED` 加入明确的本地登录恢复指引和回归测试。
-5. 已在本地 `merchant.first_value(draft=true)` / `content.draft.generate` 共用处理器中加入计费前置检查；定向测试覆盖价格缺失、价格超时、有效价格，以及超时后不预留积分、不写授权/审计、不调用 provider。需要按免迁移的兼容候选部署后，在 App 中复验。
+5. 已在 `merchant.first_value(draft=true)` / `content.draft.generate` 共用处理器中加入计费前置检查；定向测试覆盖价格缺失、价格超时、有效价格，以及超时后不预留积分、不写授权/审计、不调用 provider。该修复已通过免迁移兼容候选部署，并在 App 中完成一次真实候选及账本结算复验。
 
-## 上线前优化顺序
+## 后续优化顺序
 
-1. **模型与价格先对齐**：配置热修已切换为价格表覆盖的 `qwen3.8-flash`；本地前置检查代码已完成。下一步以免迁移候选部署并验证；价格接口超时或任一计费依据缺失时，应在 provider 调用及创意点预留前阻断。仍需验证中转价格接口的稳定性和结算后的真实账本。
-2. **对账两次请求**：由平台运营分别核对两条 `pending_cost` 的 provider 请求/账单和模型用量，按已有人工对账流程处理两笔各 1 点预留。未拿到权威成本证据前不手工标记成功或退款，也不继续发起付费测试。
-3. **部署最小修复**：审计当前线上 API 源码基线与主分支差异。线上 API 为 `bb417660...`，本地主分支为 `a1462b0e...`，两者之间 138 个提交且包含迁移 255；本次授权/bridge 修复不得把主分支整体倒灌到仍在迁移 254 的 demo。按 demo 发布手册冻结兼容候选，只替换 API 双副本及本地插件；不迁移数据库。
+1. **模型与价格稳定性**：当前模型为有 VIP 价格的 `qwen3.8-flash`，前置检查已部署，真实一次结算成功。继续监测中转价格接口超时和快照缓存；失败必须在调用 provider 与预留创意点之前阻断。
+2. **对账两次历史请求**：两条旧用量现为 `manual_attention`，各 1 点预留仍为 `active`。平台运营需逐笔核对 provider 请求/账单与调用时价格证据；现有 `retry` 不能录入缺失成本，不能拿当前估价补记，也不能盲目退款或重放。
+3. **发布基线管理**：此次仅把 5 文件补丁移植到线上 `bb417660...`，API 双副本更新到 `2f6b4387...`，数据库保持迁移 254；其他服务仍是混合源码版本。后续完整发布不得把含迁移 255 的主分支直接倒灌到 demo。
 4. **App 使用引导**：首次进入先显示当前账号、工作区、人工登记/官方授权店铺数；对未绑定商品提供明确“导入/确认商品事实”入口。`catalog.search(scope=workspace)` 不需要 `platform` 和 `account_id`，修正当前 App 回复中的误导提示。
 5. **工具列表与参数契约**：在商家视角隐藏或标注平台专用读工具；对 `support.customer.replies.list` 和 `catalog.image.get` 补齐必填参数 schema 或给出明确缺参提示。上传 Excel/CSV 的入口与导入后未绑定商品状态需用真实桌面和 App 流程单独验收。
 
-验收门槛：新用户在 App 中完成登录 → 读取真实工作区 → 上传/导入资料 → 事实确认 → 生成待审核内容；每一步都能看到服务端真实状态、权限与成本证据，出错时有单一可执行恢复动作。部署后再跑线上 App、桌面浏览器、API/MCP、账务与容器健康的完整回归。
+剩余验收门槛：新用户在真实桌面完成 Excel/CSV 文件选择、上传/导入和事实确认后，能在 App 中查到正确店铺归属，并继续走审核与导出。当前 App 的登录、工作区读取、未绑定商品读取及一次未绑定文案候选生成已通过；桌面原生文件选择器、商品绑定、正式审核/导出和其余工具仍须逐项实测。不能以此次候选成功宣称所有流程通过。
