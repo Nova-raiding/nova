@@ -19,7 +19,7 @@ import {
   staleManifestEntries,
   vitestTestFilesOnDisk,
 } from './test-entrypoint-coverage.js'
-import { UNINVOKED_SCRIPTS, uninvokedScriptNames } from './package-script-entrypoints.js'
+import { UNINVOKED_SCRIPTS, expandScriptInvocationGraph, invokedScriptNames, uninvokedScriptNames } from './package-script-entrypoints.js'
 
 const root = resolve(import.meta.dirname, '..')
 const packageJsonSource = readFileSync(resolve(root, 'package.json'), 'utf8')
@@ -54,6 +54,31 @@ function filesUnder(directory: string): string[] {
 }
 
 describe('quality entrypoint coverage', () => {
+  it('resolves npm pre/post hooks across nested script lifecycle chains', () => {
+    const scripts = {
+      'test:release-gates': 'npm run test:release-gates:node',
+      'pretest:release-gates': 'npm run test:release-gates:runtime',
+      'posttest:release-gates': 'npm run test:release-gates:report',
+      'pretest:release-gates:runtime': 'node runtime-preflight.mjs',
+      'test:release-gates:runtime': 'node runtime-tests.mjs',
+      'test:release-gates:node': 'node node-tests.mjs',
+      'test:release-gates:report': 'node report.mjs',
+    }
+    const resolved = expandScriptInvocationGraph(scripts, new Set(['test:release-gates']))
+    expect([...resolved].sort()).toEqual([
+      'posttest:release-gates', 'pretest:release-gates', 'pretest:release-gates:runtime',
+      'test:release-gates', 'test:release-gates:node', 'test:release-gates:report',
+      'test:release-gates:runtime',
+    ])
+  })
+
+  it('keeps the real release runtime lifecycle hook reachable from release gates', () => {
+    const invoked = invokedScriptNames(root)
+    expect(invoked).toContain('test:release-gates')
+    expect(invoked).toContain('pretest:release-gates')
+    expect(invoked).toContain('test:release-gates:runtime')
+  })
+
   it('keeps release gate script names unique in the source manifest', () => {
     const occurrences = packageJsonSource.match(/^\s*"test:release-gates"\s*:/gm) ?? []
     expect(occurrences).toHaveLength(1)

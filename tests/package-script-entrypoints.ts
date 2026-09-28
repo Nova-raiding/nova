@@ -153,22 +153,28 @@ export function invokedScriptNames(root: string): Set<string> {
     if (file === 'package.json' || !isEntrypointSource(file)) continue
     for (const name of invocationsIn(readFileSync(resolve(root, file), 'utf8'))) invoked.add(name)
   }
+  return expandScriptInvocationGraph(scripts, invoked)
+}
+
+/** Resolve npm script invocations and implicit pre/post lifecycle edges. */
+export function expandScriptInvocationGraph(scripts: Record<string, string>, invoked: Set<string>): Set<string> {
+  const expanded = new Set(invoked)
   let changed = true
   while (changed) {
     changed = false
-    for (const name of [...invoked]) {
+    for (const name of [...expanded]) {
       for (const lifecycleName of [`pre${name}`, `post${name}`]) {
-        if (scripts[lifecycleName] && !invoked.has(lifecycleName)) {
-          invoked.add(lifecycleName)
+        if (scripts[lifecycleName] && !expanded.has(lifecycleName)) {
+          expanded.add(lifecycleName)
           changed = true
         }
       }
       for (const nested of invocationsIn(scripts[name] ?? '')) {
-        if (!invoked.has(nested)) { invoked.add(nested); changed = true }
+        if (!expanded.has(nested)) { expanded.add(nested); changed = true }
       }
     }
   }
-  return invoked
+  return expanded
 }
 
 /** Scripts in `package.json` that nothing invokes. */
