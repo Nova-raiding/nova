@@ -351,12 +351,13 @@ describe('verified ECS Compose deployment runner', () => {
       database: { strategy: 'forward_only', schema_downgrade: false, live_migration_version: 245, target_migration_tail: 245,
         allowed_prefix_sha256: { 245: hash('7') } }, volumes: { preserve: true },
     }
-    const verify = (database: Record<string, unknown>) => {
+    const verify = (database: Record<string, unknown>, options: { expectedMigrationVersion?: string; bridgeCodeOnly?: boolean } = {}) => {
       writeFileSync(planPath, JSON.stringify({ ...base, database }))
       return spawnSync('node', ['-'], { input: block![1], encoding: 'utf8', env: {
         ...process.env, PLAN: planPath, COMPOSE_SHA: hash('1'), ENV_SHA: hash('2'), DIGESTS_SHA: hash('3'), PROJECT: 'merchant-production',
         CANDIDATE_ID: candidate.release_id, CANDIDATE_GIT: candidate.git_sha, CANDIDATE_MANIFEST: candidate.manifest_sha256,
-        CANDIDATE_IMAGES: candidate.image_set_digest, EXPECTED_MIGRATION_VERSION: '245', DIGESTS: JSON.stringify({ api: `sha256:${hash('8')}` }),
+        CANDIDATE_IMAGES: candidate.image_set_digest, EXPECTED_MIGRATION_VERSION: options.expectedMigrationVersion ?? '245',
+        ECS_BRIDGE_CODE_ONLY: options.bridgeCodeOnly ? 'YES' : 'NO', DIGESTS: JSON.stringify({ api: `sha256:${hash('8')}` }),
       } })
     }
     expect(verify(base.database).status).toBe(0)
@@ -365,6 +366,18 @@ describe('verified ECS Compose deployment runner', () => {
     const behindCandidate = { ...base.database, live_migration_version: 242, allowed_prefix_sha256: { 242: hash('4'), 243: hash('5'), 244: hash('6'), 245: hash('7') } }
     expect(verify(behindCandidate).stderr).toContain('ordinary C deployment requires the live database at migration 245')
     expect(verify(behindCandidate).stderr).toContain('independently signed and verified compatibility bridge')
+    const production254To255 = {
+      ...base.database,
+      live_migration_version: 254,
+      target_migration_tail: 255,
+      allowed_prefix_sha256: { 254: hash('4'), 255: hash('5') },
+    }
+    const unbridged254To255 = verify(production254To255, { expectedMigrationVersion: '255' })
+    expect(unbridged254To255.status).not.toBe(0)
+    expect(unbridged254To255.stderr).toContain('ordinary C deployment requires the live database at migration 255')
+    const borrowedBridgeB = verify(production254To255, { expectedMigrationVersion: '255', bridgeCodeOnly: true })
+    expect(borrowedBridgeB.status).not.toBe(0)
+    expect(borrowedBridgeB.stderr).toContain('B code-only capsule requires old schema 242 and candidate tail 244')
     expect(script.indexOf('ordinary C deployment requires the live database at migration')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('rollback target must contain exactly the candidate migration chain')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('forward-compatible rollback bridge is not the current public release')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
