@@ -31,6 +31,12 @@ export function validateOpsE2eArguments(args: readonly string[], source: NodeJS.
   return args.length ? [...args] : ['dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js']
 }
 
+export function isolatedManualOperationsMode(source: NodeJS.ProcessEnv): boolean {
+  const value = source.OPS_E2E_MANUAL_OPERATIONS
+  if (value !== undefined && value !== 'true') throw new Error('OPS_E2E_MANUAL_OPERATIONS_INVALID')
+  return value === 'true'
+}
+
 /** Parse even when scanning is disabled, so a bad explicit configuration never
  * reaches directory creation or any fixture provisioning. No numeric coercion
  * of blank, fractional, exponent, hexadecimal or whitespace-padded values. */
@@ -136,6 +142,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   // Validate before creating directories, containers, connections or processes.
   const args = validateOpsE2eArguments(requested, source)
   const scannerStartupTimeoutMs = validateOpsE2eScannerStartupTimeout(source)
+  const manualOperationsMode = isolatedManualOperationsMode(source)
   const evidenceDir = resolve('artifacts/ops-jit-isolation', `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}`)
   mkdirSync(evidenceDir, { recursive: true, mode: 0o700 })
   const children: ChildProcess[] = []
@@ -234,6 +241,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       DATABASE_URL: fixture.databaseUrl, OPS_DATABASE_URL: fixture.opsDatabaseUrl, REDIS_URL: fixture.redisUrl,
       RUN_MIGRATIONS_ON_STARTUP: 'false', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
       CONNECTOR_FIXTURE_MODE: 'false', REQUEST_OBSERVABILITY_LOGS: 'true',
+      ...(manualOperationsMode ? { PLATFORM_OPERATIONS_MODE: 'manual' } : {}),
       ALLOWED_ORIGINS: baseUrl, PUBLIC_OPS_BASE_URL: baseUrl, ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
       ...scanEnvironment?.apiEnvironment,
     })
@@ -264,6 +272,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       OPS_E2E_SUBJECT_IDENTITY_ID: fixture.subjectIdentityId, OPS_E2E_APPROVER_ID: fixture.approverId,
       OPS_E2E_APPROVAL_TOKEN: approvalToken,
       OPS_E2E_OUTPUT_DIR: evidenceDir, PLAYWRIGHT_JSON_OUTPUT_NAME: resolve(evidenceDir, 'playwright.json'),
+      OPS_E2E_MERCHANT_USERNAME: fixture.merchantLogin, OPS_E2E_MERCHANT_PASSWORD: fixture.merchantPassword,
+      OPS_E2E_MANUAL_OPERATIONS: manualOperationsMode ? 'true' : 'false',
       ...(scanner ? { OPS_E2E_REAL_DELIVERY_SCAN: 'true' } : {}),
     })
     writeFileSync(resolve(evidenceDir, 'runtime.json'), JSON.stringify({

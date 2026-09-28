@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { disposeOpsE2eResources, fetchOpsE2eHealth, monitorOpsE2eScanner, opsChildEnvironment, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout } from '../scripts/run-ops-password-e2e.js'
+import { disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout } from '../scripts/run-ops-password-e2e.js'
 
 const { forbidRuntimeResources } = vi.hoisted(() => ({
   forbidRuntimeResources: vi.fn(() => { throw new Error('OPS_E2E_RESOURCE_CREATION_ATTEMPTED') }),
@@ -59,6 +59,15 @@ describe('Ops browser acceptance isolation', () => {
   it('rejects legacy source-container reuse before any runtime is provisioned', () => {
     expect(() => validateOpsE2eArguments([], { OPS_E2E_SOURCE_CONTAINER: 'existing-api' })).toThrow('OPS_E2E_SHARED_SOURCE_UNSUPPORTED')
     expect(validateOpsE2eArguments([], {})).toEqual(['dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js'])
+  })
+  it('enables manual store operations only for an explicit isolated fixture flag', async () => {
+    expect(isolatedManualOperationsMode({})).toBe(false)
+    expect(isolatedManualOperationsMode({ OPS_E2E_MANUAL_OPERATIONS: 'true' })).toBe(true)
+    for (const value of ['false', '1', 'TRUE', '']) {
+      expect(() => isolatedManualOperationsMode({ OPS_E2E_MANUAL_OPERATIONS: value })).toThrow('OPS_E2E_MANUAL_OPERATIONS_INVALID')
+      await expect(runOpsE2e([], { OPS_E2E_MANUAL_OPERATIONS: value })).rejects.toThrow('OPS_E2E_MANUAL_OPERATIONS_INVALID')
+    }
+    expect(forbidRuntimeResources).not.toHaveBeenCalled()
   })
   it('defaults scanner startup to 120 seconds and accepts explicit bounded decimal milliseconds', () => {
     expect(validateOpsE2eScannerStartupTimeout({})).toBe(120_000)

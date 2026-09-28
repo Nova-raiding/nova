@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
+import { evaluatePlatformModelGate, startPlatformRelayTokenQuotaMonitor } from '../../../packages/ai/src/platform-model-gate.js'
 
 const videoProvider = vi.hoisted(() => ({
   generate: vi.fn(async () => ({ status: 'queued' as const, providerJobId: 'video-provider-job-1' })),
@@ -24,6 +25,7 @@ type ApiModule = typeof import('./server.js')
 let api: ApiModule
 let baseUrl = ''
 let pricingSnapshotRequests = 0
+let stopQuotaMonitor: (() => void) | undefined
 
 const realFetch = globalThis.fetch
 const pricingSnapshot = {
@@ -42,6 +44,10 @@ const snapshotFetch: typeof fetch = async (input, init) => {
   }
   if (url.startsWith('https://relay.example.test/api/status')) {
     return new Response(JSON.stringify({ data: { quota_per_unit: 500_000, usd_exchange_rate: 6.83, quota_display_type: 'CNY' } }))
+  }
+  // Isolated finite-token receipt: production traffic is never contacted.
+  if (url.startsWith('https://relay.example.test/api/usage/token/')) {
+    return new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 1_000_000, total_used: 0, total_available: 1_000_000, expires_at: 0 } }))
   }
   return realFetch(input, init)
 }
@@ -109,12 +115,15 @@ beforeAll(async () => {
   vi.stubEnv('MODEL_RELAY_VIDEO_COST_EVIDENCE', 'true')
   vi.stubGlobal('fetch', snapshotFetch)
   api = await import('./server.js')
+  stopQuotaMonitor = startPlatformRelayTokenQuotaMonitor({ ...process.env, NODE_ENV: 'production' }, snapshotFetch)
+  await vi.waitFor(() => expect(evaluatePlatformModelGate({ ...process.env, NODE_ENV: 'production' }, 'video').ready).toBe(true))
   baseUrl = await startServer()
 })
 
 afterAll(async () => {
   if (api?.server.listening) await new Promise<void>(resolve => api.server.close(() => resolve()))
   api?.setRuleRepositoryForTests(undefined)
+  stopQuotaMonitor?.()
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
 })
