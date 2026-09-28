@@ -2707,6 +2707,35 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('does not retry a model call when provider usage cost needs reconciliation', async () => {
+    let attempts = 0
+    const server = createServer(async (_req, res) => {
+      attempts += 1
+      res.writeHead(503, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: {
+        code: 'MODEL_USAGE_COST_MISSING',
+        message: 'model usage cost is pending',
+        details: { provider_succeeded: true, reconciliation_required: true },
+      } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_RETRY_DELAY_MS: '50' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.first_value', arguments: { draft: 'true', draft_title: '待审核商品草稿', idempotency_key: 'cost-pending-1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MODEL_USAGE_COST_MISSING' } })
+      expect(response.result.content[0].text).toContain('不要重复生成')
+      expect(attempts).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('does not retry a non-idempotent write after an ambiguous gateway failure', async () => {
     let attempts = 0
     const server = createServer(async (_req, res) => {
@@ -3404,6 +3433,31 @@ describe('Codex stdio MCP bridge', () => {
         })
         expect(response.result.content[0].text).not.toContain('连接本地插件')
       }
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('shows a local-login recovery action for an authenticated API error', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(401, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'token expired' } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'onboarding.status', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: { code: 'UNAUTHENTICATED', recovery: { state: 'authentication_required', user_action_required: true } },
+      })
+      expect(response.result.content[0].text).toContain('完成登录后重启 ChatGPT')
     } finally {
       child.kill()
       await close(server)

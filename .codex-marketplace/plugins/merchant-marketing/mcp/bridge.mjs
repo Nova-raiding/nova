@@ -1610,6 +1610,7 @@ function merchantBillingProjection(method, result) {
 
 function userFacingErrorText(code, details) {
   if (code === 'MCP_CONFIGURATION_REQUIRED') return '插件连接配置尚未加载，本次未向后端发送请求。请先完成连接配置；若配置刚更新，请重新加载插件连接。已有图片和视频无需重新上传。'
+  if (code === 'UNAUTHENTICATED' || code === 'MCP_AUTH_REQUIRED') return 'Store Nova 工作区登录已失效。请在本地插件安装目录重新登录当前工作区，然后完整重启 ChatGPT；已有商品和素材不会丢失。'
   if (code === 'STORE_SELECTION_REQUIRED') return '还没有选定店铺。先调用 workspace.health 查看可用店铺，或明确提供 platform + account_id；已导入的商品和 SKU 不会丢失。'
   if (code === 'MODEL_PROVIDER_REQUEST_FAILED' && /input\.media|first_frame/u.test(String(details?.provider_error_summary ?? ''))) return '视频尚未生成：视频服务未能正确接收参考图，需修复中转渠道的首帧映射。原图已保留，无需重新上传。'
   const retryable = new Set(['API_STARTING', 'API_UNAVAILABLE', 'RATE_LIMITED', 'MCP_GATEWAY_ERROR'])
@@ -1619,6 +1620,7 @@ function userFacingErrorText(code, details) {
   if (code === 'CREATIVE_POINTS_EXHAUSTED') return '创意点已用完，本次请求已阻断，未执行业务写入。请登录 Store Nova 商家桌面，在“财务与资源”查看当前工作区余额及服务端授权的创意点恢复入口；只有页面显示可购买套餐和正式支付入口时才下单，支付后须等待服务端确认创意点到账。'
   if (code === 'CREATIVE_POINTS_INSUFFICIENT') return '创意点不足，当前未执行业务写入。请使用服务端授权的充值恢复入口。'
   if (code === 'CREATIVE_POINTS_UNAVAILABLE') return '暂时无法确认创意点余额，已安全停止。待确认余额不会按 0 处理。'
+  if (code === 'MODEL_USAGE_COST_MISSING' || code === 'MODEL_USAGE_SETTLEMENT_PENDING') return '模型调用已发出，但用量成本尚未完成结算，结果暂不能交付。创意点可能仍处于预留状态；请在商家后台查看账务状态并联系平台运营对账，不要重复生成。'
   if (code === 'RATE_CARD_UNAVAILABLE') return '当前无法取得已批准的创意点费率，已安全停止，未扣点。'
   if (code === 'COMMERCIAL_ACCESS_STALE') return '创意点准入状态已变更，请先刷新服务端返回的恢复状态，不要重复提交。'
   if (code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE') return '旧版钱包充值已停用；请仅使用服务端返回的创意点包 SKU 恢复入口。'
@@ -1675,7 +1677,7 @@ function toolErrorPresentation(method, args, code, details) {
       },
     }
   }
-  if (code === 'MCP_AUTH_REQUIRED') {
+  if (code === 'MCP_AUTH_REQUIRED' || code === 'UNAUTHENTICATED') {
     return {
       text: '当前插件的 Store Nova 工作区登录已失效。本次未完成请求；请联系平台管理员确认分配给你的 ws_... 工作区 ID，在插件安装目录运行 macOS 的 login.sh --workspace ws_... 或 Windows 的 login.cmd --workspace ws_...，按提示完成登录后重启 ChatGPT。此操作只登录当前工作区，不会连接店铺、扣费或发布。',
       recovery: {
@@ -2919,6 +2921,10 @@ async function callRemote(method, params) {
           }
         }
         const providerOutcomeUnknown = normalizedRemoteError?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
+          || normalizedRemoteError?.code === 'MODEL_USAGE_COST_MISSING'
+          || normalizedRemoteError?.code === 'MODEL_USAGE_SETTLEMENT_PENDING'
+          || normalizedRemoteError?.details?.provider_succeeded === true
+          || normalizedRemoteError?.details?.reconciliation_required === true
         const transient = retrySafe && !providerOutcomeUnknown && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
         if ((!response.ok || !payload || remoteError) && (!transient || attempt === maxAttempts)) {
           const error = normalizedRemoteError ?? {
