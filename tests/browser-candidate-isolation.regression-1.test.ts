@@ -97,6 +97,7 @@ describe('browser candidate isolation', () => {
     expect(harness).toContain("'com.docker.compose.service'")
     expect(harness).toContain('refusing to reuse any listener')
     expect(harness).toContain("'--env-file', '/dev/null'")
+    expect(harness).toContain("'status', '--porcelain', '--untracked-files=no', '--', ...buildPaths")
     expect(readFileSync('infra/local/docker-compose.yml', 'utf8')).toContain('${LOCAL_API_IMAGE:-local-api}')
     expect(readFileSync('infra/local/docker-compose.yml', 'utf8')).toContain('${LOCAL_OPS_UI_IMAGE:-local-ops-ui}')
     for (const file of ['infra/docker/ui.Dockerfile', 'infra/docker/ops-console.Dockerfile']) {

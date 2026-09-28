@@ -254,7 +254,7 @@ async function main(): Promise<void> {
   const sha = mode === 'external' ? '' : execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
   if (mode === 'candidate') {
     const buildPaths = ['package.json', 'package-lock.json', 'tsconfig.json', 'apps', 'packages', 'services', 'tests', 'demo', 'scripts', 'infra']
-    const dirtyTracked = Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim())
+    const dirtyTracked = Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=no', '--', ...buildPaths], { encoding: 'utf8' }).trim())
     const mergeHead = execFileSync('git', ['rev-parse', '--git-path', 'MERGE_HEAD'], { encoding: 'utf8' }).trim()
     const untrackedSource = Boolean(execFileSync('git', ['ls-files', '--others', '--exclude-standard', '--', ...buildPaths], { encoding: 'utf8' }).trim())
     assertCandidateGitState(dirtyTracked, existsSync(mergeHead), untrackedSource)
