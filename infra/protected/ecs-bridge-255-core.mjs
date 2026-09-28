@@ -11,6 +11,31 @@ const requireValue = (ok, reason) => { if (!ok) throw new Error(`BRIDGE_255_CORE
 const sha = value => createHash('sha256').update(value).digest('hex')
 const identityFields = ['release_id', 'git_sha', 'manifest_sha256', 'image_set_digest']
 
+// Check the complete adapter surface before even taking a capture or writing a
+// signed phase. A partially installed host adapter must fail before it can
+// fence traffic and then discover that it cannot observe, recover, or journal
+// the transition. These are capability checks only; they do not prove that a
+// supplied adapter is trustworthy or production-ready.
+function requirePorts(value, methods, label) {
+  requireValue(value && methods.every(method => typeof value[method] === 'function'),
+    `${label}_PORTS_INCOMPLETE`)
+}
+
+function requireExecutionPorts(control, runtime) {
+  requirePorts(control, ['captureSigned', 'advanceSigned', 'consumeNonceOnce'], 'CONTROL')
+  requirePorts(runtime, ['assertProtectedLock', 'captureExactBridgeAt254', 'observePhase',
+    'fenceIngressAndCallbacks', 'stopExactOldRuntime', 'observeFenceAndDrain',
+    'createSignedDemo254BackupAndVerifyPg17Restore', 'observeDatabasePrefix',
+    'applyOnlyMigration255', 'startPinnedRecovery255', 'keepIngressFencedForForwardRecovery'], 'RUNTIME')
+}
+
+function requireResumePorts(control, runtime) {
+  requirePorts(control, ['readFrozenAttempt', 'readConsumedNonce', 'advanceSigned'], 'CONTROL')
+  requirePorts(runtime, ['assertProtectedLock', 'observePhase', 'observeFenceAndDrain',
+    'observeDatabasePrefix', 'applyOnlyMigration255', 'startPinnedRecovery255',
+    'keepIngressFencedForForwardRecovery'], 'RUNTIME')
+}
+
 function assertNonceReceipt(receipt, plan) {
   requireValue(receipt && Object.keys(receipt).sort().join('\0') === [
     'namespace', 'operation', 'attempt_id', 'nonce_sha256', ...identityFields,
@@ -61,7 +86,8 @@ export async function executeBridge255ForwardMigration({ plan, deploymentNonce, 
   validateBridge255Plan(plan)
   requireValue(typeof deploymentNonce === 'string' && /^[A-Za-z0-9_-]{22,128}$/u.test(deploymentNonce)
     && sha(deploymentNonce) === plan.nonce_sha256, 'NONCE_INPUT_INVALID')
-  requireValue(control && runtime && typeof publicKeyPem === 'string', 'PROTECTED_PORTS_MISSING')
+  requireValue(typeof publicKeyPem === 'string', 'PROTECTED_PORTS_MISSING')
+  requireExecutionPorts(control, runtime)
   await assertLocked(runtime)
   const capture = await runtime.captureExactBridgeAt254()
   const capturedObservation = await runtime.observePhase('captured_254')
@@ -124,6 +150,8 @@ export async function executeBridge255ForwardMigration({ plan, deploymentNonce, 
 export async function resumeBridge255ForwardRecovery({ plan, publicKeyPem, control, runtime,
   now = new Date() }) {
   validateBridge255Plan(plan)
+  requireValue(typeof publicKeyPem === 'string', 'PROTECTED_PORTS_MISSING')
+  requireResumePorts(control, runtime)
   await assertLocked(runtime)
   const frozen = await control.readFrozenAttempt({ attemptId: plan.attempt_id })
   requireValue(frozen?.plan_sha256 === validateBridge255Plan(plan)

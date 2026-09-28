@@ -172,6 +172,32 @@ test('fence, drain, signed restore, nonce and journal precede the only SQL mutat
   assert.equal(f.state.events.includes('restart-old-254'), false)
 })
 
+test('incomplete host adapters are rejected before lock, capture, journal or fence operations', async () => {
+  const runtimeMissing = fixture()
+  delete runtimeMissing.runtime.keepIngressFencedForForwardRecovery
+  await assert.rejects(executeBridge255ForwardMigration({ plan: runtimeMissing.plan,
+    deploymentNonce: runtimeMissing.nonce, publicKeyPem: runtimeMissing.publicKeyPem,
+    control: runtimeMissing.control, runtime: runtimeMissing.runtime, now: runtimeMissing.now }),
+  /BRIDGE_255_CORE_RUNTIME_PORTS_INCOMPLETE/u)
+  assert.deepEqual(runtimeMissing.state.events, [])
+
+  const controlMissing = fixture()
+  delete controlMissing.control.consumeNonceOnce
+  await assert.rejects(executeBridge255ForwardMigration({ plan: controlMissing.plan,
+    deploymentNonce: controlMissing.nonce, publicKeyPem: controlMissing.publicKeyPem,
+    control: controlMissing.control, runtime: controlMissing.runtime, now: controlMissing.now }),
+  /BRIDGE_255_CORE_CONTROL_PORTS_INCOMPLETE/u)
+  assert.deepEqual(controlMissing.state.events, [])
+
+  const resumeMissing = fixture()
+  delete resumeMissing.runtime.observeDatabasePrefix
+  await assert.rejects(resumeBridge255ForwardRecovery({ plan: resumeMissing.plan,
+    publicKeyPem: resumeMissing.publicKeyPem, control: resumeMissing.control,
+    runtime: resumeMissing.runtime, now: resumeMissing.now }),
+  /BRIDGE_255_CORE_RUNTIME_PORTS_INCOMPLETE/u)
+  assert.deepEqual(resumeMissing.state.events, [])
+})
+
 test('protected journal store persists an approved attempt and resumes with the same nonce after SQL commit', async () => {
   const f = fixture()
   const dir = mkdtempSync(join(realpathSync(tmpdir()), 'merchant-bridge-255-state-'))
