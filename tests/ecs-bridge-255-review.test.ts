@@ -142,6 +142,20 @@ describe('read-only 254/255 transition review', () => {
     expect(() => reviewBridge255Phase(input)).toThrow('RUNTIME_255_NOT_VERIFIED')
   })
 
+  it('requires the complete current 254 demo service set but permits worker-scan on 255 targets', () => {
+    for (const worker of runtime.filter(name => name.startsWith('worker-'))) {
+      const missingOldWorker = fixture()
+      missingOldWorker.plan.old_demo_services = services.filter(name => name !== worker).sort()
+      expect(() => validateBridge255Plan(missingOldWorker.plan), `missing old worker ${worker}`)
+        .toThrow('BRIDGE_255_SERVICE_PLAN_INVALID')
+    }
+
+    const targetWithScanWorker = fixture('candidate_cutover', true)
+    expect(targetWithScanWorker.plan.candidate_255_services).toContain('worker-scan')
+    expect(targetWithScanWorker.plan.recovery_255_services).toContain('worker-scan')
+    expect(() => validateBridge255Plan(targetWithScanWorker.plan)).not.toThrow()
+  })
+
   it('rejects topology, public identity, migration history and frozen artifact drift', () => {
     const mutations = [
       (x: ReturnType<typeof fixture>) => { x.plan.project = 'merchant-production' },

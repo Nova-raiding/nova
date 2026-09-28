@@ -27,8 +27,9 @@ function fixture() {
     manifest_sha256: h(char), image_set_digest: `sha256:${h(char)}` })
   const artifacts = char => ({ identity: identity(char), compose_sha256: h(char),
     env_sha256: h(char), image_digests_sha256: h(char) })
-  const services = ['api', 'api-replica', 'pilot-gateway', 'postgres', 'redis',
-    'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-sync']
+  const services = ['api', 'api-replica', 'ops-ui', 'payment-gateway', 'pilot-gateway',
+    'postgres', 'redis', 'ui', 'worker-automation', 'worker-generation', 'worker-publish',
+    'worker-reconcile', 'worker-sync']
   const plan = { schema_version: 'ecs-bridge-255-plan/1', attempt_id: 'attempt_abcdefghijklmnop',
     project: 'merchant-demo-85575f9c', lock_path: '/var/lib/merchant-release-security/production-deploy.lock',
     nonce_sha256: h('0'), old_demo: artifacts('b'), bridge_254_255: artifacts('c'),

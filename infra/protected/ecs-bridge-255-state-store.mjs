@@ -182,6 +182,11 @@ function readNonceForAttempt(ledgerPath, plan, uid, { allowMissing = false } = {
           identity.manifest_sha256, identity.git_sha)
       requireValue(!ambiguous.some(row => sha(row.nonce) === plan.nonce_sha256),
         'NONCE_LEDGER_OWNER_MISSING_OR_DIFFERENT_ATTEMPT')
+      const orphanOwners = db.prepare(`SELECT o.nonce,o.attempt_id FROM nonce_owners o
+        LEFT JOIN consumed_nonces c USING(namespace,nonce)
+        WHERE o.namespace=? AND c.nonce IS NULL`).all('merchant-production-deploy')
+      requireValue(!orphanOwners.some(row => sha(row.nonce) === plan.nonce_sha256
+        || row.attempt_id === plan.attempt_id), 'NONCE_LEDGER_OWNER_ORPHAN')
     }
     requireValue(rows.length === 1 || (allowMissing && rows.length === 0), 'NONCE_LEDGER_BINDING_MISSING_OR_DUPLICATE')
     if (rows.length === 0) return null

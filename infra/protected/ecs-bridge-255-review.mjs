@@ -14,6 +14,9 @@ const ALLOWED_SERVICES = Object.freeze(['api', 'api-replica', 'ui', 'ops-ui', 'p
   'worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile',
   'worker-automation', 'worker-scan', 'postgres', 'redis', 'pilot-gateway'])
 const REQUIRED_SERVICES = Object.freeze(['api', 'api-replica', 'postgres', 'redis', 'pilot-gateway'])
+const OLD_DEMO_SERVICES = Object.freeze(['api', 'api-replica', 'ops-ui', 'payment-gateway', 'pilot-gateway',
+  'postgres', 'redis', 'ui', 'worker-automation', 'worker-generation', 'worker-publish',
+  'worker-reconcile', 'worker-sync'])
 const validServices = value => Array.isArray(value)
   && value.length >= REQUIRED_SERVICES.length
   && new Set(value).size === value.length
@@ -21,6 +24,9 @@ const validServices = value => Array.isArray(value)
   && REQUIRED_SERVICES.every(name => value.includes(name))
   && value.some(name => name.startsWith('worker-'))
   && [...value].sort().join('\0') === value.join('\0')
+const validOldDemoServices = value => Array.isArray(value)
+  && value.length === OLD_DEMO_SERVICES.length
+  && value.every((name, index) => name === OLD_DEMO_SERVICES[index])
 const PHASES = Object.freeze(['captured_254', 'fenced_254', 'migrating_255', 'verified_255',
   'candidate_cutover', 'accepted_255'])
 const requireValue = (ok, message) => { if (!ok) throw new Error(`BRIDGE_255_${message}`) }
@@ -76,7 +82,7 @@ export function validateBridge255Plan(plan) {
   requireValue(artifacts(plan.old_demo) && artifacts(plan.bridge_254_255)
     && artifacts(plan.candidate_255) && artifacts(plan.recovery_255)
     && IMAGE.test(plan.pg17_image_ref ?? ''), 'ARTIFACTS_INVALID')
-  requireValue(validServices(plan.old_demo_services)
+  requireValue(validOldDemoServices(plan.old_demo_services)
     && validServices(plan.recovery_255_services)
     && validServices(plan.candidate_255_services), 'SERVICE_PLAN_INVALID')
   requireValue(exactKeys(plan.database, ['strategy', 'schema_downgrade', 'preserve_volumes', 'prefix_254_sha256', 'prefix_255_sha256'])

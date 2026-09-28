@@ -233,12 +233,24 @@ describe('quality entrypoint coverage', () => {
   it('runs critical MCP, worker, payment, and usage evidence checks from the default release entrypoint', () => {
     const releaseGate = script('test:release-gates')
     const runtimeReleaseGate = script('test:release-gates:runtime')
+    const releaseLifecycle = expandScriptInvocationGraph(packageJson.scripts, new Set(['test:release-gates']))
+    for (const reachable of [
+      'test:release-gates',
+      'pretest:release-gates',
+      'test:release-gates:runtime',
+      'test:ecs-bridge-255-store',
+    ]) {
+      expect(releaseLifecycle.has(reachable), `${reachable} must be reachable from npm run test:release-gates`).toBe(true)
+    }
     for (const gate of CRITICAL_DEFAULT_RELEASE_GATES) {
       expect(releaseGate.split(/\s+/u).filter(argument => argument === gate)).toHaveLength(1)
     }
-    for (const gate of [
+    const runtimeBridgeTests = [
       'tests/ecs-254-255-api-bridge-isolated.postgres.test.ts',
       'tests/ecs-254-255-worker-bridge-isolated.postgres.test.ts',
+    ] as const
+    for (const gate of [
+      ...runtimeBridgeTests,
       'apps/api/src/model-usage-settlement.test.ts',
     ]) {
       expect(runtimeReleaseGate.split(/\s+/u).filter(argument => argument === gate)).toHaveLength(1)
