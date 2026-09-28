@@ -24,6 +24,14 @@ API 的 `bb417660` 改动为运维手工商品导入 ACL；该一行补丁已包
 
 ## 最小可审过渡
 
+### 生产状态存储与 trust prerequisite（当前仍 NO-GO）
+
+当前 `openProtectedBridge255StateStore()` 只校验并打开既有生产资料；它不会创建 `/var/lib/merchant-release-security/bridge-255`、初始化 nonce SQLite schema、签署执行计划或安装迁移控制器。不要通过运行 helper、触碰数据库/nonce 文件、`mkdir -p` 或宽松 `chmod` 来“试初始化”生产状态。控制器缺失时，这些准备步骤不得在 101 上执行。
+
+未来若经独立审查批准 provision，必须在维护窗口外由双人核对的 root-only provisioning 步骤执行，并先检查后创建、绝不覆盖现有目标：journal 根目录必须是 canonical、root-owned、mode `0700`；nonce ledger 必须是已存在的 canonical、root-owned、mode `0600` 普通文件，并由已审 nonce consumer 拥有预期 schema；生产 deploy lock 和固定 nonce consumer 必须与已安装 digest 一致；trust 目录、Ed25519 公钥/key id、执行计划签名、state/review/transition-review/nonce-consumer 摘要文件必须通过固定安装器和独立签名流程投放。生产私钥只能由既有受保护密钥流程提供，不可放入候选归档、shell 参数或普通日志。所有路径须检查 symlink、父目录权限、owner、mode、inode/摘要及 ledger schema；发现任何既有但不匹配的资料即停止，不能删除、重建或迁移 ledger/journal 来消除冲突。
+
+安装后的验收首先只能是只读检查：以 root 身份、空环境运行固定控制器的 `status`/`verify-plan`（该命令尚未实现）；检查项须报告 controller 与依赖摘要、trust/key id、签名计划有效期和摘要、journal 根目录属性、nonce ledger owner/mode/schema、production lock 的固定 inode契约，以及是否存在未终结 attempt。只读验收不得消费 nonce、创建 journal、启动/停止容器或访问生产数据库写连接。只有上述控制器实现、安装映射、真实 Linux lock/nonce 集成测试及故障恢复演练均通过独立审核后，才可补入确切命令并重新评估 NO-GO；本节不是授权 101 预配或迁移。
+
 首选单独发布 **254/255 双前缀兼容桥**：桥接 API、API 副本和公网 demo 项目的五类 worker 必须在完整且校验过的 254 与 255 数据库前缀上均健康，并且在 254 时不得读写迁移 255 新表；其他共享消费者须被明确识别并纳入隔离/恢复计划。桥接版本必须先以 254 数据库完成隔离部署、真实业务及本地 stdio ChatGPT 宿主验收，再成为公网当前身份。迁移期间只有这套经审核的桥接运行时处理流量；旧 254 镜像退出服务路径。桥接的 255 恢复镜像须在迁移前完成构建、固定摘要、隔离 255 数据库演练和恢复验收。
 
 受保护部署/恢复控制随后需要一个 **独立的 254→255 转移模式**，在生产锁内绑定：当前桥接公网四字段身份、完整服务清单与容器 ID、255 候选身份、255 恢复目标身份、受保护 Compose/env/八镜像摘要、实际 254 历史前缀 SHA-256、预期 255 前缀 SHA-256、nonce 和一次性签名 journal。迁移前核对上述输入及恢复镜像在本机可用；迁移后先核对数据库从 1 到 255 的名称和校验和，再切流。任一失败按已冻结的 **255 兼容恢复目标**恢复业务；数据库和卷均不倒退。整个过程中绝不能重新启动不识别 255 的旧 API/worker。

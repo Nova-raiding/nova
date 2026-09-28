@@ -2,6 +2,7 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { reviewBridge255Phase, validateBridge255Plan } from '../infra/protected/ecs-bridge-255-review.mjs'
 import { reviewBridge255Transition, BRIDGE_255_HOST_CONTRACT } from '../infra/protected/ecs-bridge-255-state.mjs'
+import { readFileSync } from 'node:fs'
 
 const h = (char: string) => char.repeat(64)
 const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
@@ -111,6 +112,16 @@ function resignObservation(input: ReturnType<typeof fixture>) {
 }
 
 describe('read-only 254/255 transition review', () => {
+  it('documents that production state prerequisites cannot be initialized or mutated by the current helper', () => {
+    const runbook = readFileSync('docs/runbooks/ecs-254-255-forward-recovery.md', 'utf8')
+    expect(runbook).toContain('生产状态存储与 trust prerequisite（当前仍 NO-GO）')
+    expect(runbook).toContain('它不会创建 `/var/lib/merchant-release-security/bridge-255`')
+    expect(runbook).toContain('不会创建')
+    expect(runbook).toContain('只读检查')
+    expect(runbook).toContain('不得消费 nonce、创建 journal、启动/停止容器')
+    expect(runbook).toContain('本节不是授权 101 预配或迁移')
+  })
+
   it('keeps every structurally valid signed phase review-only and non-deployable', () => {
     for (const phase of ['captured_254', 'fenced_254', 'migrating_255', 'verified_255',
       'candidate_cutover', 'accepted_255']) {
