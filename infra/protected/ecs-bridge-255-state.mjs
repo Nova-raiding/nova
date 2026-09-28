@@ -46,7 +46,7 @@ const signedJournalDigest = journal => createHash('sha256')
 /**
  * The future host entrypoint must collect observations under the same held
  * flock, read protected trust material, verify the nonce ledger, then call
- * this review before atomically writing its next signed journal. A passing
+ * this review before advancing the protected state store's signed journal. A passing
  * review is still not a permission for that entrypoint to mutate production.
  */
 export function reviewBridge255Transition({ plan, capture, previous, next, publicKeyPem,
@@ -76,7 +76,7 @@ export function reviewBridge255Transition({ plan, capture, previous, next, publi
     host_contract: HOST_CONTRACT, required_observations: OBSERVATIONS[next.phase],
     production_authorized: false, deployable: false,
     blockers: [...new Set([...prior.blockers, ...following.blockers,
-      'NO_PROTECTED_ATOMIC_JOURNAL_CAS', 'NO_REHEARSED_FORWARD_RECOVERY_PATH'])],
+      'NO_PRODUCTION_HOST_CONTROL_ADAPTER', 'NO_REHEARSED_FORWARD_RECOVERY_PATH'])],
   })
 }
 

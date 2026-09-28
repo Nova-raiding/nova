@@ -198,10 +198,9 @@ export function reviewBridge255Phase({ plan, journal, publicKeyPem, capture, obs
   return Object.freeze({ schema_version: 'ecs-bridge-255-phase-review/1', status: 'review_only',
     phase: journal.phase, plan_sha256: planSha, journal_sha256: digest(journal),
     production_authorized: false, deployable: false,
-    blockers: ['NO_TRUSTED_HOST_LOCK_OBSERVATION', 'NO_PROTECTED_TRUST_ROOT',
-      'NO_PROTECTED_NONCE_LEDGER_CONSUMER',
-      'NO_DEMO_254_SIGNED_BACKUP_RESTORE_CONTROL',
-      'NO_DURABLE_SIGNED_JOURNAL_STATE_MACHINE', 'NO_INDEPENDENT_DOCKER_DATABASE_GATEWAY_OBSERVATION',
-      'NO_EXECUTION_OR_FORWARD_RECOVERY_CONTROLLER'],
+    blockers: ['NO_PRODUCTION_LOCK_ADAPTER', 'NO_PROTECTED_PRODUCTION_TRUST_BINDING',
+      'NO_PRODUCTION_NONCE_LEDGER_ADAPTER', 'NO_PRODUCTION_254_BACKUP_RESTORE_ADAPTER',
+      'NO_PRODUCTION_SIGNED_STATE_STORE_BINDING', 'NO_INDEPENDENT_PRODUCTION_TOPOLOGY_OBSERVER',
+      'NO_PRODUCTION_FORWARD_RECOVERY_EXECUTOR'],
   })
 }

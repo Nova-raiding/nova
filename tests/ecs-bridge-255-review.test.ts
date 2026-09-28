@@ -117,7 +117,7 @@ describe('read-only 254/255 transition review', () => {
       const result = reviewBridge255Phase(fixture(phase))
       expect(result).toMatchObject({ phase, status: 'review_only', production_authorized: false,
         deployable: false })
-      expect(result.blockers).toContain('NO_PROTECTED_NONCE_LEDGER_CONSUMER')
+      expect(result.blockers).toContain('NO_PRODUCTION_NONCE_LEDGER_ADAPTER')
     }
   })
 
@@ -199,6 +199,8 @@ describe('read-only 254/255 signed journal state machine', () => {
         status: 'review_only', deployable: false, production_authorized: false })
       expect(result.host_contract.production_lock).toBe(BRIDGE_255_HOST_CONTRACT.production_lock)
       expect(result.required_observations.length).toBeGreaterThan(0)
+      expect(result.blockers).toContain('NO_PRODUCTION_HOST_CONTROL_ADAPTER')
+      expect(result.blockers).not.toContain('NO_PROTECTED_ATOMIC_JOURNAL_CAS')
       expect(result.blockers).toContain('NO_REHEARSED_FORWARD_RECOVERY_PATH')
     }
   })
