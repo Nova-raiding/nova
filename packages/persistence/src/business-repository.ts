@@ -356,11 +356,13 @@ export class PostgresBusinessRepository {
       }
       if (input.query) {
         const searchable = table === 'products'
-          ? "(lower(id) LIKE '%' || lower(?) || '%' OR lower(title) LIKE '%' || lower(?) || '%' OR lower(coalesce(remote_product_id,'')) LIKE '%' || lower(?) || '%')"
+          ? "(lower(id) LIKE '%' || lower(?) || '%' OR lower(title) LIKE '%' || lower(?) || '%' OR lower(coalesce(remote_product_id,'')) LIKE '%' || lower(?) || '%' OR lower(coalesce(data->>'localProductKey','')) LIKE '%' || lower(?) || '%')"
           : "(lower(id) LIKE '%' || lower(?) || '%' OR lower(product_id) LIKE '%' || lower(?) || '%' OR EXISTS (SELECT 1 FROM products WHERE products.workspace_id = tasks.workspace_id AND products.id = tasks.product_id AND lower(products.title) LIKE '%' || lower(?) || '%'))"
-        values.push(input.query, input.query, input.query)
-        const base = values.length - 2
-        clauses.push(searchable.replace('?', `$${base}`).replace('?', `$${base + 1}`).replace('?', `$${base + 2}`))
+        const searchValues = table === 'products' ? [input.query, input.query, input.query, input.query] : [input.query, input.query, input.query]
+        const base = values.length + 1
+        values.push(...searchValues)
+        let index = base
+        clauses.push(searchable.replaceAll('?', () => `$${index++}`))
       }
       if (input.dateFrom) add(`${table === 'products' ? 'updated_at' : 'created_at'} >= ?::timestamptz`, input.dateFrom)
       if (input.dateTo) add(`${table === 'products' ? 'updated_at' : 'created_at'} <= ?::timestamptz`, input.dateTo)

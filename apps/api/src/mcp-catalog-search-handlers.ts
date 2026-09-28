@@ -239,6 +239,7 @@ export async function handleCatalogSearch(params: Params, workspaceId: string, d
       return {
         ...product,
         product_id: product.id,
+        local_product_key: product.localProductKey ?? null,
         ...(requestedSkuId ? { selected_skus: selectedSkus } : {}),
         storeContext: product.accountId ? directory.get(`${product.platform}:${product.accountId}`) ?? { platform: product.platform, accountId: product.accountId } : null,
         canonical_scope: { verification_status: verificationStatus, read_mode: readControl.mode, canonical_product_id: canonical?.id ?? null, brand_id: canonical?.brandId ?? null, listing_id: listings.length === 1 ? listings[0]!.id : null, listing_count: listings.length, next_action: verificationStatus === 'verified' ? null : 'canonical.product.consistency' },

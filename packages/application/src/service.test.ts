@@ -1906,6 +1906,15 @@ describe('MerchantService', () => {
     expect(service.listTasks('ws_other')).toHaveLength(0)
   })
 
+  it('keeps an imported product code separate from SKU IDs and finds it by text query', () => {
+    const service = new MerchantService()
+    const product = service.importProduct({ workspaceId: 'ws_product_code', platform: 'jd', localProductKey: 'STYLE-42', title: '测试运动鞋', stock: 3 })
+    expect(product).toMatchObject({ localProductKey: 'STYLE-42', skuCount: 0 })
+    expect(service.listProducts('ws_product_code', { query: 'style-42' })).toEqual([product])
+    expect(service.listProducts('ws_product_code', { skuId: 'STYLE-42' })).toEqual([])
+    expect(service.listProducts('ws_other', { query: 'STYLE-42' })).toEqual([])
+  })
+
   it('supports PRD catalog and task history filters for SKU, remote identity, sync and publish state', () => {
     const service = new MerchantService()
     const accountId = 'acct-filter'

@@ -24,6 +24,20 @@ const input: SaveBusinessSnapshotInput = {
 const row = { workspace_id: 'ws_one', entity_type: 'task', entity_id: 'task_1', entity_version: 2, payload: input.payload, created_at: '2026-08-23T00:00:00.000Z', updated_at: '2026-08-23T00:00:01.000Z' }
 
 describe('PostgresBusinessRepository', () => {
+  it('searches imported product codes in existing JSON data without widening tenant scope', async () => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // tenant scope
+    client.enqueue({ total: '1' })
+    client.enqueue({ data: { id: 'prod_1', localProductKey: 'STYLE-42' } })
+    client.enqueue() // COMMIT
+    const page = await new PostgresBusinessRepository(new RecordingPool(client)).listProductsPage('ws_one', { limit: 10, offset: 0, query: 'STYLE-42' })
+    expect(page.items).toEqual([{ id: 'prod_1', localProductKey: 'STYLE-42' }])
+    expect(client.calls[2]?.text).toContain("lower(coalesce(data->>'localProductKey','')) LIKE '%' || lower($5) || '%'")
+    expect(client.calls[2]?.values).toEqual(['ws_one', 'STYLE-42', 'STYLE-42', 'STYLE-42', 'STYLE-42'])
+    expect(client.calls[3]?.text).toContain('LIMIT $6 OFFSET $7')
+  })
+
   it('saves a versioned snapshot and rejects stale writes', async () => {
     const client = new RecordingClient()
     client.enqueue() // BEGIN

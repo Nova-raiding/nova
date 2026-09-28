@@ -27,7 +27,7 @@ import { MCP_OPS_CONTROL_METHODS } from '../../../packages/contracts/src/commerc
 import { MCP_METHOD_SCHEMAS } from '../../../packages/contracts/src/mcp.js'
 import { MANUAL_STORE_RECORD_TOKEN_STATE, isManualStoreRecord } from '../../../packages/application/src/service.js'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
-import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, operationAudits, platformAuthorizationAuditForTests, server, service, setPasswordAuthRepositoryForTests, workspaceMembers, workspaceStoreDirectory } from './server.js'
+import { enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, operationAudits, platformAuthorizationAuditForTests, server, service, setPasswordAuthRepositoryForTests, workspaceMembers, workspaceStoreDirectory } from './server.js'
 
 type Envelope<T = Record<string, any>> = { workspace_id: string; data: T | null; error: { code: string; details?: Record<string, unknown> } | null }
 
@@ -86,6 +86,7 @@ afterEach(async () => {
 
 describe('manual operations store records', () => {
   it('lets platform operations import audited products only into an active merchant manual store', async () => {
+    enableCommercialFixtureHarnessForTests()
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('PLATFORM_OPERATIONS_MODE', 'manual')
     const workspaceId = `ws_manual_ops_import_${Date.now()}`
@@ -126,7 +127,13 @@ describe('manual operations store records', () => {
     expect(imported.body.error, JSON.stringify(imported.body.error)).toBeNull()
     expect(imported.body.data!.result).toMatchObject({ workspace_id: workspaceId, source_mode: 'platform_manual_upload', result: { count: 1, atomic: true, factsConfirmationRequired: true } })
     const productId = imported.body.data!.result.result.products[0].id as string
-    expect(service.products.get(productId)).toMatchObject({ workspaceId, accountId: storeKey, title: product.title, factsConfirmed: false })
+    expect(service.products.get(productId)).toMatchObject({ workspaceId, accountId: storeKey, localProductKey: 'QA-OPS-001', title: product.title, skuCount: 0, factsConfirmed: false })
+    const byProductCode = await mcpAt(base, { ...merchant, 'x-test-commercial-fixture': 'server-e2e' }, 'catalog.search', { scope: 'workspace', query: 'QA-OPS-001' })
+    expect(byProductCode.body.error, JSON.stringify(byProductCode.body.error)).toBeNull()
+    expect(byProductCode.body.data!.result.products).toEqual(expect.arrayContaining([expect.objectContaining({ product_id: productId, local_product_key: 'QA-OPS-001', accountId: storeKey, skuCount: 0 })]))
+    const bySkuCode = await mcpAt(base, { ...merchant, 'x-test-commercial-fixture': 'server-e2e' }, 'catalog.search', { scope: 'workspace', sku_id: 'QA-OPS-001' })
+    expect(bySkuCode.body.error, JSON.stringify(bySkuCode.body.error)).toBeNull()
+    expect(bySkuCode.body.data!.result.products).toEqual([])
     const adminImported = await mcpAt(base, admin, 'ops.platform.product.import.batch', { ...input, products_json: JSON.stringify([{ ...product, local_product_key: 'QA-ADMIN-001' }]) })
     expect(adminImported.body.error, JSON.stringify(adminImported.body.error)).toBeNull()
     const merchantProducts = await fetch(`${base}/v1/products?limit=50&offset=0`, { headers: merchant }).then(response => response.json()) as { data?: { items?: Array<{ id: string; accountId?: string; title: string }> } }

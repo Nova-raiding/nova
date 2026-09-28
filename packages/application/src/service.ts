@@ -79,6 +79,8 @@ export interface Product {
   storeDifferentiation?: string
   /** Absent for a local/imported product until the first successful create. */
   remoteId?: string
+  /** Merchant-provided product code; distinct from a SKU and a platform product ID. */
+  localProductKey?: string
   cursor?: string
   title: string
   skuCount: number
@@ -1932,7 +1934,7 @@ export class MerchantService {
     return [...this.products.values()].filter(product => {
       const latestSync = [...this.syncJobs.values()].filter(job => job.workspaceId === workspaceId && job.platform === product.platform && job.accountId === product.accountId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
       return product.workspaceId === workspaceId
-      && (!query || [product.id, product.remoteId, product.title, product.category, ...(product.images ?? [])].some(value => value?.toLocaleLowerCase().includes(query)))
+      && (!query || [product.id, product.remoteId, product.localProductKey, product.title, product.category, ...(product.images ?? [])].some(value => value?.toLocaleLowerCase().includes(query)))
       && (!filters.platform || product.platform === filters.platform)
       && (!filters.accountId || product.accountId === filters.accountId)
       && (!storeName || product.storeName.toLocaleLowerCase().includes(storeName))
@@ -2213,7 +2215,7 @@ export class MerchantService {
     const id = this.scopedProductId(input.workspaceId, input.platform, remoteId || `local_${hash(localKey).slice(0, 20)}`, input.accountId)
     const previous = this.products.get(id)
     const product: Product = {
-      id, workspaceId: input.workspaceId, platform: input.platform, ...(input.brandId ? { brandId: input.brandId.trim() } : {}), ...(input.accountId ? { accountId: input.accountId } : {}), storeName: input.storeName?.trim() || '导入店铺', ...(input.storeDifferentiation?.trim() ? { storeDifferentiation: input.storeDifferentiation.trim().slice(0, 500) } : {}), ...(remoteId ? { remoteId } : {}), title,
+      id, workspaceId: input.workspaceId, platform: input.platform, ...(input.brandId ? { brandId: input.brandId.trim() } : {}), ...(input.accountId ? { accountId: input.accountId } : {}), storeName: input.storeName?.trim() || '导入店铺', ...(input.storeDifferentiation?.trim() ? { storeDifferentiation: input.storeDifferentiation.trim().slice(0, 500) } : {}), ...(remoteId ? { remoteId } : {}), localProductKey: localKey, title,
       skuCount: input.skus?.length ?? Math.max(0, input.skuCount ?? 0), stock: Math.max(0, input.stock ?? 0),
       ...(input.skus?.length ? { skus: input.skus.map(normalizeProductSku) } : {}),
       ...(typeof input.price === 'number' && Number.isFinite(input.price) ? { price: input.price } : {}),
