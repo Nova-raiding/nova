@@ -8,6 +8,7 @@
 - 本地插件已从当前源码重新加入、重建 macOS Keychain helper；重启后的 ChatGPT App 再次调用 `onboarding.status` 成功，见 [更新后 App 截图](evidence/2026-09-29-chatgpt-app/06-updated-plugin-app-success.png)。云端 API 修复仍未部署。
 - **文案生成尚不能作为成功交付**：`content.draft.generate` 被错误的品牌范围授权挡住；`merchant.first_value` 的一次模型调用返回成本结算缺失，生成结果未交付，1 点创意点仍处于预留状态。见 [授权阻断](evidence/2026-09-29-chatgpt-app/03-draft-scope-block.png)、[模型阻断](evidence/2026-09-29-chatgpt-app/04-draft-cost-block.png)、[积分账本](evidence/2026-09-29-chatgpt-app/05-points-reserved.png)。
 - 配置热修后在 App 中用**新幂等键**验证了一次：`qwen3.8-flash` 返回 341/377 token，但中转价格接口在结算时超过 10 秒超时，仍被 `MODEL_USAGE_COST_MISSING` 阻断；结果未交付。见 [热修后截图](evidence/2026-09-29-chatgpt-app/07-priced-model-cost-timeout.png)。数据库只读核对显示两次尝试各有 1 点 `active` 预留，均未结算；已停止进一步付费生成。
+- 已在本地 API 候选加入价格前置检查：先验证当前文本模型的中转价格、计费组与汇率，再预留创意点和调用模型。价格检查失败时返回 `MODEL_PRICING_PREFLIGHT_UNAVAILABLE`，并明确 `provider_executed=false`、`points_reserved=false`。此修复**尚未部署**，不能用它宣称线上生成已恢复。
 
 ## 实测覆盖
 
@@ -23,7 +24,7 @@
 
 本轮未覆盖其余需要素材、店铺授权、审核状态或可能发布/扣费的工具的线上写操作；不能宣称“131 个功能全通过”。
 
-本地检查：`npm run typecheck` 通过；`npm run test:release-gates` 通过（1387 项通过、16 项跳过）；插件 bridge、安装与 manifest 相关 127 项通过；授权和积分相关定向 API 测试 14 项通过。线上 demo 配置热修后 API 双副本均 healthy，公网 `/releasez`、`/api/readyz` 和运营后台 `/healthz` 通过。上述检查不能替代仍被阻断的文案生成验收。
+本地检查：最新前置检查代码经 `npm run typecheck`、`npm run test:release-gates` 通过（Vitest 1387 项通过、16 项跳过，后续 Node/脚本门禁也通过）；前置检查、授权及相关 API 定向测试 18 项通过，其中包含价格超时后不预留积分、不写授权/审计、不调用 provider 的处理器测试。插件 bridge、安装与 manifest 相关 127 项通过。线上 demo 配置热修后 API 双副本均 healthy，公网 `/releasez`、`/api/healthz` 和运营后台 `/healthz` 通过。上述检查不能替代仍被阻断的文案生成验收。
 
 ## 根因与已完成的本地修复
 
@@ -32,10 +33,11 @@
    - 配置热修的新模型已经列于中转 `/v1/models` 且有 VIP 价格；第二次调用的 `pending_cost` 原因是 `MODEL_PRICING_FETCH_TIMEOUT`。这是价格接口可用性问题，不能把“价格表有模型”误当成整条结算链已通过。
 3. 插件将带幂等键的模型写请求收到的 503 当作可重试临时错误，掩盖了成本结算阻断。已在本地 bridge 阻止 `MODEL_USAGE_COST_MISSING`、`MODEL_USAGE_SETTLEMENT_PENDING` 和明确需对账的响应重试，并改为提示用户查账、勿重复生成；新增回归测试通过。
 4. App 曾显示笼统 `UNAUTHENTICATED`。失效凭据的刷新端点返回 `MCP_OAUTH_INVALID_GRANT`；本地重新登录并重启 App 后查询成功。已在本地 bridge 为服务端 `UNAUTHENTICATED` 加入明确的本地登录恢复指引和回归测试。
+5. 已在本地 `merchant.first_value(draft=true)` / `content.draft.generate` 共用处理器中加入计费前置检查；定向测试覆盖价格缺失、价格超时、有效价格，以及超时后不预留积分、不写授权/审计、不调用 provider。需要按免迁移的兼容候选部署后，在 App 中复验。
 
 ## 上线前优化顺序
 
-1. **模型与价格先对齐**：配置热修已切换为价格表覆盖的 `qwen3.8-flash`。下一步必须在 provider 调用前验证模型、计费组、汇率、价格版本和价格接口响应时间；缺任何一项时前置阻断，不能先预留创意点再发现价格缺失或超时。
+1. **模型与价格先对齐**：配置热修已切换为价格表覆盖的 `qwen3.8-flash`；本地前置检查代码已完成。下一步以免迁移候选部署并验证；价格接口超时或任一计费依据缺失时，应在 provider 调用及创意点预留前阻断。仍需验证中转价格接口的稳定性和结算后的真实账本。
 2. **对账两次请求**：由平台运营分别核对两条 `pending_cost` 的 provider 请求/账单和模型用量，按已有人工对账流程处理两笔各 1 点预留。未拿到权威成本证据前不手工标记成功或退款，也不继续发起付费测试。
 3. **部署最小修复**：审计当前线上 API 源码基线与主分支差异。线上 API 为 `bb417660...`，本地主分支为 `a1462b0e...`，两者之间 138 个提交且包含迁移 255；本次授权/bridge 修复不得把主分支整体倒灌到仍在迁移 254 的 demo。按 demo 发布手册冻结兼容候选，只替换 API 双副本及本地插件；不迁移数据库。
 4. **App 使用引导**：首次进入先显示当前账号、工作区、人工登记/官方授权店铺数；对未绑定商品提供明确“导入/确认商品事实”入口。`catalog.search(scope=workspace)` 不需要 `platform` 和 `account_id`，修正当前 App 回复中的误导提示。
