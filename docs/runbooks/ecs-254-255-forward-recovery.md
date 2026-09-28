@@ -8,9 +8,15 @@
 
 现有 `ECS_BRIDGE_CODE_ONLY` 特例只允许 242 数据库和 244 候选，且入口要求使用独立签名的 Bridge B 执行器。`verifyBridgeMigrationPrefix` 只接受 242/244 或 242/254，后者要求候选迁移清单恰好到 254。255 提交不能借用任一模式。受保护的预身份恢复控制对 Bridge B 也绑定旧 242 前缀。不要把 254→255 写成新的允许数值而沿用旧签名状态机。
 
-### 101 公网真实拓扑快照（2026-09-28，只读）
+### 101 公网真实拓扑快照（较早采样，2026-09-28，只读）
 
-公网 80/443 由 `merchant-demo-85575f9c-pilot-gateway-1` 持有（宿主 80→容器 8080、443→8443）；其 `/api` upstream 是同项目 `api-replica:8787`。`merchant-demo-85575f9c-api-replica-1` 和 `merchant-demo-85575f9c-postgres-1` 均有有效的 `com.docker.compose.project=merchant-demo-85575f9c` 及对应 service 标签，并连在 `merchant-demo-85575f9c_default` 网络。Postgres 容器 ID 为 `6abd0fb584b3746cca5b3e73d21681a24ab3780fce0a46d385ffcebcd43c0980`，当时地址为 `192.168.96.3`，数据卷为 `merchant-demo-85575f9c_merchant-postgres`；数据库版本是 PG16、迁移尾号 254。公网 `https://yxsona.com/api/releasez` 当时仍报告 `release-f48c8454-dual-e2e` / `f48c84544c519642de7c92615351007c9ac70a99`。实际端口、网络地址和容器 ID 都须在执行前重新读取，不能把此快照当作冻结执行输入。
+公网 80/443 由 `merchant-demo-85575f9c-pilot-gateway-1` 持有（宿主 80→容器 8080、443→8443）；其 `/api` upstream 是同项目 `api-replica:8787`。`merchant-demo-85575f9c-api-replica-1` 和 `merchant-demo-85575f9c-postgres-1` 均有有效的 `com.docker.compose.project=merchant-demo-85575f9c` 及对应 service 标签，并连在 `merchant-demo-85575f9c_default` 网络。Postgres 容器 ID 为 `6abd0fb584b3746cca5b3e73d21681a24ab3780fce0a46d385ffcebcd43c0980`，当时地址为 `192.168.96.3`，数据卷为 `merchant-demo-85575f9c_merchant-postgres`；数据库版本是 PG16、迁移尾号 254。公网 `/api/releasez` 当时报告 `release-f48c8454-dual-e2e`；该 release 身份后来变化，见下方 12:44 最新采样。实际端口、网络地址和容器 ID 都须在执行前重新读取，不能把本段快照当作冻结执行输入。
+
+### 101 公网逐服务身份复核（2026-09-28T12:44:48Z，只读）
+
+公网 `/api/releasez` 返回 `release-demo-manual-import-20260928` / `bb417660402c341df1b0d1debd5778f8b963c568`，manifest `f28180720e4f3b4c4d7698987b487b61aa76c7808ba1c6092b81ae3dc9cf7043`，image-set `sha256:9512e0b347f1a558cc7bba5ecbf7d20676f3276397b669b36a5b457fc1e490a3`。Docker inspect 显示 API 与 replica 同为该 SHA；商家 UI 仍为 `f48c84544c519642de7c92615351007c9ac70a99`，Ops UI 为 `fccee75805ce2d5ed066f4c18475e6467dfe9e5f`，五个 worker 为 `ffcda3996bcf1821fd2ab619c31a840dd5ee6eff`，支付网关为 `0fa18b78a65de8c5b07f09488f416a6ed08bfe08`，pilot gateway 为 `3567df1e2894aaf45974464f2ecad50b187971ab`。服务混版仍未消除；11 个 demo 服务当时均为 running，但这不构成 release approval。
+
+API 的 `bb417660` 改动为运维手工商品导入 ACL；该一行补丁已包含在当前 `main` 的 `72754581`，无需整体合并候选提交。此身份复核未重新采集数据库、网关 upstream、容器 ID 或卷信息，这些仍须在任何部署/迁移前重新只读采集。
 
 另一个历史 `merchant-production` project 有无 Compose 标签的 API replica 与六 worker，其中 replica 显示 `unhealthy`；它们**不是当前公网 demo 项目的服务清单**。本路径不以它们的状态推断公网 API 健康，也不要求先将其收编进公网 demo Compose。仍须只读查明其数据库、队列、网关网络和任务归属；特别是历史 `worker-scan` 是否消费 demo 的队列。若存在共享消费者，桥安装前必须单独隔离和排空，不能让旧、新同角色并发处理任务。
 

@@ -2,7 +2,11 @@
 
 This runbook stages controls only. It does not authorize a release, a database
 migration, or a gateway switch. The current public source is
-`release-f48c8454-dual-e2e`; its serving PostgreSQL is the
+`release-f48c8454-dual-e2e` at the time this protected backup source plan was
+captured. The API was later updated to `release-demo-manual-import-20260928`
+(`bb417660402c341df1b0d1debd5778f8b963c568`); the existing signed backup and
+isolated PG17 preview remain bound to their original `f48c8454` source and are
+not evidence for a fresh capture of the newer live runtime. Its serving PostgreSQL is the
 `merchant-demo-85575f9c` project, not `merchant-production`.
 
 ## 1. Package one reviewed `main` commit
