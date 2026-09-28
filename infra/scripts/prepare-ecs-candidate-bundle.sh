@@ -196,6 +196,9 @@ tests/ecs-staging-toolchain-installer.test.mjs
 tests/ecs-staging-toolchain-installer.container-check.mjs
 infra/scripts/verify-ecs-evidence-readable-by-api.mjs
 tests/ecs-evidence-readable-by-api.test.mjs
+infra/scripts/ecs-demo-254-host-inventory.mjs
+tests/ecs-demo-254-host-inventory.test.mjs
+docs/runbooks/ecs-demo-254-bridge-install.md
 tests/ecs-production-compose-contract.test.ts
 tests/ecs-one-click-deploy.test.ts
 infra/scripts/consume-production-evidence-nonce.sh

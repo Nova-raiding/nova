@@ -58,12 +58,15 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(137)
+    expect(manifest.artifacts).toHaveLength(140)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',
       'scripts/collect-codex-app-host-evidence.mjs',
       'tests/codex-app-host-evidence-gate.ts',
+      'infra/scripts/ecs-demo-254-host-inventory.mjs',
+      'tests/ecs-demo-254-host-inventory.test.mjs',
+      'docs/runbooks/ecs-demo-254-bridge-install.md',
       'infra/protected/canonical-safe-state-attestation.mjs',
       'infra/protected/canonical-safe-state-attestation.d.mts',
       'infra/protected/attest-canonical-safe-state.mjs',

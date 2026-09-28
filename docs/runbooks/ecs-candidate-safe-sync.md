@@ -27,6 +27,16 @@ npm run test:bridge-254-255-api
 
 该门禁在一次性 PostgreSQL 17/Redis 容器中运行当前 API 进程：验证 254 前缀下新品牌作用域路由 fail-closed，执行受检迁移 255，确认旧进程对新前缀撤销 readiness，再重启候选 API 并验证 255 路由及 merchant_app RLS 隔离。它只证明 API/schema 的隔离运行时合同；不证明 worker、MCP、网关、生产签名恢复控制或 101 切流就绪，仍须完成下方 254→255 恢复与生产门禁。
 
+### 101 demo 主机只读清单
+
+`npm run test:ecs-demo-254-host-inventory` 使用 mock SSH/Docker 输出，只验证采集器合同，不会连接 101，也不代表主机已核验。经授权的维护者可在部署审查窗口单独运行以下固定目标只读采集：
+
+```sh
+node infra/scripts/ecs-demo-254-host-inventory.mjs
+```
+
+脚本固定 SSH alias `101` 和 Docker socket，只读取容器、网络、端口、挂载及 Compose 元数据的白名单投影；不输出 Env/Cmd/完整 inspect，也不执行写操作。非零退出或 `release_approved=false` 都是未批准状态。输出可能包含主机拓扑和容器标识，应仅保存在访问受限的审查位置，并与同一候选的 `candidate-identity.txt`、采集时间及 SHA-256 一起留存；不得把采集输出当作部署授权或业务验收证据。
+
 ## 生成候选包
 
 发布不依赖 GitHub CLI、PR 或 GitHub 登录。候选包由本地 owner 生成后，通过 SSH/受控文件同步送到 `101`，再由 ECS 主机上的发布执行器完成 staging、preflight 和切换。
