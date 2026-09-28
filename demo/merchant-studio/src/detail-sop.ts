@@ -11,7 +11,10 @@ export const DETAIL_SOP_STEPS = [
   { key: 'summary', label: '信任收束', question: '关键信息是否足够确认？' },
 ] as const
 
-export type DetailSopStep = (typeof DETAIL_SOP_STEPS)[number] & {
+export type DetailSopStep = {
+  key: string
+  label: string
+  question: string
   position: number
   disposition: DecisionDisposition | 'pending'
   evidenceStatus: DecisionEvidenceStatus | 'pending' | null
