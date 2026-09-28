@@ -90,7 +90,6 @@
     "dogfood/chatgpt-all-functions"
   ],
   "devDependencies": {
-    "@playwright/test": "1.55.1",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.23.1",
     "playwright": "1.55.1",
