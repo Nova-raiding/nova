@@ -96,8 +96,8 @@ test('operates the platform user directory without destructive confirmation', as
   // snapshot. It intentionally does not claim to contain billing-cycle or
   // payment evidence; those remain in Finance.
   await expect(detailDrawer.getByRole('heading', { name: '成员与工作区' })).toBeVisible({ timeout: 20_000 })
-  await expect(detailDrawer.getByRole('heading', { name: '套餐与任务额度' })).toBeVisible()
-  await expect(detailDrawer.getByText('此处显示套餐状态与任务额度快照，不包含支付凭证或账单周期；实际收款请核对财务流水。')).toBeVisible()
+  await expect(detailDrawer.getByRole('heading', { name: '旧版套餐与任务额度快照' })).toBeVisible()
+  await expect(detailDrawer.getByText('此处仅显示旧版套餐与任务额度快照；当前 V2 套餐及权益请到“订单与权益”核对，实收金额请核对财务流水。')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(detailDrawer).toBeHidden()
   await expect(detailButton).toBeFocused()
