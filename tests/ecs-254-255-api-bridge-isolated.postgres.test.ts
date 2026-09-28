@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -21,11 +22,11 @@ async function freeLoopbackPort(): Promise<number> {
   return address.port
 }
 
-async function startApi(input: { databaseUrl: string; redisUrl: string; port: number }): Promise<ChildProcess> {
+async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; redisUrl: string; port: number }): Promise<ChildProcess> {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C.UTF-8',
     NODE_ENV: 'development', AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres',
-    DATABASE_URL: input.databaseUrl, REDIS_URL: input.redisUrl,
+    DATABASE_URL: input.databaseUrl, OPS_DATABASE_URL: input.opsDatabaseUrl, REDIS_URL: input.redisUrl,
     RUN_MIGRATIONS_ON_STARTUP: 'false', BRIDGE_SCHEMA_COMPATIBILITY_MODE: 'prefix_254_or_255',
     SESSION_ID_HASH_SECRET: 'isolated-254-255-api-bridge-secret',
     API_BIND_HOST: '127.0.0.1', PORT: String(input.port),
@@ -41,16 +42,16 @@ async function startApi(input: { databaseUrl: string; redisUrl: string; port: nu
   for (const stream of [child.stdout, child.stderr]) stream?.on('data', chunk => {
     diagnostics = `${diagnostics}${String(chunk)}`.slice(-4000)
   })
-  apiDiagnostics.set(child, () => diagnostics.replaceAll(input.databaseUrl, '[database]').replaceAll(input.redisUrl, '[redis]'))
+  apiDiagnostics.set(child, () => diagnostics.replaceAll(input.databaseUrl, '[database]').replaceAll(input.opsDatabaseUrl, '[ops-database]').replaceAll(input.redisUrl, '[redis]'))
   const url = `http://127.0.0.1:${input.port}/readyz`
   const deadline = Date.now() + 45_000
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`isolated API exited before readiness: ${diagnostics.replaceAll(input.databaseUrl, '[database]').replaceAll(input.redisUrl, '[redis]')}`)
+    if (child.exitCode !== null) throw new Error(`isolated API exited before readiness: ${diagnostics.replaceAll(input.databaseUrl, '[database]').replaceAll(input.opsDatabaseUrl, '[ops-database]').replaceAll(input.redisUrl, '[redis]')}`)
     try { if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) return child } catch { /* starting */ }
     await new Promise(done => setTimeout(done, 250))
   }
   child.kill('SIGTERM')
-  throw new Error(`isolated API readiness timed out: ${diagnostics.replaceAll(input.databaseUrl, '[database]').replaceAll(input.redisUrl, '[redis]')}`)
+  throw new Error(`isolated API readiness timed out: ${diagnostics.replaceAll(input.databaseUrl, '[database]').replaceAll(input.opsDatabaseUrl, '[ops-database]').replaceAll(input.redisUrl, '[redis]')}`)
 }
 
 async function stopApi(child: ChildProcess | undefined): Promise<void> {
@@ -70,22 +71,31 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
     const databaseUrl = fixture.acceptanceDatabaseUrls?.legacyBackfill
     if (!databaseUrl) throw new Error('isolated empty PostgreSQL database unavailable')
     const admin = new Pool({ connectionString: databaseUrl })
+    const databaseName = new URL(databaseUrl).pathname.slice(1)
     const appUrl = new URL(fixture.databaseUrl)
-    appUrl.pathname = new URL(databaseUrl).pathname
+    appUrl.pathname = `/${databaseName}`
+    const opsUrl = new URL(fixture.opsDatabaseUrl)
+    opsUrl.pathname = `/${databaseName}`
     const app = new Pool({ connectionString: appUrl.toString() })
     let child: ChildProcess | undefined
     try {
       const migrations = await loadMigrations()
       expect(migrations.at(-1)?.version).toBe(255)
+      const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
+      const databaseGrant = /ON DATABASE merchant\b/gu
+      const grantCount = [...roleSql.matchAll(databaseGrant)].length
+      expect(grantCount).toBe(3)
+      const isolatedRoleSql = roleSql.replace(databaseGrant, `ON DATABASE "${databaseName}"`)
+      await admin.query(isolatedRoleSql)
       await new MigrationRunner(admin, migrations.slice(0, 254)).run()
-      await admin.query('GRANT SELECT ON schema_migrations TO merchant_app, merchant_ops')
+      await admin.query(isolatedRoleSql)
       await admin.query('INSERT INTO workspaces(id,status) VALUES ($1,$2)', [workspaceId, 'active'])
       await admin.query("INSERT INTO workspace_members(id,workspace_id,external_subject,display_name,role,status,invited_by) VALUES ($1,$2,'bridge-actor','Bridge Actor','merchant_admin','active','isolated-bridge-fixture')", [randomUUID(), workspaceId])
       const port254 = await freeLoopbackPort()
-      // The empty intermediate database has migration DDL but not the fixture's
-      // separate runtime-grant normalization. Use its owned admin connection
-      // for this process-level routing probe; exercise merchant_app RLS below.
-      child = await startApi({ databaseUrl, redisUrl: fixture.redisUrl, port: port254 })
+      // The API uses the same least-privilege merchant_app and merchant_ops
+      // roles as production. The admin connection only creates the isolated
+      // schema, seeds the fixture, and advances the migration prefix.
+      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: port254 })
       const getBrand = (port: number) => fetch(`http://127.0.0.1:${port}/v1/brand-scopes`, {
         headers: { authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId },
       })
@@ -97,6 +107,7 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       expect(absent.rows[0]?.exists).toBeNull()
 
       expect(await new MigrationRunner(admin, migrations).run()).toEqual([255])
+      await admin.query(isolatedRoleSql)
       const history = (await admin.query<{ version: number; name: string; checksum: string }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version')).rows
       expect(history).toHaveLength(255)
       expect(() => verifyAppliedMigrations(history, migrations)).not.toThrow()
@@ -107,7 +118,7 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       expect(staleReadiness.status).toBe(503)
       await stopApi(child); child = undefined
       const port255 = await freeLoopbackPort()
-      child = await startApi({ databaseUrl, redisUrl: fixture.redisUrl, port: port255 })
+      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: port255 })
       const opened = await getBrand(port255)
       expect(opened.status).toBe(200)
       expect(JSON.stringify(await opened.json())).toContain(workspaceId)
