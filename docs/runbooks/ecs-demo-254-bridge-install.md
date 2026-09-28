@@ -11,7 +11,7 @@
 
 ## 安装前冻结的输入与证据
 
-当前源码有纯只读的 `infra/protected/demo-254-old-runtime-capsule.mjs` 组合旧运行时合同，覆盖公网 demo 项目的 API、副本、五个 worker、网关、两套 UI、支付、Postgres、Redis，以及项目外共享消费者。它逐项约束不可变镜像引用、真实容器 ID、Compose/env 摘要、254 备份 capture 摘要、24 小时有效期和保卷前向恢复。**形状审查即使通过也始终返回 `deployable=false`**。截至 2026-09-28，尚无从 101 独立采集全部受保护文件、签名该组合 capsule、恢复七服务并完成故障演练的固定摘要宿主控制；不能把现有签名数据库备份当作运行时恢复 capsule。
+当前源码有纯只读的 `infra/protected/demo-254-old-runtime-capsule.mjs` 组合旧运行时合同（schema v2），覆盖公网 demo 项目的 API、副本、五个 worker、网关、两套 UI、支付、Postgres、Redis，以及项目外共享消费者。它逐项约束不可变镜像引用、真实容器 ID、Compose/env 摘要、254 备份 capture 摘要、最多 24 小时有效期、保卷前向恢复，并要求 runtime archive SHA/字节数绑定旧 API、worker、pilot gateway 三个实际 image ID。此字段只是签名 capsule 的必要输入合同，尚没有独立主机采集器证明 archive 字节；**形状审查即使通过也始终返回 `deployable=false`**。截至 2026-09-28，尚无从 101 独立采集全部受保护文件、签名该组合 capsule、恢复七服务并完成故障演练的固定摘要宿主控制；不能把现有签名数据库备份当作运行时恢复 capsule。
 
 101 当次只读重算也发现原件与现行容器标签的 Compose 服务配置 SHA 不一致：`pilot-gateway` 标签为 `ba7db8168f2bb8495a348038f41678ed8c3d8295af6f853193c86489be0467ea`，以其受保护 Compose 和 `candidate.local-stdio.env` 重算为 `6813fbb851b021b30f44e2b912ea9675ba84c025958bbf8477bb0ce5ece909d4`；`api` 标签为 `d2c08c7b91852f939142a4b3a46993d7bec06ce0e94b4fb21b8c637198fda16a`，重算为 `d506f0fd2cc8f85400377404cf238accae1efbe9cc1db53a9236e762fda0c6bc`；`worker-sync` 标签为 `d8af08cd2350b5a9dc19917f1fca91ac2125d2c78d48219dc4dceb97b286131d`，重算为 `ee8d236e468d5d79ea6ad48220cdecf68fe0b9500566108b179762b695619360`。在查清历史 Docker Compose 版本、环境插值及受保护原件是否变化并完成实际恢复演练之前，这些原件不能被签为可恢复的旧组合。
 
