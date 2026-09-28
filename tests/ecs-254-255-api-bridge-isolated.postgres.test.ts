@@ -95,12 +95,17 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       expect(JSON.stringify(closedBody)).toContain('BRAND_SCOPES_NOT_CONFIGURED')
       const absent = await admin.query<{ exists: string | null }>("SELECT to_regclass('merchant_brand_scoped_settings')::text AS exists")
       expect(absent.rows[0]?.exists).toBeNull()
-      await stopApi(child); child = undefined
 
       expect(await new MigrationRunner(admin, migrations).run()).toEqual([255])
       const history = (await admin.query<{ version: number; name: string; checksum: string }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version')).rows
       expect(history).toHaveLength(255)
       expect(() => verifyAppliedMigrations(history, migrations)).not.toThrow()
+      // A process booted against 254 must revoke readiness when the database
+      // moves to 255. Its repository set was fixed at startup; only a restart
+      // can enable the new route against the new schema safely.
+      const staleReadiness = await fetch(`http://127.0.0.1:${port254}/readyz`)
+      expect(staleReadiness.status).toBe(503)
+      await stopApi(child); child = undefined
       const port255 = await freeLoopbackPort()
       child = await startApi({ databaseUrl, redisUrl: fixture.redisUrl, port: port255 })
       const opened = await getBrand(port255)
