@@ -346,12 +346,30 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
       await expect(oauthA.refreshMcpOAuthToken({ ...context, refreshToken: exchanged[0]!.value.refreshToken })).rejects.toMatchObject({ code: 'MCP_OAUTH_INVALID_GRANT' })
       await expect(oauthA.authenticateMcpAccessToken({ ...context, accessToken: refreshed[0]!.value.accessToken })).resolves.toBeUndefined()
 
+      // Browser tabs can ask for local MCP credentials at the same time. Each
+      // request authenticates the same HttpOnly session, creates a distinct
+      // authorization code, then exchanges it for a token pair. Exercise the
+      // full path against PostgreSQL row and foreign-key locks, not a mock.
+      const concurrentPairResults = await Promise.allSettled(Array.from({ length: 12 }, async (_, index) => {
+        const client = index % 2 === 0 ? oauthA : oauthB
+        const session = await client.authenticate(passwordRefreshWinners[0]!.value.token)
+        expect(session?.account.id).toBe(reviewed.id)
+        const code = await client.issueMcpAuthorizationCode({ ...context, account: reviewed, redirectUri, codeChallenge: createHash('sha256').update(verifier).digest('base64url') })
+        const pair = await client.exchangeMcpAuthorizationCode({ ...context, redirectUri, code: code.code, codeVerifier: verifier })
+        expect(await client.authenticateMcpAccessToken({ ...context, accessToken: pair.accessToken })).toMatchObject({ workspaceId })
+        return pair
+      }))
+      expect(concurrentPairResults.filter(result => result.status === 'rejected')).toEqual([])
+      expect(concurrentPairResults.filter(result => result.status === 'fulfilled')).toHaveLength(12)
+
       // Explicit selection must be checked again for every token operation,
       // including after the account loses one of several workspace bindings.
       await database.query(`INSERT INTO workspace_members (id,workspace_id,external_subject,display_name,role,status,invited_by) VALUES ($1,$2,$3,'Second workspace owner','workspace_owner','active','postgres-multi-workspace')`, [randomUUID(), untouchedWorkspaceId, login])
       const multiAccount = await repository.activateMerchantAccount({ login, workspaceIds: [workspaceId, untouchedWorkspaceId], actorId: 'platform-reviewer-e2e', reason: 'add second workspace' })
       await expect(oauthA.issueMcpAuthorizationCode({ ...context, account: multiAccount, redirectUri, codeChallenge: createHash('sha256').update(verifier).digest('base64url') })).rejects.toMatchObject({ code: 'MCP_OAUTH_WORKSPACE_AMBIGUOUS' })
-      const selectedCode = await oauthA.issueMcpAuthorizationCode({ ...context, account: multiAccount, workspaceId: untouchedWorkspaceId, redirectUri, codeChallenge: createHash('sha256').update(verifier).digest('base64url') })
+      const selectedCodes = await Promise.all(Array.from({ length: 4 }, (_, index) => (index % 2 === 0 ? oauthA : oauthB).issueMcpAuthorizationCode({ ...context, account: multiAccount, workspaceId: untouchedWorkspaceId, redirectUri, codeChallenge: createHash('sha256').update(verifier).digest('base64url') })))
+      expect(selectedCodes).toHaveLength(4)
+      const selectedCode = selectedCodes[0]!
       const selectedPair = await oauthA.exchangeMcpAuthorizationCode({ ...context, redirectUri, code: selectedCode.code, codeVerifier: verifier })
       await expect(oauthA.authenticateMcpAccessToken({ ...context, accessToken: selectedPair.accessToken })).resolves.toMatchObject({ workspaceId: untouchedWorkspaceId })
       await repository.activateMerchantAccount({ login, workspaceIds: [workspaceId], actorId: 'platform-reviewer-e2e', reason: 'remove second workspace' })
