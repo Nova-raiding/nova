@@ -159,7 +159,7 @@ export async function handleOpsOverviewMcpMethod(method: string, params: Record<
     }
     case 'ops.platform.manual-stores.list':
     case 'ops.platform.product.import.batch': {
-      const actorId = requireOperationsRole(req, ['platform_ops'])
+      const actorId = requireOperationsRole(req, ['platform_ops', 'platform_admin', 'ops_admin'])
       const targetWorkspaceId = required(params, 'workspace_id')
       const headerWorkspace = header(req, 'x-workspace-id')?.trim()
       if (headerWorkspace && headerWorkspace !== targetWorkspaceId) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_MISMATCH, '商品导入的工作区范围声明不一致', 403)

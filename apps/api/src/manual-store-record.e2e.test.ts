@@ -48,7 +48,7 @@ async function start() {
  * `platform_ops` is the canonical platform-workbench operator role; the other
  * entries are merchant roles used for the negative cases.
  */
-async function configureMembers(entries: Array<{ token: string; workspaceId: string; role: 'workspace_owner' | 'merchant_admin' | 'operator' | 'platform_ops'; grantWorkspaces?: string[] }>) {
+async function configureMembers(entries: Array<{ token: string; workspaceId: string; role: 'workspace_owner' | 'merchant_admin' | 'operator' | 'platform_ops'; gatewayRole?: 'platform_admin'; grantWorkspaces?: string[] }>) {
   const grants: Record<string, { workspaces: string[]; actor_id: string; roles?: string[]; workbenches: Array<'platform' | 'workspace'> }> = {}
   for (const entry of entries) {
     // A platform workbench principal authorizes through its *gateway* role
@@ -60,8 +60,8 @@ async function configureMembers(entries: Array<{ token: string; workspaceId: str
     grants[entry.token] = {
       workspaces: entry.grantWorkspaces ?? [entry.workspaceId],
       actor_id: `${entry.token}-actor`,
-      ...(entry.role === 'platform_ops' ? { roles: ['platform_ops'] } : {}),
-      workbenches: entry.role === 'platform_ops' ? ['platform'] : ['workspace'],
+      ...(entry.role === 'platform_ops' || entry.gatewayRole ? { roles: [entry.gatewayRole ?? 'platform_ops'] } : {}),
+      workbenches: entry.role === 'platform_ops' || entry.gatewayRole ? ['platform'] : ['workspace'],
     }
     await workspaceMembers.upsert({ workspaceId: entry.workspaceId, externalSubject: `${entry.token}-actor`, displayName: entry.token, role: entry.role, status: 'active', invitedBy: 'manual-store-record-test' })
   }
@@ -96,6 +96,7 @@ describe('manual operations store records', () => {
     await configureMembers([
       { token: 'import-owner', workspaceId, role: 'workspace_owner' },
       { token: 'import-ops', workspaceId, role: 'platform_ops' },
+      { token: 'import-admin', workspaceId, role: 'workspace_owner', gatewayRole: 'platform_admin' },
     ])
     const base = await start()
     const ops = { authorization: 'Bearer import-ops', 'x-workspace-id': workspaceId }
@@ -105,6 +106,10 @@ describe('manual operations store records', () => {
     const listed = await mcpAt(base, ops, 'ops.platform.manual-stores.list', { workspace_id: workspaceId })
     expect(listed.body.error, JSON.stringify(listed.body.error)).toBeNull()
     expect(listed.body.data!.result.items).toEqual(expect.arrayContaining([expect.objectContaining({ platform: 'jd', account_id: storeKey, token_state: 'manually_registered' })]))
+    const admin = { authorization: 'Bearer import-admin', 'x-workspace-id': workspaceId }
+    const adminListed = await mcpAt(base, admin, 'ops.platform.manual-stores.list', { workspace_id: workspaceId })
+    expect(adminListed.body.error, JSON.stringify(adminListed.body.error)).toBeNull()
+    expect(adminListed.body.data!.result.items).toEqual(expect.arrayContaining([expect.objectContaining({ platform: 'jd', account_id: storeKey })]))
     const product = { platform: 'jd', account_id: storeKey, store_name: 'QA store', local_product_key: 'QA-OPS-001', title: 'QA isolated product', price: 39, stock: 2 }
     const input = { workspace_id: workspaceId, platform: 'jd', account_id: storeKey, products_json: JSON.stringify([product]), source_ref: 'qa://isolated-merchant-file', source_sha256: 'a'.repeat(64), reason: 'QA platform-assisted import' }
     const merchantDenied = await mcpAt(base, merchant, 'ops.platform.product.import.batch', input)
@@ -122,6 +127,8 @@ describe('manual operations store records', () => {
     expect(imported.body.data!.result).toMatchObject({ workspace_id: workspaceId, source_mode: 'platform_manual_upload', result: { count: 1, atomic: true, factsConfirmationRequired: true } })
     const productId = imported.body.data!.result.result.products[0].id as string
     expect(service.products.get(productId)).toMatchObject({ workspaceId, accountId: storeKey, title: product.title, factsConfirmed: false })
+    const adminImported = await mcpAt(base, admin, 'ops.platform.product.import.batch', { ...input, products_json: JSON.stringify([{ ...product, local_product_key: 'QA-ADMIN-001' }]) })
+    expect(adminImported.body.error, JSON.stringify(adminImported.body.error)).toBeNull()
     const merchantProducts = await fetch(`${base}/v1/products?limit=50&offset=0`, { headers: merchant }).then(response => response.json()) as { data?: { items?: Array<{ id: string; accountId?: string; title: string }> } }
     expect(merchantProducts.data?.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: productId, accountId: storeKey, title: product.title })]))
     const audit = await operationAudits.find(workspaceId, 'platform.catalog.import.batch', 'product_import_batch', imported.body.data!.result.result.batchId)

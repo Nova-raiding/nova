@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Checkbox, Input, Select, Space, Table, Typography, Upload } from "antd";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import { rpcForWorkspace } from "../../api/opsClient.js";
@@ -20,16 +20,30 @@ export function PlatformManualProductImport({ workspaces }: { workspaces: Worksp
   const [reason, setReason] = useState("");
   const [assignmentConfirmed, setAssignmentConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loadingStores, setLoadingStores] = useState(false);
+  const [storeError, setStoreError] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const storeRequest = useRef(0);
+  const loadStores = useCallback(async (targetWorkspaceId: string) => {
+    if (!targetWorkspaceId) return;
+    const requestId = ++storeRequest.current;
+    setLoadingStores(true); setStoreError(""); setStores([]); setStoreKey("");
+    try {
+      const value = await rpcForWorkspace<{ items: ManualStore[] }>(targetWorkspaceId, "ops.platform.manual-stores.list", { workspace_id: targetWorkspaceId });
+      if (requestId === storeRequest.current) setStores(value?.items ?? []);
+    } catch (cause) {
+      if (requestId === storeRequest.current) setStoreError(cause instanceof Error ? cause.message : "读取人工店铺失败");
+    } finally {
+      if (requestId === storeRequest.current) setLoadingStores(false);
+    }
+  }, []);
   useEffect(() => {
-    let cancelled = false;
+    storeRequest.current += 1;
     setStores([]); setStoreKey(""); setProducts([]); setSha256(""); setFileName(""); setSourceRef(""); setReason(""); setError(""); setSuccess(""); setAssignmentConfirmed(false);
-    if (workspaceId) void rpcForWorkspace<{ items: ManualStore[] }>(workspaceId, "ops.platform.manual-stores.list", { workspace_id: workspaceId })
-      .then(value => { if (!cancelled) setStores(value?.items ?? []); })
-      .catch(cause => { if (!cancelled) setError(cause instanceof Error ? cause.message : "读取人工店铺失败"); });
-    return () => { cancelled = true; };
-  }, [workspaceId]);
+    if (workspaceId) void loadStores(workspaceId);
+    return () => { storeRequest.current += 1; };
+  }, [workspaceId, loadStores]);
   const chosen = stores.find(store => `${store.platform}:${store.account_id}` === storeKey);
   const scoped = chosen ? scopeManualProductsToStore(products, chosen) : null;
   const upload = async (file: File) => {
@@ -63,8 +77,10 @@ export function PlatformManualProductImport({ workspaces }: { workspaces: Worksp
     <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
       <Typography.Paragraph>选择商家和人工登记的店铺，上传商家提供的商品表格。先核对预览，再记录资料来源和操作原因。导入后商家可在商品库查看，商品事实仍需确认。</Typography.Paragraph>
       <Select showSearch optionFilterProp="label" placeholder="选择商家工作区" value={workspaceId || undefined} onChange={setWorkspaceId} options={workspaces.map(item => ({ value: item.workspaceId, label: `${item.enterpriseName || item.workspaceId} · ${item.workspaceId}` }))} style={{ width: "100%" }} />
-      {workspaceId && <Select placeholder="选择已登记的人工店铺" value={storeKey || undefined} onChange={value => { setStoreKey(value); setSuccess(""); setAssignmentConfirmed(false); }} options={stores.map(item => ({ value: `${item.platform}:${item.account_id}`, label: `${item.store_alias || item.account_id} · ${item.platform}` }))} style={{ width: "100%" }} />}
-      {workspaceId && !stores.length && <Alert type="warning" title="这个商家工作区没有人工登记的店铺，请先在上方登记。" />}
+      {workspaceId && <Select loading={loadingStores} placeholder="选择已登记的人工店铺" value={storeKey || undefined} onChange={value => { setStoreKey(value); setSuccess(""); setAssignmentConfirmed(false); }} options={stores.map(item => ({ value: `${item.platform}:${item.account_id}`, label: `${item.store_alias || item.account_id} · ${item.platform}` }))} style={{ width: "100%" }} />}
+      {workspaceId && <Space wrap><Button size="small" loading={loadingStores} onClick={() => void loadStores(workspaceId)}>刷新店铺列表</Button><Typography.Text type="secondary">仅显示当前所选商家工作区的人工登记店铺。</Typography.Text></Space>}
+      {storeError && <Alert type="error" showIcon title="读取人工店铺失败" description={`${storeError}。请确认平台运营权限、当前部署已启用人工店铺运营，并检查所选商家工作区。`} />}
+      {workspaceId && !loadingStores && !storeError && !stores.length && <Alert type="warning" showIcon title="该商家工作区暂无可导入的人工登记店铺" description="列表只包含当前工作区、状态为“人工登记（未授权）”的店铺。请核对登记时选择的商家工作区；登记后点“刷新店铺列表”。" />}
       <Space wrap><Button icon={<DownloadOutlined />} onClick={async () => { const blob = await productImportTemplate(); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "商品-SKU导入模板.xlsx"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>下载模板</Button>
         <Upload accept=".xlsx,.csv" showUploadList={false} beforeUpload={upload} disabled={!chosen || busy}><Button icon={<UploadOutlined />} loading={busy} disabled={!chosen || busy}>上传 Excel / CSV</Button></Upload></Space>
       {fileName && <Typography.Text>当前文件：{fileName}</Typography.Text>}
