@@ -29,6 +29,12 @@ type SpreadsheetProduct = {
 
 export type SpreadsheetImportMode = 'draft_only' | 'store'
 
+export function spreadsheetImportScanState(status: string | undefined): 'ready' | 'blocked' | 'pending' {
+  if (status === 'clean') return 'ready'
+  if (status === 'blocked' || status === 'rejected' || status === 'failed') return 'blocked'
+  return 'pending'
+}
+
 export function validateSpreadsheetImportMode(
   products: SpreadsheetProduct[],
   mode: SpreadsheetImportMode,
@@ -99,8 +105,9 @@ export function ProductSpreadsheetImport({
     for (let attempt = 0; attempt < 40; attempt += 1) {
       if (run !== runRef.current) return
       const current = (await fetchAssets(baseUrl!)).find((item) => item.id === assetId)
-      if (current?.scanStatus === 'rejected' || current?.scanStatus === 'quarantined') throw new Error('文件未通过安全检查，请检查内容后重新上传。')
-      if (current?.scanStatus === 'clean') {
+      const scanState = spreadsheetImportScanState(current?.scanStatus)
+      if (scanState === 'blocked') throw new Error('文件未通过安全检查，请检查内容后重新上传。')
+      if (scanState === 'ready' && current) {
         setPhase('正在解析商品与 SKU…')
         if (current.parseStatus !== 'succeeded') await parseAsset(baseUrl!, assetId)
         const parsed = (await fetchAssets(baseUrl!)).find((item) => item.id === assetId)
