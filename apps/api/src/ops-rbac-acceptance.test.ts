@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { server, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
+import argon2 from 'argon2'
+import { server, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, workspaceMembers } from './server.js'
 import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, MCP_METHOD_POLICIES } from '../../../packages/contracts/src/authz.js'
 import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
 import { PLATFORM_ASSIGNED_ROLES } from '../../../packages/persistence/src/index.js'
+import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
+import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 
 type RpcBody<T = unknown> = {
   request_id?: string
@@ -75,18 +78,29 @@ beforeEach(() => {
 afterEach(async () => {
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
   setAuthorizationRepositoryForTests(undefined)
+  setPasswordAuthRepositoryForTests(undefined)
   vi.unstubAllEnvs()
 })
 
 describe('Ops RBAC backend API acceptance contracts', () => {
   it('returns a closed, current authorization matrix contract for every registered MCP method', async () => {
-    const workspaceId = `ws_ops_matrix_contract_${Date.now()}`
-    const actorId = `ops-matrix-actor-${Date.now()}`
-    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
-      'ops-matrix-token': { workspaces: [], actor_id: actorId, roles: ['platform_ops'], workbenches: ['platform'] },
-    }))
+    vi.stubEnv('OPS_AUTH_MODE', 'password')
+    const passwordRepository = new MemoryPasswordAuthRepository()
+    const authorizationRepository = new MemoryAuthorizationRepository()
+    setPasswordAuthRepositoryForTests(passwordRepository)
+    setAuthorizationRepositoryForTests(authorizationRepository)
+    const login = 'hyp@sn.com'
+    const password = 'MatrixContractPassword123!'
+    await passwordRepository.ensurePlatformAccount({ login, passwordHash: await argon2.hash(password), roles: [] })
+    const identityId = (await passwordRepository.listAccounts()).find(account => account.login === login)!.identityId
+    await authorizationRepository.assignPlatformRole({ subjectIdentityId: identityId, role: 'platform_admin', assignedBy: 'matrix-contract-fixture', reason: 'Designated matrix viewer', expectedAuthorizationRevision: 0 })
     const base = await start()
-    const { response, body } = await call<Matrix>(base, 'ops-matrix-token', 'ops.authorization.matrix.get', {}, { 'x-ops-workbench': 'platform' })
+    const signedIn = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'platform' }) })
+    expect(signedIn.status).toBe(200)
+    const cookie = signedIn.headers.get('set-cookie')?.split(';')[0]
+    expect(cookie).toBeTruthy()
+    const response = await fetch(`${base}/mcp`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'matrix-contract', method: 'ops.authorization.matrix.get', params: {} }) })
+    const body = await response.json() as RpcBody<Matrix>
 
     expect(response.status).toBe(200)
     expect(body.error).toBeNull()

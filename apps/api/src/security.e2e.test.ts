@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
+import argon2 from 'argon2'
 import { request as httpRequest } from 'node:http'
-import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, productionReadinessDiagnostics, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setOAuthStateStoreForTests, setPaymentProviderForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, productionReadinessDiagnostics, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setOAuthStateStoreForTests, setPaymentProviderForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
 import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/security/src/redis-oauth.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
+import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
 import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES } from '../../../packages/contracts/src/authz.js'
 import { createWorkerRequestProof, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
@@ -24,6 +26,22 @@ async function start() {
 }
 
 async function json(response: Response) { return { response, body: await response.json() as Envelope } }
+
+async function designatedAuthorizationSession(base: string, authorizationRepository: MemoryAuthorizationRepository, assignRole = false) {
+  vi.stubEnv('OPS_AUTH_MODE', 'password')
+  const passwordRepository = new MemoryPasswordAuthRepository()
+  setPasswordAuthRepositoryForTests(passwordRepository)
+  const login = 'hyp@sn.com'
+  const password = 'SecurityContractAdminPassword123!'
+  await passwordRepository.ensurePlatformAccount({ login, passwordHash: await argon2.hash(password), roles: [] })
+  const identityId = (await passwordRepository.listAccounts()).find(account => account.login === login)!.identityId
+  if (assignRole) await authorizationRepository.assignPlatformRole({ subjectIdentityId: identityId, role: 'platform_admin', assignedBy: 'security-contract-fixture', reason: 'Designated authorization administrator', expectedAuthorizationRevision: 0 })
+  const response = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'platform' }) })
+  expect(response.status).toBe(200)
+  const cookie = response.headers.get('set-cookie')?.split(';')[0]
+  expect(cookie).toBeTruthy()
+  return { cookie: cookie!, identityId }
+}
 
 async function requestThroughHost(base: string, path: string, host: string, headers: Record<string, string> = {}) {
   const target = new URL(base)
@@ -121,6 +139,7 @@ beforeEach(() => vi.stubEnv('SESSION_ID_HASH_SECRET', 'test-session-hash-secret'
 afterEach(async () => {
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
   setAuthorizationRepositoryForTests(undefined)
+  setPasswordAuthRepositoryForTests(undefined)
   setRuleRepositoryForTests(undefined)
   setPaymentProviderForTests(undefined)
   setOAuthStateStoreForTests(undefined)
@@ -342,15 +361,16 @@ describe('security and access-control acceptance gates', () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED', 'true')
     vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
-    await configureBearerMembers([{ token: 'durable-platform-token', workspaceId, actorId: 'durable-platform-actor', role: 'platform_ops', gatewayRoles: ['platform_ops'], grantWorkspaces: [], workbenches: ['platform'] }])
     const base = await start()
+    const admin = await designatedAuthorizationSession(base, repository)
     const call = (method: string) => fetch(`${base}/mcp`, {
-      method: 'POST', headers: { authorization: 'Bearer durable-platform-token', 'content-type': 'application/json', 'x-ops-workbench': 'platform' },
+      method: 'POST', headers: { cookie: admin.cookie, origin: base, 'content-type': 'application/json', 'x-ops-workbench': 'platform' },
       body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params: {} }),
     }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
 
     const initial = (await call('ops.session')).data?.result
     expect(initial).toMatchObject({ roles: [], capabilities: ['authorization.session.read'], authorization_revision: 0, workspace_id: null })
+    expect(initial.identity_id).toBe(admin.identityId)
     const assignment = await repository.assignPlatformRole({ subjectIdentityId: initial.identity_id, role: 'ops_admin', assignedBy: 'security-admin', reason: 'grant platform operations', expectedAuthorizationRevision: 0 })
     expect((await call('ops.feature-flags.list')).error).toBeNull()
     const active = (await call('ops.session')).data?.result
@@ -400,12 +420,9 @@ describe('security and access-control acceptance gates', () => {
     vi.stubEnv('AUTHORIZATION_APPROVAL_TOKENS', JSON.stringify({
       'authz-approval-token': { workspaces: [workspaceId], actor_id: 'security-approver' },
     }))
-    await configureBearerMembers([{ token: 'authz-admin-token', workspaceId, actorId: 'authz-admin-actor', role: 'platform_ops', gatewayRoles: ['platform_admin'], grantWorkspaces: [], workbenches: ['platform'] }])
     const base = await start()
-    const session = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: 'Bearer authz-admin-token', 'content-type': 'application/json', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ops.session', params: {} }) }).then(response => response.json() as Promise<Envelope<{ result: { identity_id: string } }>>)
-    const adminIdentityId = session.data!.result.identity_id
-    await repository.assignPlatformRole({ subjectIdentityId: adminIdentityId, role: 'platform_admin', assignedBy: 'seed', reason: '安全测试管理员', expectedAuthorizationRevision: 0 })
-    const call = (method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: 'Bearer authz-admin-token', 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-authorization-approval-token': 'authz-approval-token' }, body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params }) }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+    const admin = await designatedAuthorizationSession(base, repository, true)
+    const call = (method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers: { cookie: admin.cookie, origin: base, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-authorization-approval-token': 'authz-approval-token' }, body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params }) }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
     const target = 'identity-managed-target'
     const assigned = await call('ops.authorization.role.assign', { subject_identity_id: target, role: 'support_agent', expected_authorization_revision: '0', reason: '客服值班角色' })
     expect(assigned.error).toBeNull()

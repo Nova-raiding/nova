@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import argon2 from 'argon2'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
+import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import { AUTHZ_POLICY_VERSION } from '../../../packages/contracts/src/authz.js'
-import { operationAudits, server, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
+import { operationAudits, server, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, workspaceMembers } from './server.js'
 
 type RpcBody<T = unknown> = {
   request_id?: string
@@ -31,6 +33,21 @@ type Grant = {
   authorizationRevision: number
   revokedAt?: string
 }
+let authorizationRepository: MemoryAuthorizationRepository
+let passwordRepository: MemoryPasswordAuthRepository
+
+async function designatedAdminCookie(base: string) {
+  const login = 'hyp@sn.com'
+  const password = 'GrantContractAdminPassword123!'
+  await passwordRepository.ensurePlatformAccount({ login, passwordHash: await argon2.hash(password), roles: [] })
+  const identityId = (await passwordRepository.listAccounts()).find(account => account.login === login)!.identityId
+  await authorizationRepository.assignPlatformRole({ subjectIdentityId: identityId, role: 'platform_admin', assignedBy: 'grant-contract-fixture', reason: 'Designated authorization administrator', expectedAuthorizationRevision: 0 })
+  const response = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'platform' }) })
+  expect(response.status).toBe(200)
+  const cookie = response.headers.get('set-cookie')?.split(';')[0]
+  expect(cookie).toBeTruthy()
+  return `cookie:${cookie}`
+}
 
 async function start() {
   await new Promise<void>((resolve, reject) => {
@@ -46,7 +63,7 @@ async function start() {
 async function call<T>(base: string, token: string, method: string, params: Record<string, unknown> = {}, headers: Record<string, string> = {}) {
   const response = await fetch(`${base}/mcp`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers },
+    headers: { ...(token.startsWith('cookie:') ? { cookie: token.slice(7), origin: base } : { authorization: `Bearer ${token}` }), 'content-type': 'application/json', ...headers },
     body: JSON.stringify({ jsonrpc: '2.0', id: `${method}-${Date.now()}-${Math.random()}`, method, params }),
   })
   return { response, body: await response.json() as RpcBody<T> }
@@ -81,12 +98,16 @@ beforeEach(() => {
   vi.stubEnv('NODE_ENV', 'production')
   vi.stubEnv('SESSION_ID_HASH_SECRET', 'ops-session-grant-contract-secret')
   vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
-  setAuthorizationRepositoryForTests(new MemoryAuthorizationRepository())
+  authorizationRepository = new MemoryAuthorizationRepository()
+  passwordRepository = new MemoryPasswordAuthRepository()
+  setAuthorizationRepositoryForTests(authorizationRepository)
+  setPasswordAuthRepositoryForTests(passwordRepository)
 })
 
 afterEach(async () => {
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
   setAuthorizationRepositoryForTests(undefined)
+  setPasswordAuthRepositoryForTests(undefined)
   vi.unstubAllEnvs()
 })
 
@@ -121,13 +142,14 @@ describe('Ops session and grant API local contracts', () => {
     // independent approver, which is the only thing that satisfies `approval`.
     configureApprovalToken(APPROVAL_TOKEN, APPROVER_ACTOR_ID, [workspaceId])
     const base = await start()
+    const adminSession = await designatedAdminCookie(base)
     const session = await call<Session>(base, 'grant-lifecycle-token', 'ops.session', {}, { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' })
     expect(session.response.status).toBe(200)
     const identityId = session.body.data!.result.identity_id
     const authorizationRevision = session.body.data!.result.authorization_revision
     const expiresAt = new Date(Date.now() + 60_000).toISOString()
 
-    const issued = await call<Grant>(base, 'grant-lifecycle-token', 'ops.authorization.grant.issue', {
+    const issued = await call<Grant>(base, adminSession, 'ops.authorization.grant.issue', {
       subject_identity_id: identityId,
       target_workspace_id: workspaceId,
       grant_kind: 'support',
@@ -150,7 +172,7 @@ describe('Ops session and grant API local contracts', () => {
     const projected = await call<Session>(base, 'grant-lifecycle-token', 'ops.session', {}, { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' })
     expect(projected.body.data?.result.temporary_grants).toEqual(expect.arrayContaining([expect.objectContaining({ id: grant.id, expires_at: expiresAt, revision: 1 })]))
 
-    const revoked = await call<Grant>(base, 'grant-lifecycle-token', 'ops.authorization.grant.revoke', {
+    const revoked = await call<Grant>(base, adminSession, 'ops.authorization.grant.revoke', {
       grant_id: grant.id,
       subject_identity_id: identityId,
       expected_revision: '1',
@@ -174,8 +196,9 @@ describe('Ops session and grant API local contracts', () => {
     // token instead of the previously forgeable `approved_by` string.
     configureApprovalToken(APPROVAL_TOKEN, APPROVER_ACTOR_ID, [workspaceId])
     const base = await start()
+    const adminSession = await designatedAdminCookie(base)
     const session = await call<Session>(base, 'grant-expiry-token', 'ops.session', {}, { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' })
-    const result = await call<Grant>(base, 'grant-expiry-token', 'ops.authorization.grant.issue', {
+    const result = await call<Grant>(base, adminSession, 'ops.authorization.grant.issue', {
       subject_identity_id: session.body.data!.result.identity_id,
       target_workspace_id: workspaceId,
       grant_kind: 'temporary',

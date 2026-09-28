@@ -11338,7 +11338,14 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'ops.authorization.grant.issue':
     case 'ops.authorization.grant.revoke':
       return result(await handleMcpOpsAuthorizationMethod(method, params, req, workspaceId, {
-        authorizationRepository, canonicalRoleMethodAccess, requestActor,
+        authorizationRepository, canonicalRoleMethodAccess,
+        authorizationContext: (request, scopeWorkspaceId) => {
+          const principal = requestPrincipals.get(request)
+          if (!principal) return undefined
+          const projection = effectiveAuthorizationProjection(principal, scopeWorkspaceId)
+          return { actorId: principal.actorId, identityId: principal.identityId, accountLogin: principal.accountLogin,
+            workbench: principal.workbench, canonicalRoles: projection.canonicalRoles, capabilities: projection.capabilities }
+        },
         verifiedApprovalActor, requiresStrictAuth, required,
       }))
     case 'ops.storage.reconciliation.list': {

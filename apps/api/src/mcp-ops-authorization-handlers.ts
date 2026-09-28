@@ -5,8 +5,16 @@ import { PLATFORM_ASSIGNED_ROLES, type AuthorizationRepository, type PlatformAss
 
 type Dependencies = {
   authorizationRepository: () => AuthorizationRepository | undefined
+  /** Derived from the server's verified request principal, never request headers or params. */
+  authorizationContext: (req: IncomingMessage, workspaceId: string) => {
+    actorId?: string
+    identityId?: string
+    accountLogin?: string
+    workbench: string
+    canonicalRoles: readonly string[]
+    capabilities: readonly string[]
+  } | undefined
   canonicalRoleMethodAccess: (role: CanonicalRole, policy: (typeof MCP_METHOD_POLICIES)[keyof typeof MCP_METHOD_POLICIES]) => 'hidden' | 'read' | 'govern' | 'operate'
-  requestActor: (req: IncomingMessage) => string
   verifiedApprovalActor: (params: Record<string, unknown>, req: IncomingMessage, workspaceId: string) => string | undefined
   requiresStrictAuth: () => boolean
   required: (params: Record<string, unknown>, key: string) => string
@@ -19,9 +27,28 @@ export const MCP_OPS_AUTHORIZATION_METHODS = new Set([
   'ops.authorization.grant.revoke',
 ])
 
+const authorizationSuperAdminLogins = new Set(['hyp@sn.com', 'hxd@sn.com'])
+
+function requiredCapability(method: string): CapabilityId | undefined {
+  return MCP_METHOD_POLICIES[method as keyof typeof MCP_METHOD_POLICIES]?.capability
+}
+
+function assertAuthorizationSuperAdmin(req: IncomingMessage, workspaceId: string, method: string, dependencies: Dependencies): string {
+  const context = dependencies.authorizationContext(req, workspaceId)
+  const capability = requiredCapability(method)
+  if (!context?.identityId || !context.actorId || context.workbench !== 'platform'
+    || !authorizationSuperAdminLogins.has(context.accountLogin?.trim().toLowerCase() ?? '')
+    || !context.canonicalRoles.some(role => role === 'ops_admin' || role === 'platform_admin')
+    || !capability || !context.capabilities.includes(capability)) {
+    throw new DomainError(ERROR_CODES.FORBIDDEN, '当前身份无权访问平台权限与授权', 403)
+  }
+  return context.actorId
+}
+
 /** Returns the MCP value while the caller retains transport-specific response handling. */
 export async function handleMcpOpsAuthorizationMethod(method: string, params: Record<string, unknown>, req: IncomingMessage, workspaceId: string, dependencies: Dependencies): Promise<unknown> {
-  const { authorizationRepository, canonicalRoleMethodAccess, requestActor, verifiedApprovalActor, requiresStrictAuth, required } = dependencies
+  const actorId = assertAuthorizationSuperAdmin(req, workspaceId, method, dependencies)
+  const { authorizationRepository, canonicalRoleMethodAccess, verifiedApprovalActor, requiresStrictAuth, required } = dependencies
   if (method === 'ops.authorization.matrix.get') {
       const roles = [...CANONICAL_ROLES]
       const assignableRoles = PLATFORM_ASSIGNED_ROLES.filter(role => role !== 'platform_owner')
@@ -52,12 +79,12 @@ export async function handleMcpOpsAuthorizationMethod(method: string, params: Re
       if (!repository) throw new DomainError('AUTHORIZATION_REPOSITORY_UNAVAILABLE', '持久授权仓储未配置', 503)
       const role = required(params, 'role')
       if (!PLATFORM_ASSIGNED_ROLES.includes(role as PlatformAssignedRole) || role === 'platform_owner') throw new DomainError('AUTHZ_PLATFORM_ROLE_UNSUPPORTED', '该平台角色不能通过日常运营入口分配', 400)
-      return (await repository.assignPlatformRole({ subjectIdentityId: required(params, 'subject_identity_id'), role: role as PlatformAssignedRole, assignedBy: requestActor(req), reason: required(params, 'reason'), expectedAuthorizationRevision: Number(required(params, 'expected_authorization_revision')), ...(typeof params.expires_at === 'string' && params.expires_at.trim() ? { expiresAt: params.expires_at.trim() } : {}) }))
+      return (await repository.assignPlatformRole({ subjectIdentityId: required(params, 'subject_identity_id'), role: role as PlatformAssignedRole, assignedBy: actorId, reason: required(params, 'reason'), expectedAuthorizationRevision: Number(required(params, 'expected_authorization_revision')), ...(typeof params.expires_at === 'string' && params.expires_at.trim() ? { expiresAt: params.expires_at.trim() } : {}) }))
     }
   if (method === 'ops.authorization.role.revoke') {
       const repository = authorizationRepository()
       if (!repository) throw new DomainError('AUTHORIZATION_REPOSITORY_UNAVAILABLE', '持久授权仓储未配置', 503)
-      return (await repository.revokePlatformRole({ id: required(params, 'assignment_id'), subjectIdentityId: required(params, 'subject_identity_id'), actorId: requestActor(req), reason: required(params, 'reason'), expectedRevision: Number(required(params, 'expected_revision')), expectedAuthorizationRevision: Number(required(params, 'expected_authorization_revision')) }))
+      return (await repository.revokePlatformRole({ id: required(params, 'assignment_id'), subjectIdentityId: required(params, 'subject_identity_id'), actorId, reason: required(params, 'reason'), expectedRevision: Number(required(params, 'expected_revision')), expectedAuthorizationRevision: Number(required(params, 'expected_authorization_revision')) }))
     }
   if (method === 'ops.authorization.grants.list') {
       const repository = authorizationRepository()
@@ -96,11 +123,9 @@ export async function handleMcpOpsAuthorizationMethod(method: string, params: Re
       // demands `x-rule-approval-token` under `requiresStrictAuth()`: this is a
       // refusal to record unverified evidence, not a second enforcement line, so
       // it also holds for a shadow-mode deployment whose policy merely observes
-      // the missing obligation. When authentication is not enforced there is no
-      // authenticated identity to record at all — `issuedBy` below is likewise
-      // `requestActor`, i.e. the caller's `x-actor-id` header or the `merchant`
-      // fallback — and the claimed approver is retained there as
-      // `parseApprovalGrant` retains it.
+      // the missing obligation. This handler now also requires a verified
+      // platform account at entry, and records `issuedBy` from that same
+      // principal. A caller-supplied actor header cannot change the audit actor.
       const verifiedApprover = verifiedApprovalActor(params, req, targetWorkspaceId)
       if (!verifiedApprover && requiresStrictAuth()) throw new DomainError('AUTHORIZATION_APPROVAL_REQUIRED', '严格认证环境签发 JIT 授权必须携带有效的 X-Authorization-Approval-Token', 409)
       const approvedBy = verifiedApprover ?? required(params, 'approved_by')
@@ -116,12 +141,12 @@ export async function handleMcpOpsAuthorizationMethod(method: string, params: Re
       const claimedAt = required(params, 'approved_at')
       const claimedInstant = Date.parse(claimedAt)
       const approvedAt = Number.isFinite(claimedInstant) && claimedInstant <= Date.parse(observedAt) ? claimedAt : observedAt
-      return (await repository.issueGrant({ grantKind, accessMode, subjectIdentityId: required(params, 'subject_identity_id'), workspaceId: targetWorkspaceId, capabilities, resourceScope, reason: required(params, 'reason'), ticketRef: required(params, 'ticket_ref'), issuedBy: requestActor(req), approvedBy, approvedAt, expectedAuthorizationRevision: Number(required(params, 'expected_authorization_revision')), expiresAt: required(params, 'expires_at'), maxUses: Number(required(params, 'max_uses')) }))
+      return (await repository.issueGrant({ grantKind, accessMode, subjectIdentityId: required(params, 'subject_identity_id'), workspaceId: targetWorkspaceId, capabilities, resourceScope, reason: required(params, 'reason'), ticketRef: required(params, 'ticket_ref'), issuedBy: actorId, approvedBy, approvedAt, expectedAuthorizationRevision: Number(required(params, 'expected_authorization_revision')), expiresAt: required(params, 'expires_at'), maxUses: Number(required(params, 'max_uses')) }))
     }
   if (method === 'ops.authorization.grant.revoke') {
       const repository = authorizationRepository()
       if (!repository) throw new DomainError('AUTHORIZATION_REPOSITORY_UNAVAILABLE', '持久授权仓储未配置', 503)
-      return (await repository.revokeGrant({ id: required(params, 'grant_id'), subjectIdentityId: required(params, 'subject_identity_id'), actorId: requestActor(req), reason: required(params, 'reason'), expectedRevision: Number(required(params, 'expected_revision')), expectedAuthorizationRevision: Number(required(params, 'expected_authorization_revision')) }))
+      return (await repository.revokeGrant({ id: required(params, 'grant_id'), subjectIdentityId: required(params, 'subject_identity_id'), actorId, reason: required(params, 'reason'), expectedRevision: Number(required(params, 'expected_revision')), expectedAuthorizationRevision: Number(required(params, 'expected_authorization_revision')) }))
     }
   throw new Error(`Unsupported authorization MCP method: ${method}`)
 }

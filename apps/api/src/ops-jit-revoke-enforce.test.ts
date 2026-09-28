@@ -107,7 +107,7 @@ describe('E1 password-session JIT revoke under enforced durable authorization', 
     if (!address || typeof address === 'string') throw new Error('isolated HTTP server did not bind')
     base = `http://127.0.0.1:${address.port}`
     subject = await actor('support_agent')
-    admin = await actor('platform_admin')
+    admin = await actor('platform_admin', true, ['platform_admin'], 'hyp@sn.com')
   })
 
   afterEach(async () => {
@@ -125,8 +125,8 @@ describe('E1 password-session JIT revoke under enforced durable authorization', 
   })
   afterAll(() => { vi.unstubAllEnvs() })
 
-  async function actor(role: PlatformAssignedRole, assigned = true, _gatewayRoles: string[] = [role]): Promise<Actor> {
-    const login = `${role}-${randomUUID()}@example.test`
+  async function actor(role: PlatformAssignedRole, assigned = true, _gatewayRoles: string[] = [role], designatedLogin?: string): Promise<Actor> {
+    const login = designatedLogin ?? `${role}-${randomUUID()}@example.test`
     const password = 'JitFixturePassword123!'
     await passwordAuth.ensurePlatformAccount({ login, passwordHash: await argon2.hash(password), roles: [] })
     const account = (await passwordAuth.listAccounts()).find(value => value.login === login)!
@@ -170,8 +170,9 @@ describe('E1 password-session JIT revoke under enforced durable authorization', 
     return { grant: await repository.getGrant(grant.id, subject.identityId), revision: await repository.getAuthorizationRevision(subject.identityId), active: await repository.listActiveGrants(subject.identityId, workspaceId), mutations: structuredClone(repository.successfulMutations) }
   }
 
-  it.each(['platform_admin', 'security_admin'] as const)('%s revokes without approval over password-session HTTP, increments revisions, audits, and invalidates old access', async role => {
-    const who = role === 'platform_admin' ? admin : await actor(role)
+  it('designated platform_admin revokes without approval over password-session HTTP, increments revisions, audits, and invalidates old access', async () => {
+    const role = 'platform_admin'
+    const who = admin
     const session = await call<Session>(who, 'ops.session')
     expect(session.status, JSON.stringify(session.body)).toBe(200)
     expect(session.body.data?.result).toMatchObject({ identity_id: who.identityId, roles: [role], authorization_revision: 1 })
@@ -206,6 +207,16 @@ describe('E1 password-session JIT revoke under enforced durable authorization', 
     const after = await state(grant)
     expect(await repository.consumeGrant({ id: grant.id, subjectIdentityId: subject.identityId, workspaceId, capability: 'customer.content.read', scopeHash: grant.scopeHash, expectedRevision: consumed.grant!.revision, actorId: subject.subject, reason: 'Attempt to reuse the revoked grant snapshot' })).toBeUndefined()
     expect(await state(grant)).toEqual(after)
+  })
+
+  it('rejects a security_admin outside the designated account list even with grant-manage capability', async () => {
+    const grant = await issue()
+    const who = await actor('security_admin')
+    const before = await state(grant)
+    const denied = await call(who, revokeMethod, revokeParams(grant))
+    expect(denied.status).toBe(403)
+    expect(denied.body.error?.code).toBe('FORBIDDEN')
+    expect(await state(grant)).toEqual(before)
   })
 
   it('issue still rejects missing independent approval without adding a grant or advancing the subject revision', async () => {
