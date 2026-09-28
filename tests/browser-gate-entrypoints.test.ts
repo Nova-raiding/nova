@@ -13,7 +13,8 @@
  *      `DECLARED_BROWSER_ENTRYPOINTS_UNINVOKED_BY_CHECK`) rather than asserting
  *      it is closed.
  *   2. Each `test:browser:*` script runs a small, explicit, closed set of
- *      specs. `test:browser:ops` and `test:browser:ops:jit` name their specs
+ *      specs. `test:browser:ops`, its template and product-import sub-suites,
+ *      and `test:browser:ops:jit` name their specs
  *      (or delegate to a fallback) in the script / runner, and
  *      `test:browser:merchant` delegates to a runner that names six specs.
  *      Those sets are pinned below.
@@ -88,15 +89,8 @@ const OPS_SPECS = [
   spec('ops.spec.js'),
 ].sort()
 
-const OPS_JIT_SPECS = [
-  spec('ops-delivery-readonly-isolated.spec.js'),
-  spec('ops-desktop-readonly-matrix.spec.js'),
-  spec('ops-jit-isolated.spec.js'),
-  spec('ops-manual-import-isolated.spec.js'),
-  // The product-import acceptance path is enabled only with the explicit
-  // OPS_E2E_SCAN_PURPOSE=product_import runner mode, not by the default JIT script.
-  spec('ops-product-import-scan-isolated.spec.js'),
-]
+const OPS_TEMPLATE_SPECS = [spec('ops-template-download-isolated.spec.js')]
+const OPS_PRODUCT_IMPORT_SPECS = [spec('ops-product-import-scan-isolated.spec.js')]
 
 /**
  * `package.json` entrypoints that declare browser coverage but that `npm run
@@ -131,9 +125,11 @@ const CONFIG_ONLY_BROWSER_SPECS = [
   spec('ops-delivery-contract-link.spec.js'),
   spec('ops-delivery-isolated.spec.js'),
   spec('ops-delivery-owner-acceptance.spec.js'),
+  spec('ops-delivery-readonly-isolated.spec.js'),
+  spec('ops-desktop-readonly-matrix.spec.js'),
+  spec('ops-manual-import-isolated.spec.js'),
   spec('ops-mcp-request-matrix.spec.js'),
   spec('ops-members-global-isolated.spec.js'),
-  spec('ops-template-download-isolated.spec.js'),
   spec('ops-rbac-desktop-matrix.spec.js'),
   spec('ops-refund-isolated.spec.js'),
   spec('ops-workbench-dirty-guard.spec.js'),
@@ -169,23 +165,37 @@ describe('browser gate entrypoints', () => {
     expect(playwrightInvocation(runner)).not.toContain('--config')
   })
 
+  it('runs the isolated template download browser acceptance from its dedicated entrypoint', () => {
+    const command = script('test:browser:ops:template')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
+    expect(specPathsIn(command)).toEqual(OPS_TEMPLATE_SPECS)
+    expect(command).not.toContain('--config')
+  })
+
+  it('runs product import only with its dedicated real-scanner fixture and exact spec', () => {
+    const command = script('test:browser:ops:product-import')
+    expect(command).toContain('OPS_E2E_DELIVERY_SCAN=true OPS_E2E_SCAN_PURPOSE=product_import')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
+    expect(specPathsIn(command)).toEqual(OPS_PRODUCT_IMPORT_SPECS)
+    expect(command).not.toContain('--config')
+  })
+
   it('gives test:browser:ops:jit no spec, so it runs the runner fallback spec', () => {
     const command = script('test:browser:ops:jit')
     expect(command).toContain('scripts/run-ops-password-e2e.ts')
     expect(specPathsIn(command)).toEqual([])
     expect(command).not.toContain('--config')
     const runner = readFileSync(resolve(root, 'scripts/run-ops-password-e2e.ts'), 'utf8')
-    // The runner's only literal spec path is the no-argument fallback, and its
-    // argument validator rejects anything but spec paths, --workers=1 and
-    // --grep, so `--config` can never reach the Playwright CLI through it.
-    expect(specPathsIn(runner)).toEqual(OPS_JIT_SPECS)
+    // Other literal paths in the runner belong to dedicated opt-in suites and
+    // must never be inferred as a run from this no-argument fallback.
+    expect(runner).toContain("return args.length ? [...args] : ['dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js']")
     expect(playwrightInvocation(runner)).not.toContain('--config')
     expect(runner).toContain('OPS_E2E_OVERRIDE_NOT_ALLOWED')
   })
 
-  it('composes test:browser:all from merchant and ops only, leaving jit standalone', () => {
+  it('composes test:browser:all from merchant and every dedicated Ops acceptance suite', () => {
     const all = script('test:browser:all')
-    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:ops')
+    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:ops && npm run test:browser:ops:template && npm run test:browser:ops:product-import')
     expect(all).not.toContain('test:browser:ops:jit')
   })
 
@@ -214,7 +224,7 @@ describe('browser gate entrypoints', () => {
     expect(configMatched.size, 'the config matched nothing, so the ledger credit is vacuous').toBeGreaterThan(0)
     expect([...configMatched].filter(file => !file.startsWith(`${DOGFOOD_DIR}/`))).toEqual([])
 
-    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_JIT_SPECS])
+    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, spec('ops-jit-isolated.spec.js')])
     const configOnly = [...configMatched].filter(file => !runByBrowserScripts.has(file)).sort()
     expect(configOnly.length, 'an empty claim list would make this assertion vacuous').toBeGreaterThan(0)
     expect(configOnly).toEqual(CONFIG_ONLY_BROWSER_SPECS)

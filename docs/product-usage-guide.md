@@ -531,6 +531,8 @@ npm run audit:ops-surface
 npm run release:metadata:validate
 ```
 
+`test:browser:all` 会分别运行运营基础桌面验收、模板下载，以及由一次性隔离 PostgreSQL/Redis 和专用 ClamAV fixture 驱动的真实商品导入扫描；扫描只连接 runner 创建的 loopback 服务，不连接线上账号或共享业务容器。
+
 生产是否可发布必须以生产环境的 release gate、真实 canary 和签名 evidence 为准，不能以本地命令通过替代。
 
 ## 相关技术文档
