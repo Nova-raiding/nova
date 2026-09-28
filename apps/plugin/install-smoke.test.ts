@@ -505,6 +505,20 @@ printf '%s\n' Darwin
     expect(skill).toContain('不得调用宿主原生 `image_gen` 绕过业务 relay')
   })
 
+  it('distinguishes product item numbers from exact SKU codes when searching', () => {
+    const skill = readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')
+    const bridge = readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')
+    const catalogSearch = bridge.slice(bridge.indexOf("  'catalog.search': {"), bridge.indexOf("  'catalog.categories': {"))
+    expect(skill).toContain('商品货号、商品编号、款号')
+    expect(skill).toContain('作为商品查询词传给 `query`')
+    expect(skill).toContain('`sku_id` 只传系统返回或已确认对应到具体变体的 ID')
+    expect(skill).toContain('不能据此判定商品货号其实是 SKU')
+    expect(catalogSearch).toContain('商品货号、商品编号或款号是商品级查询词，放入 query')
+    expect(catalogSearch).toContain('外部 SKU 编码不能直接假定为系统 sku_id')
+    expect(catalogSearch).toContain('商品搜索无结果不能推断货号是 SKU')
+    expect(catalogSearch).toContain('商品货号、款号或颜色/尺码名称不能直接替代')
+  })
+
   it('routes product video planning through confirmed facts and keeps rendering fail-closed', () => {
     const skill = readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')
     expect(skill).toContain('ecommerce-video-marketing')
@@ -533,6 +547,8 @@ printf '%s\n' Darwin
     const marketplaceRoot = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing')
     expect(readFileSync(resolve(root, '.mcp.json'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, '.mcp.json'), 'utf8'))
     expect(readFileSync(resolve(root, 'mcp/bridge.sh'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/bridge.sh'), 'utf8'))
+    expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/bridge.mjs'), 'utf8'))
+    expect(readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'skills/merchant-marketing/SKILL.md'), 'utf8'))
     expect(readFileSync(resolve(root, 'package.json'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'package.json'), 'utf8'))
   })
 

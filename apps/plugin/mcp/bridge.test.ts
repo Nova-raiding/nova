@@ -113,7 +113,7 @@ function literalSetFromBridge(source: string, name: string): Set<string> {
   return new Set([...block.matchAll(/'([^']+)'/gu)].map(match => match[1]!))
 }
 
-type ListedTool = { name: string; inputSchema: { properties?: Record<string, any> } }
+type ListedTool = { name: string; description?: string; inputSchema: { properties?: Record<string, any> } }
 
 // Spawns the real bridge exactly as the host does and performs one tools/list,
 // so surface assertions run against the shipped process rather than the source.
@@ -147,6 +147,20 @@ async function close(server: ReturnType<typeof createServer>) {
 }
 
 describe('Codex stdio MCP bridge', () => {
+  it('describes product item numbers and SKU codes as distinct catalog search filters', async () => {
+    const { tools, child } = await listBridgeTools({})
+    try {
+      const search = tools.find(tool => tool.name === 'catalog.search')
+      expect(search?.description).toContain('商品货号、商品编号或款号是商品级查询词，放入 query')
+      expect(search?.description).toContain('外部 SKU 编码不能直接假定为系统 sku_id')
+      expect(search?.description).toContain('商品搜索无结果不能推断货号是 SKU')
+      expect(search?.inputSchema.properties?.query.description).toContain('不要传变体 SKU 编码')
+      expect(search?.inputSchema.properties?.sku_id.description).toContain('商品货号、款号或颜色/尺码名称不能直接替代')
+    } finally {
+      child.kill()
+    }
+  })
+
   it('keeps legacy store progress as evidence without making it the default content workflow', async () => {
     let completed = 0
     const server = createServer(async (_req, res) => {
@@ -1078,7 +1092,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260925075058' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929072700' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
