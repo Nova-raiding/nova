@@ -9,13 +9,17 @@ const GIT = /^[0-9a-f]{40}$/u
 const ATTEMPT = /^[A-Za-z0-9_-]{16,128}$/u
 const LOCK = '/var/lib/merchant-release-security/production-deploy.lock'
 const PROJECT = 'merchant-demo-85575f9c'
-const SERVICES = Object.freeze([
-  'api', 'api-replica', 'ui', 'ops-ui', 'payment-gateway',
-  'worker-sync', 'worker-generation', 'worker-publish',
-  'worker-reconcile', 'worker-automation', 'postgres', 'redis', 'pilot-gateway',
-])
-const RUNTIME = Object.freeze(['api', 'api-replica', 'worker-sync', 'worker-generation',
-  'worker-publish', 'worker-reconcile', 'worker-automation'])
+const ALLOWED_SERVICES = Object.freeze(['api', 'api-replica', 'ui', 'ops-ui', 'payment-gateway',
+  'worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile',
+  'worker-automation', 'worker-scan', 'postgres', 'redis', 'pilot-gateway'])
+const REQUIRED_SERVICES = Object.freeze(['api', 'api-replica', 'postgres', 'redis', 'pilot-gateway'])
+const validServices = value => Array.isArray(value)
+  && value.length >= REQUIRED_SERVICES.length
+  && new Set(value).size === value.length
+  && value.every(name => ALLOWED_SERVICES.includes(name))
+  && REQUIRED_SERVICES.every(name => value.includes(name))
+  && value.some(name => name.startsWith('worker-'))
+  && [...value].sort().join('\0') === value.join('\0')
 const PHASES = Object.freeze(['captured_254', 'fenced_254', 'migrating_255', 'verified_255',
   'candidate_cutover', 'accepted_255'])
 const requireValue = (ok, message) => { if (!ok) throw new Error(`BRIDGE_255_${message}`) }
@@ -46,11 +50,11 @@ function prefix(value, version, hash) {
     && value.history_sha256 === hash && value.ops_history_sha256 === hash
 }
 
-function inventory(value, project, expectedStatus) {
-  requireValue(Array.isArray(value) && value.length === SERVICES.length, 'INVENTORY_INCOMPLETE')
+function inventory(value, project, services, expectedStatus) {
+  requireValue(Array.isArray(value) && value.length === services.length, 'INVENTORY_INCOMPLETE')
   const actual = new Map(value.map(item => [item.service, item]))
-  requireValue(actual.size === SERVICES.length && SERVICES.every(name => actual.has(name)), 'INVENTORY_SERVICE_MISMATCH')
-  for (const service of SERVICES) {
+  requireValue(actual.size === services.length && services.every(name => actual.has(name)), 'INVENTORY_SERVICE_MISMATCH')
+  for (const service of services) {
     const item = actual.get(service)
     const status = expectedStatus[service]
     requireValue(exactKeys(item, ['service', 'name', 'project', 'compose_service', 'id', 'image_id', 'inspect_sha256', 'network_sha256', 'running'])
@@ -59,17 +63,21 @@ function inventory(value, project, expectedStatus) {
       && HEX.test(item.inspect_sha256 ?? '') && HEX.test(item.network_sha256 ?? '')
       && item.running === status, `INVENTORY_${service.toUpperCase().replaceAll('-', '_')}_INVALID`)
   }
-  requireValue(new Set(value.map(item => item.id)).size === SERVICES.length, 'INVENTORY_DUPLICATE_CONTAINER')
+  requireValue(new Set(value.map(item => item.id)).size === services.length, 'INVENTORY_DUPLICATE_CONTAINER')
 }
 
 export function validateBridge255Plan(plan) {
   requireValue(exactKeys(plan, ['schema_version', 'attempt_id', 'project', 'lock_path', 'nonce_sha256', 'old_demo',
-    'bridge_254_255', 'candidate_255', 'recovery_255', 'database', 'pg17_image_ref']), 'PLAN_SHAPE_INVALID')
+    'bridge_254_255', 'candidate_255', 'recovery_255', 'database', 'pg17_image_ref',
+    'old_demo_services', 'recovery_255_services', 'candidate_255_services']), 'PLAN_SHAPE_INVALID')
   requireValue(plan.schema_version === 'ecs-bridge-255-plan/1' && ATTEMPT.test(plan.attempt_id ?? '')
     && plan.project === PROJECT && plan.lock_path === LOCK && HEX.test(plan.nonce_sha256 ?? ''), 'PLAN_IDENTITY_INVALID')
   requireValue(artifacts(plan.old_demo) && artifacts(plan.bridge_254_255)
     && artifacts(plan.candidate_255) && artifacts(plan.recovery_255)
     && IMAGE.test(plan.pg17_image_ref ?? ''), 'ARTIFACTS_INVALID')
+  requireValue(validServices(plan.old_demo_services)
+    && validServices(plan.recovery_255_services)
+    && validServices(plan.candidate_255_services), 'SERVICE_PLAN_INVALID')
   requireValue(exactKeys(plan.database, ['strategy', 'schema_downgrade', 'preserve_volumes', 'prefix_254_sha256', 'prefix_255_sha256'])
     && plan.database.strategy === 'forward_only' && plan.database.schema_downgrade === false
     && plan.database.preserve_volumes === true && HEX.test(plan.database.prefix_254_sha256)
@@ -109,14 +117,22 @@ function signedJournal(journal, publicKeyPem, plan, planSha, now) {
 export function reviewBridge255Phase({ plan, journal, publicKeyPem, capture, observation, now = new Date() }) {
   const planSha = validateBridge255Plan(plan)
   signedJournal(journal, publicKeyPem, plan, planSha, now)
-  requireValue(exactKeys(capture, ['project', 'public_release', 'database', 'containers', 'gateway_ports', 'capture_sha256'])
+  requireValue(exactKeys(capture, ['project', 'public_release', 'database', 'containers',
+    'compose_services', 'compose_sha256', 'gateway_ports', 'capture_sha256'])
     && capture.project === PROJECT && identity(capture.public_release)
-    && canonical(capture.public_release) === canonical(plan.old_demo.identity)
+    // The 254/255 bridge must already be the serving public release before
+    // this transition can enter captured_254. The prior demo release is only
+    // an independently frozen ancestry/recovery reference.
+    && canonical(capture.public_release) === canonical(plan.bridge_254_255.identity)
+    && Array.isArray(capture.compose_services)
+    && capture.compose_services.join('\0') === plan.old_demo_services.join('\0')
+    && capture.compose_sha256 === plan.bridge_254_255.compose_sha256
     && prefix(capture.database, 254, plan.database.prefix_254_sha256)
     && exactKeys(capture.gateway_ports, ['http', 'https'])
     && capture.gateway_ports.http === 80 && capture.gateway_ports.https === 443,
   'CAPTURE_INVALID')
-  inventory(capture.containers, PROJECT, Object.fromEntries(SERVICES.map(name => [name, true])))
+  inventory(capture.containers, PROJECT, plan.old_demo_services,
+    Object.fromEntries(plan.old_demo_services.map(name => [name, true])))
   const { capture_sha256: capturedDigest, ...captureBody } = capture
   requireValue(capturedDigest === digest(captureBody), 'CAPTURE_DIGEST_INVALID')
   requireValue(exactKeys(observation, ['phase', 'database', 'ingress_fenced', 'callbacks_fenced', 'in_flight_requests',
@@ -133,6 +149,7 @@ export function reviewBridge255Phase({ plan, journal, publicKeyPem, capture, obs
       migrated ? plan.database.prefix_255_sha256 : plan.database.prefix_254_sha256), 'PHASE_PREFIX_INVALID')
   }
   if (journal.phase !== 'captured_254') {
+    const runtimeServices = plan.old_demo_services.filter(name => name === 'api' || name === 'api-replica' || name.startsWith('worker-'))
     if (journal.phase === 'accepted_255') {
       requireValue(observation.ingress_fenced === false && observation.callbacks_fenced === false
         && Array.isArray(observation.stopped_services) && observation.stopped_services.length === 0,
@@ -141,7 +158,7 @@ export function reviewBridge255Phase({ plan, journal, publicKeyPem, capture, obs
       requireValue(observation.ingress_fenced === true && observation.callbacks_fenced === true
         && observation.in_flight_requests === 0 && observation.active_worker_cycles === 0
         && observation.active_outbox_leases === 0 && observation.provider_started_unresolved === 0
-        && Array.isArray(observation.stopped_services) && RUNTIME.every(name => observation.stopped_services.includes(name))
+        && Array.isArray(observation.stopped_services) && runtimeServices.every(name => observation.stopped_services.includes(name))
         && observation.gateway?.ingress_fence_verified === true,
       'FENCE_OR_DRAIN_INCOMPLETE')
     }
@@ -153,20 +170,31 @@ export function reviewBridge255Phase({ plan, journal, publicKeyPem, capture, obs
     'PG17_BACKUP_RESTORE_UNVERIFIED')
   }
   if (migrated) {
+    const targetServices = journal.phase === 'verified_255'
+      ? plan.recovery_255_services : plan.candidate_255_services
     requireValue(observation.runtime?.identity && canonical(observation.runtime.identity)
       === canonical(journal.phase === 'candidate_cutover' || journal.phase === 'accepted_255'
         ? plan.candidate_255.identity : plan.recovery_255.identity)
       && observation.runtime.api_ready === true && observation.runtime.api_replica_ready === true
-      && observation.runtime.workers_ready === RUNTIME.filter(name => name.startsWith('worker-')).length
+      && Array.isArray(observation.runtime.services)
+      && observation.runtime.services.join('\0') === targetServices.join('\0')
+      && observation.runtime.workers_ready === targetServices.filter(name => name.startsWith('worker-')).length
       && observation.runtime.business_canary_passed === true
       && observation.gateway?.release_identity_verified === true && observation.gateway?.https_ready === true,
     'RUNTIME_255_NOT_VERIFIED')
+    if (journal.phase === 'accepted_255') {
+      requireValue(observation.runtime.ops_canary_passed === true
+        && observation.runtime.model_relay_passed === true
+        && observation.runtime.codex_stdio_host_passed === true,
+      'POST_CUTOVER_EVIDENCE_INCOMPLETE')
+    }
   }
   return Object.freeze({ schema_version: 'ecs-bridge-255-phase-review/1', status: 'review_only',
     phase: journal.phase, plan_sha256: planSha, journal_sha256: digest(journal),
     production_authorized: false, deployable: false,
     blockers: ['NO_TRUSTED_HOST_LOCK_OBSERVATION', 'NO_PROTECTED_TRUST_ROOT',
       'NO_PROTECTED_NONCE_LEDGER_CONSUMER',
+      'NO_DEMO_254_SIGNED_BACKUP_RESTORE_CONTROL',
       'NO_DURABLE_SIGNED_JOURNAL_STATE_MACHINE', 'NO_INDEPENDENT_DOCKER_DATABASE_GATEWAY_OBSERVATION',
       'NO_EXECUTION_OR_FORWARD_RECOVERY_CONTROLLER'],
   })
