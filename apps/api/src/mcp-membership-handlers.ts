@@ -22,7 +22,7 @@ export async function acceptWorkspaceInvitation(input: { workspaceId: string; ac
   return { accepted: true, member: accepted.member }
 }
 
-export async function listOpsMembers(input: { workspaceId: string; params: Record<string, unknown>; members: MembersRepository; platformOperator: boolean; authorization: AuthorizationProjection; actorId: string }) {
+export async function listOpsMembers(input: { workspaceId: string; params: Record<string, unknown>; members: MembersRepository; platformOperator: boolean; authorization: AuthorizationProjection; actorSubjects: ReadonlySet<string>; actorIdentityId?: string }) {
   const { params, workspaceId } = input
   const hasPageParams = Object.prototype.hasOwnProperty.call(params, 'offset') || Object.prototype.hasOwnProperty.call(params, 'limit')
   const requestedLimit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Number(params.limit) : 20
@@ -37,10 +37,11 @@ export async function listOpsMembers(input: { workspaceId: string; params: Recor
   const canAssignOwner = input.authorization.capabilities.includes('workspace.status.update')
   const activeOwnerCount = memberPage?.activeOwnerCount ?? members.filter(item => item.role === 'workspace_owner' && item.status === 'active').length
   const projected = members.map(member => {
+    const isSelf = input.actorSubjects.has(member.externalSubject) || Boolean(input.actorIdentityId && member.identityId === input.actorIdentityId)
     const protectedTarget = !input.platformOperator && (member.role === 'platform_ops' || (member.role === 'workspace_owner' && !canAssignOwner))
     const canChangeTarget = canManage && !protectedTarget
-    const canDeactivateTarget = canChangeTarget && member.externalSubject !== input.actorId && !(member.role === 'workspace_owner' && member.status === 'active' && activeOwnerCount <= 1)
-    return { ...member, governance: { protectedTarget, canChangeTarget, canDeactivateTarget, ...(protectedTarget ? { reasonCode: member.role === 'platform_ops' ? 'PLATFORM_ROLE_CHANGE_REQUIRES_PLATFORM_WORKBENCH' : 'WORKSPACE_OWNER_CHANGE_REQUIRES_OWNER_OR_PLATFORM' } : canDeactivateTarget ? {} : { reasonCode: member.externalSubject === input.actorId ? 'SELF_SUSPENSION_DENIED' : member.role === 'workspace_owner' && member.status === 'active' && activeOwnerCount <= 1 ? 'LAST_WORKSPACE_OWNER_REQUIRED' : undefined }) } }
+    const canDeactivateTarget = canChangeTarget && !isSelf && !(member.role === 'workspace_owner' && member.status === 'active' && activeOwnerCount <= 1)
+    return { ...member, governance: { protectedTarget, canChangeTarget, canDeactivateTarget, ...(protectedTarget ? { reasonCode: member.role === 'platform_ops' ? 'PLATFORM_ROLE_CHANGE_REQUIRES_PLATFORM_WORKBENCH' : 'WORKSPACE_OWNER_CHANGE_REQUIRES_OWNER_OR_PLATFORM' } : canDeactivateTarget ? {} : { reasonCode: isSelf ? 'SELF_SUSPENSION_DENIED' : member.role === 'workspace_owner' && member.status === 'active' && activeOwnerCount <= 1 ? 'LAST_WORKSPACE_OWNER_REQUIRED' : undefined }) } }
   })
   return hasPageParams && memberPage ? { ...memberPage, items: projected } : projected
 }

@@ -10487,7 +10487,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   const isFirstValueMethod = method === 'merchant.first_value'
   const isOpsDomainMethod = OPS_DOMAIN_METHODS.has(method)
   const isCampaignLifecycleMethod = CAMPAIGN_LIFECYCLE_METHODS.has(method)
-  if (requestPrincipals.get(req)?.credentialSource === 'mcp_oauth' && method.startsWith('ops.')) throw new DomainError(ERROR_CODES.FORBIDDEN, '商家 OAuth 会话不能访问平台运营工作台', 403)
+  if (requestPrincipals.get(req)?.credentialSource === 'mcp_oauth' && method.startsWith('ops.')
+    && !['ops.session', 'ops.members.list', 'ops.member.upsert', 'ops.member.suspend'].includes(method)) {
+    throw new DomainError(ERROR_CODES.FORBIDDEN, '商家 OAuth 会话不能访问平台运营工作台', 403)
+  }
   if (!isMcpMethod(method) && !isFirstValueMethod && !isOpsDomainMethod && !isCampaignLifecycleMethod) throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, `不支持的 MCP 方法: ${method}`, 404)
   if (isMcpMethod(method)) {
     const validation = validateMcpRequest(input)
@@ -11320,7 +11323,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       }))
     case 'ops.members.list': {
       requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'operator', 'support', 'platform_ops'])
-      return result(await listOpsMembers({ workspaceId, params, members: persistence.members ?? memoryMembers, platformOperator: isPlatformOperations(req), authorization: effectiveAuthorizationProjection(requestPrincipals.get(req), workspaceId), actorId: requestActor(req) }))
+      return result(await listOpsMembers({ workspaceId, params, members: persistence.members ?? memoryMembers, platformOperator: isPlatformOperations(req), authorization: effectiveAuthorizationProjection(requestPrincipals.get(req), workspaceId), actorSubjects: new Set([requestActor(req), requestPrincipals.get(req)?.accountLogin].filter((value): value is string => Boolean(value))), actorIdentityId: requestPrincipals.get(req)?.identityId }))
     }
     case 'ops.session': {
       const principal = requestPrincipals.get(req)
@@ -12278,6 +12281,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (current?.role === 'platform_ops' && !isPlatformOperations(req)) throw new DomainError('PLATFORM_ROLE_CHANGE_DENIED', '只有平台运营可以变更平台运营成员', 403)
       if (current?.role === 'workspace_owner' && !isPlatformOperations(req) && actorMemberRole !== 'workspace_owner') throw new DomainError('WORKSPACE_OWNER_CHANGE_DENIED', '只有工作区所有者或平台运营可以变更所有者成员', 403)
       const activeOwnerCount = members.filter(item => item.role === 'workspace_owner' && item.status === 'active').length
+      if (current && status === 'suspended' && (current.externalSubject === actorId || current.externalSubject === requestPrincipals.get(req)?.accountLogin || (current.identityId && current.identityId === requestPrincipals.get(req)?.identityId))) throw new DomainError('SELF_SUSPENSION_DENIED', '不能停用当前登录账号；请由另一名授权成员执行', 409)
       if (!isPlatformOperations(req) && current?.role === 'workspace_owner' && current.status === 'active' && activeOwnerCount <= 1 && (role !== 'workspace_owner' || status !== 'active')) throw new DomainError('LAST_WORKSPACE_OWNER_REQUIRED', '不能降级或停用最后一名有效工作区所有者', 409)
       const expectedRevision = optionalNumberValue(params, 'expectedRevision', 'expected_revision')
       if (current && expectedRevision === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '更新现有成员必须提供 expected_revision', 400)
@@ -12296,6 +12300,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const externalSubject = required(params, 'external_subject')
       const members = await (persistence.members ?? memoryMembers).list(workspaceId)
       const target = members.find(item => item.externalSubject === externalSubject)
+      if (externalSubject === actorId || externalSubject === requestPrincipals.get(req)?.accountLogin || (target?.identityId && target.identityId === requestPrincipals.get(req)?.identityId)) throw new DomainError('SELF_SUSPENSION_DENIED', '不能停用当前登录账号；请由另一名授权成员执行', 409)
       const actorMemberRole = requestPrincipals.get(req)?.memberRole
       if (target?.role === 'platform_ops' && !isPlatformOperations(req)) throw new DomainError('PLATFORM_ROLE_CHANGE_DENIED', '只有平台运营可以停用平台运营成员', 403)
       if (target?.role === 'workspace_owner' && !isPlatformOperations(req) && actorMemberRole !== 'workspace_owner') throw new DomainError('WORKSPACE_OWNER_CHANGE_DENIED', '只有工作区所有者或平台运营可以停用所有者成员', 403)
