@@ -90,6 +90,17 @@ describe('isolated PostgreSQL entrypoint', () => {
     expect(summary).not.toContain('external-secret')
     expect(summary).not.toContain(adminUrl)
   })
+  it('binds fixture-only CI databases for an explicitly selected test', async () => {
+    const { runtime } = fixture()
+    const selected = ['packages/persistence/src/campaign-lifecycle.postgres.test.ts']
+    vi.mocked(runtime.readReport).mockResolvedValue(report(selected))
+    const outcome = await runIsolatedPostgresTests(selected, { PLATFORM_MEDIA_SPEC_DATABASE_URL: 'postgres://external/unsafe' }, runtime)
+    expect(outcome.exitCode).toBe(0)
+    const [, environment] = vi.mocked(runtime.runVitest).mock.calls[0]!
+    expect(environment.PLATFORM_MEDIA_SPEC_DATABASE_URL).toBe(adminUrl)
+    expect(environment.LEGACY_BACKFILL_DATABASE_URL).toBe(adminUrl)
+    expect(environment.MERCHANT_ISOLATED_POSTGRES_ALL).toBe('true')
+  })
   it('fails before fixture creation for an unapproved selection', async () => {
     const { runtime } = fixture()
     await expect(runIsolatedPostgresTests(['--config=other.ts'], {}, runtime)).rejects.toThrow(/only exact known PostgreSQL test files/u)

@@ -168,6 +168,11 @@ export async function runIsolatedPostgresTests(args: readonly string[], source: 
     await runtime.prepareTestRoles(fixture.adminDatabaseUrl)
     if (runtime.cancelled?.()) throw new Error('ISOLATED_POSTGRES_INTERRUPTED')
     const allMode = args.length === 1 && args[0] === '--all'
+    // A single selected file may rely on one of the extra CI database
+    // bindings. Give custom selections the same owned fixture bindings as
+    // --all, otherwise they can silently skip their only assertion.
+    const expandedBindings = allMode || selectedFiles.length !== ISOLATED_POSTGRES_TEST_FILES.length
+      || selectedFiles.some((file, index) => file !== ISOLATED_POSTGRES_TEST_FILES[index])
     const environment = {
       ...buildSafeTestEnvironment(source, join(evidenceDir, 'local-objects')),
       PERSISTENCE_RELEASE_DATABASE_URL: fixture.adminDatabaseUrl,
@@ -175,7 +180,7 @@ export async function runIsolatedPostgresTests(args: readonly string[], source: 
       // Every binding the CI PostgreSQL step provides, pointed at the fixture
       // this process just created. CI and this launcher must agree on the set;
       // a binding only CI sets is a binding that can only be exercised in CI.
-      ...(allMode ? {
+      ...(expandedBindings ? {
         PLATFORM_MEDIA_SPEC_DATABASE_URL: fixture.adminDatabaseUrl,
         MODEL_BUDGET_DATABASE_URL: fixture.adminDatabaseUrl,
         // These two apply the migration chain from the beginning and assert
