@@ -79,6 +79,22 @@ npx tsx scripts/model-relay-recovery-evidence.ts \
 
 本次发布按用户要求不执行压测，不创建 50 个工作区或测试账号。使用正式 `no_load` 声明明确记录没有容量验证、没有容量承诺；不能把它标记为 `pass` 或 `cloud_gate=true`。该范围不豁免真实登录、租户权限、业务 E2E、模型调用、支付、对象存储、备份恢复和发布身份验证。下面的容量采集流程仅供未来另行批准的负载验证使用，不属于本次部署步骤。
 
+可用以下离线入口生成 unsigned 声明。它不联网、不测量运行容量；声明起止时间和人工确认时间取本机生成时刻。所有版本绑定与 `verified_by` 必须由负责的发布人员按实际候选填写，`RELEASE_ID` 必须在两个参数中逐字一致；目标固定为正式域名。输出目录必须已存在、由运行用户拥有、路径规范且权限为 `0700`；输出文件独占创建为 `0600`，不会覆盖文件或跟随符号链接。脚本会调用现有 capacity gate，以 `--profile no_load` 验证生成结果。
+
+```sh
+RELEASE_ID='release-<当前冻结候选标识>'
+SOFTWARE_VERSION='<候选软件版本或镜像身份>'
+CONFIG_VERSION='<渲染生产配置版本>'
+DATA_VERSION='<候选数据库迁移版本>'
+VERIFIED_BY='<人工核验负责人>'
+CAPACITY_NO_LOAD_EXPIRES_AT='<未来 ISO-8601 时间，例如 2026-10-01T00:00:00Z>'
+CAPACITY_NO_LOAD_OUTPUT='/受保护证据目录/<release-id>-capacity-no-load.json'
+
+npm run capacity:no-load:declare -- --release-id "$RELEASE_ID" --confirm-release-id "$RELEASE_ID" --verified-by "$VERIFIED_BY" --software-version "$SOFTWARE_VERSION" --config-version "$CONFIG_VERSION" --data-version "$DATA_VERSION" --target-url 'https://yxsona.com' --expires-at "$CAPACITY_NO_LOAD_EXPIRES_AT" --output "$CAPACITY_NO_LOAD_OUTPUT"
+```
+
+输出只记录 `status=not_performed`、`profile/scope=no_load`、`cloud_gate=false`、`capacity_commitment=none` 和固定原因 `load_testing_excluded_by_release_scope`；不含负载指标，也不是已签名生产证据。它必须继续通过生产受保护签名与 release manifest/evidence-bundle 的身份绑定；不得把 unsigned JSON 直接配置为生产 evidence 路径或描述为容量通过。
+
 容量采集只允许针对隔离预发环境。默认 `plan` 仅输出不可执行计划，不发送请求；
 `yxsona.com` 与 `ops.yxsona.com` 生产域名会被脚本直接拒绝。当前候选可先执行：
 
