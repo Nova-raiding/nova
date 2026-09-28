@@ -10,6 +10,42 @@ const request = (method: string) => ({ method }) as IncomingMessage
 const response = () => ({} as ServerResponse)
 
 describe('scoped brand HTTP and task confirmation contracts', () => {
+  it('keeps brand scope routes closed and old task confirmation usable on schema 254', async () => {
+    const read = vi.fn(async () => ({ schemaVersion: 1 }))
+    const deps = {
+      repository: undefined,
+      body: vi.fn(async () => ({})),
+      resolveWorkspace: vi.fn(() => 'ws_demo'),
+      enforceAccess: vi.fn(async () => undefined),
+      actor: () => 'merchant',
+      send: vi.fn(),
+    }
+    for (const [method, path] of [['GET', '/v1/brand-scopes'], ['PUT', '/v1/brand-scopes'], ['POST', '/v1/brand-scopes/series'], ['PUT', '/v1/brand-scopes/assets/asset_1/assignment']]) {
+      await expect(routeScopedBrandHttp(request(method!), response(), path!, deps)).rejects.toMatchObject({ code: 'BRAND_SCOPES_NOT_CONFIGURED', status: 503 })
+    }
+    expect(deps.body).not.toHaveBeenCalled()
+    expect(deps.send).not.toHaveBeenCalled()
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A', task.version)
+    const confirmed = await handleMcpTaskContinuation('task.plan.confirm', { task_id: task.id }, request('POST'), 'ws_demo', {
+      service,
+      required: (params, name) => String(params[name]),
+      scopeTask: () => service.tasks.get(task.id)!,
+      taskWriteBrandForProduct: async () => undefined,
+      supportedPlatforms: ['taobao'],
+      assertCanonicalTaskScopeForAction: async () => undefined,
+      resolveCanonicalTaskScope: async () => undefined,
+      persistSnapshot: async () => undefined,
+      persistEvent: async () => undefined,
+      requestActor: () => 'merchant',
+      hydrateDurableRuleSnapshot: read,
+      recordOperationAudit: async () => undefined,
+    }) as typeof task
+    expect(confirmed.state).toBe('plan_confirmed')
+    expect(confirmed.inputSnapshot?.scopedBrand).toBeUndefined()
+  })
+
   it('enforces the tenant permission before reading or writing and maps CAS conflicts to HTTP 409', async () => {
     const get = vi.fn(async () => undefined)
     const save = vi.fn(async () => { throw new ScopedBrandRevisionConflictError() })

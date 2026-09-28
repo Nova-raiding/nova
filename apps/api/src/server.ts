@@ -759,6 +759,7 @@ export interface ApiPersistence {
   rules?: RuleRepositoryPort
   brandUnits?: import('../../../packages/persistence/src/index.js').BrandUnitRepository
   scopedBrandSettings?: PostgresScopedBrandSettingsRepository
+  bridgeSchemaVersion?: 254 | 255
   objectOrphans?: ObjectOrphanRepository
   contextSnapshots?: ContextSnapshotRepository
   identities?: IdentityLifecycleRepository
@@ -3108,10 +3109,16 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const migrations = await loadMigrations()
     const expectedMigrationVersion = migrations.at(-1)?.version ?? 0
     const bridgeSchemaMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
-    if (bridgeSchemaMode && (bridgeSchemaMode !== 'prefix_242_or_244' || process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false')) {
-      throw new Error('bridge runtime requires prefix_242_or_244 and RUN_MIGRATIONS_ON_STARTUP=false')
+    if (bridgeSchemaMode && (!['prefix_242_or_244', 'prefix_254_or_255'].includes(bridgeSchemaMode) || process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false')) {
+      throw new Error('bridge runtime requires a reviewed schema compatibility mode and RUN_MIGRATIONS_ON_STARTUP=false')
     }
     if (process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') await runMigrations(sqlPool, migrations)
+    const bridgeSchemaVersion = bridgeSchemaMode === 'prefix_254_or_255'
+      ? await (async () => {
+        const result = await pool.query<{ version: number; name: string; checksum: string | null }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version ASC')
+        return verifyBridgeMigrationPrefix(result.rows, migrations, bridgeSchemaMode) as 254 | 255
+      })()
+      : undefined
     const outbox = new PostgresOutboxRepository(sqlPool)
     const business = new PostgresBusinessRepository(sqlPool, { normalizedProjection: true })
     const billing = new PostgresBillingRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event))
@@ -3154,7 +3161,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     // (ECS, whose bootstrap re-widens merchant_app) or a 42501 failure (k8s).
     const rules = new PostgresRuleRepository(sqlPool, opsSqlPool)
     const brandUnits = new PostgresBrandUnitRepository(sqlPool)
-    const scopedBrandSettings = new PostgresScopedBrandSettingsRepository(sqlPool)
+    const scopedBrandSettings = bridgeSchemaVersion === 254 ? undefined : new PostgresScopedBrandSettingsRepository(sqlPool)
     const objectOrphans = new PostgresObjectOrphanRepository(sqlPool)
     const contextSnapshots = new PostgresContextSnapshotRepository(sqlPool)
     const identities = new PostgresIdentityLifecycleRepository(opsSqlPool)
@@ -3330,7 +3337,8 @@ async function initializePersistence(): Promise<ApiPersistence> {
       try {
         if (bridgeSchemaMode) {
           const migrationState = await client.query<{ version: number; name: string; checksum: string | null }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version ASC')
-          verifyBridgeMigrationPrefix(migrationState.rows, migrations, bridgeSchemaMode)
+          const version = verifyBridgeMigrationPrefix(migrationState.rows, migrations, bridgeSchemaMode)
+          if (bridgeSchemaVersion !== undefined && version !== bridgeSchemaVersion) throw new Error('bridge database migration prefix changed; restart the API before serving traffic')
         } else {
           const migrationState = await client.query<{ version: number | null }>('SELECT max(version)::int AS version FROM schema_migrations')
           if ((migrationState.rows[0]?.version ?? 0) < expectedMigrationVersion) throw new Error('database schema is behind the application migrations')
@@ -3354,7 +3362,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, ...(bridgeSchemaVersion !== undefined ? { bridgeSchemaVersion } : {}), objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -13161,7 +13169,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         persistEvent,
         requestActor,
         hydrateDurableRuleSnapshot,
-        hydrateScopedBrandForTask: (scopedWorkspaceId, task) => hydrateScopedBrandForTask({ workspaceId: scopedWorkspaceId, task, service, repository: persistence.scopedBrandSettings, requireRepository: isProduction() }),
+        ...(persistence.bridgeSchemaVersion === 254 ? {} : { hydrateScopedBrandForTask: (scopedWorkspaceId: string, task: Task) => hydrateScopedBrandForTask({ workspaceId: scopedWorkspaceId, task, service, repository: persistence.scopedBrandSettings, requireRepository: isProduction() }) }),
         recordOperationAudit,
       }))
     case 'task.timeline':
@@ -13270,7 +13278,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         persistEvent,
         requestActor,
         hydrateDurableRuleSnapshot,
-        hydrateScopedBrandForTask: (scopedWorkspaceId, task) => hydrateScopedBrandForTask({ workspaceId: scopedWorkspaceId, task, service, repository: persistence.scopedBrandSettings, requireRepository: isProduction() }),
+        ...(persistence.bridgeSchemaVersion === 254 ? {} : { hydrateScopedBrandForTask: (scopedWorkspaceId: string, task: Task) => hydrateScopedBrandForTask({ workspaceId: scopedWorkspaceId, task, service, repository: persistence.scopedBrandSettings, requireRepository: isProduction() }) }),
         recordOperationAudit,
       }))
     case 'content.draft.generate': {
@@ -13579,7 +13587,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   // The bridge image is allowed to run before 243/244. Never let its newer
   // one-click branches query missing tables or issue a code before failing.
   const bridgeNewTableRouteUnavailable = () => {
-    if (process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE) throw new DomainError('LOCAL_PLUGIN_BRIDGE_UNAVAILABLE', '本地插件一键连接将在数据库升级后开放', 503)
+    if (process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE && process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE !== 'prefix_254_or_255') throw new DomainError('LOCAL_PLUGIN_BRIDGE_UNAVAILABLE', '本地插件一键连接将在数据库升级后开放', 503)
   }
   const isPasswordAuthRoute = isLocalPluginConnectionRoute || path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/workspace-bootstrap' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke' || path === '/v1/auth/local-plugin/authorize' || path === '/v1/auth/local-plugin/token'
   const passwordSessionToken = () => {

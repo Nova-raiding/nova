@@ -37,6 +37,19 @@ describe('MigrationRunner', () => {
     expect(() => verifyBridgeMigrationPrefix(rows, migrations, 'prefix_242_or_244'))
       .toThrow('exactly 242 or 244')
   })
+  it('accepts only exact, checksummed 254 or 255 prefixes from a 255 bridge image', async () => {
+    const migrations = await loadMigrations()
+    const rows = migrations.map(({ version, name, sql }) => ({ version, name, checksum: migrationChecksum(sql) }))
+    expect(verifyBridgeMigrationPrefix(rows.slice(0, 254), migrations, 'prefix_254_or_255')).toBe(254)
+    expect(verifyBridgeMigrationPrefix(rows, migrations, 'prefix_254_or_255')).toBe(255)
+    for (const version of [242, 253, 256]) {
+      const candidate = version === 256 ? [...rows, { version: 256, name: 'unknown', checksum: 'a'.repeat(64) }] : rows.slice(0, version)
+      expect(() => verifyBridgeMigrationPrefix(candidate, migrations, 'prefix_254_or_255')).toThrow('exactly 254 or 255')
+    }
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 254).map((row, index) => index === 253 ? { ...row, checksum: 'a'.repeat(64) } : row), migrations, 'prefix_254_or_255')).toThrow('checksum mismatch')
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 254), migrations.slice(0, 254), 'prefix_254_or_255')).toThrow('complete migration chain through 255')
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 254), migrations, 'prefix_242_or_254')).toThrow('complete migration chain through 254')
+  })
   it('loads the executable 001 SQL asset', async () => {
     const migration = await loadInitialMigration()
     expect(migration).toMatchObject({ version: 1, name: 'initial' })

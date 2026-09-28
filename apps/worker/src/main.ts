@@ -616,6 +616,10 @@ type WorkerReadinessDatabase = {
   query(text: string, values?: readonly unknown[]): Promise<{ rows: Array<{ version: number; name: string; checksum?: string | null }> }>
 }
 
+export function assertBridgeStartupMigrationVersion(startupVersion: number | undefined, currentVersion: number): void {
+  if (startupVersion !== undefined && currentVersion !== startupVersion) throw new Error('bridge database migration prefix changed; restart the worker before processing tasks')
+}
+
 /** A worker is ready only when its database schema exactly matches the shipped
  * migration inventory and its API dependency reports durable readiness. */
 export async function assertWorkerReadinessDependencies(input: {
@@ -2765,6 +2769,10 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
       })
     }
     const expectedMigrations = await loadMigrations()
+    const bridgeMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
+    const bridgeStartupVersion = bridgeMode
+      ? (await assertWorkerReadinessDependencies({ database: pool, expectedMigrations, bridgeMode, bridgeMigrations: expectedMigrations })).migrationVersion
+      : undefined
     if (scanRoleEnabled) {
       const instanceId = process.env.HOSTNAME?.trim() || `worker-${process.pid}`
       const heartbeatIntervalMs = positiveInt(process.env.SCANNER_HEARTBEAT_INTERVAL_MS, 5_000, 'SCANNER_HEARTBEAT_INTERVAL_MS')
@@ -2801,6 +2809,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         callbackConfigured: hasCompleteScanCallbackCredentials(config, process.env),
         dependencyProbe: async () => {
           const state = await assertWorkerReadinessDependencies({ database: pool, ...(config.apiBaseUrl ? { apiBaseUrl: config.apiBaseUrl } : {}), apiHealthPath: '/healthz', expectedMigrations, ...(process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE ? { bridgeMode: process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE, bridgeMigrations: expectedMigrations } : {}) })
+          assertBridgeStartupMigrationVersion(bridgeStartupVersion, state.migrationVersion)
           return { databaseReady: true, apiReady: state.apiReady }
         },
         queueProbe: async () => {
@@ -2880,6 +2889,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         if (!dependenciesReady || startedAt >= nextDependencyCheckAt) {
           dependenciesReady = false
           const dependencyState = await assertWorkerReadinessDependencies({ database: pool, ...(config.apiBaseUrl ? { apiBaseUrl: config.apiBaseUrl } : {}), ...(scannerHeartbeat ? { apiHealthPath: '/healthz' as const } : {}), expectedMigrations, ...(process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE ? { bridgeMode: process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE, bridgeMigrations: expectedMigrations } : {}) })
+          assertBridgeStartupMigrationVersion(bridgeStartupVersion, dependencyState.migrationVersion)
           if (clamavReadiness && !scannerHeartbeat) await clamavReadiness.ping()
           dependenciesReady = true
           nextDependencyCheckAt = startedAt + config.dependencyCheckIntervalMs

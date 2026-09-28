@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
 import { contextEnvelopeHash, loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { generationKnowledgeReceiptHash } from '../../../packages/application/src/knowledge-execution-fence.js'
 import { verifyWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
@@ -366,6 +366,25 @@ describe('worker production entry', () => {
       .rejects.toThrow('exactly 242 or 244')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations, bridgeMode: 'prefix_242_or_244', bridgeMigrations: expectedMigrations }))
       .rejects.toThrow('exactly 242 or 244')
+  })
+
+  it('requires exact 254 or 255 checksummed history for a 255 bridge worker image', async () => {
+    const migrations = await loadMigrations()
+    const rows = migrations.map(item => ({ version: item.version, name: item.name, checksum: createHash('sha256').update(item.sql).digest('hex') }))
+    const database = (selected: typeof rows) => ({ query: async () => ({ rows: selected }) })
+    for (const version of [254, 255]) {
+      await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, version)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
+        .resolves.toEqual({ migrationVersion: version, apiReady: false })
+    }
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations }))
+      .rejects.toThrow('expected complete migration chain through 255')
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 253)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
+      .rejects.toThrow('exactly 254 or 255')
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254).map((row, index) => index === 253 ? { ...row, checksum: 'a'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
+      .rejects.toThrow('checksum mismatch')
+    expect(() => assertBridgeStartupMigrationVersion(254, 254)).not.toThrow()
+    expect(() => assertBridgeStartupMigrationVersion(254, 255)).toThrow('restart the worker')
+    expect(() => assertBridgeStartupMigrationVersion(255, 254)).toThrow('restart the worker')
   })
 
   it('requires complete scan callback credentials before advertising scanner readiness', async () => {

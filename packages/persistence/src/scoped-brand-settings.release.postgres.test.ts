@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { parseScopedBrandSettings } from '../../application/src/scoped-brand-settings.js'
-import { loadMigrations, MigrationRunner, verifyAppliedMigrations } from './migration.js'
+import { loadMigrations, MigrationRunner, verifyAppliedMigrations, verifyBridgeMigrationPrefix } from './migration.js'
 import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { PostgresScopedBrandSettingsRepository, ScopedBrandRevisionConflictError } from './scoped-brand-settings-repository.js'
 
@@ -33,9 +33,12 @@ describe('scoped brand PostgreSQL release evidence', () => {
       expect(migrations.at(-1)?.version).toBe(255)
       expect(await new MigrationRunner(database, previousRelease).run()).toEqual(previousRelease.map(item => item.version))
       expect((await database.query<{ version: number }>('SELECT max(version)::int AS version FROM schema_migrations')).rows[0]?.version).toBe(254)
+      const previousRows = await database.query<{ version: number; name: string; checksum: string }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version')
+      expect(verifyBridgeMigrationPrefix(previousRows.rows, migrations, 'prefix_254_or_255')).toBe(254)
       expect(await new MigrationRunner(database, migrations).run()).toEqual([255])
       expect(await new MigrationRunner(database, migrations).run()).toEqual([])
       const applied = await database.query<{ version: number; name: string; checksum: string }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version')
+      expect(verifyBridgeMigrationPrefix(applied.rows, migrations, 'prefix_254_or_255')).toBe(255)
       expect(() => verifyAppliedMigrations(applied.rows, previousRelease)).toThrowError(expect.objectContaining({ code: 'MIGRATION_VERSION_UNKNOWN', version: 255 }))
       // A fresh migration database has not run the post-migration runtime ACL
       // normalization. Grant only the backing reads and row locks exercised by

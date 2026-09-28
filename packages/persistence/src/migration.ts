@@ -222,12 +222,21 @@ export function verifyBridgeMigrationPrefix(
   applied: readonly AppliedMigration[],
   expected: readonly Migration[],
   mode: string | undefined,
-): 242 | 244 | 254 {
+): 242 | 244 | 254 | 255 {
   if (mode === 'prefix_242_or_244') {
     if (expected.length < 244 || expected.some((migration, index) => migration.version !== index + 1)) {
       throw new Error('bridge release must carry the complete migration chain through 244')
     }
     if (applied.length !== 242 && applied.length !== 244) throw new Error('bridge database migration prefix must be exactly 242 or 244')
+    verifyAppliedMigrations(applied, expected, migrationChecksumBaseline())
+    return applied.length
+  }
+
+  if (mode === 'prefix_254_or_255') {
+    if (expected.length !== 255 || expected.some((migration, index) => migration.version !== index + 1)) {
+      throw new Error('254-to-255 bridge release must carry exactly the complete migration chain through 255')
+    }
+    if (applied.length !== 254 && applied.length !== 255) throw new Error('254-to-255 bridge database migration prefix must be exactly 254 or 255')
     verifyAppliedMigrations(applied, expected, migrationChecksumBaseline())
     return applied.length
   }
