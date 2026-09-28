@@ -84,7 +84,9 @@
     "check": "npm run typecheck && npm test && npm run test:ecs-staging-toolchain && npm run test:ops-console && npm run test:plugin-import-contract && npm run audit:ops-surface && npm run release:metadata:validate && npm run build:ops-console && npm run build:merchant-studio && npm run invariants:check",
     "invariants:verify": "tsx scripts/invariant-mutation-gate.ts",
     "invariants:check": "tsx scripts/invariant-mutation-gate.ts --tolerate-missing-bindings",
-    "verify:commercial-read-boundaries": "tsx scripts/verify-commercial-read-boundaries.ts"
+    "verify:commercial-read-boundaries": "tsx scripts/verify-commercial-read-boundaries.ts",
+    "test:release-gates:runtime": "node --import tsx scripts/run-safe-tests.ts --no-file-parallelism tests/ecs-254-255-api-bridge-isolated.postgres.test.ts apps/api/src/model-usage-settlement.test.ts",
+    "pretest:release-gates": "npm run test:release-gates:runtime"
   },
   "workspaces": [
     "apps/*",

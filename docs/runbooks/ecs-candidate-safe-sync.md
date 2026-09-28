@@ -19,7 +19,7 @@
 
 ### 254→255 API runtime gate
 
-发布候选涉及迁移 255 时，除 `npm run test:release-gates` 外，必须运行：
+发布候选涉及迁移 255 时，`npm run test:release-gates` 会先通过 `pretest:release-gates` 自动执行 API 254→255 隔离桥接测试和模型用量结算测试；也可以单独运行桥接测试：
 
 ```sh
 npm run test:bridge-254-255-api

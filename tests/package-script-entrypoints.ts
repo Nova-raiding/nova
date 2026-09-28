@@ -143,7 +143,8 @@ function invocationsIn(source: string): string[] {
 /**
  * Scripts some other script, workflow, document or tooling file actually
  * invokes, followed through `package.json` so `check` → `npm test` → the
- * launcher counts as one chain.
+ * launcher counts as one chain. npm lifecycle `pre<name>`/`post<name>` hooks
+ * are implicit edges and must be included as well.
  */
 export function invokedScriptNames(root: string): Set<string> {
   const scripts = (JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
@@ -156,6 +157,12 @@ export function invokedScriptNames(root: string): Set<string> {
   while (changed) {
     changed = false
     for (const name of [...invoked]) {
+      for (const lifecycleName of [`pre${name}`, `post${name}`]) {
+        if (scripts[lifecycleName] && !invoked.has(lifecycleName)) {
+          invoked.add(lifecycleName)
+          changed = true
+        }
+      }
       for (const nested of invocationsIn(scripts[name] ?? '')) {
         if (!invoked.has(nested)) { invoked.add(nested); changed = true }
       }

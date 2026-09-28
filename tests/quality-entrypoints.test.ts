@@ -207,9 +207,17 @@ describe('quality entrypoint coverage', () => {
 
   it('runs critical MCP, worker, payment, and usage evidence checks from the default release entrypoint', () => {
     const releaseGate = script('test:release-gates')
+    const runtimeReleaseGate = script('test:release-gates:runtime')
     for (const gate of CRITICAL_DEFAULT_RELEASE_GATES) {
       expect(releaseGate.split(/\s+/u).filter(argument => argument === gate)).toHaveLength(1)
     }
+    for (const gate of [
+      'tests/ecs-254-255-api-bridge-isolated.postgres.test.ts',
+      'apps/api/src/model-usage-settlement.test.ts',
+    ]) {
+      expect(runtimeReleaseGate.split(/\s+/u).filter(argument => argument === gate)).toHaveLength(1)
+    }
+    expect(script('pretest:release-gates')).toBe('npm run test:release-gates:runtime')
 
     // The attack matrix needs a disposable PostgreSQL instance, so the safe
     // default process enforces its dedicated launcher rather than pretending
