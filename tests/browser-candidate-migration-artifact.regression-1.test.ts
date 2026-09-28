@@ -14,6 +14,7 @@ describe('candidate frozen migration artifacts', () => {
     const rendered = JSON.parse(execFileSync('docker', [...candidateComposeArgs(value), 'config', '--format', 'json'], { env: { ...value.env, PATH: process.env.PATH }, encoding: 'utf8' }))
     expect(() => assertCandidateComposeRender(rendered, value)).not.toThrow()
     expect(rendered.services.migrate.image).toBe(value.migrationImage)
+    expect(rendered.networks.default.ipam.config).toEqual([{ subnet: value.networkSubnet }])
     expect(rendered.services.migrate.volumes ?? []).toEqual([])
     expect(rendered.services.migrate.build.dockerfile).toBe('infra/docker/browser-candidate-migrate.Dockerfile')
     expect(rendered.services.postgres.image).toBe(ISOLATED_POSTGRES_IMAGE)
@@ -30,6 +31,8 @@ describe('candidate frozen migration artifacts', () => {
     expect(() => assertCandidateComposeRender(pg16, value)).toThrow(/pinned PG17/)
     const mutableRedis = structuredClone(rendered); mutableRedis.services.redis.image = 'redis:7-alpine'
     expect(() => assertCandidateComposeRender(mutableRedis, value)).toThrow(/pinned PG17\/Redis/)
+    const reusedSubnet = structuredClone(rendered); reusedSubnet.networks.default.ipam.config[0].subnet = '172.17.0.0/16'
+    expect(() => assertCandidateComposeRender(reusedSubnet, value)).toThrow(/isolated Docker subnet/)
   })
 
   it('bakes all four bootstrap/verification files and frozen migration SQL into the pinned PG17 image', () => {

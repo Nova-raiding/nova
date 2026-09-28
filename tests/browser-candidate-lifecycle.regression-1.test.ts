@@ -39,6 +39,9 @@ describe('candidate environment and lifecycle', () => {
       async list(project) { expect(project).toBe(value.project); return [own, foreign, exited] },
       async inspect(id) { return { Id: id, Config: { Labels: { 'com.docker.compose.project': id === foreign ? 'business-runtime' : value.project!, 'com.docker.compose.service': 'api' } }, State: { Running: running.has(id) } } },
       async stop(id) { stopped.push(id); running.delete(id) },
+      async listNetworks(project) { expect(project).toBe(value.project); return ['d'.repeat(64)] },
+      async inspectNetwork(id) { return { Id: id, Name: `${value.project}_default`, Labels: { 'com.docker.compose.project': value.project!, 'com.docker.compose.network': 'default' }, Containers: {}, IPAM: { Config: [{ Subnet: value.networkSubnet }] } } },
+      async removeNetwork() {},
     }
     const evidence = await cleanupBrowserCandidate(value, docker)
     expect(stopped).toEqual([own])
@@ -48,9 +51,23 @@ describe('candidate environment and lifecycle', () => {
 
   it('reports failed stop/unknown enumeration rather than claiming cleanup success', async () => {
     const value = candidate(); const id = 'a'.repeat(64)
-    const docker: CleanupDocker = { async list() { return [id] }, async inspect() { return { Id: id, Config: { Labels: { 'com.docker.compose.project': value.project!, 'com.docker.compose.service': 'api' } }, State: { Running: true } } }, async stop() { throw new Error('stop failed') } }
+    const docker: CleanupDocker = { async list() { return [id] }, async inspect() { return { Id: id, Config: { Labels: { 'com.docker.compose.project': value.project!, 'com.docker.compose.service': 'api' } }, State: { Running: true } } }, async stop() { throw new Error('stop failed') }, async listNetworks() { return [] }, async inspectNetwork() { throw new Error('not used') }, async removeNetwork() { throw new Error('not used') } }
     expect(await cleanupBrowserCandidate(value, docker)).toMatchObject({ leftRunning: [id], stopped: [], volumesRetained: true })
     expect(await cleanupBrowserCandidate(value, { ...docker, async list() { throw new Error('daemon unavailable') } })).toMatchObject({ leftRunning: ['unknown: enumeration failed'], volumesRetained: true })
+  })
+
+  it('removes only the exact empty candidate network and leaves attached or foreign networks untouched', async () => {
+    const value = candidate(); const good = 'd'.repeat(64); const attached = 'e'.repeat(64); const removed: string[] = []
+    const docker: CleanupDocker = {
+      async list() { return [] }, async inspect() { throw new Error('not used') }, async stop() { throw new Error('not used') },
+      async listNetworks() { return [good, attached] },
+      async inspectNetwork(id) { return { Id: id, Name: `${value.project}_default`, Labels: { 'com.docker.compose.project': value.project!, 'com.docker.compose.network': 'default' }, Containers: id === good ? {} : { container: {} }, IPAM: { Config: [{ Subnet: value.networkSubnet }] } } },
+      async removeNetwork(id) { removed.push(id) },
+    }
+    const result = await cleanupBrowserCandidate(value, docker)
+    expect(removed).toEqual([good])
+    expect(result.failures).toEqual(['candidate network cleanup refused unverified ownership or attached containers'])
+    expect(result.volumesRetained).toBe(true)
   })
 
   it('cleans in finally and aborts active process groups on SIGINT/SIGTERM without removing volumes', () => {
@@ -61,6 +78,7 @@ describe('candidate environment and lifecycle', () => {
     expect(source).toContain("'--wait', '--wait-timeout', '180'")
     expect(source).toContain('/healthz')
     expect(source).not.toContain('down -v')
-    expect(source).not.toContain("'rm'")
+    expect(source).toContain("['network', 'rm', id]")
+    expect(source).not.toContain("['volume', 'rm'")
   })
 })

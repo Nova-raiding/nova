@@ -8,6 +8,10 @@ import { fileURLToPath } from 'node:url'
 type Environment = Record<string, string | undefined>
 const activeChildren = new Set<ChildProcess>()
 const candidateServices = ['api', 'ui', 'ops-ui', 'postgres', 'redis', 'migrate']
+// Local browser-only IPAM space. Keep this pool separate from the host's
+// configured Docker pools and refuse any overlap with an existing Docker net.
+// Hosts with a VPN/LAN route through 10.253.0.0/16 should change that route or
+// reserve another reviewed browser-only pool before running browser QA.
 export const CANDIDATE_POSTGRES_IMAGE = 'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73'
 export const CANDIDATE_REDIS_IMAGE = 'redis:7-alpine@sha256:ca0acbb137c1dc3339c8b147a58fd6f42775d4599327b50e7b116c23de501af2'
 const toolingEnvironmentKeys = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'TERM', 'CI', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST', 'MERCHANT_E2E_LOGIN', 'MERCHANT_E2E_PASSWORD'] as const
@@ -36,6 +40,7 @@ export interface BrowserCandidate {
   apiImage?: string
   opsImage?: string
   migrationImage?: string
+  networkSubnet?: string
   ports: number[]
   env: Environment
 }
@@ -64,12 +69,13 @@ export function candidateConfiguration(source: Environment, sha: string, ports: 
   const apiImage = `merchant-browser-api:${key}`
   const opsImage = `merchant-browser-ops-ui:${key}`
   const migrationImage = `merchant-browser-migrate:${key}`
+  const networkSubnet = `10.253.${Number.parseInt(nonce.slice(0, 2), 16)}.0/24`
   const [ui, ops, api, postgres, redis] = ports
   const merchantUrl = `http://127.0.0.1:${ui}/`
   const opsUrl = `http://127.0.0.1:${ops}/`
-  return { mode, sha, releaseId, project, apiImage, opsImage, migrationImage, merchantUrl, opsUrl, ports, env: {
+  return { mode, sha, releaseId, project, apiImage, opsImage, migrationImage, networkSubnet, merchantUrl, opsUrl, ports, env: {
     ...isolatedCandidateEnvironment(source), COMPOSE_PROJECT_NAME: project, LOCAL_API_IMAGE: apiImage, LOCAL_OPS_UI_IMAGE: opsImage,
-    BROWSER_MIGRATION_IMAGE: migrationImage,
+    BROWSER_MIGRATION_IMAGE: migrationImage, BROWSER_NETWORK_SUBNET: networkSubnet,
     LOCAL_UI_PORT: String(ui), LOCAL_OPS_UI_PORT: String(ops), LOCAL_API_PORT: String(api),
     LOCAL_POSTGRES_PORT: String(postgres), LOCAL_REDIS_PORT: String(redis),
     MERCHANT_STUDIO_URL: merchantUrl, OPS_BASE_URL: opsUrl,
@@ -124,7 +130,35 @@ export function candidateComposeArgs(candidate: BrowserCandidate): string[] {
   return ['compose', '-p', candidate.project, '-f', 'infra/local/docker-compose.yml', '-f', 'infra/local/docker-compose.browser-candidate.yml', '--env-file', '/dev/null']
 }
 
-export function assertCandidateComposeRender(rendered: { services?: Record<string, { image?: string; volumes?: Array<{ type?: string }> }> }, candidate: BrowserCandidate): void {
+function ipv4CidrRange(cidr: string): [number, number] | undefined {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/u.exec(cidr)
+  if (!match) return undefined
+  const octets = match.slice(1, 5).map(Number)
+  const prefix = Number(match[5])
+  if (octets.some(value => value > 255) || prefix > 32) return undefined
+  const address = octets.reduce((value, octet) => value * 256 + octet, 0)
+  const size = 2 ** (32 - prefix)
+  const start = Math.floor(address / size) * size
+  return [start, start + size - 1]
+}
+
+export function chooseCandidateNetworkSubnet(preferred: string, usedSubnets: string[]): string {
+  if (!/^10\.253\.\d{1,3}\.0\/24$/u.test(preferred) || !ipv4CidrRange(preferred)) throw new Error('candidate network subnet must be a /24 inside 10.253.0.0/16')
+  const used = usedSubnets.map(subnet => {
+    const range = ipv4CidrRange(subnet)
+    if (!range && subnet.includes('.')) throw new Error('Docker reported an invalid IPv4 network subnet')
+    return range
+  }).filter((range): range is [number, number] => range !== undefined)
+  const preferredOctet = Number(preferred.split('.')[2])
+  for (let offset = 0; offset < 256; offset += 1) {
+    const subnet = `10.253.${(preferredOctet + offset) % 256}.0/24`
+    const range = ipv4CidrRange(subnet)!
+    if (used.every(([start, end]) => range[1] < start || range[0] > end)) return subnet
+  }
+  throw new Error('no isolated 10.253.0.0/16 Docker subnet is available for browser candidate')
+}
+
+export function assertCandidateComposeRender(rendered: { services?: Record<string, { image?: string; volumes?: Array<{ type?: string }> }>; networks?: { default?: { ipam?: { config?: Array<{ subnet?: string }> } } } }, candidate: BrowserCandidate): void {
   for (const service of candidateServices) {
     const config = rendered.services?.[service]
     if (!config) throw new Error(`candidate Compose is missing ${service}`)
@@ -134,6 +168,7 @@ export function assertCandidateComposeRender(rendered: { services?: Record<strin
   const migrate = rendered.services?.migrate
   const redis = rendered.services?.redis
   if (!postgres || !migrate || !redis || postgres.image !== CANDIDATE_POSTGRES_IMAGE || redis.image !== CANDIDATE_REDIS_IMAGE || migrate.image !== candidate.migrationImage || migrate.volumes?.length) throw new Error('candidate requires pinned PG17/Redis and built migration artifacts without runtime mounts')
+  if (rendered.networks?.default?.ipam?.config?.length !== 1 || rendered.networks.default.ipam.config[0]?.subnet !== candidate.networkSubnet) throw new Error('candidate requires its exact isolated Docker subnet')
 }
 
 export function assertContainerHealthy(inspected: { State?: { Running?: boolean; Health?: { Status?: string } } }, service: string): void {
@@ -189,6 +224,13 @@ export async function ensureBrowserCandidate(candidate: BrowserCandidate, onStar
   if (candidate.env.DOCKER_HOST) assertLocalDockerEndpoint(candidate.env.DOCKER_HOST)
   // Pin the checked local context for startup, inspection and exact-ID cleanup.
   candidate.env.DOCKER_CONTEXT = dockerContext
+  const networkIds = execFileSync('docker', ['network', 'ls', '-q'], { env: candidate.env, encoding: 'utf8' }).trim().split('\n').filter(Boolean)
+  if (networkIds.length) {
+    const networks = JSON.parse(execFileSync('docker', ['network', 'inspect', ...networkIds], { env: candidate.env, encoding: 'utf8' })) as Array<{ IPAM?: { Config?: Array<{ Subnet?: string }> } }>
+    const usedSubnets = networks.flatMap(network => network.IPAM?.Config?.map(config => config.Subnet).filter((subnet): subnet is string => typeof subnet === 'string') ?? [])
+    candidate.networkSubnet = chooseCandidateNetworkSubnet(candidate.networkSubnet!, usedSubnets)
+    candidate.env.BROWSER_NETWORK_SUBNET = candidate.networkSubnet
+  }
   await assertUnoccupiedPorts(candidate.ports)
   const args = candidateComposeArgs(candidate)
   const rendered = JSON.parse(execFileSync('docker', [...args, 'config', '--format', 'json'], { env: candidate.env, encoding: 'utf8' }))
@@ -225,11 +267,17 @@ export interface CleanupDocker {
   list(project: string, env: Environment): Promise<string[]>
   inspect(id: string, env: Environment): Promise<{ Id: string; Config: { Labels: Record<string, string> }; State: { Running: boolean } }>
   stop(id: string, env: Environment): Promise<void>
+  listNetworks(project: string, env: Environment): Promise<string[]>
+  inspectNetwork(id: string, env: Environment): Promise<{ Id: string; Name: string; Labels?: Record<string, string>; Containers?: Record<string, unknown> | null; IPAM?: { Config?: Array<{ Subnet?: string }> } }>
+  removeNetwork(id: string, env: Environment): Promise<void>
 }
 const cleanupDocker: CleanupDocker = {
   async list(project, env) { return execFileSync('docker', ['ps', '-a', '--no-trunc', '--filter', `label=com.docker.compose.project=${project}`, '-q'], { env, encoding: 'utf8' }).trim().split('\n').filter(Boolean) },
   async inspect(id, env) { return JSON.parse(execFileSync('docker', ['inspect', id], { env, encoding: 'utf8' }))[0] },
   async stop(id, env) { await new Promise<void>((accept, reject) => { const child = spawn('docker', ['stop', '--time', '10', id], { env, stdio: 'ignore' }); child.once('error', reject); child.once('exit', code => code === 0 ? accept() : reject(new Error('exact candidate container stop failed'))) }) },
+  async listNetworks(project, env) { return execFileSync('docker', ['network', 'ls', '--no-trunc', '--filter', `label=com.docker.compose.project=${project}`, '-q'], { env, encoding: 'utf8' }).trim().split('\n').filter(Boolean) },
+  async inspectNetwork(id, env) { return JSON.parse(execFileSync('docker', ['network', 'inspect', id], { env, encoding: 'utf8' }))[0] },
+  async removeNetwork(id, env) { execFileSync('docker', ['network', 'rm', id], { env, stdio: 'ignore' }) },
 }
 
 export async function cleanupBrowserCandidate(candidate: BrowserCandidate, docker: CleanupDocker = cleanupDocker): Promise<{ stopped: string[]; leftRunning: string[]; failures: string[]; volumesRetained: true }> {
@@ -246,6 +294,26 @@ export async function cleanupBrowserCandidate(candidate: BrowserCandidate, docke
       if ((await docker.inspect(id, candidate.env)).State.Running) { evidence.leftRunning.push(id); evidence.failures.push('candidate container remains running') } else evidence.stopped.push(id)
     } catch { evidence.leftRunning.push(id); evidence.failures.push(`candidate cleanup could not safely stop ${id}`) }
   }))
+  let networkIds: string[]
+  try { networkIds = await docker.listNetworks(candidate.project!, candidate.env) } catch {
+    evidence.failures.push('candidate network enumeration failed')
+    return evidence
+  }
+  for (const id of networkIds) {
+    try {
+      const network = await docker.inspectNetwork(id, candidate.env)
+      const subnets = network.IPAM?.Config?.map(config => config.Subnet).filter((subnet): subnet is string => typeof subnet === 'string') ?? []
+      if (!/^[0-9a-f]{64}$/u.test(id) || network.Id !== id || network.Name !== `${candidate.project}_default`
+        || network.Labels?.['com.docker.compose.project'] !== candidate.project
+        || network.Labels?.['com.docker.compose.network'] !== 'default'
+        || subnets.length !== 1 || subnets[0] !== candidate.networkSubnet
+        || Object.keys(network.Containers ?? {}).length !== 0) {
+        evidence.failures.push('candidate network cleanup refused unverified ownership or attached containers')
+        continue
+      }
+      await docker.removeNetwork(id, candidate.env)
+    } catch { evidence.failures.push('candidate network cleanup failed') }
+  }
   return evidence
 }
 

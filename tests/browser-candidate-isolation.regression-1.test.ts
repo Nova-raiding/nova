@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { describe, expect, it } from 'vitest'
-import { assertCandidateGitState, assertContainerOwnership, assertLocalDockerEndpoint, assertProbeIdentity, assertUnoccupiedPorts, candidateConfiguration, verifyBrowserIdentity } from '../scripts/merchant-browser-candidate.js'
+import { assertCandidateGitState, assertContainerOwnership, assertLocalDockerEndpoint, assertProbeIdentity, assertUnoccupiedPorts, candidateConfiguration, chooseCandidateNetworkSubnet, verifyBrowserIdentity } from '../scripts/merchant-browser-candidate.js'
 
 // Regression: ISSUE-001 — HTTP-success SSH tunnels were accepted as the current browser candidate.
 // Found by /qa on 2026-09-15
@@ -20,11 +20,19 @@ describe('browser candidate isolation', () => {
     expect(value.project).toBe('merchant-browser-aaaaaaaaaaaa-0123456789ab')
     expect(value.env).toMatchObject({
       COMPOSE_PROJECT_NAME: value.project, LOCAL_API_IMAGE: value.apiImage, LOCAL_OPS_UI_IMAGE: value.opsImage,
+      BROWSER_NETWORK_SUBNET: value.networkSubnet,
       DOCKER_DEFAULT_PLATFORM: 'linux/amd64',
       LOCAL_UI_PORT: '28081', LOCAL_OPS_UI_PORT: '28082', LOCAL_API_PORT: '28787', LOCAL_POSTGRES_PORT: '15439', LOCAL_REDIS_PORT: '16389',
       MERCHANT_STUDIO_URL: 'http://127.0.0.1:28081/', OPS_BASE_URL: 'http://127.0.0.1:28082/', RELEASE_ID: value.releaseId, RELEASE_GIT_SHA: sha,
     })
     expect(candidateConfiguration({}, sha, ports, '1123456789ab').project).not.toBe(value.project)
+  })
+  it('allocates a non-overlapping subnet in the isolated browser-only pool', () => {
+    expect(chooseCandidateNetworkSubnet('10.253.1.0/24', ['172.17.0.0/16', '10.253.1.0/24', '10.253.2.0/23'])).toBe('10.253.4.0/24')
+    expect(() => chooseCandidateNetworkSubnet('192.168.1.0/24', [])).toThrow(/10.253/)
+    expect(() => chooseCandidateNetworkSubnet('10.253.1.0/24', ['10.253.invalid/24'])).toThrow(/invalid IPv4/)
+    const exhausted = Array.from({ length: 256 }, (_, index) => `10.253.${index}.0/24`)
+    expect(() => chooseCandidateNetworkSubnet('10.253.1.0/24', exhausted)).toThrow(/no isolated/)
   })
 
   it('refuses documented SSH ports and silently supplied deployed URLs', () => {
