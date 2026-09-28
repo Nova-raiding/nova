@@ -19,7 +19,7 @@
 
 ### 254→255 API runtime gate
 
-发布候选涉及迁移 255 时，`npm run test:release-gates` 会先通过 `pretest:release-gates` 自动执行 API 254→255 隔离桥接测试和模型用量结算测试；也可以单独运行桥接测试：
+发布候选涉及迁移 255 时，`npm run test:release-gates` 会先通过 `pretest:release-gates` 自动执行 API 与 worker 的 254→255 隔离桥接检查，以及模型用量结算测试。API 检查启动实际服务并覆盖品牌作用域 fail-closed、迁移后 readiness 撤销、重启后路由和 RLS；worker 检查用 merchant_app 实际连接隔离 PG17 验证两个完整前缀及迁移后的重启要求。它不代替生产 worker/队列业务 canary。可单独运行 API 桥接测试：
 
 ```sh
 npm run test:bridge-254-255-api

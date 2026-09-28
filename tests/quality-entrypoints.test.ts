@@ -238,6 +238,7 @@ describe('quality entrypoint coverage', () => {
     }
     for (const gate of [
       'tests/ecs-254-255-api-bridge-isolated.postgres.test.ts',
+      'tests/ecs-254-255-worker-bridge-isolated.postgres.test.ts',
       'apps/api/src/model-usage-settlement.test.ts',
     ]) {
       expect(runtimeReleaseGate.split(/\s+/u).filter(argument => argument === gate)).toHaveLength(1)
