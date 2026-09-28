@@ -19,6 +19,15 @@ describe('merchant new-session entry points', () => {
     expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '?section=assets', hash: '' }).entry).toBe('assets')
   })
 
+  it('round-trips the platform and store catalog entry from the overview', () => {
+    const url = urlForMerchantRoute(
+      { pathname: '/merchant/overview', search: '' },
+      { page: 'products', entry: 'products' },
+    )
+    expect(url).toBe('/merchant/products?section=products')
+    expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '?section=products', hash: '' }).entry).toBe('products')
+  })
+
   it('redirects the legacy rules entry to the product-first workflow', () => {
     const url = urlForMerchantRoute({ pathname: '/', search: '' }, { page: 'rules', target: { kind: 'product', productId: 'product-a', platform: 'taobao', accountId: 'store-a' } })
     expect(url).toBe('/merchant/rules?product_id=product-a&platform=taobao&account_id=store-a')

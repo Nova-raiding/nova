@@ -1062,6 +1062,30 @@ export async function fetchBillingStatus(baseUrl: string): Promise<BillingStatus
   }
 }
 export const fetchCommercialCatalog = async (baseUrl: string) => normalizeCommercialCatalog(await requestMcp<{ schema_version?: unknown; status?: unknown; catalog?: unknown }>(baseUrl, 'commercial.catalog.get'))
+
+export type CurrentCommercialEntitlement =
+  | { status: 'available'; plan: string; period: { start: string; end: string }; entitlementId: string }
+  | { status: 'unknown' }
+
+/** Only the V2 projection can identify the merchant's current plan. */
+export function normalizeCurrentCommercialEntitlement(value: unknown): CurrentCommercialEntitlement {
+  const result = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const raw = result.commercial_entitlement && typeof result.commercial_entitlement === 'object'
+    ? result.commercial_entitlement as Record<string, unknown>
+    : null
+  if (raw?.schema_version !== 'commercial.entitlement.v2') return { status: 'unknown' }
+  if (raw.status !== 'available' || typeof raw.plan !== 'string' || !raw.plan.trim()
+    || typeof raw.entitlement_id !== 'string' || !raw.entitlement_id.trim()) return { status: 'unknown' }
+  const period = raw.period && typeof raw.period === 'object' ? raw.period as Record<string, unknown> : null
+  if (typeof period?.start !== 'string' || typeof period.end !== 'string'
+    || !Number.isFinite(Date.parse(period.start)) || !Number.isFinite(Date.parse(period.end))
+    || Date.parse(period.end) <= Date.parse(period.start)) return { status: 'unknown' }
+  return { status: 'available', plan: raw.plan, period: { start: period.start, end: period.end }, entitlementId: raw.entitlement_id }
+}
+
+export async function fetchCurrentCommercialEntitlement(baseUrl: string): Promise<CurrentCommercialEntitlement> {
+  return normalizeCurrentCommercialEntitlement(await requestMcp<unknown>(baseUrl, 'subscription.get'))
+}
 /**
  * Merchant workspaces may read the redacted readiness projection from
  * workspace.health. The platform.model.status MCP method is platform-scoped

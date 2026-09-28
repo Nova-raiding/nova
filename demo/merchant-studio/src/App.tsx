@@ -106,6 +106,7 @@ import {
   fetchAssetStorageQuota,
   fetchBillingStatus,
   fetchCommercialCatalog,
+  fetchCurrentCommercialEntitlement,
   fetchCreativePointStatement,
   fetchCustomerSupportReplies,
   fetchBrandProfile,
@@ -2085,7 +2086,7 @@ export function Overview({
   onOpenUtility,
 }: {
   goTask: () => void
-  goProducts: () => void
+  goProducts: (entry?: MerchantEntryPoint) => void
   goTasks: () => void
   baseUrl?: string
   apiMode?: string | null
@@ -2447,7 +2448,7 @@ export function Overview({
 
       <div className="overview-secondary-grid">
         <AccountDashboard
-          onOpenConnections={goProducts}
+          onOpenConnections={() => goProducts('products')}
           // `rows` collapses an unresolved/failed account read to `[]`, which
           // would let the dashboard claim 「当前工作区没有平台连接记录」 while
           // the read is still pending or has errored. Mirror the `stores` prop:
@@ -2492,7 +2493,7 @@ export function Overview({
                   : '离线演示不会访问真实店铺；连接 API 后可发起官方授权。'}
               </p>
             </div>
-            <button className="text-button" onClick={goProducts}>
+            <button className="text-button" onClick={() => goProducts('products')}>
               管理连接 <ArrowRight size={15} />
             </button>
           </div>
@@ -2966,6 +2967,8 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
   const [catalogItems, setCatalogItems] = useState<CommercialCatalogItem[] | null>(null)
   const [catalogNote, setCatalogNote] = useState('正在读取创意点套餐…')
+  const [currentEntitlement, setCurrentEntitlement] = useState<Awaited<ReturnType<typeof fetchCurrentCommercialEntitlement>> | null>(null)
+  const [entitlementNote, setEntitlementNote] = useState('正在读取当前套餐…')
   const [pricingDialog, setPricingDialog] = useState<'points' | 'storage' | null>(null)
   const [selectedPointPackage, setSelectedPointPackage] = useState('')
   const [purchaseQuantity, setPurchaseQuantity] = useState(1)
@@ -2990,6 +2993,8 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
       setStorageQuota(null)
       setCatalogItems(null)
       setCatalogNote('未配置 API，无法读取创意点套餐。')
+      setCurrentEntitlement(null)
+      setEntitlementNote('未配置 API，无法读取当前套餐。')
       setManualPublishRecords(null)
       setManualPublishNote('未配置 API，无法读取人工发布状态。')
       return
@@ -3002,6 +3007,8 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
     setStorageQuota(null)
     setCatalogItems(null)
     setCatalogNote('正在读取创意点套餐…')
+    setCurrentEntitlement(null)
+    setEntitlementNote('正在读取当前套餐…')
     setManualPublishRecords(null)
     setManualPublishNote('正在读取人工发布状态…')
     fetchCreativePointStatement(baseUrl)
@@ -3035,6 +3042,9 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
         setCatalogItems(null)
         setCatalogNote(`创意点套餐读取失败：${describeApiError(cause)}`)
       })
+    fetchCurrentCommercialEntitlement(baseUrl)
+      .then((entitlement) => { if (active) { setCurrentEntitlement(entitlement); setEntitlementNote('') } })
+      .catch((cause) => { if (active) { setCurrentEntitlement(null); setEntitlementNote(`当前套餐读取失败：${describeApiError(cause)}`) } })
     fetchManualPublishRecords(baseUrl)
       .then((records) => {
         if (!active) return
@@ -3153,6 +3163,12 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
               ? '服务端未返回该区间的创意点流水，不显示趋势图。'
               : `服务端已读取 ${statementEntries.length} 条创意点流水，其中没有消耗记录（只有消耗类流水计入趋势），不显示趋势图。`}</p>
         )}
+      </section>
+      <section className="finance-panel" aria-label="当前套餐">
+        <div className="finance-panel-heading"><div><span className="section-kicker">CURRENT PLAN</span><h3>当前套餐</h3><p>仅依据服务端 V2 权益快照展示；套餐订单与钱包充值需分别核对。</p></div></div>
+        {currentEntitlement?.status === 'available' ? (
+          <p role="status"><strong>{currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan}</strong> · 生效中 · 有效期 {new Date(currentEntitlement.period.start).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })} 至 {new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p>
+        ) : <p className="muted" role="status">{currentEntitlement?.status === 'unknown' ? '服务端未确认当前生效套餐，请联系平台运营核对权益。' : entitlementNote}</p>}
       </section>
       <section className="finance-account-panel"><div><span className="section-kicker">ACCOUNT</span><h3>账号与工作区</h3><p>{account ? `当前登录账号 ${account.login}，企业主体 ${account.enterpriseName?.trim() || UNREAD_METRIC}，账号状态 ${merchantAccountStatusLabel(account.status)}。` : '当前未读取到商家账号信息。'}</p></div><div className="finance-account-facts"><span><b>{account?.login || UNREAD_METRIC}</b>登录账号</span><span><b>{account?.enterpriseName?.trim() || UNREAD_METRIC}</b>企业主体</span><span><b>{account ? merchantAccountStatusLabel(account.status) : UNREAD_METRIC}</b>账号状态</span></div><button className="primary" type="button" onClick={onOpenSupport}>咨询客服升级账号</button></section>
       <section className="finance-panel" aria-label="人工发布状态">
@@ -13494,7 +13510,7 @@ export default function App() {
                     goTask={() =>
                       navigateTo('products', { clearContext: true })
                     }
-                    goProducts={() => navigateTo('products')}
+                    goProducts={(entry) => navigateTo('products', { entry })}
                     goTasks={() => navigateTo('task', { clearContext: true })}
                     baseUrl={apiBaseUrl}
                     apiMode={apiMode}
