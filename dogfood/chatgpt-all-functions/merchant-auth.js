@@ -5,7 +5,11 @@ export async function ensureMerchantSession(page) {
   const password = process.env.MERCHANT_E2E_PASSWORD ?? 'MerchantDemo123!'
   const accountInput = page.locator('#merchant-login-account')
   await page.locator('#merchant-login-account, .app-shell').first().waitFor({ state: 'visible', timeout: 30_000 })
-  if (!(await accountInput.isVisible().catch(() => false))) return
+  if (await page.locator('.app-shell').isVisible().catch(() => false)) return
+  if (!(await accountInput.isVisible().catch(() => false))) {
+    await page.locator('.app-shell').waitFor({ state: 'visible', timeout: 30_000 })
+    return
+  }
   await accountInput.fill(account)
   await page.locator('#merchant-login-password').fill(password)
   const submit = page.getByRole('button', { name: '登录商家工作台', exact: true })
