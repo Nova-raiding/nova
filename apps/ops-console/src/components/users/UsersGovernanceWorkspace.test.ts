@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
-import { UsersGovernanceWorkspace, visibleUsersGovernanceSections } from "./UsersGovernanceWorkspace";
+import { PlatformMembersUnavailable, UsersGovernanceWorkspace, visibleUsersGovernanceSections } from "./UsersGovernanceWorkspace";
 
 function authorization(capabilities: string[]) {
   const allowed = new Set(capabilities);
@@ -33,6 +33,13 @@ describe("visibleUsersGovernanceSections", () => {
 
   it("places member invitations inside the user center", () => {
     expect(visibleUsersGovernanceSections(authorization(["workspace.member.read"]))).toEqual(["members"]);
+  });
+
+  it("does not offer member operations in the platform global context", () => {
+    const markup = renderToStaticMarkup(createElement(PlatformMembersUnavailable));
+    expect(markup).toContain("请先进入商家工作区");
+    expect(markup).not.toContain("邀请工作区成员");
+    expect(readFileSync(new URL("./UsersGovernanceWorkspace.tsx", import.meta.url), "utf8")).toContain('model.opsSession?.workspace_id\n    ? <MembersSection model={model} />\n    : <PlatformMembersUnavailable />');
   });
 
   it("makes the unavailable page state discoverable and recoverable", () => {
