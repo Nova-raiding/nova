@@ -44,7 +44,7 @@ describe('bridge-only migration compatibility', () => {
   })
 
   it('accepts only verified 242 or 254 prefixes for the independent 242-to-254 bridge mode', async () => {
-    const expected = await loadMigrations()
+    const expected = (await loadMigrations()).slice(0, 254)
     expect(expected).toHaveLength(254)
     const rows = expected.map(item => ({ version: item.version, name: item.name, checksum: migrationChecksum(item.sql) }))
 

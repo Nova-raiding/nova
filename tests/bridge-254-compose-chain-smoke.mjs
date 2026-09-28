@@ -89,7 +89,7 @@ try {
   workerImage = imageIds[1]
   fixture = await createIsolatedOpsFixture({ evidenceDir })
   pool = new Pool({ connectionString: fixture.acceptanceDatabaseUrls.legacyBackfill, max: 2 })
-  const migrations = await loadMigrations()
+  const migrations = (await loadMigrations()).slice(0, 254)
   if (migrations.length !== 254) throw new Error('source must contain migrations 1..254')
   const frozenPrefixes = Object.fromEntries(Array.from({ length: 13 }, (_, index) => {
     const prefix = index + 242

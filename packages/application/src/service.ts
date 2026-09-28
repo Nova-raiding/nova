@@ -7,6 +7,7 @@ import { budgetContentGenerationInput, estimateContentGenerationRequestTokens, r
 import type { ImageGenerator } from '../../../packages/ai/src/image-generator.js'
 import { defaultRuleCenterSeeds, RuleCenter, type RuleHit } from '../../../packages/review/src/rule-center.js'
 import { extractBrandCandidates, type BrandExtraction } from './brand-extractor.js'
+import type { ScopedBrandContext, ScopedBrandValues } from './scoped-brand-settings.js'
 import { assertCreativeDirectionsClearlyDifferent, CreativeDirectionQualityError, evaluateCreativeDirectionQuality, type CreativeDirectionQualityReport } from './creative-direction-quality.js'
 import { extractMerchantIntent, type MerchantIntentExtraction } from './merchant-intent-extractor.js'
 import { evaluateCompetitorReferencePolicy, type CompetitorReferenceExtraction, type CompetitorReferencePolicyInput, type CompetitorReferencePolicyResult, type CompetitorReferenceProvenance } from './competitor-reference-policy.js'
@@ -493,6 +494,8 @@ export interface TaskInputSnapshot {
   promotions: PromotionSnapshot[]
   /** Frozen brand evidence used by generation and review; never reads a later profile revision. */
   brand?: BrandProfile
+  /** Tenant-validated scoped settings frozen at plan confirmation. */
+  scopedBrand?: { revision: number; context: ScopedBrandContext; values: ScopedBrandValues }
   assets: Array<{ id: string; revision: number; sha256: string; contentTrust: AssetContentTrust; preference?: AssetPreference }>
   knowledgeContext?: KnowledgeGenerationContext
   /** Sanitized policy evidence. Only short excerpts needed for deterministic review are retained. */
@@ -1503,6 +1506,7 @@ export class MerchantService {
   readonly feedback = new Map<string, TaskFeedback>()
   readonly syncJobs = new Map<string, SyncJob>()
   readonly taskInputSnapshots = new Map<string, TaskInputSnapshot>()
+  private readonly pendingScopedBrandByTask = new Map<string, NonNullable<TaskInputSnapshot['scopedBrand']>>()
   private readonly durableRuleSnapshots = new Map<string, DurableRuleSnapshot>()
   private readonly idempotency = new Map<string, string>()
   private readonly manualPublishIdempotency = new Map<string, string>()
@@ -1719,6 +1723,7 @@ export class MerchantService {
       },
       promotions: this.parsePromotionSnapshot(task, product),
       ...(brand ? { brand } : {}),
+      ...(this.pendingScopedBrandByTask.get(task.id) ? { scopedBrand: this.pendingScopedBrandByTask.get(task.id) } : {}),
       assets,
       ...(knowledgeContext ? { knowledgeContext: { ...knowledgeContext, ...(generationCompetitorReference ? { competitorReferences: [generationCompetitorReference] } : {}) } } : {}),
       ...(competitorReference ? { competitorReferencePolicy: competitorReference.policy } : {}),
@@ -1727,6 +1732,15 @@ export class MerchantService {
     task.inputSnapshotId = snapshot.id
     task.inputSnapshot = snapshot
     return snapshot
+  }
+
+  setScopedBrandForTask(workspaceId: string, taskId: string, scopedBrand: NonNullable<TaskInputSnapshot['scopedBrand']> | null): void {
+    const task = this.tasks.get(taskId)
+    if (!task || task.workspaceId !== workspaceId) throw new DomainError('TASK_NOT_FOUND', '任务不存在或不属于当前工作区', 404)
+    if (task.state === 'plan_confirmed' || task.state === 'review_required' || task.state === 'approved') throw new DomainError('BRAND_SCOPE_FROZEN', '已确认任务的品牌配置不可重新写入', 409)
+    if (scopedBrand && (!Number.isSafeInteger(scopedBrand.revision) || scopedBrand.revision < 1)) throw new DomainError('BRAND_SCOPE_REVISION_INVALID', '品牌配置修订号无效', 400)
+    if (scopedBrand) this.pendingScopedBrandByTask.set(taskId, structuredClone(scopedBrand))
+    else this.pendingScopedBrandByTask.delete(taskId)
   }
 
   /** Attach approved persistent knowledge documents before freezing a task snapshot. */
@@ -4751,7 +4765,19 @@ export class MerchantService {
       directionId: task.selectedDirectionId ?? 'default',
       product: { id: product.id, title: product.title, ...(product.category ? { category: product.category } : {}), ...(typeof product.price === 'number' ? { price: product.price } : {}), stock: product.stock, skuCount: product.skuCount, skuIds: [...snapshot.skuIds], ...(product.attributes ? { attributes: product.attributes } : {}) },
       confirmedFactSourceIds: [`product:${product.id}:v${product.version ?? 1}`],
-      ...(snapshot.brand?.visualRules ? { brandVisualRules: snapshot.brand.visualRules } : {}),
+      ...((snapshot.brand?.visualRules || snapshot.scopedBrand?.values.color || snapshot.scopedBrand?.values.logoAssetId) ? { brandVisualRules: {
+        ...(snapshot.brand?.visualRules ?? {}),
+        ...(snapshot.scopedBrand?.values.color ? { colors: { ...(snapshot.brand?.visualRules?.colors ?? { secondary: [], forbidden: [] }), primary: [snapshot.scopedBrand.values.color] } } : {}),
+        ...(snapshot.scopedBrand?.values.logoAssetId ? { logo: { assetIds: [snapshot.scopedBrand.values.logoAssetId], allowRecolor: false, allowDistortion: false, allowRedraw: false } } : {}),
+      } } : {}),
+      ...(snapshot.scopedBrand ? { brandContext: {
+        revision: snapshot.scopedBrand.revision,
+        ...snapshot.scopedBrand.context,
+        ...(snapshot.scopedBrand.values.persona ? { persona: snapshot.scopedBrand.values.persona } : {}),
+        ...(snapshot.scopedBrand.values.sellingPoints ? { sellingPoints: snapshot.scopedBrand.values.sellingPoints } : {}),
+        ...(snapshot.scopedBrand.values.color ? { color: snapshot.scopedBrand.values.color } : {}),
+        ...(snapshot.scopedBrand.values.logoAssetId ? { logoAssetId: snapshot.scopedBrand.values.logoAssetId } : {}),
+      } } : {}),
       ...(snapshot.assets.length ? { referenceAssets: snapshot.assets.map(asset => ({ id: asset.id, revision: asset.revision, ...(asset.preference ? { preference: asset.preference } : {}) })) } : {}),
       ...(snapshot.promotions.length ? { promotions: snapshot.promotions.map(promotion => ({ ...promotion })) } : {}),
       ...(snapshot.knowledgeContext ? { knowledgeContext: snapshot.knowledgeContext } : {}),

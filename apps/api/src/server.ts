@@ -28,6 +28,7 @@ import { MCP_OPS_MODEL_METHODS, handleMcpOpsModelMethod } from './mcp-ops-model-
 import { createModelUsageReconciliation } from './model-usage-reconciliation.js'
 import { resolveChargedTextNoDelivery } from './charged-text-no-delivery-handler.js'
 import { PostgresChargedTextNoDeliveryRepository } from '../../../packages/persistence/src/charged-text-no-delivery-repository.js'
+import { PostgresScopedBrandSettingsRepository } from '../../../packages/persistence/src/scoped-brand-settings-repository.js'
 import { createModelBudgetRuntime, modalityForActionKind } from './model-budget-runtime.js'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 export type WorkspaceOnboardingState = ReturnType<typeof workspaceOnboarding>
@@ -137,6 +138,8 @@ import { batchFactsConfirmation, productFactsConfirmation, brandProfileWithUnit 
 import { MCP_OPS_OVERVIEW_METHODS, handleOpsOverviewMcpMethod } from './mcp-ops-overview-handlers.js'
 import { MCP_IMAGE_METHODS, handleImageMcpMethod } from './mcp-image-handlers.js'
 import { routeBrandProfileHttp } from './http-brand-profile-routes.js'
+import { routeScopedBrandHttp } from './http-scoped-brand-routes.js'
+import { hydrateScopedBrandForTask } from './scoped-brand-task-hydration.js'
 import { routeAssetHttp } from './http-asset-routes.js'
 import { reviewProductImagesForMcp, parseImageListForMcp, GENERATED_IMAGE_MIME, MAX_ARCHIVED_IMAGE_BYTES, MAX_ARCHIVED_VIDEO_BYTES, artifactDownloadSignal, artifactDownloadFailure, imageArtifactBody, assertVideoArtifactUrl, videoSignatureMatches, readBoundedVideoBody, generatedImageSignatureMatches, videoArtifactFetcherForTestsValue } from './image-artifact-policy.js'
 import { publicImageJob as publicImageJobModule, publicImageJobForCommercialRead as publicImageJobForCommercialReadModule, assetDisplayProjection as assetDisplayProjectionModule } from './image-projections.js'
@@ -755,6 +758,7 @@ export interface ApiPersistence {
   members?: MembersRepository
   rules?: RuleRepositoryPort
   brandUnits?: import('../../../packages/persistence/src/index.js').BrandUnitRepository
+  scopedBrandSettings?: PostgresScopedBrandSettingsRepository
   objectOrphans?: ObjectOrphanRepository
   contextSnapshots?: ContextSnapshotRepository
   identities?: IdentityLifecycleRepository
@@ -3150,6 +3154,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     // (ECS, whose bootstrap re-widens merchant_app) or a 42501 failure (k8s).
     const rules = new PostgresRuleRepository(sqlPool, opsSqlPool)
     const brandUnits = new PostgresBrandUnitRepository(sqlPool)
+    const scopedBrandSettings = new PostgresScopedBrandSettingsRepository(sqlPool)
     const objectOrphans = new PostgresObjectOrphanRepository(sqlPool)
     const contextSnapshots = new PostgresContextSnapshotRepository(sqlPool)
     const identities = new PostgresIdentityLifecycleRepository(opsSqlPool)
@@ -3349,7 +3354,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -13144,6 +13149,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         persistEvent,
         requestActor,
         hydrateDurableRuleSnapshot,
+        hydrateScopedBrandForTask: (scopedWorkspaceId, task) => hydrateScopedBrandForTask({ workspaceId: scopedWorkspaceId, task, service, repository: persistence.scopedBrandSettings, requireRepository: isProduction() }),
         recordOperationAudit,
       }))
     case 'task.timeline':
@@ -13252,6 +13258,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         persistEvent,
         requestActor,
         hydrateDurableRuleSnapshot,
+        hydrateScopedBrandForTask: (scopedWorkspaceId, task) => hydrateScopedBrandForTask({ workspaceId: scopedWorkspaceId, task, service, repository: persistence.scopedBrandSettings, requireRepository: isProduction() }),
         recordOperationAudit,
       }))
     case 'content.draft.generate': {
@@ -14196,6 +14203,14 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   const assetRuntime = assetHttpRuntime(httpOperationPolicy?.operation)
   await routeBrandProfileHttp(req, res, path, assetRuntime)
   if (res.writableEnded) return
+  if (await routeScopedBrandHttp(req, res, path, {
+    repository: persistence.scopedBrandSettings,
+    body: request => body(request),
+    resolveWorkspace: (request, candidate) => resolveWorkspace(request, candidate),
+    enforceAccess: (request, workspaceId, write) => enforceBrandProfileHttpAccess(request, workspaceId, write),
+    actor: request => requestActor(request),
+    send: (response, status, workspaceId, value, error, request) => send(response, status, workspaceId, value, error, request),
+  })) return
   await routeAssetHttp(req, res, path, url, assetRuntime)
   if (res.writableEnded) return
   if ((await handleHttpProductWrite(req, res, path, { service, supportedPlatforms: SUPPORTED_PLATFORMS, isProduction, body, resolveWorkspace, required, actor: () => requestActor(req), scanImportedProductRules, persistSnapshot, persistSnapshotsAndEvent, recordOperationAudit, rollbackBatchProducts, enforceProductBrandAccess: (workspaceId: string, productId: string) => enforceProductBrandAccess(req, workspaceId, productId), confirmProductFactsTransition, send })) !== false) return

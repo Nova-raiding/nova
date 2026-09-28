@@ -108,6 +108,10 @@ import {
   fetchCreativePointStatement,
   fetchCustomerSupportReplies,
   fetchBrandProfile,
+  fetchScopedBrandSettings,
+  saveScopedBrandSettings,
+  createScopedBrandSeries,
+  assignScopedBrandAsset,
   fetchImageGenerationJob,
   fetchImageGenerationJobs,
   fetchCatalogCategories,
@@ -168,6 +172,8 @@ import {
   type BrandExtraction,
   type BrandProfile,
   type BrandVisualRules,
+  type ScopedBrandSettings,
+  type ScopedBrandRead,
   type BillingStatus,
   type CatalogCategory,
   type CommercialCatalogItem,
@@ -5710,6 +5716,8 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
 // them from a real `GET /v1/assets` row.
 type MaterialBrandSettings = {
   logoUrl: string
+  logoAssetId?: string
+  documentAssetId?: string
   color: string
   persona: string
   sellingPoints: string
@@ -5721,6 +5729,18 @@ type MaterialBrandSettings = {
 // of every workspace that never configured one. `resolveBrandColorFacts` turns
 // the empty string into 「未单独配置」.
 const emptyMaterialBrandSettings: MaterialBrandSettings = { logoUrl: '', color: '', persona: '', sellingPoints: '', personaFileName: '', sellingPointsFileName: '', assetFileName: '' }
+const scopedBrandValues = (value: MaterialBrandSettings) => ({
+  ...(value.logoAssetId ? { logoAssetId: value.logoAssetId } : {}),
+  ...(value.documentAssetId ? { documentAssetId: value.documentAssetId } : {}),
+  ...(value.color ? { color: value.color } : {}),
+  ...(value.persona.trim() ? { persona: value.persona.trim() } : {}),
+  ...(value.sellingPoints.trim() ? { sellingPoints: value.sellingPoints.trim() } : {}),
+})
+const materialBrandFromScope = (value?: { color?: string; persona?: string; sellingPoints?: string; logoAssetId?: string; documentAssetId?: string }): MaterialBrandSettings => ({
+  ...emptyMaterialBrandSettings,
+  color: value?.color ?? '', persona: value?.persona ?? '', sellingPoints: value?.sellingPoints ?? '',
+  logoAssetId: value?.logoAssetId, documentAssetId: value?.documentAssetId,
+})
 
 export function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard }: { value: MaterialBrandSettings; onChange: (next: MaterialBrandSettings) => void; label: string; logoLabel?: string; leadingCard?: ReactNode }) {
   const logoInputId = useId()
@@ -5770,27 +5790,24 @@ export function MaterialBrandFields({ value, onChange, label, logoLabel, leading
   return <div className={`material-brand-fields${leadingCard ? ' has-leading-card' : ''}${logoLabel ? ' has-store-card' : ''}`}>
     {leadingCard}
     <div className="material-brand-logo-field">
-      <span>{logoLabel ?? `${label} Logo`}</span>
+      <span>{logoLabel ?? `${label} Logo`}{value.logoAssetId ? ` · 已引用素材 ${value.logoAssetId}` : ''}</span>
       <label htmlFor={logoInputId}><Upload size={14} />{value.logoUrl ? '重新选择 Logo' : '选择 Logo'}<input id={logoInputId} type="file" accept="image/*" multiple={false} onChange={(event) => updateLogo(event.target.files?.[0])} /></label>
     </div>
     <div className="material-brand-color-field"><span>品牌色</span><div><input type="color" value={/^#[0-9a-f]{6}$/i.test(draftColor) ? draftColor : value.color} onChange={(event) => setDraftColor(event.target.value)} /><label className="material-brand-color-code"><span>#</span><input aria-label={`${label}品牌色值`} value={draftColor.replace(/^#/, '')} maxLength={6} inputMode="text" onChange={(event) => setDraftColor(`#${event.target.value.replace(/[^0-9a-f]/gi, '').slice(0, 6)}`)} /></label><button type="button" disabled={!/^#[0-9a-f]{6}$/i.test(draftColor) || draftColor.toLowerCase() === value.color.toLowerCase()} onClick={() => onChange({ ...value, color: draftColor })}>确定</button></div></div>
-    <div className="material-brand-asset-file"><span>品牌资产文档</span><label htmlFor={assetInputId}><Upload size={14} /><strong>{assetAnalysisStatus === 'analyzing' ? '正在本机解析文档…' : '选择文档并解析'}</strong><input id={assetInputId} type="file" accept=".txt,.md,.csv,.json,.doc,.docx,.pdf,.zip" multiple={false} onChange={(event) => { void updateAssetFile(event.target.files?.[0]) }} /></label><small className={`material-brand-analysis-status ${assetAnalysisStatus}`}>{assetAnalysisStatus === 'analyzing' ? '正在本机提取用户画像与品牌卖点；不会上传服务端' : assetAnalysisStatus === 'done' ? BRAND_DOCUMENT_LOCAL_ANALYSIS : assetAnalysisStatus === 'empty' ? '未识别到可填写内容，请在下方手动补充' : ''}</small></div>
+    <div className="material-brand-asset-file"><span>品牌资产文档{value.documentAssetId ? ` · 已引用素材 ${value.documentAssetId}` : ''}</span><label htmlFor={assetInputId}><Upload size={14} /><strong>{assetAnalysisStatus === 'analyzing' ? '正在本机解析文档…' : '选择文档并解析'}</strong><input id={assetInputId} type="file" accept=".txt,.md,.csv,.json,.doc,.docx,.pdf,.zip" multiple={false} onChange={(event) => { void updateAssetFile(event.target.files?.[0]) }} /></label><small className={`material-brand-analysis-status ${assetAnalysisStatus}`}>{assetAnalysisStatus === 'analyzing' ? '正在本机提取用户画像与品牌卖点；不会上传服务端' : assetAnalysisStatus === 'done' ? BRAND_DOCUMENT_LOCAL_ANALYSIS : assetAnalysisStatus === 'empty' ? '未识别到可填写内容，请在下方手动补充' : ''}</small></div>
     <div className="material-brand-text-field"><div className="material-brand-field-heading"><span>用户画像</span></div><textarea aria-label={`${label}用户画像`} value={value.persona} onChange={(event) => onChange({ ...value, persona: event.target.value })} placeholder="例如：25–35 岁、关注设计感与使用效率的城市职场人" /></div>
     <div className="material-brand-text-field"><div className="material-brand-field-heading"><span>品牌卖点</span></div><textarea aria-label={`${label}品牌卖点`} value={value.sellingPoints} onChange={(event) => onChange({ ...value, sellingPoints: event.target.value })} placeholder="例如：原创设计、耐用材质、礼赠友好" /></div>
   </div>
 }
 
 export function MaterialBrandOutput({ value, label, enabled, onEnabledChange, context, transitionLabel }: { value: MaterialBrandSettings; label: string; enabled: boolean; onEnabledChange?: (enabled: boolean) => void; context?: { label: string; value: string }; transitionLabel?: string }) {
-  // The card may only present a colour the workspace actually configured, a
-  // document name only as far as the server is concerned, and a Logo only as far
-  // as it actually got — see `material-brand-facts.ts`. The Logo row and the
-  // document row are both read in this browser and never sent anywhere, so they
-  // print the same sentence.
+  // Text and colour are editable server fields. Logo and document pickers still
+  // hold local previews, so their rows keep the explicit local-only wording.
   const colorFacts = resolveBrandColorFacts(value.color)
   const documentFacts = resolveBrandDocumentFacts(value.assetFileName)
   const logoFacts = resolveBrandLogoFacts(value.logoUrl)
-  return <aside className={`material-brand-output${enabled ? '' : ' disabled'}${transitionLabel ? ' switching' : ''}`} aria-label={`${label}${enabled ? '已经启用' : '已经停用'}的配置`}>
-    <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前本地预览</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}本页预览状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>本页启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>本页停用{label}</button></div> : <small className="material-brand-output-live">本地预览，不会写入服务端</small>}</div>
+  return <aside className={`material-brand-output${enabled ? '' : ' disabled'}${transitionLabel ? ' switching' : ''}`} aria-label={`${label}${enabled ? '待保存启用' : '待保存停用'}的配置`}>
+    <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前编辑预览</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}保存后启用状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>停用{label}</button></div> : <small className="material-brand-output-live">保存后用于新任务</small>}</div>
     <div className={`material-brand-output-card${context ? ' has-context' : ''}`} style={{ '--brand-preview-color': colorFacts.value || 'transparent' } as CSSProperties}>
       {context && <div className="material-brand-output-context"><span>{context.label}</span><strong>{context.value}</strong></div>}
       <div className="material-brand-output-item material-brand-output-logo"><span>品牌 Logo</span><div>{logoFacts.picked ? <><img src={value.logoUrl} alt={`${label} ${logoFacts.imageAlt}`} /><small>{logoFacts.label}</small></> : <><ImageIcon size={24} /><small>{BRAND_UNCONFIGURED}</small></>}</div></div>
@@ -6117,6 +6134,11 @@ export function MaterialLibraryWorkspace({
   const [seriesBrandEnabled, setSeriesBrandEnabled] = useState<Record<string, boolean>>({})
   const [imageBrands, setImageBrands] = useState<Record<string, MaterialBrandSettings>>({})
   const [imageBrandEnabled, setImageBrandEnabled] = useState<Record<string, boolean>>({})
+  const [imageBrandContexts, setImageBrandContexts] = useState<Record<string, { accountId: string; seriesName: string }>>({})
+  const [scopedBrandRead, setScopedBrandRead] = useState<ScopedBrandRead | null>(null)
+  const [scopedBrandBusy, setScopedBrandBusy] = useState(false)
+  const [scopedBrandError, setScopedBrandError] = useState('')
+  const [scopedBrandSaved, setScopedBrandSaved] = useState('')
   const uploadInput = useRef<HTMLInputElement>(null)
   const seriesManagerRef = useRef<HTMLDivElement>(null)
   const storeBrandTransitionTimer = useRef<number | null>(null)
@@ -6124,6 +6146,34 @@ export function MaterialLibraryWorkspace({
   const pendingPreviews = useMemo(() => pendingFiles.map((file) => ({ file, url: URL.createObjectURL(file) })), [pendingFiles])
   const availableSeries = seriesByStore[activeStoreId] ?? ['未分类']
   const activeSeriesKey = `${activeStoreId}::${activeBrandSeries}`
+
+  useEffect(() => {
+    if (!baseUrl) { setScopedBrandRead(null); return }
+    let active = true
+    setScopedBrandError('')
+    fetchScopedBrandSettings(baseUrl).then((read) => {
+      if (!active) return
+      setScopedBrandRead(read)
+      setGlobalBrand(materialBrandFromScope(read.settings.global?.values))
+      setGlobalBrandEnabled(read.settings.global?.enabled ?? true)
+      setStoreBrands(Object.fromEntries(Object.entries(read.settings.stores ?? {}).map(([id, entry]) => [id, materialBrandFromScope(entry.values)])))
+      setStoreBrandEnabled(Object.fromEntries(Object.entries(read.settings.stores ?? {}).map(([id, entry]) => [id, entry.enabled])))
+      const seriesById = new Map(read.series.map((entry) => [entry.id, entry]))
+      setSeriesBrands(Object.fromEntries(Object.entries(read.settings.series ?? {}).flatMap(([accountId, entries]) => Object.entries(entries).flatMap(([seriesId, entry]) => {
+        const series = seriesById.get(seriesId)
+        return series ? [[`${accountId}::${series.name}`, materialBrandFromScope(entry.values)] as const] : []
+      }))))
+      setSeriesBrandEnabled(Object.fromEntries(Object.entries(read.settings.series ?? {}).flatMap(([accountId, entries]) => Object.entries(entries).flatMap(([seriesId, entry]) => {
+        const series = seriesById.get(seriesId)
+        return series ? [[`${accountId}::${series.name}`, entry.enabled] as const] : []
+      }))))
+      setImageBrands(Object.fromEntries(Object.entries(read.settings.images ?? {}).map(([id, entry]) => [id, materialBrandFromScope(entry.values)])))
+      setImageBrandEnabled(Object.fromEntries(Object.entries(read.settings.images ?? {}).map(([id, entry]) => [id, entry.enabled])))
+      const serverSeries = Object.fromEntries([...new Set(read.series.map((entry) => entry.accountId))].map((accountId) => [accountId, ['未分类', ...read.series.filter((entry) => entry.accountId === accountId && entry.name !== '未分类').map((entry) => entry.name)]]))
+      setSeriesByStore((current) => ({ ...current, ...serverSeries }))
+    }).catch((cause) => { if (active) setScopedBrandError(`品牌配置读取失败：${describeApiError(cause)}`) })
+    return () => { active = false }
+  }, [baseUrl])
 
   useEffect(() => () => pendingPreviews.forEach((item) => URL.revokeObjectURL(item.url)), [pendingPreviews])
 
@@ -6190,21 +6240,26 @@ export function MaterialLibraryWorkspace({
   const activeStore = materialStores.find((store) => store.id === activeStoreId) ?? materialStores[0] ?? (view === 'brands' ? unclassifiedUploadStore : undefined)
   const uploadStore = uploadTargets.find((store) => store.id === uploadStoreId) ?? activeStore ?? unclassifiedUploadStore
   const uploadAvailableSeries = seriesByStore[uploadStoreId] ?? initialSeriesForStore(uploadStoreId)
-  // The listed inventory is the workspace read plus whatever this browser
-  // actually selected during the session. `GET /v1/assets` is workspace-scoped
-  // and publishes no store attribution, so the store selector cannot honestly
-  // partition the server rows; it stays what the summary already calls it, the
-  // upload target (and the brand-config scope). Attributing a server asset to a
-  // store would be the same class of invention the seed was removed for.
+  // The asset endpoint is workspace-scoped. Store attribution comes only from
+  // the durable, tenant-scoped assignment rows returned by brand-scopes.
   // A session upload is a server asset now, so the re-read returns the same row
   // the upload acknowledged. The session copy is kept — it is the one carrying the
   // merchant's 素材分类/所属系列 — and the server row for the same id is not
   // rendered twice beside it.
   const sessionMaterials = materialsByStore[activeStoreId] ?? []
   const sessionMaterialIds = new Set(sessionMaterials.map((item) => item.id))
+  const assignmentByAsset = new Map((scopedBrandRead?.assignments ?? []).map((row) => [row.assetId, row]))
   const activeMaterials = [
     ...sessionMaterials,
-    ...materialsRead.items.filter((item) => !sessionMaterialIds.has(item.id)),
+    ...materialsRead.items.filter((item) => {
+      if (sessionMaterialIds.has(item.id)) return false
+      const assignedStore = assignmentByAsset.get(item.id)?.accountId ?? 'unclassified'
+      return assignedStore === activeStoreId
+    }).map((item) => {
+      const assignedSeriesId = assignmentByAsset.get(item.id)?.seriesId
+      const assignedSeries = scopedBrandRead?.series.find((row) => row.id === assignedSeriesId)
+      return assignedSeries ? { ...item, series: assignedSeries.name } : item
+    }),
   ].filter((item) => !removedMaterialIds.includes(item.id))
   const visibleMaterials = activeMaterials.filter((item) => {
     const matchesCategory = category === '全部' || item.category === category
@@ -6293,9 +6348,78 @@ export function MaterialLibraryWorkspace({
   } : effectiveDetailSeriesBrand
   const batchDownloadUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(selectedMaterials.map((item) => `${item.name} · ${item.category} · ${item.series} · ${item.fileSizeLabel}`).join('\n'))}`
 
-  const createBrandSeries = () => {
+  const saveMaterialBrandScopes = async () => {
+    if (!baseUrl || !scopedBrandRead || scopedBrandBusy) return
+    setScopedBrandBusy(true)
+    setScopedBrandError('')
+    setScopedBrandSaved('')
+    try {
+      let seriesRows = [...scopedBrandRead.series]
+      let assignments = [...scopedBrandRead.assignments]
+      const ensureSeries = async (accountId: string, name: string) => {
+        const existing = seriesRows.find((row) => row.accountId === accountId && row.name === name)
+        if (existing) return existing.id
+        const created = await createScopedBrandSeries(baseUrl, accountId, name)
+        seriesRows = [...seriesRows, created]
+        return created.id
+      }
+      const settings: ScopedBrandSettings = {
+        schemaVersion: 1,
+        global: { enabled: globalBrandEnabled, values: scopedBrandValues(globalBrand) },
+        stores: Object.fromEntries(Object.entries(storeBrands).filter(([accountId]) => stores.some((store) => store.id === accountId)).map(([accountId, value]) => [accountId, { enabled: storeBrandEnabled[accountId] ?? true, values: scopedBrandValues(value) }])),
+        series: {}, images: {},
+      }
+      for (const [key, value] of Object.entries(seriesBrands)) {
+        const separator = key.indexOf('::')
+        if (separator < 0) continue
+        const accountId = key.slice(0, separator)
+        const name = key.slice(separator + 2)
+        if (!stores.some((store) => store.id === accountId)) continue
+        const seriesId = await ensureSeries(accountId, name)
+        settings.series![accountId] ??= {}
+        settings.series![accountId]![seriesId] = { enabled: seriesBrandEnabled[key] ?? true, values: scopedBrandValues(value) }
+      }
+      for (const [assetId, value] of Object.entries(imageBrands)) {
+        let assignment = assignments.find((row) => row.assetId === assetId)
+        const context = imageBrandContexts[assetId]
+        if (assignment && context && assignment.accountId !== context.accountId) throw new Error(`图片 ${assetId} 已归属其他店铺，请先在素材库确认归属`)
+        if (!assignment) {
+          if (!context || !stores.some((store) => store.id === context.accountId)) throw new Error(`图片 ${assetId} 尚未绑定真实店铺，请从素材库选择店铺后重试`)
+          const seriesId = await ensureSeries(context.accountId, context.seriesName)
+          assignment = await assignScopedBrandAsset(baseUrl, assetId, context.accountId, seriesId, 0)
+          assignments = [...assignments, assignment]
+        } else if (context && context.seriesName !== '未分类') {
+          const seriesId = await ensureSeries(context.accountId, context.seriesName)
+          if (assignment.seriesId !== seriesId) {
+            const updated = await assignScopedBrandAsset(baseUrl, assetId, context.accountId, seriesId, assignment.revision)
+            assignments = assignments.map((row) => row.assetId === assetId ? updated : row)
+          }
+        }
+        settings.images![assetId] = { enabled: imageBrandEnabled[assetId] ?? true, values: scopedBrandValues(value) }
+      }
+      const saved = await saveScopedBrandSettings(baseUrl, settings, scopedBrandRead.revision)
+      setScopedBrandRead({ ...scopedBrandRead, settings: saved.settings, revision: saved.revision, updated_at: saved.updatedAt, series: seriesRows, assignments })
+      setScopedBrandSaved(`已保存第 ${saved.revision} 版；文本与品牌色将在新确认的内容任务中生效。`)
+    } catch (cause) {
+      setScopedBrandError(`品牌配置保存失败：${describeApiError(cause)}`)
+    } finally {
+      setScopedBrandBusy(false)
+    }
+  }
+
+  const createBrandSeries = async () => {
     const name = newSeriesName.trim()
     if (!name) return
+    if (availableSeries.includes(name)) { switchBrandSeries(name); setNewSeriesName(''); return }
+    if (baseUrl && scopedBrandRead && activeStoreId) {
+      try {
+        const created = await createScopedBrandSeries(baseUrl, activeStoreId, name)
+        setScopedBrandRead((current) => current ? { ...current, series: [...current.series, created] } : current)
+      } catch (cause) {
+        setScopedBrandError(`创建系列失败：${describeApiError(cause)}`)
+        return
+      }
+    }
     const nextSeriesByStore = { ...seriesByStore, [activeStoreId]: availableSeries.includes(name) ? availableSeries : [...availableSeries, name] }
     setSeriesByStore(nextSeriesByStore)
     writeStoreSeriesRegistry(nextSeriesByStore)
@@ -6453,8 +6577,35 @@ export function MaterialLibraryWorkspace({
       // session only, never a second copy of the asset.
       previewUrlFor: (file) => URL.createObjectURL(file),
     })
+    const assignmentFailures: string[] = []
+    const assigned: StoreMaterialItem[] = []
+    const unassigned: StoreMaterialItem[] = []
+    if (uploadStore.id !== 'unclassified' && accepted.length) {
+      try {
+        let seriesRow = scopedBrandRead?.series.find((row) => row.accountId === uploadStore.id && row.name === uploadSeries)
+        if (!seriesRow) seriesRow = await createScopedBrandSeries(baseUrl, uploadStore.id, uploadSeries)
+        const newAssignments: ScopedBrandRead['assignments'] = []
+        for (const item of accepted) {
+          try {
+            const result = await assignScopedBrandAsset(baseUrl, item.id, uploadStore.id, seriesRow.id, 0)
+            newAssignments.push(result)
+            assigned.push(item)
+          } catch (cause) {
+            unassigned.push(item)
+            assignmentFailures.push(`${item.name} 店铺归属保存失败：${describeApiError(cause)}`)
+          }
+        }
+        setScopedBrandRead((current) => current ? { ...current, series: current.series.some((row) => row.id === seriesRow.id) ? current.series : [...current.series, seriesRow], assignments: [...current.assignments, ...newAssignments] } : current)
+      } catch (cause) {
+        unassigned.push(...accepted)
+        assignmentFailures.push(`系列创建失败：${describeApiError(cause)}`)
+      }
+    } else unassigned.push(...accepted)
     if (accepted.length) {
-      setMaterialsByStore((current) => ({ ...current, [uploadStore.id]: [...accepted, ...(current[uploadStore.id] ?? [])] }))
+      setMaterialsByStore((current) => ({ ...current,
+        [uploadStore.id]: [...assigned, ...(current[uploadStore.id] ?? [])],
+        unclassified: [...unassigned, ...(current.unclassified ?? [])],
+      }))
       setUploadedBytes((current) => current + accepted.reduce((total, item) => total + (item.bytes ?? 0), 0))
       setCategory('全部')
       setSeries('全部')
@@ -6465,19 +6616,37 @@ export function MaterialLibraryWorkspace({
         .catch((cause) => setAssetsError(describeApiError(cause)))
     }
     setUploadBusy(false)
-    if (failures.length) {
+    if (failures.length || assignmentFailures.length) {
       // Partial success stays visible: the accepted files are listed and the
       // rejects are named, so 确认上传 is never reported as a blanket success.
-      setUploadError(`以下素材未通过服务端检查：${failures.join('；')}`)
+      setUploadError([...failures.map((message) => `上传失败：${message}`), ...assignmentFailures].join('；'))
       return
     }
     closeUploadDialog()
   }
 
-  const updateMaterialMetadata = (materialId: string, patch: Partial<Pick<StoreMaterialItem, 'category' | 'series'>>) => {
+  const updateMaterialMetadata = async (materialId: string, patch: Partial<Pick<StoreMaterialItem, 'category' | 'series'>>) => {
+    if (patch.series && baseUrl && scopedBrandRead && activeStoreId !== 'unclassified') {
+      try {
+        let seriesRow = scopedBrandRead.series.find((row) => row.accountId === activeStoreId && row.name === patch.series)
+        if (!seriesRow) seriesRow = await createScopedBrandSeries(baseUrl, activeStoreId, patch.series)
+        const previous = scopedBrandRead.assignments.find((row) => row.assetId === materialId)
+        const updated = await assignScopedBrandAsset(baseUrl, materialId, activeStoreId, seriesRow.id, previous?.revision ?? 0)
+        setScopedBrandRead((current) => current ? {
+          ...current,
+          series: current.series.some((row) => row.id === seriesRow.id) ? current.series : [...current.series, seriesRow],
+          assignments: [...current.assignments.filter((row) => row.assetId !== materialId), updated],
+        } : current)
+      } catch (cause) {
+        setScopedBrandError(`素材系列保存失败：${describeApiError(cause)}`)
+        return
+      }
+    }
     setMaterialsByStore((current) => ({
       ...current,
-      [activeStoreId]: (current[activeStoreId] ?? []).map((item) => item.id === materialId ? { ...item, ...patch } : item),
+      [activeStoreId]: (current[activeStoreId] ?? []).some((item) => item.id === materialId)
+        ? (current[activeStoreId] ?? []).map((item) => item.id === materialId ? { ...item, ...patch } : item)
+        : [{ ...(activeMaterials.find((item) => item.id === materialId)!), ...patch }, ...(current[activeStoreId] ?? [])],
     }))
   }
 
@@ -6540,9 +6709,10 @@ export function MaterialLibraryWorkspace({
         <div className="material-detail-info"><span className="section-kicker">MATERIAL DETAILS</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.name}</dd></div><div><dt>平台</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.platform}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div>{detailIsImage && <div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div>}<div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
       </section>
       {detailIsImage && <section className="material-image-brand-settings">
-        <div className="material-brand-panel-heading"><div><span className="section-kicker">IMAGE BRAND SETTINGS</span><h2>单图品牌配置预览</h2><p>此处试填的设置只在本页预览当前图片；刷新后会丢失，也不会用于内容生成。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
+        <div className="material-brand-panel-heading"><div><span className="section-kicker">IMAGE BRAND SETTINGS</span><h2>单图品牌配置</h2><p>编辑后点击下方“保存品牌配置”；服务端确认保存后，设置才会用于之后确认的内容任务。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
+        <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span></div>
         <article className="material-brand-row material-image-brand-row">
-          <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" onChange={(next) => setImageBrands((current) => ({ ...current, [detailMaterial.id]: next }))} /></div>
+          <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" onChange={(next) => { setImageBrands((current) => ({ ...current, [detailMaterial.id]: next })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })) }} /></div>
           <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} onEnabledChange={(enabled) => setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled }))} context={{ label: '当前图片', value: detailMaterial.name }} />
         </article>
       </section>}
@@ -6562,10 +6732,11 @@ export function MaterialLibraryWorkspace({
 
       {view === 'brands' && <section className="material-brand-assets-panel" aria-label="品牌资产配置">
         <div className="material-brand-panel-heading">
-          <div><span className="section-kicker">BRAND SETTINGS</span><h2>品牌配置预览</h2><p>可在本页试填全局、店铺、系列与单图信息；这些配置尚未保存，刷新后会丢失，也不会用于内容生成。</p></div>
+          <div><span className="section-kicker">BRAND SETTINGS</span><h2>品牌配置</h2><p>填写全局、店铺、系列与单图的文字和品牌色后点击保存；已确认的配置会用于之后确认的内容任务。Logo 和文档选择仍是本地预览，须在素材库完成上传、扫描及权益确认后才能引用。</p></div>
           <div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div>
         </div>
-        <div className="material-brand-upload-entry"><div><strong>上传品牌资料</strong><span>通过服务端素材上传器添加图片或文档；品牌配置本身和资料分类暂未由服务端持久化。</span></div><button type="button" className="material-upload-button" onClick={() => { setUploadStoreId('unclassified'); setUploadCategory('品牌资料'); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传品牌资料</span></button></div>
+        <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span></div>
+        <div className="material-brand-upload-entry"><div><strong>上传品牌资料</strong><span>素材经服务端上传后，需完成扫描、权益和事实确认；文字与品牌色可在上方保存。</span></div><button type="button" className="material-upload-button" onClick={() => { setUploadStoreId('unclassified'); setUploadCategory('品牌资料'); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传品牌资料</span></button></div>
         {stores.length === 0 && <p className="material-brand-no-store">{catalogStores === null ? '正在读取店铺列表；品牌资料可先上传到工作区素材库。' : catalogStores.length > 0 ? '已登记店铺尚未取得可读取授权；店铺品牌配置将在授权后开放。品牌资料可先上传到工作区素材库。' : '当前没有已登记店铺；品牌资料可先上传到工作区素材库。'}</p>}
         <div className="material-brand-stack">
           <article className="material-brand-row">
@@ -6577,7 +6748,7 @@ export function MaterialLibraryWorkspace({
             <MaterialBrandOutput value={effectiveStoreBrand} label="店铺配置" enabled={activeStoreBrandEnabled} onEnabledChange={(enabled) => setStoreBrandEnabled((current) => ({ ...current, [activeStoreId]: enabled }))} context={{ label: '当前店铺', value: activeStore.name }} transitionLabel={storeBrandTransition} />
           </article>}
           {stores.length > 0 && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用到当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} onChange={(next) => setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next }))} leadingCard={<div className="material-brand-series-card" ref={seriesManagerRef}><div className="material-brand-series-current"><span>当前系列</span><strong>{activeBrandSeries}</strong></div><button type="button" aria-haspopup="dialog" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>创建、选择或删除当前店铺系列</strong></div><label><span>新系列名称</span><div><input autoFocus value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={createBrandSeries} disabled={!newSeriesName.trim()}>创建</button></div></label><div className="material-brand-series-list"><span>已有系列</span>{availableSeries.map((item) => <div className={item === activeBrandSeries ? 'active' : ''} key={item}><button type="button" className="material-brand-series-select" onClick={() => switchBrandSeries(item)}><span>{item}</span>{item === activeBrandSeries && <Check size={14} />}</button><button type="button" className="material-brand-series-delete" aria-label={`删除${item}系列`} disabled={availableSeries.length === 1} onClick={() => deleteBrandSeries(item)}><Trash2 size={13} /></button></div>)}</div></div>}</div>} /></div>
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用到当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} onChange={(next) => setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next }))} leadingCard={<div className="material-brand-series-card" ref={seriesManagerRef}><div className="material-brand-series-current"><span>当前系列</span><strong>{activeBrandSeries}</strong></div><button type="button" aria-haspopup="dialog" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>创建或选择当前店铺系列；已保存系列暂不支持删除</strong></div><label><span>新系列名称</span><div><input autoFocus value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={createBrandSeries} disabled={!newSeriesName.trim()}>创建</button></div></label><div className="material-brand-series-list"><span>已有系列</span>{availableSeries.map((item) => <div className={item === activeBrandSeries ? 'active' : ''} key={item}><button type="button" className="material-brand-series-select" onClick={() => switchBrandSeries(item)}><span>{item}</span>{item === activeBrandSeries && <Check size={14} />}</button><button type="button" className="material-brand-series-delete" aria-label={`删除${item}系列`} disabled={availableSeries.length === 1 || Boolean(scopedBrandRead?.series.some((row) => row.accountId === activeStoreId && row.name === item))} onClick={() => deleteBrandSeries(item)}><Trash2 size={13} /></button></div>)}</div></div>}</div>} /></div>
             <MaterialBrandOutput value={effectiveSeriesBrand} label="系列配置" enabled={activeSeriesBrandEnabled} onEnabledChange={(enabled) => setSeriesBrandEnabled((current) => ({ ...current, [activeSeriesKey]: enabled }))} context={{ label: '当前系列', value: activeBrandSeries }} transitionLabel={seriesBrandTransition} />
           </article>}
           <article className="material-brand-row material-brand-single-row">

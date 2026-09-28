@@ -18,6 +18,7 @@ export interface McpTaskContinuationDependencies {
   persistEvent: (workspaceId: string, aggregateId: string, eventType: string, sequence: number, payload: Record<string, unknown>) => Promise<void>
   requestActor: (req: IncomingMessage, fallback?: string) => string
   hydrateDurableRuleSnapshot: (workspaceId: string, product: Product) => Promise<unknown>
+  hydrateScopedBrandForTask?: (workspaceId: string, task: Task) => Promise<void>
   recordOperationAudit: (input: Omit<OperationAudit, 'id' | 'createdAt'>) => Promise<unknown>
 }
 
@@ -69,6 +70,7 @@ export async function handleMcpTaskContinuation(method: string, params: JsonObje
       const priceImpactConfirmed = params.price_impact_confirmed === true || params.price_impact_confirmed === 'true'
       const planProduct = service.products.get(task.productId)
       if (planProduct) await hydrateDurableRuleSnapshot(workspaceId, planProduct)
+      if (deps.hydrateScopedBrandForTask) await deps.hydrateScopedBrandForTask(workspaceId, task)
       const confirmed = service.confirmProductionPlan(workspaceId, task.id, requestActor(req, typeof params.actor_id === 'string' && params.actor_id.trim() ? params.actor_id.trim() : 'merchant'), typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? Number(params.expected_version) : undefined, priceImpactConfirmed)
       await persistSnapshot(workspaceId, 'task', confirmed, confirmed as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, confirmed.id, 'task.plan_confirmed', confirmed.version, { task_id: confirmed.id, plan_id: confirmed.productionPlan?.id ?? null, actor_id: confirmed.productionPlan?.confirmedBy ?? null })

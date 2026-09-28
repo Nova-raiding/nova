@@ -93,7 +93,7 @@ try {
   workerImage = imageIds[1]
   fixture = await createIsolatedOpsFixture({ evidenceDir })
   pool = new Pool({ connectionString: fixture.acceptanceDatabaseUrls.legacyBackfill, max: 2 })
-  const migrations = await loadMigrations()
+  const migrations = (await loadMigrations()).slice(0, 254)
   if (migrations.length !== 254) throw new Error('review source must carry migration tail 254')
   for (const migration of migrations) {
     const name = `${String(migration.version).padStart(3, '0')}_${migration.name}.sql`

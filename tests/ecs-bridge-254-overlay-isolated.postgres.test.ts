@@ -29,7 +29,10 @@ describe('B-derived 242/254 bridge on an owned PG17 fixture', () => {
       const verify = new Function('verifyAppliedMigrations', 'migrationChecksumBaseline', `return (applied, expected, mode) => {${body}\n}`)(
         verifyAppliedMigrations, migrationChecksumBaseline,
       ) as (applied: AppliedMigration[], expected: Awaited<ReturnType<typeof loadMigrations>>, mode: string) => number
-      const migrations = await loadMigrations()
+      // This review artifact is frozen at 254 even when the application has
+      // newer migrations. Keep the fixture and checksum comparison on that
+      // historical chain.
+      const migrations = (await loadMigrations()).slice(0, 254)
       expect(migrations).toHaveLength(254)
       for (const migration of migrations) {
         const name = `${String(migration.version).padStart(3, '0')}_${migration.name}.sql`

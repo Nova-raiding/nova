@@ -22,7 +22,9 @@ describe('242-to-254 forward migration SQL on isolated PostgreSQL', () => {
       database = new Pool({ connectionString: isolated.toString(), max: 2 })
       await database.query(await readFile(new URL('../../../infra/local/ensure-app-role.sql', import.meta.url), 'utf8'))
 
-      const migrations = await loadMigrations()
+      // The bridge exercises its published 242..254 window, independent of
+      // subsequent application migrations.
+      const migrations = (await loadMigrations()).slice(0, 254)
       expect(migrations.map(item => item.version)).toHaveLength(254)
       expect(migrations.at(-1)?.version).toBe(254)
 

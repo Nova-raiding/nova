@@ -1278,6 +1278,26 @@ export const uploadAsset = async (baseUrl: string, file: File) => requestApi<Ass
   body: await file.arrayBuffer(),
 })
 export const fetchBrandProfile = (baseUrl: string) => requestApi<{ profile: BrandProfile | null }>(baseUrl, '/v1/brand-profile')
+export interface ScopedBrandValues { color?: string; persona?: string; sellingPoints?: string; logoAssetId?: string; documentAssetId?: string }
+export interface ScopedBrandEntry { enabled: boolean; values: ScopedBrandValues }
+export interface ScopedBrandSettings {
+  schemaVersion: 1
+  global?: ScopedBrandEntry
+  stores?: Record<string, ScopedBrandEntry>
+  series?: Record<string, Record<string, ScopedBrandEntry>>
+  images?: Record<string, ScopedBrandEntry>
+}
+export interface ScopedBrandRead {
+  settings: ScopedBrandSettings
+  revision: number
+  updated_at: string | null
+  series: Array<{ id: string; accountId: string; name: string; revision: number }>
+  assignments: Array<{ assetId: string; accountId: string; seriesId: string | null; revision: number }>
+}
+export const fetchScopedBrandSettings = (baseUrl: string) => requestApi<ScopedBrandRead>(baseUrl, '/v1/brand-scopes')
+export const saveScopedBrandSettings = (baseUrl: string, settings: ScopedBrandSettings, expectedRevision: number) => requestApi<{ settings: ScopedBrandSettings; revision: number; updatedAt: string }>(baseUrl, '/v1/brand-scopes', { method: 'PUT', body: JSON.stringify({ settings, expected_revision: expectedRevision }) })
+export const createScopedBrandSeries = (baseUrl: string, accountId: string, name: string) => requestApi<{ id: string; accountId: string; name: string; revision: number }>(baseUrl, '/v1/brand-scopes/series', { method: 'POST', body: JSON.stringify({ account_id: accountId, name }) })
+export const assignScopedBrandAsset = (baseUrl: string, assetId: string, accountId: string, seriesId: string | null, expectedRevision: number) => requestApi<{ assetId: string; accountId: string; seriesId: string | null; revision: number }>(baseUrl, `/v1/brand-scopes/assets/${encodeURIComponent(assetId)}/assignment`, { method: 'PUT', body: JSON.stringify({ account_id: accountId, series_id: seriesId, expected_revision: expectedRevision }) })
 export const extractBrandProfile = (baseUrl: string, assetIds?: string[]) => requestApi<BrandExtraction>(baseUrl, '/v1/brand-profile/extract', { method: 'POST', body: JSON.stringify(assetIds?.length ? { asset_ids: assetIds } : {}) })
 export const saveBrandProfile = (baseUrl: string, input: { name: string; positioning?: string; audience?: string; tone?: string[]; forbidden_terms?: string[]; details?: Record<string, unknown>; visual_rules?: BrandVisualRules; source?: string; conflict_resolutions?: Record<string, 'existing' | 'candidate'> }) => requestApi<BrandProfile>(baseUrl, '/v1/brand-profile', { method: 'PUT', body: JSON.stringify(input) })
 export const saveAssetPreference = (baseUrl: string, assetId: string, input: { verdict: 'excellent' | 'disliked' | 'unrated'; reasons?: string[]; note?: string; expected_revision?: number }) => requestApi<AssetMetadata>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/preference`, { method: 'PUT', body: JSON.stringify(input) })

@@ -65,7 +65,7 @@ export async function createIsolatedBridge254IO({ apiReference, workerReference,
     const [apiImage, workerImage] = await Promise.all([imageId(apiReference), imageId(workerReference)])
     fixture = await createIsolatedOpsFixture({ evidenceDir: dir })
     pool = new Pool({ connectionString: fixture.acceptanceDatabaseUrls.legacyBackfill, max: 2 })
-    const migrations = await loadMigrations()
+    const migrations = (await loadMigrations()).slice(0, 254)
     if (migrations.length !== 254) throw new Error('isolated bridge migration inventory is not 254')
     const prefixes = Object.fromEntries(Array.from({ length: 13 }, (_, index) => {
       const version = index + 242

@@ -67,6 +67,10 @@ export const HTTP_OPERATION_POLICIES = [
   identity('GET', '/v1/brand-profile', 'brand.get'),
   identity('PUT', '/v1/brand-profile', 'brand.upsert'),
   identity('POST', '/v1/brand-profile/extract', 'brand.extract'),
+  identity('GET', '/v1/brand-scopes', 'brand.get'),
+  identity('PUT', '/v1/brand-scopes', 'brand.upsert'),
+  identity('POST', '/v1/brand-scopes/series', 'brand.upsert'),
+  identity('PUT', '/v1/brand-scopes/assets/{assetId}/assignment', 'brand.upsert'),
   // The collection is workspace-scoped and filtered by accessible products in
   // the handler; an individual job remains brand-scoped below.
   identity('GET', '/v1/image-generation-jobs', 'catalog.search'),

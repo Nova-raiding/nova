@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 242).map((row, index) => index === 241 ? { ...row, checksum: 'bad' } : row), migrations, 'prefix_242_or_244')).toThrow('checksum mismatch')
   })
   it('supports a separate 242-or-254 verifier without widening the existing 242-or-244 contract', async () => {
-    const migrations = await loadMigrations()
+    const migrations = (await loadMigrations()).slice(0, 254)
     const rows = migrations.map(({ version, name, sql }) => ({ version, name, checksum: migrationChecksum(sql) }))
 
     expect(verifyBridgeMigrationPrefix(rows.slice(0, 242), migrations, 'prefix_242_or_254')).toBe(242)
@@ -47,7 +47,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(254)
+    expect(latestVersion).toBe(255)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
