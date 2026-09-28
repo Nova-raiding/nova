@@ -27,6 +27,7 @@
 - 贵人鸟素材 11 项未扫描，官方店铺缺真实授权凭证；规则与商品归属不能按隔离 fixture 宣称通过。`demo@ys.com` 的现金订单和成长版权益已由 101 只读核验，本轮未改动真实账户。
 - 101 主机剩余约 36 GiB；未清理任何业务数据、容器卷或其他 agent 的候选环境。
 - 浏览器验收完成后只停止本次 `merchant-demo-674full` 四个常驻容器和 `merchant-ops-674full-private`，保留隔离 PG/Redis 卷及受保护证据；本机测试 tunnel 和路径代理已关闭。
+- 在并行桥接文件持续变动期间重跑最新 `main` 的 `npm run typecheck && npm run test:release-gates`：类型检查通过；release gates 的 Vitest 阶段 171 文件通过、7 跳过、2 失败。失败分别是新发布控制目标未更新安装器断言，以及新增 frozen-plan 测试尚未纳入入口清单。日志在 `/private/tmp/storenova-main-release-gates-20260928.log`。这个可变工作树测试不能作为最终固定 SHA 的通过证据。
 
 ## 未通过的最终用户目标
 
