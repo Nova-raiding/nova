@@ -15,14 +15,15 @@ const approvedModels = ['qwen3.7-text-embedding-flash', 'qwen3.7-text-embedding'
 const hash = value => createHash('sha256').update(value).digest('hex')
 
 function options(argv) {
-  const allowed = new Set(['identity', 'release-images', 'eight-image-set', 'root-env', 'source-root', 'output-dir', 'project', 'redis-image', 'embedding-model'])
+  const allowed = new Set(['identity', 'release-images', 'eight-image-set', 'root-env', 'source-root', 'output-dir', 'project', 'redis-image', 'embedding-model', 'merchant-ui'])
   const result = {}
   for (let i = 0; i < argv.length; i += 2) {
     const name = argv[i]?.startsWith('--') ? argv[i].slice(2) : ''
     if (!allowed.has(name) || !argv[i + 1] || argv[i + 1].startsWith('--') || Object.hasOwn(result, name)) fail('invalid or duplicate command argument')
     result[name] = argv[i + 1]
   }
-  for (const name of allowed) if (!result[name] && !['embedding-model'].includes(name)) fail(`--${name} is required`)
+  for (const name of allowed) if (!result[name] && !['embedding-model', 'merchant-ui'].includes(name)) fail(`--${name} is required`)
+  if (result['merchant-ui'] && result['merchant-ui'] !== 'enabled') fail('--merchant-ui must be enabled')
   return result
 }
 
@@ -118,7 +119,8 @@ function databaseUrl(role, password) { return `postgres://${role}:${password}@po
 
 export function validateDemoCompose(compose, project) {
   const services = compose?.services ?? {}
-  const required = ['postgres', 'redis', 'migrate', 'api']
+  const withMerchantUi = Object.hasOwn(services, 'ui')
+  const required = withMerchantUi ? ['postgres', 'redis', 'migrate', 'api', 'ui'] : ['postgres', 'redis', 'migrate', 'api']
   if (Object.keys(services).sort().join(',') !== [...required].sort().join(',')) fail('candidate Compose must contain exactly postgres, redis, migrate, and api')
   for (const name of required) {
     const service = services[name]
@@ -146,6 +148,19 @@ export function validateDemoCompose(compose, project) {
   if (networks.default.internal === true) fail('candidate network must allow outbound provider TLS while remaining unpublished')
   const api = services.api
   const env = api.environment ?? {}
+  if (withMerchantUi) {
+    const ui = services.ui
+    if (ui.image !== compose['x-merchant-ui-image'] || ui.environment?.MERCHANT_API_RESOLVER !== '127.0.0.11' ||
+        !/^ws_candidate_[a-f0-9]{12}$/u.test(ui.environment?.MERCHANT_WORKSPACE_ID ?? '') ||
+        ui.labels?.['com.storenova.release.id'] !== env.RELEASE_ID ||
+        ui.labels?.['org.opencontainers.image.revision'] !== env.RELEASE_GIT_SHA ||
+        ui.labels?.['com.storenova.release.source_sha256'] !== api.labels?.['com.storenova.release.source_sha256'] ||
+        !api.networks?.default?.aliases?.includes('merchant-api') ||
+        ui.depends_on?.api?.condition !== 'service_healthy' ||
+        JSON.stringify(ui.healthcheck?.test) !== JSON.stringify(['CMD-SHELL', 'wget -qO- http://127.0.0.1:8080/ >/dev/null && wget -qO- http://127.0.0.1:8080/api/healthz >/dev/null || exit 1']))
+      fail('merchant UI candidate identity, private API alias or healthcheck differs')
+    immutableReference(ui.image, 'merchant UI image')
+  }
   if (JSON.stringify(api.healthcheck?.test) !== JSON.stringify(['CMD-SHELL', 'wget -qO- http://127.0.0.1:8787/healthz >/dev/null || exit 1'])) fail('isolated API healthcheck must measure liveness')
   if (env.KNOWLEDGE_VECTOR_INDEX_ENABLED !== 'false' || env.EMBEDDING_DIMENSIONS !== '1024' || !approvedModels.includes(env.EMBEDDING_MODEL)) fail('embedding must remain disabled with an approved Qwen 1024 configuration')
   if (env.PLUGIN_WRITE_ENABLED !== 'false' || env.ASSET_STORAGE_PREFIX !== `demo-candidate/${env.RELEASE_ID}`) fail('candidate API writes must be disabled and release-scoped')
@@ -175,7 +190,7 @@ export function validateDemoCompose(compose, project) {
   return true
 }
 
-function render({ identity, images, eightImageSet, project, sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey }) {
+function render({ identity, images, eightImageSet, project, sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey, withMerchantUi, migrationTarget }) {
   const rendererSha256 = hash(readFileSync(new URL(import.meta.url)))
   const roles = { merchant_app: newSecret(), merchant_ops: newSecret(), merchant_alert_receiver: newSecret() }
   const adminPassword = newSecret()
@@ -187,7 +202,8 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
     schema: 'isolated-demo-candidate/1', release_id: identity.release_id, release_git_sha: identity.git_sha,
     source_sha256: identity.source_sha256, image_digests: imageDigests, image_references: imageRefs,
     renderer_sha256: rendererSha256,
-    deployment_scope: 'isolated_four_service_candidate', public_ports: [], embedding_enabled: false,
+    deployment_scope: withMerchantUi ? 'isolated_merchant_browser_candidate' : 'isolated_four_service_candidate',
+    migration_target: migrationTarget, public_ports: [], embedding_enabled: false,
     embedding_model: embeddingModel, embedding_dimensions: 1024,
   }
   const manifestText = `${JSON.stringify(manifest, null, 2)}\n`
@@ -200,6 +216,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
   const compose = {
     name: project,
     'x-eight-image-set-digest': imageSetDigest,
+    ...(withMerchantUi ? { 'x-merchant-ui-image': images.image_references['merchant-ui'] } : {}),
     services: {
       postgres: {
         image: postgresImage, restart: 'no', environment: { POSTGRES_USER: 'merchant', POSTGRES_PASSWORD: adminPassword, POSTGRES_DB: 'merchant' },
@@ -226,6 +243,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
       },
       api: {
         image: apiImage, restart: 'no', env_file: [{ path: envPath, required: true }], expose: ['8787'],
+        ...(withMerchantUi ? { networks: { default: { aliases: ['merchant-api'] } } } : {}),
         healthcheck: { test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8787/healthz >/dev/null || exit 1'], interval: '10s', timeout: '3s', retries: 6, start_period: '30s' },
         labels: { 'com.storenova.release.id': identity.release_id, 'org.opencontainers.image.revision': identity.git_sha, 'com.storenova.release.source_sha256': identity.source_sha256 },
         environment: {
@@ -243,6 +261,15 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
           MODEL_COST_ESTIMATE_VERSION: 'isolated-candidate-review-only',
         },
       },
+      ...(withMerchantUi ? { ui: {
+        image: images.image_references['merchant-ui'], restart: 'no', expose: ['8080'],
+        depends_on: { api: { condition: 'service_healthy' } },
+        environment: { MERCHANT_WORKSPACE_ID: `ws_candidate_${randomBytes(6).toString('hex')}`, MERCHANT_API_RESOLVER: '127.0.0.11' },
+        labels: { 'com.storenova.release.id': identity.release_id,
+          'org.opencontainers.image.revision': identity.git_sha,
+          'com.storenova.release.source_sha256': identity.source_sha256 },
+        healthcheck: { test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8080/ >/dev/null && wget -qO- http://127.0.0.1:8080/api/healthz >/dev/null || exit 1'], interval: '10s', timeout: '3s', retries: 6, start_period: '15s' },
+      } } : {}),
     },
     volumes: {
       postgres_data: { name: `${project}_postgres_data`, external: false },
@@ -294,6 +321,9 @@ export function main(argv = process.argv.slice(2)) {
   }
   const identity = parseIdentity(paths.identity)
   assertSourceBoundToIdentity(paths.sourceRoot, paths.identity, identity)
+  const migrationNumbers = readdirSync(migrationDir).filter(name => /^\d{3}_[a-z0-9][a-z0-9_]*\.sql$/u.test(name)).map(name => Number(name.slice(0, 3))).sort((a, b) => a - b)
+  if (!migrationNumbers.length || migrationNumbers.some((number, index) => number !== index + 1)) fail('candidate migration history must be a contiguous prefix')
+  const migrationTarget = migrationNumbers.at(-1)
   let images
   try { images = JSON.parse(readFileSync(paths.images, 'utf8')) } catch { fail('six-image manifest is invalid JSON') }
   if (images?.schema_version !== 1 || images.release_id !== identity.release_id || images.release_git_sha !== identity.git_sha || images.source_sha256 !== identity.source_sha256) fail('six-image manifest does not match the candidate identity')
@@ -317,7 +347,8 @@ export function main(argv = process.argv.slice(2)) {
   if (!/(?:^|\/)postgres:17-alpine@sha256:[0-9a-f]{64}$/u.test(migrationImage)) fail('migration image must be immutable postgres:17-alpine')
   const redisImage = immutableReference(args['redis-image'], 'redis image')
   if (!/(?:^|\/)redis:7-alpine@sha256:[0-9a-f]{64}$/u.test(redisImage)) fail('isolated redis image must be immutable redis:7-alpine')
-  const rendered = render({ identity, images, eightImageSet, project, sourceRoot: paths.sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey })
+  const rendered = render({ identity, images, eightImageSet, project, sourceRoot: paths.sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey,
+    withMerchantUi: args['merchant-ui'] === 'enabled', migrationTarget })
   const created = []
   try {
     createExclusive(join(paths.outputDir, 'candidate.env'), rendered.envText, created)
@@ -328,7 +359,9 @@ export function main(argv = process.argv.slice(2)) {
     for (const path of created.reverse()) { try { unlinkSync(path) } catch {} }
     throw error
   }
-  console.log(JSON.stringify({ status: 'config_rendered', release_id: identity.release_id, git_sha: identity.git_sha, project, services: ['postgres', 'redis', 'migrate', 'api'], public_ports: [], embedding_enabled: false, embedding_dimensions: 1024, image_set_digest: rendered.imageSetDigest, manifest_sha256: rendered.manifestSha, renderer_sha256: rendered.rendererSha256, outputs: outputs.map(name => name) }))
+  console.log(JSON.stringify({ status: 'config_rendered', release_id: identity.release_id, git_sha: identity.git_sha, project,
+    services: args['merchant-ui'] === 'enabled' ? ['postgres', 'redis', 'migrate', 'api', 'ui'] : ['postgres', 'redis', 'migrate', 'api'],
+    migration_target: migrationTarget, public_ports: [], embedding_enabled: false, embedding_dimensions: 1024, image_set_digest: rendered.imageSetDigest, manifest_sha256: rendered.manifestSha, renderer_sha256: rendered.rendererSha256, outputs: outputs.map(name => name) }))
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

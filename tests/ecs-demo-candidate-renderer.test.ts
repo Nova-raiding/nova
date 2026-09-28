@@ -169,4 +169,22 @@ describe('protected isolated ECS demo candidate renderer', () => {
     expect(retry.stderr).toContain('candidate output already exists')
     expect(readFileSync(composePath)).toEqual(before)
   })
+
+  it('renders a private merchant browser candidate with pinned UI and migration target', () => {
+    const value = fixture()
+    const result = value.run(['--merchant-ui', 'enabled'])
+    expect(result.status, result.stderr).toBe(0)
+    const compose = JSON.parse(readFileSync(join(value.output, 'candidate.compose.json'), 'utf8'))
+    const manifest = JSON.parse(readFileSync(join(value.output, 'candidate-manifest.json'), 'utf8'))
+    expect(Object.keys(compose.services).sort()).toEqual(['api', 'migrate', 'postgres', 'redis', 'ui'])
+    expect(manifest.deployment_scope).toBe('isolated_merchant_browser_candidate')
+    expect(manifest.migration_target).toBe(1)
+    expect(compose.services.ui.image).toBe(images['merchant-ui'])
+    expect(compose.services.ui.ports).toBeUndefined()
+    expect(compose.services.api.networks.default.aliases).toEqual(['merchant-api'])
+    expect(validateDemoCompose(compose, project)).toBe(true)
+    const changed = structuredClone(compose)
+    changed.services.ui.ports = [{ target: 8080, published: '18443' }]
+    expect(() => validateDemoCompose(changed, project)).toThrow(/host ports/u)
+  })
 })

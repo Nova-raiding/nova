@@ -98,4 +98,19 @@ describe('protected independent candidate TLS route renderer', () => {
       expect(() => renderCandidateTlsRoute(value.source, value.images, value.container, apiImageId, gatewayImageId)).toThrow()
     }
   })
+
+  it('accepts only a private merchant UI from the same release image set', () => {
+    const value: any = fixture()
+    const uiRef = `registry.example/ui@sha256:${'5'.repeat(64)}`
+    value.source.services.api.networks = { default: { aliases: ['merchant-api'] } }
+    Object.assign(value.source.services, { ui: { image: uiRef, labels: {
+      'org.opencontainers.image.revision': gitSha,
+      'com.storenova.release.source_sha256': sourceSha256,
+    } } })
+    value.images.image_references['merchant-ui'] = uiRef
+    value.images.image_digests['merchant-ui'] = uiRef.split('@')[1]
+    expect(renderCandidateTlsRoute(value.source, value.images, value.container, apiImageId, gatewayImageId).services['pilot-gateway']).toBeDefined()
+    value.source.services.ui.ports = ['127.0.0.1:18444:8080']
+    expect(() => renderCandidateTlsRoute(value.source, value.images, value.container, apiImageId, gatewayImageId)).toThrow()
+  })
 })

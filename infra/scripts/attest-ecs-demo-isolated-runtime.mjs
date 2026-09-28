@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 const FULL_ID = /^[a-f0-9]{64}$/u
 const DIGEST = /^sha256:[a-f0-9]{64}$/u
 const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[a-f0-9]{64}$/u
-const SERVICES = ['api', 'postgres', 'redis']
+const BASE_SERVICES = ['api', 'postgres', 'redis']
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
 const requireValue = (value, message) => { if (!value) throw new Error(message) }
 
@@ -112,26 +112,31 @@ const req=http.get({host:'127.0.0.1',port:8787,path,timeout:5000},res=>{
  res.on('end',()=>process.stdout.write(JSON.stringify({status:res.statusCode,body})));
 });req.on('timeout',()=>req.destroy());req.on('error',()=>process.exit(2));`
 
-export function verifyIsolatedRuntime({ compose, identity, manifest, manifestSha256, containers, images, network, database, health, readiness }) {
+export function verifyIsolatedRuntime({ compose, identity, manifest, manifestSha256, containers, images, network, database, health, readiness, uiBuild }) {
   const project = compose?.name
+  const withMerchantUi = manifest?.deployment_scope === 'isolated_merchant_browser_candidate'
+  const services = withMerchantUi ? [...BASE_SERVICES, 'ui'] : BASE_SERVICES
+  const migrationTarget = manifest?.migration_target ?? (withMerchantUi ? undefined : 254)
   requireValue(/^merchant-demo-[a-z0-9][a-z0-9_-]{0,25}$/u.test(project ?? ''), 'isolated project identity is invalid')
-  requireValue(manifest?.schema === 'isolated-demo-candidate/1' && manifest.deployment_scope === 'isolated_four_service_candidate' &&
+  requireValue(manifest?.schema === 'isolated-demo-candidate/1' &&
+    ['isolated_four_service_candidate', 'isolated_merchant_browser_candidate'].includes(manifest.deployment_scope) &&
     Array.isArray(manifest.public_ports) && manifest.public_ports.length === 0, 'manifest is not an isolated candidate')
+  requireValue(Number.isInteger(migrationTarget) && migrationTarget >= 1 && migrationTarget <= 999, 'candidate migration target is missing or invalid')
   requireValue(identity.release_id === manifest.release_id && identity.git_sha === manifest.release_git_sha &&
     identity.source_sha256 === manifest.source_sha256 && compose.services?.api?.environment?.RELEASE_ID === identity.release_id &&
     compose.services.api.environment.RELEASE_GIT_SHA === identity.git_sha &&
     compose.services.api.environment.RELEASE_MANIFEST_SHA256 === manifestSha256, 'candidate identity or manifest binding differs')
   requireValue(/^[0-9a-f]{40}$/u.test(identity.git_sha ?? '') && DIGEST.test(identity.source_sha256 ?? '') &&
     /^[0-9a-f]{64}$/u.test(manifestSha256 ?? ''), 'candidate digest is invalid')
-  requireValue(Object.keys(containers).sort().join(',') === SERVICES.slice().sort().join(','), 'candidate project has unexpected running or stopped containers')
+  requireValue(Object.keys(containers).sort().join(',') === services.slice().sort().join(','), 'candidate project has unexpected running or stopped containers')
   requireValue(network?.Name === `${project}_private` && network?.Labels?.['com.docker.compose.project'] === project &&
     network?.Internal === false, 'candidate project network differs')
   requireValue(Object.keys(network.Containers ?? {}).sort().join(',') ===
-    SERVICES.map(service => containers[service]?.Id).sort().join(','), 'candidate private network has an unexpected endpoint')
+    services.map(service => containers[service]?.Id).sort().join(','), 'candidate private network has an unexpected endpoint')
   const details = {}
-  for (const service of SERVICES) {
+  for (const service of services) {
     const config = compose.services?.[service], container = containers[service], image = images[service]
-    const artifact = service === 'api' ? 'merchant-api' : service === 'postgres' ? 'postgres-migration' : 'candidate-redis'
+    const artifact = service === 'api' ? 'merchant-api' : service === 'ui' ? 'merchant-ui' : service === 'postgres' ? 'postgres-migration' : 'candidate-redis'
     requireValue(config && IMAGE.test(config.image ?? '') && config.image === manifest.image_references?.[artifact] &&
       manifest.image_digests?.[artifact] === config.image.split('@')[1], `${service} manifest image differs`)
     requireValue(FULL_ID.test(container?.Id ?? '') && DIGEST.test(container?.Image ?? '') &&
@@ -143,17 +148,20 @@ export function verifyIsolatedRuntime({ compose, identity, manifest, manifestSha
       container.HostConfig?.NetworkMode === `${project}_private` &&
       Object.keys(container.NetworkSettings?.Networks ?? {}).join(',') === `${project}_private` &&
       network.Containers?.[container.Id]?.Name === container.Name?.slice(1), `${service} network or host port differs`)
-    if (service === 'api') requireValue(image.Config?.Labels?.['com.storenova.release.id'] === identity.release_id &&
+    if (service === 'api' || service === 'ui') requireValue(image.Config?.Labels?.['com.storenova.release.id'] === identity.release_id &&
       image.Config?.Labels?.['org.opencontainers.image.revision'] === identity.git_sha &&
       image.Config?.Labels?.['com.storenova.release.source_sha256'] === identity.source_sha256 &&
-      container.Config?.Labels?.['com.storenova.release.id'] === identity.release_id, 'API release labels differ')
+      container.Config?.Labels?.['com.storenova.release.id'] === identity.release_id, 'candidate application release labels differ')
     details[service] = { container_id: container.Id, image_id: container.Image, image_digest: config.image.split('@')[1] }
   }
   requireValue(database?.server_version_num >= 170000 && database.server_version_num < 180000 &&
-    database.history_count === 254 && database.history_first === 1 && database.history_last === 254 &&
-    database.history_distinct === 254 && database.checksums === true && database.role_count === 3 &&
+    database.history_count === migrationTarget && database.history_first === 1 && database.history_last === migrationTarget &&
+    database.history_distinct === migrationTarget && database.checksums === true && database.role_count === 3 &&
     database.roles_safe === true && database.tenant_count > 0 && database.unsafe_tenant_count === 0,
   'PG17 migration, role or RLS observation failed')
+  if (withMerchantUi) requireValue(containers.ui?.State?.Health?.Status === 'healthy' &&
+    uiBuild?.surface === 'merchant-ui' && uiBuild.release_id === identity.release_id &&
+    uiBuild.release_git_sha === identity.git_sha, 'merchant UI health or build identity differs')
   requireValue(health?.status === 200 && (() => { try { return JSON.parse(health.body)?.data?.persistence?.ready === true } catch { return false } })(),
     'isolated API healthz is unhealthy')
   requireValue(readiness?.status === 503 && (() => {
@@ -168,10 +176,11 @@ export function verifyIsolatedRuntime({ compose, identity, manifest, manifestSha
   return { schema: 'ecs-demo-isolated-runtime-attestation/1', status: 'review_only', scope: 'isolated',
     deployable: false, production_go: false, project, release_id: identity.release_id, git_sha: identity.git_sha,
     manifest_sha256: `sha256:${manifestSha256}`, containers: details,
-    postgres: { migration_prefix: 254, roles_verified: true,
+    postgres: { migration_prefix: migrationTarget, roles_verified: true,
       workspace_rls: { scope: 'public_workspace_id_tables_excluding_special_policy_tables',
         checked_table_count: database.tenant_count, verified: true } },
-    api: { healthz_status: 200, readyz_status: 503 } }
+    api: { healthz_status: 200, readyz_status: 503 },
+    ...(withMerchantUi ? { ui: { surface: 'merchant-ui', release_id: identity.release_id, release_git_sha: identity.git_sha, healthy: true } } : {}) }
 }
 
 export function attestIsolatedRuntime({ composePath, identityPath, manifestPath }) {
@@ -181,17 +190,18 @@ export function attestIsolatedRuntime({ composePath, identityPath, manifestPath 
   const project = compose?.name
   requireValue(/^merchant-demo-[a-z0-9][a-z0-9_-]{0,25}$/u.test(project ?? ''), 'isolated project is invalid')
   const ids = docker(['container', 'ls', '--all', '--no-trunc', '--filter', `label=com.docker.compose.project=${project}`, '--format', '{{.ID}}']).split('\n').filter(Boolean)
-  requireValue(ids.length === 3 && ids.every(id => FULL_ID.test(id)) && new Set(ids).size === 3, 'candidate project must have exactly three containers')
+  const services = compose?.services?.ui ? [...BASE_SERVICES, 'ui'] : BASE_SERVICES
+  requireValue(ids.length === services.length && ids.every(id => FULL_ID.test(id)) && new Set(ids).size === services.length, 'candidate project container count differs')
   const containers = {}
   for (const id of ids) {
     const result = parseDocker(['inspect', '--type', 'container', id])
     requireValue(Array.isArray(result) && result.length === 1 && result[0]?.Id === id, 'container inspection differs')
     const service = result[0].Config?.Labels?.['com.docker.compose.service']
-    requireValue(SERVICES.includes(service) && !Object.hasOwn(containers, service), 'candidate service set differs')
+    requireValue(services.includes(service) && !Object.hasOwn(containers, service), 'candidate service set differs')
     containers[service] = result[0]
   }
   const images = {}
-  for (const service of SERVICES) {
+  for (const service of services) {
     const ref = compose.services?.[service]?.image
     requireValue(IMAGE.test(ref ?? ''), `${service} image reference is invalid`)
     const result = parseDocker(['image', 'inspect', ref])
@@ -204,8 +214,9 @@ export function attestIsolatedRuntime({ composePath, identityPath, manifestPath 
   requireValue(FULL_ID.test(pgId ?? '') && FULL_ID.test(apiId ?? ''), 'candidate API/PG IDs are missing')
   const database = JSON.parse(docker(['exec', pgId, 'psql', '-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-U', 'merchant', '-d', 'merchant', '-c', PG_SQL]))
   const probe = path => parseDocker(['exec', '-e', 'NODE_OPTIONS=', apiId, 'node', '-e', HTTP_PROBE, path])
+  const uiBuild = compose?.services?.ui ? JSON.parse(docker(['exec', containers.ui.Id, 'wget', '-qO-', 'http://127.0.0.1:8080/build-meta.json'])) : undefined
   return verifyIsolatedRuntime({ compose, identity, manifest: manifestFile.value, manifestSha256: manifestFile.digest,
-    containers, images, network: networkResult[0], database, health: probe('/healthz'), readiness: probe('/readyz') })
+    containers, images, network: networkResult[0], database, health: probe('/healthz'), readiness: probe('/readyz'), uiBuild })
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

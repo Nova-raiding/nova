@@ -21,7 +21,7 @@ export function renderCandidateTlsRoute(source, images, apiContainer, apiImageId
   const imageSetDigest = api?.environment?.RELEASE_IMAGE_SET_DIGEST
   const sourceSha256 = api?.labels?.['com.storenova.release.source_sha256']
   if (!/^merchant-demo-[a-z0-9][a-z0-9_-]{0,25}$/u.test(project ?? '') ||
-      Object.keys(services).sort().join(',') !== 'api,migrate,postgres,redis' ||
+      !['api,migrate,postgres,redis', 'api,migrate,postgres,redis,ui'].includes(Object.keys(services).sort().join(',')) ||
       Object.keys(source.networks ?? {}).join(',') !== 'default' ||
       network?.name !== `${project}_private` || network?.external === true ||
       !/^release-[A-Za-z0-9._-]{1,80}$/u.test(releaseId ?? '') ||
@@ -30,6 +30,11 @@ export function renderCandidateTlsRoute(source, images, apiContainer, apiImageId
       !/^sha256:[0-9a-f]{64}$/u.test(sourceSha256 ?? '') ||
       source['x-eight-image-set-digest'] !== imageSetDigest ||
       Object.values(services).some(service => (service?.ports ?? []).length > 0)) fail('source identity or isolation mismatch')
+  if (services.ui && (services.ui.image !== images?.image_references?.['merchant-ui'] ||
+      images?.image_digests?.['merchant-ui'] !== services.ui.image.split('@')[1] ||
+      services.ui.labels?.['org.opencontainers.image.revision'] !== gitSha ||
+      services.ui.labels?.['com.storenova.release.source_sha256'] !== sourceSha256 ||
+      !api.networks?.default?.aliases?.includes('merchant-api'))) fail('merchant UI candidate identity mismatch')
   if (images?.schema_version !== 1 || images.release_id !== releaseId ||
       images.release_git_sha !== gitSha || images.source_sha256 !== sourceSha256 ||
       !IMAGE.test(api.image ?? '') || api.image !== images.image_references?.['merchant-api'] ||

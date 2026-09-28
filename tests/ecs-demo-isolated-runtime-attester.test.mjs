@@ -112,3 +112,40 @@ test('rejects published ports, incomplete migration, unsafe roles/RLS and ready 
     assert.throws(() => verifyIsolatedRuntime(value))
   }
 })
+
+test('binds merchant UI and PG17 migration 255 to the isolated runtime identity', () => {
+  const value = fixture()
+  value.manifest.deployment_scope = 'isolated_merchant_browser_candidate'
+  value.manifest.migration_target = 255
+  value.database.history_count = 255
+  value.database.history_last = 255
+  value.database.history_distinct = 255
+  const uiId = 'a'.repeat(64)
+  const uiImageId = `sha256:${'b'.repeat(64)}`
+  const uiRef = `registry.invalid/ui@sha256:${'c'.repeat(64)}`
+  value.compose.services.ui = { image: uiRef }
+  value.manifest.image_references['merchant-ui'] = uiRef
+  value.manifest.image_digests['merchant-ui'] = uiRef.split('@')[1]
+  value.containers.ui = { Id: uiId, Name: `/${project}-ui-1`, Image: uiImageId, State: { Running: true, Health: { Status: 'healthy' } },
+    Config: { Labels: { 'com.docker.compose.project': project, 'com.docker.compose.service': 'ui', 'com.storenova.release.id': value.identity.release_id } },
+    HostConfig: { NetworkMode: `${project}_private`, PortBindings: {} },
+    NetworkSettings: { Networks: { [`${project}_private`]: {} }, Ports: { '8080/tcp': null } } }
+  value.images.ui = { Id: uiImageId, RepoDigests: [canonicalRepoDigest(uiRef)], Config: { Labels: {
+    'com.storenova.release.id': value.identity.release_id, 'org.opencontainers.image.revision': sha,
+    'com.storenova.release.source_sha256': source } } }
+  value.network.Containers[uiId] = { Name: `${project}-ui-1` }
+  value.uiBuild = { surface: 'merchant-ui', release_id: value.identity.release_id, release_git_sha: sha }
+  assert.equal(verifyIsolatedRuntime(value).postgres.migration_prefix, 255)
+  const missingUi = structuredClone(value)
+  delete missingUi.containers.ui
+  assert.throws(() => verifyIsolatedRuntime(missingUi))
+  const wrongPrefix = structuredClone(value)
+  wrongPrefix.database.history_last = 254
+  assert.throws(() => verifyIsolatedRuntime(wrongPrefix))
+  const missingTarget = structuredClone(value)
+  delete missingTarget.manifest.migration_target
+  assert.throws(() => verifyIsolatedRuntime(missingTarget))
+  const wrongBuild = structuredClone(value)
+  wrongBuild.uiBuild.release_git_sha = 'f'.repeat(40)
+  assert.throws(() => verifyIsolatedRuntime(wrongBuild))
+})
