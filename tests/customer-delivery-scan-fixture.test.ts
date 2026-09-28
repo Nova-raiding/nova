@@ -31,6 +31,7 @@ const fixture = (): IsolatedOpsFixture => ({
   workspaceId: `ws_ops_fixture_${runId.replaceAll('-', '')}`, subjectIdentityId: 'synthetic-identity',
   workspaceActorSubject: 'synthetic-workspace-actor', approverId: 'synthetic-approver', issuer: 'synthetic-issuer', actorSubject: 'synthetic-actor',
   platformLogin: 'ops-fixture@example.invalid', platformPassword: 'fixture-pass-123', platformIdentityId: 'synthetic-platform-identity',
+  merchantLogin: 'merchant-fixture@example.invalid', merchantPassword: 'merchant-fixture-pass-123',
   containerEvidence: (['postgres', 'redis'] as const).map((kind, index) => ({
     id: String(index + 1).repeat(64), runId, kind, name: `merchant-ops-fixture-${kind}-${runId}`,
     image: kind === 'postgres' ? ISOLATED_POSTGRES_IMAGE : `redis@sha256:${'b'.repeat(64)}`,

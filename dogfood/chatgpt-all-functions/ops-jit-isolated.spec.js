@@ -171,6 +171,8 @@ async function login(page, evidence) {
   await page.getByPlaceholder('请输入平台运营密码', { exact: true }).fill(config.password)
   const [{ result: session }] = await rpcThroughUi(page, ['ops.session'], () => page.getByRole('button', { name: '登录平台运营后台', exact: true }).click(), evidence)
   expect(session.actor_id).toBe(config.actorId)
+  expect(config.username).toBe('hyp@sn.com')
+  expect(session.account_login).toBe('hyp@sn.com')
   expect(session.actor_id).not.toBe(config.approverId)
   expect(session.workbench).toBe('platform')
   expect(session.capabilities).toEqual(expect.arrayContaining(['authorization.grant.read', 'authorization.grant.manage']))
