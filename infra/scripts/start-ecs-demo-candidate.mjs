@@ -50,11 +50,14 @@ if (api?.environment?.RELEASE_ID !== releaseId || api?.environment?.RELEASE_GIT_
     api?.environment?.NODE_ENV !== 'production' || api?.environment?.DEPLOYMENT_PROFILE !== 'ecs' ||
     api?.environment?.RUN_MIGRATIONS_ON_STARTUP !== 'false' || api?.environment?.CONNECTOR_FIXTURE_MODE !== 'false' ||
     api?.environment?.AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED !== 'true') fail('API does not match frozen candidate identity and production mode')
+if (api.environment.MCP_AUTHZ_MODE !== 'enforce' || (api.environment.MCP_AUTHZ_ENFORCE_DOMAINS ?? '') !== '')
+  fail('candidate API must enforce all MCP authorization domains')
 if (!/^[0-9a-f]{64}$/.test(api.environment.RELEASE_MANIFEST_SHA256 ?? '') ||
     !/^sha256:[0-9a-f]{64}$/.test(api.environment.RELEASE_IMAGE_SET_DIGEST ?? '')) fail('API lacks frozen manifest and image-set identity')
 if (api.environment.PLUGIN_WRITE_ENABLED !== 'false' ||
     api.environment.ASSET_STORAGE_PREFIX !== `demo-candidate/${releaseId}`) fail('candidate API must disable plugin writes and use a release-specific object prefix')
 const required = ['postgres', 'redis', 'migrate', 'api']
+if (services.ui) required.push('ui')
 const immutableImage = /^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$/
 for (const name of required) {
   const service = services[name]
