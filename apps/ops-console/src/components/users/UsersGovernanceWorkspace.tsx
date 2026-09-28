@@ -6,7 +6,7 @@ import { OpsPageError } from "../OpsPageError";
 import { UserDirectorySection } from "./UserDirectorySection";
 import { WorkspaceGovernanceSection } from "./WorkspaceGovernanceSection";
 import { MembersSection } from "../finance/MembersSection";
-import { AuthorizationGovernanceSection } from "./AuthorizationGovernanceSection";
+import { AuthorizationGovernanceSection, canViewAuthorizationGovernance } from "./AuthorizationGovernanceSection";
 import { opsRestGet, opsRestPost, describeOpsError } from "../../api/opsClient.js";
 import { packageCodeLabel } from "../commercial/packageLabels.js";
 
@@ -49,14 +49,14 @@ export function PlatformMembersUnavailable() {
   return <Alert showIcon type="info" title="请先进入商家工作区" description="成员列表和邀请操作只在已授权的商家工作区会话中可用。当前是平台全局会话，无法读取或修改某个工作区的成员。" />;
 }
 
-type CapabilityReader = Pick<OpsConsoleModel["authorization"], "can">;
+type CapabilityReader = Pick<OpsConsoleModel["authorization"], "can" | "roles" | "scope">;
 
-export function visibleUsersGovernanceSections(authorization: CapabilityReader): UsersGovernanceSectionKey[] {
+export function visibleUsersGovernanceSections(authorization: CapabilityReader, accountLogin?: string | null): UsersGovernanceSectionKey[] {
   const sections: UsersGovernanceSectionKey[] = [];
   if (authorization.can("identity.read")) sections.push("directory");
   if (authorization.can("workspace.directory.read")) sections.push("workspaces");
   if (authorization.can("workspace.member.read")) sections.push("members");
-  if (["authorization.role.read", "authorization.grant.read"].some(capability => authorization.can(capability))) sections.push("authorization");
+  if (canViewAuthorizationGovernance(authorization, accountLogin)) sections.push("authorization");
   // The registration review tab was rendered with a `registrations` key that
   // was never listed here, so the guard in `UsersGovernanceWorkspace` snapped
   // `activeSection` back to `sectionKeys[0]` on every click: the tab was drawn
@@ -72,7 +72,7 @@ export function visibleUsersGovernanceSections(authorization: CapabilityReader):
 }
 
 export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConsoleModel; onRefresh?: () => void }) {
-  const sectionKeys = useMemo(() => visibleUsersGovernanceSections(model.authorization), [model.authorization]);
+  const sectionKeys = useMemo(() => visibleUsersGovernanceSections(model.authorization, model.opsSession?.account_login), [model.authorization, model.opsSession?.account_login]);
   const unavailableRef = useRef<HTMLDivElement>(null);
   const [activeSection, setActiveSection] = useState("directory");
 

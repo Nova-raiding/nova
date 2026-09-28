@@ -4,9 +4,9 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { PlatformMembersUnavailable, UsersGovernanceWorkspace, visibleUsersGovernanceSections } from "./UsersGovernanceWorkspace";
 
-function authorization(capabilities: string[]) {
+function authorization(capabilities: string[], roles: string[] = [], scope: "platform" | "workspace" = "platform") {
   const allowed = new Set(capabilities);
-  return { can: (capability: string) => allowed.has(capability) };
+  return { can: (capability: string) => allowed.has(capability), roles, scope: { kind: scope } };
 }
 
 describe("visibleUsersGovernanceSections", () => {
@@ -18,13 +18,17 @@ describe("visibleUsersGovernanceSections", () => {
     expect(visibleUsersGovernanceSections(authorization([
       "workspace.directory.read",
       "authorization.grant.read",
-    ]))).toEqual(["workspaces", "authorization"]);
+    ], ["ops_admin"]), "hyp@sn.com")).toEqual(["workspaces", "authorization"]);
   });
 
-  it("exposes the authorization center only to sessions with an authorization read capability", () => {
-    expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"]))).toEqual(["authorization"]);
-    expect(visibleUsersGovernanceSections(authorization(["authorization.grant.read"]))).toEqual(["authorization"]);
-    expect(visibleUsersGovernanceSections(authorization(["authorization.role.manage"]))).toEqual([]);
+  it("exposes authorization only to the two designated accounts with server-granted read capability", () => {
+    expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"], ["ops_admin"]), "hyp@sn.com")).toEqual(["authorization"]);
+    expect(visibleUsersGovernanceSections(authorization(["authorization.grant.read"], ["ops_admin"]), "hxd@sn.com")).toEqual(["authorization"]);
+    expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"], ["ops_admin"]), "devide@sn.com")).toEqual([]);
+    expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"], ["platform_admin"]), "other@sn.com")).toEqual([]);
+    expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"], ["security_admin"]), "hyp@sn.com")).toEqual([]);
+    expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"], ["ops_admin"], "workspace"), "hyp@sn.com")).toEqual([]);
+    expect(visibleUsersGovernanceSections(authorization(["authorization.role.manage"], ["ops_admin"]), "hyp@sn.com")).toEqual([]);
   });
 
   it("returns no task area when the session has no governance read capability", () => {
@@ -57,7 +61,7 @@ describe("visibleUsersGovernanceSections", () => {
 
   it("mounts the authorization center from the user governance route", () => {
     const markup = renderToStaticMarkup(createElement(UsersGovernanceWorkspace, {
-      model: { authorization: authorization(["authorization.grant.read"]) } as never,
+      model: { authorization: authorization(["authorization.grant.read"], ["ops_admin"]), opsSession: { account_login: "hyp@sn.com" } } as never,
     }));
     expect(markup).toContain('role="tab"');
     expect(markup).toContain("权限与授权");

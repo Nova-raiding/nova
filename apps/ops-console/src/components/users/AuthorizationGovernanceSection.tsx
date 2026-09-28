@@ -34,6 +34,17 @@ const capabilityLabels: Record<string, string> = {
   "workspace.member.read": "查看商家成员",
   "workspace.member.manage": "管理商家成员",
 };
+const authorizationSuperAdminLogins = new Set(["hyp@sn.com", "hxd@sn.com"]);
+
+export function canViewAuthorizationGovernance(
+  authorization: Pick<OpsConsoleModel["authorization"], "can" | "roles" | "scope">,
+  accountLogin: string | null | undefined,
+): boolean {
+  return authorization.scope.kind === "platform"
+    && authorizationSuperAdminLogins.has(accountLogin?.trim().toLowerCase() ?? "")
+    && authorization.roles.some(role => role === "ops_admin" || role === "platform_admin")
+    && (authorization.can("authorization.role.read") || authorization.can("authorization.grant.read"));
+}
 
 function readableCapability(value: string): string {
   return capabilityLabels[value] ?? value;
@@ -122,7 +133,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
     setRevocationError(undefined);
   };
 
-  if (!canReadRoles && !canReadGrants) return null;
+  if (!canViewAuthorizationGovernance(model.authorization, model.opsSession?.account_login)) return null;
 
   const loadRoles = async () => {
     if (!subjectIdentityId.trim()) return;
@@ -202,7 +213,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
     }
   };
 
-  return <Card title="角色与商家授权中心" extra={<Tag color="purple">平台控制面</Tag>}>
+  return <Card className="ops-authorization-card" title="角色与商家授权中心" extra={<Tag color="purple">仅平台超级管理员</Tag>}>
     <Alert showIcon type="info" title="所有变更由服务端重新授权并写入持久审计" description="平台角色不授予客户正文访问；进入指定商家主体必须使用精确主体、能力、有效期、工单和审批人绑定的临时授权。platform_owner 不在日常入口开放。" />
     {targetWorkspaceId ? (
       <Alert
@@ -294,15 +305,24 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
         ]} />
         {canManageGrants && <>
         <OpsPageError error={grantSubmitError} onRetry={() => grantForm.submit()} />
-        <Alert showIcon type="info" role="status" title="精确商家授权范围" description={describeGrantScope(targetWorkspaceId)} />
+        <div className="ops-jit-issue-panel">
+        <div className="ops-jit-issue-heading">
+          <div>
+            <Typography.Text className="ops-jit-issue-kicker">临时授权</Typography.Text>
+            <Typography.Title level={5}>签发 JIT 授权</Typography.Title>
+            <Typography.Paragraph>只对指定商家主体和能力生效，提交后由服务端校验审批证据并记录审计。</Typography.Paragraph>
+          </div>
+          <Tag color="blue">只读最长 15 分钟 · 写入最长 5 分钟</Tag>
+        </div>
+        <div className="ops-jit-scope-note" role="status">{describeGrantScope(targetWorkspaceId)}</div>
         {/* The form used to take the approver's name and timestamp as free text,
             which is exactly the forgeable interaction: nothing proved an
             approval act happened, and the typed name was persisted into
             ops_access_grants.approved_by and the audit stream. The proof is now
             a server-issued token the approver holds, so the form demands it and
             explains what it is instead of implying a typed name authorises. */}
-        <Alert showIcon type="warning" role="status" title="审批证据来自令牌，而不是表单里的姓名" description="服务端只从 x-authorization-approval-token 请求头解析审批人，并把它绑定到目标商家主体；审批人身份若与令牌绑定身份不一致，整次签发会被拒绝（AUTHZ_OBLIGATION_REQUIRED）。令牌由平台签发方发放给审批人本人。" />
-        <Form form={grantForm} layout="vertical" aria-label="签发 JIT 授权" onFinish={async (values) => {
+        <details className="ops-jit-approval-note"><summary>审批证据来自令牌 · 查看校验规则</summary><p>审批证据来自平台签发给审批人本人的令牌。服务端从请求头解析身份并绑定目标商家；表单中的姓名仅作记录，身份不一致时会拒绝签发。</p></details>
+        <Form className="ops-jit-issue-form" form={grantForm} layout="vertical" aria-label="签发 JIT 授权" onFinish={async (values) => {
             if (grantSubmitting) return;
             setGrantSubmitting(true);
             setGrantSubmitError(undefined);
@@ -327,22 +347,22 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
               setGrantSubmitting(false);
             }
           }}>
-          <Row gutter={12}>
-            <Col span={4}><Form.Item name="access_mode" label="权限模式" initialValue="read" rules={[{ required: true }]}><Select options={[{ value: "read", label: "只读" }, { value: "write", label: "写入（双人）" }]} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="capabilities" label="能力（逗号分隔）" rules={[{ required: true }]}><Input placeholder="support.ticket.read" /></Form.Item></Col>
-            <Col span={4}><Form.Item name="ticket_ref" label="工单/事故" rules={[{ required: true }]}><Input /></Form.Item></Col>
-            <Col span={4}><Form.Item name="max_uses" label="最大使用次数" initialValue={1} rules={[{ required: true }]}><InputNumber min={1} max={100} className="full-width" /></Form.Item></Col>
-            <Col span={8}><Form.Item name="approved_by" label="审批人身份" extra="必须与令牌绑定的审批人一致；不一致时服务端会拒绝整次签发" rules={[{ required: true, whitespace: true, message: "请填写令牌绑定的审批人身份" }]}><Input /></Form.Item></Col>
-            <Col span={8}><Form.Item name="approval_token" label="审批人令牌" extra="由平台签发方发放给审批人本人；只随本次请求以请求头提交，不写入本地存储，签发成功后自动清空" rules={[{ required: true, whitespace: true, message: "请填写审批人令牌" }]}><Input.Password autoComplete="off" placeholder="由审批人提供的令牌" /></Form.Item></Col>
-            <Col span={8}><Form.Item name="approved_at" label="审批时间（ISO UTC）" extra="仅作记录：审批证明来自令牌，本字段不参与服务端审批判定" rules={[{ required: true }]}><Input /></Form.Item></Col>
-            <Col span={8}><Form.Item name="expires_at" label="到期时间（读≤15m / 写≤5m）" extra="使用 ISO 时间；提交前会校验有效期与权限模式" rules={[{ required: true }, ({ getFieldValue }) => ({ validator: async (_rule, value) => {
+          <Row gutter={[16, 2]}>
+            <Col xs={24} md={12} xl={6}><Form.Item name="access_mode" label="权限模式" initialValue="read" rules={[{ required: true }]}><Select options={[{ value: "read", label: "只读" }, { value: "write", label: "写入（双人）" }]} /></Form.Item></Col>
+            <Col xs={24} md={12} xl={6}><Form.Item name="capabilities" label="能力（逗号分隔）" rules={[{ required: true }]}><Input placeholder="support.ticket.read" /></Form.Item></Col>
+            <Col xs={24} md={12} xl={6}><Form.Item name="ticket_ref" label="工单/事故" rules={[{ required: true }]}><Input /></Form.Item></Col>
+            <Col xs={24} md={12} xl={6}><Form.Item name="max_uses" label="最大使用次数" initialValue={1} rules={[{ required: true }]}><InputNumber min={1} max={100} className="full-width" /></Form.Item></Col>
+            <Col xs={24} md={12} xl={8}><Form.Item name="approved_by" label="审批人身份" extra="须与令牌绑定的身份一致" rules={[{ required: true, whitespace: true, message: "请填写令牌绑定的审批人身份" }]}><Input /></Form.Item></Col>
+            <Col xs={24} md={12} xl={8}><Form.Item name="approval_token" label="审批人令牌" extra="仅随本次请求提交，成功后清空" rules={[{ required: true, whitespace: true, message: "请填写审批人令牌" }]}><Input.Password autoComplete="off" placeholder="由审批人提供的令牌" /></Form.Item></Col>
+            <Col xs={24} md={12} xl={8}><Form.Item name="approved_at" label="审批时间（ISO UTC）" extra="仅作记录，不参与审批判定" rules={[{ required: true }]}><Input /></Form.Item></Col>
+            <Col xs={24} md={12} xl={12}><Form.Item name="expires_at" label="到期时间（读≤15m / 写≤5m）" extra="使用 ISO 时间；提交前会校验有效期与权限模式" rules={[{ required: true }, ({ getFieldValue }) => ({ validator: async (_rule, value) => {
               const error = validateJitExpiry(value, getFieldValue("access_mode") ?? "read");
               if (error) throw new Error(error);
             } })]}><Input aria-label="到期时间（读≤15m / 写≤5m）" aria-describedby="jit-expiry-help" /></Form.Item><span id="jit-expiry-help" className="sr-only">只读权限最多 15 分钟，写入权限最多 5 分钟</span></Col>
-            <Col span={8}><Form.Item name="reason" label="授权原因" rules={[{ required: true, min: 3 }]}><Input aria-label="授权原因" /></Form.Item></Col>
+            <Col xs={24} md={12} xl={12}><Form.Item name="reason" label="授权原因" rules={[{ required: true, min: 3 }]}><Input aria-label="授权原因" /></Form.Item></Col>
           </Row>
           <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={grantSubmitting} aria-busy={grantSubmitting} disabled={grantSubmitting || !subjectIdentityId.trim() || !targetWorkspaceId.trim()}>签发 JIT</Button>
-        </Form></>}
+        </Form></div></>}
       </Space>
     </section> : null}
     <DangerActionModal

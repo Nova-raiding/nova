@@ -133,18 +133,20 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
             import React from 'react';
             import { createRoot } from 'react-dom/client';
             import { App } from 'antd';
+            import '/src/styles.css';
             import { AuthorizationGovernanceSection } from '/src/components/users/AuthorizationGovernanceSection.tsx';
             localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
             const model = {
-              authorization: { can: capability => ['authorization.grant.read', 'authorization.grant.manage'].includes(capability) },
+              authorization: { can: capability => ['authorization.grant.read', 'authorization.grant.manage'].includes(capability), roles: ['ops_admin'], scope: { kind: 'platform' } },
+              opsSession: { account_login: new URLSearchParams(location.search).get('login') || 'hyp@sn.com' },
               clearAuthorizationScopedData() {}, async load() {},
             };
-            createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(AuthorizationGovernanceSection, { model })));
+            createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement('section', { id: 'authorization-governance', className: 'ops-users-section' }, React.createElement(AuthorizationGovernanceSection, { model }))));
           `;
         },
         configureServer(server) {
           server.middlewares.use((req, res, next) => {
-            if (req.url !== "/__jit-submit-test") return next();
+            if (req.url?.split("?")[0] !== "/__jit-submit-test") return next();
             const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="${entryPath}"></script></body></html>`;
             void server.transformIndexHtml(req.url, html).then(output => {
               res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -199,6 +201,16 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
     return { form, approvedAt, expiresAt };
   }
 
+  it("does not render the authorization panel for a different operations administrator even when capabilities are present", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await page.goto(`${baseUrl}/__jit-submit-test?login=devide%40sn.com`);
+      await page.waitForFunction(() => Boolean(document.querySelector("#root > .ant-app")));
+      expect(await page.locator(".ops-authorization-card").count()).toBe(0);
+      expect(await page.getByRole("form", { name: "签发 JIT 授权" }).count()).toBe(0);
+    } finally { await page.close(); }
+  });
+
   it("submits the real JIT form with the API workspace_ids contract and the loaded revision", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     const requests: RpcRequest[] = [];
@@ -211,6 +223,9 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
         await respond(route, request, request.method === "ops.authorization.grants.list" ? grantList : { id: "issued-jit-ui" });
       });
       const { form, approvedAt, expiresAt } = await fillGrantForm(page);
+      const capabilityWidth = await form.getByLabel("能力（逗号分隔）", { exact: true }).evaluate(element => element.getBoundingClientRect().width);
+      expect(capabilityWidth).toBeGreaterThan(200);
+      expect(await page.locator(".ops-jit-approval-note").evaluate(element => (element as HTMLDetailsElement).open)).toBe(false);
       await form.getByRole("button", { name: "签发 JIT", exact: true }).click();
       await expect.poll(() => requests.filter(request => request.method === "ops.authorization.grant.issue").length).toBe(1);
       const issuedIndex = requests.findIndex(request => request.method === "ops.authorization.grant.issue");
