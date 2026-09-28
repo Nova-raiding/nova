@@ -40,4 +40,11 @@ describe("permission matrix filtering", () => {
     expect(source).toContain("!Array.isArray(value.assignable_roles)");
     expect(source).toContain("onLoaded?.(value)");
   });
+
+  it("loads the role catalog in the background and leaves the large reference table collapsed until requested", () => {
+    expect(source).toContain("useEffect(() => { void load(); }, [])");
+    expect(source).toContain("const [expanded, setExpanded] = useState(false)");
+    expect(source).toContain('<details className="ops-permission-matrix-details"');
+    expect(source).toContain("{expanded ? <div className=\"ops-permission-matrix-content\">");
+  });
 });

@@ -213,65 +213,20 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
     }
   };
 
-  return <Card className="ops-authorization-card" title="角色与商家授权中心" extra={<Tag color="purple">仅平台超级管理员</Tag>}>
-    <Alert showIcon type="info" title="所有变更由服务端重新授权并写入持久审计" description="平台角色不授予客户正文访问；进入指定商家主体必须使用精确主体、能力、有效期、工单和审批人绑定的临时授权。platform_owner 不在日常入口开放。" />
+  return <Card className="ops-authorization-card" title="权限与授权" extra={<Tag className="ops-authorization-admin-tag">仅平台超级管理员</Tag>}>
+    <div className="ops-authorization-intro">
+      <div><Typography.Text className="ops-authorization-eyebrow">ACCESS GOVERNANCE</Typography.Text><Typography.Title level={4}>为指定身份和商家主体授权</Typography.Title></div>
+      <Typography.Paragraph>先确认授权目标，再签发限时 JIT。所有变更由服务端重新授权并写入持久审计；平台角色不授予客户正文访问。</Typography.Paragraph>
+    </div>
     {targetWorkspaceId ? (
-      <Alert
-        showIcon
-        type="success"
-        role="status"
-        title="已带入商家主体范围"
-        description={<Typography.Text>当前查看：<Typography.Text code copyable>{targetWorkspaceId}</Typography.Text>。下面的临时授权查询会限定在这个商家主体内；还需要输入具体用户的登录身份。</Typography.Text>}
-      />
+      <div className="ops-authorization-target-context" role="status">已带入商家主体 <Typography.Text code copyable>{targetWorkspaceId}</Typography.Text>。请确认具体用户的持久身份。</div>
     ) : null}
-    {canReadRoles ? <section className="ops-authorization-block" aria-labelledby="permission-matrix-heading">
-      <Typography.Title id="permission-matrix-heading" level={5}>功能权限矩阵</Typography.Title>
-      <PermissionMatrixSection onLoaded={(matrix) => setAssignableRoles(matrix.assignable_roles)} />
-    </section> : null}
-    {canReadRoles ? <section className="ops-authorization-block" aria-labelledby="platform-roles-heading">
-      <Divider><span id="platform-roles-heading">平台角色</span></Divider>
-      <Space orientation="vertical" size="middle" className="full-width">
-        <Space wrap>
-          <Input value={subjectIdentityId} onChange={(event) => setSubjectIdentityId(event.target.value)} placeholder="目标持久身份 ID" aria-label="平台角色目标身份 ID" style={{ width: 320 }} />
-          <Button style={{ minHeight: 44 }} onClick={() => void loadRoles()} loading={loading} disabled={!subjectIdentityId.trim()}>读取当前分配</Button>
-        </Space>
-        <OpsPageError error={roleLoadError} onRetry={() => void loadRoles()} />
-        <Table<RoleAssignment> size="small" rowKey="id" loading={loading} dataSource={roles?.assignments ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份 ID 后读取平台角色" }} columns={[
-          { title: "角色", dataIndex: "role", render: (value: string) => <Tag color="blue" title={`技术标识：${value}`}>{platformRoleLabels[value] ?? value}</Tag> },
-          { title: "到期", dataIndex: "expiresAt", render: (value?: string) => value ?? "长期" },
-          { title: "修订", dataIndex: "revision" },
-          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageRoles} onClick={(event) => requestRevocationReason({ kind: "role", title: `撤销 ${row.role}`, role: row }, event.currentTarget)}>撤销</Button> },
-        ]} />
-        {canManageRoles && <>
-          <OpsPageError error={roleSubmitError} onRetry={() => roleForm.submit()} />
-          <Form form={roleForm} layout="inline" aria-label="分配平台角色" onFinish={async (values) => {
-            if (roleSubmitting) return;
-            setRoleSubmitting(true);
-            setRoleSubmitError(undefined);
-            try {
-              await rpc("ops.authorization.role.assign", { subject_identity_id: subjectIdentityId.trim(), role: values.role, expected_authorization_revision: String(roles?.authorization_revision ?? 0), reason: values.reason, ...(values.expires_at ? { expires_at: values.expires_at } : {}) });
-              roleForm.resetFields();
-              await loadRoles();
-            } catch (error) {
-              setRoleSubmitError(error);
-              message.error(describeOpsError(error));
-            } finally {
-              setRoleSubmitting(false);
-            }
-          }}>
-          <Form.Item name="role" label="平台角色" rules={[{ required: true }]}><Select placeholder={assignableRoles.length ? "选择平台角色" : "等待服务端角色策略"} disabled={!assignableRoles.length} style={{ width: 190 }} options={assignableRoles.map(value => ({ value, label: platformRoleLabels[value] ?? value }))} /></Form.Item>
-          <Form.Item name="expires_at" label="到期时间"><Input placeholder="可选：ISO 到期时间" style={{ width: 220 }} /></Form.Item>
-          <Form.Item name="reason" label="分配原因" rules={[{ required: true, min: 3 }]}><Input placeholder="说明工单或业务原因" style={{ width: 220 }} /></Form.Item>
-          <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={roleSubmitting} aria-busy={roleSubmitting} disabled={roleSubmitting || !subjectIdentityId.trim()}>分配角色</Button>
-        </Form></>}
-      </Space>
-    </section> : null}
     {canReadGrants ? <section className="ops-authorization-block" aria-labelledby="jit-grants-heading">
-      <Divider><span id="jit-grants-heading">JIT 临时授权</span></Divider>
+      <div className="ops-authorization-section-heading"><div><Typography.Text className="ops-authorization-eyebrow">01 · 授权目标</Typography.Text><Typography.Title id="jit-grants-heading" level={5}>JIT 临时授权</Typography.Title></div><Typography.Text>精确身份 · 精确商家主体</Typography.Text></div>
       <Space orientation="vertical" size="middle" className="full-width">
-        <Space wrap>
-          <Input value={subjectIdentityId} onChange={(event) => setSubjectIdentityId(event.target.value)} placeholder="目标持久身份 ID" aria-label="JIT 目标身份 ID" style={{ width: 300 }} />
-          <Input value={targetWorkspaceId} onChange={(event) => setTargetWorkspaceId(event.target.value)} placeholder="商家主体 ID" aria-label="JIT 目标商家主体 ID" style={{ width: 260 }} />
+        <Space wrap className="ops-authorization-target-fields">
+          <div className="ops-authorization-target-field"><label htmlFor="jit-subject-identity">目标持久身份 ID</label><Input id="jit-subject-identity" value={subjectIdentityId} onChange={(event) => setSubjectIdentityId(event.target.value)} placeholder="输入目标身份" aria-label="JIT 目标身份 ID" style={{ width: 300 }} /></div>
+          <div className="ops-authorization-target-field"><label htmlFor="jit-workspace">商家主体 ID</label><Input id="jit-workspace" value={targetWorkspaceId} onChange={(event) => setTargetWorkspaceId(event.target.value)} placeholder="输入精确商家主体" aria-label="JIT 目标商家主体 ID" style={{ width: 260 }} /></div>
           <Button style={{ minHeight: 44 }} onClick={() => void loadGrants()} loading={loading} disabled={!subjectIdentityId.trim() || !targetWorkspaceId.trim()}>读取有效 JIT</Button>
         </Space>
         <OpsPageError error={grantLoadError} onRetry={() => void loadGrants()} />
@@ -291,18 +246,6 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
             description={`授权 ${model.jitRevocationReceipt.grantId} 已于 ${model.jitRevocationReceipt.revokedAt} 撤销，并从工作区 ${model.jitRevocationReceipt.workspaceId} 的有效列表中移除。`}
           />
         </div> : null}
-        <Table<Grant> size="small" rowKey="id" loading={loading} dataSource={grants?.grants ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份与工作区后读取 JIT" }} scroll={{ x: 900 }} columns={[
-          { title: "状态", render: (_value, row) => {
-            const status = describeGrantStatus(row, grantStatusNow);
-            return <Tag color={status.color}>{status.label}</Tag>;
-          } },
-          { title: "授权模式", dataIndex: "accessMode", render: (value: Grant["accessMode"]) => <Tag color={value === "write" ? "volcano" : "gold"} title={`技术标识：${value}`}>{accessModeLabels[value] ?? value}</Tag> },
-          { title: "授权能力", dataIndex: "capabilities", render: (value: string[]) => <Space wrap>{value.map(item => <Tag key={item} title={`技术标识：${item}`}>{readableCapability(item)}</Tag>)}</Space> },
-          { title: "工单", dataIndex: "ticketRef" },
-          { title: "使用", render: (_value, row) => `${row.useCount}/${row.maxUses}` },
-          { title: "到期", dataIndex: "expiresAt" },
-          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageGrants} onClick={(event) => requestRevocationReason({ kind: "grant", title: `立即撤销 ${row.id}`, grant: row }, event.currentTarget)}>立即撤销</Button> },
-        ]} />
         {canManageGrants && <>
         <OpsPageError error={grantSubmitError} onRetry={() => grantForm.submit()} />
         <div className="ops-jit-issue-panel">
@@ -312,7 +255,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
             <Typography.Title level={5}>签发 JIT 授权</Typography.Title>
             <Typography.Paragraph>只对指定商家主体和能力生效，提交后由服务端校验审批证据并记录审计。</Typography.Paragraph>
           </div>
-          <Tag color="blue">只读最长 15 分钟 · 写入最长 5 分钟</Tag>
+          <Tag className="ops-jit-ttl-tag">只读最长 15 分钟 · 写入最长 5 分钟</Tag>
         </div>
         <div className="ops-jit-scope-note" role="status">{describeGrantScope(targetWorkspaceId)}</div>
         {/* The form used to take the approver's name and timestamp as free text,
@@ -363,7 +306,62 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           </Row>
           <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={grantSubmitting} aria-busy={grantSubmitting} disabled={grantSubmitting || !subjectIdentityId.trim() || !targetWorkspaceId.trim()}>签发 JIT</Button>
         </Form></div></>}
+        <Table<Grant> size="small" rowKey="id" loading={loading} dataSource={grants?.grants ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份与工作区后读取 JIT" }} scroll={{ x: 900 }} columns={[
+          { title: "状态", render: (_value, row) => {
+            const status = describeGrantStatus(row, grantStatusNow);
+            return <Tag color={status.color}>{status.label}</Tag>;
+          } },
+          { title: "授权模式", dataIndex: "accessMode", render: (value: Grant["accessMode"]) => <Tag color={value === "write" ? "volcano" : "gold"} title={`技术标识：${value}`}>{accessModeLabels[value] ?? value}</Tag> },
+          { title: "授权能力", dataIndex: "capabilities", render: (value: string[]) => <Space wrap>{value.map(item => <Tag key={item} title={`技术标识：${item}`}>{readableCapability(item)}</Tag>)}</Space> },
+          { title: "工单", dataIndex: "ticketRef" },
+          { title: "使用", render: (_value, row) => `${row.useCount}/${row.maxUses}` },
+          { title: "到期", dataIndex: "expiresAt" },
+          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageGrants} onClick={(event) => requestRevocationReason({ kind: "grant", title: `立即撤销 ${row.id}`, grant: row }, event.currentTarget)}>立即撤销</Button> },
+        ]} />
+
       </Space>
+    </section> : null}
+    {canReadRoles ? <section className="ops-authorization-block" aria-labelledby="platform-roles-heading">
+      <Divider><span id="platform-roles-heading">平台角色</span></Divider>
+      <Space orientation="vertical" size="middle" className="full-width">
+        <Space wrap>
+          <Input value={subjectIdentityId} onChange={(event) => setSubjectIdentityId(event.target.value)} placeholder="目标持久身份 ID" aria-label="平台角色目标身份 ID" style={{ width: 320 }} />
+          <Button style={{ minHeight: 44 }} onClick={() => void loadRoles()} loading={loading} disabled={!subjectIdentityId.trim()}>读取当前分配</Button>
+        </Space>
+        <OpsPageError error={roleLoadError} onRetry={() => void loadRoles()} />
+        <Table<RoleAssignment> size="small" rowKey="id" loading={loading} dataSource={roles?.assignments ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份 ID 后读取平台角色" }} columns={[
+          { title: "角色", dataIndex: "role", render: (value: string) => <Tag color="blue" title={`技术标识：${value}`}>{platformRoleLabels[value] ?? value}</Tag> },
+          { title: "到期", dataIndex: "expiresAt", render: (value?: string) => value ?? "长期" },
+          { title: "修订", dataIndex: "revision" },
+          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageRoles} onClick={(event) => requestRevocationReason({ kind: "role", title: `撤销 ${row.role}`, role: row }, event.currentTarget)}>撤销</Button> },
+        ]} />
+        {canManageRoles && <>
+          <OpsPageError error={roleSubmitError} onRetry={() => roleForm.submit()} />
+          <Form form={roleForm} layout="inline" aria-label="分配平台角色" onFinish={async (values) => {
+            if (roleSubmitting) return;
+            setRoleSubmitting(true);
+            setRoleSubmitError(undefined);
+            try {
+              await rpc("ops.authorization.role.assign", { subject_identity_id: subjectIdentityId.trim(), role: values.role, expected_authorization_revision: String(roles?.authorization_revision ?? 0), reason: values.reason, ...(values.expires_at ? { expires_at: values.expires_at } : {}) });
+              roleForm.resetFields();
+              await loadRoles();
+            } catch (error) {
+              setRoleSubmitError(error);
+              message.error(describeOpsError(error));
+            } finally {
+              setRoleSubmitting(false);
+            }
+          }}>
+          <Form.Item name="role" label="平台角色" rules={[{ required: true }]}><Select placeholder={assignableRoles.length ? "选择平台角色" : "等待服务端角色策略"} disabled={!assignableRoles.length} style={{ width: 190 }} options={assignableRoles.map(value => ({ value, label: platformRoleLabels[value] ?? value }))} /></Form.Item>
+          <Form.Item name="expires_at" label="到期时间"><Input placeholder="可选：ISO 到期时间" style={{ width: 220 }} /></Form.Item>
+          <Form.Item name="reason" label="分配原因" rules={[{ required: true, min: 3 }]}><Input placeholder="说明工单或业务原因" style={{ width: 220 }} /></Form.Item>
+          <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={roleSubmitting} aria-busy={roleSubmitting} disabled={roleSubmitting || !subjectIdentityId.trim()}>分配角色</Button>
+        </Form></>}
+      </Space>
+    </section> : null}
+    {canReadRoles ? <section className="ops-authorization-block" aria-labelledby="permission-matrix-heading">
+      <Typography.Title id="permission-matrix-heading" level={5}>功能权限矩阵</Typography.Title>
+      <PermissionMatrixSection onLoaded={(matrix) => setAssignableRoles(matrix.assignable_roles)} />
     </section> : null}
     <DangerActionModal
       open={Boolean(pendingRevocation)}

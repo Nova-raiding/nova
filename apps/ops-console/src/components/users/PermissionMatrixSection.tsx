@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Input, Select, Skeleton, Space, Table, Tag, Typography, type TableColumnsType } from "antd";
+import { Button, Input, Select, Skeleton, Space, Table, Tag, Typography, type TableColumnsType } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { rpc } from "../../api/opsClient";
 
@@ -60,6 +60,7 @@ export function PermissionMatrixSection({ onLoaded }: { onLoaded?: (matrix: Perm
   const [workbench, setWorkbench] = useState<string>();
   const [effect, setEffect] = useState<string>();
   const [visibleRoles, setVisibleRoles] = useState<string[]>(defaultRoles);
+  const [expanded, setExpanded] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -89,13 +90,16 @@ export function PermissionMatrixSection({ onLoaded }: { onLoaded?: (matrix: Perm
     ...visibleRoles.map((role) => ({ title: roleLabels[role] ?? role, key: role, width: 116, align: "center" as const, render: (_value: unknown, row: PermissionMatrixItem) => <AccessTag access={row.role_access[role] ?? "hidden"} /> })),
   ], [visibleRoles]);
 
-  return <Space orientation="vertical" size="middle" className="full-width">
-    <Alert showIcon type="info" title="插件功能权限矩阵" description="数据直接生成自服务端 MCP_METHOD_POLICIES；不可见表示该角色没有对应能力，最终执行仍由当前工作台、资源范围、显式 deny 和义务条件共同决定。" />
+  return <div className="ops-permission-matrix">
     {error ? <div ref={errorRef} tabIndex={-1} className="ops-form-error-summary" role="alert" aria-live="assertive" aria-atomic="true" aria-labelledby="permission-matrix-error-title" aria-describedby="permission-matrix-error-description">
       <Typography.Text strong id="permission-matrix-error-title">权限矩阵读取失败</Typography.Text>
       <Typography.Paragraph id="permission-matrix-error-description" type="danger" style={{ marginBottom: 8 }}>{error}。当前筛选和已读取的矩阵仍保留，修复连接后可重试。</Typography.Paragraph>
       <Button className="ops-error-retry" type="primary" onClick={() => void load()} loading={loading}>重试读取</Button>
     </div> : null}
+    <details className="ops-permission-matrix-details" onToggle={(event) => setExpanded(event.currentTarget.open)}>
+      <summary><span><strong>查看插件功能权限矩阵</strong><small>服务端策略参考 · {matrix ? `${matrix.method_count} 个方法 / ${matrix.role_count} 个角色` : loading ? "正在读取策略" : "策略暂不可用"}</small></span><span className="ops-permission-matrix-action">{expanded ? "收起矩阵" : "展开矩阵"}</span></summary>
+      {expanded ? <div className="ops-permission-matrix-content">
+    <Typography.Paragraph className="ops-permission-matrix-caption">数据直接生成自服务端 MCP_METHOD_POLICIES；最终执行仍由工作台、资源范围、显式 deny 和义务条件决定。</Typography.Paragraph>
     <Space wrap aria-label="权限矩阵筛选">
       <Input.Search allowClear value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索方法、能力或数据类型" aria-label="搜索插件方法或能力" style={{ width: 300 }} />
       <Select allowClear value={workbench} onChange={setWorkbench} placeholder="全部工作台" aria-label="筛选工作台" style={{ width: 140 }} options={[{ value: "platform", label: "平台工作台" }, { value: "workspace", label: "商家工作台" }]} />
@@ -105,5 +109,7 @@ export function PermissionMatrixSection({ onLoaded }: { onLoaded?: (matrix: Perm
     </Space>
     <Typography.Text type="secondary">策略 {matrix?.policy_version ?? "读取中"} · {matrix ? `${items.length}/${matrix.method_count} 个插件方法` : "插件方法数量读取中"} · 当前显示 {visibleRoles.length} 个角色</Typography.Text>
     {loading && !matrix ? <div className="ops-data-state" data-state="loading" aria-label="正在读取权限矩阵"><Skeleton active paragraph={{ rows: 7 }} /></div> : <Table<PermissionMatrixItem> rowKey="method" size="small" loading={loading} dataSource={items} columns={columns} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 个方法` }} scroll={{ x: 830 + visibleRoles.length * 116, y: 560 }} sticky />}
-  </Space>;
+      </div> : null}
+    </details>
+  </div>;
 }

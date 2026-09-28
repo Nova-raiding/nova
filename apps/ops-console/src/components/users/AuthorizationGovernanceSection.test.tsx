@@ -98,6 +98,13 @@ describe("AuthorizationGovernanceSection", () => {
     expect(workspaceSource).not.toContain("用户与权限工作台");
     expect(modelSource).toContain("jitRevocationReceipt");
   });
+
+  it("puts the JIT target and issue form before historical grants, roles and the reference matrix", () => {
+    expect(source.indexOf('aria-labelledby="jit-grants-heading"')).toBeLessThan(source.indexOf('aria-labelledby="platform-roles-heading"'));
+    expect(source.indexOf('aria-labelledby="platform-roles-heading"')).toBeLessThan(source.indexOf('aria-labelledby="permission-matrix-heading"'));
+    expect(source.indexOf('aria-label="签发 JIT 授权"')).toBeLessThan(source.indexOf('<Table<Grant>'));
+    expect(source).toContain('className="ops-authorization-target-fields"');
+  });
 });
 
 // E1 component regression: Chromium mounts the real React/Ant Design form and
@@ -137,7 +144,7 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
             import { AuthorizationGovernanceSection } from '/src/components/users/AuthorizationGovernanceSection.tsx';
             localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
             const model = {
-              authorization: { can: capability => ['authorization.grant.read', 'authorization.grant.manage'].includes(capability), roles: ['ops_admin'], scope: { kind: 'platform' } },
+              authorization: { can: capability => ['authorization.grant.read', 'authorization.grant.manage', ...(new URLSearchParams(location.search).has('matrix') ? ['authorization.role.read'] : [])].includes(capability), roles: ['ops_admin'], scope: { kind: 'platform' } },
               opsSession: { account_login: new URLSearchParams(location.search).get('login') || 'hyp@sn.com' },
               clearAuthorizationScopedData() {}, async load() {},
             };
@@ -211,6 +218,28 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
     } finally { await page.close(); }
   });
 
+  it("fetches the role catalog while keeping the matrix collapsed until keyboard or pointer expansion", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    const requests: string[] = [];
+    try {
+      await page.route(`${baseUrl}/api/mcp`, async route => {
+        const request = route.request().postDataJSON() as RpcRequest;
+        requests.push(request.method);
+        await respond(route, request, { schema_version: 1, policy_version: "test", generated_from: "MCP_METHOD_POLICIES", method_count: 0, role_count: 1, roles: ["platform_admin"], assignable_roles: ["platform_admin"], items: [] });
+      });
+      await page.goto(`${baseUrl}/__jit-submit-test?matrix=1`);
+      await expect.poll(() => requests.filter(method => method === "ops.authorization.matrix.get").length).toBe(1);
+      const details = page.locator(".ops-permission-matrix-details");
+      expect(await details.evaluate(element => (element as HTMLDetailsElement).open)).toBe(false);
+      expect(await details.locator("table").count()).toBe(0);
+      await details.locator("summary").focus();
+      await page.keyboard.press("Enter");
+      await expect.poll(() => details.evaluate(element => (element as HTMLDetailsElement).open)).toBe(true);
+      await details.locator('[aria-label="搜索插件方法或能力"]').waitFor();
+      expect(requests.filter(method => method === "ops.authorization.matrix.get")).toHaveLength(1);
+    } finally { await page.close(); }
+  }, 30_000);
+
   it("submits the real JIT form with the API workspace_ids contract and the loaded revision", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     const requests: RpcRequest[] = [];
@@ -223,6 +252,10 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
         await respond(route, request, request.method === "ops.authorization.grants.list" ? grantList : { id: "issued-jit-ui" });
       });
       const { form, approvedAt, expiresAt } = await fillGrantForm(page);
+      const targetPosition = await page.getByRole("textbox", { name: "JIT 目标身份 ID", exact: true }).boundingBox();
+      const issuePosition = await page.getByRole("heading", { name: "签发 JIT 授权", exact: true }).boundingBox();
+      expect(targetPosition?.y).toBeLessThan(900);
+      expect(issuePosition?.y).toBeLessThan(900);
       const capabilityWidth = await form.getByLabel("能力（逗号分隔）", { exact: true }).evaluate(element => element.getBoundingClientRect().width);
       expect(capabilityWidth).toBeGreaterThan(200);
       expect(await page.locator(".ops-jit-approval-note").evaluate(element => (element as HTMLDetailsElement).open)).toBe(false);

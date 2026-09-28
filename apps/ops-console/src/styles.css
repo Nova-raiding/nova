@@ -300,33 +300,65 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-users-section-heading h4 { margin: 4px 0 4px; color: #172554; font-size: 22px; line-height: 1.25; }
 .ops-users-section-kicker { color: #d97706 !important; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: .12em; }
 .ops-users-section-heading .ant-typography { line-height: 1.5; }
-.ops-authorization-block { display: grid; gap: 12px; min-width: 0; }
-.ops-authorization-block + .ops-authorization-block { padding-top: 8px; border-top: 1px solid #eef2f7; }
-.ops-authorization-block .ant-divider { margin: 4px 0 0; color: #172554; font-weight: 700; }
-.ops-authorization-card .ant-card-body { display: grid; gap: 18px; }
+.ops-authorization-card { border: 1px solid #dce8de; border-radius: 18px; box-shadow: 0 12px 32px rgb(17 45 33 / 5%); overflow: hidden; }
+.ops-authorization-card > .ant-card-head { background: #102b22; border-bottom: 0; color: #f5fbf6; }
+.ops-authorization-card > .ant-card-head .ant-card-head-title { color: #f5fbf6; font-size: 18px; font-weight: 700; }
+.ops-authorization-admin-tag, .ops-jit-ttl-tag { margin: 0; border: 1px solid #d4e5bb; background: #ebf3cb; color: #31523c; font-weight: 600; }
+.ops-authorization-card .ant-card-body { display: grid; gap: 20px; padding: 24px; }
 .ops-authorization-card .ant-alert { margin: 0; }
+.ops-authorization-intro { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding-bottom: 16px; border-bottom: 1px solid #e1eae2; }
+.ops-authorization-intro > div, .ops-authorization-intro > p { min-width: 0; }
+.ops-authorization-intro h4.ant-typography { margin: 3px 0 0; color: #17392a; font-size: 22px; line-height: 1.25; }
+.ops-authorization-intro > .ant-typography { max-width: 560px; margin: 0; color: #62766a; font-size: 13px; line-height: 1.55; }
+.ops-authorization-eyebrow { color: #397654; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.ops-authorization-target-context { padding: 10px 14px; border: 1px solid #d6e8d8; border-radius: 9px; background: #f3faf3; color: #315b42; font-size: 13px; }
+.ops-authorization-block { display: grid; gap: 12px; min-width: 0; }
+.ops-authorization-block + .ops-authorization-block { padding-top: 18px; border-top: 1px solid #e1eae2; }
+.ops-authorization-block .ant-divider { margin: 4px 0 0; color: #17392a; font-weight: 700; }
+.ops-authorization-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; }
+.ops-authorization-section-heading h5.ant-typography { margin: 2px 0 0; color: #17392a; font-size: 19px; }
+.ops-authorization-section-heading > .ant-typography { color: #718578; font-size: 12px; }
+.ops-authorization-target-fields { display: flex; width: 100%; padding: 15px 16px; border: 1px solid #dce8de; border-radius: 12px; background: #f7faf6; }
+.ops-authorization-target-fields .ant-space-item:last-child { align-self: end; }
+.ops-authorization-target-field { display: grid; gap: 6px; }
+.ops-authorization-target-field label { color: #315b42; font-size: 12px; font-weight: 700; }
+.ops-authorization-target-fields .ant-input { min-height: 42px; }
+.ops-authorization-target-fields .ant-btn { min-height: 42px; border-color: #8caf94; color: #176849; font-weight: 600; }
+.ops-authorization-target-fields .ant-btn:hover { border-color: #176849 !important; color: #12583e !important; }
+.ops-authorization-card .ant-btn-primary { background: #176849; box-shadow: none; }
+.ops-authorization-card .ant-btn-primary:hover { background: #12583e !important; }
 .ops-authorization-card .ant-form-inline { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
 .ops-authorization-card .ant-form-inline .ant-form-item { margin: 0; }
-.ops-jit-issue-panel { padding: 22px 24px; border: 1px solid #dbe5f2; border-radius: 12px; background: #f8fbff; }
+.ops-jit-issue-panel { padding: 22px 24px; border: 1px solid #d7e7d9; border-radius: 14px; background: #fbfdf9; }
 .ops-jit-issue-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .ops-jit-issue-heading .ant-typography { margin: 0; }
-.ops-jit-issue-heading h5.ant-typography { margin: 4px 0 6px; color: #172554; }
-.ops-jit-issue-heading p.ant-typography { color: #52637c; line-height: 1.55; }
+.ops-jit-issue-heading h5.ant-typography { margin: 4px 0 6px; color: #17392a; }
+.ops-jit-issue-heading p.ant-typography { color: #62766a; line-height: 1.55; }
 .ops-jit-issue-heading .ant-tag { margin: 2px 0 0; white-space: nowrap; }
-.ops-jit-issue-kicker { color: #2f65b3; font-size: 12px; font-weight: 700; letter-spacing: .06em; }
-.ops-jit-scope-note { margin: 16px 0 10px; padding: 10px 14px; border-left: 3px solid #2f65b3; border-radius: 4px; background: #eef5ff; color: #28466e; line-height: 1.5; }
-.ops-jit-approval-note { margin-bottom: 16px; color: #53647c; font-size: 13px; line-height: 1.55; }
-.ops-jit-approval-note summary { width: fit-content; color: #294e83; cursor: pointer; font-weight: 600; }
+.ops-jit-issue-kicker { color: #397654; font-size: 12px; font-weight: 700; letter-spacing: .06em; }
+.ops-jit-scope-note { margin: 16px 0 10px; padding: 10px 14px; border-left: 3px solid #76ae81; border-radius: 4px; background: #edf6ed; color: #315b42; line-height: 1.5; }
+.ops-jit-approval-note { margin-bottom: 16px; color: #62766a; font-size: 13px; line-height: 1.55; }
+.ops-jit-approval-note summary { width: fit-content; color: #176849; cursor: pointer; font-weight: 600; }
 .ops-jit-approval-note p { max-width: 850px; margin: 8px 0 0; }
 .ops-jit-issue-form .ant-form-item { margin-bottom: 16px; }
-.ops-jit-issue-form .ant-form-item-label > label { color: #263750; font-weight: 600; }
+.ops-jit-issue-form .ant-form-item-label > label { color: #264837; font-weight: 600; }
 .ops-jit-issue-form .ant-form-item-control-input-content > .ant-input,
 .ops-jit-issue-form .ant-form-item-control-input-content > .ant-input-affix-wrapper,
 .ops-jit-issue-form .ant-form-item-control-input-content > .ant-select,
 .ops-jit-issue-form .ant-form-item-control-input-content > .ant-input-number { width: 100%; min-height: 40px; }
 .ops-jit-issue-form .ant-form-item-extra { min-height: 0; color: #64748b; font-size: 12px; line-height: 1.4; }
 .ops-jit-issue-form > .ant-btn { margin-top: 4px; min-width: 132px; }
-@media (max-width: 900px) { .ops-jit-issue-panel { padding: 18px; } .ops-jit-issue-heading { flex-direction: column; } }
+.ops-permission-matrix { min-width: 0; }
+.ops-permission-matrix-details { border: 1px solid #dce8de; border-radius: 11px; background: #f8fbf7; }
+.ops-permission-matrix-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 18px; color: #17392a; cursor: pointer; list-style: none; }
+.ops-permission-matrix-details > summary::-webkit-details-marker { display: none; }
+.ops-permission-matrix-details > summary:focus-visible, .ops-jit-approval-note summary:focus-visible { outline: 3px solid #87b695; outline-offset: 3px; }
+.ops-permission-matrix-details > summary strong { display: block; font-size: 14px; }
+.ops-permission-matrix-details > summary small { display: block; margin-top: 3px; color: #718578; font-size: 12px; }
+.ops-permission-matrix-action { color: #176849; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.ops-permission-matrix-content { display: grid; gap: 14px; min-width: 0; padding: 18px; border-top: 1px solid #dce8de; background: #fff; }
+.ops-permission-matrix-caption.ant-typography { margin: 0; color: #62766a; font-size: 13px; }
+@media (max-width: 1100px) { .ops-authorization-intro { align-items: start; flex-direction: column; gap: 8px; } .ops-jit-issue-panel { padding: 18px; } .ops-jit-issue-heading { flex-direction: column; } }
 .ops-section-anchor { scroll-margin-top: 20px; }
 .ops-tasks-page { display: grid; gap: 24px; }
 .ops-tasks-overview, .ops-tasks-work, .ops-tasks-input { display: grid; gap: 14px; }
