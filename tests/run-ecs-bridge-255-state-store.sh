@@ -19,6 +19,6 @@ tar -cf - infra/protected/ecs-bridge-255-review.mjs infra/protected/ecs-bridge-2
     chmod 0755 /usr/local/libexec/merchant/ecs-bridge-255-review.mjs /usr/local/libexec/merchant/ecs-bridge-255-state.mjs /usr/local/libexec/merchant/ecs-bridge-255-state-store.mjs /usr/local/libexec/merchant/consume-production-evidence-nonce
     : >/var/lib/merchant-release-security/production-deploy.lock
     chmod 0600 /var/lib/merchant-release-security/production-deploy.lock
-    exec 9>/var/lib/merchant-release-security/production-deploy.lock
-    exec /usr/bin/flock -n 9 node /tests/fixtures/ecs-bridge-255-state-store/verify.mjs
+    exec /usr/bin/flock -n /var/lib/merchant-release-security/production-deploy.lock \
+      sh -c "exec 9>>/var/lib/merchant-release-security/production-deploy.lock; exec node /tests/fixtures/ecs-bridge-255-state-store/verify.mjs"
   '

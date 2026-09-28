@@ -204,12 +204,15 @@ function verifyProtectedPrerequisites() {
   const db = new DatabaseSync(LEDGER, { readOnly: true })
   try {
     const expected = {
-      consumed_nonces: ['namespace', 'nonce', 'release_id', 'image_digest', 'manifest_sha256', 'release_git_sha', 'consumed_at'],
-      nonce_owners: ['namespace', 'nonce', 'operation', 'attempt_id'],
+      consumed_nonces: { columns: ['namespace', 'nonce', 'release_id', 'image_digest', 'manifest_sha256', 'release_git_sha', 'consumed_at'], primaryKey: ['namespace', 'nonce'] },
+      nonce_owners: { columns: ['namespace', 'nonce', 'operation', 'attempt_id'], primaryKey: ['namespace', 'nonce'] },
     }
-    for (const [table, columns] of Object.entries(expected)) {
-      const found = db.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name)
-      requireValue(columns.every(column => found.includes(column)), 'NONCE_LEDGER_SCHEMA_INVALID')
+    for (const [table, contract] of Object.entries(expected)) {
+      const found = db.prepare(`PRAGMA table_info(${table})`).all()
+      const columns = found.map(row => row.name)
+      const primaryKey = found.filter(row => row.pk > 0).sort((a, b) => a.pk - b.pk).map(row => row.name)
+      requireValue(contract.columns.every(column => columns.includes(column))
+        && canonical(primaryKey) === canonical(contract.primaryKey), 'NONCE_LEDGER_SCHEMA_INVALID')
     }
     db.prepare(`SELECT c.namespace,c.nonce,c.release_id,c.image_digest,c.manifest_sha256,c.release_git_sha,
       o.operation,o.attempt_id FROM consumed_nonces c JOIN nonce_owners o USING(namespace,nonce) LIMIT 0`).all()

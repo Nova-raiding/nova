@@ -26,7 +26,7 @@ API 的 `bb417660` 改动为运维手工商品导入 ACL；该一行补丁已包
 
 ### 生产状态存储与 trust prerequisite（当前仍 NO-GO）
 
-当前 `openProtectedBridge255StateStore()` 只校验并打开既有生产资料；它不会创建 `/var/lib/merchant-release-security/bridge-255`、初始化 nonce SQLite schema、签署执行计划或安装迁移控制器。不要通过运行 helper、触碰数据库/nonce 文件、`mkdir -p` 或宽松 `chmod` 来“试初始化”生产状态。控制器缺失时，这些准备步骤不得在 101 上执行。
+当前 `openProtectedBridge255StateStore()` 只校验并打开既有生产资料；现已在只读 opener 中检查 fixed-path trust/source digest、journal 根目录属性、production lock、nonce consumer 和 nonce SQLite 所需列/复合主键。它不会创建 `/var/lib/merchant-release-security/bridge-255`、初始化 nonce SQLite schema、签署执行计划或安装迁移控制器。不要通过运行 helper、触碰数据库/nonce 文件、`mkdir -p` 或宽松 `chmod` 来“试初始化”生产状态。控制器缺失时，这些准备步骤不得在 101 上执行。
 
 未来若经独立审查批准 provision，必须在维护窗口外由双人核对的 root-only provisioning 步骤执行，并先检查后创建、绝不覆盖现有目标：journal 根目录必须是 canonical、root-owned、mode `0700`；nonce ledger 必须是已存在的 canonical、root-owned、mode `0600` 普通文件，并由已审 nonce consumer 拥有预期 schema；生产 deploy lock 和固定 nonce consumer 必须与已安装 digest 一致；trust 目录、Ed25519 公钥/key id、执行计划签名、state/review/transition-review/nonce-consumer 摘要文件必须通过固定安装器和独立签名流程投放。生产私钥只能由既有受保护密钥流程提供，不可放入候选归档、shell 参数或普通日志。所有路径须检查 symlink、父目录权限、owner、mode、inode/摘要及 ledger schema；发现任何既有但不匹配的资料即停止，不能删除、重建或迁移 ledger/journal 来消除冲突。
 

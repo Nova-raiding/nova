@@ -60,6 +60,7 @@ chmodSync(ledgerPath, 0o600)
 const store = openProtectedBridge255StateStore()
 assert.deepEqual(Object.keys(store).sort(), ['advanceSigned', 'captureSigned', 'consumeNonceOnce', 'readConsumedNonce', 'readFrozenAttempt'])
 const ledgerStat = lstatSync(ledgerPath)
+await assert.rejects(store.readConsumedNonce({ plan, attemptId: plan.attempt_id, nonce_sha256: plan.nonce_sha256 }), /NONCE_LEDGER_BINDING_MISSING_OR_DUPLICATE/u)
 assert.equal(lstatSync(ledgerPath).mtimeMs, ledgerStat.mtimeMs, 'read-only trust/ledger verification must not write to the nonce ledger')
 assert.deepEqual((await import('node:fs')).readdirSync(journalRoot), [], 'opening and verifying must not create a journal')
 
@@ -76,6 +77,14 @@ assert.throws(() => openProtectedBridge255StateStore(), /NONCE_LEDGER_SCHEMA_INV
 const restoreLedger = new DatabaseSync(ledgerPath)
 restoreLedger.exec('DROP TABLE nonce_owners; ALTER TABLE nonce_owners_saved RENAME TO nonce_owners;')
 restoreLedger.close()
+chmodSync(ledgerPath, 0o600)
+const weakLedger = new DatabaseSync(ledgerPath)
+weakLedger.exec('ALTER TABLE nonce_owners RENAME TO nonce_owners_saved; CREATE TABLE nonce_owners (namespace TEXT, nonce TEXT, operation TEXT, attempt_id TEXT);')
+weakLedger.close()
+assert.throws(() => openProtectedBridge255StateStore(), /NONCE_LEDGER_SCHEMA_INVALID/u)
+const restoreKeyConstraints = new DatabaseSync(ledgerPath)
+restoreKeyConstraints.exec('DROP TABLE nonce_owners; ALTER TABLE nonce_owners_saved RENAME TO nonce_owners;')
+restoreKeyConstraints.close()
 chmodSync(ledgerPath, 0o600)
 
 const storeDigestPath = `${trust}/production-bridge-255-state-store-sha256`
