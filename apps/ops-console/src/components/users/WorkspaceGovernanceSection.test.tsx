@@ -76,6 +76,15 @@ describe("monthly workspace directory states", () => {
     expect(markup).not.toContain('data-state="error"');
   });
 
+  it("does not print undefined or claim zero before the workspace count is read", () => {
+    const markup = render({ workspaceDirectory: { items: [], offset: 0, limit: 20, hasMore: false } });
+    expect(countLabel(markup)).toBe("工作区数量未知：尚未读取");
+    expect(markup).toContain("尚未读取工作区目录，请点击查询或刷新列表。");
+    expect(markup).not.toContain("undefined 个工作区");
+    expect(markup).not.toContain("暂无商家工作区记录");
+    expect(markup).not.toContain("共 0 条记录");
+  });
+
   it("shows the server total rather than counting only the loaded page", () => {
     const markup = render({ workspaceRows: [], workspaceDirectory: { items: [row], offset: 40, limit: 20, hasMore: true, total: 73 } });
     expect(countLabel(markup)).toBe("共 73 个工作区");

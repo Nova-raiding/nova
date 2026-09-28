@@ -65,6 +65,7 @@ export function WorkspaceGovernanceSection({ model, entitlementClient = commerci
   // failure in `workspaceDirectoryError`; the console-wide bootstrap records
   // `ops.workspaces.list` in the shared dataset errors.
   const directoryError = model.workspaceDirectoryError || model.dataSetError("ops.workspaces.list") || "";
+  const directoryCountKnown = typeof model.workspaceDirectory.total === "number" && Number.isFinite(model.workspaceDirectory.total);
   const loadPage = (nextPage: number) => model.loadWorkspaceDirectory(workspaceDirectoryPageRequest(query, status, nextPage, model.workspaceDirectory.limit));
   const reloadDirectory = () => void loadPage(page);
   const changingTo = statusTarget?.status === "active" ? "disabled" : "active";
@@ -82,14 +83,14 @@ export function WorkspaceGovernanceSection({ model, entitlementClient = commerci
     }
   };
   return <>
-    <Card title="商家工作区与套餐" extra={<Typography.Text type="secondary">{directoryError ? "工作区数量未知：目录读取失败" : `共 ${model.workspaceDirectory.total} 个工作区`}</Typography.Text>}>
+    <Card title="商家工作区与套餐" extra={<Typography.Text type="secondary">{directoryError ? "工作区数量未知：目录读取失败" : directoryCountKnown ? `共 ${model.workspaceDirectory.total} 个工作区` : model.workspaceDirectoryLoading ? "正在读取工作区数量" : "工作区数量未知：尚未读取"}</Typography.Text>}>
       <Form layout="inline" style={{ marginBottom: 16 }} onFinish={() => void loadPage(1)}>
         <Form.Item label="搜索"><Input allowClear value={query} onChange={(event) => setQuery(event.target.value)} placeholder="企业名称 / 工作区 ID / 套餐" style={{ width: 280 }} /></Form.Item>
         <Form.Item label="状态"><Select allowClear value={status} onChange={setStatus} placeholder="全部" options={[{ label: "正常", value: "active" }, { label: "已停用", value: "disabled" }]} style={{ width: 140 }} /></Form.Item>
         <Space><Button type="primary" htmlType="submit" loading={model.workspaceDirectoryLoading}>查询</Button><Button onClick={reloadDirectory} loading={model.workspaceDirectoryLoading}>刷新列表</Button></Space>
       </Form>
       <OpsPageError error={directoryError} onRetry={reloadDirectory} />
-      <Table<WorkspaceSummary> rowKey="workspaceId" loading={model.workspaceDirectoryLoading} dataSource={rows} locale={{ emptyText: directoryError ? "工作区读取失败，这不是空列表：请查看上方错误摘要后重试。" : "暂无商家工作区记录" }} pagination={{ current: page, pageSize: model.workspaceDirectory.limit, total: model.workspaceDirectory.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 条记录`, onChange: (nextPage) => void loadPage(nextPage) }} scroll={{ x: 980 }} columns={[
+      <Table<WorkspaceSummary> rowKey="workspaceId" loading={model.workspaceDirectoryLoading} dataSource={rows} locale={{ emptyText: directoryError ? "工作区读取失败，这不是空列表：请查看上方错误摘要后重试。" : directoryCountKnown ? "暂无商家工作区记录" : "尚未读取工作区目录，请点击查询或刷新列表。" }} pagination={directoryCountKnown ? { current: page, pageSize: model.workspaceDirectory.limit, total: model.workspaceDirectory.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 条记录`, onChange: (nextPage) => void loadPage(nextPage) } : false} scroll={{ x: 980 }} columns={[
         { title: "用户 / 企业主体", key: "enterprise", width: 260, render: (_: unknown, row) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
         { title: "旧版套餐快照", dataIndex: "planName", width: 160 },
         { title: "旧版标价（元/月）", dataIndex: "monthlyPriceCny", width: 145, render: (value: number) => `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}` },
