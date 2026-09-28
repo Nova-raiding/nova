@@ -21,9 +21,10 @@ describe('protected release-control installation', () => {
     expect(() => prepareControlBytes('backup', source, sha, node)).toThrow('canonical');
   });
   it('does not accept arbitrary destinations or trust directories', () => {
-    expect(Object.keys(CONTROLS).sort()).toEqual(['backup', 'bridge254Review', 'bridge254State', 'bridgeB', 'bundle', 'canonicalAttester', 'canonicalSnapshot', 'capability', 'demo254Backup', 'demo254Plan', 'manual', 'pg17BaselineBackup', 'pg17Plan', 'preidentity', 'restore']);
+    expect(Object.keys(CONTROLS).sort()).toEqual(['backup', 'bridge254Review', 'bridge254State', 'bridge255Isolated', 'bridgeB', 'bundle', 'canonicalAttester', 'canonicalSnapshot', 'capability', 'demo254Backup', 'demo254Plan', 'manual', 'pg17BaselineBackup', 'pg17Plan', 'preidentity', 'restore']);
     expect(CONTROLS.demo254Backup).toEqual({ executable: 'attest-demo-254-backup', digest: 'production-demo-254-backup-attester-sha256' });
     expect(CONTROLS.demo254Plan).toEqual({ executable: 'attest-demo-254-frozen-plan', digest: 'production-demo-254-plan-signer-sha256' });
+    expect(CONTROLS.bridge255Isolated).toEqual({ executable: 'ecs-bridge-255-isolated-runner', digest: 'production-bridge-255-isolated-runner-sha256' });
     expect(CONTROLS.pg17Plan).toEqual({ executable: 'attest-pg17-frozen-plan', digest: 'production-pg17-plan-signer-sha256' });
     expect(CONTROLS.pg17BaselineBackup).toEqual({ executable: 'attest-pg17-backup-baseline', digest: 'production-pg17-baseline-backup-sha256' });
     expect(CONTROLS.canonicalSnapshot).toEqual({ executable: 'canonical-safe-state-snapshot.mjs', digest: 'canonical-safe-state-library-sha256' });

@@ -113,7 +113,7 @@ function restoreFixture() {
   const f = fixture()
   const sql = Buffer.from('CREATE TABLE isolated_255_fixture (id bigint);')
   const expectedRows = Array.from({ length: 255 }, (_, index) => ({
-    version: index + 1, name: `migration_${index + 1}`,
+    version: index + 1, name: index === 254 ? 'scoped_brand_settings' : `migration_${index + 1}`,
     checksum: index === 254 ? sha(sql) : sha(`sql-${index + 1}`),
   }))
   const historyHash = rows => sha(rows.map(row => `${row.version}\t${row.name}\t${row.checksum}\n`).join(''))

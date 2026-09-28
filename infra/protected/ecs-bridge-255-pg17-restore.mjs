@@ -94,7 +94,8 @@ export async function produceBridge255Pg17Restore({ plan, signedSourcePlan, mani
     verifyRows(await isolation.readHistory(plan.attempt_id), expectedRows.slice(0, 254),
       254, plan.database.prefix_254_sha256)
     await isolation.applyOnly255({ attemptId: plan.attempt_id, sql: migration255.sql,
-      sqlSha256: sha(migration255.sql), expectedBefore: plan.database.prefix_254_sha256 })
+      sqlSha256: sha(migration255.sql), name: migration255.name,
+      expectedBefore: plan.database.prefix_254_sha256 })
     state = await isolation.inspect(plan.attempt_id)
     verifyIsolation(state, plan, attestation.source_database_id_sha256)
     verifyRows(await isolation.readHistory(plan.attempt_id), expectedRows,
