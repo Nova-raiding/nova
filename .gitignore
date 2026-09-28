@@ -29,6 +29,7 @@ coverage/
 /ops-users-result.json
 /ops-workspace-visual-inventory.json
 /output/**
+/outputs/**
 /tmp/**
 
 # Ephemeral local/runtime outputs. Reviewed evidence remains trackable under
