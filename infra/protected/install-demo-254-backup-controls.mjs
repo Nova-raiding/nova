@@ -94,16 +94,19 @@ function argsOf(args) {
   }
   return { mode: args[0], values }
 }
-function recover(state) {
+export function restoreDemo254ControlSnapshot(state, { expectedTargets = targets, writeAtomic = atomic, remove = unlinkSync, inspect = present } = {}) {
   check(state?.schema_version === 'demo-254-control-install-recovery/1'
-    && Array.isArray(state.files) && state.files.length === targets.length
-    && state.files.every((item, index) => item.path === targets[index]
+    && Array.isArray(state.files) && state.files.length === expectedTargets.length
+    && state.files.every((item, index) => item.path === expectedTargets[index]
       && (item.bytes === null || typeof item.bytes === 'string')
       && (item.mode === null || Number.isInteger(item.mode))), 'recovery journal invalid')
   for (const item of state.files) {
-    if (item.bytes === null) { if (present(item.path)) unlinkSync(item.path) }
-    else atomic(item.path, Buffer.from(item.bytes, 'base64'), item.mode)
+    if (item.bytes === null) { if (inspect(item.path)) remove(item.path) }
+    else writeAtomic(item.path, Buffer.from(item.bytes, 'base64'), item.mode)
   }
+}
+function recover(state) {
+  restoreDemo254ControlSnapshot(state)
   unlinkSync(JOURNAL)
 }
 function main(args) {
