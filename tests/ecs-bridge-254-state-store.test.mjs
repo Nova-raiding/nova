@@ -43,9 +43,9 @@ const expected = { project: 'merchant-production', prefixes, oldRuntime: old_run
   nonceOwner: { namespace: 'merchant-production-deploy', operation: 'bridge-254', attempt_id: attemptId,
     ...bridge, nonce_sha256: sha(nonce) } }
 
-test('installed nonce consumer must advertise bridge-254 before state store opens', () => {
+test('installed nonce consumer must advertise all protected bridge operations before state store opens', () => {
   const current = join(temp, 'consumer-current.sh'), old = join(temp, 'consumer-old.sh')
-  writeFileSync(current, '#!/bin/sh\necho "--operation {deployment,bridge-b,bridge-254}"\n', { mode: 0o700 })
+  writeFileSync(current, '#!/bin/sh\necho "--operation {deployment,bridge-b,bridge-254,bridge-255,demo-254-backup}"\n', { mode: 0o700 })
   writeFileSync(old, '#!/bin/sh\necho "--operation {deployment,bridge-b}"\n', { mode: 0o700 })
   assert.doesNotThrow(() => assertBridge254NonceConsumerSupportsOperation(current))
   assert.throws(() => assertBridge254NonceConsumerSupportsOperation(old), /does not advertise/)

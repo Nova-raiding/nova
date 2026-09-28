@@ -346,7 +346,7 @@ export const BRIDGE_254_PROTECTED_STATE_PATHS = Object.freeze({ directory: ROOT,
 
 export function assertBridge254NonceConsumerSupportsOperation(path) {
   const result = spawnSync(path, ['consume', '--help'], { encoding: 'utf8', env: {}, timeout: 5000, maxBuffer: 8192 })
-  assert(result.status === 0 && /--operation \{deployment,bridge-b,bridge-254\}/u.test(result.stdout ?? ''),
+  assert(result.status === 0 && /--operation \{deployment,bridge-b,bridge-254,bridge-255,demo-254-backup\}/u.test(result.stdout ?? ''),
     'installed nonce consumer does not advertise the independently reviewed bridge-254 operation')
 }
 

@@ -88,7 +88,19 @@ def main():
         assert backup_owner == ('demo-254-backup', 'attempt_Demo254_abcdefgh'), backup_owner
         assert subprocess.run(fresh_backup, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               universal_newlines=True).returncode != 0
-        for operation in ('deployment', 'bridge-b', 'bridge-254', 'demo-254-backup'):
+        fresh_255 = list(args)
+        fresh_255[fresh_255.index('--nonce') + 1] = 'H' * 24
+        fresh_255 += ['--operation', 'bridge-255', '--attempt-id', 'attempt_Bridge255_abcdefgh']
+        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
+            bridge_255_results = list(pool.map(lambda _: subprocess.run(
+                fresh_255, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True), range(24)))
+        assert sum(item.returncode == 0 for item in bridge_255_results) == 1, [item.stderr for item in bridge_255_results]
+        assert all('nonce rejected' in item.stderr for item in bridge_255_results if item.returncode != 0)
+        with sqlite3.connect(str(ledger_dir / 'production-nonces.sqlite3')) as ledger:
+            bridge_255_owner = ledger.execute('SELECT operation,attempt_id FROM nonce_owners WHERE namespace=? AND nonce=?',
+                                              ('merchant-production-deploy', 'H' * 24)).fetchone()
+        assert bridge_255_owner == ('bridge-255', 'attempt_Bridge255_abcdefgh'), bridge_255_owner
+        for operation in ('deployment', 'bridge-b', 'bridge-254', 'bridge-255', 'demo-254-backup'):
             cross = list(args)
             cross[cross.index('--nonce') + 1] = 'E' * 24
             if operation != 'deployment':
@@ -182,7 +194,7 @@ def main():
         (ledger_dir / 'saved-ledger.sqlite3').rename(ledger)
         ledger.write_bytes(b'corrupt sqlite bytes')
         assert unique_run(27).returncode != 0
-        print('isolated nonce candidate: deployment, bridge-b, bridge-254 and demo-254-backup owners atomically recorded; bridge-254 same-attempt 24-way race has one winner; replay, cross-operation takeover, invalid attempt, legacy-row adoption, insecure ledger and corrupt ledger rejected')
+        print('isolated nonce candidate: deployment, bridge-b, bridge-254, bridge-255 and demo-254-backup owners atomically recorded; bridge-254/255 same-attempt 24-way races have one winner each; replay, cross-operation takeover, invalid attempt, legacy-row adoption, insecure ledger and corrupt ledger rejected')
 
 
 if __name__ == '__main__':

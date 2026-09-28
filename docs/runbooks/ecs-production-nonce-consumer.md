@@ -1,8 +1,8 @@
 # ECS 生产 deployment nonce 防重放控制面
 
-`infra/protected/consume-production-evidence-nonce.py` 是受保护程序的审查源码，生产安装位置固定为 `/usr/local/libexec/merchant/consume-production-evidence-nonce`。程序只能由 root 执行，在 `/var/lib/merchant-release-security/production-nonces.sqlite3` 使用 SQLite `BEGIN IMMEDIATE` 与 `(namespace, nonce)` 唯一键原子记录 release ID、镜像、manifest 和 Git SHA，并在同一事务写入 `nonce_owners(namespace, nonce, operation, attempt_id)`。普通发布现有 CLI 不变，省略新增选项时 owner 默认是 `deployment` 和空 attempt；Bridge B 必须显式给出 `--operation bridge-b --attempt-id <signed-attempt-id>`。两张表都以 `(namespace, nonce)` 唯一约束，旧版 ledger 有 consumed row 但缺 owner row 时绝不补领或回填为 Bridge B；这类 nonce 对 Bridge B 是未知来源并必须拒绝。Bridge B 仅可在 journal 绑定完全相同的 `bridge-b` operation 与 attempt ID 时恢复同一 attempt。账本是持久宿主数据，不能随容器或候选目录清理。
+`infra/protected/consume-production-evidence-nonce.py` 是受保护程序的审查源码，生产安装位置固定为 `/usr/local/libexec/merchant/consume-production-evidence-nonce`。程序只能由 root 执行，在 `/var/lib/merchant-release-security/production-nonces.sqlite3` 使用 SQLite `BEGIN IMMEDIATE` 与 `(namespace, nonce)` 唯一键原子记录 release ID、镜像、manifest 和 Git SHA，并在同一事务写入 `nonce_owners(namespace, nonce, operation, attempt_id)`。普通发布现有 CLI 不变，省略新增选项时 owner 默认是 `deployment` 和空 attempt；受保护操作 `bridge-b`、`bridge-254`、`bridge-255`、`demo-254-backup` 必须显式给出 operation 与 attempt ID。各桥接状态机必须核对自己独有的 operation、attempt 与 release 四字段；已消费 nonce 不能跨操作接管或重放。两张表都以 `(namespace, nonce)` 唯一约束，旧版 ledger 有 consumed row 但缺 owner row 时绝不补领。账本是持久宿主数据，不能随容器或候选目录清理。
 
-安装前核对候选源码与隔离并发测试的 SHA-256。生产机必须具备 Python 3 与 SQLite 支持。在开发机用 `sh tests/run-protected-nonce-consumer-isolated.sh` 执行 root、无网络、无挂载的固定镜像 smoke；该 smoke 核对原普通发布参数仍接受并获得 `deployment` owner，并证明同 release identity 的普通发布 nonce 不能被重新消费为 Bridge B attempt。不要在生产账本上运行 smoke。
+安装前核对候选源码与隔离并发测试的 SHA-256。生产机必须具备 Python 3 与 SQLite 支持。在开发机用 `sh tests/run-protected-nonce-consumer-isolated.sh` 执行 root、无网络、无挂载的固定镜像 smoke；该 smoke 核对普通发布及各受保护 operation 的唯一 owner、并发单赢家、重放与跨 operation 接管拒绝。不要在生产账本上运行 smoke。
 
 ### 首次安装（只有目标不存在时）
 

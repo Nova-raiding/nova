@@ -16,6 +16,7 @@ test('exact commit sources yield standalone plan, backup and nonce control manif
   const plan = readFileSync(join(output, 'attest-demo-254-frozen-plan'))
   const backup = readFileSync(join(output, 'attest-demo-254-backup'))
   const nonce = readFileSync(join(output, 'consume-production-evidence-nonce'))
+  assert.match(nonce.toString('utf8'), /'bridge-255'/u)
   assert.equal(result.manifest.source_commit, commit)
   assert.equal(result.manifest_sha256, sha(readFileSync(join(output, 'manifest.json'))))
   assert.equal(validateDemo254InstallManifest(result.manifest, { plan, backup, nonce }), true)
