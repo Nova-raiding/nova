@@ -417,8 +417,8 @@ describe("container source freshness gate", () => {
     const apiDockerfile = readFileSync("infra/docker/api.Dockerfile", "utf8");
     const [apiBuildStage, apiRuntimeStage] = apiDockerfile.split(" AS runtime");
     expect(apiBuildStage).toContain("COPY dogfood ./dogfood");
-    expect(apiBuildStage.indexOf("COPY dogfood ./dogfood")).toBeLessThan(
-      apiBuildStage.indexOf("npm ci --prefer-offline"),
+    expect(apiBuildStage!.indexOf("COPY dogfood ./dogfood")).toBeLessThan(
+      apiBuildStage!.indexOf("npm ci --prefer-offline"),
     );
     expect(apiRuntimeStage).not.toContain("COPY dogfood");
     expect(apiBuildStage).toContain(
