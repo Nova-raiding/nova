@@ -2616,6 +2616,32 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('preserves a platform-rule preflight error on image generation without claiming provider usage', async () => {
+    let attempts = 0
+    const server = createServer(async (_req, res) => {
+      attempts += 1
+      res.writeHead(503, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { code: 'PLATFORM_RULE_DATA_UNAVAILABLE', message: 'signed jd rules unavailable', details: { platform: 'jd' } } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '5' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: { product_id: 'product_1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'PLATFORM_RULE_DATA_UNAVAILABLE' } })
+      expect(response.result.content[0].text).toContain('签名规则数据尚未就绪')
+      expect(JSON.stringify(response.result)).not.toMatch(/Provider 回执|创意点仍处于预留状态/u)
+      expect(attempts).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('honors Retry-After when the local API returns a workspace rate limit', async () => {
     let attempts = 0
     const server = createServer(async (_req, res) => {

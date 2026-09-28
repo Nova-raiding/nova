@@ -171,7 +171,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   return <>
     {!canReadUserDirectory && <Alert showIcon type="warning" title="当前角色不能读取用户目录" description="跨租户身份与成员关系需要 identity.read；权限由服务端策略决定。" />}
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
-    <Card title="已接入用户" extra={<Space><Typography.Text type="secondary">共 {model.userDirectory.workspaceCount} 家接入用户</Typography.Text><Button onClick={() => setProvisionOpen(true)} disabled={!model.canPlatformOps}>开通商家账号</Button></Space>} aria-busy={model.userDirectoryLoading}>
+    <Card title="已接入用户" extra={<Space><Typography.Text type="secondary">当前筛选：{model.userDirectory.total} 条账号记录，涉及 {model.userDirectory.workspaceCount} 个商家工作区</Typography.Text><Button onClick={() => setProvisionOpen(true)} disabled={!model.canPlatformOps}>开通商家账号</Button></Space>} aria-busy={model.userDirectoryLoading}>
       <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "" }} onFinish={(values) => { void model.loadUsers({ ...values, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
         <Form.Item name="query" label="搜索"><Input allowClear maxLength={64} aria-label="按关键词筛选用户目录" /></Form.Item>
         <Form.Item name="status" label="激活状态">

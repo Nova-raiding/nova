@@ -43,6 +43,7 @@ export type StoreMaterialItem = {
   sizeLabel: string
   fileSizeLabel: string
   format: string
+  mimeType?: string
   addedAt: string
   previewUrl?: string
   downloadUrl: string
@@ -102,6 +103,13 @@ export function materialFormatFromMimeType(mimeType: string): string {
   return subtype ? subtype.toUpperCase() : MATERIAL_UNREAD
 }
 
+/** Image-only controls must follow the actual media type, not the asset card's label. */
+export function isImageMaterial(item: Pick<StoreMaterialItem, 'mimeType' | 'format'>): boolean {
+  const mimeType = item.mimeType?.trim().toLowerCase()
+  if (mimeType) return mimeType.startsWith('image/')
+  return ['JPG', 'PNG', 'WEBP', 'GIF', 'AVIF', 'HEIC', 'SVG', 'BMP'].includes(item.format)
+}
+
 /**
  * The reviewed taxonomy (商品主图 / 详情页图 / SKU 图 / 商品视频 / 未分类) is the
  * merchant's own labelling, and the server stores no label for an asset. Only
@@ -152,6 +160,7 @@ export function materialItemFromAsset(asset: AssetMetadata): StoreMaterialItem {
     sizeLabel: MATERIAL_UNREAD,
     fileSizeLabel: formatMaterialFileSize(bytes),
     format: materialFormatFromMimeType(asset?.mimeType ?? ''),
+    mimeType: String(asset?.mimeType ?? ''),
     addedAt: materialAddedAtFromAsset(asset),
     // Server bytes are read through the authenticated endpoint when the
     // merchant clicks 下载; there is no shareable URL to put in the href.

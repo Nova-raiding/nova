@@ -257,6 +257,7 @@ describe('MCP method contract', () => {
     ])
     expect(MCP_METHOD_SCHEMAS['catalog.sync'].required).toEqual(['platform'])
     expect(MCP_METHOD_SCHEMAS['catalog.import'].properties.skus_json?.type).toBe('string')
+    expect(MCP_METHOD_SCHEMAS['ops.platform.product.import.batch'].properties.store_assignment_confirmed).toEqual({ type: 'string', enum: ['true'] })
     expect(MCP_METHOD_SCHEMAS['asset.facts.confirm'].required).toEqual(['asset_id', 'facts_json', 'reason'])
     expect(MCP_METHOD_SCHEMAS['asset.preference.update'].properties.verdict?.enum).toEqual(['excellent', 'disliked', 'unrated'])
     expect(MCP_METHOD_SCHEMAS['brand.extract'].required).toBeUndefined()

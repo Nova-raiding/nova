@@ -176,11 +176,13 @@ export async function handleOpsOverviewMcpMethod(method: string, params: Record<
       const sourceReference = required(params, 'source_ref')
       const sourceSha256 = required(params, 'source_sha256')
       if (!SUPPORTED_PLATFORMS.includes(platform) || !/^[0-9a-f]{64}$/u.test(sourceSha256)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '平台或源文件摘要无效', 400)
-      if (!stores.some(account => account.platform === platform && account.id === accountId)) throw new DomainError('MANUAL_STORE_NOT_FOUND', '目标店铺未在该商家工作区完成人工登记', 404)
+      const selectedStore = stores.find(account => account.platform === platform && account.id === accountId)
+      if (!selectedStore) throw new DomainError('MANUAL_STORE_NOT_FOUND', '目标店铺未在该商家工作区完成人工登记', 404)
       let products: unknown
       try { products = JSON.parse(required(params, 'products_json')) }
       catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, '商品表格预览数据无效', 400) }
       if (!Array.isArray(products) || products.length < 1 || products.length > 50) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '一次只能导入 1 至 50 个商品', 400)
+      let assignmentConfirmationRequired = false
       for (const product of products) {
         if (!product || typeof product !== 'object' || Array.isArray(product)
           || product.platform !== platform || product.account_id !== accountId
@@ -188,10 +190,20 @@ export async function handleOpsOverviewMcpMethod(method: string, params: Record<
           || Array.isArray(product.skus) && product.skus.some((sku: unknown) => sku && typeof sku === 'object' && (sku as Record<string, unknown>).sourceAssetIds !== undefined)) {
           throw new DomainError('MANUAL_PRODUCT_IMPORT_SCOPE_INVALID', '商品必须全部属于所选店铺，且不能引用未经该工作区确认的素材', 409)
         }
+        const storeName = typeof product.store_name === 'string' ? product.store_name.normalize('NFKC').trim() : ''
+        const registeredName = selectedStore.storeAlias?.normalize('NFKC').trim() ?? ''
+        // The selected account is scoped to the target workspace, but a file
+        // can still describe a different store. Never let a forged account_id
+        // override an explicit conflicting source store name.
+        if (storeName && registeredName && storeName !== registeredName) {
+          throw new DomainError('MANUAL_PRODUCT_IMPORT_SCOPE_INVALID', '商品表格中的店铺名称与所选人工店铺不一致', 409)
+        }
+        if (!storeName || !registeredName) assignmentConfirmationRequired = true
       }
+      if (assignmentConfirmationRequired && params.store_assignment_confirmed !== 'true') throw new DomainError('MANUAL_PRODUCT_IMPORT_ASSIGNMENT_CONFIRMATION_REQUIRED', '表格缺少可与已登记店铺核对的名称，运营需核实原始资料并显式确认归属', 409)
       // Record the operator's intent before any catalog or knowledge write. If
       // durable auditing is unavailable, the import must not begin.
-      await recordOperationAudit({ workspaceId: targetWorkspaceId, actorId, action: 'platform.catalog.import.batch.attempt', resourceType: 'manual_product_source', resourceId: `${platform}:${accountId}:${sourceSha256}`, before: {}, after: { platform, account_id: accountId, source_ref: sourceReference, source_sha256: sourceSha256, requested_count: products.length }, reason })
+      await recordOperationAudit({ workspaceId: targetWorkspaceId, actorId, action: 'platform.catalog.import.batch.attempt', resourceType: 'manual_product_source', resourceId: `${platform}:${accountId}:${sourceSha256}`, before: {}, after: { platform, account_id: accountId, source_ref: sourceReference, source_sha256: sourceSha256, requested_count: products.length, store_assignment_confirmed: params.store_assignment_confirmed === 'true' }, reason })
       const imported = await importManualProducts(targetWorkspaceId, JSON.stringify(products), { reference: sourceReference, sha256: sourceSha256, reason }, req)
       return ({ workspace_id: targetWorkspaceId, platform, account_id: accountId, imported_by: actorId, source_mode: 'platform_manual_upload', result: imported })
     }

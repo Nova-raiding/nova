@@ -4,6 +4,7 @@ import type { AssetMetadata } from './api'
 import {
   MATERIAL_UNREAD,
   formatMaterialFileSize,
+  isImageMaterial,
   materialAddedAtFromAsset,
   materialCategoryFromMimeType,
   materialDownloadHref,
@@ -66,6 +67,12 @@ describe('a material card is built from the server row', () => {
     expect(materialCategoryFromMimeType('video/mp4')).toBe('商品视频')
     expect(materialCategoryFromMimeType('image/png')).toBe('未分类')
     expect(materialCategoryFromMimeType('')).toBe('未分类')
+  })
+
+  it('only offers single-image controls for image assets', () => {
+    expect(isImageMaterial(materialItemFromAsset(assets[0]!))).toBe(true)
+    expect(isImageMaterial(materialItemFromAsset({ ...assets[0]!, name: 'products.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))).toBe(false)
+    expect(isImageMaterial(materialItemFromAsset({ ...assets[0]!, name: 'clip.mp4', mimeType: 'video/mp4' }))).toBe(false)
   })
 
   it('reports 未读取 instead of zero for facts the server did not publish', () => {

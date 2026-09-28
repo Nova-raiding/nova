@@ -1,6 +1,32 @@
 import JSZip from "jszip";
 import { spreadsheetFactsToBatchProducts } from "../../../../../packages/application/src/spreadsheet-batch.js";
 
+export function scopeManualProductsToStore(
+  products: ReadonlyArray<Record<string, unknown>>,
+  store: { platform: string; account_id: string; store_alias?: string | null },
+): { products: Record<string, unknown>[]; mismatchedCount: number; assignedCount: number; confirmationCount: number } {
+  let mismatchedCount = 0;
+  let assignedCount = 0;
+  let confirmationCount = 0;
+  const scoped = products.map(product => {
+    const platformMissing = product.platform == null || product.platform === "";
+    const accountMissing = product.account_id == null || product.account_id === "";
+    const fileStoreName = typeof product.store_name === "string" ? product.store_name.normalize("NFKC").trim() : "";
+    const selectedStoreName = store.store_alias?.normalize("NFKC").trim() ?? "";
+    if ((!platformMissing && product.platform !== store.platform)
+      || (!accountMissing && product.account_id !== store.account_id)
+      || (fileStoreName && selectedStoreName && fileStoreName !== selectedStoreName)) mismatchedCount++;
+    if (platformMissing || accountMissing) assignedCount++;
+    if (platformMissing || accountMissing || !fileStoreName || !selectedStoreName) confirmationCount++;
+    return {
+      ...product,
+      ...(platformMissing ? { platform: store.platform } : {}),
+      ...(accountMissing ? { account_id: store.account_id } : {}),
+    };
+  });
+  return { products: scoped, mismatchedCount, assignedCount, confirmationCount };
+}
+
 function csvRows(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [], cell = "", quoted = false;

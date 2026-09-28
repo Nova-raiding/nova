@@ -19,6 +19,7 @@ import {
 import { DetailDecisionContract } from './DetailDecisionContract'
 import {
   formatMaterialFileSize,
+  isImageMaterial,
   materialDownloadHref,
   materialEmptyCopy,
   materialStoreCategories,
@@ -6531,19 +6532,20 @@ export function MaterialLibraryWorkspace({
   }
 
   if (detailMaterial) {
+    const detailIsImage = isImageMaterial(detailMaterial)
     return <div className="material-detail-page" data-testid="material-detail-page">
       <button type="button" className="material-detail-back" onClick={() => { setDetailMaterialId(null); setDetailPreviewOpen(false) }}><ArrowLeft size={16} />返回素材库</button>
       <section className="material-detail-hero">
         <button type="button" className={`material-detail-preview ${detailMaterial.previewUrl ? 'has-image' : ''}`} aria-label={`放大${detailMaterial.name}`} onClick={() => setDetailPreviewOpen(true)}>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : detailMaterial.category === '商品视频' ? <Play size={64} fill="currentColor" /> : <ImageIcon size={64} />}<span>点击放大预览</span></button>
-        <div className="material-detail-info"><span className="section-kicker">MATERIAL DETAILS</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.name}</dd></div><div><dt>平台</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.platform}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div><div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div><div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
+        <div className="material-detail-info"><span className="section-kicker">MATERIAL DETAILS</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.name}</dd></div><div><dt>平台</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.platform}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div>{detailIsImage && <div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div>}<div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
       </section>
-      <section className="material-image-brand-settings">
+      {detailIsImage && <section className="material-image-brand-settings">
         <div className="material-brand-panel-heading"><div><span className="section-kicker">IMAGE BRAND SETTINGS</span><h2>单图品牌配置预览</h2><p>此处试填的设置只在本页预览当前图片；刷新后会丢失，也不会用于内容生成。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
         <article className="material-brand-row material-image-brand-row">
           <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" onChange={(next) => setImageBrands((current) => ({ ...current, [detailMaterial.id]: next }))} /></div>
           <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} onEnabledChange={(enabled) => setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled }))} context={{ label: '当前图片', value: detailMaterial.name }} />
         </article>
-      </section>
+      </section>}
       {detailPreviewOpen && <button type="button" className="material-upload-lightbox" aria-label="关闭素材图片预览" onClick={() => setDetailPreviewOpen(false)}><span>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{detailMaterial.name}</strong><small>点击任意位置关闭</small></span></button>}
     </div>
   }

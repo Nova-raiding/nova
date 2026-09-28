@@ -216,6 +216,7 @@ import { handleHttpMerchantRegistrationRoute } from './http-merchant-registratio
 import { createPlatformWorkspaceRuntime } from './platform-workspace-runtime.js'
 export { appendProtectedProductConstraints } from './protected-product-runtime.js'
 import { projectCommercialEntitlement } from '../../../packages/application/src/commercial-entitlement-projection.js'
+import { readSubscriptionV2Entitlement } from './mcp-subscription-v2-projection.js'
 import { buildCanonicalChainConsistencyReport, canonicalProductReadModeFromFlag, CANONICAL_PRODUCT_READ_MODE_FLAG, resolveCanonicalProductReadScope, type CanonicalChainConsistencyInput, type CanonicalProductReadMode } from '../../../packages/application/src/canonical-product-consistency.js'
 import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecycleOperation } from '../../../packages/application/src/campaign-delivery-orchestrator.js'
 import { CampaignManifestError, type CampaignDeliveryManifestInput } from '../../../packages/application/src/campaign-delivery-manifest.js'
@@ -1702,7 +1703,9 @@ async function markRechargeReconciliationChecked(input: { workspaceId: string; o
   const order = rechargeOrders.get(input.orderId)
   if (!order || order.workspaceId !== input.workspaceId || order.state !== input.expectedState || order.paymentMode !== 'provider') return undefined
   const previous = Date.parse(order.updatedAt)
-  order.updatedAt = new Date(Math.max(Date.now(), Number.isFinite(previous) ? previous + 1 : 0)).toISOString()
+  // Millisecond timestamps can tie with an order created in the same tick.
+  // Move the checked item past that tick so limit-one queues rotate fairly.
+  order.updatedAt = new Date(Math.max(Date.now() + 1, Number.isFinite(previous) ? previous + 1 : 0)).toISOString()
   return order
 }
 
@@ -11103,7 +11106,19 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'subscription.get': {
       const subscription = await (persistence.subscriptions ?? memorySubscriptions).get(workspaceId)
-      return result({ ...subscription, commercial_entitlement: commercialEntitlementProjection(subscription), entitlements: await (persistence.entitlements ?? memoryEntitlements).list(workspaceId) })
+      const commercialEntitlement = await readSubscriptionV2Entitlement({
+        workspaceId,
+        listSnapshots: async (id, limit) => {
+          if (!persistence.commercialContracts) throw new Error('V2 entitlement repository unavailable')
+          return persistence.commercialContracts.listEntitlementSnapshots(id, limit)
+        },
+      })
+      return result({
+        ...subscription,
+        legacy_commercial_entitlement: commercialEntitlementProjection(subscription),
+        commercial_entitlement: commercialEntitlement,
+        entitlements: await (persistence.entitlements ?? memoryEntitlements).list(workspaceId),
+      })
     }
     case 'subscription.orders.list': {
       const limit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Number(params.limit) : 50

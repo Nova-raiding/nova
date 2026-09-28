@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { PlatformUser } from "../../types/ops";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel.js";
-import { canWriteLoadedIdentity, sortUserDirectoryRows, userDirectoryPageRequest } from "./UserDirectorySection.js";
+import { UserDirectorySection, canWriteLoadedIdentity, sortUserDirectoryRows, userDirectoryPageRequest } from "./UserDirectorySection.js";
 
 type DirectoryUser = PlatformUser & { createdAt: string };
 
@@ -55,6 +57,25 @@ describe("UserDirectorySection sorting", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain("total: model.userDirectory.total");
     expect(source).not.toContain("total: attributeFilter ? sortedUsers.length");
+  });
+
+  it("distinguishes matched account records from merchant workspaces in the visible summary", () => {
+    const model = {
+      authorization: { can: (capability: string) => capability === "identity.read" },
+      userDirectory: { items: [], total: 9, identityCount: 9, workspaceCount: 1, offset: 0, limit: 20, truncated: false },
+      userDirectoryLoading: false,
+      userDirectoryError: "",
+      userExporting: false,
+      canPlatformOps: false,
+      canUserGovernance: false,
+      userDetail: undefined,
+      userDetailLoading: false,
+      opsSession: undefined,
+    } as unknown as OpsConsoleModel;
+
+    const markup = renderToStaticMarkup(createElement(UserDirectorySection, { model }));
+    expect(markup).toContain("当前筛选：9 条账号记录，涉及 1 个商家工作区");
+    expect(markup).not.toContain("共 1 家接入用户");
   });
 
   it("requests 20 users by default while preserving explicit server page sizes", () => {
@@ -123,7 +144,7 @@ describe("UserDirectorySection sorting", () => {
     expect(source).not.toContain('title: "充值金额"');
     expect(source).not.toContain('title: "实际到账创意点"');
     expect(source).not.toContain('title: "充值时间"');
-    expect(source).toContain("实际收款请核对财务流水");
+    expect(source).toContain("实收金额请核对财务流水");
   });
 
   it("does not manufacture member approval from a browser-selected name", () => {

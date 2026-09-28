@@ -100,12 +100,12 @@ describe('manual operations store records', () => {
     const base = await start()
     const ops = { authorization: 'Bearer import-ops', 'x-workspace-id': workspaceId }
     const merchant = { authorization: 'Bearer import-owner', 'x-workspace-id': workspaceId }
-    const registered = await mcpAt(base, ops, MANUAL_RECORD_METHOD, { workspace_id: workspaceId, platform: 'jd', account_id: storeKey, reason: 'QA isolated manual store' })
+    const registered = await mcpAt(base, ops, MANUAL_RECORD_METHOD, { workspace_id: workspaceId, platform: 'jd', account_id: storeKey, store_alias: 'QA store', reason: 'QA isolated manual store' })
     expect(registered.body.error).toBeNull()
     const listed = await mcpAt(base, ops, 'ops.platform.manual-stores.list', { workspace_id: workspaceId })
     expect(listed.body.error, JSON.stringify(listed.body.error)).toBeNull()
     expect(listed.body.data!.result.items).toEqual(expect.arrayContaining([expect.objectContaining({ platform: 'jd', account_id: storeKey, token_state: 'manually_registered' })]))
-    const product = { platform: 'jd', account_id: storeKey, local_product_key: 'QA-OPS-001', title: 'QA isolated product', price: 39, stock: 2 }
+    const product = { platform: 'jd', account_id: storeKey, store_name: 'QA store', local_product_key: 'QA-OPS-001', title: 'QA isolated product', price: 39, stock: 2 }
     const input = { workspace_id: workspaceId, platform: 'jd', account_id: storeKey, products_json: JSON.stringify([product]), source_ref: 'qa://isolated-merchant-file', source_sha256: 'a'.repeat(64), reason: 'QA platform-assisted import' }
     const merchantDenied = await mcpAt(base, merchant, 'ops.platform.product.import.batch', input)
     expect(merchantDenied.body.error).not.toBeNull()
@@ -113,6 +113,10 @@ describe('manual operations store records', () => {
     expect(['FORBIDDEN', 'WORKSPACE_SCOPE_MISMATCH']).toContain(crossWorkspace.body.error?.code)
     const mismatch = await mcpAt(base, ops, 'ops.platform.product.import.batch', { ...input, products_json: JSON.stringify([{ ...product, account_id: 'other-store' }]) })
     expect(mismatch.body.error?.code).toBe('MANUAL_PRODUCT_IMPORT_SCOPE_INVALID')
+    const wrongStoreName = await mcpAt(base, ops, 'ops.platform.product.import.batch', { ...input, products_json: JSON.stringify([{ ...product, store_name: 'Another store' }]), store_assignment_confirmed: 'true' })
+    expect(wrongStoreName.body.error?.code).toBe('MANUAL_PRODUCT_IMPORT_SCOPE_INVALID')
+    const missingStoreName = await mcpAt(base, ops, 'ops.platform.product.import.batch', { ...input, products_json: JSON.stringify([{ ...product, store_name: undefined }]) })
+    expect(missingStoreName.body.error?.code).toBe('MANUAL_PRODUCT_IMPORT_ASSIGNMENT_CONFIRMATION_REQUIRED')
     const imported = await mcpAt(base, ops, 'ops.platform.product.import.batch', input)
     expect(imported.body.error, JSON.stringify(imported.body.error)).toBeNull()
     expect(imported.body.data!.result).toMatchObject({ workspace_id: workspaceId, source_mode: 'platform_manual_upload', result: { count: 1, atomic: true, factsConfirmationRequired: true } })
@@ -122,6 +126,10 @@ describe('manual operations store records', () => {
     expect(merchantProducts.data?.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: productId, accountId: storeKey, title: product.title })]))
     const audit = await operationAudits.find(workspaceId, 'platform.catalog.import.batch', 'product_import_batch', imported.body.data!.result.result.batchId)
     expect(audit).toMatchObject({ reason: input.reason, after: { source_ref: input.source_ref, source_sha256: input.source_sha256, import_mode: 'platform_manual_upload' } })
+    const confirmed = await mcpAt(base, ops, 'ops.platform.product.import.batch', { ...input, products_json: JSON.stringify([{ ...product, local_product_key: 'QA-OPS-002', store_name: undefined }]), store_assignment_confirmed: 'true' })
+    expect(confirmed.body.error, JSON.stringify(confirmed.body.error)).toBeNull()
+    const confirmedAttempt = await operationAudits.find(workspaceId, 'platform.catalog.import.batch.attempt', 'manual_product_source', `jd:${storeKey}:${input.source_sha256}`)
+    expect(confirmedAttempt?.after.store_assignment_confirmed).toBe(true)
   })
   it('reproduces the manual-mode deadlock: no bound store, and no operations method that could create one', async () => {
     vi.stubEnv('NODE_ENV', 'production')
