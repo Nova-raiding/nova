@@ -14,6 +14,7 @@ async function openIsolatedMerchant(path, entitlement) {
     const pathname = new URL(route.request().url()).pathname.replace(/^\/api/u, '')
     let data
     if (pathname === '/v1/auth/session') data = { account: { id: 'merchant_browser', login: 'demo@ys.com', accountType: 'merchant', displayName: '贵人鸟商家', enterpriseName: '贵人鸟服装', status: 'active', workspaceIds: ['ws_browser'] } }
+    else if (pathname === '/v1/auth/mcp-token') data = { access_token: 'browser-fixture-access', refresh_token: 'browser-fixture-refresh', expires_in: 300 }
     else if (pathname === '/healthz') data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'postgres', ready: true }, setup: { platformOperations: { mode: 'manual', ready: true } } }
     else if (pathname === '/v1/platform-accounts') data = { items: [{ platform: 'jd', state: 'not_configured', readEnabled: false, writeEnabled: false, dataMode: 'account_record_only', accountId: 'jd-store', storeName: '贵人鸟官方旗舰店' }] }
     else if (pathname === '/v1/products') data = { items: [], total: 0, limit: 50, offset: 0 }

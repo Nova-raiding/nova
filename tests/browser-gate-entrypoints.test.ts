@@ -15,7 +15,7 @@
  *   2. Each `test:browser:*` script runs a small, explicit, closed set of
  *      specs. `test:browser:ops` and `test:browser:ops:jit` name their specs
  *      (or delegate to a fallback) in the script / runner, and
- *      `test:browser:merchant` delegates to a runner that names four specs.
+ *      `test:browser:merchant` delegates to a runner that names six specs.
  *      Those sets are pinned below.
  *   3. The entrypoint ledger's browser half is satisfied by
  *      `dogfood/chatgpt-all-functions/playwright.config.mjs`, whose
@@ -74,7 +74,9 @@ function playwrightInvocation(source: string): string {
 }
 
 const MERCHANT_SPECS = [
+  'demo/merchant-studio/overview-finance.browser.spec.js',
   spec('merchant-all.spec.js'),
+  spec('merchant-brand-scopes.spec.js'),
   spec('merchant-data-safety.spec.js'),
   spec('merchant-interactions.spec.js'),
   spec('merchant.spec.js'),
@@ -86,7 +88,12 @@ const OPS_SPECS = [
   spec('ops.spec.js'),
 ].sort()
 
-const OPS_JIT_SPECS = [spec('ops-jit-isolated.spec.js')]
+const OPS_JIT_SPECS = [
+  spec('ops-delivery-readonly-isolated.spec.js'),
+  spec('ops-desktop-readonly-matrix.spec.js'),
+  spec('ops-jit-isolated.spec.js'),
+  spec('ops-manual-import-isolated.spec.js'),
+]
 
 /**
  * `package.json` entrypoints that declare browser coverage but that `npm run
@@ -115,13 +122,14 @@ const CONFIG_ONLY_BROWSER_SPECS = [
   spec('merchant-production-readonly.spec.js'),
   spec('merchant-workspace-roles.spec.js'),
   spec('ops-account-label-isolated.spec.js'),
+  spec('ops-account-ownership-isolated.spec.js'),
   spec('ops-delivery-account-access.spec.js'),
   spec('ops-delivery-auth-boundary.spec.js'),
   spec('ops-delivery-contract-link.spec.js'),
   spec('ops-delivery-isolated.spec.js'),
   spec('ops-delivery-owner-acceptance.spec.js'),
-  spec('ops-delivery-readonly-isolated.spec.js'),
   spec('ops-mcp-request-matrix.spec.js'),
+  spec('ops-members-global-isolated.spec.js'),
   spec('ops-rbac-desktop-matrix.spec.js'),
   spec('ops-refund-isolated.spec.js'),
   spec('ops-workbench-dirty-guard.spec.js'),
@@ -148,7 +156,7 @@ describe('browser gate entrypoints', () => {
     expect(command).not.toContain('--config')
   })
 
-  it('delegates test:browser:merchant to a runner that names exactly four spec files', () => {
+  it('delegates test:browser:merchant to a runner that names exactly six spec files', () => {
     const command = script('test:browser:merchant')
     expect(command).toContain('scripts/merchant-browser-candidate.ts')
     expect(command).not.toContain('--config')
