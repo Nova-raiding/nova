@@ -32,7 +32,10 @@ test('downloads Ops XLSX, imports merchant draft through real scan, and keeps kn
     await studio.goto(new URL('/merchant/login', merchantBase).href)
     await studio.getByPlaceholder('例如 merchant@example.com').fill(process.env.OPS_E2E_MERCHANT_USERNAME)
     await studio.getByPlaceholder('请输入商家密码').fill(process.env.OPS_E2E_MERCHANT_PASSWORD)
+    const merchantLogin = studio.waitForResponse(response => response.url().endsWith('/api/v1/auth/login') && response.request().method() === 'POST')
     await studio.getByRole('button', { name: '登录商家工作台' }).click()
+    expect((await merchantLogin).status()).toBe(200)
+    await expect(studio.getByRole('button', { name: '登录商家工作台' })).toBeHidden({ timeout: 30_000 })
     await studio.goto(new URL('/merchant/products?section=products', merchantBase).href)
     const form = studio.getByTestId('merchant-product-spreadsheet-import')
     await expect(form).toBeVisible({ timeout: 30_000 })
@@ -41,7 +44,7 @@ test('downloads Ops XLSX, imports merchant draft through real scan, and keeps kn
     const uploadPromise = studio.waitForResponse(response => response.url().endsWith('/api/v1/assets/upload') && response.request().method() === 'POST')
     await form.locator('input[type="file"]').setInputFiles({ name: '商品-SKU导入模板.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: workbook })
     const upload = await uploadPromise
-    expect(upload.status()).toBe(200)
+    expect(upload.status()).toBe(201)
     const uploadBody = await upload.json()
     const assetId = uploadBody.data?.id
     expect(assetId).toMatch(/^asset_/u)

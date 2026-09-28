@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync } from 'node:fs'
+import { createServer, request as httpRequest } from 'node:http'
 import { describe, expect, it, vi } from 'vitest'
-import { disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, opsE2eScanPurpose, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout, validateOpsE2eSpecIsolation } from '../scripts/run-ops-password-e2e.js'
+import { createOpsPasswordProxy, disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, opsE2eScanPurpose, productImportPointGrantInput, productImportSyntheticSku, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout, validateOpsE2eSpecIsolation } from '../scripts/run-ops-password-e2e.js'
 
 const { forbidRuntimeResources } = vi.hoisted(() => ({
   forbidRuntimeResources: vi.fn(() => { throw new Error('OPS_E2E_RESOURCE_CREATION_ATTEMPTED') }),
@@ -46,6 +47,39 @@ describe('Ops browser acceptance isolation', () => {
     expect(source).toContain("API_BIND_HOST: '127.0.0.1'")
     expect(source).toContain('SESSION_ID_HASH_SECRET: randomBytes')
     expect(readFileSync('apps/api/src/server.ts', 'utf8')).toContain('server.listen(port, process.env.API_BIND_HOST,')
+  })
+  it('preserves the browser Host for same-origin merchant CSRF while rejecting a forged Origin', async () => {
+    const ui = createServer((_request, response) => { response.writeHead(200); response.end('ui') })
+    const api = createServer((request, response) => {
+      const origin = request.headers.origin
+      const host = request.headers.host
+      response.writeHead(origin === `http://${host}` ? 200 : 403)
+      response.end()
+    })
+    const listen = async (server: ReturnType<typeof createServer>) => {
+      await new Promise<void>(done => server.listen(0, '127.0.0.1', done))
+      const address = server.address()
+      if (!address || typeof address === 'string') throw new Error('missing test port')
+      return `http://127.0.0.1:${address.port}`
+    }
+    let proxy: ReturnType<typeof createOpsPasswordProxy> | undefined
+    try {
+      const uiUrl = await listen(ui), apiUrl = await listen(api)
+      proxy = createOpsPasswordProxy(uiUrl, apiUrl)
+      const publicUrl = await listen(proxy)
+      const status = (origin: string) => new Promise<number>((done, reject) => {
+        const request = httpRequest(`${publicUrl}/api/v1/auth/mcp-token`, { method: 'POST', agent: false, headers: { origin } }, response => {
+          response.resume()
+          response.once('end', () => done(response.statusCode ?? 0))
+        })
+        request.once('error', reject)
+        request.end()
+      })
+      expect(await status(publicUrl)).toBe(200)
+      expect(await status('http://evil.example')).toBe(403)
+    } finally {
+      await Promise.all([proxy, ui, api].filter(Boolean).map(server => new Promise<void>(done => server!.close(() => done()))))
+    }
   })
   it('waits for in-flight fixture provisioning before signal cleanup', () => {
     expect(source).toContain('fixture = await fixtureSetup.catch(() => undefined)')
@@ -96,6 +130,19 @@ describe('Ops browser acceptance isolation', () => {
     await expect(runOpsE2e([delivery], { OPS_E2E_DELIVERY_SCAN: 'true', OPS_E2E_SCAN_PURPOSE: 'product_import' })).rejects.toThrow('OPS_E2E_PRODUCT_IMPORT_REQUIRES_DEDICATED_SCANNER_FIXTURE')
     await expect(runOpsE2e([product], { OPS_E2E_DELIVERY_SCAN: 'true', OPS_E2E_SCAN_PURPOSE: 'other' })).rejects.toThrow('OPS_E2E_SCAN_PURPOSE_INVALID')
     expect(forbidRuntimeResources).not.toHaveBeenCalled()
+  })
+  it('provisions a single idempotent test-only scan point bound to the disposable workspace', () => {
+    expect(productImportPointGrantInput({ workspaceId: 'ws_isolated', runId: 'run_isolated' })).toEqual({
+      workspaceId: 'ws_isolated', idempotencyKey: 'product-import-scan:run_isolated', sourceType: 'test_fixture',
+      sourceId: 'run_isolated', points: 1, metadata: { isolated: true, purpose: 'product_import_scan',
+        actor: 'isolated_fixture', reason: 'Admit one no-charge asset scan in this disposable workspace' },
+    })
+  })
+  it('labels the disposable entitlement as synthetic and keeps its period and benefits explicit', () => {
+    const sku = productImportSyntheticSku('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '2026-09-28T00:00:00.000Z')
+    expect(sku).toMatchObject({ kind: 'monthly', visibility: 'public', priceFen: 0, payload: { synthetic: true, purpose: 'product_import_scan' } })
+    expect(sku.benefits.map(item => item.code)).toEqual(['max_brands', 'max_stores', 'monthly_creative_points'])
+    expect(sku.checksum).toMatch(/^[a-f0-9]{64}$/u)
   })
   it.each(['', ' ', '0', '-1', '300001', '1000000', '1.5', '120000.0', '3e5', '0x493e0', '+300000', '0300000', ' 300000', '300000 ', '300000\n', 'Infinity', 'NaN'])('rejects invalid scanner startup budget %j before any resource creation', async value => {
     expect(() => validateOpsE2eScannerStartupTimeout({ OPS_E2E_SCANNER_STARTUP_TIMEOUT_MS: value })).toThrow('OPS_E2E_SCANNER_STARTUP_TIMEOUT_INVALID')

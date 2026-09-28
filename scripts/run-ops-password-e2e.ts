@@ -1,11 +1,15 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { closeSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createServer as createHttpServer, request as httpRequest, type Server as HttpServer } from 'node:http'
+import { Pool } from 'pg'
 import { createIsolatedOpsFixture, type IsolatedOpsFixture } from '../tests/isolated-ops-fixture.js'
+import { PostgresCreativePointRepository } from '../packages/persistence/src/creative-point-repository.js'
+import { PostgresCommercialContractRepository, monthlyAnniversary } from '../packages/persistence/src/commercial-contract-repository.js'
+import type { CommercialCatalogSkuSnapshot } from '../packages/persistence/src/commercial-catalog-repository.js'
 import { customerDeliveryScanTimeout, startCustomerDeliveryScanFixture, prepareCustomerDeliveryScanEnvironment, type CustomerDeliveryScanFixture } from './customer-delivery-scan-fixture.js'
 import { collectCustomerDeliveryScanEvidence } from './customer-delivery-scan-evidence.js'
 import { collectProductImportScanEvidence } from './product-import-scan-evidence.js'
@@ -71,6 +75,22 @@ export function opsE2eScanPurpose(args: readonly string[], source: NodeJS.Proces
     return 'product_import'
   }
   return source.OPS_E2E_DELIVERY_SCAN === 'true' ? 'customer_delivery' : undefined
+}
+
+export function productImportPointGrantInput(fixture: Pick<IsolatedOpsFixture, 'workspaceId' | 'runId'>) {
+  return { workspaceId: fixture.workspaceId, idempotencyKey: `product-import-scan:${fixture.runId}`,
+    sourceType: 'test_fixture', sourceId: fixture.runId, points: 1,
+    metadata: { isolated: true, purpose: 'product_import_scan', actor: 'isolated_fixture', reason: 'Admit one no-charge asset scan in this disposable workspace' } }
+}
+
+export function productImportSyntheticSku(runId: string, now: string): CommercialCatalogSkuSnapshot {
+  const key = runId.replaceAll('-', '')
+  const benefit = (code: string, quantity: number) => ({ code, quantity, rawValue: null, rawUnit: null, normalizedValue: null, policyRef: null, metadata: { isolated: true } })
+  return { id: `sku_product_scan_${key}`, code: `product_scan_${key}`, kind: 'monthly', visibility: 'public', requiredCapability: null,
+    versionId: `sku_product_scan_${key}_v1`, version: 1, lifecycle: 'approved', executable: true,
+    priceFen: 0, currency: 'CNY', priceMode: 'fixed', durationDays: null,
+    payload: { blockers: [], synthetic: true, purpose: 'product_import_scan' }, checksum: createHash('sha256').update(`product-import-synthetic-sku:${runId}`).digest('hex'),
+    effectiveAt: now, benefits: [benefit('max_brands', 1), benefit('max_stores', 1), benefit('monthly_creative_points', 1)] }
 }
 
 async function freeLoopbackPort(): Promise<number> {
@@ -153,7 +173,10 @@ export function createOpsPasswordProxy(uiUpstream: string, apiUpstream: string):
     const apiRequest = incoming.url?.startsWith('/api/') || incoming.url === '/api'
     const upstreamUrl = new URL(incoming.url ?? '/', apiRequest ? apiUpstream : uiUpstream)
     if (apiRequest) upstreamUrl.pathname = upstreamUrl.pathname.replace(/^\/api(?=\/|$)/u, '') || '/'
-    const headers = { ...incoming.headers, host: upstreamUrl.host }
+    // Keep the browser-visible authority for API CSRF checks. Rewriting Host to
+    // the private upstream makes a same-origin merchant token request appear
+    // cross-origin even though the browser sent it through this loopback gate.
+    const headers = { ...incoming.headers, host: apiRequest ? incoming.headers.host : upstreamUrl.host }
     const upstream = httpRequest(upstreamUrl, { method: incoming.method, headers }, response => {
       outgoing.writeHead(response.statusCode ?? 502, response.headers)
       response.pipe(outgoing)
@@ -244,6 +267,50 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     fixtureSetup = createIsolatedOpsFixture({ evidenceDir, ...(authorizationSuperAdminLogin ? { authorizationSuperAdminLogin } : {}) })
     fixture = await fixtureSetup
     if (stopping) throw new Error('OPS_E2E_INTERRUPTED_DURING_SETUP')
+    if (scanPurpose === 'product_import') {
+      // A generic asset.uploaded scan has a no-charge commercial snapshot but
+      // still requires a known positive balance. Provision one isolated test
+      // point through the RLS-bound repository; no payment or model call occurs.
+      const pointPool = new Pool({ connectionString: fixture.databaseUrl, max: 1 })
+      try {
+        const role = (await pointPool.query(`SELECT current_user AS role,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user`)).rows[0]
+        if (role?.role !== 'merchant_app' || role.rolsuper !== false || role.rolbypassrls !== false) throw new Error('OPS_E2E_PRODUCT_IMPORT_POINT_ROLE_UNSAFE')
+        const grant = await new PostgresCreativePointRepository(pointPool).grant(productImportPointGrantInput(fixture))
+        if (grant.balance.availablePoints !== 1) throw new Error('OPS_E2E_PRODUCT_IMPORT_POINT_FIXTURE_FAILED')
+        writeFileSync(resolve(evidenceDir, 'product-import-point-fixture.json'), JSON.stringify({ workspaceId: fixture.workspaceId,
+          grantId: grant.value.id, availablePoints: grant.balance.availablePoints, isolated: true, modelCalls: 0,
+          actor: 'isolated_fixture', reason: 'Admit one no-charge asset scan in this disposable workspace',
+          databaseRole: role.role, bypassRls: false }), { mode: 0o600, flag: 'wx' })
+      } finally { await pointPool.end() }
+      if (!fixture.workspaceId.includes(fixture.runId.replaceAll('-', ''))) throw new Error('OPS_E2E_PRODUCT_IMPORT_FIXTURE_IDENTITY_INVALID')
+      const now = new Date().toISOString()
+      const sku = productImportSyntheticSku(fixture.runId, now)
+      const adminPool = new Pool({ connectionString: fixture.adminDatabaseUrl, max: 1 })
+      try {
+        const admin = await adminPool.query('SELECT current_user AS role,current_database() AS database')
+        if (admin.rows[0]?.role !== 'merchant' || admin.rows[0]?.database !== 'merchant') throw new Error('OPS_E2E_PRODUCT_IMPORT_CATALOG_FIXTURE_UNSAFE')
+        await adminPool.query(`INSERT INTO commercial_catalog_skus(id,code,kind,visibility) VALUES ($1,$2,'monthly','public')`, [sku.id, sku.code])
+        await adminPool.query(`INSERT INTO commercial_catalog_sku_versions(id,sku_id,version,lifecycle,executable,price_fen,currency,price_mode,payload,checksum,effective_at)
+          VALUES ($1,$2,1,'approved',true,0,'CNY','fixed',$3::jsonb,$4,$5::timestamptz)`, [sku.versionId, sku.id, JSON.stringify(sku.payload), sku.checksum, now])
+      } finally { await adminPool.end() }
+      const contractPool = new Pool({ connectionString: fixture.databaseUrl, max: 1 })
+      try {
+        const contracts = new PostgresCommercialContractRepository(contractPool)
+        const order = await contracts.createOrder({ workspaceId: fixture.workspaceId, sku, paymentProvider: 'synthetic_fixture',
+          createdByActorId: 'isolated_fixture', idempotencyKey: `product-import-entitlement:${fixture.runId}`,
+          reason: 'Disposable scanner browser acceptance; no payment provider called', now })
+        const granted = await contracts.recordVerifiedPaymentAndGrant({ workspaceId: fixture.workspaceId, orderId: order.id,
+          provider: 'synthetic_fixture', providerEventId: `synthetic:${fixture.runId}`, providerOrderId: `synthetic:${fixture.runId}`,
+          nonce: `synthetic:${fixture.runId}`, payloadHash: createHash('sha256').update(`synthetic:${fixture.runId}`).digest('hex'),
+          amountFen: 0, currency: 'CNY', paidAt: now, period: { start: now, end: monthlyAnniversary(now, 1) } })
+        if (granted.order.status !== 'paid' || granted.availablePoints !== 2) throw new Error('OPS_E2E_PRODUCT_IMPORT_ENTITLEMENT_FIXTURE_FAILED')
+        writeFileSync(resolve(evidenceDir, 'product-import-entitlement-fixture.json'), JSON.stringify({ workspaceId: fixture.workspaceId,
+          skuId: sku.id, orderId: order.id, grantId: granted.grantId, availablePoints: granted.availablePoints,
+          actor: 'isolated_fixture', reason: 'Disposable scanner browser acceptance; no payment provider called',
+          synthetic: true, paidAmountFen: 0, providerCalled: false, modelCalls: 0,
+          period: { start: now, end: monthlyAnniversary(now, 1) } }), { mode: 0o600, flag: 'wx' })
+      } finally { await contractPool.end() }
+    }
     const apiPort = await freeLoopbackPort()
     const uiPort = await freeLoopbackPort()
     const gatewayPort = await freeLoopbackPort()
