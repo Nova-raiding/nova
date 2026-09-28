@@ -32,7 +32,8 @@ describe('isolated Ops password authentication runner', () => {
 
   it('starts one password UI and one same-origin gateway for the platform console', () => {
     const source = readFileSync('scripts/run-ops-password-e2e.ts', 'utf8')
-    expect(source.match(/'node_modules\/vite\/bin\/vite\.js', 'preview'/gu)).toHaveLength(1)
+    expect(source.match(/const ui = launch\(process\.execPath, \['node_modules\/vite\/bin\/vite\.js', 'preview'/gu)).toHaveLength(1)
+    expect(source.match(/const merchantUi = launch\(process\.execPath, \['node_modules\/vite\/bin\/vite\.js', 'preview'/gu)).toHaveLength(1)
     expect(source.match(/gateway = createOpsPasswordProxy\(/gu)).toHaveLength(1)
     expect(source).not.toMatch(/workspaceGateway|workspaceUi|OPS_WORKSPACE_BASE_URL/u)
     expect(source).toContain('OPS_TEST_USERNAME: username')

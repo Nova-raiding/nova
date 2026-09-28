@@ -42,6 +42,23 @@ mode_of() { if stat -c '%a' "$1" >/dev/null 2>&1; then stat -c '%a' "$1"; else s
 [ "$(owner_of "$releases")" = "$(id -u)" ] || { echo 'ECS_RELEASES_ROOT must be owned by the invoking user' >&2; exit 2; }
 release_mode=$(mode_of "$releases"); case "$release_mode" in *[2367][0-7]|*[2367]) echo 'ECS_RELEASES_ROOT must not be writable by group or other users' >&2; exit 2 ;; esac
 
+# Reject an invalid deploy request before probing every Docker container. The
+# inventory is intentionally thorough for retention, but can be expensive on
+# hosts with a large container history and is irrelevant to a request that
+# cannot pass its configuration/path gates.
+if [ "$action" = deploy ]; then
+  : "${ECS_CANDIDATE_BUNDLE_DIR:?ECS_CANDIDATE_BUNDLE_DIR is required}"
+  destination="$releases/$RELEASE_ID"
+  case "$destination" in "$releases"/*) ;; *) echo 'release destination escaped releases root' >&2; exit 2 ;; esac
+  [ ! -L "$destination" ] || { echo 'release destination must not be a symlink' >&2; exit 2; }
+  missing=
+  for name in RENDERED_COMPOSE_PATH PRODUCTION_CONFIG_PATH ECS_DEPLOY_STATE_DIR ECS_PREIDENTITY_SERVICE_MAP_PATH ECS_DEPLOY_LOCK_PATH ECS_ROLLBACK_ENTRYPOINT ECS_ROLLBACK_PLAN_PATH ECS_ROLLBACK_COMPOSE_PATH ECS_ROLLBACK_ENV_FILE ECS_ROLLBACK_IMAGE_DIGESTS_JSON ECS_ROLLBACK_STATE_PATH PRODUCTION_API_BASE_URL PRODUCTION_APPROVED_ORIGIN PRODUCTION_CANARY_BEARER_TOKEN PRODUCTION_CANARY_WORKSPACE_ID POST_DEPLOY_CANARY_OUTPUT IMAGE_DIGESTS_JSON DEPLOYMENT_NONCE DATABASE_URL; do
+    value=$(printenv "$name" 2>/dev/null || true)
+    [ -n "$value" ] || missing="$missing $name"
+  done
+  [ -z "$missing" ] || { echo "one-click deployment configuration is incomplete; missing:$missing" >&2; exit 2; }
+fi
+
 protected_file=$(mktemp "${TMPDIR:-/tmp}/merchant-protected-releases.XXXXXXXX")
 protected_git_file=$(mktemp "${TMPDIR:-/tmp}/merchant-protected-git-shas.XXXXXXXX")
 candidates_file=$(mktemp "${TMPDIR:-/tmp}/merchant-release-candidates.XXXXXXXX")
@@ -231,21 +248,9 @@ if [ "$action" = report ] || [ "$action" = cleanup ]; then
   exit 0
 fi
 
-: "${ECS_CANDIDATE_BUNDLE_DIR:?ECS_CANDIDATE_BUNDLE_DIR is required}"
-
-destination="$releases/$RELEASE_ID"
-case "$destination" in "$releases"/*) ;; *) echo 'release destination escaped releases root' >&2; exit 2 ;; esac
-[ ! -L "$destination" ] || { echo 'release destination must not be a symlink' >&2; exit 2; }
-
 # Fail before the expensive npm install/build staging step when the host
 # deployment contract is incomplete. The deploy runner still validates values,
 # permissions, checksums, and every downstream evidence input independently.
-missing=
-for name in RENDERED_COMPOSE_PATH PRODUCTION_CONFIG_PATH ECS_DEPLOY_STATE_DIR ECS_PREIDENTITY_SERVICE_MAP_PATH ECS_DEPLOY_LOCK_PATH ECS_ROLLBACK_ENTRYPOINT ECS_ROLLBACK_PLAN_PATH ECS_ROLLBACK_COMPOSE_PATH ECS_ROLLBACK_ENV_FILE ECS_ROLLBACK_IMAGE_DIGESTS_JSON ECS_ROLLBACK_STATE_PATH PRODUCTION_API_BASE_URL PRODUCTION_APPROVED_ORIGIN PRODUCTION_CANARY_BEARER_TOKEN PRODUCTION_CANARY_WORKSPACE_ID POST_DEPLOY_CANARY_OUTPUT IMAGE_DIGESTS_JSON DEPLOYMENT_NONCE DATABASE_URL; do
-  value=$(printenv "$name" 2>/dev/null || true)
-  [ -n "$value" ] || missing="$missing $name"
-done
-[ -z "$missing" ] || { echo "one-click deployment configuration is incomplete; missing:$missing" >&2; exit 2; }
 sh "$root/infra/scripts/check-ecs-storage-budget.sh"
 if [ ! -d "$destination" ]; then
   : "${ECS_CANDIDATE_BUNDLE_DIR:?ECS_CANDIDATE_BUNDLE_DIR is required}"

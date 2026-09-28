@@ -1906,6 +1906,7 @@ components:
         products_json: { type: string, minLength: 1, maxLength: 33000, description: JSON array containing 1 to 50 products, all scoped to the selected store. }
         source_ref: { type: string, minLength: 1, maxLength: 1000 }
         source_sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        store_assignment_confirmed: { type: string, enum: ['true'], description: Required when source store identity is missing or cannot be verified; explicit operator confirmation only. }
         reason: { type: string, minLength: 3, maxLength: 1000 }
       additionalProperties: false
     McpRequest:

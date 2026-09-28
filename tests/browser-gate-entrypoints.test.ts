@@ -93,6 +93,9 @@ const OPS_JIT_SPECS = [
   spec('ops-desktop-readonly-matrix.spec.js'),
   spec('ops-jit-isolated.spec.js'),
   spec('ops-manual-import-isolated.spec.js'),
+  // The product-import acceptance path is enabled only with the explicit
+  // OPS_E2E_SCAN_PURPOSE=product_import runner mode, not by the default JIT script.
+  spec('ops-product-import-scan-isolated.spec.js'),
 ]
 
 /**
@@ -130,6 +133,7 @@ const CONFIG_ONLY_BROWSER_SPECS = [
   spec('ops-delivery-owner-acceptance.spec.js'),
   spec('ops-mcp-request-matrix.spec.js'),
   spec('ops-members-global-isolated.spec.js'),
+  spec('ops-template-download-isolated.spec.js'),
   spec('ops-rbac-desktop-matrix.spec.js'),
   spec('ops-refund-isolated.spec.js'),
   spec('ops-workbench-dirty-guard.spec.js'),

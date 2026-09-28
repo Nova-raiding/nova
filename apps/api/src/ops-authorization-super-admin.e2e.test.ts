@@ -81,6 +81,12 @@ describe('authorization MCP password session boundary', () => {
     const result = await call(await login(account))
     expect(result.status).toBe(200)
     expect(result.body.error).toBeNull()
+    const matrix = result.body.data?.result as { items: Array<{ method: string; role_access: Record<string, string> }> }
+    for (const method of ['workspace.activate', 'workspace.deactivate']) {
+      const item = matrix.items.find(candidate => candidate.method === method)
+      expect(item).toBeDefined()
+      expect(item?.role_access).toMatchObject({ workspace_owner: 'govern', platform_admin: 'hidden', ops_admin: 'hidden', workspace_admin: 'hidden' })
+    }
   })
 
   it('denies an allowlisted login without the platform administrator role', async () => {

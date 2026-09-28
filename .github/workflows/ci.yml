@@ -278,6 +278,10 @@ jobs:
           packages/persistence/src/image-generation-before-provider.release.postgres.test.ts
           packages/persistence/src/knowledge-index-cas.release.postgres.test.ts
           packages/persistence/src/knowledge-generation-claim-boundary.postgres.test.ts
+          packages/persistence/src/scoped-brand-settings.release.postgres.test.ts
+          tests/ecs-254-255-api-bridge-isolated.postgres.test.ts
+          tests/ecs-254-255-worker-bridge-isolated.postgres.test.ts
+          tests/ecs-bridge-254-overlay-isolated.postgres.test.ts
           packages/persistence/src/migration-250-role-replay.postgres.test.ts
           packages/persistence/src/creative-point-action-claim.release.postgres.test.ts
           packages/persistence/src/charged-text-dispatch.postgres.test.ts

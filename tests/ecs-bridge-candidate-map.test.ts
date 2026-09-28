@@ -13,7 +13,10 @@ describe('bridge candidate map from real stopped Docker containers', () => {
     const dir = mkdtempSync(join(tmpdir(), 'bridge-candidate-map-'))
     const project = `bridgecandidate${randomBytes(4).toString('hex')}`
     const compose = join(dir, 'compose.yml'), output = join(dir, 'candidate-map.json')
-    writeFileSync(compose, `services:\n${names.map(name => `  ${name}:\n    image: ${image}\n    command: ["sleep", "600"]\n`).join('')}`)
+    // The container map only needs immutable Compose labels and IDs. These
+    // containers never run or communicate, so keep them networkless and avoid
+    // consuming a host bridge subnet on Docker machines with scarce pools.
+    writeFileSync(compose, `services:\n${names.map(name => `  ${name}:\n    image: ${image}\n    network_mode: none\n    command: ["sleep", "600"]\n`).join('')}`)
     const args = ['compose', '-p', project, '-f', compose]
     try {
       execFileSync('docker', [...args, 'create', '--no-build', '--pull', 'never', '--no-recreate', '-y', ...names], { stdio: 'pipe' })

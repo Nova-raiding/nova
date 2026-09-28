@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { startPlatformRelayTokenQuotaMonitor } from '../../../packages/ai/src/platform-model-gate.js'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 
 const videoProvider = vi.hoisted(() => ({
@@ -14,6 +15,10 @@ vi.mock('../../../packages/ai/src/video-generator.js', async importOriginal => (
 type Api = typeof import('./server.js')
 let api: Api
 let baseUrl = ''
+let stopRelayQuotaMonitor: (() => void) | undefined
+let relayQuotaRequests = 0
+let resolveRelayQuota: (() => void) | undefined
+const relayQuotaReady = new Promise<void>(resolve => { resolveRelayQuota = resolve })
 const actualFetch = globalThis.fetch
 
 async function callMcp(token: string, workspaceId: string, method: string, params: Record<string, unknown> = {}) {
@@ -53,6 +58,11 @@ beforeAll(async () => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
     if (url.startsWith('https://relay.example.test/api/pricing')) return new Response(JSON.stringify({ pricing_version: 'video-outcome-points-v1', group_ratio: { VIP: 1 }, data: [{ model_name: 'video-test-model', quota_type: 1, model_ratio: 37.5, model_price: 0, completion_ratio: 1, enable_groups: ['VIP'] }] }))
     if (url.startsWith('https://relay.example.test/api/status')) return new Response(JSON.stringify({ data: { quota_per_unit: 500_000, usd_exchange_rate: 6.83, quota_display_type: 'CNY' } }))
+    if (url.startsWith('https://relay.example.test/api/usage/token/')) {
+      relayQuotaRequests += 1
+      if (relayQuotaRequests >= 2) resolveRelayQuota?.()
+      return new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 100, total_used: 20, total_available: 80, expires_at: 0 } }))
+    }
     return actualFetch(input, init)
   }) as typeof fetch)
   api = await import('./server.js')
@@ -65,6 +75,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (api?.server.listening) await new Promise<void>(resolve => api.server.close(() => resolve()))
   api?.setRuleRepositoryForTests(undefined)
+  stopRelayQuotaMonitor?.()
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
 })
@@ -94,13 +105,33 @@ describe('video provider outcome point reservation over MCP', () => {
     expect(before.status).toBe(200)
     const beforeBalance = before.body.data?.result
     vi.stubEnv('NODE_ENV', 'production')
+    stopRelayQuotaMonitor = startPlatformRelayTokenQuotaMonitor(process.env)
+    await relayQuotaReady
+    const reviewAt = new Date().toISOString()
     const request = await callMcp(token, workspaceId, 'multimodal.video.request', {
       prompt: '根据已确认商品事实生成通勤场景视频', output: 'rendering', idempotency_key: `video-unknown-${suffix}`,
-      context_json: JSON.stringify({ brand: { id: 'brand-video-unknown', version: '1' }, product: { id: product.id, version: String(product.version) }, rules: [{ id: 'rule-video-unknown', version: '1' }] }),
+      context_json: JSON.stringify({
+        brand: { id: 'brand-video-unknown', version: '1' },
+        product: { id: product.id, version: String(product.version) },
+        rules: [{ id: 'rule-video-unknown', version: '1' }],
+        storyboardQuality: {
+          platform: 'taobao',
+          platformCapability: {
+            state: 'production_canary', evidenceRef: 'canary://fixture/taobao/video', verifiedAt: reviewAt,
+            specification: { durationsSeconds: [15], aspectRatios: ['9:16'], resolutions: [{ width: 1080, height: 1920 }], fps: [30], containers: ['mp4'], maxFileBytes: 20_000_000 },
+          },
+          reviewAt, durationSeconds: 15, aspectRatio: '9:16', resolution: { width: 1080, height: 1920 }, fps: 30,
+          scenes: [{ id: 'scene-1', startSeconds: 0, endSeconds: 15, visual: '展示已确认商品的通勤穿着与细节', productIds: [product.id], skuIds: ['fixture-sku'], claims: [] }],
+          cover: { assetId: 'cover-fixture', productIds: [product.id], skuIds: ['fixture-sku'], factSourceIds: ['fact://confirmed-product'], rights: { status: 'approved', evidenceRef: 'rights://fixture/approved', validUntil: '2027-01-01T00:00:00Z', platforms: ['taobao'] } },
+          output: { container: 'mp4', videoCodec: 'h264', fileBytes: 8_000_000 },
+          completionEvidence: { rendering: { state: 'real_render_passed', artifactRef: 'artifact://fixture/video', checksum: `sha256:${'a'.repeat(64)}`, rendererVersion: 'fixture-renderer' }, ocr: { state: 'passed', reportRef: 'ocr://fixture/video' }, humanReview: { state: 'approved', reviewRef: 'review://fixture/video', actorId: 'fixture-reviewer', reviewedAt: reviewAt } },
+          provenance: 'model_generated',
+        },
+      }),
     })
     const after = await callMcp(token, workspaceId, 'creative-points.balance.get')
-    expect(videoProvider.generate).toHaveBeenCalledTimes(1)
     expect(request.body.error?.code).toBe('MODEL_PROVIDER_OUTCOME_UNKNOWN')
+    expect(videoProvider.generate).toHaveBeenCalledTimes(1)
     expect(after.status).toBe(200)
     expect(after.body.data?.result?.available_points).toBe(Number(beforeBalance?.available_points) - 1)
     expect(after.body.data?.result?.reserved_points).toBe(Number(beforeBalance?.reserved_points) + 1)

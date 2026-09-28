@@ -88,18 +88,18 @@ describe('workspace lifecycle authorization', () => {
     expect(shadowOwner.status, JSON.stringify(shadowOwner.body)).toBe(200)
   })
 
-  it('does not advertise tenant lifecycle mutation to platform roles in the authorization matrix', async () => {
+  it('denies an unverified API-token principal access to the authorization matrix', async () => {
     const workspaceId = `ws_status_matrix_${randomUUID().slice(0, 8)}`
     vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
       admin: { workspaces: [workspaceId], actor_id: `admin-${workspaceId}`, roles: ['platform_admin'], workbenches: ['platform'] },
     }))
     const base = await start()
     const matrix = await call(base, 'admin', workspaceId, 'platform', 'ops.authorization.matrix.get')
-    expect(matrix.status, JSON.stringify(matrix.body)).toBe(200)
-    for (const method of ['workspace.activate', 'workspace.deactivate']) {
-      const item = matrix.body.data?.result.items?.find(candidate => candidate.method === method)
-      expect(item).toBeDefined()
-      expect(item?.role_access).toMatchObject({ workspace_owner: 'govern', platform_admin: 'hidden', ops_admin: 'hidden', workspace_admin: 'hidden' })
-    }
+    // The global role matrix requires the verified password-auth identity and
+    // allowlisted super-admin login; API token role claims are intentionally
+    // insufficient. Matrix contents are exercised through that real session in
+    // ops-authorization-super-admin.e2e.test.ts.
+    expect(matrix.status, JSON.stringify(matrix.body)).toBe(403)
+    expect(matrix.body.error?.code).toBe('FORBIDDEN')
   })
 })

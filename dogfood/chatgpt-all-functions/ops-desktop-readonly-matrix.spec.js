@@ -15,7 +15,7 @@ const routes = [
   ['总览', 'overview'], ['用户/工作区/成员/权限/入驻', 'users'],
   ['店铺与代导入', 'stores'], ['平台规则', 'rules'],
   ['财务/收款/权益', 'finance'], ['客户交付', 'customer-delivery'],
-  ['模型服务旧路由', 'models'], ['存储与对账旧路由', 'storage'], ['审计旧路由', 'audit'],
+  ['模型计费设置旧路由', 'models'], ['存储与对账旧路由', 'storage'], ['审计旧路由', 'audit'],
 ]
 
 test('platform desktop read-only route and tab matrix', async ({ page }) => {

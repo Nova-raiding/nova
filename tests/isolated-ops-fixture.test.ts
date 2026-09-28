@@ -120,8 +120,8 @@ describe('isolated Ops fixture safety boundary', () => {
 
   it('keeps the password Ops actor platform-only instead of granting synthetic workspace membership', () => {
     const source = readFileSync(new URL('./isolated-ops-fixture.ts', import.meta.url), 'utf8')
-    expect(source).toContain("const platformLogin = `ops-${runId}@fixture.invalid`")
-    expect(source).toContain('platformLogin, platformPassword, platformIdentityId: platformAccount.identityId')
+    expect(source).toContain("const platformLogin = authorizationSuperAdminLogin ?? `ops-${runId}@fixture.invalid`")
+    expect(source).toContain('platformLogin, platformPassword, merchantLogin, merchantPassword, platformIdentityId: platformAccount.identityId')
     expect(source).toContain('subjectIdentityId, `ops-fixture-target-${runId}`')
     expect(source).not.toContain('Isolated Ops Password Actor')
     expect(source).not.toContain('[randomUUID(), workspaceId, platformLogin, platformAccount.identityId]')

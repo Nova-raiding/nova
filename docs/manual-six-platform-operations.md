@@ -52,7 +52,7 @@
 | 字段 | 是否必填 | 说明 |
 |---|---:|---|
 | platform | 是 | `jd`、`taobao`、`tmall`、`pinduoduo`、`xiaohongshu` 或 `douyin` |
-| account_id | 是 | Store Nova 中登记的店铺范围。没有时由**平台运营**在运营后台“平台连接汇总”登记人工店铺记录，再导入本表资料；底层 MCP 方法为 `ops.platform.store.record.create`（商家工具面不可见）。该记录的 `token_state=manually_registered`，没有凭据、scope 或平台回执，也不表示已获平台授权。运营不得直接改数据库、复用其他商家的账号或把人工资料说成平台同步结果。 |
+| account_id | 是 | Store Nova 中登记的店铺范围。没有时由**平台运营**在运营后台“平台连接汇总”登记人工店铺记录，再导入本表资料；底层 MCP 方法为 `ops.platform.store.record.create`（商家工具面不可见）。该记录的 `token_state=manually_registered`，不写任何凭据、scope 或平台回执，也不表示已获平台授权。运营不得直接改数据库、复用其他商家的账号或把人工资料说成平台同步结果。 |
 | 商品货号 | 是 | 商家内部稳定编号，不能只用商品标题 |
 | 商品名称 | 是 | 不包含未经确认的营销承诺 |
 | 类目 | 是 | 使用商家确认的平台类目 |
