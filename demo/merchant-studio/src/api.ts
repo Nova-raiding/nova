@@ -207,6 +207,27 @@ export interface ApiError extends Error {
 
 let authExpired = false
 const merchantMcpSession = new MerchantMcpSession()
+const workspaceMcpSessions = new Map<string, MerchantMcpSession>()
+let pendingMcpIssuance: Promise<void> = Promise.resolve()
+
+async function issueMcpToken(baseUrl: string, workspaceId?: string) {
+  const prior = pendingMcpIssuance
+  let release!: () => void
+  pendingMcpIssuance = new Promise<void>(resolve => { release = resolve })
+  await prior
+  try {
+    return await requestApi<{ access_token?: unknown; refresh_token?: unknown; expires_in?: unknown }>(baseUrl, '/v1/auth/mcp-token', {
+      method: 'POST', body: JSON.stringify(workspaceId ? { workspace_id: workspaceId } : {}),
+    })
+  } finally {
+    release()
+  }
+}
+
+function clearWorkspaceMcpSessions() {
+  for (const session of workspaceMcpSessions.values()) session.clear()
+  workspaceMcpSessions.clear()
+}
 
 function isSessionAuthFailure(status: number, code?: string, message?: string) {
   if (status === 401) return true
@@ -912,6 +933,7 @@ export function describeApiError(error: unknown) {
 export async function loginMerchantAccount(baseUrl: string, input: { login: string; password: string }): Promise<MerchantAuthAccount> {
   authExpired = false
   merchantMcpSession.clear()
+  clearWorkspaceMcpSessions()
   const result = await requestApi<{ account: MerchantAuthAccount }>(baseUrl, '/v1/auth/login', {
     method: 'POST',
     body: JSON.stringify({ login: input.login.trim(), password: input.password, account_type: 'merchant' }),
@@ -943,6 +965,10 @@ export async function fetchMerchantSession(baseUrl: string): Promise<MerchantAut
 }
 
 export async function logoutMerchantAccount(baseUrl: string): Promise<void> {
+  await Promise.all([...workspaceMcpSessions.values()].map(session => session.revoke(refreshToken => requestApi<{ revoked: boolean }>(baseUrl, '/v1/auth/mcp-token/revoke', {
+    method: 'POST', body: JSON.stringify({ refresh_token: refreshToken }),
+  }))))
+  workspaceMcpSessions.clear()
   await merchantMcpSession.revoke(refreshToken => requestApi<{ revoked: boolean }>(baseUrl, '/v1/auth/mcp-token/revoke', {
     method: 'POST',
     body: JSON.stringify({ refresh_token: refreshToken }),
@@ -975,21 +1001,25 @@ export async function fetchApiHealth(baseUrl = runtimeEnv.VITE_API_BASE_URL): Pr
   return requestApi<ApiHealth>(baseUrl, '/healthz')
 }
 
-export async function requestMcp<T>(baseUrl: string, method: string, params: Record<string, unknown> = {}) {
+export async function requestMcp<T>(baseUrl: string, method: string, params: Record<string, unknown> = {}, workspaceId?: string) {
   // Vitest's in-process API fixtures intentionally exercise the raw MCP
   // contract with their own test auth repository. The deployed browser bundle
   // has no test MODE and must exchange its HttpOnly session for a bearer.
+  const scopedWorkspace = workspaceId?.trim()
+  if (workspaceId !== undefined && !scopedWorkspace) throw new Error('工作区 ID 不能为空')
   const invoke = (bearer?: string) => requestApi<{ result: T }>(baseUrl, '/mcp', {
     method: 'POST',
-    ...(bearer ? { headers: { authorization: `Bearer ${bearer}` } } : {}),
+    ...(bearer ? { headers: { authorization: `Bearer ${bearer}`, ...(scopedWorkspace ? { 'x-workspace-id': scopedWorkspace } : {}) } } : {}),
     body: JSON.stringify({ jsonrpc: '2.0', id: `studio-${Date.now()}`, method, params }),
   })
   if (runtimeEnv.MODE === 'test') return (await invoke()).result
-  return merchantMcpSession.request(
-    () => requestApi<{ access_token?: unknown; refresh_token?: unknown; expires_in?: unknown }>(baseUrl, '/v1/auth/mcp-token', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    }),
+  let session = merchantMcpSession
+  if (scopedWorkspace) {
+    session = workspaceMcpSessions.get(scopedWorkspace) ?? new MerchantMcpSession()
+    workspaceMcpSessions.set(scopedWorkspace, session)
+  }
+  return session.request(
+    () => issueMcpToken(baseUrl, scopedWorkspace),
     async bearer => (await invoke(bearer)).result,
   )
 }

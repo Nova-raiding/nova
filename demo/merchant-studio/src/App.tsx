@@ -77,6 +77,7 @@ import {
   Undo2,
   Upload,
   UserRound,
+  Users,
   WalletCards,
   X,
   Zap,
@@ -251,6 +252,7 @@ import {
   type MerchantEntryPoint,
 } from './entry-points.js'
 import { DeliveryReadinessPanel } from './DeliveryReadinessPanel.js'
+import { MerchantMembersPage } from './MerchantMembersPage.js'
 import { CampaignLifecyclePanel } from './CampaignLifecyclePanel.js'
 import { batchTargetKey, projectProductRowTarget, projectProductTarget, toggleBatchTarget } from './batch-target.js'
 import { resolveBatchReadiness, resolveBatchResultState } from './batch-readiness.js'
@@ -309,6 +311,7 @@ const navItems: Array<{
   // 商品资产不再作为独立工作台；相关能力收敛到知识库二级工作区。
   { id: 'products', label: '知识库', icon: BookOpen, entry: 'knowledge' },
   { id: 'finance', label: '财务概况', icon: WalletCards },
+  { id: 'members', label: '成员与权限', icon: Users },
 ]
 
 const knowledgeSubItems: Array<{
@@ -1041,6 +1044,7 @@ function Topbar({
     overview: '运营概览',
     products: activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : activeEntry === 'knowledge' ? '素材库' : '知识库',
     finance: '财务概况',
+    members: '成员与权限',
     task: '营销任务',
     publish: '发布中心',
     rules: '规则与检查',
@@ -13499,6 +13503,7 @@ export default function App() {
                   />
                 )}
                 {page === 'finance' && <FinanceOverview baseUrl={apiBaseUrl ?? ''} billing={accountBilling} account={authAccount} onOpenSupport={() => openUtility('support')} />}
+                {page === 'members' && authAccount && <MerchantMembersPage baseUrl={apiBaseUrl ?? ''} account={authAccount} />}
                 {page === 'products' && (
                   activeEntry === 'products' ? (
                     <StoreCatalogExperience key={`products-${workspaceNavigationKey}`} baseUrl={apiBaseUrl} apiMode={apiMode} />
