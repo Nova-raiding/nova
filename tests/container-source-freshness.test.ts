@@ -416,6 +416,11 @@ describe("container source freshness gate", () => {
     expect(preflight).toContain("WORKER_IMAGE_REF");
     const apiDockerfile = readFileSync("infra/docker/api.Dockerfile", "utf8");
     const [apiBuildStage, apiRuntimeStage] = apiDockerfile.split(" AS runtime");
+    expect(apiBuildStage).toContain("COPY dogfood ./dogfood");
+    expect(apiBuildStage.indexOf("COPY dogfood ./dogfood")).toBeLessThan(
+      apiBuildStage.indexOf("npm ci --prefer-offline"),
+    );
+    expect(apiRuntimeStage).not.toContain("COPY dogfood");
     expect(apiBuildStage).toContain(
       "COPY infra/scripts/install-ecs-release-controls.mjs infra/scripts/install-ecs-release-controls.d.mts ./infra/scripts/",
     );

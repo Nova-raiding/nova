@@ -7,6 +7,7 @@ COPY packages ./packages
 COPY services ./services
 COPY tests ./tests
 COPY demo ./demo
+COPY dogfood ./dogfood
 COPY scripts ./scripts
 # The root composite build typechecks tests that import host-side release
 # helpers. Keep those imports resolvable in the build stage; the API source
