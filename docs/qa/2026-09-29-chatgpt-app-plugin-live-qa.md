@@ -2,6 +2,7 @@
 
 ## 环境与结论
 
+- **2026-09-29 06:55 CST 店铺商品上传复验：桌面和 App 链路通过。** 运营后台选择 `ws_guirenniaoniao` 与人工登记店铺 `jd:42169` 后，[上传入口可用](evidence/2026-09-29-chatgpt-app/10-ops-store-upload-entry.png)。故意把 CSV 的店铺账号写成 `jd:42169` 时，页面提示归属不符并禁用导入；改为实际账号 `42169` 后预览通过。提交一条标为 `QA测试商品请勿发布`、货号 `QA-DO-NOT-PUBLISH-20260929` 的测试记录，填写资料来源与原因，后台明确显示[已导入 1 个商品](evidence/2026-09-29-chatgpt-app/11-ops-csv-import-success.png)。ChatGPT App 再用 `catalog.search(scope="workspace", query="QA测试商品请勿发布")` 只读查询，返回该商品、`platform=jd`、`accountId=42169`、店铺名“贵人鸟官方旗舰店”、店铺状态 `manually_registered`、`factsConfirmed=false`，见[App 真实结果](evidence/2026-09-29-chatgpt-app/12-chatgpt-imported-product.png)。另用 macOS 原生文件选择器选择含一条 SKU 的 XLSX，[预览 1 个商品](evidence/2026-09-29-chatgpt-app/13-ops-xlsx-preview.png)，未提交该 Excel，故没有第二条测试写入。此 CSV 只有商品货号、未填 `SKU编码`，App 原始结果 `skuCount=0`；首次回复仅按 SKU 找货号而误判“未找到”，随后以商品名重新查询并正确显示。需优化 App 的货号/SKU 提示。
 - **2026-09-29 06:47 CST 复验更新：App 文案候选已真实交付。** 线上 API 双副本已从 schema 254 兼容候选 `2f6b4387329921e91558e332243be1b8901e0ad4` 更新为 `release-demo-draft-preflight-20260929`；没有迁移数据库。ChatGPT App 先读到工作区 `ws_guirenniaoniao`、人工登记店铺 1 家、授权店铺 0 家、未绑定商品 1 件，见[更新后只读结果](evidence/2026-09-29-chatgpt-app/08-postdeploy-read.png)。随后仅调用一次 `content.draft.generate`，返回贵人鸟儿童运动鞋雾霾蓝 42 号的待审核候选，明确未创建正式版本、未批准、未发布，见[App 候选与账务截图](evidence/2026-09-29-chatgpt-app/09-postdeploy-draft-settled.png)。服务端只读账本核对该次 `qwen3.8-flash` 用量为输入 348、输出 403 token，成本 ¥0.001161，`model_usage_ledger` 和 1 点创意点预留均为 `settled`。这证明此次候选生成链路通过，不代表其余 130 个工具或正式商品审核发布流程已全通过。
 - 先前两次失败用量现为 `manual_attention`，各自 1 点预留仍为 `active`，错误仍是 `MODEL_USAGE_COST_MISSING`；没有补成本、退款或重放。必须用逐笔 provider 成本证据对账。
 - 宿主：macOS ChatGPT App 的 Codex 工作区；插件为本地直装、stdio MCP，实际进程运行 `merchant-marketing/mcp/bridge.mjs`。
@@ -24,10 +25,11 @@
 | ChatGPT App 内容候选 | `workspace.interactive.confirm` → `content.draft.generate` | 确认成功，生成被 `AUTHZ_SCOPE_MISMATCH` 拦截。 |
 | ChatGPT App 中转/账务 | `merchant.first_value(draft=true)` → 积分账本 | 真实调用一次；服务端第一响应为 `MODEL_USAGE_COST_MISSING`，插件错误重试后变成 `MODEL_ACTION_ALREADY_STARTED`。账本显示 1 点预留，未见结算/释放。 |
 | ChatGPT App 上线复验 | `workspace.interactive.confirm` → `content.draft.generate` → 用量/创意点账本 | 一次真实调用返回待审核候选；模型 348/403 token、成本 ¥0.001161、1 点预留结算为 `settled`。 |
+| 桌面店铺表格与 App 读取 | 错误归属 CSV 拦截、正确 CSV 导入、XLSX 原生选择与预览、App `catalog.search` | 1 条 QA 商品写入 `jd:42169` 后可在 App 查到；XLSX 仅预览，未导入。商品事实未确认、未发布。 |
 
 本轮未覆盖其余需要素材、店铺授权、审核状态或可能发布/扣费的工具的线上写操作；不能宣称“131 个功能全通过”。
 
-兼容候选从线上 API 基线 `bb417660402c341df1b0d1debd5778f8b963c568` 临时隔离移植 5 个文件（2 个测试、3 个源码），无 SQL/迁移文件差异。候选类型检查、106 项定向测试、完整 `test:release-gates` 通过（Vitest 1325 项通过、16 项既有跳过，后续脚本门禁退出 0）。新 API 镜像 digest `sha256:a4ffefcf27f6df39dc9191f77f011320afcbda5ab312acf407fe7abe4b10d2d6`；受保护候选、manifest 与当前版本回滚输入逐项核对后，只更新 `api api-replica`，两副本 healthy，公网 `/releasez`、`/api/healthz`、`/api/readyz`、Ops `/healthz` 通过。临时 worktree 需在证据归档后移除。
+兼容候选从线上 API 基线 `bb417660402c341df1b0d1debd5778f8b963c568` 临时隔离移植 5 个文件（2 个测试、3 个源码），无 SQL/迁移文件差异。候选类型检查、106 项定向测试、完整 `test:release-gates` 通过（Vitest 1325 项通过、16 项既有跳过，后续脚本门禁退出 0）。新 API 镜像 digest `sha256:a4ffefcf27f6df39dc9191f77f011320afcbda5ab312acf407fe7abe4b10d2d6`；受保护候选、manifest 与当前版本回滚输入逐项核对后，只更新 `api api-replica`，两副本 healthy，公网 `/releasez`、`/api/healthz`、`/api/readyz`、Ops `/healthz` 通过。临时 worktree 已移除，当前只保留主工作目录。
 
 主分支本地检查：`npm run typecheck`、`npm run test:release-gates` 通过（Vitest 1387 项通过、16 项跳过，后续 Node/脚本门禁也通过）；前置检查、授权及相关 API 定向测试 18 项通过。插件 bridge、安装与 manifest 相关 127 项通过。实际部署的 254 兼容候选另通过 106 项定向测试和完整发布门禁；App 文案生成及账本结算已经按本报告开头的记录复验。
 
@@ -48,4 +50,4 @@
 4. **App 使用引导**：首次进入先显示当前账号、工作区、人工登记/官方授权店铺数；对未绑定商品提供明确“导入/确认商品事实”入口。`catalog.search(scope=workspace)` 不需要 `platform` 和 `account_id`，修正当前 App 回复中的误导提示。
 5. **工具列表与参数契约**：在商家视角隐藏或标注平台专用读工具；对 `support.customer.replies.list` 和 `catalog.image.get` 补齐必填参数 schema 或给出明确缺参提示。上传 Excel/CSV 的入口与导入后未绑定商品状态需用真实桌面和 App 流程单独验收。
 
-剩余验收门槛：新用户在真实桌面完成 Excel/CSV 文件选择、上传/导入和事实确认后，能在 App 中查到正确店铺归属，并继续走审核与导出。当前 App 的登录、工作区读取、未绑定商品读取及一次未绑定文案候选生成已通过；桌面原生文件选择器、商品绑定、正式审核/导出和其余工具仍须逐项实测。不能以此次候选成功宣称所有流程通过。
+剩余验收门槛：本轮已通过真实桌面 CSV 导入、XLSX 原生选择与预览、App 读取正确店铺归属。QA 商品尚待商家确认事实，正式审核/导出、需官方授权的店铺写入流程和其余工具仍须按各自前置条件逐项实测。不能以此次候选与导入成功宣称所有流程通过。
