@@ -23,6 +23,9 @@ export const CONTROLS = Object.freeze({
   bridgeB: Object.freeze({ executable: 'ecs-bridge-b-transition', digest: 'production-bridge-b-transition-sha256' }),
   bridge254Review: Object.freeze({ executable: 'ecs-bridge-254-review-state.mjs', digest: 'production-bridge-254-review-state-sha256' }),
   bridge254State: Object.freeze({ executable: 'ecs-bridge-254-state-store.mjs', digest: 'production-bridge-254-state-store-sha256' }),
+  bridge255Review: Object.freeze({ executable: 'ecs-bridge-255-review.mjs', digest: 'production-bridge-255-review-sha256' }),
+  bridge255TransitionReview: Object.freeze({ executable: 'ecs-bridge-255-state.mjs', digest: 'production-bridge-255-transition-review-sha256' }),
+  bridge255State: Object.freeze({ executable: 'ecs-bridge-255-state-store.mjs', digest: 'production-bridge-255-state-store-sha256' }),
 });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const ensure = (condition, message) => { if (!condition) throw new Error(message); };

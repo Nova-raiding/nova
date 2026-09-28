@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict'
 import { createHash, generateKeyPairSync, sign } from 'node:crypto'
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import test from 'node:test'
 import { executeBridge255ForwardMigration, resumeBridge255ForwardRecovery } from '../infra/protected/ecs-bridge-255-core.mjs'
 import { validateBridge255Plan } from '../infra/protected/ecs-bridge-255-review.mjs'
+import { createBridge255StateStore, productionLockProbeConflicts, verifySignedBridge255ExecutionPlan } from '../infra/protected/ecs-bridge-255-state-store.mjs'
 
 const h = char => char.repeat(64)
 const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
@@ -13,6 +18,15 @@ const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(
 const sha = value => createHash('sha256').update(value).digest('hex')
 const digest = value => sha(canonical(value))
 const signedDigest = value => sha(JSON.stringify(Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))))
+
+test('production lock probe passes the lock path to flock and accepts only real contention', () => {
+  const calls = []
+  const probe = (...args) => { calls.push(args); return { status: 1 } }
+  assert.equal(productionLockProbeConflicts('/protected/deploy.lock', probe), true)
+  assert.deepEqual(calls[0].slice(0, 2), ['/usr/bin/flock', ['-n', '/protected/deploy.lock', '/bin/true']])
+  assert.equal(productionLockProbeConflicts('/protected/deploy.lock', () => ({ status: 0 })), false)
+  assert.equal(productionLockProbeConflicts('/protected/deploy.lock', () => ({ status: 127 })), false)
+})
 const services = ['api', 'api-replica', 'ui', 'ops-ui', 'payment-gateway', 'worker-sync',
   'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation',
   'postgres', 'redis', 'pilot-gateway'].sort()
@@ -125,7 +139,22 @@ function fixture() {
     async keepIngressFencedForForwardRecovery() { state.events.push('keep-fenced'); state.fenced = true },
   }
   return { plan, nonce, publicKeyPem: key.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    privateKeyPem: key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
     control, runtime, state, now: new Date('2026-09-28T04:02:00.000Z') }
+}
+
+function commitNonce(ledgerPath, nonce, plan) {
+  const identity = plan.bridge_254_255.identity
+  const db = new DatabaseSync(ledgerPath)
+  try {
+    db.exec('BEGIN IMMEDIATE')
+    db.exec('CREATE TABLE IF NOT EXISTS consumed_nonces (namespace TEXT,nonce TEXT,release_id TEXT,image_digest TEXT,manifest_sha256 TEXT,release_git_sha TEXT,PRIMARY KEY(namespace,nonce))')
+    db.exec('CREATE TABLE IF NOT EXISTS nonce_owners (namespace TEXT,nonce TEXT,operation TEXT,attempt_id TEXT,PRIMARY KEY(namespace,nonce))')
+    db.prepare('INSERT INTO consumed_nonces VALUES (?,?,?,?,?,?)').run('merchant-production-deploy', nonce,
+      identity.release_id, identity.image_set_digest, identity.manifest_sha256, identity.git_sha)
+    db.prepare('INSERT INTO nonce_owners VALUES (?,?,?,?)').run('merchant-production-deploy', nonce, 'bridge-255', plan.attempt_id)
+    db.exec('COMMIT')
+  } finally { db.close(); chmodSync(ledgerPath, 0o600) }
 }
 
 test('fence, drain, signed restore, nonce and journal precede the only SQL mutation', async () => {
@@ -141,6 +170,130 @@ test('fence, drain, signed restore, nonce and journal precede the only SQL mutat
   }
   assert.equal(f.state.fenced, true)
   assert.equal(f.state.events.includes('restart-old-254'), false)
+})
+
+test('protected journal store persists an approved attempt and resumes with the same nonce after SQL commit', async () => {
+  const f = fixture()
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), 'merchant-bridge-255-state-'))
+  try {
+    const ledgerPath = join(dir, 'nonces.sqlite3')
+    const ledger = new DatabaseSync(ledgerPath)
+    ledger.exec('CREATE TABLE consumed_nonces (namespace TEXT,nonce TEXT,release_id TEXT,image_digest TEXT,manifest_sha256 TEXT,release_git_sha TEXT,PRIMARY KEY(namespace,nonce))')
+    ledger.exec('CREATE TABLE nonce_owners (namespace TEXT,nonce TEXT,operation TEXT,attempt_id TEXT,PRIMARY KEY(namespace,nonce))')
+    ledger.close(); chmodSync(ledgerPath, 0o600)
+    let ticks = 0
+    const store = createBridge255StateStore({ directory: dir, ledgerPath,
+      consumerPath: join(dir, 'unused-consumer'), privateKeyPem: f.privateKeyPem,
+      publicKeyPem: f.publicKeyPem, trustedKeyId: 'isolated-key',
+      approvedPlanSha256: validateBridge255Plan(f.plan), approvedPlan: f.plan,
+      expectedUid: process.getuid(), requireProductionLock: false,
+      now: () => new Date(f.now.getTime() + 1000 * ticks++),
+      consume: nonce => commitNonce(ledgerPath, nonce, f.plan) })
+    assert.throws(() => createBridge255StateStore({ directory: dir, ledgerPath,
+      consumerPath: join(dir, 'unused-consumer'), privateKeyPem: f.privateKeyPem,
+      publicKeyPem: f.publicKeyPem, trustedKeyId: 'isolated-key',
+      approvedPlanSha256: h('0'), approvedPlan: f.plan,
+      expectedUid: process.getuid(), requireProductionLock: false }), /APPROVED_PLAN_HASH_MISMATCH/u)
+    f.state.crashAfterSql = true
+    const args = { plan: f.plan, deploymentNonce: f.nonce, publicKeyPem: f.publicKeyPem,
+      control: store, runtime: f.runtime, now: f.now }
+    await assert.rejects(executeBridge255ForwardMigration(args), /crash after SQL COMMIT/u)
+    assert.equal(f.state.version, 255)
+    const recovered = await resumeBridge255ForwardRecovery(args)
+    assert.equal(recovered.status, 'recovery_255_verified_fenced')
+    assert.equal(f.state.sqlCount, 1, 'durable 255 prefix must prevent replaying SQL')
+    assert.equal(f.state.nonceCount, 0, 'durable nonce receipt must not be consumed twice')
+    assert.equal(f.state.fenced, true)
+    const frozen = await store.readFrozenAttempt({ attemptId: f.plan.attempt_id })
+    assert.equal(frozen.journal.phase, 'verified_255')
+    assert.equal(frozen.journal.plan_sha256, validateBridge255Plan(f.plan))
+    const statePath = join(dir, `${f.plan.attempt_id}.json`)
+    const tampered = JSON.parse(readFileSync(statePath, 'utf8'))
+    tampered.history.at(-1).observation.runtime.business_canary_passed = false
+    chmodSync(statePath, 0o600)
+    writeFileSync(statePath, `${JSON.stringify(tampered)}\n`)
+    chmodSync(statePath, 0o400)
+    await assert.rejects(store.readFrozenAttempt({ attemptId: f.plan.attempt_id }), /JOURNAL_OBSERVATION_BINDING_INVALID/u)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('production execution-plan trust requires a fresh 24-hour Ed25519 approval envelope', () => {
+  const f = fixture()
+  const body = { schema_version: 'ecs-bridge-255-execution-plan/1', key_id: 'isolated-key', plan: f.plan,
+    created_at: f.now.toISOString(), expires_at: new Date(f.now.getTime() + 60_000).toISOString() }
+  const envelope = { ...body, signature_base64: sign(null, Buffer.from(canonical(body)), f.privateKeyPem).toString('base64') }
+  assert.equal(verifySignedBridge255ExecutionPlan(envelope, f.publicKeyPem, 'isolated-key', f.now).plan_sha256,
+    validateBridge255Plan(f.plan))
+  assert.throws(() => verifySignedBridge255ExecutionPlan({ ...envelope, plan: { ...f.plan, attempt_id: 'changed_attempt_123456' } },
+    f.publicKeyPem, 'isolated-key', f.now), /APPROVED_PLAN_SIGNATURE_INVALID/u)
+  assert.throws(() => verifySignedBridge255ExecutionPlan(envelope, f.publicKeyPem, 'isolated-key',
+    new Date(f.now.getTime() + 61_000)), /APPROVED_PLAN_TIME_INVALID/u)
+})
+
+test('durable nonce survives a crash before the migrating journal and is never re-consumed', async () => {
+  const f = fixture()
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), 'merchant-bridge-255-state-'))
+  try {
+    const ledgerPath = join(dir, 'nonces.sqlite3')
+    const ledger = new DatabaseSync(ledgerPath)
+    ledger.exec('CREATE TABLE consumed_nonces (namespace TEXT,nonce TEXT,release_id TEXT,image_digest TEXT,manifest_sha256 TEXT,release_git_sha TEXT,PRIMARY KEY(namespace,nonce))')
+    ledger.exec('CREATE TABLE nonce_owners (namespace TEXT,nonce TEXT,operation TEXT,attempt_id TEXT,PRIMARY KEY(namespace,nonce))')
+    ledger.close(); chmodSync(ledgerPath, 0o600)
+    let ticks = 0, consumeCalls = 0, crashAfterCommit = true
+    const store = createBridge255StateStore({ directory: dir, ledgerPath,
+      consumerPath: join(dir, 'unused-consumer'), privateKeyPem: f.privateKeyPem,
+      publicKeyPem: f.publicKeyPem, trustedKeyId: 'isolated-key',
+      approvedPlanSha256: validateBridge255Plan(f.plan), approvedPlan: f.plan,
+      expectedUid: process.getuid(), requireProductionLock: false,
+      now: () => new Date(f.now.getTime() + 1000 * ticks++),
+      consume: (nonce, plan) => {
+        consumeCalls += 1
+        commitNonce(ledgerPath, nonce, plan)
+        if (crashAfterCommit) { crashAfterCommit = false; throw new Error('simulated crash after durable nonce commit') }
+      } })
+    const args = { plan: f.plan, deploymentNonce: f.nonce, publicKeyPem: f.publicKeyPem,
+      control: store, runtime: f.runtime, now: f.now }
+    await assert.rejects(executeBridge255ForwardMigration(args), /simulated crash after durable nonce commit/u)
+    assert.equal(f.state.version, 254)
+    assert.equal(f.state.sqlCount, 0)
+    assert.equal(f.state.fenced, true)
+    assert.equal((await store.readFrozenAttempt({ attemptId: f.plan.attempt_id })).journal.phase, 'fenced_254')
+    const recovered = await resumeBridge255ForwardRecovery(args)
+    assert.equal(recovered.status, 'recovery_255_verified_fenced')
+    assert.equal(f.state.version, 255)
+    assert.equal(f.state.sqlCount, 1)
+    assert.equal(consumeCalls, 1, 'recovery must read the committed owner row rather than consume again')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('duplicate nonce bindings fail closed without invoking the production consumer', async () => {
+  const f = fixture()
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), 'merchant-bridge-255-state-'))
+  try {
+    const ledgerPath = join(dir, 'nonces.sqlite3')
+    const ledger = new DatabaseSync(ledgerPath)
+    ledger.exec('CREATE TABLE consumed_nonces (namespace TEXT,nonce TEXT,release_id TEXT,image_digest TEXT,manifest_sha256 TEXT,release_git_sha TEXT)')
+    ledger.exec('CREATE TABLE nonce_owners (namespace TEXT,nonce TEXT,operation TEXT,attempt_id TEXT)')
+    const identity = f.plan.bridge_254_255.identity
+    const row = ['merchant-production-deploy', f.nonce, identity.release_id, identity.image_set_digest,
+      identity.manifest_sha256, identity.git_sha]
+    ledger.prepare('INSERT INTO consumed_nonces VALUES (?,?,?,?,?,?)').run(...row)
+    ledger.prepare('INSERT INTO consumed_nonces VALUES (?,?,?,?,?,?)').run(...row)
+    ledger.prepare('INSERT INTO nonce_owners VALUES (?,?,?,?)').run('merchant-production-deploy', f.nonce,
+      'bridge-255', f.plan.attempt_id)
+    ledger.close(); chmodSync(ledgerPath, 0o600)
+    let consumeCalls = 0
+    const store = createBridge255StateStore({ directory: dir, ledgerPath,
+      consumerPath: join(dir, 'unused-consumer'), privateKeyPem: f.privateKeyPem,
+      publicKeyPem: f.publicKeyPem, trustedKeyId: 'isolated-key',
+      approvedPlanSha256: validateBridge255Plan(f.plan), approvedPlan: f.plan,
+      expectedUid: process.getuid(), requireProductionLock: false,
+      consume: () => { consumeCalls += 1 } })
+    await assert.rejects(store.consumeNonceOnce({ plan: f.plan, deploymentNonce: f.nonce,
+      namespace: 'merchant-production-deploy', operation: 'bridge-255' }),
+    /NONCE_LEDGER_BINDING_DUPLICATE/u)
+    assert.equal(consumeCalls, 0)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
 test('backup or nonce failure keeps the database 254 and retains ingress fence', async () => {

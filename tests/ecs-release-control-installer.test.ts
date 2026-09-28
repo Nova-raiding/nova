@@ -21,7 +21,7 @@ describe('protected release-control installation', () => {
     expect(() => prepareControlBytes('backup', source, sha, node)).toThrow('canonical');
   });
   it('does not accept arbitrary destinations or trust directories', () => {
-    expect(Object.keys(CONTROLS).sort()).toEqual(['backup', 'bridge254Review', 'bridge254State', 'bridge255Isolated', 'bridgeB', 'bundle', 'canonicalAttester', 'canonicalSnapshot', 'capability', 'demo254Backup', 'demo254Plan', 'manual', 'pg17BaselineBackup', 'pg17Plan', 'preidentity', 'restore']);
+    expect(Object.keys(CONTROLS).sort()).toEqual(['backup', 'bridge254Review', 'bridge254State', 'bridge255Isolated', 'bridge255Review', 'bridge255State', 'bridge255TransitionReview', 'bridgeB', 'bundle', 'canonicalAttester', 'canonicalSnapshot', 'capability', 'demo254Backup', 'demo254Plan', 'manual', 'pg17BaselineBackup', 'pg17Plan', 'preidentity', 'restore']);
     expect(CONTROLS.demo254Backup).toEqual({ executable: 'attest-demo-254-backup', digest: 'production-demo-254-backup-attester-sha256' });
     expect(CONTROLS.demo254Plan).toEqual({ executable: 'attest-demo-254-frozen-plan', digest: 'production-demo-254-plan-signer-sha256' });
     expect(CONTROLS.bridge255Isolated).toEqual({ executable: 'ecs-bridge-255-isolated-runner', digest: 'production-bridge-255-isolated-runner-sha256' });
@@ -31,6 +31,9 @@ describe('protected release-control installation', () => {
     expect(CONTROLS.canonicalAttester).toEqual({ executable: 'attest-canonical-safe-state', digest: 'canonical-safe-state-collector-sha256' });
     expect(CONTROLS.bridge254Review).toEqual({ executable: 'ecs-bridge-254-review-state.mjs', digest: 'production-bridge-254-review-state-sha256' });
     expect(CONTROLS.bridge254State).toEqual({ executable: 'ecs-bridge-254-state-store.mjs', digest: 'production-bridge-254-state-store-sha256' });
+    expect(CONTROLS.bridge255Review).toEqual({ executable: 'ecs-bridge-255-review.mjs', digest: 'production-bridge-255-review-sha256' });
+    expect(CONTROLS.bridge255TransitionReview).toEqual({ executable: 'ecs-bridge-255-state.mjs', digest: 'production-bridge-255-transition-review-sha256' });
+    expect(CONTROLS.bridge255State).toEqual({ executable: 'ecs-bridge-255-state-store.mjs', digest: 'production-bridge-255-state-store-sha256' });
     expect(CONTROLS.bridgeB).toEqual({ executable: 'ecs-bridge-b-transition', digest: 'production-bridge-b-transition-sha256' });
     expect(prepareControlBytes('bridgeB', source, sha, '/usr/bin/node').toString())
       .toBe('#!/usr/bin/node\nconsole.log("reviewed control");\n');

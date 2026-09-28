@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Read-only 254→255 transition review. This module has no Docker, database,
 // lock, nonce-consumer, signing-key or network access. A matching document is
 // never an authorization to run a production migration or cutover.
