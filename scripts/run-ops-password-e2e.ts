@@ -8,6 +8,7 @@ import { createServer as createHttpServer, request as httpRequest, type Server a
 import { createIsolatedOpsFixture, type IsolatedOpsFixture } from '../tests/isolated-ops-fixture.js'
 import { customerDeliveryScanTimeout, startCustomerDeliveryScanFixture, prepareCustomerDeliveryScanEnvironment, type CustomerDeliveryScanFixture } from './customer-delivery-scan-fixture.js'
 import { collectCustomerDeliveryScanEvidence } from './customer-delivery-scan-evidence.js'
+import { collectProductImportScanEvidence } from './product-import-scan-evidence.js'
 import { disposeOpsE2eChild, monitorOpsE2eChild } from './ops-e2e-child-monitor.js'
 
 // Own all persistence and identities; never copy a business container or .env.
@@ -59,6 +60,17 @@ export function validateOpsE2eScannerStartupTimeout(source: NodeJS.ProcessEnv): 
   if (!/^[1-9]\d{0,5}$/u.test(raw)) throw new Error('OPS_E2E_SCANNER_STARTUP_TIMEOUT_INVALID')
   try { return customerDeliveryScanTimeout(Number(raw)) }
   catch { throw new Error('OPS_E2E_SCANNER_STARTUP_TIMEOUT_INVALID') }
+}
+
+export function opsE2eScanPurpose(args: readonly string[], source: NodeJS.ProcessEnv): 'customer_delivery' | 'product_import' | undefined {
+  const purpose = source.OPS_E2E_SCAN_PURPOSE
+  if (purpose !== undefined && purpose !== 'product_import') throw new Error('OPS_E2E_SCAN_PURPOSE_INVALID')
+  if (purpose === 'product_import') {
+    if (source.OPS_E2E_DELIVERY_SCAN !== 'true' || args.filter(argument => argument.endsWith('.spec.js')).join() !== 'dogfood/chatgpt-all-functions/ops-product-import-scan-isolated.spec.js')
+      throw new Error('OPS_E2E_PRODUCT_IMPORT_REQUIRES_DEDICATED_SCANNER_FIXTURE')
+    return 'product_import'
+  }
+  return source.OPS_E2E_DELIVERY_SCAN === 'true' ? 'customer_delivery' : undefined
 }
 
 async function freeLoopbackPort(): Promise<number> {
@@ -155,6 +167,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   // Validate before creating directories, containers, connections or processes.
   const args = validateOpsE2eArguments(requested, source)
   const scannerStartupTimeoutMs = validateOpsE2eScannerStartupTimeout(source)
+  const scanPurpose = opsE2eScanPurpose(args, source)
   const manualOperationsMode = isolatedManualOperationsMode(source)
   const authorizationSuperAdminLogin = validateOpsE2eSpecIsolation(args, manualOperationsMode)
   const evidenceDir = resolve('artifacts/ops-jit-isolation', `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}`)
@@ -175,6 +188,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     for (const monitor of serviceMonitors) monitor.assertHealthy()
   }
   let gateway: HttpServer | undefined
+  let merchantGateway: HttpServer | undefined
   let cleanupPromise: Promise<void> | undefined
   let stopping = false
   let primaryError: unknown
@@ -193,6 +207,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     try {
       gateway?.closeAllConnections?.()
       if (gateway?.listening) await new Promise<void>(closed => gateway!.close(() => closed()))
+      merchantGateway?.closeAllConnections?.()
+      if (merchantGateway?.listening) await new Promise<void>(closed => merchantGateway!.close(() => closed()))
     } catch { cleanupErrors.push('OPS_E2E_GATEWAY_CLEANUP_FAILED') }
     const childrenDisposed = await Promise.allSettled(children.map(disposeOpsE2eChild))
     if (childrenDisposed.some(result => result.status === 'rejected')) cleanupErrors.push('OPS_E2E_CHILD_CLEANUP_FAILED')
@@ -231,9 +247,12 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const apiPort = await freeLoopbackPort()
     const uiPort = await freeLoopbackPort()
     const gatewayPort = await freeLoopbackPort()
-    if (new Set([apiPort, uiPort, gatewayPort]).size !== 3) throw new Error('OPS_E2E_LISTENER_PORT_COLLISION')
+    const merchantUiPort = scanPurpose === 'product_import' ? await freeLoopbackPort() : undefined
+    const merchantGatewayPort = scanPurpose === 'product_import' ? await freeLoopbackPort() : undefined
+    if (new Set([apiPort, uiPort, gatewayPort, merchantUiPort, merchantGatewayPort].filter(Boolean)).size !== (scanPurpose === 'product_import' ? 5 : 3)) throw new Error('OPS_E2E_LISTENER_PORT_COLLISION')
     const baseUrl = `http://127.0.0.1:${gatewayPort}`
-    if (source.OPS_E2E_DELIVERY_SCAN === 'true') {
+    const merchantBaseUrl = merchantGatewayPort ? `http://127.0.0.1:${merchantGatewayPort}` : undefined
+    if (scanPurpose) {
       scannerSetup = startCustomerDeliveryScanFixture({ enabled: true, evidenceDir, startupTimeoutMs: scannerStartupTimeoutMs })
       scanner = await scannerSetup
       if (stopping) throw new Error('OPS_E2E_INTERRUPTED_DURING_SCANNER_SETUP')
@@ -256,7 +275,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       RUN_MIGRATIONS_ON_STARTUP: 'false', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
       CONNECTOR_FIXTURE_MODE: 'false', REQUEST_OBSERVABILITY_LOGS: 'true',
       ...(manualOperationsMode ? { PLATFORM_OPERATIONS_MODE: 'manual' } : {}),
-      ALLOWED_ORIGINS: baseUrl, PUBLIC_OPS_BASE_URL: baseUrl, ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
+      ALLOWED_ORIGINS: [baseUrl, merchantBaseUrl].filter(Boolean).join(','), PUBLIC_OPS_BASE_URL: baseUrl, ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
       ...scanEnvironment?.apiEnvironment,
     })
     const api = launch(process.execPath, ['--import', 'tsx', 'apps/api/src/server.ts'], apiEnvironment, 'api')
@@ -273,6 +292,17 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     // which creates false console failures and does not represent production.
     const ui = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort', '--outDir', uiOutput], uiEnvironment, 'ui')
     serviceMonitors.push(monitorOpsE2eChild(ui))
+    if (scanPurpose === 'product_import' && merchantUiPort && merchantGatewayPort) {
+      const merchantOutput = resolve(evidenceDir, 'merchant-ui-dist')
+      const merchantEnvironment = opsChildEnvironment(source, { NODE_ENV: 'production', VITE_API_BASE_URL: '/api' })
+      const merchantBuild = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'build', 'demo/merchant-studio', '--config', 'demo/merchant-studio/vite.config.ts', '--outDir', merchantOutput], merchantEnvironment, 'merchant-ui-build')
+      if (await guardRuntime(exited(merchantBuild)) !== 0) throw new Error('OPS_E2E_MERCHANT_UI_BUILD_FAILED')
+      const merchantUi = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', String(merchantUiPort), '--strictPort', '--outDir', merchantOutput], merchantEnvironment, 'merchant-ui')
+      serviceMonitors.push(monitorOpsE2eChild(merchantUi))
+      await guardRuntime(ready(`http://127.0.0.1:${merchantUiPort}/`, merchantUi))
+      merchantGateway = createOpsPasswordProxy(`http://127.0.0.1:${merchantUiPort}`, `http://127.0.0.1:${apiPort}`)
+      await new Promise<void>((done, reject) => { merchantGateway!.once('error', reject); merchantGateway!.listen(merchantGatewayPort, '127.0.0.1', done) })
+    }
     await guardRuntime(Promise.all([ready(`http://127.0.0.1:${apiPort}/healthz`, api), ready(`http://127.0.0.1:${uiPort}/`, ui)]))
     const health = await guardRuntime(fetchOpsE2eHealth(`http://127.0.0.1:${apiPort}/healthz`))
     if (health.data?.persistence?.mode !== 'postgres' || !health.data.persistence.ready || !health.data.redis?.ready) throw new Error('OPS_E2E_DURABLE_RUNTIME_REQUIRED')
@@ -288,6 +318,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       OPS_E2E_OUTPUT_DIR: evidenceDir, PLAYWRIGHT_JSON_OUTPUT_NAME: resolve(evidenceDir, 'playwright.json'),
       OPS_E2E_MERCHANT_USERNAME: fixture.merchantLogin, OPS_E2E_MERCHANT_PASSWORD: fixture.merchantPassword,
       OPS_E2E_MANUAL_OPERATIONS: manualOperationsMode ? 'true' : 'false',
+      ...(scanPurpose ? { OPS_E2E_SCAN_PURPOSE: scanPurpose } : {}),
+      ...(merchantBaseUrl ? { MERCHANT_STUDIO_URL: merchantBaseUrl } : {}),
       ...(scanner ? { OPS_E2E_REAL_DELIVERY_SCAN: 'true' } : {}),
     })
     writeFileSync(resolve(evidenceDir, 'runtime.json'), JSON.stringify({
@@ -295,7 +327,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       persistence: health.data.persistence, redis: health.data.redis,
       authorization: { mode: 'enforce', durableAssignmentsRequired: true, authentication: 'isolated PostgreSQL account/password sessions' },
       models: { configured: false, called: false }, sharedConfigurationRead: false,
-      ...(scanner ? { scanner: { runId: scanner.runId, evidenceDir: scanner.evidenceDir, startupTimeoutMs: scannerStartupTimeoutMs, readiness: scanner.readiness, real: true, pointsGranted: false } } : {}),
+      ...(scanner ? { scanner: { runId: scanner.runId, evidenceDir: scanner.evidenceDir, startupTimeoutMs: scannerStartupTimeoutMs, readiness: scanner.readiness, real: true, pointsGranted: false, purpose: scanPurpose } } : {}),
     }, null, 2), { mode: 0o600, flag: 'wx' })
     console.log(JSON.stringify({ evidenceDir, runId: fixture.runId, isolated: true, persistence: 'postgres', testFiles: args.filter(argument => argument.endsWith('.spec.js')) }))
     const run = launch(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', ...args, '--workers=1', '--reporter=line,json', '--output', resolve(evidenceDir, 'test-results')], environment, 'browser', true)
@@ -321,7 +353,10 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     assertRuntimeHealthy()
     // These hooks can hold database transactions. Drain them before cleanup;
     // do not race their effects against teardown on a background failure.
-    if (scanner && exitCode === 0) await collectCustomerDeliveryScanEvidence({ fixture, evidenceDir })
+    if (scanner && exitCode === 0) {
+      if (scanPurpose === 'product_import') await collectProductImportScanEvidence({ fixture, evidenceDir })
+      else await collectCustomerDeliveryScanEvidence({ fixture, evidenceDir })
+    }
     assertRuntimeHealthy()
     if (afterRun) await afterRun({ fixture, baseUrl, username, password, evidenceDir, environment })
     assertRuntimeHealthy()

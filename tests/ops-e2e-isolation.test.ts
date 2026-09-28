@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout, validateOpsE2eSpecIsolation } from '../scripts/run-ops-password-e2e.js'
+import { disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, opsE2eScanPurpose, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout, validateOpsE2eSpecIsolation } from '../scripts/run-ops-password-e2e.js'
 
 const { forbidRuntimeResources } = vi.hoisted(() => ({
   forbidRuntimeResources: vi.fn(() => { throw new Error('OPS_E2E_RESOURCE_CREATION_ATTEMPTED') }),
@@ -86,6 +86,16 @@ describe('Ops browser acceptance isolation', () => {
     for (const value of ['1', '5000', '120000', '120001', '300000']) {
       expect(validateOpsE2eScannerStartupTimeout({ OPS_E2E_SCANNER_STARTUP_TIMEOUT_MS: value })).toBe(Number(value))
     }
+  })
+  it('keeps customer-delivery scanning as the default and isolates product-import evidence', async () => {
+    const product = 'dogfood/chatgpt-all-functions/ops-product-import-scan-isolated.spec.js'
+    const delivery = 'dogfood/chatgpt-all-functions/ops-delivery-readonly-isolated.spec.js'
+    expect(opsE2eScanPurpose([delivery], { OPS_E2E_DELIVERY_SCAN: 'true' })).toBe('customer_delivery')
+    expect(opsE2eScanPurpose([product], { OPS_E2E_DELIVERY_SCAN: 'true', OPS_E2E_SCAN_PURPOSE: 'product_import' })).toBe('product_import')
+    await expect(runOpsE2e([product], { OPS_E2E_SCAN_PURPOSE: 'product_import' })).rejects.toThrow('OPS_E2E_PRODUCT_IMPORT_REQUIRES_DEDICATED_SCANNER_FIXTURE')
+    await expect(runOpsE2e([delivery], { OPS_E2E_DELIVERY_SCAN: 'true', OPS_E2E_SCAN_PURPOSE: 'product_import' })).rejects.toThrow('OPS_E2E_PRODUCT_IMPORT_REQUIRES_DEDICATED_SCANNER_FIXTURE')
+    await expect(runOpsE2e([product], { OPS_E2E_DELIVERY_SCAN: 'true', OPS_E2E_SCAN_PURPOSE: 'other' })).rejects.toThrow('OPS_E2E_SCAN_PURPOSE_INVALID')
+    expect(forbidRuntimeResources).not.toHaveBeenCalled()
   })
   it.each(['', ' ', '0', '-1', '300001', '1000000', '1.5', '120000.0', '3e5', '0x493e0', '+300000', '0300000', ' 300000', '300000 ', '300000\n', 'Infinity', 'NaN'])('rejects invalid scanner startup budget %j before any resource creation', async value => {
     expect(() => validateOpsE2eScannerStartupTimeout({ OPS_E2E_SCANNER_STARTUP_TIMEOUT_MS: value })).toThrow('OPS_E2E_SCANNER_STARTUP_TIMEOUT_INVALID')
