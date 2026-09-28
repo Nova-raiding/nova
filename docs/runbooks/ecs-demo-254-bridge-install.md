@@ -11,6 +11,8 @@
 
 ## 安装前冻结的输入与证据
 
+当前源码有纯只读的 `infra/protected/demo-254-old-runtime-capsule.mjs` 组合旧运行时合同，覆盖公网 demo 项目的 API、副本、五个 worker、网关、两套 UI、支付、Postgres、Redis，以及项目外共享消费者。它逐项约束不可变镜像引用、真实容器 ID、Compose/env 摘要、254 备份 capture 摘要、24 小时有效期和保卷前向恢复。**形状审查即使通过也始终返回 `deployable=false`**。截至 2026-09-28，尚无从 101 独立采集全部受保护文件、签名该组合 capsule、恢复七服务并完成故障演练的固定摘要宿主控制；不能把现有签名数据库备份当作运行时恢复 capsule。
+
 1. 从同一干净候选提交冻结 release ID、Git SHA、源码归档 SHA、manifest SHA、完整八镜像集摘要及各服务不可变镜像引用；候选 API/replica 与五 worker 必须已在独立 PG16 迁移 254 和 255 的恢复库上通过真实健康、MCP、租户/RLS、任务及收费路径，且 254 时不得访问迁移 255 新表。`RUN_MIGRATIONS_ON_STARTUP=false`，桥安装过程不得选择 `migrate` 服务。
 2. 在持有同一生产部署锁时，重新读取公网 `/releasez` 四字段、`/livez`、`/readyz`；数据库 `merchant_app`、`merchant_ops` 角色各自读取完整 1–254 版本/名称/SQL SHA 链、无效索引和角色/RLS 状态，两个历史摘要须相同。记录 PG16 server version、数据库身份与卷 ID。不得依靠单个 `max(version)`。
 3. 冻结七个被替换的服务（API、replica、五 worker）各自容器 ID、image ID、仓库 digest、Compose project/service/config hash、网络别名、挂载及健康状态；并冻结未替换的网关、两个 UI、支付、PG、Redis 和主机上可能访问同一 DB/队列的 worker 的完整 inventory。若服务增加、失联或身份漂移，捕获失败。
