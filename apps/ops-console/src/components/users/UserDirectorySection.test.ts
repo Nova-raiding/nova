@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { PlatformUser } from "../../types/ops";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel.js";
-import { UserDirectorySection, canWriteLoadedIdentity, sortUserDirectoryRows, userDirectoryPageRequest } from "./UserDirectorySection.js";
+import { UserDirectorySection, canWriteLoadedIdentity, legacyCommercialSnapshotRows, sortUserDirectoryRows, userDirectoryPageRequest } from "./UserDirectorySection.js";
 
 type DirectoryUser = PlatformUser & { createdAt: string };
 
@@ -82,6 +82,16 @@ describe("UserDirectorySection sorting", () => {
   it("requests 20 users by default while preserving explicit server page sizes", () => {
     expect(userDirectoryPageRequest({})).toEqual({ page: 1, pageSize: 20 });
     expect(userDirectoryPageRequest({}, 2, 50)).toEqual({ page: 2, pageSize: 50 });
+  });
+
+  it("excludes memberships without legacy facts from the snapshot table", () => {
+    const withoutSnapshot = user({ id: "member-without-snapshot" });
+    const withSnapshot = user({ id: "member-with-snapshot", commercial: {
+      planCode: "legacy-starter", planName: "Starter", subscriptionStatus: "trial", usedTasks: 0,
+      includedTasks: 30, remainingTasks: 30, walletBalanceCny: "0.00",
+    } });
+    expect(legacyCommercialSnapshotRows([withoutSnapshot])).toEqual([]);
+    expect(legacyCommercialSnapshotRows([withoutSnapshot, withSnapshot])).toEqual([withSnapshot]);
   });
 
   it("keeps identity writes disabled until a persistent identity is fully loaded", () => {

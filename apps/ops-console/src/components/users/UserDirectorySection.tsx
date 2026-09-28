@@ -55,6 +55,10 @@ export function canWriteLoadedIdentity(model: Pick<OpsConsoleModel, "canUserGove
   return model.canUserGovernance && !model.userDetailLoading && Boolean(model.userDetail?.identity.id);
 }
 
+export function legacyCommercialSnapshotRows(memberships: readonly PlatformUser[]) {
+  return memberships.filter((row) => Boolean(row.commercial));
+}
+
 export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const canReadUserDirectory = model.authorization.can("identity.read");
   const [form] = Form.useForm<UserFilters>();
@@ -330,7 +334,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "成员创建时间", key: "createdAt", align: "center", width: 170, render: (_: unknown, row: PlatformUser) => formatKnownDateTime((row as DirectoryUser).createdAt) },
             { title: "成员更新时间", dataIndex: "updatedAt", align: "center", width: 170, render: (value: string) => formatKnownDateTime(value) },
           ]} /></section>
-          <section className="ops-user-detail-section"><Typography.Title level={5}>旧版套餐与任务额度快照</Typography.Title><Table size="small" tableLayout="fixed" scroll={{ x: 760 }} rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial-snapshot`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无旧版套餐与用量数据" }} columns={[
+          <section className="ops-user-detail-section"><Typography.Title level={5}>旧版套餐与任务额度快照</Typography.Title><Table size="small" tableLayout="fixed" scroll={{ x: 760 }} rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial-snapshot`} pagination={false} dataSource={legacyCommercialSnapshotRows(model.userDetail.memberships)} locale={{ emptyText: "暂无旧版套餐与用量数据" }} columns={[
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "成员", key: "name", align: "left", width: 150, render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
             { title: "旧版套餐", key: "plan", align: "left", width: 140, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "未提供" },
