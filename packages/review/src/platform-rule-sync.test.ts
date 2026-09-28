@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { defaultRuleCenterSeeds, RuleCenter } from './rule-center.js'
-import { platformRuleSyncStatus } from './platform-rule-sync.js'
+import { PLATFORM_RULE_SOURCES, platformRuleSyncStatus } from './platform-rule-sync.js'
 
 describe('platform rule sync status', () => {
+  it('links JD to its official rules directory, not an unrelated rule notice', () => {
+    const jd = PLATFORM_RULE_SOURCES.find(source => source.platform === 'jd')
+    expect(jd).toMatchObject({ officialUrl: 'https://rule.jd.com/rule/list.action', machineReadable: false })
+    expect(platformRuleSyncStatus([], { now: '2026-09-28T00:00:00.000Z' }).find(item => item.platform === 'jd'))
+      .toMatchObject({ officialUrl: jd?.officialUrl, state: 'not_configured', latestVersion: null })
+  })
+
   it('reports missing trusted manifest configuration fail-closed', () => {
     const rules = new RuleCenter(() => '2026-08-26T00:00:00.000Z', defaultRuleCenterSeeds.map(seed => ({ ...seed, source: { ...seed.source, kind: 'official' as const, trust: 'verified' as const, reference: seed.source.reference.replace('manual://', 'manifest://') } }))).list()
     const result = platformRuleSyncStatus(rules, { now: '2026-08-26T12:00:00.000Z' })
