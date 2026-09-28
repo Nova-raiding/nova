@@ -28,6 +28,7 @@
 - 101 主机剩余约 36 GiB；未清理任何业务数据、容器卷或其他 agent 的候选环境。
 - 浏览器验收完成后只停止本次 `merchant-demo-674full` 四个常驻容器和 `merchant-ops-674full-private`，保留隔离 PG/Redis 卷及受保护证据；本机测试 tunnel 和路径代理已关闭。
 - 在并行桥接文件持续变动期间重跑最新 `main` 的 `npm run typecheck && npm run test:release-gates`：类型检查通过；release gates 的 Vitest 阶段 171 文件通过、7 跳过、2 失败。失败分别是新发布控制目标未更新安装器断言，以及新增 frozen-plan 测试尚未纳入入口清单。日志在 `/private/tmp/storenova-main-release-gates-20260928.log`。这个可变工作树测试不能作为最终固定 SHA 的通过证据。
+- 随后补齐发布控制安装器断言及测试入口登记，定向复测 `ecs-release-control-installer` 与 `quality-entrypoints` 共 27/27 通过。全套门禁仍需对桥接工作全部提交后的固定 SHA 重跑。
 
 ## 未通过的最终用户目标
 
