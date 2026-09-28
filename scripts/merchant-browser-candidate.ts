@@ -16,6 +16,9 @@ export function isolatedCandidateEnvironment(source: Environment): Environment {
   const env: Environment = {}
   for (const key of toolingEnvironmentKeys) if (source[key] !== undefined) env[key] = source[key]
   return { ...env, BROWSER_STACK_MODE: 'candidate', NODE_ENV: 'test',
+    // Release images are built for the production ECS architecture. Keep the
+    // isolated browser candidate on that same platform even on ARM dev hosts.
+    DOCKER_DEFAULT_PLATFORM: 'linux/amd64',
     PERSISTENCE_MODE: 'postgres', CONNECTOR_FIXTURE_MODE: 'true', PAYMENT_MODE: 'fixture',
     COMMERCIAL_PAYMENT_PROVIDER: 'manual_transfer', PAYMENT_RECONCILIATION_ENABLED: 'false', PAYMENT_REFUND_ENABLED: 'false',
     MODEL_RELAY_API_KEY: '', VIDEO_MODEL_RELAY_API_KEY: '', PLUGIN_WRITE_ENABLED: 'false',
