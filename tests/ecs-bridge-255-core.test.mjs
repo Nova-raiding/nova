@@ -428,10 +428,56 @@ test('invalid frozen journal during resume restores ingress fence without replay
   await assert.rejects(resumeBridge255ForwardRecovery({ plan: f.plan,
     publicKeyPem: f.publicKeyPem, control: f.control, runtime: f.runtime, now: f.now }))
 
-  assert.deepEqual(f.state.events, ['lock', 'read-frozen', 'keep-fenced'])
+  assert.deepEqual(f.state.events, ['lock', 'read-frozen', 'lock', 'keep-fenced'])
   assert.equal(f.state.sqlCount, priorSql)
   assert.equal(f.state.nonceCount, priorNonce)
   assert.equal(f.state.fenced, true)
+})
+
+test('resume never tries to re-fence after it can no longer prove the protected lock is held', async () => {
+  const f = fixture(); f.state.crashNonceJournal = true
+  await assert.rejects(executeBridge255ForwardMigration({ plan: f.plan,
+    deploymentNonce: f.nonce, publicKeyPem: f.publicKeyPem,
+    control: f.control, runtime: f.runtime, now: f.now }))
+  f.state.crashNonceJournal = false
+  f.state.fenced = false
+  f.state.events.splice(0)
+  const assertProtectedLock = f.runtime.assertProtectedLock
+  let lockChecks = 0
+  f.runtime.assertProtectedLock = async path => {
+    f.state.events.push('lock')
+    lockChecks += 1
+    if (lockChecks === 2) return { held: false, path, owner: 'protected-host' }
+    return { held: true, path, owner: 'protected-host' }
+  }
+  const readFrozenAttempt = f.control.readFrozenAttempt
+  f.control.readFrozenAttempt = async input => {
+    f.state.events.push('read-frozen')
+    const frozen = await readFrozenAttempt(input)
+    return { ...frozen, journal: { ...frozen.journal, signature_base64: 'invalid-signature' } }
+  }
+
+  await assert.rejects(resumeBridge255ForwardRecovery({ plan: f.plan,
+    publicKeyPem: f.publicKeyPem, control: f.control, runtime: f.runtime, now: f.now }), AggregateError)
+
+  assert.deepEqual(f.state.events, ['lock', 'read-frozen', 'lock'])
+  assert.equal(f.state.sqlCount, 0)
+  assert.equal(f.state.nonceCount, 1)
+  assert.equal(f.state.fenced, false)
+  f.runtime.assertProtectedLock = assertProtectedLock
+})
+
+test('resume does not attempt ingress mutation when the initial protected lock check fails', async () => {
+  const f = fixture()
+  f.state.events.splice(0)
+  f.runtime.assertProtectedLock = async path => {
+    f.state.events.push('lock')
+    return { held: false, path, owner: 'protected-host' }
+  }
+  await assert.rejects(resumeBridge255ForwardRecovery({ plan: f.plan,
+    publicKeyPem: f.publicKeyPem, control: f.control, runtime: f.runtime, now: f.now }), /PRODUCTION_LOCK_UNVERIFIED/u)
+  assert.deepEqual(f.state.events, ['lock'])
+  assert.equal(f.state.fenced, false)
 })
 
 test('resume refuses changed plan or database history without mutation', async () => {

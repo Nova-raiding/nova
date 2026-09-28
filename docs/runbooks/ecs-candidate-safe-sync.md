@@ -159,11 +159,11 @@ ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATAB
 
 部署执行器消费 nonce 后使用固定摘要的 PostgreSQL 17 迁移镜像执行前向迁移；迁移命令成功并不足以切流。执行器必须再次通过 `DATABASE_URL` 和 `OPS_DATABASE_URL` 运行完整链校验，确认两个运行角色都精确包含 1 到 `EXPECTED_MIGRATION_VERSION` 的候选链，才允许重建 API、Worker、UI 或网关容器。完整链校验失败会在业务容器切换前中止并进入受保护回退流程；数据库仍遵循 forward-only 策略，不执行 schema downgrade。
 
-### 当前 242→254 过渡发布阻断条件
+### 当前 242→255 过渡发布阻断条件
 
-当前候选 `release-metadata.json` 声明迁移目标 254；候选归档、隔离恢复 capture、生产 evidence 和 `EXPECTED_MIGRATION_VERSION` 必须共同绑定该值。当前运行中旧 API/Worker 已知数据库前缀为 242，但发布前仍须重新读取并核实实时数据库历史。不得让旧运行时代码继续承载流量并直接把共享库迁到 254。候选 C 的普通 `deploy-verified-ecs-compose.sh` 在消费 nonce 前要求回滚 capsule 的目标迁移链精确覆盖 metadata 目标，并为计划中的实时版本到 254 之间每个前缀提供受审查摘要；公网 `/releasez` 还必须显示已验明的兼容桥身份。预部署签名观测中的数据库版本也必须与计划一致。
+当前候选 `release-metadata.json` 声明迁移目标 255；候选归档、隔离恢复 capture、生产 evidence 和 `EXPECTED_MIGRATION_VERSION` 必须共同绑定该值。此前旧 API/Worker 组合的数据库前缀曾观测为 242，但发布前仍须重新读取并核实所有实际数据库及外部消费者。不得让旧运行时代码继续承载流量并直接把共享库迁到 255。候选 C 的普通 `deploy-verified-ecs-compose.sh` 在消费 nonce 前要求回滚 capsule 的目标迁移链精确覆盖 metadata 目标，并为计划中的实时版本到 255 之间每个前缀提供受审查摘要；公网 `/releasez` 还必须显示已验明的兼容桥身份。预部署签名观测中的数据库版本也必须与计划一致。
 
-现有桥 B runbook 只描述 242 前缀的 runtime-only 安装，且明确不兼容 245 及之后的数据库前缀；它不是目标 254 的兼容桥。因而当前 242→254 发布保持 NO-GO，直到一个经审查且实机验证的桥接版本能承载目标 schema、独立安装步骤和故障恢复执行器就绪，且回滚 capsule 覆盖 242→254 全部前缀。顺序必须是：隔离 PG17 恢复库验证候选归档 metadata 指定的 242→254 完整链及受保护回滚 capsule；生产实时前缀复核为 capsule 计划所声明的值；先安装并通过 `/releasez` 证明兼容 254 的桥；再由签名候选和受保护 capsule 执行前向迁移并切换候选 C。缺少任一运行证据时，不得把旧桥 B、普通一键部署或静态文档当作授权/成功证据。
+现有桥 B runbook 只描述 242 前缀的 runtime-only 安装，且明确不兼容 245 及之后的数据库前缀；它不是目标 255 的兼容桥。254→255 的隔离 API/worker 测试只证明这两个前缀间的 runtime contract，不等于 242→255 的完整恢复证明。当前 242→255 发布保持 NO-GO，直到一个经审查且实机验证的桥接版本能承载目标 schema、独立安装步骤和故障恢复执行器就绪，且回滚 capsule 覆盖经现场核实的实时前缀至 255 的全部迁移前缀。顺序必须是：隔离 PG17 恢复库验证候选归档 metadata 指定的完整迁移链及受保护回滚 capsule；生产实时前缀复核为 capsule 计划所声明的值；先安装并通过 `/releasez` 证明兼容目标 255 的桥；再由签名候选和受保护 capsule 执行前向迁移并切换候选 C。缺少任一运行证据时，不得把旧桥 B、普通一键部署或静态文档当作授权/成功证据。
 
 1. 在独立目录解包并完成三方合并。
 2. 对合并结果运行类型检查、OSS/证据/生产配置测试及 `pilot-compose-preflight.sh`。

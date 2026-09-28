@@ -117,10 +117,10 @@ import { taskFeedbackEventPayload, publishRejectionKnowledgeObservation as creat
 export { taskFeedbackEventPayload, recordValue } from './event-projections.js'
 export { internalAutomationTickAllowed } from './automation-policy-utils.js'
 export { nativeMcpCommercialErrorData, nativeMcpErrorData } from './native-mcp-errors.js'
-import { readFileSync } from 'node:fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { requiresCustomerDeliveryAccess } from '../../../packages/contracts/src/customer-delivery-access.js'
 import { loadConnectorCapabilityEvidenceTrust } from './connector-capability-evidence-trust.js'
+import { readSafeRuntimeEvidenceFile } from './safe-evidence-file.js'
 import { inspectStoreLinks } from '../../../packages/domain/src/onboarding.js'
 import { readCustomerDeliveryAccess, assertCustomerDeliveryAllowed, pendingCustomerDeliveryProjection } from './customer-delivery-access.js'
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
@@ -6994,7 +6994,7 @@ function evidenceReadiness(kind: 'capability' | 'capacity'): EvidenceReadiness {
     return base
   }
   let document: unknown
-  try { document = JSON.parse(readFileSync(sourceRef, 'utf8')) } catch { base.reasons.push(`${pathKey} cannot be read`) ; return base }
+  try { document = JSON.parse(readSafeRuntimeEvidenceFile(sourceRef)) } catch { base.reasons.push(`${pathKey} cannot be read`) ; return base }
   if (!document || typeof document !== 'object' || Array.isArray(document)) { base.reasons.push('evidence document must be a JSON object'); return base }
   const value = document as Record<string, any>
   base.schemaVersion = typeof value.schema_version === 'string' ? value.schema_version : undefined

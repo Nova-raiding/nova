@@ -8,10 +8,13 @@ import { canReadEvidenceAsApi, verifyEvidenceReadableByApi } from '../infra/scri
 test('API evidence read policy follows owner, group, then other permission precedence', () => {
   assert.equal(canReadEvidenceAsApi({ uid: 10001, gid: 1, mode: 0o100400 }), true)
   assert.equal(canReadEvidenceAsApi({ uid: 10001, gid: 1, mode: 0o100600 }), false)
+  assert.equal(canReadEvidenceAsApi({ uid: 10001, gid: 1, mode: 0o100422 }), false)
   assert.equal(canReadEvidenceAsApi({ uid: 1, gid: 10001, mode: 0o100040 }), true)
   assert.equal(canReadEvidenceAsApi({ uid: 1, gid: 10001, mode: 0o100060 }), false)
+  assert.equal(canReadEvidenceAsApi({ uid: 1, gid: 10001, mode: 0o100042 }), false)
   assert.equal(canReadEvidenceAsApi({ uid: 1, gid: 1, mode: 0o100004 }), true)
   assert.equal(canReadEvidenceAsApi({ uid: 1, gid: 1, mode: 0o100006 }), false)
+  assert.equal(canReadEvidenceAsApi({ uid: 1, gid: 1, mode: 0o100402 }), false)
   assert.equal(canReadEvidenceAsApi({ uid: 1, gid: 1, mode: 0o100600 }), false)
 })
 

@@ -93,6 +93,16 @@ test('old runtime archive must bind exact API, worker and gateway image IDs and 
   }
 })
 
+test('old runtime archive must cover every replaced service image, not only API and worker-sync', () => {
+  for (const role of ['api-replica', 'worker-generation']) {
+    const value = fixture()
+    const target = value.capsule.replace.find(item => item.role === role)
+    target.image_id = `sha256:${'d'.repeat(64)}`
+    value.observed = { ...value.observed, replace: value.capsule.replace }
+    assert.ok(review(value).errors.includes('RUNTIME_ARCHIVE_DRIFT'), `${role} image must be archived`)
+  }
+})
+
 test('expiry and hand-added approval field fail closed', () => {
   let value = fixture(); value.capsule.expires_at = '2026-09-30T05:00:00.000Z'
   assert.ok(review(value).errors.includes('LIFETIME_INVALID'))

@@ -83,12 +83,10 @@ export function reviewDemo254OldRuntimeCapsule(capsule, observed, expected, now 
     && archive.image_ids.every(value => IMAGE.test(value))
     && new Set(archive.image_ids).size === archive.image_ids.length
   check(archiveValid, 'RUNTIME_ARCHIVE_INVALID')
-  const oldApi = Array.isArray(capsule.replace) ? capsule.replace.find(item => item?.role === 'api') : null
-  const oldWorker = Array.isArray(capsule.replace) ? capsule.replace.find(item => item?.role === 'worker-sync') : null
+  const replacedImageIds = Array.isArray(capsule.replace) ? capsule.replace.map(item => item?.image_id) : []
   const gateway = Array.isArray(capsule.preserve) ? capsule.preserve.find(item => item?.role === 'pilot-gateway') : null
-  check(!archiveValid || (archive.image_ids.includes(oldApi?.image_id) && archive.image_ids.includes(oldWorker?.image_id)
-    && archive.image_ids.includes(gateway?.image_id)
-    && archive.image_ids.length === new Set([oldApi?.image_id, oldWorker?.image_id, gateway?.image_id]).size
+  const requiredArchiveImageIds = [...new Set([...replacedImageIds, gateway?.image_id])].sort()
+  check(!archiveValid || (same([...archive.image_ids].sort(), requiredArchiveImageIds)
     && same(archive, observed?.runtime_archive)), 'RUNTIME_ARCHIVE_DRIFT')
   check(Array.isArray(capsule.external_consumers) && capsule.external_consumers.length > 0
     && capsule.external_consumers.every(item => exactKeys(item, ['role', 'container_id', 'database_target_sha256', 'queue_target_sha256', 'disposition'])

@@ -84,6 +84,8 @@ cat > "$manifest" <<'EOF'
 package.json
 package-lock.json
 apps/api/src/server.ts
+apps/api/src/safe-evidence-file.ts
+apps/api/src/safe-evidence-file.test.ts
 apps/api/src/scanner-health.test.ts
 apps/api/src/connector-capability-evidence-trust.ts
 apps/api/src/connector-capability-evidence-trust.test.ts
@@ -212,6 +214,10 @@ infra/protected/attest-manual-operations-evidence.mjs
 infra/protected/attest-manual-operations-evidence.d.mts
 infra/protected/ecs-preidentity-recovery.mjs
 infra/protected/ecs-preidentity-recovery.d.mts
+infra/protected/ecs-bridge-255-core.mjs
+infra/protected/demo-254-old-runtime-capsule.mjs
+tests/ecs-bridge-255-core.test.mjs
+tests/demo-254-old-runtime-capsule.test.mjs
 tests/release-evidence-bundle-gate.ts
 tests/ecs-release-control-installer.container-check.mjs
 tests/ecs-release-control-installer.test.ts

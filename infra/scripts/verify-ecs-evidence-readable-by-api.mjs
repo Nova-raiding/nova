@@ -6,9 +6,10 @@ const API_GID = 10001
 
 export function canReadEvidenceAsApi({ uid, gid, mode }) {
   const permissions = mode & 0o777
-  if (uid === API_UID) return (permissions & 0o400) !== 0 && (permissions & 0o200) === 0
-  if (gid === API_GID) return (permissions & 0o040) !== 0 && (permissions & 0o020) === 0
-  return (permissions & 0o004) !== 0 && (permissions & 0o002) === 0
+  if ((permissions & 0o222) !== 0) return false
+  if (uid === API_UID) return (permissions & 0o400) !== 0
+  if (gid === API_GID) return (permissions & 0o040) !== 0
+  return (permissions & 0o004) !== 0
 }
 
 export function verifyEvidenceReadableByApi(path) {
@@ -27,7 +28,7 @@ export function verifyEvidenceReadableByApi(path) {
 function main(paths) {
   if (paths.length !== 2) throw new Error('CAPABILITY_AND_CAPACITY_EVIDENCE_PATHS_REQUIRED')
   for (const path of paths) verifyEvidenceReadableByApi(path)
-  process.stdout.write('ECS release evidence is readable by API UID/GID 10001\n')
+  process.stdout.write('ECS release evidence permission metadata allows read-only access for API UID/GID 10001\n')
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {

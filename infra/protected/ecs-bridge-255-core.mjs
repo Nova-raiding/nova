@@ -197,6 +197,10 @@ export async function resumeBridge255ForwardRecovery({ plan, publicKeyPem, contr
       production_cutover_authorized: false, phase: verified.journal.phase,
       database_version: 255, ingress_fenced: true })
   } catch (error) {
+    try { await assertLocked(runtime) }
+    catch (lockError) {
+      throw new AggregateError([error, lockError], 'bridge 255 resume failed after production lock was lost; ingress state needs incident recovery')
+    }
     try { await runtime.keepIngressFencedForForwardRecovery() }
     catch (fenceError) { throw new AggregateError([error, fenceError], 'bridge 255 resume failed and ingress fence needs incident recovery') }
     throw error
