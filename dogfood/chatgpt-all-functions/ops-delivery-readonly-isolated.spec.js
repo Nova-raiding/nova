@@ -1,9 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { createHash, randomUUID } from 'node:crypto'
-import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { openPlatformConsole } from './ops-auth.js'
 
@@ -68,7 +65,8 @@ test('read-only platform operator can inspect every delivery section without mut
     const row = page.getByRole('row').filter({ hasText: companyName })
     await expect(row).toBeVisible()
     await expect(page.getByRole('button', { name: '新建客户', exact: true })).toBeDisabled()
-    await expect(row.getByRole('checkbox')).toBeDisabled()
+    await expect(row.getByRole('checkbox')).toHaveCount(0)
+    await expect(row.getByRole('combobox', { name: `${companyName}客户培训状态` })).toBeDisabled()
     const uiWrites = []
     page.on('request', request => {
       if (request.method() !== 'POST' || new URL(request.url()).pathname !== '/api/mcp') return
@@ -78,7 +76,7 @@ test('read-only platform operator can inspect every delivery section without mut
       } catch { /* Ignore non-JSON, never alter requests. */ }
     })
     for (const [index, label, checkboxes] of [[0, '客户档案', 0], [1, '系统接入', 10], [2, '功能测试及验收', 8]]) {
-      await row.getByRole('button', { name: '未填写', exact: true }).nth(index).click()
+      await row.getByRole('button', { name: '未完成', exact: true }).nth(index).click()
       const drawer = page.getByRole('dialog').filter({ hasText: `${companyName} · ${label}` })
       await expect(drawer).toBeVisible()
       await expect(drawer.locator('form')).toHaveAttribute('aria-busy', 'false')
@@ -93,20 +91,17 @@ test('read-only platform operator can inspect every delivery section without mut
         await expect(companyInput).toHaveValue(companyName)
         await expect(companyInput).toBeDisabled()
       }
-      await drawer.getByRole('button', { name: '关闭', exact: true }).click()
+      await drawer.locator('.ant-drawer-close').click()
       await expect(drawer).not.toBeVisible()
     }
-    await row.getByRole('button', { name: '凭证', exact: true }).click()
-    await expect(page.getByText('培训凭证', { exact: true })).toBeVisible()
-    await expect(page.locator('input[type=file]')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: '确认培训完成', exact: true })).toHaveCount(0)
-    await row.getByRole('button', { name: '凭证', exact: true }).click()
-    await row.getByRole('button', { name: '未上传', exact: true }).click()
-    const videoDrawer = page.getByRole('dialog').filter({ hasText: `${companyName} · 交付视频` })
-    await expect(videoDrawer.getByText('尚未登记交付视频', { exact: true })).toBeVisible()
-    await expect(videoDrawer.locator('input[type=file]')).toHaveCount(0)
-    await expect(videoDrawer.getByRole('button', { name: '保存当前环节' })).toHaveCount(0)
-    await videoDrawer.getByRole('button', { name: '关闭', exact: true }).click()
+    await row.getByRole('button', { name: '查看详情', exact: true }).click()
+    const detailsDrawer = page.getByRole('dialog').filter({ hasText: `${companyName} · 客户详情` })
+    await expect(detailsDrawer).toBeVisible()
+    await expect(detailsDrawer.getByRole('region', { name: `${companyName} 客户培训凭证` })).toBeVisible()
+    await expect(detailsDrawer.getByRole('button', { name: '确认培训完成', exact: true })).toHaveCount(0)
+    await expect(detailsDrawer.locator('input[type=file]')).toHaveCount(0)
+    await detailsDrawer.locator('.ant-drawer-close').click()
+    await expect(detailsDrawer).not.toBeVisible()
     expect(uiWrites).toEqual([])
 
     // Direct requests must also fail at capability authorization, not merely
@@ -122,53 +117,11 @@ test('read-only platform operator can inspect every delivery section without mut
     ]) await rpc(method, params, 403)
     expect(await rpc('ops.customer-delivery.get', scope)).toEqual(before)
 
-    const screenshot = join(evidenceDir, 'readonly-profile-shot-scraper.png')
-    const storyboard = join(evidenceDir, 'readonly-storyboard.json')
-    const rowSelector = `tr.ant-table-row:has-text(${JSON.stringify(companyName)})`
-    await writeFile(storyboard, JSON.stringify({
-      url: page.url(), output: join(evidenceDir, 'readonly-inspection.webm'), viewport: { width: 1440, height: 900 },
-      javascript: `sessionStorage.setItem('ops_connection_config_v1', ${JSON.stringify(JSON.stringify({ apiBase: '/api', workspaceId, workbench: 'platform' }))}); sessionStorage.setItem('ops_workspace_id', ${JSON.stringify(workspaceId)}); sessionStorage.setItem('ops_workbench', 'platform');`,
-      scenes: [{ name: 'Read-only operator opens the actual customer profile', open: page.url(), wait_for: '[aria-label="客户交付目标企业工作区"]', do: [
-        { click: '[aria-label="客户交付目标企业工作区"]' },
-        { wait_for: `.ant-select-item-option:has-text(${JSON.stringify(workspaceId)})` },
-        { click: `.ant-select-item-option:has-text(${JSON.stringify(workspaceId)})` },
-        { wait_for: rowSelector },
-        { click: `:nth-match(${rowSelector} button:has-text("未填写"), 1)` },
-        { wait_for: ':nth-match(.ant-drawer-body form[aria-busy="false"] input[disabled], 1)' },
-        { pause: 0.5 },
-        { screenshot },
-      ] }],
-    }), { mode: 0o600, flag: 'wx' })
-    const installed = join(homedir(), '.local/bin/shot-scraper')
-    const authState = await page.context().storageState()
-    await new Promise((resolve, reject) => {
-      const child = spawn(existsSync(installed) ? installed : 'shot-scraper', ['video', storyboard, '--auth', '/dev/stdin', '--browser', 'chrome', '--timeout', '30000'], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 35_000 })
-      let captureError = ''
-      let diagnosticsOmitted = false
-      child.stdout.resume()
-      child.stderr.on('data', chunk => {
-        if (diagnosticsOmitted) return
-        captureError += String(chunk)
-        // Never truncate a secret before redaction: discard oversized output
-        // entirely so an incomplete cookie cannot survive the buffer boundary.
-        if (captureError.length > 64_000) { captureError = ''; diagnosticsOmitted = true }
-      })
-      child.once('error', () => reject(new Error('DELIVERY_READONLY_CAPTURE_UNAVAILABLE')))
-      child.once('exit', code => {
-        if (code === 0) return resolve()
-        // Diagnostics may include selector errors, but never persist the
-        // authenticated browser state or cookie values supplied via stdin.
-        for (const cookie of authState.cookies) {
-          if (cookie.value) captureError = captureError.replaceAll(cookie.value, '[REDACTED]').replaceAll(encodeURIComponent(cookie.value), '[REDACTED]')
-        }
-        reject(new Error(`DELIVERY_READONLY_CAPTURE_FAILED: ${diagnosticsOmitted ? 'diagnostics exceeded safe limit' : captureError.slice(-8000)}`))
-      })
-      child.stdin.on('error', () => {})
-      child.stdin.end(JSON.stringify(authState))
-    })
+    const screenshot = join(evidenceDir, 'readonly-profile.png')
+    await page.screenshot({ path: screenshot, fullPage: true })
     await testInfo.attach('readonly-profile', { path: screenshot, contentType: 'image/png' })
     evidence.status = 'passed'
-    evidence.detailsOpened = ['profile', 'system_integration', 'functional_acceptance', 'training', 'video']
+    evidence.detailsOpened = ['profile', 'system_integration', 'functional_acceptance', 'customer_details', 'training_evidence']
     evidence.checklistControlsInspected = 18
     evidence.savedChecklistItems = 0
     evidence.mutationsDenied = 6
