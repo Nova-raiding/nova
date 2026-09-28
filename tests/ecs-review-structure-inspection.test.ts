@@ -69,6 +69,7 @@ describe('ECS sanitized remote structure review', () => {
     expect(PROTECTED_OPS_PATHS).toContain('infra/scripts/ecs-compose-published-ports.d.mts')
     expect(PROTECTED_OPS_PATHS).toContain('infra/scripts/check-mcp-integration-production.mjs')
     expect(STRUCTURE_REVIEW_PATHS).toContain('tests/ecs-compose-published-ports.test.ts')
+    expect(STRUCTURE_REVIEW_PATHS).toContain('demo/merchant-studio/entry-points.test.ts')
   })
 
   it('publishes only redacted structural summaries after exact sync-plan hash verification', () => {

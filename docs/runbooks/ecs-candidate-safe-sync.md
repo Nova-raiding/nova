@@ -37,6 +37,8 @@ sh infra/scripts/prepare-ecs-candidate-bundle.sh
 
 脚本只接受干净且已提交的工作树。产物包含远端比较文件清单、逐文件本地/远端 SHA-256、提交源码归档 `candidate-source.tar`、归档摘要及 `candidate-identity.txt`。源码归档统一排除 `artifacts/`、`screenshots/` 中的历史交付物和验收产物，保留构建、迁移和测试输入，包括发布测试直接依赖的 `dogfood/` 脚本与退役断言记录；这些排除规则必须同时用于候选包、门禁镜像、业务镜像和部署时的源码摘要校验。此操作不删除仓库或服务器上的任何历史文件。身份文件绑定完整 Git SHA、源码归档 SHA-256、比较清单 SHA-256 和同步计划 SHA-256；其中源码摘要必须与候选门禁镜像的 `com.storenova.candidate.source_sha256` OCI 标签一致。脚本对 SSH 目标仅执行 `cd`、文件存在性判断和 `sha256sum`。
 
+对刚生成的候选，先运行 `npm run test:ecs-review-structure`，再分别执行 `node infra/scripts/acquire-ecs-review-source.mjs <候选包目录>` 与 `node infra/scripts/inspect-ecs-review-structure.mjs <候选包目录>`。这些步骤只读 `101`：第一项仅取回源码策略允许的文件并明确报告拒绝项；第二项对其余已分类结构文件生成脱敏摘要，不保存原始远端内容；受保护部署/配置文件只保留摘要并要求服务器现场复核。所有报告必须绑定同一 `candidate-identity.txt`，且在 `review_required` 三方合并和 `missing_remote` 新文件审查完成前，不得 staging 或部署。
+
 审核完成后，不得把归档覆盖解压到现有 checkout。若 `/srv/release-candidates/stage-verified-ecs-release.sh` 是旧的 standalone copy，先按下面的“staging 工具链安装/升级”步骤用候选归档绑定的 staging+lock pair 更新它；不能直接覆盖旧文件，也不能让旧 helper 在共享构建锁之外继续执行。随后在 ECS 主机预创建仓库外、仅发布操作者可写的 releases 根目录，再执行：
 
 ```sh

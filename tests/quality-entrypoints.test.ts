@@ -216,7 +216,9 @@ describe('quality entrypoint coverage', () => {
     // to execute it against an absent or shared database.
     expect(script('test:postgres:isolated')).toContain('scripts/run-isolated-postgres-tests.ts')
     expect(script('test:bridge-254-255-api')).toBe('node --import tsx scripts/run-safe-tests.ts --no-file-parallelism tests/ecs-254-255-api-bridge-isolated.postgres.test.ts')
+    expect(script('test:ecs-review-structure')).toBe('node --import tsx scripts/run-safe-tests.ts --no-file-parallelism tests/ecs-review-structure-inspection.test.ts')
     expect(readFileSync(resolve(root, 'docs/runbooks/ecs-candidate-safe-sync.md'), 'utf8')).toContain('npm run test:bridge-254-255-api')
+    expect(readFileSync(resolve(root, 'docs/runbooks/ecs-candidate-safe-sync.md'), 'utf8')).toContain('npm run test:ecs-review-structure')
     const isolatedRunner = readFileSync(resolve(root, 'scripts/run-isolated-postgres-tests.ts'), 'utf8')
     expect(isolatedRunner).toContain("from '../vitest.postgres.config.js'")
     const postgresManifest = readFileSync(resolve(root, 'vitest.postgres.config.ts'), 'utf8')
