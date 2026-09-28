@@ -313,7 +313,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         </Row>
       </Form>
     </Modal>
-    <Drawer title={detailAccountType === "platform" ? "运营平台账号详情" : "商户用户详情"} aria-label="用户目录详情抽屉" size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden footer={detailAccountType === "platform" ? null : <div style={{ textAlign: "right" }}><Button danger disabled={!model.canUserGovernance || !model.userDetail?.memberships.length} onClick={() => { const row = model.userDetail?.memberships[0]; if (row) { setActionError(""); setAccessTarget(row); } }}>停用</Button></div>}>
+    <Drawer className="ops-user-detail-drawer" title={detailAccountType === "platform" ? "运营平台账号详情" : "商户用户详情"} aria-label="用户目录详情抽屉" size="min(920px, calc(100vw - 32px))" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden footer={detailAccountType === "platform" ? null : <div style={{ textAlign: "right" }}><Button danger disabled={!model.canUserGovernance || !model.userDetail?.memberships.length} onClick={() => { const row = model.userDetail?.memberships[0]; if (row) { setActionError(""); setAccessTarget(row); } }}>停用</Button></div>}>
       <Spin spinning={model.userDetailLoading} tip="正在加载用户详情…" aria-label="正在加载用户详情">
         {!model.userDetailLoading && !model.userDetail ? <Empty description="用户详情尚未取得，请重试或关闭后重新打开" /> : null}
         {model.userDetail && <Space orientation="vertical" size="middle" className="full-width">
@@ -323,14 +323,14 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           ]} />
           {detailAccountType === "platform" && <Alert type="info" showIcon title="运营平台账号" description="此账号属于运营平台，不计入商家工作区成员、套餐或商品数据。" />}
           {detailAccountType === "merchant" && <>
-          <div><Typography.Title level={5}>成员与工作区</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} dataSource={model.userDetail.memberships} columns={[
+          <div><Typography.Title level={5}>成员与工作区</Typography.Title><Table size="small" tableLayout="fixed" scroll={{ x: 760 }} rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} dataSource={model.userDetail.memberships} columns={[
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "企业主体", key: "name", align: "center", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
             { title: "工作区状态", key: "status", align: "center", width: 120, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "default"}>{workspaceStatusLabels[row.workspaceStatus] ?? row.workspaceStatus}</Tag> },
             { title: "成员创建时间", key: "createdAt", align: "center", width: 170, render: (_: unknown, row: PlatformUser) => formatKnownDateTime((row as DirectoryUser).createdAt) },
             { title: "成员更新时间", dataIndex: "updatedAt", align: "center", width: 170, render: (value: string) => formatKnownDateTime(value) },
           ]} /></div>
-          <div><Typography.Title level={5}>旧版套餐与任务额度快照</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial-snapshot`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无旧版套餐与用量数据" }} columns={[
+          <div><Typography.Title level={5}>旧版套餐与任务额度快照</Typography.Title><Table size="small" tableLayout="fixed" scroll={{ x: 880 }} rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial-snapshot`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无旧版套餐与用量数据" }} columns={[
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "成员", key: "name", align: "center", width: 180, render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
             { title: "旧版套餐", key: "plan", align: "center", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "未提供" },

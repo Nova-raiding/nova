@@ -48,11 +48,15 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   return (
     <section className="ops-overview-snapshot" aria-label="平台运营数据">
       <section className="ops-dashboard-hero" aria-label="核心经营指标">
-        <Typography.Title level={2} id="ops-overview-snapshot-title">平台运营概况</Typography.Title>
-        <div className="ops-dashboard-current-month">财务与模型用量按累计口径展示</div>
+        <div>
+          <span className="ops-dashboard-eyebrow">PLATFORM BRIEFING</span>
+          <Typography.Title level={2} id="ops-overview-snapshot-title">平台运营概况</Typography.Title>
+          <p>汇总客户、收入与模型成本，快速掌握平台经营状态。</p>
+        </div>
+        <div className="ops-dashboard-current-month">数据范围 <strong>累计</strong></div>
       </section>
       <section className="ops-dashboard-panel-grid">
-        <article className="ops-dashboard-panel ops-dashboard-total"><header><div><h3>平台累计总览</h3></div><small>全部</small></header><div className="ops-dashboard-metric-list">{metric("客户总数", totalWorkspaceCount, "家", "primary")}{metric("有效客户数", merchantWorkspaceCount, "家", "primary")}{metric("赠送客户数", giftedMerchantCount, "家")}{metric("接入费总收入", finance?.onboardingOrderCny, "元", "revenue")}{metric("累计客户消耗创意点", undefined, "点")}{metric("累计平台消耗金额", platformProviderCost, "元", "revenue")}</div></article>
+        <article className="ops-dashboard-panel ops-dashboard-total"><header><div><span>ACCOUNT OVERVIEW</span><h3>平台累计总览</h3></div><small>全部</small></header><div className="ops-dashboard-metric-list">{metric("客户总数", totalWorkspaceCount, "家", "primary")}{metric("有效客户数", merchantWorkspaceCount, "家", "primary")}{metric("赠送客户数", giftedMerchantCount, "家")}{metric("接入费总收入", finance?.onboardingOrderCny, "元", "revenue")}{metric("累计客户消耗创意点", undefined, "点")}{metric("累计平台消耗金额", platformProviderCost, "元", "revenue")}</div></article>
         <article className="ops-dashboard-panel"><header><div><h3>经营数据（累计口径）</h3></div><small>累计</small></header><div className="ops-dashboard-monthly-groups">
           <section><h4>接入</h4><div className="ops-dashboard-metric-list">{metric("接入客户数", merchantWorkspaceCount, "家", "primary")}{metric("接入费销售额", finance?.onboardingOrderCny, "元", "revenue")}</div></section>
           <section><h4>套餐</h4><div className="ops-dashboard-metric-list">{metric("套餐销量", finance?.subscriptionOrderWorkspaceCount, "单")}{metric("套餐销售额", finance?.subscriptionOrderCny, "元", "revenue")}{metric("2000 版本销量", basicSales, "单")}{metric("5000 版本销量", growthSales, "单")}</div></section>
