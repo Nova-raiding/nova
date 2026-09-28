@@ -33,7 +33,7 @@ function signature(document, publicPem, reason) {
   check(valid, reason)
 }
 
-function verifyAttestation(attestation, publicPem, keyId, now) {
+export function verifyDemo254Attestation(attestation, publicPem, keyId, now) {
   check(exact(attestation, ['schema_version', 'kind', 'environment', 'simulated',
     'backup_file_name', 'backup_sha256', 'source_database_id_sha256',
     'source_database_oid', 'source_database_name', 'migration_version',
@@ -98,28 +98,43 @@ function verifyRestore(restore, { plan, attestation, publicPem, keyId, now }) {
 export function reviewBridge255BackupSource({ plan, signedSourcePlan, manifest, attestation,
   backupPath, publicPem, keyId, now = new Date() }) {
   validateBridge255Plan(plan)
+  const source = reviewDemo254BackupForPreview({ signedSourcePlan, manifest, attestation,
+    backupPath, publicPem, keyId, now })
+  check(source.history_sha256 === plan.database.prefix_254_sha256
+    && source.release_id === plan.bridge_254_255.identity.release_id
+    && source.git_sha === plan.bridge_254_255.identity.git_sha
+    && source.project === plan.project,
+  'SOURCE_PLAN_BRIDGE_MISMATCH')
+  return Object.freeze({ plan_sha256: validateBridge255Plan(plan),
+    backup_sha256: attestation.backup_sha256,
+    source_database_id_sha256: attestation.source_database_id_sha256 })
+}
+
+/** Verifies the actual 254 backup without claiming that its public release is a 254/255 bridge. */
+export function reviewDemo254BackupForPreview({ signedSourcePlan, manifest, attestation,
+  backupPath, publicPem, keyId, now = new Date() }) {
   check(typeof publicPem === 'string' && /^[A-Za-z0-9._:-]{1,128}$/u.test(keyId ?? ''), 'TRUST_ANCHOR_INVALID')
   const frozen = verifyFrozenDemo254Plan(signedSourcePlan, publicPem)
   check(signedSourcePlan.key_id === keyId
-    && frozen.database.history_sha256 === plan.database.prefix_254_sha256
-    && frozen.public_route.release_id === plan.bridge_254_255.identity.release_id
-    && frozen.public_route.git_sha === plan.bridge_254_255.identity.git_sha
-    && frozen.postgres.compose_project === plan.project,
-  'SOURCE_PLAN_BRIDGE_MISMATCH')
-  verifyAttestation(attestation, publicPem, keyId, now)
+    && frozen.postgres.compose_project === 'merchant-demo-85575f9c',
+  'SOURCE_PLAN_PROJECT_MISMATCH')
+  verifyDemo254Attestation(attestation, publicPem, keyId, now)
   check(attestation.source_database_id_sha256 === frozen.database.system_identifier_sha256
     && attestation.source_database_oid === frozen.database.oid
     && attestation.source_database_name === frozen.database.name,
   'SOURCE_DATABASE_MISMATCH')
   verifyDemo254CaptureManifest(manifest, { attestation, signedPlan: signedSourcePlan, publicPem })
-  check(manifest.migration_history_sha256 === plan.database.prefix_254_sha256,
-    'CAPTURE_PREFIX_MISMATCH')
+  check(manifest.migration_history_sha256 === frozen.database.history_sha256,
+  'CAPTURE_PREFIX_MISMATCH')
   check(typeof backupPath === 'string' && backupPath.endsWith(`/${attestation.backup_file_name}`)
     && hashRegularFile(backupPath).sha256 === attestation.backup_sha256,
   'BACKUP_BYTES_MISMATCH')
-  return Object.freeze({ plan_sha256: validateBridge255Plan(plan),
+  return Object.freeze({ release_id: frozen.public_route.release_id,
+    git_sha: frozen.public_route.git_sha, project: frozen.postgres.compose_project,
+    history_sha256: frozen.database.history_sha256,
     backup_sha256: attestation.backup_sha256,
-    source_database_id_sha256: attestation.source_database_id_sha256 })
+    source_database_id_sha256: attestation.source_database_id_sha256,
+    candidate_migrations: frozen.candidate_migrations })
 }
 
 /** Validate a backup/restore handoff supplied by an independently installed collector. */

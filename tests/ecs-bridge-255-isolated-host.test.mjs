@@ -3,7 +3,8 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import test from 'node:test'
 import { buildSync } from 'esbuild'
 import { createIsolatedPg17DockerPorts, isolatedDockerArgs } from '../infra/protected/ecs-bridge-255-isolated-host.mjs'
-import { parseBridge255IsolatedArgs, validateBridge255IsolatedPaths,
+import { parseBridge255IsolatedArgs, parseBridge255PreviewPlanArgs,
+  validateBridge255IsolatedPaths,
   verifySignedBridge255Plan } from '../infra/protected/ecs-bridge-255-isolated-runner.mjs'
 import { prepareControlBytes } from '../infra/scripts/install-ecs-release-controls.mjs'
 
@@ -91,7 +92,7 @@ test('root preview CLI accepts exact attempt paths and rejects unsigned or forei
   const backup = `${base}/backups/release-reviewed-demo254-${plan.attempt_id}/before-upgrade-254.dump`
   const assets = `${base}/bridge-255/${plan.attempt_id}`
   const args = ['--backup', backup, '--attestation', `${backup}.attestation.json`,
-    '--capture', `${backup}.capture.json`, '--history', `${assets}/migration-history-255.json`,
+    '--capture', `${backup}.capture.json`,
     '--migration-255', `${assets}/255_scoped_brand_settings.sql`,
     '--output', `${base}/preview-restores/${plan.attempt_id}-isolated-255.json`]
   const parsed = parseBridge255IsolatedArgs(args)
@@ -110,6 +111,12 @@ test('root preview CLI accepts exact attempt paths and rejects unsigned or forei
     publicPem, 'production-evidence'), /PLAN_ENVELOPE_INVALID/u)
   assert.throws(() => verifySignedBridge255Plan({ ...envelope, signature_base64: 'fake' },
     publicPem, 'production-evidence'), /PLAN_SIGNATURE_INVALID/u)
+  const createdAt = '2026-09-28T04:00:00.000Z'
+  const planArgs = ['inspect', '--attempt-id', plan.attempt_id,
+    '--pg17-image-id', imageRef, '--created-at', createdAt, ...args]
+  assert.equal(parseBridge255PreviewPlanArgs(planArgs).mode, 'inspect')
+  assert.throws(() => parseBridge255PreviewPlanArgs([...planArgs, '--approved-plan-sha256', h('1')]),
+    /ARGUMENT_COUNT_INVALID/u)
 })
 
 test('preview runner bundles as one fixed-install reviewed control', () => {

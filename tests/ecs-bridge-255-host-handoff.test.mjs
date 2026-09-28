@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { reviewBridge255HostHandoff } from '../infra/protected/ecs-bridge-255-host-handoff.mjs'
 import { produceBridge255Pg17Restore } from '../infra/protected/ecs-bridge-255-pg17-restore.mjs'
+import { createSignedBridge255PreviewPlan, runSignedBridge255Preview,
+  verifySignedBridge255PreviewPlan } from '../infra/protected/ecs-bridge-255-isolated-preview.mjs'
 import { validateBridge255Plan } from '../infra/protected/ecs-bridge-255-review.mjs'
 
 const h = char => char.repeat(64)
@@ -120,6 +122,7 @@ function restoreFixture() {
   f.plan.database.prefix_254_sha256 = historyHash(expectedRows.slice(0, 254))
   f.plan.database.prefix_255_sha256 = historyHash(expectedRows)
   f.signedSourcePlan.freeze.database.history_sha256 = f.plan.database.prefix_254_sha256
+  f.signedSourcePlan.freeze.candidate_migrations = expectedRows.slice(0, 254)
   f.signedSourcePlan = signed({ freeze: f.signedSourcePlan.freeze, key_id: f.keyId })
   f.manifest.migration_history_sha256 = f.plan.database.prefix_254_sha256
   f.manifest.signed_plan_sha256 = sha(canonical(f.signedSourcePlan))
@@ -187,5 +190,52 @@ test('lost isolation or SQL failure quarantines attempt and preserves its volume
     assert.equal(x.state.quarantined, true)
     assert.equal(x.events.at(-1), 'quarantine')
     if (failure === 'exposed') assert.equal(x.events.includes('restore'), false)
+  }
+})
+
+test('signed isolated preview plan binds current 254 source without claiming a live bridge', async () => {
+  const x = restoreFixture()
+  const privatePem = key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
+  const plan = createSignedBridge255PreviewPlan({ attemptId: x.f.plan.attempt_id,
+    signedSourcePlan: x.f.signedSourcePlan, manifest: x.f.manifest,
+    attestation: x.f.attestation, backupPath: x.f.backupPath,
+    migration255Sql: x.migration255.sql, pg17ImageId: x.f.plan.pg17_image_ref,
+    publicPem, privatePem, keyId: x.f.keyId, now })
+  assert.equal(plan.source_release_id, x.f.signedSourcePlan.freeze.public_route.release_id)
+  assert.equal(plan.production_deploy_authorized, false)
+  const result = await runSignedBridge255Preview({ plan,
+    signedSourcePlan: x.f.signedSourcePlan, manifest: x.f.manifest,
+    attestation: x.f.attestation, backupPath: x.f.backupPath,
+    migration255Sql: x.migration255.sql, publicPem, privatePem,
+    keyId: x.f.keyId, now: () => now }, x.isolation)
+  assert.equal(result.status, 'pass')
+  assert.equal(result.production_deploy_authorized, false)
+  assert.equal(x.state.version, 255)
+  assert.deepEqual(x.events.filter(event => event === 'restore' || event === 'sql255'),
+    ['restore', 'sql255'])
+})
+
+test('isolated preview rejects changed source, SQL, signature and expiration before Docker', async () => {
+  for (const mutate of [
+    x => { x.plan.production_deploy_authorized = true },
+    x => { x.plan.signature_base64 = 'bad' },
+    x => { x.sql = Buffer.from('DROP TABLE unsafe') },
+    x => { x.plan.expires_at = '2026-09-28T04:01:00.000Z' },
+  ]) {
+    const x = restoreFixture()
+    const privatePem = key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
+    x.plan = createSignedBridge255PreviewPlan({ attemptId: x.f.plan.attempt_id,
+      signedSourcePlan: x.f.signedSourcePlan, manifest: x.f.manifest,
+      attestation: x.f.attestation, backupPath: x.f.backupPath,
+      migration255Sql: x.migration255.sql, pg17ImageId: x.f.plan.pg17_image_ref,
+      publicPem, privatePem, keyId: x.f.keyId, now })
+    x.sql = x.migration255.sql
+    mutate(x)
+    await assert.rejects(runSignedBridge255Preview({ plan: x.plan,
+      signedSourcePlan: x.f.signedSourcePlan, manifest: x.f.manifest,
+      attestation: x.f.attestation, backupPath: x.f.backupPath,
+      migration255Sql: x.sql, publicPem, privatePem,
+      keyId: x.f.keyId, now: () => now }, x.isolation))
+    assert.deepEqual(x.events, [])
   }
 })
