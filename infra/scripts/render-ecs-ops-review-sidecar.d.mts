@@ -17,6 +17,20 @@ export function validateOpsSidecarInputs(input: OpsSidecarReviewInput): {
 
 export function candidateOpsReviewTlsConfig(): string;
 
+export interface OpsReviewStat {
+  uid: number;
+  gid: number;
+  mode: number;
+}
+
+export function assertOpsReviewCertificateAccess(input: {
+  directory: OpsReviewStat & { isDirectory(): boolean };
+  privateKey: OpsReviewStat & { isFile(): boolean };
+  fullchain: OpsReviewStat & { isFile(): boolean };
+}): void;
+
+export function writeReviewOutputFile(path: string, contents: string | Uint8Array, mode?: number): void;
+
 export function createOpsSidecarCompose(input: {
   networkName: string;
   sidecarProject: string;
