@@ -416,6 +416,7 @@ describe("container source freshness gate", () => {
     expect(preflight).toContain("WORKER_IMAGE_REF");
     const apiDockerfile = readFileSync("infra/docker/api.Dockerfile", "utf8");
     const dockerignore = readFileSync(".dockerignore", "utf8");
+    expect(dockerignore).toMatch(/^\.candidate-source\.tar$/mu);
     expect(dockerignore).toContain("dogfood/**");
     expect(dockerignore).toContain("!dogfood/chatgpt-all-functions/package.json");
     const [apiBuildStage, apiRuntimeStage] = apiDockerfile.split(" AS runtime");
