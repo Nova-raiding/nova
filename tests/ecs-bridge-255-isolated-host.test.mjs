@@ -29,8 +29,9 @@ test('isolated Docker commands create only internal network and new volume, with
   /NAMES_NOT_ISOLATED/u)
 })
 
-function fakeDocker({ publishPort = false, badNetwork = false } = {}) {
+function fakeDocker({ publishPort = false, badNetwork = false, transientVersionFailures = 0 } = {}) {
   const events = []
+  let versionFailures = 0
   const network = `merchant_restore_net_${suffix}`
   const volume = `merchant_restore_data_${suffix}`
   const container = `merchant_restore_pg_${suffix}`
@@ -42,7 +43,10 @@ function fakeDocker({ publishPort = false, badNetwork = false } = {}) {
     if (command.startsWith('volume create')) return volume
     if (command.startsWith('run -d')) return h('c')
     if (command.startsWith('exec -u postgres') && command.includes('pg_isready')) return 'ready'
-    if (command.includes('SHOW server_version_num')) return '170006'
+    if (command.includes('SHOW server_version_num')) {
+      if (versionFailures++ < transientVersionFailures) throw new Error('database restarting after initdb')
+      return '170006'
+    }
     if (command.startsWith('network inspect')) return JSON.stringify([{ Id: h('b'), Internal: !badNetwork }])
     if (command.startsWith('volume inspect')) return JSON.stringify([{ Name: volume }])
     if (command.startsWith('inspect ')) return JSON.stringify([{ Id: h('c'), Image: imageRef,
@@ -56,6 +60,17 @@ function fakeDocker({ publishPort = false, badNetwork = false } = {}) {
   }
   return { docker, events }
 }
+
+test('waits through the temporary initdb server restart before querying PG17', async () => {
+  const mock = fakeDocker({ transientVersionFailures: 1 })
+  let waits = 0
+  const ports = createIsolatedPg17DockerPorts({ docker: mock.docker,
+    stream: async () => {}, random: () => suffix, wait: async () => { waits++ } })
+  await ports.create({ attemptId, imageRef, preserveVolume: true,
+    internalNetwork: true, publishPorts: false })
+  assert.equal(waits, 1)
+  assert.equal(mock.events.filter(args => args.includes('SHOW server_version_num')).length, 2)
+})
 
 test('real port adapter rejects exposed container or external network before source restore', async () => {
   for (const flag of ['publishPort', 'badNetwork']) {

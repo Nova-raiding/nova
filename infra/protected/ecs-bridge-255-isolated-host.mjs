@@ -87,12 +87,20 @@ export function createIsolatedPg17DockerPorts({ docker = realDocker,
       check(docker(args.volume) === volume, 'VOLUME_ID_INVALID')
       attempt.containerId = docker(args.postgres, { env: { POSTGRES_PASSWORD: attempt.password } })
       check(HEX.test(attempt.containerId), 'CONTAINER_ID_INVALID')
+      // pg_isready can succeed against the image's temporary initdb server,
+      // which then restarts before ordinary queries are accepted. Wait for a
+      // real query against the target database before proceeding.
+      let version
       for (let tries = 0; tries < 60; tries++) {
-        try { docker(['exec', '-u', 'postgres', attempt.container, 'pg_isready',
-          '-U', 'postgres', '-d', 'merchant'], { timeout: 10_000 }); break }
+        try {
+          docker(['exec', '-u', 'postgres', attempt.container, 'pg_isready',
+            '-U', 'postgres', '-d', 'merchant'], { timeout: 10_000 })
+          version = query(attempt, 'SHOW server_version_num')
+          break
+        }
         catch (error) { if (tries === 59) throw error; await wait(1000) }
       }
-      check(/^17\d{4}$/u.test(query(attempt, 'SHOW server_version_num')),
+      check(/^17\d{4}$/u.test(version),
         'POSTGRES_17_REQUIRED')
     },
     async inspect(attemptId) {
