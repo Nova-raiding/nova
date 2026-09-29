@@ -12,6 +12,18 @@ describe('macOS keychain credential', () => {
     expect(keychainHelperFailureReason({ status: 1, stderr: 'keychain_osstatus=-25308 operation=write\n' }, 'read')).toBe('helper_exit=1')
     expect(keychainHelperFailureReason({ status: null, error: { code: 'ETIMEDOUT' }, stderr: '' }, 'read')).toBe('helper_timeout operation=read')
   })
+  it('bounds a GUI Keychain prompt and fails closed when the helper times out', () => {
+    let timeout: number | undefined
+    let argv: string[] | undefined
+    const spawnHelper = (_path: string, args: string[], options: { timeout: number }) => {
+      timeout = options.timeout
+      argv = args
+      return { status: null, error: { code: 'ETIMEDOUT' }, stderr: '', stdout: '' }
+    }
+    expect(() => readKeychainCredential(bound, { spawnHelper })).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read')
+    expect(timeout).toBe(8_000)
+    expect(argv).toEqual([])
+  })
   it('writes one atomic JSON item without placing secrets in argv', async () => {
     let call: Record<string, string> | undefined
     writeKeychainCredential(bound, { schema_version: '1', api_origin: bound.apiOrigin, workspace_id: bound.workspaceId, access_token: 'access-secret', refresh_token: 'refresh-secret', expires_at: '2030-01-01T00:00:00Z' }, {

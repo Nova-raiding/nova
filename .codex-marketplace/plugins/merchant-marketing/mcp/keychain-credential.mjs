@@ -53,12 +53,13 @@ function binding(apiOrigin, workspaceId) {
   return { origin, workspace, account: createHash('sha256').update(`${origin}\n${workspace}`).digest('hex') }
 }
 
-function defaultHelper(request) {
+function defaultHelper(request, spawn = spawnSync) {
   assertKeychainHelperReady()
   const helper = fileURLToPath(new URL('./keychain-credential-helper', import.meta.url))
-  const result = spawnSync(helper, [], {
+  const result = spawn(helper, [], {
     input: JSON.stringify(request), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 2_000, maxBuffer: 1024 * 1024,
+    // Leave room for a Keychain prompt within the bridge's 10-second startup probe.
+    timeout: 8_000, maxBuffer: 1024 * 1024,
   })
   if (result.error || result.status !== 0) helperFail(keychainHelperFailureReason(result, request.operation))
   return result.stdout
@@ -71,7 +72,7 @@ export function writeKeychainCredential({ apiOrigin, workspaceId }, bundle, opti
   const expiry = bundle?.expires_at?.trim()
   if (bundle?.schema_version !== '1' || bundle.api_origin !== origin || bundle.workspace_id !== workspace || !access || !refresh || !expiry || !Number.isFinite(Date.parse(expiry))) fail()
   const record = JSON.stringify({ schema_version: '1', api_origin: origin, workspace_id: workspace, access_token: access, refresh_token: refresh, expires_at: expiry })
-  const runHelper = options.runHelper ?? defaultHelper
+  const runHelper = options.runHelper ?? (request => defaultHelper(request, options.spawnHelper))
   try { runHelper({ operation: 'write', service: KEYCHAIN_SERVICE, account, data: record }) }
   catch (error) {
     if (error?.message?.startsWith('MCP_KEYCHAIN_HELPER_INVALID:')) throw error
@@ -81,7 +82,7 @@ export function writeKeychainCredential({ apiOrigin, workspaceId }, bundle, opti
 
 export function readKeychainCredential({ apiOrigin, workspaceId }, options = {}) {
   const { origin, workspace, account } = binding(apiOrigin, workspaceId)
-  const runHelper = options.runHelper ?? defaultHelper
+  const runHelper = options.runHelper ?? (request => defaultHelper(request, options.spawnHelper))
   let raw
   try { raw = runHelper({ operation: 'read', service: KEYCHAIN_SERVICE, account }) }
   catch (error) {
