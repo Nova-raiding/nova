@@ -73,3 +73,8 @@
 6. **货号与 SKU 术语**：API、插件 Skill 与 MCP 工具说明已按商品货号 `query`、具体变体系统 `sku_id` 区分；最终本地插件版本和 App 自然语言复验已通过。后续仍需在真实 SKU 商品上补充按变体 ID 精确搜索的线上验收。
 
 剩余验收门槛：本轮已通过真实桌面 CSV 导入、XLSX 原生选择与预览、App 读取正确店铺归属。QA 商品尚待商家确认事实，正式审核/导出、需官方授权的店铺写入流程和其余工具仍须按各自前置条件逐项实测。不能以此次候选与导入成功宣称所有流程通过。
+## 10:25 本地插件与 ChatGPT 宿主复验
+
+- 将 `brand.get` 的 `null` 结果显示为“当前范围未找到品牌档案；已登记的品牌单元仍需单独核对档案内容”，避免把未建档表述为已读取档案。源码与本地插件源镜像同步，版本 `0.1.0+codex.20260929102500` 已直装并启用；安装器核验 `ok: true`。桥接与清单定向测试 219/219 通过，`npm run typecheck` 通过。
+- 完全重启 ChatGPT 后在新 Work 对话请求只读 `brand.get`，宿主回复“当前会话没有暴露 Store Nova 的 Merchant Marketing MCP 工具”，没有工具调用。截图：[35-102500-brand-get-host-unavailable.png](evidence/2026-09-29-chatgpt-app/35-102500-brand-get-host-unavailable.png)。因此新版提示仅有本地 MCP 契约测试证据，**没有 ChatGPT App 功能通过证据**；须排查宿主工具暴露/会话入口后复验。
+- `codex plugin list --json` 显示 `merchant-marketing@merchant-local` 版本 `0.1.0+codex.20260929102500` 为 `installed=true, enabled=true`。该状态不等于 ChatGPT 当前会话已经加载工具。

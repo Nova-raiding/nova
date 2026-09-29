@@ -1446,6 +1446,9 @@ function userFacingToolText(method, result) {
       ? `已读取 ${rules.length} 条可执行规则。`
       : `已读取 ${rules.length} 条知识规则，其中 ${executable.length} 条看起来已具备执行状态；最终是否可消费仍以服务端规则门禁为准。`
   }
+  if (method === 'brand.get' && result === null) {
+    return '当前范围未找到品牌档案；已登记的品牌单元仍需单独核对档案内容。'
+  }
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
     return method === 'content.export' ? '导出已准备好。' : READ_ONLY_METHODS.has(method) ? '查询已返回；请以结构化字段核对业务状态。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
   }

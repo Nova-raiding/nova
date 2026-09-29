@@ -1106,6 +1106,29 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('reports a missing brand profile without treating a registered brand unit as a profile', async () => {
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: null }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'brand.get', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(false)
+      expect(response.result.content[0].text).toContain('未找到品牌档案')
+      expect(response.result.content[0].text).not.toContain('已读取品牌档案')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('redacts bare UUIDs and SHA-256 values from merchant-facing summaries', async () => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
@@ -1221,7 +1244,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929100500' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929102500' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
