@@ -47,7 +47,7 @@ async function runCase(name, successful) {
     await page.getByRole('heading', { name: '正在完成绑定' }).waitFor()
     assert.equal(new URL(page.url()).search, '', 'callback code/state must leave the visible URL')
     assert.equal(await page.getByRole('button', { name: '完成，关闭此页面' }).isHidden(), true)
-    await page.screenshot({ path: new URL(`27-${name}-pending.png`, evidenceDir).pathname })
+    if (!process.env.CALLBACK_NO_SCREENSHOTS) await page.screenshot({ path: new URL(`27-${name}-pending.png`, evidenceDir).pathname })
 
     releaseExchange()
     if (successful) {
@@ -60,16 +60,22 @@ async function runCase(name, successful) {
       assert.equal(saved, false)
       await page.getByRole('heading', { name: '绑定未完成' }).waitFor()
     }
-    assert.equal(await page.getByRole('button', { name: '完成，关闭此页面' }).isVisible(), true)
+    const closeLabel = successful ? '完成，关闭此页面' : '关闭此页面，返回安装器'
+    assert.equal(await page.getByRole('button', { name: closeLabel }).isVisible(), true)
     if (successful) {
-      await page.getByRole('button', { name: '完成，关闭此页面' }).click()
+      await page.getByRole('button', { name: closeLabel }).click()
       await page.getByRole('button', { name: '绑定完成，请返回 ChatGPT' }).isDisabled()
       assert.match(await page.locator('#hint').innerText(), /切换回 ChatGPT.*手动关闭/u)
+    } else {
+      await page.getByRole('button', { name: closeLabel }).click()
+      await page.getByRole('button', { name: '绑定未完成，请返回安装器' }).isDisabled()
+      assert.match(await page.locator('#hint').innerText(), /绑定未完成.*安装器查看错误并重试/u)
+      assert.doesNotMatch(await page.locator('body').innerText(), /绑定已完成/u)
     }
     const body = await page.locator('body').innerText()
     assert.doesNotMatch(body, /synthetic-access|synthetic-refresh|synthetic-browser-code-12345/)
     assert.deepEqual(errors, [])
-    await page.screenshot({ path: new URL(`27-${name}-result.png`, evidenceDir).pathname })
+    if (!process.env.CALLBACK_NO_SCREENSHOTS) await page.screenshot({ path: new URL(`27-${name}-result.png`, evidenceDir).pathname })
     return { case: name, result: successful ? 'success' : 'failure', credentialSaved: saved, pageErrors: errors.length }
   } finally {
     releaseExchange?.()
