@@ -1470,6 +1470,11 @@ body {
 .material-workspace-actions-card { display:grid; grid-template-columns:275px 104px; align-items:stretch; gap:9px; padding:9px; border:1px solid #dce7e1; border-radius:12px; background:#fff; box-shadow:0 5px 16px rgba(24,63,46,.035); }
 .material-workspace-storage { display:grid; width:275px; min-width:0; gap:6px; padding:9px 11px; border:1px solid #1f6448; border-radius:10px; background:#17543c; box-shadow:0 5px 13px rgba(23,84,60,.12); }
 .material-workspace-storage>div { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.material-workspace-storage-heading strong { color:#fff; font-size:14px; white-space:nowrap; }
+.material-workspace-storage-track { height:6px; overflow:hidden; border-radius:999px; background:rgba(236,247,241,.23); }
+.material-workspace-storage-track i { display:block; height:100%; border-radius:inherit; background:#d8f487; }
+.material-workspace-storage-details { min-width:0; }
+.material-workspace-storage-details small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .material-workspace-storage span,.material-workspace-storage small { color:#c8d9d1; font-size:8px; }
 .material-workspace-storage strong { color:#fff; font-size:14px; }
 .material-workspace-storage strong small { font-size:8px; font-weight:600; }

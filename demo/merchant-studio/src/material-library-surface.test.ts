@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MaterialLibraryWorkspace, MaterialRecycleBinWorkspace } from './App'
+import { MaterialLibraryWorkspace, MaterialRecycleBinWorkspace, MaterialStorageQuotaCard } from './App'
 import type { PlatformAccount } from './api'
 
 /**
@@ -121,6 +121,39 @@ describe('the material library may not claim a catalogue it did not read', () =>
     expect(library).toContain('上传素材')
     expect(library).toContain('店铺筛选')
     expect(library).toContain('共享储存空间')
+  })
+})
+
+describe('material storage summary uses the live quota projection', () => {
+  it('shows used capacity, total capacity, remaining capacity, and a bounded progress value', () => {
+    const summary = renderToStaticMarkup(createElement(MaterialStorageQuotaCard, {
+      quota: {
+        usedBytes: 31_500_000_000,
+        reservedBytes: 0,
+        limitBytes: 50_000_000_000,
+        availableBytes: 18_500_000_000,
+        status: 'available',
+      },
+      uploadedGb: 0,
+    }))
+
+    expect(summary).toContain('31.5 GB / 50 GB')
+    expect(summary).toContain('全部店铺已用 31.5 GB')
+    expect(summary).toContain('剩余 18.5 GB')
+    expect(summary).toContain('aria-valuemax="50000000000"')
+    expect(summary).toContain('aria-valuenow="31500000000"')
+    expect(summary).toContain('width:63.0%')
+  })
+
+  it('keeps quota unknown when the server has not returned a valid limit', () => {
+    const summary = renderToStaticMarkup(createElement(MaterialStorageQuotaCard, {
+      quota: { usedBytes: 1, reservedBytes: 0, limitBytes: 0, availableBytes: 0, status: 'available' },
+      uploadedGb: 0.3,
+    }))
+
+    expect(summary).toContain('未读取')
+    expect(summary).toContain('配额尚未读取，本次会话上传 0.3 GB')
+    expect(summary).not.toContain('role="progressbar"')
   })
 })
 

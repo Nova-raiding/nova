@@ -6248,6 +6248,39 @@ export function materialUploadBalanceNotice(billing: BillingStatus | null): stri
   return null
 }
 
+export function MaterialStorageQuotaCard({ quota, uploadedGb }: {
+  quota: StorageQuotaProjection | null
+  uploadedGb: number
+}) {
+  const hasQuota = Boolean(quota && Number.isFinite(quota.limitBytes) && quota.limitBytes > 0
+    && Number.isFinite(quota.usedBytes) && Number.isFinite(quota.availableBytes))
+  const usedBytes = hasQuota ? Math.max(0, quota!.usedBytes) : 0
+  const limitBytes = hasQuota ? quota!.limitBytes : 0
+  const usedPercent = hasQuota ? Math.min(100, Math.max(0, usedBytes / limitBytes * 100)) : 0
+  const displayCapacity = (bytes: number) => formatStorageGb(bytes).replace(/\.0(?= GB$)/u, '')
+
+  return (
+    <div className="material-workspace-storage" aria-label="共享储存空间">
+      <div className="material-workspace-storage-heading">
+        <span>共享储存空间</span>
+        <strong>{hasQuota ? <>{formatStorageGb(usedBytes)} / {displayCapacity(limitBytes)}</> : UNREAD_METRIC}</strong>
+      </div>
+      {hasQuota ? <>
+        <div className="material-workspace-storage-track" role="progressbar" aria-label="储存空间已用" aria-valuemin={0} aria-valuemax={limitBytes} aria-valuenow={usedBytes}>
+          <i style={{ width: `${usedPercent.toFixed(1)}%` }} />
+        </div>
+        <div className="material-workspace-storage-details">
+          <small>全部店铺已用 {formatStorageGb(usedBytes)}</small>
+          <b>剩余 {formatStorageGb(quota!.availableBytes)}</b>
+        </div>
+      </> : <div className="material-workspace-storage-details">
+        <small>配额尚未读取，本次会话上传 {uploadedGb.toFixed(1)} GB</small>
+        <b>剩余 {UNREAD_METRIC}</b>
+      </div>}
+    </div>
+  )
+}
+
 export function MaterialLibraryWorkspace({
   baseUrl,
   storageScope,
@@ -7084,7 +7117,7 @@ export function MaterialLibraryWorkspace({
           <div className="material-workspace-overview">
             <div className="material-workspace-intro"><span className="material-workspace-mark" aria-hidden="true"><FolderOpen size={20} /></span><div><span className="section-kicker">MATERIAL LIBRARY</span><h1>素材库</h1><p>按店铺独立管理图片与视频。</p></div></div>
             <div className="material-workspace-actions-card">
-              <div className="material-workspace-storage" aria-label="共享储存空间"><div><span>共享储存空间</span><strong>{storageQuota ? formatStorageGb(storageQuota.limitBytes) : UNREAD_METRIC} <small>服务端配额</small></strong></div><div><small>{storageQuota ? `已用 ${formatStorageGb(storageQuota.usedBytes)}` : `配额尚未读取，本次会话上传 ${uploadedGb.toFixed(1)} GB`}</small><b>剩余 {storageQuota ? formatStorageGb(storageQuota.availableBytes) : UNREAD_METRIC}</b></div></div>
+              <MaterialStorageQuotaCard quota={storageQuota} uploadedGb={uploadedGb} />
               <button type="button" className="material-upload-button" onClick={() => { setUploadStoreId(activeStore.id); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传素材</span></button>
             </div>
           </div>
