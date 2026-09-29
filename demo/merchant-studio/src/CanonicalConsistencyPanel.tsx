@@ -39,7 +39,7 @@ export function CanonicalConsistencyPanel({ items, freshness = 'unknown', genera
     <section className="data-consistency-card canonical-consistency-panel" data-testid="canonical-consistency-panel" aria-labelledby="canonical-consistency-title" aria-busy={refreshing}>
       <div className="data-consistency-head">
         <div>
-          <span className="section-kicker">CANONICAL STATUS</span>
+          <span className="section-kicker">商品关系核验</span>
           <h3 id="canonical-consistency-title">规范商品状态</h3>
           <p>只展示服务端已确认的商品关系；读取失败、过期或未验证都不会被标记为通过。</p>
         </div>

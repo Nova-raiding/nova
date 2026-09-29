@@ -179,7 +179,7 @@ export function ProductSpreadsheetImport({
   const storeModeBlocked = !accounts.some((account) => account.readEnabled && account.accountId)
 
   return <section className="table-panel merchant-spreadsheet-import" data-testid="merchant-product-spreadsheet-import" aria-labelledby="merchant-spreadsheet-import-title">
-    <div className="panel-head"><div><span className="section-kicker">PRODUCT IMPORT</span><h3 id="merchant-spreadsheet-import-title">Excel / CSV 导入商品与 SKU</h3><p>上传后先完成安全检查和预览，再创建商品；每个 SKU 会按商品货号自动合并。</p></div><button className="secondary" type="button" onClick={reset} disabled={busy || (!asset && !products.length)}>重新开始</button></div>
+    <div className="panel-head"><div><span className="section-kicker">商品导入</span><h3 id="merchant-spreadsheet-import-title">Excel / CSV 导入商品与 SKU</h3><p>上传后先完成安全检查和预览，再创建商品；每个 SKU 会按商品货号自动合并。</p></div><button className="secondary" type="button" onClick={reset} disabled={busy || (!asset && !products.length)}>重新开始</button></div>
     <div className="spreadsheet-import-body">
       <fieldset className="import-mode-picker"><legend>导入方式</legend>
         <label><input type="radio" name="merchant-import-mode" checked={mode === 'draft_only'} onChange={() => setMode('draft_only')} disabled={busy} /><span><b>仅草稿</b><small>无需店铺账号；创建待审核知识候选，不可同步或发布。</small></span></label>
@@ -188,7 +188,7 @@ export function ProductSpreadsheetImport({
       <div className="button-row"><label className="file-button"><Upload aria-hidden="true" size={16} />上传 .xlsx / .csv<input type="file" accept=".xlsx,.csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); event.currentTarget.value = '' }} disabled={!baseUrl || !canWrite || busy} /></label>{asset && !products.length && <button className="secondary" type="button" onClick={() => void inspect(asset.id, runRef.current)} disabled={busy}>继续检查</button>}</div>
       {!baseUrl && <div className="info-notice" role="status">商家 API 尚未配置，上传入口已关闭。</div>}
       {!canWrite && <div className="info-notice" role="status">当前账号没有商品导入权限。</div>}
-      {asset && <p className="source-note">当前文件：<b>{asset.name}</b> · revision {asset.revision} · 已确认素材事实后才能提交</p>}
+      {asset && <p className="source-note">当前文件：<b>{asset.name}</b> · 版本 {asset.revision} · 已确认素材事实后才能提交</p>}
       {error && <div ref={errorRef} id="merchant-spreadsheet-import-error" className="error-notice" role="alert" tabIndex={-1} aria-live="assertive"><b>无法导入</b><span>{error}</span></div>}
       {phase && <div className="info-notice" role="status" aria-live="polite">{phase}</div>}
       {!!rows.length && <><div className="import-preview-summary"><b>预览：{products.length} 个商品，{rows.length} 个 SKU / 商品记录</b><span>{mode === 'draft_only' ? '草稿模式：不会写入任何平台店铺' : '真实店铺模式：按表格中的店铺账号绑定'}</span></div><div className="table-wrap"><table><thead><tr><th>商品</th><th>SKU</th><th>品牌</th><th>材质</th><th>规格</th><th>待确认卖点数</th><th>店铺账号</th><th>价格（元）</th><th>库存</th></tr></thead><tbody>{rows.map((row) => <tr key={row.key}><td>{row.title}</td><td>{row.sku}</td><td>{row.brand}</td><td>{row.material}</td><td>{row.specification}</td><td>{row.sellingPointCount}</td><td>{row.storeLabel}</td><td>{row.price}</td><td>{row.stock}</td></tr>)}</tbody></table></div><button className="primary" type="button" onClick={() => void commit()} disabled={busy || !!importedIds.length || !canWrite}>{importedIds.length ? '已提交' : mode === 'draft_only' ? '确认并创建草稿' : '确认并导入真实店铺'}</button></>}
