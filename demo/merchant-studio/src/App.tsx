@@ -5900,7 +5900,7 @@ export function BrandScopeUnavailableRow({ number, label, description, status }:
       <div className="material-brand-scope-unavailable-state" role="status"><AlertCircle size={18} aria-hidden="true" /><div><strong>{label}尚不可用</strong><span>{status}</span></div></div>
     </section>
     <aside className="material-brand-output material-brand-output-unavailable" aria-label={`${label}状态`}>
-      <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前{label}</strong><small>等待真实数据</small></div>
+      <div className="material-brand-output-heading"><span>品牌档案</span><strong>当前{label}</strong><small>等待真实数据</small></div>
       <div className="material-brand-output-unavailable-body"><ImageIcon size={24} aria-hidden="true" /><strong>尚未加载配置</strong><span>读取到可用店铺后显示此层品牌资产。</span></div>
     </aside>
   </article>
@@ -5933,7 +5933,7 @@ export function MaterialBrandOutput({ value, label, enabled, onEnabledChange, co
   const logoAssetReady = isUsableBrandAsset(logoAsset)
   const documentAssetReady = isUsableBrandAsset(documentAsset)
   return <aside className={`material-brand-output${enabled ? '' : ' disabled'}${transitionLabel ? ' switching' : ''}`} aria-label={`${label}${enabled ? '待保存启用' : '待保存停用'}的配置`}>
-    <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前品牌资产</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}保存后启用状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>停用{label}</button></div> : <small className="material-brand-output-live">保存后用于新任务</small>}</div>
+    <div className="material-brand-output-heading"><span>品牌档案</span><strong>当前品牌资产</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}保存后启用状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>停用{label}</button></div> : <small className="material-brand-output-live">保存后用于新任务</small>}</div>
     <div className={`material-brand-output-card${context ? ' has-context' : ''}`} style={{ '--brand-preview-color': colorFacts.value || 'transparent' } as CSSProperties}>
       {context && <div className="material-brand-output-context"><span>{context.label}</span><strong>{context.value}</strong></div>}
       <div className="material-brand-output-item material-brand-output-logo"><span>品牌 Logo</span><div>{logoFacts.picked ? <><img src={logoPreviewUrl} alt={`${label} Logo 预览`} /><small>{value.logoAssetId ? `${logoAsset?.name ?? value.logoFileName ?? value.logoAssetId} · ${logoAssetReady ? '素材已就绪' : '已上传，待素材检查'}` : logoFacts.label}</small></> : logoAsset ? <><ImageIcon size={24} /><small>{logoAsset.name} · {logoAssetReady ? '素材已就绪' : '已上传，待素材检查'}</small></> : <><ImageIcon size={24} /><small>{value.logoAssetId ? `已引用素材 ${value.logoAssetId}，等待服务端读取` : BRAND_UNCONFIGURED}</small></>}</div></div>
