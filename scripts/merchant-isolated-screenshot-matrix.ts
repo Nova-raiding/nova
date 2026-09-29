@@ -82,6 +82,18 @@ async function capture(context: Parameters<NonNullable<Parameters<typeof runOpsE
       await page.goto(new URL(route, origin).toString(), { waitUntil: 'networkidle', timeout: 30_000 })
       await page.locator('.app-shell').waitFor({ state: 'visible', timeout: 30_000 })
       await page.locator('main').waitFor({ state: 'visible', timeout: 30_000 })
+      if (name === 'overview') {
+        // Account status is rendered below the dashboard fold. A generic
+        // network-idle wait can finish while that workspace-scoped read is
+        // still unresolved, so require both cards to leave their unread state.
+        await page.waitForFunction(() => {
+          const platform = document.querySelector<HTMLElement>('.account-platform-block')
+          const stores = document.querySelector<HTMLElement>('.account-store-block')
+          return Boolean(platform && stores)
+            && !platform!.innerText.includes('未读取')
+            && !stores!.innerText.includes('未读取')
+        }, undefined, { timeout: 15_000 })
+      }
       const routeContent = await page.locator('main').innerText()
       if (routeContent.includes('欢迎使用Store Nova') || routeContent.includes('登录商家工作台')) {
         throw new Error(`MERCHANT_ISOLATED_ROUTE_RETURNED_LOGIN_${name}`)
