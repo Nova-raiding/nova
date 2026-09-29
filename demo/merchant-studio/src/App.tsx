@@ -6267,12 +6267,12 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
     <div className="material-recycle-page" data-testid="material-recycle-bin">
       <section className="material-recycle-hero">
         {/* Retention is server-owned; the page displays its returned expiry date. */}
-        <div><span className="section-kicker">RECYCLE BIN</span><h1>回收站</h1><p>显示当前工作区由服务端记录的已移除素材。</p></div>
+        <div><span className="section-kicker">RECYCLE BIN</span><h1>回收站</h1><p>删除的素材会保留 7 天，到期后由服务端自动清理。</p></div>
         <div className="material-recycle-summary"><strong>{readState === 'ready' ? items.length : '—'}</strong><span>项待处理素材</span><small>保留期限由服务端返回</small></div>
       </section>
       <section className="material-recycle-workspace">
         <div className="material-recycle-toolbar">
-          <div><h2>已删除素材</h2><p>素材会保留 7 天；也可以提交提前彻底删除请求。</p></div>
+          <div><h2>已删除素材</h2><p>可恢复到原店铺，也可以申请提前彻底删除。</p></div>
           <div className="material-recycle-actions">
             <span>已选 <strong>{selectedItems.length}</strong> 项</span>
             <button type="button" disabled={readState !== 'ready' || busy || !items.length} onClick={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}>{allSelected ? '取消全选' : '全选'}</button>

@@ -1,17 +1,22 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { mkdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner, verifyAppliedMigrations } from '../packages/persistence/src/migration.js'
 import { PostgresCreativePointRepository } from '../packages/persistence/src/creative-point-repository.js'
 import { PostgresAssetLifecycleRepository } from '../packages/persistence/src/asset-lifecycle-repository.js'
+import { LocalObjectStorage } from '../packages/storage/src/object-storage.js'
+import { createWorkerRequestProof } from '../packages/security/src/worker-request-proof.js'
 import { createIsolatedOpsFixture } from './isolated-ops-fixture.js'
 
 const token = 'isolated-254-255-bridge-token'
+const automationToken = 'isolated-automation-token'
+const automationSecret = 'isolated-automation-signing-secret'
 const workspaceId = 'ws_bridge_254_255'
 const apiDiagnostics = new WeakMap<ChildProcess, () => string>()
 
@@ -24,7 +29,7 @@ async function freeLoopbackPort(): Promise<number> {
   return address.port
 }
 
-async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; redisUrl: string; port: number; bridgeMode?: 'prefix_254_or_255' | 'prefix_255_or_256' | null; testCommercialFixture?: boolean }): Promise<ChildProcess> {
+async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; redisUrl: string; port: number; bridgeMode?: 'prefix_254_or_255' | 'prefix_255_or_256' | null; testCommercialFixture?: boolean; assetStorageRoot?: string }): Promise<ChildProcess> {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C.UTF-8',
     NODE_ENV: 'development', AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres',
@@ -34,6 +39,8 @@ async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; re
     API_BIND_HOST: '127.0.0.1', PORT: String(input.port),
     CONNECTOR_FIXTURE_MODE: 'false',
     API_AUTH_TOKENS: JSON.stringify({ [token]: { workspaces: [workspaceId], actor_id: 'bridge-actor', roles: ['merchant_admin'], workbenches: ['workspace'] } }),
+    WORKER_API_CREDENTIALS: JSON.stringify(Object.fromEntries(['sync', 'generation', 'publish', 'reconcile', 'automation', 'scan'].map(role => [role, { token: `isolated-${role}-token`, signing_secret: `isolated-${role}-signing-secret` }]))),
+    ...(input.assetStorageRoot ? { ASSET_STORAGE_ROOT: input.assetStorageRoot } : {}),
   }
   const child = spawn(process.execPath, ['--import', 'tsx', 'apps/api/src/server.ts'], {
     cwd: resolve('.'), env, stdio: ['ignore', 'pipe', 'pipe'],
@@ -79,6 +86,7 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
     const opsUrl = new URL(fixture.opsDatabaseUrl)
     opsUrl.pathname = `/${databaseName}`
     const app = new Pool({ connectionString: appUrl.toString() })
+      const storageRoot = await mkdtemp(join(tmpdir(), 'store-nova-asset-purge-'))
     let child: ChildProcess | undefined
     try {
       const migrations = await loadMigrations()
@@ -119,7 +127,7 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       // The API uses the same least-privilege merchant_app and merchant_ops
       // roles as production. The admin connection only creates the isolated
       // schema, seeds the fixture, and advances the migration prefix.
-      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: port254 })
+      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: port254, assetStorageRoot: storageRoot })
       const getBrand = (port: number) => fetch(`http://127.0.0.1:${port}/v1/brand-scopes`, {
         headers: { authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId },
       })
@@ -142,7 +150,7 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       expect(staleReadiness.status).toBe(503)
       await stopApi(child); child = undefined
       const port255 = await freeLoopbackPort()
-      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: port255 })
+      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: port255, assetStorageRoot: storageRoot })
       const opened = await getBrand(port255)
       expect(opened.status).toBe(200)
       expect(JSON.stringify(await opened.json())).toContain(workspaceId)
@@ -164,7 +172,7 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       // unavailable for the whole compatibility deployment phase.
       await stopApi(child); child = undefined
       const portBridge255 = await freeLoopbackPort()
-      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: portBridge255, bridgeMode: 'prefix_255_or_256' })
+      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: portBridge255, bridgeMode: 'prefix_255_or_256', assetStorageRoot: storageRoot })
       expect(await new MigrationRunner(admin, migrations).run()).toEqual([256])
       await admin.query(isolatedRoleSql)
       const stale256Readiness = await fetch(`http://127.0.0.1:${portBridge255}/readyz`)
@@ -268,10 +276,24 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       )
       expect(lifecycleAfterBlockedWrites.rows).toEqual(lifecycleBeforeBlockedPurge.rows)
       await stopApi(child); child = undefined
-      const normalPort256 = await freeLoopbackPort()
-      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: normalPort256, bridgeMode: null })
-      expect((await fetch(`http://127.0.0.1:${normalPort256}/readyz`)).status).toBe(200)
       const headers = { authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId }
+      const lifecycleHeaders = { ...headers, 'content-type': 'application/json' }
+      // Seed an expired asset before the v256 API hydrates this workspace so
+      // the worker sees the same durable snapshot as the service read model.
+      const purgeAssetId = 'asset_bridge_256_worker_purge'
+      const purgeBytes = Buffer.from('isolated durable asset purge bytes')
+      const purgeSha256 = createHash('sha256').update(purgeBytes).digest('hex')
+      const objectStore = new LocalObjectStorage(storageRoot, { maxObjectBytes: 1024 * 1024 })
+      const storedPurgeObject = await objectStore.putQuarantine({ workspaceId, assetId: purgeAssetId, fileName: `${purgeAssetId}.txt`, body: purgeBytes, contentType: 'text/plain', expectedSha256: purgeSha256, expectedSizeBytes: purgeBytes.byteLength })
+      await admin.query(`INSERT INTO business_entity_snapshots(workspace_id,entity_type,entity_id,entity_version,payload)
+        VALUES ($1,'asset',$2,1,$3::jsonb)`, [workspaceId, purgeAssetId, JSON.stringify({ ...assetSnapshot(purgeAssetId), storageKey: storedPurgeObject.key, sha256: purgeSha256, sizeBytes: purgeBytes.byteLength })])
+      await admin.query('INSERT INTO workspace_storage_quotas(workspace_id,limit_bytes,used_bytes,reserved_bytes,revision) VALUES ($1,1048576,$2,0,1)', [workspaceId, purgeBytes.byteLength])
+      await admin.query(`INSERT INTO merchant_asset_lifecycle
+        (workspace_id,asset_id,deleted_at,expires_at,deleted_by,revision)
+        VALUES ($1,$2,now()-interval '8 days',now()-interval '1 day','bridge-actor',1)`, [workspaceId, purgeAssetId])
+      const normalPort256 = await freeLoopbackPort()
+      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: normalPort256, bridgeMode: null, assetStorageRoot: storageRoot })
+      expect((await fetch(`http://127.0.0.1:${normalPort256}/readyz`)).status).toBe(200)
       const activeTrash = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets/trash`, { headers })
       expect(activeTrash.status).toBe(200)
       expect(await activeTrash.json()).toMatchObject({ data: { items: [expect.objectContaining({ asset: expect.objectContaining({ id: trashedAssetId }) })], total: 1, retention_days: 7 } })
@@ -280,7 +302,6 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       const activeAssetsBody = JSON.stringify(await activeAssets.json())
       expect(activeAssetsBody).toContain(assetId)
       expect(activeAssetsBody).not.toContain(trashedAssetId)
-      const lifecycleHeaders = { ...headers, 'content-type': 'application/json' }
       const trashed = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets/${encodeURIComponent(assetId)}/trash`, { method: 'POST', headers: lifecycleHeaders, body: JSON.stringify({ expected_revision: 1 }) })
       expect(trashed.status).toBe(200)
       expect(await trashed.json()).toMatchObject({ data: { asset: { id: assetId }, revision: 1 } })
@@ -328,12 +349,59 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
         [workspaceId, assetId],
       )
       expect(lifecycleEvents.rows.map(event => event.event_type)).toEqual(['deleted', 'restored', 'deleted', 'early_purge_requested', 'purge_request_cancelled'])
+
+      // Exercise the complete worker purge success path against the real API
+      // process, app-role PostgreSQL repositories and a private local object
+      // store. The old snapshot is retained by migration 256 as the source of
+      // the object key, while lifecycle/events prove durable completion.
+      const workerId = 'isolated-asset-purge-worker'
+      const purgeBody = JSON.stringify({ workspace_id: workspaceId, limit: 1 })
+      const purgeTarget = '/v1/internal/assets/lifecycle/purge'
+      const proof = createWorkerRequestProof({ secret: automationSecret, role: 'automation', workerId,
+        method: 'POST', requestTarget: purgeTarget, workspaceId, body: purgeBody })
+      const purgedResponse = await fetch(`http://127.0.0.1:${normalPort256}${purgeTarget}`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${automationToken}`, 'content-type': 'application/json',
+          'x-worker-role': 'automation', 'x-worker-id': workerId, 'x-workspace-id': workspaceId,
+          'x-worker-timestamp': proof.timestamp, 'x-worker-nonce': proof.nonce,
+          'x-worker-body-sha256': proof.bodySha256, 'x-worker-workspace-signature': proof.signature,
+        },
+        body: purgeBody,
+      })
+      const purgeHttpBody = await purgedResponse.json()
+      expect(purgedResponse.status, JSON.stringify(purgeHttpBody)).toBe(200)
+      const purgeResponseBody = purgeHttpBody
+      const purgeFailure = await admin.query<{ purge_error: Record<string, unknown> | null }>(
+        'SELECT purge_error FROM merchant_asset_lifecycle WHERE workspace_id=$1 AND asset_id=$2', [workspaceId, purgeAssetId],
+      )
+      expect(purgeResponseBody, `purge_error=${JSON.stringify(purgeFailure.rows[0]?.purge_error)}`).toMatchObject({ data: { purged: 1, retried: 0, claimed: 1, worker_id: workerId } })
+      await expect(objectStore.head(workspaceId, storedPurgeObject.key, { includeQuarantine: true })).resolves.toBeNull()
+      const purgedState = await admin.query<{ purged_at: Date | null; purge_lease_token: string | null; purge_lease_until: Date | null; purge_attempts: number }>(
+        'SELECT purged_at,purge_lease_token,purge_lease_until,purge_attempts FROM merchant_asset_lifecycle WHERE workspace_id=$1 AND asset_id=$2',
+        [workspaceId, purgeAssetId],
+      )
+      expect(purgedState.rows).toEqual([{ purged_at: expect.any(Date), purge_lease_token: null, purge_lease_until: null, purge_attempts: 0 }])
+      const purgeEvents = await admin.query<{ event_type: string; actor_id: string }>(
+        'SELECT event_type,actor_id FROM merchant_asset_lifecycle_events WHERE workspace_id=$1 AND asset_id=$2 ORDER BY occurred_at,event_id',
+        [workspaceId, purgeAssetId],
+      )
+      expect(purgeEvents.rows.map(event => event.event_type)).toEqual(['purge_claimed', 'purged'])
+      expect(purgeEvents.rows.at(-1)?.actor_id).toBe(workerId)
+
     } finally {
       await stopApi(child)
-      await app.end()
-      await admin.end()
-      const disposed = await fixture.dispose()
-      if (disposed.leftRunning.length) throw new Error('isolated PostgreSQL fixture cleanup requires inspection')
+      try {
+        await app.end()
+        await admin.end()
+      } finally {
+        try {
+          const disposed = await fixture.dispose()
+          if (disposed.leftRunning.length) throw new Error('isolated PostgreSQL fixture cleanup requires inspection')
+        } finally {
+          await rm(storageRoot, { recursive: true, force: true })
+        }
+      }
     }
   }, 300_000)
 })
