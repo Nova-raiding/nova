@@ -635,6 +635,7 @@ export interface PublishJob {
 
 export interface ManualPublishRecord {
   id: string
+  workspaceId?: string
   taskId: string
   contentVersionId: string
   platform: PlatformId
@@ -647,6 +648,7 @@ export interface ManualPublishRecord {
   reviewedAt?: string
   recordedAt: string
   differenceNote?: string
+  evidenceBoundary?: 'manual_unverified'
 }
 
 export interface SyncFailureItem {
@@ -1399,6 +1401,13 @@ export const fetchPublishJobPage = (baseUrl: string, options: { limit?: number; 
   const offset = options.offset ?? 0
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   return requestApi<ApiPage<PublishJob> | PublishJob[]>(baseUrl, `/v1/publish-jobs?${params.toString()}`).then(value => normalizeApiPage(value, limit, offset))
+}
+export const fetchManualPublishRecordPage = (baseUrl: string, options: { limit?: number; offset?: number; taskId?: string } = {}) => {
+  const limit = options.limit ?? MERCHANT_PUBLISH_PAGE_SIZE
+  const offset = options.offset ?? 0
+  return requestMcp<ApiPage<ManualPublishRecord> | ManualPublishRecord[]>(baseUrl, 'publish.manual.list', {
+    limit: String(limit), offset: String(offset), ...(options.taskId ? { task_id: options.taskId } : {}),
+  }).then(value => normalizeApiPage(value, limit, offset))
 }
 export const fetchManualPublishRecords = async (baseUrl: string) => normalizeApiItems(await requestMcp<ApiPage<ManualPublishRecord> | ManualPublishRecord[]>(baseUrl, 'publish.manual.list', { limit: '100', offset: '0' }))
 export const createTask = (baseUrl: string, input: { product_id: string; platform: PlatformId; account_id?: string; request_text?: string; idempotency_key?: string }) => requestApi<Task>(baseUrl, '/v1/tasks', { method: 'POST', body: JSON.stringify(input) })

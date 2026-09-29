@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchPublishJobPage, MERCHANT_PUBLISH_PAGE_SIZE } from './api'
+import { fetchManualPublishRecordPage, fetchPublishJobPage, MERCHANT_PUBLISH_PAGE_SIZE } from './api'
 
 const envelope = (data: unknown) => new Response(JSON.stringify({
   request_id: 'publish-page-test', trace_id: 'publish-page-test', workspace_id: 'ws_demo',
@@ -28,5 +28,19 @@ describe('merchant publish job pagination', () => {
   it('uses the bounded server contract by default', () => {
     expect(MERCHANT_PUBLISH_PAGE_SIZE).toBe(20)
     expect(fetchPublishJobPage).toBeTypeOf('function')
+  })
+
+  it('requests a bounded manual publish page with an optional task filter', async () => {
+    const fetcher = vi.fn().mockResolvedValue(envelope({ result: { items: [], total: 51, limit: 20, offset: 20 } }))
+    vi.stubGlobal('fetch', fetcher)
+
+    await expect(fetchManualPublishRecordPage('http://127.0.0.1:9', { limit: 20, offset: 20, taskId: 'task_1' })).resolves.toEqual({
+      items: [], total: 51, limit: 20, offset: 20,
+    })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('/mcp')
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({
+      method: 'publish.manual.list', params: { limit: '20', offset: '20', task_id: 'task_1' },
+    })
   })
 })
