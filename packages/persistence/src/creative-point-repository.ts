@@ -288,11 +288,11 @@ const reservationFactProjection = `r.id, r.workspace_id AS "workspaceId", r.oper
 
 export class PostgresCreativePointRepository implements CreativePointRepository {
   constructor(private readonly pool: SqlPool) {}
-  async getBalance(workspaceId: string, at = now()) { const scope = requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, scope, async client => { const rows = await client.query<BalanceRow>(`SELECT ${balanceProjection} FROM creative_point_access_state WHERE workspace_id=$1`, [scope]); if (!rows.rows[0]) return { workspaceId: scope, availablePoints: null, reservedPoints: null, settledPoints: null, revision: 0 }; return this.refreshBalance(client, scope, instant(at), false) }) }
+  async getBalance(workspaceId: string, at = now()) { const scope = requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, scope, async client => { const rows = await client.query<BalanceRow>(`SELECT ${balanceProjection} FROM creative_point_access_state WHERE workspace_id=$1 FOR SHARE`, [scope]); if (!rows.rows[0]) return { workspaceId: scope, availablePoints: null, reservedPoints: null, settledPoints: null, revision: 0 }; return this.refreshBalance(client, scope, instant(at), false) }) }
   async getBalanceDetails(workspaceId: string, at = now()): Promise<CreativePointBalanceDetails> {
     const scope = requireWorkspaceScope(workspaceId); const observedAt = instant(at)
     return withWorkspaceTransaction(this.pool, scope, async client => {
-      const state = await client.query<BalanceRow>(`SELECT ${balanceProjection} FROM creative_point_access_state WHERE workspace_id=$1`, [scope])
+      const state = await client.query<BalanceRow>(`SELECT ${balanceProjection} FROM creative_point_access_state WHERE workspace_id=$1 FOR SHARE`, [scope])
       if (!state.rows[0]) return { workspaceId: scope, availablePoints: null, reservedPoints: null, settledPoints: null, revision: 0, nextExpiry: null, expiringPoints: null }
       const balance = await this.refreshBalance(client, scope, observedAt, false)
       if (balance.availablePoints === null) return { ...balance, nextExpiry: null, expiringPoints: null }
@@ -368,7 +368,19 @@ export class PostgresCreativePointRepository implements CreativePointRepository 
     const computed = await client.query<{ available: string | null; reserved: string | null; settled: string | null; known: boolean }>(`SELECT EXISTS(SELECT 1 FROM creative_point_grants WHERE workspace_id=$1) AS known, COALESCE((SELECT sum(GREATEST(g.points-COALESCE(a.points,0),0)) FROM creative_point_grants g LEFT JOIN (SELECT workspace_id,grant_id,sum(points_delta) points FROM creative_point_allocations WHERE workspace_id=$1 GROUP BY workspace_id,grant_id) a ON a.workspace_id=g.workspace_id AND a.grant_id=g.id WHERE g.workspace_id=$1 AND (g.expires_at IS NULL OR g.expires_at>$2::timestamptz)),0) AS available, COALESCE((SELECT sum(points) FROM creative_point_reservations WHERE workspace_id=$1 AND status='active'),0) AS reserved, COALESCE((SELECT sum(GREATEST(r.settled_points-COALESCE(v.points,0),0)) FROM creative_point_reservations r LEFT JOIN (SELECT workspace_id,original_reservation_id,sum(points) AS points FROM creative_point_reversals_v2 WHERE workspace_id=$1 GROUP BY workspace_id,original_reservation_id) v ON v.workspace_id=r.workspace_id AND v.original_reservation_id=r.id WHERE r.workspace_id=$1 AND r.status='settled'),0) AS settled`, [workspaceId, at])
     const values = computed.rows[0]!; const available = values.known ? integer(values.available!) : null
     if (available !== null && available < 0) throw new CreativePointRepositoryError('CREATIVE_POINT_INSUFFICIENT', 'creative point allocation exceeds grant capacity')
-    const result = await client.query<BalanceRow>(`UPDATE creative_point_access_state SET available_points=$2,reserved_points=$3,settled_points=$4,revision=revision+$5,updated_at=$6::timestamptz WHERE workspace_id=$1 RETURNING ${balanceProjection}`, [workspaceId, available, values.known ? integer(values.reserved!) : null, values.known ? integer(values.settled!) : null, advance ? 1 : 0, at]); return balanceFromRow(result.rows[0]!)
+    const reserved = values.known ? integer(values.reserved!) : null
+    const settled = values.known ? integer(values.settled!) : null
+    if (!advance) {
+      // Reads must recompute expiry without rewriting the last mutation time.
+      // Mutation callers hold the workspace state lock and persist the freshly
+      // computed balance below once their grant/reservation has changed.
+      const stored = await client.query<Pick<BalanceRow, 'revision' | 'updatedAt'>>('SELECT revision, updated_at AS "updatedAt" FROM creative_point_access_state WHERE workspace_id=$1', [workspaceId])
+      const row = stored.rows[0]
+      if (!row) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'creative point access state is unavailable')
+      return { workspaceId, availablePoints: available, reservedPoints: reserved, settledPoints: settled, revision: integer(row.revision), ...(row.updatedAt ? { updatedAt: timestampValue(row.updatedAt) } : {}) }
+    }
+    const result = await client.query<BalanceRow>(`UPDATE creative_point_access_state SET available_points=$2,reserved_points=$3,settled_points=$4,revision=revision+1,updated_at=$5::timestamptz WHERE workspace_id=$1 RETURNING ${balanceProjection}`, [workspaceId, available, reserved, settled, at])
+    return balanceFromRow(result.rows[0]!)
   }
   private async replay<T>(client: SqlClient, workspaceId: string, kind: string, key: string, request: Record<string, unknown>, projection: string, table: string): Promise<T | undefined> { const op = await client.query<{ result: { entity_id?: string } | null; requestMatches: boolean }>('SELECT result, request=$4::jsonb AS "requestMatches" FROM creative_point_operations WHERE workspace_id=$1 AND kind=$2 AND idempotency_key=$3 AND status=\'completed\'', [workspaceId, kind, key, JSON.stringify(request)]); if(op.rows[0]&&!op.rows[0].requestMatches) throw new CreativePointRepositoryError('CREATIVE_POINT_IDEMPOTENCY_CONFLICT','idempotency key was already used for a different creative point intent'); const id = op.rows[0]?.result?.entity_id; if (!id) return undefined; const result = await client.query<T>(`SELECT ${projection} FROM ${table} WHERE workspace_id=$1 AND id=$2`, [workspaceId, id]); return result.rows[0] }
   private async insertOperation(client: SqlClient, id: string, workspaceId: string, kind: string, key: string, request: Record<string, unknown>) { await client.query('INSERT INTO creative_point_operations (id,workspace_id,kind,idempotency_key,status,request) VALUES ($1,$2,$3,$4,\'pending\',$5::jsonb)', [id, workspaceId, kind, key, JSON.stringify(request)]) }

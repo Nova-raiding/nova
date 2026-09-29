@@ -112,8 +112,9 @@ describe('creative point repository', () => {
             if (text.includes('ON CONFLICT (workspace_id) DO NOTHING')) return { rows: [] as Row[] }
             if (text.includes('FROM creative_point_access_state WHERE workspace_id=$1 FOR UPDATE')) return { rows: [] as Row[] }
             if (text.includes('FROM creative_point_operations')) return { rows: [{ result: { entity_id: 'cpr_recorded' }, requestMatches: true }] as unknown as Row[] }
-            if (text.includes('FROM creative_point_reservations')) return { rows: [{ id: 'cpr_recorded', workspaceId: 'ws-a', operationId: 'cpo_recorded', actionKey: 'image.generate', rateCardVersion: 'image-v1', points: '40', status, settledPoints: null, createdAt: '2026-01-01T00:00:00.000Z', finalizedAt: status === 'active' ? null : '2026-01-02T00:00:00.000Z' }] as unknown as Row[] }
             if (text.includes('AS known,')) return { rows: [{ available: '60', reserved: '40', settled: '0', known: true }] as unknown as Row[] }
+            if (text.includes('FROM creative_point_reservations')) return { rows: [{ id: 'cpr_recorded', workspaceId: 'ws-a', operationId: 'cpo_recorded', actionKey: 'image.generate', rateCardVersion: 'image-v1', points: '40', status, settledPoints: null, createdAt: '2026-01-01T00:00:00.000Z', finalizedAt: status === 'active' ? null : '2026-01-02T00:00:00.000Z' }] as unknown as Row[] }
+            if (text.includes('SELECT revision, updated_at AS "updatedAt" FROM creative_point_access_state')) return { rows: [{ revision: '2', updatedAt: '2026-01-01T00:00:00.000Z' }] as unknown as Row[] }
             if (text.includes('UPDATE creative_point_access_state SET available_points=')) return { rows: [{ workspaceId: 'ws-a', availablePoints: '60', reservedPoints: '40', settledPoints: '0', revision: '2', updatedAt: null }] as unknown as Row[] }
             throw new Error(`unexpected query: ${text}`)
           },
