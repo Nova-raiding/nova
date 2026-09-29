@@ -823,7 +823,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('keeps upstream English summaries and support statuses out of merchant-facing text', async () => {
+  it('keeps upstream English prose out of merchant-visible result fields while preserving status evidence', async () => {
     const summaries = ['Ready to publish', '处理 failed', 'Store Nova 已准备好']
     let historyCalls = 0
     const server = createServer(async (req, res) => {
@@ -832,11 +832,22 @@ describe('Codex stdio MCP bridge', () => {
       const method = JSON.parse(raw).method
       res.setHeader('content-type', 'application/json')
       if (method === 'onboarding.status') {
-        res.writeHead(400).end(JSON.stringify({ error: { code: 'MCP_GATEWAY_ERROR', message: 'Bad Gateway', details: { safe_message: 'Bad Gateway' } } }))
+        res.writeHead(400).end(JSON.stringify({ error: { code: 'MCP_GATEWAY_ERROR', message: 'Bad Gateway', details: { safe_message: 'Bad Gateway', issues: [{ code: 'UPSTREAM_REJECTED', message: 'Provider request failed' }], provider_error_summary: 'Provider request failed', request_id: 'req_qa_123' } } }))
         return
       }
       const result = method === 'task.history'
-        ? { summary: summaries[historyCalls++], next_actions: ['Review now'] }
+        ? {
+            summary: summaries[historyCalls++], next_actions: ['Review now'], status: 'waiting_customer', request_id: 'req_qa_123',
+            product: { title: 'Nike Air Max', sku: 'SKU-001' },
+            execution: { provider_request_id: 'provider_qa_123', cost_cny: 0.0123 },
+            workflow: {
+              status: { internal_state: 'queued', user_state: 'Waiting for provider', terminal: false },
+              progress: { known: false, label: 'Processing request' },
+              next_action: { label: 'Review now', allowed: true },
+              recovery: { retryable: false },
+              evidence: { source: 'provider_qa_123', simulated: false },
+            },
+          }
         : { ticket_number: 'QA-1', status: 'waiting_customer', replies: [] }
       res.end(JSON.stringify({ data: { result }, error: null }))
     })
@@ -861,11 +872,19 @@ describe('Codex stdio MCP bridge', () => {
         expect(visible).toMatch(/[\u3400-\u9fff]/u)
         expect(visible).not.toMatch(/Ready to publish|Review now|waiting_customer|Bad Gateway|failed/u)
         if (name === 'task.history') {
-          expect(response.result.structuredContent.summary).toBe(summaries[index])
-          if (index === 2) expect(visible).toContain('Store Nova 已准备好')
+          expect(response.result.structuredContent.summary).toMatch(/[\u3400-\u9fff]/u)
+          expect(response.result.structuredContent.summary).not.toMatch(/Ready to publish|failed/u)
+          expect(response.result.structuredContent.next_actions).toEqual(['继续当前步骤'])
+          expect(response.result.structuredContent).toMatchObject({ status: 'waiting_customer', request_id: 'req_qa_123' })
+          expect(response.result.structuredContent).toMatchObject({ product: { title: 'Nike Air Max', sku: 'SKU-001' }, execution: { provider_request_id: 'provider_qa_123', cost_cny: 0.0123 }, workflow: { status: { internal_state: 'queued' }, evidence: { source: 'provider_qa_123' } } })
+          expect(JSON.stringify(response.result.structuredContent.workflow)).not.toMatch(/Waiting for provider|Processing request|Review now/u)
+          if (index === 2) expect(response.result.structuredContent.summary).toContain('Store Nova 已准备好')
         }
         if (name === 'support.customer.replies.list') expect(visible).toContain('等待客户回复')
-        if (name === 'onboarding.status') expect(response.result.structuredContent.code).toBe('MCP_GATEWAY_ERROR')
+        if (name === 'onboarding.status') {
+          expect(response.result.structuredContent).toMatchObject({ code: 'MCP_GATEWAY_ERROR', details: { request_id: 'req_qa_123', issues: [{ code: 'UPSTREAM_REJECTED' }] } })
+          expect(JSON.stringify(response.result.structuredContent)).not.toMatch(/Bad Gateway|Provider request failed/u)
+        }
       }
     } finally {
       child.kill()

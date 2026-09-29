@@ -1289,6 +1289,33 @@ function merchantVisibleText(value, fallback) {
   return /[\u3400-\u9fff]/u.test(sanitized) && !/[A-Za-z]{2,}/u.test(prose) ? sanitized : fallback
 }
 
+function merchantVisibleResultCopy(result) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return result
+  const copy = { ...result }
+  for (const key of ['summary', 'message', 'completed_summary', 'question', 'next_step']) {
+    if (typeof copy[key] === 'string') copy[key] = merchantVisibleText(copy[key], '请查看结构化字段核对当前业务状态。')
+  }
+  if (Array.isArray(copy.next_actions)) {
+    copy.next_actions = copy.next_actions.map(action => typeof action === 'string'
+      ? (/^(?:[a-z][a-z_-]*\.)+[a-z][a-z_-]*$/u.test(action) ? action : merchantVisibleText(action, '继续当前步骤'))
+      : action)
+  }
+  if (copy.workflow && typeof copy.workflow === 'object' && !Array.isArray(copy.workflow)) {
+    const workflow = { ...copy.workflow }
+    if (workflow.status && typeof workflow.status === 'object' && !Array.isArray(workflow.status) && typeof workflow.status.user_state === 'string') {
+      workflow.status = { ...workflow.status, user_state: merchantVisibleText(workflow.status.user_state, '需要查看状态') }
+    }
+    if (workflow.progress && typeof workflow.progress === 'object' && !Array.isArray(workflow.progress) && typeof workflow.progress.label === 'string') {
+      workflow.progress = { ...workflow.progress, label: merchantVisibleText(workflow.progress.label, '进度待确认') }
+    }
+    if (workflow.next_action && typeof workflow.next_action === 'object' && !Array.isArray(workflow.next_action) && typeof workflow.next_action.label === 'string') {
+      workflow.next_action = { ...workflow.next_action, label: merchantVisibleText(workflow.next_action.label, '查看状态') }
+    }
+    copy.workflow = workflow
+  }
+  return copy
+}
+
 function sanitizeMerchantAction(value) {
   const sanitized = sanitizeMerchantText(value)
     .replace(/\b(?:product|task|account|workspace|content|campaign|batch)[_-]?id\b/giu, '相关信息')
@@ -1881,6 +1908,21 @@ function safeErrorDetails(details) {
     if (value !== undefined) safe[key] = value
   }
   return Object.keys(safe).length ? safe : undefined
+}
+
+function merchantVisibleErrorDetails(details) {
+  if (!details || typeof details !== 'object') return details
+  if (Array.isArray(details)) return details.map(merchantVisibleErrorDetails)
+  const copy = { ...details }
+  for (const key of ['message', 'gateway_error_summary', 'provider_error_summary']) {
+    if (typeof copy[key] === 'string') copy[key] = merchantVisibleText(copy[key], '服务端诊断信息已记录，请按错误码和请求 ID 排查。')
+  }
+  for (const key of ['issues', 'next_actions']) {
+    if (Array.isArray(copy[key])) copy[key] = copy[key].map(item => typeof item === 'string'
+      ? (/^(?:[a-z][a-z_-]*\.)+[a-z][a-z_-]*$/u.test(item) ? item : merchantVisibleText(item, '请按错误码核对当前问题。'))
+      : merchantVisibleErrorDetails(item))
+  }
+  return copy
 }
 
 function commercialAccessErrorProjection(code, details) {
@@ -3729,7 +3771,7 @@ async function handle(request) {
         }
       }
       if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('mcp.output', { method: name, job_id: normalizedResult?.job_id ?? result?.job_id ?? workflowResult?.job_id ?? rawResult?.job_id ?? result?.job?.jobId ?? result?.job?.id ?? 'unknown', image_count: nativeImages.length, structured_image_url_count: Array.isArray(structuredContent?.image_urls) ? structuredContent.image_urls.length : 0, native_attachment_count: content.filter(item => item?.type === 'image').length, candidate_state: normalizedResult?.candidate_state?.state ?? result?.candidate_state?.state ?? 'missing', archive_state: normalizedResult?.candidate_state?.archive_state ?? result?.candidate_state?.archive_state ?? 'unknown' })
-      return jsonRpc(id, { content, structuredContent, ...(resultUi ? { _meta: resultUi } : {}), isError: false })
+      return jsonRpc(id, { content, structuredContent: merchantVisibleResultCopy(structuredContent), ...(resultUi ? { _meta: resultUi } : {}), isError: false })
     } catch (error) {
       imageTrace('error', { method: name, error: error instanceof Error ? error.message : String(error) })
       const code = error && typeof error === 'object' && typeof error.code === 'string' ? error.code : 'MCP_GATEWAY_ERROR'
@@ -3768,7 +3810,7 @@ async function handle(request) {
       const structuredContent = {
         code,
         message: presentation.recovery ? presentation.text : safeStructuredErrorMessage(error, code, details),
-        ...(projectedDetails ? { details: projectedDetails } : {}),
+        ...(projectedDetails ? { details: merchantVisibleErrorDetails(projectedDetails) } : {}),
         ...(presentation.recovery ? { recovery: presentation.recovery } : {}),
         ...parseRecovery,
         ...(commercialAccess ?? {}),
