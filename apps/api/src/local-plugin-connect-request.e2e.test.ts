@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryLocalPluginConnectionRepository } from '../../../packages/persistence/src/local-plugin-connection-repository.js'
 import { MemoryLocalPluginInstallInstanceRepository } from '../../../packages/persistence/src/local-plugin-install-instance-repository.js'
@@ -105,6 +105,64 @@ describe('local plugin connect request HTTP contract', () => {
     await expect(pending.json()).resolves.toMatchObject({ data: { request_id: created.data!.request_id, status: 'pending' } })
     now += 1_001
     await expect((await poll()).json()).resolves.toMatchObject({ data: { request_id: created.data!.request_id, status: 'expired' } })
+  })
+
+  it('requires an exchanged bearer and owned installation proof before exposing local binding completion', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+    vi.stubEnv('LOCAL_PLUGIN_ONE_CLICK_ENABLED', 'true')
+    const auth = new MemoryPasswordAuthRepository()
+    const connections = new MemoryLocalPluginConnectionRepository()
+    const instances = new MemoryLocalPluginInstallInstanceRepository()
+    setPasswordAuthRepositoryForTests(auth)
+    setLocalPluginConnectionRepositoryForTests(connections)
+    setLocalPluginInstallInstanceRepositoryForTests(instances)
+    const workspaceId = 'ws_local_binding'
+    const login = 'local-binding@example.test'
+    const password = 'LocalBinding1234!'
+    const account = await auth.createMerchantAccount({ login, password, enterpriseName: 'Local Binding', contactName: 'Owner', workspaceIds: [workspaceId], actorId: 'platform', reason: 'local binding completion e2e' })
+    const request = await connections.create({ accountId: account.id, identityId: account.identityId, workspaceId })
+    await connections.authorize({ id: request.id, accountId: account.id, identityId: account.identityId, workspaceId })
+    await connections.markExchanged({ id: request.id, accountId: account.id, workspaceId })
+    const keys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const registered = await instances.register({ platform: 'macos', publicKey: keys.publicKey.export({ format: 'der', type: 'spki' }).toString('base64url') })
+    await instances.pair({ accountId: account.id, identityId: account.identityId, workspaceId, instanceId: registered.instance.id, pairingToken: registered.pairingToken })
+    const challenge = await instances.issueChallenge({ accountId: account.id, identityId: account.identityId, workspaceId, instanceId: registered.instance.id, requestId: request.id })
+    const signedMessage = `test install proof\n${challenge.nonce}\n${request.id}`
+    await instances.verifyAndConsumeChallenge({ accountId: account.id, identityId: account.identityId, workspaceId, instanceId: registered.instance.id, id: challenge.id, requestId: request.id, nonce: challenge.nonce, issuedAt: challenge.createdAt, expiresAt: challenge.expiresAt, message: signedMessage, signature: sign('sha256', Buffer.from(signedMessage), keys.privateKey).toString('base64url') })
+    const base = await startApi()
+    const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
+    const cookie = logged.headers.get('set-cookie')?.split(';')[0]
+    expect(cookie).toBeTruthy()
+    const mcp = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, 'content-type': 'application/json', origin: base }, body: JSON.stringify({ workspace_id: workspaceId }) })
+    expect(mcp.status).toBe(200)
+    const tokenEnvelope = await mcp.json() as Envelope<{ access_token: string }>
+    expect(tokenEnvelope.data?.access_token).toBeTruthy()
+    const secondMcp = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, 'content-type': 'application/json', origin: base }, body: JSON.stringify({ workspace_id: workspaceId }) })
+    const secondTokenEnvelope = await secondMcp.json() as Envelope<{ access_token: string }>
+    const tokenPrincipal = await auth.authenticateMcpAccessToken({ clientId: 'local-desktop', issuer: base, audience: `${base}/mcp`, resource: `${base}/mcp`, scope: ['merchant'], accessToken: tokenEnvelope.data!.access_token })
+    expect(tokenPrincipal).toBeTruthy()
+    await instances.recordTokenExchange({ instanceId: registered.instance.id, requestId: request.id, accountId: account.id, identityId: account.identityId, workspaceId, tokenId: tokenPrincipal!.tokenId })
+    const endpoint = `${base}/v1/auth/local-plugin/connect-requests/${request.id}/complete`
+    const body = JSON.stringify({ installation_id: registered.instance.id })
+    const noBearer = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body })
+    expect(noBearer.status).toBe(401)
+    const wrongBearer = await fetch(endpoint, { method: 'POST', headers: { authorization: `Bearer ${secondTokenEnvelope.data!.access_token}`, 'content-type': 'application/json' }, body })
+    expect(wrongBearer.status).toBe(409)
+    const statusUrl = `${base}/v1/auth/local-plugin/connect-requests/${request.id}/status`
+    const beforeAck = await fetch(statusUrl, { headers: { cookie: cookie! } })
+    const beforeAckText = await beforeAck.text()
+    expect(beforeAckText).toContain('"status":"exchanged"')
+    expect(beforeAckText).not.toContain('local_binding_complete')
+    const ack = await fetch(endpoint, { method: 'POST', headers: { authorization: `Bearer ${tokenEnvelope.data!.access_token}`, 'content-type': 'application/json' }, body })
+    expect(ack.status).toBe(200)
+    await expect(ack.json()).resolves.toMatchObject({ data: { request_id: request.id, status: 'exchanged', local_binding_complete: true } })
+
+    const afterAck = await fetch(statusUrl, { headers: { cookie: cookie! } })
+    const statusText = await afterAck.text()
+    expect(statusText).toContain('"local_binding_complete":true')
+    expect(statusText).not.toContain(tokenEnvelope.data!.access_token)
+    expect(statusText).not.toMatch(/refresh_token|authorization_code|code_verifier/u)
   })
 
   it('rejects a workspace swap before creating a request', async () => {

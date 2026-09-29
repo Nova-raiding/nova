@@ -22,9 +22,20 @@ describe('local plugin login installer runtime', () => {
   it('adds a signed installation challenge to the browser request and token exchange', async () => {
     let authorization: URL
     const tokenBodies: URLSearchParams[] = []
+    let acknowledgementCount = 0
+    const localEvents: string[] = []
     const provider = createServer(async (req, res) => {
       const chunks: Buffer[] = []
       for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      if (req.url?.endsWith('/complete')) {
+        expect(localEvents).toEqual(['stored', 'configured'])
+        expect(req.headers.authorization).toBe('Bearer access')
+        expect(JSON.parse(Buffer.concat(chunks).toString())).toEqual({ installation_id: '11111111-1111-4111-8111-111111111111' })
+        acknowledgementCount++
+        res.setHeader('content-type', 'application/json')
+        res.end(JSON.stringify({ data: { local_binding_complete: true } }))
+        return
+      }
       tokenBodies.push(new URLSearchParams(Buffer.concat(chunks).toString()))
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { access_token: 'access', refresh_token: 'refresh', token_type: 'Bearer',
@@ -33,7 +44,7 @@ describe('local plugin login installer runtime', () => {
     await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve))
     try {
       const port = (provider.address() as { port: number }).port
-      await loginLocalPlugin({ baseUrl: `http://127.0.0.1:${port}`, workspaceId: 'ws_test',
+      const result = await loginLocalPlugin({ baseUrl: `http://127.0.0.1:${port}`, workspaceId: 'ws_test',
         requestId: 'req_1234567890abcdef',
         createInstallationProof: ({ codeChallenge, redirectUri }: { codeChallenge: string; redirectUri: string }) => {
           expect(codeChallenge).toMatch(/^[A-Za-z0-9_-]{43}$/u)
@@ -52,11 +63,43 @@ describe('local plugin login installer runtime', () => {
           callback.searchParams.set('state', authorization.searchParams.get('state')!)
           expect((await fetch(callback)).status).toBe(200)
         },
-        storeCredential: () => {}, configureSession: () => {}, timeoutMs: 2000,
+        storeCredential: () => { localEvents.push('stored') }, configureSession: () => { localEvents.push('configured') },
+        launchChatGPT: () => { throw new Error('optional host launch unavailable') }, timeoutMs: 2000,
       })
       expect(tokenBodies).toHaveLength(1)
       expect(tokenBodies[0]!.get('installation_id')).toBe('11111111-1111-4111-8111-111111111111')
+      expect(acknowledgementCount).toBe(1)
+      expect(result).toMatchObject({ ok: true, restart_required: true, host_verified: false })
     } finally { provider.closeAllConnections(); await new Promise<void>(resolve => provider.close(() => resolve())) }
+  })
+
+  it('does not show binding success when the post-save server acknowledgement is absent', async () => {
+    let stored = false
+    let configured = false
+    await expect(loginLocalPlugin({ baseUrl: 'https://example.test', workspaceId: 'ws_test',
+      requestId: 'req_1234567890abcdef',
+      createInstallationProof: () => ({ installationId: '11111111-1111-4111-8111-111111111111',
+        challengeId: '22222222-2222-4222-8222-222222222222', signature: 's'.repeat(86),
+        clientNonce: 'c'.repeat(43), serverNonce: 'n'.repeat(43),
+        issuedAt: '2026-09-28T00:00:00.000Z', expiresAt: '2026-09-28T00:02:00.000Z' }),
+      openBrowser: async (url: string) => {
+        const authorization = new URL(url)
+        const callback = new URL(authorization.searchParams.get('redirect_uri')!)
+        callback.searchParams.set('code', 'one-time-code-long-enough')
+        callback.searchParams.set('state', authorization.searchParams.get('state')!)
+        const response = await fetch(callback)
+        expect(response.status).toBe(200)
+        void response.body?.cancel()
+      },
+      fetchImpl: async (url: string) => new Response(JSON.stringify(url.endsWith('/complete')
+        ? { data: { local_binding_complete: false } }
+        : { data: { access_token: 'access', refresh_token: 'refresh', token_type: 'Bearer',
+          scope: 'merchant', expires_in: 600, workspace_id: 'ws_test', account_login: 'merchant@example.test' } }),
+      { status: 200, headers: { 'content-type': 'application/json' } }),
+      storeCredential: () => { stored = true }, configureSession: () => { configured = true }, timeoutMs: 2000,
+    })).rejects.toThrow('LOCAL_PLUGIN_LOGIN_ACK_FAILED')
+    expect(stored).toBe(true)
+    expect(configured).toBe(true)
   })
 
   it.each(['keychain', 'windows_credential_manager'])('drives the real listener for %s, rejects forged callback, then persists before configuring', async credentialSource => {

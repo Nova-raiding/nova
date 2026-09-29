@@ -3,6 +3,7 @@ import { DomainError } from '../../../packages/application/src/service.js'
 import type { PasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import type { LocalPluginConnectionRepository } from '../../../packages/persistence/src/local-plugin-connection-repository.js'
 import { LocalPluginInstallInstanceError, type LocalPluginInstallInstanceRepository } from '../../../packages/persistence/src/local-plugin-install-instance-repository.js'
+import { LOCAL_PLUGIN_CLIENT_ID } from './local-plugin-auth.js'
 
 type Input = Record<string, unknown>
 
@@ -22,7 +23,7 @@ export function isLocalPluginConnectionRoute(path: string): boolean {
     || path === '/v1/auth/local-plugin/connect-requests'
     || path === '/v1/auth/local-plugin/install-instances/register'
     || path === '/v1/auth/local-plugin/install-instances/pair'
-    || /^\/v1\/auth\/local-plugin\/connect-requests\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/status$/iu.test(path)
+    || /^\/v1\/auth\/local-plugin\/connect-requests\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/(?:status|complete)$/iu.test(path)
 }
 
 export async function handleLocalPluginConnectionRoute(req: IncomingMessage, res: ServerResponse, path: string, url: URL, deps: LocalPluginConnectionRouteDependencies): Promise<boolean> {
@@ -40,6 +41,14 @@ export async function handleLocalPluginConnectionRoute(req: IncomingMessage, res
     const current = await deps.passwordAuth.authenticate(sessionToken())
     if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录商家后台', 401)
     return current
+  }
+  const bearerPrincipal = async () => {
+    const match = /^Bearer\s+(.+)$/iu.exec(header('authorization')?.trim() ?? '')
+    if (!match) throw new DomainError('AUTH_MCP_TOKEN_INVALID', '本地插件访问凭据无效', 401)
+    const origin = deps.publicOrigin
+    const principal = await deps.passwordAuth.authenticateMcpAccessToken({ clientId: LOCAL_PLUGIN_CLIENT_ID, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'], accessToken: match[1]! })
+    if (!principal) throw new DomainError('AUTH_MCP_TOKEN_INVALID', '本地插件访问凭据无效', 401)
+    return principal
   }
   res.setHeader('cache-control', 'no-store')
   if (req.method === 'GET' && path === '/v1/auth/local-plugin/connect-capability') {
@@ -98,6 +107,24 @@ export async function handleLocalPluginConnectionRoute(req: IncomingMessage, res
     deps.send(201, workspaceId, { request_id: request.id, status: request.status, expires_at: request.expiresAt, launch_url: launch.toString(), ...(challenge ? { account_id: current.account.id, installation_id: installationId, challenge_id: challenge.id, server_nonce: challenge.nonce, challenge_issued_at: challenge.createdAt, challenge_expires_at: challenge.expiresAt } : {}) })
     return true
   }
+  const completeMatch = path.match(/^\/v1\/auth\/local-plugin\/connect-requests\/([^/]+)\/complete$/u)
+  if (req.method === 'POST' && completeMatch) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(completeMatch[1]!)) throw new DomainError('LOCAL_PLUGIN_CONNECTION_NOT_FOUND', '连接请求不存在', 404)
+    const principal = await bearerPrincipal()
+    const input = await deps.readBody(16 * 1024)
+    const installationId = String(input.installation_id ?? '').trim()
+    if (!installationId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(installationId)) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_INVALID', '安装实例信息无效', 400)
+    const request = await deps.connections.getForAccount({ id: completeMatch[1]!, accountId: principal.accountId, workspaceId: principal.workspaceId })
+    if (!request || request.status !== 'exchanged' || request.identityId !== principal.identityId) throw new DomainError('LOCAL_PLUGIN_CONNECTION_INVALID', '连接请求无效、未完成授权或已过期', 409)
+    try {
+      await deps.installInstances.completeLocalBinding({ instanceId: installationId, requestId: request.id, accountId: principal.accountId, identityId: principal.identityId, workspaceId: principal.workspaceId, tokenId: principal.tokenId })
+    } catch (error) {
+      if (error instanceof LocalPluginInstallInstanceError) throw new DomainError(error.code, '安装实例与该连接请求不匹配，或缺少有效的持有证明', 409)
+      throw error
+    }
+    deps.send(200, request.workspaceId, { request_id: request.id, status: request.status, local_binding_complete: true })
+    return true
+  }
   const statusMatch = path.match(/^\/v1\/auth\/local-plugin\/connect-requests\/([^/]+)\/status$/u)
   if (req.method === 'GET' && statusMatch) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(statusMatch[1]!)) throw new DomainError('LOCAL_PLUGIN_CONNECTION_NOT_FOUND', '连接请求不存在', 404)
@@ -107,7 +134,8 @@ export async function handleLocalPluginConnectionRoute(req: IncomingMessage, res
     if (!workspaceId || !workspaceIds.includes(workspaceId)) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '请指定当前账号已授权的工作区', 409)
     const request = await deps.connections.getForAccount({ id: statusMatch[1]!, accountId: current.account.id, workspaceId })
     if (!request) throw new DomainError('LOCAL_PLUGIN_CONNECTION_NOT_FOUND', '连接请求不存在', 404)
-    deps.send(200, request.workspaceId, { request_id: request.id, status: request.status, expires_at: request.expiresAt, ...(request.exchangedAt ? { connected_at: request.exchangedAt } : {}) })
+    const localBindingComplete = request.status === 'exchanged' && await deps.installInstances.hasLocalBindingCompletion({ requestId: request.id, accountId: current.account.id, identityId: current.account.identityId, workspaceId: request.workspaceId })
+    deps.send(200, request.workspaceId, { request_id: request.id, status: request.status, expires_at: request.expiresAt, ...(request.exchangedAt ? { connected_at: request.exchangedAt } : {}), ...(localBindingComplete ? { local_binding_complete: true } : {}) })
     return true
   }
   return false

@@ -62,7 +62,7 @@ export function parsePluginPairFragment(hash: string, workspaceIds: string[]): P
   } catch { return null }
 }
 
-type ConnectionUiState = 'idle' | 'requesting' | 'launching' | 'install_required' | 'connected' | 'expired' | 'failed'
+type ConnectionUiState = 'idle' | 'requesting' | 'launching' | 'install_required' | 'confirmation_pending' | 'connected' | 'expired' | 'failed'
 export type LocalPluginPlatform = 'macos' | 'windows' | 'other'
 
 export function detectLocalPluginPlatform(userAgent = '', platform = ''): LocalPluginPlatform {
@@ -77,7 +77,8 @@ const connectionStatePresentation: Record<ConnectionUiState, { color: string; la
   requesting: { color: 'processing', label: '正在创建安全连接' },
   launching: { color: 'processing', label: '正在唤起连接助手' },
   install_required: { color: 'warning', label: '等待本地助手完成' },
-  connected: { color: 'success', label: '授权已完成，请重启 ChatGPT' },
+  confirmation_pending: { color: 'processing', label: '凭据已签发，等待本机保存确认' },
+  connected: { color: 'success', label: '本地绑定已完成，请重启 ChatGPT 验证' },
   expired: { color: 'warning', label: '连接请求已过期' },
   failed: { color: 'error', label: '连接失败，请重试' },
 }
@@ -98,6 +99,7 @@ interface ConnectRequest {
 interface ConnectRequestStatus {
   request_id?: string
   status: 'pending' | 'authorized' | 'exchanged' | 'expired'
+  local_binding_complete?: boolean
 }
 
 export function LocalPluginConnection({ apiBaseUrl, account }: {
@@ -174,6 +176,7 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
 
   const beginConnection = async (pairedInstallationId?: string) => {
     if ((!oneClickAvailable && !pairedInstallationId) || !workspaceId || !connectTargetAvailable || !installationKey || connectionState === 'requesting') return
+    setOpenScope(scope)
     const installationId = pairedInstallationId ?? window.localStorage.getItem(installationKey)
     if (!installationId) {
       const enrollUrl = localPluginEnrollUrl(apiBaseUrl, account.workspaceIds, workspaceId, account.id)
@@ -211,9 +214,11 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
             `/v1/auth/local-plugin/connect-requests/${encodeURIComponent(created.request_id)}/status?workspace_id=${encodeURIComponent(workspaceId)}`, {}, workspaceId)
           if (attempt !== connectionAttempt.current) return
           if (status.request_id !== undefined && status.request_id !== created.request_id) throw new Error('INVALID_CONNECT_STATUS')
-          if (status.status === 'exchanged') { setConnectionState('connected'); return }
+          // Older APIs mark `exchanged` as soon as they issue a token. Only a
+          // post-save installer acknowledgement can confirm the local binding.
+          if (status.local_binding_complete === true) { setConnectionState('connected'); return }
           if (status.status === 'expired' || Date.now() >= new Date(created.expires_at).getTime()) { setConnectionState('expired'); return }
-          setConnectionState('install_required')
+          setConnectionState(status.status === 'exchanged' ? 'confirmation_pending' : 'install_required')
           launchTimer.current = setTimeout(poll, 2_000)
         } catch { if (attempt === connectionAttempt.current) setConnectionState('failed') }
       }
@@ -242,6 +247,15 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
       <Button onClick={(event) => { event.stopPropagation(); setOpenScope(null) }}>关闭</Button>
     }>
       <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+        <Alert type={connectionState === 'connected' ? 'success' : connectionState === 'failed' ? 'error' : connectionState === 'expired' ? 'warning' : 'info'}
+          title={presentation.label} showIcon
+          description={connectionState === 'connected'
+            ? '安装器已确认将凭据保存到这台电脑。请重启 ChatGPT，并在新对话中检查 Store Nova 连接。'
+            : connectionState === 'confirmation_pending'
+              ? '服务端已完成凭据交换，正在等待本地安装器确认保存。收到授权回调本身不代表绑定成功。'
+              : connectionState === 'expired' || connectionState === 'failed'
+                ? '本次连接未完成。请检查本地安装器提示后重新连接。'
+                : '请保持商家工作台打开。授权页会在另一个标签页完成验证，本页面会显示绑定进度。'} />
         {pairing
           ? <Alert type="info" title="确认连接这台电脑" showIcon description={`将工作区 ${pairing.workspace_id} 授权给刚打开的 Store Nova 本地插件。`} />
           : oneClickAvailable

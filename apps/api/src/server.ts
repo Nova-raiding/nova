@@ -13589,7 +13589,7 @@ export function assetHttpRuntime(httpOperationPolicyOperation?: string) {
 async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', `${publicRequestOrigin(req)}/`)
   const path = url.pathname
-  const isLocalPluginConnectionRoute = path === '/v1/auth/local-plugin/connect-capability' || path === '/v1/auth/local-plugin/connect-requests' || path === '/v1/auth/local-plugin/install-instances/register' || path === '/v1/auth/local-plugin/install-instances/pair' || /^\/v1\/auth\/local-plugin\/connect-requests\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/status$/iu.test(path)
+  const isLocalPluginConnectionRoute = path === '/v1/auth/local-plugin/connect-capability' || path === '/v1/auth/local-plugin/connect-requests' || path === '/v1/auth/local-plugin/install-instances/register' || path === '/v1/auth/local-plugin/install-instances/pair' || /^\/v1\/auth\/local-plugin\/connect-requests\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/(?:status|complete)$/iu.test(path)
   // The bridge image is allowed to run before 243/244. Never let its newer
   // one-click branches query missing tables or issue a code before failing.
   const bridgeNewTableRouteUnavailable = () => {
@@ -13681,6 +13681,8 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         throw error
       }
       if (input.requestId || input.installInstanceId) bridgeNewTableRouteUnavailable()
+      if (input.requestId && (isProduction() || process.env.LOCAL_PLUGIN_INSTANCE_BINDING_REQUIRED === 'true') && !input.installInstanceId) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_REQUIRED', '生产一键连接必须携带配对安装实例', 409)
+      if (input.installInstanceId && !input.requestId) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_INVALID', '安装实例必须绑定连接请求', 400)
       const origin = publicRequestOrigin(req)
       if (input.resource !== `${origin}/mcp`) throw new DomainError('LOCAL_PLUGIN_TOKEN_INVALID_RESOURCE', '本地插件 token resource 无效', 400)
       const context = { clientId: LOCAL_PLUGIN_CLIENT_ID, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
@@ -13692,6 +13694,14 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
           throw new Error('MCP_OAUTH_INVALID_GRANT')
         }
         if (input.requestId) {
+          if (input.installInstanceId) {
+            try { await localPluginInstallInstances.recordTokenExchange({ instanceId: input.installInstanceId, requestId: input.requestId, accountId: principal.accountId, identityId: principal.identityId, workspaceId: principal.workspaceId, tokenId: principal.tokenId }) }
+            catch (error) {
+              await passwordAuthRepository.revokeMcpOAuthToken({ ...context, token: pair.refreshToken, tokenTypeHint: 'refresh_token' })
+              if (error instanceof LocalPluginInstallInstanceError) throw new DomainError(error.code, '安装实例与连接请求的授权证明不匹配', 409)
+              throw error
+            }
+          }
           try { await localPluginConnections.markExchanged({ id: input.requestId, accountId: principal.accountId, workspaceId: principal.workspaceId }) }
           catch (error) {
             await passwordAuthRepository.revokeMcpOAuthToken({ ...context, token: pair.refreshToken, tokenTypeHint: 'refresh_token' })

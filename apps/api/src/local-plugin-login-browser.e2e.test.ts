@@ -19,7 +19,7 @@ it('returns from merchant login to the original local plugin consent in a browse
   const workspaceId = `ws_login_browser_${Date.now()}`
   const login = `plugin-browser-${Date.now()}@example.test`
   const password = 'PluginBrowser1234!'
-  await repository.createMerchantAccount({ login, password, enterpriseName: 'Plugin Login Browser', contactName: 'Owner', workspaceIds: [workspaceId], actorId: 'platform-operator', reason: 'browser consent test' })
+  const account = await repository.createMerchantAccount({ login, password, enterpriseName: 'Plugin Login Browser', contactName: 'Owner', workspaceIds: [workspaceId], actorId: 'platform-operator', reason: 'browser consent test' })
   await workspaceMembers.upsert({ workspaceId, externalSubject: login, displayName: login,
     role: 'workspace_owner', status: 'active', invitedBy: 'browser-consent-test' })
   await new Promise<void>(resolve => api.listen(0, '127.0.0.1', resolve))
@@ -78,6 +78,17 @@ it('returns from merchant login to the original local plugin consent in a browse
     await dialog.waitFor({ state: 'visible' })
     expect(await dialog.innerText()).toContain('点击连接并按浏览器提示打开本地插件')
     expect(await dialog.innerText()).not.toMatch(/login-local|login\.cmd|runtime\/node/u)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'hidden' })
+    await page.evaluate(({ origin, accountId, workspace }) => {
+      window.localStorage.setItem(`storenova.plugin.installation:${origin}:${accountId}:${workspace}`,
+        '11111111-1111-4111-8111-111111111111')
+    }, { origin: base, accountId: account.id, workspace: workspaceId })
+    await page.getByRole('button', { name: '打开账号菜单' }).click()
+    await connect.click()
+    await dialog.waitFor({ state: 'visible' })
+    await dialog.getByText('连接失败，请重试').waitFor({ state: 'visible' })
+    expect(await dialog.innerText()).toContain('本次连接未完成')
   } finally {
     await browser?.close()
     await vite?.close()

@@ -27,4 +27,26 @@ describe('local plugin install instance repository', () => {
     await repository.pair({ ...owner, instanceId: registration.instance.id, pairingToken: registration.pairingToken })
     await expect(repository.issueChallenge({ ...owner, accountId: 'account-b', instanceId: registration.instance.id, requestId: 'request-a' })).rejects.toMatchObject({ code: 'LOCAL_PLUGIN_INSTALL_INSTANCE_INVALID' })
   })
+
+  it('acknowledges completion only for an owned instance with a consumed proof for the same request', async () => {
+    const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const repository = new MemoryLocalPluginInstallInstanceRepository()
+    const registration = await repository.register({ platform: 'macos', publicKey: pair.publicKey.export({ format: 'der', type: 'spki' }).toString('base64url') })
+    await repository.pair({ ...owner, instanceId: registration.instance.id, pairingToken: registration.pairingToken })
+    const challenge = await repository.issueChallenge({ ...owner, instanceId: registration.instance.id, requestId: 'request-a' })
+    const message = `store-nova-local-plugin-v1\n${challenge.nonce}\nrequest-a`
+    const signature = sign('sha256', Buffer.from(message), pair.privateKey).toString('base64url')
+    await repository.verifyAndConsumeChallenge({ ...owner, id: challenge.id, instanceId: registration.instance.id, requestId: 'request-a', nonce: challenge.nonce, issuedAt: challenge.createdAt, expiresAt: challenge.expiresAt, message, signature })
+
+    await expect(repository.hasLocalBindingCompletion({ ...owner, requestId: 'request-a' })).resolves.toBe(false)
+    await expect(repository.recordTokenExchange({ ...owner, instanceId: registration.instance.id, requestId: 'request-other', tokenId: 'token-a' })).rejects.toMatchObject({ code: 'LOCAL_PLUGIN_INSTALL_INSTANCE_INVALID' })
+    await repository.recordTokenExchange({ ...owner, instanceId: registration.instance.id, requestId: 'request-a', tokenId: 'token-a' })
+    await expect(repository.completeLocalBinding({ ...owner, instanceId: registration.instance.id, requestId: 'request-a', tokenId: 'token-b' })).rejects.toMatchObject({ code: 'LOCAL_PLUGIN_INSTALL_INSTANCE_INVALID' })
+    await expect(repository.completeLocalBinding({ ...owner, instanceId: registration.instance.id, requestId: 'request-other', tokenId: 'token-a' })).rejects.toMatchObject({ code: 'LOCAL_PLUGIN_INSTALL_INSTANCE_INVALID' })
+    await expect(repository.completeLocalBinding({ ...owner, accountId: 'account-other', instanceId: registration.instance.id, requestId: 'request-a', tokenId: 'token-a' })).rejects.toMatchObject({ code: 'LOCAL_PLUGIN_INSTALL_INSTANCE_INVALID' })
+    await repository.completeLocalBinding({ ...owner, instanceId: registration.instance.id, requestId: 'request-a', tokenId: 'token-a' })
+    await repository.completeLocalBinding({ ...owner, instanceId: registration.instance.id, requestId: 'request-a', tokenId: 'token-a' })
+    await expect(repository.hasLocalBindingCompletion({ ...owner, requestId: 'request-a' })).resolves.toBe(true)
+    await expect(repository.hasLocalBindingCompletion({ ...owner, workspaceId: 'workspace-other', requestId: 'request-a' })).resolves.toBe(false)
+  })
 })

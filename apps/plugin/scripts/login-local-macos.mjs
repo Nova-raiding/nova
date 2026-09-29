@@ -172,7 +172,23 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
     }
     await storeCredential(target, bundle)
     await configureSession(target)
-    const chatGPT = typeof launchChatGPT === 'function' ? await launchChatGPT() : { launched: false, reason: 'ChatGPT 启动由安装器负责' }
+    if (requestId && installationId) {
+      // Token exchange is not proof that the local credential store accepted
+      // the bundle. Acknowledge only after both local persistence and host
+      // session configuration have completed. Never send a code or refresh token.
+      const acknowledgement = await fetchImpl(`${target.apiOrigin}/v1/auth/local-plugin/connect-requests/${encodeURIComponent(requestId)}/complete`, {
+        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
+        headers: { authorization: `Bearer ${bundle.access_token}`, 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ installation_id: installationId }),
+      })
+      const acknowledgementBody = await boundedJson(acknowledgement)
+      if (acknowledgementBody?.data?.local_binding_complete !== true) throw fail('ACK_FAILED')
+    }
+    let chatGPT = { launched: false, reason: 'ChatGPT 启动由安装器负责' }
+    if (typeof launchChatGPT === 'function') {
+      try { chatGPT = await launchChatGPT() }
+      catch { chatGPT = { launched: false, reason: 'ChatGPT 未自动打开，请手动重启并验证' } }
+    }
     callbackResponse?.end(callbackResultScript(callbackNonce, true))
     return { ok: true, mode: 'local_stdio', workspace_id: target.workspaceId, api_origin: target.apiOrigin,
       credential_source: credentialSource, restart_required: !chatGPT.launched, chatgpt_launched: chatGPT.launched, host_verified: false }

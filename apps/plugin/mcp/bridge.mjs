@@ -1779,6 +1779,10 @@ function validateToolArguments(name, args) {
     const hasVisualRef = typeof args.visual_ref === 'string' && Boolean(args.visual_ref.trim())
     if (hasJobId === hasVisualRef) return fail('provide exactly one of job_id or visual_ref')
   }
+  if (name === 'support.customer.replies.list'
+    && !['ticket_id', 'related_task_id', 'related_order_id'].some(key => typeof args[key] === 'string' && Boolean(args[key].trim()))) {
+    return fail('provide ticket_id, related_task_id, or related_order_id')
+  }
   return undefined
 }
 

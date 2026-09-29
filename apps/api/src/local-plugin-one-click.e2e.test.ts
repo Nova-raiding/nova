@@ -87,6 +87,10 @@ it('pairs a local installation, signs its browser authorization and exchanges a 
     const request = created.body.data as Record<string, string>
     if (!request.request_id) throw new Error('Connect request id missing')
     expect(request.account_id).toBe(account.id)
+    const statusPath = `/v1/auth/local-plugin/connect-requests/${encodeURIComponent(request.request_id)}/status?workspace_id=${encodeURIComponent(workspaceId)}`
+    const beforeBinding = await page.evaluate(async path => (await (await fetch(path)).json()).data, statusPath)
+    expect(beforeBinding).toMatchObject({ status: 'pending' })
+    expect(beforeBinding.local_binding_complete).not.toBe(true)
     let stored = false
     const result = await loginLocalPlugin({ baseUrl: base, workspaceId, requestId: request.request_id,
       createInstallationProof: ({ codeChallenge, redirectUri }: { codeChallenge: string; redirectUri: string }) => {
@@ -115,5 +119,9 @@ it('pairs a local installation, signs its browser authorization and exchanges a 
     expect(stored).toBe(true)
     expect(await connections.getForAccount({ id: request.request_id, accountId: account.id, workspaceId })).toMatchObject({ status: 'exchanged' })
     expect(installations.auditEvents.map(event => event.eventType)).toContain('auth.local_plugin_challenge_verified')
+    expect(installations.auditEvents.map(event => event.eventType)).toContain('auth.local_plugin_local_binding_completed')
+    await page.goto(`${base}/v1/auth/session`)
+    const afterBinding = await page.evaluate(async path => (await (await fetch(path)).json()).data, statusPath)
+    expect(afterBinding).toMatchObject({ status: 'exchanged', local_binding_complete: true })
   } finally { await browser.close() }
 }, 30_000)
