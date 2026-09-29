@@ -209,7 +209,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
     <h2 id="user-directory-heading" className="sr-only">{displayedAccountType === "platform" ? "运营平台用户" : "已接入用户"}</h2>
     <Card className="ops-user-directory-card" title={displayedAccountType === "platform" ? "运营平台用户" : "已接入用户"} extra={<Dropdown menu={{ items: governanceMenuItems, onClick: handleGovernanceMenuClick }}><Button type="text" aria-label={`更多用户治理操作${governanceSections.length ? `：${governanceSections.map(({ label }) => label).join("、")}` : ""}`} className="ops-user-directory-total">{directoryResultUnread ? unreadDirectoryLabel : displayedAccountType === "platform" ? `共 ${model.userDirectory.total} 个运营平台账号` : `共 ${model.userDirectory.workspaceCount} 家接入用户`}</Button></Dropdown>} aria-busy={model.userDirectoryLoading}>
       <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "", accountType: "all" }} onFinish={(values) => { void model.loadUsers({ ...values, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
-        <Form.Item name="query" label="搜索"><Input allowClear maxLength={64} aria-label="按关键词筛选用户目录" /></Form.Item>
+        <Form.Item name="query" label="搜索"><Input allowClear maxLength={64} aria-label="按关键词筛选用户目录" style={{ width: 200 }} /></Form.Item>
         <Form.Item name="status" label="状态">
           <Select aria-label="按激活状态筛选用户目录" style={{ width: 140 }} options={[
             { value: "", label: "全部" }, { value: "active", label: "已激活" }, { value: "suspended", label: "已停用" },
