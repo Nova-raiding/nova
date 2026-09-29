@@ -8,9 +8,10 @@
 | 160709 版，历史真实桌面 App | 1/116 | `onboarding.status` 有中文正文；执行脚本未保留 `isError`、结构化工作区 ID，因此只计调用通达，不计身份或业务通过。 | [16:40 桌面原始调用](164046-desktop-onboarding-call.md) |
 | 153500 版，历史真实桌面 App | 8/116 个不同方法、9 次调用 | 4 次明确非错误、3 次明确错误、2 次错误位未保存；两次 Excel `asset.upload` 均为 `CREATIVE_POINTS_UNAVAILABLE`，没有资产 ID。 | [153500 原始调用审计](153500-app-call-audit.md) |
 | 143500 版，历史真实桌面 App | 116/116 | 22 项 `isError=false`，94 项 `isError=true`；22 项主要是状态、空态或后台入口读取，94 项多数为创意点门禁。**116 是调用覆盖，不是功能通过。** | [历史 116/116 审计](positive-business-coverage-matrix.md) |
-| 当前 174000 版，独立 stdio | `tools/list` 116/116；业务 `tools/call` 0/116 | 54 个运行文件与安装源一致，工具名 116/116；无配置健康检查返回预期 `MCP_CONFIGURATION_REQUIRED`，不是租户成功。 | [174000 安装验真](174000-local-install-verification.md) |
+| 当前 174000 版，独立 stdio | 安装器 `tools/list` 116/116；正式租户业务 `tools/call` 0/116 | 54 个运行文件与安装源一致；独立 QA 子任务没有安全传入商家会话凭据，未发起正式租户调用。无配置健康检查返回预期 `MCP_CONFIGURATION_REQUIRED`，不是租户成功。 | [174000 安装验真](174000-local-install-verification.md)、[stdio 认证前置](174000-31-readonly-stdio-auth-precondition.md) |
 | 160709 版，独立 stdio | `tools/list` 116/116；31 项只读批次 `tools/call` 0/31 | 独立进程读取 Keychain helper 失败，初始化前即停在 `MCP_CREDENTIAL_SOURCE_INVALID`；不能推论桌面 App 同样失败。 | [Keychain 阻断原始记录](160709-31-readonly-stdio-keychain-block.md) |
 | 生产 HTTPS `/api/mcp`，专用 QA 工作区 | 无必填参数只读 31/31 实际调用 | 31 项均返回一致工作区；21 项 HTTP 200 且 API 无错误，10 项为店铺入驻、权限、商业权益或余额门禁。21 项也只算 API 层状态/空态响应，**不是 21 个完整业务流程通过**。 | [31 项逐方法 request ID](production-api-31-readonly-20260929.md) |
+| 生产 HTTPS `/api/mcp`，专用 QA 工作区 | 带参数只读 2/15 实际调用 | `brand.get({})` 返回空品牌档案；`catalog.search({scope:"workspace"})` 返回创意点门禁。其余 13 项缺本租户真实对象 ID。仍非 App 或业务正向通过。 | [带参数只读逐项证据](172900-parameterized-readonly-preconditions.md) |
 | 本地/隔离测试及源码 | 按用例各自计数 | 桥接契约、桌面浏览器、隔离 API 和 UI 文案证据只适用于各自候选环境；不能折算为当前生产 App 成功。 | [本地桌面浏览器](local-desktop-browser-followup.md)、[本地视觉检查](1730-local-merchant-visual.md) |
 
 ## 当前 174000 版剩余范围
