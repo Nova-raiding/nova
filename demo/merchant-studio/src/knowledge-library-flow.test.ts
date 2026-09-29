@@ -16,11 +16,4 @@ describe('merchant knowledge library flow wiring', () => {
     expect(app).toContain('? () => runPrimaryAssetAction(asset)')
     expect(app).toContain(': !binding.ready')
   })
-
-  it('refreshes a partially successful batch and reports the accepted count', () => {
-    const upload = app.slice(app.indexOf('const uploadFiles = async (files: FileList | null) => {'), app.indexOf('const extractBrand = async () => {'))
-    expect(upload).toContain('uploadedCount += 1')
-    expect(upload).toContain('const refreshed = uploadedCount > 0 ? await load() : false')
-    expect(upload).toContain("refreshed ? '列表已刷新' : '素材列表刷新失败，请刷新重试'")
-  })
 })

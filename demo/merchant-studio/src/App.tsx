@@ -3603,7 +3603,7 @@ function AssetLibrary({
   const load = async () => {
     if (!baseUrl) {
       setLoading(false)
-      return false
+      return
     }
     setLoading(true)
     setError('')
@@ -3627,7 +3627,6 @@ function AssetLibrary({
       setStorageLoadError(describeApiError(healthResult.reason))
     }
     setLoading(false)
-    return assetResult.status === 'fulfilled'
   }
   const loadBrand = () => {
     if (!baseUrl) return
@@ -3753,20 +3752,17 @@ function AssetLibrary({
     }
     setUploadAction(`正在上传 1/${selected.length}…`)
     setBrandMessage('')
-    let uploadedCount = 0
     try {
       for (const [index, file] of selected.entries()) {
         setUploadAction(`正在上传 ${index + 1}/${selected.length}…`)
         await uploadAsset(baseUrl, file)
-        uploadedCount += 1
       }
       await load()
       setBrandMessage(
         `已上传 ${selected.length} 个素材；当前处于隔离区，完成安全扫描与权益确认后才能用于生成。`,
       )
     } catch (cause) {
-      const refreshed = uploadedCount > 0 ? await load() : false
-      setBrandMessage(`${uploadedCount ? `已上传 ${uploadedCount}/${selected.length} 个素材；${refreshed ? '列表已刷新' : '素材列表刷新失败，请刷新重试'}；其余文件上传失败：` : '上传失败：'}${describeApiError(cause)}`)
+      setBrandMessage(describeApiError(cause))
     } finally {
       setUploadAction('')
       if (uploadInput.current) uploadInput.current.value = ''
