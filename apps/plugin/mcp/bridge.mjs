@@ -36,9 +36,33 @@ if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.
 }
 
 restoreWindowsSession()
-await loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
-  encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
-}))
+let managedCredentialUnavailable = false
+let managedCredentialPromise
+async function ensureManagedCredential() {
+  // Do not consult the OS credential store during public MCP discovery. Besides
+  // failing, it can wait for interaction and exceed the host initialize timeout.
+  if (!managedCredentialPromise) {
+    managedCredentialPromise = Promise.resolve().then(() => loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
+    }))).then(() => true, () => {
+      // Latch failure until plugin reload. Never fall back to inherited tokens,
+      // fixture auth, or raw credential-store diagnostics after a failed read.
+      managedCredentialUnavailable = true
+      delete process.env.MERCHANT_MCP_TOKEN
+      delete process.env.MERCHANT_MCP_REFRESH_TOKEN
+      delete process.env.MERCHANT_MCP_TOKEN_EXPIRES_AT
+      return false
+    })
+  }
+  return managedCredentialPromise
+}
+
+function managedCredentialError() {
+  return {
+    code: 'MCP_CREDENTIAL_SOURCE_INVALID',
+    message: '本地插件凭据暂不可用，请完成本地绑定后重新加载插件。',
+  }
+}
 
 let credentialRefreshPromise
 
@@ -2001,6 +2025,10 @@ function deploymentEnvironment() {
 }
 
 function assertTransportConfiguration() {
+  if (managedCredentialUnavailable) {
+    const failure = managedCredentialError()
+    throw Object.assign(new Error(failure.message), { code: failure.code })
+  }
   const environment = deploymentEnvironment()
   const strictAuth = configuredEnv('MERCHANT_STRICT_AUTH').toLowerCase() === 'true'
   if (allowsLocalFixtureFallback() && ['production', 'staging', 'preview'].includes(environment)) {
@@ -2947,6 +2975,7 @@ async function resolveGeneratedImagePreview(method, initialResult) {
 }
 
 async function callRemote(method, params) {
+  await ensureManagedCredential()
   // Workspace IDs are assigned by the platform administrator. Never create
   // one from the merchant plugin; missing bindings fail closed below.
   assertTransportConfiguration()
@@ -3650,6 +3679,10 @@ async function handle(request) {
     const args = request.params?.arguments
     if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name]) return jsonRpcError(id, -32602, `当前插件没有此工具：${String(name)}`)
     if (!args || typeof args !== 'object' || Array.isArray(args)) return toolArgumentError(id, '工具参数必须是对象')
+    if (!await ensureManagedCredential()) {
+      const structuredContent = managedCredentialError()
+      return jsonRpc(id, { content: [{ type: 'text', text: structuredContent.message }], structuredContent, isError: true })
+    }
     if (COMMERCIAL_DISABLED_METHODS.has(name)) {
       // The set is not only a registry mirror: it also carries the annotated
       // bridge-only narrowings, so the message must not claim the shared

@@ -156,6 +156,60 @@ async function close(server: ReturnType<typeof createServer>) {
 }
 
 describe('Codex stdio MCP bridge', () => {
+  it.each(['unknown', 'keychain', 'windows_credential_manager'])('keeps discovery available and every tool closed when managed source %s fails', async source => {
+    let requests = 0
+    const server = createServer((_req, res) => { requests += 1; res.end('{}') })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      env: {
+        ...TEST_PROCESS_ENV,
+        MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MERCHANT_WORKSPACE_ID: 'ws_test',
+        MERCHANT_MCP_TOKEN_SOURCE: source,
+        // An explicit principal pin deterministically rejects either managed
+        // store on every OS, without touching the developer's real Keychain.
+        MERCHANT_ACTOR_ID: 'incompatible-principal',
+        MERCHANT_MCP_TOKEN: 'stale-secret-access',
+        MERCHANT_MCP_REFRESH_TOKEN: 'stale-secret-refresh',
+        MERCHANT_ALLOW_FIXTURE_FALLBACK: 'true',
+        MERCHANT_STRICT_AUTH: 'false',
+        MERCHANT_MCP_WRITE_ENABLED: 'true',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let stderr = ''
+    child.stderr.on('data', chunk => { stderr += chunk.toString() })
+    let id = 0
+    const rpc = async (method: string, params?: object) => {
+      const response = nextLine(child.stdout)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params })}\n`)
+      return response
+    }
+    try {
+      expect((await rpc('initialize')).result.serverInfo.name).toBe('merchant-marketing')
+      const tools = (await rpc('tools/list')).result.tools as ListedTool[]
+      expect(tools.length).toBeGreaterThan(0)
+      const resources = (await rpc('resources/list')).result.resources as { uri: string }[]
+      expect((await rpc('resources/templates/list')).result.resourceTemplates).toEqual([])
+      for (const resource of resources) {
+        expect((await rpc('resources/read', { uri: resource.uri })).result.contents[0].text).toContain('<')
+      }
+      for (const tool of tools) {
+        const response = await rpc('tools/call', { name: tool.name, arguments: {} })
+        expect(response.result.isError, tool.name).toBe(true)
+        expect(response.result.structuredContent.code, tool.name).toBe('MCP_CREDENTIAL_SOURCE_INVALID')
+        expect(JSON.stringify(response)).not.toContain('stale-secret')
+      }
+      expect((await rpc('ping')).result).toEqual({})
+      expect((await rpc('tools/list')).result.tools).toHaveLength(tools.length)
+      expect(requests).toBe(0)
+      expect(stderr).toBe('')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('keeps the cached-balance read bypass identical to the API read allowlist', async () => {
     const [bridgeSource, apiSource] = await Promise.all([
       readFile(BRIDGE_PATH, 'utf8'),
