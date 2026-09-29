@@ -10519,6 +10519,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     if (!hasMember && !requestPrincipals.get(req)?.activeAuthorizationGrants?.length) await enforceActiveWorkspaceMember(req, workspaceId)
     await requireActiveWorkspace(workspaceId, method)
   }
+  // Invitation reads also serve pre-membership invitees, but an existing
+  // active member needs their durable role hydrated before capability checks.
+  if (method === 'workspace.invitations.list' && !await hasPendingInvitationForPrincipal(req, workspaceId)) {
+    await resolveActiveWorkspaceMember(req, workspaceId, false)
+  }
   await enforceRegisteredMcpCapability(req, workspaceId, method, params)
   if (method !== 'workspace.bootstrap' && !bypassWorkspaceLifecycleGate && !requestMemberChecks.has(req)
     && !exactConsumedGrantForRequest(req, workspaceId)

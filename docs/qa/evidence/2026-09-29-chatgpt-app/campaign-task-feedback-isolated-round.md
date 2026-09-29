@@ -16,14 +16,17 @@
 | `task.select_direction` / `task.plan.confirm` | 状态依次进入 direction_selected、plan_confirmed。 |
 | `task.answer` | 非法改绑商品被拒；`task-answers.e2e` 验证创建时回答及商品事实确认持续存在。 |
 | `task.resume` | `task-answers.e2e` 在提交回答前恢复已有任务并读回待答问题。 |
+| `task.group.create` | 新增隔离 HTTP MCP 成功用例：同店铺两个不同商品创建两个带同一 `taskGroupId` 的任务；重放返回原任务 ID，改变意图复用幂等键返回 `IDEMPOTENCY_KEY_REUSED` 且任务数仍为 2。 |
 | `task.timeline` | 返回 `task.created` 与 `task_feedback_submitted` 事件。 |
 | `feedback.submit` / `feedback.list` | 已有任务、内容版本下提交 neutral 反馈并读回一条；另有 REST 反馈跨工作区拒绝。 |
 | `creative.brief` / `creative.preview` | 商品图片测试通过 banner/video brief 和 banner preview，验证尺寸、SKU 关联与不受信营销声明的阻断。 |
 
 命令 `npx vitest run apps/plugin/mcp/bridge.test.ts apps/api/src/mcp-content-knowledge-http.e2e.test.ts apps/api/src/mcp-completion-content.e2e.test.ts --no-file-parallelism`：**3 文件、100/100 测试通过**。其用例包括桥接门禁、带认证 MCP 的 `task.request.create`、`task.sku.split`、`creative.directions.update` 和跨租户权限。
 
+补充用例后单独运行 `npx vitest run apps/api/src/server.e2e.test.ts --no-file-parallelism`：**81/81 通过**，含新增的 `task.group.create` 成功、重放与冲突断言。`npm run typecheck` 通过，`git diff --check` 通过。
+
 ## 未完成的成功路径
 
-生产 demo 的 `task.history` 和 `campaign.batch.list` 当前均为空，因此真实商家权限下无法读取已有正式任务或计划，也无法在 ChatGPT App 展示后续操作结果。插件的交互写门禁此前对写方法返回 `INTERACTIVE_WRITE_DISABLED`；本轮隔离 API 成功不等于生产 App 成功。生产批量生成 `campaign.batch.generate`、失败重试 `campaign.batch.retry_failed` 仍被插件商业门禁隐藏。`task.group.create` 的当前 HTTP MCP 用例只覆盖无商店与越权失败路径，尚缺成功路径。`creative.directions.update` 的隔离成功路径已覆盖，仍待逐方法 App 实际验收。
+生产 demo 的 `task.history` 和 `campaign.batch.list` 当前均为空，因此真实商家权限下无法读取已有正式任务或计划，也无法在 ChatGPT App 展示后续操作结果。插件的交互写门禁此前对写方法返回 `INTERACTIVE_WRITE_DISABLED`；本轮隔离 API 成功不等于生产 App 成功。生产批量生成 `campaign.batch.generate`、失败重试 `campaign.batch.retry_failed` 仍被插件商业门禁隐藏。`creative.directions.update` 的隔离成功路径已覆盖，仍待逐方法 App 实际验收。
 
-本轮无源码修复，也未改动生产数据。把上述方法的线上状态保持为原有未完成或预期阻断，不能据 193 个隔离测试宣称全部插件功能通过。
+本轮只增加一条隔离 HTTP MCP 测试，没有源码修复或生产数据写入。把上述方法的线上状态保持为原有未完成或预期阻断，不能据隔离测试宣称全部插件功能通过。

@@ -1701,6 +1701,41 @@ describe('security and access-control acceptance gates', () => {
     }
   })
 
+  it('lets an active merchant read only their own workspace invitations without a gateway role assertion', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
+    const workspaceId = 'ws_active_merchant_invitations'
+    await configureBearerMembers([
+      { token: 'active-merchant-invitation-token', workspaceId, actorId: 'active-merchant-invitee', role: 'merchant_admin' },
+      { token: 'pending-merchant-invitation-token', workspaceId, actorId: 'pending-merchant-invitee', role: 'operator' },
+      { token: 'suspended-merchant-invitation-token', workspaceId, actorId: 'suspended-merchant-invitee', role: 'merchant_admin' },
+      { token: 'platform-invitation-token', workspaceId, actorId: 'platform-invite-reader', role: 'platform_ops' },
+    ])
+    await workspaceMembers.upsert({ workspaceId, externalSubject: 'pending-merchant-invitee', displayName: '待接受商家', role: 'operator', status: 'invited', invitedBy: 'workspace-owner' })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: 'suspended-merchant-invitee', displayName: '已暂停商家', role: 'merchant_admin', status: 'suspended', invitedBy: 'workspace-owner' })
+    const base = await start()
+    const call = async (token: string, scope: string) => {
+      const response = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'x-workspace-id': scope, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.invitations.list', params: {} }) })
+      return { status: response.status, body: await response.json() as Envelope }
+    }
+
+    const own = await call('active-merchant-invitation-token', workspaceId)
+    expect(own.status).toBe(200)
+    expect(own.body.error).toBeNull()
+    expect(own.body.data).toMatchObject({ result: { invitations: [], unread_count: 0 } })
+
+    const pending = await call('pending-merchant-invitation-token', workspaceId)
+    expect(pending.status).toBe(200)
+    expect(pending.body.data).toMatchObject({ result: { unread_count: 1 } })
+
+    const foreign = await call('active-merchant-invitation-token', 'ws_foreign_invitations')
+    expect(foreign.status).toBe(403)
+    const suspended = await call('suspended-merchant-invitation-token', workspaceId)
+    expect(suspended.status).toBe(403)
+    const platform = await call('platform-invitation-token', workspaceId)
+    expect(platform.status).toBe(403)
+  })
+
   it('keeps the REST and MCP store boundaries in step for the same capability', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     const workspaceId = 'ws_store_boundary_parity'

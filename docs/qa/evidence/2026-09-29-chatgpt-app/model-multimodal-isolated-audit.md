@@ -34,3 +34,17 @@
 2. 图片编辑须用同一租户的合格源图走 App → MCP → API → relay → 归档；核对原图保留与未发布状态。
 3. 视频默认未暴露给商家插件，不能写成“全部功能通过”；若产品决定开放，先完成本地验收开关、正式商用费率/时长/来源预检，再依发布门禁单独上线。当前不触发生产视频计费。
 4. 修复发布证据挂载可读性，且不要用占位文件伪造通过；该门禁与模型配置 `ready` 是不同事实。
+
+## 图片五方法逐项补测与 relay 边界（09:15）
+
+追加运行 `npx vitest run --no-file-parallelism apps/plugin/mcp/bridge.test.ts --testNamePattern='forwards catalog.image.select|requires exactly one image-job lookup key|executes catalog.image.review|binds the minimal image chooser|restores the preferred image|returns generated data URI images|does not retry a model call when provider usage cost needs reconciliation' --reporter=dot`：**7/7 通过，91 项按筛选跳过**。这只验证本地插件桥接行为，未请求生产 relay。
+
+| 方法 | 隔离 API/MCP 成功路径 | 对应 relay 测试与真实边界 |
+| --- | --- | --- |
+| `catalog.image.generate` | `product-image-review.e2e` 成功创建两张候选并归档，但明确返回 `mode=simulated`、`providerExecuted=false`，不构成 relay 成功。 | `image-generator.test.ts` 用 mock `fetch` 验证 HTTPS relay 请求体、批准的源图字节、输出图单位与成本回执、幂等键；它不是线上中转请求。生产正常走 durable worker，先持久授权快照、钱包预留和出站准入；缺持久化/worker 返回 `IMAGE_GENERATION_DURABLE_NOT_CONFIGURED`。 |
+| `catalog.image.get` | 隔离生成、扫描标记 clean 后，按 `visual_ref` 与 `job_id` 成功读取归档图片和短期选择票据，签名展示 URL 可打开；篡改 workspace/签名参数拒绝。 | 只读，不调 relay。生产候选须通过**原始用量、成本、创意点结算**核验；证据不足时返回待对账状态且不放出图片。插件桥接 `job_id` / `visual_ref` 二选一检查通过。 |
+| `catalog.image.select` | 隔离候选清洁后，持正确 ticket、revision、幂等键成功选中；重放返回同一 revision，票据缺失/错绑/过期/并发复用拒绝；结果 `publishable=false`、`remote_write_performed=false`。 | 不调 relay；生产要求已归档可读候选及结算证据。插件桥接保留完整 ticket 转发的测试通过。 |
+| `catalog.image.review` | 隔离用外部图片列表检查格式/重复；对 `visual_refs_json` 的归档候选可持久化审阅状态。 | 不调 relay。生产 `platformGovernanceGatesRequired()` 时仅允许归档 `visual_ref` 加真实性证据；仅传调用者图片 URL 被 `VISUAL_AUTHENTICITY_EVIDENCE_REQUIRED` 拒绝。此方法的归档审阅分支**会写快照和审计事件**，应按写操作确认，不能仅因基础 URL 检查分支看似只读就称只读。 |
+| `multimodal.image.edit` | `product-image-review.e2e` 验证受保护商品违规编辑被拦截与合格源图候选行为；未产生真实线上图片。 | `image-generator.test.ts` 使用 mock `fetch` 成功提交源图 base64 和局部区域，解析带用量的中转图片响应；缺使用量 sink 在生产出站前拒绝，结果图片不合法但 provider 已收费时保留回执、转待对账，不能当作无成本失败。API 先检查同租户素材扫描、rights=approved、AI 修改许可、商品事实、规则及费率。生产无编辑 provider 返回 `IMAGE_EDIT_NOT_CONFIGURED`，不应显示候选成功。 |
+
+配置与成功的区分：`/api/healthz` 的 image/image_edit `ready=true` 说明中转地址、模型和配置门禁可通过；未给出本轮生产图片/编辑请求 ID、实际用量或成本。因此五方法的完整 App → 生产 API → relay → 归档/审阅/选择链路仍待授权素材与明确费用确认后验收。当前演示商品 `QA-DO-NOT-PUBLISH-20260929` 事实未确认，不能作为正式图片生成输入。

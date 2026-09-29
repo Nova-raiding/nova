@@ -664,6 +664,36 @@ describe('API HTTP vertical slice', () => {
   })
   afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())); setPaymentProviderForTests(); setRuleRepositoryForTests(); vi.unstubAllEnvs() })
 
+  it('creates and replays a task group through HTTP MCP for two store-bound products', async () => {
+    const workspaceId = `ws_task_group_mcp_${Date.now()}`
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `group-store-${workspaceId}`, credentialRef: `fixture://${workspaceId}` })
+    const products = ['甲', '乙'].map((suffix, index) => service.importProduct({
+      workspaceId, platform: 'taobao', accountId: account.id, localProductKey: `group-${index}-${workspaceId}`,
+      title: `任务组商品${suffix}`, stock: 3,
+    }))
+    const base = await start()
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const entries = products.map(product => ({ product_id: product.id, platform: 'taobao', account_id: account.id }))
+    const call = async (id: number, requestText: string) => fetch(`${base}/mcp`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ jsonrpc: '2.0', id, method: 'task.group.create', params: { entries_json: JSON.stringify(entries), request_text: requestText, idempotency_key: `group-${workspaceId}` } }),
+    }).then(json)
+
+    const created = await call(1, '生成两件商品的营销内容')
+    expect(created.error).toBeNull()
+    const group = (created.data as { result: { id: string; taskIds: string[]; replayed: boolean } }).result
+    expect(group).toMatchObject({ id: expect.any(String), taskIds: [expect.any(String), expect.any(String)], replayed: false })
+    expect(new Set(group.taskIds).size).toBe(2)
+    expect(group.taskIds.map(taskId => service.getTask(taskId))).toEqual(expect.arrayContaining(products.map(product => expect.objectContaining({ workspaceId, productId: product.id, accountId: account.id, taskGroupId: group.id }))))
+
+    const replay = await call(2, '生成两件商品的营销内容')
+    expect(replay.error).toBeNull()
+    expect(replay.data).toMatchObject({ result: { id: group.id, taskIds: group.taskIds, replayed: true } })
+    const conflict = await call(3, '改成主图素材')
+    expect(conflict.error?.code).toBe('IDEMPOTENCY_KEY_REUSED')
+    expect(service.listTasks(workspaceId)).toHaveLength(2)
+  })
+
   it('creates an unbound candidate task through strict-auth MCP without a store', async () => {
     const workspaceId = `ws_candidate_${Date.now()}`
     const actorId = `candidate-owner-${Date.now()}`
