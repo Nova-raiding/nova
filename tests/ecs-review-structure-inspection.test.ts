@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { PROTECTED_OPS_PATHS, STRUCTURE_REVIEW_PATHS, summarizeReviewBytes } from '../infra/scripts/ecs-review-structure.mjs'
+import { isAllowlistedReviewSource } from '../infra/scripts/ecs-review-source-policy.mjs'
 
 const digest = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
 const helper = resolve('infra/scripts/inspect-ecs-review-structure.mjs')
@@ -137,5 +138,16 @@ describe('ECS sanitized remote structure review', () => {
     expect(summary.status).toBe('reviewed')
     expect(serialized).toContain('safe_package')
     for (const value of ['SENTINEL_VERSION', 'SENTINEL_SCRIPT', 'https://private.example']) expect(serialized).not.toContain(value)
+  })
+
+  it('reviews the Merchant Vite TypeScript config while exposing only safe compiler identity fields', () => {
+    const path = 'demo/merchant-studio/tsconfig.node.json'
+    const summary = summarizeReviewBytes(path, Buffer.from(JSON.stringify({ compilerOptions: {
+      target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', tsBuildInfoFile: 'SENTINEL_LOCAL_PATH', paths: { '*': ['SENTINEL_PRIVATE_PATH'] },
+    } })))
+    expect(STRUCTURE_REVIEW_PATHS).toContain(path)
+    expect(isAllowlistedReviewSource(path)).toBe(true)
+    expect(summary).toMatchObject({ status: 'reviewed', summary: { kind: 'typescript_build_config', target: 'ES2022', module: 'ESNext', module_resolution: 'Bundler' } })
+    expect(JSON.stringify(summary)).not.toContain('SENTINEL_')
   })
 })

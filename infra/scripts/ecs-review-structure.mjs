@@ -6,6 +6,7 @@ export const STRUCTURE_REVIEW_PATHS = Object.freeze([
   'infra/nginx/pilot-gateway-https.conf', 'infra/nginx/merchant-studio.conf', 'infra/nginx/ops-console.conf', 'infra/nginx/pilot-gateway.conf',
   'apps/ops-console/src/styles.css', 'demo/merchant-studio/src/capability.css', 'demo/merchant-studio/src/styles.css',
   'apps/ops-console/README.md',
+  'demo/merchant-studio/tsconfig.node.json',
   'tests/ecs-pilot-api-replica-parity.test.ts', 'tests/object-storage-evidence-gate.test.ts', 'tests/model-relay-contract.test.ts', 'tests/production-config-gate.test.ts', 'tests/rendered-production-config-gate.test.ts', 'tests/production-evidence-gate.test.ts', 'tests/release-manifest-gate.test.ts', 'tests/release-manifest.test.ts', 'tests/local-compose-ops-ui.test.ts', 'tests/codex-app-host-evidence-gate.test.ts', 'tests/operations-scripts.test.ts', 'tests/ecs-compose-published-ports.test.ts', 'demo/merchant-studio/api.test.ts', 'demo/merchant-studio/notification-center.test.ts', 'demo/merchant-studio/image-generation-desktop.spec.js',
   'tests/object-storage-evidence-gate.ts', 'packages/contracts/src/ops/feature-flags.ts', 'tests/production-evidence-gate.ts', 'tests/release-manifest-gate.ts', 'tests/test-suite-isolation.ts', '.github/workflows/ci.yml', 'AGENTS.md', 'tests/codex-app-host-evidence-gate.ts', 'demo/merchant-studio/README.md', 'docs/chatgpt-host-canary-runbook.md', 'demo/merchant-studio/entry-points.test.ts',
 ])
@@ -25,6 +26,11 @@ const safeDependencyNames = names => names.filter(name => /^(?:@[A-Za-z0-9._-]+\
 function summarizeJson(path, text) {
   const value = JSON.parse(text)
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid_json_shape')
+  if (path.endsWith('tsconfig.node.json')) {
+    const options = value.compilerOptions && typeof value.compilerOptions === 'object' && !Array.isArray(value.compilerOptions) ? value.compilerOptions : {}
+    const stringValue = key => typeof options[key] === 'string' ? options[key] : null
+    return { kind: 'typescript_build_config', compiler_option_names: Object.keys(options).sort(), target: stringValue('target'), module: stringValue('module'), module_resolution: stringValue('moduleResolution'), jsx: stringValue('jsx') }
+  }
   if (path.endsWith('package-lock.json')) {
     const packages = value.packages && typeof value.packages === 'object' ? value.packages : {}
     const names = Object.keys(packages['']?.dependencies ?? {})
