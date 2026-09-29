@@ -375,7 +375,7 @@ const relayPricing = createRelayPricingClientFromEnv(process.env)
 
 const MERCHANT_CAPABILITY_CARDS = [
   { id: 'stores-products', title: '店铺与商品', summary: '绑定平台店铺、同步商品、查看多店铺商品事实。', entryMethod: 'platform.connect', nextMethods: ['platform.connect', 'catalog.sync.start', 'catalog.search'], readOnly: false },
-  { id: 'first-value', title: '示例体验', summary: '可选查看安全预览，了解商品内容和视觉交付方式，不会发布或覆盖商品。', entryMethod: 'merchant.first_value', nextMethods: ['merchant.first_value'], readOnly: true },
+  { id: 'first-value', title: '示例体验', summary: '可查看静态示例；生成草稿候选会调用模型并结算用量，不会发布或覆盖商品。', entryMethod: 'merchant.first_value', nextMethods: ['merchant.first_value'], readOnly: false },
   { id: 'knowledge-assets', title: '知识库与素材', summary: '管理商品原图、品牌资料、扫描状态和商用权益。', entryMethod: 'asset.list', nextMethods: ['asset.list', 'asset.upload', 'asset.parse', 'brand.get'], readOnly: true },
   { id: 'content', title: '商品内容', summary: '按事实确认、方案确认、生成、审核和版本交付商品文案。', entryMethod: 'task.understand', nextMethods: ['task.understand', 'task.plan.confirm', 'content.generate', 'content.review'], readOnly: false },
   { id: 'visuals', title: '主图与视觉', summary: '使用已授权商品素材生成候选主图，审阅后选择版本。', entryMethod: 'catalog.image.generate', nextMethods: ['catalog.image.generate', 'catalog.image.get', 'catalog.image.review', 'content.visual.select'], readOnly: false },

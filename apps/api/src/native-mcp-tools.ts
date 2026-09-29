@@ -16,8 +16,8 @@ export function isNativeMcpToolEnabled(method: string, paymentReady: () => boole
 // the Bridge even though their service policy is a write effect for lifecycle
 // or permission purposes.
 const NATIVE_READ_ONLY_ANNOTATION_EXCEPTIONS = new Set([
-  'merchant.first_value', 'brand.extract', 'brand.tone.preview', 'task.resume',
-  'task.understand', 'content.review', 'knowledge.competitor.reference',
+  'brand.extract', 'brand.tone.preview', 'task.resume',
+  'task.understand', 'content.review',
   'delivery.bundle.verify',
 ])
 const NATIVE_DESTRUCTIVE_ANNOTATION_METHODS = new Set([
@@ -47,4 +47,3 @@ export function nativeMcpTools(paymentReady: () => boolean) {
       annotations: nativeMcpToolAnnotations(contract.method),
     }))
 }
-

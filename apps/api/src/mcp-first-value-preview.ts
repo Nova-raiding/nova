@@ -75,9 +75,29 @@ export async function merchantFirstValuePreview(workspaceId: string, params: Rec
       } else await releaseReservedModelPoints(workspaceId, actionId, '文案候选生成失败', creativeReservation)
       throw error
     }
-    await requireSettledContentExecutionEvidence(workspaceId, actionId)
+    let executionEvidence: Awaited<ReturnType<FirstValuePreviewRuntime['requireSettledContentExecutionEvidence']>>
+    try {
+      executionEvidence = await requireSettledContentExecutionEvidence(workspaceId, actionId)
+    } catch (error) {
+      // Provider generation has already returned successfully. If its durable
+      // receipt/settlement evidence is not ready, preserve the point hold and
+      // make the action discoverable to reconciliation instead of leaving it
+      // authorized (or incorrectly releasing a potentially charged hold).
+      if ((error as { code?: unknown })?.code === 'MODEL_RELAY_EVIDENCE_REQUIRED') {
+        try {
+          if (!persistence.actionLedger?.transitionSettlementStatus) throw Object.assign(new Error(), { code: 'ACTION_LEDGER_TRANSITION_FAILED' })
+          await persistence.actionLedger.transitionSettlementStatus({ workspaceId, actionKey: actionId, from: ['authorized'], to: 'pending_receipt' })
+        } catch (transitionError) {
+          const rawCode = (transitionError as { code?: unknown })?.code
+          const code = typeof rawCode === 'string' && /^[A-Z0-9_]{1,64}$/u.test(rawCode) ? rawCode : 'ACTION_LEDGER_TRANSITION_FAILED'
+          // Never log provider output, receipt contents, or exception messages.
+          console.error('model settlement pending transition failed', { workspaceId, actionId, code })
+        }
+      }
+      throw error
+    }
     const body = validateContentSchema(generated, 'content.draft.generate', { candidateOnly: true })
-    return { readOnly: true, previewOnly: true, candidateOnly: true, publishable: false, formalVersionCreated: false, product: { id: null, title, platform, factsConfirmed: false }, contentPreview: { id: actionId, taskId: null, version: null, state: 'candidate', body }, execution: { mode: 'platform_relay_candidate', simulated: false, providerExecuted: true, modelCalled: true, label: '平台中转模型已生成内容候选', message: '仅供预览；未创建正式内容版本，未批准、未发布' }, nextActions: ['绑定已授权店铺并确认商品事实后，创建正式任务', '正式商品内容必须通过 content.generate 生成并审核'] }
+    return { readOnly: false, previewOnly: true, candidateOnly: true, publishable: false, formalVersionCreated: false, product: { id: null, title, platform, factsConfirmed: false }, contentPreview: { id: actionId, taskId: null, version: null, state: 'candidate', body }, execution: { mode: 'platform_relay_candidate', simulated: false, providerExecuted: true, modelCalled: true, ...(executionEvidence.providerRequestId ? { providerRequestId: executionEvidence.providerRequestId } : {}), ...(executionEvidence.usage ? { usage: executionEvidence.usage } : {}), ...(executionEvidence.costCny !== undefined ? { costCny: executionEvidence.costCny } : {}), ...(executionEvidence.settlementStatus ? { settlementStatus: executionEvidence.settlementStatus } : {}), label: '平台中转模型已生成内容候选', message: '仅供预览；未创建正式内容版本，未批准、未发布' }, nextActions: ['绑定已授权店铺并确认商品事实后，创建正式任务', '正式商品内容必须通过 content.generate 生成并审核'] }
   }
   const example = params.example === 'true'
   if (example) {
