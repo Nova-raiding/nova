@@ -251,7 +251,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
         loading={model.userDirectoryLoading}
         dataSource={sortedUsers}
         rowClassName={(row) => row.status === "suspended" ? "ops-user-row-suspended" : ""}
-        locale={{ emptyText: directoryResultUnread ? model.userDirectoryLoading ? unreadDirectoryLabel : "用户目录未读取，请刷新后重试" : "没有符合条件的用户成员关系" }}
+        locale={{ emptyText: directoryResultUnread ? model.userDirectoryLoading ? unreadDirectoryLabel : "用户目录未读取，请刷新后重试" : displayedAccountType === "platform" ? "没有符合条件的运营平台账号" : "没有符合条件的用户成员关系" }}
         rowSelection={{ selectedRowKeys: selectedUserKeys, onChange: (keys) => setSelectedUserKeys(keys.map((key) => String(key))), getCheckboxProps: (row) => ({ disabled: row.accountType === "platform" || row.externalSubject === model.opsSession?.actor_id || row.status === "suspended" }) }}
         pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: model.userDirectory.total, showSizeChanger: false }}
         onChange={handleDirectoryChange}

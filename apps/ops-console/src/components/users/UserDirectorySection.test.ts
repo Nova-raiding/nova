@@ -106,6 +106,11 @@ describe("UserDirectorySection sorting", () => {
     const empty = rendered(baseModel);
     expect(empty).toContain("共 0 家接入用户");
     expect(empty).toContain("没有符合条件的用户成员关系");
+
+    const emptyPlatform = rendered({ ...baseModel, userDirectoryFilters: { accountType: "platform" } });
+    expect(emptyPlatform).toContain("共 0 个运营平台账号");
+    expect(emptyPlatform).toContain("没有符合条件的运营平台账号");
+    expect(emptyPlatform).not.toContain("没有符合条件的用户成员关系");
   });
 
   it("labels loaded rows using the requested account scope, not an unsubmitted form choice", () => {
