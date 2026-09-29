@@ -69,6 +69,7 @@ import { auditCenterClient, financeSearchClient, incidentsClient, parseModelStat
 import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
 import type { CapabilityId } from "../../../../packages/contracts/src/authz.js";
 import { manualPublishClient, type RecordManualPublishEvidenceInput } from "../api/manualPublishClient.js";
+import { loadUserDirectory, userDirectoryResultKey } from "../api/userDirectoryCompatibility.js";
 
 export type JitRevocationReceipt = {
   grantId: string;
@@ -484,7 +485,9 @@ export function useOpsConsoleModel() {
   });
   const [userDirectoryLoading, setUserDirectoryLoading] = useState(false);
   const [userDirectoryError, setUserDirectoryError] = useState("");
+  const [userDirectoryCompatibilityWarning, setUserDirectoryCompatibilityWarning] = useState("");
   const userDirectoryRequestRef = useRef(0);
+  const userDirectoryResultKeyRef = useRef<string | undefined>(undefined);
   const [userExporting, setUserExporting] = useState(false);
   const [userDetail, setUserDetail] = useState<PlatformUserDetail>();
   const [userDetailLoading, setUserDetailLoading] = useState(false);
@@ -692,7 +695,9 @@ export function useOpsConsoleModel() {
     setOrders([]);
     setMembers([]);
     setUserDirectory({ items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: 20, truncated: false });
+    userDirectoryResultKeyRef.current = undefined;
     setUserDirectoryError("");
+    setUserDirectoryCompatibilityWarning("");
     setUserDetail(undefined);
     setWorkspaceRows([]);
     setWorkspaceDirectory(UNRESOLVED_WORKSPACE_DIRECTORY);
@@ -1592,33 +1597,44 @@ export function useOpsConsoleModel() {
   const loadUsers = async (filters: { query?: string; status?: string; workspaceId?: string; accountType?: "all" | "merchant" | "platform"; page?: number; pageSize?: number } = userDirectoryFilters) => {
     recordOpsBootstrapTrace("users_load_enter", { connected: hasOpsConnection(), identity: authorization.can("identity.read") });
     if (!hasOpsConnection()) { recordOpsBootstrapTrace("users_load_skipped", { reason: "no_connection" }); return false; }
-    const requestKey = JSON.stringify(filters);
-    if (userDirectoryInFlightKeysRef.current.has(requestKey)) return false;
-    const controller = userRequestsRef.current.beginDirectory();
-    userDirectoryInFlightKeysRef.current.add(requestKey);
-    const requestId = ++userDirectoryRequestRef.current;
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 10;
+    const requestKey = userDirectoryResultKey({ ...filters, page, pageSize });
+    if (userDirectoryInFlightKeysRef.current.has(requestKey)) return false;
+    const controller = userRequestsRef.current.beginDirectory();
+    userDirectoryInFlightKeysRef.current.clear();
+    userDirectoryInFlightKeysRef.current.add(requestKey);
+    const requestId = ++userDirectoryRequestRef.current;
     setUserDirectoryFilters(filters);
     setUserDirectoryLoading(true);
     setUserDirectoryError("");
+    setUserDirectoryCompatibilityWarning("");
+    if (userDirectoryResultKeyRef.current !== requestKey) {
+      setUserDirectory({ items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: pageSize, truncated: false });
+    }
     try {
-      const response = await rpc("ops.users.list", {
-        limit: String(pageSize),
-        offset: String((page - 1) * pageSize),
-        ...(filters.query?.trim() ? { query: filters.query.trim() } : {}),
-        ...(filters.status ? { status: filters.status } : {}),
-        account_type: filters.accountType ?? "all",
-        ...(filters.workspaceId?.trim() ? { workspace_id: filters.workspaceId.trim() } : {}),
-      }, { signal: controller.signal, timeoutMs: 30_000 });
+      const result = await loadUserDirectory(
+        (params) => rpc("ops.users.list", params, { signal: controller.signal, timeoutMs: 30_000 }),
+        { ...filters, page, pageSize },
+      );
+      const response = result.data;
       recordOpsBootstrapTrace("users_load_response", { items: Array.isArray((response as { items?: unknown[] } | undefined)?.items) ? (response as { items: unknown[] }).items.length : -1 });
-      if (requestId === userDirectoryRequestRef.current) setUserDirectory(response as unknown as PlatformUserDirectory);
+      if (requestId === userDirectoryRequestRef.current) {
+        setUserDirectory(response as unknown as PlatformUserDirectory);
+        userDirectoryResultKeyRef.current = requestKey;
+        setUserDirectoryCompatibilityWarning(result.compatibilityWarning);
+      }
     } catch (cause) {
       recordOpsBootstrapTrace("users_load_error", { code: (cause as { code?: string })?.code, message: cause instanceof Error ? cause.message : String(cause) });
-      if (!controller.signal.aborted && requestId === userDirectoryRequestRef.current) setUserDirectoryError(describeOpsError(cause));
+      if (!controller.signal.aborted && requestId === userDirectoryRequestRef.current) {
+        setUserDirectoryError(describeOpsError(cause));
+        if ((cause as { code?: string })?.code === "OPS_USERS_ACCOUNT_TYPE_FILTER_UNSUPPORTED") {
+          setUserDirectory({ items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: pageSize, truncated: false });
+        }
+      }
     } finally {
-      userDirectoryInFlightKeysRef.current.delete(requestKey);
       if (requestId === userDirectoryRequestRef.current) {
+        userDirectoryInFlightKeysRef.current.delete(requestKey);
         userRequestsRef.current.finishDirectory(controller);
         setUserDirectoryLoading(false);
       }
@@ -3037,8 +3053,10 @@ export function useOpsConsoleModel() {
     setMembers,
     userDirectory,
     setUserDirectory,
+    userDirectoryFilters,
     userDirectoryLoading,
     userDirectoryError,
+    userDirectoryCompatibilityWarning,
     userExporting,
     userDetail,
     setUserDetail,

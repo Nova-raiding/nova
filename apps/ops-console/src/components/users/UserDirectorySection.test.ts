@@ -79,6 +79,63 @@ describe("UserDirectorySection sorting", () => {
     expect(markup).not.toContain("共 9 家接入用户");
   });
 
+  it("keeps an unread directory distinct from a successfully read empty directory", () => {
+    const baseModel = {
+      authorization: { can: (capability: string) => capability === "identity.read" },
+      userDirectory: { items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: 10, truncated: false },
+      userDirectoryLoading: false,
+      userDirectoryError: "",
+      userDirectoryCompatibilityWarning: "",
+      userExporting: false,
+      canPlatformOps: false,
+      canUserGovernance: false,
+      userDetail: undefined,
+      userDetailLoading: false,
+      opsSession: undefined,
+    } as unknown as OpsConsoleModel;
+    const rendered = (model: OpsConsoleModel) => renderToStaticMarkup(createElement(UserDirectorySection, { model }));
+    const failed = rendered({ ...baseModel, userDirectoryError: "当前运营 API 版本不支持筛选运营平台账号" });
+    expect(failed).toContain("用户目录未读取");
+    expect(failed).not.toContain("共 0 家接入用户");
+    expect(failed).not.toContain("没有符合条件的用户成员关系");
+
+    const loading = rendered({ ...baseModel, userDirectoryLoading: true });
+    expect(loading).toContain("正在读取用户目录");
+    expect(loading).not.toContain("共 0 家接入用户");
+
+    const empty = rendered(baseModel);
+    expect(empty).toContain("共 0 家接入用户");
+    expect(empty).toContain("没有符合条件的用户成员关系");
+  });
+
+  it("labels loaded rows using the requested account scope, not an unsubmitted form choice", () => {
+    const baseModel = {
+      authorization: { can: (capability: string) => capability === "identity.read" },
+      userDirectory: { items: [user({ externalSubject: "merchant@example.test", accountType: "merchant" })], total: 1, identityCount: 1, workspaceCount: 1, offset: 0, limit: 10, truncated: false },
+      userDirectoryFilters: { accountType: "merchant" },
+      userDirectoryLoading: false,
+      userDirectoryError: "",
+      userDirectoryCompatibilityWarning: "",
+      userExporting: false,
+      canPlatformOps: false,
+      canUserGovernance: false,
+      userDetail: undefined,
+      userDetailLoading: false,
+      opsSession: undefined,
+    } as unknown as OpsConsoleModel;
+    const merchantMarkup = renderToStaticMarkup(createElement(UserDirectorySection, { model: baseModel }));
+    expect(merchantMarkup).toContain("共 1 家接入用户");
+    expect(merchantMarkup).not.toContain("共 1 个运营平台账号");
+
+    const platformMarkup = renderToStaticMarkup(createElement(UserDirectorySection, { model: {
+      ...baseModel,
+      userDirectory: { ...baseModel.userDirectory, items: [user({ externalSubject: "ops@example.test", accountType: "platform", workspaceId: "" })], workspaceCount: 0 },
+      userDirectoryFilters: { accountType: "platform" },
+    } }));
+    expect(platformMarkup).toContain("共 1 个运营平台账号");
+    expect(platformMarkup).not.toContain("共 0 家接入用户");
+  });
+
   it("keeps the desktop directory to five viewport-sized columns and opens detail for full identity fields", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('{ title: "用户名", dataIndex: "externalSubject", width: 405');

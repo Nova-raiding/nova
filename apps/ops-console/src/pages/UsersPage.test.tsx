@@ -59,6 +59,15 @@ describe("UsersPage capability state", () => {
     expect(markup).toContain('aria-label="重试加载运营数据"');
   });
 
+  it("shows the backend-reported legacy account directory scope", () => {
+    const markup = renderToStaticMarkup(<UsersPage model={model(["identity.read"], {
+      userDirectoryCompatibilityWarning: "当前运营 API 版本仅返回商家成员范围。",
+    })} />);
+
+    expect(markup).toContain("运营 API 兼容模式");
+    expect(markup).toContain("当前运营 API 版本仅返回商家成员范围。");
+  });
+
   it("fails closed through the user workspace when no server read capability is projected", () => {
     const markup = renderToStaticMarkup(<UsersPage model={model([], { error: "" })} />);
 
