@@ -53,7 +53,17 @@ describe('local plugin login/install contract', () => {
       target: { apiOrigin: 'https://merchant.example.test', workspaceId: 'ws_contract' },
       bundle: { schema_version: '1', api_origin: 'https://merchant.example.test', workspace_id: 'ws_contract', access_token: 'access-secret', refresh_token: 'refresh-secret' },
     })
-    expect(configureSession).toHaveBeenCalledWith({ apiOrigin: 'https://merchant.example.test', workspaceId: 'ws_contract' })
+    expect(configureSession).toHaveBeenCalledOnce()
+    expect(configureSession).toHaveBeenCalledWith(
+      { apiOrigin: 'https://merchant.example.test', workspaceId: 'ws_contract' },
+      expect.objectContaining({
+        schema_version: '1',
+        api_origin: 'https://merchant.example.test',
+        workspace_id: 'ws_contract',
+        access_token: 'access-secret',
+        refresh_token: 'refresh-secret',
+      }),
+    )
     expect(result).toMatchObject({ ok: true, mode: 'local_stdio', credential_source: 'keychain', host_verified: false })
   })
 

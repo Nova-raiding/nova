@@ -63,6 +63,7 @@ export function parsePluginPairFragment(hash: string, workspaceIds: string[]): P
 }
 
 type ConnectionUiState = 'idle' | 'requesting' | 'launching' | 'install_required' | 'confirmation_pending' | 'connected' | 'expired' | 'failed'
+type OneClickState = 'checking' | 'available' | 'release_gate' | 'unsupported_platform' | 'workspace_required' | 'check_failed'
 export type LocalPluginPlatform = 'macos' | 'windows' | 'other'
 
 export function detectLocalPluginPlatform(userAgent = '', platform = ''): LocalPluginPlatform {
@@ -110,7 +111,7 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
   const [connectionState, setConnectionState] = useState<ConnectionUiState>('idle')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | undefined>(account.workspaceIds.length === 1 ? account.workspaceIds[0] : undefined)
   const [pairing, setPairing] = useState<PairingReturn | null>(null)
-  const [oneClickAvailable, setOneClickAvailable] = useState(false)
+  const [oneClickState, setOneClickState] = useState<OneClickState>('checking')
   const launchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const connectionAttempt = useRef(0)
   const scope = JSON.stringify([apiBaseUrl, account.id, account.login, account.status, account.workspaceIds])
@@ -124,6 +125,17 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
     typeof navigator === 'undefined' ? '' : navigator.platform,
   ) === 'macos'
   const presentation = connectionStatePresentation[connectionState]
+  const oneClickAvailable = oneClickState === 'available'
+  const loginCommand = localPluginLoginCommand(apiBaseUrl, account.workspaceIds, workspaceId ?? undefined, 'macos')
+  const oneClickUnavailableReason = oneClickState === 'release_gate'
+    ? '生产发布门禁尚未通过，暂不能启用一键连接。'
+    : oneClickState === 'unsupported_platform'
+      ? '一键连接目前仅支持 macOS 桌面端。'
+      : oneClickState === 'workspace_required'
+        ? '请先选择要连接的工作区。'
+        : oneClickState === 'check_failed'
+          ? '暂时无法确认一键连接状态，请打开安装与故障帮助。'
+          : '正在检查一键连接是否可用。'
 
   useEffect(() => {
     connectionAttempt.current += 1
@@ -136,12 +148,14 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
 
   useEffect(() => {
     let active = true
-    setOneClickAvailable(false)
-    if (eligible && macosBrowser) {
+    if (!macosBrowser) setOneClickState('unsupported_platform')
+    else if (!workspaceId) setOneClickState('workspace_required')
+    else if (eligible) {
+      setOneClickState('checking')
       void requestApi<{ one_click_available: boolean; supported_platforms: string[] }>(apiBaseUrl,
         '/v1/auth/local-plugin/connect-capability', {}, workspaceId ?? undefined)
-        .then(result => { if (active) setOneClickAvailable(result.one_click_available === true && result.supported_platforms?.includes('macos') === true) })
-        .catch(() => { if (active) setOneClickAvailable(false) })
+        .then(result => { if (active) setOneClickState(result.one_click_available === true && result.supported_platforms?.includes('macos') === true ? 'available' : 'release_gate') })
+        .catch(() => { if (active) setOneClickState('check_failed') })
     }
     return () => { active = false }
   }, [scope, workspaceId, eligible, macosBrowser, apiBaseUrl])
@@ -242,6 +256,7 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
       <Button type="primary" disabled={!oneClickAvailable || !connectTargetAvailable || connectionState === 'requesting' || connectionState === 'launching'} loading={connectionState === 'requesting'} onClick={() => { void beginConnection() }}>连接 ChatGPT 本地插件</Button>
       <Tag color={presentation.color}>{presentation.label}</Tag>
       <Button type="link" onClick={() => setOpenScope(scope)}>安装与故障帮助</Button>
+      {!oneClickAvailable && <Typography.Text type={oneClickState === 'release_gate' || oneClickState === 'check_failed' ? 'warning' : 'secondary'}>{oneClickUnavailableReason}</Typography.Text>}
     </Space>
     <Modal title="连接本地插件" wrapClassName="merchant-local-plugin-modal" open={openScope === scope} onCancel={() => setOpenScope(null)} destroyOnHidden footer={
       <Button onClick={(event) => { event.stopPropagation(); setOpenScope(null) }}>关闭</Button>
@@ -250,7 +265,7 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
         <Alert type={connectionState === 'connected' ? 'success' : connectionState === 'failed' ? 'error' : connectionState === 'expired' ? 'warning' : 'info'}
           title={presentation.label} showIcon
           description={connectionState === 'connected'
-            ? '安装器已确认将凭据保存到这台电脑。请重启 ChatGPT，并在新对话中检查 Store Nova 连接。'
+            ? `安装器已确认将账号 ${account.login} 对目标工作区 ${workspaceId ?? '当前所选工作区'} 的凭据保存到这台电脑。请完全退出并重新打开 ChatGPT，再在新对话中检查 Store Nova 连接。`
             : connectionState === 'confirmation_pending'
               ? '服务端已完成凭据交换，正在等待本地安装器确认保存。收到授权回调本身不代表绑定成功。'
               : connectionState === 'expired' || connectionState === 'failed'
@@ -260,13 +275,18 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
           ? <Alert type="info" title="确认连接这台电脑" showIcon description={`将工作区 ${pairing.workspace_id} 授权给刚打开的 Store Nova 本地插件。`} />
           : oneClickAvailable
             ? <Alert type="info" title="点击连接并按浏览器提示打开本地插件" showIcon description="首次连接需确认这台电脑。若浏览器提示没有应用可打开，请先安装平台提供的桌面插件包。" />
-            : <Alert type="warning" title="一键授权暂未开放" showIcon description="桌面插件安装包仍在验证中。开放后，可直接点击连接，无需输入命令。" />}
+            : <Alert type="warning" title="一键授权暂未开放" showIcon description={oneClickUnavailableReason} />}
         <Descriptions size="small" column={1} items={[
           { key: 'account', label: '当前登录账号', children: account.login },
           { key: 'workspace', label: '目标工作区', children: workspaceId ?? '请先选择当前账号已授权的工作区' },
         ]} />
         {pairing && <Button type="primary" onClick={() => { void completePairing() }}>确认连接这台电脑</Button>}
-        <Typography.Paragraph style={{ margin: 0 }}>连接完成后重启 ChatGPT。在新对话中说“检查 Store Nova 插件是否已连接”即可。</Typography.Paragraph>
+        {!oneClickAvailable && loginCommand && <Alert type="info" title="本地验证恢复路径" showIcon description={<Space orientation="vertical" size={4}>
+          <Typography.Text>优先重新运行平台提供的 macOS 安装包。维护人员或旧版安装可在插件目录运行：</Typography.Text>
+          <Typography.Text code copyable>{loginCommand}</Typography.Text>
+          <Typography.Text type="secondary">运行前请确认商家后台登录账号为 {account.login}，授权页显示目标工作区 {workspaceId}。浏览器授权完成后，还要等待安装器确认本机凭据保存成功；然后完全退出并重新打开 ChatGPT。</Typography.Text>
+        </Space>} />}
+        <Typography.Paragraph style={{ margin: 0 }}>本机凭据保存成功后，完全退出并重新打开 ChatGPT。在新对话中说“检查 Store Nova 插件是否已连接”即可。</Typography.Paragraph>
       </Space>
     </Modal>
   </>

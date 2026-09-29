@@ -138,6 +138,11 @@ services:
       # production keeps NODE_ENV=production and never uses this compose file.
       NODE_ENV: development
       LOCAL_COMPOSE: "true"
+      # The desktop Merchant UI exchanges its HttpOnly password session for a
+      # workspace-scoped MCP bearer. Keep the local API on that same stdio
+      # credential boundary; without this setting /mcp falls through to the
+      # static API token verifier and the UI cannot read points or billing.
+      MCP_INTEGRATION_MODE: local_stdio
       MCP_AUTHZ_MODE: enforce
       REQUEST_OBSERVABILITY_LOGS: ${REQUEST_OBSERVABILITY_LOGS:-false}
       OPS_ALERT_NOTIFICATIONS_ENABLED: ${OPS_ALERT_NOTIFICATIONS_ENABLED:-false}
@@ -539,6 +544,11 @@ services:
       PGDATABASE: merchant
       PGUSER: merchant
       PGPASSWORD: merchant_local_only
+      # This long-lived local volume predates the finalized SQL bytes for a
+      # small, fixed set of migrations. apply-migrations.sh accepts only the
+      # reviewed legacy digests embedded in that script; every unknown digest
+      # mismatch still fails closed.
+      MIGRATION_BASELINE_ACCEPTED: "true"
       DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
       OPS_DATABASE_URL: postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant
       ALERT_RECEIVER_DATABASE_URL: postgres://merchant_alert_receiver:merchant_alert_receiver_local_only@postgres:5432/merchant

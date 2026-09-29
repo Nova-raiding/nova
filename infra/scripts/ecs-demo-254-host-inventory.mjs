@@ -13,6 +13,23 @@ export const DEMO_254_EXPECTED_SERVICES = Object.freeze([
   'payment-gateway', 'worker-automation', 'worker-generation', 'worker-publish',
   'worker-reconcile', 'worker-sync',
 ])
+// This exact container fingerprint was reviewed on 101 and documented as
+// shared build infrastructure in ecs-101-single-environment-retirement.md.
+// Recognition only changes topology classification; it never approves release.
+const SHARED_BUILD_REGISTRY = Object.freeze({
+  id: 'a77f0da8b0ee8a6607d521ed35c9dd40e3a70a8116b31f3cdffc451a93ada03f',
+  name: '/storenova-registry',
+  imageId: 'sha256:26b2eb03618e749084668eaff68cff8f81dda12d06ac641be7a6398b82a6f25b',
+  state: 'running',
+  health: 'absent',
+  network: { name: 'bridge', id: 'afd13a439d098d2ae47fcbe9e458f2abcb4404f9c9961eebd60f808010b36f80', aliases: [] },
+  port: { container_port: '5000/tcp', host_ip: '127.0.0.1', host_port: '5000' },
+  mount: { type: 'volume', name: 'storenova-registry-data', destination: '/var/lib/registry', read_write: true },
+  envSha256: '1c24775fadba31bd348800df91e54a100f1b2e4936bd629e5a36e89c5c8f51f7',
+  configSha256: '89790dac8b307c7a5e60af741f0035cfdcba0b370faae1e662e322dc30400804',
+  hostConfigSha256: '932f3cb9597e5cd6883a65a0600020bf34061cd76681ac789dc0b09374d9afc6',
+  mountsSha256: '20e1cf2546f240a0d7b8aaed46714c7f5d5a00cbe79c2859863e642282439e06',
+})
 const SHA = /^[a-f0-9]{64}$/u
 const CONTAINER_ID = /^[a-f0-9]{64}$/u
 const IMAGE_ID = /^sha256:[a-f0-9]{64}$/u
@@ -43,12 +60,13 @@ for start in range(0,len(ids),32):
             if len(image)!=1: raise RuntimeError('image inspect count mismatch')
             images.add(image_id)
         config=item.get('Config') or {}
+        container_name=item.get('Name','')
         labels=config.get('Labels') or {}
         state=item.get('State') or {}
         health=(state.get('Health') or {}).get('Status','absent')
         networks=[]
-        for name,net in (item.get('NetworkSettings',{}).get('Networks') or {}).items():
-            networks.append({'name':name,'id':net.get('NetworkID',''),'aliases':sorted(x for x in (net.get('Aliases') or []) if isinstance(x,str))})
+        for network_name,net in (item.get('NetworkSettings',{}).get('Networks') or {}).items():
+            networks.append({'name':network_name,'id':net.get('NetworkID',''),'aliases':sorted(x for x in (net.get('Aliases') or []) if isinstance(x,str))})
         networks.sort(key=lambda n:n['name'])
         ports=[]
         for target,bindings in (item.get('NetworkSettings',{}).get('Ports') or {}).items():
@@ -62,28 +80,28 @@ for start in range(0,len(ids),32):
         compose={key:labels.get(key,'') for key in ('com.docker.compose.project','com.docker.compose.service','com.docker.compose.project.config_files','com.docker.compose.project.working_dir')}
         env=config.get('Env') or []
         host=item.get('HostConfig') or {}
-        containers.append({'id':item.get('Id',''),'state':state.get('Status','unknown'),'health':health,
+        containers.append({'id':item.get('Id',''),'name':container_name if isinstance(container_name,str) else '', 'state':state.get('Status','unknown'),'health':health,
             'image_id':image_id,
             'compose':compose,'networks':networks,'ports':ports,'mounts':mounts,
             'env_sha256':digest(env),'config_sha256':digest(config),'host_config_sha256':digest(host),
             'mounts_sha256':digest(item.get('Mounts') or [])})
 containers.sort(key=lambda c:c['id'])
-print(json.dumps({'schema_version':'ecs-demo-254-host-inventory/1','project':${JSON.stringify('merchant-demo-85575f9c')},'containers':containers},sort_keys=True,separators=(',',':')))
+print(json.dumps({'schema_version':'ecs-demo-254-host-inventory/2','project':${JSON.stringify('merchant-demo-85575f9c')},'containers':containers},sort_keys=True,separators=(',',':')))
 `
 
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 export function validateRemoteInventory(value) {
   if (!isObject(value) || Object.keys(value).sort().join(',') !== 'containers,project,schema_version'
-    || value.schema_version !== 'ecs-demo-254-host-inventory/1' || value.project !== DEMO_254_PROJECT
+    || value.schema_version !== 'ecs-demo-254-host-inventory/2' || value.project !== DEMO_254_PROJECT
     || !Array.isArray(value.containers) || value.containers.length > 512) {
     throw new Error('101 inventory schema rejected')
   }
   const ids = new Set()
   for (const item of value.containers) {
-    if (!isObject(item) || Object.keys(item).sort().join(',') !== 'compose,config_sha256,env_sha256,health,host_config_sha256,id,image_id,mounts,mounts_sha256,networks,ports,state'
+    if (!isObject(item) || Object.keys(item).sort().join(',') !== 'compose,config_sha256,env_sha256,health,host_config_sha256,id,image_id,mounts,mounts_sha256,name,networks,ports,state'
       || !CONTAINER_ID.test(item.id ?? '') || ids.has(item.id) || !IMAGE_ID.test(item.image_id ?? '')
-      || typeof item.state !== 'string'
+      || typeof item.name !== 'string' || typeof item.state !== 'string'
       || !['healthy','unhealthy','starting','absent'].includes(item.health)
       || ![item.env_sha256,item.config_sha256,item.host_config_sha256,item.mounts_sha256].every(v => SHA.test(v ?? ''))
       || !isObject(item.compose) || Object.keys(item.compose).sort().join(',') !== 'com.docker.compose.project,com.docker.compose.project.config_files,com.docker.compose.project.working_dir,com.docker.compose.service'
@@ -117,7 +135,8 @@ export function classifyInventory(snapshot) {
     const service = item.compose['com.docker.compose.service']
     const isExpected = item.compose['com.docker.compose.project'] === DEMO_254_PROJECT && expected.has(service)
     if (isExpected) expected.get(service).push(item)
-    return { ...item, classification: isExpected ? 'expected_demo_role' : 'unclassified_external_consumer' }
+    const isSharedRegistry = !isExpected && matchesSharedBuildRegistry(item)
+    return { ...item, classification: isExpected ? 'expected_demo_role' : isSharedRegistry ? 'shared_build_infrastructure' : 'unclassified_external_consumer' }
   })
   const blockers = []
   for (const [service, matches] of expected) {
@@ -129,11 +148,36 @@ export function classifyInventory(snapshot) {
     }
   }
   const external = containers.filter(item => item.classification === 'unclassified_external_consumer')
+  const sharedInfrastructure = containers.filter(item => item.classification === 'shared_build_infrastructure')
   for (const item of external) blockers.push(`unclassified_external_consumer:${item.id}`)
   return Object.freeze({ schema_version: snapshot.schema_version, project: snapshot.project,
     observed_at: new Date().toISOString(), containers, expected_services: [...expected.keys()],
-    unclassified_external_consumer_ids: external.map(item => item.id), blockers,
+    unclassified_external_consumer_ids: external.map(item => item.id),
+    shared_build_infrastructure_ids: sharedInfrastructure.map(item => item.id),
+    warnings: sharedInfrastructure.map(item => `shared_build_infrastructure_consumer_policy_requires_review:${item.id}`), blockers,
     inventory_only: true, release_approved: false })
+}
+
+function matchesSharedBuildRegistry(item) {
+  const fingerprint = SHARED_BUILD_REGISTRY
+  const port = item.ports[0]
+  const mount = item.mounts[0]
+  const network = item.networks[0]
+  return item.id === fingerprint.id
+    && item.name === fingerprint.name
+    && item.image_id === fingerprint.imageId
+    && item.state === fingerprint.state && item.health === fingerprint.health
+    && item.networks.length === 1 && network.name === fingerprint.network.name
+    && network.id === fingerprint.network.id && network.aliases.length === fingerprint.network.aliases.length
+    && network.aliases.every((alias, index) => alias === fingerprint.network.aliases[index])
+    && item.ports.length === 1 && port.container_port === fingerprint.port.container_port
+    && port.host_ip === fingerprint.port.host_ip && port.host_port === fingerprint.port.host_port
+    && item.mounts.length === 1 && mount.type === fingerprint.mount.type
+    && mount.name === fingerprint.mount.name && mount.destination === fingerprint.mount.destination
+    && mount.read_write === fingerprint.mount.read_write
+    && item.env_sha256 === fingerprint.envSha256 && item.config_sha256 === fingerprint.configSha256
+    && item.host_config_sha256 === fingerprint.hostConfigSha256 && item.mounts_sha256 === fingerprint.mountsSha256
+    && Object.values(item.compose).every(value => value === '')
 }
 
 export function acquireInventory(run = spawnSync) {

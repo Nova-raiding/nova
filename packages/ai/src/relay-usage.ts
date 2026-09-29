@@ -72,10 +72,12 @@ export class ModelUsageReceiptIdentityError extends Error {
 export class ModelUsageEvidenceMissingError extends Error {
   readonly code = 'MODEL_USAGE_EVIDENCE_MISSING'
   readonly providerSucceeded = true
+  readonly providerRequestId?: string
 
-  constructor(readonly missing: 'usage' | 'cost' | 'sink' | 'identity') {
+  constructor(readonly missing: 'usage' | 'cost' | 'sink' | 'identity', evidence?: Pick<RelayUsageRecord, 'providerRequestId'>) {
     super(`model usage ${missing} evidence is missing`)
     this.name = 'ModelUsageEvidenceMissingError'
+    this.providerRequestId = evidence?.providerRequestId
   }
 }
 
@@ -210,9 +212,23 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // Cost is not usage. A relay that reports only a price has not provided
   // enough metering evidence to settle a model call safely.
   // Image relays commonly meter by generated image units rather than tokens.
-  // Only a positive provider-reported output_image_count is billing evidence;
-  // parsed artifacts are diagnostic and never substitute for provider usage.
-  const rawOutputImageCount = [usage?.output_image_count, usage?.outputImageCount, root.output_image_count, data?.output_image_count, result?.output_image_count, metadata?.output_image_count].find(value => value !== undefined)
+  // Only a positive provider-reported usage count is billing evidence; parsed
+  // artifacts are diagnostic and never substitute for provider usage.
+  // OpenAI-compatible relays generally expose `output_image_count`, while
+  // DashScope/Qwen reports the same provider-observed quantity as
+  // `usage.image_count`. New API preserves that upstream usage object in its
+  // response metadata. Both are provider-reported metering evidence; neither
+  // is inferred from the requested or returned artifact count.
+  const rawOutputImageCount = [
+    usage?.output_image_count,
+    usage?.outputImageCount,
+    usage?.image_count,
+    usage?.imageCount,
+    root.output_image_count,
+    data?.output_image_count,
+    result?.output_image_count,
+    metadata?.output_image_count,
+  ].find(value => value !== undefined)
   const reportedOutputImageCount = rawOutputImageCount === undefined ? undefined : tokenFrom(rawOutputImageCount)
   const reportedOutputImageCountValid = rawOutputImageCount === undefined || (reportedOutputImageCount !== undefined && reportedOutputImageCount > 0)
   const observedArtifactCount = defaults.context?.observedArtifactCount
@@ -283,9 +299,9 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
 
 export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: unknown, headers: Headers, defaults: { modality: RelayUsageModality; model: string; context?: RelayUsageContext }) {
   const usage = parseRelayUsage(payload, headers, defaults)
-  if (!usage || usage.metadata?.usage_observed !== true) throw new ModelUsageEvidenceMissingError('usage')
-  if (!usage.providerRequestId?.trim() && !usage.providerAttemptId?.trim()) throw new ModelUsageEvidenceMissingError('identity')
-  if (!sink) throw new ModelUsageEvidenceMissingError('sink')
+  if (!usage || usage.metadata?.usage_observed !== true) throw new ModelUsageEvidenceMissingError('usage', usage)
+  if (!usage.providerRequestId?.trim() && !usage.providerAttemptId?.trim()) throw new ModelUsageEvidenceMissingError('identity', usage)
+  if (!sink) throw new ModelUsageEvidenceMissingError('sink', usage)
   let settlementReceipt: void | RelayUsageSettlementReceipt
   try {
     settlementReceipt = await sink(usage)
@@ -304,8 +320,8 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
   if (settlementReceipt === undefined || settlementReceipt.recorded !== true || settlementReceipt.costEvidence !== true) {
     // Prefer the actionable financial-evidence diagnostic when the provider
     // omitted currency; settlement is still rejected below this boundary.
-    if (settlementReceipt === undefined && usage.costCny === undefined) throw new ModelUsageEvidenceMissingError('cost')
-    throw new ModelUsageEvidenceMissingError('sink')
+    if (settlementReceipt === undefined && usage.costCny === undefined) throw new ModelUsageEvidenceMissingError('cost', usage)
+    throw new ModelUsageEvidenceMissingError('sink', usage)
   }
   // Some relays return tokens but omit currency. Only a trusted settlement
   // sink may fill that gap from a versioned pricing snapshot; a plain sink
@@ -314,7 +330,7 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
   // the usage record was durably recorded. Do not let a malformed or stale
   // adapter response turn derived pricing into a successful settlement.
   const settlementRecorded = settlementReceipt.recorded === true
-  if (usage.costCny === undefined && (!settlementRecorded || settlementReceipt.costEvidence !== true)) throw new ModelUsageEvidenceMissingError('cost')
+  if (usage.costCny === undefined && (!settlementRecorded || settlementReceipt.costEvidence !== true)) throw new ModelUsageEvidenceMissingError('cost', usage)
   usage.metadata = { ...(usage.metadata ?? {}), ...(usage.costCny === undefined ? { cost_evidence: 'settlement_sink' } : {}), settlement: 'recorded' satisfies RelayUsageSettlement }
   return usage
 }

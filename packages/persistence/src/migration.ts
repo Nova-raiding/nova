@@ -222,31 +222,40 @@ export function verifyBridgeMigrationPrefix(
   applied: readonly AppliedMigration[],
   expected: readonly Migration[],
   mode: string | undefined,
-): 242 | 244 | 254 | 255 {
+): 242 | 244 | 254 | 255 | 256 {
   if (mode === 'prefix_242_or_244') {
-    if (expected.length < 244 || expected.some((migration, index) => migration.version !== index + 1)) {
+    if (expected.length < 244 || expected.slice(0, 244).some((migration, index) => migration.version !== index + 1)) {
       throw new Error('bridge release must carry the complete migration chain through 244')
     }
     if (applied.length !== 242 && applied.length !== 244) throw new Error('bridge database migration prefix must be exactly 242 or 244')
-    verifyAppliedMigrations(applied, expected, migrationChecksumBaseline())
+    verifyAppliedMigrations(applied, expected.slice(0, 244), migrationChecksumBaseline())
     return applied.length
   }
 
   if (mode === 'prefix_254_or_255') {
-    if (expected.length !== 255 || expected.some((migration, index) => migration.version !== index + 1)) {
-      throw new Error('254-to-255 bridge release must carry exactly the complete migration chain through 255')
+    if (expected.length < 255 || expected.slice(0, 255).some((migration, index) => migration.version !== index + 1)) {
+      throw new Error('254-to-255 bridge release must carry the complete migration chain through 255')
     }
     if (applied.length !== 254 && applied.length !== 255) throw new Error('254-to-255 bridge database migration prefix must be exactly 254 or 255')
-    verifyAppliedMigrations(applied, expected, migrationChecksumBaseline())
+    verifyAppliedMigrations(applied, expected.slice(0, 255), migrationChecksumBaseline())
+    return applied.length
+  }
+
+  if (mode === 'prefix_255_or_256') {
+    if (expected.length < 256 || expected.slice(0, 256).some((migration, index) => migration.version !== index + 1)) {
+      throw new Error('255-to-256 bridge release must carry the complete migration chain through 256')
+    }
+    if (applied.length !== 255 && applied.length !== 256) throw new Error('255-to-256 bridge database migration prefix must be exactly 255 or 256')
+    verifyAppliedMigrations(applied, expected.slice(0, 256), migrationChecksumBaseline())
     return applied.length
   }
 
   if (mode !== 'prefix_242_or_254') throw new Error('bridge schema compatibility mode is not enabled')
-  if (expected.length !== 254 || expected.some((migration, index) => migration.version !== index + 1)) {
-    throw new Error('242-to-254 bridge release must carry exactly the complete migration chain through 254')
+  if (expected.length < 254 || expected.slice(0, 254).some((migration, index) => migration.version !== index + 1)) {
+    throw new Error('242-to-254 bridge release must carry the complete migration chain through 254')
   }
   if (applied.length !== 242 && applied.length !== 254) throw new Error('242-to-254 bridge database migration prefix must be exactly 242 or 254')
-  verifyAppliedMigrations(applied, expected, migrationChecksumBaseline())
+  verifyAppliedMigrations(applied, expected.slice(0, 254), migrationChecksumBaseline())
   return applied.length
 }
 
@@ -740,6 +749,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const chargedTextNoDeliveryResolution = await readFile(new URL('./migrations/253_charged_text_no_delivery_resolution.sql', import.meta.url), 'utf8')
   const merchantEntitlementSnapshotCursor = await readFile(new URL('./migrations/254_merchant_entitlement_snapshot_cursor.sql', import.meta.url), 'utf8')
   const scopedBrandSettings = await readFile(new URL('./migrations/255_scoped_brand_settings.sql', import.meta.url), 'utf8')
+  const assetLifecycle = await readFile(new URL('./migrations/256_asset_lifecycle.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -996,6 +1006,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 253, name: 'charged_text_no_delivery_resolution', sql: chargedTextNoDeliveryResolution },
     { version: 254, name: 'merchant_entitlement_snapshot_cursor', sql: merchantEntitlementSnapshotCursor },
     { version: 255, name: 'scoped_brand_settings', sql: scopedBrandSettings },
+    { version: 256, name: 'asset_lifecycle', sql: assetLifecycle },
   ]
 }
 

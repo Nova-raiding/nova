@@ -29,7 +29,9 @@ import { MCP_OPS_MODEL_METHODS, handleMcpOpsModelMethod } from './mcp-ops-model-
 import { createModelUsageReconciliation } from './model-usage-reconciliation.js'
 import { resolveChargedTextNoDelivery } from './charged-text-no-delivery-handler.js'
 import { PostgresChargedTextNoDeliveryRepository } from '../../../packages/persistence/src/charged-text-no-delivery-repository.js'
+import { CreativePointRepositoryError } from '../../../packages/persistence/src/creative-point-repository.js'
 import { PostgresScopedBrandSettingsRepository } from '../../../packages/persistence/src/scoped-brand-settings-repository.js'
+import { PostgresAssetLifecycleRepository } from '../../../packages/persistence/src/asset-lifecycle-repository.js'
 import { createModelBudgetRuntime, modalityForActionKind } from './model-budget-runtime.js'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 export type WorkspaceOnboardingState = ReturnType<typeof workspaceOnboarding>
@@ -760,7 +762,7 @@ export interface ApiPersistence {
   rules?: RuleRepositoryPort
   brandUnits?: import('../../../packages/persistence/src/index.js').BrandUnitRepository
   scopedBrandSettings?: PostgresScopedBrandSettingsRepository
-  bridgeSchemaVersion?: 254 | 255
+  bridgeSchemaVersion?: 254 | 255 | 256
   objectOrphans?: ObjectOrphanRepository
   contextSnapshots?: ContextSnapshotRepository
   identities?: IdentityLifecycleRepository
@@ -779,6 +781,9 @@ export interface ApiPersistence {
   assetScanReceipts?: AssetScanReceiptRepository
   assetScanRedrive?: AssetScanRedriveRepository
   assetPromotionCleanup?: AssetPromotionCleanupRepository
+  /** Read-only lifecycle projection for 255/256 bridge rollback safety. */
+  assetLifecycleRead?: Pick<PostgresAssetLifecycleRepository, 'listTrashedAssetIds' | 'isActive'>
+  assetLifecycle?: PostgresAssetLifecycleRepository
   imageContinuationLeases?: ImageContinuationLeaseRepository
   imageGenerationExecutions?: ImageGenerationExecutionRepository
   reconciliationEvidence?: ReconciliationEvidenceRepository
@@ -1336,6 +1341,23 @@ const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memo
 memoryPersistence.customerDeliveries = memoryCustomerDeliveries
 let persistence: ApiPersistence = memoryPersistence
 let persistenceError: unknown
+
+/** Narrow test seam for exercising the HTTP/MCP failed-image reconciliation
+ * boundary with deterministic in-memory repositories. */
+export function setFailedImageReconciliationPersistenceForTests(overrides: Pick<ApiPersistence, 'creativePoints' | 'creativePointLifecycle' | 'outbox' | 'imageGenerationExecutions' | 'reconciliationStatuses'>) {
+  const previous = { creativePoints: persistence.creativePoints, creativePointLifecycle: persistence.creativePointLifecycle, outbox: persistence.outbox, imageGenerationExecutions: persistence.imageGenerationExecutions, reconciliationStatuses: persistence.reconciliationStatuses }
+  Object.assign(persistence, overrides)
+  return () => { Object.assign(persistence, previous) }
+}
+/** Isolates the server-side asset lifecycle contract without enabling a local
+ * browser store or touching a configured database. Production always wires
+ * the PostgreSQL repository during persistence initialization. */
+export function setAssetLifecycleRepositoryForTests(repository: PostgresAssetLifecycleRepository | undefined) {
+  const previous = { assetLifecycle: persistence.assetLifecycle, assetLifecycleRead: persistence.assetLifecycleRead }
+  persistence.assetLifecycle = repository
+  persistence.assetLifecycleRead = repository
+  return () => { Object.assign(persistence, previous) }
+}
 const workspaceEventSequences = new Map<string, number>()
 let assetStorage: ObjectStoragePort | undefined
 let ruleRepositoryOverride: RuleRepositoryPort | undefined
@@ -1442,10 +1464,10 @@ async function loadPlatformWorkspaceEnterpriseNames(workspaceIds: readonly strin
 
 function assetMcpDependencies() {
   return {
-    service, required, requestActor, requestId, accessibleAssetIds, assetDisplayProjection,
+    service, required, requestActor, requestId, accessibleAssetIds, filterActiveAssets, assetDisplayProjection,
     conversationalAssetScanWaitingState,
     getStorageQuotaSnapshot: async (workspaceId: string) => persistence.storageQuota?.getSnapshot(workspaceId),
-    configuredStorageQuotaLimit, enforceAssetAccess, executeDurableAssetParse, assetForWorkspace,
+    configuredStorageQuotaLimit, enforceAssetAccess, assertAssetActive, executeDurableAssetParse, assetForWorkspace,
     confirmDurableAssetFacts, enforceMcpCommercialAccess, persistSnapshot, persistEvent,
     uploadAssetForMcp, rejectMerchantVideoUpload, persistRejectedAssetUpload,
     signedAssetScanCallbackRequired, requireWorkerAuthorization, promoteAssetAndPersist,
@@ -2338,14 +2360,11 @@ async function generationRulePreflight(workspaceId: string, productId: string) {
   if (isProduction()) {
     const status = (await trustedPlatformRuleSyncStatuses(workspaceId)).find(item => item.platform === product.platform)
     if (!status || status.state !== 'ready') {
+      const nextActions = platformRuleDataRecoveryActions(process.env)
       throw new DomainError('PLATFORM_RULE_DATA_UNAVAILABLE', `未取得可验证且在有效期内的${status?.label ?? product.platform}平台规则，已阻止生成`, 503, {
         platform: product.platform,
         rule_sync: status ?? null,
-        next_actions: [
-          '通过 rule.sync.status 查看签名规则清单配置和平台级新鲜度',
-          '配置 PLATFORM_RULE_SYNC_MANIFEST_URL 与 PLATFORM_RULE_SYNC_SIGNING_SECRET 后调用 rule.sync.now',
-          '确认规则版本由 signed-rule-sync 导入并处于 active 状态后重试生成',
-        ],
+        next_actions: nextActions,
       })
     }
   }
@@ -2375,6 +2394,21 @@ async function generationRulePreflight(workspaceId: string, productId: string) {
   const currentRules = await evaluationRules(workspaceId, context)
   for (const term of currentRules?.forbiddenTerms ?? []) forbiddenTerms.add(term)
   return { blocking: findings.some(finding => finding.severity === 'error'), finding_count: findings.length, rule_hits: ruleHits, forbidden_terms: [...forbiddenTerms], findings }
+}
+
+export function platformRuleDataRecoveryActions(source: NodeJS.ProcessEnv = process.env) {
+  if (source.PLATFORM_OPERATIONS_MODE?.trim().toLowerCase() === 'manual') {
+    return [
+      '通过 rule.sync.status 查看目标平台的规则版本和新鲜度',
+      '请平台规则管理员在平台工作台导入经审阅的公共平台规则草稿，并由另一位审批人激活',
+      '确认目标平台规则处于 active 且 rule.sync.status 返回 ready 后重试生成',
+    ]
+  }
+  return [
+    '通过 rule.sync.status 查看签名规则清单配置和平台级新鲜度',
+    '配置 PLATFORM_RULE_SYNC_MANIFEST_URL、PLATFORM_RULE_SYNC_SIGNING_SECRET 与 PLATFORM_RULE_SYNC_INTERVAL_HOURS 后，由平台规则管理员调用 rule.sync.now',
+    '确认规则版本由 signed-rule-sync 导入并处于 active 状态后重试生成',
+  ]
 }
 
 async function requireGenerationRulePreflight(workspaceId: string, productId: string, message = '当前店铺平台规则存在阻断项，不能继续生成') {
@@ -3110,14 +3144,14 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const migrations = await loadMigrations()
     const expectedMigrationVersion = migrations.at(-1)?.version ?? 0
     const bridgeSchemaMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
-    if (bridgeSchemaMode && (!['prefix_242_or_244', 'prefix_254_or_255'].includes(bridgeSchemaMode) || process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false')) {
+    if (bridgeSchemaMode && (!['prefix_242_or_244', 'prefix_254_or_255', 'prefix_255_or_256'].includes(bridgeSchemaMode) || process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false')) {
       throw new Error('bridge runtime requires a reviewed schema compatibility mode and RUN_MIGRATIONS_ON_STARTUP=false')
     }
     if (process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') await runMigrations(sqlPool, migrations)
-    const bridgeSchemaVersion = bridgeSchemaMode === 'prefix_254_or_255'
+    const bridgeSchemaVersion = bridgeSchemaMode === 'prefix_254_or_255' || bridgeSchemaMode === 'prefix_255_or_256'
       ? await (async () => {
         const result = await pool.query<{ version: number; name: string; checksum: string | null }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version ASC')
-        return verifyBridgeMigrationPrefix(result.rows, migrations, bridgeSchemaMode) as 254 | 255
+        return verifyBridgeMigrationPrefix(result.rows, migrations, bridgeSchemaMode) as 254 | 255 | 256
       })()
       : undefined
     const outbox = new PostgresOutboxRepository(sqlPool)
@@ -3201,6 +3235,13 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const assetScanReceipts = new PostgresAssetScanReceiptRepository(sqlPool)
     const assetScanRedrive = new PostgresAssetScanRedriveRepository(sqlPool)
     const assetPromotionCleanup = new PostgresAssetPromotionCleanupRepository(sqlPool)
+    // Bridge images keep lifecycle mutations and purge disabled for the full
+    // rollout. Once the 255/256 bridge observes schema 256, retain a read-only
+    // projection so a rollback image cannot expose already-trashed assets.
+    const assetLifecycleRead = bridgeSchemaMode === undefined || bridgeSchemaVersion === 256
+      ? new PostgresAssetLifecycleRepository(sqlPool)
+      : undefined
+    const assetLifecycle = bridgeSchemaMode === undefined ? assetLifecycleRead : undefined
     const imageContinuationLeases = new PostgresImageContinuationLeaseRepository(sqlPool)
     const imageGenerationExecutions = new PostgresImageGenerationExecutionRepository(sqlPool)
     const reconciliationEvidence = new PostgresReconciliationEvidenceRepository(sqlPool)
@@ -3363,7 +3404,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, ...(bridgeSchemaVersion !== undefined ? { bridgeSchemaVersion } : {}), objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, ...(bridgeSchemaVersion !== undefined ? { bridgeSchemaVersion } : {}), objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, ...(assetLifecycleRead ? { assetLifecycleRead } : {}), ...(assetLifecycle ? { assetLifecycle } : {}), imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -4387,6 +4428,7 @@ function isHttpOnboardingExempt(path: string) {
   return path === '/mcp'
     || path === '/v1/internal/automation/tick'
     || path === '/v1/internal/storage/orphans/cleanup'
+    || path === '/v1/internal/assets/lifecycle/purge'
     || path === '/v1/platform-accounts'
     || path === '/v1/platform-capabilities'
     || path === '/v1/delivery-readiness'
@@ -5733,27 +5775,83 @@ function imageTrace(event: string, fields: Record<string, unknown> = {}) {
  * read from the immutable request outbox event rather than inferred from the
  * UI action key, so gifted/charged requests follow the same accounting path.
  */
-async function releaseImageReservationOnFailedReconcile(workspaceId: string, jobId: string, idempotencyKey: string) {
+async function releaseImageReservationOnFailedReconcile(workspaceId: string, jobId: string, idempotencyKey: string, expected: { eventId: string; reservationId: string; actionId: string }) {
   const repository = persistence.creativePoints
   const outbox = persistence.outbox
   if (!repository || !outbox) return { status: 'not_configured' as const, reservationId: null, points: null }
-  const requested = (await outbox.listAggregateEvents(workspaceId, jobId, 100)).find(event => event.eventType === 'image.generation.requested')
+  const requested = (await outbox.listAggregateEvents(workspaceId, jobId, 100)).find(event => event.id === expected.eventId && event.workspaceId === workspaceId && event.aggregateId === jobId && event.eventType === 'image.generation.requested')
   const snapshot = requested?.payload.commercial_access_snapshot
   const reservationId = snapshot && typeof snapshot === 'object' && typeof (snapshot as Record<string, unknown>).reservation_id === 'string'
     ? String((snapshot as Record<string, unknown>).reservation_id).trim()
     : ''
+  const actionId = requested && typeof requested.payload.action_id === 'string' ? requested.payload.action_id.trim() : ''
+  const accessMode = snapshot && typeof snapshot === 'object' ? (snapshot as Record<string, unknown>).access_mode : undefined
+  if (reservationId !== expected.reservationId || actionId !== expected.actionId || accessMode !== 'POINT_CHARGED') return { status: 'not_found' as const, reservationId: reservationId || null, points: null }
   if (!reservationId) return { status: 'not_found' as const, reservationId: null, points: null }
-  const reservation = await repository.getReservation(workspaceId, reservationId)
-  if (!reservation) return { status: 'not_found' as const, reservationId, points: null }
-  if (reservation.status !== 'active') return { status: reservation.status as 'released' | 'settled', reservationId, points: reservation.points }
-  const released = await repository.release({
-    workspaceId,
-    reservationId,
-    idempotencyKey: `image-reconcile-release:${jobId}:${idempotencyKey}`,
-    at: new Date().toISOString(),
-  })
+  if (!repository.releaseFailedProviderReservation) return { status: 'not_configured' as const, reservationId, points: null }
+  let released
+  try {
+    // A release belongs to the immutable request event, not to an operator's
+    // reconciliation attempt. Reusing this key lets a retry recover the
+    // projection after the release committed, while a different source event
+    // conflicts with the operation's request binding.
+    released = await repository.releaseFailedProviderReservation({ workspaceId, reservationId, actionKey: actionId, sourceEventId: expected.eventId, preProvider: true, idempotencyKey: `image-reconcile-release:${jobId}:${reservationId}`, at: new Date().toISOString() })
+  } catch (error) {
+    if (error instanceof CreativePointRepositoryError) throw new DomainError('IMAGE_GENERATION_PROVIDER_SUCCESS_EXISTS', '原商业操作已有 Provider 回执，禁止按 Provider 前置失败释放创意点', 409, { reconciliation_required: true })
+    throw error
+  }
   imageTrace('reconcile.points_released', { workspace_id: workspaceId, job_id: jobId, reservation_id: reservationId, points: released.value.points })
   return { status: 'released' as const, reservationId, points: released.value.points }
+}
+
+/** With no execution row, the worker's contract is that no provider call was
+ * made: it persists the image execution claim before invoking the provider.
+ * Bind that inference to the exact terminal, non-unknown request. */
+async function requirePreProviderImageFailureEvidence(input: { workspaceId: string; jobId: string; event: OutboxEvent }) {
+  const { workspaceId, jobId, event } = input
+  if (event.workspaceId !== workspaceId || event.aggregateId !== jobId || event.eventType !== 'image.generation.requested' || event.lastError?.terminal !== true || event.lastError?.unknown === true) {
+    throw new DomainError('IMAGE_GENERATION_PRE_PROVIDER_FAILURE_REQUIRED', '缺少与图片任务绑定的终态、非未知 Provider 前置失败证据', 409, { reconciliation_required: true })
+  }
+  const rawSnapshot = event.payload.commercial_access_snapshot
+  const snapshot = rawSnapshot && typeof rawSnapshot === 'object' && !Array.isArray(rawSnapshot) ? rawSnapshot as Record<string, unknown> : undefined
+  const reservationId = typeof snapshot?.reservation_id === 'string' ? snapshot.reservation_id.trim() : ''
+  const actionId = typeof event.payload.action_id === 'string' ? event.payload.action_id.trim() : ''
+  if (snapshot?.access_mode !== 'POINT_CHARGED' || !reservationId || !actionId) throw new DomainError('IMAGE_GENERATION_COMMERCIAL_SNAPSHOT_REQUIRED', '终止的原始图片请求缺少商业快照或 action 绑定，禁止释放创意点', 409, { reconciliation_required: true })
+  const points = persistence.creativePoints
+  if (!points) throw new DomainError('IMAGE_GENERATION_RECONCILIATION_EVIDENCE_UNAVAILABLE', '图片失败收口所需的创意点仓储不可用', 503)
+  const reservation = await points.getReservation(workspaceId, reservationId)
+  if (!reservation || reservation.actionKey !== actionId || !['active', 'released'].includes(reservation.status)) throw new DomainError('IMAGE_GENERATION_RESERVATION_NOT_RELEASABLE', '原始创意点预留不存在、已结算或与请求不匹配', 409, { reconciliation_required: true })
+  return { eventId: event.id, reservationId, actionId }
+}
+
+async function releaseFailedImageReservationWithEvidence(input: {
+  workspaceId: string
+  idempotencyKey: string
+  job: import('../../../packages/application/src/service.js').ImageGenerationJob
+  execution: import('../../../packages/persistence/src/image-generation-execution-repository.js').ImageGenerationExecution
+  requested?: OutboxEvent
+}) {
+  const { workspaceId, job, execution, requested } = input
+  if (!['failed', 'provider_started', 'outcome_unknown'].includes(execution.state)) throw new DomainError('IMAGE_GENERATION_FAILED_STATE_REQUIRED', '当前执行状态不允许依据 Provider 失败回执释放创意点', 409)
+  if (job.archiveState === 'archived' && imageJobOutputsAreClean(job)) throw new DomainError('IMAGE_GENERATION_DELIVERABLE_ARCHIVE_EXISTS', '图片任务已有可交付归档，禁止按失败任务释放创意点', 409, { reconciliation_required: true })
+  if (!requested || requested.id !== execution.eventId || requested.eventType !== 'image.generation.requested') throw new DomainError('IMAGE_GENERATION_ORIGINAL_OUTBOX_REQUIRED', '缺少与执行绑定的原始图片请求 outbox 证据，禁止释放创意点', 409, { reconciliation_required: true })
+  const rawSnapshot = requested.payload.commercial_access_snapshot
+  const snapshot = rawSnapshot && typeof rawSnapshot === 'object' && !Array.isArray(rawSnapshot) ? rawSnapshot as Record<string, unknown> : undefined
+  const reservationId = typeof snapshot?.reservation_id === 'string' ? snapshot.reservation_id.trim() : ''
+  const actionId = typeof requested.payload.action_id === 'string' ? requested.payload.action_id.trim() : ''
+  const providerRequestId = execution.providerRequestId?.trim() ?? ''
+  if (snapshot?.access_mode !== 'POINT_CHARGED' || !reservationId || !actionId || !providerRequestId) throw new DomainError('IMAGE_GENERATION_COMMERCIAL_SNAPSHOT_REQUIRED', '原始图片请求缺少付费商业快照或执行 Provider request id，禁止释放创意点', 409, { reconciliation_required: true })
+  const points = persistence.creativePoints
+  if (!points?.releaseFailedProviderReservation) throw new DomainError('IMAGE_GENERATION_RECONCILIATION_EVIDENCE_UNAVAILABLE', '图片失败收口所需的事务型创意点仓储不可用', 503)
+  let released
+  try {
+    released = await points.releaseFailedProviderReservation({ workspaceId, reservationId, actionKey: actionId, providerRequestId, sourceEventId: requested.id, idempotencyKey: `image-reconcile-release:${job.id}:${reservationId}`, at: new Date().toISOString() })
+  } catch (error) {
+    if (error instanceof CreativePointRepositoryError) throw new DomainError('IMAGE_GENERATION_PROVIDER_FAILED_EVIDENCE_REQUIRED', '原预留未绑定唯一、明确失败的 Provider 回执，禁止释放创意点', 409, { reconciliation_required: true })
+    throw error
+  }
+  imageTrace('reconcile.points_released', { workspace_id: workspaceId, job_id: job.id, reservation_id: reservationId, provider_request_id: providerRequestId, points: released.value.points })
+  return { status: 'released' as const, reservationId, points: released.value.points, operationId: released.value.operationId, actionId, providerRequestId }
 }
 
 /** A Provider result is deliverable only after its original point charge,
@@ -7867,6 +7965,7 @@ function imageJobOutputsAreClean(job: import('../../../packages/application/src/
 }
 
 async function sourceImagesForImageJob(workspaceId: string, job: import('../../../packages/application/src/service.js').ImageGenerationJob) {
+  for (const assetId of job.sourceAssetIds ?? []) await assertAssetActive(workspaceId, assetId)
   return imageArchiveHelpers.sourceImagesForImageJob(workspaceId, job)
 }
 
@@ -7917,6 +8016,12 @@ async function publicImageJobExecutionProjection(workspaceId: string, jobId: str
 function assetForWorkspace(workspaceId: string, assetId: string) {
   const asset = service.assets.get(assetId)
   if (!asset || asset.workspaceId !== workspaceId) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或不属于当前工作区', 404)
+  return asset
+}
+
+async function activeAssetForWorkspace(workspaceId: string, assetId: string) {
+  const asset = assetForWorkspace(workspaceId, assetId)
+  await assertAssetActive(workspaceId, assetId)
   return asset
 }
 
@@ -8312,7 +8417,7 @@ async function executeReadyImageContinuationOnce(workspaceId: string, jobId: str
   requireRuleSafeGenerationText(rulePreflight, [product.title, job.direction], '主图生成方向命中当前平台规则禁用表达')
   const imageTask = job.taskId ? service.getTask(job.taskId) : undefined
   service.assertBrandVisualGenerationReady(workspaceId, product.platform, imageTask?.region)
-  requireApprovedAssetForImageGeneration(workspaceId, product, job.sourceAssetIds)
+  await requireApprovedAssetForImageGeneration(workspaceId, product, job.sourceAssetIds)
 
   const walletDebitKey = `image:${job.idempotencyKey}`
   let entitlementConsumed = false
@@ -8750,6 +8855,7 @@ function isWorkerRoute(method: string | undefined, path: string): boolean {
       || path === '/v1/internal/billing/reconciliation'
       || path === '/v1/ops/data-deletion/complete'
       || path === '/v1/internal/storage/orphans/cleanup'
+      || path === '/v1/internal/assets/lifecycle/purge'
       || path === '/v1/internal/storage/reconciliation'
       || path === '/v1/internal/support/sla-scan'
       || path === '/v1/internal/support/sla-report'
@@ -8836,7 +8942,7 @@ function workerRouteRoles(method: string | undefined, path: string): WorkerReque
     if (path === '/v1/internal/knowledge-embeddings/admission' || path === '/v1/internal/knowledge-embeddings/outcome') return ['generation', 'automation']
     if (path === '/v1/internal/knowledge/generation-claims') return ['generation']
     if (path === '/v1/internal/model-usage/reconciliation' || path === '/v1/internal/storage/reconciliation' || path === '/v1/internal/support/sla-scan' || path === '/v1/internal/support/sla-report' || path === '/v1/internal/image-generation-jobs/reconciliation') return ['reconcile']
-    if (path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup') return ['automation']
+    if (path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup' || path === '/v1/internal/assets/lifecycle/purge') return ['automation']
     if (/^\/v1\/assets\/[^/]+\/scan$/u.test(path)) return ['scan']
   }
   if (method === 'PATCH' && /^\/v1\/internal\/knowledge\/generation-claims\/[^/]+$/u.test(path)) return ['generation']
@@ -9430,14 +9536,37 @@ async function accessibleAssetIds(req: IncomingMessage, workspaceId: string): Pr
   return accessible
 }
 
-async function enforceAssetAccess(req: IncomingMessage, workspaceId: string, assetId: string, minimumRole: BrandAccessRole = 'viewer') {
-  await assertAssetAccess(req, workspaceId, assetId, minimumRole)
+async function filterActiveAssets<T extends import('../../../packages/application/src/service.js').AssetMetadata>(workspaceId: string, assets: readonly T[]): Promise<T[]> {
+  const activeIds = await activeAssetIds(workspaceId, assets.map(asset => asset.id))
+  return assets.filter(asset => activeIds.has(asset.id))
+}
+
+async function activeAssetIds(workspaceId: string, assetIds: readonly string[]) {
+  const lifecycle = persistence.assetLifecycleRead ?? persistence.assetLifecycle
+  if (!lifecycle || assetIds.length === 0) return new Set(assetIds)
+  const trashed = new Set<string>()
+  for (let offset = 0; offset < assetIds.length; offset += 500) {
+    const ids = assetIds.slice(offset, offset + 500)
+    for (const assetId of await lifecycle.listTrashedAssetIds(workspaceId, ids)) trashed.add(assetId)
+  }
+  return new Set(assetIds.filter(assetId => !trashed.has(assetId)))
+}
+
+async function assertAssetActive(workspaceId: string, assetId: string) {
+  const lifecycle = persistence.assetLifecycleRead ?? persistence.assetLifecycle
+  if (lifecycle && !(await lifecycle.isActive(workspaceId, assetId))) throw new DomainError('ASSET_TRASHED', '素材已移入回收站，恢复后才能使用', 410)
+}
+
+async function enforceAssetAccess(req: IncomingMessage, workspaceId: string, assetId: string, minimumRole: BrandAccessRole = 'viewer', options: { allowTrashed?: boolean } = {}) {
+  await assertAssetAccess(req, workspaceId, assetId, minimumRole, options)
   rememberProviderResourceAccess(req, ['asset', workspaceId, assetId, minimumRole], () => assertAssetAccess(req, workspaceId, assetId, minimumRole))
 }
 
-async function assertAssetAccess(req: IncomingMessage, workspaceId: string, assetId: string, minimumRole: BrandAccessRole) {
+async function assertAssetAccess(req: IncomingMessage, workspaceId: string, assetId: string, minimumRole: BrandAccessRole, options: { allowTrashed?: boolean } = {}) {
   const localAsset = service.assets.get(assetId)
   if (localAsset && localAsset.workspaceId !== workspaceId) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或不属于当前工作区', 404)
+  const lifecycle = persistence.assetLifecycleRead ?? persistence.assetLifecycle
+  if (!options.allowTrashed && lifecycle && !(await lifecycle.isActive(workspaceId, assetId))) throw new DomainError('ASSET_TRASHED', '素材已移入回收站，恢复后才能使用', 410)
   const accessible = await accessibleAssetIds(req, workspaceId)
   if (accessible !== undefined && !accessible.has(assetId)) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或不属于当前可访问品', 404)
   if (minimumRole === 'viewer' || !requiresStrictAuth() || hasWorkspaceWideBrandAccess(req)) return
@@ -10370,6 +10499,7 @@ export function imageMcpRuntime() {
     publicImageJob,
     publicImageJobForCommercialRead,
     assetForWorkspace,
+    assertAssetActive,
     requireApprovedAssetForImageGeneration,
     issueImageSelectionTickets,
     consumeImageSelectionTicket,
@@ -11080,6 +11210,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         workspaceOnboarding,
         merchantOnboardingProjection,
         service,
+        filterActiveAssets,
         trustedPlatformRuleSyncStatuses,
         setupDiagnostics,
         persistence,
@@ -11824,7 +11955,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           const visualReviewCount = [...service.imageGenerationJobs.values()]
             .filter(job => job.workspaceId === targetWorkspaceId && job.archiveState === 'archived' && job.outputs?.some(output => output.reviewStatus !== 'passed'))
             .reduce((count, job) => count + (job.outputs ?? []).filter(output => output.reviewStatus !== 'passed').length, 0)
-          const assetRiskCount = service.listAssets(targetWorkspaceId).filter(asset => asset.readiness.status !== 'ready').length
+          const assetRiskCount = (await filterActiveAssets(targetWorkspaceId, service.listAssets(targetWorkspaceId))).filter(asset => asset.readiness.status !== 'ready').length
           const learningSuggestionCount = knowledgeForWorkspace(targetWorkspaceId).listLearningSuggestions(targetWorkspaceId, 'pending').length
           return { failed: false, taskCount: tasks.length, generationByState, publishByState, visualReviewCount, assetRiskCount, learningSuggestionCount }
         } catch {
@@ -11936,7 +12067,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           return [{ jobId: job.id, taskId: job.taskId ?? null, productId: job.productId, state: execution.state, archiveState: job.archiveState, eventId: execution.eventId, attempt: execution.attempt, providerRequestId: execution.providerRequestId ?? null, errorCode: execution.errorCode ?? null, errorMessage: execution.errorMessage ?? null, assignedOperatorId: job.assignedOperatorId ?? null, assignedAt: job.assignedAt ?? null, revision: job.revision, updatedAt: execution.updatedAt, reconciliationStatus: reconciliation?.status ?? null, reconciliationRevision: reconciliation?.revision ?? null, reconciliationEvidenceRef: typeof reconciliation?.details.evidenceRef === 'string' ? reconciliation.details.evidenceRef : null, reconciliationReason: typeof reconciliation?.details.reason === 'string' ? reconciliation.details.reason : null, alertState, lastAction, closureEvidence: reconciliation?.details.evidenceRef ?? null, nextAction: '查询真实 provider 状态或人工确认；禁止自动重试' }]
         }))).flat()
         : []
-      const matchingAssets = service.listAssets(workspaceId).filter(asset => asset.readiness.status !== 'ready' && !filterProductId && !filterTaskId && !filterAccountId && (!filterPlatform || !asset.applicablePlatforms?.length || asset.applicablePlatforms.includes(filterPlatform)))
+      const matchingAssets = (await filterActiveAssets(workspaceId, service.listAssets(workspaceId))).filter(asset => asset.readiness.status !== 'ready' && !filterProductId && !filterTaskId && !filterAccountId && (!filterPlatform || !asset.applicablePlatforms?.length || asset.applicablePlatforms.includes(filterPlatform)))
       const matchingAssetIds = new Set(matchingAssets.map(asset => asset.id))
       const durableScanFailures = persistence.assetScanRedrive && matchingAssets.length
         ? (await persistence.assetScanRedrive.listRetryableFailures(workspaceId, { limit: 100, scanMaxAttempts: configuredAssetScanMaxAttempts() })).filter(failure => matchingAssetIds.has(failure.assetId))
@@ -12000,25 +12131,39 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (currentStatus?.lastIdempotencyKey === idempotencyKey) return result(currentStatus)
       const execution = await repository.get({ workspaceId, jobId })
       const aggregateEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, jobId, 100) : []
-      const terminalDispatchFailure = aggregateEvents.find(event => event.eventType === 'image.generation.requested' && event.lastError?.terminal === true && event.lastError?.unknown !== true)
+      const terminalDispatchFailures = aggregateEvents.filter(event => event.eventType === 'image.generation.requested' && event.lastError?.terminal === true && event.lastError?.unknown !== true)
+      const recoverablePreProviderProjection = !execution && resolution === 'failed' && job.state === 'failed' && job.errorCode === 'IMAGE_GENERATION_MANUAL_FAILED'
+      if (!execution && resolution === 'failed' && (job.state === 'queued' || recoverablePreProviderProjection) && terminalDispatchFailures.length > 1) throw new DomainError('IMAGE_GENERATION_PRE_PROVIDER_FAILURE_AMBIGUOUS', '存在多个终态图片请求事件，无法唯一绑定原始预留，禁止失败收口', 409, { reconciliation_required: true, terminal_event_count: terminalDispatchFailures.length })
+      const terminalDispatchFailure = terminalDispatchFailures.length === 1 ? terminalDispatchFailures[0] : undefined
+      const failedProjectionEvents = aggregateEvents.filter(event => event.eventType === 'image.generation.failed' && event.payload.job_id === jobId)
+      const matchingFailedProjection = terminalDispatchFailure && failedProjectionEvents.find(event => event.payload.source_event_id === terminalDispatchFailure.id)
+      if (!execution && resolution === 'failed' && failedProjectionEvents.some(event => event.payload.source_event_id !== terminalDispatchFailure?.id)) throw new DomainError('IMAGE_GENERATION_PRE_PROVIDER_PROJECTION_CONFLICT', '已有失败投影绑定到其他图片请求事件，禁止覆盖', 409, { reconciliation_required: true })
+      const originalRequestedEvent = execution ? aggregateEvents.find(event => event.id === execution.eventId && event.eventType === 'image.generation.requested') : undefined
       // A worker can reject an event before creating an execution row (for
       // example, a stale authorization snapshot). That is still a durable,
       // pre-provider failure: it must be closeable and release its point
       // reservation, but it can never be treated as a successful execution.
-      if (!execution && resolution === 'failed' && job.state === 'queued' && terminalDispatchFailure) {
-        if (expectedRevision !== undefined && job.revision !== expectedRevision) throw new DomainError('IMAGE_GENERATION_REVISION_CONFLICT', '图片任务已变化，请刷新后重试', 409)
-        const failed = service.markImageGenerationFailed({ workspaceId, jobId, errorCode: 'IMAGE_GENERATION_MANUAL_FAILED', errorMessage: reason, ...(expectedRevision !== undefined ? { expectedRevision } : {}) })
-        await persistence.persistSnapshotAndEvent?.({ workspaceId, entityType: 'image_generation_job', entityId: failed.id, entityVersion: failed.revision, payload: failed as unknown as Record<string, unknown>, eventType: 'image.generation.failed', eventPayload: { job_id: failed.id, error_code: failed.errorCode, error_message: failed.errorMessage, manual: true, evidence_ref: evidenceRef, source_event_id: terminalDispatchFailure.id, source_error_code: terminalDispatchFailure.lastError?.code ?? null } })
-        const points = await releaseImageReservationOnFailedReconcile(workspaceId, jobId, idempotencyKey)
+      if (!execution && resolution === 'failed' && (job.state === 'queued' || recoverablePreProviderProjection) && terminalDispatchFailure) {
+        const expectedRevisionMatchesRetry = recoverablePreProviderProjection && expectedRevision !== undefined && expectedRevision + 1 === job.revision
+        if (expectedRevision !== undefined && job.revision !== expectedRevision && !expectedRevisionMatchesRetry) throw new DomainError('IMAGE_GENERATION_REVISION_CONFLICT', '图片任务已变化，请刷新后重试', 409)
+        const preProviderEvidence = await requirePreProviderImageFailureEvidence({ workspaceId, jobId, event: terminalDispatchFailure })
+        const points = await releaseImageReservationOnFailedReconcile(workspaceId, jobId, idempotencyKey, preProviderEvidence)
+        if (points.status !== 'released') throw new DomainError('IMAGE_GENERATION_RESERVATION_RELEASE_INCOMPLETE', '终止图片请求的原始创意点预留未能确认释放', 409, { release_status: points.status })
+        const failed = recoverablePreProviderProjection
+          ? job
+          : service.markImageGenerationFailed({ workspaceId, jobId, errorCode: 'IMAGE_GENERATION_MANUAL_FAILED', errorMessage: reason, ...(expectedRevision !== undefined ? { expectedRevision } : {}) })
+        if (!matchingFailedProjection) {
+          await persistence.persistSnapshotAndEvent?.({ workspaceId, entityType: 'image_generation_job', entityId: failed.id, entityVersion: failed.revision, payload: failed as unknown as Record<string, unknown>, eventType: 'image.generation.failed', eventPayload: { job_id: failed.id, error_code: failed.errorCode, error_message: failed.errorMessage, manual: true, evidence_ref: evidenceRef, source_event_id: terminalDispatchFailure.id, source_error_code: terminalDispatchFailure.lastError?.code ?? null } })
+        }
         const status = await statusRepository.upsert({ workspaceId, resourceType: 'image_generation_execution', resourceId: jobId, status: 'failed', idempotencyKey, details: { resolution, evidenceRef, reason, executionState: 'not_started', settledState: 'failed', recoveredProjection: true, terminalDispatchFailure: { eventId: terminalDispatchFailure.id, code: terminalDispatchFailure.lastError?.code ?? null }, creativePointsReleased: points.status === 'released', creativePointsReleaseStatus: points.status, creativePointsReleasedAmount: points.points }, observedAt: new Date().toISOString() })
         await recordOperationAudit({ workspaceId, actorId, action: 'ops.marketing.image.reconcile.recover', resourceType: 'image_generation_execution', resourceId: jobId, before: { executionState: null, jobState: job.state, terminalDispatchFailure: terminalDispatchFailure.id }, after: { resolution, reconciliationRevision: status.revision, recoveredProjection: true, creativePointsReleaseStatus: points.status }, reason })
         return result({ jobId, resolution, execution: null, reconciliation: status, recoveredProjection: true, creativePoints: points })
       }
-      if (execution?.state === 'failed' && resolution === 'failed' && job.state === 'failed' && job.errorCode === 'IMAGE_GENERATION_MANUAL_FAILED') {
-        const points = await releaseImageReservationOnFailedReconcile(workspaceId, jobId, idempotencyKey)
+      if (execution?.state === 'failed' && resolution === 'failed' && job.state === 'failed') {
+        const points = await releaseFailedImageReservationWithEvidence({ workspaceId, idempotencyKey, job, execution, requested: originalRequestedEvent })
         const status = await statusRepository.upsert({ workspaceId, resourceType: 'image_generation_execution', resourceId: jobId, status: 'failed', idempotencyKey, details: { resolution, evidenceRef, reason, executionState: execution.state, settledState: execution.state, recoveredProjection: true, creativePointsReleased: (points as { status: string }).status === 'released', creativePointsReleaseStatus: points.status, creativePointsReleasedAmount: points.points }, observedAt: new Date().toISOString() })
-        await recordOperationAudit({ workspaceId, actorId, action: 'ops.marketing.image.reconcile.recover', resourceType: 'image_generation_execution', resourceId: jobId, before: { executionState: execution.state, reconciliationProjection: 'missing' }, after: { resolution, reconciliationRevision: status.revision, recoveredProjection: true }, reason })
-        return result({ jobId, resolution, execution, reconciliation: status, recoveredProjection: true })
+        await recordOperationAudit({ workspaceId, actorId, action: 'ops.marketing.image.reconcile.recover', resourceType: 'image_generation_execution', resourceId: jobId, before: { executionState: execution.state, jobState: job.state, reconciliationProjection: 'missing' }, after: { resolution, reconciliationRevision: status.revision, recoveredProjection: true, reservationId: points.reservationId, reservationStatus: points.status, originalEventId: originalRequestedEvent!.id, commercialOperationId: points.operationId, providerRequestId: points.providerRequestId }, reason })
+        return result({ jobId, resolution, execution, reconciliation: status, recoveredProjection: true, creativePoints: points })
       }
       if (execution?.state === 'completed' && resolution === 'completed' && job.state === 'succeeded' && job.archiveState === 'archived' && imageJobOutputsAreClean(job)) {
         const status = await statusRepository.upsert({ workspaceId, resourceType: 'image_generation_execution', resourceId: jobId, status: 'succeeded', idempotencyKey, details: { resolution, evidenceRef, reason, executionState: execution.state, settledState: execution.state, recoveredProjection: true }, observedAt: new Date().toISOString() })
@@ -12028,16 +12173,16 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!execution || !['provider_started', 'outcome_unknown'].includes(execution.state)) throw new DomainError('IMAGE_GENERATION_EXECUTION_NOT_RECONCILABLE', '当前图片执行不在可人工收口状态', 409)
       if (expectedRevision !== undefined && job.revision !== expectedRevision) throw new DomainError('IMAGE_GENERATION_REVISION_CONFLICT', '图片任务已变化，请刷新后重试', 409)
       if (resolution === 'completed' && !(job.state === 'succeeded' && job.archiveState === 'archived' && imageJobOutputsAreClean(job))) throw new DomainError('IMAGE_GENERATION_COMPLETION_EVIDENCE_REQUIRED', '只有任务已成功、产物已归档且安全扫描通过时才能人工确认完成', 409, { reconciliation_required: true })
+      const points = resolution === 'failed'
+        ? await releaseFailedImageReservationWithEvidence({ workspaceId, idempotencyKey, job, execution, requested: originalRequestedEvent })
+        : { status: 'not_applicable' as const, reservationId: null, points: null }
       let settled
       if (resolution === 'completed') settled = await repository.reconcileCompleted({ workspaceId, jobId })
       else {
         const failed = service.markImageGenerationFailed({ workspaceId, jobId, errorCode: 'IMAGE_GENERATION_MANUAL_FAILED', errorMessage: reason, ...(expectedRevision !== undefined ? { expectedRevision } : {}) })
-        await persistence.persistSnapshotAndEvent?.({ workspaceId, entityType: 'image_generation_job', entityId: failed.id, entityVersion: failed.revision, payload: failed as unknown as Record<string, unknown>, eventType: 'image.generation.failed', eventPayload: { job_id: failed.id, error_code: failed.errorCode, error_message: failed.errorMessage, manual: true, evidence_ref: evidenceRef } })
+        await persistence.persistSnapshotAndEvent?.({ workspaceId, entityType: 'image_generation_job', entityId: failed.id, entityVersion: failed.revision, payload: failed as unknown as Record<string, unknown>, eventType: 'image.generation.failed', eventPayload: { job_id: failed.id, error_code: failed.errorCode, error_message: failed.errorMessage, manual: true, evidence_ref: evidenceRef, source_event_id: originalRequestedEvent!.id } })
         settled = await repository.reconcileFailed({ workspaceId, jobId, errorCode: failed.errorCode ?? 'IMAGE_GENERATION_MANUAL_FAILED', errorMessage: failed.errorMessage ?? reason })
       }
-      const points = resolution === 'failed'
-        ? await releaseImageReservationOnFailedReconcile(workspaceId, jobId, idempotencyKey)
-        : { status: 'not_applicable' as const, reservationId: null, points: null }
       const status = await statusRepository.upsert({ workspaceId, resourceType: 'image_generation_execution', resourceId: jobId, status: resolution === 'completed' ? 'succeeded' : 'failed', idempotencyKey, details: { resolution, evidenceRef, reason, executionState: execution.state, settledState: settled.state, creativePointsReleased: points.status === 'released', creativePointsReleaseStatus: points.status, creativePointsReleasedAmount: points.points }, observedAt: new Date().toISOString() })
       await recordOperationAudit({ workspaceId, actorId, action: 'ops.marketing.image.reconcile', resourceType: 'image_generation_execution', resourceId: jobId, before: { executionState: execution.state, jobRevision: job.revision }, after: { resolution, status: settled.state, reconciliationRevision: status.revision }, reason })
       return result({ jobId, resolution, execution: settled, reconciliation: status })
@@ -13812,6 +13957,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   const workerNeedsWorkspaceHydration = workerRoute && (
     /^\/v1\/internal\/image-generation-jobs\/[^/]+\/(?:result|execution|reconciliation-evidence)$/u.test(path)
     || path === '/v1/internal/image-generation-jobs/reconciliation'
+    || path === '/v1/internal/assets/lifecycle/purge'
     || /^\/v1\/internal\/image-generation-continuations\/[^/]+\/execute$/u.test(path)
   )
   const assetScannerRoute = isAssetScannerRoute(req.method, path)
@@ -13936,6 +14082,8 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     await requireStoreOnboarding(requestWorkspace, storeBoundaryScopeForHttp(httpOperationPolicy, path))
   }
   const httpCommercialValidationDeferred = (req.method === 'PUT' && /^\/v1\/assets\/[^/]+\/preference$/u.test(path))
+    || (req.method === 'POST' && /^\/v1\/assets\/[^/]+\/(?:trash|restore)$/u.test(path))
+    || (req.method === 'GET' && path === '/v1/assets/trash')
     || (req.method === 'POST' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/manual-record$/u.test(path))
     || (req.method === 'POST' && path === '/v1/brand-profile/extract')
     // Charged REST generation is intentionally refused in production until
@@ -14221,7 +14369,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   await enforceRateLimit(req, platformRateScope ?? requestWorkspace ?? 'unknown')
   if (await handleHttpCatalogReadRoute(req, res, path, url, { service, business: persistence.business, resolveWorkspace, accessibleTaskBrandIds, accessibleProductIds, filterByTaskBrandAccess, send })) return
   if ((req.method === 'GET' && (/^\/v1\/products\/[^/]+(?:\/assets|\/image-review)?$/.test(path) || /^\/v1\/assets\/[^/]+\/products$/.test(path))) || ((req.method === 'POST' || req.method === 'DELETE') && /^\/v1\/products\/[^/]+\/assets$/.test(path))) {
-    await handleHttpProductAssetRoute(req, res, path, { service, business: persistence.business, persistenceReady, resolveWorkspace, enforceProductBrandAccess, enforceProductBrandBinding, accessibleProductIds, requestActor, body: req => body(req), send })
+    await handleHttpProductAssetRoute(req, res, path, { service, business: persistence.business, persistenceReady, resolveWorkspace, enforceProductBrandAccess, enforceProductBrandBinding, accessibleProductIds, filterActiveAssetIds: activeAssetIds, assertAssetActive, requestActor, body: req => body(req), send })
     return
   }
   if (req.method === 'GET' && (path === '/v1/platform-capabilities' || path === '/v1/delivery-readiness')) {
@@ -14238,6 +14386,8 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     body: request => body(request),
     resolveWorkspace: (request, candidate) => resolveWorkspace(request, candidate),
     enforceAccess: (request, workspaceId, write) => enforceBrandProfileHttpAccess(request, workspaceId, write),
+    filterActiveAssetIds: activeAssetIds,
+    assertAssetActive,
     requireActionableStore: (workspaceId, accountId) => { service.getActionablePlatformAccount(workspaceId, accountId) },
     actor: request => requestActor(request),
     send: (response, status, workspaceId, value, error, request) => send(response, status, workspaceId, value, error, request),
@@ -14348,6 +14498,58 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       void persistOperationalAlertNotification(alert)
     }
     return send(res, 200, workspaceId, { ...cleanup, worker_id: workerId }, null, req)
+  }
+  if (path === '/v1/internal/assets/lifecycle/purge' && req.method === 'POST') {
+    await requireWorkerAuthorization(req)
+    await persistenceReady
+    const input = await body(req)
+    const workspaceId = resolveWorkspace(req, input.workspace_id)
+    const workerId = headerRequired(req, 'x-worker-id')
+    const lifecycle = persistence.assetLifecycle
+    if (!lifecycle || !persistence.business) throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '素材到期清理所需的持久层暂不可用', 503)
+    const limit = typeof input.limit === 'number' ? input.limit : 25
+    const claimed = await lifecycle.claimExpired({ workspaceId, workerId, limit })
+    const rows = await persistence.business.loadWorkspace(workspaceId)
+    const hasObjectReference = (value: unknown, key: string): boolean => {
+      if (Array.isArray(value)) return value.some(item => hasObjectReference(item, key))
+      if (!value || typeof value !== 'object') return false
+      return Object.entries(value as Record<string, unknown>).some(([name, child]) =>
+        ((name === 'storageKey' || name === 'storage_key') && child === key) || hasObjectReference(child, key))
+    }
+    let purged = 0
+    let retried = 0
+    let blockedByReferences = 0
+    for (const item of claimed) {
+      try {
+        const asset = service.assets.get(item.assetId)
+        if (!asset || asset.workspaceId !== workspaceId || !asset.storageKey) throw new DomainError('ASSET_LIFECYCLE_SNAPSHOT_MISSING', '到期素材快照不可用，已保留回收记录并安排重试', 503)
+        const referenced = rows.some(snapshot => snapshot.entityType === 'asset' && snapshot.entityId !== item.assetId && hasObjectReference(snapshot.payload, asset.storageKey))
+          || service.listAssets(workspaceId).some(other => other.id !== asset.id && other.storageKey === asset.storageKey)
+        if (referenced) {
+          blockedByReferences += 1
+          await lifecycle.failPurge({ workspaceId, assetId: item.assetId, workerId, leaseToken: item.leaseToken, error: { code: 'ASSET_OBJECT_STILL_REFERENCED', object_key: asset.storageKey } })
+          retried += 1
+          continue
+        }
+        const storage = getAssetStorage()
+        const existing = await storage.head(workspaceId, asset.storageKey, { includeQuarantine: true })
+        let verification: 'delete_ack' | 'head_absent' = 'head_absent'
+        if (existing) {
+          await storage.delete(workspaceId, asset.storageKey, { includeQuarantine: true })
+          const afterDelete = await storage.head(workspaceId, asset.storageKey, { includeQuarantine: true })
+          if (afterDelete) throw new DomainError('ASSET_OBJECT_DELETE_UNVERIFIED', '对象存储未确认删除素材对象', 503)
+          verification = 'delete_ack'
+        }
+        const reservationKey = reservationKeyForObjectKey(asset.storageKey, workspaceId)
+        if (reservationKey && persistence.storageQuota) await persistence.storageQuota.releaseAfterPhysicalDeletion({ workspaceId, reservationKey, receipt: { objectKey: asset.storageKey, deletedAt: new Date().toISOString(), verification } })
+        await lifecycle.completePurge({ workspaceId, assetId: item.assetId, workerId, leaseToken: item.leaseToken })
+        purged += 1
+      } catch (error) {
+        retried += 1
+        await lifecycle.failPurge({ workspaceId, assetId: item.assetId, workerId, leaseToken: item.leaseToken, error: { code: error instanceof DomainError ? error.code : 'ASSET_LIFECYCLE_PURGE_FAILED', message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500) } }).catch(() => undefined)
+      }
+    }
+    return send(res, 200, workspaceId, { purged, retried, blocked_by_references: blockedByReferences, claimed: claimed.length, worker_id: workerId }, null, req)
   }
   if (await handleSyncJobRoute(req, res, path, syncJobRouteDeps)) return
   if (handleHttpSyncJobRead(req, res, path, url, { service, resolveWorkspace, paginationRequest, projectSyncWorkflow, send })) return

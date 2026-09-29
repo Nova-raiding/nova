@@ -8,13 +8,13 @@ import { loadMigrations, MigrationRunner, verifyAppliedMigrations } from '../pac
 import { assertBridgeStartupMigrationVersion, assertWorkerReadinessDependencies } from '../apps/worker/src/main.js'
 import { createIsolatedOpsFixture } from './isolated-ops-fixture.js'
 
-async function runWorkerOnce(input: { databaseUrl: string; redisUrl: string; workspaceId: string; evidenceDir: string; expectedVersion: number | null }): Promise<void> {
+async function runWorkerOnce(input: { databaseUrl: string; redisUrl: string; workspaceId: string; evidenceDir: string; expectedVersion: number | null; bridgeMode?: string }): Promise<void> {
   const env: NodeJS.ProcessEnv = {
     PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin', HOME: '/nonexistent', LANG: 'C.UTF-8',
     NODE_ENV: 'development', DATABASE_URL: input.databaseUrl, REDIS_URL: input.redisUrl,
     WORKER_ROLE: 'sync', WORKER_WORKSPACES: input.workspaceId, WORKER_ONCE: 'true',
     WORKER_METRICS_PORT: '0', WORKER_READY_FILE: resolve(input.evidenceDir, `worker-${input.expectedVersion ?? 'partial'}.ready`),
-    BRIDGE_SCHEMA_COMPATIBILITY_MODE: 'prefix_254_or_255',
+    BRIDGE_SCHEMA_COMPATIBILITY_MODE: input.bridgeMode ?? 'prefix_254_or_255',
   }
   const child = spawn(process.execPath, ['--import', 'tsx', 'apps/worker/src/main.ts'], {
     cwd: resolve('.'), env, stdio: ['ignore', 'pipe', 'pipe'],
@@ -60,7 +60,7 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
     const app = new Pool({ connectionString: appUrl.toString() })
     try {
       const migrations = await loadMigrations()
-      expect(migrations.at(-1)?.version).toBe(255)
+      expect(migrations.at(-1)?.version).toBe(256)
       const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       const databaseGrant = /ON DATABASE merchant\b/gu
       expect([...roleSql.matchAll(databaseGrant)]).toHaveLength(3)
@@ -85,13 +85,13 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
       await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
         workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 254 })
 
-      expect(await new MigrationRunner(admin, migrations).run()).toEqual([255])
+      expect(await new MigrationRunner(admin, migrations.slice(0, 255)).run()).toEqual([255])
       await admin.query(isolatedRoleSql)
       const history = (await admin.query<{ version: number; name: string; checksum: string }>(
         'SELECT version,name,checksum FROM schema_migrations ORDER BY version',
       )).rows
       expect(history).toHaveLength(255)
-      expect(() => verifyAppliedMigrations(history, migrations)).not.toThrow()
+      expect(() => verifyAppliedMigrations(history, migrations.slice(0, 255))).not.toThrow()
 
       const ready255 = await assertWorkerReadinessDependencies({
         database: app,
@@ -105,6 +105,21 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
       expect(() => assertBridgeStartupMigrationVersion(ready255.migrationVersion, ready255.migrationVersion)).not.toThrow()
       await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
         workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 255 })
+
+      const ready255OnNewBridge = await assertWorkerReadinessDependencies({
+        database: app, expectedMigrations: migrations, bridgeMigrations: migrations, bridgeMode: 'prefix_255_or_256',
+      })
+      expect(ready255OnNewBridge).toEqual({ migrationVersion: 255, apiReady: false })
+      expect(() => assertBridgeStartupMigrationVersion(ready255OnNewBridge.migrationVersion, 256))
+        .toThrow('bridge database migration prefix changed; restart the worker before processing tasks')
+      expect(await new MigrationRunner(admin, migrations).run()).toEqual([256])
+      const ready256 = await assertWorkerReadinessDependencies({
+        database: app, expectedMigrations: migrations, bridgeMigrations: migrations, bridgeMode: 'prefix_255_or_256',
+      })
+      expect(ready256).toEqual({ migrationVersion: 256, apiReady: false })
+      expect(() => assertBridgeStartupMigrationVersion(ready256.migrationVersion, 256)).not.toThrow()
+      await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
+        workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 256, bridgeMode: 'prefix_255_or_256' })
     } finally {
       await app.end()
       await admin.end()

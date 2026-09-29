@@ -327,7 +327,13 @@ describe('ops dogfood retirements', () => {
 
   it.each(RETIRED_SURFACES)('keeps "$form" out of the ops specs ($note)', ({ form }) => {
     const offenders = guardedSpecs()
-      .filter(spec => spec.surface.includes(form))
+      // The dogfood specs must still name a withdrawn label to assert that its
+      // button is absent. Strip only those exact negative assertions; positive
+      // visibility checks remain in the guarded assertion surface.
+      .filter(spec => {
+        const negative = spec.surface.replace(/[^\n]*\.toHaveCount\(0\)[^\n]*\n/gu, '')
+        return negative.includes(form)
+      })
       .map(spec => spec.name)
     expect(
       offenders,

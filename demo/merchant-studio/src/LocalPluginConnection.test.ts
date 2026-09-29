@@ -32,12 +32,15 @@ describe('local plugin connection entry', () => {
     expect(app).toContain("event.target.closest('.merchant-local-plugin-modal')")
   })
 
-  it('presents a one-click entry without showing shell commands to merchants', () => {
+  it('presents a one-click entry with a gated local recovery path', () => {
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
     const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account }))
     expect(markup).toContain('连接 ChatGPT 本地插件')
     expect(markup).toContain('安装与故障帮助')
-    expect(markup).not.toMatch(/login-local|login\.cmd|runtime\/node/u)
+    expect(component).toContain('生产发布门禁尚未通过，暂不能启用一键连接')
+    expect(component).not.toContain('Developer ID 签名和 Apple 公证验证')
+    expect(component).toContain('本地验证恢复路径')
+    expect(component).toContain('loginCommand')
     expect(component).toContain('install-instances/pair')
     expect(component).toContain('installation_id: installationId')
     expect(component).toContain('检查 Store Nova 插件是否已连接')
@@ -93,6 +96,11 @@ describe('local plugin connection entry', () => {
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
     expect(component).toContain('点击连接并按浏览器提示打开本地插件')
     expect(component).toContain('一键授权暂未开放')
+    expect(component).not.toContain('Developer ID 签名和 Apple 公证验证')
+    expect(component).toContain('优先重新运行平台提供的 macOS 安装包')
+    expect(component).toContain('运行前请确认商家后台登录账号为 {account.login}')
+    expect(component).toContain('浏览器授权完成后，还要等待安装器确认本机凭据保存成功')
+    expect(component).toContain('完全退出并重新打开 ChatGPT')
     expect(component).not.toContain('查看安装与登录步骤')
   })
 

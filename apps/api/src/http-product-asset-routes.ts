@@ -14,6 +14,8 @@ export async function handleHttpProductAssetRoute(req: IncomingMessage, res: Ser
   enforceProductBrandAccess: (req: IncomingMessage, workspaceId: string, productId: string) => Promise<unknown>
   enforceProductBrandBinding: (req: IncomingMessage, workspaceId: string, productId: string, brandId: string) => Promise<unknown>
   accessibleProductIds: (req: IncomingMessage, workspaceId: string) => Promise<ReadonlySet<string> | undefined>
+  filterActiveAssetIds?: (workspaceId: string, assetIds: readonly string[]) => Promise<ReadonlySet<string>>
+  assertAssetActive?: (workspaceId: string, assetId: string) => Promise<void>
   requestActor: (req: IncomingMessage) => string
   body: (req: IncomingMessage) => Promise<JsonObject>
   send: Send
@@ -27,10 +29,16 @@ export async function handleHttpProductAssetRoute(req: IncomingMessage, res: Ser
     if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
     await deps.enforceProductBrandAccess(req, workspaceId, productId)
     if (deps.business) {
-      const items = await deps.business.listProductAssetBindings(workspaceId, { productId })
+      const bindings = await deps.business.listProductAssetBindings(workspaceId, { productId })
+      const activeIds = deps.filterActiveAssetIds ? await deps.filterActiveAssetIds(workspaceId, bindings.map(item => item.assetId)) : undefined
+      const items = activeIds ? bindings.filter(item => activeIds.has(item.assetId)) : bindings
       return deps.send(res, 200, workspaceId, { items, source: 'normalized_relation' }, null, req)
     }
+    const activeAssets = deps.filterActiveAssetIds
+      ? (await deps.filterActiveAssetIds(workspaceId, deps.service.listAssets(workspaceId).map(asset => asset.id)))
+      : undefined
     const items = deps.service.listAssets(workspaceId)
+      .filter(asset => !activeAssets || activeAssets.has(asset.id))
       .filter(asset => product.sourceAssetIds?.includes(asset.id))
       .map((asset, index) => ({ workspaceId, productId, assetId: asset.id, assetRole: 'source' as const, ordinal: index + 1, status: 'active' as const, createdAt: asset.createdAt, updatedAt: asset.createdAt }))
     return deps.send(res, 200, workspaceId, { items, source: 'compatibility_projection' }, null, req)
@@ -48,6 +56,7 @@ export async function handleHttpProductAssetRoute(req: IncomingMessage, res: Ser
     const ordinal = input.ordinal === undefined ? undefined : Number(input.ordinal)
     const reason = typeof input.reason === 'string' ? input.reason.trim() : ''
     if (!assetId || !brandId || !reason || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || (ordinal !== undefined && (!Number.isSafeInteger(ordinal) || ordinal < 1)) || !['source', 'main', 'secondary', 'detail'].includes(assetRole)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'asset_id、brand_id、reason、expected_version 和合法 asset_role 为必填项', 400)
+    await deps.assertAssetActive?.(workspaceId, assetId)
     await deps.enforceProductBrandBinding(req, workspaceId, productId, brandId)
     const actorId = deps.requestActor(req)
     try {
@@ -74,6 +83,7 @@ export async function handleHttpProductAssetRoute(req: IncomingMessage, res: Ser
     const assetId = decodeURIComponent(assetProductsMatch[1]!)
     const asset = deps.service.listAssets(workspaceId).find(item => item.id === assetId)
     if (!asset) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或不属于当前工作区', 404)
+    await deps.assertAssetActive?.(workspaceId, assetId)
     const accessibleIds = await deps.accessibleProductIds(req, workspaceId)
     if (deps.business) {
       const items = (await deps.business.listProductAssetBindings(workspaceId, { assetId })).filter(item => accessibleIds === undefined || accessibleIds.has(item.productId))

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
 import { contextEnvelopeHash, loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { generationKnowledgeReceiptHash } from '../../../packages/application/src/knowledge-execution-fence.js'
 import { verifyWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
@@ -202,6 +202,11 @@ describe('worker production entry', () => {
     expect(isImageProviderOutcomeUnknown({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', details: { reconciliation_required: true } })).toBe(true)
     expect(isImageProviderOutcomeUnknown({ code: 'MODEL_PROVIDER_REQUEST_FAILED', providerOutcome: 'failed', providerSucceeded: false })).toBe(false)
   })
+  it('preserves only bounded provider request ids from settlement failures', () => {
+    expect(imageProviderRequestIdFromError({ providerRequestId: ' qwen-request-1 ' })).toBe('qwen-request-1')
+    expect(imageProviderRequestIdFromError({ providerRequestId: 'bad\nrequest' })).toBeUndefined()
+    expect(imageProviderRequestIdFromError({ providerRequestId: 'x'.repeat(257) })).toBeUndefined()
+  })
   it('requires the persisted image provider action instead of fabricating one in the worker', () => {
     expect(requireImageGenerationActionId({ action_id: ' image:request_1 ' })).toBe('image:request_1')
     expect(() => requireImageGenerationActionId({})).toThrow(expect.objectContaining({ code: 'IMAGE_GENERATION_ACTION_ID_REQUIRED', retryable: false, unknown: false }))
@@ -377,7 +382,7 @@ describe('worker production entry', () => {
         .resolves.toEqual({ migrationVersion: version, apiReady: false })
     }
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations }))
-      .rejects.toThrow('expected complete migration chain through 255')
+      .rejects.toThrow('expected complete migration chain through 256')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 253)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
       .rejects.toThrow('exactly 254 or 255')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254).map((row, index) => index === 253 ? { ...row, checksum: 'a'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
@@ -385,6 +390,28 @@ describe('worker production entry', () => {
     expect(() => assertBridgeStartupMigrationVersion(254, 254)).not.toThrow()
     expect(() => assertBridgeStartupMigrationVersion(254, 255)).toThrow('restart the worker')
     expect(() => assertBridgeStartupMigrationVersion(255, 254)).toThrow('restart the worker')
+  })
+
+  it('requires exact 255 or 256 checksummed history for a 256 bridge worker image', async () => {
+    const migrations = await loadMigrations()
+    const rows = migrations.map(item => ({ version: item.version, name: item.name, checksum: createHash('sha256').update(item.sql).digest('hex') }))
+    const database = (selected: typeof rows) => ({ query: async () => ({ rows: selected }) })
+    for (const version of [255, 256]) {
+      await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, version)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
+        .resolves.toEqual({ migrationVersion: version, apiReady: false })
+    }
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
+      .rejects.toThrow('exactly 255 or 256')
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 255)), expectedMigrations: migrations }))
+      .rejects.toThrow('expected complete migration chain through 256')
+    await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 256).map((row, index) => index === 255 ? { ...row, checksum: 'b'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
+      .rejects.toThrow('checksum mismatch')
+  })
+
+  it('does not call the migration 256 purge endpoint from a 255 bridge worker', () => {
+    expect(shouldRunAssetLifecyclePurge('prefix_255_or_256', 255)).toBe(false)
+    expect(shouldRunAssetLifecyclePurge('prefix_255_or_256', 256)).toBe(true)
+    expect(shouldRunAssetLifecyclePurge(undefined, undefined)).toBe(true)
   })
 
   it('requires complete scan callback credentials before advertising scanner readiness', async () => {
@@ -1163,6 +1190,18 @@ describe('worker production entry', () => {
     expect(response).toMatchObject({ data: { cleaned: 2 } })
     expect(requests[0]?.url).toBe('https://api.test/v1/internal/storage/orphans/cleanup')
     expect(JSON.parse(requests[0]!.body)).toEqual({ workspace_id: 'ws_a', limit: 25 })
+    expect(requests[0]?.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
+  })
+
+  it('runs expired asset lifecycle cleanup through the signed automation callback', async () => {
+    const requests: Array<{ url: string; body: string; headers: Headers }> = []
+    const response = await postAssetLifecyclePurge({ apiBaseUrl: 'https://api.test', apiToken: 'worker-token', workspaceId: 'ws_assets', limit: 12, signingSecret: 'worker-secret', fetcher: async (input, init) => {
+      requests.push({ url: String(input), body: String(init?.body), headers: new Headers(init?.headers) })
+      return new Response(JSON.stringify({ data: { purged: 3, retried: 1 } }), { status: 200, headers: { 'content-type': 'application/json' } })
+    } })
+    expect(response).toMatchObject({ data: { purged: 3 } })
+    expect(requests[0]?.url).toBe('https://api.test/v1/internal/assets/lifecycle/purge')
+    expect(JSON.parse(requests[0]!.body)).toEqual({ workspace_id: 'ws_assets', limit: 12 })
     expect(requests[0]?.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
   })
 

@@ -49,8 +49,7 @@ afterEach(() => {
 const renderLibrary = (props: { baseUrl?: string; accounts: never[] | null; products: null; view: 'library' | 'brands' }) =>
   renderToStaticMarkup(createElement(MaterialLibraryWorkspace, props))
 
-const demoScope = { accountId: 'merchant-1', workspaceId: 'ws_demo' }
-const renderRecycleBin = (storageScope: typeof demoScope | null = demoScope) => renderToStaticMarkup(createElement(MaterialRecycleBinWorkspace, { storageScope }))
+const renderRecycleBin = (baseUrl?: string) => renderToStaticMarkup(createElement(MaterialRecycleBinWorkspace, { baseUrl }))
 
 describe('the material library may not claim a catalogue it did not read', () => {
   it('states no count when no API is configured, and shows no material card', () => {
@@ -158,46 +157,42 @@ describe('material storage summary uses the live quota projection', () => {
 })
 
 describe('the recycle bin may not invent a recoverable material', () => {
-  it('is empty on a profile that never removed anything', () => {
+  it('keeps the count unread until the server recycle bin answers', () => {
     // The shipped defect: a brand-new profile showed one item, deleted
     // "yesterday", with six days left, described as a server retention policy.
     const recycleBin = renderRecycleBin()
-    expect(recycleBin).toContain('回收站为空')
-    // 「0 项待处理素材」 is the reviewed summary; the defect was the 1.
-    expect(recycleBin).toContain('<strong>0</strong>')
+    expect(recycleBin).toContain('回收站尚未读取')
+    expect(recycleBin).toContain('<strong>—</strong>')
+    expect(recycleBin).not.toContain('回收站为空')
+    expect(recycleBin).not.toContain('<strong>0</strong><span>项待处理素材</span>')
     expect(recycleBin).not.toContain('<strong>1</strong>')
     expect(recycleBin).not.toContain('旧版包装展示图')
     expect(recycleBin).not.toContain('剩余 6 天')
     expect(recycleBin).not.toMatch(/\d{4}\/\d{1,2}\/\d{1,2} 删除/u)
   })
 
-  it('shows only what this browser recorded, and claims no server retention', () => {
+  it('describes the server-backed source without inventing a fixed retention policy', () => {
     const recycleBin = renderRecycleBin()
     expect(recycleBin).not.toContain('删除的素材会保留 7 天，到期后自动彻底删除')
-    expect(recycleBin).toContain('服务端已删除素材的读取尚未接入')
-    // A record this browser really wrote is still shown — the bin is not
-    // hardcoded to empty, it reads its own storage.
+    expect(recycleBin).toContain('显示当前工作区由服务端记录的已移除素材')
+    expect(recycleBin).toContain('保留期限由服务端返回')
+    expect(recycleBin).toContain('当前没有可用的服务端 API 地址')
+  })
+
+  it('does not read legacy or other-tenant browser entries', () => {
+    storage.set('merchant-material-recycle-bin-v1', JSON.stringify([{ id: 'old', name: 'legacy-secret' }]))
+    storage.set('merchant-material-recycle-bin-v2:other:ws_demo', JSON.stringify([{ id: 'other', name: 'other-secret' }]))
     storage.set('merchant-material-recycle-bin-v2:merchant-1:ws_demo', JSON.stringify([{
       id: 'asset-1', name: 'merchant-removed.png', category: '未分类', series: '未分类',
       sizeLabel: '未读取', fileSizeLabel: '1 KB', format: 'PNG', addedAt: '2026-09-20',
       downloadUrl: '', assetId: 'asset-1', storeId: '', storeName: '未归属', platform: '未归属',
       deletedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 6 * 86400000).toISOString(),
     }]))
-    const withItem = renderRecycleBin()
-    expect(withItem).toContain('merchant-removed.png')
-    expect(withItem).toContain('未归属')
-    expect(withItem).toContain('恢复会取消本地隐藏状态')
-    expect(withItem).toContain('不修改服务端归属或文件')
-    expect(withItem).not.toContain('可恢复到原店铺')
-    expect(withItem).not.toContain('提前彻底删除')
-  })
-
-  it('does not read legacy or other-tenant entries when scope is absent', () => {
-    storage.set('merchant-material-recycle-bin-v1', JSON.stringify([{ id: 'old', name: 'legacy-secret' }]))
-    storage.set('merchant-material-recycle-bin-v2:other:ws_demo', JSON.stringify([{ id: 'other', name: 'other-secret' }]))
-    expect(renderRecycleBin(null)).toContain('回收站为空')
-    expect(renderRecycleBin(null)).not.toContain('legacy-secret')
-    expect(renderRecycleBin(null)).not.toContain('other-secret')
+    const recycleBin = renderRecycleBin()
+    expect(recycleBin).toContain('回收站尚未读取')
+    expect(recycleBin).not.toContain('legacy-secret')
+    expect(recycleBin).not.toContain('other-secret')
+    expect(recycleBin).not.toContain('merchant-removed.png')
     expect(storage.has('merchant-material-recycle-bin-v1')).toBe(true)
   })
 })

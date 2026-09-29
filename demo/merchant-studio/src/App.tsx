@@ -30,6 +30,7 @@ import {
   materialEmptyCopy,
   materialStoreCategories,
   materialSummaryText,
+  materialItemFromAsset,
   resolveMaterialRead,
   uploadMaterialFiles,
   type StoreMaterialCategory,
@@ -108,6 +109,7 @@ import {
   fetchApiHealth,
   fetchAssetBlob,
   fetchAssets,
+  fetchTrashedAssets,
   fetchAssetStorageQuota,
   fetchBillingStatus,
   fetchCommercialCatalog,
@@ -159,6 +161,8 @@ import {
   retryImageGeneration,
   retrySyncFailures,
   revokePlatform,
+  requestAssetPurge,
+  cancelAssetPurge,
   saveAssetPreference,
   saveBrandProfile,
   selectDirection,
@@ -169,8 +173,11 @@ import {
   understandTask,
   configuredWorkspaceId,
   updateAssetRights,
+  trashAsset,
+  restoreAsset,
   uploadAsset,
   type AssetMetadata,
+  type TrashedAsset,
   type ApiHealth,
   type BrandCandidateFieldKey,
   type BrandExtraction,
@@ -324,7 +331,7 @@ const knowledgeSubItems: Array<{
   { id: 'products', label: '平台&店铺&商品', icon: PackageSearch, entry: 'products', description: '选择平台、店铺和商品后创建营销任务' },
   { id: 'products', label: '品牌资产', icon: FolderOpen, entry: 'assets', description: '维护品牌资料与素材' },
   { id: 'products', label: '素材库', icon: BookOpen, entry: 'knowledge', description: '上传、确认并引用素材' },
-  { id: 'products', label: '回收站', icon: Trash2, entry: 'trash', description: '查看本浏览器中已从素材列表隐藏的记录' },
+  { id: 'products', label: '回收站', icon: Trash2, entry: 'trash', description: '查看当前工作区服务端回收的素材' },
 ]
 // Compatibility marker for deep links that still address id: 'knowledge'.
 
@@ -5926,11 +5933,27 @@ export function MaterialBrandOutput({ value, label, enabled, onEnabledChange, co
   </aside>
 }
 type RecycleMaterialItem = StoreMaterialItem & {
-  storeId: string
-  storeName: string
-  platform: string
+  deletedBy?: string | null
+  purgeRequestedAt?: string | null
+  purgeRequestedBy?: string | null
+  purgeRequestReason?: string | null
+  purgeError?: Record<string, unknown> | null
+  revision: number
   deletedAt: string
   expiresAt: string
+}
+export function recycleMaterialFromServer(row: TrashedAsset): RecycleMaterialItem {
+  return {
+    ...materialItemFromAsset(row.asset),
+    deletedBy: row.deleted_by,
+    purgeRequestedAt: row.purge_requested_at,
+    purgeRequestedBy: row.purge_requested_by,
+    purgeRequestReason: row.purge_request_reason,
+    purgeError: row.purge_error,
+    revision: row.revision,
+    deletedAt: row.deleted_at,
+    expiresAt: row.expires_at,
+  }
 }
 export type MaterialStorageScope = { accountId: string; workspaceId: string }
 export type MaterialStorageKeys = { recycle: string; removed: string }
@@ -5957,8 +5980,8 @@ export function merchantMaterialStorageScope(
 }
 
 /**
- * Browser-local material state is still tenant data. Never consult the old
- * unscoped keys: they may contain material names from another signed-in user.
+ * Legacy local material-state helpers are retained for compatibility tests only.
+ * Runtime recycle-bin truth is read from the workspace-scoped server API.
  */
 export function materialStorageKeys(scope: MaterialStorageScope | null | undefined): MaterialStorageKeys | null {
   const accountId = scope?.accountId.trim()
@@ -5972,17 +5995,8 @@ export function materialStorageKeys(scope: MaterialStorageScope | null | undefin
 }
 
 /**
- * The recycle bin never seeds itself.
- *
- * It used to open with `recycle-demo-packaging-v1` — 「Store Nova 旗舰店 · 旧版包装
- * 展示图」, deleted "yesterday", expiring in seven days — so a brand-new account
- * that had never removed anything saw 「1 项待处理素材 · 剩余 6 天 · 2026/9/19 删除」
- * next to the claim 「删除的素材会保留 7 天，到期后自动彻底删除」. No server held
- * that item and no server enforces that retention: `GET /v1/assets` has no
- * deleted-materials counterpart and there is no delete endpoint at all.
- *
- * What is left is only what this browser actually recorded: an item appears
- * here after the merchant removes it from the material library in this profile.
+ * Legacy local recycle helpers remain exported for existing compatibility tests;
+ * the active UI does not use them as its data source or retention clock.
  */
 export function readRecycleMaterialsWithStatus(
   scope: MaterialStorageScope | null | undefined,
@@ -6042,12 +6056,8 @@ export function writeRecycleMaterials(
 }
 
 /**
- * The ids this browser has removed from the material library.
- *
- * `GET /v1/assets` has no delete counterpart, so removing a server material is
- * a browser-local decision: the id is recorded here, the library filters it out,
- * and 恢复 in the recycle bin drops it again. Without this the delete button on
- * a server material would do nothing at all.
+ * Legacy local hidden-id helpers remain for compatibility only. The active
+ * material library now removes assets through the server trash endpoint.
  */
 export function readRemovedMaterialIds(
   scope: MaterialStorageScope | null | undefined,
@@ -6165,62 +6175,122 @@ function MaterialCategoryDropdown({
   )
 }
 
-export function MaterialRecycleBinWorkspace({ storageScope }: { storageScope: MaterialStorageScope | null }) {
-  const currentStorageScopeKey = storageScope ? JSON.stringify([storageScope.accountId, storageScope.workspaceId]) : ''
-  const [itemsState, setItemsState] = useState<{ scopeKey: string; items: RecycleMaterialItem[]; expiryCleanupFailed: boolean }>(() => ({ scopeKey: currentStorageScopeKey, ...readRecycleMaterialsWithStatus(storageScope) }))
-  const loadedState = itemsState.scopeKey === currentStorageScopeKey ? itemsState : { scopeKey: currentStorageScopeKey, ...readRecycleMaterialsWithStatus(storageScope) }
-  const items = loadedState.items
-  const expiryCleanupFailed = loadedState.expiryCleanupFailed
-  const setItems = (next: RecycleMaterialItem[]) => setItemsState({ scopeKey: currentStorageScopeKey, items: next, expiryCleanupFailed: false })
+export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
+  const [items, setItems] = useState<RecycleMaterialItem[]>([])
+  const [readState, setReadState] = useState<'unread' | 'loading' | 'ready' | 'error'>(baseUrl ? 'loading' : 'unread')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [previewId, setPreviewId] = useState<string | null>(null)
-  const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false)
-  const [storageError, setStorageError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [recycleError, setRecycleError] = useState('')
+  const [purgeDialogOpen, setPurgeDialogOpen] = useState(false)
+  const [purgeConfirmation, setPurgeConfirmation] = useState('')
+  const [purgeReason, setPurgeReason] = useState('')
   const selectedItems = items.filter((item) => selectedIds.includes(item.id))
   const previewItem = items.find((item) => item.id === previewId)
   const allSelected = items.length > 0 && items.every((item) => selectedIds.includes(item.id))
 
   useEffect(() => {
-    setItemsState({ scopeKey: currentStorageScopeKey, ...readRecycleMaterialsWithStatus(storageScope) })
+    let active = true
     setSelectedIds([])
     setPreviewId(null)
-  }, [storageScope?.accountId, storageScope?.workspaceId])
+    setRecycleError('')
+    if (!baseUrl) { setReadState('unread'); setItems([]); return () => { active = false } }
+    setReadState('loading')
+    void fetchTrashedAssets(baseUrl).then((rows) => {
+      if (!active) return
+      setItems(rows.map(recycleMaterialFromServer))
+      setReadState('ready')
+    }).catch((error: unknown) => {
+      if (!active) return
+      setItems([])
+      setReadState('error')
+      setRecycleError(describeApiError(error))
+    })
+    return () => { active = false }
+  }, [baseUrl])
 
-  const removeFromRecycleBin = (ids: string[]) => {
-    const result = clearRecycleMaterialRecords(storageScope, ids)
-    if (!result.success) { setStorageError('浏览器未能完整更新本地回收记录；未确认清除，请重试。'); return false }
-    setItems(result.items)
-    setSelectedIds([])
-    setStorageError('')
-    return true
+  const restoreFromRecycleBin = async (ids: string[]) => {
+    if (!baseUrl || busy || !ids.length) return
+    setBusy(true)
+    setRecycleError('')
+    const settled = await Promise.allSettled(ids.map((id) => restoreAsset(baseUrl, id)))
+    const restored = new Set(ids.filter((_, index) => settled[index]?.status === 'fulfilled'))
+    if (restored.size) {
+      setItems((current) => current.filter((item) => !restored.has(item.id)))
+      setSelectedIds((current) => current.filter((id) => !restored.has(id)))
+      setPreviewId((current) => current && restored.has(current) ? null : current)
+      try {
+        setItems((await fetchTrashedAssets(baseUrl)).map(recycleMaterialFromServer))
+      } catch (error) {
+        setRecycleError('素材已恢复，但回收站刷新失败：' + describeApiError(error))
+      }
+    }
+    const failure = settled.find((result) => result.status === 'rejected')
+    if (failure?.status === 'rejected') setRecycleError(describeApiError(failure.reason))
+    setBusy(false)
   }
 
-  // Both restoring and clearing a browser-local record must remove its hidden
-  // marker; otherwise the material would remain missing from the library.
-  const restoreFromRecycleBin = (ids: string[]) => {
-    removeFromRecycleBin(ids)
+  const requestPurgeForSelected = async () => {
+    if (!baseUrl || busy || !selectedItems.length || purgeConfirmation.trim() !== '彻底删除' || !purgeReason.trim()) return
+    setBusy(true)
+    setRecycleError('')
+    const settled = await Promise.allSettled(selectedItems.map((item) => requestAssetPurge(baseUrl, {
+      assetId: item.assetId ?? item.id,
+      assetName: item.name,
+      reason: purgeReason.trim(),
+      expectedRevision: item.revision,
+    })))
+    const accepted = new Set(selectedItems.filter((_, index) => settled[index]?.status === 'fulfilled').map(item => item.id))
+    setSelectedIds(current => current.filter(id => !accepted.has(id)))
+    setPurgeDialogOpen(false)
+    setPurgeConfirmation('')
+    setPurgeReason('')
+    try { setItems((await fetchTrashedAssets(baseUrl)).map(recycleMaterialFromServer)) }
+    catch (error) { setRecycleError('删除请求已提交，但回收站刷新失败：' + describeApiError(error)) }
+    const failure = settled.find((result) => result.status === 'rejected')
+    if (failure?.status === 'rejected') setRecycleError(describeApiError(failure.reason))
+    setBusy(false)
+  }
+
+  const cancelPurgeRequest = async (item: RecycleMaterialItem) => {
+    if (!baseUrl || busy || !item.purgeRequestedAt) return
+    setBusy(true)
+    setRecycleError('')
+    try {
+      await cancelAssetPurge(baseUrl, item.assetId ?? item.id, item.revision)
+      setItems((await fetchTrashedAssets(baseUrl)).map(recycleMaterialFromServer))
+    } catch (error) { setRecycleError(describeApiError(error)) }
+    setBusy(false)
   }
 
   return (
     <div className="material-recycle-page" data-testid="material-recycle-bin">
       <section className="material-recycle-hero">
-        {/* 无法声明的保留策略不许写成服务端行为：`GET /v1/assets` 没有已删除素材
-            的对应接口，服务端也不存在素材删除接口，此前那句「删除的素材会保留 7 天，
-            到期后自动彻底删除」描述的是一条服务端不存在的记录。 */}
-        <div><span className="section-kicker">RECYCLE BIN</span><h1>回收站</h1><p>回收站只记录本浏览器实际移除的素材；服务端已删除素材的读取尚未接入。</p></div>
-        <div className="material-recycle-summary"><strong>{items.length}</strong><span>项待处理素材</span><small>本地记录 7 天后过期</small></div>
+        {/* Retention is server-owned; the page displays its returned expiry date. */}
+        <div><span className="section-kicker">RECYCLE BIN</span><h1>回收站</h1><p>显示当前工作区由服务端记录的已移除素材。</p></div>
+        <div className="material-recycle-summary"><strong>{readState === 'ready' ? items.length : '—'}</strong><span>项待处理素材</span><small>保留期限由服务端返回</small></div>
       </section>
       <section className="material-recycle-workspace">
         <div className="material-recycle-toolbar">
-          <div><h2>已移出列表素材</h2><p>恢复会取消本地隐藏状态；清除只移除本地记录，不修改服务端归属或文件。</p></div>
+          <div><h2>已删除素材</h2><p>素材会保留 7 天；也可以提交提前彻底删除请求。</p></div>
           <div className="material-recycle-actions">
             <span>已选 <strong>{selectedItems.length}</strong> 项</span>
-            <button type="button" disabled={!items.length} onClick={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}>{allSelected ? '取消全选' : '全选'}</button>
-            <button type="button" disabled={!selectedItems.length} onClick={() => restoreFromRecycleBin(selectedIds)}><Undo2 size={14} />从本地列表恢复</button>
-            <button type="button" className="danger" disabled={!selectedItems.length} onClick={() => setPermanentDeleteOpen(true)}><Trash2 size={14} />清除本地记录</button>
+            <button type="button" disabled={readState !== 'ready' || busy || !items.length} onClick={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}>{allSelected ? '取消全选' : '全选'}</button>
+            <button type="button" disabled={!selectedItems.length || busy || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={() => void restoreFromRecycleBin(selectedIds)}><Undo2 size={14} />恢复所选素材</button>
+            <button type="button" className="danger" disabled={!selectedItems.length || busy || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={() => { setPurgeConfirmation(''); setPurgeReason(''); setPurgeDialogOpen(true) }}><Trash2 size={14} />彻底删除</button>
           </div>
         </div>
-        {items.length ? <div className="material-recycle-grid">{items.map((item) => {
+        {readState === 'loading' ? <div className="material-empty" role="status"><RefreshCw size={25} /><strong>正在读取服务端回收站</strong><span>读取完成前不会显示记录数量。</span></div>
+          : readState === 'unread' ? <div className="material-empty" role="status"><Trash2 size={30} /><strong>回收站尚未读取</strong><span>当前没有可用的服务端 API 地址。</span></div>
+          : readState === 'error' ? <div className="material-empty" role="alert"><AlertCircle size={30} /><strong>服务端回收站读取失败</strong><span>{recycleError || '请稍后重试。'}</span><button type="button" onClick={() => {
+            if (!baseUrl) return
+            setReadState('loading'); setRecycleError('')
+            void fetchTrashedAssets(baseUrl).then((rows) => {
+              setItems(rows.map(recycleMaterialFromServer))
+              setReadState('ready')
+            }).catch((error: unknown) => { setReadState('error'); setRecycleError(describeApiError(error)) })
+          }}>重试</button></div>
+          : items.length ? <div className="material-recycle-grid">{items.map((item) => {
           const selected = selectedIds.includes(item.id)
           return <article className={selected ? 'selected' : ''} key={item.id}>
             <div className="material-recycle-preview">
@@ -6228,15 +6298,22 @@ export function MaterialRecycleBinWorkspace({ storageScope }: { storageScope: Ma
               <button type="button" className="material-recycle-select" aria-label={`选择${item.name}`} aria-pressed={selected} onClick={() => setSelectedIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])}>{selected && <Check size={14} />}</button>
               <span>{item.category}</span>
             </div>
-            <div className="material-recycle-copy"><strong title={item.name}>{item.name}</strong><span>{item.series} · {item.sizeLabel} · {item.format}</span><small>{item.storeName} · {item.platform}</small></div>
-            <div className="material-recycle-expiry"><Clock3 size={13} /><span>{recycleExpiryLabel(item.expiresAt)}</span><small>{new Date(item.deletedAt).toLocaleDateString('zh-CN')} 删除</small></div>
+            <div className="material-recycle-copy"><strong title={item.name}>{item.name}</strong><span>{item.series} · {item.sizeLabel} · {item.format}</span><small>服务端素材</small></div>
+            <div className="material-recycle-expiry"><Clock3 size={13} /><span>{item.purgeRequestedAt ? '已提交提前清理请求' : recycleExpiryLabel(item.expiresAt)}</span><small>{new Date(item.deletedAt).toLocaleDateString('zh-CN')} 删除</small></div>
+            {item.purgeRequestedAt && <div className="material-recycle-purge-status"><span>{item.purgeError ? `清理遇到阻碍：${String(item.purgeError.code ?? '请稍后重试')}` : '对象存储清理处理中'}</span><button type="button" disabled={busy} onClick={() => void cancelPurgeRequest(item)}>撤销请求</button></div>}
           </article>
-        })}</div> : <div className="material-empty"><Trash2 size={30} /><strong>回收站为空</strong><span>本浏览器还没有记录到已移除的素材；服务端已删除素材的读取尚未接入。</span></div>}
+        })}</div> : <div className="material-empty"><Trash2 size={30} /><strong>回收站为空</strong><span>服务端当前没有可恢复的素材。</span></div>}
       </section>
+      {purgeDialogOpen && <div className="material-recycle-confirm-backdrop"><section className="material-recycle-confirm" role="alertdialog" aria-modal="true" aria-labelledby="material-purge-title">
+        <span className="section-kicker">PERMANENT DELETE</span><h2 id="material-purge-title">提前彻底删除素材</h2>
+        <p>该请求会交给服务端清理 worker。对象存储确认删除前，素材记录与空间配额都会保留；worker 开始处理前可撤销请求。</p>
+        <div className="material-recycle-confirm-list">{selectedItems.map(item => <span key={item.id}>{item.name}</span>)}</div>
+        <label>删除原因<textarea value={purgeReason} maxLength={500} onChange={event => setPurgeReason(event.target.value)} placeholder="说明提前删除原因" /></label>
+        <label>输入“彻底删除”确认<input value={purgeConfirmation} onChange={event => setPurgeConfirmation(event.target.value)} /></label>
+        <div><button type="button" disabled={busy} onClick={() => setPurgeDialogOpen(false)}>取消</button><button type="button" className="danger" disabled={busy || purgeConfirmation.trim() !== '彻底删除' || !purgeReason.trim()} onClick={() => void requestPurgeForSelected()}><Trash2 size={14} />提交清理请求</button></div>
+      </section></div>}
       {previewItem && <button type="button" className="material-upload-lightbox" aria-label="关闭回收站图片预览" onClick={() => setPreviewId(null)}><span>{previewItem.previewUrl && previewItem.format !== 'MP4' ? <img src={previewItem.previewUrl} alt={previewItem.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{previewItem.name}</strong><small>点击任意位置关闭</small></span></button>}
-      {expiryCleanupFailed && <p role="alert">浏览器未能保存过期回收记录的清理状态；已过期记录暂时保留以便恢复，检查本地储存空间后刷新重试。</p>}
-      {storageError && <p role="alert">{storageError}</p>}
-      {permanentDeleteOpen && selectedItems.length > 0 && <DialogFrame title="清除本地回收记录" kicker="清除本地记录" onClose={() => setPermanentDeleteOpen(false)} actions={<><button type="button" className="catalog-asset-cancel" onClick={() => setPermanentDeleteOpen(false)}>取消</button><button type="button" className="material-delete-confirm" onClick={() => { if (removeFromRecycleBin(selectedIds)) setPermanentDeleteOpen(false) }}><Trash2 size={14} />清除本地记录</button></>}><div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定清除已选的 {selectedItems.length} 条本地记录？</strong><p>此操作不会删除服务端素材文件。</p></div></div></DialogFrame>}
+      {recycleError && readState !== 'error' && <p role="alert">{recycleError}</p>}
     </div>
   )
 }
@@ -6382,18 +6459,6 @@ export function MaterialLibraryWorkspace({
   // are kept per store because the merchant picked the store; nothing else is
   // seeded here — the eight invented materials per store are gone.
   const [materialsByStore, setMaterialsByStore] = useState<Record<string, StoreMaterialItem[]>>({})
-  const [removedState, setRemovedState] = useState<{ scopeKey: string; ids: string[] }>(() => {
-    // Expiry is a cleanup event too: remove stale hidden IDs before loading the
-    // library, so a material does not disappear forever after its recycle row.
-    readRecycleMaterials(storageScope)
-    return { scopeKey: currentStorageScopeKey, ids: readRemovedMaterialIds(storageScope) }
-  })
-  const removedMaterialIds = removedState.scopeKey === currentStorageScopeKey ? removedState.ids : readRemovedMaterialIds(storageScope)
-  const setRemovedMaterialIds = (ids: string[]) => setRemovedState({ scopeKey: currentStorageScopeKey, ids })
-  useEffect(() => {
-    readRecycleMaterials(storageScope)
-    setRemovedMaterialIds(readRemovedMaterialIds(storageScope))
-  }, [storageScope?.accountId, storageScope?.workspaceId])
   const [uploadedBytes, setUploadedBytes] = useState(0)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [uploadStoreId, setUploadStoreId] = useState(materialStores[0]?.id ?? '')
@@ -6408,6 +6473,7 @@ export function MaterialLibraryWorkspace({
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [materialStorageError, setMaterialStorageError] = useState('')
+  const [deleteBusy, setDeleteBusy] = useState(false)
   const [detailMaterialId, setDetailMaterialId] = useState<string | null>(null)
   const [detailPreviewOpen, setDetailPreviewOpen] = useState(false)
   // The global brand slot starts empty, like every other level of the stack.
@@ -6571,7 +6637,7 @@ export function MaterialLibraryWorkspace({
       const assignedSeries = scopedBrandRead?.series.find((row) => row.id === assignedSeriesId)
       return assignedSeries ? { ...item, series: assignedSeries.name } : item
     }),
-  ].filter((item) => !removedMaterialIds.includes(item.id))
+  ]
   const visibleMaterials = activeMaterials.filter((item) => {
     const matchesCategory = category === '全部' || item.category === category
     const matchesSeries = series === '全部' || item.series === series
@@ -6987,47 +7053,42 @@ export function MaterialLibraryWorkspace({
     }))
   }
 
-  const deleteSelectedMaterials = () => {
-    if (!activeStore) return
-    // `uploadedBytes` counts what this session actually sent to
-    // `POST /v1/assets/upload` and nothing else, so nothing is subtracted here.
-    // Removing a material from the list — whether it was uploaded here or read
-    // from `GET /v1/assets` — is a browser-local list change, not a server-side
-    // removal (`GET /v1/assets` has no delete counterpart), and the bytes were
-    // uploaded either way.
-    const now = new Date()
-    const expiresAt = new Date(now)
-    expiresAt.setDate(expiresAt.getDate() + 7)
-    const recycled = readRecycleMaterials(storageScope)
-    const additions = selectedMaterials.map((item): RecycleMaterialItem => ({
-      ...item,
-      // `GET /v1/assets` publishes no store attribution, so a server asset is
-      // recorded as 未归属 rather than filed under whichever store happened to
-      // be selected. Session uploads really did pick a store.
-      storeId: item.assetId ? '' : activeStore.id,
-      storeName: item.assetId ? '未归属' : activeStore.name,
-      platform: item.assetId ? '未归属' : activeStore.platform,
-      deletedAt: now.toISOString(),
-      expiresAt: expiresAt.toISOString(),
-    }))
-    const nextRecycle = [...additions, ...recycled.filter((item) => !selectedIds.includes(item.id))]
-    const nextRemoved = Array.from(new Set([...readRemovedMaterialIds(storageScope), ...selectedIds]))
-    if (!writeRecycleMaterials(storageScope, nextRecycle)) {
-      setMaterialStorageError('浏览器未能保存回收记录；素材仍保留在当前列表。请检查本地储存空间后重试。')
+  const deleteSelectedMaterials = async () => {
+    if (!activeStore || !baseUrl || deleteBusy || !selectedMaterials.length) return
+    const missingServerIds = selectedMaterials.filter((item) => !item.assetId)
+    if (missingServerIds.length) {
+      setMaterialStorageError('部分所选素材尚无服务端素材 ID，无法移入服务端回收站；请重新读取素材后再操作。')
       return
     }
-    if (!writeRemovedMaterialIds(storageScope, nextRemoved)) {
-      setMaterialStorageError('回收记录已保存，但隐藏状态未能保存；素材仍保留在当前列表。请检查本地储存后重试。')
-      return
-    }
+    setDeleteBusy(true)
     setMaterialStorageError('')
-    setRemovedMaterialIds(nextRemoved)
-    setMaterialsByStore((current) => ({
-      ...current,
-      [activeStoreId]: (current[activeStoreId] ?? []).filter((item) => !selectedIds.includes(item.id)),
-    }))
-    setSelectedIds([])
-    setDeleteDialogOpen(false)
+    const settled = await Promise.allSettled(selectedMaterials.map((item) => trashAsset(baseUrl, item.assetId!)))
+    const confirmedIds = new Set(selectedMaterials.filter((_, index) => settled[index]?.status === 'fulfilled').map((item) => item.id))
+    let hiddenIds = new Set<string>()
+    if (confirmedIds.size) {
+      try {
+        const refreshedAssets = await fetchAssets(baseUrl)
+        setRemoteAssets(refreshedAssets)
+        hiddenIds = new Set([...confirmedIds].filter((id) => !refreshedAssets.some((asset) => asset.id === id)))
+        if (hiddenIds.size) {
+          setMaterialsByStore((current) => ({
+            ...current,
+            [activeStoreId]: (current[activeStoreId] ?? []).filter((item) => !hiddenIds.has(item.id)),
+          }))
+          setSelectedIds((current) => current.filter((id) => !hiddenIds.has(id)))
+        }
+      } catch (error) {
+        setMaterialStorageError('服务端已受理移入请求，但素材列表刷新失败；当前页面未隐藏素材：' + describeApiError(error))
+      }
+    }
+    const failure = settled.find((result) => result.status === 'rejected')
+    if (failure?.status === 'rejected') setMaterialStorageError(`部分素材未能移入服务端回收站：${describeApiError(failure.reason)}`)
+    else if (confirmedIds.size && hiddenIds.size !== confirmedIds.size) setMaterialStorageError('服务端已确认移入，但素材列表尚未反映全部变更；未确认的素材仍保留在当前列表。')
+    else {
+      setMaterialStorageError('')
+      setDeleteDialogOpen(false)
+    }
+    setDeleteBusy(false)
   }
 
   // A workspace the server reports no store for is a real state (the catalogue
@@ -7215,10 +7276,10 @@ export function MaterialLibraryWorkspace({
           testId="material-delete-dialog"
           actions={<>
             <button type="button" className="catalog-asset-cancel" onClick={() => setDeleteDialogOpen(false)}>取消</button>
-            <button type="button" className="material-delete-confirm" onClick={deleteSelectedMaterials}><Trash2 size={14} />从列表隐藏</button>
+            <button type="button" className="material-delete-confirm" disabled={deleteBusy || !baseUrl} onClick={() => { void deleteSelectedMaterials() }}><Trash2 size={14} />{deleteBusy ? '正在移入回收站…' : '移入回收站'}</button>
           </>}
         >
-          <div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定从当前列表隐藏已选的 {selectedMaterials.length} 项素材？</strong><p>此操作只影响本浏览器显示；不会删除服务端文件或工作区素材。</p>{materialStorageError && <p role="alert">{materialStorageError}</p>}</div></div>
+          <div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定将已选的 {selectedMaterials.length} 项素材移入服务端回收站？</strong><p>素材将按服务端保留策略暂时移出当前工作区素材列表。</p>{materialStorageError && <p role="alert">{materialStorageError}</p>}</div></div>
         </DialogFrame>
       )}
     </div>
@@ -7912,7 +7973,7 @@ export function Products({
       : initialEntry === 'assets'
         ? <MaterialLibraryWorkspace {...materialWorkspaceProps} view="brands" />
       : initialEntry === 'trash'
-        ? <MaterialRecycleBinWorkspace storageScope={storageScope} />
+        ? <MaterialRecycleBinWorkspace baseUrl={baseUrl} />
         : <MaterialLibraryWorkspace {...materialWorkspaceProps} view="library" />
   }
   return (

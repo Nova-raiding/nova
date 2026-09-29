@@ -52,9 +52,10 @@ describe('merchant navigation cleanup contract', () => {
     expect(app).not.toContain('选择一个平台后查看当前工作区登记的店铺。')
   })
 
-  it('describes the recycle bin as browser-local and makes no server restore/delete promise', () => {
-    expect(app).toContain("description: '查看本浏览器中已从素材列表隐藏的记录'")
-    expect(app).not.toContain('恢复或彻底删除近 7 天内移除的素材')
+  it('describes the recycle bin as workspace-scoped server data', () => {
+    expect(app).toContain("description: '查看当前工作区服务端回收的素材'")
+    expect(app).not.toContain('本浏览器中已从素材列表隐藏的记录')
+    expect(app).toContain('素材会保留 7 天；也可以提交提前彻底删除请求。')
   })
 
   it('does not ship the removed welcome panel or duplicate entry cards', () => {

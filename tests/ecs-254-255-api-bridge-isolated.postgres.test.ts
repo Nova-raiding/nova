@@ -7,6 +7,8 @@ import { resolve } from 'node:path'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner, verifyAppliedMigrations } from '../packages/persistence/src/migration.js'
+import { PostgresCreativePointRepository } from '../packages/persistence/src/creative-point-repository.js'
+import { PostgresAssetLifecycleRepository } from '../packages/persistence/src/asset-lifecycle-repository.js'
 import { createIsolatedOpsFixture } from './isolated-ops-fixture.js'
 
 const token = 'isolated-254-255-bridge-token'
@@ -22,12 +24,12 @@ async function freeLoopbackPort(): Promise<number> {
   return address.port
 }
 
-async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; redisUrl: string; port: number }): Promise<ChildProcess> {
+async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; redisUrl: string; port: number; bridgeMode?: 'prefix_254_or_255' | 'prefix_255_or_256' | null; testCommercialFixture?: boolean }): Promise<ChildProcess> {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C.UTF-8',
     NODE_ENV: 'development', AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres',
     DATABASE_URL: input.databaseUrl, OPS_DATABASE_URL: input.opsDatabaseUrl, REDIS_URL: input.redisUrl,
-    RUN_MIGRATIONS_ON_STARTUP: 'false', BRIDGE_SCHEMA_COMPATIBILITY_MODE: 'prefix_254_or_255',
+    RUN_MIGRATIONS_ON_STARTUP: 'false', ...(input.bridgeMode === null ? {} : { BRIDGE_SCHEMA_COMPATIBILITY_MODE: input.bridgeMode ?? 'prefix_254_or_255' }),
     SESSION_ID_HASH_SECRET: 'isolated-254-255-api-bridge-secret',
     API_BIND_HOST: '127.0.0.1', PORT: String(input.port),
     CONNECTOR_FIXTURE_MODE: 'false',
@@ -80,7 +82,7 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
     let child: ChildProcess | undefined
     try {
       const migrations = await loadMigrations()
-      expect(migrations.at(-1)?.version).toBe(255)
+      expect(migrations.at(-1)?.version).toBe(256)
       const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       const databaseGrant = /ON DATABASE merchant\b/gu
       const grantCount = [...roleSql.matchAll(databaseGrant)].length
@@ -91,6 +93,17 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       await admin.query(isolatedRoleSql)
       await admin.query('INSERT INTO workspaces(id,status) VALUES ($1,$2)', [workspaceId, 'active'])
       await admin.query("INSERT INTO workspace_members(id,workspace_id,external_subject,display_name,role,status,invited_by) VALUES ($1,$2,'bridge-actor','Bridge Actor','merchant_admin','active','isolated-bridge-fixture')", [randomUUID(), workspaceId])
+      // The commercial HTTP gate requires a known balance before route
+      // dispatch. Seed a durable fixture grant so bridge assertions reach the
+      // lifecycle guard instead of failing early with unknown points.
+      await new PostgresCreativePointRepository(admin).grant({
+        workspaceId,
+        idempotencyKey: 'isolated-bridge-fixture-grant',
+        sourceType: 'test_fixture',
+        sourceId: 'isolated-bridge-254-256',
+        points: 100,
+        metadata: { test_only: true, non_production: true },
+      })
       const port254 = await freeLoopbackPort()
       // The API uses the same least-privilege merchant_app and merchant_ops
       // roles as production. The admin connection only creates the isolated
@@ -106,11 +119,11 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       const absent = await admin.query<{ exists: string | null }>("SELECT to_regclass('merchant_brand_scoped_settings')::text AS exists")
       expect(absent.rows[0]?.exists).toBeNull()
 
-      expect(await new MigrationRunner(admin, migrations).run()).toEqual([255])
+      expect(await new MigrationRunner(admin, migrations.slice(0, 255)).run()).toEqual([255])
       await admin.query(isolatedRoleSql)
       const history = (await admin.query<{ version: number; name: string; checksum: string }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version')).rows
       expect(history).toHaveLength(255)
-      expect(() => verifyAppliedMigrations(history, migrations)).not.toThrow()
+      expect(() => verifyAppliedMigrations(history, migrations.slice(0, 255))).not.toThrow()
       // A process booted against 254 must revoke readiness when the database
       // moves to 255. Its repository set was fixed at startup; only a restart
       // can enable the new route against the new schema safely.
@@ -132,6 +145,81 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
         expect((await client.query('SELECT workspace_id FROM merchant_brand_scoped_settings')).rows).toEqual([])
         await client.query('COMMIT')
       } finally { await client.query('ROLLBACK'); client.release() }
+
+      // The next reviewed bridge has its own exact-prefix contract. It starts
+      // ready on 255, revokes readiness as soon as migration 256 appears, and
+      // becomes ready again only after a restart that rebuilds repositories
+      // for the newly observed schema. The 256-only trash-list route remains
+      // unavailable for the whole compatibility deployment phase.
+      await stopApi(child); child = undefined
+      const portBridge255 = await freeLoopbackPort()
+      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: portBridge255, bridgeMode: 'prefix_255_or_256' })
+      expect(await new MigrationRunner(admin, migrations).run()).toEqual([256])
+      await admin.query(isolatedRoleSql)
+      const stale256Readiness = await fetch(`http://127.0.0.1:${portBridge255}/readyz`)
+      expect(stale256Readiness.status).toBe(503)
+      await stopApi(child); child = undefined
+      // Seed two durable asset snapshots and trash one through the production
+      // app role. A 255/256 bridge at prefix 256 must keep that row hidden and
+      // reject lifecycle writes until the normal v256 API image is active.
+      const assetId = 'asset_bridge_256_active'
+      const trashedAssetId = 'asset_bridge_256_trashed'
+      const assetSnapshot = (id: string) => ({
+        id, workspaceId, name: `${id}.txt`, mimeType: 'text/plain', sizeBytes: 32,
+        sha256: 'd'.repeat(64), sourceRevision: 1,
+        storageKey: `quarantine/${workspaceId}/${id}.txt`, rightsStatus: 'pending',
+        scanStatus: 'quarantined', parseStatus: 'pending', contentTrust: { status: 'untrusted', reasons: ['not_scanned'] },
+        references: [{ name: `${id}.txt`, mimeType: 'text/plain', firstSeenAt: new Date().toISOString() }],
+        uploadedByActorIds: ['bridge-actor'], revision: 1, createdAt: new Date().toISOString(),
+      })
+      for (const id of [assetId, trashedAssetId]) {
+        await admin.query(`INSERT INTO business_entity_snapshots(workspace_id,entity_type,entity_id,entity_version,payload)
+          VALUES ($1,'asset',$2,1,$3::jsonb)`, [workspaceId, id, JSON.stringify(assetSnapshot(id))])
+      }
+      await new PostgresAssetLifecycleRepository(app).trash({ workspaceId, assetId: trashedAssetId, actorId: 'bridge-actor', expectedRevision: 1 })
+      const port256 = await freeLoopbackPort()
+      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: port256, bridgeMode: 'prefix_255_or_256' })
+      expect((await fetch(`http://127.0.0.1:${port256}/readyz`)).status).toBe(200)
+      const bridgeHeaders = { authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId }
+      const bridgeTrash = await fetch(`http://127.0.0.1:${port256}/v1/assets/trash`, { headers: bridgeHeaders })
+      const bridgeTrashBody = await bridgeTrash.json()
+      expect(bridgeTrash.status, JSON.stringify(bridgeTrashBody)).toBe(503)
+      expect(JSON.stringify(bridgeTrashBody)).toContain('ASSET_LIFECYCLE_UNAVAILABLE')
+      const bridgeAssets = await fetch(`http://127.0.0.1:${port256}/v1/assets`, { headers: bridgeHeaders })
+      const bridgeAssetsBody = JSON.stringify(await bridgeAssets.json())
+      expect(bridgeAssets.status).toBe(200)
+      expect(bridgeAssetsBody).toContain(assetId)
+      expect(bridgeAssetsBody).not.toContain(trashedAssetId)
+      const bridgeDownload = await fetch(`http://127.0.0.1:${port256}/v1/assets/${encodeURIComponent(trashedAssetId)}/download`, { headers: bridgeHeaders })
+      expect(bridgeDownload.status).toBe(410)
+      const bridgeTrashWrite = await fetch(`http://127.0.0.1:${port256}/v1/assets/${encodeURIComponent(assetId)}/trash`, { method: 'POST', headers: { ...bridgeHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ expected_revision: 1 }) })
+      expect(bridgeTrashWrite.status).toBe(503)
+      const bridgeRestoreWrite = await fetch(`http://127.0.0.1:${port256}/v1/assets/${encodeURIComponent(trashedAssetId)}/restore`, { method: 'POST', headers: { ...bridgeHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ expected_revision: 1 }) })
+      expect(bridgeRestoreWrite.status).toBe(503)
+      await stopApi(child); child = undefined
+      const normalPort256 = await freeLoopbackPort()
+      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: normalPort256, bridgeMode: null })
+      expect((await fetch(`http://127.0.0.1:${normalPort256}/readyz`)).status).toBe(200)
+      const headers = { authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId }
+      const activeTrash = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets/trash`, { headers })
+      expect(activeTrash.status).toBe(200)
+      expect(await activeTrash.json()).toMatchObject({ data: { items: [expect.objectContaining({ asset: expect.objectContaining({ id: trashedAssetId }) })], total: 1, retention_days: 7 } })
+      const activeAssets = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets`, { headers })
+      expect(activeAssets.status).toBe(200)
+      const activeAssetsBody = JSON.stringify(await activeAssets.json())
+      expect(activeAssetsBody).toContain(assetId)
+      expect(activeAssetsBody).not.toContain(trashedAssetId)
+      const lifecycleHeaders = { ...headers, 'content-type': 'application/json' }
+      const trashed = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets/${encodeURIComponent(assetId)}/trash`, { method: 'POST', headers: lifecycleHeaders, body: JSON.stringify({ expected_revision: 1 }) })
+      expect(trashed.status).toBe(200)
+      expect(await trashed.json()).toMatchObject({ data: { asset: { id: assetId }, revision: 1 } })
+      const hidden = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets`, { headers: lifecycleHeaders })
+      expect(await hidden.json()).toMatchObject({ data: [] })
+      const restored = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets/${encodeURIComponent(assetId)}/restore`, { method: 'POST', headers: lifecycleHeaders, body: JSON.stringify({ expected_revision: 1 }) })
+      expect(restored.status).toBe(200)
+      expect(await restored.json()).toMatchObject({ data: { id: assetId, revision: 1, sourceRevision: 1 } })
+      const visible = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets`, { headers: lifecycleHeaders })
+      expect(await visible.json()).toMatchObject({ data: [expect.objectContaining({ id: assetId })] })
     } finally {
       await stopApi(child)
       await app.end()

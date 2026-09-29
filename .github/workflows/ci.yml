@@ -177,6 +177,7 @@ jobs:
           packages/persistence/src/migration-108.test.ts
           packages/persistence/src/campaign-lifecycle.postgres.test.ts
           packages/persistence/src/model-daily-budget.postgres.test.ts
+          packages/persistence/src/creative-point-failed-provider-release.postgres.test.ts
           packages/persistence/src/migration-118-release.postgres.test.ts
           packages/persistence/src/migration-119-120-release.postgres.test.ts
           packages/persistence/src/migration-122.test.ts

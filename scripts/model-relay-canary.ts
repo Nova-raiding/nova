@@ -453,6 +453,7 @@ export function extractProviderRequestId(payload: unknown, headers: Headers): st
   const data = root.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data as Record<string, unknown> : {}
   const nestedData = data.data && typeof data.data === 'object' && !Array.isArray(data.data) ? data.data as Record<string, unknown> : {}
   const result = data.result && typeof data.result === 'object' && !Array.isArray(data.result) ? data.result as Record<string, unknown> : {}
+  const metadata = root.metadata && typeof root.metadata === 'object' && !Array.isArray(root.metadata) ? root.metadata as Record<string, unknown> : {}
   return nonEmptyText(headers.get('x-oneapi-request-id'))
     ?? nonEmptyText(headers.get('x-request-id'))
     ?? nonEmptyText(headers.get('x-provider-request-id'))
@@ -465,6 +466,8 @@ export function extractProviderRequestId(payload: unknown, headers: Headers): st
     ?? nonEmptyText(nestedData.request_id)
     ?? nonEmptyText(result.provider_request_id)
     ?? nonEmptyText(result.request_id)
+    ?? nonEmptyText(metadata.provider_request_id)
+    ?? nonEmptyText(metadata.request_id)
 }
 
 type PricingClient = Pick<NonNullable<ReturnType<typeof createRelayPricingClientFromEnv>>, 'quote'>
@@ -480,12 +483,14 @@ export async function evaluateRelayUsageEvidence(
   const nested = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
   const nestedData = nested?.data && typeof nested.data === 'object' && !Array.isArray(nested.data) ? nested.data as Record<string, unknown> : undefined
   const result = nested?.result && typeof nested.result === 'object' && !Array.isArray(nested.result) ? nested.result as Record<string, unknown> : undefined
+  const metadata = record.metadata && typeof record.metadata === 'object' && !Array.isArray(record.metadata) ? record.metadata as Record<string, unknown> : undefined
   const rawUsage = record.usage && typeof record.usage === 'object' && !Array.isArray(record.usage)
     ? record.usage as Record<string, unknown>
     : nested?.usage && typeof nested.usage === 'object' && !Array.isArray(nested.usage)
       ? nested.usage as Record<string, unknown>
       : nestedData?.usage && typeof nestedData.usage === 'object' && !Array.isArray(nestedData.usage) ? nestedData.usage as Record<string, unknown>
-        : result?.usage && typeof result.usage === 'object' && !Array.isArray(result.usage) ? result.usage as Record<string, unknown> : undefined
+        : result?.usage && typeof result.usage === 'object' && !Array.isArray(result.usage) ? result.usage as Record<string, unknown>
+          : metadata?.usage && typeof metadata.usage === 'object' && !Array.isArray(metadata.usage) ? metadata.usage as Record<string, unknown> : undefined
   const parsed = parseRelayUsage(payload, headers, {
     modality,
     model,
@@ -495,7 +500,11 @@ export async function evaluateRelayUsageEvidence(
     const number = typeof value === 'number' ? value : typeof value === 'string' && /^\d+(?:\.\d+)?$/u.test(value.trim()) ? Number(value) : undefined
     return number !== undefined && Number.isFinite(number) && number >= 0 ? number : undefined
   }
-  const rawImageCount = rawUsage?.output_image_count
+  // Qwen reports provider-observed generated units as `usage.image_count`.
+  // New API preserves this upstream usage object under response metadata.
+  // Keep this evidence provider sourced; never substitute request count or
+  // the number of parsed artifacts.
+  const rawImageCount = rawUsage?.output_image_count ?? rawUsage?.image_count
   const parsedImageCount = nonNegativeNumber(rawImageCount)
   const reportedBillingUnits = parsedImageCount !== undefined && Number.isSafeInteger(parsedImageCount) && parsedImageCount > 0
     ? parsedImageCount

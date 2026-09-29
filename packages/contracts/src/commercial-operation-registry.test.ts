@@ -4,6 +4,7 @@ import {
   COMMERCIAL_OPERATION_REGISTRY,
   COMMERCIAL_OPERATION_REGISTRY_COVERAGE,
   COMMERCIAL_OPERATION_RUNTIME_MANIFEST,
+  HTTP_ASSET_LIFECYCLE_OPERATIONS,
   HTTP_OPERATION_POLICIES,
   MCP_METHOD_SCHEMAS,
   MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS,
@@ -45,6 +46,37 @@ describe('complete commercial operation registry E1 totality', () => {
     )).toThrow('missing classifications: MCP:new.method.requires.review')
   })
 
+  it('classifies asset trash reads and lifecycle writes as enabled and uncharged', () => {
+    expect(resolveHttp('http:GET:/v1/assets/trash')).toMatchObject({
+      outcome: 'REGISTERED',
+      policy: {
+        domain: 'COMMERCIAL',
+        enabled: true,
+        classification: 'POINT_REQUIRED_NO_CHARGE',
+        rate_action: null,
+        authorization_policy_ref: 'asset.list',
+      },
+    })
+    expect(HTTP_ASSET_LIFECYCLE_OPERATIONS).toEqual([
+      'http:POST:/v1/assets/{assetId}/trash',
+      'http:POST:/v1/assets/{assetId}/restore',
+      'http:POST:/v1/assets/{assetId}/purge',
+      'http:POST:/v1/assets/{assetId}/purge/cancel',
+    ])
+    for (const operation of HTTP_ASSET_LIFECYCLE_OPERATIONS) {
+      expect(resolveHttp(operation)).toMatchObject({
+        outcome: 'REGISTERED',
+        policy: {
+          domain: 'COMMERCIAL',
+          enabled: true,
+          classification: 'POINT_REQUIRED_NO_CHARGE',
+          rate_action: null,
+          authorization_policy_ref: null,
+        },
+      })
+    }
+  })
+
   it('registers public rule draft review as enabled, uncharged read capability', () => {
     for (const operation of ['ops.rules.public.drafts.list', 'ops.rules.public.drafts.get']) {
       expect(resolveMcp(operation)).toMatchObject({ outcome: 'REGISTERED', policy: { enabled: true, domain: 'OPS_CONTROL', classification: null, rate_action: null } })
@@ -64,6 +96,19 @@ describe('complete commercial operation registry E1 totality', () => {
     }
     expect(resolveHttp('http:POST:/v1/internal/knowledge/generation-claims/{claimId}')).toMatchObject({ outcome: 'DENY_UNCLASSIFIED' })
     expect(resolveHttp('http:PATCH:/v1/internal/knowledge/generation-claims')).toMatchObject({ outcome: 'DENY_UNCLASSIFIED' })
+  })
+
+  it('classifies the worker-authenticated asset lifecycle purge as machine infrastructure', () => {
+    expect(resolveHttp('http:POST:/v1/internal/assets/lifecycle/purge')).toMatchObject({
+      outcome: 'REGISTERED',
+      policy: {
+        domain: 'MACHINE_INFRASTRUCTURE',
+        enabled: true,
+        classification: null,
+        rate_action: null,
+        authorization_policy_ref: null,
+      },
+    })
   })
 
   it('publishes exact personal-commercial and workspace-creative-point policies for the four V2 recovery reads', () => {

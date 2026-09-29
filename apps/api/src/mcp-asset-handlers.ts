@@ -15,11 +15,13 @@ type Dependencies = {
   requestActor: (req: IncomingMessage) => string
   requestId: (req: IncomingMessage) => string
   accessibleAssetIds: (req: IncomingMessage, workspaceId: string) => Promise<ReadonlySet<string> | undefined>
+  filterActiveAssets?: (workspaceId: string, assets: readonly ListedAsset[]) => Promise<ListedAsset[]>
   assetDisplayProjection: (asset: ListedAsset) => AssetDisplay
   conversationalAssetScanWaitingState: () => { message: string }
   getStorageQuotaSnapshot: (workspaceId: string) => Promise<{ limitBytes: number; usedBytes: number; reservedBytes: number } | undefined> | undefined
   configuredStorageQuotaLimit: () => number
   enforceAssetAccess: (req: IncomingMessage, workspaceId: string, assetId: string, role: 'editor') => Promise<unknown>
+  assertAssetActive?: (workspaceId: string, assetId: string) => Promise<void>
   executeDurableAssetParse: (workspaceId: string, assetId: string, req: IncomingMessage) => Promise<unknown>
   assetForWorkspace: (workspaceId: string, assetId: string) => AssetMetadata
   confirmDurableAssetFacts: (input: { workspaceId: string; assetId: string; facts: Record<string, unknown>; reason: string; req: IncomingMessage }) => Promise<unknown>
@@ -48,7 +50,7 @@ export const MCP_ASSET_METHODS = new Set([
 ])
 
 export async function handleMcpAssetMethod(method: string, params: Record<string, unknown>, req: IncomingMessage, workspaceId: string, dependencies: Dependencies): Promise<unknown> {
-  const { service, required, requestActor, requestId, accessibleAssetIds, assetDisplayProjection,
+  const { service, required, requestActor, requestId, accessibleAssetIds, filterActiveAssets, assetDisplayProjection,
     conversationalAssetScanWaitingState, getStorageQuotaSnapshot, configuredStorageQuotaLimit,
     enforceAssetAccess, executeDurableAssetParse, assetForWorkspace, confirmDurableAssetFacts,
     enforceMcpCommercialAccess, persistSnapshot, persistEvent, uploadAssetForMcp,
@@ -59,7 +61,8 @@ export async function handleMcpAssetMethod(method: string, params: Record<string
     supportedPlatforms: SUPPORTED_PLATFORMS } = dependencies
   if (method === 'asset.list') {
       const accessibleIds = await accessibleAssetIds(req, workspaceId)
-      const allAssets = service.listAssets(workspaceId)
+      const listedAssets = service.listAssets(workspaceId)
+      const allAssets = filterActiveAssets ? await filterActiveAssets(workspaceId, listedAssets) : listedAssets
       const internalAssets = accessibleIds === undefined ? allAssets : allAssets.filter(asset => accessibleIds.has(asset.id))
       const hasAutomaticScanInProgress = internalAssets.some(asset => asset.scanStatus === 'quarantined')
       const nextAction = internalAssets
@@ -125,11 +128,13 @@ export async function handleMcpAssetMethod(method: string, params: Record<string
   if (method === 'asset.parse') {
       const assetId = required(params, 'asset_id')
       await enforceAssetAccess(req, workspaceId, assetId, 'editor')
+      await dependencies.assertAssetActive?.(workspaceId, assetId)
       return (await executeDurableAssetParse(workspaceId, assetId, req))
     }
   if (method === 'asset.facts.confirm') {
       const asset = assetForWorkspace(workspaceId, required(params, 'asset_id'))
       await enforceAssetAccess(req, workspaceId, asset.id, 'editor')
+      await dependencies.assertAssetActive?.(workspaceId, asset.id)
       let facts: Record<string, unknown>
       try {
         const parsed = JSON.parse(required(params, 'facts_json'))
@@ -220,6 +225,7 @@ export async function handleMcpAssetMethod(method: string, params: Record<string
       if (!current.continuation) throw new DomainError('IMAGE_CONTINUATION_NOT_FOUND', '图片任务不是素材续跑任务', 404)
       if (current.continuation.state !== 'awaiting_confirmation') throw new DomainError('IMAGE_CONTINUATION_CONFIRMATION_REQUIRED', '图片续跑当前不在等待商家确认状态', 409, { continuation_state: current.continuation.state })
       const asset = assetForWorkspace(workspaceId, current.continuation.sourceAssetId)
+      await dependencies.assertAssetActive?.(workspaceId, asset.id)
       if (!isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())) throw new DomainError('IMAGE_CONTINUATION_NOT_READY', '素材尚不可用', 409)
       if (imageContinuationGate(asset, current) !== 'ready') throw new DomainError('IMAGE_CONTINUATION_RIGHTS_REQUIRED', '素材权益或适用范围尚未满足图片生成条件', 409)
       const authorizationSnapshot = workerAuthorizationSnapshot(req, workspaceId, asset.id, 'asset.continuation.execute', { method: 'asset.generation.confirm', job_id: current.id, asset_id: asset.id, job_revision: current.revision })
@@ -243,6 +249,7 @@ export async function handleMcpAssetMethod(method: string, params: Record<string
   if (method === 'asset.rights.update') {
       const asset = assetForWorkspace(workspaceId, required(params, 'asset_id'))
       await enforceAssetAccess(req, workspaceId, asset.id, 'editor')
+      await dependencies.assertAssetActive?.(workspaceId, asset.id)
       const previousAsset = structuredClone(asset)
       const rightsStatus = required(params, 'rights_status')
       if (!['approved', 'rejected', 'pending'].includes(rightsStatus)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'rights_status 无效', 400)

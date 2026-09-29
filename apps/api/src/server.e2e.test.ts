@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setWorkspaceBootstrapRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
+import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setAssetLifecycleRepositoryForTests, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setWorkspaceBootstrapRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
 import type { McpCanonicalProductConsistencyResult } from '../../../packages/contracts/src/index.js'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
@@ -2102,6 +2102,86 @@ describe('API HTTP vertical slice', () => {
     expect((listed.data as Array<{ display: { primaryStatus: string; nextAction: { method: string } } }>)[0]?.display).toMatchObject({ primaryStatus: 'awaiting_scan', nextAction: { method: 'asset.list' } })
     const paged = await fetch(`${base}/v1/assets?limit=1&offset=0`, { headers }).then(json)
     expect(paged.data).toMatchObject({ items: [expect.objectContaining({ id: (asset.data as { id: string }).id })], total: 1, limit: 1, offset: 0 })
+  })
+
+  it('serves recycle, restore, active-list exclusion and tenant isolation from the server lifecycle repository', async () => {
+    const base = await start()
+    const workspaceId = 'ws_asset_lifecycle_api'
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const state = new Map<string, { workspaceId: string; assetId: string; deletedAt: string; expiresAt: string; deletedBy: string; revision: number; purgeRequestedAt?: string; purgeRequestedBy?: string; purgeRequestReason?: string }>()
+    const lifecycle = {
+      async trash(input: { workspaceId: string; assetId: string; actorId: string }) {
+        const previous = state.get(`${input.workspaceId}:${input.assetId}`)
+        const item = previous ?? { workspaceId: input.workspaceId, assetId: input.assetId, deletedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(), deletedBy: input.actorId, revision: 1 }
+        state.set(`${input.workspaceId}:${input.assetId}`, item)
+        return item
+      },
+      async restore(input: { workspaceId: string; assetId: string }) {
+        const key = `${input.workspaceId}:${input.assetId}`
+        const item = state.get(key)
+        if (!item) throw new Error('ASSET_LIFECYCLE_RESTORE_UNAVAILABLE')
+        state.delete(key)
+        return item
+      },
+      async requestEarlyPurge(input: { workspaceId: string; assetId: string; actorId: string; reason: string; expectedRevision: number }) {
+        const item = state.get(`${input.workspaceId}:${input.assetId}`)
+        if (!item || item.revision !== input.expectedRevision || item.purgeRequestedAt) throw new Error('ASSET_LIFECYCLE_REVISION_CONFLICT')
+        Object.assign(item, { purgeRequestedAt: new Date().toISOString(), purgeRequestedBy: input.actorId, purgeRequestReason: input.reason, revision: item.revision + 1 })
+        return item
+      },
+      async cancelEarlyPurge(input: { workspaceId: string; assetId: string; expectedRevision: number }) {
+        const item = state.get(`${input.workspaceId}:${input.assetId}`)
+        if (!item?.purgeRequestedAt || item.revision !== input.expectedRevision) throw new Error('ASSET_LIFECYCLE_PURGE_CANCEL_UNAVAILABLE')
+        delete item.purgeRequestedAt; delete item.purgeRequestedBy; delete item.purgeRequestReason; item.revision += 1
+        return item
+      },
+      async listTrash(scope: string, options: { limit?: number; offset?: number; assetIds?: readonly string[] } = {}) {
+        const items = [...state.values()].filter(item => item.workspaceId === scope && (!options.assetIds || options.assetIds.includes(item.assetId)))
+        const limit = options.limit ?? 50; const offset = options.offset ?? 0
+        return { items: items.slice(offset, offset + limit), total: items.length, limit, offset }
+      },
+      async listTrashedAssetIds(scope: string, ids: readonly string[]) { return new Set(ids.filter(id => state.has(`${scope}:${id}`))) },
+      async isActive(scope: string, id: string) { return !state.has(`${scope}:${id}`) },
+    }
+    const restoreLifecycle = setAssetLifecycleRepositoryForTests(lifecycle as never)
+    try {
+      const registered = await fetch(`${base}/v1/assets`, { method: 'POST', headers, body: JSON.stringify({ name: 'real-guide.txt', mime_type: 'text/plain', size_bytes: 15, sha256: 'b'.repeat(64), storage_key: `quarantine/${workspaceId}/real-guide.txt` }) }).then(json)
+      expect(registered.error).toBeNull()
+      const asset = registered.data as { id: string }
+      const malformedTrashRevision = await fetch(`${base}/v1/assets/${encodeURIComponent(asset.id)}/trash`, { method: 'POST', headers, body: JSON.stringify({ expected_revision: '1' }) }).then(json)
+      expect(malformedTrashRevision.error?.code).toBe('INVALID_REQUEST')
+      const trashed = await fetch(`${base}/v1/assets/${encodeURIComponent(asset.id)}/trash`, { method: 'POST', headers }).then(json)
+      expect(trashed.error).toBeNull()
+      expect(trashed.data).toMatchObject({ asset: { id: asset.id }, deleted_by: expect.any(String), expires_at: expect.any(String) })
+      const active = await fetch(`${base}/v1/assets`, { headers }).then(json)
+      expect(active.data).toEqual([])
+      const trash = await fetch(`${base}/v1/assets/trash`, { headers }).then(json)
+      const trashData = trash.data as { total: number; items: Array<{ asset: { id: string }; revision: number }> }
+      expect(trashData.total).toBe(1)
+      expect(trashData.items[0]?.asset.id).toBe(asset.id)
+      const foreignTrash = await fetch(`${base}/v1/assets/trash`, { headers: { 'x-workspace-id': 'ws_asset_lifecycle_other' } }).then(json)
+      expect((foreignTrash.data as { total: number; items: unknown[] }).total).toBe(0)
+      expect((foreignTrash.data as { items: unknown[] }).items).toEqual([])
+      const malformedPurge = await fetch(`${base}/v1/assets/${encodeURIComponent(asset.id)}/purge`, { method: 'POST', headers, body: JSON.stringify({ confirm_asset_name: 'wrong', reason: 'test', expected_revision: 1 }) }).then(json)
+      expect(malformedPurge.error?.code).toBe('INVALID_REQUEST')
+      const currentRevision = trashData.items[0]?.revision ?? 1
+      const purgeRequested = await fetch(`${base}/v1/assets/${encodeURIComponent(asset.id)}/purge`, { method: 'POST', headers, body: JSON.stringify({ confirm_asset_name: 'real-guide.txt', reason: '商家主动确认提前删除', expected_revision: currentRevision }) }).then(json)
+      expect(purgeRequested.error).toBeNull()
+      expect(purgeRequested.data).toMatchObject({ asset_id: asset.id, status: 'purge_queued', purge_requested_by: expect.any(String) })
+      const queuedTrash = await fetch(`${base}/v1/assets/trash`, { headers }).then(json)
+      expect((queuedTrash.data as { items: Array<{ purge_requested_at: string; purge_request_reason: string }> }).items[0]).toMatchObject({ purge_requested_at: expect.any(String), purge_request_reason: '商家主动确认提前删除' })
+      const cancelPurge = await fetch(`${base}/v1/assets/${encodeURIComponent(asset.id)}/purge/cancel`, { method: 'POST', headers, body: JSON.stringify({ expected_revision: (purgeRequested.data as { revision: number }).revision }) }).then(json)
+      expect(cancelPurge.error).toBeNull()
+      expect(cancelPurge.data).toMatchObject({ status: 'purge_cancelled' })
+      const deniedDownload = await fetch(`${base}/v1/assets/${encodeURIComponent(asset.id)}/download`, { headers }).then(json)
+      expect(deniedDownload.error?.code).toBe('ASSET_TRASHED')
+      const malformedRestoreRevision = await fetch(`${base}/v1/assets/${encodeURIComponent(asset.id)}/restore`, { method: 'POST', headers, body: JSON.stringify({ expected_revision: 0 }) }).then(json)
+      expect(malformedRestoreRevision.error?.code).toBe('INVALID_REQUEST')
+      const restored = await fetch(`${base}/v1/assets/${encodeURIComponent(asset.id)}/restore`, { method: 'POST', headers }).then(json)
+      expect(restored.error).toBeNull()
+      const visibleAgain = await fetch(`${base}/v1/assets`, { headers }).then(json)
+      expect((visibleAgain.data as Array<{ id: string }>).map(item => item.id)).toContain(asset.id)
+    } finally { restoreLifecycle() }
   })
 
   it('uploads assets into quarantine and only serves them after scan promotion', async () => {

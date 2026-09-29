@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
 import argon2 from 'argon2'
 import { request as httpRequest } from 'node:http'
-import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, productionReadinessDiagnostics, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setOAuthStateStoreForTests, setPaymentProviderForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, creativePointsForTests, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, productionReadinessDiagnostics, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setOAuthStateStoreForTests, setPaymentProviderForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
 import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/security/src/redis-oauth.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
@@ -1507,6 +1507,7 @@ describe('security and access-control acceptance gates', () => {
 
   it('rejects production publish before queueing when platform write readiness is incomplete', async () => {
     vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('PLATFORM_OPERATIONS_MODE', 'manual')
     await configureBearerMembers([{ token: 'token-publish', workspaceId: 'ws_publish_gate' }])
     await grantCreativePointsForTests('ws_publish_gate')
     grantContinuousFeatureEntitlementForTests('ws_publish_gate')
@@ -1517,8 +1518,21 @@ describe('security and access-control acceptance gates', () => {
     const headers = { authorization: 'Bearer token-publish', 'x-workspace-id': 'ws_publish_gate', 'content-type': 'application/json' }
     const created = await fetch(`${base}/v1/tasks`, { method: 'POST', headers, body: JSON.stringify({ product_id: productId, platform: 'taobao', account_id: 'remote-publish-gate' }) }).then(response => response.json() as Promise<Envelope<{ id: string }>>)
     const taskId = created.data!.id
-    const generationWithoutRules = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'content.generate', params: { task_id: taskId } }) }).then(response => response.json() as Promise<Envelope>)
+    const pointsBeforeRuleGate = await creativePointsForTests.getBalance('ws_publish_gate')
+    const generationWithoutRulesResponse = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'content.generate', params: { task_id: taskId } }) })
+    const generationWithoutRules = await generationWithoutRulesResponse.json() as Envelope
+    expect(generationWithoutRulesResponse.status).toBe(503)
     expect(generationWithoutRules.error).toMatchObject({ code: 'PLATFORM_RULE_DATA_UNAVAILABLE', details: { platform: 'taobao', rule_sync: { state: 'not_configured' } } })
+    const manualRuleActions = (generationWithoutRules.error?.details?.next_actions ?? []) as string[]
+    expect(manualRuleActions.join('\n')).toContain('另一位审批人激活')
+    expect(manualRuleActions.join('\n')).not.toContain('PLATFORM_RULE_SYNC_')
+    expect(manualRuleActions.join('\n')).not.toContain('rule.sync.now')
+    expect(await creativePointsForTests.getBalance('ws_publish_gate')).toMatchObject({
+      availablePoints: pointsBeforeRuleGate.availablePoints,
+      reservedPoints: pointsBeforeRuleGate.reservedPoints,
+      settledPoints: pointsBeforeRuleGate.settledPoints,
+      revision: pointsBeforeRuleGate.revision,
+    })
     const trustedRuleRepository = await configureTrustedPlatformRule('ws_publish_gate', 'taobao')
     const generationBeforeRecharge = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'content.generate', params: { task_id: taskId } }) }).then(response => response.json() as Promise<Envelope>)
     expect(generationBeforeRecharge.error?.code).toBe('MODEL_RELAY_NOT_CONFIGURED')

@@ -6,6 +6,20 @@ import type { imageMcpRuntime } from './server.js'
 type ImageMcpRuntime = ReturnType<typeof imageMcpRuntime>
 export const MCP_IMAGE_METHODS = new Set(['catalog.image.generate', 'catalog.image.retry', 'catalog.image.get', 'catalog.image.select', 'catalog.image.review', 'content.visual.select'])
 
+export function durableImageAdmissionCommitted(events: ReadonlyArray<{ eventType: string; payload: Record<string, unknown> }>, idempotencyKey: string): boolean {
+  return events.some(event => event.eventType === 'image.generation.requested' && event.payload.idempotency_key === idempotencyKey)
+}
+
+/** Run work that is known to happen before any durable request is admitted. */
+export async function prepareDurableImageAdmission<T>(prepare: () => Promise<T>, compensate: (error: unknown) => Promise<void>): Promise<T> {
+  try {
+    return await prepare()
+  } catch (error) {
+    await compensate(error)
+    throw error
+  }
+}
+
 export async function handleImageMcpMethod(method: string, params: Record<string, unknown>, workspaceId: string, req: IncomingMessage, runtime: ImageMcpRuntime): Promise<unknown> {
   const {
     protectedProductConclusion, requireProtectedProductIntent, demoUnscannedAssetsEnabled,
@@ -157,6 +171,7 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       const effectiveSourceAssetIds = sourceAssetIds ?? (imageMode === 'optimize' ? defaultSourceAssetIds : undefined)
       if (imageMode === 'optimize' && !effectiveSourceAssetIds?.length) throw new DomainError('IMAGE_OPTIMIZATION_SOURCE_REQUIRED', '素材优化模式必须提供至少一个已授权商品素材', 400)
       imageTrace('generate.request', { workspace_id: workspaceId, product_id: product.id, platform: product.platform, mode: imageMode, size: typeof params.size === 'string' ? params.size : 'default', direction: typeof params.direction === 'string' ? params.direction.slice(0, 160) : 'default', source_asset_count: effectiveSourceAssetIds?.length ?? 0, requested_count: params.count ?? 'default' })
+      for (const assetId of effectiveSourceAssetIds ?? []) await runtime.assertAssetActive?.(workspaceId, assetId)
       requireApprovedAssetForImageGeneration(workspaceId, product, effectiveSourceAssetIds, unboundCandidate && !imageTask && !params.content_version_id)
       const commercialDecision = await enforceMcpCommercialAccess(req, workspaceId, method)
       requirePlatformModelCostGate('image')
@@ -183,16 +198,25 @@ export async function handleImageMcpMethod(method: string, params: Record<string
         if (unboundCandidate && !(await persistence.actionLedger?.get(workspaceId, walletDebitKey))) {
           await recordActionSettlement({ workspaceId, actionKey: walletDebitKey, actionKind: 'model_image', settlement: 'included_quota', amountFen: 0, actorId: billingActorId, description: '图片生成候选（未绑定商品）', settlementStatus: 'authorized' })
         }
-        if (existingImageJob?.continuation) {
-          existingImageJob.continuation.billingState = 'settled'
-          existingImageJob.continuation.state = 'executing'
-          existingImageJob.continuation.updatedAt = new Date().toISOString()
-          existingImageJob.updatedAt = existingImageJob.continuation.updatedAt
-          existingImageJob.revision += 1
-          await persistSnapshot(workspaceId, 'image_generation_job', existingImageJob, existingImageJob as unknown as Record<string, unknown>)
-        }
       }
-      const creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
+      // A replay can arrive after the durable job and its point reservation
+      // were committed but before ChatGPT received the first response. Reuse
+      // that job handle instead of treating the reservation replay as a busy
+      // action; otherwise the caller has no job_id it can poll or inspect.
+      const creativeReservation = billingRequired
+        ? await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
+        : null
+      // Do not advance a deferred continuation past its billing gate until
+      // the reservation has succeeded. If reservation fails, the durable
+      // snapshot remains `pending`, so a later replay cannot bypass billing.
+      if (billingRequired && existingImageJob?.continuation) {
+        existingImageJob.continuation.billingState = 'settled'
+        existingImageJob.continuation.state = 'executing'
+        existingImageJob.continuation.updatedAt = new Date().toISOString()
+        existingImageJob.updatedAt = existingImageJob.continuation.updatedAt
+        existingImageJob.revision += 1
+        await persistSnapshot(workspaceId, 'image_generation_job', existingImageJob, existingImageJob as unknown as Record<string, unknown>)
+      }
       // Reserve before reading the evidence returned to MCP. This makes the
       // response reflect the current balance and the points held for this
       // request, including gifted/entitlement points.
@@ -210,44 +234,85 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       // job here; the normal local fixture path below remains synchronous until
       // the image worker executor and callback are configured.
       if (durableImageGeneration) {
-        const authorizationSnapshot = workerAuthorizationSnapshot(req, workspaceId, job.id, 'image_generation.execute', { method: 'catalog.image.generate', product_id: product.id, source_product_version: job.sourceProductVersion, intent_hash: job.intentHash })
-        if (!authorizationSnapshot) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '图片生成缺少持久身份授权快照，已拒绝入队', 503)
-        const sourceAssetDataUrls = await Promise.all((job.sourceAssetIds ?? []).map(async assetId => {
-          const asset = assetForWorkspace(workspaceId, assetId)
-          const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey, { includeQuarantine: asset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
-          return `data:${asset.mimeType};base64,${Buffer.from(stored.body).toString('base64')}`
-        }))
-        const eventPayload: Record<string, unknown> = {
-          job_id: job.id,
-          workspace_id: workspaceId,
-          product_id: job.productId,
-          product_title: product.title,
-          category: product.category ?? null,
-          task_id: job.taskId ?? null,
-          content_version_id: job.contentVersionId ?? null,
-          intent_hash: job.intentHash,
-          idempotency_key: job.idempotencyKey,
-          image_mode: job.imageMode,
-          direction: job.direction,
-          requested_count: job.count,
-          source_asset_ids: job.sourceAssetIds ?? [],
-          source_asset_data_urls: sourceAssetDataUrls,
-          source_product_version: job.sourceProductVersion,
-          visual_brief: job.visualBrief ?? null,
-          action_id: walletDebitKey,
-          run_key: walletDebitKey,
-          authorization_snapshot: serializedWorkerAuthorizationSnapshot(authorizationSnapshot),
-        }
-        const commercialAccessSnapshot = await commercialWorkerSnapshotForReservation(workspaceId, 'image_generation.execute', commercialDecision, creativeReservation?.id)
-        if (commercialAccessSnapshot) eventPayload.commercial_access_snapshot = commercialAccessSnapshot
-        if (!existingImageJob) {
-          const guardedEventPayload = await withCommercialWorkerSnapshot(workspaceId, 'image.generation.requested', eventPayload)
+        // A failed HTTP response can follow a successful in-memory enqueue but
+        // a failed durable write. On an idempotent retry, repair that gap by
+        // checking the authoritative outbox instead of treating any in-memory
+        // job as proof that the worker event was committed.
+        const requestedEvents = existingImageJob
+          ? await persistence.outbox!.listAggregateEvents(workspaceId, job.id, 100)
+          : []
+        const durableAdmissionExists = durableImageAdmissionCommitted(requestedEvents, idempotencyKey)
+        if (!durableAdmissionExists) {
+          const prepared = await prepareDurableImageAdmission(async () => {
+            const authorizationSnapshot = workerAuthorizationSnapshot(req, workspaceId, job.id, 'image_generation.execute', { method: 'catalog.image.generate', product_id: product.id, source_product_version: job.sourceProductVersion, intent_hash: job.intentHash })
+            if (!authorizationSnapshot) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '图片生成缺少持久身份授权快照，已拒绝入队', 503)
+            const sourceAssetDataUrls = await Promise.all((job.sourceAssetIds ?? []).map(async assetId => {
+              await runtime.assertAssetActive(workspaceId, assetId)
+              const asset = assetForWorkspace(workspaceId, assetId)
+              const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey, { includeQuarantine: asset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
+              return `data:${asset.mimeType};base64,${Buffer.from(stored.body).toString('base64')}`
+            }))
+            const eventPayload: Record<string, unknown> = {
+              job_id: job.id,
+              workspace_id: workspaceId,
+              product_id: job.productId,
+              product_title: product.title,
+              category: product.category ?? null,
+              task_id: job.taskId ?? null,
+              content_version_id: job.contentVersionId ?? null,
+              intent_hash: job.intentHash,
+              idempotency_key: job.idempotencyKey,
+              image_mode: job.imageMode,
+              direction: job.direction,
+              requested_count: job.count,
+              source_asset_ids: job.sourceAssetIds ?? [],
+              source_asset_data_urls: sourceAssetDataUrls,
+              source_product_version: job.sourceProductVersion,
+              visual_brief: job.visualBrief ?? null,
+              action_id: walletDebitKey,
+              run_key: walletDebitKey,
+              authorization_snapshot: serializedWorkerAuthorizationSnapshot(authorizationSnapshot),
+            }
+            const commercialAccessSnapshot = await commercialWorkerSnapshotForReservation(workspaceId, 'image_generation.execute', commercialDecision, creativeReservation?.id)
+            if (commercialAccessSnapshot) eventPayload.commercial_access_snapshot = commercialAccessSnapshot
+            const guardedEventPayload = await withCommercialWorkerSnapshot(workspaceId, 'image.generation.requested', eventPayload)
+            return { guardedEventPayload }
+          }, async () => {
+            // This scope ends before persistSnapshotAndEvent is called, so the
+            // provider cannot have been dispatched and no outbox admission can
+            // exist for a newly-created job. Never apply this compensation to
+            // an idempotent replay: its reservation may belong to another call.
+            if (existingImageJob) return
+            await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片任务入队准备失败', creativeReservation)
+            // Remove the replay handle before secondary wallet/entitlement
+            // compensation can fail; otherwise an idempotent replay could
+            // mistake this unadmitted in-memory job for billable work.
+            service.discardUnpersistedImageGeneration(workspaceId, job.id)
+            if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片任务入队准备失败' })
+            else if (billingRequired) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: billingActorId, reason: '图片任务入队准备失败' })
+          })
           if (!persistence.persistSnapshotAndEvent) throw new DomainError('IMAGE_GENERATION_PERSISTENCE_UNAVAILABLE', '图片生成持久化写入未配置，已阻断任务入队', 503)
-          await persistence.persistSnapshotAndEvent({ workspaceId, entityType: 'image_generation_job', entityId: job.id, entityVersion: job.revision, payload: job as unknown as Record<string, unknown>, eventType: 'image.generation.requested', eventPayload: guardedEventPayload })
+          if (!creativeReservation && commercialDecision?.classification === 'POINT_CHARGED') {
+            const priorReservation = await persistence.creativePoints?.getReservationByActionKey?.(workspaceId, walletDebitKey)
+            const priorSnapshot = priorReservation?.id
+              ? await commercialWorkerSnapshotForReservation(workspaceId, 'image_generation.execute', commercialDecision, priorReservation.id)
+              : undefined
+            if (!priorSnapshot) throw new DomainError('COMMERCIAL_EXECUTION_RESERVATION_INVALID', '图片任务回执缺少有效的创意点预留快照', 409)
+            prepared.guardedEventPayload.commercial_access_snapshot = priorSnapshot
+          }
+          await persistence.persistSnapshotAndEvent({ workspaceId, entityType: 'image_generation_job', entityId: job.id, entityVersion: job.revision, payload: job as unknown as Record<string, unknown>, eventType: 'image.generation.requested', eventPayload: prepared.guardedEventPayload })
         }
         // The durable poll contract retains the historical automatic shape:
         // poll_request: { job_id: job.id, automatic: true, user_action_required: false }
-        return ({ job_id: job.id, product_id: product.id, unbound_candidate: unboundCandidate, candidate_status: unboundCandidate ? '未绑定商品、仅候选、不可发布' : undefined, creative_points: creativePoints, execution: { mode: 'durable', state: 'queued', provider: 'configured relay', source: 'server' }, rule_preflight: rulePreflight, product_protection: productProtection, job: publicImageJob(job), poll_request: { job_id: job.id, automatic: true, user_action_required: false, next_action: { type: 'automatic_poll', label: '系统自动获取结果' } } })
+        const stillRunning = job.state === 'queued' || job.state === 'running'
+        const nextAction = stillRunning
+          ? { type: 'automatic_poll', label: '系统自动获取结果' }
+          : job.state === 'failed'
+            ? { type: 'review_error', label: '查看失败原因' }
+            : job.state === 'succeeded'
+              ? { type: 'review_candidates', label: '查看候选' }
+              : { type: 'refresh_status', label: '刷新任务状态' }
+        return ({ job_id: job.id, product_id: product.id, unbound_candidate: unboundCandidate, candidate_status: unboundCandidate ? '未绑定商品、仅候选、不可发布' : undefined, creative_points: creativePoints, execution: { mode: 'durable', state: job.state, provider: 'configured relay', source: 'server' }, rule_preflight: rulePreflight, product_protection: productProtection, job: publicImageJob(job), poll_request: { job_id: job.id, automatic: stillRunning, user_action_required: false, next_action: nextAction } })
       }
       // A nested model-usage callback may hydrate the pre-provider snapshot
       // while the provider request is in flight. Durable archived outputs are
@@ -330,10 +395,12 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       const imageRunKey = typeof previousRunKey === 'string' ? previousRunKey.trim() : `image:${previous.idempotencyKey}`
       const billingActorId = requestActor(req)
       const walletDebitKey = `image:${retryKey}`
-      const creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
+      const existingRetry = [...service.imageGenerationJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === retryKey)
+      const creativeReservation = existingRetry
+        ? null
+        : await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
       let creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
       let entitlementConsumed = false
-      const existingRetry = [...service.imageGenerationJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === retryKey)
       if (!existingRetry) {
         entitlementConsumed = Boolean(await observeLegacyImageEntitlementShadow({ workspaceId, kind: 'image_generation' }))
         await observeLegacyWalletShadow(workspaceId)
@@ -344,7 +411,7 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       } catch (error) {
           await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试未创建任务', creativeReservation)
         if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片安全重试未创建任务' })
-        else await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: billingActorId, reason: '图片安全重试未创建任务' })
+        else if (!existingRetry) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: billingActorId, reason: '图片安全重试未创建任务' })
         throw error
       }
       const retryAuthorizationSnapshot = durableRetry ? workerAuthorizationSnapshot(req, workspaceId, retried.job.id, 'image_generation.execute', { method: 'catalog.image.retry', product_id: retried.job.productId, source_product_version: retried.job.sourceProductVersion, intent_hash: retried.job.intentHash }) : undefined
@@ -361,11 +428,17 @@ export async function handleImageMcpMethod(method: string, params: Record<string
           await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试持久化未配置', creativeReservation)
           throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '图片安全重试的 Durable Worker 尚未完成生产配置', 503)
         }
-        if (!existingRetry) {
-          const commercialAccessSnapshot = await commercialWorkerSnapshotForReservation(workspaceId, 'image_generation.execute', commercialDecision, creativeReservation?.id)
+        const retryEvents = await persistence.outbox.listAggregateEvents(workspaceId, retried.job.id, 100)
+        if (!durableImageAdmissionCommitted(retryEvents, retryKey)) {
+          const priorReservation = !creativeReservation && commercialDecision?.classification === 'POINT_CHARGED'
+            ? await persistence.creativePoints?.getReservationByActionKey?.(workspaceId, walletDebitKey)
+            : undefined
+          const commercialAccessSnapshot = await commercialWorkerSnapshotForReservation(workspaceId, 'image_generation.execute', commercialDecision, creativeReservation?.id ?? priorReservation?.id)
+          if (!commercialAccessSnapshot) throw new DomainError('COMMERCIAL_ACCESS_SNAPSHOT_REQUIRED', '图片安全重试缺少可恢复的商业授权快照，已拒绝入队', 503)
           await persistence.persistSnapshotAndEvent({ workspaceId, entityType: 'image_generation_job', entityId: retried.job.id, entityVersion: retried.job.revision, payload: retried.job as unknown as Record<string, unknown>, eventType: 'image.generation.requested', eventPayload: { job_id: retried.job.id, workspace_id: workspaceId, product_id: retried.job.productId, intent_hash: retried.job.intentHash, idempotency_key: retried.job.idempotencyKey, image_mode: retried.job.imageMode, direction: retried.job.direction, requested_count: retried.job.count, source_asset_ids: retried.job.sourceAssetIds ?? [], source_product_version: retried.job.sourceProductVersion, visual_brief: retried.job.visualBrief ?? null, action_id: walletDebitKey, run_key: imageRunKey, authorization_snapshot: serializedWorkerAuthorizationSnapshot(retryAuthorizationSnapshot!), ...(commercialAccessSnapshot ? { commercial_access_snapshot: commercialAccessSnapshot } : {}), retry_of_job_id: previous.id }})
         }
-        return ({ job_id: retried.job.id, previous_job_id: previous.id, state: 'queued', creative_points: creativePoints, execution: { mode: 'durable', state: 'queued', provider: 'configured relay', source: 'server' }, job: publicImageJob(retried.job), poll_request: { job_id: retried.job.id, automatic: true, user_action_required: false } })
+        const retryState = retried.job.state
+        return ({ job_id: retried.job.id, previous_job_id: previous.id, state: retryState, creative_points: creativePoints, execution: { mode: 'durable', state: retryState, provider: 'configured relay', source: 'server' }, job: publicImageJob(retried.job), poll_request: { job_id: retried.job.id, automatic: retryState === 'queued' || retryState === 'running', user_action_required: false } })
       }
       try {
         const completed = await service.completeImageGeneration({ workspaceId, jobId: retried.job.id, runKey: imageRunKey, sourceImages: await sourceImagesForImageJob(workspaceId, retried.job) })

@@ -3,7 +3,7 @@ import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { alertingSelfMetricLines, jobQueueMetricLines } from './server.js'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, authorizationRepositoryDomainError, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, prioritizeQueueAssets, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, satisfiedAuthorizationObligations, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, authorizationRepositoryDomainError, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, platformRuleDataRecoveryActions, prioritizeQueueAssets, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, satisfiedAuthorizationObligations, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requireApprovedAssetForImageGeneration, requirePublishAuthorizationSnapshot } from './server.js'
 import { merchantEntryBillingReadAllowed } from './server.js'
 import { providerSucceededButSettlementPending } from './server.js'
@@ -28,6 +28,23 @@ describe('provider outcome point reservation boundary', () => {
       { code: 'MODEL_USAGE_SETTLEMENT_PENDING' },
     ]) expect(providerSucceededButSettlementPending(error)).toBe(true)
     expect(providerSucceededButSettlementPending({ code: 'IMAGE_EDIT_NOT_CONFIGURED', details: { provider_executed: false } })).toBe(false)
+  })
+})
+
+describe('platform rule data recovery guidance', () => {
+  it('routes manual operations to reviewed public-rule governance without remote sync instructions', () => {
+    const actions = platformRuleDataRecoveryActions({ PLATFORM_OPERATIONS_MODE: 'manual' })
+    expect(actions.join('\n')).toContain('另一位审批人激活')
+    expect(actions.join('\n')).not.toContain('PLATFORM_RULE_SYNC_')
+    expect(actions.join('\n')).not.toContain('rule.sync.now')
+  })
+
+  it('routes official API operations to signed manifest synchronization', () => {
+    const actions = platformRuleDataRecoveryActions({ PLATFORM_OPERATIONS_MODE: 'official_api' })
+    expect(actions.join('\n')).toContain('PLATFORM_RULE_SYNC_MANIFEST_URL')
+    expect(actions.join('\n')).toContain('PLATFORM_RULE_SYNC_SIGNING_SECRET')
+    expect(actions.join('\n')).toContain('PLATFORM_RULE_SYNC_INTERVAL_HOURS')
+    expect(actions.join('\n')).toContain('rule.sync.now')
   })
 })
 
@@ -795,7 +812,7 @@ describe('API application wiring', () => {
     expect(handler).toContain("case 'catalog.image.generate':")
     expect(handler).toContain("process.env.IMAGE_GENERATION_EXECUTION_MODE?.trim().toLowerCase() === 'durable'")
     expect(handler).toContain("eventType: 'image.generation.requested'")
-    expect(handler).toContain('if (!existingImageJob) {')
+    expect(handler).toContain('const requestedEvents = existingImageJob')
     expect(handler).toContain("entityType: 'image_generation_job'")
     expect(handler).toContain("poll_request:")
     expect(handler).toContain("user_action_required: false")

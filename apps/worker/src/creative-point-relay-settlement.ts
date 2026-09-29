@@ -77,7 +77,7 @@ const receiptHash = (value: Record<string, unknown>) => createHash('sha256').upd
  */
 export class CreativePointRelaySettlement {
   constructor(
-    private readonly points: Pick<CreativePointRepository, 'getReservation' | 'release'>,
+    private readonly points: Pick<CreativePointRepository, 'getReservation' | 'releaseFailedProviderReservation'>,
     private readonly receipts: Pick<PostgresCreativePointLifecycleRepository, 'recordProviderReceipt' | 'getProviderReceipt' | 'verifyModelUsageDeliverySettlement'>,
     private readonly provider: string,
   ) {}
@@ -134,7 +134,8 @@ export class CreativePointRelaySettlement {
       return
     }
     if (providerRequestId) await this.receipts.recordProviderReceipt({ workspaceId: event.workspaceId, operationId: reservation.operationId, provider: this.provider, providerRequestId, outcome: 'failed', receiptHash: receiptHash({ workspace_id: event.workspaceId, operation_id: reservation.operationId, provider: this.provider, provider_request_id: providerRequestId, outcome: 'failed', error_code: identity(error.code) ?? 'MODEL_PROVIDER_REQUEST_FAILED' }), at })
-    await this.points.release({ workspaceId: event.workspaceId, reservationId: reservation.id, idempotencyKey: `relay-release:${providerRequestId ?? event.id}`, at })
+    if (!providerRequestId || !this.points.releaseFailedProviderReservation) throw Object.assign(new Error('a provider request identity and transactionally guarded release are required before refunding a failed relay reservation'), { code: 'CREATIVE_POINT_FAILED_RELEASE_UNAVAILABLE', reconciliationRequired: true })
+    await this.points.releaseFailedProviderReservation({ workspaceId: event.workspaceId, reservationId: reservation.id, actionKey: reservation.actionKey, providerRequestId, sourceEventId: event.id, idempotencyKey: `relay-release:${event.id}:${providerRequestId}`, at })
   }
 }
 

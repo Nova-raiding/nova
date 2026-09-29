@@ -371,6 +371,98 @@ paths:
         required: true
         content: { application/json: { schema: { type: object, required: [name, mime_type, size_bytes, sha256, storage_key], additionalProperties: false, properties: { name: { type: string }, mime_type: { type: string }, size_bytes: { type: integer, minimum: 0 }, sha256: { type: string }, storage_key: { type: string }, rights_status: { type: string, enum: [pending, approved, rejected] } } } } }
       responses: { '201': { $ref: '#/components/responses/Envelope' }, '400': { $ref: '#/components/responses/ErrorEnvelope' } }
+  /v1/assets/trash:
+    get:
+      tags: [Catalog]
+      operationId: listTrashedAssets
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Offset' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/assets/{assetId}/trash:
+    post:
+      tags: [Catalog]
+      operationId: trashAsset
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: assetId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 256 } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, additionalProperties: false, properties: { expected_revision: { type: integer, minimum: 1 } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/assets/{assetId}/restore:
+    post:
+      tags: [Catalog]
+      operationId: restoreAsset
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: assetId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 256 } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, additionalProperties: false, properties: { expected_revision: { type: integer, minimum: 1 } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '410': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/assets/{assetId}/purge:
+    post:
+      tags: [Catalog]
+      operationId: requestEarlyAssetPurge
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: assetId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 256 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirm_asset_name, reason, expected_revision]
+              properties:
+                confirm_asset_name: { type: string, minLength: 1, maxLength: 256 }
+                reason: { type: string, minLength: 1, maxLength: 500 }
+                expected_revision: { type: integer, minimum: 1 }
+      responses:
+        '202': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/assets/{assetId}/purge/cancel:
+    post:
+      tags: [Catalog]
+      operationId: cancelEarlyAssetPurge
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: assetId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 256 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expected_revision]
+              properties:
+                expected_revision: { type: integer, minimum: 1 }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/assets/{assetId}/products:
     get:
       tags: [Catalog]

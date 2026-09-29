@@ -395,6 +395,7 @@ export const HTTP_IDENTITY_LINKED_OPERATIONS = [
   'http:GET:/v1/image-generation-jobs',
   'http:GET:/v1/image-generation-jobs/{jobId}',
   'http:GET:/v1/assets',
+  'http:GET:/v1/assets/trash',
   'http:POST:/v1/assets',
   'http:GET:/v1/assets/{assetId}/products',
   'http:GET:/v1/products/{productId}/assets',
@@ -453,6 +454,16 @@ export const HTTP_IDENTITY_LINKED_OPERATIONS = [
   'http:POST:/v1/canonical-backfill/conflicts/scan',
 ] as const satisfies readonly string[]
 
+// Tenant asset lifecycle mutations have a dedicated workspace membership and
+// per-asset editor authorization check in the HTTP router; they have no MCP
+// equivalent and therefore remain identity-only commercial operations.
+export const HTTP_ASSET_LIFECYCLE_OPERATIONS = [
+  'http:POST:/v1/assets/{assetId}/trash',
+  'http:POST:/v1/assets/{assetId}/restore',
+  'http:POST:/v1/assets/{assetId}/purge',
+  'http:POST:/v1/assets/{assetId}/purge/cancel',
+] as const satisfies readonly string[]
+
 // Platform-operator identity routes that intentionally have no merchant MCP
 // equivalent. They still require an authenticated operations session and must
 // be classified so the HTTP surface remains total.
@@ -496,6 +507,7 @@ export const HTTP_MACHINE_INFRASTRUCTURE_OPERATIONS = [
   'http:POST:/v1/internal/support/sla-scan',
   'http:POST:/v1/internal/support/sla-report',
   'http:POST:/v1/internal/storage/orphans/cleanup',
+  'http:POST:/v1/internal/assets/lifecycle/purge',
   'http:POST:/v1/internal/image-generation-jobs/reconciliation',
   'http:POST:/v1/internal/image-generation-jobs/{jobId}/result',
   'http:POST:/v1/internal/image-generation-jobs/{jobId}/execution',
@@ -592,6 +604,15 @@ function linkedHttpPolicies(): CommercialOperationPolicy[] {
 
 const httpRegistry = defineCommercialOperationRegistry([
   ...linkedHttpPolicies(),
+  ...HTTP_ASSET_LIFECYCLE_OPERATIONS.map(operation => ({
+    surface: 'HTTP' as const,
+    operation,
+    domain: 'COMMERCIAL' as const,
+    enabled: true,
+    classification: 'POINT_REQUIRED_NO_CHARGE' as const,
+    rate_action: null,
+    authorization_policy_ref: null,
+  })),
   ...HTTP_OPS_IDENTITY_OPERATIONS.map(operation => ({
     surface: 'HTTP' as const,
     operation,

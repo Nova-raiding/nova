@@ -10,6 +10,8 @@ export interface ContentGenerationInput {
   platform: string
   /** Unbound preview: creative copy only, with no fact-backed detail modules. */
   candidateOnly?: boolean
+  /** Candidate output contract. Video storyboards use a stricter shape than ordinary copy. */
+  candidateFormat?: 'copy' | 'video_storyboard'
   product: {
     id?: string
     title: string
@@ -85,6 +87,41 @@ export interface GeneratedContent {
   sellingPoints: string[]
   modules?: ContentModule[]
   brief?: StaticBrief
+  storyboard?: VideoStoryboardShot[]
+}
+
+export interface VideoStoryboardShot {
+  durationSeconds: number
+  visual: string
+  subtitle: string
+  voiceover: string
+}
+
+const UNSUPPORTED_UNVERIFIED_VIDEO_CLAIMS = ['独特设计', '卓越体验', '品质生活'] as const
+
+function validateCandidateStoryboard(value: Record<string, unknown>, source: string): VideoStoryboardShot[] {
+  const errors: string[] = []
+  if (!Array.isArray(value.storyboard) || value.storyboard.length < 3 || value.storyboard.length > 5) {
+    throw new Error(`CONTENT_SCHEMA_INVALID: ${source} storyboard 必须包含 3 至 5 个镜头`)
+  }
+  const storyboard = value.storyboard.map((raw, index): VideoStoryboardShot => {
+    if (!isRecord(raw)) {
+      errors.push(`storyboard[${index}] 必须是对象`)
+      return { durationSeconds: 0, visual: '', subtitle: '', voiceover: '' }
+    }
+    const durationSeconds = raw.durationSeconds
+    if (typeof durationSeconds !== 'number' || !Number.isFinite(durationSeconds) || durationSeconds < 2 || durationSeconds > 6) errors.push(`storyboard[${index}].durationSeconds 必须是 2 至 6 秒的数字`)
+    const text = (key: 'visual' | 'subtitle' | 'voiceover') => {
+      const candidate = raw[key]
+      if (typeof candidate !== 'string' || !candidate.trim()) errors.push(`storyboard[${index}].${key} 必须是非空字符串`)
+      return typeof candidate === 'string' ? candidate.trim() : ''
+    }
+    return { durationSeconds: typeof durationSeconds === 'number' ? durationSeconds : 0, visual: text('visual'), subtitle: text('subtitle'), voiceover: text('voiceover') }
+  })
+  const serialized = JSON.stringify(value)
+  for (const claim of UNSUPPORTED_UNVERIFIED_VIDEO_CLAIMS) if (serialized.includes(claim)) errors.push(`视频候选不得包含无事实依据的“${claim}”`)
+  if (errors.length) throw new Error(`CONTENT_SCHEMA_INVALID: ${source} ${errors.join('；')}`)
+  return storyboard
 }
 
 export interface ContentModule {
@@ -216,7 +253,7 @@ function normalizeProviderStructure(value: unknown, input: ContentGenerationInpu
 }
 
 /** Validate without repairing or silently dropping fields. This is the trust boundary for model/Codex output. */
-export function validateContentSchema(value: unknown, source = 'content', options: { requireDecisionContracts?: boolean; candidateOnly?: boolean } = {}): GeneratedContent {
+export function validateContentSchema(value: unknown, source = 'content', options: { requireDecisionContracts?: boolean; candidateOnly?: boolean; candidateFormat?: 'copy' | 'video_storyboard' } = {}): GeneratedContent {
   const errors: string[] = []
   const requiredText = (record: Record<string, unknown>, key: string, errorPath = key) => {
     if (typeof record[key] !== 'string' || !(record[key] as string).trim()) errors.push(`${errorPath} 必须是非空字符串`)
@@ -226,7 +263,10 @@ export function validateContentSchema(value: unknown, source = 'content', option
   const title = requiredText(value, 'title')
   const detail = requiredText(value, 'detail')
   if (options.candidateOnly) {
-    for (const key of Object.keys(value)) if (!['title', 'detail', 'sellingPoints', 'brief'].includes(key)) errors.push(`未绑定候选不得包含 ${key}`)
+    const allowedKeys = options.candidateFormat === 'video_storyboard'
+      ? ['title', 'detail', 'sellingPoints', 'storyboard']
+      : ['title', 'detail', 'sellingPoints', 'brief']
+    for (const key of Object.keys(value)) if (!allowedKeys.includes(key)) errors.push(`未绑定候选不得包含 ${key}`)
     if (isRecord(value.brief) && value.brief.priceExpression !== undefined) errors.push('未绑定候选不得包含价格表达')
   }
   if (!Array.isArray(value.sellingPoints) || value.sellingPoints.length === 0) errors.push('sellingPoints 必须是非空字符串数组')
@@ -234,7 +274,7 @@ export function validateContentSchema(value: unknown, source = 'content', option
 
   let modules: ContentModule[] | undefined
   if (options.candidateOnly && value.modules !== undefined) errors.push('未绑定候选不得包含事实模块')
-  if (options.candidateOnly && value.brief === undefined) errors.push('未绑定候选 brief 必须是对象')
+  if (options.candidateOnly && options.candidateFormat !== 'video_storyboard' && value.brief === undefined) errors.push('未绑定候选 brief 必须是对象')
   if (options.requireDecisionContracts === true && value.modules === undefined) {
     errors.push('modules 必须是非空数组')
   }
@@ -285,8 +325,10 @@ export function validateContentSchema(value: unknown, source = 'content', option
       brief = { ...text, visualHierarchy, protectedAreas, ...(typeof raw.priceExpression === 'string' && raw.priceExpression.trim() ? { priceExpression: raw.priceExpression.trim() } : {}) } as StaticBrief
     }
   }
+  let storyboard: VideoStoryboardShot[] | undefined
+  if (options.candidateFormat === 'video_storyboard') storyboard = validateCandidateStoryboard(value, source)
   if (errors.length) throw new Error(`CONTENT_SCHEMA_INVALID: ${source} 结构化内容校验失败：${errors.join('；')}`)
-  return { title, detail, sellingPoints: (value.sellingPoints as string[]).map(item => item.trim()), ...(modules ? { modules } : {}), ...(brief ? { brief } : {}) }
+  return { title, detail, sellingPoints: Array.isArray(value.sellingPoints) ? value.sellingPoints.filter((item): item is string => typeof item === 'string').map(item => item.trim()) : [], ...(modules ? { modules } : {}), ...(brief ? { brief } : {}), ...(storyboard ? { storyboard } : {}) }
 }
 
 function stringList(record: Record<string, unknown>, key: string, path: string, errors: string[], options: { allowEmpty?: boolean } = {}) {
@@ -366,15 +408,19 @@ function validateProviderScope(content: GeneratedContent, input: ContentGenerati
 }
 
 function validate(value: unknown, input: ContentGenerationInput): GeneratedContent {
-  return validateProviderScope(validateContentSchema(value, '模型响应', input.candidateOnly ? { candidateOnly: true } : { requireDecisionContracts: true }), input)
+  return validateProviderScope(validateContentSchema(value, '模型响应', input.candidateOnly ? { candidateOnly: true, candidateFormat: input.candidateFormat } : { requireDecisionContracts: true }), input)
 }
 
 function prompt(input: ContentGenerationInput) {
   const { usageContext: _usageContext, allowSchemaRepair: _allowSchemaRepair, beforeProviderRequest: _beforeProviderRequest, claimProviderAttempt: _claimProviderAttempt, startProviderAttempt: _startProviderAttempt, markProviderAttemptUnknown: _markProviderAttemptUnknown, recordProviderResponse: _recordProviderResponse, markProviderRepairRequired: _markProviderRepairRequired, settleProviderAttempt: _settleProviderAttempt, ...providerInput } = input
   if (input.candidateOnly) return JSON.stringify({
-    role: 'commerce-content-candidate',
-    outputShape: { title: '非空字符串', detail: '非空字符串', sellingPoints: ['非空字符串'], brief: { platform: '目标 platform', placement: '非空字符串', targetDimensions: '按目标平台版位规范配置，未配置时由设计确认', visualHierarchy: ['非空字符串'], productImageGuidance: '非空字符串', logoSafety: '非空字符串', headline: '非空字符串', subheadline: '非空字符串', coreSellingPoint: '非空字符串', cta: '非空字符串', textDensity: '非空字符串', safeArea: '非空字符串', protectedAreas: ['非空字符串'] } },
-    instruction: '仅生成未绑定商品的创意文案预览，返回 JSON 的 title、detail、sellingPoints、brief。不得返回 modules、事实来源、SKU、价格、库存、材质、功能、效果、认证或促销等未经确认的商品事实。product.title 只作为用户提供的主题，不证明商品事实。所有文字应明确属于待确认的创意建议；不得照抄 outputShape 示例字符串。brief 的必填字段都不可为空，未知尺寸使用指定待确认文案。',
+    role: input.candidateFormat === 'video_storyboard' ? 'commerce-video-storyboard-candidate' : 'commerce-content-candidate',
+    outputShape: input.candidateFormat === 'video_storyboard'
+      ? { title: '非空字符串', detail: '非空字符串，说明这是待确认候选', sellingPoints: ['非空字符串'], storyboard: [{ durationSeconds: 3, visual: '画面描述', subtitle: '字幕', voiceover: '旁白' }] }
+      : { title: '非空字符串', detail: '非空字符串', sellingPoints: ['非空字符串'], brief: { platform: '目标 platform', placement: '非空字符串', targetDimensions: '按目标平台版位规范配置，未配置时由设计确认', visualHierarchy: ['非空字符串'], productImageGuidance: '非空字符串', logoSafety: '非空字符串', headline: '非空字符串', subheadline: '非空字符串', coreSellingPoint: '非空字符串', cta: '非空字符串', textDensity: '非空字符串', safeArea: '非空字符串', protectedAreas: ['非空字符串'] } },
+    instruction: input.candidateFormat === 'video_storyboard'
+      ? '只返回视频脚本/分镜候选 JSON：title、detail、sellingPoints、storyboard。storyboard 必须恰有 3 至 5 个镜头，每镜头必须有 durationSeconds（2 至 6 秒）、visual、subtitle、voiceover，所有文字字段非空。没有已确认商品事实，因此只可描述创意拍摄动作和待确认占位，不得声称商品具有任何材质、功能、效果、认证、价格、促销或用户体验；禁止使用“独特设计”“卓越体验”“品质生活”。product.title 只是创作主题，不构成商品事实。'
+      : '仅生成未绑定商品的创意文案预览，返回 JSON 的 title、detail、sellingPoints、brief。不得返回 modules、事实来源、SKU、价格、库存、材质、功能、效果、认证或促销等未经确认的商品事实。product.title 只作为用户提供的主题，不证明商品事实。所有文字应明确属于待确认的创意建议；不得照抄 outputShape 示例字符串。brief 的必填字段都不可为空，未知尺寸使用指定待确认文案。',
     input: providerInput,
   })
   return JSON.stringify({
@@ -417,6 +463,7 @@ export function budgetContentGenerationInput(input: ContentGenerationInput, maxI
   const hardContext: ContentGenerationInput = {
     platform: input.platform,
     ...(input.candidateOnly ? { candidateOnly: true } : {}),
+    ...(input.candidateFormat ? { candidateFormat: input.candidateFormat } : {}),
     product: input.product,
     directionId: input.directionId,
     ...(input.confirmedFactSourceIds?.length ? { confirmedFactSourceIds: input.confirmedFactSourceIds } : {}),
@@ -614,7 +661,9 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
             throw error
           }
           const repairMessage = boundedInput.candidateOnly
-            ? `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。只返回完整 JSON：title、detail、sellingPoints、brief；不得返回 modules 或任何未经确认的商品事实。逐字段核对初始 outputShape，勿照抄示意值。`
+            ? boundedInput.candidateFormat === 'video_storyboard'
+              ? `上一个 JSON 未通过结构或事实校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。只返回完整 JSON：title、detail、sellingPoints、storyboard；storyboard 必须有 3 至 5 个镜头，每镜头包含 2 至 6 秒的 durationSeconds、visual、subtitle、voiceover。删除所有未经确认的商品属性和“独特设计”“卓越体验”“品质生活”等无依据表达。`
+              : `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。只返回完整 JSON：title、detail、sellingPoints、brief；不得返回 modules 或任何未经确认的商品事实。逐字段核对初始 outputShape，勿照抄示意值。`
             : `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。重新返回完整 JSON，逐字段核对初始消息中的 outputShape。尤其每个模块必须有 factSourceIds、decisionContract.claim.factSourceIds、decisionContract.visualContract.requiredElements、decisionContract.priority 和 decisionContract.optional；claim.validUntil 只在输入事实有真实有效期时填写，不得虚构时间。仅使用输入 confirmedFactSourceIds 中的真实 ID；缺少来源则删除该模块，不能复制 outputShape 的示意值。只修复结构和缺失字段，不增加未确认事实。evidence.type 仅允许 real_image、parameter、test_report、comparison、usage_result、manual_review；evidence.status 仅允许 verified、missing、expired、conflict；product.id 不是 SKU ID，claim.skuIds 和 referencedSkuIds 只能使用 product.skuIds 中的值。不要复述上一份响应。`
           const nextRepairMessages = [...repairMessages, repairMessage]
           const assistantMessage = readAssistantMessage(payload)

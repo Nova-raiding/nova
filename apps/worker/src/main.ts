@@ -335,6 +335,17 @@ export function isImageProviderOutcomeUnknown(error: unknown): boolean {
     || candidate.details?.reconciliation_required === true
 }
 
+/** Preserve a provider response identity even when usage/cost settlement is
+ * rejected. This keeps an accepted call in reconciliation instead of
+ * misreporting it as a pre-provider failure. */
+export function imageProviderRequestIdFromError(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const value = (error as { providerRequestId?: unknown }).providerRequestId
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim()
+  return normalized && normalized.length <= 256 && !/[\u0000-\u001f\u007f]/u.test(normalized) ? normalized : undefined
+}
+
 export function requireImageGenerationActionId(payload: Record<string, unknown>): string {
   const actionId = typeof payload.action_id === 'string' ? payload.action_id.trim() : ''
   if (!actionId) throw Object.assign(new Error('image generation event is missing action_id'), { code: 'IMAGE_GENERATION_ACTION_ID_REQUIRED', retryable: false, unknown: false })
@@ -620,6 +631,10 @@ export function assertBridgeStartupMigrationVersion(startupVersion: number | und
   if (startupVersion !== undefined && currentVersion !== startupVersion) throw new Error('bridge database migration prefix changed; restart the worker before processing tasks')
 }
 
+export function shouldRunAssetLifecyclePurge(bridgeMode: string | undefined, startupVersion: number | undefined): boolean {
+  return bridgeMode === undefined || startupVersion === 256
+}
+
 /** A worker is ready only when its database schema exactly matches the shipped
  * migration inventory and its API dependency reports durable readiness. */
 export async function assertWorkerReadinessDependencies(input: {
@@ -750,7 +765,7 @@ export function workerRoleForRequest(method: string, requestTarget: string, body
     if (operation === 'asset.scan.execute' || operation === CUSTOMER_DELIVERY_SCAN_OPERATION) return 'scan'
     return 'generation'
   }
-  if (path === '/v1/internal/automation/tick' || path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup') return 'automation'
+  if (path === '/v1/internal/automation/tick' || path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup' || path === '/v1/internal/assets/lifecycle/purge') return 'automation'
   if (path === '/v1/internal/support/sla-scan' || path === '/v1/internal/support/sla-report') return 'reconcile'
   if (path.includes('reconciliation')) return 'reconcile'
   // Knowledge indexing is owned by the automation worker. Its admission,
@@ -792,6 +807,16 @@ export async function postObjectOrphanCleanup(input: { apiBaseUrl: string; apiTo
     body: JSON.stringify({ workspace_id: input.workspaceId, limit: input.limit ?? 100 }), redirect: 'error',
   })
   if (!response.ok) throw new Error(`object orphan cleanup API returned ${response.status}`)
+  return await parseWorkerApiJson(response)
+}
+
+export async function postAssetLifecyclePurge(input: { apiBaseUrl: string; apiToken: string; workspaceId: string; limit?: number; signingSecret?: string; fetcher?: typeof fetch }) {
+  const path = '/v1/internal/assets/lifecycle/purge'
+  const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+    method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
+    body: JSON.stringify({ workspace_id: input.workspaceId, limit: input.limit ?? 25 }), redirect: 'error',
+  })
+  if (!response.ok) throw new Error(`asset lifecycle purge API returned ${response.status}`)
   return await parseWorkerApiJson(response)
 }
 
@@ -865,7 +890,8 @@ export async function runAutomationMaintenance(input: {
   workspaces: string[]
   tick: (workspaceId: string) => Promise<{ data?: { result?: { executed?: unknown[]; skipReason?: string } } }>
   cleanup: (workspaceId: string) => Promise<{ data?: { cleaned?: number } }>
-  onError?: (workspaceId: string, operation: 'automation_tick' | 'object_orphan_cleanup', error: unknown) => void
+  purgeAssets?: (workspaceId: string) => Promise<{ data?: { purged?: number } }>
+  onError?: (workspaceId: string, operation: 'automation_tick' | 'object_orphan_cleanup' | 'asset_lifecycle_purge', error: unknown) => void
 }): Promise<WorkerPollResult> {
   let executed = 0
   let failures = 0
@@ -886,6 +912,15 @@ export async function runAutomationMaintenance(input: {
       } catch (error) {
         failures += 1
         input.onError?.(workspaceId, 'object_orphan_cleanup', error)
+      }
+    }
+    if (input.purgeAssets) {
+      try {
+        const purge = await input.purgeAssets(workspaceId)
+        executed += typeof purge.data?.purged === 'number' ? purge.data.purged : 0
+      } catch (error) {
+        failures += 1
+        input.onError?.(workspaceId, 'asset_lifecycle_purge', error)
       }
     }
   }
@@ -2602,7 +2637,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         if (error instanceof WorkerExecutionAuthorizationError && dispatchScope.providerRequests === 0) return closeRejected(error)
         const candidate = error as { code?: unknown }
         const failure = { code: typeof candidate.code === 'string' ? candidate.code : 'IMAGE_GENERATION_FAILED', message: error instanceof Error ? error.message : 'image generation failed' }
-        const providerRequestId = imageUsageContexts.get(actionId)?.providerRequestId?.trim()
+        const providerRequestId = imageUsageContexts.get(actionId)?.providerRequestId?.trim() || imageProviderRequestIdFromError(error)
         imageWorkerTrace('provider_error', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, ...(providerRequestId ? { provider_request_id: providerRequestId } : {}), ...imageWorkerErrorFields(error) })
         if (!providerRequestId) {
           await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'outcome_unknown', ownerToken, errorCode: failure.code, errorMessage: failure.message, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }).catch(() => undefined)
@@ -2773,6 +2808,11 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
     const bridgeStartupVersion = bridgeMode
       ? (await assertWorkerReadinessDependencies({ database: pool, expectedMigrations, bridgeMode, bridgeMigrations: expectedMigrations })).migrationVersion
       : undefined
+    // Migration 256 owns the asset lifecycle tables and purge endpoint. A
+    // 255-prefix bridge worker must remain quiet until its process is restarted
+    // against 256; the existing bridge version fence will revoke readiness if
+    // the prefix changes underneath this process.
+    const assetLifecyclePurgeEnabled = shouldRunAssetLifecyclePurge(bridgeMode, bridgeStartupVersion)
     if (scanRoleEnabled) {
       const instanceId = process.env.HOSTNAME?.trim() || `worker-${process.pid}`
       const heartbeatIntervalMs = positiveInt(process.env.SCANNER_HEARTBEAT_INTERVAL_MS, 5_000, 'SCANNER_HEARTBEAT_INTERVAL_MS')
@@ -2907,6 +2947,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
               workspaces,
               tick: workspaceId => postAutomationTick({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }) as Promise<{ data?: { result?: { executed?: unknown[] } } }>,
               cleanup: workspaceId => postObjectOrphanCleanup({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }) as Promise<{ data?: { cleaned?: number } }>,
+              ...(assetLifecyclePurgeEnabled ? { purgeAssets: (workspaceId: string) => postAssetLifecyclePurge({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }) as Promise<{ data?: { purged?: number } }> } : {}),
               onError: (workspaceId, operation, error) => log({ level: 'error', message: 'automation workspace maintenance failed; continuing', workspaceId, operation, error: serializeError(error) }),
             })
           })()

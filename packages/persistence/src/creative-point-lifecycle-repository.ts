@@ -9,6 +9,14 @@ const validUsageEvidence = (value: unknown): boolean => {
   return true
 }
 const validCostEvidence = (value: unknown): boolean => validEvidenceRecord(value) && value.currency === 'CNY' && finiteNonNegative(value.actual)
+function canonicalJson(value: unknown): string {
+  const normalize = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(normalize)
+    if (item !== null && typeof item === 'object') return Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, nested]) => [key, normalize(nested)]))
+    return item
+  }
+  return JSON.stringify(normalize(value))
+}
 import { CreativePointRepositoryError, type CreativePointBalance } from './creative-point-repository.js'
 
 type MutationInput = { workspaceId: string; idempotencyKey: string; at: string }
@@ -141,11 +149,30 @@ export class PostgresCreativePointLifecycleRepository {
       if (!validUsageEvidence(input.usage) || !validCostEvidence(input.cost) || Number.isNaN(Date.parse(input.verifiedAt))) throw new CreativePointRepositoryError('CREATIVE_POINT_INPUT_INVALID', 'successful provider receipt requires valid usage, finite non-negative cost and verifiedAt')
     }
     await withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const inserted = await client.query<{ operation_id: string; provider: string; outcome: string; receipt_hash: string }>(`INSERT INTO creative_point_provider_receipts_v2 (id,workspace_id,operation_id,provider,provider_request_id,outcome,usage,cost,receipt_hash,verified_at,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10::timestamptz,$11::timestamptz) ON CONFLICT (provider,provider_request_id) DO NOTHING RETURNING operation_id,provider,outcome,receipt_hash`, [`cppr_${randomUUID()}`, workspaceId, input.operationId, input.provider, input.providerRequestId, input.outcome, input.usage ? JSON.stringify(input.usage) : null, input.cost ? JSON.stringify(input.cost) : null, input.receiptHash, input.verifiedAt ? at(input.verifiedAt) : null, observedAt])
-      if (inserted.rowCount) return
-      const existing = await client.query<{ operation_id: string; provider: string; outcome: string; receipt_hash: string }>(`SELECT operation_id,provider,outcome,receipt_hash FROM creative_point_provider_receipts_v2 WHERE provider=$1 AND provider_request_id=$2`, [input.provider, input.providerRequestId])
+      const operation = await client.query<{ id: string; kind: string }>(`SELECT id,kind FROM creative_point_operations WHERE workspace_id=$1 AND id=$2 FOR SHARE`, [workspaceId, input.operationId])
+      if (operation.rows.length !== 1 || operation.rows[0]?.kind !== 'reserve') throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'provider receipt must bind to one reserve operation')
+      const reservations = await client.query<{ status: string }>(`SELECT status FROM creative_point_reservations WHERE workspace_id=$1 AND operation_id=$2 FOR SHARE`, [workspaceId, input.operationId])
+      if (reservations.rows.length !== 1) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'provider receipt reserve is unavailable or ambiguous')
+      if (reservations.rows[0]?.status === 'released') throw new CreativePointRepositoryError('CREATIVE_POINT_RESERVATION_FINALIZED', 'provider receipt cannot be recorded after reservation release')
+      const inputUsage = input.usage ? JSON.stringify(input.usage) : null
+      const inputCost = input.cost ? JSON.stringify(input.cost) : null
+      const inputVerifiedAt = input.verifiedAt ? at(input.verifiedAt) : null
+      const existing = await client.query<{ operation_id: string; workspace_id: string; provider: string; provider_request_id: string; outcome: string; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; receipt_hash: string; verified_at: string | Date | null }>(`SELECT operation_id,workspace_id,provider,provider_request_id,outcome,usage,cost,receipt_hash,verified_at FROM creative_point_provider_receipts_v2 WHERE provider=$1 AND provider_request_id=$2 FOR SHARE`, [input.provider, input.providerRequestId])
       const row = existing.rows[0]
-      if (!row || row.operation_id !== input.operationId || row.provider !== input.provider || row.outcome !== input.outcome || row.receipt_hash !== input.receiptHash) throw new CreativePointRepositoryError('CREATIVE_POINT_IDEMPOTENCY_CONFLICT', 'provider receipt identity is already bound to a different operation or evidence')
+      const existingVerifiedAt = row?.verified_at instanceof Date ? row.verified_at.toISOString() : row?.verified_at ?? null
+      const sameInstant = (left: string | null, right: string | null) => left === null || right === null ? left === right : Date.parse(left) === Date.parse(right)
+      const replayMatches = row
+        && row.operation_id === input.operationId && row.workspace_id === workspaceId
+        && row.provider === input.provider && row.provider_request_id === input.providerRequestId
+        && row.outcome === input.outcome && row.receipt_hash === input.receiptHash
+        && canonicalJson(row.usage) === canonicalJson(input.usage ?? null) && canonicalJson(row.cost) === canonicalJson(input.cost ?? null)
+        && sameInstant(existingVerifiedAt, inputVerifiedAt)
+      if (replayMatches) return
+      if (row) throw new CreativePointRepositoryError('CREATIVE_POINT_IDEMPOTENCY_CONFLICT', 'provider receipt identity is already bound to a different operation or evidence')
+      if (reservations.rows[0]?.status === 'settled') throw new CreativePointRepositoryError('CREATIVE_POINT_RESERVATION_FINALIZED', 'new provider receipts cannot be recorded after reservation settlement')
+      const inserted = await client.query<{ operation_id: string; provider: string; outcome: string; receipt_hash: string }>(`INSERT INTO creative_point_provider_receipts_v2 (id,workspace_id,operation_id,provider,provider_request_id,outcome,usage,cost,receipt_hash,verified_at,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10::timestamptz,$11::timestamptz) ON CONFLICT (provider,provider_request_id) DO NOTHING RETURNING operation_id,provider,outcome,receipt_hash`, [`cppr_${randomUUID()}`, workspaceId, input.operationId, input.provider, input.providerRequestId, input.outcome, inputUsage, inputCost, input.receiptHash, inputVerifiedAt, observedAt])
+      if (inserted.rowCount) return
+      throw new CreativePointRepositoryError('CREATIVE_POINT_IDEMPOTENCY_CONFLICT', 'provider receipt identity was concurrently bound to different evidence')
     })
   }
 

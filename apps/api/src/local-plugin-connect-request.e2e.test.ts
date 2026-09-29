@@ -64,7 +64,7 @@ describe('local plugin connect request HTTP contract', () => {
     expect(cookie).toBeTruthy()
     const capability = await fetch(`${base}/v1/auth/local-plugin/connect-capability`, { headers: { cookie: cookie! } })
     expect(capability.status).toBe(200)
-    await expect(capability.json()).resolves.toMatchObject({ data: { one_click_available: false, supported_platforms: ['macos'] } })
+    await expect(capability.json()).resolves.toMatchObject({ workspace_id: workspaceId, data: { one_click_available: false, supported_platforms: ['macos'], workspace_selection_required: false } })
     const response = await fetch(`${base}/v1/auth/local-plugin/connect-requests`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) })
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toMatchObject({ error: { code: 'LOCAL_PLUGIN_ONE_CLICK_UNAVAILABLE' } })
@@ -194,6 +194,9 @@ describe('local plugin connect request HTTP contract', () => {
     const base = await startApi()
     const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
     const cookie = logged.headers.get('set-cookie')?.split(';')[0]
+    const capability = await fetch(`${base}/v1/auth/local-plugin/connect-capability`, { headers: { cookie: cookie! } })
+    expect(capability.status).toBe(200)
+    await expect(capability.json()).resolves.toMatchObject({ workspace_id: 'unknown', data: { workspace_selection_required: true } })
     const create = (workspaceId?: string) => fetch(`${base}/v1/auth/local-plugin/connect-requests`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify(workspaceId ? { workspace_id: workspaceId } : {}) })
     expect((await create()).status).toBe(409)
     expect((await create('ws_foreign')).status).toBe(409)

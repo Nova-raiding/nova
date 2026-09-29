@@ -345,6 +345,21 @@ describe('production model relay contract', () => {
     )).resolves.toEqual({ usageObserved: true, usage: { billingUnits: 1 }, usageProviderRequestId: 'req-image', costObserved: true, costSource: 'relay_pricing_snapshot', costCny: 0.12, pricingVersion: 'pricing-v1', pricingGroup: 'VIP' })
   })
 
+  it('accepts New API preserved Qwen image_count and request identity as provider evidence', async () => {
+    const pricing = { quote: async () => ({ costCny: 0.12, metadata: {
+      cost_source: 'relay_pricing_snapshot' as const, pricing_version: 'pricing-v1', pricing_group: 'VIP', group_ratio: 1,
+      usd_exchange_rate: 7, quota_per_unit: 500_000, quota_type: 1, model_ratio: 0, model_price: 0.12,
+      completion_ratio: 1, raw_quota: 60_000, rounded_quota: 60_000, formula_version: 'new-api-quota-v1' as const,
+    } }) }
+    const payload = {
+      data: [{ url: 'https://cdn.example/qwen.png' }],
+      metadata: { request_id: 'qwen-provider-request', usage: { image_count: 1, height: 1024, width: 1024 } },
+    }
+    expect(extractProviderRequestId(payload, new Headers())).toBe('qwen-provider-request')
+    await expect(evaluateRelayUsageEvidence(payload, new Headers(), 'image', 'qwen-image-2.0', { pricing }))
+      .resolves.toEqual({ usageObserved: true, usage: { billingUnits: 1 }, usageProviderRequestId: 'qwen-provider-request', costObserved: true, costSource: 'relay_pricing_snapshot', costCny: 0.12, pricingVersion: 'pricing-v1', pricingGroup: 'VIP' })
+  })
+
   it.each([0, -1, 1.5, '1x'])('does not use malformed or non-positive provider image count %p', async count => {
     const pricing = { quote: vi.fn() }
     await expect(evaluateRelayUsageEvidence(

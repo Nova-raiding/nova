@@ -108,8 +108,8 @@ describe('the source helper this file asserts through', () => {
     // Comments really were removed (otherwise the assertions are on the wrong text).
     // The probe is a token that survives only in a comment, so this stays a test
     // of the stripper rather than of the code's contents.
-    expect(appSource).toContain('recycle-demo-packaging-v1')
-    expect(appCode).not.toContain('recycle-demo-packaging-v1')
+    expect(appSource).toContain('value that a paying merchant could mistake for their own business data')
+    expect(appCode).not.toContain('value that a paying merchant could mistake for their own business data')
   })
 })
 
@@ -330,20 +330,21 @@ describe('确认上传 writes to the server', () => {
   })
 })
 
-describe('the recycle bin does not claim a server it does not have', () => {
-  it('states that the list is local and that server-side deletes are unread', () => {
-    // `GET /v1/assets` has no deleted-materials counterpart and there is no
-    // delete endpoint at all (probed live: `DELETE /v1/assets/:id` → NOT_FOUND
-    // 路由不存在, `?status=deleted` is ignored). The page may only claim the
-    // browser-local record it really keeps, which `material-library-surface.test.ts`
-    // renders; this pins the two sentences that admit it.
+describe('the recycle bin reflects server-owned lifecycle data', () => {
+  it('loads workspace records and restores through the API', () => {
     const recycleBin = appSource.slice(
       appSource.indexOf('export function MaterialRecycleBinWorkspace'),
       appSource.indexOf('export function MaterialLibraryWorkspace'),
     )
     expect(recycleBin.length).toBeGreaterThan(1_000)
-    expect(recycleBin).toContain('服务端已删除素材的读取尚未接入')
-    expect(recycleBin).toContain('本地记录 7 天后过期')
-    expect(recycleBin).not.toContain('删除的素材会保留 7 天，到期后自动彻底删除')
+    expect(recycleBin).toContain('fetchTrashedAssets(baseUrl)')
+    expect(recycleBin).toContain('restoreAsset(baseUrl, id)')
+    expect(recycleBin).toContain('素材会保留 7 天；也可以提交提前彻底删除请求。')
+    expect(recycleBin).toContain('requestAssetPurge(baseUrl')
+    expect(recycleBin).toContain('cancelAssetPurge(baseUrl')
+    expect(recycleBin).toContain('输入“彻底删除”确认')
+    expect(recycleBin).not.toContain('localStorage')
+    expect(recycleBin).not.toContain('服务端已删除素材的读取尚未接入')
+    expect(recycleBin).not.toContain('本地记录 7 天后过期')
   })
 })

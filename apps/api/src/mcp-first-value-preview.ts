@@ -43,6 +43,7 @@ export async function merchantFirstValuePreview(workspaceId: string, params: Rec
     requirePlatformModelCostGate('text')
     const title = typeof params.draft_title === 'string' && params.draft_title.trim() ? params.draft_title.trim() : '未绑定商品内容候选'
     const prompt = typeof params.draft_prompt === 'string' && params.draft_prompt.trim() ? params.draft_prompt.trim() : '生成一个结构化商品文案候选，仅使用创意表达，不作任何未经确认的商品事实或效果宣称。'
+    const candidateFormat = /(?:视频|分镜|storyboard|shot\s*list|video\s*script)/iu.test(prompt) ? 'video_storyboard' as const : 'copy' as const
     const platform = typeof params.platform === 'string' && params.platform.trim() ? params.platform.trim() : 'general'
     const actionId = `content-draft:${createHash('sha256').update(`${workspaceId}:${idempotencyKey}`).digest('hex')}`
     const decision = await enforceMcpCommercialAccess(req, workspaceId, 'content.draft.generate')
@@ -53,7 +54,7 @@ export async function merchantFirstValuePreview(workspaceId: string, params: Rec
     try {
       await recordActionSettlement({ workspaceId, actionKey: actionId, actionKind: 'model_text', settlement: 'included_quota', amountFen: 0, actorId: requestActor(req), description: '未绑定商品文案候选生成', settlementStatus: 'authorized' })
       await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'content.draft.generate', resourceType: 'content_draft_candidate', resourceId: actionId, before: {}, after: { candidate_only: true, platform, title }, reason: '生成未绑定内容候选；不创建正式版本、不允许发布' })
-      generated = await contentGenerator.generate({ platform, candidateOnly: true, directionId: prompt, product: { title, stock: 0, skuCount: 0 }, usageContext: { workspaceId, actionId, runKey: actionId } })
+      generated = await contentGenerator.generate({ platform, candidateOnly: true, candidateFormat, directionId: prompt, product: { title, stock: 0, skuCount: 0 }, usageContext: { workspaceId, actionId, runKey: actionId } })
     } catch (error) {
       if (providerSucceededButSettlementPending(error)) {
         if ((error as { code?: unknown })?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {
@@ -96,7 +97,7 @@ export async function merchantFirstValuePreview(workspaceId: string, params: Rec
       }
       throw error
     }
-    const body = validateContentSchema(generated, 'content.draft.generate', { candidateOnly: true })
+    const body = validateContentSchema(generated, 'content.draft.generate', { candidateOnly: true, candidateFormat })
     return { readOnly: false, previewOnly: true, candidateOnly: true, publishable: false, formalVersionCreated: false, product: { id: null, title, platform, factsConfirmed: false }, contentPreview: { id: actionId, taskId: null, version: null, state: 'candidate', body }, execution: { mode: 'platform_relay_candidate', simulated: false, providerExecuted: true, modelCalled: true, ...(executionEvidence.providerRequestId ? { providerRequestId: executionEvidence.providerRequestId } : {}), ...(executionEvidence.usage ? { usage: executionEvidence.usage } : {}), ...(executionEvidence.costCny !== undefined ? { costCny: executionEvidence.costCny } : {}), ...(executionEvidence.settlementStatus ? { settlementStatus: executionEvidence.settlementStatus } : {}), label: '平台中转模型已生成内容候选', message: '仅供预览；未创建正式内容版本，未批准、未发布' }, nextActions: ['绑定已授权店铺并确认商品事实后，创建正式任务', '正式商品内容必须通过 content.generate 生成并审核'] }
   }
   const example = params.example === 'true'

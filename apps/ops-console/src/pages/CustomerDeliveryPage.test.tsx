@@ -127,6 +127,7 @@ describe("customer delivery read-only desktop interaction", () => {
   let vite: ViteDevServer | undefined;
   let cacheDirectory: string | undefined;
   let baseUrl: string;
+  const disconnectedFormWarnings = new WeakMap<Page, string[]>();
 
   beforeAll(async () => {
     cacheDirectory = await mkdtemp(join(tmpdir(), "ops-delivery-readonly-"));
@@ -259,6 +260,12 @@ describe("customer delivery read-only desktop interaction", () => {
     failVideoRefresh?: boolean;
   } = {}) {
     const methods: string[] = [];
+    const formWarnings: string[] = [];
+    disconnectedFormWarnings.set(page, formWarnings);
+    page.on("console", message => {
+      const text = message.text();
+      if (text.includes("Instance created by `useForm` is not connected to any Form element")) formWarnings.push(text);
+    });
     const videos = record.videos.map(video => ({ ...video }));
     await page.route(`${baseUrl}/api/mcp`, async route => {
       const request = route.request().postDataJSON() as { id: string; method: string; params: Record<string, string> };
@@ -289,7 +296,7 @@ describe("customer delivery read-only desktop interaction", () => {
   const account2 = { ...account, accountId: "private-account-2", identityId: "private-identity-2", login: "merchant-two@example.test" };
   const boundRecord = { ...record, workspaceId: "ws-readonly", revision: 5, targetAccountId: account.accountId, targetIdentityId: account.identityId, targetAccountLogin: account.login };
   async function openAccountBinding(page: Page) {
-    await row(page).getByRole("button", { name: "已完成", exact: true }).first().click();
+    await row(page).getByRole("button", { name: "编辑档案", exact: true }).click();
     await page.getByRole("region", { name: "生效账号", exact: true }).waitFor();
   }
   async function selectAccount(page: Page, login = account.login) {
@@ -298,6 +305,8 @@ describe("customer delivery read-only desktop interaction", () => {
     await page.getByRole("combobox", { name: "选择生效账号", exact: true }).click();
     await page.locator(".ant-select-item-option-content").filter({ hasText: login }).click();
   }
+
+
 
   it("reads and writes no tenant at all while the shared target is empty", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
@@ -378,20 +387,6 @@ describe("customer delivery read-only desktop interaction", () => {
       await expect.poll(() => page.getByTestId("dirty-labels").innerText()).toBe("客户建档表单");
       await page.getByRole("button", { name: "返回客户建档", exact: true }).click();
       await expect.poll(() => page.getByTestId("dirty-labels").innerText()).toBe("");
-    } finally { await page.close(); }
-  }, 45_000);
-
-  it("shows a bound login but no internal identifiers or binding controls to read-only operators", async () => {
-    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
-    try {
-      const methods = await prepare(page, { onList: () => [boundRecord] });
-      await openAccountBinding(page);
-      const section = page.getByRole("region", { name: "生效账号", exact: true });
-      expect(await section.innerText()).toContain(account.login);
-      expect(await section.innerText()).not.toContain(account.accountId);
-      expect(await section.innerText()).not.toContain(account.identityId);
-      expect(await section.getByRole("button").count()).toBe(0);
-      expect(methods).toEqual(["ops.customer-delivery.list"]);
     } finally { await page.close(); }
   }, 45_000);
 
@@ -539,6 +534,38 @@ describe("customer delivery read-only desktop interaction", () => {
       expect(await page.locator(".ant-select-item-option-content").filter({ hasText: account.login }).count()).toBe(0);
     } finally { release?.(); await page.close(); }
   }, 45_000);
+
+  it("keeps Ant Design form instances connected through idle and drawer lifecycles", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await prepare(page, { write: true });
+      await settle(page);
+      await row(page).getByRole("button", { name: "编辑档案", exact: true }).click();
+      await page.getByRole("dialog").waitFor();
+      await closeDrawer(page);
+      await settle(page);
+      expect(disconnectedFormWarnings.get(page)).toEqual([]);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it.each([false, true])("keeps account binding controls and identifiers out of the delivery drawer (write=%s)", async write => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      const methods = await prepare(page, { write, onList: () => [boundRecord] });
+      await row(page).getByRole("button", { name: "已完成", exact: true }).first().click();
+      await page.getByRole("dialog").waitFor();
+      expect(await page.getByRole("region", { name: "生效账号", exact: true }).count()).toBe(0);
+      expect(await page.getByRole("combobox", { name: "选择生效账号", exact: true }).count()).toBe(0);
+      expect(await page.getByRole("button", { name: "查询账号", exact: true }).count()).toBe(0);
+      expect(await page.getByRole("button", { name: "确认关联账号", exact: true }).count()).toBe(0);
+      const drawer = await page.getByRole("dialog").innerText();
+      expect(drawer).not.toContain(boundRecord.targetAccountLogin);
+      expect(drawer).not.toContain(boundRecord.targetAccountId);
+      expect(drawer).not.toContain(boundRecord.targetIdentityId);
+      expect(methods[0]).toBe("ops.customer-delivery.list");
+      expect(methods.some(method => method === "ops.customer-delivery.accounts.list" || method === "ops.customer-delivery.account.bind")).toBe(false);
+    } finally { await page.close(); }
+  }, 45_000);
   async function closeDrawer(page: Page) {
     await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
@@ -555,16 +582,10 @@ describe("customer delivery read-only desktop interaction", () => {
     try {
       const methods = await prepare(page, { unpaid });
       const overview = row(page);
-      await expect.poll(() => overview.getByRole("button", { name: "已完成", exact: true }).first().isEnabled()).toBe(true);
-      await overview.getByRole("button", { name: "已完成", exact: true }).nth(0).click();
-      await page.getByRole("dialog").waitFor();
-      expect(await page.getByLabel("合同编号", { exact: true }).inputValue()).toBe("READ-2026");
-      expect(await page.getByLabel("合同编号", { exact: true }).isDisabled()).toBe(true);
-      await assertNoWrites(page, methods);
-      await closeDrawer(page);
-      for (const index of [1, 2]) {
+      await expect.poll(() => overview.getByRole("button", { name: "已完成", exact: true }).count()).toBe(2);
+      for (const index of [0, 1]) {
         await overview.getByRole("button", { name: "已完成", exact: true }).nth(index).click();
-        const evidenceLabel = index === 1 ? "插件账户 · 证据说明" : "文案生成 · 证据说明";
+        const evidenceLabel = index === 0 ? "插件账户 · 证据说明" : "文案生成 · 证据说明";
         await expect.poll(() => page.getByRole("dialog").getByLabel(evidenceLabel, { exact: true }).inputValue()).toBe("已保存的检查记录");
         await assertNoWrites(page, methods);
         await closeDrawer(page);
@@ -583,13 +604,14 @@ describe("customer delivery read-only desktop interaction", () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     try {
       const methods = await prepare(page, { write: true });
-      await row(page).getByRole("button", { name: "已完成", exact: true }).first().click();
-      await page.getByRole("dialog").waitFor();
-      expect(await page.locator('input[type="file"]').count()).toBe(1);
+      await row(page).getByRole("button", { name: "编辑档案", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.waitFor();
+      expect(await dialog.locator('input[type="file"]').count()).toBe(1);
       // Harness control changes the real React model without navigating away.
       await page.getByRole("button", { name: "撤销测试写权限", exact: true }).evaluate(element => (element as HTMLButtonElement).click());
       await page.getByText("当前会话仅可查看客户交付", { exact: true }).waitFor();
-      await expect.poll(() => page.locator('input[type="file"]').count()).toBe(0);
+      await expect.poll(() => dialog.locator('input[type="file"]').count()).toBe(0);
       expect(await page.getByLabel("合同编号", { exact: true }).isDisabled()).toBe(true);
       // Native form submission cannot bypass the read-only action guard.
       await page.getByRole("dialog").locator("form").evaluate(element => (element as HTMLFormElement).requestSubmit());
@@ -632,7 +654,7 @@ describe("customer delivery read-only desktop interaction", () => {
         return { ...record, revision: record.revision + 1 };
       } });
       if (action === "profile") {
-        await row(page).getByRole("button", { name: "已完成", exact: true }).first().click();
+        await row(page).getByRole("button", { name: "编辑档案", exact: true }).click();
         await page.getByRole("button", { name: "保存当前环节", exact: true }).click();
       } else if (action === "training") {
         // This controlled checkbox stays checked until its real callback
@@ -669,7 +691,7 @@ describe("customer delivery read-only desktop interaction", () => {
         calls.push({ method, params });
         return [{ itemKey: "插件账号", completed: true, evidence: {} }];
       } });
-      await row(page).getByRole("button", { name: "已完成", exact: true }).nth(1).click();
+      await row(page).getByRole("button", { name: "已完成", exact: true }).nth(0).click();
       await expect.poll(() => page.getByLabel("插件账户 · 证据说明", { exact: true }).inputValue()).toBe("已保存的检查记录");
       // The antd button keeps a leaving loading icon whose label hides it from
       // an exact accessible-name match, so match on its text.

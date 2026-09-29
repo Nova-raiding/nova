@@ -12,6 +12,7 @@ export interface McpWorkspaceOverviewDependencies {
   workspaceOnboarding: (workspaceId: string, directory: StoreDirectory) => WorkspaceOnboardingState
   merchantOnboardingProjection: (state: WorkspaceOnboardingState) => MerchantOnboardingProjection
   service: Pick<MerchantService, 'listSyncJobs' | 'listProducts' | 'getBrandProfile' | 'listAssets'>
+  filterActiveAssets?: (workspaceId: string, assets: ReturnType<MerchantService['listAssets']>) => Promise<ReturnType<MerchantService['listAssets']>>
   trustedPlatformRuleSyncStatuses: (workspaceId: string) => Promise<Array<{ platform: Platform; state: string }>>
   setupDiagnostics: () => ReturnType<typeof import('./health-setup.js').setupDiagnostics>
   persistence: ApiPersistence
@@ -35,7 +36,7 @@ export async function handleMcpWorkspaceOverview(method: 'onboarding.status' | '
     trustedPlatformRuleSyncStatuses, setupDiagnostics, persistence, memoryWorkspaceContentSetup,
     accessibleBrandNavigation, runtimeHealth, persistenceError, invalidDurableSnapshots,
     getWorkspaceStatus, trustedActiveRuleVersionsForWorkspace, SUPPORTED_PLATFORMS,
-    workspaceConnectorReadiness, workspacePlatformStatus, memoryCommercial,
+    workspaceConnectorReadiness, workspacePlatformStatus, memoryCommercial, filterActiveAssets,
     MERCHANT_CAPABILITY_CARDS, result } = deps
   const directory = workspaceStoreDirectory(workspaceId)
   const onboardingState = workspaceOnboarding(workspaceId, directory)
@@ -65,7 +66,9 @@ export async function handleMcpWorkspaceOverview(method: 'onboarding.status' | '
     const configurationReady = knowledgeReady && brandReady && rulesReady && relayReady && modalitiesReady && costReady && storageReady && pointsReady
     const contentSetup = await (persistence.workspaceContentSetup ?? memoryWorkspaceContentSetup).get(workspaceId)
     const contentSetupStoreReady = Boolean(contentSetup && officialStores.some(store => store.platform === contentSetup.platform && store.accountId === contentSetup.accountId))
-    const trustedBrandMaterials = service.listAssets(workspaceId).filter(asset => isTrustedCleanAsset(asset) && asset.parseStatus === 'succeeded')
+    const listedAssets = service.listAssets(workspaceId)
+    const activeAssets = filterActiveAssets ? await filterActiveAssets(workspaceId, listedAssets) : listedAssets
+    const trustedBrandMaterials = activeAssets.filter(asset => isTrustedCleanAsset(asset) && asset.parseStatus === 'succeeded')
     const configurationNextAction = !knowledgeReady
       ? { method: 'catalog.search', label: '核对商品事实', required_inputs: ['platform', 'account_id'] }
       : !brandReady && trustedBrandMaterials.length

@@ -90,6 +90,12 @@ describe('MCP method contract', () => {
     expect(isMcpMethod('admin.raw_sql')).toBe(false)
   })
 
+  it('marks the V2 entitlement as the authoritative current subscription fact', () => {
+    const subscription = MCP_METHOD_CONTRACTS.find(contract => contract.method === 'subscription.get')
+    expect(subscription?.description).toContain('commercial_entitlement (V2)')
+    expect(subscription?.description).toContain('compatibility-only legacy snapshots')
+  })
+
   it('requires exactly one image-job lookup key', () => {
     const request = (params: Record<string, string>) => validateMcpRequest({ jsonrpc: '2.0', id: 'image-get', method: 'catalog.image.get', params })
     expect(MCP_METHOD_SCHEMAS['catalog.image.get'].oneOf).toEqual([{ required: ['job_id'] }, { required: ['visual_ref'] }])

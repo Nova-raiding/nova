@@ -23,6 +23,24 @@ const roleLabels: Record<MemberRole, string> = {
 const statusLabels = { active: "已激活", invited: "待激活", suspended: "已停用" } as const;
 
 export function MembersSection({ model, client }: MembersSectionProps) {
+  const session = model.opsSession;
+  const sessionBoundary = JSON.stringify([
+    session?.actor_id, session?.account_login, session?.identity_id, session?.session_id,
+    session?.context_id, session?.context_version, session?.workspace_id,
+    session?.workbench, session?.scope, session?.scopes,
+    session?.roles, session?.canonical_roles, session?.capabilities,
+    session?.assignable_roles, session?.effective_permissions, session?.temporary_grants,
+    model.authorization.managed, model.authorization.scope,
+    model.authorization.policyVersion,
+    [...model.authorization.roles].sort(),
+    [...model.authorization.capabilities].sort(),
+    [...model.authorization.deniedCapabilities].sort(),
+    [...model.authorization.capabilityScopes.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  ]);
+  return <MembersSectionForSession key={sessionBoundary} model={model} client={client} />;
+}
+
+function MembersSectionForSession({ model, client }: MembersSectionProps) {
   const screens = Grid.useBreakpoint();
   const compact = !screens.md;
   const workspaceId = model.opsSession?.workspace_id;
@@ -35,7 +53,8 @@ export function MembersSection({ model, client }: MembersSectionProps) {
   const [notice, setNotice] = useState("");
   const initialErrorRef = useRef<HTMLDivElement>(null);
   const generalCapabilities = memberCapabilities(model.authorization, actorId);
-  const initialLoadFailed = Boolean(state.error && !state.loading && state.members.length === 0);
+  const workspaceUnavailable = !workspaceId;
+  const initialLoadFailed = Boolean(workspaceId && state.error && !state.loading && state.members.length === 0);
   useEffect(() => {
     if (!initialLoadFailed) return;
     const focusTimer = window.requestAnimationFrame(() => initialErrorRef.current?.focus({ preventScroll: true }));
@@ -94,9 +113,10 @@ export function MembersSection({ model, client }: MembersSectionProps) {
         <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {state.loading ? "正在加载成员列表，请稍候" : state.members.length > 0 ? `已加载 ${state.members.length} 位成员` : ""}
         </span>
+        {workspaceUnavailable && <Alert showIcon type="info" title="当前会话尚未绑定企业主体" description="成员列表和成员变更都需要明确的企业主体范围。请先选择企业主体并刷新会话。" />}
         {!generalCapabilities.canManage && <Alert showIcon type="info" title="当前角色只有成员查看权限" description="只有企业所有者、企业管理员或平台运营可以邀请成员和调整权限。" />}
         {assignmentPolicyUnavailable && <Alert role="alert" showIcon type="warning" title="成员角色策略尚未取得" description="服务端授权策略未返回前，邀请和角色调整入口保持关闭；请刷新会话后重试。" />}
-        {state.error && <div ref={initialErrorRef} tabIndex={initialLoadFailed ? -1 : undefined} role="alert" aria-live="assertive" aria-atomic="true" aria-label={initialLoadFailed ? "成员列表加载错误摘要" : undefined}>
+        {workspaceId && state.error && <div ref={initialErrorRef} tabIndex={initialLoadFailed ? -1 : undefined} role="alert" aria-live="assertive" aria-atomic="true" aria-label={initialLoadFailed ? "成员列表加载错误摘要" : undefined}>
           <Alert showIcon type="error" title={initialLoadFailed ? "成员列表加载失败" : "成员操作失败"} description={<Space orientation="vertical"><span>{state.error}</span><Button style={{ minHeight: 44 }} aria-label="刷新成员列表" onClick={() => void state.load()}>刷新成员</Button></Space>} />
         </div>}
         {notice && <Alert role="status" aria-live="polite" showIcon type="success" title={notice} closable onClose={() => setNotice("")} />}
@@ -104,7 +124,7 @@ export function MembersSection({ model, client }: MembersSectionProps) {
         <Form
           form={inviteForm}
           layout={compact ? "vertical" : "inline"}
-          disabled={!generalCapabilities.canManage || assignmentPolicyUnavailable || assignableRoles.length === 0 || state.mutating}
+          disabled={workspaceUnavailable || !generalCapabilities.canManage || assignmentPolicyUnavailable || assignableRoles.length === 0 || state.mutating}
           aria-label="邀请工作区成员"
           onFinish={async (values: { externalSubject: string; displayName?: string; role: MemberRole; reason: string }) => {
             setNotice("");
@@ -130,13 +150,13 @@ export function MembersSection({ model, client }: MembersSectionProps) {
           <Form.Item name="reason" label="邀请原因" rules={[{ required: true, whitespace: true, min: 4, message: "请填写至少 4 个字符的邀请原因" }]}>
             <Input placeholder="用于权限审计" style={{ minHeight: 44 }} />
           </Form.Item>
-          <Form.Item><Button loading={state.mutating} disabled={!generalCapabilities.canManage || assignmentPolicyUnavailable || assignableRoles.length === 0} style={{ minHeight: 44 }} type="primary" htmlType="submit">邀请成员</Button></Form.Item>
+          <Form.Item><Button loading={state.mutating} disabled={workspaceUnavailable || !generalCapabilities.canManage || assignmentPolicyUnavailable || assignableRoles.length === 0} style={{ minHeight: 44 }} type="primary" htmlType="submit">邀请成员</Button></Form.Item>
         </Form>
 
         {compact ? (
           <Spin spinning={state.loading} description="正在加载成员">
             <div role="list" aria-label="成员列表" aria-busy={state.loading}>
-              {!state.loading && !state.error && state.members.length === 0 ? <Typography.Text type="secondary">当前企业主体还没有成员</Typography.Text> : null}
+              {!state.loading && !state.error && state.members.length === 0 ? <Typography.Text type="secondary">{workspaceUnavailable ? "请先选择企业主体后查看成员" : "当前企业主体还没有成员"}</Typography.Text> : null}
               <Space orientation="vertical" size={12} className="full-width">
                 {state.members.map((member) => (
                   <div role="listitem" key={member.id}>
@@ -164,7 +184,7 @@ export function MembersSection({ model, client }: MembersSectionProps) {
             pagination={{ current: Math.floor(state.page.offset / state.page.limit) + 1, pageSize: state.page.limit, total: state.page.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 位成员` }}
             onChange={(pagination) => void state.load(pagination.current ?? 1, state.page.limit)}
             dataSource={state.members}
-            locale={{ emptyText: "当前企业主体还没有成员" }}
+            locale={{ emptyText: workspaceUnavailable ? "请先选择企业主体后查看成员" : "当前企业主体还没有成员" }}
             scroll={{ x: 960 }}
             columns={[
               { title: "身份标识", dataIndex: "externalSubject", width: 180, render: (value: string) => <span className="ops-token">{value}</span> },

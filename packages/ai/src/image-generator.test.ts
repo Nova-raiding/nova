@@ -79,6 +79,26 @@ describe('image generator', () => {
     ])
   })
 
+  it('settles a New API Qwen image response from its preserved provider image_count', async () => {
+    const sink = vi.fn<(record: RelayUsageRecord) => { recorded: true; costEvidence: true }>(() => ({ recorded: true, costEvidence: true }))
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'qwen-image-2.0', usageSink: sink,
+      fetch: async () => new Response(JSON.stringify({
+        data: [{ url: 'https://cdn.example/qwen.png' }],
+        metadata: {
+          request_id: 'qwen-provider-request',
+          usage: { image_count: 1, height: 1024, width: 1024 },
+          output: { choices: [{ message: { content: [{ image: 'https://cdn.example/qwen.png' }] } }] },
+        },
+      }), { status: 200 }),
+    })
+    await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 1 })).resolves.toEqual(['https://cdn.example/qwen.png'])
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+      providerRequestId: 'qwen-provider-request',
+      metadata: expect.objectContaining({ usage_observed: true, billing_units: 1, billing_units_evidence: 'provider_usage' }),
+    }))
+  })
+
   it('sends actual source pixels as multipart files to the edit endpoint', async () => {
     let endpoint = ''
     let body: FormData | undefined

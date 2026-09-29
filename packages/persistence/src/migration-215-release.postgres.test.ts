@@ -32,10 +32,10 @@ async function scoped<T>(pool: Pool, workspaceId: string, work: (client: PoolCli
   }
 }
 
-describe('migration 212 customer delivery account binding release acceptance', () => {
+describe('migration 215 customer delivery account binding release acceptance', () => {
   postgresIt('preserves history and enforces scoped, immutable, atomic account bindings under concurrent revocation', async () => {
     const base = new URL(databaseUrlValue!)
-    const databaseName = `release_212_${randomUUID().replaceAll('-', '')}`
+    const databaseName = `release_215_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
     let ops: Pool | undefined
@@ -47,8 +47,8 @@ describe('migration 212 customer delivery account binding release acceptance', (
       const migrations = (await loadMigrations()).filter(migration => migration.version <= 215)
       await new MigrationRunner(database, migrations.filter(migration => migration.version < 215)).run()
 
-      const workspaceId = `delivery-212-${randomUUID()}`
-      const otherWorkspaceId = `delivery-212-other-${randomUUID()}`
+      const workspaceId = `delivery-215-${randomUUID()}`
+      const otherWorkspaceId = `delivery-215-other-${randomUUID()}`
       await database.query("INSERT INTO workspaces(id,status) VALUES($1,'active'),($2,'active')", [workspaceId, otherWorkspaceId])
       // Administrative writes below create fixtures and simulate lifecycle changes;
       // every successful binding and RLS assertion uses the real merchant_ops role.
@@ -58,12 +58,12 @@ describe('migration 212 customer delivery account binding release acceptance', (
         const login = `delivery-${accountId}@example.test`
         await fixtureDb.query(
           `INSERT INTO platform_identities(id,issuer,external_subject,display_name,access_status,risk_decision)
-           VALUES($1,'release-212',$2,'Delivery principal','active','allow')`, [identityId, login],
+           VALUES($1,'release-215',$2,'Delivery principal','active','allow')`, [identityId, login],
         )
         for (const memberWorkspace of workspaceIds) {
           await fixtureDb.query(
             `INSERT INTO workspace_members(id,workspace_id,external_subject,display_name,role,status,invited_by,identity_id)
-             VALUES($1,$2,$3,'Delivery principal','workspace_owner','active','release-212',$4)`,
+             VALUES($1,$2,$3,'Delivery principal','workspace_owner','active','release-215',$4)`,
             [randomUUID(), memberWorkspace, login, identityId],
           )
         }
@@ -81,7 +81,7 @@ describe('migration 212 customer delivery account binding release acceptance', (
       await database.query(
         `INSERT INTO workspace_customer_deliveries(id,workspace_id,company_name,contract_number,project_owner,revision,
            created_by_actor_id,updated_by_actor_id)
-         VALUES($1,$2,'Matching historical company','LEGACY-212','Historical owner',7,'historical-creator','historical-updater')`,
+         VALUES($1,$2,'Matching historical company','LEGACY-215','Historical owner',7,'historical-creator','historical-updater')`,
         [historicalId, workspaceId],
       )
       const historicalBefore = (await database.query('SELECT to_jsonb(d) AS row FROM workspace_customer_deliveries d WHERE id=$1', [historicalId])).rows[0].row
@@ -124,7 +124,7 @@ describe('migration 212 customer delivery account binding release acceptance', (
       ))).rowCount).toBe(0)
       await expect(scoped(ops, otherWorkspaceId, client => client.query(
         `INSERT INTO workspace_customer_deliveries(id,workspace_id,company_name,created_by_actor_id,updated_by_actor_id)
-         VALUES($1,$2,'Wrong scope','release-212','release-212')`, [randomUUID(), workspaceId],
+         VALUES($1,$2,'Wrong scope','release-215','release-215')`, [randomUUID(), workspaceId],
       ))).rejects.toMatchObject({ code: '42501' })
 
       const firstPage = await repo.listBindableAccounts({ workspaceId, search: 'delivery-', limit: 1 })
@@ -143,7 +143,7 @@ describe('migration 212 customer delivery account binding release acceptance', (
         .rejects.toMatchObject({ code: 'INVALID_INPUT' })
 
       const bindInput = { workspaceId, deliveryId: historicalId, targetAccountId: target.accountId,
-        actorId: 'release-212-operator', expectedRevision: 7, reason: '  Verified merchant login  ' }
+        actorId: 'release-215-operator', expectedRevision: 7, reason: '  Verified merchant login  ' }
       await expect(repo.bindAccount({ ...bindInput, expectedRevision: 6 })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
       const bound = await repo.bindAccount(bindInput)
       expect(bound).toMatchObject({ id: historicalId, targetAccountId: target.accountId, targetIdentityId: target.identityId,
@@ -166,7 +166,7 @@ describe('migration 212 customer delivery account binding release acceptance', (
         after_json: { targetAccountId: target.accountId, targetIdentityId: target.identityId, revision: 8 } })
       expect(JSON.stringify(audits)).not.toMatch(/password_hash|passwordHash|argon2id|token_hash/u)
 
-      const create = (companyName: string, workspace = workspaceId) => repo.create({ workspaceId: workspace, companyName, actorId: 'release-212-operator' })
+      const create = (companyName: string, workspace = workspaceId) => repo.create({ workspaceId: workspace, companyName, actorId: 'release-215-operator' })
       const duplicate = await create('Duplicate identity')
       await expect(repo.bindAccount({ ...bindInput, deliveryId: duplicate.id, expectedRevision: duplicate.revision }))
         .rejects.toMatchObject({ code: 'ACCOUNT_ALREADY_BOUND' })
@@ -229,7 +229,7 @@ describe('migration 212 customer delivery account binding release acceptance', (
         { apply: "UPDATE platform_password_accounts SET account_type='platform' WHERE id=$1", restore: "UPDATE platform_password_accounts SET account_type='merchant' WHERE id=$1", values: [ineligible.accountId] },
         { apply: "UPDATE platform_password_accounts SET workspace_ids=ARRAY[]::text[] WHERE id=$1", restore: 'UPDATE platform_password_accounts SET workspace_ids=ARRAY[$2]::text[] WHERE id=$1', values: [ineligible.accountId], restoreValues: [ineligible.accountId, workspaceId] },
         { apply: "UPDATE platform_identities SET risk_decision='block' WHERE id=$1", restore: "UPDATE platform_identities SET risk_decision='allow' WHERE id=$1", values: [ineligible.identityId] },
-        { apply: "UPDATE platform_identities SET access_status='suspended',suspended_at=now(),suspended_by='release-212',suspension_reason='test' WHERE id=$1", restore: "UPDATE platform_identities SET access_status='active',suspended_at=NULL,suspended_by=NULL,suspension_reason=NULL WHERE id=$1", values: [ineligible.identityId] },
+        { apply: "UPDATE platform_identities SET access_status='suspended',suspended_at=now(),suspended_by='release-215',suspension_reason='test' WHERE id=$1", restore: "UPDATE platform_identities SET access_status='active',suspended_at=NULL,suspended_by=NULL,suspension_reason=NULL WHERE id=$1", values: [ineligible.identityId] },
         { apply: "UPDATE workspace_members SET status='suspended' WHERE identity_id=$1", restore: "UPDATE workspace_members SET status='active' WHERE identity_id=$1", values: [ineligible.identityId] },
         { apply: "UPDATE workspaces SET status='disabled' WHERE id=$1", restore: "UPDATE workspaces SET status='active' WHERE id=$1", values: [workspaceId] },
       ]) {
@@ -247,22 +247,22 @@ describe('migration 212 customer delivery account binding release acceptance', (
       const rollbackInput = { ...bindInput, deliveryId: rollbackDelivery.id, expectedRevision: rollbackDelivery.revision, targetAccountId: alternate.accountId }
       const persistedBefore = (await database.query('SELECT to_jsonb(d) AS row FROM workspace_customer_deliveries d WHERE id=$1', [rollbackDelivery.id])).rows[0].row
       await database.query(`
-        CREATE FUNCTION public.release_212_reject_binding_audit() RETURNS trigger LANGUAGE plpgsql AS $$
+        CREATE FUNCTION public.release_215_reject_binding_audit() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
           IF NEW.action='customer_delivery.account.bind' THEN
-            RAISE EXCEPTION 'release 212 injected audit failure' USING ERRCODE='P0001';
+            RAISE EXCEPTION 'release 215 injected audit failure' USING ERRCODE='P0001';
           END IF;
           RETURN NEW;
         END $$;
-        CREATE TRIGGER release_212_reject_binding_audit BEFORE INSERT ON workspace_operation_audit
-          FOR EACH ROW EXECUTE FUNCTION public.release_212_reject_binding_audit();
+        CREATE TRIGGER release_215_reject_binding_audit BEFORE INSERT ON workspace_operation_audit
+          FOR EACH ROW EXECUTE FUNCTION public.release_215_reject_binding_audit();
       `)
       try {
-        await expect(repo.bindAccount(rollbackInput)).rejects.toMatchObject({ code: 'P0001', message: 'release 212 injected audit failure' })
+        await expect(repo.bindAccount(rollbackInput)).rejects.toMatchObject({ code: 'P0001', message: 'release 215 injected audit failure' })
         expect((await database.query('SELECT to_jsonb(d) AS row FROM workspace_customer_deliveries d WHERE id=$1', [rollbackDelivery.id])).rows[0].row).toEqual(persistedBefore)
         expect(await bindingAudits(rollbackDelivery.id)).toEqual([])
       } finally {
-        await database.query('DROP TRIGGER release_212_reject_binding_audit ON workspace_operation_audit; DROP FUNCTION public.release_212_reject_binding_audit()')
+        await database.query('DROP TRIGGER release_215_reject_binding_audit ON workspace_operation_audit; DROP FUNCTION public.release_215_reject_binding_audit()')
       }
       expect(await repo.bindAccount(rollbackInput)).toMatchObject({ targetAccountId: alternate.accountId, revision: rollbackDelivery.revision + 1 })
       expect(await bindingAudits(rollbackDelivery.id)).toHaveLength(1)

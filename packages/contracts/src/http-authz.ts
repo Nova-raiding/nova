@@ -76,6 +76,13 @@ export const HTTP_OPERATION_POLICIES = [
   identity('GET', '/v1/image-generation-jobs', 'catalog.search'),
   identity('GET', '/v1/image-generation-jobs/{jobId}', 'catalog.image.get'),
   identity('GET', '/v1/assets', 'asset.list'),
+  identity('GET', '/v1/assets/trash', 'asset.list'),
+  // Lifecycle mutations have their own HTTP authorization boundary. The
+  // route enforces workspace membership plus editor access to this exact asset.
+  identityOnly('POST', '/v1/assets/{assetId}/trash'),
+  identityOnly('POST', '/v1/assets/{assetId}/restore'),
+  identityOnly('POST', '/v1/assets/{assetId}/purge'),
+  identityOnly('POST', '/v1/assets/{assetId}/purge/cancel'),
   identity('POST', '/v1/assets', 'asset.upload'),
   identity('GET', '/v1/assets/{assetId}/products', 'asset.list'),
   identity('GET', '/v1/products/{productId}/assets', 'catalog.search'),
@@ -172,6 +179,7 @@ export const HTTP_OPERATION_POLICIES = [
   machine('POST', '/v1/internal/support/sla-scan', 'worker'),
   machine('POST', '/v1/internal/support/sla-report', 'worker'),
   machine('POST', '/v1/internal/storage/orphans/cleanup', 'worker'),
+  machine('POST', '/v1/internal/assets/lifecycle/purge', 'worker'),
   machine('POST', '/v1/internal/image-generation-jobs/reconciliation', 'worker'),
   machine('POST', '/v1/internal/image-generation-jobs/{jobId}/result', 'worker'),
   machine('POST', '/v1/internal/image-generation-jobs/{jobId}/execution', 'worker'),

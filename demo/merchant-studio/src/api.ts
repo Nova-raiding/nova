@@ -697,6 +697,20 @@ export interface AssetMetadata {
   display?: { primaryStatus: string; label: string; sourceState: string; reasons: string[]; nextAction: { method: string; label: string; allowed: boolean } | null }
 }
 
+/** Server-owned recycle-bin entry. `asset` remains the canonical asset
+ * snapshot; deletion metadata is returned by the asset lifecycle API. */
+export interface TrashedAsset {
+  asset: AssetMetadata
+  deleted_at: string
+  expires_at: string
+  deleted_by: string
+  purge_requested_at?: string | null
+  purge_requested_by?: string | null
+  purge_request_reason?: string | null
+  purge_error?: Record<string, unknown> | null
+  revision: number
+}
+
 export interface StorageQuotaProjection {
   usedBytes: number
   reservedBytes: number
@@ -1205,6 +1219,13 @@ export async function fetchProduct(baseUrl: string, productId: string): Promise<
  * used by the current library UI. No individual HTTP response contains the
  * whole workspace collection. */
 export const fetchAssets = (baseUrl: string) => fetchAllPages<AssetMetadata>(baseUrl, '/v1/assets')
+/** Read server-side soft-deleted assets; this is deliberately separate from
+ * the active asset list and never synthesized from browser storage. */
+export const fetchTrashedAssets = (baseUrl: string) => fetchAllPages<TrashedAsset>(baseUrl, '/v1/assets/trash')
+export const trashAsset = (baseUrl: string, assetId: string) => requestApi<TrashedAsset>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/trash`, { method: 'POST' })
+export const restoreAsset = (baseUrl: string, assetId: string) => requestApi<AssetMetadata>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/restore`, { method: 'POST' })
+export const requestAssetPurge = (baseUrl: string, input: { assetId: string; assetName: string; reason: string; expectedRevision: number }) => requestApi<{ asset_id: string; purge_requested_at: string; revision: number; status: 'purge_queued' }>(baseUrl, `/v1/assets/${encodeURIComponent(input.assetId)}/purge`, { method: 'POST', body: JSON.stringify({ confirm_asset_name: input.assetName, reason: input.reason, expected_revision: input.expectedRevision }) })
+export const cancelAssetPurge = (baseUrl: string, assetId: string, expectedRevision: number) => requestApi<{ asset_id: string; expires_at: string; revision: number; status: 'purge_cancelled' }>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/purge/cancel`, { method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision }) })
 export const fetchAssetStorageQuota = (baseUrl: string) => requestApi<ApiPage<AssetMetadata> & { storage_quota?: StorageQuotaProjection }>(baseUrl, '/v1/assets?limit=1&offset=0').then(value => value.storage_quota)
 
 /**

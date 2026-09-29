@@ -21,6 +21,116 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     rejectMerchantVideoUpload, headerRequired, assetScannerWorkspace, accessibleAssetIds,
     enforceAssetAccess, httpOperationPolicyOperation,
   } = runtime
+  const trashedIdsFor = async (workspaceId: string, assetIds: readonly string[]) => {
+    const trashed = new Set<string>()
+    for (let offset = 0; offset < assetIds.length; offset += 500) {
+      const page = assetIds.slice(offset, offset + 500)
+      const result = await (persistence.assetLifecycleRead ?? persistence.assetLifecycle)?.listTrashedAssetIds(workspaceId, page)
+      for (const assetId of result ?? []) trashed.add(assetId)
+    }
+    return trashed
+  }
+  if (req.method === 'GET' && path === '/v1/assets/trash') {
+    const workspaceId = resolveWorkspace(req)
+    const lifecycle = persistence.assetLifecycle
+    if (!lifecycle) throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
+    const rawLimit = url.searchParams.get('limit')
+    const rawOffset = url.searchParams.get('offset')
+    const limit = rawLimit === null ? 50 : Number(rawLimit)
+    const offset = rawOffset === null ? 0 : Number(rawOffset)
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset) || offset < 0) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '回收站分页参数无效', 400)
+    const accessibleIds = await accessibleAssetIds(req, workspaceId)
+    const page = await lifecycle.listTrash(workspaceId, { limit, offset, ...(accessibleIds === undefined ? {} : { assetIds: [...accessibleIds] }) })
+    const items = page.items.map(item => {
+        const asset = service.assets.get(item.assetId)
+        if (!asset || asset.workspaceId !== workspaceId) throw new DomainError('ASSET_LIFECYCLE_SNAPSHOT_MISSING', '回收站素材快照暂不可用，已阻断读取', 503)
+        return { asset: { ...asset, display: assetDisplayProjection(asset) }, deleted_at: item.deletedAt, expires_at: item.expiresAt, deleted_by: item.deletedBy, purge_requested_at: item.purgeRequestedAt, purge_requested_by: item.purgeRequestedBy, purge_request_reason: item.purgeRequestReason, purge_error: item.purgeError, revision: item.revision }
+      })
+    return send(res, 200, workspaceId, { items, total: page.total, limit, offset, retention_days: 7 }, null, req)
+  }
+  const assetTrashMatch = path.match(/^\/v1\/assets\/([^/]+)\/trash$/)
+  if (req.method === 'POST' && assetTrashMatch) {
+    const workspaceId = resolveWorkspace(req)
+    const lifecycle = persistence.assetLifecycle
+    if (!lifecycle) throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
+    const assetId = decodeURIComponent(assetTrashMatch[1]!)
+    const asset = assetForWorkspace(workspaceId, assetId)
+    await enforceAssetAccess(req, workspaceId, asset.id, 'editor')
+    const input = await body(req)
+    if (input.expected_revision !== undefined && (!Number.isSafeInteger(input.expected_revision) || (input.expected_revision as number) < 1)) {
+      throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_revision 必须是正整数', 400)
+    }
+    try {
+      const state = await lifecycle.trash({ workspaceId, assetId: asset.id, actorId: requestActor(req), ...(typeof input.expected_revision === 'number' ? { expectedRevision: input.expected_revision } : {}) })
+      return send(res, 200, workspaceId, { asset: { ...asset, display: assetDisplayProjection(asset) }, deleted_at: state.deletedAt, expires_at: state.expiresAt, deleted_by: state.deletedBy, revision: state.revision }, null, req)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'ASSET_LIFECYCLE_REVISION_CONFLICT') throw new DomainError('ASSET_LIFECYCLE_REVISION_CONFLICT', '素材回收状态已变化，请刷新后重试', 409)
+      if (error instanceof Error && error.message === 'ASSET_LIFECYCLE_ASSET_NOT_FOUND') throw new DomainError('ASSET_NOT_FOUND', '素材不存在或不属于当前工作区', 404)
+      throw error
+    }
+  }
+  const assetRestoreMatch = path.match(/^\/v1\/assets\/([^/]+)\/restore$/)
+  if (req.method === 'POST' && assetRestoreMatch) {
+    const workspaceId = resolveWorkspace(req)
+    const lifecycle = persistence.assetLifecycle
+    if (!lifecycle) throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
+    const assetId = decodeURIComponent(assetRestoreMatch[1]!)
+    const asset = assetForWorkspace(workspaceId, assetId)
+    await enforceAssetAccess(req, workspaceId, asset.id, 'editor', { allowTrashed: true })
+    const input = await body(req)
+    if (input.expected_revision !== undefined && (!Number.isSafeInteger(input.expected_revision) || (input.expected_revision as number) < 1)) {
+      throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_revision 必须是正整数', 400)
+    }
+    try {
+      await lifecycle.restore({ workspaceId, assetId: asset.id, actorId: requestActor(req), ...(typeof input.expected_revision === 'number' ? { expectedRevision: input.expected_revision } : {}) })
+      return send(res, 200, workspaceId, { ...asset, display: assetDisplayProjection(asset) }, null, req)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'ASSET_LIFECYCLE_REVISION_CONFLICT') throw new DomainError('ASSET_LIFECYCLE_REVISION_CONFLICT', '素材回收状态已变化，请刷新后重试', 409)
+      if (error instanceof Error && error.message === 'ASSET_LIFECYCLE_RESTORE_UNAVAILABLE') throw new DomainError('ASSET_LIFECYCLE_RESTORE_UNAVAILABLE', '素材已到期或不可恢复', 410)
+      throw error
+    }
+  }
+  const assetPurgeMatch = path.match(/^\/v1\/assets\/([^/]+)\/purge$/)
+  if (req.method === 'POST' && assetPurgeMatch) {
+    const workspaceId = resolveWorkspace(req)
+    const lifecycle = persistence.assetLifecycle
+    if (!lifecycle) throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
+    const assetId = decodeURIComponent(assetPurgeMatch[1]!)
+    const asset = assetForWorkspace(workspaceId, assetId)
+    await enforceAssetAccess(req, workspaceId, asset.id, 'editor', { allowTrashed: true })
+    const input = await body(req)
+    if (input.confirm_asset_name !== asset.name || typeof input.reason !== 'string' || !input.reason.trim() || input.reason.length > 500
+      || typeof input.expected_revision !== 'number' || !Number.isSafeInteger(input.expected_revision) || input.expected_revision < 1) {
+      throw new DomainError(ERROR_CODES.INVALID_REQUEST, '请准确确认素材名称、填写删除原因并提供当前回收版本', 400)
+    }
+    try {
+      const state = await lifecycle.requestEarlyPurge({ workspaceId, assetId: asset.id, actorId: requestActor(req), reason: input.reason, expectedRevision: input.expected_revision })
+      return send(res, 202, workspaceId, { asset_id: asset.id, purge_requested_at: state.purgeRequestedAt, purge_requested_by: state.purgeRequestedBy, purge_request_reason: state.purgeRequestReason, expires_at: state.expiresAt, revision: state.revision, status: 'purge_queued' }, null, req)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'ASSET_LIFECYCLE_REVISION_CONFLICT') throw new DomainError('ASSET_LIFECYCLE_REVISION_CONFLICT', '素材回收状态已变化，请刷新后重试', 409)
+      if (error instanceof Error && error.message === 'ASSET_LIFECYCLE_PURGE_IN_PROGRESS') throw new DomainError('ASSET_LIFECYCLE_PURGE_IN_PROGRESS', '素材清理已开始，请稍后刷新状态', 409)
+      if (error instanceof Error && error.message === 'ASSET_LIFECYCLE_PURGE_REQUEST_UNAVAILABLE') throw new DomainError('ASSET_LIFECYCLE_PURGE_REQUEST_UNAVAILABLE', '素材当前不可提前清理', 409)
+      throw error
+    }
+  }
+  const assetPurgeCancelMatch = path.match(/^\/v1\/assets\/([^/]+)\/purge\/cancel$/)
+  if (req.method === 'POST' && assetPurgeCancelMatch) {
+    const workspaceId = resolveWorkspace(req)
+    const lifecycle = persistence.assetLifecycle
+    if (!lifecycle) throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
+    const assetId = decodeURIComponent(assetPurgeCancelMatch[1]!)
+    const asset = assetForWorkspace(workspaceId, assetId)
+    await enforceAssetAccess(req, workspaceId, asset.id, 'editor', { allowTrashed: true })
+    const input = await body(req)
+    if (typeof input.expected_revision !== 'number' || !Number.isSafeInteger(input.expected_revision) || input.expected_revision < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_revision 必须是正整数', 400)
+    try {
+      const state = await lifecycle.cancelEarlyPurge({ workspaceId, assetId: asset.id, actorId: requestActor(req), expectedRevision: input.expected_revision })
+      return send(res, 200, workspaceId, { asset_id: asset.id, expires_at: state.expiresAt, revision: state.revision, status: 'purge_cancelled' }, null, req)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'ASSET_LIFECYCLE_PURGE_CANCEL_UNAVAILABLE') throw new DomainError('ASSET_LIFECYCLE_PURGE_CANCEL_UNAVAILABLE', '清理已经开始或回收期限已结束，无法撤销', 409)
+      throw error
+    }
+  }
   if (req.method === 'GET' && path === '/v1/assets') {
     const workspaceId = resolveWorkspace(req)
     const accessibleIds = await accessibleAssetIds(req, workspaceId)
@@ -41,11 +151,14 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
       const limit = rawLimit === null ? undefined : Number(rawLimit)
       const offset = rawOffset === null ? undefined : Number(rawOffset)
       if ((limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)) || (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '素材分页参数无效：limit 必须为 1-100，offset 必须为非负整数', 400)
-      const all = service.listAssets(workspaceId).filter(asset => accessibleIds === undefined || accessibleIds.has(asset.id))
+      const candidateAssets = service.listAssets(workspaceId)
+      const trashed = await trashedIdsFor(workspaceId, candidateAssets.map(asset => asset.id))
+      const all = candidateAssets.filter(asset => !trashed?.has(asset.id) && (accessibleIds === undefined || accessibleIds.has(asset.id)))
       return send(res, 200, workspaceId, { items: all.slice(offset ?? 0, (offset ?? 0) + (limit ?? 20)).map(asset => ({ ...asset, display: assetDisplayProjection(asset) })), total: all.length, limit: limit ?? 20, offset: offset ?? 0, ...(storageQuota ? { storage_quota: storageQuota } : {}) }, null, req)
     }
     const assets = service.listAssets(workspaceId)
-    const visible = accessibleIds === undefined ? assets : assets.filter(asset => accessibleIds.has(asset.id))
+    const trashed = await trashedIdsFor(workspaceId, assets.map(asset => asset.id))
+    const visible = assets.filter(asset => !trashed?.has(asset.id) && (accessibleIds === undefined || accessibleIds.has(asset.id)))
     return send(res, 200, workspaceId, visible.map(asset => ({ ...asset, display: assetDisplayProjection(asset) })), null, req)
   }
   const assetPreferenceMatch = path.match(/^\/v1\/assets\/([^/]+)\/preference$/)

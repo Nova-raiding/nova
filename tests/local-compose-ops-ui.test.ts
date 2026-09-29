@@ -50,6 +50,7 @@ describe('local Compose Ops UI', () => {
     expect(apiReplica?.ports).toContainEqual(expect.objectContaining({ host_ip: '127.0.0.1', published: '8788', target: 8787 }))
 
     const apiHealthcheck = api?.healthcheck?.test?.join(' ') ?? ''
+    expect(api?.environment?.MCP_INTEGRATION_MODE).toBe('local_stdio')
     expect(apiHealthcheck).toContain('127.0.0.1:8787/readyz')
     expect(apiHealthcheck).toContain('Authorization: Bearer')
     expect(apiHealthcheck).not.toContain('ASSET_SCAN_TRUSTED_PUBLIC_KEYS')

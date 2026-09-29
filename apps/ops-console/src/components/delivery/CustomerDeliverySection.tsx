@@ -708,6 +708,7 @@ export function CustomerDeliverySection({
     >
       <Drawer
         title="新建客户档案"
+        forceRender
         open={showCreate && !disabled && !readOnly}
         onClose={() => { setCreateDirty(false); setShowCreate(false); }}
         size={480}
@@ -723,6 +724,7 @@ export function CustomerDeliverySection({
           </Form.Item>
         </Form>
       </Drawer>
+      {!selected ? <Form form={form} style={{ display: "none" }} aria-hidden /> : null}
       <Form
         form={filterForm}
         className="customer-delivery-filter-form"

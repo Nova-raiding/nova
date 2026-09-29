@@ -64,7 +64,7 @@ describe('relay usage normalization', () => {
       { data: { task_id: 'video_job_1', status: 'queued' } },
       new Headers({ 'x-request-id': 'video_request_1' }),
       { modality: 'video', model: 'video-v1', context: { preauthorizationDurationSeconds: 5 } },
-    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage' })
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage', providerRequestId: 'video_request_1' })
   })
 
   it('normalizes provider usage and request identity inside the API envelope result', () => {
@@ -79,12 +79,27 @@ describe('relay usage normalization', () => {
       { id: 'unmetered-image', cost_cny: 0.01, data: [{ url: 'https://cdn.example/image.png' }] },
       new Headers(),
       { modality: 'image', model: 'image-v1', context: { providerAttemptId: 'attempt_unmetered_image' } },
-    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage' })
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage', providerRequestId: 'unmetered-image' })
     expect(sink).not.toHaveBeenCalled()
   })
 
   it('uses an image response body id when the relay omits request-id headers', () => {
     expect(parseRelayUsage({ id: 'image-response-123', usage: { output_image_count: 1 }, data: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1', context: { observedArtifactCount: 1 } })).toMatchObject({ providerRequestId: 'image-response-123', metadata: { usage_observed: true, billing_units: 1, billing_units_evidence: 'provider_usage' } })
+  })
+
+  it('normalizes New API preserved Qwen image_count usage as provider billing units', () => {
+    const usage = parseRelayUsage({
+      data: [{ url: 'https://cdn.example/qwen.png' }],
+      metadata: {
+        request_id: 'qwen-provider-request',
+        usage: { image_count: 1, height: 1024, width: 1024 },
+        output: { choices: [{ message: { content: [{ image: 'https://cdn.example/qwen.png' }] } }] },
+      },
+    }, new Headers(), { modality: 'image', model: 'qwen-image-2.0', context: { observedArtifactCount: 1 } })
+    expect(usage).toMatchObject({
+      providerRequestId: 'qwen-provider-request',
+      metadata: { usage_observed: true, billing_units: 1, billing_units_evidence: 'provider_usage', observed_artifact_count: 1 },
+    })
   })
 
   it('recognizes top-level image arrays through the sanitized usage parser', () => {

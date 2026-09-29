@@ -1,5 +1,9 @@
 # 商家营销内容助手（桌面 ChatGPT 插件）
 
+Store Nova 面向电商商家，帮助把商品资料和素材整理成可审核、可导出的营销内容。商家通过桌面 ChatGPT 自然语言发起文案、商品视觉或视频脚本等工作；Store Nova 的 API/MCP、模型中转与运营后台负责工作区权限、商品事实、规则、任务状态和用量成本记录。它解决的是商品资料到营销内容之间的整理、创作和审核衔接，不是自动经营店铺的平台。
+
+当前业务 profile 以人工运营为主：商品资料由商家提供或平台运营核验、导入并分配；插件产出候选内容，审核后导出。六个平台的店铺 OAuth、库存/订单自动同步和自动发布不属于当前商家工作流；需要上线平台时由运营在官方商家后台人工处理并回填记录。模型、支付、存储和扫描器等生产依赖已有真实配置/调用证据，但每项证据只适用于其对应环境、版本和流程，不应把单次成功推断为所有模态或当前候选均已验收。
+
 发布元数据同步基线（2026-09-19）：MCP 契约和商家插件工具面以共享注册表与运行态校验为准，不在文档中固化易过期的工具数量；PostgreSQL 迁移链尾以 `release-metadata.json` 为准，不在文档中写死迁移号。
 
 当前仓库包含一个可运行的工程 RC：桌面 ChatGPT 本地 stdio 插件 manifest/入口 Skill、MCP/API、统一契约、任务/内容/发布领域状态机、人工平台资料导入、生成/发布/对账 Worker、租户隔离 Outbox、OAuth state 安全组件，以及面向付费商家的 Merchant Studio Web 界面（构建产物为 `merchant-ui`）。当前上线档为 `PLATFORM_OPERATIONS_MODE=manual`：六个平台不接 OAuth 自动同步，平台运营人工导入商品与规则资料，商家只消费已分配的数据；官方平台 API 属于未来可选档位，不作为当前上线前置条件。
@@ -8,7 +12,7 @@
 
 桌面 ChatGPT 宿主的本地 stdio 链路已覆盖 `merchant.start`、`workspace.health`、`catalog.search`、`billing.status` 等只读入口；本地 fixture 结果只能证明契约链路，不能替代生产商家、账务或发布证据。生产商家必须由平台运营建立人工店铺记录、导入资料并分配到 workspace 后才可继续。
 
-**发布结论仍为 NO-GO。** 当前阻断不是六平台 OAuth：人工运营档已明确关闭自动授权和平台写入。仍需在同一候选 release 上补齐并验证 capability/capacity 外部证据、模型中转五模态真实用量与成本证据、支付回执、对象存储/KMS/PITR、扫描器、告警值守、`/releasez` 与认证业务路径 canary、签名 rollback bundle、备份 attestation，以及部署后真实桌面运营台验收。
+**仓库历史发布复核记录为 NO-GO，不能直接当作当前实时状态。** 复核中的候选版本存在尚未绑定到同一候选的能力/容量、模型多模态、支付、对象存储/恢复、扫描、告警、桌面宿主与部署验收项。此结论表示证据与版本绑定尚未完成，不表示这些生产依赖不存在；单项配置、历史真实调用和健康检查也不能替代当前候选的整链路验收。评估实时发布状态应以当前候选 SHA、运行镜像、数据库迁移尾及对应验收记录为准。
 
 2026-08-29 发布审计复核：仓库版本、插件镜像、MCP 注册表和迁移链已有 fail-closed metadata gate，release manifest 同时绑定 `VERSION`、`CHANGELOG`、metadata、Git SHA、插件、OpenAPI 与 MCP 源码。正式 trust anchor 检查因 `/run/release-security/evidence-trust` 未配置而拒绝，容量示例也因 `cloud_gate=false`、非生产环境、非 HTTPS 且包含 mock 流量而被真实云门禁拒绝。因此仓库门禁可验收，但生产发布继续 **NO-GO**。当前检查项和外部缺口见 [Store Nova 发布解阻清单](docs/runbooks/release-unblock-checklist.md)。
 

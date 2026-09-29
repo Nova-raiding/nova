@@ -132,6 +132,31 @@ describe('PostgresFinanceSearchRepository', () => {
     expect(maxActive).toBeLessThanOrEqual(8)
   })
 
+  it('shares the pool-derived concurrency budget across parallel searches', async () => {
+    let active = 0
+    let maxActive = 0
+    const pool = {
+      options: { max: 3 },
+      async connect(): Promise<SqlClient> {
+        active += 1; maxActive = Math.max(maxActive, active)
+        return {
+          query: async <Row>(text: string): Promise<SqlQueryResult<Row>> => {
+            if (text.includes('SELECT record_id')) await new Promise(resolve => setTimeout(resolve, 2))
+            return { rows: [] }
+          },
+          release: () => { active -= 1 },
+        }
+      },
+    }
+    const repository = new PostgresFinanceSearchRepository(pool)
+    const workspaceIds = Array.from({ length: 12 }, (_, index) => `ws_${index}`)
+    await Promise.all([
+      repository.search({ role: 'finance', authorizedWorkspaceIds: workspaceIds }, { limit: 20 }),
+      repository.search({ role: 'finance', authorizedWorkspaceIds: workspaceIds }, { limit: 20 }),
+    ])
+    expect(maxActive).toBeLessThanOrEqual(2)
+  })
+
   it('adds covering indexes only and does not duplicate financial facts', async () => {
     const sql = await readFile(new URL('./migrations/058_finance_search_indexes.sql', import.meta.url), 'utf8')
     expect(sql.match(/CREATE INDEX IF NOT EXISTS/g)).toHaveLength(5)

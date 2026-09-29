@@ -441,6 +441,26 @@ describe('content generator', () => {
     expect(bodies[1]?.messages.at(-1)).toMatchObject({ role: 'user' })
   })
 
+  it('returns every prior assistant reasoning message across two repair continuations', async () => {
+    const bodies: Array<{ messages: Array<Record<string, unknown>> }> = []
+    const firstAssistant = { role: 'assistant', content: JSON.stringify({ title: '标题1', detail: '详情1', sellingPoints: [] }), reasoning_text: 'opaque reasoning state 1', reasoning_tokens: 11 }
+    const secondAssistant = { role: 'assistant', content: JSON.stringify({ title: '标题2', detail: '详情2', sellingPoints: [] }), reasoning_text: 'opaque reasoning state 2', reasoning_tokens: 13 }
+    const responses = [firstAssistant, secondAssistant, { role: 'assistant', content: JSON.stringify(validGeneratedContent()) }]
+    const generator = new OpenAICompatibleContentGenerator({
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'reasoning-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async (_url, init = {}) => {
+        bodies.push(JSON.parse(String(init.body)) as { messages: Array<Record<string, unknown>> })
+        return new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: responses.shift() }] }), { status: 200 })
+      },
+    })
+    await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 } })).resolves.toMatchObject({ title: '标题' })
+    expect(bodies).toHaveLength(3)
+    expect(bodies[2]?.messages).toContainEqual(firstAssistant)
+    expect(bodies[2]?.messages).toContainEqual(secondAssistant)
+    expect(bodies[2]?.messages.filter(message => message.role === 'assistant')).toHaveLength(2)
+    expect(bodies[2]?.messages.at(-1)).toMatchObject({ role: 'user' })
+  })
+
   it('keeps hard facts and rules while dropping oversized optional knowledge context', () => {
     const bounded = budgetContentGenerationInput({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 }, knowledgeContext: { rules: [{ id: 'rule_1', content: '禁止虚假宣传', version: '1', sourceReference: 'official' }], assets: Array.from({ length: 20 }, (_, index) => ({ id: `asset_${index}`, kind: 'brand' as const, name: '资料', content: '可选内容'.repeat(2_000), revision: 1, confirmed: false as const })), confirmedLearningSuggestions: [] } }, 3_000)
     expect(bounded.product.title).toBe('商品')

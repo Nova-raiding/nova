@@ -42,6 +42,16 @@ describe("MembersSection", () => {
     expect(html).toContain("disabled");
   });
 
+  it("fails closed with an explicit scope message when the session has no workspace", () => {
+    const model = { opsSession: { actor_id: "owner_1", roles: ["workspace_owner"], workspace_granted: true, assignable_roles: ["merchant_admin", "operator"] }, authorization: authorization(["workspace.member.manage", "workspace.status.update"]) } as OpsConsoleModel;
+    const html = renderToStaticMarkup(createElement(MembersSection, { model, client }));
+    expect(html).toContain("当前会话尚未绑定企业主体");
+    expect(html).toContain("请先选择企业主体后查看成员");
+    expect(html).not.toContain("当前企业主体还没有成员");
+    expect(html).not.toContain("成员列表加载失败");
+    expect(html).toMatch(/<button type="submit"[^>]*disabled=""/u);
+  });
+
   it("provides focusable initial-load recovery and announces table loading", () => {
     const source = readFileSync(new URL("./MembersSection.tsx", import.meta.url), "utf8");
 

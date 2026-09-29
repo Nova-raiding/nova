@@ -11,6 +11,8 @@ export interface ScopedBrandHttpDependencies {
   enforceAccess(req: IncomingMessage, workspaceId: string, write?: boolean): Promise<unknown>
   requireActionableStore(workspaceId: string, accountId: string): void
   actor(req: IncomingMessage): string
+  filterActiveAssetIds?: (workspaceId: string, assetIds: readonly string[]) => Promise<ReadonlySet<string>>
+  assertAssetActive?: (workspaceId: string, assetId: string) => Promise<void>
   send(res: ServerResponse, status: number, workspaceId: string, value: unknown, error: null, req: IncomingMessage): unknown
 }
 
@@ -35,9 +37,11 @@ export async function routeScopedBrandHttp(req: IncomingMessage, res: ServerResp
   if (req.method === 'GET' && path === '/v1/brand-scopes') {
     const workspaceId = resolveWorkspace(req)
     await enforceAccess(req, workspaceId)
-    const [record, series, assignments] = await Promise.all([
+    const [record, series, rawAssignments] = await Promise.all([
       repository.get(workspaceId), repository.listSeries(workspaceId), repository.listAssetAssignments(workspaceId),
     ])
+    const activeIds = dependencies.filterActiveAssetIds ? await dependencies.filterActiveAssetIds(workspaceId, rawAssignments.map(row => row.assetId)) : undefined
+    const assignments = activeIds ? rawAssignments.filter(row => activeIds.has(row.assetId)) : rawAssignments
     send(res, 200, workspaceId, { settings: record?.settings ?? { schemaVersion: 1 }, revision: record?.revision ?? 0, updated_at: record?.updatedAt ?? null, series, assignments }, null, req)
     return true
   }
@@ -58,6 +62,7 @@ export async function routeScopedBrandHttp(req: IncomingMessage, res: ServerResp
     }
     for (const [assetId, value] of Object.entries(entries(settings.images))) {
       if (isDeepStrictEqual(value, entries(previous.images)[assetId])) continue
+      await dependencies.assertAssetActive?.(workspaceId, assetId)
       const assignment = await repository.getAssetAssignment(workspaceId, assetId)
       if (assignment) changedStores.add(assignment.accountId)
     }
@@ -88,6 +93,7 @@ export async function routeScopedBrandHttp(req: IncomingMessage, res: ServerResp
     if (input.series_id !== undefined && input.series_id !== null && (typeof input.series_id !== 'string' || !input.series_id.trim())) throw new DomainError('BRAND_ASSET_ASSIGNMENT_INVALID', '系列标识无效', 400)
     dependencies.requireActionableStore(workspaceId, input.account_id)
     const assetId = decodeURIComponent(assetMatch[1]!)
+    await dependencies.assertAssetActive?.(workspaceId, assetId)
     try {
       const assignment = await repository.assignAsset({ workspaceId, assetId, accountId: input.account_id, seriesId: typeof input.series_id === 'string' ? input.series_id : null, expectedRevision: Number(input.expected_revision) })
       send(res, 200, workspaceId, assignment, null, req)

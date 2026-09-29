@@ -38,14 +38,14 @@ const additionalSources = [
   'apps/worker/src/handler.ts', 'apps/api/src/worker-authorization-recheck.test.ts', 'packages/application/src/connector-runtime.ts',
   'packages/ai/src/provider-request.ts', 'packages/ai/src/generator.ts', 'packages/ai/src/image-editor.ts', 'packages/ai/src/image-facts.ts',
   'packages/ai/src/image-generator.ts', 'packages/ai/src/video-generator.ts', 'packages/ai/src/provider-dispatch-admission.test.ts',
-  'packages/persistence/src/migration-212.test.ts', 'packages/persistence/src/migration-212-release.postgres.test.ts',
+  'packages/persistence/src/migration-215.test.ts', 'packages/persistence/src/migration-215-release.postgres.test.ts',
   'apps/ops-console/src/pages/CustomerDeliveryPage.test.tsx',
   'packages/connectors/src/index.ts', 'packages/connectors/src/http-connector.ts', 'packages/multimodal/src/index.ts',
   'packages/security/src/oauth.ts', 'packages/security/src/oauth.test.ts', 'apps/plugin/mcp/bridge.mjs', 'apps/plugin/mcp/bridge.test.ts',
 ]
 export async function accountAccessSourceFingerprint() {
   const sources = { ...await contractLinkSourceFingerprint(), ...Object.fromEntries(await Promise.all(additionalSources.map(async file => [file, sha(await readFile(join(projectRoot, file)))]))) }
-  assert(Object.keys(sources).some(file => file.endsWith('/212_customer_delivery_account_binding.sql')), 'ACCOUNT_ACCESS_BINDING_MIGRATION_MISSING')
+  assert(Object.keys(sources).some(file => file.endsWith('/215_customer_delivery_account_binding.sql')), 'ACCOUNT_ACCESS_BINDING_MIGRATION_MISSING')
   return Object.fromEntries(Object.entries(sources).sort(([a], [b]) => a.localeCompare(b)))
 }
 function required(value: unknown, code: string): asserts value { if (!value) throw new Error(`ACCOUNT_ACCESS_${code}`) }

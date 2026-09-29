@@ -36,6 +36,31 @@ export class FinanceRecordVersionConflictError extends Error {
 // an aggregate summary without a workspace filter.
 const MAX_PLATFORM_WORKSPACES = 10_000
 const SEARCH_CONCURRENCY = 8
+const poolSearchConcurrency = (pool: SqlPool) => {
+  const configuredMax = Number((pool as SqlPool & { options?: { max?: number } }).options?.max)
+  if (!Number.isInteger(configuredMax) || configuredMax <= 0) return SEARCH_CONCURRENCY
+  // Keep one connection available for scope checks and other control-plane
+  // reads. The gate is shared by every search on this repository, so parallel
+  // overview requests cannot each consume the full pool independently.
+  return Math.max(1, Math.min(SEARCH_CONCURRENCY, configuredMax - 1))
+}
+
+class ConcurrencyGate {
+  private active = 0
+  private readonly waiters: Array<() => void> = []
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(work: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) await new Promise<void>(resolve => this.waiters.push(resolve))
+    this.active += 1
+    try { return await work() }
+    finally {
+      this.active -= 1
+      this.waiters.shift()?.()
+    }
+  }
+}
 const kindCounts = (): Record<FinanceRecordKind, number> => ({
   recharge_order: 0,
   wallet_transaction: 0,
@@ -305,7 +330,11 @@ export interface FinanceSearchRepository {
 }
 
 export class PostgresFinanceSearchRepository implements FinanceSearchRepository {
-  constructor(private readonly pool: SqlPool, private readonly now: () => Date = () => new Date()) {}
+  private readonly searchGate: ConcurrencyGate
+
+  constructor(private readonly pool: SqlPool, private readonly now: () => Date = () => new Date(), searchConcurrency = poolSearchConcurrency(pool)) {
+    this.searchGate = new ConcurrencyGate(Math.max(1, Math.min(SEARCH_CONCURRENCY, Math.floor(searchConcurrency))))
+  }
 
   private async workspaceScope(access: FinanceSearchAccess, requested?: readonly string[]) {
     const requestedSet = requested ? new Set(requested) : undefined
@@ -331,7 +360,7 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
     const snapshotAt = decoded?.snapshotAt ?? query.snapshotAt ?? this.now().toISOString()
     if (query.snapshotAt && decoded && query.snapshotAt !== decoded.snapshotAt) throw new FinanceSearchCursorError('cursor snapshot does not match the request')
     const common = [snapshotAt, query.fromAt ?? null, query.toAt ?? null, query.kinds ?? [], query.statuses ?? [], query.text ?? null]
-    const perWorkspace = await mapBounded(scope, SEARCH_CONCURRENCY, workspaceId => withWorkspaceTransaction(this.pool, workspaceId, async client => {
+    const perWorkspace = await mapBounded(scope, SEARCH_CONCURRENCY, workspaceId => this.searchGate.run(() => withWorkspaceTransaction(this.pool, workspaceId, async client => {
       const values: unknown[] = [workspaceId, ...common]
       let cursorClause = ''
       if (decoded) {
@@ -390,7 +419,7 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
           count(*) FILTER (WHERE kind='model_usage') AS model_usage_count
         FROM finance_records_with_enterprise WHERE ${FILTER_SQL}`, [workspaceId, ...common])
       return { rows: rows.rows, summary: summary.rows[0] }
-    }))
+    })))
     const merged = perWorkspace.flatMap(value => value.rows).sort(compareRows)
     const selected = merged.slice(0, query.limit)
     const last = selected.at(-1)
