@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest'
+import { existsSync, readFileSync } from 'node:fs'
 // @ts-ignore JavaScript runtime module
 import { KEYCHAIN_SERVICE, installationIdentityStore, keychainHelperFailureReason, readKeychainCredential, writeKeychainCredential } from './keychain-credential.mjs'
 
 const bound = { apiOrigin: 'https://merchant.example.test', workspaceId: 'ws_test' }
 
 describe('macOS keychain credential', () => {
+  it('authenticates the live native caller chain before Keychain access', () => {
+    const source = readFileSync(new URL('./keychain-credential-helper.swift', import.meta.url), 'utf8')
+    expect(source).toContain('SecCodeCopyGuestWithAttributes')
+    expect(source).toContain('SecCodeCheckValidity')
+    expect(source).toContain('kSecCSStrictValidate')
+    expect(source).toContain('identifier == "com.openai.codex" && team == "2DC432GLL2"')
+    expect(source).toContain('identifier == "com.storenova.connect-helper" && team == ownTeam')
+    expect(source.indexOf('validSignedAncestor()')).toBeLessThan(source.indexOf('SecItemCopyMatching'))
+    expect(source).not.toContain('ProcessInfo.processInfo.environment')
+  })
   it('keeps only the OSStatus and operation from helper failures', () => {
     const result = { status: 1, stderr: 'keychain_osstatus=-25308 operation=read\naccess_token=never-print\n' }
     expect(keychainHelperFailureReason(result, 'read')).toBe('helper_exit=1')
@@ -12,17 +23,16 @@ describe('macOS keychain credential', () => {
     expect(keychainHelperFailureReason({ status: 1, stderr: 'keychain_osstatus=-25308 operation=write\n' }, 'read')).toBe('helper_exit=1')
     expect(keychainHelperFailureReason({ status: null, error: { code: 'ETIMEDOUT' }, stderr: '' }, 'read')).toBe('helper_timeout operation=read')
   })
-  it('bounds a GUI Keychain prompt and fails closed when the helper times out', () => {
-    let timeout: number | undefined
-    let argv: string[] | undefined
-    const spawnHelper = (_path: string, args: string[], options: { timeout: number }) => {
-      timeout = options.timeout
-      argv = args
-      return { status: null, error: { code: 'ETIMEDOUT' }, stderr: '', stdout: '' }
+  it('fails closed when the native helper caller has no accepted signed ancestor', () => {
+    const bundle = { schema_version: '1', api_origin: bound.apiOrigin, workspace_id: bound.workspaceId,
+      access_token: 'access-secret', refresh_token: 'refresh-secret', expires_at: '2030-01-01T00:00:00Z' }
+    if (process.platform === 'darwin' && existsSync(new URL('./keychain-credential-helper', import.meta.url))) {
+      expect(() => readKeychainCredential(bound)).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_exit=1')
+      expect(() => writeKeychainCredential(bound, bundle)).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_exit=1')
+    } else {
+      expect(() => readKeychainCredential(bound)).toThrow('MCP_KEYCHAIN_HELPER_INVALID')
+      expect(() => writeKeychainCredential(bound, bundle)).toThrow('MCP_KEYCHAIN_HELPER_INVALID')
     }
-    expect(() => readKeychainCredential(bound, { spawnHelper })).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read')
-    expect(timeout).toBe(8_000)
-    expect(argv).toEqual([])
   })
   it('writes one atomic JSON item without placing secrets in argv', async () => {
     let call: Record<string, string> | undefined

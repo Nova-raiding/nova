@@ -79,9 +79,11 @@ Windows 包必须在 Windows x64 发布机上构建。发布机安装构建工�
 
 #### 开发人员从源码安装
 
+此命令安装的是 `qa-broker` 开发/QA 包。它使用未认证的同用户凭据 broker，标记为 `qa_only` 且 `release_eligible=false`；不得交付客户、用于生产或作为正式上线验收证据。生产安装须等待可信签名、公证和发布门禁全部完成后使用正式包。
+
 在目标仓库根目录执行：
 
-    node apps/plugin/scripts/install-local-plugin.mjs
+    node apps/plugin/scripts/install-local-plugin.mjs --package-profile qa-broker
 
 该脚本只使用当前仓库里的本地源适配器完成 ChatGPT/Codex 所需的插件发现和缓存安装，随后比较源码与安装缓存的 manifest、Skill、Bridge 哈希和实际 `tools/list`。它不会上传插件、不会发布到公开或团队插件市场，也不要求真实 ChatGPT OAuth。
 
@@ -206,7 +208,7 @@ ChatGPT 宿主已经加载或验收通过。
 
 另一个常见问题是插件缓存落后于本地源码。修复方式是重新执行本地安装并验真：
 
-    node apps/plugin/scripts/install-local-plugin.mjs
+    node apps/plugin/scripts/install-local-plugin.mjs --package-profile qa-broker
 
 然后退出并重启 ChatGPT，再开启新会话。不要手工修改 `~/.codex/plugins/cache`，否则下次更新会被覆盖。
 

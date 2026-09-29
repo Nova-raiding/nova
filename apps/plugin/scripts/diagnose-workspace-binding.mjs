@@ -83,4 +83,3 @@ const result = {
 }
 
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
-

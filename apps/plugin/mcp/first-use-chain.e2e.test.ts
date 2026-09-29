@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { once } from 'node:events'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
-import { enableCommercialFixtureHarnessForTests, setPasswordAuthRepositoryForTests, workspaceMembers } from '../../api/src/server.js'
-import { server } from '../../api/src/server.js'
+import { pathToFileURL } from 'node:url'
+
+const repoFile = (path: string) => pathToFileURL(resolve(process.cwd(), path)).href
+const { MemoryPasswordAuthRepository } = await import(repoFile('packages/persistence/src/password-auth-repository.ts'))
+const { enableCommercialFixtureHarnessForTests, setPasswordAuthRepositoryForTests, workspaceMembers, server } = await import(repoFile('apps/api/src/server.ts'))
 
 const bridgePath = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
 let child: ChildProcessWithoutNullStreams | undefined

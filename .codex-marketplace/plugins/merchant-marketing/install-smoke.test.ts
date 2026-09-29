@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 
@@ -32,6 +33,209 @@ const inheritedRuntimeEnv = [
 ]
 
 describe('Codex plugin installation package', () => {
+  it('does not replace an unrecognized previous installation', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-install-rollback-'))
+    const home = resolve(directory, 'home')
+    const source = resolve(directory, '.agents', 'unpacked-plugin')
+    const destination = resolve(home, 'plugins/merchant-marketing')
+    const cache = resolve(home, '.codex/plugins/cache/merchant-personal/merchant-marketing/local')
+    const registry = resolve(home, '.agents/plugins/marketplace.json')
+    const config = resolve(home, '.codex/config.toml')
+    try {
+      mkdirSync(resolve(source, 'scripts'), { recursive: true })
+      mkdirSync(resolve(source, 'runtime'))
+      mkdirSync(resolve(source, '.codex-plugin'))
+      mkdirSync(destination, { recursive: true })
+      mkdirSync(cache, { recursive: true })
+      mkdirSync(resolve(home, '.agents/plugins'), { recursive: true })
+      cpSync(resolve(root, 'scripts/install-chatgpt-bundled.mjs'), resolve(source, 'scripts/install-chatgpt-bundled.mjs'))
+      cpSync(resolve(root, 'scripts/bundle-provenance.mjs'), resolve(source, 'scripts/bundle-provenance.mjs'))
+      writeFileSync(resolve(source, '.codex-plugin/plugin.json'), JSON.stringify({ id: 'merchant-marketing', name: 'merchant-marketing', version: '1.0.0', mcpServers: './.mcp.json' }))
+      writeFileSync(resolve(source, 'package.json'), JSON.stringify({ name: '@merchant-marketing/plugin', version: '1.0.0' }))
+      writeFileSync(resolve(source, 'runtime/node'), 'bundled runtime marker')
+      const bundlePaths = ['.codex-plugin/plugin.json', 'package.json', 'runtime/node', 'scripts/bundle-provenance.mjs', 'scripts/install-chatgpt-bundled.mjs']
+      writeFileSync(resolve(source, 'bundle-provenance.json'), `${JSON.stringify({
+        schema_version: '1', plugin: 'merchant-marketing', version: '1.0.0', platform: process.platform,
+        architecture: process.arch, git_commit: 'a'.repeat(40), source_dirty: false, authenticity_verified: false,
+        files: bundlePaths.map(path => ({ path, sha256: createHash('sha256').update(readFileSync(resolve(source, path))).digest('hex') })),
+      })}\n`)
+      writeFileSync(resolve(destination, 'previous.txt'), 'installed before update')
+      writeFileSync(resolve(cache, 'previous.txt'), 'cached before update')
+      const oldRegistry = JSON.stringify({ name: 'merchant-personal', plugins: [{ name: 'another-plugin' }] })
+      const oldConfig = '[other]\nenabled = true\n'
+      writeFileSync(registry, oldRegistry)
+      writeFileSync(config, oldConfig)
+      const result = spawnSync(process.execPath, [resolve(source, 'scripts/install-chatgpt-bundled.mjs')], {
+        encoding: 'utf8', env: { ...process.env, HOME: home, CODEX_HOME: resolve(home, '.codex'), AGENTS_HOME: resolve(home, '.agents') },
+      })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('not recognized as Store Nova')
+      expect(readFileSync(resolve(destination, 'previous.txt'), 'utf8')).toBe('installed before update')
+      expect(readFileSync(resolve(cache, 'previous.txt'), 'utf8')).toBe('cached before update')
+      expect(readFileSync(registry, 'utf8')).toBe(oldRegistry)
+      expect(readFileSync(config, 'utf8')).toBe(oldConfig)
+      expect(readdirSync(resolve(home, 'plugins')).some(name => name.includes('previous-') || name.includes('install-'))).toBe(false)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(process.platform !== 'darwin')('packages the macOS runtime and an unregistered candidate helper', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-local-package-'))
+    const artifact = resolve(directory, 'merchant-marketing.tar.gz')
+    try {
+      const packaged = spawnSync(process.execPath, [resolve(root, 'scripts/package-local-plugin.mjs'), artifact], { encoding: 'utf8' })
+      expect(packaged.status, packaged.stderr).toBe(0)
+      const packageMetadata = JSON.parse(packaged.stdout)
+      expect(packageMetadata).toMatchObject({
+        ok: true,
+        platform: 'darwin',
+        architecture: process.arch,
+        bundled_node_version: 'v22.16.0',
+        ready_to_install: false,
+        connect_helper: {
+          source_included: true,
+          app_bundle_included: true,
+          custom_scheme: 'included_unregistered_until_signed',
+          production_ready: false,
+          platforms: {
+            darwin: { source_included: true, binary_included: true },
+            win32: { source_included: true, binary_included: false, authenticode_required: true },
+          },
+        },
+      })
+      expect(packageMetadata.release_status).toBe(packageMetadata.source_dirty ? 'dirty_source_candidate' : 'unsigned_candidate')
+      const listing = spawnSync('tar', ['-tzf', artifact], { encoding: 'utf8' })
+      expect(listing.status, listing.stderr).toBe(0)
+      const skillFiles: string[] = []
+      const collectSkillFiles = (directoryPath: string, relative = ''): void => {
+        for (const entry of readdirSync(directoryPath, { withFileTypes: true })) {
+          const nested = relative ? `${relative}/${entry.name}` : entry.name
+          if (entry.isDirectory()) collectSkillFiles(resolve(directoryPath, entry.name), nested)
+          else if (entry.isFile() && !/\.test\.[cm]?[jt]s$/u.test(entry.name)) skillFiles.push(`skills/${nested}`)
+        }
+      }
+      collectSkillFiles(resolve(root, 'skills'))
+      for (const skillFile of skillFiles) expect(listing.stdout).toContain(skillFile)
+      expect(listing.stdout).not.toContain('skills/six-platform-public-import/scripts/extract-product.test.mjs')
+      expect(listing.stdout).toContain('macos/store-nova-connect-helper.swift')
+      expect(listing.stdout).toContain('scripts/build-connect-helper.mjs')
+      expect(listing.stdout).toContain('scripts/connect-local-macos.mjs')
+      expect(listing.stdout).toContain('windows/StoreNovaConnectHelper.cs')
+      expect(listing.stdout).toContain('scripts/build-connect-helper-windows.mjs')
+      expect(listing.stdout).toContain('scripts/verify-connect-helper-windows.ps1')
+      expect(listing.stdout).toContain('install-chatgpt.ps1')
+      expect(listing.stdout).toContain('runtime/node')
+      expect(listing.stdout).toContain('install-all.command')
+      expect(listing.stdout).toContain('scripts/install-all-macos.mjs')
+      expect(listing.stdout).toContain('scripts/verify-chatgpt-macos.mjs')
+      expect(listing.stdout).not.toContain('ChatGPT.app')
+      expect(listing.stdout).toContain('bundle-provenance.json')
+      const macInstaller = spawnSync('tar', ['-xOf', artifact, 'install.command'], { encoding: 'utf8' })
+      expect(macInstaller.status, macInstaller.stderr).toBe(0)
+      writeFileSync(resolve(directory, 'install.command'), macInstaller.stdout)
+      writeFileSync(resolve(directory, 'install.sh'), '#!/bin/sh\nexit 0\n')
+      writeFileSync(resolve(directory, 'login.sh'), '#!/bin/sh\nexit 0\n')
+      const installCommandResult = spawnSync('/bin/sh', [resolve(directory, 'install.command')], { encoding: 'utf8' })
+      expect(installCommandResult.status).toBe(0)
+      expect(installCommandResult.stdout).toContain('点击连接 ChatGPT 本地插件完成授权')
+      expect(listing.stdout).toContain('scripts/bundle-provenance.mjs')
+      expect(listing.stdout).toContain('scripts/verify-bundle-provenance.mjs')
+      expect(listing.stdout).toContain('mcp/keychain-credential-helper.build.json')
+      expect(listing.stdout).toContain('mcp/keychain-credential-helper')
+      expect(listing.stdout).toContain('scripts/install-chatgpt-bundled.mjs')
+      const extractedHelper = spawnSync('tar', ['-xzf', artifact, '-C', directory, 'mcp/keychain-credential-helper'], { encoding: 'utf8' })
+      expect(extractedHelper.status, extractedHelper.stderr).toBe(0)
+      const buildVersion = spawnSync('vtool', ['-show-build', resolve(directory, 'mcp/keychain-credential-helper')], { encoding: 'utf8' })
+      expect(buildVersion.status, buildVersion.stderr).toBe(0)
+      expect(buildVersion.stdout).toMatch(/minos 11\.0/u)
+      const packagedMcp = spawnSync('tar', ['-xOzf', artifact, '.mcp.json'], { encoding: 'utf8' })
+      expect(JSON.parse(packagedMcp.stdout).mcpServers['merchant-marketing'].command).toBe('./runtime/node')
+      const installer = spawnSync('tar', ['-xOzf', artifact, 'install-plugin.ps1'], { encoding: 'utf8' })
+      expect(installer.status, installer.stderr).toBe(0)
+      const entry = spawnSync('tar', ['-xOzf', artifact, 'install-chatgpt.ps1'], { encoding: 'utf8' })
+      expect(entry.status, entry.stderr).toBe(0)
+      expect(entry.stdout.indexOf('ensure-chatgpt-windows.ps1')).toBeLessThan(entry.stdout.indexOf('install-plugin.ps1'))
+      expect(listing.stdout).toContain('scripts/ensure-chatgpt-windows.ps1')
+      expect(installer.stdout).toContain('login.cmd --workspace')
+      expect(installer.stdout).not.toContain('SetEnvironmentVariable("MERCHANT_WORKSPACE_ID"')
+      expect(installer.stdout).not.toContain('ws_guirenniaoniao')
+      expect(installer.stdout).toContain('StoreNovaCredentialHelper.exe')
+      expect(installer.stdout).toContain('Get-FileHash')
+      expect(installer.stdout).toContain('Get-AuthenticodeSignature')
+      expect(installer.stdout).toContain('credential-signer.txt')
+      expect(installer.stdout.indexOf('Get-AuthenticodeSignature')).toBeLessThan(installer.stdout.indexOf('install-chatgpt-bundled.mjs'))
+      expect(installer.stdout).toContain('install-chatgpt-bundled.mjs')
+      expect(installer.stdout).toContain('runtime\\node.exe')
+      expect(listing.stdout).not.toContain('StoreNovaCredentialHelper.exe')
+      expect(listing.stdout).not.toMatch(/ChatGPT.*\.msix|ChatGPT-License\.xml/iu)
+      expect(listing.stdout).toContain('Store Nova Connect.app/Contents/MacOS/store-nova-connect')
+      expect(listing.stdout).toContain('scripts/enroll-local-macos.mjs')
+      expect(listing.stdout).toContain('scripts/register-connect-helper.mjs')
+      expect(listing.stdout).not.toContain('StoreNovaConnectHelper.exe')
+      const extracted = resolve(directory, 'extracted')
+      const home = resolve(directory, 'clean-home')
+      mkdirSync(extracted)
+      mkdirSync(home)
+      expect(spawnSync('tar', ['-xzf', artifact, '-C', extracted]).status).toBe(0)
+      const installed = spawnSync('/bin/sh', [resolve(extracted, 'install.sh')], {
+        encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: home,
+          CODEX_HOME: resolve(home, '.codex'), AGENTS_HOME: resolve(home, '.agents') },
+      })
+      expect(installed.status, installed.stderr).toBe(0)
+      const installedRoot = resolve(home, 'plugins/merchant-marketing')
+      expect(existsSync(resolve(installedRoot, 'runtime/node'))).toBe(true)
+      expect(existsSync(resolve(installedRoot, '.agents'))).toBe(false)
+      expect(JSON.parse(readFileSync(resolve(home, '.agents/plugins/marketplace.json'), 'utf8')).plugins[0].source.path).toBe('./plugins/merchant-marketing')
+      const installedCache = resolve(home, '.codex/plugins/cache/merchant-personal/merchant-marketing/local')
+      expect(existsSync(resolve(installedCache, 'runtime/node'))).toBe(true)
+      expect(existsSync(resolve(installedCache, '.agents'))).toBe(false)
+      expect(readFileSync(resolve(home, '.codex/config.toml'), 'utf8')).toContain('[plugins."merchant-marketing@merchant-personal"]\nenabled = true')
+      const bundledNode = spawnSync(resolve(installedRoot, 'runtime/node'), ['-p', 'process.versions.node'],
+        { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: home } })
+      expect(bundledNode.status, bundledNode.stderr).toBe(0)
+      expect(bundledNode.stdout.trim()).toBe('22.16.0')
+      const mcp = spawnSync(resolve(installedRoot, 'runtime/node'), [resolve(installedRoot, 'mcp/bridge.mjs')], {
+        cwd: installedRoot,
+        encoding: 'utf8',
+        input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`,
+        env: { PATH: '/usr/bin:/bin', HOME: home, NODE_ENV: 'test', DEPLOY_ENV: 'local_desktop' },
+        timeout: 15_000,
+      })
+      expect(mcp.status, mcp.stderr).toBe(0)
+      const responses = mcp.stdout.trim().split('\n').map(line => JSON.parse(line))
+      expect(responses[0].result.serverInfo.version).toBe(readJson('.codex-plugin/plugin.json').version)
+      expect(responses[1].result.tools.length).toBeGreaterThan(0)
+      const tamperedHome = resolve(directory, 'tampered-home')
+      mkdirSync(tamperedHome)
+      writeFileSync(resolve(extracted, 'mcp/bridge.mjs'), `${readFileSync(resolve(extracted, 'mcp/bridge.mjs'), 'utf8')}\n`)
+      const rejected = spawnSync('/bin/sh', [resolve(extracted, 'install.sh')], {
+        encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: tamperedHome,
+          CODEX_HOME: resolve(tamperedHome, '.codex'), AGENTS_HOME: resolve(tamperedHome, '.agents') },
+      })
+      expect(rejected.status).not.toBe(0)
+      expect(rejected.stderr).toContain('file digest differs: mcp/bridge.mjs')
+      expect(existsSync(resolve(tamperedHome, '.agents/plugins/marketplace.json'))).toBe(false)
+      expect(existsSync(resolve(tamperedHome, '.codex/config.toml'))).toBe(false)
+      expect(existsSync(resolve(tamperedHome, 'plugins/merchant-marketing'))).toBe(false)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  it('does not bundle a Windows credential binary without a Windows signing check', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-windows-package-'))
+    try {
+      const artifact = resolve(directory, 'merchant-marketing.tar.gz')
+      const packaged = spawnSync(process.execPath, [resolve(root, 'scripts/package-local-plugin.mjs'), artifact, '--windows-helper-dir', directory], { encoding: 'utf8' })
+      expect(packaged.status).not.toBe(0)
+      expect(packaged.stderr).toMatch(/signed Windows helper packaging must run on Windows|trusted Windows signer thumbprint is required|signed Windows credential helper and SHA-256 file are both required/u)
+      expect(existsSync(artifact)).toBe(false)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it('contains the required manifest, skill entry, and MCP companion file', () => {
     const manifest = readJson('.codex-plugin/plugin.json')
     expect(manifest.name).toBe('merchant-marketing')
@@ -103,16 +307,81 @@ describe('Codex plugin installation package', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
+
+  it('installs and verifies an explicitly staged QA profile without public marketplace or ChatGPT OAuth', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-direct-local-install-'))
+    const bin = resolve(directory, 'bin')
+    const fakeCodex = resolve(bin, 'codex')
+    const commandLog = resolve(directory, 'commands.log')
+    const activeMarketplace = resolve(directory, 'active-marketplace')
+    const localSource = resolve(directory, 'local-source')
+    const qaSource = resolve(directory, 'qa-source')
+    const installed = resolve(directory, 'installed')
+    mkdirSync(bin)
+    mkdirSync(localSource)
+    cpSync(root, qaSource, { recursive: true })
+    writeFileSync(resolve(qaSource, 'bundle-profile.json'), `${JSON.stringify({
+      schema_version: '1', profile: 'qa-broker', qa_only: true, release_eligible: false,
+      credential_broker: { path: 'mcp/keychain-broker.mjs', included: true,
+        authenticated_peer_identity: false, release_eligible: false },
+    }, null, 2)}\n`)
+    cpSync(qaSource, installed, { recursive: true })
+    writeFileSync(resolve(localSource, 'marketplace.json'), JSON.stringify({
+      name: 'merchant-local-test',
+      plugins: [{ name: 'merchant-marketing', source: { source: 'local', path: qaSource } }],
+    }))
+    writeFileSync(fakeCodex, `#!/bin/sh
+printf '%s\\n' "$*" >> '${commandLog}'
+case "$*" in
+  'plugin marketplace list --json')
+    if [ -f '${activeMarketplace}' ]; then
+      printf '{"marketplaces":[{"name":"merchant-local-test","root":"${localSource}","marketplaceSource":{"sourceType":"local","source":"${localSource}"}}]}\\n'
+    else
+      printf '{"marketplaces":[]}\\n'
+    fi ;;
+  'plugin marketplace add '*' --json') touch '${activeMarketplace}'; printf '{"ok":true}\\n' ;;
+  'plugin add merchant-marketing@merchant-local-test --json') printf '{"ok":true}\\n' ;;
+  *) exit 2 ;;
+esac
+`)
+    chmodSync(fakeCodex, 0o755)
+    try {
+      const result = spawnSync(process.execPath, [
+        resolve(root, 'scripts/install-local-plugin.mjs'),
+        '--source', qaSource,
+        '--local-source', localSource,
+        '--codex', fakeCodex,
+        '--installed', installed,
+        '--package-profile', 'qa-broker',
+      ], { encoding: 'utf8' })
+      expect(result.status, result.stderr).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: true,
+        mode: 'local_stdio',
+        public_marketplace_required: false,
+        chatgpt_oauth_required: false,
+        plugin: 'merchant-marketing',
+        restart_required: true,
+      })
+      const commands = readFileSync(commandLog, 'utf8')
+      expect(commands).toContain(`plugin marketplace add ${localSource} --json`)
+      expect(commands).toContain('plugin add merchant-marketing@merchant-local-test --json')
+      expect(commands).not.toMatch(/https?:\/\//u)
+      expect(commands).not.toMatch(/oauth/iu)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 15_000)
 
   it('recovers local merchant settings from the macOS user session without exposing them in the manifest', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-launchctl-'))
     const launchctl = resolve(directory, 'launchctl')
     const uname = resolve(directory, 'uname')
     const node = resolve(directory, 'node-probe')
-    writeFileSync(launchctl, `#!/bin/sh\ncase "$2" in\n  MERCHANT_MCP_BASE_URL) printf '%s' 'http://127.0.0.1:8790' ;;\n  MERCHANT_WORKSPACE_ID) printf '%s' 'ws_demo' ;;\n  MERCHANT_MCP_TOKEN) printf '%s' 'test-token' ;;\n  MERCHANT_STRICT_AUTH) printf '%s' 'true' ;;\n  MERCHANT_ALLOW_FIXTURE_FALLBACK) printf '%s' 'true' ;;\n  MERCHANT_MCP_WRITE_ENABLED) printf '%s' 'false' ;;\n  MERCHANT_ASSET_RESOURCE_DOMAINS) printf '%s' 'https://assets.example.test' ;;\nesac\n`)
+    writeFileSync(launchctl, `#!/bin/sh\ncase "$2" in\n  MERCHANT_MCP_BASE_URL) printf '%s' 'http://127.0.0.1:8790' ;;\n  MERCHANT_WORKSPACE_ID) printf '%s' 'ws_demo' ;;\n  MERCHANT_MCP_TOKEN) printf '%s' 'test-token' ;;\n  MERCHANT_MCP_REFRESH_TOKEN) printf '%s' 'test-refresh-token' ;;\n  MERCHANT_STRICT_AUTH) printf '%s' 'true' ;;\n  MERCHANT_ALLOW_FIXTURE_FALLBACK) printf '%s' 'true' ;;\n  MERCHANT_MCP_WRITE_ENABLED) printf '%s' 'false' ;;\n  MERCHANT_ASSET_RESOURCE_DOMAINS) printf '%s' 'https://assets.example.test' ;;\nesac\n`)
     writeFileSync(uname, `#!/bin/sh\nprintf '%s\n' Darwin\n`)
-    writeFileSync(node, `#!/bin/sh\ncase "\${1:-}" in\n  -e) exit 0 ;;\n  -p) printf '%s' '22.0.0'; exit 0 ;;\nesac\nprintf '%s|%s|%s|%s|%s|%s|%s' "$MERCHANT_MCP_BASE_URL" "$MERCHANT_WORKSPACE_ID" "$MERCHANT_MCP_TOKEN" "$MERCHANT_STRICT_AUTH" "$MERCHANT_ALLOW_FIXTURE_FALLBACK" "$MERCHANT_MCP_WRITE_ENABLED" "$MERCHANT_ASSET_RESOURCE_DOMAINS"\n`)
+    writeFileSync(node, `#!/bin/sh\ncase "\${1:-}" in\n  -e) exit 0 ;;\n  -p) printf '%s' '22.0.0'; exit 0 ;;\nesac\nprintf '%s|%s|%s|%s|%s|%s|%s|%s' "$MERCHANT_MCP_BASE_URL" "$MERCHANT_WORKSPACE_ID" "$MERCHANT_MCP_TOKEN" "$MERCHANT_MCP_REFRESH_TOKEN" "$MERCHANT_STRICT_AUTH" "$MERCHANT_ALLOW_FIXTURE_FALLBACK" "$MERCHANT_MCP_WRITE_ENABLED" "$MERCHANT_ASSET_RESOURCE_DOMAINS"\n`)
     chmodSync(launchctl, 0o755)
     chmodSync(uname, 0o755)
     chmodSync(node, 0o755)
@@ -125,11 +394,12 @@ describe('Codex plugin installation package', () => {
           MERCHANT_MCP_BASE_URL: '',
           MERCHANT_WORKSPACE_ID: '${MERCHANT_WORKSPACE_ID}',
           MERCHANT_MCP_TOKEN: 'host-token',
+          MERCHANT_MCP_REFRESH_TOKEN: '${MERCHANT_MCP_REFRESH_TOKEN}',
           MERCHANT_STRICT_AUTH: '${MERCHANT_STRICT_AUTH}',
         },
       })
       expect(result.status).toBe(0)
-      expect(result.stdout).toBe('http://127.0.0.1:8790|ws_demo|host-token|true|true|false|https://assets.example.test')
+      expect(result.stdout).toBe('http://127.0.0.1:8790|ws_demo|host-token|test-refresh-token|true|true|false|https://assets.example.test')
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
@@ -249,11 +519,26 @@ printf '%s\n' Darwin
     expect(skill).toContain('不得调用宿主原生 `image_gen` 绕过业务 relay')
   })
 
+  it('distinguishes product item numbers from exact SKU codes when searching', () => {
+    const skill = readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')
+    const bridge = readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')
+    const catalogSearch = bridge.slice(bridge.indexOf("  'catalog.search': {"), bridge.indexOf("  'catalog.categories': {"))
+    expect(skill).toContain('商品货号、商品编号、款号')
+    expect(skill).toContain('作为商品查询词传给 `query`')
+    expect(skill).toContain('`sku_id` 只传系统返回或已确认对应到具体变体的 ID')
+    expect(skill).toContain('不能据此判定商品货号其实是 SKU')
+    expect(catalogSearch).toContain('商品货号、商品编号或款号是商品级查询词，放入 query')
+    expect(catalogSearch).toContain('外部 SKU 编码不能直接假定为系统 sku_id')
+    expect(catalogSearch).toContain('商品搜索无结果不能推断货号是 SKU')
+    expect(catalogSearch).toContain('商品货号、款号或颜色/尺码名称不能直接替代')
+  })
+
   it('routes product video planning through confirmed facts and keeps rendering fail-closed', () => {
     const skill = readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')
     expect(skill).toContain('ecommerce-video-marketing')
     expect(skill).toContain('storyboard-prompt-assistant')
     expect(skill).toContain('读取商品事实与素材扫描结果')
+    expect(skill).toContain('只有真实扫描通过才可标记扫描完成')
     expect(skill).toContain('用 `creative.brief` 形成结构化视频 brief')
     // The merchant bridge does not expose the video rendering tool by default.
     // The entry skill must gate the call on the current tools/list surface
@@ -262,7 +547,8 @@ printf '%s\n' Darwin
     expect(skill).toContain('以 `output=rendering` 调用它')
     expect(skill).not.toContain('调用 `multimodal.video.request`')
     expect(skill).toContain('查询同一 provider job')
-    expect(skill).toContain('对象归档、病毒扫描和商品保真复核')
+    expect(skill).toContain('下载、签名校验、对象归档、病毒扫描和商品保真复核')
+    expect(skill).toContain('任何素材事实、扫描/权益状态')
     expect(skill).toContain('不能用脚本、分镜或 fixture 视频冒充可发布商品视频')
     expect(skill).toContain('不调用宿主视频工具、不自行选择 provider')
     expect(skill).toContain('开头 3 秒内应出现明确商品或问题场景')
@@ -275,6 +561,10 @@ printf '%s\n' Darwin
     const marketplaceRoot = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing')
     expect(readFileSync(resolve(root, '.mcp.json'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, '.mcp.json'), 'utf8'))
     expect(readFileSync(resolve(root, 'mcp/bridge.sh'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/bridge.sh'), 'utf8'))
+    expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/bridge.mjs'), 'utf8'))
+    expect(readFileSync(resolve(root, 'mcp/keychain-credential.mjs'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/keychain-credential.mjs'), 'utf8'))
+    expect(readFileSync(resolve(root, 'mcp/keychain-credential-helper.swift'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/keychain-credential-helper.swift'), 'utf8'))
+    expect(readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'skills/merchant-marketing/SKILL.md'), 'utf8'))
     expect(readFileSync(resolve(root, 'package.json'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'package.json'), 'utf8'))
   })
 
@@ -399,6 +689,7 @@ esac
     expect(evidence).toMatchObject({
       ok: true,
       plugin_version: readJson('.codex-plugin/plugin.json').version,
+      manifest: { errors: [] },
       tools: {
         required: ['merchant.start', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list'],
         missing: [],
@@ -406,9 +697,73 @@ esac
         cache_drift: { detected: false, automatic_reuse: false, automatic_deletion: false },
       },
       current_conversation_refresh: { verified: false },
+      connect_helper: {
+        source_verified: true,
+        app_bundle_verified: false,
+        custom_scheme: 'development_recovery_only',
+        production_ready: false,
+        platforms: {
+          darwin: { source_verified: true, signed_bundle_verified: false, production_ready: false },
+          win32: { source_verified: true, sha256_verified: false, authenticode_verified: false, production_ready: false },
+        },
+      },
     })
     expect(evidence.tools.count).toBeGreaterThanOrEqual(5)
     expect(evidence.runtime_files.every((file: { matches: boolean }) => file.matches)).toBe(true)
+  })
+
+  it('keeps Windows helper installation fail-closed behind hash, Authenticode, signer, and instance binding gates', () => {
+    const build = readFileSync(resolve(root, 'scripts/build-connect-helper-windows.mjs'), 'utf8')
+    const verify = readFileSync(resolve(root, 'scripts/verify-connect-helper-windows.ps1'), 'utf8')
+    const helper = readFileSync(resolve(root, 'windows/StoreNovaConnectHelper.cs'), 'utf8')
+    expect(build).toContain("process.platform !== 'win32'")
+    expect(build).toContain('signed: false, production_ready: false')
+    expect(verify).toContain('Get-FileHash')
+    expect(verify).toContain('Get-AuthenticodeSignature')
+    expect(verify).toContain('STORENOVA_WINDOWS_SIGNER_THUMBPRINT')
+    expect(verify).toContain("protocol_registered = $false")
+    expect(verify).toContain("installed = $false")
+    expect(verify).toContain("production_ready = $false")
+    expect(verify).toContain("blocker = 'installation_instance_binding_missing'")
+    expect(verify).toContain('exit 78')
+    expect(verify).not.toMatch(/New-ItemProperty|HKCU:|HKLM:|CredentialManager/iu)
+    expect(helper).toContain('STORE_NOVA_CONNECT_WINDOWS_NOT_PRODUCTION_READY')
+    expect(helper).not.toMatch(/Microsoft\.Win32|CredentialManager/iu)
+  })
+
+  it('uses the official Store identity before the Windows plugin-only installer', () => {
+    const preflight = readFileSync(resolve(root, 'scripts/ensure-chatgpt-windows.ps1'), 'utf8')
+    const packager = readFileSync(resolve(root, 'scripts/package-local-plugin.mjs'), 'utf8')
+    expect(preflight).toContain("$packageName = 'OpenAI.Codex'")
+    expect(preflight).toContain("$storeId = '9PLM9XGG6VKS'")
+    expect(preflight).toContain("$publisher = 'CN=50BDFD77-8903-4850-9FFE-6E8522F64D5B'")
+    expect(preflight).toContain("$package.SignatureKind.ToString() -ne 'Store'")
+    expect(preflight).toContain('CHATGPT_APP_REQUIRED')
+    expect(preflight).not.toMatch(/Add-AppxPackage|Add-AppxProvisionedPackage|ChatGPT-x64\.msix/iu)
+    expect(packager.indexOf('ensure-chatgpt-windows.ps1')).toBeLessThan(packager.indexOf('install-plugin.ps1'))
+  })
+
+  it.each([
+    'scripts/connect-local-macos.mjs',
+    'windows/StoreNovaConnectHelper.cs',
+  ])('fails upgrade verification when installed connection helper source %s is stale', helperRelativePath => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-connect-helper-drift-'))
+    const installed = resolve(directory, 'installed')
+    try {
+      cpSync(root, installed, { recursive: true })
+      const helperPath = resolve(installed, helperRelativePath)
+      writeFileSync(helperPath, `${readFileSync(helperPath, 'utf8')}\n// stale installed helper\n`)
+      const result = spawnSync(process.execPath, [resolve(root, 'scripts/verify-installed-bridge.mjs'), '--source', root, '--installed', installed], {
+        encoding: 'utf8',
+        env: { ...process.env, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' },
+      })
+      expect(result.status).toBe(1)
+      const evidence = JSON.parse(result.stdout)
+      expect(evidence.connect_helper).toMatchObject({ source_verified: false, production_ready: false })
+      expect(evidence.runtime_files).toContainEqual(expect.objectContaining({ path: helperRelativePath, matches: false }))
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 
   it('classifies an installed tool-surface mismatch as cache drift without deleting or reusing it', () => {

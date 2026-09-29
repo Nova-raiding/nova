@@ -32,6 +32,10 @@ const semverPattern = /^\d+\.\d+\.\d+(?:[+-][0-9A-Za-z.-]+)?$/u
 const sourceManifest = JSON.parse(readFileSync(resolve(sourceRoot, '.codex-plugin/plugin.json'), 'utf8'))
 const sourcePackageJson = JSON.parse(readFileSync(resolve(sourceRoot, 'package.json'), 'utf8'))
 const expectedVersion = String(argumentsByName.get('expected-version') ?? sourceManifest.version ?? '')
+const expectedPackageProfile = argumentsByName.get('expected-package-profile') ?? null
+if (expectedPackageProfile && !['production', 'qa-broker'].includes(expectedPackageProfile)) {
+  throw new Error('expected package profile must be production or qa-broker')
+}
 const sourceManifestVersion = String(sourceManifest.version ?? '')
 const sourcePackageVersion = String(sourcePackageJson.version ?? '')
 const sourceVersionErrors = [
@@ -40,15 +44,58 @@ const sourceVersionErrors = [
   expectedVersion === sourceManifestVersion ? null : 'expected version does not match source manifest version',
 ].filter(Boolean)
 
+function readBundleProfile(root) {
+  const path = resolve(root, 'bundle-profile.json')
+  if (!existsSync(path)) return null
+  try {
+    const profile = JSON.parse(readFileSync(path, 'utf8'))
+    const isProduction = profile?.schema_version === '1' && profile.profile === 'production'
+      && profile.qa_only === false && profile.release_eligible === true
+      && profile.credential_broker?.path === 'mcp/keychain-broker.mjs'
+      && profile.credential_broker?.included === false
+      && profile.credential_broker?.authenticated_peer_identity === false
+      && profile.credential_broker?.release_eligible === false
+    const isQaBroker = profile?.schema_version === '1' && profile.profile === 'qa-broker'
+      && profile.qa_only === true && profile.release_eligible === false
+      && profile.credential_broker?.path === 'mcp/keychain-broker.mjs'
+      && profile.credential_broker?.included === true
+      && profile.credential_broker?.authenticated_peer_identity === false
+      && profile.credential_broker?.release_eligible === false
+    return isProduction || isQaBroker ? profile : { invalid: true }
+  } catch {
+    return { invalid: true }
+  }
+}
+
+const sourceBundleProfile = readBundleProfile(sourceRoot)
+const installedBundleProfile = readBundleProfile(installedRoot)
+const sourcePackageProfile = sourceBundleProfile?.invalid ? null : sourceBundleProfile?.profile ?? null
+const installedPackageProfile = installedBundleProfile?.invalid ? null : installedBundleProfile?.profile ?? null
+const packageProfileErrors = [
+  sourceBundleProfile?.invalid ? 'source bundle profile is invalid' : null,
+  installedBundleProfile?.invalid ? 'installed bundle profile is invalid' : null,
+  expectedPackageProfile && installedPackageProfile !== expectedPackageProfile
+    ? `installed bundle profile does not match expected ${expectedPackageProfile} profile` : null,
+  !expectedPackageProfile && (sourceBundleProfile || installedBundleProfile) && sourcePackageProfile !== installedPackageProfile
+    ? 'installed bundle profile does not match source bundle profile' : null,
+  sourcePackageProfile === 'production' && existsSync(resolve(sourceRoot, 'mcp/keychain-broker.mjs'))
+    ? 'production bundle must not contain the credential broker' : null,
+  sourcePackageProfile === 'qa-broker' && !existsSync(resolve(sourceRoot, 'mcp/keychain-broker.mjs'))
+    ? 'QA bundle is missing its credential broker' : null,
+].filter(Boolean)
+
 const fixedRuntimeFiles = [
   '.codex-plugin/plugin.json',
   '.mcp.json',
   'README.md',
   'package.json',
+  ...(sourceBundleProfile ? ['bundle-profile.json'] : []),
+  'assets/store-nova-logo.png',
   'mcp/bridge.sh',
   'mcp/bridge.mjs',
   'mcp/relay-evidence.mjs',
   'mcp/managed-token.mjs',
+  'mcp/managed-credential-state.mjs',
   'mcp/installation-identity.mjs',
   'mcp/windows-credential.mjs',
   'mcp/windows-installation-binding.mjs',
@@ -64,8 +111,19 @@ const fixedRuntimeFiles = [
   'scripts/build-connect-helper-windows.mjs',
   'scripts/build-windows-credential-helper.mjs',
   'scripts/bundle-provenance.mjs',
+  'scripts/diagnose-workspace-binding.mjs',
+  'scripts/install-all-macos.mjs',
+  'scripts/install-chatgpt-bundled.mjs',
+  'scripts/install-local-macos.sh',
+  'scripts/install-local-plugin.mjs',
+  'scripts/local-plugin-package-profile.mjs',
+  'scripts/package-local-plugin.mjs',
+  'scripts/upgrade-installed-plugin.mjs',
   'scripts/verify-bundle-provenance.mjs',
+  'scripts/verify-installed-bridge.mjs',
+  'scripts/verify-marketplace-source.mjs',
   'scripts/verify-connect-helper-windows.ps1',
+  'scripts/ensure-chatgpt-windows.ps1',
   'scripts/login-local-macos.mjs',
   'scripts/verify-chatgpt-macos.mjs',
   'scripts/launch-verified-chatgpt-macos.mjs',
@@ -93,10 +151,15 @@ const walkRuntimeTree = (root, directory) => {
 }
 const sourceRuntimeFiles = [...new Set([
   ...fixedRuntimeFiles,
+  ...(expectedPackageProfile && !sourceBundleProfile ? ['bundle-profile.json'] : []),
+  ...(sourcePackageProfile === 'qa-broker' || (!sourceBundleProfile && existsSync(resolve(sourceRoot, 'mcp/keychain-broker.mjs')))
+    ? ['mcp/keychain-broker.mjs'] : []),
   ...runtimeTreeRoots.flatMap(directory => walkRuntimeTree(sourceRoot, directory)),
 ])].sort()
 const installedRuntimeFiles = [...new Set([
   ...fixedRuntimeFiles.filter(path => existsSync(resolve(installedRoot, path))),
+  ...(!sourceBundleProfile && existsSync(resolve(installedRoot, 'bundle-profile.json')) ? ['bundle-profile.json'] : []),
+  ...(existsSync(resolve(installedRoot, 'mcp/keychain-broker.mjs')) ? ['mcp/keychain-broker.mjs'] : []),
   ...runtimeTreeRoots.flatMap(directory => walkRuntimeTree(installedRoot, directory)),
 ])].sort()
 const missingRuntimeFiles = sourceRuntimeFiles.filter(path => !existsSync(resolve(installedRoot, path)))
@@ -114,7 +177,7 @@ const bundledMcpMatchesSource = (() => {
   normalized.mcpServers['merchant-marketing'].command = 'node'
   return JSON.stringify(normalized) === JSON.stringify(sourceMcp)
 })()
-const files = sourceRuntimeFiles.filter(path => existsSync(resolve(installedRoot, path))).map(path => {
+const files = sourceRuntimeFiles.filter(path => existsSync(resolve(sourceRoot, path)) && existsSync(resolve(installedRoot, path))).map(path => {
   const sourceSha256 = sha256(resolve(sourceRoot, path))
   const installedSha256 = sha256(resolve(installedRoot, path))
   return { path, source_sha256: sourceSha256, installed_sha256: installedSha256,
@@ -130,6 +193,7 @@ const manifestErrors = [
   manifest.version === packageJson.version ? null : 'manifest version does not match package version',
   manifest.version === expectedVersion ? null : 'installed version does not match expected source version',
   manifest.mcpServers === './.mcp.json' ? null : 'manifest mcpServers must point to ./.mcp.json',
+  ...packageProfileErrors,
   (startup?.command === 'node' || (startup?.command === bundledNodeCommand && bundledNodeExists))
     && Array.isArray(startup?.args) && startup.args.length === 1 && startup.args[0] === './mcp/bridge.mjs'
     ? null : `MCP startup must use node or the present ${bundledNodeCommand} runtime with ./mcp/bridge.mjs`,
@@ -251,6 +315,7 @@ const evidence = {
   plugin_version: manifest.version,
   expected_plugin_version: expectedVersion,
   source_manifest: { version: sourceManifestVersion, package_version: sourcePackageVersion, errors: sourceVersionErrors },
+  package_profile: { expected: expectedPackageProfile, source: sourcePackageProfile, installed: installedPackageProfile, errors: packageProfileErrors },
   manifest: { errors: manifestErrors },
   source_root: sourceRoot,
   installed_root: installedRoot,

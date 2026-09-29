@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { writeBundleProvenance, provenanceFile } from './bundle-provenance.mjs'
 import { verifyChatGPTMacApp } from './verify-chatgpt-macos.mjs'
+import { assertPackageProfileEntries, packageProfileManifest, parsePackageCliArgs, profileSourceEntries, readPackageProfile } from './local-plugin-package-profile.mjs'
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = resolve(pluginRoot, '..', '..')
@@ -22,16 +23,17 @@ const version = String(manifest.version ?? '')
 if (!version || version !== String(packageJson.version ?? '')) {
   throw new Error('plugin manifest and package versions must match before packaging')
 }
+const cliArguments = process.argv.slice(2)
+const packageCli = parsePackageCliArgs(cliArguments)
+const packageProfile = readPackageProfile(cliArguments)
+const profileManifest = packageProfileManifest(packageProfile)
+const profileSourceFiles = profileSourceEntries(packageProfile, relativePath => existsSync(resolve(pluginRoot, relativePath)))
 
-const output = resolve(process.argv[2] ?? resolve(repositoryRoot, 'artifacts', 'local-plugin', `${manifest.id}-${version}-${process.platform}-${process.arch}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}`))
-const windowsHelperArg = process.argv.indexOf('--windows-helper-dir')
-if (windowsHelperArg !== -1 && (!process.argv[windowsHelperArg + 1] || windowsHelperArg !== 3)) {
-  throw new Error('usage: package-local-plugin.mjs [output.tar.gz] [--windows-helper-dir signed-binary-directory]')
-}
-const windowsHelperDir = windowsHelperArg === -1 ? null : resolve(process.argv[windowsHelperArg + 1])
+const output = resolve(packageCli.output ?? resolve(repositoryRoot, 'artifacts', 'local-plugin', `${manifest.id}-${version}-${process.platform}-${process.arch}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}`))
+const windowsHelperDir = packageCli.windowsHelperDirectory === undefined ? null : resolve(packageCli.windowsHelperDirectory)
 const platform = process.platform
 if (!['darwin', 'win32'].includes(platform)) throw new Error('desktop packages require macOS or Windows')
-const ciTestCertificate = process.argv.includes('--ci-test-certificate')
+const ciTestCertificate = packageCli.ciTestCertificate
 if (ciTestCertificate && (platform !== 'win32' || !windowsHelperDir || process.env.GITHUB_ACTIONS !== 'true')) {
   throw new Error('CI test-certificate packages require a signed Windows helper on GitHub Actions')
 }
@@ -118,7 +120,7 @@ const required = [
   '.codex-plugin/plugin.json', '.mcp.json', 'package.json', 'README.md',
   'assets/store-nova-logo.png',
   'mcp/bridge.mjs', 'mcp/bridge.sh', 'mcp/keychain-credential.mjs', 'mcp/keychain-credential-helper.swift',
-  'mcp/managed-token.mjs', 'mcp/relay-evidence.mjs', 'mcp/installation-identity.mjs', 'mcp/windows-credential.mjs',
+  'mcp/managed-token.mjs', 'mcp/managed-credential-state.mjs', 'mcp/relay-evidence.mjs', 'mcp/installation-identity.mjs', 'mcp/windows-credential.mjs',
   'mcp/windows-installation-binding.mjs', 'mcp/windows-session-env.mjs',
   'macos/store-nova-connect-helper.swift',
   'scripts/build-connect-helper.mjs', 'scripts/connect-local-macos.mjs',
@@ -148,6 +150,7 @@ const required = [
   'skills/merchant-marketing/references/ecommerce-detail-page-generator/platform-style-guide.md',
   'skills/merchant-marketing/references/ecommerce-detail-page-generator/prompt-recipes.md',
   'ui/image-local-edit.html', 'ui/recharge.html',
+  ...profileSourceFiles,
 ]
 for (const relativePath of required) {
   if (!existsSync(resolve(pluginRoot, relativePath))) throw new Error(`local plugin input is missing: ${relativePath}`)
@@ -158,6 +161,7 @@ for (const relativePath of required) {
 const sourceProvenanceInputs = [...new Set([
   ...required,
   'scripts/package-local-plugin.mjs',
+  'scripts/local-plugin-package-profile.mjs',
   'scripts/verify-chatgpt-macos.mjs',
 ])].map(relativePath => `apps/plugin/${relativePath}`)
 const sourceDirty = Boolean(git(['status', '--porcelain', '--untracked-files=all', '--', ...sourceProvenanceInputs]))
@@ -201,6 +205,7 @@ try {
     run('/usr/bin/ditto', ['-c', '-k', '--keepParent', bundledChatGPTPath, resolve(staging, 'ChatGPT.app.zip')])
   }
   if (windowsHelperFiles) writeFileSync(resolve(staging, 'windows/credential-signer.txt'), `${String(process.env.STORENOVA_WINDOWS_SIGNER_THUMBPRINT).replace(/\s/gu, '').toUpperCase()}\n`)
+  writeFileSync(resolve(staging, 'bundle-profile.json'), `${JSON.stringify(profileManifest, null, 2)}\n`)
   const mcpConfig = JSON.parse(readFileSync(resolve(staging, '.mcp.json'), 'utf8'))
   mcpConfig.mcpServers['merchant-marketing'].command = platform === 'win32' ? './runtime/node.exe' : './runtime/node'
   writeFileSync(resolve(staging, '.mcp.json'), `${JSON.stringify(mcpConfig, null, 2)}\n`)
@@ -277,15 +282,19 @@ try {
   const bundleStatus = {
     schema_version: '1',
     release_status: platform === 'darwin' ? 'unsigned_candidate' : ciTestCertificate ? 'ci_test_only' : 'signed_candidate',
-    ready_to_install: platform === 'win32' && Boolean(windowsHelperFiles) && !ciTestCertificate && !sourceDirty,
+    ready_to_install: profileManifest.release_eligible === true && platform === 'win32' && Boolean(windowsHelperFiles) && !ciTestCertificate && !sourceDirty,
     ci_test_certificate: ciTestCertificate,
     source_dirty: sourceDirty,
     chatgpt_app_bundled: Boolean(bundledChatGPTPath),
   }
   if (sourceDirty) bundleStatus.release_status = 'dirty_source_candidate'
+  // QA identity takes precedence over cleanliness so no consumer can mistake a
+  // clean or dirty QA broker archive for a production release candidate.
+  if (profileManifest.qa_only) bundleStatus.release_status = 'qa_only'
   writeFileSync(resolve(staging, 'bundle-status.json'), `${JSON.stringify(bundleStatus, null, 2)}\n`)
   writeBundleProvenance(staging, { plugin: manifest.id, version, platform, architecture, gitCommit, sourceDirty })
-  const packageEntries = [...required, 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'Store Nova Connect.app', 'login.sh', 'install.command', 'install-all.command'] : []), ...(bundledChatGPTPath ? ['ChatGPT.app.zip'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'login.cmd', 'install-plugin.ps1', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json', 'bundle-status.json', provenanceFile]
+  const packageEntries = [...required, 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'Store Nova Connect.app', 'login.sh', 'install.command', 'install-all.command'] : []), ...(bundledChatGPTPath ? ['ChatGPT.app.zip'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'login.cmd', 'install-plugin.ps1', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json', 'bundle-status.json', 'bundle-profile.json', provenanceFile]
+  assertPackageProfileEntries(packageProfile, packageEntries)
   mkdirSync(dirname(output), { recursive: true })
   if (platform === 'win32') {
     if (!output.toLowerCase().endsWith('.zip')) throw new Error('Windows deliverable must be a .zip file')
@@ -308,6 +317,7 @@ try {
     platform,
     architecture,
     bundled_node_version: nodeVersion,
+    package_profile: packageProfile,
     git_commit: gitCommit,
     // The macOS tarball is a locally runnable candidate. Gatekeeper-ready
     // distribution requires Developer ID signing and Apple notarization.

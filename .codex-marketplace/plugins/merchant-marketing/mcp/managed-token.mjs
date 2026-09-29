@@ -1,5 +1,24 @@
 import { readKeychainCredential } from './keychain-credential.mjs'
 import { readWindowsCredential } from './windows-credential.mjs'
+import { TEMPORARY_CREDENTIAL_ERROR_CODE } from './managed-credential-state.mjs'
+
+function managedStoreReadFailure(error, env) {
+  // Preserve only a safe retry classification. Raw credential-store and IPC
+  // diagnostics must never cross the MCP boundary.
+  const classification = String(error?.code ?? error?.message ?? '')
+  // QA broker packages wrap client startup/timeout failures at the Keychain
+  // helper boundary. Production's authenticated IPC gate uses a different
+  // reason and deliberately remains a permanent, fail-closed configuration
+  // error; recognizing these narrow reasons does not enable the QA broker.
+  if (/^(?:KEYCHAIN_BROKER_(?:UNAVAILABLE|TIMEOUT)|MCP_KEYCHAIN_HELPER_INVALID: broker_(?:unavailable|timeout))$/u.test(classification)) {
+    delete env.MERCHANT_MCP_TOKEN
+    delete env.MERCHANT_MCP_REFRESH_TOKEN
+    delete env.MERCHANT_MCP_TOKEN_EXPIRES_AT
+    const transient = new Error('MCP_CREDENTIAL_SOURCE_INVALID: managed credential service temporarily unavailable.')
+    transient.code = TEMPORARY_CREDENTIAL_ERROR_CODE
+    throw transient
+  }
+}
 
 export function validatedRotatedCredential(result, { tokenSource, workspaceId, apiOrigin, now = Date.now() }) {
   const accessToken = typeof result?.access_token === 'string' ? result.access_token.trim() : ''
@@ -26,6 +45,7 @@ export function loadManagedToken(env, platform, readLaunchd, readKeychain = read
   const reject = () => {
     delete env.MERCHANT_MCP_TOKEN
     delete env.MERCHANT_MCP_REFRESH_TOKEN
+    delete env.MERCHANT_MCP_TOKEN_EXPIRES_AT
     throw new Error('MCP_CREDENTIAL_SOURCE_INVALID: managed credentials unavailable or scope changed; reconnect with matching configuration.')
   }
   if (source === 'keychain' || source === 'windows_credential_manager') {
@@ -37,13 +57,13 @@ export function loadManagedToken(env, platform, readLaunchd, readKeychain = read
     if (!workspaceId) reject()
     let recordOrPromise
     try { recordOrPromise = (source === 'keychain' ? readKeychain : readWindows)({ apiOrigin: origin, workspaceId }) }
-    catch { reject() }
+    catch (error) { managedStoreReadFailure(error, env); reject() }
     return Promise.resolve(recordOrPromise).then(record => {
       if (!record?.access_token || !record?.refresh_token) reject()
       env.MERCHANT_MCP_TOKEN = record.access_token
       env.MERCHANT_MCP_REFRESH_TOKEN = record.refresh_token
       env.MERCHANT_MCP_TOKEN_EXPIRES_AT = record.expires_at ?? ''
-    }, reject)
+    }, error => { managedStoreReadFailure(error, env); reject() })
   }
   if (source !== 'launchd' || platform !== 'darwin') reject()
   let values

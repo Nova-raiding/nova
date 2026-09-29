@@ -9,6 +9,7 @@ import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { assertRelayEvidence } from './relay-evidence.mjs'
 import { loadManagedToken, validatedRotatedCredential } from './managed-token.mjs'
+import { createManagedCredentialLoader } from './managed-credential-state.mjs'
 import { writeKeychainCredential } from './keychain-credential.mjs'
 import { writeWindowsCredential } from './windows-credential.mjs'
 import { restoreWindowsSession } from './windows-session-env.mjs'
@@ -36,31 +37,54 @@ if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.
 }
 
 restoreWindowsSession()
-let managedCredentialUnavailable = false
-let managedCredentialPromise
-async function ensureManagedCredential() {
+const managedCredentialLoader = createManagedCredentialLoader({
   // Do not consult the OS credential store during public MCP discovery. Besides
   // failing, it can wait for interaction and exceed the host initialize timeout.
-  if (!managedCredentialPromise) {
-    managedCredentialPromise = Promise.resolve().then(() => loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
+  load: () => loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
-    }))).then(() => true, () => {
-      // Latch failure until plugin reload. Never fall back to inherited tokens,
-      // fixture auth, or raw credential-store diagnostics after a failed read.
-      managedCredentialUnavailable = true
-      delete process.env.MERCHANT_MCP_TOKEN
-      delete process.env.MERCHANT_MCP_REFRESH_TOKEN
-      delete process.env.MERCHANT_MCP_TOKEN_EXPIRES_AT
-      return false
-    })
-  }
-  return managedCredentialPromise
-}
+    })),
+  clear: () => {
+    // Never fall back to inherited tokens or fixture auth after a failed read.
+    delete process.env.MERCHANT_MCP_TOKEN
+    delete process.env.MERCHANT_MCP_REFRESH_TOKEN
+    delete process.env.MERCHANT_MCP_TOKEN_EXPIRES_AT
+  },
+})
+const ensureManagedCredential = () => managedCredentialLoader.ensure()
 
 function managedCredentialError() {
+  const configuredWorkspace = process.env.MERCHANT_WORKSPACE_ID?.trim()
+  const workspaceId = configuredWorkspace && /^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(configuredWorkspace)
+    ? configuredWorkspace
+    : undefined
   return {
     code: 'MCP_CREDENTIAL_SOURCE_INVALID',
-    message: '本地插件凭据暂不可用，请完成本地绑定后重新加载插件。',
+    message: `本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问${workspaceId ? `目标工作区 ${workspaceId}` : '目标工作区'}，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。`,
+    recovery: {
+      state: 'credential_unavailable',
+      user_action_required: true,
+      preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
+      resume_message: '完全重启 ChatGPT 后在新对话中重试',
+      next_action: {
+        label: `确认商家后台账号可访问${workspaceId ? `工作区 ${workspaceId}` : '目标工作区'}，重新完成本地登录与凭据保存，然后完全重启 ChatGPT。`,
+        target: 'local_plugin_login',
+        ...(workspaceId ? { workspace_id: workspaceId } : {}),
+      },
+    },
+  }
+}
+
+function managedCredentialTemporaryError() {
+  return {
+    code: 'MCP_CREDENTIAL_SOURCE_TEMPORARILY_UNAVAILABLE',
+    message: '本地凭据服务暂时不可用，本次未向后端发送请求。请稍后重试；当前凭据绑定没有更改，无需重新登录或重启 ChatGPT。',
+    recovery: {
+      state: 'credential_service_temporarily_unavailable',
+      retryable: true,
+      user_action_required: false,
+      resume_message: '稍后重试当前操作',
+      next_action: { label: '稍后重试当前操作。', target: 'retry_tool_call' },
+    },
   }
 }
 
@@ -598,7 +622,7 @@ const METHODS = {
   'ops.marketing.revision.create': { description: '从当前工作区平台驳回的发布版本创建待审核修正版；需要有效工作区角色或显式 support 授权，platform_ops 单独无权操作。', inputSchema: { type: 'object', properties: { publish_job_id: { type: 'string' }, changes_json: { type: 'string' }, locked_fields_json: { type: 'string' }, reason: { type: 'string' }, expected_revision: { type: 'string' } }, required: ['publish_job_id', 'changes_json', 'reason'], additionalProperties: false } },
   'ops.member.upsert': { description: '创建或更新工作区成员角色和状态。', inputSchema: { type: 'object', properties: { external_subject: { type: 'string' }, display_name: { type: 'string' }, role: { type: 'string', enum: ['workspace_owner', 'merchant_admin', 'operator', 'support', 'finance', 'platform_ops'] }, status: { type: 'string', enum: ['invited', 'active', 'suspended'] }, reason: { type: 'string' } }, required: ['external_subject', 'role'], additionalProperties: false } },
   'ops.member.suspend': { description: '停用工作区成员并保留审计。', inputSchema: { type: 'object', properties: { external_subject: { type: 'string' }, reason: { type: 'string' } }, required: ['external_subject', 'reason'], additionalProperties: false } },
-  'subscription.get': { description: '查看当前工作区订阅状态和周期。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  'subscription.get': { description: '查看工作区订阅事实。当前套餐和周期必须以 commercial_entitlement（V2）为准；顶层订阅字段与 legacy_commercial_entitlement 仅为旧版兼容快照，不得用于判定当前权益或准入。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'subscription.orders.list': { description: '默认查看本人订阅订单；工作区范围需要账务管理权限。只读。', inputSchema: { type: 'object', properties: { limit: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }, additionalProperties: false } },
   'subscription.order.create': { description: '创建订阅支付订单；价格、店铺数和任务额度由服务端套餐目录决定。', inputSchema: { type: 'object', properties: { plan_code: { type: 'string' }, billing_cycle: { type: 'string', enum: ['monthly', 'annual'] }, channel: { type: 'string', enum: ['alipay'] }, coupon_code: { type: 'string' }, addon_codes_json: { type: 'string' }, source_channel: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['plan_code', 'billing_cycle', 'channel', 'idempotency_key'], additionalProperties: false } },
   'subscription.change': { description: '按服务端套餐目录升级或降级；价格由服务端计算。', inputSchema: { type: 'object', properties: { to_plan_code: { type: 'string' }, billing_cycle: { type: 'string', enum: ['monthly', 'annual'] }, channel: { type: 'string', enum: ['alipay'] }, effective_at: { type: 'string' }, reason: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['to_plan_code', 'billing_cycle', 'channel', 'reason', 'idempotency_key'], additionalProperties: false } },
@@ -1315,29 +1339,43 @@ function merchantVisibleText(value, fallback) {
 
 function merchantVisibleResultCopy(result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return result
-  const copy = { ...result }
-  for (const key of ['summary', 'message', 'completed_summary', 'question', 'next_step']) {
-    if (typeof copy[key] === 'string') copy[key] = merchantVisibleText(copy[key], '请查看结构化字段核对当前业务状态。')
-  }
-  if (Array.isArray(copy.next_actions)) {
-    copy.next_actions = copy.next_actions.map(action => typeof action === 'string'
-      ? (/^(?:[a-z][a-z_-]*\.)+[a-z][a-z_-]*$/u.test(action) ? action : merchantVisibleText(action, '继续当前步骤'))
-      : action)
-  }
-  if (copy.workflow && typeof copy.workflow === 'object' && !Array.isArray(copy.workflow)) {
-    const workflow = { ...copy.workflow }
-    if (workflow.status && typeof workflow.status === 'object' && !Array.isArray(workflow.status) && typeof workflow.status.user_state === 'string') {
-      workflow.status = { ...workflow.status, user_state: merchantVisibleText(workflow.status.user_state, '需要查看状态') }
+  const visibleCopyKeys = new Set([
+    'summary', 'message', 'completed_summary', 'question', 'next_step', 'user_state',
+    'label', 'reason', 'instruction', 'guidance', 'user_message', 'customer_message',
+    'merchant_message', 'display_title', 'action_title', 'action_label', 'helper_text', 'hint',
+  ])
+  const fallbackFor = (key, parentKey) => ({
+    summary: '请查看结构化字段核对当前业务状态。',
+    message: '请查看当前状态。',
+    completed_summary: '当前步骤已处理，请核对结果。',
+    question: '请查看当前需要确认的内容。',
+    next_step: '请继续当前步骤。',
+    user_state: '需要查看状态',
+    label: parentKey === 'progress' ? '进度待确认' : parentKey === 'next_action' ? '查看状态' : '当前状态待确认',
+    reason: '原因待确认',
+    instruction: '请查看当前操作说明。',
+    guidance: '请查看当前步骤。',
+    user_message: '请查看当前状态。',
+    customer_message: '请查看当前状态。',
+    merchant_message: '请查看当前状态。',
+    display_title: '当前步骤',
+    action_title: '当前操作',
+    action_label: '继续当前步骤',
+    helper_text: '请查看当前说明。',
+    hint: '请查看当前提示。',
+  })[key] ?? '请查看当前状态。'
+  const localize = (value, key = '', parentKey = '') => {
+    if (typeof value === 'string') {
+      if (key === 'next_actions') {
+        return /^(?:[a-z][a-z_-]*\.)+[a-z][a-z_-]*$/u.test(value) ? value : merchantVisibleText(value, '继续当前步骤')
+      }
+      return visibleCopyKeys.has(key) ? merchantVisibleText(value, fallbackFor(key, parentKey)) : value
     }
-    if (workflow.progress && typeof workflow.progress === 'object' && !Array.isArray(workflow.progress) && typeof workflow.progress.label === 'string') {
-      workflow.progress = { ...workflow.progress, label: merchantVisibleText(workflow.progress.label, '进度待确认') }
-    }
-    if (workflow.next_action && typeof workflow.next_action === 'object' && !Array.isArray(workflow.next_action) && typeof workflow.next_action.label === 'string') {
-      workflow.next_action = { ...workflow.next_action, label: merchantVisibleText(workflow.next_action.label, '查看状态') }
-    }
-    copy.workflow = workflow
+    if (Array.isArray(value)) return value.map(item => localize(item, key, parentKey))
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(Object.entries(value).map(([childKey, childValue]) => [childKey, localize(childValue, childKey, key)]))
   }
-  return copy
+  return localize(result)
 }
 
 function sanitizeMerchantAction(value) {
@@ -2025,7 +2063,7 @@ function deploymentEnvironment() {
 }
 
 function assertTransportConfiguration() {
-  if (managedCredentialUnavailable) {
+  if (managedCredentialLoader.isPermanentlyUnavailable()) {
     const failure = managedCredentialError()
     throw Object.assign(new Error(failure.message), { code: failure.code })
   }
@@ -3680,7 +3718,9 @@ async function handle(request) {
     if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name]) return jsonRpcError(id, -32602, `当前插件没有此工具：${String(name)}`)
     if (!args || typeof args !== 'object' || Array.isArray(args)) return toolArgumentError(id, '工具参数必须是对象')
     if (!await ensureManagedCredential()) {
-      const structuredContent = managedCredentialError()
+      const structuredContent = managedCredentialLoader.isPermanentlyUnavailable()
+        ? managedCredentialError()
+        : managedCredentialTemporaryError()
       return jsonRpc(id, { content: [{ type: 'text', text: structuredContent.message }], structuredContent, isError: true })
     }
     if (COMMERCIAL_DISABLED_METHODS.has(name)) {

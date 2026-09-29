@@ -53,15 +53,49 @@ function binding(apiOrigin, workspaceId) {
   return { origin, workspace, account: createHash('sha256').update(`${origin}\n${workspace}`).digest('hex') }
 }
 
+export function isQaBrokerPackage() {
+  try {
+    const profile = JSON.parse(readFileSync(fileURLToPath(new URL('../bundle-profile.json', import.meta.url)), 'utf8'))
+    return profile?.schema_version === '1' && profile.profile === 'qa-broker' && profile.qa_only === true
+      && profile.release_eligible === false && profile.credential_broker?.included === true
+      && profile.credential_broker?.authenticated_peer_identity === false
+      && profile.credential_broker?.release_eligible === false
+  } catch { return false }
+}
+
+export function keychainCredentialSeed({ apiOrigin, workspaceId }, bundle) {
+  const { origin, workspace, account } = binding(apiOrigin, workspaceId)
+  const access = bundle?.access_token?.trim()
+  const refresh = bundle?.refresh_token?.trim()
+  const expiry = bundle?.expires_at?.trim()
+  if (bundle?.schema_version !== '1' || bundle.api_origin !== origin || bundle.workspace_id !== workspace
+    || !access || !refresh || !expiry || !Number.isFinite(Date.parse(expiry))) fail()
+  return { account, data: JSON.stringify({ schema_version: '1', api_origin: origin, workspace_id: workspace,
+    access_token: access, refresh_token: refresh, expires_at: expiry }) }
+}
+
 function defaultHelper(request, spawn = spawnSync) {
-  assertKeychainHelperReady()
-  const helper = fileURLToPath(new URL('./keychain-credential-helper', import.meta.url))
-  const result = spawn(helper, [], {
+  const qaBroker = isQaBrokerPackage()
+  if (!qaBroker) assertKeychainHelperReady()
+  // QA packages use the explicitly release-ineligible seeded broker. A signed
+  // production package invokes the native helper directly; the helper checks
+  // the live process ancestry and designated signatures before touching the
+  // Keychain, accepting only ChatGPT or Store Nova Connect from its own team.
+  const executable = qaBroker
+    ? process.execPath
+    : fileURLToPath(new URL('./keychain-credential-helper', import.meta.url))
+  const arguments_ = qaBroker
+    ? [fileURLToPath(new URL('./keychain-broker.mjs', import.meta.url)), '--client']
+    : []
+  const result = spawn(executable, arguments_, {
     input: JSON.stringify(request), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-    // Leave room for a Keychain prompt within the bridge's 10-second startup probe.
-    timeout: 8_000, maxBuffer: 1024 * 1024,
+    timeout: request.operation === 'write' ? 125_000 : 10_000, maxBuffer: 1024 * 1024,
   })
-  if (result.error || result.status !== 0) helperFail(keychainHelperFailureReason(result, request.operation))
+  if (result.error || result.status !== 0) {
+    helperFail(qaBroker
+      ? result.error?.code === 'ETIMEDOUT' ? 'broker_timeout' : 'broker_unavailable'
+      : keychainHelperFailureReason(result, request.operation))
+  }
   return result.stdout
 }
 
@@ -70,8 +104,10 @@ export function writeKeychainCredential({ apiOrigin, workspaceId }, bundle, opti
   const access = bundle?.access_token?.trim()
   const refresh = bundle?.refresh_token?.trim()
   const expiry = bundle?.expires_at?.trim()
-  if (bundle?.schema_version !== '1' || bundle.api_origin !== origin || bundle.workspace_id !== workspace || !access || !refresh || !expiry || !Number.isFinite(Date.parse(expiry))) fail()
-  const record = JSON.stringify({ schema_version: '1', api_origin: origin, workspace_id: workspace, access_token: access, refresh_token: refresh, expires_at: expiry })
+  if (bundle?.schema_version !== '1' || bundle.api_origin !== origin || bundle.workspace_id !== workspace
+    || !access || !refresh || !expiry || !Number.isFinite(Date.parse(expiry))) fail()
+  const record = JSON.stringify({ schema_version: '1', api_origin: origin, workspace_id: workspace,
+    access_token: access, refresh_token: refresh, expires_at: expiry })
   const runHelper = options.runHelper ?? (request => defaultHelper(request, options.spawnHelper))
   try { runHelper({ operation: 'write', service: KEYCHAIN_SERVICE, account, data: record }) }
   catch (error) {
@@ -105,7 +141,7 @@ export function installationIdentityStore(apiOrigin, owner, options = {}) {
   if (!owner || !/^[A-Za-z0-9_-]{1,128}$/u.test(owner.accountId ?? '')
     || !/^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(owner.workspaceId ?? '')) fail()
   const account = sha256(`${INSTALLATION_ACCOUNT_PREFIX}${origin}\n${owner.accountId}\n${owner.workspaceId}`)
-  const runHelper = options.runHelper ?? defaultHelper
+  const runHelper = options.runHelper ?? (request => defaultHelper(request, options.spawnHelper))
   return {
     load() {
       const raw = String(runHelper({ operation: 'read_optional', service: KEYCHAIN_SERVICE, account })).trim()

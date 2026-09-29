@@ -93,6 +93,12 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
   const state = randomBytes(32).toString('base64url')
   const challenge = createHash('sha256').update(verifier).digest('base64url')
   let complete, reject, timer, consumed = false, callbackResponse, callbackNonce
+  let callbackFinished = false
+  const finishCallback = async ok => {
+    if (!callbackResponse || callbackResponse.writableEnded || callbackFinished) return
+    callbackFinished = true
+    await new Promise(resolveFinish => callbackResponse.end(callbackResultScript(callbackNonce, ok), resolveFinish))
+  }
   const callback = new Promise((resolve, rejectPromise) => { complete = resolve; reject = rejectPromise })
   // Keep early timeout/abort rejections handled while browser launch is pending.
   void callback.catch(() => {})
@@ -171,7 +177,7 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
       throw fail('CANCELLED')
     }
     await storeCredential(target, bundle)
-    await configureSession(target)
+    await configureSession(target, bundle)
     if (requestId && installationId) {
       // Token exchange is not proof that the local credential store accepted
       // the bundle. Acknowledge only after both local persistence and host
@@ -189,11 +195,14 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
       try { chatGPT = await launchChatGPT() }
       catch { chatGPT = { launched: false, reason: 'ChatGPT 未自动打开，请手动重启并验证' } }
     }
-    callbackResponse?.end(callbackResultScript(callbackNonce, true))
+    // Wait until the final status script is flushed before closing callback
+    // connections. Closing immediately can leave the browser on the pending
+    // page even though token exchange and local persistence succeeded.
+    await finishCallback(true)
     return { ok: true, mode: 'local_stdio', workspace_id: target.workspaceId, api_origin: target.apiOrigin,
       credential_source: credentialSource, restart_required: !chatGPT.launched, chatgpt_launched: chatGPT.launched, host_verified: false }
   } catch (error) {
-    if (callbackResponse && !callbackResponse.writableEnded) callbackResponse.end(callbackResultScript(callbackNonce, false))
+    await finishCallback(false)
     if (error instanceof Error && error.message === 'LOCAL_PLUGIN_LOGIN_CANCEL_REVOKE_FAILED') throw error
     if (signal?.aborted) throw fail('CANCELLED')
     if (error instanceof Error && /^LOCAL_PLUGIN_LOGIN_[A-Z_]+$/u.test(error.message)) throw error
@@ -202,7 +211,7 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', cancel)
-    if (callbackResponse && !callbackResponse.writableEnded) callbackResponse.end(callbackResultScript(callbackNonce, false))
+    await finishCallback(false)
     server.closeAllConnections()
     await new Promise(resolve => server.close(() => resolve()))
   }
@@ -239,7 +248,8 @@ async function main() {
   const manifest = JSON.parse(readFileSync(new URL('../.codex-plugin/plugin.json', import.meta.url), 'utf8'))
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   if (!manifest.version || manifest.version !== pkg.version) throw fail('PACKAGE_MISMATCH')
-  const { writeKeychainCredential, assertKeychainHelperReady, installationIdentityStore } = await import('../mcp/keychain-credential.mjs')
+  const { writeKeychainCredential, readKeychainCredential, assertKeychainHelperReady, installationIdentityStore,
+    isQaBrokerPackage, keychainCredentialSeed } = await import('../mcp/keychain-credential.mjs')
   assertKeychainHelperReady()
   let createInstallationProof
   if (proofValues.every(Boolean)) {
@@ -275,7 +285,30 @@ async function main() {
     const result = await loginLocalPlugin({ baseUrl: options.get('--base-url'), workspaceId: options.get('--workspace'), requestId: options.get('--request-id'), createInstallationProof,
       openBrowser: url => options.get('--no-open') ? process.stdout.write(`请在商家浏览器打开此授权地址（不含 token）：\n${url}\n`)
         : execFileSync('/usr/bin/open', [url], { stdio: 'ignore', timeout: 5000 }),
-      storeCredential: writeKeychainCredential, configureSession: configureLaunchd, launchChatGPT, signal: controller.signal })
+      storeCredential: async (target, bundle) => {
+        if (isQaBrokerPackage()) {
+          const { startSeededKeychainBrokerDetached } = await import('../mcp/keychain-broker.mjs')
+          await startSeededKeychainBrokerDetached({ credentials: [keychainCredentialSeed(target, bundle)] })
+        } else {
+          try { writeKeychainCredential(target, bundle) }
+          catch (error) {
+            if (error?.message === 'MCP_KEYCHAIN_HELPER_INVALID: authenticated_keychain_ipc_unavailable') {
+              throw fail('CREDENTIAL_IPC_UNAVAILABLE')
+            }
+            throw error
+          }
+        }
+        const persisted = readKeychainCredential(target)
+        if (persisted.access_token !== bundle.access_token || persisted.refresh_token !== bundle.refresh_token
+          || persisted.expires_at !== bundle.expires_at) throw fail('KEYCHAIN_VERIFY_FAILED')
+      }, configureSession: async (configuration, bundle) => {
+        configureLaunchd(configuration)
+        // Do not acknowledge binding until ChatGPT has an authenticated way to
+        // read the Keychain. A same-UID socket broker would expose bearer tokens.
+        const persisted = readKeychainCredential(configuration)
+        if (persisted.access_token !== bundle.access_token || persisted.refresh_token !== bundle.refresh_token
+          || persisted.expires_at !== bundle.expires_at) throw fail('KEYCHAIN_VERIFY_FAILED')
+      }, launchChatGPT, signal: controller.signal })
     process.stdout.write(`${JSON.stringify(result)}\n${result.chatgpt_launched ? 'ChatGPT 已打开；请在新会话调用 onboarding.status 验证。' : '凭据已保存；请打开或重启 ChatGPT，并在新会话调用 onboarding.status 验证。'}\n`)
   } finally { process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel) }
 }

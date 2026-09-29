@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "profile": "qa-broker",
+  "qa_only": true,
+  "release_eligible": false,
+  "credential_broker": {
+    "path": "mcp/keychain-broker.mjs",
+    "included": true,
+    "authenticated_peer_identity": false,
+    "release_eligible": false
+  }
+}

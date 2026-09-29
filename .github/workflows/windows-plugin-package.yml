@@ -4,10 +4,12 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - codex/windows-plugin-bundle
     paths:
       - '.github/workflows/windows-plugin-package.yml'
       - 'apps/plugin/**'
+      - '.codex-marketplace/plugins/merchant-marketing/**'
       - 'release-metadata.json'
 
 permissions:
@@ -314,6 +316,39 @@ jobs:
             exit 1
           }
           Write-Host 'Windows package build, bundled install, MCP runtime, and Credential Manager passed.'
+      - name: Reject a DPAPI-protected credential that exceeds Credential Manager's blob limit
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $binary = Join-Path $env:RUNNER_TEMP 'storenova-clean-user\.codex\plugins\cache\merchant-personal\merchant-marketing\local\windows\StoreNovaCredentialHelper.exe'
+          $account = 'a' * 64
+          $record = [ordered]@{
+            schema_version = '1'
+            api_origin = 'https://yxsona.com'
+            workspace_id = 'ws_ci_blob_boundary'
+            access_token = ''
+            refresh_token = 'refresh'
+            expires_at = '2030-01-01T00:00:00.000Z'
+          }
+          $encoding = [System.Text.Encoding]::UTF8
+          $data = ConvertTo-Json -InputObject $record -Compress
+          $record.access_token = 'x' * (2560 - $encoding.GetByteCount($data))
+          $data = ConvertTo-Json -InputObject $record -Compress
+          if ($encoding.GetByteCount($data) -ne 2560) { throw 'Credential boundary fixture is not exactly 2560 UTF-8 bytes' }
+          $request = [ordered]@{ operation = 'write'; target = 'com.storenova.merchant-mcp'; account = $account; data = $data } | ConvertTo-Json -Compress
+          $inputPath = Join-Path $env:RUNNER_TEMP 'credential-too-large-request.json'
+          $outputPath = Join-Path $env:RUNNER_TEMP 'credential-too-large-output.txt'
+          $errorPath = Join-Path $env:RUNNER_TEMP 'credential-too-large-error.txt'
+          $readOutputPath = Join-Path $env:RUNNER_TEMP 'credential-too-large-read-output.txt'
+          $readErrorPath = Join-Path $env:RUNNER_TEMP 'credential-too-large-read-error.txt'
+          [System.IO.File]::WriteAllText($inputPath, $request, [System.Text.UTF8Encoding]::new($false))
+          $process = Start-Process -FilePath $binary -RedirectStandardInput $inputPath -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -Wait -PassThru
+          if ($process.ExitCode -ne 78) { throw "DPAPI-expanded overflow returned unexpected exit code $($process.ExitCode), expected 78" }
+          $readRequest = [ordered]@{ operation = 'read'; target = 'com.storenova.merchant-mcp'; account = $account } | ConvertTo-Json -Compress
+          [System.IO.File]::WriteAllText($inputPath, $readRequest, [System.Text.Encoding]::ASCII)
+          $readProcess = Start-Process -FilePath $binary -RedirectStandardInput $inputPath -RedirectStandardOutput $readOutputPath -RedirectStandardError $readErrorPath -Wait -PassThru
+          $stored = if (Test-Path -LiteralPath $readOutputPath) { (Get-Content -LiteralPath $readOutputPath -Raw).Trim() } else { '' }
+          if ($readProcess.ExitCode -ne 0 -or $stored -ne 'null') { throw 'Oversized DPAPI ciphertext was persisted before rejection' }
       - name: Verify a realistic credential bundle through installed Node and helper
         shell: powershell
         run: |
@@ -324,13 +359,25 @@ jobs:
           $script = Join-Path $env:RUNNER_TEMP 'storenova-credential-bundle-smoke.mjs'
           @'
           import { pathToFileURL } from 'node:url'
-          const { writeWindowsCredential, readWindowsCredential } = await import(pathToFileURL(process.argv[2]).href)
+          import { createHash } from 'node:crypto'
+          const { runWindowsCredentialHelper, writeWindowsCredential, readWindowsCredential, WINDOWS_CREDENTIAL_MAX_BLOB_BYTES } = await import(pathToFileURL(process.argv[2]).href)
           const binding = { apiOrigin: 'https://yxsona.com', workspaceId: 'ws_ci_bundle' }
           const bundle = { schema_version: '1', api_origin: binding.apiOrigin, workspace_id: binding.workspaceId,
             access_token: 'a'.repeat(900), refresh_token: 'r'.repeat(900), expires_at: '2030-01-01T00:00:00.000Z' }
           writeWindowsCredential(binding, bundle)
           const stored = readWindowsCredential(binding)
           if (stored.access_token !== bundle.access_token || stored.refresh_token !== bundle.refresh_token) process.exit(1)
+          const boundaryBinding = { apiOrigin: binding.apiOrigin, workspaceId: 'ws_ci_blob_boundary' }
+          const emptyRecord = { schema_version: '1', api_origin: boundaryBinding.apiOrigin, workspace_id: boundaryBinding.workspaceId,
+            access_token: '', refresh_token: 'refresh', expires_at: '2030-01-01T00:00:00.000Z' }
+          const accessBytes = WINDOWS_CREDENTIAL_MAX_BLOB_BYTES - Buffer.byteLength(JSON.stringify(emptyRecord), 'utf8')
+          const boundaryRecord = { ...emptyRecord, access_token: 'x'.repeat(accessBytes) }
+          let failure
+          try { writeWindowsCredential(boundaryBinding, boundaryRecord) } catch (error) { failure = error }
+          if (Buffer.byteLength(JSON.stringify(boundaryRecord), 'utf8') !== WINDOWS_CREDENTIAL_MAX_BLOB_BYTES || failure?.code !== 'MCP_WINDOWS_CREDENTIAL_TOO_LARGE') process.exit(1)
+          const account = createHash('sha256').update(`${boundaryBinding.apiOrigin}\n${boundaryBinding.workspaceId}`).digest('hex')
+          const absent = runWindowsCredentialHelper({ operation: 'read', target: 'com.storenova.merchant-mcp', account })
+          if (absent.trim() !== 'null') process.exit(1)
           '@ | Set-Content -LiteralPath $script -Encoding Ascii
           & $node $script $module
           if ($LASTEXITCODE -ne 0) { Write-Host '::error file=.github/workflows/windows-plugin-package.yml,line=1::CREDENTIAL_BUNDLE_ROUNDTRIP_FAILED'; exit 1 }

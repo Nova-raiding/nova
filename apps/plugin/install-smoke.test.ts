@@ -309,25 +309,38 @@ describe('Codex plugin installation package', () => {
     }
   }, 15_000)
 
-  it('installs and verifies the plugin from a local checkout without public marketplace or ChatGPT OAuth', () => {
+  it('installs and verifies an explicitly staged QA profile without public marketplace or ChatGPT OAuth', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-direct-local-install-'))
     const bin = resolve(directory, 'bin')
     const fakeCodex = resolve(bin, 'codex')
     const commandLog = resolve(directory, 'commands.log')
+    const activeMarketplace = resolve(directory, 'active-marketplace')
     const localSource = resolve(directory, 'local-source')
+    const qaSource = resolve(directory, 'qa-source')
     const installed = resolve(directory, 'installed')
     mkdirSync(bin)
     mkdirSync(localSource)
-    cpSync(root, installed, { recursive: true })
+    cpSync(root, qaSource, { recursive: true })
+    writeFileSync(resolve(qaSource, 'bundle-profile.json'), `${JSON.stringify({
+      schema_version: '1', profile: 'qa-broker', qa_only: true, release_eligible: false,
+      credential_broker: { path: 'mcp/keychain-broker.mjs', included: true,
+        authenticated_peer_identity: false, release_eligible: false },
+    }, null, 2)}\n`)
+    cpSync(qaSource, installed, { recursive: true })
     writeFileSync(resolve(localSource, 'marketplace.json'), JSON.stringify({
       name: 'merchant-local-test',
-      plugins: [{ name: 'merchant-marketing', source: { source: 'local', path: root } }],
+      plugins: [{ name: 'merchant-marketing', source: { source: 'local', path: qaSource } }],
     }))
     writeFileSync(fakeCodex, `#!/bin/sh
 printf '%s\\n' "$*" >> '${commandLog}'
 case "$*" in
-  'plugin marketplace list') printf 'MARKETPLACE ROOT\\n' ;;
-  'plugin marketplace add '*' --json') printf '{"ok":true}\\n' ;;
+  'plugin marketplace list --json')
+    if [ -f '${activeMarketplace}' ]; then
+      printf '{"marketplaces":[{"name":"merchant-local-test","root":"${localSource}","marketplaceSource":{"sourceType":"local","source":"${localSource}"}}]}\\n'
+    else
+      printf '{"marketplaces":[]}\\n'
+    fi ;;
+  'plugin marketplace add '*' --json') touch '${activeMarketplace}'; printf '{"ok":true}\\n' ;;
   'plugin add merchant-marketing@merchant-local-test --json') printf '{"ok":true}\\n' ;;
   *) exit 2 ;;
 esac
@@ -336,10 +349,11 @@ esac
     try {
       const result = spawnSync(process.execPath, [
         resolve(root, 'scripts/install-local-plugin.mjs'),
-        '--source', root,
+        '--source', qaSource,
         '--local-source', localSource,
         '--codex', fakeCodex,
         '--installed', installed,
+        '--package-profile', 'qa-broker',
       ], { encoding: 'utf8' })
       expect(result.status, result.stderr).toBe(0)
       expect(JSON.parse(result.stdout)).toMatchObject({
@@ -358,7 +372,7 @@ esac
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
 
   it('recovers local merchant settings from the macOS user session without exposing them in the manifest', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-launchctl-'))
@@ -548,6 +562,8 @@ printf '%s\n' Darwin
     expect(readFileSync(resolve(root, '.mcp.json'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, '.mcp.json'), 'utf8'))
     expect(readFileSync(resolve(root, 'mcp/bridge.sh'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/bridge.sh'), 'utf8'))
     expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/bridge.mjs'), 'utf8'))
+    expect(readFileSync(resolve(root, 'mcp/keychain-credential.mjs'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/keychain-credential.mjs'), 'utf8'))
+    expect(readFileSync(resolve(root, 'mcp/keychain-credential-helper.swift'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/keychain-credential-helper.swift'), 'utf8'))
     expect(readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'skills/merchant-marketing/SKILL.md'), 'utf8'))
     expect(readFileSync(resolve(root, 'package.json'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'package.json'), 'utf8'))
   })

@@ -8,6 +8,7 @@ const configured = () => ({
   MERCHANT_WORKSPACE_ID: 'ws_test',
   MERCHANT_MCP_TOKEN: 'stale-token',
   MERCHANT_MCP_REFRESH_TOKEN: 'stale-refresh-token',
+  MERCHANT_MCP_TOKEN_EXPIRES_AT: '2026-09-29T00:00:00.000Z',
 })
 const read = (name: string) => ({ ...configured(), MERCHANT_MCP_TOKEN: 'fresh-token', MERCHANT_MCP_REFRESH_TOKEN: 'fresh-refresh-token' } as Record<string, string>)[name] || ''
 
@@ -23,6 +24,36 @@ describe('managed credential startup', () => {
       .rejects.toThrow(/^MCP_CREDENTIAL_SOURCE_INVALID: managed credentials unavailable or scope changed; reconnect with matching configuration\.$/u)
     expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN')
     expect(env).not.toHaveProperty('MERCHANT_MCP_REFRESH_TOKEN')
+    expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN_EXPIRES_AT')
+  })
+
+  it.each([
+    ['sync direct', 'KEYCHAIN_BROKER_UNAVAILABLE', 'sync'],
+    ['async direct', 'KEYCHAIN_BROKER_TIMEOUT', 'async'],
+    ['sync wrapped', 'MCP_KEYCHAIN_HELPER_INVALID: broker_unavailable', 'sync'],
+    ['async wrapped', 'MCP_KEYCHAIN_HELPER_INVALID: broker_timeout', 'async'],
+  ])('classifies a %s broker outage as temporary without exposing broker diagnostics', async (_label, message, mode) => {
+    const env = { ...configured(), MERCHANT_MCP_TOKEN_SOURCE: 'keychain' }
+    const reader = () => {
+      const failure = new Error(message)
+      if (mode === 'sync') throw failure
+      return Promise.reject(failure)
+    }
+    const promise = Promise.resolve().then(() => loadManagedToken(env, 'darwin', read, reader))
+    await expect(promise).rejects.toMatchObject({ code: 'MCP_CREDENTIAL_SOURCE_TEMPORARILY_UNAVAILABLE' })
+    await expect(promise).rejects.not.toThrow(/KEYCHAIN_BROKER/u)
+    expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN')
+    expect(env).not.toHaveProperty('MERCHANT_MCP_REFRESH_TOKEN')
+    expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN_EXPIRES_AT')
+  })
+
+  it('keeps the production authenticated IPC gate structural and non-retryable', async () => {
+    const env = { ...configured(), MERCHANT_MCP_TOKEN_SOURCE: 'keychain' }
+    const promise = Promise.resolve().then(() => loadManagedToken(env, 'darwin', read, () => {
+      throw new Error('MCP_KEYCHAIN_HELPER_INVALID: authenticated_keychain_ipc_unavailable')
+    }))
+    await expect(promise).rejects.not.toMatchObject({ code: 'MCP_CREDENTIAL_SOURCE_TEMPORARILY_UNAVAILABLE' })
+    await expect(promise).rejects.toThrow('MCP_CREDENTIAL_SOURCE_INVALID')
   })
 
   it('preserves explicit credentials by default without consulting launchd', () => {
@@ -41,6 +72,7 @@ describe('managed credential startup', () => {
     expect(() => loadManagedToken(env, 'darwin', (key: string) => key === name ? '' : read(key))).toThrow('MCP_CREDENTIAL_SOURCE_INVALID')
     expect(env.MERCHANT_MCP_TOKEN).toBeUndefined()
     expect(env.MERCHANT_MCP_REFRESH_TOKEN).toBeUndefined()
+    expect(env.MERCHANT_MCP_TOKEN_EXPIRES_AT).toBeUndefined()
   })
   it.each(['MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID'])('rejects a different nonempty %s', name => {
     const env = configured()

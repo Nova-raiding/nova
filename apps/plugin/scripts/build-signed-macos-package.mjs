@@ -9,6 +9,7 @@ import { dirname, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { verifyBundleProvenance, writeBundleProvenance } from './bundle-provenance.mjs'
+import { assertReleaseEligiblePackageProfile } from './local-plugin-package-profile.mjs'
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = resolve(pluginRoot, '..', '..')
@@ -62,8 +63,16 @@ try {
   const staged = resolve(scratch, 'payload')
   const image = resolve(scratch, 'signed-notarized.dmg')
   mkdirSync(staged)
-  run(process.execPath, [resolve(pluginRoot, 'scripts/package-local-plugin.mjs'), candidate], 300_000)
+  run(process.execPath, [resolve(pluginRoot, 'scripts/package-local-plugin.mjs'), candidate, '--profile', 'production'], 300_000)
   run('/usr/bin/tar', ['-xzf', candidate, '-C', staged])
+  assertReleaseEligiblePackageProfile(JSON.parse(readFileSync(resolve(staged, 'bundle-profile.json'), 'utf8')))
+
+  const candidateProvenanceCheck = verifyBundleProvenance(staged)
+  if (!candidateProvenanceCheck.ok || candidateProvenanceCheck.source_dirty !== false ||
+      candidateProvenanceCheck.version !== manifest.version || candidateProvenanceCheck.platform !== 'darwin' ||
+      candidateProvenanceCheck.architecture !== process.arch) {
+    throw new Error(`macOS release candidate provenance is invalid or does not match this build: ${candidateProvenanceCheck.errors?.join('; ') || 'source identity mismatch or dirty source'}`)
+  }
 
   const helper = resolve(staged, 'mcp/keychain-credential-helper')
   const connectApp = resolve(staged, 'Store Nova Connect.app')
@@ -93,8 +102,7 @@ try {
   writeFileSync(buildRecord, `${JSON.stringify(record)}\n`)
   writeFileSync(resolve(staged, 'bundle-status.json'), `${JSON.stringify({ schema_version: '1', release_status: 'signed_notarized', ready_to_install: true,
     ci_test_certificate: false, source_dirty: false, mac_team_id: teamId, mac_signer_thumbprint: signer }, null, 2)}\n`)
-  const candidateProvenance = JSON.parse(readFileSync(resolve(staged, 'bundle-provenance.json'), 'utf8'))
-  if (candidateProvenance.source_dirty) throw new Error('production macOS package has dirty source provenance')
+  const candidateProvenance = candidateProvenanceCheck
   writeBundleProvenance(staged, { plugin: manifest.id, version: manifest.version,
     platform: 'darwin', architecture: process.arch, gitCommit: candidateProvenance.git_commit, sourceDirty: false })
 
@@ -124,6 +132,7 @@ try {
       throw new Error(`DMG payload provenance is invalid: ${shipped.errors?.join('; ') || 'source identity differs'}`)
     }
     const shippedStatus = JSON.parse(readFileSync(resolve(mounted, 'bundle-status.json'), 'utf8'))
+    assertReleaseEligiblePackageProfile(JSON.parse(readFileSync(resolve(mounted, 'bundle-profile.json'), 'utf8')))
     if (shippedStatus.release_status !== 'signed_notarized' || shippedStatus.ready_to_install !== true ||
         shippedStatus.ci_test_certificate !== false || shippedStatus.source_dirty !== false) {
       throw new Error('DMG payload is not a signed, notarized production release')

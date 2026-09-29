@@ -1,8 +1,9 @@
+import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { existsSync, realpathSync } from 'node:fs'
+import { copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -155,7 +156,120 @@ async function close(server: ReturnType<typeof createServer>) {
   await once(server, 'close').catch(() => undefined)
 }
 
+async function credentialRetryBridge(stateFile: string, baseUrl: string) {
+  const directory = await mkdtemp(join(tmpdir(), 'merchant-credential-retry-bridge-'))
+  for (const name of ['bridge.mjs', 'relay-evidence.mjs', 'managed-token.mjs', 'managed-credential-state.mjs', 'windows-credential.mjs', 'windows-session-env.mjs']) {
+    await copyFile(fileURLToPath(new URL(`./${name}`, import.meta.url)), join(directory, name))
+  }
+  await writeFile(join(directory, 'keychain-credential.mjs'), `
+import { readFileSync } from 'node:fs'
+export function readKeychainCredential({ apiOrigin, workspaceId }) {
+  let state
+  try { state = readFileSync(process.env.MOCK_CREDENTIAL_STATE_FILE, 'utf8').trim() }
+  catch { throw new Error('MCP_KEYCHAIN_HELPER_INVALID: broker_unavailable') }
+  if (state !== 'ready') throw new Error('MCP_KEYCHAIN_CREDENTIAL_INVALID: credential malformed or scope changed')
+  return { access_token: 'recovered-bearer', refresh_token: 'recovered-refresh', expires_at: '2099-01-01T00:00:00.000Z', api_origin: apiOrigin, workspace_id: workspaceId }
+}
+
+export function writeKeychainCredential() { throw new Error('unexpected credential write') }
+`)
+  const child = spawn(process.execPath, [join(directory, 'bridge.mjs')], {
+    cwd: process.cwd(),
+    env: { ...TEST_PROCESS_ENV, DEPLOY_ENV: 'local_desktop', MERCHANT_MCP_BASE_URL: baseUrl, MERCHANT_WORKSPACE_ID: 'ws_retry_test', MERCHANT_MCP_TOKEN_SOURCE: 'keychain', MERCHANT_STRICT_AUTH: 'true', MOCK_CREDENTIAL_STATE_FILE: stateFile },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  return { child, directory }
+}
+
+async function qaPackageBrokerBridge(baseUrl: string) {
+  const directory = await mkdtemp(join(tmpdir(), 'merchant-qa-broker-package-'))
+  const mcpDirectory = join(directory, 'mcp')
+  await mkdir(mcpDirectory)
+  for (const name of ['bridge.mjs', 'relay-evidence.mjs', 'managed-token.mjs', 'managed-credential-state.mjs', 'windows-credential.mjs', 'windows-session-env.mjs', 'keychain-credential.mjs', 'keychain-broker.mjs']) {
+    await copyFile(fileURLToPath(new URL(`./${name}`, import.meta.url)), join(mcpDirectory, name))
+  }
+  await writeFile(join(directory, 'bundle-profile.json'), JSON.stringify({ schema_version: '1', profile: 'qa-broker', qa_only: true, release_eligible: false,
+    credential_broker: { included: true, authenticated_peer_identity: false, release_eligible: false } }))
+  const brokerSocket = join(directory, 'broker', 'v1.sock')
+  const env = { ...TEST_PROCESS_ENV, HOME: directory, DEPLOY_ENV: 'local_desktop', MERCHANT_MCP_BASE_URL: baseUrl,
+    MERCHANT_WORKSPACE_ID: 'ws_retry_test', MERCHANT_MCP_TOKEN_SOURCE: 'keychain', MERCHANT_STRICT_AUTH: 'true', STORENOVA_QA_BROKER_SOCKET: brokerSocket }
+  const child = spawn(process.execPath, [join(mcpDirectory, 'bridge.mjs')], { cwd: process.cwd(), env, stdio: ['pipe', 'pipe', 'pipe'] })
+  return { child, directory, mcpDirectory, env, brokerSocket }
+}
+
 describe('Codex stdio MCP bridge', () => {
+  it('fails a missing broker closed, then recovers on the next call in the same bridge process', async () => {
+    let requests = 0
+    const server = createServer(async (req, res) => {
+      requests += 1
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: body.id, result: { ok: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    const { child, directory, mcpDirectory, env, brokerSocket } = await qaPackageBrokerBridge(baseUrl)
+    let broker: ReturnType<typeof spawn> | undefined
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const unavailable = (await nextLine(child.stdout)).result
+      expect(unavailable).toMatchObject({ isError: true, structuredContent: {
+        code: 'MCP_CREDENTIAL_SOURCE_TEMPORARILY_UNAVAILABLE',
+        recovery: { state: 'credential_service_temporarily_unavailable', retryable: true, user_action_required: false,
+          next_action: { target: 'retry_tool_call' } },
+      } })
+      expect(unavailable.content[0].text).toContain('请稍后重试')
+      expect(unavailable.content[0].text).toContain('无需重新登录或重启 ChatGPT')
+      expect(unavailable.content[0].text).not.toContain('重新运行本地登录')
+      expect(requests).toBe(0)
+
+      const account = createHash('sha256').update(`${baseUrl}\nws_retry_test`).digest('hex')
+      const data = JSON.stringify({ schema_version: '1', api_origin: baseUrl, workspace_id: 'ws_retry_test', access_token: 'recovered-bearer',
+        refresh_token: 'recovered-refresh', expires_at: '2099-01-01T00:00:00.000Z' })
+      const brokerProcess = spawn(process.execPath, [realpathSync(join(mcpDirectory, 'keychain-broker.mjs')), '--serve-seeded'], { env, stdio: ['pipe', 'ignore', 'pipe'] })
+      if (!brokerProcess.stdin || !brokerProcess.stderr) throw new Error('QA broker test child lost its stdio pipes')
+      broker = brokerProcess
+      let brokerStderr = ''
+      brokerProcess.stderr.on('data', chunk => { brokerStderr += chunk.toString() })
+      brokerProcess.stdin.end(JSON.stringify({ schema_version: '1', credentials: [{ account, data }] }))
+      for (let attempt = 0; attempt < 300 && !existsSync(brokerSocket); attempt += 1) await new Promise(resolve => setTimeout(resolve, 10))
+      expect(existsSync(brokerSocket), `broker exit=${brokerProcess.exitCode} stderr=${brokerStderr}`).toBe(true)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result.isError).toBe(false)
+      expect(requests).toBe(1)
+    } finally {
+      child.kill()
+      broker?.kill()
+      await close(server)
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('latches a structurally invalid managed credential for the bridge process lifetime', async () => {
+    const stateDirectory = await mkdtemp(join(tmpdir(), 'merchant-credential-structural-state-'))
+    const stateFile = join(stateDirectory, 'state')
+    await writeFile(stateFile, 'malformed')
+    let requests = 0
+    const server = createServer((_req, res) => { requests += 1; res.writeHead(200).end('{}') })
+    const address = await listen(server)
+    const { child, directory } = await credentialRetryBridge(stateFile, `http://127.0.0.1:${address.port}`)
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_CREDENTIAL_SOURCE_INVALID' } })
+      await writeFile(stateFile, 'ready')
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_CREDENTIAL_SOURCE_INVALID' } })
+      expect(requests).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+      await rm(directory, { recursive: true, force: true })
+      await rm(stateDirectory, { recursive: true, force: true })
+    }
+  })
+
   it.each(['unknown', 'keychain', 'windows_credential_manager'])('keeps discovery available and every tool closed when managed source %s fails', async source => {
     let requests = 0
     const server = createServer((_req, res) => { requests += 1; res.end('{}') })
@@ -198,6 +312,13 @@ describe('Codex stdio MCP bridge', () => {
         const response = await rpc('tools/call', { name: tool.name, arguments: {} })
         expect(response.result.isError, tool.name).toBe(true)
         expect(response.result.structuredContent.code, tool.name).toBe('MCP_CREDENTIAL_SOURCE_INVALID')
+        expect(response.result.structuredContent).toMatchObject({ recovery: {
+          state: 'credential_unavailable', user_action_required: true,
+          next_action: { target: 'local_plugin_login', workspace_id: 'ws_test' },
+        } })
+        expect(response.result.content[0].text).toContain('确认当前登录账号有权访问目标工作区 ws_test')
+        expect(response.result.content[0].text).toContain('本机凭据保存成功后，完全退出并重新打开 ChatGPT')
+        expect(response.result.content[0].text).toContain('浏览器显示授权完成不等于本机绑定已经完成')
         expect(JSON.stringify(response)).not.toContain('stale-secret')
       }
       expect((await rpc('ping')).result).toEqual({})
@@ -894,11 +1015,12 @@ describe('Codex stdio MCP bridge', () => {
             summary: summaries[historyCalls++], next_actions: ['Review now'], status: 'waiting_customer', request_id: 'req_qa_123',
             product: { title: 'Nike Air Max', sku: 'SKU-001' },
             execution: { provider_request_id: 'provider_qa_123', cost_cny: 0.0123 },
+            details: { message: 'Open the request', reason: 'Provider outcome is unknown' },
             workflow: {
               status: { internal_state: 'queued', user_state: 'Waiting for provider', terminal: false },
               progress: { known: false, label: 'Processing request' },
               next_action: { label: 'Review now', allowed: true },
-              recovery: { retryable: false },
+              recovery: { retryable: false, reason: 'Provider outcome is unknown', instruction: 'Contact support' },
               evidence: { source: 'provider_qa_123', simulated: false },
             },
           }
@@ -929,7 +1051,16 @@ describe('Codex stdio MCP bridge', () => {
           expect(response.result.structuredContent.summary).toMatch(/[\u3400-\u9fff]/u)
           expect(response.result.structuredContent.summary).not.toMatch(/Ready to publish|failed/u)
           expect(response.result.structuredContent.next_actions).toEqual(['继续当前步骤'])
+          expect(response.result.structuredContent.details).toEqual({ message: '请查看当前状态。', reason: '原因待确认' })
+          expect(response.result.structuredContent.workflow).toMatchObject({
+            status: { user_state: '需要查看状态', internal_state: 'queued' },
+            progress: { label: '进度待确认' },
+            next_action: { label: '查看状态' },
+            recovery: { retryable: false, reason: '原因待确认', instruction: '请查看当前操作说明。' },
+          })
           expect(response.result.structuredContent).toMatchObject({ status: 'waiting_customer', request_id: 'req_qa_123' })
+          expect(response.result.structuredContent.product).toEqual({ title: 'Nike Air Max', sku: 'SKU-001' })
+          expect(response.result.structuredContent.execution).toEqual({ provider_request_id: 'provider_qa_123', cost_cny: 0.0123 })
           expect(response.result.structuredContent).toMatchObject({ product: { title: 'Nike Air Max', sku: 'SKU-001' }, execution: { provider_request_id: 'provider_qa_123', cost_cny: 0.0123 }, workflow: { status: { internal_state: 'queued' }, evidence: { source: 'provider_qa_123' } } })
           expect(JSON.stringify(response.result.structuredContent.workflow)).not.toMatch(/Waiting for provider|Processing request|Review now/u)
           if (index === 2) expect(response.result.structuredContent.summary).toContain('Store Nova 已准备好')

@@ -12,6 +12,7 @@ static class Program {
   const uint CRED_PERSIST_LOCAL_MACHINE = 2;
   const int MAX_REQUEST_BYTES = 1024 * 1024;
   const int MAX_CREDENTIAL_BLOB_BYTES = 2560;
+  const int EXIT_CREDENTIAL_BLOB_TOO_LARGE = 78;
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct Credential {
     public uint Flags, Type; public string TargetName, Comment; public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
     public uint CredentialBlobSize; public IntPtr CredentialBlob; public uint Persist, AttributeCount; public IntPtr Attributes;
@@ -51,7 +52,7 @@ static class Program {
         byte[] secret;
         try { secret = ProtectedData.Protect(clear, entropy, DataProtectionScope.CurrentUser); }
         finally { Array.Clear(clear); }
-        if (secret.Length > MAX_CREDENTIAL_BLOB_BYTES) { Array.Clear(secret); return 1; }
+        if (secret.Length > MAX_CREDENTIAL_BLOB_BYTES) { Array.Clear(secret); return EXIT_CREDENTIAL_BLOB_TOO_LARGE; }
         var handle = default(GCHandle);
         try { handle = GCHandle.Alloc(secret, GCHandleType.Pinned);
           var credential = new Credential { Type=CRED_TYPE_GENERIC, TargetName=name, CredentialBlobSize=(uint)secret.Length,
@@ -71,6 +72,11 @@ static class Program {
             finally { Array.Clear(secret); }
           } finally { Array.Clear(encrypted); }
         } finally { CredFree(pointer); }
+      }
+      if (request.operation == "read") {
+        var error = Marshal.GetLastPInvokeError();
+        if (error == 1168) { Console.OpenStandardOutput().Write(Encoding.UTF8.GetBytes("null")); return 0; }
+        Diagnostic("CredRead", error);
       }
     } catch (Exception error) { Diagnostic(error.GetType().Name, 0); }
     return 1; // Never print credential values.

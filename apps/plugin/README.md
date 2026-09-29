@@ -67,13 +67,15 @@ node apps/plugin/scripts/verify-marketplace-source.mjs --marketplace <marketplac
 验收通过后，从当前源码执行本地安装：
 
 ```bash
-node apps/plugin/scripts/install-local-plugin.mjs
+node apps/plugin/scripts/install-local-plugin.mjs --package-profile qa-broker
 ```
+
+这是开发/QA 验收包：`qa-broker` 使用未认证的同用户凭据 broker，profile 明确为 `qa_only` 且 `release_eligible=false`。不得将其交付客户或用于生产验收；生产安装必须使用通过独立签名与发布门禁的正式包。
 
 Codex CLI 将本地源码适配器放在 `plugin marketplace` 命令组下，这是本机发现和缓存安装协议，
 不等于发布到公共或团队插件市场。脚本不会上传插件。
 
-签名安装包完成安装后，商家回到后台点击“连接 ChatGPT 本地插件”，在网页确认本机配对和授权。当前发布机缺少 Developer ID 身份，101 一键连接开关保持关闭。以下 CLI 仅供本地开发和旧版安装维护：
+当前发布机缺少可信 Developer ID 身份，正式签名安装包和后台“连接 ChatGPT 本地插件”功能均未开放。对开发/QA 安装，工作区凭据通过本机 CLI 完成 PKCE 授权；macOS 在插件目录构建 Keychain helper 后运行：
 
 ```bash
 cd /absolute/path/to/installed/merchant-marketing/<version>
@@ -82,6 +84,8 @@ node scripts/login-local-macos.mjs \
   --base-url https://yxsona.com \
   --workspace ws_<平台分配的工作区>
 ```
+
+Windows QA 安装应在插件目录运行 `login.cmd --workspace ws_<平台分配的工作区>`。这些 QA 流程不构成生产签名、宿主身份或正式桌面验收。
 
 浏览器打开后，若尚未登录，点击“登录商家账号”；登录成功会返回本次插件授权确认页，再核对账号和工作区并确认。CLI 成功同样只证明凭据已写入
 Keychain 且非敏感连接配置已设置，不代表 ChatGPT 已加载插件。完全退出并重新打开
