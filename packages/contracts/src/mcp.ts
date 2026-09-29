@@ -1089,8 +1089,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'catalog.image.get',
-    description: 'Read a product main-image generation job and its generated image variants.',
-    params: params({ job_id: { type: 'string' }, visual_ref: { type: 'string' } }),
+    description: 'Read a product main-image generation job and its generated image variants. Provide exactly one of job_id or visual_ref.',
+    params: { ...params({ job_id: { type: 'string', minLength: 1 }, visual_ref: { type: 'string', minLength: 1 } }, [], ['job_id', 'visual_ref'], [['job_id', 'visual_ref']]), oneOf: [{ required: ['job_id'] }, { required: ['visual_ref'] }] },
   },
   {
     method: 'catalog.image.select',

@@ -64,6 +64,16 @@ describe('MCP method contract', () => {
     expect(isMcpMethod('admin.raw_sql')).toBe(false)
   })
 
+  it('requires exactly one image-job lookup key', () => {
+    const request = (params: Record<string, string>) => validateMcpRequest({ jsonrpc: '2.0', id: 'image-get', method: 'catalog.image.get', params })
+    expect(MCP_METHOD_SCHEMAS['catalog.image.get'].oneOf).toEqual([{ required: ['job_id'] }, { required: ['visual_ref'] }])
+    expect(request({ job_id: 'job_1' }).valid).toBe(true)
+    expect(request({ visual_ref: 'visual_1' }).valid).toBe(true)
+    expect(request({}).valid).toBe(false)
+    expect(request({ job_id: 'job_1', visual_ref: 'visual_1' }).valid).toBe(false)
+    expect(request({ job_id: ' ' }).valid).toBe(false)
+  })
+
   it('declares exact bounded public rule draft review inputs', () => {
     expect(getMcpMethodContract('ops.rules.public.drafts.list')?.params.required).toBeUndefined()
     expect(MCP_METHOD_SCHEMAS['ops.rules.public.drafts.list'].properties?.limit).toMatchObject({ pattern: '^(?:[1-9]|[1-9][0-9]|100)$' })

@@ -148,20 +148,19 @@ let bootstrappedWorkspaceId = ''
 let commercialRecoveryOnlySnapshot
 const READ_ONLY_METHODS = new Set([
   'onboarding.status',
-  'merchant.first_value',
   'brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get',
-  'workspace.health', 'catalog.search', 'catalog.categories', 'catalog.image.get',
+  'workspace.health', 'workspace.invitations.list', 'catalog.search', 'catalog.categories', 'catalog.image.get',
   'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'workspace.data.export.get', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list',
   'ops.support.tickets.list', 'ops.support.ticket.get', 'support.customer.replies.list',
   'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline',
   'ops.feature-flags.list', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
   'ops.finance.search', 'ops.finance.detail', 'ops.finance.export',
-  'ops.users.list', 'ops.users.export', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get', 'platform.store.list', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify',
+  'ops.users.list', 'ops.users.export', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get', 'platform.store.list', 'platform.media.spec.list', 'platform.media.spec.get', 'delivery.bundle.verify',
   'billing.status', 'billing.model-usage.statement', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get', 'commercial.order.payment.get',
   'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
   'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'content.review',
   'content.versions', 'content.diff', 'publish.get', 'publish.manual.get', 'publish.manual.list', 'publish.batch.get',
-  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'automation.policy.get', 'automation.policy.list',
+  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'automation.policy.get', 'automation.policy.list',
 ])
 const COMMERCIAL_REGISTRY_VERSION = 'commercial-operation-registry.v1'
 // Mirrors packages/contracts/src/commercial-operation-registry.ts
@@ -260,9 +259,17 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'billing.usage.refund',
   'billing.refund',
   'billing.reconciliation.run',
+  // These methods require platform workbench capabilities. A merchant token
+  // cannot invoke them, so do not advertise them in the merchant tool list.
+  'platform.settings.get',
   'platform.settings.update',
+  'platform.media.spec.list', 'platform.media.spec.get',
+  'platform.media.spec.create', 'platform.media.spec.update',
+  'platform.media.spec.approve', 'platform.media.spec.expire',
   'platform.revoke',
   'platform.model.status',
+  'rule.sync.now', 'rule.audit', 'rule.publish', 'rule.status',
+  'delivery.bundle.verify',
   'asset.scan',
   'content.codex.prepare',
   'content.codex.commit',
@@ -304,8 +311,11 @@ const reasonProperty = boundedString(1000, 3, '当前交互写操作的可审计
 // asserts the empty intersection.
 const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   ...READ_ONLY_METHODS,
-  'merchant.start',
+  'merchant.start', 'merchant.first_value',
   'content.export', 'catalog.image.review', 'catalog.image.select',
+  // A reference only creates an audit record; it does not mutate the analysis.
+  // Keep the explicit merchant request usable without marking it read-only or retrying it.
+  'knowledge.competitor.reference',
   // The merchant explicitly supplied the image and requested an unpublished
   // preview. Uploading the source and invoking candidate generation are part
   // of that same non-publishing workflow; binding/publishing remains gated.
@@ -704,8 +714,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { job_id: { type: 'string' }, expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, required: ['job_id', 'idempotency_key'], additionalProperties: false },
   },
   'catalog.image.get': {
-    description: '查询商品主图生成任务及结果。',
-    inputSchema: { type: 'object', properties: { job_id: { type: 'string' }, visual_ref: { type: 'string' } }, additionalProperties: false },
+    description: '查询商品主图生成任务及结果；必须且只能提供 job_id 或 visual_ref 其中一个。',
+    inputSchema: { type: 'object', properties: { job_id: { type: 'string', minLength: 1 }, visual_ref: { type: 'string', minLength: 1 } }, oneOf: [{ required: ['job_id'] }, { required: ['visual_ref'] }], additionalProperties: false },
   },
   'catalog.image.select': {
     description: '将已归档并通过自动检查的候选保存为商品首选主图；不会审核、批准或发布。',
@@ -1759,6 +1769,11 @@ function validateToolArguments(name, args) {
   for (const [key, value] of Object.entries(args)) {
     const issue = validate(value, schema.properties?.[key] ?? CONTRACT_DECLARED_IMPLICIT_PROPERTIES[key], key)
     if (issue) return issue
+  }
+  if (name === 'catalog.image.get') {
+    const hasJobId = typeof args.job_id === 'string' && Boolean(args.job_id.trim())
+    const hasVisualRef = typeof args.visual_ref === 'string' && Boolean(args.visual_ref.trim())
+    if (hasJobId === hasVisualRef) return fail('provide exactly one of job_id or visual_ref')
   }
   return undefined
 }

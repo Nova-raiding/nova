@@ -67,9 +67,15 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'billing.usage.refund',
   'billing.refund',
   'billing.reconciliation.run',
+  'platform.settings.get',
   'platform.settings.update',
+  'platform.media.spec.list', 'platform.media.spec.get',
+  'platform.media.spec.create', 'platform.media.spec.update',
+  'platform.media.spec.approve', 'platform.media.spec.expire',
   'platform.revoke',
   'platform.model.status',
+  'rule.sync.now', 'rule.audit', 'rule.publish', 'rule.status',
+  'delivery.bundle.verify',
   'asset.scan',
   'content.codex.prepare',
   'content.codex.commit',
@@ -236,7 +242,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageEditResponse.result._meta).toBeUndefined()
       for (const [index, name] of ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 3, method: 'tools/call', params: { name, arguments: { id: 'spec_1', expected_revision: '1', idempotency_key: `media:${index}:write`, reason: 'verified production evidence' } } })}\n`)
-        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: expect.stringMatching(/^(?:INTERACTIVE_WRITE_DISABLED|COMMERCIAL_OPERATION_DISABLED)$/u) } })
+        expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
       }
       expect(requests).toBe(0)
     } finally {
@@ -261,7 +267,7 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      const writes = ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire', 'campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed']
+      const writes = ['campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed']
       for (const [index, name] of writes.entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: {} } })}\n`)
         expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: expect.stringMatching(/^(?:INTERACTIVE_WRITE_DISABLED|COMMERCIAL_OPERATION_DISABLED)$/u) } })
@@ -451,6 +457,70 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('requires exactly one image-job lookup key before forwarding', async () => {
+    let forwarded = 0
+    const server = createServer((_req, res) => { forwarded += 1; res.writeHead(200).end('{}') })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+      const imageGet = (await nextLine(child.stdout)).result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.get')
+      expect(imageGet.inputSchema.oneOf).toEqual([{ required: ['job_id'] }, { required: ['visual_ref'] }])
+      for (const [index, args] of [{}, { job_id: 'job_1', visual_ref: 'visual_1' }, { job_id: ' ' }].entries()) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name: 'catalog.image.get', arguments: args } })}\n`)
+        expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602 })
+      }
+      expect(forwarded).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('gates multipart upload tools and forwards their declared arguments after confirmation', async () => {
+    const forwarded: Array<{ method: string; params: Record<string, unknown> }> = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      const { method, params } = JSON.parse(body)
+      forwarded.push({ method, params })
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'false' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const calls = [
+      ['upload.session.create', { file_name: 'image.png', content_type: 'image/png', size_bytes: '3', sha256: 'a'.repeat(64) }],
+      ['upload.session.part', { session_id: 'session_1', part_number: '1', content_base64: 'YWJj' }],
+      ['upload.session.complete', { session_id: 'session_1' }],
+    ] as const
+    try {
+      for (const [index, [name, args]] of calls.entries()) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: args } })}\n`)
+        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      }
+      expect(forwarded).toEqual([])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      for (const [index, [name, args]] of calls.entries()) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 5, method: 'tools/call', params: { name, arguments: args } })}\n`)
+        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
+        expect(forwarded[index + 1]).toEqual({ method: name, params: { ...args, workspace_id: 'ws_test' } })
+      }
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('does not let DEPLOY_ENV production bypass the interactive write gate', async () => {
     let requests = 0
     const server = createServer((_req, res) => { requests += 1; res.writeHead(200).end('{}') })
@@ -528,11 +598,13 @@ describe('Codex stdio MCP bridge', () => {
         const result = response.result
         if (name === 'task.understand') {
           expect(result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
+        } else if (name === 'platform.mapping.preflight' || name === 'delivery.bundle.verify') {
+          expect(result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
         } else {
           expect(result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
         }
       }
-      expect(requests).toBe(4)
+      expect(requests).toBe(0)
     } finally {
       child.kill()
       await close(server)
@@ -1056,7 +1128,7 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
       const listedNames = (await nextLine(child.stdout)).result.tools.map((tool: { name: string }) => tool.name)
       for (const name of MERCHANT_HIDDEN_METHODS) expect(listedNames).not.toContain(name)
-      for (const name of ['catalog.import', 'content.draft.generate', 'content.export', 'content.review.decide', 'workspace.health', 'subscription.orders.list', 'commercial.order.create']) expect(listedNames).toContain(name)
+      for (const name of ['catalog.import', 'content.draft.generate', 'content.export', 'content.review.decide', 'workspace.health', 'subscription.orders.list', 'commercial.order.create', 'rule.list', 'rule.sync.status', 'rule.history', 'platform.mapping.preflight', 'platform.store.alias.set']) expect(listedNames).toContain(name)
       for (const [index, name] of [...MERCHANT_HIDDEN_METHODS].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name, arguments: {} } })}\n`)
         expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
@@ -1092,7 +1164,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929074100' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929083842' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -1274,17 +1346,12 @@ describe('Codex stdio MCP bridge', () => {
       const bindStore = listed.result.tools.find((tool: { name: string }) => tool.name === 'brand-unit.bind-store')
       expect(bindStore.inputSchema.required).toEqual(['brand_id', 'platform', 'account_id'])
       expect(bindStore.inputSchema.properties.expected_revision).toEqual({ type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 })
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.competitor.reference').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.competitor.reference').annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false })
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'workspace.invitations.list').annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.rule.create').inputSchema.properties.source_kind.enum).toEqual(['official', 'internal', 'merchant', 'observed', 'legal_review'])
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'workspace.activate').inputSchema.required).toEqual(['reason'])
-      for (const name of ['platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify']) {
-        expect(listed.result.tools.find((tool: { name: string }) => tool.name === name).annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
-      }
-      const mediaCreate = listed.result.tools.find((tool: { name: string }) => tool.name === 'platform.media.spec.create')
-      expect(mediaCreate.inputSchema.required).toEqual(expect.arrayContaining(['expected_revision', 'idempotency_key', 'reason', 'spec_json']))
-      expect(mediaCreate.inputSchema.properties.spec_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'object' })
-      expect(mediaCreate.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: false })
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'delivery.bundle.verify').inputSchema.properties.files_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array' })
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'platform.mapping.preflight').annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: false })
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'delivery.bundle.verify')).toBeUndefined()
       const publishConfirm = listed.result.tools.find((tool: { name: string }) => tool.name === 'publish.confirm')
       expect(publishConfirm).toBeUndefined()
       // Backend contracts remain intact; only the merchant entry is hidden.
@@ -1509,8 +1576,6 @@ describe('Codex stdio MCP bridge', () => {
       const intentHash = 'a'.repeat(64)
       const calls = [
         ['workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES', intent_hash: intentHash }],
-        ['rule.publish', { pack_id: 'pack_platform', name: '公共平台规则', version: '1.0.0', scope: 'platform', public_scope: 'platform', category: 'platform', target_id: 'jd', source_kind: 'internal', source_reference: 'manual://platform-rules', source_checked_at: '2026-09-01T00:00:00.000Z', status: 'draft', checks_json: '{}', reason: '导入公共平台规则草稿' }],
-        ['rule.status', { pack_id: 'pack_platform', version: '1.0.0', status: 'inactive', public_scope: 'platform', platform: 'jd', reason: '停用公共平台规则' }],
       ] as const
       for (const [index, [name, args]] of calls.entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name, arguments: args } })}\n`)
@@ -1875,7 +1940,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('exposes merchant.first_value as a read-only safe preview and forwards optional scope', async () => {
+  it('exposes merchant.first_value as an explicit, audit-safe preview and forwards optional scope', async () => {
     const requests: any[] = []
     const server = createServer(async (req, res) => {
       const chunks: Buffer[] = []
@@ -1909,7 +1974,7 @@ describe('Codex stdio MCP bridge', () => {
         additionalProperties: false,
       })
       expect(firstValue.description).toMatch(/安全预览包.*不发布/u)
-      expect(firstValue.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
+      expect(firstValue.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'merchant.first_value', arguments: { platform: 'taobao', account_id: 'acct_1', product_id: 'prod_1' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { preview: true } })
       expect(requests).toEqual([{ jsonrpc: '2.0', id: expect.any(String), method: 'merchant.first_value', params: { platform: 'taobao', account_id: 'acct_1', product_id: 'prod_1', workspace_id: 'ws_test' } }])
