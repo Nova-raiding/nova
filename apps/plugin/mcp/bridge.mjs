@@ -815,7 +815,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { topic: { type: 'string' }, product_id: { type: 'string' } }, additionalProperties: false },
   },
   'asset.upload': {
-    description: '上传用户已附加的本地素材并保存到当前工作区。附件优先传绝对 file_path，由插件读取文件；不要在终端生成或向模型传递图片编码。图片生成任务可同时携带 continuation_kind=image_generation 及当前商品、任务和生成参数；需要商家确认图片权益后再继续，确认前不会调用图片模型。上传后本工具会在同一调用内有界等待检查结果：检查中无需操作，风险阻断时只需重新上传。绝对不要调用 automation.scan 推进文件检查，也不要要求用户、平台人员或人工证据完成检查。单文件最多 50MB。',
+    description: '上传用户已附加的本地素材并保存到当前工作区，包括商品资料表格。需先取得服务端允许的创意点权益；创意点准入阻断时文件未上传，不能声称已进入知识库。上传成功只形成原始素材记录，后续仍需读取、确认事实和使用权益，不能直接视为已批准的知识资产或商品。附件优先传绝对 file_path，由插件读取文件；不要在终端生成或向模型传递图片编码。图片生成任务可同时携带 continuation_kind=image_generation 及当前商品、任务和生成参数；需要商家确认图片权益后再继续，确认前不会调用图片模型。上传后本工具会在同一调用内有界等待检查结果：检查中无需操作，风险阻断时只需重新上传。绝对不要调用 automation.scan 推进文件检查，也不要要求用户、平台人员或人工证据完成检查。单文件最多 50MB。',
     inputSchema: { type: 'object', properties: { name: { type: 'string' }, mime_type: { type: 'string' }, file_path: { type: 'string', description: '用户在当前会话明确附加的本地文件绝对路径。' }, content_base64: { type: 'string', description: '仅用于已经很小的内联内容；本地附件请使用 file_path。' }, sha256: { type: 'string' }, rights_scope: { type: 'string', enum: ['owned', 'commercial_authorized', 'limited_use', 'internal_only', 'unknown', 'unusable'] }, applicable_platforms_json: { type: 'string' }, applicable_regions_json: { type: 'string' }, usage_scopes_json: { type: 'string' }, valid_from: { type: 'string' }, valid_to: { type: 'string' }, ai_modification_allowed: { type: 'string', enum: ['true', 'false'] }, continuation_kind: { type: 'string', enum: ['image_generation'] }, continuation_product_id: { type: 'string' }, continuation_task_id: { type: 'string' }, continuation_content_version_id: { type: 'string' }, continuation_sku_ids_json: { type: 'string', description: '续跑图片生成时使用的 SKU ID 字符串数组 JSON。' }, continuation_direction: { type: 'string' }, continuation_count: { type: 'string' }, continuation_idempotency_key: { type: 'string' } }, required: ['name', 'mime_type'], oneOf: [{ required: ['file_path'] }, { required: ['content_base64'] }], additionalProperties: false },
   },
   'asset.upload.batch': {
@@ -1093,7 +1093,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { scope: { type: 'string' }, scope_value: { type: 'string' }, status: { type: 'string' }, as_of: { type: 'string' }, platform: { type: 'string' }, category: { type: 'string' }, brand: { type: 'string' }, store: { type: 'string' }, campaign: { type: 'string' }, text: { type: 'string' } }, additionalProperties: false },
   },
   'knowledge.asset.create': {
-    description: '录入品牌资产或客户资产，供后续内容生成使用。',
+    description: '根据已核对的事实录入品牌资产或客户资产，供后续内容生成使用。原始文件上传不会自动完成这一步；不得把未确认的表格字段或图片内容写成已批准知识。',
     inputSchema: { type: 'object', properties: { kind: { type: 'string', enum: ['brand', 'customer'] }, name: { type: 'string' }, content_json: { type: 'string' }, source: { type: 'string' }, tags_json: { type: 'string' }, approval_status: { type: 'string', enum: ['pending', 'approved', 'rejected'] }, rights_status: { type: 'string', enum: ['unknown', 'cleared', 'restricted'] } }, required: ['kind', 'name', 'content_json'], additionalProperties: false },
   },
   'knowledge.asset.update': {
@@ -1682,7 +1682,7 @@ function userFacingErrorText(code, details) {
   }
   if (code === 'CREATIVE_POINTS_EXHAUSTED') return '创意点已用完，本次请求已阻断，未执行业务写入。请登录 Store Nova 商家桌面，在“财务与资源”查看当前工作区余额及服务端授权的创意点恢复入口；只有页面显示可购买套餐和正式支付入口时才下单，支付后须等待服务端确认创意点到账。'
   if (code === 'CREATIVE_POINTS_INSUFFICIENT') return '创意点不足，当前未执行业务写入。请使用服务端授权的充值恢复入口。'
-  if (code === 'CREATIVE_POINTS_UNAVAILABLE') return '暂时无法确认创意点余额，已安全停止。待确认余额不会按 0 处理。'
+  if (code === 'CREATIVE_POINTS_UNAVAILABLE') return '暂时无法确认当前工作区的创意点余额，本次操作已停止；如果正在上传文件，不能将这次请求视为上传成功。请在 Store Nova 商家桌面的“财务与资源”核对套餐权益、订单与创意点到账状态；如页面仍显示未读取，请联系平台运营核对。待确认余额不会按 0 处理，也不能按套餐标称额度视为已到账。'
   if (code === 'MODEL_USAGE_COST_MISSING' || code === 'MODEL_USAGE_SETTLEMENT_PENDING') return '模型调用已发出，但用量成本尚未完成结算，结果暂不能交付。创意点可能仍处于预留状态；请在商家后台查看账务状态并联系平台运营对账，不要重复生成。'
   if (code === 'RATE_CARD_UNAVAILABLE') return '当前无法取得已批准的创意点费率，已安全停止，未扣点。'
   if (code === 'COMMERCIAL_ACCESS_STALE') return '创意点准入状态已变更，请先刷新服务端返回的恢复状态，不要重复提交。'

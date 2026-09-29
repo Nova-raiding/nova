@@ -174,6 +174,9 @@ describe('Codex stdio MCP bridge', () => {
       ]).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
       expect(tools).toHaveLength(116)
       expect(descriptions.filter(([, description]) => !/[\u3400-\u9fff]/u.test(description))).toEqual([])
+      expect(tools.find(tool => tool.name === 'asset.upload')?.description).toContain('上传成功只形成原始素材记录')
+      expect(tools.find(tool => tool.name === 'asset.upload')?.description).toContain('创意点准入阻断时文件未上传')
+      expect(tools.find(tool => tool.name === 'knowledge.asset.create')?.description).toContain('原始文件上传不会自动完成这一步')
     } finally {
       child.kill()
     }
@@ -3350,8 +3353,12 @@ describe('Codex stdio MCP bridge', () => {
         }
       }
       expect(forwarded).toEqual(['creative-points.balance.get', ...reads])
-      for (const method of ['knowledge.asset.create', 'content.generate', 'catalog.search']) {
-        expect((await call(forwarded.length + 2, method)).result).toMatchObject({ isError: true, structuredContent: { code: 'CREATIVE_POINTS_UNAVAILABLE', recovery_only: true } })
+      for (const method of ['asset.upload', 'knowledge.asset.create', 'content.generate', 'catalog.search']) {
+        const blocked = (await call(forwarded.length + 2, method)).result
+        expect(blocked).toMatchObject({ isError: true, structuredContent: { code: 'CREATIVE_POINTS_UNAVAILABLE', recovery_only: true } })
+        expect(blocked.content[0].text).toContain('“财务与资源”核对套餐权益、订单与创意点到账状态')
+        expect(blocked.content[0].text).toContain('不能按套餐标称额度视为已到账')
+        expect(blocked.content[0].text).not.toMatch(/CREATIVE_POINTS_UNAVAILABLE|https?:\/\//u)
       }
       expect(forwarded).toEqual(['creative-points.balance.get', ...reads])
     } finally {
