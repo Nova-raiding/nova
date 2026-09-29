@@ -77,6 +77,7 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'rule.sync.now', 'rule.audit', 'rule.publish', 'rule.status',
   'delivery.bundle.verify',
   'asset.scan',
+  'upload.session.create', 'upload.session.part', 'upload.session.complete',
   'content.codex.prepare',
   'content.codex.commit',
 ])
@@ -481,13 +482,12 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('gates multipart upload tools and forwards their declared arguments after confirmation', async () => {
-    const forwarded: Array<{ method: string; params: Record<string, unknown> }> = []
+  it('does not advertise or forward upload sessions without a server transport', async () => {
+    const forwarded: string[] = []
     const server = createServer(async (req, res) => {
       let body = ''
       for await (const chunk of req) body += chunk.toString()
-      const { method, params } = JSON.parse(body)
-      forwarded.push({ method, params })
+      forwarded.push(JSON.parse(body).method)
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
     })
@@ -503,18 +503,16 @@ describe('Codex stdio MCP bridge', () => {
       ['upload.session.complete', { session_id: 'session_1' }],
     ] as const
     try {
-      for (const [index, [name, args]] of calls.entries()) {
-        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: args } })}\n`)
-        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
-      }
-      expect(forwarded).toEqual([])
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+      const listed = (await nextLine(child.stdout)).result.tools.map((tool: { name: string }) => tool.name)
+      for (const [name] of calls) expect(listed).not.toContain(name)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
       for (const [index, [name, args]] of calls.entries()) {
-        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 5, method: 'tools/call', params: { name, arguments: args } })}\n`)
-        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
-        expect(forwarded[index + 1]).toEqual({ method: name, params: { ...args, workspace_id: 'ws_test' } })
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 3, method: 'tools/call', params: { name, arguments: args } })}\n`)
+        expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
       }
+      expect(forwarded).toEqual(['workspace.interactive.confirm'])
     } finally {
       child.kill()
       await close(server)
@@ -1164,7 +1162,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929083842' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929085500' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)

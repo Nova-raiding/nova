@@ -48,6 +48,7 @@ describe('local plugin installer and API integration', () => {
 
     const baseUrl = await startApi()
     let stored: { target: Record<string, string>; bundle: Record<string, string> } | undefined
+    let callbackPage: Response | undefined
     const events: string[] = []
 
     const result = await loginLocalPlugin({
@@ -87,7 +88,8 @@ describe('local plugin installer and API integration', () => {
           body: new URLSearchParams(authorization.searchParams),
         })
         expect(approved.status).toBe(200)
-        expect(await approved.text()).toContain('Store Nova 已收到授权回调')
+        callbackPage = approved
+        expect(approved.headers.get('content-type')).toContain('text/html')
         events.push('browser-consent-complete')
       },
       storeCredential: async (target: Record<string, string>, bundle: Record<string, string>) => {
@@ -99,6 +101,7 @@ describe('local plugin installer and API integration', () => {
     })
 
     expect(events).toEqual(['browser-consent-complete', 'credential-stored', 'session-configured'])
+    expect(await callbackPage?.text()).toContain('绑定已完成')
     expect(result).toMatchObject({ ok: true, mode: 'local_stdio', workspace_id: workspaceId, api_origin: baseUrl })
     expect(stored?.target).toMatchObject({ apiOrigin: baseUrl, workspaceId })
     expect(stored?.bundle).toMatchObject({ schema_version: '1', api_origin: baseUrl, workspace_id: workspaceId })

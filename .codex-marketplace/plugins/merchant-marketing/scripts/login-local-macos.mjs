@@ -10,6 +10,23 @@ import { pathToFileURL } from 'node:url'
 const CALLBACK_PATH = '/merchant-mcp-callback'
 const fail = code => new Error(`LOCAL_PLUGIN_LOGIN_${code}`)
 
+function callbackPage(nonce) {
+  return `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>绑定 Store Nova</title>
+<style nonce="${nonce}">
+:root{color-scheme:light;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f6fb;color:#17233b}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 10%,#e4edff 0,#f3f6fb 44%,#f8faff 100%)}main{width:min(100%,440px);padding:40px 36px;border:1px solid #e0e8f5;border-radius:20px;background:#fff;box-shadow:0 22px 65px rgba(37,64,112,.12);text-align:center}.brand{display:inline-flex;align-items:center;gap:9px;margin-bottom:34px;color:#1f3763;font-size:16px;font-weight:700;letter-spacing:.01em}.mark{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:#3458d4;color:#fff;font-size:17px}.icon{display:grid;place-items:center;width:66px;height:66px;margin:0 auto 22px;border-radius:50%;background:#eaf0ff;color:#3658cf;font-size:31px;font-weight:700}.icon.pending::after{content:"";width:28px;height:28px;border:3px solid #b9c9ff;border-top-color:#3658cf;border-radius:50%;animation:spin .85s linear infinite}.icon.success{background:#e8f8ef;color:#15834a}.icon.error{background:#fff0ed;color:#c44b36}h1{margin:0 0 10px;font-size:23px;line-height:1.35;letter-spacing:-.02em}p{margin:0;color:#5a6880;font-size:15px;line-height:1.7}.hint{margin-top:24px;padding:14px 16px;border-radius:10px;background:#f5f7fb;color:#60708a;font-size:13px;line-height:1.6;text-align:left}.hint strong{color:#2b3c59}button{min-height:44px;width:100%;margin-top:28px;border:0;border-radius:10px;background:#3458d4;color:#fff;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer}button:hover{background:#2949bd}button:focus-visible{outline:3px solid #9db4ff;outline-offset:3px}button[hidden]{display:none}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.icon.pending::after{animation:none;border-color:#3658cf}}
+</style></head><body><main role="dialog" aria-modal="true" aria-labelledby="title" aria-describedby="description"><div class="brand"><span class="mark" aria-hidden="true">S</span>Store Nova</div><div class="icon pending" id="icon" aria-hidden="true"></div><h1 id="title">正在完成绑定</h1><p id="description" role="status" aria-live="polite">已收到授权，正在验证并保存本地凭据…</p><div class="hint" id="hint">请保持此页面打开。完成后即可返回 <strong>ChatGPT</strong> 使用插件。</div><button type="button" id="close" hidden>完成，关闭此页面</button></main>
+<script nonce="${nonce}">history.replaceState(null,'','${CALLBACK_PATH}');document.getElementById('close').addEventListener('click',()=>{window.close();document.getElementById('hint').textContent='如页面没有自动关闭，请手动关闭此标签页。'});</script>
+`
+}
+
+function callbackResultScript(nonce, ok) {
+  const title = ok ? '绑定已完成' : '绑定未完成'
+  const description = ok ? '本地凭据已保存，插件已配置完成。' : '安装器未能完成绑定，请返回安装器查看错误并重试。'
+  const hint = ok ? '关闭此页面，返回 ChatGPT 并在新对话中验证插件连接。' : '绑定步骤未全部完成。请查看安装器错误，然后重新发起绑定。'
+  return `<script nonce="${nonce}">document.getElementById('icon').className='icon ${ok ? 'success' : 'error'}';document.getElementById('icon').textContent='${ok ? '✓' : '!'}';document.getElementById('title').textContent='${title}';document.getElementById('description').textContent='${description}';document.getElementById('hint').textContent='${hint}';document.getElementById('close').hidden=false;document.title='${title} · Store Nova';</script></body></html>`
+}
+
 export function validateLoginTarget(baseUrl, workspaceId) {
   if (typeof baseUrl !== 'string' || baseUrl.trim() !== baseUrl || /[\s\\]/u.test(baseUrl)) throw fail('TARGET_INVALID')
   let url
@@ -75,7 +92,7 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
   const verifier = randomBytes(32).toString('base64url')
   const state = randomBytes(32).toString('base64url')
   const challenge = createHash('sha256').update(verifier).digest('base64url')
-  let complete, reject, timer, consumed = false
+  let complete, reject, timer, consumed = false, callbackResponse, callbackNonce
   const callback = new Promise((resolve, rejectPromise) => { complete = resolve; reject = rejectPromise })
   // Keep early timeout/abort rejections handled while browser launch is pending.
   void callback.catch(() => {})
@@ -101,7 +118,12 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
       res.writeHead(400).end('Invalid callback'); return
     }
     consumed = true
-    res.end('Store Nova 已收到授权回调。请返回本地安装器查看最终结果；此页面不代表安装成功。')
+    callbackNonce = randomBytes(16).toString('base64')
+    callbackResponse = res
+    res.setHeader('content-type', 'text/html; charset=utf-8')
+    res.setHeader('content-security-policy', `default-src 'none'; script-src 'nonce-${callbackNonce}'; style-src 'nonce-${callbackNonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`)
+    res.writeHead(200)
+    res.write(callbackPage(callbackNonce))
     complete(code)
   })
   server.requestTimeout = 5000
@@ -151,9 +173,11 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
     await storeCredential(target, bundle)
     await configureSession(target)
     const chatGPT = typeof launchChatGPT === 'function' ? await launchChatGPT() : { launched: false, reason: 'ChatGPT 启动由安装器负责' }
+    callbackResponse?.end(callbackResultScript(callbackNonce, true))
     return { ok: true, mode: 'local_stdio', workspace_id: target.workspaceId, api_origin: target.apiOrigin,
       credential_source: credentialSource, restart_required: !chatGPT.launched, chatgpt_launched: chatGPT.launched, host_verified: false }
   } catch (error) {
+    if (callbackResponse && !callbackResponse.writableEnded) callbackResponse.end(callbackResultScript(callbackNonce, false))
     if (error instanceof Error && error.message === 'LOCAL_PLUGIN_LOGIN_CANCEL_REVOKE_FAILED') throw error
     if (signal?.aborted) throw fail('CANCELLED')
     if (error instanceof Error && /^LOCAL_PLUGIN_LOGIN_[A-Z_]+$/u.test(error.message)) throw error
@@ -162,6 +186,7 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', cancel)
+    if (callbackResponse && !callbackResponse.writableEnded) callbackResponse.end(callbackResultScript(callbackNonce, false))
     server.closeAllConnections()
     await new Promise(resolve => server.close(() => resolve()))
   }

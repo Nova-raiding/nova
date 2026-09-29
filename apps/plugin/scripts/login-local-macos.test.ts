@@ -107,6 +107,46 @@ describe('local plugin login installer runtime', () => {
     } finally { provider.closeAllConnections(); await new Promise<void>(resolve => provider.close(() => resolve())) }
   })
 
+  it.each([false, true])('shows binding result only after local configuration (fails=%s)', async shouldFail => {
+    let releaseStore!: () => void
+    const storeGate = new Promise<void>(resolve => { releaseStore = resolve })
+    let revealPage!: (page: { response: Response; reader: ReadableStreamDefaultReader<Uint8Array>; first: string }) => void
+    const pageReady = new Promise<{ response: Response; reader: ReadableStreamDefaultReader<Uint8Array>; first: string }>(resolve => { revealPage = resolve })
+    const login = loginLocalPlugin({ baseUrl: 'https://example.test', workspaceId: 'ws_test',
+      openBrowser: async (url: string) => {
+        const authorization = new URL(url)
+        const callback = new URL(authorization.searchParams.get('redirect_uri')!)
+        callback.searchParams.set('code', 'one-time-code-long-enough')
+        callback.searchParams.set('state', authorization.searchParams.get('state')!)
+        const response = await fetch(callback)
+        const reader = response.body!.getReader()
+        const first = new TextDecoder().decode((await reader.read()).value)
+        revealPage({ response, reader, first })
+      },
+      fetchImpl: async () => new Response(JSON.stringify({ data: { access_token: 'synthetic-access-secret', refresh_token: 'synthetic-refresh-secret', token_type: 'Bearer', scope: 'merchant', expires_in: 600, workspace_id: 'ws_test', account_login: 'merchant@example.test' } }), { status: 200 }),
+      storeCredential: async () => { await storeGate; if (shouldFail) throw new Error('synthetic secret') },
+      configureSession: async () => {}, timeoutMs: 2000,
+    })
+    const { response, reader, first } = await pageReady
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/html')
+    expect(response.headers.get('content-security-policy')).toContain("script-src 'nonce-")
+    expect(first).toContain('正在完成绑定')
+    expect(first).not.toContain('绑定已完成')
+    expect(first).not.toMatch(/one-time-code|synthetic-access|synthetic-refresh/u)
+    releaseStore()
+    if (shouldFail) await expect(login).rejects.toThrow('LOCAL_PLUGIN_LOGIN_FAILED')
+    else await expect(login).resolves.toMatchObject({ ok: true })
+    let result = ''
+    for (;;) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      result += new TextDecoder().decode(chunk.value)
+    }
+    expect(result).toContain(shouldFail ? '绑定未完成' : '绑定已完成')
+    expect(result).not.toMatch(/one-time-code|synthetic-access|synthetic-refresh/u)
+  })
+
   it('times out without touching credentials or launchd', async () => {
     let writes = 0
     await expect(loginLocalPlugin({ baseUrl: 'https://example.test', workspaceId: 'ws_test', openBrowser: async () => {}, storeCredential: () => { writes++ }, configureSession: () => { writes++ }, timeoutMs: 50 })).rejects.toThrow('TIMEOUT')

@@ -271,6 +271,10 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'rule.sync.now', 'rule.audit', 'rule.publish', 'rule.status',
   'delivery.bundle.verify',
   'asset.scan',
+  // The API has no upload-session transport; all three methods currently
+  // return UPLOAD_TRANSPORT_NOT_CONFIGURED. Keep them off the merchant surface
+  // until a durable, workspace-bound upload path is available.
+  'upload.session.create', 'upload.session.part', 'upload.session.complete',
   'content.codex.prepare',
   'content.codex.commit',
   'knowledge.rule.update',
