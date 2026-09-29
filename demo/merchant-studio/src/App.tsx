@@ -7082,7 +7082,7 @@ export function MaterialLibraryWorkspace({
       {view === 'library' && activeStore && (
         <section className="material-store-workspace">
           <div className="material-workspace-overview">
-            <div className="material-workspace-intro"><span className="material-workspace-mark" aria-hidden="true"><FolderOpen size={20} /></span><div><span className="section-kicker">素材库</span><h1>素材库</h1><p>按店铺独立管理图片与视频。</p></div></div>
+            <div className="material-workspace-intro"><span className="material-workspace-mark" aria-hidden="true"><FolderOpen size={20} /></span><div><span className="section-kicker">素材库</span><h1>素材库</h1><p>按店铺独立管理图片与商品资料文档。</p></div></div>
             <div className="material-workspace-actions-card">
               <div className="material-workspace-storage" aria-label="共享储存空间"><div><span>共享储存空间</span><strong>{storageQuota ? formatStorageGb(storageQuota.limitBytes) : UNREAD_METRIC} <small>服务端配额</small></strong></div><div><small>{storageQuota ? `已用 ${formatStorageGb(storageQuota.usedBytes)}` : `配额尚未读取，本次会话上传 ${uploadedGb.toFixed(1)} GB`}</small><b>剩余 {storageQuota ? formatStorageGb(storageQuota.availableBytes) : UNREAD_METRIC}</b></div></div>
               <button type="button" className="material-upload-button" onClick={() => { setUploadStoreId(activeStore.id); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传素材</span></button>
@@ -7148,9 +7148,9 @@ export function MaterialLibraryWorkspace({
             {materialUploadBalanceNotice(billing ?? null) && <p className="material-upload-access-notice" role="alert" data-testid="material-upload-access-notice">{materialUploadBalanceNotice(billing ?? null)}</p>}
             <div className="material-upload-top">
               <div className="material-upload-store"><MaterialCategoryDropdown ariaLabel="选择上传目标" value={uploadStore.id} options={uploadTargets.map((store) => ({ value: store.id, label: store.name }))} onChange={(value) => { setUploadStoreId(value); setUploadSeries('') }} searchable searchPlaceholder="搜索店铺" triggerContent={<span className="material-upload-store-trigger"><span className="catalog-store-logo" aria-hidden="true">{uploadStore.logoUrl ? <img src={uploadStore.logoUrl} alt="" /> : uploadStore.mark}</span><span className="material-upload-store-copy"><small>上传目标</small><strong>{uploadStore.name}</strong><em>{uploadStore.platform} · 服务端资产按工作区保存</em></span></span>} /></div>
-              <button type="button" className="material-upload-picker" data-dialog-initial-focus disabled={pendingFiles.length >= 50} onClick={() => uploadInput.current?.click()}><Upload size={18} /><span><strong>{pendingFiles.length ? '继续选择' : view === 'brands' ? '选择图片或文档' : '选择图片或视频'}</strong><small>最多 50 个文件</small></span></button>
+              <button type="button" className="material-upload-picker" data-dialog-initial-focus disabled={pendingFiles.length >= 50} onClick={() => uploadInput.current?.click()}><Upload size={18} /><span><strong>{pendingFiles.length ? '继续选择' : '选择图片或文档'}</strong><small>最多 50 个文件</small></span></button>
             </div>
-            <input ref={uploadInput} className="sr-only" type="file" accept={view === 'brands' ? '.png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.docx,.xlsx,.csv,.txt,.md,.json,.ai,.eps' : 'image/*,video/*'} multiple onChange={(event) => addPendingFiles(event.target.files)} />
+            <input ref={uploadInput} className="sr-only" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.docx,.xlsx,.csv,.txt,.md,.json,.ai,.eps" multiple onChange={(event) => addPendingFiles(event.target.files)} />
             <div className="material-upload-controls">
               <div className="material-upload-category"><span>素材分类</span><MaterialCategoryDropdown ariaLabel="素材分类" value={uploadCategory} options={materialStoreCategories.filter((item): item is StoreMaterialCategory => item !== '全部').map((item) => ({ value: item, label: item }))} onChange={(value) => setUploadCategory(value as StoreMaterialCategory)} /></div>
               <div className="material-upload-category"><span>所属系列</span><MaterialCategoryDropdown ariaLabel="所属系列" value={uploadSeries} options={[{ value: '', label: '请选择系列' }, ...uploadAvailableSeries.map((item) => ({ value: item, label: item }))]} onChange={(value) => setUploadSeries(value)} /></div>
@@ -7161,16 +7161,16 @@ export function MaterialLibraryWorkspace({
                 const fileKey = pendingFileKey(file)
                 const selected = pendingSelectedKeys.includes(fileKey)
                 return <article className={selected ? 'selected' : ''} key={fileKey}>
-                  <button type="button" className="material-upload-thumb" aria-label={`放大预览${file.name}`} onClick={() => setPendingPreviewIndex(index)}>{file.type.startsWith('image/') ? <img src={url} alt="" /> : <Play size={24} fill="currentColor" />}</button>
+                  <button type="button" className="material-upload-thumb" aria-label={`预览${file.name}`} onClick={() => setPendingPreviewIndex(index)}>{file.type.startsWith('image/') ? <img src={url} alt="" /> : <FileText size={24} />}</button>
                   <button type="button" className="material-upload-select" aria-label={`选择${file.name}`} aria-pressed={selected} onClick={() => setPendingSelectedKeys((current) => current.includes(fileKey) ? current.filter((key) => key !== fileKey) : [...current, fileKey])}>{selected && <Check size={13} />}</button>
                   <strong title={file.name}>{file.name}</strong>
                   <small>{formatMaterialFileSize(file.size)}</small>
                 </article>
-              }) : <div><ImageIcon size={30} /><strong>尚未选择素材</strong><span>点击上方按钮，可一次选择或继续追加多张图片。</span></div>}
+              }) : <div><ImageIcon size={30} /><strong>尚未选择素材</strong><span>点击上方按钮，可一次选择或继续追加图片、Excel 和文档。</span></div>}
             </div>
             <p className="material-upload-note">{uploadCategory === '品牌资料' ? '文件写入当前工作区的服务端素材库；品牌资料分类、店铺归属与系列暂不由服务端持久化。上传文件仍需完成安全与权益确认后才能使用。' : `文件上传至当前工作区素材服务；“${uploadCategory}”${uploadSeries ? ` / ${uploadSeries}` : ''}仅作为本次会话分类，服务端未接受的文件不会出现在素材库中。`}</p>
             {uploadError && <p className="material-download-error" role="alert" data-testid="material-upload-error">{uploadError}</p>}
-            {pendingPreviewIndex !== null && pendingPreviews[pendingPreviewIndex] && <button type="button" className="material-upload-lightbox" aria-label="关闭图片预览" onClick={() => setPendingPreviewIndex(null)}><span>{pendingPreviews[pendingPreviewIndex].file.type.startsWith('image/') ? <img src={pendingPreviews[pendingPreviewIndex].url} alt={pendingPreviews[pendingPreviewIndex].file.name} /> : <span className="material-upload-video-preview"><Play size={52} fill="currentColor" /></span>}<strong>{pendingPreviews[pendingPreviewIndex].file.name}</strong><small>点击任意位置关闭</small></span></button>}
+            {pendingPreviewIndex !== null && pendingPreviews[pendingPreviewIndex] && <button type="button" className="material-upload-lightbox" aria-label="关闭素材预览" onClick={() => setPendingPreviewIndex(null)}><span>{pendingPreviews[pendingPreviewIndex].file.type.startsWith('image/') ? <img src={pendingPreviews[pendingPreviewIndex].url} alt={pendingPreviews[pendingPreviewIndex].file.name} /> : <span className="material-upload-video-preview"><FileText size={52} /></span>}<strong>{pendingPreviews[pendingPreviewIndex].file.name}</strong><small>点击任意位置关闭</small></span></button>}
           </div>
         </DialogFrame>
       )}

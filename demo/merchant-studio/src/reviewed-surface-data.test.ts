@@ -102,7 +102,9 @@ describe('the source helper this file asserts through', () => {
     // Markers from both ends of the file, so a truncated `appCode` fails loudly.
     expect(appCode).toContain("import { Fragment")
     expect(appCode).toContain('material-upload-note')
-    expect(appSource).toContain("'image/*,video/*'")
+    expect(appSource).toContain('accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.docx,.xlsx,.csv,.txt,.md,.json,.ai,.eps"')
+    expect(appCode).toContain('选择图片或文档')
+    expect(appCode).not.toContain('选择图片或视频')
     // Comments really were removed (otherwise the assertions are on the wrong text).
     // The probe is a token that survives only in a comment, so this stays a test
     // of the stripper rather than of the code's contents.

@@ -138,10 +138,8 @@ describe('Merchant Studio production UI contract', () => {
     // (`MaterialLibraryWorkspace`) calls `uploadAsset` directly, so these three
     // entries are exercised by a reachable path.
     //
-    // The `accept=".jpg,…,​.eps"` attribute this test used to assert alongside them
-    // belongs to the unmounted `AssetLibrary` knowledge library and is retired with
-    // the rest of it. The reviewed UI's document intake is 品牌资产 › 品牌资产文档,
-    // not the material library — the material upload only offers `image/*,video/*`.
+    // The current MaterialLibraryWorkspace accepts documents, including XLSX,
+    // through its reachable 上传素材 dialog. The older AssetLibrary is unmounted.
     expect(api).toContain("'.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'")
     expect(api).toContain("'.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'")
     expect(api).toContain("'.svg': 'image/svg+xml'")
