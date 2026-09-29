@@ -120,6 +120,13 @@ describe('customer-visible support replies MCP method', () => {
     let revision = ticket.revision
     for (const body of ['reply-1', 'reply-2', 'reply-3']) revision = (await comment(base, workspaceB, 'support-replies-token', ticket.id, revision, 'customer', body)).revision
 
+    const invalidTicketId = await call(base, 'merchant-replies-token', workspaceB, 'support.customer.replies.list', { ticket_id: 'not-a-uuid' })
+    expect(invalidTicketId.response.status).toBe(400)
+    expect(invalidTicketId.body.error?.code).toBe('INVALID_REQUEST')
+    const missingTicket = await call(base, 'merchant-replies-token', workspaceB, 'support.customer.replies.list', { ticket_id: crypto.randomUUID() })
+    expect(missingTicket.response.status).toBe(404)
+    expect(missingTicket.body.error?.code).toBe('NOT_FOUND')
+
     const crossWorkspace = await call(base, 'merchant-replies-token', workspaceA, 'support.customer.replies.list', { ticket_id: ticket.id })
     expect(crossWorkspace.response.status).toBe(404)
     expect(crossWorkspace.body.data).toBeNull()

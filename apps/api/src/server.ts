@@ -11277,6 +11277,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const relatedTaskId = optionalStringValue(params, 'relatedTaskId', 'related_task_id')
       const relatedOrderId = optionalStringValue(params, 'relatedOrderId', 'related_order_id')
       if (!ticketId && !relatedTaskId && !relatedOrderId) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '请提供工单、任务或订单关联信息', 400)
+      if (ticketId && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(ticketId)) {
+        throw new DomainError(ERROR_CODES.INVALID_REQUEST, '客服工单编号格式无效', 400)
+      }
       const rawCursor = optionalStringValue(params, 'cursor')
       let afterSequence = 0
       let relatedCursor: { createdAt: string; id: string } | undefined
