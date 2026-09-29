@@ -13,3 +13,9 @@
 截图：[等待态](27-callback-success-pending.png)、[完成态](27-callback-success-result.png)、[失败态](27-callback-failure-result.png)。
 
 此验收只证明本地回调页和安装器状态联动。生产商家登录、钥匙串持久化及 ChatGPT App 再读取须在安装升级后单独实测。
+
+## 生产商家真实回调
+
+新版插件 `0.1.0+codex.20260929090000` 安装后，在现有 Chrome 商家会话中确认 `demo@ys.com` 对 `ws_guirenniaoniao` 的本地插件授权。由 macOS Terminal 图形会话启动安装器后，真实生产授权页重定向至本机回调页；页面先显示处理中，随后显示[绑定完成截图](28-production-callback-binding-success.png)。地址栏只有 `/merchant-mcp-callback`，没有授权码或 state。安装器返回 `ok:true`、`credential_source:keychain`、`restart_required:true`、`host_verified:false`，未输出令牌。
+
+此前从无图形交互的执行环境启动同一安装器，回调页正确显示绑定失败，安装器返回 `LOCAL_PLUGIN_LOGIN_FAILED`；诊断显示系统钥匙串报 `User interaction is not allowed`。改由 Terminal 图形会话执行后成功。该失败属于安装器运行环境的钥匙串权限问题，不代表生产授权成功；成功结果仍需要 ChatGPT 重启后的 `onboarding.status` 独立验证。
