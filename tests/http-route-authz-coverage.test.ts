@@ -36,7 +36,7 @@ const PARAM = '\u0000'
  * bounded by the next top-level declaration so a reordering inside the router
  * cannot silently truncate the scan.
  */
-type DispatchIdiom = 'literal' | 'match' | 'test'
+type DispatchIdiom = 'literal' | 'match' | 'test' | 'includes'
 
 const DISPATCH_REGIONS: readonly { label: string, start: string, ends: readonly string[], idioms: readonly DispatchIdiom[] }[] = [
   {
@@ -49,7 +49,7 @@ const DISPATCH_REGIONS: readonly { label: string, start: string, ends: readonly 
     label: 'isWorkerRoute',
     start: 'function isWorkerRoute(',
     ends: ['function isAssetScannerRoute('],
-    idioms: ['test'],
+    idioms: ['literal', 'test'],
   },
   {
     label: 'isAssetScannerRoute',
@@ -95,6 +95,32 @@ function methodsInWorkerGuard(text: string): HttpMethod[] {
 }
 
 /**
+ * Worker route predicates put the verb on an enclosing `if` block and the
+ * path comparison several lines below it. Attribute the route to that block;
+ * otherwise a POST-only path is incorrectly recorded as method-agnostic.
+ */
+function methodsInWorkerBlock(lines: string[], lineIndex: number, regionStartIndex: number): HttpMethod[] {
+  const inline = methodsInWorkerGuard(lines[lineIndex] ?? '')
+  if (inline.length) return inline
+
+  for (let candidate = lineIndex - 1; candidate >= regionStartIndex; candidate -= 1) {
+    const guard = /^(\s*)if\s*\(\s*method\s*===\s*'(GET|POST|PUT|PATCH|DELETE)'\s*\)\s*\{\s*$/u.exec(lines[candidate] ?? '')
+    if (!guard) continue
+    const indent = guard[1]!.length
+    let blockEnd = lines.length
+    for (let index = candidate + 1; index < lines.length; index += 1) {
+      if (lines[index]!.length > 0 && /^\s*\}\s*$/u.test(lines[index]!)
+        && (lines[index]!.match(/^\s*/u)?.[0].length ?? -1) === indent) {
+        blockEnd = index
+        break
+      }
+    }
+    if (lineIndex < blockEnd) return [guard[2] as HttpMethod]
+  }
+  return []
+}
+
+/**
  * The guard an occurrence belongs to. A route guard is usually one line, but
  * `const x = req.method === 'GET'` + `&& (path === a || path === b)` on the
  * next one is the same statement, so continue while the previous line is an
@@ -119,21 +145,40 @@ function collectOccurrences(lines: string[]): RawOccurrence[] {
   const occurrences: RawOccurrence[] = []
   const moduleRegions = lines.flatMap(line => {
     const declaration = /^export (?:async )?function ((?:handle|route)[A-Za-z]+)\(/u.exec(line)
-    return declaration ? [{ label: declaration[1]!, start: declaration[0], ends: [HTTP_MODULE_END], idioms: ['literal', 'match'] as const }] : []
+    return declaration ? [{ label: declaration[1]!, start: declaration[0], ends: [HTTP_MODULE_END], idioms: ['literal', 'match', 'includes'] as const }] : []
   })
   for (const region of [...DISPATCH_REGIONS, ...moduleRegions]) {
     const sliced = sliceRegion(lines, region.start, region.ends)
+    if (region.idioms.includes('includes')) {
+      const source = sliced.lines.join('\n')
+      const guardedArrays = /req\.method\s*===\s*'(GET|POST|PUT|PATCH|DELETE)'\s*&&\s*\(\s*\[([\s\S]*?)\]\.includes\(path\)/gu
+      for (const match of source.matchAll(guardedArrays)) {
+        const method = match[1] as HttpMethod
+        const arrayBody = match[2] ?? ''
+        const lineNumber = sliced.startIndex + source.slice(0, match.index ?? 0).split('\n').length
+        for (const pathMatch of arrayBody.matchAll(/'([^']+)'/gu)) {
+          occurrences.push({ source: pathMatch[1]!, isRegex: false, methods: [method], lineNumber })
+        }
+      }
+    }
     for (const [offset, line] of sliced.lines.entries()) {
       const lineIndex = sliced.startIndex + offset
       const lineNumber = lineIndex + 1
       const windowMethods = region.idioms.includes('literal') ? methodsIn(guardWindow(lines, lineIndex)) : []
+      const routeMethods = region.label === 'isWorkerRoute'
+        ? methodsInWorkerBlock(lines, lineIndex, sliced.startIndex)
+        : windowMethods
       if (region.idioms.includes('literal')) {
         const directMethods = new Map<string, HttpMethod[]>()
         for (const paired of line.matchAll(/req\.method\s*===\s*'([A-Z]+)'\s*&&\s*path\s*===\s*'([^']+)'/gu)) {
           if (HTTP_METHODS.includes(paired[1] as HttpMethod)) directMethods.set(paired[2]!, [...(directMethods.get(paired[2]!) ?? []), paired[1] as HttpMethod])
         }
         for (const match of line.matchAll(/path\s*===\s*'([^']+)'/gu)) {
-          occurrences.push({ source: match[1]!, isRegex: false, methods: directMethods.get(match[1]!) ?? windowMethods, lineNumber })
+          const methods = directMethods.get(match[1]!) ?? routeMethods
+          if (region.label === 'isWorkerRoute' && methods.length === 0) {
+            throw new Error(`could not attribute HTTP method for worker route at apps/api/src/server.ts:${lineNumber}`)
+          }
+          occurrences.push({ source: match[1]!, isRegex: false, methods, lineNumber })
         }
       }
       if (region.idioms.includes('match')) {
@@ -146,7 +191,11 @@ function collectOccurrences(lines: string[]): RawOccurrence[] {
       }
       if (region.idioms.includes('test')) {
         for (const match of line.matchAll(/\/\^[^\n]*?\/[a-z]*\.test\(path\)/gu)) {
-          occurrences.push({ source: match[0].replace(/\.test\(path\)$/u, ''), isRegex: true, methods: methodsInWorkerGuard(line), lineNumber })
+          const methods = region.label === 'isWorkerRoute' ? routeMethods : methodsInWorkerGuard(line)
+          if (region.label === 'isWorkerRoute' && methods.length === 0) {
+            throw new Error(`could not attribute HTTP method for worker route at apps/api/src/server.ts:${lineNumber}`)
+          }
+          occurrences.push({ source: match[0].replace(/\.test\(path\)$/u, ''), isRegex: true, methods, lineNumber })
         }
       }
     }
@@ -282,6 +331,9 @@ describe('HTTP route authorization coverage', () => {
     expect(dispatched.some(operation => operation.path === '/v1/tasks/sample')).toBe(true)
     expect(dispatched.some(operation => operation.path.startsWith('/v1/internal/'))).toBe(true)
     expect(dispatched.some(operation => operation.path.startsWith('/v1/oauth/callback/'))).toBe(true)
+    expect(dispatched).toContainEqual(expect.objectContaining({ method: 'POST', path: '/v1/internal/storage/reconciliation' }))
+    expect(dispatched).toContainEqual(expect.objectContaining({ method: 'GET', path: '/v1/generation-jobs/sample' }))
+    expect(dispatched).toContainEqual(expect.objectContaining({ method: 'PATCH', path: '/v1/internal/knowledge/generation-claims/sample' }))
   })
 
   it('registers every route the server dispatches, or exempts it with a reason', () => {
@@ -316,6 +368,42 @@ describe('HTTP route authorization coverage', () => {
     const drifted = dispatchedHttpOperations(injected)
     expect(drifted.some(operation => operation.path === '/v1/security/drift-probe')).toBe(true)
     expect(() => assertHttpOperationPolicyCoverage(drifted)).toThrow(/POST \/v1\/security\/drift-probe/u)
+  })
+
+  it('attributes worker regex dispatches to their enclosing HTTP method', () => {
+    const source = readServerSource()
+    const injected = source.replace(
+      "if (method === 'GET') {",
+      "if (method === 'GET') {\n    if (/^\\/v1\\/internal\\/billing\\/reconciliation$/.test(path)) return true",
+    )
+    expect(injected).not.toBe(source)
+    const drifted = dispatchedHttpOperations(injected)
+    expect(drifted).toContainEqual(expect.objectContaining({
+      method: 'GET',
+      path: '/v1/internal/billing/reconciliation',
+    }))
+    expect(() => assertHttpOperationPolicyCoverage(drifted)).toThrow(/GET \/v1\/internal\/billing\/reconciliation/u)
+  })
+
+  it('fails closed when a worker route has no attributable HTTP method', () => {
+    const source = readServerSource()
+    const anchor = "  if (method === 'PATCH' && /^\\/v1\\/internal\\/knowledge\\/generation-claims\\/[^/]+$/u.test(path)) return true\n  return false"
+    const injected = source.replace(anchor, `${anchor.slice(0, anchor.lastIndexOf('  return false'))}  if (/^\\/v1\\/internal\\/unbound-worker-method$/.test(path)) return true\n  return false`)
+    expect(injected).not.toBe(source)
+    expect(() => dispatchedHttpOperations(injected)).toThrow(/could not attribute HTTP method for worker route/u)
+  })
+
+  it('derives literal dispatches from method-guarded includes arrays', () => {
+    const source = readServerSource()
+    const anchor = "'/v1/internal/billing/reconciliation', '/v1/internal/model-usage/reconciliation'"
+    const injected = source.replace(anchor, `${anchor}, '/v1/internal/security/drift-probe'`)
+    expect(injected).not.toBe(source)
+    const drifted = dispatchedHttpOperations(injected)
+    expect(drifted).toContainEqual(expect.objectContaining({
+      method: 'POST',
+      path: '/v1/internal/security/drift-probe',
+    }))
+    expect(() => assertHttpOperationPolicyCoverage(drifted)).toThrow(/POST \/v1\/internal\/security\/drift-probe/u)
   })
 
   it('rejects an exemption whose route is no longer dispatched', () => {

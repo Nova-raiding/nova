@@ -33,6 +33,7 @@ const LEGACY_NON_RELEASE_GATES = new Set([
 const CRITICAL_DEFAULT_RELEASE_GATES = [
   'tests/mcp-integration-mode-release-gate.test.ts',
   'tests/mcp-integration-production-script.test.ts',
+  'tests/http-route-authz-coverage.test.ts',
   'tests/payment-gateway-process.integration.test.ts',
   'apps/api/src/payment-capability-status.test.ts',
   'apps/api/src/payment-reconciliation-worker.e2e.test.ts',
