@@ -404,7 +404,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { brand_id: { type: 'string' }, external_subject: { type: 'string' }, role: { type: 'string', enum: ['viewer', 'editor', 'publisher', 'admin'] }, reason: { type: 'string' } }, required: ['brand_id', 'external_subject', 'role'], additionalProperties: false },
   },
   'canonical.product.consistency': {
-    description: '只读检查当前工作区 legacy 商品、canonical 商品、平台 listing、批量项和任务的显式关系；不会猜测或修改数据。',
+    description: '只读检查当前工作区历史商品、标准商品、平台店铺商品、批量项和任务的显式关系；不会猜测或修改数据。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   'campaign.batch.create': {
@@ -424,11 +424,11 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { campaign_id: { type: 'string' }, request_text: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['campaign_id'], additionalProperties: false },
   },
   'campaign.batch.pause': {
-    description: '经当前会话交互确认，以 expected_revision 暂停批量计划；不会把在途外部任务伪造成已取消，修订过期或幂等冲突时 fail-closed。',
+    description: '经当前会话交互确认，以 expected_revision 暂停批量计划；不会把在途外部任务伪造成已取消，修订过期或幂等冲突时直接阻断。',
     inputSchema: { type: 'object', properties: { campaign_id: boundedString(200), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['campaign_id', 'expected_revision', 'idempotency_key', 'reason'], additionalProperties: false },
   },
   'campaign.batch.resume': {
-    description: '经当前会话交互确认，以 expected_revision 恢复已暂停批量计划；保留全部人工审批门禁，修订过期或幂等冲突时 fail-closed。',
+    description: '经当前会话交互确认，以 expected_revision 恢复已暂停批量计划；保留全部人工审批门禁，修订过期或幂等冲突时直接阻断。',
     inputSchema: { type: 'object', properties: { campaign_id: boundedString(200), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['campaign_id', 'expected_revision', 'idempotency_key', 'reason'], additionalProperties: false },
   },
   'campaign.batch.retry_failed': {
@@ -472,11 +472,11 @@ const METHODS = {
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   'commercial.access.get': {
-    description: '查看服务端持有的当前商业准入决策；unknown 保持 null，不回退到旧钱包或任务额度。只读恢复入口。',
+    description: '查看服务端持有的当前商业准入决策；未知余额保持为空，不回退到旧钱包或任务额度。只读恢复入口。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   'commercial.catalog.get': {
-    description: '查看当前工作区可见的版本化商业目录；不可用时明确返回阻断，不回退到 legacy offer。只读恢复入口。',
+    description: '查看当前工作区可见的版本化商业目录；不可用时明确返回阻断，不回退到历史套餐报价。只读恢复入口。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   'commercial.order.create': {
@@ -604,7 +604,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { id: boundedString(200), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['id', 'expected_revision', 'idempotency_key', 'reason'], additionalProperties: false },
   },
   'platform.mapping.preflight': {
-    description: '使用不可变生产 schema 和 mapping 证据评估结构化字段映射。只读且 fail-closed：证据未验证、未知字段、确认过期或哈希漂移时不可发布。',
+    description: '经当前会话交互确认，使用不可变生产字段定义和映射证据评估字段映射；评估会记录审计事件，并可能更新或撤销映射批准。证据未验证、未知字段、确认过期或哈希漂移时直接阻断发布。',
     inputSchema: { type: 'object', properties: { input_json: jsonObject('结构化 PlatformFieldMappingGateInput JSON 对象，含 schema、mapping、源分页、远端快照和不可变证据。') }, required: ['input_json'], additionalProperties: false },
   },
   'platform.model.status': { description: '查看模型和中转服务可用性。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
@@ -614,7 +614,7 @@ const METHODS = {
   },
   'billing.model-usage.statement': {
     description: '查看当前工作区模型用量汇总。只读，不返回凭据或跨工作区数据。',
-    inputSchema: { type: 'object', properties: { from_at: { type: 'string' }, to_at: { type: 'string' }, limit: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { from_at: { type: 'string' }, to_at: { type: 'string' }, limit: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] }, manual_attention_cursor: { type: 'string', minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' } }, additionalProperties: false },
   },
   'billing.recharge.create': {
     description: '创建支付宝充值订单；生产环境必须等待支付服务商回调确认后才入账。',
@@ -794,7 +794,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { topic: { type: 'string' }, product_id: { type: 'string' } }, additionalProperties: false },
   },
   'asset.upload': {
-    description: '上传用户已附加的本地素材并保存到当前工作区。附件优先传绝对 file_path，由 bridge 读取文件；不要在终端生成或向模型传递 base64。图片生成任务可同时携带 continuation_kind=image_generation 及当前商品、任务和生成参数；需要商家确认图片权益后再继续，确认前不会调用图片模型。上传后本工具会在同一调用内有界等待检查结果：检查中无需操作，风险阻断时只需重新上传。绝对不要调用 automation.scan 推进文件检查，也不要要求用户、平台人员或人工证据完成检查。单文件最多 50MB。',
+    description: '上传用户已附加的本地素材并保存到当前工作区。附件优先传绝对 file_path，由插件读取文件；不要在终端生成或向模型传递图片编码。图片生成任务可同时携带 continuation_kind=image_generation 及当前商品、任务和生成参数；需要商家确认图片权益后再继续，确认前不会调用图片模型。上传后本工具会在同一调用内有界等待检查结果：检查中无需操作，风险阻断时只需重新上传。绝对不要调用 automation.scan 推进文件检查，也不要要求用户、平台人员或人工证据完成检查。单文件最多 50MB。',
     inputSchema: { type: 'object', properties: { name: { type: 'string' }, mime_type: { type: 'string' }, file_path: { type: 'string', description: '用户在当前会话明确附加的本地文件绝对路径。' }, content_base64: { type: 'string', description: '仅用于已经很小的内联内容；本地附件请使用 file_path。' }, sha256: { type: 'string' }, rights_scope: { type: 'string', enum: ['owned', 'commercial_authorized', 'limited_use', 'internal_only', 'unknown', 'unusable'] }, applicable_platforms_json: { type: 'string' }, applicable_regions_json: { type: 'string' }, usage_scopes_json: { type: 'string' }, valid_from: { type: 'string' }, valid_to: { type: 'string' }, ai_modification_allowed: { type: 'string', enum: ['true', 'false'] }, continuation_kind: { type: 'string', enum: ['image_generation'] }, continuation_product_id: { type: 'string' }, continuation_task_id: { type: 'string' }, continuation_content_version_id: { type: 'string' }, continuation_sku_ids_json: { type: 'string', description: '续跑图片生成时使用的 SKU ID 字符串数组 JSON。' }, continuation_direction: { type: 'string' }, continuation_count: { type: 'string' }, continuation_idempotency_key: { type: 'string' } }, required: ['name', 'mime_type'], oneOf: [{ required: ['file_path'] }, { required: ['content_base64'] }], additionalProperties: false },
   },
   'asset.upload.batch': {
@@ -1251,6 +1251,15 @@ function sanitizeMerchantText(value) {
     .replace(/\b(?:billing|catalog|content|publish|subscription|workspace|platform)\.[a-z][A-Za-z0-9_-]+\b/gu, '当前步骤')
 }
 
+// API summaries and action labels are data, not trusted copy. Keep a localized
+// sentence only when it is already Chinese; the original remains in structured
+// content for diagnosis without being repeated as merchant-facing prose.
+function merchantVisibleText(value, fallback) {
+  const sanitized = typeof value === 'string' ? sanitizeMerchantText(value.trim()) : ''
+  const prose = sanitized.replace(/\bStore Nova\b/giu, '')
+  return /[\u3400-\u9fff]/u.test(sanitized) && !/[A-Za-z]{2,}/u.test(prose) ? sanitized : fallback
+}
+
 function sanitizeMerchantAction(value) {
   const sanitized = sanitizeMerchantText(value)
     .replace(/\b(?:product|task|account|workspace|content|campaign|batch)[_-]?id\b/giu, '相关信息')
@@ -1285,13 +1294,17 @@ function merchantActionLabel(value) {
 function merchantNextActionLabel(value) {
   const method = typeof value === 'string' ? value.match(/\b(?:[a-z][a-z_-]*\.)+[a-z][a-z_-]*\b/u)?.[0] : value?.tool ?? value?.method
   if (typeof method === 'string' && !isMerchantTool(method)) return undefined
-  if (typeof value === 'string') return merchantActionLabel(value) ?? sanitizeMerchantAction(value)
+  if (typeof value === 'string') return merchantActionLabel(value) ?? merchantVisibleText(sanitizeMerchantAction(value), '继续当前步骤')
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-  return merchantActionLabel(value.tool ?? value.method) ?? sanitizeMerchantAction(String(value.label ?? value.title ?? value.description ?? ''))
+  return merchantActionLabel(value.tool ?? value.method) ?? merchantVisibleText(sanitizeMerchantAction(String(value.label ?? value.title ?? value.description ?? '')), '继续当前步骤')
 }
 
 function merchantPlatformLabel(value) {
-  return ({ jd: '京东', taobao: '淘宝', tmall: '天猫', pinduoduo: '拼多多', xiaohongshu: '小红书', douyin: '抖音' })[String(value ?? '').toLowerCase()] ?? String(value ?? '')
+  return ({ jd: '京东', taobao: '淘宝', tmall: '天猫', pinduoduo: '拼多多', xiaohongshu: '小红书', douyin: '抖音' })[String(value ?? '').toLowerCase()] ?? '未知平台'
+}
+
+function merchantTicketStatusLabel(value) {
+  return ({ open: '待处理', in_progress: '处理中', waiting_customer: '等待客户回复', resolved: '已解决', closed: '已关闭' })[String(value ?? '').toLowerCase()] ?? '状态待确认'
 }
 
 function detailDecisionVersions(method, result) {
@@ -1391,11 +1404,11 @@ function userFacingToolText(method, result) {
     const inspection = result?.store_link_inspection
     if (inspection && Array.isArray(inspection.candidates)) {
       const issueText = Array.isArray(inspection.issues) && inspection.issues.length
-        ? inspection.issues.map(issue => `第 ${issue.line || '?'} 行：${issue.message}`).join('\n')
+        ? inspection.issues.map(issue => `第 ${issue.line || '?'} 行：${merchantVisibleText(issue.message, '店铺链接格式需要核对')}`).join('\n')
         : ''
       return [
         inspection.candidates.length ? `已整理 ${inspection.candidates.length} 家店铺的接入候选；链接格式已检查，店铺身份和授权仍待核验。` : '这次没有识别出可用的店铺候选。',
-        ...inspection.candidates.map((store, index) => `${index + 1}. ${store.platformLabel}｜${store.storeName}｜${store.shopUrl}`),
+        ...inspection.candidates.map((store, index) => `${index + 1}. ${merchantPlatformLabel(store.platform ?? store.platformLabel)}｜${store.storeName}｜${store.shopUrl}`),
         issueText,
         inspection.candidates.length ? '请确认这份店铺名单是否正确；需要修改或继续添加，也可以直接告诉我。' : '请按“淘宝｜店铺名称｜https://店铺首页”重新发送。',
       ].filter(Boolean).join('\n')
@@ -1413,16 +1426,16 @@ function userFacingToolText(method, result) {
     }
     const blocker = result?.blocker
     if (blocker?.code === 'ONBOARDING_API_VERSION_MISMATCH') {
-      return `${blocker.title ?? '首次引导服务正在升级'}：${blocker.message ?? '当前服务端引导版本需要更新。'}${blocker.next_action ? `\n${blocker.next_action}` : ''}`
+      return `${merchantVisibleText(blocker.title, '首次引导服务正在升级')}：${merchantVisibleText(blocker.message, '当前服务端引导版本需要更新。')}${blocker.next_action ? `\n${merchantVisibleText(blocker.next_action, '请稍后重试。')}` : ''}`
     }
     const card = result?.onboarding_card
     if (card && typeof card === 'object') {
       return [
-        `安装引导：${card.status ?? '进行中'}`,
-        `当前步骤：${card.current_step ?? '待检查'}`,
-        card.binding ? `需要绑定：${card.binding}` : '',
-        card.progress ? `进度：${card.progress}` : '',
-        card.guidance ? `下一步：${card.guidance}` : '',
+        `安装引导：${merchantVisibleText(card.status, '进行中')}`,
+        `当前步骤：${merchantVisibleText(card.current_step, '待检查')}`,
+        card.binding ? `需要绑定：${merchantVisibleText(card.binding, '请核对工作区绑定')}` : '',
+        card.progress ? `进度：${merchantVisibleText(card.progress, '进度待确认')}` : '',
+        card.guidance ? `下一步：${merchantVisibleText(card.guidance, '请查看当前步骤')}` : '',
       ].filter(Boolean).join('\n')
     }
   }
@@ -1470,15 +1483,12 @@ function userFacingToolText(method, result) {
     if (!campaigns.length) return '当前工作区没有批量生产计划。'
     const blocked = campaigns.filter(item => item && item.readiness === 'blocked')
     return blocked.length
-      ? `已读取 ${campaigns.length} 个批量生产计划，其中 ${blocked.length} 个交付被阻断；请打开计划查看阻断码和 canonical/listing 修复路径。`
+      ? `已读取 ${campaigns.length} 个批量生产计划，其中 ${blocked.length} 个交付被阻断；请打开计划查看阻断原因和标准商品、店铺商品的关联情况。`
       : `已读取 ${campaigns.length} 个批量生产计划，当前列表中的交付条件已通过。`
   }
   if (method === 'campaign.batch.get') {
     if (result.readiness === 'blocked' || result.delivery_manifest?.state === 'blocked') {
-      const validation = result.delivery_manifest?.validation
-      const code = typeof validation?.code === 'string' ? validation.code : '交付清单阻断'
-      const path = typeof validation?.path === 'string' ? `（${validation.path}）` : ''
-      return `批量计划已保存，但当前不可交付：${code}${path}。请先完成 canonical 商品与 listing 关联，再继续。`
+      return '批量计划已保存，但当前交付校验未通过。请查看结构化阻断原因，完成标准商品与店铺商品的关联后再继续。'
     }
     if (result.readiness === 'ready') return '批量计划已读取，当前交付条件已通过。'
   }
@@ -1491,13 +1501,13 @@ function userFacingToolText(method, result) {
     const tickets = Array.isArray(result.tickets) ? result.tickets : []
     if (typeof result.ticket_id === 'string' || typeof result.ticket_number === 'string') {
       const replyCount = Array.isArray(result.replies) ? result.replies.length : 0
-      const status = typeof result.status === 'string' ? result.status : '状态待确认'
-      return `已读取工单${typeof result.ticket_number === 'string' ? `（${sanitizeMerchantText(result.ticket_number)}）` : ''}，状态：${sanitizeMerchantText(status)}；本页 ${replyCount} 条客户可见回复。${result.next_cursor ? '仍有下一页，请继续使用返回的 next_cursor 读取。' : '已读取全部客户可见回复。'}`
+      const status = merchantTicketStatusLabel(result.status)
+      return `已读取工单${typeof result.ticket_number === 'string' ? `（${sanitizeMerchantText(result.ticket_number)}）` : ''}，状态：${status}；本页 ${replyCount} 条客户可见回复。${result.next_cursor ? '仍有下一页，请继续使用返回的 next_cursor 读取。' : '已读取全部客户可见回复。'}`
     }
     if (!tickets.length) return result.next_cursor ? '当前页没有关联工单，但仍有下一页，请继续使用返回的 next_cursor 读取。' : '当前没有找到关联工单或客户可见回复。'
     const replyCount = tickets.reduce((count, ticket) => count + (Array.isArray(ticket?.replies) ? ticket.replies.length : 0), 0)
-    const statuses = [...new Set(tickets.map(ticket => typeof ticket?.status === 'string' ? ticket.status : '状态待确认'))]
-    return `已读取 ${tickets.length} 个关联工单，状态：${statuses.map(status => sanitizeMerchantText(status)).join('、')}；本页 ${replyCount} 条客户可见回复。${result.next_cursor ? '仍有下一页，请继续使用返回的 next_cursor 读取。' : '已读取全部当前关联工单。'}`
+    const statuses = [...new Set(tickets.map(ticket => merchantTicketStatusLabel(ticket?.status)))]
+    return `已读取 ${tickets.length} 个关联工单，状态：${statuses.join('、')}；本页 ${replyCount} 条客户可见回复。${result.next_cursor ? '仍有下一页，请继续使用返回的 next_cursor 读取。' : '已读取全部当前关联工单。'}`
   }
   if (method === 'multimodal.video.request' || method === 'multimodal.video.get') {
     const video = result.rendering && typeof result.rendering === 'object' ? result.rendering : result
@@ -1508,11 +1518,11 @@ function userFacingToolText(method, result) {
   }
   const merchantStatus = result.merchant_status && typeof result.merchant_status === 'object' ? result.merchant_status : undefined
   if (merchantStatus) {
-    const label = typeof merchantStatus.label === 'string' ? merchantStatus.label : '需要查看状态'
+    const label = merchantVisibleText(merchantStatus.label, '需要查看状态')
     const continuation = result.generation_continuation && typeof result.generation_continuation === 'object' ? result.generation_continuation : result.continuation && typeof result.continuation === 'object' ? result.continuation : result.image_generation && typeof result.image_generation === 'object' ? result.image_generation : undefined
     const isImageGeneration = method === 'catalog.image.generate' || (method === 'asset.upload' && (continuation?.kind === 'image_generation' || typeof continuation?.job_id === 'string' || typeof result.job_id === 'string'))
-    const next = !isImageGeneration && merchantStatus.next_action && typeof merchantStatus.next_action === 'object' && typeof merchantStatus.next_action.label === 'string' ? merchantStatus.next_action.label : ''
-    const progress = merchantStatus.progress && typeof merchantStatus.progress === 'object' && typeof merchantStatus.progress.label === 'string' ? `进度：${merchantStatus.progress.label}` : ''
+    const next = !isImageGeneration && merchantStatus.next_action && typeof merchantStatus.next_action === 'object' && typeof merchantStatus.next_action.label === 'string' ? merchantVisibleText(merchantStatus.next_action.label, '继续当前步骤') : ''
+    const progress = merchantStatus.progress && typeof merchantStatus.progress === 'object' && typeof merchantStatus.progress.label === 'string' ? `进度：${merchantVisibleText(merchantStatus.progress.label, '进度待确认')}` : ''
     const caution = merchantStatus.recovery?.reconciliation_required === true ? '平台最终回执尚未确认，不要重复提交。' : ''
     const automaticProgress = isImageGeneration && !next
       ? '系统会自动轮询并展示生成结果，无需输入“查询结果”。'
@@ -1520,22 +1530,22 @@ function userFacingToolText(method, result) {
     return [`${label}。`, progress, caution, pointsText, automaticProgress, next ? `下一步：${next}` : ''].filter(Boolean).join('\n')
   }
   if ((method === 'merchant.start' || method === 'workspace.health') && result.conversation_state) {
-    const summary = typeof result.completed_summary === 'string' ? result.completed_summary.trim() : ''
-    const question = typeof result.question === 'string' ? result.question.trim() : ''
+    const summary = typeof result.completed_summary === 'string' ? merchantVisibleText(result.completed_summary, '当前步骤已返回，请核对状态。') : ''
+    const question = typeof result.question === 'string' ? merchantVisibleText(result.question, '请确认下一步需要处理的内容。') : ''
     return [summary, question].filter(Boolean).join('\n')
   }
   if (method === 'catalog.image.get' && result.candidate_state) {
     if (result.candidate_state.presentation === 'component') return ['主图候选已准备好。', pointsText].filter(Boolean).join('\n')
-    if (typeof result.question === 'string' && result.question.trim()) return [result.question.trim(), pointsText].filter(Boolean).join('\n')
+    if (typeof result.question === 'string' && result.question.trim()) return [merchantVisibleText(result.question, '请查看主图候选状态。'), pointsText].filter(Boolean).join('\n')
     return [typeof result.completed_summary === 'string' && result.completed_summary.trim()
-      ? result.completed_summary.trim()
+      ? merchantVisibleText(result.completed_summary, '请查看主图候选状态。')
       : '主图候选仍在自动检查，通过后会继续，无需操作。', pointsText].filter(Boolean).join('\n')
   }
   const explicitContext = method === 'merchant.start' && result.ui && typeof result.ui === 'object' && !Array.isArray(result.ui)
     ? result.ui.recognized_context
     : undefined
   if (explicitContext?.platform) {
-    const nextStep = typeof result.ui?.next_step?.label === 'string' ? sanitizeMerchantAction(result.ui.next_step.label) : ''
+    const nextStep = typeof result.ui?.next_step?.label === 'string' ? merchantVisibleText(sanitizeMerchantAction(result.ui.next_step.label), '继续当前步骤') : ''
     const goal = typeof explicitContext.goal === 'string' && explicitContext.goal ? `，目标：${sanitizeMerchantAction(explicitContext.goal)}` : ''
     const attachments = Number.isInteger(explicitContext.attachment_count) && explicitContext.attachment_count > 0 ? `，附件：${explicitContext.attachment_count} 个` : ''
     return [`已识别平台：${merchantPlatformLabel(explicitContext.platform)}${goal}${attachments}。`, nextStep ? `下一步：${nextStep}` : ''].filter(Boolean).join('\n')
@@ -1546,14 +1556,14 @@ function userFacingToolText(method, result) {
     : []
   const cardLabels = cards
     .map(card => card && typeof card === 'object' ? merchantActionLabel(card.tool ?? card.method) ?? (typeof card.label === 'string' ? card.label.trim() : '') : '')
-    .map(label => label === '继续当前步骤' ? '继续当前步骤' : sanitizeMerchantAction(label))
+    .map(label => label === '继续当前步骤' ? '继续当前步骤' : merchantVisibleText(sanitizeMerchantAction(label), '继续当前步骤'))
     .filter(Boolean)
   // Codex App 对话层只给一个主行动；其余动作仍保留在结构化卡片中供宿主按上下文呈现。
   const uniqueActions = [...new Set([...cardLabels, ...actions])].slice(0, 1)
   const summary = typeof result.summary === 'string' && result.summary.trim()
-    ? sanitizeMerchantText(result.summary.trim())
+    ? merchantVisibleText(result.summary, '服务端已返回响应，请核对业务状态。')
     : typeof result.message === 'string' && result.message.trim()
-      ? sanitizeMerchantText(result.message.trim())
+      ? merchantVisibleText(result.message, '服务端已返回响应，请核对业务状态。')
       : result.status === 'needs_input' ? '还需要补充信息。' : (Array.isArray(result.images) && result.images.length > 0) || ['ok', 'success', 'succeeded', 'completed', 'complete', 'ready', 'published', 'active'].includes(String(result.status ?? '').toLowerCase()) ? '操作已完成。' : READ_ONLY_METHODS.has(method) ? '查询已返回；请以结构化字段核对业务状态。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
   const pending = ['queued', 'generating', 'processing'].includes(result.state) || ['queued', 'running', 'pending'].includes(result.status)
   const pendingSummary = pending ? '请求已进入平台中转队列，尚未产生可交付内容。' : summary
@@ -1628,7 +1638,7 @@ function merchantBillingProjection(method, result) {
 function userFacingErrorText(code, details) {
   if (code === 'MCP_CONFIGURATION_REQUIRED') return '插件连接配置尚未加载，本次未向后端发送请求。请先完成连接配置；若配置刚更新，请重新加载插件连接。已有图片和视频无需重新上传。'
   if (code === 'UNAUTHENTICATED' || code === 'MCP_AUTH_REQUIRED') return 'Store Nova 工作区登录已失效。请在本地插件安装目录重新登录当前工作区，然后完整重启 ChatGPT；已有商品和素材不会丢失。'
-  if (code === 'STORE_SELECTION_REQUIRED') return '还没有选定店铺。先调用 workspace.health 查看可用店铺，或明确提供 platform + account_id；已导入的商品和 SKU 不会丢失。'
+  if (code === 'STORE_SELECTION_REQUIRED') return '还没有选定店铺。请先查看可用店铺，或明确提供平台和店铺账号；已导入的商品和商品规格不会丢失。'
   if (code === 'MODEL_PROVIDER_REQUEST_FAILED' && /input\.media|first_frame/u.test(String(details?.provider_error_summary ?? ''))) return '视频尚未生成：视频服务未能正确接收参考图，需修复中转渠道的首帧映射。原图已保留，无需重新上传。'
   const retryable = new Set(['API_STARTING', 'API_UNAVAILABLE', 'RATE_LIMITED', 'MCP_GATEWAY_ERROR'])
   if (code === 'INTERACTIVE_WRITE_DISABLED' || code === 'INTERACTIVE_CONFIRMATION_REQUIRED') {
@@ -1654,16 +1664,15 @@ function userFacingErrorText(code, details) {
     if (missing.includes('cost_cny') || missing.includes('settlement')) return '平台正在核对本次生成记录，暂时不能继续。没有生成新内容、扣费或发布；当前任务和已有产物已保留，核对完成后可继续。'
     return '平台暂时无法确认本次生成结果，已安全停止。当前任务和已有产物已保留，没有重复调用、扣费或发布；平台恢复后可继续。'
   }
-  if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '本次图片请求的 Provider 回执暂未确认，系统已转入后台自动核对；创意点仍处于预留状态，确认前不会重复调用、重复扣费或发布，商户无需输入查询指令。'
+  if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '本次图片请求的服务商回执暂未确认，系统已转入后台自动核对；创意点仍处于预留状态，确认前不会重复调用、重复扣费或发布，商户无需输入查询指令。'
   if (code === 'PLATFORM_RULE_DATA_UNAVAILABLE') return '当前平台的签名规则数据尚未就绪，生成已被阻止；请在平台规则状态中检查配置和有效期。本次没有发起模型生成。'
   if (code === 'MODEL_PROVIDER_REQUEST_FAILED') {
-    const reason = typeof details?.provider_error_summary === 'string' ? `（${details.provider_error_summary}）` : ''
-    return `图片模型请求被中转服务拒绝${reason}。未生成新图片、未重复扣费；请更换可用模型或稍后重试。`
+    return '图片模型请求被中转服务拒绝。未生成新图片、未重复扣费；请更换可用模型或稍后重试。'
   }
   if (code === 'MCP_HTTPS_REQUIRED') return '当前服务的安全连接尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
   if (code === 'MCP_STRICT_AUTH_REQUIRED') return '当前服务的安全鉴权尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
-  if (code === 'MCP_GATEWAY_ERROR' && typeof details?.safe_message === 'string') return details.safe_message
-  if (code === 'MCP_GATEWAY_ERROR' && typeof details?.config_message === 'string') return details.config_message
+  if (code === 'MCP_GATEWAY_ERROR' && typeof details?.safe_message === 'string') return '服务连接异常，当前操作未确认完成。请查看任务状态，再决定是否重试。'
+  if (code === 'MCP_GATEWAY_ERROR' && typeof details?.config_message === 'string') return '插件连接配置异常，本次操作未完成。请检查当前工作区连接配置。'
   if (code === 'MCP_GATEWAY_ERROR' && details?.export_signature_invalid === true) return '导出文件校验失败，未返回文件。请重新生成导出。'
   if ((code === 'API_UNAVAILABLE' || code === 'MCP_GATEWAY_ERROR') && details?.operation_status === 'unknown') {
     return '服务连接中断，尚未确认操作是否完成。请先查看任务状态，再决定是否重试。'
@@ -1734,16 +1743,16 @@ const CONTRACT_DECLARED_IMPLICIT_PROPERTIES = { workspace_id: { type: 'string' }
 function validateToolArguments(name, args) {
   const schema = METHODS[name]?.inputSchema
   if (!schema || schema.type !== 'object') return undefined
-  const fail = message => ({ message: `Invalid arguments for ${name}: ${message}` })
+  const fail = message => ({ message: `工具 ${name} 参数无效：${message}` })
   const validate = (value, propertySchema, path) => {
     if (!propertySchema || typeof propertySchema !== 'object') return undefined
     if (Array.isArray(propertySchema.anyOf)) {
       if (propertySchema.anyOf.some(candidate => !validate(value, candidate, path))) return undefined
-      return fail(`${path} does not match any allowed shape`)
+      return fail(`${path} 不符合允许的格式`)
     }
-    if (propertySchema.type === 'string' && typeof value !== 'string') return fail(`${path} must be a string`)
-    if (propertySchema.type === 'array' && !Array.isArray(value)) return fail(`${path} must be an array`)
-    if (propertySchema.type === 'object' && (!value || typeof value !== 'object' || Array.isArray(value))) return fail(`${path} must be an object`)
+    if (propertySchema.type === 'string' && typeof value !== 'string') return fail(`${path} 必须是文本`)
+    if (propertySchema.type === 'array' && !Array.isArray(value)) return fail(`${path} 必须是数组`)
+    if (propertySchema.type === 'object' && (!value || typeof value !== 'object' || Array.isArray(value))) return fail(`${path} 必须是对象`)
     // Numeric aliases (e.g. merchant.start.attachment_count) must satisfy the
     // declared type and range here. The bridge normalizer only accepts integers,
     // so a number branch declared as `number` would let e.g. 5.5 pass this check
@@ -1751,26 +1760,26 @@ function validateToolArguments(name, args) {
     // alias branch is therefore declared as `integer`.
     if ((propertySchema.type === 'number' || propertySchema.type === 'integer')
       && (typeof value !== 'number' || !Number.isFinite(value) || (propertySchema.type === 'integer' && !Number.isInteger(value)))) {
-      return fail(`${path} must be a ${propertySchema.type}`)
+      return fail(`${path} 必须是${propertySchema.type === 'integer' ? '整数' : '数字'}`)
     }
-    if (typeof propertySchema.minimum === 'number' && typeof value === 'number' && value < propertySchema.minimum) return fail(`${path} is below the minimum`)
-    if (typeof propertySchema.maximum === 'number' && typeof value === 'number' && value > propertySchema.maximum) return fail(`${path} is above the maximum`)
-    if (typeof propertySchema.minLength === 'number' && typeof value === 'string' && value.length < propertySchema.minLength) return fail(`${path} is too short`)
-    if (typeof propertySchema.maxLength === 'number' && typeof value === 'string' && value.length > propertySchema.maxLength) return fail(`${path} is too long`)
-    if (typeof propertySchema.pattern === 'string' && typeof value === 'string' && !(new RegExp(propertySchema.pattern, 'u')).test(value)) return fail(`${path} has an invalid format`)
-    if (Array.isArray(propertySchema.enum) && !propertySchema.enum.includes(value)) return fail(`${path} has an unsupported value`)
+    if (typeof propertySchema.minimum === 'number' && typeof value === 'number' && value < propertySchema.minimum) return fail(`${path} 小于最小值`)
+    if (typeof propertySchema.maximum === 'number' && typeof value === 'number' && value > propertySchema.maximum) return fail(`${path} 大于最大值`)
+    if (typeof propertySchema.minLength === 'number' && typeof value === 'string' && value.length < propertySchema.minLength) return fail(`${path} 长度不足`)
+    if (typeof propertySchema.maxLength === 'number' && typeof value === 'string' && value.length > propertySchema.maxLength) return fail(`${path} 超过长度限制`)
+    if (typeof propertySchema.pattern === 'string' && typeof value === 'string' && !(new RegExp(propertySchema.pattern, 'u')).test(value)) return fail(`${path} 格式无效`)
+    if (Array.isArray(propertySchema.enum) && !propertySchema.enum.includes(value)) return fail(`${path} 的值不受支持`)
     return undefined
   }
-  if (!args || typeof args !== 'object' || Array.isArray(args)) return fail('arguments must be an object')
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return fail('参数必须是对象')
   for (const required of schema.required ?? []) {
-    if (!Object.prototype.hasOwnProperty.call(args, required)) return fail(`missing required property ${required}`)
+    if (!Object.prototype.hasOwnProperty.call(args, required)) return fail(`缺少必填字段 ${required}`)
   }
   if (schema.additionalProperties === false) {
     const properties = schema.properties ?? {}
     for (const key of Object.keys(args)) {
       if (Object.prototype.hasOwnProperty.call(properties, key)) continue
       if (Object.prototype.hasOwnProperty.call(CONTRACT_DECLARED_IMPLICIT_PROPERTIES, key)) continue
-      return fail(`unexpected property ${key}`)
+      return fail(`不支持的字段 ${key}`)
     }
   }
   for (const [key, value] of Object.entries(args)) {
@@ -1780,11 +1789,11 @@ function validateToolArguments(name, args) {
   if (name === 'catalog.image.get') {
     const hasJobId = typeof args.job_id === 'string' && Boolean(args.job_id.trim())
     const hasVisualRef = typeof args.visual_ref === 'string' && Boolean(args.visual_ref.trim())
-    if (hasJobId === hasVisualRef) return fail('provide exactly one of job_id or visual_ref')
+    if (hasJobId === hasVisualRef) return fail('job_id 和 visual_ref 必须且只能提供其中一个')
   }
   if (name === 'support.customer.replies.list'
     && !['ticket_id', 'related_task_id', 'related_order_id'].some(key => typeof args[key] === 'string' && Boolean(args[key].trim()))) {
-    return fail('provide ticket_id, related_task_id, or related_order_id')
+    return fail('请提供 ticket_id、related_task_id 或 related_order_id 之一')
   }
   return undefined
 }
@@ -1896,7 +1905,7 @@ function recoveryOnlyResult(id, name) {
   if (!commercialRecoveryOnlySnapshot || COMMERCIAL_RECOVERY_METHODS.has(name) || name === 'workspace.interactive.confirm') return undefined
   const structuredContent = {
     ...commercialRecoveryOnlySnapshot,
-    message: '服务端已将当前会话限制为商业恢复操作；bridge 未转发本次业务请求。请先通过服务端授权的入口恢复并重新读取准入状态。',
+    message: '服务端已将当前会话限制为商业恢复操作；插件未转发本次业务请求。请先通过服务端授权的入口恢复并重新读取准入状态。',
   }
   return jsonRpc(id, { content: [{ type: 'text', text: userFacingErrorText(structuredContent.code, structuredContent) }], structuredContent, isError: true })
 }
@@ -1952,7 +1961,7 @@ function safeStructuredErrorMessage(error, code, details) {
   if (code === 'PERMISSION_DENIED') return '当前账号没有执行这一步的权限。任务和已有内容已保留。'
   if (code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE') return userFacingErrorText(code, details)
   const raw = error instanceof Error ? error.message : ''
-  if (/^MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID) is required/u.test(raw)) return raw
+  if (/^MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID) is required/u.test(raw)) return '插件连接配置不完整，本次操作未完成。请检查服务地址和工作区绑定。'
   if (/^content\.export ZIP 文件签名无效$/u.test(raw)) return '导出文件校验失败（ZIP 文件签名无效），未返回文件。请重新生成导出。'
   return userFacingErrorText(code, details)
 }
@@ -1985,12 +1994,12 @@ function actionCards(method, result) {
     type: card.type ?? (card.method === 'billing.recharge.create' ? 'recharge' : card.method === 'subscription.change' ? 'upgrade' : 'view'),
     // Tool names and IDs are execution details. Keep them in structuredContent
     // for the model, but never use them as the merchant-facing label.
-    label: merchantActionLabel(card.tool ?? card.method) ?? (typeof card.label === 'string' ? sanitizeMerchantAction(card.label) : '查看下一步'),
+    label: merchantActionLabel(card.tool ?? card.method) ?? (typeof card.label === 'string' ? merchantVisibleText(sanitizeMerchantAction(card.label), '查看下一步') : '查看下一步'),
     tool: card.tool ?? card.method,
     arguments: card.arguments && typeof card.arguments === 'object' && !Array.isArray(card.arguments) ? card.arguments : {},
     required_inputs: Array.isArray(card.required_inputs) ? card.required_inputs : [],
     enabled: card.enabled ?? true,
-    reason: sanitizeMerchantText(String(card.reason ?? card.description ?? '')),
+    reason: merchantVisibleText(String(card.reason ?? card.description ?? ''), '请查看当前步骤的服务端状态。'),
     requires_confirmation: card.requires_confirmation ?? card.confirmation === 'interactive_confirmation',
   })).filter(card => typeof card.tool === 'string' && isMerchantTool(card.tool) && !COMMERCIAL_DISABLED_METHODS.has(card.tool)) : []
   let sanitizedStoreCapacity = result.store_capacity
@@ -2049,7 +2058,7 @@ function merchantContextMetadata(result, explicitContext = {}) {
     ? result.action_cards.find(card => card && typeof card === 'object' && card.enabled !== false)
     : undefined
   let nextActionLabel = firstAction
-    ? merchantActionLabel(firstAction.tool ?? firstAction.method) ?? (typeof firstAction.label === 'string' ? sanitizeMerchantAction(firstAction.label) : undefined)
+    ? merchantActionLabel(firstAction.tool ?? firstAction.method) ?? (typeof firstAction.label === 'string' ? merchantVisibleText(sanitizeMerchantAction(firstAction.label), '继续当前步骤') : undefined)
     : Array.isArray(result?.next_actions)
       ? result.next_actions.map(merchantNextActionLabel).find(Boolean)
       : undefined
@@ -2087,7 +2096,7 @@ function firstMerchantAction(result) {
     const action = canonical.primary_action
     if (action && typeof action === 'object' && !Array.isArray(action) && typeof action.method === 'string' && isMerchantTool(action.method)) return {
       method: typeof action.method === 'string' ? action.method : '',
-      label: typeof action.label === 'string' ? sanitizeMerchantAction(action.label) : undefined,
+      label: typeof action.label === 'string' ? merchantVisibleText(sanitizeMerchantAction(action.label), '继续当前步骤') : undefined,
     }
   }
   const card = Array.isArray(result?.action_cards)
@@ -2141,7 +2150,7 @@ function merchantConversationQuestion(method, stage, expectedInput, explicitCont
     ? `你要使用哪个${merchantPlatformLabel(explicitContext.platform)}店铺或商品？`
     : '你要处理哪个店铺或商品？'
   if (expectedInput.kind === 'platform_store_or_product_selection') return '你要处理哪个平台、店铺或商品？'
-  const prompt = typeof result?.nextPrompt === 'string' ? sanitizeMerchantAction(result.nextPrompt) : ''
+  const prompt = typeof result?.nextPrompt === 'string' ? merchantVisibleText(sanitizeMerchantAction(result.nextPrompt), '你想先完成什么营销任务？') : ''
   if (prompt && !/管理员|运营后台|扫描证据|扫描完成/u.test(prompt)) return prompt
   if (actionLabel && !/管理员|运营后台|扫描证据|扫描完成/u.test(actionLabel)) return actionLabel
   return '你想先完成什么营销任务？'
@@ -2230,7 +2239,7 @@ function merchantConversationProjection(method, result, args = {}) {
   const primaryAction = merchantActionAllowed && action.method
     ? {
         method: action.method,
-        ...(action.label ? { label: action.label } : {}),
+        ...(action.label ? { label: merchantVisibleText(action.label, '继续当前步骤') } : {}),
         ...(Array.isArray(rawPrimaryAction?.required_inputs) ? { required_inputs: rawPrimaryAction.required_inputs } : {}),
       }
     : undefined
@@ -2243,9 +2252,9 @@ function merchantConversationProjection(method, result, args = {}) {
         : explicitContext.platform
           ? `已锁定${merchantPlatformLabel(explicitContext.platform)}。`
           : typeof result?.summary === 'string' && result.summary.trim()
-            ? sanitizeMerchantText(result.summary.trim())
+            ? merchantVisibleText(result.summary, '当前步骤已返回，请核对状态。')
             : typeof result?.greeting === 'string' && result.greeting.trim()
-              ? sanitizeMerchantText(result.greeting.trim())
+              ? merchantVisibleText(result.greeting, '可以开始了。')
               : '可以开始了。'
   return {
     conversation_state: {
@@ -2410,8 +2419,8 @@ function toolContent(method, result) {
       }
       return content
     }
-     if (status === 'clean') return [{ type: 'text', text: `图片检查已通过。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${sanitizeMerchantAction(result.next_step)}` : ''}`.trim() }]
-    if (status === 'unscanned') return [{ type: 'text', text: `文件已上传，可继续使用。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${sanitizeMerchantAction(result.next_step)}` : ''}`.trim() }]
+     if (status === 'clean') return [{ type: 'text', text: `图片检查已通过。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${merchantVisibleText(sanitizeMerchantAction(result.next_step), '继续当前步骤')}` : ''}`.trim() }]
+    if (status === 'unscanned') return [{ type: 'text', text: `文件已上传，可继续使用。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${merchantVisibleText(sanitizeMerchantAction(result.next_step), '继续当前步骤')}` : ''}`.trim() }]
      if (status === 'blocked') return [{ type: 'text', text: '这张图片暂时不能继续使用。素材已安全保留；平台会在你重新提交图片时自动复检，无需人工处理或提交扫描结果。' }]
     return [{ type: 'text', text: '图片已收到，正在自动检查。检查通过后会等待你的确认再生成。' }]
   }
@@ -3225,12 +3234,12 @@ function merchantAssetSummary(asset) {
   const display = asset.display && typeof asset.display === 'object' && !Array.isArray(asset.display)
     ? {
         primary_status: blocked ? 'scan_blocked' : rightsBlocked ? 'rights_blocked' : !assetUploadUsable(scanStatus) ? 'awaiting_scan' : typeof asset.display.primaryStatus === 'string' && asset.display.primaryStatus !== 'awaiting_scan' ? asset.display.primaryStatus : 'unknown',
-        label: blocked ? '安全检查未通过' : rightsBlocked ? '使用权益受限' : !assetUploadUsable(scanStatus) ? '正在安全检查' : scanStatus === 'unscanned' ? '已上传，可继续使用' : typeof asset.display.label === 'string' ? asset.display.label : '当前暂不可用',
+        label: blocked ? '安全检查未通过' : rightsBlocked ? '使用权益受限' : !assetUploadUsable(scanStatus) ? '正在安全检查' : scanStatus === 'unscanned' ? '已上传，可继续使用' : typeof asset.display.label === 'string' ? merchantVisibleText(asset.display.label, '当前暂不可用') : '当前暂不可用',
         source_state: blocked || rightsBlocked ? 'blocked' : typeof asset.display.sourceState === 'string' ? asset.display.sourceState : undefined,
-        reasons: blocked || rightsBlocked ? [] : Array.isArray(asset.display.reasons) ? asset.display.reasons.filter(reason => typeof reason === 'string').map(sanitizeMerchantAction) : [],
+        reasons: blocked || rightsBlocked ? [] : Array.isArray(asset.display.reasons) ? asset.display.reasons.filter(reason => typeof reason === 'string').map(reason => merchantVisibleText(sanitizeMerchantAction(reason), '当前状态待确认')) : [],
         next_action: assetUploadUsable(scanStatus) && !rightsBlocked && asset.display.nextAction && typeof asset.display.nextAction === 'object' ? {
           method: typeof asset.display.nextAction.method === 'string' ? asset.display.nextAction.method : undefined,
-          label: typeof asset.display.nextAction.label === 'string' ? sanitizeMerchantAction(asset.display.nextAction.label) : undefined,
+          label: typeof asset.display.nextAction.label === 'string' ? merchantVisibleText(sanitizeMerchantAction(asset.display.nextAction.label), '继续当前步骤') : undefined,
           allowed: asset.display.nextAction.allowed === true,
         } : null,
       }
@@ -3247,7 +3256,7 @@ function merchantAssetSummary(asset) {
     rights_scope: rightsScope,
     readiness_status: rightsBlocked || blocked && rawReadiness ? 'blocked' : rawReadiness,
     ...(display ? { display } : {}),
-    next_step: blocked ? '重新提交这张图片即可触发平台自动复检，无需人工处理' : rightsBlocked ? '这张图片的使用权益受限，请换用其他已授权图片' : typeof asset.next_step === 'string' ? sanitizeMerchantAction(asset.next_step) : undefined,
+    next_step: blocked ? '重新提交这张图片即可触发平台自动复检，无需人工处理' : rightsBlocked ? '这张图片的使用权益受限，请换用其他已授权图片' : typeof asset.next_step === 'string' ? merchantVisibleText(sanitizeMerchantAction(asset.next_step), '继续当前步骤') : undefined,
   }
 }
 
@@ -3285,7 +3294,7 @@ function merchantAssetStructuredContent(method, result) {
           ? '这张图片的使用权益受限，请换用其他已授权图片'
           : awaitingScan
             ? '图片正在自动检查，通过后会继续，无需操作'
-            : typeof action?.next_step === 'string' ? sanitizeMerchantAction(action.next_step) : undefined
+            : typeof action?.next_step === 'string' ? merchantVisibleText(sanitizeMerchantAction(action.next_step), '继续当前步骤') : undefined
       const projectedAction = {
         ...summary,
         scan_status: awaitingScan ? 'quarantined' : summary.scan_status,
@@ -3352,9 +3361,9 @@ function merchantAssetStructuredContent(method, result) {
       state: blocked ? 'blocked' : rightsBlocked ? 'rights_blocked' : awaitingConfirmation ? 'awaiting_confirmation' : assetUploadUsable(scanStatus) ? 'completed' : 'processing',
       user_action_required: blocked || rightsBlocked || awaitingConfirmation,
       timed_out: result.scan_wait?.timed_out === true,
-      next_step: blocked || rightsBlocked ? summary.next_step : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : sanitizeMerchantAction(String(result.scan_wait?.next_step ?? result.next_step ?? (assetUploadUsable(scanStatus) ? '继续当前任务' : '平台会继续自动检查，你无需操作'))),
+      next_step: blocked || rightsBlocked ? summary.next_step : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : merchantVisibleText(sanitizeMerchantAction(String(result.scan_wait?.next_step ?? result.next_step ?? (assetUploadUsable(scanStatus) ? '继续当前任务' : '平台会继续自动检查，你无需操作'))), '继续当前步骤'),
     },
-    next_step: blocked || rightsBlocked ? summary.next_step : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : sanitizeMerchantAction(String(result.next_step ?? (assetUploadUsable(scanStatus) ? '继续当前任务' : '平台会继续自动检查，你无需操作'))),
+    next_step: blocked || rightsBlocked ? summary.next_step : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : merchantVisibleText(sanitizeMerchantAction(String(result.next_step ?? (assetUploadUsable(scanStatus) ? '继续当前任务' : '平台会继续自动检查，你无需操作'))), '继续当前步骤'),
     ...(!rightsBlocked && (continuationState !== 'awaiting_confirmation' || awaitingConfirmation) && result.generationContinuation && typeof result.generationContinuation === 'object' && typeof result.generationContinuation.state === 'string'
       ? { generation_continuation: { state: result.generationContinuation.state, ...(typeof result.generationContinuation.job_id === 'string' ? { job_id: result.generationContinuation.job_id } : {}), ...(typeof result.generationContinuation.jobId === 'string' ? { jobId: result.generationContinuation.jobId } : {}) } }
       : {}),
@@ -3376,17 +3385,17 @@ function merchantWorkflowStructuredContent(result) {
     ...result,
     merchant_status: {
       state: typeof status.internal_state === 'string' ? status.internal_state : 'unknown',
-      label: typeof status.user_state === 'string' ? status.user_state : '需要查看状态',
+      label: typeof status.user_state === 'string' ? merchantVisibleText(status.user_state, '需要查看状态') : '需要查看状态',
       terminal: status.terminal === true,
       ...(typeof status.updated_at === 'string' ? { updated_at: status.updated_at } : {}),
       progress: {
         known: progress.known === true,
         ...(Number.isSafeInteger(progress.completed) ? { completed: progress.completed } : {}),
         ...(Number.isSafeInteger(progress.total) ? { total: progress.total } : {}),
-        label: typeof progress.label === 'string' ? progress.label : progress.known === true ? '进度已知' : '总量待确认',
+        label: typeof progress.label === 'string' ? merchantVisibleText(progress.label, '进度待确认') : progress.known === true ? '进度已知' : '总量待确认',
       },
       next_action: {
-        label: typeof next.label === 'string' ? sanitizeMerchantAction(next.label) : '查看状态',
+        label: typeof next.label === 'string' ? merchantVisibleText(sanitizeMerchantAction(next.label), '查看状态') : '查看状态',
         allowed: next.allowed !== false,
       },
       recovery: {
@@ -3406,7 +3415,7 @@ function assetScanResult(uploadResult, asset, assetAction, timedOut = false) {
   const rightsRejected = [uploadResult, asset, assetAction].some(value => value?.rightsStatus === 'rejected' || value?.rights_status === 'rejected')
   const rightsUnusable = [uploadResult, asset, assetAction].some(value => value?.rightsScope === 'unusable' || value?.rights_scope === 'unusable')
   const nextStep = assetUploadUsable(scanStatus)
-    ? (typeof assetAction?.next_step === 'string' ? assetAction.next_step : '继续当前任务')
+    ? (typeof assetAction?.next_step === 'string' ? merchantVisibleText(assetAction.next_step, '继续当前任务') : '继续当前任务')
     : scanStatus === 'blocked'
       ? '重新提交这张图片即可触发平台自动复检，无需人工处理'
       : '平台会继续自动检查，你无需操作'
@@ -3480,12 +3489,12 @@ async function waitForAssetScan(uploadResult) {
 
 async function handle(request) {
   const id = request.id ?? null
-  if (request.jsonrpc !== '2.0') return jsonRpcError(id, -32600, 'Invalid JSON-RPC request')
+  if (request.jsonrpc !== '2.0') return jsonRpcError(id, -32600, 'JSON-RPC 请求格式无效')
   if (request.method === 'notifications/initialized') return null
   if (request.method === 'ping') return jsonRpc(id, {})
   if (request.method === 'initialize') {
     const requestedProtocol = request.params?.protocolVersion
-    if (requestedProtocol && requestedProtocol !== PROTOCOL_VERSION) return jsonRpcError(id, -32602, `Unsupported MCP protocol version: ${String(requestedProtocol)}`, { supportedProtocolVersion: PROTOCOL_VERSION })
+    if (requestedProtocol && requestedProtocol !== PROTOCOL_VERSION) return jsonRpcError(id, -32602, `不支持的 MCP 协议版本：${String(requestedProtocol)}`, { supportedProtocolVersion: PROTOCOL_VERSION })
     return jsonRpc(id, {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: {}, resources: {}, resourceTemplates: {} },
@@ -3512,7 +3521,7 @@ async function handle(request) {
     if (request.params?.uri === CONTENT_DIFF_UI_URI) return jsonRpc(id, { contents: [{ uri: CONTENT_DIFF_UI_URI, mimeType: 'text/html;profile=mcp-app', text: contentDiffUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
     if (request.params?.uri === IMAGE_EDIT_UI_URI) return jsonRpc(id, { contents: [{ uri: IMAGE_EDIT_UI_URI, mimeType: 'text/html;profile=mcp-app', text: imageEditUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
     if (request.params?.uri === IMAGE_CANDIDATE_CHOICE_UI_URI) return jsonRpc(id, { contents: [{ uri: IMAGE_CANDIDATE_CHOICE_UI_URI, mimeType: 'text/html;profile=mcp-app', text: imageCandidateChoiceUiHtml(), _meta: { ui: { prefersBorder: true, csp: { resourceDomains: imageResourceDomains() } } } }] })
-    if (request.params?.uri !== RECHARGE_UI_URI) return jsonRpcError(id, -32602, `Unknown resource: ${String(request.params?.uri)}`)
+    if (request.params?.uri !== RECHARGE_UI_URI) return jsonRpcError(id, -32602, `未找到资源：${String(request.params?.uri)}`)
     return jsonRpc(id, { contents: [{ uri: RECHARGE_UI_URI, mimeType: 'text/html;profile=mcp-app', text: rechargeUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
   }
   if (request.method === 'tools/list') {
@@ -3526,8 +3535,8 @@ async function handle(request) {
   if (request.method === 'tools/call') {
     const name = request.params?.name
     const args = request.params?.arguments
-    if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name]) return jsonRpcError(id, -32602, `Unknown tool: ${String(name)}`)
-    if (!args || typeof args !== 'object' || Array.isArray(args)) return jsonRpcError(id, -32602, 'Tool arguments must be an object')
+    if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name]) return jsonRpcError(id, -32602, `当前插件没有此工具：${String(name)}`)
+    if (!args || typeof args !== 'object' || Array.isArray(args)) return jsonRpcError(id, -32602, '工具参数必须是对象')
     if (COMMERCIAL_DISABLED_METHODS.has(name)) {
       // The set is not only a registry mirror: it also carries the annotated
       // bridge-only narrowings, so the message must not claim the shared
@@ -3554,12 +3563,12 @@ async function handle(request) {
     // provider callback/query settlement all stay available; only
     // "self-confirm a test payment" is unreachable on purpose.
     if (name === 'billing.recharge.get' && Object.prototype.hasOwnProperty.call(args, 'confirm_test_payment')) {
-      return jsonRpcError(id, -32602, 'Unsupported tool argument: confirm_test_payment')
+      return jsonRpcError(id, -32602, '不支持的工具参数：confirm_test_payment')
     }
     if (name === 'catalog.image.select') {
       const ticketHash = /^[a-f0-9]{64}$/u
       if (!ticketHash.test(String(args.confirmation_ticket_nonce_hash ?? '')) || !ticketHash.test(String(args.confirmation_ticket_intent_hash ?? ''))) {
-        return jsonRpcError(id, -32602, 'catalog.image.select requires candidate-bound confirmation ticket SHA-256 hashes')
+        return jsonRpcError(id, -32602, '选择主图需要与当前候选绑定的 SHA-256 确认票据')
       }
     }
     if (name === 'workspace.interactive.confirm') {
@@ -3567,7 +3576,7 @@ async function handle(request) {
         const result = await confirmInteractiveWrites(args)
         return jsonRpc(id, { content: toolContent(name, result), structuredContent: result, isError: false })
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'interactive confirmation failed'
+        const message = error instanceof Error ? merchantVisibleText(error.message, '本次确认未完成。') : '本次确认未完成。'
         const code = error && typeof error === 'object' && typeof error.code === 'string' ? error.code : 'INTERACTIVE_CONFIRMATION_REQUIRED'
         return jsonRpc(id, { content: [{ type: 'text', text: userFacingErrorText(code) }], structuredContent: { code, message }, isError: true })
       }
@@ -3696,7 +3705,7 @@ async function handle(request) {
       return jsonRpc(id, { content: [{ type: 'text', text: presentation.text }], structuredContent, ...(toolResultUiMetadata(name) ? { _meta: toolResultUiMetadata(name) } : {}), isError: true })
     }
   }
-  return jsonRpcError(id, -32601, `Method not found: ${String(request.method)}`)
+  return jsonRpcError(id, -32601, `未找到请求方法：${String(request.method)}`)
 }
 
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity })
@@ -3704,9 +3713,9 @@ let requestQueue = Promise.resolve()
 input.on('line', line => {
   if (!line.trim()) return
   let request
-  try { request = JSON.parse(line) } catch { write(jsonRpcError(null, -32700, 'Parse error')); return }
+  try { request = JSON.parse(line) } catch { write(jsonRpcError(null, -32700, '请求内容解析失败')); return }
   requestQueue = requestQueue
     .then(() => handle(request))
     .then(response => { if (response) write(response) })
-    .catch(error => write(jsonRpcError(request?.id ?? null, -32603, error instanceof Error ? error.message : 'Internal error')))
+    .catch(() => write(jsonRpcError(request?.id ?? null, -32603, '插件处理请求时发生错误；请稍后重试。')))
 })

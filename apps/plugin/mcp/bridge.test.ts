@@ -243,7 +243,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageEditResponse.result._meta).toBeUndefined()
       for (const [index, name] of ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 3, method: 'tools/call', params: { name, arguments: { id: 'spec_1', expected_revision: '1', idempotency_key: `media:${index}:write`, reason: 'verified production evidence' } } })}\n`)
-        expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
+        expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `当前插件没有此工具：${name}` })
       }
       expect(requests).toBe(0)
     } finally {
@@ -446,7 +446,7 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'workspace', totally_undeclared_field: 'x' } } })}\n`)
       const rejected = await nextLine(child.stdout)
       expect(rejected.error).toMatchObject({ code: -32602 })
-      expect(String(rejected.error.message)).toContain('unexpected property totally_undeclared_field')
+      expect(String(rejected.error.message)).toContain('不支持的字段 totally_undeclared_field')
       expect(forwarded).toEqual([])
       // The declared surface still works unchanged.
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'workspace', limit: '10' } } })}\n`)
@@ -501,7 +501,7 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'support.customer.replies.list', arguments: { limit: '10' } } })}\n`)
       const rejected = await nextLine(child.stdout)
       expect(rejected.error).toMatchObject({ code: -32602 })
-      expect(String(rejected.error.message)).toContain('provide ticket_id, related_task_id, or related_order_id')
+      expect(String(rejected.error.message)).toContain('请提供 ticket_id、related_task_id 或 related_order_id 之一')
       expect(forwarded).toEqual([])
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'support.customer.replies.list', arguments: { related_task_id: 'task_1', limit: '10' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { tickets: [] } })
@@ -540,7 +540,7 @@ describe('Codex stdio MCP bridge', () => {
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
       for (const [index, [name, args]] of calls.entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 3, method: 'tools/call', params: { name, arguments: args } })}\n`)
-        expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
+        expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `当前插件没有此工具：${name}` })
       }
       expect(forwarded).toEqual(['workspace.interactive.confirm'])
     } finally {
@@ -620,7 +620,7 @@ describe('Codex stdio MCP bridge', () => {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: declaredArguments[name] ?? {} } })}\n`)
         const response = await nextLine(child.stdout)
         if (name === 'billing.recharge.create' || MERCHANT_HIDDEN_METHODS.has(name)) {
-          expect(response.error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
+          expect(response.error).toMatchObject({ code: -32602, message: `当前插件没有此工具：${name}` })
           continue
         }
         const result = response.result
@@ -661,10 +661,10 @@ describe('Codex stdio MCP bridge', () => {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: {} } })}\n`)
         const response = await nextLine(child.stdout)
         if (name === 'platform.connect') {
-          expect(response.error).toMatchObject({ code: -32602, message: 'Unknown tool: platform.connect' })
+          expect(response.error).toMatchObject({ code: -32602, message: '当前插件没有此工具：platform.connect' })
           continue
         }
-        expect(response.error).toMatchObject({ code: -32602, message: 'Unknown tool: billing.recharge.create' })
+        expect(response.error).toMatchObject({ code: -32602, message: '当前插件没有此工具：billing.recharge.create' })
       }
     } finally {
       child.kill()
@@ -737,7 +737,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.recharge.create', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unknown tool: billing.recharge.create' })
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: '当前插件没有此工具：billing.recharge.create' })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_1' } } })}\n`)
       expect((await nextLine(child.stdout)).result.content).not.toContainEqual(expect.objectContaining({ type: 'resource_link' }))
     } finally {
@@ -784,6 +784,56 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.content[0].text).not.toContain('product_id')
       expect(response.result.content[0].text).not.toContain('prod_123456')
       expect(response.result.content[0].text).not.toContain('billing-status-1')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('keeps upstream English summaries and support statuses out of merchant-facing text', async () => {
+    const summaries = ['Ready to publish', '处理 failed', 'Store Nova 已准备好']
+    let historyCalls = 0
+    const server = createServer(async (req, res) => {
+      let raw = ''
+      for await (const chunk of req) raw += chunk.toString()
+      const method = JSON.parse(raw).method
+      res.setHeader('content-type', 'application/json')
+      if (method === 'onboarding.status') {
+        res.writeHead(400).end(JSON.stringify({ error: { code: 'MCP_GATEWAY_ERROR', message: 'Bad Gateway', details: { safe_message: 'Bad Gateway' } } }))
+        return
+      }
+      const result = method === 'task.history'
+        ? { summary: summaries[historyCalls++], next_actions: ['Review now'] }
+        : { ticket_number: 'QA-1', status: 'waiting_customer', replies: [] }
+      res.end(JSON.stringify({ data: { result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      const calls = [
+        ['task.history', {}],
+        ['task.history', {}],
+        ['task.history', {}],
+        ['support.customer.replies.list', { ticket_id: 'ticket_qa' }],
+        ['onboarding.status', {}],
+      ] as const
+      for (const [index, [name, args]] of calls.entries()) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: args } })}\n`)
+        const response = await nextLine(child.stdout)
+        const visible = response.result.content[0].text as string
+        expect(visible).toMatch(/[\u3400-\u9fff]/u)
+        expect(visible).not.toMatch(/Ready to publish|Review now|waiting_customer|Bad Gateway|failed/u)
+        if (name === 'task.history') {
+          expect(response.result.structuredContent.summary).toBe(summaries[index])
+          if (index === 2) expect(visible).toContain('Store Nova 已准备好')
+        }
+        if (name === 'support.customer.replies.list') expect(visible).toContain('等待客户回复')
+        if (name === 'onboarding.status') expect(response.result.structuredContent.code).toBe('MCP_GATEWAY_ERROR')
+      }
     } finally {
       child.kill()
       await close(server)
@@ -1211,7 +1261,7 @@ describe('Codex stdio MCP bridge', () => {
       for (const name of ['catalog.import', 'content.draft.generate', 'content.export', 'content.review.decide', 'workspace.health', 'subscription.orders.list', 'commercial.order.create', 'rule.list', 'rule.sync.status', 'rule.history', 'platform.mapping.preflight', 'platform.store.alias.set']) expect(listedNames).toContain(name)
       for (const [index, name] of [...MERCHANT_HIDDEN_METHODS].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name, arguments: {} } })}\n`)
-        expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
+        expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `当前插件没有此工具：${name}` })
       }
       expect(requests).toBe(0)
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 100, method: 'resources/list' })}\n`)
@@ -1244,7 +1294,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929111500' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929114000' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -1437,7 +1487,7 @@ describe('Codex stdio MCP bridge', () => {
       // Backend contracts remain intact; only the merchant entry is hidden.
       expect(MCP_METHOD_SCHEMAS['publish.confirm'].properties.confirmation_ticket_nonce_hash).toBeDefined()
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_test', confirm_test_payment: 'true' } } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unsupported tool argument: confirm_test_payment' })
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: '不支持的工具参数：confirm_test_payment' })
       expect(requests).toHaveLength(0)
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'workspace.metrics', arguments: { date_from: '2026-08-18T00:00:00+08:00', date_to: '2026-08-25T23:59:59+08:00', risk_limit: '25' } } })}\n`)
       const called = await nextLine(child.stdout)
@@ -1473,7 +1523,7 @@ describe('Codex stdio MCP bridge', () => {
       // nullable from out here even though the helper always passes 'pipe'.
       if (!child.stdin || !child.stdout) throw new Error('bridge test child lost its stdio pipes')
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'job_poll_1' } } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unknown tool: multimodal.video.get' })
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: '当前插件没有此工具：multimodal.video.get' })
       // The generic multimodal entry point stays withheld on purpose: its
       // modality=video + output=rendering branch is the only other route to
       // video rendering, and the API settles it through the same commercial
@@ -1555,7 +1605,7 @@ describe('Codex stdio MCP bridge', () => {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: args } })}\n`)
         const envelope = await nextLine(child.stdout)
         if (MERCHANT_HIDDEN_METHODS.has(name)) {
-          expect(envelope.error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
+          expect(envelope.error).toMatchObject({ code: -32602, message: `当前插件没有此工具：${name}` })
           continue
         }
         const response = envelope.result
@@ -1672,7 +1722,7 @@ describe('Codex stdio MCP bridge', () => {
       // The refusal is what keeps the withheld argument unreachable; keeping it
       // here means a future schema sync cannot silently re-open it.
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_test', confirm_test_payment: 'true' } } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unsupported tool argument: confirm_test_payment' })
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: '不支持的工具参数：confirm_test_payment' })
     } finally {
       child.kill()
       await close(server)
@@ -1725,9 +1775,9 @@ describe('Codex stdio MCP bridge', () => {
       // The exception is only for the contract-declared property: the type is
       // still checked, and genuinely undeclared arguments stay rejected.
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'tools/call', params: { name: 'onboarding.status', arguments: { workspace_id: 5 } } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Invalid arguments for onboarding.status: workspace_id must be a string' })
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: '工具 onboarding.status 参数无效：workspace_id 必须是文本' })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'tools/call', params: { name: 'onboarding.status', arguments: { store_links_text: 'x', unexpected_context: 'y' } } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Invalid arguments for onboarding.status: unexpected property unexpected_context' })
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: '工具 onboarding.status 参数无效：不支持的字段 unexpected_context' })
       expect(requests).toHaveLength(2)
     } finally {
       child.kill()
@@ -1765,7 +1815,7 @@ describe('Codex stdio MCP bridge', () => {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'merchant.start', arguments: { attachment_count: attachmentCount } } })}\n`)
         expect((await nextLine(child.stdout)).error, `attachment_count ${JSON.stringify(attachmentCount)} must be rejected`).toMatchObject({
           code: -32602,
-          message: 'Invalid arguments for merchant.start: attachment_count does not match any allowed shape',
+          message: '工具 merchant.start 参数无效：attachment_count 不符合允许的格式',
         })
       }
       // No rejected value may ever be forwarded without the argument.
@@ -2393,7 +2443,7 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'platform.connect', arguments: { platform: 'jd' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.error).toMatchObject({ code: -32602, message: 'Unknown tool: platform.connect' })
+      expect(response.error).toMatchObject({ code: -32602, message: '当前插件没有此工具：platform.connect' })
       expect(response.result).toBeUndefined()
     } finally {
       child.kill()
