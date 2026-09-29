@@ -2405,6 +2405,10 @@ function merchantUiMetadata(method, result, args = {}) {
 }
 
 function toolUiMetadata(name) {
+  if (IMAGE_CANDIDATE_UI_METHODS.has(name)) return {
+    ui: { resourceUri: IMAGE_CANDIDATE_CHOICE_UI_URI, prefersBorder: true },
+    'openai/outputTemplate': IMAGE_CANDIDATE_CHOICE_UI_URI,
+  }
   if (IMAGE_EDIT_UI_METHODS.has(name)) return {
     ui: { resourceUri: IMAGE_EDIT_UI_URI, prefersBorder: true },
     'openai/outputTemplate': IMAGE_EDIT_UI_URI,
@@ -3564,7 +3568,7 @@ async function handle(request) {
     return jsonRpc(id, { tools: Object.entries(METHODS).filter(([name]) => isMerchantTool(name) && !COMMERCIAL_DISABLED_METHODS.has(name)).map(([name, value]) => ({
       name,
       ...value,
-      ...(RECHARGE_UI_METHODS.has(name) || MERCHANT_CONTEXT_COMPONENT_METHODS.has(name) || IMAGE_EDIT_UI_METHODS.has(name) ? { _meta: { ...(RECHARGE_UI_METHODS.has(name) ? { ui: { resourceUri: RECHARGE_UI_URI }, 'openai/outputTemplate': RECHARGE_UI_URI, 'openai/toolInvocation/invoking': '正在读取创意点准入与账务证据…', 'openai/toolInvocation/invoked': '创意点准入状态已更新' } : {}), ...(toolUiMetadata(name) ?? {}) } } : {}),
+      ...(RECHARGE_UI_METHODS.has(name) || MERCHANT_CONTEXT_COMPONENT_METHODS.has(name) || IMAGE_EDIT_UI_METHODS.has(name) || IMAGE_CANDIDATE_UI_METHODS.has(name) ? { _meta: { ...(RECHARGE_UI_METHODS.has(name) ? { ui: { resourceUri: RECHARGE_UI_URI }, 'openai/outputTemplate': RECHARGE_UI_URI, 'openai/toolInvocation/invoking': '正在读取创意点准入与账务证据…', 'openai/toolInvocation/invoked': '创意点准入状态已更新' } : {}), ...(toolUiMetadata(name) ?? {}) } } : {}),
       annotations: toolAnnotations(name),
     })) })
   }
