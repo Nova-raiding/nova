@@ -88,6 +88,10 @@ describe('Codex plugin package', () => {
     expect(manifest.interface.longDescription).toMatch(/不提供库存\/订单同步和自动发布/)
   })
 
+  it('requires Chinese merchant-facing replies in the installed entry skill', () => {
+    expect(readPluginFile('skills/merchant-marketing/SKILL.md')).toContain('所有面向商家的自然语言回复、表格标题与列名、状态说明、错误解释、下一步提示和生成候选文案统一使用简体中文')
+  })
+
   it('keeps native entry prompts within the Codex host limit and inside the content workflow', () => {
     const manifest = JSON.parse(readPluginFile('.codex-plugin/plugin.json')) as {
       interface?: { defaultPrompt?: unknown }
