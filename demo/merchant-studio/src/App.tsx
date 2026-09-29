@@ -3198,7 +3198,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
         <article className="finance-balance-card"><div className="finance-card-icon"><Boxes size={20} /></div><div className="finance-inline-metric"><span>储存空间剩余</span><strong>{storageAvailableBytes === null ? UNREAD_METRIC : formatStorageGb(storageAvailableBytes)}</strong></div><div className="finance-storage-summary"><p>{storageKnown ? `已使用 ${formatStorageGb(storageUsedBytes!)} / 共 ${formatStorageGb(storageLimitBytes!)}` : '服务端未返回储存配额，当前不显示用量。'}</p>{storageKnown && <div className="finance-storage-track" role="progressbar" aria-label="储存空间已用" aria-valuemin={0} aria-valuemax={Math.round(storageLimitBytes!)} aria-valuenow={Math.min(Math.round(storageLimitBytes!), Math.max(0, Math.round(storageUsedBytes!)))}><i style={{ width: `${Math.min(100, (storageUsedBytes! / storageLimitBytes!) * 100).toFixed(1)}%` }} /></div>}</div><button className="primary" type="button" onClick={() => setPricingDialog('storage')}>购买储存空间</button></article>
       </div>
       <section className="finance-panel finance-usage-panel">
-        <div className="finance-panel-heading"><div><span className="section-kicker">创意点</span><h3>创意点消耗趋势</h3><p>按服务端创意点流水的发生时间汇总，可查询日期或月份区间。</p></div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault() }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={rangeMode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => { setRangeMode(value); setRangeStart(''); setRangeEnd('') }} /></label><label><span>开始{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeStart ? dayjs(rangeStart).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeStart(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><i>至</i><label><span>结束{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeEnd ? dayjs(rangeEnd).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeEnd(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
+        <div className="finance-panel-heading"><div><span className="section-kicker">创意点</span><h3>创意点消耗趋势</h3><p>默认展示当月每日数据，也可查询日期或月份区间。</p></div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault() }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={rangeMode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => { setRangeMode(value); setRangeStart(''); setRangeEnd('') }} /></label><label><span>开始{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeStart ? dayjs(rangeStart).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeStart(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><i>至</i><label><span>结束{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeEnd ? dayjs(rangeEnd).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeEnd(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
         {/* The sum may only be stated when the ledger read succeeded: a failed
             or pending read rendered as 「合计 0 点」 next to an 「已读取流水」
             caption reports a consumed total that was never measured. */}
@@ -3603,7 +3603,7 @@ function AssetLibrary({
   const load = async () => {
     if (!baseUrl) {
       setLoading(false)
-      return
+      return false
     }
     setLoading(true)
     setError('')
@@ -3627,6 +3627,7 @@ function AssetLibrary({
       setStorageLoadError(describeApiError(healthResult.reason))
     }
     setLoading(false)
+    return assetResult.status === 'fulfilled'
   }
   const loadBrand = () => {
     if (!baseUrl) return
@@ -3752,17 +3753,20 @@ function AssetLibrary({
     }
     setUploadAction(`正在上传 1/${selected.length}…`)
     setBrandMessage('')
+    let uploadedCount = 0
     try {
       for (const [index, file] of selected.entries()) {
         setUploadAction(`正在上传 ${index + 1}/${selected.length}…`)
         await uploadAsset(baseUrl, file)
+        uploadedCount += 1
       }
       await load()
       setBrandMessage(
         `已上传 ${selected.length} 个素材；当前处于隔离区，完成安全扫描与权益确认后才能用于生成。`,
       )
     } catch (cause) {
-      setBrandMessage(describeApiError(cause))
+      const refreshed = uploadedCount > 0 ? await load() : false
+      setBrandMessage(`${uploadedCount ? `已上传 ${uploadedCount}/${selected.length} 个素材；${refreshed ? '列表已刷新' : '素材列表刷新失败，请刷新重试'}；其余文件上传失败：` : '上传失败：'}${describeApiError(cause)}`)
     } finally {
       setUploadAction('')
       if (uploadInput.current) uploadInput.current.value = ''
@@ -5801,6 +5805,8 @@ type MaterialBrandSettings = {
 // of every workspace that never configured one. `resolveBrandColorFacts` turns
 // the empty string into 「未单独配置」.
 const emptyMaterialBrandSettings: MaterialBrandSettings = { logoUrl: '', color: '', persona: '', sellingPoints: '', personaFileName: '', sellingPointsFileName: '', assetFileName: '' }
+export const imageBrandSaveEntries = (brands: Record<string, MaterialBrandSettings>, enabled: Record<string, boolean>): Array<[string, MaterialBrandSettings]> =>
+  [...new Set([...Object.keys(brands), ...Object.keys(enabled)])].map((assetId) => [assetId, brands[assetId] ?? { ...emptyMaterialBrandSettings }])
 const scopedBrandValues = (value: MaterialBrandSettings, usableAssetIds: ReadonlySet<string>) => ({
   ...(value.logoAssetId && usableAssetIds.has(value.logoAssetId) ? { logoAssetId: value.logoAssetId } : {}),
   ...(value.documentAssetId && usableAssetIds.has(value.documentAssetId) ? { documentAssetId: value.documentAssetId } : {}),
@@ -6680,7 +6686,7 @@ export function MaterialLibraryWorkspace({
         settings.series![accountId] ??= {}
         settings.series![accountId]![seriesId] = { enabled: seriesBrandEnabled[key] ?? true, values: scopedBrandValues(value, usableAssetIds) }
       }
-      for (const [assetId, value] of Object.entries(imageBrands)) {
+      for (const [assetId, value] of imageBrandSaveEntries(imageBrands, imageBrandEnabled)) {
         let assignment = assignments.find((row) => row.assetId === assetId)
         const context = imageBrandContexts[assetId]
         if (assignment && context && assignment.accountId !== context.accountId) throw new Error(`图片 ${assetId} 已归属其他店铺，请先在素材库确认归属`)
@@ -7012,18 +7018,21 @@ export function MaterialLibraryWorkspace({
 
   if (detailMaterial) {
     const detailIsImage = isImageMaterial(detailMaterial)
+    const detailAssignedToStore = detailMaterial.assetId
+      ? assignmentByAsset.get(detailMaterial.id)?.accountId === activeStore.id
+      : true
     return <div className="material-detail-page" data-testid="material-detail-page">
       <button type="button" className="material-detail-back" onClick={() => { setDetailMaterialId(null); setDetailPreviewOpen(false) }}><ArrowLeft size={16} />返回素材库</button>
       <section className="material-detail-hero">
         <button type="button" className={`material-detail-preview ${detailMaterial.previewUrl ? 'has-image' : ''}`} aria-label={`放大${detailMaterial.name}`} onClick={() => setDetailPreviewOpen(true)}>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : detailMaterial.category === '商品视频' ? <Play size={64} fill="currentColor" /> : <ImageIcon size={64} />}<span>点击放大预览</span></button>
-        <div className="material-detail-info"><span className="section-kicker">素材详情</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.name}</dd></div><div><dt>平台</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.platform}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div>{detailIsImage && <div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div>}<div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
+        <div className="material-detail-info"><span className="section-kicker">素材详情</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailAssignedToStore ? activeStore.name : '未归属'}</dd></div><div><dt>平台</dt><dd>{detailAssignedToStore ? activeStore.platform : '未归属'}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div>{detailIsImage && <div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div>}<div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
       </section>
       {detailIsImage && <section className="material-image-brand-settings">
         <div className="material-brand-panel-heading"><div><span className="section-kicker">单图品牌配置</span><h2>单图品牌配置</h2><p>编辑后点击下方“保存品牌配置”；服务端确认保存后，设置才会用于之后确认的内容任务。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
-        <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span></div>
+        {(scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved) && <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span></div>}
         <article className="material-brand-row material-image-brand-row">
-          <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setImageBrands((current) => ({ ...current, [detailMaterial.id]: next })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })) }} /></div>
-        <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} onEnabledChange={(enabled) => setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled }))} context={{ label: '当前图片', value: detailMaterial.name }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
+          <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setImageBrands((current) => ({ ...current, [detailMaterial.id]: next })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} /></div>
+        <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} onEnabledChange={(enabled) => { setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前图片', value: detailMaterial.name }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
         </article>
       </section>}
       {detailPreviewOpen && <button type="button" className="material-upload-lightbox" aria-label="关闭素材图片预览" onClick={() => setDetailPreviewOpen(false)}><span>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{detailMaterial.name}</strong><small>点击任意位置关闭</small></span></button>}

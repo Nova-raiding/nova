@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { BrandScopeUnavailableRow, MaterialBrandFields, MaterialBrandOutput, MaterialLibraryWorkspace } from './App'
+import { BrandScopeUnavailableRow, MaterialBrandFields, MaterialBrandOutput, MaterialLibraryWorkspace, imageBrandSaveEntries } from './App'
 import type { AssetMetadata, PlatformAccount, Product } from './api'
 import {
   BRAND_DOCUMENT_LOCAL_ONLY,
@@ -71,9 +71,24 @@ describe('single-image brand settings save path', () => {
     expect(detail).toContain('保存品牌配置')
     expect(detail).toContain('setImageBrands((current) => ({ ...current, [detailMaterial.id]: next }))')
     expect(detail).toContain('setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled }))')
-    expect(save).toContain('for (const [assetId, value] of Object.entries(imageBrands))')
+    expect(detail).toContain('setScopedBrandDraftDirty(true); setScopedBrandError(\'\'); setScopedBrandSaved(\'\')')
+    expect(detail).toContain('{(scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved) && <div className="material-brand-save-row">')
+    expect(save).toContain('for (const [assetId, value] of imageBrandSaveEntries(imageBrands, imageBrandEnabled))')
     expect(save).toContain('enabled: imageBrandEnabled[assetId] ?? true')
     expect(save).toContain('await saveScopedBrandSettings(baseUrl, settings, scopedBrandRead.revision)')
+  })
+
+  it('includes a new image whose only edit is disabling its brand override', () => {
+    const entries = imageBrandSaveEntries({}, { 'asset-new-image': false })
+    expect(entries).toEqual([['asset-new-image', settings('', '')]])
+    const detail = appSource.slice(appSource.indexOf('if (detailMaterial) {'), appSource.indexOf('  return (\n    <div className="material-library-page"', appSource.indexOf('if (detailMaterial) {')))
+    expect(detail).toContain('setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } }))')
+  })
+
+  it('shows server-confirmed store attribution in image details', () => {
+    const detail = appSource.slice(appSource.indexOf('if (detailMaterial) {'), appSource.indexOf('  return (\n    <div className="material-library-page"', appSource.indexOf('if (detailMaterial) {')))
+    expect(detail).toContain('assignmentByAsset.get(detailMaterial.id)?.accountId === activeStore.id')
+    expect(detail).toContain("detailAssignedToStore ? activeStore.name : '未归属'")
   })
 })
 

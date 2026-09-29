@@ -72,6 +72,10 @@ describe('unread reads are never rendered as measured values', () => {
 
   it('keeps the screenshot finance plan ribbon and only the matched summary facts visible', () => {
     const html = finance()
+    expect(html).toContain('账号与财务')
+    expect(html).toContain('创意点')
+    expect(html).toContain('默认展示当月每日数据，也可查询日期或月份区间。')
+    expect(html).toContain('账号版本')
     expect(html).toContain('aria-label="账号版本与有效期"')
     expect(html).toContain('当前版本')
     expect(html).toContain('有效期至')

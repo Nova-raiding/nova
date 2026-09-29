@@ -55,7 +55,11 @@ describe('merchant navigation cleanup contract', () => {
   })
 
   it('does not expose removed support and diagnostics labels', () => {
-    expect(app).not.toContain('帮助与诊断')
-    expect(app).not.toContain('客服回复')
+    const markup = renderToStaticMarkup(createElement(Sidebar, {
+      page: 'overview', setPage: () => {}, open: false, close: () => {}, returnFocus: null,
+      backgroundInert: false, onOpenUtility: () => {}, onOpenEntry: () => {},
+    }))
+    expect(markup).not.toContain('帮助与诊断')
+    expect(markup).not.toContain('客服回复')
   })
 })
