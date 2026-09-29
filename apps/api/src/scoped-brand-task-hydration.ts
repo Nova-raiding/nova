@@ -18,6 +18,7 @@ export async function hydrateScopedBrandForTask(input: {
   }
   const product = service.products.get(task.productId)
   if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
+  if (task.accountId) service.getActionablePlatformAccount(workspaceId, task.accountId, task.platform)
   const selected = Array.isArray(task.answers.asset_ids)
     ? task.answers.asset_ids.filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
     : []

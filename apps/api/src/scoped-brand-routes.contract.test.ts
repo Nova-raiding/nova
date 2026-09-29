@@ -17,6 +17,7 @@ describe('scoped brand HTTP and task confirmation contracts', () => {
       body: vi.fn(async () => ({})),
       resolveWorkspace: vi.fn(() => 'ws_demo'),
       enforceAccess: vi.fn(async () => undefined),
+      requireActionableStore: vi.fn(),
       actor: () => 'merchant',
       send: vi.fn(),
     }
@@ -56,7 +57,7 @@ describe('scoped brand HTTP and task confirmation contracts', () => {
     const enforceAccess = vi.fn(async (_req: IncomingMessage, workspaceId: string) => {
       if (workspaceId !== 'tenant') throw new Error('TENANT_DENIED')
     })
-    const deps = { repository, body, resolveWorkspace, enforceAccess, actor: () => 'merchant', send: (_res: ServerResponse, status: number, workspaceId: string, value: unknown) => { sent.push({ status, workspaceId, value }) } }
+    const deps = { repository, body, resolveWorkspace, enforceAccess, requireActionableStore: vi.fn(), actor: () => 'merchant', send: (_res: ServerResponse, status: number, workspaceId: string, value: unknown) => { sent.push({ status, workspaceId, value }) } }
     await expect(routeScopedBrandHttp(request('PUT'), response(), '/v1/brand-scopes', deps)).rejects.toThrow('TENANT_DENIED')
     expect(save).not.toHaveBeenCalled()
     body.mockResolvedValueOnce({ workspace_id: 'tenant', expected_revision: 2, settings: { schemaVersion: 1 } })
@@ -66,6 +67,88 @@ describe('scoped brand HTTP and task confirmation contracts', () => {
     expect(await routeScopedBrandHttp(request('GET'), response(), '/v1/brand-scopes', deps)).toBe(true)
     expect(sent).toEqual([{ status: 200, workspaceId: 'tenant', value: expect.objectContaining({ revision: 0, assignments: [], series: [] }) }])
     expect(get).toHaveBeenCalledWith('tenant')
+  })
+
+  it.each(['refresh_required', 'revoked'] as const)('rejects %s stores at every scoped brand write and task freeze', async tokenState => {
+    const workspaceId = 'ws_demo'
+    const service = new MerchantService({ fixtureMode: true })
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: 'scoped-store', credentialRef: 'vault://scoped-store' })
+    const task = service.createTask({ workspaceId, productId: 'prod_fixture_1', platform: 'taobao', accountId: account.id })
+    account.tokenState = tokenState
+    const repository = {
+      save: vi.fn(), createSeries: vi.fn(), assignAsset: vi.fn(), resolveForTask: vi.fn(),
+      getAssetAssignment: vi.fn(async () => ({ assetId: 'asset_1', accountId: account.id, seriesId: null, revision: 1 })),
+      get: vi.fn(async () => ({ settings: { schemaVersion: 1, stores: { [account.id]: { enabled: true, values: { persona: '旧配置' } } } }, revision: 1 })),
+      listSeries: vi.fn(async () => []), listAssetAssignments: vi.fn(async () => []),
+    } as unknown as PostgresScopedBrandSettingsRepository
+    let payload: Record<string, unknown> = {}
+    const deps = {
+      repository, body: async () => payload, resolveWorkspace: () => workspaceId,
+      enforceAccess: async () => undefined,
+      requireActionableStore: (scope: string, accountId: string) => { service.getActionablePlatformAccount(scope, accountId) },
+      actor: () => 'merchant', send: vi.fn(),
+    }
+    payload = { expected_revision: 0, settings: { schemaVersion: 1, stores: { [account.id]: { enabled: true, values: {} } } } }
+    await expect(routeScopedBrandHttp(request('PUT'), response(), '/v1/brand-scopes', deps)).rejects.toMatchObject({ code: 'PLATFORM_ACCOUNT_REAUTH_REQUIRED', status: 409 })
+    payload = { expected_revision: 1, settings: { schemaVersion: 1, images: { asset_1: { enabled: true, values: {} } } } }
+    await expect(routeScopedBrandHttp(request('PUT'), response(), '/v1/brand-scopes', deps)).rejects.toMatchObject({ code: 'PLATFORM_ACCOUNT_REAUTH_REQUIRED', status: 409 })
+    payload = { account_id: account.id, name: '秋冬系列' }
+    await expect(routeScopedBrandHttp(request('POST'), response(), '/v1/brand-scopes/series', deps)).rejects.toMatchObject({ code: 'PLATFORM_ACCOUNT_REAUTH_REQUIRED', status: 409 })
+    payload = { account_id: account.id, expected_revision: 0 }
+    await expect(routeScopedBrandHttp(request('PUT'), response(), '/v1/brand-scopes/assets/asset_1/assignment', deps)).rejects.toMatchObject({ code: 'PLATFORM_ACCOUNT_REAUTH_REQUIRED', status: 409 })
+    await expect(hydrateScopedBrandForTask({ workspaceId, task, service, repository, requireRepository: true })).rejects.toMatchObject({ code: 'PLATFORM_ACCOUNT_REAUTH_REQUIRED', status: 409 })
+    expect(repository.save).not.toHaveBeenCalled()
+    expect(repository.createSeries).not.toHaveBeenCalled()
+    expect(repository.assignAsset).not.toHaveBeenCalled()
+    expect(repository.resolveForTask).not.toHaveBeenCalled()
+    expect(await routeScopedBrandHttp(request('GET'), response(), '/v1/brand-scopes', deps)).toBe(true)
+    expect(deps.send).toHaveBeenCalledWith(expect.anything(), 200, workspaceId, expect.objectContaining({ revision: 1 }), null, expect.anything())
+  })
+
+  it('lets an active store change while retaining an unchanged revoked store entry', async () => {
+    const workspaceId = 'ws_demo'
+    const service = new MerchantService({ fixtureMode: true })
+    const inactive = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: 'old', credentialRef: 'vault://old' })
+    const active = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: 'current', credentialRef: 'vault://current' })
+    inactive.tokenState = 'revoked'
+    const oldEntry = { enabled: true, values: { persona: '旧店资料' } }
+    const settings = { schemaVersion: 1, stores: { [inactive.id]: oldEntry, [active.id]: { enabled: true, values: { persona: '新店资料' } } } }
+    const save = vi.fn(async () => ({ settings, revision: 2 }))
+    const repository = { get: vi.fn(async () => ({ settings: { schemaVersion: 1, stores: { [inactive.id]: oldEntry } }, revision: 1 })), save } as unknown as PostgresScopedBrandSettingsRepository
+    const checked: string[] = []
+    const deps = {
+      repository, body: async () => ({ expected_revision: 1, settings }), resolveWorkspace: () => workspaceId,
+      enforceAccess: async () => undefined,
+      requireActionableStore: (scope: string, accountId: string) => { checked.push(accountId); service.getActionablePlatformAccount(scope, accountId) },
+      actor: () => 'merchant', send: vi.fn(),
+    }
+    await expect(routeScopedBrandHttp(request('PUT'), response(), '/v1/brand-scopes', deps)).resolves.toBe(true)
+    expect(checked).toEqual([active.id])
+    expect(save).toHaveBeenCalledOnce()
+    const task = service.createTask({ workspaceId, productId: 'prod_fixture_1', platform: 'taobao', accountId: active.id })
+    const taskRepository = { resolveForTask: vi.fn(async () => ({ settings, revision: 2, context: { accountId: active.id } })) } as unknown as PostgresScopedBrandSettingsRepository
+    await expect(hydrateScopedBrandForTask({ workspaceId, task, service, repository: taskRepository, requireRepository: true })).resolves.toBeUndefined()
+    expect(taskRepository.resolveForTask).toHaveBeenCalledOnce()
+  })
+
+  it('allows a manual store only while manual operations mode is active', async () => {
+    let manualMode = true
+    const service = new MerchantService({ fixtureMode: true, manualStoreRecords: () => manualMode })
+    const account = service.registerManualPlatformAccount({ workspaceId: 'ws_demo', platform: 'taobao', remoteAccountId: 'manual-store' })
+    const settings = { schemaVersion: 1, stores: { [account.id]: { enabled: true, values: {} } } }
+    const save = vi.fn(async () => ({ settings, revision: 1 }))
+    const repository = { get: vi.fn(async () => undefined), save } as unknown as PostgresScopedBrandSettingsRepository
+    const deps = {
+      repository, body: async () => ({ expected_revision: 0, settings }), resolveWorkspace: () => 'ws_demo',
+      enforceAccess: async () => undefined,
+      requireActionableStore: (workspaceId: string, accountId: string) => { service.getActionablePlatformAccount(workspaceId, accountId) },
+      actor: () => 'merchant', send: vi.fn(),
+    }
+    await expect(routeScopedBrandHttp(request('PUT'), response(), '/v1/brand-scopes', deps)).resolves.toBe(true)
+    expect(save).toHaveBeenCalledOnce()
+    manualMode = false
+    await expect(routeScopedBrandHttp(request('PUT'), response(), '/v1/brand-scopes', deps)).rejects.toMatchObject({ code: 'PLATFORM_ACCOUNT_REAUTH_REQUIRED', status: 409 })
+    expect(save).toHaveBeenCalledOnce()
   })
 
   it('hydrates tenant-checked settings before the real task.plan.confirm and freezes the revision', async () => {

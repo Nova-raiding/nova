@@ -14238,6 +14238,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     body: request => body(request),
     resolveWorkspace: (request, candidate) => resolveWorkspace(request, candidate),
     enforceAccess: (request, workspaceId, write) => enforceBrandProfileHttpAccess(request, workspaceId, write),
+    requireActionableStore: (workspaceId, accountId) => { service.getActionablePlatformAccount(workspaceId, accountId) },
     actor: request => requestActor(request),
     send: (response, status, workspaceId, value, error, request) => send(response, status, workspaceId, value, error, request),
   })) return
