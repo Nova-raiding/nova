@@ -30,6 +30,17 @@ export async function authorizeRegistrationWorkspaces(
 }
 
 export function RegistrationApplications({ model }: { model: OpsConsoleModel }) {
+  const session = model.opsSession;
+  const sessionBoundary = JSON.stringify([
+    session?.actor_id, session?.identity_id, session?.session_id,
+    session?.context_id, session?.context_version, session?.workspace_id,
+    session?.workbench, session?.scope, session?.roles, session?.capabilities,
+    model.authorization.can("identity.read"),
+  ]);
+  return <RegistrationApplicationsForSession key={sessionBoundary} model={model} />;
+}
+
+function RegistrationApplicationsForSession({ model }: { model: OpsConsoleModel }) {
   const pageSize = 20;
   const [items, setItems] = useState<Registration[]>([]); const [total, setTotal] = useState(0); const [offset, setOffset] = useState(0); const [loading, setLoading] = useState(false); const [loadError, setLoadError] = useState(""); const [reviewError, setReviewError] = useState(""); const [boundWorkspaces, setBoundWorkspaces] = useState<string[]>([]); const [target, setTarget] = useState<Registration>(); const [reason, setReason] = useState(""); const [decision, setDecision] = useState<"approved" | "rejected">("approved"); const [workspaceIds, setWorkspaceIds] = useState(""); const [memberRole, setMemberRole] = useState<"merchant_admin" | "operator" | "support" | "finance">("merchant_admin"); const [skuCode, setSkuCode] = useState("sku-onboarding-once"); const [amountFen, setAmountFen] = useState("500000");
   // A failed read must stay distinguishable from an empty directory: the toast

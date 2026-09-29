@@ -52,13 +52,19 @@ describe("registration applications error state", () => {
         load(id) {
           if (id !== `\0${entryPath}`) return;
           return `
-            import React from 'react';
+            import React, { useState } from 'react';
             import { createRoot } from 'react-dom/client';
             import { App } from 'antd';
             import { RegistrationApplications } from '/src/components/users/UsersGovernanceWorkspace.tsx';
             localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
-            const model = { authorization: { can: () => true } };
-            createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(RegistrationApplications, { model })));
+            function Probe() {
+              const [actor, setActor] = useState('operator-a');
+              const model = { authorization: { can: () => true }, opsSession: { actor_id: actor, session_id: actor + '-session', workspace_id: '', roles: ['platform_ops'], capabilities: ['identity.read'], workbench: 'platform', scope: { type: 'platform' } } };
+              return React.createElement(App, null,
+                React.createElement('button', { 'data-testid': 'switch-actor', onClick: () => setActor('operator-b') }, '切换账号'),
+                React.createElement(RegistrationApplications, { model }));
+            }
+            createRoot(document.getElementById('root')).render(React.createElement(Probe));
           `;
         },
         configureServer(server) {
@@ -168,6 +174,24 @@ describe("registration applications error state", () => {
       await page.getByTitle("Next Page").click();
       await expect.poll(() => page.getByText("page-two@example.com", { exact: false }).count()).toBe(1);
       expect(requestedOffsets).toEqual(["0", "20"]);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("discards the previous operator's applications and reads again after an account switch", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    let reads = 0;
+    try {
+      await page.route(applicationsUrl(), route => {
+        reads += 1;
+        const login = reads === 1 ? "first-operator-customer@example.test" : "second-operator-customer@example.test";
+        return succeed(route, [{ ...application, application_id: `app-${reads}`, login }]);
+      });
+      await open(page);
+      await page.getByText("first-operator-customer@example.test").first().waitFor();
+      await page.getByTestId("switch-actor").click();
+      await page.getByText("second-operator-customer@example.test").first().waitFor();
+      expect(await page.getByText("first-operator-customer@example.test").count()).toBe(0);
+      expect(reads).toBe(2);
     } finally { await page.close(); }
   }, 45_000);
 });
