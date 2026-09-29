@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
 import { fetchPublishJobPage, MERCHANT_PUBLISH_PAGE_SIZE } from './api'
 
 const envelope = (data: unknown) => new Response(JSON.stringify({
@@ -26,11 +25,8 @@ describe('merchant publish job pagination', () => {
     expect(String(fetcher.mock.calls[0]?.[0])).toContain('/v1/publish-jobs?limit=20&offset=20')
   })
 
-  it('keeps the desktop page wired to the bounded server contract', () => {
-    const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+  it('uses the bounded server contract by default', () => {
     expect(MERCHANT_PUBLISH_PAGE_SIZE).toBe(20)
-    expect(app).toContain('fetchPublishJobPage(baseUrl')
-    expect(app).toContain('aria-label="发布任务分页"')
-    expect(app).not.toContain('fetchPublishJobs(baseUrl)')
+    expect(fetchPublishJobPage).toBeTypeOf('function')
   })
 })

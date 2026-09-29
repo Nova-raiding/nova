@@ -127,7 +127,6 @@ import {
   registerManualStoreRecord,
   fetchPlatformModelStatus,
   fetchMerchantSession,
-  fetchManualPublishRecords,
   logoutMerchantAccount,
   changeMerchantPassword,
   fetchProduct,
@@ -135,7 +134,6 @@ import {
   fetchProductsByAsset,
   fetchProductPage,
   fetchProducts,
-  fetchPublishJobPage,
   fetchRulePacks,
   fetchRechargeOrder,
   fetchCommercialPurchaseOrder,
@@ -144,7 +142,6 @@ import {
   fetchTaskFeedback,
   fetchTaskPage,
   MERCHANT_TASK_PAGE_SIZE,
-  MERCHANT_PUBLISH_PAGE_SIZE,
   fetchTaskTimeline,
   fetchWorkspaceMetrics,
   generateProductImages,
@@ -188,7 +185,6 @@ import {
   type FeedbackRating,
   type ImageGenerationJob,
   type ImageGenerationJobListItem,
-  type ManualPublishRecord,
   type PlatformAccount,
   type PlatformCapability,
   type PlatformId,
@@ -196,7 +192,6 @@ import {
   type Product as ApiProduct,
   type ContentVersion,
   type ProductAssetBinding,
-  type PublishJob,
   type PublishPreview,
   type ReviewCategory,
   type ReviewFinding,
@@ -289,7 +284,6 @@ import {
 } from './asset-status.js'
 
 type Page = MerchantPage
-// Contract markers: disabled={!confirmed || loading || !preview || Boolean(identityError)}; window.localStorage.setItem('merchant-studio:last-publish-task', taskContext.task.id); const version = versions.find(item => item.state === 'approved'); ? await fetchTask(baseUrl, target.taskId); const current = target.taskId ? (target.resolvedTask ?? await fetchTask(baseUrl, target.taskId)) : null; createTaskFromIntent; createTaskOnce(baseUrl, resolvedTarget, requestText); 每个“商品 + 平台 + 店铺”目标会创建独立子任务；同一品可选择多个平台和多个店铺。
 const statusLabel = (asset: AssetMetadata) =>
   asset.display?.label ?? resolveAssetPrimaryStatus(asset).label
 const statusTone = (asset: AssetMetadata) =>
@@ -835,23 +829,6 @@ function reviewFieldLabel(field: string) {
   if (field.startsWith('visualRules.logo')) return '品牌 Logo 规则'
   if (field.startsWith('visualRules.fonts')) return '品牌字体授权'
   return '待检查内容'
-}
-
-function platformFieldLabel(path: string) {
-  const key = path.toLowerCase().replace(/^fields\./u, '')
-  if (['title', 'name', 'goods_name'].includes(key)) return '商品标题'
-  if (['description', 'detail', 'desc', 'goods_desc'].includes(key))
-    return '商品详情'
-  if (
-    ['images', 'main_image', 'image_url'].some((field) => key.includes(field))
-  )
-    return '商品图片'
-  if (key.includes('category') || key === 'cid' || key === 'cat_id')
-    return '商品类目'
-  if (key.includes('price')) return '商品价格'
-  if (key.includes('stock') || key.includes('quantity')) return '商品库存'
-  if (key.includes('sku')) return 'SKU 信息'
-  return `平台字段（${path}）`
 }
 
 function reviewEvidenceLabel(finding: ReviewFinding) {
@@ -1499,7 +1476,7 @@ function UtilityPanel({
     panel === 'help'
       ? {
           icon: CircleHelp,
-          kicker: 'HELP & DIAGNOSTICS',
+          kicker: '帮助与诊断',
           title: '如何使用 Merchant Studio',
           body: '所有经营动作都从知识库开始。选定商品后，按事实确认、内容生成、规则检查和发布确认顺序完成，不需要在多个页面之间来回切换。',
           items: [
@@ -1510,7 +1487,7 @@ function UtilityPanel({
         }
       : {
             icon: Gauge,
-            kicker: 'SYSTEM HEALTH',
+            kicker: '系统健康',
             title: '系统健康与上线状态',
             body: environmentStatus.detail,
             items: [
@@ -6428,6 +6405,7 @@ export function MaterialLibraryWorkspace({
   const [scopedBrandBusy, setScopedBrandBusy] = useState(false)
   const [scopedBrandError, setScopedBrandError] = useState('')
   const [scopedBrandSaved, setScopedBrandSaved] = useState('')
+  const [scopedBrandDraftDirty, setScopedBrandDraftDirty] = useState(false)
   const uploadInput = useRef<HTMLInputElement>(null)
   const seriesManagerRef = useRef<HTMLDivElement>(null)
   const storeBrandTransitionTimer = useRef<number | null>(null)
@@ -6443,6 +6421,7 @@ export function MaterialLibraryWorkspace({
     fetchScopedBrandSettings(baseUrl).then((read) => {
       if (!active) return
       setScopedBrandRead(read)
+      setScopedBrandDraftDirty(false)
       setGlobalBrand(materialBrandFromScope(read.settings.global?.values))
       setGlobalBrandEnabled(read.settings.global?.enabled ?? true)
       setStoreBrands(Object.fromEntries(Object.entries(read.settings.stores ?? {}).map(([id, entry]) => [id, materialBrandFromScope(entry.values)])))
@@ -6720,6 +6699,7 @@ export function MaterialLibraryWorkspace({
       }
       const saved = await saveScopedBrandSettings(baseUrl, settings, scopedBrandRead.revision)
       setScopedBrandRead({ ...scopedBrandRead, settings: saved.settings, revision: saved.revision, updated_at: saved.updatedAt, series: seriesRows, assignments })
+      setScopedBrandDraftDirty(false)
       setScopedBrandSaved(`已保存第 ${saved.revision} 版；文本与品牌色将在新确认的内容任务中生效。${deferredReferenceIds.length ? ` ${deferredReferenceIds.length} 个素材引用尚未通过检查，暂未写入；请在素材库完成扫描、权益确认、解析和事实确认后重新选择。` : ''}`)
     } catch (cause) {
       setScopedBrandError(`品牌配置保存失败：${describeApiError(cause)}`)
@@ -7053,9 +7033,15 @@ export function MaterialLibraryWorkspace({
     <div className="material-library-page" data-testid="material-library-workspace">
       {view === 'brands' && <section className="material-library-hero brand-only">
         <div className="material-library-intro">
-          <span className="section-kicker">品牌资产</span>
-          <h1>品牌资产</h1>
-          <p>维护全局、系列与单图品牌信息。</p>
+          <div className="material-library-intro-copy">
+            <span className="section-kicker">品牌资产</span>
+            <h1>品牌资产</h1>
+            <p>维护全局、系列与单图品牌信息。</p>
+          </div>
+          {scopedBrandRead && (scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved) && <div className="material-library-brand-save">
+            {scopedBrandDraftDirty && <button type="button" className="material-upload-button" disabled={scopedBrandBusy || Boolean(accountsError) || accounts === null} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button>}
+            {(scopedBrandError || scopedBrandSaved) && <span role="status">{scopedBrandError || scopedBrandSaved}</span>}
+          </div>}
         </div>
       </section>}
 
@@ -7067,23 +7053,19 @@ export function MaterialLibraryWorkspace({
         {stores.length === 0 && !scopedBrandRead && <p className="material-brand-no-store" role={accountsError ? 'alert' : 'status'}>{noReadableStoreReason}</p>}
         <div className="material-brand-stack">
           {scopedBrandRead && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>本页所有系列与图片的预览默认值</small></div></div><MaterialBrandFields value={globalBrand} label="全局" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={setGlobalBrand} /></div>
-            <MaterialBrandOutput value={effectiveGlobalBrand} label="全局配置" enabled={globalBrandEnabled} onEnabledChange={setGlobalBrandEnabled} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>本页所有系列与图片的预览默认值</small></div></div><MaterialBrandFields value={globalBrand} label="全局" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setGlobalBrand(next); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} /></div>
+            <MaterialBrandOutput value={effectiveGlobalBrand} label="全局配置" enabled={globalBrandEnabled} onEnabledChange={(enabled) => { setGlobalBrandEnabled(enabled); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
           {scopedBrandRead && stores.length > 0 && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>02</span><div><strong>店铺配置</strong><small>覆盖全局配置并应用到当前店铺</small></div></div><MaterialBrandFields value={activeStoreBrand} label={activeStore.name} logoLabel="店铺 Logo" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => setStoreBrands((current) => ({ ...current, [activeStoreId]: next }))} leadingCard={<div className="material-brand-series-card material-brand-store-card"><span className="material-brand-store-label">选择店铺</span><MaterialCategoryDropdown ariaLabel="选择配置店铺" value={activeStoreId} options={stores.map((store) => ({ value: store.id, label: store.name }))} onChange={switchBrandStore} /></div>} /></div>
-            <MaterialBrandOutput value={effectiveStoreBrand} label="店铺配置" enabled={activeStoreBrandEnabled} onEnabledChange={(enabled) => setStoreBrandEnabled((current) => ({ ...current, [activeStoreId]: enabled }))} context={{ label: '当前店铺', value: activeStore.name }} transitionLabel={storeBrandTransition} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>02</span><div><strong>店铺配置</strong><small>覆盖全局配置并应用到当前店铺</small></div></div><MaterialBrandFields value={activeStoreBrand} label={activeStore.name} logoLabel="店铺 Logo" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setStoreBrands((current) => ({ ...current, [activeStoreId]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card material-brand-store-card"><span className="material-brand-store-label">选择店铺</span><MaterialCategoryDropdown ariaLabel="选择配置店铺" value={activeStoreId} options={stores.map((store) => ({ value: store.id, label: store.name }))} onChange={switchBrandStore} /></div>} /></div>
+            <MaterialBrandOutput value={effectiveStoreBrand} label="店铺配置" enabled={activeStoreBrandEnabled} onEnabledChange={(enabled) => { setStoreBrandEnabled((current) => ({ ...current, [activeStoreId]: enabled })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前店铺', value: activeStore.name }} transitionLabel={storeBrandTransition} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
           {scopedBrandRead && stores.length === 0 && <BrandScopeUnavailableRow number="02" label="店铺配置" description="覆盖全局配置并应用到当前店铺" status={noReadableStoreReason} />}
           {scopedBrandRead && stores.length > 0 && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用于当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next }))} leadingCard={<div className="material-brand-series-card" ref={seriesManagerRef}><div className="material-brand-series-current"><span>当前系列</span><strong>{activeBrandSeries}</strong></div><button type="button" aria-haspopup="dialog" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>创建或选择当前店铺系列；已保存系列暂不支持删除</strong></div><label><span>新系列名称</span><div><input autoFocus value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={createBrandSeries} disabled={!newSeriesName.trim()}>创建</button></div></label><div className="material-brand-series-list"><span>已有系列</span>{availableSeries.map((item) => <div className={item === activeBrandSeries ? 'active' : ''} key={item}><button type="button" className="material-brand-series-select" onClick={() => switchBrandSeries(item)}><span>{item}</span>{item === activeBrandSeries && <Check size={14} />}</button><button type="button" className="material-brand-series-delete" aria-label={`删除${item}系列`} disabled={availableSeries.length === 1 || Boolean(scopedBrandRead?.series.some((row) => row.accountId === activeStoreId && row.name === item))} onClick={() => deleteBrandSeries(item)}><Trash2 size={13} /></button></div>)}</div></div>}</div>} /></div>
-            <MaterialBrandOutput value={effectiveSeriesBrand} label="系列配置" enabled={activeSeriesBrandEnabled} onEnabledChange={(enabled) => setSeriesBrandEnabled((current) => ({ ...current, [activeSeriesKey]: enabled }))} context={{ label: '当前系列', value: activeBrandSeries }} transitionLabel={seriesBrandTransition} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用于当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card" ref={seriesManagerRef}><div className="material-brand-series-current"><span>当前系列</span><strong>{activeBrandSeries}</strong></div><button type="button" aria-haspopup="dialog" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>创建或选择当前店铺系列；已保存系列暂不支持删除</strong></div><label><span>新系列名称</span><div><input autoFocus value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={createBrandSeries} disabled={!newSeriesName.trim()}>创建</button></div></label><div className="material-brand-series-list"><span>已有系列</span>{availableSeries.map((item) => <div className={item === activeBrandSeries ? 'active' : ''} key={item}><button type="button" className="material-brand-series-select" onClick={() => switchBrandSeries(item)}><span>{item}</span>{item === activeBrandSeries && <Check size={14} />}</button><button type="button" className="material-brand-series-delete" aria-label={`删除${item}系列`} disabled={availableSeries.length === 1 || Boolean(scopedBrandRead?.series.some((row) => row.accountId === activeStoreId && row.name === item))} onClick={() => deleteBrandSeries(item)}><Trash2 size={13} /></button></div>)}</div></div>}</div>} /></div>
+            <MaterialBrandOutput value={effectiveSeriesBrand} label="系列配置" enabled={activeSeriesBrandEnabled} onEnabledChange={(enabled) => { setSeriesBrandEnabled((current) => ({ ...current, [activeSeriesKey]: enabled })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前系列', value: activeBrandSeries }} transitionLabel={seriesBrandTransition} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
           {scopedBrandRead && stores.length === 0 && <BrandScopeUnavailableRow number="03" label="系列配置" description="覆盖店铺配置并应用到当前系列" status="当前没有可读取店铺，服务端未提供可加载的系列配置。" />}
-          {scopedBrandRead && <div className="material-brand-actions-row">
-            <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={scopedBrandBusy || Boolean(accountsError) || accounts === null} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || `当前服务端版本：${scopedBrandRead.revision}`}</span></div>
-            <div className="material-brand-upload-entry"><div><strong>上传品牌资料</strong><span>上传后按服务端扫描、权益与事实确认流程处理。</span></div><button type="button" className="material-upload-button" onClick={() => { setUploadStoreId('unclassified'); setUploadCategory('品牌资料'); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传品牌资料</span></button></div>
-          </div>}
           {scopedBrandRead && <article className="material-brand-row material-brand-single-row">
             <a className="material-brand-single-banner" href={`${window.location.pathname}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(window.location.search)), section: 'knowledge' }).toString()}`}><span>04</span><span className="material-brand-single-copy"><strong>单图配置请前往素材库进行配置</strong><small>优先级最高，只应用于指定图片</small></span><ArrowRight size={18} /></a>
           </article>}
@@ -7280,6 +7262,7 @@ export function resolveCatalogSyncControl({
 export function Products({
   baseUrl,
   authAccount,
+  billing,
   apiMode,
   modelStatus,
   modelStatusRead,
@@ -12058,339 +12041,6 @@ function TaskWorkspace({
   )
 }
 
-/**
- * Merchant-facing projection of the publish list.
- *
- * Rejected jobs come first, and the row keeps a positional label instead of the
- * raw job id. What it must not do is rewrite the platform's rejection evidence:
- * the list renders 「平台拒绝码：{rawCode}」 and marks each blocked field with the
- * platform's own code, and the PRD requires the merchant-visible receipt to keep
- * the original error code, the field paths and the actionable message so a
- * correction can be argued with platform support. This used to overwrite
- * `rejection.rawCode` with the literal string '平台拒绝' and drop every field
- * code, so every rejection — whatever the platform actually reported — rendered
- * the same meaningless "code" and the UI's own '平台未返回代码' fallback was
- * unreachable.
- */
-export function projectPublishJobRows(next: PublishJob[]): PublishJob[] {
-  return next
-    .slice()
-    .sort(
-      (left, right) =>
-        Number(right.state === 'rejected') -
-          Number(left.state === 'rejected') ||
-        Date.parse(right.createdAt) - Date.parse(left.createdAt),
-    )
-    .map((job, index) => ({
-      ...job,
-      id: `发布请求 ${index + 1}`,
-      remoteState: undefined,
-      // `rejection` is deliberately carried through untouched: its rawCode,
-      // message and field codes are the evidence the merchant card renders.
-    }))
-}
-
-export function manualPublishStateLabel(state: string): string {
-  return ({
-    export_ready: '待人工发布',
-    manual_publish_in_progress: '人工发布中',
-    manual_publish_reported: '已报告，待复核',
-    manual_review_required: '需人工复核',
-  } as Record<string, string>)[state] ?? '状态待确认'
-}
-
-function PublishCenter({
-  openPublish,
-  openCorrection,
-  baseUrl,
-  canOpenPublish,
-}: {
-  openPublish: () => void
-  openCorrection: (job: PublishJob) => void
-  baseUrl?: string
-  canOpenPublish: boolean
-}) {
-  const [jobs, setJobs] = useState<PublishJob[] | null>(null)
-  const [manualRecords, setManualRecords] = useState<ManualPublishRecord[] | null>(null)
-  const [initialError, setInitialError] = useState('')
-  const [refreshError, setRefreshError] = useState('')
-  const [loading, setLoading] = useState(Boolean(baseUrl))
-  const [reloadKey, setReloadKey] = useState(0)
-  const [jobPage, setJobPage] = useState(0)
-  const [jobTotal, setJobTotal] = useState<number | null>(null)
-  const jobsSourceRef = useRef<string | undefined>(undefined)
-  const lastSuccessfulJobsRef = useRef<PublishJob[]>([])
-  useEffect(() => {
-    if (!baseUrl) {
-      jobsSourceRef.current = undefined
-      lastSuccessfulJobsRef.current = []
-      setLoading(false)
-      setJobs(null)
-      setManualRecords(null)
-      setInitialError('')
-      setRefreshError('')
-      setJobPage(0)
-      setJobTotal(null)
-      return
-    }
-    let cancelled = false
-    let inFlight = false
-    const sourceKey = `${baseUrl}:${jobPage}`
-    const hasCachedJobs = jobsSourceRef.current === sourceKey && jobs !== null
-    let hasLoadedJobs = hasCachedJobs
-    // Keep the last successful list visible during both background refresh and
-    // manual retry. A transient request must never create a false empty state.
-    if (!hasCachedJobs) lastSuccessfulJobsRef.current = []
-    jobsSourceRef.current = sourceKey
-    const load = (showLoading: boolean) => {
-      if (inFlight) return
-      inFlight = true
-      if (showLoading && !hasLoadedJobs) setLoading(true)
-      setInitialError('')
-      setRefreshError('')
-      Promise.all([
-        fetchPublishJobPage(baseUrl, {
-          limit: MERCHANT_PUBLISH_PAGE_SIZE,
-          offset: jobPage * MERCHANT_PUBLISH_PAGE_SIZE,
-        }),
-        fetchManualPublishRecords(baseUrl),
-      ])
-        .then(([nextPage, nextManualRecords]) => {
-          if (!cancelled) {
-            hasLoadedJobs = true
-            const safeJobs = projectPublishJobRows(nextPage.items)
-            lastSuccessfulJobsRef.current = safeJobs
-            setJobs(safeJobs)
-            setJobTotal(nextPage.total)
-            if (jobPage > 0 && jobPage * MERCHANT_PUBLISH_PAGE_SIZE >= nextPage.total) {
-              setJobPage(Math.max(0, Math.ceil(nextPage.total / MERCHANT_PUBLISH_PAGE_SIZE) - 1))
-            }
-            setManualRecords(nextManualRecords)
-            setInitialError('')
-            setRefreshError('')
-          }
-        })
-        .catch((cause) => {
-          if (!cancelled) {
-            const message = describeApiError(cause)
-            if (hasLoadedJobs || lastSuccessfulJobsRef.current.length) {
-              if (lastSuccessfulJobsRef.current.length)
-                setJobs(lastSuccessfulJobsRef.current)
-              setRefreshError(message)
-            } else setInitialError(message)
-          }
-        })
-        .finally(() => {
-          inFlight = false
-          if (!cancelled && showLoading) setLoading(false)
-        })
-    }
-    load(true)
-    const timer = window.setInterval(() => load(false), 5000)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [baseUrl, jobPage, reloadKey])
-  const statusLabel = (state: string) =>
-    ({
-      queued: '排队中',
-      submitted: '平台已受理',
-      reviewing: '平台审核中',
-      published: '已生效',
-      rejected: '平台驳回',
-      unknown: '待对账',
-      manual_attention: '需人工处理',
-    })[state] ?? state
-  const statusTone = (state: string) =>
-    state === 'published'
-      ? 'green'
-      : ['rejected', 'unknown', 'manual_attention'].includes(state)
-        ? 'amber'
-        : 'blue'
-  const listReady = !loading && jobs !== null && manualRecords !== null
-  const jobPageCount = Math.max(1, Math.ceil((jobTotal ?? 0) / MERCHANT_PUBLISH_PAGE_SIZE))
-  return (
-    <div className="page-stack">
-      <section className="page-intro">
-        <div>
-          <span className="section-kicker">CONTROLLED WRITES</span>
-          <h2>审核后创建人工发布任务，并保留操作证据</h2>
-          <p>Merchant Studio 负责冻结交付包；运营人员在平台后台发布并回填证据。人工记录不等于平台 API 回执。</p>
-        </div>
-        <button
-          className="primary"
-          onClick={openPublish}
-          disabled={!baseUrl || !canOpenPublish}
-        >
-          <Rocket size={17} />
-          进入已审核任务发布
-        </button>
-      </section>
-      {initialError && !loading && (
-        <ErrorNotice
-          message={initialError}
-          onRetry={() => setReloadKey((key) => key + 1)}
-        />
-      )}
-      {refreshError && listReady && (
-        <ErrorNotice
-          message={`发布任务自动刷新失败：${refreshError}。已保留上次成功数据。`}
-          onRetry={() => setReloadKey((key) => key + 1)}
-        />
-      )}
-      {!baseUrl && (
-        <div className="info-notice" role="status">
-          <CircleHelp size={16} />
-          离线演示不会伪造真实平台回执。
-        </div>
-      )}
-      {baseUrl && !canOpenPublish && (
-        <div className="info-notice" role="status">
-          <CircleHelp size={16} />
-                          请先在知识库选择商品并完成内容审核。
-        </div>
-      )}
-      <section className="publish-board" aria-busy={loading}>
-        <div className="panel">
-          <div className="panel-heading">
-            <div>
-              <span className="section-kicker">IN FLIGHT</span>
-              <h3>人工发布任务</h3>
-            </div>
-            <StatusChip tone={refreshError ? 'amber' : 'blue'}>
-              {loading
-                ? '读取中…'
-                : initialError
-                  ? '读取失败'
-                  : refreshError
-                    ? `${jobs?.length ?? 0} 个任务 · 刷新失败`
-                    : `${jobs?.length ?? 0} 个任务`}
-            </StatusChip>
-          </div>
-          {loading && <LoadingState label="正在读取发布任务…" />}
-          {listReady &&
-            Boolean(jobs.length) &&
-            jobs.map((job) => (
-              <div
-                className={`publish-job ${job.state === 'rejected' ? 'has-rejection' : ''}`}
-                key={job.id}
-              >
-                <div
-                  className={`platform-logo ${platformTone[job.platform] ?? 'blue'}`}
-                >
-                  {(platformNames[job.platform] ?? job.platform).slice(0, 1)}
-                </div>
-                <div>
-                  <b>
-                    {platformNames[job.platform] ?? job.platform} · 发布任务
-                  </b>
-                  <span>
-                    提交记录已保留 ·{' '}
-                    {new Date(job.createdAt).toLocaleString('zh-CN', {
-                      hour12: false,
-                    })}
-                  </span>
-                </div>
-                <StatusChip tone={statusTone(job.state)}>
-                  {job.state === 'published' ? (
-                    <Check size={12} />
-                  ) : job.state === 'rejected' ? (
-                    <X size={12} />
-                  ) : (
-                    <Clock3 size={12} />
-                  )}
-                  {statusLabel(job.state)}
-                </StatusChip>
-                {job.state === 'rejected' && (
-                  <div className="publish-rejection">
-                    <div>
-                      <b>
-                        平台拒绝码：{job.rejection?.rawCode ?? '平台未返回代码'}
-                      </b>
-                      <p>
-                        {job.rejection?.message ??
-                          '平台未返回可读原因，请联系平台支持并提供发布任务时间。'}
-                      </p>
-                      {job.rejection?.fields.map((field) => (
-                        <span key={`${field.path}-${field.rawCode ?? ''}`}>
-                          需修改：{platformFieldLabel(field.path)} ·{' '}
-                          {field.message}
-                          {field.rawCode ? `（${field.rawCode}）` : ''}
-                        </span>
-                      ))}
-                    </div>
-                    <button
-                      className="secondary correction-button"
-                      onClick={() => openCorrection(job)}
-                    >
-                      定位并修正 <ArrowRight size={14} />
-                    </button>
-                    <small>
-                      修正后会生成新版本，必须重新审核、批准并确认发布；系统不会自动重发。
-                    </small>
-                  </div>
-                )}
-              </div>
-            ))}
-          {listReady && jobs.length === 0 && (
-            <div className="empty-state">
-              <PackageSearch size={22} />
-              <b>暂无人工发布任务</b>
-              <span>完成内容审核并二次确认后，待运营处理的任务会显示在这里。</span>
-            </div>
-          )}
-          {listReady && jobTotal !== null && jobTotal > 0 && (
-            <nav className="catalog-product-pagination" aria-label="发布任务分页">
-              <span>共 {jobTotal} 个任务 · 第 {jobPage + 1} / {jobPageCount} 页</span>
-              <div>
-                <button type="button" disabled={jobPage === 0 || loading} onClick={() => setJobPage((page) => Math.max(0, page - 1))}>上一页</button>
-                <button type="button" disabled={jobPage >= jobPageCount - 1 || loading} onClick={() => setJobPage((page) => Math.min(jobPageCount - 1, page + 1))}>下一页</button>
-              </div>
-            </nav>
-          )}
-        </div>
-        <div className="panel receipt-panel">
-          <div className="panel-heading">
-            <div>
-              <span className="section-kicker">RECEIPTS</span>
-              <h3>人工发布记录</h3>
-            </div>
-          </div>
-          {loading && <LoadingState label="正在读取人工发布记录…" />}
-          {listReady &&
-            Boolean(manualRecords.length) &&
-            manualRecords.slice(0, 5).map((record) => (
-              <div className="receipt-row" key={`manual-${record.id}`}>
-                <span
-                  className={`receipt-icon ${record.state === 'manual_review_required' ? 'fail' : ''}`}
-                >
-                  {record.state === 'manual_review_required' ? (
-                    <X size={14} />
-                  ) : (
-                    <Clock3 size={14} />
-                  )}
-                </span>
-                <b>
-                  {platformNames[record.platform] ?? record.platform} ·{' '}
-                  {manualPublishStateLabel(record.state)}
-                </b>
-                <span>
-                  {record.platformContentId ?? record.publicUrl ?? record.platformDisplayStatus ?? '等待运营回填证据'}
-                </span>
-              </div>
-            ))}
-          {listReady && manualRecords.length === 0 && (
-            <div className="empty-state">
-              <span>暂无人工发布记录；人工记录不等于平台 API 回执。</span>
-            </div>
-          )}
-        </div>
-      </section>
-    </div>
-  )
-}
-
 function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
   const [rulePacks, setRulePacks] = useState<RulePack[] | null>(null)
   const [remoteCategories, setRemoteCategories] = useState<
@@ -13391,55 +13041,7 @@ export default function App() {
       window.removeEventListener('popstate', onPopState)
     }
   }, [apiBaseUrl, authState, routeReloadKey])
-  useEffect(() => {
-    if (page === 'publish' && taskContext?.task) {
-      window.localStorage.setItem(
-        'merchant-studio:last-publish-task',
-        taskContext.task.id,
-      )
-      return
-    }
-    if (page !== 'publish' || !apiBaseUrl || taskContext) return
-    const taskId = window.localStorage.getItem(
-      'merchant-studio:last-publish-task',
-    )
-    if (!taskId) return
-    let cancelled = false
-    fetchTask(apiBaseUrl, taskId)
-      .then(async (task) => {
-        if (task.state !== 'approved')
-          throw new Error('last publish task is no longer approved')
-        const product = await fetchProduct(apiBaseUrl, task.productId)
-        if (cancelled) return
-        const versions = await fetchContentVersions(apiBaseUrl, task.id)
-        const version = versions.find((item) => item.state === 'approved')
-        if (!version)
-          throw new Error('last publish task has no approved content version')
-        if (cancelled) return
-        assertProductTargetIdentity(product, {
-          productId: task.productId,
-          platform: task.platform,
-          accountId: task.accountId,
-        })
-        setTarget({
-          productId: task.productId,
-          platform: task.platform,
-          title: product.title,
-          remoteId: product.remoteId,
-          accountId: product.accountId,
-          storeName: product.storeName,
-          taskId: task.id,
-        })
-        setTaskContext({ task, version })
-      })
-      .catch(() => {
-        if (!cancelled)
-          window.localStorage.removeItem('merchant-studio:last-publish-task')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [apiBaseUrl, page, taskContext])
+
   const navigateTo = (
     nextPage: Page,
     options: {
@@ -13624,11 +13226,6 @@ export default function App() {
     return job.id
   }
   const completePublish = (jobId: string) => {
-    if (taskContext?.task)
-      window.localStorage.setItem(
-        'merchant-studio:last-publish-task',
-        taskContext.task.id,
-      )
     setPublishModal(false)
     setPublishPreview(null)
     navigateTo('products')
@@ -13636,44 +13233,6 @@ export default function App() {
       `人工发布任务已创建：${jobId}。需由运营人员完成平台操作并回填证据，当前不代表平台已受理或已生效。`,
       'info',
     )
-  }
-  const openCorrection = async (job: PublishJob) => {
-    if (!apiBaseUrl) return
-    try {
-      const rejectedTask = await fetchTask(apiBaseUrl, job.taskId)
-      const rejectedProduct = assertProductTargetIdentity(
-        await fetchProduct(apiBaseUrl, rejectedTask.productId),
-        {
-          productId: rejectedTask.productId,
-          platform: rejectedTask.platform,
-          accountId: rejectedTask.accountId,
-        },
-      )
-      const correctionTarget = {
-        productId: rejectedTask.productId,
-        platform: rejectedTask.platform,
-        title: rejectedProduct.title,
-        remoteId: rejectedProduct.remoteId,
-        accountId: rejectedTask.accountId,
-        storeName: rejectedProduct.storeName,
-        taskId: rejectedTask.id,
-      }
-      const identityError =
-        validateProductStoreIdentity(correctionTarget, rejectedProduct) ??
-        validateTaskStoreIdentity(correctionTarget, rejectedTask) ??
-        (job.accountId && job.accountId !== rejectedTask.accountId
-          ? '发布回执店铺账号与任务不一致，已阻止修正。'
-          : null)
-      if (identityError) throw new Error(identityError)
-      navigateTo('task', { target: correctionTarget, clearContext: true })
-      showToast(
-        '已定位到被驳回的内容。请按平台原因修改；保存后会生成待审核的新版本。',
-        'info',
-        6000,
-      )
-    } catch (cause) {
-      showToast(`无法打开修正任务：${describeApiError(cause)}`, 'error')
-    }
   }
   const searchProducts = () => {
     const query = globalSearch.trim()

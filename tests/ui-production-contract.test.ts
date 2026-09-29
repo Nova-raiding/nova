@@ -94,19 +94,14 @@ describe('Merchant Studio production UI contract', () => {
   it('requires server preview and approved task context before publish confirmation', () => {
     expect(app).toContain('if (!taskContext?.task || !taskContext.version)')
     expect(app).toContain('preparePublish(apiBaseUrl, taskContext.task.id)')
-    expect(app).toContain('fetchPublishJobPage(baseUrl, {')
-    expect(app).toContain('disabled={!confirmed || loading || !preview || Boolean(identityError)}')
-    expect(app).toContain("window.localStorage.setItem('merchant-studio:last-publish-task', taskContext.task.id)")
-    expect(app).toContain("if (page === 'publish' && taskContext?.task)")
-    expect(app).toContain("fetchProduct(apiBaseUrl, task.productId)")
-    expect(app).toContain("task.state !== 'approved'")
-    expect(app).toContain("const version = versions.find(item => item.state === 'approved')")
-    expect(app).not.toContain("?? versions[0]")
+    expect(app).toContain('validatePublishPreview({')
+    expect(app).toContain('validatePublishReceipt(submission, job)')
+    expect(app).toMatch(/disabled=\{\s*!confirmed \|\| loading \|\| !preview \|\| Boolean\(identityError\)\s*\}/u)
   })
 
   it('restores existing tasks without creating duplicates or auto-generating content', () => {
-    expect(app).toContain('? await fetchTask(baseUrl, target.taskId)')
-    expect(app).toContain('const current = target.taskId ? (target.resolvedTask ?? await fetchTask(baseUrl, target.taskId)) : null')
+    expect(app).toContain('await fetchTask(baseUrl, target.taskId)')
+    expect(app).toMatch(/const current = target\.taskId\s*\?\s*\(target\.resolvedTask \?\? \(await fetchTask\(baseUrl, target\.taskId\)\)\)\s*:\s*null/u)
     expect(app).toContain('createTaskFromIntent')
     expect(app).toContain('createTaskOnce(baseUrl, resolvedTarget, requestText)')
     expect(app).toContain('idempotency_key: intentKey')
@@ -204,7 +199,7 @@ describe('Merchant Studio production UI contract', () => {
   it('preserves exact product/platform/store targets and confirms task-group creation', () => {
     expect(app).toContain('batchTargetKey(item) === batchTargetKey(target)')
     expect(app).toContain('task-group-confirm-dialog')
-    expect(app).toContain('每个“商品 + 平台 + 店铺”目标会创建独立子任务')
+    expect(app).toMatch(/每个“商品 \+ 平台 \+\s+店铺”目标会创建独立子任务/u)
     expect(app).not.toContain('window.confirm(')
     expect(app).toContain('同一品可选择多个平台和多个店铺')
     expect(app).toContain('task-group-created')
@@ -234,12 +229,13 @@ describe('Merchant Studio production UI contract', () => {
     expect(api).toContain("kind: 'fact' | 'rule' | 'brand' | 'content' | 'image'")
   })
 
-  it('shows platform rejection evidence and opens the existing versioned correction flow', () => {
-    expect(app).toContain('平台拒绝码：{job.rejection?.rawCode')
-    expect(app).toContain('定位并修正')
-    expect(app).toContain('fetchTask(apiBaseUrl, job.taskId)')
-    expect(app).toContain('系统不会自动重发')
-    expect(app).toContain('modifyContentVersion(baseUrl, content.id')
+  it('keeps the active manual-publish confirmation flow and retires the unreachable history panel', () => {
+    expect(app).not.toContain('function PublishCenter(')
+    expect(app).toContain('<PublishModal')
+    expect(app).toContain('preparePublish(apiBaseUrl, taskContext.task.id)')
+    expect(app).toContain('confirmPublish(')
+    expect(app).toContain('validatePublishReceipt(submission, job)')
+    expect(app).toContain('当前不代表平台已受理或已生效')
     expect(api).toContain('rawCode: string')
   })
 

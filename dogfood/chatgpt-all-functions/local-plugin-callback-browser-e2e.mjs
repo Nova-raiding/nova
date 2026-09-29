@@ -13,6 +13,7 @@ const browser = await chromium.launch({ headless: true })
 async function runCase(name, successful) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
   const page = await context.newPage()
+  await page.addInitScript(() => { window.close = () => { throw new Error('close blocked by browser') } })
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   let releaseExchange
@@ -60,6 +61,11 @@ async function runCase(name, successful) {
       await page.getByRole('heading', { name: '绑定未完成' }).waitFor()
     }
     assert.equal(await page.getByRole('button', { name: '完成，关闭此页面' }).isVisible(), true)
+    if (successful) {
+      await page.getByRole('button', { name: '完成，关闭此页面' }).click()
+      await page.getByRole('button', { name: '绑定完成，请返回 ChatGPT' }).isDisabled()
+      assert.match(await page.locator('#hint').innerText(), /切换回 ChatGPT.*手动关闭/u)
+    }
     const body = await page.locator('body').innerText()
     assert.doesNotMatch(body, /synthetic-access|synthetic-refresh|synthetic-browser-code-12345/)
     assert.deepEqual(errors, [])

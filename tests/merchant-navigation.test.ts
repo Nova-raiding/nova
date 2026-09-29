@@ -34,8 +34,8 @@ describe('Merchant Studio navigation', () => {
     }
   })
 
-  it('routes every screenshot-backed merchant workspace to its distinct entry', () => {
-    expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '', hash: '' }).entry).toBe('products')
+  it('defaults the products route to the screenshot-backed knowledge entry', () => {
+    expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '', hash: '' }).entry).toBe('knowledge')
     for (const entry of ['products', 'images', 'assets', 'trash'] as const) {
       expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: `?section=${entry}`, hash: '' }).entry).toBe(entry)
     }

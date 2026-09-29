@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { manualPublishStateLabel } from './App'
 
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 
@@ -16,17 +15,10 @@ describe('content candidate to manual publish workflow', () => {
     expect(app).not.toContain('我确认将审核后的内容写入')
   })
 
-  it('labels the durable manual evidence states for merchants', () => {
-    expect(manualPublishStateLabel('export_ready')).toBe('待人工发布')
-    expect(manualPublishStateLabel('manual_publish_in_progress')).toBe('人工发布中')
-    expect(manualPublishStateLabel('manual_publish_reported')).toBe('已报告，待复核')
-    expect(manualPublishStateLabel('manual_review_required')).toBe('需人工复核')
-    expect(manualPublishStateLabel('unexpected')).toBe('状态待确认')
-  })
-
-  it('reads and renders manual publish records instead of hiding them behind publish jobs', () => {
-    expect(app).toContain('fetchManualPublishRecords(baseUrl)')
-    expect(app).toContain('人工发布记录')
-    expect(app).toContain('人工记录不等于平台 API 回执')
+  it('keeps publish creation in the reviewed task flow and describes its manual status accurately', () => {
+    expect(app).toContain('preparePublish(apiBaseUrl, taskContext.task.id)')
+    expect(app).toContain('confirmPublish(')
+    expect(app).toContain('onComplete={completePublish}')
+    expect(app).toContain('需由运营人员完成平台操作并回填证据，当前不代表平台已受理或已生效。')
   })
 })
