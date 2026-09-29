@@ -9,12 +9,13 @@
 | 真实 ChatGPT App 全量调用 | 本地插件 `125100`，同一商家 QA 会话，生产 API | **116/116** | 22 项 `isError=false`，94 项 `isError=true` | 全部方法至少一次经 App 发出并收到工具结果；22 项主要是入门、状态、空态、后台入口，94 项为门禁/不存在/参数错误/内部错误，**不等于 116 项业务通过**。逐项见[116 清单](../../2026-09-29-chatgpt-app-116-tool-checklist.md)及[原始行号审计](full-84-app-run-audit.md)。 |
 | 真实 ChatGPT App 参数错误定向回归 | 本地插件 `133000`，新会话，生产 API | **4/116** | 四个故意缺参调用均返回中文 `TOOL_ARGUMENTS_INVALID`；用户可见答复为中文 | 只证明参数错误的中文展示修复，不继承 125100 版的 116 项覆盖；见[133000 原始复测](133000-chinese-argument-errors-app.md)。 |
 | 真实 ChatGPT App 空态定向回归 | **当前本地插件 `143500`**，新会话，生产 API | **2/116** | `knowledge.brand.preference.get`、`subscription.get` 并行调用均 `isError=false`；品牌偏好明确中文空态，订阅为 `trialing`/`trial`，旧版 1 店/5 任务，V2 商业权益 `unknown` | 证明这两项当前版展示与状态读取；试用行不能当作已支付权益或生成准入。原始会话 `rollout-2026-09-29T14-35-13-01a0ebdf-e34d-7372-abea-aee1a699239f.jsonl` 第 21/25 行调用/输出、第 28 行全中文答复。 |
+| 真实 ChatGPT App 新全量安全调用 | 当前本地插件 `143500`，**14:53:55 独立新会话**，生产 API | **116/116 已调用** | 十批均有调用及工具输出，22 项 `isError=false`、94 项 `isError=true`；84 项为创意点余额门禁，且一项非错误结果是“账单导出仅后台处理”提示 | 第 21/26、50/67、85/102、120/135、153/165、183/198、212/225、239/251、265/284、298/309 行逐项调用与输出；无未调用方法。按此新会话单独累计，不把 14:35 的两项混入。原始文件 `rollout-2026-09-29T14-53-55-01a0ebf1-0393-7340-a194-da6267b71ad3.jsonl`。 |
 | 已安装 stdio → 生产 API 读边界 | 本地插件 `125100`，短期 QA 令牌 | **14/116** | 2 项非错误空态、12 项门禁/不存在/错误；使用正确 `related_order_id` 的客服读取返回空工单 | 证明这些方法的直接桥接边界，**不是 ChatGPT 宿主调用**；见[14 项直接调用](remaining-reads-agent.md)。 |
 | 生产身份与租户边界 | `demo@sn.com` 商家令牌，生产 HTTPS MCP | 定向读/拒绝 | QA 工作区空店铺可读；同令牌指定贵人鸟工作区为 HTTP 403 | 证明生产 API 的租户隔离，**不证明 143500 App 正向对象结果**；见[身份核验](qa-merchant-identity-scope-e2e.md)。 |
 | 专用 QA 租户真实正向业务闭环 | `demo@sn.com`，当前生产服务 | **0 个完整流程获证** | 已验证账号和工作区建立、身份隔离与若干空态/状态读取；无专用店铺、商品、正式内容、可用创意点或完整模型成本链 | 业务对象创建→同租户读回→审计/账本→App 可见结果的闭环仍待执行。此处按完整流程计数，不否认已成功的账号开通和空态读取。 |
 | 隔离 API/MCP 测试 | 本地测试进程、fixture/stub | 多组正向和拒绝用例，数量以各报告为准 | 商品定向 API 32/32、隔离 PostgreSQL 1/1；任务/内容相关 117/117；资产/创意 40/40；知识九方法的专用隔离 E2E 1/1。各组文件有重叠，不能把用例数简单相加 | 证明本地候选实现的部分合同；不是现网部署或 ChatGPT App 正向业务成功。参见[商品](catalog-writes-agent.md)、[任务内容](task-content-agent.md)、[资产创意](assets-creative-agent.md)、[知识](knowledge-writes-agent.md)、[模型](model-multimodal-isolated-audit.md)。 |
 
-125100 版原始会话为 `~/.codex/sessions/2026/09/29/rollout-2026-09-29T12-52-12-01a0eb81-9269-7f60-a1b8-34524cdb72a8.jsonl`；116 个清单方法均有 `custom_tool_call` 与相同 `call_id` 的输出。133000 版为 `rollout-2026-09-29T13-31-42-01a0eba5-bccd-7960-be00-b534f07a5b39.jsonl`，仅四项参数定向复测；143500 版仅两项空态/订阅定向复测。**当前 143500 版并无 116/116 全量调用证据。** 125100 的 94 项错误中有 82 项为创意点余额不可确认；其余包括 3 项本地参数拒绝、3 项交互写拒绝、3 项本租户对象不存在、1 项待确认、1 项商业权益拒绝，以及 `support.customer.replies.list` 的 1 项内部错误。该内部错误的源码修复尚未部署，不能按本地插件定向复测标为线上已修复。
+125100 版原始会话为 `~/.codex/sessions/2026/09/29/rollout-2026-09-29T12-52-12-01a0eb81-9269-7f60-a1b8-34524cdb72a8.jsonl`；116 个清单方法均有 `custom_tool_call` 与相同 `call_id` 的输出。133000 版为 `rollout-2026-09-29T13-31-42-01a0eba5-bccd-7960-be00-b534f07a5b39.jsonl`，仅四项参数定向复测；143500 版 14:35 定向会话 2 项，14:53 独立全量会话已有 **116/116 全量调用证据**，但没有 116 项正向业务通过证据。125100 的 94 项错误中有 82 项为创意点余额不可确认；其余包括 3 项本地参数拒绝、3 项交互写拒绝、3 项本租户对象不存在、1 项待确认、1 项商业权益拒绝，以及 `support.customer.replies.list` 的 1 项内部错误。该内部错误的源码修复尚未部署，不能按本地插件定向复测标为线上已修复。
 
 | 125100 工具类别 | 已在 App 调用 | 非错误结果 | 错误/门禁 | 正向业务结论 |
 | --- | ---: | ---: | ---: | --- |
@@ -23,6 +24,25 @@
 | 受限写入 | 60/60 | 0 | 60 | 无授权写入闭环通过证据 |
 | 预期阻断 | 7/7 | 0 | 7 | 有拒绝返回；仍需服务端副作用核对才能判定安全性 |
 | **合计** | **116/116** | **22** | **94** | **调用全覆盖，业务闭环未全通过** |
+
+### 143500 新全量会话：独立进度
+
+本节只计 `rollout-2026-09-29T14-53-55-01a0ebf1-0393-7340-a194-da6267b71ad3.jsonl`。与上表 125100 历史全量是不同插件版本/会话，不能把旧版结果填进新会话。并行调用通过原始 `custom_tool_call` 中的工具名数组和同 `call_id` 输出的 `tool/result` 或 `label/result` 逐项配对。
+
+| 批次 | 本会话累计不同方法 | 非错误/错误 | 关键结果 |
+| --- | ---: | ---: | --- |
+| 第 21/26 行，3 项 | 3/116 | 3/0 | `subscription.get`、`canonical.product.consistency` 的 `workspaceId` 均为专用 QA ID；旧版订阅 `trialing`，V2 权益 unknown，商品 0；`creative-points.balance.get` 余额 unknown/null。 |
+| 第 50/67 行，15 项 | **18/116** | **11/7** | `onboarding.status` 仍在入门；店铺/活动/邀请类五项点数余额门禁，商业订单不存在，`billing.status` 缺权益；其余为空态/商业目录/后台入口。 |
+| 第 85/102 行，15 项 | **33/116** | **17/16** | 账单模型用量、充值列表、交易记录、规则列表/同步状态、品牌读取均非错误；充值单不存在，商品搜索/分类、规则历史、素材、品牌提取、交付物、任务历史/时间线均被创意点余额门禁阻断。 |
+| 第 120/135 行，13 项 | **46/116** | **22/24** | 只读 46/46 已调用；客服回复与数据导出对象不存在，商品图片/任务恢复/反馈/生成/内容版本/差异六项被创意点门禁阻断；知识规则/素材/品牌偏好/学习/竞品五项返回非错误空态。 |
+| 第 153/165 行，10 项 | **56/116** | **22/34** | 店铺别名、商品启停、商业边界接受、邀请接受、工作区启停及图片编辑八项被创意点门禁阻断；商业下单与工作区删除申请两项被交互写入门禁阻断。无生产写入成功证据。 |
+| 第 183/198 行，13 项 | **69/116** | **22/47** | 商家入门两项、品牌单元五项、活动批次三项被创意点门禁阻断；数据导出申请参数无效，映射预检和工作区交互确认被交互写入/确认门禁阻断。 |
+| 第 212/225 行，11 项 | **80/116** | **22/58** | 11 项均以 `{}` 输入调用；商品标题/导入/更新/事实/图片与品牌更新全部返回创意点门禁。此轮只能证明 App 调用与门禁，不是商品写入成功。 |
+| 第 239/251 行，10 项 | **90/116** | **22/68** | 九项素材/创意方法输入 `{}`，`asset.upload` 输入未知 QA 参数；十项全部返回创意点门禁，无素材写入成功证据。 |
+| 第 265/284 行，17 项 | **107/116** | **22/85** | 任务/反馈十项与内容七项全部返回创意点门禁。除 `content.export` 使用未知 QA 参数外，其余均以 `{}` 输入调用；无任务/内容对象创建证据。 |
+| 第 298/309 行，9 项 | **116/116** | **22/94** | 知识规则/素材/品牌偏好/反馈/学习/竞品九项全部返回创意点门禁；除 `knowledge.competitor.reference` 使用未知 QA 参数外，其余以 `{}` 输入调用。用户可见 App 答复在第 312 行明确九项均调用及安全拒绝。 |
+
+**当前版 116 项方法均已在同一真实 ChatGPT App 会话调用并收到同 `call_id` 工具输出，未配对数 0。** 只读 46/46 中有 22 项 `isError=false`、24 项错误；非只读 70/70 全部 `isError=true`。94 项错误中有 84 项 `CREATIVE_POINTS_UNAVAILABLE`，另有交互写入禁用 3 项、商业订单不存在 1 项、商业权益缺失 1 项、充值单不存在 1 项、客服对象不存在 1 项、导出对象不存在 1 项、参数无效 1 项、交互确认缺失 1 项。22 项非错误多为空态、状态和后台入口，其中 `billing.export` 虽为 `isError=false`，返回的 `MERCHANT_BILLING_EXPORT_CONSOLE_ONLY` 仅提示在后台办理，**不能计为成功导出**。本次零个商品、店铺、任务、素材或内容的正向业务闭环；余额与权益依旧不能放行收费写入。第 312 行 App 用户可见答复仅针对最后九项明确显示安全拒绝；全量调用结论来自原始工具事件，而非这段答复。
 
 ## 专用 QA 工作区的前置资源
 
@@ -42,14 +62,14 @@
 | 阶段 | 正向场景与精确方法 | 必须先具备 | 完成判据 | 目前状态 |
 | --- | --- | --- | --- | --- |
 | 0 身份与门禁 | `onboarding.status`、`workspace.health`、`canonical.product.consistency`、`commercial.access.get`、`subscription.get`、`creative-points.balance.get` | QA 身份、当前 App 令牌作用域 | 结构化工作区 ID/商家身份一致；额度、权益、费率可确认；跨租户访问拒绝 | 身份隔离和空态已证；余额/权益不可用，收费流程阻断 |
-| 1 店铺与品牌 | `merchant.start`、`merchant.first_value`、`brand-unit.create`、`brand-unit.bind-store`、`brand-unit.access.grant`、`brand.upsert`、`brand.get`、`platform.store.alias.set` | 专用店铺账号、店铺容量、可读店铺数据、品牌资料 | 店铺可选且来源可信；品牌单元/档案版本与权限读回；操作审计及旧版本拒绝 | 店铺 0、品牌档案缺失；仅调用/门禁覆盖 |
-| 2 商品资料 | `brand-unit.product.create`、`brand-unit.listing.create`、`catalog.import`、`catalog.import.batch`、`catalog.product.update`、`catalog.sku.update`、`catalog.facts.confirm`、`catalog.search`、`catalog.categories`、`canonical.product.consistency` | QA 货号、店铺、已确认事实和来源表格 | 导入/更新→同租户搜索读回→事实版本/来源/审核一致；跨店与旧版拒绝 | 商品 0；隔离 API 测试有证，生产 App 正向未做 |
-| 3 素材与视觉 | `asset.upload`、`asset.upload.batch`、`asset.parse`、`asset.facts.confirm`、`asset.rights.update`、`asset.preference.update`、`asset.list`、`catalog.image.generate/get/review/select`、`asset.generation.confirm`、`multimodal.image.edit` | 已授权测试图片、扫描/存储配额、真实模型中转与成本、确认过的商品事实 | 上传扫描→素材 ID→解析事实→图片候选/归档→审核/选择；原图保留、未发布、模型账本可核 | 无授权 QA 素材与额度；图片隔离测试使用模拟 provider，不等于生产中转完成 |
+| 1 店铺与品牌 | `brand.get`、`platform.store.alias.set` | 专用店铺账号、店铺容量、可读店铺数据、品牌资料 | 店铺可选且来源可信；品牌单元/档案版本与权限读回；操作审计及旧版本拒绝 | 店铺 0、品牌档案缺失；仅调用/门禁覆盖 |
+| 2 商品资料 | `catalog.search`、`catalog.categories`、`canonical.product.consistency` | QA 货号、店铺、已确认事实和来源表格 | 导入/更新→同租户搜索读回→事实版本/来源/审核一致；跨店与旧版拒绝 | 商品 0；隔离 API 测试有证，生产 App 正向未做 |
+| 3 素材与视觉 | `asset.list`、`catalog.image.generate/get/review/select`、`multimodal.image.edit` | 已授权测试图片、扫描/存储配额、真实模型中转与成本、确认过的商品事实 | 上传扫描→素材 ID→解析事实→图片候选/归档→审核/选择；原图保留、未发布、模型账本可核 | 无授权 QA 素材与额度；图片隔离测试使用模拟 provider，不等于生产中转完成 |
 | 4 任务与活动 | `creative.brief/preview/directions.update`、`task.create/create.draft/answer/request.create/sku.split/group.create/select_direction/plan.confirm/clone`、`campaign.batch.create/get/list/pause/resume`、`task.history/timeline/resume`、`feedback.submit/list` | QA 商品、店铺、品牌、授权素材、模型预算 | 创建任务/活动→读回同租户版本和状态→确认/暂停/恢复→反馈与审计；失败保留可恢复 | 正向 QA 对象缺失；隔离 API 测试有证，App 本轮仅余额门禁 |
 | 5 内容审核交付 | `content.generate/draft.generate/versions/diff/review.decide/visual.select/approve/restore/export`、`deliverable.list`、`generation.get` | 正式 QA 任务、候选、审核人、模型点数/费率、导出目的地 | 候选生成→人工审核→正式版本→差异/恢复→未发布交付物；真实用量、成本和版本审计可对账 | 无正式任务/版本；隔离用例不能替代 App/生产正向 |
 | 6 知识库 | `knowledge.rule.create/list`、`knowledge.asset.create/update/list`、`knowledge.brand.preference.update/get`、`knowledge.feedback.record/learning.list/confirm/dismiss`、`knowledge.competitor.create/list/reference` | 来源和审核状态明确的 QA 规则/素材/竞品，两条独立学习建议；规则创建另需 `rules_admin`/`reviewer` 权限 | 创建草稿→读回同租户版本/来源→确认或驳回→审计；不把未核实来源升为可信 | 125100 写入均余额门禁；143500 仅品牌偏好空态 App 复测，未重跑知识写入；[九项隔离 HTTP 正向](knowledge-writes-agent.md)有证，但 QA 商家仅 `workspace_owner`，缺规则管理权限 |
 | 7 商业与工作区 | `commercial.catalog.get`、`commercial.order.create/payment.get`、`subscription.orders.list`、`billing.status/recharge.get/recharge.list/transactions/export/model-usage.statement`、`creative-points.statement.list`、`workspace.invitations.list`、`workspace.data.export.request/get`、`support.customer.replies.list` | 平台批准的测试套餐/账务对象、QA 邀请对象、真实导出申请、客服工单或订单 ID | 支付待确认与到账分开；账本、订阅、发票/导出、工单按 QA 租户读回；无真实顾客或支付 | 账务只有空态/后台入口；客服读取生产内部错误待部署修复；购买与导出需单独受控验收 |
-| 8 高风险操作 | `catalog.product.disable/enable`、`workspace.deactivate/activate`、`workspace.data.delete.request`、`workspace.invitation.accept`、`commercial.service-boundary.accept`、`multimodal.image.edit` | 隔离测试对象、回退/恢复证据、相应人工确认 | 可逆操作读回前后版本；删除、真实购买、外部发布只在隔离环境走正向，生产验安全拒绝 | 125100 已见门禁拒绝；未有安全正向闭环；删除不作为 QA 清理手段 |
+| 8 高风险操作 | `catalog.product.disable/enable`、`workspace.deactivate/activate`、`multimodal.image.edit` | 隔离测试对象、回退/恢复证据、相应人工确认 | 可逆操作读回前后版本；删除、真实购买、外部发布只在隔离环境走正向，生产验安全拒绝 | 125100 已见门禁拒绝；未有安全正向闭环；删除不作为 QA 清理手段 |
 
 上表按流程组织，**不是“每行已通过”**。部分读取方法需要先由前序写入产生真实 ID；`campaign.batch.get` 和 `catalog.image.get` 还可能因状态刷新或候选票据产生副作用，不能简单归为无副作用查询，详见[副作用审计](full-84-safety-audit.md)。每一阶段如遇余额 `unknown`、租户不符、缺发布门禁或中转成本证据，即停在该阶段并记录阻断，不调用其他租户数据填补。
 
@@ -64,6 +84,6 @@
 
 ## 143500 后续回归与发布边界
 
-当前 143500 仅验证品牌偏好空态和试用订阅的中文读取；133000 的四项中文参数错误是前一版证据。需在**同一当前版本**对完整流程的成功和失败路径重新取证。首个可执行最小闭环是专用额度和测试店铺到位后，用一条 QA 商品走 `catalog.import`→`catalog.search`→`catalog.facts.confirm`→`canonical.product.consistency`，再走一条已授权素材→草稿→审核→导出，全程保留模型中转成本。知识库和商业账务另用各自测试对象执行。任何新云端 API 修复要先满足发布门禁、部署到可识别 SHA，再在真实 App 复测；本地插件安装成功本身不代表服务端已更新。当前发布结论以[无迁移发布核查](20260929-no-migration-release-audit.md)为准，正式上线判断仍需最新运行时证据。
+当前 143500 已验证品牌偏好空态、试用订阅的中文读取，并已开始新的全量安全调用会话；133000 的四项中文参数错误是前一版证据。需在**同一当前版本**对完整流程的成功和失败路径重新取证。首个可执行最小闭环是专用额度和测试店铺到位后，用一条 QA 商品走 `catalog.import`→`catalog.search`→`catalog.facts.confirm`→`canonical.product.consistency`，再走一条已授权素材→草稿→审核→导出，全程保留模型中转成本。知识库和商业账务另用各自测试对象执行。任何新云端 API 修复要先满足发布门禁、部署到可识别 SHA，再在真实 App 复测；本地插件安装成功本身不代表服务端已更新。当前发布结论以[无迁移发布核查](20260929-no-migration-release-audit.md)为准，正式上线判断仍需最新运行时证据。
 
 CodeGraph 当前索引 2,349 文件、33,821 节点，仍有未同步改动；各组用它定位桥接、API、仓储、worker 和账务调用链，最终结论以原始 App 会话、生产只读结果、隔离测试实际输出和当前磁盘源码为准。gstack QA 的证据分级用于把“入口可调用”“门禁拒绝”“隔离成功”“生产业务闭环”分别记录。
