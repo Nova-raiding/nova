@@ -2578,8 +2578,8 @@ function materializeExportArtifact(result) {
   return {
     structuredContent,
     content: [
-      { type: 'text', text: JSON.stringify(structuredContent) },
-      { type: 'resource_link', name: fileName, title: '内容导出', uri, mimeType: contentType, size: bytes.length, description: 'Codex 本地生成的按需内容导出；不代表已批准或已发布。', annotations: { audience: ['user'] } },
+      { type: 'text', text: '内容导出已生成，请打开下方文件。此文件不代表内容已审核或发布。' },
+      { type: 'resource_link', name: fileName, title: '内容导出', uri, mimeType: contentType, size: bytes.length, description: '按需生成的内容导出文件；不代表已批准或已发布。', annotations: { audience: ['user'] } },
     ],
   }
 }

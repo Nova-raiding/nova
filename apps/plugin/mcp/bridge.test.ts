@@ -2922,6 +2922,8 @@ describe('Codex stdio MCP bridge', () => {
       const zipResponse = await nextLine(child.stdout)
       const zipLink = zipResponse.result.content.find((item: { type: string }) => item.type === 'resource_link')
       expect(zipResponse.result.isError).toBe(false)
+      expect(zipResponse.result.content[0].text).toBe('内容导出已生成，请打开下方文件。此文件不代表内容已审核或发布。')
+      expect(zipLink.description).toBe('按需生成的内容导出文件；不代表已批准或已发布。')
       expect(zipLink).toMatchObject({ type: 'resource_link', mimeType: 'application/zip', size: zipBytes.length })
       expect(zipLink.name).toMatch(/^merchant-content-export-[a-f0-9-]{36}\.zip$/u)
       expect(await readFile(fileURLToPath(zipLink.uri))).toEqual(zipBytes)
