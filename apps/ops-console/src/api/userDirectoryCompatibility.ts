@@ -38,7 +38,7 @@ export class UnsupportedLegacyUserAccountFilterError extends Error {
   readonly code = "OPS_USERS_ACCOUNT_TYPE_FILTER_UNSUPPORTED";
 
   constructor() {
-    super("当前运营 API 版本不支持筛选运营平台账号。请升级 API 后重试；未用商家数据替代运营账号结果。");
+    super("当前运营 API 版本不支持账号属性筛选。请将“属性”设为“全部”或升级 API 后重试；未用其他账号类别替代筛选结果。");
     this.name = "UnsupportedLegacyUserAccountFilterError";
   }
 }
@@ -52,14 +52,12 @@ export async function loadUserDirectory<T>(
     return { data: await request(params), compatibilityWarning: "" };
   } catch (error) {
     if (!isLegacyAccountTypeContractError(error)) throw error;
-    if (filters.accountType === "platform") throw new UnsupportedLegacyUserAccountFilterError();
+    if (filters.accountType && filters.accountType !== "all") throw new UnsupportedLegacyUserAccountFilterError();
 
     const { account_type: _unsupported, ...legacyParams } = params;
     return {
       data: await request(legacyParams),
-      compatibilityWarning: filters.accountType === "all"
-        ? "当前运营 API 版本仅返回旧接口默认的商家成员范围；运营平台账号不在此结果中。升级 API 后可查看合并目录。"
-        : "当前运营 API 版本使用旧的商家成员目录接口。",
+      compatibilityWarning: "",
     };
   }
 }

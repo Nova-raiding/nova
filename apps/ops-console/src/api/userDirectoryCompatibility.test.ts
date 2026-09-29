@@ -25,7 +25,7 @@ describe("ops user directory API compatibility", () => {
       .not.toBe(userDirectoryResultKey({ accountType: "merchant", page: 2 }));
   });
 
-  it("retries an all-account request against the legacy merchant default and reports its narrower result", async () => {
+  it("retries an all-account request against the legacy mixed directory without a false warning", async () => {
     const request = vi.fn()
       .mockRejectedValueOnce(Object.assign(new Error("ops.users.list 不接受参数 params.account_type"), { code: "INVALID_REQUEST" }))
       .mockResolvedValueOnce({ items: [{ externalSubject: "db-member@example.test" }], total: 1 });
@@ -35,18 +35,20 @@ describe("ops user directory API compatibility", () => {
     expect(request).toHaveBeenNthCalledWith(1, { limit: "10", offset: "10", account_type: "all" });
     expect(request).toHaveBeenNthCalledWith(2, { limit: "10", offset: "10" });
     expect(result.data).toEqual({ items: [{ externalSubject: "db-member@example.test" }], total: 1 });
-    expect(result.compatibilityWarning).toContain("仅返回旧接口默认的商家成员范围");
+    expect(result.compatibilityWarning).toBe("");
   });
 
-  it("does not show merchant rows as platform accounts when the old API lacks that filter", async () => {
-    const request = vi.fn().mockRejectedValue(Object.assign(
-      new Error("ops.users.list 不接受参数 params.account_type"),
-      { code: "INVALID_REQUEST" },
-    ));
+  it("fails closed for merchant and platform filters when the legacy API cannot apply account_type", async () => {
+    for (const accountType of ["merchant", "platform"] as const) {
+      const request = vi.fn().mockRejectedValue(Object.assign(
+        new Error("ops.users.list 不接受参数 params.account_type"),
+        { code: "INVALID_REQUEST" },
+      ));
 
-    await expect(loadUserDirectory(request, { accountType: "platform" }))
-      .rejects.toBeInstanceOf(UnsupportedLegacyUserAccountFilterError);
-    expect(request).toHaveBeenCalledTimes(1);
+      await expect(loadUserDirectory(request, { accountType }))
+        .rejects.toBeInstanceOf(UnsupportedLegacyUserAccountFilterError);
+      expect(request).toHaveBeenCalledTimes(1);
+    }
   });
 
   it("only treats an explicit unknown-account_type validation as a legacy contract", () => {
