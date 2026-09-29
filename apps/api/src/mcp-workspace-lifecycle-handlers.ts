@@ -70,6 +70,9 @@ export async function handleWorkspaceLifecycleMethod(method: string, deps: Works
   if (method === 'workspace.data.export.get') {
     deps.requireRole(['workspace_owner', 'merchant_admin'])
     const requestId = deps.required('request_id')
+    if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(requestId)) {
+      throw new DomainError(ERROR_CODES.INVALID_REQUEST, '数据导出申请编号格式无效', 400)
+    }
     const request = await new WorkspaceDataExportService(deps.exports).get({ workspaceId, requestId })
     if (!request) throw new DomainError('WORKSPACE_DATA_EXPORT_NOT_FOUND', '数据导出申请不存在或不属于当前工作区', 404)
     return request

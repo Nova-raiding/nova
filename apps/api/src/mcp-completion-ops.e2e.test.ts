@@ -247,6 +247,12 @@ describe('MCP completion operations per-method HTTP evidence', () => {
     })
     expect(exportConflict.body.error?.code).toBe('WORKSPACE_DATA_EXPORT_IDEMPOTENCY_CONFLICT')
     expect(resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.export.get', { request_id: exportRequest.request_id }))).toEqual(exportRequest)
+    const invalidExportRead = await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.export.get', { request_id: 'not-a-uuid' })
+    expect(invalidExportRead.status).toBe(400)
+    expect(invalidExportRead.body.error?.code).toBe('INVALID_REQUEST')
+    const missingExportRead = await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.export.get', { request_id: crypto.randomUUID() })
+    expect(missingExportRead.status).toBe(404)
+    expect(missingExportRead.body.error?.code).toBe('WORKSPACE_DATA_EXPORT_NOT_FOUND')
     const foreignExportRead = await callMcp(base, tokens.ownerB, workspaceB, 'workspace.data.export.get', { request_id: exportRequest.request_id })
     expect(foreignExportRead.body.error?.code).toBe('WORKSPACE_DATA_EXPORT_NOT_FOUND')
 

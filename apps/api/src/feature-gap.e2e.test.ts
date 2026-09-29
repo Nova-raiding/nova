@@ -278,6 +278,14 @@ describe('new commercial and operations capabilities', () => {
     expect(product.error).toBeNull(); expect(product.data.result).toMatchObject({ title: '已修正防晒外套', factsConfirmationRequired: true, factsConfirmed: false })
     const sku = await call(base, workspaceId, 'catalog.sku.update', { product_id: productId, sku_id: 'sku-a', price: '209', stock: '7', expected_version: String(product.data.result.version) })
     expect(sku.error).toBeNull(); expect(sku.data.result.skus[0]).toMatchObject({ id: 'sku-a', price: 209, stock: 7 }); expect(sku.data.result.factsConfirmationRequired).toBe(true)
+    const stale = await call(base, workspaceId, 'catalog.sku.update', { product_id: productId, sku_id: 'sku-a', stock: '8', expected_version: String(product.data.result.version) })
+    expect(stale.error).toMatchObject({ code: 'PRODUCT_VERSION_CONFLICT' })
+    const confirmed = await call(base, workspaceId, 'catalog.facts.confirm', { product_id: productId })
+    expect(confirmed.error).toBeNull()
+    expect(confirmed.data.result).toMatchObject({ factsConfirmed: true, stock: 7, title: '已修正防晒外套' })
+    const searched = await call(base, workspaceId, 'catalog.search', { scope: 'workspace', query: '已修正防晒外套' })
+    expect(searched.error).toBeNull()
+    expect(searched.data.result.products).toEqual(expect.arrayContaining([expect.objectContaining({ product_id: productId, factsConfirmed: true, stock: 7, skus: [expect.objectContaining({ id: 'sku-a', price: 209, stock: 7 })] })]))
   })
 
   it('rejects duplicate product identities before MCP or REST batch import writes', async () => {

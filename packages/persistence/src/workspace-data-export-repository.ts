@@ -87,7 +87,7 @@ export class MemoryWorkspaceDataExportRepository implements WorkspaceDataExportR
     }
     const timestamp = this.now().toISOString()
     const row: WorkspaceDataExportRequest = {
-      id: `workspace_export_${randomUUID()}`,
+      id: randomUUID(),
       workspaceId,
       requestedBy: required(input.requestedBy, 'WORKSPACE_DATA_EXPORT_ACTOR_REQUIRED'),
       reason: required(input.reason, 'WORKSPACE_DATA_EXPORT_REASON_REQUIRED'),
