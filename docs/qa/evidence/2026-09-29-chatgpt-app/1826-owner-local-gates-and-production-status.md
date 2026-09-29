@@ -5,6 +5,7 @@
 - `npm run typecheck`：退出 0。
 - `npm run test:release-gates`：退出 0。前置桥接和模型结算 22/22；主 Vitest 177 个文件、1403 项通过，7 个文件和 16 项按显式待办清单跳过；后续脚本门禁退出 0。首次运行被失效的 `.safe-tests.lock` 阻挡；核对锁内 PID 不存在且无测试运行器后移除临时锁，重跑通过。
 - 本地插件版本 `0.1.0+codex.20260929182200` 已安装。`verify-installed-bridge.mjs` 返回 `ok=true`、116 项工具、54 个运行文件摘要一致。未在新版本真实 ChatGPT 桌面会话中取得业务调用证据。
+- 对该新版本以相同生产 origin 和 QA 工作区做独立 Keychain 凭据读取，仍返回 `MCP_KEYCHAIN_HELPER_INVALID`。系统钥匙串仅做不读取密码的元数据查询，目标条目存在；因此无法把这个失败归因为条目不存在。未读取或输出令牌，也未发起本轮正式租户 stdio 工具调用。
 - 线上 `yxsona.com` 的 `/releasez` 仍为 `fd1ad6a7bd122a391350c185798ac07e92795f8c`。API/Ops 健康，但 `release_approved=false`，数据库仍为 254；当前候选含迁移 255。用户要求不迁移现有数据库，本轮没有部署或修改数据库。
 - 生产商家 `demo@sn.com` 财务页实测创意点显示“未读取”，最近入账充值为空；近一小时线上日志有 9 次 MCP `CREATIVE_POINTS_UNAVAILABLE`。两份 Excel 未获得成功上传、扫描和知识确认的证据。
 - 五模态中转健康配置显示 ready，但没有与当前候选绑定的近 24 小时真实请求、用量和成本回执；生产能力与容量证据路径不可读。不能据此宣称全功能或上线门禁通过。
