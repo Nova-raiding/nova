@@ -41,7 +41,8 @@ static class Program {
         if (memory.TryGetBuffer(out var contents)) Array.Clear(contents.Array!, contents.Offset, contents.Count);
         Array.Clear(buffer);
       }
-      if (request is null || (request.target != "com.storenova.merchant-mcp" && request.target != "com.storenova.installation-identity")
+      if (request is null || (request.target != "com.storenova.merchant-mcp" && request.target != "com.storenova.installation-identity"
+        && request.target != "com.storenova.installation-binding")
         || !System.Text.RegularExpressions.Regex.IsMatch(request.account, "^(?:[a-f0-9]{64}|current-installation)$")) return 1;
       var name = request.target + ":" + request.account;
       if (request.operation == "write") {

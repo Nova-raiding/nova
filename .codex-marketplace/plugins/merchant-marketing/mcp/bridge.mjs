@@ -11,6 +11,7 @@ import { assertRelayEvidence } from './relay-evidence.mjs'
 import { loadManagedToken, validatedRotatedCredential } from './managed-token.mjs'
 import { writeKeychainCredential } from './keychain-credential.mjs'
 import { writeWindowsCredential } from './windows-credential.mjs'
+import { restoreWindowsSession } from './windows-session-env.mjs'
 
 // ChatGPT/Codex may launch the JavaScript entrypoint with a bundled Node binary.
 // On macOS, recover only missing configuration from launchd;
@@ -34,6 +35,7 @@ if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.
   }
 }
 
+restoreWindowsSession()
 await loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
   encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
 }))
@@ -181,6 +183,20 @@ const COMMERCIAL_RECOVERY_METHODS = new Set([
   'upload.session.create', 'upload.session.part', 'upload.session.complete',
   'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request',
   'platform.mapping.preflight',
+])
+// Mirrors the API's COMMERCIAL_READ_ONLY_METHODS. These methods only inspect
+// workspace state and the API already lets them run while balance facts are
+// unknown. The local recovery latch must not turn those reads into a cached
+// points error; the API still enforces identity, scope and capability checks.
+const COMMERCIAL_API_READ_ONLY_METHODS = new Set([
+  'ops.session', 'onboarding.status', 'workspace.health', 'workspace.metrics',
+  'billing.status', 'billing.transactions', 'billing.reconciliation', 'billing.model-usage.statement',
+  'subscription.get', 'subscription.orders.list', 'platform.model.status',
+  'platform.media.spec.list', 'platform.media.spec.get', 'platform.store.list',
+  'brand.get', 'support.customer.replies.list',
+  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get',
+  'knowledge.learning.list', 'knowledge.competitor.list',
+  'rule.list', 'rule.sync.status', 'automation.policy.get', 'automation.policy.list',
 ])
 // Commercial operations this bridge fails closed before forwarding. It is a
 // snapshot of the shared registry's disabled classification
@@ -365,7 +381,7 @@ const METHODS = {
         // `integer` (not `number`) on purpose: normalizeAttachmentCount drops a
         // non-integer, so a `number` branch would let 5.5 pass validation and
         // then vanish from the forwarded request with no error at all.
-        attachment_count: { anyOf: [{ type: 'string', pattern: '^(?:[0-9]|1[0-9]|20)$', maxLength: 2 }, { type: 'integer', minimum: 0, maximum: 20 }], description: 'Number of ChatGPT attachments associated with this intent. Canonical form is a wire-level integer string from 0 through 20; a JSON integer 0-20 is accepted as a documented alias.' },
+        attachment_count: { anyOf: [{ type: 'string', pattern: '^(?:[0-9]|1[0-9]|20)$', maxLength: 2 }, { type: 'integer', minimum: 0, maximum: 20 }], description: '当前意图关联的 ChatGPT 附件数量，范围为 0 至 20；标准传输格式为整数字符串，也接受等值的 JSON 整数。' },
         idempotency_key: { type: 'string', minLength: 8, maxLength: 200, description: '同一开始意图重试时保持稳定；通常由插件自动生成' },
       },
       additionalProperties: false,
@@ -1462,6 +1478,9 @@ function userFacingToolText(method, result) {
   if (method === 'brand.get' && result === null) {
     return '当前范围未找到品牌档案；已登记的品牌单元仍需单独核对档案内容。'
   }
+  if (Array.isArray(result) && READ_ONLY_METHODS.has(method)) {
+    return result.length === 0 ? '当前范围没有匹配记录。' : `已读取 ${result.length} 条记录；请核对结构化结果中的内容与来源。`
+  }
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
     return method === 'content.export' ? '导出已准备好。' : READ_ONLY_METHODS.has(method) ? '查询已返回；请以结构化字段核对业务状态。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
   }
@@ -1639,6 +1658,7 @@ function userFacingErrorText(code, details) {
   if (code === 'MCP_CONFIGURATION_REQUIRED') return '插件连接配置尚未加载，本次未向后端发送请求。请先完成连接配置；若配置刚更新，请重新加载插件连接。已有图片和视频无需重新上传。'
   if (code === 'UNAUTHENTICATED' || code === 'MCP_AUTH_REQUIRED') return 'Store Nova 工作区登录已失效。请在本地插件安装目录重新登录当前工作区，然后完整重启 ChatGPT；已有商品和素材不会丢失。'
   if (code === 'STORE_SELECTION_REQUIRED') return '还没有选定店铺。请先查看可用店铺，或明确提供平台和店铺账号；已导入的商品和商品规格不会丢失。'
+  if (code === 'STORE_ONBOARDING_REQUIRED') return '当前工作区尚未绑定可用于正式商品任务的店铺，本次正式操作未执行。请联系平台运营完成店铺登记或授权绑定；如当前工作区具备相应权限和额度，你仍可上传自己的商品资料，制作待审核候选，并在审核后导出。'
   if (code === 'MODEL_PROVIDER_REQUEST_FAILED' && /input\.media|first_frame/u.test(String(details?.provider_error_summary ?? ''))) return '视频尚未生成：视频服务未能正确接收参考图，需修复中转渠道的首帧映射。原图已保留，无需重新上传。'
   const retryable = new Set(['API_STARTING', 'API_UNAVAILABLE', 'RATE_LIMITED', 'MCP_GATEWAY_ERROR'])
   if (code === 'INTERACTIVE_WRITE_DISABLED' || code === 'INTERACTIVE_CONFIRMATION_REQUIRED') {
@@ -1902,7 +1922,7 @@ function rememberCommercialAccessResult(method, result) {
 }
 
 function recoveryOnlyResult(id, name) {
-  if (!commercialRecoveryOnlySnapshot || COMMERCIAL_RECOVERY_METHODS.has(name) || name === 'workspace.interactive.confirm') return undefined
+  if (!commercialRecoveryOnlySnapshot || COMMERCIAL_RECOVERY_METHODS.has(name) || COMMERCIAL_API_READ_ONLY_METHODS.has(name) || name === 'workspace.interactive.confirm') return undefined
   const structuredContent = {
     ...commercialRecoveryOnlySnapshot,
     message: '服务端已将当前会话限制为商业恢复操作；插件未转发本次业务请求。请先通过服务端授权的入口恢复并重新读取准入状态。',

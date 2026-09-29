@@ -154,6 +154,29 @@ async function close(server: ReturnType<typeof createServer>) {
 }
 
 describe('Codex stdio MCP bridge', () => {
+  it('keeps the cached-balance read bypass identical to the API read allowlist', async () => {
+    const [bridgeSource, apiSource] = await Promise.all([
+      readFile(BRIDGE_PATH, 'utf8'),
+      readFile(join(repositoryRoot, 'apps/api/src/server.ts'), 'utf8'),
+    ])
+    expect([...literalSetFromBridge(bridgeSource, 'COMMERCIAL_API_READ_ONLY_METHODS')].sort())
+      .toEqual([...literalSetFromBridge(apiSource, 'COMMERCIAL_READ_ONLY_METHODS')].sort())
+  })
+
+  it('describes every exposed tool and described argument in Chinese', async () => {
+    const { tools, child } = await listBridgeTools({})
+    try {
+      const descriptions = tools.flatMap(tool => [
+        [tool.name, tool.description],
+        ...Object.entries(tool.inputSchema.properties ?? {}).map(([name, schema]) => [`${tool.name}.${name}`, schema.description]),
+      ]).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+      expect(tools).toHaveLength(116)
+      expect(descriptions.filter(([, description]) => !/[\u3400-\u9fff]/u.test(description))).toEqual([])
+    } finally {
+      child.kill()
+    }
+  })
+
   it('describes product item numbers and SKU codes as distinct catalog search filters', async () => {
     const { tools, child } = await listBridgeTools({})
     try {
@@ -1294,7 +1317,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929114000' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929125100' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -3135,6 +3158,49 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('forwards API-exempt knowledge reads during an unknown-balance recovery latch', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const { method } = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      forwarded.push(method)
+      const result = method === 'creative-points.balance.get'
+        ? { balance_state: 'unknown', available_points: null }
+        : method === 'knowledge.brand.preference.get' ? { items: [] } : []
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: 1, result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: {
+      ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+      MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true',
+    }, stdio: ['pipe', 'pipe', 'pipe'] })
+    const call = async (id: number, name: string, args: Record<string, unknown> = {}) => {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } })}\n`)
+      return nextLine(child.stdout)
+    }
+    try {
+      expect((await call(1, 'creative-points.balance.get')).result).toMatchObject({ isError: false, structuredContent: { balance_state: 'unknown', available_points: null } })
+      const reads = ['knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list']
+      for (const [index, method] of reads.entries()) {
+        const response = (await call(index + 2, method)).result
+        expect(response.isError).toBe(false)
+        if (method === 'knowledge.asset.list' || method === 'knowledge.learning.list' || method === 'knowledge.competitor.list') {
+          expect(response.content[0].text).toBe('当前范围没有匹配记录。')
+        }
+      }
+      expect(forwarded).toEqual(['creative-points.balance.get', ...reads])
+      for (const method of ['knowledge.asset.create', 'content.generate', 'catalog.search']) {
+        expect((await call(forwarded.length + 2, method)).result).toMatchObject({ isError: true, structuredContent: { code: 'CREATIVE_POINTS_UNAVAILABLE', recovery_only: true } })
+      }
+      expect(forwarded).toEqual(['creative-points.balance.get', ...reads])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('preserves redacted authorization decision evidence for ChatGPT', async () => {
     const server = createServer((_req, res) => {
       res.writeHead(403, { 'content-type': 'application/json' })
@@ -3642,6 +3708,30 @@ describe('Codex stdio MCP bridge', () => {
         })
         expect(response.result.content[0].text).not.toContain('连接本地插件')
       }
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('explains the store onboarding gate in Chinese while preserving its diagnostic code', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(428, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { code: 'STORE_ONBOARDING_REQUIRED', message: 'store onboarding required', details: { onboarding_required: true, next_actions: ['调用 workspace.health 查看店铺授权状态'] } } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'workspace' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'STORE_ONBOARDING_REQUIRED' } })
+      expect(response.result.content[0].text).toContain('尚未绑定可用于正式商品任务的店铺')
+      expect(response.result.content[0].text).not.toMatch(/STORE_ONBOARDING_REQUIRED|workspace\.health|store onboarding required/u)
+      expect(response.result.structuredContent.message).toBe(response.result.content[0].text)
     } finally {
       child.kill()
       await close(server)

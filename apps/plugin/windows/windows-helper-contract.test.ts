@@ -2,6 +2,20 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 describe('Windows helper source contract', () => {
+  it('allows exactly the credential targets used by the Windows stores, including installation receipts', () => {
+    const source = readFileSync('apps/plugin/windows/StoreNovaCredentialHelper.cs', 'utf8')
+    const stores = readFileSync('apps/plugin/mcp/windows-credential.mjs', 'utf8')
+    const allowedTargets = [...source.matchAll(/request\.target != "([^"]+)"/gu)].map(match => match[1]).sort()
+    const storeTargets = [...new Set([...stores.matchAll(/'(com\.storenova\.[^']+)'/gu)].map(match => match[1]))].sort()
+    expect(storeTargets).toEqual([
+      'com.storenova.installation-binding',
+      'com.storenova.installation-identity',
+      'com.storenova.merchant-mcp',
+    ])
+    expect(allowedTargets).toEqual(storeTargets)
+    expect(source).toContain('|| !System.Text.RegularExpressions.Regex.IsMatch(request.account, "^(?:[a-f0-9]{64}|current-installation)$")) return 1;')
+  })
+
   it('protects secrets with CurrentUser DPAPI before Credential Manager persistence', () => {
     const source = readFileSync('apps/plugin/windows/StoreNovaCredentialHelper.cs', 'utf8')
     expect(source).toContain('ProtectedData.Protect')

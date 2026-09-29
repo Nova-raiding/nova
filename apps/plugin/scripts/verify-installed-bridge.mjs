@@ -52,6 +52,7 @@ const fixedRuntimeFiles = [
   'mcp/installation-identity.mjs',
   'mcp/windows-credential.mjs',
   'mcp/windows-installation-binding.mjs',
+  'mcp/windows-session-env.mjs',
   'mcp/keychain-credential.mjs',
   'mcp/keychain-credential-helper.swift',
   'macos/store-nova-connect-helper.swift',

@@ -3,7 +3,7 @@ import { once } from 'node:events'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
-import { setPasswordAuthRepositoryForTests, workspaceMembers } from '../../api/src/server.js'
+import { enableCommercialFixtureHarnessForTests, setPasswordAuthRepositoryForTests, workspaceMembers } from '../../api/src/server.js'
 import { server } from '../../api/src/server.js'
 
 const bridgePath = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
@@ -170,5 +170,67 @@ describe('first-use plugin → API/MCP chain', () => {
     })
     expect(foreignWorkspace.status).toBe(403)
     await expect(foreignWorkspace.json()).resolves.toMatchObject({ error: { code: 'FORBIDDEN' } })
+  }, 30_000)
+
+  it('reads customer-visible support replies through the real local stdio bridge and rejects missing scope', async () => {
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
+    vi.stubEnv('SESSION_ID_HASH_SECRET', 'isolated-support-replies-stdio-secret')
+    vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
+    enableCommercialFixtureHarnessForTests()
+    const workspaceId = `ws_support_stdio_${Date.now()}`
+    const supportActor = `support-${workspaceId}`
+    const merchantActor = `merchant-${workspaceId}`
+    const supportToken = `support-token-${workspaceId}`
+    const merchantToken = `merchant-token-${workspaceId}`
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      [supportToken]: { workspaces: [workspaceId], actor_id: supportActor, roles: ['support'], workbenches: ['workspace'] },
+      [merchantToken]: { workspaces: [workspaceId], actor_id: merchantActor, roles: ['merchant_admin'], workbenches: ['workspace'] },
+    }))
+    await workspaceMembers.upsert({ workspaceId, externalSubject: supportActor, displayName: 'Isolated support agent', role: 'support', status: 'active', invitedBy: 'support-stdio-chain-e2e' })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: merchantActor, displayName: 'Isolated merchant', role: 'merchant_admin', status: 'active', invitedBy: 'support-stdio-chain-e2e' })
+    const apiBase = await startApi()
+    const apiCall = async (token: string, method: string, params: Record<string, unknown>) => fetch(`${apiBase}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-ops-workbench': 'workspace', 'x-workspace-id': workspaceId, 'x-test-commercial-fixture': 'server-e2e' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params }),
+    })
+    const createdResponse = await apiCall(supportToken, 'ops.support.ticket.create', {
+      subject: 'stdio 客服回复链路', description: '只在隔离测试工作区验证', priority: 'normal',
+      customer_id: 'isolated-customer', customer_name: '隔离商户', idempotency_key: `support-stdio-${workspaceId}`,
+    })
+    expect(createdResponse.status).toBe(200)
+    const createdEnvelope = await createdResponse.json() as { data?: { result?: { ticket?: { id: string; revision: number } } }; error?: unknown }
+    expect(createdEnvelope.error).toBeFalsy()
+    const ticket = createdEnvelope.data?.result?.ticket
+    expect(ticket?.id).toBeTruthy()
+    const internalResponse = await apiCall(supportToken, 'ops.support.ticket.comment', {
+      ticket_id: ticket!.id, body: 'internal-only stdio note', visibility: 'internal', expected_revision: String(ticket!.revision), idempotency_key: `internal-${workspaceId}`,
+    })
+    expect(internalResponse.status).toBe(200)
+    const internalEnvelope = await internalResponse.json() as { data?: { result?: { ticket?: { revision: number } } } }
+    const customerResponse = await apiCall(supportToken, 'ops.support.ticket.comment', {
+      ticket_id: ticket!.id, body: 'customer-visible stdio reply', visibility: 'customer', expected_revision: String(internalEnvelope.data?.result?.ticket?.revision), idempotency_key: `customer-${workspaceId}`,
+    })
+    expect(customerResponse.status).toBe(200)
+
+    child = spawn(process.execPath, [bridgePath], {
+      cwd: process.cwd(),
+      env: { ...process.env, NODE_ENV: 'test', DEPLOY_ENV: 'test', MERCHANT_MCP_BASE_URL: apiBase, MERCHANT_WORKSPACE_ID: workspaceId, MERCHANT_MCP_TOKEN: merchantToken, MERCHANT_MCP_TOKEN_SOURCE: 'environment', MERCHANT_STRICT_AUTH: 'true', MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false', MERCHANT_MCP_WRITE_ENABLED: 'false' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'support.customer.replies.list', arguments: { ticket_id: ticket!.id } } })}\n`)
+    const read = await nextLine(child.stdout)
+    expect(read.result.isError, JSON.stringify(read.result)).toBe(false)
+    expect(read.result.structuredContent).toMatchObject({ ticket_id: ticket!.id, replies: [{ body: 'customer-visible stdio reply' }] })
+    expect(JSON.stringify(read.result)).not.toContain('internal-only stdio note')
+
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'support.customer.replies.list', arguments: { limit: '10' } } })}\n`)
+    const rejected = await nextLine(child.stdout)
+    expect(rejected.error.message).toContain('请提供 ticket_id、related_task_id 或 related_order_id 之一')
+
+    const apiMissingScope = await apiCall(merchantToken, 'support.customer.replies.list', { limit: '10' })
+    expect(apiMissingScope.status).toBe(400)
+    await expect(apiMissingScope.json()).resolves.toMatchObject({ error: { code: expect.any(String) } })
   }, 30_000)
 })

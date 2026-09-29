@@ -17,6 +17,9 @@ async function discoveredToolNames(root: URL) {
       MERCHANT_MCP_BASE_URL: 'https://merchant.example.com',
       MERCHANT_WORKSPACE_ID: 'ws_mirror_runtime_test',
       MERCHANT_MCP_WRITE_ENABLED: 'false',
+      MERCHANT_MCP_TOKEN_SOURCE: 'environment',
+      MERCHANT_MCP_TOKEN: '',
+      MERCHANT_MCP_REFRESH_TOKEN: '',
     },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
