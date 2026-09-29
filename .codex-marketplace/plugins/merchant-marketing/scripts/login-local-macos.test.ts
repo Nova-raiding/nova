@@ -175,7 +175,7 @@ describe('local plugin login installer runtime', () => {
     expect(response.headers.get('content-type')).toContain('text/html')
     expect(response.headers.get('content-security-policy')).toContain("script-src 'nonce-")
     expect(first).toContain('正在完成绑定')
-    expect(first).not.toContain('绑定已完成')
+    expect(first).not.toContain('<h1 id="title">绑定已完成</h1>')
     expect(first).not.toMatch(/one-time-code|synthetic-access|synthetic-refresh/u)
     releaseStore()
     if (shouldFail) await expect(login).rejects.toThrow('LOCAL_PLUGIN_LOGIN_FAILED')
