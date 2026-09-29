@@ -17,9 +17,9 @@
 
 隔离候选启动与 ChatGPT 宿主取证见 [候选宿主路由](chatgpt-candidate-host-route.md)。正式部署脚本的完整证据预检发生在生产容器启动**之前**；因此“先部署、后验证”在本项目应指先启动 **101 隔离候选运行时**、在该运行时验证，然后生产切流并再次验收。现有正式部署脚本在迁移前读取旧生产 `/releasez`，并要求其身份与回滚 capsule 声明的兼容桥目标完全一致；旧生产 `/readyz` 则在候选运行时切换后检查。不得把旧版健康状态当作候选验收，也不得把旧版身份与兼容性未经核验的响应当作桥接证据。同样，回到已知故障的旧版不能算成功恢复。故障修复发布需要单独实现并验收：记录旧版故障及身份，保全数据库和运行配置，验证候选在隔离环境中可用，核对迁移兼容和流量切换方案，并在生产切流后以新版本公网业务验收作为成功条件。该路径目前尚未实现，不得把修改本文当作可以运行现有部署器的依据；旧容器缺少目标 Compose 归属的问题仍需处理。Bridge B 的现有约束见 [Bridge B 手册](ecs-bridge-b-transition.md)。
 
-### 254→255 API runtime gate
+### 254→255→256 API/worker isolated runtime gate
 
-发布候选涉及迁移 255 时，`npm run test:release-gates` 会先通过 `pretest:release-gates` 自动执行 API 与 worker 的 254→255 隔离桥接检查，以及模型用量结算测试。API 检查启动实际服务并覆盖品牌作用域 fail-closed、迁移后 readiness 撤销、重启后路由和 RLS；worker 检查使用 `merchant_app` 实际连接隔离 PG17，证明真实 worker 进程在不完整 253 前缀拒绝启动、在 254 与 255 前缀分别完成空队列轮询，并检查进程观察到版本变化时必须重启。它不代替生产 worker/队列业务 canary。可单独运行 API 桥接测试：
+`npm run test:release-gates` 的 `pretest:release-gates` 会在隔离 PostgreSQL 17/Redis 中执行 API、worker 和模型用量结算运行时门禁。API 测试实跑 254→255→256，覆盖品牌/素材路由 fail-closed、迁移后撤销 readiness、重启及 RLS。worker 测试通过 `merchant_app` 校验 254/255/256 前缀及版本变化重启；真实进程覆盖 sync 与 automation 角色，并验证 255 bridge 不调用 migration-256 purge、迁移到 256 后重启才发送带签名且限定 workspace 的 purge 请求。它仍不代替生产 PG16 恢复/故障演练、其他 worker 角色与队列业务 canary。可单独运行 API 桥接测试：
 
 ```sh
 npm run test:bridge-254-255-api
@@ -169,11 +169,13 @@ ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATAB
 
 部署执行器消费 nonce 后使用固定摘要的 PostgreSQL 17 迁移镜像执行前向迁移；迁移命令成功并不足以切流。执行器必须再次通过 `DATABASE_URL` 和 `OPS_DATABASE_URL` 运行完整链校验，确认两个运行角色都精确包含 1 到 `EXPECTED_MIGRATION_VERSION` 的候选链，才允许重建 API、Worker、UI 或网关容器。完整链校验失败会在业务容器切换前中止并进入受保护回退流程；数据库仍遵循 forward-only 策略，不执行 schema downgrade。
 
-### 当前 242→255 过渡发布阻断条件
+### 当前 254→255→256 过渡发布阻断条件
 
-当前候选 `release-metadata.json` 声明迁移目标 255；候选归档、隔离恢复 capture、生产 evidence 和 `EXPECTED_MIGRATION_VERSION` 必须共同绑定该值。此前旧 API/Worker 组合的数据库前缀曾观测为 242，但发布前仍须重新读取并核实所有实际数据库及外部消费者。不得让旧运行时代码继续承载流量并直接把共享库迁到 255。候选 C 的普通 `deploy-verified-ecs-compose.sh` 在消费 nonce 前要求回滚 capsule 的目标迁移链精确覆盖 metadata 目标，并为计划中的实时版本到 255 之间每个前缀提供受审查摘要；公网 `/releasez` 还必须显示已验明的兼容桥身份。预部署签名观测中的数据库版本也必须与计划一致。
+本次线上 `merchant_ops / merchant` 只读事务在 2026-09-29T18:50:04Z 观测到连续迁移记录 count/tail=254；候选 `52d79f52` 的 `release-metadata.json` 目标为 256。该观察只核验了尾部和最近三条 checksum，不是 1–254 完整历史、`merchant_app` 视图或发布授权证明。候选归档、隔离恢复 capture、生产 evidence 和 `EXPECTED_MIGRATION_VERSION` 必须共同绑定目标 256。禁止让仍只兼容 254 的运行时代码承载流量时直接把共享库迁到 255。
 
-现有桥 B runbook 只描述 242 前缀的 runtime-only 安装，且明确不兼容 245 及之后的数据库前缀；它不是目标 255 的兼容桥。254→255 的隔离 API/worker 测试只证明这两个前缀间的 runtime contract，不等于 242→255 的完整恢复证明。当前 242→255 发布保持 NO-GO，直到一个经审查且实机验证的桥接版本能承载目标 schema、独立安装步骤和故障恢复执行器就绪，且回滚 capsule 覆盖经现场核实的实时前缀至 255 的全部迁移前缀。顺序必须是：隔离 PG17 恢复库验证候选归档 metadata 指定的完整迁移链及受保护回滚 capsule；生产实时前缀复核为 capsule 计划所声明的值；先安装并通过 `/releasez` 证明兼容目标 255 的桥；再由签名候选和受保护 capsule 执行前向迁移并切换候选 C。缺少任一运行证据时，不得把旧桥 B、普通一键部署或静态文档当作授权/成功证据。
+这是两个有序阶段，不是可把旧 254→255 门禁中的数字替换成 256 的单桥：先证明并安装兼容 254/255 的桥，完成受保护 254→255 转移；再将所有 API/replica 和正在运行的 worker（含 automation 及任何共享消费者）滚动至兼容 255/256 的桥，证明不存在只兼容 254/255 的活跃实例，之后才可执行受保护 255→256 转移，最后重启并验收完整 256 runtime。现有隔离 API 测试已贯穿两个相邻迁移阶段；worker 隔离测试现覆盖 sync 与 automation 真实进程，并实测 255/256 的 purge 调用门控。generation、publish、reconcile、scan 等角色仍没有同等级的跨阶段真实进程验证；第二阶段桥接期间一键插件连接接口的 503 行为也仍需确认，旧式 CLI PKCE 路径应独立核验。
+
+旧桥 B runbook 和 254→255 文档仍是阶段一的历史合同，不能重写为 256 的生产执行证据。当前 runtime gate 已覆盖 API 及 sync/automation worker 在 254→255→256 的部分隔离合同，但普通发布器、回滚 capsule 和桥接安装/恢复状态机尚未形成覆盖两阶段的受保护闭环。当前保持 **NO-GO**。在补齐其余 worker 角色与插件连接跨阶段隔离测试、生产逐项迁移 checksum 和双角色完整历史核验、PG16 恢复与故障注入、每个活跃服务/共享消费者身份核验、nonce/锁/签名恢复 capsule 以及真实候选宿主验收之前，不得 staging、迁移或切流。
 
 1. 在独立目录解包并完成三方合并。
 2. 对合并结果运行类型检查、OSS/证据/生产配置测试及 `pilot-compose-preflight.sh`。

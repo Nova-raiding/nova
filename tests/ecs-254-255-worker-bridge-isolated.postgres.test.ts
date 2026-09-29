@@ -1,20 +1,69 @@
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
+import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Pool } from 'pg'
 import { afterAll, describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner, verifyAppliedMigrations } from '../packages/persistence/src/migration.js'
+import { verifyWorkerRequestProof } from '../packages/security/src/worker-request-proof.js'
 import { assertBridgeStartupMigrationVersion, assertWorkerReadinessDependencies } from '../apps/worker/src/main.js'
 import { createIsolatedOpsFixture } from './isolated-ops-fixture.js'
 
-async function runWorkerOnce(input: { databaseUrl: string; redisUrl: string; workspaceId: string; evidenceDir: string; expectedVersion: number | null; bridgeMode?: string }): Promise<void> {
+const automationToken = 'isolated-worker-automation-token'
+const automationSecret = 'isolated-worker-automation-signing-secret'
+type WorkerRole = 'sync' | 'automation'
+type StubRequest = { method: string; target: string; body: string; headers: IncomingMessage['headers'] }
+
+async function startAutomationApiStub(): Promise<{ url: string; requests: StubRequest[]; close: () => Promise<void> }> {
+  const requests: StubRequest[] = []
+  const server: Server = createServer(async (request, response) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of request) chunks.push(Buffer.from(chunk))
+    const body = Buffer.concat(chunks).toString('utf8')
+    const target = request.url ?? '/'
+    if (request.method === 'GET' && target === '/readyz') {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ data: { persistence: { ready: true }, redis: { ready: true } } }))
+      return
+    }
+    requests.push({ method: request.method ?? 'GET', target, body, headers: request.headers })
+    const payload = target === '/v1/internal/automation/tick'
+      ? { data: { result: { executed: [] } } }
+      : target === '/v1/internal/storage/orphans/cleanup'
+        ? { data: { cleaned: 0 } }
+        : target === '/v1/internal/assets/lifecycle/purge'
+          ? { data: { purged: 0 } }
+          : { error: { code: 'ISOLATED_STUB_ROUTE_NOT_FOUND' } }
+    response.writeHead('error' in payload ? 404 : 200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify(payload))
+  })
+  await new Promise<void>((resolveListen, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolveListen)
+  })
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('isolated automation API stub did not bind a TCP port')
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    requests,
+    close: () => new Promise<void>((resolveClose, reject) => server.close(error => error ? reject(error) : resolveClose())),
+  }
+}
+
+async function runWorkerOnce(input: { databaseUrl: string; redisUrl: string; workspaceId: string; evidenceDir: string; expectedVersion: number | null; bridgeMode?: string; role?: WorkerRole; apiBaseUrl?: string }): Promise<Record<string, unknown> | undefined> {
+  const role = input.role ?? 'sync'
   const env: NodeJS.ProcessEnv = {
     PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin', HOME: '/nonexistent', LANG: 'C.UTF-8',
     NODE_ENV: 'development', DATABASE_URL: input.databaseUrl, REDIS_URL: input.redisUrl,
-    WORKER_ROLE: 'sync', WORKER_WORKSPACES: input.workspaceId, WORKER_ONCE: 'true',
-    WORKER_METRICS_PORT: '0', WORKER_READY_FILE: resolve(input.evidenceDir, `worker-${input.expectedVersion ?? 'partial'}.ready`),
+    WORKER_ROLE: role, WORKER_WORKSPACES: input.workspaceId, WORKER_ONCE: 'true',
+    WORKER_METRICS_PORT: '0', WORKER_READY_FILE: resolve(input.evidenceDir, `worker-${input.expectedVersion ?? 'partial'}-${role}.ready`),
     BRIDGE_SCHEMA_COMPATIBILITY_MODE: input.bridgeMode ?? 'prefix_254_or_255',
+    ...(role === 'automation' ? {
+      WORKER_API_BASE_URL: input.apiBaseUrl,
+      WORKER_API_TOKEN: automationToken,
+      WORKER_API_SIGNING_SECRET: automationSecret,
+    } : {}),
   }
   const child = spawn(process.execPath, ['--import', 'tsx', 'apps/worker/src/main.ts'], {
     cwd: resolve('.'), env, stdio: ['ignore', 'pipe', 'pipe'],
@@ -34,6 +83,7 @@ async function runWorkerOnce(input: { databaseUrl: string; redisUrl: string; wor
     child.once('exit', code => { clearTimeout(timer); resolveExit(code) })
   })
   const diagnostics = output.replaceAll(input.databaseUrl, '[database]').replaceAll(input.redisUrl, '[redis]')
+    .replaceAll(automationToken, '[worker-token]').replaceAll(automationSecret, '[worker-secret]')
   if (input.expectedVersion === null) {
     expect(exit, `worker unexpectedly accepted an incomplete migration prefix: ${diagnostics}`).not.toBe(0)
     expect(diagnostics).toContain('exactly 254 or 255')
@@ -42,7 +92,8 @@ async function runWorkerOnce(input: { databaseUrl: string; redisUrl: string; wor
   expect(exit, `worker failed at ${input.expectedVersion}: ${diagnostics}`).toBe(0)
   expect(diagnostics).toContain('"message":"worker poll completed"')
   const readiness = JSON.parse(await readFile(env.WORKER_READY_FILE!, 'utf8')) as Record<string, unknown>
-  expect(readiness).toMatchObject({ role: 'sync', workspaces: 1 })
+  expect(readiness).toMatchObject({ role, workspaces: 1 })
+  return readiness
 }
 
 describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
@@ -112,6 +163,24 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
       expect(ready255OnNewBridge).toEqual({ migrationVersion: 255, apiReady: false })
       expect(() => assertBridgeStartupMigrationVersion(ready255OnNewBridge.migrationVersion, 256))
         .toThrow('bridge database migration prefix changed; restart the worker before processing tasks')
+
+      // Exercise the actual automation process while the DB is still at 255.
+      // Routine maintenance remains available, but the 256-only lifecycle
+      // purge callback must not be issued by this bridge process.
+      const automation255 = await startAutomationApiStub()
+      try {
+        await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
+          workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 255,
+          bridgeMode: 'prefix_255_or_256', role: 'automation', apiBaseUrl: automation255.url })
+        expect(automation255.requests.map(request => request.target)).toEqual([
+          '/v1/internal/automation/tick', '/v1/internal/storage/orphans/cleanup',
+        ])
+        expect(automation255.requests.every(request => request.headers.authorization === `Bearer ${automationToken}`)).toBe(true)
+        expect(automation255.requests.every(request => request.headers['x-workspace-id'] === fixture.workspaceId)).toBe(true)
+      } finally {
+        await automation255.close()
+      }
+
       expect(await new MigrationRunner(admin, migrations).run()).toEqual([256])
       const ready256 = await assertWorkerReadinessDependencies({
         database: app, expectedMigrations: migrations, bridgeMigrations: migrations, bridgeMode: 'prefix_255_or_256',
@@ -120,6 +189,43 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
       expect(() => assertBridgeStartupMigrationVersion(ready256.migrationVersion, 256)).not.toThrow()
       await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
         workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 256, bridgeMode: 'prefix_255_or_256' })
+
+      // After migration 256, a restarted real automation process is allowed to
+      // issue the purge callback. Verify scope, request body, bearer token, and
+      // cryptographic automation proof at the loopback-only receiver.
+      const automation256 = await startAutomationApiStub()
+      try {
+        await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
+          workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 256,
+          bridgeMode: 'prefix_255_or_256', role: 'automation', apiBaseUrl: automation256.url })
+        const purgeRequests = automation256.requests.filter(request => request.target === '/v1/internal/assets/lifecycle/purge')
+        expect(purgeRequests).toHaveLength(1)
+        const purge = purgeRequests[0]!
+        expect(purge.method).toBe('POST')
+        expect(purge.headers.authorization).toBe(`Bearer ${automationToken}`)
+        expect(purge.headers['x-workspace-id']).toBe(fixture.workspaceId)
+        expect(JSON.parse(purge.body)).toEqual({ workspace_id: fixture.workspaceId, limit: 25 })
+        const header = (name: string) => {
+          const value = purge.headers[name]
+          return Array.isArray(value) ? value[0] : value
+        }
+        expect(header('x-worker-role')).toBe('automation')
+        expect(verifyWorkerRequestProof({
+          secret: automationSecret,
+          role: 'automation',
+          workerId: header('x-worker-id'),
+          method: purge.method,
+          requestTarget: purge.target,
+          workspaceId: fixture.workspaceId,
+          body: purge.body,
+          timestamp: header('x-worker-timestamp') ?? '',
+          nonce: header('x-worker-nonce') ?? '',
+          bodySha256: header('x-worker-body-sha256') ?? '',
+          signature: header('x-worker-workspace-signature') ?? '',
+        })).toBe(true)
+      } finally {
+        await automation256.close()
+      }
     } finally {
       await app.end()
       await admin.end()
