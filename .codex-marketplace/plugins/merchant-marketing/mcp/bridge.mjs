@@ -1165,6 +1165,14 @@ function jsonRpcError(id, code, message, data) {
   return { jsonrpc: '2.0', id, error: { code, message, ...(data === undefined ? {} : { data }) } }
 }
 
+function toolArgumentError(id, message, visibleMessage = '参数不完整或格式不正确，请补充后重试。') {
+  return jsonRpc(id, {
+    content: [{ type: 'text', text: visibleMessage }],
+    structuredContent: { code: 'TOOL_ARGUMENTS_INVALID', message },
+    isError: true,
+  })
+}
+
 function taskDecisionUiHtml(kind) {
   const copy = kind === 'creative'
     ? { title: '选择一个创意方向', summary: '三个方向各有侧重。先比较，再确认最适合当前商品的一项。', cta: '确认选择' }
@@ -3556,7 +3564,7 @@ async function handle(request) {
     const name = request.params?.name
     const args = request.params?.arguments
     if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name]) return jsonRpcError(id, -32602, `当前插件没有此工具：${String(name)}`)
-    if (!args || typeof args !== 'object' || Array.isArray(args)) return jsonRpcError(id, -32602, '工具参数必须是对象')
+    if (!args || typeof args !== 'object' || Array.isArray(args)) return toolArgumentError(id, '工具参数必须是对象')
     if (COMMERCIAL_DISABLED_METHODS.has(name)) {
       // The set is not only a registry mirror: it also carries the annotated
       // bridge-only narrowings, so the message must not claim the shared
@@ -3588,7 +3596,7 @@ async function handle(request) {
     if (name === 'catalog.image.select') {
       const ticketHash = /^[a-f0-9]{64}$/u
       if (!ticketHash.test(String(args.confirmation_ticket_nonce_hash ?? '')) || !ticketHash.test(String(args.confirmation_ticket_intent_hash ?? ''))) {
-        return jsonRpcError(id, -32602, '选择主图需要与当前候选绑定的 SHA-256 确认票据')
+        return toolArgumentError(id, '选择主图需要与当前候选绑定的 SHA-256 确认票据', '选择主图需要当前候选的确认票据，请重新读取候选并确认。')
       }
     }
     if (name === 'workspace.interactive.confirm') {
@@ -3615,7 +3623,7 @@ async function handle(request) {
     // validateToolArguments is a pure in-memory check over the METHODS schema, so
     // it runs after the consent gate but before any transport work.
     const argumentError = validateToolArguments(name, args)
-    if (argumentError) return jsonRpcError(id, -32602, argumentError.message)
+    if (argumentError) return toolArgumentError(id, argumentError.message)
     try {
       const remoteResult = await callRemote(name, prepareToolArguments(name, args))
       if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('api.result', { method: name, job_id: remoteResult?.job_id ?? remoteResult?.job?.jobId ?? remoteResult?.job?.id ?? 'unknown', image_count: Array.isArray(remoteResult?.images) ? remoteResult.images.length : 0, state: remoteResult?.state ?? remoteResult?.execution_state ?? remoteResult?.candidate_state?.state ?? 'missing', archive_state: remoteResult?.job?.archiveState ?? remoteResult?.job?.archive_state ?? remoteResult?.candidate_state?.archive_state ?? 'unknown' })

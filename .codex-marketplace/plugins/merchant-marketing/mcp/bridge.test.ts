@@ -328,9 +328,9 @@ describe('Codex stdio MCP bridge', () => {
     try {
       const baseArguments = { job_id: 'job_1', visual_ref: 'visual_2', expected_revision: '7', idempotency_key: 'image-select-visual-2', reason: '用户选择首选主图' }
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.select', arguments: baseArguments } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602 })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.image.select', arguments: { ...baseArguments, confirmation_ticket_nonce_hash: 'A'.repeat(64), confirmation_ticket_intent_hash: 'b'.repeat(64) } } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602 })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
       expect(requests).toHaveLength(0)
       const arguments_ = { ...baseArguments, confirmation_ticket_nonce_hash: 'a'.repeat(64), confirmation_ticket_intent_hash: 'b'.repeat(64) }
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'catalog.image.select', arguments: arguments_ } })}\n`)
@@ -468,11 +468,16 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'workspace', totally_undeclared_field: 'x' } } })}\n`)
       const rejected = await nextLine(child.stdout)
-      expect(rejected.error).toMatchObject({ code: -32602 })
-      expect(String(rejected.error.message)).toContain('不支持的字段 totally_undeclared_field')
+      expect(rejected.result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+      expect(String(rejected.result.structuredContent.message)).toContain('不支持的字段 totally_undeclared_field')
+      expect(rejected.result.content).toEqual([{ type: 'text', text: '参数不完整或格式不正确，请补充后重试。' }])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: { size: 'invalid' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' }, content: [{ type: 'text', text: '参数不完整或格式不正确，请补充后重试。' }] })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'catalog.search', arguments: null } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
       expect(forwarded).toEqual([])
       // The declared surface still works unchanged.
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'workspace', limit: '10' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'workspace', limit: '10' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { items: [] } })
       expect(forwarded).toEqual(['catalog.search'])
     } finally {
@@ -496,7 +501,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageGet.inputSchema.oneOf).toEqual([{ required: ['job_id'] }, { required: ['visual_ref'] }])
       for (const [index, args] of [{}, { job_id: 'job_1', visual_ref: 'visual_1' }, { job_id: ' ' }].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name: 'catalog.image.get', arguments: args } })}\n`)
-        expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602 })
+        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
       }
       expect(forwarded).toBe(0)
     } finally {
@@ -523,8 +528,8 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'support.customer.replies.list', arguments: { limit: '10' } } })}\n`)
       const rejected = await nextLine(child.stdout)
-      expect(rejected.error).toMatchObject({ code: -32602 })
-      expect(String(rejected.error.message)).toContain('请提供 ticket_id、related_task_id 或 related_order_id 之一')
+      expect(rejected.result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+      expect(String(rejected.result.structuredContent.message)).toContain('请提供 ticket_id、related_task_id 或 related_order_id 之一')
       expect(forwarded).toEqual([])
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'support.customer.replies.list', arguments: { related_task_id: 'task_1', limit: '10' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { tickets: [] } })
@@ -1116,8 +1121,8 @@ describe('Codex stdio MCP bridge', () => {
       for (const [index, attachmentCount] of ['21', 21, true].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { attachment_count: attachmentCount } } })}\n`)
         const response = await nextLine(child.stdout)
-        expect(response.error).toMatchObject({ code: -32602 })
-        expect(String(response.error.message)).toContain('attachment_count')
+        expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+        expect(String(response.result.structuredContent.message)).toContain('attachment_count')
       }
       expect(forwarded).toEqual([])
     } finally {
@@ -1317,7 +1322,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929125100' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929133000' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -1798,9 +1803,9 @@ describe('Codex stdio MCP bridge', () => {
       // The exception is only for the contract-declared property: the type is
       // still checked, and genuinely undeclared arguments stay rejected.
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'tools/call', params: { name: 'onboarding.status', arguments: { workspace_id: 5 } } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: '工具 onboarding.status 参数无效：workspace_id 必须是文本' })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID', message: '工具 onboarding.status 参数无效：workspace_id 必须是文本' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'tools/call', params: { name: 'onboarding.status', arguments: { store_links_text: 'x', unexpected_context: 'y' } } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: '工具 onboarding.status 参数无效：不支持的字段 unexpected_context' })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID', message: '工具 onboarding.status 参数无效：不支持的字段 unexpected_context' } })
       expect(requests).toHaveLength(2)
     } finally {
       child.kill()
@@ -1836,9 +1841,9 @@ describe('Codex stdio MCP bridge', () => {
       for (const attachmentCount of [5.5, 21, '21', '', null, -1, true]) {
         id += 1
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'merchant.start', arguments: { attachment_count: attachmentCount } } })}\n`)
-        expect((await nextLine(child.stdout)).error, `attachment_count ${JSON.stringify(attachmentCount)} must be rejected`).toMatchObject({
-          code: -32602,
-          message: '工具 merchant.start 参数无效：attachment_count 不符合允许的格式',
+        expect((await nextLine(child.stdout)).result, `attachment_count ${JSON.stringify(attachmentCount)} must be rejected`).toMatchObject({
+          isError: true,
+          structuredContent: { code: 'TOOL_ARGUMENTS_INVALID', message: '工具 merchant.start 参数无效：attachment_count 不符合允许的格式' },
         })
       }
       // No rejected value may ever be forwarded without the argument.
