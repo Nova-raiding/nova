@@ -6261,12 +6261,20 @@ export function MaterialRecycleBinWorkspace({ storageScope }: { storageScope: Ma
   )
 }
 
+export function materialUploadBalanceNotice(billing: BillingStatus | null): string | null {
+  const points = billing?.available_points
+  if (points === null || points === undefined) return '创意点余额尚未确认。当前上传可能被服务端拒绝；请到财务概况核对权益与到账状态。'
+  if (points <= 0) return '当前创意点余额为 0。上传前请到财务概况确认权益或充值到账；最终以服务端实时校验为准。'
+  return null
+}
+
 export function MaterialLibraryWorkspace({
   baseUrl,
   storageScope,
   accounts,
   accountsError = '',
   products,
+  billing,
   view = 'library',
 }: {
   baseUrl?: string
@@ -6274,6 +6282,7 @@ export function MaterialLibraryWorkspace({
   accounts: PlatformAccount[] | null
   accountsError?: string
   products: ApiProduct[] | null
+  billing?: BillingStatus | null
   view?: 'library' | 'brands'
 }) {
   const currentStorageScopeKey = storageScope ? JSON.stringify([storageScope.accountId, storageScope.workspaceId]) : ''
@@ -7148,6 +7157,7 @@ export function MaterialLibraryWorkspace({
           </>}
         >
           <div className="material-upload-dialog">
+            {materialUploadBalanceNotice(billing ?? null) && <p className="material-upload-access-notice" role="alert" data-testid="material-upload-access-notice">{materialUploadBalanceNotice(billing ?? null)}</p>}
             <div className="material-upload-top">
               <div className="material-upload-store"><MaterialCategoryDropdown ariaLabel="选择上传目标" value={uploadStore.id} options={uploadTargets.map((store) => ({ value: store.id, label: store.name }))} onChange={(value) => { setUploadStoreId(value); setUploadSeries('') }} searchable searchPlaceholder="搜索店铺" triggerContent={<span className="material-upload-store-trigger"><span className="catalog-store-logo" aria-hidden="true">{uploadStore.logoUrl ? <img src={uploadStore.logoUrl} alt="" /> : uploadStore.mark}</span><span className="material-upload-store-copy"><small>上传目标</small><strong>{uploadStore.name}</strong><em>{uploadStore.platform} · 服务端资产按工作区保存</em></span></span>} /></div>
               <button type="button" className="material-upload-picker" data-dialog-initial-focus disabled={pendingFiles.length >= 50} onClick={() => uploadInput.current?.click()}><Upload size={18} /><span><strong>{pendingFiles.length ? '继续选择' : view === 'brands' ? '选择图片或文档' : '选择图片或视频'}</strong><small>最多 50 个文件</small></span></button>
@@ -7281,6 +7291,7 @@ export function Products({
 }: {
   baseUrl?: string
   authAccount: MerchantAuthAccount | null
+  billing?: BillingStatus | null
   apiMode?: string | null
   modelStatus: PlatformModelStatus | null
   modelStatusRead: boolean
@@ -7873,7 +7884,7 @@ export function Products({
     // material workspace can never disagree with the catalogue about the
     // workspace's stores (it used to read its own eight-store seed instead).
     const storageScope = merchantMaterialStorageScope(authAccount)
-    const materialWorkspaceProps = { baseUrl, storageScope, accounts, accountsError, products: remoteProducts } as const
+    const materialWorkspaceProps = { baseUrl, storageScope, accounts, accountsError, products: remoteProducts, billing } as const
     return initialEntry === 'knowledge'
       ? <MaterialLibraryWorkspace {...materialWorkspaceProps} view="library" />
       : initialEntry === 'assets'
@@ -13833,6 +13844,7 @@ export default function App() {
                       key={`${activeEntry ?? 'knowledge'}-${workspaceNavigationKey}`}
                       baseUrl={apiBaseUrl}
                       authAccount={authAccount}
+                      billing={accountBilling}
                       apiMode={apiMode}
                       modelStatus={modelStatus}
                       modelStatusRead={modelStatusRead}

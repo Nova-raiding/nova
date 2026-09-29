@@ -1524,6 +1524,7 @@ body {
 .material-toolbar-actions a { border-color:#246348; color:#fff; background:#246348; }
 .material-toolbar-actions a.disabled { pointer-events:none; border-color:#dce3df; color:#9ca7a1; background:#edf1ef; }
 .material-upload-dialog { display:grid; gap:13px; }
+.material-upload-access-notice { margin:0; padding:10px 12px; border:1px solid #e7c88b; border-radius:8px; color:#734e13; background:#fff8e9; font-size:12px; line-height:1.5; }
 .material-upload-top { display:grid; grid-template-columns:minmax(0,1fr) 145px; align-items:stretch; gap:8px; }
 .material-upload-store { min-width:0; min-height:50px; }
 .material-upload-store .material-category-dropdown,.material-upload-store .material-category-dropdown>button { width:100%; height:100%; }
