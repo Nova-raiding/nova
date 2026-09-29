@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
@@ -66,15 +66,18 @@ if (process.platform === 'darwin') {
   // Marketplace copies contain the Swift source but not the host-built binary.
   // Build and validate it in the versioned cache before claiming the MCP is
   // usable; the bridge fails during startup when either artifact is absent.
+  const helperPath = resolve(installedRoot, 'mcp/keychain-credential-helper')
+  const buildInfoPath = resolve(installedRoot, 'mcp/keychain-credential-helper.build.json')
+  // Do not accept stale artifacts copied from a prior cache or bundled source.
+  rmSync(helperPath, { force: true })
+  rmSync(buildInfoPath, { force: true })
   const helperBuild = spawnSync(process.execPath, [resolve(installedRoot, 'scripts/build-keychain-helper.mjs')], {
     encoding: 'utf8', env: process.env, timeout: 120_000,
   })
   if (helperBuild.error || helperBuild.status !== 0) {
     throw new Error(`LOCAL_PLUGIN_KEYCHAIN_BUILD_FAILED: ${helperBuild.stderr?.trim() || helperBuild.error?.message || 'macOS Keychain helper build failed'}`)
   }
-  const helperPath = resolve(installedRoot, 'mcp/keychain-credential-helper')
   const sourcePath = resolve(installedRoot, 'mcp/keychain-credential-helper.swift')
-  const buildInfoPath = resolve(installedRoot, 'mcp/keychain-credential-helper.build.json')
   try {
     const helper = statSync(helperPath)
     const sourceSha256 = createHash('sha256').update(readFileSync(sourcePath)).digest('hex')

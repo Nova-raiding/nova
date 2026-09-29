@@ -38,7 +38,7 @@ function runInstall(fixture: ReturnType<typeof setup>, sourceRoot = source) {
 }
 
 describe('direct local plugin install runtime build', () => {
-  it('builds and validates the macOS Keychain helper before reporting the installed bridge usable', () => {
+  it.skipIf(process.platform !== 'darwin')('builds and validates the macOS Keychain helper before reporting the installed bridge usable', () => {
     const fixture = setup()
     try {
       const result = runInstall(fixture)
