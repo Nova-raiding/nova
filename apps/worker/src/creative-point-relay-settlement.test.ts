@@ -9,10 +9,10 @@ async function fixture(operation: 'generation.execute' | 'image_generation.execu
   const points = new MemoryCreativePointRepository()
   await points.grant({ workspaceId: 'ws_a', idempotencyKey: 'grant_1', sourceType: 'test', sourceId: 'grant_1', points: 10, at })
   const reserved = await points.reserve({ workspaceId: 'ws_a', idempotencyKey: 'reserve_1', actionKey: operation, points: 3, rateCardVersion: 'rate_1', at })
-  const receiptRows = new Map<string, { operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; verifiedAt: string | null }>()
+  const receiptRows = new Map<string, { operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; receiptHash: string; verifiedAt: string | null }>()
   const receipts = {
-    recordProviderReceipt: vi.fn(async (input: { operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage?: Record<string, unknown>; cost?: Record<string, unknown>; verifiedAt?: string }) => {
-      receiptRows.set(input.providerRequestId, { operationId: input.operationId, provider: input.provider, providerRequestId: input.providerRequestId, outcome: input.outcome, usage: input.usage ?? null, cost: input.cost ?? null, verifiedAt: input.verifiedAt ?? null })
+    recordProviderReceipt: vi.fn(async (input: { operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage?: Record<string, unknown>; cost?: Record<string, unknown>; receiptHash: string; verifiedAt?: string }) => {
+      receiptRows.set(input.providerRequestId, { operationId: input.operationId, provider: input.provider, providerRequestId: input.providerRequestId, outcome: input.outcome, usage: input.usage ?? null, cost: input.cost ?? null, receiptHash: input.receiptHash, verifiedAt: input.verifiedAt ?? null })
     }),
     getProviderReceipt: vi.fn(async (input: { operationId: string; provider: string; providerRequestId: string }) => {
       const row = receiptRows.get(input.providerRequestId)
@@ -41,6 +41,9 @@ describe('creative point relay settlement', () => {
     const requestId = await settlement.recordSucceeded(event, { modality: 'text', model: 'model-1', providerRequestId: 'provider_req_1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny: 0.12, observedAt: at })
     expect(requestId).toBe('provider_req_1')
     expect(receipts.recordProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ operationId: expect.stringMatching(/^cpo_/), outcome: 'succeeded', providerRequestId: 'provider_req_1', usage: expect.objectContaining({ total_tokens: 15 }), cost: { currency: 'CNY', actual: 0.12 }, verifiedAt: at }))
+    const recordedReceipt = receipts.recordProviderReceipt.mock.calls[0]![0]
+    expect(recordedReceipt.receiptHash).toMatch(/^[a-f0-9]{64}$/u)
+    await expect(receipts.getProviderReceipt({ operationId: recordedReceipt.operationId, provider: recordedReceipt.provider, providerRequestId: recordedReceipt.providerRequestId })).resolves.toMatchObject({ receiptHash: recordedReceipt.receiptHash, usage: recordedReceipt.usage, cost: recordedReceipt.cost })
     await points.settle({ workspaceId: 'ws_a', reservationId, actualPoints: 3, idempotencyKey: 'commercial.settle:generation.execute', metadata: { provider_request_id: requestId }, at })
     receipts.verifyModelUsageDeliverySettlement.mockResolvedValue(true)
     const settle = vi.spyOn(points, 'settle')
@@ -102,7 +105,7 @@ describe('creative point relay settlement', () => {
     const { receipts, event, settlement } = await fixture('image_generation.execute')
     receipts.getProviderReceipt.mockResolvedValue({
       operationId: 'cpo_test', provider: 'relay.example', providerRequestId: 'image_unproven_1', outcome: 'succeeded',
-      usage: { modality: 'image', model: 'image-model' }, cost: { currency: 'CNY', actual: 0.2 }, verifiedAt: at,
+      usage: { modality: 'image', model: 'image-model' }, cost: { currency: 'CNY', actual: 0.2 }, receiptHash: 'test-image-unproven', verifiedAt: at,
     })
     await expect(settlement.settleForDelivery(event, ['image_unproven_1'], 'image_generation.execute')).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', providerRequestId: 'image_unproven_1' })
     expect(receipts.verifyModelUsageDeliverySettlement).not.toHaveBeenCalled()
@@ -162,7 +165,7 @@ describe('creative point relay settlement', () => {
   it('rejects delivery when the current-operation receipt is not succeeded with complete evidence', async () => {
     const { event, settlement, receipts } = await fixture()
     const operationId = 'cpo_test'
-    receipts.getProviderReceipt.mockResolvedValue({ operationId, provider: 'relay.example', providerRequestId: 'provider_failed', outcome: 'failed', usage: null, cost: null, verifiedAt: null })
+    receipts.getProviderReceipt.mockResolvedValue({ operationId, provider: 'relay.example', providerRequestId: 'provider_failed', outcome: 'failed', usage: null, cost: null, receiptHash: 'test-provider-failed', verifiedAt: null })
     await expect(settlement.settleForDelivery(event, ['provider_failed'])).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING' })
   })
 
@@ -178,7 +181,7 @@ describe('creative point relay settlement', () => {
     { usage: [], cost: { currency: 'CNY', actual: 0.1 } },
   ])('rejects malformed persisted receipt evidence before settling: %j', async evidence => {
     const { event, settlement, receipts } = await fixture()
-    receipts.getProviderReceipt.mockResolvedValue({ operationId: 'cpo_test', provider: 'relay.example', providerRequestId: 'provider_malformed', outcome: 'succeeded', usage: evidence.usage as Record<string, unknown>, cost: evidence.cost, verifiedAt: at })
+    receipts.getProviderReceipt.mockResolvedValue({ operationId: 'cpo_test', provider: 'relay.example', providerRequestId: 'provider_malformed', outcome: 'succeeded', usage: evidence.usage as Record<string, unknown>, cost: evidence.cost, receiptHash: 'test-provider-malformed', verifiedAt: at })
     await expect(settlement.settleForDelivery(event, ['provider_malformed'])).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING' })
   })
 

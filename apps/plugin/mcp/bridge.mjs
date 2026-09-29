@@ -1443,7 +1443,7 @@ function userFacingToolText(method, result) {
       ].filter(Boolean).join('\n')
     }
     const initialization = result?.initialization
-    if (initialization && Array.isArray(initialization.steps)) {
+    if (initialization && typeof initialization === 'object') {
       return [
         '您好，感谢您使用 Store Nova。',
         '从公开商品链接、手工填写的商品资料或你上传的图片开始，完成内容生产 → 审核 → 导出。',
@@ -2314,10 +2314,28 @@ function merchantUiMetadata(method, result, args = {}) {
   if (!result || typeof result !== 'object' || Array.isArray(result) || !MERCHANT_CONTEXT_METADATA_METHODS.has(method)) return result
   if (method === 'onboarding.status') {
     if (result.initialization && Array.isArray(result.initialization.steps)) {
-      // The four-step first-use journey is delivered in ChatGPT's native
-      // conversation. Keep the server facts available without attaching the
-      // legacy six-step dashboard card or an HTML output template.
-      return result
+      // The server still reports its retired store setup as top-level
+      // current_step/next_action. Keep only the historical status summary,
+      // so the host model sees the current content workflow as the next step.
+      const { current_step: _storeStep, steps: _storeSteps, next_action: _storeAction,
+        binding: _storeBinding, guidance: _storeGuidance, ...facts } = result
+      const legacy = result.initialization
+      return {
+        ...facts,
+        initialization: {
+          schema_version: legacy.schema_version,
+          status: legacy.status,
+          completed: legacy.completed,
+          total: legacy.total,
+          evidence: legacy.evidence,
+          brand_clues: legacy.brand_clues,
+          legacy_store_setup: true,
+          note: '历史店铺接入状态仅供核查，不是当前内容制作的步骤或前置条件。',
+        },
+        current_step: { id: 'provide_materials', title: '提供商品资料', state: 'available' },
+        content_workflow: { scope: 'content', store_connection_required: false,
+          next_question: '你想制作什么内容？可以提供公开商品链接、商品资料或图片。' },
+      }
     }
     // Older servers expose a six-step status. Adapt only the durable states
     // they actually returned into the current four-step conversation; never
@@ -2358,7 +2376,17 @@ function merchantUiMetadata(method, result, args = {}) {
         { id: 'build_workspace', title: '建立工作区', state: configDone ? 'required' : 'pending', summary: configDone ? '请确认内容工作区名称和店铺范围' : '等待前述步骤完成', next_action: { method: 'workspace.content_setup.confirm', label: '确认内容工作区', required_inputs: ['display_name', 'platform', 'account_id'] } },
       ]
       const current = initializationSteps.find(step => step.state !== 'complete') ?? initializationSteps.at(-1)
-      return { schema_version: 'store-nova.initialization.v1', status: current?.state === 'complete' ? 'ready' : 'in_progress', initialization: { schema_version: 'store-nova.initialization.v1', status: 'in_progress', completed: initializationSteps.filter(step => step.state === 'complete').length, total: 4, current_step: current, steps: initializationSteps, security_notice: '请通过平台官方页面授权，不要发送密码或验证码。', evidence: { compatibility_projection: true } } }
+      return {
+        schema_version: 'store-nova.initialization.v1',
+        status: current?.state === 'complete' ? 'ready' : 'in_progress',
+        current_step: { id: 'provide_materials', title: '提供商品资料', state: 'available' },
+        content_workflow: { scope: 'content', store_connection_required: false,
+          next_question: '你想制作什么内容？可以提供公开商品链接、商品资料或图片。' },
+        initialization: { schema_version: 'store-nova.initialization.v1', status: 'in_progress',
+          completed: initializationSteps.filter(step => step.state === 'complete').length, total: 4,
+          legacy_store_setup: true, note: '历史店铺接入状态仅供核查，不是当前内容制作的步骤或前置条件。',
+          evidence: { compatibility_projection: true, official_stores: hasOfficialStore ? officialStoreCount || 1 : 0 } },
+      }
     }
     const current = result.current_step && typeof result.current_step === 'object' ? result.current_step : {}
     const steps = Array.isArray(result.steps) ? result.steps : []
