@@ -62,6 +62,21 @@ const cardWithLogo = (assetFileName = '') => renderToStaticMarkup(createElement(
   enabled: true,
 }))
 
+describe('single-image brand settings save path', () => {
+  it('keeps an explicit save button in the image detail view wired to image edits', () => {
+    const detail = appSource.slice(appSource.indexOf('if (detailMaterial) {'), appSource.indexOf('  return (\n    <div className="material-library-page"', appSource.indexOf('if (detailMaterial) {')))
+    const save = appSource.slice(appSource.indexOf('const saveMaterialBrandScopes = async () => {'), appSource.indexOf('const createBrandSeries = async () => {'))
+
+    expect(detail).toContain('onClick={() => { void saveMaterialBrandScopes() }}')
+    expect(detail).toContain('保存品牌配置')
+    expect(detail).toContain('setImageBrands((current) => ({ ...current, [detailMaterial.id]: next }))')
+    expect(detail).toContain('setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled }))')
+    expect(save).toContain('for (const [assetId, value] of Object.entries(imageBrands))')
+    expect(save).toContain('enabled: imageBrandEnabled[assetId] ?? true')
+    expect(save).toContain('await saveScopedBrandSettings(baseUrl, settings, scopedBrandRead.revision)')
+  })
+})
+
 describe('a locally picked document is never called received', () => {
   it('says the document is local and unsent, because no request is made', () => {
     expect(resolveBrandDocumentFacts('brand-doc.txt')).toEqual({
