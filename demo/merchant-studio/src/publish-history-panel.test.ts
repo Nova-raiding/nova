@@ -33,7 +33,7 @@ describe('商家发布记录', () => {
     const html = renderToStaticMarkup(createElement(PublishJobRecord, { job, taskHref: '/merchant/tasks/task-1' }))
     expect(html).toContain('PLATFORM_422')
     expect(html).toContain('TITLE_42')
-    expect(html).toContain('字段 title')
+    expect(html).toContain('标题（原始字段 title）')
     expect(html).toContain('/merchant/tasks/task-1')
     expect(html).toContain('重新审核')
   })
@@ -53,5 +53,19 @@ describe('商家发布记录', () => {
       confirmationHash: 'hash-1', remoteSnapshotHash: 'hash-2', createdAt: '2026-09-29T00:00:00.000Z',
     } satisfies PublishJob
     expect(renderToStaticMarkup(createElement(PublishJobRecord, { job: unknown, taskHref: '/merchant/tasks/task-1' }))).toContain('不要重复提交')
+  })
+
+  it('准备与确认状态为中文，非法时间显示中文兜底', () => {
+    const base = {
+      id: 'job-3', workspaceId: 'ws_demo', taskId: 'task-3', contentVersionId: 'content-3',
+      platform: 'taobao', accountId: 'store-1', idempotencyKey: 'key-3',
+      confirmationHash: 'hash-1', remoteSnapshotHash: 'hash-2', createdAt: 'invalid-date',
+    } satisfies Omit<PublishJob, 'state'>
+    const prepared = renderToStaticMarkup(createElement(PublishJobRecord, { job: { ...base, state: 'prepared' }, taskHref: '/merchant/tasks/task-3' }))
+    const confirmed = renderToStaticMarkup(createElement(PublishJobRecord, { job: { ...base, state: 'confirmed' }, taskHref: '/merchant/tasks/task-3' }))
+    expect(prepared).toContain('发布预览已准备')
+    expect(confirmed).toContain('发布确认已记录，待入队')
+    expect(prepared).toContain('时间待核对')
+    expect(prepared).not.toContain('Invalid Date')
   })
 })

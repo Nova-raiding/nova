@@ -11,6 +11,7 @@ import {
 import { urlForMerchantRoute } from './navigation'
 
 const publishStateLabel: Record<string, string> = {
+  prepared: '发布预览已准备', confirmed: '发布确认已记录，待入队',
   queued: '等待运营处理', submitting: '提交处理中', submitted: '已提交，待平台确认',
   reviewing: '平台审核中', published: '平台回执显示已发布', rejected: '平台驳回',
   unknown: '结果未知，需人工核对', reconciling: '对账中，禁止重复提交',
@@ -27,15 +28,32 @@ const platformLabel: Record<string, string> = {
   xiaohongshu: '小红书', douyin: '抖音',
 }
 
+const rejectionFieldLabel: Record<string, string> = {
+  title: '标题', description: '商品描述', detail: '详情', category: '品类',
+  price: '价格', stock: '库存', sku: '规格', images: '图片', image: '图片',
+  brand: '品牌', attributes: '商品属性',
+}
+
+function displayDate(value: string): string {
+  const date = new Date(value)
+  return Number.isFinite(date.getTime()) ? date.toLocaleString('zh-CN', { hour12: false }) : '时间待核对'
+}
+
+function displayRejectionField(path: string): string {
+  const leaf = path.split(/[.\[\]\/]/u).filter(Boolean).at(-1)?.toLowerCase() ?? ''
+  const label = rejectionFieldLabel[leaf] ?? '平台字段'
+  return `${label}（原始字段 ${path}）`
+}
+
 export function PublishJobRecord({ job, taskHref }: { job: PublishJob; taskHref: string }) {
   return <article className="task-list-row">
     <div>
       <b>{publishStateLabel[job.remoteState ?? job.state] ?? '状态待核对'} · {platformLabel[job.platform] ?? '未知平台'} · {job.accountId ?? '店铺未绑定'}</b>
-      <span>任务 {job.taskId} · 内容版本 {job.contentVersionId} · {new Date(job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span>
+      <span>任务 {job.taskId} · 内容版本 {job.contentVersionId} · {displayDate(job.createdAt)}</span>
       {job.rejection && <div className="error-notice" role="status">
         <b>平台原始拒绝码：{job.rejection.rawCode}</b>
         {job.rejection.message && <span> · {job.rejection.message}</span>}
-        {job.rejection.fields.length > 0 && <ul>{job.rejection.fields.map((field, i) => <li key={`${field.path}-${i}`}>字段 {field.path}；原始代码 {field.rawCode ?? '未提供'}；{field.message}</li>)}</ul>}
+        {job.rejection.fields.length > 0 && <ul>{job.rejection.fields.map((field, i) => <li key={`${field.path}-${i}`}>{displayRejectionField(field.path)}；原始代码 {field.rawCode ?? '未提供'}；{field.message}</li>)}</ul>}
         <p>根据拒绝原因在任务中创建修正版，重新审核后再确认提交。</p>
       </div>}
       {['unknown', 'reconciling'].includes(job.remoteState ?? job.state) && <div className="info-notice">先核对平台回执和任务历史，当前不要重复提交。</div>}
@@ -48,7 +66,7 @@ export function ManualPublishRecordRow({ record, taskHref }: { record: ManualPub
   return <article className="task-list-row">
     <div>
       <b>{manualStateLabel[record.state] ?? '人工状态待核对'} · {platformLabel[record.platform] ?? '未知平台'} · {record.accountId}</b>
-      <span>任务 {record.taskId} · 内容版本 {record.contentVersionId} · {new Date(record.recordedAt).toLocaleString('zh-CN', { hour12: false })}</span>
+      <span>任务 {record.taskId} · 内容版本 {record.contentVersionId} · {displayDate(record.recordedAt)}</span>
       <div className="info-notice">这是运营人工报告，未经平台接口验证，不代表平台已发布。</div>
       {record.platformContentId && <span>运营回填的平台内容编号：{record.platformContentId}</span>}
       {record.differenceNote && <span>内容差异：{record.differenceNote}</span>}
