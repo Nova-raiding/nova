@@ -137,7 +137,13 @@ describe('Codex App merchant conversation flow', () => {
     }
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')
-      res.end(json(ok(request, { initialization })))
+      res.end(json(ok(request, {
+        current_step: { id: 'connect_store', title: '连接店铺' },
+        steps: [{ id: 'connect_store', title: '连接店铺' }],
+        next_action: { method: 'platform.connect', label: '连接平台店铺' },
+        binding: '通过官方 OAuth 授权',
+        initialization,
+      })))
     }, async (child, calls) => {
       const response = await request(child, 1, 'onboarding.status')
       const result = response.result as { content: Array<{ text: string }>; structuredContent: Json }
@@ -146,7 +152,16 @@ describe('Codex App merchant conversation flow', () => {
       expectContentProductionIntroduction(content)
       expect(content).toContain('有效登录、当前工作区权限、服务端准入')
       expect(content).toContain('真实模型配置、创意点和成本证据')
-      expect(result.structuredContent.initialization).toEqual(initialization)
+      expect(result.structuredContent.initialization).toMatchObject({
+        completed: 0, total: 4, legacy_store_setup: true,
+        note: expect.stringContaining('不是当前内容制作的步骤'),
+      })
+      expect((result.structuredContent as Json).initialization).not.toHaveProperty('current_step')
+      expect(result.structuredContent.initialization).not.toHaveProperty('steps')
+      expect(result.structuredContent.current_step).toEqual({ id: 'provide_materials', title: '提供商品资料', state: 'available' })
+      expect(result.structuredContent.content_workflow).toMatchObject({ scope: 'content', store_connection_required: false })
+      expect(result.structuredContent).not.toHaveProperty('next_action')
+      expect(result.structuredContent).not.toHaveProperty('binding')
       expect(result.structuredContent).not.toHaveProperty('onboarding_card')
       expect(calls.map(call => call.method)).toEqual(['onboarding.status'])
     })
@@ -190,7 +205,8 @@ describe('Codex App merchant conversation flow', () => {
       const content = (result.content as Array<{ text: string }>)[0]?.text ?? ''
       expectContentProductionIntroduction(content)
       expect(content).not.toContain('进行第二步')
-      expect(result.structuredContent).toMatchObject({ initialization: { completed: 0, current_step: { id: 'connect_stores', state: 'required' } } })
+      expect(result.structuredContent).toMatchObject({ current_step: { id: 'provide_materials' }, initialization: { completed: 0, legacy_store_setup: true } })
+      expect((result.structuredContent as Json).initialization).not.toHaveProperty('current_step')
     })
   })
 
@@ -225,7 +241,8 @@ describe('Codex App merchant conversation flow', () => {
       expectContentProductionIntroduction(content)
       expect(content).toContain('不代表本次内容已生成、审核或导出')
       expect(content).not.toContain('服务端已确认四步接入配置完成')
-      expect(result.structuredContent.initialization).toEqual(initialization)
+      expect(result.structuredContent.initialization).toMatchObject({ completed: 4, total: 4, legacy_store_setup: true })
+      expect(result.structuredContent.initialization).not.toHaveProperty('steps')
     })
   })
 
@@ -247,7 +264,8 @@ describe('Codex App merchant conversation flow', () => {
       expectContentProductionIntroduction(content)
       expect(content).not.toContain('历史品牌线索')
       expect(content).not.toContain('请确认这是否是你要使用的品牌名称')
-      expect(result.structuredContent.initialization).toEqual(initialization)
+      expect(result.structuredContent.initialization).toMatchObject({ completed: 2, total: 4, legacy_store_setup: true, brand_clues: initialization.brand_clues })
+      expect(result.structuredContent.initialization).not.toHaveProperty('current_step')
     })
   })
 
