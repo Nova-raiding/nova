@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { countKnowledgeAssets, resolveKnowledgeBindingStatus, resolveKnowledgeBindingSummary } from './knowledge-binding-status.js'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { KnowledgeBindingStatus, countKnowledgeAssets, resolveKnowledgeBindingStatus, resolveKnowledgeBindingSummary } from './knowledge-binding-status.js'
 import type { AssetMetadata } from './api.js'
 
 const asset = (overrides: Partial<AssetMetadata> = {}): AssetMetadata => ({
@@ -19,6 +21,19 @@ const asset = (overrides: Partial<AssetMetadata> = {}): AssetMetadata => ({
 })
 
 describe('knowledge binding status', () => {
+  it('shows merchant-facing states and accessible text in Chinese', () => {
+    const pending = renderToStaticMarkup(createElement(KnowledgeBindingStatus, { asset: asset() }))
+    expect(pending).toContain('事实确认</b> 待确认')
+    expect(pending).toContain('商用权益</b> 待确认')
+    expect(pending).toContain('知识索引</b> 处理中')
+    expect(pending).toContain('知识绑定尚未就绪')
+    const ready = renderToStaticMarkup(createElement(KnowledgeBindingStatus, { asset: asset({
+      rightsStatus: 'approved', factsConfirmedBy: 'merchant-1', factsConfirmedAt: '2026-09-01T00:01:00Z', readiness: { status: 'ready', reasons: [] },
+    }) }))
+    expect(ready).toContain('知识绑定已就绪')
+    expect(ready).toContain('知识索引</b> 已就绪')
+  })
+
   it('exposes the three fail-closed lifecycle states', () => {
     expect(resolveKnowledgeBindingStatus(asset())).toMatchObject({
       approvalStatus: 'pending',

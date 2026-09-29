@@ -121,9 +121,9 @@ export function resolveKnowledgeBindingSummary(
 
 function statusLabel(status: KnowledgeBindingStatus) {
   return {
-    approval: status.approvalStatus === 'approved' ? 'approved' : 'pending',
-    rights: status.rightsStatus === 'cleared' ? 'cleared' : 'unknown',
-    index: status.indexState === 'ready' ? 'ready' : 'queued',
+    approval: status.approvalStatus === 'approved' ? '已确认' : '待确认',
+    rights: status.rightsStatus === 'cleared' ? '已确认' : '待确认',
+    index: status.indexState === 'ready' ? '已就绪' : '处理中',
   }
 }
 
@@ -148,17 +148,17 @@ export function KnowledgeBindingStatus({
     <div
       className={`knowledge-binding-status ${compact ? 'compact' : ''} ${status.ready ? 'ready' : 'blocked'}`}
       data-testid={asset ? `knowledge-binding-status-${asset.id}` : 'knowledge-binding-status'}
-      aria-label={status.ready ? '知识绑定已 ready' : `知识绑定未 ready：${status.reasons.join('、')}`}
+      aria-label={status.ready ? '知识绑定已就绪' : `知识绑定尚未就绪：${status.reasons.join('、')}`}
     >
       <div className="knowledge-binding-chips">
         <span className={`knowledge-state-chip ${status.approvalStatus}`}>
-          <b>approval</b> {labels.approval}
+          <b>事实确认</b> {labels.approval}
         </span>
         <span className={`knowledge-state-chip ${status.rightsStatus}`}>
-          <b>rights</b> {labels.rights}
+          <b>商用权益</b> {labels.rights}
         </span>
         <span className={`knowledge-state-chip ${status.indexState}`}>
-          <b>index</b> {labels.index}
+          <b>知识索引</b> {labels.index}
         </span>
       </div>
       {!compact && !status.ready && (
