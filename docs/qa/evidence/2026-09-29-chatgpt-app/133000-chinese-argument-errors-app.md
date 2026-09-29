@@ -11,4 +11,4 @@
 
 四项 `structuredContent.message` 均给出中文具体缺参原因；第 54 行 App 最终答复也全部用中文说明，未出现原先 `tool call error / Caused by / Mcp error` 的英文宿主包装。参数在插件本地拒绝，没有有效导出申请或客服数据访问。本轮只验证参数错误展示，**不继承 125100 版的 116/116 调用覆盖为 133000 版的全量验收**；125100 版逐项结果见[116 项清单](../../2026-09-29-chatgpt-app-116-tool-checklist.md)。
 
-定向回归：桥接器 110/110、插件镜像清单 6/6、发布元数据 4/4；本地安装成功。生产 API 的客服工单 UUID 修复已在源码提交，但没有部署，故本轮没有把生产 `INTERNAL_ERROR` 标成已解决。
+定向回归：桥接器 110/110、插件镜像清单 6/6、发布元数据 4/4；`npm run typecheck` 通过，`npm run test:release-gates` 退出码 0（记录 `/tmp/storenova-release-gates-133000.log`）；本地安装成功。生产 API 的客服工单 UUID 修复已在源码提交，但没有部署，故本轮没有把生产 `INTERNAL_ERROR` 标成已解决。
