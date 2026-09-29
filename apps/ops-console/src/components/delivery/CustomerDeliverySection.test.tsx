@@ -146,6 +146,14 @@ describe("customer delivery completion", () => {
     expect(source).toContain("已上传培训凭证");
   });
 
+  it("uses profile wording for the customer record column and completion wording for checklists", () => {
+    const html = renderToStaticMarkup(<CustomerDeliverySection records={[base, { ...base, id: "c-2", profile: false, integration: false }]} />);
+    expect(html).toContain("已填写");
+    expect(html).toContain("未填写");
+    expect(html).toContain("已完成");
+    expect(html).toContain("未完成");
+  });
+
   it("keeps read-only records visible and removes mutation controls", () => {
     const html = renderToStaticMarkup(<CustomerDeliverySection readOnly records={[base]} onCreate={async () => base} onArchive={async () => {}} onTrainingSave={async () => base} />);
     expect(html).toContain("示例企业");

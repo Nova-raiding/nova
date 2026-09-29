@@ -619,7 +619,9 @@ export function CustomerDeliverySection({
           dataIndex: key,
           render: (_value: boolean, row: CustomerDeliveryRecord) => {
             const value = key === "profile" ? isCustomerProfileFilled(row) : isDeliveryChecklistComplete(row, key);
-            const label = value ? "已完成" : "未完成";
+            const label = key === "profile"
+              ? value ? "已填写" : "未填写"
+              : value ? "已完成" : "未完成";
             return <Button type="link" size="small" disabled={disabled || saving} onClick={() => void openStep(row, key)}>{label}</Button>;
           },
         }),

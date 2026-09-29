@@ -31,6 +31,7 @@ export class BrandAssetPreviewRegistry {
 
 const MAX_BRAND_ASSET_BYTES = 50 * 1024 * 1024
 const DOCUMENT_EXTENSIONS = new Set(['.txt', '.md', '.csv', '.json', '.doc', '.docx', '.pdf', '.zip'])
+const UPLOAD_DOCUMENT_EXTENSIONS = new Set(['.txt', '.md', '.csv', '.json', '.docx', '.pdf'])
 
 export function brandAssetFileError(file: File, kind: BrandAssetKind): string {
   if (file.size <= 0) return '不能上传空文件。'
@@ -38,7 +39,7 @@ export function brandAssetFileError(file: File, kind: BrandAssetKind): string {
   if (kind === 'logo' && !file.type.toLowerCase().startsWith('image/')) return 'Logo 请使用图片文件。'
   if (kind === 'document') {
     const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
-    if (!DOCUMENT_EXTENSIONS.has(extension)) return '品牌文档请使用 TXT、MD、CSV、JSON、DOC、DOCX、PDF 或 ZIP 文件。'
+    if (!UPLOAD_DOCUMENT_EXTENSIONS.has(extension)) return '品牌文档请使用 TXT、MD、CSV、JSON、DOCX 或 PDF 文件。'
   }
   return ''
 }

@@ -15,6 +15,9 @@ describe('brand asset upload contract', () => {
   it('accepts image Logos and supported document formats, rejecting invalid files before upload', () => {
     expect(brandAssetFileError(new File(['image'], 'logo.png', { type: 'image/png' }), 'logo')).toBe('')
     expect(brandAssetFileError(new File(['text'], 'guide.pdf', { type: 'application/pdf' }), 'document')).toBe('')
+    expect(brandAssetFileError(new File(['text'], 'guide.docx'), 'document')).toBe('')
+    expect(brandAssetFileError(new File(['text'], 'guide.doc'), 'document')).toContain('DOCX 或 PDF')
+    expect(brandAssetFileError(new File(['text'], 'guide.zip'), 'document')).toContain('DOCX 或 PDF')
     expect(brandAssetFileError(new File(['text'], 'guide.exe'), 'document')).toContain('品牌文档请使用')
     expect(brandAssetFileError(new File(['text'], 'not-image.txt', { type: 'text/plain' }), 'logo')).toBe('Logo 请使用图片文件。')
     expect(brandAssetFileError(new File([], 'empty.pdf'), 'document')).toBe('不能上传空文件。')

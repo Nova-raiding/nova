@@ -1874,7 +1874,7 @@ export function TodayDashboard({
     <section className="today-dashboard" aria-labelledby="today-dashboard-title">
       <div className="today-dashboard-heading">
         <div>
-          <span className="section-kicker">每日简报</span>
+          <span className="section-kicker">DAILY BRIEFING</span>
           <h2 id="today-dashboard-title">今日看板</h2>
           <p>汇总昨日执行、规则状态和素材容量，帮助快速安排今天的工作。</p>
         </div>
@@ -1989,7 +1989,7 @@ export function AccountDashboard({
       <div className="account-dashboard-main">
         <div className="account-dashboard-heading">
           <div>
-            <span className="section-kicker">账号概览</span>
+            <span className="section-kicker">ACCOUNT OVERVIEW</span>
             <h2 id="account-dashboard-title">账号看板</h2>
             <p>汇总平台授权与已连接店铺，快速掌握账号接入状态。</p>
           </div>
@@ -2072,7 +2072,7 @@ export function TransactionDashboard({
       <aside className="transaction-dashboard" aria-labelledby="transaction-dashboard-title">
         <div className="transaction-dashboard-heading">
           <div>
-            <span className="section-kicker">待办事项</span>
+            <span className="section-kicker">ACTION CENTER</span>
             <h2 id="transaction-dashboard-title">事务看板</h2>
             <p>集中查看需要处理的授权、素材与运营事项。</p>
           </div>
@@ -3191,14 +3191,14 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   return (
     <section className="page finance-overview-page" aria-label="财务概况">
       <div className="finance-hero">
-        <div><span className="section-kicker">账号与财务</span><h2>财务与资源</h2><p>统一查看创意点、储存空间和账号版本。</p></div>
+        <div><span className="section-kicker">ACCOUNT &amp; BILLING</span><h2>财务与资源</h2><p>统一查看创意点、储存空间和账号版本。</p></div>
       </div>
       <div className="finance-summary-grid">
         <article className="finance-balance-card accent"><div className="finance-card-icon"><Sparkles size={20} /></div><div className="finance-inline-metric"><span>当前剩余创意点</span><strong>{pointBalance === null ? UNREAD_METRIC : `${pointBalance.toLocaleString('zh-CN')} 点`}</strong></div><div className="finance-inline-metric subtle"><span>截止今日总消耗</span><strong>{totalSettledConsumption === null ? UNREAD_METRIC : `${totalSettledConsumption.toLocaleString('zh-CN')} 点`}</strong></div><button className="primary" type="button" onClick={() => setPricingDialog('points')}>充值创意点</button></article>
         <article className="finance-balance-card"><div className="finance-card-icon"><Boxes size={20} /></div><div className="finance-inline-metric"><span>储存空间剩余</span><strong>{storageAvailableBytes === null ? UNREAD_METRIC : formatStorageGb(storageAvailableBytes)}</strong></div><div className="finance-storage-summary"><p>{storageKnown ? `已使用 ${formatStorageGb(storageUsedBytes!)} / 共 ${formatStorageGb(storageLimitBytes!)}` : '服务端未返回储存配额，当前不显示用量。'}</p>{storageKnown && <div className="finance-storage-track" role="progressbar" aria-label="储存空间已用" aria-valuemin={0} aria-valuemax={Math.round(storageLimitBytes!)} aria-valuenow={Math.min(Math.round(storageLimitBytes!), Math.max(0, Math.round(storageUsedBytes!)))}><i style={{ width: `${Math.min(100, (storageUsedBytes! / storageLimitBytes!) * 100).toFixed(1)}%` }} /></div>}</div><button className="primary" type="button" onClick={() => setPricingDialog('storage')}>购买储存空间</button></article>
       </div>
       <section className="finance-panel finance-usage-panel">
-        <div className="finance-panel-heading"><div><span className="section-kicker">创意点</span><h3>创意点消耗趋势</h3><p>默认展示当月每日数据，也可查询日期或月份区间。</p></div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault() }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={rangeMode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => { setRangeMode(value); setRangeStart(''); setRangeEnd('') }} /></label><label><span>开始{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeStart ? dayjs(rangeStart).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeStart(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><i>至</i><label><span>结束{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeEnd ? dayjs(rangeEnd).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeEnd(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
+        <div className="finance-panel-heading"><div><span className="section-kicker">CREATIVE POINTS</span><h3>创意点消耗趋势</h3><p>默认展示当月每日数据，也可查询日期或月份区间。</p></div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault() }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={rangeMode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => { setRangeMode(value); setRangeStart(''); setRangeEnd('') }} /></label><label><span>开始{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeStart ? dayjs(rangeStart).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeStart(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><i>至</i><label><span>结束{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeEnd ? dayjs(rangeEnd).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeEnd(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
         {/* The sum may only be stated when the ledger read succeeded: a failed
             or pending read rendered as 「合计 0 点」 next to an 「已读取流水」
             caption reports a consumed total that was never measured. */}
@@ -3227,8 +3227,8 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
         )}
       </section>
       <section className="finance-account-panel finance-plan-ribbon" aria-label="账号版本与有效期">
-        <div><span className="section-kicker">账号版本</span><h3>账号版本与有效期</h3><p>{currentEntitlement?.status === 'available' ? `当前账号为 ${currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan}，有效期至 ${new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}，还剩 ${entitlementDaysRemaining ?? UNREAD_METRIC} 天。` : currentEntitlement?.status === 'unknown' ? '服务端未确认当前账号版本，请联系平台运营核对权益。' : entitlementNote || '当前账号版本未读取。'}</p></div>
-        <div className="finance-account-facts"><span><b>{currentEntitlement?.status === 'available' ? (currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan) : UNREAD_METRIC}</b>当前版本</span><span><b>{currentEntitlement?.status === 'available' ? new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : UNREAD_METRIC}</b>有效期至</span><span><b>{entitlementDaysRemaining === null ? UNREAD_METRIC : entitlementDaysRemaining}</b>剩余天数</span></div>
+        <div><span className="section-kicker">ACCOUNT PLAN</span><h3>账号版本与有效期</h3><p>{currentEntitlement?.status === 'available' ? `当前账号为 ${currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan}，有效期至 ${new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}，还剩 ${entitlementDaysRemaining ?? UNREAD_METRIC} 天。` : currentEntitlement?.status === 'unknown' ? '服务端未确认当前账号版本，请联系平台运营核对权益。' : entitlementNote || '当前账号版本未读取。'}</p></div>
+        <div className="finance-account-facts"><span><b>{currentEntitlement?.status === 'available' ? (currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan) : UNREAD_METRIC}</b>当前版本</span><span><b>{currentEntitlement?.status === 'available' ? new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : UNREAD_METRIC}</b>到期时间</span><span><b>{entitlementDaysRemaining === null ? UNREAD_METRIC : entitlementDaysRemaining}</b>剩余时间</span></div>
         <button className="primary" type="button" onClick={onOpenSupport}>咨询客服升级账号版本</button>
       </section>
       <Modal title={pricingDialog === 'points' ? '创意点套餐' : '储存空间购买'} open={Boolean(pricingDialog)} footer={null} width={720} onCancel={() => { setPricingDialog(null); setSelectedPointPackage(''); setPurchaseQuantity(1); setAgreementAccepted(false) }}>
@@ -5713,7 +5713,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
   return (
     <div className="store-catalog-page catalog-stores-page">
       <section className="catalog-page-hero">
-        <div><span className="section-kicker">平台与店铺</span><h1>选择平台与店铺</h1><p>从左侧选择平台，再从右侧进入对应店铺的商品页。</p></div>
+        <div><span className="section-kicker">PLATFORM &amp; STORE</span><h1>选择平台与店铺</h1><p>从左侧选择平台，再从右侧进入对应店铺的商品页。</p></div>
         {/* Every number here is a server answer: the platform set and store
             counts come from /v1/platform-accounts, and 「已连接」 is only claimed
             for a real (non-fixture) readable account — the same rule the
@@ -5862,7 +5862,7 @@ export function MaterialBrandFields({ value, onChange, label, logoLabel, leading
       {assets.some((asset) => brandAssetMatchesKind(asset, 'logo')) && <select aria-label={`${label}选择已上传 Logo`} value={value.logoAssetId ?? ''} onChange={(event) => { const selected = assets.find((asset) => asset.id === event.target.value); onChange({ ...value, logoAssetId: selected?.id, logoFileName: selected?.name, logoUrl: '' }); setAssetUploadStatus(selected ? `${selected.name} 已选择；${isUsableBrandAsset(selected) ? '保存后写入品牌配置。' : '素材检查通过后才会写入服务端配置。'}` : '已移除 Logo 素材引用。') }}><option value="">选择工作区已上传 Logo</option>{assets.filter((asset) => brandAssetMatchesKind(asset, 'logo')).map((asset) => <option key={asset.id} value={asset.id}>{asset.name} · {isUsableBrandAsset(asset) ? '已就绪' : '待检查'}</option>)}</select>}
     </div>
     <div className="material-brand-color-field"><span>品牌色</span><div><input type="color" aria-label={`${label}品牌色选择器${value.color ? '' : '，当前未配置'}`} value={/^#[0-9a-f]{6}$/i.test(draftColor) ? draftColor : '#ffffff'} onChange={(event) => setDraftColor(event.target.value)} /><label className="material-brand-color-code"><span>{value.color ? '#' : '未配置'}</span><input aria-label={`${label}品牌色值`} placeholder="未配置" value={draftColor.replace(/^#/, '')} maxLength={6} inputMode="text" onChange={(event) => setDraftColor(`#${event.target.value.replace(/[^0-9a-f]/gi, '').slice(0, 6)}`)} /></label><button type="button" disabled={!/^#[0-9a-f]{6}$/i.test(draftColor) || draftColor.toLowerCase() === value.color.toLowerCase()} onClick={() => onChange({ ...value, color: draftColor })}>确定</button></div></div>
-    <div className="material-brand-asset-file"><span>品牌资产文档{value.documentAssetId ? ` · 已引用素材 ${value.assetFileName || value.documentAssetId}` : ''}</span><label htmlFor={assetInputId}><Upload size={14} /><strong>{assetUploading === 'document' ? '正在上传…' : value.documentAssetId ? '重新上传文档' : '上传文档'}</strong><input id={assetInputId} type="file" accept=".txt,.md,.csv,.json,.doc,.docx,.pdf,.zip" multiple={false} disabled={Boolean(assetUploading)} onChange={(event) => { void uploadBrandAsset(event.target.files?.[0], 'document'); event.currentTarget.value = '' }} /></label>{assets.some((asset) => brandAssetMatchesKind(asset, 'document')) && <select aria-label={`${label}选择已上传品牌文档`} value={value.documentAssetId ?? ''} onChange={(event) => { const selected = assets.find((asset) => asset.id === event.target.value); onChange({ ...value, documentAssetId: selected?.id, assetFileName: selected?.name ?? '' }); setAssetUploadStatus(selected ? `${selected.name} 已选择；${isUsableBrandAsset(selected) ? '保存后写入品牌配置。' : '素材检查通过后才会写入服务端配置。'}` : '已移除品牌文档引用。') }}><option value="">选择工作区已上传文档</option>{assets.filter((asset) => brandAssetMatchesKind(asset, 'document')).map((asset) => <option key={asset.id} value={asset.id}>{asset.name} · {isUsableBrandAsset(asset) ? '已就绪' : '待检查'}</option>)}</select>}</div>
+    <div className="material-brand-asset-file"><span>品牌资产文档{value.documentAssetId ? ` · 已引用素材 ${value.assetFileName || value.documentAssetId}` : ''}</span><label htmlFor={assetInputId}><Upload size={14} /><strong>{assetUploading === 'document' ? '正在上传…' : value.documentAssetId ? '重新上传文档' : '上传文档'}</strong><input id={assetInputId} type="file" accept=".txt,.md,.csv,.json,.docx,.pdf" multiple={false} disabled={Boolean(assetUploading)} onChange={(event) => { void uploadBrandAsset(event.target.files?.[0], 'document'); event.currentTarget.value = '' }} /></label>{assets.some((asset) => brandAssetMatchesKind(asset, 'document')) && <select aria-label={`${label}选择已上传品牌文档`} value={value.documentAssetId ?? ''} onChange={(event) => { const selected = assets.find((asset) => asset.id === event.target.value); onChange({ ...value, documentAssetId: selected?.id, assetFileName: selected?.name ?? '' }); setAssetUploadStatus(selected ? `${selected.name} 已选择；${isUsableBrandAsset(selected) ? '保存后写入品牌配置。' : '素材检查通过后才会写入服务端配置。'}` : '已移除品牌文档引用。') }}><option value="">选择工作区已上传文档</option>{assets.filter((asset) => brandAssetMatchesKind(asset, 'document')).map((asset) => <option key={asset.id} value={asset.id}>{asset.name} · {isUsableBrandAsset(asset) ? '已就绪' : '待检查'}</option>)}</select>}</div>
     {(assetUploadStatus || assetUploadError) && <small className={`material-brand-analysis-status ${assetUploadError ? 'error' : 'uploaded'}`} role={assetUploadError ? 'alert' : 'status'}>{assetUploadError || assetUploadStatus}</small>}
     <div className="material-brand-text-field"><div className="material-brand-field-heading"><span>用户画像</span></div><textarea aria-label={`${label}用户画像`} value={value.persona} onChange={(event) => onChange({ ...value, persona: event.target.value })} placeholder="例如：25–35 岁、关注设计感与使用效率的城市职场人" /></div>
     <div className="material-brand-text-field"><div className="material-brand-field-heading"><span>品牌卖点</span></div><textarea aria-label={`${label}品牌卖点`} value={value.sellingPoints} onChange={(event) => onChange({ ...value, sellingPoints: event.target.value })} placeholder="例如：原创设计、耐用材质、礼赠友好" /></div>
@@ -6207,7 +6207,7 @@ export function MaterialRecycleBinWorkspace({ storageScope }: { storageScope: Ma
         {/* 无法声明的保留策略不许写成服务端行为：`GET /v1/assets` 没有已删除素材
             的对应接口，服务端也不存在素材删除接口，此前那句「删除的素材会保留 7 天，
             到期后自动彻底删除」描述的是一条服务端不存在的记录。 */}
-        <div><span className="section-kicker">回收站</span><h1>回收站</h1><p>回收站只记录本浏览器实际移除的素材；服务端已删除素材的读取尚未接入。</p></div>
+        <div><span className="section-kicker">RECYCLE BIN</span><h1>回收站</h1><p>回收站只记录本浏览器实际移除的素材；服务端已删除素材的读取尚未接入。</p></div>
         <div className="material-recycle-summary"><strong>{items.length}</strong><span>项待处理素材</span><small>本地记录 7 天后过期</small></div>
       </section>
       <section className="material-recycle-workspace">
@@ -7040,7 +7040,7 @@ export function MaterialLibraryWorkspace({
       {view === 'brands' && <section className="material-library-hero brand-only">
         <div className="material-library-intro">
           <div className="material-library-intro-copy">
-            <span className="section-kicker">品牌资产</span>
+            <span className="section-kicker">BRAND ASSETS</span>
             <h1>品牌资产</h1>
             <p>维护全局、系列与单图品牌信息。</p>
           </div>
@@ -7053,7 +7053,7 @@ export function MaterialLibraryWorkspace({
 
       {view === 'brands' && <section className="material-brand-assets-panel" aria-label="品牌资产配置">
         <div className="material-brand-panel-heading">
-          <div><span className="section-kicker">品牌配置</span><h2>品牌配置</h2><p>统一维护全局、店铺、系列与单图品牌信息，生成内容时自动按优先级应用。</p></div>
+          <div><span className="section-kicker">BRAND SETTINGS</span><h2>品牌配置</h2><p>统一维护全局、店铺、系列与单图品牌信息，生成内容时自动按优先级应用。</p></div>
           <div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>资产应用原则：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div>
         </div>
         {stores.length === 0 && !scopedBrandRead && <p className="material-brand-no-store" role={accountsError ? 'alert' : 'status'}>{noReadableStoreReason}</p>}
@@ -7082,7 +7082,7 @@ export function MaterialLibraryWorkspace({
       {view === 'library' && activeStore && (
         <section className="material-store-workspace">
           <div className="material-workspace-overview">
-            <div className="material-workspace-intro"><span className="material-workspace-mark" aria-hidden="true"><FolderOpen size={20} /></span><div><span className="section-kicker">素材库</span><h1>素材库</h1><p>按店铺独立管理图片与商品资料文档。</p></div></div>
+            <div className="material-workspace-intro"><span className="material-workspace-mark" aria-hidden="true"><FolderOpen size={20} /></span><div><span className="section-kicker">MATERIAL LIBRARY</span><h1>素材库</h1><p>按店铺独立管理图片与视频。</p></div></div>
             <div className="material-workspace-actions-card">
               <div className="material-workspace-storage" aria-label="共享储存空间"><div><span>共享储存空间</span><strong>{storageQuota ? formatStorageGb(storageQuota.limitBytes) : UNREAD_METRIC} <small>服务端配额</small></strong></div><div><small>{storageQuota ? `已用 ${formatStorageGb(storageQuota.usedBytes)}` : `配额尚未读取，本次会话上传 ${uploadedGb.toFixed(1)} GB`}</small><b>剩余 {storageQuota ? formatStorageGb(storageQuota.availableBytes) : UNREAD_METRIC}</b></div></div>
               <button type="button" className="material-upload-button" onClick={() => { setUploadStoreId(activeStore.id); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传素材</span></button>

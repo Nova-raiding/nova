@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Sidebar } from './App.js'
+import { merchantRouteFromLocation } from './navigation.js'
 
 const app = readFileSync(resolve(import.meta.dirname, 'App.tsx'), 'utf8')
 const css = readFileSync(resolve(import.meta.dirname, 'styles.css'), 'utf8')
@@ -16,13 +17,21 @@ describe('merchant navigation cleanup contract', () => {
     expect(app).not.toContain("id: 'assets',")
   })
 
-  it('shows the image alias as a knowledge page without falsely selecting the materials subitem', () => {
-    const markup = renderToStaticMarkup(createElement(Sidebar, {
-      page: 'products', activeEntry: 'images', setPage: () => {}, open: false, close: () => {}, returnFocus: null,
-      backgroundInert: false, onOpenUtility: () => {}, onOpenEntry: () => {},
-    }))
-    const activeSubItems = [...markup.matchAll(/<button class="active"[^>]*>([\s\S]*?)<\/button>/gu)].map((match) => match[1])
-    expect(activeSubItems.some((item) => item?.includes('素材库'))).toBe(false)
+  it('matches the screenshot-specific selection state for knowledge and image routes', () => {
+    for (const [section, materialSubitemActive] of [['knowledge', true], ['images', false]] as const) {
+      const route = merchantRouteFromLocation({ pathname: '/merchant/products', search: `?section=${section}`, hash: '' })
+      expect(route.page).toBe('products')
+      expect(route.entry).toBe(section)
+
+      const markup = renderToStaticMarkup(createElement(Sidebar, {
+        page: route.page, activeEntry: route.entry, setPage: () => {}, open: false, close: () => {}, returnFocus: null,
+        backgroundInert: false, onOpenUtility: () => {}, onOpenEntry: () => {},
+      }))
+      const activeSubItems = [...markup.matchAll(/<button class="active"[^>]*>([\s\S]*?)<\/button>/gu)].map((match) => match[1])
+      expect(activeSubItems.filter((item) => item?.includes('素材库'))).toHaveLength(materialSubitemActive ? 1 : 0)
+    }
+    // Images keeps the target's knowledge title while the shared materials child stays unselected.
+    expect(app).toContain("products: activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : activeEntry === 'products' || activeEntry === 'images' ? '知识库' : '素材库'")
   })
 
   it('keeps member governance out of the screenshot-matched primary rail while retaining its gated route', () => {
