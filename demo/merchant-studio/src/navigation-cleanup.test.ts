@@ -55,7 +55,7 @@ describe('merchant navigation cleanup contract', () => {
   it('describes the recycle bin as workspace-scoped server data', () => {
     expect(app).toContain("description: '查看当前工作区服务端回收的素材'")
     expect(app).not.toContain('本浏览器中已从素材列表隐藏的记录')
-    expect(app).toContain('素材会保留 7 天；也可以提交提前彻底删除请求。')
+    expect(app).toContain('显示当前工作区由服务端记录的已移除素材，保留期限按服务端策略处理。')
   })
 
   it('does not ship the removed welcome panel or duplicate entry cards', () => {

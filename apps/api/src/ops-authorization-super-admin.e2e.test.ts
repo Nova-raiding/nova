@@ -24,14 +24,32 @@ async function login(login: string, role: 'platform_admin' | 'ops_admin' | 'secu
   return cookie!
 }
 
-async function call(cookie: string, method = 'ops.authorization.matrix.get') {
+async function call(cookie: string, method = 'ops.authorization.matrix.get', params: Record<string, unknown> = {}) {
   const response = await fetch(`${base}/mcp`, {
     method: 'POST',
     headers: { cookie, origin: base, 'x-ops-workbench': 'platform', 'content-type': 'application/json',
       'x-actor-id': 'hyp@sn.com', 'x-account-login': 'hyp@sn.com' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 'super-admin-boundary', method, params: {} }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 'super-admin-boundary', method, params }),
   })
   return { status: response.status, body: await response.json() as { data: { result: unknown } | null; error: { code: string } | null } }
+}
+
+async function createPlatformIdentity(login: string) {
+  const password = 'RulesAdminContractPassword123!'
+  await repository.ensurePlatformAccount({ login, passwordHash: await argon2.hash(password), roles: [] })
+  const identityId = (await repository.listAccounts()).find(account => account.login === login)!.identityId
+  return { login, password, identityId }
+}
+
+async function loginExisting(login: string, password: string) {
+  const response = await fetch(`${base}/v1/auth/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ login, password, account_type: 'platform' }),
+  })
+  expect(response.status).toBe(200)
+  const cookie = response.headers.get('set-cookie')?.split(';')[0]
+  expect(cookie).toBeTruthy()
+  return cookie!
 }
 
 beforeAll(async () => {
@@ -93,5 +111,53 @@ describe('authorization MCP password session boundary', () => {
     const result = await call(await login('hyp@sn.com', 'security_admin'))
     expect(result.status).toBe(403)
     expect(result.body.error?.code).toBe('FORBIDDEN')
+  })
+
+  it('grants two independent platform identities rules_admin through the authenticated Ops mutation', async () => {
+    const administratorCookie = await login('hyp@sn.com')
+    const maker = await createPlatformIdentity('rules-maker@example.test')
+    const checker = await createPlatformIdentity('rules-checker@example.test')
+
+    for (const target of [maker, checker]) {
+      const before = await call(administratorCookie, 'ops.authorization.roles.list', { subject_identity_id: target.identityId })
+      expect(before.status).toBe(200)
+      expect(before.body.data?.result).toMatchObject({ subject_identity_id: target.identityId, authorization_revision: 0, assignments: [] })
+
+      const assigned = await call(administratorCookie, 'ops.authorization.role.assign', {
+        subject_identity_id: target.identityId,
+        role: 'rules_admin',
+        expected_authorization_revision: '0',
+        reason: `QA-RULES-ADMIN-${target.login}: independently authorised local acceptance identity`,
+      })
+      expect(assigned.status).toBe(200)
+      expect(assigned.body.data?.result).toMatchObject({
+        subjectIdentityId: target.identityId,
+        role: 'rules_admin',
+        assignedBy: expect.any(String),
+        authorizationRevision: 1,
+        revision: 1,
+      })
+
+      const after = await call(administratorCookie, 'ops.authorization.roles.list', { subject_identity_id: target.identityId })
+      expect(after.body.data?.result).toMatchObject({
+        subject_identity_id: target.identityId,
+        authorization_revision: 1,
+        assignments: [expect.objectContaining({ subjectIdentityId: target.identityId, role: 'rules_admin' })],
+      })
+    }
+
+    const sessions = await Promise.all([maker, checker].map(async target => {
+      const cookie = await loginExisting(target.login, target.password)
+      const session = await call(cookie, 'ops.session')
+      expect(session.status).toBe(200)
+      return session.body.data?.result as { identity_id: string; canonical_roles: string[]; capabilities: string[]; effective_permissions: Array<{ source: string }> }
+    }))
+
+    expect(sessions.map(session => session.identity_id)).toEqual([maker.identityId, checker.identityId])
+    for (const session of sessions) {
+      expect(session.canonical_roles).toContain('rules_admin')
+      expect(session.capabilities).toEqual(expect.arrayContaining(['rule.read', 'rule.update', 'rule.publish.approve']))
+      expect(session.effective_permissions).toEqual(expect.arrayContaining([expect.objectContaining({ source: 'platform_assignment' })]))
+    }
   })
 })

@@ -151,13 +151,13 @@ export class PostgresCreativePointLifecycleRepository {
     await withWorkspaceTransaction(this.pool, workspaceId, async client => {
       const operation = await client.query<{ id: string; kind: string }>(`SELECT id,kind FROM creative_point_operations WHERE workspace_id=$1 AND id=$2 FOR SHARE`, [workspaceId, input.operationId])
       if (operation.rows.length !== 1 || operation.rows[0]?.kind !== 'reserve') throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'provider receipt must bind to one reserve operation')
-      const reservations = await client.query<{ status: string }>(`SELECT status FROM creative_point_reservations WHERE workspace_id=$1 AND operation_id=$2 FOR SHARE`, [workspaceId, input.operationId])
+      const reservations = await client.query<{ status: string }>(`SELECT status FROM creative_point_reservations WHERE workspace_id=$1 AND operation_id=$2 FOR UPDATE`, [workspaceId, input.operationId])
       if (reservations.rows.length !== 1) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'provider receipt reserve is unavailable or ambiguous')
       if (reservations.rows[0]?.status === 'released') throw new CreativePointRepositoryError('CREATIVE_POINT_RESERVATION_FINALIZED', 'provider receipt cannot be recorded after reservation release')
       const inputUsage = input.usage ? JSON.stringify(input.usage) : null
       const inputCost = input.cost ? JSON.stringify(input.cost) : null
       const inputVerifiedAt = input.verifiedAt ? at(input.verifiedAt) : null
-      const existing = await client.query<{ operation_id: string; workspace_id: string; provider: string; provider_request_id: string; outcome: string; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; receipt_hash: string; verified_at: string | Date | null }>(`SELECT operation_id,workspace_id,provider,provider_request_id,outcome,usage,cost,receipt_hash,verified_at FROM creative_point_provider_receipts_v2 WHERE provider=$1 AND provider_request_id=$2 FOR SHARE`, [input.provider, input.providerRequestId])
+      const existing = await client.query<{ operation_id: string; workspace_id: string; provider: string; provider_request_id: string; outcome: string; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; receipt_hash: string; verified_at: string | Date | null }>(`SELECT operation_id,workspace_id,provider,provider_request_id,outcome,usage,cost,receipt_hash,verified_at FROM creative_point_provider_receipts_v2 WHERE provider=$1 AND provider_request_id=$2`, [input.provider, input.providerRequestId])
       const row = existing.rows[0]
       const existingVerifiedAt = row?.verified_at instanceof Date ? row.verified_at.toISOString() : row?.verified_at ?? null
       const sameInstant = (left: string | null, right: string | null) => left === null || right === null ? left === right : Date.parse(left) === Date.parse(right)

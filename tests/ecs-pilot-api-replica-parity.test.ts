@@ -241,6 +241,7 @@ describe('ECS pilot API replica parity', () => {
         PLATFORM_ACCOUNT_LOGIN: '', PLATFORM_ACCOUNT_PASSWORD_HASH: '',
         ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
         OPS_AUTH_MODE: 'password',
+        LOCAL_PLUGIN_ONE_CLICK_ENABLED: 'false',
         SESSION_ID_HASH_SECRET: 'test-production-session-hash-secret',
         ASSET_DISPLAY_URL_SIGNING_SECRET: 'test-production-display-signing-secret',
         ASSET_DISPLAY_URL_SIGNING_KEY_ID: 'display-production',

@@ -51,6 +51,7 @@ describe('local Compose Ops UI', () => {
 
     const apiHealthcheck = api?.healthcheck?.test?.join(' ') ?? ''
     expect(api?.environment?.MCP_INTEGRATION_MODE).toBe('local_stdio')
+    expect(api?.environment?.LOCAL_PLUGIN_ONE_CLICK_ENABLED).toBe('true')
     expect(apiHealthcheck).toContain('127.0.0.1:8787/readyz')
     expect(apiHealthcheck).toContain('Authorization: Bearer')
     expect(apiHealthcheck).not.toContain('ASSET_SCAN_TRUSTED_PUBLIC_KEYS')

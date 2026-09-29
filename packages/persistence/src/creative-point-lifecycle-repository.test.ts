@@ -171,7 +171,9 @@ describe('PostgresCreativePointLifecycleRepository', () => {
     const repository = new PostgresCreativePointLifecycleRepository(pool(client))
     await expect(repository.recordProviderReceipt({ workspaceId: 'ws-1', operationId: 'operation-1', provider: 'relay', providerRequestId: 'request-success', outcome: 'succeeded', usage: { modality: 'text', model: 'model-1', total_tokens: 1 }, cost: { currency: 'CNY', actual: 0.01 }, verifiedAt: '2026-09-02T00:00:00Z', receiptHash: 'c'.repeat(64), at: '2026-09-02T00:00:00Z' })).resolves.toBeUndefined()
     expect(client.sql.findIndex(sql => sql.includes('SELECT id,kind FROM creative_point_operations'))).toBeLessThan(client.sql.findIndex(sql => sql.includes('SELECT status FROM creative_point_reservations')))
+    expect(client.sql.find(sql => sql.includes('SELECT status FROM creative_point_reservations'))).toContain('FOR UPDATE')
     expect(client.sql.findIndex(sql => sql.includes('SELECT status FROM creative_point_reservations'))).toBeLessThan(client.sql.findIndex(sql => sql.includes('INSERT INTO creative_point_provider_receipts_v2')))
+    expect(client.sql.find(sql => sql.includes('FROM creative_point_provider_receipts_v2'))).not.toContain('FOR SHARE')
   })
 
   it('rejects a provider receipt request id already bound to another operation', async () => {
@@ -190,6 +192,7 @@ describe('PostgresCreativePointLifecycleRepository', () => {
     const repository = new PostgresCreativePointLifecycleRepository(pool(client))
     await expect(repository.recordProviderReceipt({ workspaceId: 'ws-1', operationId: 'operation-1', provider: 'relay', providerRequestId: 'request-late-success', outcome: 'succeeded', usage: { modality: 'image', model: 'model-1' }, cost: { currency: 'CNY', actual: 0.01 }, verifiedAt: '2026-09-02T00:00:00Z', receiptHash: 'a'.repeat(64), at: '2026-09-02T00:00:00Z' })).rejects.toMatchObject({ code: 'CREATIVE_POINT_RESERVATION_FINALIZED' })
     expect(client.sql.find(sql => sql.includes('SELECT id,kind FROM creative_point_operations'))).toContain('FOR SHARE')
+    expect(client.sql.find(sql => sql.includes('SELECT status FROM creative_point_reservations'))).toContain('FOR UPDATE')
     expect(client.sql.some(sql => sql.includes('INSERT INTO creative_point_provider_receipts_v2'))).toBe(false)
     expect(client.sql.at(-1)).toBe('ROLLBACK')
   })

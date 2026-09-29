@@ -143,6 +143,31 @@ describe('durable rule-center HTTP boundary', () => {
     expect(repository.audits).toHaveLength(0)
   })
 
+  it('requires the platform reviewer workbench before forcing a signed rule sync', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'merchant-admin': { workspaces: ['ws_rule_sync_auth'], roles: ['rules_admin'], workbenches: ['workspace'], actor_id: 'merchant_admin' },
+    }))
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, { method: 'POST', headers: {
+      authorization: 'Bearer merchant-admin', 'x-workspace-id': 'ws_rule_sync_auth', 'content-type': 'application/json',
+    }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'rule.sync.now', params: {} }) }).then(json)
+    expect(response.error?.code).toBe('FORBIDDEN')
+    expect(repository.publicVersions).toHaveLength(0)
+  })
+
+  it('does not expose active platform rules with forged or cross-platform official provenance', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const workspaceId = 'ws_rule_list_trust'
+    await repository.insertVersion({ id: 'forged-platform-rule', workspaceId, packId: 'forged-platform', name: 'forged', version: '1', scope: 'platform', targetId: 'pinduoduo', status: 'active', sourceKind: 'official', sourceReference: 'https://rule.jd.com/rule/list.action', sourceCheckedAt: new Date().toISOString(), checksum: 'a'.repeat(64), checks: { forbiddenTerms: ['x'] }, createdBy: 'operator', revision: 1 })
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'x-workspace-id': workspaceId, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'rule.list', params: { platform: 'pinduoduo' } }) }).then(json)
+    expect(response.error).toBeNull()
+    expect(response.data?.result).toEqual([])
+  })
+
   it('requires an independently approved manual public rule before it reaches active merchant rules', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)
@@ -152,13 +177,13 @@ describe('durable rule-center HTTP boundary', () => {
     const draft = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({
       jsonrpc: '2.0', id: 1, method: 'rule.publish', params: {
         pack_id: 'manual-public', name: '人工平台规则', version: '1', scope: 'platform', category: 'platform', public_scope: 'platform', target_id: 'pinduoduo',
-        source_kind: 'internal', source_reference: 'manual://rules.md#PDD-1', source_checked_at: new Date().toISOString(),
+        source_kind: 'internal', source_reference: 'https://www.yangkeduo.com/home/help/', source_checked_at: new Date().toISOString(),
         checks_json: JSON.stringify({ content: '不得使用未验证承诺' }), reason: 'manual import',
       },
     }) }).then(json)
     expect(draft.error).toBeNull()
     expect(repository.publicVersions).toHaveLength(1)
-    expect(repository.publicVersions[0]).toMatchObject({ status: 'draft', sourceKind: 'internal', sourceReference: 'manual://rules.md#PDD-1' })
+    expect(repository.publicVersions[0]).toMatchObject({ status: 'draft', sourceKind: 'internal', sourceReference: 'https://www.yangkeduo.com/home/help/' })
 
     const approval = { approval_ref: 'approval://manual-test', approved_by: 'reviewer_2', approved_at: new Date().toISOString() }
     const activation = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({
@@ -185,6 +210,19 @@ describe('durable rule-center HTTP boundary', () => {
     }) }).then(json)
     expect(missingRevision.error?.code).toBe('INVALID_REQUEST')
     expect(await repository.listPublic(workspaceId, 'pinduoduo')).toHaveLength(1)
+  })
+
+  it('rejects an unapproved or cross-platform source URL when creating a public draft', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const base = await start()
+    const headers = { 'x-workspace-id': 'ws_invalid_public_source', 'x-actor-id': 'rules_admin_1', 'x-role': 'rules_admin', 'x-ops-workbench': 'platform', 'content-type': 'application/json' }
+    const response = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'rule.publish', params: {
+      pack_id: 'bad-source', name: 'bad source', version: '1', scope: 'platform', category: 'platform', public_scope: 'platform', target_id: 'pinduoduo',
+      source_kind: 'internal', source_reference: 'https://rule.jd.com/rule/list.action', source_checked_at: new Date().toISOString(), checks_json: '{"forbiddenTerms":["x"]}', reason: 'test',
+    } }) }).then(json)
+    expect(response.error?.code).toBe('OFFICIAL_RULE_IMPORT_REQUIRED')
+    expect(repository.publicVersions).toHaveLength(0)
   })
 
   it('enforces token-bound tenant/admin/approver identities and appends readable audit', async () => {
@@ -324,8 +362,8 @@ describe('durable rule-center HTTP boundary', () => {
     const workspaceId = `ws_rule_list_filter_${Date.now()}`
     const now = new Date().toISOString()
     await repository.insertVersion({ id: 'global-rule', workspaceId, packId: 'global', name: '全局规则', version: '1', scope: 'global', status: 'active', sourceKind: 'official', sourceReference: 'official://global', sourceCheckedAt: now, checksum: 'a'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
-    await repository.insertVersion({ id: 'jd-rule', workspaceId, packId: 'jd', name: '京东规则', version: '1', scope: 'platform', targetId: 'jd', status: 'active', sourceKind: 'official', sourceReference: 'official://jd', sourceCheckedAt: now, checksum: 'b'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
-    await repository.insertVersion({ id: 'taobao-rule', workspaceId, packId: 'taobao', name: '淘宝规则', version: '1', scope: 'platform', targetId: 'taobao', status: 'active', sourceKind: 'official', sourceReference: 'official://taobao', sourceCheckedAt: now, checksum: 'c'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
+    await repository.insertVersion({ id: 'jd-rule', workspaceId, packId: 'jd', name: '京东规则', version: '1', scope: 'platform', targetId: 'jd', status: 'active', sourceKind: 'official', sourceReference: 'https://rule.jd.com/rule/list.action', sourceCheckedAt: now, checksum: 'b'.repeat(64), checks: {}, createdBy: 'signed-rule-sync', revision: 1 })
+    await repository.insertVersion({ id: 'taobao-rule', workspaceId, packId: 'taobao', name: '淘宝规则', version: '1', scope: 'platform', targetId: 'taobao', status: 'active', sourceKind: 'official', sourceReference: 'https://developer.alibaba.com/doc/doc.htm?articleId=1', sourceCheckedAt: now, checksum: 'c'.repeat(64), checks: {}, createdBy: 'signed-rule-sync', revision: 1 })
     await repository.insertVersion({ id: 'draft-rule', workspaceId, packId: 'draft', name: '待审批规则', version: '1', scope: 'global', status: 'draft', sourceKind: 'internal', sourceReference: 'internal://draft', sourceCheckedAt: now, checksum: 'd'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
     await repository.insertVersion({ id: 'inactive-rule', workspaceId, packId: 'inactive', name: '已停用规则', version: '1', scope: 'global', status: 'inactive', sourceKind: 'internal', sourceReference: 'internal://inactive', sourceCheckedAt: now, checksum: 'e'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 2 })
     const base = await start()
@@ -401,6 +439,8 @@ describe('durable rule-center HTTP boundary', () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)
     const workspaceId = `ws_persisted_generation_rules_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `persisted-generation-store-${workspaceId}`, credentialRef: `vault://persisted-generation/${workspaceId}` })
     const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, category: '女装外套', title: '持久化规则生成商品', stock: 4 })
     service.confirmProductFacts(workspaceId, product.id)

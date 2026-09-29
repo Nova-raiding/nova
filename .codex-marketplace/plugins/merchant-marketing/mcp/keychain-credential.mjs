@@ -74,6 +74,17 @@ export function keychainCredentialSeed({ apiOrigin, workspaceId }, bundle) {
     access_token: access, refresh_token: refresh, expires_at: expiry }) }
 }
 
+export function installationIdentitySeed(apiOrigin, owner, identity) {
+  const { origin } = binding(apiOrigin, 'installation')
+  if (!owner || !/^[A-Za-z0-9_-]{1,128}$/u.test(owner.accountId ?? '')
+    || !/^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(owner.workspaceId ?? '')
+    || !identity || typeof identity !== 'object' || Array.isArray(identity)) fail()
+  return {
+    account: sha256(`${INSTALLATION_ACCOUNT_PREFIX}${origin}\n${owner.accountId}\n${owner.workspaceId}`),
+    data: JSON.stringify(identity),
+  }
+}
+
 function defaultHelper(request, spawn = spawnSync) {
   const qaBroker = isQaBrokerPackage()
   if (!qaBroker) assertKeychainHelperReady()
@@ -137,10 +148,7 @@ export function readKeychainCredential({ apiOrigin, workspaceId }, options = {})
 
 /** Keep the installation signing key in Keychain, scoped to the API origin. */
 export function installationIdentityStore(apiOrigin, owner, options = {}) {
-  const { origin } = binding(apiOrigin, 'installation')
-  if (!owner || !/^[A-Za-z0-9_-]{1,128}$/u.test(owner.accountId ?? '')
-    || !/^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(owner.workspaceId ?? '')) fail()
-  const account = sha256(`${INSTALLATION_ACCOUNT_PREFIX}${origin}\n${owner.accountId}\n${owner.workspaceId}`)
+  const account = installationIdentitySeed(apiOrigin, owner, {}).account
   const runHelper = options.runHelper ?? (request => defaultHelper(request, options.spawnHelper))
   return {
     load() {

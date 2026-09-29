@@ -243,7 +243,7 @@ import { createImageEditCandidate, createOneSentenceGenerationRequest, createVid
 import { generateSeoGeoSuggestions } from '../../../packages/seo/src/index.js'
 import { classifyPaymentRefundState, createPaymentProviderFromEnv, FixturePaymentProvider, type PaymentProvider } from '../../../packages/billing/src/payment-provider.js'
 import { paymentFixturePolicy } from '../../../packages/application/src/payment-fixture-guard.js'
-import { platformRuleSyncStatus } from '../../../packages/review/src/platform-rule-sync.js'
+import { isApprovedPlatformRuleSource, platformRuleSyncStatus } from '../../../packages/review/src/platform-rule-sync.js'
 import { verifyAndParsePlatformRuleManifest } from '../../../packages/review/src/platform-rule-manifest.js'
 import { assertOutboundUrl } from '../../../packages/connectors/src/outbound-security.js'
 import { readBoundedResponseText } from '../../../packages/connectors/src/bounded-response.js'
@@ -2125,8 +2125,11 @@ export function setBusinessRepositoryForTests(repository?: PostgresBusinessRepos
 function ruleRepository() { return ruleRepositoryOverride ?? persistence.rules }
 
 function iso(value: string | Date) { return typeof value === 'string' ? value : new Date(String(value)).toISOString() }
-function isVerifiedOfficialRule(version: Pick<PersistedRuleVersion, 'sourceKind' | 'sourceReference' | 'createdBy'>) {
-  return version.sourceKind === 'official' && version.createdBy === 'signed-rule-sync' && !version.sourceReference.startsWith('manual://')
+function isVerifiedOfficialRule(version: Pick<PersistedRuleVersion, 'scope' | 'scopeValue' | 'targetId' | 'sourceKind' | 'sourceReference' | 'createdBy'>) {
+  const platform = version.scopeValue ?? version.targetId
+  return version.scope === 'platform' && Boolean(platform) && SUPPORTED_PLATFORMS.includes(platform as Platform)
+    && version.sourceKind === 'official' && version.createdBy === 'signed-rule-sync'
+    && isApprovedPlatformRuleSource(platform as Platform, version.sourceReference)
 }
 
 function isAllowedManualPublicRule(version: Pick<PersistedRuleVersion, 'scope' | 'scopeValue' | 'targetId' | 'sourceKind' | 'sourceReference' | 'checks' | 'checksum' | 'createdBy'>) {
@@ -2134,8 +2137,9 @@ function isAllowedManualPublicRule(version: Pick<PersistedRuleVersion, 'scope' |
   // Public platform rule storage does not persist category; the private marker
   // and checksum are the durable provenance contract for this manual path.
   if (version.scope !== 'platform' || version.sourceKind !== 'internal'
-    || !version.sourceReference.startsWith('manual://') || version.checks.__public_scope !== 'platform'
-    || !version.createdBy || !platform || !SUPPORTED_PLATFORMS.includes(platform as Platform)) return false
+    || !platform || !SUPPORTED_PLATFORMS.includes(platform as Platform)
+    || !isApprovedPlatformRuleSource(platform as Platform, version.sourceReference) || version.checks.__public_scope !== 'platform'
+    || !version.createdBy) return false
   const { __public_scope: _scopeMarker, ...checks } = version.checks
   const checksum = createHash('sha256').update(canonicalJson(checks)).digest('hex')
   return checksum === version.checksum
@@ -2164,12 +2168,12 @@ function publicRule(version: PersistedRuleVersion) {
   const lifecycleStatus = version.status === 'active' ? 'published' : version.status === 'inactive' ? 'disabled' : version.status
   const verified = isTrustedPublicRule(version)
   const activationEligible = isVerifiedOfficialRule(version) || isAllowedManualPublicRule(version)
-  return { id: version.id, workspaceId: version.workspaceId, packId: version.packId, name: version.name, version: version.version, scope: version.scope, status: version.status, lifecycleStatus, activationEligible, createdBy: version.createdBy, updatedAt: iso(version.updatedAt), source: { kind: version.sourceKind, reference: version.sourceReference, checkedAt: iso(version.sourceCheckedAt), trust: verified ? 'verified' : 'unverified' }, checksum: version.checksum, revision: version.revision, ...(version.category ? { category: version.category } : {}), ...(version.effectiveFrom ? { effectiveFrom: iso(version.effectiveFrom) } : {}), ...(version.effectiveTo ? { effectiveTo: iso(version.effectiveTo) } : {}), ...(version.severity ? { severity: version.severity } : {}), ...(version.action ? { action: version.action } : {}), ...(version.targetId ? { targetId: version.targetId } : {}), ...(version.scopeValue ? { scopeValue: version.scopeValue } : {}), ...(version.activatedAt ? { activatedAt: iso(version.activatedAt) } : {}), ...(version.deactivatedAt ? { deactivatedAt: iso(version.deactivatedAt) } : {}) }
+  return { id: version.id, workspaceId: version.workspaceId, packId: version.packId, name: version.name, version: version.version, scope: version.scope, status: version.status, lifecycleStatus, activationEligible, createdBy: version.createdBy, updatedAt: iso(version.updatedAt), source: { kind: version.sourceKind, reference: version.sourceReference, checkedAt: iso(version.sourceCheckedAt), trust: verified ? 'verified' : 'unverified', createdBy: version.createdBy }, checksum: version.checksum, revision: version.revision, ...(version.category ? { category: version.category } : {}), ...(version.effectiveFrom ? { effectiveFrom: iso(version.effectiveFrom) } : {}), ...(version.effectiveTo ? { effectiveTo: iso(version.effectiveTo) } : {}), ...(version.severity ? { severity: version.severity } : {}), ...(version.action ? { action: version.action } : {}), ...(version.targetId ? { targetId: version.targetId } : {}), ...(version.scopeValue ? { scopeValue: version.scopeValue } : {}), ...(version.activatedAt ? { activatedAt: iso(version.activatedAt) } : {}), ...(version.deactivatedAt ? { deactivatedAt: iso(version.deactivatedAt) } : {}) }
 }
 
 function rulePackProjection(version: PersistedRuleVersion): RulePack {
   const category = version.category === 'platform' || version.category === 'category' || version.category === 'advertising_publish' || version.category === 'big_promotion' ? version.category : undefined
-  return { id: version.id, name: version.name, version: version.version, scope: version.scope as RulePack['scope'], status: version.status as RulePack['status'], updatedAt: iso(version.updatedAt), source: { kind: version.sourceKind as RulePack['source']['kind'], reference: version.sourceReference, checkedAt: iso(version.sourceCheckedAt), ...(isTrustedPublicRule(version) ? { trust: 'verified' as const } : {}) }, checksum: version.checksum, revision: version.revision, ...(category ? { category } : {}), ...(version.effectiveFrom ? { effectiveFrom: iso(version.effectiveFrom) } : {}), ...(version.effectiveTo ? { effectiveTo: iso(version.effectiveTo) } : {}), ...(version.severity ? { severity: version.severity as RulePack['severity'] } : {}), ...(version.action ? { action: version.action as RulePack['action'] } : {}), ...(version.targetId ? { targetId: version.targetId } : {}), ...(version.scopeValue ? { scopeValue: version.scopeValue } : {}), ...(version.activatedAt ? { activatedAt: iso(version.activatedAt) } : {}), ...(version.deactivatedAt ? { deactivatedAt: iso(version.deactivatedAt) } : {}) }
+  return { id: version.id, name: version.name, version: version.version, scope: version.scope as RulePack['scope'], status: version.status as RulePack['status'], updatedAt: iso(version.updatedAt), createdBy: version.createdBy, source: { kind: version.sourceKind as RulePack['source']['kind'], reference: version.sourceReference, checkedAt: iso(version.sourceCheckedAt), createdBy: version.createdBy, ...(isTrustedPublicRule(version) ? { trust: 'verified' as const } : {}) }, checksum: version.checksum, revision: version.revision, ...(category ? { category } : {}), ...(version.effectiveFrom ? { effectiveFrom: iso(version.effectiveFrom) } : {}), ...(version.effectiveTo ? { effectiveTo: iso(version.effectiveTo) } : {}), ...(version.severity ? { severity: version.severity as RulePack['severity'] } : {}), ...(version.action ? { action: version.action as RulePack['action'] } : {}), ...(version.targetId ? { targetId: version.targetId } : {}), ...(version.scopeValue ? { scopeValue: version.scopeValue } : {}), ...(version.activatedAt ? { activatedAt: iso(version.activatedAt) } : {}), ...(version.deactivatedAt ? { deactivatedAt: iso(version.deactivatedAt) } : {}) }
 }
 
 async function rulePacksForWorkspace(workspaceId: string): Promise<RulePack[]> {
@@ -2211,8 +2215,6 @@ async function trustedPlatformRuleSyncStatuses(workspaceId: string, intervalHour
   })
 }
 
-const lastPlatformRuleSync = new Map<string, number>()
-
 export async function syncSignedPlatformRules(workspaceId: string, options: { force?: boolean } = {}) {
   const manifestUrl = process.env.PLATFORM_RULE_SYNC_MANIFEST_URL?.trim()
   const signingSecret = process.env.PLATFORM_RULE_SYNC_SIGNING_SECRET?.trim()
@@ -2221,22 +2223,37 @@ export async function syncSignedPlatformRules(workspaceId: string, options: { fo
   const repository = ruleRepository()
   if (!repository) throw new DomainError('RULE_REPOSITORY_NOT_CONFIGURED', '规则定时同步需要持久化规则仓储', 503)
   if (!repository.insertVersionWithAudit || !repository.transitionStatusWithAudit) throw new DomainError('RULE_REPOSITORY_ATOMIC_SYNC_UNAVAILABLE', '规则仓储不支持原子导入和激活', 503)
-  const last = lastPlatformRuleSync.get(workspaceId)
-  if (!options.force && last && Date.now() - last < intervalHours * 3_600_000) return { state: 'not_due' as const, imported: 0, activated: 0, next_sync_at: new Date(last + intervalHours * 3_600_000).toISOString() }
   await assertOutboundUrl(manifestUrl, { environment: process.env.NODE_ENV })
   const response = await fetch(manifestUrl, { headers: { accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(15_000) })
   if (!response.ok) throw new DomainError('RULE_MANIFEST_FETCH_FAILED', `签名规则清单返回 HTTP ${response.status}`, 503)
   const raw = await readBoundedResponseText(response, 2 * 1024 * 1024, 'platform rule manifest')
+  const manifestSignature = response.headers.get('x-rule-manifest-signature') ?? ''
   let manifest
-  try { manifest = verifyAndParsePlatformRuleManifest(raw, response.headers.get('x-rule-manifest-signature') ?? '', signingSecret) }
+  try { manifest = verifyAndParsePlatformRuleManifest(raw, manifestSignature, signingSecret) }
   catch (error) { throw new DomainError('RULE_MANIFEST_INVALID', error instanceof Error ? error.message : '签名规则清单无效', 409) }
+  const manifestEvidence = {
+    manifest_generated_at: manifest.generatedAt,
+    manifest_url: manifestUrl,
+    manifest_sha256: createHash('sha256').update(raw).digest('hex'),
+    signature_sha256: createHash('sha256').update(manifestSignature).digest('hex'),
+    signature_verified: true,
+  }
   const existing = repository.listPublic
     ? await repository.listPublic(workspaceId)
     : await repository.list(workspaceId)
+  const manifestKeys = new Set(manifest.entries.map(entry => `${entry.platform}:${entry.packId}:${entry.version}`))
+  for (const stored of existing.filter(row => row.sourceKind === 'official' && row.createdBy === 'signed-rule-sync')) {
+    const key = `${stored.scopeValue ?? stored.targetId}:${stored.packId}:${stored.version}`
+    if (!manifestKeys.has(key)) throw new DomainError('RULE_MANIFEST_ROLLBACK_REJECTED', '签名规则清单缺少已导入版本，拒绝回滚或不完整清单', 409, { platform: stored.scopeValue ?? stored.targetId, pack_id: stored.packId, version: stored.version })
+  }
   let imported = 0
   let activated = 0
   const versions: Array<{ platform: string; pack_id: string; version: string; state: string }> = []
   for (const entry of manifest.entries) {
+    const entryDate = Date.parse(entry.sourceCheckedAt)
+    if (entryDate > Date.parse(manifest.generatedAt) + 5 * 60_000) throw new DomainError('RULE_MANIFEST_SOURCE_CHECKED_AT_INVALID', '来源检查时间晚于签名清单生成时间', 409)
+    const priorVersions = existing.filter(row => (row.scopeValue ?? row.targetId) === entry.platform && row.packId === entry.packId && row.sourceKind === 'official' && row.createdBy === 'signed-rule-sync')
+    if (priorVersions.some(row => Date.parse(String(row.sourceCheckedAt)) > entryDate)) throw new DomainError('RULE_MANIFEST_ROLLBACK_REJECTED', '规则来源检查时间早于已保存版本，拒绝回滚', 409)
     const checksum = createHash('sha256').update(canonicalJson({ platform: entry.platform, packId: entry.packId, version: entry.version, sourceReference: entry.sourceReference, sourceCheckedAt: entry.sourceCheckedAt, checks: entry.checks, severity: entry.severity, action: entry.action, effectiveFrom: entry.effectiveFrom ?? null, effectiveTo: entry.effectiveTo ?? null })).digest('hex')
     let target = existing.find(row => row.packId === entry.packId && row.version === entry.version)
     if (target && target.checksum !== checksum) throw new DomainError('RULE_MANIFEST_VERSION_CONFLICT', `规则 ${entry.packId}@${entry.version} 已存在但摘要不同`, 409)
@@ -2245,7 +2262,7 @@ export async function syncSignedPlatformRules(workspaceId: string, options: { fo
       const id = `public_rule_sync_${createHash('sha256').update(`${entry.platform}:${entry.packId}:${entry.version}`).digest('hex').slice(0, 32)}`
       target = (await repository.insertPublicVersionWithAudit({
         version: { id, packId: entry.packId, name: entry.name, version: entry.version, scope: 'platform', status: 'active', sourceKind: 'official', sourceReference: entry.sourceReference, sourceCheckedAt: entry.sourceCheckedAt, checksum, checks: entry.checks, createdBy: 'signed-rule-sync', revision: 1, targetId: entry.platform, severity: entry.severity, action: entry.action, ...(entry.effectiveFrom ? { effectiveFrom: entry.effectiveFrom } : {}), ...(entry.effectiveTo ? { effectiveTo: entry.effectiveTo } : {}), activatedAt: at },
-        audit: { id: `public_rule_audit_${randomUUID()}`, rulePackId: entry.packId, ruleVersionId: id, version: entry.version, action: 'activated', actorId: 'signed-rule-sync', reason: '签名平台规则清单导入并激活公共规则', occurredAt: at, data: { manifest_generated_at: manifest.generatedAt, checksum } },
+        audit: { id: `public_rule_audit_${randomUUID()}`, rulePackId: entry.packId, ruleVersionId: id, version: entry.version, action: 'activated', actorId: 'signed-rule-sync', reason: '签名平台规则清单导入并激活公共规则', occurredAt: at, data: { ...manifestEvidence, source_reference: entry.sourceReference, checksum } },
       })).version
       existing.push(target)
       imported += 1
@@ -2254,18 +2271,17 @@ export async function syncSignedPlatformRules(workspaceId: string, options: { fo
       const id = `rule_sync_${createHash('sha256').update(`${workspaceId}:${entry.platform}:${entry.packId}:${entry.version}`).digest('hex').slice(0, 32)}`
       target = (await repository.insertVersionWithAudit({
         version: { id, workspaceId, packId: entry.packId, name: entry.name, version: entry.version, scope: 'platform', status: 'draft', sourceKind: 'official', sourceReference: entry.sourceReference, sourceCheckedAt: entry.sourceCheckedAt, checksum, checks: entry.checks, createdBy: 'signed-rule-sync', revision: 1, targetId: entry.platform, severity: entry.severity, action: entry.action, ...(entry.effectiveFrom ? { effectiveFrom: entry.effectiveFrom } : {}), ...(entry.effectiveTo ? { effectiveTo: entry.effectiveTo } : {}) },
-        audit: { id: `rule_audit_${randomUUID()}`, workspaceId, rulePackId: entry.packId, ruleVersionId: id, version: entry.version, action: 'created', actorId: 'signed-rule-sync', reason: '签名平台规则清单定时导入', occurredAt: at, data: { manifest_generated_at: manifest.generatedAt, checksum } },
+        audit: { id: `rule_audit_${randomUUID()}`, workspaceId, rulePackId: entry.packId, ruleVersionId: id, version: entry.version, action: 'created', actorId: 'signed-rule-sync', reason: '签名平台规则清单定时导入', occurredAt: at, data: { ...manifestEvidence, source_reference: entry.sourceReference, checksum } },
       })).version
       existing.push(target)
       imported += 1
     }
     if (target.status !== 'active') {
-      target = (await repository.transitionStatusWithAudit({ workspaceId, packId: entry.packId, targetId: target.id, status: 'active', actorId: 'signed-rule-sync', reason: '签名平台规则清单定时激活', occurredAt: at, targetAuditId: `rule_audit_${randomUUID()}`, currentAuditId: `rule_audit_${randomUUID()}`, auditData: { manifest_generated_at: manifest.generatedAt, checksum } })).version
+      target = (await repository.transitionStatusWithAudit({ workspaceId, packId: entry.packId, targetId: target.id, status: 'active', actorId: 'signed-rule-sync', reason: '签名平台规则清单定时激活', occurredAt: at, targetAuditId: `rule_audit_${randomUUID()}`, currentAuditId: `rule_audit_${randomUUID()}`, auditData: { ...manifestEvidence, source_reference: entry.sourceReference, checksum } })).version
       activated += 1
     }
     versions.push({ platform: entry.platform, pack_id: entry.packId, version: entry.version, state: target.status })
   }
-  lastPlatformRuleSync.set(workspaceId, Date.now())
   return { state: 'succeeded' as const, imported, activated, manifest_generated_at: manifest.generatedAt, versions }
 }
 

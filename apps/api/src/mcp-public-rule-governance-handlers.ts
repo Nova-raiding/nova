@@ -3,6 +3,7 @@ import type { IncomingMessage } from 'node:http'
 import { DomainError } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import type { PersistedRuleAudit, PersistedRuleVersion, PublicRuleReviewCursor } from '../../../packages/persistence/src/index.js'
+import { isApprovedPlatformRuleSource, type RuleSyncPlatform } from '../../../packages/review/src/platform-rule-sync.js'
 import type { RuleRepositoryPort } from './server.js'
 
 type JsonObject = Record<string, unknown>
@@ -49,9 +50,10 @@ function projectReviewRule(version: PersistedRuleVersion, canonicalJson: (value:
   const platform = version.scopeValue ?? version.targetId
   const platformBound = version.scope === 'platform' && Boolean(platform && supportedPlatforms.includes(platform))
   const manualProvenanceValid = platformBound && version.sourceKind === 'internal'
-    && version.sourceReference.startsWith('manual://') && marker === 'platform' && Boolean(version.createdBy)
+    && isApprovedPlatformRuleSource(platform as RuleSyncPlatform, version.sourceReference) && marker === 'platform' && Boolean(version.createdBy)
   const signedProvenanceValid = platformBound && version.sourceKind === 'official'
     && version.createdBy === 'signed-rule-sync' && !version.sourceReference.startsWith('manual://')
+    && isApprovedPlatformRuleSource(platform as RuleSyncPlatform, version.sourceReference)
   // A trust label is an assertion about both origin and intact payload. Keep
   // malformed or legacy rows visibly unverified even if their lifecycle state
   // says active; activation/runtime gates independently enforce the same rule.

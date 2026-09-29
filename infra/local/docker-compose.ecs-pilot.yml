@@ -252,6 +252,7 @@ services:
       # a separately reviewed deployment manifest and must not be required here.
       NODE_ENV: production
       LOCAL_COMPOSE: "false"
+      LOCAL_PLUGIN_ONE_CLICK_ENABLED: "false"
       DEPLOYMENT_PROFILE: ecs
       CONNECTOR_FIXTURE_MODE: "false"
       MERCHANT_TEST_APPROVED_RATES: "false"

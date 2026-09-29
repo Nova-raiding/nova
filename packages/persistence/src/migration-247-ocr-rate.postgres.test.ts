@@ -52,6 +52,8 @@ describe('migration 248 OCR free threshold rate', () => {
       app = new Pool({ connectionString: appUrl.toString() })
       const points = new PostgresCreativePointRepository(app)
       const lifecycle = new PostgresCreativePointLifecycleRepository(app)
+      const receiptAcl = await app.query<{ current_user: string; can_select: boolean; can_insert: boolean }>(`SELECT current_user, has_table_privilege(current_user, 'public.creative_point_provider_receipts_v2', 'SELECT') AS can_select, has_table_privilege(current_user, 'public.creative_point_provider_receipts_v2', 'INSERT') AS can_insert`)
+      expect(receiptAcl.rows[0]).toMatchObject({ current_user: 'merchant_app', can_select: true, can_insert: true })
       await points.grant({ workspaceId, idempotencyKey: 'ocr-pg-grant', sourceType: 'paid_order', sourceId: 'ocr-pg-order', points: 5 })
 
       const settleReceipt = async (actionKey: string, rateCardVersion: string, costCny: number, policyVersion: typeof OCR_COST_POINT_POLICY_VERSION | typeof OCR_FREE_THRESHOLD_POINT_POLICY_VERSION) => {

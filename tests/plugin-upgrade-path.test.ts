@@ -11,6 +11,14 @@ describe('plugin upgrade path', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-plugin-upgrade-'))
     const installed = resolve(directory, 'installed')
     const fakeCodex = resolve(directory, 'codex')
+    const marketplaceRoot = resolve(directory, 'marketplace')
+    const marketplacePlugin = resolve(marketplaceRoot, 'plugins/merchant-marketing')
+    mkdirSync(marketplacePlugin, { recursive: true })
+    cpSync(source, marketplacePlugin, { recursive: true })
+    writeFileSync(resolve(marketplaceRoot, 'marketplace.json'), JSON.stringify({
+      name: 'merchant-local',
+      plugins: [{ name: 'merchant-marketing', source: { source: 'local', path: './plugins/merchant-marketing' } }],
+    }, null, 2))
     writeFileSync(fakeCodex, `#!/usr/bin/env node
 const { cpSync, mkdirSync } = require('node:fs')
 const args = process.argv.slice(2)
@@ -29,11 +37,11 @@ process.exit(2)
     chmodSync(fakeCodex, 0o755)
     try {
       const result = spawnSync(process.execPath, [resolve(source, 'scripts/upgrade-installed-plugin.mjs'),
-        '--source', source, '--marketplace', 'merchant-local', '--codex', fakeCodex, '--installed', installed], {
+        '--source', source, '--local-source', marketplaceRoot, '--marketplace', 'merchant-local', '--codex', fakeCodex, '--installed', installed], {
         encoding: 'utf8',
         env: { ...process.env,
-          FAKE_MARKETPLACE_ROOT: resolve(process.cwd(), '.codex-marketplace'),
-          FAKE_MARKETPLACE_PLUGIN: resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing'),
+          FAKE_MARKETPLACE_ROOT: marketplaceRoot,
+          FAKE_MARKETPLACE_PLUGIN: marketplacePlugin,
           FAKE_INSTALLED: installed,
         },
       })

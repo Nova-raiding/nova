@@ -102,12 +102,16 @@ describe('ECS candidate bundle contract', () => {
 
       const archive = readFileSync(join(output, 'candidate-source.tar'))
       const identity = readFileSync(join(output, 'candidate-identity.txt'), 'utf8')
+      const readme = readFileSync(join(output, 'README.txt'), 'utf8')
       const manifest = readFileSync(join(output, 'files.txt'))
       const syncPlan = readFileSync(join(output, 'sync-plan.tsv'))
       expect(identity).toContain(`git_sha=${expectedSha}\n`)
       expect(identity).toContain(`source_sha256=sha256:${createHash('sha256').update(archive).digest('hex')}\n`)
       expect(identity).toContain(`comparison_manifest_sha256=sha256:${createHash('sha256').update(manifest).digest('hex')}\n`)
       expect(identity).toContain(`sync_plan_sha256=sha256:${createHash('sha256').update(syncPlan).digest('hex')}\n`)
+      expect(readme).toContain('Profile: full-source v1.')
+      expect(readme).toContain('Local plugin source is included for the local stdio')
+      expect(readme).not.toContain('v2 excludes local plugin code')
       expect(execFileSync('sh', ['-c', 'git get-tar-commit-id < "$1"', 'candidate-archive', join(output, 'candidate-source.tar')], { encoding: 'utf8' }).trim()).toBe(expectedSha)
       const bridgeReview = JSON.parse(execFileSync('node', [resolve('infra/scripts/verify-ecs-bridge-254-review-package.mjs'), '--bundle', output], { encoding: 'utf8' })) as { status: string; deployable: boolean; review_files_verified: number }
       expect(bridgeReview).toMatchObject({ status: 'review_only', deployable: false, review_files_verified: 32 })

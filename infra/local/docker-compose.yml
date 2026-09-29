@@ -143,6 +143,9 @@ services:
       # credential boundary; without this setting /mcp falls through to the
       # static API token verifier and the UI cannot read points or billing.
       MCP_INTEGRATION_MODE: local_stdio
+      # Local desktop acceptance uses the real browser pairing flow. Production
+      # manifests keep this disabled until the signed installer gate is met.
+      LOCAL_PLUGIN_ONE_CLICK_ENABLED: "true"
       MCP_AUTHZ_MODE: enforce
       REQUEST_OBSERVABILITY_LOGS: ${REQUEST_OBSERVABILITY_LOGS:-false}
       OPS_ALERT_NOTIFICATIONS_ENABLED: ${OPS_ALERT_NOTIFICATIONS_ENABLED:-false}

@@ -16,6 +16,26 @@ const platformByMarkdownName = new Map<string, Platform>(
   ]),
 );
 
+const approvedRuleSources: Record<Platform, { host: string; paths: readonly RegExp[] }> = {
+  jd: { host: "rule.jd.com", paths: [/^\/rule\/(?:list|ruleDetail)\.action$/u] },
+  taobao: { host: "developer.alibaba.com", paths: [/^\/(?:doc|docs)\//u] },
+  tmall: { host: "www.tmall.com", paths: [/^\/wow\/seller\/act\/guize(?:\/|$)/u] },
+  pinduoduo: { host: "www.yangkeduo.com", paths: [/^\/home\/(?:help|food_trade)(?:\/|$)/u] },
+  xiaohongshu: { host: "school.xiaohongshu.com", paths: [/^\/(?:rule|helper|en\/open\/product)(?:\/|$)/u] },
+  douyin: { host: "school.jinritemai.com", paths: [/^\/doudian\/(?:web|wap)\/(?:home|rules|article)(?:\/|$)/u] },
+};
+
+function isApprovedRuleSourceReference(reference: string, platform?: Platform) {
+  try {
+    const url = new URL(reference);
+    if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return false;
+    return (platform ? [platform] : platforms).some(id => {
+      const policy = approvedRuleSources[id];
+      return url.hostname === policy.host && policy.paths.some(pattern => pattern.test(url.pathname));
+    });
+  } catch { return false; }
+}
+
 function resolveMarkdownPlatform(value: string, cardId: string): Platform {
   const normalized = value.trim();
   const platform = platformByMarkdownName.get(normalized) ?? platformByMarkdownName.get(normalized.toLowerCase());
@@ -23,16 +43,21 @@ function resolveMarkdownPlatform(value: string, cardId: string): Platform {
   return platform;
 }
 
-export function isTrustedPlatformRule(rule: Pick<Rule, "source">) {
+export function isTrustedPlatformRule(rule: Pick<Rule, "source" | "scope" | "targetId" | "scopeValue" | "createdBy">) {
+  const platform = rule.targetId ?? rule.scopeValue;
+  const supportedPlatform = platforms.includes(platform as Platform) ? platform as Platform : undefined;
+  const sourceCreator = rule.source.createdBy ?? rule.createdBy;
   return rule.source.trust === "verified"
-    && ((rule.source.kind === "official" && !rule.source.reference.startsWith("manual://"))
-      || (rule.source.kind === "internal" && rule.source.reference.startsWith("manual://")));
+    && ((rule.source.kind === "official" && sourceCreator === "signed-rule-sync" && rule.scope === "platform"
+      && Boolean(supportedPlatform) && isApprovedRuleSourceReference(rule.source.reference, supportedPlatform))
+      || (rule.source.kind === "internal" && rule.scope === "platform" && Boolean(supportedPlatform)
+        && isApprovedRuleSourceReference(rule.source.reference, supportedPlatform)));
 }
 
-export function ruleTrustLabel(rule: Pick<Rule, "source">) {
+export function ruleTrustLabel(rule: Pick<Rule, "source" | "scope" | "targetId" | "scopeValue" | "createdBy">) {
   if (rule.source.trust !== "verified") return "未核验";
-  if (rule.source.kind === "official" && !rule.source.reference.startsWith("manual://")) return "签名来源已验证";
-  if (rule.source.kind === "internal" && rule.source.reference.startsWith("manual://")) return "人工已审批";
+  if (isTrustedPlatformRule(rule) && rule.source.kind === "official") return "签名来源已验证";
+  if (isTrustedPlatformRule(rule) && rule.source.kind === "internal") return "人工已审批";
   return "来源类型不匹配";
 }
 
@@ -71,6 +96,7 @@ export function parseMarkdownDraftInputs(markdown: string, fileName: string) {
     const source = body.match(/^- 官方依据：(.+)$/mu)?.[1]?.trim();
     if (!platform || !source) throw new Error(`${cardId} 缺少平台或官方依据字段`);
     const targetId = resolveMarkdownPlatform(platform, cardId);
+    if (!isApprovedRuleSourceReference(source, targetId)) throw new Error(`${cardId} 的官方依据不是该平台批准域名和路径下的 HTTPS 规则页面`);
     return {
       packId: `${targetId}-manual-${cardId.toLowerCase()}`,
       name: card[2]?.trim() || cardId,
@@ -78,8 +104,8 @@ export function parseMarkdownDraftInputs(markdown: string, fileName: string) {
       category: "platform" as const,
       publicScope: "platform" as const,
       targetId,
-      sourceReference: `manual://${fileName}#${cardId}`,
-      checksJson: JSON.stringify({ platform, source, content: `${card[0]}\n${body}` }),
+      sourceReference: source,
+      checksJson: JSON.stringify({ platform, source, sourceDocument: fileName, sourceCard: cardId, content: `${card[0]}\n${body}` }),
       reason: `运营上传平台规则草稿：${fileName}`,
     };
   });
@@ -177,8 +203,8 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
         <Alert
           type="warning"
           showIcon
-          title="当前列表含本地演示/人工录入规则，不是平台官方规则"
-          description="未审批的 manual:// 来源只是人工草稿，不会进入商家插件。独立审批只表示平台运营审核过提交材料，不代表系统已独立核验来源网站；生效范围为所有商家。"
+          title="当前列表含未验证来源的规则"
+          description="未审批的人工导入只是草稿，不会进入商家插件。来源必须是批准域名和路径下的具体官方文章 URL；独立审批后生效范围为所有商家。"
           style={{ marginBottom: 16 }}
         />
       ) : null}
@@ -217,7 +243,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
             render: (_: unknown, row: Rule) => (
               <Space size={4}>
                 <Tag color={row.lifecycleStatus === "published" ? "green" : "orange"}>{ruleStatusLabel(row.lifecycleStatus ?? row.status)}</Tag>
-                <Tag color={row.source.trust !== "verified" ? "orange" : row.source.kind === "internal" && row.source.reference.startsWith("manual://") ? "blue" : ruleTrustLabel(row) === "签名来源已验证" ? "green" : "red"}>{ruleTrustLabel(row)}</Tag>
+                <Tag color={row.source.trust !== "verified" ? "orange" : row.source.kind === "internal" && isApprovedRuleSourceReference(row.source.reference) ? "blue" : ruleTrustLabel(row) === "签名来源已验证" ? "green" : "red"}>{ruleTrustLabel(row)}</Tag>
               </Space>
             ),
           },

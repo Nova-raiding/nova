@@ -173,6 +173,30 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       await stopApi(child); child = undefined
       const portBridge255 = await freeLoopbackPort()
       child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: portBridge255, bridgeMode: 'prefix_255_or_256', assetStorageRoot: storageRoot })
+      const assertPluginConnectClosed = async (port: number) => {
+        const base = `http://127.0.0.1:${port}`
+        const requestId = '00000000-0000-4000-8000-000000000000'
+        const requests: Array<[string, RequestInit]> = [
+          ['/v1/auth/local-plugin/connect-requests', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) }],
+          ['/v1/auth/local-plugin/install-instances/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ platform: 'macos', installation_public_key_spki: 'isolated-test-key' }) }],
+          ['/v1/auth/local-plugin/install-instances/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ installation_id: requestId, pairing_token: 'isolated-test-token', request_id: requestId }) }],
+          [`/v1/auth/local-plugin/connect-requests/${requestId}/status`, { method: 'GET' }],
+          [`/v1/auth/local-plugin/connect-requests/${requestId}/complete`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }],
+        ]
+        for (const [path, init] of requests) {
+          const response = await fetch(`${base}${path}`, init)
+          expect(response.status, `${path} must fail closed in bridge mode`).toBe(503)
+          expect(await response.json()).toMatchObject({ error: { code: 'LOCAL_PLUGIN_BRIDGE_UNAVAILABLE' } })
+        }
+        const authorization = new URLSearchParams({ response_type: 'code', client_id: 'local-desktop', redirect_uri: 'http://127.0.0.1:8765/merchant-mcp-callback', state: 'x'.repeat(43), code_challenge: 'y'.repeat(43), code_challenge_method: 'S256', scope: 'merchant', resource: `${base}/mcp`, workspace_id: workspaceId, connection_request_id: requestId })
+        const authorize = await fetch(`${base}/v1/auth/local-plugin/authorize`, { method: 'POST', headers: { origin: base, 'content-type': 'application/x-www-form-urlencoded' }, body: authorization })
+        expect(authorize.status).toBe(503)
+        expect(await authorize.json()).toMatchObject({ error: { code: 'LOCAL_PLUGIN_BRIDGE_UNAVAILABLE' } })
+        const exchange = await fetch(`${base}/v1/auth/local-plugin/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', client_id: 'local-desktop', redirect_uri: 'http://127.0.0.1:8765/merchant-mcp-callback', code: 'unused', code_verifier: 'v'.repeat(43), resource: `${base}/mcp`, workspace_id: workspaceId, connection_request_id: requestId }) })
+        expect(exchange.status).toBe(503)
+        expect(await exchange.json()).toMatchObject({ error: { code: 'LOCAL_PLUGIN_BRIDGE_UNAVAILABLE' } })
+      }
+      await assertPluginConnectClosed(portBridge255)
       expect(await new MigrationRunner(admin, migrations).run()).toEqual([256])
       await admin.query(isolatedRoleSql)
       const stale256Readiness = await fetch(`http://127.0.0.1:${portBridge255}/readyz`)
@@ -199,6 +223,7 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       const port256 = await freeLoopbackPort()
       child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: port256, bridgeMode: 'prefix_255_or_256' })
       expect((await fetch(`http://127.0.0.1:${port256}/readyz`)).status).toBe(200)
+      await assertPluginConnectClosed(port256)
       const bridgeHeaders = { authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId }
       // Purge and cancel remain POINT_REQUIRED_NO_CHARGE operations. Without
       // a durable executable entitlement, their registered commercial gate

@@ -20,6 +20,18 @@ describe('Store Nova custom protocol helper', () => {
     expect(() => parseConnectUrl(url.toString())).toThrow('PARAMETERS_INVALID')
   })
 
+  it('rejects malformed installation identifiers and a non-forward challenge lifetime', () => {
+    const make = (installationId: string, issuedAt: string, expiresAt: string) => {
+      const url = new URL(valid)
+      for (const [key, value] of Object.entries({ account_id: 'account_123', installation_id: installationId,
+        challenge_id: '22222222-2222-4222-8222-222222222222', server_nonce: 'n'.repeat(43),
+        challenge_issued_at: issuedAt, challenge_expires_at: expiresAt })) url.searchParams.set(key, value)
+      return url.toString()
+    }
+    expect(() => parseConnectUrl(make('11111111-1111-1111-1111-111111111111', '2026-09-28T00:00:00Z', '2026-09-28T00:02:00Z'))).toThrow('PARAMETERS_INVALID')
+    expect(() => parseConnectUrl(make('11111111-1111-4111-8111-111111111111', '2026-09-28T00:02:00Z', '2026-09-28T00:02:00Z'))).toThrow('PARAMETERS_INVALID')
+  })
+
   it('requires an account-scoped enrollment target', () => {
     const validEnroll = 'storenova://enroll?api_origin=https%3A%2F%2Fyxsona.com&workspace=ws_guirenniaoniao&account_id=account_123'
     expect(parseEnrollUrl(validEnroll)).toEqual({ baseUrl: 'https://yxsona.com', workspaceId: 'ws_guirenniaoniao', accountId: 'account_123' })

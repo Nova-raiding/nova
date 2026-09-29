@@ -1,19 +1,36 @@
-import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 
 const fail = () => { throw new Error('LOCAL_PLUGIN_INSTALLATION_IDENTITY_INVALID') }
 const encode = value => Buffer.from(value).toString('base64url')
+
+function validateIdentity(identity, platform) {
+  if (!identity || identity.schema_version !== '1'
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(identity.installation_id ?? '')
+    || !/^[A-Za-z0-9_-]{43}$/u.test(identity.key_id ?? '')
+    || !/^[A-Za-z0-9_-]{40,256}$/u.test(identity.installation_public_key_spki ?? '')
+    || !/^[A-Za-z0-9_-]{40,512}$/u.test(identity.installation_private_key_pkcs8 ?? '') || identity.platform !== platform) fail()
+  try {
+    const publicDer = Buffer.from(identity.installation_public_key_spki, 'base64url')
+    const publicKey = createPublicKey({ key: publicDer, format: 'der', type: 'spki' })
+    const privateKey = createPrivateKey({ key: Buffer.from(identity.installation_private_key_pkcs8, 'base64url'), format: 'der', type: 'pkcs8' })
+    const derivedPublicDer = createPublicKey(privateKey).export({ type: 'spki', format: 'der' })
+    const expectedKeyId = encode(createHash('sha256').update(publicDer).digest())
+    if (publicKey.asymmetricKeyType !== 'ec' || privateKey.asymmetricKeyType !== 'ec'
+      || publicKey.asymmetricKeyDetails?.namedCurve !== 'prime256v1'
+      || privateKey.asymmetricKeyDetails?.namedCurve !== 'prime256v1'
+      || identity.key_id !== expectedKeyId || !Buffer.from(derivedPublicDer).equals(publicDer)) fail()
+  } catch (error) {
+    if (error?.message === 'LOCAL_PLUGIN_INSTALLATION_IDENTITY_INVALID') throw error
+    fail()
+  }
+  return identity
+}
 
 /** Secure-store callbacks must persist in Keychain or Credential Manager, never a plaintext file. */
 export function loadOrCreateInstallationIdentity({ platform, load, save }) {
   if (!['macos', 'windows'].includes(platform) || typeof load !== 'function' || typeof save !== 'function') fail()
   const existing = load()
-  if (existing !== undefined) {
-    if (!existing || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/iu.test(existing.installation_id)
-      || !/^[A-Za-z0-9_-]{43}$/u.test(existing.key_id)
-      || !/^[A-Za-z0-9_-]{40,256}$/u.test(existing.installation_public_key_spki)
-      || !/^[A-Za-z0-9_-]{40,512}$/u.test(existing.installation_private_key_pkcs8) || existing.platform !== platform) fail()
-    return existing
-  }
+  if (existing !== undefined) return validateIdentity(existing, platform)
   const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
   const publicDer = pair.publicKey.export({ type: 'spki', format: 'der' })
   const identity = { schema_version: '1', installation_id: randomUUID(), platform,

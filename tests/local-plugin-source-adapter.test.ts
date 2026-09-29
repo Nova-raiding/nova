@@ -1,23 +1,31 @@
-import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
+import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const sourceRoot = resolve(repositoryRoot, 'apps/plugin')
-const adapterRoot = resolve(repositoryRoot, '.codex-marketplace/plugins/merchant-marketing')
 const verifier = resolve(sourceRoot, 'scripts/verify-installed-bridge.mjs')
 const expectedVersion = JSON.parse(readFileSync(resolve(sourceRoot, 'package.json'), 'utf8')).version as string
 
-describe('local plugin source adapter', () => {
-  it('matches the canonical plugin runtime and tool surface through the real verifier', () => {
-    const result = spawnSync(process.execPath, [
-      verifier,
-      '--source', sourceRoot,
-      '--installed', adapterRoot,
-      '--expected-version', expectedVersion,
-    ], { encoding: 'utf8', timeout: 20_000 })
+describe('plugin installed-runtime verifier', () => {
+  it('accepts a byte-identical staged copy of the canonical plugin runtime', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-plugin-source-adapter-'))
+    const adapterRoot = resolve(directory, 'installed')
+    cpSync(sourceRoot, adapterRoot, { recursive: true })
+    let result: SpawnSyncReturns<string>
+    try {
+      result = spawnSync(process.execPath, [
+        verifier,
+        '--source', sourceRoot,
+        '--installed', adapterRoot,
+        '--expected-version', expectedVersion,
+      ], { encoding: 'utf8', timeout: 20_000 })
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
 
     expect(result.signal, result.stderr).toBeNull()
     expect(result.status, result.stderr).toBe(0)

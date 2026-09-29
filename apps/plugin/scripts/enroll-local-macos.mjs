@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { loadOrCreateInstallationIdentity } from '../mcp/installation-identity.mjs'
-import { assertKeychainHelperReady, installationIdentityStore } from '../mcp/keychain-credential.mjs'
+import { assertKeychainHelperReady, installationIdentitySeed, installationIdentityStore, isQaBrokerPackage } from '../mcp/keychain-credential.mjs'
 import { validateLoginTarget } from './login-local-macos.mjs'
 
 const fail = () => { throw new Error('LOCAL_PLUGIN_ENROLL_FAILED') }
@@ -14,8 +14,13 @@ export async function enrollLocalMac({ baseUrl, workspaceId, accountId, store, f
     || typeof openBrowser !== 'function') fail()
   let identity = store.load()
   if (identity !== undefined) {
-    if (identity?.platform !== 'macos' || !identity.installation_id || !identity.key_id) fail()
-    if (!identity.pending_pairing || Date.parse(identity.pending_pairing.expires_at) <= now()
+    // Validate the complete persisted P-256 key pair and its fingerprint before
+    // reusing a pending pairing. Shape checks alone would accept substituted key
+    // material from a damaged or replaced secure-store item.
+    loadOrCreateInstallationIdentity({ platform: 'macos', load: () => identity, save: () => fail() })
+    if (!identity.pending_pairing || !/^[A-Za-z0-9_-]{43}$/u.test(identity.pending_pairing.token ?? '')
+      || !Number.isFinite(Date.parse(identity.pending_pairing.expires_at))
+      || Date.parse(identity.pending_pairing.expires_at) <= now()
       || identity.pending_pairing.workspace_id !== workspaceId) fail()
   } else {
     let generated
@@ -41,7 +46,7 @@ export async function enrollLocalMac({ baseUrl, workspaceId, accountId, store, f
       }
       payload = JSON.parse(Buffer.concat(parts).toString('utf8')).data
     } catch { fail() }
-    if (!/^[0-9a-f-]{36}$/iu.test(payload?.installation_id ?? '')
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(payload?.installation_id ?? '')
       || payload?.key_id !== generated.key_id
       || payload?.platform !== 'macos'
       || !/^[A-Za-z0-9_-]{43}$/u.test(payload?.pairing_token ?? '')
@@ -63,10 +68,26 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const args = process.argv.slice(2)
     if (process.platform !== 'darwin' || args.length !== 6 || args[0] !== '--base-url' || args[2] !== '--workspace' || args[4] !== '--account-id') fail()
     assertKeychainHelperReady()
-    const result = await enrollLocalMac({ baseUrl: args[1], workspaceId: args[3], accountId: args[5],
-      store: installationIdentityStore(args[1], { accountId: args[5], workspaceId: args[3] }),
+    const owner = { accountId: args[5], workspaceId: args[3] }
+    const durableStore = installationIdentityStore(args[1], owner)
+    let seededIdentity
+    const store = isQaBrokerPackage() ? {
+      load() {
+        try { return durableStore.load() }
+        catch (error) {
+          if (error?.message === 'MCP_KEYCHAIN_HELPER_INVALID: broker_unavailable') return undefined
+          throw error
+        }
+      },
+      save(identity) { seededIdentity = identity },
+    } : durableStore
+    const result = await enrollLocalMac({ baseUrl: args[1], workspaceId: args[3], accountId: args[5], store,
       openBrowser: url => execFileSync('/usr/bin/open', [url], { stdio: 'ignore', timeout: 5000 }),
     })
+    if (seededIdentity) {
+      const { startSeededKeychainBrokerDetached } = await import('../mcp/keychain-broker.mjs')
+      await startSeededKeychainBrokerDetached({ credentials: [installationIdentitySeed(args[1], owner, seededIdentity)] })
+    }
     process.stdout.write(`${JSON.stringify(result)}\n`)
   } catch { process.stderr.write('LOCAL_PLUGIN_ENROLL_FAILED\n'); process.exitCode = 1 }
 }

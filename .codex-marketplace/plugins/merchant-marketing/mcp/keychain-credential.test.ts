@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 // @ts-ignore JavaScript runtime module
-import { KEYCHAIN_SERVICE, installationIdentityStore, keychainHelperFailureReason, readKeychainCredential, writeKeychainCredential } from './keychain-credential.mjs'
+import { KEYCHAIN_SERVICE, installationIdentitySeed, installationIdentityStore, keychainHelperFailureReason, readKeychainCredential, writeKeychainCredential } from './keychain-credential.mjs'
 
 const bound = { apiOrigin: 'https://merchant.example.test', workspaceId: 'ws_test' }
 
@@ -82,5 +82,15 @@ describe('macOS keychain credential', () => {
       { runHelper: (request: Record<string, string>) => { calls.push(request); return 'null' } })
     other.load()
     expect(calls.at(-1)!.account).not.toBe(calls[0]!.account)
+  })
+  it('creates a stable QA broker seed for the installation identity without mixing workspace credentials', () => {
+    const owner = { accountId: 'account_123', workspaceId: bound.workspaceId }
+    const identity = { schema_version: '1', installation_id: '11111111-1111-4111-8111-111111111111', private: 'secret' }
+    const first = installationIdentitySeed(bound.apiOrigin, owner, identity)
+    const second = installationIdentitySeed(bound.apiOrigin, owner, identity)
+    expect(first).toEqual(second)
+    expect(first.account).toMatch(/^[a-f0-9]{64}$/u)
+    expect(JSON.parse(first.data)).toEqual(identity)
+    expect(first.account).not.toBe('ea40339f1e0c40eb0650c2fe65a43e7f151bc536fde5113da0865b988ad6a37d')
   })
 })

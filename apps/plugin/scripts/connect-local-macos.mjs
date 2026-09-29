@@ -32,12 +32,14 @@ export function parseConnectUrl(value) {
     'challenge_issued_at', 'challenge_expires_at'].map(key => [key, url.searchParams.get(key)]))
   const proofValues = Object.values(proof)
   if (proofValues.some(Boolean) && !proofValues.every(Boolean)) throw fail('PARAMETERS_INVALID')
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
   if (proofValues.every(Boolean) && (!/^[A-Za-z0-9_-]{1,128}$/u.test(proof.account_id)
-    || !/^[0-9a-f-]{36}$/iu.test(proof.installation_id)
-    || !/^[0-9a-f-]{36}$/iu.test(proof.challenge_id)
+    || !uuid.test(proof.installation_id)
+    || !uuid.test(proof.challenge_id)
     || !/^[A-Za-z0-9_-]{43}$/u.test(proof.server_nonce)
     || !Number.isFinite(Date.parse(proof.challenge_issued_at))
-    || !Number.isFinite(Date.parse(proof.challenge_expires_at)))) throw fail('PARAMETERS_INVALID')
+    || !Number.isFinite(Date.parse(proof.challenge_expires_at))
+    || Date.parse(proof.challenge_expires_at) <= Date.parse(proof.challenge_issued_at))) throw fail('PARAMETERS_INVALID')
   return { baseUrl: targetUrl.origin, workspaceId, requestId, ...(proofValues.every(Boolean) ? { proof } : {}) }
 }
 

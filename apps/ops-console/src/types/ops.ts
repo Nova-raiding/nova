@@ -291,7 +291,9 @@ export type Rule = {
   activationEligible?: boolean;
   scope: string;
   scopeValue?: string;
-  source: { kind: string; reference: string; checkedAt: string; trust?: "verified" | "unverified" };
+  createdBy?: string;
+  targetId?: string;
+  source: { kind: string; reference: string; checkedAt: string; trust?: "verified" | "unverified"; createdBy?: string };
   revision: number;
   effectiveFrom?: string;
   effectiveTo?: string;

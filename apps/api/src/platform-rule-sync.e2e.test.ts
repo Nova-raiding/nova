@@ -30,5 +30,13 @@ describe('signed platform rule scheduler', () => {
     const result = await syncSignedPlatformRules(workspaceId)
     expect(result).toMatchObject({ state: 'succeeded', imported: 1, activated: 1, versions: [{ platform: 'taobao', pack_id: 'taobao-scheduled', version: '2026.08.28', state: 'active' }] })
     expect(versions[0]).toMatchObject({ workspaceId, scope: 'platform', targetId: 'taobao', status: 'active', checks: { forbiddenTerms: ['定时禁词'] }, checksum: expect.stringMatching(/^[a-f0-9]{64}$/u) })
+    expect(audits[0]?.data).toMatchObject({
+      manifest_generated_at: '2026-08-28T00:00:00.000Z',
+      manifest_url: 'https://rules.example.com/platform-rules/v1/manifest.json',
+      manifest_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      signature_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      signature_verified: true,
+      source_reference: PLATFORM_RULE_SOURCES.find(item => item.platform === 'taobao')!.officialUrl,
+    })
   })
 })

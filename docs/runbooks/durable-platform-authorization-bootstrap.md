@@ -21,6 +21,18 @@
 4. 另一名既有持久授权管理员用自己的独立会话核对目标身份、变更单、角色列表和追加审计事件。复核通过前，不把该目标算作可恢复管理员。现有接口没有不可伪造的第二人签核字段，因此在外部变更单中记录复核人及证据，不把 `reason` 文本当成批准证明。
 5. 目标用本人账号新建会话，确认 `ops.session` 的 `canonical_roles` 与 `effective_permissions` 来自 `platform_assignment`，且拥有预期的 `authorization.role.manage`。再确认至少两名不同身份的管理员仍可独立登录和管理角色。
 
+## 两名规则管理员的本地验收
+
+平台规则 maker/checker 验收必须使用两个不同的持久 `identity_id`。测试账号可以由隔离 fixture 创建，但 `rules_admin` 本身必须由已登录的指定平台超级管理员通过“用户与权限 → 授权治理”或 `ops.authorization.role.assign` 分配，不得写授权表或把角色塞进本地 token。
+
+1. 两个目标账号分别登录一次，记录各自 `ops.session.identity_id`，确认二者不同。
+2. 授权执行者分别读取两个目标的 `ops.authorization.roles.list`，按各自返回的 `authorization_revision` 提交 `role.assign`，角色为 `rules_admin`，原因中填写独立测试单号。
+3. 每次分配后重新读取；接受条件是 revision 递增、assignment 为 active，并且 assignment 的 `assignedBy` 是服务端认证执行者。
+4. 两个目标分别重新登录。两份 `ops.session` 都必须包含 `canonical_roles=rules_admin`，同时包含 `rule.read`、`rule.update`、`rule.publish.approve`，对应权限来源必须为 `platform_assignment`。
+5. maker 创建公共平台规则草稿；checker 使用服务端配置且绑定其 actor 与 workspace 的规则审批令牌激活。`approved_by` 必须与令牌 actor 一致，并与草稿 `createdBy` 不同。用同一身份创建和审批必须返回 `RULE_SEPARATION_OF_DUTIES_REQUIRED`。
+
+角色分配接口本身当前不是双人审批接口。这里的双人约束用于公共规则的创建与激活，不能把第二人事后查看角色列表描述成服务端强制的角色授权批准。
+
 ## 切换与回退
 
 生产不得通过切换 `AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED` 回退。完成补充或轮换后，分别验证两名管理员可读取角色；如需验证分配能力，使用经批准的实际变更，不创建虚构测试授权。

@@ -272,8 +272,10 @@ jobs:
           packages/persistence/src/billing-effective-amount.postgres.test.ts
           packages/persistence/src/billing-repository.postgres.test.ts
           packages/persistence/src/business-repository.postgres.test.ts
+          packages/persistence/src/asset-lifecycle-release.postgres.test.ts
           packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts
           packages/persistence/src/canonical-product-backfill.postgres.test.ts
+          packages/persistence/src/local-212-collision-bridge.postgres.test.ts
           packages/persistence/src/commercial-contract-repository.release.postgres.test.ts
           packages/persistence/src/commercial-refund-repository.release.postgres.test.ts
           packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts
@@ -297,7 +299,7 @@ jobs:
           packages/persistence/src/migration-129-release.postgres.test.ts
           packages/persistence/src/migration-146-release.postgres.test.ts
           packages/persistence/src/migration-148-release.postgres.test.ts
-          packages/persistence/src/migration-212-release.postgres.test.ts
+          packages/persistence/src/migration-215-release.postgres.test.ts
           packages/persistence/src/migration-214-release.postgres.test.ts
           packages/persistence/src/migration-218-release.postgres.test.ts
           packages/persistence/src/migration-219-release.postgres.test.ts

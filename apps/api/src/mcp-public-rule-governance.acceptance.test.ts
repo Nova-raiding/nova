@@ -17,7 +17,7 @@ function fixtureRule(): PersistedRuleVersion {
   const checks = { forbiddenTerms: ['全网最低'] }
   return {
     id: 'public-review-rule', workspaceId: '__platform_rules__', packId: 'pdd-claims', name: 'PDD claims', version: '4',
-    scope: 'platform', status: 'draft', sourceKind: 'internal', sourceReference: 'manual://review.md#PDD-4',
+    scope: 'platform', status: 'draft', sourceKind: 'internal', sourceReference: 'https://www.yangkeduo.com/home/help/',
     sourceCheckedAt: '2026-09-25T10:00:00.000Z', checksum: createHash('sha256').update(JSON.stringify(checks)).digest('hex'), checks: { ...checks, __public_scope: 'platform' },
     createdAt: '2026-09-25T10:01:00.000Z', updatedAt: '2026-09-25T10:01:00.000Z', createdBy: 'author-1', revision: 1,
     scopeValue: 'pinduoduo', severity: 'error', action: 'block',

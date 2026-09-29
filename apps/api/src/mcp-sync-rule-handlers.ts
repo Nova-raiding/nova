@@ -4,6 +4,7 @@ import { DomainError, type MerchantService, type Platform, type SyncJob } from '
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import type { PersistedRuleVersion } from '../../../packages/persistence/src/index.js'
 import type { RulePack } from '../../../packages/review/src/rule-center.js'
+import { isApprovedPlatformRuleSource, type RuleSyncPlatform } from '../../../packages/review/src/platform-rule-sync.js'
 import type { WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
 import type { RuleRepositoryPort } from './server.js'
 
@@ -96,12 +97,21 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
         const target = rule.targetId ?? rule.scopeValue
         return Boolean(expected && target === expected)
       }
-      const filterRules = <T extends { status: string; scope: string; targetId?: string; scopeValue?: string; source?: { reference?: string } }>(rules: T[]) => rules.filter(rule => {
+      const filterRules = <T extends { status: string; scope: string; targetId?: string; scopeValue?: string; source?: { kind?: string; trust?: string; createdBy?: string; reference?: string }; createdBy?: string }>(rules: T[]) => rules.filter(rule => {
         if (!matchesContext(rule)) return false
         if (includeLifecycleStates) return true
-        // manual:// rows are fixtures or human drafts. They may remain visible
-        // in the Ops lifecycle view, but must never become merchant/plugin
-        // knowledge merely because their lifecycle status says "active".
+        // Public platform rules only flow to merchant/plugin consumers when
+        // both their scope and official source URL are bound to that platform.
+        // Tenant-owned rule sources keep their existing activation checks.
+        const platform = rule.scope === 'platform' ? (rule.targetId ?? rule.scopeValue) : undefined
+        if (platform && SUPPORTED_PLATFORMS.includes(platform as Platform)) {
+          return rule.status === 'active'
+            && rule.source?.kind === 'official'
+            && rule.source.trust === 'verified'
+            && (rule.source.createdBy ?? rule.createdBy) === 'signed-rule-sync'
+            && typeof rule.source.reference === 'string'
+            && isApprovedPlatformRuleSource(platform as RuleSyncPlatform, rule.source.reference)
+        }
         return rule.status === 'active' && !rule.source?.reference?.startsWith('manual://')
       })
       if (repository) return result(filterRules(await rulePacksForWorkspace(workspaceId)))
@@ -118,6 +128,7 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
       return result(await trustedPlatformRuleSyncStatuses('__platform_rules__', intervalHours, true))
     }
     case 'rule.sync.now': {
+      requirePlatformRuleReviewer(req)
       const sync = await syncSignedPlatformRules(workspaceId, { force: true })
       return result({ sync, statuses: await trustedPlatformRuleSyncStatuses(workspaceId) })
     }
@@ -180,7 +191,8 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
           // Write authority must equal read authority: public drafts are only readable from the platform workbench.
           requirePlatformRuleReviewer(req)
           if (scope !== 'platform' || !repository.insertPublicVersionWithAudit || typeof params.target_id !== 'string' || !SUPPORTED_PLATFORMS.includes(params.target_id as Platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '公共平台规则必须指定受支持的平台和公共规则仓储', 400)
-          if (sourceKind !== 'internal' || !sourceReference.startsWith('manual://') || governanceCategory !== 'platform') throw new DomainError('OFFICIAL_RULE_IMPORT_REQUIRED', '人工公共平台规则必须使用平台类别和人工来源标记', 409)
+          if (sourceKind !== 'internal' || sourceReference.startsWith('manual://') || governanceCategory !== 'platform') throw new DomainError('OFFICIAL_RULE_IMPORT_REQUIRED', '人工公共平台规则必须使用平台类别、内部导入类型和可追溯的官方文章 URL', 409)
+          if (!isApprovedPlatformRuleSource(params.target_id as RuleSyncPlatform, sourceReference)) throw new DomainError('OFFICIAL_RULE_IMPORT_REQUIRED', '公共平台规则来源必须是该平台批准域名和路径下的 HTTPS 规则页面', 409)
           if (status === 'active') throw new DomainError('RULE_ACTIVATION_REQUIRES_APPROVAL', '公共平台规则必须先创建草稿，再通过独立审批激活', 409)
           const publicId = `public_rule_${randomBytes(12).toString('hex')}`
           const publicVersion = await repository.insertPublicVersionWithAudit({
@@ -221,7 +233,9 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
             if (!repository.getPublicVersion) throw new DomainError('RULE_REPOSITORY_NOT_CONFIGURED', '公共平台规则无法读取待审批版本', 503)
             const target = await repository.getPublicVersion(params.platform, packId, versionValue)
             if (!target) throw new DomainError('RULE_VERSION_NOT_FOUND', '公共平台规则版本不存在', 404)
-            const verifiedOfficial = target.sourceKind === 'official' && target.createdBy === 'signed-rule-sync' && !target.sourceReference.startsWith('manual://')
+            const verifiedOfficial = target.sourceKind === 'official' && target.createdBy === 'signed-rule-sync' && target.scope === 'platform'
+              && (target.scopeValue ?? target.targetId) === params.platform
+              && isApprovedPlatformRuleSource(params.platform as RuleSyncPlatform, target.sourceReference)
             if (!verifiedOfficial && !isAllowedManualPublicRule(target)) {
               throw new DomainError('OFFICIAL_RULE_IMPORT_REQUIRED', '人工或未验证的公共规则草稿不能激活；请使用受信签名清单同步或走已审阅的平台草稿流程', 409)
             }

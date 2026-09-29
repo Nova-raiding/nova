@@ -21,6 +21,8 @@ export interface RuleSource {
   checkedAt: string
   /** Server-supplied trust projection; it is not caller-authored provenance. */
   trust?: 'verified' | 'unverified'
+  /** Persisted server provenance, exposed only by the trusted API projection. */
+  createdBy?: string
 }
 
 export interface RuleChecks {
@@ -68,6 +70,7 @@ export interface RulePack {
   category?: RulePackCategory
   status: RulePackStatus
   updatedAt: string
+  createdBy?: string
   source: RuleSource
   checksum: string
   revision: number

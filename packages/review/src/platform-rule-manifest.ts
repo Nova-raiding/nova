@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
-import { PLATFORM_RULE_SOURCES, type RuleSyncPlatform } from './platform-rule-sync.js'
+import { isApprovedPlatformRuleSource, PLATFORM_RULE_SOURCES, type RuleSyncPlatform } from './platform-rule-sync.js'
 
 export interface SignedPlatformRuleEntry {
   platform: RuleSyncPlatform
@@ -40,7 +40,7 @@ function cleanStringList(value: unknown, field: string) {
   return [...new Set(value.map(item => String(item).trim()))]
 }
 
-export function verifyAndParsePlatformRuleManifest(raw: string, signature: string, secret: string): SignedPlatformRuleManifest {
+export function verifyAndParsePlatformRuleManifest(raw: string, signature: string, secret: string, options: { now?: string; maxAgeHours?: number } = {}): SignedPlatformRuleManifest {
   if (!secret.trim() || !/^[a-f0-9]{64}$/iu.test(signature)) throw new Error('RULE_MANIFEST_SIGNATURE_INVALID')
   const expected = createHmac('sha256', secret).update(raw).digest()
   const supplied = Buffer.from(signature, 'hex')
@@ -49,13 +49,18 @@ export function verifyAndParsePlatformRuleManifest(raw: string, signature: strin
   try { parsed = JSON.parse(raw) } catch { throw new Error('RULE_MANIFEST_JSON_INVALID') }
   if (!record(parsed) || parsed.schema_version !== '1' || !Array.isArray(parsed.entries) || parsed.entries.length < 1 || parsed.entries.length > 100) throw new Error('RULE_MANIFEST_SCHEMA_INVALID')
   const generatedAt = cleanDate(parsed.generated_at, 'generated_at')
+  const now = Date.parse(options.now ?? generatedAt)
+  const maxAgeMs = (options.maxAgeHours ?? 24 * 8) * 3_600_000
+  if (!Number.isFinite(now) || !Number.isFinite(maxAgeMs) || maxAgeMs <= 0) throw new Error('RULE_MANIFEST_CLOCK_INVALID')
+  if (Date.parse(generatedAt) > now + 5 * 60_000) throw new Error('RULE_MANIFEST_GENERATED_AT_FUTURE')
+  if (now - Date.parse(generatedAt) > maxAgeMs) throw new Error('RULE_MANIFEST_STALE')
   const sources = new Map(PLATFORM_RULE_SOURCES.map(source => [source.platform, source]))
   const seen = new Set<string>()
   const entries = parsed.entries.map((value): SignedPlatformRuleEntry => {
     if (!record(value) || !sources.has(value.platform as RuleSyncPlatform) || !record(value.checks)) throw new Error('RULE_MANIFEST_ENTRY_INVALID')
     const platform = value.platform as RuleSyncPlatform
     const sourceReference = cleanText(value.source_reference, 'source_reference', 500)
-    if (sourceReference !== sources.get(platform)!.officialUrl) throw new Error('RULE_MANIFEST_SOURCE_MISMATCH')
+    if (!isApprovedPlatformRuleSource(platform, sourceReference)) throw new Error('RULE_MANIFEST_SOURCE_MISMATCH')
     const packId = cleanId(value.pack_id, 'pack_id')
     const version = cleanId(value.version, 'version')
     const identity = `${platform}:${packId}:${version}`
@@ -63,6 +68,8 @@ export function verifyAndParsePlatformRuleManifest(raw: string, signature: strin
     seen.add(identity)
     const effectiveFrom = value.effective_from === undefined ? undefined : cleanDate(value.effective_from, 'effective_from')
     const effectiveTo = value.effective_to === undefined ? undefined : cleanDate(value.effective_to, 'effective_to')
+    const sourceCheckedAt = cleanDate(value.source_checked_at, 'source_checked_at')
+    if (Date.parse(sourceCheckedAt) > now + 5 * 60_000 || Date.parse(sourceCheckedAt) > Date.parse(generatedAt) + 5 * 60_000) throw new Error('RULE_MANIFEST_SOURCE_CHECKED_AT_INVALID')
     if (effectiveFrom && effectiveTo && Date.parse(effectiveFrom) >= Date.parse(effectiveTo)) throw new Error('RULE_MANIFEST_EFFECTIVE_RANGE_INVALID')
     const severity = value.severity === 'warning' ? 'warning' : value.severity === 'error' || value.severity === undefined ? 'error' : undefined
     const action = value.action === 'warn' || value.action === 'review' || value.action === 'allow' || value.action === 'block' ? value.action : value.action === undefined ? 'block' : undefined
@@ -70,7 +77,8 @@ export function verifyAndParsePlatformRuleManifest(raw: string, signature: strin
     const forbiddenTerms = cleanStringList(value.checks.forbidden_terms ?? value.checks.forbiddenTerms, 'forbidden_terms')
     const requiredFields = cleanStringList(value.checks.required_fields ?? value.checks.requiredFields, 'required_fields')
     const conflictKeys = cleanStringList(value.checks.conflict_keys ?? value.checks.conflictKeys, 'conflict_keys')
-    return { platform, packId, name: cleanText(value.name, 'name'), version, sourceReference, sourceCheckedAt: cleanDate(value.source_checked_at, 'source_checked_at'), checks: { ...(forbiddenTerms ? { forbiddenTerms } : {}), ...(requiredFields ? { requiredFields } : {}), ...(conflictKeys ? { conflictKeys } : {}) }, severity, action, ...(effectiveFrom ? { effectiveFrom } : {}), ...(effectiveTo ? { effectiveTo } : {}) }
+    if (!((forbiddenTerms?.length ?? 0) || (requiredFields?.length ?? 0) || (conflictKeys?.length ?? 0))) throw new Error('RULE_MANIFEST_CHECKS_EMPTY')
+    return { platform, packId, name: cleanText(value.name, 'name'), version, sourceReference, sourceCheckedAt, checks: { ...(forbiddenTerms ? { forbiddenTerms } : {}), ...(requiredFields ? { requiredFields } : {}), ...(conflictKeys ? { conflictKeys } : {}) }, severity, action, ...(effectiveFrom ? { effectiveFrom } : {}), ...(effectiveTo ? { effectiveTo } : {}) }
   })
   return { schemaVersion: '1', generatedAt, entries }
 }

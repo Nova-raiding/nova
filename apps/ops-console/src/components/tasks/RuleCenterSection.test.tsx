@@ -5,10 +5,19 @@ import { RuleCenterSection, canActivateOfficialPlatformRule, isTrustedPlatformRu
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { Platform, Rule } from "../../types/ops";
 
+const sourceForPlatform = (platform: string) => ({
+  jd: "https://rule.jd.com/rule/ruleDetail.action?ruleId=1", 京东: "https://rule.jd.com/rule/ruleDetail.action?ruleId=1",
+  taobao: "https://developer.alibaba.com/doc/doc.htm?articleId=1", 淘宝: "https://developer.alibaba.com/doc/doc.htm?articleId=1",
+  tmall: "https://www.tmall.com/wow/seller/act/guize/article", 天猫: "https://www.tmall.com/wow/seller/act/guize/article",
+  pinduoduo: "https://www.yangkeduo.com/home/help/", 拼多多: "https://www.yangkeduo.com/home/help/",
+  xiaohongshu: "https://school.xiaohongshu.com/rule/detail/1", 小红书: "https://school.xiaohongshu.com/rule/detail/1",
+  douyin: "https://school.jinritemai.com/doudian/web/article/1", 抖音: "https://school.jinritemai.com/doudian/web/article/1",
+}[platform] ?? "https://invalid.example/rule");
+
 const markdownCard = (id: string, platform: string) => [
   `## PDD-${id}｜规则 ${id}`,
   `- 平台：${platform}`,
-  `- 官方依据：https://official.example/${id}`,
+  `- 官方依据：${sourceForPlatform(platform)}`,
   "规则内容",
 ].join("\n");
 
@@ -21,16 +30,21 @@ const platformRule = (overrides: Partial<Rule> = {}): Rule => ({
 
 describe("trusted platform rule boundary", () => {
   it("distinguishes approved internal rules from untrusted material", () => {
-    const source = { kind: "official", trust: "verified", reference: "https://rules.example/rule" };
-    expect(isTrustedPlatformRule({ source } as Parameters<typeof isTrustedPlatformRule>[0])).toBe(true);
-    expect(isTrustedPlatformRule({ source: { kind: "internal", trust: "verified", reference: "manual://reviewed" } } as Parameters<typeof isTrustedPlatformRule>[0])).toBe(true);
+    const source = { kind: "official", trust: "verified", reference: "https://rule.jd.com/rule/list.action" };
+    expect(isTrustedPlatformRule({ source, scope: "platform", targetId: "jd", createdBy: "signed-rule-sync" } as Parameters<typeof isTrustedPlatformRule>[0])).toBe(true);
+    expect(isTrustedPlatformRule({ source: { kind: "internal", trust: "verified", reference: "https://www.yangkeduo.com/home/help/" }, scope: "platform", targetId: "pinduoduo" } as Parameters<typeof isTrustedPlatformRule>[0])).toBe(true);
     for (const override of [{ kind: "internal" }, { trust: "unverified" }, { reference: "manual://rule" }]) {
       expect(isTrustedPlatformRule({ source: { ...source, ...override } } as Parameters<typeof isTrustedPlatformRule>[0])).toBe(false);
     }
   });
+  it("requires platform binding, importer identity, and default HTTPS port for signed trust", () => {
+    expect(isTrustedPlatformRule({ source: { kind: "official", trust: "verified", reference: "https://www.yangkeduo.com:8443/home/help/" }, scope: "platform", targetId: "pinduoduo", createdBy: "signed-rule-sync" } as Parameters<typeof isTrustedPlatformRule>[0])).toBe(false);
+    expect(isTrustedPlatformRule({ source: { kind: "official", trust: "verified", reference: "https://rule.jd.com/rule/list.action" }, scope: "platform", targetId: "taobao", createdBy: "signed-rule-sync" } as Parameters<typeof isTrustedPlatformRule>[0])).toBe(false);
+    expect(isTrustedPlatformRule({ source: { kind: "official", trust: "verified", reference: "https://rule.jd.com/rule/list.action" }, scope: "platform", targetId: "jd", createdBy: "operator" } as Parameters<typeof isTrustedPlatformRule>[0])).toBe(false);
+  });
   it("does not label mismatched provenance as signed or approved", () => {
     expect(ruleTrustLabel({ source: { kind: "official", trust: "verified", reference: "manual://misclassified" } } as Parameters<typeof ruleTrustLabel>[0])).toBe("来源类型不匹配");
-    expect(ruleTrustLabel({ source: { kind: "internal", trust: "verified", reference: "https://unreviewed.example" } } as Parameters<typeof ruleTrustLabel>[0])).toBe("来源类型不匹配");
+    expect(ruleTrustLabel({ source: { kind: "internal", trust: "verified", reference: "https://www.yangkeduo.com/home/help/" }, scope: "platform", targetId: "pinduoduo" } as Parameters<typeof ruleTrustLabel>[0])).toBe("人工已审批");
   });
   it("does not expose an internal draft creation form on the official rules page", () => {
     const html = renderToStaticMarkup(<RuleCenterSection model={{ canRules: true, rules: [], updateRuleStatus: async () => true } as unknown as OpsConsoleModel} />);
@@ -44,7 +58,7 @@ describe("trusted platform rule boundary", () => {
   it("does not describe an approved manual source as independently verified", () => {
     const html = renderToStaticMarkup(<RuleCenterSection model={{
       canRules: false,
-      rules: [{ id: "manual", packId: "pdd", name: "平台条款", version: "1", status: "active", scope: "platform", revision: 2, source: { kind: "internal", reference: "manual://rules.md#PDD-1", checkedAt: "2026-08-26T06:00:00.000Z", trust: "verified" } }],
+      rules: [{ id: "manual", packId: "pdd", name: "平台条款", version: "1", status: "active", scope: "platform", targetId: "pinduoduo", revision: 2, source: { kind: "internal", reference: "https://www.yangkeduo.com/home/help/", checkedAt: "2026-08-26T06:00:00.000Z", trust: "verified" } }],
       updateRuleStatus: async () => true,
     } as unknown as OpsConsoleModel} />);
     expect(html).toContain("人工已审批");
@@ -56,15 +70,15 @@ describe("trusted platform rule boundary", () => {
       "# 知识库 v2026.09",
       "## PDD-001｜标题规则",
       "- 平台：拼多多",
-      "- 官方依据：https://official.example/pdd/title",
+      "- 官方依据：https://www.yangkeduo.com/home/help/",
       "标题不得夸大",
       "## PDD-002｜图片规则",
       "- 平台：拼多多",
-      "- 官方依据：https://official.example/pdd/image",
+      "- 官方依据：https://www.yangkeduo.com/home/food_trade/",
       "图片需清晰",
     ].join("\n");
     expect(parseMarkdownDraftInputs(markdown, "pdd.md")).toHaveLength(2);
-    expect(() => parseMarkdownDraftInputs(markdown.replace("- 官方依据：https://official.example/pdd/title", "- 依据缺失"), "pdd.md")).toThrow("PDD-001 缺少平台或官方依据字段");
+    expect(() => parseMarkdownDraftInputs(markdown.replace("- 官方依据：https://www.yangkeduo.com/home/help/", "- 依据缺失"), "pdd.md")).toThrow("PDD-001 缺少平台或官方依据字段");
   });
 
   it("maps all six platform ids and Chinese names to canonical ids", () => {

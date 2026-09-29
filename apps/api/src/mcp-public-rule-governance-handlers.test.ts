@@ -8,7 +8,7 @@ const manualChecks = { forbiddenTerms: ['全网最低'] }
 const manualChecksum = createHash('sha256').update(JSON.stringify(manualChecks)).digest('hex')
 const version = (overrides: Partial<PersistedRuleVersion> = {}): PersistedRuleVersion => ({
   id: 'public-rule-1', workspaceId: '__platform_rules__', packId: 'pdd-copy', name: 'PDD listing claims', version: '3',
-  scope: 'platform', status: 'draft', sourceKind: 'internal', sourceReference: 'manual://rules.md#PDD-1',
+  scope: 'platform', status: 'draft', sourceKind: 'internal', sourceReference: 'https://www.yangkeduo.com/home/help/',
   sourceCheckedAt: '2026-09-25T10:00:00.000Z', checksum: manualChecksum, checks: { ...manualChecks, __public_scope: 'platform' },
   createdAt: '2026-09-25T10:01:00.000Z', updatedAt: '2026-09-25T10:01:00.000Z', createdBy: 'actor-author', revision: 1,
   scopeValue: 'pinduoduo', severity: 'error', action: 'block', ...overrides,
@@ -111,5 +111,15 @@ describe('public platform rule governance preview handler', () => {
     }))
     const result = await handlePublicRuleDraftsGet(request, { platform: 'pinduoduo', pack_id: 'pdd-copy', version: '3' }, deps) as { rule: Record<string, unknown> }
     expect(result.rule).toMatchObject({ status: 'active', checksum_valid: true, source: { trust: 'unverified' } })
+  })
+
+  it('does not label a signed source URL on an unapproved port as verified', async () => {
+    const { deps, repo } = setup()
+    repo.getPublicRuleForReview.mockResolvedValue(version({
+      sourceKind: 'official', sourceReference: 'https://www.yangkeduo.com:8443/home/help/', createdBy: 'signed-rule-sync',
+      status: 'active', checksum: manualChecksum,
+    }))
+    const result = await handlePublicRuleDraftsGet(request, { platform: 'pinduoduo', pack_id: 'pdd-copy', version: '3' }, deps) as { rule: Record<string, unknown> }
+    expect(result.rule).toMatchObject({ status: 'active', source: { trust: 'unverified' } })
   })
 })

@@ -11,14 +11,14 @@ describe('platform rule sync status', () => {
   })
 
   it('reports missing trusted manifest configuration fail-closed', () => {
-    const rules = new RuleCenter(() => '2026-08-26T00:00:00.000Z', defaultRuleCenterSeeds.map(seed => ({ ...seed, source: { ...seed.source, kind: 'official' as const, trust: 'verified' as const, reference: seed.source.reference.replace('manual://', 'manifest://') } }))).list()
+    const rules = new RuleCenter(() => '2026-08-26T00:00:00.000Z', defaultRuleCenterSeeds.map(seed => ({ ...seed, source: { ...seed.source, kind: 'official' as const, trust: 'verified' as const, reference: seed.targetId ? PLATFORM_RULE_SOURCES.find(source => source.platform === seed.targetId)?.officialUrl ?? seed.source.reference : seed.source.reference.replace('manual://', 'manifest://'), createdBy: 'signed-rule-sync' } }))).list()
     const result = platformRuleSyncStatus(rules, { now: '2026-08-26T12:00:00.000Z' })
     expect(result).toHaveLength(6)
     expect(result.every(item => item.state === 'not_configured' && item.configured === false)).toBe(true)
   })
 
   it('detects stale platform packs individually', () => {
-    const rules = new RuleCenter(() => '2026-08-26T00:00:00.000Z', defaultRuleCenterSeeds.map(seed => ({ ...seed, source: { ...seed.source, kind: 'official' as const, trust: 'verified' as const, reference: seed.source.reference.replace('manual://', 'manifest://') } }))).list()
+    const rules = new RuleCenter(() => '2026-08-26T00:00:00.000Z', defaultRuleCenterSeeds.map(seed => ({ ...seed, source: { ...seed.source, kind: 'official' as const, trust: 'verified' as const, reference: seed.targetId ? PLATFORM_RULE_SOURCES.find(source => source.platform === seed.targetId)?.officialUrl ?? seed.source.reference : seed.source.reference.replace('manual://', 'manifest://'), createdBy: 'signed-rule-sync' } }))).list()
     const result = platformRuleSyncStatus(rules, { now: '2026-08-26T12:00:00.000Z', intervalHours: 24, manifestUrl: 'https://rules.example/manifest.json', signingSecretConfigured: true })
     expect(result.find(item => item.platform === 'douyin')).toMatchObject({ state: 'ready', latestVersion: 'douyin-content-1.0.0' })
     expect(result.find(item => item.platform === 'jd')).toMatchObject({ state: 'stale', stale: true })
@@ -41,18 +41,29 @@ describe('platform rule sync status', () => {
         scopeValue: 'taobao',
         // Pin the freshness so this test can only fail on the platform match,
         // which is the regression under guard.
-        source: { ...seed.source, kind: 'official' as const, trust: 'verified' as const, reference: seed.source.reference.replace('manual://', 'manifest://'), checkedAt: '2026-08-26T06:00:00.000Z' },
+        source: { ...seed.source, kind: 'official' as const, trust: 'verified' as const, reference: PLATFORM_RULE_SOURCES.find(source => source.platform === 'taobao')!.officialUrl, createdBy: 'signed-rule-sync', checkedAt: '2026-08-26T06:00:00.000Z' },
       }))
     const rules = new RuleCenter(() => '2026-08-26T00:00:00.000Z', publicProjection).list()
     const result = platformRuleSyncStatus(rules, { now: '2026-08-26T12:00:00.000Z', intervalHours: 24, manifestUrl: 'https://rules.example/manifest.json', signingSecretConfigured: true })
     expect(result.find(item => item.platform === 'taobao')).toMatchObject({ state: 'ready', configured: true })
   })
 
+  it('does not trust a signed row without importer identity and an approved platform source', () => {
+    const rules = [{
+      id: 'bad-signed', name: 'untrusted', version: '1', scope: 'platform' as const,
+      status: 'active' as const, targetId: 'pinduoduo', updatedAt: '2026-08-26T06:00:00.000Z',
+      source: { kind: 'official' as const, reference: 'https://www.yangkeduo.com:8443/home/help/', checkedAt: '2026-08-26T06:00:00.000Z', trust: 'verified' as const, createdBy: 'operator' },
+      checksum: 'a'.repeat(64), revision: 1, checks: {},
+    }]
+    const result = platformRuleSyncStatus(rules, { now: '2026-08-26T12:00:00.000Z', intervalHours: 24, manifestUrl: 'https://rules.example/manifest.json', signingSecretConfigured: true })
+    expect(result.find(item => item.platform === 'pinduoduo')).toMatchObject({ state: 'not_configured', latestVersion: null })
+  })
+
   it('treats an approved operator upload as ready without manifest configuration', () => {
     const rules = [{
       id: 'manual-public', name: '拼多多人工规则', version: '2026.09', scope: 'platform' as const,
       status: 'active' as const, targetId: 'pinduoduo', updatedAt: '2026-08-26T06:00:00.000Z',
-      source: { kind: 'internal' as const, reference: 'manual://rules.md#PDD-1', checkedAt: '2026-08-26T06:00:00.000Z', trust: 'verified' as const },
+      source: { kind: 'internal' as const, reference: 'https://www.yangkeduo.com/home/help/', checkedAt: '2026-08-26T06:00:00.000Z', trust: 'verified' as const },
       checksum: 'a'.repeat(64), revision: 2, checks: {},
     }]
     const result = platformRuleSyncStatus(rules, { now: '2026-08-26T12:00:00.000Z', intervalHours: 24 })

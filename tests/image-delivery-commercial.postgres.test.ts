@@ -159,12 +159,12 @@ describe('charged image callback commercial delivery fence (real isolated PG17/R
     expect(blocked.body.error?.code).toBe('IMAGE_GENERATION_SETTLEMENT_EVIDENCE_PENDING')
     expect((await scopedRead('SELECT id FROM model_usage_ledger WHERE workspace_id=$1 AND action_id=$2', [fixture.workspaceId, actionKey]))).toHaveLength(0)
     const observedAt = new Date().toISOString()
-    const usage = await signedPost('/v1/internal/model-usage', { modality: 'image', model: 'fixture-image', actionId: actionKey, runKey: actionKey, providerRequestId, inputTokens: 1, outputTokens: 1, totalTokens: 2, costCny: 0.5, observedAt })
-    expect(usage.status, JSON.stringify(usage.body)).toBe(200)
     const workerUsage = { modality: 'image', model: 'fixture-image', input_tokens: 1, output_tokens: 1, total_tokens: 2 }
     const workerCost = { currency: 'CNY', actual: 0.5 }
     const workerReceipt = { workspace_id: fixture.workspaceId, operation_id: reserved.value.operationId, provider: 'fixture-relay', provider_request_id: providerRequestId, outcome: 'succeeded', usage: workerUsage, cost: workerCost, verified_at: observedAt }
     await persistence.creativePointLifecycle!.recordProviderReceipt({ workspaceId: fixture.workspaceId, operationId: reserved.value.operationId, provider: 'fixture-relay', providerRequestId, outcome: 'succeeded', usage: workerUsage, cost: workerCost, receiptHash: createHash('sha256').update(JSON.stringify(workerReceipt)).digest('hex'), verifiedAt: observedAt, at: observedAt })
+    const usage = await signedPost('/v1/internal/model-usage', { modality: 'image', model: 'fixture-image', actionId: actionKey, runKey: actionKey, providerRequestId, inputTokens: 1, outputTokens: 1, totalTokens: 2, costCny: 0.5, observedAt })
+    expect(usage.status, JSON.stringify(usage.body)).toBe(200)
     const settled = await persistence.creativePointLifecycle!.verifyModelUsageDeliverySettlement({ workspaceId: fixture.workspaceId, reservationId: reserved.value.id, actionId: actionKey, providerRequestId, relayProvider: 'fixture-relay' })
     expect(settled).toBe(true)
     const accepted = await signedPost(callbackPath, callbackBody)

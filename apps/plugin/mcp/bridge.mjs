@@ -2982,6 +2982,16 @@ function imageTrace(event, fields = {}) {
   try { console.error(JSON.stringify({ event: `merchant.image.${event}`, ts: new Date().toISOString(), ...fields })) } catch { /* diagnostics must never break MCP */ }
 }
 
+function mcpErrorTrace(method, error) {
+  if (process.env.NODE_ENV === 'production' && process.env.MERCHANT_IMAGE_TRACE_LOGS !== 'true') return
+  const candidate = error && typeof error === 'object' && typeof error.code === 'string' ? error.code.trim() : ''
+  const errorCode = /^[A-Z][A-Z0-9_]{0,127}$/u.test(candidate) ? candidate : 'MCP_GATEWAY_ERROR'
+  // Tool inputs and provider/API error messages may contain merchant content or
+  // credentials. Keep the diagnostic useful for routing without serializing
+  // the original error or any request fields.
+  try { console.error(JSON.stringify({ event: 'merchant.mcp.error', ts: new Date().toISOString(), method, error_code: errorCode })) } catch { /* diagnostics must never break MCP */ }
+}
+
 async function resolveGeneratedImagePreview(method, initialResult) {
   if (!['catalog.image.generate', 'asset.upload'].includes(method) || !initialResult || typeof initialResult !== 'object' || Array.isArray(initialResult)) return initialResult
   if (Array.isArray(initialResult.images) && initialResult.images.length) return initialResult
@@ -3846,7 +3856,7 @@ async function handle(request) {
       if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('mcp.output', { method: name, job_id: normalizedResult?.job_id ?? result?.job_id ?? workflowResult?.job_id ?? rawResult?.job_id ?? result?.job?.jobId ?? result?.job?.id ?? 'unknown', image_count: nativeImages.length, structured_image_url_count: Array.isArray(structuredContent?.image_urls) ? structuredContent.image_urls.length : 0, native_attachment_count: content.filter(item => item?.type === 'image').length, candidate_state: normalizedResult?.candidate_state?.state ?? result?.candidate_state?.state ?? 'missing', archive_state: normalizedResult?.candidate_state?.archive_state ?? result?.candidate_state?.archive_state ?? 'unknown' })
       return jsonRpc(id, { content, structuredContent: merchantVisibleResultCopy(structuredContent), ...(resultUi ? { _meta: resultUi } : {}), isError: false })
     } catch (error) {
-      imageTrace('error', { method: name, error: error instanceof Error ? error.message : String(error) })
+      mcpErrorTrace(name, error)
       const code = error && typeof error === 'object' && typeof error.code === 'string' ? error.code : 'MCP_GATEWAY_ERROR'
       const rawErrorDetails = error && typeof error === 'object' && error.details && typeof error.details === 'object' && !Array.isArray(error.details)
         ? error.details

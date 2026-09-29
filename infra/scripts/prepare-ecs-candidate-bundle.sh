@@ -451,10 +451,24 @@ fi
 cat > "$output_dir/README.txt" <<'EOF'
 This review candidate must be materialized by
 infra/scripts/stage-verified-ecs-release.sh before deployment. candidate-source.tar
-is the committed source tree (v2 excludes local plugin code). candidate-identity.txt binds its Git SHA,
+is the committed source tree for the selected candidate profile. candidate-identity.txt binds its Git SHA,
 source digest, comparison manifest and sync plan; the source digest must equal
 the candidate gate image's com.storenova.candidate.source_sha256 label.
+EOF
 
+if [ "$cloud_source_v2" = 1 ]; then
+  cat >> "$output_dir/README.txt" <<'PROFILE'
+Profile: cloud-only v2. Local plugin source is excluded from the archive; signed
+desktop plugin packages and test attestations are bound by candidate-identity/2.
+PROFILE
+else
+  cat >> "$output_dir/README.txt" <<'PROFILE'
+Profile: full-source v1. Local plugin source is included for the local stdio
+workflow. This archive is not a plugin marketplace upload.
+PROFILE
+fi
+
+cat >> "$output_dir/README.txt" <<'EOF'
 Safety rules:
 1. Do not rsync or extract this archive over /opt/merchant-deploy. Stage it to
    a new repository-external release directory with the verified staging script.

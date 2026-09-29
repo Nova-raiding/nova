@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, embeddingResponseMatchesModel, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, isPrivateRelayArtifact, persistRelayCanaryEvidence, readRelayErrorRecovery, requireCanaryBudget, requireEmbeddingProbePreflight, requireFiniteRelayTokenQuota, requireProductionCandidateBinding, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
+import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, embeddingResponseMatchesModel, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, isPrivateRelayArtifact, persistRelayCanaryEvidence, readRelayErrorRecovery, relayProbeFailureReason, requireCanaryBudget, requireEmbeddingProbePreflight, requireFiniteRelayTokenQuota, requireProductionCandidateBinding, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -22,6 +22,13 @@ describe('production model relay contract', () => {
     costSource: 'provider_receipt' as const,
     costCny: 0.01,
     responseValid: true,
+  })
+
+  it('reports actionable quota blockers without echoing provider details', () => {
+    expect(relayProbeFailureReason(new Error('model relay token must have a finite server-enforced quota'))).toBe('relay_token_quota_unbounded')
+    expect(relayProbeFailureReason(new Error('video relay token finite quota evidence is invalid or exhausted'))).toBe('relay_token_quota_invalid_or_exhausted')
+    expect(relayProbeFailureReason(new Error('model relay token quota HTTP 401: secret response'))).toBe('relay_token_quota_http_error')
+    expect(relayProbeFailureReason(new Error('provider said sk-secret'))).toBe('relay_probe_failed')
   })
 
   it('loads an operator-captured recovery object without inventing recovery evidence', () => {

@@ -12,8 +12,8 @@ const report = (files: readonly string[]) => ({
 
 describe('isolated PostgreSQL entrypoint', () => {
   it('selects exactly the audited PostgreSQL files by default', async () => {
-    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(32)
-    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(32)
+    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(34)
+    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(34)
     await expect(selectIsolatedPostgresTests([])).resolves.toEqual(ISOLATED_POSTGRES_TEST_FILES)
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')

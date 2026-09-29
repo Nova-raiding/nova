@@ -28,4 +28,17 @@ describe('installation identity', () => {
     expect(verify('sha256', canonicalInstallationTranscript({ ...transcript, workspaceId: 'ws_other' }), publicKey,
       Buffer.from(signature, 'base64url'))).toBe(false)
   })
+
+  it('rejects malformed, substituted, and mismatched persisted installation keys', () => {
+    let stored: Record<string, string> | undefined
+    const identity = loadOrCreateInstallationIdentity({ platform: 'macos', load: () => undefined,
+      save: (value: Record<string, string>) => { stored = value } })
+    expect(stored).toEqual(identity)
+    const load = (value: Record<string, string>) => () => value
+    expect(() => loadOrCreateInstallationIdentity({ platform: 'macos', load: load({ ...identity, installation_id: 'not-a-uuid' }), save: () => {} })).toThrow('INVALID')
+    expect(() => loadOrCreateInstallationIdentity({ platform: 'macos', load: load({ ...identity, key_id: 'A'.repeat(43) }), save: () => {} })).toThrow('INVALID')
+    const other = loadOrCreateInstallationIdentity({ platform: 'macos', load: () => undefined, save: () => {} })
+    expect(() => loadOrCreateInstallationIdentity({ platform: 'macos', load: load({ ...identity,
+      installation_private_key_pkcs8: other.installation_private_key_pkcs8 }), save: () => {} })).toThrow('INVALID')
+  })
 })

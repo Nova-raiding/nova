@@ -12,15 +12,15 @@ process.env.LOCAL_MIGRATION_212_COLLISION_APPROVED = 'true'
 async function fixture(body: (pool: Pool, url: string) => Promise<void>) {
   const base = new URL(baseUrl!); const name = `release_211_${randomUUID().replaceAll('-', '')}`
   const admin = new Pool({ connectionString: base.toString() }); const target = new URL(base); target.pathname = `/${name}`
-  let pool: Pool | undefined; let failure: unknown
+  let pool: Pool | undefined; let primaryFailure: unknown
   try {
     await admin.query(`CREATE DATABASE "${name}"`); pool = new Pool({ connectionString: target.toString() })
     await new MigrationRunner(pool, (await loadMigrations()).filter(m => m.version <= 211)).run()
     const old = (await readFile(new URL('./migrations/215_customer_delivery_account_binding.sql', import.meta.url), 'utf8')).replaceAll('pg_catalog, public, pg_temp', 'pg_catalog, public')
     await pool.query(old); await pool.query("INSERT INTO schema_migrations(version,name,checksum) VALUES(212,'customer_delivery_account_binding','eada99cb91760dcea0d26a771e281e9f7d3654e93ad3a4088c8af1ffa409aa66')")
     await body(pool, target.toString())
-  } catch (e) { failure = e; throw e } finally {
-    await withPostgresFixtureCleanup(async () => { await pool?.end(); await dropDrainedPostgresFixture(admin, name) }, failure, [() => admin.end()])
+  } catch (e) { primaryFailure = e; throw e } finally {
+    await withPostgresFixtureCleanup(async () => { await pool?.end(); await dropDrainedPostgresFixture(admin, name) }, primaryFailure, [() => admin.end()])
   }
 }
 

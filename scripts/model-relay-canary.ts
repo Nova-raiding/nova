@@ -174,6 +174,19 @@ export function requireCanaryBudget(value: string | undefined): CanaryBudget {
   return { limitCny, reservedCny: 0 }
 }
 
+/** Return an actionable, credential-safe blocker for operator-facing canary output. */
+export function relayProbeFailureReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : ''
+  if (message.endsWith('relay token must have a finite server-enforced quota')) return 'relay_token_quota_unbounded'
+  if (message.endsWith('relay token finite quota evidence is invalid or exhausted')) return 'relay_token_quota_invalid_or_exhausted'
+  if (message.includes('relay token quota HTTP ')) return 'relay_token_quota_http_error'
+  if (message.endsWith('relay token quota response is invalid')) return 'relay_token_quota_response_invalid'
+  if (message.includes('MODEL_RELAY_CANARY_MAX_TOTAL_CNY')) return 'relay_canary_budget_invalid'
+  if (message.includes('MODEL_RELAY_ARTIFACT_ROOT')) return 'relay_artifact_root_missing'
+  if (message.includes('MODEL_RELAY_BASE_URL/ALLOWED_HOSTS')) return 'relay_security_config_invalid'
+  return 'relay_probe_failed'
+}
+
 /** Reserve the worst case of three 429 attempts before any billable relay request. */
 export async function reserveCanaryCost(input: {
   pricing: CanaryPricing | undefined
@@ -918,7 +931,7 @@ export async function main() {
         if (process.env.NODE_ENV?.trim() === 'production' && (!artifactRoot || results.some(result => !result.evidence_ref))) process.exitCode = 1
         if (process.env.NODE_ENV?.trim() === 'production' && !errorRecovery) process.exitCode = 1
       } catch (error) {
-        console.error(JSON.stringify({ state: 'blocked', reason: 'relay_probe_failed' }))
+        console.error(JSON.stringify({ state: 'blocked', reason: relayProbeFailureReason(error) }))
         process.exitCode = 1
       }
     }

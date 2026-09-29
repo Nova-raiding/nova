@@ -20,8 +20,10 @@ Do not treat its result as a production release approval.
    The protected output has five services: PG17, Redis, one-shot migration,
    API and merchant UI. It uses new project volumes, a private network, no
    published host ports, and no worker. The manifest records the contiguous
-   SQL migration tail from the frozen archive; for the current member release
-   it must be **255**.
+   SQL migration tail from the frozen archive and must equal that archive's
+   `release-metadata.json.expectedMigrationVersion` exactly (256 for candidate
+   `52d79f52`). Do not start the candidate until the renderer, attester, and
+   review tools bind and test that same target.
 3. Before `docker compose up`, inspect the rendered Compose and run
    `validateDemoCompose` plus Docker Compose config validation. Check that
    `ui` and `api` use the same immutable release identity and that the
@@ -30,7 +32,8 @@ Do not treat its result as a production release approval.
    job must finish with exit 0. Never direct it to a live database URL.
 4. Run `attest-ecs-demo-isolated-runtime.mjs` against the protected Compose,
    identity and manifest. It checks exact project container and image IDs,
-   private network and no host ports, PG17 migration prefix 255 and RLS roles,
+   private network and no host ports, PG17 migration prefix matching the frozen
+   metadata target (256 for candidate `52d79f52`) and RLS roles,
    API health, expected production readiness blocks, UI health and the UI
    `build-meta.json` release identity. Preserve its review-only result. A
    `readyz` 503 caused by unavailable release gates remains a block for
@@ -56,3 +59,11 @@ The older four-service candidate and its 254 attestation remain valid for their
 original frozen releases. The new UI mode does not make the old a3e99e31
 archive deployable: the renderer/attester changes must first be reviewed and
 committed, followed by a new frozen candidate identity and image build.
+
+The Ops review sidecar accepts the candidate manifest's positive migration tail
+and requires the PG17 attestation to match it exactly; 255 and 256 contracts are
+covered by unit tests. It still does not independently read `release-metadata`
+or the source archive, so before using it, the reviewed candidate renderer and
+archive identity must prove that the manifest tail came from the same frozen
+candidate metadata. Passing an isolated candidate remains review-only and does
+not approve either production migration stage 254→255 or 255→256.

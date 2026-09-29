@@ -32,6 +32,30 @@ export const PLATFORM_RULE_SOURCES: readonly PlatformRuleSource[] = [
   { platform: 'douyin', label: '抖音', officialUrl: 'https://school.jinritemai.com/doudian/web/home', machineReadable: false },
 ]
 
+const PLATFORM_RULE_SOURCE_PATHS: Readonly<Record<RuleSyncPlatform, readonly RegExp[]>> = {
+  jd: [/^\/rule\/(?:list|ruleDetail)\.action$/u],
+  taobao: [/^\/(?:doc|docs)\//u],
+  tmall: [/^\/wow\/seller\/act\/guize(?:\/|$)/u],
+  pinduoduo: [/^\/home\/(?:help|food_trade)(?:\/|$)/u],
+  xiaohongshu: [/^\/(?:rule|helper|en\/open\/product)(?:\/|$)/u],
+  douyin: [/^\/doudian\/(?:web|wap)\/(?:home|rules|article)(?:\/|$)/u],
+}
+
+/**
+ * Bind an executable rule to a traceable page on the platform's approved
+ * official host and path. Query strings are retained because several official
+ * article systems use them as stable identifiers; credentials and non-HTTPS
+ * URLs are never accepted.
+ */
+export function isApprovedPlatformRuleSource(platform: RuleSyncPlatform, reference: string): boolean {
+  let url: URL
+  try { url = new URL(reference) } catch { return false }
+  if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443')) return false
+  const source = PLATFORM_RULE_SOURCES.find(item => item.platform === platform)
+  if (!source || url.hostname !== new URL(source.officialUrl).hostname) return false
+  return PLATFORM_RULE_SOURCE_PATHS[platform].some(pattern => pattern.test(url.pathname))
+}
+
 function validDate(value: string | undefined): string | null {
   if (!value || Number.isNaN(Date.parse(value))) return null
   return value
@@ -57,8 +81,8 @@ export function platformRuleSyncStatus(
     // are the same concept elsewhere in the rule center (`rule-center.ts`,
     // `server.ts`), so accept either.
     const matchingPlatformRules = rules.filter(rule => rule.status === 'active' && rule.scope === 'platform' && (rule.targetId ?? rule.scopeValue) === source.platform)
-    const trustedManualRules = matchingPlatformRules.filter(rule => rule.source.kind === 'internal' && rule.source.reference.startsWith('manual://') && rule.source.trust === 'verified')
-    const verifiedSignedRules = matchingPlatformRules.filter(rule => rule.source.kind === 'official' && rule.source.trust === 'verified' && !rule.source.reference.startsWith('manual://'))
+    const trustedManualRules = matchingPlatformRules.filter(rule => rule.source.kind === 'internal' && isApprovedPlatformRuleSource(source.platform, rule.source.reference) && rule.source.trust === 'verified')
+    const verifiedSignedRules = matchingPlatformRules.filter(rule => rule.source.kind === 'official' && rule.source.trust === 'verified' && rule.source.createdBy === 'signed-rule-sync' && isApprovedPlatformRuleSource(source.platform, rule.source.reference))
     const platformRules = manifestConfigured ? [...trustedManualRules, ...verifiedSignedRules] : trustedManualRules
     const latest = [...platformRules].sort((a, b) => Date.parse(b.source.checkedAt) - Date.parse(a.source.checkedAt))[0]
     const configured = manifestConfigured || trustedManualRules.length > 0
@@ -80,7 +104,7 @@ export function platformRuleSyncStatus(
           ? `尚未导入可验证的${source.label}平台规则，商户与插件不能消费该平台规则`
           : stale
             ? `规则来源已超过 ${intervalHours} 小时未检查`
-            : latest.source.reference.startsWith('manual://') ? '规则来源由平台运营人工复核并审批' : '规则来源在检查窗口内',
+            : latest.source.kind === 'internal' ? '规则来源由平台运营人工复核并审批' : '规则来源在检查窗口内',
     }
   })
 }

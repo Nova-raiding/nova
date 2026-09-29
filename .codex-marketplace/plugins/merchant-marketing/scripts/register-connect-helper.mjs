@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -23,7 +25,18 @@ export function registerConnectHelper({ pluginRoot, run = spawnSync }) {
     }
     execute('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', app])
     const details = execute('/usr/bin/codesign', ['--display', '--verbose=4', app])
-    if (!details.includes(`TeamIdentifier=${status.mac_team_id}`) || !details.includes('Authority=Developer ID Application:')) fail()
+    if (!details.includes(`TeamIdentifier=${status.mac_team_id}`) || !details.includes('Authority=Developer ID Application:')
+      || !/flags=0x[0-9a-f]+\([^)]*runtime[^)]*\)/iu.test(details) || !/^Timestamp=.+$/mu.test(details)) fail()
+    const requirements = execute('/usr/bin/codesign', ['--display', '--requirements', '-', app])
+    if (!requirements.includes('anchor apple generic')
+      || !requirements.includes(`certificate leaf[subject.OU] = ${status.mac_team_id}`)) fail()
+    const certificateDirectory = mkdtempSync(resolve(tmpdir(), 'store-nova-connect-cert-'))
+    try {
+      const prefix = resolve(certificateDirectory, 'signer')
+      execute('/usr/bin/codesign', ['--display', '--extract-certificates', prefix, app])
+      const thumbprint = createHash('sha1').update(readFileSync(`${prefix}0`)).digest('hex').toUpperCase()
+      if (thumbprint !== status.mac_signer_thumbprint) fail()
+    } finally { rmSync(certificateDirectory, { recursive: true, force: true }) }
     execute('/usr/sbin/spctl', ['--assess', '--type', 'execute', app])
     execute('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', ['-f', app])
   } catch { fail() }

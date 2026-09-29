@@ -173,8 +173,8 @@ describe('the recycle bin may not invent a recoverable material', () => {
 
   it('describes the server-backed source without inventing a fixed retention policy', () => {
     const recycleBin = renderRecycleBin()
-    expect(recycleBin).not.toContain('删除的素材会保留 7 天，到期后自动彻底删除')
     expect(recycleBin).toContain('显示当前工作区由服务端记录的已移除素材')
+    expect(recycleBin).not.toContain('保留 7 天')
     expect(recycleBin).toContain('保留期限由服务端返回')
     expect(recycleBin).toContain('当前没有可用的服务端 API 地址')
   })

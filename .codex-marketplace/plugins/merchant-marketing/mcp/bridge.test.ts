@@ -239,6 +239,14 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
       expect((await nextLine(child.stdout)).result.isError).toBe(false)
       expect(requests).toBe(1)
+      child.kill()
+      await new Promise<void>(resolvePromise => child.once('exit', () => resolvePromise()))
+      const restarted = spawn(process.execPath, [join(mcpDirectory, 'bridge.mjs')], { cwd: process.cwd(), env, stdio: ['pipe', 'pipe', 'pipe'] })
+      try {
+        restarted.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+        expect((await nextLine(restarted.stdout)).result.isError).toBe(false)
+        expect(requests).toBe(2)
+      } finally { restarted.kill() }
     } finally {
       child.kill()
       broker?.kill()
@@ -1834,6 +1842,41 @@ describe('Codex stdio MCP bridge', () => {
       expect(names).toContain('multimodal.video.get')
     } finally {
       local.child.kill()
+    }
+  })
+
+  it('records video validation failures as redacted MCP diagnostics', async () => {
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: {
+        ...TEST_PROCESS_ENV,
+        MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:1',
+        MERCHANT_WORKSPACE_ID: 'ws_test',
+        MERCHANT_MCP_WRITE_ENABLED: 'true',
+        MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES: 'true',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let stderr = ''
+    child.stderr.on('data', chunk => { stderr += chunk.toString() })
+    const sensitivePrompt = '内部新品代号 SECRET-VIDEO-CLAIM'
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: {
+        prompt: sensitivePrompt,
+        output: 'rendering',
+        context_json: JSON.stringify({ brand: { id: 'brand_1', version: '1' }, product: { id: 'product_1', version: '1' }, rules: [] }),
+      } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true })
+      await expect.poll(() => stderr.trim(), { timeout: 2000 }).not.toBe('')
+      const diagnostic = JSON.parse(stderr.trim())
+      expect(diagnostic).toMatchObject({ event: 'merchant.mcp.error', method: 'multimodal.video.request', error_code: 'API_UNAVAILABLE' })
+      expect(Object.keys(diagnostic).sort()).toEqual(['error_code', 'event', 'method', 'ts'])
+      expect(stderr).not.toContain(sensitivePrompt)
+      expect(stderr).not.toContain('merchant.image.error')
+    } finally {
+      child.kill()
     }
   })
 
