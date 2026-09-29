@@ -264,6 +264,8 @@ describe('MCP completion operations per-method HTTP evidence', () => {
     const cancelRequest = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.delete.request', {
       scope: 'assets', reason: '清理测试素材', idempotency_key: cancelKey,
     }))
+    expect(cancelRequest).toMatchObject({ workspaceId: workspaceA, status: 'pending', gracePeriodDays: 7, approvals: [], execution: 'pending_external_approval' })
+    expect(Date.parse(cancelRequest.scheduledFor) - Date.parse(cancelRequest.requestedAt)).toBeGreaterThanOrEqual(7 * 86_400_000 - 1_000)
     const cancelReplay = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.delete.request', {
       scope: 'assets', reason: '清理测试素材', idempotency_key: cancelKey,
     }))
@@ -276,6 +278,7 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       request_id: cancelRequest.id, reason: '商家撤回删除申请',
     }))
     expect(cancelled).toMatchObject({ id: cancelRequest.id, workspaceId: workspaceA, status: 'cancelled', cancelledBy: `admin-a-${suffix}` })
+    expect(cancelled.approvals).toEqual([])
 
     const approveRequest = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.delete.request', {
       scope: 'business', reason: '业务数据删除演练', idempotency_key: `delete-approve-${suffix}`,
@@ -306,6 +309,12 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       expect.objectContaining({ id: approveRequest.id, status: 'approved' }),
     ]))
     expect(listedB).toEqual([expect.objectContaining({ id: foreignRequest.id, workspaceId: workspaceB, status: 'pending' })])
+    const deletionAudit = resultOf<{ records: Array<{ action: string; resourceId: string }> }>(await callMcp(base, tokens.ownerA, workspaceA, 'ops.audit.list', { limit: '100' }))
+    expect(deletionAudit.records).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'data.delete.request', resourceId: cancelRequest.id }),
+      expect.objectContaining({ action: 'data.delete.cancel', resourceId: cancelRequest.id }),
+      expect.objectContaining({ action: 'data.delete.approve', resourceId: approveRequest.id }),
+    ]))
 
     const extraParameter = await callMcp(base, tokens.ownerA, workspaceA, 'subscription.orders.list', { unexpected: 'rejected' })
     const invalidEnum = await callMcp(base, tokens.financeA, workspaceA, 'billing.export', { format: 'xml' })

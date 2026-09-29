@@ -12,7 +12,17 @@ describe('data deletion lifecycle repository', () => {
     const approved = await repository.approve({ workspaceId: 'ws_delete', id: request.id, actorId: 'operator-b', reason: '独立复核通过，等待外部证明' })
     expect(approved).toMatchObject({ status: 'approved', approvals: [{ actorId: 'operator-a' }, { actorId: 'operator-b' }] })
     await expect(repository.approve({ workspaceId: 'ws_delete', id: request.id, actorId: 'operator-c', reason: '不得再次审批' })).rejects.toThrow('DATA_DELETION_REQUEST_NOT_PENDING')
+    await expect(repository.complete({ workspaceId: 'ws_delete', id: request.id, workerId: 'deletion-worker', proofRef: 'artifact://delete/ws_delete/early', now: request.requestedAt })).rejects.toThrow('DATA_DELETION_GRACE_PERIOD_ACTIVE')
     await expect(repository.complete({ workspaceId: 'ws_delete', id: request.id, workerId: 'deletion-worker', proofRef: 'artifact://delete/ws_delete/1', now: request.scheduledFor })).resolves.toMatchObject({ status: 'completed', completedBy: 'deletion-worker', executionProofRef: 'artifact://delete/ws_delete/1' })
+  })
+
+  it('keeps a cancelled request from being approved or executed', async () => {
+    const repository = new MemoryDataLifecycleRepository()
+    const request = await repository.request({ workspaceId: 'ws_cancelled_delete', scope: 'business', reason: '商家撤回前的业务数据删除申请', requestedBy: 'owner', gracePeriodDays: 7, idempotencyKey: 'cancel-1' })
+    const cancelled = await repository.cancel({ workspaceId: 'ws_cancelled_delete', id: request.id, actorId: 'owner', reason: '商家撤回申请' })
+    expect(cancelled).toMatchObject({ status: 'cancelled', approvals: [], cancelledBy: 'owner' })
+    await expect(repository.approve({ workspaceId: 'ws_cancelled_delete', id: request.id, actorId: 'operator-a', reason: '不得审批已撤回申请' })).rejects.toThrow('DATA_DELETION_REQUEST_NOT_PENDING')
+    await expect(repository.complete({ workspaceId: 'ws_cancelled_delete', id: request.id, workerId: 'deletion-worker', proofRef: 'artifact://delete/ws_cancelled_delete/1', now: request.scheduledFor })).rejects.toThrow('DATA_DELETION_REQUEST_NOT_APPROVED')
   })
 
   it('rejects idempotency reuse for a different deletion intent', async () => {

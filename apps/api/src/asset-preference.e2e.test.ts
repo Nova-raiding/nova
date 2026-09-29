@@ -37,6 +37,8 @@ describe('historical asset preference API', () => {
 
     const disliked = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'asset.preference.update', params: { asset_id: asset.id, verdict: 'disliked', reasons_json: '["背景干扰主体"]', expected_revision: String(saved.data?.revision) } }) }).then(response => response.json()) as { data: { result: { preference: { verdict: string; reasons: string[] } } } }
     expect(disliked.data.result.preference).toEqual(expect.objectContaining({ verdict: 'disliked', reasons: ['背景干扰主体'] }))
+    const readBack = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'asset.list', params: {} }) }).then(response => response.json()) as { data: { result: { assets: Array<{ id: string; preference?: { verdict: string; reasons: string[]; updatedBy: string } }> } } }
+    expect(readBack.data.result.assets.find(item => item.id === asset.id)?.preference).toEqual(expect.objectContaining({ verdict: 'disliked', reasons: ['背景干扰主体'], updatedBy: 'merchant-test' }))
 
     const foreign = await fetch(`${base}/v1/assets/${asset.id}/preference`, { method: 'PUT', headers: { ...headers, 'x-workspace-id': `${workspaceId}_other` }, body: JSON.stringify({ verdict: 'excellent', reasons: ['越权'] }) }).then(response => response.json()) as Envelope<unknown>
     expect(foreign.error?.code).toBe('ASSET_NOT_FOUND')

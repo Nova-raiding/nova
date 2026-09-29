@@ -89,6 +89,56 @@ afterEach(async () => {
 })
 
 describe('brand profile upsert HTTP/MCP parity', () => {
+  it('versions MCP brand facts, records conflicting candidate provenance, and denies a foreign workspace', async () => {
+    const workspaceId = `ws_brand_upsert_version_${Date.now()}`
+    const foreignWorkspaceId = `${workspaceId}_foreign`
+    const actorId = `brand-upsert-version-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'brand-upsert-acceptance' })
+    service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `brand-upsert-version-store-${workspaceId}`, credentialRef: `vault://brand-upsert/${workspaceId}` })
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'brand-upsert-version-token': { workspaces: [workspaceId], actor_id: actorId, roles: ['merchant_admin'], workbenches: ['workspace'] },
+    }))
+    const base = await start()
+    const first = await callMcpMethod(base, 'brand-upsert-version-token', workspaceId, 'brand.upsert', {
+      name: '来源验收品牌', positioning: '原始定位', source: 'qa://brand/manual-v1',
+    })
+    expect(first.response.status, JSON.stringify(first.body)).toBe(200)
+    expect(first.body.error).toBeNull()
+    expect(resultOf(first.body)).toMatchObject({ workspaceId, name: '来源验收品牌', positioning: '原始定位', revision: 1 })
+
+    const candidate = await callMcpMethod(base, 'brand-upsert-version-token', workspaceId, 'brand.upsert', {
+      name: '来源验收品牌', positioning: '候选定位', source: 'qa://brand/candidate-v2',
+    })
+    expect(candidate.response.status, JSON.stringify(candidate.body)).toBe(200)
+    expect(candidate.body.error).toBeNull()
+    expect(resultOf(candidate.body)).toMatchObject({
+      positioning: '原始定位', revision: 2,
+      conflicts: [expect.objectContaining({ field: 'positioning', candidateValue: '候选定位', source: 'qa://brand/candidate-v2', state: 'pending' })],
+    })
+
+    const resolved = await callMcpMethod(base, 'brand-upsert-version-token', workspaceId, 'brand.upsert', {
+      name: '来源验收品牌', positioning: '候选定位', source: 'qa://brand/confirmed-v3',
+      conflict_resolutions_json: JSON.stringify({ positioning: 'candidate' }),
+    })
+    expect(resolved.response.status, JSON.stringify(resolved.body)).toBe(200)
+    expect(resolved.body.error).toBeNull()
+    expect(resultOf(resolved.body)).toMatchObject({ positioning: '候选定位', revision: 3 })
+    expect(resultOf(resolved.body)).not.toHaveProperty('conflicts')
+    const readBack = await callMcpMethod(base, 'brand-upsert-version-token', workspaceId, 'brand.get', {})
+    expect(readBack.body.error).toBeNull()
+    expect(resultOf(readBack.body)).toMatchObject({ workspaceId, positioning: '候选定位', revision: 3 })
+
+    const foreign = await callMcpMethod(base, 'brand-upsert-version-token', foreignWorkspaceId, 'brand.upsert', {
+      name: '不应写入的外租户品牌', source: 'qa://brand/foreign',
+    })
+    expect(foreign.response.status).toBe(403)
+    expect(foreign.body.error?.code).toBe('FORBIDDEN')
+    expect(service.getBrandProfile(foreignWorkspaceId)).toBeUndefined()
+    expect(service.getBrandProfile(workspaceId)).toMatchObject({ name: '来源验收品牌', positioning: '候选定位', revision: 3 })
+  })
+
   it('writes the same authenticated workspace facts through HTTP and MCP', async () => {
     const httpWorkspaceId = `ws_brand_upsert_http_${Date.now()}`
     const mcpWorkspaceId = `${httpWorkspaceId}_mcp`

@@ -104,10 +104,22 @@ describe('merchant knowledge consumption over the real API boundary', () => {
     api.service.selectDirection(task.id, 'A')
     api.service.confirmProductionPlan(workspaceId, task.id, 'rules_admin_consumer')
 
-    const generated = await call<{ knowledgeContext?: { rules: Array<{ id: string; version: string; sourceReference: string }>; assets: Array<{ id: string; name: string; revision: number }> } }>(workspaceId, token, 'content.generate', { task_id: task.id })
+    const generated = await call<{
+      id: string
+      taskId: string
+      state: string
+      execution: { mode: string; simulated: boolean; providerExecuted: boolean; providerRequestId?: string; usage?: unknown; costCny?: number }
+      knowledgeContext?: { rules: Array<{ id: string; version: string; sourceReference: string }>; assets: Array<{ id: string; name: string; revision: number }> }
+    }>(workspaceId, token, 'content.generate', { task_id: task.id })
     expect(generated.status, JSON.stringify(generated.body)).toBe(200)
     expect(generated.body.error).toBeNull()
     const result = generated.body.data!.result
+    expect(result).toMatchObject({ taskId: task.id, state: 'review_required', execution: { mode: 'simulated', simulated: true, providerExecuted: false } })
+    expect(result.execution.providerRequestId).toBeUndefined()
+    expect(result.execution.usage).toBeUndefined()
+    expect(result.execution.costCny).toBeUndefined()
+    const reservation = await api.creativePointsForTests.getReservationByActionKey(workspaceId, `model:content.generate:${task.id}`)
+    expect(reservation).toMatchObject({ workspaceId, status: 'active', settledPoints: null })
     expect(result.knowledgeContext?.rules ?? []).toContainEqual(expect.objectContaining({ id: rule.id, version: '7.2.0', sourceReference: `ops://knowledge-consumption/${suffix}` }))
     expect(result.knowledgeContext?.assets ?? []).toContainEqual(expect.objectContaining({ id: asset.id, name: `商家消费品牌资料 ${suffix}`, revision: 1 }))
 
