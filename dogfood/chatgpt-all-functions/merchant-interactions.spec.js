@@ -120,12 +120,10 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
 
   await page.getByRole('button', { name: '财务概况', exact: true }).first().click()
   await expect(page.getByRole('button', { name: '充值创意点', exact: true })).toBeVisible()
-  const manualPublish = page.getByRole('region', { name: '人工发布状态' })
-  await expect(manualPublish).toBeVisible()
-  await expect(manualPublish).toContainText('六平台由人工执行发布')
-  await expect(manualPublish).toContainText(/暂无人工发布记录|待人工发布|人工发布中|已回填平台结果|需人工复核/u)
-  await expect(manualPublish.getByRole('button', { name: /发布/u })).toHaveCount(0)
-  steps.push(await state(page, '财务支付入口与人工发布状态'))
+  await expect(page.getByRole('region', { name: '财务概况' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '人工发布状态' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /提交人工发布任务|确认人工发布/u })).toHaveCount(0)
+  steps.push(await state(page, '财务支付入口'))
 
   await writeFile('merchant-interactions.json', JSON.stringify({ steps, badResponses, requestFailures, consoleErrors }, null, 2))
   try {
