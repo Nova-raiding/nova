@@ -240,6 +240,7 @@ describe('quality entrypoint coverage', () => {
       'pretest:release-gates',
       'test:release-gates:runtime',
       'test:ecs-bridge-255-store',
+      'test:pg16-migration-compatibility',
     ]) {
       expect(releaseLifecycle.has(reachable), `${reachable} must be reachable from npm run test:release-gates`).toBe(true)
     }
@@ -256,8 +257,18 @@ describe('quality entrypoint coverage', () => {
     ]) {
       expect(runtimeReleaseGate.split(/\s+/u).filter(argument => argument === gate)).toHaveLength(1)
     }
+    expect(runtimeReleaseGate).not.toContain('tests/ecs-pg16-migration-compatibility.isolated.test.ts')
     expect(script('pretest:release-gates')).toContain('npm run test:release-gates:runtime')
     expect(script('pretest:release-gates')).toContain('npm run test:ecs-bridge-255-store')
+    expect(script('pretest:release-gates')).toContain('npm run test:pg16-migration-compatibility')
+    expect(script('test:pg16-migration-compatibility')).toBe('node --import tsx scripts/run-pg16-migration-compatibility.ts')
+    expect(readFileSync(resolve(root, 'vitest.pg16-migration.config.ts'), 'utf8')).toContain('include: [...PG16_MIGRATION_TEST_FILES]')
+    expect(readFileSync(resolve(root, 'scripts/pg16-migration-test-entrypoint.ts'), 'utf8')).toContain("'tests/ecs-pg16-migration-compatibility.isolated.test.ts'")
+    expect(NON_HERMETIC_TEST_FILES).toContain('tests/ecs-pg16-migration-compatibility.isolated.test.ts')
+    const ciWorkflow = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8')
+    const pinnedPg16Image = 'postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685'
+    expect(ciWorkflow).toContain(`docker pull ${pinnedPg16Image}`)
+    expect(ciWorkflow.indexOf(`docker pull ${pinnedPg16Image}`)).toBeLessThan(ciWorkflow.indexOf('npm run test:release-gates'))
     expect(script('test:ecs-bridge-255-store')).toBe('sh tests/run-ecs-bridge-255-state-store.sh')
 
     // The attack matrix needs a disposable PostgreSQL instance, so the safe
@@ -305,7 +316,7 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(43)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(44)
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/kubernetes-release-gate.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/rendered-kubernetes-config.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')

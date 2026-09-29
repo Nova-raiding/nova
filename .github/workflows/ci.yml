@@ -85,6 +85,8 @@ jobs:
           # filtering credentials and deployment configuration. The complete
           # serialized suite can exceed five minutes on shared runners.
           SAFE_TEST_TIMEOUT_MS: '900000'
+      - name: Prepare isolated PostgreSQL 16 migration image
+        run: docker pull postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
       - name: Run explicit repository release gates
         run: npm run test:release-gates
       # The mutation gate is the only mechanism in this repository that proves

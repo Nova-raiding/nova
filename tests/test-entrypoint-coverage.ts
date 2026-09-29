@@ -35,6 +35,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { ISOLATED_POSTGRES_TEST_FILES } from '../vitest.postgres.config.js'
 import { ISOLATED_REDIS_TEST_FILES } from '../vitest.redis.config.js'
+import { PG16_MIGRATION_TEST_FILES } from '../scripts/pg16-migration-test-entrypoint.js'
 import { LOCAL_RUNTIME_TEST_FILES } from './local-runtime-test-safety.js'
 
 const IGNORED_DIRECTORIES = new Set([
@@ -115,6 +116,7 @@ export function manifestTestFiles(): Set<string> {
     ...LOCAL_RUNTIME_TEST_FILES,
     ...ISOLATED_POSTGRES_TEST_FILES,
     ...ISOLATED_REDIS_TEST_FILES,
+    ...PG16_MIGRATION_TEST_FILES,
   ])
 }
 

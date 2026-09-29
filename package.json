@@ -94,7 +94,8 @@
     "invariants:check": "tsx scripts/invariant-mutation-gate.ts --tolerate-missing-bindings",
     "verify:commercial-read-boundaries": "tsx scripts/verify-commercial-read-boundaries.ts",
     "test:release-gates:runtime": "node --import tsx scripts/run-safe-tests.ts --no-file-parallelism tests/ecs-254-255-api-bridge-isolated.postgres.test.ts tests/ecs-254-255-worker-bridge-isolated.postgres.test.ts apps/api/src/model-usage-settlement.test.ts",
-    "pretest:release-gates": "npm run test:release-gates:runtime && npm run test:ecs-bridge-255-store"
+    "test:pg16-migration-compatibility": "node --import tsx scripts/run-pg16-migration-compatibility.ts",
+    "pretest:release-gates": "npm run test:release-gates:runtime && npm run test:ecs-bridge-255-store && npm run test:pg16-migration-compatibility"
   },
   "workspaces": [
     "apps/*",

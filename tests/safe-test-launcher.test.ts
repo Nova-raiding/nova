@@ -60,6 +60,11 @@ describe('safe default test launcher', () => {
     }
   })
 
+  it('rejects the PG16 Docker acceptance file from the generic safe-test launcher', () => {
+    expect(() => buildSafeVitestArgs(['tests/ecs-pg16-migration-compatibility.isolated.test.ts']))
+      .toThrow(/dedicated integration entrypoint/u)
+  })
+
   it.each(['--config=integration.ts', '-c', '--root=/shared/project', '--dir', '--project=integration', '--workspace=integration.ts', '--exclude=anything', '--passWithNoTests', '--watch', '--ui'])('rejects an isolation-bypassing argument: %s', argument => {
     expect(() => buildSafeVitestArgs([argument])).toThrow(/safe test entrypoint/u)
   })
@@ -72,8 +77,8 @@ describe('safe default test launcher', () => {
   })
 
   it('keeps the explicit isolation manifest unique and limited to the audited files', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(42)
-    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(42)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(44)
+    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(44)
     expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/canonical-backfill-contract.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/local-creative-points-seed-runtime.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')

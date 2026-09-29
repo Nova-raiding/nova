@@ -50,6 +50,9 @@ export const NON_HERMETIC_TEST_FILES = [
   // Runs API catalog writes against an owned tmpfs PostgreSQL fixture through
   // the explicit isolated PostgreSQL launcher; no default-suite skip is allowed.
   'apps/api/src/catalog-positive-isolated.postgres.test.ts',
+  // Uses a fixed-digest, one-off local Docker container and its own launcher;
+  // it must not run from the default suite or the generic safe-test runner.
+  'tests/ecs-pg16-migration-compatibility.isolated.test.ts',
   'apps/api/src/canonical-backfill-contract.test.ts',
   // These two are `REDIS_URL` gated. They carry no default-suite assertion at
   // all when the variable is absent (`describe.skipIf` reports every test as
