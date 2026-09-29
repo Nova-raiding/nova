@@ -1,12 +1,12 @@
 # Store Nova 116 项工具：真实 ChatGPT App 验收缺口
 
-审计时间：2026-09-29 11:29 CST。本轮仅核对清单、既有证据、代码调用图和测试报告；未操作 ChatGPT、未调用生产写接口。按 gstack QA 的证据层级区分**工具发现、工具实际调用、业务结果、服务端读回**。完整逐方法参数见[116 项执行清单](../../2026-09-29-chatgpt-app-116-tool-checklist.md)，逐方法 App 状态见[111500 版证据清单](111500-app-tool-evidence-audit.md)。
+审计时间：2026-09-29 11:29 CST。本轮仅核对清单、既有证据、代码调用图和测试报告；未操作 ChatGPT、未调用生产写接口。按 gstack QA 的证据层级区分**工具发现、工具实际调用、业务结果、服务端读回**。完整逐方法参数见[116 项执行清单](../../2026-09-29-chatgpt-app-116-tool-checklist.md)，111500 版状态见[111500 版证据清单](111500-app-tool-evidence-audit.md)，后续 114000 版调用见[114000 版运行日志核对](114000-runtime-log-audit.md)。
 
 ## 结论与证据等级
 
 - 清单精确计数为 **116 = 46 只读 + 3 可逆写入 + 60 受限写入 + 7 预期阻断**。本机安装缓存的 `tools/list`、契约对照和 53 个运行文件验真仅证明安装与发现，不能计入 ChatGPT App 通过。
 - 截至本审计可读取的证据，**111500 版没有逐方法 App 调用截图或工具事件，116 项均待该版本真实 App 验收**。102500 版的 `onboarding.status`、`brand.get` 以及 `brand-unit.listing.list`、`campaign.batch.list`、`task.history`、`subscription.orders.list`、`brand.extract` 七项画面是历史证据，不向新版继承。后五项截图主要是宿主的调用摘要，尚须展开工具事件。更早版本的 CSV 导入、商品查询和一次文案候选生成也不能折算成新版 116 项全过。
-- 后续复核在 11:34 收到新版 `onboarding.status({})` 调用截图 [39](39-111500-onboarding-status-work.png)，有工具事件和 `isError=false`，因此新版剩余 **115/116 项待测**；结果和限制见[逐方法证据表](111500-app-tool-evidence-audit.md)。
+- 11:34 的截图 [39](39-111500-onboarding-status-work.png)只证明 **111500** 版 `onboarding.status({})`。其后 114000 版的同方法调用由运行日志与截图 [40](40-114000-chinese-reply-unverified-tool.png)单独证明，因此 **114000 版仍有 115/116 项待测**；两个版本的证据不合并计数。
 - 旧 131 项矩阵中剩余 57 项有 53 项隔离成功路径，3 项 `upload.session.*` 仍不可用且已从当前插件隐藏；这批隔离 HTTP/MCP 结果不证明真实 App、生产权限或模型中转。`merchant.start` 连隔离正向调用仍缺。
 - CodeGraph 只读检查：索引 2,343 文件、33,756 节点、132,010 边，当前有 1 个新增和 12 个修改文件未同步。`merchantConversationProjection` 的调用关系连到 `merchantUiMetadata`、`merchantStartContext` 与商家文案净化函数；图证明桥接位置，不证明宿主显示效果。审计以安装版工具清单和现有截图为准，未用未同步索引推断新改动已生效。
 
