@@ -24,6 +24,17 @@ const completedOperation = (stored: Record<string, unknown>, balance: Record<str
 const pool = (client: SqlClient): SqlPool => ({ connect: async () => client })
 
 describe('PostgresCreativePointLifecycleRepository', () => {
+  it('returns the stored provider receipt hash and original cost without recomputing either', async () => {
+    const receipt = { operationId: 'operation-1', provider: 'model-relay', providerRequestId: 'provider-1', outcome: 'succeeded', usage: { modality: 'text', model: 'model-1' }, cost: { currency: 'CNY', actual: 0.00090156 }, receiptHash: 'b'.repeat(64), verifiedAt: new Date('2026-09-29T08:00:00Z') }
+    const client = new Client(sql => sql.includes('receipt_hash AS "receiptHash"') ? { rows: [receipt] } : { rows: [] })
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    await expect(repository.getProviderReceipt({ workspaceId: 'ws-1', operationId: 'operation-1', provider: 'model-relay', providerRequestId: 'provider-1' })).resolves.toEqual({ ...receipt, verifiedAt: '2026-09-29T08:00:00.000Z' })
+    const query = client.sql.find(sql => sql.includes('receipt_hash AS "receiptHash"'))!
+    expect(query).toContain('WHERE workspace_id=$1 AND operation_id=$2 AND provider=$3 AND provider_request_id=$4')
+    expect(client.values[client.sql.indexOf(query)]).toEqual(['ws-1', 'operation-1', 'model-relay', 'provider-1'])
+    expect(client.sql.some(sql => /\b(INSERT|UPDATE|DELETE)\b/iu.test(sql))).toBe(false)
+  })
+
   it('verifies API-owned delivery settlement evidence in a workspace-scoped read transaction', async () => {
     const client = new Client(sql => sql.includes('SELECT count(*)::int AS matched') ? { rows: [{ matched: 1 }] } : { rows: [] })
     const repository = new PostgresCreativePointLifecycleRepository(pool(client))
@@ -44,6 +55,32 @@ describe('PostgresCreativePointLifecycleRepository', () => {
     const client = new Client(sql => sql.includes('SELECT count(*)::int AS matched') ? { rows: [{ matched: 0 }] } : { rows: [] })
     const repository = new PostgresCreativePointLifecycleRepository(pool(client))
     await expect(repository.verifyModelUsageDeliverySettlement({ workspaceId: 'ws-1', reservationId: 'reservation-1', actionId: 'action-1', providerRequestId: 'provider-1', relayProvider: 'relay.example' })).resolves.toBe(false)
+  })
+
+  it('permits zero-point delivery only for the verified non-OCR free-cost policy while preserving paid checks', async () => {
+    const client = new Client(sql => sql.includes('SELECT count(*)::int AS matched') ? { rows: [{ matched: 1 }] } : { rows: [] })
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    await expect(repository.verifyModelUsageDeliverySettlement({ workspaceId: 'ws-1', reservationId: 'reservation-1', actionId: 'action-1', providerRequestId: 'provider-1', relayProvider: 'relay.example' })).resolves.toBe(true)
+    const query = client.sql.find(sql => sql.includes('SELECT count(*)::int AS matched'))!
+    const compact = query.replace(/\s+/gu, ' ')
+    // Pin the complete OR branch: neither allowPartialPoints nor a bare zero
+    // may bypass the cost threshold, supported modality, or both policy stamps.
+    expect(compact).toContain("AND ( (r.settled_points>0 AND (r.settled_points=r.points OR $6::boolean)) OR ( r.settled_points=0 AND r.points>0 AND m.modality IN ('text','image','image_edit','video') AND verified_cost.actual_cost_cny>=0 AND verified_cost.actual_cost_cny<0.1 AND ledger.metadata->>'point_policy_version'='model.cost_cny_free_lt_0_1.v1' AND settlement.request->'metadata'->>'point_policy_version'='model.cost_cny_free_lt_0_1.v1' ) ) AND a.state='settled'")
+    // These conditions remain outside both branches and apply equally to free
+    // and paid delivery. A policy stamp alone is never sufficient evidence.
+    for (const guard of [
+      "api_receipt.outcome='succeeded' AND api_receipt.verified_at IS NOT NULL",
+      "worker_receipt.outcome='succeeded' AND worker_receipt.verified_at IS NOT NULL",
+      "jsonb_typeof(api_receipt.cost->'actual')='number'",
+      "THEN (api_receipt.cost->>'actual')::numeric ELSE NULL END",
+      "round(verified_cost.actual_cost_cny,6)=m.cost_cny",
+      "worker_receipt.cost->'actual'=api_receipt.cost->'actual'",
+      "ledger.metadata->'cost_cny'=api_receipt.cost->'actual'",
+      "settlement.request->'metadata'->'cost_cny'=api_receipt.cost->'actual'",
+      "settlement.request->'actual_points'=to_jsonb(r.settled_points)",
+      "ledger.metadata->>'receipt_hash'=api_receipt.receipt_hash",
+      "settlement.request->'metadata'->>'receipt_hash'=api_receipt.receipt_hash",
+    ]) expect(query).toContain(guard)
   })
 
   it('requires text usage only for the charged text no-delivery resolution', async () => {

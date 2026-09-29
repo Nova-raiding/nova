@@ -1,10 +1,29 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { DomainError } from '../../../packages/application/src/service.js'
-import { decideOcrPointFinalization, OCR_COST_POINT_POLICY_VERSION, OCR_FREE_THRESHOLD_POINT_POLICY_VERSION } from '../../../packages/application/src/ocr-point-lifecycle.js'
+import { OCR_COST_POINT_POLICY_VERSION, OCR_FREE_THRESHOLD_POINT_POLICY_VERSION } from '../../../packages/application/src/ocr-point-lifecycle.js'
 import { evaluatePlatformModelTaskCostLimit } from '../../../packages/ai/src/platform-model-gate.js'
 import type { ActionLedgerRepository, ModelUsageRecord } from '../../../packages/persistence/src/index.js'
 import type { ApiPersistence } from './server.js'
 import { chargeFenFromCny } from './wallet-money.js'
+import { decideModelPointFinalization } from './model-point-settlement-policy.js'
+
+/** Match PostgreSQL numeric(12,6) using the decimal representation sent over JSON. */
+export function roundModelUsageCostForLedger(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null
+  const [coefficient, exponent = '0'] = value.toString().split('e')
+  const [whole, fraction = ''] = coefficient!.split('.')
+  const digits = BigInt(whole! + fraction)
+  const shift = 6 + Number(exponent) - fraction.length
+  let units: bigint
+  if (shift >= 0) units = digits * 10n ** BigInt(shift)
+  else {
+    const divisor = 10n ** BigInt(-shift)
+    // Costs are nonnegative; PostgreSQL rounds exact half points upward.
+    units = digits / divisor + (digits % divisor * 2n >= divisor ? 1n : 0n)
+  }
+  if (units > 999_999_999_999n) return null // numeric(12,6) overflow
+  return Number(units) / 1_000_000
+}
 
 export function createModelUsageReconciliation(deps: {
   persistence: () => ApiPersistence
@@ -29,16 +48,29 @@ export function createModelUsageReconciliation(deps: {
       throw new DomainError('POINT_SETTLEMENT_EVIDENCE_UNAVAILABLE', '模型用量缺少创意点结算所需的真实 provider 请求、成本或生命周期仓储', 409)
     }
 
-    const usageEvidence = {
-      modality: usage.modality,
-      model: usage.model,
-      ...(usage.inputTokens !== undefined ? { input_tokens: usage.inputTokens } : {}),
-      ...(usage.outputTokens !== undefined ? { output_tokens: usage.outputTokens } : {}),
-      ...(usage.totalTokens !== undefined ? { total_tokens: usage.totalTokens } : {}),
+    // The SQL usage ledger rounds cost to six decimals. Only the immutable,
+    // verified API receipt retains the original cost and its original hash.
+    if (usage.workspaceId !== workspaceId || reservation.workspaceId !== workspaceId || reservation.actionKey !== usage.actionId
+      || !lifecycle.getProviderReceipt) {
+      throw new DomainError('POINT_SETTLEMENT_EVIDENCE_UNAVAILABLE', '模型回执与预留作用域不匹配', 409)
     }
-    const costEvidence = { currency: 'CNY', actual: usage.costCny }
+    const receipt = await lifecycle.getProviderReceipt({ workspaceId, operationId: reservation.operationId,
+      provider: 'model-relay', providerRequestId: usage.providerRequestId })
+    const originalCost = receipt?.cost?.actual
+    const ledgerCost = roundModelUsageCostForLedger(originalCost)
+    const tokenFields = [['input_tokens', usage.inputTokens], ['output_tokens', usage.outputTokens], ['total_tokens', usage.totalTokens]] as const
+    if (!receipt || receipt.operationId !== reservation.operationId || receipt.provider !== 'model-relay'
+      || receipt.providerRequestId !== usage.providerRequestId || receipt.outcome !== 'succeeded'
+      || !receipt.verifiedAt || !Number.isFinite(Date.parse(receipt.verifiedAt))
+      || !/^[a-f0-9]{64}$/u.test(receipt.receiptHash)
+      || receipt.usage?.modality !== usage.modality || receipt.usage?.model !== usage.model
+      || tokenFields.some(([key, value]) => (receipt.usage?.[key] ?? undefined) !== value)
+      || receipt.cost?.currency !== 'CNY' || typeof originalCost !== 'number' || !Number.isFinite(originalCost) || originalCost < 0
+      || ledgerCost === null || (originalCost !== usage.costCny && ledgerCost !== usage.costCny)) {
+      throw new DomainError('POINT_SETTLEMENT_EVIDENCE_UNAVAILABLE', '缺少匹配的已验证原始模型回执，保留创意点预留等待核对', 409)
+    }
     let actualPoints = reservation.points
-    let receiptHash: string
+    const receiptHash = receipt.receiptHash
     let receiptMetadata: Record<string, unknown>
     if (usage.modality === 'ocr') {
       const rate = reservation.rateCardVersion
@@ -46,36 +78,25 @@ export function createModelUsageReconciliation(deps: {
         ? OCR_FREE_THRESHOLD_POINT_POLICY_VERSION
         : OCR_COST_POINT_POLICY_VERSION
       const taskCap = evaluatePlatformModelTaskCostLimit(process.env)
-      const decision = decideOcrPointFinalization({
+      const decision = decideModelPointFinalization({
+        modality: usage.modality,
         reservedPoints: reservation.points,
-        providerOutcome: 'succeeded',
-        verifiedReceipt: Boolean(rate.startsWith(`${policyVersion}:`) && taskCap.ready && usage.costCny <= taskCap.limitCny),
-        actualCostCny: usage.costCny,
-        policyVersion,
+        verifiedReceipt: Boolean(rate.startsWith(`${policyVersion}:`) && taskCap.ready && originalCost <= taskCap.limitCny),
+        actualCostCny: originalCost,
+        ocrPolicyVersion: policyVersion,
       })
       if (decision.action !== 'settle') throw new DomainError('MODEL_USAGE_SETTLEMENT_PENDING', 'OCR 成本或费率证据尚不足以恢复创意点结算', 409)
       actualPoints = decision.actualPoints
-      receiptHash = createHash('sha256').update(JSON.stringify({ providerRequestId: usage.providerRequestId, usage: usageEvidence, cost: costEvidence, observedAt: usage.observedAt, rate })).digest('hex')
-      receiptMetadata = { provider_request_id: usage.providerRequestId, receipt_hash: receiptHash, cost_cny: usage.costCny, modality: 'ocr', rate_card_version: rate }
+      receiptMetadata = { provider_request_id: usage.providerRequestId, receipt_hash: receiptHash, cost_cny: originalCost, modality: 'ocr', rate_card_version: rate }
     } else {
-      receiptHash = createHash('sha256').update(JSON.stringify({ providerRequestId: usage.providerRequestId, usage: usageEvidence, cost: costEvidence, observedAt: usage.observedAt })).digest('hex')
-      receiptMetadata = { provider_request_id: usage.providerRequestId, receipt_hash: receiptHash, cost_cny: usage.costCny, modality: usage.modality }
+      const decision = decideModelPointFinalization({ modality: usage.modality, reservedPoints: reservation.points,
+        actualCostCny: originalCost, verifiedReceipt: true })
+      if (decision.action !== 'settle') throw new DomainError('MODEL_USAGE_SETTLEMENT_PENDING', '模型成本或费率证据尚不足以恢复创意点结算', 409)
+      actualPoints = decision.actualPoints
+      receiptMetadata = { provider_request_id: usage.providerRequestId, receipt_hash: receiptHash, cost_cny: originalCost, modality: usage.modality, point_policy_version: decision.policyVersion }
     }
 
-    // Replaying this insert validates that a prior API receipt is byte-for-byte
-    // the same evidence before a failed point settlement is retried.
-    await lifecycle.recordProviderReceipt({
-      workspaceId,
-      operationId: reservation.operationId,
-      provider: 'model-relay',
-      providerRequestId: usage.providerRequestId,
-      outcome: 'succeeded',
-      usage: usageEvidence,
-      cost: costEvidence,
-      receiptHash,
-      verifiedAt: usage.observedAt,
-      at: usage.observedAt,
-    })
+    // Reuse the original receipt; never replace it with rounded ledger evidence.
     await creativePoints.settle({
       workspaceId,
       reservationId: reservation.id,
@@ -93,7 +114,10 @@ export function createModelUsageReconciliation(deps: {
     let usage = (await modelUsage.list(input.workspaceId, 1000)).find(item => item.id === input.usageId)
     if (!usage) throw new DomainError('MODEL_USAGE_NOT_FOUND', '模型用量记录不存在', 404)
     if (usage.revision !== input.expectedRevision) throw new DomainError('MODEL_USAGE_REVISION_CONFLICT', '模型用量记录已被其他操作更新，请刷新后重试', 409)
-    if (usage.costCny === undefined || usage.customerChargeCny === undefined) throw new DomainError('MODEL_USAGE_COST_MISSING', '该回执仍缺少实际成本，无法自动结算', 409)
+    if (typeof usage.costCny !== 'number' || !Number.isFinite(usage.costCny) || usage.costCny < 0
+      || typeof usage.customerChargeCny !== 'number' || !Number.isFinite(usage.customerChargeCny) || usage.customerChargeCny < 0) {
+      throw new DomainError('MODEL_USAGE_COST_MISSING', '该回执仍缺少有效实际成本，无法自动结算', 409)
+    }
     const usageCostCny = usage.costCny
     const usageCustomerChargeCny = usage.customerChargeCny
     if (usage.budgetReservationKey && usage.budgetRunKey) {

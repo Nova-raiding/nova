@@ -7,6 +7,7 @@ import { decideOcrPointFinalization, OCR_COST_POINT_POLICY_VERSION, OCR_FREE_THR
 import type { ActionKind, ActionLedgerRepository, ActionSettlement, CommercialExtensionsRepository, OperationalAlert, OperationalAlertsRepository } from '../../../packages/persistence/src/index.js'
 import type { ApiPersistence } from './server.js'
 import { chargeFenFromCny } from './wallet-money.js'
+import { decideModelPointFinalization } from './model-point-settlement-policy.js'
 
 type ActionAuthorization = Awaited<ReturnType<ActionLedgerRepository['get']>>
 type Reservation = { debitIdempotencyKey: string; actorId: string; providerRequests: Set<string> }
@@ -124,11 +125,13 @@ export function createRelayUsageRuntime(deps: RelayUsageRuntimeDependencies) {
         await persistence.creativePointLifecycle.recordProviderReceipt({ workspaceId, operationId: creativeReservation.operationId, provider: 'model-relay', providerRequestId, outcome: 'succeeded', usage: usageEvidence, cost: costEvidence, receiptHash, verifiedAt: usage.observedAt, at: usage.observedAt })
         await creativePointsRepository!.settle({ workspaceId, reservationId: creativeReservation.id, idempotencyKey: `commercial.settle:${usage.actionId}`, actualPoints: decision.actualPoints, metadata: { provider_request_id: providerRequestId, receipt_hash: receiptHash, cost_cny: usage.costCny, modality: 'ocr', rate_card_version: rate }, at: usage.observedAt })
       } else {
+      const pointDecision = decideModelPointFinalization({ modality: usage.modality, reservedPoints: creativeReservation.points, actualCostCny: usage.costCny, verifiedReceipt: Boolean(recordedUsage && usage.providerRequestId) })
+      if (pointDecision.action !== 'settle') throw Object.assign(new Error('Model provider receipt requires reconciliation before point settlement'), { code: 'MODEL_USAGE_SETTLEMENT_PENDING', providerSucceeded: true, reconciliationRequired: true, receiptKey })
       const usageEvidence = { modality: usage.modality, model: usage.model, ...(usage.inputTokens !== undefined ? { input_tokens: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { output_tokens: usage.outputTokens } : {}), ...(usage.totalTokens !== undefined ? { total_tokens: usage.totalTokens } : {}) }
       const costEvidence = { currency: 'CNY', actual: usage.costCny }
       const receiptHash = createHash('sha256').update(JSON.stringify({ providerRequestId, usage: usageEvidence, cost: costEvidence, observedAt: usage.observedAt })).digest('hex')
       await persistence.creativePointLifecycle.recordProviderReceipt({ workspaceId, operationId: creativeReservation.operationId, provider: 'model-relay', providerRequestId, outcome: 'succeeded', usage: usageEvidence, cost: costEvidence, receiptHash, verifiedAt: usage.observedAt, at: usage.observedAt })
-      await creativePointsRepository!.settle({ workspaceId, reservationId: creativeReservation.id, idempotencyKey: `commercial.settle:${usage.actionId}`, actualPoints: creativeReservation.points, metadata: { provider_request_id: providerRequestId, receipt_hash: receiptHash, cost_cny: usage.costCny, modality: usage.modality }, at: usage.observedAt })
+      await creativePointsRepository!.settle({ workspaceId, reservationId: creativeReservation.id, idempotencyKey: `commercial.settle:${usage.actionId}`, actualPoints: pointDecision.actualPoints, metadata: { provider_request_id: providerRequestId, receipt_hash: receiptHash, cost_cny: usage.costCny, modality: usage.modality, point_policy_version: pointDecision.policyVersion }, at: usage.observedAt })
       }
     }
     if (recordedUsage.settlementStatus === 'settled' || recordedUsage.settlementStatus === 'waived') return { recorded: true as const, costEvidence: true as const }

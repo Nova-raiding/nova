@@ -149,10 +149,10 @@ export class PostgresCreativePointLifecycleRepository {
     })
   }
 
-  async getProviderReceipt(input: { workspaceId: string; operationId: string; provider: string; providerRequestId: string }): Promise<{ operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; verifiedAt: string | null } | null> {
+  async getProviderReceipt(input: { workspaceId: string; operationId: string; provider: string; providerRequestId: string }): Promise<{ operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; receiptHash: string; verifiedAt: string | null } | null> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); required(input.operationId, 'operationId'); required(input.provider, 'provider'); required(input.providerRequestId, 'providerRequestId')
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const result = await client.query<{ operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; verifiedAt: string | Date | null }>(`SELECT operation_id AS "operationId",provider,provider_request_id AS "providerRequestId",outcome,usage,cost,verified_at AS "verifiedAt" FROM creative_point_provider_receipts_v2 WHERE workspace_id=$1 AND operation_id=$2 AND provider=$3 AND provider_request_id=$4`, [workspaceId, input.operationId, input.provider, input.providerRequestId])
+      const result = await client.query<{ operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; receiptHash: string; verifiedAt: string | Date | null }>(`SELECT operation_id AS "operationId",provider,provider_request_id AS "providerRequestId",outcome,usage,cost,receipt_hash AS "receiptHash",verified_at AS "verifiedAt" FROM creative_point_provider_receipts_v2 WHERE workspace_id=$1 AND operation_id=$2 AND provider=$3 AND provider_request_id=$4`, [workspaceId, input.operationId, input.provider, input.providerRequestId])
       const row = result.rows[0]
       if (!row) return null
       return { ...row, verifiedAt: row.verifiedAt instanceof Date ? row.verifiedAt.toISOString() : row.verifiedAt }
@@ -169,6 +169,12 @@ export class PostgresCreativePointLifecycleRepository {
   async verifyModelUsageDeliverySettlementInTransaction(client: SqlClient, input: ModelUsageDeliverySettlementInput): Promise<boolean> {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     required(input.reservationId, 'reservationId'); required(input.actionId, 'actionId'); required(input.providerRequestId, 'providerRequestId'); required(input.relayProvider, 'relayProvider')
+      // Free model delivery needs the same verified provider/usage evidence as
+      // paid delivery, plus the exact policy in both settlement records. OCR
+      // retains its separate versioned policy; allowPartialPoints is not a
+      // general exemption for zero-point settlements. model_usage_ledger.cost_cny
+      // is numeric(12,6); only that stored projection may round. Receipt and
+      // settlement metadata must agree at the original provider precision.
       const result = await client.query<{ matched: number | string }>(`
         SELECT count(*)::int AS matched
           FROM creative_point_reservations r
@@ -181,15 +187,29 @@ export class PostgresCreativePointLifecycleRepository {
           JOIN creative_point_ledger_events ledger ON ledger.workspace_id=r.workspace_id
             AND ledger.event_type='settled' AND ledger.metadata->>'reservation_id'=r.id
           JOIN creative_point_operations settlement ON settlement.workspace_id=ledger.workspace_id AND settlement.id=ledger.operation_id
+          CROSS JOIN LATERAL (
+            SELECT CASE WHEN jsonb_typeof(api_receipt.cost->'actual')='number'
+              THEN (api_receipt.cost->>'actual')::numeric ELSE NULL END AS actual_cost_cny
+          ) verified_cost
          WHERE r.workspace_id=$1 AND r.id=$2 AND r.action_key=$3
-           AND r.status='settled' AND r.settled_points>0
-           AND (r.settled_points=r.points OR $6::boolean)
+           AND r.status='settled'
+           AND (
+             (r.settled_points>0 AND (r.settled_points=r.points OR $6::boolean))
+             OR (
+               r.settled_points=0 AND r.points>0
+               AND m.modality IN ('text','image','image_edit','video')
+               AND verified_cost.actual_cost_cny>=0 AND verified_cost.actual_cost_cny<0.1
+               AND ledger.metadata->>'point_policy_version'='model.cost_cny_free_lt_0_1.v1'
+               AND settlement.request->'metadata'->>'point_policy_version'='model.cost_cny_free_lt_0_1.v1'
+             )
+           )
            AND a.state='settled' AND a.settlement_status='settled' AND a.provider_request_id=$4
            AND (NOT $7::boolean OR m.modality='text') AND m.settlement_status='settled' AND m.cost_cny IS NOT NULL
            AND api_receipt.outcome='succeeded' AND api_receipt.verified_at IS NOT NULL
            AND worker_receipt.outcome='succeeded' AND worker_receipt.verified_at IS NOT NULL
            AND api_receipt.cost->>'currency'='CNY' AND worker_receipt.cost->>'currency'='CNY'
-           AND api_receipt.cost->'actual'=to_jsonb(m.cost_cny)
+           AND verified_cost.actual_cost_cny>=0
+           AND round(verified_cost.actual_cost_cny,6)=m.cost_cny
            AND worker_receipt.cost->'actual'=api_receipt.cost->'actual'
            AND api_receipt.usage->>'modality'=m.modality AND worker_receipt.usage->>'modality'=m.modality
            AND api_receipt.usage->>'model'=m.model AND worker_receipt.usage->>'model'=m.model
@@ -201,7 +221,7 @@ export class PostgresCreativePointLifecycleRepository {
            AND COALESCE(worker_receipt.usage->'total_tokens','null'::jsonb)=COALESCE(api_receipt.usage->'total_tokens','null'::jsonb)
            AND ledger.metadata->>'provider_request_id'=$4
            AND ledger.metadata->>'receipt_hash'=api_receipt.receipt_hash
-           AND ledger.metadata->'cost_cny'=to_jsonb(m.cost_cny)
+           AND ledger.metadata->'cost_cny'=api_receipt.cost->'actual'
            AND ledger.metadata->>'modality'=m.modality
            AND settlement.kind='settle' AND settlement.status='completed'
            AND settlement.idempotency_key='commercial.settle:' || r.action_key
@@ -209,7 +229,7 @@ export class PostgresCreativePointLifecycleRepository {
            AND settlement.request->'actual_points'=to_jsonb(r.settled_points)
            AND settlement.request->'metadata'->>'provider_request_id'=$4
            AND settlement.request->'metadata'->>'receipt_hash'=api_receipt.receipt_hash
-           AND settlement.request->'metadata'->'cost_cny'=to_jsonb(m.cost_cny)
+           AND settlement.request->'metadata'->'cost_cny'=api_receipt.cost->'actual'
            AND settlement.request->'metadata'->>'modality'=m.modality
            AND (SELECT count(*) FROM model_usage_ledger all_usage WHERE all_usage.workspace_id=$1 AND all_usage.provider_request_id=$4)=1
            AND (SELECT count(*) FROM creative_point_ledger_events all_settlements WHERE all_settlements.workspace_id=$1 AND all_settlements.event_type='settled' AND all_settlements.metadata->>'reservation_id'=r.id)=1
