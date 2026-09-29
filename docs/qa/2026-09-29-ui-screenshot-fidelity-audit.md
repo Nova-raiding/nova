@@ -86,3 +86,13 @@
 - 进一步同会话核验发现 Merchant Overview 有一处可确认的数据绑定缺陷：API health 返回 `setup.platformOperations.mode=fixture`，`GET /api/v1/platform-accounts` 返回 6 个 workspace 平台状态（其中淘宝状态为 connected，但数据模式是 fixture）；目录页能据此展示“1 家店铺 · 0 家已连接”和“演示连接”，Overview 却因只在 `official_api` 模式调用列表 API 而显示“店铺连接未读取”。现已让 Overview 在所有已配置 API 模式读取同一工作区只读状态接口；同步控件与同步任务仍只在显式 `official_api` 模式下开放。人工登记浏览器用例断言 Overview 显示 `0/1 已接入`、人工登记状态和 0 家真实可读取店铺。Merchant production build 通过，该浏览器用例通过；finance 与 legacy-entitlement 浏览器用例也一并通过。真实 API 检查是只读的，没有触发授权、同步或数据写入。
 - 上述独立审查后实际运行了 gstack Browse：浏览器 daemon 健康，运营商家登录 URL 返回 200；在 1440×1050 下保存 [Merchant 登录实截图](../../artifacts/gstack-browse/2026-09-29/merchant-login.png)，与参考图肉眼对照，卡片、Logo、输入框、按钮和页脚位置一致。该图对应登录态，不代表它验证了本次 Overview 源码补丁的线上部署结果。CodeGraph `sync` 两轮共同步 28 个变更文件；最新状态索引 2,351 文件、33,840 节点、132,693 条边，`pendingChanges` 仍有 1 个新增文件，引用解析完整。索引可用于关系定位，不作为页面视觉验收证据。
 - 用本地 Vite 浏览器对接 merchant-demo API 的一次补充运行中，登录接口返回成功，但 `/api/v1/auth/mcp-token` 被 API 以跨来源校验拒绝（本地开发源 4201 不属于商家工作台允许来源）；因此没有把它算作真实后端下的补丁后页面验收。修复行为由隔离浏览器测试的 workspace-scoped API fixture 覆盖，现有已部署页面仍需在其受信工作台来源上更新源码后复测。
+
+## 2026-09-29 全量页面复核续跑
+
+- 本轮 owner + 9 个只读 agent 分域复核 Ops 登录/总览/用户、客户交付/店铺治理、模型/存储/审计、权限路由，以及 Merchant 总览/目录、品牌/回收站、财务、任务/发布/规则和冗余实现；没有发现有证据可直接删除的完整 UI 功能。`IncidentsRoute`、`SupportRoute`、未挂载的 `PublishCenter` 仍有配套页面/API/测试或待产品退役决策，故本轮保留。
+- 重新以隔离 Postgres/Redis 跑 Merchant 10 路由矩阵，结果 `passed`、`pageErrors=[]`、`failedApi=[]`；截图与 JSON 位于 `artifacts/ops-jit-isolation/2026-09-29T06-55-00.958Z-d8d5aadd-9eba-41c9-b289-15fd99e4ee96/merchant-desktop-matrix/`。Overview 实截显示真实读取到 6 个平台状态、0 家可读取店铺；没有复用目标图中的旧租户 KPI 或红色权限提示。
+- 只读独立审查发现旧矩阵脚本只等待页面网络空闲，未等待 Overview 下方账号卡片异步读取完成；旧实截曾以“未读取”状态误通过。已在 `scripts/merchant-isolated-screenshot-matrix.ts` 加入平台/店铺状态卡离开“未读取”态的断言，补断言后的矩阵也通过，避免该异步验收遗漏复发。
+- 品牌页通过受隔离浏览器覆盖测试验证：scoped scopes 读取成功且没有可读店铺时，只在店铺/系列范围行显示不可用原因，不再在顶部重复显示同一提示。`overview-finance.browser.spec.js` 四项浏览器测试通过（4/4，含 Overview 连接状态、品牌重复提示、套餐/财务状态）。
+- 本轮再次逐页核对后仍存在不能按旧截图补造的边界：Ops 04/05/06/08 是同一张失效会话截图，成员/任务/知识页在当前 Ops platform-only 权限下没有可验收的授权 workspace 画面；Merchant 品牌和回收站的截图是旧数据状态，当前品牌范围数据为空且回收站仅有浏览器本地记录，服务端尚无回收记录 API。未用前端常量伪装真实数据，也没有把这些页面宣称为非空状态 1:1。
+- 商家 05 品牌资产通过 `.material-brand-no-store` 去重回归；02/03 范围行明确保留授权/范围原因。Finance 与 Catalog 的网格骨架和 224px 主侧栏对齐参考图，差异来自隔离租户真实店铺、账本、配额和套餐状态。
+- CodeGraph 用于审查路由/组件引用与变更关系，gstack Browse 既有真实运行记录仅证明登录页及 daemon 可用，不冒充全站像素验收。截图矩阵为 1440×1050 实际桌面运行；全页面 SSIM/逐像素 overlay 尚未生成，因此最终验收结论仍限于人工对照、路由矩阵、局部几何断言和真实数据状态。
