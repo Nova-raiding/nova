@@ -479,7 +479,7 @@ export function WorkspaceDataIntegrityNotice({ metrics }: { metrics: WorkspaceMe
     <section className="panel data-integrity-panel" aria-labelledby="merchant-data-integrity-title">
       <div className="panel-heading">
         <div>
-          <span className="section-kicker">DATA INTEGRITY</span>
+          <span className="section-kicker">数据完整性</span>
           <h3 id="merchant-data-integrity-title">当前经营数据范围</h3>
         </div>
         <StatusChip tone={partial ? 'amber' : 'blue'}>{partial ? '部分数据' : '演示数据'}</StatusChip>
@@ -1668,7 +1668,7 @@ function CustomerSupportPanel({
       <div className="modal utility-modal" role="dialog" aria-modal="true" aria-labelledby="support-panel-title">
         <div className="modal-head">
           <div className="modal-icon"><CircleHelp size={20} /></div>
-          <div><span className="section-kicker">SUPPORT</span><h2 id="support-panel-title">支持消息</h2></div>
+          <div><span className="section-kicker">帮助支持</span><h2 id="support-panel-title">支持消息</h2></div>
           <button className="icon-button" onClick={onClose} aria-label="关闭支持消息"><X size={19} /></button>
         </div>
         <div className="modal-body">
@@ -1896,7 +1896,7 @@ export function TodayDashboard({
     <section className="today-dashboard" aria-labelledby="today-dashboard-title">
       <div className="today-dashboard-heading">
         <div>
-          <span className="section-kicker">DAILY BRIEFING</span>
+          <span className="section-kicker">每日简报</span>
           <h2 id="today-dashboard-title">今日看板</h2>
           <p>汇总昨日执行、规则状态和素材容量，帮助快速安排今天的工作。</p>
         </div>
@@ -2011,7 +2011,7 @@ export function AccountDashboard({
       <div className="account-dashboard-main">
         <div className="account-dashboard-heading">
           <div>
-            <span className="section-kicker">ACCOUNT OVERVIEW</span>
+            <span className="section-kicker">账号概览</span>
             <h2 id="account-dashboard-title">账号看板</h2>
             <p>汇总平台授权与已连接店铺，快速掌握账号接入状态。</p>
           </div>
@@ -2094,7 +2094,7 @@ export function TransactionDashboard({
       <aside className="transaction-dashboard" aria-labelledby="transaction-dashboard-title">
         <div className="transaction-dashboard-heading">
           <div>
-            <span className="section-kicker">ACTION CENTER</span>
+            <span className="section-kicker">待办事项</span>
             <h2 id="transaction-dashboard-title">事务看板</h2>
             <p>集中查看需要处理的授权、素材与运营事项。</p>
           </div>
@@ -2538,7 +2538,7 @@ export function Overview({
         <article className="panel platform-panel" aria-busy={accountsLoading}>
           <div className="panel-heading">
             <div>
-              <span className="section-kicker">CONNECTIONS</span>
+              <span className="section-kicker">店铺接入</span>
               <h3>平台连接</h3>
               <p className="panel-hint">
                 {baseUrl
@@ -2652,7 +2652,7 @@ export function Overview({
         <article className="panel activity-panel">
           <div className="panel-heading">
             <div>
-              <span className="section-kicker">RECENT</span>
+              <span className="section-kicker">近期动态</span>
               <h3>最近动态</h3>
             </div>
             <button className="text-button" onClick={goTasks}>
@@ -2714,7 +2714,7 @@ export function Overview({
         <section className="panel sync-failures-panel">
           <div className="panel-heading">
             <div>
-              <span className="section-kicker">SYNC RECOVERY</span>
+              <span className="section-kicker">同步恢复</span>
               <h3>同步任务与失败项</h3>
             </div>
             <button className="text-button" onClick={loadSyncJobs}>
@@ -2774,7 +2774,7 @@ export function Overview({
       <section className="panel capability-panel">
         <div className="panel-heading">
           <div>
-            <span className="section-kicker">CAPABILITY EVIDENCE</span>
+            <span className="section-kicker">能力与凭据</span>
             <h3>平台能力证据</h3>
           </div>
         </div>
@@ -2787,7 +2787,7 @@ export function Overview({
       {revokeTarget && (
         <DialogFrame
           testId="revoke-platform-dialog"
-          kicker="CONNECTION SAFETY"
+          kicker="连接安全"
           title={`撤销${platformNames[revokeTarget.platform]}连接`}
           onClose={() => setRevokeTarget(null)}
           busy={action === `revoke-${revokeTarget.platform}`}
@@ -3213,14 +3213,14 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   return (
     <section className="page finance-overview-page" aria-label="财务概况">
       <div className="finance-hero">
-        <div><span className="section-kicker">ACCOUNT &amp; BILLING</span><h2>财务与资源</h2><p>统一查看创意点、储存空间和账号版本。</p></div>
+        <div><span className="section-kicker">账号与财务</span><h2>财务与资源</h2><p>统一查看创意点、储存空间和账号版本。</p></div>
       </div>
       <div className="finance-summary-grid">
         <article className="finance-balance-card accent"><div className="finance-card-icon"><Sparkles size={20} /></div><div className="finance-inline-metric"><span>当前剩余创意点</span><strong>{pointBalance === null ? UNREAD_METRIC : `${pointBalance.toLocaleString('zh-CN')} 点`}</strong></div><div className="finance-inline-metric subtle"><span>截止今日总消耗</span><strong>{totalSettledConsumption === null ? UNREAD_METRIC : `${totalSettledConsumption.toLocaleString('zh-CN')} 点`}</strong></div><button className="primary" type="button" onClick={() => setPricingDialog('points')}>充值创意点</button></article>
         <article className="finance-balance-card"><div className="finance-card-icon"><Boxes size={20} /></div><div className="finance-inline-metric"><span>储存空间剩余</span><strong>{storageAvailableBytes === null ? UNREAD_METRIC : formatStorageGb(storageAvailableBytes)}</strong></div><div className="finance-storage-summary"><p>{storageKnown ? `已使用 ${formatStorageGb(storageUsedBytes!)} / 共 ${formatStorageGb(storageLimitBytes!)}` : '服务端未返回储存配额，当前不显示用量。'}</p>{storageKnown && <div className="finance-storage-track" role="progressbar" aria-label="储存空间已用" aria-valuemin={0} aria-valuemax={Math.round(storageLimitBytes!)} aria-valuenow={Math.min(Math.round(storageLimitBytes!), Math.max(0, Math.round(storageUsedBytes!)))}><i style={{ width: `${Math.min(100, (storageUsedBytes! / storageLimitBytes!) * 100).toFixed(1)}%` }} /></div>}</div><button className="primary" type="button" onClick={() => setPricingDialog('storage')}>购买储存空间</button></article>
       </div>
       <section className="finance-panel finance-usage-panel">
-        <div className="finance-panel-heading"><div><span className="section-kicker">CREATIVE POINTS</span><h3>创意点消耗趋势</h3><p>按服务端创意点流水的发生时间汇总，可查询日期或月份区间。</p></div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault() }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={rangeMode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => { setRangeMode(value); setRangeStart(''); setRangeEnd('') }} /></label><label><span>开始{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeStart ? dayjs(rangeStart).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeStart(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><i>至</i><label><span>结束{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeEnd ? dayjs(rangeEnd).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeEnd(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
+        <div className="finance-panel-heading"><div><span className="section-kicker">创意点</span><h3>创意点消耗趋势</h3><p>按服务端创意点流水的发生时间汇总，可查询日期或月份区间。</p></div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault() }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={rangeMode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => { setRangeMode(value); setRangeStart(''); setRangeEnd('') }} /></label><label><span>开始{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeStart ? dayjs(rangeStart).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeStart(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><i>至</i><label><span>结束{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeEnd ? dayjs(rangeEnd).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeEnd(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
         {/* The sum may only be stated when the ledger read succeeded: a failed
             or pending read rendered as 「合计 0 点」 next to an 「已读取流水」
             caption reports a consumed total that was never measured. */}
@@ -3249,7 +3249,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
         )}
       </section>
       <section className="finance-account-panel finance-plan-ribbon" aria-label="账号版本与有效期">
-        <div><span className="section-kicker">ACCOUNT PLAN</span><h3>账号版本与有效期</h3><p>{currentEntitlement?.status === 'available' ? `当前账号为 ${currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan}，有效期至 ${new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}，还剩 ${entitlementDaysRemaining ?? UNREAD_METRIC} 天。` : currentEntitlement?.status === 'unknown' ? '服务端未确认当前账号版本，请联系平台运营核对权益。' : entitlementNote || '当前账号版本未读取。'}</p></div>
+        <div><span className="section-kicker">账号版本</span><h3>账号版本与有效期</h3><p>{currentEntitlement?.status === 'available' ? `当前账号为 ${currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan}，有效期至 ${new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}，还剩 ${entitlementDaysRemaining ?? UNREAD_METRIC} 天。` : currentEntitlement?.status === 'unknown' ? '服务端未确认当前账号版本，请联系平台运营核对权益。' : entitlementNote || '当前账号版本未读取。'}</p></div>
         <div className="finance-account-facts"><span><b>{currentEntitlement?.status === 'available' ? (currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan) : UNREAD_METRIC}</b>当前版本</span><span><b>{currentEntitlement?.status === 'available' ? new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : UNREAD_METRIC}</b>有效期至</span><span><b>{entitlementDaysRemaining === null ? UNREAD_METRIC : entitlementDaysRemaining}</b>剩余天数</span></div>
         <button className="primary" type="button" onClick={onOpenSupport}>咨询客服升级账号版本</button>
       </section>
@@ -3403,7 +3403,7 @@ function AssetProductUsageDialog({
   return (
     <DialogFrame
       testId="asset-product-usage-dialog"
-      kicker="ASSET · PRODUCT USAGE"
+      kicker="素材与商品使用"
       title={`“${asset.name}”被哪些商品使用`}
       onClose={onClose}
       actions={
@@ -4197,7 +4197,7 @@ function AssetLibrary({
       </div>
       <div className="panel-heading">
         <div>
-        <span className="section-kicker">KNOWLEDGE WORKSPACE</span>
+        <span className="section-kicker">知识库工作区</span>
           <h3>知识库</h3>
           <p className="panel-subtitle">
             统一管理商品资料、店铺授权素材与品牌规范；从左侧知识库分区进入对应工作流。
@@ -4394,7 +4394,7 @@ function AssetLibrary({
             </section>
             <section className="knowledge-guide" aria-label="知识库说明">
               <div>
-                <span className="section-kicker">KNOWLEDGE BASE</span>
+                <span className="section-kicker">知识库</span>
                 <h4>生成内容前，系统会先读取这里</h4>
                 <p>只会引用已读取、来源可追溯且权益已确认的资料；待处理内容不会进入生成上下文。</p>
               </div>
@@ -4408,7 +4408,7 @@ function AssetLibrary({
           <section className="visual-rules-panel" aria-label="品牌视觉强规则">
             <div className="brand-candidate-head">
               <div>
-                <span className="section-kicker">HARD CONSTRAINTS</span>
+                <span className="section-kicker">硬性约束</span>
                 <h4>Logo、品牌色与字体强规则</h4>
                 <p>
                   这些不是参考建议：任一素材或字体授权不满足时，内容、主图和创意生成都会被阻止。
@@ -4566,7 +4566,7 @@ function AssetLibrary({
           <section className="brand-candidate-panel" aria-label="品牌候选字段">
             <div className="brand-candidate-head">
               <div>
-                <span className="section-kicker">REVIEW BEFORE SAVE</span>
+                <span className="section-kicker">保存前检查</span>
                 <h4>逐字段确认品牌档案</h4>
                 <p>
                   自动提取不会直接写入。置信度仅代表解析把握，不代表内容正确。
@@ -4669,7 +4669,7 @@ function AssetLibrary({
           >
             <div className="brand-candidate-head">
               <div>
-                <span className="section-kicker">PROHIBITED SUBJECTS</span>
+                <span className="section-kicker">禁用主题</span>
                 <h4>禁用内容、人物、代言人与 IP</h4>
                 <p>
                   生成提示和确定性文案审核都会使用这些强规则；图片中的人物/IP
@@ -4756,7 +4756,7 @@ function AssetLibrary({
           assetEntry === 'knowledge' ? (
             <div className="knowledge-list-section">
               <div className="knowledge-list-heading">
-                <div><span className="section-kicker">KNOWLEDGE ASSETS</span><h4>知识资料</h4><p>每一条资料都保留扫描、读取和权益状态，只有“可直接引用”的内容会参与生成。</p></div>
+                <div><span className="section-kicker">知识资料</span><h4>知识资料</h4><p>每一条资料都保留扫描、读取和权益状态，只有“可直接引用”的内容会参与生成。</p></div>
                 <StatusChip tone={knowledgeReadyCount ? 'green' : 'neutral'}>{knowledgeReadyCount} 条可引用</StatusChip>
               </div>
               <div className="knowledge-table-wrap" aria-label="知识库列表">
@@ -4812,7 +4812,7 @@ function AssetLibrary({
       {rightsAsset && (
         <DialogFrame
           testId="asset-rights-dialog"
-          kicker="RIGHTS CONFIRMATION"
+          kicker="权益确认"
           title={`确认“${rightsAsset.name}”的权益`}
           onClose={() => setRightsAsset(null)}
           busy={assetAction === `rights-${rightsAsset.id}`}
@@ -4860,7 +4860,7 @@ function AssetLibrary({
       {factsAsset && (
         <DialogFrame
           testId="asset-facts-dialog"
-          kicker="FACT VERIFICATION"
+          kicker="事实核验"
           title={`确认“${factsAsset.name}”的事实`}
           onClose={() => setFactsAsset(null)}
           busy={assetAction === `facts-${factsAsset.id}`}
@@ -5033,7 +5033,7 @@ function ProductAssetRelationDialog({
   return (
     <DialogFrame
       testId="product-asset-relation-dialog"
-      kicker="PRODUCT · ASSET RELATION"
+      kicker="商品与素材关联"
       title="商品与素材关系"
       onClose={onClose}
       actions={
@@ -5735,7 +5735,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
   return (
     <div className="store-catalog-page catalog-stores-page">
       <section className="catalog-page-hero">
-        <div><span className="section-kicker">PLATFORM & STORE</span><h1>选择平台与店铺</h1><p>从左侧选择平台，再从右侧进入对应店铺的商品页。</p></div>
+        <div><span className="section-kicker">平台与店铺</span><h1>选择平台与店铺</h1><p>从左侧选择平台，再从右侧进入对应店铺的商品页。</p></div>
         {/* Every number here is a server answer: the platform set and store
             counts come from /v1/platform-accounts, and 「已连接」 is only claimed
             for a real (non-fixture) readable account — the same rule the
@@ -5762,7 +5762,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
             <div className="catalog-platform-empty"><span><Store size={28} /></span><strong>请选择平台</strong><p>请点击左侧平台，选择店铺后进入商品页。</p></div>
           ) : selectedPlatformStores.length ? (
             <>
-              <div className="catalog-platform-result-heading"><div><span className="section-kicker">SELECT STORE</span><h2>{selectedPlatformView?.label ?? platformNames[selectedPlatform ?? '']}店铺</h2><p>选择要查看的店铺。</p></div><span>{selectedPlatformStores.length} 家店铺 · {selectedPlatformView?.connectedCount ?? 0} 家已接入</span></div>
+              <div className="catalog-platform-result-heading"><div><span className="section-kicker">选择店铺</span><h2>{selectedPlatformView?.label ?? platformNames[selectedPlatform ?? '']}店铺</h2><p>选择要查看的店铺。</p></div><span>{selectedPlatformStores.length} 家店铺 · {selectedPlatformView?.connectedCount ?? 0} 家已接入</span></div>
               <div className={`catalog-store-grid catalog-store-results-grid ${selectedPlatformStores.length === 1 ? 'single' : selectedPlatformStores.length === 2 ? 'pair' : ''}`}>
                 {selectedPlatformStores.map((store) => (
                   <article className={`catalog-store-card ${store.tone} ${store.readable ? 'connected' : 'disconnected'}`} key={store.id}>
@@ -6227,7 +6227,7 @@ export function MaterialRecycleBinWorkspace({ storageScope }: { storageScope: Ma
         {/* 无法声明的保留策略不许写成服务端行为：`GET /v1/assets` 没有已删除素材
             的对应接口，服务端也不存在素材删除接口，此前那句「删除的素材会保留 7 天，
             到期后自动彻底删除」描述的是一条服务端不存在的记录。 */}
-        <div><span className="section-kicker">RECYCLE BIN</span><h1>回收站</h1><p>回收站只记录本浏览器实际移除的素材；服务端已删除素材的读取尚未接入。</p></div>
+        <div><span className="section-kicker">回收站</span><h1>回收站</h1><p>回收站只记录本浏览器实际移除的素材；服务端已删除素材的读取尚未接入。</p></div>
         <div className="material-recycle-summary"><strong>{items.length}</strong><span>项待处理素材</span><small>本地记录 7 天后过期</small></div>
       </section>
       <section className="material-recycle-workspace">
@@ -6256,7 +6256,7 @@ export function MaterialRecycleBinWorkspace({ storageScope }: { storageScope: Ma
       {previewItem && <button type="button" className="material-upload-lightbox" aria-label="关闭回收站图片预览" onClick={() => setPreviewId(null)}><span>{previewItem.previewUrl && previewItem.format !== 'MP4' ? <img src={previewItem.previewUrl} alt={previewItem.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{previewItem.name}</strong><small>点击任意位置关闭</small></span></button>}
       {expiryCleanupFailed && <p role="alert">浏览器未能保存过期回收记录的清理状态；已过期记录暂时保留以便恢复，检查本地储存空间后刷新重试。</p>}
       {storageError && <p role="alert">{storageError}</p>}
-      {permanentDeleteOpen && selectedItems.length > 0 && <DialogFrame title="清除本地回收记录" kicker="CLEAR LOCAL RECORDS" onClose={() => setPermanentDeleteOpen(false)} actions={<><button type="button" className="catalog-asset-cancel" onClick={() => setPermanentDeleteOpen(false)}>取消</button><button type="button" className="material-delete-confirm" onClick={() => { if (removeFromRecycleBin(selectedIds)) setPermanentDeleteOpen(false) }}><Trash2 size={14} />清除本地记录</button></>}><div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定清除已选的 {selectedItems.length} 条本地记录？</strong><p>此操作不会删除服务端素材文件。</p></div></div></DialogFrame>}
+      {permanentDeleteOpen && selectedItems.length > 0 && <DialogFrame title="清除本地回收记录" kicker="清除本地记录" onClose={() => setPermanentDeleteOpen(false)} actions={<><button type="button" className="catalog-asset-cancel" onClick={() => setPermanentDeleteOpen(false)}>取消</button><button type="button" className="material-delete-confirm" onClick={() => { if (removeFromRecycleBin(selectedIds)) setPermanentDeleteOpen(false) }}><Trash2 size={14} />清除本地记录</button></>}><div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定清除已选的 {selectedItems.length} 条本地记录？</strong><p>此操作不会删除服务端素材文件。</p></div></div></DialogFrame>}
     </div>
   )
 }
@@ -7035,10 +7035,10 @@ export function MaterialLibraryWorkspace({
       <button type="button" className="material-detail-back" onClick={() => { setDetailMaterialId(null); setDetailPreviewOpen(false) }}><ArrowLeft size={16} />返回素材库</button>
       <section className="material-detail-hero">
         <button type="button" className={`material-detail-preview ${detailMaterial.previewUrl ? 'has-image' : ''}`} aria-label={`放大${detailMaterial.name}`} onClick={() => setDetailPreviewOpen(true)}>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : detailMaterial.category === '商品视频' ? <Play size={64} fill="currentColor" /> : <ImageIcon size={64} />}<span>点击放大预览</span></button>
-        <div className="material-detail-info"><span className="section-kicker">MATERIAL DETAILS</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.name}</dd></div><div><dt>平台</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.platform}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div>{detailIsImage && <div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div>}<div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
+        <div className="material-detail-info"><span className="section-kicker">素材详情</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.name}</dd></div><div><dt>平台</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.platform}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div>{detailIsImage && <div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div>}<div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
       </section>
       {detailIsImage && <section className="material-image-brand-settings">
-        <div className="material-brand-panel-heading"><div><span className="section-kicker">IMAGE BRAND SETTINGS</span><h2>单图品牌配置</h2><p>编辑后点击下方“保存品牌配置”；服务端确认保存后，设置才会用于之后确认的内容任务。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
+        <div className="material-brand-panel-heading"><div><span className="section-kicker">单图品牌配置</span><h2>单图品牌配置</h2><p>编辑后点击下方“保存品牌配置”；服务端确认保存后，设置才会用于之后确认的内容任务。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
         <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span></div>
         <article className="material-brand-row material-image-brand-row">
           <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setImageBrands((current) => ({ ...current, [detailMaterial.id]: next })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })) }} /></div>
@@ -7053,7 +7053,7 @@ export function MaterialLibraryWorkspace({
     <div className="material-library-page" data-testid="material-library-workspace">
       {view === 'brands' && <section className="material-library-hero brand-only">
         <div className="material-library-intro">
-          <span className="section-kicker">BRAND ASSETS</span>
+          <span className="section-kicker">品牌资产</span>
           <h1>品牌资产</h1>
           <p>维护全局、系列与单图品牌信息。</p>
         </div>
@@ -7061,7 +7061,7 @@ export function MaterialLibraryWorkspace({
 
       {view === 'brands' && <section className="material-brand-assets-panel" aria-label="品牌资产配置">
         <div className="material-brand-panel-heading">
-          <div><span className="section-kicker">BRAND SETTINGS</span><h2>品牌配置</h2><p>统一维护全局、店铺、系列与单图品牌信息，生成内容时自动按优先级应用。</p></div>
+          <div><span className="section-kicker">品牌配置</span><h2>品牌配置</h2><p>统一维护全局、店铺、系列与单图品牌信息，生成内容时自动按优先级应用。</p></div>
           <div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>资产应用原则：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div>
         </div>
         {stores.length === 0 && !scopedBrandRead && <p className="material-brand-no-store" role={accountsError ? 'alert' : 'status'}>{noReadableStoreReason}</p>}
@@ -7094,7 +7094,7 @@ export function MaterialLibraryWorkspace({
       {view === 'library' && activeStore && (
         <section className="material-store-workspace">
           <div className="material-workspace-overview">
-            <div className="material-workspace-intro"><span className="material-workspace-mark" aria-hidden="true"><FolderOpen size={20} /></span><div><span className="section-kicker">MATERIAL LIBRARY</span><h1>素材库</h1><p>按店铺独立管理图片与视频。</p></div></div>
+            <div className="material-workspace-intro"><span className="material-workspace-mark" aria-hidden="true"><FolderOpen size={20} /></span><div><span className="section-kicker">素材库</span><h1>素材库</h1><p>按店铺独立管理图片与视频。</p></div></div>
             <div className="material-workspace-actions-card">
               <div className="material-workspace-storage" aria-label="共享储存空间"><div><span>共享储存空间</span><strong>{storageQuota ? formatStorageGb(storageQuota.limitBytes) : UNREAD_METRIC} <small>服务端配额</small></strong></div><div><small>{storageQuota ? `已用 ${formatStorageGb(storageQuota.usedBytes)}` : `配额尚未读取，本次会话上传 ${uploadedGb.toFixed(1)} GB`}</small><b>剩余 {storageQuota ? formatStorageGb(storageQuota.availableBytes) : UNREAD_METRIC}</b></div></div>
               <button type="button" className="material-upload-button" onClick={() => { setUploadStoreId(activeStore.id); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传素材</span></button>
@@ -7148,7 +7148,7 @@ export function MaterialLibraryWorkspace({
       {uploadDialogOpen && (
         <DialogFrame
           title="上传素材"
-          kicker="MATERIAL UPLOAD"
+          kicker="上传素材"
           onClose={closeUploadDialog}
           testId="material-upload-dialog"
           actions={<>
@@ -7189,7 +7189,7 @@ export function MaterialLibraryWorkspace({
       {activeStore && deleteDialogOpen && selectedMaterials.length > 0 && (
         <DialogFrame
           title="从当前素材列表移除"
-          kicker="HIDE FROM THIS BROWSER"
+          kicker="从本浏览器隐藏"
           onClose={() => setDeleteDialogOpen(false)}
           testId="material-delete-dialog"
           actions={<>
@@ -7897,7 +7897,7 @@ export function Products({
     <div className="page-stack products-page">
       <section className="page-intro">
         <div>
-          <span className="section-kicker">PRODUCT CATALOG</span>
+          <span className="section-kicker">商品目录</span>
           <h2>管理商品事实与素材</h2>
           <p>
             先确认商品事实与店铺身份，再生成内容或创建批量任务。所有操作都会保留来源证据。
@@ -7971,7 +7971,7 @@ export function Products({
       </section>
       <section className="scope-summary" aria-label="商品与素材当前范围">
         <div>
-          <span className="section-kicker">CURRENT SCOPE</span>
+          <span className="section-kicker">当前范围</span>
           <b>
             {platformFilter === 'all'
               ? '全部平台'
@@ -8014,7 +8014,7 @@ export function Products({
         aria-label="批量任务入口说明"
       >
         <div>
-          <span className="section-kicker">BATCH WORKFLOW</span>
+          <span className="section-kicker">批量处理</span>
           <b>批量入口只创建任务组</b>
           <small>
             {batchReadiness.selectionLabel} · {batchReadiness.nextStep}
@@ -8076,7 +8076,7 @@ export function Products({
       >
         <div className="catalog-panel-heading">
           <div>
-            <span className="section-kicker">CATALOG</span>
+            <span className="section-kicker">商品目录</span>
             <h3>商品目录</h3>
           </div>
           <div className="catalog-status-legend" aria-label="商品状态说明">
@@ -8440,7 +8440,7 @@ export function Products({
       {importOpen && (
         <DialogFrame
           testId="import-product-dialog"
-          kicker="PRODUCT IMPORT"
+          kicker="导入商品"
           title="导入待创建商品"
           onClose={() => setImportOpen(false)}
           busy={importing}
@@ -8646,7 +8646,7 @@ export function Products({
       {groupConfirmOpen && (
         <DialogFrame
           testId="task-group-confirm-dialog"
-          kicker="BATCH TASKS"
+          kicker="批量任务"
           title={`创建 ${selectedTargets.length} 个店铺子任务`}
           onClose={() => setGroupConfirmOpen(false)}
           busy={groupCreating}
@@ -8690,7 +8690,7 @@ export function Products({
       {imageReviewMessage && (
         <DialogFrame
           testId="image-review-dialog"
-          kicker="IMAGE REVIEW"
+          kicker="图片审核"
           title="主图检查结果"
           onClose={() => setImageReviewMessage('')}
           actions={
@@ -8719,7 +8719,7 @@ export function Products({
       {imageGenerationTarget && (
         <DialogFrame
           testId="image-generation-dialog"
-          kicker="IMAGE GENERATION"
+          kicker="图片生成"
           title={`为「${imageGenerationTarget.title}」生成图片`}
           onClose={() => setImageGenerationTarget(null)}
           busy={imageGenerationBusy}
@@ -8929,7 +8929,7 @@ function ProductDetailPreview({
     <section className="product-detail-preview" aria-label="商品详情页预览">
       <div className="preview-heading">
         <div>
-          <span className="section-kicker">STOREFRONT PREVIEW</span>
+          <span className="section-kicker">店铺预览</span>
           <h3>商品详情页预览</h3>
         </div>
         <StatusChip tone="blue">草稿 · 未发布</StatusChip>
@@ -9037,7 +9037,7 @@ function ProductDetailPreview({
         <section className="detail-sop-overview" aria-labelledby="detail-sop-title">
           <div className="detail-section-head">
             <div>
-              <span className="section-kicker">DETAIL PAGE SOP</span>
+              <span className="section-kicker">详情页流程</span>
               <h4 id="detail-sop-title">按买家问题审阅详情页</h4>
             </div>
             <small>文字讲卖点，证据负责证明</small>
@@ -9236,7 +9236,7 @@ function ImageGenerationJobDiscovery({ baseUrl }: { baseUrl?: string }) {
   </div>
   const listReady = !loading && jobs !== null
   return <section className="panel image-generation-discovery" aria-labelledby="image-job-discovery-title" aria-busy={loading}>
-    <div className="detail-section-head"><div><span className="section-kicker">IMAGE TASKS</span><h3 id="image-job-discovery-title">图片任务</h3></div><StatusChip tone="blue">{loading ? '读取中…' : `${jobs?.length ?? 0} 个任务`}</StatusChip></div>
+    <div className="detail-section-head"><div><span className="section-kicker">图片任务</span><h3 id="image-job-discovery-title">图片任务</h3></div><StatusChip tone="blue">{loading ? '读取中…' : `${jobs?.length ?? 0} 个任务`}</StatusChip></div>
     {initialError && !loading && <ErrorNotice message={`图片任务列表读取失败：${initialError}`} onRetry={() => setReload(value => value + 1)} />}
     {refreshError && listReady && <ErrorNotice message={`图片任务自动刷新失败：${refreshError}。已保留上次成功数据。`} onRetry={() => setReload(value => value + 1)} />}
     {listReady && !initialError && jobs?.length === 0 && <div className="empty-state"><ImageIcon size={22} /><b>暂无图片任务</b><span>从商品任务进入图片生成；系统不会自动创建演示任务。</span></div>}
@@ -9398,7 +9398,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
     <div className="task-breadcrumb" aria-label="任务位置">
       <Breadcrumb items={[{ title: <Button type="link" size="small" onClick={backToTaskQueue}>营销任务</Button> }, { title: '图片生成任务' }]} />
     </div>
-    <div className="detail-section-head"><div><span className="section-kicker">IMAGE JOB</span><h3 id="image-job-title">图片生成任务</h3></div><StatusChip tone={displayStateTone}>{loading && !job ? '读取中…' : displayStateLabels[displayState] ?? '状态待确认'}</StatusChip></div>
+    <div className="detail-section-head"><div><span className="section-kicker">图片生成任务</span><h3 id="image-job-title">图片生成任务</h3></div><StatusChip tone={displayStateTone}>{loading && !job ? '读取中…' : displayStateLabels[displayState] ?? '状态待确认'}</StatusChip></div>
     <div className="info-notice" role="status" aria-live="polite" aria-atomic="true">{job ? `任务 ${job.jobId} · 商品 ${job.productId} · 最后更新 ${new Date(job.updatedAt).toLocaleString('zh-CN', { hour12: false })}` : '正在读取任务状态…'}</div>
     {configurationError && <div ref={imageJobConfigurationErrorRef} id="image-job-config-error" className="error-notice image-job-config-blocker" role="alert" tabIndex={-1} aria-labelledby="image-job-config-error-title" aria-describedby="image-job-config-error-description"><strong id="image-job-config-error-title">模型中转配置尚未就绪</strong><span id="image-job-config-error-description">API 返回配置阻断（{error}）。系统不会生成、扣费或发布；请联系管理员完成测试环境模型中转配置后，再刷新任务状态。</span><button className="secondary-button" type="button" onClick={() => { setError(''); setConfigurationError(false); setReload(value => value + 1) }} disabled={loading}>刷新任务状态</button></div>}
     {error && !configurationError && <div ref={imageJobReadErrorRef} id="image-job-read-error" className="error-notice image-job-read-error" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true" aria-labelledby="image-job-read-error-title" aria-describedby="image-job-read-error-description"><strong id="image-job-read-error-title">图片任务状态暂时不可用</strong><span id="image-job-read-error-description">任务状态读取失败：{error}。已保留上次可信状态；请刷新任务状态后继续。</span><button className="secondary-button" type="button" onClick={() => { setError(''); setReload(value => value + 1) }} disabled={loading}>刷新任务状态</button></div>}
@@ -10445,7 +10445,7 @@ function TaskWorkspace({
         {!imageJobId && <ImageGenerationJobDiscovery baseUrl={baseUrl} />}
         <section className="page-intro">
           <div>
-            <span className="section-kicker">TASK QUEUE</span>
+            <span className="section-kicker">任务队列</span>
             <h2>任务队列</h2>
             <p>从这里恢复已有任务；只有从商品页点击“创建任务”才会新建任务。</p>
           </div>
@@ -10613,7 +10613,7 @@ function TaskWorkspace({
                 <History size={18} />
               </div>
               <div>
-                <span className="section-kicker">AUDIT TRAIL</span>
+                <span className="section-kicker">审计记录</span>
                 <h2>任务历史</h2>
               </div>
               <button
@@ -10682,7 +10682,7 @@ function TaskWorkspace({
                 <ShieldCheck size={18} />
               </div>
               <div>
-                <span className="section-kicker">REVIEW DECISION</span>
+                <span className="section-kicker">审核决定</span>
                 <h2 id="finding-waiver-title">带理由接受审核建议</h2>
               </div>
               <button
@@ -10739,7 +10739,7 @@ function TaskWorkspace({
       {titleEditOpen && content && (
         <DialogFrame
           testId="title-edit-dialog"
-          kicker="CONTENT REVISION"
+          kicker="修改内容"
           title="修改首屏标题"
           onClose={() => setTitleEditOpen(false)}
           busy={operation === '创建修改版本中…'}
@@ -10843,7 +10843,7 @@ function TaskWorkspace({
         >
           <div className="panel-heading">
             <div>
-              <span className="section-kicker">TASK CREATION RECOVERY</span>
+              <span className="section-kicker">任务创建恢复</span>
               <h3 id="task-create-recovery-title">创建任务未确认</h3>
             </div>
             <span className="status-chip amber">需核对</span>
@@ -10899,7 +10899,7 @@ function TaskWorkspace({
                   <Sparkles size={16} />
                 </span>
                 <div>
-                  <span className="section-kicker">MERCHANT COPILOT</span>
+                  <span className="section-kicker">商家助手</span>
                   <h3>任务协作线程</h3>
                 </div>
               </div>
@@ -11088,7 +11088,7 @@ function TaskWorkspace({
           >
             <div className="panel-heading">
               <div>
-                <span className="section-kicker">TASK UNDERSTANDING</span>
+                <span className="section-kicker">任务理解</span>
                 <h3>先确认需求与阻断问题</h3>
               </div>
               <StatusChip
@@ -11357,7 +11357,7 @@ function TaskWorkspace({
               className={`context-panel ${contextCollapsed ? 'collapsed' : ''}`}
             >
               <div className="context-head">
-                <span className="section-kicker">SOURCE OF TRUTH</span>
+                <span className="section-kicker">可信资料</span>
                 <h3>任务事实</h3>
                 <button
                   className="icon-button"
@@ -11515,7 +11515,7 @@ function TaskWorkspace({
               >
                 <div className="section-heading-inline">
                   <div>
-                    <span className="section-kicker">CREATIVE DIRECTIONS</span>
+                    <span className="section-kicker">创意方向</span>
                     <h3>
                       {directionsData.mode === 'offline_demo'
                         ? `${directions.length} 个离线演示方向`
@@ -11624,7 +11624,7 @@ function TaskWorkspace({
               <section className="content-document">
                 <div className="document-toolbar">
                   <div>
-                    <span className="section-kicker">CONTENT DRAFT</span>
+                    <span className="section-kicker">内容草稿</span>
                     <h3>详情页内容草稿</h3>
                   </div>
                   <div className="segmented">
@@ -11741,7 +11741,7 @@ function TaskWorkspace({
                   <span>/100</span>
                 </div>
                 <div>
-                  <span className="section-kicker">REVIEW SCORE</span>
+                  <span className="section-kicker">审核评分</span>
                   <h3>
                     {!content
                       ? '等待内容版本'
@@ -12640,7 +12640,7 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
               <Boxes size={18} />
             </div>
             <div>
-              <span className="section-kicker">CATALOG {category.code}</span>
+              <span className="section-kicker">商品目录 {category.code}</span>
               <h3>{category.name}</h3>
             </div>
             <StatusChip tone="green">
@@ -12681,7 +12681,7 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
     <div className="page-stack">
       <section className="page-intro">
         <div>
-          <span className="section-kicker">POLICY & TAXONOMY</span>
+          <span className="section-kicker">规则与分类</span>
           <h2>规则库与品类库</h2>
           <p>
             先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。
@@ -12821,7 +12821,7 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
         >
           <div className="panel-heading">
             <div>
-              <span className="section-kicker">ACTIVE RULE PACKS</span>
+              <span className="section-kicker">生效规则集</span>
               <h3>生效规则包</h3>
             </div>
             <StatusChip
@@ -12864,7 +12864,7 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
         >
           <div className="panel-heading">
             <div>
-              <span className="section-kicker">FIELD MAPPING</span>
+              <span className="section-kicker">字段映射</span>
               <h3>{selectedCategory.name} · 字段映射</h3>
               <p className="panel-subtitle">
                 当前展示平台类目模板字段；提交前仍需以目标平台实时校验为准。
@@ -13017,7 +13017,7 @@ function PublishModal({
             <Rocket size={21} />
           </div>
           <div>
-            <span className="section-kicker">SECOND CONFIRMATION</span>
+            <span className="section-kicker">二次确认</span>
             <h2 id="publish-title">提交人工发布任务</h2>
           </div>
           <button
