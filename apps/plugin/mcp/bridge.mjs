@@ -1486,6 +1486,9 @@ function userFacingToolText(method, result) {
   if (method === 'brand.get' && result === null) {
     return '当前范围未找到品牌档案；已登记的品牌单元仍需单独核对档案内容。'
   }
+  if (method === 'knowledge.brand.preference.get' && result === null) {
+    return '当前工作区尚未设置品牌偏好。'
+  }
   if (Array.isArray(result) && READ_ONLY_METHODS.has(method)) {
     return result.length === 0 ? '当前范围没有匹配记录。' : `已读取 ${result.length} 条记录；请核对结构化结果中的内容与来源。`
   }
