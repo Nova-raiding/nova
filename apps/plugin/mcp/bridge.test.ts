@@ -27,6 +27,7 @@ const repositoryRoot = (() => {
   }
   throw new Error('bridge test could not locate the repository root')
 })()
+const pluginVersion = (JSON.parse(await readFile(join(repositoryRoot, 'apps/plugin/package.json'), 'utf8')) as { version: string }).version
 const {
   MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS,
   MCP_POINT_CHARGED_DISABLED_METHODS,
@@ -1231,6 +1232,34 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it.each([
+    ['commercial.order.payment.get', 'COMMERCIAL_ORDER_NOT_FOUND', { order_id: 'qa-missing-order' }, '未找到这笔购买订单'],
+    ['billing.recharge.get', 'BILLING_ORDER_NOT_FOUND', { order_id: 'qa-missing-order' }, '未找到这笔充值订单'],
+    ['workspace.data.export.get', 'WORKSPACE_DATA_EXPORT_NOT_FOUND', { request_id: '00000000-0000-4000-8000-000000000001' }, '未找到这份数据导出申请'],
+  ])('explains missing current-workspace records for %s', async (method, code, args, expectedText) => {
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.statusCode = 404
+      res.end(JSON.stringify({ error: { code, message: 'not found' } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: method, arguments: args } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code } })
+      expect(response.result.content[0].text).toContain(expectedText)
+      expect(response.result.content[0].text).toContain('当前工作区')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('redacts bare UUIDs and SHA-256 values from merchant-facing summaries', async () => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
@@ -1346,7 +1375,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929143500' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: pluginVersion } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -2089,6 +2118,7 @@ describe('Codex stdio MCP bridge', () => {
 
   it('renders a real image attachment and persists the selected candidate in the App-like chooser', async () => {
     const { child } = await listBridgeTools({})
+    if (!child.stdin || !child.stdout) throw new Error('bridge stdio unavailable')
     const browser = await chromium.launch({ headless: true })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 41, method: 'resources/read', params: { uri: 'ui://merchant-marketing/image-candidate-choice-v15.html' } })}\n`)
@@ -2104,7 +2134,7 @@ describe('Codex stdio MCP bridge', () => {
       }
       const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pXcAAAAASUVORK5CYII='
       const page = await browser.newPage()
-      await page.evaluate(({ payload, ticket, image }) => {
+      await page.addInitScript(({ payload, ticket, image }) => {
         ;(window as any).openai = {
           toolOutput: payload,
           toolResponseMetadata: { mcp_tool_result: { _meta: { 'merchant/candidateSelectionTickets': [ticket] }, content: [{ type: 'image', mimeType: 'image/png', data: image }] } },
@@ -2116,7 +2146,7 @@ describe('Codex stdio MCP bridge', () => {
         }
         ;(window as any).__calls = []
       }, { payload, ticket, image })
-      await page.setContent(html)
+      await page.goto(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
       await page.locator('input[type="radio"]').waitFor({ state: 'visible' })
       const imageNode = page.locator('img')
       await imageNode.waitFor({ state: 'visible' })
@@ -2125,7 +2155,9 @@ describe('Codex stdio MCP bridge', () => {
       const confirm = page.getByRole('button', { name: '使用这张主图' })
       expect(await confirm.isEnabled()).toBe(true)
       await confirm.click()
-      await expect(page.getByRole('button', { name: '已保存' })).toBeDisabled()
+      const saved = page.getByRole('button', { name: '已保存' })
+      await saved.waitFor({ state: 'visible' })
+      expect(await saved.isDisabled()).toBe(true)
       expect(await page.locator('#status').textContent()).toContain('已保存为首选主图，尚未审核或发布')
       expect(await page.evaluate(() => (window as any).__calls)).toEqual([
         { name: 'catalog.image.select', args: expect.objectContaining({ job_id: 'job_fixture', visual_ref: 'visual_fixture_1', expected_revision: '3', confirmation_ticket_nonce_hash: nonce, confirmation_ticket_intent_hash: intent }) },

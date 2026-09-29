@@ -21,14 +21,14 @@ describe('Merchant Studio paid wallet projection', () => {
     expect(implementation).not.toContain("'billing.status'")
   })
 
-  it('shows the creative-point balance and a recharge credited in the read wallet page without claiming unpaid benefits', () => {
+  it('shows the ledger-backed creative-point balance without adding content outside the approved finance layout', () => {
     expect(app).toContain('当前剩余创意点')
     expect(app).toContain('财务与资源')
     expect(app).toContain('充值创意点')
     expect(app).toContain('支付完成后由服务端回调或查单入账，未支付不会增加权益或创意点。')
-    expect(app).toContain("billing?.transactions.find((item) => item.type === 'recharge')")
-    expect(app).toContain('最近已入账充值（最近读取的 20 条钱包流水）')
-    expect(app).toContain('充值订单：')
+    expect(app).not.toContain('最近已入账充值（最近读取的 20 条钱包流水）')
+    expect(app).not.toContain('finance-recharge-proof')
+    expect(app).toContain('className="finance-recharge-order"')
     expect(app).toContain('订单：{rechargeOrder.id}')
     expect(styles).toContain('.finance-balance-card')
   })
@@ -36,9 +36,10 @@ describe('Merchant Studio paid wallet projection', () => {
   it('keeps payment and manual publishing in the merchant workspace without enabling automatic platform writes', () => {
     expect(api).toContain("requestMcp<ApiPage<ManualPublishRecord> | ManualPublishRecord[]>(baseUrl, 'publish.manual.list'")
     expect(app).toContain('fetchManualPublishRecords(baseUrl)')
-    expect(app).toContain('六平台由人工执行发布')
-    expect(app).toContain('不会自动提交平台')
-    expect(app).toContain("manual_publish_reported: '已回填平台结果'")
+    expect(app).toContain('人工发布任务')
+    expect(app).toContain('人工发布记录')
+    expect(app).toContain('当前不代表平台已受理或已生效')
+    expect(app).toContain("manual_publish_reported: '已报告，待复核'")
   })
 })
 

@@ -1693,6 +1693,9 @@ function userFacingErrorText(code, details) {
     return '图片已保存并通过自动安全检查，但没有读出可靠的商品信息。请先告诉我商品名称；我会继续使用当前图片记录你的确认，无需重新连接工作区或重复上传。'
   }
   if (code === 'PERMISSION_DENIED') return '当前账号没有执行这一步的权限。任务和已有内容已保留。'
+  if (code === 'COMMERCIAL_ORDER_NOT_FOUND') return '未找到这笔购买订单，或订单不属于当前工作区。请核对订单编号。'
+  if (code === 'BILLING_ORDER_NOT_FOUND') return '未找到这笔充值订单，或订单不属于当前工作区。请核对订单编号。'
+  if (code === 'WORKSPACE_DATA_EXPORT_NOT_FOUND') return '未找到这份数据导出申请，或申请不属于当前工作区。请核对申请编号。'
   if (code === 'MCP_AUTH_REQUIRED') return '当前插件的 Store Nova 工作区登录已失效。本次未完成请求；请联系平台管理员确认分配给你的 ws_... 工作区 ID，在插件安装目录运行 macOS 的 login.sh --workspace ws_... 或 Windows 的 login.cmd --workspace ws_...，按提示完成登录后重启 ChatGPT。此操作只登录当前工作区，不会连接店铺、扣费或发布。'
   if (code === 'MCP_GATEWAY_BAD_REQUEST') return '插件请求被网关拒绝。当前任务和已有产物已保留；请根据请求 ID 排查网关路由、请求格式或插件连接配置。'
   if (code === 'MODEL_RELAY_EVIDENCE_REQUIRED') {

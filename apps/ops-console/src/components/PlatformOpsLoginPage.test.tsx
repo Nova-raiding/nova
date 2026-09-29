@@ -11,6 +11,7 @@ describe("PlatformOpsLoginPage", () => {
     expect(markup).toContain('id="ops-login-account"');
     expect(markup).toContain('id="ops-login-password"');
     expect(markup).toContain("平台管理员分配的运营账号");
+    expect(markup).not.toMatch(/\bplaceholder=/u);
     expect(markup).not.toContain("连接诊断");
     expect(markup).not.toContain('class="ops-login-alert"');
   });

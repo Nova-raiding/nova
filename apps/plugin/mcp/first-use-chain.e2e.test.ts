@@ -227,7 +227,8 @@ describe('first-use plugin → API/MCP chain', () => {
 
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'support.customer.replies.list', arguments: { limit: '10' } } })}\n`)
     const rejected = await nextLine(child.stdout)
-    expect(rejected.error.message).toContain('请提供 ticket_id、related_task_id 或 related_order_id 之一')
+    expect(rejected.result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+    expect(String(rejected.result.structuredContent.message)).toContain('请提供 ticket_id、related_task_id 或 related_order_id 之一')
 
     const apiMissingScope = await apiCall(merchantToken, 'support.customer.replies.list', { limit: '10' })
     expect(apiMissingScope.status).toBe(400)

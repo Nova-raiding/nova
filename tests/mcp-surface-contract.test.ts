@@ -33,6 +33,12 @@ function apiSurfaceSource(): string {
  */
 const CONDITIONALLY_EXPOSED_TOOLS = new Map<string, { enabledBy: string; producer: string }>([
   [
+    'multimodal.video.request',
+    // Rendering is opt-in on local installations; its sibling poller is gated
+    // in lockstep so a rendered job can be queried only where it was admitted.
+    { enabledBy: 'MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES', producer: 'multimodal.video.get' },
+  ],
+  [
     'multimodal.video.get',
     // Its only input is the provider_job_id returned by multimodal.video.request,
     // so the poller is exactly as reachable as its producer.

@@ -426,14 +426,14 @@ describe('Codex App merchant conversation flow', () => {
 
       const publishArgs = { idempotency_key: 'publish:task_1:v3', confirmation_hash: 'hash_1', remote_snapshot_hash: 'snapshot_1' }
       const blocked = await request(child, 2, 'publish.confirm', publishArgs)
-      expect(blocked.error).toMatchObject({ code: -32602, message: 'Unknown tool: publish.confirm' })
+      expect(blocked.error).toMatchObject({ code: -32602, message: '当前插件没有此工具：publish.confirm' })
       expect(calls).toEqual([])
 
       const confirmed = await request(child, 3, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' })
       expect(confirmed.result).toMatchObject({ isError: false })
       for (const [index, method] of hiddenMethods.entries()) {
         const response = await request(child, index + 4, method, method === 'publish.confirm' ? publishArgs : {})
-        expect(response.error).toMatchObject({ code: -32602, message: `Unknown tool: ${method}` })
+        expect(response.error).toMatchObject({ code: -32602, message: `当前插件没有此工具：${method}` })
         expect(response).not.toHaveProperty('result')
       }
       expect(calls).toEqual([])

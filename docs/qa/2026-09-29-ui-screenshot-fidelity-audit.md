@@ -96,3 +96,22 @@
 - 本轮再次逐页核对后仍存在不能按旧截图补造的边界：Ops 04/05/06/08 是同一张失效会话截图，成员/任务/知识页在当前 Ops platform-only 权限下没有可验收的授权 workspace 画面；Merchant 品牌和回收站的截图是旧数据状态，当前品牌范围数据为空且回收站仅有浏览器本地记录，服务端尚无回收记录 API。未用前端常量伪装真实数据，也没有把这些页面宣称为非空状态 1:1。
 - 商家 05 品牌资产通过 `.material-brand-no-store` 去重回归；02/03 范围行明确保留授权/范围原因。Finance 与 Catalog 的网格骨架和 224px 主侧栏对齐参考图，差异来自隔离租户真实店铺、账本、配额和套餐状态。
 - CodeGraph 用于审查路由/组件引用与变更关系，gstack Browse 既有真实运行记录仅证明登录页及 daemon 可用，不冒充全站像素验收。截图矩阵为 1440×1050 实际桌面运行；全页面 SSIM/逐像素 overlay 尚未生成，因此最终验收结论仍限于人工对照、路由矩阵、局部几何断言和真实数据状态。
+- 用户反馈“页面显示仍不正确”后，直接检查本地运行 UI 容器发现 `qa-clean-ui-1`、`qa-clean-ops-ui-1` 的镜像创建时间早于当前 UI 提交，所服务的 JS 资源 hash 也与 HEAD 构建不一致。只重建并替换了这两个静态 UI 容器（`docker compose -p qa-clean -f infra/local/docker-compose.yml build ui ops-ui`，随后 `up -d --no-deps --force-recreate ui ops-ui`）；API、数据库、worker 均未重建或写入。更新后两容器为 healthy，18081/18082 及各自 `/api/readyz` 返回 200，实际资源为 Merchant `index-D43VE5bp.js`、Ops `index-B5cFbr60.js`。在 1440×1050 捕获的当前运行登录页与目标登录图人工对照吻合，证据为 `artifacts/ui-live-restored/2026-09-29/merchant-login.png` 和 `ops-login.png`。这次运行态修复能解释源码已正确但本地页面仍显示旧版；它只验证登录态，不能替代受权限保护页面的完整运行态验收，也不是生产部署。
+- Customer Delivery 复核确认，目标租户必须通过 UI 明确选择后才会发起 scoped API 读取；登录运维工作区身份不能推导目标客户工作区。未选择时显示范围提示并不读取数据，已选择后该测试工作区真实记录为 0。保留选择器是必要的授权边界，不属于与目标图无关的装饰差异。
+- 运行态 hash 会受构建环境变量影响，单看 Vite 文件名差异不能证明内容版本不同；可确认的旧版证据是替换前静态容器创建时间早于本轮 UI 提交。此次重建后的服务资源及健康状态由独立 agent 复核，容器创建时间为 2026-09-29 15:02（本地时区）。
+- Ops 04/05/06/08 仍缺当日有效 workspace 参考；仓库发现 09-07 历史成员/任务截图，只能追溯旧结构，不能当作 09-28 最新基准或复用其测试数据。现有 `SupportRoute.tsx` 与 `IncidentsRoute.tsx` 包装器保留在工作树中。
+- 独立复核确认 Merchant 最新 10 路由矩阵 11 张截图覆盖全部清单入口；Ops 矩阵覆盖对应 pathname，但成员/任务/知识仅测到 platform 权限拒绝态、规则只验 platform scope。矩阵均无 page errors/failed API，但没有全页像素 diff；不能把通过矩阵描述为 23 个独立页面已达到逐像素 1:1。
+- 早期并行修改期间的一次 `npm run typecheck` 曾因 bridge 测试中的 nullable stdin 和 matcher 类型报错；后续已修复对应测试断言和初始化顺序。本轮最终类型检查通过；Merchant build 仍有既有 >500 kB chunk 提示。
+- 按 gstack Browse 流程另在实际 18081/18082 以 1440×1050 重新捕获登录页，并等待网络 idle 后对照，避免把 session 初始化期间暂时 loading 的按钮色误判为 UI 差异。证据：`artifacts/ui-live-restored/2026-09-29/{ops-login-gstack-settled.png,merchant-login-gstack-settled.png}`；两张 settled 登录图与相应参考图的卡片/表单/logo 几何及按钮状态一致。最新独立矩阵路径为 Ops `artifacts/ops-jit-isolation/2026-09-29T06-58-17.711Z-44e952e0-668f-4e83-b190-e22bc7b05d28/desktop-readonly-matrix/`、Merchant `artifacts/ops-jit-isolation/2026-09-29T06-58-58.788Z-8e00938d-945b-4f9c-a218-c5ae01c25506/merchant-desktop-matrix/`；矩阵仅记录失败 API，故不单独证明每个页面成功读取了其业务 API。
+- 直接用 gstack Browse 对照公网登录页后确认：生产 Ops 登录页在两个输入框显示 `ops@example.com` / 密码 placeholder，而 09-28 目标图和当前 HEAD 都没有 placeholder；这项可见差异来自线上旧静态包，提交 `861dbc2a` 已按目标移除并补 aria-label。公网 Merchant 登录图与目标基本一致。公网 HTML 的 Last-Modified 为 2026-09-28（商家）和 2026-09-28（Ops）；Ops 线上 JS 仍为 `index-CkyaE8T6.js`，当前构建为 `index-D1FvJPFg.js`，截图及文件日期共同说明线上尚未更新。公网 gstack 实截图：`artifacts/ui-live-restored/2026-09-29/{ops-production-login.png,merchant-production-login.png}`。未部署：项目 ECS 发布门禁仍是独立的 NO-GO 条件；本地 UI 验收和本仓测试不代表已上线。
+- 最近一次 `npm run test:release-gates` 完成：177 个测试文件通过、7 个按清单跳过，1403 项通过、16 项为声明中的待验断言；ECS nonce、旧运行态 CLI、toolchain、scanner、支付回放、Docker 安全及 152 项 Node 末段检查均通过。该结果覆盖运行时发布门禁，不代表生产发布获准或已部署。
+
+## 2026-09-29 最终复核补充
+
+- 按用户要求再次启动 10 个并行 agent（owner + 9），逐域交叉核对 Ops 与 Merchant 截图、路由和本地/公网静态资源；使用 CodeGraph 定位引用并以 gstack Browse 实际浏览器截图核对。结论由 owner 复核后记录。
+- 参考目录 `/Users/lixiaomei/Desktop/outputs/ui-images-2026-09-28` 实际只含 12 张 Ops PNG 与 23 路由清单，没有 Merchant 参考图；Merchant 参考来自 WeChat 输出目录。多张 Ops workspace 页面截图实际是相同的失效登录画面，不能当作页面设计稿。Merchant 任务/发布/规则参考按页面清单重定向到商品页；Ops 部分页面受真实 workspace 权限/RLS 限制，矩阵权限拒绝时不跳过授权读取。
+- 对照中多数现有页面骨架、主侧栏、用户表列宽及模型/存储几何与有效参考图一致。可验证的剩余差异主要由截图状态和隔离测试 workspace 的真实数据造成（目录/素材/账本/套餐/存储额度等）；不通过硬编码参考租户数据来伪装一致。Finance 目前显示最近一笔已入账充值证明行，数据来自最近读取的 20 条钱包流水；该行不在目标 Finance 截图中，属于需要产品取舍/后续调整的可见差异，不能称为 1:1 完成。
+- Ops 登录表单已移除参考图不存在的 placeholder 并保留可访问标签，新增回归断言。两个历史未注册 route wrapper `SupportRoute.tsx`、`IncidentsRoute.tsx` 的生产注册/引用检查确认没有 callsite，已从当前工作树删除；支持与事件页面、API、测试仍保留。其余旧功能没有足够证据安全删除。
+- 最新本地构建/运行资源及线上静态入口仍不同：线上 Merchant/Ops HTML 的 Last-Modified 均为 2026-09-28；生产入口仍引用旧静态资源。两个线上 healthz 均为 200，只证明健康检查成功，不证明 UI 更新。未触碰生产。
+- 最新验证：`npm run typecheck` 通过；Merchant build 与 finance regression 5/5 通过；Ops build 通过；`npm run test:release-gates` 通过（152/152 Node 子测试，完整脚本退出码 0）；`git diff --check` 通过。CodeGraph 索引需在本轮变更最终稳定后再次同步。完整矩阵只验证已配置隔离数据与页面状态，不能等同逐像素全站 1:1 验收。
+- 生产发布继续 NO-GO：`docs/runbooks/ecs-candidate-safe-sync.md` 指出独立故障修复发布路径尚未实现，当前数据库前缀 242→255 与旧桥版本不兼容，须完成受审阅的兼容桥/迁移链及 releasez 证据。当前没有获准路径把本地 UI 单独覆盖到生产，因此本轮仅完成本地修复与只读生产核对。

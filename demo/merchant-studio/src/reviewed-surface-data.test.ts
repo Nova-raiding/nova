@@ -131,9 +131,8 @@ describe('品牌资产 opens on what the workspace actually has', () => {
     const brands = renderBrands()
     expect(brands).not.toContain('Store Nova 品牌资产手册.pdf')
     expect(brands).not.toContain('已接收')
-    // 「待接收」 and 「暂无资产文件」 are the two facts it can stand behind.
-    expect(brands).toContain('暂无资产文件')
-    expect(brands).toContain('待接收')
+    // The first render waits for the server rather than inventing a file state.
+    expect(brands).toContain('正在读取服务端品牌配置…')
   })
 
   it('never presents a bundled image as the workspace brand logo', () => {
@@ -142,14 +141,14 @@ describe('品牌资产 opens on what the workspace actually has', () => {
     // card drew an app-bundle image under 「品牌 Logo」.
     expect(storeNovaLogo.length).toBeGreaterThan(0)
     expect(brands).not.toContain(storeNovaLogo)
-    expect(brands).toContain('未单独配置')
+    expect(brands).toContain('正在读取服务端品牌配置…')
   })
 
   it('keeps the same honest default while the store read is still in flight', () => {
     const brands = renderBrands('http://127.0.0.1:9')
     expect(brands).not.toContain('Store Nova 品牌资产手册.pdf')
     expect(brands).not.toContain(storeNovaLogo)
-    expect(brands).toContain('暂无资产文件')
+    expect(brands).toContain('正在读取服务端品牌配置…')
   })
 })
 
