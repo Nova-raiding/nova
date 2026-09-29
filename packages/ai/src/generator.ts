@@ -193,6 +193,14 @@ function readContent(payload: unknown): unknown {
   }
 }
 
+function readAssistantMessage(payload: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(payload) || !Array.isArray(payload.choices)) return undefined
+  const choice = payload.choices[0]
+  if (!isRecord(choice) || !isRecord(choice.message)) return undefined
+  // Keep relay/model extensions such as reasoning_text intact for follow-ups.
+  return structuredClone(choice.message)
+}
+
 function normalizeProviderStructure(value: unknown, input: ContentGenerationInput): unknown {
   if (!isRecord(value)) return value
   // Never manufacture module provenance by copying every frozen product source.
@@ -387,8 +395,8 @@ const REPAIR_MESSAGE_TOKEN_RESERVE = 800
 const REPAIR_DIAGNOSTIC_MAX_CHARS = 600
 const REPAIR_MAX_OUTPUT_TOKENS = 2_500
 export const MAX_CONTENT_INPUT_TOKENS = 4_000
-function estimateRequestTokensFromPrompt(promptText: string, additionalMessages: readonly string[] = []) {
-  const payload = additionalMessages.length ? { prompt: promptText, additionalMessages } : { prompt: promptText }
+function estimateRequestTokensFromPrompt(promptText: string, additionalMessages: readonly string[] = [], assistantMessage?: Record<string, unknown>) {
+  const payload = additionalMessages.length || assistantMessage ? { prompt: promptText, additionalMessages, ...(assistantMessage ? { assistantMessage } : {}) } : { prompt: promptText }
   return Math.ceil(Buffer.byteLength(JSON.stringify(payload), 'utf8') / 3) + (additionalMessages.length ? 0 : REPAIR_MESSAGE_TOKEN_RESERVE)
 }
 export function estimateContentGenerationRequestTokens(input: ContentGenerationInput, additionalMessages: readonly string[] = []) {
@@ -471,7 +479,11 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
       // serialized form avoids rebuilding the full product/knowledge payload
       // for every retry while keeping the exact request body unchanged.
       const initialPrompt = prompt(boundedInput)
-      const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [{ role: 'user', content: initialPrompt }]
+      // Preserve provider-specific assistant fields (for example reasoning_text)
+      // when a malformed structured response needs a follow-up repair request.
+      // Some reasoning relays require the complete prior assistant message to
+      // be sent back verbatim as part of the conversation.
+      const messages: Array<Record<string, unknown>> = [{ role: 'user', content: initialPrompt }]
       const repairMessages: string[] = []
       const maxOutputTokens = this.options.maxOutputTokens ?? 2_500
       const maxTotalOutputTokens = this.options.maxTotalOutputTokens ?? maxOutputTokens + (2 * Math.min(maxOutputTokens, REPAIR_MAX_OUTPUT_TOKENS))
@@ -605,13 +617,15 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
             ? `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。只返回完整 JSON：title、detail、sellingPoints、brief；不得返回 modules 或任何未经确认的商品事实。逐字段核对初始 outputShape，勿照抄示意值。`
             : `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。重新返回完整 JSON，逐字段核对初始消息中的 outputShape。尤其每个模块必须有 factSourceIds、decisionContract.claim.factSourceIds、decisionContract.visualContract.requiredElements、decisionContract.priority 和 decisionContract.optional；claim.validUntil 只在输入事实有真实有效期时填写，不得虚构时间。仅使用输入 confirmedFactSourceIds 中的真实 ID；缺少来源则删除该模块，不能复制 outputShape 的示意值。只修复结构和缺失字段，不增加未确认事实。evidence.type 仅允许 real_image、parameter、test_report、comparison、usage_result、manual_review；evidence.status 仅允许 verified、missing、expired、conflict；product.id 不是 SKU ID，claim.skuIds 和 referencedSkuIds 只能使用 product.skuIds 中的值。不要复述上一份响应。`
           const nextRepairMessages = [...repairMessages, repairMessage]
-          if (estimateRequestTokensFromPrompt(initialPrompt, nextRepairMessages) > (this.options.maxInputTokens ?? 4_000)) {
+          const assistantMessage = readAssistantMessage(payload)
+          const messagesForRepair = assistantMessage ? [...messages, assistantMessage, { role: 'user', content: repairMessage }] : [...messages, { role: 'user', content: repairMessage }]
+          if (estimateRequestTokensFromPrompt(initialPrompt, nextRepairMessages, assistantMessage) > (this.options.maxInputTokens ?? 4_000)) {
             if (successfulProviderAttempt && input.settleProviderAttempt) await afterProviderClaim(() => input.settleProviderAttempt!(successfulProviderAttempt!.proof, successfulProviderAttempt!.claim, 'completed'))
             throw new Error('CONTEXT_BUDGET_EXCEEDED: 累计结构修复消息加入后超过输入 Token 预算')
           }
           if (successfulProviderAttempt && input.markProviderRepairRequired) await afterProviderClaim(() => input.markProviderRepairRequired!(successfulProviderAttempt!.proof, successfulProviderAttempt!.claim))
           repairMessages.push(repairMessage)
-          messages.push({ role: 'user', content: repairMessage })
+          messages.splice(0, messages.length, ...messagesForRepair)
           continue
         }
         if (successfulProviderAttempt && input.settleProviderAttempt) await afterProviderClaim(() => input.settleProviderAttempt!(successfulProviderAttempt!.proof, successfulProviderAttempt!.claim, 'completed'))
