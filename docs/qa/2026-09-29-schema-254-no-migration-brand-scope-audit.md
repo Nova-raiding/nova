@@ -28,6 +28,16 @@
 
 **可行性界线：** 254 的 RLS 与 JSONB 容量足以实现“工作区隔离的某些配置存取”；但在不加表/约束/索引/触发器的前提下，不能从数据库层继承 255 已有的稳定身份、名称唯一性、引用完整性和删除限制。理论上可以另写应用层事务锁、校验与 CAS，尽量取得类似 API 可见行为，但须处理跨请求竞争、相关实体删除、恢复投影和所有绕开该 API 的写入路径；目前没有这套实现或相应生产证据。把 `expectedMigrationVersion` 改成 254、改健康门禁或启用现有仓库查询，只会把缺表错误/不完整语义暴露给用户，不是无迁移方案。
 
+### 254 JSON 聚合不能等价承载 255 约束的反证
+
+254 的 `business_entity_snapshots` 并非可自由扩展实体类型的键值表：迁移 `218_manual_publish_evidence.sql:4-8` 重建的 `business_entity_snapshots_entity_type_supported_check` 仅允许固定的 `brand_profile`、`asset` 等类型，不允许新建 `brand_series` 或 `scoped_settings` 类型。若复用保留的 `brand_profile` ID 存一行 JSON 聚合，`packages/application/src/service.ts:2474` 会把它当旧品牌档案加载，必须改读模型才能避免伪档案混入。该表的 `entity_version` 是 `integer`（`004_business_entities.sql:189-197`），255 新配置和系列的修订号是 `BIGINT`。
+
+一个 254 适配器可以用 `SELECT id FROM workspaces WHERE id=$1 FOR UPDATE` 串行化自己的一切创建、改名、绑定及保存操作；在事务中核对同店 `lower(name)`、素材与店铺存在性，使用 `UPDATE business_entity_snapshots SET entity_version=entity_version+1,payload=$new::jsonb WHERE workspace_id=$1 AND entity_type='brand_profile' AND entity_id=$reserved AND entity_version=$expected RETURNING ...` 实现等值 CAS。这只能约束**经过适配器**的写入。`infra/local/ensure-app-role.sql:55-59` 给 `merchant_app` 现有表的 `SELECT, INSERT, UPDATE, DELETE`，工作区 RLS 只检查 `workspace_id`（`004_business_entities.sql:203-208`），不检查聚合 JSON 内的资产、店铺和系列引用。即使适配器在事务中用 `FOR SHARE` 锁定一个可用资产，事务提交后，另一合法同租户事务仍可删除一个未被其他外键引用的 `asset` 快照；聚合继续引用已不存在的素材。删除被引用的店铺也会造成悬空。适配器锁住 `workspaces` 行并不能强制其他写入路径遵守该锁协议。资产状态后来变为不可用时，254 与 255 都还需要在任务冻结阶段重新校验使用资格。
+
+255 的 `merchant_brand_asset_assignments` 则以 `(workspace_id,asset_id)` 为主键，并对素材快照、店铺和同店系列设置复合外键 `ON DELETE RESTRICT`（`255_scoped_brand_settings.sql:20-35`）；系列还受同店 `lower(name)` 唯一索引保护（`:17-18`）。上述删除在 255 上由数据库拒绝，不依赖 API 是否参与。要在 254 上达到同等级保证，必须新增/改变数据库外键、约束、触发器或角色权限；即使不增加版本号，这也是实质数据库迁移，与用户的“不迁移数据库”限制冲突。因此不能把 JSON 聚合适配器称为完整、等价、可上线的 254 方案。
+
+并发任务冻结还有单独注意点：当前 255 仓库的 `resolveForTask` 用 `FOR KEY SHARE` 读取资产归属（`scoped-brand-settings-repository.ts:142`），而 `assignAsset` 更新的店铺/系列归属不属于归属表主键（`:90-99`）；该锁模式不能阻止普通非主键字段更新。无论选择哪种数据库方案，都应把任务冻结和重归属之间的锁与提交边界纳入真实 PostgreSQL 并发验收，不能用仅有的顺序测试推断无竞争。
+
 ## 如果坚持 254 完整功能，实际工程范围
 
 这会是新的持久化实现，而非一个发布配置切换。至少需要：
