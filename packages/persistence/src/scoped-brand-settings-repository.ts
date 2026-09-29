@@ -139,7 +139,7 @@ export class PostgresScopedBrandSettingsRepository {
       const context: { accountId?: string; seriesKey?: string; assetId?: string } = input.accountId ? { accountId: input.accountId } : {}
       const selected = [...new Set(input.selectedAssetIds.filter(Boolean))]
       if (selected.length && input.accountId) {
-        const assignments = await client.query<AssignmentRow>('SELECT workspace_id,asset_id,platform_account_id,series_id,revision FROM merchant_brand_asset_assignments WHERE workspace_id=$1 AND asset_id=ANY($2::text[]) FOR KEY SHARE', [scope, selected])
+        const assignments = await client.query<AssignmentRow>('SELECT workspace_id,asset_id,platform_account_id,series_id,revision FROM merchant_brand_asset_assignments WHERE workspace_id=$1 AND asset_id=ANY($2::text[]) FOR SHARE', [scope, selected])
         for (const assignment of assignments.rows) {
           if (assignment.platform_account_id !== input.accountId) throw new ScopedBrandBindingError('BRAND_SCOPE_STORE_MISMATCH', '所选素材与任务店铺不一致')
         }

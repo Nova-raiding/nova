@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { parseScopedBrandSettings } from '../../application/src/scoped-brand-settings.js'
 import { loadMigrations, MigrationRunner, verifyAppliedMigrations, verifyBridgeMigrationPrefix } from './migration.js'
 import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
+import type { SqlPool } from './repository.js'
 import { PostgresScopedBrandSettingsRepository, ScopedBrandRevisionConflictError } from './scoped-brand-settings-repository.js'
 
 const databaseUrl = process.env.PERSISTENCE_RELEASE_DATABASE_URL
@@ -23,6 +24,7 @@ describe('scoped brand PostgreSQL release evidence', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
     let app: Pool | undefined
+    let lockProbe: Pool | undefined
     let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
@@ -102,6 +104,41 @@ describe('scoped brand PostgreSQL release evidence', () => {
         .rejects.toMatchObject({ code: 'BRAND_SCOPE_STORE_MISMATCH' })
       const singleImage = await repository.resolveForTask({ workspaceId: 'brand_alpha', accountId: 'store_alpha', selectedAssetIds: ['shared_image'], validate: parseScopedBrandSettings })
       expect(singleImage?.context).toMatchObject({ accountId: 'store_alpha', seriesKey: series.id, assetId: 'shared_image' })
+      let releaseRead!: () => void
+      let reportRead!: () => void
+      const readHeld = new Promise<void>(resolve => { reportRead = resolve })
+      const resumeRead = new Promise<void>(resolve => { releaseRead = resolve })
+      const heldPool: SqlPool = {
+        connect: async () => {
+          const client = await app!.connect()
+          return {
+            query: async <Row = Record<string, unknown>>(text: string, values?: readonly unknown[]) => {
+              const result = await client.query(text, values as unknown[])
+              if (text.startsWith('SELECT workspace_id,asset_id,platform_account_id,series_id,revision FROM merchant_brand_asset_assignments')) {
+                reportRead()
+                await resumeRead
+              }
+              return { rows: result.rows as Row[], rowCount: result.rowCount }
+            },
+            release: (error?: Error) => client.release(error),
+          }
+        },
+      }
+      lockProbe = new Pool({ connectionString: connection(base, databaseName, 'merchant_app', 'merchant_app_local_only'), options: '-c lock_timeout=250ms' })
+      const frozenRead = new PostgresScopedBrandSettingsRepository(heldPool).resolveForTask({
+        workspaceId: 'brand_alpha', accountId: 'store_alpha', selectedAssetIds: ['shared_image'], validate: parseScopedBrandSettings,
+      })
+      try {
+        await readHeld
+        await expect(new PostgresScopedBrandSettingsRepository(lockProbe).assignAsset({
+          workspaceId: 'brand_alpha', assetId: 'shared_image', accountId: 'store_other', expectedRevision: 1,
+        })).rejects.toMatchObject({ code: '55P03' })
+      } finally {
+        releaseRead()
+      }
+      expect((await frozenRead)?.context).toMatchObject({ accountId: 'store_alpha', seriesKey: series.id, assetId: 'shared_image' })
+      expect(await repository.assignAsset({ workspaceId: 'brand_alpha', assetId: 'shared_image', accountId: 'store_other', expectedRevision: 1 }))
+        .toMatchObject({ accountId: 'store_other', revision: 2 })
       await expect(repository.get('brand_beta')).resolves.toBeUndefined()
       await expect(save('brand_beta', candidate, 0)).rejects.toThrow(/店铺不存在/)
       await expect(save('brand_alpha', { schemaVersion: 1, global: { enabled: true, values: { logoAssetId: 'shared_image' } } }, 3)).rejects.toThrow(/尚未通过扫描/)
@@ -123,6 +160,7 @@ describe('scoped brand PostgreSQL release evidence', () => {
     } finally {
       await withPostgresFixtureCleanup(async () => {
         await app?.end()
+        await lockProbe?.end()
         await database?.end()
         await dropDrainedPostgresFixture(admin, databaseName)
       }, primaryFailure, [() => admin.end()])
