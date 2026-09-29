@@ -64,8 +64,8 @@ describe("operations audit export", () => {
   it("proves the removed format/limit params were rejected by the contract", () => {
     const legacy = validateMcpRequest(request({ format: "csv", limit: "5000" }));
     expect(legacy.valid).toBe(false);
-    expect(legacy.errors.join(" ")).toContain("params.format is not accepted for ops.audit.export");
-    expect(legacy.errors.join(" ")).toContain("params.limit is not accepted for ops.audit.export");
+    expect(legacy.errors.join(" ")).toContain("ops.audit.export 不接受参数 params.format");
+    expect(legacy.errors.join(" ")).toContain("ops.audit.export 不接受参数 params.limit");
   });
 
   it("reads the CSV payload the audit export handler actually returns", () => {

@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Col, Pagination, Row, Statistic, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Pagination, Row, Space, Statistic, Tag, Typography } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { useEffect, useId, useRef, useState } from "react";
 import type { StorageReconciliationSummary } from "../../types/ops";
@@ -46,10 +46,30 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
   const statusColor = loading || error || unavailable || fixtureDataPresent ? "default" : failed || expired || stale || attention ? "orange" : "green";
   const workspaceRows = summaries.filter(item => item.workspaceId);
   const workspacePageRows = workspaceRows.slice((workspacePage - 1) * 20, workspacePage * 20);
-  const workspaceEmpty = !loading && !error && workspaceRows.length === 0;
   return (
     <>
-    <Card title="对象存储容量与对账" extra={<Tag color={statusColor}>{statusLabel}</Tag>} aria-busy={loading}>
+    <Card title="对象存储容量与对账" extra={<Space size="small"><Tag color={statusColor}>{statusLabel}</Tag>{workspaceRows.length > 0 ? <details className="ops-storage-workspace-details">
+      <summary>workspace 对账列表（{workspaceRows.length}）</summary>
+      <div className="ops-storage-workspace-popover">
+      <Card size="small">
+        <div role="list" aria-label="workspace 存储对账状态">
+          {workspacePageRows.map(item => {
+            const itemExpired = item.freshness === "expired";
+            const itemFailed = item.status === "failed";
+            const itemStale = item.freshness === "stale";
+            const itemAttention = item.status === "attention_required" || itemExpired || itemStale;
+            const itemUnavailable = item.status === "unavailable" || !item.lastRunAt || item.freshness === "unknown";
+            return <div role="listitem" key={item.workspaceId} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8, padding: "10px 0", borderBottom: "1px solid #f0f0f0" }}>
+              <div style={{ minWidth: 0, overflowWrap: "anywhere" }}><Typography.Text strong>{item.workspaceId}</Typography.Text><br /><Typography.Text type="secondary">最近对账：{item.lastRunAt ?? "暂无"}</Typography.Text></div>
+              <Tag color={error ? "default" : itemUnavailable ? "default" : itemFailed || itemAttention ? "orange" : "green"}>{error ? "上次快照，未复核" : itemUnavailable ? "状态不可验证" : itemFailed ? "失败" : itemExpired ? "已过期" : itemStale ? "需刷新" : item.status === "attention_required" ? "需处理" : "正常"}</Tag>
+            </div>;
+          })}
+        </div>
+        {workspaceRows.length > 20 ? <Pagination current={workspacePage} pageSize={20} total={workspaceRows.length} showSizeChanger={false} showTotal={(total, range) => `${range[0]}-${range[1]} / ${total}`} onChange={setWorkspacePage} style={{ marginTop: 12 }} /> : null}
+        <Typography.Paragraph type="secondary" style={{ margin: "12px 0 0" }}>列表仅用于定位 workspace 状态，不提供客户对象、素材内容、对象 key 或下载操作。</Typography.Paragraph>
+      </Card>
+      </div>
+    </details> : null}</Space>} aria-busy={loading}>
       {loading ? <Alert role="status" aria-live="polite" aria-atomic="true" showIcon title="正在加载对账结果" description="正在读取平台范围的脱敏容量和一致性摘要。" /> : null}
       {fixtureDataPresent ? <Alert type="warning" showIcon title="当前含演示数据，对象存储状态不可视为真实就绪" description="请先切换到无 fixture 的真实 API/对象存储数据源；本页面保持 fail-closed。" /> : null}
       {unknownStatus ? <Alert type="warning" showIcon title="对象存储对账状态待确认，不能视为正常" description="API 返回了未识别的对账状态；请升级契约或检查服务端响应。" /> : null}
@@ -74,35 +94,6 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
         引用 {counts.references} · 对象 {counts.inventoryObjects} · 匹配 {counts.matched} · 缺失 {counts.missing} · 孤儿 {counts.orphans} · 元数据不一致 {counts.metadataMismatches}
       </Typography.Paragraph> : null}
     </Card>
-    {workspaceRows.length ? <Card title={`workspace 对账列表（${workspaceRows.length}）`} style={{ marginTop: 16 }}>
-      <div role="list" aria-label="workspace 存储对账状态">
-        {workspacePageRows.map(item => {
-          const itemExpired = item.freshness === "expired";
-          const itemFailed = item.status === "failed";
-          const itemStale = item.freshness === "stale";
-          const itemAttention = item.status === "attention_required" || itemExpired || itemStale;
-          const itemUnavailable = item.status === "unavailable" || !item.lastRunAt || item.freshness === "unknown";
-          return <div role="listitem" key={item.workspaceId} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8, padding: "10px 0", borderBottom: "1px solid #f0f0f0" }}>
-            <div style={{ minWidth: 0, overflowWrap: "anywhere" }}><Typography.Text strong>{item.workspaceId}</Typography.Text><br /><Typography.Text type="secondary">最近对账：{item.lastRunAt ?? "暂无"}</Typography.Text></div>
-            <Tag color={error ? "default" : itemUnavailable ? "default" : itemFailed || itemAttention ? "orange" : "green"}>{error ? "上次快照，未复核" : itemUnavailable ? "状态不可验证" : itemFailed ? "失败" : itemExpired ? "已过期" : itemStale ? "需刷新" : item.status === "attention_required" ? "需处理" : "正常"}</Tag>
-          </div>;
-        })}
-      </div>
-      {workspaceRows.length > 20 ? <Pagination current={workspacePage} pageSize={20} total={workspaceRows.length} showSizeChanger={false} showTotal={(total, range) => `${range[0]}-${range[1]} / ${total}`} onChange={setWorkspacePage} style={{ marginTop: 12 }} /> : null}
-      <Typography.Paragraph type="secondary" style={{ margin: "12px 0 0" }}>列表仅用于定位 workspace 状态，不提供客户对象、素材内容、对象 key 或下载操作。</Typography.Paragraph>
-    </Card> : workspaceEmpty ? <Card title="workspace 对账列表（0）" style={{ marginTop: 16 }}>
-      <Alert
-        type="info"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        data-state="empty"
-        showIcon
-        title="暂无 workspace 级对账结果"
-        description="当前还没有可展示的 workspace 对账摘要；请先运行对账任务，或刷新以读取最新受控结果。"
-        action={onRetry ? <Button icon={<ReloadOutlined aria-hidden />} aria-label="刷新 workspace 对账列表" style={{ minHeight: 44 }} onClick={onRetry}>刷新列表</Button> : undefined}
-      />
-    </Card> : null}
     </>
   );
 }

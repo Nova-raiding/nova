@@ -89,6 +89,7 @@ describe("password session gate", () => {
     expect(source).toContain("<PlatformOpsLoginPage");
     expect(source).toContain("expectedUnauthenticated");
     expect(source).toContain('managedSession={false}');
+    expect(source).toContain("error={expectedUnauthenticated ? undefined : sessionError}");
   });
 });
 

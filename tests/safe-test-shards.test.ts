@@ -2,6 +2,23 @@ import { describe, expect, it, vi } from 'vitest'
 import { runSafeTestShards, safeTestShardCount } from '../scripts/run-safe-tests-sharded.js'
 
 describe('safe sharded test launcher', () => {
+  it('runs an explicit test-file selection once without discovering the full suite', async () => {
+    const runShard = vi.fn(async (_args: readonly string[], _source?: NodeJS.ProcessEnv) => 0)
+    const messages: string[] = []
+    const listFiles = vi.fn(async () => { throw new Error('explicit selection must not enumerate the repository') })
+    const selection = ['--run', 'apps/api/src/manual-store-record.e2e.test.ts', '--no-file-parallelism']
+
+    await expect(runSafeTestShards(selection, {}, runShard, message => messages.push(message), listFiles)).resolves.toBe(0)
+
+    expect(listFiles).not.toHaveBeenCalled()
+    expect(runShard).toHaveBeenCalledTimes(1)
+    expect(runShard).toHaveBeenCalledWith(selection, {})
+    expect(messages).toEqual([
+      '[safe-tests] explicit test-file selection; running one isolated invocation',
+      '[safe-tests] explicit test-file selection passed',
+    ])
+  })
+
   it('uses eight bounded sequential shards by default', async () => {
     const runShard = vi.fn(async (_args: readonly string[], _source?: NodeJS.ProcessEnv) => 0)
     const messages: string[] = []

@@ -229,7 +229,7 @@ describe('MCP handler/contract parameter parity', () => {
         for (const key of readKeys) {
           if (declared.has(key)) continue
           const result = validateMcpRequest({ jsonrpc: '2.0', id: 1, method, params: { [key]: 'parity-probe' } })
-          if (result.valid || !result.errors.some(error => error === `params.${key} is not accepted for ${method}`)) {
+          if (result.valid || !result.errors.some(error => error === `${method} 不接受参数 params.${key}`)) {
             failures.push(`${method} reads params.${key}, and the validator does not reject it: ${result.errors.join('; ')}`)
           }
         }
@@ -249,7 +249,7 @@ describe('MCP handler/contract parameter parity', () => {
         params: { external_subject: 'member_1', expectedRevision: '2', reason: 'contract parity check', ...(method === 'ops.member.upsert' ? { role: 'operator' } : {}) },
       })
       expect(result.valid).toBe(false)
-      expect(result.errors).toContain(`params.expectedRevision is not accepted for ${method}`)
+      expect(result.errors).toContain(`${method} 不接受参数 params.expectedRevision`)
     }
   })
 

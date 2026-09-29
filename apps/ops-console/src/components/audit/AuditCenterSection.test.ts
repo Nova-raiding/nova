@@ -121,4 +121,11 @@ describe('audit center UI contract', () => {
     expect(markup).toContain('旧审计结果不可导出')
     expect(markup).not.toContain('已加载全部 1 条审计记录')
   })
+
+  it('keeps platform audit rows aligned with the platform screenshot while retaining reason in authorized detail', async () => {
+    const section = await readFile(new URL('./AuditCenterSection.tsx', import.meta.url), 'utf8')
+    const drawer = await readFile(new URL('./AuditDetailDrawer.tsx', import.meta.url), 'utf8')
+    expect(section).toContain("...(!platformScope ? [{ title: '原因'")
+    expect(drawer).toContain('label="原因"')
+  })
 })

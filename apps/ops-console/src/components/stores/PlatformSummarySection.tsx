@@ -1,5 +1,5 @@
 import { GlobalOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Empty, Space, Statistic, Tag, Typography } from "antd";
+import { Alert, Button, Card, Space, Statistic, Tag, Typography } from "antd";
 import { useEffect, useRef } from "react";
 import type { StoreDirectory } from "../../types/ops";
 
@@ -45,14 +45,14 @@ export function PlatformSummarySection({ stores, loading = false, error, onRetry
       title={<Space><GlobalOutlined aria-hidden="true" />平台连接汇总</Space>}
     >
       <Typography.Paragraph type="secondary">
-        这里汇总各平台的店铺连接状态。人工登记店铺的商品可在下方选择商家工作区后，按资料来源和操作原因代为导入；其他客户详情仍按授权范围处理。
+        平台运营只查看连接健康与汇总指标；客户店铺、商品和素材详情仅通过客服工单授权范围受控处理。
       </Typography.Paragraph>
       <div aria-busy={loading || undefined}>
         {loading && <div role="status" aria-live="polite" aria-label="正在更新平台连接汇总" style={{ marginBottom: 12 }}>正在更新平台连接汇总；上次可信数据仍保留。</div>}
         {error && <div ref={errorRef} tabIndex={-1} aria-label="平台汇总错误摘要">
           <Alert role="alert" aria-live="assertive" aria-atomic="true" type="error" showIcon title="平台汇总读取失败" description={error} action={onRetry ? <Button htmlType="button" style={{ minHeight: 44 }} aria-label="重试平台汇总" onClick={onRetry}>重试</Button> : undefined} />
         </div>}
-        {summaries.length > 0 ? <div className="platform-summary-grid" aria-label={loading || error ? "上次可信的平台连接汇总" : "平台连接汇总"}>{summaries.map(summary => <Card size="small" key={summary.platform} title={platformLabels[summary.platform] ?? summary.platform}><Space wrap><Statistic title="登记店铺" value={summary.storeCount} /><Statistic title="官方 API" value={summary.officialApiCount} /><Tag color={summary.attentionCount ? "orange" : "green"}>{summary.attentionCount ? `${summary.attentionCount} 个需关注` : "连接正常"}</Tag></Space></Card>)}</div> : !loading && !error ? <Empty description="暂无平台连接汇总" /> : null}
+        {summaries.length > 0 ? <div className="platform-summary-grid" aria-label={loading || error ? "上次可信的平台连接汇总" : "平台连接汇总"}>{summaries.map(summary => <Card size="small" key={summary.platform} title={platformLabels[summary.platform] ?? summary.platform}><Space wrap><Statistic title="登记店铺" value={summary.storeCount} /><Statistic title="官方 API" value={summary.officialApiCount} /><Tag color={summary.attentionCount ? "orange" : "green"}>{summary.attentionCount ? `${summary.attentionCount} 个需关注` : "连接正常"}</Tag></Space></Card>)}</div> : !loading && !error ? <div className="ops-platform-summary-empty" role="status">暂无平台连接汇总</div> : null}
       </div>
     </Card>
   );

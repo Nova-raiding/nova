@@ -17,6 +17,7 @@ export function ModelsPage({ model }: ModelsPageProps) {
       nextStep="调整倍率前确认成本证据与变更原因；历史账单不会回溯重算。"
     >
       <Alert
+        className="ops-models-merged-alert"
         type="info"
         showIcon
         title="模型服务页已合并"
@@ -25,12 +26,6 @@ export function ModelsPage({ model }: ModelsPageProps) {
           : "运行时健康、五模态能力和平台用量请从总览查看；当前会话没有商业计费读取权限，因此不展示计费倍率设置。"}
       />
       {sections.includes("model-markup") ? <ModelMarkupPanel model={model} /> : null}
-      {/* The retired 模型服务 page's deep-link anchors (模型服务关键指标,
-          models-runtime-heading, models-capability-heading, 平台模型用量,
-          BILLING CONTROL) are not rendered here or anywhere else in the
-          console; only the route /ops/models survives. Do not claim they are
-          retained - an assertion that greps this file for those literals is
-          satisfied by this comment alone. */}
     </OpsPage>
   );
 }

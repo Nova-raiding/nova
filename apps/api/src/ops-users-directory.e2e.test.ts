@@ -170,6 +170,9 @@ describe('ops.users.list platform directory', () => {
     const operators = (await call({ query: id, account_type: 'platform' })).data?.result
     expect(operators).toMatchObject({ total: 1, workspaceCount: 0, scanned_workspace_count: 0 })
     expect(operators.items[0]).toMatchObject({ accountType: 'platform', scope: 'platform', workspaceId: '' })
+    const all = (await call({ query: id, account_type: 'all' })).data?.result
+    expect(all).toMatchObject({ total: 7, workspaceCount: 3 })
+    expect(new Set(all.items.map((item: any) => item.accountType))).toEqual(new Set(['merchant', 'platform']))
     expect((await call({ account_type: 'other' })).error?.code).toBe('INVALID_REQUEST')
   })
 

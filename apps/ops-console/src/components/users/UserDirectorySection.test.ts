@@ -59,7 +59,7 @@ describe("UserDirectorySection sorting", () => {
     expect(source).not.toContain("total: attributeFilter ? sortedUsers.length");
   });
 
-  it("distinguishes matched account records from merchant workspaces in the visible summary", () => {
+  it("shows the actual number of access-ready merchant workspaces in the directory header", () => {
     const model = {
       authorization: { can: (capability: string) => capability === "identity.read" },
       userDirectory: { items: [], total: 9, identityCount: 9, workspaceCount: 1, offset: 0, limit: 20, truncated: false },
@@ -74,13 +74,24 @@ describe("UserDirectorySection sorting", () => {
     } as unknown as OpsConsoleModel;
 
     const markup = renderToStaticMarkup(createElement(UserDirectorySection, { model }));
-    expect(markup).toContain("当前筛选：9 条商户成员记录，涉及 1 个商家工作区");
+    expect(markup).toContain("共 1 家接入用户");
     expect(markup).toContain("已接入用户");
-    expect(markup).not.toContain("涉及 9 个商家工作区");
+    expect(markup).not.toContain("共 9 家接入用户");
   });
 
-  it("requests 20 users by default while preserving explicit server page sizes", () => {
-    expect(userDirectoryPageRequest({})).toEqual({ page: 1, pageSize: 20 });
+  it("keeps the desktop directory to five viewport-sized columns and opens detail for full identity fields", () => {
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain('{ title: "用户名", dataIndex: "externalSubject", width: 405');
+    expect(source).toContain('{ title: "店铺名", dataIndex: "displayName", width: 213');
+    expect(source).toContain('{ title: "激活状态", dataIndex: "status", width: 130');
+    expect(source).toContain('{ title: "用户属性", dataIndex: "accountType", width: 177');
+    expect(source).not.toContain('{ title: "工作区 ID"');
+    expect(source).not.toContain('{ title: "姓名或显示名"');
+    expect(source).toContain("loadUserDetail(row.externalSubject, row.identityId)");
+  });
+
+  it("requests 10 users by default while preserving explicit server page sizes", () => {
+    expect(userDirectoryPageRequest({})).toEqual({ page: 1, pageSize: 10 });
     expect(userDirectoryPageRequest({}, 2, 50)).toEqual({ page: 2, pageSize: 50 });
   });
 
@@ -137,7 +148,9 @@ describe("UserDirectorySection sorting", () => {
   it("retains account provisioning and authorized directory export actions in the secondary menu", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('{ key: "provision", label: "开通商家账号", disabled: !model.canPlatformOps }');
-    expect(source).toContain('{ key: "export", label: "导出商户成员", disabled: accountType === "platform" || !model.canUserGovernance || model.userExporting }');
+    expect(source).toContain('{ key: "export", label: "导出商户成员", disabled: accountType !== "merchant" || !model.canUserGovernance || model.userExporting }');
+    expect(source).toContain('initialValues={{ status: "", accountType: "all" }}');
+    expect(source).toContain('{ value: "all", label: "全部" }');
     expect(source).toContain('accountType: nextAccountType, page: 1');
   });
 

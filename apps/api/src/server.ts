@@ -2,6 +2,7 @@ import { createHttpResponseHelpers } from './http-response-helpers.js'
 import { authenticateRequest } from './http-authentication-runtime.js'
 import { merchantFirstValuePreview as createMerchantFirstValuePreview } from './mcp-first-value-preview.js'
 import { createRequestObservation } from './http-request-observation.js'
+import { countVerifiedCompletedTasks } from './workspace-completed-task-metrics.js'
 import { createRelayUsageRuntime } from './model-relay-usage-runtime.js'
 import { beginHttpMetric, observeHttpMetric, httpMetricLines } from './http-metrics.js'
 import { handleHttpWorkerExecutionRoute } from './http-worker-execution-routes.js'
@@ -12707,6 +12708,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const severityOrder = { high: 0, medium: 1 } as const
       riskItems.sort((left, right) => severityOrder[left.severity] - severityOrder[right.severity] || left.key.localeCompare(right.key))
       const metricDates = [...products.map(product => product.updatedAt), ...syncJobs.map(job => job.updatedAt), ...tasks.map(task => task.createdAt), ...publishJobs.map(job => job.remoteObservedAt ?? job.createdAt)].filter(Boolean).sort()
+      const funnelTasks = dateFrom || dateTo ? tasks.filter(task => inPeriod(task.createdAt)) : tasks
       const unboundProducts = products.filter(product => !product.accountId)
       const unboundTasks = tasks.filter(task => !resolvedTaskAccount(task))
       const unboundPublish = publishJobs.filter(job => !resolvedPublishAccount(job))
@@ -12738,7 +12740,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         riskSummary: { total: riskItems.length, returned: Math.min(riskItems.length, riskLimit), truncated: riskItems.length > riskLimit, limit: riskLimit },
         snapshotHash,
         productSummary: { total: products.length, lowStock: lowStockProducts.length, missingImages: missingImageProducts.length }, recommendations, platformMetrics,
-        taskFunnel: Object.fromEntries([...new Set(tasks.map(task => task.state))].map(state => [state, tasks.filter(task => task.state === state).length])),
+        taskFunnel: Object.fromEntries([...new Set(funnelTasks.map(task => task.state))].map(state => [state, funnelTasks.filter(task => task.state === state).length])),
+        completedTaskCount: countVerifiedCompletedTasks(publishJobs, inPeriod),
         quality: { p0FindingCount, recoverableTaskRate: tasks.length ? recoveredTasks / tasks.length : 0, recoveryRate: tasks.length ? recoveredTasks / tasks.length : 0, modelFailureRate: generationJobs.length ? generationJobs.filter(job => job.state === 'failed').length / generationJobs.length : 0 },
         jobs: { sync: syncJobs.length, generation: generationJobs.length, generationFailed: generationJobs.filter(job => job.state === 'failed').length, publish: publishJobs.length },
         cost: { available: true, source: 'model_usage_ledger', model_usage_records: modelUsage.length, total_tokens: modelTokens, model_charge_cny: modelChargeCny.toFixed(6), note: '仅展示当前工作区已结算的模型使用费；内部成本和定价策略不对商家端暴露' }, storageReconciliation, warnings,
@@ -12968,6 +12971,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           : walletTransactions.filter(item => item.workspaceId === workspaceId && (billingScope.scope === 'workspace' || item.actorId === billingScope.actorId)).sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
         listModelUsage: period => persistence.modelUsage ? persistence.modelUsage.listForStatement(workspaceId, period) : Promise.resolve([]),
         listActions: () => persistence.actionLedger ? persistence.actionLedger.list(workspaceId, 1000) : Promise.resolve([]),
+        listManualAttentionActions: input => persistence.actionLedger ? persistence.actionLedger.listManualAttention({ workspaceId, ...input }) : Promise.resolve({ items: [], hasMore: false }),
         balanceFen: () => persistence.billing ? persistence.billing.balanceFen(workspaceId) : Promise.resolve(walletBalanceFen(workspaceId)),
         walletEffectiveDebitFens,
         externalProviderUsageStatement,

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Alert,
   Button,
@@ -301,6 +301,7 @@ export function CustomerDeliverySection({
   pageSize = 20,
   onPageChange,
   onFiltersChange,
+  headerActions,
 }: {
   readOnly?: boolean;
   disabled?: boolean;
@@ -341,6 +342,7 @@ export function CustomerDeliverySection({
   pageSize?: number;
   onPageChange?: (page: number) => void;
   onFiltersChange?: (filters: CustomerDeliveryFilters) => void;
+  headerActions?: ReactNode;
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [detailsRecord, setDetailsRecord] = useState<CustomerDeliveryRecord>();
@@ -685,7 +687,8 @@ export function CustomerDeliverySection({
     <Card
       title="客户建档"
       extra={
-        <Space>
+        <Space wrap>
+          {headerActions}
           <Button
             type="primary"
             disabled={disabled || readOnly}

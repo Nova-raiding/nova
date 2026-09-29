@@ -22,7 +22,7 @@ export function conflictEvidenceSummary(row: CanonicalBackfillConflict) {
   };
 }
 
-export function CanonicalBackfillConflictSection({ enabled = false, canUpdate = false, brands = [], onScan }: { enabled?: boolean; canUpdate?: boolean; brands?: BrandNavigationItem[]; onScan?: () => Promise<void> | void }) {
+export function CanonicalBackfillConflictSection({ enabled = false, canUpdate = false, brands = [], workspaces = [], workspaceId, onWorkspaceChange, onScan }: { enabled?: boolean; canUpdate?: boolean; brands?: BrandNavigationItem[]; workspaces?: Array<{ workspaceId: string; enterpriseName?: string }>; workspaceId?: string; onWorkspaceChange?: (workspaceId: string) => void; onScan?: (workspaceId: string) => Promise<void> | void }) {
   const [rows, setRows] = useState<CanonicalBackfillConflict[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -39,14 +39,15 @@ export function CanonicalBackfillConflictSection({ enabled = false, canUpdate = 
   const [runError, setRunError] = useState("");
   const [runIdInput, setRunIdInput] = useState("");
   const operationInFlightRef = useRef(false);
-  const load = async () => { if (!enabled) return; setLoading(true); setError(""); try { setRows((await rpc<CanonicalBackfillConflict[]>("ops.canonical.backfill.conflicts.list", { limit: "100" })) ?? []); } catch (cause) { setError(cause instanceof Error ? cause.message : "冲突队列读取失败"); } finally { setLoading(false); } };
-  useEffect(() => { void load(); }, [enabled]);
+  const scoped = (params: Record<string, string> = {}) => ({ workspace_id: workspaceId ?? "", ...params });
+  const load = async () => { if (!enabled || !workspaceId) { setRows([]); return; } setLoading(true); setError(""); try { setRows((await rpc<CanonicalBackfillConflict[]>("ops.canonical.backfill.conflicts.list", scoped({ limit: "100" }))) ?? []); } catch (cause) { setError(cause instanceof Error ? cause.message : "冲突队列读取失败"); } finally { setLoading(false); } };
+  useEffect(() => { void load(); }, [enabled, workspaceId]);
   const claim = async (row: CanonicalBackfillConflict) => {
     if (operationInFlightRef.current) return;
     operationInFlightRef.current = true;
     setLoading(true);
     try {
-      await rpc("ops.canonical.backfill.conflict.claim", { conflict_id: row.id, expected_revision: String(row.revision), reason: "认领冲突并开始人工核查" });
+      await rpc("ops.canonical.backfill.conflict.claim", scoped({ conflict_id: row.id, expected_revision: String(row.revision), reason: "认领冲突并开始人工核查" }));
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "认领失败");
@@ -69,7 +70,7 @@ export function CanonicalBackfillConflictSection({ enabled = false, canUpdate = 
         setResolutionError("只有 MISSING_BRAND 且服务端返回商品版本时才允许安全修复；请刷新队列。");
         return;
       }
-      await rpc("ops.canonical.backfill.conflict.resolve", { conflict_id: selected.id, expected_revision: String(selected.revision), status: resolution, reason: `品牌范围：${brands.find(brand => brand.id === brandId)?.title ?? brandId}；${note.trim()}`, resolution_note: note.trim(), ...(resolution === "resolved" ? { remediation_type: "set_legacy_brand", brand_id: brandId, expected_product_version: String(selected.sourceProductVersion) } : {}) });
+      await rpc("ops.canonical.backfill.conflict.resolve", scoped({ conflict_id: selected.id, expected_revision: String(selected.revision), status: resolution, reason: `品牌范围：${brands.find(brand => brand.id === brandId)?.title ?? brandId}；${note.trim()}`, resolution_note: note.trim(), ...(resolution === "resolved" ? { remediation_type: "set_legacy_brand", brand_id: brandId, expected_product_version: String(selected.sourceProductVersion) } : {}) }));
       setSelected(undefined); setNote(""); setBrandId(""); setEvidenceConfirmed(false); await load();
     } catch (cause) { setResolutionError(cause instanceof Error ? cause.message : "处理失败"); }
     finally { operationInFlightRef.current = false; setLoading(false); }
@@ -77,11 +78,11 @@ export function CanonicalBackfillConflictSection({ enabled = false, canUpdate = 
   const openResolution = (row: CanonicalBackfillConflict) => { setSelected(row); setBrandId(""); setEvidenceConfirmed(false); setResolutionError(""); setNote(""); setResolution("resolved"); };
   const closeResolution = () => { if (!loading) { setSelected(undefined); setResolutionError(""); setNote(""); setBrandId(""); setEvidenceConfirmed(false); } };
   const scan = async () => {
-    if (!onScan) return;
+    if (!onScan || !workspaceId) return;
     setScanState("running");
     setScanError("");
     try {
-      await onScan();
+      await onScan(workspaceId);
       await load();
       setScanState("success");
     } catch (cause) {
@@ -90,38 +91,39 @@ export function CanonicalBackfillConflictSection({ enabled = false, canUpdate = 
     }
   };
   const createRun = async () => {
-    if (!canUpdate || runBusy) return;
+    if (!canUpdate || !workspaceId || runBusy) return;
     setRunBusy(true); setRunError("");
     try {
-      const created = await rpc<BackfillRun>("ops.canonical.backfill.create", { dry_run: "true", reason: "运营台创建受控 canonical 回填批次" });
+      const created = await rpc<BackfillRun>("ops.canonical.backfill.create", scoped({ dry_run: "true", reason: "运营台创建受控 canonical 回填批次" }));
       if (created) setRun(created);
     } catch (cause) { setRunError(cause instanceof Error ? cause.message : "创建回填批次失败"); }
     finally { setRunBusy(false); }
   };
   const updateRun = async (action: "pause" | "resume" | "run") => {
-    if (!run || !canUpdate || runBusy) return;
+    if (!run || !canUpdate || !workspaceId || runBusy) return;
     setRunBusy(true); setRunError("");
     try {
       const method = action === "pause" ? "ops.canonical.backfill.pause" : action === "resume" ? "ops.canonical.backfill.resume" : "ops.canonical.backfill.run";
-      const value = await rpc<{ run?: BackfillRun }>(method, action === "run" ? { run_id: run.id, expected_revision: String(run.revision) } : { run_id: run.id, expected_revision: String(run.revision), reason: `运营台${action === "pause" ? "暂停" : "恢复"} canonical 回填批次` });
+      const value = await rpc<{ run?: BackfillRun }>(method, scoped(action === "run" ? { run_id: run.id, expected_revision: String(run.revision) } : { run_id: run.id, expected_revision: String(run.revision), reason: `运营台${action === "pause" ? "暂停" : "恢复"} canonical 回填批次` }));
       if (value?.run) setRun(value.run);
     } catch (cause) { setRunError(cause instanceof Error ? cause.message : "回填批次操作失败"); }
     finally { setRunBusy(false); }
   };
   const loadRun = async () => {
-    if (!runIdInput.trim() || runBusy) return;
+    if (!runIdInput.trim() || !workspaceId || runBusy) return;
     setRunBusy(true); setRunError("");
-    try { const value = await rpc<BackfillRun>("ops.canonical.backfill.get", { run_id: runIdInput.trim() }); if (!value) throw new Error("服务端未返回回填批次"); setRun(value); }
+    try { const value = await rpc<BackfillRun>("ops.canonical.backfill.get", scoped({ run_id: runIdInput.trim() })); if (!value) throw new Error("服务端未返回回填批次"); setRun(value); }
     catch (cause) { setRunError(cause instanceof Error ? cause.message : "回填批次读取失败"); }
     finally { setRunBusy(false); }
   };
   if (!enabled) return null;
-  return <Card title="Canonical 回填人工冲突队列" extra={<Space><Button icon={<ScanOutlined />} loading={scanState === "running"} onClick={() => void scan()}>扫描并刷新队列</Button><Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>刷新队列</Button></Space>}>
+  return <Card title="Canonical 回填人工冲突队列" extra={<Space><Select aria-label="冲突队列工作区" placeholder="选择商家工作区" value={workspaceId || undefined} onChange={onWorkspaceChange} style={{ width: 210 }} options={workspaces.map(workspace => ({ value: workspace.workspaceId, label: workspace.enterpriseName ? `${workspace.enterpriseName}（${workspace.workspaceId}）` : workspace.workspaceId }))} /><Button icon={<ScanOutlined />} disabled={!workspaceId || !onScan} loading={scanState === "running"} onClick={() => void scan()}>扫描并刷新队列</Button><Button icon={<ReloadOutlined />} disabled={!workspaceId} loading={loading} onClick={() => void load()}>刷新队列</Button></Space>}>
     {canUpdate && <Card size="small" title="受控回填批次" style={{ marginBottom: 12 }} extra={<Button size="small" type="primary" loading={runBusy} onClick={() => void createRun()}>创建 dry-run 批次</Button>}>
       <Space.Compact style={{ width: "100%", marginBottom: 8 }}><Input aria-label="回填批次 ID" placeholder="输入已有 run_id 查看状态" value={runIdInput} onChange={event => setRunIdInput(event.target.value)} /><Button loading={runBusy} onClick={() => void loadRun()}>读取批次</Button></Space.Compact>
       {run ? <Space wrap><Tag color="processing">{run.status}</Tag><Typography.Text code>{run.id}</Typography.Text><Typography.Text type="secondary">revision {run.revision}</Typography.Text>{(run.status === "planned" || run.status === "running") && <Button size="small" icon={<PauseOutlined />} loading={runBusy} onClick={() => void updateRun("pause")}>暂停</Button>}{run.status === "paused" && <Button size="small" icon={<PlayCircleOutlined />} loading={runBusy} onClick={() => void updateRun("resume")}>恢复</Button>}{(run.status === "planned" || run.status === "running") && <Button size="small" loading={runBusy} onClick={() => void updateRun("run")}>执行一批</Button>}</Space> : <Typography.Text type="secondary">尚未创建或读取回填批次；默认只允许 dry-run。</Typography.Text>}
       {runError && <Alert type="error" showIcon title="回填批次操作失败" description={runError} style={{ marginTop: 8 }} />}
     </Card>}
+    {!workspaceId && <Alert type="info" showIcon title="请选择商家工作区" description="冲突队列按工作区隔离。选择已授权的商家工作区后，页面才会读取该范围内的真实冲突记录。" style={{ marginBottom: 12 }} />}
     <Typography.Paragraph type="secondary">仅展示服务端入队的冲突；认领和解决均要求最新 revision，不能绕过商品关系校验。</Typography.Paragraph>
     {!canUpdate && <Alert type="info" showIcon title="当前为只读权限" description="你可以查看冲突及其状态，但缺少 canonical.backfill.update，不能认领或处理冲突。" style={{ marginBottom: 12 }} />}
     {scanState === "running" && <Alert type="info" showIcon role="status" title="正在扫描一致性" description="正在读取当前工作区的 canonical 关系并刷新冲突队列；扫描不会修改商品关系。" style={{ marginBottom: 12 }} />}

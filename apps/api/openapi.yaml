@@ -1299,7 +1299,7 @@ components:
       additionalProperties: false
     McpCanonicalBackfillRunCreateParams:
       type: object
-      required: [dry_run, reason]
+      required: [workspace_id, dry_run, reason]
       properties:
         workspace_id: { type: string, minLength: 1 }
         dry_run: { type: string, enum: ['true', 'false'] }
@@ -1308,14 +1308,14 @@ components:
       additionalProperties: false
     McpCanonicalBackfillRunGetParams:
       type: object
-      required: [run_id]
+      required: [workspace_id, run_id]
       properties:
         workspace_id: { type: string, minLength: 1 }
         run_id: { type: string, minLength: 1, maxLength: 200 }
       additionalProperties: false
     McpCanonicalBackfillRunControlParams:
       type: object
-      required: [run_id, expected_revision, reason]
+      required: [workspace_id, run_id, expected_revision, reason]
       properties:
         workspace_id: { type: string, minLength: 1 }
         run_id: { type: string, minLength: 1, maxLength: 200 }
@@ -1328,7 +1328,7 @@ components:
     # required field the wire validator rejects; it has its own exact schema.
     McpCanonicalBackfillRunExecuteParams:
       type: object
-      required: [run_id, expected_revision]
+      required: [workspace_id, run_id, expected_revision]
       properties:
         workspace_id: { type: string, minLength: 1 }
         run_id: { type: string, minLength: 1, maxLength: 200 }
@@ -1336,6 +1336,7 @@ components:
       additionalProperties: false
     McpCanonicalBackfillConflictListParams:
       type: object
+      required: [workspace_id]
       properties:
         workspace_id: { type: string, minLength: 1 }
         run_id: { type: string, minLength: 1, maxLength: 200 }
@@ -1344,7 +1345,7 @@ components:
       additionalProperties: false
     McpCanonicalBackfillConflictClaimParams:
       type: object
-      required: [conflict_id, expected_revision, reason]
+      required: [workspace_id, conflict_id, expected_revision, reason]
       properties:
         workspace_id: { type: string, minLength: 1 }
         conflict_id: { type: string, minLength: 1, maxLength: 200 }
@@ -1353,7 +1354,7 @@ components:
       additionalProperties: false
     McpCanonicalBackfillConflictResolveParams:
       type: object
-      required: [conflict_id, expected_revision, status, resolution_note, reason]
+      required: [workspace_id, conflict_id, expected_revision, status, resolution_note, reason]
       properties:
         workspace_id: { type: string, minLength: 1 }
         conflict_id: { type: string, minLength: 1, maxLength: 200 }

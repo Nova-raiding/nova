@@ -11,6 +11,13 @@ describe('canonical governance empty and error accessibility', () => {
     expect(markup).not.toContain('ant-statistic-content')
   })
 
+  it('uses the empty state when the real aggregate reports no brands or mappings', () => {
+    const markup = renderToStaticMarkup(<BrandGovernanceSummary summary={{ scope: 'platform', workspaceCount: 1, brandCount: 0, boundStoreCount: 0, unboundBrandCount: 0, canonicalProductCount: 0, listingCount: 0, workspaces: [] }} />)
+    expect(markup).toContain('尚未取得平台品牌聚合数据')
+    expect(markup).not.toContain('品牌数')
+    expect(markup).not.toContain('平台级脱敏')
+  })
+
   it('keeps the error recovery control keyboard reachable and named', () => {
     const markup = renderToStaticMarkup(<OpsPageError error="canonical consistency service unavailable" onRetry={vi.fn()} />)
     expect(markup).toContain('role="alert"')

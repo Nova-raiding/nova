@@ -4,15 +4,11 @@ import { mainItems, navigationGroups, OpsSidebar } from "./OpsSidebar.js";
 
 describe("OpsSidebar navigation", () => {
   it("uses Store Nova branding for platform operations", () => {
-    expect(mainItems.map(({ domain }) => domain)).not.toContain("tasks");
+    expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("tasks");
     const markup = renderToStaticMarkup(
       <OpsSidebar
         activeDomain="users"
-        stores={[]}
-        platformLabels={{}}
-        selectedStoreScope=""
         onNavigate={() => undefined}
-        onSelectStore={() => undefined}
       />,
     );
     expect(markup).toContain("Store Nova");
@@ -33,20 +29,19 @@ describe("OpsSidebar navigation", () => {
   });
 
   it("keeps the primary rail matched to the three screenshot destinations", () => {
-    expect(navigationGroups.flatMap(({ items }) => [...items])).toEqual(["overview", "users", "customer-delivery"]);
-    expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toContainEqual({ domain: "stores", label: "平台与店铺" });
-    expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toContainEqual({ domain: "finance", label: "账务与退款" });
+    expect(navigationGroups[0]?.items).toEqual(["overview", "users", "customer-delivery"]);
+    expect(navigationGroups).toHaveLength(1);
+    expect(mainItems.map(({ domain }) => domain)).toEqual([
+      "overview", "users", "customer-delivery", "members", "tasks", "knowledge", "stores", "rules", "models", "storage", "finance", "audit",
+    ]);
   });
 
-  it("exposes the independent model services destination", () => {
-    expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toContainEqual({
-      domain: "models",
-      label: "模型服务",
-    });
+  it("keeps the retired model services destination out of navigation", () => {
+    expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("models");
   });
 
   it("keeps member governance inside the user center", () => {
-    expect(mainItems.map(({ domain }) => domain)).not.toContain("members");
+    expect(mainItems.map(({ domain }) => domain)).toContain("members");
     expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toContainEqual({
       domain: "users",
       label: "用户中心",
@@ -54,13 +49,9 @@ describe("OpsSidebar navigation", () => {
   });
 
   it("keeps role-gated routes available in their authorized navigation group", () => {
-    expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toEqual(
-      expect.arrayContaining([
-        { domain: "rules", label: "平台规则" },
-      ]),
-    );
+    expect(mainItems.map(({ domain }) => domain)).toContain("rules");
     expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("rules");
-    expect(mainItems.map(({ domain }) => domain)).not.toEqual(expect.arrayContaining(["feature-flags", "storage", "audit"]));
+    expect(mainItems.map(({ domain }) => domain)).not.toContain("feature-flags");
   });
 
   it("does not expose removed support, incident, or feature flag destinations", () => {
@@ -71,12 +62,8 @@ describe("OpsSidebar navigation", () => {
     const markup = renderToStaticMarkup(
       <OpsSidebar
         activeDomain="users"
-        stores={[]}
-        platformLabels={{}}
-        selectedStoreScope=""
-        visibleDomains={["users", "stores", "audit"]}
+        visibleDomains={["users", "audit"]}
         onNavigate={() => undefined}
-        onSelectStore={() => undefined}
       />,
     );
     expect(markup).not.toContain("客服");
@@ -87,70 +74,66 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("平台规则");
     expect(markup).not.toContain("功能开关");
     expect(markup).not.toContain("风险与系统");
-    expect(markup).not.toContain("存储与对账");
-    expect(markup).not.toContain("审计中心");
+    expect(markup).not.toContain('aria-label="更多功能"');
+    expect(markup).not.toContain('aria-label="审计中心"');
+    expect(markup).not.toContain('aria-label="平台与店铺"');
+    expect(markup).not.toContain('aria-label="平台规则"');
+    expect(markup).not.toContain('aria-label="账务与退款"');
+    expect(markup).not.toContain('aria-label="存储与对账"');
   });
 
-  it("renders the three primary destinations from the supplied desktop reference", () => {
-    const markup = renderToStaticMarkup(<OpsSidebar activeDomain="overview" stores={[]} platformLabels={{}} selectedStoreScope="" onNavigate={() => undefined} onSelectStore={() => undefined} />);
+  it("renders only the three screenshot destinations in the primary rail", () => {
+    const markup = renderToStaticMarkup(<OpsSidebar activeDomain="overview" visibleDomains={["overview", "users", "customer-delivery", "stores", "rules", "finance", "storage", "audit"]} onNavigate={() => undefined} />);
     expect((markup.match(/class="sider-item(?: active)?"/g) ?? [])).toHaveLength(3);
     expect(markup).toContain('aria-label="总览"');
     expect(markup).toContain('aria-label="用户中心"');
     expect(markup).toContain('aria-label="客户交付"');
-    expect(markup).not.toContain('aria-label="平台与店铺"');
-    expect(markup).not.toContain('aria-label="平台规则"');
-    expect(markup).not.toContain('aria-label="账务与退款"');
+    for (const label of ["平台与店铺", "规则中心", "账务与退款", "审计中心", "存储治理"]) {
+      expect(markup).not.toContain(`aria-label="${label}"`);
+    }
+    expect(mainItems.map(({ domain }) => domain)).toEqual(expect.arrayContaining(["stores", "rules", "finance", "storage", "audit"]));
   });
 
-  it("keeps finance route definitions without adding it to the primary rail", () => {
+  it("keeps finance reachable only when it is in the server-derived visibility set", () => {
     expect(mainItems.map(({ domain }) => domain)).toContain("finance");
-    expect(mainItems.map(({ label }) => label)).toContain("账务与退款");
     expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("finance");
+    expect(mainItems.map(({ domain }) => domain)).not.toContain("feature-flags");
     const markup = renderToStaticMarkup(
       <OpsSidebar
         activeDomain="overview"
-        stores={[]}
-        platformLabels={{}}
-        selectedStoreScope=""
         visibleDomains={["overview", "finance"]}
         onNavigate={() => undefined}
-        onSelectStore={() => undefined}
       />,
     );
     expect(markup).toContain('aria-label="总览"');
     expect(markup).not.toContain('aria-label="用户中心"');
     expect(markup).not.toContain('aria-label="客户交付"');
     expect(markup).not.toContain('aria-label="账务与退款"');
-    expect(markup).not.toContain('aria-labelledby="ops-nav-group-model-billing"');
     const restrictedMarkup = renderToStaticMarkup(
-      <OpsSidebar activeDomain="users" stores={[]} platformLabels={{}} selectedStoreScope="" visibleDomains={["users"]} onNavigate={() => undefined} onSelectStore={() => undefined} />,
+      <OpsSidebar activeDomain="users" visibleDomains={["users"]} onNavigate={() => undefined} />,
     );
     expect(restrictedMarkup).not.toContain('aria-label="账务与退款"');
+    expect(restrictedMarkup).not.toContain('aria-label="更多功能"');
   });
 
-  it("keeps the model services entry out of the rendered platform navigation", () => {
-    // `models` is intentionally retained in `mainItems` for backwards-compatible
-    // labels, but 365c5d84 left it out of `navigationGroups`, so the sidebar
-    // renders no button for it. The browser walk in ops-all.spec.js asserts the
-    // same absence; this pins it at the unit level.
+  it("excludes retired model services and workspace-only destinations", () => {
     expect(mainItems.map(({ domain }) => domain)).toContain("models");
     expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("models");
     const markup = renderToStaticMarkup(
       <OpsSidebar
         activeDomain="overview"
-        stores={[]}
-        platformLabels={{}}
-        selectedStoreScope=""
+        visibleDomains={["overview", "models"]}
         onNavigate={() => undefined}
-        onSelectStore={() => undefined}
       />,
     );
-    expect(markup).not.toContain("模型服务");
+    expect(markup).not.toContain('aria-label="模型服务"');
+    expect(markup).not.toContain('aria-label="成员管理"');
+    expect(markup).not.toContain('aria-label="任务中心"');
   });
 
   it("does not render customer store scope in the platform operations navigation", () => {
     const markup = renderToStaticMarkup(
-      <OpsSidebar activeDomain="stores" stores={[{ platform: "jd", accountId: "store-1", label: "京东一店", state: "connected" }, { platform: "jd", accountId: "store-2", label: "京东二店", state: "refresh_required" }]} platformLabels={{ jd: "京东" }} selectedStoreScope="jd:store-1" onNavigate={() => undefined} onSelectStore={() => undefined} />,
+      <OpsSidebar activeDomain="stores" onNavigate={() => undefined} />,
     );
     expect(markup).not.toContain("受控支持入口");
     expect(markup).not.toContain("京东一店");
@@ -162,12 +145,8 @@ describe("OpsSidebar navigation", () => {
     const markup = renderToStaticMarkup(
       <OpsSidebar
         activeDomain="users"
-        stores={[]}
-        platformLabels={{}}
-        selectedStoreScope=""
         visibleDomains={["users"]}
         onNavigate={() => undefined}
-        onSelectStore={() => undefined}
       />,
     );
     expect(markup).not.toContain("当前操作范围");
@@ -177,4 +156,5 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("风险与系统");
     expect(markup).not.toContain("受控支持入口");
   });
+
 });

@@ -20,7 +20,6 @@ const overview = (baseUrl?: string) => renderToStaticMarkup(createElement(Overvi
 const finance = () => renderToStaticMarkup(createElement(FinanceOverview, {
   baseUrl: 'http://127.0.0.1:9',
   billing: null,
-  account: null,
   onOpenSupport: () => undefined,
 }))
 
@@ -69,6 +68,31 @@ describe('unread reads are never rendered as measured values', () => {
     const html = finance()
     expect(html).not.toContain('finance-storage-track')
     expect(html).toContain('服务端未返回储存配额，当前不显示用量。')
+  })
+
+  it('keeps the screenshot finance plan ribbon and only the matched summary facts visible', () => {
+    const html = finance()
+    expect(html).toContain('aria-label="账号版本与有效期"')
+    expect(html).toContain('当前版本')
+    expect(html).toContain('有效期至')
+    expect(html).toContain('剩余天数')
+    expect(html).toContain('截止今日总消耗')
+    expect(html).not.toContain('最近已入账充值')
+    expect(html).not.toContain('aria-label="账号与工作区"')
+    expect(html).not.toContain('aria-label="人工发布状态"')
+    expect(html).not.toContain('finance-secondary-disclosure')
+  })
+
+  it('uses the screenshot summary metrics and does not insert a wallet metric', () => {
+    const html = renderToStaticMarkup(createElement(FinanceOverview, {
+      baseUrl: 'http://127.0.0.1:9',
+      billing: { available_points: 2480, balance_cny: '123.45' } as never,
+      onOpenSupport: () => undefined,
+    }))
+    expect(html).toContain('当前剩余创意点')
+    expect(html).toContain('2,480 点')
+    expect(html).toContain('截止今日总消耗')
+    expect(html).not.toContain('钱包余额')
   })
 
   it('removes the hardcoded 0% storage bars entirely', () => {
@@ -127,7 +151,7 @@ describe('creative point statement discloses its page budget', () => {
   // contracts declaration and hid the fact that the client could not read a
   // single real row (see creative-point-statement-contract.test.ts).
   const capturedEntry = capture.data.result.entries[0]!
-  const entry = (id: string) => ({ ...capturedEntry, id, eventType: 'settled', pointsDelta: -1, createdAt: '2026-09-01T00:00:00.000Z' })
+  const entry = (id: string) => ({ ...capturedEntry, id, eventType: 'settled', pointsDelta: -1, createdAt: '2026-09-01T00:00:00.000Z', intent: { ...capturedEntry.intent, actual_points: 1 } })
   const envelope = (data: unknown) => new Response(JSON.stringify({
     request_id: 'merchant-studio-test', trace_id: 'merchant-studio-test', workspace_id: 'ws_demo',
     data, warnings: [], next_actions: [], error: null,

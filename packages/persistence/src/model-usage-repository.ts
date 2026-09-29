@@ -319,6 +319,14 @@ const tokenCount = (value: number | string | null) => {
   return parsed
 }
 const projection = 'id, workspace_id, receipt_key, receipt_hash, action_id, budget_reservation_key, budget_run_key, context_link_id, context_hash, modality, model, provider_request_id, input_tokens, output_tokens, total_tokens, cost_cny, markup_multiplier, customer_charge_cny, pricing_policy_revision, settlement_status, attempt_count, last_error, next_attempt_at, claim_owner, claim_expires_at, revision, resolved_by, resolution_reason, resolution_evidence_ref, resolved_at, observed_at, metadata'
+
+function receiptLookupSql(lockAction: boolean) {
+  if (!lockAction) return `SELECT ${projection} FROM model_usage_ledger WHERE workspace_id=$1 AND (receipt_key=$2 OR ($3::text IS NOT NULL AND provider_request_id=$3)) FOR UPDATE`
+  // Orphan reconciliation takes this same action-row lock before checking for
+  // a missing usage receipt. Serializing both paths prevents it from observing
+  // the gap between the pending_receipt transition and the usage-row insert.
+  return `WITH locked_action AS MATERIALIZED (SELECT action_key FROM action_ledger WHERE workspace_id=$1 AND action_key=$4 FOR UPDATE) SELECT ${projection} FROM model_usage_ledger CROSS JOIN (SELECT count(*) AS lock_count FROM locked_action) action_lock WHERE workspace_id=$1 AND (receipt_key=$2 OR ($3::text IS NOT NULL AND provider_request_id=$3)) FOR UPDATE`
+}
 const map = (row: UsageRow): ModelUsageRecord => ({ id: row.id, workspaceId: row.workspace_id, receiptKey: row.receipt_key, receiptHash: row.receipt_hash, ...(row.action_id ? { actionId: row.action_id } : {}), ...(row.budget_reservation_key ? { budgetReservationKey: row.budget_reservation_key } : {}), ...(row.budget_run_key ? { budgetRunKey: row.budget_run_key } : {}), ...(row.context_link_id ? { contextLinkId: row.context_link_id } : {}), ...(row.context_hash ? { contextHash: row.context_hash } : {}), modality: row.modality, model: row.model, ...(row.provider_request_id ? { providerRequestId: row.provider_request_id } : {}), ...(tokenCount(row.input_tokens) !== undefined ? { inputTokens: tokenCount(row.input_tokens) } : {}), ...(tokenCount(row.output_tokens) !== undefined ? { outputTokens: tokenCount(row.output_tokens) } : {}), ...(tokenCount(row.total_tokens) !== undefined ? { totalTokens: tokenCount(row.total_tokens) } : {}), ...(row.cost_cny !== null ? { costCny: Number(row.cost_cny) } : {}), ...(row.markup_multiplier !== null ? { markupMultiplier: Number(row.markup_multiplier) } : {}), ...(row.customer_charge_cny !== null ? { customerChargeCny: Number(row.customer_charge_cny) } : {}), ...(row.pricing_policy_revision !== null ? { pricingPolicyRevision: row.pricing_policy_revision } : {}), settlementStatus: row.settlement_status, attemptCount: row.attempt_count, ...(row.last_error ? { lastError: row.last_error } : {}), ...(row.next_attempt_at ? { nextAttemptAt: iso(row.next_attempt_at) } : {}), ...(row.claim_owner ? { claimOwner: row.claim_owner } : {}), ...(row.claim_expires_at ? { claimExpiresAt: iso(row.claim_expires_at) } : {}), revision: row.revision, ...(row.resolved_by ? { resolvedBy: row.resolved_by } : {}), ...(row.resolution_reason ? { resolutionReason: row.resolution_reason } : {}), ...(row.resolution_evidence_ref ? { resolutionEvidenceRef: row.resolution_evidence_ref } : {}), ...(row.resolved_at ? { resolvedAt: iso(row.resolved_at) } : {}), observedAt: iso(row.observed_at), ...(row.metadata ? { metadata: row.metadata } : {}) })
 const budgetProjection = 'workspace_id,budget_date::text AS budget_date,reservation_key,run_key,modality,model,estimate_cny,estimate_version,daily_limit_cny,run_limit_cny,status,over_budget_reason,actual_cost_cny,provider_request_id,revision,created_at,updated_at'
 const mapBudget = (row: BudgetRow): ModelCostBudgetReservation => ({ workspaceId: row.workspace_id, budgetDate: iso(row.budget_date).slice(0, 10), reservationKey: row.reservation_key, runKey: row.run_key, modality: row.modality, model: row.model, estimateCny: Number(row.estimate_cny), estimateVersion: row.estimate_version, dailyLimitCny: Number(row.daily_limit_cny), runLimitCny: Number(row.run_limit_cny), status: row.status, ...(row.over_budget_reason ? { overBudgetReason: row.over_budget_reason } : {}), ...(row.actual_cost_cny !== null ? { actualCostCny: Number(row.actual_cost_cny) } : {}), ...(row.provider_request_id ? { providerRequestId: row.provider_request_id } : {}), revision: row.revision, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) })
@@ -351,7 +359,9 @@ export class PostgresModelUsageRepository implements ModelUsageRepository {
       } else {
         await client.query(budgetLockSql, [workspaceId, budgetDate(observedAt)])
       }
-      const found = await client.query<UsageRow>(`SELECT ${projection} FROM model_usage_ledger WHERE workspace_id=$1 AND (receipt_key=$2 OR ($3::text IS NOT NULL AND provider_request_id=$3)) FOR UPDATE`, [workspaceId, receiptKey, input.providerRequestId ?? null])
+      const found = await client.query<UsageRow>(receiptLookupSql(Boolean(input.actionId)), input.actionId
+        ? [workspaceId, receiptKey, input.providerRequestId ?? null, input.actionId]
+        : [workspaceId, receiptKey, input.providerRequestId ?? null])
       if (found.rows[0]) {
         const existing = map(found.rows[0]); if (existing.receiptHash !== receiptHash) throw new Error('MODEL_USAGE_IDEMPOTENCY_CONFLICT')
         assertBudgetLinkMatches(existing, input)
@@ -377,7 +387,9 @@ export class PostgresModelUsageRepository implements ModelUsageRepository {
       let reservation = reservationResult.rows[0] ? mapBudget(reservationResult.rows[0]) : undefined
       if (!reservation || reservation.runKey !== input.budgetRunKey) throw new Error('MODEL_USAGE_BUDGET_LINK_CONFLICT')
       if (reservation.status === 'released') throw new Error('MODEL_COST_BUDGET_RESERVATION_RELEASED')
-      const found = await client.query<UsageRow>(`SELECT ${projection} FROM model_usage_ledger WHERE workspace_id=$1 AND (receipt_key=$2 OR ($3::text IS NOT NULL AND provider_request_id=$3)) FOR UPDATE`, [workspaceId, receiptKey, input.providerRequestId ?? null])
+      const found = await client.query<UsageRow>(receiptLookupSql(Boolean(input.actionId)), input.actionId
+        ? [workspaceId, receiptKey, input.providerRequestId ?? null, input.actionId]
+        : [workspaceId, receiptKey, input.providerRequestId ?? null])
       let usage: ModelUsageRecord
       if (found.rows[0]) {
         const existing = map(found.rows[0])

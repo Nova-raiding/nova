@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { MerchantAuthAccount } from './api.js'
 import { MemberRequestGate, memberActions, memberSessionScope } from './MerchantMembersPage.js'
 import { merchantRouteFromLocation, urlForMerchantRoute } from './navigation.js'
+
+const membersPageSource = readFileSync(resolve(import.meta.dirname, 'MerchantMembersPage.tsx'), 'utf8')
 
 const account = { accountType: 'merchant', workspaceIds: ['ws_a', 'ws_b'] } as MerchantAuthAccount
 const session = { workspace_id: 'ws_a', workbench: 'workspace', capabilities: ['workspace.member.read', 'workspace.member.manage'], assignable_roles: ['operator'] }
@@ -20,6 +24,16 @@ describe('merchant members scope and governance', () => {
     expect(memberActions({ ...session, capabilities: ['workspace.member.read'] }, { ...member, governance: { canChangeTarget: true, canDeactivateTarget: true } })).toEqual({ changeRole: false, suspend: false, reactivate: false })
     expect(memberActions(session, { ...member, governance: { canChangeTarget: true, canDeactivateTarget: false } })).toEqual({ changeRole: true, suspend: false, reactivate: false })
     expect(memberActions(session, { ...member, status: 'suspended', governance: { canChangeTarget: true, canDeactivateTarget: false } })).toEqual({ changeRole: true, suspend: false, reactivate: true })
+  })
+
+  it('keeps the rendered member list behind server read capability and workspace scope', () => {
+    const scopeCheck = membersPageSource.indexOf('if (!memberSessionScope(currentSession, account, selectedWorkspaceId))')
+    const readCapabilityCheck = membersPageSource.indexOf("if (!currentSession.capabilities.includes('workspace.member.read'))")
+    const listRequest = membersPageSource.indexOf("'ops.members.list'")
+    expect(scopeCheck).toBeGreaterThan(-1)
+    expect(readCapabilityCheck).toBeGreaterThan(scopeCheck)
+    expect(listRequest).toBeGreaterThan(readCapabilityCheck)
+    expect(membersPageSource).toContain("const canManage = Boolean(workspaceId && page && session?.capabilities.includes('workspace.member.read') && session?.capabilities.includes('workspace.member.manage')")
   })
 
   it('keeps the member destination stable across direct links and in-app navigation', () => {

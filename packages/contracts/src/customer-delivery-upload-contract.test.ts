@@ -95,8 +95,8 @@ describe('customer delivery upload and status MCP contracts', () => {
   it.each(['target_workspace_id', 'delivery_id', 'purpose', 'name', 'mime_type', 'content_base64'])('requires a nonempty upload %s', field => {
     const missing: Record<string, unknown> = { ...uploadParams }
     delete missing[field]
-    expect(validate(uploadMethod, missing).errors).toContain(`params.${field} is required`)
-    expect(validate(uploadMethod, { ...uploadParams, [field]: '' }).errors).toContain(`params.${field} is required`)
+    expect(validate(uploadMethod, missing).errors).toContain(`缺少必填参数 params.${field}`)
+    expect(validate(uploadMethod, { ...uploadParams, [field]: '' }).errors).toContain(`缺少必填参数 params.${field}`)
     expect(validate(uploadMethod, { ...uploadParams, [field]: '   ' }).valid).toBe(false)
   })
 
@@ -107,13 +107,13 @@ describe('customer delivery upload and status MCP contracts', () => {
     ['mime_type', 100],
   ] as const)('enforces the exact upload %s length limit', (field, limit) => {
     expect(validate(uploadMethod, { ...uploadParams, [field]: 'a'.repeat(limit) })).toEqual({ valid: true, errors: [] })
-    expect(validate(uploadMethod, { ...uploadParams, [field]: 'a'.repeat(limit + 1) }).errors).toContain(`params.${field} must contain at most ${limit} characters`)
+    expect(validate(uploadMethod, { ...uploadParams, [field]: 'a'.repeat(limit + 1) }).errors).toContain(`params.${field} 最多允许 ${limit} 个字符`)
   })
 
   it('accepts the 50 MiB base64 boundary and rejects one extra encoded character', () => {
     const oversized = 'A'.repeat(maxContentLength + 1)
     expect(validate(uploadMethod, { ...uploadParams, content_base64: oversized.slice(0, maxContentLength) })).toEqual({ valid: true, errors: [] })
-    expect(validate(uploadMethod, { ...uploadParams, content_base64: oversized }).errors).toContain(`params.content_base64 must contain at most ${maxContentLength} characters`)
+    expect(validate(uploadMethod, { ...uploadParams, content_base64: oversized }).errors).toContain(`params.content_base64 最多允许 ${maxContentLength} 个字符`)
   })
 
   it.each(['', 'a'.repeat(63), 'a'.repeat(65), 'A'.repeat(64), 'g'.repeat(64), ` ${'a'.repeat(64)}`])('rejects a malformed optional SHA-256 value %#', sha256 => {
@@ -134,7 +134,7 @@ describe('customer delivery upload and status MCP contracts', () => {
     for (const field of ['target_workspace_id', 'delivery_id', 'purpose', 'asset_ref']) {
       const missing: Record<string, unknown> = { ...getParams }
       delete missing[field]
-      expect(validate(getMethod, missing).errors).toContain(`params.${field} is required`)
+      expect(validate(getMethod, missing).errors).toContain(`缺少必填参数 params.${field}`)
       expect(validate(getMethod, { ...getParams, [field]: '' }).valid).toBe(false)
     }
     for (const [field, limit] of [['target_workspace_id', 200], ['delivery_id', 256], ['asset_ref', 1000]] as const) {
@@ -145,9 +145,9 @@ describe('customer delivery upload and status MCP contracts', () => {
 
   it.each([uploadMethod, getMethod])('rejects client-supplied scan verdicts and unsupported purpose for %s', method => {
     const base = method === uploadMethod ? uploadParams : getParams
-    expect(validate(method, { ...base, purpose: 'image' }).errors).toContain('params.purpose has an unsupported value')
+    expect(validate(method, { ...base, purpose: 'image' }).errors).toContain('params.purpose 的值不受支持')
     for (const field of ['scan_status', 'scan_receipt_id', 'storage_key']) {
-      expect(validate(method, { ...base, [field]: 'clean' }).errors).toContain(`params.${field} is not accepted for ${method}`)
+      expect(validate(method, { ...base, [field]: 'clean' }).errors).toContain(`${method} 不接受参数 params.${field}`)
     }
   })
 })

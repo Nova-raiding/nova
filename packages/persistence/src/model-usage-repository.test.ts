@@ -251,6 +251,22 @@ describe('MemoryModelUsageRepository', () => {
 })
 
 describe('PostgresModelUsageRepository settlement cost invariant', () => {
+  it('locks the linked action while recording a provider receipt', async () => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // set workspace scope
+    client.enqueue() // daily budget advisory lock
+    client.enqueue([postgresUsageRow({ receipt_key: 'receipt_orphan', action_id: 'action_orphan', receipt_hash: 'a'.repeat(64), provider_request_id: 'provider_orphan', cost_cny: 0.01, settlement_status: 'pending_wallet' })])
+    client.enqueue()
+    const repository = new PostgresModelUsageRepository(new RecordingPool(client))
+
+    await repository.record({ workspaceId: 'ws_usage', actionId: 'action_orphan', receiptKey: 'receipt_orphan', receiptHash: 'a'.repeat(64), modality: 'image', model: 'relay-image', providerRequestId: 'provider_orphan', costCny: 0.01, settlementStatus: 'pending_wallet' })
+
+    const receiptLookup = client.calls.find(call => call.text.includes('locked_action AS MATERIALIZED'))
+    expect(receiptLookup?.text).toContain('FROM action_ledger WHERE workspace_id=$1 AND action_key=$4 FOR UPDATE')
+    expect(receiptLookup?.values).toEqual(['ws_usage', 'receipt_orphan', 'provider_orphan', 'action_orphan'])
+  })
+
   it('atomically rejects settled when both stored and supplied costs are absent', async () => {
     const client = new RecordingClient()
     client.enqueue()

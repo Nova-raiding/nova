@@ -49,7 +49,8 @@ afterEach(() => {
 const renderLibrary = (props: { baseUrl?: string; accounts: never[] | null; products: null; view: 'library' | 'brands' }) =>
   renderToStaticMarkup(createElement(MaterialLibraryWorkspace, props))
 
-const renderRecycleBin = () => renderToStaticMarkup(createElement(MaterialRecycleBinWorkspace))
+const demoScope = { accountId: 'merchant-1', workspaceId: 'ws_demo' }
+const renderRecycleBin = (storageScope: typeof demoScope | null = demoScope) => renderToStaticMarkup(createElement(MaterialRecycleBinWorkspace, { storageScope }))
 
 describe('the material library may not claim a catalogue it did not read', () => {
   it('states no count when no API is configured, and shows no material card', () => {
@@ -78,10 +79,12 @@ describe('the material library may not claim a catalogue it did not read', () =>
     // The brand view used to dereference `activeStore.name` unconditionally.
     const brands = renderLibrary({ accounts: [], products: null, view: 'brands' })
     expect(brands).toContain('当前没有已登记店铺')
-    expect(brands).toContain('上传品牌资料')
+    expect(brands).not.toContain('上传品牌资料')
+    expect(brands).toContain('登记店铺后可配置店铺品牌信息')
     expect(brands).not.toMatch(/Store Nova/u)
     const unreadBrands = renderLibrary({ baseUrl: 'http://127.0.0.1:9', accounts: null, products: null, view: 'brands' })
-    expect(unreadBrands).toContain('上传品牌资料')
+    expect(unreadBrands).not.toContain('上传品牌资料')
+    expect(unreadBrands).toContain('正在读取店铺列表')
   })
 
   it('distinguishes a registered store without read authorization from no store', () => {
@@ -103,7 +106,10 @@ describe('the material library may not claim a catalogue it did not read', () =>
     }))
     expect(brands).toContain('店铺列表读取失败：服务暂不可用')
     expect(brands).not.toContain('正在读取店铺列表')
-    expect(brands).toContain('上传品牌资料')
+    expect(brands).not.toContain('上传品牌资料')
+    expect(brands).toContain('店铺品牌配置暂不可用')
+    expect(brands).not.toContain('保存品牌配置')
+    expect(brands).not.toContain('material-brand-config-card')
   })
 
   it('renders the reviewed workspace landmarks, not a rebuilt page', () => {
@@ -138,7 +144,7 @@ describe('the recycle bin may not invent a recoverable material', () => {
     expect(recycleBin).toContain('服务端已删除素材的读取尚未接入')
     // A record this browser really wrote is still shown — the bin is not
     // hardcoded to empty, it reads its own storage.
-    storage.set('merchant-material-recycle-bin-v1', JSON.stringify([{
+    storage.set('merchant-material-recycle-bin-v2:merchant-1:ws_demo', JSON.stringify([{
       id: 'asset-1', name: 'merchant-removed.png', category: '未分类', series: '未分类',
       sizeLabel: '未读取', fileSizeLabel: '1 KB', format: 'PNG', addedAt: '2026-09-20',
       downloadUrl: '', assetId: 'asset-1', storeId: '', storeName: '未归属', platform: '未归属',
@@ -147,5 +153,18 @@ describe('the recycle bin may not invent a recoverable material', () => {
     const withItem = renderRecycleBin()
     expect(withItem).toContain('merchant-removed.png')
     expect(withItem).toContain('未归属')
+    expect(withItem).toContain('恢复会取消本地隐藏状态')
+    expect(withItem).toContain('不修改服务端归属或文件')
+    expect(withItem).not.toContain('可恢复到原店铺')
+    expect(withItem).not.toContain('提前彻底删除')
+  })
+
+  it('does not read legacy or other-tenant entries when scope is absent', () => {
+    storage.set('merchant-material-recycle-bin-v1', JSON.stringify([{ id: 'old', name: 'legacy-secret' }]))
+    storage.set('merchant-material-recycle-bin-v2:other:ws_demo', JSON.stringify([{ id: 'other', name: 'other-secret' }]))
+    expect(renderRecycleBin(null)).toContain('回收站为空')
+    expect(renderRecycleBin(null)).not.toContain('legacy-secret')
+    expect(renderRecycleBin(null)).not.toContain('other-secret')
+    expect(storage.has('merchant-material-recycle-bin-v1')).toBe(true)
   })
 })

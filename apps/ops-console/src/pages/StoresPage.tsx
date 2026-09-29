@@ -15,6 +15,7 @@ import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { platformLabels, platforms, type Platform } from "../types/ops";
 import type { OpsDomain } from "../navigation/opsNavigation";
 import { Button } from "antd";
+import { useState } from "react";
 
 interface StoresPageProps {
   model: OpsConsoleModel;
@@ -41,12 +42,20 @@ export function canCreateBrandUnit(roles: readonly string[]) {
   return roles.some((role) => ["workspace_owner", "merchant_admin", "platform_ops"].includes(role));
 }
 
+export function canScanCanonicalBackfill(platformScope: boolean, canUpdate: boolean, updateScope?: string) {
+  return platformScope && canUpdate && updateScope === "platform";
+}
+
 export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate: (domain: OpsDomain) => void }) {
+  const [conflictWorkspaceId, setConflictWorkspaceId] = useState("");
   const storeLoadError = model.dataSetError("workspace.health", "ops.stores.list");
   const platformScope = model.authorization.scope.kind === "platform";
-  const canManageCanonicalBackfill = platformScope
-    && model.opsSession?.roles.includes("platform_ops") === true
-    && model.authorization.can("canonical.backfill.read");
+  const canManageCanonicalBackfill = platformScope && model.authorization.can("canonical.backfill.read");
+  const canUpdateCanonicalBackfill = canScanCanonicalBackfill(
+    platformScope,
+    model.authorization.can("canonical.backfill.update"),
+    model.authorization.scopeFor("canonical.backfill.update")?.kind,
+  );
   const storeDetailError = storeLoadError && model.storeDirectory.length === 0 ? storeLoadError : undefined;
   const hasAutomationData = Boolean(model.automationPolicy || model.automationScan || model.automationPolicies.length);
   const automationLoadError = model.dataSetError("automation.policy.get", "automation.policy.list", "automation.scan");
@@ -71,10 +80,10 @@ export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate
       }} />}
       <BrandGovernanceSummary summary={model.platformBrandUnitSummary} />
       <CanonicalProductConsistencySection report={model.canonicalProductConsistency} onRefresh={() => void model.load()} loading={model.loading} canRead={canCanonicalRead} />
-      <CanonicalBackfillConflictSection enabled={canManageCanonicalBackfill} canUpdate={canManageCanonicalBackfill && model.authorization.can("canonical.backfill.update")} brands={model.brandNavigation} onScan={canManageCanonicalBackfill && canCanonicalRead ? async () => {
-        const run = await rpc<{ id: string }>("ops.canonical.backfill.create", { dry_run: "true", reason: "刷新 canonical 冲突队列前创建扫描审计批次" });
+      <CanonicalBackfillConflictSection enabled={canManageCanonicalBackfill} canUpdate={canUpdateCanonicalBackfill} brands={model.brandNavigation} workspaces={(model.workspaceDirectory?.items ?? []).filter(workspace => workspace.status === "active")} workspaceId={conflictWorkspaceId} onWorkspaceChange={setConflictWorkspaceId} onScan={canUpdateCanonicalBackfill ? async (workspaceId) => {
+        const run = await rpc<{ id: string }>("ops.canonical.backfill.create", { workspace_id: workspaceId, dry_run: "true", reason: "刷新 canonical 冲突队列前创建扫描审计批次" });
         if (!run?.id) throw new Error("扫描审计批次创建失败");
-        await opsRestPost("/v1/canonical-backfill/conflicts/scan", { audit_batch_id: run.id, reason: "刷新 canonical 冲突队列" });
+        await opsRestPost("/v1/canonical-backfill/conflicts/scan", { workspace_id: workspaceId, audit_batch_id: run.id, reason: "刷新 canonical 冲突队列" });
         await model.load();
       } : undefined} />
       <StoreDirectorySection

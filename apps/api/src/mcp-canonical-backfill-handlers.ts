@@ -37,6 +37,7 @@ export async function handleMcpCanonicalBackfill(method: string, params: Record<
     case 'ops.canonical.backfill.conflict.claim':
     case 'ops.canonical.backfill.conflict.resolve': {
       requireOperationsRole(req, ['platform_ops'])
+      if (!workspaceId.trim()) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_REQUIRED, 'canonical backfill 必须明确选择工作区范围', 400)
       await persistenceReady
       const persistence = getPersistence()
       const repository = persistence.canonicalBackfillRuns

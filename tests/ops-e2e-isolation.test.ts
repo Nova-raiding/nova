@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { createServer, request as httpRequest } from 'node:http'
 import { describe, expect, it, vi } from 'vitest'
-import { createOpsPasswordProxy, disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, opsE2eScanPurpose, productImportPointGrantInput, productImportSyntheticSku, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout, validateOpsE2eSpecIsolation } from '../scripts/run-ops-password-e2e.js'
+import { createOpsPasswordProxy, disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, opsE2eFailureReport, opsE2eScanPurpose, productImportPointGrantInput, productImportSyntheticSku, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout, validateOpsE2eSpecIsolation } from '../scripts/run-ops-password-e2e.js'
 
 const { forbidRuntimeResources } = vi.hoisted(() => ({
   forbidRuntimeResources: vi.fn(() => { throw new Error('OPS_E2E_RESOURCE_CREATION_ATTEMPTED') }),
@@ -168,6 +168,26 @@ describe('Ops browser acceptance isolation', () => {
 })
 
 describe('Ops acceptance runtime failure and cleanup', () => {
+  it('writes a whitelisted scanner-cleanup phase for a successful browser followed by cleanup failure', () => {
+    const report = opsE2eFailureReport({ throwSite: 'cleanup', browserExitCode: 0,
+      cleanupErrors: ['OPS_E2E_SCANNER_CLEANUP_FAILED', 'postgres://private:secret@host'] })
+    expect(report).toMatchObject({ status: 'failed', errorCode: 'OPS_E2E_SCANNER_CLEANUP_FAILED',
+      stageCode: 'OPS_E2E_STAGE_SCANNER_CLEANUP', throwSite: 'scanner_cleanup', browserExitCode: 0,
+      cleanupErrors: ['OPS_E2E_SCANNER_CLEANUP_FAILED'], runtimeErrors: [], sharedContainersTouched: false })
+    expect(JSON.stringify(report)).not.toContain('secret')
+  })
+  it('writes the concrete scanner runtime stage without preserving raw exception text', () => {
+    const report = opsE2eFailureReport({ throwSite: 'cleanup', browserExitCode: 0,
+      runtimeErrors: ['OPS_E2E_SCANNER_RUNTIME_FAILED', 'raw daemon/private credential'] })
+    expect(report).toMatchObject({ errorCode: 'OPS_E2E_SCANNER_RUNTIME_FAILED',
+      stageCode: 'OPS_E2E_STAGE_SCANNER_RUNTIME', throwSite: 'scanner_runtime', browserExitCode: 0,
+      cleanupErrors: [], runtimeErrors: ['OPS_E2E_SCANNER_RUNTIME_FAILED'] })
+    expect(JSON.stringify(report)).not.toMatch(/daemon|credential/iu)
+  })
+  it('keeps a primary scanner runtime error aligned with its report stage', () => {
+    const report = opsE2eFailureReport({ throwSite: 'browser_run', primaryErrorCode: 'OPS_E2E_SCANNER_RUNTIME_FAILED', browserExitCode: 0 })
+    expect(report).toMatchObject({ errorCode: 'OPS_E2E_SCANNER_RUNTIME_FAILED', stageCode: 'OPS_E2E_STAGE_SCANNER_RUNTIME', throwSite: 'scanner_runtime' })
+  })
   it('bounds the final health response including its body, not only service startup', async () => {
     vi.useFakeTimers()
     const request = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, options) => ({

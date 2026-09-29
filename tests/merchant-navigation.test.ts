@@ -34,6 +34,15 @@ describe('Merchant Studio navigation', () => {
     }
   })
 
+  it('routes every screenshot-backed merchant workspace to its distinct entry', () => {
+    expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '', hash: '' }).entry).toBe('products')
+    for (const entry of ['products', 'images', 'assets', 'trash'] as const) {
+      expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: `?section=${entry}`, hash: '' }).entry).toBe(entry)
+    }
+    expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '?section=knowledge', hash: '' }).entry).toBe('knowledge')
+    expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '?section=rules', hash: '' }).entry).toBe('products')
+  })
+
   it('builds canonical URLs while preserving the deployment base and unrelated query', () => {
     expect(urlForMerchantRoute({ pathname: '/console/merchant/overview', search: '?source=codex&q=old' }, { page: 'products', searchQuery: '防晒 外套' })).toBe('/console/merchant/products?source=codex&q=%E9%98%B2%E6%99%92+%E5%A4%96%E5%A5%97')
     expect(urlForMerchantRoute({ pathname: '/merchant/products', search: '?source=codex' }, { page: 'task', target: { kind: 'task', taskId: 'task/one' } })).toBe('/merchant/tasks/task%2Fone?source=codex')

@@ -8,9 +8,14 @@ import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IM
 import { getImageCandidatePage } from './image-candidate-pagination'
 import { imageCandidateLoading } from './image-candidate-loading'
 import { mergeImageGenerationJobs } from './image-job-list'
+import { BrandAssetPreviewRegistry, brandAssetFileError, brandAssetMatchesKind, isUsableBrandAsset } from './material-brand-assets'
+import { daysRemainingInShanghai, yesterdayWindowInShanghai } from './entitlement-date'
+import { currentShanghaiMonthRange, filterFinanceEntriesByWindow, fillDailyFinancePoints, shanghaiCalendarDate } from './finance-window'
 import { isRealReadableStore, merchantConnectionPresentation } from './platform-connection-status'
 import {
   buildCatalogPlatforms,
+  catalogPlatformLabel,
+  catalogPlatformOrder,
   catalogProductsForStore,
   type CatalogPlatformView,
   type CatalogProduct,
@@ -78,7 +83,6 @@ import {
   Undo2,
   Upload,
   UserRound,
-  Users,
   WalletCards,
   X,
   Zap,
@@ -266,7 +270,7 @@ import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
 import { resolveDetailSopSteps } from './detail-sop.js'
 import { actionableIssueItems, createIssueReadSession, resolveIssueReadState, resolveIssueReadStateFromOutcome, type IssueReadOutcome, type IssueReadState } from './issue-read-state.js'
-import { BRAND_UNCONFIGURED, BRAND_DOCUMENT_LOCAL_ANALYSIS, BRAND_DOCUMENT_NONE, resolveBrandColorFacts, resolveBrandDocumentFacts, resolveBrandLogoFacts } from './material-brand-facts.js'
+import { BRAND_UNCONFIGURED, BRAND_DOCUMENT_NONE, resolveBrandColorFacts, resolveBrandDocumentFacts, resolveBrandLogoFacts } from './material-brand-facts.js'
 import { countKnowledgeAssets, KnowledgeBindingStatus, resolveKnowledgeBindingStatus } from './knowledge-binding-status.js'
 
 // There is deliberately no client-side read-only role projection here. It used
@@ -313,7 +317,6 @@ const navItems: Array<{
   // 商品资产不再作为独立工作台；相关能力收敛到知识库二级工作区。
   { id: 'products', label: '知识库', icon: BookOpen, entry: 'knowledge' },
   { id: 'finance', label: '财务概况', icon: WalletCards },
-  { id: 'members', label: '成员与权限', icon: Users },
 ]
 
 const knowledgeSubItems: Array<{
@@ -326,7 +329,7 @@ const knowledgeSubItems: Array<{
   { id: 'products', label: '平台&店铺&商品', icon: PackageSearch, entry: 'products', description: '选择平台、店铺和商品后创建营销任务' },
   { id: 'products', label: '品牌资产', icon: FolderOpen, entry: 'assets', description: '维护品牌资料与素材' },
   { id: 'products', label: '素材库', icon: BookOpen, entry: 'knowledge', description: '上传、确认并引用素材' },
-  { id: 'products', label: '回收站', icon: Trash2, entry: 'trash', description: '恢复或彻底删除近 7 天内移除的素材' },
+  { id: 'products', label: '回收站', icon: Trash2, entry: 'trash', description: '查看本浏览器中已从素材列表隐藏的记录' },
 ]
 // Compatibility marker for deep links that still address id: 'knowledge'.
 
@@ -1044,7 +1047,7 @@ function Topbar({
   }, [apiBaseUrl, issueReload])
   const titles: Record<Page, string> = {
     overview: '运营概览',
-    products: activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : activeEntry === 'knowledge' ? '素材库' : '知识库',
+    products: activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : activeEntry === 'products' || activeEntry === 'images' ? '知识库' : '素材库',
     finance: '财务概况',
     members: '成员与权限',
     task: '营销任务',
@@ -1287,7 +1290,7 @@ function userFacingModelAction(action: string): string {
     .replace(/\b(?:platform|provider|relay)\.[a-z0-9_.-]+\b/giu, '模型中转配置')
 }
 
-function Sidebar({
+export function Sidebar({
   page,
   setPage,
   open,
@@ -1416,7 +1419,7 @@ function Sidebar({
                     {knowledgeSubItems.map((subItem) => {
                       const SubIcon = subItem.icon
                       const subActive = subItem.entry
-                        ? page === subItem.id && activeEntry === subItem.entry
+                        ? page === subItem.id && (activeEntry === subItem.entry || (subItem.entry === 'knowledge' && activeEntry === undefined))
                         : page === subItem.id
                       return (
                         <button
@@ -1439,6 +1442,14 @@ function Sidebar({
             )
           })}
         </nav>
+        <button
+          className="sidebar-contact-manager"
+          type="button"
+          onClick={(event) => closeForAction(() => onOpenUtility('support', event.currentTarget))}
+        >
+          <CircleHelp size={18} />
+          <span>联系客服经理</span>
+        </button>
         <nav aria-label="新会话入口" className="sr-only" aria-hidden="true" />
       </aside>
     </>
@@ -1788,6 +1799,47 @@ export function TodayDashboard({
   const [rulePacksError, setRulePacksError] = useState('')
   const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
   const [storageRead, setStorageRead] = useState(false)
+  const [yesterdayMetrics, setYesterdayMetrics] = useState<WorkspaceMetrics | null>(null)
+  const [yesterdayMetricsRead, setYesterdayMetricsRead] = useState(false)
+  const [yesterdayPoints, setYesterdayPoints] = useState<number | null>(null)
+  const [currentEntitlement, setCurrentEntitlement] = useState<Awaited<ReturnType<typeof fetchCurrentCommercialEntitlement>> | null>(null)
+  const yesterday = yesterdayWindowInShanghai()
+  useEffect(() => {
+    if (!baseUrl) {
+      setYesterdayMetrics(null)
+      setYesterdayMetricsRead(false)
+      setYesterdayPoints(null)
+      setCurrentEntitlement(null)
+      return
+    }
+    let active = true
+    setYesterdayMetrics(null)
+    setYesterdayMetricsRead(false)
+    setYesterdayPoints(null)
+    setCurrentEntitlement(null)
+    fetchWorkspaceMetrics(baseUrl, { date_from: yesterday.dateFrom, date_to: yesterday.dateTo })
+      .then((result) => { if (active) setYesterdayMetrics(result) })
+      .catch(() => { if (active) setYesterdayMetrics(null) })
+      .finally(() => { if (active) setYesterdayMetricsRead(true) })
+    fetchCreativePointStatement(baseUrl)
+      .then((page) => {
+        if (!active || !page || page.truncated || page.unreadableEntries > 0) return
+        const from = Date.parse(yesterday.dateFrom)
+        const to = Date.parse(yesterday.dateTo)
+        setYesterdayPoints(page.entries.reduce((sum, entry) => {
+          const occurredAt = Date.parse(entry.createdAt)
+          const consumed = settledConsumptionPoints(entry)
+          return occurredAt >= from && occurredAt <= to && consumed !== null
+            ? sum + consumed
+            : sum
+        }, 0))
+      })
+      .catch(() => { if (active) setYesterdayPoints(null) })
+    fetchCurrentCommercialEntitlement(baseUrl)
+      .then((entitlement) => { if (active) setCurrentEntitlement(entitlement) })
+      .catch(() => { if (active) setCurrentEntitlement(null) })
+    return () => { active = false }
+  }, [baseUrl, yesterday.dateFrom, yesterday.dateTo])
   useEffect(() => {
     if (!baseUrl) {
       setStorageQuota(null)
@@ -1822,7 +1874,9 @@ export function TodayDashboard({
     ? metrics.stores.filter((store) => isRealReadableStore(store.connection)).length
     : null
   const productTotal = metrics ? metrics.productSummary.total : null
-  const riskTotal = metrics ? metrics.riskSummary.total : null
+  const yesterdayCompletedTasks = yesterdayMetricsRead && typeof yesterdayMetrics?.completedTaskCount === 'number'
+    ? yesterdayMetrics.completedTaskCount
+    : null
   const pointBalance = billing?.available_points ?? null
   const storageUsedBytes = storageQuota?.usedBytes ?? null
   const storageLimitBytes = storageQuota?.limitBytes ?? null
@@ -1844,12 +1898,12 @@ export function TodayDashboard({
         <div>
           <span className="section-kicker">DAILY BRIEFING</span>
           <h2 id="today-dashboard-title">今日看板</h2>
-          <p>汇总当前工作区数据、规则版本和素材容量，全部来自服务端读取。</p>
+          <p>汇总昨日执行、规则状态和素材容量，帮助快速安排今天的工作。</p>
         </div>
-        <div className="today-current-plan" aria-label={`当前剩余创意点：${pointBalance === null ? UNREAD_METRIC : `${pointBalance} 点`}`}>
-          <span><Sparkles size={14} />当前剩余创意点</span>
-          <strong>{pointBalance === null ? UNREAD_METRIC : `${pointBalance.toLocaleString('zh-CN')} 点`}</strong>
-          <small>{billing ? `钱包余额 ¥${billing.balance_cny}` : '等待服务端账务数据'}</small>
+        <div className="today-current-plan" aria-label="当前账号版本与有效期">
+          <span><ShieldCheck size={14} />当前账号版本</span>
+          <strong>{currentEntitlement?.status === 'available' ? (currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan) : UNREAD_METRIC}</strong>
+          <small>有效期至 {currentEntitlement?.status === 'available' ? new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : UNREAD_METRIC}</small>
         </div>
       </div>
 
@@ -1857,24 +1911,24 @@ export function TodayDashboard({
         <article className="today-board-card today-data-board">
           <div className="today-board-title">
             <span className="today-board-icon" aria-hidden="true"><LayoutDashboard size={18} /></span>
-            <div><h3>数据看板</h3><span>当前工作区摘要</span></div>
+            <div><h3>数据看板</h3><span>昨日经营摘要</span></div>
           </div>
           <div className="today-stat-grid">
-            <div><span>已连接店铺</span><strong>{readableStoreCount === null ? UNREAD_METRIC : readableStoreCount}<small>家</small></strong></div>
-            <div><span>商品总数</span><strong>{productTotal === null ? UNREAD_METRIC : productTotal.toLocaleString('zh-CN')}<small>件</small></strong></div>
-            <div><span>待处理风险</span><strong>{riskTotal === null ? UNREAD_METRIC : riskTotal.toLocaleString('zh-CN')}<small>项</small></strong></div>
+            <div><span>昨日完成任务</span><strong>{yesterdayCompletedTasks === null ? UNREAD_METRIC : yesterdayCompletedTasks.toLocaleString('zh-CN')}<small>次</small></strong></div>
+            <div><span>昨日使用创意点</span><strong>{yesterdayPoints === null ? UNREAD_METRIC : yesterdayPoints.toLocaleString('zh-CN')}<small>点</small></strong></div>
+            <div><span>当前剩余创意点</span><strong>{pointBalance === null ? UNREAD_METRIC : pointBalance.toLocaleString('zh-CN')}<small>点</small></strong></div>
           </div>
         </article>
 
         <article className="today-board-card today-assets-board">
           <div className="today-board-title">
             <span className="today-board-icon" aria-hidden="true"><FolderOpen size={18} /></span>
-            <div><h3>素材看板</h3><span>店铺与储存空间</span></div>
+            <div><h3>素材看板</h3><span>商品卡片与储存空间</span></div>
           </div>
           <div className="today-assets-summary" aria-label="素材概览">
             <div><span>已连接</span><strong>{readableStoreCount === null ? UNREAD_METRIC : readableStoreCount}<small>家电商店铺</small></strong></div>
-            <div><span>已用储存</span><strong>{storageUsedBytes === null ? UNREAD_METRIC : formatStorageGb(storageUsedBytes)}<small>素材</small></strong></div>
-            <div><span>剩余储存</span><strong>{storageAvailableBytes === null ? UNREAD_METRIC : formatStorageGb(storageAvailableBytes)}<small>可用</small></strong></div>
+            <div><span>已储存</span><strong>{productTotal === null ? UNREAD_METRIC : productTotal.toLocaleString('zh-CN')}<small>套商品卡片</small></strong></div>
+            <div><span>已上传素材</span><strong>{storageUsedBytes === null ? UNREAD_METRIC : formatStorageGb(storageUsedBytes)}<small>GB</small></strong></div>
           </div>
           <div className="today-storage-heading">
             <span>储存空间</span><b>{storageKnown ? `${formatStorageGb(storageUsedBytes!)} / ${formatStorageGb(storageLimitBytes!)}` : UNREAD_METRIC}</b>
@@ -2114,18 +2168,16 @@ export function Overview({
   const [metricsError, setMetricsError] = useState('')
   const loadAccounts = () => {
     const requestId = ++accountsRequestId.current
-    if (!baseUrl || isManualPlatformOperationsMode(apiMode)) {
+    if (!baseUrl) {
       setAccounts(null)
       setAccountsLoading(false)
       setAccountsError('')
       return
     }
-    if (!shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
-      setAccounts(null)
-      setAccountsLoading(false)
-      setAccountsError('')
-      return
-    }
+    // This is a workspace-scoped, credential-free status read. It is safe in
+    // fixture/manual modes too; the mode gate below still prevents sync and
+    // automation controls from appearing unless official API operations are
+    // explicitly enabled.
     setAccountsLoading(true)
     setAccountsError('')
     setAccounts(null)
@@ -2771,9 +2823,26 @@ export function Overview({
 
 type PointUsageItem = { label: string; value: number; dateLabel?: string }
 
+/** Only a settled ledger row reports actual charge; reserve deltas are not usage. */
+export function settledConsumptionPoints(entry: CreativePointStatementEntry): number | null {
+  if (entry.eventType !== 'settled') return null
+  const actual = entry.intent?.actual_points
+  return typeof actual === 'number' && Number.isSafeInteger(actual) && actual >= 0 ? actual : null
+}
+
+/** Sum the complete server statement; partial or unreadable pages stay unknown. */
+export function totalSettledConsumptionPoints(
+  entries: CreativePointStatementEntry[] | null,
+  complete: boolean,
+): number | null {
+  if (entries === null || !complete) return null
+  if (entries.some((entry) => entry.eventType === 'settled' && settledConsumptionPoints(entry) === null)) return null
+  return entries.reduce((sum, entry) => sum + (settledConsumptionPoints(entry) ?? 0), 0)
+}
+
 /**
- * Aggregate real consumption from the creative-point ledger. Only negative
- * deltas are consumption, and buckets are keyed by the server timestamp, so an
+ * Aggregate actual consumption from settled creative-point ledger rows.
+ * Reserve and adjustment deltas are not actual usage; buckets are keyed by the server timestamp, so an
  * empty or unavailable ledger produces an empty chart rather than a
  * plausible-looking trend the server never reported.
  *
@@ -2786,12 +2855,13 @@ type PointUsageItem = { label: string; value: number; dateLabel?: string }
 export function aggregatePointUsage(entries: CreativePointStatementEntry[], mode: 'day' | 'month'): PointUsageItem[] {
   const buckets = new Map<string, number>()
   for (const entry of entries) {
-    if (!Number.isFinite(entry.pointsDelta) || entry.pointsDelta >= 0) continue
-    const occurredAt = new Date(entry.createdAt)
-    if (Number.isNaN(occurredAt.getTime())) continue
-    const month = `${occurredAt.getFullYear()}/${String(occurredAt.getMonth() + 1).padStart(2, '0')}`
-    const key = mode === 'day' ? `${month}/${String(occurredAt.getDate()).padStart(2, '0')}` : month
-    buckets.set(key, (buckets.get(key) ?? 0) + Math.abs(entry.pointsDelta))
+    const consumed = settledConsumptionPoints(entry)
+    if (consumed === null || consumed === 0) continue
+    const date = shanghaiCalendarDate(new Date(entry.createdAt))
+    if (!date) continue
+    const month = date.slice(0, 7).replace('-', '/')
+    const key = mode === 'day' ? `${month}/${date.slice(8)}` : month
+    buckets.set(key, (buckets.get(key) ?? 0) + consumed)
   }
   return [...buckets.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
@@ -2978,8 +3048,6 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   const [rechargeOrder, setRechargeOrder] = useState<Awaited<ReturnType<typeof createRechargeOrder>> | null>(null)
   const [rechargeLoading, setRechargeLoading] = useState(false)
   const [rechargeError, setRechargeError] = useState('')
-  const [manualPublishRecords, setManualPublishRecords] = useState<ManualPublishRecord[] | null>(null)
-  const [manualPublishNote, setManualPublishNote] = useState('正在读取人工发布状态…')
   // One idempotency key per purchase intent. It must survive a failed or timed
   // out attempt so the retry replays the order the server already created, and
   // it must change when the merchant really does change what they are buying.
@@ -2996,8 +3064,6 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
       setCatalogNote('未配置 API，无法读取创意点套餐。')
       setCurrentEntitlement(null)
       setEntitlementNote('未配置 API，无法读取当前套餐。')
-      setManualPublishRecords(null)
-      setManualPublishNote('未配置 API，无法读取人工发布状态。')
       return
     }
     let active = true
@@ -3010,8 +3076,6 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
     setCatalogNote('正在读取创意点套餐…')
     setCurrentEntitlement(null)
     setEntitlementNote('正在读取当前套餐…')
-    setManualPublishRecords(null)
-    setManualPublishNote('正在读取人工发布状态…')
     fetchCreativePointStatement(baseUrl)
       .then((page) => {
         if (!active) return
@@ -3046,17 +3110,6 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
     fetchCurrentCommercialEntitlement(baseUrl)
       .then((entitlement) => { if (active) { setCurrentEntitlement(entitlement); setEntitlementNote('') } })
       .catch((cause) => { if (active) { setCurrentEntitlement(null); setEntitlementNote(`当前套餐读取失败：${describeApiError(cause)}`) } })
-    fetchManualPublishRecords(baseUrl)
-      .then((records) => {
-        if (!active) return
-        setManualPublishRecords(records.slice().sort((left, right) => Date.parse(right.recordedAt) - Date.parse(left.recordedAt)))
-        setManualPublishNote('')
-      })
-      .catch((cause) => {
-        if (!active) return
-        setManualPublishRecords(null)
-        setManualPublishNote(`人工发布状态读取失败：${describeApiError(cause)}`)
-      })
     return () => { active = false }
   }, [baseUrl])
   const pointPackages = useMemo(() => (catalogItems ? resolvePointPackages(catalogItems) : []), [catalogItems])
@@ -3067,25 +3120,56 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   const purchaseBlockNotice = resolvePurchaseBlockNotice(selectedPackage)
   const dailyUsage = useMemo(() => aggregatePointUsage(statementEntries ?? [], 'day'), [statementEntries])
   const monthlyUsage = useMemo(() => aggregatePointUsage(statementEntries ?? [], 'month'), [statementEntries])
+  // The finance summary's lifetime consumption is only complete after every
+  // statement page has been read and every row has been understood. A partial
+  // page must not be presented as the total consumed points.
+  const totalSettledConsumption = totalSettledConsumptionPoints(
+    statementEntries,
+    statementEntries !== null && !statementTruncated && statementUnreadable === 0,
+  )
+  const currentMonthWindow = currentShanghaiMonthRange()
+  const defaultDayWindow = rangeMode === 'day' && !rangeStart && !rangeEnd
+  const rangeEntryStart = rangeMode === 'day'
+    ? (rangeStart || (defaultDayWindow ? currentMonthWindow.start : ''))
+    : rangeStart
+  const rangeEntryEnd = rangeMode === 'day'
+    ? (rangeEnd || (defaultDayWindow ? currentMonthWindow.end : ''))
+    : rangeEnd
+  const entriesInRange = useMemo(() => statementEntries === null
+    ? null
+    : filterFinanceEntriesByWindow(statementEntries, rangeMode, rangeEntryStart, rangeEntryEnd),
+  [rangeEntryEnd, rangeEntryStart, rangeMode, statementEntries])
   const chartItems = useMemo(() => {
     const source = rangeMode === 'day' ? dailyUsage : monthlyUsage
-    const startValue = rangeMode === 'day' ? rangeStart.replaceAll('-', '/') : rangeStart.replace('-', '/')
-    const endValue = rangeMode === 'day' ? rangeEnd.replaceAll('-', '/') : rangeEnd.replace('-', '/')
-    return source.filter((item) => (!startValue || (item.dateLabel ?? item.label) >= startValue) && (!endValue || (item.dateLabel ?? item.label) <= endValue))
-  }, [dailyUsage, monthlyUsage, rangeEnd, rangeMode, rangeStart])
-  const chartLabel = rangeStart || rangeEnd
-    ? `${(rangeStart || '最早').replaceAll('-', '/')} 至 ${(rangeEnd || '最新').replaceAll('-', '/')}`
-    : rangeMode === 'day'
-      ? '已读取流水（按日汇总）'
-      : '已读取流水（按月汇总）'
+    const startValue = rangeMode === 'day'
+      ? (rangeStart || (defaultDayWindow ? currentMonthWindow.start : '')).replaceAll('-', '/')
+      : rangeStart.replace('-', '/')
+    const endValue = rangeMode === 'day'
+      ? (rangeEnd || (defaultDayWindow ? currentMonthWindow.end : '')).replaceAll('-', '/')
+      : rangeEnd.replace('-', '/')
+    const filtered = source.filter((item) => (!startValue || (item.dateLabel ?? item.label) >= startValue) && (!endValue || (item.dateLabel ?? item.label) <= endValue))
+    const ledgerComplete = statementEntries !== null && !statementTruncated && statementUnreadable === 0
+    const boundedDayRange = defaultDayWindow || Boolean(rangeStart && rangeEnd)
+    if (rangeMode === 'day' && ledgerComplete && boundedDayRange) {
+      return fillDailyFinancePoints(filtered, startValue, endValue)
+    }
+    return filtered
+  }, [currentMonthWindow.end, currentMonthWindow.start, dailyUsage, defaultDayWindow, monthlyUsage, rangeEnd, rangeMode, rangeStart, statementEntries, statementTruncated, statementUnreadable])
+  const chartLabel = defaultDayWindow
+    ? `当月${currentMonthWindow.days}天`
+    : rangeStart || rangeEnd
+      ? `${(rangeStart || '最早').replaceAll('-', '/')} 至 ${(rangeEnd || '最新').replaceAll('-', '/')}`
+      : rangeMode === 'day'
+        ? '已读取流水（按日汇总）'
+        : '已读取流水（按月汇总）'
   const pointBalance = billing?.available_points ?? null
-  // A recharge transaction exists only after the server has credited the
-  // wallet. Pending checkout orders are never presented as paid evidence.
-  const latestVerifiedRecharge = billing?.transactions.find((item) => item.type === 'recharge') ?? null
   const storageUsedBytes = storageQuota?.usedBytes ?? null
   const storageLimitBytes = storageQuota?.limitBytes ?? null
   const storageAvailableBytes = storageQuota?.availableBytes ?? null
   const storageKnown = storageUsedBytes !== null && storageLimitBytes !== null && storageLimitBytes > 0
+  const entitlementDaysRemaining = currentEntitlement?.status === 'available'
+    ? daysRemainingInShanghai(currentEntitlement.period.end)
+    : null
   const submitRecharge = async () => {
     if (!selectedPackage || !agreementAccepted || !baseUrl) return
     if (selectedPackage.blockedReason) { setRechargeError(selectedPackage.blockedReason); return }
@@ -3129,13 +3213,12 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   return (
     <section className="page finance-overview-page" aria-label="财务概况">
       <div className="finance-hero">
-        <div><span className="section-kicker">ACCOUNT &amp; BILLING</span><h2>财务与资源</h2><p>统一查看创意点、储存空间和账号信息，全部来自服务端账本。</p></div>
+        <div><span className="section-kicker">ACCOUNT &amp; BILLING</span><h2>财务与资源</h2><p>统一查看创意点、储存空间和账号版本。</p></div>
       </div>
       <div className="finance-summary-grid">
-        <article className="finance-balance-card accent"><div className="finance-card-icon"><Sparkles size={20} /></div><div className="finance-inline-metric"><span>当前剩余创意点</span><strong>{pointBalance === null ? UNREAD_METRIC : `${pointBalance.toLocaleString('zh-CN')} 点`}</strong></div><div className="finance-inline-metric subtle"><span>钱包余额</span><strong>{billing ? `¥${billing.balance_cny}` : UNREAD_METRIC}</strong></div><button className="primary" type="button" onClick={() => setPricingDialog('points')}>充值创意点</button></article>
+        <article className="finance-balance-card accent"><div className="finance-card-icon"><Sparkles size={20} /></div><div className="finance-inline-metric"><span>当前剩余创意点</span><strong>{pointBalance === null ? UNREAD_METRIC : `${pointBalance.toLocaleString('zh-CN')} 点`}</strong></div><div className="finance-inline-metric subtle"><span>截止今日总消耗</span><strong>{totalSettledConsumption === null ? UNREAD_METRIC : `${totalSettledConsumption.toLocaleString('zh-CN')} 点`}</strong></div><button className="primary" type="button" onClick={() => setPricingDialog('points')}>充值创意点</button></article>
         <article className="finance-balance-card"><div className="finance-card-icon"><Boxes size={20} /></div><div className="finance-inline-metric"><span>储存空间剩余</span><strong>{storageAvailableBytes === null ? UNREAD_METRIC : formatStorageGb(storageAvailableBytes)}</strong></div><div className="finance-storage-summary"><p>{storageKnown ? `已使用 ${formatStorageGb(storageUsedBytes!)} / 共 ${formatStorageGb(storageLimitBytes!)}` : '服务端未返回储存配额，当前不显示用量。'}</p>{storageKnown && <div className="finance-storage-track" role="progressbar" aria-label="储存空间已用" aria-valuemin={0} aria-valuemax={Math.round(storageLimitBytes!)} aria-valuenow={Math.min(Math.round(storageLimitBytes!), Math.max(0, Math.round(storageUsedBytes!)))}><i style={{ width: `${Math.min(100, (storageUsedBytes! / storageLimitBytes!) * 100).toFixed(1)}%` }} /></div>}</div><button className="primary" type="button" onClick={() => setPricingDialog('storage')}>购买储存空间</button></article>
       </div>
-      <p className="finance-recharge-proof">最近已入账充值（最近读取的 20 条钱包流水）：{latestVerifiedRecharge ? <>充值订单：{latestVerifiedRecharge.order_id ?? latestVerifiedRecharge.orderId ?? '未关联订单'} · ¥{latestVerifiedRecharge.amount_cny}</> : billing ? '未查到已入账充值' : UNREAD_METRIC}</p>
       <section className="finance-panel finance-usage-panel">
         <div className="finance-panel-heading"><div><span className="section-kicker">CREATIVE POINTS</span><h3>创意点消耗趋势</h3><p>按服务端创意点流水的发生时间汇总，可查询日期或月份区间。</p></div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault() }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={rangeMode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => { setRangeMode(value); setRangeStart(''); setRangeEnd('') }} /></label><label><span>开始{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeStart ? dayjs(rangeStart).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeStart(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><i>至</i><label><span>结束{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeEnd ? dayjs(rangeEnd).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeEnd(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
         {/* The sum may only be stated when the ledger read succeeded: a failed
@@ -3160,26 +3243,15 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
              releases) is not the same statement as an empty one. */
           <p className="finance-chart finance-chart-empty" role="status">{statementEntries === null
             ? statementNote
-            : statementEntries.length === 0
-              ? '服务端未返回该区间的创意点流水，不显示趋势图。'
-              : `服务端已读取 ${statementEntries.length} 条创意点流水，其中没有消耗记录（只有消耗类流水计入趋势），不显示趋势图。`}</p>
+            : entriesInRange?.length === 0
+              ? `${statementTruncated ? '已读取页' : '服务端'}在该区间没有${statementUnreadable > 0 ? '可识别的' : ''}创意点流水，不显示趋势图。`
+              : `该区间已读取 ${entriesInRange?.length ?? 0} 条创意点流水，其中没有消耗记录（只有消耗类流水计入趋势），不显示趋势图。`}</p>
         )}
       </section>
-      <section className="finance-panel" aria-label="当前套餐">
-        <div className="finance-panel-heading"><div><span className="section-kicker">CURRENT PLAN</span><h3>当前套餐</h3><p>仅依据服务端 V2 权益快照展示；套餐订单与钱包充值需分别核对。</p></div></div>
-        {currentEntitlement?.status === 'available' ? (
-          <p role="status"><strong>{currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan}</strong> · 生效中 · 有效期 {new Date(currentEntitlement.period.start).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })} 至 {new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p>
-        ) : <p className="muted" role="status">{currentEntitlement?.status === 'unknown' ? '服务端未确认当前生效套餐，请联系平台运营核对权益。' : entitlementNote}</p>}
-      </section>
-      <section className="finance-account-panel"><div><span className="section-kicker">ACCOUNT</span><h3>账号与工作区</h3><p>{account ? `当前登录账号 ${account.login}，企业主体 ${account.enterpriseName?.trim() || UNREAD_METRIC}，账号状态 ${merchantAccountStatusLabel(account.status)}。` : '当前未读取到商家账号信息。'}</p></div><div className="finance-account-facts"><span><b>{account?.login || UNREAD_METRIC}</b>登录账号</span><span><b>{account?.enterpriseName?.trim() || UNREAD_METRIC}</b>企业主体</span><span><b>{account ? merchantAccountStatusLabel(account.status) : UNREAD_METRIC}</b>账号状态</span></div><button className="primary" type="button" onClick={onOpenSupport}>咨询客服升级账号</button></section>
-      <section className="finance-panel" aria-label="人工发布状态">
-        <div className="finance-panel-heading"><div><span className="section-kicker">MANUAL PUBLISH</span><h3>人工发布状态</h3><p>六平台由人工执行发布；这里仅展示服务端记录的进度和平台回填，不会自动提交平台。</p></div></div>
-        {manualPublishRecords === null ? <p className="muted" role="status">{manualPublishNote}</p> : manualPublishRecords.length === 0 ? <p className="muted" role="status">暂无人工发布记录。内容审核完成并导出后，进度会显示在这里。</p> : (
-          <div className="finance-price-table" role="table" aria-label="人工发布记录">
-            <div className="finance-price-row header" role="row"><span>平台</span><span>任务</span><span>状态</span><span>平台结果</span></div>
-            {manualPublishRecords.map((record) => <div className="finance-price-row" role="row" key={record.id}><strong>{platformNames[record.platform] ?? record.platform}</strong><span>{record.taskId}</span><b>{{ export_ready: '待人工发布', manual_publish_in_progress: '人工发布中', manual_publish_reported: '已回填平台结果', manual_review_required: '需人工复核' }[record.state] ?? record.state}</b><small>{record.platformDisplayStatus || record.platformContentId || record.publicUrl || '尚未回填'}</small></div>)}
-          </div>
-        )}
+      <section className="finance-account-panel finance-plan-ribbon" aria-label="账号版本与有效期">
+        <div><span className="section-kicker">ACCOUNT PLAN</span><h3>账号版本与有效期</h3><p>{currentEntitlement?.status === 'available' ? `当前账号为 ${currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan}，有效期至 ${new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}，还剩 ${entitlementDaysRemaining ?? UNREAD_METRIC} 天。` : currentEntitlement?.status === 'unknown' ? '服务端未确认当前账号版本，请联系平台运营核对权益。' : entitlementNote || '当前账号版本未读取。'}</p></div>
+        <div className="finance-account-facts"><span><b>{currentEntitlement?.status === 'available' ? (currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan) : UNREAD_METRIC}</b>当前版本</span><span><b>{currentEntitlement?.status === 'available' ? new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : UNREAD_METRIC}</b>有效期至</span><span><b>{entitlementDaysRemaining === null ? UNREAD_METRIC : entitlementDaysRemaining}</b>剩余天数</span></div>
+        <button className="primary" type="button" onClick={onOpenSupport}>咨询客服升级账号版本</button>
       </section>
       <Modal title={pricingDialog === 'points' ? '创意点套餐' : '储存空间购买'} open={Boolean(pricingDialog)} footer={null} width={720} onCancel={() => { setPricingDialog(null); setSelectedPointPackage(''); setPurchaseQuantity(1); setAgreementAccepted(false) }}>
         {pricingDialog === 'points' ? <>
@@ -5670,14 +5742,14 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
             overview uses. Before the read answers the page says so. */}
         <div className="catalog-hero-summary"><div><strong>{platforms === null ? UNREAD_METRIC : platforms.length}</strong><span>{platforms === null ? '电商平台' : '个电商平台'}</span></div><small>{platforms === null ? catalogReadNote : `${catalogStores.length} 家店铺 · ${realConnectedStores} 家已连接`}</small></div>
       </section>
-      <ProductSpreadsheetImport baseUrl={baseUrl} accounts={accounts ?? []} canWrite={Boolean(baseUrl)} />
       <section className="catalog-platform-store-browser">
         <aside className="catalog-platform-rail" aria-label="平台列表">
           <div className="catalog-platform-rail-heading"><span>平台</span><small>选择后查看店铺</small></div>
           <div className="catalog-platform-list">
           {platforms === null && catalogReadNote ? (
             <p className="muted" role="status">{catalogReadNote}</p>
-          ) : Object.entries(platformNames).map(([id, label]) => {
+          ) : catalogPlatformOrder.map((id) => {
+            const label = catalogPlatformLabel(id)
             const platform = platforms?.find((item) => item.id === id)
             return <button className={`${selectedPlatform === id ? 'active ' : ''}${platform?.connected ? 'connected' : 'disconnected'}`} type="button" aria-pressed={selectedPlatform === id} key={id} onClick={() => setSelectedPlatform(id)}>
               <span className="catalog-platform-mark" aria-hidden="true">{platform?.mark ?? label.slice(0, 1)}</span><span className="catalog-platform-list-copy"><strong>{platform?.label ?? label}</strong><small>{platform?.stores.length ?? 0} 家店铺</small></span><span className="catalog-platform-connection"><i />{platform?.statusLabel ?? '未登记'}</span><ChevronRight size={16} aria-hidden="true" />
@@ -5687,7 +5759,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
         </aside>
         <section className="catalog-platform-result" aria-live="polite">
           {!selectedPlatform ? (
-            <div className="catalog-platform-empty"><span><Store size={28} /></span><strong>请选择平台</strong><p>选择一个平台后查看当前工作区登记的店铺。人工登记只保存店铺识别信息，不代表平台授权。</p></div>
+            <div className="catalog-platform-empty"><span><Store size={28} /></span><strong>请选择平台</strong><p>请点击左侧平台，选择店铺后进入商品页。</p></div>
           ) : selectedPlatformStores.length ? (
             <>
               <div className="catalog-platform-result-heading"><div><span className="section-kicker">SELECT STORE</span><h2>{selectedPlatformView?.label ?? platformNames[selectedPlatform ?? '']}店铺</h2><p>选择要查看的店铺。</p></div><span>{selectedPlatformStores.length} 家店铺 · {selectedPlatformView?.connectedCount ?? 0} 家已接入</span></div>
@@ -5704,6 +5776,10 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
           ) : (
             <div className="catalog-platform-empty disconnected"><span><AlertCircle size={28} /></span><strong>{selectedPlatformView?.label ?? platformNames[selectedPlatform] ?? '所选平台'}尚无店铺记录</strong><p>{isManualPlatformOperationsMode(apiMode) ? '可以登记店铺 ID 和名称作为工作区内的人工记录；登记不会连接平台、读取商品或授予发布权限。' : '当前工作区尚无此平台店铺记录。'}</p></div>
           )}
+          {selectedPlatform ? <details className="catalog-import-disclosure">
+            <summary>商品表格导入</summary>
+            <ProductSpreadsheetImport baseUrl={baseUrl} accounts={accounts ?? []} canWrite={Boolean(baseUrl)} />
+          </details> : null}
           {selectedPlatform && isManualPlatformOperationsMode(apiMode) && (
             <Card size="small" title={selectedPlatformStores.length ? '登记另一家店铺' : '登记店铺'} style={{ marginTop: 24 }}>
               <p>仅登记店铺识别信息，不会建立 OAuth 授权，也不会读取店铺数据。请勿在此输入平台密码、Cookie、Token 或验证码。</p>
@@ -5733,6 +5809,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
 // them from a real `GET /v1/assets` row.
 type MaterialBrandSettings = {
   logoUrl: string
+  logoFileName?: string
   logoAssetId?: string
   documentAssetId?: string
   color: string
@@ -5746,9 +5823,9 @@ type MaterialBrandSettings = {
 // of every workspace that never configured one. `resolveBrandColorFacts` turns
 // the empty string into 「未单独配置」.
 const emptyMaterialBrandSettings: MaterialBrandSettings = { logoUrl: '', color: '', persona: '', sellingPoints: '', personaFileName: '', sellingPointsFileName: '', assetFileName: '' }
-const scopedBrandValues = (value: MaterialBrandSettings) => ({
-  ...(value.logoAssetId ? { logoAssetId: value.logoAssetId } : {}),
-  ...(value.documentAssetId ? { documentAssetId: value.documentAssetId } : {}),
+const scopedBrandValues = (value: MaterialBrandSettings, usableAssetIds: ReadonlySet<string>) => ({
+  ...(value.logoAssetId && usableAssetIds.has(value.logoAssetId) ? { logoAssetId: value.logoAssetId } : {}),
+  ...(value.documentAssetId && usableAssetIds.has(value.documentAssetId) ? { documentAssetId: value.documentAssetId } : {}),
   ...(value.color ? { color: value.color } : {}),
   ...(value.persona.trim() ? { persona: value.persona.trim() } : {}),
   ...(value.sellingPoints.trim() ? { sellingPoints: value.sellingPoints.trim() } : {}),
@@ -5759,79 +5836,111 @@ const materialBrandFromScope = (value?: { color?: string; persona?: string; sell
   logoAssetId: value?.logoAssetId, documentAssetId: value?.documentAssetId,
 })
 
-export function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard }: { value: MaterialBrandSettings; onChange: (next: MaterialBrandSettings) => void; label: string; logoLabel?: string; leadingCard?: ReactNode }) {
+export function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard, baseUrl, assets = [], onAssetUploaded }: { value: MaterialBrandSettings; onChange: (next: MaterialBrandSettings) => void; label: string; logoLabel?: string; leadingCard?: ReactNode; baseUrl?: string; assets?: AssetMetadata[]; onAssetUploaded?: (asset: AssetMetadata, kind: 'logo' | 'document', file: File) => void }) {
   const logoInputId = useId()
   const assetInputId = useId()
   const [draftColor, setDraftColor] = useState(value.color)
-  const [assetAnalysisStatus, setAssetAnalysisStatus] = useState<'idle' | 'analyzing' | 'done' | 'empty'>('idle')
+  const [assetUploadStatus, setAssetUploadStatus] = useState('')
+  const [assetUploadError, setAssetUploadError] = useState('')
+  const [assetUploading, setAssetUploading] = useState<'logo' | 'document' | ''>('')
   useEffect(() => setDraftColor(value.color), [value.color])
-  // Local by design, and it says so. This reads the picked image with
-  // `FileReader` and keeps the data URL in component state — there is no request
-  // on this path, so the picker may not say 「上传 Logo」 and the output card may
-  // not call the result 「生效 Logo」. Both now say 「仅本地，未上传」 through
-  // `resolveBrandLogoFacts`, the same sentence the document row below uses.
-  const updateLogo = (file?: File) => {
+  useEffect(() => {
+    setAssetUploadStatus('')
+    setAssetUploadError('')
+  }, [label])
+  const uploadBrandAsset = async (file: File | undefined, kind: 'logo' | 'document') => {
     if (!file) return
-    const reader = new FileReader()
-    reader.addEventListener('load', () => onChange({ ...value, logoUrl: typeof reader.result === 'string' ? reader.result : '' }))
-    reader.readAsDataURL(file)
-  }
-  // Local by design, and it says so. This reads the picked file with
-  // `file.text()` and fills 用户画像/品牌卖点 from its text — there is no request
-  // on this path, so the pane may not label the document 「已接收」: it says
-  // 「仅本地，未上传」 through `resolveBrandDocumentFacts`. See
-  // `material-brand-facts.ts` for why the two brand endpoints that exist cannot
-  // be reached from here.
-  const updateAssetFile = async (file?: File) => {
-    if (!file) return
-    setAssetAnalysisStatus('analyzing')
-    onChange({ ...value, assetFileName: file.name })
-    let content = ''
+    const validationError = brandAssetFileError(file, kind)
+    if (validationError) { setAssetUploadError(validationError); setAssetUploadStatus(''); return }
+    if (!baseUrl) { setAssetUploadError('未配置 API，品牌素材无法上传到服务端。'); setAssetUploadStatus(''); return }
+    setAssetUploading(kind)
+    setAssetUploadError('')
+    setAssetUploadStatus('')
     try {
-      content = await file.text()
-    } catch {
-      content = ''
-    }
-    const extractField = (names: string[]) => {
-      for (const name of names) {
-        const match = content.match(new RegExp(`${name}\\s*[：:]\\s*([^\\n\\r]{4,180})`, 'i'))
-        if (match?.[1]) return match[1].trim()
+      const uploaded = await uploadAsset(baseUrl, file)
+      onAssetUploaded?.(uploaded, kind, file)
+      const ready = isUsableBrandAsset(uploaded)
+      if (kind === 'logo') {
+        onChange({ ...value, logoAssetId: uploaded.id, logoUrl: '', logoFileName: uploaded.name })
+      } else {
+        onChange({ ...value, documentAssetId: uploaded.id, assetFileName: uploaded.name })
       }
-      return ''
+      setAssetUploadStatus(ready
+        ? `${uploaded.name} 已上传并通过素材检查；保存后写入品牌配置。`
+        : `${uploaded.name} 已上传，素材 ID ${uploaded.id}；完成扫描、权益确认、解析和事实确认后才能保存引用。`)
+    } catch (cause) {
+      setAssetUploadError(`品牌素材上传失败：${describeApiError(cause)}`)
+    } finally {
+      setAssetUploading('')
     }
-    const persona = extractField(['用户画像', '目标人群', '目标用户', '核心受众']) || value.persona
-    const sellingPoints = extractField(['品牌卖点', '核心卖点', '品牌优势', '产品优势']) || value.sellingPoints
-    onChange({ ...value, assetFileName: file.name, persona, sellingPoints })
-    setAssetAnalysisStatus(persona || sellingPoints ? 'done' : 'empty')
   }
   return <div className={`material-brand-fields${leadingCard ? ' has-leading-card' : ''}${logoLabel ? ' has-store-card' : ''}`}>
     {leadingCard}
     <div className="material-brand-logo-field">
-      <span>{logoLabel ?? `${label} Logo`}{value.logoAssetId ? ` · 已引用素材 ${value.logoAssetId}` : ''}</span>
-      <label htmlFor={logoInputId}><Upload size={14} />{value.logoUrl ? '重新选择 Logo' : '选择 Logo'}<input id={logoInputId} type="file" accept="image/*" multiple={false} onChange={(event) => updateLogo(event.target.files?.[0])} /></label>
+      <span>{logoLabel ?? `${label} Logo`}{value.logoAssetId ? ` · 已引用素材 ${value.logoFileName || value.logoAssetId}` : ''}</span>
+      <label htmlFor={logoInputId}><Upload size={14} />{assetUploading === 'logo' ? '正在上传…' : value.logoAssetId ? '重新上传 Logo' : '上传 Logo'}<input id={logoInputId} type="file" accept="image/*" multiple={false} disabled={Boolean(assetUploading)} onChange={(event) => { void uploadBrandAsset(event.target.files?.[0], 'logo'); event.currentTarget.value = '' }} /></label>
+      {assets.some((asset) => brandAssetMatchesKind(asset, 'logo')) && <select aria-label={`${label}选择已上传 Logo`} value={value.logoAssetId ?? ''} onChange={(event) => { const selected = assets.find((asset) => asset.id === event.target.value); onChange({ ...value, logoAssetId: selected?.id, logoFileName: selected?.name, logoUrl: '' }); setAssetUploadStatus(selected ? `${selected.name} 已选择；${isUsableBrandAsset(selected) ? '保存后写入品牌配置。' : '素材检查通过后才会写入服务端配置。'}` : '已移除 Logo 素材引用。') }}><option value="">选择工作区已上传 Logo</option>{assets.filter((asset) => brandAssetMatchesKind(asset, 'logo')).map((asset) => <option key={asset.id} value={asset.id}>{asset.name} · {isUsableBrandAsset(asset) ? '已就绪' : '待检查'}</option>)}</select>}
     </div>
-    <div className="material-brand-color-field"><span>品牌色</span><div><input type="color" value={/^#[0-9a-f]{6}$/i.test(draftColor) ? draftColor : value.color} onChange={(event) => setDraftColor(event.target.value)} /><label className="material-brand-color-code"><span>#</span><input aria-label={`${label}品牌色值`} value={draftColor.replace(/^#/, '')} maxLength={6} inputMode="text" onChange={(event) => setDraftColor(`#${event.target.value.replace(/[^0-9a-f]/gi, '').slice(0, 6)}`)} /></label><button type="button" disabled={!/^#[0-9a-f]{6}$/i.test(draftColor) || draftColor.toLowerCase() === value.color.toLowerCase()} onClick={() => onChange({ ...value, color: draftColor })}>确定</button></div></div>
-    <div className="material-brand-asset-file"><span>品牌资产文档{value.documentAssetId ? ` · 已引用素材 ${value.documentAssetId}` : ''}</span><label htmlFor={assetInputId}><Upload size={14} /><strong>{assetAnalysisStatus === 'analyzing' ? '正在本机解析文档…' : '选择文档并解析'}</strong><input id={assetInputId} type="file" accept=".txt,.md,.csv,.json,.doc,.docx,.pdf,.zip" multiple={false} onChange={(event) => { void updateAssetFile(event.target.files?.[0]) }} /></label><small className={`material-brand-analysis-status ${assetAnalysisStatus}`}>{assetAnalysisStatus === 'analyzing' ? '正在本机提取用户画像与品牌卖点；不会上传服务端' : assetAnalysisStatus === 'done' ? BRAND_DOCUMENT_LOCAL_ANALYSIS : assetAnalysisStatus === 'empty' ? '未识别到可填写内容，请在下方手动补充' : ''}</small></div>
+    <div className="material-brand-color-field"><span>品牌色</span><div><input type="color" aria-label={`${label}品牌色选择器${value.color ? '' : '，当前未配置'}`} value={/^#[0-9a-f]{6}$/i.test(draftColor) ? draftColor : '#ffffff'} onChange={(event) => setDraftColor(event.target.value)} /><label className="material-brand-color-code"><span>{value.color ? '#' : '未配置'}</span><input aria-label={`${label}品牌色值`} placeholder="未配置" value={draftColor.replace(/^#/, '')} maxLength={6} inputMode="text" onChange={(event) => setDraftColor(`#${event.target.value.replace(/[^0-9a-f]/gi, '').slice(0, 6)}`)} /></label><button type="button" disabled={!/^#[0-9a-f]{6}$/i.test(draftColor) || draftColor.toLowerCase() === value.color.toLowerCase()} onClick={() => onChange({ ...value, color: draftColor })}>确定</button></div></div>
+    <div className="material-brand-asset-file"><span>品牌资产文档{value.documentAssetId ? ` · 已引用素材 ${value.assetFileName || value.documentAssetId}` : ''}</span><label htmlFor={assetInputId}><Upload size={14} /><strong>{assetUploading === 'document' ? '正在上传…' : value.documentAssetId ? '重新上传文档' : '上传文档'}</strong><input id={assetInputId} type="file" accept=".txt,.md,.csv,.json,.doc,.docx,.pdf,.zip" multiple={false} disabled={Boolean(assetUploading)} onChange={(event) => { void uploadBrandAsset(event.target.files?.[0], 'document'); event.currentTarget.value = '' }} /></label>{assets.some((asset) => brandAssetMatchesKind(asset, 'document')) && <select aria-label={`${label}选择已上传品牌文档`} value={value.documentAssetId ?? ''} onChange={(event) => { const selected = assets.find((asset) => asset.id === event.target.value); onChange({ ...value, documentAssetId: selected?.id, assetFileName: selected?.name ?? '' }); setAssetUploadStatus(selected ? `${selected.name} 已选择；${isUsableBrandAsset(selected) ? '保存后写入品牌配置。' : '素材检查通过后才会写入服务端配置。'}` : '已移除品牌文档引用。') }}><option value="">选择工作区已上传文档</option>{assets.filter((asset) => brandAssetMatchesKind(asset, 'document')).map((asset) => <option key={asset.id} value={asset.id}>{asset.name} · {isUsableBrandAsset(asset) ? '已就绪' : '待检查'}</option>)}</select>}</div>
+    {(assetUploadStatus || assetUploadError) && <small className={`material-brand-analysis-status ${assetUploadError ? 'error' : 'uploaded'}`} role={assetUploadError ? 'alert' : 'status'}>{assetUploadError || assetUploadStatus}</small>}
     <div className="material-brand-text-field"><div className="material-brand-field-heading"><span>用户画像</span></div><textarea aria-label={`${label}用户画像`} value={value.persona} onChange={(event) => onChange({ ...value, persona: event.target.value })} placeholder="例如：25–35 岁、关注设计感与使用效率的城市职场人" /></div>
     <div className="material-brand-text-field"><div className="material-brand-field-heading"><span>品牌卖点</span></div><textarea aria-label={`${label}品牌卖点`} value={value.sellingPoints} onChange={(event) => onChange({ ...value, sellingPoints: event.target.value })} placeholder="例如：原创设计、耐用材质、礼赠友好" /></div>
   </div>
 }
 
-export function MaterialBrandOutput({ value, label, enabled, onEnabledChange, context, transitionLabel }: { value: MaterialBrandSettings; label: string; enabled: boolean; onEnabledChange?: (enabled: boolean) => void; context?: { label: string; value: string }; transitionLabel?: string }) {
-  // Text and colour are editable server fields. Logo and document pickers still
-  // hold local previews, so their rows keep the explicit local-only wording.
+/** Keep the brand scope hierarchy visible when the API has no readable store.
+ * These are status panels only: they do not invent store/series identities or
+ * expose controls that could write a configuration to an unknown scope.
+ */
+export function BrandScopeUnavailableRow({ number, label, description, status }: { number: string; label: string; description: string; status: string }) {
+  return <article className="material-brand-row material-brand-row-unavailable" data-testid={`brand-scope-unavailable-${number}`}>
+    <section className="material-brand-config-card">
+      <div className="material-brand-row-heading"><span>{number}</span><div><strong>{label}</strong><small>{description}</small></div></div>
+      <div className="material-brand-scope-unavailable-state" role="status"><AlertCircle size={18} aria-hidden="true" /><div><strong>{label}尚不可用</strong><span>{status}</span></div></div>
+    </section>
+    <aside className="material-brand-output material-brand-output-unavailable" aria-label={`${label}状态`}>
+      <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前{label}</strong><small>等待真实数据</small></div>
+      <div className="material-brand-output-unavailable-body"><ImageIcon size={24} aria-hidden="true" /><strong>尚未加载配置</strong><span>读取到可用店铺后显示此层品牌资产。</span></div>
+    </aside>
+  </article>
+}
+
+export function MaterialBrandOutput({ value, label, enabled, onEnabledChange, context, transitionLabel, assets = [], baseUrl, brandLogoPreviews = {} }: { value: MaterialBrandSettings; label: string; enabled: boolean; onEnabledChange?: (enabled: boolean) => void; context?: { label: string; value: string }; transitionLabel?: string; assets?: AssetMetadata[]; baseUrl?: string; brandLogoPreviews?: Record<string, string> }) {
+  // Asset IDs and metadata come from the authenticated workspace asset read.
+  const [serverLogoPreview, setServerLogoPreview] = useState('')
+  const logoAsset = assets.find((asset) => asset.id === value.logoAssetId)
+  useEffect(() => {
+    setServerLogoPreview('')
+    if (!baseUrl || !value.logoAssetId || value.logoUrl || brandLogoPreviews[value.logoAssetId] || !logoAsset?.mimeType.toLowerCase().startsWith('image/') || logoAsset.scanStatus !== 'clean') return
+    const controller = new AbortController()
+    let objectUrl = ''
+    fetchAssetBlob(baseUrl, value.logoAssetId, controller.signal).then((blob) => {
+      if (controller.signal.aborted || !blob.type.toLowerCase().startsWith('image/')) return
+      objectUrl = URL.createObjectURL(blob)
+      setServerLogoPreview(objectUrl)
+    }).catch(() => { /* The asset row remains visible even when its image bytes cannot be read. */ })
+    return () => {
+      controller.abort()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [assets, baseUrl, logoAsset, value.logoAssetId, value.logoUrl, brandLogoPreviews])
+  const logoPreviewUrl = value.logoUrl || (value.logoAssetId ? brandLogoPreviews[value.logoAssetId] : '') || serverLogoPreview
   const colorFacts = resolveBrandColorFacts(value.color)
   const documentFacts = resolveBrandDocumentFacts(value.assetFileName)
-  const logoFacts = resolveBrandLogoFacts(value.logoUrl)
+  const logoFacts = resolveBrandLogoFacts(logoPreviewUrl)
+  const documentAsset = assets.find((asset) => asset.id === value.documentAssetId)
+  const logoAssetReady = isUsableBrandAsset(logoAsset)
+  const documentAssetReady = isUsableBrandAsset(documentAsset)
   return <aside className={`material-brand-output${enabled ? '' : ' disabled'}${transitionLabel ? ' switching' : ''}`} aria-label={`${label}${enabled ? '待保存启用' : '待保存停用'}的配置`}>
-    <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前编辑预览</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}保存后启用状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>停用{label}</button></div> : <small className="material-brand-output-live">保存后用于新任务</small>}</div>
+    <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前品牌资产</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}保存后启用状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>停用{label}</button></div> : <small className="material-brand-output-live">保存后用于新任务</small>}</div>
     <div className={`material-brand-output-card${context ? ' has-context' : ''}`} style={{ '--brand-preview-color': colorFacts.value || 'transparent' } as CSSProperties}>
       {context && <div className="material-brand-output-context"><span>{context.label}</span><strong>{context.value}</strong></div>}
-      <div className="material-brand-output-item material-brand-output-logo"><span>品牌 Logo</span><div>{logoFacts.picked ? <><img src={value.logoUrl} alt={`${label} ${logoFacts.imageAlt}`} /><small>{logoFacts.label}</small></> : <><ImageIcon size={24} /><small>{BRAND_UNCONFIGURED}</small></>}</div></div>
+      <div className="material-brand-output-item material-brand-output-logo"><span>品牌 Logo</span><div>{logoFacts.picked ? <><img src={logoPreviewUrl} alt={`${label} Logo 预览`} /><small>{value.logoAssetId ? `${logoAsset?.name ?? value.logoFileName ?? value.logoAssetId} · ${logoAssetReady ? '素材已就绪' : '已上传，待素材检查'}` : logoFacts.label}</small></> : logoAsset ? <><ImageIcon size={24} /><small>{logoAsset.name} · {logoAssetReady ? '素材已就绪' : '已上传，待素材检查'}</small></> : <><ImageIcon size={24} /><small>{value.logoAssetId ? `已引用素材 ${value.logoAssetId}，等待服务端读取` : BRAND_UNCONFIGURED}</small></>}</div></div>
       <div className="material-brand-output-item material-brand-output-color"><span>品牌主色</span><div>{colorFacts.configured ? <><i /><strong>{colorFacts.value}</strong></> : <small>{colorFacts.label}</small>}</div></div>
       <div className="material-brand-output-item material-brand-output-copy"><span>用户画像</span><p>{value.persona.trim() || '尚未填写，本页预览显示上一级配置。'}</p></div>
       <div className="material-brand-output-item material-brand-output-copy"><span>品牌卖点</span><p>{value.sellingPoints.trim() || '尚未填写，本页预览显示上一级配置。'}</p></div>
-      <div className={`material-brand-output-document${documentFacts.pending ? ' pending' : ''}`}><FileCheck2 size={18} /><div><span>品牌资产文档</span><strong>{documentFacts.fileName || BRAND_DOCUMENT_NONE}</strong></div><small>{documentFacts.label}</small></div>
+      <div className={`material-brand-output-document${documentFacts.pending && !value.documentAssetId ? ' pending' : ''}`}><FileCheck2 size={18} /><div><span>品牌资产文档</span><strong>{documentAsset?.name || value.assetFileName || BRAND_DOCUMENT_NONE}</strong></div><small>{value.documentAssetId ? documentAssetReady ? '素材已就绪' : '已上传，待素材检查' : documentFacts.label}</small></div>
     </div>
     {transitionLabel && <div className="material-brand-output-transition" role="status" aria-live="polite"><span>{transitionLabel}</span></div>}
   </aside>
@@ -5843,7 +5952,44 @@ type RecycleMaterialItem = StoreMaterialItem & {
   deletedAt: string
   expiresAt: string
 }
-const materialRecycleStorageKey = 'merchant-material-recycle-bin-v1'
+export type MaterialStorageScope = { accountId: string; workspaceId: string }
+export type MaterialStorageKeys = { recycle: string; removed: string }
+type MaterialStorage = Pick<Storage, 'getItem' | 'setItem'>
+
+function merchantMaterialStorage(): MaterialStorage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    return null
+  }
+}
+
+export function merchantMaterialStorageScope(
+  account: MerchantAuthAccount | null | undefined,
+  configuredWorkspace = configuredWorkspaceId(),
+): MaterialStorageScope | null {
+  if (!account || account.accountType !== 'merchant' || !account.id.trim()) return null
+  const configured = configuredWorkspace.trim()
+  const workspaceId = configured
+    ? account.workspaceIds.includes(configured) ? configured : ''
+    : account.workspaceIds.length === 1 ? account.workspaceIds[0]?.trim() ?? '' : ''
+  return workspaceId ? { accountId: account.id.trim(), workspaceId } : null
+}
+
+/**
+ * Browser-local material state is still tenant data. Never consult the old
+ * unscoped keys: they may contain material names from another signed-in user.
+ */
+export function materialStorageKeys(scope: MaterialStorageScope | null | undefined): MaterialStorageKeys | null {
+  const accountId = scope?.accountId.trim()
+  const workspaceId = scope?.workspaceId.trim()
+  if (!accountId || !workspaceId) return null
+  const namespace = `${encodeURIComponent(accountId)}:${encodeURIComponent(workspaceId)}`
+  return {
+    recycle: `merchant-material-recycle-bin-v2:${namespace}`,
+    removed: `merchant-material-removed-v2:${namespace}`,
+  }
+}
 
 /**
  * The recycle bin never seeds itself.
@@ -5858,24 +6004,60 @@ const materialRecycleStorageKey = 'merchant-material-recycle-bin-v1'
  * What is left is only what this browser actually recorded: an item appears
  * here after the merchant removes it from the material library in this profile.
  */
-function readRecycleMaterials(): RecycleMaterialItem[] {
+export function readRecycleMaterialsWithStatus(
+  scope: MaterialStorageScope | null | undefined,
+  now = Date.now(),
+  storage: MaterialStorage | null = merchantMaterialStorage(),
+): { items: RecycleMaterialItem[]; expiryCleanupFailed: boolean } {
+  const keys = materialStorageKeys(scope)
+  if (!keys || !storage) return { items: [], expiryCleanupFailed: false }
   try {
-    const saved = window.localStorage.getItem(materialRecycleStorageKey)
-    if (saved === null) return []
-    const items = JSON.parse(saved) as RecycleMaterialItem[]
-    const active = items.filter((item) => new Date(item.expiresAt).getTime() > Date.now())
-    if (active.length !== items.length) window.localStorage.setItem(materialRecycleStorageKey, JSON.stringify(active))
-    return active
+    const saved = storage.getItem(keys.recycle)
+    if (saved === null) return { items: [], expiryCleanupFailed: false }
+    const parsed = JSON.parse(saved) as unknown
+    if (!Array.isArray(parsed)) return { items: [], expiryCleanupFailed: false }
+    const items = parsed as RecycleMaterialItem[]
+    const active = items.filter((item) => item && typeof item.id === 'string' && new Date(item.expiresAt).getTime() > now)
+    const expiredIds = items.filter((item) => item && typeof item.id === 'string' && !(new Date(item.expiresAt).getTime() > now)).map((item) => item.id)
+    let expiryCleanupSucceeded = true
+    if (expiredIds.length) {
+      const removed = readRemovedMaterialIds(scope, storage).filter((id) => !expiredIds.includes(id))
+      expiryCleanupSucceeded = writeRemovedMaterialIds(scope, removed, storage)
+    }
+    // Keep expired rows readable when clearing their hidden markers fails. If
+    // we dropped them anyway, the material would remain hidden with no way to
+    // restore it; the next read can retry cleanup.
+    const visible = expiryCleanupSucceeded ? active : items.filter((item) => item && typeof item.id === 'string')
+    if (visible.length !== items.length) {
+      try { storage.setItem(keys.recycle, JSON.stringify(visible)) } catch { /* Keep valid rows visible if best-effort cleanup fails. */ }
+    }
+    return { items: visible, expiryCleanupFailed: expiredIds.length > 0 && !expiryCleanupSucceeded }
   } catch {
-    return []
+    return { items: [], expiryCleanupFailed: false }
   }
 }
 
-function writeRecycleMaterials(items: RecycleMaterialItem[]) {
+export function readRecycleMaterials(
+  scope: MaterialStorageScope | null | undefined,
+  now = Date.now(),
+  storage: MaterialStorage | null = merchantMaterialStorage(),
+): RecycleMaterialItem[] {
+  return readRecycleMaterialsWithStatus(scope, now, storage).items
+}
+
+export function writeRecycleMaterials(
+  scope: MaterialStorageScope | null | undefined,
+  items: RecycleMaterialItem[],
+  storage: MaterialStorage | null = merchantMaterialStorage(),
+): boolean {
+  const keys = materialStorageKeys(scope)
+  if (!keys || !storage) return false
   try {
-    window.localStorage.setItem(materialRecycleStorageKey, JSON.stringify(items))
+    storage.setItem(keys.recycle, JSON.stringify(items))
+    return storage.getItem(keys.recycle) === JSON.stringify(items)
   } catch {
     // 本地预览禁用储存时仍保留当前页面状态。
+    return false
   }
 }
 
@@ -5887,11 +6069,14 @@ function writeRecycleMaterials(items: RecycleMaterialItem[]) {
  * and 恢复 in the recycle bin drops it again. Without this the delete button on
  * a server material would do nothing at all.
  */
-const materialRemovedStorageKey = 'merchant-material-removed-v1'
-
-function readRemovedMaterialIds(): string[] {
+export function readRemovedMaterialIds(
+  scope: MaterialStorageScope | null | undefined,
+  storage: MaterialStorage | null = merchantMaterialStorage(),
+): string[] {
+  const keys = materialStorageKeys(scope)
+  if (!keys || !storage) return []
   try {
-    const saved = window.localStorage.getItem(materialRemovedStorageKey)
+    const saved = storage.getItem(keys.removed)
     if (saved === null) return []
     const ids = JSON.parse(saved) as unknown
     return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
@@ -5900,16 +6085,49 @@ function readRemovedMaterialIds(): string[] {
   }
 }
 
-function writeRemovedMaterialIds(ids: string[]) {
+export function writeRemovedMaterialIds(
+  scope: MaterialStorageScope | null | undefined,
+  ids: string[],
+  storage: MaterialStorage | null = merchantMaterialStorage(),
+): boolean {
+  const keys = materialStorageKeys(scope)
+  if (!keys || !storage) return false
   try {
-    window.localStorage.setItem(materialRemovedStorageKey, JSON.stringify(Array.from(new Set(ids))))
+    const serialized = JSON.stringify(Array.from(new Set(ids)))
+    storage.setItem(keys.removed, serialized)
+    return storage.getItem(keys.removed) === serialized
   } catch {
     // 本地预览禁用储存时仍保留当前页面状态。
+    return false
   }
+}
+
+export function clearRecycleMaterialRecords(
+  scope: MaterialStorageScope | null | undefined,
+  ids: string[],
+  storage: MaterialStorage | null = merchantMaterialStorage(),
+  now = Date.now(),
+) {
+  const keys = materialStorageKeys(scope)
+  if (!keys || !storage) return { items: readRecycleMaterials(scope, now, storage), removedIds: readRemovedMaterialIds(scope, storage), success: false }
+  const removedIds = new Set(ids)
+  const items = readRecycleMaterials(scope, now, storage).filter((item) => !removedIds.has(item.id))
+  const stillRemoved = readRemovedMaterialIds(scope, storage).filter((id) => !removedIds.has(id))
+  // Unhide first. If removing the local recycle row then fails, the item may
+  // remain listed in both views, but it is never hidden with no recovery row.
+  if (!writeRemovedMaterialIds(scope, stillRemoved, storage)) return { items: readRecycleMaterials(scope, now, storage), removedIds: readRemovedMaterialIds(scope, storage), success: false }
+  if (!writeRecycleMaterials(scope, items, storage)) return { items: readRecycleMaterials(scope, now, storage), removedIds: stillRemoved, success: false }
+  return { items, removedIds: stillRemoved, success: true }
 }
 
 function recycleDaysRemaining(expiresAt: string) {
   return Math.max(1, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000))
+}
+
+export function recycleExpiryLabel(expiresAt: string) {
+  const expiry = new Date(expiresAt).getTime()
+  if (!Number.isFinite(expiry)) return '到期时间无效'
+  return expiry <= Date.now() ? '已过期' : `剩余 ${recycleDaysRemaining(expiresAt)} 天`
 }
 
 function MaterialCategoryDropdown({
@@ -5967,27 +6185,40 @@ function MaterialCategoryDropdown({
   )
 }
 
-export function MaterialRecycleBinWorkspace() {
-  const [items, setItems] = useState<RecycleMaterialItem[]>(() => readRecycleMaterials())
+export function MaterialRecycleBinWorkspace({ storageScope }: { storageScope: MaterialStorageScope | null }) {
+  const currentStorageScopeKey = storageScope ? JSON.stringify([storageScope.accountId, storageScope.workspaceId]) : ''
+  const [itemsState, setItemsState] = useState<{ scopeKey: string; items: RecycleMaterialItem[]; expiryCleanupFailed: boolean }>(() => ({ scopeKey: currentStorageScopeKey, ...readRecycleMaterialsWithStatus(storageScope) }))
+  const loadedState = itemsState.scopeKey === currentStorageScopeKey ? itemsState : { scopeKey: currentStorageScopeKey, ...readRecycleMaterialsWithStatus(storageScope) }
+  const items = loadedState.items
+  const expiryCleanupFailed = loadedState.expiryCleanupFailed
+  const setItems = (next: RecycleMaterialItem[]) => setItemsState({ scopeKey: currentStorageScopeKey, items: next, expiryCleanupFailed: false })
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false)
+  const [storageError, setStorageError] = useState('')
   const selectedItems = items.filter((item) => selectedIds.includes(item.id))
   const previewItem = items.find((item) => item.id === previewId)
   const allSelected = items.length > 0 && items.every((item) => selectedIds.includes(item.id))
 
-  const removeFromRecycleBin = (ids: string[]) => {
-    const next = items.filter((item) => !ids.includes(item.id))
-    setItems(next)
-    writeRecycleMaterials(next)
+  useEffect(() => {
+    setItemsState({ scopeKey: currentStorageScopeKey, ...readRecycleMaterialsWithStatus(storageScope) })
     setSelectedIds([])
+    setPreviewId(null)
+  }, [storageScope?.accountId, storageScope?.workspaceId])
+
+  const removeFromRecycleBin = (ids: string[]) => {
+    const result = clearRecycleMaterialRecords(storageScope, ids)
+    if (!result.success) { setStorageError('浏览器未能完整更新本地回收记录；未确认清除，请重试。'); return false }
+    setItems(result.items)
+    setSelectedIds([])
+    setStorageError('')
+    return true
   }
 
-  // 恢复 must put the material back in the library, so it drops the id from the
-  // shared removed-set the library filters on. 彻底删除 keeps it there.
+  // Both restoring and clearing a browser-local record must remove its hidden
+  // marker; otherwise the material would remain missing from the library.
   const restoreFromRecycleBin = (ids: string[]) => {
     removeFromRecycleBin(ids)
-    writeRemovedMaterialIds(readRemovedMaterialIds().filter((id) => !ids.includes(id)))
   }
 
   return (
@@ -6001,12 +6232,12 @@ export function MaterialRecycleBinWorkspace() {
       </section>
       <section className="material-recycle-workspace">
         <div className="material-recycle-toolbar">
-          <div><h2>已删除素材</h2><p>可恢复到原店铺，也可以提前彻底删除。</p><p>列表来自本浏览器的记录，不是服务端读取结果。</p></div>
+          <div><h2>已移出列表素材</h2><p>恢复会取消本地隐藏状态；清除只移除本地记录，不修改服务端归属或文件。</p></div>
           <div className="material-recycle-actions">
             <span>已选 <strong>{selectedItems.length}</strong> 项</span>
             <button type="button" disabled={!items.length} onClick={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}>{allSelected ? '取消全选' : '全选'}</button>
-            <button type="button" disabled={!selectedItems.length} onClick={() => restoreFromRecycleBin(selectedIds)}><Undo2 size={14} />恢复</button>
-            <button type="button" className="danger" disabled={!selectedItems.length} onClick={() => setPermanentDeleteOpen(true)}><Trash2 size={14} />彻底删除</button>
+            <button type="button" disabled={!selectedItems.length} onClick={() => restoreFromRecycleBin(selectedIds)}><Undo2 size={14} />从本地列表恢复</button>
+            <button type="button" className="danger" disabled={!selectedItems.length} onClick={() => setPermanentDeleteOpen(true)}><Trash2 size={14} />清除本地记录</button>
           </div>
         </div>
         {items.length ? <div className="material-recycle-grid">{items.map((item) => {
@@ -6018,29 +6249,34 @@ export function MaterialRecycleBinWorkspace() {
               <span>{item.category}</span>
             </div>
             <div className="material-recycle-copy"><strong title={item.name}>{item.name}</strong><span>{item.series} · {item.sizeLabel} · {item.format}</span><small>{item.storeName} · {item.platform}</small></div>
-            <div className="material-recycle-expiry"><Clock3 size={13} /><span>剩余 {recycleDaysRemaining(item.expiresAt)} 天</span><small>{new Date(item.deletedAt).toLocaleDateString('zh-CN')} 删除</small></div>
+            <div className="material-recycle-expiry"><Clock3 size={13} /><span>{recycleExpiryLabel(item.expiresAt)}</span><small>{new Date(item.deletedAt).toLocaleDateString('zh-CN')} 删除</small></div>
           </article>
         })}</div> : <div className="material-empty"><Trash2 size={30} /><strong>回收站为空</strong><span>本浏览器还没有记录到已移除的素材；服务端已删除素材的读取尚未接入。</span></div>}
       </section>
       {previewItem && <button type="button" className="material-upload-lightbox" aria-label="关闭回收站图片预览" onClick={() => setPreviewId(null)}><span>{previewItem.previewUrl && previewItem.format !== 'MP4' ? <img src={previewItem.previewUrl} alt={previewItem.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{previewItem.name}</strong><small>点击任意位置关闭</small></span></button>}
-      {permanentDeleteOpen && selectedItems.length > 0 && <DialogFrame title="彻底删除素材" kicker="PERMANENT DELETE" onClose={() => setPermanentDeleteOpen(false)} actions={<><button type="button" className="catalog-asset-cancel" onClick={() => setPermanentDeleteOpen(false)}>取消</button><button type="button" className="material-delete-confirm" onClick={() => { removeFromRecycleBin(selectedIds); setPermanentDeleteOpen(false) }}><Trash2 size={14} />彻底删除</button></>}><div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定彻底删除已选的 {selectedItems.length} 项素材？</strong><p>此操作完成后，这些素材将无法从回收站恢复。</p></div></div></DialogFrame>}
+      {expiryCleanupFailed && <p role="alert">浏览器未能保存过期回收记录的清理状态；已过期记录暂时保留以便恢复，检查本地储存空间后刷新重试。</p>}
+      {storageError && <p role="alert">{storageError}</p>}
+      {permanentDeleteOpen && selectedItems.length > 0 && <DialogFrame title="清除本地回收记录" kicker="CLEAR LOCAL RECORDS" onClose={() => setPermanentDeleteOpen(false)} actions={<><button type="button" className="catalog-asset-cancel" onClick={() => setPermanentDeleteOpen(false)}>取消</button><button type="button" className="material-delete-confirm" onClick={() => { if (removeFromRecycleBin(selectedIds)) setPermanentDeleteOpen(false) }}><Trash2 size={14} />清除本地记录</button></>}><div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定清除已选的 {selectedItems.length} 条本地记录？</strong><p>此操作不会删除服务端素材文件。</p></div></div></DialogFrame>}
     </div>
   )
 }
 
 export function MaterialLibraryWorkspace({
   baseUrl,
+  storageScope,
   accounts,
   accountsError = '',
   products,
   view = 'library',
 }: {
   baseUrl?: string
+  storageScope: MaterialStorageScope | null
   accounts: PlatformAccount[] | null
   accountsError?: string
   products: ApiProduct[] | null
   view?: 'library' | 'brands'
 }) {
+  const currentStorageScopeKey = storageScope ? JSON.stringify([storageScope.accountId, storageScope.workspaceId]) : ''
   // Both the store list and the material list are server reads now. The store
   // list reuses the catalogue page's `buildCatalogPlatforms` so the two pages
   // can never disagree about how many stores the workspace has again.
@@ -6055,9 +6291,15 @@ export function MaterialLibraryWorkspace({
   // `GET /v1/assets` is the only honest source for the material cards. Before
   // it answers the page says so; when it answers empty the page says empty.
   const [remoteAssets, setRemoteAssets] = useState<AssetMetadata[] | null>(null)
+  const brandAssetPreviewRegistry = useRef(new BrandAssetPreviewRegistry())
+  const [brandLogoPreviews, setBrandLogoPreviews] = useState<Record<string, string>>({})
   const [assetsError, setAssetsError] = useState('')
   const [materialDownloadError, setMaterialDownloadError] = useState('')
   const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
+  useEffect(() => {
+    setBrandLogoPreviews({})
+    return () => brandAssetPreviewRegistry.current.clear()
+  }, [currentStorageScopeKey])
   useEffect(() => {
     if (!baseUrl) {
       setRemoteAssets(null)
@@ -6089,6 +6331,13 @@ export function MaterialLibraryWorkspace({
     () => (catalogStores ?? []).filter((store) => store.readable).map(catalogStoreForMaterials),
     [catalogStores],
   )
+  const noReadableStoreReason = accountsError
+    ? `店铺列表读取失败：${accountsError}；店铺品牌配置暂不可用。`
+    : catalogStores === null
+      ? '正在读取店铺列表；店铺品牌配置将在读取完成后开放。'
+      : catalogStores.length > 0
+        ? '已登记店铺尚未取得可读取授权；店铺品牌配置将在授权后开放。'
+        : '当前没有已登记店铺；登记店铺后可配置店铺品牌信息。'
   const materialStores = useMemo<CatalogStore[]>(
     () =>
       view === 'library'
@@ -6111,7 +6360,18 @@ export function MaterialLibraryWorkspace({
   // are kept per store because the merchant picked the store; nothing else is
   // seeded here — the eight invented materials per store are gone.
   const [materialsByStore, setMaterialsByStore] = useState<Record<string, StoreMaterialItem[]>>({})
-  const [removedMaterialIds, setRemovedMaterialIds] = useState<string[]>(() => readRemovedMaterialIds())
+  const [removedState, setRemovedState] = useState<{ scopeKey: string; ids: string[] }>(() => {
+    // Expiry is a cleanup event too: remove stale hidden IDs before loading the
+    // library, so a material does not disappear forever after its recycle row.
+    readRecycleMaterials(storageScope)
+    return { scopeKey: currentStorageScopeKey, ids: readRemovedMaterialIds(storageScope) }
+  })
+  const removedMaterialIds = removedState.scopeKey === currentStorageScopeKey ? removedState.ids : readRemovedMaterialIds(storageScope)
+  const setRemovedMaterialIds = (ids: string[]) => setRemovedState({ scopeKey: currentStorageScopeKey, ids })
+  useEffect(() => {
+    readRecycleMaterials(storageScope)
+    setRemovedMaterialIds(readRemovedMaterialIds(storageScope))
+  }, [storageScope?.accountId, storageScope?.workspaceId])
   const [uploadedBytes, setUploadedBytes] = useState(0)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [uploadStoreId, setUploadStoreId] = useState(materialStores[0]?.id ?? '')
@@ -6125,6 +6385,7 @@ export function MaterialLibraryWorkspace({
   const [uploadError, setUploadError] = useState('')
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [materialStorageError, setMaterialStorageError] = useState('')
   const [detailMaterialId, setDetailMaterialId] = useState<string | null>(null)
   const [detailPreviewOpen, setDetailPreviewOpen] = useState(false)
   // The global brand slot starts empty, like every other level of the stack.
@@ -6257,6 +6518,13 @@ export function MaterialLibraryWorkspace({
     }
   }, [seriesManagerOpen])
   const activeStore = materialStores.find((store) => store.id === activeStoreId) ?? materialStores[0] ?? (view === 'brands' ? unclassifiedUploadStore : undefined)
+  const registerUploadedBrandAsset = (asset: AssetMetadata, kind: 'logo' | 'document', file: File) => {
+    setRemoteAssets((current) => [asset, ...(current ?? []).filter((item) => item.id !== asset.id)])
+    if (kind === 'logo') {
+      const previewUrl = brandAssetPreviewRegistry.current.set(asset.id, file)
+      setBrandLogoPreviews((current) => ({ ...current, [asset.id]: previewUrl }))
+    }
+  }
   const uploadStore = uploadTargets.find((store) => store.id === uploadStoreId) ?? activeStore ?? unclassifiedUploadStore
   const uploadAvailableSeries = seriesByStore[uploadStoreId] ?? initialSeriesForStore(uploadStoreId)
   // The asset endpoint is workspace-scoped. Store attribution comes only from
@@ -6324,6 +6592,9 @@ export function MaterialLibraryWorkspace({
   const activeStoreBrandEnabled = storeBrandEnabled[activeStoreId] ?? true
   const effectiveStoreBrand: MaterialBrandSettings = activeStoreBrandEnabled ? {
     logoUrl: activeStoreBrand.logoUrl || effectiveGlobalBrand.logoUrl,
+    logoAssetId: activeStoreBrand.logoAssetId || effectiveGlobalBrand.logoAssetId,
+    logoFileName: activeStoreBrand.logoFileName || effectiveGlobalBrand.logoFileName,
+    documentAssetId: activeStoreBrand.documentAssetId || effectiveGlobalBrand.documentAssetId,
     color: activeStoreBrand.color || effectiveGlobalBrand.color,
     persona: activeStoreBrand.persona || effectiveGlobalBrand.persona,
     sellingPoints: activeStoreBrand.sellingPoints || effectiveGlobalBrand.sellingPoints,
@@ -6335,6 +6606,9 @@ export function MaterialLibraryWorkspace({
   const activeSeriesBrandEnabled = seriesBrandEnabled[activeSeriesKey] ?? true
   const effectiveSeriesBrand: MaterialBrandSettings = activeSeriesBrandEnabled ? {
     logoUrl: activeSeriesBrand.logoUrl || effectiveStoreBrand.logoUrl,
+    logoAssetId: activeSeriesBrand.logoAssetId || effectiveStoreBrand.logoAssetId,
+    logoFileName: activeSeriesBrand.logoFileName || effectiveStoreBrand.logoFileName,
+    documentAssetId: activeSeriesBrand.documentAssetId || effectiveStoreBrand.documentAssetId,
     color: activeSeriesBrand.color || effectiveStoreBrand.color,
     persona: activeSeriesBrand.persona || effectiveStoreBrand.persona,
     sellingPoints: activeSeriesBrand.sellingPoints || effectiveStoreBrand.sellingPoints,
@@ -6348,6 +6622,9 @@ export function MaterialLibraryWorkspace({
   const detailSeriesBrandEnabled = seriesBrandEnabled[detailSeriesKey] ?? true
   const effectiveDetailSeriesBrand: MaterialBrandSettings = detailSeriesBrandEnabled ? {
     logoUrl: detailSeriesBrand.logoUrl || effectiveStoreBrand.logoUrl,
+    logoAssetId: detailSeriesBrand.logoAssetId || effectiveStoreBrand.logoAssetId,
+    logoFileName: detailSeriesBrand.logoFileName || effectiveStoreBrand.logoFileName,
+    documentAssetId: detailSeriesBrand.documentAssetId || effectiveStoreBrand.documentAssetId,
     color: detailSeriesBrand.color || effectiveStoreBrand.color,
     persona: detailSeriesBrand.persona || effectiveStoreBrand.persona,
     sellingPoints: detailSeriesBrand.sellingPoints || effectiveStoreBrand.sellingPoints,
@@ -6358,6 +6635,9 @@ export function MaterialLibraryWorkspace({
   const detailImageBrandEnabled = detailMaterial ? imageBrandEnabled[detailMaterial.id] ?? true : true
   const effectiveDetailImageBrand: MaterialBrandSettings = detailImageBrandEnabled ? {
     logoUrl: detailImageBrand.logoUrl || effectiveDetailSeriesBrand.logoUrl,
+    logoAssetId: detailImageBrand.logoAssetId || effectiveDetailSeriesBrand.logoAssetId,
+    logoFileName: detailImageBrand.logoFileName || effectiveDetailSeriesBrand.logoFileName,
+    documentAssetId: detailImageBrand.documentAssetId || effectiveDetailSeriesBrand.documentAssetId,
     color: detailImageBrand.color || effectiveDetailSeriesBrand.color,
     persona: detailImageBrand.persona || effectiveDetailSeriesBrand.persona,
     sellingPoints: detailImageBrand.sellingPoints || effectiveDetailSeriesBrand.sellingPoints,
@@ -6369,10 +6649,23 @@ export function MaterialLibraryWorkspace({
 
   const saveMaterialBrandScopes = async () => {
     if (!baseUrl || !scopedBrandRead || scopedBrandBusy) return
+    if (remoteAssets === null || assetsError) {
+      setScopedBrandError(assetsError ? `素材列表读取失败，已阻止保存以保护现有品牌素材引用：${assetsError}` : '素材列表仍在读取，完成后才能安全保存品牌素材引用。')
+      return
+    }
+    // A failed or partial account read must never turn a whole-workspace
+    // settings replacement into an accidental deletion of hidden scopes.
+    if (accountsError || accounts === null) {
+      setScopedBrandError('店铺列表尚未完整读取，已阻止保存以避免覆盖未显示的店铺配置。请重新加载店铺列表后重试。')
+      return
+    }
     setScopedBrandBusy(true)
     setScopedBrandError('')
     setScopedBrandSaved('')
     try {
+      const usableAssetIds = new Set(remoteAssets.filter(isUsableBrandAsset).map((asset) => asset.id))
+      const draftBrandValues = [globalBrand, ...Object.values(storeBrands), ...Object.values(seriesBrands), ...Object.values(imageBrands)]
+      const deferredReferenceIds = [...new Set(draftBrandValues.flatMap((value) => [value.logoAssetId, value.documentAssetId]).filter((id): id is string => Boolean(id && !usableAssetIds.has(id))))]
       let seriesRows = [...scopedBrandRead.series]
       let assignments = [...scopedBrandRead.assignments]
       const ensureSeries = async (accountId: string, name: string) => {
@@ -6384,8 +6677,8 @@ export function MaterialLibraryWorkspace({
       }
       const settings: ScopedBrandSettings = {
         schemaVersion: 1,
-        global: { enabled: globalBrandEnabled, values: scopedBrandValues(globalBrand) },
-        stores: Object.fromEntries(Object.entries(storeBrands).filter(([accountId]) => stores.some((store) => store.id === accountId)).map(([accountId, value]) => [accountId, { enabled: storeBrandEnabled[accountId] ?? true, values: scopedBrandValues(value) }])),
+        global: { enabled: globalBrandEnabled, values: scopedBrandValues(globalBrand, usableAssetIds) },
+        stores: Object.fromEntries(Object.entries(storeBrands).filter(([accountId]) => stores.some((store) => store.id === accountId)).map(([accountId, value]) => [accountId, { enabled: storeBrandEnabled[accountId] ?? true, values: scopedBrandValues(value, usableAssetIds) }])),
         series: {}, images: {},
       }
       for (const [key, value] of Object.entries(seriesBrands)) {
@@ -6396,7 +6689,7 @@ export function MaterialLibraryWorkspace({
         if (!stores.some((store) => store.id === accountId)) continue
         const seriesId = await ensureSeries(accountId, name)
         settings.series![accountId] ??= {}
-        settings.series![accountId]![seriesId] = { enabled: seriesBrandEnabled[key] ?? true, values: scopedBrandValues(value) }
+        settings.series![accountId]![seriesId] = { enabled: seriesBrandEnabled[key] ?? true, values: scopedBrandValues(value, usableAssetIds) }
       }
       for (const [assetId, value] of Object.entries(imageBrands)) {
         let assignment = assignments.find((row) => row.assetId === assetId)
@@ -6414,11 +6707,11 @@ export function MaterialLibraryWorkspace({
             assignments = assignments.map((row) => row.assetId === assetId ? updated : row)
           }
         }
-        settings.images![assetId] = { enabled: imageBrandEnabled[assetId] ?? true, values: scopedBrandValues(value) }
+        settings.images![assetId] = { enabled: imageBrandEnabled[assetId] ?? true, values: scopedBrandValues(value, usableAssetIds) }
       }
       const saved = await saveScopedBrandSettings(baseUrl, settings, scopedBrandRead.revision)
       setScopedBrandRead({ ...scopedBrandRead, settings: saved.settings, revision: saved.revision, updated_at: saved.updatedAt, series: seriesRows, assignments })
-      setScopedBrandSaved(`已保存第 ${saved.revision} 版；文本与品牌色将在新确认的内容任务中生效。`)
+      setScopedBrandSaved(`已保存第 ${saved.revision} 版；文本与品牌色将在新确认的内容任务中生效。${deferredReferenceIds.length ? ` ${deferredReferenceIds.length} 个素材引用尚未通过检查，暂未写入；请在素材库完成扫描、权益确认、解析和事实确认后重新选择。` : ''}`)
     } catch (cause) {
       setScopedBrandError(`品牌配置保存失败：${describeApiError(cause)}`)
     } finally {
@@ -6680,7 +6973,7 @@ export function MaterialLibraryWorkspace({
     const now = new Date()
     const expiresAt = new Date(now)
     expiresAt.setDate(expiresAt.getDate() + 7)
-    const recycled = readRecycleMaterials()
+    const recycled = readRecycleMaterials(storageScope)
     const additions = selectedMaterials.map((item): RecycleMaterialItem => ({
       ...item,
       // `GET /v1/assets` publishes no store attribution, so a server asset is
@@ -6692,9 +6985,17 @@ export function MaterialLibraryWorkspace({
       deletedAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
     }))
-    writeRecycleMaterials([...additions, ...recycled.filter((item) => !selectedIds.includes(item.id))])
-    const nextRemoved = Array.from(new Set([...readRemovedMaterialIds(), ...selectedIds]))
-    writeRemovedMaterialIds(nextRemoved)
+    const nextRecycle = [...additions, ...recycled.filter((item) => !selectedIds.includes(item.id))]
+    const nextRemoved = Array.from(new Set([...readRemovedMaterialIds(storageScope), ...selectedIds]))
+    if (!writeRecycleMaterials(storageScope, nextRecycle)) {
+      setMaterialStorageError('浏览器未能保存回收记录；素材仍保留在当前列表。请检查本地储存空间后重试。')
+      return
+    }
+    if (!writeRemovedMaterialIds(storageScope, nextRemoved)) {
+      setMaterialStorageError('回收记录已保存，但隐藏状态未能保存；素材仍保留在当前列表。请检查本地储存后重试。')
+      return
+    }
+    setMaterialStorageError('')
     setRemovedMaterialIds(nextRemoved)
     setMaterialsByStore((current) => ({
       ...current,
@@ -6731,8 +7032,8 @@ export function MaterialLibraryWorkspace({
         <div className="material-brand-panel-heading"><div><span className="section-kicker">IMAGE BRAND SETTINGS</span><h2>单图品牌配置</h2><p>编辑后点击下方“保存品牌配置”；服务端确认保存后，设置才会用于之后确认的内容任务。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
         <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span></div>
         <article className="material-brand-row material-image-brand-row">
-          <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" onChange={(next) => { setImageBrands((current) => ({ ...current, [detailMaterial.id]: next })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })) }} /></div>
-          <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} onEnabledChange={(enabled) => setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled }))} context={{ label: '当前图片', value: detailMaterial.name }} />
+          <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setImageBrands((current) => ({ ...current, [detailMaterial.id]: next })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })) }} /></div>
+        <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} onEnabledChange={(enabled) => setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled }))} context={{ label: '当前图片', value: detailMaterial.name }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
         </article>
       </section>}
       {detailPreviewOpen && <button type="button" className="material-upload-lightbox" aria-label="关闭素材图片预览" onClick={() => setDetailPreviewOpen(false)}><span>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{detailMaterial.name}</strong><small>点击任意位置关闭</small></span></button>}
@@ -6751,29 +7052,34 @@ export function MaterialLibraryWorkspace({
 
       {view === 'brands' && <section className="material-brand-assets-panel" aria-label="品牌资产配置">
         <div className="material-brand-panel-heading">
-          <div><span className="section-kicker">BRAND SETTINGS</span><h2>品牌配置</h2><p>填写全局、店铺、系列与单图的文字和品牌色后点击保存；已确认的配置会用于之后确认的内容任务。Logo 和文档选择仍是本地预览，须在素材库完成上传、扫描及权益确认后才能引用。</p></div>
-          <div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div>
+          <div><span className="section-kicker">BRAND SETTINGS</span><h2>品牌配置</h2><p>统一维护全局、店铺、系列与单图品牌信息，生成内容时自动按优先级应用。</p></div>
+          <div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>资产应用原则：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div>
         </div>
-        <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span></div>
-        <div className="material-brand-upload-entry"><div><strong>上传品牌资料</strong><span>素材经服务端上传后，需完成扫描、权益和事实确认；文字与品牌色可在上方保存。</span></div><button type="button" className="material-upload-button" onClick={() => { setUploadStoreId('unclassified'); setUploadCategory('品牌资料'); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传品牌资料</span></button></div>
-        {stores.length === 0 && <p className="material-brand-no-store">{accountsError ? `店铺列表读取失败：${accountsError}；品牌资料可先上传到工作区素材库。` : catalogStores === null ? '正在读取店铺列表；品牌资料可先上传到工作区素材库。' : catalogStores.length > 0 ? '已登记店铺尚未取得可读取授权；店铺品牌配置将在授权后开放。品牌资料可先上传到工作区素材库。' : '当前没有已登记店铺；品牌资料可先上传到工作区素材库。'}</p>}
+        {stores.length === 0 && !scopedBrandRead && <p className="material-brand-no-store" role={accountsError ? 'alert' : 'status'}>{noReadableStoreReason}</p>}
         <div className="material-brand-stack">
-          <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>本页所有系列与图片的预览默认值</small></div></div><MaterialBrandFields value={globalBrand} label="全局" onChange={setGlobalBrand} /></div>
-            <MaterialBrandOutput value={effectiveGlobalBrand} label="全局配置" enabled={globalBrandEnabled} onEnabledChange={setGlobalBrandEnabled} />
-          </article>
-          {stores.length > 0 && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>02</span><div><strong>店铺配置</strong><small>覆盖全局配置并应用到当前店铺</small></div></div><MaterialBrandFields value={activeStoreBrand} label={activeStore.name} logoLabel="店铺 Logo" onChange={(next) => setStoreBrands((current) => ({ ...current, [activeStoreId]: next }))} leadingCard={<div className="material-brand-series-card material-brand-store-card"><span className="material-brand-store-label">选择店铺</span><MaterialCategoryDropdown ariaLabel="选择配置店铺" value={activeStoreId} options={stores.map((store) => ({ value: store.id, label: store.name }))} onChange={switchBrandStore} /></div>} /></div>
-            <MaterialBrandOutput value={effectiveStoreBrand} label="店铺配置" enabled={activeStoreBrandEnabled} onEnabledChange={(enabled) => setStoreBrandEnabled((current) => ({ ...current, [activeStoreId]: enabled }))} context={{ label: '当前店铺', value: activeStore.name }} transitionLabel={storeBrandTransition} />
+          {scopedBrandRead && <article className="material-brand-row">
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>本页所有系列与图片的预览默认值</small></div></div><MaterialBrandFields value={globalBrand} label="全局" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={setGlobalBrand} /></div>
+            <MaterialBrandOutput value={effectiveGlobalBrand} label="全局配置" enabled={globalBrandEnabled} onEnabledChange={setGlobalBrandEnabled} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
-          {stores.length > 0 && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用到当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} onChange={(next) => setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next }))} leadingCard={<div className="material-brand-series-card" ref={seriesManagerRef}><div className="material-brand-series-current"><span>当前系列</span><strong>{activeBrandSeries}</strong></div><button type="button" aria-haspopup="dialog" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>创建或选择当前店铺系列；已保存系列暂不支持删除</strong></div><label><span>新系列名称</span><div><input autoFocus value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={createBrandSeries} disabled={!newSeriesName.trim()}>创建</button></div></label><div className="material-brand-series-list"><span>已有系列</span>{availableSeries.map((item) => <div className={item === activeBrandSeries ? 'active' : ''} key={item}><button type="button" className="material-brand-series-select" onClick={() => switchBrandSeries(item)}><span>{item}</span>{item === activeBrandSeries && <Check size={14} />}</button><button type="button" className="material-brand-series-delete" aria-label={`删除${item}系列`} disabled={availableSeries.length === 1 || Boolean(scopedBrandRead?.series.some((row) => row.accountId === activeStoreId && row.name === item))} onClick={() => deleteBrandSeries(item)}><Trash2 size={13} /></button></div>)}</div></div>}</div>} /></div>
-            <MaterialBrandOutput value={effectiveSeriesBrand} label="系列配置" enabled={activeSeriesBrandEnabled} onEnabledChange={(enabled) => setSeriesBrandEnabled((current) => ({ ...current, [activeSeriesKey]: enabled }))} context={{ label: '当前系列', value: activeBrandSeries }} transitionLabel={seriesBrandTransition} />
+          {scopedBrandRead && stores.length > 0 && <article className="material-brand-row">
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>02</span><div><strong>店铺配置</strong><small>覆盖全局配置并应用到当前店铺</small></div></div><MaterialBrandFields value={activeStoreBrand} label={activeStore.name} logoLabel="店铺 Logo" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => setStoreBrands((current) => ({ ...current, [activeStoreId]: next }))} leadingCard={<div className="material-brand-series-card material-brand-store-card"><span className="material-brand-store-label">选择店铺</span><MaterialCategoryDropdown ariaLabel="选择配置店铺" value={activeStoreId} options={stores.map((store) => ({ value: store.id, label: store.name }))} onChange={switchBrandStore} /></div>} /></div>
+            <MaterialBrandOutput value={effectiveStoreBrand} label="店铺配置" enabled={activeStoreBrandEnabled} onEnabledChange={(enabled) => setStoreBrandEnabled((current) => ({ ...current, [activeStoreId]: enabled }))} context={{ label: '当前店铺', value: activeStore.name }} transitionLabel={storeBrandTransition} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
-          <article className="material-brand-row material-brand-single-row">
+          {scopedBrandRead && stores.length === 0 && <BrandScopeUnavailableRow number="02" label="店铺配置" description="覆盖全局配置并应用到当前店铺" status={noReadableStoreReason} />}
+          {scopedBrandRead && stores.length > 0 && <article className="material-brand-row">
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用于当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next }))} leadingCard={<div className="material-brand-series-card" ref={seriesManagerRef}><div className="material-brand-series-current"><span>当前系列</span><strong>{activeBrandSeries}</strong></div><button type="button" aria-haspopup="dialog" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>创建或选择当前店铺系列；已保存系列暂不支持删除</strong></div><label><span>新系列名称</span><div><input autoFocus value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={createBrandSeries} disabled={!newSeriesName.trim()}>创建</button></div></label><div className="material-brand-series-list"><span>已有系列</span>{availableSeries.map((item) => <div className={item === activeBrandSeries ? 'active' : ''} key={item}><button type="button" className="material-brand-series-select" onClick={() => switchBrandSeries(item)}><span>{item}</span>{item === activeBrandSeries && <Check size={14} />}</button><button type="button" className="material-brand-series-delete" aria-label={`删除${item}系列`} disabled={availableSeries.length === 1 || Boolean(scopedBrandRead?.series.some((row) => row.accountId === activeStoreId && row.name === item))} onClick={() => deleteBrandSeries(item)}><Trash2 size={13} /></button></div>)}</div></div>}</div>} /></div>
+            <MaterialBrandOutput value={effectiveSeriesBrand} label="系列配置" enabled={activeSeriesBrandEnabled} onEnabledChange={(enabled) => setSeriesBrandEnabled((current) => ({ ...current, [activeSeriesKey]: enabled }))} context={{ label: '当前系列', value: activeBrandSeries }} transitionLabel={seriesBrandTransition} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
+          </article>}
+          {scopedBrandRead && stores.length === 0 && <BrandScopeUnavailableRow number="03" label="系列配置" description="覆盖店铺配置并应用到当前系列" status="当前没有可读取店铺，服务端未提供可加载的系列配置。" />}
+          {scopedBrandRead && <div className="material-brand-actions-row">
+            <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={scopedBrandBusy || Boolean(accountsError) || accounts === null} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || `当前服务端版本：${scopedBrandRead.revision}`}</span></div>
+            <div className="material-brand-upload-entry"><div><strong>上传品牌资料</strong><span>上传后按服务端扫描、权益与事实确认流程处理。</span></div><button type="button" className="material-upload-button" onClick={() => { setUploadStoreId('unclassified'); setUploadCategory('品牌资料'); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传品牌资料</span></button></div>
+          </div>}
+          {scopedBrandRead && <article className="material-brand-row material-brand-single-row">
             <a className="material-brand-single-banner" href={`${window.location.pathname}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(window.location.search)), section: 'knowledge' }).toString()}`}><span>04</span><span className="material-brand-single-copy"><strong>单图配置请前往素材库进行配置</strong><small>优先级最高，只应用于指定图片</small></span><ArrowRight size={18} /></a>
-          </article>
+          </article>}
         </div>
+        {!scopedBrandRead && <div className="material-brand-read-state" role={scopedBrandError ? 'alert' : 'status'}>{scopedBrandError || '正在读取服务端品牌配置…'}</div>}
       </section>}
 
       {view === 'library' && activeStore && (
@@ -6872,16 +7178,16 @@ export function MaterialLibraryWorkspace({
       )}
       {activeStore && deleteDialogOpen && selectedMaterials.length > 0 && (
         <DialogFrame
-          title="移入回收站"
-          kicker="MOVE TO RECYCLE BIN"
+          title="从当前素材列表移除"
+          kicker="HIDE FROM THIS BROWSER"
           onClose={() => setDeleteDialogOpen(false)}
           testId="material-delete-dialog"
           actions={<>
             <button type="button" className="catalog-asset-cancel" onClick={() => setDeleteDialogOpen(false)}>取消</button>
-            <button type="button" className="material-delete-confirm" onClick={deleteSelectedMaterials}><Trash2 size={14} />移入回收站</button>
+            <button type="button" className="material-delete-confirm" onClick={deleteSelectedMaterials}><Trash2 size={14} />从列表隐藏</button>
           </>}
         >
-          <div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定将已选的 {selectedMaterials.length} 项素材移入回收站？</strong><p>素材会从“{activeStore.name}”的列表移除，并记录在本浏览器的回收站中。</p></div></div>
+          <div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定从当前列表隐藏已选的 {selectedMaterials.length} 项素材？</strong><p>此操作只影响本浏览器显示；不会删除服务端文件或工作区素材。</p>{materialStorageError && <p role="alert">{materialStorageError}</p>}</div></div>
         </DialogFrame>
       )}
     </div>
@@ -6963,6 +7269,7 @@ export function resolveCatalogSyncControl({
 
 export function Products({
   baseUrl,
+  authAccount,
   apiMode,
   modelStatus,
   modelStatusRead,
@@ -6973,6 +7280,7 @@ export function Products({
   onOpenTasks,
 }: {
   baseUrl?: string
+  authAccount: MerchantAuthAccount | null
   apiMode?: string | null
   modelStatus: PlatformModelStatus | null
   modelStatusRead: boolean
@@ -7564,14 +7872,15 @@ export function Products({
     // The store rows come from the reads this page already performs, so the
     // material workspace can never disagree with the catalogue about the
     // workspace's stores (it used to read its own eight-store seed instead).
-    const materialWorkspaceProps = { baseUrl, accounts, accountsError, products: remoteProducts } as const
+    const storageScope = merchantMaterialStorageScope(authAccount)
+    const materialWorkspaceProps = { baseUrl, storageScope, accounts, accountsError, products: remoteProducts } as const
     return initialEntry === 'knowledge'
       ? <MaterialLibraryWorkspace {...materialWorkspaceProps} view="library" />
       : initialEntry === 'assets'
         ? <MaterialLibraryWorkspace {...materialWorkspaceProps} view="brands" />
       : initialEntry === 'trash'
-        ? <MaterialRecycleBinWorkspace />
-      : <MaterialLibraryWorkspace {...materialWorkspaceProps} view="library" />
+        ? <MaterialRecycleBinWorkspace storageScope={storageScope} />
+        : <MaterialLibraryWorkspace {...materialWorkspaceProps} view="library" />
   }
   return (
     <div className="page-stack products-page">
@@ -13523,6 +13832,7 @@ export default function App() {
                     <Products
                       key={`${activeEntry ?? 'knowledge'}-${workspaceNavigationKey}`}
                       baseUrl={apiBaseUrl}
+                      authAccount={authAccount}
                       apiMode={apiMode}
                       modelStatus={modelStatus}
                       modelStatusRead={modelStatusRead}

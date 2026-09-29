@@ -10,6 +10,9 @@ const unresolvedDirectory: WorkspaceDirectoryPage = { items: [], offset: 0, limi
 const model = (overrides: Record<string, unknown> = {}) => ({
   workspaceDirectory: { total: 0, merchantWorkspaceCount: 0 },
   platformFinanceSummary: undefined,
+  platformMonthlyFinanceSummary: undefined,
+  platformMonthlyFinanceMonth: "2026年9月",
+  platformCommercialCatalog: [],
   platformModelUsageSummary: undefined,
   dataSetError: () => undefined,
   ...overrides,
@@ -53,7 +56,7 @@ describe("PlatformOverviewSnapshot money honesty", () => {
     const html = render({ platformModelUsageSummary: usage({ providerCostStatus: "verified" }) });
     expect(html).not.toContain("48213905");
     expect(tile(html, "累计平台消耗金额")).toContain("12.34");
-    expect(tile(html, "平台消耗金额")).toContain("12.34");
+    expect(tile(html, "平台消耗金额")).toContain("—");
   });
 
   it("resolves the monthly tile from its own label, not from an earlier substring match", () => {
@@ -75,9 +78,15 @@ describe("PlatformOverviewSnapshot money honesty", () => {
     expect(html).not.toContain("48213905");
   });
 
+  it("renders verified whole-yuan provider cost without screenshot-mismatching decimal zeroes", () => {
+    const html = render({ platformModelUsageSummary: usage({ providerCostCny: 0, providerCostStatus: "verified" }) });
+    expect(tile(html, "累计平台消耗金额")).toContain("0 ");
+    expect(tile(html, "累计平台消耗金额")).not.toContain("0.00");
+  });
+
   it("does not present an absent finance, usage or directory read as a measured zero", () => {
     const html = render({ workspaceDirectory: unresolvedDirectory });
-    expect(html).not.toContain("<small>元</small>");
+    expect(tile(html, "接入费总收入")).toContain("<small>元</small>");
     expect(tile(html, "接入费总收入")).toContain("—");
     expect(tile(html, "接入费销售额")).toContain("—");
     expect(tile(html, "套餐销售额")).toContain("—");
@@ -127,18 +136,80 @@ describe("PlatformOverviewSnapshot money honesty", () => {
     expect(tile(html, "赠送客户数")).not.toMatch(/\d/u);
   });
 
-  it("labels finance using its cumulative scope and leaves unsupported metrics unknown", () => {
+  it("separates cumulative finance from the current Shanghai-month window", () => {
     const html = render({ platformFinanceSummary: {
       onboardingOrderCny: 1288,
       subscriptionOrderCny: 3200,
       subscriptionOrderBySku: { basic: { orderCount: 2 }, growth: { orderCount: 3 } },
-    } });
+    }, platformMonthlyFinanceSummary: {
+      onboardingOrderCny: 88,
+      onboardingOrderWorkspaceCount: 2,
+      subscriptionOrderCny: 400,
+      subscriptionOrderBySku: {
+        basic: { orderCount: 1, workspaceCount: 1 },
+        growth: { orderCount: 2, workspaceCount: 1 },
+        custom_bundle: { orderCount: 4, workspaceCount: 2 },
+      },
+      commercialOrderBySku: {
+        basic: { orderCount: 1, workspaceCount: 1 },
+        growth: { orderCount: 2, workspaceCount: 1 },
+        custom_bundle: { orderCount: 4, workspaceCount: 2 },
+        "sku-monthly-basic": { orderCount: 1, workspaceCount: 1 },
+        "sku-monthly-growth": { orderCount: 2, workspaceCount: 1 },
+        "sku-monthly-custom": { orderCount: 4, workspaceCount: 2 },
+      },
+    }, platformCommercialCatalog: [
+      { skuCode: "sku-monthly-basic", name: "基础版", type: "monthly" },
+      { skuCode: "sku-monthly-growth", name: "成长版", type: "monthly" },
+      { skuCode: "sku-monthly-custom", name: "定制方案", type: "monthly" },
+      { skuCode: "sku-points-500", name: "点数充值", type: "point_pack" },
+    ] });
     expect(html).toContain("9月经营数据");
+    expect(html).toContain("当前月份：<strong>9月</strong>");
     expect(html).toContain("<small>本月</small>");
-    expect(tile(html, "接入费销售额")).toContain("1288");
-    expect(tile(html, "套餐销售额")).toContain("3200");
+    expect(tile(html, "接入费销售额")).toContain("88");
+    expect(tile(html, "套餐销售额")).toContain("400");
     expect(tile(html, "接入费总收入")).toContain("1288");
-    expect(html).toContain("3200");
+    expect(tile(html, "套餐销量")).toContain("7");
+    expect(tile(html, "2000 版本销量")).toContain("1");
+    expect(tile(html, "5000 版本销量")).toContain("2");
+    expect(html).not.toContain("定制方案 销量");
+    expect(tile(html, "接入客户数")).toContain("2");
+    expect(tile(html, "套餐销售额")).not.toContain("3200");
+    expect(html).toContain("跨月付款仍按订单创建月份归类");
+    expect(tile(html, "平台消耗金额")).toContain("—");
+  });
+
+  it("preserves a real zero when the monthly finance summary reports no bundle orders", () => {
+    const html = render({ platformMonthlyFinanceSummary: {
+      subscriptionOrderCny: 0,
+      subscriptionOrderBySku: {},
+      commercialOrderBySku: {},
+    } });
+    expect(tile(html, "套餐销量")).toContain("0");
+    expect(tile(html, "套餐销售额")).toContain("0");
+    expect(tile(html, "2000 版本销量")).toContain("—");
+    expect(tile(html, "5000 版本销量")).toContain("—");
+  });
+
+  it("counts monthly SKUs from the commercial summary and excludes point packs", () => {
+    const html = render({ platformMonthlyFinanceSummary: {
+      subscriptionOrderCny: 400,
+      subscriptionOrderBySku: {},
+      commercialOrderBySku: {
+        "sku-monthly-basic": { orderCount: 2, workspaceCount: 1 },
+        "sku-monthly-growth": { orderCount: 1, workspaceCount: 1 },
+        "sku-points-500": { orderCount: 7, workspaceCount: 3 },
+      },
+    }, platformCommercialCatalog: [
+      { skuCode: "sku-monthly-basic", name: "基础版", type: "monthly" },
+      { skuCode: "sku-monthly-growth", name: "成长版", type: "monthly" },
+      { skuCode: "sku-points-500", name: "点数充值", type: "point_pack" },
+    ] });
+    expect(tile(html, "套餐销量")).toContain("3");
+    expect(tile(html, "套餐销量")).not.toContain("10");
+    expect(tile(html, "2000 版本销量")).toContain("2");
+    expect(tile(html, "5000 版本销量")).toContain("1");
   });
 
   it("never fabricates a zero for the creative-point tiles that have no data source", () => {
@@ -152,7 +223,7 @@ describe("PlatformOverviewSnapshot money honesty", () => {
   it("does not map unsupported subscription workspace counts onto customer counts", () => {
     const html = render({
       workspaceDirectory: { total: 18, merchantWorkspaceCount: 18, items: [], offset: 0, limit: 20, hasMore: false },
-      platformFinanceSummary: {
+      platformMonthlyFinanceSummary: {
         onboardingOrderWorkspaceCount: 9,
         onboardingOrderCount: 13,
         subscriptionOrderWorkspaceCount: 7,
@@ -160,6 +231,7 @@ describe("PlatformOverviewSnapshot money honesty", () => {
     });
     expect(tile(html, "客户总数")).toContain("18");
     expect(tile(html, "有效客户数")).toContain("18");
+    expect(tile(html, "接入客户数")).toContain("9");
     expect(tile(html, "接入费销售额")).toContain("—");
     expect(tile(html, "套餐销量")).toContain("—");
     expect(tile(html, "累计客户消耗创意点")).toContain("—");

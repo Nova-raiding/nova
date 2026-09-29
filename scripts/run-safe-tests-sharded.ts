@@ -34,6 +34,10 @@ export function safeTestShardCount(source: NodeJS.ProcessEnv): number {
   return value
 }
 
+function hasExplicitTestFileSelection(args: readonly string[]): boolean {
+  return args.some(argument => /\.(?:test|spec)\.(?:[cm]?[jt]sx?)(?::\d+(?:-\d+)?)?$/u.test(argument))
+}
+
 export async function runSafeTestShards(
   args: readonly string[],
   source: NodeJS.ProcessEnv = process.env,
@@ -41,6 +45,16 @@ export async function runSafeTestShards(
   write: (message: string) => void = message => console.error(message),
   listFiles: (source: NodeJS.ProcessEnv) => Promise<string[]> = listSafeTestFiles,
 ): Promise<number> {
+  // Explicit test-file filters stay a single isolated invocation. Appending
+  // them to every repository shard accidentally runs the whole suite again
+  // when developers expect a focused regression test.
+  if (hasExplicitTestFileSelection(args)) {
+    write('[safe-tests] explicit test-file selection; running one isolated invocation')
+    const exitCode = await runShard([...args], source)
+    write(`[safe-tests] explicit test-file selection ${exitCode === 0 ? 'passed' : `failed (exit ${exitCode})`}`)
+    return exitCode
+  }
+
   const shardCount = safeTestShardCount(source)
   const files = await listFiles(source)
   const shards = Array.from({ length: shardCount }, () => [] as string[])

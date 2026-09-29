@@ -305,17 +305,17 @@ describe('content and knowledge MCP methods over real HTTP', () => {
     const missingRequired = await callMcp(tokens.rules, workspaceId, 'generation.get')
     expect(missingRequired.status).toBe(400)
     expect(missingRequired.body.error?.code).toBe('INVALID_REQUEST')
-    expect(missingRequired.body.error?.message).toContain('params.job_id is required')
+    expect(missingRequired.body.error?.message).toContain('缺少必填参数 params.job_id')
 
     const extraField = await callMcp(tokens.rules, workspaceId, 'knowledge.rule.list', { unexpected: 'not-allowed' })
     expect(extraField.status).toBe(400)
     expect(extraField.body.error?.code).toBe('INVALID_REQUEST')
-    expect(extraField.body.error?.message).toContain('params.unexpected is not accepted')
+    expect(extraField.body.error?.message).toContain('不接受参数 params.unexpected')
 
     const invalidEnum = await callMcp(tokens.rules, workspaceId, 'creative.directions.update', { task_id: creativeTask.id, action: 'explode' })
     expect(invalidEnum.status).toBe(400)
     expect(invalidEnum.body.error?.code).toBe('INVALID_REQUEST')
-    expect(invalidEnum.body.error?.message).toContain('params.action has an unsupported value')
+    expect(invalidEnum.body.error?.message).toContain('params.action 的值不受支持')
 
     const forbiddenRole = await callMcp(tokens.owner, workspaceId, 'knowledge.rule.create', {
       name: '无 rules_admin 的规则', content: '不应创建', scope: 'global', source_kind: 'internal',
@@ -342,6 +342,6 @@ describe('content and knowledge MCP methods over real HTTP', () => {
     })
     expect(adHocIdempotency.status).toBe(400)
     expect(adHocIdempotency.body.error?.code).toBe('INVALID_REQUEST')
-    expect(adHocIdempotency.body.error?.message).toContain('params.idempotency_key is not accepted')
+    expect(adHocIdempotency.body.error?.message).toContain('不接受参数 params.idempotency_key')
   }, 30_000)
 })

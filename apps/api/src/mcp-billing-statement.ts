@@ -1,5 +1,5 @@
 import { DomainError } from '../../../packages/application/src/service.js'
-import { allowedModelUsageSettlementDecisions, type ActionLedgerRecord } from '../../../packages/persistence/src/index.js'
+import { allowedModelUsageSettlementDecisions, type ActionLedgerCursor, type ActionLedgerPage, type ActionLedgerRecord } from '../../../packages/persistence/src/index.js'
 import type { ModelUsageRecord } from '../../../packages/persistence/src/model-usage-repository.js'
 import { chargeFenFromCny, publicMoneyRecord } from './wallet-money.js'
 import type { BillingExportTransaction } from './mcp-billing-export.js'
@@ -13,15 +13,36 @@ export interface BillingStatementDependencies {
   listTransactions: (actorId?: string) => Promise<BillingExportTransaction[]>
   listModelUsage: (period: { fromAt?: string; toAt?: string; actorId?: string }) => Promise<ModelUsageRecord[]>
   listActions: () => Promise<ActionLedgerRecord[]>
+  listManualAttentionActions: (input: { actorId?: string; cursor?: ActionLedgerCursor; limit: number }) => Promise<ActionLedgerPage>
   balanceFen: () => Promise<number>
   walletEffectiveDebitFens: (workspaceId: string, debitKeys: readonly string[], actorId?: string) => Promise<Map<string, number>>
   externalProviderUsageStatement: (input: { modelUsage: ModelUsageRecord[]; fromAt?: string; toAt?: string }) => Promise<{ status: string }>
   paymentProviderReadiness: () => { ready: boolean; reasons: string[] }
 }
 
+function decodeManualAttentionCursor(value: unknown): ActionLedgerCursor | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || value.length > 512 || !/^[A-Za-z0-9_-]+$/u.test(value)) throw new DomainError('MODEL_USAGE_STATEMENT_CURSOR_INVALID', 'manual_attention_cursor 格式无效', 400)
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as { v?: unknown; created_at?: unknown; id?: unknown }
+    if (parsed.v !== 1 || typeof parsed.created_at !== 'string' || !Number.isFinite(Date.parse(parsed.created_at)) || typeof parsed.id !== 'string' || !parsed.id.trim() || parsed.id.length > 200) throw new Error('invalid cursor')
+    // Preserve the exact database timestamp text. PostgreSQL supports
+    // microseconds; normalizing through JavaScript Date truncates to ms and
+    // can skip same-millisecond rows at the next cursor boundary.
+    return { createdAt: parsed.created_at, id: parsed.id }
+  } catch {
+    throw new DomainError('MODEL_USAGE_STATEMENT_CURSOR_INVALID', 'manual_attention_cursor 格式无效', 400)
+  }
+}
+
+function encodeManualAttentionCursor(cursor?: ActionLedgerCursor) {
+  return cursor ? Buffer.from(JSON.stringify({ v: 1, created_at: cursor.createdAt, id: cursor.id }), 'utf8').toString('base64url') : null
+}
+
 export async function billingReconciliationStatement(deps: BillingStatementDependencies) {
   const { workspaceId, params, billingScope, canViewProviderCosts } = deps
       const limit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Math.min(100, Math.max(1, Number(params.limit))) : 100
+      const manualAttentionCursor = decodeManualAttentionCursor(params.manual_attention_cursor)
       const parseStatementTime = (value: unknown) => { if (typeof value !== 'string' || !value.trim()) return undefined; const parsed = new Date(value); return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null }
       const fromAt = parseStatementTime(params.from_at)
       const toAt = parseStatementTime(params.to_at)
@@ -35,6 +56,11 @@ export async function billingReconciliationStatement(deps: BillingStatementDepen
       // so older receipts remain reportable without duplicating identity data.
       const fullActionLedger = await deps.listActions()
       const actionLedger = billingScope.scope === 'mine' ? fullActionLedger.filter(item => item.actorId === billingScope.actorId) : fullActionLedger
+      const manualAttentionPage = await deps.listManualAttentionActions({
+        ...(billingScope.scope === 'mine' ? { actorId: billingScope.actorId } : {}),
+        ...(manualAttentionCursor ? { cursor: manualAttentionCursor } : {}),
+        limit,
+      })
       const actorByAction = new Map(actionLedger.map(item => [item.actionKey, item.actorId]))
       const actionByKey = new Map(actionLedger.map(item => [item.actionKey, item]))
       const modelUsage = billingScope.scope === 'mine' && deps.storageMode === 'memory' ? candidateModelUsage.filter(item => item.actionId && actorByAction.get(item.actionId) === billingScope.actorId) : candidateModelUsage
@@ -95,5 +121,5 @@ export async function billingReconciliationStatement(deps: BillingStatementDepen
         : { status: 'not_applicable_personal_scope', source: 'workspace_provider_account', reason: '外部中转账单只支持工作区级对账；个人视图使用本地可归属用量台账' }
       const localReconciliationStatus = missingRunKeyCount > 0 || budgetLinkMismatchCount > 0 || unknownActorCount > 0 || walletMismatchCount > 0 || orphanActionCount > 0 ? 'needs_review' : unsettledModelUsage.length > 0 ? 'pending' : 'locally_consistent'
       const reconciliationStatus = localReconciliationStatus === 'needs_review' || externalProviderStatement.status === 'needs_review' ? 'needs_review' : localReconciliationStatus
-      return { currency: 'CNY', statement: { from_at: fromAt ?? null, to_at: toAt ?? null, scope: billingScope.scope, balance_scope: 'workspace', transaction_scope: billingScope.scope, model_usage_scope: billingScope.scope, wallet_scope: 'workspace', source: 'model_usage_ledger' }, balance_scope: 'workspace', transaction_scope: billingScope.scope, model_usage_scope: billingScope.scope, balance_cny: (balanceFen / 100).toFixed(2), recharge_cny: ((totals.recharge ?? 0) / 100).toFixed(2), debit_cny: ((totals.debit ?? 0) / 100).toFixed(2), refund_cny: ((totals.refund ?? 0) / 100).toFixed(2), transaction_count: periodTransactions.length, returned_transaction_count: transactions.length, transaction_limit: limit, has_more_transactions: periodTransactions.length > transactions.length, transactions: transactions.map(publicMoneyRecord), model_usage: { record_count: modelUsage.length, total_tokens: modelUsageTotals.totalTokens, provider_cost_cny: canViewProviderCosts && billingScope.scope === 'workspace' && missingCostEvidenceCount === 0 ? modelUsageTotals.costCny.toFixed(6) : null, missing_cost_evidence_count: missingCostEvidenceCount, customer_charge_cny: modelUsageTotals.customerChargeCny.toFixed(6), unsettled_records: unsettledModelUsage.length, reconciliation_status: reconciliationStatus, reconciliation_checks: { unknown_actor_count: unknownActorCount, orphan_action_count: orphanActionCount, wallet_amount_mismatch_count: walletMismatchCount, missing_run_key_count: missingRunKeyCount, budget_link_mismatch_count: budgetLinkMismatchCount }, external_provider_statement: externalProviderStatement, by_actor: byActor, unsettled: billingScope.scope === 'workspace' ? unsettledModelUsage.slice(0, 100).map(item => ({ id: item.id, revision: item.revision, action_id: item.actionId ?? null, run_key: item.budgetRunKey ?? null, modality: item.modality, model: item.model, settlement_status: item.settlementStatus, allowed_decisions: allowedModelUsageSettlementDecisions(item), attempt_count: item.attemptCount, provider_request_id: canViewProviderCosts ? item.providerRequestId ?? null : null, observed_at: item.observedAt, next_attempt_at: item.nextAttemptAt ?? null, last_error: item.lastError ?? null, settlement_reason: typeof item.metadata?.settlement_reason === 'string' ? item.metadata.settlement_reason : item.settlementStatus })) : [], by_modality: modelUsageTotals.byModality }, action_ledger: { record_count: actionLedger.length, by_kind_settlement_state: actionSummary }, provider: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', ready: process.env.PAYMENT_MODE === 'provider' && provider.ready, reasons: provider.reasons } }
+      return { currency: 'CNY', statement: { from_at: fromAt ?? null, to_at: toAt ?? null, scope: billingScope.scope, balance_scope: 'workspace', transaction_scope: billingScope.scope, model_usage_scope: billingScope.scope, wallet_scope: 'workspace', source: 'model_usage_ledger' }, balance_scope: 'workspace', transaction_scope: billingScope.scope, model_usage_scope: billingScope.scope, balance_cny: (balanceFen / 100).toFixed(2), recharge_cny: ((totals.recharge ?? 0) / 100).toFixed(2), debit_cny: ((totals.debit ?? 0) / 100).toFixed(2), refund_cny: ((totals.refund ?? 0) / 100).toFixed(2), transaction_count: periodTransactions.length, returned_transaction_count: transactions.length, transaction_limit: limit, has_more_transactions: periodTransactions.length > transactions.length, transactions: transactions.map(publicMoneyRecord), model_usage: { record_count: modelUsage.length, total_tokens: modelUsageTotals.totalTokens, provider_cost_cny: canViewProviderCosts && billingScope.scope === 'workspace' && missingCostEvidenceCount === 0 ? modelUsageTotals.costCny.toFixed(6) : null, missing_cost_evidence_count: missingCostEvidenceCount, customer_charge_cny: modelUsageTotals.customerChargeCny.toFixed(6), unsettled_records: unsettledModelUsage.length, reconciliation_status: reconciliationStatus, reconciliation_checks: { unknown_actor_count: unknownActorCount, orphan_action_count: orphanActionCount, wallet_amount_mismatch_count: walletMismatchCount, missing_run_key_count: missingRunKeyCount, budget_link_mismatch_count: budgetLinkMismatchCount }, external_provider_statement: externalProviderStatement, by_actor: byActor, unsettled: billingScope.scope === 'workspace' ? unsettledModelUsage.slice(0, 100).map(item => ({ id: item.id, revision: item.revision, action_id: item.actionId ?? null, run_key: item.budgetRunKey ?? null, modality: item.modality, model: item.model, settlement_status: item.settlementStatus, allowed_decisions: allowedModelUsageSettlementDecisions(item), attempt_count: item.attemptCount, provider_request_id: canViewProviderCosts ? item.providerRequestId ?? null : null, observed_at: item.observedAt, next_attempt_at: item.nextAttemptAt ?? null, last_error: item.lastError ?? null, settlement_reason: typeof item.metadata?.settlement_reason === 'string' ? item.metadata.settlement_reason : item.settlementStatus })) : [], by_modality: modelUsageTotals.byModality }, action_ledger: { record_count: actionLedger.length, by_kind_settlement_state: actionSummary, manual_attention: { items: manualAttentionPage.items.map(item => ({ action_id: item.actionKey, action_kind: item.actionKind, settlement_status: item.settlementStatus, created_at: item.createdAt })), limit, has_more: manualAttentionPage.hasMore, next_cursor: encodeManualAttentionCursor(manualAttentionPage.nextCursor) } }, provider: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', ready: process.env.PAYMENT_MODE === 'provider' && provider.ready, reasons: provider.reasons } }
 }

@@ -108,11 +108,30 @@ describe('the merchant client reads the real statement shape', () => {
 describe('consumption drawn from the real shape reaches the chart', () => {
   it('buckets a consumption row that the old snake_case reader discarded', () => {
     // Same keys as the capture; only the values describe a consumption event.
-    const consumed = { ...entries[0]!, eventType: 'settled', pointsDelta: -1500, createdAt: '2026-09-01T00:00:00.000Z' }
+    const consumed = { ...entries[0]!, eventType: 'settled', pointsDelta: 2, intent: { actual_points: 8 }, createdAt: '2026-09-01T00:00:00.000Z' }
     const usage = aggregatePointUsage([consumed], 'day')
-    expect(usage).toEqual([{ label: '09/01', dateLabel: '2026/09/01', value: 1500 }])
+    expect(usage).toEqual([{ label: '09/01', dateLabel: '2026/09/01', value: 8 }])
+    const reserve = { ...consumed, eventType: 'reserved', pointsDelta: -100, intent: {} }
+    expect(aggregatePointUsage([reserve], 'day')).toEqual([])
     // Grants are still not consumption, but they are no longer the only rows the
     // client can see.
     expect(aggregatePointUsage(entries, 'day')).toEqual([])
+  })
+
+  it('marks settled rows without an authoritative actual amount unreadable', async () => {
+    const malformed = { ...entries[0]!, eventType: 'settled', intent: {} }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelope({ entries: [malformed], next_cursor: null })))
+    vi.stubGlobal('window', globalThis)
+    await expect(fetchCreativePointStatement('http://127.0.0.1:9')).resolves.toBeNull()
+  })
+
+  it.each([null, ''])('counts malformed settled actual_points (%s) as unreadable', async (actualPoints) => {
+    const valid = { ...entries[0]!, eventType: 'settled', intent: { actual_points: 8 } }
+    const malformed = { ...entries[0]!, eventType: 'settled', intent: { actual_points: actualPoints } }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelope({ entries: [valid, malformed], next_cursor: null })))
+    vi.stubGlobal('window', globalThis)
+    const page = await fetchCreativePointStatement('http://127.0.0.1:9')
+    expect(page?.entries).toHaveLength(1)
+    expect(page?.unreadableEntries).toBe(1)
   })
 })

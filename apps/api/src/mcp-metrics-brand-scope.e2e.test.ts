@@ -100,4 +100,18 @@ describe('workspace.metrics brand scope', () => {
     expect(result.productSummary).toMatchObject({ total: 2, lowStock: 2 })
     expect(result.dataCoverage.tasks).toBe(2)
   })
+
+  it('filters the task funnel by the requested activity period without shrinking current catalog totals', async () => {
+    const context = await setupBrandScopedWorkspace()
+    const metrics = await context.mcp(context.ownerHeaders, 12, 'workspace.metrics', {
+      date_from: '2000-01-01T00:00:00.000Z',
+      date_to: '2000-01-01T23:59:59.999Z',
+    })
+    expect(metrics.error).toBeNull()
+    const result = metrics.data!.result
+    expect(result.period.activityFiltered).toBe(true)
+    expect(result.productSummary.total).toBe(2)
+    expect(result.dataCoverage.tasks).toBe(2)
+    expect(result.taskFunnel).toEqual({})
+  })
 })

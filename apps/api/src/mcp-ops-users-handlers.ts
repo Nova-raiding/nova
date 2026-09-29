@@ -53,7 +53,7 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
       const status = typeof params.status === 'string' && params.status.trim() ? params.status.trim() : undefined
       if (status && !['invited', 'active', 'suspended'].includes(status)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'status 必须是 invited、active 或 suspended', 400)
       const accountType = params.account_type ?? 'merchant'
-      if (accountType !== 'merchant' && accountType !== 'platform') throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'account_type 必须是 merchant 或 platform', 400)
+      if (accountType !== 'merchant' && accountType !== 'platform' && accountType !== 'all') throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'account_type 必须是 all、merchant 或 platform', 400)
       const targetWorkspaceId = typeof params.workspace_id === 'string' && params.workspace_id.trim() ? params.workspace_id.trim() : undefined
       const requestedLimit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Number(params.limit) : 20
       const offset = typeof params.offset === 'string' && /^\d+$/u.test(params.offset) ? Number(params.offset) : 0
@@ -62,7 +62,7 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
       const allWorkspaceIds = persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [...knownWorkspaces]
       const scopedWorkspaceIds = targetWorkspaceId ? allWorkspaceIds.filter(id => id === targetWorkspaceId) : allWorkspaceIds
       const memberRepository = persistence.members ?? memoryMembers
-      const platformAccounts = accountType === 'platform' ? await passwordAuthRepository.listAccounts() : []
+      const platformAccounts = accountType === 'merchant' ? [] : await passwordAuthRepository.listAccounts()
       const accountRows = platformAccounts
         .filter(account => account.accountType === 'platform')
         .map(account => ({
@@ -82,8 +82,8 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
           accountType: 'platform' as const,
           scope: 'platform' as const,
         }))
-      // Platform accounts have no workspace and are returned only for the
-      // explicit platform filter. The default directory contains merchants.
+      // Platform accounts have no workspace. They are either isolated in the
+      // explicit platform view or merged with merchant memberships in `all`.
       const visibleAccountRows = targetWorkspaceId ? [] : accountRows.filter(member => (!status || member.status === status) && (!query || memberMatchesQuery(member, query)))
       if (accountType === 'platform') {
         const rows = visibleAccountRows.sort(compareMembersByRecency)

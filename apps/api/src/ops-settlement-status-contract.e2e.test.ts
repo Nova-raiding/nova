@@ -179,6 +179,15 @@ describe('Ops settlement status API contract', () => {
       lastError: { code: 'MODEL_USAGE_WALLET_SETTLEMENT_FAILED' },
     })
 
+    const attentionCurrentActor = `model:attention-current:${randomUUID()}`
+    const attentionOtherActor = `model:attention-other:${randomUUID()}`
+    const attentionOtherWorkspace = `model:attention-other-workspace:${randomUUID()}`
+    const attentionNewestAt = '2026-09-27T00:00:00.000Z'
+    const attentionOlderAt = '2026-09-26T00:00:00.000Z'
+    await api.actionLedgerForTests.record({ workspaceId, actionKey: attentionCurrentActor, actionKind: 'model_video', settlement: 'wallet_overage', units: 1, amountFen: 5, actorId: 'settlement-contract-test', description: 'internal-only detail', providerRequestId: 'provider-private', settlementStatus: 'manual_attention', createdAt: attentionNewestAt })
+    await api.actionLedgerForTests.record({ workspaceId, actionKey: attentionOtherActor, actionKind: 'model_image', settlement: 'wallet_overage', units: 1, amountFen: 5, actorId: 'another-finance-actor', description: 'another actor detail', settlementStatus: 'manual_attention', createdAt: attentionOlderAt })
+    await api.actionLedgerForTests.record({ workspaceId: `${workspaceId}_other`, actionKey: attentionOtherWorkspace, actionKind: 'model_text', settlement: 'wallet_overage', units: 1, amountFen: 5, actorId: 'settlement-contract-test', description: 'other tenant detail', settlementStatus: 'manual_attention', createdAt: attentionNewestAt })
+
     vi.stubEnv('NODE_ENV', 'test')
     const base = await startApi()
     try {
@@ -222,6 +231,25 @@ describe('Ops settlement status API contract', () => {
       expect(actionLedger?.by_kind_settlement_state as Record<string, unknown> | undefined).toMatchObject({
         'model_text:wallet:pending_receipt': 2,
       })
+
+      const firstHistoryPage = await callMcp(base, workspaceId, 'billing.reconciliation', { limit: '1' })
+      expect(firstHistoryPage.error).toBeNull()
+      const firstLedger = firstHistoryPage.data?.result?.action_ledger as Record<string, unknown>
+      const firstAttention = firstLedger.manual_attention as Record<string, unknown>
+      expect(firstAttention).toMatchObject({ has_more: true, items: [{ action_id: attentionCurrentActor, action_kind: 'model_video', settlement_status: 'manual_attention', created_at: attentionNewestAt }] })
+      expect(JSON.stringify(firstAttention)).not.toMatch(/amountFen|provider-private|internal-only detail|actorId/u)
+
+      const secondHistoryPage = await callMcp(base, workspaceId, 'billing.reconciliation', { limit: '1', manual_attention_cursor: firstAttention.next_cursor })
+      expect(secondHistoryPage.error).toBeNull()
+      const secondAttention = ((secondHistoryPage.data?.result?.action_ledger as Record<string, unknown>).manual_attention as Record<string, unknown>)
+      expect(secondAttention).toMatchObject({ has_more: false, items: [{ action_id: attentionOtherActor, action_kind: 'model_image', settlement_status: 'manual_attention', created_at: attentionOlderAt }] })
+
+      const personalHistory = await callMcp(base, workspaceId, 'billing.model-usage.statement', { limit: '10' })
+      const personalAttention = (((personalHistory.data?.result?.action_ledger as Record<string, unknown>).manual_attention as Record<string, unknown>).items as Array<Record<string, unknown>>)
+      expect(personalHistory.error).toBeNull()
+      expect(personalAttention.map(item => item.action_id)).toContain(attentionCurrentActor)
+      expect(personalAttention.map(item => item.action_id)).not.toContain(attentionOtherActor)
+      expect(personalAttention.map(item => item.action_id)).not.toContain(attentionOtherWorkspace)
     } finally {
       await new Promise<void>((resolve, reject) => api.server.close(error => error ? reject(error) : resolve()))
       vi.stubEnv('NODE_ENV', 'production')

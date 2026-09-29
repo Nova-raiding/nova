@@ -66,6 +66,7 @@ describe("customer delivery workspace selection", () => {
     // behaviour behind that - no read, no enabled write control, when the
     // shared target is empty - is asserted in Chromium below, not here.
     expect(pageSource).not.toContain("workspaceRows[0]?.workspaceId");
+    expect(pageSource).not.toContain("刷新交付档案");
   });
 
   it("uploads the contract, omits delivery video, and resumes an interrupted draft", () => {

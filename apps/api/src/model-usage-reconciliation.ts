@@ -10,7 +10,14 @@ export function createModelUsageReconciliation(deps: {
   persistence: () => ApiPersistence
   getActionLedgerWithHistoricalImageCompat: (workspaceId: string, actionKey: string) => Promise<{ action: Awaited<ReturnType<ActionLedgerRepository['get']>>; actionKey: string }>
   settlePluginWalletDebit: (input: { workspaceId: string; debitIdempotencyKey: string; finalAmountFen: number; actorId: string; providerRequestId?: string }) => Promise<void>
+  now?: () => string
 }) {
+  // A pending_receipt action with an active point hold but no model-usage row
+  // cannot be reconciled automatically: there is no trustworthy provider
+  // request/usage/cost evidence from which to settle. Give an in-flight write
+  // a short grace period, then make the orphan explicit for human/provider
+  // investigation without releasing the hold or inventing a receipt.
+  const orphanActionGraceMs = 5 * 60_000
   async function settleCreativePointReservationForUsage(workspaceId: string, usage: ModelUsageRecord) {
     const persistence = deps.persistence()
     const creativePoints = persistence.creativePoints
@@ -119,6 +126,7 @@ export function createModelUsageReconciliation(deps: {
     const settled: string[] = []
     const repairedCreativePointSettlements: string[] = []
     const pending: Array<{ usage_id: string; status: string; code: string }> = []
+    const orphanedActions: Array<{ action_id: string; status: 'manual_attention'; code: string }> = []
     for (const usage of claimed) {
       try {
         const completed = await settlePendingModelUsage({ workspaceId: input.workspaceId, usageId: usage.id, actorId: input.actorId, expectedRevision: usage.revision })
@@ -163,7 +171,59 @@ export function createModelUsageReconciliation(deps: {
         }
       }
     }
-    return { state: pending.length ? 'attention_required' as const : 'completed' as const, checked: claimed.length, settled, repaired_creative_point_settlements: repairedCreativePointSettlements, pending, actor_id: input.actorId }
+
+    // A provider success followed by a missing model_usage_ledger insert has
+    // no row for claimPending() to discover. Only inspect the explicit
+    // pending_receipt state (set after a completed/unknown provider operation),
+    // and only dead-letter it when an active creative-point hold exists and
+    // the action is older than the grace period. A later real usage receipt
+    // can still settle a manual_attention action through settleProviderUsage.
+    const actionLedger = persistence.actionLedger
+    if (actionLedger?.listPendingReceiptActions && persistence.creativePoints?.getReservationByActionKey && modelUsage.listByAction) {
+      const nowMs = Date.parse(deps.now?.() ?? new Date().toISOString())
+      if (Number.isFinite(nowMs)) {
+        // Query only eligible model actions, oldest first. Resolving each row
+        // removes it from the next scan, so unrelated high-volume ledger rows
+        // cannot starve old orphan receipts behind a generic recent-list cap.
+        const actions = await actionLedger.listPendingReceiptActions({
+          workspaceId: input.workspaceId,
+          before: new Date(nowMs - orphanActionGraceMs).toISOString(),
+          limit: 100,
+        })
+        for (const action of actions) {
+          try {
+            if (actionLedger.markPendingReceiptOrphanForAttention) {
+              // The PostgreSQL repository locks the action row and rechecks its
+              // age, active hold, and missing usage receipt in the same
+              // transaction. The model-usage writer takes that same lock.
+              const marked = await actionLedger.markPendingReceiptOrphanForAttention({
+                workspaceId: input.workspaceId,
+                actionKey: action.actionKey,
+                before: new Date(nowMs - orphanActionGraceMs).toISOString(),
+              })
+              if (marked) orphanedActions.push({ action_id: action.actionKey, status: 'manual_attention', code: 'MODEL_USAGE_RECEIPT_ROW_MISSING' })
+              continue
+            }
+
+            // Memory and third-party repository implementations use the
+            // read/check/CAS fallback; production PostgreSQL uses the atomic
+            // method above.
+            const reservation = await persistence.creativePoints.getReservationByActionKey(input.workspaceId, action.actionKey)
+            if (reservation?.status !== 'active') continue
+            const usageRows = await modelUsage.listByAction(input.workspaceId, action.actionKey)
+            if (usageRows.length) continue
+            await actionLedger.transitionSettlementStatus({ workspaceId: input.workspaceId, actionKey: action.actionKey, from: ['pending_receipt'], to: 'manual_attention' })
+            orphanedActions.push({ action_id: action.actionKey, status: 'manual_attention', code: 'MODEL_USAGE_RECEIPT_ROW_MISSING' })
+          } catch (error) {
+            // A concurrent reconciler may have advanced it. Report only a
+            // stable code; never leak exception/provider payloads in the report.
+            const code = (error as { code?: unknown })?.code
+            pending.push({ usage_id: action.actionKey, status: 'orphan_action_transition_failed', code: typeof code === 'string' && /^[A-Z0-9_]{1,64}$/u.test(code) ? code : 'ACTION_LEDGER_TRANSITION_FAILED' })
+          }
+        }
+      }
+    }
+    return { state: pending.length || orphanedActions.length ? 'attention_required' as const : 'completed' as const, checked: claimed.length, settled, repaired_creative_point_settlements: repairedCreativePointSettlements, pending, orphaned_actions: orphanedActions, actor_id: input.actorId }
   }
 
   return { settlePendingModelUsage, runModelUsageReconciliation }

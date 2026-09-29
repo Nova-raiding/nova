@@ -207,17 +207,17 @@ describe('OpenAPI/MCP parameter parity', () => {
     // accepted `reason` while `validateMcpRequest` refused it.
     const run = MCP_METHOD_SCHEMAS['ops.canonical.backfill.run']
     expect(Object.keys(run.properties)).not.toContain('reason')
-    expect([...(run.required ?? [])].sort()).toEqual(['expected_revision', 'run_id'])
-    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'ops.canonical.backfill.run', params: { run_id: 'run_1', expected_revision: '1', reason: 'manual run' } }))
-      .toMatchObject({ valid: false, errors: ['params.reason is not accepted for ops.canonical.backfill.run'] })
+    expect([...(run.required ?? [])].sort()).toEqual(['expected_revision', 'run_id', 'workspace_id'])
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'ops.canonical.backfill.run', params: { workspace_id: 'ws_1', run_id: 'run_1', expected_revision: '1', reason: 'manual run' } }))
+      .toMatchObject({ valid: false, errors: ['ops.canonical.backfill.run 不接受参数 params.reason'] })
     expect(refs.get('ops.canonical.backfill.run')).toBe('McpCanonicalBackfillRunExecuteParams')
     expect(refs.get('ops.canonical.backfill.pause')).toBe('McpCanonicalBackfillRunControlParams')
     expect(refs.get('ops.canonical.backfill.resume')).toBe('McpCanonicalBackfillRunControlParams')
     // The pause/resume half of the family still requires and accepts `reason`,
     // so the split must not be "delete reason from the shared control schema".
     expect(inlineArray(blockValue(schemaBody('McpCanonicalBackfillRunControlParams'), 'required'), 'required').sort())
-      .toEqual(['expected_revision', 'reason', 'run_id'])
-    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'ops.canonical.backfill.pause', params: { run_id: 'run_1', expected_revision: '1', reason: 'pause it' } }).valid).toBe(true)
+      .toEqual(['expected_revision', 'reason', 'run_id', 'workspace_id'])
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'ops.canonical.backfill.pause', params: { workspace_id: 'ws_1', run_id: 'run_1', expected_revision: '1', reason: 'pause it' } }).valid).toBe(true)
   })
 
   it('pins the archive-audit limit bound the document used to overstate', () => {

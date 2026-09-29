@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
-import { canCreateBrandUnit, StoresPage } from "./StoresPage.js";
+import { canCreateBrandUnit, canScanCanonicalBackfill, StoresPage } from "./StoresPage.js";
 import { createAuthorizationProjection } from "../authz/authorization.js";
 
 const workspaceAuthorization = createAuthorizationProjection({ actor_id: "owner", workspace_id: "ws_a", roles: [], workspace_granted: true, capabilities: ["store.connection.read", "store.connection.update", "automation.read", "automation.update", "customer.content.read"] }, true);
@@ -30,6 +30,22 @@ const model = (overrides: Partial<OpsConsoleModel> = {}) => ({
 }) as unknown as OpsConsoleModel;
 
 describe("StoresPage", () => {
+  it("requires the platform update capability before exposing the canonical scan action", () => {
+    expect(canScanCanonicalBackfill(true, false, "platform")).toBe(false);
+    expect(canScanCanonicalBackfill(true, true, "platform")).toBe(true);
+    expect(canScanCanonicalBackfill(false, true, "platform")).toBe(false);
+    expect(canScanCanonicalBackfill(true, true, "workspace")).toBe(false);
+
+    const explicitDeny = createAuthorizationProjection({
+      workspace_id: "ops", roles: ["platform_ops"], workbench: "platform", actor_id: "operator", workspace_granted: true,
+      capabilities: ["canonical.backfill.update"],
+      effective_permissions: [{ capability: "canonical.backfill.update", effect: "deny" }],
+    }, true);
+    expect(explicitDeny.capabilities.has("canonical.backfill.update")).toBe(true);
+    expect(explicitDeny.can("canonical.backfill.update")).toBe(false);
+    expect(canScanCanonicalBackfill(true, explicitDeny.can("canonical.backfill.update"), explicitDeny.scopeFor("canonical.backfill.update")?.kind)).toBe(false);
+  });
+
   it("only exposes brand creation to roles accepted by the server gate", () => {
     expect(canCreateBrandUnit(["merchant_admin"])).toBe(true);
     expect(canCreateBrandUnit(["workspace_owner"])).toBe(true);

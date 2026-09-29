@@ -6,7 +6,6 @@ import { mainItems, OpsSidebar } from "../components/OpsSidebar";
 import { useOpsConsoleModel, type OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { useOpsNavigation } from "../navigation/useOpsNavigation";
 import { opsPageRegistry } from "../navigation/opsPageRegistry.js";
-import { platformLabels } from "../types/ops";
 import { abortOpsRequests, hasOpsConnection, managedOpsSession, passwordOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
 import { OpsPageBoundary } from "../components/OpsPageBoundary";
 import { canViewOpsDomain, domainFromLocation, requiredWorkbenchForDomain, urlForDomain, visibleOpsDomains, type OpsDomain } from "../navigation/opsNavigation.js";
@@ -292,7 +291,7 @@ function Dashboard({
     return (
       <PlatformOpsLoginPage
         managedSession={false}
-        error={sessionError}
+        error={expectedUnauthenticated ? undefined : sessionError}
         loading={model.loading}
         onRetry={() => void model.load()}
         onAuthenticated={() => {
@@ -310,11 +309,7 @@ function Dashboard({
       </a>
       <OpsSidebar
         activeDomain={activeDomain}
-        stores={model.storeDirectory}
-        platformLabels={platformLabels}
-        selectedStoreScope={model.selectedStoreScope}
         onNavigate={navigateToDomain}
-        onSelectStore={(scope) => selectStoreScope(model, scope)}
         visibleDomains={visibleDomains}
         onMobileOpenChange={setMobileNavigationOpen}
       />

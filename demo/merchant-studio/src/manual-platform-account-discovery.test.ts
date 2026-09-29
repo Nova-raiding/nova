@@ -18,7 +18,7 @@ describe('manual platform account discovery', () => {
     expect(app).toContain('registerManualStoreRecord(baseUrl, selectedPlatform as PlatformId')
     expect(app).toContain("result.connection.token_state !== 'manually_registered'")
     expect(app).toContain("saved.state !== 'manually_registered' || saved.readEnabled || saved.writeEnabled")
-    expect(app).toContain("Object.entries(platformNames).map")
+    expect(app).toContain('catalogPlatformOrder.map')
     expect(app).toContain('const requestId = ++syncJobsRequestId.current')
     expect(app).toContain('if (!baseUrl) {\n      setSyncJobs(null)')
     expect(app).toContain('if (!shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {\n      setSyncJobs(null)')

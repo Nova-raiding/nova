@@ -634,31 +634,31 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'ops.canonical.backfill.create',
     description: 'Create a bounded, auditable canonical-product backfill run in planned state. Platform operations only; does not execute data writes.',
-    params: params({ dry_run: booleanString, batch_limit: { type: 'string', pattern: '^(?:[1-9][0-9]{0,2}|[1-4][0-9]{3}|5000)$' }, reason: boundedString(500, 3) }, ['dry_run', 'reason']),
+    params: params({ workspace_id: workspaceProperty, dry_run: booleanString, batch_limit: { type: 'string', pattern: '^(?:[1-9][0-9]{0,2}|[1-4][0-9]{3}|5000)$' }, reason: boundedString(500, 3) }, ['workspace_id', 'dry_run', 'reason']),
   },
   {
     method: 'ops.canonical.backfill.get',
     description: 'Read one durable canonical backfill run and its last bounded result snapshot.',
-    params: params({ run_id: boundedString(200, 1) }, ['run_id']),
+    params: params({ workspace_id: workspaceProperty, run_id: boundedString(200, 1) }, ['workspace_id', 'run_id']),
   },
   {
     method: 'ops.canonical.backfill.pause',
     description: 'Pause a planned or running canonical backfill run with optimistic revision protection.',
-    params: params({ run_id: boundedString(200, 1), expected_revision: positiveIntegerString, reason: boundedString(500, 3) }, ['run_id', 'expected_revision', 'reason']),
+    params: params({ workspace_id: workspaceProperty, run_id: boundedString(200, 1), expected_revision: positiveIntegerString, reason: boundedString(500, 3) }, ['workspace_id', 'run_id', 'expected_revision', 'reason']),
   },
   {
     method: 'ops.canonical.backfill.resume',
     description: 'Resume a paused canonical backfill run with optimistic revision protection; execution remains separately gated.',
-    params: params({ run_id: boundedString(200, 1), expected_revision: positiveIntegerString, reason: boundedString(500, 3) }, ['run_id', 'expected_revision', 'reason']),
+    params: params({ workspace_id: workspaceProperty, run_id: boundedString(200, 1), expected_revision: positiveIntegerString, reason: boundedString(500, 3) }, ['workspace_id', 'run_id', 'expected_revision', 'reason']),
   },
   {
     method: 'ops.canonical.backfill.run',
     description: 'Execute exactly one bounded canonical backfill batch for a running or planned run; writes only safe canonical inserts and persists the result cursor.',
-    params: params({ run_id: boundedString(200, 1), expected_revision: positiveIntegerString }, ['run_id', 'expected_revision']),
+    params: params({ workspace_id: workspaceProperty, run_id: boundedString(200, 1), expected_revision: positiveIntegerString }, ['workspace_id', 'run_id', 'expected_revision']),
   },
-  { method: 'ops.canonical.backfill.conflicts.list', description: 'List bounded human-review conflicts for a canonical backfill run.', params: params({ run_id: boundedString(200, 1), status: { type: 'string', enum: ['open', 'claimed', 'resolved', 'dismissed'] }, limit: pageLimit100 }) },
-  { method: 'ops.canonical.backfill.conflict.claim', description: 'Claim one canonical backfill conflict for human review with revision and audit-reason protection.', params: params({ conflict_id: boundedString(200, 1), expected_revision: positiveIntegerString, reason: boundedString(500, 3) }, ['conflict_id', 'expected_revision', 'reason']) },
-  { method: 'ops.canonical.backfill.conflict.resolve', description: 'Resolve or dismiss one canonical backfill conflict. Resolved MISSING_BRAND requires explicit brand and source-version CAS remediation.', params: params({ conflict_id: boundedString(200, 1), expected_revision: positiveIntegerString, status: { type: 'string', enum: ['resolved', 'dismissed'] }, resolution_note: boundedString(1_000, 3), reason: boundedString(1_000, 3), remediation_type: { type: 'string', enum: ['set_legacy_brand'] }, brand_id: boundedString(200, 1), expected_product_version: positiveIntegerString, reference: boundedString(500, 1) }, ['conflict_id', 'expected_revision', 'status', 'resolution_note', 'reason']) },
+  { method: 'ops.canonical.backfill.conflicts.list', description: 'List bounded human-review conflicts for a backfill run in the explicitly selected workspace.', params: params({ workspace_id: workspaceProperty, run_id: boundedString(200, 1), status: { type: 'string', enum: ['open', 'claimed', 'resolved', 'dismissed'] }, limit: pageLimit100 }, ['workspace_id']) },
+  { method: 'ops.canonical.backfill.conflict.claim', description: 'Claim one canonical backfill conflict for human review with revision and audit-reason protection.', params: params({ workspace_id: workspaceProperty, conflict_id: boundedString(200, 1), expected_revision: positiveIntegerString, reason: boundedString(500, 3) }, ['workspace_id', 'conflict_id', 'expected_revision', 'reason']) },
+  { method: 'ops.canonical.backfill.conflict.resolve', description: 'Resolve or dismiss one canonical backfill conflict. Resolved MISSING_BRAND requires explicit brand and source-version CAS remediation.', params: params({ workspace_id: workspaceProperty, conflict_id: boundedString(200, 1), expected_revision: positiveIntegerString, status: { type: 'string', enum: ['resolved', 'dismissed'] }, resolution_note: boundedString(1_000, 3), reason: boundedString(1_000, 3), remediation_type: { type: 'string', enum: ['set_legacy_brand'] }, brand_id: boundedString(200, 1), expected_product_version: positiveIntegerString, reference: boundedString(500, 1) }, ['workspace_id', 'conflict_id', 'expected_revision', 'status', 'resolution_note', 'reason']) },
   {
     method: 'campaign.batch.create',
     description: '为最多 50 个商品创建持久化批量运营计划；可指定单店铺商品 ID，或指定多个商品/平台/店铺目标；创建本身不会生成或发布。',
@@ -815,7 +815,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     }, ['target_workspace_id', 'delivery_id', 'purpose', 'asset_ref']),
   },
   { method: 'ops.support.ticket.get', description: 'Return one support ticket and its append-only event history in an authorized workspace.', params: params({ ticket_id: boundedString(36) }, ['ticket_id']) },
-  { method: 'support.customer.replies.list', description: 'Return only customer-visible support replies in the authenticated merchant workspace. Use ticket_id when a ticket is known, or related_task_id/related_order_id to discover tickets attached to the current task or order. Internal notes and raw event payloads are never returned.', params: params({ ticket_id: boundedString(36), related_task_id: boundedString(256), related_order_id: boundedString(256), limit: pageLimit100, cursor: boundedString(1_000) }) },
+  { method: 'support.customer.replies.list', description: 'Return only customer-visible support replies in the authenticated merchant workspace. Use ticket_id when a ticket is known, or related_task_id/related_order_id to discover tickets attached to the current task or order. Internal notes and raw event payloads are never returned.', params: params({ ticket_id: boundedString(36), related_task_id: boundedString(256), related_order_id: boundedString(256), limit: pageLimit100, cursor: boundedString(1_000) }, [], ['ticket_id', 'related_task_id', 'related_order_id']) },
   { method: 'ops.support.ticket.create', description: 'Create a support ticket with bounded customer context and an idempotency key.', params: params({ subject: boundedString(200, 3), description: boundedString(10_000), priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, customer_id: boundedString(256), customer_name: boundedString(200), customer_email: boundedString(320), related_order_id: boundedString(256), related_task_id: boundedString(256), tags_json: boundedString(2_000), idempotency_key: idempotencyKeyProperty }, ['subject', 'description', 'priority', 'customer_id', 'customer_name', 'idempotency_key']) },
   { method: 'ops.support.ticket.assign', description: 'Assign a support ticket with optimistic concurrency and idempotent replay.', params: params({ ticket_id: boundedString(36), assignee_id: boundedString(256), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, ['ticket_id', 'assignee_id', 'expected_revision', 'idempotency_key']) },
   { method: 'ops.support.ticket.transition', description: 'Move a support ticket through its controlled lifecycle with revision, reason and idempotency evidence.', params: params({ ticket_id: boundedString(36), status: { type: 'string', enum: ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'] }, reason: boundedString(1_000, 3), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, ['ticket_id', 'status', 'reason', 'expected_revision', 'idempotency_key']) },
@@ -839,7 +839,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.finance.search', description: 'Search bounded, redacted finance facts across the operator authorized scope; never returns credentials, payment URLs, raw provider payloads or full provider transaction identifiers.', params: params({ workspace_ids_json: boundedString(33_000), kinds_json: boundedString(256), statuses_json: boundedString(1_500), text: boundedString(200), from_at: boundedString(64), to_at: boundedString(64), cursor: boundedString(4_096), snapshot_at: boundedString(64), limit: pageLimit100 }) },
   { method: 'ops.finance.detail', description: 'Return one redacted finance fact at an optional expected version and snapshot.', params: params({ target_workspace_id: boundedString(128), kind: { type: 'string', enum: ['recharge_order', 'wallet_transaction', 'subscription_order', 'usage_entry', 'model_usage'] }, record_id: boundedString(256), expected_version: boundedString(128), snapshot_at: boundedString(64) }, ['target_workspace_id', 'kind', 'record_id']) },
   { method: 'ops.finance.export', description: 'Export at most 5000 redacted finance facts as CSV; excludes credentials, payment URLs, raw provider payloads and full provider transaction identifiers.', params: params({ workspace_ids_json: boundedString(33_000), kinds_json: boundedString(256), statuses_json: boundedString(1_500), text: boundedString(200), from_at: boundedString(64), to_at: boundedString(64), snapshot_at: boundedString(64), limit: pageLimit100 }) },
-  { method: 'ops.users.list', description: 'List merchant memberships or platform operator accounts for platform operations.', params: params({ query: { type: 'string' }, status: { type: 'string', enum: ['invited', 'active', 'suspended'] }, account_type: { type: 'string', enum: ['merchant', 'platform'] }, workspace_id: { type: 'string' }, offset: { type: 'string' }, limit: { type: 'string' } }) },
+  { method: 'ops.users.list', description: 'List merchant memberships, platform operator accounts, or both for platform operations.', params: params({ query: { type: 'string' }, status: { type: 'string', enum: ['invited', 'active', 'suspended'] }, account_type: { type: 'string', enum: ['all', 'merchant', 'platform'] }, workspace_id: { type: 'string' }, offset: { type: 'string' }, limit: { type: 'string' } }) },
   { method: 'ops.users.export', description: 'Export filtered cross-workspace user memberships for platform operations as a bounded CSV or JSON artifact.', params: params({ query: { type: 'string' }, status: { type: 'string', enum: ['invited', 'active', 'suspended'] }, workspace_id: { type: 'string' }, limit: { type: 'string' }, format: { type: 'string', enum: ['csv', 'json'] } }) },
   { method: 'ops.user.detail', description: 'Return one persistent platform identity, redacted sessions, lifecycle events, workspace memberships with commercial snapshots (plan, entitlement, task usage and wallet balance), and membership audits.', params: params({ identity_id: { type: 'string' }, issuer: { type: 'string' }, external_subject: { type: 'string' } }) },
   { method: 'ops.user.suspend', description: 'Suspend one workspace membership or a persistent platform identity with session revocation and audit evidence.', params: params({ scope: { type: 'string', enum: ['membership', 'identity'] }, workspace_id: { type: 'string' }, external_subject: { type: 'string' }, identity_id: { type: 'string' }, expected_revision: { type: 'string' }, idempotency_key: { type: 'string' }, reason: { type: 'string' } }, ['reason']) },
@@ -927,8 +927,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'billing.usage.consume', description: 'Consume one task quota unit idempotently.', params: params({ task_id: { type: 'string' }, idempotency_key: { type: 'string' } }, ['task_id', 'idempotency_key']) },
   { method: 'billing.usage.refund', description: 'Refund one previously consumed task quota unit with an auditable reason.', params: params({ task_id: { type: 'string' }, idempotency_key: { type: 'string' }, reason: { type: 'string' } }, ['task_id', 'idempotency_key', 'reason']) },
   { method: 'billing.refund', description: 'Refund a paid wallet recharge exactly once with an auditable reason.', params: params({ order_id: { type: 'string' }, reason: { type: 'string' } }, ['order_id', 'reason']) },
-  { method: 'billing.reconciliation', description: 'Return workspace wallet totals and transaction evidence for reconciliation.', params: params({ limit: { type: 'string' } }) },
-  { method: 'billing.model-usage.statement', description: 'Return the authenticated member token usage statement by default; workspace scope requires a billing administration role.', params: params({ from_at: { type: 'string', description: 'Inclusive ISO-8601 period start.' }, to_at: { type: 'string', description: 'Exclusive ISO-8601 period end.' }, limit: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }) },
+  { method: 'billing.reconciliation', description: 'Return workspace wallet totals and transaction evidence for reconciliation. Action Ledger manual-attention rows are paged with an opaque read-only cursor.', params: params({ limit: { type: 'string' }, manual_attention_cursor: { type: 'string', minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' } }) },
+  { method: 'billing.model-usage.statement', description: 'Return the authenticated member token usage statement by default; workspace scope requires a billing administration role. Action Ledger manual-attention rows use a separate opaque cursor and remain read-only.', params: params({ from_at: { type: 'string', description: 'Inclusive ISO-8601 period start.' }, to_at: { type: 'string', description: 'Exclusive ISO-8601 period end.' }, limit: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] }, manual_attention_cursor: { type: 'string', minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' } }) },
   { method: 'billing.reconciliation.run', description: 'Run a role-protected provider status reconciliation for pending wallet orders; paid orders settle idempotently and ambiguous results remain visible.', params: params({ limit: { type: 'string' } }) },
   { method: 'billing.model-usage.reconciliation.run', description: 'Claim and retry a bounded batch of pending model usage settlements; unresolved or ambiguous records remain visible for later operations handling.', params: params({ limit: { type: 'string' } }) },
   { method: 'billing.model-usage.resolve', description: 'Apply an optimistic-concurrency operations decision to one model usage settlement with an authenticated actor, audit reason, and evidence reference.', params: params({ usage_id: { type: 'string' }, revision: { type: 'string' }, decision: { type: 'string', enum: ['retry', 'waive', 'manual_attention'] }, reason: { type: 'string' }, evidence_ref: { type: 'string' } }, ['usage_id', 'revision', 'decision', 'reason', 'evidence_ref']) },
@@ -1704,20 +1704,20 @@ function validCustomerDeliveryContractRef(value: unknown): boolean {
 export function validateMcpRequest(value: unknown): McpValidationResult {
   const errors: string[] = []
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return { valid: false, errors: ['request must be an object'] }
+    return { valid: false, errors: ['请求必须是对象'] }
   }
   const request = value as Record<string, unknown>
-  if (request.jsonrpc !== '2.0') errors.push('jsonrpc must be 2.0')
+  if (request.jsonrpc !== '2.0') errors.push('jsonrpc 必须为 2.0')
   if (!('id' in request) || (request.id !== null && typeof request.id !== 'string' && typeof request.id !== 'number')) {
-    errors.push('id must be a string, number, or null')
+    errors.push('id 必须是字符串、数字或 null')
   }
   if (typeof request.method !== 'string' || !isMcpMethod(request.method)) {
-    errors.push('method is not in the MCP allowlist')
+    errors.push('method 不在允许的 MCP 方法列表中')
     return { valid: false, errors }
   }
   const rawParams = request.params ?? {}
   if (!rawParams || typeof rawParams !== 'object' || Array.isArray(rawParams)) {
-    errors.push('params must be an object')
+    errors.push('params 必须是对象')
     return { valid: false, errors }
   }
   const paramsObject = rawParams as Record<string, unknown>
@@ -1725,27 +1725,27 @@ export function validateMcpRequest(value: unknown): McpValidationResult {
   for (const required of schema.required ?? []) {
     const value = paramsObject[required]
     if (typeof value !== 'string' || !value.trim()) {
-      errors.push(`params.${required} is required`)
+      errors.push(`缺少必填参数 params.${required}`)
     }
   }
   if (schema.requiredAnyOf && !schema.requiredAnyOf.some(key => {
     const value = paramsObject[key]
     return typeof value === 'string' && Boolean(value.trim())
   })) {
-    errors.push(`params.${schema.requiredAnyOf.join(' or ')} is required`)
+    errors.push(`以下参数至少填写一项：${schema.requiredAnyOf.map(key => `params.${key}`).join('、')}`)
   }
   for (const group of schema.mutuallyExclusive ?? []) {
     const supplied = group.filter(key => {
       const value = paramsObject[key]
       return typeof value === 'string' ? Boolean(value.trim()) : value !== undefined && value !== null
     })
-    if (supplied.length > 1) errors.push(`params.${supplied.join(' and ')} are mutually exclusive`)
+    if (supplied.length > 1) errors.push(`以下参数不能同时填写：${supplied.map(key => `params.${key}`).join('、')}`)
   }
   if (request.method === 'ops.customer-delivery.assets.upload') {
     if ('source_url' in paramsObject) {
-      if (paramsObject.purpose !== 'contract') errors.push('params.source_url is only accepted for contract purpose')
+      if (paramsObject.purpose !== 'contract') errors.push('仅当 params.purpose 为 contract 时才能提供 params.source_url')
       for (const key of ['name', 'mime_type', 'content_base64', 'sha256']) {
-        if (key in paramsObject) errors.push(`params.${key} is not accepted with source_url`)
+        if (key in paramsObject) errors.push(`提供 params.source_url 时不能同时提供 params.${key}`)
       }
       try {
         const raw = paramsObject.source_url
@@ -1756,50 +1756,50 @@ export function validateMcpRequest(value: unknown): McpValidationResult {
         if (url.protocol !== 'https:' || url.username || url.password || authority.includes('@') || url.hash || (url.port && url.port !== '443')) throw new Error()
       } catch {
         // Never echo signed URLs or credentials in validation errors.
-        errors.push('params.source_url must be a public HTTPS direct URL without credentials, fragment or custom port')
+        errors.push('params.source_url 必须是公开的 HTTPS 直达网址，不能包含凭据、片段或自定义端口')
       }
     } else {
       for (const key of ['name', 'mime_type', 'content_base64']) {
-        if (typeof paramsObject[key] !== 'string' || !(paramsObject[key] as string).trim()) errors.push(`params.${key} is required`)
+        if (typeof paramsObject[key] !== 'string' || !(paramsObject[key] as string).trim()) errors.push(`缺少必填参数 params.${key}`)
       }
     }
   }
   if (request.method === 'ops.customer-delivery.update' && typeof paramsObject.patch_json === 'string') {
     try {
       const patch = JSON.parse(paramsObject.patch_json)
-      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) errors.push('params.patch_json must be a JSON object')
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) errors.push('params.patch_json 必须是 JSON 对象')
       else {
         const allowedFields = new Set(['companyName', 'contractNumber', 'paymentStatus', 'contractRef', 'projectOwner', 'supportOwner', 'paymentDate', 'paymentEvidenceRefs', 'plannedGoLiveAt', 'customerProfileStatus', 'archivedAt'])
-        for (const key of Object.keys(patch)) if (!allowedFields.has(key)) errors.push(`params.patch_json.${key} is not accepted for customer delivery profile updates`)
-        if ('contractRef' in patch && patch.contractRef !== null && !validCustomerDeliveryContractRef(patch.contractRef)) errors.push('params.patch_json.contractRef must be an uploaded asset_ref or null; external URLs are not accepted')
+        for (const key of Object.keys(patch)) if (!allowedFields.has(key)) errors.push(`更新客户交付档案时不接受 params.patch_json.${key}`)
+        if ('contractRef' in patch && patch.contractRef !== null && !validCustomerDeliveryContractRef(patch.contractRef)) errors.push('params.patch_json.contractRef 必须是已上传的 asset_ref 或 null，不能使用外部网址')
       }
     } catch {
-      errors.push('params.patch_json must be valid JSON')
+      errors.push('params.patch_json 必须是有效的 JSON')
     }
   }
   if (request.method === 'ops.customer-delivery.checklist.update' && paramsObject.completed !== undefined && paramsObject.checklist_key !== 'customer_profile') {
-    errors.push('params.completed is only accepted for checklist_key customer_profile; use items_json or checklist-item.update')
+    errors.push('仅当 params.checklist_key 为 customer_profile 时才能提供 params.completed；其他情况请使用 items_json 或 checklist-item.update')
   }
   for (const [key, field] of Object.entries(paramsObject)) {
     const definition = schema.properties[key]
     if (!definition) {
-      errors.push(`params.${key} is not accepted for ${request.method}`)
+      errors.push(`${request.method} 不接受参数 params.${key}`)
       continue
     }
     if (!fieldType(field, definition.type) || (typeof field === 'string' && !field.trim())) {
-      errors.push(`params.${key} must be a non-empty string`)
+      errors.push(`params.${key} 必须是非空字符串`)
     }
     if (definition.enum && typeof field === 'string' && !definition.enum.includes(field)) {
-      errors.push(`params.${key} has an unsupported value`)
+      errors.push(`params.${key} 的值不受支持`)
     }
     if (typeof field === 'string' && definition.minLength !== undefined && field.length < definition.minLength) {
-      errors.push(`params.${key} must contain at least ${definition.minLength} characters`)
+      errors.push(`params.${key} 至少需要 ${definition.minLength} 个字符`)
     }
     if (typeof field === 'string' && definition.maxLength !== undefined && field.length > definition.maxLength) {
-      errors.push(`params.${key} must contain at most ${definition.maxLength} characters`)
+      errors.push(`params.${key} 最多允许 ${definition.maxLength} 个字符`)
     }
     if (typeof field === 'string' && definition.pattern && !new RegExp(definition.pattern, 'u').test(field)) {
-      errors.push(`params.${key} has an invalid format`)
+      errors.push(`params.${key} 格式无效`)
     }
     if (typeof field === 'string' && definition.jsonShape) {
       try {
@@ -1807,9 +1807,9 @@ export function validateMcpRequest(value: unknown): McpValidationResult {
         const matchesShape = definition.jsonShape === 'array'
           ? Array.isArray(parsed)
           : Boolean(parsed && typeof parsed === 'object' && !Array.isArray(parsed))
-        if (!matchesShape) errors.push(`params.${key} must be a JSON ${definition.jsonShape}`)
+        if (!matchesShape) errors.push(`params.${key} 必须是 JSON ${definition.jsonShape === 'array' ? '数组' : '对象'}`)
       } catch {
-        errors.push(`params.${key} must be valid JSON`)
+        errors.push(`params.${key} 必须是有效的 JSON`)
       }
     }
   }

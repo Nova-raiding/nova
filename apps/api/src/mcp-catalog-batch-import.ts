@@ -60,12 +60,12 @@ export async function handleCatalogBatchImport(workspaceId: string, params: Para
       const items: BatchImportItem[] = rawItems.map((raw, index) => {
         const item = raw as Record<string, unknown>
         const platform = typeof item.platform === 'string' ? item.platform as Platform : '' as Platform
-        if (!supportedPlatforms.includes(platform)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 platform 无效`, 400)
+        if (!supportedPlatforms.includes(platform)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项平台（platform）无效`, 400)
         const accountId = typeof item.account_id === 'string' && item.account_id.trim() ? item.account_id.trim() : undefined
         if (isProduction() && !accountId && !draftOnly) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', `第 ${index + 1} 项生产导入必须绑定已授权平台账号；如仅需建立待审核知识草稿，请显式传 draft_only=true`, 400)
         if (accountId) service.getActionablePlatformAccount(workspaceId, accountId, platform)
         const title = typeof item.title === 'string' ? item.title.trim() : ''
-        if (!title) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 title 不能为空`, 400)
+        if (!title) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项商品标题（title）不能为空`, 400)
         const images = Array.isArray(item.images) ? item.images.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).map(value => value.trim()) : typeof item.images === 'string' ? item.images.split(',').map(value => value.trim()).filter(Boolean) : undefined
         const sourceAssetIds = Array.isArray(item.asset_ids) ? item.asset_ids.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).map(value => value.trim()) : undefined
         if (sourceAssetIds && (sourceAssetIds.length > 50 || new Set(sourceAssetIds).size !== sourceAssetIds.length)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 asset_ids 必须是最多 50 个不重复素材 ID`, 400)
@@ -75,9 +75,9 @@ export async function handleCatalogBatchImport(workspaceId: string, params: Para
           skus = item.skus.map((value, skuIndex) => {
             if (!value || typeof value !== 'object' || Array.isArray(value)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 SKU ${skuIndex + 1} 格式无效`, 400)
             const sku = value as Record<string, unknown>
-            if (typeof sku.id !== 'string' || typeof sku.name !== 'string') throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 SKU ${skuIndex + 1} 缺少 id/name`, 400)
-            const price = numeric(sku.price, 'SKU price', index); const stock = numeric(sku.stock, 'SKU stock', index)
-            if (price === undefined || stock === undefined || !Number.isInteger(stock)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 SKU ${skuIndex + 1} 的 price/stock 无效`, 400)
+            if (typeof sku.id !== 'string' || typeof sku.name !== 'string') throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 SKU ${skuIndex + 1} 缺少编号（id）或名称（name）`, 400)
+            const price = numeric(sku.price, 'SKU 价格', index); const stock = numeric(sku.stock, 'SKU 库存', index)
+            if (price === undefined || stock === undefined || !Number.isInteger(stock)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 SKU ${skuIndex + 1} 的价格或库存无效`, 400)
             const attributes = sku.attributes && typeof sku.attributes === 'object' && !Array.isArray(sku.attributes) ? Object.fromEntries(Object.entries(sku.attributes).filter(([, candidate]) => typeof candidate === 'string').map(([key, candidate]) => [key, candidate as string])) : undefined
             const skuAssetIds = sku.sourceAssetIds
             if (skuAssetIds !== undefined && (!Array.isArray(skuAssetIds) || skuAssetIds.length > 50 || skuAssetIds.some(value => typeof value !== 'string' || !value.trim()) || new Set(skuAssetIds).size !== skuAssetIds.length)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 SKU ${skuIndex + 1} 原图素材必须是最多 50 个不重复素材 ID`, 400)
@@ -90,7 +90,7 @@ export async function handleCatalogBatchImport(workspaceId: string, params: Para
           const point = value as Record<string, unknown>
           return { id: typeof point.id === 'string' ? point.id : `sp_${pointIndex + 1}`, text: typeof point.text === 'string' ? point.text : '', proofStatus: (point.proof_status === 'confirmed' || point.proof_status === 'rejected' ? point.proof_status : 'pending') as 'pending' | 'confirmed' | 'rejected', sourceIds: Array.isArray(point.source_ids) ? point.source_ids.filter((source): source is string => typeof source === 'string') : [] }
         }) : undefined
-        return { platform, ...(accountId ? { accountId } : {}), ...(typeof item.remote_id === 'string' && item.remote_id.trim() ? { remoteId: item.remote_id.trim() } : {}), ...(typeof item.local_product_key === 'string' ? { localProductKey: item.local_product_key } : {}), title, ...(typeof item.category === 'string' ? { category: item.category } : {}), ...(typeof item.store_name === 'string' ? { storeName: item.store_name } : {}), ...(typeof item.store_differentiation === 'string' ? { storeDifferentiation: item.store_differentiation } : {}), ...(images ? { images } : {}), ...(sourceAssetIds ? { sourceAssetIds } : {}), ...(attributes ? { attributes } : {}), ...(sellingPoints ? { sellingPoints } : {}), ...(skus ? { skus, skuCount: skus.length } : {}), ...(numeric(item.price, 'price', index) !== undefined ? { price: numeric(item.price, 'price', index) } : {}), ...(numeric(item.stock, 'stock', index) !== undefined ? { stock: numeric(item.stock, 'stock', index) } : {}), ...(numeric(item.sku_count, 'sku_count', index) !== undefined ? { skuCount: numeric(item.sku_count, 'sku_count', index) } : {}) }
+        return { platform, ...(accountId ? { accountId } : {}), ...(typeof item.remote_id === 'string' && item.remote_id.trim() ? { remoteId: item.remote_id.trim() } : {}), ...(typeof item.local_product_key === 'string' ? { localProductKey: item.local_product_key } : {}), title, ...(typeof item.category === 'string' ? { category: item.category } : {}), ...(typeof item.store_name === 'string' ? { storeName: item.store_name } : {}), ...(typeof item.store_differentiation === 'string' ? { storeDifferentiation: item.store_differentiation } : {}), ...(images ? { images } : {}), ...(sourceAssetIds ? { sourceAssetIds } : {}), ...(attributes ? { attributes } : {}), ...(sellingPoints ? { sellingPoints } : {}), ...(skus ? { skus, skuCount: skus.length } : {}), ...(numeric(item.price, '价格', index) !== undefined ? { price: numeric(item.price, '价格', index) } : {}), ...(numeric(item.stock, '库存', index) !== undefined ? { stock: numeric(item.stock, '库存', index) } : {}), ...(numeric(item.sku_count, 'SKU 数量', index) !== undefined ? { skuCount: numeric(item.sku_count, 'SKU 数量', index) } : {}) }
       })
       assertUniqueBatchProductImportIdentities(items)
       for (const assetId of new Set(items.flatMap(item => [...(item.sourceAssetIds ?? []), ...(item.skus ?? []).flatMap(sku => sku.sourceAssetIds ?? [])]))) await enforceAssetAccess(workspaceId, assetId, 'viewer')

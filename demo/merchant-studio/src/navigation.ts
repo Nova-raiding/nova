@@ -51,18 +51,19 @@ export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pat
   if (segment === 'finance') return { page: 'finance', searchQuery: '' }
   if (segment === 'members') return { page: 'members', searchQuery: '' }
   if (segment === 'products') {
-    // The former 商品与资产 landing page is retired. Direct links now open
-    // the knowledge workspace; the product catalog remains available only
-    // through an explicit legacy section=products deep link.
+    // Direct links open the materials workspace; the catalog remains available
+    // through its explicit screenshot-backed section=products entry.
     const entry = merchantEntryPointFromQuery(params.get('section')) ?? 'knowledge'
     return { page: 'products', searchQuery: params.get('q') ?? '', entry }
   }
-  // Broad legacy destinations resolve to the product-first workflow. Concrete
+  // Broad legacy destinations resolve to the materials workspace. Concrete
   // task deep-links remain supported below so old bookmarks still recover work.
   if (segment === 'publish' || segment === 'rules') return { page: 'products', searchQuery: '' }
   if (segment === 'tasks') {
     const imageJobId = params.get('image_job')?.trim()
-    return { page: imageJobId ? 'task' : 'products', searchQuery: '', ...(imageJobId ? { imageJobId } : {}) }
+    return imageJobId
+      ? { page: 'task', searchQuery: '', imageJobId }
+      : { page: 'products', searchQuery: '' }
   }
   if (segment === 'tasks/new') {
     const productId = params.get('product_id')?.trim()

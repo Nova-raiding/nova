@@ -6,7 +6,7 @@ import type { OperationalAlert, OpsDataSource, OpsSession, OpsWorkbench } from "
 import type { AuthorizationProjection } from "../authz/authorization.js";
 import { accountLabel } from "../authz/accountLabel.js";
 import { ControlledSessionBar } from "./authz/ControlledSessionBar.js";
-import { RoleScopeBar, notificationFeed } from "./authz/RoleScopeBar.js";
+import { RoleScopeBar, notificationFeed, workbenchBoundaryMessage } from "./authz/RoleScopeBar.js";
 
 interface OpsHeaderProps {
   managedSession: boolean;
@@ -65,6 +65,7 @@ export function OpsHeader({
   const hasSession = Boolean(sessionLoaded && session);
   const shouldShowLogin = !hasSession || isDemoSession;
   const merchantNotificationsEnabled = (activeWorkbench ?? session?.workbench) === "workspace" || authorization?.scope.kind !== "platform";
+  const showRoleScopeInline = merchantNotificationsEnabled;
   // Same feed as the bell badge: `notifications` is always an array, so a
   // nullish fallback to `alerts` never fired and the menu center claimed
   // 「暂无消息」 while the badge counted unread alerts.
@@ -109,6 +110,18 @@ export function OpsHeader({
           <span>{roleLabel}</span>
         </div>
       </div>
+      {authorization && !showRoleScopeInline ? (
+        <div className="ops-account-authorization">
+          <RoleScopeBar
+            session={session}
+            authorization={authorization}
+            activeWorkbench={activeWorkbench}
+            alerts={alerts}
+            notifications={notifications}
+            onAcknowledgeAlert={onAcknowledgeAlert}
+          />
+        </div>
+      ) : null}
       {merchantNotificationsEnabled ? (
         <div className="ops-account-message-center" aria-label="消息中心">
           <div className="ops-account-message-heading">
@@ -145,18 +158,16 @@ export function OpsHeader({
 
   return (
     <Layout.Header className="ops-header">
-      <div className="ops-header-identity">
-        {/* The operator's own authorization state: the server-projected roles,
-            the exact resource scope and the policy version the projection was
-            built from, and whether the server has actually verified it. Without
-            a projection the bar says so instead of implying access it cannot
-            prove. It is not optional furniture — the login gate waits for this
-            region before it will treat the console as authenticated.
-            Responsibility is split with `ControlledSessionBar` below: this bar
-            owns identity/roles/scope/policy/verification, that one owns the
-            controlled (JIT) session. The JIT callbacks stay on that bar so the
-            expiry cleanup keeps exactly one trigger. */}
-        {authorization ? (
+      {authorization && !showRoleScopeInline ? (
+        <span className="sr-only" role="region" aria-label="当前身份与权限范围">
+          <span role="status">{session ? "授权状态：已由服务端验证" : "授权状态：未验证，正在等待服务端授权"}</span>
+          <span>角色：{authorization.roles.join("、") || "权限未验证"}</span>
+          <span>平台与企业主体权限详情请从账号菜单查看。</span>
+          <span>{workbenchBoundaryMessage(activeWorkbench ?? session?.workbench ?? (authorization.scope.kind === "platform" ? "platform" : "workspace"))}</span>
+        </span>
+      ) : null}
+      {showRoleScopeInline && authorization ? (
+        <div className="ops-header-identity">
           <RoleScopeBar
             session={session}
             authorization={authorization}
@@ -165,12 +176,11 @@ export function OpsHeader({
             notifications={notifications}
             onAcknowledgeAlert={onAcknowledgeAlert}
           />
-        ) : null}
-        {/* Renders nothing unless the server projection carries a live
-            temporary grant. It lives here because it is the only trigger for
-            the expiry cleanup the controller wires into onJitExpired. */}
-        <ControlledSessionBar session={session} onExpired={onJitExpired} onExit={onJitExit} />
-      </div>
+        </div>
+      ) : null}
+      {/* A live JIT grant remains visible because it is time-sensitive and
+          carries its own expiry/exit controls. */}
+      <ControlledSessionBar session={session} onExpired={onJitExpired} onExit={onJitExit} />
       <div className="ops-header-actions">
         <div className="ops-connection-toolbar">
           {shouldShowLogin ? (

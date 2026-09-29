@@ -31,14 +31,12 @@ describe("StorageReconciliationSection accessibility states", () => {
     expect(html).toContain("新鲜度待确认");
   });
 
-  it("renders a named empty workspace state with an optional refresh action", () => {
-    const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "clean", lastRunAt: "2026-08-29T10:00:00Z" }} onRetry={() => undefined} />);
-    expect(html).toContain("workspace 对账列表（0）");
-    expect(html).toContain('data-state="empty"');
-    expect(html).toContain('role="status"');
-    expect(html).toContain('aria-live="polite"');
-    expect(html).toContain('aria-label="刷新 workspace 对账列表"');
-    expect(html).toContain("暂无 workspace 级对账结果");
+  it("omits the empty workspace list control but keeps the real unavailable state visible", () => {
+    const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "unavailable" }} onRetry={() => undefined} />);
+    expect(html).not.toContain("workspace 对账列表（0）");
+    expect(html).not.toContain('aria-label="刷新 workspace 对账列表"');
+    expect(html).toContain("状态不可验证");
+    expect(html).toContain("暂无可验证的对象清单对账结果");
   });
 
   it("renders failed, expired, and multi-workspace states without object details", () => {

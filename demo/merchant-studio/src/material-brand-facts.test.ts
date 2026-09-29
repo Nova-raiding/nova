@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MaterialBrandFields, MaterialBrandOutput, MaterialLibraryWorkspace } from './App'
-import type { PlatformAccount, Product } from './api'
+import { BrandScopeUnavailableRow, MaterialBrandFields, MaterialBrandOutput, MaterialLibraryWorkspace } from './App'
+import type { AssetMetadata, PlatformAccount, Product } from './api'
 import {
   BRAND_DOCUMENT_LOCAL_ONLY,
   BRAND_DOCUMENT_NONE,
@@ -31,6 +31,7 @@ import productsCapture from './fixtures/products.capture.json'
  * `{"profile": null}` and whose Logo row correctly said 「未单独配置」.
  */
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+const brandAssetSource = readFileSync(new URL('./material-brand-assets.ts', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 const accounts = (platformAccountsCapture as { data: { items: PlatformAccount[] } }).data.items
 const products = (productsCapture as { data: { items: Product[] } }).data.items
@@ -88,21 +89,18 @@ describe('a locally picked document is never called received', () => {
     expect(html).not.toContain('已接收')
   })
 
-  it('cannot claim an upload while the pane makes no server call', () => {
-    // The label and the behaviour have to agree. `resolveBrandDocumentFacts`
-    // returns `uploaded: false` as a literal type, so a real upload would have
-    // to change this file's contract on purpose — and this assertion is what
-    // fails while someone wires the endpoint but leaves 「仅本地，未上传」 up.
+  it('uploads a selected document and stores the server asset identity', () => {
     const pane = appSource.slice(appSource.indexOf('function MaterialBrandFields('), appSource.indexOf('type RecycleMaterialItem'))
     expect(pane.length).toBeGreaterThan(3_000)
-    for (const serverCall of ['uploadAsset(', 'saveBrandProfile(', 'extractBrandProfile(', 'fetch(']) {
-      expect(pane, `${serverCall} would make 「${BRAND_DOCUMENT_LOCAL_ONLY}」 a lie`).not.toContain(serverCall)
-    }
-    // ... and the fields block tells the merchant the same thing before reading
-    // the card, in the same words the analysis status uses.
-    const fields = renderToStaticMarkup(createElement(MaterialBrandFields, { value: settings('', ''), onChange: () => undefined, label: '全局' }))
-    expect(fields).toContain('选择文档并解析')
-    expect(fields).not.toContain('上传并分析')
+    expect(pane).toContain('uploadAsset(baseUrl, file)')
+    expect(pane).toContain('documentAssetId: uploaded.id')
+    expect(pane).toContain('onAssetUploaded?.(uploaded, kind, file)')
+    const existingDoc = { id: 'asset-existing-brand-doc', name: 'brand-guide.pdf', mimeType: 'application/pdf', scanStatus: 'clean', rightsStatus: 'approved', parseStatus: 'succeeded', rightsScope: 'commercial_authorized', factsConfirmedBy: 'merchant-1', factsConfirmedAt: '2026-09-29T00:00:00Z', readiness: { status: 'ready', reasons: [] }, contentTrust: { classification: 'untrusted', mode: 'data_only', canOverrideInstructions: false, canTriggerTools: false, requiresMerchantConfirmation: true }, references: [], revision: 1, sizeBytes: 10, createdAt: '2026-09-29T00:00:00Z' } as AssetMetadata
+    const fields = renderToStaticMarkup(createElement(MaterialBrandFields, { value: settings('', ''), onChange: () => undefined, label: '全局', assets: [existingDoc] }))
+    expect(fields).toContain('上传文档')
+    expect(fields).toContain('选择已上传品牌文档')
+    expect(fields).toContain('brand-guide.pdf · 已就绪')
+    expect(pane).toContain('未配置 API，品牌素材无法上传到服务端。')
   })
 
   it('routes the card through the resolver instead of an inline claim', () => {
@@ -148,7 +146,7 @@ describe('a Logo read in this browser is never called 生效', () => {
     // One occurrence for the Logo row, one for the Logo preview's alt, one for
     // the document row — and no state where one of them says something else.
     const sentences = html.split(BRAND_LOCAL_ONLY).length - 1
-    expect(sentences).toBe(3)
+    expect(sentences).toBe(2)
     expect(html).not.toContain(BRAND_DOCUMENT_PENDING)
   })
 
@@ -156,34 +154,27 @@ describe('a Logo read in this browser is never called 生效', () => {
     // The mutation this catches is the shipped code: `alt={`${label}生效 Logo`}`.
     const html = cardWithLogo()
     expect(html).not.toContain('生效')
-    expect(html).toContain('Logo 本地预览（仅本地，未上传）')
-    expect(html).toMatch(/alt="全局配置 Logo 本地预览（仅本地，未上传）"/u)
+    expect(html).toContain('仅本地，未上传')
+    expect(html).toMatch(/alt="全局配置 Logo 预览"/u)
     // The scope label survives, so four stacked cards stay distinguishable.
     expect(html).toContain('全局配置')
   })
 
-  it('cannot claim an upload while the Logo path makes no server call', () => {
-    // `updateLogo` is a `FileReader` and nothing else. Same shape as the document
-    // guard above: the absence of a request is not observable from a rendered
-    // string, so the pane is read for the calls that would make 「仅本地，未上传」
-    // a lie. (The absence itself was verified live, in a browser, not here.)
+  it('uploads a Logo, links the returned asset ID, and revokes the local preview URL', () => {
     const pane = appSource.slice(appSource.indexOf('function MaterialBrandFields('), appSource.indexOf('type RecycleMaterialItem'))
-    const updateLogo = pane.slice(pane.indexOf('const updateLogo ='), pane.indexOf('const updateAssetFile ='))
-    expect(updateLogo.length).toBeGreaterThan(200)
-    expect(updateLogo).toContain('new FileReader()')
-    for (const serverCall of ['fetch(', 'uploadAsset(', 'saveBrandProfile(', 'extractBrandProfile(', 'XMLHttpRequest']) {
-      expect(updateLogo, `${serverCall} would make 「${BRAND_LOGO_LOCAL_ONLY}」 a lie`).not.toContain(serverCall)
-    }
-    // ... and the picker does not offer an upload it cannot perform.
+    expect(pane).toContain('logoAssetId: uploaded.id')
+    expect(brandAssetSource).toContain('URL.createObjectURL(file)')
+    expect(brandAssetSource).toContain('URL.revokeObjectURL(url)')
+    expect(appSource).toContain('brandAssetPreviewRegistry.current.clear()')
+    expect(pane).toContain('品牌素材上传失败：')
     const fields = renderToStaticMarkup(createElement(MaterialBrandFields, { value: settings('', ''), onChange: () => undefined, label: '全局' }))
-    expect(fields).toContain('选择 Logo')
-    expect(fields).not.toContain('上传 Logo')
-    expect(renderToStaticMarkup(createElement(MaterialBrandFields, { value: { ...settings('', ''), logoUrl: pickedLogo }, onChange: () => undefined, label: '全局' }))).toContain('重新选择 Logo')
+    expect(fields).toContain('上传 Logo')
+    expect(renderToStaticMarkup(createElement(MaterialBrandFields, { value: { ...settings('', ''), logoAssetId: 'asset-real-1' }, onChange: () => undefined, label: '全局' }))).toContain('重新上传 Logo')
   })
 
   it('routes the card through the resolver instead of an inline claim', () => {
     const cardSource = appSource.slice(appSource.indexOf('export function MaterialBrandOutput'), appSource.indexOf('type RecycleMaterialItem'))
-    expect(cardSource).toContain('resolveBrandLogoFacts(value.logoUrl)')
+    expect(cardSource).toContain('resolveBrandLogoFacts(logoPreviewUrl)')
     expect(cardSource).toContain('logoFacts.label')
     // The claim may only live in the module that documents why it is false.
     expect(cardSource).not.toContain('生效')
@@ -216,17 +207,41 @@ describe('a default colour is not a brand colour', () => {
     expect(styles).toContain('var(--brand-preview-color,transparent)')
   })
 
-  it('opens the reviewed 品牌资产 page without a colour or a document', () => {
+  it('keeps brand editing closed until scoped server data is read', () => {
     const brands = renderToStaticMarkup(createElement(MaterialLibraryWorkspace, { baseUrl: undefined, accounts, products, view: 'brands' }))
     expect(brands).not.toMatch(/#17543c/iu)
-    expect(brands).toContain(BRAND_UNCONFIGURED)
-    expect(brands).toContain(BRAND_DOCUMENT_NONE)
-    expect(brands).toContain(BRAND_DOCUMENT_PENDING)
-    expect(brands).not.toContain('已接收')
-    expect(brands).toContain('上传品牌资料')
-    expect(brands).toContain('保存品牌配置')
     expect(brands).toContain('正在读取服务端品牌配置')
-    expect(brands).toContain('Logo 和文档选择仍是本地预览')
-    expect(brands).not.toContain('生成内容时自动按优先级应用')
+    expect(brands).not.toContain('material-brand-config-card')
+    expect(brands).not.toContain('material-brand-output')
+    expect(brands).not.toContain(BRAND_UNCONFIGURED)
+    expect(brands).not.toContain(BRAND_DOCUMENT_NONE)
+    expect(brands).not.toContain(BRAND_DOCUMENT_PENDING)
+    expect(brands).not.toContain('已接收')
+    expect(brands).not.toContain('上传品牌资料')
+    expect(brands).not.toContain('保存品牌配置')
+  })
+})
+
+describe('brand scope data is unavailable', () => {
+  it('keeps the scope layout but exposes no editable controls without a readable store', () => {
+    const html = renderToStaticMarkup(createElement(BrandScopeUnavailableRow, {
+      number: '02', label: '店铺配置', description: '覆盖全局配置并应用到当前店铺', status: '当前没有已登记店铺。',
+    }))
+    expect(html).toContain('data-testid="brand-scope-unavailable-02"')
+    expect(html).toContain('店铺配置尚不可用')
+    expect(html).toContain('当前没有已登记店铺。')
+    expect(html).toContain('等待真实数据')
+    expect(html).not.toMatch(/<input|<textarea|Store Nova|#17543c/iu)
+  })
+
+  it('labels the native colour picker as unconfigured instead of showing its browser black default', () => {
+    const html = renderToStaticMarkup(createElement(MaterialBrandFields, {
+      value: { logoUrl: '', color: '', persona: '', sellingPoints: '', personaFileName: '', sellingPointsFileName: '', assetFileName: '' },
+      label: '全局', onChange: () => undefined,
+    }))
+    expect(html).toContain('当前未配置')
+    expect(html).toContain('placeholder="未配置"')
+    expect(html).toContain('value="#ffffff"')
+    expect(html).not.toContain('value="#000000"')
   })
 })

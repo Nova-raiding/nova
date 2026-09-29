@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import type { PlatformAccount, Product } from './api'
 import {
   buildCatalogPlatforms,
+  catalogPlatformOrder,
+  catalogPlatformLabel,
   catalogProductAddedAt,
   catalogProductsForStore,
   catalogProductSubtitle,
@@ -200,8 +202,14 @@ describe('the page cannot fall back to a hardcoded catalogue', () => {
     expect(catalogComponent).toContain('catalogProductsForStore(products, selectedStore.id')
   })
 
+  it('keeps the screenshot platform order and labels while deriving each count from server rows', () => {
+    expect(catalogPlatformOrder).toEqual(['taobao', 'tmall', 'jd', 'douyin', 'pinduoduo', 'xiaohongshu'])
+    expect(catalogPlatformOrder.map(catalogPlatformLabel)).toEqual(['淘宝', '天猫', '京东', '抖音小店', '拼多多', '小红书店'])
+    expect(catalogComponent).toContain('catalogPlatformOrder.map')
+  })
+
   it('offers merchant store registration without an Ops handoff or OAuth credential flow in manual mode', () => {
-    expect(catalogComponent).toContain('Object.entries(platformNames).map')
+    expect(catalogComponent).toContain('catalogPlatformOrder.map')
     expect(catalogComponent).toContain('登记店铺资料')
     expect(catalogComponent).toContain('人工登记（未授权）')
     expect(catalogComponent).not.toContain('前往运营后台登记店铺')

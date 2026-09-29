@@ -28,7 +28,9 @@ export function validateOpsE2eArguments(args: readonly string[], source: NodeJS.
   if (source.OPS_E2E_SOURCE_CONTAINER?.trim()) throw new Error('OPS_E2E_SHARED_SOURCE_UNSUPPORTED: this runner only provisions isolated fixtures')
   for (let index = 0; index < args.length; index++) {
     const argument = args[index]!
-    if (/^dogfood\/chatgpt-all-functions\/ops[a-z0-9-]*\.spec\.js$/u.test(argument) || argument === '--workers=1') continue
+    if (/^dogfood\/chatgpt-all-functions\/(?:ops[a-z0-9-]*|ops-merchant-matrix-bootstrap)\.spec\.js$/u.test(argument)
+      || (argument === 'scripts/merchant-isolated-screenshot-matrix.ts' && source.OPS_E2E_MERCHANT_UI === 'true')
+      || argument === '--workers=1') continue
     if ((argument === '--grep' || argument === '-g') && args[index + 1]?.trim() && !/[\u0000-\u001f\u007f]/u.test(args[index + 1]!)) { index++; continue }
     throw new Error('OPS_E2E_OVERRIDE_NOT_ALLOWED')
   }
@@ -134,6 +136,54 @@ export async function disposeOpsE2eResources(
   return errors
 }
 
+const OPS_E2E_THROW_SITES = [
+  'fixture_setup', 'product_import_fixture', 'scanner_setup', 'service_setup',
+  'browser_run', 'scan_evidence', 'after_run', 'cleanup', 'scanner_cleanup',
+  'fixture_cleanup', 'gateway_cleanup', 'child_cleanup', 'scanner_runtime', 'service_runtime',
+] as const
+type OpsE2eThrowSite = typeof OPS_E2E_THROW_SITES[number]
+const OPS_E2E_FAILURE_CODES = new Set([
+  'OPS_E2E_SCANNER_CLEANUP_REQUIRES_REVIEW', 'OPS_E2E_SCANNER_CLEANUP_FAILED',
+  'OPS_E2E_FIXTURE_CLEANUP_REQUIRES_REVIEW', 'OPS_E2E_FIXTURE_CLEANUP_FAILED',
+  'OPS_E2E_GATEWAY_CLEANUP_FAILED', 'OPS_E2E_CHILD_CLEANUP_FAILED',
+  'OPS_E2E_SCANNER_RUNTIME_FAILED', 'OPS_E2E_SERVICE_RUNTIME_FAILED',
+  'OPS_E2E_BROWSER_FAILED', 'OPS_E2E_RUN_FAILED',
+])
+
+/** Only report fixed codes and stage names. Never serialize thrown messages. */
+export function opsE2eFailureReport(input: {
+  throwSite: string
+  primaryErrorCode?: string
+  browserExitCode?: number
+  cleanupErrors?: readonly string[]
+  runtimeErrors?: readonly string[]
+}) {
+  const cleanupErrors = [...new Set((input.cleanupErrors ?? []).filter(code => OPS_E2E_FAILURE_CODES.has(code)))]
+  const runtimeErrors = [...new Set((input.runtimeErrors ?? []).filter(code => OPS_E2E_FAILURE_CODES.has(code)))]
+  const primaryErrorCode = input.primaryErrorCode && OPS_E2E_FAILURE_CODES.has(input.primaryErrorCode) ? input.primaryErrorCode : undefined
+  const primaryRuntimeThrowSite = primaryErrorCode === 'OPS_E2E_SCANNER_RUNTIME_FAILED' ? 'scanner_runtime'
+    : primaryErrorCode === 'OPS_E2E_SERVICE_RUNTIME_FAILED' ? 'service_runtime' : undefined
+  const inferredThrowSite = runtimeErrors.some(code => code === 'OPS_E2E_SCANNER_RUNTIME_FAILED') ? 'scanner_runtime'
+    : runtimeErrors.length ? 'service_runtime'
+      : cleanupErrors.some(code => code.startsWith('OPS_E2E_SCANNER_CLEANUP_')) ? 'scanner_cleanup'
+        : cleanupErrors.some(code => code.startsWith('OPS_E2E_FIXTURE_CLEANUP_')) ? 'fixture_cleanup'
+          : cleanupErrors.some(code => code.startsWith('OPS_E2E_GATEWAY_CLEANUP_')) ? 'gateway_cleanup'
+            : cleanupErrors.length ? 'child_cleanup' : undefined
+  const throwSite: OpsE2eThrowSite = OPS_E2E_THROW_SITES.includes(input.throwSite as OpsE2eThrowSite) ? input.throwSite as OpsE2eThrowSite : inferredThrowSite ?? 'service_setup'
+  const effectiveThrowSite = primaryRuntimeThrowSite ?? (inferredThrowSite && !primaryErrorCode ? inferredThrowSite : throwSite)
+  const errorCode = primaryErrorCode ?? runtimeErrors[0] ?? cleanupErrors[0] ?? (input.browserExitCode !== undefined && input.browserExitCode !== 0 ? 'OPS_E2E_BROWSER_FAILED' : 'OPS_E2E_RUN_FAILED')
+  return {
+    status: 'failed' as const,
+    errorCode,
+    stageCode: `OPS_E2E_STAGE_${effectiveThrowSite.toUpperCase()}`,
+    throwSite: effectiveThrowSite,
+    browserExitCode: input.browserExitCode,
+    cleanupErrors,
+    runtimeErrors,
+    sharedContainersTouched: false as const,
+  }
+}
+
 /** Readiness is not a lifetime guarantee. Never overlap probes or restart a failed scanner. */
 export function monitorOpsE2eScanner(scanner: { checkRuntime(): Promise<void> }, intervalMs = 5_000) {
   let stopped = false
@@ -192,6 +242,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   const args = validateOpsE2eArguments(requested, source)
   const scannerStartupTimeoutMs = validateOpsE2eScannerStartupTimeout(source)
   const scanPurpose = opsE2eScanPurpose(args, source)
+  const merchantUiEnabled = scanPurpose === 'product_import' || source.OPS_E2E_MERCHANT_UI === 'true'
+  if (source.OPS_E2E_MERCHANT_UI !== undefined && source.OPS_E2E_MERCHANT_UI !== 'true') throw new Error('OPS_E2E_MERCHANT_UI_INVALID')
   const manualOperationsMode = isolatedManualOperationsMode(source)
   const authorizationSuperAdminLogin = validateOpsE2eSpecIsolation(args, manualOperationsMode)
   const evidenceDir = resolve('artifacts/ops-jit-isolation', `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}`)
@@ -216,6 +268,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   let cleanupPromise: Promise<void> | undefined
   let stopping = false
   let primaryError: unknown
+  let primaryThrowSite: OpsE2eThrowSite | undefined
+  let throwSite: OpsE2eThrowSite = 'fixture_setup'
   let browserExitCode: number | undefined
   let cleanupErrors: string[] = []
   const runtimeErrors: string[] = []
@@ -269,6 +323,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     fixture = await fixtureSetup
     if (stopping) throw new Error('OPS_E2E_INTERRUPTED_DURING_SETUP')
     if (scanPurpose === 'product_import') {
+      throwSite = 'product_import_fixture'
       // A generic asset.uploaded scan has a no-charge commercial snapshot but
       // still requires a known positive balance. Provision one isolated test
       // point through the RLS-bound repository; no payment or model call occurs.
@@ -315,12 +370,13 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const apiPort = await freeLoopbackPort()
     const uiPort = await freeLoopbackPort()
     const gatewayPort = await freeLoopbackPort()
-    const merchantUiPort = scanPurpose === 'product_import' ? await freeLoopbackPort() : undefined
-    const merchantGatewayPort = scanPurpose === 'product_import' ? await freeLoopbackPort() : undefined
-    if (new Set([apiPort, uiPort, gatewayPort, merchantUiPort, merchantGatewayPort].filter(Boolean)).size !== (scanPurpose === 'product_import' ? 5 : 3)) throw new Error('OPS_E2E_LISTENER_PORT_COLLISION')
+    const merchantUiPort = merchantUiEnabled ? await freeLoopbackPort() : undefined
+    const merchantGatewayPort = merchantUiEnabled ? await freeLoopbackPort() : undefined
+    if (new Set([apiPort, uiPort, gatewayPort, merchantUiPort, merchantGatewayPort].filter(Boolean)).size !== (merchantUiEnabled ? 5 : 3)) throw new Error('OPS_E2E_LISTENER_PORT_COLLISION')
     const baseUrl = `http://127.0.0.1:${gatewayPort}`
     const merchantBaseUrl = merchantGatewayPort ? `http://127.0.0.1:${merchantGatewayPort}` : undefined
     if (scanPurpose) {
+      throwSite = 'scanner_setup'
       scannerSetup = startCustomerDeliveryScanFixture({ enabled: true, evidenceDir, startupTimeoutMs: scannerStartupTimeoutMs,
         retainForDiagnostics: scanPurpose === 'product_import' })
       scanner = await scannerSetup
@@ -328,6 +384,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       if (scanner) scannerMonitor = monitorOpsE2eScanner(scanner)
     }
     const scanEnvironment = scanner ? prepareCustomerDeliveryScanEnvironment(scanner, { fixture, apiBaseUrl: `http://127.0.0.1:${apiPort}`, apiPort }) : undefined
+    throwSite = 'service_setup'
     const username = fixture.platformLogin
     const password = fixture.platformPassword
     // Seed a run-unique approval credential in this isolated API only. The
@@ -361,7 +418,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     // which creates false console failures and does not represent production.
     const ui = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort', '--outDir', uiOutput], uiEnvironment, 'ui')
     serviceMonitors.push(monitorOpsE2eChild(ui))
-    if (scanPurpose === 'product_import' && merchantUiPort && merchantGatewayPort) {
+    if (merchantUiEnabled && merchantUiPort && merchantGatewayPort) {
       const merchantOutput = resolve(evidenceDir, 'merchant-ui-dist')
       const merchantEnvironment = opsChildEnvironment(source, { NODE_ENV: 'production', VITE_API_BASE_URL: '/api' })
       const merchantBuild = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'build', 'demo/merchant-studio', '--config', 'demo/merchant-studio/vite.config.ts', '--outDir', merchantOutput], merchantEnvironment, 'merchant-ui-build')
@@ -417,25 +474,28 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
         resolveTimeout(124)
       }, Number.isFinite(browserTimeout) ? Math.max(10_000, browserTimeout) : 900_000) }),
     ]).finally(() => clearTimeout(browserTimer))
+    throwSite = 'browser_run'
     const exitCode = await guardRuntime(browserOutcome)
     browserExitCode = exitCode
     assertRuntimeHealthy()
     // These hooks can hold database transactions. Drain them before cleanup;
     // do not race their effects against teardown on a background failure.
     if (scanner && exitCode === 0) {
+      throwSite = 'scan_evidence'
       if (scanPurpose === 'product_import') await collectProductImportScanEvidence({ fixture, evidenceDir })
       else await collectCustomerDeliveryScanEvidence({ fixture, evidenceDir })
     }
     assertRuntimeHealthy()
-    if (afterRun) await afterRun({ fixture, baseUrl, username, password, evidenceDir, environment })
+    if (afterRun) { throwSite = 'after_run'; await afterRun({ fixture, baseUrl, username, password, evidenceDir, environment }) }
     assertRuntimeHealthy()
     return exitCode
   } catch (error) {
     primaryError = error
+    primaryThrowSite = throwSite
     throw error
   } finally {
-    try { await cleanup(); if (!primaryError) assertRuntimeHealthy() }
-    catch (error) { if (!primaryError) { primaryError = error; throw error } }
+    try { throwSite = 'cleanup'; await cleanup(); if (!primaryError) assertRuntimeHealthy() }
+    catch (error) { if (!primaryError) { primaryError = error; primaryThrowSite = 'cleanup'; throw error } }
     finally {
       process.removeListener('SIGINT', onInterrupt)
       process.removeListener('SIGTERM', onTerminate)
@@ -447,9 +507,9 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       }
       if (primaryError || cleanupErrors.length || runtimeErrors.length || browserExitCode && browserExitCode !== 0) {
         const message = primaryError instanceof Error ? primaryError.message : ''
-        const errorCode = /^(?:OPS_E2E_|CUSTOMER_DELIVERY_SCAN_|CUSTOMER_DELIVERY_OWNER_|OWNER_ACCEPTANCE_)[A-Z_:]+$/u.test(message)
-          ? message : primaryError ? 'OPS_E2E_RUN_FAILED' : undefined
-        try { writeFileSync(resolve(evidenceDir, 'run-failure.json'), JSON.stringify({ status: 'failed', errorCode, browserExitCode, cleanupErrors: [...new Set(cleanupErrors)], runtimeErrors: [...new Set(runtimeErrors)], sharedContainersTouched: false }, null, 2), { mode: 0o600, flag: 'wx' }) }
+        const safePrimaryCode = OPS_E2E_FAILURE_CODES.has(message) ? message : undefined
+        const report = opsE2eFailureReport({ throwSite: primaryThrowSite ?? throwSite, primaryErrorCode: safePrimaryCode, browserExitCode, cleanupErrors, runtimeErrors })
+        try { writeFileSync(resolve(evidenceDir, 'run-failure.json'), JSON.stringify(report, null, 2), { mode: 0o600, flag: 'wx' }) }
         catch { /* Preserve the original failure; never skip cleanup for a report write. */ }
       }
     }

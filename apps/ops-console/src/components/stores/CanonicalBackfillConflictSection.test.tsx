@@ -27,6 +27,8 @@ describe("CanonicalBackfillConflictSection", () => {
     const markup = renderToStaticMarkup(<CanonicalBackfillConflictSection enabled onScan={async () => undefined} />);
     expect(markup).toContain("扫描并刷新队列");
     expect(markup).toContain("刷新队列");
+    expect(markup).toContain('aria-label="冲突队列工作区"');
+    expect(markup).toContain("请选择商家工作区");
     expect(markup).not.toContain("正在扫描一致性");
   });
 

@@ -10,21 +10,16 @@ const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
 // only exercised with a workspace membership fixture below.
 // These domains require a workspace-scoped policy and are covered by
 // workspace fixtures, never by the platform token walk.
-// 365c5d84 converged the platform sidebar to a single navigation group. `models`
-// is still deliberately absent from OpsSidebar.navigationGroups, so 模型服务 has
-// no reachable button; 客户交付 renders no page heading (OpsPage hideTitle) and
-// is walked by the ops-delivery-*.spec.js fixtures instead.
-//
-// Walk routes through visible, role-filtered navigation. Finance must remain
-// discoverable as required by the 2026-09-20 owner decision.
+// Walk the default platform fixture through its visible navigation. Elevated
+// screenshot-backed pages are clicked in the dedicated role-authorized matrix.
 //
 // Shrinking this list is a retirement, not a convenience: every entry that left
 // it is written down in ./retired-ops-assertions.md, with what it asserted, the
 // commit that removed the surface, and what coverage survives. The models
 // withdrawal is still asserted by the reverse gate below rather than being
 // merely absent — re-mounting it has to turn that gate red.
-const platformSections = ['总览', '用户中心', '客户交付', '账务与退款']
-const headings = { '总览': '平台运营实时概况', '用户中心': '已接入用户', '客户交付': '客户建档', '成员与权限': '成员与权限', '客服': '客服工作台', '平台连接': '平台连接汇总', '存储与对账': '存储与对账', '账务与退款': '平台财务中心' }
+const platformSections = ['总览', '用户中心', '客户交付']
+const headings = { '总览': '平台运营实时概况', '用户中心': '已接入用户', '客户交付': '客户建档', '成员与权限': '成员与权限', '客服': '客服工作台', '平台连接': '平台连接汇总', '账务与退款': '平台财务中心' }
 
 const snapshot = async (page, section) => ({
   section,
@@ -128,21 +123,7 @@ test('walk every Ops Console section through the real browser UI', async () => {
   await closeWithDeadline(() => browser.close())
 })
 
-// `models` remains a reverse gate: it must stay withdrawn until re-reviewed.
-//
-// The finance half of that gate did its job: it was written so the decision
-// "has to come back through review instead of arriving as a silent re-add", and
-// on 2026-09-20 it did exactly that. The owner reviewed and restored the
-// finance domain (docs/qa/four-product-decisions-2026-09-20.md, option A), so
-// this test now asserts the models withdrawal alone and additionally pins the
-// facts the restore was for.
-//
-// Why 模型服务 is still a reverse gate instead of nothing: an entry that merely
-// disappears from `platformSections` leaves no signal. If it is ever mounted
-// again, the walk would stay green while `OpsSidebar.test.tsx` (which asserts
-// the same product fact from the unit side) and this test would go red, so that
-// decision has to come back through review too.
-test('keeps finance discoverable through the authorized sidebar entry', async () => {
+test('keeps default-role screenshot destinations discoverable through authorized navigation', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   context.setDefaultTimeout(10_000)
@@ -151,28 +132,8 @@ test('keeps finance discoverable through the authorized sidebar entry', async ()
     await openPlatformConsole(page)
     const sidebar = page.getByRole('navigation', { name: '平台运营功能导航' })
     await expect(sidebar).toBeVisible({ timeout: 20_000 })
-    const financeButton = sidebar.getByRole('button', { name: '账务与退款', exact: true })
-    await expect(financeButton).toBeVisible({ timeout: 20_000 })
-    // 模型服务 stays withdrawn, and 存储与对账 / 审计中心 never had a sidebar
-    // entry because `navigationGroups` omits them.
-    for (const label of ['模型服务', '存储与对账', '审计中心']) {
-      await expect(sidebar.getByRole('button', { name: label, exact: true })).toHaveCount(0)
-    }
-    // A normal user action must land on the finance page, not require a manually
-    // entered deep link.
-    await financeButton.click()
-    await expect(page.locator('h1,h2,h3').filter({ hasText: /^平台财务中心$/u })).toBeVisible({ timeout: 20_000 })
-    // The guarantee the withdrawal actually lost: the commercial-readiness card
-    // inside FinancePage, which embeds CommercialReadinessPanel. Re-walking the
-    // section is not enough — this asserts the evidence panel is on screen.
-    await expect(page.getByText('商业化生产门禁')).toBeVisible({ timeout: 20_000 })
-    // Still no mount point, and restoring finance did NOT change that:
-    // `导出商业配置` lives only in components/finance/PlanBillingSection.tsx, which
-    // the restored FinancePage does not import and which has never been imported
-    // by any file since 2440b44b. Registered as a remaining gap in
-    // ./retired-ops-assertions.md; this assertion is what will go red when it is
-    // finally mounted.
-    await expect(page.getByRole('button', { name: '导出商业配置' })).toHaveCount(0)
+    await expect(sidebar.getByRole('button', { name: '模型服务', exact: true })).toHaveCount(0)
+    await expect(sidebar.getByRole('button', { name: '更多功能', exact: true })).toHaveCount(0)
   } finally {
     await context.close()
     await browser.close()

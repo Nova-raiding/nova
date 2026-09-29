@@ -30,13 +30,28 @@ export interface ActionLedgerRecord {
   refundReason?: string
 }
 
+export interface ActionLedgerCursor {
+  createdAt: string
+  id: string
+}
+
+export interface ActionLedgerPage {
+  items: ActionLedgerRecord[]
+  hasMore: boolean
+  nextCursor?: ActionLedgerCursor
+}
+
 export interface ActionLedgerRepository {
   record(input: Omit<ActionLedgerRecord, 'id' | 'createdAt' | 'state'> & { createdAt?: string }): Promise<ActionLedgerRecord>
   get(workspaceId: string, actionKey: string): Promise<ActionLedgerRecord | undefined>
   refund(input: { workspaceId: string; actionKey: string; reason: string }): Promise<{ refunded: boolean; record?: ActionLedgerRecord }>
   list(workspaceId: string, limit?: number): Promise<ActionLedgerRecord[]>
+  listPendingReceiptActions(input: { workspaceId: string; before: string; limit?: number }): Promise<ActionLedgerRecord[]>
+  listManualAttention(input: { workspaceId: string; actorId?: string; cursor?: ActionLedgerCursor; limit?: number }): Promise<ActionLedgerPage>
   listByScope(input: { workspaceId: string; taskId?: string; campaignItemId?: string; contextLinkId?: string; contextHash?: string; limit?: number }): Promise<ActionLedgerRecord[]>
   transitionSettlementStatus(input: { workspaceId: string; actionKey: string; from: ActionSettlementStatus[]; to: ActionSettlementStatus }): Promise<ActionLedgerRecord>
+  /** Atomically recheck a pending receipt against its active point hold and usage row before flagging it. */
+  markPendingReceiptOrphanForAttention?(input: { workspaceId: string; actionKey: string; before: string }): Promise<ActionLedgerRecord | null>
   settleProviderUsage(input: { workspaceId: string; actionKey: string; providerRequestId?: string; actualAmountFen: number }): Promise<void>
 }
 
@@ -100,6 +115,33 @@ export class MemoryActionLedgerRepository implements ActionLedgerRepository {
     return { refunded: true, record: row }
   }
   async list(workspaceId: string, limit = 100) { return [...this.rows.values()].filter(row => row.workspaceId === workspaceId).slice(-Math.min(1000, Math.max(1, limit))).reverse() }
+  async listPendingReceiptActions(input: { workspaceId: string; before: string; limit?: number }) {
+    const workspaceId = requireWorkspaceScope(input.workspaceId)
+    const before = Date.parse(input.before)
+    if (!Number.isFinite(before)) throw new Error('ACTION_LEDGER_CUTOFF_INVALID')
+    const limit = Math.min(100, Math.max(1, input.limit ?? 50))
+    return [...this.rows.values()]
+      .filter(row => row.workspaceId === workspaceId && row.settlementStatus === 'pending_receipt' && row.actionKind.startsWith('model_') && Date.parse(row.createdAt) < before)
+      .sort((left, right) => compareTimestamp(left.createdAt, right.createdAt) || left.id.localeCompare(right.id))
+      .slice(0, limit)
+  }
+  async listManualAttention(input: { workspaceId: string; actorId?: string; cursor?: ActionLedgerCursor; limit?: number }): Promise<ActionLedgerPage> {
+    const workspaceId = requireWorkspaceScope(input.workspaceId)
+    const limit = manualAttentionLimit(input.limit)
+    validateActionCursor(input.cursor)
+    const rows = [...this.rows.values()]
+      .filter(row => row.workspaceId === workspaceId
+        && row.settlementStatus === 'manual_attention'
+        && row.actionKind.startsWith('model_')
+        && (input.actorId === undefined || row.actorId === input.actorId)
+        && actionBeforeCursor(row, input.cursor))
+      .sort((left, right) => compareTimestamp(right.createdAt, left.createdAt) || right.id.localeCompare(left.id))
+    const page = rows.slice(0, limit + 1)
+    const hasMore = page.length > limit
+    const items = page.slice(0, limit)
+    const last = items.at(-1)
+    return { items, hasMore, ...(hasMore && last ? { nextCursor: { createdAt: last.createdAt, id: last.id } } : {}) }
+  }
   async listByScope(input: { workspaceId: string; taskId?: string; campaignItemId?: string; contextLinkId?: string; contextHash?: string; limit?: number }) {
     const workspaceId = requireWorkspaceScope(input.workspaceId); validateScope(input)
     return [...this.rows.values()].filter(row => row.workspaceId === workspaceId && associationFields.every(field => input[field] === undefined || row[field] === input[field])).slice(-Math.min(1000, Math.max(1, input.limit ?? 100))).reverse()
@@ -125,8 +167,38 @@ export class MemoryActionLedgerRepository implements ActionLedgerRepository {
 }
 
 type ActionRow = { id: string; workspace_id: string; action_key: string; action_kind: ActionKind; settlement: ActionSettlement; state: ActionState; units: number; amount_fen: number | string; actor_id: string; description: string; created_at: string | Date; task_id: string | null; campaign_item_id: string | null; context_link_id: string | null; context_hash: string | null; provider_request_id: string | null; reserved_amount_fen: number | string | null; multiplier: number | string | null; settlement_status: ActionSettlementStatus | null; refunded_at: string | Date | null; refund_reason: string | null }
+type ActionAttentionRow = ActionRow & { cursor_created_at: string }
 const map = (row: ActionRow): ActionLedgerRecord => ({ id: row.id, workspaceId: row.workspace_id, actionKey: row.action_key, actionKind: row.action_kind, settlement: row.settlement, state: row.state, units: row.units, amountFen: Number(row.amount_fen), actorId: row.actor_id, description: row.description, createdAt: iso(row.created_at), ...(row.task_id ? { taskId: row.task_id } : {}), ...(row.campaign_item_id ? { campaignItemId: row.campaign_item_id } : {}), ...(row.context_link_id ? { contextLinkId: row.context_link_id } : {}), ...(row.context_hash ? { contextHash: row.context_hash } : {}), ...(row.provider_request_id ? { providerRequestId: row.provider_request_id } : {}), ...(row.reserved_amount_fen !== null ? { reservedAmountFen: Number(row.reserved_amount_fen) } : {}), ...(row.multiplier !== null ? { multiplier: Number(row.multiplier) } : {}), ...(row.settlement_status ? { settlementStatus: row.settlement_status } : {}), ...(row.refunded_at ? { refundedAt: iso(row.refunded_at) } : {}), ...(row.refund_reason ? { refundReason: row.refund_reason } : {}) })
 const projection = 'id, workspace_id, action_key, action_kind, settlement, state, units, amount_fen, actor_id, description, created_at, task_id, campaign_item_id, context_link_id, context_hash, provider_request_id, reserved_amount_fen, multiplier, settlement_status, refunded_at, refund_reason'
+
+function manualAttentionLimit(value = 50) {
+  if (!Number.isInteger(value) || value < 1 || value > 100) throw new RangeError('manual attention limit must be an integer between 1 and 100')
+  return value
+}
+
+function validateActionCursor(cursor?: ActionLedgerCursor) {
+  if (!cursor) return
+  if (!Number.isFinite(Date.parse(cursor.createdAt)) || !cursor.id.trim() || cursor.id.length > 200) throw new Error('ACTION_LEDGER_CURSOR_INVALID')
+}
+
+function actionBeforeCursor(row: ActionLedgerRecord, cursor?: ActionLedgerCursor) {
+  if (!cursor) return true
+  const byTimestamp = compareTimestamp(row.createdAt, cursor.createdAt)
+  return byTimestamp < 0 || (byTimestamp === 0 && row.id < cursor.id)
+}
+
+function compareTimestamp(left: string, right: string) {
+  // ISO timestamps with offsets are normalized to UTC before comparing. Preserve
+  // fractional digits beyond milliseconds so Memory matches PostgreSQL timestamptz.
+  const leftMs = Date.parse(left)
+  const rightMs = Date.parse(right)
+  if (leftMs !== rightMs) return leftMs < rightMs ? -1 : 1
+  const leftFraction = /\.(\d+)(?:Z|[+-]\d{2}(?::?\d{2})?)$/u.exec(left)?.[1] ?? ''
+  const rightFraction = /\.(\d+)(?:Z|[+-]\d{2}(?::?\d{2})?)$/u.exec(right)?.[1] ?? ''
+  const leftNormalized = leftFraction.padEnd(9, '0').slice(0, 9)
+  const rightNormalized = rightFraction.padEnd(9, '0').slice(0, 9)
+  return leftNormalized < rightNormalized ? -1 : leftNormalized > rightNormalized ? 1 : 0
+}
 
 export class PostgresActionLedgerRepository implements ActionLedgerRepository {
   constructor(private readonly pool: SqlPool) {}
@@ -163,6 +235,29 @@ export class PostgresActionLedgerRepository implements ActionLedgerRepository {
       return result.rows.map(map)
     })
   }
+  async listPendingReceiptActions(input: { workspaceId: string; before: string; limit?: number }) {
+    const workspaceId = requireWorkspaceScope(input.workspaceId)
+    const before = new Date(input.before)
+    if (!Number.isFinite(before.getTime())) throw new Error('ACTION_LEDGER_CUTOFF_INVALID')
+    const limit = Math.min(100, Math.max(1, input.limit ?? 50))
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const result = await client.query<ActionRow>(`SELECT ${projection} FROM action_ledger a WHERE a.workspace_id=$1 AND a.settlement_status='pending_receipt' AND a.action_kind IN ('model_text','model_image','model_ocr','model_video') AND a.created_at<$2::timestamptz AND EXISTS (SELECT 1 FROM creative_point_reservations r WHERE r.workspace_id=a.workspace_id AND r.action_key=a.action_key AND r.status='active') AND NOT EXISTS (SELECT 1 FROM model_usage_ledger u WHERE u.workspace_id=a.workspace_id AND u.action_id=a.action_key) ORDER BY a.created_at ASC,a.id ASC LIMIT $3`, [workspaceId, before.toISOString(), limit])
+      return result.rows.map(map)
+    })
+  }
+  async listManualAttention(input: { workspaceId: string; actorId?: string; cursor?: ActionLedgerCursor; limit?: number }): Promise<ActionLedgerPage> {
+    const workspaceId = requireWorkspaceScope(input.workspaceId)
+    const limit = manualAttentionLimit(input.limit)
+    validateActionCursor(input.cursor)
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const result = await client.query<ActionAttentionRow>(`SELECT ${projection},created_at::text AS cursor_created_at FROM action_ledger WHERE workspace_id=$1 AND settlement_status='manual_attention' AND action_kind IN ('model_text','model_image','model_ocr','model_video') AND ($2::text IS NULL OR actor_id=$2) AND ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::text)) ORDER BY created_at DESC,id DESC LIMIT $5`, [workspaceId, input.actorId ?? null, input.cursor?.createdAt ?? null, input.cursor?.id ?? null, limit + 1])
+      const pageRows = result.rows.slice(0, limit)
+      const items = pageRows.map(map)
+      const hasMore = result.rows.length > limit
+      const last = pageRows.at(-1)
+      return { items, hasMore, ...(hasMore && last ? { nextCursor: { createdAt: last.cursor_created_at, id: last.id } } : {}) }
+    })
+  }
   async listByScope(input: { workspaceId: string; taskId?: string; campaignItemId?: string; contextLinkId?: string; contextHash?: string; limit?: number }) {
     const workspaceId = requireWorkspaceScope(input.workspaceId); validateScope(input)
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
@@ -177,6 +272,23 @@ export class PostgresActionLedgerRepository implements ActionLedgerRepository {
       const existing = await client.query<ActionRow>(`SELECT ${projection} FROM action_ledger WHERE workspace_id=$1 AND action_key=$2`, [input.workspaceId, input.actionKey])
       if (!existing.rows[0]) throw new Error('ACTION_LEDGER_RECORD_NOT_FOUND')
       throw new Error('ACTION_LEDGER_STATUS_CONFLICT')
+    })
+  }
+  async markPendingReceiptOrphanForAttention(input: { workspaceId: string; actionKey: string; before: string }) {
+    const workspaceId = requireWorkspaceScope(input.workspaceId)
+    if (!Number.isFinite(Date.parse(input.before))) throw new Error('ACTION_LEDGER_CUTOFF_INVALID')
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const selected = await client.query<ActionRow>(`SELECT ${projection} FROM action_ledger WHERE workspace_id=$1 AND action_key=$2 FOR UPDATE`, [workspaceId, input.actionKey])
+      const action = selected.rows[0] ? map(selected.rows[0]) : undefined
+      if (!action || !action.actionKind.startsWith('model_') || action.settlementStatus !== 'pending_receipt' || Date.parse(action.createdAt) >= Date.parse(input.before)) return null
+
+      const reservation = await client.query<{ status: string }>(`SELECT status FROM creative_point_reservations WHERE workspace_id=$1 AND action_key=$2 ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, [workspaceId, input.actionKey])
+      if (reservation.rows[0]?.status !== 'active') return null
+      const usage = await client.query<{ id: string }>('SELECT id FROM model_usage_ledger WHERE workspace_id=$1 AND action_id=$2 LIMIT 1', [workspaceId, input.actionKey])
+      if (usage.rows.length) return null
+
+      const updated = await client.query<ActionRow>(`UPDATE action_ledger SET settlement_status='manual_attention' WHERE workspace_id=$1 AND action_key=$2 AND settlement_status='pending_receipt' AND created_at<$3::timestamptz RETURNING ${projection}`, [workspaceId, input.actionKey, input.before])
+      return updated.rows[0] ? map(updated.rows[0]) : null
     })
   }
   async settleProviderUsage(input: { workspaceId: string; actionKey: string; providerRequestId?: string; actualAmountFen: number }) {

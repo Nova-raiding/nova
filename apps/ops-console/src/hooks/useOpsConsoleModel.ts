@@ -58,6 +58,7 @@ import type {
   OpsRequestError,
 } from "../types/ops.js";
 import type { FinanceSearchSummary } from "../../../../packages/contracts/src/ops/finance-search.js";
+import { platformMonthlyFinanceRequest } from "../components/sections/overview/financeWindow.js";
 import type { CommercialCatalogItem } from "../api/commercialOperationsClient.js";
 import { financePermissions, runAuthorizedFinanceAction } from "../components/finance/financePermissions.js";
 import { confirmPolicyPropsFor } from "../utils/destructiveConfirm.js";
@@ -85,6 +86,16 @@ export interface OpsLoadFilterOverrides {
 
 export type OpsDataSetErrors = Readonly<Record<string, string>>;
 export type OpsDataSetErrorEvidence = Readonly<Record<string, Pick<OpsRequestError, "requestId" | "traceId" | "code" | "details">>>;
+export type ModelUsageReconciliationReport = {
+  state?: "completed" | "attention_required" | string;
+  settled?: string[];
+  pending?: unknown[];
+  orphaned_actions?: Array<{
+    action_id: string;
+    status: "manual_attention" | string;
+    code: string;
+  }>;
+};
 export type MerchantAccountProvisioningInput = {
   login: string;
   password: string;
@@ -478,7 +489,7 @@ export function useOpsConsoleModel() {
   const [userDetail, setUserDetail] = useState<PlatformUserDetail>();
   const [userDetailLoading, setUserDetailLoading] = useState(false);
   const userDetailRequestRef = useRef(0);
-  const [userDirectoryFilters, setUserDirectoryFilters] = useState<{ query?: string; status?: string; workspaceId?: string; accountType?: "merchant" | "platform"; page?: number; pageSize?: number }>({ accountType: "merchant" });
+  const [userDirectoryFilters, setUserDirectoryFilters] = useState<{ query?: string; status?: string; workspaceId?: string; accountType?: "all" | "merchant" | "platform"; page?: number; pageSize?: number }>({ accountType: "all" });
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceSummary[]>([]);
   const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectoryPage>(UNRESOLVED_WORKSPACE_DIRECTORY);
   const [workspaceDirectoryLoading, setWorkspaceDirectoryLoading] = useState(false);
@@ -488,8 +499,14 @@ export function useOpsConsoleModel() {
   const [workspaceDirectoryError, setWorkspaceDirectoryError] = useState("");
   const workspaceDirectoryRequestRef = useRef(0);
   const [platformFinanceSummary, setPlatformFinanceSummary] = useState<FinanceSearchSummary>();
+  const [platformMonthlyFinanceSummary, setPlatformMonthlyFinanceSummary] = useState<FinanceSearchSummary>();
+  const [platformMonthlyFinanceMonth, setPlatformMonthlyFinanceMonth] = useState<string>();
   const [platformCommercialCatalog, setPlatformCommercialCatalog] = useState<CommercialCatalogItem[]>([]);
   const [reconciliation, setReconciliation] = useState<Reconciliation>();
+  const [manualAttentionLoading, setManualAttentionLoading] = useState(false);
+  const [manualAttentionError, setManualAttentionError] = useState("");
+  const manualAttentionRequestRef = useRef(0);
+  const [modelUsageReconciliationReport, setModelUsageReconciliationReport] = useState<ModelUsageReconciliationReport>();
   const [rechargeOrders, setRechargeOrders] = useState<RechargeOrderList>();
   const [rechargeOrdersLoading, setRechargeOrdersLoading] = useState(false);
   const [rechargeOrdersError, setRechargeOrdersError] = useState("");
@@ -681,8 +698,13 @@ export function useOpsConsoleModel() {
     setWorkspaceDirectory(UNRESOLVED_WORKSPACE_DIRECTORY);
     setWorkspaceDirectoryError("");
     setPlatformFinanceSummary(undefined);
+    setPlatformMonthlyFinanceSummary(undefined);
+    setPlatformMonthlyFinanceMonth(undefined);
     setPlatformCommercialCatalog([]);
     setReconciliation(undefined);
+    manualAttentionRequestRef.current += 1;
+    setManualAttentionLoading(false);
+    setManualAttentionError("");
     setRechargeOrders(undefined);
     setRechargeOrdersError("");
     setRechargeOrdersLoading(false);
@@ -739,6 +761,13 @@ export function useOpsConsoleModel() {
     const activeQueueFilters = filterOverrides.queueFilters ?? queueFilters;
     const activeAlertFilters = filterOverrides.alertFilters ?? alertFilters;
     const loadRequest = loadCoordinatorRef.current.begin();
+    manualAttentionRequestRef.current += 1;
+    setManualAttentionLoading(false);
+    const monthlyFinanceRequest = platformMonthlyFinanceRequest();
+    if (platformMonthlyFinanceMonth !== monthlyFinanceRequest.label) {
+      setPlatformMonthlyFinanceSummary(undefined);
+    }
+    setPlatformMonthlyFinanceMonth(monthlyFinanceRequest.label);
     setLoading(true);
     setModelStatusLoading(true);
     setError("");
@@ -873,6 +902,7 @@ export function useOpsConsoleModel() {
         marketingSummaryResult,
         modelUsageSummaryResult,
         platformFinanceResult,
+        platformMonthlyFinanceResult,
         platformCommercialCatalogResult,
         financeResult,
         offerResult,
@@ -922,6 +952,7 @@ export function useOpsConsoleModel() {
           statuses_json: JSON.stringify(["paid"]),
           limit: "1",
         }) : Promise.resolve(undefined),
+        platformOperator ? authorizedOptional("ops.finance.search", monthlyFinanceRequest.params) : Promise.resolve(undefined),
         platformOperator ? authorizedOptional("ops.commercial.catalog-v2.list", {
           include_private: "false",
           limit: "100",
@@ -1019,6 +1050,11 @@ export function useOpsConsoleModel() {
           setPlatformFinanceSummary((value as { summary?: FinanceSearchSummary }).summary);
         }
       });
+      applyLoadedValue(platformMonthlyFinanceResult, (value) => {
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          setPlatformMonthlyFinanceSummary((value as { summary?: FinanceSearchSummary }).summary);
+        }
+      });
       applyLoadedValue(platformCommercialCatalogResult, (value) => {
         const items = value && typeof value === "object" && !Array.isArray(value)
           ? (value as { items?: Array<Record<string, unknown>> }).items ?? []
@@ -1040,7 +1076,17 @@ export function useOpsConsoleModel() {
           unresolved: Array.isArray(item.unresolved) ? item.unresolved.filter((entry): entry is string => typeof entry === "string") : [],
         })));
       });
-      applyLoadedValue(financeResult, (value) => setReconciliation(value as unknown as Reconciliation));
+      applyLoadedValue(financeResult, (value) => {
+        const statement = value as unknown as Reconciliation;
+        // A new first page invalidates any request made with the previous
+        // page's cursor, even when that request started after refresh began.
+        manualAttentionRequestRef.current += 1;
+        setManualAttentionLoading(false);
+        setReconciliation(statement);
+        setManualAttentionError(statement.action_ledger?.manual_attention
+          ? ""
+          : "服务端未提供 manual_attention 历史分页数据；当前不能确认历史记录为空。");
+      });
       applyLoadedValue(offerResult, (value) => setOffers((value ?? []) as unknown as Offer[]));
       applyLoadedValue(addonResult, (value) => setAddons((value ?? []) as unknown as Addon[]));
       applyLoadedValue(couponResult, (value) => setCoupons((value ?? []) as unknown as Coupon[]));
@@ -1543,7 +1589,7 @@ export function useOpsConsoleModel() {
       message.error(cause instanceof Error ? cause.message : "成员保存失败");
     }
   };
-  const loadUsers = async (filters: { query?: string; status?: string; workspaceId?: string; accountType?: "merchant" | "platform"; page?: number; pageSize?: number } = userDirectoryFilters) => {
+  const loadUsers = async (filters: { query?: string; status?: string; workspaceId?: string; accountType?: "all" | "merchant" | "platform"; page?: number; pageSize?: number } = userDirectoryFilters) => {
     recordOpsBootstrapTrace("users_load_enter", { connected: hasOpsConnection(), identity: authorization.can("identity.read") });
     if (!hasOpsConnection()) { recordOpsBootstrapTrace("users_load_skipped", { reason: "no_connection" }); return false; }
     const requestKey = JSON.stringify(filters);
@@ -1552,7 +1598,7 @@ export function useOpsConsoleModel() {
     userDirectoryInFlightKeysRef.current.add(requestKey);
     const requestId = ++userDirectoryRequestRef.current;
     const page = filters.page ?? 1;
-    const pageSize = filters.pageSize ?? 20;
+    const pageSize = filters.pageSize ?? 10;
     setUserDirectoryFilters(filters);
     setUserDirectoryLoading(true);
     setUserDirectoryError("");
@@ -1562,7 +1608,7 @@ export function useOpsConsoleModel() {
         offset: String((page - 1) * pageSize),
         ...(filters.query?.trim() ? { query: filters.query.trim() } : {}),
         ...(filters.status ? { status: filters.status } : {}),
-        account_type: filters.accountType ?? "merchant",
+        account_type: filters.accountType ?? "all",
         ...(filters.workspaceId?.trim() ? { workspace_id: filters.workspaceId.trim() } : {}),
       }, { signal: controller.signal, timeoutMs: 30_000 });
       recordOpsBootstrapTrace("users_load_response", { items: Array.isArray((response as { items?: unknown[] } | undefined)?.items) ? (response as { items: unknown[] }).items.length : -1 });
@@ -1951,8 +1997,15 @@ export function useOpsConsoleModel() {
       return await runAuthorizedFinanceAction(
         canModelSettlement,
         async () => {
-          const report = (await rpc("billing.model-usage.reconciliation.run", { limit: "50" })) as unknown as { settled?: string[]; pending?: Array<unknown> };
-          message.success(`模型结算完成：成功 ${report.settled?.length ?? 0}，仍待处理 ${report.pending?.length ?? 0}`);
+          const report = (await rpc("billing.model-usage.reconciliation.run", { limit: "50" })) as unknown as ModelUsageReconciliationReport;
+          setModelUsageReconciliationReport(report);
+          const pendingCount = report.pending?.length ?? 0;
+          const orphanCount = report.orphaned_actions?.length ?? 0;
+          if (report.state === "completed" && pendingCount === 0 && orphanCount === 0) {
+            message.success(`模型结算完成：成功 ${report.settled?.length ?? 0}，仍待处理 0`);
+          } else {
+            message.warning(`模型结算需要关注：成功 ${report.settled?.length ?? 0}，待处理 ${pendingCount}，孤立调用 ${orphanCount}`);
+          }
           await load();
         },
         () => message.error("当前会话为只读，缺少模型结算权限"),
@@ -1960,6 +2013,49 @@ export function useOpsConsoleModel() {
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "模型用量对账失败");
       return false;
+    }
+  };
+  const loadMoreManualAttention = async () => {
+    const currentPage = reconciliation?.action_ledger?.manual_attention;
+    if (!currentPage?.has_more) return false;
+    if (!currentPage.next_cursor) {
+      setManualAttentionError("服务端提示仍有更多历史记录，但没有返回下一页游标；请刷新后重试。");
+      return false;
+    }
+    if (manualAttentionLoading) return false;
+    const requestId = ++manualAttentionRequestRef.current;
+    setManualAttentionLoading(true);
+    setManualAttentionError("");
+    try {
+      const statement = await rpc("billing.model-usage.statement", {
+        limit: String(currentPage.limit || 50),
+        scope: reconciliation?.model_usage_scope === "workspace" ? "workspace" : "mine",
+        manual_attention_cursor: currentPage.next_cursor,
+      }) as unknown as Reconciliation;
+      const nextPage = statement.action_ledger?.manual_attention;
+      if (!nextPage) throw new Error("服务端未返回 manual_attention 历史分页数据");
+      if (requestId !== manualAttentionRequestRef.current) return false;
+      setReconciliation((current) => {
+        if (!current) return current;
+        const currentItems = current.action_ledger?.manual_attention?.items ?? [];
+        const seen = new Set(currentItems.map((item) => item.action_id));
+        const appended = nextPage.items.filter((item) => !seen.has(item.action_id));
+        return {
+          ...current,
+          action_ledger: {
+            ...current.action_ledger,
+            manual_attention: { ...nextPage, items: [...currentItems, ...appended] },
+          },
+        };
+      });
+      return true;
+    } catch (cause) {
+      if (requestId === manualAttentionRequestRef.current) {
+        setManualAttentionError(describeOpsError(cause));
+      }
+      return false;
+    } finally {
+      if (requestId === manualAttentionRequestRef.current) setManualAttentionLoading(false);
     }
   };
   const retryModelUsageSettlement = async (record: ModelUsageSettlementRecord, reason: string, evidenceRef: string) => {
@@ -2922,6 +3018,10 @@ export function useOpsConsoleModel() {
   };
 
   return {
+    modelUsageReconciliationReport,
+    manualAttentionLoading,
+    manualAttentionError,
+    loadMoreManualAttention,
     settings,
     setSettings,
     platformRows,
@@ -2950,6 +3050,9 @@ export function useOpsConsoleModel() {
     workspaceDirectoryError,
     platformFinanceSummary,
     setPlatformFinanceSummary,
+    platformMonthlyFinanceSummary,
+    setPlatformMonthlyFinanceSummary,
+    platformMonthlyFinanceMonth,
     platformCommercialCatalog,
     setPlatformCommercialCatalog,
     reconciliation,

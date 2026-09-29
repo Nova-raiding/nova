@@ -284,6 +284,7 @@ export const HTTP_ROUTE_COVERAGE_EXEMPTIONS: readonly HttpRouteCoverageExemption
   { pathTemplate: '/v1/auth/local-plugin/token', methods: ['POST'], reason: 'local desktop PKCE code exchange; authenticates the one-time code and verifier, not a ChatGPT OAuth client' },
   { pathTemplate: '/v1/auth/local-plugin/connect-requests', methods: ['POST'], reason: 'creates a browser-session-bound one-click local plugin request after same-origin validation' },
   { pathTemplate: '/v1/auth/local-plugin/connect-requests/{requestId}/status', methods: ['GET'], reason: 'polls only the current merchant session account and workspace request; never returns credentials' },
+  { pathTemplate: '/v1/auth/local-plugin/connect-requests/{requestId}/complete', methods: ['POST'], reason: 'exchanges a signed one-time local plugin request after browser-session identity and origin verification' },
   { pathTemplate: '/v1/auth/local-plugin/install-instances/register', methods: ['POST'], reason: 'registers an untrusted P-256 public installation key and short-lived pairing capability without tenant access' },
   { pathTemplate: '/v1/auth/local-plugin/install-instances/pair', methods: ['POST'], reason: 'pairs an installation through an authenticated same-origin merchant session and one-time capability' },
   // Local Ops Console bootstrap. Disabled unless OPS_LOCAL_SESSION_ENABLED is

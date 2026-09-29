@@ -89,6 +89,7 @@ const OPS_SPECS = [
   spec('ops.spec.js'),
 ].sort()
 
+const OPS_MATRIX_SPECS = [spec('ops-desktop-readonly-matrix.spec.js')]
 const OPS_TEMPLATE_SPECS = [spec('ops-template-download-isolated.spec.js')]
 const OPS_PRODUCT_IMPORT_SPECS = [spec('ops-product-import-scan-isolated.spec.js')]
 
@@ -126,7 +127,6 @@ const CONFIG_ONLY_BROWSER_SPECS = [
   spec('ops-delivery-isolated.spec.js'),
   spec('ops-delivery-owner-acceptance.spec.js'),
   spec('ops-delivery-readonly-isolated.spec.js'),
-  spec('ops-desktop-readonly-matrix.spec.js'),
   spec('ops-manual-import-isolated.spec.js'),
   spec('ops-mcp-request-matrix.spec.js'),
   spec('ops-members-global-isolated.spec.js'),
@@ -153,6 +153,13 @@ describe('browser gate entrypoints', () => {
     expect(command).toContain('scripts/run-ops-password-e2e.ts')
     expect(specPathsIn(command)).toEqual(OPS_SPECS)
     // The runner is launched with explicit paths; it must not point at a config.
+    expect(command).not.toContain('--config')
+  })
+
+  it('runs the role-gated desktop route matrix in its dedicated isolated fixture', () => {
+    const command = script('test:browser:ops:matrix')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
+    expect(specPathsIn(command)).toEqual(OPS_MATRIX_SPECS)
     expect(command).not.toContain('--config')
   })
 
@@ -195,7 +202,7 @@ describe('browser gate entrypoints', () => {
 
   it('composes test:browser:all from merchant and every dedicated Ops acceptance suite', () => {
     const all = script('test:browser:all')
-    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:ops && npm run test:browser:ops:template && npm run test:browser:ops:product-import')
+    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:ops && npm run test:browser:ops:matrix && npm run test:browser:ops:template && npm run test:browser:ops:product-import')
     expect(all).not.toContain('test:browser:ops:jit')
   })
 
@@ -224,7 +231,7 @@ describe('browser gate entrypoints', () => {
     expect(configMatched.size, 'the config matched nothing, so the ledger credit is vacuous').toBeGreaterThan(0)
     expect([...configMatched].filter(file => !file.startsWith(`${DOGFOOD_DIR}/`))).toEqual([])
 
-    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, spec('ops-jit-isolated.spec.js')])
+    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_MATRIX_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, spec('ops-jit-isolated.spec.js')])
     const configOnly = [...configMatched].filter(file => !runByBrowserScripts.has(file)).sort()
     expect(configOnly.length, 'an empty claim list would make this assertion vacuous').toBeGreaterThan(0)
     expect(configOnly).toEqual(CONFIG_ONLY_BROWSER_SPECS)

@@ -23,6 +23,32 @@ describe('MCP method contract', () => {
   ] as const
   const campaignControlMethods = ['campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed'] as const
 
+  it('returns Chinese validation explanations while preserving protocol field names', () => {
+    expect(validateMcpRequest(null).errors).toEqual(['请求必须是对象'])
+    expect(validateMcpRequest({ jsonrpc: '1.0', id: true, method: 'missing.method' }).errors).toEqual([
+      'jsonrpc 必须为 2.0', 'id 必须是字符串、数字或 null', 'method 不在允许的 MCP 方法列表中',
+    ])
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'catalog.search', params: [] }).errors).toEqual(['params 必须是对象'])
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'delivery.bundle.verify', params: { manifest_json: '{broken' } }).errors).toContain('params.manifest_json 必须是有效的 JSON')
+  })
+
+  it('accepts the combined merchant and platform account directory filter', () => {
+    expect(validateMcpRequest({
+      jsonrpc: '2.0', id: 'ops-users-all', method: 'ops.users.list', params: { account_type: 'all', limit: '10', offset: '0' },
+    })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({
+      jsonrpc: '2.0', id: 'ops-users-invalid', method: 'ops.users.list', params: { account_type: 'other' },
+    }).valid).toBe(false)
+  })
+
+  it('requires an explicit tenant workspace for canonical backfill control-plane operations', () => {
+    const list = { jsonrpc: '2.0' as const, id: 'canonical-conflicts', method: 'ops.canonical.backfill.conflicts.list', params: { workspace_id: 'ws_target', limit: '100' } }
+    expect(validateMcpRequest(list)).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ ...list, params: { limit: '100' } }).valid).toBe(false)
+    expect(MCP_METHOD_SCHEMAS['ops.canonical.backfill.create'].required).toContain('workspace_id')
+    expect(MCP_METHOD_SCHEMAS['ops.canonical.backfill.conflict.resolve'].required).toContain('workspace_id')
+  })
+
   it('keeps the legacy methods and exposes the complete merchant workflow', () => {
     expect(MCP_METHODS.filter(method => !['workspace.interactive.confirm', 'task.resume', 'catalog.title.accept', 'catalog.sku.update', 'catalog.product.update', 'ops.marketing.queue.assign', 'ops.marketing.visual.review', 'automation.tick', 'ops.session', 'brand-unit.list', 'brand-unit.create', 'brand-unit.bind-store', 'brand-unit.product.create', 'brand-unit.listing.create', 'brand-unit.listing.list', 'campaign.batch.create', 'campaign.batch.get', 'campaign.batch.generate'].includes(method)).filter(method => !method.startsWith('ops.commercial.model-markup.'))).toEqual(expect.arrayContaining([
       'merchant.start', 'merchant.first_value', 'workspace.health', 'workspace.bootstrap', 'workspace.metrics', 'workspace.commercial.get', 'workspace.commercial.update', 'workspace.usage.get', 'ops.audit.list', 'ops.audit.detail', 'ops.audit.export', 'ops.data.delete.list', 'ops.data.delete.cancel', 'ops.data.delete.approve', 'ops.members.list', 'ops.workspaces.list', 'ops.commercial.offers.list', 'ops.commercial.offer.upsert', 'ops.commercial.addons.list', 'ops.commercial.addon.upsert', 'ops.commercial.coupons.list', 'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list', 'ops.commercial.rollout.upsert', 'ops.growth.funnel', 'ops.alerts.list', 'ops.alert.ack', 'ops.marketing.queue', 'ops.marketing.generation.retry', 'ops.marketing.asset_scan.retry', 'ops.marketing.publish.acknowledge', 'ops.marketing.revision.create', 'ops.member.upsert', 'ops.member.suspend', 'subscription.get', 'subscription.orders.list', 'subscription.order.create', 'subscription.change', 'billing.usage.consume', 'billing.usage.refund', 'billing.refund', 'billing.reconciliation', 'billing.reconciliation.run', 'billing.export', 'platform.settings.get', 'platform.settings.update', 'platform.model.status', 'billing.status', 'billing.recharge.create', 'billing.recharge.get', 'billing.transactions', 'workspace.deactivate', 'workspace.activate', 'workspace.data.delete.request', 'platform.connect', 'platform.store.alias.set', 'catalog.search', 'catalog.categories', 'catalog.title.optimize', 'catalog.import', 'catalog.import.batch', 'catalog.facts.confirm', 'catalog.product.disable', 'catalog.product.enable', 'catalog.image.generate', 'catalog.image.get', 'catalog.image.review', 'sync.retry_failed', 'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'rule.publish', 'rule.status', 'asset.list', 'asset.parse', 'asset.facts.confirm', 'asset.preference.update', 'brand.get', 'brand.extract', 'brand.upsert', 'brand.tone.preview', 'asset.upload', 'asset.upload.batch', 'asset.scan', 'asset.rights.update', 'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'deliverable.list', 'task.history', 'task.clone', 'task.timeline', 'feedback.list', 'feedback.submit', 'platform.revoke', 'task.create', 'task.answer', 'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create',
@@ -74,6 +100,16 @@ describe('MCP method contract', () => {
     expect(request({ job_id: ' ' }).valid).toBe(false)
   })
 
+  it('requires a ticket, task, or order scope for customer-visible support replies', () => {
+    const request = (params: Record<string, string>) => validateMcpRequest({ jsonrpc: '2.0', id: 'support-replies', method: 'support.customer.replies.list', params })
+    expect(MCP_METHOD_SCHEMAS['support.customer.replies.list'].requiredAnyOf).toEqual(['ticket_id', 'related_task_id', 'related_order_id'])
+    expect(request({}).valid).toBe(false)
+    expect(request({ limit: '10' })).toMatchObject({ valid: false, errors: ['以下参数至少填写一项：params.ticket_id、params.related_task_id、params.related_order_id'] })
+    expect(request({ ticket_id: 'ticket_1' }).valid).toBe(true)
+    expect(request({ related_task_id: 'task_1' }).valid).toBe(true)
+    expect(request({ related_order_id: 'order_1' }).valid).toBe(true)
+  })
+
   it('declares exact bounded public rule draft review inputs', () => {
     expect(getMcpMethodContract('ops.rules.public.drafts.list')?.params.required).toBeUndefined()
     expect(MCP_METHOD_SCHEMAS['ops.rules.public.drafts.list'].properties?.limit).toMatchObject({ pattern: '^(?:[1-9]|[1-9][0-9]|100)$' })
@@ -91,7 +127,7 @@ describe('MCP method contract', () => {
   it.each(['https://example.com/contract.pdf', ' https://example.com/contract.pdf ', 'http://insecure.example/contract.pdf', '//example.com/contract.pdf', 'data:application/pdf;base64,JVBERg==', 'not-a-ref', '', 'asset:', 123, false, {}, []].map(contractRef => ({ contractRef })))('rejects external URLs and malformed customer delivery contract evidence: $contractRef', ({ contractRef }) => {
     const base = { jsonrpc: '2.0' as const, id: 'contract', method: 'ops.customer-delivery.update', params: { target_workspace_id: 'ws_1', delivery_id: 'cd_1', expected_revision: '1' } }
     const validation = validateMcpRequest({ ...base, params: { ...base.params, patch_json: JSON.stringify({ contractRef }) } })
-    expect(validation).toEqual({ valid: false, errors: ['params.patch_json.contractRef must be an uploaded asset_ref or null; external URLs are not accepted'] })
+    expect(validation).toEqual({ valid: false, errors: ['params.patch_json.contractRef 必须是已上传的 asset_ref 或 null，不能使用外部网址'] })
   })
 
   it.each(['asset_ref_contract-1', 'asset_ref:contract-1', 'asset_contract-1', 'asset:contract-1', 'asset://contract-1', ' \tasset_ref_contract-1\u00a0', null, undefined])('preserves contract asset references and nullable draft fields: %j', contractRef => {
@@ -124,9 +160,9 @@ describe('MCP method contract', () => {
       jsonrpc: '2.0', id: 'scan-retry-invalid', method: 'ops.marketing.asset_scan.retry',
       params: { asset_id: 'asset_1', event_id: 'event_1', expected_asset_revision: '0', idempotency_key: 'short', reason: 'no' },
     }).errors).toEqual(expect.arrayContaining([
-      'params.expected_asset_revision has an invalid format',
-      'params.idempotency_key must contain at least 8 characters',
-      'params.reason must contain at least 3 characters',
+      'params.expected_asset_revision 格式无效',
+      'params.idempotency_key 至少需要 8 个字符',
+      'params.reason 至少需要 3 个字符',
     ]))
   })
 
@@ -180,9 +216,9 @@ describe('MCP method contract', () => {
     }
     const method = 'ops.marketing.publish.manual-evidence.record'
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-report', method, params: validParams })).toEqual({ valid: true, errors: [] })
-    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-verified', method, params: { ...validParams, status: 'platform_verified' } }).errors).toContain('params.status has an unsupported value')
-    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-published', method, params: { ...validParams, status: 'published' } }).errors).toContain('params.status has an unsupported value')
-    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-fake-receipt', method, params: { ...validParams, platform_verified: 'true' } }).errors).toContain(`params.platform_verified is not accepted for ${method}`)
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-verified', method, params: { ...validParams, status: 'platform_verified' } }).errors).toContain('params.status 的值不受支持')
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-published', method, params: { ...validParams, status: 'published' } }).errors).toContain('params.status 的值不受支持')
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-fake-receipt', method, params: { ...validParams, platform_verified: 'true' } }).errors).toContain(`${method} 不接受参数 params.platform_verified`)
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-get', method: 'publish.manual.get', params: { manual_publish_report_id: 'manual_report_1' } })).toEqual({ valid: true, errors: [] })
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-list', method: 'publish.manual.list', params: { task_id: 'task_1', limit: '20', offset: '0' } })).toEqual({ valid: true, errors: [] })
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-list-invalid', method: 'publish.manual.list', params: { limit: '0' } }).valid).toBe(false)
@@ -209,18 +245,18 @@ describe('MCP method contract', () => {
     const base = { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', checklist_key: 'system_integration', expected_revision: '1' }
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-completed', method: 'ops.customer-delivery.checklist.update', params: { ...base, checklist_key: 'customer_profile', completed: 'false' } })).toEqual({ valid: true, errors: [] })
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-items', method: 'ops.customer-delivery.checklist.update', params: { ...base, items_json: '[]' } })).toEqual({ valid: true, errors: [] })
-    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-wrong-shape', method: 'ops.customer-delivery.checklist.update', params: { ...base, items_json: '{}' } }).errors).toContain('params.items_json must be a JSON array')
-    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'patch-wrong-shape', method: 'ops.customer-delivery.update', params: { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', expected_revision: '1', patch_json: '[]' } }).errors).toContain('params.patch_json must be a JSON object')
-    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-neither', method: 'ops.customer-delivery.checklist.update', params: base }).errors).toContain('params.completed or items_json is required')
-    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-both', method: 'ops.customer-delivery.checklist.update', params: { ...base, completed: 'true', items_json: '[]' } }).errors).toContain('params.completed and items_json are mutually exclusive')
-    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-no-target', method: 'ops.customer-delivery.checklist.update', params: { ...base, target_workspace_id: '', completed: 'true' } }).errors).toContain('params.target_workspace_id is required')
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-wrong-shape', method: 'ops.customer-delivery.checklist.update', params: { ...base, items_json: '{}' } }).errors).toContain('params.items_json 必须是 JSON 数组')
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'patch-wrong-shape', method: 'ops.customer-delivery.update', params: { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', expected_revision: '1', patch_json: '[]' } }).errors).toContain('params.patch_json 必须是 JSON 对象')
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-neither', method: 'ops.customer-delivery.checklist.update', params: base }).errors).toContain('以下参数至少填写一项：params.completed、params.items_json')
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-both', method: 'ops.customer-delivery.checklist.update', params: { ...base, completed: 'true', items_json: '[]' } }).errors).toContain('以下参数不能同时填写：params.completed、params.items_json')
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-no-target', method: 'ops.customer-delivery.checklist.update', params: { ...base, target_workspace_id: '', completed: 'true' } }).errors).toContain('缺少必填参数 params.target_workspace_id')
   })
 
   it.each(['true', 'false'])('restricts scalar checklist completed=%s to customer_profile', completed => {
     const params = { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', expected_revision: '1', completed }
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'profile-scalar', method: 'ops.customer-delivery.checklist.update', params: { ...params, checklist_key: 'customer_profile' } })).toEqual({ valid: true, errors: [] })
     for (const checklist_key of ['system_integration', 'functional_acceptance']) {
-      expect(validateMcpRequest({ jsonrpc: '2.0', id: 'derived-scalar', method: 'ops.customer-delivery.checklist.update', params: { ...params, checklist_key } }).errors).toContain('params.completed is only accepted for checklist_key customer_profile; use items_json or checklist-item.update')
+      expect(validateMcpRequest({ jsonrpc: '2.0', id: 'derived-scalar', method: 'ops.customer-delivery.checklist.update', params: { ...params, checklist_key } }).errors).toContain('仅当 params.checklist_key 为 customer_profile 时才能提供 params.completed；其他情况请使用 items_json 或 checklist-item.update')
     }
   })
 
@@ -229,18 +265,18 @@ describe('MCP method contract', () => {
     const profile = { companyName: '客户企业', contractNumber: 'C-2026-01', paymentStatus: 'paid', contractRef: 'asset_ref_contract_1', projectOwner: '负责人', supportOwner: '支持人', paymentDate: '2026-09-14', paymentEvidenceRefs: ['asset_ref_payment_1'], plannedGoLiveAt: '2026-10-01T01:00:00.000Z', customerProfileStatus: 'incomplete' }
     expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: JSON.stringify(profile) } })).toEqual({ valid: true, errors: [] })
     for (const field of ['systemIntegrationStatus', 'functionalAcceptanceStatus', 'trainingCompleted', 'trainingEvidenceRefs', 'effectiveAt', 'unknown']) {
-      expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: JSON.stringify({ ...profile, [field]: null }) } }).errors).toContain(`params.patch_json.${field} is not accepted for customer delivery profile updates`)
+      expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: JSON.stringify({ ...profile, [field]: null }) } }).errors).toContain(`更新客户交付档案时不接受 params.patch_json.${field}`)
     }
   })
 
   it.each(['true', 'false'])('requires strict training evidence JSON even for completed=%s', completed => {
     const request = { jsonrpc: '2.0', id: 'training-evidence', method: 'ops.customer-delivery.training.complete', params: { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', expected_revision: '1', completed } }
-    expect(validateMcpRequest(request).errors).toContain('params.evidence_refs_json is required')
+    expect(validateMcpRequest(request).errors).toContain('缺少必填参数 params.evidence_refs_json')
     expect(MCP_METHOD_SCHEMAS['ops.customer-delivery.training.complete'].properties.evidence_refs_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array', maxLength: 16_384 })
     expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json: '[]' } })).toEqual({ valid: true, errors: [] })
     expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json: '["asset_ref_training_1"]' } })).toEqual({ valid: true, errors: [] })
-    for (const evidence_refs_json of ['not-json', '["asset_ref_training_1",]']) expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json } }).errors).toContain('params.evidence_refs_json must be valid JSON')
-    for (const evidence_refs_json of ['{}', 'null', '"asset_ref_training_1"']) expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json } }).errors).toContain('params.evidence_refs_json must be a JSON array')
+    for (const evidence_refs_json of ['not-json', '["asset_ref_training_1",]']) expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json } }).errors).toContain('params.evidence_refs_json 必须是有效的 JSON')
+    for (const evidence_refs_json of ['{}', 'null', '"asset_ref_training_1"']) expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json } }).errors).toContain('params.evidence_refs_json 必须是 JSON 数组')
   })
 
   it('publishes completion evidence requirements without claiming static validation proves clean scans', () => {
@@ -251,7 +287,7 @@ describe('MCP method contract', () => {
       const params = { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', checklist_key, expected_revision: '1' }
       expect(validateMcpRequest({ jsonrpc: '2.0', id: 'item-evidence', method: 'ops.customer-delivery.checklist-item.update', params: { ...params, item_key: 'test-item', completed: 'true', evidence_json: '{"asset_refs":["asset_ref_evidence_1"]}' } })).toEqual({ valid: true, errors: [] })
       expect(validateMcpRequest({ jsonrpc: '2.0', id: 'batch-evidence', method: 'ops.customer-delivery.checklist.update', params: { ...params, items_json: '[{"itemKey":"test-item","completed":true,"evidence":{"asset_refs":["asset_ref_evidence_1"]}}]' } })).toEqual({ valid: true, errors: [] })
-      expect(validateMcpRequest({ jsonrpc: '2.0', id: 'wrong-item-evidence', method: 'ops.customer-delivery.checklist-item.update', params: { ...params, item_key: 'test-item', completed: 'true', evidence_json: '[]' } }).errors).toContain('params.evidence_json must be a JSON object')
+      expect(validateMcpRequest({ jsonrpc: '2.0', id: 'wrong-item-evidence', method: 'ops.customer-delivery.checklist-item.update', params: { ...params, item_key: 'test-item', completed: 'true', evidence_json: '[]' } }).errors).toContain('params.evidence_json 必须是 JSON 对象')
     }
   })
 
@@ -345,6 +381,9 @@ describe('MCP method contract', () => {
     })
     expect(MCP_METHOD_SCHEMAS['ops.user.session.revoke'].required).toEqual(['identity_id', 'session_id', 'expected_revision', 'idempotency_key', 'reason'])
     expect(MCP_METHOD_SCHEMAS['billing.model-usage.reconciliation.run']).toMatchObject({ properties: { limit: { type: 'string' } } })
+    expect(MCP_METHOD_SCHEMAS['billing.model-usage.statement'].properties?.manual_attention_cursor).toMatchObject({ type: 'string', maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'billing.model-usage.statement', params: { manual_attention_cursor: 'eyJ2IjoxfQ' } })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'billing.model-usage.statement', params: { manual_attention_cursor: '../bad' } }).valid).toBe(false)
     expect(MCP_METHOD_SCHEMAS['billing.model-usage.resolve']).toMatchObject({
       required: ['usage_id', 'revision', 'decision', 'reason', 'evidence_ref'],
       properties: {
@@ -449,8 +488,8 @@ describe('MCP method contract', () => {
         reason: validParams.reason,
       },
     }).errors).toEqual(expect.arrayContaining([
-      'params.confirmation_ticket_nonce_hash is required',
-      'params.confirmation_ticket_intent_hash is required',
+      '缺少必填参数 params.confirmation_ticket_nonce_hash',
+      '缺少必填参数 params.confirmation_ticket_intent_hash',
     ]))
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 'image-select-invalid', method: 'catalog.image.select',
@@ -460,8 +499,8 @@ describe('MCP method contract', () => {
         confirmation_ticket_intent_hash: 'g'.repeat(64),
       },
     }).errors).toEqual(expect.arrayContaining([
-      'params.confirmation_ticket_nonce_hash has an invalid format',
-      'params.confirmation_ticket_intent_hash has an invalid format',
+      'params.confirmation_ticket_nonce_hash 格式无效',
+      'params.confirmation_ticket_intent_hash 格式无效',
     ]))
   })
 
@@ -488,19 +527,19 @@ describe('MCP method contract', () => {
         unexpected_context: 'must remain rejected',
       },
     }).errors).toEqual(expect.arrayContaining([
-      'params.requested_platform has an unsupported value',
-      'params.requested_goal must be a non-empty string',
-      'params.attachment_count has an invalid format',
-      'params.idempotency_key must contain at least 8 characters',
-      'params.unexpected_context is not accepted for merchant.start',
+      'params.requested_platform 的值不受支持',
+      'params.requested_goal 必须是非空字符串',
+      'params.attachment_count 格式无效',
+      'params.idempotency_key 至少需要 8 个字符',
+      'merchant.start 不接受参数 params.unexpected_context',
     ]))
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 'start-number', method: 'merchant.start', params: { attachment_count: 1 },
-    }).errors).toContain('params.attachment_count must be a non-empty string')
+    }).errors).toContain('params.attachment_count 必须是非空字符串')
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 'start-max', method: 'merchant.start',
       params: { requested_goal: 'x'.repeat(2_001), attachment_count: '20' },
-    }).errors).toContain('params.requested_goal must contain at most 2000 characters')
+    }).errors).toContain('params.requested_goal 最多允许 2000 个字符')
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'task.create',
       params: { product_id: 'prod_1', platform: 'taobao' },
@@ -511,7 +550,7 @@ describe('MCP method contract', () => {
     }).valid).toBe(false)
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'catalog.search', params: { raw_sql: 'select 1' },
-    }).errors).toContain('params.raw_sql is not accepted for catalog.search')
+    }).errors).toContain('catalog.search 不接受参数 params.raw_sql')
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'content.export', params: { content_version_id: 'cv_1', format: 'pdf' },
     }).valid).toBe(false)
@@ -531,7 +570,7 @@ describe('MCP method contract', () => {
     })).toEqual({ valid: true, errors: [] })
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'merchant.first_value', params: { publish: true },
-    }).errors).toContain('params.publish is not accepted for merchant.first_value')
+    }).errors).toContain('merchant.first_value 不接受参数 params.publish')
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'ops.user.risk.transition',
       params: { identity_id: 'identity_1', risk_level: 'critical', risk_decision: 'block', expected_revision: '2', idempotency_key: 'risk-1', reason: 'credential abuse', evidence_json: '{"signal":"impossible_travel"}' },
@@ -552,7 +591,7 @@ describe('MCP method contract', () => {
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'billing.model-usage.resolve',
       params: { usage_id: 'usage_1', revision: '4', decision: 'waive', reason: 'approved service credit' },
-    }).errors).toContain('params.evidence_ref is required')
+    }).errors).toContain('缺少必填参数 params.evidence_ref')
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'billing.model-usage.resolve',
       params: { usage_id: 'usage_1', revision: '4', decision: 'settled', reason: 'unsupported decision', actor_id: 'caller-controlled' },
@@ -561,9 +600,9 @@ describe('MCP method contract', () => {
       jsonrpc: '2.0', id: 1, method: 'ops.support.ticket.transition',
       params: { ticket_id: 'ticket_1', status: 'resolved', reason: 'ok', expected_revision: '0', idempotency_key: 'short' },
     }).errors).toEqual(expect.arrayContaining([
-      'params.reason must contain at least 3 characters',
-      'params.expected_revision has an invalid format',
-      'params.idempotency_key must contain at least 8 characters',
+      'params.reason 至少需要 3 个字符',
+      'params.expected_revision 格式无效',
+      'params.idempotency_key 至少需要 8 个字符',
     ]))
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'ops.feature-flag.emergency.set',
@@ -576,11 +615,11 @@ describe('MCP method contract', () => {
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 3, method: 'platform.media.spec.update',
       params: { id: 'spec_1', patch_json: '[]', expected_revision: '2', idempotency_key: 'media:update:2', reason: 'wrong structured shape' },
-    }).errors).toContain('params.patch_json must be a JSON object')
+    }).errors).toContain('params.patch_json 必须是 JSON 对象')
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 4, method: 'delivery.bundle.verify',
       params: { manifest_json: '{}', files_json: '{"path":"manifest.json"}', expected_manifest_hash: 'a'.repeat(64) },
-    }).errors).toContain('params.files_json must be a JSON array')
+    }).errors).toContain('params.files_json 必须是 JSON 数组')
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 5, method: 'campaign.batch.pause',
       params: { campaign_id: 'campaign_1', expected_revision: '3', idempotency_key: 'campaign:pause:1', reason: 'operator requested pause' },
@@ -589,40 +628,40 @@ describe('MCP method contract', () => {
       jsonrpc: '2.0', id: 6, method: 'campaign.batch.retry_failed',
       params: { campaign_id: 'campaign_1', expected_revision: '0', idempotency_key: 'short', reason: 'no' },
     }).errors).toEqual(expect.arrayContaining([
-      'params.expected_revision has an invalid format',
-      'params.idempotency_key must contain at least 8 characters',
-      'params.reason must contain at least 3 characters',
+      'params.expected_revision 格式无效',
+      'params.idempotency_key 至少需要 8 个字符',
+      'params.reason 至少需要 3 个字符',
     ]))
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 7, method: 'campaign.batch.retry_failed',
       params: { campaign_id: 'campaign_1', item_ids_json: '{}', expected_revision: '3', idempotency_key: 'campaign:retry:1', reason: 'retry selected failed items' },
-    }).errors).toContain('params.item_ids_json must be a JSON array')
+    }).errors).toContain('params.item_ids_json 必须是 JSON 数组')
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'ops.finance.search',
       params: { text: 'x'.repeat(201), provider_transaction_id: 'full-secret-reference' },
     }).errors).toEqual(expect.arrayContaining([
-      'params.text must contain at most 200 characters',
-      'params.provider_transaction_id is not accepted for ops.finance.search',
+      'params.text 最多允许 200 个字符',
+      'ops.finance.search 不接受参数 params.provider_transaction_id',
     ]))
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'ops.finance.search', params: { limit: '101' },
-    }).errors).toContain('params.limit has an invalid format')
+    }).errors).toContain('params.limit 格式无效')
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'ops.audit.detail', params: { source: 'incident', id: 'incident:evt_1' },
     })).toEqual({ valid: true, errors: [] })
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'ops.audit.detail', params: { source: 'payments', id: 'evt_1', raw_payload: '{}' },
     }).errors).toEqual(expect.arrayContaining([
-      'params.source has an unsupported value',
-      'params.raw_payload is not accepted for ops.audit.detail',
+      'params.source 的值不受支持',
+      'ops.audit.detail 不接受参数 params.raw_payload',
     ]))
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'ops.member.upsert',
       params: { external_subject: 'member_1', role: 'support' },
-    }).errors).toContain('params.reason is required')
+    }).errors).toContain('缺少必填参数 params.reason')
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'ops.member.suspend',
       params: { external_subject: 'member_1', reason: 'security review' },
-    }).errors).toContain('params.expected_revision is required')
+    }).errors).toContain('缺少必填参数 params.expected_revision')
   })
 })

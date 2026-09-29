@@ -19,6 +19,9 @@ describe("models page sections", () => {
       model: {
         canModelMarkup: false,
         canModelMarkupUpdate: false,
+        modelStatusLoading: false,
+        dataSetError: () => undefined,
+        dataSource: { fixtureDataPresent: false },
       } as unknown as OpsConsoleModel,
     }));
 
@@ -28,11 +31,7 @@ describe("models page sections", () => {
     expect(markup).not.toContain("Revision");
   });
 
-  it("renders the merged-model notice and the billing markup controls without a redundant hero", () => {
-    // This case used to grep the page source for the retired 模型服务 anchors
-    // and their headings, which the source satisfied from a comment alone - it
-    // stayed green while the page rendered none of them. Assert on what is
-    // rendered instead, so a comment can never satisfy it again.
+  it("renders the screenshot-aligned merged billing page and authorized controls", () => {
     const markup = renderToStaticMarkup(createElement(ModelsPage, {
       model: {
         canModelMarkup: true,
@@ -41,6 +40,9 @@ describe("models page sections", () => {
         modelMarkupLoading: false,
         modelMarkupError: "",
         modelMarkupReason: "",
+        modelStatusLoading: false,
+        dataSetError: () => undefined,
+        dataSource: { fixtureDataPresent: false },
         setModelMarkup: vi.fn(),
         setModelMarkupReason: vi.fn(),
         saveModelMarkup: vi.fn(async () => undefined),
@@ -48,15 +50,11 @@ describe("models page sections", () => {
       } as unknown as OpsConsoleModel,
     }));
 
-    expect(markup).not.toContain("ops-models-hero");
+    expect(markup).toContain("模型计费设置");
     expect(markup).toContain("模型服务页已合并");
     expect(markup).toContain("Token 成本倍率");
     expect(markup).toContain("Token 计费倍率");
-    expect(markup).toContain("模型计费设置");
-    // None of the retired anchors exist in rendered output, only in the
-    // explanatory comment.
-    expect(markup).not.toContain("BILLING CONTROL");
-    expect(markup).not.toContain("models-runtime-heading");
+    expect(markup).toContain("MODEL BILLING");
     expect(markup).not.toContain("模型服务关键指标");
   });
 });

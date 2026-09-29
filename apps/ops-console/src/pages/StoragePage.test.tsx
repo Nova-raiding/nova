@@ -37,6 +37,6 @@ describe("StoragePage platform reconciliation list", () => {
     const markup = renderToStaticMarkup(<StoragePage model={model(["storage.reconciliation.read"])} />);
 
     expect(markup).not.toContain("当前会话没有平台存储对账读取权限");
-    expect(markup).toContain("暂无 workspace 级对账结果");
+    expect(markup).toContain("暂无可验证的对象清单对账结果");
   });
 });

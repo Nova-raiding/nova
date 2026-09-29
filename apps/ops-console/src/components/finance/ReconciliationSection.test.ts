@@ -154,4 +154,104 @@ describe("ReconciliationSection finance actions", () => {
     expect(html).toContain("错误码：");
     expect(html).toContain("MODEL_WALLET_SETTLEMENT_FAILED");
   });
+
+  it("surfaces orphaned reconciliation actions without offering usage settlement actions", () => {
+    const html = renderSection({
+      modelUsageReconciliationReport: {
+        state: "attention_required",
+        settled: [],
+        pending: [],
+        orphaned_actions: [{
+          action_id: "action-orphan-17",
+          status: "manual_attention",
+          code: "MODEL_USAGE_RECEIPT_ROW_MISSING",
+        }],
+      },
+    });
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("模型结算需要关注：attention_required");
+    expect(html).toContain("action-orphan-17");
+    expect(html).toContain("MODEL_USAGE_RECEIPT_ROW_MISSING");
+    expect(html).toContain("没有模型用量回执，不提供重试或豁免操作");
+    expect(html).not.toContain('aria-label="重试模型用量结算 action-orphan-17"');
+    expect(html).not.toContain('aria-label="豁免模型用量结算 action-orphan-17"');
+  });
+
+  it("treats reconciliation reports with pending work as attention, even without orphan rows", () => {
+    const html = renderSection({
+      modelUsageReconciliationReport: {
+        state: "attention_required",
+        settled: [],
+        pending: [{}],
+        orphaned_actions: [],
+      },
+    });
+
+    expect(html).toContain("待处理 1 项，孤立调用 0 项");
+    expect(html).not.toContain("模型结算完成");
+  });
+
+  it("renders paged historical manual_attention evidence as read-only rows", () => {
+    const reconciliation = {
+      ...reconciliationFixture,
+      model_usage_scope: "workspace",
+      action_ledger: {
+        manual_attention: {
+          items: [{
+            action_id: "model-call-history-9",
+            action_kind: "model_text",
+            settlement_status: "manual_attention",
+            created_at: "2026-09-20T10:00:00.000Z",
+          }],
+          limit: 50,
+          has_more: true,
+          next_cursor: "opaque-cursor",
+        },
+      },
+    };
+    const html = renderSection({
+      reconciliation: reconciliation as never,
+      loadMoreManualAttention: vi.fn(),
+    });
+
+    expect(html).toContain('aria-label="模型人工关注历史记录"');
+    expect(html).toContain("模型调用人工关注历史");
+    expect(html).toContain("model-call-history-9");
+    expect(html).toContain("model_text");
+    expect(html).toContain("manual_attention");
+    expect(html).toContain("发现时间");
+    expect(html).toContain("还有更多记录");
+    expect(html).toContain('aria-label="加载更多模型人工关注历史"');
+    expect(html).toContain("只读历史证据");
+    expect(html).not.toContain('aria-label="重试模型用量结算 model-call-history-9"');
+    expect(html).not.toContain('aria-label="豁免模型用量结算 model-call-history-9"');
+  });
+
+  it("announces manual attention history pagination errors without reporting an empty list", () => {
+    const html = renderSection({
+      reconciliation: reconciliationFixture as never,
+      manualAttentionError: "下一页读取超时",
+    });
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("人工关注历史读取失败");
+    expect(html).toContain("下一页读取超时");
+    expect(html).not.toContain("当前页没有模型人工关注记录");
+  });
+
+  it("distinguishes a successfully loaded empty manual attention page from unavailable data", () => {
+    const reconciliation = {
+      ...reconciliationFixture,
+      action_ledger: {
+        manual_attention: { items: [], limit: 50, has_more: false, next_cursor: null },
+      },
+    };
+
+    const html = renderSection({ reconciliation: reconciliation as never });
+
+    expect(html).toContain("当前页没有模型人工关注记录");
+    expect(html).toContain("已到末页");
+    expect(html).not.toContain("正在读取模型人工关注历史");
+  });
 });

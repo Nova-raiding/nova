@@ -417,6 +417,8 @@ export interface WorkspaceMetrics {
   riskSummary: { total: number; returned: number; truncated: boolean }
   riskItems: Array<{ severity: 'high' | 'medium'; type: string; title?: string; platform?: PlatformId; accountId?: string; storeName?: string; status?: string; nextAction?: string; evidence?: { unboundLocalData?: boolean; fixtureData?: boolean; [key: string]: unknown } }>
   taskFunnel: Record<string, number>
+  /** Distinct tasks with a verified, real platform publish receipt in the requested activity window. */
+  completedTaskCount?: number
 }
 
 export interface Product {
@@ -1125,7 +1127,7 @@ export const fetchPlatformModelStatus = async (baseUrl: string): Promise<Platfor
   }
   return requestMcp<PlatformModelStatus>(baseUrl, 'platform.model.status')
 }
-export const fetchWorkspaceMetrics = (baseUrl: string) => requestMcp<WorkspaceMetrics>(baseUrl, 'workspace.metrics', { risk_limit: '100' })
+export const fetchWorkspaceMetrics = (baseUrl: string, period: { date_from?: string; date_to?: string } = {}) => requestMcp<WorkspaceMetrics>(baseUrl, 'workspace.metrics', { risk_limit: '100', ...period })
 /**
  * `idempotencyKey` is a required part of the call, not a convenience.
  *
@@ -1203,7 +1205,8 @@ export const fetchAssetStorageQuota = (baseUrl: string) => requestApi<ApiPage<As
 
 /**
  * One server-owned creative-point ledger entry, in the exact shape the server
- * sends. `pointsDelta` is negative for consumption.
+ * sends. Only settled rows contain actual consumption in `intent.actual_points`;
+ * reserve and adjustment deltas are not consumption.
  *
  * The authoritative contract is the producing repository DTO
  * (`packages/persistence/src/creative-point-repository.ts`,
@@ -1246,6 +1249,9 @@ function normalizeCreativePointStatementEntry(raw: unknown): CreativePointStatem
   const createdAt = typeof entry.createdAt === 'string' ? entry.createdAt : ''
   // A row the client cannot read is dropped — never coerced into a 0-点 row.
   if (!Number.isFinite(delta) || !createdAt || Number.isNaN(Date.parse(createdAt))) return null
+  const intent = entry.intent && typeof entry.intent === 'object' && !Array.isArray(entry.intent) ? entry.intent as Record<string, unknown> : null
+  const actualPoints = intent?.actual_points
+  if (entry.eventType === 'settled' && (typeof actualPoints !== 'number' || !Number.isSafeInteger(actualPoints) || actualPoints < 0)) return null
   const optionalNumber = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null
   return {
     id: typeof entry.id === 'string' ? entry.id : `${createdAt}:${delta}`,
@@ -1260,7 +1266,7 @@ function normalizeCreativePointStatementEntry(raw: unknown): CreativePointStatem
     settledAfter: optionalNumber(entry.settledAfter),
     accessRevision: Number.isFinite(Number(entry.accessRevision)) ? Number(entry.accessRevision) : 0,
     createdAt,
-    intent: entry.intent && typeof entry.intent === 'object' && !Array.isArray(entry.intent) ? entry.intent as Record<string, unknown> : {},
+    intent: intent ?? {},
     grantSourceType: typeof entry.grantSourceType === 'string' ? entry.grantSourceType : null,
     grantSourceId: typeof entry.grantSourceId === 'string' ? entry.grantSourceId : null,
   }
@@ -1361,15 +1367,18 @@ export const parseAsset = (baseUrl: string, assetId: string) => requestApi<Asset
 export async function fetchAssetBlob(baseUrl: string, assetId: string, signal?: AbortSignal): Promise<Blob> {
   const headers = new Headers({ accept: 'application/octet-stream' })
   const workspaceId = configuredWorkspaceId()
-  if (!workspaceId && !baseUrl.trim().startsWith('/')) {
+  const sameOriginProxy = baseUrl.trim().startsWith('/')
+  if (!workspaceId && !sameOriginProxy) {
     const error = new Error('商家工作区未配置，已阻止素材请求') as ApiError
     error.code = 'API_WORKSPACE_ID_MISSING'
     throw error
   }
-  if (workspaceId) headers.set('x-workspace-id', workspaceId)
+  // In the same-origin session flow the HttpOnly cookie owns the workspace;
+  // a build-time demo ID must never override that authenticated scope.
+  if (workspaceId && !sameOriginProxy) headers.set('x-workspace-id', workspaceId)
   const token = runtimeConfig('VITE_API_TOKEN')
   if (token) headers.set('authorization', `Bearer ${token}`)
-  const response = await fetch(apiUrl(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/download`), { headers, signal })
+  const response = await fetch(apiUrl(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/download`), { headers, signal, credentials: 'include' })
   if (!response.ok) {
     const error = new Error(`素材读取失败：HTTP ${response.status}`) as ApiError
     error.status = response.status

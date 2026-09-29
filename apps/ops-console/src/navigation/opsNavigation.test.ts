@@ -116,6 +116,22 @@ describe("operations navigation", () => {
     expect(visible).not.toContain("feature-flags");
   });
 
+  it("projects sidebar domains from active workbench-scoped permissions with deny taking precedence", () => {
+    const platform = createAuthorizationProjection({
+      actor_id: "actor_1", workspace_id: "platform", roles: [], canonical_roles: ["ops_admin"],
+      workspace_granted: true, workbench: "platform", scope: { type: "platform" },
+      capabilities: ["identity.read", "billing.platform.read"],
+      effective_permissions: [
+        { capability: "identity.read", effect: "allow", scope: { type: "platform" } },
+        { capability: "billing.platform.read", effect: "deny", scope: { type: "platform" } },
+        { capability: "rule.read", effect: "allow", scope: { type: "workspace", id: "ws_other" } },
+      ],
+    }, true);
+    expect(visibleOpsDomains(platform)).toContain("users");
+    expect(visibleOpsDomains(platform)).not.toContain("finance");
+    expect(visibleOpsDomains(platform)).not.toContain("rules");
+  });
+
   // 365c5d84 withdrew `/ops/finance` and this assertion was inverted to pin the
   // canonicalization to overview. The owner reversed that on 2026-09-20
   // (docs/qa/four-product-decisions-2026-09-20.md, option A restore), so the

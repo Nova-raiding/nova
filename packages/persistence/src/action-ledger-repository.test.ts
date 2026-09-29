@@ -40,6 +40,63 @@ describe('MemoryActionLedgerRepository', () => {
     expect(record).toMatchObject({ settlement: 'entitlement', amountFen: 0, state: 'settled' })
   })
 
+  it('pages durable model manual-attention actions by workspace, actor, and stable timestamp/id cursor', async () => {
+    const repository = new MemoryActionLedgerRepository()
+    const record = (workspaceId: string, actionKey: string, createdAt: string, actorId = 'finance_a', actionKind: 'model_text' | 'other' = 'model_text') => repository.record({ workspaceId, actionKey, actionKind, settlement: 'wallet_overage', units: 1, amountFen: 1, actorId, description: 'fixture', createdAt, settlementStatus: 'manual_attention' })
+    const sameTime = '2026-08-28T01:00:00.000Z'
+    const older = '2026-08-27T01:00:00.000Z'
+    const rows = await Promise.all([
+      record('ws_attention', 'a', sameTime),
+      record('ws_attention', 'b', sameTime),
+      record('ws_attention', 'c', older),
+      record('ws_attention', 'other-actor', older, 'finance_b'),
+      record('ws_attention', 'other-kind', older, 'finance_a', 'other'),
+      record('ws_other', 'other-workspace', sameTime),
+    ])
+
+    const first = await repository.listManualAttention({ workspaceId: 'ws_attention', actorId: 'finance_a', limit: 2 })
+    expect(first.items).toHaveLength(2)
+    expect(first.hasMore).toBe(true)
+    expect(first.nextCursor).toEqual({ createdAt: first.items[1]!.createdAt, id: first.items[1]!.id })
+    const second = await repository.listManualAttention({ workspaceId: 'ws_attention', actorId: 'finance_a', limit: 2, cursor: first.nextCursor })
+    expect(second.hasMore).toBe(false)
+    expect(second.items).toHaveLength(1)
+    expect([...first.items, ...second.items].map(row => row.actionKey)).toEqual(rows.slice(0, 3).sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.id.localeCompare(left.id)).map(row => row.actionKey))
+    expect([...first.items, ...second.items].every(row => row.workspaceId === 'ws_attention' && row.actorId === 'finance_a' && row.actionKind.startsWith('model_'))).toBe(true)
+    await expect(repository.listManualAttention({ workspaceId: '', limit: 10 })).rejects.toThrow('workspace scope is required')
+    await expect(repository.listManualAttention({ workspaceId: 'ws_attention', limit: 101 })).rejects.toThrow(RangeError)
+    await expect(repository.listManualAttention({ workspaceId: 'ws_attention', cursor: { createdAt: 'invalid', id: 'a' } })).rejects.toThrow('ACTION_LEDGER_CURSOR_INVALID')
+  })
+
+  it('keeps Memory microsecond ordering aligned with its keyset cursor', async () => {
+    const repository = new MemoryActionLedgerRepository()
+    const rows = [
+      { actionKey: 'micro-123456', createdAt: '2026-08-28T01:00:00.123456Z' },
+      { actionKey: 'micro-123789', createdAt: '2026-08-28T01:00:00.123789Z' },
+      { actionKey: 'micro-123455', createdAt: '2026-08-28T01:00:00.123455Z' },
+    ]
+    for (const row of rows) await repository.record({ workspaceId: 'ws_micro_cursor', ...row, actionKind: 'model_text', settlement: 'wallet_overage', units: 1, amountFen: 1, actorId: 'finance_a', description: 'fixture', settlementStatus: 'manual_attention' })
+    const first = await repository.listManualAttention({ workspaceId: 'ws_micro_cursor', limit: 1 })
+    const second = await repository.listManualAttention({ workspaceId: 'ws_micro_cursor', cursor: first.nextCursor, limit: 1 })
+    const third = await repository.listManualAttention({ workspaceId: 'ws_micro_cursor', cursor: second.nextCursor, limit: 1 })
+    expect([first.items[0]?.actionKey, second.items[0]?.actionKey, third.items[0]?.actionKey]).toEqual(['micro-123789', 'micro-123456', 'micro-123455'])
+    expect([first, second, third].map(page => page.hasMore)).toEqual([true, true, false])
+  })
+
+  it('scans only aged pending model receipts in oldest-first order, independent of unrelated ledger volume', async () => {
+    const repository = new MemoryActionLedgerRepository()
+    const insert = (workspaceId: string, actionKey: string, createdAt: string, actionKind: 'model_text' | 'other', settlementStatus: 'pending_receipt' | 'settled' = 'pending_receipt') => repository.record({ workspaceId, actionKey, createdAt, actionKind, settlement: 'included_quota', units: 1, amountFen: 0, actorId: 'merchant', description: 'fixture', settlementStatus })
+    for (let index = 0; index < 1200; index += 1) await insert('ws_orphan_scan', `unrelated_${index}`, '2026-08-28T00:00:00.000Z', 'other', 'settled')
+    await insert('ws_orphan_scan', 'recent_pending', '2026-09-29T00:00:00.000Z', 'model_text')
+    await insert('ws_orphan_scan', 'aged_newer', '2026-09-28T00:00:00.000Z', 'model_text')
+    await insert('ws_orphan_scan', 'aged_oldest', '2026-09-27T00:00:00.000Z', 'model_text')
+    await insert('ws_other_orphan_scan', 'foreign', '2026-09-26T00:00:00.000Z', 'model_text')
+
+    const rows = await repository.listPendingReceiptActions({ workspaceId: 'ws_orphan_scan', before: '2026-09-29T00:00:00.000Z', limit: 1 })
+    expect(rows.map(row => row.actionKey)).toEqual(['aged_oldest'])
+    await expect(repository.listPendingReceiptActions({ workspaceId: 'ws_orphan_scan', before: 'invalid' })).rejects.toThrow('ACTION_LEDGER_CUTOFF_INVALID')
+  })
+
   it('updates the wallet action to the provider-reported final amount', async () => {
     const repository = new MemoryActionLedgerRepository()
     await repository.record({ workspaceId: 'ws_action', actionKey: 'model:receipt', actionKind: 'model_text', settlement: 'wallet_overage', units: 1, amountFen: 1, actorId: 'merchant', description: '模型预扣', taskId: 'task_1', providerRequestId: 'relay_1', reservedAmountFen: 1, multiplier: 2.5, settlementStatus: 'authorized' })
@@ -107,6 +164,61 @@ describe('PostgresActionLedgerRepository', () => {
     expect(rows[0]).toMatchObject({ taskId: 'task_1', campaignItemId: 'item_1', contextLinkId: 'context_link_1' })
     const query = client.calls.find(call => call.text.includes('($2::text IS NULL OR task_id=$2)'))
     expect(query?.values).toEqual(['ws_action', 'task_1', 'item_1', 'context_link_1', 'a'.repeat(64), 25])
+  })
+
+  it('queries aged pending model receipts oldest-first without a generic ledger window', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue([postgresRow({ settlement_status: 'pending_receipt' })]); client.enqueue()
+    const rows = await new PostgresActionLedgerRepository(new RecordingPool(client)).listPendingReceiptActions({ workspaceId: 'ws_action', before: '2026-09-28T00:00:00.000Z', limit: 37 })
+    expect(rows).toHaveLength(1)
+    const query = client.calls.find(call => call.text.includes("settlement_status='pending_receipt'"))
+    expect(query?.text).toMatch(/a\.workspace_id=\$1/u)
+    expect(query?.text).toMatch(/a\.action_kind IN \('model_text','model_image','model_ocr','model_video'\)/u)
+    expect(query?.text).toMatch(/a\.created_at<\$2::timestamptz/u)
+    expect(query?.text).toMatch(/EXISTS \(SELECT 1 FROM creative_point_reservations r WHERE r\.workspace_id=a\.workspace_id AND r\.action_key=a\.action_key AND r\.status='active'\)/u)
+    expect(query?.text).toMatch(/NOT EXISTS \(SELECT 1 FROM model_usage_ledger u WHERE u\.workspace_id=a\.workspace_id AND u\.action_id=a\.action_key\)/u)
+    expect(query?.text).toMatch(/ORDER BY a\.created_at ASC,a\.id ASC LIMIT \$3/u)
+    expect(query?.values).toEqual(['ws_action', '2026-09-28T00:00:00.000Z', 37])
+  })
+
+  it('atomically rechecks the active point hold and missing usage row while locking the action', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue()
+    client.enqueue([postgresRow({ created_at: '2026-08-28T01:00:00.000Z', settlement_status: 'pending_receipt' })])
+    client.enqueue([{ status: 'active' }])
+    client.enqueue([])
+    client.enqueue([postgresRow({ created_at: '2026-08-28T01:00:00.000Z', settlement_status: 'manual_attention' })])
+    client.enqueue()
+    const repository = new PostgresActionLedgerRepository(new RecordingPool(client))
+
+    await expect(repository.markPendingReceiptOrphanForAttention({ workspaceId: 'ws_action', actionKey: 'model:receipt', before: '2026-09-28T00:00:00.000Z' }))
+      .resolves.toMatchObject({ actionKey: 'model:receipt', settlementStatus: 'manual_attention' })
+
+    const lock = client.calls.find(call => call.text.includes('FROM action_ledger WHERE workspace_id=$1 AND action_key=$2 FOR UPDATE'))
+    const reservation = client.calls.find(call => call.text.includes('FROM creative_point_reservations'))
+    const usage = client.calls.find(call => call.text.includes('FROM model_usage_ledger WHERE workspace_id=$1 AND action_id=$2'))
+    const update = client.calls.find(call => call.text.startsWith("UPDATE action_ledger SET settlement_status='manual_attention'"))
+    expect(lock).toBeDefined()
+    expect(reservation?.text).toContain('FOR UPDATE')
+    expect(usage?.values).toEqual(['ws_action', 'model:receipt'])
+    expect(update?.text).toContain("settlement_status='pending_receipt'")
+    expect(client.calls.at(-1)?.text).toBe('COMMIT')
+  })
+
+  it('uses tenant/status/actor/cursor predicates before the page limit for manual attention', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue();
+    client.enqueue([postgresRow({ id: 'action_2', created_at: '2026-08-28T01:00:00.123456Z', cursor_created_at: '2026-08-28 01:00:00.123456+00', settlement_status: 'manual_attention' }), postgresRow({ id: 'action_1', created_at: '2026-08-28T01:00:00.123456Z', cursor_created_at: '2026-08-28 01:00:00.123456+00', settlement_status: 'manual_attention' })]);
+    client.enqueue()
+    const page = await new PostgresActionLedgerRepository(new RecordingPool(client)).listManualAttention({ workspaceId: 'ws_action', actorId: 'finance_a', cursor: { createdAt: '2026-08-29T01:00:00.000Z', id: 'action_3' }, limit: 1 })
+    expect(page).toMatchObject({ items: [expect.objectContaining({ settlementStatus: 'manual_attention' })], hasMore: true, nextCursor: { createdAt: '2026-08-28 01:00:00.123456+00', id: 'action_2' } })
+    const query = client.calls.find(call => call.text.includes("settlement_status='manual_attention'"))
+    expect(query?.text).toMatch(/workspace_id=\$1/u)
+    expect(query?.text).toMatch(/action_kind IN \('model_text','model_image','model_ocr','model_video'\)/u)
+    expect(query?.text).toMatch(/actor_id=\$2/u)
+    expect(query?.text).toMatch(/\(created_at,id\)<\(\$3::timestamptz,\$4::text\)/u)
+    expect(query?.text).toMatch(/ORDER BY created_at DESC,id DESC LIMIT \$5/u)
+    expect(query?.values).toEqual(['ws_action', 'finance_a', '2026-08-29T01:00:00.000Z', 'action_3', 2])
   })
 
   it('locks before first settlement and persists the provider receipt', async () => {

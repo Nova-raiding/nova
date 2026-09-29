@@ -28,7 +28,14 @@ describe('merchant new-session entry points', () => {
     expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '?section=products', hash: '' }).entry).toBe('products')
   })
 
-  it('redirects the legacy rules entry to the product-first workflow', () => {
+  it('keeps the bare product route and broad task destinations on the screenshot-backed materials page', () => {
+    expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '', hash: '' })).toMatchObject({ page: 'products', entry: 'knowledge' })
+    expect(merchantRouteFromLocation({ pathname: '/merchant/tasks', search: '', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
+    expect(merchantRouteFromLocation({ pathname: '/merchant/publish', search: '', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
+    expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: '', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
+  })
+
+  it('keeps the legacy rules workflow scoped to the selected product catalog entry', () => {
     const url = urlForMerchantRoute({ pathname: '/', search: '' }, { page: 'rules', target: { kind: 'product', productId: 'product-a', platform: 'taobao', accountId: 'store-a' } })
     expect(url).toBe('/merchant/rules?product_id=product-a&platform=taobao&account_id=store-a')
     expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: '?product_id=product-a&platform=taobao&account_id=store-a', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
@@ -70,10 +77,11 @@ describe('merchant new-session entry points', () => {
     expect(main.focus).not.toHaveBeenCalled()
   })
 
-  it('separates knowledge documents from images while assets includes both', () => {
+  it('keeps the screenshot-backed knowledge and image destinations on the shared server asset collection', () => {
     expect(assetMatchesEntry('application/pdf', 'knowledge')).toBe(true)
-    expect(assetMatchesEntry('image/png', 'knowledge')).toBe(false)
+    expect(assetMatchesEntry('image/png', 'knowledge')).toBe(true)
     expect(assetMatchesEntry('image/png', 'images')).toBe(true)
+    expect(assetMatchesEntry('application/pdf', 'images')).toBe(true)
     expect(assetMatchesEntry('application/pdf', 'assets')).toBe(true)
   })
 })

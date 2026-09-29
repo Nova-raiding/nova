@@ -31,7 +31,7 @@ interface ReconciliationSectionProps {
 }
 
 export function ReconciliationSection({ model }: ReconciliationSectionProps) {
-  const { reconciliation, canPaymentReconciliation, canModelSettlement, canBillingExport, runReconciliation, runModelUsageReconciliation, retryModelUsageSettlement, waiveModelUsageSettlement, markModelUsageForManualAttention, exportBilling } = model;
+  const { reconciliation, modelUsageReconciliationReport, manualAttentionLoading, manualAttentionError, loadMoreManualAttention, canPaymentReconciliation, canModelSettlement, canBillingExport, runReconciliation, runModelUsageReconciliation, retryModelUsageSettlement, waiveModelUsageSettlement, markModelUsageForManualAttention, exportBilling } = model;
   const reconciliationError = model.dataSetError?.("billing.model-usage.statement");
   const reconciliationLoading = Boolean(model.loading) && !reconciliation;
   const refreshing = Boolean(model.loading) && Boolean(reconciliation);
@@ -56,6 +56,15 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
   const settlementCounts = summarizeModelUsageSettlements(unsettled);
   const missingCostEvidenceCount = reconciliation?.model_usage?.missing_cost_evidence_count ?? 0;
   const externalStatementStatus = reconciliation?.model_usage?.external_provider_statement?.status;
+  const orphanedActions = modelUsageReconciliationReport?.orphaned_actions ?? [];
+  const manualAttentionPage = reconciliation?.action_ledger?.manual_attention;
+  const manualAttentionReadError = manualAttentionError || (!reconciliation ? reconciliationError ?? "" : "");
+  const manualAttentionCursorError = Boolean(manualAttentionPage?.has_more && !manualAttentionPage.next_cursor);
+  const reconciliationNeedsAttention = Boolean(modelUsageReconciliationReport && (
+    modelUsageReconciliationReport.state !== "completed" ||
+    (modelUsageReconciliationReport.pending?.length ?? 0) > 0 ||
+    orphanedActions.length > 0
+  ));
   const hasReadinessIssues = Boolean(reconciliation && (
     reconciliation.provider?.mode !== "provider" ||
     !reconciliation.provider?.ready ||
@@ -219,6 +228,30 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
         />
       ) : null}
       {refreshing ? <Alert className="reconciliation-status-banner" type="info" showIcon role="status" aria-live="polite" title="正在刷新对账数据" description="页面暂时保留上次成功数据；刷新完成后会更新结果。" /> : null}
+      {reconciliationNeedsAttention && modelUsageReconciliationReport ? (
+        <Alert
+          className="reconciliation-status-banner"
+          type="error"
+          showIcon
+          role="alert"
+          title={`模型结算需要关注：${modelUsageReconciliationReport.state ?? "状态未知"}`}
+          description={(
+            <div>
+              <p>待处理 {modelUsageReconciliationReport.pending?.length ?? 0} 项，孤立调用 {orphanedActions.length} 项。孤立调用没有模型用量回执，不提供重试或豁免操作；请按 Action ID 人工核查。</p>
+              {orphanedActions.length > 0 ? (
+                <ul aria-label="孤立模型调用 Action ID">
+                  {orphanedActions.map((action) => (
+                    <li key={`${action.action_id}:${action.code}`}>
+                      <Typography.Text className="ops-token" copyable>{action.action_id}</Typography.Text>
+                      <span> · {action.status} · {action.code}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          )}
+        />
+      ) : null}
       {reconciliation ? (
         <>
       <div className="reconciliation-context" aria-label="账务数据范围">
@@ -356,6 +389,68 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
           </Form.Item>
         </Form>
       </Modal>
+      <section aria-labelledby="model-manual-attention-history-title" aria-busy={Boolean(manualAttentionLoading)}>
+        <Typography.Title level={5} id="model-manual-attention-history-title">模型调用人工关注历史</Typography.Title>
+        <Typography.Paragraph type="secondary">
+          只读历史证据；该列表不提供结算操作。若没有真实模型用量记录，不得对这些调用执行重试或豁免。
+        </Typography.Paragraph>
+        {manualAttentionReadError || manualAttentionCursorError ? (
+          <Alert
+            className="settlement-feedback"
+            type="error"
+            showIcon
+            role="alert"
+            title="人工关注历史读取失败"
+            description={manualAttentionReadError || "服务端提示仍有更多历史记录，但没有返回下一页游标；请刷新后重试。"}
+          />
+        ) : null}
+        {manualAttentionPage ? (
+          <>
+            <Table
+              aria-label="模型人工关注历史记录"
+              rowKey="action_id"
+              size="small"
+              pagination={false}
+              loading={Boolean(manualAttentionLoading)}
+              locale={{ emptyText: "当前页没有模型人工关注记录" }}
+              dataSource={manualAttentionPage.items}
+              scroll={{ x: 700 }}
+              columns={[
+                {
+                  title: "Action ID",
+                  dataIndex: "action_id",
+                  render: (value: string) => <Typography.Text className="ops-token" copyable>{value}</Typography.Text>,
+                },
+                { title: "调用类型", dataIndex: "action_kind" },
+                {
+                  title: "状态",
+                  dataIndex: "settlement_status",
+                  render: (value: string) => <Tag color="red">{value}</Tag>,
+                },
+                { title: "发现时间", dataIndex: "created_at", render: (value: string) => new Date(value).toLocaleString() },
+              ]}
+            />
+            {manualAttentionPage.has_more ? (
+              <Button
+                type="default"
+                disabled={Boolean(model.loading) || Boolean(manualAttentionLoading) || !manualAttentionPage.next_cursor}
+                loading={Boolean(manualAttentionLoading)}
+                aria-label="加载更多模型人工关注历史"
+                onClick={() => void loadMoreManualAttention()}
+              >
+                加载更多历史
+              </Button>
+            ) : null}
+            <Typography.Text type="secondary" role="status" aria-live="polite">
+              已显示 {manualAttentionPage.items.length} 条{manualAttentionPage.has_more ? "，还有更多记录" : "，已到末页"}
+            </Typography.Text>
+          </>
+        ) : !manualAttentionReadError && reconciliationLoading ? (
+          <OpsLoadingState label="正在读取模型人工关注历史" />
+        ) : !manualAttentionReadError ? (
+          <Typography.Text type="secondary">尚未读取人工关注历史；请先加载账务与模型用量对账。</Typography.Text>
+        ) : null}
+      </section>
       <Table
         aria-label="模型用量待结算记录"
         rowKey="id"

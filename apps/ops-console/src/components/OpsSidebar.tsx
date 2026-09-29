@@ -1,43 +1,22 @@
 import {
   DashboardOutlined,
+  MenuOutlined,
   DollarOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
   ShopOutlined,
   TeamOutlined,
-  MenuOutlined,
 } from "@ant-design/icons";
 import { Layout } from "antd";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { OpsDomain } from "../navigation/opsNavigation";
 import { storeNovaLogoUrl } from "../assets.js";
 
-interface StoreNavItem {
-  platform: string;
-  accountId: string;
-  label: string;
-  state: string;
-}
-
 interface OpsSidebarProps {
   activeDomain: OpsDomain;
-  stores: StoreNavItem[];
-  platformLabels: Record<string, string>;
-  selectedStoreScope: string;
   onNavigate: (domain: OpsDomain) => void;
-  onSelectStore: (scope: string) => void | Promise<unknown>;
   visibleDomains?: readonly OpsDomain[];
   onMobileOpenChange?: (open: boolean) => void;
-}
-
-export function selectStoreAndNavigate(
-  scope: string,
-  onSelectStore: OpsSidebarProps["onSelectStore"],
-  navigate: (domain: OpsDomain) => void,
-) {
-  const selection = onSelectStore(scope);
-  navigate("stores");
-  return selection;
 }
 
 export const mainItems: Array<{ domain: OpsDomain; label: string; description: string; icon: ReactNode }> =
@@ -45,24 +24,26 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; description: s
     { domain: "overview", label: "总览", description: "查看平台健康与待处理事项", icon: <DashboardOutlined /> },
     { domain: "users", label: "用户中心", description: "管理企业账号与授权范围", icon: <TeamOutlined /> },
     { domain: "customer-delivery", label: "客户交付", description: "管理客户建档、接入、验收与上线", icon: <TeamOutlined /> },
+    { domain: "members", label: "成员管理", description: "管理当前工作区成员", icon: <TeamOutlined /> },
+    { domain: "tasks", label: "任务中心", description: "查看当前工作区任务", icon: <DashboardOutlined /> },
+    { domain: "knowledge", label: "知识治理", description: "查看当前工作区知识资料", icon: <SafetyCertificateOutlined /> },
     { domain: "stores", label: "平台与店铺", description: "查看平台连接并登记人工运营店铺", icon: <ShopOutlined /> },
-    { domain: "rules", label: "平台规则", description: "查看六平台规则状态并审核公共草稿", icon: <SafetyCertificateOutlined /> },
-    // Kept for backwards-compatible tests/bookmarks; the privileged store route is role-filtered below.
+    { domain: "rules", label: "规则中心", description: "查看平台规则并审核公共草稿", icon: <SafetyCertificateOutlined /> },
     { domain: "models", label: "模型服务", description: "查看模型状态与计费设置", icon: <RobotOutlined /> },
+    { domain: "storage", label: "存储治理", description: "核对对象存储容量与一致性", icon: <ShopOutlined /> },
     { domain: "finance", label: "账务与退款", description: "核对收款、创意点与退款", icon: <DollarOutlined /> },
+    { domain: "audit", label: "审计中心", description: "查询脱敏审计记录", icon: <SafetyCertificateOutlined /> },
   ];
 
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
   { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery"] },
 ];
 
+// Match the reviewed desktop rail. Other authorized destinations remain
+// routable through their canonical links and contextual workflows.
 export function OpsSidebar({
   activeDomain,
-  stores,
-  platformLabels,
-  selectedStoreScope,
   onNavigate,
-  onSelectStore,
   visibleDomains,
   onMobileOpenChange,
 }: OpsSidebarProps) {
@@ -85,9 +66,13 @@ export function OpsSidebar({
     </button>
     <button className={`ops-nav-backdrop${mobileOpen ? " open" : ""}`} type="button" aria-label="关闭运营导航" tabIndex={mobileOpen ? 0 : -1} onClick={() => setMobileCollapsed(true)} />
     <Layout.Sider id="ops-primary-navigation" aria-label="运营主导航" breakpoint="lg" collapsible collapsed={mobileCollapsed} collapsedWidth="0" trigger={null} onBreakpoint={(broken) => setMobileCollapsed(broken)} onKeyDown={(event) => {
-      if (event.key === "Escape" && window.matchMedia("(max-width: 991px)").matches) { setMobileCollapsed(true); return; }
+      if (event.key === "Escape" && window.matchMedia("(max-width: 991px)").matches) {
+        setMobileCollapsed(true);
+        return;
+      }
       if (event.key !== "Tab" || mobileCollapsed || !window.matchMedia("(max-width: 991px)").matches) return;
-      const controls = [...event.currentTarget.querySelectorAll<HTMLElement>("button:not([disabled])")];
+      const controls = [...event.currentTarget.querySelectorAll<HTMLElement>("button:not([disabled])")]
+        .filter((control) => !control.closest("[hidden]"));
       const first = controls.at(0); const last = controls.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }

@@ -77,6 +77,43 @@ describe('253 charged text no-delivery finance resolution', () => {
         .rejects.toMatchObject({ code: 'CHARGED_TEXT_NO_DELIVERY_EVIDENCE_MISMATCH' })
       expect((await db.query('SELECT status FROM creative_point_reservations WHERE id=$1', [reserved.value.id])).rows[0]?.status).toBe('active')
       const actionLedger = new PostgresActionLedgerRepository(app)
+      const attentionRows = [
+        { actionKey: 'model:manual-attention-a', actorId: 'finance-253', createdAt: '2026-08-28T01:00:00.123456Z' },
+        { actionKey: 'model:manual-attention-b', actorId: 'finance-253', createdAt: '2026-08-28T01:00:00.123456Z' },
+        { actionKey: 'model:manual-attention-other-actor', actorId: 'finance-other', createdAt: '2026-08-27T01:00:00.000001Z' },
+      ]
+      for (const row of attentionRows) {
+        await actionLedger.record({ workspaceId: ws, ...row, actionKind: 'model_text', settlement: 'wallet_overage', units: 1,
+          amountFen: 1, description: 'manual attention fixture', settlementStatus: 'authorized' })
+        await actionLedger.transitionSettlementStatus({ workspaceId: ws, actionKey: row.actionKey, from: ['authorized'], to: 'manual_attention' })
+      }
+      await actionLedger.record({ workspaceId: 'ws_other_253', actionKey: 'model:manual-attention-other-workspace', actionKind: 'model_video',
+        settlement: 'wallet_overage', units: 1, amountFen: 1, actorId: 'finance-253', description: 'other tenant fixture', settlementStatus: 'manual_attention' })
+      const firstAttentionPage = await actionLedger.listManualAttention({ workspaceId: ws, actorId: 'finance-253', limit: 1 })
+      expect(firstAttentionPage.items).toHaveLength(1)
+      expect(firstAttentionPage.hasMore).toBe(true)
+      expect(firstAttentionPage.items[0]?.createdAt).toContain('2026-08-28T01:00:00.123')
+      const secondAttentionPage = await actionLedger.listManualAttention({ workspaceId: ws, actorId: 'finance-253', cursor: firstAttentionPage.nextCursor, limit: 1 })
+      expect(secondAttentionPage.items).toHaveLength(1)
+      expect(secondAttentionPage.hasMore).toBe(false)
+      expect(new Set([...firstAttentionPage.items, ...secondAttentionPage.items].map(row => row.actorId))).toEqual(new Set(['finance-253']))
+      expect((await actionLedger.listManualAttention({ workspaceId: ws, actorId: 'finance-253', limit: 10 })).items.map(row => row.actionKey).sort())
+        .toEqual(['model:manual-attention-a', 'model:manual-attention-b'].sort())
+      expect((await actionLedger.listManualAttention({ workspaceId: 'ws_other_253', actorId: 'finance-253', limit: 10 })).items.map(row => row.actionKey))
+        .toEqual(['model:manual-attention-other-workspace'])
+      const workspaceRls = await withWorkspaceTransaction(app, ws, client => client.query<{ id: string }>(
+        `SELECT id FROM action_ledger WHERE workspace_id='ws_other_253' AND action_key='model:manual-attention-other-workspace'`))
+      expect(workspaceRls.rows).toEqual([])
+
+      const orphanActionKey = 'model:orphan-receipt-scan-253'
+      const orphanCreatedAt = new Date(Date.now() - 60 * 60_000).toISOString()
+      await points.reserve({ workspaceId: ws, actionKey: orphanActionKey, idempotencyKey: `commercial.reserve:${orphanActionKey}`, points: 1, rateCardVersion: 'rate-253' })
+      await actionLedger.record({ workspaceId: ws, actionKey: orphanActionKey, actionKind: 'model_text', settlement: 'included_quota', units: 1,
+        amountFen: 0, actorId: 'fixture', description: 'orphan scan fixture', createdAt: orphanCreatedAt, settlementStatus: 'pending_receipt' })
+      const orphanCandidates = await actionLedger.listPendingReceiptActions({ workspaceId: ws, before: new Date().toISOString(), limit: 10 })
+      expect(orphanCandidates.map(row => row.actionKey)).toContain(orphanActionKey)
+      expect((await actionLedger.listPendingReceiptActions({ workspaceId: 'ws_other_253', before: new Date().toISOString(), limit: 10 })).map(row => row.actionKey)).not.toContain(orphanActionKey)
+
       await actionLedger.record({ workspaceId: ws, actionKey, actionKind: 'model_text', settlement: 'wallet', units: 1,
         amountFen: 10, actorId: 'fixture', description: 'fixture', settlementStatus: 'authorized' })
       await actionLedger.settleProviderUsage({ workspaceId: ws, actionKey, providerRequestId: providerId, actualAmountFen: 10 })

@@ -811,6 +811,14 @@ export type Reconciliation = {
     description: string;
     createdAt: string;
   }>;
+  action_ledger?: {
+    manual_attention?: {
+      items: Array<{ action_id: string; action_kind: string; settlement_status: "manual_attention" | string; created_at: string }>;
+      limit: number;
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+  };
   model_usage?: {
     record_count: number;
     total_tokens: number;

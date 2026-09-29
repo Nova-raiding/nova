@@ -45,8 +45,8 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
     { title: '来源', dataIndex: 'source', width: 110, render: value => <Tag>{sourceLabels[value as AuditCenterRecord['source']]}</Tag> },
     { title: '操作者', dataIndex: 'actorId', width: 170 },
     { title: '动作', dataIndex: 'action', width: 200 },
-    { title: '资源', width: 260, render: (_, row) => <Typography.Text ellipsis={{ tooltip: `${row.resourceType} / ${row.resourceId}` }}>{row.resourceType} / {row.resourceId}</Typography.Text> },
-    { title: '原因', dataIndex: 'reason', width: 260, render: value => value || '—' },
+    { title: '资源', width: 196, render: (_, row) => <Typography.Text ellipsis={{ tooltip: `${row.resourceType} / ${row.resourceId}` }}>{row.resourceType} / {row.resourceId}</Typography.Text> },
+    ...(!platformScope ? [{ title: '原因', dataIndex: 'reason', width: 260, render: (value: string) => value || '—' }] : []),
     { title: '操作', width: 90, fixed: 'right', render: (_, row) => <Button type="link" style={{ minHeight: 44 }} disabled={!canViewDetails} title={canViewDetails ? undefined : '平台聚合视图不开放跨租户详情'} onClick={event => openDetail(row, event.currentTarget)} aria-label={`查看审计事件 ${row.id} 详情`}>详情</Button> },
   ]
 
@@ -104,7 +104,7 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
       </div>)}
     </div> : initialLoadFailed ? <Typography.Text type="secondary" role="status">审计数据尚未取得，请重试；当前状态不能解释为没有审计记录。</Typography.Text> : <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
         <Table rowKey={record => `${record.workspaceId}:${record.source}:${record.id}`} size="small" loading={controller.loading}
-          dataSource={controller.records} columns={columns} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 1270 }}
+          dataSource={controller.records} columns={columns} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 'max-content' }}
           locale={{ emptyText: controller.loading ? '正在加载' : '当前筛选条件下没有审计记录' }} />
       </div>}
 

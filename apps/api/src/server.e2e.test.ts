@@ -796,6 +796,7 @@ describe('API HTTP vertical slice', () => {
     expect((ownerExport.data?.result as { content: string }).content).toContain(memberOrder.id)
     const personalStatement = await call('personal-billing-owner', 14, 'billing.model-usage.statement')
     expect(personalStatement.data?.result).toMatchObject({ statement: { scope: 'mine', balance_scope: 'workspace', transaction_scope: 'mine', model_usage_scope: 'mine' }, balance_scope: 'workspace', transaction_scope: 'mine', model_usage_scope: 'mine', model_usage: { provider_cost_cny: null, external_provider_statement: { status: 'not_applicable_personal_scope' } } })
+    expect((await call('personal-billing-member', 15, 'billing.model-usage.statement', { scope: 'workspace' })).error?.code).toBe('FORBIDDEN')
   })
 
   it('does not let merchant.start bypass workspace billing permission or an explicit deny', async () => {

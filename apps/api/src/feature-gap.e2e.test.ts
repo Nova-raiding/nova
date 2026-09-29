@@ -241,7 +241,7 @@ describe('new commercial and operations capabilities', () => {
     const base = await start(); const workspaceId = `ws_invalid_video_output_${Date.now()}`
     const response = await call(base, workspaceId, 'multimodal.video.request', { prompt: '不应执行', output: 'mp4', context_json: JSON.stringify({ brand: { id: 'brand-1', version: '1' }, product: { id: 'missing-product', version: '1' }, rules: [{ id: 'rule-1', version: '1' }] }) })
     expect(response.error).toMatchObject({ code: 'INVALID_REQUEST' })
-    expect(response.error?.message).toContain('params.output has an unsupported value')
+    expect(response.error?.message).toContain('params.output 的值不受支持')
   })
 
   it('atomically imports multiple products into their explicit platform stores', async () => {
@@ -260,10 +260,16 @@ describe('new commercial and operations capabilities', () => {
     ]))
     const invalid = await call(base, workspaceId, 'catalog.import.batch', { products_json: JSON.stringify([{ platform: 'taobao', account_id: taobao.id, title: '将失败的商品' }, { platform: 'not-platform', account_id: taobao.id, title: '不应写入' }]) })
     expect(invalid.error?.code).toBe('PRODUCT_IMPORT_BATCH_INVALID')
+    expect(invalid.error?.message).toContain('平台（platform）无效')
     expect(service.listProducts(workspaceId, { query: '不应写入' })).toHaveLength(0)
     const invalidFacts = await call(base, workspaceId, 'catalog.import.batch', { products_json: JSON.stringify([{ platform: 'taobao', account_id: taobao.id, title: '不应静默修正', price: -1, skus: [{ id: 'sku-negative', name: '异常 SKU', price: -1, stock: -2 }] }]) })
     expect(invalidFacts.error?.code).toBe('PRODUCT_IMPORT_BATCH_INVALID')
+    expect(invalidFacts.error?.message).toContain('SKU 价格 必须是非负数字')
     expect(service.listProducts(workspaceId, { query: '不应静默修正' })).toHaveLength(0)
+    const invalidStock = await call(base, workspaceId, 'catalog.import.batch', { products_json: JSON.stringify([{ platform: 'taobao', account_id: taobao.id, title: '库存错误', skus: [{ id: 'sku-stock', name: '库存错误', price: 1, stock: -2 }] }]) })
+    expect(invalidStock.error?.code).toBe('PRODUCT_IMPORT_BATCH_INVALID')
+    expect(invalidStock.error?.message).toContain('SKU 库存 必须是非负数字')
+    expect(service.listProducts(workspaceId, { query: '库存错误' })).toHaveLength(0)
     const existing = service.importProduct({ workspaceId, platform: 'taobao', accountId: taobao.id, localProductKey: 'existing-product', title: '原始商品', price: 99, stock: 5 })
     const failedAfterMutation = await call(base, workspaceId, 'catalog.import.batch', { products_json: JSON.stringify([{ platform: 'taobao', account_id: taobao.id, local_product_key: 'existing-product', title: '不应覆盖原始商品', price: 1 }, { platform: 'douyin', account_id: douyin.id, title: '卖点不完整', selling_points: [{ text: '', source_ids: [] }] }]) })
     expect(failedAfterMutation.error?.code).toBe('SELLING_POINT_PROOF_REQUIRED')

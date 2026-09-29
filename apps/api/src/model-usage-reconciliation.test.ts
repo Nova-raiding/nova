@@ -5,6 +5,111 @@ import type { ApiPersistence } from './server.js'
 import { createModelUsageReconciliation } from './model-usage-reconciliation.js'
 
 describe('model usage reconciliation creative point recovery', () => {
+  it('dead-letters an aged pending action with an active points hold and no usage row without releasing the hold', async () => {
+    const workspaceId = `ws_usage_orphan_${Date.now()}`
+    const actionId = `content-draft:${Date.now()}`
+    const createdAt = '2026-09-28T00:00:00.000Z'
+    const modelUsage = new MemoryModelUsageRepository()
+    const reservation = {
+      id: 'cpr_orphan', workspaceId, operationId: 'cpo_orphan', actionKey: actionId,
+      rateCardVersion: 'test-v1', points: 3, status: 'active' as const,
+      settledPoints: null as number | null, createdAt, finalizedAt: null as string | null,
+    }
+    const action = {
+      id: 'action_orphan', workspaceId, actionKey: actionId, actionKind: 'model_text' as const,
+      settlement: 'included_quota' as const, state: 'settled' as const, units: 1, amountFen: 0,
+      actorId: 'merchant:test', description: 'draft', createdAt, settlementStatus: 'pending_receipt' as const,
+    }
+    const markPendingReceiptOrphanForAttention = vi.fn(async () => ({ ...action, settlementStatus: 'manual_attention' as const }))
+    const pointSettle = vi.fn()
+    const persistence = {
+      modelUsage,
+      actionLedger: { listPendingReceiptActions: vi.fn(async ({ before }: { before: string }) => Date.parse(action.createdAt) < Date.parse(before) ? [action] : []), markPendingReceiptOrphanForAttention },
+      creativePoints: { getReservationByActionKey: vi.fn(async () => reservation), settle: pointSettle },
+      creativePointLifecycle: { recordProviderReceipt: vi.fn() },
+    } as unknown as ApiPersistence
+    const reconciliation = createModelUsageReconciliation({
+      persistence: () => persistence,
+      getActionLedgerWithHistoricalImageCompat: vi.fn(),
+      settlePluginWalletDebit: vi.fn(),
+      now: () => '2026-09-29T00:00:00.000Z',
+    })
+
+    const result = await reconciliation.runModelUsageReconciliation({ workspaceId, actorId: 'worker:reconcile', limit: 10 })
+
+    expect(result).toMatchObject({
+      state: 'attention_required',
+      orphaned_actions: [{ action_id: actionId, status: 'manual_attention', code: 'MODEL_USAGE_RECEIPT_ROW_MISSING' }],
+    })
+    expect(markPendingReceiptOrphanForAttention).toHaveBeenCalledWith({ workspaceId, actionKey: actionId, before: '2026-09-28T23:55:00.000Z' })
+    expect(pointSettle).not.toHaveBeenCalled()
+    expect(reservation.status).toBe('active')
+    await expect(modelUsage.listByAction(workspaceId, actionId)).resolves.toEqual([])
+  })
+
+  it('does not dead-letter a pending action during the grace period', async () => {
+    const workspaceId = `ws_usage_orphan_grace_${Date.now()}`
+    const actionId = `content-draft:${Date.now()}`
+    const now = '2026-09-29T00:00:00.000Z'
+    const modelUsage = new MemoryModelUsageRepository()
+    const action = {
+      id: 'action_orphan_grace', workspaceId, actionKey: actionId, actionKind: 'model_text' as const,
+      settlement: 'included_quota' as const, state: 'settled' as const, units: 1, amountFen: 0,
+      actorId: 'merchant:test', description: 'draft', createdAt: now, settlementStatus: 'pending_receipt' as const,
+    }
+    const transitionSettlementStatus = vi.fn()
+    const reservation = { id: 'cpr_grace', workspaceId, operationId: 'cpo_grace', actionKey: actionId, rateCardVersion: 'test-v1', points: 3, status: 'active' as const, settledPoints: null, createdAt: now, finalizedAt: null }
+    const persistence = {
+      modelUsage,
+      actionLedger: { listPendingReceiptActions: vi.fn(async ({ before }: { before: string }) => Date.parse(action.createdAt) < Date.parse(before) ? [action] : []), transitionSettlementStatus },
+      creativePoints: { getReservationByActionKey: vi.fn(async () => reservation) },
+      creativePointLifecycle: {},
+    } as unknown as ApiPersistence
+    const reconciliation = createModelUsageReconciliation({
+      persistence: () => persistence,
+      getActionLedgerWithHistoricalImageCompat: vi.fn(),
+      settlePluginWalletDebit: vi.fn(),
+      now: () => now,
+    })
+
+    const result = await reconciliation.runModelUsageReconciliation({ workspaceId, actorId: 'worker:reconcile', limit: 10 })
+
+    expect(result).toMatchObject({ state: 'completed', orphaned_actions: [] })
+    expect(transitionSettlementStatus).not.toHaveBeenCalled()
+  })
+
+  it('does not classify an action as orphaned when an action-linked usage row exists', async () => {
+    const workspaceId = `ws_usage_orphan_has_usage_${Date.now()}`
+    const actionId = `content-draft:${Date.now()}`
+    const createdAt = '2026-09-28T00:00:00.000Z'
+    const modelUsage = new MemoryModelUsageRepository()
+    await modelUsage.record({ workspaceId, actionId, modality: 'text', model: 'relay-text', settlementStatus: 'manual_attention', observedAt: createdAt })
+    const action = {
+      id: 'action_orphan_has_usage', workspaceId, actionKey: actionId, actionKind: 'model_text' as const,
+      settlement: 'included_quota' as const, state: 'settled' as const, units: 1, amountFen: 0,
+      actorId: 'merchant:test', description: 'draft', createdAt, settlementStatus: 'pending_receipt' as const,
+    }
+    const transitionSettlementStatus = vi.fn()
+    const reservation = { id: 'cpr_has_usage', workspaceId, operationId: 'cpo_has_usage', actionKey: actionId, rateCardVersion: 'test-v1', points: 3, status: 'active' as const, settledPoints: null, createdAt, finalizedAt: null }
+    const persistence = {
+      modelUsage,
+      actionLedger: { listPendingReceiptActions: vi.fn(async () => [action]), transitionSettlementStatus },
+      creativePoints: { getReservationByActionKey: vi.fn(async () => reservation) },
+      creativePointLifecycle: {},
+    } as unknown as ApiPersistence
+    const reconciliation = createModelUsageReconciliation({
+      persistence: () => persistence,
+      getActionLedgerWithHistoricalImageCompat: vi.fn(),
+      settlePluginWalletDebit: vi.fn(),
+      now: () => '2026-09-29T00:00:00.000Z',
+    })
+
+    const result = await reconciliation.runModelUsageReconciliation({ workspaceId, actorId: 'worker:reconcile', limit: 10 })
+
+    expect(result).toMatchObject({ orphaned_actions: [] })
+    expect(transitionSettlementStatus).not.toHaveBeenCalled()
+  })
+
   it('replays the API provider receipt and settles an active point hold before finalizing usage', async () => {
     const workspaceId = `ws_usage_point_recovery_${Date.now()}`
     const actionId = `model:generation:point-recovery-${Date.now()}`

@@ -14,7 +14,9 @@ describe('reviewed finance chart layout', () => {
   it('keeps the reviewed desktop chart height and truthful no-data messages', () => {
     expect(css).toMatch(/\.finance-chart\s*\{\s*height:\s*360px;/)
     expect(app).toContain('? statementNote')
-    expect(app).toContain('服务端未返回该区间的创意点流水，不显示趋势图。')
+    expect(app).toContain('entriesInRange?.length === 0')
+    expect(app).toContain('没有${statementUnreadable > 0 ? \'可识别的\' : \'\'}创意点流水，不显示趋势图。')
+    expect(app).toContain('只有消耗类流水计入趋势')
     expect(app).toContain('<PointUsageChart items={chartItems} label={chartLabel} />')
   })
 })

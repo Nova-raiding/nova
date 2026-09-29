@@ -61,6 +61,19 @@ describe("Ops Console model helpers", () => {
     expect(allowedBackgroundHydrationMethods(authorization)).not.toContain("workspace.commercial.get");
   });
 
+  it("hydrates platform finance only with billing platform read", () => {
+    const authorized = createAuthorizationProjection({
+      capabilities: ["billing.platform.read"],
+      scope: { type: "platform" },
+    } as never, true);
+    const denied = createAuthorizationProjection({
+      capabilities: ["workspace.summary.read"],
+      scope: { type: "platform" },
+    } as never, true);
+    expect(allowedBackgroundHydrationMethods(authorized)).toContain("ops.finance.search");
+    expect(allowedBackgroundHydrationMethods(denied)).not.toContain("ops.finance.search");
+  });
+
   it("isolates dataset failures to the operations domain that owns them", () => {
     const failures = {
       "ops.audit.list": "审计中心仓储不可用",
