@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest'
 // @ts-ignore JavaScript runtime module
-import { KEYCHAIN_SERVICE, installationIdentityStore, readKeychainCredential, writeKeychainCredential } from './keychain-credential.mjs'
+import { KEYCHAIN_SERVICE, installationIdentityStore, keychainHelperFailureReason, readKeychainCredential, writeKeychainCredential } from './keychain-credential.mjs'
 
 const bound = { apiOrigin: 'https://merchant.example.test', workspaceId: 'ws_test' }
 
 describe('macOS keychain credential', () => {
+  it('keeps only the OSStatus and operation from helper failures', () => {
+    const result = { status: 1, stderr: 'keychain_osstatus=-25308 operation=read\naccess_token=never-print\n' }
+    expect(keychainHelperFailureReason(result, 'read')).toBe('helper_exit=1')
+    expect(keychainHelperFailureReason({ status: 1, stderr: 'keychain_osstatus=-25308 operation=read\n' }, 'read')).toBe('keychain_osstatus=-25308 operation=read')
+    expect(keychainHelperFailureReason({ status: 1, stderr: 'keychain_osstatus=-25308 operation=write\n' }, 'read')).toBe('helper_exit=1')
+    expect(keychainHelperFailureReason({ status: null, error: { code: 'ETIMEDOUT' }, stderr: '' }, 'read')).toBe('helper_timeout operation=read')
+  })
   it('writes one atomic JSON item without placing secrets in argv', async () => {
     let call: Record<string, string> | undefined
     writeKeychainCredential(bound, { schema_version: '1', api_origin: bound.apiOrigin, workspace_id: bound.workspaceId, access_token: 'access-secret', refresh_token: 'refresh-secret', expires_at: '2030-01-01T00:00:00Z' }, {

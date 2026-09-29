@@ -8,8 +8,12 @@ struct Request: Decodable {
     let data: String?
 }
 
-func fail() -> Never {
-    FileHandle.standardError.write(Data("keychain operation failed\n".utf8))
+func fail(operation: String? = nil, status: OSStatus? = nil) -> Never {
+    if let operation, let status {
+        FileHandle.standardError.write(Data("keychain_osstatus=\(status) operation=\(operation)\n".utf8))
+    } else {
+        FileHandle.standardError.write(Data("keychain operation failed\n".utf8))
+    }
     exit(1)
 }
 
@@ -31,8 +35,9 @@ case "write":
     if status == errSecItemNotFound {
         var item = query
         item[kSecValueData as String] = value
-        guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { fail() }
-    } else if status != errSecSuccess { fail() }
+        let addStatus = SecItemAdd(item as CFDictionary, nil)
+        guard addStatus == errSecSuccess else { fail(operation: request.operation, status: addStatus) }
+    } else if status != errSecSuccess { fail(operation: request.operation, status: status) }
 case "read", "read_optional":
     var readQuery = query
     readQuery[kSecReturnData as String] = true
@@ -43,7 +48,7 @@ case "read", "read_optional":
         FileHandle.standardOutput.write(Data("null".utf8))
         break
     }
-    guard status == errSecSuccess, let data = result as? Data else { fail() }
+    guard status == errSecSuccess, let data = result as? Data else { fail(operation: request.operation, status: status) }
     FileHandle.standardOutput.write(data)
 default:
     fail()

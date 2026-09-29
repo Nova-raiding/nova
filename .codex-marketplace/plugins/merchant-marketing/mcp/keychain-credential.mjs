@@ -10,8 +10,18 @@ function fail() {
   throw new Error('MCP_KEYCHAIN_CREDENTIAL_INVALID: credential unavailable, malformed, or bound to a different endpoint/workspace.')
 }
 
-function helperFail() {
-  throw new Error('MCP_KEYCHAIN_HELPER_INVALID: run scripts/build-keychain-helper.mjs before starting the local plugin.')
+function helperFail(reason) {
+  throw new Error(`MCP_KEYCHAIN_HELPER_INVALID: ${reason ?? 'helper unavailable or build manifest invalid'}`)
+}
+
+export function keychainHelperFailureReason(result, operation) {
+  const safeOperation = ['read', 'read_optional', 'write'].includes(operation) ? operation : 'unknown'
+  if (result?.error?.code === 'ETIMEDOUT') return `helper_timeout operation=${safeOperation}`
+  const stderr = typeof result?.stderr === 'string' ? result.stderr : ''
+  const statusMatch = stderr.match(/^keychain_osstatus=(-?\d+) operation=(read|read_optional|write)\n?$/u)
+  if (statusMatch && statusMatch[2] === safeOperation) return `keychain_osstatus=${statusMatch[1]} operation=${safeOperation}`
+  if (result?.error) return `helper_start_failed operation=${safeOperation}`
+  return `helper_exit=${Number.isInteger(result?.status) ? result.status : 'unknown'}`
 }
 
 function sha256(value) { return createHash('sha256').update(value).digest('hex') }
@@ -50,7 +60,7 @@ function defaultHelper(request) {
     input: JSON.stringify(request), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
     timeout: 2_000, maxBuffer: 1024 * 1024,
   })
-  if (result.error || result.status !== 0) helperFail()
+  if (result.error || result.status !== 0) helperFail(keychainHelperFailureReason(result, request.operation))
   return result.stdout
 }
 
