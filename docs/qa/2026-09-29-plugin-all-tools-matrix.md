@@ -4,7 +4,7 @@
 
 状态：**App 成功**＝真实 ChatGPT 桌面会话看到生产业务结果；**生产 MCP 成功**＝认证后 stdio→生产 API 返回对应业务结果，尚未有对应 App 画面；**预期阻断**＝真实负向/权限/缺资源响应，仅证明安全边界；**产品门禁/后台办理**＝服务端明确转交商家后台，不能算 ChatGPT 内功能成功；**线上缺陷**＝真实请求错误且不符合契约；**本地契约**＝只见候选源码或测试；**未测试**＝没有可认定的生产/App 业务成功路径；隔离测试结果仅在备注中列出。较早桥接版本的结果在备注中单独标注。
 
-**计数：** App 成功 16；生产 MCP 成功 18；预期阻断 26；产品门禁/后台办理 3；线上缺陷 1；本地契约 10；未测试 57；合计 131。当前已安装 `0.1.0+codex.20260929090000` 的源码与缓存各暴露 **116** 项；它在上一版 119 项基础上继续隐藏 3 项无法工作的分片上传工具。116 项版本尚待 ChatGPT 完全重启后复验，不把安装验收算作 App 业务成功。
+**计数：** App 成功 16；生产 MCP 成功 18；预期阻断 26；产品门禁/后台办理 3；线上缺陷 1；本地契约 10；未测试 57；合计 131。当前已安装 `0.1.0+codex.20260929090000` 的源码与缓存各暴露 **116** 项；它在上一版 119 项基础上继续隐藏 3 项无法工作的分片上传工具。生产账号在新版回调页完成本地钥匙串绑定，ChatGPT 完全重启后新 Work 会话真实调用 `onboarding.status` 与 `catalog.search` 成功，见[116 项版 App 复验](evidence/2026-09-29-chatgpt-app/29-production-bound-116-tool-app-readonly.png)。安装验收仍不计为业务成功。
 
 当前生产仍为 API `release-demo-product-code-20260929`、DB 迁移 254；API 与商家网页修复尚未部署。表内“隐藏”12 项在新安装的本地插件中已实际隐藏。此表不宣称旧 131 项全通过，也不把运营后台 CSV 导入算作 `catalog.import` 插件工具成功。
 
@@ -146,6 +146,6 @@
 
 - 真实 App 成功路径集中在工作区、商品/知识库查询和一次文案候选；任务/批量 17 项虽已逐项调用，但 12 项只验证交互写门禁、3 项只验证缺对象或权限拒绝，正式创建、审核、版本、导出、素材上传、图片候选、邀请、订单和删除申请仍无完整 App 端到端证据。隔离目录、知识库、正式内容和账务 E2E 仅证明测试环境路径；`upload.session.*` 在隔离 HTTP/MCP 固定返回 503，待修复传输与持久化后才可重新暴露。
 - `workspace.data.export.get` 的非法 ID 当前生产返回 500；本地候选已做 UUID 校验但尚未部署。`workspace.invitations.list` 的商家权限需确认。
-- 升级前 131 项中的 15 项已在当前安装的 116 工具版本隐藏：12 项平台/交付内部工具和 3 项无上传 transport 的分片会话工具。上一版 119 项在新 ChatGPT Work 会话已验证 `onboarding.status` 和 `catalog.search`，见[升级后 App 截图](evidence/2026-09-29-chatgpt-app/26-upgraded-119-tool-plugin-app-readonly.png)；当前 116 项还需重启 ChatGPT 复验。平台规则同步六行当前均未配置且过期，规则执行成功路径仍待测。
+- 升级前 131 项中的 15 项已在当前安装的 116 工具版本隐藏：12 项平台/交付内部工具和 3 项无上传 transport 的分片会话工具。当前版本的生产账号绑定与 ChatGPT 新会话 `onboarding.status`、`catalog.search` 已通过，见[回调成功](evidence/2026-09-29-chatgpt-app/28-production-callback-binding-success.png)及[App 商品读取](evidence/2026-09-29-chatgpt-app/29-production-bound-116-tool-app-readonly.png)。平台规则同步六行当前均未配置且过期，规则执行成功路径仍待测。
 - 商家后台 Excel/CSV 导入、商品列表和 App 查询已验证，但插件侧 `catalog.import`、正式资料确认及后续审核/导出不能据此判通过。
 - `/tmp/storenova-plugin-qa-20260929` 的早期桥接器批量探测为辅助线索；其中无参数 `catalog.image.get`、`support.customer.replies.list` 等返回错误。对需要 ID 的功能须以真实归属对象完成成功路径。
