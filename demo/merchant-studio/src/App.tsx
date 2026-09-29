@@ -255,6 +255,7 @@ import {
 import { DeliveryReadinessPanel } from './DeliveryReadinessPanel.js'
 import { MerchantMembersPage } from './MerchantMembersPage.js'
 import { CampaignLifecyclePanel } from './CampaignLifecyclePanel.js'
+import { PublishHistoryPanel } from './PublishHistoryPanel.js'
 import { batchTargetKey, projectProductRowTarget, projectProductTarget, toggleBatchTarget } from './batch-target.js'
 import { resolveBatchReadiness, resolveBatchResultState } from './batch-readiness.js'
 import { resolveRuleContext, resolveRuleExecutionState } from './rule-context.js'
@@ -10441,6 +10442,7 @@ function TaskWorkspace({
           </StatusChip>
         </section>
         <CampaignLifecyclePanel baseUrl={baseUrl} />
+        <PublishHistoryPanel baseUrl={baseUrl} />
         {taskListLoading && <LoadingState label="正在读取营销任务…" />}
         {taskListError && !taskListLoading && (
           <ErrorNotice message={taskListError} onRetry={loadTaskList} />
