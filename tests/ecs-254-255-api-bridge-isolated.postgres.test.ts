@@ -104,6 +104,35 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
         points: 100,
         metadata: { test_only: true, non_production: true },
       })
+      // Asset lifecycle writes are classified as POINT_REQUIRED_NO_CHARGE,
+      // which still requires one authoritative continuous entitlement. Give
+      // this disposable workspace a synthetic, executable basic-plan period
+      // so the bridge assertion reaches lifecycle schema availability rather
+      // than being stopped by the normal commercial access gate.
+      const commercialFixtureId = randomUUID()
+      const orderId = `bridge-order-${commercialFixtureId}`
+      const orderSnapshotId = `bridge-order-snapshot-${commercialFixtureId}`
+      const periodId = `bridge-period-${commercialFixtureId}`
+      const periodStart = new Date(Date.now() - 60_000).toISOString()
+      const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      await admin.query(`INSERT INTO commercial_orders_v2
+        (id,workspace_id,sku_id,sku_version_id,amount_fen,currency,payment_provider,status,idempotency_key,request_hash,created_by_actor_id,provider_order_id,paid_at)
+        VALUES ($1,$2,'sku-monthly-basic','sku-version-monthly-basic-v2',200000,'CNY','fixture','paid',$3,$4,'bridge-actor',$5,now())`,
+        [orderId, workspaceId, `bridge-entitlement:${commercialFixtureId}`, 'a'.repeat(64), `bridge-fixture-${commercialFixtureId}`])
+      await admin.query(`INSERT INTO commercial_order_snapshots_v2
+        (id,workspace_id,order_id,sku_id,sku_version_id,catalog_checksum,snapshot,checksum)
+        VALUES ($1,$2,$3,'sku-monthly-basic','sku-version-monthly-basic-v2',$4,$5::jsonb,$6)`,
+        [orderSnapshotId, workspaceId, orderId, 'b'.repeat(64), JSON.stringify({ fixture: 'bridge-254-256', simulated: true }), 'c'.repeat(64)])
+      await admin.query(`INSERT INTO workspace_subscription_periods_v2
+        (id,workspace_id,order_snapshot_id,period_start,period_end,status,revision)
+        VALUES ($1,$2,$3,$4::timestamptz,$5::timestamptz,'active',1)`,
+        [periodId, workspaceId, orderSnapshotId, periodStart, periodEnd])
+      await admin.query(`INSERT INTO workspace_entitlement_snapshots_v2
+        (id,workspace_id,subscription_period_id,subscription_period_revision,catalog_version_id,rate_card_version_id,resolved_benefits,unresolved_blockers,executable,checksum)
+        VALUES ($1,$2,$3,1,'sku-version-monthly-basic-v2',NULL,$4::jsonb,'[]'::jsonb,true,$5)`,
+        [`bridge-entitlement-${commercialFixtureId}`, workspaceId, periodId, JSON.stringify([
+          { code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 }, { code: 'monthly_creative_points', quantity: 5000 },
+        ]), 'd'.repeat(64)])
       const port254 = await freeLoopbackPort()
       // The API uses the same least-privilege merchant_app and merchant_ops
       // roles as production. The admin connection only creates the isolated
@@ -196,6 +225,29 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       expect(bridgeTrashWrite.status).toBe(503)
       const bridgeRestoreWrite = await fetch(`http://127.0.0.1:${port256}/v1/assets/${encodeURIComponent(trashedAssetId)}/restore`, { method: 'POST', headers: { ...bridgeHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ expected_revision: 1 }) })
       expect(bridgeRestoreWrite.status).toBe(503)
+      const lifecycleBeforeBlockedPurge = await admin.query<{ purge_requested_at: string | null; revision: number }>(
+        'SELECT purge_requested_at, revision FROM merchant_asset_lifecycle WHERE workspace_id=$1 AND asset_id=$2',
+        [workspaceId, trashedAssetId],
+      )
+      expect(lifecycleBeforeBlockedPurge.rows).toEqual([{ purge_requested_at: null, revision: 1 }])
+      const bridgePurgeWrite = await fetch(`http://127.0.0.1:${port256}/v1/assets/${encodeURIComponent(trashedAssetId)}/purge`, {
+        method: 'POST', headers: { ...bridgeHeaders, 'content-type': 'application/json' },
+        body: JSON.stringify({ confirm_asset_name: `${trashedAssetId}.txt`, reason: 'isolated bridge fail-closed assertion', expected_revision: 1 }),
+      })
+      const bridgePurgeBody = await bridgePurgeWrite.json()
+      expect(bridgePurgeWrite.status, JSON.stringify(bridgePurgeBody)).toBe(503)
+      expect(JSON.stringify(bridgePurgeBody)).toContain('ASSET_LIFECYCLE_UNAVAILABLE')
+      const bridgePurgeCancel = await fetch(`http://127.0.0.1:${port256}/v1/assets/${encodeURIComponent(trashedAssetId)}/purge/cancel`, {
+        method: 'POST', headers: { ...bridgeHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ expected_revision: 1 }),
+      })
+      const bridgePurgeCancelBody = await bridgePurgeCancel.json()
+      expect(bridgePurgeCancel.status, JSON.stringify(bridgePurgeCancelBody)).toBe(503)
+      expect(JSON.stringify(bridgePurgeCancelBody)).toContain('ASSET_LIFECYCLE_UNAVAILABLE')
+      const lifecycleAfterBlockedWrites = await admin.query<{ purge_requested_at: string | null; revision: number }>(
+        'SELECT purge_requested_at, revision FROM merchant_asset_lifecycle WHERE workspace_id=$1 AND asset_id=$2',
+        [workspaceId, trashedAssetId],
+      )
+      expect(lifecycleAfterBlockedWrites.rows).toEqual(lifecycleBeforeBlockedPurge.rows)
       await stopApi(child); child = undefined
       const normalPort256 = await freeLoopbackPort()
       child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: normalPort256, bridgeMode: null })

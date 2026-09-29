@@ -14094,7 +14094,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     await requireStoreOnboarding(requestWorkspace, storeBoundaryScopeForHttp(httpOperationPolicy, path))
   }
   const httpCommercialValidationDeferred = (req.method === 'PUT' && /^\/v1\/assets\/[^/]+\/preference$/u.test(path))
-    || (req.method === 'POST' && /^\/v1\/assets\/[^/]+\/(?:trash|restore)$/u.test(path))
+    || (req.method === 'POST' && /^\/v1\/assets\/[^/]+\/(?:trash|restore|purge(?:\/cancel)?)$/u.test(path))
     || (req.method === 'GET' && path === '/v1/assets/trash')
     || (req.method === 'POST' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/manual-record$/u.test(path))
     || (req.method === 'POST' && path === '/v1/brand-profile/extract')
