@@ -103,7 +103,10 @@ printf '%s' "$project" | grep -Eq '^[a-z0-9][a-z0-9_-]{0,62}$' || {
   echo 'unsafe ECS_COMPOSE_PROJECT' >&2
   exit 1
 }
-docker compose -p "$project" --env-file "$production_env" "$@" config --format json | node -e '
+rendered_compose=$(mktemp "${TMPDIR:-/tmp}/merchant-compose-render.XXXXXXXX")
+trap 'rm -f -- "$rendered_compose"' EXIT HUP INT TERM
+docker compose -p "$project" --env-file "$production_env" "$@" config --format json > "$rendered_compose"
+node -e '
 let input = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", chunk => { input += chunk; });
@@ -119,4 +122,4 @@ process.stdin.on("end", () => {
   }
   process.stdout.write(JSON.stringify(compose, null, 2) + "\n");
 });
-'
+' < "$rendered_compose"

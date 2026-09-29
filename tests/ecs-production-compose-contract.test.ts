@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -64,7 +64,7 @@ function validate(value: unknown, env: NodeJS.ProcessEnv = {}) {
   })
 }
 
-function renderFinalProductionCompose() {
+function renderFinalProductionCompose(inspectTemp = false) {
   const files = readFileSync('infra/local/ecs-production-compose.layers', 'utf8').trim().split('\n')
   const renderRoot = mkdtempSync(join(tmpdir(), 'ecs-production-compose-render-'))
   const localDir = join(renderRoot, 'infra/local')
@@ -110,12 +110,41 @@ function renderFinalProductionCompose() {
     env[`WORKER_${role.toUpperCase()}_API_TOKEN`] = credentials[role].token
     env[`WORKER_${role.toUpperCase()}_API_SIGNING_SECRET`] = credentials[role].signing_secret
   }
-  return JSON.parse(execFileSync('sh', [rendererPath], {
+  if (inspectTemp) {
+    const tempDir = join(renderRoot, 'private-temp')
+    const binDir = join(renderRoot, 'bin')
+    mkdirSync(tempDir)
+    mkdirSync(binDir)
+    const marker = join(renderRoot, 'temp-inspection.json')
+    writeFileSync(join(binDir, 'node'), `#!${process.execPath}
+const fs = require('node:fs')
+const { spawnSync } = require('node:child_process')
+const files = fs.readdirSync(process.env.TMPDIR).filter(name => name.startsWith('merchant-compose-render.'))
+if (files.length !== 1) process.exit(90)
+const path = require('node:path').join(process.env.TMPDIR, files[0])
+fs.writeFileSync(process.env.COMPOSE_TEMP_MARKER, JSON.stringify({ mode: fs.statSync(path).mode & 0o777, hasFixture: fs.readFileSync(path, 'utf8').includes('opaque') }))
+const result = spawnSync(${JSON.stringify(process.execPath)}, process.argv.slice(2), { stdio: 'inherit' })
+process.exit(result.status ?? 91)
+`, { mode: 0o700 })
+    env.TMPDIR = tempDir
+    env.COMPOSE_TEMP_MARKER = marker
+    env.PATH = `${binDir}:${process.env.PATH ?? ''}`
+  }
+  const rendered = JSON.parse(execFileSync('sh', [rendererPath], {
     cwd: renderRoot, encoding: 'utf8', env: { ...env, ECS_COMPOSE_PROJECT: 'compose-contract-test' }, stdio: ['ignore', 'pipe', 'pipe'],
   }))
+  if (inspectTemp) {
+    expect(JSON.parse(readFileSync(join(renderRoot, 'temp-inspection.json'), 'utf8'))).toEqual({ mode: 0o600, hasFixture: true })
+    expect(readdirSync(join(renderRoot, 'private-temp'))).toEqual([])
+  }
+  return rendered
 }
 
 describe('ECS production Compose contract', () => {
+  it('keeps the real fixture render private while normalizing and removes the temporary file', () => {
+    expect(renderFinalProductionCompose(true).services.api).toBeDefined()
+  })
+
   it('renders every release layer from one candidate checkout and deploys one frozen Compose input', () => {
     const renderer = readFileSync('infra/scripts/render-ecs-production-compose.sh', 'utf8')
     const deployer = readFileSync('infra/scripts/deploy-verified-ecs-compose.sh', 'utf8')
@@ -125,7 +154,7 @@ describe('ECS production Compose contract', () => {
     expect(renderer).toContain('layers_file=infra/local/ecs-production-compose.layers')
     expect(renderer).toContain('done < "$layers_file"')
     expect(renderer).toContain('set -- "$@" -f "$layer"')
-    expect(renderer).toContain('docker compose -p "$project" --env-file "$production_env" "$@" config --format json')
+    expect(renderer).toContain('docker compose -p "$project" --env-file "$production_env" "$@" config --format json > "$rendered_compose"')
     expect(renderer).toContain('ECS_PRODUCTION_COMPOSE_LAYERS_FILE override is forbidden')
 
     expect(deployer).toContain('cp "$RENDERED_COMPOSE_PATH" "$verified_compose"')

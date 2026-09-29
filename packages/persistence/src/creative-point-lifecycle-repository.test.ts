@@ -43,6 +43,7 @@ describe('PostgresCreativePointLifecycleRepository', () => {
     expect(query).toContain('JOIN model_usage_ledger')
     expect(query).toContain('JOIN creative_point_provider_receipts_v2 api_receipt')
     expect(query).toContain('JOIN creative_point_provider_receipts_v2 worker_receipt')
+    expect(query).toContain('worker_receipt.id<>api_receipt.id')
     expect(query).toContain("m.modality='text'")
     expect(query).toContain("settlement.idempotency_key='commercial.settle:' || r.action_key")
     expect(query).toContain('NOT EXISTS (SELECT 1 FROM creative_point_reversals_v2')
@@ -97,6 +98,14 @@ describe('PostgresCreativePointLifecycleRepository', () => {
     const repository = new PostgresCreativePointLifecycleRepository(pool(client))
     await expect(repository.verifyModelUsageDeliverySettlement({ workspaceId: 'ws-1', reservationId: 'reservation-1', actionId: 'action-1', providerRequestId: 'provider-1', relayProvider: ' ' })).rejects.toThrow('relayProvider is required')
     expect(client.sql).toEqual([])
+  })
+
+  it('never treats the reserved API provider identity as an independent relay receipt', async () => {
+    const client = new Client()
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    await expect(repository.verifyModelUsageDeliverySettlement({ workspaceId: 'ws-1', reservationId: 'reservation-1', actionId: 'action-1', providerRequestId: 'provider-1', relayProvider: 'model-relay' })).resolves.toBe(false)
+    await expect(repository.verifyModelUsageDeliverySettlementInTransaction(client, { workspaceId: 'ws-1', reservationId: 'reservation-1', actionId: 'action-1', providerRequestId: 'provider-1', relayProvider: 'model-relay' })).resolves.toBe(false)
+    expect(client.sql).not.toContain(expect.stringContaining('SELECT count(*)::int AS matched'))
   })
 
   it('expires a due grant by appending an expiry operation/event and advancing revision', async () => {

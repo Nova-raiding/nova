@@ -61,7 +61,9 @@ describe('deployment operation scripts', () => {
     expect(renderer).toContain('ECS_PRODUCTION_COMPOSE_LAYERS_FILE override is forbidden')
     expect(renderer).toContain('development auth-hardening overlay is forbidden')
     expect(renderer).toContain("release identity layer must be last")
-    expect(renderer).toContain('docker compose -p "$project" --env-file "$production_env" "$@" config --format json')
+    expect(renderer).toContain('docker compose -p "$project" --env-file "$production_env" "$@" config --format json > "$rendered_compose"')
+    expect(renderer).toContain('node -e \'')
+    expect(renderer).toContain('< "$rendered_compose"')
     expect(renderer).toContain('ECS_PRODUCTION_ENV_FILE')
   })
 

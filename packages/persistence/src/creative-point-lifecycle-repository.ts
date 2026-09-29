@@ -169,6 +169,9 @@ export class PostgresCreativePointLifecycleRepository {
   async verifyModelUsageDeliverySettlementInTransaction(client: SqlClient, input: ModelUsageDeliverySettlementInput): Promise<boolean> {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     required(input.reservationId, 'reservationId'); required(input.actionId, 'actionId'); required(input.providerRequestId, 'providerRequestId'); required(input.relayProvider, 'relayProvider')
+    // The API receipt uses this reserved identity. A relay configured with the
+    // same name must never make one append-only row satisfy both receipt joins.
+    if (input.relayProvider === 'model-relay') return false
       // Free model delivery needs the same verified provider/usage evidence as
       // paid delivery, plus the exact policy in both settlement records. OCR
       // retains its separate versioned policy; allowPartialPoints is not a
@@ -207,6 +210,7 @@ export class PostgresCreativePointLifecycleRepository {
            AND (NOT $7::boolean OR m.modality='text') AND m.settlement_status='settled' AND m.cost_cny IS NOT NULL
            AND api_receipt.outcome='succeeded' AND api_receipt.verified_at IS NOT NULL
            AND worker_receipt.outcome='succeeded' AND worker_receipt.verified_at IS NOT NULL
+           AND worker_receipt.id<>api_receipt.id
            AND api_receipt.cost->>'currency'='CNY' AND worker_receipt.cost->>'currency'='CNY'
            AND verified_cost.actual_cost_cny>=0
            AND round(verified_cost.actual_cost_cny,6)=m.cost_cny
