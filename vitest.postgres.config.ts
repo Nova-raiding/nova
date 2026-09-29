@@ -6,6 +6,7 @@ import { DEFAULT_SUITE_PENDING_ALLOWANCES, NON_HERMETIC_TEST_FILES } from './tes
 export const ISOLATED_POSTGRES_TEST_FILES = NON_HERMETIC_TEST_FILES.filter(file => (
   file.startsWith('packages/persistence/src/')
   || file === 'apps/api/src/content-generation-action-owner.postgres.test.ts'
+  || file === 'apps/api/src/catalog-positive-isolated.postgres.test.ts'
   || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts'
   || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts'
 ) && file.endsWith('.postgres.test.ts'))

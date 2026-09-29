@@ -45,6 +45,9 @@ export const NON_HERMETIC_TEST_FILES = [
   // is owned-fixture acceptance rather than a hermetic unit test.
   'packages/persistence/src/support-repository-sla-filter.postgres.test.ts',
   'apps/api/src/content-generation-action-owner.postgres.test.ts',
+  // Runs API catalog writes against an owned tmpfs PostgreSQL fixture through
+  // the explicit isolated PostgreSQL launcher; no default-suite skip is allowed.
+  'apps/api/src/catalog-positive-isolated.postgres.test.ts',
   'apps/api/src/canonical-backfill-contract.test.ts',
   // These two are `REDIS_URL` gated. They carry no default-suite assertion at
   // all when the variable is absent (`describe.skipIf` reports every test as
