@@ -272,6 +272,43 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       expect(await restored.json()).toMatchObject({ data: { id: assetId, revision: 1, sourceRevision: 1 } })
       const visible = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets`, { headers: lifecycleHeaders })
       expect(await visible.json()).toMatchObject({ data: [expect.objectContaining({ id: assetId })] })
+      const reTrashed = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets/${encodeURIComponent(assetId)}/trash`, {
+        method: 'POST', headers: lifecycleHeaders, body: JSON.stringify({ expected_revision: 2 }),
+      })
+      expect(reTrashed.status).toBe(200)
+      const reTrashedBody = await reTrashed.json() as { data: { revision: number } }
+      expect(reTrashedBody.data.revision).toBe(3)
+      const earlyPurge = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets/${encodeURIComponent(assetId)}/purge`, {
+        method: 'POST', headers: lifecycleHeaders,
+        body: JSON.stringify({ confirm_asset_name: `${assetId}.txt`, reason: 'isolated PostgreSQL purge cancellation acceptance', expected_revision: reTrashedBody.data.revision }),
+      })
+      expect(earlyPurge.status).toBe(202)
+      const earlyPurgeBody = await earlyPurge.json() as { data: { revision: number; status: string } }
+      expect(earlyPurgeBody.data).toMatchObject({ revision: 4, status: 'purge_queued' })
+      const queuedState = await admin.query<{ purge_requested_at: string | null; purge_request_reason: string | null; revision: number }>(
+        'SELECT purge_requested_at, purge_request_reason, revision FROM merchant_asset_lifecycle WHERE workspace_id=$1 AND asset_id=$2',
+        [workspaceId, assetId],
+      )
+      expect(queuedState.rows).toEqual([{
+        purge_requested_at: expect.any(Date),
+        purge_request_reason: 'isolated PostgreSQL purge cancellation acceptance',
+        revision: 4,
+      }])
+      const cancelledPurge = await fetch(`http://127.0.0.1:${normalPort256}/v1/assets/${encodeURIComponent(assetId)}/purge/cancel`, {
+        method: 'POST', headers: lifecycleHeaders, body: JSON.stringify({ expected_revision: earlyPurgeBody.data.revision }),
+      })
+      expect(cancelledPurge.status).toBe(200)
+      expect(await cancelledPurge.json()).toMatchObject({ data: { asset_id: assetId, revision: 5, status: 'purge_cancelled' } })
+      const cancelledState = await admin.query<{ purge_requested_at: string | null; purge_request_reason: string | null; revision: number }>(
+        'SELECT purge_requested_at, purge_request_reason, revision FROM merchant_asset_lifecycle WHERE workspace_id=$1 AND asset_id=$2',
+        [workspaceId, assetId],
+      )
+      expect(cancelledState.rows).toEqual([{ purge_requested_at: null, purge_request_reason: null, revision: 5 }])
+      const lifecycleEvents = await admin.query<{ event_type: string }>(
+        'SELECT event_type FROM merchant_asset_lifecycle_events WHERE workspace_id=$1 AND asset_id=$2 ORDER BY occurred_at,event_id',
+        [workspaceId, assetId],
+      )
+      expect(lifecycleEvents.rows.map(event => event.event_type)).toEqual(['deleted', 'restored', 'deleted', 'early_purge_requested', 'purge_request_cancelled'])
     } finally {
       await stopApi(child)
       await app.end()
