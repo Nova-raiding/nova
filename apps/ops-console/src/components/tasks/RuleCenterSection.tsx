@@ -204,7 +204,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
           type="warning"
           showIcon
           title="当前列表含未验证来源的规则"
-          description="未审批的人工导入只是草稿，不会进入商家插件。来源必须是批准域名和路径下的具体官方文章 URL；独立审批后生效范围为所有商家。"
+          description="未审批的人工导入只是草稿，不会进入商家插件。来源链接需符合该平台批准的域名和路径规则；格式校验不证明页面存在或内容真实性，审批人仍须核对原始依据。独立审批后生效范围为所有商家。"
           style={{ marginBottom: 16 }}
         />
       ) : null}
@@ -243,7 +243,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
             render: (_: unknown, row: Rule) => (
               <Space size={4}>
                 <Tag color={row.lifecycleStatus === "published" ? "green" : "orange"}>{ruleStatusLabel(row.lifecycleStatus ?? row.status)}</Tag>
-                <Tag color={row.source.trust !== "verified" ? "orange" : row.source.kind === "internal" && isApprovedRuleSourceReference(row.source.reference) ? "blue" : ruleTrustLabel(row) === "签名来源已验证" ? "green" : "red"}>{ruleTrustLabel(row)}</Tag>
+                <Tag color={row.source.trust !== "verified" ? "orange" : ruleTrustLabel(row) === "人工已审批" ? "blue" : ruleTrustLabel(row) === "签名来源已验证" ? "green" : "red"}>{ruleTrustLabel(row)}</Tag>
               </Space>
             ),
           },
