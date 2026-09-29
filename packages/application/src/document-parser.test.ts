@@ -93,7 +93,7 @@ describe('document parser', () => {
     expect(String(facts.text)).toContain('Hello Codex')
   })
 
-  it('limits PDF text extraction to the first page and caps extracted bytes', async () => {
+  it('fails closed when PDF text would exceed the extraction limit', async () => {
     const cap = 2 * 1024 * 1024
     const textFragment = 'BT /F1 8 Tf 10 10 Td (AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA) Tj ET '
     const completeFragments = Math.floor((cap - 2) / 48)
@@ -114,12 +114,11 @@ endstream endobj
 endstream endobj
 trailer << /Root 1 0 R >>
 %%EOF`
-    const facts = await parseDocumentFacts({ name: 'large.pdf', mimeType: 'application/pdf', body: Buffer.from(pdf) })
-    expect(facts).toMatchObject({ format: 'pdf', pages: 2 })
-    expect(Buffer.byteLength(String(facts.text), 'utf8')).toBeLessThanOrEqual(cap)
-    expect(String(facts.text)).not.toContain('\uFFFD')
-    expect(String(facts.text)).not.toContain('SECOND PAGE')
-  })
+    await expect(parseDocumentFacts({ name: 'large.pdf', mimeType: 'application/pdf', body: Buffer.from(pdf) }))
+      .rejects.toMatchObject({ name: 'DocumentParseError', context: {
+        code: 'invalid_document', manualAction: 'asset.facts.confirm', message: expect.stringContaining('未返回不完整事实'),
+      } })
+  }, 30_000)
 
   it('extracts DOCX text through the bounded ZIP reader', async () => {
     const zip = new JSZip()
@@ -262,5 +261,13 @@ trailer << /Root 1 0 R >>
     zip.file('xl/worksheets/sheet1.xml', `<worksheet><sheetData><row r="1"><c r="A1" t="str"><v>attacker</v></c><c r="B1" t="str"><v>attacker</v></c></row></sheetData><mergeCells>${merges}</mergeCells></worksheet>`)
     await expect(parseDocumentFacts({ name: 'merge-work.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: await zip.generateAsync({ type: 'uint8array' }) }))
       .rejects.toThrow('XLSX 合并单元格展开量超过上限')
+  })
+
+  it('rejects XLSX merge expansion that would exceed the serialized-facts byte budget', async () => {
+    const zip = new JSZip()
+    const largeValue = 'A'.repeat(700_000)
+    zip.file('xl/worksheets/sheet1.xml', `<worksheet><sheetData><row r="1"><c r="A1" t="str"><v>${largeValue}</v></c></row></sheetData><mergeCells><mergeCell ref="A1:A4"/></mergeCells></worksheet>`)
+    await expect(parseDocumentFacts({ name: 'merge-output-bomb.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: await zip.generateAsync({ type: 'uint8array' }) }))
+      .rejects.toThrow('XLSX 结构化事实超过解析上限')
   })
 })

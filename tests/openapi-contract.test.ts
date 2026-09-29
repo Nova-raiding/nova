@@ -29,7 +29,27 @@ function parseMcpRequestSchema(source: string) {
   return { block, properties, methodEnum }
 }
 
+function openApiOperation(source: string, path: string, method: string) {
+  const pathStart = source.indexOf(`  ${path}:\n`)
+  expect(pathStart, `OpenAPI path ${path} is missing`).toBeGreaterThanOrEqual(0)
+  const laterPath = source.slice(pathStart + 1).search(/^  \/[^\n]*:\s*$/mu)
+  const pathBlock = source.slice(pathStart, laterPath < 0 ? undefined : pathStart + 1 + laterPath)
+  const methodStart = pathBlock.indexOf(`    ${method}:\n`)
+  expect(methodStart, `OpenAPI ${method.toUpperCase()} ${path} operation is missing`).toBeGreaterThanOrEqual(0)
+  const remaining = pathBlock.slice(methodStart + 1)
+  const nextMethod = remaining.search(/^    (?:get|post|put|patch|delete|options|head):\s*$/mu)
+  return pathBlock.slice(methodStart, nextMethod < 0 ? undefined : methodStart + 1 + nextMethod)
+}
+
 describe('OpenAPI security contract', () => {
+  it('documents recycled-media binding as 410 and missing-asset purge as 404', () => {
+    const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
+    const binding = openApiOperation(source, '/v1/products/{productId}/assets', 'post')
+    const purge = openApiOperation(source, '/v1/assets/{assetId}/purge', 'post')
+    expect(binding).toContain("'410': { $ref: '#/components/responses/ErrorEnvelope' }")
+    expect(purge).toContain("'404': { $ref: '#/components/responses/ErrorEnvelope' }")
+  })
+
   it('documents the implemented security response/status surface and method allowlist', () => {
     const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
     for (const path of ['/v1/oauth/callback/{platform}:', '/v1/rules/audit:', '/v1/rules/{packId}/versions:', '/v1/rules/{packId}/versions/{version}/status:', '/v1/publish-jobs:', '/v1/publish-jobs/{jobId}:', '/v1/image-generation-jobs:', '/v1/image-generation-jobs/{jobId}:', '/mcp:']) expect(source).toContain(path)

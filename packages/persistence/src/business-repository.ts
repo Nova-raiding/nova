@@ -268,6 +268,26 @@ export class PostgresBusinessRepository {
       const assetResult = await client.query<{ entity_id: string; payload: Record<string, unknown> }>(`SELECT entity_id, payload FROM business_entity_snapshots WHERE workspace_id=$1 AND entity_type='asset' AND entity_id=$2 FOR SHARE`, [workspaceId, input.assetId])
       const asset = assetResult.rows[0]
       if (!asset) throw new Error('PRODUCT_ASSET_BINDING_ASSET_NOT_FOUND')
+      if (status === 'active') {
+        // Serialize new bindings against trashing and purge claims. The asset
+        // snapshot lock above also protects assets that have never had a
+        // lifecycle row: trash takes FOR UPDATE on that same stable row before
+        // inserting lifecycle state. Existing lifecycle rows are locked here
+        // with FOR SHARE, which conflicts with trash/claim/purge UPDATEs.
+        const lifecycleResult = await client.query<{
+          deleted_at: string | Date | null
+          purge_requested_at: string | Date | null
+          purged_at: string | Date | null
+          purge_lease_token: string | null
+        }>(`SELECT deleted_at,purge_requested_at,purged_at,purge_lease_token
+              FROM merchant_asset_lifecycle
+             WHERE workspace_id=$1 AND asset_id=$2
+             FOR SHARE`, [workspaceId, input.assetId])
+        const lifecycle = lifecycleResult.rows[0]
+        if (lifecycle && (lifecycle.deleted_at !== null || lifecycle.purge_requested_at !== null || lifecycle.purged_at !== null || lifecycle.purge_lease_token !== null)) {
+          throw new Error('ASSET_LIFECYCLE_ASSET_NOT_ACTIVE')
+        }
+      }
       const assetBrandId = typeof asset.payload.brandId === 'string' ? asset.payload.brandId.trim() : ''
       if (input.brandId?.trim() && assetBrandId && assetBrandId !== input.brandId.trim()) throw new Error('PRODUCT_ASSET_BINDING_BRAND_MISMATCH')
       const nextPayload = { ...product.payload }

@@ -66,7 +66,7 @@ describe("customer delivery workspace selection", () => {
     // behaviour behind that - no read, no enabled write control, when the
     // shared target is empty - is asserted in Chromium below, not here.
     expect(pageSource).not.toContain("workspaceRows[0]?.workspaceId");
-    expect(pageSource).not.toContain("刷新交付档案");
+    expect(pageSource).toContain("刷新交付档案");
   });
 
   it("uploads the contract, omits delivery video, and resumes an interrupted draft", () => {
@@ -320,6 +320,10 @@ describe("customer delivery read-only desktop interaction", () => {
       // and no write control may be enabled in that state.
       const methods = await prepare(page, { write: true, target: "", awaitRows: false });
       expect(await page.getByRole("combobox", { name: "客户交付目标企业工作区", exact: true }).count()).toBe(1);
+      const toolbar = page.locator(".ops-page-header-actions-only");
+      expect(await toolbar.getByRole("combobox", { name: "客户交付目标企业工作区", exact: true }).count()).toBe(1);
+      const refresh = page.getByRole("button", { name: "刷新交付档案", exact: true });
+      expect(await refresh.isDisabled()).toBe(true);
       await page.getByText("客户建档", { exact: true }).waitFor();
       await settle(page);
       // Nothing at all may be requested: `ws-directory-first` was never chosen.
@@ -333,6 +337,34 @@ describe("customer delivery read-only desktop interaction", () => {
       await settle(page);
       expect(methods).toEqual([]);
       expect(await page.getByRole("dialog").count()).toBe(0);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("places the selector above the warning and refreshes only the explicitly selected tenant", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    const requestedWorkspaces: string[] = [];
+    try {
+      const methods = await prepare(page, {
+        target: "",
+        awaitRows: false,
+        onList: (workspaceId) => { requestedWorkspaces.push(workspaceId); return [{ ...record, workspaceId }]; },
+      });
+      const toolbar = page.locator(".ops-page-header-actions-only");
+      expect(await toolbar.getByRole("combobox", { name: "客户交付目标企业工作区", exact: true }).count()).toBe(1);
+      const warning = page.getByText("尚未选择客户工作区", { exact: true });
+      const toolbarY = await toolbar.evaluate((element) => element.getBoundingClientRect().y);
+      const warningY = await warning.evaluate((element) => element.getBoundingClientRect().y);
+      expect(toolbarY).toBeLessThan(warningY);
+      expect(methods).toEqual([]);
+      const refresh = page.getByRole("button", { name: "刷新交付档案", exact: true });
+      expect(await refresh.isDisabled()).toBe(true);
+      await toolbar.getByRole("combobox", { name: "客户交付目标企业工作区", exact: true }).click();
+      await page.locator(".ant-select-item-option-content").filter({ hasText: "目录首家企业 · ws-directory-first" }).click();
+      await page.getByRole("cell", { name: "只读客户", exact: true }).waitFor();
+      expect(await refresh.isEnabled()).toBe(true);
+      await refresh.click();
+      await expect.poll(() => methods.filter((method) => method === "ops.customer-delivery.list").length).toBe(2);
+      expect(requestedWorkspaces).toEqual(["ws-directory-first", "ws-directory-first"]);
     } finally { await page.close(); }
   }, 45_000);
 
@@ -371,6 +403,36 @@ describe("customer delivery read-only desktop interaction", () => {
       await afterSales.click();
       expect(await page.getByRole("option", { name: "API 售后乙", exact: true }).count()).toBe(0);
       expect(await page.getByRole("option", { name: "韩先晓", exact: true }).count()).toBe(0);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("shows only the bound login in the read-only customer details drawer", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      const methods = await prepare(page, { onList: () => [boundRecord] });
+      await row(page).getByRole("button", { name: "查看详情", exact: true }).click();
+      const drawer = page.getByRole("dialog").filter({ hasText: "只读客户" }).last();
+      await drawer.waitFor();
+      const details = await drawer.innerText();
+      expect(details).toContain(account.login);
+      expect(details).not.toContain(account.accountId);
+      expect(details).not.toContain(account.identityId);
+      expect(await drawer.getByRole("region", { name: "生效账号", exact: true }).count()).toBe(0);
+      expect(await drawer.getByRole("combobox", { name: "选择生效账号", exact: true }).count()).toBe(0);
+      expect(await drawer.getByRole("button", { name: "查询账号", exact: true }).count()).toBe(0);
+      expect(await drawer.getByRole("button", { name: "确认关联账号", exact: true }).count()).toBe(0);
+      expect(methods).toEqual(["ops.customer-delivery.list"]);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("does not focus the force-rendered create form while the page is initially idle", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await prepare(page, { write: true });
+      const focusedInsideDrawer = await page.locator(".ant-drawer").evaluateAll(drawers =>
+        drawers.some(drawer => drawer.contains(document.activeElement)),
+      );
+      expect(focusedInsideDrawer).toBe(false);
     } finally { await page.close(); }
   }, 45_000);
 

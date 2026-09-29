@@ -110,6 +110,7 @@ describe('PostgresBusinessRepository', () => {
     client.enqueue() // set_config
     client.enqueue({ workspace_id: 'ws_one', entity_type: 'product', entity_id: 'product_1', entity_version: 3, payload: { id: 'product_1', workspaceId: 'ws_one', brandId: 'brand_1', sourceAssetIds: [] }, created_at: '2026-08-23T00:00:00.000Z', updated_at: '2026-08-23T00:00:00.000Z' })
     client.enqueue({ entity_id: 'asset_1', payload: { id: 'asset_1', workspaceId: 'ws_one', brandId: 'brand_1' } })
+    client.enqueue() // no lifecycle row: never trashed
     client.enqueue({ workspace_id: 'ws_one', entity_type: 'product', entity_id: 'product_1', entity_version: 4, payload: { id: 'product_1', workspaceId: 'ws_one', brandId: 'brand_1', sourceAssetIds: ['asset_1'] }, created_at: '2026-08-23T00:00:00.000Z', updated_at: '2026-08-23T00:00:01.000Z' })
     client.enqueue() // normalized product projection trigger
     client.enqueue({ workspace_id: 'ws_one', product_id: 'product_1', asset_id: 'asset_1', asset_role: 'source', ordinal: 1, status: 'active', created_at: '2026-08-23T00:00:01.000Z', updated_at: '2026-08-23T00:00:01.000Z' })

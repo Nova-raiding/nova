@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setAssetLifecycleRepositoryForTests, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setWorkspaceBootstrapRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
+import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setAssetLifecycleRepositoryForTests, setAssetStorageForTests, setBusinessRepositoryForTests, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setWorkspaceBootstrapRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
 import type { McpCanonicalProductConsistencyResult } from '../../../packages/contracts/src/index.js'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
@@ -2182,6 +2182,110 @@ describe('API HTTP vertical slice', () => {
       const visibleAgain = await fetch(`${base}/v1/assets`, { headers }).then(json)
       expect((visibleAgain.data as Array<{ id: string }>).map(item => item.id)).toContain(asset.id)
     } finally { restoreLifecycle() }
+  })
+
+  it('returns the standard HTTP 410 envelope when binding a product to recycled media', async () => {
+    const base = await start()
+    const workspaceId = `ws_bind_trashed_asset_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const product = service.importProduct({ workspaceId, platform: 'taobao', title: '回收素材绑定拒绝商品' })
+    const asset = service.registerAsset({
+      workspaceId,
+      name: 'recycled-guide.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1024,
+      sha256: 'c'.repeat(64),
+      storageKey: `quarantine/${workspaceId}/recycled-guide.pdf`,
+    })
+    let bindCalled = false
+    let unbindCalled = false
+    let activeChecks = 0
+    setBusinessRepositoryForTests({
+      async loadWorkspace() { return [] },
+      async bindProductAsset() { bindCalled = true; throw new Error('unexpected bind attempt') },
+      async unbindProductAsset(input: { workspaceId: string; productId: string; assetId: string; assetRole: 'source'; actorId: string }) {
+        unbindCalled = true
+        return { workspaceId: input.workspaceId, productId: input.productId, assetId: input.assetId, assetRole: input.assetRole, ordinal: 1, status: 'disabled', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      },
+      async listProductAssetBindings() { return [] },
+    } as never)
+    const restoreLifecycle = setAssetLifecycleRepositoryForTests({
+      async isActive(scope: string, id: string) { activeChecks += 1; return scope === workspaceId && id === asset.id ? false : true },
+    } as never)
+    try {
+      const response = await fetch(`${base}/v1/products/${encodeURIComponent(product.id)}/assets`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ asset_id: asset.id, brand_id: 'brand_recycled_asset', expected_version: 1, reason: '不应将回收素材绑定到商品' }),
+      })
+      const envelope = await json(response)
+      expect(response.status).toBe(410)
+      expect(envelope).toMatchObject({
+        workspace_id: workspaceId,
+        data: null,
+        error: { code: 'ASSET_TRASHED', message: expect.stringContaining('回收站') },
+      })
+      expect(envelope.request_id).toEqual(expect.any(String))
+      expect(envelope.trace_id).toEqual(expect.any(String))
+      expect(bindCalled).toBe(false)
+
+      const checksAfterRejectedBind = activeChecks
+      const unbindResponse = await fetch(`${base}/v1/products/${encodeURIComponent(product.id)}/assets`, {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({ asset_id: asset.id, brand_id: 'brand_recycled_asset', expected_version: 1, reason: '解除回收素材绑定' }),
+      })
+      const unbindEnvelope = await json(unbindResponse)
+      expect(unbindResponse.status).toBe(200)
+      expect(unbindEnvelope.data).toMatchObject({ binding: { assetId: asset.id, status: 'disabled' } })
+      expect(unbindCalled).toBe(true)
+      expect(activeChecks).toBe(checksAfterRejectedBind)
+    } finally {
+      restoreLifecycle()
+      setBusinessRepositoryForTests()
+    }
+  })
+
+  it('refuses to purge an asset referenced by an active product binding and preserves its object', async () => {
+    const base = await start()
+    const workspaceId = `ws_purge_active_asset_ref_${Date.now()}`
+    const asset = service.registerAsset({ workspaceId, name: 'bound-image.png', mimeType: 'image/png', sizeBytes: 1024, sha256: 'd'.repeat(64), storageKey: `quarantine/${workspaceId}/bound-image.png` })
+    let failPurgeCalls = 0
+    let completePurgeCalls = 0
+    let storageCalls = 0
+    let leaseLockCalls = 0
+    setBusinessRepositoryForTests({
+      async loadWorkspace() { return [{ workspaceId, entityType: 'product', entityId: 'bound-product', entityVersion: 1, payload: { id: 'bound-product', sourceAssetIds: [asset.id] }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] },
+      async listProductAssetBindings() { return [{ workspaceId, productId: 'bound-product', assetId: asset.id, assetRole: 'source', ordinal: 1, status: 'active', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] },
+    } as never)
+    const restoreLifecycle = setAssetLifecycleRepositoryForTests({
+      async claimExpired() { return [{ assetId: asset.id, leaseToken: 'lease-active-binding' }] },
+      async withPurgeLease(input: { workspaceId: string; assetId: string; leaseToken: string }, work: () => Promise<void>) { leaseLockCalls += 1; expect(input).toMatchObject({ workspaceId, assetId: asset.id, leaseToken: 'lease-active-binding' }); return work() },
+      async failPurge(input: { assetId: string; leaseToken: string; error: { code: string } }) { failPurgeCalls += 1; expect(input).toMatchObject({ assetId: asset.id, leaseToken: 'lease-active-binding', error: { code: 'ASSET_OBJECT_STILL_REFERENCED' } }) },
+      async completePurge() { completePurgeCalls += 1 },
+    } as never)
+    const restoreStorage = setAssetStorageForTests({
+      async head() { storageCalls += 1; return { key: asset.storageKey, size: asset.sizeBytes, lastModifiedAt: new Date().toISOString() } },
+      async delete() { storageCalls += 1 },
+    } as never)
+    try {
+      const response = await fetch(`${base}/v1/internal/assets/lifecycle/purge`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-worker-id': 'asset-cleaner-test' },
+        body: JSON.stringify({ workspace_id: workspaceId, limit: 1 }),
+      })
+      const envelope = await json(response)
+      expect(response.status).toBe(200)
+      expect(envelope.data).toMatchObject({ purged: 0, retried: 1, blocked_by_references: 1, claimed: 1 })
+      expect(failPurgeCalls).toBe(1)
+      expect(leaseLockCalls).toBe(1)
+      expect(completePurgeCalls).toBe(0)
+      expect(storageCalls).toBe(0)
+    } finally {
+      restoreStorage()
+      restoreLifecycle()
+      setBusinessRepositoryForTests()
+      service.assets.delete(asset.id)
+    }
   })
 
   it('uploads assets into quarantine and only serves them after scan promotion', async () => {

@@ -437,6 +437,7 @@ paths:
         '202': { $ref: '#/components/responses/Envelope' }
         '400': { $ref: '#/components/responses/ErrorEnvelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
         '409': { $ref: '#/components/responses/ErrorEnvelope' }
         '503': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/assets/{assetId}/purge/cancel:
@@ -511,6 +512,7 @@ paths:
         '400': { $ref: '#/components/responses/ErrorEnvelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
         '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '410': { $ref: '#/components/responses/ErrorEnvelope' }
         '409': { $ref: '#/components/responses/ErrorEnvelope' }
     delete:
       tags: [Catalog]

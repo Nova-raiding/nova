@@ -36,6 +36,7 @@ const MAX_ZIP_ENTRIES = 10_000
 // arrays, and cap the work spent materializing merged cells.
 const MAX_XLSX_ROWS = 100_000
 const MAX_XLSX_MERGE_EXPANSIONS = 100_000
+const MAX_XLSX_OUTPUT_BYTES = MAX_EXTRACTED_TEXT
 
 export function truncateUtf8ToByteLength(value: string, byteLimit: number): string {
   if (byteLimit <= 0) return ''
@@ -296,6 +297,14 @@ async function parseXlsx(bytes: Uint8Array): Promise<ParsedDocumentFacts> {
     })
     rowsByNumber.set(rowNumber, Object.fromEntries(cells.filter(cell => cell.reference).map(cell => [cell.reference, cell.value])))
   }
+  const outputPrefixBytes = Buffer.byteLength('{"format":"xlsx","rows":[', 'utf8')
+  const outputSuffixBytes = Buffer.byteLength(']}', 'utf8')
+  let serializedOutputBytes = outputPrefixBytes + outputSuffixBytes
+  for (let rowNumber = 1; rowNumber <= lastRow; rowNumber += 1) {
+    if (rowNumber > 1) serializedOutputBytes += 1 // comma between JSON array rows
+    serializedOutputBytes += Buffer.byteLength(JSON.stringify(rowsByNumber.get(rowNumber) ?? {}), 'utf8')
+    if (serializedOutputBytes > MAX_XLSX_OUTPUT_BYTES) throw new Error('XLSX 结构化事实超过解析上限')
+  }
   let mergeExpansions = 0
   for (const match of sheetXml.matchAll(/<(?:[\w.-]+:)?mergeCell\b[^>]*\bref="([A-Z]+)(\d+):([A-Z]+)(\d+)"[^>]*\/?\s*>/giu)) {
     const [, startColumn, startRowText, endColumn, endRowText] = match
@@ -306,10 +315,24 @@ async function parseXlsx(bytes: Uint8Array): Promise<ParsedDocumentFacts> {
     if (mergeExpansions > MAX_XLSX_MERGE_EXPANSIONS) throw new Error(`XLSX 合并单元格展开量超过上限（${MAX_XLSX_MERGE_EXPANSIONS}）`)
     const value = rowsByNumber.get(startRow)?.[startColumn]
     if (value === undefined || value === '') continue
+    if (endRow > lastRow) {
+      // Every newly materialized empty row adds `{}` and its array separator.
+      const addedRowsBytes = (endRow - lastRow) * 3
+      if (serializedOutputBytes + addedRowsBytes > MAX_XLSX_OUTPUT_BYTES) throw new Error('XLSX 结构化事实超过解析上限')
+      serializedOutputBytes += addedRowsBytes
+    }
     lastRow = Math.max(lastRow, endRow)
+    // Calculate the JSON-escaped cost once. Counting raw UTF-8 bytes alone is
+    // not safe because control characters can expand sixfold when serialized.
+    const serializedCellBytes = Buffer.byteLength(JSON.stringify({ [startColumn]: value }), 'utf8') - 2
     for (let rowNumber = startRow + 1; rowNumber <= endRow; rowNumber += 1) {
       const row = rowsByNumber.get(rowNumber) ?? {}
-      row[startColumn] ??= value
+      if (row[startColumn] === undefined) {
+        const addition = serializedCellBytes + (Object.keys(row).length > 0 ? 1 : 0)
+        if (serializedOutputBytes + addition > MAX_XLSX_OUTPUT_BYTES) throw new Error('XLSX 结构化事实超过解析上限')
+        serializedOutputBytes += addition
+        row[startColumn] = value
+      }
       rowsByNumber.set(rowNumber, row)
     }
   }
@@ -393,9 +416,6 @@ export async function parseDocumentFacts(input: { name: string; mimeType: string
               if (remaining <= 0) { exhausted = true; break }
               const encoded = Buffer.from(fragment, 'utf8')
               if (encoded.byteLength > remaining) {
-                const truncated = truncateUtf8ToByteLength(fragment, remaining)
-                text += truncated
-                bytesUsed += Buffer.byteLength(truncated, 'utf8')
                 exhausted = true
                 break
               }
@@ -419,6 +439,11 @@ export async function parseDocumentFacts(input: { name: string; mimeType: string
           else exhausted = true
         }
       }
+      if (exhausted) throw new DocumentParseError({
+        code: 'invalid_document',
+        message: 'PDF 提取文本超过解析上限；未返回不完整事实，请拆分文件后重试',
+        manualAction: 'asset.facts.confirm',
+      })
       return { format: 'pdf', text, pages: doc.numPages }
     } finally {
       if (doc) await doc.destroy()

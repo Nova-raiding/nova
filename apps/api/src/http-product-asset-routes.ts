@@ -56,7 +56,7 @@ export async function handleHttpProductAssetRoute(req: IncomingMessage, res: Ser
     const ordinal = input.ordinal === undefined ? undefined : Number(input.ordinal)
     const reason = typeof input.reason === 'string' ? input.reason.trim() : ''
     if (!assetId || !brandId || !reason || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || (ordinal !== undefined && (!Number.isSafeInteger(ordinal) || ordinal < 1)) || !['source', 'main', 'secondary', 'detail'].includes(assetRole)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'asset_id、brand_id、reason、expected_version 和合法 asset_role 为必填项', 400)
-    await deps.assertAssetActive?.(workspaceId, assetId)
+    if (req.method === 'POST') await deps.assertAssetActive?.(workspaceId, assetId)
     await deps.enforceProductBrandBinding(req, workspaceId, productId, brandId)
     const actorId = deps.requestActor(req)
     try {
@@ -65,6 +65,7 @@ export async function handleHttpProductAssetRoute(req: IncomingMessage, res: Ser
       return deps.send(res, req.method === 'POST' ? 201 : 200, workspaceId, { binding, audited: true, source: 'controlled_relation_service' }, null, req)
     } catch (error) {
       if (error instanceof BusinessSnapshotVersionConflictError) throw new DomainError('PRODUCT_ASSET_BINDING_VERSION_CONFLICT', '商品版本已变化，请刷新后重试', 409)
+      if (error instanceof Error && error.message === 'ASSET_LIFECYCLE_ASSET_NOT_ACTIVE') throw new DomainError('ASSET_LIFECYCLE_ASSET_NOT_ACTIVE', '素材已进入回收流程，不能再绑定商品', 410)
       if (error instanceof Error && error.message === 'PRODUCT_ASSET_BINDING_BRAND_MISMATCH') throw new DomainError('PRODUCT_ASSET_BINDING_BRAND_MISMATCH', '商品或素材不属于指定品牌', 403)
       if (error instanceof Error && error.message === 'PRODUCT_ASSET_BINDING_ASSET_NOT_FOUND') throw new DomainError('PRODUCT_ASSET_BINDING_ASSET_NOT_FOUND', '素材不存在或不属于当前工作区', 404)
       throw error

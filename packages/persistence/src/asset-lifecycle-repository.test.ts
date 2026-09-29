@@ -36,7 +36,7 @@ describe('PostgresAssetLifecycleRepository', () => {
     expect(trashed).toMatchObject({ workspaceId: 'ws_asset', assetId: 'asset-1', revision: 1, deletedBy: 'merchant' })
     expect(client.calls.map(call => call.text)).toEqual([
       'BEGIN', "SELECT set_config('app.workspace_id', $1, true)",
-      expect.stringContaining("entity_type='asset' AND entity_id=$2 FOR KEY SHARE"),
+      expect.stringContaining("entity_type='asset' AND entity_id=$2 FOR UPDATE"),
       expect.stringContaining('ON CONFLICT (workspace_id,asset_id)'),
       expect.stringContaining('merchant_asset_lifecycle_events'), 'COMMIT',
     ])

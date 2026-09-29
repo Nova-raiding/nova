@@ -717,6 +717,11 @@ async function requireSettledContentExecutionEvidence(workspaceId: string, actio
 }
 
 type SnapshotInput = { entityType: BusinessEntityType; entityId: string; entityVersion: number; payload: Record<string, unknown> }
+function orderProductSnapshotsForLocking(snapshots: readonly SnapshotInput[]): SnapshotInput[] {
+  const products = snapshots.filter(snapshot => snapshot.entityType === 'product').sort((left, right) => left.entityId.localeCompare(right.entityId))
+  let productIndex = 0
+  return snapshots.map(snapshot => snapshot.entityType === 'product' ? products[productIndex++]! : snapshot)
+}
 type TrustedScanPromotionPersistenceInput = {
   workspaceId: string
   receipt: AppendAssetScanReceiptInput
@@ -762,7 +767,7 @@ export interface ApiPersistence {
   rules?: RuleRepositoryPort
   brandUnits?: import('../../../packages/persistence/src/index.js').BrandUnitRepository
   scopedBrandSettings?: PostgresScopedBrandSettingsRepository
-  bridgeSchemaVersion?: 254 | 255 | 256
+  bridgeSchemaVersion?: 242 | 244 | 254 | 255 | 256
   objectOrphans?: ObjectOrphanRepository
   contextSnapshots?: ContextSnapshotRepository
   identities?: IdentityLifecycleRepository
@@ -1360,6 +1365,12 @@ export function setAssetLifecycleRepositoryForTests(repository: PostgresAssetLif
 }
 const workspaceEventSequences = new Map<string, number>()
 let assetStorage: ObjectStoragePort | undefined
+export function setAssetStorageForTests(storage?: ObjectStoragePort) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('ASSET_STORAGE_OVERRIDE_TEST_ONLY')
+  const previous = assetStorage
+  assetStorage = storage
+  return () => { assetStorage = previous }
+}
 let ruleRepositoryOverride: RuleRepositoryPort | undefined
 const inMemoryTimelineEvents = new Map<string, OutboxEvent[]>()
 const rechargeOrders = new Map<string, RechargeOrder>()
@@ -3144,16 +3155,17 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const migrations = await loadMigrations()
     const expectedMigrationVersion = migrations.at(-1)?.version ?? 0
     const bridgeSchemaMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
-    if (bridgeSchemaMode && (!['prefix_242_or_244', 'prefix_254_or_255', 'prefix_255_or_256'].includes(bridgeSchemaMode) || process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false')) {
+    if (bridgeSchemaMode && (!['prefix_242_or_254', 'prefix_254_or_255', 'prefix_255_or_256'].includes(bridgeSchemaMode) || process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false')) {
       throw new Error('bridge runtime requires a reviewed schema compatibility mode and RUN_MIGRATIONS_ON_STARTUP=false')
     }
     if (process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') await runMigrations(sqlPool, migrations)
-    const bridgeSchemaVersion = bridgeSchemaMode === 'prefix_254_or_255' || bridgeSchemaMode === 'prefix_255_or_256'
+    const bridgeSchemaVersion = bridgeSchemaMode
       ? await (async () => {
         const result = await pool.query<{ version: number; name: string; checksum: string | null }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version ASC')
-        return verifyBridgeMigrationPrefix(result.rows, migrations, bridgeSchemaMode) as 254 | 255 | 256
+        return verifyBridgeMigrationPrefix(result.rows, migrations, bridgeSchemaMode)
       })()
       : undefined
+    const assetLifecycleAvailable = bridgeSchemaMode === undefined || bridgeSchemaMode === 'prefix_255_or_256' && bridgeSchemaVersion === 256
     const outbox = new PostgresOutboxRepository(sqlPool)
     const business = new PostgresBusinessRepository(sqlPool, { normalizedProjection: true })
     const billing = new PostgresBillingRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event))
@@ -3238,7 +3250,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     // Bridge images keep lifecycle mutations and purge disabled for the full
     // rollout. Once the 255/256 bridge observes schema 256, retain a read-only
     // projection so a rollback image cannot expose already-trashed assets.
-    const assetLifecycleRead = bridgeSchemaMode === undefined || bridgeSchemaVersion === 256
+    const assetLifecycleRead = assetLifecycleAvailable
       ? new PostgresAssetLifecycleRepository(sqlPool)
       : undefined
     const assetLifecycle = bridgeSchemaMode === undefined ? assetLifecycleRead : undefined
@@ -3314,7 +3326,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const persistSnapshotsAndEvent = async (input: { workspaceId: string; snapshots: SnapshotInput[]; aggregateId: string; eventType: string; sequence: number; eventPayload: Record<string, unknown> }) => {
       await ensureWorkspace(input.workspaceId)
       await withWorkspaceTransaction(sqlPool, input.workspaceId, async client => {
-        for (const snapshot of input.snapshots) {
+        for (const snapshot of orderProductSnapshotsForLocking(input.snapshots)) {
           let saved
           try {
             saved = await business.saveInTransaction(client, { workspaceId: input.workspaceId, ...snapshot })
@@ -3330,7 +3342,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const persistPublishTransaction = async (input: { workspaceId: string; snapshots: SnapshotInput[]; aggregateId: string; eventType: string; sequence: number; eventPayload: Record<string, unknown>; finalizeTicketInTransaction: (client: SqlClient) => Promise<void> }) => {
       await ensureWorkspace(input.workspaceId)
       await withWorkspaceTransaction(sqlPool, input.workspaceId, async client => {
-        for (const snapshot of input.snapshots) {
+        for (const snapshot of orderProductSnapshotsForLocking(input.snapshots)) {
           let saved
           try {
             saved = await business.saveInTransaction(client, { workspaceId: input.workspaceId, ...snapshot })
@@ -4868,7 +4880,7 @@ async function persistSnapshotsAndEvent(input: { workspaceId: string; snapshots:
     invalidateWorkspaceHydration(input.workspaceId)
     return
   }
-  for (const snapshot of input.snapshots) {
+  for (const snapshot of orderProductSnapshotsForLocking(input.snapshots)) {
     if (snapshot.entityType === 'merchant_intent') merchantIntents.set(`${input.workspaceId}:${snapshot.entityId}`, snapshot.payload)
     else await persistSnapshot(input.workspaceId, snapshot.entityType, { id: snapshot.entityId, revision: snapshot.entityVersion }, snapshot.payload)
   }
@@ -14516,34 +14528,50 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       return Object.entries(value as Record<string, unknown>).some(([name, child]) =>
         ((name === 'storageKey' || name === 'storage_key') && child === key) || hasObjectReference(child, key))
     }
+    const productReferencesAsset = (payload: Record<string, unknown>, assetId: string): boolean => {
+      const contains = (value: unknown) => Array.isArray(value) && value.some(id => id === assetId)
+      if (contains(payload.sourceAssetIds)) return true
+      return Array.isArray(payload.skus) && payload.skus.some(sku =>
+        Boolean(sku && typeof sku === 'object' && !Array.isArray(sku) && contains((sku as Record<string, unknown>).sourceAssetIds)))
+    }
     let purged = 0
     let retried = 0
     let blockedByReferences = 0
     for (const item of claimed) {
       try {
-        const asset = service.assets.get(item.assetId)
-        if (!asset || asset.workspaceId !== workspaceId || !asset.storageKey) throw new DomainError('ASSET_LIFECYCLE_SNAPSHOT_MISSING', '到期素材快照不可用，已保留回收记录并安排重试', 503)
-        const referenced = rows.some(snapshot => snapshot.entityType === 'asset' && snapshot.entityId !== item.assetId && hasObjectReference(snapshot.payload, asset.storageKey))
-          || service.listAssets(workspaceId).some(other => other.id !== asset.id && other.storageKey === asset.storageKey)
-        if (referenced) {
-          blockedByReferences += 1
-          await lifecycle.failPurge({ workspaceId, assetId: item.assetId, workerId, leaseToken: item.leaseToken, error: { code: 'ASSET_OBJECT_STILL_REFERENCED', object_key: asset.storageKey } })
-          retried += 1
-          continue
+        const withPurgeLease = (lifecycle as typeof lifecycle & { withPurgeLease?: (input: { workspaceId: string; assetId: string; leaseToken: string }, work: (client: SqlClient) => Promise<void>) => Promise<void> }).withPurgeLease
+        const purge = async (transactionClient?: SqlClient) => {
+          const asset = service.assets.get(item.assetId)
+          if (!asset || asset.workspaceId !== workspaceId || !asset.storageKey) throw new DomainError('ASSET_LIFECYCLE_SNAPSHOT_MISSING', '到期素材快照不可用，已保留回收记录并安排重试', 503)
+          const activeBindings = persistence.business
+            ? await persistence.business.listProductAssetBindings(workspaceId, { assetId: item.assetId, status: 'active' })
+            : []
+          const referenced = activeBindings.length > 0
+            || rows.some(snapshot => snapshot.entityType === 'product' && productReferencesAsset(snapshot.payload, item.assetId))
+            || rows.some(snapshot => snapshot.entityType === 'asset' && snapshot.entityId !== item.assetId && hasObjectReference(snapshot.payload, asset.storageKey))
+            || service.listAssets(workspaceId).some(other => other.id !== asset.id && other.storageKey === asset.storageKey)
+          if (referenced) {
+            blockedByReferences += 1
+            await lifecycle.failPurge({ workspaceId, assetId: item.assetId, workerId, leaseToken: item.leaseToken, error: { code: 'ASSET_OBJECT_STILL_REFERENCED', object_key: asset.storageKey } }, transactionClient)
+            retried += 1
+            return
+          }
+          const storage = getAssetStorage()
+          const existing = await storage.head(workspaceId, asset.storageKey, { includeQuarantine: true })
+          let verification: 'delete_ack' | 'head_absent' = 'head_absent'
+          if (existing) {
+            await storage.delete(workspaceId, asset.storageKey, { includeQuarantine: true })
+            const afterDelete = await storage.head(workspaceId, asset.storageKey, { includeQuarantine: true })
+            if (afterDelete) throw new DomainError('ASSET_OBJECT_DELETE_UNVERIFIED', '对象存储未确认删除素材对象', 503)
+            verification = 'delete_ack'
+          }
+          const reservationKey = reservationKeyForObjectKey(asset.storageKey, workspaceId)
+          if (reservationKey && persistence.storageQuota) await persistence.storageQuota.releaseAfterPhysicalDeletion({ workspaceId, reservationKey, receipt: { objectKey: asset.storageKey, deletedAt: new Date().toISOString(), verification } })
+          await lifecycle.completePurge({ workspaceId, assetId: item.assetId, workerId, leaseToken: item.leaseToken }, transactionClient)
+          purged += 1
         }
-        const storage = getAssetStorage()
-        const existing = await storage.head(workspaceId, asset.storageKey, { includeQuarantine: true })
-        let verification: 'delete_ack' | 'head_absent' = 'head_absent'
-        if (existing) {
-          await storage.delete(workspaceId, asset.storageKey, { includeQuarantine: true })
-          const afterDelete = await storage.head(workspaceId, asset.storageKey, { includeQuarantine: true })
-          if (afterDelete) throw new DomainError('ASSET_OBJECT_DELETE_UNVERIFIED', '对象存储未确认删除素材对象', 503)
-          verification = 'delete_ack'
-        }
-        const reservationKey = reservationKeyForObjectKey(asset.storageKey, workspaceId)
-        if (reservationKey && persistence.storageQuota) await persistence.storageQuota.releaseAfterPhysicalDeletion({ workspaceId, reservationKey, receipt: { objectKey: asset.storageKey, deletedAt: new Date().toISOString(), verification } })
-        await lifecycle.completePurge({ workspaceId, assetId: item.assetId, workerId, leaseToken: item.leaseToken })
-        purged += 1
+        if (withPurgeLease) await withPurgeLease.call(lifecycle, { workspaceId, assetId: item.assetId, leaseToken: item.leaseToken }, transactionClient => purge(transactionClient))
+        else await purge()
       } catch (error) {
         retried += 1
         await lifecycle.failPurge({ workspaceId, assetId: item.assetId, workerId, leaseToken: item.leaseToken, error: { code: error instanceof DomainError ? error.code : 'ASSET_LIFECYCLE_PURGE_FAILED', message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500) } }).catch(() => undefined)

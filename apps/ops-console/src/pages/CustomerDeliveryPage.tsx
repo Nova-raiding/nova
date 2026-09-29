@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Checkbox, DatePicker, Form, Input, Select, Space, message } from "antd";
-import { CloseOutlined, UploadOutlined } from "@ant-design/icons";
+import { CloseOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { OpsPage } from "../components/OpsPage.js";
 import { ACCEPTANCE_ITEMS, CustomerDeliverySection, INTEGRATION_ITEMS, checklistDisplayLabel } from "../components/delivery/CustomerDeliverySection.js";
@@ -392,6 +392,25 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       title="客户交付"
       hideTitle
       description="以客户为中心跟进建档、系统接入、功能验收、培训和上线。付款未核验时，受控环节会保持阻断。"
+      actions={<Space wrap>
+        <Select
+          aria-label="客户交付目标企业工作区"
+          placeholder="选择目标企业"
+          value={targetWorkspaceId || undefined}
+          options={customerDeliveryWorkspaceOptions(model.workspaceRows)}
+          loading={model.workspaceDirectoryLoading}
+          disabled={!canRead || createDraftDirty}
+          onChange={(workspaceId) => model.setAuthorizationTargetWorkspaceId(workspaceId)}
+          style={{ minWidth: 280, maxWidth: 380 }}
+        />
+        <Button
+          aria-label="刷新交付档案"
+          icon={<ReloadOutlined />}
+          disabled={!canRead || !targetWorkspaceId}
+          loading={loading}
+          onClick={() => void load()}
+        >刷新交付档案</Button>
+      </Space>}
     >
       {!canRead ? <Alert type="warning" showIcon title="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
       {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
@@ -444,18 +463,6 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         </>
       ) : <CustomerDeliverySection
         key={targetWorkspaceId || "unselected"}
-        headerActions={<>
-          <Select
-            aria-label="客户交付目标企业工作区"
-            placeholder="选择目标企业"
-            value={targetWorkspaceId || undefined}
-            options={customerDeliveryWorkspaceOptions(model.workspaceRows)}
-            loading={model.workspaceDirectoryLoading}
-            disabled={!canRead || createDraftDirty}
-            onChange={(workspaceId) => model.setAuthorizationTargetWorkspaceId(workspaceId)}
-            style={{ minWidth: 280, maxWidth: 380 }}
-          />
-        </>}
         disabled={!canRead || !targetWorkspaceId}
         readOnly={canRead && !canUpdate}
         records={records}
