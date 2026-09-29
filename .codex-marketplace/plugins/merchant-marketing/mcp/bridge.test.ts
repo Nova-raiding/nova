@@ -921,7 +921,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.structuredContent.conversation_state.store_options).toEqual([
         expect.objectContaining({ platform: 'jd', store_name: '京东旗舰店', status: '可读取', data_source: '官方 API', selectable: true, action: { method: 'catalog.search', arguments: { scope: 'store', platform: 'jd', account_id: 'jd-real' } } }),
       ])
-      expect(response.result.content[0].text).toContain('已更新 1 家店铺的连接状态。')
+      expect(response.result.content[0].text).toContain('当前列出 1 条店铺连接记录。')
     } finally {
       child.kill()
       await close(server)
@@ -1055,7 +1055,7 @@ describe('Codex stdio MCP bridge', () => {
 
   it.each([
     ['merchant.start', { currentStep: { id: 'automatic-scan', state: 'in_progress' }, capabilityCards: { title: 'Store Nova工作台' }, context_bar: { labels: {} }, action_cards: [{ method: 'asset.scan', label: '请管理员在运营后台提交扫描证据' }], automation: { asset_scan: 'automatic' } }, { requested_platform: 'jd', requested_goal: 'generate_white_background_image', attachment_count: 1 }, '图片已收到，正在自动检查。通过后会等待你的确认再继续生成。'],
-    ['workspace.health', { status: 'ok', workspace: { status: 'ready' }, storeDirectory: [{ platform: 'jd', label: '京东旗舰店' }], capabilityCards: { title: 'Store Nova工作台' }, context_bar: { labels: {} }, action_cards: [{ method: 'asset.scan', label: '请管理员扫描' }] }, {}, '已更新 1 家店铺的连接状态。'],
+    ['workspace.health', { status: 'ok', workspace: { status: 'ready' }, storeDirectory: [{ platform: 'jd', label: '京东旗舰店' }], capabilityCards: { title: 'Store Nova工作台' }, context_bar: { labels: {} }, action_cards: [{ method: 'asset.scan', label: '请管理员扫描' }] }, {}, '当前列出 1 条店铺连接记录。'],
   ])('removes dashboard and administrator-scan guidance from %s', async (method, upstreamResult, args, expectedSummary) => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
@@ -1071,6 +1071,35 @@ describe('Codex stdio MCP bridge', () => {
       expect(Object.keys(response.result.structuredContent).sort()).toEqual(expect.arrayContaining(['completed_summary', 'conversation_state', 'expected_input']))
       expect(Object.keys(response.result.structuredContent).filter(key => key === 'question')).toHaveLength(response.result.structuredContent.question ? 1 : 0)
       expect(JSON.stringify(response.result)).not.toMatch(/dashboard|capabilityCards|context_bar|action_cards|管理员|运营后台|扫描证据/u)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it.each([
+    ['brand-unit.list', {}, { items: [{ id: 'brand-1' }] }],
+    ['commercial.access.get', {}, { decision: 'allowed' }],
+    ['commercial.catalog.get', {}, { catalog: { status: 'available' } }],
+    ['subscription.get', {}, { subscription: { status: 'trialing' } }],
+    ['creative-points.statement.list', { limit: '10' }, { entries: [{ pointsDelta: 0 }] }],
+  ])('describes %s as a returned read without claiming a write or business approval', async (method, args, upstreamResult) => {
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: upstreamResult }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: method, arguments: args } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(false)
+      expect(response.result.content[0].text).toContain('查询已返回；请以结构化字段核对业务状态。')
+      expect(response.result.content[0].text).not.toMatch(/已更新|操作已完成/u)
     } finally {
       child.kill()
       await close(server)
@@ -1192,7 +1221,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929094500' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260929100500' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)

@@ -10,7 +10,7 @@ docker run --rm -d --network none --tmpfs /var/lib/postgresql/data \
   --name "$name" -e POSTGRES_PASSWORD=reviewonly -e POSTGRES_DB=merchant "$image" >/dev/null
 trap 'docker stop "$name" >/dev/null 2>&1 || true' EXIT HUP INT TERM
 attempt=0
-until docker exec "$name" pg_isready -U postgres -d merchant >/dev/null 2>&1; do
+until docker exec "$name" psql -U postgres -d merchant -X -qAt -v ON_ERROR_STOP=1 -c 'SELECT 1' >/dev/null 2>&1; do
   attempt=$((attempt + 1))
   [ "$attempt" -lt 40 ] || { echo 'isolated PostgreSQL did not become ready' >&2; exit 1; }
   sleep 1

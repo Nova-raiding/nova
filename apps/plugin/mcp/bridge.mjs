@@ -1447,7 +1447,7 @@ function userFacingToolText(method, result) {
       : `已读取 ${rules.length} 条知识规则，其中 ${executable.length} 条看起来已具备执行状态；最终是否可消费仍以服务端规则门禁为准。`
   }
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
-    return method === 'content.export' ? '导出已准备好。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
+    return method === 'content.export' ? '导出已准备好。' : READ_ONLY_METHODS.has(method) ? '查询已返回；请以结构化字段核对业务状态。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
   }
   if (method === 'billing.status' || method === 'creative-points.balance.get') {
     const balanceKnown = result.balance_state === 'known' || points?.balance_state === 'known'
@@ -1551,7 +1551,7 @@ function userFacingToolText(method, result) {
     ? sanitizeMerchantText(result.summary.trim())
     : typeof result.message === 'string' && result.message.trim()
       ? sanitizeMerchantText(result.message.trim())
-      : result.status === 'needs_input' ? '还需要补充信息。' : (Array.isArray(result.images) && result.images.length > 0) || ['ok', 'success', 'succeeded', 'completed', 'complete', 'ready', 'published', 'active'].includes(String(result.status ?? '').toLowerCase()) ? '操作已完成。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
+      : result.status === 'needs_input' ? '还需要补充信息。' : (Array.isArray(result.images) && result.images.length > 0) || ['ok', 'success', 'succeeded', 'completed', 'complete', 'ready', 'published', 'active'].includes(String(result.status ?? '').toLowerCase()) ? '操作已完成。' : READ_ONLY_METHODS.has(method) ? '查询已返回；请以结构化字段核对业务状态。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
   const pending = ['queued', 'generating', 'processing'].includes(result.state) || ['queued', 'running', 'pending'].includes(result.status)
   const pendingSummary = pending ? '请求已进入平台中转队列，尚未产生可交付内容。' : summary
   const attachmentHint = Array.isArray(result.images) && result.images.length
@@ -2236,7 +2236,7 @@ function merchantConversationProjection(method, result, args = {}) {
     : scanning
       ? '图片已收到，正在自动检查。通过后会等待你的确认再继续生成。'
       : method === 'workspace.health'
-        ? demoOnlyStores ? `当前检测到 ${stores.length} 家演示店铺；它们不代表真实授权，也不能用于读取商品或发布。` : stores.length ? `已更新 ${stores.length} 家店铺的连接状态。` : '当前还没有可用店铺。'
+        ? demoOnlyStores ? `当前检测到 ${stores.length} 家演示店铺；它们不代表真实授权，也不能用于读取商品或发布。` : stores.length ? `当前列出 ${stores.length} 条店铺连接记录。` : '当前还没有可用店铺。'
         : explicitContext.platform
           ? `已锁定${merchantPlatformLabel(explicitContext.platform)}。`
           : typeof result?.summary === 'string' && result.summary.trim()

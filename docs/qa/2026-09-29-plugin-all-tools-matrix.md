@@ -6,6 +6,8 @@
 
 **计数：** App 成功 16；生产 MCP 成功 18；预期阻断 26；产品门禁/后台办理 3；线上缺陷 1；本地契约 10；未测试 57；合计 131。当前已安装 `0.1.0+codex.20260929090000` 的源码与缓存各暴露 **116** 项；它在上一版 119 项基础上继续隐藏 3 项无法工作的分片上传工具。生产账号在新版回调页完成本地钥匙串绑定，ChatGPT 完全重启后新 Work 会话真实调用 `onboarding.status` 与 `catalog.search` 成功，见[116 项版 App 复验](evidence/2026-09-29-chatgpt-app/29-production-bound-116-tool-app-readonly.png)。安装验收仍不计为业务成功。
 
+上段计数固定为升级前 131 项的**历史互斥分类**，不随之后的补充验收重写。当前本地直装为 `0.1.0+codex.20260929100500`，源码/缓存各 116 工具、53 运行文件一致。`10:00` 版的 ChatGPT Work 新会话对 `workspace.health`、`brand-unit.list`、`commercial.access.get`、`commercial.catalog.get`、`subscription.get`、`creative-points.statement.list` 有新宿主可见结果；`10:05` 版在完整重启后的既有 Work 会话再次调用 `commercial.access.get`，并调用 `workspace.metrics`、`billing.recharge.list`、`brand.get`、`rule.list`。见[实时 QA 记录](2026-09-29-chatgpt-app-plugin-live-qa.md)。其中 `brand.get` 只有泛用文本，未证实品牌档案业务结果。这些补充证据不意味着全部 116 项已经在当前版本逐项复验，也不证明原商家页面的绑定弹框已经上线。
+
 当前生产仍为 API `release-demo-product-code-20260929`、DB 迁移 254；API 与商家网页修复尚未部署。表内“隐藏”12 项在新安装的本地插件中已实际隐藏。此表不宣称旧 131 项全通过，也不把运营后台 CSV 导入算作 `catalog.import` 插件工具成功。
 
 | # | 精确 MCP 方法 | 升级前结果级别 | 当前已安装版本 | 前置条件 / 实际结果 | 证据 |
@@ -87,7 +89,7 @@
 | 75 | `asset.parse` | 未测试 | 保留 | 需真实商家对象、授权、素材、余额或交互写入确认后按方法复测；必填：`asset_id`；隔离 HTTP/MCP 素材流程有验证，非生产/App 成功；本地解析报告 `simulated=true`、`providerExecuted=false` | [素材隔离审计](evidence/2026-09-29-chatgpt-app/asset-upload-e2e-audit.md) |
 | 76 | `asset.facts.confirm` | 未测试 | 保留 | 需真实商家对象、授权、素材、余额或交互写入确认后按方法复测；必填：`asset_id`, `facts_json`, `reason`；隔离 HTTP/MCP 素材流程有验证，非生产/App 成功 | [素材隔离审计](evidence/2026-09-29-chatgpt-app/asset-upload-e2e-audit.md) |
 | 77 | `asset.preference.update` | 未测试 | 保留 | 需真实商家对象、授权、素材、余额或交互写入确认后按方法复测；必填：`asset_id`, `verdict` | — |
-| 78 | `brand.get` | 生产 MCP 成功 | 保留 | 已认证生产 stdio/MCP 调用成功；无必填参数 | [品牌规则只读审计](evidence/2026-09-29-chatgpt-app/brand-rule-readonly-audit.json) |
+| 78 | `brand.get` | 生产 MCP 成功 | 保留 | 已认证请求成功，但返回值无结构化品牌字段（`keys:[]`）；`10:05` 版 App 再次只见泛用文本，**品牌档案业务结果未证实**。无必填参数 | [品牌规则只读审计](evidence/2026-09-29-chatgpt-app/brand-rule-readonly-audit.json)；[App 截图](evidence/2026-09-29-chatgpt-app/34-100500-four-more-read-tools.png) |
 | 79 | `brand.extract` | 生产 MCP 成功 | 保留 | 已认证生产 stdio/MCP 调用成功；无必填参数 | [品牌规则只读审计](evidence/2026-09-29-chatgpt-app/brand-rule-readonly-audit.json) |
 | 80 | `brand.upsert` | 未测试 | 保留 | 需真实商家对象、授权、素材、余额或交互写入确认后按方法复测；必填：`name` | — |
 | 81 | `asset.upload` | 未测试 | 保留 | 需真实商家对象、授权、素材、余额或交互写入确认后按方法复测；必填：`name`, `mime_type`；隔离 HTTP/MCP 素材流程有验证，非生产/App 成功 | [素材隔离审计](evidence/2026-09-29-chatgpt-app/asset-upload-e2e-audit.md) |

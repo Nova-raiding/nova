@@ -32,3 +32,5 @@
 隔离联合测试：`apps/api/src/local-plugin-one-click.e2e.test.ts` 1/1 通过，浏览器中的状态 GET 在连接前无完成标记、安装器保存及确认后才为 `local_binding_complete:true`；安装器脚本 20/20，组件 11/11；另一个 Chromium 商家工作台测试 1/1，验证无效安装实例时原页 Modal 自动出现并显示失败。全仓 `npm run typecheck` 退出 0。gstack browse 的共享 daemon 配置冲突仍在，实际浏览器证据来自项目已有 Playwright 隔离 Chromium。
 
 此候选只覆盖当前开放的 **macOS 一键连接**。Windows 一键能力仍由 API 标为未开放，Windows 安装器没有生产安装实例签名参数；手工本地登录没有 `requestId`，仍由 loopback 标签页展示结果。API 后续又把回执绑定到本次请求签发的精确 MCP token ID，同账号同工作区的另一令牌会被拒绝。`0.1.0+codex.20260929094500` 已完成本地直装，源码与缓存的 116 个工具、53 个运行文件一致；相关定向测试 250/250 通过。上述本地通过不能替代云端 API/商家网页部署、这次版本在 ChatGPT 新会话与真实 Keychain 的复验，也不能称为所有授权路径都在原页面显示弹框。
+
+后续 `10:00`、`10:05` 本地插件版本修正了只读查询在 ChatGPT 中的两处误导性摘要；`workspace.health` 与五项商家只读工具已有真实 Work 宿主调用截图，见[主 QA 记录](../../2026-09-29-chatgpt-app-plugin-live-qa.md)。这些截图证明对应查询在宿主可见，不证明原商家页面弹框已部署或本次完成了真实一键重绑定。
