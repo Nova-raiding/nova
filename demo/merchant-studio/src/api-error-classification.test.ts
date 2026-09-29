@@ -27,6 +27,18 @@ describe('merchant API error classification', () => {
     expect(describeApiError(error)).not.toContain('服务暂不可用')
   })
 
+  it('explains creative point upload gates in Chinese without reporting a service outage or success', () => {
+    const unknown = describeApiError(apiError('creative points unavailable', 'CREATIVE_POINTS_UNAVAILABLE', 503))
+    expect(unknown).toContain('余额尚未确认')
+    expect(unknown).toContain('本次操作未完成')
+    expect(unknown).toContain('财务与资源')
+    expect(unknown).not.toContain('服务暂不可用')
+
+    const insufficient = describeApiError(apiError('insufficient points', 'CREATIVE_POINTS_INSUFFICIENT', 402))
+    expect(insufficient).toContain('可用创意点不足')
+    expect(insufficient).toContain('本次操作未完成')
+  })
+
   it('gives a safe recovery path for closed MCP transports and unknown 503 responses', () => {
     expect(describeApiError(apiError('Transport closed', undefined, 503))).toContain('Store Nova连接已中断')
     expect(describeApiError(apiError('upstream unavailable', undefined, 503))).toContain('服务暂不可用')
