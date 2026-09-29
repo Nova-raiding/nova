@@ -51,18 +51,19 @@ function readIdentity(path) {
 export function validateOpsSidecarInputs({ compose, manifest, identity, images, attestation, containers, network, imageInspects, sidecarProject }) {
   const project = compose?.name
   const services = compose?.services ?? {}
+  const migrationTarget = manifest?.migration_target
   assert(/^merchant-demo-[a-z0-9][a-z0-9_-]{0,25}$/u.test(project ?? '') &&
     Object.keys(services).sort().join(',') === 'api,migrate,postgres,redis' &&
     compose.networks?.default?.name === `${project}_private` && compose.networks.default.external === false, 'base candidate Compose is not the isolated four-service project')
   assert(/^merchant-ops-review-[a-z0-9][a-z0-9_-]{0,30}$/u.test(sidecarProject ?? '') && sidecarProject !== project, 'sidecar project is invalid')
   assert(manifest?.schema === 'isolated-demo-candidate/1' && manifest.deployment_scope === 'isolated_four_service_candidate' &&
     manifest.release_id === identity.release_id && manifest.release_git_sha === identity.git_sha &&
-    manifest.source_sha256 === identity.source_sha256 && manifest.migration_target === 255 &&
-    Array.isArray(manifest.public_ports) && manifest.public_ports.length === 0, 'base candidate manifest or migration 255 differs')
+    manifest.source_sha256 === identity.source_sha256 && Number.isSafeInteger(migrationTarget) && migrationTarget > 0 &&
+    Array.isArray(manifest.public_ports) && manifest.public_ports.length === 0, 'base candidate manifest or migration target differs')
   assert(attestation?.schema === 'ecs-demo-isolated-runtime-attestation/1' && attestation.status === 'review_only' &&
     attestation.scope === 'isolated' && attestation.production_go === false && attestation.project === project &&
     attestation.release_id === identity.release_id && attestation.git_sha === identity.git_sha &&
-    attestation.postgres?.migration_prefix === 255 && attestation.postgres?.roles_verified === true &&
+    attestation.postgres?.migration_prefix === migrationTarget && attestation.postgres?.roles_verified === true &&
     attestation.postgres?.workspace_rls?.verified === true, 'isolated PG17 attestation is missing or differs')
   assert(services.api.image === images.image_references?.['merchant-api'] && digestRef.test(services.api.image) &&
     /(?:^|\/)postgres:17-alpine@sha256:[0-9a-f]{64}$/u.test(services.postgres.image ?? '') &&

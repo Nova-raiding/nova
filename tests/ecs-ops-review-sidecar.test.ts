@@ -16,7 +16,7 @@ const project = 'merchant-demo-d3a3ops';
 const networkName = `${project}_private`;
 const id = (digit: string) => digit.repeat(64);
 
-function fixture() {
+function fixture(migrationTarget = 255) {
   const identity = { release_id: releaseId, git_sha: gitSha, source_sha256: sourceSha };
   const artifacts = ['merchant-api', 'merchant-worker', 'merchant-ui', 'merchant-ops-ui', 'payment-gateway', 'pilot-gateway'];
   const refs = Object.fromEntries(artifacts.map((name, index) => [name, index === 0 ? apiRef : index === 3 ? opsRef : index === 5 ? gatewayRef : `127.0.0.1:5000/storenova/${name}@sha256:${String(index + 1).repeat(64)}`]));
@@ -28,7 +28,7 @@ function fixture() {
       postgres: { image: pgRef }, redis: { image: redisRef }, migrate: { image: pgRef },
     } };
   const manifest = { schema: 'isolated-demo-candidate/1', deployment_scope: 'isolated_four_service_candidate', release_id: releaseId,
-    release_git_sha: gitSha, source_sha256: sourceSha, migration_target: 255, public_ports: [],
+    release_git_sha: gitSha, source_sha256: sourceSha, migration_target: migrationTarget, public_ports: [],
     image_references: { ...refs, 'postgres-migration': pgRef, 'candidate-redis': redisRef } };
   const containers = Object.fromEntries(['api', 'postgres', 'redis'].map((service, index) => [service, {
     Id: id(String(index + 1)), Image: `sha256:${String(index + 1).repeat(64)}`, State: { Running: true }, Config: { Labels: {
@@ -41,7 +41,7 @@ function fixture() {
     Containers: Object.fromEntries(Object.entries(containers).map(([service, container]) => [(container as any).Id, { Name: `${project}-${service}-1` }])) };
   const attestation = { schema: 'ecs-demo-isolated-runtime-attestation/1', status: 'review_only', scope: 'isolated', production_go: false,
     project, release_id: releaseId, git_sha: gitSha, manifest_sha256: `sha256:${'7'.repeat(64)}`,
-    postgres: { migration_prefix: 255, roles_verified: true, workspace_rls: { verified: true } },
+    postgres: { migration_prefix: migrationTarget, roles_verified: true, workspace_rls: { verified: true } },
     containers: Object.fromEntries(Object.entries(containers).map(([service, container]) => [service, { container_id: (container as any).Id, image_id: `sha256:${String(['api', 'postgres', 'redis'].indexOf(service) + 1).repeat(64)}` }])) };
   const imageInspects = { 'merchant-ops-ui': { Id: `sha256:${'2'.repeat(64)}`, RepoDigests: [opsRef], Config: { Labels: {
     'com.storenova.release.id': releaseId, 'org.opencontainers.image.revision': gitSha,
@@ -80,8 +80,8 @@ describe('isolated Ops review sidecar', () => {
     expect(() => assertOpsReviewCertificateAccess({ directory, privateKey, fullchain: { ...fullchain, mode: 0o640 } })).toThrow(/certificate chain/);
   });
 
-  it('accepts only the attested PG17 migration-255 candidate and generates loopback TLS', () => {
-    const input = fixture();
+  it.each([255, 256])('accepts a candidate whose manifest and PG17 attestation agree on migration tail %i', (migrationTarget) => {
+    const input = fixture(migrationTarget);
     expect(validateOpsSidecarInputs(input)).toEqual({ baseProject: project, networkName });
     const sidecar = createOpsSidecarCompose({ networkName, sidecarProject: input.sidecarProject, images: input.images,
       identity: input.identity, certDir: '/protected/certs', configPath: '/protected/ops-review-nginx.conf' });
@@ -96,6 +96,12 @@ describe('isolated Ops review sidecar', () => {
     expect(nginx).toContain('location ^~ /api/');
     expect(nginx).toContain('location ^~ /ops/');
     expect(nginx).not.toContain('listen 443');
+  });
+
+  it('rejects a candidate when its manifest tail differs from the PG17 attestation', () => {
+    const input = fixture(256);
+    input.attestation.postgres.migration_prefix = 255;
+    expect(() => validateOpsSidecarInputs(input)).toThrow(/attestation/u);
   });
 
   it.each([
