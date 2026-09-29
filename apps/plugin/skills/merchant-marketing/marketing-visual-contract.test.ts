@@ -12,7 +12,7 @@ describe('merchant marketing visual and video contract', () => {
     expect(skill.slice(0, skill.indexOf('\n---', 4))).toMatch(/商品详情页设计图.*详情长图.*视频脚本.*视频成片/u)
     expect(skill).toContain('先按当前 MCP 会话实际返回的 `tools/list` 判断可执行的产物类型')
     expect(skill).toContain('用户要设计方案/视觉策划')
-    expect(skill).toContain('用户明确要生成商品图片/详情长图')
+    expect(skill).toContain('用户明确要求生成商品图片/详情长图')
     expect(skill).toContain('只有 MCP 返回真实 `images`/图片附件')
     expect(skill).toContain('用户要视频脚本或分镜')
     expect(skill).toContain('用户明确要视频成片')
@@ -35,5 +35,19 @@ describe('merchant marketing visual and video contract', () => {
     expect(skill).toContain('不能把方案、文案、原图、占位组件或任务排队状态说成生成成品')
     expect(skill).toContain('仅有任务 ID、排队状态、文本方案或分镜时')
     expect(skill).toContain('保留真实查询路径，不重复创建任务')
+  })
+
+  it('keeps ambiguous design requests and incomplete plan confirmation out of generation', async () => {
+    const skill = await readFile(skillPath, 'utf8')
+    const videoSkill = await readFile(new URL('../ecommerce-video-marketing/SKILL.md', import.meta.url), 'utf8')
+    const storyboardSkill = await readFile(new URL('../storyboard-prompt-assistant/SKILL.md', import.meta.url), 'utf8')
+
+    expect(skill).toContain('“设计/设计一下”本身不等于要求生成图片')
+    expect(skill).toContain('补充商品事实、要求代查资料或泛泛说“继续”都不算方案确认')
+    expect(skill).toContain('从零创作用 `mode=create`')
+    expect(skill).toContain('基于已上传素材优化用 `mode=optimize`')
+    expect(skill).toContain('未绑定模式（不传 `product_id`）无论 `mode=create` 还是 `mode=optimize`，都必须传用户确认的 `title` 和 `asset.upload` 返回的真实 `asset_ids_json`')
+    expect(videoSkill).toContain('仅当 merchant-marketing 主技能已将当前请求路由为可审阅脚本/分镜文本')
+    expect(storyboardSkill).toContain('For Store Nova merchant-product workflows, use this skill only after `merchant-marketing` has routed the request to script/storyboard text')
   })
 })

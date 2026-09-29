@@ -1,6 +1,6 @@
 ---
 name: storyboard-prompt-assistant
-description: Convert concepts, scripts, ad copy, product ideas, rough stories, or vague video ideas into high-quality storyboard prompts, shot lists, and AI-video-ready multi-shot prompt tables. Use for storyboard, shot script, camera planning, shot list, video storyboard, trailer planning, script-to-storyboard, AI video prompts, and incremental storyboard edits.
+description: Convert concepts, scripts, ad copy, product ideas, rough stories, or vague video ideas into high-quality storyboard prompts, shot lists, and AI-video-ready multi-shot prompt tables. For Store Nova merchant-product workflows, use only after merchant-marketing routes the request to a script/storyboard; follow its MCP and confirmed-facts rules. This skill produces text, never a rendered video.
 ---
 
 # Storyboard Prompt Assistant
@@ -18,6 +18,8 @@ Use when the user asks for:
 - trailer, music video, ad, short film, game promo, product demo, or narrative video planning
 - Sora, Kling, Runway, Veo, Seedance, Pika, Hailuo, or other AI-video prompt tables
 - incremental edits to previous storyboard output, especially when the user says everything else should stay unchanged
+
+For Store Nova merchant-product workflows, use this skill only after `merchant-marketing` has routed the request to script/storyboard text, or when the user explicitly requests a standalone text storyboard. Treat Store Nova's confirmed product facts and MCP result as authoritative; do not invent product claims or replace a rendered-video request with storyboard text.
 
 Boundary: If the user wants single-image prompt optimization, use `generation-prompt-builder` or `gpt-image-assistant`. If the user only wants general pre-writing advice, use `prompt-preflight-advice`.
 
