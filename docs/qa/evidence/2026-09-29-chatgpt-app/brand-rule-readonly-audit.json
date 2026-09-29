@@ -1,0 +1,100 @@
+{
+  "timestamp": "2026-09-29T00:28:21.306Z",
+  "surfaceCount": 119,
+  "bridge": "installed merchant-marketing@merchant-local stdio",
+  "workspace": "ws_guirenniaoniao",
+  "production": "https://yxsona.com",
+  "rows": [
+    {
+      "name": "brand.get",
+      "args": [],
+      "ok": true,
+      "code": null,
+      "keys": [],
+      "count": null
+    },
+    {
+      "name": "brand.extract",
+      "args": [],
+      "ok": true,
+      "code": null,
+      "keys": [
+        "assetIds",
+        "generatedAt",
+        "fields",
+        "ignoredAssets",
+        "warnings"
+      ],
+      "count": null
+    },
+    {
+      "name": "brand-unit.list",
+      "args": [],
+      "ok": true,
+      "code": null,
+      "keys": [
+        "items",
+        "count",
+        "storage",
+        "durable"
+      ],
+      "count": 1
+    },
+    {
+      "name": "brand-unit.listing.list",
+      "args": [],
+      "ok": true,
+      "code": null,
+      "keys": [
+        "items",
+        "count",
+        "storage",
+        "durable"
+      ],
+      "count": 0
+    },
+    {
+      "name": "rule.list",
+      "args": [],
+      "ok": true,
+      "code": null,
+      "keys": [],
+      "count": null
+    },
+    {
+      "name": "rule.sync.status",
+      "args": [],
+      "ok": true,
+      "code": null,
+      "keys": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "count": null
+    },
+    {
+      "name": "rule.list",
+      "args": [],
+      "ok": true,
+      "code": null,
+      "keys": [],
+      "count": null
+    },
+    {
+      "name": "rule.history",
+      "status": "not_called_no_pack_id"
+    },
+    {
+      "name": "feedback.list",
+      "status": "not_called_no_existing_task_id"
+    },
+    {
+      "name": "support.customer.replies.list",
+      "status": "not_called_no_existing_task_order_ticket_id"
+    }
+  ]
+}

@@ -1,0 +1,161 @@
+{
+  "plugin_version": "0.1.0+codex.20260929074100",
+  "workspace": "ws_guirenniaoniao",
+  "protocol": "2025-06-18",
+  "methods": [
+    {
+      "name": "catalog.search",
+      "args": {
+        "scope": "workspace",
+        "query": "QA-DO-NOT-PUBLISH-20260929",
+        "limit": "5"
+      },
+      "isError": false,
+      "code": null,
+      "kind": "object",
+      "count": null,
+      "keys": [
+        "scope",
+        "selection",
+        "products",
+        "product_actions",
+        "total",
+        "limit",
+        "offset",
+        "emptyState",
+        "ui"
+      ],
+      "status": null,
+      "readMode": null,
+      "total": 1,
+      "products": 1,
+      "sha256": "53c54e75fa9e0b84bef46c77baca7ff1c1f96986bc9868410ed7dc294e34c884"
+    },
+    {
+      "name": "catalog.categories",
+      "args": {
+        "query": "服装"
+      },
+      "isError": false,
+      "code": null,
+      "kind": "array",
+      "count": 1,
+      "keys": null,
+      "status": null,
+      "readMode": null,
+      "total": null,
+      "products": null,
+      "sha256": "e367cf59750d89cc8e74c05749d03f847a27a41d4230c8a3e04678bc6b2c9d64"
+    },
+    {
+      "name": "canonical.product.consistency",
+      "args": {},
+      "isError": false,
+      "code": null,
+      "kind": "object",
+      "count": null,
+      "keys": [
+        "workspaceId",
+        "status",
+        "contractVersion",
+        "contractStatus",
+        "generatedAt",
+        "readMode",
+        "freshness",
+        "revision",
+        "availability",
+        "blocking",
+        "counts",
+        "findings",
+        "orphanFindings",
+        "readOnly",
+        "cutover",
+        "read_control",
+        "unified_link_audit",
+        "source",
+        "durable"
+      ],
+      "status": "attention_required",
+      "readMode": "live",
+      "total": null,
+      "products": null,
+      "sha256": "cb579306635fe1531d7a1513863289ce8b83fac9d28e99d4eabb6f52bcd6ca11"
+    },
+    {
+      "name": "knowledge.rule.list",
+      "args": {},
+      "isError": false,
+      "code": null,
+      "kind": "array",
+      "count": 0,
+      "keys": null,
+      "status": null,
+      "readMode": null,
+      "total": null,
+      "products": null,
+      "sha256": "b6d4d70e7d7939aa4e2035dad1e3d98b87aecff1411ce97e3c01eb44b04c81f0"
+    },
+    {
+      "name": "knowledge.asset.list",
+      "args": {},
+      "isError": false,
+      "code": null,
+      "kind": "array",
+      "count": 1,
+      "keys": null,
+      "status": null,
+      "readMode": null,
+      "total": null,
+      "products": null,
+      "sha256": "4fa06211af2c3f8f60596fe4bf6706899ded7ab1817e5c2d9810cf1178c25897"
+    },
+    {
+      "name": "knowledge.brand.preference.get",
+      "args": {},
+      "isError": false,
+      "code": null,
+      "kind": "object",
+      "count": null,
+      "keys": [],
+      "status": null,
+      "readMode": null,
+      "total": null,
+      "products": null,
+      "sha256": "ca0a4a51c69c34d67eba021e2337fe615554020a5961058b559d4f0b0cb2aa84"
+    },
+    {
+      "name": "knowledge.learning.list",
+      "args": {},
+      "isError": false,
+      "code": null,
+      "kind": "array",
+      "count": 0,
+      "keys": null,
+      "status": null,
+      "readMode": null,
+      "total": null,
+      "products": null,
+      "sha256": "1f37125e54c7ff5efdccb3df8bade0d0f94542f3f3c97827deae04d161287969"
+    },
+    {
+      "name": "knowledge.competitor.list",
+      "args": {},
+      "isError": false,
+      "code": null,
+      "kind": "array",
+      "count": 0,
+      "keys": null,
+      "status": null,
+      "readMode": null,
+      "total": null,
+      "products": null,
+      "sha256": "1f37125e54c7ff5efdccb3df8bade0d0f94542f3f3c97827deae04d161287969"
+    }
+  ],
+  "initialize": {
+    "ok": true,
+    "version": "2025-06-18",
+    "error": null
+  },
+  "stderr": ""
+}

@@ -17,6 +17,17 @@
 
 ## 实测覆盖
 
+### 08:53 CST 全工具复测增量（仍在验收中）
+
+- [131 项逐工具验收矩阵](2026-09-29-plugin-all-tools-matrix.md)分别记录 App 成功、生产 MCP 成功、权限或参数阻断、本地契约及未测成功路径；工具发现或本地校验不计为业务成功。
+- 本轮最初安装的插件暴露 **131** 个工具；升级后已安装 `0.1.0+codex.20260929083842`，本地安装验收确认 **119** 个工具。ChatGPT Work 本轮真实调用了 `onboarding.status`、`asset.list`、`billing.status`、`creative-points.balance.get`、`rule.sync.status`，均返回生产工作区数据；见[五接口截图](evidence/2026-09-29-chatgpt-app/20-chatgpt-work-five-readonly-tools.png)。第二组实际调用 `catalog.categories`、`canonical.product.consistency`、五个 `knowledge.*` 只读接口和 `deliverable.list`；见[知识库截图](evidence/2026-09-29-chatgpt-app/21-chatgpt-work-knowledge-readonly-top.png)。再次调用 `catalog.search(scope=workspace)` 返回两件商品，一件 QA 商品事实未确认，另一件商品事实已确认但店铺账号未绑定；见[商品总览截图](evidence/2026-09-29-chatgpt-app/22-chatgpt-work-all-products.png)。此前 `content.draft.generate` 的一次真实中转、成本和点数结算证据仍有效。
+- 多组 agent 使用商家演示账号签发的短期工作区 MCP 凭据，经本地 stdio 插件调用生产只读工具。账务 13 项均完成调用，其中 `billing.export` 明确返回仅商家后台可导出，模型用量和交易明细只返回后台入口；素材列表返回 11 件，图片任务不存在时正确返回 `IMAGE_GENERATION_JOB_NOT_FOUND`；任务和批量计划列表当前均为空，带虚构 ID 的受保护查询按预期拒绝。以上是**读取或安全阻断**证据，不是写入成功路径证据。
+- 桌面生产复测：运营后台选定 `ws_guirenniaoniao` 和人工登记的 `jd:42169` 后，`上传 Excel / CSV` 启用，XLSX 模板可下载；商家后台能查看 QA 商品。当前商家生产页面没有自己的 Excel 导入入口，“知识库”导航实际显示素材库。正式任务、审核、导出、图片生成、素材上传会话、批量生成和发布没有完成线上成功路径；不能称为全功能通过。
+- 已发现并在**本地插件新版**修正：只读邀请查询被写门禁误挡；`merchant.first_value(draft=true)`、竞品参考和字段映射预检被误标为纯只读；12 个平台/运营权限工具被商家错误列出；图片任务查询的二选一参数契约缺失。`0.1.0+codex.20260929083842` 已经本地直装，源码/缓存各 119 个工具、53 个运行文件一致；完整重启 ChatGPT 后，新 Work 会话真实调用 `onboarding.status` 和 `catalog.search` 成功，见[升级后截图](evidence/2026-09-29-chatgpt-app/26-upgraded-119-tool-plugin-app-readonly.png)。随后发现 3 个分片上传工具固定返回 503，已在 `0.1.0+codex.20260929090000` 隐藏，并把授权回调黑底文本页改为同页状态弹框；新版已本地安装，源码/缓存各 116 个工具、53 个运行文件一致，ChatGPT 重启后的业务调用待复验。隔离 Chromium 已覆盖回调处理中→成功和处理中→失败，见[浏览器证据](evidence/2026-09-29-chatgpt-app/local-plugin-callback-browser-e2e.md)。非法导出申请 ID 在生产返回 500 的 API 修复仍只是本地候选，尚未部署。主分支含迁移 255，而生产数据库为 254；本轮不迁移数据库，也不能直接用主分支全量 API 发布。
+- 当前公网 API 与 Ops 健康返回 `status=ok`，API 双副本和主要容器 healthy；但 `/api/healthz` 的 `productionEvidence.capability`、`productionEvidence.capacity` 都为 `blocked`，原因是证据路径不可读。正式发布门禁仍须补齐真实且可读的候选证据，不能把健康探针当作发布批准。
+- 第二轮隔离验证已覆盖目录写入 37 项、正式任务和内容 106 项、知识库 API 21 项与桥接 98 项、账务定向 165 项及独立 PostgreSQL 支付链路。它们验证了实现和权限边界，**不计入生产 ChatGPT App 成功数**。账务证据见[隔离支付审计](evidence/2026-09-29-chatgpt-app/billing-write-isolated-audit.md)，正式内容见[隔离内容审计](evidence/2026-09-29-chatgpt-app/formal-content-isolated-audit.md)。
+- 当前主分支 `npm run typecheck` 和 `npm run test:release-gates` 已通过；Vitest 1387 通过、16 跳过，后续 Node 与基础设施门禁也退出 0。此结果是本地代码质量证据；生产 API 仍为 `release-demo-product-code-20260929`，本轮未部署 API、未迁移数据库。
+
 | 层 | 实测 | 结果 |
 | --- | --- | --- |
 | 本地 MCP 握手/工具发现 | `initialize`、`tools/list` | 成功发现 131 个商家工具；未暴露 `ops.*`。 |
