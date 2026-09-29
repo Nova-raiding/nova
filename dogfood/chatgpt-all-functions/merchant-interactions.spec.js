@@ -106,7 +106,7 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
     await page.screenshot({ path: resolve(shots, '4-visual-rules.png') })
   }
 
-  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
+  await expect(page.getByRole('complementary', { name: '商家工作区导航' }).getByText('知识库', { exact: true })).toBeVisible()
   steps.push(await state(page, '商品工作流规则状态'))
   await page.screenshot({ path: resolve(shots, '5-product-workflow.png') })
 

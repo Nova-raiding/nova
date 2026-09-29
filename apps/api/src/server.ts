@@ -3399,19 +3399,6 @@ void persistenceReady.then(async () => {
   if (isProduction()) persistenceError = error
 })
 
-// Local development fixture: provide a deterministic, idempotent creative-point
-// balance for ws_demo after PostgreSQL repositories are ready. Production and
-// staging never execute this path.
-void persistenceReady.then(async () => {
-  if (process.env.NODE_ENV !== 'development' || process.env.CONNECTOR_FIXTURE_MODE !== 'true' || process.env.MERCHANT_TEST_APPROVED_RATES !== 'true') return
-  if (!persistence?.creativePoints) return
-  await persistence.creativePoints.grant({
-    workspaceId: 'ws_demo', points: 10_000,
-    sourceType: 'test_fixture', sourceId: 'fixture-bootstrap-ws_demo',
-    idempotencyKey: 'fixture-bootstrap:ws_demo', metadata: { fixture: true },
-  })
-}).catch(() => undefined)
-
 const fixtureCommercialRegistry = COMMERCIAL_OPERATION_REGISTRY.map(policy => policy.classification === 'POINT_CHARGED' || MCP_RECOVERY_DISABLED_METHODS.includes(policy.operation as (typeof MCP_RECOVERY_DISABLED_METHODS)[number]) || MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS.includes(policy.operation as (typeof MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS)[number]) || MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS.includes(policy.operation as (typeof MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS)[number]) ? { ...policy, enabled: true } : policy)
 
 const commercialAccessService = new CommercialAccessService({
