@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
+import { chromium } from 'playwright'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MCP_METHOD_SCHEMAS, MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
 // The two byte-identical copies of this file sit at different depths relative to
@@ -1443,8 +1444,9 @@ describe('Codex stdio MCP bridge', () => {
       const listed = await nextLine(child.stdout)
       expect(listed.result.tools.some((tool: { name: string }) => tool.name === 'workspace.bootstrap')).toBe(false)
       const catalogImageGet = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.get')
-      expect(catalogImageGet).toMatchObject({ name: 'catalog.image.get', annotations: { readOnlyHint: true } })
-      expect(catalogImageGet).not.toHaveProperty('_meta')
+      const catalogImageGenerate = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.generate')
+      expect(catalogImageGet).toMatchObject({ name: 'catalog.image.get', annotations: { readOnlyHint: true }, _meta: { ui: { resourceUri: 'ui://merchant-marketing/image-candidate-choice-v15.html', prefersBorder: true }, 'openai/outputTemplate': 'ui://merchant-marketing/image-candidate-choice-v15.html' } })
+      expect(catalogImageGenerate).toMatchObject({ name: 'catalog.image.generate', _meta: { ui: { resourceUri: 'ui://merchant-marketing/image-candidate-choice-v15.html', prefersBorder: true }, 'openai/outputTemplate': 'ui://merchant-marketing/image-candidate-choice-v15.html' } })
       expect(listed.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining(['onboarding.status', 'merchant.start', 'catalog.image.get', 'billing.status', 'workspace.health']))
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.select')).toMatchObject({
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -1596,6 +1598,52 @@ describe('Codex stdio MCP bridge', () => {
       expect(names).toContain('multimodal.video.get')
     } finally {
       local.child.kill()
+    }
+  })
+
+  it('keeps video storyboard briefs available while rendering stays hidden by default', async () => {
+    const received: any[] = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      received.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {
+        product_id: 'product_1', asset_type: 'video_storyboard', state: 'candidate',
+        storyboard: [{ shot: 1, duration_seconds: 3, description: '展示商品细节' }],
+        provider_executed: false,
+      } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+      const listed = await nextLine(child.stdout)
+      const tools = listed.result.tools as ListedTool[]
+      const names = tools.map(tool => tool.name)
+      expect(names).toContain('creative.brief')
+      expect(tools.find(tool => tool.name === 'creative.brief')?.inputSchema.properties?.asset_type.enum).toContain('video_storyboard')
+      expect(names).not.toContain('multimodal.video.request')
+      expect(names).not.toContain('multimodal.video.get')
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'creative.brief', arguments: { product_id: 'product_1', asset_type: 'video_storyboard', duration_seconds: '15' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({
+        isError: false,
+        structuredContent: { asset_type: 'video_storyboard', provider_executed: false, storyboard: [{ shot: 1 }] },
+      })
+      expect(received).toHaveLength(1)
+      expect(received[0].method).toBe('creative.brief')
+      expect(received[0].method).not.toMatch(/multimodal\.video\.(?:request|get)/u)
+    } finally {
+      child.kill()
+      await close(server)
     }
   })
 
@@ -2038,6 +2086,57 @@ describe('Codex stdio MCP bridge', () => {
       await close(server)
     }
   })
+
+  it('renders a real image attachment and persists the selected candidate in the App-like chooser', async () => {
+    const { child } = await listBridgeTools({})
+    const browser = await chromium.launch({ headless: true })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 41, method: 'resources/read', params: { uri: 'ui://merchant-marketing/image-candidate-choice-v15.html' } })}\n`)
+      const read = await nextLine(child.stdout)
+      const html = read.result.contents[0].text as string
+      const nonce = 'a'.repeat(64)
+      const intent = 'b'.repeat(64)
+      const ticket = { visual_ref: 'visual_fixture_1', nonce_hash: nonce, intent_hash: intent, expires_at: '2099-01-01T00:00:00.000Z' }
+      const payload = {
+        candidate_state: { state: 'ready' }, completed_summary: '已准备 1 张主图候选。',
+        selection_request: { job_id: 'job_fixture', expected_revision: '3', candidates: [{ ordinal: 1, visual_ref: ticket.visual_ref, selectable: true, subject_label: '商品主体', availability_label: '可用' }] },
+        image_urls: [],
+      }
+      const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pXcAAAAASUVORK5CYII='
+      const page = await browser.newPage()
+      await page.evaluate(({ payload, ticket, image }) => {
+        ;(window as any).openai = {
+          toolOutput: payload,
+          toolResponseMetadata: { mcp_tool_result: { _meta: { 'merchant/candidateSelectionTickets': [ticket] }, content: [{ type: 'image', mimeType: 'image/png', data: image }] } },
+          callTool: async (name: string, args: Record<string, unknown>) => {
+            ;(window as any).__calls.push({ name, args })
+            if (name === 'catalog.image.select') return { structuredContent: { preference_status: 'selected', visual_ref: ticket.visual_ref, revision: 4 } }
+            return { structuredContent: { ...payload, selection_request: { ...payload.selection_request, expected_revision: '4', selected_visual_ref: ticket.visual_ref } }, _meta: { 'merchant/candidateSelectionTickets': [ticket] }, content: [{ type: 'image', mimeType: 'image/png', data: image }] }
+          },
+        }
+        ;(window as any).__calls = []
+      }, { payload, ticket, image })
+      await page.setContent(html)
+      await page.locator('input[type="radio"]').waitFor({ state: 'visible' })
+      const imageNode = page.locator('img')
+      await imageNode.waitFor({ state: 'visible' })
+      expect(await imageNode.getAttribute('src')).toBe(`data:image/png;base64,${image}`)
+      expect(await imageNode.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBe(1)
+      const confirm = page.getByRole('button', { name: '使用这张主图' })
+      expect(await confirm.isEnabled()).toBe(true)
+      await confirm.click()
+      await expect(page.getByRole('button', { name: '已保存' })).toBeDisabled()
+      expect(await page.locator('#status').textContent()).toContain('已保存为首选主图，尚未审核或发布')
+      expect(await page.evaluate(() => (window as any).__calls)).toEqual([
+        { name: 'catalog.image.select', args: expect.objectContaining({ job_id: 'job_fixture', visual_ref: 'visual_fixture_1', expected_revision: '3', confirmation_ticket_nonce_hash: nonce, confirmation_ticket_intent_hash: intent }) },
+        { name: 'catalog.image.get', args: { job_id: 'job_fixture' } },
+      ])
+      await page.close()
+    } finally {
+      child.kill()
+      await browser.close()
+    }
+  }, 45_000)
 
   it('restores the preferred image after refresh and accepts a new choice only with the new revision', async () => {
     const images = ['data:image/png;base64,aW1hZ2Ux', 'data:image/png;base64,aW1hZ2Uy']

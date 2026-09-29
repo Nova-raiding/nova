@@ -134,6 +134,11 @@ const TASK_UI_METHODS = new Map([
 ])
 const RECHARGE_UI_METHODS = new Set()
 const IMAGE_EDIT_UI_METHODS = new Set()
+// Bind the merchant image candidate view at tool discovery time. Result-level
+// metadata is still state-specific (only ready/progress results open the
+// chooser), but ChatGPT needs the output template on the tool definition to
+// associate the component with the image generation and polling tools.
+const IMAGE_CANDIDATE_UI_METHODS = new Set(['catalog.image.generate', 'catalog.image.get'])
 const MAX_LOCAL_UPLOAD_BYTES = 50 * 1024 * 1024
 const MAX_EXPORT_ARTIFACT_BYTES = 25 * 1024 * 1024
 const MAX_REMOTE_RESPONSE_BYTES = 36 * 1024 * 1024

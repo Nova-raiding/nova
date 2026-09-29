@@ -134,6 +134,11 @@ const TASK_UI_METHODS = new Map([
 ])
 const RECHARGE_UI_METHODS = new Set()
 const IMAGE_EDIT_UI_METHODS = new Set()
+// Bind the merchant image candidate view at tool discovery time. Result-level
+// metadata is still state-specific (only ready/progress results open the
+// chooser), but ChatGPT needs the output template on the tool definition to
+// associate the component with the image generation and polling tools.
+const IMAGE_CANDIDATE_UI_METHODS = new Set(['catalog.image.generate', 'catalog.image.get'])
 const MAX_LOCAL_UPLOAD_BYTES = 50 * 1024 * 1024
 const MAX_EXPORT_ARTIFACT_BYTES = 25 * 1024 * 1024
 const MAX_REMOTE_RESPONSE_BYTES = 36 * 1024 * 1024
@@ -2400,6 +2405,10 @@ function merchantUiMetadata(method, result, args = {}) {
 }
 
 function toolUiMetadata(name) {
+  if (IMAGE_CANDIDATE_UI_METHODS.has(name)) return {
+    ui: { resourceUri: IMAGE_CANDIDATE_CHOICE_UI_URI, prefersBorder: true },
+    'openai/outputTemplate': IMAGE_CANDIDATE_CHOICE_UI_URI,
+  }
   if (IMAGE_EDIT_UI_METHODS.has(name)) return {
     ui: { resourceUri: IMAGE_EDIT_UI_URI, prefersBorder: true },
     'openai/outputTemplate': IMAGE_EDIT_UI_URI,
@@ -3559,7 +3568,7 @@ async function handle(request) {
     return jsonRpc(id, { tools: Object.entries(METHODS).filter(([name]) => isMerchantTool(name) && !COMMERCIAL_DISABLED_METHODS.has(name)).map(([name, value]) => ({
       name,
       ...value,
-      ...(RECHARGE_UI_METHODS.has(name) || MERCHANT_CONTEXT_COMPONENT_METHODS.has(name) || IMAGE_EDIT_UI_METHODS.has(name) ? { _meta: { ...(RECHARGE_UI_METHODS.has(name) ? { ui: { resourceUri: RECHARGE_UI_URI }, 'openai/outputTemplate': RECHARGE_UI_URI, 'openai/toolInvocation/invoking': '正在读取创意点准入与账务证据…', 'openai/toolInvocation/invoked': '创意点准入状态已更新' } : {}), ...(toolUiMetadata(name) ?? {}) } } : {}),
+      ...(RECHARGE_UI_METHODS.has(name) || MERCHANT_CONTEXT_COMPONENT_METHODS.has(name) || IMAGE_EDIT_UI_METHODS.has(name) || IMAGE_CANDIDATE_UI_METHODS.has(name) ? { _meta: { ...(RECHARGE_UI_METHODS.has(name) ? { ui: { resourceUri: RECHARGE_UI_URI }, 'openai/outputTemplate': RECHARGE_UI_URI, 'openai/toolInvocation/invoking': '正在读取创意点准入与账务证据…', 'openai/toolInvocation/invoked': '创意点准入状态已更新' } : {}), ...(toolUiMetadata(name) ?? {}) } } : {}),
       annotations: toolAnnotations(name),
     })) })
   }
