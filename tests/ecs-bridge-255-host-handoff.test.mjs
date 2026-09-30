@@ -101,7 +101,10 @@ test('rejects old 242 attestation, wrong source and tampered dump', () => {
 
 test('rejects expired, fake, exposed, cross-attempt and wrong-prefix restore proof', () => {
   for (const mutate of [
-    f => { f.restore.signature_base64 = f.restore.signature_base64.replace(/^./u, 'A') },
+    f => {
+      const first = f.restore.signature_base64[0] === 'A' ? 'B' : 'A'
+      f.restore.signature_base64 = `${first}${f.restore.signature_base64.slice(1)}`
+    },
     f => { f.restore.published_ports = [5432]; f.restore = signed({ ...f.restore, signature_base64: undefined }) },
     f => { f.restore.attempt_id = 'attempt_other_abcdefghijkl'; f.restore = signed({ ...f.restore, signature_base64: undefined }) },
     f => { f.restore.source_prefix_254_sha256 = h('a'); f.restore = signed({ ...f.restore, signature_base64: undefined }) },
