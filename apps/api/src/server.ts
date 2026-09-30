@@ -3170,7 +3170,10 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const opsSqlPool = (opsPool ?? pool) as unknown as SqlPool
     const migrations = await loadMigrations()
     const expectedMigrationVersion = migrations.at(-1)?.version ?? 0
-    const bridgeSchemaMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
+    // Compose keeps this variable present with an empty default in local
+    // acceptance. Treat an empty value as unset; otherwise the runtime would
+    // incorrectly disable lifecycle repositories while no bridge is active.
+    const bridgeSchemaMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE || undefined
     if (bridgeSchemaMode && (!['prefix_242_or_254', 'prefix_254_or_255', 'prefix_255_or_256', 'prefix_256_or_257'].includes(bridgeSchemaMode) || process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false')) {
       throw new Error('bridge runtime requires a reviewed schema compatibility mode and RUN_MIGRATIONS_ON_STARTUP=false')
     }
