@@ -35,6 +35,10 @@ export function inventoryWarnings(snapshot) {
   return revisions.size > 1 ? ['application_services_have_mixed_source_revisions'] : []
 }
 
+export function isManagedDemoContainerName(name) {
+  return typeof name === 'string' && /^merchant-demo-85575f9c-[a-z0-9][a-z0-9-]*-[0-9]+$/u.test(name)
+}
+
 const remote = String.raw`
 import json,subprocess,shutil
 
@@ -45,6 +49,9 @@ services=[]
 for cid in ids:
     c=json.loads(docker('inspect',cid))[0]
     labels=c['Config'].get('Labels') or {}
+    name=c.get('Name','').lstrip('/')
+    if not name.startswith('merchant-demo-85575f9c-'):
+        continue
     image=json.loads(docker('image','inspect',c['Image']))[0]
     il=image['Config'].get('Labels') or {}
     services.append(dict(service=labels.get('com.docker.compose.service'),container_id=c['Id'],state=c['State']['Status'],health=c['State'].get('Health',{}).get('Status','absent'),image=c['Config']['Image'],image_id=c['Image'],git_sha=il.get('org.opencontainers.image.revision'),compose_path=labels.get('com.docker.compose.project.config_files')))

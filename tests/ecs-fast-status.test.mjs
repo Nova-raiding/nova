@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assess, inventoryWarnings } from '../infra/scripts/ecs-fast-status.mjs'
+import { assess, inventoryWarnings, isManagedDemoContainerName } from '../infra/scripts/ecs-fast-status.mjs'
 const names = ['api', 'api-replica', 'ops-ui', 'pilot-gateway', 'postgres', 'redis']
 function snapshot() {
   return { free_bytes: 10 * 1024 ** 3, services: names.map(service => ({ service, state: 'running', health: 'healthy', image: `registry/service@sha256:${'a'.repeat(64)}`, git_sha: ['postgres', 'redis'].includes(service) ? null : 'b'.repeat(40) })) }
@@ -36,4 +36,11 @@ test('untouched database and Redis tag references are not application update blo
   const value = snapshot()
   for (const service of value.services) if (['postgres', 'redis'].includes(service.service)) service.image = `${service.service}:stable`
   assert.deepEqual(assess(value), [])
+})
+
+test('isolated candidate sidecars are excluded from the formal demo inventory', () => {
+  assert.equal(isManagedDemoContainerName('merchant-demo-85575f9c-api-1'), true)
+  assert.equal(isManagedDemoContainerName('merchant-demo-85575f9c-worker-scan-1'), true)
+  assert.equal(isManagedDemoContainerName('merchant-candidate-api-ecs-20260930T133625Z-244933747f'), false)
+  assert.equal(isManagedDemoContainerName('merchant-demo-85575f9c-api'), false)
 })
