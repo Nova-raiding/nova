@@ -107,14 +107,25 @@ describe('authorization MCP password session boundary', () => {
     }
   })
 
+  it('denies role assignment by a non-designated durable ops_admin despite forged login headers', async () => {
+    const target = await createPlatformIdentity('rules-denied@example.test')
+    const result = await call(await login('ordinary-ops@example.test', 'ops_admin'), 'ops.authorization.role.assign', {
+      subject_identity_id: target.identityId, role: 'rules_admin', expected_authorization_revision: '0', reason: 'Verify designated administrator boundary',
+    })
+    expect(result.status).toBe(403)
+    expect(result.body.error?.code).toBe('FORBIDDEN')
+    const persistence = await api.persistenceReady
+    expect(await persistence.authorization?.listActivePlatformRoles(target.identityId)).toEqual([])
+  })
+
   it('denies an allowlisted login without the platform administrator role', async () => {
     const result = await call(await login('hyp@sn.com', 'security_admin'))
     expect(result.status).toBe(403)
     expect(result.body.error?.code).toBe('FORBIDDEN')
   })
 
-  it('grants two independent platform identities rules_admin through the authenticated Ops mutation', async () => {
-    const administratorCookie = await login('hyp@sn.com')
+  it.each(['hyp@sn.com', 'hxd@sn.com'])('lets designated durable ops_admin %s assign rules_admin through the authenticated Ops mutation', async account => {
+    const administratorCookie = await login(account, 'ops_admin')
     const maker = await createPlatformIdentity('rules-maker@example.test')
     const checker = await createPlatformIdentity('rules-checker@example.test')
 
