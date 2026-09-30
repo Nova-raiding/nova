@@ -128,7 +128,7 @@ const required = [
   'scripts/build-connect-helper-windows.mjs', 'scripts/build-windows-credential-helper.mjs', 'scripts/verify-connect-helper-windows.ps1',
   'scripts/ensure-chatgpt-windows.ps1',
   'scripts/build-keychain-helper.mjs', 'scripts/diagnose-workspace-binding.mjs', 'scripts/install-local-macos.sh',
-  'scripts/install-local-plugin.mjs', 'scripts/login-local-macos.mjs', 'scripts/enroll-local-macos.mjs', 'scripts/register-connect-helper.mjs', 'scripts/login-local-windows.mjs', 'scripts/upgrade-installed-plugin.mjs',
+  'scripts/install-local-plugin.mjs', 'scripts/package-local-plugin.mjs', 'scripts/local-plugin-package-profile.mjs', 'scripts/login-local-macos.mjs', 'scripts/enroll-local-macos.mjs', 'scripts/register-connect-helper.mjs', 'scripts/login-local-windows.mjs', 'scripts/upgrade-installed-plugin.mjs',
   'scripts/windows-installation-binding.mjs',
   'scripts/verify-installed-bridge.mjs', 'scripts/verify-marketplace-source.mjs',
   'scripts/install-chatgpt-bundled.mjs', 'scripts/install-all-macos.mjs', 'scripts/verify-chatgpt-macos.mjs', 'scripts/launch-verified-chatgpt-macos.mjs',
