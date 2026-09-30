@@ -66,6 +66,7 @@ const paymentEnvironment = {
   OPS_DATABASE_URL: 'postgres://merchant_ops:opaque-production-ops-secret@postgres:5432/merchant',
   PGPASSWORD: 'opaque-production-schema-owner-secret',
   MODEL_COST_ESTIMATE_VERSION: 'production-rate-card-2026-09-15',
+  OCR_MAX_OUTPUT_TOKENS: '512',
 }
 
 const requiredPaymentKeys = [
@@ -184,6 +185,7 @@ describe('ECS pilot API replica parity', () => {
       MODEL_RELAY_BASE_URL: 'https://ai.wormholexyz.xyz/v1',
       MODEL_RELAY_ALLOWED_HOSTS: 'ai.wormholexyz.xyz',
       MODEL_RELAY_API_KEY: '',
+      OCR_MAX_OUTPUT_TOKENS: '512',
       MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'false',
     }
     const apiEnv = services.api?.environment ?? {}
@@ -267,6 +269,7 @@ describe('ECS pilot API replica parity', () => {
     'API_AUTH_TOKENS', 'SESSION_ID_HASH_SECRET', 'WORKER_API_CREDENTIALS',
     'ASSET_DISPLAY_URL_SIGNING_SECRET', 'ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'WORKER_WORKSPACES',
     'DATABASE_URL', 'OPS_DATABASE_URL', 'MODEL_COST_ESTIMATE_VERSION',
+    'OCR_MAX_OUTPUT_TOKENS',
     'WORKER_SYNC_API_TOKEN', 'WORKER_SYNC_API_SIGNING_SECRET',
     'WORKER_GENERATION_API_TOKEN', 'WORKER_GENERATION_API_SIGNING_SECRET',
     'WORKER_PUBLISH_API_TOKEN', 'WORKER_PUBLISH_API_SIGNING_SECRET',
