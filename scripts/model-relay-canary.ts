@@ -441,7 +441,9 @@ export function writeRelayResponseArtifact(root: string, release: string, modali
     observed_at: new Date().toISOString(), http_status: response.status,
     response_headers: responseHeaders,
     result: resultSummary,
-    ...(modality === 'embedding' ? relayResponse as Record<string, unknown> : { relay_response: relayResponse }),
+    ...(modality === 'embedding'
+      ? relayResponse as Record<string, unknown>
+      : { relay_response: relayResponse, ...(response.candidateBinding ? { candidate_binding: response.candidateBinding } : {}) }),
   }, null, 2) + '\n'
   const digest = createHash('sha256').update(body).digest('hex')
   const directory = resolve(root, 'relay', release)
