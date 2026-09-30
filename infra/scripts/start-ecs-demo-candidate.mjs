@@ -191,7 +191,10 @@ for (const name of ['postgres', 'redis', ...appServices]) {
     let healthy = false
     while (Date.now() < deadline) {
       const check = spawnSync(dockerBinary, ['--host', 'unix:///var/run/docker.sock', 'exec', id,
-        'wget', '-qO-', 'http://127.0.0.1:8787/healthz'], {
+        // Discard the response body: /healthz is a detailed JSON document and
+        // can exceed the bounded child-process buffer. The HTTP exit status is
+        // the only readiness signal needed here.
+        'wget', '-qO', '/dev/null', 'http://127.0.0.1:8787/healthz'], {
         encoding: 'utf8', timeout: 5000, maxBuffer: 1024, env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
         stdio: ['ignore', 'pipe', 'pipe'],
       })
