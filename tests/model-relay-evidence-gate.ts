@@ -72,7 +72,11 @@ function videoResponseIsComplete(payload: unknown): boolean {
   const statuses = [nestedOutput.task_status, nestedData.task_status, nestedData.status, data.status]
     .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
     .map(value => value.trim().toLowerCase())
-  if (new Set(statuses).size > 1 || !statuses.length || !['completed', 'succeeded', 'success'].includes(statuses[0]!)) return false
+  // The relay envelope reports SUCCESS while the upstream task reports
+  // SUCCEEDED. Normalize these equivalent terminal states before checking for
+  // conflicting async status evidence.
+  const normalizedStatuses = statuses.map(value => value === 'success' ? 'succeeded' : value)
+  if (new Set(normalizedStatuses).size > 1 || !normalizedStatuses.length || !['completed', 'succeeded'].includes(normalizedStatuses[0]!)) return false
   const isStrictHttpsUrl = (value: unknown): boolean => {
     if (typeof value !== 'string' || value !== value.trim() || !/^https:\/\//iu.test(value)) return false
     const authority = /^https:\/\/([^/?#]*)/iu.exec(value)?.[1]
