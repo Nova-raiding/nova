@@ -174,10 +174,27 @@ describe('central commercial access gate', () => {
     expect(isNativeMcpToolEnabled('unregistered.business.action')).toBe(false)
   })
 
-  it('keeps local fixture video tools available only behind the approved development gate', () => {
-    const source = readFileSync(new URL('./native-mcp-tools.ts', import.meta.url), 'utf8')
-    expect(source).toContain("['catalog.image.generate', 'multimodal.video.request', 'multimodal.video.get'].includes(method)")
-    expect(source).toContain("process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true'")
+  it('keeps local fixture video tools behind the explicit loopback-only development gate', () => {
+    try {
+      vi.stubEnv('MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES', 'true')
+      vi.stubEnv('NODE_ENV', 'development')
+      vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true')
+      vi.stubEnv('MERCHANT_TEST_APPROVED_RATES', 'true')
+      vi.stubEnv('MERCHANT_MCP_BASE_URL', 'http://127.0.0.1:8787/mcp')
+      expect(isNativeMcpToolEnabled('multimodal.video.request')).toBe(true)
+      expect(isNativeMcpToolEnabled('multimodal.video.get')).toBe(true)
+      vi.stubEnv('MERCHANT_MCP_BASE_URL', 'https://yxsona.com/mcp')
+      expect(isNativeMcpToolEnabled('multimodal.video.request')).toBe(false)
+      expect(isNativeMcpToolEnabled('multimodal.video.get')).toBe(false)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('hides unimplemented multipart upload methods from native MCP', () => {
+    for (const method of ['upload.session.create', 'upload.session.part', 'upload.session.complete']) {
+      expect(isNativeMcpToolEnabled(method)).toBe(false)
+    }
   })
 
   it('labels explicit manual platform operations as manual upload instead of fixture-ready', () => {
@@ -752,7 +769,7 @@ describe('API application wiring', () => {
     expect((source.match(/const stored = await putQuarantineObject\(/gu) ?? [])).toHaveLength(8)
     // Customer-delivery quarantine adds one independently authorized atomic
     // event; it must retain the same asset/outbox transaction boundary.
-    expect((source.match(/await persistAssetSnapshotAndEvent\(workspaceId,/gu) ?? [])).toHaveLength(7)
+    expect((source.match(/await persistAssetSnapshotAndEvent\(workspaceId,/gu) ?? [])).toHaveLength(9)
     expect(source).toContain('await persistAssetSnapshotAndEvent(workspaceId, asset, CUSTOMER_DELIVERY_SCAN_EVENT, eventPayload, asset as unknown as Record<string, unknown>)')
     expect((source.match(/compensateStoredAsset\(/gu) ?? [])).toHaveLength(9)
     expect(source).toContain('const quota = persistence.storageQuota')
@@ -1065,6 +1082,7 @@ describe('API application wiring', () => {
   it('uses the same customer-data grant boundary for HTTP and MCP transports', () => {
     expect(customerDataMethodForHttp('GET', '/v1/products')).toBe('catalog.search')
     expect(customerDataMethodForHttp('GET', '/v1/assets/a1/products')).toBe('asset.list')
+    expect(customerDataMethodForHttp('PUT', '/v1/assets/a1/metadata')).toBe('asset.metadata.update')
     expect(customerDataMethodForHttp('POST', '/v1/products/p1/confirm')).toBe('catalog.facts.confirm')
     expect(customerDataMethodForHttp('GET', '/v1/products/p1/image-review')).toBe('catalog.image.get')
     expect(customerDataMethodForHttp('POST', '/v1/publish-jobs')).toBe('publish.confirm')

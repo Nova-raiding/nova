@@ -3183,7 +3183,11 @@ async function initializePersistence(): Promise<ApiPersistence> {
       : undefined
     const assetLifecycleAvailable = bridgeSchemaMode === undefined
       || bridgeSchemaMode === 'prefix_255_or_256' && bridgeSchemaVersion === 256
-      || bridgeSchemaMode === 'prefix_256_or_257' && bridgeSchemaVersion === 257
+      // Migration 256 already owns the lifecycle read columns and indexes;
+      // migration 257 adds the snapshot FK guard. Keep the read projection
+      // active on both prefixes so trashed assets never become visible during
+      // the bridge rollout. Mutations remain disabled below for bridge mode.
+      || bridgeSchemaMode === 'prefix_256_or_257' && (bridgeSchemaVersion === 256 || bridgeSchemaVersion === 257)
     const outbox = new PostgresOutboxRepository(sqlPool)
     const business = new PostgresBusinessRepository(sqlPool, { normalizedProjection: true })
     const billing = new PostgresBillingRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event))
@@ -13285,6 +13289,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'asset.list':
     case 'asset.parse':
     case 'asset.facts.confirm':
+    case 'asset.metadata.update':
     case 'asset.preference.update':
       return result(await handleMcpAssetMethod(method, params, req, workspaceId, assetMcpDependencies()))
     case 'brand.get':

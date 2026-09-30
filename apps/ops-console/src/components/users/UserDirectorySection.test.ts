@@ -219,8 +219,8 @@ describe("UserDirectorySection sorting", () => {
   it("gives desktop directory controls stable, row-specific accessible names", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`}');
-    expect(source).toContain('aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`}');
-    expect(source).toContain('{row.status === "suspended" ? "恢复" : "停用"}');
+    expect(source).toContain('aria-label={`${row.status === "suspended" ? "启用" : "停用"} ${row.displayName || row.externalSubject} 的访问`}');
+    expect(source).toContain('{row.status === "suspended" ? "启用" : "停用"}');
     expect(source).toContain('aria-label="按关键词筛选用户目录"');
     // The column was renamed 成员状态 -> 激活状态 (7f6cf3f4); the filter has to
     // carry the same name as the column it filters.

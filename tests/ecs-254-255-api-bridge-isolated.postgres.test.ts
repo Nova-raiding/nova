@@ -29,7 +29,7 @@ async function freeLoopbackPort(): Promise<number> {
   return address.port
 }
 
-async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; redisUrl: string; port: number; bridgeMode?: 'prefix_254_or_255' | 'prefix_255_or_256' | null; testCommercialFixture?: boolean; assetStorageRoot?: string }): Promise<ChildProcess> {
+async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; redisUrl: string; port: number; bridgeMode?: 'prefix_254_or_255' | 'prefix_255_or_256' | 'prefix_256_or_257' | null; testCommercialFixture?: boolean; assetStorageRoot?: string }): Promise<ChildProcess> {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C.UTF-8',
     NODE_ENV: 'development', AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres',
@@ -301,6 +301,92 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       )
       expect(lifecycleAfterBlockedWrites.rows).toEqual(lifecycleBeforeBlockedPurge.rows)
       await stopApi(child); child = undefined
+
+      // The 256→257 bridge accepts exactly those two reviewed prefixes. At
+      // both versions it keeps lifecycle reads active to hide trashed assets,
+      // while lifecycle writes remain unavailable until normal API mode.
+      const portBridge256 = await freeLoopbackPort()
+      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: portBridge256, bridgeMode: 'prefix_256_or_257', assetStorageRoot: storageRoot })
+      expect((await fetch(`http://127.0.0.1:${portBridge256}/readyz`)).status).toBe(200)
+      const bridge256Assets = await fetch(`http://127.0.0.1:${portBridge256}/v1/assets`, { headers: bridgeHeaders })
+      expect(bridge256Assets.status).toBe(200)
+      const bridge256AssetBody = JSON.stringify(await bridge256Assets.json())
+      expect(bridge256AssetBody).toContain(assetId)
+      expect(bridge256AssetBody).not.toContain(trashedAssetId)
+      const bridge256Download = await fetch(`http://127.0.0.1:${portBridge256}/v1/assets/${encodeURIComponent(trashedAssetId)}/download`, { headers: bridgeHeaders })
+      expect(bridge256Download.status).toBe(410)
+      const bridge256Trash = await fetch(`http://127.0.0.1:${portBridge256}/v1/assets/trash`, { headers: bridgeHeaders })
+      expect(bridge256Trash.status).toBe(503)
+      expect(JSON.stringify(await bridge256Trash.json())).toContain('ASSET_LIFECYCLE_UNAVAILABLE')
+      const bridge256Restore = await fetch(`http://127.0.0.1:${portBridge256}/v1/assets/${encodeURIComponent(trashedAssetId)}/restore`, {
+        method: 'POST', headers: { ...bridgeHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ expected_revision: 1 }),
+      })
+      expect(bridge256Restore.status).toBe(503)
+      expect(JSON.stringify(await bridge256Restore.json())).toContain('ASSET_LIFECYCLE_UNAVAILABLE')
+      const before257 = await admin.query<{ revision: number; deleted_at: Date | null }>(
+        'SELECT revision, deleted_at FROM merchant_asset_lifecycle WHERE workspace_id=$1 AND asset_id=$2', [workspaceId, trashedAssetId],
+      )
+      expect(before257.rows).toEqual([{ revision: 1, deleted_at: expect.any(Date) }])
+
+      expect(await new MigrationRunner(admin, migrations.slice(0, 257)).run()).toEqual([257])
+      await admin.query(isolatedRoleSql)
+      const history257 = (await admin.query<{ version: number; name: string; checksum: string }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version')).rows
+      expect(history257).toHaveLength(257)
+      expect(() => verifyAppliedMigrations(history257, migrations.slice(0, 257))).not.toThrow()
+      expect((await fetch(`http://127.0.0.1:${portBridge256}/readyz`)).status).toBe(503)
+      await stopApi(child); child = undefined
+
+      const portBridge257 = await freeLoopbackPort()
+      child = await startApi({ databaseUrl: appUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: fixture.redisUrl, port: portBridge257, bridgeMode: 'prefix_256_or_257', assetStorageRoot: storageRoot })
+      expect((await fetch(`http://127.0.0.1:${portBridge257}/readyz`)).status).toBe(200)
+      // At 257 this bridge opens only the read projection, which hides the
+      // trashed snapshot. The write/trash APIs remain disabled until a normal
+      // non-bridge API process is running.
+      const bridge257Assets = await fetch(`http://127.0.0.1:${portBridge257}/v1/assets`, { headers: bridgeHeaders })
+      expect(bridge257Assets.status).toBe(200)
+      const bridge257AssetBody = JSON.stringify(await bridge257Assets.json())
+      expect(bridge257AssetBody).toContain(assetId)
+      expect(bridge257AssetBody).not.toContain(trashedAssetId)
+      const bridge257Trash = await fetch(`http://127.0.0.1:${portBridge257}/v1/assets/trash`, { headers: bridgeHeaders })
+      expect(bridge257Trash.status).toBe(503)
+      expect(JSON.stringify(await bridge257Trash.json())).toContain('ASSET_LIFECYCLE_UNAVAILABLE')
+      const bridge257Restore = await fetch(`http://127.0.0.1:${portBridge257}/v1/assets/${encodeURIComponent(trashedAssetId)}/restore`, {
+        method: 'POST', headers: { ...bridgeHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ expected_revision: 1 }),
+      })
+      expect(bridge257Restore.status).toBe(503)
+      expect(JSON.stringify(await bridge257Restore.json())).toContain('ASSET_LIFECYCLE_UNAVAILABLE')
+
+      // Migration 257's composite FK binds lifecycle records to the matching
+      // workspace asset snapshot. It rejects orphan/cross-tenant references
+      // and protects referenced snapshots from deletion.
+      await expect(admin.query(`INSERT INTO merchant_asset_lifecycle
+        (workspace_id,asset_id,deleted_at,expires_at,deleted_by,revision)
+        VALUES ($1,'asset_bridge_missing_snapshot',now(),now()+interval '7 days','bridge-actor',1)`, [workspaceId]))
+        .rejects.toMatchObject({ code: '23503' })
+      await expect(admin.query(`INSERT INTO merchant_asset_lifecycle
+        (workspace_id,asset_id,deleted_at,expires_at,deleted_by,revision)
+        VALUES ('ws_bridge_other',$1,now(),now()+interval '7 days','bridge-actor',1)`, [trashedAssetId]))
+        .rejects.toMatchObject({ code: '23503' })
+      await expect(admin.query('DELETE FROM business_entity_snapshots WHERE workspace_id=$1 AND entity_type=\'asset\' AND entity_id=$2', [workspaceId, trashedAssetId]))
+        .rejects.toMatchObject({ code: '23503' })
+      const scopedLifecycle = await app.connect()
+      try {
+        await scopedLifecycle.query('BEGIN READ ONLY')
+        await scopedLifecycle.query("SELECT set_config('app.workspace_id',$1,true)", [workspaceId])
+        expect((await scopedLifecycle.query('SELECT workspace_id,asset_id FROM merchant_asset_lifecycle WHERE asset_id=$1', [trashedAssetId])).rows)
+          .toEqual([{ workspace_id: workspaceId, asset_id: trashedAssetId }])
+        await scopedLifecycle.query('COMMIT')
+        await scopedLifecycle.query('BEGIN READ ONLY')
+        await scopedLifecycle.query("SELECT set_config('app.workspace_id','ws_bridge_other',true)")
+        expect((await scopedLifecycle.query('SELECT workspace_id,asset_id FROM merchant_asset_lifecycle WHERE asset_id=$1', [trashedAssetId])).rows).toEqual([])
+        await scopedLifecycle.query('COMMIT')
+      } finally { await scopedLifecycle.query('ROLLBACK'); scopedLifecycle.release() }
+      const lifecycleAfter257Bridge = await admin.query<{ revision: number; deleted_at: Date | null }>(
+        'SELECT revision, deleted_at FROM merchant_asset_lifecycle WHERE workspace_id=$1 AND asset_id=$2', [workspaceId, trashedAssetId],
+      )
+      expect(lifecycleAfter257Bridge.rows).toEqual(before257.rows)
+      await stopApi(child); child = undefined
+
       const headers = { authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId }
       const lifecycleHeaders = { ...headers, 'content-type': 'application/json' }
       // Seed an expired asset before the v256 API hydrates this workspace so

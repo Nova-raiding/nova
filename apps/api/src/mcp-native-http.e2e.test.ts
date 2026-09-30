@@ -45,6 +45,8 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(payload.result.tools.some(tool => tool.name === 'commercial.order.checkout.create')).toBe(false)
     expect(payload.result.tools.some(tool => tool.name === 'creative-points.balance.get')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'merchant.start')).toBe(true)
+    expect(payload.result.tools.some(tool => tool.name.startsWith('upload.session.'))).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name.startsWith('multimodal.video.'))).toBe(false)
     expect(payload.result.tools.every(tool => tool.inputSchema.type === 'object')).toBe(true)
     expect(payload.result.tools.find(tool => tool.name === 'workspace.health')?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
     expect(payload.result.tools.find(tool => tool.name === 'merchant.first_value')?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false })
@@ -116,6 +118,32 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const disabledCommercialTool = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'subscription.order.create', arguments: {} } }) })
     expect(disabledCommercialTool.status).toBe(200)
     expect(await disabledCommercialTool.json()).toMatchObject({ jsonrpc: '2.0', id: 8, error: { code: -32601 } })
+
+    for (const [id, name] of [
+      ['upload-1', 'upload.session.create'],
+      ['upload-2', 'upload.session.part'],
+      ['upload-3', 'upload.session.complete'],
+      ['video-1', 'multimodal.video.request'],
+      ['video-2', 'multimodal.video.get'],
+    ] as const) {
+      const disabledTransport = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: {} } }) })
+      expect(disabledTransport.status).toBe(200)
+      expect(await disabledTransport.json()).toMatchObject({ jsonrpc: '2.0', id, error: { code: -32601 } })
+    }
+  })
+
+  it('only lists local video candidates behind the full loopback fixture gate', async () => {
+    vi.stubEnv('MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES', 'true')
+    vi.stubEnv('NODE_ENV', 'development')
+    vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true')
+    vi.stubEnv('MERCHANT_TEST_APPROVED_RATES', 'true')
+    vi.stubEnv('MERCHANT_MCP_BASE_URL', 'http://127.0.0.1:8787/mcp')
+    const base = await start()
+    const listed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list', params: {} }) })
+    const payload = await listed.json() as { result: { tools: Array<{ name: string }> } }
+    expect(payload.result.tools.some(tool => tool.name === 'multimodal.video.request')).toBe(true)
+    expect(payload.result.tools.some(tool => tool.name === 'multimodal.video.get')).toBe(true)
+    expect(payload.result.tools.some(tool => tool.name.startsWith('upload.session.'))).toBe(false)
   })
 
   it('returns JSON-RPC method-not-found for unknown native methods instead of legacy envelopes', async () => {

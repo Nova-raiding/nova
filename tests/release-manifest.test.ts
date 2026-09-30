@@ -58,7 +58,7 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(140)
+    expect(manifest.artifacts).toHaveLength(144)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',

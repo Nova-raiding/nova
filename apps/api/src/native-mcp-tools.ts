@@ -1,12 +1,33 @@
 import { COMMERCIAL_OPERATION_REGISTRY, MCP_METHOD_CONTRACTS, MCP_NON_PRODUCTION_METHODS, getMcpMethodPolicy, resolveCommercialOperation } from '../../../packages/contracts/src/index.js'
 
+const NATIVE_MCP_METHODS_WITHOUT_TRANSPORT = new Set([
+  // The API has no multipart upload transport configured. Keep these out of
+  // every advertised MCP surface until the transport is implemented.
+  'upload.session.create', 'upload.session.part', 'upload.session.complete',
+])
+
+function localVideoCandidatesEnabled() {
+  if (process.env.MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES !== 'true') return false
+  if (process.env.NODE_ENV !== 'development' || process.env.CONNECTOR_FIXTURE_MODE !== 'true' || process.env.MERCHANT_TEST_APPROVED_RATES !== 'true') return false
+  try {
+    const hostname = new URL(process.env.MERCHANT_MCP_BASE_URL ?? '').hostname
+    return ['127.0.0.1', 'localhost', '[::1]'].includes(hostname)
+  } catch {
+    return false
+  }
+}
+
 export function isNativeMcpToolEnabled(method: string, paymentReady: () => boolean) {
+  if (NATIVE_MCP_METHODS_WITHOUT_TRANSPORT.has(method)) return false
+  // Rendering is a local QA-only capability and must never become visible
+  // merely because a commercial registry entry is present.
+  if (method === 'multimodal.video.request' || method === 'multimodal.video.get') return localVideoCandidatesEnabled()
   // Expose the recharge entry only after the production provider is configured.
   // Fixture and incomplete environments remain hidden from ChatGPT.
   if (method === 'billing.recharge.create' && process.env.PAYMENT_MODE === 'provider' && paymentReady()) return true
   if (method.startsWith('ops.') || (MCP_NON_PRODUCTION_METHODS as readonly string[]).includes(method)) return false
   if (!MCP_METHOD_CONTRACTS.some(contract => contract.method === method)) return false
-  if (['catalog.image.generate', 'multimodal.video.request', 'multimodal.video.get'].includes(method) && process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true') return true
+  if (method === 'catalog.image.generate' && process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true') return true
   return resolveCommercialOperation(COMMERCIAL_OPERATION_REGISTRY, { surface: 'MCP', operation: method }).outcome === 'REGISTERED'
 }
 

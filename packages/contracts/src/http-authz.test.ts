@@ -59,6 +59,7 @@ describe('HTTP authorization policy registry', () => {
     expect(getHttpOperationPolicy('POST', '/v1/internal/support/sla-report')).toMatchObject({ authentication: 'worker' })
     expect(getHttpOperationPolicy('GET', '/v1/tasks/task-1/approve')).toBeUndefined()
     expect(getHttpOperationPolicy('GET', '/v1/products/product-1/image-review')).toMatchObject({ mcpMethod: 'catalog.image.get', authentication: 'identity' })
+    expect(getHttpOperationPolicy('PUT', '/v1/assets/sample/metadata')).toMatchObject({ mcpMethod: 'asset.metadata.update', authentication: 'identity' })
     expect(getHttpOperationPolicy('POST', '/v1/tasks/task-1/approve/extra')).toBeUndefined()
   })
 

@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { chromium } from '@playwright/test'
+import { createScreenshotMatrixEvidence } from './screenshot-matrix-evidence.mjs'
 import { runOpsE2e } from './run-ops-password-e2e.js'
 
 async function capture(context: Parameters<NonNullable<Parameters<typeof runOpsE2e>[2]>>[0]) {
@@ -9,6 +10,7 @@ async function capture(context: Parameters<NonNullable<Parameters<typeof runOpsE
   if (!origin) throw new Error('MERCHANT_ISOLATED_UI_URL_MISSING')
   const output = resolve(evidenceDir, 'merchant-desktop-matrix')
   await mkdir(output, { recursive: true, mode: 0o700 })
+  const captureEvidence = await createScreenshotMatrixEvidence({ evidenceDir, matrixName: 'merchant-desktop-matrix-with-ops-login' })
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   try {
     const opsLoginPage = await browser.newPage({ viewport: { width: 1440, height: 1050 }, timezoneId: 'Asia/Shanghai' })
@@ -17,7 +19,8 @@ async function capture(context: Parameters<NonNullable<Parameters<typeof runOpsE
     await opsLoginPage.goto(`${context.baseUrl}/ops/overview?workbench=platform`, { waitUntil: 'domcontentloaded' })
     await opsLoginPage.getByRole('button', { name: '登录平台运营后台', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
     const opsLoginScreenshot = resolve(evidenceDir, 'desktop-readonly-matrix', '00-login.png')
-    await opsLoginPage.screenshot({ path: opsLoginScreenshot, fullPage: true })
+    await mkdir(dirname(opsLoginScreenshot), { recursive: true, mode: 0o700 })
+    await captureEvidence.capture(opsLoginPage, { filePath: opsLoginScreenshot, label: 'ops-login' })
     await opsLoginPage.close()
     const page = await browser.newPage({ viewport: { width: 1440, height: 1050 }, timezoneId: 'Asia/Shanghai' })
     const pageErrors: string[] = []
@@ -59,7 +62,7 @@ async function capture(context: Parameters<NonNullable<Parameters<typeof runOpsE
       backgroundColor: getComputedStyle(button).backgroundColor,
       opacity: getComputedStyle(button).opacity,
     }))
-    await page.screenshot({ path: resolve(output, '00-login.png'), fullPage: true })
+    await captureEvidence.capture(page, { filePath: resolve(output, '00-login.png'), label: 'merchant-login' })
     await page.getByPlaceholder('例如 merchant@example.com').fill(fixture.merchantLogin)
     await page.getByPlaceholder('请输入商家密码').fill(fixture.merchantPassword)
     const loginResponse = page.waitForResponse(response => {
@@ -112,7 +115,7 @@ async function capture(context: Parameters<NonNullable<Parameters<typeof runOpsE
         throw new Error(`MERCHANT_DESKTOP_GEOMETRY_MISMATCH_${name}_${geometry.sidebarWidth}_${geometry.mainShellOffset}`)
       }
       routeEvidence.push({ name, requestedPath: route, finalPath, heading: expectedHeading, geometry })
-      await page.screenshot({ path: resolve(output, `${name}.png`), fullPage: true })
+      await captureEvidence.capture(page, { filePath: resolve(output, `${name}.png`), label: name })
     }
     const result = { status: pageErrors.length || failedApi.length ? 'failed' : 'passed', isolated: true,
       persistence: 'disposable PostgreSQL + Redis', workspaceId: fixture.workspaceId,
@@ -120,6 +123,7 @@ async function capture(context: Parameters<NonNullable<Parameters<typeof runOpsE
       routes: routeEvidence, pageErrors, failedApi,
       loginButtonVisual, expectedLoginProbeCount: expectedAuthProbeFailures.length, productionBrowser: false }
     await writeFile(resolve(output, 'matrix.json'), JSON.stringify(result, null, 2), { mode: 0o600 })
+    await captureEvidence.finalize()
     if (result.status !== 'passed') throw new Error('MERCHANT_ISOLATED_BROWSER_MATRIX_FAILED')
   } finally { await browser.close() }
 }

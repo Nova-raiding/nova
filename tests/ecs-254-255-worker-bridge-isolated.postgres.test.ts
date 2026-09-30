@@ -226,6 +226,83 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
       } finally {
         await automation256.close()
       }
+
+      // A 256-to-257 bridge starts safely on 256, but must keep the new
+      // lifecycle callback fenced until the database has reached 257.
+      const automation256On257Bridge = await startAutomationApiStub()
+      try {
+        await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
+          workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 256,
+          bridgeMode: 'prefix_256_or_257', role: 'automation', apiBaseUrl: automation256On257Bridge.url })
+        expect(automation256On257Bridge.requests.map(request => request.target)).toEqual([
+          '/v1/internal/automation/tick', '/v1/internal/storage/orphans/cleanup',
+        ])
+        expect(automation256On257Bridge.requests.every(request => request.headers['x-workspace-id'] === fixture.workspaceId)).toBe(true)
+      } finally {
+        await automation256On257Bridge.close()
+      }
+
+      const ready256OnNewBridge = await assertWorkerReadinessDependencies({
+        database: app, expectedMigrations: migrations, bridgeMigrations: migrations, bridgeMode: 'prefix_256_or_257',
+      })
+      expect(ready256OnNewBridge).toEqual({ migrationVersion: 256, apiReady: false })
+      expect(() => assertBridgeStartupMigrationVersion(ready256OnNewBridge.migrationVersion, 257))
+        .toThrow('bridge database migration prefix changed; restart the worker before processing tasks')
+
+      expect(await new MigrationRunner(admin, migrations.slice(0, 257)).run()).toEqual([257])
+      await admin.query(isolatedRoleSql)
+      const history257 = (await admin.query<{ version: number; name: string; checksum: string }>(
+        'SELECT version,name,checksum FROM schema_migrations ORDER BY version',
+      )).rows
+      expect(history257).toHaveLength(257)
+      expect(() => verifyAppliedMigrations(history257, migrations.slice(0, 257))).not.toThrow()
+
+      const ready257 = await assertWorkerReadinessDependencies({
+        database: app, expectedMigrations: migrations, bridgeMigrations: migrations, bridgeMode: 'prefix_256_or_257',
+      })
+      expect(ready257).toEqual({ migrationVersion: 257, apiReady: false })
+      expect(() => assertBridgeStartupMigrationVersion(ready256OnNewBridge.migrationVersion, ready257.migrationVersion))
+        .toThrow('bridge database migration prefix changed; restart the worker before processing tasks')
+      expect(() => assertBridgeStartupMigrationVersion(ready257.migrationVersion, ready257.migrationVersion)).not.toThrow()
+
+      // Once the 257 schema is present, a restarted worker on the matching
+      // bridge enables purge and signs the request with its automation proof.
+      const automation257 = await startAutomationApiStub()
+      try {
+        await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
+          workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 257,
+          bridgeMode: 'prefix_256_or_257', role: 'automation', apiBaseUrl: automation257.url })
+        const requests257 = automation257.requests.map(request => request.target)
+        expect(requests257).toEqual([
+          '/v1/internal/automation/tick', '/v1/internal/storage/orphans/cleanup',
+          '/v1/internal/assets/lifecycle/purge',
+        ])
+        const purge = automation257.requests.find(request => request.target === '/v1/internal/assets/lifecycle/purge')!
+        expect(purge.method).toBe('POST')
+        expect(purge.headers.authorization).toBe(`Bearer ${automationToken}`)
+        expect(purge.headers['x-workspace-id']).toBe(fixture.workspaceId)
+        expect(JSON.parse(purge.body)).toEqual({ workspace_id: fixture.workspaceId, limit: 25 })
+        const header = (name: string) => {
+          const value = purge.headers[name]
+          return Array.isArray(value) ? value[0] : value
+        }
+        expect(header('x-worker-role')).toBe('automation')
+        expect(verifyWorkerRequestProof({
+          secret: automationSecret,
+          role: 'automation',
+          workerId: header('x-worker-id'),
+          method: purge.method,
+          requestTarget: purge.target,
+          workspaceId: fixture.workspaceId,
+          body: purge.body,
+          timestamp: header('x-worker-timestamp') ?? '',
+          nonce: header('x-worker-nonce') ?? '',
+          bodySha256: header('x-worker-body-sha256') ?? '',
+          signature: header('x-worker-workspace-signature') ?? '',
+        })).toBe(true)
+      } finally {
+        await automation257.close()
+      }
     } finally {
       await app.end()
       await admin.end()

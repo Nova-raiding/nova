@@ -7058,7 +7058,9 @@ export function MaterialLibraryWorkspace({
           assignments: [...current.assignments.filter((row) => row.assetId !== materialId), updated],
         } : current)
       } catch (cause) {
-        setScopedBrandError(`素材系列保存失败：${describeApiError(cause)}`)
+        const message = `素材系列保存失败：${describeApiError(cause)}`
+        setScopedBrandError(message)
+        setMaterialStorageError(message)
         return
       }
     }
@@ -7132,7 +7134,13 @@ export function MaterialLibraryWorkspace({
       <button type="button" className="material-detail-back" onClick={() => { setDetailMaterialId(null); setDetailPreviewOpen(false) }}><ArrowLeft size={16} />返回素材库</button>
       <section className="material-detail-hero">
         <button type="button" className={`material-detail-preview ${detailMaterial.previewUrl ? 'has-image' : ''}`} aria-label={`放大${detailMaterial.name}`} onClick={() => setDetailPreviewOpen(true)}>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : detailMaterial.category === '商品视频' ? <Play size={64} fill="currentColor" /> : <ImageIcon size={64} />}<span>点击放大预览</span></button>
-        <div className="material-detail-info"><span className="section-kicker">素材详情</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailAssignedToStore ? activeStore.name : '未归属'}</dd></div><div><dt>平台</dt><dd>{detailAssignedToStore ? activeStore.platform : '未归属'}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div>{detailIsImage && <div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div>}<div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
+        <div className="material-detail-info"><span className="section-kicker">素材详情</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailAssignedToStore ? activeStore.name : '未归属'}</dd></div><div><dt>平台</dt><dd>{detailAssignedToStore ? activeStore.platform : '未归属'}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div>{detailIsImage && <div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div>}<div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl>
+          {detailMaterial.assetId ? <div className="material-detail-metadata-editors" aria-label="编辑素材分类和系列">
+            <label><span>修改素材分类</span><MaterialCategoryDropdown ariaLabel={`修改${detailMaterial.name}的素材分类`} value={detailMaterial.category} options={materialStoreCategories.filter((value): value is StoreMaterialCategory => value !== '全部').map((value) => ({ value, label: value }))} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(detailMaterial.id, { category: value as StoreMaterialCategory }) }} /></label>
+            <label><span>修改所属系列</span><MaterialCategoryDropdown ariaLabel={`修改${detailMaterial.name}的所属系列`} value={detailMaterial.series} options={availableSeries.map((value) => ({ value, label: value }))} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(detailMaterial.id, { series: value }) }} /></label>
+          </div> : <p className="material-detail-metadata-readonly">素材还没有服务端记录，分类与系列只能在成功上传后修改。</p>}
+          {materialStorageError && <p className="material-detail-metadata-error" role="alert">{materialStorageError}</p>}
+          <a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
       </section>
       {detailIsImage && <section className="material-image-brand-settings">
         <div className="material-brand-panel-heading"><div><span className="section-kicker">单图品牌配置</span><h2>单图品牌配置</h2><p>编辑后点击下方“保存品牌配置”；服务端确认保存后，设置才会用于之后确认的内容任务。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
@@ -7228,13 +7236,7 @@ export function MaterialLibraryWorkspace({
                       <button type="button" className="material-card-select" aria-label={`选择${item.name}`} aria-pressed={selected} onClick={() => setSelectedIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])}>{selected && <Check size={14} />}</button>
                     </div>
                     <div className="material-card-copy"><strong title={item.name}>{item.name}</strong><span>{item.series} · {item.sizeLabel} · {item.format}</span><small>{item.fileSizeLabel} · {item.addedAt}</small></div>
-                    <div className="material-card-actions">
-                      <div className="material-card-inline-editor">
-                        <div className="material-card-inline-field"><span>素材分类</span><MaterialCategoryDropdown ariaLabel={`修改${item.name}的素材分类`} value={item.category} options={materialStoreCategories.filter((value): value is StoreMaterialCategory => value !== '全部').map((value) => ({ value, label: value }))} onChange={(value) => updateMaterialMetadata(item.id, { category: value as StoreMaterialCategory })} /></div>
-                        <div className="material-card-inline-field"><span>所属系列</span><MaterialCategoryDropdown ariaLabel={`修改${item.name}的所属系列`} value={item.series} options={availableSeries.map((value) => ({ value, label: value }))} onChange={(value) => updateMaterialMetadata(item.id, { series: value })} /></div>
-                      </div>
-                      <a href={materialDownloadHref(item, baseUrl)} download={item.name} onClick={(event) => { if (!item.assetId) return; event.preventDefault(); void downloadMaterial(item) }}><Download size={14} />下载</a>
-                    </div>
+                    <div className="material-card-actions"><a href={materialDownloadHref(item, baseUrl)} download={item.name} onClick={(event) => { if (!item.assetId) return; event.preventDefault(); void downloadMaterial(item) }}><Download size={14} />下载</a></div>
                   </article>
                 )
               })}

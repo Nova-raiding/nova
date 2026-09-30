@@ -1,4 +1,5 @@
 import { createElement } from 'react'
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MaterialLibraryWorkspace, MaterialRecycleBinWorkspace, MaterialStorageQuotaCard } from './App'
@@ -120,6 +121,18 @@ describe('the material library may not claim a catalogue it did not read', () =>
     expect(library).toContain('上传素材')
     expect(library).toContain('店铺筛选')
     expect(library).toContain('共享储存空间')
+  })
+})
+
+describe('material metadata editing stays out of the reference card layout', () => {
+  it('keeps listing cards compact and exposes persisted category/series edits on the detail page', () => {
+    const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+    expect(appSource).not.toContain('className="material-card-inline-editor"')
+    expect(appSource).toContain('className="material-detail-metadata-editors"')
+    expect(appSource).toContain('ariaLabel={`修改${detailMaterial.name}的素材分类`}')
+    expect(appSource).toContain('ariaLabel={`修改${detailMaterial.name}的所属系列`}')
+    expect(appSource).toContain('void updateMaterialMetadata(detailMaterial.id, { category: value as StoreMaterialCategory })')
+    expect(appSource).toContain('void updateMaterialMetadata(detailMaterial.id, { series: value })')
   })
 })
 

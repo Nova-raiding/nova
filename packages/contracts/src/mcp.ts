@@ -260,6 +260,7 @@ export const MCP_METHODS = [
   'asset.list',
   'asset.parse',
   'asset.facts.confirm',
+  'asset.metadata.update',
   'asset.preference.update',
   'brand.get',
   'brand.extract',
@@ -1179,6 +1180,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     method: 'asset.facts.confirm',
     description: 'Manually confirm structured facts for a clean asset when automatic parsing or OCR is unavailable; preserves manual provenance.',
     params: params({ asset_id: { type: 'string' }, facts_json: { type: 'string' }, reason: { type: 'string' } }, ['asset_id', 'facts_json', 'reason']),
+  },
+  {
+    method: 'asset.metadata.update',
+    description: 'Update workspace-scoped material category metadata for an asset with optimistic revision checking.',
+    params: params({ asset_id: boundedString(256, 1), material_category: { type: 'string', enum: ['品牌资料', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类'] }, expected_revision: positiveIntegerString }, ['asset_id', 'material_category', 'expected_revision']),
   },
   {
     method: 'asset.preference.update',

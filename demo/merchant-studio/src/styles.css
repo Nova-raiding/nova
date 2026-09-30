@@ -1611,15 +1611,6 @@ body {
 .material-card-copy span { margin-top:5px; color:#66766d; font-size:9px; }
 .material-card-copy small { margin-top:4px; color:#96a099; font-size:8px; }
 .material-card-actions { display:grid; border-top:1px solid #e6ebe8; }
-.material-card-inline-editor { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; padding:8px; background:#f8faf9; }
-.material-card-inline-field { display:grid; min-width:0; gap:4px; }
-.material-card-inline-field>span { color:#7d8b84; font-size:7px; font-weight:700; }
-.material-card-inline-field .material-category-dropdown>button { min-height:30px; padding:0 22px 0 6px; border:1px solid #d5e0da; border-radius:7px; background:#fff; font-size:8px; }
-.material-card-inline-field .material-category-dropdown>button>svg { right:5px; width:12px; }
-.material-card-inline-field .material-category-dropdown-menu { top:calc(100% + 4px); width:140px; min-width:140px; }
-.material-card-inline-field:first-child .material-category-dropdown-menu { right:auto; left:0; }
-.material-card-inline-field:last-child .material-category-dropdown-menu { right:0; left:auto; }
-.material-card-inline-field .material-category-dropdown-options>button { min-height:30px; padding:0 8px; font-size:8px; }
 .material-card-actions>a { display:flex; min-height:32px; align-items:center; justify-content:center; gap:5px; border-top:1px solid #e6ebe8; border-radius:0 0 10px 10px; color:#1f6849; background:#fafcfa; font-size:9px; font-weight:800; text-decoration:none; }
 .material-card-actions>a:hover { background:#eef5f0; }
 .material-download-error { margin:8px 1px 0; color:#a5372a; font-size:9px; }
@@ -1641,6 +1632,11 @@ body {
 .material-detail-info dl>div { display:grid; min-height:56px; align-content:center; gap:5px; padding:9px 10px; border:1px solid #e2e8e4; border-radius:8px; background:#f8faf9; }
 .material-detail-info dt { color:#819087; font-size:9px; }
 .material-detail-info dd { margin:0; color:#2d4437; font-size:11px; font-weight:800; }
+.material-detail-metadata-editors { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px; }
+.material-detail-metadata-editors>label { display:grid; min-width:0; gap:4px; color:#718077; font-size:9px; font-weight:700; }
+.material-detail-metadata-editors .material-category-dropdown>button { min-height:34px; border:1px solid #d5e0da; background:#fff; text-align:left; }
+.material-detail-metadata-readonly,.material-detail-metadata-error { margin:10px 0 0 !important; color:#77857e; font-size:10px !important; }
+.material-detail-metadata-error { color:#a5372a !important; }
 .material-detail-info>a { display:inline-flex; position:absolute; top:24px; right:28px; width:max-content; min-height:36px; align-items:center; gap:7px; padding:0 13px; border-radius:8px; color:#fff; background:#17543c; font-size:10px; font-weight:800; text-decoration:none; }
 .material-recycle-hero { display:flex; min-height:128px; align-items:center; justify-content:space-between; gap:24px; padding:24px 28px; border-radius:14px; color:#fff; background:linear-gradient(110deg,#0d3829,#1d6849); }
 .material-recycle-hero h1 { margin:5px 0 0; font-size:25px; }

@@ -45,7 +45,7 @@ type Dependencies = {
 }
 
 export const MCP_ASSET_METHODS = new Set([
-  'asset.list', 'asset.parse', 'asset.facts.confirm', 'asset.preference.update',
+  'asset.list', 'asset.parse', 'asset.facts.confirm', 'asset.metadata.update', 'asset.preference.update',
   'asset.upload', 'asset.upload.batch', 'asset.scan', 'asset.generation.confirm', 'asset.rights.update',
 ])
 
@@ -146,6 +146,25 @@ export async function handleMcpAssetMethod(method: string, params: Record<string
       const reason = required(params, 'reason').trim()
       if (!reason) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '人工补录原因不能为空', 400)
       return (await confirmDurableAssetFacts({ workspaceId, assetId: asset.id, facts, reason, req }))
+    }
+  if (method === 'asset.metadata.update') {
+      const asset = assetForWorkspace(workspaceId, required(params, 'asset_id'))
+      await enforceAssetAccess(req, workspaceId, asset.id, 'editor')
+      await dependencies.assertAssetActive?.(workspaceId, asset.id)
+      const category = required(params, 'material_category')
+      if (!['品牌资料', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类'].includes(category)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'material_category 无效', 400)
+      const expectedRevision = Number(required(params, 'expected_revision'))
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_revision 必须是正整数', 400)
+      if (asset.revision !== expectedRevision) throw new DomainError('VERSION_CONFLICT', '素材已被其他操作更新，请刷新后重试', 409, { asset_id: asset.id, current_revision: asset.revision, expected_revision: expectedRevision })
+      const previous = structuredClone(asset)
+      const updated = service.updateAssetMaterialCategory({ workspaceId, assetId: asset.id, category: category as import('../../../packages/application/src/service.js').AssetMaterialCategory, expectedRevision })
+      try {
+        await dependencies.persistSnapshotsAndEvent({ workspaceId, snapshots: [{ entityType: 'asset', entityId: updated.id, entityVersion: updated.revision, payload: updated as unknown as Record<string, unknown> }], aggregateId: updated.id, eventType: 'asset.material_category_updated', sequence: updated.revision, eventPayload: { asset_id: updated.id, material_category: updated.materialCategory, actor_id: requestActor(req) } })
+      } catch (error) {
+        service.assets.set(previous.id, previous)
+        throw error
+      }
+      return updated
     }
   if (method === 'asset.preference.update') {
       const verdict = required(params, 'verdict')

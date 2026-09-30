@@ -59,6 +59,7 @@ describe('MCP method contract', () => {
     ]))
     expect(MCP_METHODS).toContain('catalog.sku.update')
     expect(MCP_METHODS).toContain('catalog.product.update')
+    expect(MCP_METHODS).toContain('asset.metadata.update')
     expect(MCP_METHODS).toContain('ops.marketing.queue.assign')
     expect(MCP_METHODS).toContain('ops.marketing.visual.review')
     expect(MCP_METHODS).toContain('automation.tick')

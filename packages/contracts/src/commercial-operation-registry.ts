@@ -464,6 +464,10 @@ export const HTTP_ASSET_LIFECYCLE_OPERATIONS = [
   'http:POST:/v1/assets/{assetId}/purge/cancel',
 ] as const satisfies readonly string[]
 
+export const HTTP_ASSET_METADATA_OPERATIONS = [
+  'http:PUT:/v1/assets/{assetId}/metadata',
+] as const satisfies readonly string[]
+
 // Platform-operator identity routes that intentionally have no merchant MCP
 // equivalent. They still require an authenticated operations session and must
 // be classified so the HTTP surface remains total.
@@ -581,6 +585,7 @@ const mcpRegistry = defineCommercialOperationRegistry([
   ...mcpPolicies(MCP_POINT_CHARGED_ENABLED_METHODS, { domain: 'COMMERCIAL', enabled: true, classification: 'POINT_CHARGED' }, method => method === 'catalog.image.generate' ? 'image.generate.standard' : method === 'multimodal.image.edit' ? 'image.edit.annotation' : method === 'multimodal.video.request' ? 'video.generate.standard_15s' : 'text.generate'),
   ...mcpPolicies(MCP_POINT_CHARGED_DISABLED_METHODS, { domain: 'COMMERCIAL', enabled: false, classification: 'POINT_CHARGED' }, method => method),
   ...mcpPolicies(MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS, { domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE' }),
+  { surface: 'MCP' as const, operation: 'asset.metadata.update', domain: 'COMMERCIAL' as const, enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE' as const, rate_action: null, authorization_policy_ref: 'asset.metadata.update' },
   ...mcpPolicies(MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS, { domain: 'COMMERCIAL', enabled: false, classification: 'POINT_REQUIRED_NO_CHARGE' }),
 ])
 
@@ -604,6 +609,15 @@ function linkedHttpPolicies(): CommercialOperationPolicy[] {
 
 const httpRegistry = defineCommercialOperationRegistry([
   ...linkedHttpPolicies(),
+  ...HTTP_ASSET_METADATA_OPERATIONS.map(operation => ({
+    surface: 'HTTP' as const,
+    operation,
+    domain: 'COMMERCIAL' as const,
+    enabled: true,
+    classification: 'POINT_REQUIRED_NO_CHARGE' as const,
+    rate_action: null,
+    authorization_policy_ref: 'asset.metadata.update',
+  })),
   ...HTTP_ASSET_LIFECYCLE_OPERATIONS.map(operation => ({
     surface: 'HTTP' as const,
     operation,

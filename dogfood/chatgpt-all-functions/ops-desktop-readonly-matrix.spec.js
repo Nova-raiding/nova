@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createScreenshotMatrixEvidence } from '../../scripts/screenshot-matrix-evidence.mjs'
 import { openPlatformConsole } from './ops-auth.js'
 
 const outputRoot = process.env.OPS_E2E_OUTPUT_DIR
@@ -25,6 +26,7 @@ function hasEffectiveCapability(allowed, denied, capability) {
 test('platform desktop read-only route and tab matrix', async ({ page }) => {
   const output = join(outputRoot, 'desktop-readonly-matrix')
   await mkdir(output, { recursive: true, mode: 0o700 })
+  const captureEvidence = await createScreenshotMatrixEvidence({ evidenceDir: outputRoot, matrixName: 'ops-desktop-readonly-matrix' })
   const pageErrors = []
   const failedApi = []
   const overviewApiEvidence = []
@@ -191,7 +193,7 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
       ...(domain === 'overview' ? { displayedOverviewMetrics: await page.locator('.ops-dashboard-metric').allInnerTexts() } : {}),
       ...(searchInputGeometry ? { searchInputGeometry } : {}),
       ...(userTableHeaderRightEdges ? { userTableHeaderRightEdges } : {}) })
-    await page.screenshot({ path: join(output, `${domain}.png`), fullPage: true })
+    await captureEvidence.capture(page, { filePath: join(output, `${domain}.png`), label: domain })
     console.log(`[ops-matrix] captured ${domain}; tabs=${tabs.length}`)
     if (domain === 'stores') {
       const conflictWorkspace = page.getByRole('combobox', { name: '冲突队列工作区' })
@@ -215,7 +217,7 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
       await expect(page.locator('main .ant-select-content-has-value')).toContainText(conflictsRequest.params.workspace_id)
       await expect(page.locator('main [aria-busy="true"]')).toHaveCount(0, { timeout: 20_000 })
       matrix.push({ label: `${label} → 已选工作区冲突队列`, domain, workspaceId: conflictsRequest.params.workspace_id, status: conflictsResponse.status(), conflictRows: (conflictsBody.result ?? conflictsBody.data?.result).length })
-      await page.screenshot({ path: join(output, 'stores-selected-conflict-workspace.png'), fullPage: true })
+      await captureEvidence.capture(page, { filePath: join(output, 'stores-selected-conflict-workspace.png'), label: 'stores-selected-conflict-workspace' })
     }
     if (domain === 'customer-delivery') {
       const workspaceSelector = page.getByRole('combobox', { name: '客户交付目标企业工作区' })
@@ -260,7 +262,7 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
         expect(refreshResponse.request().postDataJSON()?.params?.target_workspace_id).toBe(workspaceId)
         await page.waitForTimeout(250)
         await expect(page.locator('main [aria-busy="true"]')).toHaveCount(0, { timeout: 20_000 })
-        await page.screenshot({ path: join(output, 'customer-delivery-selected-workspace.png'), fullPage: true })
+        await captureEvidence.capture(page, { filePath: join(output, 'customer-delivery-selected-workspace.png'), label: 'customer-delivery-selected-workspace' })
         console.log(`[ops-matrix] captured customer delivery with explicitly selected authorized workspace`)
       } else {
         await expect(workspaceOptions).toHaveCount(0)
@@ -280,7 +282,7 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
         await page.waitForTimeout(250)
         await expect(tab).toHaveAttribute('aria-selected', 'true')
         matrix.push({ label: `${label} → ${tabName}`, domain, headings: (await page.locator('h1,h2,h3').allTextContents()).map(value => value.trim()), alerts: (await page.getByRole('alert').allTextContents()).map(value => value.trim().slice(0, 500)), selected: await tab.getAttribute('aria-selected') })
-        await page.screenshot({ path: join(output, `${domain}-tab-${tabs.indexOf(tabName)}.png`), fullPage: true })
+        await captureEvidence.capture(page, { filePath: join(output, `${domain}-tab-${tabs.indexOf(tabName)}.png`), label: `${domain}-tab-${tabs.indexOf(tabName)}` })
       }
     }
     if (domain === 'users') {
@@ -301,7 +303,7 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
         const selectedSection = page.getByRole('button', { name: new RegExp(`当前为${destination}`) })
         await expect(selectedSection).toBeVisible()
         matrix.push({ label: `${label} → ${destination}`, domain, headings: (await page.locator('h1,h2,h3').allTextContents()).map(value => value.trim()), alerts: (await page.getByRole('alert').allTextContents()).map(value => value.trim().slice(0, 500)), tables: await page.getByRole('table').count() })
-        await page.screenshot({ path: join(output, `${domain}-governance-${matrix.length}.png`), fullPage: true })
+        await captureEvidence.capture(page, { filePath: join(output, `${domain}-governance-${matrix.length}.png`), label: `${domain}-governance-${matrix.length}` })
         if (destination !== destinations.at(-1)) {
           const nextMenu = page.getByRole('button', { name: /更多用户治理操作|切换用户治理页面/u })
           await expect(nextMenu).toHaveCount(1)
@@ -319,10 +321,11 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
     await expect(page.getByText('平台运营控制台不提供该页面', { exact: false })).toBeVisible()
     const headings = await page.locator('h1,h2,h3').allTextContents()
     matrix.push({ label: `${domain} 页面（平台作用域拒绝）`, domain, url: new URL(page.url()).pathname, headings, authorizationState: 'merchant_workspace_scope_required' })
-    await page.screenshot({ path: join(output, `${domain}-platform-scope-denied.png`), fullPage: true })
+    await captureEvidence.capture(page, { filePath: join(output, `${domain}-platform-scope-denied.png`), label: `${domain}-platform-scope-denied` })
   }
   await Promise.all(overviewApiInspection)
   await writeFile(join(output, 'matrix.json'), JSON.stringify({ auth: 'real-isolated-platform-password-session', productionBrowser: false, matrix, pageErrors, failedApi, overviewApiEvidence }, null, 2), { mode: 0o600 })
+  await captureEvidence.finalize()
   expect(pageErrors).toEqual([])
   console.log(`[ops-matrix] failed API requests=${JSON.stringify(failedApi)}`)
   expect(failedApi).toEqual([])

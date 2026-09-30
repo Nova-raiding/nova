@@ -89,6 +89,7 @@ export const HTTP_OPERATION_POLICIES = [
   identity('GET', '/v1/products/{productId}', 'catalog.search'),
   identity('POST', '/v1/products/{productId}/assets', 'catalog.product.update'),
   identity('DELETE', '/v1/products/{productId}/assets', 'catalog.product.update'),
+  identity('PUT', '/v1/assets/{assetId}/metadata', 'asset.metadata.update'),
   identity('PUT', '/v1/assets/{assetId}/preference', 'asset.preference.update'),
   identity('PUT', '/v1/assets/{assetId}/rights', 'asset.rights.update'),
   identity('POST', '/v1/assets/{assetId}/facts', 'asset.facts.confirm'),

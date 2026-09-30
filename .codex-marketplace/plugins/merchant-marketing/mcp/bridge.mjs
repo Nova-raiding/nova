@@ -842,6 +842,10 @@ const METHODS = {
     description: '自动解析或 OCR 不可用时，由商家人工补录并确认素材事实；保留人工来源、确认人和原因。',
     inputSchema: { type: 'object', properties: { asset_id: { type: 'string' }, facts_json: { type: 'string' }, reason: { type: 'string' } }, required: ['asset_id', 'facts_json', 'reason'], additionalProperties: false },
   },
+  'asset.metadata.update': {
+    description: '更新工作区素材分类，并使用预期版本检查并发修改。',
+    inputSchema: { type: 'object', properties: { asset_id: { type: 'string' }, material_category: { type: 'string', enum: ['品牌资料', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类'] }, expected_revision: { type: 'string', pattern: '^[1-9][0-9]*$' } }, required: ['asset_id', 'material_category', 'expected_revision'], additionalProperties: false },
+  },
   'asset.preference.update': {
     description: '记录或清除商家对历史素材的“优秀/不喜欢”评价；优秀或不喜欢必须填写原因。',
     inputSchema: { type: 'object', properties: { asset_id: { type: 'string' }, verdict: { type: 'string', enum: ['excellent', 'disliked', 'unrated'] }, reasons_json: { type: 'string' }, note: { type: 'string' }, expected_revision: { type: 'string' } }, required: ['asset_id', 'verdict'], additionalProperties: false },
@@ -1397,6 +1401,7 @@ const MERCHANT_ACTION_LABELS = {
   'task.create.draft': '创建未绑定候选任务',
   'task.resume': '恢复任务并回答问题',
   'asset.facts.confirm': '确认商品事实',
+  'asset.metadata.update': '更新素材分类',
   'content.generate': '生成内容',
   'content.export': '导出交付包',
   'publish.prepare': '查看发布预览',
