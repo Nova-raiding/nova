@@ -1,0 +1,21 @@
+{
+  "schema_version": "1",
+  "version": "213938",
+  "captured_at": "2026-09-29T13:45:58.602Z",
+  "call": "rule.list",
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "当前范围没有可执行规则；请先检查规则同步和激活状态。"
+        }
+      ],
+      "structuredContent": [],
+      "isError": false
+    }
+  },
+  "stderr": ""
+}

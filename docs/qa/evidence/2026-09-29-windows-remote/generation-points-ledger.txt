@@ -1,0 +1,5 @@
+BEGIN
+{"id":"cpl_ed0109cf-f0bb-4fdb-bf0f-99935ef3883d","event_type":"reserved","points_delta":-1,"available_after":12590,"reserved_after":4,"settled_after":6,"access_revision":22,"reservation_id":"cpr_a60d49be-70c8-491a-9ddb-d999fe9ebba1","provider_request_id":null,"cost_cny":null,"created_at":"2026-09-29T07:44:49.489896+00:00"}
+{"id":"cpl_08de2af0-70c4-4d1c-986e-48d171197e59","event_type":"settled","points_delta":0,"available_after":12590,"reserved_after":3,"settled_after":7,"access_revision":23,"reservation_id":"cpr_a60d49be-70c8-491a-9ddb-d999fe9ebba1","provider_request_id":"202609290744498401328318268d9d6jVzpukc1","cost_cny":"0.00090156","created_at":"2026-09-29T07:44:55.089892+00:00"}
+{"usage_rows" : 1, "distinct_provider_requests" : 1}
+ROLLBACK

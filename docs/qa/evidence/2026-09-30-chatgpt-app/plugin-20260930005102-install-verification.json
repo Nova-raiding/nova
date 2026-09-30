@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-09-30T00:57:57Z",
+  "plugin": "merchant-marketing",
+  "plugin_version": "0.1.0+codex.20260930005102",
+  "marketplace": "merchant-local",
+  "package_profile": "qa-broker",
+  "source_verification": {
+    "ok": true,
+    "tool_count": 117,
+    "runtime_files": {
+      "verified": 69,
+      "total": 69
+    },
+    "empty_credentials_health": {
+      "ok": false,
+      "error_code": "MCP_CONFIGURATION_REQUIRED"
+    }
+  },
+  "installed_verification": {
+    "ok": true,
+    "tool_count": 117,
+    "missing_files": [],
+    "unexpected_files": [],
+    "cache_drift": false,
+    "empty_credentials_health": {
+      "ok": false,
+      "error_code": "MCP_CONFIGURATION_REQUIRED"
+    },
+    "conversation_refresh_confirmed": false
+  },
+  "codex_plugin_list": {
+    "enabled": true,
+    "version": "0.1.0+codex.20260930005102"
+  },
+  "sha256": {
+    "apps/plugin/.codex-plugin/plugin.json": "cf88974e3331b4109af9447584279078e90dd42065ef2a3dd7c0e5d1046a6f31",
+    "apps/plugin/package.json": "29127a42d9f92adaebd55c8ab03705c82b6cce2007c9bb2f98d4b469bbdc2158",
+    ".codex-marketplace/plugins/merchant-marketing/.codex-plugin/plugin.json": "cf88974e3331b4109af9447584279078e90dd42065ef2a3dd7c0e5d1046a6f31",
+    ".codex-marketplace/plugins/merchant-marketing/package.json": "29127a42d9f92adaebd55c8ab03705c82b6cce2007c9bb2f98d4b469bbdc2158",
+    "apps/plugin/mcp/bridge.mjs": "b47fcf5becb8f8d0d7da21d219de58a4b55ee1401bfe5aa8d2c40c4bbadb2335"
+  },
+  "scope_limitations": [
+    "qa-broker used isolated synthetic credentials and did not verify a real merchant account",
+    "ChatGPT conversation/plugin refresh was not confirmed",
+    "No image or video provider request was made",
+    "This evidence is not release eligible"
+  ]
+}

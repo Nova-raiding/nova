@@ -1,0 +1,1758 @@
+{
+  "schema_version": "store-nova-tool-coverage.v1",
+  "generated_at": "2026-09-29T15:10:15.764Z",
+  "plugin_version": "0.1.0+codex.20260929213938",
+  "bridge_sha256": "3c43754291974e34546d5722eb8813c3e89f7b8fddc8c0dba63ca81a826aa9f2",
+  "workspace_ref_sha256_16": "404184fc04f63e54",
+  "policy": "Execute all declared read-only tools with real identifiers discovered from safe list calls. Do not execute approvals, publish, purchase/payment, generation, export requests, deletion, or state-changing tools.",
+  "tool_count": 116,
+  "tally": {
+    "expected_gate": 35,
+    "not_executed_by_safety_policy": 70,
+    "not_applicable": 11
+  },
+  "stderr_present": false,
+  "tools": [
+    {
+      "name": "onboarding.status",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "3957bed812381457"
+    },
+    {
+      "name": "commercial.service-boundary.accept",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "policy_version",
+        "policy_checksum",
+        "acceptance_ref",
+        "accepted_at",
+        "idempotency_key"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "merchant.start",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "merchant.first_value",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand-unit.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "1dcb68443a7539db"
+    },
+    {
+      "name": "brand-unit.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "name"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand-unit.bind-store",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "brand_id",
+        "platform",
+        "account_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand-unit.product.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "brand_id",
+        "title"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand-unit.listing.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "brand_id",
+        "canonical_product_id",
+        "platform",
+        "account_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand-unit.listing.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "7fa44a4826fc7f39"
+    },
+    {
+      "name": "brand-unit.access.grant",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "brand_id",
+        "external_subject",
+        "role"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "canonical.product.consistency",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "2fff04d2ca7ae3ae"
+    },
+    {
+      "name": "campaign.batch.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "brand_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "campaign.batch.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "15d80b96a792dab5"
+    },
+    {
+      "name": "campaign.batch.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "campaign_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_campaign_id_returned_by_safe_lists"
+    },
+    {
+      "name": "campaign.batch.pause",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "campaign_id",
+        "expected_revision",
+        "idempotency_key",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "campaign.batch.resume",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "campaign_id",
+        "expected_revision",
+        "idempotency_key",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.health",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "699b1a1ab32d34bd"
+    },
+    {
+      "name": "workspace.invitations.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "056b56a32bcab2ed"
+    },
+    {
+      "name": "workspace.invitation.accept",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "expected_revision"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.interactive.confirm",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "confirmation"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.metrics",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "ac7022c7100ae5ca"
+    },
+    {
+      "name": "commercial.access.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "52d4c97a7e004f09"
+    },
+    {
+      "name": "commercial.catalog.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "111acff411098152"
+    },
+    {
+      "name": "commercial.order.create",
+      "category": "payment_or_purchase",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "purchase_kind",
+        "sku_code",
+        "idempotency_key",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "commercial.order.payment.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "order_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_order_id_returned_by_safe_lists"
+    },
+    {
+      "name": "creative-points.balance.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "f946218f4169ef5a"
+    },
+    {
+      "name": "creative-points.statement.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "2e88a08c2f9f7c14"
+    },
+    {
+      "name": "support.customer.replies.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "200971828cc9d111"
+    },
+    {
+      "name": "subscription.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "1e14b971a36f23c8"
+    },
+    {
+      "name": "subscription.orders.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "51463e3340e29301"
+    },
+    {
+      "name": "billing.export",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "72129ded14469bf3"
+    },
+    {
+      "name": "workspace.data.export.request",
+      "category": "export_or_data_request",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "reason",
+        "idempotency_key"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.data.export.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "request_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_request_id_returned_by_safe_lists"
+    },
+    {
+      "name": "platform.mapping.preflight",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "input_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "billing.status",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "a3122494457f4438"
+    },
+    {
+      "name": "billing.model-usage.statement",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "46563d7f2cd2a729"
+    },
+    {
+      "name": "billing.recharge.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "order_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_order_id_returned_by_safe_lists"
+    },
+    {
+      "name": "billing.recharge.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "39502ddcc214962a"
+    },
+    {
+      "name": "billing.transactions",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "97a3ab0231faf658"
+    },
+    {
+      "name": "workspace.deactivate",
+      "category": "delete_or_destructive",
+      "read_only": false,
+      "destructive": true,
+      "required_arguments": [
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.activate",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.data.delete.request",
+      "category": "delete_or_destructive",
+      "read_only": false,
+      "destructive": true,
+      "required_arguments": [
+        "scope",
+        "reason",
+        "idempotency_key"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "platform.store.alias.set",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "platform",
+        "account_id",
+        "alias",
+        "expected_revision"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.search",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "d4452ae8e5f1144c"
+    },
+    {
+      "name": "catalog.categories",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "fa985672efea687c"
+    },
+    {
+      "name": "catalog.title.optimize",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.title.accept",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "platform",
+        "suggestion_id",
+        "title"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.import",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "platform",
+        "title"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.import.batch",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.sku.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "sku_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.product.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.facts.confirm",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.product.disable",
+      "category": "delete_or_destructive",
+      "read_only": false,
+      "destructive": true,
+      "required_arguments": [
+        "product_id",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.product.enable",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.image.generate",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.image.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "2205967997f16049"
+    },
+    {
+      "name": "catalog.image.select",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "job_id",
+        "visual_ref",
+        "expected_revision",
+        "idempotency_key",
+        "reason",
+        "confirmation_ticket_nonce_hash",
+        "confirmation_ticket_intent_hash"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.image.review",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "rule.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "0c85c9abc40ab56e"
+    },
+    {
+      "name": "rule.sync.status",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "3f2c298ca3f27601"
+    },
+    {
+      "name": "rule.history",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "pack_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_pack_id_returned_by_safe_lists"
+    },
+    {
+      "name": "asset.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "093835cba54fccf1"
+    },
+    {
+      "name": "asset.parse",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "asset_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.facts.confirm",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "asset_id",
+        "facts_json",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.preference.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "asset_id",
+        "verdict"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "02db7a79a0f55405"
+    },
+    {
+      "name": "brand.extract",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "75adc3d934b3bc0b"
+    },
+    {
+      "name": "brand.upsert",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "name"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.upload",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "name",
+        "mime_type"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.upload.batch",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "assets_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.generation.confirm",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "job_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.rights.update",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "asset_id",
+        "rights_status"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "deliverable.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "ee28517fdcdbaa12"
+    },
+    {
+      "name": "task.history",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "18ead3076c493504"
+    },
+    {
+      "name": "task.resume",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_task_id_returned_by_safe_lists"
+    },
+    {
+      "name": "task.clone",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.timeline",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_task_id_returned_by_safe_lists"
+    },
+    {
+      "name": "feedback.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_task_id_returned_by_safe_lists"
+    },
+    {
+      "name": "feedback.submit",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id",
+        "rating"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "platform"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.create.draft",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "platform"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.answer",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id",
+        "answers_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.request.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "request_text"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.sku.split",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.group.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "entries_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "creative.brief",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "asset_type"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "creative.preview",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "asset_type"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "creative.directions.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id",
+        "action"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.select_direction",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id",
+        "direction_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.plan.confirm",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.generate",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.draft.generate",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "draft",
+        "draft_title",
+        "idempotency_key"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "generation.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "job_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_job_id_returned_by_safe_lists"
+    },
+    {
+      "name": "content.review.decide",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "content_version_id",
+        "code",
+        "field",
+        "status"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.visual.select",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "content_version_id",
+        "visual_refs_json",
+        "expected_revision",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.versions",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_task_id_returned_by_safe_lists"
+    },
+    {
+      "name": "content.diff",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "content_version_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_content_version_id_returned_by_safe_lists"
+    },
+    {
+      "name": "content.export",
+      "category": "export_or_data_request",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.approve",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id",
+        "content_version_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.restore",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "content_version_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.rule.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "name",
+        "content",
+        "scope",
+        "source_kind",
+        "source_reference",
+        "source_checked_at",
+        "version",
+        "status"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.rule.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "3b4b032cf22c4a31"
+    },
+    {
+      "name": "knowledge.asset.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "kind",
+        "name",
+        "content_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.asset.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "asset_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.asset.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "599dba5817523182"
+    },
+    {
+      "name": "knowledge.brand.preference.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "a27113a2aaad0252"
+    },
+    {
+      "name": "knowledge.brand.preference.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "preferences_json",
+        "version"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.feedback.record",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "kind",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.learning.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "962f69aee835fc26"
+    },
+    {
+      "name": "knowledge.learning.confirm",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "suggestion_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.learning.dismiss",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "suggestion_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.competitor.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "competitor_name",
+        "source_json",
+        "summary",
+        "structure_json",
+        "selling_points_json",
+        "expression_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.competitor.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "message": "本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问目标工作区 ws_guirenniaoniao，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message",
+        "recovery"
+      ],
+      "response_digest": "49bc219ee2928f7f"
+    },
+    {
+      "name": "knowledge.competitor.reference",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "competitor_id",
+        "own_brand_name",
+        "own_selling_points_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "multimodal.image.edit",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "request_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    }
+  ]
+}

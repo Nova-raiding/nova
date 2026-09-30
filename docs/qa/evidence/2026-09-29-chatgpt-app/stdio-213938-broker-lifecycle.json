@@ -1,0 +1,20 @@
+{
+  "schema_version": "1",
+  "package_version": "0.1.0+codex.20260929213938",
+  "workspace_id": "ws_guirenniaoniao",
+  "login": { "completed": true, "secret_material_recorded": false },
+  "broker": {
+    "pid": 1588,
+    "ppid_after_login": 1,
+    "path": "/Users/lixiaomei/.codex/plugins/cache/merchant-local/merchant-marketing/0.1.0+codex.20260929213938/mcp/keychain-broker.mjs",
+    "alive_after_login_exit": true,
+    "alive_after_chatgpt_restart": true,
+    "alive_after_first_bridge_exit": true,
+    "alive_after_second_bridge_exit": true
+  },
+  "chatgpt": { "restarted": true, "pid_after_restart": 1925 },
+  "bridges": [
+    { "pid": 2923, "tools_count": 116, "all_read_calls_succeeded": true, "evidence": "stdio-213938-lifecycle-first.json" },
+    { "pid": 3393, "tools_count": 116, "all_read_calls_succeeded": true, "evidence": "stdio-213938-lifecycle-second.json" }
+  ]
+}

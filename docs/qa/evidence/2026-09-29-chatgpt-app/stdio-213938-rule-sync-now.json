@@ -1,0 +1,15 @@
+{
+  "schema_version": "1",
+  "version": "213938",
+  "captured_at": "2026-09-29T13:45:49.877Z",
+  "call": "rule.sync.now",
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "error": {
+      "code": -32602,
+      "message": "当前插件没有此工具：rule.sync.now"
+    }
+  },
+  "stderr": ""
+}

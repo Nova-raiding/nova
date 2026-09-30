@@ -1,0 +1,13 @@
+{
+  "checkedAt": "2026-09-29T10:54:43.035Z",
+  "surface": "installed stdio bridge; not ChatGPT UI",
+  "exit": 0,
+  "initialized": {
+    "name": "merchant-marketing",
+    "version": "0.1.0+codex.20260929185400"
+  },
+  "toolCount": 116,
+  "businessError": "MCP_CREDENTIAL_SOURCE_INVALID",
+  "businessIsError": true,
+  "stderrPresent": false
+}

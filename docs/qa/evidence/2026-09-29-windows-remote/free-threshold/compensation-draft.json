@@ -1,0 +1,17 @@
+{
+  "status": "not_submitted",
+  "method": "ops.commercial.points.adjust.propose",
+  "params": {
+    "target_workspace_id": "ws_guirenniaoniao",
+    "points_delta": "1",
+    "expected_revision": null,
+    "idempotency_key": "compensate:cpr_a60d49be-70c8-491a-9ddb-d999fe9ebba1",
+    "reason": "实际中转成本0.00090156元低于0.1元免费门槛，旧结算路径误扣1个创意点，申请补偿。",
+    "evidence_json": "{\"reservation_id\": \"cpr_a60d49be-70c8-491a-9ddb-d999fe9ebba1\", \"provider_request_id\": \"202609290744498401328318268d9d6jVzpukc1\", \"cost_cny\": 0.00090156, \"evidence_ref\": \"docs/qa/evidence/2026-09-29-windows-remote/generation-server-ledger.txt\"}"
+  },
+  "requirements": [
+    "Read current access_revision and check prior compensation before submission",
+    "Authenticated operator proposes; distinct authorized operator approves",
+    "Never modify balance directly"
+  ]
+}

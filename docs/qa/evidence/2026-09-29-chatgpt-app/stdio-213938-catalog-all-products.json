@@ -1,0 +1,930 @@
+{
+  "schema_version": "1",
+  "version": "213938",
+  "captured_at": "2026-09-29T13:45:01.463Z",
+  "call": "catalog.search",
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "已读取 6 个商品，包含 1 个 SKU。"
+        }
+      ],
+      "structuredContent": {
+        "scope": "workspace",
+        "selection": null,
+        "products": [
+          {
+            "id": "prod_jd_local_0375ba5239c58e8d97c7",
+            "price": null,
+            "stock": 0,
+            "title": "贵人鸟黑色厚底运动鞋",
+            "images": [],
+            "source": "csv",
+            "version": 4,
+            "category": null,
+            "platform": "jd",
+            "remoteId": null,
+            "skuCount": 0,
+            "accountId": null,
+            "createdAt": "2026-09-29T12:08:13.439117+00:00",
+            "storeName": "未绑定商品",
+            "updatedAt": "2026-09-29T12:13:08.440491+00:00",
+            "attributes": {},
+            "workspaceId": "ws_guirenniaoniao",
+            "factsConfirmed": true,
+            "sourceAssetIds": [
+              "asset_672858ef-2537-4a34-a0cb-3243793b8807"
+            ],
+            "localProductKey": "未绑定商品:贵人鸟黑色厚底运动鞋",
+            "product_id": "prod_jd_local_0375ba5239c58e8d97c7",
+            "local_product_key": "未绑定商品:贵人鸟黑色厚底运动鞋",
+            "storeContext": null,
+            "canonical_scope": {
+              "verification_status": "legacy_only",
+              "read_mode": "legacy_shadow",
+              "canonical_product_id": null,
+              "brand_id": null,
+              "listing_id": null,
+              "listing_count": 0,
+              "next_action": "canonical.product.consistency"
+            },
+            "knowledge_context": {
+              "rules": [],
+              "assets": [
+                {
+                  "id": "knowledge_asset_product_prod_jd_10137064435110",
+                  "kind": "product_facts",
+                  "name": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42 商品事实",
+                  "content": {
+                    "id": "prod_jd_10137064435110",
+                    "skus": [
+                      {
+                        "id": "10137064435110",
+                        "name": "雾霾蓝 42",
+                        "price": 399.2,
+                        "stock": 99,
+                        "images": [
+                          "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                        ],
+                        "attributes": {
+                          "size": "42",
+                          "color": "雾霾蓝",
+                          "specification": "雾霾蓝 / 42"
+                        }
+                      }
+                    ],
+                    "price": 399.2,
+                    "stock": 99,
+                    "title": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42",
+                    "images": [
+                      "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                    ],
+                    "source": "csv",
+                    "version": 2,
+                    "category": "儿童跑步鞋",
+                    "platform": "jd",
+                    "remoteId": "10137064435110",
+                    "ruleScan": {
+                      "status": "unavailable",
+                      "findings": [
+                        {
+                          "code": "PLATFORM_RULE_DATA_UNAVAILABLE",
+                          "field": "platform",
+                          "message": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则",
+                          "severity": "error"
+                        }
+                      ],
+                      "scannedAt": "2026-09-27T23:22:51.339Z",
+                      "ruleVersionIds": [
+                        "cn-commerce-1.0.0",
+                        "jd-apparel-write-1.0.0"
+                      ],
+                      "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过"
+                    },
+                    "skuCount": 1,
+                    "storeName": "贵人鸟母婴旗舰店",
+                    "updatedAt": "2026-09-27T23:22:51.338Z",
+                    "attributes": {
+                      "brand": "贵人鸟"
+                    },
+                    "workspaceId": "ws_guirenniaoniao",
+                    "factsConfirmed": true
+                  },
+                  "revision": 3,
+                  "confirmed": false
+                }
+              ],
+              "confirmedLearningSuggestions": []
+            },
+            "knowledge_documents": []
+          },
+          {
+            "id": "prod_jd_local_2d44fdbef4396d139aac",
+            "price": null,
+            "stock": 0,
+            "title": "贵人鸟黑色厚底运动鞋 双十一大促套图",
+            "images": [],
+            "source": "csv",
+            "version": 4,
+            "category": null,
+            "platform": "jd",
+            "remoteId": null,
+            "skuCount": 0,
+            "accountId": null,
+            "createdAt": "2026-09-29T12:03:02.388999+00:00",
+            "storeName": "未绑定商品",
+            "updatedAt": "2026-09-29T12:12:45.505986+00:00",
+            "attributes": {},
+            "workspaceId": "ws_guirenniaoniao",
+            "factsConfirmed": true,
+            "sourceAssetIds": [
+              "asset_672858ef-2537-4a34-a0cb-3243793b8807"
+            ],
+            "localProductKey": "未绑定商品:贵人鸟黑色厚底运动鞋 双十一大促套图",
+            "product_id": "prod_jd_local_2d44fdbef4396d139aac",
+            "local_product_key": "未绑定商品:贵人鸟黑色厚底运动鞋 双十一大促套图",
+            "storeContext": null,
+            "canonical_scope": {
+              "verification_status": "legacy_only",
+              "read_mode": "legacy_shadow",
+              "canonical_product_id": null,
+              "brand_id": null,
+              "listing_id": null,
+              "listing_count": 0,
+              "next_action": "canonical.product.consistency"
+            },
+            "knowledge_context": {
+              "rules": [],
+              "assets": [
+                {
+                  "id": "knowledge_asset_product_prod_jd_10137064435110",
+                  "kind": "product_facts",
+                  "name": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42 商品事实",
+                  "content": {
+                    "id": "prod_jd_10137064435110",
+                    "skus": [
+                      {
+                        "id": "10137064435110",
+                        "name": "雾霾蓝 42",
+                        "price": 399.2,
+                        "stock": 99,
+                        "images": [
+                          "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                        ],
+                        "attributes": {
+                          "size": "42",
+                          "color": "雾霾蓝",
+                          "specification": "雾霾蓝 / 42"
+                        }
+                      }
+                    ],
+                    "price": 399.2,
+                    "stock": 99,
+                    "title": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42",
+                    "images": [
+                      "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                    ],
+                    "source": "csv",
+                    "version": 2,
+                    "category": "儿童跑步鞋",
+                    "platform": "jd",
+                    "remoteId": "10137064435110",
+                    "ruleScan": {
+                      "status": "unavailable",
+                      "findings": [
+                        {
+                          "code": "PLATFORM_RULE_DATA_UNAVAILABLE",
+                          "field": "platform",
+                          "message": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则",
+                          "severity": "error"
+                        }
+                      ],
+                      "scannedAt": "2026-09-27T23:22:51.339Z",
+                      "ruleVersionIds": [
+                        "cn-commerce-1.0.0",
+                        "jd-apparel-write-1.0.0"
+                      ],
+                      "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过"
+                    },
+                    "skuCount": 1,
+                    "storeName": "贵人鸟母婴旗舰店",
+                    "updatedAt": "2026-09-27T23:22:51.338Z",
+                    "attributes": {
+                      "brand": "贵人鸟"
+                    },
+                    "workspaceId": "ws_guirenniaoniao",
+                    "factsConfirmed": true
+                  },
+                  "revision": 3,
+                  "confirmed": false
+                }
+              ],
+              "confirmedLearningSuggestions": []
+            },
+            "knowledge_documents": []
+          },
+          {
+            "id": "prod_jd_local_94cea35815607c763260",
+            "price": null,
+            "stock": 0,
+            "title": "未绑定候选图",
+            "images": [],
+            "source": "csv",
+            "version": 8,
+            "category": null,
+            "platform": "jd",
+            "remoteId": null,
+            "skuCount": 0,
+            "accountId": null,
+            "createdAt": "2026-09-29T08:35:41.7466+00:00",
+            "storeName": "未绑定商品",
+            "updatedAt": "2026-09-29T12:02:29.217488+00:00",
+            "attributes": {},
+            "workspaceId": "ws_guirenniaoniao",
+            "factsConfirmed": true,
+            "sourceAssetIds": [
+              "asset_672858ef-2537-4a34-a0cb-3243793b8807"
+            ],
+            "localProductKey": "未绑定商品:未绑定候选图",
+            "product_id": "prod_jd_local_94cea35815607c763260",
+            "local_product_key": "未绑定商品:未绑定候选图",
+            "storeContext": null,
+            "canonical_scope": {
+              "verification_status": "legacy_only",
+              "read_mode": "legacy_shadow",
+              "canonical_product_id": null,
+              "brand_id": null,
+              "listing_id": null,
+              "listing_count": 0,
+              "next_action": "canonical.product.consistency"
+            },
+            "knowledge_context": {
+              "rules": [],
+              "assets": [
+                {
+                  "id": "knowledge_asset_product_prod_jd_10137064435110",
+                  "kind": "product_facts",
+                  "name": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42 商品事实",
+                  "content": {
+                    "id": "prod_jd_10137064435110",
+                    "skus": [
+                      {
+                        "id": "10137064435110",
+                        "name": "雾霾蓝 42",
+                        "price": 399.2,
+                        "stock": 99,
+                        "images": [
+                          "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                        ],
+                        "attributes": {
+                          "size": "42",
+                          "color": "雾霾蓝",
+                          "specification": "雾霾蓝 / 42"
+                        }
+                      }
+                    ],
+                    "price": 399.2,
+                    "stock": 99,
+                    "title": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42",
+                    "images": [
+                      "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                    ],
+                    "source": "csv",
+                    "version": 2,
+                    "category": "儿童跑步鞋",
+                    "platform": "jd",
+                    "remoteId": "10137064435110",
+                    "ruleScan": {
+                      "status": "unavailable",
+                      "findings": [
+                        {
+                          "code": "PLATFORM_RULE_DATA_UNAVAILABLE",
+                          "field": "platform",
+                          "message": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则",
+                          "severity": "error"
+                        }
+                      ],
+                      "scannedAt": "2026-09-27T23:22:51.339Z",
+                      "ruleVersionIds": [
+                        "cn-commerce-1.0.0",
+                        "jd-apparel-write-1.0.0"
+                      ],
+                      "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过"
+                    },
+                    "skuCount": 1,
+                    "storeName": "贵人鸟母婴旗舰店",
+                    "updatedAt": "2026-09-27T23:22:51.338Z",
+                    "attributes": {
+                      "brand": "贵人鸟"
+                    },
+                    "workspaceId": "ws_guirenniaoniao",
+                    "factsConfirmed": true
+                  },
+                  "revision": 3,
+                  "confirmed": false
+                }
+              ],
+              "confirmedLearningSuggestions": []
+            },
+            "knowledge_documents": []
+          },
+          {
+            "id": "prod_jd_local_a67e5219ef3b04be309b",
+            "price": null,
+            "stock": 0,
+            "title": "贵人鸟黑色厚底运动鞋 双十一大促详情图",
+            "images": [],
+            "source": "csv",
+            "version": 2,
+            "category": null,
+            "platform": "jd",
+            "remoteId": null,
+            "skuCount": 0,
+            "accountId": null,
+            "createdAt": "2026-09-29T08:35:21.186282+00:00",
+            "storeName": "未绑定商品",
+            "updatedAt": "2026-09-29T08:35:21.186282+00:00",
+            "attributes": {},
+            "workspaceId": "ws_guirenniaoniao",
+            "factsConfirmed": true,
+            "sourceAssetIds": [
+              "asset_672858ef-2537-4a34-a0cb-3243793b8807"
+            ],
+            "localProductKey": "未绑定商品:贵人鸟黑色厚底运动鞋 双十一大促详情图",
+            "product_id": "prod_jd_local_a67e5219ef3b04be309b",
+            "local_product_key": "未绑定商品:贵人鸟黑色厚底运动鞋 双十一大促详情图",
+            "storeContext": null,
+            "canonical_scope": {
+              "verification_status": "legacy_only",
+              "read_mode": "legacy_shadow",
+              "canonical_product_id": null,
+              "brand_id": null,
+              "listing_id": null,
+              "listing_count": 0,
+              "next_action": "canonical.product.consistency"
+            },
+            "knowledge_context": {
+              "rules": [],
+              "assets": [
+                {
+                  "id": "knowledge_asset_product_prod_jd_10137064435110",
+                  "kind": "product_facts",
+                  "name": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42 商品事实",
+                  "content": {
+                    "id": "prod_jd_10137064435110",
+                    "skus": [
+                      {
+                        "id": "10137064435110",
+                        "name": "雾霾蓝 42",
+                        "price": 399.2,
+                        "stock": 99,
+                        "images": [
+                          "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                        ],
+                        "attributes": {
+                          "size": "42",
+                          "color": "雾霾蓝",
+                          "specification": "雾霾蓝 / 42"
+                        }
+                      }
+                    ],
+                    "price": 399.2,
+                    "stock": 99,
+                    "title": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42",
+                    "images": [
+                      "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                    ],
+                    "source": "csv",
+                    "version": 2,
+                    "category": "儿童跑步鞋",
+                    "platform": "jd",
+                    "remoteId": "10137064435110",
+                    "ruleScan": {
+                      "status": "unavailable",
+                      "findings": [
+                        {
+                          "code": "PLATFORM_RULE_DATA_UNAVAILABLE",
+                          "field": "platform",
+                          "message": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则",
+                          "severity": "error"
+                        }
+                      ],
+                      "scannedAt": "2026-09-27T23:22:51.339Z",
+                      "ruleVersionIds": [
+                        "cn-commerce-1.0.0",
+                        "jd-apparel-write-1.0.0"
+                      ],
+                      "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过"
+                    },
+                    "skuCount": 1,
+                    "storeName": "贵人鸟母婴旗舰店",
+                    "updatedAt": "2026-09-27T23:22:51.338Z",
+                    "attributes": {
+                      "brand": "贵人鸟"
+                    },
+                    "workspaceId": "ws_guirenniaoniao",
+                    "factsConfirmed": true
+                  },
+                  "revision": 3,
+                  "confirmed": false
+                }
+              ],
+              "confirmedLearningSuggestions": []
+            },
+            "knowledge_documents": []
+          },
+          {
+            "id": "prod_jd_6911e8340375_local_6d6522f884119d7909dc",
+            "price": 199,
+            "stock": 3,
+            "title": "QA测试商品请勿发布",
+            "images": [],
+            "source": "csv",
+            "version": 2,
+            "category": null,
+            "platform": "jd",
+            "remoteId": null,
+            "ruleScan": {
+              "status": "unavailable",
+              "findings": [
+                {
+                  "code": "PLATFORM_RULE_DATA_UNAVAILABLE",
+                  "field": "platform",
+                  "message": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则",
+                  "severity": "error"
+                }
+              ],
+              "scannedAt": "2026-09-28T23:22:21.044Z",
+              "ruleVersionIds": [
+                "cn-commerce-1.0.0",
+                "jd-apparel-write-1.0.0"
+              ],
+              "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过"
+            },
+            "skuCount": 0,
+            "accountId": "42169",
+            "createdAt": "2026-09-28T22:53:49.337825+00:00",
+            "storeName": "贵人鸟官方旗舰店",
+            "updatedAt": "2026-09-28T23:22:21.102906+00:00",
+            "attributes": {},
+            "workspaceId": "ws_guirenniaoniao",
+            "factsConfirmed": false,
+            "localProductKey": "QA-DO-NOT-PUBLISH-20260929",
+            "product_id": "prod_jd_6911e8340375_local_6d6522f884119d7909dc",
+            "local_product_key": "QA-DO-NOT-PUBLISH-20260929",
+            "storeContext": {
+              "platform": "jd",
+              "accountId": "42169",
+              "alias": "贵人鸟官方旗舰店",
+              "storeName": "贵人鸟官方旗舰店",
+              "label": "贵人鸟官方旗舰店",
+              "state": "manually_registered",
+              "dataMode": "manual_upload",
+              "readable": false,
+              "writeEnabled": false,
+              "authorization": "[REDACTED]",
+              "sync": {
+                "latestState": null,
+                "lastAttemptAt": null,
+                "lastSuccessfulAt": null,
+                "lastUsableAt": null,
+                "failedItems": 0
+              },
+              "revision": 1
+            },
+            "canonical_scope": {
+              "verification_status": "legacy_only",
+              "read_mode": "legacy_shadow",
+              "canonical_product_id": null,
+              "brand_id": null,
+              "listing_id": null,
+              "listing_count": 0,
+              "next_action": "canonical.product.consistency"
+            },
+            "knowledge_context": {
+              "rules": [],
+              "assets": [
+                {
+                  "id": "knowledge_asset_product_prod_jd_10137064435110",
+                  "kind": "product_facts",
+                  "name": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42 商品事实",
+                  "content": {
+                    "id": "prod_jd_10137064435110",
+                    "skus": [
+                      {
+                        "id": "10137064435110",
+                        "name": "雾霾蓝 42",
+                        "price": 399.2,
+                        "stock": 99,
+                        "images": [
+                          "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                        ],
+                        "attributes": {
+                          "size": "42",
+                          "color": "雾霾蓝",
+                          "specification": "雾霾蓝 / 42"
+                        }
+                      }
+                    ],
+                    "price": 399.2,
+                    "stock": 99,
+                    "title": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42",
+                    "images": [
+                      "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                    ],
+                    "source": "csv",
+                    "version": 2,
+                    "category": "儿童跑步鞋",
+                    "platform": "jd",
+                    "remoteId": "10137064435110",
+                    "ruleScan": {
+                      "status": "unavailable",
+                      "findings": [
+                        {
+                          "code": "PLATFORM_RULE_DATA_UNAVAILABLE",
+                          "field": "platform",
+                          "message": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则",
+                          "severity": "error"
+                        }
+                      ],
+                      "scannedAt": "2026-09-27T23:22:51.339Z",
+                      "ruleVersionIds": [
+                        "cn-commerce-1.0.0",
+                        "jd-apparel-write-1.0.0"
+                      ],
+                      "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过"
+                    },
+                    "skuCount": 1,
+                    "storeName": "贵人鸟母婴旗舰店",
+                    "updatedAt": "2026-09-27T23:22:51.338Z",
+                    "attributes": {
+                      "brand": "贵人鸟"
+                    },
+                    "workspaceId": "ws_guirenniaoniao",
+                    "factsConfirmed": true
+                  },
+                  "revision": 3,
+                  "confirmed": false
+                }
+              ],
+              "confirmedLearningSuggestions": []
+            },
+            "knowledge_documents": [],
+            "knowledge_status": {
+              "state": "pending_review_or_index",
+              "document_count": 1,
+              "statuses": [
+                "pending/unknown/queued"
+              ],
+              "next_action": "knowledge.asset.update",
+              "message": "商品知识已入库，但仍在等待运营审批、权益确认或索引完成；完成后插件会自动返回可用知识。"
+            }
+          },
+          {
+            "id": "prod_jd_10137064435110",
+            "skus": [
+              {
+                "id": "10137064435110",
+                "name": "雾霾蓝 42",
+                "price": 399.2,
+                "stock": 99,
+                "images": [
+                  "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                ],
+                "attributes": {
+                  "size": "42",
+                  "color": "雾霾蓝",
+                  "specification": "雾霾蓝 / 42"
+                }
+              }
+            ],
+            "price": 399.2,
+            "stock": 99,
+            "title": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42",
+            "images": [
+              "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+            ],
+            "source": "csv",
+            "version": 2,
+            "category": "儿童跑步鞋",
+            "platform": "jd",
+            "remoteId": "10137064435110",
+            "ruleScan": {
+              "status": "unavailable",
+              "findings": [
+                {
+                  "code": "PLATFORM_RULE_DATA_UNAVAILABLE",
+                  "field": "platform",
+                  "message": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则",
+                  "severity": "error"
+                }
+              ],
+              "scannedAt": "2026-09-27T23:22:51.339Z",
+              "ruleVersionIds": [
+                "cn-commerce-1.0.0",
+                "jd-apparel-write-1.0.0"
+              ],
+              "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过"
+            },
+            "skuCount": 1,
+            "accountId": null,
+            "createdAt": "2026-09-27T23:22:51.379004+00:00",
+            "storeName": "贵人鸟母婴旗舰店",
+            "updatedAt": "2026-09-27T23:24:22.346701+00:00",
+            "attributes": {
+              "brand": "贵人鸟"
+            },
+            "workspaceId": "ws_guirenniaoniao",
+            "factsConfirmed": true,
+            "product_id": "prod_jd_10137064435110",
+            "local_product_key": null,
+            "storeContext": null,
+            "canonical_scope": {
+              "verification_status": "legacy_only",
+              "read_mode": "legacy_shadow",
+              "canonical_product_id": null,
+              "brand_id": null,
+              "listing_id": null,
+              "listing_count": 0,
+              "next_action": "canonical.product.consistency"
+            },
+            "knowledge_context": {
+              "rules": [],
+              "assets": [
+                {
+                  "id": "knowledge_asset_product_prod_jd_10137064435110",
+                  "kind": "product_facts",
+                  "name": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42 商品事实",
+                  "content": {
+                    "id": "prod_jd_10137064435110",
+                    "skus": [
+                      {
+                        "id": "10137064435110",
+                        "name": "雾霾蓝 42",
+                        "price": 399.2,
+                        "stock": 99,
+                        "images": [
+                          "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                        ],
+                        "attributes": {
+                          "size": "42",
+                          "color": "雾霾蓝",
+                          "specification": "雾霾蓝 / 42"
+                        }
+                      }
+                    ],
+                    "price": 399.2,
+                    "stock": 99,
+                    "title": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42",
+                    "images": [
+                      "https://img10.360buyimg.com/n1/s720x720_jfs/t1/266352/14/18185/92044/67a8a103Ffa50ccad/ba465b61739e1e35.jpg"
+                    ],
+                    "source": "csv",
+                    "version": 2,
+                    "category": "儿童跑步鞋",
+                    "platform": "jd",
+                    "remoteId": "10137064435110",
+                    "ruleScan": {
+                      "status": "unavailable",
+                      "findings": [
+                        {
+                          "code": "PLATFORM_RULE_DATA_UNAVAILABLE",
+                          "field": "platform",
+                          "message": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则",
+                          "severity": "error"
+                        }
+                      ],
+                      "scannedAt": "2026-09-27T23:22:51.339Z",
+                      "ruleVersionIds": [
+                        "cn-commerce-1.0.0",
+                        "jd-apparel-write-1.0.0"
+                      ],
+                      "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过"
+                    },
+                    "skuCount": 1,
+                    "storeName": "贵人鸟母婴旗舰店",
+                    "updatedAt": "2026-09-27T23:22:51.338Z",
+                    "attributes": {
+                      "brand": "贵人鸟"
+                    },
+                    "workspaceId": "ws_guirenniaoniao",
+                    "factsConfirmed": true
+                  },
+                  "revision": 3,
+                  "confirmed": false
+                }
+              ],
+              "confirmedLearningSuggestions": []
+            },
+            "knowledge_documents": [
+              {
+                "id": "knowledge_document_product_prod_jd_10137064435110",
+                "title": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42 商品事实",
+                "knowledge_type": "product_facts",
+                "product_id": "prod_jd_10137064435110",
+                "sku_id": null,
+                "extracted_text": "商品名称：贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42\n平台：jd\n类目：儿童跑步鞋\n店铺：贵人鸟母婴旗舰店\n商品价格：399.2\n商品库存：99\n商品属性：{\"brand\":\"贵人鸟\"}\nSKU：10137064435110 雾霾蓝 42 价格399.2 库存99 属性{\"color\":\"雾霾蓝\",\"size\":\"42\",\"specification\":\"雾霾蓝 / 42\"}",
+                "chunks": [
+                  {
+                    "id": "knowledge_chunk_product_prod_jd_10137064435110",
+                    "ordinal": 0,
+                    "content": "商品名称：贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42\n平台：jd\n类目：儿童跑步鞋\n店铺：贵人鸟母婴旗舰店\n商品价格：399.2\n商品库存：99\n商品属性：{\"brand\":\"贵人鸟\"}\nSKU：10137064435110 雾霾蓝 42 价格399.2 库存99 属性{\"color\":\"雾霾蓝\",\"size\":\"42\",\"specification\":\"雾霾蓝 / 42\"}"
+                  }
+                ],
+                "score": 0,
+                "source_version": 1,
+                "revision": 4
+              },
+              {
+                "id": "knowledge_document_sku_prod_jd_10137064435110_10137064435110",
+                "title": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42 SKU 雾霾蓝 42",
+                "knowledge_type": "product_facts",
+                "product_id": "prod_jd_10137064435110",
+                "sku_id": "10137064435110",
+                "extracted_text": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42\nSKU 10137064435110：雾霾蓝 42\n价格：399.2\n库存：99\n属性：{\"color\":\"雾霾蓝\",\"size\":\"42\",\"specification\":\"雾霾蓝 / 42\"}",
+                "chunks": [
+                  {
+                    "id": "knowledge_chunk_sku_prod_jd_10137064435110_10137064435110",
+                    "ordinal": 0,
+                    "content": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42\nSKU 10137064435110：雾霾蓝 42\n价格：399.2\n库存：99\n属性：{\"color\":\"雾霾蓝\",\"size\":\"42\",\"specification\":\"雾霾蓝 / 42\"}"
+                  }
+                ],
+                "score": 0,
+                "source_version": 1,
+                "revision": 4
+              }
+            ]
+          }
+        ],
+        "product_actions": [
+          {
+            "product_id": "prod_jd_local_0375ba5239c58e8d97c7",
+            "title": "贵人鸟黑色厚底运动鞋",
+            "platform": "jd",
+            "account_id": null,
+            "facts_confirmed": true,
+            "action": {
+              "method": "platform.connect",
+              "label": "绑定商品所属店铺",
+              "required_inputs": [
+                "platform"
+              ],
+              "confirmation": "interactive_confirmation"
+            }
+          },
+          {
+            "product_id": "prod_jd_local_2d44fdbef4396d139aac",
+            "title": "贵人鸟黑色厚底运动鞋 双十一大促套图",
+            "platform": "jd",
+            "account_id": null,
+            "facts_confirmed": true,
+            "action": {
+              "method": "platform.connect",
+              "label": "绑定商品所属店铺",
+              "required_inputs": [
+                "platform"
+              ],
+              "confirmation": "interactive_confirmation"
+            }
+          },
+          {
+            "product_id": "prod_jd_local_94cea35815607c763260",
+            "title": "未绑定候选图",
+            "platform": "jd",
+            "account_id": null,
+            "facts_confirmed": true,
+            "action": {
+              "method": "platform.connect",
+              "label": "绑定商品所属店铺",
+              "required_inputs": [
+                "platform"
+              ],
+              "confirmation": "interactive_confirmation"
+            }
+          },
+          {
+            "product_id": "prod_jd_local_a67e5219ef3b04be309b",
+            "title": "贵人鸟黑色厚底运动鞋 双十一大促详情图",
+            "platform": "jd",
+            "account_id": null,
+            "facts_confirmed": true,
+            "action": {
+              "method": "platform.connect",
+              "label": "绑定商品所属店铺",
+              "required_inputs": [
+                "platform"
+              ],
+              "confirmation": "interactive_confirmation"
+            }
+          },
+          {
+            "product_id": "prod_jd_6911e8340375_local_6d6522f884119d7909dc",
+            "title": "QA测试商品请勿发布",
+            "platform": "jd",
+            "account_id": "42169",
+            "facts_confirmed": false,
+            "action": {
+              "method": "catalog.facts.confirm",
+              "label": "确认商品、SKU、价格和图片事实",
+              "required_inputs": [
+                "product_id"
+              ],
+              "confirmation": "interactive_confirmation"
+            }
+          },
+          {
+            "product_id": "prod_jd_10137064435110",
+            "title": "贵人鸟儿童运动鞋青少年篮球鞋男童2025新款春秋款防滑耐磨实战训练球鞋 雾霾蓝 42",
+            "platform": "jd",
+            "account_id": null,
+            "facts_confirmed": true,
+            "action": {
+              "method": "platform.connect",
+              "label": "绑定商品所属店铺",
+              "required_inputs": [
+                "platform"
+              ],
+              "confirmation": "interactive_confirmation"
+            }
+          }
+        ],
+        "total": 6,
+        "limit": 100,
+        "offset": 0,
+        "emptyState": null,
+        "ui": {
+          "schema_version": "1",
+          "surface": "merchant_codex_app",
+          "data_status": "real_or_server_reported",
+          "data_status_label": "服务端数据",
+          "context_bar": {
+            "order": [
+              "workspace",
+              "business_unit",
+              "platform",
+              "store"
+            ],
+            "labels": {
+              "workspace": "工作区",
+              "business_unit": "品",
+              "platform": "平台",
+              "store": "店铺"
+            },
+            "selection": {
+              "workspace": {
+                "state": "unknown",
+                "value": null
+              },
+              "business_unit": {
+                "state": "not_provided",
+                "value": null,
+                "options": []
+              },
+              "platform": {
+                "state": "selectable",
+                "value": null
+              },
+              "store": {
+                "state": "unknown",
+                "value": null,
+                "options": []
+              }
+            },
+            "reset_on_change": {
+              "business_unit": [
+                "platform",
+                "account_id",
+                "product_id",
+                "selected_product_ids"
+              ],
+              "platform": [
+                "account_id",
+                "product_id",
+                "selected_product_ids"
+              ],
+              "account_id": [
+                "product_id",
+                "selected_product_ids"
+              ]
+            },
+            "unresolved": [
+              "品目录尚未由当前 API 提供；不能把品牌或店铺自动当作品"
+            ]
+          },
+          "list": {
+            "kind": "products",
+            "selection": "multi",
+            "selection_key": "product_id",
+            "empty_state": null
+          }
+        }
+      },
+      "isError": false
+    }
+  },
+  "stderr": ""
+}

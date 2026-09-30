@@ -1,0 +1,587 @@
+{
+  "schema_version": "1",
+  "captured_at": "2026-09-29T13:41:24.049Z",
+  "bridge": {
+    "pid": 2923,
+    "path": "/Users/lixiaomei/.codex/plugins/cache/merchant-local/merchant-marketing/0.1.0+codex.20260929213938/mcp/bridge.mjs",
+    "cwd": "/Users/lixiaomei/.codex/plugins/cache/merchant-local/merchant-marketing/0.1.0+codex.20260929213938",
+    "package_version": "0.1.0+codex.20260929213938"
+  },
+  "initialize": {
+    "jsonrpc": "2.0",
+    "id": 1790689282902,
+    "result": {
+      "protocolVersion": "2025-06-18",
+      "capabilities": {
+        "tools": {},
+        "resources": {},
+        "resourceTemplates": {}
+      },
+      "serverInfo": {
+        "name": "merchant-marketing",
+        "version": "0.1.0+codex.20260929213938"
+      },
+      "instructions": "首次使用先只读调用 onboarding.status。默认主流程是公开链接/手工资料输入 → 内容生产 → 审核 → 导出，不以店铺 OAuth 或历史四步接入进度作为默认前置。已登录并获工作区权限、服务端准入允许时，用 catalog.import（显式 draft_only=\"true\"）和 content.draft.generate 制作未批准未发布的候选。公开链接不是读取成功或事实已确认的证据，无法读取时请商家补充资料；不索取 Cookie、平台密码或验证码。只调用当前实际提供的工具，缺失时明确阻断，不绕过权限、创意点或模型配置门禁。审核后按实际支持的 content.export 导出；草稿候选不是正式版本，不能虚构 content_version_id。当前不提供库存/订单同步和自动发布，不主动引导连接店铺或调用隐藏方法。"
+    }
+  },
+  "tools": {
+    "count": 116,
+    "names": [
+      "onboarding.status",
+      "commercial.service-boundary.accept",
+      "workspace.health",
+      "commercial.access.get",
+      "commercial.catalog.get",
+      "commercial.order.create",
+      "commercial.order.payment.get",
+      "creative-points.balance.get",
+      "creative-points.statement.list",
+      "catalog.search",
+      "catalog.categories",
+      "catalog.title.optimize",
+      "catalog.title.accept",
+      "catalog.import",
+      "catalog.import.batch",
+      "catalog.sku.update",
+      "catalog.product.update",
+      "catalog.facts.confirm",
+      "catalog.product.disable",
+      "catalog.product.enable",
+      "catalog.image.generate",
+      "catalog.image.get",
+      "catalog.image.select",
+      "catalog.image.review"
+    ]
+  },
+  "calls": [
+    {
+      "name": "onboarding.status",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1790689283338,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "您好，感谢您使用 Store Nova。\n\n从公开商品链接、手工填写的商品资料或你上传的图片开始，完成内容生产 → 审核 → 导出。\n\n不必先连接店铺。资料导入和草稿生成仍需有效登录、当前工作区权限、服务端准入，以及真实模型配置、创意点和成本证据；候选保持未批准、未发布。\n\n公开链接只是来源线索，不代表系统已读取页面或确认商品事实；若当前无法读取，请补充商品资料。审核和导出仅使用当前实际支持的工具，草稿不能冒充正式内容版本。\n\n当前不提供库存/订单同步和自动发布。历史店铺接入状态已保留，但不代表本次内容已生成、审核或导出；不要发送 Cookie、平台密码或验证码。\n\n你想制作什么内容？可以提供公开商品链接、商品资料或图片。"
+            }
+          ],
+          "structuredContent": {
+            "schema_version": "onboarding.status.v1",
+            "status": "in_progress",
+            "summary": {
+              "stores": 1,
+              "officialStores": 0,
+              "manualStores": 1,
+              "fixtureStores": 0,
+              "products": 1,
+              "unboundProducts": 5,
+              "confirmedProducts": 0,
+              "assets": 12,
+              "readyAssets": 0,
+              "tasks": 0,
+              "deliverableTasks": 0
+            },
+            "initialization": {
+              "schema_version": "store-nova.initialization.v1",
+              "status": "in_progress",
+              "completed": 0,
+              "total": 4,
+              "evidence": {
+                "official_stores": 0,
+                "successful_sync_stores": 0,
+                "scanned_products": 0,
+                "confirmed_products": 0,
+                "brand_candidate_count": 0,
+                "sku_records": 0,
+                "image_references": 0,
+                "products_missing_images": 0,
+                "brand_profile_present": false,
+                "content_workspace_confirmed": false,
+                "points_state": "ready",
+                "rules_ready": false,
+                "relay_ready": true,
+                "modalities_ready": true,
+                "cost_ready": true,
+                "storage_ready": true
+              },
+              "brand_clues": {
+                "candidates": [],
+                "totalCandidates": 0,
+                "truncated": false,
+                "profileCreated": false,
+                "guidance": "这些只是已确认商品字段中的品牌线索；不同店铺或不同品牌不能自动合并，商家确认后才可建立品牌档案。"
+              },
+              "legacy_store_setup": true,
+              "note": "历史店铺接入状态仅供核查，不是当前内容制作的步骤或前置条件。"
+            },
+            "current_step": {
+              "id": "provide_materials",
+              "title": "提供商品资料",
+              "state": "available"
+            },
+            "content_workflow": {
+              "scope": "content",
+              "store_connection_required": false,
+              "next_question": "你想制作什么内容？可以提供公开商品链接、商品资料或图片。"
+            }
+          },
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "workspace.health",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1790689283627,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "当前列出 1 条店铺连接记录。\n你要处理哪个店铺或商品？"
+            }
+          ],
+          "structuredContent": {
+            "conversation_state": {
+              "stage": "select_product",
+              "status": "needs_input",
+              "connected_store_count": 1,
+              "store_options": [
+                {
+                  "id": "store-option-1",
+                  "platform": "jd",
+                  "store_name": "贵人鸟官方旗舰店",
+                  "account_id": "42169",
+                  "status": "仅有账号记录",
+                  "explanation": "尚未取得可读取的店铺数据",
+                  "data_source": "账号记录",
+                  "selectable": false,
+                  "action": {
+                    "method": "catalog.search",
+                    "arguments": {
+                      "scope": "store",
+                      "platform": "jd",
+                      "account_id": "42169"
+                    }
+                  }
+                }
+              ],
+              "primary_action": {
+                "method": "catalog.search",
+                "label": "选择或导入商品",
+                "required_inputs": [
+                  "platform",
+                  "account_id"
+                ]
+              }
+            },
+            "completed_summary": "当前列出 1 条店铺连接记录。",
+            "question": "你要处理哪个店铺或商品？",
+            "expected_input": {
+              "kind": "store_or_product_selection",
+              "accepts": [
+                "natural_language"
+              ]
+            }
+          },
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "commercial.access.get",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1790689283769,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "查询已返回；请以结构化字段核对业务状态。"
+            }
+          ],
+          "structuredContent": {
+            "decision": {
+              "decision_id": "850c52a4-3e49-4f1b-a770-f747a4a3e893",
+              "decided_at": "2026-09-29T13:41:23.872Z",
+              "schema_version": "commercial-access.v1",
+              "registry_version": "commercial-operation-registry.v1",
+              "workspace_id": "ws_guirenniaoniao",
+              "surface": "MCP",
+              "operation": "commercial.access.get",
+              "classification": "RECOVERY_CONTROL",
+              "balance_state": "unknown",
+              "available_points": null,
+              "quoted_points": null,
+              "rate_card_version": null,
+              "access_revision": null,
+              "allowed": true,
+              "error_code": null,
+              "next_actions": []
+            }
+          },
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "subscription.get",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1790689283807,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "查询已返回；请以结构化字段核对业务状态。"
+            }
+          ],
+          "structuredContent": {
+            "workspaceId": "ws_guirenniaoniao",
+            "status": "trialing",
+            "planCode": "trial",
+            "planName": "Trial",
+            "billingCycle": "monthly",
+            "priceCny": 0,
+            "includedStores": 1,
+            "includedTasks": 5,
+            "currentPeriodStart": "2026-09-25T01:42:37.793Z",
+            "currentPeriodEnd": "2026-10-25T01:42:37.793Z",
+            "revision": 1,
+            "updatedAt": "2026-09-25T01:42:37.793Z",
+            "legacy_commercial_entitlement": {
+              "plan": null,
+              "period": null,
+              "status": "unknown",
+              "sourceVersion": null,
+              "checksum": null
+            },
+            "commercial_entitlement": {
+              "schema_version": "commercial.entitlement.v2",
+              "status": "available",
+              "plan": "growth",
+              "period": {
+                "start": "2026-09-27T12:53:13.872Z",
+                "end": "2026-10-27T12:53:13.872Z"
+              },
+              "sourceVersion": "sku-version-monthly-growth-v2",
+              "checksum": "e0c6bc94782e1a0db2a5b30fe156e3902c4f545d6d11dbb3a96049e2bcf80203",
+              "entitlement_id": "ces_f4c24a96-81ee-4dd2-83b3-599c0d0dba4a",
+              "subscription_period_id": "csp_adde54e8-4a62-40fd-a152-34b03c049572",
+              "code": null
+            },
+            "entitlements": []
+          },
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "creative-points.balance.get",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1790689283867,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "创意点状态：可用。生成能力由服务端准入决定。"
+            }
+          ],
+          "structuredContent": {
+            "schema_version": "creative-points.balance.v1",
+            "balance_state": "known",
+            "availability": "available",
+            "available_points": 12584,
+            "reserved_points": 7,
+            "settled_points": 9,
+            "access_revision": "31",
+            "updated_at": "2026-09-29T13:41:23.976Z"
+          },
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "catalog.categories",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1790689283927,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "已读取 3 条记录；请核对结构化结果中的内容与来源。"
+            }
+          ],
+          "structuredContent": [
+            {
+              "code": "1312",
+              "name": "服装 / 防晒外套",
+              "fields": [
+                "材质",
+                "成分",
+                "重量",
+                "尺码",
+                "颜色",
+                "功能依据"
+              ],
+              "platforms": [
+                "jd",
+                "taobao",
+                "tmall",
+                "pinduoduo",
+                "xiaohongshu",
+                "douyin"
+              ],
+              "status": "active",
+              "updatedAt": "今天",
+              "category_code": "1312",
+              "required_fields": [
+                "材质",
+                "成分",
+                "重量",
+                "尺码",
+                "颜色",
+                "功能依据"
+              ]
+            },
+            {
+              "code": "1408",
+              "name": "鞋靴 / 户外鞋",
+              "fields": [
+                "鞋面材质",
+                "闭合方式",
+                "适用场景",
+                "尺码"
+              ],
+              "platforms": [
+                "jd",
+                "taobao",
+                "pinduoduo"
+              ],
+              "status": "active",
+              "updatedAt": "昨天",
+              "category_code": "1408",
+              "required_fields": [
+                "鞋面材质",
+                "闭合方式",
+                "适用场景",
+                "尺码"
+              ]
+            },
+            {
+              "code": "1503",
+              "name": "运动 / 速干裤装",
+              "fields": [
+                "面料",
+                "版型",
+                "弹性",
+                "洗护",
+                "尺码"
+              ],
+              "platforms": [
+                "taobao",
+                "tmall"
+              ],
+              "status": "active",
+              "updatedAt": "3 天前",
+              "category_code": "1503",
+              "required_fields": [
+                "面料",
+                "版型",
+                "弹性",
+                "洗护",
+                "尺码"
+              ]
+            }
+          ],
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "catalog.search",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1790689283993,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "已读取 1 个商品。"
+            }
+          ],
+          "structuredContent": {
+            "scope": "store",
+            "selection": {
+              "platform": "jd",
+              "accountId": "42169"
+            },
+            "products": [
+              {
+                "id": "prod_jd_6911e8340375_local_6d6522f884119d7909dc",
+                "price": 199,
+                "stock": 3,
+                "title": "QA测试商品请勿发布",
+                "images": [],
+                "source": "csv",
+                "version": 2,
+                "category": null,
+                "platform": "jd",
+                "remoteId": null,
+                "ruleScan": {
+                  "status": "unavailable",
+                  "findings": [
+                    {
+                      "code": "PLATFORM_RULE_DATA_UNAVAILABLE",
+                      "field": "platform",
+                      "message": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则",
+                      "severity": "error"
+                    }
+                  ],
+                  "scannedAt": "2026-09-28T23:22:21.044Z",
+                  "ruleVersionIds": [
+                    "cn-commerce-1.0.0",
+                    "jd-apparel-write-1.0.0"
+                  ],
+                  "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过"
+                },
+                "skuCount": 0,
+                "accountId": "42169",
+                "createdAt": "2026-09-28T22:53:49.337825+00:00",
+                "storeName": "贵人鸟官方旗舰店",
+                "updatedAt": "2026-09-28T23:22:21.102906+00:00",
+                "attributes": {},
+                "workspaceId": "ws_guirenniaoniao",
+                "factsConfirmed": false,
+                "localProductKey": "QA-DO-NOT-PUBLISH-20260929",
+                "product_id": "prod_jd_6911e8340375_local_6d6522f884119d7909dc",
+                "local_product_key": "QA-DO-NOT-PUBLISH-20260929",
+                "storeContext": {
+                  "platform": "jd",
+                  "accountId": "42169",
+                  "alias": "贵人鸟官方旗舰店",
+                  "storeName": "贵人鸟官方旗舰店",
+                  "label": "贵人鸟官方旗舰店",
+                  "state": "manually_registered",
+                  "dataMode": "manual_upload",
+                  "readable": false,
+                  "writeEnabled": false,
+                  "authorization": "[REDACTED]",
+                  "sync": {
+                    "latestState": null,
+                    "lastAttemptAt": null,
+                    "lastSuccessfulAt": null,
+                    "lastUsableAt": null,
+                    "failedItems": 0
+                  },
+                  "revision": 1
+                },
+                "canonical_scope": {
+                  "verification_status": "legacy_only",
+                  "read_mode": "legacy_shadow",
+                  "canonical_product_id": null,
+                  "brand_id": null,
+                  "listing_id": null,
+                  "listing_count": 0,
+                  "next_action": "canonical.product.consistency"
+                }
+              }
+            ],
+            "product_actions": [
+              {
+                "product_id": "prod_jd_6911e8340375_local_6d6522f884119d7909dc",
+                "title": "QA测试商品请勿发布",
+                "platform": "jd",
+                "account_id": "42169",
+                "facts_confirmed": false,
+                "action": {
+                  "method": "catalog.facts.confirm",
+                  "label": "确认商品、SKU、价格和图片事实",
+                  "required_inputs": [
+                    "product_id"
+                  ],
+                  "confirmation": "interactive_confirmation"
+                }
+              }
+            ],
+            "total": 1,
+            "limit": 50,
+            "offset": 0,
+            "emptyState": null,
+            "ui": {
+              "schema_version": "1",
+              "surface": "merchant_codex_app",
+              "data_status": "real_or_server_reported",
+              "data_status_label": "服务端数据",
+              "context_bar": {
+                "order": [
+                  "workspace",
+                  "business_unit",
+                  "platform",
+                  "store"
+                ],
+                "labels": {
+                  "workspace": "工作区",
+                  "business_unit": "品",
+                  "platform": "平台",
+                  "store": "店铺"
+                },
+                "selection": {
+                  "workspace": {
+                    "state": "unknown",
+                    "value": null
+                  },
+                  "business_unit": {
+                    "state": "not_provided",
+                    "value": null,
+                    "options": []
+                  },
+                  "platform": {
+                    "state": "selectable",
+                    "value": null
+                  },
+                  "store": {
+                    "state": "unknown",
+                    "value": null,
+                    "options": []
+                  }
+                },
+                "reset_on_change": {
+                  "business_unit": [
+                    "platform",
+                    "account_id",
+                    "product_id",
+                    "selected_product_ids"
+                  ],
+                  "platform": [
+                    "account_id",
+                    "product_id",
+                    "selected_product_ids"
+                  ],
+                  "account_id": [
+                    "product_id",
+                    "selected_product_ids"
+                  ]
+                },
+                "unresolved": [
+                  "品目录尚未由当前 API 提供；不能把品牌或店铺自动当作品"
+                ]
+              },
+              "list": {
+                "kind": "products",
+                "selection": "multi",
+                "selection_key": "product_id",
+                "empty_state": null
+              }
+            }
+          },
+          "isError": false
+        }
+      }
+    }
+  ],
+  "stderr": ""
+}

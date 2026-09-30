@@ -1,0 +1,365 @@
+{
+  "schema_version": "1",
+  "version": "213938",
+  "started_at": "2026-09-29T13:45:15.879Z",
+  "calls": [
+    {
+      "name": "creative-points.balance.get",
+      "args": {},
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "创意点状态：可用。生成能力由服务端准入决定。"
+            }
+          ],
+          "structuredContent": {
+            "schema_version": "creative-points.balance.v1",
+            "balance_state": "known",
+            "availability": "available",
+            "available_points": 12582,
+            "reserved_points": 7,
+            "settled_points": 11,
+            "access_revision": "35",
+            "updated_at": "2026-09-29T13:45:16.705Z"
+          },
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "workspace.interactive.confirm",
+      "args": {
+        "confirmation": "I_CONFIRM_INTERACTIVE_WRITES"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。"
+            }
+          ],
+          "structuredContent": {
+            "enabled": true,
+            "expires_at": "2026-09-29T14:00:16.798Z",
+            "scope": "current_interactive_session",
+            "automation": "read_only",
+            "ticket": {
+              "nonce_hash": "bba217d60d6956a50b8d0c233c0f1418efcca69bd9ce3a041fa48c593e630371",
+              "intent_hash": "d7b79e57aafadf26659a89e10650fe772ada1ded6ca0c5896bb4ae2c40c05889",
+              "expires_at": "2026-09-29T14:00:16.798Z"
+            }
+          },
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "catalog.image.generate",
+      "args": {
+        "product_id": "prod_jd_10137064435110",
+        "platform": "jd",
+        "mode": "create",
+        "size": "1024x1024",
+        "direction": "基于已确认商品事实与原图制作简洁白底商品主图候选；保持雾霾蓝配色和鞋款外观，不添加促销文字、性能承诺或未确认元素",
+        "count": "1",
+        "idempotency_key": "qa-confirmed-image-213938-001"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "当前平台的签名规则数据尚未就绪，生成已被阻止；请在平台规则状态中检查配置和有效期。本次没有发起模型生成。"
+            }
+          ],
+          "structuredContent": {
+            "code": "PLATFORM_RULE_DATA_UNAVAILABLE",
+            "message": "当前平台的签名规则数据尚未就绪，生成已被阻止；请在平台规则状态中检查配置和有效期。本次没有发起模型生成。",
+            "details": {
+              "next_actions": [
+                "请按错误码核对当前问题。",
+                "请按错误码核对当前问题。",
+                "请按错误码核对当前问题。"
+              ]
+            }
+          },
+          "isError": true
+        }
+      }
+    },
+    {
+      "name": "creative-points.balance.get",
+      "args": {},
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "创意点状态：可用。生成能力由服务端准入决定。"
+            }
+          ],
+          "structuredContent": {
+            "schema_version": "creative-points.balance.v1",
+            "balance_state": "known",
+            "availability": "available",
+            "available_points": 12582,
+            "reserved_points": 7,
+            "settled_points": 11,
+            "access_revision": "35",
+            "updated_at": "2026-09-29T13:45:16.890Z"
+          },
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "creative-points.statement.list",
+      "args": {
+        "limit": "10"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "查询已返回；请以结构化字段核对业务状态。"
+            }
+          ],
+          "structuredContent": {
+            "schema_version": "creative-points.statement.v1",
+            "entries": [
+              {
+                "id": "cpl_b879e15f-c9f6-4756-b6ef-5697e9e5ae7c",
+                "workspaceId": "ws_guirenniaoniao",
+                "operationId": "cpo_07b79754-b8de-40b9-8d50-5ae142a34c62",
+                "eventType": "settled",
+                "pointsDelta": 0,
+                "availableAfter": 12582,
+                "reservedAfter": 7,
+                "settledAfter": 11,
+                "accessRevision": 35,
+                "createdAt": "2026-09-29T13:43:38.022Z",
+                "intent": {
+                  "metadata": {
+                    "cost_cny": 0.00127038,
+                    "modality": "text",
+                    "receipt_hash": "ca0ff268fb1f77a7a29f1c0eae8f50df1d8bd0a2147da69386bc0ace23bcae73",
+                    "provider_request_id": "202609291343307705553448268d9d6fK8O3bWk"
+                  },
+                  "actual_points": 1,
+                  "reservation_id": "cpr_31954c55-4f38-4771-8005-f00e2dd7c543"
+                },
+                "grantSourceType": null,
+                "grantSourceId": null
+              },
+              {
+                "id": "cpl_e128e288-9738-4561-b151-305c501c53e3",
+                "workspaceId": "ws_guirenniaoniao",
+                "operationId": "cpo_19a0eab6-18eb-4899-ae27-06c228f79890",
+                "eventType": "reserved",
+                "pointsDelta": -1,
+                "availableAfter": 12582,
+                "reservedAfter": 8,
+                "settledAfter": 10,
+                "accessRevision": 34,
+                "createdAt": "2026-09-29T13:43:30.421Z",
+                "intent": {
+                  "points": 1,
+                  "action_key": "content-draft:f877e734ea4b0652ceee3eb15723bec744323e2f6ebf840e9364d8575a47099a",
+                  "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+                },
+                "grantSourceType": null,
+                "grantSourceId": null
+              },
+              {
+                "id": "cpl_d219fa90-c2d1-442b-bdc1-559eda75f40f",
+                "workspaceId": "ws_guirenniaoniao",
+                "operationId": "cpo_50c9c4f6-5dcb-4b92-9726-d65bf3986dc2",
+                "eventType": "settled",
+                "pointsDelta": 0,
+                "availableAfter": 12583,
+                "reservedAfter": 7,
+                "settledAfter": 10,
+                "accessRevision": 33,
+                "createdAt": "2026-09-29T13:43:30.358Z",
+                "intent": {
+                  "metadata": {
+                    "cost_cny": 0.00124306,
+                    "modality": "text",
+                    "receipt_hash": "28f40e1492dc52b82193ca4bf33d57ff1959ce49b43dc8268979def5b6cd7c1b",
+                    "provider_request_id": "202609291343225930255798268d9d6B2VApP3r"
+                  },
+                  "actual_points": 1,
+                  "reservation_id": "cpr_e54fdf2c-bc01-4391-8ffd-70b7f56d5b18"
+                },
+                "grantSourceType": null,
+                "grantSourceId": null
+              },
+              {
+                "id": "cpl_e568d699-fd1a-4025-bdb0-6a8d131a5ab2",
+                "workspaceId": "ws_guirenniaoniao",
+                "operationId": "cpo_2e8ec271-ec4c-4437-9fb5-5e6d4adb1d84",
+                "eventType": "reserved",
+                "pointsDelta": -1,
+                "availableAfter": 12583,
+                "reservedAfter": 8,
+                "settledAfter": 9,
+                "accessRevision": 32,
+                "createdAt": "2026-09-29T13:43:22.266Z",
+                "intent": {
+                  "points": 1,
+                  "action_key": "content-draft:5db57660fe32b14c66126dda2d3affded2a2cc5a08d3d68dc564552e275cc824",
+                  "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+                },
+                "grantSourceType": null,
+                "grantSourceId": null
+              },
+              {
+                "id": "cpl_bed6b847-2620-46b9-b956-5b9899483dbd",
+                "workspaceId": "ws_guirenniaoniao",
+                "operationId": "cpo_563cd89b-81b1-4836-82d3-fb565eb3a3c7",
+                "eventType": "settled",
+                "pointsDelta": 0,
+                "availableAfter": 12584,
+                "reservedAfter": 7,
+                "settledAfter": 9,
+                "accessRevision": 31,
+                "createdAt": "2026-09-29T12:12:57.778Z",
+                "intent": {
+                  "metadata": {
+                    "cost_cny": 0.00154358,
+                    "modality": "text",
+                    "receipt_hash": "28e9686ac23fda8ae2b2ca68f9af3547cd77a48fc3363641e9a5ea89220043d2",
+                    "provider_request_id": "202609291212494312085308268d9d6oEP9EXNN"
+                  },
+                  "actual_points": 1,
+                  "reservation_id": "cpr_bb64edf1-2e2b-4b73-89d4-ce75e3c19705"
+                },
+                "grantSourceType": null,
+                "grantSourceId": null
+              },
+              {
+                "id": "cpl_1c2c4d65-29b9-4f6f-b80d-053a2860f1e8",
+                "workspaceId": "ws_guirenniaoniao",
+                "operationId": "cpo_f15af03c-3340-4b94-9f0d-1dac8b1fd0af",
+                "eventType": "reserved",
+                "pointsDelta": -1,
+                "availableAfter": 12584,
+                "reservedAfter": 8,
+                "settledAfter": 8,
+                "accessRevision": 30,
+                "createdAt": "2026-09-29T12:12:48.609Z",
+                "intent": {
+                  "points": 1,
+                  "action_key": "content-draft:e28e54a3051eeb66a965dc35b8fb8e8b11434da4bc90b238987419df7ee0b419",
+                  "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+                },
+                "grantSourceType": null,
+                "grantSourceId": null
+              },
+              {
+                "id": "cpl_cf08b894-568b-4579-a03f-b76633989405",
+                "workspaceId": "ws_guirenniaoniao",
+                "operationId": "cpo_990dee9a-ddc7-4d6e-9965-89c42675cdd1",
+                "eventType": "reserved",
+                "pointsDelta": -1,
+                "availableAfter": 12585,
+                "reservedAfter": 7,
+                "settledAfter": 8,
+                "accessRevision": 29,
+                "createdAt": "2026-09-29T12:12:45.526Z",
+                "intent": {
+                  "points": 1,
+                  "action_key": "image:d11-set6-keep-20260929-d",
+                  "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+                },
+                "grantSourceType": null,
+                "grantSourceId": null
+              },
+              {
+                "id": "cpl_f2e5f56e-f0c7-45a7-8984-463f72b56585",
+                "workspaceId": "ws_guirenniaoniao",
+                "operationId": "cpo_c6b43bc3-6d50-458e-b214-4b02d3d89449",
+                "eventType": "settled",
+                "pointsDelta": 0,
+                "availableAfter": 12586,
+                "reservedAfter": 6,
+                "settledAfter": 8,
+                "accessRevision": 28,
+                "createdAt": "2026-09-29T12:12:29.001Z",
+                "intent": {
+                  "metadata": {
+                    "cost_cny": 0.00135234,
+                    "modality": "text",
+                    "receipt_hash": "17eca65080d3080f27a1257a9f9b7331d518fa35c2e306654ba3bea58dfb07c8",
+                    "provider_request_id": "202609291212195465350278268d9d6JT86Xwpq"
+                  },
+                  "actual_points": 1,
+                  "reservation_id": "cpr_e0d1e0ec-fcbe-4041-90e7-9104d11e21f6"
+                },
+                "grantSourceType": null,
+                "grantSourceId": null
+              },
+              {
+                "id": "cpl_61979077-cd95-4c45-a510-7ff20a62ed49",
+                "workspaceId": "ws_guirenniaoniao",
+                "operationId": "cpo_1db4174d-635e-4428-9bbe-a68464889c70",
+                "eventType": "reserved",
+                "pointsDelta": -1,
+                "availableAfter": 12586,
+                "reservedAfter": 7,
+                "settledAfter": 7,
+                "accessRevision": 27,
+                "createdAt": "2026-09-29T12:12:19.194Z",
+                "intent": {
+                  "points": 1,
+                  "action_key": "content-draft:8beab39de3df559e59bbe724e6f02bef8cefddbb33d3b37ddfab35300accffa5",
+                  "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+                },
+                "grantSourceType": null,
+                "grantSourceId": null
+              },
+              {
+                "id": "cpl_9fa6c91e-a4b4-448a-a8dd-6963c2b816c3",
+                "workspaceId": "ws_guirenniaoniao",
+                "operationId": "cpo_3d9a7640-92da-4ab0-9df8-c891029ad2e7",
+                "eventType": "reserved",
+                "pointsDelta": -1,
+                "availableAfter": 12587,
+                "reservedAfter": 6,
+                "settledAfter": 7,
+                "accessRevision": 26,
+                "createdAt": "2026-09-29T12:08:13.452Z",
+                "intent": {
+                  "points": 1,
+                  "action_key": "image:grn-black-shoe-image-optimize-20260929-v1",
+                  "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+                },
+                "grantSourceType": null,
+                "grantSourceId": null
+              }
+            ],
+            "next_cursor": "eyJjcmVhdGVkQXQiOiIyMDI2LTA5LTI5VDEyOjA4OjEzLjQ1MloiLCJpZCI6ImNwbF85ZmE2YzkxZS1hNGI0LTQ0OGEtYThkZC02OTYzYzJiODE2YzMifQ"
+          },
+          "isError": false
+        }
+      }
+    }
+  ],
+  "job_id": null,
+  "ended_at": "2026-09-29T13:45:16.903Z",
+  "stderr": "[NONEMPTY_REDACTED]"
+}

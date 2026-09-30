@@ -1,0 +1,53 @@
+BEGIN
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 2
+INSERT 0 1
+INSERT 0 1
+PREPARE
+NOTICE:  PASS free_actual_precision matched=1
+NOTICE:  PASS free_rounds_to_threshold matched=1
+NOTICE:  PASS paid_rounds_to_threshold matched=1
+NOTICE:  PASS free_text matched=1
+NOTICE:  PASS free_zero_cost matched=1
+NOTICE:  PASS free_image matched=1
+NOTICE:  PASS free_image_edit matched=1
+NOTICE:  PASS free_video matched=1
+NOTICE:  PASS threshold_exact matched=0
+NOTICE:  PASS negative_cost matched=0
+NOTICE:  PASS missing_cost matched=0
+NOTICE:  PASS ocr_cannot_use_model_policy matched=0
+NOTICE:  PASS bad_ledger_policy matched=0
+NOTICE:  PASS bad_operation_policy matched=0
+NOTICE:  PASS missing_policy matched=0
+NOTICE:  PASS provider_unknown matched=0
+NOTICE:  PASS unverified_worker matched=0
+NOTICE:  PASS paid_unchanged matched=1
+NOTICE:  PASS partial_paid_disabled matched=0
+NOTICE:  PASS partial_paid_enabled matched=1
+DO
+NOTICE:  PASS invalid numeric "0.09" matched=0
+NOTICE:  PASS invalid numeric "NaN" matched=0
+NOTICE:  PASS invalid numeric "Infinity" matched=0
+NOTICE:  PASS invalid numeric "not_numeric" matched=0
+NOTICE:  PASS invalid numeric null matched=0
+NOTICE:  PASS invalid numeric {} matched=0
+NOTICE:  PASS invalid numeric [] matched=0
+NOTICE:  PASS invalid numeric true matched=0
+NOTICE:  PASS invalid numeric -0.00000001 matched=0
+DO
+NOTICE:  PASS raw precision baseline matched=1
+NOTICE:  PASS raw precision worker matched=0
+NOTICE:  PASS raw precision ledger matched=0
+NOTICE:  PASS raw precision operation matched=0
+DO
+NOTICE:  PASS raw precision stored matched=0
+ROLLBACK

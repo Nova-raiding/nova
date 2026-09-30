@@ -1,0 +1,55 @@
+{
+  "schema_version": "1",
+  "captured_at": "2026-09-29T22:26:25.752Z",
+  "package_version": "0.1.0+codex.20260929213938",
+  "package_profile": "qa-broker",
+  "real_tokens_used": false,
+  "secret_material_recorded": false,
+  "isolated_socket": true,
+  "broker": {
+    "started": true,
+    "stderr_empty": true,
+    "socket_created": true,
+    "sigterm_exit_signal": null,
+    "socket_removed_after_sigterm": true
+  },
+  "chatgpt": {
+    "running_initially": true,
+    "running_before_restart": true,
+    "stopped_for_restart": true,
+    "running_after_restart": true,
+    "broker_alive_after_restart": true
+  },
+  "bridges": {
+    "before_restart": {
+      "exit_code": 0,
+      "stderr_empty": true,
+      "initialized_version": "0.1.0+codex.20260929213938",
+      "tools_count": 116,
+      "call_is_error": false,
+      "call_error_code": null
+    },
+    "after_restart": {
+      "exit_code": 0,
+      "stderr_empty": true,
+      "initialized_version": "0.1.0+codex.20260929213938",
+      "tools_count": 116,
+      "call_is_error": false,
+      "call_error_code": null
+    },
+    "after_logout_new_stdio": {
+      "exit_code": 0,
+      "stderr_empty": true,
+      "initialized_version": "0.1.0+codex.20260929213938",
+      "tools_count": 116,
+      "call_is_error": true,
+      "call_error_code": "MCP_CREDENTIAL_SOURCE_INVALID",
+      "api_requests_added": 0
+    }
+  },
+  "api": {
+    "requests_total": 2,
+    "authorization_valid_for_forwarded_requests": true
+  },
+  "verdict": "pass"
+}

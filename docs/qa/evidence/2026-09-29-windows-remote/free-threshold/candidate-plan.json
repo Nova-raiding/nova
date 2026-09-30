@@ -1,0 +1,49 @@
+{
+  "status": "prepared_not_deployed",
+  "candidate_git_sha": "f14dd4cf4e9a71d29108c589f138899d7ff477bf",
+  "target": "ssh:101/merchant-demo-85575f9c",
+  "components": [
+    "merchant-api",
+    "merchant-worker"
+  ],
+  "services": [
+    "api",
+    "api-replica",
+    "worker-sync",
+    "worker-generation",
+    "worker-publish",
+    "worker-reconcile",
+    "worker-automation"
+  ],
+  "live_api_git_sha": "fd1ad6a7bd122a391350c185798ac07e92795f8c",
+  "live_worker_git_sha": "ffcda3996bcf1821fd2ab619c31a840dd5ee6eff",
+  "database": {
+    "current_version": 254,
+    "candidate_source_version": 255,
+    "checked_prefix_count": 254,
+    "name_checksum_mismatches": 0,
+    "evidence_sha256": "48022fc23dbaf7dd1baf06b18fd03438d86f59408cf46ebf24a92d15baa6e6dc",
+    "migration_executed": false
+  },
+  "compatibility_mode": {
+    "required_for_254": "prefix_254_or_255",
+    "live_enabled": false,
+    "candidate_configuration_prepared": false
+  },
+  "checks": {
+    "typecheck": "exit_0_after_rounding_fix",
+    "release_gates": "running_not_complete",
+    "windows_free_settlement": "not_tested"
+  },
+  "compensation": {
+    "points": 1,
+    "status": "not_submitted"
+  },
+  "unresolved": [
+    "Review full API and worker delta from separate live component baselines",
+    "Complete release gates and final focused regression",
+    "Prepare reviewed protected compose and rollback with explicit bridge mode",
+    "Verify billing and delivery on compatible isolated schema",
+    "Deploy exact candidate and run a new uniquely keyed Windows plugin task"
+  ]
+}

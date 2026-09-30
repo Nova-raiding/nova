@@ -1,0 +1,444 @@
+{
+  "schema_version": "1",
+  "version": "213938",
+  "captured_at": "2026-09-29T13:44:34.904Z",
+  "call": "creative-points.statement.list",
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "查询已返回；请以结构化字段核对业务状态。"
+        }
+      ],
+      "structuredContent": {
+        "schema_version": "creative-points.statement.v1",
+        "entries": [
+          {
+            "id": "cpl_b879e15f-c9f6-4756-b6ef-5697e9e5ae7c",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_07b79754-b8de-40b9-8d50-5ae142a34c62",
+            "eventType": "settled",
+            "pointsDelta": 0,
+            "availableAfter": 12582,
+            "reservedAfter": 7,
+            "settledAfter": 11,
+            "accessRevision": 35,
+            "createdAt": "2026-09-29T13:43:38.022Z",
+            "intent": {
+              "metadata": {
+                "cost_cny": 0.00127038,
+                "modality": "text",
+                "receipt_hash": "ca0ff268fb1f77a7a29f1c0eae8f50df1d8bd0a2147da69386bc0ace23bcae73",
+                "provider_request_id": "202609291343307705553448268d9d6fK8O3bWk"
+              },
+              "actual_points": 1,
+              "reservation_id": "cpr_31954c55-4f38-4771-8005-f00e2dd7c543"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_e128e288-9738-4561-b151-305c501c53e3",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_19a0eab6-18eb-4899-ae27-06c228f79890",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12582,
+            "reservedAfter": 8,
+            "settledAfter": 10,
+            "accessRevision": 34,
+            "createdAt": "2026-09-29T13:43:30.421Z",
+            "intent": {
+              "points": 1,
+              "action_key": "content-draft:f877e734ea4b0652ceee3eb15723bec744323e2f6ebf840e9364d8575a47099a",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_d219fa90-c2d1-442b-bdc1-559eda75f40f",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_50c9c4f6-5dcb-4b92-9726-d65bf3986dc2",
+            "eventType": "settled",
+            "pointsDelta": 0,
+            "availableAfter": 12583,
+            "reservedAfter": 7,
+            "settledAfter": 10,
+            "accessRevision": 33,
+            "createdAt": "2026-09-29T13:43:30.358Z",
+            "intent": {
+              "metadata": {
+                "cost_cny": 0.00124306,
+                "modality": "text",
+                "receipt_hash": "28f40e1492dc52b82193ca4bf33d57ff1959ce49b43dc8268979def5b6cd7c1b",
+                "provider_request_id": "202609291343225930255798268d9d6B2VApP3r"
+              },
+              "actual_points": 1,
+              "reservation_id": "cpr_e54fdf2c-bc01-4391-8ffd-70b7f56d5b18"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_e568d699-fd1a-4025-bdb0-6a8d131a5ab2",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_2e8ec271-ec4c-4437-9fb5-5e6d4adb1d84",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12583,
+            "reservedAfter": 8,
+            "settledAfter": 9,
+            "accessRevision": 32,
+            "createdAt": "2026-09-29T13:43:22.266Z",
+            "intent": {
+              "points": 1,
+              "action_key": "content-draft:5db57660fe32b14c66126dda2d3affded2a2cc5a08d3d68dc564552e275cc824",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_bed6b847-2620-46b9-b956-5b9899483dbd",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_563cd89b-81b1-4836-82d3-fb565eb3a3c7",
+            "eventType": "settled",
+            "pointsDelta": 0,
+            "availableAfter": 12584,
+            "reservedAfter": 7,
+            "settledAfter": 9,
+            "accessRevision": 31,
+            "createdAt": "2026-09-29T12:12:57.778Z",
+            "intent": {
+              "metadata": {
+                "cost_cny": 0.00154358,
+                "modality": "text",
+                "receipt_hash": "28e9686ac23fda8ae2b2ca68f9af3547cd77a48fc3363641e9a5ea89220043d2",
+                "provider_request_id": "202609291212494312085308268d9d6oEP9EXNN"
+              },
+              "actual_points": 1,
+              "reservation_id": "cpr_bb64edf1-2e2b-4b73-89d4-ce75e3c19705"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_1c2c4d65-29b9-4f6f-b80d-053a2860f1e8",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_f15af03c-3340-4b94-9f0d-1dac8b1fd0af",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12584,
+            "reservedAfter": 8,
+            "settledAfter": 8,
+            "accessRevision": 30,
+            "createdAt": "2026-09-29T12:12:48.609Z",
+            "intent": {
+              "points": 1,
+              "action_key": "content-draft:e28e54a3051eeb66a965dc35b8fb8e8b11434da4bc90b238987419df7ee0b419",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_cf08b894-568b-4579-a03f-b76633989405",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_990dee9a-ddc7-4d6e-9965-89c42675cdd1",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12585,
+            "reservedAfter": 7,
+            "settledAfter": 8,
+            "accessRevision": 29,
+            "createdAt": "2026-09-29T12:12:45.526Z",
+            "intent": {
+              "points": 1,
+              "action_key": "image:d11-set6-keep-20260929-d",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_f2e5f56e-f0c7-45a7-8984-463f72b56585",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_c6b43bc3-6d50-458e-b214-4b02d3d89449",
+            "eventType": "settled",
+            "pointsDelta": 0,
+            "availableAfter": 12586,
+            "reservedAfter": 6,
+            "settledAfter": 8,
+            "accessRevision": 28,
+            "createdAt": "2026-09-29T12:12:29.001Z",
+            "intent": {
+              "metadata": {
+                "cost_cny": 0.00135234,
+                "modality": "text",
+                "receipt_hash": "17eca65080d3080f27a1257a9f9b7331d518fa35c2e306654ba3bea58dfb07c8",
+                "provider_request_id": "202609291212195465350278268d9d6JT86Xwpq"
+              },
+              "actual_points": 1,
+              "reservation_id": "cpr_e0d1e0ec-fcbe-4041-90e7-9104d11e21f6"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_61979077-cd95-4c45-a510-7ff20a62ed49",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_1db4174d-635e-4428-9bbe-a68464889c70",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12586,
+            "reservedAfter": 7,
+            "settledAfter": 7,
+            "accessRevision": 27,
+            "createdAt": "2026-09-29T12:12:19.194Z",
+            "intent": {
+              "points": 1,
+              "action_key": "content-draft:8beab39de3df559e59bbe724e6f02bef8cefddbb33d3b37ddfab35300accffa5",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_9fa6c91e-a4b4-448a-a8dd-6963c2b816c3",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_3d9a7640-92da-4ab0-9df8-c891029ad2e7",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12587,
+            "reservedAfter": 6,
+            "settledAfter": 7,
+            "accessRevision": 26,
+            "createdAt": "2026-09-29T12:08:13.452Z",
+            "intent": {
+              "points": 1,
+              "action_key": "image:grn-black-shoe-image-optimize-20260929-v1",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_78dcf4ee-7d55-4bb3-bc69-db2469b209a9",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_7f015312-a0f5-4ae0-9dd7-32d02b3d8260",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12588,
+            "reservedAfter": 5,
+            "settledAfter": 7,
+            "accessRevision": 25,
+            "createdAt": "2026-09-29T12:03:02.402Z",
+            "intent": {
+              "points": 1,
+              "action_key": "image:d11-set6-20260929-c",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_11541451-e566-4d7a-8342-3133c940e1fc",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_12586efc-e731-4e4a-9a44-8463b80b167c",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12589,
+            "reservedAfter": 4,
+            "settledAfter": 7,
+            "accessRevision": 24,
+            "createdAt": "2026-09-29T08:35:41.766Z",
+            "intent": {
+              "points": 1,
+              "action_key": "image:d11-probe-20260929-b",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_08de2af0-70c4-4d1c-986e-48d171197e59",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_f52d8ee2-9857-4263-9283-7041d9dec597",
+            "eventType": "settled",
+            "pointsDelta": 0,
+            "availableAfter": 12590,
+            "reservedAfter": 3,
+            "settledAfter": 7,
+            "accessRevision": 23,
+            "createdAt": "2026-09-29T07:44:55.089Z",
+            "intent": {
+              "metadata": {
+                "cost_cny": 0.00090156,
+                "modality": "text",
+                "receipt_hash": "09570685bd75f78e0bd0c5be6e967fb89bb94b7101e4c37467bfff6da9c05c0b",
+                "provider_request_id": "202609290744498401328318268d9d6jVzpukc1"
+              },
+              "actual_points": 1,
+              "reservation_id": "cpr_a60d49be-70c8-491a-9ddb-d999fe9ebba1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_ed0109cf-f0bb-4fdb-bf0f-99935ef3883d",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_ab6226d8-c081-4f73-bfa3-af7e5c36c9ed",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12590,
+            "reservedAfter": 4,
+            "settledAfter": 6,
+            "accessRevision": 22,
+            "createdAt": "2026-09-29T07:44:49.489Z",
+            "intent": {
+              "points": 1,
+              "action_key": "content-draft:e8a5441f0202b40a4fbd942970429cb9016e93c9016838f3994a435cbd6a3440",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_cc9f42a1-67ee-40cb-b197-38ab3d48fbcb",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_5f373b19-5b55-42bb-9b6b-6d2016eaf1a6",
+            "eventType": "settled",
+            "pointsDelta": 0,
+            "availableAfter": 12591,
+            "reservedAfter": 3,
+            "settledAfter": 6,
+            "accessRevision": 21,
+            "createdAt": "2026-09-28T22:46:40.566Z",
+            "intent": {
+              "metadata": {
+                "cost_cny": 0.0011611,
+                "modality": "text",
+                "receipt_hash": "8981d565dd929be1f9963c515342204a8c9a64c36786c636c17d5dcbf33d3f40",
+                "provider_request_id": "202609282246335465088148268d9d6uw3aIwum"
+              },
+              "actual_points": 1,
+              "reservation_id": "cpr_2fb5008b-ff4c-482f-b774-0f97eec7b6e8"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_7fc86630-dff1-42bd-80d3-2a855a5ae941",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_eed2ea8c-456c-4249-b7dc-8fda1134ef4d",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12591,
+            "reservedAfter": 4,
+            "settledAfter": 5,
+            "accessRevision": 20,
+            "createdAt": "2026-09-28T22:46:33.195Z",
+            "intent": {
+              "points": 1,
+              "action_key": "content-draft:3cee8b4947a7347e54fea47fc699920105f47ad219a88942c6cdf61771f480a2",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_0045aa8c-bb29-412b-b2fe-9ec1cb9a2f08",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_343d7ed4-87a7-4336-8214-ed656f23b469",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12592,
+            "reservedAfter": 3,
+            "settledAfter": 5,
+            "accessRevision": 19,
+            "createdAt": "2026-09-28T20:05:21.912Z",
+            "intent": {
+              "points": 1,
+              "action_key": "content-draft:91dca3a5db5f2e09452e4e4254b42b83ce86497727f5e878e614ab056bd09805",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_ad6069d3-a3a2-451d-b58e-edbfc8a6a1fe",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_4ae065f8-14dc-4edc-91ee-56b027a535c3",
+            "eventType": "reserved",
+            "pointsDelta": -1,
+            "availableAfter": 12593,
+            "reservedAfter": 2,
+            "settledAfter": 5,
+            "accessRevision": 18,
+            "createdAt": "2026-09-28T19:50:56.816Z",
+            "intent": {
+              "points": 1,
+              "action_key": "content-draft:a29a3200d1afa184f50d1a7b81ac30682fc1a657ff605890747a3b3a655c2ac9",
+              "rate_card_version": "rate-card-approved-v2:v2:d925ff8f610a5aaf3607bddbde660593227905c46b91d7c9e3d3981ff47bd8c1"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          },
+          {
+            "id": "cpl_dc60f847-f5b3-4f21-b511-25f5b0bc91d2",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_d6abd7ca-afc7-4b99-92bf-cabe554f84b9",
+            "eventType": "granted",
+            "pointsDelta": 12500,
+            "availableAfter": 12594,
+            "reservedAfter": 1,
+            "settledAfter": 5,
+            "accessRevision": 17,
+            "createdAt": "2026-09-27T12:53:13.872Z",
+            "intent": {
+              "points": 12500,
+              "source_id": "cor_e099b5a5-003a-4490-9e81-af1d6c02e0d9",
+              "expires_at": "2026-10-27T12:53:13.872Z",
+              "source_type": "commercial_order_v2",
+              "payment_event_id": "cash-owner-attestation-20260927-grn-growth"
+            },
+            "grantSourceType": "commercial_order_v2",
+            "grantSourceId": "cor_e099b5a5-003a-4490-9e81-af1d6c02e0d9"
+          },
+          {
+            "id": "cpl_e53d2b73-336a-4151-beb2-621d50abdbfc",
+            "workspaceId": "ws_guirenniaoniao",
+            "operationId": "cpo_5d4ac764-bb16-4040-b4c9-b1b27b74b30e",
+            "eventType": "settled",
+            "pointsDelta": 40,
+            "availableAfter": 94,
+            "reservedAfter": 1,
+            "settledAfter": 5,
+            "accessRevision": 16,
+            "createdAt": "2026-09-25T02:37:25.661Z",
+            "intent": {
+              "metadata": {
+                "cost_cny": 0.00005464,
+                "modality": "ocr",
+                "receipt_hash": "d72caffc80cbf07e23fa16cc9de59303aa3119d5621738a9527d4c731e58e48c",
+                "rate_card_version": "ocr.cost_cny_free_lte_0_3_x2_ceil_min1.v1:rate-card-ocr-free-threshold-v4:4:b843481846f25330c404e8f0ac6f917e2a83066bf48d32b8233e493791c8aeb6",
+                "provider_request_id": "202609250237238455932868268d9d66Je6NMfo"
+              },
+              "actual_points": 0,
+              "reservation_id": "cpr_6b1727df-9aff-4a04-8649-3c80b37b944f"
+            },
+            "grantSourceType": null,
+            "grantSourceId": null
+          }
+        ],
+        "next_cursor": "eyJjcmVhdGVkQXQiOiIyMDI2LTA5LTI1VDAyOjM3OjI1LjY2MVoiLCJpZCI6ImNwbF9lNTNkMmI3My0zMzZhLTQxNTEtYmViMi02MjFkNTBhYmRiZmMifQ"
+      },
+      "isError": false
+    }
+  },
+  "stderr": ""
+}

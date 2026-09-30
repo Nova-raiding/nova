@@ -1,0 +1,29 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+stdout | apps/api/src/model-usage-settlement.test.ts > API model usage settlement invariants > rejects a provider usage receipt without an action id
+merchant API listening on {"address":"127.0.0.1","family":"IPv4","port":58824} (memory)
+
+ ✓ apps/api/src/model-usage-settlement.test.ts (20 tests) 9431ms
+ ✓ apps/plugin/mcp/merchant-conversation-flow.test.ts (16 tests) 5949ms
+     ✓ welcomes first-time users with content production while preserving server initialization evidence  355ms
+     ✓ does not invent official store evidence while allowing the content-first introduction  325ms
+     ✓ introduces content production when a legacy server only returns a greeting  335ms
+     ✓ keeps legacy brand clues as evidence without diverting the content question into brand confirmation  320ms
+     ✓ starts onboarding with one conversational question and removes dashboard-shaped fields  338ms
+     ✓ adapts a legacy server connection prerequisite to material input without exposing the hidden action  332ms
+     ✓ keeps repeated merchant.start calls available in the same ChatGPT conversation  370ms
+     ✓ recovers an existing task in history order instead of creating a duplicate task  404ms
+     ✓ preserves a new conversation goal and completes automatic scanning in the same turn (the declared wire string)  844ms
+     ✓ preserves a new conversation goal and completes automatic scanning in the same turn (the documented number alias)  707ms
+     ✓ returns an existing successful deliverable as an actionable artifact card  345ms
+ ✓ packages/persistence/src/creative-point-lifecycle-repository.test.ts (18 tests) 40ms
+ ✓ apps/api/src/model-relay-usage-runtime.test.ts (8 tests) 43ms
+ ✓ apps/api/src/model-usage-reconciliation.test.ts (24 tests) 215ms
+ ✓ apps/api/src/model-point-settlement-policy.test.ts (43 tests) 17ms
+
+ Test Files  6 passed (6)
+      Tests  129 passed (129)
+   Start at  16:20:38
+   Duration  19.34s (transform 7.32s, setup 0ms, import 1.44s, tests 15.70s, environment 1ms)
+

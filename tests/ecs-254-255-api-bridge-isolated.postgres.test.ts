@@ -356,9 +356,8 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       expect(bridge257Restore.status).toBe(503)
       expect(JSON.stringify(await bridge257Restore.json())).toContain('ASSET_LIFECYCLE_UNAVAILABLE')
 
-      // Migration 257's composite FK binds lifecycle records to the matching
-      // workspace asset snapshot. It rejects orphan/cross-tenant references
-      // and protects referenced snapshots from deletion.
+      // Migration 257's triggers reject orphan/cross-tenant lifecycle rows
+      // and protect referenced snapshots from deletion before the FK upgrade.
       await expect(admin.query(`INSERT INTO merchant_asset_lifecycle
         (workspace_id,asset_id,deleted_at,expires_at,deleted_by,revision)
         VALUES ($1,'asset_bridge_missing_snapshot',now(),now()+interval '7 days','bridge-actor',1)`, [workspaceId]))

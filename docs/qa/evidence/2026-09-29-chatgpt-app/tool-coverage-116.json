@@ -1,0 +1,1793 @@
+{
+  "schema_version": "store-nova-tool-coverage.v1",
+  "generated_at": "2026-09-29T13:54:37.209Z",
+  "plugin_version": "0.1.0+codex.20260929213938",
+  "bridge_sha256": "3c43754291974e34546d5722eb8813c3e89f7b8fddc8c0dba63ca81a826aa9f2",
+  "workspace_ref_sha256_16": "404184fc04f63e54",
+  "policy": "Execute all declared read-only tools with real identifiers discovered from safe list calls. Do not execute approvals, publish, purchase/payment, generation, export requests, deletion, or state-changing tools.",
+  "tool_count": 116,
+  "tally": {
+    "pass": 31,
+    "not_executed_by_safety_policy": 70,
+    "not_applicable": 11,
+    "expected_gate": 4
+  },
+  "stderr_present": true,
+  "tools": [
+    {
+      "name": "onboarding.status",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [
+        "content_workflow",
+        "current_step",
+        "initialization",
+        "schema_version",
+        "status",
+        "summary"
+      ],
+      "response_digest": "c7f4fc5b7d0abed7"
+    },
+    {
+      "name": "commercial.service-boundary.accept",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "policy_version",
+        "policy_checksum",
+        "acceptance_ref",
+        "accepted_at",
+        "idempotency_key"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "merchant.start",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "merchant.first_value",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand-unit.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "items": 1
+      },
+      "result_shape": [
+        "count",
+        "durable",
+        "items",
+        "storage"
+      ],
+      "response_digest": "bee49b918d994145"
+    },
+    {
+      "name": "brand-unit.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "name"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand-unit.bind-store",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "brand_id",
+        "platform",
+        "account_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand-unit.product.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "brand_id",
+        "title"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand-unit.listing.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "brand_id",
+        "canonical_product_id",
+        "platform",
+        "account_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand-unit.listing.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "items": 0
+      },
+      "result_shape": [
+        "count",
+        "durable",
+        "items",
+        "storage"
+      ],
+      "response_digest": "a1b0282d4f9e4c3f"
+    },
+    {
+      "name": "brand-unit.access.grant",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "brand_id",
+        "external_subject",
+        "role"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "canonical.product.consistency",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "findings": 6,
+        "orphanFindings": 0
+      },
+      "result_shape": [
+        "availability",
+        "blocking",
+        "contractStatus",
+        "contractVersion",
+        "counts",
+        "cutover",
+        "durable",
+        "findings",
+        "freshness",
+        "generatedAt",
+        "orphanFindings",
+        "readMode",
+        "readOnly",
+        "read_control",
+        "revision",
+        "source",
+        "status",
+        "unified_link_audit",
+        "workspaceId"
+      ],
+      "response_digest": "41bff5d28a162277"
+    },
+    {
+      "name": "campaign.batch.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "brand_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "campaign.batch.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "items": 0
+      },
+      "result_shape": [
+        "count",
+        "durable",
+        "items",
+        "storage"
+      ],
+      "response_digest": "a303331b5c335558"
+    },
+    {
+      "name": "campaign.batch.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "campaign_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_campaign_id_returned_by_safe_lists"
+    },
+    {
+      "name": "campaign.batch.pause",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "campaign_id",
+        "expected_revision",
+        "idempotency_key",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "campaign.batch.resume",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "campaign_id",
+        "expected_revision",
+        "idempotency_key",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.health",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [
+        "completed_summary",
+        "conversation_state",
+        "expected_input",
+        "question"
+      ],
+      "response_digest": "680465839cbb00b2"
+    },
+    {
+      "name": "workspace.invitations.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "FORBIDDEN",
+      "message": "这一步没有完成，当前任务和已有产物已保留。请根据提示修正后再继续。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "details",
+        "message"
+      ],
+      "response_digest": "101ba9e2dfa7c012"
+    },
+    {
+      "name": "workspace.invitation.accept",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "expected_revision"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.interactive.confirm",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "confirmation"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.metrics",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "stores": 1,
+        "riskItems": 11,
+        "recommendations": 2,
+        "warnings": 3
+      },
+      "result_shape": [
+        "comparisonAvailable",
+        "comparisonReason",
+        "cost",
+        "dataCompleteness",
+        "dataCoverage",
+        "generatedAt",
+        "hydration",
+        "jobs",
+        "period",
+        "platformMetrics",
+        "productSummary",
+        "quality",
+        "recommendations",
+        "riskItems",
+        "riskSummary",
+        "selection",
+        "snapshotHash",
+        "source",
+        "storageReconciliation",
+        "stores",
+        "taskFunnel",
+        "unboundLocalData",
+        "warnings"
+      ],
+      "response_digest": "4c85b3c516d52aec"
+    },
+    {
+      "name": "commercial.access.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [
+        "decision"
+      ],
+      "response_digest": "f961da7a63d972b5"
+    },
+    {
+      "name": "commercial.catalog.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "catalog": 12
+      },
+      "result_shape": [
+        "catalog",
+        "schema_version",
+        "status"
+      ],
+      "response_digest": "f102cf21b7a63d68"
+    },
+    {
+      "name": "commercial.order.create",
+      "category": "payment_or_purchase",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "purchase_kind",
+        "sku_code",
+        "idempotency_key",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "commercial.order.payment.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "order_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_order_id_returned_by_safe_lists"
+    },
+    {
+      "name": "creative-points.balance.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [
+        "access_revision",
+        "availability",
+        "available_points",
+        "balance_state",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "updated_at"
+      ],
+      "response_digest": "336a5fc9308527a1"
+    },
+    {
+      "name": "creative-points.statement.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "entries": 35
+      },
+      "result_shape": [
+        "entries",
+        "next_cursor",
+        "schema_version"
+      ],
+      "response_digest": "44da614b3aca2d64"
+    },
+    {
+      "name": "support.customer.replies.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "TOOL_ARGUMENTS_INVALID",
+      "message": "工具 support.customer.replies.list 参数无效：请提供 ticket_id、related_task_id 或 related_order_id 之一",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message"
+      ],
+      "response_digest": "d8bf1bac84a3ec4e"
+    },
+    {
+      "name": "subscription.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "entitlements": 0
+      },
+      "result_shape": [
+        "billingCycle",
+        "commercial_entitlement",
+        "currentPeriodEnd",
+        "currentPeriodStart",
+        "entitlements",
+        "includedStores",
+        "includedTasks",
+        "legacy_commercial_entitlement",
+        "planCode",
+        "planName",
+        "priceCny",
+        "revision",
+        "status",
+        "updatedAt",
+        "workspaceId"
+      ],
+      "response_digest": "5357d22e26e0dbee"
+    },
+    {
+      "name": "subscription.orders.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [],
+      "response_digest": "f9868b6e41416761"
+    },
+    {
+      "name": "billing.export",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "code": "MERCHANT_BILLING_EXPORT_CONSOLE_ONLY",
+      "message": "请查看结构化字段核对当前业务状态。",
+      "counts": {},
+      "result_shape": [
+        "available",
+        "code",
+        "message",
+        "next_action",
+        "schema_version"
+      ],
+      "response_digest": "b37b0027d592f191"
+    },
+    {
+      "name": "workspace.data.export.request",
+      "category": "export_or_data_request",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "reason",
+        "idempotency_key"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.data.export.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "request_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_request_id_returned_by_safe_lists"
+    },
+    {
+      "name": "platform.mapping.preflight",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "input_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "billing.status",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "next_actions": 3
+      },
+      "result_shape": [
+        "access_revision",
+        "allowed",
+        "availability",
+        "available_points",
+        "balance_state",
+        "next_actions",
+        "schema_version",
+        "viewer"
+      ],
+      "response_digest": "70640dfc8f719ecd"
+    },
+    {
+      "name": "billing.model-usage.statement",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "message": "请查看结构化字段核对当前业务状态。",
+      "counts": {},
+      "result_shape": [
+        "available",
+        "message",
+        "next_action",
+        "schema_version"
+      ],
+      "response_digest": "4dd8d6c841de3ce6"
+    },
+    {
+      "name": "billing.recharge.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "order_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_order_id_returned_by_safe_lists"
+    },
+    {
+      "name": "billing.recharge.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "orders": 1
+      },
+      "result_shape": [
+        "legacy_unattributed_hidden",
+        "orders",
+        "returned",
+        "scope",
+        "summary",
+        "total"
+      ],
+      "response_digest": "67ac26004edd89c4"
+    },
+    {
+      "name": "billing.transactions",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "message": "请查看结构化字段核对当前业务状态。",
+      "counts": {},
+      "result_shape": [
+        "available",
+        "message",
+        "next_action",
+        "schema_version"
+      ],
+      "response_digest": "a941d725b3230f0d"
+    },
+    {
+      "name": "workspace.deactivate",
+      "category": "delete_or_destructive",
+      "read_only": false,
+      "destructive": true,
+      "required_arguments": [
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.activate",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "workspace.data.delete.request",
+      "category": "delete_or_destructive",
+      "read_only": false,
+      "destructive": true,
+      "required_arguments": [
+        "scope",
+        "reason",
+        "idempotency_key"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "platform.store.alias.set",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "platform",
+        "account_id",
+        "alias",
+        "expected_revision"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.search",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "STORE_SELECTION_REQUIRED",
+      "message": "还没有选定店铺。请先查看可用店铺，或明确提供平台和店铺账号；已导入的商品和商品规格不会丢失。",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "details",
+        "message"
+      ],
+      "response_digest": "8dbc4c08118a961b"
+    },
+    {
+      "name": "catalog.categories",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [
+        "0",
+        "1",
+        "2"
+      ],
+      "response_digest": "3d54f53449fe3489"
+    },
+    {
+      "name": "catalog.title.optimize",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.title.accept",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "platform",
+        "suggestion_id",
+        "title"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.import",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "platform",
+        "title"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.import.batch",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.sku.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "sku_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.product.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.facts.confirm",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.product.disable",
+      "category": "delete_or_destructive",
+      "read_only": false,
+      "destructive": true,
+      "required_arguments": [
+        "product_id",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.product.enable",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.image.generate",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.image.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "expected_gate",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": true,
+      "code": "TOOL_ARGUMENTS_INVALID",
+      "message": "工具 catalog.image.get 参数无效：job_id 和 visual_ref 必须且只能提供其中一个",
+      "counts": {},
+      "result_shape": [
+        "code",
+        "message"
+      ],
+      "response_digest": "515d76767c42fc34"
+    },
+    {
+      "name": "catalog.image.select",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "job_id",
+        "visual_ref",
+        "expected_revision",
+        "idempotency_key",
+        "reason",
+        "confirmation_ticket_nonce_hash",
+        "confirmation_ticket_intent_hash"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "catalog.image.review",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "rule.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [],
+      "response_digest": "36d6484a14691339"
+    },
+    {
+      "name": "rule.sync.status",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "response_digest": "d743b0b57c82a033"
+    },
+    {
+      "name": "rule.history",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "pack_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_pack_id_returned_by_safe_lists"
+    },
+    {
+      "name": "asset.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "assets": 12,
+        "asset_actions": 12
+      },
+      "result_shape": [
+        "asset_actions",
+        "assets",
+        "candidate_generation_guidance",
+        "empty_state",
+        "readiness",
+        "storage_quota"
+      ],
+      "response_digest": "7bf7f79010410868"
+    },
+    {
+      "name": "asset.parse",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "asset_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.facts.confirm",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "asset_id",
+        "facts_json",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.preference.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "asset_id",
+        "verdict"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "brand.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [],
+      "response_digest": "387b959eddc48edd"
+    },
+    {
+      "name": "brand.extract",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "assetIds": 12,
+        "ignoredAssets": 5,
+        "warnings": 2
+      },
+      "result_shape": [
+        "assetIds",
+        "fields",
+        "generatedAt",
+        "ignoredAssets",
+        "warnings"
+      ],
+      "response_digest": "850b327c00ef57e1"
+    },
+    {
+      "name": "brand.upsert",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "name"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.upload",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "name",
+        "mime_type"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.upload.batch",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "assets_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.generation.confirm",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "job_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "asset.rights.update",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "asset_id",
+        "rights_status"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "deliverable.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "items": 0,
+        "action_cards": 0
+      },
+      "result_shape": [
+        "action_cards",
+        "asOf",
+        "count",
+        "empty_state",
+        "hasMore",
+        "items",
+        "nextCursor",
+        "storageMode",
+        "totalMatched"
+      ],
+      "response_digest": "5f84900b47bf1117"
+    },
+    {
+      "name": "task.history",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {
+        "items": 0,
+        "action_cards": 0
+      },
+      "result_shape": [
+        "action_cards",
+        "empty_state",
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ],
+      "response_digest": "ba9476512bcd93fc"
+    },
+    {
+      "name": "task.resume",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_task_id_returned_by_safe_lists"
+    },
+    {
+      "name": "task.clone",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.timeline",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_task_id_returned_by_safe_lists"
+    },
+    {
+      "name": "feedback.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_task_id_returned_by_safe_lists"
+    },
+    {
+      "name": "feedback.submit",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id",
+        "rating"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "platform"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.create.draft",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "platform"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.answer",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id",
+        "answers_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.request.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "request_text"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.sku.split",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.group.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "entries_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "creative.brief",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "asset_type"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "creative.preview",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "product_id",
+        "asset_type"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "creative.directions.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id",
+        "action"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.select_direction",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id",
+        "direction_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "task.plan.confirm",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.generate",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.draft.generate",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "draft",
+        "draft_title",
+        "idempotency_key"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "generation.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "job_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_job_id_returned_by_safe_lists"
+    },
+    {
+      "name": "content.review.decide",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "content_version_id",
+        "code",
+        "field",
+        "status"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.visual.select",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "content_version_id",
+        "visual_refs_json",
+        "expected_revision",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.versions",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "task_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_task_id_returned_by_safe_lists"
+    },
+    {
+      "name": "content.diff",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [
+        "content_version_id"
+      ],
+      "status": "not_applicable",
+      "executed": false,
+      "reason": "no_real_content_version_id_returned_by_safe_lists"
+    },
+    {
+      "name": "content.export",
+      "category": "export_or_data_request",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.approve",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "task_id",
+        "content_version_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "content.restore",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "content_version_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.rule.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "name",
+        "content",
+        "scope",
+        "source_kind",
+        "source_reference",
+        "source_checked_at",
+        "version",
+        "status"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.rule.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [],
+      "response_digest": "a6e4187b30d6b622"
+    },
+    {
+      "name": "knowledge.asset.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "kind",
+        "name",
+        "content_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.asset.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "asset_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.asset.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [
+        "0"
+      ],
+      "response_digest": "d93ffaca60058c7c"
+    },
+    {
+      "name": "knowledge.brand.preference.get",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [],
+      "response_digest": "3851a4f988fcf63e"
+    },
+    {
+      "name": "knowledge.brand.preference.update",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "preferences_json",
+        "version"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.feedback.record",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "kind",
+        "reason"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.learning.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [],
+      "response_digest": "4748ddcdee6e0df9"
+    },
+    {
+      "name": "knowledge.learning.confirm",
+      "category": "approval_or_confirmation",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "suggestion_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.learning.dismiss",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "suggestion_id"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.competitor.create",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "competitor_name",
+        "source_json",
+        "summary",
+        "structure_json",
+        "selling_points_json",
+        "expression_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "knowledge.competitor.list",
+      "category": "read_only",
+      "read_only": true,
+      "destructive": false,
+      "required_arguments": [],
+      "status": "pass",
+      "executed": true,
+      "arguments_shape": [],
+      "is_error": false,
+      "counts": {},
+      "result_shape": [],
+      "response_digest": "31a28f1c036825d2"
+    },
+    {
+      "name": "knowledge.competitor.reference",
+      "category": "safe_draft_or_internal_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "competitor_id",
+        "own_brand_name",
+        "own_selling_points_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    },
+    {
+      "name": "multimodal.image.edit",
+      "category": "generation_or_model_write",
+      "read_only": false,
+      "destructive": false,
+      "required_arguments": [
+        "request_json"
+      ],
+      "status": "not_executed_by_safety_policy",
+      "executed": false,
+      "reason": "write_or_external_side_effect_not_authorized_for_coverage_probe"
+    }
+  ]
+}

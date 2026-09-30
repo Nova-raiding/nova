@@ -118,3 +118,157 @@
 - 新一轮截图/source 对照发现旧报告中的部分文案修改已回退。已恢复 Merchant 概览三处 kicker（`DAILY BRIEFING`、`ACCOUNT OVERVIEW`、`ACTION CENTER`）、目录 `PLATFORM & STORE`、财务三个 kicker（`ACCOUNT & BILLING`、`CREATIVE POINTS`、`ACCOUNT PLAN`）、品牌 `BRAND ASSETS`/`BRAND SETTINGS`、素材 `MATERIAL LIBRARY`，并将回收站 kicker 对齐为 `RECYCLE BIN`。素材页继续显示真实后端列表与配额；没有恢复截图种子数据，也没有将上传控件改称“上传并分析”，因为当前流程不保证自动分析。
 - Ops 03 客户资料列将“已完成/未完成”改为语义准确的“已填写/未填写”；交付检查项仍显示“已完成/未完成”。工作区选择器和可写权限下“编辑档案”操作保留，因为它们受租户 scope/权限控制，截图不足以证明可移除。
 - 复测结果：相关 5 个测试文件、56 项通过；随后 `npm run typecheck` 退出码 0、Merchant/Ops 生产构建通过、metadata gate 与 `git diff --check` 通过。本条仅证明当前本地工作树；需在清洁、提交后的同 SHA 候选中重跑并获取运行时截图。
+
+## 2026-09-29 当前 owner 复核：素材回收生命周期
+
+- 本轮在 `main` 当前共享工作树实现服务端素材回收生命周期：migration 256、租户隔离/不可变审计、删除与恢复 API、服务端列表、7 天到期租约清理、worker 定时调用，以及 Merchant 回收站改读服务器记录。素材列表、商品/品牌绑定、解析确认和生成源素材读取均按 lifecycle 状态过滤或拒绝；旧浏览器本地回收记录保留为兼容函数但不再作为 UI 真值。
+- 隔离 PostgreSQL 验收：`npm run test:postgres:isolated -- packages/persistence/src/asset-lifecycle-release.postgres.test.ts` 通过 1/1，覆盖 256 全迁移、相同 asset ID 的跨租户隔离、拒绝跨租户写、7 天到期、revision CAS、恢复、清理 lease、purge 后保持不可用、禁止再次回收及追加式审计事件。
+- 本轮通过项：`npm run typecheck`；Merchant Studio 和 Ops Console 生产构建；worker 与 Merchant 回收 UI 定向测试 131/131；API server e2e、security、HTTP authz、OpenAPI 和 quality-entrypoints 修正后的定向覆盖已分别通过（最终组合复测见会话记录）；`git diff --check`。完整 `npm run test:release-gates` 主 Vitest 曾报告 176 文件/1406 项通过、16 项因受保护凭据跳过，并因并行测试已启动后才修正的清单计数断言失败；该断言独立复跑 16/16 通过。后续 release scripts 被当前共享源目录缺少 `services/payment-gateway`、`package-lock.json` 等生产输入阻断，不记录为完整 release gates 成功。
+- 当前源码的新 UI 通过 Vite 18883 打开后，提供的商家账号可到达本地登录请求，但本地 API 因缺少 `VITE_API_TOKEN` 明确阻止鉴权。既有 18881/18882 tunnel 仍服务旧候选；未用旧截图冒充新源码截图，未向现网 API 塞假数据，也未重复尝试登录。故 Merchant 与 Ops 23 张参考图尚未在同一当前源码、真实鉴权、真实数据库的运行候选中重新逐页截图比对。
+- 外部截图清单有 23 个页面条目，像素哈希去重仅 17 张；运营成员/任务/知识/规则四图是登录错误，商家知识/任务/发布/规则四图是重复素材库快照。数值型差异按真实数据库值理解；无效重复图不能证明各自独立页面一致。
+- 工作树仍有约 204 个共享未提交/新增/删除路径，候选归档要求 clean committed source。101 状态之前已确认 `release_approved=false`，公网迁移仍为 254，与 migration 256 不匹配；没有部署、线上迁移或线上业务写入。本轮完成了可验证代码和隔离数据库验收，但不能宣称所有页面逐图验收、完整发布门禁或生产上线完成。
+
+## 2026-09-30 owner runtime follow-up
+
+- 修正 API 迁移桥隔离测试：不再以 `NODE_ENV=test` 启动 API，而是在一次性 PostgreSQL fixture 中预置符合业务结构的素材快照，并通过正常 API 进程验证 trash、active-list exclusion 和 restore。
+- `npm run test:release-gates:runtime` 通过：3 个文件 / 22 项（API 254→255→256 桥及素材生命周期，worker 兼容桥，模型用量结算）。`npm run typecheck` 退出码 0；`git diff --check` 通过。
+- 本次最终检查仍见主工作树约 205 个改动路径、分支 `main`，不是可冻结发布候选；没有运行部署或写入线上数据库。逐图桌面浏览器验收仍未完成：候选截图 SHA 不匹配当前源码、商家鉴权缺少本地 `VITE_API_TOKEN`，且多张参考图是失效登录页或重复页面。
+
+## 2026-09-30 当前工作树桌面截图矩阵复核
+
+本节记录本轮通过隔离 PostgreSQL/Redis 和真实 API 路径运行的当前共享工作树矩阵。矩阵不是发布候选证据，也没有写入生产数据。
+
+- Ops 矩阵 `artifacts/ops-jit-isolation/2026-09-29T16-06-24.947Z-31a22efc-42fe-4c3e-a3d0-994731522bb8/desktop-readonly-matrix/matrix.json`：17 个页面状态、0 个页面错误、0 个失败 API。覆盖登录、概览、用户、客户交付、店铺、模型、存储、审计、权限治理目的地及 workspace/store 选择状态。用户搜索框宽度 200px，表格右边缘为 `[287,692,905,1035,1212,1391]`，与参考图几何一致。
+- Merchant 矩阵 `artifacts/ops-jit-isolation/2026-09-29T16-07-15.460Z-208dc0a4-6725-4686-988b-cc3bebf3cc8a/merchant-desktop-matrix/matrix.json`：10 条路由、0 个页面错误、0 个失败 API。覆盖登录、概览、目录、知识/素材、图片、品牌、回收站、财务及任务/发布/规则入口；后三者实际重定向产品素材工作区。
+- 两矩阵均使用临时隔离数据库账号及当前工作树代码（`productionBrowser=false`），截图中的记录和金额只代表隔离 fixture 的实际 API 返回，不代表截图目标数据或商家线上记录。
+
+| 页面 | 当前源码与有效目标图对照 | 差异结论 |
+|---|---|---|
+| Merchant 登录 | 卡片、字段与按钮布局匹配；截图焦点状态可能不同。 | 几何通过。 |
+| Merchant 概览 | 结构匹配，显示隔离数据库实际响应。 | 指标/待办数是数据差异。 |
+| Merchant 目录 | 表格/空商品区域几何匹配。 | 目标 8 店/3 已连接，隔离库 0 店；数据差异。 |
+| Merchant 知识、图片 | 标题/框架匹配；知识目标单独选中子项，图片目标只选中父项。 | 目标含 8 项、31.5GB/50GB；隔离库为空，容量按后端响应显示。 |
+| Merchant 品牌 | 表单区域可比，但目标含 Store Nova 品牌、Logo、店铺和系列资产，隔离库未配置品牌/店铺系列。 | 后端业务数据缺口；不可用 UI 假值补齐。 |
+| Merchant 回收站 | 当前页从服务端加载、支持恢复，隔离库无删除记录。 | 目标有一条记录；目标还出现“彻底删除”，当前遵循 7 天后 worker 清理策略，没有手工永久删除按钮。此处为真实控制差异，需先定义保留策略/权限与审计契约再决定产品控制。 |
+| Merchant 财务 | 卡片和图表区域几何匹配。 | 目标 PRO/2480 点/31.5GB 及趋势在隔离库不存在；数据差异。 |
+| Merchant 任务/发布/规则 | 路由实际落到 `/merchant/products`，矩阵记录最终路径。 | 参考图为知识素材页重复图；当前也没有独立页面，不能将重复图当独立视图通过。 |
+| Ops 登录、总览 | 页面骨架与几何匹配。 | 总览 KPI 按隔离数据库值变化。 |
+| Ops 用户 | 搜索宽度与列边界匹配，表格结构一致。 | 目标 9 行/2 页，隔离库 3 行/1 页；数据差异。 |
+| Ops 客户交付 | 必须明确选 workspace 后呈现租户数据。 | 目标公司档案不存在于该隔离 workspace；保留 scope 选择以满足租户隔离。 |
+| Ops 店铺/模型/存储/审计 | 主体布局匹配；店铺/存储参考截图处于 loading 状态，当前矩阵等待 API settle；模型文案结构匹配。 | 店铺、存储、审计内容按实际 API/授权返回，目标数值不是 UI 常量。 |
+| Ops 成员/任务/知识/规则 | 09-28 对应参考图是同一失效会话告警，不是目标业务页面。 | 无效基准，不能据此验收实际 workspace 页面；平台身份也不应被提升权限来制造可比数据。 |
+
+Ops 登录页本轮截图为 `artifacts/ops-jit-isolation/2026-09-29T16-07-15.460Z-208dc0a4-6725-4686-988b-cc3bebf3cc8a/desktop-readonly-matrix/00-login.png`，与目标 `运营后台/00-登录页.png` 肉眼复核：卡片尺寸/位置、标题与说明、字段、按钮和底部 Logo 均匹配。此前矩阵清单提及登录覆盖，但没有指出该图实际位于同批 Ops matrix 目录；此处补上可核对路径。
+
+- 矩阵之前核对 `/Users/lixiaomei/Desktop/outputs/ui-images-2026-09-28` 共 23 个 URL 项、17 个唯一图像哈希：16 张有效页面基准，另有 Ops 失效会话图；四张 Ops 图重复该错误，Merchant 知识/任务/发布/规则四项互相重复素材页快照。
+- 修正 API migration bridge 在 schema 256 下的回滚只读过滤：255/256 bridge 允许 active 素材读取时仍隐藏 trashed ID，并对 trashed asset 下载返回 410；trash/list/restore 写接口保持不可用。runtime release gate 3 文件/22 项通过；Merchant recycle/nav/API 定向测试 4 文件/26 项通过。`git diff --check` 通过。
+- 全仓 typecheck 本轮未取得有效退出码：共享工作区同时出现多个 `npm run typecheck`，owner 停止自己重复启动的实例；另有共享进程仍在运行。不能记录为本轮通过。
+- 代码仍处于未冻结共享工作树，HEAD `fec82c0a7d18fd0d675ca36d450ff430f61843b5` 与旧候选截图 SHA 不同。隔离矩阵只能佐证当前开发树功能；不能替代冻结提交构建、真实商家与运营权限账号、当前 production schema 兼容验证及容器健康检查。
+- 后续单实例复核纠正：`npm run typecheck` 退出码 0；`npm run test:release-gates:runtime` 为 3 文件/22 项通过；隔离 PostgreSQL migration 256 生命周期测试 1/1 通过；`git diff --check` 通过。一次本轮 `npm run deploy:101:status` 返回所有 13 个容器 healthy，公网 `/releasez`、API `/readyz`、Ops `/healthz` 为 200，但 `release_approved=false`、应用组件 Git SHA 混合。随后执行固定白名单只读 `node infra/scripts/ecs-demo-254-host-inventory.mjs`：13/13 预期角色各一个、无未分类消费者，另识别一项共享 registry 警告，inventory 明确 `inventory_only=true` / `release_approved=false`。两个远端输出时间为 2026-09-29T16:23:46Z 与 16:25:19Z（远端时钟）；该状态命令和清单均不读取 DB schema，当前生产迁移尾号仍未获得新的受保护只读证明。
+
+## 2026-09-30 owner 修复回收站提前彻底删除对照差异
+
+- 参考图在已删除素材页工具栏提供“彻底删除”按钮。现已补上带确认词和原因的服务端流程：请求携带当前生命周期 revision 与准确素材名；API 仍要求工作区编辑权限，记录 actor/reason 的 append-only `early_purge_requested` 事件，将工作交给现有 worker lease；worker 必须检查业务引用、对象存储删除/缺失证明，再释放配额并写入 `purged`。引用仍存在或对象删除未验证时，生命周期行留在服务端列表并显示失败码；worker 取得 lease 前可通过 revision CAS 撤销请求，且可以恢复素材。没有在 HTTP 请求里直接删对象，也没有绕过租户 RLS、审计或 worker。
+- migration 256 增加请求者/原因状态列及事件类型；OpenAPI、API 路由和 Merchant SDK/回收站确认弹窗同步。项目当前 migration 256 仍只存在于未冻结 WIP，未部署线上。
+- 复测：`npm run typecheck` 通过；Merchant/Ops 生产构建通过；metadata gate 通过；针对 Persistence/API/Merchant/授权路由的 7 文件/142 项通过；Migration 256 隔离 PostgreSQL 生命周期验收 1/1 通过，覆盖早删请求、worker 领取、引用阻断后可见、可撤销恢复及成功 purge 的事件顺序。生产 UI 合约与 metadata 测试另 2 文件/51 项通过。
+- 新 Merchant 隔离浏览器矩阵通过 10 路由、页面错误 0、失败 API 0，证据在 `artifacts/ops-jit-isolation/2026-09-29T16-33-48.178Z-b8a6807f-ce2e-4777-bf16-ecf7f3586ae4/merchant-desktop-matrix/matrix.json`。新拍 `trash.png` 的工具栏包含目标图对应的“全选/恢复所选素材/彻底删除”控件；空回收站而目标显示 1 条记录是隔离库与目标数据差异。确认弹窗路径由 API/E2E 和代码测试覆盖，矩阵本身未生成有素材行的弹窗截图。
+- `git diff --check` 通过。随后完整重跑 `npm run test:release-gates` 退出码 0：预发布 runtime 3 文件/22 项通过，主 Vitest 177 文件/1407 项通过、7 文件/16 项因受保护凭据跳过，Node 后续门禁 152 项通过；production config 等脚本均运行至结束。`npm run typecheck`、`npm run release:metadata:validate`、Merchant/Ops production build 和上述定向测试也在本轮通过。
+- 工作树仍有 209 条状态记录，混有未审插件凭证、中转、业务点数、迁移、证据和 QA 改动。release-gates 自身的源清单检查也指出当前候选来源缺 `services/payment-gateway`、`package-lock.json`，并发现 `apps/api/src/package-link.json` 为符号链接；不能把整份共享工作树打包成候选或从 HEAD 假称包含当前 UI 补丁。截图仍只证明隔离数据库下页面结构和请求；缺真实商家/运营账号的同版本页面验收。101 仍 `release_approved=false`、应用组件 SHA 混合；当前 schema 尾号没有受保护只读证明，且受保护 254 前向兼容转移/恢复状态机未形成可运行候选。没有在 101 创建迁移、候选部署或容器/数据库写入。
+
+## 2026-09-30 继续 owner 审计与桥接验证
+
+- 重新检查主线：`main` 比 `origin/main` 多 5 个提交。截图 copy/geometry 和 Merchant quota UI 修复已分别提交在 `9d5a8284`、`d4088229`；Ops account filter、build typecheck 和 release source-review 支持也已提交。回收站彻底删除依赖的 UI/API/OpenAPI/authz/persistence/worker/migration 256 仍是共享 WIP，无法从脏工作树直接打候选。
+- 历史浏览器截图矩阵未绑定当前 source SHA：历史对比 JSON 指向 `e60f2485…`，新隔离矩阵未记录 commit/build identity，不能作为当前提交的逐页截图验收。矩阵 fixture 使用隔离数据库和生成凭据；Ops 的 `hyp@sn.com` 仅在隔离库重建，不是使用真实运营账号。参考目录中重复截图和失效会话页仍按无效基准处理。
+- 补足本地迁移验收：`packages/persistence/src/asset-lifecycle-release.postgres.test.ts` 现在先完整应用 1–255 前缀，再只应用 migration 256；隔离 PostgreSQL 验收通过 1/1。修正 Worker 255 bridge 行为：启动于已验证 255 前缀时不调用 migration-256 lifecycle purge endpoint；完整运行或 256 bridge 仍调用。Worker 定向 2 文件/117 项、全仓 `npm run typecheck` 通过。本轮改动后完整 `npm run test:release-gates` 再次退出 0：runtime 3 文件/22 项、主 Vitest 177 文件/1407 项通过（16 项受保护凭据跳过）、后续 Node 门禁 152 项通过；metadata gate 和 `git diff --check` 通过。
+- 101 再次只读状态：13 个业务容器 healthy，公网 `/releasez`、`/api/readyz`、Ops `/healthz` 为 200；API/merchant UI/Ops UI/workers 源 SHA 混杂，`release_approved=false`。库存输出仍是 `inventory_only=true`，有共享 registry 策略警告。主机未安装 `/usr/local/libexec/merchant/ecs-bridge-255-transition`；状态/库存命令均不读取数据库迁移尾，当前生产尾号仍为 UNKNOWN。
+- 代码虽增加 Worker 255/256 schema prefix 支持，但部署 preflight 不支持正式 254→256 rollout。现有受保护 255 CLI 只有 plan/journal status/review，没有宿主流量 fence、nonce-backed forward migration/恢复编排和完整故障演练；历史隔离 254→255 预演也不代表生产授权。尚无可支持的生产 schema read-only attestation 命令或真实账号同版本验收。
+- 所以当前 UI/API/PG 本地功能证据不等于完整候选：仍需把共享 WIP 逐块隔离成有审查的提交、绑定当前 SHA 重拍 Merchant/Ops 全矩阵并对有效参考图逐页复核、完成 254→256 受保护桥/回滚证明和完整发布证据，再由候选 gate 批准。没有在 101 写入或部署。
+
+## 2026-09-30 真实生产双后台逐页复核与证据绑定
+
+- 使用已授权的商家账号 `demo@ys.com` 与运营账号 `hyp@sn.com`，对线上 https://yxsona.com 与 https://ops.yxsona.com 完成登录后只读页面导航；每个登录会话 1 次认证，随后只访问页面，不点击写入动作。真实生产截图保存在私有目录 `/tmp/store-nova-prod-ui-qa-20260930/`（目录权限 0700，摘要权限 0600），未加入仓库。Merchant 10 个入口、Ops 11 个页面均无登录重定向、浏览器页面错误 0、失败 API 0；任务/发布/规则入口最终落到 `/merchant/products`。登录请求生成认证审计事件属于服务端预期行为，本次未执行业务写入。
+- 逐页肉眼核对有效目标截图：Merchant 登录卡片与字段几何匹配；目录/素材网格、素材标题和工具条骨架匹配，数量和真实文件名来自贵人鸟当前后端记录；概览、财务的 KPI/余额/趋势/店铺与目标快照不同，属于租户和时间数据差异，不得填入截图数值。品牌资产线上页存在独立“上传品牌资料”横幅，参考目标没有该横幅，导致下面配置表单整体下移；这是已确认的可见布局差异。线上真实品牌配置与目标 Store Nova 演示数据也不同，不能伪造回填。回收站结构、7 天保留与提前彻底删除控件匹配，但线上该账户当前为空，目标的 1 条记录只可在隔离服务端生命周期测试证明，不是线上现存记录。
+- Ops 登录参考图为登录表单，但实际授权登录后已进入总览；当前线上 admin@d… 登录页无法由已登录用户会话复现，故不声称登录页几何对比通过。总览、用户中心、客户交付、店铺、模型、存储、审计均实际打开。用户中心参考为旧版单页筛选/表格，当前为分区用户治理导航和新的表格操作，是清晰可见的页面结构差异；需产品/代码目标基线确认后再改，不能将业务数据差异当作理由。客户交付参考有显式客户工作区选择器，当前真实截图呈现平台连接汇总及其他区块，没有客户选择器，存在真实 UI 功能结构差异；新候选已具显式 scope 选择器，见隔离测试。店铺页参考显示授权健康表格/人工登记入口，生产截图内容因当前服务端数据/加载时序显示刷新状态，未观察到完整 settle。模型服务字段、审计筛选表结构与参考相近。存储页在截图时显示加载状态，和目标截图一致但不是已加载最终态；Ops `hyp@sn.com` 当前菜单无模型、存储、审计入口，仅通过直达 URL 可读取，不能把直达可见性作为导航授权正确的证明。参考中的 Ops 成员、任务、知识、规则四张图相同且为过期 session 错误页，无法用来判定这些业务页视觉是否应匹配。
+- 当前开发树隔离矩阵证据分别为 Merchant `artifacts/ops-jit-isolation/2026-09-29T17-03-52.805Z-fe08cb6b-9542-4d18-9d48-9b62b53b2da2/merchant-desktop-matrix/`（10 路由）和 Ops `artifacts/ops-jit-isolation/2026-09-29T17-04-31.116Z-064d1961-e795-41c9-8c66-23d13dc0f9c8/desktop-readonly-matrix/`（17 个状态）。两者使用 disposable PostgreSQL/Redis fixture；矩阵状态通过且没有页面/接口错误。源码指纹前后相同，但浏览器矩阵 JSON 未自带当前 SHA，且当前 `main` 此后有提交活动；这些隔离矩阵不能升级为源 SHA 绑定候选验收。
+- 线上健康证据见本审计前文 `npm run deploy:101:status`，健康探针 HTTP 200 且容器 healthy；生产 `release_approved=false`，DB migration 254，而候选有 migration 256，缺正式 bridge/controller 和全服务发布授权。本次没有迁移、部署、线上数据更改。
+- 本轮完成 10 个 scoped agent（owner + 9）只读审查。已复核并移除空的临时 worktree `/tmp/store-nova-ui-fec82`。完整源码范围仍有未提交 WIP，UI/生命周期补丁和插件/模型/财务等改动混杂；不可将共享工作区直接作为发布候选。需要继续按截图验证记录拆出最小 UI 补丁，基于冻结/审核的提交重拍并绑定 Source SHA，再在当前源码的 API/UI 同版本隔离环境验收。
+- 本轮代码验证（本地时区 2026-09-30）：`npm run typecheck` 退出 0；`npm run build:merchant-studio` 与 `npm run build:ops-console` 退出 0；`npm run release:metadata:validate` 与 `git diff --check` 通过。Merchant Vite 提示单个 bundle 超过 500 kB，构建仍成功且 production-copy guard 通过。
+- 本轮首次 `npm run test:release-gates` 在 runner 默认 300 秒总上限处终止，退出 143，不能算完整通过；终止前报告两项 `container-source-freshness`、三项 `production-config-gate` 失败。随后这两份测试定向重跑共 54/54 通过，提示为并发/资源争用期间的暂时失败，尚未找到单测根因。将 SAFE_TEST_TIMEOUT_MS 扩至 900000 再跑完整门禁时，发现上一次 npm 链进程仍在运行导致资源争用，已停止本轮重叠重跑，未声称 release-gates 通过。本轮其余已完成组：release runtime 22/22、host inventory 9/9、source-freshness/prod-config 定向 54/54。前文 2026-09-29 的完整 release gate 退出 0 是先前验证记录，不能替代本轮当前提交上的完整运行。
+
+## 2026-09-30 当前 owner 最终复跑
+
+- 修正 Ops「客户交付」页：目标企业选择器与“刷新交付档案”移至页面顶栏，位于未选择 scope 的警告上方；未选择授权工作区时刷新禁用，不发客户档案请求。选择工作区后刷新请求显式携带其 `target_workspace_id`。复跑 `npm run test:browser:ops:matrix` 通过（1/1 场景、11 个路由、失败 API 0）；当前工作树产物 `artifacts/ops-jit-isolation/2026-09-29T17-45-04.441Z-afa8ce47-8fc7-4e3f-af6d-b86d63fb645c/desktop-readonly-matrix/` 的未选/已选截图已肉眼核验。`CustomerDeliveryPage.test.tsx` 40/40、`npm run typecheck`、Ops 与 Merchant 构建、`npm run release:metadata:validate`、`git diff --check` 通过。
+- 当前重跑 `npm run test:release-gates` 的隔离 runtime（22/22）、host inventory（9/9）、主 Vitest（177 文件通过、1408 项通过，7 个受保护文件的 16 项跳过）、后续脚本链及最终 Node 组（152/152）均有通过输出；runner 进程在 shell 会话返回前结束且最终状态回收失败，**不能声明该命令完整退出码为 0**。门禁期间 freshness/production-config 测试将“required input missing”等多行写到标准错误，这是其负例夹具预期输出，不是当前仓库缺文件；已现场确认 `services/payment-gateway`、`apps/worker`、`package-lock.json` 存在，`git ls-files` 已跟踪关键文件。
+- Ops 浏览器矩阵是隔离 PostgreSQL fixture，成功只证明当前工作树该矩阵，不代表真实生产数据或发布候选。真实生产上一轮仍可只读健康探针，但应用 SHA 混合、`release_approved=false` 且候选迁移 256 与生产 254 不匹配；没有进行部署、迁移或生产写入。
+- 源码绑定 sidecar 尚待随最终文档状态刷新。当前主工作树保留 136 条共享状态记录，staged 内容同时含 API、Merchant lifecycle、Ops UI 与解析器等多项改动，不是清洁可归档候选；没有提交或声称该组 WIP 已集成。
+
+## 2026-09-30 10-agent owner 整合与候选包复核
+
+- 本轮按用户要求共启用 10 个并行角色（owner + 9 个边界清晰的只读审查 agent），覆盖商家/运营截图差异、发布候选输入、迁移转移、资产生命周期、源码绑定、用户中心和 worktree 安全。所有结论由 owner 复核整合；agent 未写生产数据。
+- `main` 当前 HEAD 为 `27aa1d3e1fd9b03827de50fbdb2bcbe3ae3c8d89`。其中 `24fa2e4c` 修复资产 purge lease 持锁时通过同一事务 client 写入完成/失败状态的死锁问题；`27aa1d3e` 将运营用户目录搜索框宽度调为 200px，以匹配桌面参考图表格几何。之前的客户交付 scope 选择器及显式 `target_workspace_id` 刷新请求已在 `24fa2e4c`。
+- Ops 浏览器只读矩阵复跑 17 个页面/状态，页面错误 0、失败 API 0；用户中心搜索控件父级宽度 200px，表格边界与 1440px 参考图对齐。另从 clean detached worktree `27aa1d3e` 重拍 Merchant 10 路由，页面错误 0、失败 API 0，结果 `artifacts/ops-jit-isolation/2026-09-29T18-26-21.256Z-ef4ebfe1-6c2d-4334-b5bd-2a46508b154b/merchant-desktop-matrix/`，workspace 为 disposable PostgreSQL/Redis fixture。商家页面矩阵通过不代表截图数值相同：品牌/财务/配额/素材总量按各自后端记录呈现，不回填目标图数字。另一个 Merchant 交互 dogfood 18 项中 17 项通过，1 项断言已退役的“人工发布状态”财务区块；目标参考图与当前 UI 都没有该区块，因此这是过时自动化断言，不是本轮 UI 回归，测试断言尚未更新。
+- 验证：`npm run typecheck` 退出 0；`npm run test:postgres:isolated -- packages/persistence/src/asset-lifecycle-release.postgres.test.ts` 1/1 通过；资产 lifecycle/API 定向测试 2 文件/94 项通过；`npm run test:browser:ops:matrix` 通过；`SAFE_TEST_TIMEOUT_MS=900000 npm run test:release-gates` 本轮完整退出 0（runtime 3 文件/22 项、主 Vitest 177 文件/1408 项通过，受保护测试 16 项跳过，后续 Node 门禁 152 项通过）。
+- 从 clean detached worktree `27aa1d3e` 只读生成候选包，绑定源码 SHA256 `43be34f7864d2649f5b3a3090658ce69208a11f3c8adbe51aab16f0d4bf234a5`、比较清单 SHA256 `189dbaf42757c9100bf2304f13af6027406952debf993c52af2701e2d8b1d759`、同步计划 SHA256 `394566db2242b003b07058f973b65bf625cc9406808e3c37672de3b536ba9811`。计划共 1008 项：383 same、236 `review_required`、389 `missing_remote`。结构审查 43 项中 6 项匹配、37 项不匹配，另有 23 个受保护路径要求主机侧复核；不能把候选直接同步至 `/opt/merchant-deploy`。隔离候选 6/6 结构测试通过；远端 allowlist 仅读抓取 170 个源码文件，拒绝 66 个非源码/配置路径，没有持久化原始远端字节，也没有修改主机。
+- 本轮新 `npm run deploy:101:status` 仍为 `release_approved=false`：13/13 容器健康，公开健康探针为 200，但 API/UI/worker 等源码 SHA 混用，schema 254 与候选 migration 256 不匹配，且 254→256 受保护 bridge、恢复状态机及隔离候选证据未就绪。没有部署、迁移、staging 或线上业务写入。
+- 当前工作树保留用户/并行任务中的约 121 条未提交状态记录，主要在插件凭证与 QA 证据；未清理或覆盖。clean-source detached worktree 的候选浏览器环境已停机且没有容器遗留，Matrix 结果已归档到当前工作区；其两个由测试脚本明确保留的隔离 fixture volumes 仍保留。候选远端源码快照含 private allowlist 文件，限制在 `/tmp` 权限目录，不作为仓库产物。
+
+## 2026-09-30 继续修复 Merchant 浏览器断言并重跑发布门禁
+
+- 修正 `dogfood/chatgpt-all-functions/merchant-interactions.spec.js` 中已退役的财务“人工发布状态”区块断言：现在验证财务概况和充值入口存在，发布任务动作不出现在财务页。主工作目录已有共享未提交变更，浏览器候选 runner 按契约拒绝 dirty tree；修正后的单项 Playwright 用例以 `npm exec -- playwright test dogfood/chatgpt-all-functions/merchant-interactions.spec.js --workers=1` 直接在本地隔离候选运行，1/1 通过。`run-safe-tests` 不包含 `.spec.js`，按该入口运行会报告 No test files；不是测试失败。
+- 当前源码对应的 Merchant 全页只读矩阵已经从 clean HEAD worktree 跑完 10/10 路由、页面错误 0、失败 API 0，并归档在 `artifacts/ops-jit-isolation/2026-09-29T18-26-21.256Z-ef4ebfe1-6c2d-4334-b5bd-2a46508b154b/merchant-desktop-matrix/`。独立互动 Playwright 修正通过。重跑 `SAFE_TEST_TIMEOUT_MS=900000 npm run test:release-gates` 完整退出 0：runtime 22/22、主 Vitest 177 文件/1408 项通过、16 个受保护测试跳过、Node 门禁 152/152 通过。
+- `npm run release:metadata:validate` 与 `git diff --check` 通过。最新 `npm run deploy:101:status` 仍为 `release_approved=false`，13 个容器健康且公网 health/readiness HTTP 200；API/商家 UI/Ops UI/worker SHA 混杂、PG16 schema 254 与目标迁移 256 不匹配，不能将健康误作审批。未做部署、迁移或线上业务写入。
+- 刷新 Merchant 来源绑定 sidecar 后，根目录审计文档继续更新；应在提交或停止修改前再次刷新 sidecar。共享工作树其他 WIP 保持原样。
+
+## 2026-09-30 提交测试修正并验证新 SHA 浏览器候选
+
+- 单独提交已修正的互动测试为 `52d79f52e63e4e8b21f8aaeaeb37a4cf3391ae24`，没有把其他共享 WIP 放入提交。原 `27aa1d3e` 的全量商家矩阵结论仍仅用于 parent SHA。
+- 从该提交 clean worktree 重拍 Merchant 10 路由矩阵，10/10 路由通过、页面错误 0、失败 API 0，归档目录为 `artifacts/ops-jit-isolation/2026-09-30T52d79f52-merchant-desktop-matrix/`。同一 SHA 的 `npm run test:browser:merchant` 第二次启动后完整通过 18/18 场景；第一次重试前的失败在迁移容器遇到 PG startup `connection refused`，隔离容器已停止，第二次完整运行正常。该脚本保留了两轮隔离 fixture volumes，没有残留运行容器。
+- 为提交 `52d79f52` 重新生成只读候选包：candidate source SHA256 为 `051b08213adbae3831f7dbb5fed79b25413e0c5df2d8adeeea369292217aa8c9`。对 101 的只读计划仍为 1008 项（383 same、236 review_required、389 missing_remote）；43 个可结构审查文件中 6 个匹配、37 个不匹配，另有 23 个保护路径须 onsite 复核。170 个 allowlisted 源文件被提取用于受限对比，未写回服务器。完整三方合并、缺失文件逐项分类、受保护主机核验尚未完成，不得上传或同步。
+- 完整 `npm run test:release-gates` 在提交前以同一测试文件字节完整退出 0（主 177 文件/1408 项、受保护 16 项跳过、Node 152/152）；Merchant browser 18/18 和逐页矩阵均在提交后的 clean SHA worktree 上验证。101 最新只读状态仍 `release_approved=false`，应用 SHA 混用，PG16/schema 254 与候选迁移 256 不兼容证据未闭合；未部署或执行迁移。
+- 当前 clean SHA worktree 的 Merchant 矩阵 sidecar 待本节审计定稿后刷新；主工作区其他约 129 条共享状态记录保留原样。
+
+## 2026-09-30 线上 schema 只读复核及并行差异审查
+
+- 通过 101 上 API 容器内已配置的 `OPS_DATABASE_URL`，使用 `merchant_ops` 角色执行 `BEGIN READ ONLY` 查询；事务确认 `transaction_read_only=on`，读取数据库 `merchant` 的迁移记录后 `ROLLBACK`。UTC 2026-09-29 18:50Z 观测到 254 条记录，尾号 254；最近三条迁移为 252 `charged_text_dispatch_attempts`、253 `charged_text_no_delivery_resolution`、254 `merchant_entitlement_snapshot_cursor`，对应 checksum 已记录在受限只读证据 `artifacts/demo-deploy/2026-09-29/live-schema-readonly-20260929T1850Z.json`（权限 0600）。没有修改数据库或业务数据。此前引用的尾号 255 快照与本次生产角色查询不一致，应视为过期/不同观测，不能作为当前证明；本次查询也尚未验证 1–254 的完整 SQL/checksum 链或 `merchant_app` 角色视图。
+- 候选 SHA `52d79f52` 的发布差异由 9 个并行只读审查角色分域检查，owner 汇总复核；没有 agent 修改代码或生产环境。Merchant 远端审查报告 28 项 review、70 项 missing；Ops 195 项中 136 review、59 missing，远端取回源码有 4 项不可用。API 定向 18 项中 4 review、14 missing；插件/MCP 定向 41 项中 40 missing、1 项需审查。多个大幅服务端、登录授权、租户交付和插件协议改动需要整合审查，不能作为可直接恢复的截图版 UI 文件。
+- 部署/迁移/授权/模型计费并行审查共同确认：候选元数据迁移目标 256，而 `ecs-candidate-safe-sync.md` 当前隔离 API/worker 合同只覆盖 254→255，demo 254 桥接安装手册明确 NO-GO；候选 255/256 及 PG16 兼容、完整迁移 checksum 链、回滚 capsule、真实服务混合版本仍未闭合。新增模型/支付账务配置需生产受保护证据，不能运行可能产生费用的 canary 来替代审批。`release_approved=false` 不变；本轮没有 staging、部署、迁移或支付/模型调用。
+- 将发布 runbook 旧的“当前 242→255”段落更新为当前 254→255→256 两阶段阻断条件，并明确 automation worker 的跨阶段测试和插件第二阶段接口仍待验证；隔离 Merchant 流程目标绑定候选 release metadata 256。其后修正 Ops review sidecar：迁移尾从隔离候选 manifest 读取并强制匹配 PG17 attestation；定向测试覆盖 255、256 与不匹配拒绝，共 11/11 通过。sidecar 尚不独立读取源码归档的 release metadata，因此必须由候选 renderer/归档身份链证明 manifest 尾号确实来自同一冻结候选；这项证据未完成。没有将旧阶段签名演练伪装成 256 证据。`release:metadata:validate` 与 `git diff --check` 通过；只读重采 101 于 2026-09-29T18:53:18Z，13/13 容器健康，公网 release/readiness/Ops health 为 200，但服务 SHA 仍混杂、PG/Redis 仍为带标签的既有运行镜像，`release_approved=false`。
+- 刷新 Merchant 矩阵 source-binding sidecar，现绑定 HEAD `52d79f52`、6275 个源文件、23 张参考图及 23 个生产截图摘要。当前树摘要以 sidecar 实际内容为准；该 sidecar 只证明截图/源码绑定关系，不代表截图逐像素全部通过或线上发布批准。
+
+
+## 2026-09-30 exact SHA 113ad72 desktop screenshot comparison
+
+- Candidate source is exact committed SHA `113ad72cd194e79c89fa44c16c9a574a7e4208aa`, tested from a clean detached worktree with disposable PostgreSQL and Redis. Merchant screenshot matrix: 10 routes, 1440px viewport, sidebar/main-shell offset 224px, zero page errors and failed API requests. Ops read-only matrix: 17 page and authorization states, zero page errors and failed API requests. Browser flows for Merchant passed 18/18; Ops desktop matrix passed 1/1 test covering its page/state assertions. PNG and JSON evidence are preserved at `artifacts/ui-comparison/2026-09-30/sha-113ad72/{merchant-desktop-matrix,ops-desktop-readonly-matrix}/` with private directory/file permissions.
+- Rechecking the original images at native pixel coordinates confirms both original Merchant brand screenshot and candidate start the main content at x=224. A prior estimate based on scaled previews (194 vs. 224) was incorrect; no sidebar CSS change is warranted.
+- The candidate and reference align in shared shell, page panel arrangement, headings, search/table geometry, and primary controls on the pages that have valid references. Remaining visible differences are predominantly live-data/configuration state: the historical Merchant baseline contains seeded-looking brand fields, PRO/credit/storage/trend values and asset rows, while the candidate fixture reports unconfigured brand, unread balances, and empty lists. No screenshot values were hardcoded and no merchant data was inserted to imitate the reference. Ops selected-workspace pages additionally show the explicit scope selector/empty authorized fixture state required by the current authorization flow.
+- Four Ops reference images (members/tasks/knowledge/rules) are the same login-error screenshot and cannot establish those pages' appearance; candidate matrix still exercised platform-scope-denied states for members/tasks/knowledge and the rules page. Merchant task/publish/rules references repeat the same Materials Library screenshot; candidate routes correctly resolve those legacy paths to the current canonical products route.
+- Full release gates and typecheck passed for this code/test change set before its isolated browser verification: runtime 22/22, core Vitest 177 files with 1410 passed and 16 protected cases skipped, Node gates 152/152; exact sidecar tests 11/11. The first Ops browser-matrix attempt failed at environment startup because the fresh worktree lacked workspace package build outputs; after `npm run build:packages`, the exact same SHA matrix passed. This is recorded as an environment setup correction, not a product defect.
+- Production remains outside this visual acceptance: latest read-only host status has 13/13 containers healthy and public health endpoints 200, but `release_approved=false` due mixed service SHAs and schema 254 vs candidate 256 plus incomplete bridge/recovery evidence. No deployment or production write occurred. Visual/build verification in the isolated fixture does not satisfy the production release gate.
+
+
+## 2026-09-30 owner 复核发布差异与 automation bridge
+
+- 从干净提交 `113ad72cd194e79c89fa44c16c9a574a7e4208aa` 生成本地候选 identity，归档 SHA-256 为 `578196fe834a5e8b08509417524a88beef13ae3d8f83fd2627cbeda576e3467b`，comparison manifest SHA-256 为 `189dbaf42757c9100bf2304f13af6027406952debf993c52af2701e2d8b1d759`，sync plan SHA-256 为 `394566db2242b003b07058f973b65bf625cc9406808e3c37672de3b536ba9811`。101 只读 plan 1008 项：383 same、236 review_required、389 missing_remote；170 个 allowlisted source 文件只读获取，66 个 source/config 路径拒绝获取；43 个结构条目中 6 match/37 mismatch，23 个受保护路径需要 onsite review。此为审查材料，不是上传或 staging。候选保存在 `/tmp/ecs-candidate-113ad72/candidate`，权限受限；未写服务器。
+- 只读主机 inventory 观察到 13 个预期运行服务，无 unclassified external consumers；共享 `/storenova-registry` 仍触发 consumer policy warning。容器健康和 `/releasez`、API readiness、Ops health 均正常，但多个服务 SHA 混用，且尚缺生产兼容迁移与受保护恢复/切流证据。inventory/status 的 `release_approved=false` 是设计上的只读未批准值，不能当作具体 gate 原因或可通过绕改 status 解决。
+- owner 复核隔离 worker 测试后发现真实 automation 进程缺口，并将其补入 `tests/ecs-254-255-worker-bridge-isolated.postgres.test.ts`：255 时 automation worker 只调用例行 tick/orphan cleanup、不发 256 purge；256 迁移后重启真实 automation 进程，验证唯一 purge 的 workspace、请求体、token、automation role 和 HMAC proof。`npm run test:release-gates:runtime` 在该改动后由实现 agent 实跑通过（3 files / 22 tests）；owner 仍需独立复跑和 typecheck。此测试不代表生产 PG16 恢复、所有 worker role、队列业务 canary 或宿主切流已完成。
+- 运营用户中心线上实图仍和历史参考存在筛选/属性列与多标签治理工作区的结构差异。候选在隔离 fixture 的 17 state 矩阵通过，不是线上真实运营账号下的逐图视觉批准。Merchant overview 的卡片壳体和 224px 主内容起点一致；banner 与真实店铺状态不同会改变纵向位置和后端数值。不能写入参考图数字来消除数据差异。
+
+## 2026-09-30 当前提交逐图差异复核（a770e424）
+
+- 当前 `main` 为 `a770e424fcdc8b5286d498992e8ffaf7ead2a2f1`。对 2026-09-28 基线目录 23 张 PNG 按 SHA-256 去重为 17 组：有效商家页面基线 8 张、有效运营页面基线 8 张；运营 04/05/06/08 是同一张会话错误截图，不能评成员/任务/知识/规则页面；商家 08/09/10 与 03 知识资料图完全相同，清单也记录三个入口最终重定向到 `/merchant/products`，所以按素材库落地态比较，不声称各有独立工作页。
+- 当前提交相对已存浏览器矩阵 SHA `113ad72cd194e79c89fa44c16c9a574a7e4208aa` 的商家/运营 UI 源码差异仅在商家回收站说明文字；Ops UI、Merchant 布局/CSS没有变化。两处文案改为由服务端提供保留期限，并说明可恢复到原店铺或申请提前彻底删除，避免旧的固定“7 天”说法。`npm run check` 与 `SAFE_TEST_TIMEOUT_MS=900000 npm run test:release-gates` 均在该提交内容下退出 0；商家回收站源码/文案契约属于通过用例。该结论只约束源码差异范围，不把旧矩阵图片改称 a770e424 构建。
+- 页面逐项结论：商家登录、商品、知识/素材、品牌、回收站和财务的主体结构与基线相近；概览少了基线里的连接/待办异常提示且待办卡为空。品牌线上页曾观察到额外“上传品牌资料”横幅并使表单下移。运营总览卡片/导航基本对齐；用户中心由旧单页筛选表变为分区治理结构，是可见结构差异；客户交付需要显式选工作区，未选时显示范围提示；店铺页有权限、策略和冲突队列状态提示；模型页结构接近；存储和审计显示真实的不可验证/已加载空态，而参考分别停在加载态。目标截图中的金额、商家数、素材行、品牌值和审计/客户行属于当时数据库快照，不得写成前端常量。
+- 逐页 PNG `sha-113ad72` 明确使用 disposable PostgreSQL + Redis 与隔离身份（`productionBrowser=false`），只作版式/交互证据，不是 `demo@ys.com` 贵人鸟或真实运营账号的数据验收。矩阵 sidecar 绑定 113ad72，且当前回收站文字不同；因此不作为当前 SHA 全矩阵通过证明。该矩阵记录 Merchant 10 路由、Ops 17 个页面/权限状态均无页面错误和失败 API；可作为历史隔离测试证据。当前源码回收站改文案后没有重新截图；本轮没有伪造商家记录、引入截图数据，也没有对生产库写入。
+- 共享工作目录仍有并行插件 Keychain/授权测试修改，候选浏览器 runner 的 clean-worktree 前置条件不满足；本轮没有挪动或覆盖这些文件。通过 CUA 浏览器检查时未发现可用 Chrome/IAB provider。重新绑定当前 SHA 的全页浏览器矩阵，以及以真实生产账号/同版本 UI+API 逐页截图，仍未完成。101 发布状态保持 NO-GO，详见 [ECS 候选包安全同步手册](../runbooks/ecs-candidate-safe-sync.md)；本次没有 staging、迁移或部署。
+- 后续生产只读登录复核（2026-09-30，Asia/Shanghai）：Merchant `demo@ys.com` 与 Ops `hyp@sn.com` 各尝试一次，登录 API 均返回 HTTP 401；没有再试其他密码/账号，未建立业务会话，也没有拍摄登录后的页面。两张未登录页、匿名 releasez 响应及不含凭据的摘要保存在权限 0700/0600 目录 `/tmp/store-nova-prod-ui-qa-20260930-current/`；两站 `/api/releasez` 均为 `ready=false` 且 release id/SHA 未提供。登录页卡片/字段结构与参考大体一致，空表单按钮 disabled 样式颜色不同于参考截图（参考图看起来处于 enabled 状态）；这不能替代登录后页面验收。
+
+## 2026-09-30 当前 d7a78ca6 逐页矩阵与旧图对照
+
+- 当前 HEAD `d7a78ca65780551c980c9fc21a8b8d60d4dd21f6` 的浏览器证据已重拍并由截图门禁逐页绑定 SHA 与 dirty-path 清单。Merchant 证据在 `artifacts/ops-jit-isolation/2026-09-30T02-35-06.532Z-0e51d8bf-b764-4ec4-bc4e-209abadf9d57/merchant-desktop-matrix/`：10 个路由均通过，`pageErrors=[]`、`failedApi=[]`，裸任务/发布/规则入口都按规范重定向到 `/merchant/products`。Ops 证据在 `artifacts/ops-jit-isolation/2026-09-30T02-35-45.756Z-1f022783-bd85-4507-91ca-a6fb97f6a4ea/desktop-readonly-matrix/`：18 个路由/权限状态通过，`failedApi=[]`。两个 fixture 均使用隔离 PostgreSQL/Redis；它们证明当前 dirty source 的桌面 UI 与授权状态可运行，不代表生产商家数据。最初并行运行两个 fixture 时 Ops 有一个 Postgres 连接超时；清理确认两套容器均已停止，串行重拍通过，未触碰外部容器。
+- 逐页结论（以 2026-09-28 原图去重组为基准）：Merchant 登录、总览、商品/店铺、知识/素材、品牌、回收站、财务都有独立截图；任务/发布/规则三图与知识页完全重复，且清单明确重定向到素材库。当前三个裸入口截图继续一致呈现素材页，属于目标定义中的复用状态。商品/素材数量、点数余额、钱包和趋势图来自各自数据库，不按截图写死。
+- Merchant 品牌页当前代码保留全局、店铺、系列三组表单/预览区；有效基线预填 Store Nova logo、颜色、品牌文案和品牌手册。当前隔离候选的三组区域为空，并用“未单独配置/等待真实数据”显示空值。较早只读生产图 `/tmp/store-nova-prod-ui-qa-20260930/merchant-brands.png` 还显示一条“上传品牌资料”提示条，导致表单下移，且已授权商家没有可编辑的店铺/系列配置；此图来自混合 SHA 的旧线上 release，不能代表 d7a78ca6 候选。差异涉及真实配置及品牌资产写入/持久化能力，不能通过预填 demo 品牌值伪造一致。
+- Merchant 财务基线的 PRO 套餐卡、2,480 点、31.5/50GB 与本地/线上候选的当前余额、钱包、容量、趋势不同；生产实图可见余额 12,582 点、容量 50GB，趋势为 2 个点并合计 98 点。这是截取时真实服务端账本的差异，不属于静态 UI 缺陷。运营概览/商品/素材的记录条数、计划和状态同理按服务端结果比较，不要求像素/数值复刻旧数据库。
+- Ops 总览、店铺治理、模型、存储、审计拥有有效参考，截图反映旧版本导航/布局及当时的数据状态；当前 Ops 有身份/权限范围提示，并且存储/审计展示当前授权和空数据状态。Ops 用户中心从基线单表筛选变为“已接入用户、商家工作区、成员、入驻申请、权限与授权”分区；这是真实结构差异，不是数据差异。客户交付基线直接显示一条客户记录，而当前平台会话在未选客户工作区时明确拒绝范围外读取；选择工作区后矩阵可显示该隔离工作区数据。生产只读图也记录未选客户工作区提示与空表。必须保留租户范围校验，不能为了复刻基线去掉选择步骤或复制客户行。
+- Ops 基线的成员、任务、知识、规则四图为同一登录错误 PNG，无法作为这些业务页基线。当前平台会话对成员/知识/任务等企业工作区能力按权限拒绝，矩阵记录 denial 状态；正确验收需要相应真实商家工作区会话。平台规则等页面当前可在授权范围验证。截图中的蓝框属于截图选区标记，非产品 UI。
+- 2026-09-29 的真实生产只读截图 `capture-summary.json` 记录 10 个 Merchant 与 11 个 Ops 页面均无页面错误/失败 API，路由结果与规范入口一致，但没有同屏绑定当时完整 release Git SHA；另有 2026-09-30 当前生产认证各一次 401、`releasez.ready=false` 的记录。因此这些旧线上截图可佐证已部署版本与真实数据库的页面/数据状态，不能作为当前源码 d7a78ca6 的 release acceptance。最终全项目候选仍需干净、已冻结提交、完整同 SHA API/MCP/UI/worker 运行和真实数据库权限验收。
+- 根因复核：隔离桥接测试曾因共享 WIP 同时宣称 migration 258 而失败（链尾实际 257）。迁移负责人确认 migration 256 已含生命周期保护、257 已加快照外键；重复 FK 的 migration 258 草案不存在必要性。owner 已将相关测试、worker 期望与 PG17 restore identity 校验对齐回实际 257 清单，没有改写 migration 256/257 SQL。修复后 runtime 3 文件/22 项、迁移/worker/restore 定向 4 文件/144 项、PG16 1–257 全链与 PG17 restore 合同均通过；完整 release gate 与当前候选干净树/生产发布仍待最终收口。

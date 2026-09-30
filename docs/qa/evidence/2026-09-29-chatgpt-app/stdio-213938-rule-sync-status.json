@@ -1,0 +1,100 @@
+{
+  "schema_version": "1",
+  "version": "213938",
+  "captured_at": "2026-09-29T13:45:44.975Z",
+  "call": "rule.sync.status",
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "已读取 6 条记录；请核对结构化结果中的内容与来源。"
+        }
+      ],
+      "structuredContent": [
+        {
+          "platform": "jd",
+          "label": "京东",
+          "officialUrl": "https://rule.jd.com/rule/ruleDetail.action?ruleId=1249712217973198848",
+          "configured": false,
+          "machineReadable": false,
+          "latestVersion": null,
+          "sourceCheckedAt": null,
+          "ageHours": null,
+          "stale": true,
+          "state": "not_configured",
+          "reason": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则"
+        },
+        {
+          "platform": "taobao",
+          "label": "淘宝",
+          "officialUrl": "https://developer.alibaba.com/doc/doc.htm?articleId=120797&docType=1&treeId=23",
+          "configured": false,
+          "machineReadable": false,
+          "latestVersion": null,
+          "sourceCheckedAt": null,
+          "ageHours": null,
+          "stale": true,
+          "state": "not_configured",
+          "reason": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则"
+        },
+        {
+          "platform": "tmall",
+          "label": "天猫",
+          "officialUrl": "https://www.tmall.com/wow/seller/act/guize",
+          "configured": false,
+          "machineReadable": false,
+          "latestVersion": null,
+          "sourceCheckedAt": null,
+          "ageHours": null,
+          "stale": true,
+          "state": "not_configured",
+          "reason": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则"
+        },
+        {
+          "platform": "pinduoduo",
+          "label": "拼多多",
+          "officialUrl": "https://www.yangkeduo.com/home/help/",
+          "configured": false,
+          "machineReadable": false,
+          "latestVersion": null,
+          "sourceCheckedAt": null,
+          "ageHours": null,
+          "stale": true,
+          "state": "not_configured",
+          "reason": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则"
+        },
+        {
+          "platform": "xiaohongshu",
+          "label": "小红书",
+          "officialUrl": "https://school.xiaohongshu.com/",
+          "configured": false,
+          "machineReadable": false,
+          "latestVersion": null,
+          "sourceCheckedAt": null,
+          "ageHours": null,
+          "stale": true,
+          "state": "not_configured",
+          "reason": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则"
+        },
+        {
+          "platform": "douyin",
+          "label": "抖音",
+          "officialUrl": "https://school.jinritemai.com/doudian/web/home",
+          "configured": false,
+          "machineReadable": false,
+          "latestVersion": null,
+          "sourceCheckedAt": null,
+          "ageHours": null,
+          "stale": true,
+          "state": "not_configured",
+          "reason": "签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则"
+        }
+      ],
+      "isError": false
+    }
+  },
+  "stderr": ""
+}

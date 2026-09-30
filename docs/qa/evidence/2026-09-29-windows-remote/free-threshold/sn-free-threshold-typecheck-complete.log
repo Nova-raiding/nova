@@ -1,0 +1,52 @@
+
+> merchant-marketing-codex@0.2.1 typecheck
+> npm run build:packages && tsc -b --pretty false && tsc -p apps/ops-console/tsconfig.json --pretty false && tsc -p demo/merchant-studio/tsconfig.json --pretty false
+
+
+> merchant-marketing-codex@0.2.1 build:packages
+> npm run build --workspace @merchant-marketing/config && npm run build --workspace @merchant-marketing/contracts && npm run build --workspace @merchant-marketing/domain && npm run build --workspace @merchant-marketing/connectors && npm run build --workspace @merchant-marketing/application && npm run build --workspace @merchant-marketing/knowledge && npm run build --workspace @merchant-marketing/multimodal && npm run build --workspace @merchant-marketing/storage && npm run build --workspace @merchant-marketing/persistence && npm run build --workspace @merchant-marketing/security && npm run build --workspace @merchant-marketing/workers
+
+
+> @merchant-marketing/config@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/contracts@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/domain@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/connectors@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/application@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/knowledge@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/multimodal@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/storage@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/persistence@0.1.0 build
+> tsc -p tsconfig.json && mkdir -p dist/migrations && cp src/migrations/*.sql dist/migrations/
+
+
+> @merchant-marketing/security@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/workers@0.1.0 build
+> tsc -p tsconfig.json
+

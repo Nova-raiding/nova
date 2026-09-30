@@ -1,0 +1,10 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ apps/api/src/model-usage-reconciliation.test.ts (22 tests) 36ms
+
+ Test Files  1 passed (1)
+      Tests  22 passed (22)
+   Start at  16:09:01
+   Duration  1.02s (transform 665ms, setup 0ms, import 807ms, tests 36ms, environment 0ms)
+
