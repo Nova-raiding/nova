@@ -18,12 +18,18 @@ export function assess(snapshot) {
     if (!snapshot.services.some(service => service.service === name)) blockers.push(`service_missing:${name}`)
   }
   // Upstream database/cache images have no repository Git SHA; do not invent one.
-  return blockers.filter(value => !['source_revision_missing:postgres', 'source_revision_missing:redis', 'image_not_pinned:postgres', 'image_not_pinned:redis'].includes(value))
+  // Third-party infrastructure images are pinned by immutable digest but do
+  // not carry this repository's Git revision label. Never invent one for
+  // ClamAV; its digest is the provenance boundary used by the host.
+  return blockers.filter(value => ![
+    'source_revision_missing:postgres', 'source_revision_missing:redis', 'source_revision_missing:clamav',
+    'image_not_pinned:postgres', 'image_not_pinned:redis', 'image_not_pinned:clamav',
+  ].includes(value))
 }
 
 export function inventoryWarnings(snapshot) {
   const revisions = new Set(snapshot.services
-    .filter(service => !['postgres', 'redis'].includes(service.service)
+    .filter(service => !['postgres', 'redis', 'clamav'].includes(service.service)
       && /^[a-f0-9]{40}$/u.test(service.git_sha ?? ''))
     .map(service => service.git_sha))
   return revisions.size > 1 ? ['application_services_have_mixed_source_revisions'] : []
