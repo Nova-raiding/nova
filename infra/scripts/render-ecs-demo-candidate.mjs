@@ -149,6 +149,7 @@ export function validateDemoCompose(compose, project) {
   if (Object.keys(networks).length !== 1 || !networks.default || networks.default.external || networks.default.name !== `${project}_private`) fail('candidate network must be a new project-scoped private network')
   if (networks.default.internal === true) fail('candidate network must allow outbound provider TLS while remaining unpublished')
   const api = services.api
+  if (api.pull_policy !== 'never') fail('candidate API must disable image pulls with pull_policy=never')
   const env = api.environment ?? {}
   if (withMerchantUi) {
     const ui = services.ui
@@ -251,7 +252,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
         ],
       },
       api: {
-        image: apiImage, restart: 'no', env_file: [{ path: envPath, required: true }], expose: ['8787'],
+        image: apiImage, pull_policy: 'never', restart: 'no', env_file: [{ path: envPath, required: true }], expose: ['8787'],
         ...(withMerchantUi ? { networks: { default: { aliases: ['merchant-api'] } } } : {}),
         healthcheck: { test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8787/healthz >/dev/null || exit 1'], interval: '10s', timeout: '3s', retries: 6, start_period: '30s' },
         labels: { 'com.storenova.release.id': identity.release_id, 'org.opencontainers.image.revision': identity.git_sha, 'com.storenova.release.source_sha256': identity.source_sha256 },

@@ -80,6 +80,7 @@ describe('protected isolated ECS demo candidate renderer', () => {
       PLUGIN_WRITE_ENABLED: 'false', ASSET_STORAGE_PREFIX: 'demo-candidate/release-b77b551a-review',
       MCP_AUTHZ_MODE: 'enforce', MCP_AUTHZ_ENFORCE_DOMAINS: '', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
     })
+    expect(compose.services.api.pull_policy).toBe('never')
     expect(compose.services.api.environment.MODEL_RELAY_API_KEY).toBeUndefined()
     expect(compose.services.api.env_file).toEqual([{ path: join(value.output, 'candidate.env'), required: true }])
     expect(compose.services.api.healthcheck.test).toEqual(['CMD-SHELL', 'wget -qO- http://127.0.0.1:8787/healthz >/dev/null || exit 1'])
@@ -145,6 +146,12 @@ describe('protected isolated ECS demo candidate renderer', () => {
     const readinessAsLiveness = structuredClone(compose)
     readinessAsLiveness.services.api.healthcheck.test[1] = 'wget -qO- http://127.0.0.1:8787/readyz || exit 1'
     expect(() => validateDemoCompose(readinessAsLiveness, project)).toThrow(/healthcheck must measure liveness/u)
+    const pullsByDefault = structuredClone(compose)
+    delete pullsByDefault.services.api.pull_policy
+    expect(() => validateDemoCompose(pullsByDefault, project)).toThrow(/pull_policy=never/u)
+    const pullsExplicitly = structuredClone(compose)
+    pullsExplicitly.services.api.pull_policy = 'always'
+    expect(() => validateDemoCompose(pullsExplicitly, project)).toThrow(/pull_policy=never/u)
   })
 
   it('requires the isolated role provisioner to match the candidate archive byte for byte', () => {
