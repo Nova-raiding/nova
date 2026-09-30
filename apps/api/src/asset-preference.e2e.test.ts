@@ -69,6 +69,9 @@ describe('merchant material category API', () => {
     const mcpUpdated = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'asset.metadata.update', params: { asset_id: asset.id, material_category: 'SKU 图', expected_revision: String(saved.data?.revision) } }) }).then(response => response.json()) as { error?: { code: string }; data?: { result: { materialCategory: string; revision: number } } }
     expect(mcpUpdated.error).toBeNull()
     expect(mcpUpdated.data?.result).toMatchObject({ materialCategory: 'SKU 图', revision: (saved.data?.revision ?? 0) + 1 })
+    const mcpListed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'asset.list', params: {} }) }).then(response => response.json()) as { error?: { code: string }; data?: { result: { assets: Array<{ id: string; materialCategory?: string }> } } }
+    expect(mcpListed.error).toBeNull()
+    expect(mcpListed.data?.result.assets.find(row => row.id === asset.id)?.materialCategory).toBe('SKU 图')
     const foreign = await fetch(`${base}/v1/assets/${asset.id}/metadata`, { method: 'PUT', headers: { ...headers, 'x-workspace-id': `${workspaceId}_other` }, body: JSON.stringify({ material_category: '详情页图', expected_revision: saved.data?.revision }) }).then(response => response.json()) as Envelope<unknown>
     expect(foreign.error?.code).toBe('ASSET_NOT_FOUND')
   })

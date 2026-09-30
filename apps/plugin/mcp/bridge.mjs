@@ -844,7 +844,7 @@ const METHODS = {
   },
   'asset.metadata.update': {
     description: '更新工作区素材分类，并使用预期版本检查并发修改。',
-    inputSchema: { type: 'object', properties: { asset_id: { type: 'string' }, material_category: { type: 'string', enum: ['品牌资料', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类'] }, expected_revision: { type: 'string', pattern: '^[1-9][0-9]*$' } }, required: ['asset_id', 'material_category', 'expected_revision'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { asset_id: { type: 'string', minLength: 1, maxLength: 256 }, material_category: { type: 'string', enum: ['品牌资料', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类'] }, expected_revision: { type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 } }, required: ['asset_id', 'material_category', 'expected_revision'], additionalProperties: false },
   },
   'asset.preference.update': {
     description: '记录或清除商家对历史素材的“优秀/不喜欢”评价；优秀或不喜欢必须填写原因。',

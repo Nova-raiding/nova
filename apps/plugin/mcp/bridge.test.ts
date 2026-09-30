@@ -357,6 +357,8 @@ describe('Codex stdio MCP bridge', () => {
       ]).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
       expect(tools).toHaveLength(116)
       expect(descriptions.filter(([, description]) => !/[\u3400-\u9fff]/u.test(description))).toEqual([])
+      expect(tools.find(tool => tool.name === 'asset.metadata.update')?.inputSchema.properties?.asset_id).toMatchObject({ type: 'string', minLength: 1, maxLength: 256 })
+      expect(tools.find(tool => tool.name === 'asset.metadata.update')?.inputSchema.properties?.expected_revision).toMatchObject({ pattern: '^[1-9][0-9]*$', maxLength: 10 })
       expect(tools.find(tool => tool.name === 'asset.upload')?.description).toContain('上传成功只形成原始素材记录')
       expect(tools.find(tool => tool.name === 'asset.upload')?.description).toContain('创意点准入阻断时文件未上传')
       expect(tools.find(tool => tool.name === 'knowledge.asset.create')?.description).toContain('原始文件上传不会自动完成这一步')

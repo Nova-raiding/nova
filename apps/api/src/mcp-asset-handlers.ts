@@ -91,6 +91,7 @@ export async function handleMcpAssetMethod(method: string, params: Record<string
         parseStatus: asset.parseStatus,
         rightsStatus: asset.rightsStatus,
         rightsScope: asset.rightsScope ?? null,
+        ...(asset.materialCategory ? { materialCategory: asset.materialCategory } : {}),
         readiness: asset.readiness,
         display: assetDisplayProjection(asset),
         ...(asset.extractedFactsSource ? { extractedFactsSource: asset.extractedFactsSource } : {}),
