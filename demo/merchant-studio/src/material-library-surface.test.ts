@@ -133,6 +133,8 @@ describe('material metadata editing stays out of the reference card layout', () 
     expect(appSource).toContain('ariaLabel={`修改${detailMaterial.name}的所属系列`}')
     expect(appSource).toContain('void updateMaterialMetadata(detailMaterial.id, { category: value as StoreMaterialCategory })')
     expect(appSource).toContain('void updateMaterialMetadata(detailMaterial.id, { series: value })')
+    expect(appSource).toContain("if (patch.series && (!baseUrl || !scopedBrandRead || activeStoreId === 'unclassified'))")
+    expect(appSource).toContain('未分类工作区不能保存店铺系列；请先选择已连接店铺。')
   })
 })
 

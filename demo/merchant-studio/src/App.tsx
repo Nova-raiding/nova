@@ -7031,6 +7031,14 @@ export function MaterialLibraryWorkspace({
   }
 
   const updateMaterialMetadata = async (materialId: string, patch: Partial<Pick<StoreMaterialItem, 'category' | 'series'>>) => {
+    if (patch.series && (!baseUrl || !scopedBrandRead || activeStoreId === 'unclassified')) {
+      setMaterialStorageError(!baseUrl
+        ? '素材系列需要服务端配置；请连接服务端后重试。'
+        : !scopedBrandRead
+          ? scopedBrandError || '素材系列配置尚未从服务端读取；读取完成后重试。'
+          : '未分类工作区不能保存店铺系列；请先选择已连接店铺。')
+      return
+    }
     if (patch.category) {
       const asset = remoteAssets?.find((row) => row.id === materialId)
       if (!baseUrl || !asset) {
