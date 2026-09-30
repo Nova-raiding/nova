@@ -12,10 +12,10 @@ import { createIsolatedOpsFixture } from './isolated-ops-fixture.js'
 
 const automationToken = 'isolated-worker-automation-token'
 const automationSecret = 'isolated-worker-automation-signing-secret'
-type WorkerRole = 'sync' | 'automation'
+type WorkerRole = 'sync' | 'generation' | 'publish' | 'reconcile' | 'automation' | 'scan'
 type StubRequest = { method: string; target: string; body: string; headers: IncomingMessage['headers'] }
 
-async function startAutomationApiStub(): Promise<{ url: string; requests: StubRequest[]; close: () => Promise<void> }> {
+async function startWorkerApiStub(): Promise<{ url: string; requests: StubRequest[]; close: () => Promise<void> }> {
   const requests: StubRequest[] = []
   const server: Server = createServer(async (request, response) => {
     const chunks: Buffer[] = []
@@ -34,6 +34,8 @@ async function startAutomationApiStub(): Promise<{ url: string; requests: StubRe
         ? { data: { cleaned: 0 } }
         : target === '/v1/internal/assets/lifecycle/purge'
           ? { data: { purged: 0 } }
+          : target === '/v1/internal/billing/reconciliation'
+            ? { data: { state: 'idle' } }
           : { error: { code: 'ISOLATED_STUB_ROUTE_NOT_FOUND' } }
     response.writeHead('error' in payload ? 404 : 200, { 'content-type': 'application/json' })
     response.end(JSON.stringify(payload))
@@ -59,7 +61,7 @@ async function runWorkerOnce(input: { databaseUrl: string; redisUrl: string; wor
     WORKER_ROLE: role, WORKER_WORKSPACES: input.workspaceId, WORKER_ONCE: 'true',
     WORKER_METRICS_PORT: '0', WORKER_READY_FILE: resolve(input.evidenceDir, `worker-${input.expectedVersion ?? 'partial'}-${role}.ready`),
     BRIDGE_SCHEMA_COMPATIBILITY_MODE: input.bridgeMode ?? 'prefix_254_or_255',
-    ...(role === 'automation' ? {
+    ...(input.apiBaseUrl ? {
       WORKER_API_BASE_URL: input.apiBaseUrl,
       WORKER_API_TOKEN: automationToken,
       WORKER_API_SIGNING_SECRET: automationSecret,
@@ -96,8 +98,8 @@ async function runWorkerOnce(input: { databaseUrl: string; redisUrl: string; wor
   return readiness
 }
 
-describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
-  it('checks both prefixes through the production app role and requires a worker restart after migration', async () => {
+describe('254–257 worker bridge on an owned PostgreSQL 17 fixture', () => {
+  it('checks each migration prefix through the production app role and starts every worker role on 256/257', async () => {
     const evidenceDir = resolve('artifacts/bridge-254-255-worker-isolation', randomUUID())
     await mkdir(evidenceDir, { recursive: true, mode: 0o700 })
     const fixture = await createIsolatedOpsFixture({ evidenceDir })
@@ -167,7 +169,7 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
       // Exercise the actual automation process while the DB is still at 255.
       // Routine maintenance remains available, but the 256-only lifecycle
       // purge callback must not be issued by this bridge process.
-      const automation255 = await startAutomationApiStub()
+      const automation255 = await startWorkerApiStub()
       try {
         await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
           workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 255,
@@ -193,7 +195,7 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
       // After migration 256, a restarted real automation process is allowed to
       // issue the purge callback. Verify scope, request body, bearer token, and
       // cryptographic automation proof at the loopback-only receiver.
-      const automation256 = await startAutomationApiStub()
+      const automation256 = await startWorkerApiStub()
       try {
         await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
           workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 256,
@@ -227,9 +229,26 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
         await automation256.close()
       }
 
+      // Start every non-automation queue role on the transitional 256 prefix. The
+      // scanner role has a separate ClamAV/EICAR/callback readiness contract and
+      // is intentionally excluded from this DB/Redis-only fixture. These are
+      // real worker processes using only fixture PostgreSQL/Redis; outbound API
+      // calls, if any, terminate at the loopback stub above.
+      for (const role of ['generation', 'publish', 'reconcile'] as const) {
+        const api = await startWorkerApiStub()
+        try {
+          await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
+            workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 256,
+            bridgeMode: 'prefix_256_or_257', role, apiBaseUrl: api.url })
+          expect(api.requests.every(request => request.target.startsWith('/'))).toBe(true)
+        } finally {
+          await api.close()
+        }
+      }
+
       // A 256-to-257 bridge starts safely on 256, but must keep the new
       // lifecycle callback fenced until the database has reached 257.
-      const automation256On257Bridge = await startAutomationApiStub()
+      const automation256On257Bridge = await startWorkerApiStub()
       try {
         await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
           workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 256,
@@ -267,7 +286,7 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
 
       // Once the 257 schema is present, a restarted worker on the matching
       // bridge enables purge and signs the request with its automation proof.
-      const automation257 = await startAutomationApiStub()
+      const automation257 = await startWorkerApiStub()
       try {
         await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
           workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 257,
@@ -302,6 +321,21 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
         })).toBe(true)
       } finally {
         await automation257.close()
+      }
+
+      // The candidate prefix must also admit every non-scanner dedicated worker
+      // process after restart. Keep receivers local and queues empty so these
+      // checks prove startup/readiness compatibility without provider writes.
+      for (const role of ['sync', 'generation', 'publish', 'reconcile'] as const) {
+        const api = await startWorkerApiStub()
+        try {
+          await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
+            workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 257,
+            bridgeMode: 'prefix_256_or_257', role, apiBaseUrl: api.url })
+          expect(api.requests.every(request => request.target.startsWith('/'))).toBe(true)
+        } finally {
+          await api.close()
+        }
       }
     } finally {
       await app.end()
