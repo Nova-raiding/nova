@@ -348,6 +348,7 @@ export function CustomerDeliverySection({
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [detailsRecord, setDetailsRecord] = useState<CustomerDeliveryRecord>();
+  const [pendingProfileRecord, setPendingProfileRecord] = useState<CustomerDeliveryRecord>();
   const [step, setStep] = useState<DeliveryStepKey>("profile");
   const [saving, setSaving] = useState(false);
   const [loadingStep, setLoadingStep] = useState(false);
@@ -357,8 +358,8 @@ export function CustomerDeliverySection({
   const detailsRequest = useRef(0);
   const uploadTracker = useRef(createDeliveryUploadTracker());
   const mounted = useRef(true);
-  const currentAccess = useRef({ disabled, readOnly });
-  currentAccess.current = { disabled, readOnly };
+  const currentAccess = useRef({ disabled, readOnly, canEditProfile: Boolean(onSave), saving });
+  currentAccess.current = { disabled, readOnly, canEditProfile: Boolean(onSave), saving };
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createDirty, setCreateDirty] = useState(false);
@@ -383,6 +384,7 @@ export function CustomerDeliverySection({
     uploadTracker.current.beginScope();
     setSelected(undefined);
     setDetailsRecord(undefined);
+    setPendingProfileRecord(undefined);
     setLoadingStep(false);
     setUploading(false);
     setBindingAccount(false);
@@ -393,6 +395,7 @@ export function CustomerDeliverySection({
   }, [disabled]);
   useLayoutEffect(() => {
     if (!readOnly) return;
+    setPendingProfileRecord(undefined);
     setShowCreate(false);
     setCreateDirty(false);
     createForm.resetFields();
@@ -670,20 +673,15 @@ export function CustomerDeliverySection({
       },
       {
         title: "操作",
-        width: 164,
+        width: 112,
         align: "center" as const,
         fixed: "right" as const,
         render: (_: unknown, row: CustomerDeliveryRecord) => (
-          <Space>
-            {!readOnly && onSave ? (
-              <Button size="small" disabled={disabled || saving} onClick={() => void openStep(row, "profile")}>编辑档案</Button>
-            ) : null}
-            <Button size="small" disabled={disabled} onClick={() => void openDetails(row)}>查看详情</Button>
-          </Space>
+          <Button size="small" disabled={disabled} onClick={() => void openDetails(row)}>查看详情</Button>
         ),
       },
     ],
-    [onTrainingSave, openStep, saving, disabled, readOnly],
+    [onTrainingSave, openDetails, disabled],
   );
   const contractUploadRequest = detailRequest.current;
   const contractUploadScope = selected ? `${selected.id}:profile:${contractUploadRequest}` : "";
@@ -794,7 +792,15 @@ export function CustomerDeliverySection({
       <Drawer
         title={detailsRecord ? `${detailsRecord.companyName} · 客户详情` : "客户详情"}
         open={Boolean(detailsRecord)}
-        onClose={() => { detailsRequest.current++; setDetailsRecord(undefined); }}
+        onClose={() => { detailsRequest.current++; setPendingProfileRecord(undefined); setDetailsRecord(undefined); }}
+        afterOpenChange={(open) => {
+          if (open || !pendingProfileRecord) return;
+          const record = pendingProfileRecord;
+          setPendingProfileRecord(undefined);
+          const access = currentAccess.current;
+          if (!mounted.current || disabled || access.disabled || access.readOnly || !access.canEditProfile || access.saving) return;
+          void openStep(record, "profile");
+        }}
         size={620}
       >
         {detailsRecord ? (
@@ -831,11 +837,24 @@ export function CustomerDeliverySection({
               const saved = await onTrainingSave(detailsRecord, true, refs);
               if (saved && mounted.current && request === detailsRequest.current && !currentAccess.current.disabled && !currentAccess.current.readOnly && detailsRecord.id === recordId) setDetailsRecord(saved);
             }}
-            onClose={() => { detailsRequest.current++; setDetailsRecord(undefined); }}
+            onClose={() => { detailsRequest.current++; setPendingProfileRecord(undefined); setDetailsRecord(undefined); }}
           />
+          {!readOnly && onSave ? (
+            <div style={{ marginTop: 16 }}>
+              <Button size="small" disabled={disabled || saving} onClick={() => {
+                const record = detailsRecord;
+                if (!record) return;
+                detailsRequest.current++;
+                setPendingProfileRecord(record);
+                setDetailsRecord(undefined);
+              }}>
+                编辑客户档案
+              </Button>
+            </div>
+          ) : null}
           </>
         ) : null}
-        {detailsRecord && onArchive && !readOnly && !disabled ? (
+            {detailsRecord && onArchive && !readOnly && !disabled ? (
           <div style={{ marginTop: 24, textAlign: "right" }}>
             <Button
               danger

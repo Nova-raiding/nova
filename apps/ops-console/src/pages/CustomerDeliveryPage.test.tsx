@@ -295,8 +295,15 @@ describe("customer delivery read-only desktop interaction", () => {
   const account = { workspaceId: "ws-readonly", accountId: "private-account-1", identityId: "private-identity-1", login: "merchant-one@example.test" };
   const account2 = { ...account, accountId: "private-account-2", identityId: "private-identity-2", login: "merchant-two@example.test" };
   const boundRecord = { ...record, workspaceId: "ws-readonly", revision: 5, targetAccountId: account.accountId, targetIdentityId: account.identityId, targetAccountLogin: account.login };
+  async function openProfileEditor(page: Page) {
+    await row(page).getByRole("button", { name: "查看详情", exact: true }).click();
+    const details = page.getByRole("dialog").filter({ hasText: "只读客户 · 客户详情" });
+    await details.getByRole("button", { name: "编辑客户档案", exact: true }).click();
+    await details.waitFor({ state: "hidden" });
+    await page.getByLabel("合同编号", { exact: true }).waitFor({ state: "visible" });
+  }
   async function openAccountBinding(page: Page) {
-    await row(page).getByRole("button", { name: "编辑档案", exact: true }).click();
+    await openProfileEditor(page);
     await page.getByRole("region", { name: "生效账号", exact: true }).waitFor();
   }
   async function selectAccount(page: Page, login = account.login) {
@@ -604,7 +611,7 @@ describe("customer delivery read-only desktop interaction", () => {
     try {
       await prepare(page, { write: true });
       await settle(page);
-      await row(page).getByRole("button", { name: "编辑档案", exact: true }).click();
+      await openProfileEditor(page);
       await page.getByRole("dialog").waitFor();
       await closeDrawer(page);
       await settle(page);
@@ -668,7 +675,7 @@ describe("customer delivery read-only desktop interaction", () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     try {
       const methods = await prepare(page, { write: true });
-      await row(page).getByRole("button", { name: "编辑档案", exact: true }).click();
+      await openProfileEditor(page);
       const dialog = page.getByRole("dialog");
       await dialog.waitFor();
       expect(await dialog.locator('input[type="file"]').count()).toBe(1);
@@ -718,7 +725,7 @@ describe("customer delivery read-only desktop interaction", () => {
         return { ...record, revision: record.revision + 1 };
       } });
       if (action === "profile") {
-        await row(page).getByRole("button", { name: "编辑档案", exact: true }).click();
+        await openProfileEditor(page);
         await page.getByRole("button", { name: "保存当前环节", exact: true }).click();
       } else if (action === "training") {
         // This controlled checkbox stays checked until its real callback

@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 
 const root = process.cwd()
@@ -50,10 +51,11 @@ const generatedEvidencePaths = [
 // a .gitignore rule AND absent from the index. `git check-ignore` alone consults
 // ignore rules and never the index, so a force-added or historically committed
 // artifact would report as "ignored" while still shipping in every clone.
-function isIgnored(path: string): boolean {
+function isIgnored(path: string, env: NodeJS.ProcessEnv = process.env): boolean {
   try {
     execFileSync('git', ['ls-files', '--error-unmatch', '--', path], {
       cwd: root,
+      env,
       stdio: 'ignore',
     })
     return false
@@ -64,6 +66,7 @@ function isIgnored(path: string): boolean {
   try {
     execFileSync('git', ['check-ignore', '--quiet', '--no-index', path], {
       cwd: root,
+      env,
       stdio: 'ignore',
     })
     return true
@@ -104,14 +107,18 @@ describe('source artifact hygiene', () => {
     // without this fixture the tracked-file branch never executes.
     const fixture = `artifacts/hygiene-force-added-${process.pid}-${Date.now()}.json`
     const absolute = join(root, fixture)
+    const temporaryIndexRoot = mkdtempSync(join(tmpdir(), 'source-artifact-hygiene-index-'))
+    const isolatedGitEnvironment = { ...process.env, GIT_INDEX_FILE: join(temporaryIndexRoot, 'index') }
     try {
+      execFileSync('git', ['read-tree', 'HEAD'], { cwd: root, env: isolatedGitEnvironment, stdio: 'ignore' })
       writeFileSync(absolute, '{}\n')
-      expect(isIgnored(fixture), 'the ignore rule must match the fixture path').toBe(true)
-      execFileSync('git', ['add', '-f', '--', fixture], { cwd: root, stdio: 'ignore' })
-      expect(isIgnored(fixture), 'a staged artifact is not excluded from source control').toBe(false)
+      expect(isIgnored(fixture, isolatedGitEnvironment), 'the ignore rule must match the fixture path').toBe(true)
+      execFileSync('git', ['add', '-f', '--', fixture], { cwd: root, env: isolatedGitEnvironment, stdio: 'ignore' })
+      expect(isIgnored(fixture, isolatedGitEnvironment), 'a staged artifact is not excluded from source control').toBe(false)
     } finally {
-      try { execFileSync('git', ['rm', '--cached', '--quiet', '--', fixture], { cwd: root, stdio: 'ignore' }) } catch { /* the fixture was never staged */ }
+      try { execFileSync('git', ['rm', '--cached', '--quiet', '--', fixture], { cwd: root, env: isolatedGitEnvironment, stdio: 'ignore' }) } catch { /* the fixture was never staged */ }
       rmSync(absolute, { force: true })
+      rmSync(temporaryIndexRoot, { recursive: true, force: true })
     }
   })
 

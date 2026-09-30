@@ -63,9 +63,19 @@ const cardWithLogo = (assetFileName = '') => renderToStaticMarkup(createElement(
 }))
 
 describe('single-image brand settings save path', () => {
+  it('confirms before a store change can discard unsaved brand drafts', () => {
+    const switcher = appSource.slice(appSource.indexOf('const switchBrandStore = (storeId: string) => {'), appSource.indexOf('const switchStore = (storeId: string) => {'))
+    expect(switcher).toContain('if (scopedBrandDraftDirty)')
+    expect(switcher).toContain('Modal.confirm({')
+    expect(switcher).toContain('放弃草稿并切换')
+    expect(switcher).toContain('继续编辑')
+    expect(switcher).toContain('onOk: commitSwitch')
+    expect(switcher.indexOf('if (scopedBrandDraftDirty)')).toBeLessThan(switcher.indexOf('commitSwitch()\n  }'))
+  })
+
   it('keeps an explicit save button in the image detail view wired to image edits', () => {
     const detail = appSource.slice(appSource.indexOf('if (detailMaterial) {'), appSource.indexOf('  return (\n    <div className="material-library-page"', appSource.indexOf('if (detailMaterial) {')))
-    const save = appSource.slice(appSource.indexOf('const saveMaterialBrandScopes = async () => {'), appSource.indexOf('const createBrandSeries = async () => {'))
+    const save = appSource.slice(appSource.indexOf('const saveMaterialBrandScopes = async () => {'), appSource.indexOf('const switchBrandStore = (storeId: string) => {'))
 
     expect(detail).toContain('onClick={() => { void saveMaterialBrandScopes() }}')
     expect(detail).toContain('保存品牌配置')

@@ -5255,61 +5255,18 @@ function catalogStoreForMaterials(store: CatalogStoreView): CatalogStore {
  * every real store, plus two more invented sets keyed on the ids of stores that
  * only ever existed in the deleted store seed. Nothing on the server carries a
  * series: `GET /v1/products` publishes no series field at all (see
- * `catalog-data.ts`, which fills every product's series with 未分类), so the
- * 「选择系列」 filter, the card's 所属系列 editor and 品牌配置 › 系列配置 all
- * presented those names to the merchant as if their store already had them.
- *
- * 未分类 is the only honest entry: it is the bucket for "no series declared",
- * and it is the one value the product mapper itself produces. Everything past it
- * is what this merchant actually created, kept in `merchant-store-series-v1`.
+ * `catalog-data.ts`, which fills every product's series with 未分类). Series
+ * editing therefore belongs to the server-backed material and brand workflows.
  */
 const defaultCatalogSeriesNames = ['未分类']
-const storeSeriesStorageKey = 'merchant-store-series-v1'
-const storeSeriesReassignmentsStorageKey = 'merchant-store-series-reassignments-v1'
-const storeSeriesChangedEvent = 'merchant-store-series-changed'
 
 /**
- * The store id is taken and deliberately unused: series are scoped per store by
- * the registry, but the server publishes none for any store, so the honest
- * starting point is the same single 未分类 bucket for all of them. A store that
- * really has series gets them the moment the merchant creates one.
+ * The store id is taken and deliberately unused: the picker uses this value
+ * only as the honest default until server scoped-brand data has loaded.
  *
  * Exported for `reviewed-surface-data.test.ts`, which pins the default against
  * the names this function used to invent.
  */
-export function initialSeriesForStore(_storeId: string) {
-  return [...defaultCatalogSeriesNames]
-}
-
-function readStoreSeriesRegistry(): Record<string, string[]> {
-  try {
-    return JSON.parse(window.localStorage.getItem(storeSeriesStorageKey) ?? '{}') as Record<string, string[]>
-  } catch {
-    return {}
-  }
-}
-
-function writeStoreSeriesRegistry(value: Record<string, string[]>) {
-  try {
-    window.localStorage.setItem(storeSeriesStorageKey, JSON.stringify(value))
-  } catch {
-    // 本地预览禁用储存时仍保留当前页面状态。
-  }
-}
-
-function readStoreSeriesReassignments(): Record<string, Record<string, string>> {
-  try {
-    return JSON.parse(window.localStorage.getItem(storeSeriesReassignmentsStorageKey) ?? '{}') as Record<string, Record<string, string>>
-  } catch {
-    return {}
-  }
-}
-
-function seriesForStore(storeId: string) {
-  const saved = readStoreSeriesRegistry()[storeId]
-  return saved?.length ? saved : initialSeriesForStore(storeId)
-}
-
 function CatalogProductVisual({ product, large = false }: { product: CatalogProduct; large?: boolean }) {
   return (
     <div className={`catalog-product-visual ${product.tone} ${large ? 'large' : ''}`} aria-hidden="true">
@@ -5395,10 +5352,8 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
   const [catalogQuery, setCatalogQuery] = useState('')
   const [catalogAddedTime, setCatalogAddedTime] = useState('all')
   const [catalogSort, setCatalogSort] = useState('default')
-  const [catalogSeries, setCatalogSeries] = useState('all')
   const [catalogPage, setCatalogPage] = useState(1)
   const [catalogSelectedIds, setCatalogSelectedIds] = useState<string[]>([])
-  const [catalogSeriesRevision, setCatalogSeriesRevision] = useState(0)
   const [manualStoreId, setManualStoreId] = useState('')
   const [manualStoreName, setManualStoreName] = useState('')
   const [manualStoreSubmitting, setManualStoreSubmitting] = useState(false)
@@ -5415,10 +5370,6 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
   const [products, setProducts] = useState<ApiProduct[] | null>(null)
   const [catalogReadNote, setCatalogReadNote] = useState('正在读取平台与店铺…')
   const [productsNote, setProductsNote] = useState('正在读取商品…')
-  // A local, per-session series label the merchant assigned to selected
-  // products. It is an organisational label only — the server publishes no
-  // series, and this never claims a server write.
-  const [seriesOverrides, setSeriesOverrides] = useState<Record<string, string>>({})
   useEffect(() => {
     if (!baseUrl) {
       setAccounts(null)
@@ -5493,14 +5444,13 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
   // `null` while the product read is unresolved (distinct from a store with no
   // products, which is a real answer).
   const storeItems = useMemo(
-    () => (selectedStore ? catalogProductsForStore(products, selectedStore.id, readStoreSeriesReassignments()[selectedStore.id] ?? {}) : null),
-    // `catalogSeriesRevision` re-reads the local series registry after a series change.
-    [products, selectedStore, catalogSeriesRevision],
+    () => (selectedStore ? catalogProductsForStore(products, selectedStore.id, {}) : null),
+    [products, selectedStore],
   )
   const storeItemsRead = storeItems !== null
   const storeProducts = useMemo(
-    () => (storeItems ?? []).map((product) => seriesOverrides[product.id] ? { ...product, series: seriesOverrides[product.id]! } : product),
-    [seriesOverrides, storeItems],
+    () => storeItems ?? [],
+    [storeItems],
   )
   const selectedProduct = storeProducts.find((product) => product.id === selectedProductId) ?? null
   const visibleStoreItems = useMemo(() => {
@@ -5515,48 +5465,32 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
         || (catalogAddedTime === '7-days' && ageInDays <= 7)
         || (catalogAddedTime === '30-days' && ageInDays <= 30)
         || (catalogAddedTime === '90-days' && ageInDays <= 90)
-      const matchesSeries = catalogSeries === 'all' || product.series === catalogSeries
-      return matchesQuery && matchesAddedTime && matchesSeries
+      return matchesQuery && matchesAddedTime
     })
     if (catalogSort === 'added-asc') return [...filtered].sort((left, right) => left.addedAt.localeCompare(right.addedAt))
     return [...filtered].sort((left, right) => right.addedAt.localeCompare(left.addedAt))
-  }, [catalogAddedTime, catalogQuery, catalogSeries, catalogSort, storeProducts])
+  }, [catalogAddedTime, catalogQuery, catalogSort, storeProducts])
   const catalogPageSize = 6
   const catalogPageCount = Math.max(1, Math.ceil(visibleStoreItems.length / catalogPageSize))
   const pagedStoreItems = visibleStoreItems.slice((catalogPage - 1) * catalogPageSize, catalogPage * catalogPageSize)
-  const hasCatalogFilters = Boolean(catalogQuery.trim()) || catalogAddedTime !== 'all' || catalogSeries !== 'all' || catalogSort !== 'default'
+  const hasCatalogFilters = Boolean(catalogQuery.trim()) || catalogAddedTime !== 'all' || catalogSort !== 'default'
   const allVisibleCatalogSelected = pagedStoreItems.length > 0 && pagedStoreItems.every((product) => catalogSelectedIds.includes(product.id))
-  const selectedCatalogSeries = new Set(storeProducts.filter((product) => catalogSelectedIds.includes(product.id)).map((product) => product.series))
-  const selectedCatalogCurrentSeries = selectedCatalogSeries.size === 1 ? Array.from(selectedCatalogSeries)[0] : ''
-  const catalogSeriesOptions = selectedStore ? seriesForStore(selectedStore.id) : defaultCatalogSeriesNames
 
   useEffect(() => {
     setCatalogPage(1)
-  }, [catalogAddedTime, catalogQuery, catalogSeries, catalogSort, selectedStoreId])
+  }, [catalogAddedTime, catalogQuery, catalogSort, selectedStoreId])
 
   useEffect(() => {
     setCatalogPage((current) => Math.min(current, catalogPageCount))
   }, [catalogPageCount])
 
-  useEffect(() => {
-    const syncSeriesChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ storeId: string; deleted?: string; fallback?: string }>).detail
-      // Series live in the local registry, so re-reading it (via the revision
-      // below) is enough: a deleted series' products fall back through the
-      // registry's reassignment map rather than a local product copy.
-      if (detail?.storeId && detail.deleted && detail.fallback && selectedStoreId === detail.storeId && catalogSeries === detail.deleted) setCatalogSeries('all')
-      setCatalogSeriesRevision((current) => current + 1)
-    }
-    window.addEventListener(storeSeriesChangedEvent, syncSeriesChange)
-    return () => window.removeEventListener(storeSeriesChangedEvent, syncSeriesChange)
-  }, [catalogSeries, selectedStoreId])
+
 
   const openStore = (storeId: string) => {
     setSelectedStoreId(storeId)
     setSelectedProductId(null)
     setCatalogQuery('')
     setCatalogAddedTime('all')
-    setCatalogSeries('all')
     setCatalogSort('default')
     setCatalogSelectedIds([])
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -5570,15 +5504,6 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
   }
   const toggleCatalogProduct = (productId: string) => {
     setCatalogSelectedIds((current) => current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId])
-  }
-  const assignSelectedCatalogSeries = (targetSeries: string) => {
-    if (!selectedStore || !catalogSelectedIds.length) return
-    // A local re-labelling of selected products; the server publishes no series.
-    setSeriesOverrides((current) => Object.fromEntries([
-      ...Object.entries(current),
-      ...catalogSelectedIds.map((id) => [id, targetSeries] as const),
-    ]))
-    setCatalogSelectedIds([])
   }
   if (selectedStore && !selectedStore.catalogAccessible) {
     return (
@@ -5684,7 +5609,6 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
               <Search size={16} aria-hidden="true" />
               <input aria-label="搜索商品名称或关键词" placeholder="搜索商品名称或关键词" value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} />
             </div>
-            <CatalogFilterMenu key={`series-filter-${catalogSeriesRevision}`} label="选择系列" buttonLabel="选择系列" value={catalogSeries} onChange={(value) => { setCatalogSeries(value); setCatalogSelectedIds([]) }} options={[{ value: 'all', label: '全部系列' }, ...catalogSeriesOptions.map((item) => ({ value: item, label: item }))]} />
             <CatalogFilterMenu label="按添加时间筛选" value={catalogAddedTime} onChange={setCatalogAddedTime} options={[{ value: 'all', label: '全部添加时间' }, { value: '7-days', label: '近 7 天添加' }, { value: '30-days', label: '近 30 天添加' }, { value: '90-days', label: '近 90 天添加' }]} />
             <CatalogFilterMenu label="商品排序方式" value={catalogSort} onChange={setCatalogSort} options={[{ value: 'default', label: '添加时间从新到旧' }, { value: 'added-asc', label: '添加时间从旧到新' }]} />
             <div className="catalog-view-toggle" role="group" aria-label="商品展示方式">
@@ -5692,7 +5616,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
               <button className={viewMode === 'list' ? 'active' : ''} aria-pressed={viewMode === 'list'} onClick={() => setViewMode('list')}><Rows3 size={16} />列表</button>
             </div>
           </div>
-          <div className="catalog-search-summary"><div className="catalog-summary-leading"><button className="catalog-back catalog-back-inline" onClick={() => setSelectedStoreId(null)}><ArrowLeft size={15} />返回店铺选择</button><div className="catalog-result-count-card"><span>共找到 <strong>{visibleStoreItems.length}</strong> 件商品</span>{hasCatalogFilters && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSeries('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>重置条件</button>}</div></div><div className="catalog-batch-operation-card"><span className={catalogSelectedIds.length ? 'active' : ''}>已选 <strong>{catalogSelectedIds.length}</strong> 件</span><button type="button" onClick={() => setCatalogSelectedIds(allVisibleCatalogSelected ? catalogSelectedIds.filter((id) => !pagedStoreItems.some((product) => product.id === id)) : Array.from(new Set([...catalogSelectedIds, ...pagedStoreItems.map((product) => product.id)])))}>{allVisibleCatalogSelected ? '取消全选' : '全选当前'}</button><CatalogFilterMenu label="添加至其他系列" buttonLabel="添加至其他系列" disabled={!catalogSelectedIds.length} value={selectedCatalogCurrentSeries} onChange={assignSelectedCatalogSeries} options={catalogSeriesOptions.map((item) => ({ value: item, label: item }))} /><button type="button" className="danger" disabled aria-label="批量删除（服务端未提供商品删除接口）" title="服务端未提供商品删除接口，当前不能删除服务端商品"><Trash2 size={13} />批量删除</button></div></div>
+          <div className="catalog-search-summary"><div className="catalog-summary-leading"><button className="catalog-back catalog-back-inline" onClick={() => setSelectedStoreId(null)}><ArrowLeft size={15} />返回店铺选择</button><div className="catalog-result-count-card"><span>共找到 <strong>{visibleStoreItems.length}</strong> 件商品</span>{hasCatalogFilters && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>重置条件</button>}</div></div><div className="catalog-batch-operation-card"><span className={catalogSelectedIds.length ? 'active' : ''}>已选 <strong>{catalogSelectedIds.length}</strong> 件</span><button type="button" onClick={() => setCatalogSelectedIds(allVisibleCatalogSelected ? catalogSelectedIds.filter((id) => !pagedStoreItems.some((product) => product.id === id)) : Array.from(new Set([...catalogSelectedIds, ...pagedStoreItems.map((product) => product.id)])))}>{allVisibleCatalogSelected ? '取消全选' : '全选当前'}</button><button type="button" className="danger" disabled aria-label="批量删除（服务端未提供商品删除接口）" title="服务端未提供商品删除接口，当前不能删除服务端商品"><Trash2 size={13} />批量删除</button></div></div>
           {viewMode === 'list' && <div className="catalog-list-header"><span>商品图片</span><span>添加时间</span><span>商品名称</span><span>系列</span><span>商品卖点</span><span>价格</span></div>}
           <div className={`catalog-product-collection ${viewMode}`}>
             {pagedStoreItems.map((product) => (
@@ -5708,7 +5632,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
                 <PackageSearch size={25} />
                 <strong>{!storeItemsRead ? '商品列表未读取' : storeProducts.length ? '没有找到符合条件的商品' : '该店铺还没有商品'}</strong>
                 <span>{!storeItemsRead ? productsNote : storeProducts.length ? '可以减少筛选条件，或换一个关键词再试。' : selectedStore.readable ? '服务端未返回这家店铺的商品事实。' : '平台运营尚未为这家店铺导入商品。'}</span>
-                {storeItemsRead && storeProducts.length > 0 && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSeries('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>清除全部条件</button>}
+                {storeItemsRead && storeProducts.length > 0 && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>清除全部条件</button>}
               </div>
             )}
           </div>
@@ -5793,6 +5717,11 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
 // `StoreMaterialCategory` / `StoreMaterialSeries` / `StoreMaterialItem` and the
 // card taxonomy now live in `material-library.ts`, next to the mapper that fills
 // them from a real `GET /v1/assets` row.
+/** Compatibility helper: series remain server-scoped, so a store starts with only the unclassified bucket. */
+export function initialSeriesForStore(_storeId: string): string[] {
+  return ['未分类']
+}
+
 type MaterialBrandSettings = {
   logoUrl: string
   logoFileName?: string
@@ -6129,6 +6058,7 @@ function MaterialCategoryDropdown({
   searchable = false,
   searchPlaceholder = '搜索',
   triggerContent,
+  disabled = false,
 }: {
   value: string
   options: Array<{ value: string; label: string }>
@@ -6137,6 +6067,7 @@ function MaterialCategoryDropdown({
   searchable?: boolean
   searchPlaceholder?: string
   triggerContent?: ReactNode
+  disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -6167,7 +6098,7 @@ function MaterialCategoryDropdown({
 
   return (
     <div className="material-category-dropdown" ref={rootRef}>
-      <button type="button" className={triggerContent ? 'custom-trigger' : ''} aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} title={selectedLabel} onClick={() => { setOpen((current) => !current); setSearch('') }}>{triggerContent ?? <span>{selectedLabel}</span>}<ChevronDown size={15} /></button>
+      <button type="button" className={triggerContent ? 'custom-trigger' : ''} disabled={disabled} aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} title={selectedLabel} onClick={() => { setOpen((current) => !current); setSearch('') }}>{triggerContent ?? <span>{selectedLabel}</span>}<ChevronDown size={15} /></button>
       {open && <div className={`material-category-dropdown-menu${searchable ? ' searchable' : ''}`} role="listbox" aria-label={ariaLabel}>
         {searchable && <label className="material-category-dropdown-search"><Search size={13} /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder={searchPlaceholder} aria-label={searchPlaceholder} /></label>}
         <div className="material-category-dropdown-options">{visibleOptions.map((option) => <button type="button" role="option" aria-selected={option.value === value} className={option.value === value ? 'active' : ''} key={option.value} onClick={() => { onChange(option.value); setOpen(false); setSearch('') }}><span>{option.label}</span>{option.value === value && <Check size={14} />}</button>)}{!visibleOptions.length && <p>没有匹配的店铺</p>}</div>
@@ -6277,7 +6208,7 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
           <div className="material-recycle-actions">
             <span>已选 <strong>{selectedItems.length}</strong> 项</span>
             <button type="button" disabled={readState !== 'ready' || busy || !items.length} onClick={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}>{allSelected ? '取消全选' : '全选'}</button>
-            <button type="button" disabled={!selectedItems.length || busy || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={() => void restoreFromRecycleBin(selectedIds)}><Undo2 size={14} />恢复所选素材</button>
+            <button type="button" disabled={!selectedItems.length || busy || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={() => void restoreFromRecycleBin(selectedIds)}><Undo2 size={14} />恢复</button>
             <button type="button" className="danger" disabled={!selectedItems.length || busy || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={() => { setPurgeConfirmation(''); setPurgeReason(''); setPurgeDialogOpen(true) }}><Trash2 size={14} />彻底删除</button>
           </div>
         </div>
@@ -6491,14 +6422,9 @@ export function MaterialLibraryWorkspace({
   const [storeBrands, setStoreBrands] = useState<Record<string, MaterialBrandSettings>>({})
   const [storeBrandEnabled, setStoreBrandEnabled] = useState<Record<string, boolean>>({})
   const [storeBrandTransition, setStoreBrandTransition] = useState('')
-  const [seriesBrandTransition, setSeriesBrandTransition] = useState('')
-  const [seriesByStore, setSeriesByStore] = useState<Record<string, string[]>>(() => {
-    const saved = readStoreSeriesRegistry()
-    return Object.fromEntries(materialStores.map((store) => [store.id, saved[store.id]?.length ? saved[store.id] : initialSeriesForStore(store.id)]))
-  })
-  const [newSeriesName, setNewSeriesName] = useState('')
-  const [activeBrandSeries, setActiveBrandSeries] = useState(() => seriesForStore(stores[0]?.id ?? '')[0] ?? '未分类')
+  const [activeBrandSeries, setActiveBrandSeries] = useState('未分类')
   const [seriesManagerOpen, setSeriesManagerOpen] = useState(false)
+  const [newSeriesName, setNewSeriesName] = useState('')
   const [seriesBrands, setSeriesBrands] = useState<Record<string, MaterialBrandSettings>>({})
   const [seriesBrandEnabled, setSeriesBrandEnabled] = useState<Record<string, boolean>>({})
   const [imageBrands, setImageBrands] = useState<Record<string, MaterialBrandSettings>>({})
@@ -6510,12 +6436,34 @@ export function MaterialLibraryWorkspace({
   const [scopedBrandSaved, setScopedBrandSaved] = useState('')
   const [scopedBrandDraftDirty, setScopedBrandDraftDirty] = useState(false)
   const uploadInput = useRef<HTMLInputElement>(null)
-  const seriesManagerRef = useRef<HTMLDivElement>(null)
   const storeBrandTransitionTimer = useRef<number | null>(null)
-  const seriesBrandTransitionTimer = useRef<number | null>(null)
   const pendingPreviews = useMemo(() => pendingFiles.map((file) => ({ file, url: URL.createObjectURL(file) })), [pendingFiles])
-  const availableSeries = seriesByStore[activeStoreId] ?? ['未分类']
+  const availableSeries = scopedBrandRead
+    ? ['未分类', ...scopedBrandRead.series.filter((row) => row.accountId === activeStoreId && row.name !== '未分类').map((row) => row.name)]
+    : ['未分类']
   const activeSeriesKey = `${activeStoreId}::${activeBrandSeries}`
+
+  const createBrandSeries = async () => {
+    const name = newSeriesName.trim()
+    if (!name || !baseUrl || !scopedBrandRead || !activeStoreId || activeStoreId === 'unclassified') return
+    const existing = scopedBrandRead.series.find((row) => row.accountId === activeStoreId && row.name === name)
+    if (existing) {
+      setActiveBrandSeries(existing.name)
+      setNewSeriesName('')
+      setSeriesManagerOpen(false)
+      return
+    }
+    try {
+      const created = await createScopedBrandSeries(baseUrl, activeStoreId, name)
+      setScopedBrandRead((current) => current ? { ...current, series: [...current.series, created] } : current)
+      setActiveBrandSeries(created.name)
+      setNewSeriesName('')
+      setSeriesManagerOpen(false)
+      setScopedBrandError('')
+    } catch (cause) {
+      setScopedBrandError(`创建系列失败：${describeApiError(cause)}`)
+    }
+  }
 
   useEffect(() => {
     if (!baseUrl) { setScopedBrandRead(null); return }
@@ -6540,11 +6488,10 @@ export function MaterialLibraryWorkspace({
       }))))
       setImageBrands(Object.fromEntries(Object.entries(read.settings.images ?? {}).map(([id, entry]) => [id, materialBrandFromScope(entry.values)])))
       setImageBrandEnabled(Object.fromEntries(Object.entries(read.settings.images ?? {}).map(([id, entry]) => [id, entry.enabled])))
-      const serverSeries = Object.fromEntries([...new Set(read.series.map((entry) => entry.accountId))].map((accountId) => [accountId, ['未分类', ...read.series.filter((entry) => entry.accountId === accountId && entry.name !== '未分类').map((entry) => entry.name)]]))
-      setSeriesByStore((current) => ({ ...current, ...serverSeries }))
+      setActiveBrandSeries((current) => read.series.some((entry) => entry.accountId === activeStoreId && entry.name === current) ? current : '未分类')
     }).catch((cause) => { if (active) setScopedBrandError(`品牌配置读取失败：${describeApiError(cause)}`) })
     return () => { active = false }
-  }, [baseUrl])
+  }, [baseUrl, activeStoreId])
 
   useEffect(() => () => pendingPreviews.forEach((item) => URL.revokeObjectURL(item.url)), [pendingPreviews])
 
@@ -6558,27 +6505,12 @@ export function MaterialLibraryWorkspace({
     if (!first || first.id === activeStoreId) return
     setActiveStoreId(first.id)
     setUploadStoreId(first.id)
-    setActiveBrandSeries((seriesByStore[first.id] ?? initialSeriesForStore(first.id))[0] ?? '未分类')
-  }, [materialStores, storeChosenByMerchant, activeStoreId, seriesByStore])
+    setActiveBrandSeries('未分类')
+  }, [materialStores, storeChosenByMerchant, activeStoreId])
 
-  // Give every store that appears after the account read its series list. The
-  // initialiser ran on an empty list, so without this the first store would
-  // render with no series at all.
-  useEffect(() => {
-    setSeriesByStore((current) => {
-      const missing = materialStores.filter((store) => !current[store.id])
-      if (!missing.length) return current
-      const saved = readStoreSeriesRegistry()
-      return {
-        ...current,
-        ...Object.fromEntries(missing.map((store) => [store.id, saved[store.id]?.length ? saved[store.id] : initialSeriesForStore(store.id)])),
-      }
-    })
-  }, [materialStores])
 
   useEffect(() => () => {
     if (storeBrandTransitionTimer.current !== null) window.clearTimeout(storeBrandTransitionTimer.current)
-    if (seriesBrandTransitionTimer.current !== null) window.clearTimeout(seriesBrandTransitionTimer.current)
   }, [])
 
   useEffect(() => {
@@ -6593,21 +6525,6 @@ export function MaterialLibraryWorkspace({
     return () => document.removeEventListener('keydown', closePreview, true)
   }, [pendingPreviewIndex])
 
-  useEffect(() => {
-    if (!seriesManagerOpen) return
-    const closeSeriesManager = (event: PointerEvent) => {
-      if (!seriesManagerRef.current?.contains(event.target as Node)) setSeriesManagerOpen(false)
-    }
-    const closeSeriesManagerWithKeyboard = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSeriesManagerOpen(false)
-    }
-    document.addEventListener('pointerdown', closeSeriesManager)
-    document.addEventListener('keydown', closeSeriesManagerWithKeyboard)
-    return () => {
-      document.removeEventListener('pointerdown', closeSeriesManager)
-      document.removeEventListener('keydown', closeSeriesManagerWithKeyboard)
-    }
-  }, [seriesManagerOpen])
   const activeStore = materialStores.find((store) => store.id === activeStoreId) ?? materialStores[0] ?? (view === 'brands' ? unclassifiedUploadStore : undefined)
   const registerUploadedBrandAsset = (asset: AssetMetadata, kind: 'logo' | 'document', file: File) => {
     setRemoteAssets((current) => [asset, ...(current ?? []).filter((item) => item.id !== asset.id)])
@@ -6617,7 +6534,7 @@ export function MaterialLibraryWorkspace({
     }
   }
   const uploadStore = uploadTargets.find((store) => store.id === uploadStoreId) ?? activeStore ?? unclassifiedUploadStore
-  const uploadAvailableSeries = seriesByStore[uploadStoreId] ?? initialSeriesForStore(uploadStoreId)
+  const uploadAvailableSeries = ['未分类', ...(scopedBrandRead?.series.filter((row) => row.accountId === uploadStoreId && row.name !== '未分类').map((row) => row.name) ?? [])]
   // The asset endpoint is workspace-scoped. Store attribution comes only from
   // the durable, tenant-scoped assignment rows returned by brand-scopes.
   // A session upload is a server asset now, so the re-read returns the same row
@@ -6787,17 +6704,16 @@ export function MaterialLibraryWorkspace({
         let assignment = assignments.find((row) => row.assetId === assetId)
         const context = imageBrandContexts[assetId]
         if (assignment && context && assignment.accountId !== context.accountId) throw new Error(`图片 ${assetId} 已归属其他店铺，请先在素材库确认归属`)
+        const seriesId = context?.seriesName && context.seriesName !== '未分类'
+          ? await ensureSeries(context.accountId, context.seriesName)
+          : null
         if (!assignment) {
           if (!context || !stores.some((store) => store.id === context.accountId)) throw new Error(`图片 ${assetId} 尚未绑定真实店铺，请从素材库选择店铺后重试`)
-          const seriesId = await ensureSeries(context.accountId, context.seriesName)
           assignment = await assignScopedBrandAsset(baseUrl, assetId, context.accountId, seriesId, 0)
           assignments = [...assignments, assignment]
-        } else if (context && context.seriesName !== '未分类') {
-          const seriesId = await ensureSeries(context.accountId, context.seriesName)
-          if (assignment.seriesId !== seriesId) {
-            const updated = await assignScopedBrandAsset(baseUrl, assetId, context.accountId, seriesId, assignment.revision)
-            assignments = assignments.map((row) => row.assetId === assetId ? updated : row)
-          }
+        } else if (context && assignment.seriesId !== seriesId) {
+          const updated = await assignScopedBrandAsset(baseUrl, assetId, context.accountId, seriesId, assignment.revision)
+          assignments = assignments.map((row) => row.assetId === assetId ? updated : row)
         }
         settings.images![assetId] = { enabled: imageBrandEnabled[assetId] ?? true, values: scopedBrandValues(value, usableAssetIds) }
       }
@@ -6812,105 +6728,38 @@ export function MaterialLibraryWorkspace({
     }
   }
 
-  const createBrandSeries = async () => {
-    const name = newSeriesName.trim()
-    if (!name) return
-    if (availableSeries.includes(name)) { switchBrandSeries(name); setNewSeriesName(''); return }
-    if (baseUrl && scopedBrandRead && activeStoreId) {
-      try {
-        const created = await createScopedBrandSeries(baseUrl, activeStoreId, name)
-        setScopedBrandRead((current) => current ? { ...current, series: [...current.series, created] } : current)
-      } catch (cause) {
-        setScopedBrandError(`创建系列失败：${describeApiError(cause)}`)
-        return
-      }
-    }
-    const nextSeriesByStore = { ...seriesByStore, [activeStoreId]: availableSeries.includes(name) ? availableSeries : [...availableSeries, name] }
-    setSeriesByStore(nextSeriesByStore)
-    writeStoreSeriesRegistry(nextSeriesByStore)
-    setActiveBrandSeries(name)
-    const nextKey = `${activeStoreId}::${name}`
-    setSeriesBrands((current) => current[nextKey] ? current : { ...current, [nextKey]: { ...emptyMaterialBrandSettings } })
-    window.dispatchEvent(new CustomEvent(storeSeriesChangedEvent, { detail: { storeId: activeStoreId } }))
-    setNewSeriesName('')
-    setSeriesManagerOpen(false)
-  }
-
-  const showSeriesTransition = (name: string) => {
-    if (seriesBrandTransitionTimer.current !== null) window.clearTimeout(seriesBrandTransitionTimer.current)
-    setSeriesBrandTransition(`切换至 ${name}系列`)
-    seriesBrandTransitionTimer.current = window.setTimeout(() => {
-      setSeriesBrandTransition('')
-      seriesBrandTransitionTimer.current = null
-    }, 900)
-  }
-
-  const switchBrandSeries = (name: string) => {
-    if (name === activeBrandSeries) {
-      setSeriesManagerOpen(false)
-      return
-    }
-    setActiveBrandSeries(name)
-    setSeriesManagerOpen(false)
-    showSeriesTransition(name)
-  }
-
   const switchBrandStore = (storeId: string) => {
     if (storeId === activeStoreId) return
     const nextStore = stores.find((store) => store.id === storeId)
     if (!nextStore) return
-    if (storeBrandTransitionTimer.current !== null) window.clearTimeout(storeBrandTransitionTimer.current)
-    const nextSeries = (seriesByStore[storeId] ?? initialSeriesForStore(storeId))[0] ?? '未分类'
-    setStoreBrandTransition(`切换至 ${nextStore.name}`)
-    setStoreChosenByMerchant(true)
-    setActiveStoreId(storeId)
-    setActiveBrandSeries(nextSeries)
-    showSeriesTransition(nextSeries)
-    storeBrandTransitionTimer.current = window.setTimeout(() => {
-      setStoreBrandTransition('')
-      storeBrandTransitionTimer.current = null
-    }, 900)
-  }
-
-  const deleteBrandSeries = (name: string) => {
-    const remainingSeries = availableSeries.filter((item) => item !== name)
-    if (!remainingSeries.length) return
-    const fallbackSeries = remainingSeries.includes('未分类') ? '未分类' : remainingSeries[0]
-    const nextSeriesByStore = { ...seriesByStore, [activeStoreId]: remainingSeries }
-    setSeriesByStore(nextSeriesByStore)
-    writeStoreSeriesRegistry(nextSeriesByStore)
-    const reassignments = readStoreSeriesReassignments()
-    const nextReassignments = { ...reassignments, [activeStoreId]: { ...(reassignments[activeStoreId] ?? {}), [name]: fallbackSeries } }
-    try {
-      window.localStorage.setItem(storeSeriesReassignmentsStorageKey, JSON.stringify(nextReassignments))
-    } catch {
-      // 本地预览禁用储存时仍保留当前页面状态。
+    const commitSwitch = () => {
+      if (storeBrandTransitionTimer.current !== null) window.clearTimeout(storeBrandTransitionTimer.current)
+      setStoreBrandTransition(`切换至 ${nextStore.name}`)
+      setStoreChosenByMerchant(true)
+      setActiveStoreId(storeId)
+      setActiveBrandSeries('未分类')
+      storeBrandTransitionTimer.current = window.setTimeout(() => {
+        setStoreBrandTransition('')
+        storeBrandTransitionTimer.current = null
+      }, 900)
     }
-    const deletedKey = `${activeStoreId}::${name}`
-    setSeriesBrands((current) => {
-      const next = { ...current }
-      delete next[deletedKey]
-      return next
-    })
-    setSeriesBrandEnabled((current) => {
-      const next = { ...current }
-      delete next[deletedKey]
-      return next
-    })
-    setMaterialsByStore((current) => ({ ...current, [activeStoreId]: (current[activeStoreId] ?? []).map((item) => item.series === name ? { ...item, series: fallbackSeries } : item) }))
-    window.dispatchEvent(new CustomEvent(storeSeriesChangedEvent, { detail: { storeId: activeStoreId, deleted: name, fallback: fallbackSeries } }))
-    if (activeBrandSeries === name) {
-      setActiveBrandSeries(fallbackSeries)
-      showSeriesTransition(fallbackSeries)
+    if (scopedBrandDraftDirty) {
+      Modal.confirm({
+        title: '切换店铺并放弃未保存的品牌配置？',
+        content: `切换到「${nextStore.name}」会重新读取服务端配置，并丢弃当前页面尚未保存的全局、店铺、系列和单图草稿。`,
+        okText: '放弃草稿并切换',
+        cancelText: '继续编辑',
+        onOk: commitSwitch,
+      })
+      return
     }
-    if (series === name) setSeries('全部')
-    if (uploadSeries === name) setUploadSeries(fallbackSeries)
+    commitSwitch()
   }
 
   const switchStore = (storeId: string) => {
     setStoreChosenByMerchant(true)
     setActiveStoreId(storeId)
-    setActiveBrandSeries((seriesByStore[storeId] ?? initialSeriesForStore(storeId))[0] ?? '未分类')
+    setActiveBrandSeries('未分类')
     setQuery('')
     setCategory('全部')
     setSeries('全部')
@@ -6987,12 +6836,15 @@ export function MaterialLibraryWorkspace({
     const unassigned: StoreMaterialItem[] = []
     if (uploadStore.id !== 'unclassified' && accepted.length) {
       try {
-        let seriesRow = scopedBrandRead?.series.find((row) => row.accountId === uploadStore.id && row.name === uploadSeries)
-        if (!seriesRow) seriesRow = await createScopedBrandSeries(baseUrl, uploadStore.id, uploadSeries)
+        const seriesRow = uploadSeries === '未分类'
+          ? undefined
+          : scopedBrandRead?.series.find((row) => row.accountId === uploadStore.id && row.name === uploadSeries)
+            ?? await createScopedBrandSeries(baseUrl, uploadStore.id, uploadSeries)
+        const seriesId = seriesRow?.id ?? null
         const newAssignments: ScopedBrandRead['assignments'] = []
         for (const item of accepted) {
           try {
-            const result = await assignScopedBrandAsset(baseUrl, item.id, uploadStore.id, seriesRow.id, 0)
+            const result = await assignScopedBrandAsset(baseUrl, item.id, uploadStore.id, seriesId, 0)
             newAssignments.push(result)
             assigned.push(item)
           } catch (cause) {
@@ -7000,7 +6852,7 @@ export function MaterialLibraryWorkspace({
             assignmentFailures.push(`${item.name} 店铺归属保存失败：${describeApiError(cause)}`)
           }
         }
-        setScopedBrandRead((current) => current ? { ...current, series: current.series.some((row) => row.id === seriesRow.id) ? current.series : [...current.series, seriesRow], assignments: [...current.assignments, ...newAssignments] } : current)
+        setScopedBrandRead((current) => current ? { ...current, series: seriesRow && !current.series.some((row) => row.id === seriesRow.id) ? [...current.series, seriesRow] : current.series, assignments: [...current.assignments, ...newAssignments] } : current)
       } catch (cause) {
         unassigned.push(...accepted)
         assignmentFailures.push(`系列创建失败：${describeApiError(cause)}`)
@@ -7031,7 +6883,7 @@ export function MaterialLibraryWorkspace({
   }
 
   const updateMaterialMetadata = async (materialId: string, patch: Partial<Pick<StoreMaterialItem, 'category' | 'series'>>) => {
-    if (patch.series && (!baseUrl || !scopedBrandRead || activeStoreId === 'unclassified')) {
+    if (patch.series !== undefined && (!baseUrl || !scopedBrandRead || activeStoreId === 'unclassified')) {
       setMaterialStorageError(!baseUrl
         ? '素材系列需要服务端配置；请连接服务端后重试。'
         : !scopedBrandRead
@@ -7054,15 +6906,17 @@ export function MaterialLibraryWorkspace({
         return
       }
     }
-    if (patch.series && baseUrl && scopedBrandRead && activeStoreId !== 'unclassified') {
+    if (patch.series !== undefined && baseUrl && scopedBrandRead && activeStoreId !== 'unclassified') {
       try {
-        let seriesRow = scopedBrandRead.series.find((row) => row.accountId === activeStoreId && row.name === patch.series)
-        if (!seriesRow) seriesRow = await createScopedBrandSeries(baseUrl, activeStoreId, patch.series)
+        const seriesRow = patch.series === '未分类'
+          ? undefined
+          : scopedBrandRead.series.find((row) => row.accountId === activeStoreId && row.name === patch.series)
+            ?? await createScopedBrandSeries(baseUrl, activeStoreId, patch.series)
         const previous = scopedBrandRead.assignments.find((row) => row.assetId === materialId)
-        const updated = await assignScopedBrandAsset(baseUrl, materialId, activeStoreId, seriesRow.id, previous?.revision ?? 0)
+        const updated = await assignScopedBrandAsset(baseUrl, materialId, activeStoreId, seriesRow?.id ?? null, previous?.revision ?? 0)
         setScopedBrandRead((current) => current ? {
           ...current,
-          series: current.series.some((row) => row.id === seriesRow.id) ? current.series : [...current.series, seriesRow],
+          series: seriesRow && !current.series.some((row) => row.id === seriesRow.id) ? [...current.series, seriesRow] : current.series,
           assignments: [...current.assignments.filter((row) => row.assetId !== materialId), updated],
         } : current)
       } catch (cause) {
@@ -7145,7 +6999,7 @@ export function MaterialLibraryWorkspace({
         <div className="material-detail-info"><span className="section-kicker">素材详情</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailAssignedToStore ? activeStore.name : '未归属'}</dd></div><div><dt>平台</dt><dd>{detailAssignedToStore ? activeStore.platform : '未归属'}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div>{detailIsImage && <div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div>}<div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl>
           {detailMaterial.assetId ? <div className="material-detail-metadata-editors" aria-label="编辑素材分类和系列">
             <label><span>修改素材分类</span><MaterialCategoryDropdown ariaLabel={`修改${detailMaterial.name}的素材分类`} value={detailMaterial.category} options={materialStoreCategories.filter((value): value is StoreMaterialCategory => value !== '全部').map((value) => ({ value, label: value }))} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(detailMaterial.id, { category: value as StoreMaterialCategory }) }} /></label>
-            <label><span>修改所属系列</span><MaterialCategoryDropdown ariaLabel={`修改${detailMaterial.name}的所属系列`} value={detailMaterial.series} options={availableSeries.map((value) => ({ value, label: value }))} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(detailMaterial.id, { series: value }) }} /></label>
+            <label><span>修改所属系列</span><MaterialCategoryDropdown ariaLabel={`修改${detailMaterial.name}的所属系列`} value={detailMaterial.series} options={availableSeries.map((value) => ({ value, label: value }))} disabled={!detailMaterial.assetId || !scopedBrandRead || activeStoreId === 'unclassified'} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(detailMaterial.id, { series: value }) }} /></label>
           </div> : <p className="material-detail-metadata-readonly">素材还没有服务端记录，分类与系列只能在成功上传后修改。</p>}
           {materialStorageError && <p className="material-detail-metadata-error" role="alert">{materialStorageError}</p>}
           <a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
@@ -7195,8 +7049,8 @@ export function MaterialLibraryWorkspace({
           </article>}
           {scopedBrandRead && stores.length === 0 && <BrandScopeUnavailableRow number="02" label="店铺配置" description="覆盖全局配置并应用到当前店铺" status={noReadableStoreReason} />}
           {scopedBrandRead && stores.length > 0 && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用于当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card" ref={seriesManagerRef}><div className="material-brand-series-current"><span>当前系列</span><strong>{activeBrandSeries}</strong></div><button type="button" aria-haspopup="dialog" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>创建或选择当前店铺系列；已保存系列暂不支持删除</strong></div><label><span>新系列名称</span><div><input autoFocus value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={createBrandSeries} disabled={!newSeriesName.trim()}>创建</button></div></label><div className="material-brand-series-list"><span>已有系列</span>{availableSeries.map((item) => <div className={item === activeBrandSeries ? 'active' : ''} key={item}><button type="button" className="material-brand-series-select" onClick={() => switchBrandSeries(item)}><span>{item}</span>{item === activeBrandSeries && <Check size={14} />}</button><button type="button" className="material-brand-series-delete" aria-label={`删除${item}系列`} disabled={availableSeries.length === 1 || Boolean(scopedBrandRead?.series.some((row) => row.accountId === activeStoreId && row.name === item))} onClick={() => deleteBrandSeries(item)}><Trash2 size={13} /></button></div>)}</div></div>}</div>} /></div>
-            <MaterialBrandOutput value={effectiveSeriesBrand} label="系列配置" enabled={activeSeriesBrandEnabled} onEnabledChange={(enabled) => { setSeriesBrandEnabled((current) => ({ ...current, [activeSeriesKey]: enabled })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前系列', value: activeBrandSeries }} transitionLabel={seriesBrandTransition} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用于当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card"><div className="material-brand-series-current"><span>当前系列</span><MaterialCategoryDropdown ariaLabel="选择品牌配置系列" value={activeBrandSeries} options={availableSeries.map((name) => ({ value: name, label: name }))} onChange={setActiveBrandSeries} /></div><button type="button" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)} disabled={!scopedBrandRead || activeStoreId === 'unclassified'}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>系列保存到当前店铺</strong></div><label><span>新系列名称</span><div><input value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={() => void createBrandSeries()} disabled={!newSeriesName.trim() || !scopedBrandRead}>创建</button></div></label></div>}</div>} /></div>
+            <MaterialBrandOutput value={effectiveSeriesBrand} label="系列配置" enabled={activeSeriesBrandEnabled} onEnabledChange={(enabled) => { setSeriesBrandEnabled((current) => ({ ...current, [activeSeriesKey]: enabled })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前系列', value: activeBrandSeries }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
           {scopedBrandRead && stores.length === 0 && <BrandScopeUnavailableRow number="03" label="系列配置" description="覆盖店铺配置并应用到当前系列" status="当前没有可读取店铺，服务端未提供可加载的系列配置。" />}
           {scopedBrandRead && <article className="material-brand-row material-brand-single-row">
@@ -7244,6 +7098,10 @@ export function MaterialLibraryWorkspace({
                       <button type="button" className="material-card-select" aria-label={`选择${item.name}`} aria-pressed={selected} onClick={() => setSelectedIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])}>{selected && <Check size={14} />}</button>
                     </div>
                     <div className="material-card-copy"><strong title={item.name}>{item.name}</strong><span>{item.series} · {item.sizeLabel} · {item.format}</span><small>{item.fileSizeLabel} · {item.addedAt}</small></div>
+                    <div className="material-card-inline-editor" aria-label={`编辑${item.name}分类和系列`}>
+                      <label><span>素材分类</span><MaterialCategoryDropdown ariaLabel={`修改${item.name}的素材分类`} value={item.category} options={materialStoreCategories.filter((value): value is StoreMaterialCategory => value !== '全部').map((value) => ({ value, label: value }))} disabled={!item.assetId} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(item.id, { category: value as StoreMaterialCategory }) }} /></label>
+                      <label><span>所属系列</span><MaterialCategoryDropdown ariaLabel={`修改${item.name}的所属系列`} value={item.series} options={availableSeries.map((value) => ({ value, label: value }))} disabled={!item.assetId || !scopedBrandRead || activeStoreId === 'unclassified'} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(item.id, { series: value }) }} /></label>
+                    </div>
                     <div className="material-card-actions"><a href={materialDownloadHref(item, baseUrl)} download={item.name} onClick={(event) => { if (!item.assetId) return; event.preventDefault(); void downloadMaterial(item) }}><Download size={14} />下载</a></div>
                   </article>
                 )
@@ -7252,6 +7110,7 @@ export function MaterialLibraryWorkspace({
           ) : (
             <div className="material-empty"><FolderOpen size={28} /><strong>{materialEmptyTitle}</strong><span>{materialEmptyDetail}</span></div>
           )}
+          {materialStorageError && <p className="material-detail-metadata-error" role="alert">{materialStorageError}</p>}
         </section>
       )}
       {uploadDialogOpen && (

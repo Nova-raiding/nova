@@ -124,17 +124,28 @@ describe('the material library may not claim a catalogue it did not read', () =>
   })
 })
 
-describe('material metadata editing stays out of the reference card layout', () => {
-  it('keeps listing cards compact and exposes persisted category/series edits on the detail page', () => {
+describe('material metadata editing follows the reference card layout and persists to the server', () => {
+  it('renders inline category/series editors and uses the persisted metadata handlers', () => {
     const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
-    expect(appSource).not.toContain('className="material-card-inline-editor"')
+    expect(appSource).toContain('className="material-card-inline-editor"')
+    expect(appSource).toContain('void updateMaterialMetadata(item.id, { category: value as StoreMaterialCategory })')
+    expect(appSource).toContain('void updateMaterialMetadata(item.id, { series: value })')
+    expect(appSource).toContain('disabled={!item.assetId}')
+    expect(appSource).toContain('disabled={!item.assetId || !scopedBrandRead || activeStoreId === \'unclassified\'}')
     expect(appSource).toContain('className="material-detail-metadata-editors"')
-    expect(appSource).toContain('ariaLabel={`修改${detailMaterial.name}的素材分类`}')
-    expect(appSource).toContain('ariaLabel={`修改${detailMaterial.name}的所属系列`}')
     expect(appSource).toContain('void updateMaterialMetadata(detailMaterial.id, { category: value as StoreMaterialCategory })')
     expect(appSource).toContain('void updateMaterialMetadata(detailMaterial.id, { series: value })')
-    expect(appSource).toContain("if (patch.series && (!baseUrl || !scopedBrandRead || activeStoreId === 'unclassified'))")
+    expect(appSource).toContain("if (patch.series !== undefined && (!baseUrl || !scopedBrandRead || activeStoreId === 'unclassified'))")
     expect(appSource).toContain('未分类工作区不能保存店铺系列；请先选择已连接店铺。')
+    expect(appSource).toContain('createScopedBrandSeries(baseUrl, activeStoreId, name)')
+    expect(appSource).toContain("patch.series === '未分类'")
+    expect(appSource).toContain('assignScopedBrandAsset(baseUrl, materialId, activeStoreId, seriesRow?.id ?? null, previous?.revision ?? 0)')
+    expect(appSource).toContain("uploadSeries === '未分类'")
+    expect(appSource).toContain('assignScopedBrandAsset(baseUrl, item.id, uploadStore.id, seriesId, 0)')
+    expect(appSource).toContain("context?.seriesName && context.seriesName !== '未分类'")
+    expect(appSource).toContain('assignScopedBrandAsset(baseUrl, assetId, context.accountId, seriesId, 0)')
+    expect(appSource).not.toContain('merchant-store-series-v1')
+    expect(appSource).not.toContain('storeSeriesReassignmentsStorageKey')
   })
 })
 

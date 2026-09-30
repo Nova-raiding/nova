@@ -1610,6 +1610,9 @@ body {
 .material-card-copy strong { color:#24362c; font-size:10px; }
 .material-card-copy span { margin-top:5px; color:#66766d; font-size:9px; }
 .material-card-copy small { margin-top:4px; color:#96a099; font-size:8px; }
+.material-card-inline-editor { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; padding:0 8px 8px; }
+.material-card-inline-editor>label { display:grid; min-width:0; gap:3px; color:#718077; font-size:8px; font-weight:700; }
+.material-card-inline-editor .material-category-dropdown>button { min-height:30px; border:1px solid #d5e0da; background:#fff; text-align:left; font-size:9px; }
 .material-card-actions { display:grid; border-top:1px solid #e6ebe8; }
 .material-card-actions>a { display:flex; min-height:32px; align-items:center; justify-content:center; gap:5px; border-top:1px solid #e6ebe8; border-radius:0 0 10px 10px; color:#1f6849; background:#fafcfa; font-size:9px; font-weight:800; text-decoration:none; }
 .material-card-actions>a:hover { background:#eef5f0; }

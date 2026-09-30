@@ -162,13 +162,23 @@ describe("customer delivery completion", () => {
     expect(html).toContain("查看详情");
   });
 
-  it("offers profile editing only to writable sessions with a save handler", () => {
+  it("keeps the reference row action to details and places profile editing in the details drawer", () => {
     const writable = renderToStaticMarkup(<CustomerDeliverySection records={[base]} onSave={async record => record} />);
     const readOnly = renderToStaticMarkup(<CustomerDeliverySection readOnly records={[base]} onSave={async record => record} />);
     const source = readFileSync(new URL("./CustomerDeliverySection.tsx", import.meta.url), "utf8");
-    expect(writable).toContain("编辑档案");
+    expect(writable).not.toContain("编辑档案");
     expect(readOnly).not.toContain("编辑档案");
-    expect(source).toContain('onClick={() => void openStep(row, "profile")}');
+    expect(writable).toContain("查看详情");
+    expect(source).toContain('onClick={() => void openDetails(row)}');
+    expect(source).toContain('openStep(record, "profile")');
+    expect(source).toContain('编辑客户档案');
+  });
+
+  it("cancels the profile transition when details closes or write access changes during its animation", () => {
+    const source = readFileSync(new URL("./CustomerDeliverySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain('onClose={() => { detailsRequest.current++; setPendingProfileRecord(undefined); setDetailsRecord(undefined); }}');
+    expect(source).toContain('if (!mounted.current || disabled || access.disabled || access.readOnly || !access.canEditProfile || access.saving) return;');
+    expect(source).toContain('currentAccess.current = { disabled, readOnly, canEditProfile: Boolean(onSave), saving };');
   });
 
   it("shows the bound account login in customer details and an explicit fallback", () => {
