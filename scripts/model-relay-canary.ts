@@ -807,7 +807,8 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
       if (artifactRoot) {
         blocked.evidence_ref = writeRelayResponseArtifact(artifactRoot, releaseId, modality, {
           status: response.status, headers: response.headers, payload, result: blocked,
-          ...(modality === 'embedding' ? { inputText: embeddingInput, ...(candidateBinding ? { candidateBinding } : {}) } : {}),
+          ...(modality === 'embedding' ? { inputText: embeddingInput } : {}),
+          ...(candidateBinding ? { candidateBinding } : {}),
         })
       }
       return blocked
@@ -825,7 +826,8 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
       if (artifactRoot) {
         blocked.evidence_ref = writeRelayResponseArtifact(artifactRoot, releaseId, modality, {
           status: response.status, headers: response.headers, payload, result: blocked,
-          ...(modality === 'embedding' ? { inputText: embeddingInput, ...(candidateBinding ? { candidateBinding } : {}) } : {}),
+          ...(modality === 'embedding' ? { inputText: embeddingInput } : {}),
+          ...(candidateBinding ? { candidateBinding } : {}),
         })
       }
       return blocked
@@ -859,7 +861,8 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
     if (artifactRoot) {
       finalized.evidence_ref = writeRelayResponseArtifact(artifactRoot, releaseId, modality, {
         status: response.status, headers: response.headers, payload, result: finalized,
-        ...(modality === 'embedding' ? { inputText: embeddingInput, ...(candidateBinding ? { candidateBinding } : {}) } : {}),
+        ...(modality === 'embedding' ? { inputText: embeddingInput } : {}),
+        ...(candidateBinding ? { candidateBinding } : {}),
       })
     }
     return finalized
