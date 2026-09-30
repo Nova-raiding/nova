@@ -268,7 +268,9 @@ services:
       IMAGE_EDIT_TIMEOUT_MS: ${IMAGE_EDIT_TIMEOUT_MS:-300000}
       IMAGE_RESPONSE_FORMAT: ${IMAGE_RESPONSE_FORMAT:-url}
       OCR_MODEL: ${OCR_MODEL:-agnes-2.5-flash}
-      OCR_MAX_OUTPUT_TOKENS: ${OCR_MAX_OUTPUT_TOKENS:?OCR_MAX_OUTPUT_TOKENS must be configured in production}
+      # Local and release-sim compose must remain renderable without production
+      # secrets. The ECS production preflight requires an explicit value.
+      OCR_MAX_OUTPUT_TOKENS: ${OCR_MAX_OUTPUT_TOKENS:-512}
       VIDEO_MODEL: ${VIDEO_MODEL:-happyhorse-1.1-t2v}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-}
