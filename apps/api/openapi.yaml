@@ -1402,6 +1402,7 @@ components:
       type: object
       required: [asset_id, material_category, expected_revision]
       properties:
+        workspace_id: { type: string, description: Optional workspace context; server-side identity and access checks remain authoritative. }
         asset_id: { type: string, minLength: 1, maxLength: 256 }
         material_category: { type: string, enum: ['品牌资料', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类'] }
         expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }

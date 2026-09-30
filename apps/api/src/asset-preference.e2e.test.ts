@@ -57,6 +57,10 @@ describe('merchant material category API', () => {
     const asset = service.registerAsset({ workspaceId, name: '主图.png', mimeType: 'image/png', sizeBytes: 16, sha256: '3'.repeat(64), storageKey: `quarantine/${workspaceId}/main.png` })
     const initialRevision = asset.revision
 
+    const unboundStores = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'platform.store.list', params: {} }) }).then(response => response.json()) as { data?: { result: { items: Array<{ state: string }> } } }
+    expect(unboundStores.data?.result.items.length).toBeGreaterThan(0)
+    expect(unboundStores.data?.result.items.every(item => item.state !== 'connected')).toBe(true)
+
     const saved = await fetch(`${base}/v1/assets/${asset.id}/metadata`, { method: 'PUT', headers, body: JSON.stringify({ material_category: '商品主图', expected_revision: initialRevision }) }).then(response => response.json()) as Envelope<{ materialCategory: string; revision: number }>
     expect(saved.error).toBeNull()
     expect(saved.data).toMatchObject({ materialCategory: '商品主图', revision: initialRevision + 1 })

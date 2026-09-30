@@ -355,7 +355,7 @@ describe('Codex stdio MCP bridge', () => {
         [tool.name, tool.description],
         ...Object.entries(tool.inputSchema.properties ?? {}).map(([name, schema]) => [`${tool.name}.${name}`, schema.description]),
       ]).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-      expect(tools).toHaveLength(116)
+      expect(tools).toHaveLength(117)
       expect(descriptions.filter(([, description]) => !/[\u3400-\u9fff]/u.test(description))).toEqual([])
       expect(tools.find(tool => tool.name === 'asset.metadata.update')?.inputSchema.properties?.asset_id).toMatchObject({ type: 'string', minLength: 1, maxLength: 256 })
       expect(tools.find(tool => tool.name === 'asset.metadata.update')?.inputSchema.properties?.expected_revision).toMatchObject({ pattern: '^[1-9][0-9]*$', maxLength: 10 })

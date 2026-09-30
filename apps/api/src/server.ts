@@ -4266,7 +4266,7 @@ const STORE_BOUNDARY_EXEMPT_METHODS = new Set([
   // only the workspace's own generation job preference and never touches a store.
   'catalog.image.select',
   // Uploading and parsing the merchant's own source material.
-  'asset.upload', 'asset.upload.batch', 'asset.parse', 'asset.list', 'asset.facts.confirm',
+  'asset.upload', 'asset.upload.batch', 'asset.parse', 'asset.list', 'asset.facts.confirm', 'asset.metadata.update',
   'upload.session.create', 'upload.session.part', 'upload.session.complete',
   // The confirmation step of the same asset-level continuation. `asset.upload`
   // with a generation intent creates an `awaiting_confirmation` continuation and
@@ -14116,7 +14116,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     // exemption table; `httpOperationPolicy` is already computed above.
     await requireStoreOnboarding(requestWorkspace, storeBoundaryScopeForHttp(httpOperationPolicy, path))
   }
-  const httpCommercialValidationDeferred = (req.method === 'PUT' && /^\/v1\/assets\/[^/]+\/preference$/u.test(path))
+  const httpCommercialValidationDeferred = (req.method === 'PUT' && /^\/v1\/assets\/[^/]+\/(?:preference|metadata)$/u.test(path))
     || (req.method === 'POST' && /^\/v1\/assets\/[^/]+\/(?:trash|restore)$/u.test(path))
     || (req.method === 'GET' && path === '/v1/assets/trash')
     || (req.method === 'POST' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/manual-record$/u.test(path))

@@ -180,6 +180,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     const workspaceId = resolveWorkspace(req, input.workspace_id)
     const asset = assetForWorkspace(workspaceId, decodeURIComponent(assetMaterialMetadataMatch[1]!))
     await enforceAssetAccess(req, workspaceId, asset.id, 'editor')
+    if (httpOperationPolicyOperation) await enforceHttpCommercialAccess(req, workspaceId, httpOperationPolicyOperation)
     const category = required(input, 'material_category')
     const expectedRevision = input.expected_revision
     if (typeof expectedRevision !== 'number' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_revision 必须是正整数', 400)
