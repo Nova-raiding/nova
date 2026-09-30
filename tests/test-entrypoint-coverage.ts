@@ -153,6 +153,10 @@ export const UNCOLLECTED_VITEST_TEST_FILES: readonly UncollectedTestFile[] = [
     file: 'demo/merchant-studio/scripts/verify-production-copy.test.mjs',
     reason: 'This is a Node built-in test, not a Vitest suite. The merchant-studio package exposes test:production-copy-guard and CI invokes that named script directly; it is listed here so the Vitest-only coverage scanner does not mistake the Node test for an orphan.',
   },
+  {
+    file: 'scripts/screenshot-matrix-evidence.test.mjs',
+    reason: 'Node built-in regression suite for the screenshot evidence extractor; run through its declared Node validation entrypoint.',
+  },
 ]
 
 /** Browser specs no Playwright project or runner argument schedules. */

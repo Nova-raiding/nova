@@ -51,6 +51,8 @@ describe('merchant material category API', () => {
   it('saves a workspace-scoped editor category with revision checking and returns it from the asset list', async () => {
     const base = await start()
     const workspaceId = `ws_asset_material_category_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'merchant-editor' }
     const asset = service.registerAsset({ workspaceId, name: '主图.png', mimeType: 'image/png', sizeBytes: 16, sha256: '3'.repeat(64), storageKey: `quarantine/${workspaceId}/main.png` })
     const initialRevision = asset.revision
@@ -65,7 +67,7 @@ describe('merchant material category API', () => {
     const stale = await fetch(`${base}/v1/assets/${asset.id}/metadata`, { method: 'PUT', headers, body: JSON.stringify({ material_category: '详情页图', expected_revision: initialRevision }) }).then(response => response.json()) as Envelope<unknown>
     expect(stale.error?.code).toBe('VERSION_CONFLICT')
     const mcpUpdated = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'asset.metadata.update', params: { asset_id: asset.id, material_category: 'SKU 图', expected_revision: String(saved.data?.revision) } }) }).then(response => response.json()) as { error?: { code: string }; data?: { result: { materialCategory: string; revision: number } } }
-    expect(mcpUpdated.error).toBeUndefined()
+    expect(mcpUpdated.error).toBeNull()
     expect(mcpUpdated.data?.result).toMatchObject({ materialCategory: 'SKU 图', revision: (saved.data?.revision ?? 0) + 1 })
     const foreign = await fetch(`${base}/v1/assets/${asset.id}/metadata`, { method: 'PUT', headers: { ...headers, 'x-workspace-id': `${workspaceId}_other` }, body: JSON.stringify({ material_category: '详情页图', expected_revision: saved.data?.revision }) }).then(response => response.json()) as Envelope<unknown>
     expect(foreign.error?.code).toBe('ASSET_NOT_FOUND')
