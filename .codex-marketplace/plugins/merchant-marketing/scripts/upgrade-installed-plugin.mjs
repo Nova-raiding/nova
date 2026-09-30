@@ -119,7 +119,12 @@ function verifyRuntimeAgainst(installedRoot, label, enforceRequestedProfile = fa
 
 // The marketplace is the actual source Codex will install. Verify its complete
 // runtime tree and tools before asking Codex to mutate the local cache.
-verifyRuntimeAgainst(marketplacePluginRoot, 'local marketplace plugin source')
+const marketplaceHasProfile = existsSync(resolve(marketplacePluginRoot, 'bundle-profile.json'))
+verifyRuntimeAgainst(
+  marketplacePluginRoot,
+  'local marketplace plugin source',
+  Boolean(requestedPackageProfile && marketplaceHasProfile),
+)
 
 if (requestedPackageProfile === 'qa-broker') {
   for (const [root, label] of [[sourceRoot, 'source'], [marketplacePluginRoot, 'marketplace']]) {
@@ -215,7 +220,15 @@ try {
   if (stagingMarketplace) {
     const stagedPlugin = resolve(stagingMarketplace, 'plugin')
     cpSync(marketplacePluginRoot, stagedPlugin, { recursive: true })
-    writeFileSync(resolve(stagedPlugin, 'bundle-profile.json'), `${JSON.stringify(packageProfileManifest(requestedPackageProfile), null, 2)}\n`, { flag: 'wx', mode: 0o444 })
+    const stagedProfilePath = resolve(stagedPlugin, 'bundle-profile.json')
+    const expectedProfile = `${JSON.stringify(packageProfileManifest(requestedPackageProfile), null, 2)}\n`
+    if (existsSync(stagedProfilePath)) {
+      if (readFileSync(stagedProfilePath, 'utf8') !== expectedProfile) {
+        throw new Error('staged marketplace plugin has a conflicting bundle profile')
+      }
+    } else {
+      writeFileSync(stagedProfilePath, expectedProfile, { flag: 'wx', mode: 0o444 })
+    }
     mkdirSync(resolve(stagingMarketplace, '.agents/plugins'), { recursive: true })
     writeFileSync(resolve(stagingMarketplace, '.agents/plugins/marketplace.json'), `${JSON.stringify({ ...marketplaceDocument,
       plugins: [{ ...pluginEntry[0], source: { source: 'local', path: './plugin' } }] }, null, 2)}\n`)
