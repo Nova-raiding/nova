@@ -131,6 +131,7 @@ describe('authorization policy registry', () => {
     expect(getMcpMethodPolicy('commercial.access.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self', workbench: 'workspace' })
     expect(capabilitiesForRoles(['platform_admin'])).toContain('billing.platform.read')
     expect(capabilitiesForRoles(['platform_admin'])).toEqual(expect.arrayContaining(['billing.reconcile.execute', 'billing.refund.execute']))
+    expect(capabilitiesForRoles(['platform_admin'])).toEqual(expect.arrayContaining(['rule.read', 'rule.update']))
     expect(getMcpMethodPolicy('billing.refund')).toMatchObject({ capability: 'billing.refund.execute', scope: 'platform', workbench: 'platform' })
     for (const method of ['billing.reconciliation.run', 'billing.model-usage.reconciliation.run', 'billing.model-usage.resolve'] as const) {
       expect(getMcpMethodPolicy(method)).toMatchObject({ capability: 'billing.reconcile.execute', scope: 'platform', workbench: 'platform' })
