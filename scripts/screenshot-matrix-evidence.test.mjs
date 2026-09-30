@@ -41,7 +41,7 @@ test('writes clean SHA, per-page viewport/time, and a positive exact-clean claim
   assert.equal(manifest.source.exactCleanShaClaimable, true)
   assert.equal(manifest.source.claimStatus, 'exact_clean_git_sha')
   assert.deepEqual(manifest.captures[0], {
-    label: 'overview', file: 'overview.png', route: '/ops/overview', viewport: { width: 1440, height: 1050 },
+    label: 'overview', file: 'overview.png', route: '/ops/overview?workbench=platform', viewport: { width: 1440, height: 1050 },
     fullPage: true, capturedAt: '2026-09-30T01:02:04.000Z',
   })
 })

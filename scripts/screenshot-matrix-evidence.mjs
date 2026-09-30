@@ -75,7 +75,7 @@ export async function createScreenshotMatrixEvidence({ evidenceDir, matrixName, 
       manifest.captures.push({
         label,
         file: pathFromRoot.split(sep).join('/'),
-        route: new URL(page.url()).pathname,
+        route: `${new URL(page.url()).pathname}${new URL(page.url()).search}`,
         viewport: viewport ? { width: viewport.width, height: viewport.height } : null,
         fullPage,
         capturedAt,
