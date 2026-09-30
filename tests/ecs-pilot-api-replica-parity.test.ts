@@ -190,6 +190,10 @@ describe('ECS pilot API replica parity', () => {
       MODEL_RELAY_ALLOWED_HOSTS: 'ai.wormholexyz.xyz',
       MODEL_RELAY_API_KEY: '',
       OCR_MAX_OUTPUT_TOKENS: '512',
+      AUTHORIZATION_APPROVAL_TOKENS: '{"approval-test":{"actor_id":"actor-approval","workspaces":["ws_production_test"]}}',
+      PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.example.test/platform-rules/v1/manifest.json',
+      PLATFORM_RULE_SYNC_SIGNING_SECRET: 'rule-sync-test-secret',
+      PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
       MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'false',
     }
     const apiEnv = services.api?.environment ?? {}
