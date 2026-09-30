@@ -17,15 +17,19 @@
 
 隔离候选启动与 ChatGPT 宿主取证见 [候选宿主路由](chatgpt-candidate-host-route.md)。正式部署脚本的完整证据预检发生在生产容器启动**之前**；因此“先部署、后验证”在本项目应指先启动 **101 隔离候选运行时**、在该运行时验证，然后生产切流并再次验收。现有正式部署脚本在迁移前读取旧生产 `/releasez`，并要求其身份与回滚 capsule 声明的兼容桥目标完全一致；旧生产 `/readyz` 则在候选运行时切换后检查。不得把旧版健康状态当作候选验收，也不得把旧版身份与兼容性未经核验的响应当作桥接证据。同样，回到已知故障的旧版不能算成功恢复。故障修复发布需要单独实现并验收：记录旧版故障及身份，保全数据库和运行配置，验证候选在隔离环境中可用，核对迁移兼容和流量切换方案，并在生产切流后以新版本公网业务验收作为成功条件。该路径目前尚未实现，不得把修改本文当作可以运行现有部署器的依据；旧容器缺少目标 Compose 归属的问题仍需处理。Bridge B 的现有约束见 [Bridge B 手册](ecs-bridge-b-transition.md)。
 
-### 254→255→256 API/worker isolated runtime gate
+### 254→257 隔离迁移与运行时证据
 
-`npm run test:release-gates` 的 `pretest:release-gates` 会在隔离 PostgreSQL 17/Redis 中执行 API、worker 和模型用量结算运行时门禁。API 测试实跑 254→255→256，覆盖品牌/素材路由 fail-closed、迁移后撤销 readiness、重启及 RLS。worker 测试通过 `merchant_app` 校验 254/255/256 前缀及版本变化重启；真实进程覆盖 sync 与 automation 角色，并验证 255 bridge 不调用 migration-256 purge、迁移到 256 后重启才发送带签名且限定 workspace 的 purge 请求。它仍不代替生产 PG16 恢复/故障演练、其他 worker 角色与队列业务 canary。可单独运行 API 桥接测试：
+当前候选 `release-metadata.json` 的迁移尾号为 257。隔离 PG16 全链兼容测试已在一次性 PostgreSQL 16 容器中从空库实际应用迁移 1–257，并逐项核验 257 条版本、名称和 SQL checksum，以及若干 RLS/资产生命周期约束。这证明当前迁移链可以在该隔离 PG16 实例上执行；它不是生产备份恢复、生产双角色完整历史核验或故障恢复演练的证据。
+
+隔离 PostgreSQL 17/Redis worker 桥测试的真实进程覆盖 `prefix_256_or_257`：automation worker 在 256 前缀保持生命周期清理请求关闭，迁移至 257 后需重启，并仅对限定 workspace 发送带签名的 purge 请求。其余 generation、publish、reconcile、scan 角色及共享消费者仍缺少同等级的 256→257 真实进程/队列验收。
+
+API 的 254→255→256 隔离合同覆盖了品牌/素材路由 fail-closed、迁移后 readiness 撤销、重启及 RLS。源码测试中已有 API 对 256→257 前缀的边界断言，但当前发布证据尚未证明 API-on-257 门禁已完整通过并绑定本候选；必须运行和审查真实隔离运行时结果，不能把测试代码存在当作通过。可单独运行历史 API 桥接测试：
 
 ```sh
 npm run test:bridge-254-255-api
 ```
 
-该门禁在一次性 PostgreSQL 17/Redis 容器中运行当前 API 进程：验证 254 前缀下新品牌作用域路由 fail-closed，执行受检迁移 255，确认旧进程对新前缀撤销 readiness，再重启候选 API 并验证 255 路由及 merchant_app RLS 隔离。它只证明 API/schema 的隔离运行时合同；不证明 worker、MCP、网关、生产签名恢复控制或 101 切流就绪，仍须完成下方 254→255 恢复与生产门禁。
+该命令在一次性 PostgreSQL 17/Redis 容器中运行当前 API 进程，覆盖 254→255 历史桥接合同；它不证明 API-on-257、全部 worker、MCP、网关、生产签名恢复控制或 101 切流就绪。PG16 全链和 worker 的 256→257 结果也不代替这些缺失门禁。
 
 ### 101 demo 主机只读清单
 
@@ -169,13 +173,15 @@ ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATAB
 
 部署执行器消费 nonce 后使用固定摘要的 PostgreSQL 17 迁移镜像执行前向迁移；迁移命令成功并不足以切流。执行器必须再次通过 `DATABASE_URL` 和 `OPS_DATABASE_URL` 运行完整链校验，确认两个运行角色都精确包含 1 到 `EXPECTED_MIGRATION_VERSION` 的候选链，才允许重建 API、Worker、UI 或网关容器。完整链校验失败会在业务容器切换前中止并进入受保护回退流程；数据库仍遵循 forward-only 策略，不执行 schema downgrade。
 
-### 当前 254→255→256 过渡发布阻断条件
+### 当前 254→257 过渡发布阻断条件
 
-本次线上 `merchant_ops / merchant` 只读事务在 2026-09-29T18:50:04Z 观测到连续迁移记录 count/tail=254；候选 `52d79f52` 的 `release-metadata.json` 目标为 256。该观察只核验了尾部和最近三条 checksum，不是 1–254 完整历史、`merchant_app` 视图或发布授权证明。候选归档、隔离恢复 capture、生产 evidence 和 `EXPECTED_MIGRATION_VERSION` 必须共同绑定目标 256。禁止让仍只兼容 254 的运行时代码承载流量时直接把共享库迁到 255。
+历史只读观测曾显示 101 连续迁移尾号为 254；该历史样本不是本次发布前的实时数据库历史证明。当前候选源码目标为 257。PG16 隔离全链 1–257 与 worker 256→257 测试已提供有限证据，但生产 `merchant_app`/`merchant_ops` 的 1–257 逐项历史、checksum 和角色边界仍须在发布窗口重新只读核验并绑定同一候选身份。不得把旧采样或单个 `max(version)` 当作生产证明。
 
-这是两个有序阶段，不是可把旧 254→255 门禁中的数字替换成 256 的单桥：先证明并安装兼容 254/255 的桥，完成受保护 254→255 转移；再将所有 API/replica 和正在运行的 worker（含 automation 及任何共享消费者）滚动至兼容 255/256 的桥，证明不存在只兼容 254/255 的活跃实例，之后才可执行受保护 255→256 转移，最后重启并验收完整 256 runtime。现有隔离 API 测试已贯穿两个相邻迁移阶段；worker 隔离测试现覆盖 sync 与 automation 真实进程，并实测 255/256 的 purge 调用门控。generation、publish、reconcile、scan 等角色仍没有同等级的跨阶段真实进程验证；第二阶段桥接期间一键插件连接接口的 503 行为也仍需确认，旧式 CLI PKCE 路径应独立核验。
+要从 254 到 257，必须有顺序且受保护的过渡：运行时先兼容 254/255，再在仍然兼容的服务全量部署后前向迁移并验收 255；随后部署兼容 255/256 的运行时再迁移至 256；最后部署兼容 256/257 的运行时并迁移至 257。每个边界都要证明所有 API/replica、worker、网关及共享消费者已切换到对应兼容版本，旧的不兼容服务已从请求和队列路径隔离。即使各前缀的单项兼容测试通过，也不能代替这条生产切换状态机。
 
-旧桥 B runbook 和 254→255 文档仍是阶段一的历史合同，不能重写为 256 的生产执行证据。当前 runtime gate 已覆盖 API 及 sync/automation worker 在 254→255→256 的部分隔离合同，但普通发布器、回滚 capsule 和桥接安装/恢复状态机尚未形成覆盖两阶段的受保护闭环。当前保持 **NO-GO**。在补齐其余 worker 角色与插件连接跨阶段隔离测试、生产逐项迁移 checksum 和双角色完整历史核验、PG16 恢复与故障注入、每个活跃服务/共享消费者身份核验、nonce/锁/签名恢复 capsule 以及真实候选宿主验收之前，不得 staging、迁移或切流。
+当前普通部署器要求生产实时库、回滚 capsule 目标和候选迁移尾号完全一致；full preflight 仅为旧 `prefix_242_or_244:244` 例外启用前缀模式。`ECS_BRIDGE_CODE_ONLY` 入口也拒绝普通 Compose takeover，并绑定旧 242→244 Bridge B 合同。运行时代码提供 254/255、255/256、256/257 前缀校验，不代表生产部署器已支持这些迁移桥。当前仍缺 API-on-257 的通过证据、其他 worker 角色/共享消费者验收，以及覆盖 254→257 的签名部署桥、nonce/锁/journal、迁移 fence 和兼容恢复闭环。不能通过只改版本常量、迁移尾号或 capsule 数值来绕过门禁。
+
+当前保持 **NO-GO**：PG16 全链与 worker 256→257 隔离测试通过不等于生产备份恢复、完整业务验收或可回退部署已通过。补齐 API-on-257 与全角色隔离门禁、生产双角色全链核验、等价 PG16 恢复和逐阶段故障注入、完整服务/共享消费者身份核验、签名恢复 capsule/state machine、同候选 ChatGPT 本地 stdio 宿主与真实业务验收之前，不得 staging、迁移或切流。部署和恢复脚本门禁保持原样。
 
 1. 在独立目录解包并完成三方合并。
 2. 对合并结果运行类型检查、OSS/证据/生产配置测试及 `pilot-compose-preflight.sh`。
