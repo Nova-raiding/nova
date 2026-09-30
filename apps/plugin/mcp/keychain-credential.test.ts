@@ -26,12 +26,13 @@ describe('macOS keychain credential', () => {
   it('fails closed when the native helper caller has no accepted signed ancestor', () => {
     const bundle = { schema_version: '1', api_origin: bound.apiOrigin, workspace_id: bound.workspaceId,
       access_token: 'access-secret', refresh_token: 'refresh-secret', expires_at: '2030-01-01T00:00:00Z' }
+    const spawnUnavailable = () => ({ status: null, error: Object.assign(new Error('helper missing'), { code: 'ENOENT' }), stdout: '', stderr: '' })
     if (process.platform === 'darwin' && existsSync(new URL('./keychain-credential-helper', import.meta.url))) {
-      expect(() => readKeychainCredential(bound)).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_exit=1')
-      expect(() => writeKeychainCredential(bound, bundle)).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_exit=1')
+      expect(() => readKeychainCredential(bound, { spawnHelper: spawnUnavailable })).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_start_failed operation=read')
+      expect(() => writeKeychainCredential(bound, bundle, { spawnHelper: spawnUnavailable })).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_start_failed operation=write')
     } else {
-      expect(() => readKeychainCredential(bound)).toThrow('MCP_KEYCHAIN_HELPER_INVALID')
-      expect(() => writeKeychainCredential(bound, bundle)).toThrow('MCP_KEYCHAIN_HELPER_INVALID')
+      expect(() => readKeychainCredential(bound, { spawnHelper: spawnUnavailable })).toThrow('MCP_KEYCHAIN_HELPER_INVALID')
+      expect(() => writeKeychainCredential(bound, bundle, { spawnHelper: spawnUnavailable })).toThrow('MCP_KEYCHAIN_HELPER_INVALID')
     }
   })
   it('writes one atomic JSON item without placing secrets in argv', async () => {

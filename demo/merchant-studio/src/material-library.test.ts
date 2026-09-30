@@ -55,13 +55,18 @@ describe('a material card is built from the server row', () => {
     })
   })
 
-  it('never invents a dimension, a category or a store attribution', () => {
+  it('never invents a dimension or store attribution and uses persisted categories', () => {
     const item = materialItemFromAsset(assets[0]!)
     // `GET /v1/assets` publishes no pixel dimensions, so the card may not show
     // the「1200 × 1200」the seed used to make up.
     expect(item.sizeLabel).toBe(MATERIAL_UNREAD)
-    // 素材分类 is the merchant's own labelling and the asset read carries none.
+    // Legacy rows with no persisted category remain unclassified.
     expect(item.category).toBe('未分类')
+    expect(materialItemFromAsset({ ...assets[0]!, materialCategory: '商品主图' }).category).toBe('商品主图')
+    const trusted = { ...assets[0]!, sha256: 'a'.repeat(64), sourceRevision: 2, imageDimensions: { width: 800, height: 600, sha256: 'a'.repeat(64), sourceRevision: 2 } }
+    expect(materialItemFromAsset(trusted).sizeLabel).toBe('800 × 600')
+    expect(materialItemFromAsset({ ...trusted, sha256: 'b'.repeat(64) }).sizeLabel).toBe(MATERIAL_UNREAD)
+    expect(materialItemFromAsset({ ...trusted, imageDimensions: { ...trusted.imageDimensions, sourceRevision: 1 } }).sizeLabel).toBe(MATERIAL_UNREAD)
     // An image that is not obviously a video stays unclassified; only the
     // medium is a server fact.
     expect(materialCategoryFromMimeType('video/mp4')).toBe('商品视频')

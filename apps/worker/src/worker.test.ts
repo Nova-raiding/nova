@@ -382,7 +382,7 @@ describe('worker production entry', () => {
         .resolves.toEqual({ migrationVersion: version, apiReady: false })
     }
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations }))
-      .rejects.toThrow('expected complete migration chain through 256')
+      .rejects.toThrow('expected complete migration chain through 257')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 253)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
       .rejects.toThrow('exactly 254 or 255')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254).map((row, index) => index === 253 ? { ...row, checksum: 'a'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
@@ -403,14 +403,17 @@ describe('worker production entry', () => {
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
       .rejects.toThrow('exactly 255 or 256')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 255)), expectedMigrations: migrations }))
-      .rejects.toThrow('expected complete migration chain through 256')
+      .rejects.toThrow('expected complete migration chain through 257')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 256).map((row, index) => index === 255 ? { ...row, checksum: 'b'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
       .rejects.toThrow('checksum mismatch')
   })
 
-  it('does not call the migration 256 purge endpoint from a 255 bridge worker', () => {
+  it('runs the asset purge endpoint only after the bridge schema has its matching guard', () => {
     expect(shouldRunAssetLifecyclePurge('prefix_255_or_256', 255)).toBe(false)
     expect(shouldRunAssetLifecyclePurge('prefix_255_or_256', 256)).toBe(true)
+    expect(shouldRunAssetLifecyclePurge('prefix_256_or_257', 256)).toBe(false)
+    expect(shouldRunAssetLifecyclePurge('prefix_256_or_257', 257)).toBe(true)
+    expect(shouldRunAssetLifecyclePurge('prefix_256_or_257', 255)).toBe(false)
     expect(shouldRunAssetLifecyclePurge(undefined, undefined)).toBe(true)
   })
 

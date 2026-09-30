@@ -677,6 +677,10 @@ export interface AssetMetadata {
   id: string
   name: string
   mimeType: string
+  materialCategory?: '品牌资料' | '商品主图' | '详情页图' | 'SKU 图' | '商品视频' | '未分类'
+  sha256?: string
+  sourceRevision?: number
+  imageDimensions?: { width: number; height: number; sha256: string; sourceRevision: number }
   sizeBytes: number
   rightsStatus: 'approved' | 'rejected' | 'pending' | string
   rightsScope?: string
@@ -1357,11 +1361,12 @@ const assetMimeType = (file: File) => file.type || ({
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.json': 'application/json',
   '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv', '.ai': 'application/postscript', '.eps': 'application/postscript',
 } as Record<string, string>)[file.name.slice(file.name.lastIndexOf('.')).toLowerCase()] || 'application/octet-stream'
-export const uploadAsset = async (baseUrl: string, file: File) => requestApi<AssetMetadata>(baseUrl, '/v1/assets/upload', {
+export const uploadAsset = async (baseUrl: string, file: File, materialCategory?: AssetMetadata['materialCategory']) => requestApi<AssetMetadata>(baseUrl, '/v1/assets/upload', {
   method: 'POST',
-  headers: { 'content-type': assetMimeType(file), 'x-asset-name': encodeURIComponent(file.name) },
+  headers: { 'content-type': assetMimeType(file), 'x-asset-name': encodeURIComponent(file.name), ...(materialCategory ? { 'x-asset-category': materialCategory } : {}) },
   body: await file.arrayBuffer(),
 })
+export const updateAssetMaterialCategory = (baseUrl: string, assetId: string, materialCategory: NonNullable<AssetMetadata['materialCategory']>, expectedRevision: number) => requestApi<AssetMetadata>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/metadata`, { method: 'PUT', body: JSON.stringify({ material_category: materialCategory, expected_revision: expectedRevision }) })
 export const fetchBrandProfile = (baseUrl: string) => requestApi<{ profile: BrandProfile | null }>(baseUrl, '/v1/brand-profile')
 export interface ScopedBrandValues { color?: string; persona?: string; sellingPoints?: string; logoAssetId?: string; documentAssetId?: string }
 export interface ScopedBrandEntry { enabled: boolean; values: ScopedBrandValues }

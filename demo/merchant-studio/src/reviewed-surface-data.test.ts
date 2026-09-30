@@ -294,16 +294,17 @@ describe('确认上传 writes to the server', () => {
     expect(outcome.accepted.map((item) => item.name)).not.toContain('probe.png')
   })
 
-  it('keeps the merchant 素材分类/所属系列 beside the acknowledged row', async () => {
+  it('renders the chosen upload category while the API upload call persists it', async () => {
     const outcome = await uploadMaterialFiles({
       files: [file('a.png', 10)],
       upload: async () => serverRow({ id: 'asset-1', name: 'a.png' }),
       labels: { category: '详情页图', series: '未分类' },
     })
-    // The asset read carries no label, so a session card would otherwise fall
-    // back to 未分类 and silently drop what the merchant chose in the dialog.
+    // The upload card immediately shows the chosen category; App sends that
+    // category with uploadAsset and the canonical asset row stores it across
+    // reads, not only in the current session's card state.
     expect(outcome.accepted[0]).toMatchObject({ category: '详情页图', series: '未分类' })
-    expect(materialItemFromAsset(serverRow()).category).toBe('未分类')
+    expect(materialItemFromAsset(serverRow({ materialCategory: '详情页图' })).category).toBe('详情页图')
   })
 
   it('routes 确认上传 through the upload endpoint rather than local state', () => {
@@ -313,7 +314,7 @@ describe('确认上传 writes to the server', () => {
     )
     // A real slice, so a moved marker fails loudly instead of asserting over "".
     expect(upload.length).toBeGreaterThan(500)
-    expect(upload).toContain('uploadAsset(baseUrl, file)')
+    expect(upload).toContain('uploadAsset(baseUrl, file, uploadCategory)')
     expect(upload).toContain('uploadMaterialFiles(')
     // The re-read is what makes the list the server's answer.
     expect(upload).toContain('fetchAssets(baseUrl)')

@@ -302,6 +302,7 @@ export function CustomerDeliverySection({
   onPageChange,
   onFiltersChange,
   headerActions,
+  emptyWorkspaceNotice,
 }: {
   readOnly?: boolean;
   disabled?: boolean;
@@ -343,6 +344,7 @@ export function CustomerDeliverySection({
   onPageChange?: (page: number) => void;
   onFiltersChange?: (filters: CustomerDeliveryFilters) => void;
   headerActions?: ReactNode;
+  emptyWorkspaceNotice?: ReactNode;
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [detailsRecord, setDetailsRecord] = useState<CustomerDeliveryRecord>();
@@ -706,6 +708,7 @@ export function CustomerDeliverySection({
         </Space>
       }
     >
+      {emptyWorkspaceNotice}
       <Drawer
         title="新建客户档案"
         forceRender

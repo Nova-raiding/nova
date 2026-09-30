@@ -233,8 +233,12 @@ export interface AssetMetadata {
   workspaceId: string
   name: string
   mimeType: string
+  /** Merchant-selected material category, persisted in the workspace asset snapshot. */
+  materialCategory?: AssetMaterialCategory
   sizeBytes: number
   sha256: string
+  /** Parsed from the exact uploaded bytes; stale values are invalidated on source change. */
+  imageDimensions?: { width: number; height: number; sha256: string; sourceRevision: number }
   /** Immutable upload-body revision used by preview evidence bindings. */
   sourceRevision?: number
   storageKey: string
@@ -271,6 +275,9 @@ export interface AssetMetadata {
   revision: number
   createdAt: string
 }
+
+export type AssetMaterialCategory = '品牌资料' | '商品主图' | '详情页图' | 'SKU 图' | '商品视频' | '未分类'
+const ASSET_MATERIAL_CATEGORIES: readonly AssetMaterialCategory[] = ['品牌资料', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类']
 
 export interface AssetPreviewEvidenceInput {
   detectedMimeType: string
@@ -2597,9 +2604,10 @@ export class MerchantService {
     if (!readiness.ready) throw new DomainError('BRAND_VISUAL_RULES_BLOCKED', '品牌视觉强规则未满足，已阻止生成；请先修正 Logo/字体素材与授权状态', 409, { issues: readiness.issues, next_step: '在素材库的品牌视觉强规则中修正配置，并完成对应素材的扫描与权益确认' })
     return readiness
   }
-  registerAsset(input: { workspaceId: string; name: string; mimeType: string; sizeBytes: number; sha256: string; storageKey: string; scanMode?: 'unscanned'; sourceProviderJobId?: string; rightsStatus?: AssetMetadata['rightsStatus']; rightsScope?: AssetMetadata['rightsScope']; applicablePlatforms?: Platform[]; applicableRegions?: string[]; usageScopes?: string[]; validFrom?: string; validTo?: string; aiModificationAllowed?: boolean; uploadedByActorId?: string }): AssetRegistrationResult {
+  registerAsset(input: { workspaceId: string; name: string; mimeType: string; sizeBytes: number; sha256: string; storageKey: string; scanMode?: 'unscanned'; sourceProviderJobId?: string; materialCategory?: AssetMaterialCategory; rightsStatus?: AssetMetadata['rightsStatus']; rightsScope?: AssetMetadata['rightsScope']; applicablePlatforms?: Platform[]; applicableRegions?: string[]; usageScopes?: string[]; validFrom?: string; validTo?: string; aiModificationAllowed?: boolean; uploadedByActorId?: string }): AssetRegistrationResult {
     const sha256 = input.sha256.trim().toLowerCase()
     if (input.scanMode === 'unscanned' && !this.options.allowUnscannedAssets) throw new DomainError('ASSET_SCAN_REQUIRED', '当前环境未启用免扫描上传', 409)
+    if (input.materialCategory !== undefined && !ASSET_MATERIAL_CATEGORIES.includes(input.materialCategory)) throw new DomainError('ASSET_MATERIAL_CATEGORY_INVALID', '素材分类无效', 400)
     if (!input.name.trim() || !input.mimeType.trim() || !Number.isInteger(input.sizeBytes) || input.sizeBytes < 0 || input.sizeBytes > 50 * 1024 * 1024 || !/^[a-f0-9]{64}$/.test(sha256) || !input.storageKey.trim() || input.storageKey.includes('..') || !input.storageKey.startsWith('quarantine/')) throw new DomainError('ASSET_METADATA_INVALID', '素材元数据无效或超过 50MB 限制', 400)
     if (input.scanMode === 'unscanned' && !isUsableAssetWithoutScan({ workspaceId: input.workspaceId, storageKey: input.storageKey, scanStatus: 'unscanned' }, true)) throw new DomainError('ASSET_METADATA_INVALID', '免扫描素材的存储路径与工作区不一致', 400)
     const normalizeList = (values: string[] | undefined, code: string, label: string) => {
@@ -2642,7 +2650,7 @@ export class MerchantService {
     }
     const createdAt = now()
     const uploader = input.uploadedByActorId?.trim()
-    const asset: AssetRegistrationResult = { id: id('asset'), workspaceId: input.workspaceId, name: input.name.trim(), mimeType: input.mimeType.trim(), sizeBytes: input.sizeBytes, sha256, sourceRevision: 1, storageKey: input.storageKey.trim(), ...(input.sourceProviderJobId ? { sourceProviderJobId: input.sourceProviderJobId.trim() } : {}), rightsStatus: input.rightsStatus ?? 'pending', ...(input.rightsScope ? { rightsScope: input.rightsScope } : {}), ...(input.applicablePlatforms?.length ? { applicablePlatforms: [...input.applicablePlatforms] } : {}), ...(applicableRegions?.length ? { applicableRegions } : {}), ...(usageScopes?.length ? { usageScopes } : {}), ...(input.validFrom ? { validFrom: new Date(input.validFrom).toISOString() } : {}), ...(input.validTo ? { validTo: new Date(input.validTo).toISOString() } : {}), ...(input.aiModificationAllowed !== undefined ? { aiModificationAllowed: input.aiModificationAllowed } : {}), scanStatus: input.scanMode ?? 'quarantined', parseStatus: 'pending', contentTrust: untrustedAssetContent(), references: [{ name: input.name.trim(), mimeType: input.mimeType.trim(), firstSeenAt: createdAt }], ...(uploader ? { uploadedByActorIds: [uploader] } : {}), revision: 1, createdAt, deduplication: { mode: 'created', rightsAndScanStatePreserved: false, referenceAdded: true } }
+    const asset: AssetRegistrationResult = { id: id('asset'), workspaceId: input.workspaceId, name: input.name.trim(), mimeType: input.mimeType.trim(), sizeBytes: input.sizeBytes, sha256, sourceRevision: 1, storageKey: input.storageKey.trim(), ...(input.sourceProviderJobId ? { sourceProviderJobId: input.sourceProviderJobId.trim() } : {}), ...(input.materialCategory ? { materialCategory: input.materialCategory } : {}), rightsStatus: input.rightsStatus ?? 'pending', ...(input.rightsScope ? { rightsScope: input.rightsScope } : {}), ...(input.applicablePlatforms?.length ? { applicablePlatforms: [...input.applicablePlatforms] } : {}), ...(applicableRegions?.length ? { applicableRegions } : {}), ...(usageScopes?.length ? { usageScopes } : {}), ...(input.validFrom ? { validFrom: new Date(input.validFrom).toISOString() } : {}), ...(input.validTo ? { validTo: new Date(input.validTo).toISOString() } : {}), ...(input.aiModificationAllowed !== undefined ? { aiModificationAllowed: input.aiModificationAllowed } : {}), scanStatus: input.scanMode ?? 'quarantined', parseStatus: 'pending', contentTrust: untrustedAssetContent(), references: [{ name: input.name.trim(), mimeType: input.mimeType.trim(), firstSeenAt: createdAt }], ...(uploader ? { uploadedByActorIds: [uploader] } : {}), revision: 1, createdAt, deduplication: { mode: 'created', rightsAndScanStatePreserved: false, referenceAdded: true } }
     this.assets.set(asset.id, asset)
     return asset
   }
@@ -2661,6 +2669,7 @@ export class MerchantService {
     }
     asset.storageKey = input.storageKey
     asset.sourceRevision = (asset.sourceRevision ?? 1) + 1
+    delete asset.imageDimensions
     asset.scanStatus = 'quarantined'
     delete asset.scanReceiptId
     delete asset.scanReceiptDigest
@@ -2672,6 +2681,15 @@ export class MerchantService {
     return asset
   }
   listAssets(workspaceId: string) { return [...this.assets.values()].filter(asset => asset.workspaceId === workspaceId).map(asset => ({ ...asset, readiness: assetReadiness(asset, this.options.allowUnscannedAssets) })) }
+  updateAssetMaterialCategory(input: { workspaceId: string; assetId: string; category: AssetMaterialCategory; expectedRevision: number }) {
+    const asset = this.assets.get(input.assetId)
+    if (!asset || asset.workspaceId !== input.workspaceId) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或不属于当前工作区', 404)
+    if (!ASSET_MATERIAL_CATEGORIES.includes(input.category)) throw new DomainError('ASSET_MATERIAL_CATEGORY_INVALID', '素材分类无效', 400)
+    if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1 || asset.revision !== input.expectedRevision) throw new DomainError('VERSION_CONFLICT', '素材已被其他操作更新，请刷新后重试', 409, { asset_id: asset.id, current_revision: asset.revision, expected_revision: input.expectedRevision })
+    asset.materialCategory = input.category
+    asset.revision += 1
+    return asset
+  }
   findAssetBySourceProviderJobId(workspaceId: string, providerJobId: string) { return [...this.assets.values()].find(asset => asset.workspaceId === workspaceId && asset.sourceProviderJobId === providerJobId) }
   listAssetsPage(workspaceId: string, input: { limit?: number; offset?: number } = {}) {
     const limit = Math.min(100, Math.max(1, Number.isInteger(input.limit) ? input.limit! : 20))

@@ -44,3 +44,27 @@ describe('historical asset preference API', () => {
     expect(foreign.error?.code).toBe('ASSET_NOT_FOUND')
   })
 })
+
+describe('merchant material category API', () => {
+  afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())) })
+
+  it('saves a workspace-scoped editor category with revision checking and returns it from the asset list', async () => {
+    const base = await start()
+    const workspaceId = `ws_asset_material_category_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'merchant-editor' }
+    const asset = service.registerAsset({ workspaceId, name: '主图.png', mimeType: 'image/png', sizeBytes: 16, sha256: '3'.repeat(64), storageKey: `quarantine/${workspaceId}/main.png` })
+    const initialRevision = asset.revision
+
+    const saved = await fetch(`${base}/v1/assets/${asset.id}/metadata`, { method: 'PUT', headers, body: JSON.stringify({ material_category: '商品主图', expected_revision: initialRevision }) }).then(response => response.json()) as Envelope<{ materialCategory: string; revision: number }>
+    expect(saved.error).toBeNull()
+    expect(saved.data).toMatchObject({ materialCategory: '商品主图', revision: initialRevision + 1 })
+
+    const listed = await fetch(`${base}/v1/assets`, { headers }).then(response => response.json()) as Envelope<Array<{ id: string; materialCategory?: string }>>
+    expect(listed.data?.find(row => row.id === asset.id)?.materialCategory).toBe('商品主图')
+
+    const stale = await fetch(`${base}/v1/assets/${asset.id}/metadata`, { method: 'PUT', headers, body: JSON.stringify({ material_category: '详情页图', expected_revision: initialRevision }) }).then(response => response.json()) as Envelope<unknown>
+    expect(stale.error?.code).toBe('VERSION_CONFLICT')
+    const foreign = await fetch(`${base}/v1/assets/${asset.id}/metadata`, { method: 'PUT', headers: { ...headers, 'x-workspace-id': `${workspaceId}_other` }, body: JSON.stringify({ material_category: '详情页图', expected_revision: saved.data?.revision }) }).then(response => response.json()) as Envelope<unknown>
+    expect(foreign.error?.code).toBe('ASSET_NOT_FOUND')
+  })
+})

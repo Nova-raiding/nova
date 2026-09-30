@@ -47,7 +47,7 @@ function runDocker(socket: string, configDir: string, args: readonly string[], e
   }
 }
 
-describe('PostgreSQL 16 isolated execution of migrations 1..256', () => {
+describe('PostgreSQL 16 isolated execution of migrations 1..257', () => {
   it('runs the full migration chain on a private tmpfs container and verifies exact history', async () => {
     const runId = randomUUID()
     const name = `merchant-pg16-migration-${runId}`
@@ -94,8 +94,8 @@ describe('PostgreSQL 16 isolated execution of migrations 1..256', () => {
       verifyPg16MigrationContainer(first, { id: containerId, name, runId, imageId, running: true })
       const hostPort = Number(first.ports['5432/tcp']?.[0]?.HostPort)
       const migrations = await loadMigrations()
-      expect(migrations).toHaveLength(256)
-      expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: 256 }, (_, index) => index + 1))
+      expect(migrations.slice(0, 257)).toHaveLength(257)
+      expect(migrations.slice(0, 257).map(migration => migration.version)).toEqual(Array.from({ length: 257 }, (_, index) => index + 1))
 
       pool = new Pool({
         host: '127.0.0.1', port: hostPort, database: databaseName, user: username,
@@ -132,9 +132,9 @@ describe('PostgreSQL 16 isolated execution of migrations 1..256', () => {
         applied_at timestamptz NOT NULL DEFAULT now()
       )`)
       await pool.query('GRANT SELECT ON public.schema_migrations TO merchant_app, merchant_ops')
-      await new MigrationRunner(pool, migrations).run()
+      await new MigrationRunner(pool, migrations.slice(0, 257)).run()
 
-      const expectedRows = migrations.map(migration => ({
+      const expectedRows = migrations.slice(0, 257).map(migration => ({
         version: migration.version,
         name: migration.name,
         checksum: migrationChecksum(migration.sql),
@@ -144,8 +144,8 @@ describe('PostgreSQL 16 isolated execution of migrations 1..256', () => {
       )
       expect(historyResult.rows).toEqual(expectedRows)
       expect(() => verifyAppliedMigrations(historyResult.rows, migrations)).not.toThrow()
-      expect(historyResult.rows).toHaveLength(256)
-      for (const [version, name] of [[254, 'merchant_entitlement_snapshot_cursor'], [255, 'scoped_brand_settings'], [256, 'asset_lifecycle']] as const) {
+      expect(historyResult.rows).toHaveLength(257)
+      for (const [version, name] of [[254, 'merchant_entitlement_snapshot_cursor'], [255, 'scoped_brand_settings'], [256, 'asset_lifecycle'], [257, 'asset_snapshot_lifecycle_guard']] as const) {
         const actual = historyResult.rows[version - 1]
         const migration = migrations[version - 1]
         expect(actual).toEqual({ version, name, checksum: migrationChecksum(migration!.sql) })
@@ -185,6 +185,27 @@ describe('PostgreSQL 16 isolated execution of migrations 1..256', () => {
         'merchant_asset_lifecycle_snapshot_delete_guard',
         'merchant_asset_lifecycle_events_append_only',
       ]))
+      const lifecycleSnapshotFk = await pool.query<{ constraint_name: string; definition: string }>(
+        `SELECT con.conname AS constraint_name, pg_get_constraintdef(con.oid) AS definition
+         FROM pg_constraint con
+         JOIN pg_class rel ON rel.oid = con.conrelid
+         JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+         WHERE ns.nspname = 'public' AND rel.relname = 'merchant_asset_lifecycle'
+           AND con.conname = 'merchant_asset_lifecycle_asset_snapshot_fk' AND con.contype = 'f'`,
+      )
+      expect(lifecycleSnapshotFk.rows).toHaveLength(1)
+      expect(lifecycleSnapshotFk.rows[0]?.definition).toContain('FOREIGN KEY (workspace_id, snapshot_entity_type, asset_id)')
+      expect(lifecycleSnapshotFk.rows[0]?.definition).toContain('REFERENCES business_entity_snapshots(workspace_id, entity_type, entity_id) ON DELETE RESTRICT')
+      const snapshotEntityTypeCheck = await pool.query<{ constraint_name: string; definition: string }>(
+        `SELECT con.conname AS constraint_name, pg_get_constraintdef(con.oid) AS definition
+         FROM pg_constraint con
+         JOIN pg_class rel ON rel.oid = con.conrelid
+         JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+         WHERE ns.nspname = 'public' AND rel.relname = 'merchant_asset_lifecycle'
+           AND con.conname = 'merchant_asset_lifecycle_snapshot_entity_type_check' AND con.contype = 'c'`,
+      )
+      expect(snapshotEntityTypeCheck.rows).toHaveLength(1)
+      expect(snapshotEntityTypeCheck.rows[0]?.definition).toMatch(/snapshot_entity_type = 'asset'/u)
 
       for (const role of ['merchant_app', 'merchant_ops'] as const) {
         const client = await pool.connect()

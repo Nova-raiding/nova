@@ -90,7 +90,7 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
     let child: ChildProcess | undefined
     try {
       const migrations = await loadMigrations()
-      expect(migrations.at(-1)?.version).toBe(256)
+      expect(migrations.at(-1)?.version).toBe(257)
       const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       const databaseGrant = /ON DATABASE merchant\b/gu
       const grantCount = [...roleSql.matchAll(databaseGrant)].length
@@ -197,7 +197,7 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
         expect(await exchange.json()).toMatchObject({ error: { code: 'LOCAL_PLUGIN_BRIDGE_UNAVAILABLE' } })
       }
       await assertPluginConnectClosed(portBridge255)
-      expect(await new MigrationRunner(admin, migrations).run()).toEqual([256])
+      expect(await new MigrationRunner(admin, migrations.slice(0, 256)).run()).toEqual([256])
       await admin.query(isolatedRoleSql)
       const stale256Readiness = await fetch(`http://127.0.0.1:${portBridge255}/readyz`)
       expect(stale256Readiness.status).toBe(503)

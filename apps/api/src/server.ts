@@ -767,7 +767,7 @@ export interface ApiPersistence {
   rules?: RuleRepositoryPort
   brandUnits?: import('../../../packages/persistence/src/index.js').BrandUnitRepository
   scopedBrandSettings?: PostgresScopedBrandSettingsRepository
-  bridgeSchemaVersion?: 242 | 244 | 254 | 255 | 256
+  bridgeSchemaVersion?: 242 | 244 | 254 | 255 | 256 | 257
   objectOrphans?: ObjectOrphanRepository
   contextSnapshots?: ContextSnapshotRepository
   identities?: IdentityLifecycleRepository
@@ -3171,7 +3171,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const migrations = await loadMigrations()
     const expectedMigrationVersion = migrations.at(-1)?.version ?? 0
     const bridgeSchemaMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
-    if (bridgeSchemaMode && (!['prefix_242_or_254', 'prefix_254_or_255', 'prefix_255_or_256'].includes(bridgeSchemaMode) || process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false')) {
+    if (bridgeSchemaMode && (!['prefix_242_or_254', 'prefix_254_or_255', 'prefix_255_or_256', 'prefix_256_or_257'].includes(bridgeSchemaMode) || process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false')) {
       throw new Error('bridge runtime requires a reviewed schema compatibility mode and RUN_MIGRATIONS_ON_STARTUP=false')
     }
     if (process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') await runMigrations(sqlPool, migrations)
@@ -3181,7 +3181,9 @@ async function initializePersistence(): Promise<ApiPersistence> {
         return verifyBridgeMigrationPrefix(result.rows, migrations, bridgeSchemaMode)
       })()
       : undefined
-    const assetLifecycleAvailable = bridgeSchemaMode === undefined || bridgeSchemaMode === 'prefix_255_or_256' && bridgeSchemaVersion === 256
+    const assetLifecycleAvailable = bridgeSchemaMode === undefined
+      || bridgeSchemaMode === 'prefix_255_or_256' && bridgeSchemaVersion === 256
+      || bridgeSchemaMode === 'prefix_256_or_257' && bridgeSchemaVersion === 257
     const outbox = new PostgresOutboxRepository(sqlPool)
     const business = new PostgresBusinessRepository(sqlPool, { normalizedProjection: true })
     const billing = new PostgresBillingRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event))

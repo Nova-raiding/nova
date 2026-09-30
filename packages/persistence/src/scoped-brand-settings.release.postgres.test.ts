@@ -34,7 +34,7 @@ describe('scoped brand PostgreSQL release evidence', () => {
       expect(previousRelease.at(-1)?.version).toBe(254)
       const bridgeRelease = migrations.slice(0, 255)
       expect(bridgeRelease.at(-1)?.version).toBe(255)
-      expect(migrations.at(-1)?.version).toBe(256)
+      expect(migrations[255]?.version).toBe(256)
       expect(await new MigrationRunner(database, previousRelease).run()).toEqual(previousRelease.map(item => item.version))
       expect((await database.query<{ version: number }>('SELECT max(version)::int AS version FROM schema_migrations')).rows[0]?.version).toBe(254)
       const previousRows = await database.query<{ version: number; name: string; checksum: string }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version')

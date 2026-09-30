@@ -38,7 +38,7 @@ const settle = (page: Page) => page.evaluate(() => new Promise<void>(resolve => 
 
 describe("customer delivery workspace selection", () => {
   it("points operators to the customer workspace selector on this page", () => {
-    expect(pageSource).toContain("本页上方的「选择目标企业」");
+    expect(pageSource).toContain("上方的「选择目标企业」");
     expect(pageSource).toContain('aria-label="客户交付目标企业工作区"');
     expect(pageSource).not.toContain("商家经营台账");
     expect(pageSource).not.toContain("查看该企业授权");
@@ -320,7 +320,8 @@ describe("customer delivery read-only desktop interaction", () => {
       // and no write control may be enabled in that state.
       const methods = await prepare(page, { write: true, target: "", awaitRows: false });
       expect(await page.getByRole("combobox", { name: "客户交付目标企业工作区", exact: true }).count()).toBe(1);
-      const toolbar = page.locator(".ops-page-header-actions-only");
+      const card = page.locator(".ant-card").filter({ has: page.getByText("客户建档", { exact: true }) }).first();
+      const toolbar = card.locator(".ant-card-extra");
       expect(await toolbar.getByRole("combobox", { name: "客户交付目标企业工作区", exact: true }).count()).toBe(1);
       const refresh = page.getByRole("button", { name: "刷新交付档案", exact: true });
       expect(await refresh.isDisabled()).toBe(true);
@@ -349,7 +350,8 @@ describe("customer delivery read-only desktop interaction", () => {
         awaitRows: false,
         onList: (workspaceId) => { requestedWorkspaces.push(workspaceId); return [{ ...record, workspaceId }]; },
       });
-      const toolbar = page.locator(".ops-page-header-actions-only");
+      const card = page.locator(".ant-card").filter({ has: page.getByText("客户建档", { exact: true }) }).first();
+      const toolbar = card.locator(".ant-card-extra");
       expect(await toolbar.getByRole("combobox", { name: "客户交付目标企业工作区", exact: true }).count()).toBe(1);
       const warning = page.getByText("尚未选择客户工作区", { exact: true });
       const toolbarY = await toolbar.evaluate((element) => element.getBoundingClientRect().y);

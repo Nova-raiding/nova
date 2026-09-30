@@ -386,35 +386,36 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       throw cause;
     }
   };
+  const workspaceToolbar = <Space wrap>
+    <Select
+      aria-label="客户交付目标企业工作区"
+      placeholder="选择目标企业"
+      value={targetWorkspaceId || undefined}
+      options={customerDeliveryWorkspaceOptions(model.workspaceRows)}
+      loading={model.workspaceDirectoryLoading}
+      disabled={!canRead || createDraftDirty}
+      onChange={(workspaceId) => model.setAuthorizationTargetWorkspaceId(workspaceId)}
+      style={{ minWidth: 280, maxWidth: 380 }}
+    />
+    <Button
+      aria-label="刷新交付档案"
+      icon={<ReloadOutlined />}
+      disabled={!canRead || !targetWorkspaceId}
+      loading={loading}
+      onClick={() => void load()}
+    >刷新交付档案</Button>
+  </Space>;
   return (
     <OpsPage
       eyebrow="CUSTOMER DELIVERY"
       title="客户交付"
       hideTitle
       description="以客户为中心跟进建档、系统接入、功能验收、培训和上线。付款未核验时，受控环节会保持阻断。"
-      actions={<Space wrap>
-        <Select
-          aria-label="客户交付目标企业工作区"
-          placeholder="选择目标企业"
-          value={targetWorkspaceId || undefined}
-          options={customerDeliveryWorkspaceOptions(model.workspaceRows)}
-          loading={model.workspaceDirectoryLoading}
-          disabled={!canRead || createDraftDirty}
-          onChange={(workspaceId) => model.setAuthorizationTargetWorkspaceId(workspaceId)}
-          style={{ minWidth: 280, maxWidth: 380 }}
-        />
-        <Button
-          aria-label="刷新交付档案"
-          icon={<ReloadOutlined />}
-          disabled={!canRead || !targetWorkspaceId}
-          loading={loading}
-          onClick={() => void load()}
-        >刷新交付档案</Button>
-      </Space>}
+      actions={createPage ? workspaceToolbar : undefined}
     >
       {!canRead ? <Alert type="warning" showIcon title="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
       {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
-      {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="warning" showIcon title="尚未选择客户工作区" description="请先使用本页上方的「选择目标企业」选择客户工作区。选择后即可读取档案，并按权限执行建档、上传和验收。" /> : null}
+      {!targetWorkspaceId && canRead && createPage ? <Alert style={{ marginBottom: 16 }} type="warning" showIcon title="尚未选择客户工作区" description="请先选择目标企业工作区。选择后即可读取档案，并按权限执行建档、上传和验收。" /> : null}
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
       {mutationError && !createPage ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (<>
@@ -469,6 +470,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         projectOwnerOptions={projectOwnerOptions}
         supportOwnerOptions={supportOwnerOptions}
         total={listTotal}
+        headerActions={workspaceToolbar}
+        emptyWorkspaceNotice={!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="warning" showIcon title="尚未选择客户工作区" description="请先使用上方的「选择目标企业」选择客户工作区。选择后即可读取档案，并按权限执行建档、上传和验收。" /> : null}
         page={listQuery.page}
         pageSize={listQuery.pageSize}
         onPageChange={(page) => { const next = { ...listQuery, page }; setListQuery(next); void load(next); }}

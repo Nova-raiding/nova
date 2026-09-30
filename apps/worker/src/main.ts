@@ -632,7 +632,11 @@ export function assertBridgeStartupMigrationVersion(startupVersion: number | und
 }
 
 export function shouldRunAssetLifecyclePurge(bridgeMode: string | undefined, startupVersion: number | undefined): boolean {
-  return bridgeMode === undefined || startupVersion === 256
+  return bridgeMode === undefined || (
+    bridgeMode === 'prefix_256_or_257' && startupVersion === 257
+  ) || (
+    bridgeMode === 'prefix_255_or_256' && startupVersion === 256
+  )
 }
 
 /** A worker is ready only when its database schema exactly matches the shipped
@@ -2808,10 +2812,9 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
     const bridgeStartupVersion = bridgeMode
       ? (await assertWorkerReadinessDependencies({ database: pool, expectedMigrations, bridgeMode, bridgeMigrations: expectedMigrations })).migrationVersion
       : undefined
-    // Migration 256 owns the asset lifecycle tables and purge endpoint. A
-    // 255-prefix bridge worker must remain quiet until its process is restarted
-    // against 256; the existing bridge version fence will revoke readiness if
-    // the prefix changes underneath this process.
+    // Migration 257 adds the database-level snapshot reference guard. A
+    // 256-to-257 bridge worker must stay quiet until that guard is installed;
+    // the existing bridge version fence revokes readiness if the prefix moves.
     const assetLifecyclePurgeEnabled = shouldRunAssetLifecyclePurge(bridgeMode, bridgeStartupVersion)
     if (scanRoleEnabled) {
       const instanceId = process.env.HOSTNAME?.trim() || `worker-${process.pid}`

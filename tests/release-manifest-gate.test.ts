@@ -171,6 +171,10 @@ describe('release manifest production gate', () => {
   })
   it('binds the ECS deploy, rollback, render and evidence-bundle trust chain', () => {
     const deploymentArtifacts = [
+      'packages/persistence/src/migration.ts',
+      'packages/persistence/src/migrations/256_asset_lifecycle.sql',
+      'packages/persistence/src/migrations/257_asset_snapshot_lifecycle_guard.sql',
+      'packages/persistence/src/migration-257.test.ts',
       'infra/scripts/render-ecs-production-compose.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/inspect-payment-gateway-receipt-runtime.mjs',

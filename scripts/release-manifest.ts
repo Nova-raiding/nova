@@ -91,6 +91,12 @@ export function buildReleaseManifest(input: {
     releaseMetadataPath,
     resolve(root, 'scripts/release-manifest.ts'),
     resolve(root, 'scripts/release-identity.ts'),
+    // Bind the executable migration registry and the current release tail into
+    // the same manifest as the runtime that will apply it.
+    resolve(root, 'packages/persistence/src/migration.ts'),
+    resolve(root, 'packages/persistence/src/migrations/256_asset_lifecycle.sql'),
+    resolve(root, 'packages/persistence/src/migrations/257_asset_snapshot_lifecycle_guard.sql'),
+    resolve(root, 'packages/persistence/src/migration-257.test.ts'),
     resolve(root, 'apps/api/src/safe-evidence-file.ts'),
     resolve(root, 'apps/api/src/safe-evidence-file.test.ts'),
     resolve(root, 'infra/protected/ecs-bridge-255-core.mjs'),

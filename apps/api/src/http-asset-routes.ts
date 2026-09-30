@@ -3,6 +3,7 @@ import type { URL } from 'node:url'
 import type { Platform } from '../../../packages/application/src/service.js'
 import type { SignedAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
 import type { assetHttpRuntime } from './server.js'
+import { readImageDimensions } from './image-dimensions.js'
 
 type AssetHttpRuntime = ReturnType<typeof assetHttpRuntime>
 
@@ -29,6 +30,18 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
       for (const assetId of result ?? []) trashed.add(assetId)
     }
     return trashed
+  }
+  const saveMaterialCategory = async (workspaceId: string, asset: import('../../../packages/application/src/service.js').AssetMetadata, category: import('../../../packages/application/src/service.js').AssetMaterialCategory) => {
+    if (asset.materialCategory === category) return asset
+    const previous = structuredClone(asset)
+    const updated = service.updateAssetMaterialCategory({ workspaceId, assetId: asset.id, category, expectedRevision: asset.revision })
+    try {
+      await persistAssetSnapshotAndEvent(workspaceId, updated, 'asset.material_category_updated', { asset_id: updated.id, material_category: updated.materialCategory, actor_id: requestActor(req) }, updated as unknown as Record<string, unknown>)
+    } catch (error) {
+      service.assets.set(previous.id, previous)
+      throw error
+    }
+    return updated
   }
   if (req.method === 'GET' && path === '/v1/assets/trash') {
     const workspaceId = resolveWorkspace(req)
@@ -161,6 +174,20 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     const visible = assets.filter(asset => !trashed?.has(asset.id) && (accessibleIds === undefined || accessibleIds.has(asset.id)))
     return send(res, 200, workspaceId, visible.map(asset => ({ ...asset, display: assetDisplayProjection(asset) })), null, req)
   }
+  const assetMaterialMetadataMatch = path.match(/^\/v1\/assets\/([^/]+)\/metadata$/)
+  if (req.method === 'PUT' && assetMaterialMetadataMatch) {
+    const input = await body(req)
+    const workspaceId = resolveWorkspace(req, input.workspace_id)
+    const asset = assetForWorkspace(workspaceId, decodeURIComponent(assetMaterialMetadataMatch[1]!))
+    await enforceAssetAccess(req, workspaceId, asset.id, 'editor')
+    const category = required(input, 'material_category')
+    const expectedRevision = input.expected_revision
+    if (typeof expectedRevision !== 'number' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_revision 必须是正整数', 400)
+    if (!['品牌资料', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类'].includes(String(category))) throw new DomainError('ASSET_MATERIAL_CATEGORY_INVALID', '素材分类无效', 400)
+    if (asset.revision !== expectedRevision) throw new DomainError('VERSION_CONFLICT', '素材已被其他操作更新，请刷新后重试', 409, { asset_id: asset.id, current_revision: asset.revision, expected_revision: expectedRevision })
+    const updated = await saveMaterialCategory(workspaceId, asset, category as import('../../../packages/application/src/service.js').AssetMaterialCategory)
+    return send(res, 200, workspaceId, updated, null, req)
+  }
   const assetPreferenceMatch = path.match(/^\/v1\/assets\/([^/]+)\/preference$/)
   if (req.method === 'PUT' && assetPreferenceMatch) {
     const input = await body(req)
@@ -255,6 +282,9 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     try { name = decodeURIComponent(encodedName) } catch { /* Preserve legacy raw header names. */ }
     rejectMerchantVideoUpload(name, contentType)
     const expectedSha256 = header(req, 'x-asset-sha256')?.trim()
+    const categoryHeader = header(req, 'x-asset-category')?.trim()
+    const validMaterialCategories = ['品牌资料', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类']
+    if (categoryHeader && !validMaterialCategories.includes(categoryHeader)) throw new DomainError('ASSET_MATERIAL_CATEGORY_INVALID', '素材分类无效', 400)
     const bytes = await binaryBody(req, limit)
     await requireAssetUploadSecurity(workspaceId, name, contentType, bytes, req)
     const actualSha256 = createHash('sha256').update(bytes).digest('hex')
@@ -262,11 +292,16 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     if (expectedSha256 && expectedSha256.toLowerCase() !== actualSha256) throw new DomainError('ASSET_DIGEST_MISMATCH', 'x-asset-sha256 与上传内容不一致', 400)
     if (demoUnscannedAssetsEnabled()) {
       const pendingKey = `quarantine/${workspaceId}/pending_${randomBytes(12).toString('hex')}/upload.bin`
-      const asset = service.registerAsset({ workspaceId, name, mimeType: contentType, sizeBytes: bytes.byteLength, sha256: actualSha256, storageKey: pendingKey, scanMode: 'unscanned', uploadedByActorId: requestActor(req) })
+      const asset = service.registerAsset({ workspaceId, name, mimeType: contentType, sizeBytes: bytes.byteLength, sha256: actualSha256, storageKey: pendingKey, scanMode: 'unscanned', ...(categoryHeader ? { materialCategory: categoryHeader as import('../../../packages/application/src/service.js').AssetMaterialCategory } : {}), uploadedByActorId: requestActor(req) })
       if (asset.deduplication.mode === 'deduplicated') {
         if (!isUsableAssetWithoutScan(asset, true)) throw new DomainError('ASSET_EXISTING_SCAN_STATE', '相同文件已存在但尚不可用，请先处理原素材', 409)
         await persistAssetReference(workspaceId, asset)
-        return send(res, 200, workspaceId, asset, null, req)
+        const categorized = categoryHeader ? await saveMaterialCategory(workspaceId, asset, categoryHeader as import('../../../packages/application/src/service.js').AssetMaterialCategory) : asset
+        if (!categorized.imageDimensions && categorized.mimeType.toLowerCase().startsWith('image/')) {
+          const found = readImageDimensions(bytes, contentType, categorized.sha256, categorized.sourceRevision ?? 1)
+          if (found) { categorized.imageDimensions = found; await persistAssetSnapshotAndEvent(workspaceId, categorized, 'asset.dimensions_read', { asset_id: categorized.id, sha256: found.sha256, source_revision: found.sourceRevision, width: found.width, height: found.height }, categorized as unknown as Record<string, unknown>) }
+        }
+        return send(res, 200, workspaceId, categorized, null, req)
       }
       let storedKey: string | undefined
       try {
@@ -275,6 +310,8 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
         asset.storageKey = stored.key
         asset.sha256 = stored.sha256
         asset.sizeBytes = stored.sizeBytes
+        const foundDimensions = readImageDimensions(bytes, contentType, stored.sha256, asset.sourceRevision ?? 1)
+        if (foundDimensions) asset.imageDimensions = foundDimensions
         await persistAssetSnapshotAndEvent(workspaceId, asset, 'asset.uploaded_unscanned', { asset_id: asset.id, storage_key: stored.key, size_bytes: stored.sizeBytes, sha256: stored.sha256, scan_status: 'unscanned' }, asset as unknown as Record<string, unknown>)
         return send(res, 201, workspaceId, asset, null, req)
       } catch (error) {
@@ -284,24 +321,27 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
       }
     }
     const pendingKey = `quarantine/${workspaceId}/pending_${randomBytes(12).toString('hex')}/upload.bin`
-    const provisional = service.registerAsset({ workspaceId, name, mimeType: contentType, sizeBytes: bytes.byteLength, sha256: actualSha256, storageKey: pendingKey, uploadedByActorId: requestActor(req) })
+    const provisional = service.registerAsset({ workspaceId, name, mimeType: contentType, sizeBytes: bytes.byteLength, sha256: actualSha256, storageKey: pendingKey, ...(categoryHeader ? { materialCategory: categoryHeader as import('../../../packages/application/src/service.js').AssetMaterialCategory } : {}), uploadedByActorId: requestActor(req) })
     if (provisional.deduplication.mode === 'deduplicated') {
       await persistAssetReference(workspaceId, provisional)
-      if (isTrustedCleanAsset(provisional)) return send(res, 200, workspaceId, provisional, null, req)
+      const categorized = categoryHeader ? await saveMaterialCategory(workspaceId, provisional, categoryHeader as import('../../../packages/application/src/service.js').AssetMaterialCategory) : provisional
+      if (isTrustedCleanAsset(categorized)) return send(res, 200, workspaceId, categorized, null, req)
       // Re-upload is the merchant-facing recovery action for both blocked
       // assets and quarantined assets whose earlier scan event terminated.
       // Always mint new scan work for a non-trusted duplicate.
       {
-        const previousAsset = structuredClone(provisional)
+        const previousAsset = structuredClone(categorized)
         const stored = await putQuarantineObject({ workspaceId, assetId: provisional.id, fileName: name, contentType, body: bytes, ...(expectedSha256 ? { expectedSha256 } : {}), expectedSizeBytes: bytes.byteLength })
         try {
-          const rescanning = service.prepareAssetRescan({ workspaceId, assetId: provisional.id, storageKey: stored.key, sizeBytes: stored.sizeBytes, sha256: stored.sha256, mimeType: contentType })
+          const rescanning = service.prepareAssetRescan({ workspaceId, assetId: categorized.id, storageKey: stored.key, sizeBytes: stored.sizeBytes, sha256: stored.sha256, mimeType: contentType })
+          const foundDimensions = readImageDimensions(bytes, contentType, stored.sha256, rescanning.sourceRevision ?? 1)
+          if (foundDimensions) rescanning.imageDimensions = foundDimensions
           await persistAssetSnapshotAndEvent(workspaceId, rescanning, 'asset.uploaded', { asset_id: rescanning.id, storage_key: stored.key, size_bytes: stored.sizeBytes, sha256: stored.sha256, rescan: true, source_revision: rescanning.sourceRevision }, rescanning as unknown as Record<string, unknown>)
           const automated = await automaticallyScanLocalFixture(workspaceId, rescanning)
           return send(res, 200, workspaceId, { ...automated.asset, scanAutomation: automated.scanAutomation }, null, req)
         } catch (error) {
           service.assets.set(previousAsset.id, previousAsset)
-          await compensateStoredAsset(workspaceId, provisional.id, stored.key, 'duplicate asset rescan persistence failed')
+          await compensateStoredAsset(workspaceId, categorized.id, stored.key, 'duplicate asset rescan persistence failed')
           throw error
         }
       }
@@ -313,6 +353,8 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
       provisional.storageKey = stored.key
       provisional.sha256 = stored.sha256
       provisional.sizeBytes = stored.sizeBytes
+      const foundDimensions = readImageDimensions(bytes, contentType, stored.sha256, provisional.sourceRevision ?? 1)
+      if (foundDimensions) provisional.imageDimensions = foundDimensions
       await persistAssetSnapshotAndEvent(workspaceId, provisional, 'asset.uploaded', { asset_id: provisional.id, storage_key: stored.key, size_bytes: stored.sizeBytes, sha256: stored.sha256 }, provisional as unknown as Record<string, unknown>)
       const automated = await automaticallyScanLocalFixture(workspaceId, provisional)
       return send(res, 201, workspaceId, { ...automated.asset, scanAutomation: automated.scanAutomation }, null, req)

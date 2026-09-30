@@ -111,7 +111,7 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
     const app = new Pool({ connectionString: appUrl.toString() })
     try {
       const migrations = await loadMigrations()
-      expect(migrations.at(-1)?.version).toBe(256)
+      expect(migrations.at(-1)?.version).toBe(257)
       const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       const databaseGrant = /ON DATABASE merchant\b/gu
       expect([...roleSql.matchAll(databaseGrant)]).toHaveLength(3)
@@ -181,7 +181,7 @@ describe('254/255 worker bridge on an owned PostgreSQL 17 fixture', () => {
         await automation255.close()
       }
 
-      expect(await new MigrationRunner(admin, migrations).run()).toEqual([256])
+      expect(await new MigrationRunner(admin, migrations.slice(0, 256)).run()).toEqual([256])
       const ready256 = await assertWorkerReadinessDependencies({
         database: app, expectedMigrations: migrations, bridgeMigrations: migrations, bridgeMode: 'prefix_255_or_256',
       })

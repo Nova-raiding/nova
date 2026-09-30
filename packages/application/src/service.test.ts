@@ -680,6 +680,7 @@ describe('MerchantService', () => {
     const originalProduct = structuredClone(product)
     const asset = service.registerAsset({ workspaceId: 'ws_demo', name: 'candidate-a.webp', mimeType: 'image/webp', sizeBytes: 11, sha256: digest('preferred-candidate-a'), storageKey: 'quarantine/ws_demo/candidate-a.webp' })
     markTrustedClean(asset)
+    asset.imageDimensions = { width: 300, height: 200, sha256: asset.sha256, sourceRevision: 1 }
     const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, idempotencyKey: 'job-preference-generate', count: 1 })
     const visualRef = `dvis_${'P'.repeat(24)}`
     const createdAt = '2026-08-31T01:00:00.000Z'
@@ -1101,6 +1102,16 @@ describe('MerchantService', () => {
     expect(service.assets.size).toBe(2)
   })
 
+  it('persists material category changes only in the owning workspace and checks revisions', () => {
+    const service = new MerchantService({ seedFixture: false })
+    const asset = service.registerAsset({ workspaceId: 'ws_asset_category', name: 'main.png', mimeType: 'image/png', sizeBytes: 12, sha256: 'a'.repeat(64), storageKey: 'quarantine/ws_asset_category/main.png' })
+    expect(service.updateAssetMaterialCategory({ workspaceId: 'ws_asset_category', assetId: asset.id, category: '商品主图', expectedRevision: asset.revision })).toMatchObject({ materialCategory: '商品主图', revision: 2 })
+    expect(service.listAssets('ws_asset_category')[0]).toMatchObject({ materialCategory: '商品主图', revision: 2 })
+    expect(() => service.updateAssetMaterialCategory({ workspaceId: 'ws_asset_category', assetId: asset.id, category: '详情页图', expectedRevision: 1 })).toThrowError(expect.objectContaining({ code: 'VERSION_CONFLICT' }))
+    expect(() => service.updateAssetMaterialCategory({ workspaceId: 'ws_other', assetId: asset.id, category: '详情页图', expectedRevision: 2 })).toThrowError(expect.objectContaining({ code: 'ASSET_NOT_FOUND' }))
+    expect(() => service.updateAssetMaterialCategory({ workspaceId: 'ws_asset_category', assetId: asset.id, category: 'unknown' as never, expectedRevision: 2 })).toThrowError(expect.objectContaining({ code: 'ASSET_MATERIAL_CATEGORY_INVALID' }))
+  })
+
   it('moves an untrusted duplicate back to quarantine for a new platform scan without changing rights', () => {
     const service = new MerchantService({ seedFixture: false })
     const asset = service.registerAsset({
@@ -1128,6 +1139,7 @@ describe('MerchantService', () => {
     expect(rescanning.scanReceiptDigest).toBeUndefined()
     expect(rescanning.scanVerdict).toBeUndefined()
     expect(rescanning.scanFindings).toBeUndefined()
+    expect(rescanning.imageDimensions).toBeUndefined()
   })
 
   it('pages asset metadata without exposing the full workspace collection', () => {

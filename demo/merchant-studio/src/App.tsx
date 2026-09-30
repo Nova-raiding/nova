@@ -164,6 +164,7 @@ import {
   requestAssetPurge,
   cancelAssetPurge,
   saveAssetPreference,
+  updateAssetMaterialCategory,
   saveBrandProfile,
   selectDirection,
   selectMerchantCatalogItems,
@@ -6620,9 +6621,10 @@ export function MaterialLibraryWorkspace({
   // The asset endpoint is workspace-scoped. Store attribution comes only from
   // the durable, tenant-scoped assignment rows returned by brand-scopes.
   // A session upload is a server asset now, so the re-read returns the same row
-  // the upload acknowledged. The session copy is kept — it is the one carrying the
-  // merchant's 素材分类/所属系列 — and the server row for the same id is not
-  // rendered twice beside it.
+  // the upload acknowledged. Keep its current-session thumbnail while the
+  // canonical server row supplies persisted metadata, including 素材分类; store
+  // assignments and series come from the scoped brand read. Avoid rendering the
+  // same asset id twice.
   const sessionMaterials = materialsByStore[activeStoreId] ?? []
   const sessionMaterialIds = new Set(sessionMaterials.map((item) => item.id))
   const assignmentByAsset = new Map((scopedBrandRead?.assignments ?? []).map((row) => [row.assetId, row]))
@@ -6974,7 +6976,7 @@ export function MaterialLibraryWorkspace({
     setUploadError('')
     const { accepted, failures } = await uploadMaterialFiles({
       files: incoming,
-      upload: (file) => uploadAsset(baseUrl, file),
+      upload: (file) => uploadAsset(baseUrl, file, uploadCategory),
       labels: { category: uploadCategory, series: uploadSeries },
       // A thumbnail of the file this browser just sent: an object URL for this
       // session only, never a second copy of the asset.
@@ -7029,6 +7031,21 @@ export function MaterialLibraryWorkspace({
   }
 
   const updateMaterialMetadata = async (materialId: string, patch: Partial<Pick<StoreMaterialItem, 'category' | 'series'>>) => {
+    if (patch.category) {
+      const asset = remoteAssets?.find((row) => row.id === materialId)
+      if (!baseUrl || !asset) {
+        setMaterialStorageError('素材分类需要服务端素材记录；请刷新素材列表后重试。')
+        return
+      }
+      setMaterialStorageError('')
+      try {
+        const updated = await updateAssetMaterialCategory(baseUrl, asset.id, patch.category, asset.revision)
+        setRemoteAssets((current) => current?.map((row) => row.id === updated.id ? updated : row) ?? current)
+      } catch (cause) {
+        setMaterialStorageError(`素材分类保存失败：${describeApiError(cause)}`)
+        return
+      }
+    }
     if (patch.series && baseUrl && scopedBrandRead && activeStoreId !== 'unclassified') {
       try {
         let seriesRow = scopedBrandRead.series.find((row) => row.accountId === activeStoreId && row.name === patch.series)
@@ -7262,7 +7279,7 @@ export function MaterialLibraryWorkspace({
                 </article>
               }) : <div><ImageIcon size={30} /><strong>尚未选择素材</strong><span>点击上方按钮，可一次选择或继续追加图片、Excel 和文档。</span></div>}
             </div>
-            <p className="material-upload-note">{uploadCategory === '品牌资料' ? '文件写入当前工作区的服务端素材库；品牌资料分类、店铺归属与系列暂不由服务端持久化。上传文件仍需完成安全与权益确认后才能使用。' : `文件上传至当前工作区素材服务；“${uploadCategory}”${uploadSeries ? ` / ${uploadSeries}` : ''}仅作为本次会话分类，服务端未接受的文件不会出现在素材库中。`}</p>
+            <p className="material-upload-note">{uploadCategory === '品牌资料' ? '文件与素材分类写入当前工作区的服务端素材库；店铺归属与系列按服务端记录管理。上传文件仍需完成安全与权益确认后才能使用。' : `文件与“${uploadCategory}”分类写入当前工作区素材服务${uploadSeries ? `；“${uploadSeries}”系列归属按服务端店铺记录管理` : ''}；服务端未接受的文件不会出现在素材库中。`}</p>
             {uploadError && <p className="material-download-error" role="alert" data-testid="material-upload-error">{uploadError}</p>}
             {pendingPreviewIndex !== null && pendingPreviews[pendingPreviewIndex] && <button type="button" className="material-upload-lightbox" aria-label="关闭素材预览" onClick={() => setPendingPreviewIndex(null)}><span>{pendingPreviews[pendingPreviewIndex].file.type.startsWith('image/') ? <img src={pendingPreviews[pendingPreviewIndex].url} alt={pendingPreviews[pendingPreviewIndex].file.name} /> : <span className="material-upload-video-preview"><FileText size={52} /></span>}<strong>{pendingPreviews[pendingPreviewIndex].file.name}</strong><small>点击任意位置关闭</small></span></button>}
           </div>

@@ -146,6 +146,7 @@ services:
       # Local desktop acceptance uses the real browser pairing flow. Production
       # manifests keep this disabled until the signed installer gate is met.
       LOCAL_PLUGIN_ONE_CLICK_ENABLED: "true"
+      BRIDGE_SCHEMA_COMPATIBILITY_MODE: ${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}
       MCP_AUTHZ_MODE: enforce
       REQUEST_OBSERVABILITY_LOGS: ${REQUEST_OBSERVABILITY_LOGS:-false}
       OPS_ALERT_NOTIFICATIONS_ENABLED: ${OPS_ALERT_NOTIFICATIONS_ENABLED:-false}

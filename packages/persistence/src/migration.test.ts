@@ -43,7 +43,7 @@ describe('MigrationRunner', () => {
     expect(verifyBridgeMigrationPrefix(rows.slice(0, 254), migrations, 'prefix_254_or_255')).toBe(254)
     expect(verifyBridgeMigrationPrefix(rows.slice(0, 255), migrations, 'prefix_254_or_255')).toBe(255)
     expect(() => verifyBridgeMigrationPrefix(rows, migrations, 'prefix_254_or_255')).toThrow('exactly 254 or 255')
-    expect(migrations.at(-1)?.version).toBe(256)
+    expect(migrations[255]?.version).toBe(256)
     for (const version of [242, 253, 256]) {
       const candidate = version === 256 ? [...rows, { version: 256, name: 'unknown', checksum: 'a'.repeat(64) }] : rows.slice(0, version)
       expect(() => verifyBridgeMigrationPrefix(candidate, migrations, 'prefix_254_or_255')).toThrow('exactly 254 or 255')
@@ -54,15 +54,24 @@ describe('MigrationRunner', () => {
   })
   it('accepts only exact, checksummed 255 or 256 prefixes from a 256 bridge image', async () => {
     const migrations = await loadMigrations()
-    const rows = migrations.map(({ version, name, sql }) => ({ version, name, checksum: migrationChecksum(sql) }))
+    const rows = migrations.slice(0, 256).map(({ version, name, sql }) => ({ version, name, checksum: migrationChecksum(sql) }))
     expect(verifyBridgeMigrationPrefix(rows.slice(0, 255), migrations, 'prefix_255_or_256')).toBe(255)
     expect(verifyBridgeMigrationPrefix(rows, migrations, 'prefix_255_or_256')).toBe(256)
-    for (const version of [254, 257]) {
-      const candidate = version === 257 ? [...rows, { version: 257, name: 'unknown', checksum: 'b'.repeat(64) }] : rows.slice(0, version)
+    for (const version of [254]) {
+      const candidate = rows.slice(0, version)
       expect(() => verifyBridgeMigrationPrefix(candidate, migrations, 'prefix_255_or_256')).toThrow('exactly 255 or 256')
     }
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 255).map((row, index) => index === 254 ? { ...row, checksum: 'f'.repeat(64) } : row), migrations, 'prefix_255_or_256')).toThrow('checksum mismatch')
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 255), migrations.slice(0, 255), 'prefix_255_or_256')).toThrow('complete migration chain through 256')
+  })
+  it('accepts only exact, checksummed 256 or 257 prefixes for the lifecycle guard bridge', async () => {
+    const migrations = await loadMigrations()
+    const rows = migrations.map(({ version, name, sql }) => ({ version, name, checksum: migrationChecksum(sql) }))
+    expect(verifyBridgeMigrationPrefix(rows.slice(0, 256), migrations, 'prefix_256_or_257')).toBe(256)
+    expect(verifyBridgeMigrationPrefix(rows, migrations, 'prefix_256_or_257')).toBe(257)
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 255), migrations, 'prefix_256_or_257')).toThrow('exactly 256 or 257')
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 256).map((row, index) => index === 255 ? { ...row, checksum: '0'.repeat(64) } : row), migrations, 'prefix_256_or_257')).toThrow('checksum mismatch')
+    expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 256), migrations.slice(0, 256), 'prefix_256_or_257')).toThrow('complete migration chain through 257')
   })
   it('loads the executable 001 SQL asset', async () => {
     const migration = await loadInitialMigration()
@@ -74,7 +83,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(256)
+    expect(latestVersion).toBe(257)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -104,6 +113,8 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(219)?.sql).toContain('public_platform_rule_audits_append_only')
     expect(byVersion.get(250)?.sql).toContain('REVOKE ALL ON FUNCTION public.knowledge_generation_assert_mutable(text,text) FROM PUBLIC')
     expect(byVersion.get(250)?.sql).toContain('REVOKE ALL ON FUNCTION public.knowledge_generation_lock_products(text,text[]) FROM PUBLIC')
+    expect(byVersion.get(257)).toMatchObject({ name: 'asset_snapshot_lifecycle_guard' })
+    expect(byVersion.get(257)?.sql).toContain('FOREIGN KEY (workspace_id, snapshot_entity_type, asset_id)')
     expect(byVersion.get(224)).toMatchObject({ name: 'public_platform_rule_audit_truncate_guard' })
     expect(byVersion.get(224)?.sql).toContain('public_platform_rule_audits_no_truncate')
     expect(byVersion.get(220)).toMatchObject({ name: 'commercial_refund_cumulative_bound' })

@@ -114,6 +114,8 @@ export function validateMigrationAssets(names, expectedMigrationVersion) {
   const ordered = [...names].sort()
   for (let index = 0; index < ordered.length; index++) requireValue(new RegExp(`^${String(index + 1).padStart(3, '0')}_[a-z0-9][a-z0-9_]*\\.sql$`, 'u').test(ordered[index]), 'candidate migration chain has a gap or unsafe filename')
   if (expectedMigrationVersion >= 245) requireValue(ordered[242] === '243_local_plugin_connection_requests.sql' && ordered[243] === '244_local_plugin_install_instances.sql' && ordered[244] === '245_local_plugin_authorized_timestamp.sql', 'candidate 243/244/245 migration identity mismatch')
+  if (expectedMigrationVersion >= 256) requireValue(ordered[255] === '256_asset_lifecycle.sql', 'candidate migration 256 identity mismatch')
+  if (expectedMigrationVersion >= 257) requireValue(ordered[256] === '257_asset_snapshot_lifecycle_guard.sql', 'candidate migration 257 identity mismatch')
 }
 async function hashFile(path, maxBytes) {
   const st = statSync(path); requireValue(st.size > 0 && st.size <= maxBytes, 'input size is invalid')

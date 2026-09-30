@@ -16,9 +16,8 @@ import { describeApiError, type AssetMetadata } from './api'
  * Two rules are load-bearing here:
  *
  * 1. A fact the server did not publish is reported as `未读取`, never filled in
- *    with a plausible-looking value. `GET /v1/assets` publishes the file name,
- *    MIME type, byte size and creation time — not pixel dimensions, not the
- *    merchant's material category, not a store attribution.
+ *    with a plausible-looking value. Pixel dimensions are shown only when they
+ *    match the asset's current SHA and source revision.
  * 2. There is no direct download URL. `GET /v1/assets/:id/download` is
  *    authenticated, so the card links to the endpoint and the click handler
  *    re-reads the bytes with the session (`fetchAssetBlob`). The previous
@@ -111,10 +110,11 @@ export function isImageMaterial(item: Pick<StoreMaterialItem, 'mimeType' | 'form
 }
 
 /**
- * The reviewed taxonomy (商品主图 / 详情页图 / SKU 图 / 商品视频 / 未分类) is the
- * merchant's own labelling, and the server stores no label for an asset. Only
- * the medium is a server fact, so a video asset is filed under 商品视频 and
- * everything else stays 未分类 until the merchant classifies it.
+ * The reviewed taxonomy (品牌资料 / 商品主图 / 详情页图 / SKU 图 / 商品视频 /
+ * 未分类) is the merchant's own labelling. Persisted `materialCategory` from the
+ * server asset takes precedence; MIME type only provides a fallback for legacy
+ * rows without a saved category. Video assets default to 商品视频 and other
+ * unlabelled assets stay 未分类 until the merchant classifies them.
  */
 export function materialCategoryFromMimeType(
   mimeType: string,
@@ -145,19 +145,22 @@ export function formatMaterialFileSize(bytes: number) {
 /**
  * One real `GET /v1/assets` row as a material card.
  *
- * `sizeLabel` is 未读取 because the server publishes no pixel dimensions, and
- * `series` starts at 未分类 because the workspace's series list is edited by the
+ * `sizeLabel` comes from revision-bound server dimensions, or 未读取; `series`
+ * starts at 未分类 because the workspace's series list is edited by the
  * merchant, not reported per asset.
  */
 export function materialItemFromAsset(asset: AssetMetadata): StoreMaterialItem {
   const bytes = Number(asset?.sizeBytes)
+  const dimensions = asset.imageDimensions
+  const dimensionsCurrent = dimensions && dimensions.width > 0 && dimensions.height > 0
+    && dimensions.sha256 === asset.sha256 && dimensions.sourceRevision === (asset.sourceRevision ?? 1)
   return {
     id: String(asset?.id ?? ''),
     assetId: String(asset?.id ?? ''),
     name: String(asset?.name ?? '').trim() || MATERIAL_UNREAD,
-    category: materialCategoryFromMimeType(asset?.mimeType ?? ''),
+    category: asset?.materialCategory ?? materialCategoryFromMimeType(asset?.mimeType ?? ''),
     series: '未分类',
-    sizeLabel: MATERIAL_UNREAD,
+    sizeLabel: dimensionsCurrent ? `${dimensions.width} × ${dimensions.height}` : MATERIAL_UNREAD,
     fileSizeLabel: formatMaterialFileSize(bytes),
     format: materialFormatFromMimeType(asset?.mimeType ?? ''),
     mimeType: String(asset?.mimeType ?? ''),
@@ -267,8 +270,9 @@ export async function uploadMaterialFiles(input: {
       const preview = input.previewUrlFor?.(file)
       accepted.push({
         ...materialItemFromAsset(uploaded),
-        // 素材分类 and 所属系列 are the merchant's own labelling and the asset
-        // row carries neither, so they sit beside the acknowledged row.
+        // The category is also sent to the upload endpoint and persisted on the
+        // asset snapshot; the session card uses the same acknowledged choice.
+        // Series remains a scoped brand assignment rather than asset metadata.
         category: input.labels.category,
         series: input.labels.series,
         ...(preview ? { previewUrl: preview } : {}),

@@ -128,6 +128,10 @@ describe('protected PostgreSQL 17 isolated restore input contract', () => {
     expect(() => validateMigrationAssets(migrationNames, expectedVersion - 1)).toThrow(new RegExp(`exactly ${expectedVersion - 1} SQL files`))
     expect(() => validateMigrationAssets(migrationNames.filter(name => !name.startsWith('243_')), expectedVersion)).toThrow(/exactly \d+ SQL files|gap or unsafe filename/)
     expect(() => validateMigrationAssets([...candidateChain.slice(0, -1), '../escape.sql'], expectedVersion)).toThrow(/gap or unsafe/)
+    if (expectedVersion >= 257) {
+      expect(() => validateMigrationAssets(candidateChain.map(name => name === '256_asset_lifecycle.sql' ? '256_wrong_identity.sql' : name), expectedVersion)).toThrow('candidate migration 256 identity mismatch')
+      expect(() => validateMigrationAssets(candidateChain.map(name => name === '257_asset_snapshot_lifecycle_guard.sql' ? '257_wrong_identity.sql' : name), expectedVersion)).toThrow('candidate migration 257 identity mismatch')
+    }
   })
   it('rejects a public port, foreign network, changed image or unexpected bind mount', () => {
     const options = { id: '1'.repeat(64), expectedImageId: `sha256:${'2'.repeat(64)}`, expectedNetwork: 'merchant_restore_net_test', expectedVolume: 'merchant_restore_data_test' }

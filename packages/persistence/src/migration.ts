@@ -222,7 +222,7 @@ export function verifyBridgeMigrationPrefix(
   applied: readonly AppliedMigration[],
   expected: readonly Migration[],
   mode: string | undefined,
-): 242 | 244 | 254 | 255 | 256 {
+): 242 | 244 | 254 | 255 | 256 | 257 {
   if (mode === 'prefix_242_or_244') {
     if (expected.length < 244 || expected.slice(0, 244).some((migration, index) => migration.version !== index + 1)) {
       throw new Error('bridge release must carry the complete migration chain through 244')
@@ -247,6 +247,16 @@ export function verifyBridgeMigrationPrefix(
     }
     if (applied.length !== 255 && applied.length !== 256) throw new Error('255-to-256 bridge database migration prefix must be exactly 255 or 256')
     verifyAppliedMigrations(applied, expected.slice(0, 256), migrationChecksumBaseline())
+    return applied.length
+  }
+
+  if (mode === 'prefix_256_or_257') {
+    if (expected.length < 257 || expected.slice(0, 257).some((migration, index) => migration.version !== index + 1)) {
+      throw new Error('256-to-257 bridge release must carry the complete migration chain through 257')
+    }
+    if (applied.length !== 256 && applied.length !== 257) throw new Error('256-to-257 bridge database migration prefix must be exactly 256 or 257')
+    const verified = applied.length === 256 ? expected.slice(0, 256) : expected.slice(0, 257)
+    verifyAppliedMigrations(applied, verified, migrationChecksumBaseline())
     return applied.length
   }
 
@@ -750,6 +760,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const merchantEntitlementSnapshotCursor = await readFile(new URL('./migrations/254_merchant_entitlement_snapshot_cursor.sql', import.meta.url), 'utf8')
   const scopedBrandSettings = await readFile(new URL('./migrations/255_scoped_brand_settings.sql', import.meta.url), 'utf8')
   const assetLifecycle = await readFile(new URL('./migrations/256_asset_lifecycle.sql', import.meta.url), 'utf8')
+  const assetSnapshotLifecycleGuard = await readFile(new URL('./migrations/257_asset_snapshot_lifecycle_guard.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -1007,6 +1018,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 254, name: 'merchant_entitlement_snapshot_cursor', sql: merchantEntitlementSnapshotCursor },
     { version: 255, name: 'scoped_brand_settings', sql: scopedBrandSettings },
     { version: 256, name: 'asset_lifecycle', sql: assetLifecycle },
+    { version: 257, name: 'asset_snapshot_lifecycle_guard', sql: assetSnapshotLifecycleGuard },
   ]
 }
 

@@ -28,7 +28,7 @@ async function waitForLockWait(database: Pool, expectedBlockedSessions: number) 
 }
 
 describe('asset lifecycle PostgreSQL release evidence', () => {
-  postgresIt('migrates 256 and enforces tenant RLS, lifecycle transitions, retention and immutable audit', async () => {
+  postgresIt('migrates 257 and enforces tenant RLS, snapshot integrity, lifecycle transitions, retention and immutable audit', async () => {
     const base = new URL(databaseUrl!)
     const databaseName = `asset_lifecycle_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
@@ -39,15 +39,30 @@ describe('asset lifecycle PostgreSQL release evidence', () => {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: connection(base, databaseName) })
       const migrations = await loadMigrations()
-      expect(migrations.at(-1)).toMatchObject({ version: 256, name: 'asset_lifecycle' })
-      // Model the supported bridge boundary explicitly: the application may
-      // start with the complete 255 prefix, then the reviewed candidate applies
-      // only migration 256. This catches accidental dependence on a fresh DB.
-      await new MigrationRunner(database, migrations.slice(0, 255)).run()
-      const prefix255 = await database.query('SELECT max(version)::int AS version, count(*)::int AS count FROM schema_migrations')
-      expect(prefix255.rows).toEqual([{ version: 255, count: 255 }])
-      await new MigrationRunner(database, migrations).run()
-      expect((await database.query('SELECT max(version)::int AS version FROM schema_migrations')).rows).toEqual([{ version: 256 }])
+      expect(migrations.at(-1)).toMatchObject({ version: 257, name: 'asset_snapshot_lifecycle_guard' })
+      // Start from a real 256 prefix, then exercise only the forward migration
+      // that adds the database-level snapshot reference guard.
+      await new MigrationRunner(database, migrations.slice(0, 256)).run()
+      const prefix256 = await database.query('SELECT max(version)::int AS version, count(*)::int AS count FROM schema_migrations')
+      expect(prefix256.rows).toEqual([{ version: 256, count: 256 }])
+      await new MigrationRunner(database, migrations.slice(256)).run()
+      expect((await database.query('SELECT max(version)::int AS version, count(*)::int AS count FROM schema_migrations')).rows).toEqual([{ version: 257, count: 257 }])
+      const snapshotGuard = await database.query<{ constraint_name: string; definition: string }>(
+        `SELECT con.conname AS constraint_name, pg_get_constraintdef(con.oid) AS definition
+         FROM pg_constraint con
+         JOIN pg_class rel ON rel.oid = con.conrelid
+         JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+         WHERE ns.nspname = 'public' AND rel.relname = 'merchant_asset_lifecycle'
+           AND con.conname IN ('merchant_asset_lifecycle_asset_snapshot_fk', 'merchant_asset_lifecycle_snapshot_entity_type_check')
+         ORDER BY con.conname`,
+      )
+      expect(snapshotGuard.rows).toHaveLength(2)
+      expect(snapshotGuard.rows.find(row => row.constraint_name === 'merchant_asset_lifecycle_asset_snapshot_fk')?.definition)
+        .toContain('FOREIGN KEY (workspace_id, snapshot_entity_type, asset_id)')
+      expect(snapshotGuard.rows.find(row => row.constraint_name === 'merchant_asset_lifecycle_snapshot_entity_type_check')?.definition)
+        .toMatch(/snapshot_entity_type = 'asset'/u)
+      await expect(database.query(`INSERT INTO merchant_asset_lifecycle(workspace_id,asset_id,deleted_at,expires_at,deleted_by)
+        VALUES ('ws_lifecycle_a','missing_snapshot',now(),now()+interval '7 days','guard-test')`)).rejects.toMatchObject({ code: '23503' })
       // Runtime role bootstrap grants scoped snapshot reads in production; the
       // test fixture provisions role credentials only, so reproduce that read
       // grant explicitly while forced RLS remains active.
