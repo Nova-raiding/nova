@@ -37,6 +37,7 @@ esac
 : "${PGPASSWORD:?PGPASSWORD is required so the migration runs as the schema owner}"
 : "${ALERT_RECEIVER_DATABASE_URL:?ALERT_RECEIVER_DATABASE_URL is required so the migration can verify the receiver role}"
 : "${SECRET_PROVIDER:?SECRET_PROVIDER is required}"
+: "${OCR_MAX_OUTPUT_TOKENS:?OCR_MAX_OUTPUT_TOKENS is required for production OCR}"
 if [ "$DEPLOYMENT_SCOPE" = full ]; then
   : "${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required for full production acceptance}"
   : "${CAPACITY_REPORT_PATH:?CAPACITY_REPORT_PATH is required for full production acceptance}"
