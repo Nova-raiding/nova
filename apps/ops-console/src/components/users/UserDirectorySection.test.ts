@@ -74,9 +74,9 @@ describe("UserDirectorySection sorting", () => {
     } as unknown as OpsConsoleModel;
 
     const markup = renderToStaticMarkup(createElement(UserDirectorySection, { model }));
-    expect(markup).toContain("共 1 家接入用户");
+    expect(markup).toContain("共 1 家商家工作区");
     expect(markup).toContain("已接入用户");
-    expect(markup).not.toContain("共 9 家接入用户");
+    expect(markup).not.toContain("共 9 家商家工作区");
   });
 
   it("keeps an unread directory distinct from a successfully read empty directory", () => {
@@ -96,15 +96,15 @@ describe("UserDirectorySection sorting", () => {
     const rendered = (model: OpsConsoleModel) => renderToStaticMarkup(createElement(UserDirectorySection, { model }));
     const failed = rendered({ ...baseModel, userDirectoryError: "当前运营 API 版本不支持筛选运营平台账号" });
     expect(failed).toContain("用户目录未读取");
-    expect(failed).not.toContain("共 0 家接入用户");
+    expect(failed).not.toContain("共 0 家商家工作区");
     expect(failed).not.toContain("没有符合条件的用户成员关系");
 
     const loading = rendered({ ...baseModel, userDirectoryLoading: true });
     expect(loading).toContain("正在读取用户目录");
-    expect(loading).not.toContain("共 0 家接入用户");
+    expect(loading).not.toContain("共 0 家商家工作区");
 
     const empty = rendered(baseModel);
-    expect(empty).toContain("共 0 家接入用户");
+    expect(empty).toContain("共 0 家商家工作区");
     expect(empty).toContain("没有符合条件的用户成员关系");
 
     const emptyPlatform = rendered({ ...baseModel, userDirectoryFilters: { accountType: "platform" } });
@@ -129,7 +129,7 @@ describe("UserDirectorySection sorting", () => {
       opsSession: undefined,
     } as unknown as OpsConsoleModel;
     const merchantMarkup = renderToStaticMarkup(createElement(UserDirectorySection, { model: baseModel }));
-    expect(merchantMarkup).toContain("共 1 家接入用户");
+    expect(merchantMarkup).toContain("共 1 家商家工作区");
     expect(merchantMarkup).not.toContain("共 1 个运营平台账号");
 
     const platformMarkup = renderToStaticMarkup(createElement(UserDirectorySection, { model: {
@@ -138,7 +138,7 @@ describe("UserDirectorySection sorting", () => {
       userDirectoryFilters: { accountType: "platform" },
     } }));
     expect(platformMarkup).toContain("共 1 个运营平台账号");
-    expect(platformMarkup).not.toContain("共 0 家接入用户");
+    expect(platformMarkup).not.toContain("共 0 家商家工作区");
   });
 
   it("keeps the desktop directory to five viewport-sized columns and opens detail for full identity fields", () => {
