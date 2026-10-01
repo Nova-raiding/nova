@@ -625,8 +625,22 @@ export function evaluateVideoProbePayload(payload: unknown): { ready: boolean; p
   const normalizedStatuses = statuses.map(value => value === 'success' ? 'succeeded' : value)
   if (new Set(normalizedStatuses).size > 1) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_state_conflict' }
   const status = normalizedStatuses[0]
-  const metadataUrl = data.metadata && typeof data.metadata === 'object' ? (data.metadata as Record<string, unknown>).url : undefined
-  const artifact = [data.result_url, data.video_url, data.output_url, data.url, metadataUrl, nestedData.result_url, nestedData.video_url, nestedData.output_url, nestedData.url].some(isStrictHttpsUrl) || hasHttpsOutput(nestedData.output)
+  // Relays have used both `data.metadata.url` and the wrapped
+  // `data.data.metadata.url` shape. Keep artifact discovery scoped to the
+  // provider response objects so an unrelated envelope URL cannot satisfy the
+  // media receipt contract.
+  const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+    ? data.metadata as Record<string, unknown> : {}
+  const nestedMetadata = nestedData.metadata && typeof nestedData.metadata === 'object' && !Array.isArray(nestedData.metadata)
+    ? nestedData.metadata as Record<string, unknown> : {}
+  const artifact = [
+    data.result_url, data.video_url, data.output_url, data.url, metadata.url,
+    nestedData.result_url, nestedData.video_url, nestedData.output_url, nestedData.url, nestedMetadata.url,
+  ].some(isStrictHttpsUrl)
+    || hasHttpsOutput(data.output)
+    || hasHttpsOutput(data.result)
+    || hasHttpsOutput(nestedData.output)
+    || hasHttpsOutput(nestedData.result)
   if (status && ['failed', 'failure', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(status)) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_failed' }
   // Wormhole's async wrapper reports the provider state as IN_PROGRESS while
   // the nested output uses RUNNING. Treat both as pending; otherwise a valid
