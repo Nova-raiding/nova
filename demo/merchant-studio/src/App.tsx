@@ -3549,7 +3549,17 @@ function AssetLibrary({
       key: 'name',
       render: (name: string, asset: AssetMetadata) => (
         <div className="knowledge-file-cell">
-          <FileText size={18} aria-hidden="true" />
+          {assetPreviews[asset.id] && asset.mimeType.toLowerCase().startsWith('image/') ? (
+            <img
+              className="knowledge-file-thumb"
+              src={assetPreviews[asset.id]}
+              alt=""
+              aria-hidden="true"
+              style={{ width: 32, height: 32, flex: '0 0 auto', objectFit: 'cover', borderRadius: 6 }}
+            />
+          ) : (
+            <FileText size={18} aria-hidden="true" />
+          )}
           <div><strong title={name}>{name}</strong><span>{asset.mimeType}</span></div>
         </div>
       ),
@@ -3663,11 +3673,13 @@ function AssetLibrary({
     void load()
   }, [baseUrl])
   useEffect(() => {
-    // Image thumbnails are part of the image workspace, so load them from the
-    // authenticated asset endpoint when that tab is explicitly opened. Keep
-    // the full-materials and knowledge tabs metadata-only to avoid fetching a
-    // Keep the full-materials and knowledge tabs metadata-only.
-    if (!baseUrl || assetEntry !== 'images' || !assetStorageReady) {
+    // Load safe, authenticated image thumbnails for both the image workspace
+    // and the knowledge table. Other workspaces remain metadata-only.
+    if (
+      !baseUrl ||
+      (assetEntry !== 'images' && assetEntry !== 'knowledge') ||
+      !assetStorageReady
+    ) {
       setAssetPreviews({})
       return
     }
@@ -3689,7 +3701,10 @@ function AssetLibrary({
           asset.mimeType.toLowerCase().startsWith('image/'),
       )
       .sort((left, right) => right.sizeBytes - left.sizeBytes)
-      .slice(0, 24)
+      // Keep the image workspace bounded, while the knowledge table needs a
+      // preview candidate for every image row so users can inspect the full
+      // library. The worker pool still limits concurrent requests to two.
+      .slice(0, assetEntry === 'images' ? 24 : undefined)
     const previews = new Map<string, string>()
     let nextIndex = 0
     const worker = async () => {
@@ -3699,7 +3714,6 @@ function AssetLibrary({
         if (!asset) return
         try {
           const blob = await fetchAssetBlob(baseUrl, asset.id, controller.signal)
-          if (!blob.type.startsWith('image/')) continue
           const url = URL.createObjectURL(blob)
           const valid = await new Promise<boolean>((resolve) => {
             const probe = new Image()
@@ -3707,7 +3721,7 @@ function AssetLibrary({
             probe.onerror = () => resolve(false)
             probe.src = url
           })
-          if (!valid) {
+          if (!valid || controller.signal.aborted) {
             URL.revokeObjectURL(url)
             continue
           }
