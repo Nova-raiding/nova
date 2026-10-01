@@ -1,5 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { assess, inventoryWarnings, isManagedDemoContainerName } from '../infra/scripts/ecs-fast-status.mjs'
 const names = ['api', 'api-replica', 'ops-ui', 'pilot-gateway', 'postgres', 'redis']
 function snapshot() {
@@ -14,6 +16,11 @@ test('mixed application Git revisions are surfaced without pretending health is 
   value.services.find(service => service.service === 'api-replica').git_sha = 'c'.repeat(40)
   assert.deepEqual(assess(value), [])
   assert.deepEqual(inventoryWarnings(value), ['application_services_have_mixed_source_revisions'])
+})
+test('an unhealthy replica is a blocker even when the API replica is present and pinned', () => {
+  const value = snapshot()
+  Object.assign(value.services.find(service => service.service === 'api-replica'), { state: 'running', health: 'unhealthy' })
+  assert.deepEqual(assess(value), ['service_not_healthy:api-replica'])
 })
 test('data-service Git labels do not count as mixed application revisions', () => {
   const value = snapshot()
@@ -43,4 +50,16 @@ test('isolated candidate sidecars are excluded from the formal demo inventory', 
   assert.equal(isManagedDemoContainerName('merchant-demo-85575f9c-worker-scan-1'), true)
   assert.equal(isManagedDemoContainerName('merchant-candidate-api-ecs-20260930T133625Z-244933747f'), false)
   assert.equal(isManagedDemoContainerName('merchant-demo-85575f9c-api'), false)
+})
+
+test('fast status keeps liveness and readiness probes separate', () => {
+  const source = readFileSync(fileURLToPath(new URL('../infra/scripts/ecs-fast-status.mjs', import.meta.url)), 'utf8')
+  // /ops.yxsona.com/healthz is a liveness signal and /api/readyz is the
+  // production readiness gate. A readiness 503 must remain visible even when
+  // the liveness endpoint is 200; the report must not collapse them into one
+  // boolean health result.
+  assert.match(source, /https:\/\/yxsona\.com\/api\/readyz/u)
+  assert.match(source, /https:\/\/ops\.yxsona\.com\/healthz/u)
+  assert.match(source, /probe\.status !== 200 \|\| !probe\.ready/u)
+  assert.match(source, /release_approved: false/u)
 })

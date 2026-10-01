@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { productionCommercialReadiness, productionReadinessDiagnostics, route, runtimeHealth, validateCapacityEvidenceRuntime, validateManualOperationsEvidenceRuntime } from './server.js'
+import { startPlatformRelayTokenQuotaMonitor } from '../../../packages/ai/src/platform-model-gate.js'
 import { MemoryCommercialCatalogRepository } from '../../../packages/persistence/src/commercial-catalog-repository.js'
 import { manualCaptureJournal, manualCaptureJournalSha256, manualCaptureObservationSha256 } from '../../../tests/manual-operations-evidence-fixture.js'
 
@@ -124,6 +125,73 @@ afterEach(async () => {
 })
 
 describe('production readiness fail-closed', () => {
+  it('surfaces relay quota rate limiting in production readiness and keeps /readyz at 503', async () => {
+    const environment = productionEnvironment()
+    const fetcher = vi.fn(async () => new Response('', { status: 429, headers: { 'retry-after': '120' } })) as unknown as typeof fetch
+    const stop = startPlatformRelayTokenQuotaMonitor(environment, fetcher)
+    try {
+      await vi.waitFor(() => {
+        const result = productionReadinessDiagnostics(environment)
+        expect(result.gates.relay?.reasons).toEqual(expect.arrayContaining([
+          'text:relay_token_quota_rate_limited',
+          'image:relay_token_quota_rate_limited',
+          'image_edit:relay_token_quota_rate_limited',
+          'ocr:relay_token_quota_rate_limited',
+          'video:relay_token_quota_rate_limited',
+        ]))
+      })
+      for (const [key, value] of Object.entries(environment)) vi.stubEnv(key, value)
+      const running = await listen()
+      openServers.push(running.server)
+      const response = await fetch(`${running.baseUrl}/readyz`)
+      const body = await response.json() as Envelope
+      expect(response.status).toBe(503)
+      expect(body.error).toMatchObject({ code: 'PRODUCTION_READINESS_BLOCKED' })
+      expect(body.error?.details).toMatchObject({ gates: { relay: { ready: false } } })
+      expect(JSON.stringify(body.error?.details?.gates?.relay)).toContain('video:relay_token_quota_rate_limited')
+    } finally { stop() }
+  })
+
+  it('keeps the video capability blocked when its relay credential is rejected', async () => {
+    const environment = productionEnvironment()
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string>)?.authorization
+      if (authorization === 'Bearer video-key') return new Response('', { status: 401 })
+      return new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 100, total_used: 20, total_available: 80, expires_at: 0 } }), { status: 200 })
+    }) as unknown as typeof fetch
+    environment.VIDEO_MODEL_RELAY_API_KEY = 'video-key'
+    const stop = startPlatformRelayTokenQuotaMonitor(environment, fetcher)
+    try {
+      await vi.waitFor(() => {
+        const result = productionReadinessDiagnostics(environment)
+        expect(result.gates.relay?.reasons).toContain('video:relay_token_auth_failed')
+      })
+      const result = productionReadinessDiagnostics(environment)
+      expect(result.ready).toBe(false)
+      expect(result.gates.relay?.reasons).toContain('video:relay_token_auth_failed')
+      expect(result.gates.relay?.reasons).not.toContain('text:relay_token_auth_failed')
+    } finally { stop() }
+  })
+
+  it('marks both relay capabilities stale after the quota evidence freshness window', async () => {
+    const environment = productionEnvironment()
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 100, total_used: 20, total_available: 80, expires_at: 0 } }), { status: 200 })) as unknown as typeof fetch
+    const stop = startPlatformRelayTokenQuotaMonitor(environment, fetcher)
+    try {
+      await vi.waitFor(() => expect(productionReadinessDiagnostics(environment).gates.relay?.ready).toBe(true))
+      const now = Date.now()
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 91_000)
+      try {
+        const result = productionReadinessDiagnostics(environment)
+        expect(result.ready).toBe(false)
+        expect(result.gates.relay?.reasons).toEqual(expect.arrayContaining([
+          'text:relay_token_quota_stale',
+          'video:relay_token_quota_stale',
+        ]))
+      } finally { clock.mockRestore() }
+    } finally { stop() }
+  })
+
   it('validates the manual operations evidence contract independently of the official API canary', () => {
     const generatedAt = '2026-09-22T01:00:00Z'
     const reportId = 'manual-report-current'
