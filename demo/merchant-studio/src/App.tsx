@@ -5341,7 +5341,19 @@ function CatalogFilterMenu({
   )
 }
 
-function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMode?: string | null }) {
+/**
+ * Catalog import is a workspace data mutation. Keep the button state aligned
+ * with the same roles accepted by the API instead of treating any configured
+ * base URL as write access. This also makes the Chinese permission notice
+ * useful for read-only merchant/support sessions.
+ */
+export function canImportCatalogForAccount(account: MerchantAuthAccount | null | undefined): boolean {
+  return Boolean(account?.roles.some((role) =>
+    ['workspace_owner', 'merchant_admin', 'operator', 'support', 'platform_ops'].includes(role),
+  ))
+}
+
+function StoreCatalogExperience({ baseUrl, apiMode, canWrite }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean }) {
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null)
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
@@ -5688,7 +5700,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
           )}
           {selectedPlatform ? <details className="catalog-import-disclosure">
             <summary>商品表格导入</summary>
-            <ProductSpreadsheetImport baseUrl={baseUrl} accounts={accounts ?? []} canWrite={Boolean(baseUrl)} />
+            <ProductSpreadsheetImport baseUrl={baseUrl} accounts={accounts ?? []} canWrite={canWrite} />
           </details> : null}
           {selectedPlatform && isManualPlatformOperationsMode(apiMode) && (
             <Card size="small" title={selectedPlatformStores.length ? '登记另一家店铺' : '登记店铺'} style={{ marginTop: 24 }}>
@@ -13384,7 +13396,12 @@ export default function App() {
                 {page === 'members' && authAccount && <MerchantMembersPage baseUrl={apiBaseUrl ?? ''} account={authAccount} />}
                 {page === 'products' && (
                   activeEntry === 'products' ? (
-                    <StoreCatalogExperience key={`products-${workspaceNavigationKey}`} baseUrl={apiBaseUrl} apiMode={apiMode} />
+                    <StoreCatalogExperience
+                      key={`products-${workspaceNavigationKey}`}
+                      baseUrl={apiBaseUrl}
+                      apiMode={apiMode}
+                      canWrite={canImportCatalogForAccount(authAccount)}
+                    />
                   ) : (
                     <Products
                       key={`${activeEntry ?? 'knowledge'}-${workspaceNavigationKey}`}

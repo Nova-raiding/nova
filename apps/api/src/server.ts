@@ -3099,7 +3099,7 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
         const code = (error as { code?: string })?.code
         const knownCode = ['OCR_CREATIVE_POINT_RATE_UNAVAILABLE', 'OCR_BILLING_CONTEXT_UNAVAILABLE', 'OCR_TASK_COST_LIMIT_UNAVAILABLE', 'CREATIVE_POINT_INSUFFICIENT', 'CREATIVE_POINT_BALANCE_UNKNOWN', 'MODEL_PROVIDER_OUTCOME_UNKNOWN', 'MODEL_USAGE_SETTLEMENT_PENDING', 'MODEL_COST_BUDGET_PREFLIGHT_UNAVAILABLE', 'MODEL_DAILY_COST_BUDGET_EXCEEDED', 'MODEL_TASK_COST_LIMIT_EXCEEDED', 'AUTHZ_EXECUTION_REVOKED'].includes(code ?? '')
         const nonRetryable = ['MODEL_PROVIDER_OUTCOME_UNKNOWN', 'MODEL_USAGE_SETTLEMENT_PENDING'].includes(code ?? '')
-        return { code: code && knownCode ? code : error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? error.code : 'ASSET_PARSE_FAILED', message: error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? 'asset parser returned no facts' : error instanceof Error ? error.message.slice(0, 1_000) : '素材解析失败', retryable: !nonRetryable }
+        return { code: code && knownCode ? code : error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? error.code : 'ASSET_PARSE_FAILED', message: error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? '素材解析未返回可用商品事实' : error instanceof Error ? error.message.slice(0, 1_000) : '素材解析失败', retryable: !nonRetryable }
       },
     })
     await assertDurableParseRecordCurrent(repository, executed.record)
@@ -6771,9 +6771,9 @@ function refundError(error: unknown): never {
 function campaignLifecycleError(error: unknown): never {
   if (!(error instanceof CampaignLifecycleError)) throw error
   const mapped = error.code === 'CAMPAIGN_BATCH_NOT_FOUND' ? { status: 404, message: '批量运营计划不存在或不属于当前工作区' }
-    : error.code === 'CAMPAIGN_REVISION_CONFLICT' ? { status: 409, message: 'campaign revision 已变化，请刷新后重试' }
+    : error.code === 'CAMPAIGN_REVISION_CONFLICT' ? { status: 409, message: '批量运营计划版本已变化，请刷新后重试' }
       : error.code === 'CAMPAIGN_LIFECYCLE_IDEMPOTENCY_CONFLICT' ? { status: 409, message: '幂等键已绑定其他 campaign 生命周期操作' }
-        : error.code === 'CAMPAIGN_RETRY_ITEM_INVALID' ? { status: 409, message: 'retry_failed 只能选择当前 failed 的 campaign item' }
+        : error.code === 'CAMPAIGN_RETRY_ITEM_INVALID' ? { status: 409, message: '重试失败项只能选择当前失败的批量运营项目' }
           : { status: 409, message: 'campaign 当前状态不允许该操作' }
   throw new DomainError(error.code, mapped.message, mapped.status)
 }
@@ -7347,7 +7347,7 @@ async function evaluateScannerHeartbeats(input: ScannerHeartbeatReadinessInput, 
     const actual = Number(heartbeat.clamav.definitionsVersion)
     return Number.isSafeInteger(actual) && actual >= minimumDefinitionsVersion
       ? scopedHeartbeat
-      : { ...scopedHeartbeat, ready: false, failure: { code: 'SCANNER_DEFINITIONS_BELOW_MINIMUM', message: 'definitions below configured minimum' } }
+      : { ...scopedHeartbeat, ready: false, failure: { code: 'SCANNER_DEFINITIONS_BELOW_MINIMUM', message: '病毒扫描定义版本低于系统要求' } }
   })
   const aggregate = aggregateScannerHeartbeats(heartbeats, {
     now,
@@ -10321,7 +10321,7 @@ async function externalProviderUsageStatement(input: {
     const matched = unmatchedLocal === 0 && unmatchedProvider === 0 && comparison.duplicateLocalCount === 0 && comparison.duplicateProviderCount === 0 && comparison.tokenMismatchCount === 0 && tokenDifference === 0
     return { status: matched ? 'balanced' : 'needs_review', source: 'wormhole_new_api_log_self', endpoint: '/api/log/self', auth: 'user_session_required', pages: statement.pages, provider_record_count: statement.records.length, matched_record_count: comparison.matchedRecordCount, unmatched_local_count: unmatchedLocal, unmatched_provider_count: unmatchedProvider, duplicate_local_count: comparison.duplicateLocalCount, duplicate_provider_count: comparison.duplicateProviderCount, token_mismatch_count: comparison.tokenMismatchCount, local_total_tokens: localTokens, provider_total_tokens: providerTokens, token_difference: tokenDifference, note: matched ? '中转站用户日志与本地 provider request ID、逐笔 token 核对一致；金额仍以供应商账单或 quota 口径单独核验。' : '中转站用户日志与本地账本存在记录、重复 request 或逐笔 token 差异，已阻断平账。' }
   } catch (error) {
-    return { status: 'externally_unverified', source: 'wormhole_new_api_log_self', endpoint: '/api/log/self', auth: 'user_session_required', error: error instanceof Error ? error.message.slice(0, 200) : 'provider usage query failed', note: '中转站日志读取失败；不会把本地一致视为供应商已平账。' }
+    return { status: 'externally_unverified', source: 'wormhole_new_api_log_self', endpoint: '/api/log/self', auth: 'user_session_required', error: error instanceof Error ? error.message.slice(0, 200) : '中转站用量查询失败', note: '中转站日志读取失败；不会把本地一致视为供应商已平账。' }
   }
 }
 
