@@ -800,9 +800,33 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
       })
     }
     if (!response) throw new Error('relay canary produced no response')
-    const payload = await readBoundedResponseText(response, 1 * 1024 * 1024, 'model relay response')
+    let payload = await readBoundedResponseText(response, 1 * 1024 * 1024, 'model relay response')
       .then(text => JSON.parse(text) as unknown)
       .catch(() => undefined)
+    // Video providers commonly acknowledge a task before the artifact is
+    // ready. Poll the candidate-bound status endpoint instead of treating a
+    // valid queued response as a failed canary.
+    if (modality === 'video' && response.ok && !existingVideoTaskId) {
+      const initial = evaluateVideoProbePayload(payload)
+      const jobId = initial.providerJobId
+      if (jobId && !initial.ready) {
+        const statusTemplate = process.env.VIDEO_STATUS_PATH?.trim() || '/video/generations/{job_id}'
+        const statusPath = statusTemplate.replace(/\{job_id\}/gu, encodeURIComponent(jobId))
+        const deadline = Date.now() + Math.min(timeoutMs, 120_000)
+        while (Date.now() < deadline) {
+          await new Promise<void>((resolveWait, rejectWait) => {
+            const timer = setTimeout(resolveWait, 5_000)
+            controller.signal.addEventListener('abort', () => { clearTimeout(timer); rejectWait(controller.signal.reason ?? new DOMException('relay video poll aborted', 'AbortError')) }, { once: true })
+          })
+          const polled = await fetch(`${base}${statusPath}`, { method: 'GET', headers: { accept: 'application/json', authorization: `Bearer ${keyFor(modality)}`, 'x-damai-canary': 'true' }, signal: controller.signal, redirect: 'error' })
+          const polledPayload = await readBoundedResponseText(polled, 1 * 1024 * 1024, 'model relay video status').then(text => JSON.parse(text) as unknown).catch(() => undefined)
+          if (!polled.ok) { response = polled; payload = polledPayload; break }
+          payload = polledPayload
+          if (evaluateVideoProbePayload(payload).ready || evaluateVideoProbePayload(payload).reason !== 'video_async_pending') { response = polled; break }
+          response = polled
+        }
+      }
+    }
     const providerRequestId = extractProviderRequestId(payload, response.headers)
     if (!response.ok) {
       const blocked = blockHttpProbe(common, response.status, providerRequestId)
