@@ -60,6 +60,14 @@ test('fast status keeps liveness and readiness probes separate', () => {
   // boolean health result.
   assert.match(source, /https:\/\/yxsona\.com\/api\/readyz/u)
   assert.match(source, /https:\/\/ops\.yxsona\.com\/healthz/u)
+  assert.match(source, /body\.data\?\.ready \?\? body\.data\?\.status === 'ok'/u)
   assert.match(source, /probe\.status !== 200 \|\| !probe\.ready/u)
+  assert.match(source, /public_probe_failed:\$\{probe\.url\}/u)
   assert.match(source, /release_approved: false/u)
+})
+
+test('a ready API does not hide an exited or unhealthy replica', () => {
+  const value = snapshot()
+  Object.assign(value.services.find(service => service.service === 'api-replica'), { state: 'exited', health: 'absent' })
+  assert.deepEqual(assess(value), ['service_not_healthy:api-replica'])
 })
