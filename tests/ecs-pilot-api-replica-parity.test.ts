@@ -168,6 +168,13 @@ function render(overrides: NodeJS.ProcessEnv = {}): ComposeConfig {
 }
 
 describe('ECS pilot API replica parity', () => {
+  it('allows manual reviewed rules without remote sync and keeps both APIs consistent', () => {
+    const services = render({ PLATFORM_OPERATIONS_MODE: 'manual', PLATFORM_RULE_SYNC_MANIFEST_URL: '', PLATFORM_RULE_SYNC_SIGNING_SECRET: '', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '0' }).services
+    for (const name of ['api', 'api-replica']) {
+      expect(services[name]?.environment).toMatchObject({ PLATFORM_RULE_SYNC_MANIFEST_URL: '', PLATFORM_RULE_SYNC_SIGNING_SECRET: '', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '0' })
+    }
+  })
+
   it('wires the disabled embedding candidate consistently to both APIs and only the automation worker', () => {
     const services = render({
       MODEL_RELAY_API_KEY: '',
@@ -278,7 +285,7 @@ describe('ECS pilot API replica parity', () => {
     'ASSET_DISPLAY_URL_SIGNING_SECRET', 'ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'WORKER_WORKSPACES',
     'DATABASE_URL', 'OPS_DATABASE_URL', 'MODEL_COST_ESTIMATE_VERSION',
     'OCR_MAX_OUTPUT_TOKENS',
-    'AUTHORIZATION_APPROVAL_TOKENS', 'PLATFORM_RULE_SYNC_MANIFEST_URL', 'PLATFORM_RULE_SYNC_SIGNING_SECRET', 'PLATFORM_RULE_SYNC_INTERVAL_HOURS',
+    'AUTHORIZATION_APPROVAL_TOKENS',
     'WORKER_SYNC_API_TOKEN', 'WORKER_SYNC_API_SIGNING_SECRET',
     'WORKER_GENERATION_API_TOKEN', 'WORKER_GENERATION_API_SIGNING_SECRET',
     'WORKER_PUBLISH_API_TOKEN', 'WORKER_PUBLISH_API_SIGNING_SECRET',
