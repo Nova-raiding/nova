@@ -171,8 +171,12 @@ async function main() {
       assert(result.platform === platform, `sync response platform mismatch for ${platform}`)
       return { platform, result }
     } catch (error) {
-      if (!accountByPlatform.get(platform)?.readEnabled) {
-        const accountState = accountByPlatform.get(platform)?.state
+      const account = accountByPlatform.get(platform)
+      const actualCode = (error as { code?: string }).code
+      // Commercial access is checked before account readiness, so it can deny
+      // an otherwise readable account as well as an unconfigured one.
+      if (!account?.readEnabled || actualCode === 'COMMERCIAL_ENTITLEMENT_REQUIRED') {
+        const accountState = account?.state
         expectSyncError(error, accountState ? { state: accountState } : undefined, `${accountState === 'revoked' || accountState === 'refresh_required' ? 'reauthorization-required' : 'unconfigured'} ${platform} sync`)
         return { platform, blocked: true }
       }
