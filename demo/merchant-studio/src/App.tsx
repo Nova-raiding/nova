@@ -6395,7 +6395,10 @@ export function MaterialLibraryWorkspace({
     }
     const controller = new AbortController()
     const objectUrls: string[] = []
-    const imageAssets = remoteAssets.filter((asset) => asset.scanStatus === 'clean' && asset.mimeType.toLowerCase().startsWith('image/'))
+    const imageAssets = remoteAssets
+      .filter((asset) => asset.scanStatus === 'clean' && asset.mimeType.toLowerCase().startsWith('image/'))
+      .sort((left, right) => right.sizeBytes - left.sizeBytes)
+      .slice(0, 24)
     const previews = new Map<string, string>()
     let nextIndex = 0
     const worker = async () => {
