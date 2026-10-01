@@ -57,7 +57,15 @@ export function createIsolatedPostgresConfig(environment: NodeJS.ProcessEnv) {
   // actually exist on disk, so no hand-maintained count is needed here: a stale
   // literal only turns "someone added a .postgres.test.ts" into a misleading
   // "Use the isolated PostgreSQL launcher" failure.
-  if (!valid || !isolatedManifestValid || ALL_POSTGRES_TEST_FILES.length < ISOLATED_POSTGRES_TEST_FILES.length) throw new Error('Use the isolated PostgreSQL launcher; generated local fixture bindings and the PostgreSQL manifest are required.')
+  if (!valid || !isolatedManifestValid || ALL_POSTGRES_TEST_FILES.length < ISOLATED_POSTGRES_TEST_FILES.length) {
+    // Keep this entrypoint fail-closed. A direct `vitest --config` invocation
+    // must never fall back to DATABASE_URL, a developer .env, or a shared
+    // production database. The command in the error creates a disposable
+    // PostgreSQL 17 fixture and supplies both bindings this config requires.
+    throw new Error(
+      'POSTGRES_ISOLATED_LAUNCHER_REQUIRED: run `npm run test:postgres:isolated` (or `npm run test:postgres:all-local`) to create an owned fixture and bind PERSISTENCE_RELEASE_DATABASE_URL; direct Vitest runs require generated local fixture bindings and the PostgreSQL manifest.',
+    )
+  }
   const files = environment.MERCHANT_ISOLATED_POSTGRES_ALL === 'true' ? ALL_POSTGRES_TEST_FILES : ISOLATED_POSTGRES_TEST_FILES
   return {
     test: {

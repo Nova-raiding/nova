@@ -21,6 +21,8 @@ npm run test:postgres:all-local
 
 前置条件只有一条：本机有可用的 Docker（fixture 通过本机 socket 创建容器；`--pull=never`，镜像不在本地时先自行 `docker pull`）。任一断言 pending、任一文件为空、任一报告不自洽，启动器都判失败——不存在「跳过即通过」。
 
+不要直接执行 `vitest --config vitest.postgres.config.ts`。该配置只接受启动器刚创建的本机 fixture URL 和运行 ID；缺少 `PERSISTENCE_RELEASE_DATABASE_URL` 或使用共享 URL 时会以 `POSTGRES_ISOLATED_LAUNCHER_REQUIRED` 失败，并提示上述命令。测试不会读取 `DATABASE_URL`、`.env` 或生产数据库作为回退。
+
 ## 该选哪一个
 
 | 场景 | 命令 |

@@ -33,9 +33,15 @@ describe('isolated PostgreSQL entrypoint', () => {
     await expect(selectIsolatedPostgresTests([argument])).rejects.toThrow(/only exact known PostgreSQL test files/u)
   })
   it('makes the standalone config fail closed without generated fixture bindings', () => {
-    expect(() => createIsolatedPostgresConfig({})).toThrow(/isolated PostgreSQL launcher/u)
-    expect(() => createIsolatedPostgresConfig({ PERSISTENCE_RELEASE_DATABASE_URL: adminUrl })).toThrow(/isolated PostgreSQL launcher/u)
-    expect(() => createIsolatedPostgresConfig({ MERCHANT_ISOLATED_POSTGRES_RUN_ID: runId, PERSISTENCE_RELEASE_DATABASE_URL: 'postgres://shared.example/merchant' })).toThrow(/isolated PostgreSQL launcher/u)
+    for (const environment of [
+      {},
+      { PERSISTENCE_RELEASE_DATABASE_URL: adminUrl },
+      { MERCHANT_ISOLATED_POSTGRES_RUN_ID: runId, PERSISTENCE_RELEASE_DATABASE_URL: 'postgres://shared.example/merchant' },
+    ]) {
+      expect(() => createIsolatedPostgresConfig(environment)).toThrow(/POSTGRES_ISOLATED_LAUNCHER_REQUIRED/u)
+      expect(() => createIsolatedPostgresConfig(environment)).toThrow(/npm run test:postgres:(?:isolated|all-local)/u)
+      expect(() => createIsolatedPostgresConfig(environment)).toThrow(/PERSISTENCE_RELEASE_DATABASE_URL/u)
+    }
     const config = createIsolatedPostgresConfig({ MERCHANT_ISOLATED_POSTGRES_RUN_ID: runId, PERSISTENCE_RELEASE_DATABASE_URL: adminUrl })
     expect(config.test.include).toEqual(ISOLATED_POSTGRES_TEST_FILES)
     expect(config.test.passWithNoTests).toBe(false)
