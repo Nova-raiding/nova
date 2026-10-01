@@ -394,6 +394,11 @@ describe('durable rule-center HTTP boundary', () => {
       },
       audit: { id: 'manual-jd-public-audit', rulePackId: 'jd-manual', ruleVersionId: 'manual-jd-public', version: '1', action: 'activated', actorId: 'platform-checker', reason: 'manual review', occurredAt: now, data: {} },
     })
+    await repository.insertVersion({
+      id: 'forged-jd-public', workspaceId, packId: 'forged-jd', name: '伪造京东规则', version: '1', scope: 'platform', targetId: 'jd',
+      status: 'active', sourceKind: 'internal', sourceReference: 'https://example.invalid/rules', sourceCheckedAt: now,
+      checksum: 'f'.repeat(64), checks: {}, createdBy: 'untrusted-operator', revision: 1,
+    })
     const base = await start()
     const response = await fetch(`${base}/mcp`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId },
@@ -406,6 +411,7 @@ describe('durable rule-center HTTP boundary', () => {
     const httpResponse = await fetch(`${base}/v1/rules?platform=jd`, { headers: { 'x-workspace-id': workspaceId } }).then(json)
     expect(httpResponse.error).toBeNull()
     expect((httpResponse.data as Array<{ id: string }>).map(item => item.id)).toContain('manual-jd-public')
+    expect((httpResponse.data as Array<{ id: string }>).map(item => item.id)).not.toContain('forged-jd-public')
   })
 
   it('keeps the Ops rule lifecycle view on canonical roles instead of the raw membership label', async () => {

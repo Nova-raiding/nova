@@ -9,7 +9,7 @@ type Send = <T>(res: ServerResponse, status: number, workspaceId: string, data: 
 type RuleRepository = Pick<PostgresRuleRepository, 'list' | 'listAudit' | 'insertVersion' | 'appendAudit' | 'updateStatus'> & Partial<Pick<PostgresRuleRepository, 'listPublic' | 'insertVersionWithAudit' | 'transitionStatusWithAudit'>>
 type Category = { code: string; name: string; fields: readonly string[] }
 type RuleApproval = { approvalRef: string; approvedAt: string; approvedBy: string }
-type RulePublic = { status: string; scope?: string; targetId?: string; scopeValue?: string; source?: { reference?: string } }
+type RulePublic = { status: string; scope?: string; targetId?: string; scopeValue?: string; source?: { reference?: string; trust?: string } }
 
 export async function handleHttpRulesRoute(req: IncomingMessage, res: ServerResponse, path: string, url: URL, deps: {
   service: Pick<MerchantService, 'listRulePacks'>
@@ -36,8 +36,9 @@ export async function handleHttpRulesRoute(req: IncomingMessage, res: ServerResp
     const workspaceId = deps.resolveWorkspace(req)
     const requestedPlatform = url.searchParams.get('platform')?.trim()
     if (requestedPlatform && !deps.supportedPlatforms.includes(requestedPlatform as Platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'platform 无效', 400)
-    const appliesToPlatform = (rule: { status: string; scope?: string; targetId?: string; scopeValue?: string; source?: { reference?: string } }) => rule.status === 'active'
+    const appliesToPlatform = (rule: { status: string; scope?: string; targetId?: string; scopeValue?: string; source?: { reference?: string; trust?: string } }) => rule.status === 'active'
       && !rule.source?.reference?.startsWith('manual://')
+      && (rule.scope !== 'platform' || rule.source?.trust === 'verified')
       && (!requestedPlatform || rule.scope === 'global' || (rule.scope === 'platform' && (rule.targetId ?? rule.scopeValue) === requestedPlatform))
     const respond = <T>(rules: T[]) => url.searchParams.has('limit') || url.searchParams.has('offset') ? deps.paginatedResult(url, rules) : rules
     const repository = deps.ruleRepository()
