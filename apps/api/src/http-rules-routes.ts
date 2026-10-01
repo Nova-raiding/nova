@@ -6,7 +6,7 @@ import type { PersistedRuleAudit, PersistedRuleVersion, PostgresRuleRepository }
 
 type JsonObject = Record<string, unknown>
 type Send = <T>(res: ServerResponse, status: number, workspaceId: string, data: T | null, error?: ApiEnvelope<T>['error'], req?: IncomingMessage) => void
-type RuleRepository = Pick<PostgresRuleRepository, 'list' | 'listAudit' | 'insertVersion' | 'appendAudit' | 'updateStatus'> & Partial<Pick<PostgresRuleRepository, 'insertVersionWithAudit' | 'transitionStatusWithAudit'>>
+type RuleRepository = Pick<PostgresRuleRepository, 'list' | 'listAudit' | 'insertVersion' | 'appendAudit' | 'updateStatus'> & Partial<Pick<PostgresRuleRepository, 'listPublic' | 'insertVersionWithAudit' | 'transitionStatusWithAudit'>>
 type Category = { code: string; name: string; fields: readonly string[] }
 type RuleApproval = { approvalRef: string; approvedAt: string; approvedBy: string }
 type RulePublic = { status: string; scope?: string; targetId?: string; scopeValue?: string; source?: { reference?: string } }
@@ -44,7 +44,11 @@ export async function handleHttpRulesRoute(req: IncomingMessage, res: ServerResp
     if (repository) {
       const packId = url.searchParams.get('pack_id')?.trim() || undefined
       const rows = await repository.list(workspaceId, packId)
-      if (rows.length || packId) return deps.send(res, 200, workspaceId, respond(rows.map(deps.publicRule).filter(appliesToPlatform)), null, req)
+      const publicRows = repository.listPublic
+        ? await repository.listPublic(workspaceId, requestedPlatform ?? undefined)
+        : []
+      const merged = [...rows, ...publicRows.filter(item => (!packId || item.packId === packId) && !rows.some(row => row.packId === item.packId && row.version === item.version))]
+      if (merged.length || packId) return deps.send(res, 200, workspaceId, respond(merged.map(deps.publicRule).filter(appliesToPlatform)), null, req)
       return deps.send(res, 200, workspaceId, respond((await deps.persistedRules(workspaceId) ?? []).filter(appliesToPlatform)), null, req)
     }
     if (deps.isProduction()) throw new DomainError('RULE_REPOSITORY_NOT_CONFIGURED', '生产规则仓储未配置', 503)

@@ -403,6 +403,9 @@ describe('durable rule-center HTTP boundary', () => {
     expect((response.data as { result: Array<{ id: string; source?: { kind?: string; trust?: string } }> }).result).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'manual-jd-public', source: expect.objectContaining({ kind: 'internal', trust: 'verified' }) }),
     ]))
+    const httpResponse = await fetch(`${base}/v1/rules?platform=jd`, { headers: { 'x-workspace-id': workspaceId } }).then(json)
+    expect(httpResponse.error).toBeNull()
+    expect((httpResponse.data as Array<{ id: string }>).map(item => item.id)).toContain('manual-jd-public')
   })
 
   it('keeps the Ops rule lifecycle view on canonical roles instead of the raw membership label', async () => {
