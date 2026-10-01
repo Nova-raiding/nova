@@ -40,6 +40,10 @@ function fixture() {
       image: artifact === 'postgres-migration'
         ? `registry.example.com/library/postgres:17-alpine@${digests[artifact as keyof typeof digests]}`
         : `registry.example.com/${artifact}@${digests[artifact as keyof typeof digests]}`,
+      labels: {
+        'com.storenova.release.id': 'release-test',
+        'org.opencontainers.image.revision': 'a'.repeat(40),
+      },
     }
   }
   return { services }
@@ -177,18 +181,29 @@ describe('ECS Compose release gate', () => {
 
   it('binds API runtime release metadata to the normalized Compose contract', () => {
     const document = fixture() as any
+    for (const service of Object.values(document.services)) service.labels['com.storenova.release.id'] = 'release-1'
     for (const name of ['api', 'api-replica']) document.services[name].environment = {}
     const directory = mkdtempSync(join(tmpdir(), 'ecs-compose-hash-'))
     const path = join(directory, 'compose.json')
+    const imageSet = run(document)
+    for (const name of ['api', 'api-replica']) {
+      Object.assign(document.services[name].environment, {
+      RELEASE_ID: 'release-1', RELEASE_GIT_SHA: 'a'.repeat(40), RELEASE_MANIFEST_SHA256: '', RELEASE_IMAGE_SET_DIGEST: imageSet,
+      })
+    }
     writeFileSync(path, JSON.stringify(document))
     const manifest = execFileSync('ruby', ['infra/scripts/validate-ecs-compose-release.rb', path, JSON.stringify(digests), '--print-manifest-sha256'], { encoding: 'utf8' }).trim()
-    const imageSet = run(document)
-    for (const name of ['api', 'api-replica']) Object.assign(document.services[name].environment, {
-      RELEASE_ID: 'release-1', RELEASE_GIT_SHA: 'a'.repeat(40), RELEASE_MANIFEST_SHA256: manifest, RELEASE_IMAGE_SET_DIGEST: imageSet,
-    })
+    for (const name of ['api', 'api-replica']) document.services[name].environment.RELEASE_MANIFEST_SHA256 = manifest
     expect(runContract(document, { RELEASE_ID: 'release-1', RELEASE_GIT_SHA: 'a'.repeat(40) })).toContain('ECS Compose release gate passed')
     document.services.api.environment.RELEASE_ID = 'different-release'
     expect(() => runContract(document, { RELEASE_ID: 'release-1', RELEASE_GIT_SHA: 'a'.repeat(40) })).toThrow(/api RELEASE_ID does not match/)
+  })
+
+  it('requires every release service to carry the container release identity labels', () => {
+    const document = fixture() as any
+    delete document.services.api.labels['com.storenova.release.id']
+    expect(() => runContract(document, { RELEASE_ID: 'release-test', RELEASE_GIT_SHA: 'a'.repeat(40) }))
+      .toThrow(/api release id label does not match/)
   })
 
   it('closes the fixed release manifest: every required variable has a producer, every required artifact is pinned', () => {

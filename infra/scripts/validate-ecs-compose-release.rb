@@ -43,6 +43,11 @@ required.each do |artifact, service_names|
     errors << "#{service_name} must not contain a build directive" if service.key?('build') && service['build']
     image = service['image']
     errors << "#{service_name} image must be an immutable repository@#{digest} reference" unless image.is_a?(String) && image.end_with?("@#{digest}")
+    if !%w[--print-image-set-digest --print-manifest-sha256].include?(mode)
+      labels = service['labels']
+      errors << "#{service_name} release id label does not match the ECS release contract" unless labels.is_a?(Hash) && labels['com.storenova.release.id'] == ENV['RELEASE_ID']
+      errors << "#{service_name} release git label does not match the ECS release contract" unless labels.is_a?(Hash) && labels['org.opencontainers.image.revision'] == ENV['RELEASE_GIT_SHA']
+    end
   end
 end
 

@@ -1,6 +1,9 @@
 # Pilot-only release identity. This file is intentionally not used by
 # production Kubernetes deployment. Values are generated from the exact pilot
 # Compose render and image inventory by the deployment operator.
+x-release-labels: &release-labels
+  com.storenova.release.id: ${PILOT_RELEASE_ID:?PILOT_RELEASE_ID is required}
+  org.opencontainers.image.revision: ${PILOT_RELEASE_GIT_SHA:?PILOT_RELEASE_GIT_SHA is required}
 services:
   migrate:
     build: !reset null
@@ -8,10 +11,12 @@ services:
     # migration identity independent from the Node API image and pin the same
     # client major so dump/restore compatibility cannot drift at release time.
     image: ${MIGRATION_IMAGE_REF:?MIGRATION_IMAGE_REF must be an immutable postgres:17-alpine repository@sha256 reference}
+    labels: *release-labels
   api:
     build: !reset null
     image: ${API_IMAGE_REF:?API_IMAGE_REF must be an immutable repository@sha256 reference}
     pull_policy: never
+    labels: *release-labels
     environment:
       RELEASE_ID: ${PILOT_RELEASE_ID:?PILOT_RELEASE_ID is required}
       RELEASE_GIT_SHA: ${PILOT_RELEASE_GIT_SHA:?PILOT_RELEASE_GIT_SHA is required}
@@ -23,6 +28,7 @@ services:
     build: !reset null
     image: ${API_IMAGE_REF:?API_IMAGE_REF must be an immutable repository@sha256 reference}
     pull_policy: never
+    labels: *release-labels
     environment:
       RELEASE_ID: ${PILOT_RELEASE_ID:?PILOT_RELEASE_ID is required}
       RELEASE_GIT_SHA: ${PILOT_RELEASE_GIT_SHA:?PILOT_RELEASE_GIT_SHA is required}
@@ -33,12 +39,15 @@ services:
   ui:
     build: !reset null
     image: ${UI_IMAGE_REF:?UI_IMAGE_REF must be an immutable repository@sha256 reference}
+    labels: *release-labels
   ops-ui:
     build: !reset null
     image: ${OPS_UI_IMAGE_REF:?OPS_UI_IMAGE_REF must be an immutable repository@sha256 reference}
+    labels: *release-labels
   payment-gateway:
     build: !reset null
     image: ${PAYMENT_GATEWAY_IMAGE_REF:?PAYMENT_GATEWAY_IMAGE_REF must be an immutable repository@sha256 reference}
+    labels: *release-labels
   # The public gateway is a production service like any other. Without this
   # override it keeps the base layer's `build:` and no `image:`, while deploy
   # and rollback start it with `up -d --no-build`, which fails with
@@ -47,9 +56,11 @@ services:
   pilot-gateway:
     build: !reset null
     image: ${PILOT_GATEWAY_IMAGE_REF:?PILOT_GATEWAY_IMAGE_REF must be an immutable repository@sha256 reference}
+    labels: *release-labels
   worker-sync: &release-worker-image
     build: !reset null
     image: ${WORKER_IMAGE_REF:?WORKER_IMAGE_REF must be an immutable repository@sha256 reference}
+    labels: *release-labels
     environment:
       BRIDGE_SCHEMA_COMPATIBILITY_MODE: ${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}
   worker-generation:
@@ -69,3 +80,4 @@ services:
     build: !reset null
   clamav:
     image: ${CLAMAV_IMAGE_REF:?CLAMAV_IMAGE_REF must be an immutable repository@sha256 reference}
+    labels: *release-labels
