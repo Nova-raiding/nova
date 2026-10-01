@@ -105,12 +105,17 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
         // Tenant-owned rule sources keep their existing activation checks.
         const platform = rule.scope === 'platform' ? (rule.targetId ?? rule.scopeValue) : undefined
         if (platform && SUPPORTED_PLATFORMS.includes(platform as Platform)) {
-          return rule.status === 'active'
-            && rule.source?.kind === 'official'
+          const approvedSource = typeof rule.source?.reference === 'string'
+            && isApprovedPlatformRuleSource(platform as RuleSyncPlatform, rule.source.reference)
+          const signedOfficial = rule.source?.kind === 'official'
             && rule.source.trust === 'verified'
             && (rule.source.createdBy ?? rule.createdBy) === 'signed-rule-sync'
-            && typeof rule.source.reference === 'string'
-            && isApprovedPlatformRuleSource(platform as RuleSyncPlatform, rule.source.reference)
+          // Approved manual public rules are a supported production path for
+          // PLATFORM_OPERATIONS_MODE=manual. They carry the same verified
+          // projection as signed imports, but must not be hidden from the
+          // merchant/plugin reader after the platform workbench activates them.
+          const reviewedManual = rule.source?.kind === 'internal' && rule.source.trust === 'verified'
+          return rule.status === 'active' && approvedSource && (signedOfficial || reviewedManual)
         }
         return rule.status === 'active' && !rule.source?.reference?.startsWith('manual://')
       })

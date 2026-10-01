@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, server, service, setRuleRepositoryForTests, workspaceMembers, type RuleRepositoryPort } from './server.js'
 import type { PersistedRuleAudit, PersistedRuleVersion } from '../../../packages/persistence/src/index.js'
 
@@ -375,6 +376,33 @@ describe('durable rule-center HTTP boundary', () => {
     const operationsView = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'platform_ops_1', 'x-role': 'platform_ops', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'rule.list', params: { workspace_id: workspaceId } }) }).then(json)
     expect(operationsView.error).toBeNull()
     expect((operationsView.data as { result: Array<{ id: string }> }).result.map(item => item.id)).toEqual(['global-rule', 'jd-rule', 'taobao-rule', 'draft-rule', 'inactive-rule'])
+  })
+
+  it('exposes an activated, approved manual public platform rule to merchant readers', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const workspaceId = `ws_manual_public_reader_${Date.now()}`
+    const now = new Date().toISOString()
+    const checks = { forbiddenTerms: ['全网最低'] }
+    await repository.insertPublicVersionWithAudit({
+      version: {
+        id: 'manual-jd-public', packId: 'jd-manual', name: '京东人工规则', version: '1', scope: 'platform',
+        status: 'active', sourceKind: 'internal', sourceReference: 'https://rule.jd.com/rule/ruleDetail.action?ruleId=1',
+        sourceCheckedAt: now, checksum: createHash('sha256').update(JSON.stringify(checks)).digest('hex'),
+        checks: { ...checks, __public_scope: 'platform' }, createdBy: 'platform-reviewer', revision: 2,
+        scopeValue: 'jd', severity: 'error', action: 'block',
+      },
+      audit: { id: 'manual-jd-public-audit', rulePackId: 'jd-manual', ruleVersionId: 'manual-jd-public', version: '1', action: 'activated', actorId: 'platform-checker', reason: 'manual review', occurredAt: now, data: {} },
+    })
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'rule.list', params: { platform: 'jd' } }),
+    }).then(json)
+    expect(response.error).toBeNull()
+    expect((response.data as { result: Array<{ id: string; source?: { kind?: string; trust?: string } }> }).result).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'manual-jd-public', source: expect.objectContaining({ kind: 'internal', trust: 'verified' }) }),
+    ]))
   })
 
   it('keeps the Ops rule lifecycle view on canonical roles instead of the raw membership label', async () => {
