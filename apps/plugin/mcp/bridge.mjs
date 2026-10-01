@@ -1800,7 +1800,7 @@ function userFacingErrorText(code, details) {
   if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '本次图片请求的服务商回执暂未确认，系统已转入后台自动核对；创意点仍处于预留状态，确认前不会重复调用、重复扣费或发布，商户无需输入查询指令。'
   if (code === 'PLATFORM_RULE_DATA_UNAVAILABLE') return '当前平台的签名规则数据尚未就绪，生成已被阻止；请在平台规则状态中检查配置和有效期。本次没有发起模型生成。'
   if (code === 'MODEL_PROVIDER_REQUEST_FAILED') {
-    return '图片模型请求被中转服务拒绝。未生成新图片、未重复扣费；请更换可用模型或稍后重试。'
+    return '模型请求被中转服务拒绝。未生成新内容、未重复扣费；请更换可用模型或稍后重试。'
   }
   if (code === 'MCP_HTTPS_REQUIRED') return '当前服务的安全连接尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
   if (code === 'MCP_STRICT_AUTH_REQUIRED') return '当前服务的安全鉴权尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
