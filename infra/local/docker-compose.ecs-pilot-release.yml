@@ -22,6 +22,11 @@ services:
       RELEASE_GIT_SHA: ${PILOT_RELEASE_GIT_SHA:?PILOT_RELEASE_GIT_SHA is required}
       RELEASE_MANIFEST_SHA256: ${PILOT_RELEASE_MANIFEST_SHA256:?PILOT_RELEASE_MANIFEST_SHA256 is required}
       RELEASE_IMAGE_SET_DIGEST: ${PILOT_RELEASE_IMAGE_SET_DIGEST:?PILOT_RELEASE_IMAGE_SET_DIGEST is required}
+      # The verified Wormhole model key is also the video credential. Do not
+      # inherit a stale VIDEO_MODEL_RELAY_API_KEY from an older host release.
+      # The video model and endpoint below are independently pinned by the
+      # production environment contract and the canary evidence.
+      VIDEO_MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:?MODEL_RELAY_API_KEY is required}
       BRIDGE_SCHEMA_COMPATIBILITY_MODE: ${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}
       RUN_MIGRATIONS_ON_STARTUP: "false"
   api-replica:
@@ -34,6 +39,7 @@ services:
       RELEASE_GIT_SHA: ${PILOT_RELEASE_GIT_SHA:?PILOT_RELEASE_GIT_SHA is required}
       RELEASE_MANIFEST_SHA256: ${PILOT_RELEASE_MANIFEST_SHA256:?PILOT_RELEASE_MANIFEST_SHA256 is required}
       RELEASE_IMAGE_SET_DIGEST: ${PILOT_RELEASE_IMAGE_SET_DIGEST:?PILOT_RELEASE_IMAGE_SET_DIGEST is required}
+      VIDEO_MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:?MODEL_RELAY_API_KEY is required}
       BRIDGE_SCHEMA_COMPATIBILITY_MODE: ${BRIDGE_SCHEMA_COMPATIBILITY_MODE:-}
       RUN_MIGRATIONS_ON_STARTUP: "false"
   ui:

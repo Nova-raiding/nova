@@ -262,6 +262,8 @@ describe('ECS production Compose contract', () => {
     expect(validate(rendered)).toContain('contract passed')
     expect(rendered.services.api.environment.PUBLIC_OPS_BASE_URL).toBe('https://ops.yxsona.com')
     expect(rendered.services['api-replica'].environment.PUBLIC_OPS_BASE_URL).toBe('https://ops.yxsona.com')
+    expect(rendered.services.api.environment.VIDEO_MODEL_RELAY_API_KEY).toBe(rendered.services.api.environment.MODEL_RELAY_API_KEY)
+    expect(rendered.services['api-replica'].environment.VIDEO_MODEL_RELAY_API_KEY).toBe(rendered.services['api-replica'].environment.MODEL_RELAY_API_KEY)
   })
 
   it.each([
