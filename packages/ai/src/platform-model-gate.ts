@@ -19,7 +19,7 @@ type RelayQuotaMonitor = {
   modelKey: string
   videoKey: string
   states: Record<RelayCredential, QuotaState>
-  retryAt: number
+  retryAt: Record<RelayCredential, number>
   timer: ReturnType<typeof setInterval>
 }
 let relayQuotaMonitor: RelayQuotaMonitor | undefined
@@ -34,7 +34,7 @@ export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fe
   const videoKey = source.VIDEO_MODEL_RELAY_API_KEY?.trim() || modelKey
   if (relayQuotaMonitor) clearInterval(relayQuotaMonitor.timer)
   const unknown = (): QuotaState => ({ checkedAt: 0, expiresAt: 0, available: 0, reason: 'relay_token_quota_unknown' })
-  const monitor: RelayQuotaMonitor = { baseUrl, modelKey, videoKey, states: { model: unknown(), video: unknown() }, retryAt: 0, timer: undefined as unknown as ReturnType<typeof setInterval> }
+  const monitor: RelayQuotaMonitor = { baseUrl, modelKey, videoKey, states: { model: unknown(), video: unknown() }, retryAt: { model: 0, video: 0 }, timer: undefined as unknown as ReturnType<typeof setInterval> }
   const retryAfterMs = (value: string | null): number => {
     const fallback = RELAY_QUOTA_REFRESH_MS
     if (!value?.trim()) return fallback
@@ -45,7 +45,7 @@ export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fe
   }
   relayQuotaMonitor = monitor
   const refresh = async (credential: RelayCredential, key: string): Promise<void> => {
-    if (monitor.retryAt > Date.now()) return
+    if (monitor.retryAt[credential] > Date.now()) return
     let state: QuotaState
     try {
       const relay = evaluatePlatformModelRelayConfiguration(source)
@@ -57,12 +57,12 @@ export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fe
         if (response.status === 429) {
           // The model and video lookups run concurrently. A shorter retry
           // window from the second response must not erase the first one.
-          monitor.retryAt = Math.max(monitor.retryAt, Date.now() + retryAfterMs(response.headers.get('retry-after')))
+          monitor.retryAt[credential] = Math.max(monitor.retryAt[credential], Date.now() + retryAfterMs(response.headers.get('retry-after')))
           throw new Error('relay_token_quota_rate_limited')
         }
         throw new Error(response.status === 401 || response.status === 403 ? 'relay_token_auth_failed' : 'relay_token_quota_http_error')
       }
-      if (monitor.retryAt <= Date.now()) monitor.retryAt = 0
+      if (monitor.retryAt[credential] <= Date.now()) monitor.retryAt[credential] = 0
       const root = JSON.parse(await readBoundedResponseText(response, 16 * 1024, 'relay token quota')) as { code?: unknown; success?: unknown; data?: Record<string, unknown> }
       const data = root?.data
       if ((root?.code !== true && root?.success !== true) || data?.object !== 'token_usage') throw new Error('relay_token_quota_invalid')

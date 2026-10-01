@@ -58,13 +58,15 @@ describe('platform-owned model gate', () => {
       await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'text').reasons).toContain('relay_token_quota_rate_limited'))
       expect(evaluatePlatformModelGate(source, 'text').ready).toBe(false)
       expect(evaluatePlatformModelGate(source, 'video').ready).toBe(true)
-      // The monitor's 30s interval must honor the relay's 120s Retry-After.
+      // The model monitor honors the relay's 120s Retry-After. The independent
+      // video credential is still allowed to refresh on its own 30s cadence.
       expect(fetcher).toHaveBeenCalledTimes(2)
       await vi.advanceTimersByTimeAsync(90_000)
-      expect(fetcher).toHaveBeenCalledTimes(2)
+      expect(fetcher.mock.calls.filter(([, init]) => (init?.headers as Record<string, string>)?.authorization === 'Bearer model-key')).toHaveLength(1)
+      expect(fetcher).toHaveBeenCalledTimes(5)
     } finally { stop(); vi.useRealTimers() }
   })
-  it('keeps the longest Retry-After when both credential lookups are rate limited', async () => {
+  it('keeps each credential Retry-After independent so one key cannot stale the other', async () => {
     vi.useFakeTimers()
     const source = { NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://relay.example/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example', MODEL_RELAY_API_KEY: 'model-key', VIDEO_MODEL_RELAY_API_KEY: 'video-key', AI_MODEL: 'text-v1', VIDEO_MODEL: 'video-v1' }
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => new Response('', {
@@ -75,8 +77,12 @@ describe('platform-owned model gate', () => {
     try {
       await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'video').reasons).toContain('relay_token_quota_rate_limited'))
       await vi.advanceTimersByTimeAsync(90_000)
-      expect(fetcher).toHaveBeenCalledTimes(2)
+      // The video key may retry after its 30s window, while the model key
+      // remains protected by its own 120s window. A shared timer would skip
+      // the model refresh and incorrectly turn a healthy model quota stale.
+      expect(fetcher).toHaveBeenCalledTimes(4)
       expect(evaluatePlatformModelRelayGate(source).ready).toBe(false)
+      expect(evaluatePlatformModelRelayGate(source, 'video').reasons).toContain('relay_token_quota_rate_limited')
     } finally { stop(); vi.useRealTimers() }
   })
   it('requires an explicit versioned conservative estimate for every modality', () => {
