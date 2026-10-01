@@ -17,7 +17,7 @@ function fixture(migrationCount = 3) {
   sql.forEach((contents, index) => writeFileSync(join(migrations, `${String(index + 1).padStart(3, '0')}_migration_${index + 1}.sql`), contents))
   const rows = sql.map((contents, index) => `${index + 1}|migration_${index + 1}|${createHash('sha256').update(contents).digest('hex')}`).join('\n') + '\n'
   const psql = join(bin, 'psql')
-  writeFileSync(psql, `#!/bin/sh\ncase "$1" in\n  *tenant*) printf '%s' "$FAKE_TENANT_ROWS" ;;\n  *ops*) printf '%s' "$FAKE_OPS_ROWS" ;;\n  *) exit 9 ;;\nesac\n`)
+  writeFileSync(psql, `#!/bin/sh\ncase "$1" in\n  *tenant*) role=tenant; rows=$FAKE_TENANT_ROWS ;;\n  *ops*) role=ops; rows=$FAKE_OPS_ROWS ;;\n  *) exit 9 ;;\nesac\nif [ "$role" = "\${FAKE_PSQL_FAIL_ROLE:-}" ]; then\n  printf 'connection failed for %s: %s\\n' "$1" "\${FAKE_PSQL_DIAGNOSTIC:-}" >&2\n  exit 9\nfi\nprintf '%s' "$rows"\n`)
   chmodSync(psql, 0o755)
   return { migrations, bin, rows }
 }
@@ -62,6 +62,20 @@ describe('ECS database migration-chain preflight', () => {
     const result = run()
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('mode=complete versions=1-3 checksums=matched')
+  })
+
+  it.each(['tenant', 'ops'])('withholds %s psql failure diagnostics and database credentials', role => {
+    const sentinel = 'synthetic-credential-sentinel'
+    const result = run({
+      DATABASE_URL: `postgresql://tenant:${sentinel}@db.internal/merchant?sslmode=verify-full`,
+      OPS_DATABASE_URL: `postgresql://ops:${sentinel}@db.internal/merchant?sslmode=verify-full`,
+      FAKE_PSQL_FAIL_ROLE: role,
+      FAKE_PSQL_DIAGNOSTIC: sentinel,
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(`${role === 'tenant' ? 'DATABASE_URL' : 'OPS_DATABASE_URL'}: migration history query failed; protected diagnostics were withheld`)
+    expect(result.stdout + result.stderr).not.toContain(sentinel)
+    expect(result.stdout).not.toContain('database migration chain verified')
   })
 
   it('accepts the same checksum-matched candidate prefix through both runtime roles', () => {

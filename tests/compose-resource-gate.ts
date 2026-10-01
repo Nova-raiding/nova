@@ -83,7 +83,9 @@ assert.ok(apiEnv.ASSET_SCANNER_WORKSPACE_SIGNING_SECRET, 'API scanner workspace 
 assert.ok('ASSET_SCAN_TRUSTED_PUBLIC_KEYS' in apiEnv, 'API scanner trust-root input must exist')
 assert.ok(apiEnv.DATABASE_URL?.startsWith('postgres://'), 'API must use PostgreSQL in Compose')
 assert.ok(apiEnv.OPS_DATABASE_URL?.startsWith('postgres://'), 'API must isolate platform control-plane tables behind a dedicated PostgreSQL role')
-assert.notEqual(apiEnv.OPS_DATABASE_URL, apiEnv.DATABASE_URL, 'Ops and tenant runtime database credentials must be distinct')
+if (apiEnv.OPS_DATABASE_URL === apiEnv.DATABASE_URL) {
+  throw new Error('compose resource gate database credential contract failed')
+}
 assert.ok(apiEnv.REDIS_URL?.startsWith('redis://'), 'API must use Redis in Compose')
 assert.equal(apiEnv.DB_POOL_MAX, '8')
 assert.equal(apiEnv.MAX_ACTIVE_JOBS_PER_WORKSPACE, '3')
@@ -132,7 +134,9 @@ for (const [index, name] of workerServices.entries()) {
   assert.equal(workerEnv.WORKER_API_TIMEOUT_MS, '360000')
   assert.equal(workerEnv.WORKER_DEPENDENCY_CHECK_INTERVAL_MS, '10000')
   for (const apiOnlyPaymentInput of ['PAYMENT_PROVIDER_API_KEY', 'PAYMENT_CALLBACK_SECRET', 'PAYMENT_PROVIDER_QUERY_API_URL', 'PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'PAYMENT_PROVIDER_REFUND_API_URL']) {
-    assert.equal(workerEnv[apiOnlyPaymentInput], undefined, `${name} must not receive API-only payment provider input ${apiOnlyPaymentInput}`)
+    if (workerEnv[apiOnlyPaymentInput] !== undefined) {
+      throw new Error('compose resource gate worker payment credential contract failed')
+    }
   }
   assert.ok(workerEnv.DATABASE_URL?.startsWith('postgres://'), `Worker ${index} must use PostgreSQL`)
   assert.ok(workerEnv.REDIS_URL?.startsWith('redis://'), `Worker ${index} must use Redis`)

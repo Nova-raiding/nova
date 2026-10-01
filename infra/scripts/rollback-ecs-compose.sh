@@ -180,7 +180,7 @@ project=${ECS_COMPOSE_PROJECT:-merchant-production}
 compose() {
   case "${1:-}" in
     config) docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" "$@" 2>/dev/null ;;
-    *) docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" "$@" ;;
+    *) docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" "$@" 2>/dev/null ;;
   esac
 }
 compose config --format json | node "$root/infra/scripts/validate-ecs-compose-project.mjs" - "$project" || fail validation_failed 'rollback Compose resources do not belong to the selected ECS project'
@@ -204,7 +204,7 @@ const expected={release_id:process.env.EXPECTED_ID,release_git_sha:process.env.E
 if(!value||Object.entries(expected).some(([key,want])=>value[key]!==want)){process.stderr.write("current production release identity does not match rollback plan\n");process.exit(1)}
 ' || fail validation_failed 'current production release identity does not match rollback plan'
 
-live_migration=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT max(version)::int FROM schema_migrations') || fail validation_failed 'could not read live database migration version'
+live_migration=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT max(version)::int FROM schema_migrations' 2>/dev/null) || fail validation_failed 'could not read live database migration version'
 [ "$live_migration" = "$PLANNED_LIVE_MIGRATION" ] || fail validation_failed 'live database migration version changed after rollback plan approval'
 
 # Execute target-image code in an ephemeral container. It only reads the

@@ -145,7 +145,10 @@ assert_frozen_compose
 IMAGE_DIGEST="$image_set_digest" PRODUCTION_EVIDENCE_MANIFEST_SHA256="$manifest_sha256" RELEASE_GIT_SHA="$release_git_sha" PRODUCTION_EVIDENCE_REPO_ROOT="$b_source" \
   sh "$b_source/infra/scripts/consume-production-evidence-nonce.sh"
 docker compose -p "$ECS_BRIDGE_CANDIDATE_PROJECT" -f "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" create --no-build --pull never --no-recreate -y \
-  api-replica worker-automation worker-generation worker-publish worker-reconcile worker-scan worker-sync
+  api-replica worker-automation worker-generation worker-publish worker-reconcile worker-scan worker-sync 2>/dev/null || {
+  echo 'B candidate Compose create failed; protected diagnostics were withheld' >&2
+  exit 1
+}
 assert_frozen_compose
 candidate_map="$ECS_DEPLOY_STATE_DIR/${RELEASE_ID}.bridge-candidate-map.json"
 node "$control_root/infra/scripts/create-ecs-bridge-candidate-map.mjs" "$ECS_BRIDGE_CANDIDATE_PROJECT" "$candidate_map"

@@ -300,7 +300,18 @@ function writeAtomic(path, value, replace = false, expectedSignature) {
 }
 function cleanExec(command, args, env = {}) {
   assert(Object.values(BIN).includes(command), `unapproved executable: ${command}`)
-  return execFileSync(command, args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, env })
+  try {
+    return execFileSync(command, args, {
+      encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, env, stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch {
+    throw new Error('protected command failed')
+  }
+}
+function composeExec(args) {
+  const result = spawnSync(BIN.docker, args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'], env: {} })
+  if (result.error) throw new Error('protected Compose operation failed')
+  return result
 }
 function jsonCommand(command, args, env = {}) { return JSON.parse(cleanExec(command, args, env)) }
 function assertInheritedLock(lockPath) {
@@ -531,7 +542,7 @@ function assertRecoveredInventory(journal) {
 function checkedTimeout(value) { const timeout = value ?? '300'; assert(/^(?:[3-9][0-9]|[1-8][0-9]{2}|900)$/u.test(timeout), 'wait timeout must be between 30 and 900 seconds'); return timeout }
 function composeUp(compose, envFile, project, timeout, services) {
   assert(services.length > 0 && services.every(value => /^[a-z0-9][a-z0-9_-]{0,62}$/u.test(value) && value !== 'migrate'), 'runtime service list contains a forbidden migration or invalid service')
-  const result = spawnSync(BIN.docker, ['compose', '-p', project, '--env-file', envFile, '-f', compose, 'up', '-d', '--no-build', '--pull', 'never', '--no-deps', '--wait', '--wait-timeout', timeout, ...services], { stdio: 'inherit', env: {} })
+  const result = composeExec(['compose', '-p', project, '--env-file', envFile, '-f', compose, 'up', '-d', '--no-build', '--pull', 'never', '--no-deps', '--wait', '--wait-timeout', timeout, ...services])
   assert(result.status === 0, 'runtime-only Compose up failed; database and persistent data were preserved')
 }
 function capture(get, privatePem, publicPem) {

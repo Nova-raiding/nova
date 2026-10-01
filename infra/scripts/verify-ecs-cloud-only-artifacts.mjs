@@ -64,7 +64,20 @@ export async function verifyCloudOnlyArtifacts(archive, scopedCompose, project) 
   const archiveSha256 = execFileSync('shasum', ['-a', '256', archive], { encoding: 'utf8', maxBuffer: 8192 }).trim().split(/\s+/u)[0]
   if (!/^[0-9a-f]{64}$/u.test(archiveSha256)) throw new Error('cloud source archive digest is invalid')
   const docker = process.platform === 'darwin' ? 'docker' : '/usr/bin/docker'
-  const config = JSON.parse(execFileSync(docker, ['compose', '-p', project, '-f', scopedCompose, 'config', '--format', 'json'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }))
+  let rendered
+  try {
+    rendered = execFileSync(docker, ['compose', '-p', project, '-f', scopedCompose, 'config', '--format', 'json'], {
+      encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch {
+    throw new Error('cloud-only Compose render failed')
+  }
+  let config
+  try {
+    config = JSON.parse(rendered)
+  } catch {
+    throw new Error('cloud-only Compose render failed')
+  }
   const services = ['api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync']
   if (JSON.stringify(Object.keys(config.services ?? {}).sort()) !== JSON.stringify([...services].sort())) throw new Error('cloud runtime must contain the exact seven reviewed API/worker services')
   const refs = new Map()

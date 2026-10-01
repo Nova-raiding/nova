@@ -235,7 +235,22 @@ function writeAtomic(path, value, replace = false) {
   try { if (replace) renameSync(temp, path); else { linkSync(temp, path); unlinkSync(temp) } } catch (error) { try { unlinkSync(temp) } catch {} throw error }
   const parentFd = openSync(parent, constants.O_RDONLY); try { fsyncSync(parentFd) } finally { closeSync(parentFd) }
 }
-function cleanExec(command, args, options = {}) { assert(Object.values(BIN).includes(command), `unapproved executable: ${command}`); return execFileSync(command, args, { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, env: options.env ?? {}, input: options.input }) }
+function cleanExec(command, args, options = {}) {
+  assert(Object.values(BIN).includes(command), `unapproved executable: ${command}`)
+  try {
+    return execFileSync(command, args, {
+      encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, env: options.env ?? {}, input: options.input,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch {
+    throw new Error('protected command failed')
+  }
+}
+function composeExec(args) {
+  const result = spawnSync(BIN.docker, args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'], env: {} })
+  if (result.error) throw new Error('protected Compose operation failed')
+  return result
+}
 function jsonCommand(command, args, input, env = {}) { return JSON.parse(cleanExec(command, args, { input, env })) }
 function collectContainers(mapPath) {
   const mappings = JSON.parse(readRegular(mapPath).toString('utf8'))
@@ -625,7 +640,7 @@ function main(args) {
     assert(document.predeployment_workload.services.every(item => targetImageIds.includes(item.image_id)), 'original bridge recovery image is not locally available')
     const timeout = get('--wait-timeout') ?? '300'; assert(/^(?:[3-9][0-9]|[1-8][0-9]{2}|900)$/u.test(timeout), 'wait timeout must be 30-900 seconds')
     if (document.phase === 'bridge_cutover_started') writeAtomic(statePath, transitionJournal(document, 'bridge_recovery_started', privatePem, publicPem), true)
-    const up = spawnSync(BIN.docker, ['compose', '-p', get('--compose-project'), '--env-file', env, '-f', compose, 'up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', timeout, ...document.recovery_target.services], { stdio: 'inherit', env: {} })
+    const up = composeExec(['compose', '-p', get('--compose-project'), '--env-file', env, '-f', compose, 'up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', timeout, ...document.recovery_target.services])
     assert(up.status === 0, 'bridge code recovery runtime failed; signed journal remains retryable')
     const after = collectDatabase(process.env.DATABASE_URL)
     assert(after.version === 242 && after.historySha256 === document.database_before.migration_history_sha256 && after.invalidConcurrentIndexes.length === 0, 'bridge code recovery changed schema 242')
@@ -655,10 +670,10 @@ function main(args) {
   const project = get('--compose-project'), timeout = get('--wait-timeout') ?? '300'; assert(/^(?:[3-9][0-9]|[1-8][0-9]{2}|900)$/u.test(timeout), 'wait timeout must be 30-900 seconds')
   assert(database.invalidConcurrentIndexes.length === 0, 'invalid concurrent index requires manual recovery')
   writeAtomic(statePath, transitionJournal(document, 'recovery_started', privatePem, publicPem), true)
-  const migration = spawnSync(BIN.docker, ['compose', '-p', project, '--env-file', env, '-f', compose, 'run', '--rm', '--no-deps', '--pull', 'never', 'migrate'], { stdio: 'inherit', env: {} })
+  const migration = composeExec(['compose', '-p', project, '--env-file', env, '-f', compose, 'run', '--rm', '--no-deps', '--pull', 'never', 'migrate'])
   assert(migration.status === 0, 'forward recovery migration failed; manual recovery required')
   const after = collectDatabase(process.env.DATABASE_URL); assert(after.invalidConcurrentIndexes.length === 0 && after.version === recovery.migrationTail && after.historySha256 === recovery.allowedPrefixSha256[recovery.migrationTail], 'forward recovery did not reach a valid target prefix; manual recovery required')
-  const up = spawnSync(BIN.docker, ['compose', '-p', project, '--env-file', env, '-f', compose, 'up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', timeout, ...document.recovery_target.services], { stdio: 'inherit', env: {} })
+  const up = composeExec(['compose', '-p', project, '--env-file', env, '-f', compose, 'up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', timeout, ...document.recovery_target.services])
   assert(up.status === 0, 'forward recovery runtime failed; manual recovery required')
   cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/livez`])
   cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/readyz`])

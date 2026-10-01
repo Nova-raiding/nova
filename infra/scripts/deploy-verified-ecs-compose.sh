@@ -305,6 +305,12 @@ image_set_digest=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$
 manifest_sha256=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$verified_compose" "$IMAGE_DIGESTS_JSON" --print-manifest-sha256)
 project=${ECS_COMPOSE_PROJECT:-merchant-production}
 runtime_services='api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway'
+compose_mutation() {
+  if ! docker compose -p "$project" -f "$verified_compose" "$@" 2>/dev/null; then
+    echo 'ECS Compose mutation failed; protected diagnostics were withheld' >&2
+    return 1
+  fi
+}
 check_published_ports() {
   docker compose -p "$project" -f "$verified_compose" config --format json \
     2>/dev/null \
@@ -452,7 +458,7 @@ else
   assert_inputs_unchanged
   "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase migration_started
   mutation_started=true
-  docker compose -p "$project" -f "$verified_compose" run --rm --no-deps --pull never migrate
+  compose_mutation run --rm --no-deps --pull never migrate
   assert_inputs_unchanged
   MIGRATION_CHAIN_MODE=complete sh "$root/infra/scripts/verify-database-migration-chain.sh"
   "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase migration_complete
@@ -472,10 +478,10 @@ fi
 if [ "${ECS_BRIDGE_CODE_ONLY:-NO}" = YES ]; then
   # Preserve every unrelated container in the signed inventory; only the
   # reviewed service map may change during this recoverable code cutover.
-  docker compose -p "$project" -f "$verified_compose" up -d --no-build --pull never --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
+  compose_mutation up -d --no-build --pull never --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
     api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway
 else
-  docker compose -p "$project" -f "$verified_compose" up -d --no-build --pull never --remove-orphans --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
+  compose_mutation up -d --no-build --pull never --remove-orphans --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
     api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway
 fi
 
@@ -495,7 +501,7 @@ payment_image_ref=$(printf '%s\n' "$payment_descriptor" | sed -n '2p')
 [ "$payment_receipt_dir" = "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || {
   echo 'frozen payment gateway receipt mount differs from protected host configuration' >&2; exit 1;
 }
-payment_container_id=$(docker compose -p "$project" -f "$verified_compose" ps -q payment-gateway) || {
+payment_container_id=$(compose_mutation ps -q payment-gateway) || {
   echo 'candidate payment gateway container lookup failed' >&2; exit 1;
 }
 printf '%s' "$payment_container_id" | grep -Eq '^[a-f0-9]{64}$' || {

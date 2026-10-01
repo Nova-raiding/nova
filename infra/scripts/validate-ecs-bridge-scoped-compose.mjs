@@ -6,7 +6,21 @@ import { execFileSync } from 'node:child_process'
 const [fullPath, scopedPath, candidateProject] = process.argv.slice(2)
 if (!fullPath?.startsWith('/') || !scopedPath?.startsWith('/') || !/^bridge[a-z0-9_-]{1,56}$/u.test(candidateProject ?? '')) throw new Error('bridge Compose input is invalid')
 const docker = process.platform === 'darwin' ? 'docker' : '/usr/bin/docker'
-const config = (project, path) => JSON.parse(execFileSync(docker, ['compose', '-p', project, '-f', path, 'config', '--format', 'json'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }))
+const config = (project, path) => {
+  let output
+  try {
+    output = execFileSync(docker, ['compose', '-p', project, '-f', path, 'config', '--format', 'json'], {
+      encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch {
+    throw new Error('bridge Compose render failed')
+  }
+  try {
+    return JSON.parse(output)
+  } catch {
+    throw new Error('bridge Compose render failed')
+  }
+}
 const full = config('merchant-production', fullPath)
 const scoped = config(candidateProject, scopedPath)
 const names = ['api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync']

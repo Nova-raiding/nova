@@ -54,9 +54,12 @@ verify_target() {
   target_name=$1
   target_url=$2
   actual_path=$3
-  psql "$target_url" -X -A -t -F '|' -v ON_ERROR_STOP=1 -c \
+  if ! psql "$target_url" -X -A -t -F '|' -v ON_ERROR_STOP=1 -c \
     "SELECT version, name, coalesce(checksum, '') FROM public.schema_migrations ORDER BY version" \
-    > "$actual_path"
+    > "$actual_path" 2>/dev/null; then
+    echo "$target_name: migration history query failed; protected diagnostics were withheld" >&2
+    exit 1
+  fi
 
   awk -F '[|\t]' -v target="$target_name" -v mode="$migration_chain_mode" -v baseline_accepted="$baseline_accepted" '
     NR == FNR { version[++expected_count]=$1; name[$1]=$2; checksum[$1]=$3; next }
