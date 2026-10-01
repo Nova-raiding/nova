@@ -105,6 +105,12 @@ export const UNINVOKED_SCRIPTS: readonly UninvokedScript[] = [
     requires: 'A host with Docker that can start the isolated PostgreSQL 17 / Redis fixture, plus a free loopback port for the real API process',
     reason: 'Fail-closed acceptance for the commercial payment read path: the creator-only PostgreSQL reader, row-level security, the HTTP route and the native MCP tool must each deny every non-creator read and disclose no checkout URL. It is registered rather than wired because it starts a real API process against an isolated PostgreSQL 17 fixture and takes minutes — folding it into `check` would change the delivery gate runtime, and that promotion is a separate decision. The runner provisions its own fixture and reads no database URL and no .env, so `npm run verify:commercial-read-boundaries` is the whole setup.',
   },
+  {
+    script: 'test:e2e:readonly',
+    category: 'release-operator',
+    requires: 'A running local or candidate API and desktop web surface with read-only E2E credentials',
+    reason: 'Runs the read-only end-to-end matrix against an explicitly prepared runtime. It requires external services and credentials that the hermetic release gate must not invent, so it remains a separately named operator entrypoint rather than running inside `check`.',
+  },
 ]
 
 const TEXT_FILE = /\.(?:ts|tsx|mts|cts|js|mjs|cjs|jsx|json|ya?ml|md|sh|bash)$/u
