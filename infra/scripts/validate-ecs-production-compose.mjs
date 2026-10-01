@@ -66,6 +66,10 @@ for (const name of ['api', 'api-replica']) {
     PUBLIC_OPS_BASE_URL: 'https://ops.yxsona.com',
     MERCHANT_TEST_APPROVED_RATES: 'false',
     ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
+    // Production assets live under the IAM/lifecycle-governed prefix. A
+    // release-scoped candidate prefix belongs only to the isolated candidate
+    // renderer and must never be accepted by the production Compose gate.
+    ASSET_STORAGE_PREFIX: 'merchant-assets',
     ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ecs_ram_role',
     OPS_ALERT_NOTIFICATIONS_ENABLED: 'false',
   }

@@ -11,6 +11,7 @@ const valid = {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
       CONNECTOR_FIXTURE_MODE: 'false', PLATFORM_OPERATIONS_MODE: 'manual', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
+      ASSET_STORAGE_PREFIX: 'merchant-assets',
       ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ecs_ram_role',
       OPS_ALERT_NOTIFICATIONS_ENABLED: 'false',
       ALERT_CHANNEL_SECRET_REF: '', OPS_ALERT_WEBHOOK_URL: '',
@@ -30,6 +31,7 @@ const valid = {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
       CONNECTOR_FIXTURE_MODE: 'false', PLATFORM_OPERATIONS_MODE: 'manual', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
+      ASSET_STORAGE_PREFIX: 'merchant-assets',
       ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ecs_ram_role',
       OPS_ALERT_NOTIFICATIONS_ENABLED: 'false',
       ALERT_CHANNEL_SECRET_REF: '', OPS_ALERT_WEBHOOK_URL: '',
@@ -303,6 +305,12 @@ describe('ECS production Compose contract', () => {
     const rendered = structuredClone(valid)
     ;(rendered.services.api.environment as Record<string, string>)[key] = value
     expect(() => validate(rendered)).toThrow(new RegExp(`api\\.${key}`))
+  })
+
+  it('rejects an isolated candidate object prefix in production services', () => {
+    const rendered = structuredClone(valid)
+    ;(rendered.services.api.environment as Record<string, string>).ASSET_STORAGE_PREFIX = 'demo-candidate/release-85575f9c'
+    expect(() => validate(rendered)).toThrow(/api\.ASSET_STORAGE_PREFIX/)
   })
 
   it('rejects seed-demo in either the command or mounts', () => {
