@@ -36,6 +36,11 @@ RUN --mount=type=cache,id=merchant-npm-cache,target=/root/.npm npm ci --prefer-o
 # therefore requires contracts/dist/*.d.ts to exist inside the image.
 RUN npm run build --workspace @merchant-marketing/contracts
 RUN npm run build
+# Fail the image build if the generated API artifacts do not contain the
+# authorization and manual-rule paths that the release contract requires.
+# Source manifests prove the inputs were copied, but this catches stale or
+# partially rebuilt dist output before an image can be labeled as a release.
+RUN node -e "const fs=require('node:fs'); const checks=[['dist/packages/contracts/src/authz.js','authorization.role.manage'],['dist/apps/api/src/mcp-sync-rule-handlers.js','reviewedManual']]; for (const [file, marker] of checks) { const text=fs.readFileSync(file,'utf8'); if (!text.includes(marker)) throw new Error('generated API artifact missing '+marker+': '+file); }"
 
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
 ENV NODE_ENV=production
