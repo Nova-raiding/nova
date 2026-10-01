@@ -181,7 +181,7 @@ describe('ECS Compose release gate', () => {
 
   it('binds API runtime release metadata to the normalized Compose contract', () => {
     const document = fixture() as any
-    for (const service of Object.values(document.services)) service.labels['com.storenova.release.id'] = 'release-1'
+    for (const service of Object.values(document.services) as any[]) service.labels['com.storenova.release.id'] = 'release-1'
     for (const name of ['api', 'api-replica']) document.services[name].environment = {}
     const directory = mkdtempSync(join(tmpdir(), 'ecs-compose-hash-'))
     const path = join(directory, 'compose.json')
