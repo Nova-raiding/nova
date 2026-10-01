@@ -137,6 +137,14 @@ function requiredReleaseArtifacts(): Map<string, string[]> {
  */
 
 describe('ECS Compose release gate', () => {
+  it('does not make the approval registry a deployment-time interpolation gate', () => {
+    const compose = readFileSync('infra/local/docker-compose.ecs-pilot.yml', 'utf8')
+    const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
+    expect(compose).toContain('AUTHORIZATION_APPROVAL_TOKENS: ${AUTHORIZATION_APPROVAL_TOKENS:-}')
+    expect(compose).not.toContain('AUTHORIZATION_APPROVAL_TOKENS:?')
+    expect(preflight).not.toContain('AUTHORIZATION_APPROVAL_TOKENS:?')
+  })
+
   it('accepts only a complete immutable image set, including both gateways', () => {
     expect(run(fixture())).toMatch(/^sha256:[0-9a-f]{64}$/)
     const { ['payment-gateway']: _, ...missingPayment } = digests

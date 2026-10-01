@@ -38,7 +38,6 @@ esac
 : "${ALERT_RECEIVER_DATABASE_URL:?ALERT_RECEIVER_DATABASE_URL is required so the migration can verify the receiver role}"
 : "${SECRET_PROVIDER:?SECRET_PROVIDER is required}"
 : "${OCR_MAX_OUTPUT_TOKENS:?OCR_MAX_OUTPUT_TOKENS is required for production OCR}"
-: "${AUTHORIZATION_APPROVAL_TOKENS:?AUTHORIZATION_APPROVAL_TOKENS is required for privileged approval provenance}"
 : "${MODEL_RELAY_API_KEY:?MODEL_RELAY_API_KEY is required for text and video relay access}"
 if [ "$DEPLOYMENT_SCOPE" = full ]; then
   : "${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required for full production acceptance}"

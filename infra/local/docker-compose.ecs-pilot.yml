@@ -267,7 +267,11 @@ services:
       OPS_DATABASE_URL: ${OPS_DATABASE_URL:?OPS_DATABASE_URL production secret is required}
       NODE_EXTRA_CA_CERTS: /run/secrets/postgres_server.crt
       API_AUTH_TOKENS: ${API_AUTH_TOKENS:?API_AUTH_TOKENS is required}
-      AUTHORIZATION_APPROVAL_TOKENS: ${AUTHORIZATION_APPROVAL_TOKENS:?AUTHORIZATION_APPROVAL_TOKENS is required}
+      # Approval credentials are optional at bootstrap. When absent, the API
+      # keeps privileged approval operations fail-closed until the protected
+      # registry is provisioned; deployment itself must not depend on a
+      # post-deploy approval issuer.
+      AUTHORIZATION_APPROVAL_TOKENS: ${AUTHORIZATION_APPROVAL_TOKENS:-}
       SESSION_ID_HASH_SECRET: ${SESSION_ID_HASH_SECRET:?SESSION_ID_HASH_SECRET is required}
       WORKER_API_CREDENTIALS: ${WORKER_API_CREDENTIALS:?WORKER_API_CREDENTIALS is required}
       ALLOW_WILDCARD_WORKSPACE_GRANT: "false"
