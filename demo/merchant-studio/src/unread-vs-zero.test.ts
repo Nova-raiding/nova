@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AccountDashboard, FinanceOverview, Overview, TodayDashboard, resolvePurchaseBlockNotice, resolveRulePackBoard } from './App'
+import { AccountDashboard, FinanceOverview, Overview, TodayDashboard, formatStorageGbValue, resolvePurchaseBlockNotice, resolveRulePackBoard } from './App'
 import { fetchCreativePointStatement } from './api'
 import capture from './fixtures/creative-point-statement.capture.json'
 
@@ -26,6 +26,12 @@ const finance = () => renderToStaticMarkup(createElement(FinanceOverview, {
 const today = () => renderToStaticMarkup(createElement(TodayDashboard, { baseUrl: 'http://127.0.0.1:9', metrics: null, billing: null }))
 
 describe('unread reads are never rendered as measured values', () => {
+  it('does not duplicate the storage unit in the overview asset board', () => {
+    expect(formatStorageGbValue(31_500_000_000)).toBe('31.5')
+    expect(app).toContain('formatStorageGbValue(storageUsedBytes)}<small>GB</small>')
+    expect(app).not.toContain('formatStorageGb(storageUsedBytes)}<small>GB</small>')
+  })
+
   it('says the platform connections were not read instead of claiming there are none', () => {
     // With an API configured the account read starts unresolved: `rows` is `[]`
     // and the panel used to render 「暂无 / 当前工作区没有平台连接记录」 plus

@@ -1719,10 +1719,14 @@ const UNREAD_METRIC = '未读取'
 const READ_FAILED_METRIC = '读取失败'
 
 /** Storage bytes are only rendered from the server quota projection. */
-function formatStorageGb(bytes: number) {
+export function formatStorageGbValue(bytes: number) {
   // Commercial plans specify GB_DECIMAL; binary conversion made a 50 GB
   // entitlement appear as only 46.6 GB in the merchant workspace.
-  return `${(bytes / 1_000_000_000).toFixed(1)} GB`
+  return (bytes / 1_000_000_000).toFixed(1)
+}
+
+function formatStorageGb(bytes: number) {
+  return `${formatStorageGbValue(bytes)} GB`
 }
 
 function formatRuleUpdatedAt(value: string | undefined) {
@@ -1914,7 +1918,7 @@ export function TodayDashboard({
           <div className="today-assets-summary" aria-label="素材概览">
             <div><span>已连接</span><strong>{readableStoreCount === null ? UNREAD_METRIC : readableStoreCount}<small>家电商店铺</small></strong></div>
             <div><span>已储存</span><strong>{productTotal === null ? UNREAD_METRIC : productTotal.toLocaleString('zh-CN')}<small>套商品卡片</small></strong></div>
-            <div><span>已上传素材</span><strong>{storageUsedBytes === null ? UNREAD_METRIC : formatStorageGb(storageUsedBytes)}<small>GB</small></strong></div>
+            <div><span>已上传素材</span><strong>{storageUsedBytes === null ? UNREAD_METRIC : formatStorageGbValue(storageUsedBytes)}<small>GB</small></strong></div>
           </div>
           <div className="today-storage-heading">
             <span>储存空间</span><b>{storageKnown ? `${formatStorageGb(storageUsedBytes!)} / ${formatStorageGb(storageLimitBytes!)}` : UNREAD_METRIC}</b>
