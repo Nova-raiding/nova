@@ -69,6 +69,8 @@ function videoResponseIsComplete(payload: unknown): boolean {
   const data = root.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data as Record<string, unknown> : root
   const nestedData = data.data && typeof data.data === 'object' && !Array.isArray(data.data) ? data.data as Record<string, unknown> : {}
   const nestedOutput = nestedData.output && typeof nestedData.output === 'object' && !Array.isArray(nestedData.output) ? nestedData.output as Record<string, unknown> : {}
+  const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata) ? data.metadata as Record<string, unknown> : {}
+  const nestedMetadata = nestedData.metadata && typeof nestedData.metadata === 'object' && !Array.isArray(nestedData.metadata) ? nestedData.metadata as Record<string, unknown> : {}
   const statuses = [nestedOutput.task_status, nestedData.task_status, nestedData.status, data.status]
     .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
     .map(value => value.trim().toLowerCase())
@@ -91,8 +93,13 @@ function videoResponseIsComplete(payload: unknown): boolean {
     const output = value as Record<string, unknown>
     return ['result_url', 'video_url', 'output_url', 'url', 'output'].some(key => hasHttpsOutput(output[key], depth + 1))
   }
-  return [data.result_url, data.video_url, data.output_url, data.url, nestedData.result_url, nestedData.video_url, nestedData.output_url, nestedData.url]
-    .some(isStrictHttpsUrl) || hasHttpsOutput(nestedData.output)
+  return [data.result_url, data.video_url, data.output_url, data.url, metadata.url,
+    nestedData.result_url, nestedData.video_url, nestedData.output_url, nestedData.url, nestedMetadata.url]
+    .some(isStrictHttpsUrl)
+    || hasHttpsOutput(data.output)
+    || hasHttpsOutput(data.result)
+    || hasHttpsOutput(nestedData.output)
+    || hasHttpsOutput(nestedData.result)
 }
 function validateArtifact(reference: string | undefined, root: string, label: string, expected?: ExpectedArtifact): string[] {
   const match = immutableArtifact.exec(reference ?? '')

@@ -749,6 +749,27 @@ describe('production model relay contract', () => {
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
+  it.each([
+    ['top-level metadata URL', { id: 'job-metadata', status: 'completed', metadata: { url: 'https://cdn.example/video.mp4' } }],
+    ['nested metadata URL', { data: { id: 'job-nested-metadata', status: 'completed', metadata: { url: 'https://cdn.example/video.mp4' } } }],
+    ['nested result URL', { data: { id: 'job-nested-result', status: 'completed', result: { url: 'https://cdn.example/video.mp4' } } }],
+  ])('accepts completed video artifact from %s', (_label, payload) => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-video-completion-binding-valid-'))
+    try {
+      const result = completeProbe('video')
+      const reference = writeRelayResponseArtifact(root, 'release-1', 'video', {
+        status: 200, headers: new Headers({ 'x-request-id': 'req-video' }), payload,
+        result: { ...result, state: 'ready' },
+      })
+      const errors = validateModelRelayEvidence({
+        schema_version: '1', release_id: 'release-1', generated_at: new Date().toISOString(),
+        environment: 'production', simulated: false, relay: 'https://relay.example.com',
+        results: [{ ...result, state: 'ready', evidence_ref: reference }],
+      }, { requireProduction: true, artifactRoot: root })
+      expect(errors).not.toContain('video.evidence_ref video receipt must prove a completed task with an HTTPS artifact')
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
   it('persists provider failure responses as auditable artifacts', () => {
     const root = mkdtempSync(join(tmpdir(), 'relay-failure-artifacts-'))
     try {
