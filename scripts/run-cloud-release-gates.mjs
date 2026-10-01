@@ -32,9 +32,11 @@ export function cloudReleaseTests(root) {
   // list. Locate the runner instead of requiring it to be the first command;
   // the source list itself remains fixed and is still parsed below.
   if (typeof command !== 'string') throw new Error('release gate command is not the expected fixed source list')
-  const runnerIndex = command.indexOf(testRunner)
-  if (runnerIndex < 0) throw new Error('release gate command is not the expected fixed source list')
-  const sourceCommand = command.slice(runnerIndex + testRunner.length).split('&&', 1)[0]
+  // Match a command boundary so text embedded in a preflight argument cannot
+  // be mistaken for the release test runner.
+  const runnerMatch = /(?:^|&&\s*)node --import tsx scripts\/run-safe-tests\.ts --no-file-parallelism\s+/u.exec(command)
+  if (!runnerMatch) throw new Error('release gate command is not the expected fixed source list')
+  const sourceCommand = command.slice(runnerMatch.index + runnerMatch[0].length).split('&&', 1)[0]
   const tests = sourceCommand.split(/\s+/u).filter(item => /\.test\.tsx?$/u.test(item))
   if (tests.length < 20 || new Set(tests).size !== tests.length) throw new Error('release gate source list is invalid')
   const local = new Set(LOCAL_ONLY_RELEASE_TESTS)
