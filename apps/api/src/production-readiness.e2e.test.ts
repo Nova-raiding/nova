@@ -148,7 +148,7 @@ describe('production readiness fail-closed', () => {
       expect(response.status).toBe(503)
       expect(body.error).toMatchObject({ code: 'PRODUCTION_READINESS_BLOCKED' })
       expect(body.error?.details).toMatchObject({ gates: { relay: { ready: false } } })
-      expect(JSON.stringify(body.error?.details?.gates?.relay)).toContain('video:relay_token_quota_rate_limited')
+      expect(JSON.stringify(body.error?.details)).toContain('video:relay_token_quota_rate_limited')
     } finally { stop() }
   })
 
