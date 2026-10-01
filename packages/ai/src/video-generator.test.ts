@@ -22,7 +22,7 @@ describe('video generator relay', () => {
       }) as typeof fetch,
     })
     await expect(generator.generate({ prompt: '生成春季上新短视频', output: 'rendering', context: { product: { id: 'p1' } } })).resolves.toEqual({ status: 'completed', videoUrl: 'https://cdn.example/video.mp4', providerJobId: 'vid_1' })
-    expect(calls[0]?.url).toBe('https://relay.example/video/generations')
+    expect(calls[0]?.url).toBe('https://relay.example/videos')
     expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ model: 'video-v1', prompt: '生成春季上新短视频', duration: 5 })
   })
 
@@ -43,14 +43,17 @@ describe('video generator relay', () => {
   it('fails closed when the relay explicitly has no enabled channel for the configured model', async () => {
     expect(isDefinitiveVideoModelUnavailable({ error: { code: 'model_not_found', message: 'no enabled channel' } })).toBe(true)
     expect(isDefinitiveVideoModelUnavailable({ error: { code: 'upstream_timeout' } })).toBe(false)
+    let settlementCalls = 0
     const generator = new OpenAICompatibleVideoGenerator({
       baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'wan3.0-video',
+      usageSink: () => { settlementCalls += 1; return { recorded: true, costEvidence: true } },
       fetch: (async () => new Response(JSON.stringify({ error: { code: 'model_not_found', message: 'no enabled channel for model in SVIP' } }), { status: 503, headers: { 'x-request-id': 'video-model-missing-1' } })) as typeof fetch,
     })
     await expect(generator.generate({ prompt: '生成视频', output: 'rendering', context: {} })).rejects.toMatchObject({
       code: 'MODEL_PROVIDER_REQUEST_FAILED', providerOutcome: 'failed', retryable: false,
       details: { provider_status: 503, provider_request_id: 'video-model-missing-1', reconciliation_required: false },
     })
+    expect(settlementCalls).toBe(0)
   })
 
   it('keeps the accepted provider job id when usage settlement fails', async () => {
@@ -95,7 +98,7 @@ describe('video generator relay', () => {
     })
     await expect(generator.getStatus('job_1')).resolves.toEqual({ status: 'completed', videoUrl: 'https://cdn.example/video.mp4', providerJobId: 'job_1' })
     expect(method).toBe('GET')
-    expect(url).toBe('https://relay.example/video/generations/job_1')
+    expect(url).toBe('https://relay.example/videos/job_1')
   })
 
   it('accepts the relay nested SUCCESS schema only when it contains an HTTPS artifact', async () => {

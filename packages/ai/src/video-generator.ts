@@ -151,7 +151,7 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
         controller.signal.throwIfAborted()
         let candidate: Response
         try {
-          candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${this.options.path ?? '/video/generations'}`, {
+          candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${this.options.path ?? '/videos'}`, {
             method: 'POST',
             headers: { accept: 'application/json', ...(!form ? { 'content-type': 'application/json' } : {}), authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey },
             body: form ?? requestBody,
@@ -213,7 +213,7 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 180_000)
     try {
-      const statusTemplate = this.options.statusPath ?? '/video/generations/{job_id}'
+      const statusTemplate = this.options.statusPath ?? '/videos/{job_id}'
       const statusPath = statusTemplate.replace(/\{job_id\}/gu, encodeURIComponent(jobId))
       const usesPathParameter = statusTemplate.includes('{job_id}')
       const requestBody = JSON.stringify({ job_id: jobId })
