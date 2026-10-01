@@ -362,6 +362,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
         {model.userDetail && <Space orientation="vertical" size="middle" className="full-width">
           <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} items={[
             { key: "name", label: "用户名", children: model.userDetail.identity.displayName || model.userDetail.identity.externalSubject },
+            { key: "identity", label: "持久身份 ID", children: model.userDetail.identity.id ? <Typography.Text copyable>{model.userDetail.identity.id}</Typography.Text> : "未提供" },
             { key: "first", label: model.userDetail.identity.id ? "身份首次识别时间" : "成员首次记录时间", children: formatKnownDateTime(model.userDetail.identity.firstSeenAt) },
           ]} />
           {detailAccountType === "platform" && <Alert type="info" showIcon title="运营平台账号" description="此账号属于运营平台，不计入商家工作区成员、套餐或商品数据。" />}
