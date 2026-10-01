@@ -24,7 +24,9 @@ const suites: Suite[] = [
 // Keep this list deliberately narrow: these are all isolated, contract, snapshot,
 // or explicitly read-only browser checks. A new suite must be reviewed here rather
 // than allowing arbitrary shell commands through CLI arguments.
-const forbidden = /(?:deploy|publish|release|product-import|payment(?!-callback-replay)|create|update|delete|write|mutat)/iu
+// Match write-oriented commands, not read-only test names such as
+// `mcp-integration-mode-release-gate.test.ts`.
+const forbidden = /(?:\b(?:deploy|publish|create|update|delete|write|mutat)\b|npm\s+run\s+(?:deploy|publish|release)|product-import|payment(?!-callback-replay))/iu
 
 function parseArgs(argv: string[]) {
   const selected = argv.find(value => value.startsWith('--only='))?.slice('--only='.length).split(',').filter(Boolean)
