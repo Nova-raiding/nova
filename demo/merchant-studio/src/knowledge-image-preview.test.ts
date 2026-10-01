@@ -16,6 +16,7 @@ describe('knowledge library image preview contract', () => {
   it('renders a preview in the knowledge file cell only for image assets', () => {
     expect(app).toContain('className="knowledge-file-thumb"')
     expect(app).toMatch(/assetPreviews\[asset\.id\].*asset\.mimeType\.toLowerCase\(\)\.startsWith\('image\/'\)/s)
+    expect(app).toContain("style={{ width: 32, height: 32, flex: '0 0 auto', objectFit: 'cover', borderRadius: 6 }}")
     expect(app).toContain('title: \'文件\'')
   })
 
