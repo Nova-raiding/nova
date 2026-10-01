@@ -126,14 +126,23 @@ const templateProvider = productionConfigTemplate.match(/^\s*commercial_payment_
 assert.equal(commercialProvider, templateProvider, 'rendered ConfigMap and production config template must agree on the commercial channel')
 assert.ok('OTEL_EXPORTER_OTLP_ENDPOINT' in apiEnv, 'API must expose an OTEL endpoint injection point')
 assert.ok(apiEnv.WORKER_API_CREDENTIALS, 'API must expose a role-scoped worker credential map')
-const workerCredentials = JSON.parse(apiEnv.WORKER_API_CREDENTIALS) as Record<string, { token: string; signing_secret: string }>
-assert.equal(new Set(Object.values(workerCredentials).map(value => value.token)).size, workerServices.length, 'worker role tokens must be distinct')
-assert.equal(new Set(Object.values(workerCredentials).map(value => value.signing_secret)).size, workerServices.length, 'worker role signing secrets must be distinct')
+let workerCredentials: Record<string, { token: string; signing_secret: string }>
+try {
+  workerCredentials = JSON.parse(apiEnv.WORKER_API_CREDENTIALS) as Record<string, { token: string; signing_secret: string }>
+} catch {
+  throw new Error('production ops gate worker credential contract failed')
+}
+if (new Set(Object.values(workerCredentials).map(value => value.token)).size !== workerServices.length ||
+    new Set(Object.values(workerCredentials).map(value => value.signing_secret)).size !== workerServices.length) {
+  throw new Error('production ops gate worker credential contract failed')
+}
 for (const name of workerServices) {
   const workerEnv = env(services[name]!)
   assert.ok(workerEnv.WORKER_ROLE, `${name} must declare a worker role`)
-  assert.equal(workerEnv.WORKER_API_TOKEN, workerCredentials[workerEnv.WORKER_ROLE!]?.token, `${name} token must match only its role`)
-  assert.equal(workerEnv.WORKER_API_SIGNING_SECRET, workerCredentials[workerEnv.WORKER_ROLE!]?.signing_secret, `${name} signing secret must match only its role`)
+  if (workerEnv.WORKER_API_TOKEN !== workerCredentials[workerEnv.WORKER_ROLE!]?.token ||
+      workerEnv.WORKER_API_SIGNING_SECRET !== workerCredentials[workerEnv.WORKER_ROLE!]?.signing_secret) {
+    throw new Error(`production ops gate worker role contract failed: ${name}`)
+  }
   const workerWorkspaces = workerEnv.WORKER_WORKSPACES?.trim() ?? ''
   assert.ok(workerWorkspaces, `${name} must declare a non-empty local workspace scope`)
   if (workerWorkspaces !== 'auto') {

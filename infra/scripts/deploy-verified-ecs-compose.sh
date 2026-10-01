@@ -307,11 +307,13 @@ project=${ECS_COMPOSE_PROJECT:-merchant-production}
 runtime_services='api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway'
 check_published_ports() {
   docker compose -p "$project" -f "$verified_compose" config --format json \
+    2>/dev/null \
     | node "$root/infra/scripts/ecs-compose-published-ports.mjs" "$project" "$runtime_services" "${ECS_EXTERNAL_GATEWAY_ID:-}"
 }
 # Check every fixed host binding against other running containers before any
 # release mutation. Recheck immediately before cutover to catch host drift.
 docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" config --format json \
+  2>/dev/null \
   | node "$root/infra/scripts/validate-ecs-compose-project.mjs" - "$project" || {
     echo 'rollback Compose resources do not belong to the selected ECS project' >&2
     exit 1
@@ -320,18 +322,21 @@ if [ -n "${ECS_EXTERNAL_GATEWAY_ID:-}" ]; then
   : "${ECS_EXTERNAL_GATEWAY_PROJECT:?reviewed external gateway project is required}"
   [ "$ECS_EXTERNAL_GATEWAY_PROJECT" != "$project" ] || { echo 'external gateway must belong to a different Compose project' >&2; exit 1; }
   external_gateway_state="$ECS_DEPLOY_STATE_DIR/${RELEASE_ID}.external-gateway.json"
-  gateway_descriptor=$(docker compose -p "$project" -f "$verified_compose" config --format json | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8"));const g=c.services?.["pilot-gateway"],a=c.services?.["api-replica"],n=c.networks?.default?.name,i=g?.image;if(!i||!/@sha256:[0-9a-f]{64}$/.test(i)||!n||!Object.hasOwn(g.networks??{},"default")||!Object.hasOwn(a?.networks??{},"default"))process.exit(1);process.stdout.write(i+"\n"+n)')
+  gateway_descriptor=$(docker compose -p "$project" -f "$verified_compose" config --format json 2>/dev/null | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8"));const g=c.services?.["pilot-gateway"],a=c.services?.["api-replica"],n=c.networks?.default?.name,i=g?.image;if(!i||!/@sha256:[0-9a-f]{64}$/.test(i)||!n||!Object.hasOwn(g.networks??{},"default")||!Object.hasOwn(a?.networks??{},"default"))process.exit(1);process.stdout.write(i+"\n"+n)') || {
+    echo 'candidate gateway Compose render failed; protected diagnostics were withheld' >&2
+    exit 1
+  }
   candidate_gateway_image=$(printf '%s\n' "$gateway_descriptor" | sed -n '1p')
   candidate_gateway_network=$(printf '%s\n' "$gateway_descriptor" | sed -n '2p')
   # Snapshot before any mutation, with the inherited production lock held.
   external_gateway_action snapshot
   # A cross-project rollback must not attempt to bind the old listener's ports.
-  docker compose -p "$project" -f "$ECS_ROLLBACK_COMPOSE_PATH" config --format json | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8"));for(const s of Object.values(c.services??{}))for(const p of s.ports??[]){if(typeof p!=="object"||["80","443"].includes(String(p.published)))process.exit(1)}' || { echo 'external gateway handoff requires a rollback Compose without public 80/443 bindings' >&2; exit 1; }
+  docker compose -p "$project" -f "$ECS_ROLLBACK_COMPOSE_PATH" config --format json 2>/dev/null | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8"));for(const s of Object.values(c.services??{}))for(const p of s.ports??[]){if(typeof p!=="object"||["80","443"].includes(String(p.published)))process.exit(1)}' || { echo 'external gateway handoff requires a rollback Compose without public 80/443 bindings' >&2; exit 1; }
 else
   node "$root/infra/scripts/ecs-external-gateway-handoff.mjs" check-ports --candidate-project "$project"
 fi
 check_published_ports
-release_images=$(docker compose -p "$project" -f "$verified_compose" config --images) || {
+release_images=$(docker compose -p "$project" -f "$verified_compose" config --images 2>/dev/null) || {
   echo 'could not enumerate verified release images' >&2; exit 1;
 }
 [ -n "$release_images" ] || { echo 'verified release contains no images' >&2; exit 1; }
@@ -412,7 +417,7 @@ attempt_id="attempt_$(printf '%s:%s:%s' "$RELEASE_ID" "$DEPLOYMENT_NONCE" "$$" |
 # migration. B requires the bridge mode; ordinary C must remove it entirely.
 # The signed B per-service image IDs come from this render, not the bare
 # artifact digests in IMAGE_DIGESTS_JSON.
-docker compose -p "$project" -f "$verified_compose" config --format json | ECS_BRIDGE_CODE_ONLY="${ECS_BRIDGE_CODE_ONLY:-NO}" node "$root/infra/scripts/validate-ecs-rendered-bridge-mode.mjs"
+docker compose -p "$project" -f "$verified_compose" config --format json 2>/dev/null | ECS_BRIDGE_CODE_ONLY="${ECS_BRIDGE_CODE_ONLY:-NO}" node "$root/infra/scripts/validate-ecs-rendered-bridge-mode.mjs"
 set -- capture --state "$state_path" --attempt-id "$attempt_id" \
   --lock-path "$ECS_DEPLOY_LOCK_PATH" \
   --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" --compose-project "$project" \
@@ -479,7 +484,7 @@ fi
 # to the frozen Compose render, then verify the UID 100 sink before treating
 # this runtime as ready. This check is review-only; payment evidence remains a
 # separate six-stage production gate.
-payment_descriptor=$(docker compose -p "$project" -f "$verified_compose" config --format json | node -e '
+payment_descriptor=$(docker compose -p "$project" -f "$verified_compose" config --format json 2>/dev/null | node -e '
   const c=JSON.parse(require("fs").readFileSync(0,"utf8")),g=c.services?.["payment-gateway"]
   const mounts=g?.volumes?.filter(v=>v.target==="/run/payment-receipts")??[]
   if(mounts.length!==1||mounts[0].type!=="bind"||!/^\/var\/lib\/merchant-release-security\/[A-Za-z0-9._/-]+$/.test(mounts[0].source??"")||!(/^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$/.test(g?.image??"")))process.exit(1)

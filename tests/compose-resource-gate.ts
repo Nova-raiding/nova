@@ -23,8 +23,17 @@ const composeArgs = [
 ]
 
 function dockerComposeConfig(): ComposeConfig {
-  const output = execFileSync('docker', [...composeArgs, 'config', '--format', 'json'], { encoding: 'utf8' })
-  return JSON.parse(output) as ComposeConfig
+  let output: string
+  try {
+    output = execFileSync('docker', [...composeArgs, 'config', '--format', 'json'], { encoding: 'utf8' })
+  } catch {
+    throw new Error('compose resource gate Compose render failed')
+  }
+  try {
+    return JSON.parse(output) as ComposeConfig
+  } catch {
+    throw new Error('compose resource gate Compose render failed')
+  }
 }
 
 function environment(service: ComposeService): Record<string, string> {
@@ -80,10 +89,17 @@ assert.equal(apiEnv.DB_POOL_MAX, '8')
 assert.equal(apiEnv.MAX_ACTIVE_JOBS_PER_WORKSPACE, '3')
 assert.equal(apiEnv.REQUEST_BODY_LIMIT_BYTES, '167772160')
 assert.ok(apiEnv.WORKER_API_CREDENTIALS, 'API must expose the role-scoped worker credential map')
-const workerCredentials = JSON.parse(apiEnv.WORKER_API_CREDENTIALS) as Record<string, { token: string; signing_secret: string }>
+let workerCredentials: Record<string, { token: string; signing_secret: string }>
+try {
+  workerCredentials = JSON.parse(apiEnv.WORKER_API_CREDENTIALS) as Record<string, { token: string; signing_secret: string }>
+} catch {
+  throw new Error('compose resource gate worker credential contract failed')
+}
 assert.deepEqual(Object.keys(workerCredentials).sort(), ['automation', 'generation', 'publish', 'reconcile', 'scan', 'sync'])
-assert.equal(new Set(Object.values(workerCredentials).map(value => value.token)).size, 6, 'worker role tokens must be distinct')
-assert.equal(new Set(Object.values(workerCredentials).map(value => value.signing_secret)).size, 6, 'worker signing secrets must be distinct')
+if (new Set(Object.values(workerCredentials).map(value => value.token)).size !== 6 ||
+    new Set(Object.values(workerCredentials).map(value => value.signing_secret)).size !== 6) {
+  throw new Error('compose resource gate worker credential contract failed')
+}
 
 for (const [index, name] of workerServices.entries()) {
   const workerEnv = environment(services[name]!)
@@ -92,11 +108,14 @@ for (const [index, name] of workerServices.entries()) {
   assert.equal(workerEnv.WORKER_ROLE, name.replace('worker-', ''))
   const credential = workerCredentials[workerEnv.WORKER_ROLE!]
   if (name === 'worker-scan') {
-    assert.equal(workerEnv.WORKER_API_TOKEN, workerEnv.ASSET_SCANNER_API_TOKEN, 'worker-scan must use its independent scanner token')
-    assert.equal(workerEnv.WORKER_API_SIGNING_SECRET, workerEnv.ASSET_SCANNER_WORKSPACE_SIGNING_SECRET, 'worker-scan must use its independent scanner signing secret')
+    if (workerEnv.WORKER_API_TOKEN !== workerEnv.ASSET_SCANNER_API_TOKEN ||
+        workerEnv.WORKER_API_SIGNING_SECRET !== workerEnv.ASSET_SCANNER_WORKSPACE_SIGNING_SECRET) {
+      throw new Error('compose resource gate worker-scan credential contract failed')
+    }
   }
-  assert.equal(workerEnv.WORKER_API_TOKEN, credential?.token, `${name} must receive only its role token`)
-  assert.equal(workerEnv.WORKER_API_SIGNING_SECRET, credential?.signing_secret, `${name} must receive only its role signing secret`)
+  if (workerEnv.WORKER_API_TOKEN !== credential?.token || workerEnv.WORKER_API_SIGNING_SECRET !== credential?.signing_secret) {
+    throw new Error(`compose resource gate worker role contract failed: ${name}`)
+  }
   const workerWorkspaces = workerEnv.WORKER_WORKSPACES?.trim() ?? ''
   assert.ok(workerWorkspaces, `${name} must declare a non-empty local workspace scope`)
   if (workerWorkspaces !== 'auto') {

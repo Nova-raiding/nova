@@ -132,7 +132,7 @@ manifest_sha256=$(ruby "$b_source/infra/scripts/validate-ecs-compose-release.rb"
 release_git_sha=$(sed -n 's/^git_sha=//p' "$ECS_CANDIDATE_IDENTITY_PATH")
 [ "$(sed -n 's/^release_id=//p' "$ECS_CANDIDATE_IDENTITY_PATH")" = "$RELEASE_ID" ] || { echo 'B package release ID differs from request' >&2; exit 2; }
 [ -z "$(docker ps -a -q --no-trunc --filter "label=com.docker.compose.project=$ECS_BRIDGE_CANDIDATE_PROJECT")" ] || { echo 'candidate project is not empty before nonce consumption' >&2; exit 2; }
-for ref in $(docker compose -p "$ECS_BRIDGE_CANDIDATE_PROJECT" -f "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" config --images); do docker image inspect "$ref" >/dev/null || { echo 'a fixed B image is unavailable locally' >&2; exit 1; }; done
+for ref in $(docker compose -p "$ECS_BRIDGE_CANDIDATE_PROJECT" -f "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" config --images 2>/dev/null); do docker image inspect "$ref" >/dev/null || { echo 'a fixed B image is unavailable locally' >&2; exit 1; }; done
 
 # This is a recovery precondition, not a soft warning: if the old public
 # readyz is already failing, reverting B cannot reach a signed healthy end

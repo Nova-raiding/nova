@@ -104,8 +104,13 @@ printf '%s' "$project" | grep -Eq '^[a-z0-9][a-z0-9_-]{0,62}$' || {
   exit 1
 }
 rendered_compose=$(mktemp "${TMPDIR:-/tmp}/merchant-compose-render.XXXXXXXX")
-trap 'rm -f -- "$rendered_compose"' EXIT HUP INT TERM
-docker compose -p "$project" --env-file "$production_env" "$@" config --format json > "$rendered_compose"
+compose_error=$(mktemp "${TMPDIR:-/tmp}/merchant-compose-render-error.XXXXXXXX")
+chmod 600 "$rendered_compose" "$compose_error"
+trap 'rm -f -- "$rendered_compose" "$compose_error"' EXIT HUP INT TERM
+if ! docker compose -p "$project" --env-file "$production_env" "$@" config --format json > "$rendered_compose" 2>"$compose_error"; then
+  echo 'ECS production Compose render failed; protected diagnostics were withheld' >&2
+  exit 1
+fi
 node -e '
 let input = "";
 process.stdin.setEncoding("utf8");

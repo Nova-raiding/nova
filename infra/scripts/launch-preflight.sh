@@ -27,7 +27,13 @@ done
 [ -x "$root/node_modules/.bin/tsx" ] || { echo 'ECS launch preflight requires the reviewed, locally installed tsx dependency (npm ci); remote npx downloads are forbidden' >&2; exit 1; }
 
 echo 'launch preflight: checking local deployment and operations contracts'
-(cd "$root" && npx --no-install tsx tests/production-ops-gate.ts >/dev/null)
+ops_gate_log=$(mktemp "${TMPDIR:-/tmp}/merchant-production-ops-gate.XXXXXXXX")
+chmod 600 "$ops_gate_log"
+trap 'rm -f -- "$ops_gate_log"' EXIT HUP INT TERM
+if ! (cd "$root" && npx --no-install tsx tests/production-ops-gate.ts >"$ops_gate_log" 2>&1); then
+  echo 'launch preflight: production ops gate failed; protected diagnostics were withheld' >&2
+  exit 1
+fi
 
 echo 'launch preflight: checking ECS Compose release, production evidence and cloud capacity'
 PRODUCTION_CONFIG_PATH="$config_path" sh "$root/infra/scripts/deploy-preflight-ecs.sh" "$config_path"

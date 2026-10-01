@@ -177,7 +177,12 @@ actual_manifest=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$E
 RELEASE_ID="$TARGET_RELEASE_ID" RELEASE_GIT_SHA="$TARGET_GIT_SHA" ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBACK_IMAGE_DIGESTS_JSON" >/dev/null || fail validation_failed 'target Compose release contract failed'
 
 project=${ECS_COMPOSE_PROJECT:-merchant-production}
-compose() { docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" "$@"; }
+compose() {
+  case "${1:-}" in
+    config) docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" "$@" 2>/dev/null ;;
+    *) docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" "$@" ;;
+  esac
+}
 compose config --format json | node "$root/infra/scripts/validate-ecs-compose-project.mjs" - "$project" || fail validation_failed 'rollback Compose resources do not belong to the selected ECS project'
 rollback_images=$(compose config --images) || fail validation_failed 'could not enumerate target rollback images'
 [ -n "$rollback_images" ] || fail validation_failed 'target rollback release contains no images'
