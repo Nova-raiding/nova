@@ -56,6 +56,17 @@ describe('host Responses gateway isolated transport', () => {
     expect((await handleHostResponses(request(body()), h.deps)).status).toBe(401)
   })
 
+  it('returns Chinese user-facing messages instead of exposing internal error codes', async () => {
+    const h = harness()
+    h.deps.relayApiKey = ''
+    const response = await handleHostResponses(request(body()), h.deps)
+    const payload = await response.json() as { error?: { code?: string; message?: string } }
+    expect(payload.error?.code).toBe('HOST_RELAY_NOT_CONFIGURED')
+    expect(payload.error?.message).toBe('模型中转服务尚未配置')
+    expect(payload.error?.message).not.toBe(payload.error?.code)
+    expect(payload.error?.message).not.toMatch(/[A-Z]{3,}_[A-Z_]+/u)
+  })
+
   it('fails closed when relay configuration or bounded output is missing', async () => {
     const h = harness()
     h.deps.relayApiKey = ''

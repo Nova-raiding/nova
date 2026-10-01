@@ -39,8 +39,25 @@ const MAX_BODY_BYTES = 1_048_576
 const MAX_OUTPUT_TOKENS = 16_384
 const MAX_EVENT_BYTES = 262_144
 
+const USER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  METHOD_NOT_ALLOWED: '当前请求方法不受支持',
+  HOST_RELAY_NOT_CONFIGURED: '模型中转服务尚未配置',
+  HOST_AUTH_REQUIRED: '请先完成登录授权',
+  HOST_AUTH_UNAVAILABLE: '登录授权服务暂时不可用，请稍后重试',
+  HOST_AUTH_INVALID: '登录授权已失效，请重新登录',
+  UNSUPPORTED_MEDIA_TYPE: '请求格式不受支持，请使用 JSON',
+  REQUEST_TOO_LARGE: '请求内容过大，请减少输入后重试',
+  INVALID_REQUEST: '请求内容无效，请检查后重试',
+  UNSUPPORTED_RESPONSES_REQUEST: '当前仅支持文本生成请求',
+  HOST_POINTS_OR_RATE_UNAVAILABLE: '创意点余额或调用额度不足，请充值或稍后重试',
+  HOST_RESERVATION_INVALID: '创意点预占失败，请稍后重试',
+  HOST_RELAY_UNAVAILABLE: '模型中转服务暂时不可用，请稍后重试',
+  HOST_RELAY_ERROR: '模型中转服务拒绝了本次请求，请稍后重试',
+  HOST_OUTCOME_UNCONFIRMED: '模型调用结果暂时无法确认，系统已转入后台核对',
+}
+
 function error(status: number, code: string): Response {
-  return new Response(JSON.stringify({ error: { code, message: code } }), { status, headers: jsonHeaders })
+  return new Response(JSON.stringify({ error: { code, message: USER_ERROR_MESSAGES[code] ?? '请求处理失败，请稍后重试' } }), { status, headers: jsonHeaders })
 }
 
 function configuredRelayUrl(base: string): URL | null {

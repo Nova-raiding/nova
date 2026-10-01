@@ -14887,7 +14887,7 @@ export function modelSettlementDomainError(error: unknown) {
     const details = source.details && typeof source.details === 'object' && !Array.isArray(source.details) ? source.details as Record<string, unknown> : {}
     const summary = typeof details.provider_error_summary === 'string' && details.provider_error_summary.trim() ? details.provider_error_summary.trim().slice(0, 500) : undefined
     const status = Number.isInteger(source.status) ? Number(source.status) : details.provider_status
-    return new DomainError('MODEL_PROVIDER_REQUEST_FAILED', `模型中转服务拒绝了本次请求${summary ? `：${summary}` : ''}`, 502, { provider_succeeded: false, provider_outcome: 'failed', reconciliation_required: false, retryable: false, ...(Number.isInteger(status) ? { provider_status: status } : {}), ...(summary ? { provider_error_summary: summary } : {}) })
+    return new DomainError('MODEL_PROVIDER_REQUEST_FAILED', '模型中转服务拒绝了本次请求，请稍后重试', 502, { provider_succeeded: false, provider_outcome: 'failed', reconciliation_required: false, retryable: false, ...(Number.isInteger(status) ? { provider_status: status } : {}), ...(summary ? { provider_error_summary: summary } : {}) })
   }
   return undefined
 }

@@ -64,8 +64,8 @@ export async function executeAssetParse(input: ExecuteAssetParseInput): Promise<
 }
 
 function defaultFailure(error: unknown): { code: string; message: string; retryable: boolean } {
-  if (error instanceof DOMException && error.name === 'TimeoutError') return { code: 'ASSET_PARSE_TIMEOUT', message: 'asset parse timed out', retryable: true }
-  if (error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY') return { code: error.code, message: 'asset parser returned no facts', retryable: true }
-  const message = error instanceof Error && error.message.trim() ? error.message.trim().slice(0, 1_000) : 'asset parse failed'
+  if (error instanceof DOMException && error.name === 'TimeoutError') return { code: 'ASSET_PARSE_TIMEOUT', message: '素材解析超时，请稍后重试', retryable: true }
+  if (error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY') return { code: error.code, message: '素材解析未返回可用商品事实', retryable: true }
+  const message = error instanceof Error && error.message.trim() ? error.message.trim().slice(0, 1_000) : '素材解析失败，请稍后重试'
   return { code: 'ASSET_PARSE_FAILED', message, retryable: true }
 }
