@@ -73,6 +73,22 @@ function httpsOutput(value: unknown, depth = 0): string | undefined {
   return undefined
 }
 
+/**
+ * Detect only a definitive relay refusal for an unavailable model. A generic
+ * 5xx remains outcome-unknown because the provider may have accepted work.
+ * Keep this allowlist narrow; broad matching would risk skipping
+ * reconciliation for a request that was actually queued and billable.
+ */
+export function isDefinitiveVideoModelUnavailable(payload: unknown): boolean {
+  const root = record(payload) ? payload : undefined
+  const error = root && record(root.error) ? root.error : root
+  if (!record(error)) return false
+  const values = [error.code, error.type, error.reason]
+    .filter((value): value is string => typeof value === 'string')
+    .map(value => value.trim().toLowerCase())
+  return values.some(value => value === 'model_not_found' || value === 'model-not-found' || value === 'model_unavailable' || value === 'model-unavailable')
+}
+
 export function videoDurationSeconds(value: string | undefined): number {
   const parsed = Number(value ?? 5)
   return Number.isFinite(parsed) ? Math.max(3, Math.min(15, Math.trunc(parsed))) : 5
@@ -157,6 +173,21 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
       }
       const remoteError = record(payload) && record(payload.error) ? payload.error : record(payload) ? payload : {}
       const errorSummary = !response.ok ? [remoteError.code, remoteError.type, remoteError.message].filter(value => typeof value === 'string').join(': ').replace(/data:image\/[^\s]+/gu, '[image redacted]').slice(0, 500) : undefined
+      // A 5xx normally means the provider outcome is ambiguous and must be
+      // reconciled. `model_not_found` is different: the relay explicitly
+      // rejected dispatch because no channel is enabled for this model. It
+      // cannot have queued work, so fail closed as a normal request failure
+      // and avoid creating a misleading reconciliation task. This is also the
+      // only safe place to support an operator-configured model change: the
+      // caller can surface the error and switch VIDEO_MODEL after validating
+      // the replacement, but this adapter never silently changes models.
+      if (!response.ok && response.status >= 500 && isDefinitiveVideoModelUnavailable(payload)) {
+        const providerRequestId = [
+          response.headers.get('x-oneapi-request-id'), response.headers.get('x-request-id'),
+          response.headers.get('x-provider-request-id'), response.headers.get('request-id'),
+        ].find(value => typeof value === 'string' && value.trim() && value.length <= 256 && !/[\u0000-\u001f\u007f]/u.test(value))?.trim()
+        throw new ProviderRequestFailedError(providerKey, response.status, `video provider model unavailable${errorSummary ? `: ${errorSummary}` : ''}`, providerRequestId, errorSummary)
+      }
       assertProviderResponseAccepted(response, providerKey, 'video provider', errorSummary)
       // Capture the relay's durable job identity before settlement. Usage
       // settlement must still fail closed, but it must not discard an accepted

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createVideoGeneratorFromEnv, OpenAICompatibleVideoGenerator, validateVideoRelayPath, videoDurationSeconds } from './video-generator.js'
+import { createVideoGeneratorFromEnv, isDefinitiveVideoModelUnavailable, OpenAICompatibleVideoGenerator, validateVideoRelayPath, videoDurationSeconds } from './video-generator.js'
 
 describe('video generator relay', () => {
   it('does not assemble a video provider from placeholder relay configuration', () => {
@@ -38,6 +38,19 @@ describe('video generator relay', () => {
       fetch: (async () => new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, url: 'http://cdn.example/video.mp4' }), { status: 200 })) as typeof fetch,
     })
     await expect(invalid.generate({ prompt: '生成视频', output: 'rendering', context: {} })).rejects.toThrow('neither an HTTPS artifact URL nor a provider job id')
+  })
+
+  it('fails closed when the relay explicitly has no enabled channel for the configured model', async () => {
+    expect(isDefinitiveVideoModelUnavailable({ error: { code: 'model_not_found', message: 'no enabled channel' } })).toBe(true)
+    expect(isDefinitiveVideoModelUnavailable({ error: { code: 'upstream_timeout' } })).toBe(false)
+    const generator = new OpenAICompatibleVideoGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'wan3.0-video',
+      fetch: (async () => new Response(JSON.stringify({ error: { code: 'model_not_found', message: 'no enabled channel for model in SVIP' } }), { status: 503, headers: { 'x-request-id': 'video-model-missing-1' } })) as typeof fetch,
+    })
+    await expect(generator.generate({ prompt: '生成视频', output: 'rendering', context: {} })).rejects.toMatchObject({
+      code: 'MODEL_PROVIDER_REQUEST_FAILED', providerOutcome: 'failed', retryable: false,
+      details: { provider_status: 503, provider_request_id: 'video-model-missing-1', reconciliation_required: false },
+    })
   })
 
   it('keeps the accepted provider job id when usage settlement fails', async () => {
