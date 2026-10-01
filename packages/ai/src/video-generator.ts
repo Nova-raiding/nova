@@ -283,8 +283,10 @@ function parseVideoResult(payload: unknown, providerKey?: string): VideoGenerati
     throw new Error('video provider response is not an object')
   }
   const nestedData = record(data.data) ? data.data : undefined
+  const metadata = record(data.metadata) ? data.metadata : undefined
   const videoUrl = httpsUrl(data.result_url) ?? httpsUrl(data.video_url) ?? httpsUrl(data.output_url) ?? httpsUrl(data.url)
     ?? httpsUrl(nestedData?.result_url) ?? httpsUrl(nestedData?.video_url) ?? httpsUrl(nestedData?.output_url) ?? httpsUrl(nestedData?.url)
+    ?? httpsUrl(metadata?.url)
     ?? httpsOutput(nestedData?.output)
   const providerJobId = videoJobIdentity(payload).providerJobId
   const rawStatus = typeof data.status === 'string' ? data.status.toLowerCase() : typeof nestedData?.status === 'string' ? nestedData.status.toLowerCase() : ''

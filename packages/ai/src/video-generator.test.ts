@@ -126,6 +126,14 @@ describe('video generator relay', () => {
     await expect(generator.getStatus('job_new_api')).resolves.toEqual({ status: 'queued', providerJobId: 'job_new_api' })
   })
 
+  it('accepts the relay metadata URL used by completed SVIP video jobs', async () => {
+    const generator = new OpenAICompatibleVideoGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'happyhorse-1.1-t2v', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: (async () => new Response(JSON.stringify({ id: 'job_metadata', status: 'completed', metadata: { url: 'https://cdn.example/video.mp4?token=redacted' } }), { status: 200 })) as typeof fetch,
+    })
+    await expect(generator.getStatus('job_metadata')).resolves.toEqual({ status: 'completed', videoUrl: 'https://cdn.example/video.mp4?token=redacted', providerJobId: 'job_metadata' })
+  })
+
   it('does not trust a completed status without an HTTPS artifact', async () => {
     const generator = new OpenAICompatibleVideoGenerator({
       baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => ({ recorded: true, costEvidence: true }),
