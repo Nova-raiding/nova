@@ -93,9 +93,28 @@ async function mcp<T>(method: string, params: Record<string, unknown>): Promise<
   return envelope.data.result
 }
 
-function expectError(error: unknown, code: string, label: string) {
+/**
+ * A sync request is admitted through the commercial access gate before it
+ * reaches the platform connector.  That means a production workspace with no
+ * active entitlement can legitimately receive COMMERCIAL_ENTITLEMENT_REQUIRED
+ * even when the connector itself is also unconfigured.  Once the gate allows
+ * the request, the account state determines whether the connector reports a
+ * reauthorization requirement or its fail-closed NOT_CONFIGURED result.
+ */
+function expectedSyncErrorCodes(account: { state?: string } | undefined): string[] {
+  const accountCode = account?.state === 'revoked' || account?.state === 'refresh_required'
+    ? 'PLATFORM_ACCOUNT_REAUTH_REQUIRED'
+    : 'NOT_CONFIGURED'
+  return [accountCode, 'COMMERCIAL_ENTITLEMENT_REQUIRED']
+}
+
+function expectSyncError(error: unknown, account: { state?: string } | undefined, label: string) {
   const actual = error as { code?: string; status?: number }
-  assert(actual.code === code, `${label}: expected ${code}, got ${actual.code ?? actual.status ?? 'unknown'}`)
+  const expected = expectedSyncErrorCodes(account)
+  assert(expected.includes(actual.code ?? ''), `${label}: expected ${expected.join(' or ')}, got ${actual.code ?? actual.status ?? 'unknown'}`)
+  if (actual.code === 'COMMERCIAL_ENTITLEMENT_REQUIRED') {
+    assert(actual.status === undefined || actual.status === 402, `${label}: commercial entitlement denial must be HTTP 402, got ${actual.status ?? 'unknown'}`)
+  }
 }
 
 function normalizeItems<T>(value: T[] | ItemsPage<T>, label: string): T[] {
@@ -154,7 +173,7 @@ async function main() {
     } catch (error) {
       if (!accountByPlatform.get(platform)?.readEnabled) {
         const accountState = accountByPlatform.get(platform)?.state
-        expectError(error, accountState === 'revoked' || accountState === 'refresh_required' ? 'PLATFORM_ACCOUNT_REAUTH_REQUIRED' : 'NOT_CONFIGURED', `${accountState === 'revoked' || accountState === 'refresh_required' ? 'reauthorization-required' : 'unconfigured'} ${platform} sync`)
+        expectSyncError(error, accountState ? { state: accountState } : undefined, `${accountState === 'revoked' || accountState === 'refresh_required' ? 'reauthorization-required' : 'unconfigured'} ${platform} sync`)
         return { platform, blocked: true }
       }
       throw error
