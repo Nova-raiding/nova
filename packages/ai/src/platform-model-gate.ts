@@ -55,7 +55,9 @@ export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fe
       })
       if (!response.ok) {
         if (response.status === 429) {
-          monitor.retryAt = Date.now() + retryAfterMs(response.headers.get('retry-after'))
+          // The model and video lookups run concurrently. A shorter retry
+          // window from the second response must not erase the first one.
+          monitor.retryAt = Math.max(monitor.retryAt, Date.now() + retryAfterMs(response.headers.get('retry-after')))
           throw new Error('relay_token_quota_rate_limited')
         }
         throw new Error(response.status === 401 || response.status === 403 ? 'relay_token_auth_failed' : 'relay_token_quota_http_error')

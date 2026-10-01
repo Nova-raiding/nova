@@ -64,6 +64,21 @@ describe('platform-owned model gate', () => {
       expect(fetcher).toHaveBeenCalledTimes(2)
     } finally { stop(); vi.useRealTimers() }
   })
+  it('keeps the longest Retry-After when both credential lookups are rate limited', async () => {
+    vi.useFakeTimers()
+    const source = { NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://relay.example/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example', MODEL_RELAY_API_KEY: 'model-key', VIDEO_MODEL_RELAY_API_KEY: 'video-key', AI_MODEL: 'text-v1', VIDEO_MODEL: 'video-v1' }
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => new Response('', {
+      status: 429,
+      headers: { 'retry-after': (init?.headers as Record<string, string>)?.authorization === 'Bearer model-key' ? '120' : '30' },
+    })) as unknown as typeof fetch
+    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
+    try {
+      await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'video').reasons).toContain('relay_token_quota_rate_limited'))
+      await vi.advanceTimersByTimeAsync(90_000)
+      expect(fetcher).toHaveBeenCalledTimes(2)
+      expect(evaluatePlatformModelRelayGate(source).ready).toBe(false)
+    } finally { stop(); vi.useRealTimers() }
+  })
   it('requires an explicit versioned conservative estimate for every modality', () => {
     expect(evaluatePlatformModelBudgetEstimate({}, 'text')).toMatchObject({ ready: false, reasons: ['request_estimate_missing_or_invalid', 'estimate_version_missing'] })
     const source = { MODEL_COST_ESTIMATE_VERSION: 'pricing-2026-08-29', MODEL_TEXT_MAX_REQUEST_CNY: '0.25', MODEL_IMAGE_MAX_REQUEST_CNY: '1.50', MODEL_IMAGE_EDIT_MAX_REQUEST_CNY: '1.75', MODEL_OCR_MAX_REQUEST_CNY: '0.40', MODEL_VIDEO_MAX_REQUEST_CNY: '600' }
