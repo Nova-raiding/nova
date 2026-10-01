@@ -9,7 +9,7 @@ describe('platform-owned model gate', () => {
     const fetcher = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>(resolve => {
       if (init?.headers && (init.headers as Record<string, string>).authorization === 'Bearer model-key') resolveModel = resolve
       else resolveVideo = resolve
-    }))
+    })) as unknown as typeof fetch
     const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
     const quota = (unlimited: boolean, expiresAt: number) => new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: unlimited, total_granted: 100, total_used: 20, total_available: 80, expires_at: expiresAt } }), { status: 200 })
     try {
@@ -30,7 +30,7 @@ describe('platform-owned model gate', () => {
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       if ((init?.headers as Record<string, string>)?.authorization === 'Bearer video-key') return new Response('', { status: 401 })
       return new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 100, total_used: 20, total_available: 80, expires_at: 0 } }), { status: 200 })
-    })
+    }) as unknown as typeof fetch
     const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
     try {
       await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'text').ready).toBe(true))
@@ -52,7 +52,7 @@ describe('platform-owned model gate', () => {
       const authorization = (init?.headers as Record<string, string>)?.authorization
       if (authorization === 'Bearer model-key') return new Response('', { status: 429, headers: { 'retry-after': '120' } })
       return new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 100, total_used: 20, total_available: 80, expires_at: 0 } }), { status: 200 })
-    })
+    }) as unknown as typeof fetch
     const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
     try {
       await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'text').reasons).toContain('relay_token_quota_rate_limited'))
@@ -72,7 +72,7 @@ describe('platform-owned model gate', () => {
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => new Response('', {
       status: 429,
       headers: { 'retry-after': (init?.headers as Record<string, string>)?.authorization === 'Bearer model-key' ? '120' : '30' },
-    }))
+    })) as unknown as typeof fetch
     const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
     try {
       await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'video').reasons).toContain('relay_token_quota_rate_limited'))
