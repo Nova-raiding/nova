@@ -482,6 +482,42 @@ BEGIN
 END
 $$;
 
+-- Migrations 255-257 grant the tenant runtime only the DML required for
+-- brand scoping and asset lifecycle transitions.  The compatibility grant at
+-- the top of this file runs after every migration and would otherwise restore
+-- DELETE on all five tables (and UPDATE/DELETE on the append-only event log).
+-- Keep this prefix-safe so the bootstrap remains usable before these tables
+-- exist, and reset both runtime roles before applying the intended grants.
+DO $$
+BEGIN
+  IF to_regclass('public.merchant_brand_series') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE merchant_brand_series FROM merchant_app, merchant_ops';
+    EXECUTE 'GRANT SELECT, INSERT, UPDATE ON TABLE merchant_brand_series TO merchant_app';
+    EXECUTE 'GRANT SELECT ON TABLE merchant_brand_series TO merchant_ops';
+  END IF;
+  IF to_regclass('public.merchant_brand_asset_assignments') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE merchant_brand_asset_assignments FROM merchant_app, merchant_ops';
+    EXECUTE 'GRANT SELECT, INSERT, UPDATE ON TABLE merchant_brand_asset_assignments TO merchant_app';
+    EXECUTE 'GRANT SELECT ON TABLE merchant_brand_asset_assignments TO merchant_ops';
+  END IF;
+  IF to_regclass('public.merchant_brand_scoped_settings') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE merchant_brand_scoped_settings FROM merchant_app, merchant_ops';
+    EXECUTE 'GRANT SELECT, INSERT, UPDATE ON TABLE merchant_brand_scoped_settings TO merchant_app';
+    EXECUTE 'GRANT SELECT ON TABLE merchant_brand_scoped_settings TO merchant_ops';
+  END IF;
+  IF to_regclass('public.merchant_asset_lifecycle') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE merchant_asset_lifecycle FROM merchant_app, merchant_ops';
+    EXECUTE 'GRANT SELECT, INSERT, UPDATE ON TABLE merchant_asset_lifecycle TO merchant_app';
+    EXECUTE 'GRANT SELECT ON TABLE merchant_asset_lifecycle TO merchant_ops';
+  END IF;
+  IF to_regclass('public.merchant_asset_lifecycle_events') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE merchant_asset_lifecycle_events FROM merchant_app, merchant_ops';
+    EXECUTE 'GRANT SELECT, INSERT ON TABLE merchant_asset_lifecycle_events TO merchant_app';
+    EXECUTE 'GRANT SELECT ON TABLE merchant_asset_lifecycle_events TO merchant_ops';
+  END IF;
+END
+$$;
+
 -- Migration 219 grants `merchant_app` SELECT on the shared platform rule tables
 -- and reserves INSERT/UPDATE for `merchant_ops`. The blanket `GRANT ... ON ALL
 -- TABLES` above re-widens them to full DML every time this bootstrap runs. That

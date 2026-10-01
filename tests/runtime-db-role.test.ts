@@ -158,6 +158,26 @@ describe('runtime database role verification', () => {
     expect(bootstrap).toContain('GRANT UPDATE (consumed_at,consumed_operation_id,reservation_id,reservation_token,reserved_at,reservation_expires_at,reservation_revision) ON TABLE interactive_confirmation_tickets TO merchant_app')
   })
 
+  it('re-applies the 255-257 brand and asset lifecycle ACLs after compatibility grants', () => {
+    const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
+
+    for (const table of [
+      'merchant_brand_series',
+      'merchant_brand_asset_assignments',
+      'merchant_brand_scoped_settings',
+      'merchant_asset_lifecycle',
+    ]) {
+      expect(bootstrap).toContain(`to_regclass('public.${table}') IS NOT NULL`)
+      expect(bootstrap).toContain(`REVOKE ALL ON TABLE ${table} FROM merchant_app, merchant_ops`)
+      expect(bootstrap).toContain(`GRANT SELECT, INSERT, UPDATE ON TABLE ${table} TO merchant_app`)
+      expect(bootstrap).toContain(`GRANT SELECT ON TABLE ${table} TO merchant_ops`)
+    }
+    expect(bootstrap).toContain("to_regclass('public.merchant_asset_lifecycle_events') IS NOT NULL")
+    expect(bootstrap).toContain('REVOKE ALL ON TABLE merchant_asset_lifecycle_events FROM merchant_app, merchant_ops')
+    expect(bootstrap).toContain('GRANT SELECT, INSERT ON TABLE merchant_asset_lifecycle_events TO merchant_app')
+    expect(bootstrap).toContain('GRANT SELECT ON TABLE merchant_asset_lifecycle_events TO merchant_ops')
+  })
+
   it('re-grants the paged entitlement projection after the migration role reset', () => {
     const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
 
