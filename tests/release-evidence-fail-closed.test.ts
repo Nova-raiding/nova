@@ -104,4 +104,13 @@ describe('release evidence fail-closed coverage', () => {
     expect(source.indexOf("'attributes/redact'")).toBeLessThan(pass)
     expect(source.indexOf("'MerchantOutboxPending'")).toBeLessThan(pass)
   })
+
+  it('redacts Docker Compose render failures before they can reach release output', () => {
+    const source = readFileSync(new URL('./production-ops-gate.ts', import.meta.url), 'utf8')
+    expect(source).toContain('try {')
+    expect(source).toContain('} catch {')
+    expect(source).toContain('production ops gate Compose render failed')
+    expect(source).not.toContain('error.stdout')
+    expect(source).not.toContain('error.stderr')
+  })
 })
