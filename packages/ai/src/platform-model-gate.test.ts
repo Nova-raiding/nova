@@ -45,6 +45,22 @@ describe('platform-owned model gate', () => {
       finally { clock.mockRestore() }
     } finally { stop() }
   })
+  it('classifies quota endpoint rate limiting separately and does not retry during Retry-After', async () => {
+    const source = { NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://relay.example/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example', MODEL_RELAY_API_KEY: 'model-key', VIDEO_MODEL_RELAY_API_KEY: 'video-key', AI_MODEL: 'text-v1', VIDEO_MODEL: 'video-v1' }
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string>)?.authorization
+      if (authorization === 'Bearer model-key') return new Response('', { status: 429, headers: { 'retry-after': '120' } })
+      return new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 100, total_used: 20, total_available: 80, expires_at: 0 } }), { status: 200 })
+    }) as unknown as typeof fetch
+    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
+    try {
+      await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'text').reasons).toContain('relay_token_quota_rate_limited'))
+      expect(evaluatePlatformModelGate(source, 'text').ready).toBe(false)
+      expect(evaluatePlatformModelGate(source, 'video').ready).toBe(true)
+      // The monitor's 30s interval must honor the relay's 120s Retry-After.
+      expect(fetcher).toHaveBeenCalledTimes(2)
+    } finally { stop() }
+  })
   it('requires an explicit versioned conservative estimate for every modality', () => {
     expect(evaluatePlatformModelBudgetEstimate({}, 'text')).toMatchObject({ ready: false, reasons: ['request_estimate_missing_or_invalid', 'estimate_version_missing'] })
     const source = { MODEL_COST_ESTIMATE_VERSION: 'pricing-2026-08-29', MODEL_TEXT_MAX_REQUEST_CNY: '0.25', MODEL_IMAGE_MAX_REQUEST_CNY: '1.50', MODEL_IMAGE_EDIT_MAX_REQUEST_CNY: '1.75', MODEL_OCR_MAX_REQUEST_CNY: '0.40', MODEL_VIDEO_MAX_REQUEST_CNY: '600' }
