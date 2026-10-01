@@ -232,6 +232,14 @@ describe('developer doctor runtime checks', () => {
     })
   })
 
+  it('marks an absent ChatGPT host snapshot as blocked instead of passing', () => {
+    expect(codexAppHostEvidenceAudit({ scenarios: [] })).toEqual({
+      ready: false,
+      reasons: ['error_recovery_missing'],
+    })
+    expect(codexAppHostEvidenceAudit(undefined)).toBeUndefined()
+  })
+
   it('pins creative point database security to the release table set', () => {
     const source = readFileSync('scripts/dev-doctor.ts', 'utf8')
 
