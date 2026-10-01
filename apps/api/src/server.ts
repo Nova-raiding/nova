@@ -6772,9 +6772,9 @@ function campaignLifecycleError(error: unknown): never {
   if (!(error instanceof CampaignLifecycleError)) throw error
   const mapped = error.code === 'CAMPAIGN_BATCH_NOT_FOUND' ? { status: 404, message: '批量运营计划不存在或不属于当前工作区' }
     : error.code === 'CAMPAIGN_REVISION_CONFLICT' ? { status: 409, message: '批量运营计划版本已变化，请刷新后重试' }
-      : error.code === 'CAMPAIGN_LIFECYCLE_IDEMPOTENCY_CONFLICT' ? { status: 409, message: '幂等键已绑定其他 campaign 生命周期操作' }
+      : error.code === 'CAMPAIGN_LIFECYCLE_IDEMPOTENCY_CONFLICT' ? { status: 409, message: '幂等键已绑定其他批量运营计划操作' }
         : error.code === 'CAMPAIGN_RETRY_ITEM_INVALID' ? { status: 409, message: '重试失败项只能选择当前失败的批量运营项目' }
-          : { status: 409, message: 'campaign 当前状态不允许该操作' }
+          : { status: 409, message: '批量运营计划当前状态不允许该操作' }
   throw new DomainError(error.code, mapped.message, mapped.status)
 }
 
