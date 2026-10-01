@@ -26,7 +26,6 @@
     "test:distributed-rate-limit": "tsx tests/distributed-rate-limit-smoke.ts",
     "test:summary": "tsx tests/test-summary.ts",
     "test:e2e:readonly": "node --import tsx scripts/e2e-readonly-matrix.ts",
-    "test:e2e:readonly": "node --import tsx scripts/e2e-readonly-matrix.ts",
     "test:authorization-postgres": "vitest run --no-file-parallelism packages/persistence/src/authorization-repository.release.postgres.test.ts packages/persistence/src/authorization-rls-boundary.postgres.test.ts packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts packages/persistence/src/authorization-grant-scope-integrity.postgres.test.ts packages/persistence/src/migration-105-release.postgres.test.ts --reporter=default --reporter=json --outputFile=artifacts/authorization-postgres/vitest.json",
     "test:merchant-studio-smoke": "tsx tests/merchant-studio-smoke.ts",
     "test:browser:merchant": "node --import tsx scripts/merchant-browser-candidate.ts",
