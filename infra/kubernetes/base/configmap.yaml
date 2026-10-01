@@ -145,15 +145,19 @@ data:
   IMAGE_EDIT_TIMEOUT_MS: "300000"
   IMAGE_EDIT_MODEL: merchant-main-image-edit
   OCR_MODEL: merchant-vision-ocr
-  VIDEO_MODEL: merchant-video
+  # The relay's OpenAI-compatible video endpoint is /v1/videos; with the
+  # configured base URL ending in /v1, use /videos for both generation and
+  # status requests. happyhorse-1.1-t2v is the verified model with an enabled
+  # channel; wan3.0-video is published but currently has no SVIP channel.
+  VIDEO_MODEL: happyhorse-1.1-t2v
   EMBEDDING_MODEL: qwen3.7-text-embedding-flash
   EMBEDDING_DIMENSIONS: "1024"
   EMBEDDING_VERSION: "v1"
   KNOWLEDGE_VECTOR_INDEX_ENABLED: "false"
   IMAGE_RESPONSE_FORMAT: url
-  VIDEO_DURATION_SECONDS: "100"
-  VIDEO_GENERATION_PATH: /video/generations
-  VIDEO_STATUS_PATH: /video/generations/{job_id}
+  VIDEO_DURATION_SECONDS: "5"
+  VIDEO_GENERATION_PATH: /videos
+  VIDEO_STATUS_PATH: /videos/{job_id}
   # Platform-owned model settings only. API keys are injected from the Secret
   # Manager contract; zero limits intentionally keep traffic fail-closed until
   # provider quota and cost approval are attached to the release.
