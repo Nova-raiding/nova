@@ -26,10 +26,16 @@ export const LOCAL_ONLY_RELEASE_TESTS = Object.freeze([
 export function cloudReleaseTests(root) {
   const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
   const command = packageJson.scripts?.['test:release-gates']
-  if (typeof command !== 'string' || !command.startsWith('node --import tsx scripts/run-safe-tests.ts --no-file-parallelism ')) {
-    throw new Error('release gate command is not the expected fixed source list')
-  }
-  const tests = command.split(/\s+/u).filter(item => /\.test\.tsx?$/u.test(item))
+  const testRunner = 'node --import tsx scripts/run-safe-tests.ts --no-file-parallelism '
+  // The release-gates script may have a host preflight (for example
+  // `npm run test:ecs-demo-254-host-inventory &&`) before the fixed source
+  // list. Locate the runner instead of requiring it to be the first command;
+  // the source list itself remains fixed and is still parsed below.
+  if (typeof command !== 'string') throw new Error('release gate command is not the expected fixed source list')
+  const runnerIndex = command.indexOf(testRunner)
+  if (runnerIndex < 0) throw new Error('release gate command is not the expected fixed source list')
+  const sourceCommand = command.slice(runnerIndex + testRunner.length).split('&&', 1)[0]
+  const tests = sourceCommand.split(/\s+/u).filter(item => /\.test\.tsx?$/u.test(item))
   if (tests.length < 20 || new Set(tests).size !== tests.length) throw new Error('release gate source list is invalid')
   const local = new Set(LOCAL_ONLY_RELEASE_TESTS)
   for (const file of local) {
