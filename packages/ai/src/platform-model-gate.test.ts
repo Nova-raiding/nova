@@ -46,6 +46,7 @@ describe('platform-owned model gate', () => {
     } finally { stop() }
   })
   it('classifies quota endpoint rate limiting separately and does not retry during Retry-After', async () => {
+    vi.useFakeTimers()
     const source = { NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://relay.example/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example', MODEL_RELAY_API_KEY: 'model-key', VIDEO_MODEL_RELAY_API_KEY: 'video-key', AI_MODEL: 'text-v1', VIDEO_MODEL: 'video-v1' }
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const authorization = (init?.headers as Record<string, string>)?.authorization
@@ -59,7 +60,9 @@ describe('platform-owned model gate', () => {
       expect(evaluatePlatformModelGate(source, 'video').ready).toBe(true)
       // The monitor's 30s interval must honor the relay's 120s Retry-After.
       expect(fetcher).toHaveBeenCalledTimes(2)
-    } finally { stop() }
+      await vi.advanceTimersByTimeAsync(90_000)
+      expect(fetcher).toHaveBeenCalledTimes(2)
+    } finally { stop(); vi.useRealTimers() }
   })
   it('requires an explicit versioned conservative estimate for every modality', () => {
     expect(evaluatePlatformModelBudgetEstimate({}, 'text')).toMatchObject({ ready: false, reasons: ['request_estimate_missing_or_invalid', 'estimate_version_missing'] })
