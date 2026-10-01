@@ -738,7 +738,7 @@ function isStrictHttpsUrl(value: unknown): value is string {
 async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, candidateBinding?: { release_git_sha: string; image_set_digest: string; manifest_sha256: string; deployment_nonce_sha256: string }): Promise<ProbeResult> {
   const model = modelFor(modality)
   const existingVideoTaskId = modality === 'video' ? process.env.MODEL_RELAY_CANARY_VIDEO_TASK_ID?.trim() : undefined
-  const endpoint = existingVideoTaskId ? process.env.VIDEO_STATUS_PATH?.trim() || '/videos/{job_id}' : endpointFor(modality)
+  const endpoint = existingVideoTaskId ? process.env.VIDEO_STATUS_PATH?.trim() || '/video/generations/{job_id}' : endpointFor(modality)
   const common = { modality, endpoint, model }
   if (!model) return { ...common, state: 'blocked', detail: 'model_missing' }
   if (modality === 'embedding' && !ALLOWED_EMBEDDING_MODELS.includes(model as typeof ALLOWED_EMBEDDING_MODELS[number])) return { ...common, state: 'blocked', detail: 'embedding_model_not_allowlisted' }
@@ -825,7 +825,7 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
       const initial = evaluateVideoProbePayload(payload)
       const jobId = initial.providerJobId
       if (jobId && !initial.ready) {
-        const statusTemplate = process.env.VIDEO_STATUS_PATH?.trim() || '/videos/{job_id}'
+        const statusTemplate = process.env.VIDEO_STATUS_PATH?.trim() || '/video/generations/{job_id}'
         const statusPath = statusTemplate.replace(/\{job_id\}/gu, encodeURIComponent(jobId))
         const deadline = Date.now() + Math.min(timeoutMs, 120_000)
         while (Date.now() < deadline) {

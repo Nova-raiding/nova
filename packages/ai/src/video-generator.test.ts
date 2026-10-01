@@ -98,7 +98,7 @@ describe('video generator relay', () => {
     })
     await expect(generator.getStatus('job_1')).resolves.toEqual({ status: 'completed', videoUrl: 'https://cdn.example/video.mp4', providerJobId: 'job_1' })
     expect(method).toBe('GET')
-    expect(url).toBe('https://relay.example/videos/job_1')
+    expect(url).toBe('https://relay.example/video/generations/job_1')
   })
 
   it('accepts the relay nested SUCCESS schema only when it contains an HTTPS artifact', async () => {
