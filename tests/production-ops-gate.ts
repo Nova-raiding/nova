@@ -29,7 +29,14 @@ const composeArgs = [
 ]
 
 function compose(): Compose {
-  return JSON.parse(execFileSync('docker', [...composeArgs, 'config', '--format', 'json'], { encoding: 'utf8' })) as Compose
+  try {
+    return JSON.parse(execFileSync('docker', [...composeArgs, 'config', '--format', 'json'], { encoding: 'utf8' })) as Compose
+  } catch {
+    // Docker's execution error can include the complete interpolated Compose
+    // document, including credentials. Keep the gate fail-closed without
+    // echoing that sensitive payload into CI or deploy logs.
+    throw new Error('production ops gate Compose render failed')
+  }
 }
 
 function env(service: Service): Record<string, string> {
