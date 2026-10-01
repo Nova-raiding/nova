@@ -19,12 +19,14 @@ async function openKnowledge() {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   const page = await context.newPage()
   const downloadRequests = []
+  const downloadHeaders = []
   await page.route('**/api/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
     const pathname = url.pathname.replace(/^\/api/u, '')
     if (pathname === `/v1/assets/${cleanId}/download` || pathname === `/v1/assets/${quarantinedId}/download`) {
       downloadRequests.push(pathname)
+      downloadHeaders.push(request.headers())
       return route.fulfill({ status: 200, contentType: 'image/png', body: png })
     }
     let data
@@ -46,11 +48,11 @@ async function openKnowledge() {
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(data)) })
   })
   await page.goto(`${studioUrl}/merchant/products?section=knowledge`, { waitUntil: 'domcontentloaded' })
-  return { browser, context, page, downloadRequests }
+  return { browser, context, page, downloadRequests, downloadHeaders }
 }
 
 test('previews clean knowledge images and fails closed for quarantined images', async () => {
-  const { browser, context, page, downloadRequests } = await openKnowledge()
+  const { browser, context, page, downloadRequests, downloadHeaders } = await openKnowledge()
   try {
     const cards = page.locator('.material-card-grid article')
     await expect(cards).toHaveCount(2)
@@ -61,6 +63,7 @@ test('previews clean knowledge images and fails closed for quarantined images', 
     await expect(cleanCard.locator('.material-card-preview')).toContainText('商品主图')
     await expect(quarantinedCard.locator('.material-card-preview')).toContainText('商品主图')
     await expect.poll(() => downloadRequests).toEqual([`/v1/assets/${cleanId}/download`])
+    expect(downloadHeaders[0]?.accept).toContain('application/octet-stream')
   } finally {
     await context.close(); await browser.close()
   }
