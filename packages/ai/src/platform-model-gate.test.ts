@@ -62,8 +62,7 @@ describe('platform-owned model gate', () => {
       // video credential is still allowed to refresh on its own 30s cadence.
       expect(fetcher).toHaveBeenCalledTimes(2)
       await vi.advanceTimersByTimeAsync(90_000)
-      const calls = (fetcher as unknown as { mock: { calls: Array<[unknown, RequestInit?]> } }).mock.calls
-      expect(calls.filter(([, init]) => (init?.headers as Record<string, string>)?.authorization === 'Bearer model-key')).toHaveLength(1)
+      expect(fetcher.mock.calls.filter(([, init]) => (init?.headers as Record<string, string>)?.authorization === 'Bearer model-key')).toHaveLength(1)
       expect(fetcher).toHaveBeenCalledTimes(5)
     } finally { stop(); vi.useRealTimers() }
   })
