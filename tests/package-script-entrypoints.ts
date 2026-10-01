@@ -46,12 +46,6 @@ export interface UninvokedScript {
  */
 export const UNINVOKED_SCRIPTS: readonly UninvokedScript[] = [
   {
-    script: 'test:e2e:readonly',
-    category: 'release-operator',
-    requires: 'A running candidate or production-like desktop environment with read-only credentials and browser services',
-    reason: 'The real-data E2E matrix exercises the deployed merchant and Ops surfaces without writes. It is intentionally operator-triggered because it needs live browser services and environment-specific credentials, so it remains outside the hermetic release gate.',
-  },
-  {
     script: 'test:kubernetes-release-gate',
     category: 'release-operator',
     requires: 'An explicitly requested Kubernetes or ACK release review',
