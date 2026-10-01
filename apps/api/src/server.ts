@@ -14841,6 +14841,22 @@ function requestFailureMetadata(error: unknown) {
   return { status: 500, code: ERROR_CODES.INTERNAL_ERROR }
 }
 
+/** Keep connector diagnostics out of merchant-facing HTTP and OAuth responses. */
+export function connectorUserFacingMessage(error: ConnectorFailure): string {
+  const message = error.normalized.message?.trim() ?? ''
+  if (/[\u3400-\u9fff]/u.test(message)) return message
+  switch (error.normalized.code) {
+    case 'UNAUTHORIZED': return '平台店铺授权已失效，请重新授权后重试'
+    case 'NOT_CONFIGURED': return '当前平台连接尚未配置，请联系平台管理员'
+    case 'RATE_LIMITED': return '平台请求过于频繁，请稍后重试'
+    case 'NOT_FOUND': return '平台未找到对应的店铺或商品'
+    case 'VALIDATION_FAILED': return '平台拒绝了提交的数据，请检查商品资料后重试'
+    case 'CONFLICT': return '平台数据已发生变化，请刷新后重试'
+    case 'TIMEOUT': return '平台响应超时，请稍后查询结果再决定是否重试'
+    default: return '平台服务暂时不可用，请稍后重试'
+  }
+}
+
 export function authorizationRepositoryDomainError(error: unknown): DomainError | undefined {
   if (!(error instanceof AuthorizationRepositoryError)) return undefined
   const status = error.code.endsWith('_NOT_FOUND')
@@ -14995,7 +15011,7 @@ const server = createServer((req, res) => {
       const mapped = error instanceof OAuthStateError
         ? oauthError(error)
         : error instanceof ConnectorFailure
-          ? { status: error.normalized.code === 'UNAUTHORIZED' ? 401 : error.normalized.code === 'NOT_CONFIGURED' ? 503 : error.normalized.code === 'RATE_LIMITED' ? 429 : error.normalized.code === 'NOT_FOUND' ? 404 : 502, code: error.normalized.code, message: error.normalized.message }
+          ? { status: error.normalized.code === 'UNAUTHORIZED' ? 401 : error.normalized.code === 'NOT_CONFIGURED' ? 503 : error.normalized.code === 'RATE_LIMITED' ? 429 : error.normalized.code === 'NOT_FOUND' ? 404 : 502, code: error.normalized.code, message: connectorUserFacingMessage(error) }
           : error instanceof DomainError ? { status: error.status, code: error.code, message: error.message } : fallback
       return sendOAuthCallbackPage(res, mapped.status, { state: 'error', platform: (req.url ?? '').split('/').at(-1)?.split('?')[0] ?? 'store', code: mapped.code, message: 'message' in mapped ? mapped.message : error instanceof Error ? error.message : fallback.message }, req)
     }
@@ -15005,7 +15021,7 @@ const server = createServer((req, res) => {
     }
     if (error instanceof ConnectorFailure) {
       const status = error.normalized.code === 'UNAUTHORIZED' ? 401 : error.normalized.code === 'NOT_CONFIGURED' ? 503 : error.normalized.code === 'RATE_LIMITED' ? 429 : error.normalized.code === 'NOT_FOUND' ? 404 : 502
-      return fail(res, status, workspaceId, error.normalized.code, error.normalized.message, req)
+      return fail(res, status, workspaceId, error.normalized.code, connectorUserFacingMessage(error), req)
     }
     if (error instanceof ObjectStorageError) return fail(res, error.status, workspaceId, error.code, error.message, req)
     if (error instanceof ConnectorMappingPreflightError) return fail(res, 409, workspaceId, 'PLATFORM_MAPPING_PREFLIGHT_REQUIRED', '平台字段映射批准缺失、失效或与当前商品载荷不一致', req, { stage: error.stage, next_actions: ['platform.mapping.preflight'] })

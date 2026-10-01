@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { alertingSelfMetricLines, jobQueueMetricLines } from './server.js'
+import { alertingSelfMetricLines, connectorUserFacingMessage, jobQueueMetricLines } from './server.js'
 import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, authorizationRepositoryDomainError, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, platformRuleDataRecoveryActions, prioritizeQueueAssets, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, satisfiedAuthorizationObligations, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requireApprovedAssetForImageGeneration, requirePublishAuthorizationSnapshot } from './server.js'
 import { merchantEntryBillingReadAllowed } from './server.js'
@@ -15,6 +15,18 @@ import type { AuthorizationDecision, PermissionAtom } from '../../../packages/co
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
 import { AuthorizationRepositoryError } from '../../../packages/persistence/src/index.js'
 import { imageReconciliationIdempotencyKey as workerImageReconciliationIdempotencyKey } from '../../../apps/worker/src/main.js'
+import { ConnectorFailure } from '../../../packages/connectors/src/fake-connector.js'
+
+describe('connector user-facing errors', () => {
+  it.each([
+    ['UNAUTHORIZED', 'access credential is unavailable', '平台店铺授权已失效，请重新授权后重试'],
+    ['NOT_CONFIGURED', 'credential vault is unavailable', '当前平台连接尚未配置，请联系平台管理员'],
+    ['RATE_LIMITED', 'slow down', '平台请求过于频繁，请稍后重试'],
+    ['REMOTE_ERROR', 'HTTP connector jd request failed', '平台服务暂时不可用，请稍后重试'],
+  ])('maps %s diagnostics to Chinese', (code, message, expected) => {
+    expect(connectorUserFacingMessage(new ConnectorFailure({ code, message } as never))).toBe(expected)
+  })
+})
 
 describe('provider outcome point reservation boundary', () => {
   it('holds points for unknown outcomes or pending settlement and releases only confirmed pre-provider failure', () => {
