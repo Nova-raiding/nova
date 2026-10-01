@@ -6352,6 +6352,7 @@ export function MaterialLibraryWorkspace({
   // `GET /v1/assets` is the only honest source for the material cards. Before
   // it answers the page says so; when it answers empty the page says empty.
   const [remoteAssets, setRemoteAssets] = useState<AssetMetadata[] | null>(null)
+  const [materialPreviews, setMaterialPreviews] = useState<Record<string, string>>({})
   const brandAssetPreviewRegistry = useRef(new BrandAssetPreviewRegistry())
   const [brandLogoPreviews, setBrandLogoPreviews] = useState<Record<string, string>>({})
   const [assetsError, setAssetsError] = useState('')
@@ -6387,6 +6388,48 @@ export function MaterialLibraryWorkspace({
       .catch(() => { if (active) setStorageQuota(null) })
     return () => { active = false }
   }, [baseUrl])
+  useEffect(() => {
+    if (!baseUrl || !remoteAssets) {
+      setMaterialPreviews({})
+      return
+    }
+    const controller = new AbortController()
+    const objectUrls: string[] = []
+    const imageAssets = remoteAssets.filter((asset) => asset.scanStatus === 'clean' && asset.mimeType.toLowerCase().startsWith('image/'))
+    const previews = new Map<string, string>()
+    let nextIndex = 0
+    const worker = async () => {
+      while (!controller.signal.aborted) {
+        const asset = imageAssets[nextIndex++]
+        if (!asset) return
+        try {
+          const blob = await fetchAssetBlob(baseUrl, asset.id, controller.signal)
+          const url = URL.createObjectURL(blob)
+          const valid = await new Promise<boolean>((resolve) => {
+            const probe = new Image()
+            probe.onload = () => resolve(true)
+            probe.onerror = () => resolve(false)
+            probe.src = url
+          })
+          if (!valid || controller.signal.aborted) {
+            URL.revokeObjectURL(url)
+            continue
+          }
+          objectUrls.push(url)
+          previews.set(asset.id, url)
+        } catch {
+          // Quarantined, unscanned, or unavailable objects remain status cards.
+        }
+      }
+    }
+    void Promise.all(Array.from({ length: Math.min(2, imageAssets.length) }, () => worker())).then(() => {
+      if (!controller.signal.aborted) setMaterialPreviews(Object.fromEntries(previews))
+    })
+    return () => {
+      controller.abort()
+      objectUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [baseUrl, remoteAssets])
   const materialsRead = resolveMaterialRead({ baseUrl, remote: remoteAssets, error: assetsError })
   const stores = useMemo(
     () => (catalogStores ?? []).filter((store) => store.readable).map(catalogStoreForMaterials),
@@ -6584,7 +6627,7 @@ export function MaterialLibraryWorkspace({
     }).map((item) => {
       const assignedSeriesId = assignmentByAsset.get(item.id)?.seriesId
       const assignedSeries = scopedBrandRead?.series.find((row) => row.id === assignedSeriesId)
-      return assignedSeries ? { ...item, series: assignedSeries.name } : item
+      return { ...item, ...(materialPreviews[item.id] ? { previewUrl: materialPreviews[item.id] } : {}), ...(assignedSeries ? { series: assignedSeries.name } : {}) }
     }),
   ]
   const visibleMaterials = activeMaterials.filter((item) => {
