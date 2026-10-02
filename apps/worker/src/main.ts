@@ -11,7 +11,7 @@ import { verifyBridgeMigrationPrefix } from '../../../packages/persistence/src/m
 import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type QueuePort, type RedisQueueTransport, type WorkerDispatchObservation } from '../../../packages/workers/src/durable.js'
 import { buildWorkerDispatchLogRecord, workerDispatchTraceId, writeWorkerDispatchLog, type WorkerDispatchLogEvent } from '../../../packages/workers/src/dispatch-observability.js'
 import { createOutboxHandler, createWorkerProjection } from './handler.js'
-import { connectRedisQueue, createRedisCredentialRefreshLock, DEFAULT_QUEUE_MAX_DEPTH } from './redis-transport.js'
+import { connectRedisQueue, createRedisCredentialRefreshLock, createRedisRelayQuotaStore, DEFAULT_QUEUE_MAX_DEPTH } from './redis-transport.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError } from '../../../packages/application/src/connector-runtime.js'
 import { createVaultCredentialProviderFromEnv } from '../../../packages/connectors/src/index.js'
 import { readBoundedResponseText } from '../../../packages/connectors/src/bounded-response.js'
@@ -2285,9 +2285,16 @@ export async function refreshScanQueueMetrics(input: {
  * path passes it.
  */
 export async function runWorker(config: WorkerConfig, pool: Pool, options: { readyFileHeartbeatIntervalMs?: number; redisClientFactory?: (url: string) => RedisClientType } = {}): Promise<void> {
-  const modelEnvironment = { ...process.env, NODE_ENV: config.environment }
+  const modelEnvironment: Record<string, string | undefined> = { ...process.env, NODE_ENV: config.environment }
+  const relayQuotaStore = config.environment === 'production' && (config.role === 'generation' || config.role === 'all')
+    ? createRedisRelayQuotaStore(process.env.REDIS_URL, {
+      baseUrl: modelEnvironment.MODEL_RELAY_BASE_URL?.trim() ?? '',
+      modelKey: modelEnvironment.MODEL_RELAY_API_KEY?.trim() ?? '',
+      videoKey: modelEnvironment.VIDEO_MODEL_RELAY_API_KEY?.trim() || modelEnvironment.MODEL_RELAY_API_KEY?.trim() || '',
+    })
+    : undefined
   const stopRelayQuotaMonitor = config.environment === 'production' && (config.role === 'generation' || config.role === 'all')
-    ? startPlatformRelayTokenQuotaMonitor(modelEnvironment) : undefined
+    ? startPlatformRelayTokenQuotaMonitor(modelEnvironment, fetch, { store: relayQuotaStore, requireSharedStore: !(process.env.VITEST === 'true' && process.env.CONNECTOR_FIXTURE_MODE === 'true') }) : undefined
   const requireWorkerModelQuota = (kind: PlatformModelKind) => {
     if (config.environment !== 'production') return
     const gate = evaluatePlatformModelGate(modelEnvironment, kind)
@@ -3067,7 +3074,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
       if (!config.once && !stopping) await sleep(!dependenciesReady ? config.dependencyCheckIntervalMs : config.role === 'automation' ? config.automationIntervalMs : config.pollIntervalMs)
     } while (!config.once && !stopping)
   } finally {
-    stopRelayQuotaMonitor?.()
+    await stopRelayQuotaMonitor?.()
     await workerMetricsServer?.stop()
     await scannerHeartbeat?.stop()
     readyFileHeartbeat.stop()

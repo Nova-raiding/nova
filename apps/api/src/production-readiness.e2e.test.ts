@@ -176,7 +176,7 @@ describe('production readiness fail-closed', () => {
   it('marks both relay capabilities stale after the quota evidence freshness window', async () => {
     const environment = productionEnvironment()
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 100, total_used: 20, total_available: 80, expires_at: 0 } }), { status: 200 })) as unknown as typeof fetch
-    const stop = startPlatformRelayTokenQuotaMonitor(environment, fetcher)
+    const stop = startPlatformRelayTokenQuotaMonitor(environment, fetcher, { refreshIntervalMs: 30_000, maxAgeMs: 90_000 })
     try {
       await vi.waitFor(() => expect(productionReadinessDiagnostics(environment).gates.relay?.ready).toBe(true))
       const now = Date.now()

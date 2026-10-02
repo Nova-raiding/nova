@@ -1,7 +1,9 @@
 import { createClient, type RedisClientType } from 'redis'
+import { createHash } from 'node:crypto'
 import { RedisCredentialRefreshLock } from '../../../packages/connectors/src/index.js'
 import type { RedisQueueTransport } from '../../../packages/workers/src/durable.js'
 import { SCANNER_HEARTBEAT_INDEX_KEY, scannerHeartbeatKey, type ScannerHeartbeat } from '../../../packages/workers/src/scanner-heartbeat.js'
+import type { RelayCredential, RelayQuotaSnapshot, RelayQuotaSnapshotStore } from '../../../packages/ai/src/platform-model-gate.js'
 
 export interface ScannerHeartbeatRedisPort {
   publish(heartbeat: ScannerHeartbeat, ttlSeconds: number): Promise<void>
@@ -22,6 +24,67 @@ export interface RedisQueueConnectionOptions {
 }
 
 export const DEFAULT_QUEUE_MAX_DEPTH = 10_000
+
+/** Shared site-level quota snapshot store. The namespace is a one-way
+ * fingerprint of the active relay configuration; credentials never enter a
+ * Redis key or value. */
+export function createRedisRelayQuotaStore(url: string | undefined, identity: { baseUrl: string; modelKey: string; videoKey: string }): RelayQuotaSnapshotStore | undefined {
+  if (!url?.trim()) return undefined
+  const client = createClient({
+    url: url.trim(), disableOfflineQueue: true,
+    socket: { connectTimeout: 1_000, reconnectStrategy: retries => Math.min(50 * 2 ** Math.min(retries, 5), 1_000) },
+  }) as RedisClientType
+  client.on('error', () => undefined)
+  const ready = client.connect()
+  const namespace = (credential: RelayCredential) => createHash('sha256').update(`model-relay-quota:v1\n${identity.baseUrl}\n${credential === 'video' ? identity.videoKey : identity.modelKey}`).digest('hex').slice(0, 32)
+  const snapshotKey = (credential: RelayCredential) => `merchant:model-relay-quota:v1:${namespace(credential)}:snapshot:${credential}`
+  const leaseKey = (credential: RelayCredential) => `merchant:model-relay-quota:v1:${namespace(credential)}:lease:${credential}`
+  return {
+    async read(credential) {
+      await withRedisOperationTimeout(ready)
+      const raw = await withRedisOperationTimeout(client.get(snapshotKey(credential)))
+      if (!raw) return undefined
+      try {
+        const value = JSON.parse(raw) as Partial<RelayQuotaSnapshot>
+        const checkedAt = value.checkedAt; const expiresAt = value.expiresAt; const available = value.available
+        if (typeof value.configFingerprint !== 'string' || typeof checkedAt !== 'number' || !Number.isSafeInteger(checkedAt) || typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt) || typeof available !== 'number' || !Number.isSafeInteger(available)) return undefined
+        return {
+          configFingerprint: value.configFingerprint,
+          checkedAt, expiresAt, available,
+          ...(typeof value.reason === 'string' ? { reason: value.reason } : {}),
+          ...(Number.isSafeInteger(value.nextRetryAt) ? { nextRetryAt: value.nextRetryAt } : {}),
+        }
+      } catch { return undefined }
+    },
+    async write(credential, snapshot, ttlMs, ownerId) {
+      await withRedisOperationTimeout(ready)
+      const result = await withRedisOperationTimeout(client.eval(`
+        if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+        redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
+        return 1
+      `, { keys: [leaseKey(credential), snapshotKey(credential)], arguments: [ownerId, JSON.stringify(snapshot), String(Math.max(1, Math.ceil(ttlMs / 1000)))] }))
+      if (Number(result) !== 1) throw new Error('relay_quota_lease_lost')
+    },
+    async tryAcquire(credential, ownerId, ttlMs) {
+      await withRedisOperationTimeout(ready)
+      const result = await withRedisOperationTimeout(client.eval(`
+        if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'PX', ARGV[2]) then return 1 end
+        return 0
+      `, { keys: [leaseKey(credential)], arguments: [ownerId, String(Math.max(1, Math.ceil(ttlMs)))] }))
+      return Number(result) === 1
+    },
+    async release(credential, ownerId) {
+      await withRedisOperationTimeout(ready)
+      await withRedisOperationTimeout(client.eval(`
+        if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) end
+        return 1
+      `, { keys: [leaseKey(credential)], arguments: [ownerId] }))
+    },
+    async close() {
+      await closeRedisClient(client)
+    },
+  }
+}
 
 /**
  * The one place a queue connection is bound to its server.

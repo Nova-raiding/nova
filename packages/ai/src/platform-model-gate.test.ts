@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { evaluatePlatformModelBudgetEstimate, evaluatePlatformModelCostGate, evaluatePlatformModelGate, evaluatePlatformModelRelayGate, evaluatePlatformModelRequestCost, evaluatePlatformModelTaskCostLimit, evaluatePlatformModelTaskRequestCost, startPlatformRelayTokenQuotaMonitor } from './platform-model-gate.js'
 
 describe('platform-owned model gate', () => {
+  const legacyTestTiming = { refreshIntervalMs: 30_000, maxAgeMs: 90_000 }
   it('blocks production readiness and dispatch for unknown, unlimited and expired relay tokens', async () => {
     const source = { NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://relay.example/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example', MODEL_RELAY_API_KEY: 'model-key', VIDEO_MODEL_RELAY_API_KEY: 'video-key', AI_MODEL: 'text-v1', VIDEO_MODEL: 'video-v1' }
     let resolveModel!: (response: Response) => void
@@ -10,7 +11,7 @@ describe('platform-owned model gate', () => {
       if (init?.headers && (init.headers as Record<string, string>).authorization === 'Bearer model-key') resolveModel = resolve
       else resolveVideo = resolve
     })) as unknown as typeof fetch
-    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
+    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher, legacyTestTiming)
     const quota = (unlimited: boolean, expiresAt: number) => new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: unlimited, total_granted: 100, total_used: 20, total_available: 80, expires_at: expiresAt } }), { status: 200 })
     try {
       expect(evaluatePlatformModelRelayGate(source)).toMatchObject({ ready: false, reasons: expect.arrayContaining(['relay_token_quota_unknown']) })
@@ -31,7 +32,7 @@ describe('platform-owned model gate', () => {
       if ((init?.headers as Record<string, string>)?.authorization === 'Bearer video-key') return new Response('', { status: 401 })
       return new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 100, total_used: 20, total_available: 80, expires_at: 0 } }), { status: 200 })
     }) as unknown as typeof fetch
-    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
+    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher, legacyTestTiming)
     try {
       await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'text').ready).toBe(true))
       await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'video').reasons).toContain('relay_token_auth_failed'))
@@ -53,7 +54,7 @@ describe('platform-owned model gate', () => {
       if (authorization === 'Bearer model-key') return new Response('', { status: 429, headers: { 'retry-after': '120' } })
       return new Response(JSON.stringify({ code: true, data: { object: 'token_usage', unlimited_quota: false, total_granted: 100, total_used: 20, total_available: 80, expires_at: 0 } }), { status: 200 })
     }) as unknown as typeof fetch
-    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
+    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher, legacyTestTiming)
     try {
       await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'text').reasons).toContain('relay_token_quota_rate_limited'))
       expect(evaluatePlatformModelGate(source, 'text').ready).toBe(false)
@@ -64,7 +65,9 @@ describe('platform-owned model gate', () => {
       await vi.advanceTimersByTimeAsync(90_000)
       const calls = (fetcher as unknown as { mock: { calls: Array<[unknown, RequestInit?]> } }).mock.calls
       expect(calls.filter(([, init]) => (init?.headers as Record<string, string>)?.authorization === 'Bearer model-key')).toHaveLength(1)
-      expect(fetcher).toHaveBeenCalledTimes(5)
+      // The shared cadence refreshes the healthy video snapshot twice during
+      // this bounded window; the model credential remains inside Retry-After.
+      expect(fetcher).toHaveBeenCalledTimes(4)
     } finally { stop(); vi.useRealTimers() }
   })
   it('keeps each credential Retry-After independent so one key cannot stale the other', async () => {
@@ -74,7 +77,7 @@ describe('platform-owned model gate', () => {
       status: 429,
       headers: { 'retry-after': (init?.headers as Record<string, string>)?.authorization === 'Bearer model-key' ? '120' : '30' },
     })) as unknown as typeof fetch
-    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher)
+    const stop = startPlatformRelayTokenQuotaMonitor(source, fetcher, legacyTestTiming)
     try {
       await vi.waitFor(() => expect(evaluatePlatformModelGate(source, 'video').reasons).toContain('relay_token_quota_rate_limited'))
       await vi.advanceTimersByTimeAsync(90_000)

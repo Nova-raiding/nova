@@ -96,7 +96,7 @@ import { readWorkspaceStatusInTransaction } from './workspace-status-runtime.js'
 export { readWorkspaceStatusInTransaction } from './workspace-status-runtime.js'
 import { isNativeMcpTransport as isNativeMcpTransportWithHeader, nativeMcpErrorCode, nativeMcpRequests, nativeMcpRequestIds, routeNativeMcp as handleNativeMcp } from './native-mcp-transport.js'
 import { isNativeMcpToolEnabled as nativeMcpToolEnabled } from './native-mcp-tools.js'
-import { createRedisHealth, createRedisAssetScannerNonce, createRedisWorkerNonce, createRedisRateLimit, createRedisCredentialRefreshLock, createRedisAutomationLease, createRedisJobAdmission, type RedisHealthPort } from './redis-ports.js'
+import { createRedisHealth, createRedisAssetScannerNonce, createRedisWorkerNonce, createRedisRateLimit, createRedisCredentialRefreshLock, createRedisAutomationLease, createRedisJobAdmission, createRedisRelayQuotaStore, type RedisHealthPort } from './redis-ports.js'
 import { oauthStateStore, oauthStateStoreProductionReady } from './oauth-state-runtime.js'
 export { oauthStates, setOAuthStateStoreForTests } from './oauth-state-runtime.js'
 import { nativeMcpCommercialErrorData, nativeMcpErrorData } from './native-mcp-errors.js'
@@ -600,6 +600,13 @@ const redisWorkerNonce = createRedisWorkerNonce(process.env.REDIS_URL)
 const redisHealth = createRedisHealth(process.env.REDIS_URL)
 const redisJobAdmission = createRedisJobAdmission(process.env.REDIS_URL)
 const redisAutomationLease = createRedisAutomationLease(process.env.REDIS_URL)
+const relayQuotaStore = process.env.NODE_ENV === 'production'
+  ? createRedisRelayQuotaStore(process.env.REDIS_URL, {
+    baseUrl: process.env.MODEL_RELAY_BASE_URL?.trim() ?? '',
+    modelKey: process.env.MODEL_RELAY_API_KEY?.trim() ?? '',
+    videoKey: process.env.VIDEO_MODEL_RELAY_API_KEY?.trim() || process.env.MODEL_RELAY_API_KEY?.trim() || '',
+  })
+  : undefined
 let redisRateLimitHealth: { state: 'not_configured' | 'configured' | 'ready' | 'degraded'; lastFailureAt?: string } = { state: redisRateLimit ? 'configured' : 'not_configured' }
 const localAutomationLeases = new Map<string, { token: string; expiresAt: number }>()
 type JsonObject = Record<string, unknown>
@@ -5795,7 +5802,8 @@ async function binaryBody(req: IncomingMessage, limit: number): Promise<Uint8Arr
 }
 
 function isProduction() { return process.env.NODE_ENV === 'production' }
-if (isProduction()) startPlatformRelayTokenQuotaMonitor(process.env)
+const requireSharedRelayQuotaStore = isProduction() && !(process.env.VITEST === 'true' && process.env.CONNECTOR_FIXTURE_MODE === 'true')
+if (isProduction()) startPlatformRelayTokenQuotaMonitor(process.env, fetch, { store: relayQuotaStore, requireSharedStore: requireSharedRelayQuotaStore })
 
 export function signedAssetScanCallbackRequired(source: NodeJS.ProcessEnv = process.env) {
   return ['staging', 'preview', 'production'].includes(source.NODE_ENV ?? '')

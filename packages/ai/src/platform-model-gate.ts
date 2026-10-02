@@ -11,32 +11,107 @@ export function isPlaceholderModelConfiguration(value: string | undefined): bool
 }
 import { inspectOutboundUrl, isSecureEnvironment, type OutboundSecurityReason } from '../../connectors/src/outbound-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
+import { createHash, randomUUID } from 'node:crypto'
 
-type RelayCredential = 'model' | 'video'
-type QuotaState = { checkedAt: number; expiresAt: number; available: number; reason?: string }
+export type RelayCredential = 'model' | 'video'
+export type RelayQuotaSnapshot = { configFingerprint: string; checkedAt: number; expiresAt: number; available: number; reason?: string; nextRetryAt?: number }
+/**
+ * Cross-process storage for the platform quota snapshot.  The monitor never
+ * puts a user request on this path: one process acquires the short lease and
+ * refreshes the relay, while every other process only reads the snapshot.
+ */
+export interface RelayQuotaSnapshotStore {
+  read(credential: RelayCredential): Promise<RelayQuotaSnapshot | undefined>
+  write(credential: RelayCredential, snapshot: RelayQuotaSnapshot, ttlMs: number, ownerId: string): Promise<void>
+  tryAcquire(credential: RelayCredential, ownerId: string, ttlMs: number): Promise<boolean>
+  release(credential: RelayCredential, ownerId: string): Promise<void>
+  close?: () => Promise<void>
+}
+export interface PlatformRelayQuotaMonitorOptions {
+  store?: RelayQuotaSnapshotStore
+  /** Production app processes set this so no-Redis deployments stay unknown. */
+  requireSharedStore?: boolean
+  refreshIntervalMs?: number
+  maxAgeMs?: number
+  cacheTtlMs?: number
+  /** Background Redis reads; this never changes upstream polling cadence. */
+  sharedSyncIntervalMs?: number
+  ownerId?: string
+}
+type QuotaState = RelayQuotaSnapshot
 type RelayQuotaMonitor = {
   baseUrl: string
   modelKey: string
   videoKey: string
   states: Record<RelayCredential, QuotaState>
   retryAt: Record<RelayCredential, number>
+  fingerprints: Record<RelayCredential, string>
+  store?: RelayQuotaSnapshotStore
+  requireSharedStore: boolean
+  ownerId: string
+  refreshIntervalMs: number
+  maxAgeMs: number
+  cacheTtlMs: number
+  syncIntervalMs: number
   timer: ReturnType<typeof setInterval>
 }
 let relayQuotaMonitor: RelayQuotaMonitor | undefined
-const RELAY_QUOTA_REFRESH_MS = 30_000
-const RELAY_QUOTA_MAX_AGE_MS = 90_000
+export const DEFAULT_RELAY_QUOTA_REFRESH_MS = 5 * 60_000
+export const DEFAULT_RELAY_QUOTA_MAX_AGE_MS = 15 * 60_000
+export const MIN_RELAY_QUOTA_REFRESH_MS = 30_000
+export const MAX_RELAY_QUOTA_REFRESH_MS = 60 * 60_000
+export const MIN_RELAY_QUOTA_MAX_AGE_MS = 90_000
+export const MAX_RELAY_QUOTA_MAX_AGE_MS = 24 * 60 * 60_000
+export const MIN_RELAY_QUOTA_CACHE_TTL_MS = 20 * 60_000
+
+function boundedMilliseconds(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const value = Number(raw)
+  return Number.isSafeInteger(value) && value >= min && value <= max ? value : fallback
+}
+
+export interface RelayQuotaMonitorTiming {
+  refreshIntervalMs: number
+  maxAgeMs: number
+  cacheTtlMs: number
+}
+
+export function relayQuotaMonitorTiming(source: ModelEnvironment, options: PlatformRelayQuotaMonitorOptions = {}): RelayQuotaMonitorTiming {
+  const refreshIntervalMs = boundedMilliseconds(options.refreshIntervalMs === undefined ? source.MODEL_RELAY_QUOTA_REFRESH_MS : String(options.refreshIntervalMs), DEFAULT_RELAY_QUOTA_REFRESH_MS, MIN_RELAY_QUOTA_REFRESH_MS, MAX_RELAY_QUOTA_REFRESH_MS)
+  const configuredMaxAge = boundedMilliseconds(options.maxAgeMs === undefined ? source.MODEL_RELAY_QUOTA_MAX_AGE_MS : String(options.maxAgeMs), DEFAULT_RELAY_QUOTA_MAX_AGE_MS, MIN_RELAY_QUOTA_MAX_AGE_MS, MAX_RELAY_QUOTA_MAX_AGE_MS)
+  // A snapshot must survive at least one missed poll, while still failing
+  // closed before the relay's budget can drift indefinitely.
+  const maxAgeMs = Math.max(configuredMaxAge, refreshIntervalMs * 2)
+  const configuredTtl = boundedMilliseconds(options.cacheTtlMs === undefined ? source.MODEL_RELAY_QUOTA_CACHE_TTL_MS : String(options.cacheTtlMs), MIN_RELAY_QUOTA_CACHE_TTL_MS, MIN_RELAY_QUOTA_CACHE_TTL_MS, 7 * 24 * 60 * 60_000)
+  return { refreshIntervalMs, maxAgeMs, cacheTtlMs: Math.max(configuredTtl, maxAgeMs + refreshIntervalMs) }
+}
+
+function relayQuotaConfigFingerprint(baseUrl: string, key: string): string {
+  return createHash('sha256').update(`${baseUrl}\n${key}`).digest('hex')
+}
 
 /** Read-only relay token checks are cached across health and generation calls.
- * Unknown, stale, unlimited and expired quota always block production traffic. */
-export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fetcher: typeof fetch = fetch): () => void {
+ * Unknown, stale, unlimited and expired quota always block production traffic.
+ * With a shared store, only one site process polls the relay; user requests
+ * synchronously inspect the last snapshot and never call the relay directly. */
+export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fetcher: typeof fetch = fetch, options: PlatformRelayQuotaMonitorOptions = {}): () => Promise<void> {
   const baseUrl = source.MODEL_RELAY_BASE_URL?.trim() ?? ''
   const modelKey = source.MODEL_RELAY_API_KEY?.trim() ?? ''
   const videoKey = source.VIDEO_MODEL_RELAY_API_KEY?.trim() || modelKey
   if (relayQuotaMonitor) clearInterval(relayQuotaMonitor.timer)
-  const unknown = (): QuotaState => ({ checkedAt: 0, expiresAt: 0, available: 0, reason: 'relay_token_quota_unknown' })
-  const monitor: RelayQuotaMonitor = { baseUrl, modelKey, videoKey, states: { model: unknown(), video: unknown() }, retryAt: { model: 0, video: 0 }, timer: undefined as unknown as ReturnType<typeof setInterval> }
+  const fingerprints = { model: relayQuotaConfigFingerprint(baseUrl, modelKey), video: relayQuotaConfigFingerprint(baseUrl, videoKey) }
+  const unknown = (credential: RelayCredential): QuotaState => ({ configFingerprint: fingerprints[credential], checkedAt: 0, expiresAt: 0, available: 0, reason: 'relay_token_quota_unknown' })
+  const timing = relayQuotaMonitorTiming(source, options)
+  const monitor: RelayQuotaMonitor = {
+    baseUrl, modelKey, videoKey, fingerprints, states: { model: unknown('model'), video: unknown('video') }, retryAt: { model: 0, video: 0 },
+    ...(options.store ? { store: options.store } : {}), requireSharedStore: options.requireSharedStore === true,
+    ownerId: options.ownerId?.trim() || `relay-quota-${randomUUID()}`, ...timing,
+    syncIntervalMs: options.sharedSyncIntervalMs !== undefined && Number.isSafeInteger(options.sharedSyncIntervalMs) && options.sharedSyncIntervalMs > 0
+      ? Math.min(options.sharedSyncIntervalMs, timing.refreshIntervalMs)
+      : options.store ? Math.min(15_000, timing.refreshIntervalMs) : timing.refreshIntervalMs,
+    timer: undefined as unknown as ReturnType<typeof setInterval>,
+  }
   const retryAfterMs = (value: string | null): number => {
-    const fallback = RELAY_QUOTA_REFRESH_MS
+    const fallback = monitor.refreshIntervalMs
     if (!value?.trim()) return fallback
     const seconds = Number(value.trim())
     if (Number.isFinite(seconds) && seconds >= 0) return Math.min(Math.max(seconds * 1000, fallback), 10 * 60_000)
@@ -44,8 +119,69 @@ export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fe
     return Number.isFinite(date) ? Math.min(Math.max(date - Date.now(), fallback), 10 * 60_000) : fallback
   }
   relayQuotaMonitor = monitor
-  const refresh = async (credential: RelayCredential, key: string): Promise<void> => {
-    if (monitor.retryAt[credential] > Date.now()) return
+  // When model and video use the same relay credential, both modalities must
+  // share the Redis snapshot and lease as well as the in-process fetch. This
+  // prevents two replicas from acquiring different modality leases for one
+  // upstream token at the same time.
+  const sharedCredential = (credential: RelayCredential): RelayCredential => modelKey && modelKey === videoKey ? 'model' : credential
+  const applySharedSnapshot = (credential: RelayCredential, snapshot: RelayQuotaSnapshot | undefined): boolean => {
+    const now = Date.now()
+    if (!snapshot || snapshot.configFingerprint !== monitor.fingerprints[credential]
+      || !Number.isSafeInteger(snapshot.checkedAt) || snapshot.checkedAt < 0 || snapshot.checkedAt > now + 5 * 60_000
+      || !Number.isSafeInteger(snapshot.expiresAt) || snapshot.expiresAt < 0
+      || !Number.isSafeInteger(snapshot.available) || snapshot.available < 0
+      || (snapshot.reason !== undefined && !/^relay_token_[a-z0-9_]+$/u.test(snapshot.reason))
+      || (snapshot.nextRetryAt !== undefined && (!Number.isSafeInteger(snapshot.nextRetryAt) || snapshot.nextRetryAt < 0))) return false
+    const current = monitor.states[credential]
+    if (snapshot.checkedAt < current.checkedAt) return true
+    monitor.states[credential] = {
+      configFingerprint: monitor.fingerprints[credential],
+      checkedAt: snapshot.checkedAt,
+      expiresAt: Number.isSafeInteger(snapshot.expiresAt) ? snapshot.expiresAt : 0,
+      available: Number.isSafeInteger(snapshot.available) ? snapshot.available : 0,
+      ...(typeof snapshot.reason === 'string' ? { reason: snapshot.reason } : {}),
+      ...(Number.isSafeInteger(snapshot.nextRetryAt) ? { nextRetryAt: snapshot.nextRetryAt } : {}),
+    }
+    monitor.retryAt[credential] = snapshot.nextRetryAt ?? 0
+    return true
+  }
+  const markSharedStoreUnavailable = (credential: RelayCredential): void => {
+    monitor.states[credential] = {
+      configFingerprint: monitor.fingerprints[credential], checkedAt: 0, expiresAt: 0, available: 0,
+      reason: 'relay_token_quota_shared_store_unavailable',
+    }
+    monitor.retryAt[credential] = 0
+  }
+  const readSharedSnapshot = async (credential: RelayCredential): Promise<boolean> => {
+    if (!monitor.store) return true
+    try {
+      const hadSnapshot = monitor.states[credential].checkedAt > 0
+      const snapshot = await monitor.store.read(sharedCredential(credential))
+      if (!snapshot) {
+        if (hadSnapshot) markSharedStoreUnavailable(credential)
+        return true
+      }
+      if (!applySharedSnapshot(credential, snapshot) && hadSnapshot) markSharedStoreUnavailable(credential)
+      return true
+    } catch {
+      // A failed shared read must not fall back to one poll per replica or
+      // continue using a snapshot whose cross-process freshness is unknown.
+      markSharedStoreUnavailable(credential)
+      return false
+    }
+  }
+  const retrySharedRead = async (credential: RelayCredential): Promise<void> => {
+    if (!monitor.store) return
+    // Give the lease owner a short opportunity to publish its result at
+    // startup. This is bounded and runs in the background, never in a request.
+    for (const delayMs of [25, 50, 100]) {
+      await new Promise<void>(resolve => setTimeout(resolve, delayMs))
+      if (!await readSharedSnapshot(credential)) return
+      if (monitor.states[credential].checkedAt > 0) return
+    }
+  }
+  const fetchSnapshot = async (credential: RelayCredential, key: string): Promise<QuotaState> => {
+    if (monitor.retryAt[credential] > Date.now()) return monitor.states[credential]
     let state: QuotaState
     try {
       const relay = evaluatePlatformModelRelayConfiguration(source)
@@ -55,8 +191,7 @@ export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fe
       })
       if (!response.ok) {
         if (response.status === 429) {
-          // The model and video lookups run concurrently. A shorter retry
-          // window from the second response must not erase the first one.
+          // The model and video retry windows remain independent.
           monitor.retryAt[credential] = Math.max(monitor.retryAt[credential], Date.now() + retryAfterMs(response.headers.get('retry-after')))
           throw new Error('relay_token_quota_rate_limited')
         }
@@ -77,18 +212,68 @@ export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fe
         || ((expiresAt as number) !== 0 && (expiresAt as number) <= Date.now() / 1000)) {
         throw new Error('relay_token_quota_expired_or_exhausted')
       }
-      state = { checkedAt: Date.now(), expiresAt: expiresAt as number, available: available as number }
+      monitor.retryAt[credential] = 0
+      state = { configFingerprint: monitor.fingerprints[credential], checkedAt: Date.now(), expiresAt: expiresAt as number, available: available as number }
     } catch (error) {
       const reason = error instanceof Error && error.message.startsWith('relay_token_') ? error.message : 'relay_token_quota_unavailable'
-      state = { checkedAt: Date.now(), expiresAt: 0, available: 0, reason }
+      const nextRetryAt = monitor.retryAt[credential]
+      state = { configFingerprint: monitor.fingerprints[credential], checkedAt: Date.now(), expiresAt: 0, available: 0, reason, ...(nextRetryAt > 0 ? { nextRetryAt } : {}) }
     }
-    if (relayQuotaMonitor === monitor) monitor.states[credential] = state
+    return state
   }
-  const refreshBoth = () => { void refresh('model', modelKey); void refresh('video', videoKey) }
+  const refresh = async (credential: RelayCredential, key: string): Promise<void> => {
+    if (monitor.store && !await readSharedSnapshot(credential)) return
+    if (monitor.requireSharedStore && !monitor.store) return
+    const current = monitor.states[credential]
+    const now = Date.now()
+    if ((current.checkedAt > 0 && now - current.checkedAt < monitor.refreshIntervalMs) || (current.nextRetryAt !== undefined && current.nextRetryAt > now)) return
+    let acquired = true
+    if (monitor.store) {
+      try { acquired = await monitor.store.tryAcquire(sharedCredential(credential), monitor.ownerId, Math.max(15_000, Math.min(120_000, monitor.refreshIntervalMs / 2))) } catch { markSharedStoreUnavailable(credential); return }
+      if (!acquired) { await retrySharedRead(credential); return }
+    }
+    try {
+      const state = await fetchSnapshot(credential, key)
+      if (relayQuotaMonitor === monitor) monitor.states[credential] = state
+      if (monitor.store) {
+        try { await monitor.store.write(sharedCredential(credential), state, monitor.cacheTtlMs, monitor.ownerId) } catch { markSharedStoreUnavailable(credential) }
+      }
+    } finally {
+      if (monitor.store && acquired) await monitor.store.release(sharedCredential(credential), monitor.ownerId).catch(() => undefined)
+    }
+  }
+  const refreshBoth = () => {
+    // A relay token shared by both modalities has one quota document. Avoid
+    // issuing two identical upstream reads while preserving per-credential
+    // state and retry windows when separate keys are configured.
+    if (modelKey && modelKey === videoKey) {
+      void refresh('model', modelKey).then(async () => {
+        if (relayQuotaMonitor !== monitor) return
+        const state = monitor.states.model
+        monitor.states.video = { ...state }
+        monitor.retryAt.video = monitor.retryAt.model
+        // The model write already populated the shared key. Do not write a
+        // second copy after the model lease has been released.
+      })
+      return
+    }
+    void refresh('model', modelKey)
+    void refresh('video', videoKey)
+  }
   refreshBoth()
-  monitor.timer = setInterval(refreshBoth, RELAY_QUOTA_REFRESH_MS)
+  // Shared stores are synchronized frequently without increasing upstream
+  // traffic: refresh() reads Redis every sync tick but fetches only when the
+  // snapshot reaches refreshIntervalMs.
+  monitor.timer = setInterval(refreshBoth, monitor.syncIntervalMs)
   monitor.timer.unref?.()
-  return () => { if (relayQuotaMonitor === monitor) { clearInterval(monitor.timer); relayQuotaMonitor = undefined } }
+  return async () => {
+    if (relayQuotaMonitor === monitor) {
+      clearInterval(monitor.timer)
+      relayQuotaMonitor = undefined
+      const close = monitor.store?.close
+      if (close) await close().catch(() => undefined)
+    }
+  }
 }
 
 function relayQuotaReasons(source: ModelEnvironment, credential: RelayCredential): string[] {
@@ -99,7 +284,7 @@ function relayQuotaReasons(source: ModelEnvironment, credential: RelayCredential
   if (source.MODEL_RELAY_BASE_URL?.trim() !== monitor.baseUrl || expectedKey !== (credential === 'video' ? monitor.videoKey : monitor.modelKey)) return ['relay_token_monitor_config_mismatch']
   const state = monitor.states[credential]
   if (state.reason) return [state.reason]
-  if (!state.checkedAt || Date.now() - state.checkedAt > RELAY_QUOTA_MAX_AGE_MS) return ['relay_token_quota_stale']
+  if (!state.checkedAt || Date.now() - state.checkedAt > monitor.maxAgeMs) return ['relay_token_quota_stale']
   if ((state.expiresAt !== 0 && state.expiresAt <= Date.now() / 1000) || state.available <= 0) return ['relay_token_quota_expired_or_exhausted']
   return []
 }
