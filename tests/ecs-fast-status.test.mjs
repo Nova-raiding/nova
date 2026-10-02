@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { assess, inventoryWarnings, isManagedDemoContainerName } from '../infra/scripts/ecs-fast-status.mjs'
+import { assess, inventoryStatus, inventoryWarnings, isManagedDemoContainerName } from '../infra/scripts/ecs-fast-status.mjs'
 const names = ['api', 'api-replica', 'ops-ui', 'pilot-gateway', 'postgres', 'redis']
 function snapshot() {
   return { free_bytes: 10 * 1024 ** 3, services: names.map(service => ({ service, state: 'running', health: 'healthy', image: `registry/service@sha256:${'a'.repeat(64)}`, git_sha: ['postgres', 'redis'].includes(service) ? null : 'b'.repeat(40) })) }
@@ -10,6 +10,24 @@ function snapshot() {
 test('healthy pinned live inventory does not require Git labels on upstream data services', () => {
   assert.deepEqual(assess(snapshot()), [])
   assert.deepEqual(inventoryWarnings(snapshot()), [])
+})
+test('inventory status distinguishes healthy demo runtime from formal production approval', () => {
+  const result = inventoryStatus([])
+  assert.deepEqual(result, {
+    scope: 'inventory_only',
+    demo_runtime_healthy: true,
+    formal_production_approved: false,
+    release_approved: false,
+    next_step: 'Demo runtime healthy; formal production approval not evaluated. Freeze a target SHA; compare each component revision, verify migration compatibility and required release evidence before updating.',
+  })
+})
+test('inventory blockers remain visible without evaluating formal production approval', () => {
+  const result = inventoryStatus(['service_not_healthy:api'])
+  assert.equal(result.scope, 'inventory_only')
+  assert.equal(result.demo_runtime_healthy, false)
+  assert.equal(result.formal_production_approved, false)
+  assert.equal(result.release_approved, false)
+  assert.equal(result.next_step, 'Demo runtime has inventory blockers; formal production approval not evaluated. Resolve the reported blockers before updating.')
 })
 test('mixed application Git revisions are surfaced without pretending health is release approval', () => {
   const value = snapshot()
@@ -63,6 +81,10 @@ test('fast status keeps liveness and readiness probes separate', () => {
   assert.match(source, /body\.data\?\.ready \?\? body\.data\?\.status === 'ok'/u)
   assert.match(source, /probe\.status !== 200 \|\| !probe\.ready/u)
   assert.match(source, /public_probe_failed:\$\{probe\.url\}/u)
+  assert.match(source, /scope: 'inventory_only'/u)
+  assert.match(source, /demo_runtime_healthy: demoRuntimeHealthy/u)
+  assert.match(source, /formal_production_approved: false/u)
+  assert.match(source, /formal production approval not evaluated/u)
   assert.match(source, /release_approved: false/u)
 })
 

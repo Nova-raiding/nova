@@ -39,6 +39,21 @@ export function isManagedDemoContainerName(name) {
   return typeof name === 'string' && /^merchant-demo-85575f9c-[a-z0-9][a-z0-9-]*-[0-9]+$/u.test(name)
 }
 
+export function inventoryStatus(blockers) {
+  const demoRuntimeHealthy = blockers.length === 0
+  return {
+    scope: 'inventory_only',
+    demo_runtime_healthy: demoRuntimeHealthy,
+    formal_production_approved: false,
+    // Kept for consumers that already treat this field as a conservative
+    // approval signal. This read-only inventory never grants approval.
+    release_approved: false,
+    next_step: demoRuntimeHealthy
+      ? 'Demo runtime healthy; formal production approval not evaluated. Freeze a target SHA; compare each component revision, verify migration compatibility and required release evidence before updating.'
+      : 'Demo runtime has inventory blockers; formal production approval not evaluated. Resolve the reported blockers before updating.',
+  }
+}
+
 const remote = String.raw`
 import json,subprocess,shutil
 
@@ -77,8 +92,7 @@ async function main() {
   for (const probe of probes) if (probe.status !== 200 || !probe.ready) blockers.push(`public_probe_failed:${probe.url}`)
   const warnings = [...inventoryWarnings(snapshot), ...snapshot.services.filter(s => ['postgres', 'redis'].includes(s.service) && !s.image.includes('@sha256:')).map(s => `data_service_uses_tag_preserve_running_image_id:${s.service}`)]
   console.log(JSON.stringify({ observed_at: new Date().toISOString(), ...snapshot, probes, blockers, warnings,
-    release_approved: false,
-    next_step: 'Freeze a target SHA; compare each component revision, verify migration compatibility and required release evidence before updating.',
+    ...inventoryStatus(blockers),
   }, null, 2))
   if (blockers.length) process.exitCode = 2
 }
