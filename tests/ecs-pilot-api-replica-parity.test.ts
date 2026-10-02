@@ -249,6 +249,22 @@ describe('ECS pilot API replica parity', () => {
     })
   })
 
+  it('passes one site-level quota polling policy to both APIs and every worker', () => {
+    const services = render({
+      MODEL_RELAY_QUOTA_REFRESH_MS: '600000',
+      MODEL_RELAY_QUOTA_MAX_AGE_MS: '1800000',
+      MODEL_RELAY_QUOTA_CACHE_TTL_MS: '2400000',
+    }).services
+    const expected = {
+      MODEL_RELAY_QUOTA_REFRESH_MS: '600000',
+      MODEL_RELAY_QUOTA_MAX_AGE_MS: '1800000',
+      MODEL_RELAY_QUOTA_CACHE_TTL_MS: '2400000',
+    }
+    for (const service of ['api', 'api-replica', 'worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan']) {
+      expect(services[service]?.environment, service).toMatchObject(expected)
+    }
+  })
+
   it('removes every local bootstrap identity from the fully rendered production services', () => {
     const services = render().services
     for (const service of ['api', 'api-replica']) {

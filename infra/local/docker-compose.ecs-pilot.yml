@@ -113,6 +113,12 @@ x-ecs-worker-environment: &ecs-worker-environment
   DATABASE_URL: ${DATABASE_URL:?DATABASE_URL production secret is required}
   WORKER_WORKSPACES: ${WORKER_WORKSPACES:?WORKER_WORKSPACES=auto or an explicit production workspace allowlist is required}
   NODE_EXTRA_CA_CERTS: /run/secrets/postgres_server.crt
+  # Quota is a site-level monitor. Every generation-capable process reads the
+  # shared Redis snapshot; these settings control the single upstream poll
+  # cadence and freshness window rather than per-user request traffic.
+  MODEL_RELAY_QUOTA_REFRESH_MS: ${MODEL_RELAY_QUOTA_REFRESH_MS:-300000}
+  MODEL_RELAY_QUOTA_MAX_AGE_MS: ${MODEL_RELAY_QUOTA_MAX_AGE_MS:-900000}
+  MODEL_RELAY_QUOTA_CACHE_TTL_MS: ${MODEL_RELAY_QUOTA_CACHE_TTL_MS:-1200000}
 
 x-ecs-node-hardening: &ecs-node-hardening
   user: "10001:10001"
@@ -290,6 +296,9 @@ services:
       MODEL_RELAY_BASE_URL: ${MODEL_RELAY_BASE_URL:-https://ai.wormholexyz.xyz/v1}
       MODEL_RELAY_ALLOWED_HOSTS: ${MODEL_RELAY_ALLOWED_HOSTS:-ai.wormholexyz.xyz}
       MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:-}
+      MODEL_RELAY_QUOTA_REFRESH_MS: ${MODEL_RELAY_QUOTA_REFRESH_MS:-300000}
+      MODEL_RELAY_QUOTA_MAX_AGE_MS: ${MODEL_RELAY_QUOTA_MAX_AGE_MS:-900000}
+      MODEL_RELAY_QUOTA_CACHE_TTL_MS: ${MODEL_RELAY_QUOTA_CACHE_TTL_MS:-1200000}
       OCR_MAX_OUTPUT_TOKENS: ${OCR_MAX_OUTPUT_TOKENS:?OCR_MAX_OUTPUT_TOKENS is required for production OCR}
       PLATFORM_RULE_SYNC_MANIFEST_URL: ${PLATFORM_RULE_SYNC_MANIFEST_URL:-}
       PLATFORM_RULE_SYNC_SIGNING_SECRET: ${PLATFORM_RULE_SYNC_SIGNING_SECRET:-}
