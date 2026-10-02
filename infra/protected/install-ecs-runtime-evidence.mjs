@@ -5,18 +5,20 @@
  *
  * The evidence producer keeps its immutable artifact root-only (0600). This
  * host-root handoff creates a byte-for-byte copy owned by root:10001 with
- * mode 0640 so the unprivileged API can read it. It never edits or replaces
+ * mode 0440 so the unprivileged API can read it. It never edits or replaces
  * the source artifact and it refuses to replace an existing runtime file.
  */
 import {
   closeSync,
   constants,
+  chmodSync,
   fchmodSync,
   fchownSync,
   fstatSync,
   fsyncSync,
   lstatSync,
   linkSync,
+  mkdirSync,
   openSync,
   readSync,
   realpathSync,
@@ -29,12 +31,16 @@ import { fileURLToPath } from 'node:url'
 
 export const API_UID = 10001
 export const API_GID = 10001
-export const RUNTIME_EVIDENCE_TARGETS = Object.freeze({
-  capability: '/run/release-evidence/platform-capability.json',
-  capacity: '/run/release-evidence/capacity-report.json',
+// Keep the host source persistent across reboots. Compose still mounts each
+// file into the fixed container paths under /run/release-evidence/.
+export const RUNTIME_EVIDENCE_TARGET_ROOT = '/var/lib/merchant-release-security/runtime-evidence'
+export const RUNTIME_EVIDENCE_TARGET_NAMES = Object.freeze({
+  capability: 'platform-capability.json',
+  capacity: 'capacity-report.json',
 })
+const RELEASE_ID_PATTERN = /^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u
 const SOURCE_MODE = 0o600
-const RUNTIME_MODE = 0o640
+const RUNTIME_MODE = 0o440
 const MAX_BYTES = 4 * 1024 * 1024
 
 function assert(condition, message) {
@@ -83,17 +89,41 @@ function readSource(sourcePath) {
 }
 
 export function validateRuntimeTarget(kind, targetPath) {
-  assert(Object.hasOwn(RUNTIME_EVIDENCE_TARGETS, kind), 'kind must be capability or capacity')
-  assert(targetPath === RUNTIME_EVIDENCE_TARGETS[kind], 'target must be the fixed ECS runtime evidence path')
+  assert(Object.hasOwn(RUNTIME_EVIDENCE_TARGET_NAMES, kind), 'kind must be capability or capacity')
   assert(typeof targetPath === 'string' && targetPath.startsWith('/') && resolve(targetPath) === targetPath, 'target must be a canonical absolute path')
+  const prefix = `${RUNTIME_EVIDENCE_TARGET_ROOT}/`
+  assert(targetPath.startsWith(prefix), 'target must be under the ECS runtime evidence root')
+  const parts = targetPath.slice(prefix.length).split('/')
+  assert(parts.length === 2 && RELEASE_ID_PATTERN.test(parts[0]), 'target must use a release-scoped runtime evidence directory')
+  assert(parts[1] === RUNTIME_EVIDENCE_TARGET_NAMES[kind], 'target filename does not match kind')
   return targetPath
 }
 
 function validateTarget(kind, targetPath) {
   validateRuntimeTarget(kind, targetPath)
   const parent = dirname(targetPath)
-  protectedDirectory(parent, 'target parent')
-  assert(basename(targetPath) === basename(RUNTIME_EVIDENCE_TARGETS[kind]), 'target filename does not match kind')
+  const rootParent = dirname(RUNTIME_EVIDENCE_TARGET_ROOT)
+  protectedDirectory(rootParent, 'runtime evidence root parent')
+  try {
+    const metadata = lstatSync(RUNTIME_EVIDENCE_TARGET_ROOT)
+    assert(metadata.isDirectory() && !metadata.isSymbolicLink(), 'runtime evidence root must be a regular directory')
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+    mkdirSync(RUNTIME_EVIDENCE_TARGET_ROOT, { mode: 0o700 })
+    chmodSync(RUNTIME_EVIDENCE_TARGET_ROOT, 0o700)
+  }
+  protectedDirectory(RUNTIME_EVIDENCE_TARGET_ROOT, 'runtime evidence root')
+  try {
+    const metadata = lstatSync(parent)
+    assert(metadata.isDirectory() && !metadata.isSymbolicLink(), 'target parent must be a regular directory')
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+    mkdirSync(parent, { mode: 0o700 })
+    chmodSync(parent, 0o700)
+  }
+  const metadata = lstatSync(parent)
+  assert(metadata.isDirectory() && !metadata.isSymbolicLink() && metadata.uid === 0 && (metadata.mode & 0o777) === 0o700,
+    'target parent must be root-owned mode 0700')
   try {
     const existing = lstatSync(targetPath)
     assert(!existing.isSymbolicLink(), 'target already exists as a symlink')
@@ -110,7 +140,7 @@ function verifyRuntimeFile(path, expectedSha256) {
   try {
     const metadata = fstatSync(fd)
     assert(metadata.isFile() && metadata.uid === 0 && metadata.gid === API_GID && (metadata.mode & 0o777) === RUNTIME_MODE,
-      'runtime evidence must be root-owned:g10001 mode 0640')
+      'runtime evidence must be root-owned:g10001 mode 0440')
     const bytes = Buffer.allocUnsafe(Number(metadata.size))
     let offset = 0
     while (offset < bytes.length) {
@@ -125,7 +155,7 @@ function verifyRuntimeFile(path, expectedSha256) {
   }
 }
 
-export function installRuntimeEvidence({ kind, sourcePath, targetPath = RUNTIME_EVIDENCE_TARGETS[kind] }) {
+export function installRuntimeEvidence({ kind, sourcePath, targetPath }) {
   assert(process.getuid?.() === 0 && process.geteuid?.() === 0, 'runtime evidence handoff requires host root')
   const source = readSource(sourcePath)
   const parent = validateTarget(kind, targetPath)

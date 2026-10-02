@@ -187,7 +187,7 @@ if [ "$DEPLOYMENT_SCOPE" = full ]; then
   for file in "$CAPABILITY_EVIDENCE_PATH" "$CAPACITY_REPORT_PATH" "$MODEL_RELAY_EVIDENCE_PATH" "$CODEX_APP_HOST_EVIDENCE_PATH" "$OBJECT_STORAGE_EVIDENCE_PATH" "$CANONICAL_CUTOVER_EVIDENCE_PATH" "$RELEASE_MANIFEST_PATH" "$PAYMENT_EVIDENCE_PATH" "$RESTORE_EVIDENCE_PATH" "$RELEASE_EVIDENCE_BUNDLE_PATH"; do
     [ -f "$file" ] || { echo "evidence file not found: $file" >&2; exit 1; }
   done
-  node "$root/infra/scripts/verify-ecs-evidence-readable-by-api.mjs" "$CAPABILITY_EVIDENCE_PATH" "$CAPACITY_REPORT_PATH"
+  node "$root/infra/scripts/verify-ecs-evidence-readable-by-api.mjs" "$CAPABILITY_EVIDENCE_PATH" "$CAPACITY_REPORT_PATH" --release-id "$RELEASE_ID"
   [ -d "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" ] || { echo 'production evidence artifact root not found' >&2; exit 1; }
 fi
 cd "$root"
