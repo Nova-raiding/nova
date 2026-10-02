@@ -186,7 +186,7 @@ describe('central commercial access gate', () => {
     expect(isNativeMcpToolEnabled('unregistered.business.action')).toBe(false)
   })
 
-  it('keeps local fixture video tools behind the explicit loopback-only development gate', () => {
+  it('keeps registry-enabled video tools visible on the production endpoint', () => {
     try {
       vi.stubEnv('MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES', 'true')
       vi.stubEnv('NODE_ENV', 'development')
@@ -196,8 +196,8 @@ describe('central commercial access gate', () => {
       expect(isNativeMcpToolEnabled('multimodal.video.request')).toBe(true)
       expect(isNativeMcpToolEnabled('multimodal.video.get')).toBe(true)
       vi.stubEnv('MERCHANT_MCP_BASE_URL', 'https://yxsona.com/mcp')
-      expect(isNativeMcpToolEnabled('multimodal.video.request')).toBe(false)
-      expect(isNativeMcpToolEnabled('multimodal.video.get')).toBe(false)
+      expect(isNativeMcpToolEnabled('multimodal.video.request')).toBe(true)
+      expect(isNativeMcpToolEnabled('multimodal.video.get')).toBe(true)
     } finally {
       vi.unstubAllEnvs()
     }

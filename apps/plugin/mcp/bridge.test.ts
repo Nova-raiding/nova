@@ -355,7 +355,7 @@ describe('Codex stdio MCP bridge', () => {
         [tool.name, tool.description],
         ...Object.entries(tool.inputSchema.properties ?? {}).map(([name, schema]) => [`${tool.name}.${name}`, schema.description]),
       ]).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-      expect(tools).toHaveLength(117)
+      expect(tools).toHaveLength(119)
       expect(descriptions.filter(([, description]) => !/[\u3400-\u9fff]/u.test(description))).toEqual([])
       expect(tools.find(tool => tool.name === 'asset.metadata.update')?.inputSchema.properties?.asset_id).toMatchObject({ type: 'string', minLength: 1, maxLength: 256 })
       expect(tools.find(tool => tool.name === 'asset.metadata.update')?.inputSchema.properties?.expected_revision).toMatchObject({ pattern: '^[1-9][0-9]*$', maxLength: 10 })
@@ -1809,20 +1809,17 @@ describe('Codex stdio MCP bridge', () => {
   // multimodal.video.get takes one required argument, provider_job_id, and the
   // only producer of that value is multimodal.video.request (the server rejects
   // a job id that is not bound to a rendering owned by the calling workspace).
-  // The poller therefore stays exactly as reachable as its producer: hidden in
-  // the production default, listed only when the local video acceptance switch
-  // makes the request tool reachable.
-  it('lists the queued-video poller only while its producer is reachable', async () => {
+  // The poller stays exactly as reachable as its producer. Both are listed
+  // when the shared registry enables video; the API enforces all gates.
+  it('lists the queued-video poller with its producer', async () => {
     const { tools, child } = await listBridgeTools({})
     try {
       const names = tools.map(tool => tool.name)
-      expect(names).not.toContain('multimodal.video.request')
-      expect(names).not.toContain('multimodal.video.get')
+      expect(names).toContain('multimodal.video.request')
+      expect(names).toContain('multimodal.video.get')
       // `ReturnType<typeof spawn>` widens the stdio tuple, so the pipes are
       // nullable from out here even though the helper always passes 'pipe'.
       if (!child.stdin || !child.stdout) throw new Error('bridge test child lost its stdio pipes')
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'job_poll_1' } } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: '当前插件没有此工具：multimodal.video.get' })
       // The generic multimodal entry point stays withheld on purpose: its
       // modality=video + output=rendering branch is the only other route to
       // video rendering, and the API settles it through the same commercial
@@ -1832,18 +1829,10 @@ describe('Codex stdio MCP bridge', () => {
       // consumes its suggestions) is listed, so withholding it broke the SEO/GEO
       // flow the skill documents.
       expect(names).toContain('catalog.title.optimize')
-      // Nothing else may ask the relay to render a video either.
-      expect(tools.filter(tool => (tool.inputSchema?.properties?.output as { enum?: string[] } | undefined)?.enum?.includes('rendering')).map(tool => tool.name)).toEqual([])
+      // Only the dedicated video request may ask the relay to render a video.
+      expect(tools.filter(tool => (tool.inputSchema?.properties?.output as { enum?: string[] } | undefined)?.enum?.includes('rendering')).map(tool => tool.name)).toEqual(['multimodal.video.request'])
     } finally {
       child.kill()
-    }
-    const local = await listBridgeTools({ MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES: 'true', MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8787' })
-    try {
-      const names = local.tools.map(tool => tool.name)
-      expect(names).toContain('multimodal.video.request')
-      expect(names).toContain('multimodal.video.get')
-    } finally {
-      local.child.kill()
     }
   })
 
@@ -1908,8 +1897,8 @@ describe('Codex stdio MCP bridge', () => {
       const names = tools.map(tool => tool.name)
       expect(names).toContain('creative.brief')
       expect(tools.find(tool => tool.name === 'creative.brief')?.inputSchema.properties?.asset_type.enum).toContain('video_storyboard')
-      expect(names).not.toContain('multimodal.video.request')
-      expect(names).not.toContain('multimodal.video.get')
+      expect(names).toContain('multimodal.video.request')
+      expect(names).toContain('multimodal.video.get')
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
@@ -1947,8 +1936,8 @@ describe('Codex stdio MCP bridge', () => {
       ...MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS,
     ])
     expect([...registryDisabled].filter(method => !disabled.has(method)), 'bridge re-enables a method the shared registry disables').toEqual([])
-    expect([...disabled].filter(method => !registryDisabled.has(method)).sort(), 'unexpected bridge-only narrowing').toEqual(['multimodal.generate', 'multimodal.video.request'])
-    for (const method of ['multimodal.generate', 'multimodal.video.request']) {
+    expect([...disabled].filter(method => !registryDisabled.has(method)).sort(), 'unexpected bridge-only narrowing').toEqual(['multimodal.generate'])
+    for (const method of ['multimodal.generate']) {
       expect(registryEnabled.has(method), `${method} must be registry-enabled, otherwise it is drift rather than a narrowing`).toBe(true)
     }
     // catalog.title.optimize was stale bridge drift: the registry enables it as
@@ -1991,7 +1980,7 @@ describe('Codex stdio MCP bridge', () => {
         const response = envelope.result
         expect(response.isError ? response.structuredContent?.code : response.structuredContent?.accepted).toBeTruthy()
       }
-      expect(requests).toHaveLength(3)
+      expect(requests).toHaveLength(4)
       for (const request of requests) {
         const expected = calls.find(([name]) => name === request.method)!
         expect(request).toMatchObject({ jsonrpc: '2.0', method: expected[0], params: { ...expected[1], workspace_id: 'ws_test' } })

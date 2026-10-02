@@ -4,6 +4,6 @@
   "pluginVersion": "0.1.0+codex.20261002081829",
   "expectedMigrationVersion": 257,
   "mcpMethodCount": 336,
-  "merchantBridgeToolCount": 117,
+  "merchantBridgeToolCount": 119,
   "opsDomainCount": 12
 }

@@ -290,21 +290,7 @@ const COMMERCIAL_DISABLED_METHODS = new Set([
   'workspace.commercial.get', 'workspace.commercial.update',
   'workspace.usage.get', 'billing.usage.consume', 'billing.usage.refund',
   'billing.refund',
-  // Bridge-only narrowing, not a registry mirror. The shared registry enables
-  // multimodal.video.request, but provider rendering is a paid, relay-backed
-  // action the merchant bridge withholds until a deployment opts into local
-  // video acceptance below.
-  'multimodal.video.request',
 ])
-// Explicit local relay acceptance only; server authorization and cost gates
-// still apply. This is also the switch that decides whether
-// multimodal.video.get may be listed: the poller is exactly as reachable as
-// its producer.
-if (process.env.MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES === 'true' && !['production', 'staging', 'preview'].includes(deploymentEnvironment())) {
-  try {
-    if (['127.0.0.1', 'localhost', '[::1]'].includes(new URL(process.env.MERCHANT_MCP_BASE_URL ?? '').hostname)) COMMERCIAL_DISABLED_METHODS.delete('multimodal.video.request')
-  } catch { /* Missing connection stays closed. */ }
-}
 const MERCHANT_HIDDEN_METHODS = new Set([
   // Current merchant scope is content production, review and export.
   // Keep server compatibility and audit records; do not expose store sync or
@@ -348,20 +334,13 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'content.codex.commit',
   'knowledge.rule.update',
   // The only required argument is provider_job_id, and the only producer of a
-  // provider_job_id is multimodal.video.request (the server rejects a job id
-  // that is not bound to a rendering owned by this workspace). Listing the
-  // poller while the request tool is withheld — the production default — would
-  // advertise a tool the merchant can never call, so it is hidden here and
-  // lifted only by the local video acceptance switch below. Keep quote marks
-  // out of this block: scripts/merchant-bridge-surface.ts and the surface
-  // contract test parse quoted entries between the set brackets.
-  'multimodal.video.get',
+  // provider_job_id is multimodal.video.request. The API verifies that the
+  // job belongs to the calling workspace before returning any result.
 ])
-// Keep the poller exactly as reachable as its producer. The local video
-// acceptance block above is the only configuration where
-// multimodal.video.request leaves COMMERCIAL_DISABLED_METHODS, and only then
-// may multimodal.video.get appear in tools/list.
-if (!COMMERCIAL_DISABLED_METHODS.has('multimodal.video.request')) MERCHANT_HIDDEN_METHODS.delete('multimodal.video.get')
+// Keep the poller exactly as reachable as its producer. Both tools are
+// registry-enabled; the API remains authoritative for workspace, rights,
+// provider, and cost gates.
+MERCHANT_HIDDEN_METHODS.delete('multimodal.video.get')
 const isMerchantTool = name => !name.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(name)
 const boundedString = (maxLength, minLength = 1, description) => ({ type: 'string', minLength, maxLength, ...(description ? { description } : {}) })
 const positiveIntegerString = { type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 }
