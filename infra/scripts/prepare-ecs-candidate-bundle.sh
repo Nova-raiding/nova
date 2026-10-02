@@ -197,6 +197,9 @@ tests/ecs-staging-toolchain-installer.test.mjs
 tests/ecs-staging-toolchain-installer.container-check.mjs
 infra/scripts/verify-ecs-evidence-readable-by-api.mjs
 tests/ecs-evidence-readable-by-api.test.mjs
+infra/protected/install-ecs-runtime-evidence.mjs
+infra/protected/install-ecs-runtime-evidence.test.mjs
+docs/runbooks/ecs-runtime-evidence-handoff.md
 infra/scripts/ecs-demo-254-host-inventory.mjs
 tests/ecs-demo-254-host-inventory.test.mjs
 docs/runbooks/ecs-demo-254-bridge-install.md

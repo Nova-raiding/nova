@@ -19,3 +19,5 @@ ECS 宿主目前没有 Node 运行时。脚本使用 Node 内置 `crypto` 的 Ed
 ## 离线验证
 
 `npx vitest run tests/protected-attester.test.ts` 用临时测试密钥验证签名与现有 verifier 一致，并拒绝私钥不匹配、sidecar 篡改和失败路径证据不匹配。测试密钥只存在临时测试内存，不可用于 ECS 信任包。
+
+签名后，按 [ECS runtime evidence handoff](ecs-runtime-evidence-handoff.md) 创建 API 使用的独立只读副本。签名产物继续保持 root-only `0600`；`CAPABILITY_EVIDENCE_PATH` 指向 Compose 使用的 handoff 副本，并在运行 bundle/preflight 前核对两份文件字节和 SHA-256 完全一致。

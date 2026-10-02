@@ -11,3 +11,8 @@ The signer checks the manual workflow boundary and the three expected observatio
 The signing key proves that the protected host accepted the candidate. The candidate capture process must still be run against the intended runtime endpoint with authorized workspace credentials; a signature alone cannot prove the HTTP responses came from the real service. Preserve the capture logs and release identity observation as deployment evidence.
 
 The capture journal stores only a minimal, redacted projection of each observation. Its SHA-256 values cover those projected fields, not the raw HTTP response bodies, which are deleted after capture. Do not describe the journal digest or the signer as independent proof of HTTP response provenance; provenance depends on running the reviewed capture script against the exact candidate container described in the release runbook and retaining the operator's capture log.
+
+After signing, run the [runtime evidence handoff](ecs-runtime-evidence-handoff.md)
+for the capability file before rendering Compose. The signer output remains
+root-only `0600`; the handoff creates the immutable `root:10001 0640` file at
+the fixed API bind path without changing its bytes.
