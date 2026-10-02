@@ -110,7 +110,7 @@ describe('production evidence trust and replay scripts', () => {
   it('fails closed when the capability or capacity evidence path is missing or unreadable', () => {
     const directory = temporaryDirectory()
     const config = join(directory, 'production.yml')
-    writeFileSync(config, 'platform_operations_mode: manual\n')
+    writeFileSync(config, 'platform_operations_mode: manual\nrelease_id: candidate-test-1\n')
     const missingCapability = join(directory, 'missing-capability.json')
     const unreadableCapability = join(directory, 'unreadable-capability.json')
     symlinkSync(join(directory, 'absent-target.json'), unreadableCapability)
