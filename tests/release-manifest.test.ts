@@ -58,7 +58,7 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(144)
+    expect(manifest.artifacts).toHaveLength(149)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',
@@ -86,6 +86,8 @@ describe('release manifest', () => {
       'tests/release-manifest-gate.ts',
       'docs/runbooks/chatgpt-candidate-host-route.md',
       'docs/runbooks/ecs-verified-compose-deploy.md',
+      'docs/runbooks/ecs-production-capability-attester.md',
+      'docs/runbooks/ecs-manual-operations-attester.md',
       'services/payment-gateway/index.mjs',
       'services/payment-gateway/alipay.mjs',
       'services/payment-gateway/alipay.d.mts',
@@ -115,6 +117,9 @@ describe('release manifest', () => {
       'infra/scripts/ecs-compose-published-ports.mjs',
       'infra/scripts/ecs-compose-published-ports.d.mts',
       'infra/scripts/deploy-preflight-ecs.sh',
+      'infra/protected/install-ecs-runtime-evidence.mjs',
+      'infra/protected/install-ecs-runtime-evidence.test.mjs',
+      'docs/runbooks/ecs-runtime-evidence-handoff.md',
       'tests/ecs-compose-published-ports.test.ts',
       'infra/scripts/build-ecs-release-images.sh',
       'infra/scripts/verify-ecs-ops-auth-mode.sh',
