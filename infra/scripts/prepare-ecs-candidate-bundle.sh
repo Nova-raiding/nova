@@ -84,6 +84,7 @@ cat > "$manifest" <<'EOF'
 package.json
 package-lock.json
 apps/api/src/server.ts
+apps/api/src/redis-ports.ts
 apps/api/src/safe-evidence-file.ts
 apps/api/src/safe-evidence-file.test.ts
 apps/api/src/scanner-health.test.ts
@@ -293,6 +294,9 @@ packages/ai/src/image-editor.ts
 packages/ai/src/image-facts.ts
 packages/ai/src/image-generator.ts
 packages/ai/src/image-generator.test.ts
+packages/ai/src/platform-model-gate.ts
+packages/ai/src/platform-model-gate.test.ts
+packages/ai/src/platform-model-gate.polling.test.ts
 packages/ai/src/relay-usage.ts
 packages/ai/src/relay-usage.test.ts
 packages/ai/src/video-generator.ts
@@ -339,6 +343,8 @@ tests/operations-scripts.test.ts
 apps/worker/src/scanner-heartbeat.ts
 apps/worker/src/scanner-container-healthcheck.ts
 apps/worker/src/scanner-container-healthcheck.test.ts
+apps/worker/src/main.ts
+apps/worker/src/redis-transport.ts
 demo/merchant-studio/src/manual-platform-account-discovery.test.ts
 infra/scripts/validate-production-config-yaml.rb
 infra/protected/ecs-bridge-b-journal-store.mjs
