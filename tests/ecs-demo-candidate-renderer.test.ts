@@ -87,6 +87,22 @@ describe('protected isolated ECS demo candidate renderer', () => {
     expect(compose.services.api.environment.RELEASE_IMAGE_SET_DIGEST).toMatch(/^sha256:[0-9a-f]{64}$/u)
     expect(compose.services.api.environment.RELEASE_MANIFEST_SHA256).toBe(createHash('sha256').update(readFileSync(join(value.output, 'candidate-manifest.json'))).digest('hex'))
     expect(JSON.parse(readFileSync(join(value.output, 'candidate-manifest.json'), 'utf8')).renderer_sha256).toMatch(/^[0-9a-f]{64}$/u)
+    const capsuleText = readFileSync(join(value.output, 'candidate-review-capsule.json'), 'utf8')
+    const capsule = JSON.parse(capsuleText)
+    expect(capsule).toMatchObject({
+      schema_version: '1', kind: 'ecs-compose-review-capsule', status: 'review_only',
+      deployable: false, production_go: false, release_id: 'release-b77b551a-review', git_sha: gitSha,
+      image_set_digest: compose.services.api.environment.RELEASE_IMAGE_SET_DIGEST, compose_project: project,
+      migration_target: 1, public_ports: [],
+      rollback: { strategy: 'forward_only', schema_downgrade: false, preserve_volumes: true, production_cutover_authorized: false },
+    })
+    expect(capsule.reproducible_binding).toMatchObject({
+      source_sha256: sourceSha, renderer_sha256: expect.stringMatching(/^[0-9a-f]{64}$/u), image_set_digest: capsule.image_set_digest, migration_target: 1,
+    })
+    expect(capsule.artifact_digests.candidate_manifest_sha256).toBe(createHash('sha256').update(readFileSync(join(value.output, 'candidate-manifest.json'))).digest('hex'))
+    expect(capsule.artifact_digests.candidate_compose_sha256).toBe(createHash('sha256').update(composeText).digest('hex'))
+    expect(capsuleText).not.toContain('relay-private-test-key')
+    expect(capsuleText).not.toMatch(/MODEL_RELAY_API_KEY|POSTGRES_PASSWORD|postgres:\/\//u)
     for (const service of Object.values(compose.services) as any[]) expect(service.ports ?? []).toEqual([])
     expect(Object.values(compose.volumes).map((entry: any) => entry.name).sort()).toEqual([
       `${project}_postgres_data`, `${project}_redis_data`,
@@ -113,7 +129,7 @@ describe('protected isolated ECS demo candidate renderer', () => {
     expect(roleUrls.every(url => url.hostname === 'postgres' && /^[0-9a-f]{48}$/u.test(url.password))).toBe(true)
     expect(readFileSync(join(value.output, 'candidate.env'), 'utf8')).toBe('MODEL_RELAY_API_KEY=relay-private-test-key\n')
     expect(composeText).not.toContain('relay-private-test-key')
-    for (const name of ['candidate.env', 'candidate.compose.json', 'candidate-identity.txt', 'candidate-manifest.json']) {
+    for (const name of ['candidate.env', 'candidate.compose.json', 'candidate-identity.txt', 'candidate-manifest.json', 'candidate-review-capsule.json']) {
       expect(lstatSync(join(value.output, name)).mode & 0o777).toBe(0o600)
     }
     expect(validateDemoCompose(compose, project)).toBe(true)

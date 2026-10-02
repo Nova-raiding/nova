@@ -20,6 +20,7 @@ trap 'rm -f -- "$filtered_config_path"' EXIT
 sed -E '/^[[:space:]]*#/d; s/[[:space:]]+#.*$//' "$config_path" > "$filtered_config_path"
 : "${RELEASE_ID:?RELEASE_ID is required}"
 printf '%s\n' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo "RELEASE_ID contains unsafe characters" >&2; exit 1; }
+ruby "$repo_root/infra/scripts/validate-production-release-binding.rb" "$config_path" "$RELEASE_ID"
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
 printf '%s\n' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo "DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters" >&2; exit 1; }
 : "${IMAGE_DIGESTS_JSON:?IMAGE_DIGESTS_JSON is required with merchant-api, merchant-worker, merchant-ui, merchant-ops-ui and clamav digests}"

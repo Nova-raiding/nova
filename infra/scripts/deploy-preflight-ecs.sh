@@ -12,6 +12,7 @@ root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd -P)
 config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 [ -f "$config_path" ] || { echo 'PRODUCTION_CONFIG_PATH or config path is required' >&2; exit 2; }
 : "${RELEASE_ID:?RELEASE_ID is required}"
+ruby "$root/infra/scripts/validate-production-release-binding.rb" "$config_path" "$RELEASE_ID"
 : "${CAPACITY_PROFILE:?CAPACITY_PROFILE must be explicit: no_load for this release, or an approved load profile}"
 : "${DEPLOYMENT_SCOPE:=full}"
 case "$DEPLOYMENT_SCOPE" in

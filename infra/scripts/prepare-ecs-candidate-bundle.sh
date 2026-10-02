@@ -285,8 +285,10 @@ demo/merchant-studio/scripts/verify-production-copy.mjs
 demo/merchant-studio/scripts/verify-production-copy.test.mjs
 infra/scripts/deploy-preflight-ecs.sh
 infra/scripts/deploy-preflight.sh
+infra/scripts/validate-production-release-binding.rb
 infra/scripts/check-mcp-integration-production.mjs
 tests/mcp-integration-production-script.test.ts
+tests/production-config-release-binding.test.ts
 infra/scripts/verify-ecs-ops-auth-mode.sh
 packages/ai/src/embedding.ts
 packages/ai/src/generator.ts

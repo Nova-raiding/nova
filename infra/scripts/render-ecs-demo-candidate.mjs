@@ -290,7 +290,34 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
     'x-candidate-env-path': envPath,
   }
   validateDemoCompose(compose, project)
-  return { compose, envText: `MODEL_RELAY_API_KEY=${relayKey}\n`, identityText: `${Object.entries(identity).map(([key, value]) => `${key}=${value}`).join('\n')}\n`, manifestText, manifestSha, imageSetDigest, rendererSha256 }
+  // Keep the review/rollback identity binding explicit and secret-safe.  The
+  // capsule contains only identities and hashes of protected inputs; it never
+  // copies the generated database credentials or relay key.  It is explicitly
+  // review-only so it cannot be mistaken for the production rollback capsule.
+  const envText = `MODEL_RELAY_API_KEY=${relayKey}\n`
+  const identityText = `${Object.entries(identity).map(([key, value]) => `${key}=${value}`).join('\n')}\n`
+  const composeText = `${JSON.stringify(compose, null, 2)}\n`
+  const imageDigestsCanonical = Object.keys(imageDigests).sort().map(key => `${key}=${imageDigests[key]}\n`).join('')
+  const reviewCapsule = {
+    schema_version: '1', kind: 'ecs-compose-review-capsule', status: 'review_only', deployable: false, production_go: false,
+    release_id: identity.release_id, git_sha: identity.git_sha, source_sha256: identity.source_sha256,
+    candidate_manifest_sha256: manifestSha, image_set_digest: imageSetDigest, renderer_sha256: rendererSha256,
+    compose_project: project, migration_target: migrationTarget, public_ports: [],
+    reproducible_binding: { source_sha256: identity.source_sha256, renderer_sha256: rendererSha256,
+      image_set_digest: imageSetDigest, migration_target: migrationTarget },
+    artifact_digests: {
+      candidate_compose_sha256: hash(composeText), candidate_env_sha256: hash(envText),
+      candidate_identity_sha256: hash(identityText), candidate_manifest_sha256: manifestSha,
+      image_digests_sha256: hash(imageDigestsCanonical),
+    },
+    rollback: { strategy: 'forward_only', schema_downgrade: false, preserve_volumes: true,
+      target_migration_tail: migrationTarget, production_cutover_authorized: false },
+  }
+  const reviewCapsuleText = `${JSON.stringify(reviewCapsule, null, 2)}\n`
+  if (reviewCapsuleText.includes(relayKey) || /MODEL_RELAY_API_KEY|POSTGRES_PASSWORD|postgres:\/\//u.test(reviewCapsuleText)) {
+    fail('review capsule would contain protected credential material')
+  }
+  return { compose, envText, identityText, composeText, manifestText, manifestSha, imageSetDigest, rendererSha256, reviewCapsuleText }
 }
 
 function createExclusive(path, contents, created) {
@@ -327,7 +354,7 @@ export function main(argv = process.argv.slice(2)) {
   inspectPath(roleVerifier, 'runtime role verifier', 'file')
   inspectPath(candidateRoles, 'isolated candidate role provisioner', 'file')
   const envPath = join(paths.outputDir, 'candidate.env')
-  const outputs = ['candidate.env', 'candidate.compose.json', 'candidate-identity.txt', 'candidate-manifest.json']
+  const outputs = ['candidate.env', 'candidate.compose.json', 'candidate-identity.txt', 'candidate-manifest.json', 'candidate-review-capsule.json']
   for (const name of outputs) {
     try { lstatSync(join(paths.outputDir, name)); fail('candidate output already exists; refusing overwrite') }
     catch (error) { if (error?.code !== 'ENOENT') throw error }
@@ -368,6 +395,7 @@ export function main(argv = process.argv.slice(2)) {
     createExclusive(join(paths.outputDir, 'candidate.compose.json'), `${JSON.stringify(rendered.compose, null, 2)}\n`, created)
     createExclusive(join(paths.outputDir, 'candidate-identity.txt'), rendered.identityText, created)
     createExclusive(join(paths.outputDir, 'candidate-manifest.json'), rendered.manifestText, created)
+    createExclusive(join(paths.outputDir, 'candidate-review-capsule.json'), rendered.reviewCapsuleText, created)
   } catch (error) {
     for (const path of created.reverse()) { try { unlinkSync(path) } catch {} }
     throw error

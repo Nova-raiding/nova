@@ -368,7 +368,7 @@ describe('deployment operation scripts', () => {
       clamav: 'sha256:' + 'f'.repeat(64),
     }
     writeFileSync(config, [
-      'plugin_enabled: true', 'merchant_bearer_hostname: merchant.example.com', 'app_base_url: https://merchant.example.com', 'ops_base_url: https://ops.yxsona.com', 'mcp_base_url: https://merchant.example.com', 'oauth_callback_base_url: https://merchant.example.com/v1/oauth/callback', 'OPS_AUTH_MODE: password',
+      'plugin_enabled: true', 'release_id: release-1', 'merchant_bearer_hostname: merchant.example.com', 'app_base_url: https://merchant.example.com', 'ops_base_url: https://ops.yxsona.com', 'mcp_base_url: https://merchant.example.com', 'oauth_callback_base_url: https://merchant.example.com/v1/oauth/callback', 'OPS_AUTH_MODE: password',
       'auth_enforcement: strict', 'mcp_authorization_mode: enforce', 'durable_platform_assignments_required: true', 'platform_operations_mode: official_api', 'require_approved_asset_for_generation: true', 'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
       'jd_auth_enabled: true', 'jd_read_enabled: true', 'jd_write_enabled: true',
       'taobao_tmall_auth_enabled: true', 'taobao_tmall_read_enabled: true', 'taobao_tmall_write_enabled: true',
@@ -503,6 +503,7 @@ describe('deployment operation scripts', () => {
     expect(ecsDeployPreflight).toContain('capacity_profile=$CAPACITY_PROFILE')
     expect(ecsDeployPreflight).not.toContain('CAPACITY_PROFILE:-pilot_50')
     expect(ecsDeployPreflight).toContain('validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"')
+    expect(ecsDeployPreflight).toContain('validate-production-release-binding.rb')
     expect(ecsDeployPreflight).toContain('validate-ecs-compose-release.rb')
     expect(ecsDeployPreflight.indexOf('validate-ecs-production-compose.mjs')).toBeLessThan(ecsDeployPreflight.indexOf('validate-ecs-compose-release.rb'))
     expect(ecsDeployPreflight).toContain('validate-production-evidence-trust.sh')
@@ -516,6 +517,7 @@ describe('deployment operation scripts', () => {
     expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('for tool in node npm npx ruby git docker psql shasum')
     expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).not.toContain('CAPACITY_PROFILE:-pilot_50')
     const deployPreflight = readFileSync('infra/scripts/deploy-preflight.sh', 'utf8')
+    expect(deployPreflight).toContain('validate-production-release-binding.rb')
     expect(deployPreflight).toContain('codex-app-host-evidence-gate.ts')
     expect(deployPreflight.match(/model-relay-evidence-gate\.ts[^\n]*/g)?.every(line => line.includes('--require-artifacts'))).toBe(true)
     expect(deployPreflight.match(/model-relay-evidence-gate\.ts[^\n]*/g)?.every(line => ['--expected-release-git-sha "$release_git_sha"', '--expected-image-set-digest "$image_set_digest"', '--expected-manifest-sha256 "$manifest_sha256"', '--expected-deployment-nonce "$DEPLOYMENT_NONCE"'].every(binding => line.includes(binding)))).toBe(true)
