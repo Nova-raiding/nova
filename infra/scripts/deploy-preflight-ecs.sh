@@ -41,8 +41,13 @@ esac
 : "${OCR_MAX_OUTPUT_TOKENS:?OCR_MAX_OUTPUT_TOKENS is required for production OCR}"
 : "${MODEL_RELAY_API_KEY:?MODEL_RELAY_API_KEY is required for text and video relay access}"
 if [ "$DEPLOYMENT_SCOPE" = full ]; then
+  # Source evidence paths are the signed, immutable artifacts consumed by the
+  # manifest and bundle exact-path gates. Runtime paths are separate,
+  # release-scoped handoff copies mounted into the API containers.
   : "${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required for full production acceptance}"
   : "${CAPACITY_REPORT_PATH:?CAPACITY_REPORT_PATH is required for full production acceptance}"
+  : "${CAPABILITY_RUNTIME_EVIDENCE_PATH:?CAPABILITY_RUNTIME_EVIDENCE_PATH is required for full production acceptance}"
+  : "${CAPACITY_RUNTIME_EVIDENCE_PATH:?CAPACITY_RUNTIME_EVIDENCE_PATH is required for full production acceptance}"
   : "${MODEL_RELAY_EVIDENCE_PATH:?MODEL_RELAY_EVIDENCE_PATH is required for full production acceptance}"
   : "${CODEX_APP_HOST_EVIDENCE_PATH:?CODEX_APP_HOST_EVIDENCE_PATH is required for full production acceptance}"
   : "${OBJECT_STORAGE_EVIDENCE_PATH:?OBJECT_STORAGE_EVIDENCE_PATH is required for full production acceptance}"
@@ -155,7 +160,7 @@ if [ ! -d "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ "$(realpath "$PAYMENT_PRO
   echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be a canonical non-symlink directory owned by UID 100 with mode 0700' >&2
   exit 1
 fi
-printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo 'unsafe RELEASE_ID' >&2; exit 1; }
+printf '%s' "$RELEASE_ID" | grep -Eq '^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' || { echo 'RELEASE_ID must use a release- prefix and contain only safe characters' >&2; exit 1; }
 printf '%s' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo 'DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters' >&2; exit 1; }
 case "$REDIS_URL" in
   rediss://*) ;;
@@ -164,7 +169,7 @@ case "$REDIS_URL" in
     ;;
   *) echo 'production REDIS_URL must use rediss:// or the private single-node ECS Redis service' >&2; exit 1 ;;
 esac
-for tool in node npm npx ruby git docker psql shasum; do
+for tool in node npm npx ruby git docker psql shasum cmp; do
   command -v "$tool" >/dev/null 2>&1 || { echo "ECS deploy preflight requires $tool on the execution host; provision the reviewed release toolchain before launch" >&2; exit 1; }
 done
 [ -x "$root/node_modules/.bin/tsx" ] || { echo 'ECS deploy preflight requires the reviewed, locally installed tsx dependency (npm ci); remote npx downloads are forbidden' >&2; exit 1; }
@@ -184,10 +189,12 @@ for file in "$RENDERED_COMPOSE_PATH"; do
 done
 if [ "$DEPLOYMENT_SCOPE" = full ]; then
   : "${PRODUCTION_EVIDENCE_ARTIFACT_ROOT:?PRODUCTION_EVIDENCE_ARTIFACT_ROOT is required for full production acceptance}"
-  for file in "$CAPABILITY_EVIDENCE_PATH" "$CAPACITY_REPORT_PATH" "$MODEL_RELAY_EVIDENCE_PATH" "$CODEX_APP_HOST_EVIDENCE_PATH" "$OBJECT_STORAGE_EVIDENCE_PATH" "$CANONICAL_CUTOVER_EVIDENCE_PATH" "$RELEASE_MANIFEST_PATH" "$PAYMENT_EVIDENCE_PATH" "$RESTORE_EVIDENCE_PATH" "$RELEASE_EVIDENCE_BUNDLE_PATH"; do
+  for file in "$CAPABILITY_EVIDENCE_PATH" "$CAPACITY_REPORT_PATH" "$CAPABILITY_RUNTIME_EVIDENCE_PATH" "$CAPACITY_RUNTIME_EVIDENCE_PATH" "$MODEL_RELAY_EVIDENCE_PATH" "$CODEX_APP_HOST_EVIDENCE_PATH" "$OBJECT_STORAGE_EVIDENCE_PATH" "$CANONICAL_CUTOVER_EVIDENCE_PATH" "$RELEASE_MANIFEST_PATH" "$PAYMENT_EVIDENCE_PATH" "$RESTORE_EVIDENCE_PATH" "$RELEASE_EVIDENCE_BUNDLE_PATH"; do
     [ -f "$file" ] || { echo "evidence file not found: $file" >&2; exit 1; }
   done
-  node "$root/infra/scripts/verify-ecs-evidence-readable-by-api.mjs" "$CAPABILITY_EVIDENCE_PATH" "$CAPACITY_REPORT_PATH" --release-id "$RELEASE_ID"
+  node "$root/infra/scripts/verify-ecs-evidence-readable-by-api.mjs" "$CAPABILITY_RUNTIME_EVIDENCE_PATH" "$CAPACITY_RUNTIME_EVIDENCE_PATH" --release-id "$RELEASE_ID"
+  cmp -s "$CAPABILITY_EVIDENCE_PATH" "$CAPABILITY_RUNTIME_EVIDENCE_PATH" || { echo 'capability runtime evidence differs from signed source' >&2; exit 1; }
+  cmp -s "$CAPACITY_REPORT_PATH" "$CAPACITY_RUNTIME_EVIDENCE_PATH" || { echo 'capacity runtime evidence differs from signed source' >&2; exit 1; }
   [ -d "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" ] || { echo 'production evidence artifact root not found' >&2; exit 1; }
 fi
 cd "$root"
@@ -203,7 +210,14 @@ if [ "$embedding_enabled" = true ]; then
   echo 'knowledge_vector_index_enabled=true is blocked: runtime readiness remains fail-closed until semantic query authorization, budget reservation and cost settlement are implemented' >&2
   exit 1
 fi
-node infra/scripts/validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"
+if [ "$DEPLOYMENT_SCOPE" = full ]; then
+  EXPECTED_ECS_RUNTIME_EVIDENCE_RELEASE_ID="$RELEASE_ID" \
+  CAPABILITY_RUNTIME_EVIDENCE_PATH="$CAPABILITY_RUNTIME_EVIDENCE_PATH" \
+  CAPACITY_RUNTIME_EVIDENCE_PATH="$CAPACITY_RUNTIME_EVIDENCE_PATH" \
+    node infra/scripts/validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"
+else
+  node infra/scripts/validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"
+fi
 ruby infra/scripts/validate-ecs-embedding-config-binding.rb "$config_path" "$RENDERED_COMPOSE_PATH"
 image_set_digest=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 sh infra/scripts/verify-ecs-ops-ui-auth-mode.sh "$OPS_UI_IMAGE_REF" "$OPS_AUTH_MODE"

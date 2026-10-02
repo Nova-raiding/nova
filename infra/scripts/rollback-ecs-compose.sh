@@ -184,6 +184,14 @@ compose() {
   esac
 }
 compose config --format json | node "$root/infra/scripts/validate-ecs-compose-project.mjs" - "$project" || fail validation_failed 'rollback Compose resources do not belong to the selected ECS project'
+# Validate the frozen rollback Compose evidence mounts before any compatibility
+# probe or service mutation. A rollback capsule that points at an old/demo
+# placeholder or a named volume must fail closed just like a forward release.
+compose config --format json | EXPECTED_ECS_RUNTIME_EVIDENCE_RELEASE_ID="$TARGET_RELEASE_ID" node "$root/infra/scripts/validate-ecs-production-compose.mjs" || fail validation_failed 'rollback Compose runtime evidence mounts are not bound to the target release'
+rollback_runtime_root=/var/lib/merchant-release-security/runtime-evidence/$TARGET_RELEASE_ID
+node "$root/infra/scripts/verify-ecs-evidence-readable-by-api.mjs" \
+  "$rollback_runtime_root/platform-capability.json" "$rollback_runtime_root/capacity-report.json" \
+  --release-id "$TARGET_RELEASE_ID" || fail validation_failed 'rollback runtime evidence handoff is unavailable or unreadable by the API'
 rollback_images=$(compose config --images) || fail validation_failed 'could not enumerate target rollback images'
 [ -n "$rollback_images" ] || fail validation_failed 'target rollback release contains no images'
 printf '%s\n' "$rollback_images" | while IFS= read -r image; do

@@ -59,6 +59,12 @@ function protectedDirectory(path, label) {
   assert(metadata.uid === 0 && (metadata.mode & 0o022) === 0, `${label} must be root-owned and not group/other writable`)
 }
 
+export function validateRuntimeEvidenceDirectoryMetadata(metadata) {
+  assert(metadata && metadata.isDirectory() && !metadata.isSymbolicLink()
+    && metadata.uid === 0 && (metadata.mode & 0o777) === 0o700,
+  'runtime evidence root must be root-owned mode 0700')
+}
+
 function readSource(sourcePath) {
   canonicalAbsolute(sourcePath, 'source')
   protectedDirectory(dirname(sourcePath), 'source parent')
@@ -106,13 +112,13 @@ function validateTarget(kind, targetPath) {
   protectedDirectory(rootParent, 'runtime evidence root parent')
   try {
     const metadata = lstatSync(RUNTIME_EVIDENCE_TARGET_ROOT)
-    assert(metadata.isDirectory() && !metadata.isSymbolicLink(), 'runtime evidence root must be a regular directory')
+    validateRuntimeEvidenceDirectoryMetadata(metadata)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
     mkdirSync(RUNTIME_EVIDENCE_TARGET_ROOT, { mode: 0o700 })
     chmodSync(RUNTIME_EVIDENCE_TARGET_ROOT, 0o700)
   }
-  protectedDirectory(RUNTIME_EVIDENCE_TARGET_ROOT, 'runtime evidence root')
+  validateRuntimeEvidenceDirectoryMetadata(lstatSync(RUNTIME_EVIDENCE_TARGET_ROOT))
   try {
     const metadata = lstatSync(parent)
     assert(metadata.isDirectory() && !metadata.isSymbolicLink(), 'target parent must be a regular directory')

@@ -1,6 +1,6 @@
 # Manual operations capability evidence on ECS
 
-In the current `manual` release profile, `CAPABILITY_EVIDENCE_PATH` is a signed `manual-operations-evidence/1` file. The unsigned candidate comes from `infra/scripts/capture-manual-operations-evidence.sh`, which observes the deployed release identity, reads a known manual report in the merchant workspace, and requires a foreign workspace request to fail. The candidate does not claim an official platform API receipt. This route is separate from the future `official_api` capability attester.
+In the current `manual` release profile, `CAPABILITY_EVIDENCE_PATH` is a signed `manual-operations-evidence/1` source file. The unsigned candidate comes from `infra/scripts/capture-manual-operations-evidence.sh`, which observes the deployed release identity, reads a known manual report in the merchant workspace, and requires a foreign workspace request to fail. The candidate does not claim an official platform API receipt. This route is separate from the future `official_api` capability attester.
 
 Install reviewed `infra/protected/attest-manual-operations-evidence.mjs` through `install-ecs-release-controls.mjs --control manual` from the exact release commit. Its installed executable is `/usr/local/libexec/merchant/attest-manual-operations-evidence`, and the fixed digest receipt is `/run/release-security/evidence-trust/production-manual-operations-attester-sha256`. Use the reviewed protected Node runtime and verify both digest and ownership before executing it, following the release evidence bundle attester installation procedure. Do not execute the signer from the mutable repository.
 
@@ -14,5 +14,7 @@ The capture journal stores only a minimal, redacted projection of each observati
 
 After signing, run the [runtime evidence handoff](ecs-runtime-evidence-handoff.md)
 for the capability file before rendering Compose. The signer output remains
-root-only `0600`; the handoff creates the immutable `root:10001 0640` file at
-the fixed API bind path without changing its bytes.
+root-only `0600` at `CAPABILITY_EVIDENCE_PATH`; the handoff creates the
+release-scoped `root:10001 0440` file at `CAPABILITY_RUNTIME_EVIDENCE_PATH`
+without changing its bytes. The manifest and bundle gates use the source file;
+the API bind mount uses only the runtime handoff.

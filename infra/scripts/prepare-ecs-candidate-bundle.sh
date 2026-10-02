@@ -377,15 +377,12 @@ EOF
 # Add every tracked input once so remote comparison cannot silently omit build
 # dependencies or produce duplicate report rows.
 scope_list=$(mktemp "${TMPDIR:-/tmp}/ecs-candidate-manifest.XXXXXX")
-trap 'rm -f "$scope_list"' 0 HUP INT TERM
+trap 'rm -f "$scope_list" "$manifest.next"' 0 HUP INT TERM
 for scope in packages/persistence/src/migrations apps/ops-console demo/merchant-studio infra/docker infra/nginx; do
-  git -C "$root" ls-files -- "$scope" > "$scope_list"
-  while IFS= read -r path; do
-    if ! grep -Fxq "$path" "$manifest"; then
-      printf '%s\n' "$path" >> "$manifest"
-    fi
-  done < "$scope_list"
+  git -C "$root" ls-files -- "$scope" >> "$scope_list"
 done
+awk '!seen[$0]++' "$manifest" "$scope_list" > "$manifest.next"
+mv "$manifest.next" "$manifest"
 rm -f "$scope_list"
 trap - 0 HUP INT TERM
 
@@ -398,24 +395,71 @@ done < "$manifest"
 
 printf 'status\tlocal_sha256\tremote_sha256\tpath\n' > "$report"
 # Read all remote checksums through one SSH connection. A full migration
-# inventory otherwise establishes hundreds of connections for one review.
+# inventory otherwise establishes hundreds of connections for one review. Keep
+# the checksum process itself batched as well: starting one sha256sum process
+# for every path made large (roughly 1,000-file) reviews spend most of their
+# time in process startup rather than hashing. The batch boundary keeps the
+# argument vector comfortably below the host ARG_MAX while preserving the
+# exact path list and read-only behavior.
+checksum_batch_size=128
+manifest_count=$(wc -l < "$manifest" | tr -d ' ')
+manifest_abs="$(CDPATH='' cd -- "$(dirname "$manifest")" && pwd)/$(basename "$manifest")"
+phase_start_epoch=$(date +%s)
+printf 'candidate phase remote-checksum start: files=%s\n' "$manifest_count" >&2
 remote_checksums="$output_dir/remote-checksums.txt"
-ssh "$remote_alias" "cd '$remote_root' && while IFS= read -r path; do if [ -f \"\$path\" ]; then sha256sum \"\$path\"; else printf 'MISSING  %s\\n' \"\$path\"; fi; done" < "$manifest" > "$remote_checksums"
-while IFS= read -r path; do
-  local_sha=$(shasum -a 256 "$root/$path" | awk '{print $1}')
-  remote_line=$(awk -v wanted="$path" '$2 == wanted { print; exit }' "$remote_checksums")
-  [ -n "$remote_line" ] || { echo "remote checksum missing: $path" >&2; exit 1; }
-  remote_sha=$(printf '%s\n' "$remote_line" | awk '{print $1}')
-  if [ "$remote_sha" = MISSING ]; then
-    status=missing_remote
-    remote_sha=-
-  elif [ "$local_sha" = "$remote_sha" ]; then
-    status=same
-  else
-    status=review_required
-  fi
-  printf '%s\t%s\t%s\t%s\n' "$status" "$local_sha" "$remote_sha" "$path" >> "$report"
-done < "$manifest"
+ssh "$remote_alias" "cd '$remote_root' && set -eu; set --; batch_count=0; while IFS= read -r path; do if [ -f \"\$path\" ]; then set -- \"\$@\" \"\$path\"; batch_count=\$((batch_count + 1)); if [ \"\$batch_count\" -ge $checksum_batch_size ]; then sha256sum -- \"\$@\"; set --; batch_count=0; fi; else printf 'MISSING  %s\\n' \"\$path\"; fi; done; if [ \"\$batch_count\" -gt 0 ]; then sha256sum -- \"\$@\"; fi" < "$manifest_abs" > "$remote_checksums"
+printf 'candidate phase remote-checksum done: seconds=%s\n' "$(( $(date +%s) - phase_start_epoch ))" >&2
+
+# Hash local inputs with the same bounded batching strategy. The previous
+# one-process-per-file loop was particularly expensive on macOS and also did
+# one awk scan of the remote output for every path. Keep both checksum maps and
+# join them in one awk pass below.
+phase_start_epoch=$(date +%s)
+printf 'candidate phase local-checksum start: files=%s\n' "$manifest_count" >&2
+local_checksums="$output_dir/local-checksums.txt"
+(
+  cd "$root"
+  set --
+  batch_count=0
+  while IFS= read -r path; do
+    set -- "$@" "$path"
+    batch_count=$((batch_count + 1))
+    if [ "$batch_count" -ge "$checksum_batch_size" ]; then
+      shasum -a 256 "$@"
+      set --
+      batch_count=0
+    fi
+  done < "$manifest_abs"
+  if [ "$batch_count" -gt 0 ]; then shasum -a 256 "$@"; fi
+) > "$local_checksums"
+printf 'candidate phase local-checksum done: seconds=%s\n' "$(( $(date +%s) - phase_start_epoch ))" >&2
+
+phase_start_epoch=$(date +%s)
+printf 'candidate phase checksum-compare start: files=%s\n' "$manifest_count" >&2
+if ! awk '
+  NR == FNR { local[substr($0, 67)] = substr($0, 1, 64); next }
+  FILENAME == ARGV[2] {
+    missing = substr($0, 1, 7) == "MISSING"
+    path = missing ? substr($0, 10) : substr($0, 67)
+    remote_seen[path] = 1
+    remote[path] = missing ? "-" : substr($0, 1, 64)
+    next
+  }
+  {
+    path = $0
+    if (!(path in remote_seen) || !(path in local)) exit 1
+    local_sha = local[path]
+    remote_sha = remote[path]
+    if (remote_sha == "-") status = "missing_remote"
+    else if (local_sha == remote_sha) status = "same"
+    else status = "review_required"
+    printf "%s\t%s\t%s\t%s\n", status, local_sha, remote_sha, path
+  }
+' "$local_checksums" "$remote_checksums" "$manifest_abs" >> "$report"; then
+  echo 'candidate checksum output did not cover every manifest path' >&2
+  exit 1
+fi
+printf 'candidate phase checksum-compare done: seconds=%s\n' "$(( $(date +%s) - phase_start_epoch ))" >&2
 
 printf '%s\n' "$revision" > "$output_dir/source-head.txt"
 # Match build-ecs-candidate-gates-image.sh exactly: the canonical source

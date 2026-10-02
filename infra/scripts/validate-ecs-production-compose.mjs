@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 
-const source = process.argv[2] ? readFileSync(process.argv[2], 'utf8') : readFileSync(0, 'utf8')
+const source = process.argv[2] && process.argv[2] !== '-' ? readFileSync(process.argv[2], 'utf8') : readFileSync(0, 'utf8')
 const rendered = JSON.parse(source)
 
 function fail(message) {
@@ -16,6 +16,30 @@ function normalizedMounts(service) {
     }
     return { source: String(item?.source ?? ''), target: String(item?.target ?? ''), type: String(item?.type ?? ''), readOnly: item?.read_only === true }
   })
+}
+
+const runtimeEvidenceReleaseId = String(process.env.EXPECTED_ECS_RUNTIME_EVIDENCE_RELEASE_ID ?? '').trim()
+const runtimeEvidenceReleasePattern = /^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u
+const runtimeEvidenceBindings = Object.freeze({
+  capability: { env: 'CAPABILITY_RUNTIME_EVIDENCE_PATH', target: '/run/release-evidence/platform-capability.json', file: 'platform-capability.json' },
+  capacity: { env: 'CAPACITY_RUNTIME_EVIDENCE_PATH', target: '/run/release-evidence/capacity-report.json', file: 'capacity-report.json' },
+})
+
+function validateRuntimeEvidenceMount(serviceName, mounts, kind) {
+  const binding = runtimeEvidenceBindings[kind]
+  const candidates = mounts.filter(item => item.target.replace(/\/$/u, '') === binding.target)
+  if (candidates.length !== 1) fail(`${serviceName} must have exactly one ${kind} evidence bind mount`)
+  const mount = candidates[0]
+  if (mount.type !== 'bind') fail(`${serviceName} ${kind} evidence mount must be a bind mount`)
+  if (!mount.readOnly) fail(`${serviceName} must mount the release-bound ${kind} evidence read-only`)
+  const expectedSource = String(process.env[binding.env] ?? '').trim()
+  if (expectedSource && mount.source !== expectedSource) fail(`${serviceName} ${kind} evidence bind source must equal ${binding.env}`)
+  if (runtimeEvidenceReleaseId) {
+    if (!runtimeEvidenceReleasePattern.test(runtimeEvidenceReleaseId)) fail('EXPECTED_ECS_RUNTIME_EVIDENCE_RELEASE_ID is invalid')
+    const expectedPath = `/var/lib/merchant-release-security/runtime-evidence/${runtimeEvidenceReleaseId}/${binding.file}`
+    if (expectedSource && expectedSource !== expectedPath) fail(`${binding.env} must be the release-scoped runtime evidence path`)
+    if (mount.source !== expectedPath) fail(`${serviceName} ${kind} evidence bind source must be release-scoped for the selected release`)
+  }
 }
 
 const applicationServices = new Set([
@@ -100,9 +124,10 @@ for (const name of ['api', 'api-replica']) {
   const mounts = (rendered.services?.[name]?.volumes ?? []).map(item => typeof item === 'string' ? item : `${item.source ?? ''}:${item.target ?? ''}`)
   if (mounts.some(item => item.includes('alert_receiver'))) fail(`${name} must not mount alert receiver secrets while alerts are disabled`)
   if (String(environment.CAPABILITY_EVIDENCE_PATH ?? '') !== '/run/release-evidence/platform-capability.json') fail(`${name}.CAPABILITY_EVIDENCE_PATH must use the release evidence mount`)
-  if (!normalizedMounts(rendered.services?.[name]).some(item => item.target === '/run/release-evidence/platform-capability.json' && item.readOnly)) fail(`${name} must mount the release-bound capability evidence read-only`)
   if (String(environment.CAPACITY_REPORT_PATH ?? '') !== '/run/release-evidence/capacity-report.json') fail(`${name}.CAPACITY_REPORT_PATH must use the release evidence mount`)
-  if (!normalizedMounts(rendered.services?.[name]).some(item => item.target === '/run/release-evidence/capacity-report.json' && item.readOnly)) fail(`${name} must mount the release-bound capacity report read-only`)
+  const evidenceMounts = normalizedMounts(rendered.services?.[name])
+  validateRuntimeEvidenceMount(name, evidenceMounts, 'capability')
+  validateRuntimeEvidenceMount(name, evidenceMounts, 'capacity')
 }
 
 for (const name of ['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan']) {

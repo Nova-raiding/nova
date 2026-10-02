@@ -24,6 +24,8 @@ const paymentEnvironment = {
   MERCHANT_WORKSPACE_ID: 'ws_pilot_parity',
   CAPABILITY_EVIDENCE_PATH: '/tmp/test-capability-evidence.json',
   CAPACITY_REPORT_PATH: '/tmp/test-capacity-report.json',
+  CAPABILITY_RUNTIME_EVIDENCE_PATH: '/tmp/test-runtime-capability-evidence.json',
+  CAPACITY_RUNTIME_EVIDENCE_PATH: '/tmp/test-runtime-capacity-report.json',
   ASSET_STORAGE_BUCKET: 'test-production-bucket',
   ASSET_STORAGE_REGION: 'cn-test',
   ASSET_STORAGE_ENDPOINT: 'https://s3.oss-cn-test.aliyuncs.com',

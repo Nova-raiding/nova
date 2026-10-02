@@ -74,6 +74,9 @@ describe('ECS candidate bundle contract', () => {
     mkdirSync(bin)
 
     const sourceScript = readFileSync('infra/scripts/prepare-ecs-candidate-bundle.sh', 'utf8')
+    expect(sourceScript).toContain('checksum_batch_size=128')
+    expect(sourceScript).toContain('sha256sum -- \\\"\\$@\\\"')
+    expect(sourceScript).not.toContain('remote_line=$(awk')
     const manifestStart = sourceScript.indexOf("cat > \"$manifest\" <<'EOF'\n")
     const manifestEnd = sourceScript.indexOf('\nEOF', manifestStart)
     const manifestBody = sourceScript.slice(manifestStart + "cat > \"$manifest\" <<'EOF'\n".length, manifestEnd)
@@ -88,6 +91,14 @@ describe('ECS candidate bundle contract', () => {
     }
     writeFileSync(join(bin, 'ssh'), '#!/bin/sh\nwhile IFS= read -r path; do printf "MISSING  %s\\n" "$path"; done\n', { mode: 0o700 })
     chmodSync(join(bin, 'ssh'), 0o700)
+    const shasumCalls = join(sandbox, 'shasum-calls')
+    writeFileSync(join(bin, 'shasum'), `#!/bin/sh
+count=0
+[ -f '${shasumCalls}' ] && count=$(cat '${shasumCalls}')
+printf '%s\\n' "$((count + 1))" > '${shasumCalls}'
+exec /usr/bin/shasum "$@"
+`, { mode: 0o700 })
+    chmodSync(join(bin, 'shasum'), 0o700)
     execFileSync('git', ['init', '-q'], { cwd: root })
     execFileSync('git', ['add', '.'], { cwd: root })
     execFileSync('git', ['-c', 'user.name=Candidate Test', '-c', 'user.email=candidate@example.invalid', 'commit', '-qm', 'candidate'], { cwd: root })
@@ -100,12 +111,21 @@ describe('ECS candidate bundle contract', () => {
         encoding: 'utf8',
       })
       expect(result.status, result.stderr).toBe(0)
+      expect(result.stderr).toContain('candidate phase remote-checksum start: files=')
+      expect(result.stderr).toContain('candidate phase local-checksum done: seconds=')
+      expect(result.stderr).toContain('candidate phase checksum-compare done: seconds=')
+      // 290 manifest paths should be hashed in a few batches. A per-file
+      // process regression would make this count roughly equal to the
+      // manifest size and would reintroduce the observed >180s path.
+      expect(Number(readFileSync(shasumCalls, 'utf8').trim())).toBeLessThan(20)
 
       const archive = readFileSync(join(output, 'candidate-source.tar'))
       const identity = readFileSync(join(output, 'candidate-identity.txt'), 'utf8')
       const readme = readFileSync(join(output, 'README.txt'), 'utf8')
       const manifest = readFileSync(join(output, 'files.txt'))
       const syncPlan = readFileSync(join(output, 'sync-plan.tsv'))
+      const manifestPaths = manifest.toString('utf8').trimEnd().split('\n')
+      expect(new Set(manifestPaths).size).toBe(manifestPaths.length)
       expect(identity).toContain(`git_sha=${expectedSha}\n`)
       expect(identity).toContain(`source_sha256=sha256:${createHash('sha256').update(archive).digest('hex')}\n`)
       expect(identity).toContain(`comparison_manifest_sha256=sha256:${createHash('sha256').update(manifest).digest('hex')}\n`)

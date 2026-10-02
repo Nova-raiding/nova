@@ -558,8 +558,11 @@ services:
       DOUYIN_MEDIA_UPLOAD_EVIDENCE_VERIFIED_BY: ${DOUYIN_MEDIA_UPLOAD_EVIDENCE_VERIFIED_BY:-}
       DOUYIN_MEDIA_UPLOAD_EVIDENCE_VERIFIED_AT: ${DOUYIN_MEDIA_UPLOAD_EVIDENCE_VERIFIED_AT:-}
     volumes:
-      - ${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
-      - ${CAPACITY_REPORT_PATH:?CAPACITY_REPORT_PATH is required}:/run/release-evidence/capacity-report.json:ro
+      # The signed source artifacts stay root-only on the host. Only the
+      # release-scoped root:10001 runtime handoff copies are mounted into the
+      # API containers; the source paths remain inputs to the exact-path gates.
+      - ${CAPABILITY_RUNTIME_EVIDENCE_PATH:?CAPABILITY_RUNTIME_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
+      - ${CAPACITY_RUNTIME_EVIDENCE_PATH:?CAPACITY_RUNTIME_EVIDENCE_PATH is required}:/run/release-evidence/capacity-report.json:ro
       - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
       - /opt/merchant-deploy/deploy/secrets/postgres_server.crt:/run/secrets/postgres_server.crt:ro
 
@@ -572,8 +575,8 @@ services:
     # byte-for-byte identical across both API instances.
     environment: *ecs-production-api-environment
     volumes:
-      - ${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
-      - ${CAPACITY_REPORT_PATH:?CAPACITY_REPORT_PATH is required}:/run/release-evidence/capacity-report.json:ro
+      - ${CAPABILITY_RUNTIME_EVIDENCE_PATH:?CAPABILITY_RUNTIME_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
+      - ${CAPACITY_RUNTIME_EVIDENCE_PATH:?CAPACITY_RUNTIME_EVIDENCE_PATH is required}:/run/release-evidence/capacity-report.json:ro
       - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
       - /opt/merchant-deploy/deploy/secrets/postgres_server.crt:/run/secrets/postgres_server.crt:ro
 

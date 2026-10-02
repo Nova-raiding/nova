@@ -106,6 +106,8 @@ function renderFinalProductionCompose(inspectTemp = false) {
     ASSET_SCANNER_WORKSPACE_SIGNING_SECRET: credentials.scan.signing_secret,
     CAPABILITY_EVIDENCE_PATH: '/tmp/production-capability-evidence.json',
     CAPACITY_REPORT_PATH: '/tmp/production-capacity-report.json',
+    CAPABILITY_RUNTIME_EVIDENCE_PATH: '/tmp/production-runtime-capability-evidence.json',
+    CAPACITY_RUNTIME_EVIDENCE_PATH: '/tmp/production-runtime-capacity-evidence.json',
     PILOT_GATEWAY_IMAGE_REF: `registry.example/pilot-gateway@sha256:${'a'.repeat(64)}`,
   })
   for (const role of roles.filter(role => role !== 'scan')) {
@@ -216,6 +218,52 @@ describe('ECS production Compose contract', () => {
 
   it('accepts a production render without demo seeding', () => {
     expect(validate(valid)).toContain('contract passed')
+  })
+
+  it('mounts only release-scoped runtime handoff copies while keeping source evidence out of bind mounts', () => {
+    const rendered = renderFinalProductionCompose()
+    for (const serviceName of ['api', 'api-replica']) {
+      const volumes = (rendered.services[serviceName].volumes as Array<string | { source?: string; target?: string; read_only?: boolean }>).map(volume => typeof volume === 'string'
+        ? volume
+        : `${volume.source ?? ''}:${volume.target ?? ''}:${volume.read_only ? 'ro' : 'rw'}`)
+      expect(volumes).toContain('/tmp/production-runtime-capability-evidence.json:/run/release-evidence/platform-capability.json:ro')
+      expect(volumes).toContain('/tmp/production-runtime-capacity-evidence.json:/run/release-evidence/capacity-report.json:ro')
+      expect(volumes).not.toContain('/tmp/production-capability-evidence.json:/run/release-evidence/platform-capability.json:ro')
+      expect(volumes).not.toContain('/tmp/production-capacity-report.json:/run/release-evidence/capacity-report.json:ro')
+    }
+  })
+
+  it('binds both API replicas to the selected release runtime evidence sources', () => {
+    const rendered = structuredClone(valid) as any
+    const capability = '/var/lib/merchant-release-security/runtime-evidence/release-test/platform-capability.json'
+    const capacity = '/var/lib/merchant-release-security/runtime-evidence/release-test/capacity-report.json'
+    for (const serviceName of ['api', 'api-replica']) {
+      rendered.services[serviceName].volumes = [
+        `${capability}:/run/release-evidence/platform-capability.json:ro`,
+        `${capacity}:/run/release-evidence/capacity-report.json:ro`,
+      ]
+    }
+    expect(validate(rendered, {
+      CAPABILITY_RUNTIME_EVIDENCE_PATH: capability,
+      CAPACITY_RUNTIME_EVIDENCE_PATH: capacity,
+      EXPECTED_ECS_RUNTIME_EVIDENCE_RELEASE_ID: 'release-test',
+    })).toContain('contract passed')
+
+    const wrong = structuredClone(rendered) as any
+    wrong.services.api.volumes[0] = '/var/lib/merchant-release-security/runtime-evidence/release-old/platform-capability.json:/run/release-evidence/platform-capability.json:ro'
+    expect(() => validate(wrong, {
+      CAPABILITY_RUNTIME_EVIDENCE_PATH: capability,
+      CAPACITY_RUNTIME_EVIDENCE_PATH: capacity,
+      EXPECTED_ECS_RUNTIME_EVIDENCE_RELEASE_ID: 'release-test',
+    })).toThrow(/bind source must equal CAPABILITY_RUNTIME_EVIDENCE_PATH|release-scoped/u)
+
+    const namedVolume = structuredClone(rendered) as any
+    namedVolume.services['api-replica'].volumes[0] = { type: 'volume', source: 'release-evidence', target: '/run/release-evidence/platform-capability.json', read_only: true }
+    expect(() => validate(namedVolume, {
+      CAPABILITY_RUNTIME_EVIDENCE_PATH: capability,
+      CAPACITY_RUNTIME_EVIDENCE_PATH: capacity,
+      EXPECTED_ECS_RUNTIME_EVIDENCE_RELEASE_ID: 'release-test',
+    })).toThrow(/must be a bind mount/u)
   })
 
   it.each(['api', 'api-replica'] as const)('requires release-bound capability evidence to be mounted read-only in %s', serviceName => {
