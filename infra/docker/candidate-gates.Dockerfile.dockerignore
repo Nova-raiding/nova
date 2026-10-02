@@ -28,6 +28,7 @@ test-results
 .cache
 *.tar.gz
 screenshots
+docs/qa/evidence
 # See the root .dockerignore: the broader glob is required because
 # merchant-inventory.json / ops-inventory.json have no middle segment.
 *-inventory.json

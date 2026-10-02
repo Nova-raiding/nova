@@ -26,7 +26,7 @@ describe('ECS candidate gate image construction', () => {
     for (const path of ['.dockerignore', 'infra/docker/candidate-gates.Dockerfile.dockerignore']) {
       const ignore = readFileSync(path, 'utf8')
       const lines = ignore.split('\n').map(line => line.trim())
-      for (const entry of ['.env', '.env.*', '.env.production-config-path', 'test-results', '.codegraph', '*.tar.gz', 'screenshots', '*-inventory.json', '.DS_Store']) {
+      for (const entry of ['.env', '.env.*', '.env.production-config-path', 'test-results', '.codegraph', '*.tar.gz', 'screenshots', 'docs/qa/evidence', '*-inventory.json', '.DS_Store']) {
         expect(lines, `${path} must exclude ${entry}`).toContain(entry)
       }
       // The tracked, secret-free template must survive the `.env.*` rule.

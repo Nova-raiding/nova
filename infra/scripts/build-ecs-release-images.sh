@@ -127,7 +127,7 @@ else
     echo 'release image build requires a clean committed source tree' >&2; exit 2;
   }
   git -C "$root" archive --format=tar "$revision" \
-    ':(exclude)artifacts' ':(exclude)screenshots' > "$archive"
+    ':(exclude)artifacts' ':(exclude)screenshots' ':(exclude)docs/qa/evidence' > "$archive"
 fi
 source_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
 tar -xf "$archive" -C "$context"

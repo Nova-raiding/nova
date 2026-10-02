@@ -43,6 +43,7 @@ describe('bounded ECS release image builder', () => {
     expect(source).toContain("':(exclude)artifacts'")
     expect(source).not.toContain("':(exclude)dogfood'")
     expect(source).toContain("':(exclude)screenshots'")
+    expect(source).toContain("':(exclude)docs/qa/evidence'")
     expect(source).toContain('cp "$source_archive" "$archive"')
     expect(source).toContain('candidate source archive digest mismatch')
     expect(source).toContain('candidate identity release ID does not match RELEASE_ID')

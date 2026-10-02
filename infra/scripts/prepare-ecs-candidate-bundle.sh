@@ -422,13 +422,12 @@ printf '%s\n' "$revision" > "$output_dir/source-head.txt"
 # The ECS source archive is a runtime/release input, not a copy of the
 # repository's generated delivery evidence. Keep the digest algorithm identical
 # to build-ecs-candidate-gates-image.sh while excluding large non-runtime
-# material that is attested and delivered separately. Dogfood scripts and
-# contracts remain in the source archive because release verification imports
-# their markdown/spec fixtures; only their large generated media belongs in
-# the separately attested evidence bundle.
+# material that is attested and delivered separately. The release gates still
+# consume a small set of committed runbooks under docs/, so exclude only the
+# generated evidence subtree rather than the entire documentation tree.
 if [ "$cloud_source_v2" = 1 ]; then
   git -C "$root" archive --format=tar "$revision" \
-    ':(exclude)artifacts' ':(exclude)screenshots' ':(exclude)apps/plugin' ':(exclude).codex-marketplace' > "$archive"
+    ':(exclude)artifacts' ':(exclude)screenshots' ':(exclude)docs/qa/evidence' ':(exclude)apps/plugin' ':(exclude).codex-marketplace' > "$archive"
   cp "$ECS_PLUGIN_DARWIN_DESCRIPTOR_PATH" "$output_dir/plugin-release-descriptor-darwin.json"
   cp "$ECS_PLUGIN_DARWIN_TEST_PATH" "$output_dir/local-plugin-test-attestation-darwin.json"
   cp "$ECS_PLUGIN_WIN32_DESCRIPTOR_PATH" "$output_dir/plugin-release-descriptor-win32.json"
@@ -439,7 +438,7 @@ if [ "$cloud_source_v2" = 1 ]; then
   win32_test_sha=$(shasum -a 256 "$output_dir/local-plugin-test-attestation-win32.json" | awk '{print $1}')
 else
   git -C "$root" archive --format=tar "$revision" \
-    ':(exclude)artifacts' ':(exclude)screenshots' > "$archive"
+    ':(exclude)artifacts' ':(exclude)screenshots' ':(exclude)docs/qa/evidence' > "$archive"
 fi
 archive_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
 manifest_sha=$(shasum -a 256 "$manifest" | awk '{print $1}')

@@ -33,6 +33,7 @@ test-results
 .cache
 *.tar.gz
 screenshots
+docs/qa/evidence
 # Matches merchant-inventory.json, merchant-all-inventory.json,
 # ops-inventory.json, ops-all-inventory.json and
 # ops-workspace-visual-inventory.json. The narrower

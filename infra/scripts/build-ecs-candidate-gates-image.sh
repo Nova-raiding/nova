@@ -30,7 +30,7 @@ trap 'rm -f "$archive"; rm -rf "$context"' EXIT HUP INT TERM
 cloud_source_v2=${ECS_CLOUD_SOURCE_V2:-0}
 case "$cloud_source_v2" in
   0) git -C "$root" archive --format=tar "$revision" \
-       ':(exclude)artifacts' ':(exclude)screenshots' > "$archive" ;;
+       ':(exclude)artifacts' ':(exclude)screenshots' ':(exclude)docs/qa/evidence' > "$archive" ;;
   1)
     : "${ECS_CANDIDATE_BUNDLE_DIR:?cloud candidate gate build requires verified candidate bundle}"
     source_archive="$ECS_CANDIDATE_BUNDLE_DIR/candidate-source.tar"
