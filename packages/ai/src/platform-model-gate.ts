@@ -39,6 +39,7 @@ export interface PlatformRelayQuotaMonitorOptions {
   ownerId?: string
 }
 type QuotaState = RelayQuotaSnapshot
+type QuotaFetchResult = { state: QuotaState; persist: boolean; ttlMs?: number }
 type RelayQuotaMonitor = {
   baseUrl: string
   modelKey: string
@@ -180,8 +181,9 @@ export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fe
       if (monitor.states[credential].checkedAt > 0) return
     }
   }
-  const fetchSnapshot = async (credential: RelayCredential, key: string): Promise<QuotaState> => {
-    if (monitor.retryAt[credential] > Date.now()) return monitor.states[credential]
+  const fetchSnapshot = async (credential: RelayCredential, key: string): Promise<QuotaFetchResult> => {
+    if (monitor.retryAt[credential] > Date.now()) return { state: monitor.states[credential], persist: false }
+    const previous = monitor.states[credential]
     let state: QuotaState
     try {
       const relay = evaluatePlatformModelRelayConfiguration(source)
@@ -193,6 +195,24 @@ export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fe
         if (response.status === 429) {
           // The model and video retry windows remain independent.
           monitor.retryAt[credential] = Math.max(monitor.retryAt[credential], Date.now() + retryAfterMs(response.headers.get('retry-after')))
+          // A quota endpoint rate limit is a temporary observation failure,
+          // not proof that a still-fresh finite snapshot became unsafe. Keep
+          // that snapshot available until its own freshness or expiry gate is
+          // reached. Share only the retry marker, and preserve the original
+          // TTL budget so this metadata cannot keep a stale snapshot alive.
+          const now = Date.now()
+          const previousFresh = !previous.reason
+            && previous.checkedAt > 0
+            && now - previous.checkedAt <= monitor.maxAgeMs
+            && previous.available > 0
+            && (previous.expiresAt === 0 || previous.expiresAt > now / 1000)
+          if (previousFresh) {
+            return {
+              state: { ...previous, nextRetryAt: monitor.retryAt[credential] },
+              persist: true,
+              ttlMs: Math.max(1, monitor.cacheTtlMs - Math.max(0, now - previous.checkedAt)),
+            }
+          }
           throw new Error('relay_token_quota_rate_limited')
         }
         throw new Error(response.status === 401 || response.status === 403 ? 'relay_token_auth_failed' : 'relay_token_quota_http_error')
@@ -219,7 +239,7 @@ export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fe
       const nextRetryAt = monitor.retryAt[credential]
       state = { configFingerprint: monitor.fingerprints[credential], checkedAt: Date.now(), expiresAt: 0, available: 0, reason, ...(nextRetryAt > 0 ? { nextRetryAt } : {}) }
     }
-    return state
+    return { state, persist: true }
   }
   const refresh = async (credential: RelayCredential, key: string): Promise<void> => {
     if (monitor.store && !await readSharedSnapshot(credential)) return
@@ -233,10 +253,10 @@ export function startPlatformRelayTokenQuotaMonitor(source: ModelEnvironment, fe
       if (!acquired) { await retrySharedRead(credential); return }
     }
     try {
-      const state = await fetchSnapshot(credential, key)
-      if (relayQuotaMonitor === monitor) monitor.states[credential] = state
-      if (monitor.store) {
-        try { await monitor.store.write(sharedCredential(credential), state, monitor.cacheTtlMs, monitor.ownerId) } catch { markSharedStoreUnavailable(credential) }
+      const result = await fetchSnapshot(credential, key)
+      if (relayQuotaMonitor === monitor) monitor.states[credential] = result.state
+      if (monitor.store && result.persist) {
+        try { await monitor.store.write(sharedCredential(credential), result.state, result.ttlMs ?? monitor.cacheTtlMs, monitor.ownerId) } catch { markSharedStoreUnavailable(credential) }
       }
     } finally {
       if (monitor.store && acquired) await monitor.store.release(sharedCredential(credential), monitor.ownerId).catch(() => undefined)

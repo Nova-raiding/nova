@@ -108,6 +108,43 @@ describe('platform relay quota polling boundary', () => {
     firstStop()
   })
 
+  it('keeps a fresh finite snapshot usable when the next quota poll is rate limited', async () => {
+    vi.useFakeTimers()
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(quotaResponse())
+      .mockResolvedValue(new Response('', { status: 429, headers: { 'retry-after': '120' } })) as unknown as typeof fetch
+    const store = new MemoryQuotaStore()
+    stopMonitor = startPlatformRelayTokenQuotaMonitor(source, fetcher, { store, ownerId: 'api-a', refreshIntervalMs: 30_000, maxAgeMs: 90_000 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(evaluatePlatformModelRelayGate(source).ready).toBe(true)
+    const firstSnapshot = store.snapshots.get('model')
+    expect(firstSnapshot).toBeDefined()
+
+    await vi.advanceTimersByTimeAsync(60_001)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    // The failed read must not replace the still-fresh finite snapshot.
+    expect(evaluatePlatformModelRelayGate(source).ready).toBe(true)
+    expect(store.snapshots.get('model')).toMatchObject({
+      checkedAt: firstSnapshot!.checkedAt,
+      expiresAt: firstSnapshot!.expiresAt,
+      available: firstSnapshot!.available,
+      nextRetryAt: expect.any(Number),
+    })
+
+    await vi.advanceTimersByTimeAsync(30_001)
+    expect(evaluatePlatformModelRelayGate(source).ready).toBe(false)
+    expect(evaluatePlatformModelRelayGate(source).reasons).toContain('relay_token_quota_stale')
+  })
+
+  it('blocks immediately when a rate-limited poll has no successful snapshot to retain', async () => {
+    vi.useFakeTimers()
+    const fetcher = vi.fn(async () => new Response('', { status: 429, headers: { 'retry-after': '120' } })) as unknown as typeof fetch
+    stopMonitor = startPlatformRelayTokenQuotaMonitor(source, fetcher, { refreshIntervalMs: 30_000, maxAgeMs: 90_000 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(evaluatePlatformModelRelayGate(source).ready).toBe(false)
+    expect(evaluatePlatformModelRelayGate(source).reasons).toContain('relay_token_quota_rate_limited')
+  })
+
   it('fails closed when a required shared store is unavailable instead of falling back to per-process polling', async () => {
     vi.useFakeTimers()
     const store = new MemoryQuotaStore()
