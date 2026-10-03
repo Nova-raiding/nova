@@ -332,6 +332,25 @@ describe('production readiness fail-closed', () => {
     else expect(runtimeHealth({ commercialReadiness: { ready: true, reasons: [] } })).toMatchObject({ setup: { productionEvidence: { capacity: { state: 'not_performed', configured: true, profile: 'no_load', releaseId: 'release-current' } } } })
   })
 
+  it('reads the API-readable runtime handoff when the signer source path is unavailable', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'capacity-runtime-handoff-'))
+    const now = new Date()
+    const endedAt = now.toISOString()
+    const report = { schema_version: '1', status: 'not_performed', cloud_gate: false, environment: 'production', release_id: 'release-current', software_version: 'release-current', config_version: 'config-current', data_version: 'migration-242', target_url: 'https://ops.example.test', started_at: new Date(now.getTime() - 60 * 60 * 1000).toISOString(), ended_at: endedAt, expires_at: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(), profile: 'no_load', scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope', sign_off: { verified_by: 'owner', verified_at: endedAt } }
+    const runtimePath = join(directory, 'capacity-runtime.json')
+    writeFileSync(runtimePath, JSON.stringify(report))
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('CAPACITY_REPORT_PATH', join(directory, 'missing-signer-source.json'))
+    vi.stubEnv('CAPACITY_RUNTIME_EVIDENCE_PATH', runtimePath)
+    vi.stubEnv('RELEASE_ID', 'release-current')
+    const running = await listen()
+    openServers.push(running.server)
+    const response = await fetch(`${running.baseUrl}/healthz`)
+    const body = await response.json() as Envelope & { data: { setup: { productionEvidence: { capacity: Record<string, unknown> } } } }
+    expect([200, 503]).toContain(response.status)
+    if (body.data) expect(body.data.setup.productionEvidence.capacity).toMatchObject({ state: 'not_performed', configured: true, profile: 'no_load', releaseId: 'release-current' })
+  })
+
   it('requires persistence-backed executable catalog, approved rates, and an enabled charged registry operation', async () => {
     const blocked = await productionCommercialReadiness(new MemoryCommercialCatalogRepository([], []))
     expect(blocked.ready).toBe(false)

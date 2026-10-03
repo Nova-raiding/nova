@@ -49,3 +49,6 @@ those runtime copies read-only into the fixed container paths
 host runtime metadata before it verifies the signed source evidence and the
 release bundle. The handoff does not sign, approve, or replace evidence; all
 release identity, signature, expiry, and bundle checks remain mandatory.
+The API health/readiness projection reads these runtime variables first, so a
+root-only source path alone remains an explicit blocked state rather than a
+false healthy result.

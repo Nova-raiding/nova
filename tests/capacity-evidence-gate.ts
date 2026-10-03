@@ -30,6 +30,10 @@ const noLoadAllowedFields = new Set([
 ])
 const noLoadSignOffAllowedFields = new Set(['verified_by', 'verified_at'])
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+// Values copied from .env.example or an unfinished run must never satisfy a
+// real cloud gate. Keep this intentionally narrow so ordinary fixture names
+// such as `example-config` remain usable outside the production gate.
+const placeholderValue = /^(?:SET_|CHANGE_ME|REPLACE_ME|TODO|TBD|<[^>]+>)/iu
 const isIsoInstant = (value: unknown): value is string => nonEmpty(value)
   && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
   && !Number.isNaN(Date.parse(value))
@@ -77,6 +81,14 @@ export function validateCapacityEvidence(document: unknown, options: { requireCl
   for (const field of ['schema_version', 'status', 'release_id', 'config_version', 'environment', 'target_url', 'started_at', 'ended_at', 'raw_metrics_ref'] as const) if (!nonEmpty(value[field])) errors.push(`${field} is required`)
   if (options.requireEvidenceBinding || options.requireCloudGate) {
     for (const field of ['software_version', 'data_version'] as const) if (!nonEmpty(value[field])) errors.push(`${field} is required for evidence binding`)
+  }
+  if (options.requireCloudGate) {
+    for (const field of ['release_id', 'software_version', 'config_version', 'data_version', 'raw_metrics_ref'] as const) {
+      if (placeholderValue.test(String(value[field] ?? '').trim())) errors.push(`${field} contains a placeholder value`)
+    }
+    if (value.sign_off && typeof value.sign_off === 'object' && !Array.isArray(value.sign_off)) {
+      if (placeholderValue.test(String(value.sign_off.verified_by ?? '').trim())) errors.push('sign_off.verified_by contains a placeholder value')
+    }
   }
   if (value.schema_version !== '1') errors.push('schema_version must be 1')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)

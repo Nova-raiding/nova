@@ -77,6 +77,13 @@ describe('capacity evidence gate', () => {
     expect(validateCapacityEvidence({ ...base, profile: 'wave_250', tenant: { ...base.tenant, workspace_count: 250 }, metrics: { ...base.metrics, workspaces: 250, client_connections: 375, sustained_rps: 75, burst_rps: 150, async_jobs_per_minute: 250 } }, { requireCloudGate: true })).toEqual([])
   })
   it('rejects mock-only evidence as a real-cloud report', () => expect(validateCapacityEvidence({ ...base, platform_mock_ratio: 1 }, { requireCloudGate: true })).toContain('cloud gate requires zero platform/model mock ratio'))
+
+  it('rejects placeholder bindings in a real-cloud report', () => {
+    for (const field of ['release_id', 'software_version', 'config_version', 'data_version', 'raw_metrics_ref'] as const) {
+      expect(validateCapacityEvidence({ ...base, [field]: 'SET_VALUE_FROM_RELEASE' }, { requireCloudGate: true })).toContain(`${field} contains a placeholder value`)
+    }
+    expect(validateCapacityEvidence({ ...base, sign_off: { ...base.sign_off, verified_by: 'TODO_OWNER' } }, { requireCloudGate: true })).toContain('sign_off.verified_by contains a placeholder value')
+  })
   it('rejects non-finite mock ratios instead of allowing malformed evidence', () => {
     for (const field of ['platform_mock_ratio', 'model_mock_ratio'] as const) {
       expect(validateCapacityEvidence({ ...base, [field]: Number.NaN }, { requireCloudGate: true })).toContain(`${field} must be between 0 and 1`)

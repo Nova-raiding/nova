@@ -7104,14 +7104,18 @@ export function validateManualOperationsEvidenceRuntime(document: unknown, optio
 
 function evidenceReadiness(kind: 'capability' | 'capacity'): EvidenceReadiness {
   const pathKey = kind === 'capability' ? 'CAPABILITY_EVIDENCE_PATH' : 'CAPACITY_REPORT_PATH'
-  const sourceRef = process.env[pathKey]?.trim()
+  // The signer source remains root-only on ECS. API health/readiness must read
+  // the release-scoped, API-readable handoff when one is configured; falling
+  // back to the legacy path keeps local/dev and older compose profiles clear.
+  const runtimePathKey = kind === 'capability' ? 'CAPABILITY_RUNTIME_EVIDENCE_PATH' : 'CAPACITY_RUNTIME_EVIDENCE_PATH'
+  const sourceRef = process.env[runtimePathKey]?.trim() || process.env[pathKey]?.trim()
   const base: EvidenceReadiness = { state: isProduction() ? 'blocked' : 'not_required', configured: false, ...(sourceRef ? { sourceRef: 'configured' } : {}), reasons: [] }
   if (!sourceRef) {
-    base.reasons.push(`${pathKey} is not configured`)
+    base.reasons.push(`${runtimePathKey} or ${pathKey} is not configured`)
     return base
   }
   let document: unknown
-  try { document = JSON.parse(readSafeRuntimeEvidenceFile(sourceRef)) } catch { base.reasons.push(`${pathKey} cannot be read`) ; return base }
+  try { document = JSON.parse(readSafeRuntimeEvidenceFile(sourceRef)) } catch { base.reasons.push(`${sourceRef === process.env[runtimePathKey]?.trim() ? runtimePathKey : pathKey} cannot be read`) ; return base }
   if (!document || typeof document !== 'object' || Array.isArray(document)) { base.reasons.push('evidence document must be a JSON object'); return base }
   const value = document as Record<string, any>
   base.schemaVersion = typeof value.schema_version === 'string' ? value.schema_version : undefined
