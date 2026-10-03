@@ -20,11 +20,19 @@ function callbackPage(nonce) {
 `
 }
 
-function callbackResultScript(nonce, ok) {
+function callbackResultScript(nonce, ok, failureCode = '') {
   const title = ok ? '绑定已完成' : '绑定未完成'
   const description = ok ? '本地凭据已保存，插件已配置完成。' : '安装器未能完成绑定，请返回安装器查看错误并重试。'
-  const hint = ok ? '关闭此页面，返回 ChatGPT 并在新对话中验证插件连接。' : '绑定步骤未全部完成。请查看安装器错误，然后重新发起绑定。'
-  return `<script nonce="${nonce}">document.getElementById('icon').className='icon ${ok ? 'success' : 'error'}';document.getElementById('icon').textContent='${ok ? '✓' : '!'}';document.getElementById('title').textContent='${title}';document.getElementById('description').textContent='${description}';document.getElementById('hint').textContent='${hint}';document.getElementById('close').dataset.result='${ok ? 'success' : 'failure'}';document.getElementById('close').textContent='${ok ? '完成，关闭此页面' : '关闭此页面，返回安装器'}';document.getElementById('close').hidden=false;document.title='${title} · Store Nova';</script></body></html>`
+  const failureLabels = {
+    LOCAL_PLUGIN_LOGIN_CREDENTIAL_IPC_UNAVAILABLE: '系统钥匙串辅助进程不可用，请在图形终端重试。',
+    LOCAL_PLUGIN_LOGIN_KEYCHAIN_VERIFY_FAILED: '凭据已写入但读取校验失败，请检查钥匙串权限。',
+    LOCAL_PLUGIN_LOGIN_EXCHANGE_REJECTED: '授权码已失效或工作区授权不匹配，请重新发起绑定。',
+    LOCAL_PLUGIN_LOGIN_ACK_FAILED: '服务端未确认安装实例，请重新从当前安装器发起绑定。',
+  }
+  const hint = ok ? '关闭此页面，返回 ChatGPT 并在新对话中验证插件连接。' : `绑定步骤未全部完成。${failureLabels[failureCode] ?? '请查看安装器错误后重新发起绑定。'}`
+  const values = [nonce, ok ? 'success' : 'error', ok ? '✓' : '!', title, description, hint, ok ? 'success' : 'failure', ok ? '完成，关闭此页面' : '关闭此页面，返回安装器', title]
+  const [iconClass, iconText, safeTitle, safeDescription, safeHint, result, buttonText, safeDocumentTitle] = values.slice(1).map(value => JSON.stringify(value))
+  return `<script nonce="${nonce}">document.getElementById('icon').className='icon '+${iconClass};document.getElementById('icon').textContent=${iconText};document.getElementById('title').textContent=${safeTitle};document.getElementById('description').textContent=${safeDescription};document.getElementById('hint').textContent=${safeHint};document.getElementById('close').dataset.result=${result};document.getElementById('close').textContent=${buttonText};document.getElementById('close').hidden=false;document.title=${safeDocumentTitle}+' · Store Nova';</script></body></html>`
 }
 
 export function validateLoginTarget(baseUrl, workspaceId) {
@@ -94,10 +102,10 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
   const challenge = createHash('sha256').update(verifier).digest('base64url')
   let complete, reject, timer, consumed = false, callbackResponse, callbackNonce
   let callbackFinished = false
-  const finishCallback = async ok => {
+  const finishCallback = async (ok, failureCode = '') => {
     if (!callbackResponse || callbackResponse.writableEnded || callbackFinished) return
     callbackFinished = true
-    await new Promise(resolveFinish => callbackResponse.end(callbackResultScript(callbackNonce, ok), resolveFinish))
+    await new Promise(resolveFinish => callbackResponse.end(callbackResultScript(callbackNonce, ok, failureCode), resolveFinish))
   }
   const callback = new Promise((resolve, rejectPromise) => { complete = resolve; reject = rejectPromise })
   // Keep early timeout/abort rejections handled while browser launch is pending.
@@ -202,7 +210,7 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
     return { ok: true, mode: 'local_stdio', workspace_id: target.workspaceId, api_origin: target.apiOrigin,
       credential_source: credentialSource, restart_required: !chatGPT.launched, chatgpt_launched: chatGPT.launched, host_verified: false }
   } catch (error) {
-    await finishCallback(false)
+    await finishCallback(false, error instanceof Error ? error.message : '')
     if (error instanceof Error && error.message === 'LOCAL_PLUGIN_LOGIN_CANCEL_REVOKE_FAILED') throw error
     if (signal?.aborted) throw fail('CANCELLED')
     if (error instanceof Error && /^LOCAL_PLUGIN_LOGIN_[A-Z_]+$/u.test(error.message)) throw error

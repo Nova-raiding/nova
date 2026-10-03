@@ -167,7 +167,7 @@ describe('local plugin login installer runtime', () => {
         revealPage({ response, reader, first })
       },
       fetchImpl: async () => new Response(JSON.stringify({ data: { access_token: 'synthetic-access-secret', refresh_token: 'synthetic-refresh-secret', token_type: 'Bearer', scope: 'merchant', expires_in: 600, workspace_id: 'ws_test', account_login: 'merchant@example.test' } }), { status: 200 }),
-      storeCredential: async () => { await storeGate; if (shouldFail) throw new Error('synthetic secret') },
+      storeCredential: async () => { await storeGate; if (shouldFail) throw new Error('LOCAL_PLUGIN_LOGIN_KEYCHAIN_VERIFY_FAILED') },
       configureSession: async () => {}, timeoutMs: 2000,
     })
     const { response, reader, first } = await pageReady
@@ -178,7 +178,7 @@ describe('local plugin login installer runtime', () => {
     expect(first).not.toContain('<h1 id="title">绑定已完成</h1>')
     expect(first).not.toMatch(/one-time-code|synthetic-access|synthetic-refresh/u)
     releaseStore()
-    if (shouldFail) await expect(login).rejects.toThrow('LOCAL_PLUGIN_LOGIN_FAILED')
+    if (shouldFail) await expect(login).rejects.toThrow('LOCAL_PLUGIN_LOGIN_KEYCHAIN_VERIFY_FAILED')
     else await expect(login).resolves.toMatchObject({ ok: true })
     let result = ''
     for (;;) {
@@ -187,6 +187,7 @@ describe('local plugin login installer runtime', () => {
       result += new TextDecoder().decode(chunk.value)
     }
     expect(result).toContain(shouldFail ? '绑定未完成' : '绑定已完成')
+    if (shouldFail) expect(result).toContain('钥匙串权限')
     expect(result).not.toMatch(/one-time-code|synthetic-access|synthetic-refresh/u)
   })
 

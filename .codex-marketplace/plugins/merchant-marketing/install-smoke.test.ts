@@ -144,6 +144,8 @@ describe('Codex plugin installation package', () => {
       expect(listing.stdout).toContain('mcp/keychain-credential-helper.build.json')
       expect(listing.stdout).toContain('mcp/keychain-credential-helper')
       expect(listing.stdout).toContain('scripts/install-chatgpt-bundled.mjs')
+      expect(listing.stdout).toContain('scripts/package-local-plugin.mjs')
+      expect(listing.stdout).toContain('scripts/local-plugin-package-profile.mjs')
       const extractedHelper = spawnSync('tar', ['-xzf', artifact, '-C', directory, 'mcp/keychain-credential-helper'], { encoding: 'utf8' })
       expect(extractedHelper.status, extractedHelper.stderr).toBe(0)
       const buildVersion = spawnSync('vtool', ['-show-build', resolve(directory, 'mcp/keychain-credential-helper')], { encoding: 'utf8' })

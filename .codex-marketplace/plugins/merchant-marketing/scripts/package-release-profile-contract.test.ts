@@ -14,6 +14,17 @@ describe('local plugin package release profile contract', () => {
     ]) expect(mirror(path), path).toBe(source(path))
   })
 
+  it('ships the installer verifier dependencies in every local package', () => {
+    const packaging = source('package-local-plugin.mjs')
+    const start = packaging.indexOf('const required = [')
+    const end = packaging.indexOf(']\nfor (const relativePath of required)', start)
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+    const required = packaging.slice(start, end)
+    expect(required).toContain("'scripts/package-local-plugin.mjs'")
+    expect(required).toContain("'scripts/local-plugin-package-profile.mjs'")
+  })
+
   it('forces and verifies production profile in both signed release builders', () => {
     const mac = source('build-signed-macos-package.mjs')
     expect(mac).toContain("candidate, '--profile', 'production'")
