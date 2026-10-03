@@ -46,6 +46,8 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(payload.result.tools.some(tool => tool.name === 'creative-points.balance.get')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'merchant.start')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name.startsWith('upload.session.'))).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name === 'billing.model-usage.reconciliation.run')).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name === 'billing.model-usage.resolve')).toBe(false)
     // Video request/get are registry-enabled on the production MCP surface.
     // The API still applies workspace, rights, provider, and cost gates when
     // a call is made; listing the tools is not evidence that rendering is
@@ -123,6 +125,12 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const disabledCommercialTool = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'subscription.order.create', arguments: {} } }) })
     expect(disabledCommercialTool.status).toBe(200)
     expect(await disabledCommercialTool.json()).toMatchObject({ jsonrpc: '2.0', id: 8, error: { code: -32601 } })
+
+    for (const [id, name] of [['settlement-1', 'billing.model-usage.reconciliation.run'], ['settlement-2', 'billing.model-usage.resolve']] as const) {
+      const hiddenOperationsTool = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: {} } }) })
+      expect(hiddenOperationsTool.status).toBe(200)
+      expect(await hiddenOperationsTool.json()).toMatchObject({ jsonrpc: '2.0', id, error: { code: -32601 } })
+    }
 
     for (const [id, name] of [
       ['upload-1', 'upload.session.create'],

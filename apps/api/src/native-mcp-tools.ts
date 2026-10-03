@@ -6,8 +6,17 @@ const NATIVE_MCP_METHODS_WITHOUT_TRANSPORT = new Set([
   'upload.session.create', 'upload.session.part', 'upload.session.complete',
 ])
 
+// These settlement commands are intentionally retained in the shared MCP
+// contract for the operations workbench, but are not merchant tools. They do
+// not carry an `ops.` prefix, so the generic platform-method filter cannot
+// protect the native ChatGPT surface from advertising them.
+const NATIVE_MCP_METHODS_HIDDEN_FROM_MERCHANT = new Set([
+  'billing.model-usage.reconciliation.run',
+  'billing.model-usage.resolve',
+])
+
 export function isNativeMcpToolEnabled(method: string, paymentReady: () => boolean) {
-  if (NATIVE_MCP_METHODS_WITHOUT_TRANSPORT.has(method)) return false
+  if (NATIVE_MCP_METHODS_WITHOUT_TRANSPORT.has(method) || NATIVE_MCP_METHODS_HIDDEN_FROM_MERCHANT.has(method)) return false
   // Expose the recharge entry only after the production provider is configured.
   // Fixture and incomplete environments remain hidden from ChatGPT.
   if (method === 'billing.recharge.create' && process.env.PAYMENT_MODE === 'provider' && paymentReady()) return true

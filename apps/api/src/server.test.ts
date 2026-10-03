@@ -209,6 +209,12 @@ describe('central commercial access gate', () => {
     }
   })
 
+  it('hides operations-only model settlement commands from native merchant MCP', () => {
+    for (const method of ['billing.model-usage.reconciliation.run', 'billing.model-usage.resolve']) {
+      expect(isNativeMcpToolEnabled(method)).toBe(false)
+    }
+  })
+
   it('labels explicit manual platform operations as manual upload instead of fixture-ready', () => {
     const wiring = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     const source = wiring + readFileSync(new URL('./health-setup.ts', import.meta.url), 'utf8') + readFileSync(new URL('./platform-workspace-runtime.ts', import.meta.url), 'utf8')

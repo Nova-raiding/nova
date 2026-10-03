@@ -91,6 +91,9 @@ describe('canonical password identity and local plugin authentication', () => {
     const refreshToken = (result as Record<string, unknown> | undefined)?.refresh_token
     expect(typeof accessToken).toBe('string')
     expect(typeof refreshToken).toBe('string')
+    const forgedBearerOnMerchantCookie = await fetch(`${base}/mcp`, { method: 'POST', headers: { cookie: cookie!, authorization: 'Bearer syntactically-valid-but-forged', origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'forged-cookie', method: 'initialize', params: {} }) })
+    expect(forgedBearerOnMerchantCookie.status).toBe(401)
+    await expect(forgedBearerOnMerchantCookie.json()).resolves.toMatchObject({ error: { code: 'UNAUTHENTICATED' } })
     const principal = await repository.authenticateMcpAccessToken({ accessToken: accessToken as string, clientId: 'local-desktop', issuer: base, audience: `${base}/mcp`, resource: `${base}/mcp`, scope: ['merchant'] })
     expect(principal).toMatchObject({ identityId: account.identityId, workspaceId, accountLogin: login })
     const initialized = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'x-workspace-id': workspaceId, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) })
