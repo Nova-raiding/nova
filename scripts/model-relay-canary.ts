@@ -302,8 +302,11 @@ export function shouldBlockForCostGuard(input: {
 }
 
 /** Existing video task polling is read-only and must not require a new spend budget. */
-export function requiresCanaryBudget(modalities: readonly ProbeResult['modality'][], existingVideoTaskId?: string): boolean {
-  return modalities.some(modality => modality !== 'video' || !existingVideoTaskId)
+export function requiresCanaryBudget(modalities: readonly ProbeResult['modality'][], existingVideoTaskId?: string, existingVideoReadOnly = false): boolean {
+  // A task id alone does not prove that the request is read-only. Custom
+  // status routes without `{job_id}` are sent as POSTs and must retain the
+  // spend guard. Only an explicitly templated GET poll may skip a new budget.
+  return modalities.some(modality => modality !== 'video' || !existingVideoTaskId || !existingVideoReadOnly)
 }
 
 export function requireProductionReleaseBinding(input: { environment?: string; releaseId: string }): void {
@@ -1008,7 +1011,9 @@ export async function main() {
         if (process.env.NODE_ENV?.trim() === 'production' && !artifactRoot) throw new Error('MODEL_RELAY_ARTIFACT_ROOT is required before production relay requests')
         await assertRelayUrl(base, relaySecurity)
         const existingVideoTaskId = modalities.length === 1 && modalities[0] === 'video' ? process.env.MODEL_RELAY_CANARY_VIDEO_TASK_ID?.trim() : undefined
-        const budget = requiresCanaryBudget(modalities, existingVideoTaskId)
+        const statusPath = process.env.VIDEO_STATUS_PATH?.trim() || '/video/generations/{job_id}'
+        const existingVideoReadOnly = Boolean(existingVideoTaskId && statusPath.includes('{job_id}'))
+        const budget = requiresCanaryBudget(modalities, existingVideoTaskId, existingVideoReadOnly)
           ? requireCanaryBudget(process.env.MODEL_RELAY_CANARY_MAX_TOTAL_CNY)
           : { limitCny: 0, reservedCny: 0 }
         const credentials: Array<{ credential: RelayTokenQuota['credential']; apiKey: string }> = modalities.some(modality => modality !== 'video')
