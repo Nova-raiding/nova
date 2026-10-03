@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, CustomerDeliverySection, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, createDeliveryUploadTracker, deliveryCompletion, deliveryLaunchDateLabel, deliveryStatusLabel, filterCustomerDeliveryRecords, isCurrentDeliveryWriteScope, isDeliveryChecklistComplete, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
+import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, CustomerDeliverySection, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, createDeliveryUploadTracker, deliveryCompletion, deliveryLaunchDateLabel, deliveryOperatorLabel, deliveryStatusLabel, filterCustomerDeliveryRecords, isCurrentDeliveryWriteScope, isDeliveryChecklistComplete, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
 
 const base: CustomerDeliveryRecord = {
   id: "c-1", companyName: "示例企业", paymentStatus: "paid", profile: true,
@@ -10,6 +10,13 @@ const base: CustomerDeliveryRecord = {
 };
 
 describe("customer delivery completion", () => {
+  it("keeps operator identity readable when an account name is unavailable", () => {
+    expect(deliveryOperatorLabel({ updatedByActorId: " actor-42 " }, "actor-42", "运营账号")).toBe("运营账号");
+    expect(deliveryOperatorLabel({ updatedByActorId: "actor-42" }, "other", "运营账号")).toBe("内部身份：actor-42");
+    expect(deliveryOperatorLabel({ updatedByActorId: "actor-42" }, "actor-42", "  ")).toBe("内部身份：actor-42");
+    expect(deliveryOperatorLabel({ updatedByActorId: "  " })).toBe("未记录");
+  });
+
   it("exposes the complete checklist required by the delivery brief", () => {
     expect(INTEGRATION_ITEMS).toEqual([
       "插件账号", "店铺连接", "商品扫描", "知识库", "平台规则",

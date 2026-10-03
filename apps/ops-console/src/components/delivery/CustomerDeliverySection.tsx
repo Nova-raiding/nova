@@ -83,6 +83,17 @@ export function filterCustomerDeliveryRecords(
     && (!filters.afterSalesOwner || record.afterSalesOwner === filters.afterSalesOwner));
 }
 
+export function deliveryOperatorLabel(
+  record: Pick<CustomerDeliveryRecord, "updatedByActorId">,
+  operatorActorId?: string,
+  operatorName?: string,
+) {
+  const actorId = record.updatedByActorId?.trim();
+  if (!actorId) return "未记录";
+  if (actorId === operatorActorId && operatorName?.trim()) return operatorName.trim();
+  return `内部身份：${actorId}`;
+}
+
 export interface CustomerDeliveryChecklistItem {
   itemKey: string;
   completed: boolean;
@@ -819,9 +830,7 @@ export function CustomerDeliverySection({
             <Descriptions.Item label="售后负责人">{detailsRecord.afterSalesOwner || "未填写"}</Descriptions.Item>
             <Descriptions.Item label="上线时间">{deliveryLaunchDateLabel(detailsRecord)}</Descriptions.Item>
             <Descriptions.Item label="操作人">
-              {detailsRecord.updatedByActorId === operatorActorId
-                ? operatorName || "账号名称未提供"
-                : detailsRecord.updatedByActorId || "未记录"}
+              {deliveryOperatorLabel(detailsRecord, operatorActorId, operatorName)}
             </Descriptions.Item>
           </Descriptions>
           <CustomerDeliveryTrainingEvidence
