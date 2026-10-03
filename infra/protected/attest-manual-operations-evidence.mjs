@@ -10,8 +10,8 @@ const HEX = /^[a-f0-9]{64}$/u
 const GIT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u
 const NONCE = /^[A-Za-z0-9_-]{22,128}$/u
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u
-const REQUIRED_CHECKS = ['tenant_scope', 'manual_route', 'isolation_boundary']
-const REQUIRED_OBSERVATIONS = ['release', 'target_list', 'isolation']
+const REQUIRED_CHECKS = ['tenant_scope', 'manual_report', 'merchant_visibility']
+const REQUIRED_OBSERVATIONS = ['release', 'target_list', 'target_get', 'isolation']
 const assert = (condition, message) => { if (!condition) throw new Error(message) }
 const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(',')}]` : value && typeof value === 'object' ? `{${Object.entries(value).filter(([key]) => key !== 'signature_base64').sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}` : JSON.stringify(value)
 function readRegular(path, maxBytes) {
@@ -23,10 +23,12 @@ function instant(value) { return typeof value === 'string' && UTC.test(value) ? 
 export function validateManualCandidate(value, binding, now = new Date()) {
   assert(value && typeof value === 'object' && !Array.isArray(value), 'manual candidate must be a JSON object')
   assert(!['signature_base64', 'key_id', 'image_set_digest', 'manifest_sha256', 'release_git_sha', 'deployment_nonce'].some(key => key in value), 'candidate already contains signer fields')
-  assert(value.schema_version === 'manual-operations-evidence/2' && value.release_id === binding.releaseId, 'candidate release or schema mismatch')
-  assert(value.environment === 'production' && value.workflow === 'manual_operations_read_only' && value.official_api_receipt === false && value.manual_evidence_boundary === 'manual_unverified' && value.simulated === false && value.tenant_isolation_verified === true, 'candidate manual workflow boundary mismatch')
+  assert(value.schema_version === 'manual-operations-evidence/1' && value.release_id === binding.releaseId, 'candidate release or schema mismatch')
+  assert(value.environment === 'production' && value.workflow === 'public_import_manual_publish' && value.official_api_receipt === false && value.simulated === false && value.tenant_isolation_verified === true, 'candidate manual workflow boundary mismatch')
   assert(typeof value.workspace_id === 'string' && value.workspace_id.trim() && typeof value.isolation_probe_workspace_id === 'string' && value.isolation_probe_workspace_id.trim() && value.workspace_id !== value.isolation_probe_workspace_id, 'candidate tenant scope incomplete')
-  assert(typeof value.verified_by === 'string' && value.verified_by.trim(), 'candidate verifier missing')
+  assert(typeof value.manual_publish_report_id === 'string' && value.manual_publish_report_id.trim() && typeof value.verified_by === 'string' && value.verified_by.trim(), 'candidate report or verifier missing')
+  assert(value.manual_evidence_boundary === 'manual_unverified', 'candidate manual evidence boundary mismatch')
+  assert(['manual_publish_in_progress', 'manual_publish_reported', 'manual_review_required'].includes(value.manual_publish_state), 'candidate manual publish state is invalid')
   const generated = instant(value.generated_at), expires = instant(value.expires_at)
   assert(Number.isFinite(generated) && generated <= now.getTime() + 300_000 && now.getTime() - generated <= 86_400_000, 'candidate generated_at is invalid or stale')
   assert(Number.isFinite(expires) && expires > now.getTime() && expires > generated && expires <= generated + 86_400_000, 'candidate expires_at is invalid')
@@ -38,9 +40,9 @@ export function validateManualCandidate(value, binding, now = new Date()) {
     names.add(check.name)
   }
   assert(names.size === REQUIRED_CHECKS.length && REQUIRED_CHECKS.every(name => names.has(name)), 'candidate workflow checks are incomplete')
-  assert(value.checks.find(check => check.name === 'tenant_scope')?.observation === 'target_workspace_read_contract', 'target workspace observation mismatch')
-  assert(value.checks.find(check => check.name === 'manual_route')?.observation === 'publish_manual_list_read_only', 'manual route observation mismatch')
-  assert(value.checks.find(check => check.name === 'isolation_boundary')?.observation === 'foreign_workspace_rejected', 'isolation observation mismatch')
+  assert(value.checks.find(check => check.name === 'tenant_scope')?.observation === 'foreign_workspace_rejected', 'tenant isolation observation mismatch')
+  assert(value.checks.find(check => check.name === 'manual_report')?.observation === 'human_evidence_boundary_preserved', 'manual report observation mismatch')
+  assert(value.checks.find(check => check.name === 'merchant_visibility')?.observation === 'expected_report_visible', 'merchant visibility observation mismatch')
   const journal = value.capture_journal
   assert(journal && typeof journal === 'object' && !Array.isArray(journal), 'candidate capture journal is required')
   assert(Object.keys(journal).every(key => ['schema_version', 'captured_at', 'candidate_identity', 'observations'].includes(key))
@@ -60,7 +62,7 @@ export function validateManualCandidate(value, binding, now = new Date()) {
       && Object.keys(observation).length === 4, 'candidate capture journal observation fields are invalid')
     assert(typeof observation.name === 'string' && typeof observation.observation_sha256 === 'string' && HEX.test(observation.observation_sha256)
       && observation.material && typeof observation.material === 'object' && !Array.isArray(observation.material), 'candidate capture journal observation is invalid')
-    if (observation.name === 'release' || observation.name === 'target_list') assert(observation.status === 200, 'candidate capture journal success probe did not return HTTP 200')
+    if (observation.name === 'release' || observation.name === 'target_list' || observation.name === 'target_get') assert(observation.status === 200, 'candidate capture journal success probe did not return HTTP 200')
     else if (observation.name === 'isolation') assert(observation.status === 401 || observation.status === 403, 'candidate capture journal isolation probe was not rejected')
     else assert(false, 'candidate capture journal contains an unknown observation')
     const material = observation.material
@@ -71,10 +73,16 @@ export function validateManualCandidate(value, binding, now = new Date()) {
         && material.manifest_sha256 === binding.manifestSha256 && material.image_set_digest === binding.imageSetDigest
         && material.ready === true, 'candidate capture journal release material is invalid or not identity-bound')
     } else if (observation.name === 'target_list') {
-      assert(keys === 'returned_count,route,tenant_scoped,total' && material.route === 'publish.manual.list'
-        && material.tenant_scoped === true && Number.isInteger(material.total) && material.total >= 0 && Number.isInteger(material.returned_count)
-        && material.returned_count >= 0 && material.returned_count <= 1 && material.returned_count <= material.total,
+      assert(keys === 'expected_report_visible,returned_count,total,visible_report_id'
+        && material.expected_report_visible === true && material.visible_report_id === value.manual_publish_report_id
+        && Number.isInteger(material.total) && material.total >= 1 && Number.isInteger(material.returned_count)
+        && material.returned_count >= 1 && material.returned_count <= 20 && material.returned_count <= material.total,
       'candidate capture journal target list material is invalid')
+    } else if (observation.name === 'target_get') {
+      assert(keys === 'evidence_boundary,manual_publish_report_id,state'
+        && material.manual_publish_report_id === value.manual_publish_report_id
+        && material.state === value.manual_publish_state && material.evidence_boundary === value.manual_evidence_boundary,
+      'candidate capture journal target report material does not match candidate')
     } else {
       assert(keys === 'code_present,error_envelope' && material.error_envelope === true && material.code_present === true,
         'candidate capture journal isolation material is invalid')
@@ -86,7 +94,7 @@ export function validateManualCandidate(value, binding, now = new Date()) {
     && REQUIRED_OBSERVATIONS.every(name => journal.observations.some(observation => observation.name === name)), 'candidate capture journal observation set is invalid')
   assert(typeof value.capture_journal_sha256 === 'string'
     && createHash('sha256').update(canonical(journal)).digest('hex') === value.capture_journal_sha256, 'candidate capture journal hash mismatch')
-  const allowed = new Set(['schema_version', 'release_id', 'environment', 'workflow', 'workspace_id', 'isolation_probe_workspace_id', 'official_api_receipt', 'manual_evidence_boundary', 'tenant_isolation_verified', 'simulated', 'generated_at', 'expires_at', 'verified_by', 'checks', 'capture_journal', 'capture_journal_sha256'])
+  const allowed = new Set(['schema_version', 'release_id', 'environment', 'workflow', 'workspace_id', 'isolation_probe_workspace_id', 'manual_publish_report_id', 'official_api_receipt', 'manual_evidence_boundary', 'manual_publish_state', 'tenant_isolation_verified', 'simulated', 'generated_at', 'expires_at', 'verified_by', 'checks', 'capture_journal', 'capture_journal_sha256'])
   assert(Object.keys(value).every(key => allowed.has(key)), 'candidate contains unknown fields')
   return value
 }

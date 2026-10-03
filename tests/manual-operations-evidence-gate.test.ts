@@ -10,15 +10,15 @@ const candidateIdentity = { release_id: 'release-1', release_git_sha: 'c'.repeat
 const generatedAt = '2026-09-21T07:00:00Z'
 const captureJournal = manualCaptureJournal(candidateIdentity, generatedAt)
 const evidence = {
-  schema_version: 'manual-operations-evidence/2', release_id: 'release-1', environment: 'production',
-  workflow: 'manual_operations_read_only', official_api_receipt: false, manual_evidence_boundary: 'manual_unverified', tenant_isolation_verified: true,
-  workspace_id: 'workspace-1', isolation_probe_workspace_id: 'foreign-workspace', verified_by: 'release-operator',
+  schema_version: 'manual-operations-evidence/1', release_id: 'release-1', environment: 'production',
+  workflow: 'public_import_manual_publish', official_api_receipt: false, manual_evidence_boundary: 'manual_unverified', manual_publish_state: 'manual_publish_reported', tenant_isolation_verified: true,
+  workspace_id: 'workspace-1', isolation_probe_workspace_id: 'foreign-workspace', manual_publish_report_id: 'manual-report-1', verified_by: 'release-operator',
   simulated: false, generated_at: generatedAt, expires_at: '2026-09-22T07:00:00Z',
   capture_journal: captureJournal, capture_journal_sha256: manualCaptureJournalSha256(captureJournal),
   checks: [
-    { name: 'tenant_scope', status: 'pass', observation: 'target_workspace_read_contract' },
-    { name: 'manual_route', status: 'pass', observation: 'publish_manual_list_read_only' },
-    { name: 'isolation_boundary', status: 'pass', observation: 'foreign_workspace_rejected' },
+    { name: 'tenant_scope', status: 'pass', observation: 'foreign_workspace_rejected' },
+    { name: 'manual_report', status: 'pass', observation: 'human_evidence_boundary_preserved' },
+    { name: 'merchant_visibility', status: 'pass', observation: 'expected_report_visible' },
   ],
 }
 
@@ -31,11 +31,11 @@ describe('manual operations evidence gate', () => {
   it('keeps runtime and release-gate decisions aligned for manual evidence boundaries and journal bindings', () => {
     const mismatchedReportJournal = structuredClone(captureJournal)
     const listObservation = mismatchedReportJournal.observations.find(observation => observation.name === 'target_list')!
-    listObservation.material.tenant_scoped = false
+    listObservation.material.visible_report_id = 'different-report'
     listObservation.observation_sha256 = manualCaptureObservationSha256(listObservation.name, listObservation.status, listObservation.material)
     const invalidCases = [
       { ...evidence, manual_evidence_boundary: 'unverified' },
-      { ...evidence, workflow: 'public_import_manual_publish' },
+      { ...evidence, manual_publish_state: 'published' },
       { ...evidence, capture_journal: undefined },
       { ...evidence, capture_journal_sha256: '0'.repeat(64) },
       { ...evidence, capture_journal: mismatchedReportJournal, capture_journal_sha256: manualCaptureJournalSha256(mismatchedReportJournal) },
@@ -49,7 +49,7 @@ describe('manual operations evidence gate', () => {
   it('rejects generic pass rows that do not prove the manual workflow boundaries', () => {
     const invalid = { ...evidence, checks: ['one', 'two', 'three'].map(name => ({ name, status: 'pass' })) }
     expect(validateManualOperationsEvidence(invalid, 'release-1', now)).toEqual(expect.arrayContaining([
-      'tenant_scope workflow check is required', 'manual_route workflow check is required', 'isolation_boundary workflow check is required',
+      'tenant_scope workflow check is required', 'manual_report workflow check is required', 'merchant_visibility workflow check is required',
     ]))
   })
 
@@ -64,8 +64,8 @@ describe('manual operations evidence gate', () => {
 
   it('recomputes observation digests and rejects unbound or raw response material', () => {
     const staleDigestJournal = structuredClone(captureJournal)
-    staleDigestJournal.observations[1]!.material.total = 1
-    expect(validateManualOperationsEvidence({ ...evidence, capture_journal: staleDigestJournal }, 'release-1', now)).toContain('capture_journal target_list observation hash does not match material')
+    staleDigestJournal.observations[2]!.material.state = 'manual_review_required'
+    expect(validateManualOperationsEvidence({ ...evidence, capture_journal: staleDigestJournal }, 'release-1', now)).toContain('capture_journal target_get observation hash does not match material')
 
     const rehashedJournal = structuredClone(captureJournal)
     const releaseObservation = rehashedJournal.observations.find(observation => observation.name === 'release')!
@@ -74,10 +74,10 @@ describe('manual operations evidence gate', () => {
     expect(validateManualOperationsEvidence({ ...evidence, capture_journal: rehashedJournal, capture_journal_sha256: manualCaptureJournalSha256(rehashedJournal) }, 'release-1', now)).toContain('capture_journal release material is invalid or not identity-bound')
 
     const rawJournal = structuredClone(captureJournal)
-    const listWithRawResponse = rawJournal.observations.find(observation => observation.name === 'target_list')!
-    listWithRawResponse.material.raw_response = 'sensitive-response'
-    listWithRawResponse.observation_sha256 = manualCaptureObservationSha256(listWithRawResponse.name, listWithRawResponse.status, listWithRawResponse.material)
-    expect(validateManualOperationsEvidence({ ...evidence, capture_journal: rawJournal, capture_journal_sha256: manualCaptureJournalSha256(rawJournal) }, 'release-1', now)).toContain('capture_journal target list material is invalid')
+    const getObservation = rawJournal.observations.find(observation => observation.name === 'target_get')!
+    getObservation.material.raw_response = 'sensitive-response'
+    getObservation.observation_sha256 = manualCaptureObservationSha256(getObservation.name, getObservation.status, getObservation.material)
+    expect(validateManualOperationsEvidence({ ...evidence, capture_journal: rawJournal, capture_journal_sha256: manualCaptureJournalSha256(rawJournal) }, 'release-1', now)).toContain('capture_journal target report material does not match evidence')
 
     const missingErrorCodeJournal = structuredClone(captureJournal)
     const isolationObservation = missingErrorCodeJournal.observations.find(observation => observation.name === 'isolation')!
@@ -87,7 +87,7 @@ describe('manual operations evidence gate', () => {
 
     const mismatchedVisibleReport = structuredClone(captureJournal)
     const listObservation = mismatchedVisibleReport.observations.find(observation => observation.name === 'target_list')!
-    listObservation.material.route = 'publish.manual.get'
+    listObservation.material.visible_report_id = 'different-report'
     listObservation.observation_sha256 = manualCaptureObservationSha256(listObservation.name, listObservation.status, listObservation.material)
     expect(validateManualOperationsEvidence({ ...evidence, capture_journal: mismatchedVisibleReport, capture_journal_sha256: manualCaptureJournalSha256(mismatchedVisibleReport) }, 'release-1', now)).toContain('capture_journal target list material is invalid')
   })
@@ -97,10 +97,10 @@ describe('manual operations evidence gate', () => {
     invalid.simulated = true
     invalid.generated_at = '2026-09-19T07:00:00Z'
     invalid.expires_at = '2026-09-20T07:00:00Z'
-    invalid.checks[2]!.name = 'manual_route'
+    invalid.checks[2]!.name = 'manual_report'
     expect(validateManualOperationsEvidence(invalid, 'release-1', now)).toEqual(expect.arrayContaining([
       'simulated must be false', 'manual operations evidence is stale', 'manual operations evidence has expired',
-      'workflow check names must be unique', 'isolation_boundary workflow check is required',
+      'workflow check names must be unique', 'merchant_visibility workflow check is required',
     ]))
     const future = { ...evidence, generated_at: '2026-09-21T08:05:01Z', expires_at: '2026-09-22T08:05:01Z' }
     expect(validateManualOperationsEvidence(future, 'release-1', now)).toContain('generated_at must not be more than five minutes in the future')
@@ -111,9 +111,9 @@ describe('manual operations evidence gate', () => {
     const privatePem = pair.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
     const publicKeyPem = pair.publicKey.export({ format: 'pem', type: 'spki' }).toString()
     const candidate = { ...evidence, isolation_probe_workspace_id: 'foreign-workspace', checks: [
-      { name: 'tenant_scope', status: 'pass', observation: 'target_workspace_read_contract' },
-      { name: 'manual_route', status: 'pass', observation: 'publish_manual_list_read_only' },
-      { name: 'isolation_boundary', status: 'pass', observation: 'foreign_workspace_rejected' },
+      { name: 'tenant_scope', status: 'pass', observation: 'foreign_workspace_rejected' },
+      { name: 'manual_report', status: 'pass', observation: 'human_evidence_boundary_preserved' },
+      { name: 'merchant_visibility', status: 'pass', observation: 'expected_report_visible' },
     ] }
     const binding = { releaseId: 'release-1', imageSetDigest: `sha256:${'a'.repeat(64)}`, manifestSha256: 'b'.repeat(64), releaseGitSha: 'c'.repeat(40), deploymentNonce: 'n'.repeat(22), keyId: 'test-key' }
     const signed = signManualCandidate(candidate, binding, privatePem, publicKeyPem, now)
@@ -134,7 +134,7 @@ describe('manual operations evidence gate', () => {
     expect(() => signManualCandidate(missingCodeCandidate, binding, privatePem, publicKeyPem, now)).toThrow('candidate capture journal isolation material is invalid')
     const mismatchedVisibleReportCandidate = structuredClone(candidate)
     const listObservation = mismatchedVisibleReportCandidate.capture_journal.observations.find((observation: { name: string }) => observation.name === 'target_list')!
-    listObservation.material.tenant_scoped = false
+    listObservation.material.visible_report_id = 'different-report'
     listObservation.observation_sha256 = manualCaptureObservationSha256(listObservation.name, listObservation.status, listObservation.material)
     mismatchedVisibleReportCandidate.capture_journal_sha256 = manualCaptureJournalSha256(mismatchedVisibleReportCandidate.capture_journal)
     expect(() => signManualCandidate(mismatchedVisibleReportCandidate, binding, privatePem, publicKeyPem, now)).toThrow('candidate capture journal target list material is invalid')
