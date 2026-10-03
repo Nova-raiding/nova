@@ -59,7 +59,8 @@ describe('production model relay contract', () => {
 
   it('allows polling an existing video job without re-confirming a new billable request', () => {
     expect(shouldBlockForCostGuard({ modality: 'video', confirmCost: false, existingVideoTaskId: 'job-existing' })).toBe(false)
-    expect(requiresCanaryBudget(['video'], 'job-existing')).toBe(false)
+    expect(requiresCanaryBudget(['video'], 'job-existing', true)).toBe(false)
+    expect(requiresCanaryBudget(['video'], 'job-existing', false)).toBe(true)
     expect(requiresCanaryBudget(['video'])).toBe(true)
     expect(requiresCanaryBudget(['text', 'video'], 'job-existing')).toBe(true)
   })
