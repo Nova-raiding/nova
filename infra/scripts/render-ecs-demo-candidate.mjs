@@ -148,6 +148,16 @@ export function validateDemoCompose(compose, project) {
   const networks = compose.networks ?? {}
   if (Object.keys(networks).length !== 1 || !networks.default || networks.default.external || networks.default.name !== `${project}_private`) fail('candidate network must be a new project-scoped private network')
   if (networks.default.internal === true) fail('candidate network must allow outbound provider TLS while remaining unpublished')
+  const assertDependencies = (name, expected) => {
+    const actual = services[name]?.depends_on ?? {}
+    const actualNames = Object.keys(actual).sort()
+    const expectedNames = Object.keys(expected).sort()
+    if (actualNames.join(',') !== expectedNames.join(',') || expectedNames.some(dependency => actual[dependency]?.condition !== expected[dependency])) {
+      fail(`${name} must wait for ${expectedNames.join(', ')} with the required health/completion conditions`)
+    }
+  }
+  assertDependencies('migrate', { postgres: 'service_healthy' })
+  assertDependencies('api', { migrate: 'service_completed_successfully', postgres: 'service_healthy', redis: 'service_healthy' })
   const api = services.api
   if (api.pull_policy !== 'never') fail('candidate API must disable image pulls with pull_policy=never')
   const env = api.environment ?? {}
@@ -239,6 +249,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
       },
       migrate: {
         image: migrationImage, restart: 'no', entrypoint: ['/bin/sh', '-c', '/bin/sh /ops/provision-isolated-candidate-db-roles.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/apply-migrations.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/verify-runtime-db-role.sh'],
+        depends_on: { postgres: { condition: 'service_healthy' } },
         environment: {
           PGHOST: 'postgres', PGPORT: '5432', PGDATABASE: 'merchant', PGUSER: 'merchant', PGPASSWORD: adminPassword, MIGRATION_BASELINE_ACCEPTED: 'false',
           DATABASE_URL: urls.merchant_app, OPS_DATABASE_URL: urls.merchant_ops, ALERT_RECEIVER_DATABASE_URL: urls.merchant_alert_receiver,
@@ -253,6 +264,11 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
       },
       api: {
         image: apiImage, pull_policy: 'never', restart: 'no', env_file: [{ path: envPath, required: true }], expose: ['8787'],
+        depends_on: {
+          migrate: { condition: 'service_completed_successfully' },
+          postgres: { condition: 'service_healthy' },
+          redis: { condition: 'service_healthy' },
+        },
         ...(withMerchantUi ? { networks: { default: { aliases: ['merchant-api'] } } } : {}),
         healthcheck: { test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8787/healthz >/dev/null || exit 1'], interval: '10s', timeout: '3s', retries: 6, start_period: '30s' },
         labels: { 'com.storenova.release.id': identity.release_id, 'org.opencontainers.image.revision': identity.git_sha, 'com.storenova.release.source_sha256': identity.source_sha256 },

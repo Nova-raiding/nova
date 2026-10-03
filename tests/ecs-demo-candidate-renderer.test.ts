@@ -81,6 +81,12 @@ describe('protected isolated ECS demo candidate renderer', () => {
       MCP_AUTHZ_MODE: 'enforce', MCP_AUTHZ_ENFORCE_DOMAINS: '', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
     })
     expect(compose.services.api.pull_policy).toBe('never')
+    expect(compose.services.migrate.depends_on).toEqual({ postgres: { condition: 'service_healthy' } })
+    expect(compose.services.api.depends_on).toEqual({
+      migrate: { condition: 'service_completed_successfully' },
+      postgres: { condition: 'service_healthy' },
+      redis: { condition: 'service_healthy' },
+    })
     expect(compose.services.api.environment.MODEL_RELAY_API_KEY).toBeUndefined()
     expect(compose.services.api.env_file).toEqual([{ path: join(value.output, 'candidate.env'), required: true }])
     expect(compose.services.api.healthcheck.test).toEqual(['CMD-SHELL', 'wget -qO- http://127.0.0.1:8787/healthz >/dev/null || exit 1'])
