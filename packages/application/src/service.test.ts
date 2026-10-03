@@ -134,6 +134,8 @@ describe('MerchantService', () => {
     const markdown = service.exportContent('ws_demo', version.id, 'markdown')
     expect(markdown.body).toMatch(/^> 候选任务导出：仅供内部审核，不可发布到平台。\n\n/u)
     expect(markdown.body).not.toContain('\\n')
+    expect(() => service.confirmCandidateVersion({ taskId: task.id, body: { title: '候选', detail: '候选', sellingPoints: [] } }))
+      .toThrowError(expect.objectContaining({ code: 'CANDIDATE_TASK_SCOPE_INVALID' }))
   })
 
   it('rejects candidate creation when product already carries store or brand scope', () => {

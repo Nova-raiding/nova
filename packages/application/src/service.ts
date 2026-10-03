@@ -4985,6 +4985,13 @@ export class MerchantService {
    */
   confirmCandidateVersion(input: { taskId: string; body: ContentVersion['body']; reason?: string }) {
     const task = this.mustTask(input.taskId)
+    // A candidate-only task deliberately has no store/canonical binding and
+    // remains permanently non-publishable. Promoting a relay preview on that
+    // task would return `formalVersionCreated=true` while the durable task
+    // still carries `candidateOnly=true`, which mislabels the result and lets
+    // an unbound task masquerade as a formal workflow. Candidate promotion
+    // must happen on the separately prepared, bound merchant task.
+    if (task.candidateOnly === true) throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务只能生成、审核和导出；请在已绑定店铺的正式任务上确认候选', 409, { task_id: task.id, candidate_only: true, next_action: '在已绑定店铺、已确认事实和制作方案的正式任务上调用 content.draft.confirm' })
     this.assertTaskState(task, ['plan_confirmed'])
     this.assertBrandVisualGenerationReady(task.workspaceId, task.platform, task.region)
     const snapshot = this.taskSnapshot(task)
