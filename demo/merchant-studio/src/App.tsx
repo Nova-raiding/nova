@@ -2513,7 +2513,14 @@ export function Overview({
           }
           stores={apiRows ? apiRows.filter((row) => row.status === '可读取' && row.accountId).map((row) => ({ key: `${row.platformId}-${row.accountId}`, name: row.shop, platform: row.name, mark: Array.from(row.name)[0] ?? '' })) : null}
         />
-        <TransactionDashboard onOpenIssues={goProducts} issues={overviewIssues ?? []} read={overviewIssueRead} />
+        <TransactionDashboard
+          // The dashboard button receives a React click event. Do not pass it
+          // through as a MerchantEntryPoint, or URLSearchParams serializes the
+          // event to `section=[object Object]` and opens the wrong workspace.
+          onOpenIssues={() => goProducts('products')}
+          issues={overviewIssues ?? []}
+          read={overviewIssueRead}
+        />
       </div>
 
       <WorkspaceDataIntegrityNotice metrics={metrics} />
