@@ -1,5 +1,6 @@
 import { createCanvas, loadImage } from '@napi-rs/canvas'
 import { assertOutboundUrl } from '../../connectors/src/outbound-security.js'
+import { assertImageArtifactQuality } from './image-quality.js'
 
 export interface MarketingCompositorBrief {
   productTitle: string
@@ -107,6 +108,7 @@ export async function composeMarketingImages(images: string[], brief: MarketingC
     const output: string[] = []
     for (const [index, source] of images.entries()) {
       const resolvedSource = await resolveImageSource(source, fetchImpl, options.signal)
+      assertImageArtifactQuality(resolvedSource)
       const image = await loadImage(Buffer.from(resolvedSource.slice(resolvedSource.indexOf(',') + 1), 'base64'))
       const width = image.width
       const height = image.height
