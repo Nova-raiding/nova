@@ -296,9 +296,10 @@ export function shouldBlockForCostGuard(input: {
   modality: ProbeResult['modality']
   confirmCost: boolean
   existingVideoTaskId?: string
+  existingVideoReadOnly?: boolean
 }): boolean {
   return !input.confirmCost
-    && (input.modality === 'image' || input.modality === 'image_edit' || input.modality === 'embedding' || (input.modality === 'video' && !input.existingVideoTaskId))
+    && (input.modality === 'image' || input.modality === 'image_edit' || input.modality === 'embedding' || (input.modality === 'video' && (!input.existingVideoTaskId || input.existingVideoReadOnly !== true)))
 }
 
 /** Existing video task polling is read-only and must not require a new spend budget. */
@@ -804,11 +805,12 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
   const model = modelFor(modality)
   const existingVideoTaskId = modality === 'video' ? process.env.MODEL_RELAY_CANARY_VIDEO_TASK_ID?.trim() : undefined
   const endpoint = existingVideoTaskId ? process.env.VIDEO_STATUS_PATH?.trim() || '/video/generations/{job_id}' : endpointFor(modality)
+  const usesVideoStatusPath = Boolean(existingVideoTaskId && endpoint.includes('{job_id}'))
   const common = { modality, endpoint, model }
   if (!model) return { ...common, state: 'blocked', detail: 'model_missing' }
   if (modality === 'embedding' && !ALLOWED_EMBEDDING_MODELS.includes(model as typeof ALLOWED_EMBEDDING_MODELS[number])) return { ...common, state: 'blocked', detail: 'embedding_model_not_allowlisted' }
   if (!keyFor(modality)) return { ...common, state: 'blocked', detail: modality === 'video' ? 'VIDEO_MODEL_RELAY_API_KEY missing' : 'MODEL_RELAY_API_KEY missing' }
-  if (shouldBlockForCostGuard({ modality, confirmCost, ...(existingVideoTaskId ? { existingVideoTaskId } : {}) })) return { ...common, state: 'not_run_cost_guard', detail: 'set MODEL_RELAY_CANARY_CONFIRM=true to run potentially billable media probes' }
+  if (shouldBlockForCostGuard({ modality, confirmCost, ...(existingVideoTaskId ? { existingVideoTaskId, existingVideoReadOnly: usesVideoStatusPath } : {}) })) return { ...common, state: 'not_run_cost_guard', detail: 'set MODEL_RELAY_CANARY_CONFIRM=true to run potentially billable media probes' }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -834,7 +836,6 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
           : modality === 'image_edit'
             ? { model, prompt: '对测试素材做最小编辑：保持主体不变', image: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFklEQVR4nGP4TyFgGDVg1IBRA4aLAQBdePwur/3haQAAAABJRU5ErkJggg=='], image_mode: 'optimize', edit_region: { x: 0, y: 0, width: 1, height: 1 }, n: 1, size: '1024x1024', response_format: 'url' }
             : { model, prompt: videoCanaryPrompt, duration: videoDurationSeconds }
-    const usesVideoStatusPath = Boolean(existingVideoTaskId && endpoint.includes('{job_id}'))
     const requestEndpoint = existingVideoTaskId ? endpoint.replace(/\{job_id\}/gu, encodeURIComponent(existingVideoTaskId)) : endpoint
     const videoRequest = modality === 'video' && !existingVideoTaskId
       ? buildVideoProbeRequest({
@@ -845,7 +846,7 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
         ...(process.env.VIDEO_REQUEST_FORMAT?.trim() ? { requestFormat: process.env.VIDEO_REQUEST_FORMAT.trim() } : {}),
       })
       : undefined
-    if (!existingVideoTaskId) {
+    if (!existingVideoTaskId || !usesVideoStatusPath) {
       await reserveCanaryCost({
         pricing: pricingClient, budget, modality, model, requestBody: body,
         ...(modality === 'video' ? { durationSeconds: videoDurationSeconds, resolution: process.env.VIDEO_RESOLUTION?.trim().toUpperCase() } : {}),
