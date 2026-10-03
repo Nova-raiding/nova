@@ -134,7 +134,20 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
       // request; model-name allowlists silently dropped this field for new
       // providers and produced accepted jobs that later failed upstream with
       // "input.media.0.url/type required".
-      const requestBody = JSON.stringify({ model, prompt: input.prompt, duration: this.options.durationSeconds ?? 5, ...(input.sourceImage ? { image: input.sourceImage } : {}), ...(this.options.resolution ? { size: this.options.resolution, metadata: { parameters: { resolution: this.options.resolution }, ...(input.sourceImage ? { input: { media: [{ type: 'first_frame', url: input.sourceImage }] } } : {}) } } : {}) })
+      const metadata = input.sourceImage || this.options.resolution
+        ? {
+            ...(this.options.resolution ? { parameters: { resolution: this.options.resolution } } : {}),
+            ...(input.sourceImage ? { input: { media: [{ type: 'first_frame', url: input.sourceImage }] } } : {}),
+          }
+        : undefined
+      const requestBody = JSON.stringify({
+        model,
+        prompt: input.prompt,
+        duration: this.options.durationSeconds ?? 5,
+        ...(input.sourceImage ? { image: input.sourceImage } : {}),
+        ...(this.options.resolution ? { size: this.options.resolution } : {}),
+        ...(metadata ? { metadata } : {}),
+      })
       const providerKey = providerIdempotencyKey({ operation: 'video_generate', model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
       assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
       let form: FormData | undefined

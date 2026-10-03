@@ -268,6 +268,20 @@ describe('video generator relay', () => {
 
 
 describe('reference-conditioned video', () => {
+  it('always carries native first-frame metadata when no resolution is configured', async () => {
+    let payload: Record<string, any> = {}
+    const generator = new OpenAICompatibleVideoGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'key', model: 'text-model', imageModel: 'image-model',
+      usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async (_url, init) => {
+        payload = JSON.parse(String(init?.body)) as Record<string, any>
+        return new Response(JSON.stringify({ usage: { total_tokens: 1, cost_cny: 0.01 }, task_id: 'test-video', status: 'queued' }))
+      },
+    })
+    await generator.generate({ prompt: '轻微推近', output: 'rendering', context: {}, sourceImage: 'data:image/png;base64,AQID' })
+    expect(payload.metadata).toEqual({ input: { media: [{ type: 'first_frame', url: 'data:image/png;base64,AQID' }] } })
+  })
+
   it('transmits source pixels using the configured image-to-video model', async () => {
     let payload: Record<string, unknown> = {}
     const generator = new OpenAICompatibleVideoGenerator({ baseUrl: 'https://relay.example', apiKey: 'key', model: 'text-model', imageModel: 'image-model', resolution: '1080P', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (_url, init) => {
