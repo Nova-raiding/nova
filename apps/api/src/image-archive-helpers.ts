@@ -7,6 +7,18 @@ import type { imageArchiveRuntime } from './server.js'
 
 type ImageArchiveRuntime = ReturnType<typeof imageArchiveRuntime>
 
+export function parseRequestedImageSize(value: string | undefined): { width: number; height: number } | undefined {
+  if (value === undefined) return undefined
+  const match = /^(\d+)x(\d+)$/u.exec(value.trim())
+  if (!match) throw new DomainError('GENERATED_IMAGE_DIMENSIONS_INVALID', '图片请求尺寸必须是严格的宽x高格式', 422, { requested_size: value })
+  const width = Number(match[1])
+  const height = Number(match[2])
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
+    throw new DomainError('GENERATED_IMAGE_DIMENSIONS_INVALID', '图片请求尺寸必须是正整数宽x高', 422, { requested_size: value })
+  }
+  return { width, height }
+}
+
 export function createImageArchiveHelpers(runtime: ImageArchiveRuntime) {
   const { service, demoUnscannedAssetsEnabled, putQuarantineObject, persistAssetSnapshotAndEvent, compensateStoredAsset, assetForWorkspace, automaticallyScanLocalFixture, getStoredObjectWithRetry } = runtime
 async function archiveGeneratedImages(workspaceId: string, jobId: string, images: readonly string[]) {
@@ -45,7 +57,9 @@ async function archiveGeneratedImages(workspaceId: string, jobId: string, images
       if (!parsedDimensions) throw new DomainError('GENERATED_IMAGE_DIMENSIONS_INVALID', '生成图片缺少可验证的像素尺寸', 502)
       const requestedSize = service.getImageGenerationJob(workspaceId, jobId).visualBrief?.size
       if (requestedSize) {
-        const [requestedWidth, requestedHeight] = requestedSize.split('x').map(Number)
+        const parsedRequestedSize = parseRequestedImageSize(requestedSize)
+        const requestedWidth = parsedRequestedSize.width
+        const requestedHeight = parsedRequestedSize.height
         if (parsedDimensions.width !== requestedWidth || parsedDimensions.height !== requestedHeight) {
           throw new DomainError('GENERATED_IMAGE_DIMENSIONS_MISMATCH', `生成图片实际尺寸 ${parsedDimensions.width}x${parsedDimensions.height} 与请求 ${requestedSize} 不一致`, 502, { requested_size: requestedSize, actual_width: parsedDimensions.width, actual_height: parsedDimensions.height })
         }
