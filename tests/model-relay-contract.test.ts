@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryResponseHasContent, canaryRetryDelayMs, canRetryCanaryResponse, embeddingResponseMatchesModel, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, isPrivateRelayArtifact, persistRelayCanaryEvidence, readRelayErrorRecovery, relayProbeFailureReason, requireCanaryBudget, requireEmbeddingProbePreflight, requireFiniteRelayTokenQuota, requireProductionCandidateBinding, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
+import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryResponseHasContent, canaryRetryDelayMs, canRetryCanaryResponse, embeddingResponseMatchesModel, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, isPrivateRelayArtifact, persistRelayCanaryEvidence, readRelayErrorRecovery, relayProbeFailureReason, requireCanaryBudget, requireEmbeddingProbePreflight, requireFiniteRelayTokenQuota, requireProductionCandidateBinding, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, requiresCanaryBudget, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -59,6 +59,9 @@ describe('production model relay contract', () => {
 
   it('allows polling an existing video job without re-confirming a new billable request', () => {
     expect(shouldBlockForCostGuard({ modality: 'video', confirmCost: false, existingVideoTaskId: 'job-existing' })).toBe(false)
+    expect(requiresCanaryBudget(['video'], 'job-existing')).toBe(false)
+    expect(requiresCanaryBudget(['video'])).toBe(true)
+    expect(requiresCanaryBudget(['text', 'video'], 'job-existing')).toBe(true)
   })
 
   it('requires an explicit per-run budget before any model request', () => {

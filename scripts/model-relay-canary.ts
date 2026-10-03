@@ -301,6 +301,11 @@ export function shouldBlockForCostGuard(input: {
     && (input.modality === 'image' || input.modality === 'image_edit' || input.modality === 'embedding' || (input.modality === 'video' && !input.existingVideoTaskId))
 }
 
+/** Existing video task polling is read-only and must not require a new spend budget. */
+export function requiresCanaryBudget(modalities: readonly ProbeResult['modality'][], existingVideoTaskId?: string): boolean {
+  return modalities.some(modality => modality !== 'video' || !existingVideoTaskId)
+}
+
 export function requireProductionReleaseBinding(input: { environment?: string; releaseId: string }): void {
   if (input.environment?.trim() === 'production' && !input.releaseId.trim()) {
     throw new Error('RELEASE_ID is required for production model relay evidence')
@@ -1002,7 +1007,10 @@ export async function main() {
         if (!relaySecurity) throw new Error('MODEL_RELAY_BASE_URL/ALLOWED_HOSTS 不满足 relay 安全配置')
         if (process.env.NODE_ENV?.trim() === 'production' && !artifactRoot) throw new Error('MODEL_RELAY_ARTIFACT_ROOT is required before production relay requests')
         await assertRelayUrl(base, relaySecurity)
-        const budget = requireCanaryBudget(process.env.MODEL_RELAY_CANARY_MAX_TOTAL_CNY)
+        const existingVideoTaskId = modalities.length === 1 && modalities[0] === 'video' ? process.env.MODEL_RELAY_CANARY_VIDEO_TASK_ID?.trim() : undefined
+        const budget = requiresCanaryBudget(modalities, existingVideoTaskId)
+          ? requireCanaryBudget(process.env.MODEL_RELAY_CANARY_MAX_TOTAL_CNY)
+          : { limitCny: 0, reservedCny: 0 }
         const credentials: Array<{ credential: RelayTokenQuota['credential']; apiKey: string }> = modalities.some(modality => modality !== 'video')
           ? [{ credential: 'model' as const, apiKey: key }]
           : []
