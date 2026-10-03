@@ -46,7 +46,12 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(payload.result.tools.some(tool => tool.name === 'creative-points.balance.get')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'merchant.start')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name.startsWith('upload.session.'))).toBe(false)
-    expect(payload.result.tools.some(tool => tool.name.startsWith('multimodal.video.'))).toBe(false)
+    // Video request/get are registry-enabled on the production MCP surface.
+    // The API still applies workspace, rights, provider, and cost gates when
+    // a call is made; listing the tools is not evidence that rendering is
+    // available for every workspace.
+    expect(payload.result.tools.some(tool => tool.name === 'multimodal.video.request')).toBe(true)
+    expect(payload.result.tools.some(tool => tool.name === 'multimodal.video.get')).toBe(true)
     expect(payload.result.tools.every(tool => tool.inputSchema.type === 'object')).toBe(true)
     expect(payload.result.tools.find(tool => tool.name === 'workspace.health')?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
     expect(payload.result.tools.find(tool => tool.name === 'merchant.first_value')?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false })
@@ -123,16 +128,22 @@ describe('native ChatGPT MCP HTTP transport', () => {
       ['upload-1', 'upload.session.create'],
       ['upload-2', 'upload.session.part'],
       ['upload-3', 'upload.session.complete'],
-      ['video-1', 'multimodal.video.request'],
-      ['video-2', 'multimodal.video.get'],
     ] as const) {
       const disabledTransport = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: {} } }) })
       expect(disabledTransport.status).toBe(200)
       expect(await disabledTransport.json()).toMatchObject({ jsonrpc: '2.0', id, error: { code: -32601 } })
     }
+
+    // Video tools are registered, so malformed calls reach contract
+    // validation and return JSON-RPC invalid-params instead of method-not-found.
+    for (const [id, name] of [['video-1', 'multimodal.video.request'], ['video-2', 'multimodal.video.get']] as const) {
+      const invalidVideo = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: {} } }) })
+      expect(invalidVideo.status).toBe(200)
+      expect(await invalidVideo.json()).toMatchObject({ jsonrpc: '2.0', id, error: { code: -32602 } })
+    }
   })
 
-  it('only lists local video candidates behind the full loopback fixture gate', async () => {
+  it('keeps registry-enabled video tools visible in the loopback fixture', async () => {
     vi.stubEnv('MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES', 'true')
     vi.stubEnv('NODE_ENV', 'development')
     vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true')
