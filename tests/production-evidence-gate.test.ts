@@ -180,6 +180,13 @@ describe('production payment and restore evidence gates', () => {
     ;(value.checks as Record<string, { evidence_ref: string }>).isolated_restore!.evidence_ref = `artifact://production/${relative}#${createHash('sha256').update(bytes).digest('hex')}`
     value.signature_base64 = signProductionEvidence(value, privateKeyPem)
     expect(validateProductionEvidence(value, { ...options('restore'), sourceMigrationVersion: 257 })).toEqual([])
+    capture.source_migration_version = 254
+    capture.restored_migration_prefix = '1:254:254'
+    const legacyBytes = JSON.stringify(capture)
+    writeFileSync(path, legacyBytes)
+    ;(value.checks as Record<string, { evidence_ref: string }>).isolated_restore!.evidence_ref = `artifact://production/${relative}#${createHash('sha256').update(legacyBytes).digest('hex')}`
+    value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, { ...options('restore'), sourceMigrationVersion: 254 })).toEqual([])
     expect(validateProductionEvidence(value, { ...options('restore'), sourceMigrationVersion: 242 })).toContain('checks.isolated_restore.evidence_ref source_migration_version does not match the protected restore capture')
   })
 

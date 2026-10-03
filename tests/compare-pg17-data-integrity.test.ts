@@ -39,6 +39,7 @@ describe('PG17 raw data integrity comparator', () => {
     const rows = Array.from({ length: 257 }, (_, index) => `${index + 1}|migration_${index + 1}|${'5'.repeat(64)}`)
     const modern = { ...capture, source_migration_version: 257, migration_target_version: 257, restored_migration_prefix: '1:257:257', migrated_prefix: '1:257:257', migration_chain_rows: rows, migration_chain_sha256: createHash('sha256').update(rows.join('\n')).digest('hex') }
     expect(comparePg17DataIntegrity(baseline, restored, modern)).toEqual({ status: 'review_consistent', compared_table_count: 1, mismatched_tables: [] })
+    expect(comparePg17DataIntegrity(baseline, restored, { ...modern, source_migration_version: 254, restored_migration_prefix: '1:254:254' }).status).toBe('review_consistent')
     expect(() => comparePg17DataIntegrity(baseline, restored, { ...modern, migration_target_version: 256 })).toThrow(/migration binding invalid/u)
   })
 

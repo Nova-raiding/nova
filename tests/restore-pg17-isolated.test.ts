@@ -33,6 +33,10 @@ describe('protected PostgreSQL 17 isolated restore input contract', () => {
     expect(validateRestoreInputs({ ...input, sourceMigrationVersion: 257 }).sourceMigrationVersion).toBe(257)
     expect(() => validateRestoreInputs({ ...input, sourceMigrationVersion: 242 })).toThrow(/242 snapshot/u)
   })
+  it('accepts a historical 254 source backup when the candidate target advances to 257', () => {
+    const { resign: _resign, ...input } = fixture(254)
+    expect(validateRestoreInputs({ ...input, sourceMigrationVersion: 254 }).sourceMigrationVersion).toBe(254)
+  })
   it('rejects tampered, expired and wrong-version backup attestations', () => {
     const tampered = fixture(); tampered.attestation.migration_version = 241
     expect(() => validateRestoreInputs(tampered)).toThrow(/242 snapshot/)

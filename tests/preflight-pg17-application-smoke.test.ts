@@ -44,6 +44,7 @@ describe('PG17 application smoke read-only preflight', () => {
     const modernCapture = { ...capture, source_migration_version: 257, migration_target_version: 257, restored_migration_prefix: '1:257:257', migrated_prefix: '1:257:257', migration_chain_rows: rows, migration_chain_sha256: createHash('sha256').update(rows.join('\n')).digest('hex') }
     const modernInput = { ...input(), capture: modernCapture }
     expect(validatePg17SmokeTopology(modernInput)).toEqual([])
+    expect(validatePg17SmokeTopology({ ...modernInput, capture: { ...modernCapture, source_migration_version: 254, restored_migration_prefix: '1:254:254' } })).toEqual([])
     expect(validatePg17SmokeTopology({ ...modernInput, capture: { ...modernCapture, migration_target_version: 256, migrated_prefix: '1:256:256' } })).toContain('restore capture migration binding invalid')
   })
   it('rejects an egress-capable network and production Redis or DB URL', () => {
