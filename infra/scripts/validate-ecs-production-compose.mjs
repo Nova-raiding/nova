@@ -138,6 +138,14 @@ for (const name of ['worker-sync', 'worker-generation', 'worker-publish', 'worke
   for (const key of ['WORKER_API_TOKEN', 'WORKER_API_SIGNING_SECRET']) {
     if (!String(environment[key] ?? '').trim()) fail(`${name}.${key} must be configured`)
   }
+  // Keep the worker scope itself fail-closed. The local Compose layer has a
+  // deliberately useful ws_demo default; an incomplete candidate env must
+  // never allow that default (or another fixture id) into production. Check
+  // the parsed scope explicitly so this remains true even if unrelated
+  // worker environment fields change later.
+  const workerScope = String(environment.WORKER_WORKSPACES ?? '').trim()
+  const scopeIds = workerScope === 'auto' ? [] : workerScope.split(',').map(value => value.trim()).filter(Boolean)
+  if (scopeIds.some(id => /^(?:ws_demo|workspace_demo|demo-workspace)$/u.test(id))) fail(`${name}.WORKER_WORKSPACES contains a local/demo fixture workspace`)
   if (/(?:ws_demo|workspace_demo|demo-workspace|local-token|local-signing-secret|merchant_app_local_only)/u.test(JSON.stringify(environment))) fail(`${name} contains a local/demo identity`)
 }
 

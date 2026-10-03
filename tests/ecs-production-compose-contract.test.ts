@@ -288,6 +288,14 @@ describe('ECS production Compose contract', () => {
     expect(validate(rendered, { PRODUCTION_CANARY_WORKSPACE_ID: 'ws_canary' })).toContain('contract passed')
   })
 
+  it('rejects fixture workspace ids in an explicit worker scope', () => {
+    for (const worker of ['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan']) {
+      const rendered = structuredClone(valid) as any
+      rendered.services[worker].environment.WORKER_WORKSPACES = 'ws_demo'
+      expect(() => validate(rendered)).toThrow(new RegExp(`${worker}\\.WORKER_WORKSPACES contains a local/demo fixture workspace`))
+    }
+  })
+
   it('accepts the real final seven-layer production render and keeps the API private to the project network', () => {
     const rendered = renderFinalProductionCompose()
     const migrate = rendered.services.migrate
@@ -307,6 +315,9 @@ describe('ECS production Compose contract', () => {
     expect(gateway.volumes).toEqual(expect.arrayContaining([
       expect.objectContaining({ source: '/opt/merchant-deploy/deploy/certs', target: '/etc/nginx/certs', read_only: true }),
     ]))
+    for (const worker of ['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan']) {
+      expect(rendered.services[worker].environment.WORKER_WORKSPACES, worker).toBe('auto')
+    }
     expect(validate(rendered)).toContain('contract passed')
     expect(rendered.services.api.environment.PUBLIC_OPS_BASE_URL).toBe('https://ops.yxsona.com')
     expect(rendered.services['api-replica'].environment.PUBLIC_OPS_BASE_URL).toBe('https://ops.yxsona.com')
