@@ -38,6 +38,18 @@ describe('ECS eight-image set preparation', () => {
     expect(() => execFileSync('node', [script, '--release-images', metadata, '--candidate-identity', identity, '--migration-image-ref', 'postgres:17-alpine', '--clamav-image-ref', `registry.example.com/clamav@${digest('d')}`, '--output', join(root, 'out')], { stdio: 'pipe' })).toThrow()
   })
 
+  it('rejects duplicate or incomplete candidate identity fields', () => {
+    const root = mkdtempSync(join(tmpdir(), 'eight-image-identity-'))
+    const metadata = join(root, 'release-images.json')
+    const identity = join(root, 'candidate-identity')
+    const artifacts = ['merchant-api', 'merchant-worker', 'merchant-ui', 'merchant-ops-ui', 'payment-gateway', 'pilot-gateway']
+    const imageDigests = Object.fromEntries(artifacts.map(artifact => [artifact, digest('1')]))
+    const imageReferences = Object.fromEntries(artifacts.map(artifact => [artifact, `registry.example.com/${artifact}@${imageDigests[artifact]}`]))
+    writeFileSync(metadata, JSON.stringify({ schema_version: 1, release_id: 'release-right', release_git_sha: 'a'.repeat(40), source_sha256: digest('b'), image_digests: imageDigests, image_references: imageReferences }))
+    writeFileSync(identity, `release_id=release-right\nrelease_id=release-tampered\ngit_sha=${'a'.repeat(40)}\nsource_sha256=${digest('b')}\n`)
+    expect(() => execFileSync('node', [script, '--release-images', metadata, '--candidate-identity', identity, '--migration-image-ref', `registry.example.com/library/postgres:17-alpine@${digest('c')}`, '--clamav-image-ref', `registry.example.com/clamav@${digest('d')}`, '--output', join(root, 'out')], { stdio: 'pipe' })).toThrow(/duplicate or empty fields/)
+  })
+
   it('rejects a mutable migration tag', () => {
     const root = mkdtempSync(join(tmpdir(), 'eight-image-mutable-'))
     const metadata = join(root, 'release-images.json')

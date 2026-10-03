@@ -33,10 +33,19 @@ regular(identityPath, 'candidate identity')
 if (existsSync(output)) fail('output directory must not already exist')
 
 const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'))
-const identity = Object.fromEntries(readFileSync(identityPath, 'utf8').trim().split('\n').map(line => {
+const identityLines = readFileSync(identityPath, 'utf8').trim().split(/\r?\n/u)
+const identity = {}
+for (const line of identityLines) {
   const split = line.indexOf('=')
-  return split > 0 ? [line.slice(0, split), line.slice(split + 1)] : fail('candidate identity is malformed')
-}))
+  if (split <= 0) fail('candidate identity is malformed')
+  const key = line.slice(0, split)
+  const value = line.slice(split + 1)
+  if (Object.hasOwn(identity, key) || !value) fail('candidate identity has duplicate or empty fields')
+  identity[key] = value
+}
+if (!/^(?:release|ecs)-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(identity.release_id ?? '') ||
+    !/^[0-9a-f]{40}$/u.test(identity.git_sha ?? '') ||
+    !/^sha256:[0-9a-f]{64}$/u.test(identity.source_sha256 ?? '')) fail('candidate identity is incomplete')
 if (metadata.schema_version !== 1) fail('unsupported release image metadata schema')
 if (metadata.release_id !== identity.release_id || metadata.release_git_sha !== identity.git_sha || metadata.source_sha256 !== identity.source_sha256) {
   fail('six-image metadata does not match the staged candidate identity')

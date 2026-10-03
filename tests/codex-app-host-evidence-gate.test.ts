@@ -123,6 +123,17 @@ describe('ChatGPT Desktop host evidence gate', () => {
     expect(mismatchedRun.stderr).toContain('candidate route probe does not match the frozen release')
     writeFileSync(probePath, releaseProbeBytes)
 
+    const nonCanonicalCapture = JSON.parse(readFileSync(capturePath, 'utf8'))
+    nonCanonicalCapture.mcp_base_url = 'https://merchant.example.com/mcp'
+    const nonCanonicalPath = join(root, 'non-canonical-origin-capture.json')
+    writeFileSync(nonCanonicalPath, JSON.stringify(nonCanonicalCapture))
+    const nonCanonicalRun = spawnSync(process.execPath, [
+      resolve('scripts/collect-codex-app-host-evidence.mjs'), '--capture', nonCanonicalPath,
+      '--output', join(root, 'non-canonical-origin-evidence.json'), '--artifact-root', root,
+    ], { encoding: 'utf8' })
+    expect(nonCanonicalRun.status).toBe(1)
+    expect(nonCanonicalRun.stderr).toContain('capture.mcp_base_url must be a canonical public HTTPS root origin')
+
     const existingBytes = readFileSync(outputPath)
     const changedCapture = JSON.parse(readFileSync(capturePath, 'utf8'))
     changedCapture.generated_at = '2026-08-29T01:01:00Z'

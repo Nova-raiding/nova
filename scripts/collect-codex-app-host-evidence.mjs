@@ -8,6 +8,7 @@
  * evidence document for tests/codex-app-host-evidence-gate.ts.
  */
 import { createHash, randomBytes } from 'node:crypto'
+import { isIP } from 'node:net'
 import { closeSync, existsSync, fchmodSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, relative, sep } from 'node:path'
 
@@ -55,8 +56,22 @@ if (capture.environment === 'production' && !/^[A-Za-z0-9_-]{22,128}$/u.test(cap
 if (typeof capture.generated_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u.test(capture.generated_at) || Number.isNaN(Date.parse(capture.generated_at))) {
   throw new Error('capture.generated_at must be a strict UTC ISO timestamp from the real host capture')
 }
-if (!/^https:\/\//u.test(String(capture.mcp_base_url ?? '')) || forbidden.test(String(capture.mcp_base_url))) {
-  throw new Error('capture.mcp_base_url must be a public HTTPS origin, not local or fixture')
+const mcpBaseUrl = String(capture.mcp_base_url ?? '').trim()
+let parsedMcpBaseUrl
+try { parsedMcpBaseUrl = new URL(mcpBaseUrl) } catch { parsedMcpBaseUrl = undefined }
+const mcpHostname = parsedMcpBaseUrl?.hostname.toLowerCase().replace(/^\[|\]$/gu, '') ?? ''
+if (!parsedMcpBaseUrl
+  || parsedMcpBaseUrl.protocol !== 'https:'
+  || parsedMcpBaseUrl.username
+  || parsedMcpBaseUrl.password
+  || parsedMcpBaseUrl.search
+  || parsedMcpBaseUrl.hash
+  || (parsedMcpBaseUrl.pathname !== '' && parsedMcpBaseUrl.pathname !== '/')
+  || parsedMcpBaseUrl.origin !== mcpBaseUrl
+  || parsedMcpBaseUrl.hostname !== parsedMcpBaseUrl.hostname.toLowerCase()
+  || forbidden.test(parsedMcpBaseUrl.hostname)
+  || isIP(mcpHostname) !== 0) {
+  throw new Error('capture.mcp_base_url must be a canonical public HTTPS root origin, not local or fixture')
 }
 if (!/^[a-f0-9]{64}$/u.test(String(capture.bridge_sha256 ?? ''))) {
   throw new Error('capture.bridge_sha256 must be a SHA-256 digest')
