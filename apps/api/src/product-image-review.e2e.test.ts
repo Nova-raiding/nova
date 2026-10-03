@@ -260,7 +260,7 @@ describe('product image review API', () => {
     const workspaceId = `ws_visual_select_${Date.now()}`
     await grantCreativePointsForTests(workspaceId)
     grantContinuousFeatureEntitlementForTests(workspaceId)
-    const product = service.importProduct({ workspaceId, platform: 'taobao', localProductKey: 'visual-select', title: '显式选图商品', stock: 8, images: ['https://example.com/original.jpg'], skus: [{ id: 'sku-visual-blue-m', name: '蓝色 / M', price: 129, stock: 8 }] })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', localProductKey: 'visual-select', title: '显式选图商品', stock: 8, images: ['https://example.com/original.jpg'], skus: [{ id: 'sku-visual-blue-m', name: '蓝色 / M', price: 129, stock: 8, images: ['https://example.com/original.jpg'] }] })
     service.confirmProductFacts(workspaceId, product.id)
     const task = service.createTask({ workspaceId, productId: product.id, platform: 'taobao' })
     service.selectDirection(task.id, 'A')
