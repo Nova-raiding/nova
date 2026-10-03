@@ -58,6 +58,7 @@ async function archiveGeneratedImages(workspaceId: string, jobId: string, images
       const requestedSize = service.getImageGenerationJob(workspaceId, jobId).visualBrief?.size
       if (requestedSize) {
         const parsedRequestedSize = parseRequestedImageSize(requestedSize)
+        if (!parsedRequestedSize) throw new DomainError('GENERATED_IMAGE_DIMENSIONS_INVALID', '图片请求尺寸缺少宽高', 422, { requested_size: requestedSize })
         const requestedWidth = parsedRequestedSize.width
         const requestedHeight = parsedRequestedSize.height
         if (parsedDimensions.width !== requestedWidth || parsedDimensions.height !== requestedHeight) {
