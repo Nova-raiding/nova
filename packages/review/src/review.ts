@@ -144,7 +144,7 @@ export function reviewProductImages(images: readonly string[] | undefined): Revi
           else if (bytes.readUInt32BE(16) < 1024 || bytes.readUInt32BE(20) < 1024) findings.push(finding({ code: 'IMAGE_TOO_SMALL', severity: 'error', priority: 'P1', field: `images[${index}]`, message: '商品主图分辨率不足 1024×1024', repairSuggestion: '更换或重新生成至少 1024×1024 的商品主图', kind: 'image', sourceIds: imageSource }))
         } else {
           const webpChunk = bytes.length >= 16 ? bytes.toString('ascii', 12, 16) : ''
-          const validWebp = bytes.length >= 20
+          let validWebp = bytes.length >= 20
             && bytes.toString('ascii', 0, 4) === 'RIFF'
             && bytes.toString('ascii', 8, 12) === 'WEBP'
             && ['VP8 ', 'VP8L', 'VP8X'].includes(webpChunk)
@@ -156,11 +156,18 @@ export function reviewProductImages(images: readonly string[] | undefined): Revi
           } else if (validWebp && webpChunk === 'VP8 ' && bytes.length >= 30) {
             width = bytes.readUInt16LE(26) & 0x3fff
             height = bytes.readUInt16LE(28) & 0x3fff
-          } else if (validWebp) {
-            // VP8L dimensions are bit-packed. The supported chunk signature
-            // still proves this is a WebP; compositor/provider enforce size.
-            width = 1024
-            height = 1024
+          } else if (validWebp && webpChunk === 'VP8L' && bytes.length >= 25 && bytes[20] === 0x2f) {
+            // VP8L stores 14-bit dimensions across the four bytes following
+            // its 0x2f signature. Do not assume 1024x1024: that allowed tiny
+            // lossless WebP candidates to bypass the main-image size gate.
+            const b1 = bytes[21]!
+            const b2 = bytes[22]!
+            const b3 = bytes[23]!
+            const b4 = bytes[24]!
+            width = 1 + (((b2 & 0x3f) << 8) | b1)
+            height = 1 + (((b4 & 0x0f) << 10) | (b3 << 2) | (b2 >> 6))
+          } else if (validWebp && webpChunk === 'VP8L') {
+            validWebp = false
           }
           if (!validWebp) findings.push(finding({ code: 'IMAGE_FORMAT_UNSUPPORTED', severity: 'error', priority: 'P0', field: `images[${index}]`, message: 'WebP 数据签名无效，无法作为商品主图使用', repairSuggestion: '重新导出或上传可正常解析的 WebP 图片', kind: 'image', sourceIds: imageSource }))
           else if (width < 1024 || height < 1024) findings.push(finding({ code: 'IMAGE_TOO_SMALL', severity: 'error', priority: 'P1', field: `images[${index}]`, message: '商品主图分辨率不足 1024×1024', repairSuggestion: '更换或重新生成至少 1024×1024 的商品主图', kind: 'image', sourceIds: imageSource }))

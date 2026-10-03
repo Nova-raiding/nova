@@ -1,0 +1,27 @@
+{
+  "surface": "installed-local-stdio-bridge",
+  "plugin_version": "0.1.0+codex.20261003154414",
+  "protocol_version": "2025-06-18",
+  "initialize": {"server": "merchant-marketing"},
+  "calls": {
+    "onboarding.status": {
+      "isError": true,
+      "code": "MCP_CONFIGURATION_REQUIRED",
+      "missing": ["MERCHANT_MCP_BASE_URL"],
+      "operation_status": "blocked",
+      "retryable": false,
+      "request_sent_to_backend": false,
+      "preserved": ["uploaded_assets", "confirmed_facts", "saved_products", "saved_skus"]
+    },
+    "workspace.health": {
+      "isError": true,
+      "code": "MCP_CONFIGURATION_REQUIRED",
+      "missing": ["MERCHANT_MCP_BASE_URL"],
+      "operation_status": "blocked",
+      "retryable": false,
+      "request_sent_to_backend": false,
+      "preserved": ["uploaded_assets", "confirmed_facts", "saved_products", "saved_skus"]
+    }
+  },
+  "host_acceptance": "After local authorization, fully restart ChatGPT/Codex, create a new conversation, then call onboarding.status."
+}

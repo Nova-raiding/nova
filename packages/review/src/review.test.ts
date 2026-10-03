@@ -131,6 +131,16 @@ describe('deterministic content review', () => {
     expect(isReviewBlocking(findings)).toBe(false)
   })
 
+  it('reads VP8L dimensions instead of trusting a hard-coded 1024 fallback', () => {
+    const webp = Buffer.alloc(25)
+    webp.write('RIFF', 0, 'ascii')
+    webp.writeUInt32LE(17, 4)
+    webp.write('WEBPVP8L', 8, 'ascii')
+    webp[20] = 0x2f
+    const findings = reviewProductImages([`data:image/webp;base64,${webp.toString('base64')}`])
+    expect(findings).toContainEqual(expect.objectContaining({ code: 'IMAGE_TOO_SMALL', priority: 'P1', field: 'images[0]' }))
+  })
+
   it('reports all six PRD review categories without claiming external checks passed', () => {
     const report = buildReviewReport([], { brandProfileBound: false, visualBriefChecked: true, technicalSchemaChecked: true, platformMappingChecked: true })
     expect(report.categories.map(category => category.id)).toEqual(['product_truth', 'brand_consistency', 'copy_price_compliance', 'visual_brief_quality', 'technical_specification', 'platform_preflight'])
