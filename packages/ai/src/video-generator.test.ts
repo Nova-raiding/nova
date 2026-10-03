@@ -327,3 +327,12 @@ it('passes Wan 3 original image as native first-frame media, never text-only', a
   expect(payload.metadata.input.media).toEqual([{ type: 'first_frame', url: 'data:image/png;base64,AQID' }])
   expect(payload.image).toBe('data:image/png;base64,AQID')
 })
+
+it('passes native first-frame media for a newly configured image model', async () => {
+  let payload: any
+  const generator = new OpenAICompatibleVideoGenerator({ baseUrl: 'https://relay.example', apiKey: 'key', model: 'text-model', imageModel: 'new-i2v-provider', resolution: '1080P', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (_url, init) => {
+    payload = JSON.parse(String(init?.body)); return new Response(JSON.stringify({ usage: { total_tokens: 1, cost_cny: 0.01 }, task_id: 'new-i2v', status: 'queued' }))
+  } })
+  await generator.generate({ prompt: '商品', output: 'rendering', context: {}, sourceImage: 'data:image/png;base64,AQID' })
+  expect(payload.metadata.input.media).toEqual([{ type: 'first_frame', url: 'data:image/png;base64,AQID' }])
+})

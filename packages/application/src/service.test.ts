@@ -2364,6 +2364,37 @@ describe('MerchantService', () => {
     expect(() => service.approveContent(task.id, draft.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
   })
 
+  it('blocks detail approval and export when any SKU has no image mapping', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.products.get('prod_fixture_1')!
+    product.skus = [{ id: 'sku-unmapped', name: '黑色/L', price: 109, stock: 1 }]
+    product.skuCount = 1
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    const draft = service.createDraft(task.id)
+    expect(service.reviewContent('ws_demo', draft.id)).toContainEqual(expect.objectContaining({
+      code: 'SKU_IMAGE_MAPPING_INVALID', field: 'sku.sku-unmapped.images', severity: 'error', priority: 'P0',
+    }))
+    expect(() => service.approveContent(task.id, draft.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
+    expect(() => service.exportContent('ws_demo', draft.id, 'json')).toThrowError(expect.objectContaining({ code: 'CONTENT_EXPORT_BLOCKED' }))
+  })
+
+  it('checks SKU image evidence only for the SKU scope frozen into the task', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.products.get('prod_fixture_1')!
+    product.skus = [
+      { id: 'sku-mapped', name: '蓝色/M', price: 99, stock: 2, images: ['fixture://sku-mapped.jpg'] },
+      { id: 'sku-unmapped', name: '黑色/L', price: 109, stock: 1 },
+    ]
+    product.skuCount = 2
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao' })
+    service.answerTask('ws_demo', task.id, { sku_id: 'sku-mapped' })
+    service.selectDirection(task.id, 'A')
+    const draft = service.createDraft(task.id)
+    expect(draft.versionVector?.skuIds).toEqual(['sku-mapped'])
+    expect(service.reviewContent('ws_demo', draft.id)).not.toContainEqual(expect.objectContaining({ code: 'SKU_IMAGE_MAPPING_INVALID' }))
+  })
+
   it('does not treat a confirmed product snapshot as visual, outcome or report evidence', () => {
     const service = new MerchantService({ fixtureMode: true })
     const product = service.products.get('prod_fixture_1')!

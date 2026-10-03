@@ -1,6 +1,7 @@
 import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
+import { assertImageArtifactQuality } from './image-quality.js'
 import { assertProviderResponseAccepted, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
@@ -117,6 +118,7 @@ export class OpenAICompatibleImageEditGenerator implements ImageEditGenerator {
       }
       const usage = await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image_edit', model: this.options.model, context: { ...input.usageContext, observedArtifactCount: images.length, providerAttemptId: providerKey } })
       if (usage.metadata?.artifact_count_mismatch === true || images.length !== 1) throwProviderOutcomeUnknown(providerKey, 'image edit provider artifact count does not match reported usage')
+      for (const image of images) assertImageArtifactQuality(image)
       return images
     } finally { clearTimeout(timeout) }
   }

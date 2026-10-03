@@ -1,6 +1,8 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { DomainError, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isUsableAssetWithoutScan } from '../../../packages/application/src/service.js'
 import { GENERATED_IMAGE_MIME, generatedImageSignatureMatches, imageArtifactBody } from './image-artifact-policy.js'
+import { assertImageArtifactQuality } from '../../../packages/ai/src/image-quality.js'
+import { readImageDimensions } from './image-dimensions.js'
 import type { imageArchiveRuntime } from './server.js'
 
 type ImageArchiveRuntime = ReturnType<typeof imageArchiveRuntime>
@@ -22,19 +24,38 @@ async function archiveGeneratedImages(workspaceId: string, jobId: string, images
     if (!extension || (match && !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(match[2]!))) throw new DomainError('GENERATED_IMAGE_FORMAT_INVALID', '图片生成服务返回了不支持的图片格式', 502)
     const body = downloaded?.body ?? new Uint8Array(Buffer.from(match![2]!, 'base64'))
     if (!generatedImageSignatureMatches(mimeType, body)) throw new DomainError('GENERATED_IMAGE_SIGNATURE_INVALID', '图片生成服务返回的 MIME 类型与文件内容不匹配', 502)
+    // Inspect the bytes after URL download as well as inline relay payloads.
+    // This catches a provider URL whose image.json technically parses but is
+    // effectively an empty white canvas before it can become a clean asset.
+    if (mimeType === 'image/png') assertImageArtifactQuality(`data:image/png;base64,${Buffer.from(body).toString('base64')}`)
     totalBytes += body.byteLength
     if (!body.byteLength || body.byteLength > 15 * 1024 * 1024 || totalBytes > 50 * 1024 * 1024) throw new DomainError('GENERATED_IMAGE_TOO_LARGE', '生成图片超过归档大小限制', 413)
     const asset = service.registerAsset({ workspaceId, name: `candidate-${index + 1}.${extension}`, mimeType, sizeBytes: body.byteLength, sha256: createHash('sha256').update(body).digest('hex'), storageKey: `quarantine/${workspaceId}/generated_pending_${randomBytes(12).toString('hex')}/candidate-${index + 1}.${extension}`, ...(demoUnscannedAssetsEnabled() ? { scanMode: 'unscanned' as const } : {}) })
     createdAssetIds.push(asset.id)
     const stored = await putQuarantineObject({ workspaceId, assetId: asset.id, fileName: `candidate-${index + 1}.${extension}`, contentType: mimeType, body, expectedSizeBytes: body.byteLength })
-      storedAssets.push({ assetId: asset.id, objectKey: stored.key })
-      asset.storageKey = stored.key
-      asset.sha256 = stored.sha256
-      asset.sizeBytes = stored.sizeBytes
-      const archiveReceiptId = `image_archive_${randomUUID()}`
-      const archiveReceiptDigest = imageArchiveReceiptDigest({ archiveReceiptId, workspaceId, jobId, assetId: asset.id, objectSha256: stored.sha256, sizeBytes: stored.sizeBytes, mimeType, createdAt: stored.createdAt })
-      await persistAssetSnapshotAndEvent(workspaceId, asset, demoUnscannedAssetsEnabled() ? 'asset.generated_unscanned' : 'asset.generated_quarantined', { asset_id: asset.id, job_id: jobId, archive_receipt_id: archiveReceiptId, archive_receipt_digest: archiveReceiptDigest, storage_key: stored.key, sha256: stored.sha256, size_bytes: stored.sizeBytes, scan_status: asset.scanStatus, ...(demoUnscannedAssetsEnabled() ? {} : { next_action: 'asset.scan' }) }, asset as unknown as Record<string, unknown>)
-      outputs.push({ visualRef: `dvis_${randomBytes(18).toString('base64url')}`, assetId: asset.id, archiveReceiptId, archiveReceiptDigest, ordinal: index + 1, storageKey: stored.key, mimeType, sizeBytes: stored.sizeBytes, sha256: stored.sha256, createdAt: stored.createdAt, reviewStatus: 'unreviewed' })
+    storedAssets.push({ assetId: asset.id, objectKey: stored.key })
+    asset.storageKey = stored.key
+    asset.sha256 = stored.sha256
+      // Generated candidates must carry dimensions parsed from the exact
+      // archived bytes.  Without this binding a long page could be returned
+      // as "ready" while its actual canvas is a provider default (often
+      // square), making the requested 1024x3072/4096 contract unverifiable.
+    if (mimeType.toLowerCase().startsWith('image/')) {
+      const parsedDimensions = readImageDimensions(body, mimeType, stored.sha256, asset.sourceRevision ?? 1)
+      if (!parsedDimensions) throw new DomainError('GENERATED_IMAGE_DIMENSIONS_INVALID', '生成图片缺少可验证的像素尺寸', 502)
+      const requestedSize = service.getImageGenerationJob(workspaceId, jobId).visualBrief?.size
+      if (requestedSize) {
+        const [requestedWidth, requestedHeight] = requestedSize.split('x').map(Number)
+        if (parsedDimensions.width !== requestedWidth || parsedDimensions.height !== requestedHeight) {
+          throw new DomainError('GENERATED_IMAGE_DIMENSIONS_MISMATCH', `生成图片实际尺寸 ${parsedDimensions.width}x${parsedDimensions.height} 与请求 ${requestedSize} 不一致`, 502, { requested_size: requestedSize, actual_width: parsedDimensions.width, actual_height: parsedDimensions.height })
+        }
+      }
+      asset.imageDimensions = parsedDimensions
+    }
+    const archiveReceiptId = `image_archive_${randomUUID()}`
+    const archiveReceiptDigest = imageArchiveReceiptDigest({ archiveReceiptId, workspaceId, jobId, assetId: asset.id, objectSha256: stored.sha256, sizeBytes: stored.sizeBytes, mimeType, createdAt: stored.createdAt })
+    await persistAssetSnapshotAndEvent(workspaceId, asset, demoUnscannedAssetsEnabled() ? 'asset.generated_unscanned' : 'asset.generated_quarantined', { asset_id: asset.id, job_id: jobId, archive_receipt_id: archiveReceiptId, archive_receipt_digest: archiveReceiptDigest, storage_key: stored.key, sha256: stored.sha256, size_bytes: stored.sizeBytes, scan_status: asset.scanStatus, ...(demoUnscannedAssetsEnabled() ? {} : { next_action: 'asset.scan' }) }, asset as unknown as Record<string, unknown>)
+    outputs.push({ visualRef: `dvis_${randomBytes(18).toString('base64url')}`, assetId: asset.id, archiveReceiptId, archiveReceiptDigest, ordinal: index + 1, storageKey: stored.key, mimeType, sizeBytes: stored.sizeBytes, sha256: stored.sha256, createdAt: stored.createdAt, reviewStatus: 'unreviewed' })
     }
     const archiveState = outputs.length === images.length ? (process.env.NODE_ENV === 'test' || demoUnscannedAssetsEnabled() ? 'archived' : 'pending') : outputs.length ? 'partial' : 'external_unarchived'
     if (!outputs.length) throw new DomainError('GENERATED_IMAGE_ARCHIVE_EMPTY', '图片模型已返回但没有可安全归档的候选，已停止自动重试并等待对账', 502)

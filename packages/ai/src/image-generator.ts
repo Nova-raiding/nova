@@ -5,6 +5,7 @@ import { readBoundedResponseText } from '../../connectors/src/bounded-response.j
 import { assertProviderResponseAccepted, ProviderRequestFailedError, ProviderOutcomeUnknownError, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 import { composeMarketingImages } from './image-marketing-compositor.js'
+import { assertImageArtifactQuality } from './image-quality.js'
 
 function imageTrace(event: string, fields: Record<string, unknown> = {}) {
   if (process.env.NODE_ENV === 'production' && process.env.MERCHANT_IMAGE_TRACE_LOGS !== 'true') return
@@ -428,6 +429,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const finalImages = hasMarketingLayer
         ? await composeMarketingImages(images, { productTitle: input.productTitle, ...brief }, this.fetchImpl, { signal: controller.signal })
         : images
+      for (const image of finalImages) assertImageArtifactQuality(image)
       imageTrace('compositor.completed', { provider_request_id: providerKey, input_count: images.length, output_count: finalImages.length, marketing_layer: hasMarketingLayer })
       return finalImages
     } finally {

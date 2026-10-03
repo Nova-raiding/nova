@@ -744,6 +744,44 @@ function hasHttpsOutput(value: unknown, depth = 0): boolean {
   return ['result_url', 'video_url', 'output_url', 'url', 'output'].some(key => hasHttpsOutput(output[key], depth + 1))
 }
 
+/** Validate the minimum payload content for the canary itself. A successful
+ * HTTP response with an empty choice/data array is not a usable modality
+ * result and must stay blocked before evidence is persisted as ready. */
+export function canaryResponseHasContent(modality: ProbeResult['modality'], payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
+  const root = payload as Record<string, unknown>
+  if (modality === 'text' || modality === 'ocr') {
+    if (!Array.isArray(root.choices) || root.choices.length === 0) return false
+    const first = root.choices[0]
+    if (!first || typeof first !== 'object' || Array.isArray(first)) return false
+    const message = (first as Record<string, unknown>).message
+    if (!message || typeof message !== 'object' || Array.isArray(message)) return false
+    const content = (message as Record<string, unknown>).content
+    if (typeof content !== 'string' || !content.trim()) return false
+    if (modality === 'ocr') {
+      try {
+        const parsed = JSON.parse(content) as unknown
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false
+        const ocrText = (parsed as Record<string, unknown>).ocr_text
+        return typeof ocrText === 'string' && ocrText.trim().length > 0
+      } catch { return false }
+    }
+    return true
+  }
+  if (modality === 'image' || modality === 'image_edit') {
+    const data = Array.isArray(root.data) ? root.data : undefined
+    if (!data || data.length === 0) return false
+    return data.some(item => {
+      if (typeof item === 'string') return isStrictHttpsUrl(item) || /^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/iu.test(item)
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+      const value = item as Record<string, unknown>
+      return (typeof value.url === 'string' && isStrictHttpsUrl(value.url))
+        || (typeof value.b64_json === 'string' && value.b64_json.trim().length > 0)
+    })
+  }
+  return true
+}
+
 function isStrictHttpsUrl(value: unknown): value is string {
   if (typeof value !== 'string' || value !== value.trim() || !/^https:\/\//iu.test(value)) return false
   const authority = /^https:\/\/([^/?#]*)/iu.exec(value)?.[1]
@@ -899,12 +937,12 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
       ? (embeddingData[0] as { embedding: unknown[] }).embedding : undefined
     const validEmbeddingVector = embeddingVector?.length === 1024 && embeddingVector.every(value => typeof value === 'number' && Number.isFinite(value))
     const valid = modality === 'text' || modality === 'ocr'
-      ? Boolean(payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).choices))
+      ? canaryResponseHasContent(modality, payload)
       : modality === 'embedding'
         ? validEmbeddingVector === true && embeddingResponseMatchesModel(payload, model)
       : modality === 'video'
         ? videoEvaluation?.ready === true
-        : Boolean(payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).data))
+      : canaryResponseHasContent(modality, payload)
     const finalized = finalizeSuccessfulProbe({
       ...common,
       httpStatus: response.status,

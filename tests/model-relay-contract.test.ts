@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, embeddingResponseMatchesModel, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, isPrivateRelayArtifact, persistRelayCanaryEvidence, readRelayErrorRecovery, relayProbeFailureReason, requireCanaryBudget, requireEmbeddingProbePreflight, requireFiniteRelayTokenQuota, requireProductionCandidateBinding, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
+import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryResponseHasContent, canaryRetryDelayMs, canRetryCanaryResponse, embeddingResponseMatchesModel, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, isPrivateRelayArtifact, persistRelayCanaryEvidence, readRelayErrorRecovery, relayProbeFailureReason, requireCanaryBudget, requireEmbeddingProbePreflight, requireFiniteRelayTokenQuota, requireProductionCandidateBinding, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -31,6 +31,15 @@ describe('production model relay contract', () => {
     expect(relayProbeFailureReason(new Error('MODEL_PRICING_MODEL_MISSING: relay pricing is missing model x'))).toBe('relay_pricing_model_missing')
     expect(relayProbeFailureReason(new Error('video canary requires explicit 720P/1080P resolution'))).toBe('relay_video_preflight_invalid')
     expect(relayProbeFailureReason(new Error('provider said sk-secret'))).toBe('relay_probe_failed')
+  })
+
+  it('requires non-empty OCR content and usable image references before canary success', () => {
+    expect(canaryResponseHasContent('ocr', { choices: [{ message: { content: '' } }] })).toBe(false)
+    expect(canaryResponseHasContent('ocr', { choices: [{ message: { content: '{"ocr_text":"  "}' } }] })).toBe(false)
+    expect(canaryResponseHasContent('ocr', { choices: [{ message: { content: '{"ocr_text":"OK"}' } }] })).toBe(true)
+    expect(canaryResponseHasContent('image', { data: [] })).toBe(false)
+    expect(canaryResponseHasContent('image', { data: [{ b64_json: '' }] })).toBe(false)
+    expect(canaryResponseHasContent('image', { data: [{ url: 'https://cdn.example/image.png' }] })).toBe(true)
   })
 
   it('loads an operator-captured recovery object without inventing recovery evidence', () => {

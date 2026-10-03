@@ -1,9 +1,22 @@
 import { describe, expect, it, vi } from 'vitest'
+import { deflateSync } from 'node:zlib'
 import { OpenAICompatibleImageGenerator, createImageGeneratorFromEnv } from './image-generator.js'
 import { OpenAICompatibleImageEditGenerator, createImageEditGeneratorFromEnv } from './image-editor.js'
 import type { RelayUsageRecord } from './relay-usage.js'
 
 const VALID_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+
+function solidWhitePng(size = 64) {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+  const chunk = (type: string, body: Buffer) => {
+    const header = Buffer.alloc(8); header.writeUInt32BE(body.length, 0); header.write(type, 4, 'ascii')
+    return Buffer.concat([header, body, Buffer.alloc(4)])
+  }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 2
+  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(size * 3, 255)])
+  const pixels = Buffer.concat(Array.from({ length: size }, () => row))
+  return Buffer.concat([signature, chunk('IHDR', ihdr), chunk('IDAT', deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))]).toString('base64')
+}
 
 describe('image generator', () => {
   it('does not assemble an image edit provider from placeholder relay configuration', () => {
@@ -124,6 +137,16 @@ describe('image generator', () => {
       .rejects.toMatchObject({ code: 'IMAGE_OUTPUT_UNCHANGED', providerOutcome: 'failed', retryable: false })
   })
 
+  it('rejects an almost-empty white inline artifact after recording relay usage', async () => {
+    const sink = vi.fn<(record: RelayUsageRecord) => { recorded: true; costEvidence: true }>(() => ({ recorded: true, costEvidence: true }))
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: sink,
+      fetch: async () => new Response(JSON.stringify({ id: 'white-image', usage: { output_image_count: 1, cost_cny: 0.01 }, data: [{ b64_json: solidWhitePng() }] }), { status: 200 }),
+    })
+    await expect(generator.generate({ productTitle: '外套', direction: '白底主图', count: 1 })).rejects.toMatchObject({ code: 'IMAGE_ARTIFACT_QUALITY_FAILED', providerSucceeded: true, reconciliationRequired: true })
+    expect(sink).toHaveBeenCalled()
+  })
+
   it('never downgrades an edit with only internal asset IDs to text-only generation', async () => {
     let called = false
     const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', fetch: async () => { called = true; throw new Error('unexpected') } })
@@ -219,6 +242,14 @@ describe('image generator', () => {
     await expect(generator.generate({ prompt: '优化背景', sourceImages: [{ bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png' }], region: { x: 0, y: 0, width: 1, height: 1 } })).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
     expect(sink).toHaveBeenCalledWith(expect.objectContaining({ providerRequestId: 'malformed-image-edit', costCny: 0.01, metadata: expect.objectContaining({ billing_units: 1, billing_units_evidence: 'provider_usage' }) }))
     expect(sink.mock.calls[0]?.[0].metadata).not.toHaveProperty('observed_artifact_count')
+  })
+
+  it('blocks an almost-empty white image edit artifact before candidate delivery', async () => {
+    const generator = new OpenAICompatibleImageEditGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'edit-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async () => new Response(JSON.stringify({ id: 'white-image-edit', usage: { output_image_count: 1, cost_cny: 0.01 }, data: [{ b64_json: solidWhitePng() }] }), { status: 200 }),
+    })
+    await expect(generator.generate({ prompt: '优化背景', sourceImages: [{ bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png' }], region: { x: 0, y: 0, width: 1, height: 1 } })).rejects.toMatchObject({ code: 'IMAGE_ARTIFACT_QUALITY_FAILED', providerSucceeded: true, reconciliationRequired: true })
   })
 
   it('turns confirmed marketing inputs into a designed main-image layer', async () => {

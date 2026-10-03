@@ -3931,12 +3931,17 @@ export class MerchantService {
       repairSuggestion: '修正品牌视觉强规则或素材权益后，创建新内容版本并重新审核',
       evidence: { kind: 'brand', sourceIds: [`brand:${brandSnapshot?.id ?? 'unknown'}:r${brandSnapshot?.revision ?? 0}`, ...(issue.assetId ? [`asset:${issue.assetId}`] : [])], verified: true, scope: 'local_deterministic', externalVerification: 'not_performed', boundary: REVIEW_EVIDENCE_BOUNDARY },
     }))
+    const scopedSkuIds = new Set(version.versionVector?.skuIds ?? product?.skus?.map(sku => sku.id) ?? [])
     const findings = [...reviewDeterministic({
       body: version.body,
       modules: reviewModules,
       facts: { sourceIds: version.factVersionIds, skuIds: version.versionVector?.skuIds ?? product?.skus?.map(sku => sku.id) ?? [] },
       referencedSkuIds,
-      ...(product?.skus ? { skuImageMappings: product.skus.filter(sku => Array.isArray(sku.images)).map(sku => ({ skuId: sku.id, imageCount: sku.images?.length ?? 0, sourceIds: [`sku:${sku.id}`] })) } : {}),
+      // Review every SKU, including rows that have no `images` field.  The
+      // previous filter silently dropped an unmapped SKU, which made a
+      // detail-page version pass approval/export even though its SKU module
+      // explicitly promises an image mapping for every SKU.
+      ...(product?.skus ? { skuImageMappings: product.skus.filter(sku => scopedSkuIds.has(sku.id)).map(sku => ({ skuId: sku.id, imageCount: sku.images?.length ?? 0, sourceIds: [`sku:${sku.id}`] })) } : {}),
       ruleVersionIds: version.ruleVersionIds,
       availableRuleVersionIds: rules?.availableRuleVersionIds ?? this.ruleCenter.activeVersionIds(),
       forbiddenTerms: rules?.forbiddenTerms ?? this.ruleCenter.activeChecks().forbiddenTerms,
