@@ -4969,6 +4969,28 @@ export class MerchantService {
     return version
   }
 
+  /** Promote a reviewed candidate body into an immutable formal version.
+   * The caller must supply a real, confirmed task; this never creates a task
+   * or changes product facts and remains subject to the normal review gate.
+   */
+  confirmCandidateVersion(input: { taskId: string; body: ContentVersion['body']; reason?: string }) {
+    const task = this.mustTask(input.taskId)
+    this.assertTaskState(task, ['plan_confirmed'])
+    this.assertBrandVisualGenerationReady(task.workspaceId, task.platform, task.region)
+    const snapshot = this.taskSnapshot(task)
+    const product = snapshot.product
+    let body: ContentVersion['body']
+    try { body = validateContentSchema(input.body, 'content.draft.confirm', { requireDecisionContracts: false }) } catch (error) { throw new DomainError('CONTENT_SCHEMA_INVALID', error instanceof Error ? error.message : '候选内容结构不合法', 400) }
+    const factVersionIds = [`product:${product.id}:v${product.version ?? 1}`]
+    const ruleVersionIds = [...snapshot.ruleVersionIds]
+    const version: ContentVersion = { id: id('cv'), taskId: task.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body, ...(product.images !== undefined ? { reviewImageReferences: [...product.images] } : {}), factVersionIds, ruleVersionIds, ...(snapshot.brand ? { brandSnapshot: clone(snapshot.brand) } : {}), versionVector: contentVersionVector({ task, product, factVersionIds, ruleVersionIds, knowledgeVersionIds: [], taskInputSnapshotId: snapshot.id, createdBy: 'model', reason: input.reason ?? 'candidate_confirmation', modelId: 'platform-relay-candidate' }), state: 'review_required', revision: 1 }
+    this.contentVersions.set(version.id, version)
+    task.contentVersionId = version.id
+    task.state = 'review_required'
+    task.version += 1
+    return { version, task }
+  }
+
   approveContent(taskId: string, contentVersionId: string, rules?: { availableRuleVersionIds: string[]; forbiddenTerms: string[] }, expectedVersion?: number) {
     const task = this.mustTask(taskId)
     this.assertExpectedTaskVersion(task, expectedVersion)

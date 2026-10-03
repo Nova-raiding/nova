@@ -672,3 +672,15 @@ describe('MCP method contract', () => {
     }).errors).toContain('缺少必填参数 params.expected_revision')
   })
 })
+
+describe('candidate formalization contract', () => {
+  it('requires explicit candidate/task confirmation and never implies approval or publishing', () => {
+    const contract = getMcpMethodContract('content.draft.confirm')
+    expect(contract?.description).toContain('review-required formal content version')
+    expect(contract?.description).toContain('never approves or publishes')
+    expect(MCP_METHOD_SCHEMAS['content.draft.confirm'].required).toEqual(['task_id', 'body_json'])
+    const valid = validateMcpRequest({ jsonrpc: '2.0', id: 'candidate-confirm', method: 'content.draft.confirm', params: { task_id: 'task_1', body_json: '{}', reason: '商家确认候选并进入审核' } })
+    expect(valid).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'content.draft.confirm', params: { task_id: 'task_1', reason: '不确认' } }).valid).toBe(false)
+  })
+})

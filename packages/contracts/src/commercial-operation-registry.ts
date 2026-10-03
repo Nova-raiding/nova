@@ -320,6 +320,7 @@ export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
   'task.plan.confirm',
   'generation.get',
   'content.review.decide',
+  'content.draft.confirm',
   'content.visual.select',
   'content.versions',
   'content.diff',

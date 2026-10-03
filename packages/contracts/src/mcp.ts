@@ -300,6 +300,7 @@ export const MCP_METHODS = [
   'task.plan.confirm',
   'content.generate',
   'content.draft.generate',
+  'content.draft.confirm',
   'content.codex.prepare',
   'content.codex.commit',
   'generation.get',
@@ -1391,6 +1392,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     method: 'content.draft.generate',
     description: 'Generate an unbound content candidate through the platform relay. Candidate-only: no formal content version, approval, or publishing.',
     params: params({ draft: { type: 'string', enum: ['true'] }, draft_title: { type: 'string', minLength: 2, maxLength: 256 }, draft_prompt: { type: 'string', minLength: 2, maxLength: 2_000 }, platform: platformProperty, idempotency_key: { type: 'string', minLength: 8, maxLength: 200 } }, ['draft', 'draft_title', 'idempotency_key']),
+  },
+  {
+    method: 'content.draft.confirm',
+    description: 'Bind a generated candidate to an explicitly confirmed product task and create a review-required formal content version. Requires merchant confirmation; never approves or publishes.',
+    params: params({ task_id: { type: 'string', minLength: 1, maxLength: 256 }, body_json: { type: 'string', contentMediaType: 'application/json' }, reason: { type: 'string', minLength: 3, maxLength: 1000 }, workspace_id: { type: 'string' } }, ['task_id', 'body_json']),
   },
   {
     method: 'content.codex.prepare',

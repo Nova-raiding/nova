@@ -87,6 +87,7 @@ export const COMMERCIAL_MCP_FOUNDATION_POLICIES = defineCommercialOperationRegis
   { surface: 'MCP', operation: 'platform.connect', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE', rate_action: null },
   { surface: 'MCP', operation: 'catalog.sync', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE', rate_action: null },
   { surface: 'MCP', operation: 'content.export', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE', rate_action: null },
+  { surface: 'MCP', operation: 'content.draft.confirm', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE', rate_action: null },
   { surface: 'MCP', operation: 'catalog.image.generate', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_CHARGED', rate_action: 'image.generate.standard' },
   { surface: 'MCP', operation: 'multimodal.image.edit', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_CHARGED', rate_action: 'image.edit.annotation' },
   { surface: 'MCP', operation: 'content.generate', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_CHARGED', rate_action: 'text.generate' },

@@ -193,7 +193,11 @@ flowchart LR
 2. 选择一件已由运营导入的商品，或上传真实商品图片并补全必要事实。
 3. 说明目标平台和制作要求，回答插件当前提出的一个问题，即可得到带来源和状态标记的文案草稿或候选图。
 
-第 2、3 步只有在上面三个前置条件全部满足时才能走通。这一步得到的是可审阅候选；要形成批准版本或发布结果，还需要继续完成规则审核、人工批准（以及当前上线档的人工发布）。
+第 2、3 步只有在上面三个前置条件全部满足时才能走通。这一步得到的是可审阅候选，响应会明确标记 `candidateOnly=true`、`publishable=false`、`formalVersionCreated=false`。候选不会自动变成正式版本。
+
+如果商家确认候选内容，应先准备一个已绑定店铺、商品事实已确认且制作方案已确认的任务，然后调用 `content.draft.confirm`，提交目标 `task_id`、候选内容的 `body_json`（JSON 对象）和可选确认原因。服务端会在同一工作区校验任务、商品事实和已确认方案，成功时创建一个 `review_required` 的正式内容版本，并返回 `formalVersionCreated=true`、`candidateOnly=false` 和版本 ID；这一步只完成绑定和进入审核，不代表已经批准或发布。缺少绑定、事实或方案时保持 fail-closed，并返回对应的 `STORE_ONBOARDING_REQUIRED`、`PRODUCT_FACTS_CONFIRMATION_REQUIRED` 或任务方案门禁错误。
+
+正式版本创建后，按 `content.review` / `content.review.decide` 处理规则发现，必要时用 `content.modify` 生成修订，再用 `content.approve` 完成人工批准，最后调用 `content.export` 导出。任何一步返回阻断错误时，都必须保留错误码和 `next_actions` 作为阻断证据，不能把候选响应或文件卡片称为已批准、已发布。
 
 ### 首次使用
 

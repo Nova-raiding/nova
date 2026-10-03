@@ -4441,7 +4441,7 @@ async function requireStoreOnboarding(workspaceId: string, method: string, param
   })
 }
 
-const CANDIDATE_CONTINUATION_METHODS = new Set(['task.select_direction', 'task.plan.confirm', 'content.generate', 'content.review', 'content.review.decide', 'content.approve', 'content.export'])
+const CANDIDATE_CONTINUATION_METHODS = new Set(['task.select_direction', 'task.plan.confirm', 'content.generate', 'content.draft.confirm', 'content.review', 'content.review.decide', 'content.approve', 'content.export'])
 const CANDIDATE_PUBLISH_METHODS = new Set(['publish.prepare', 'publish.confirm', 'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.retry_failed'])
 
 /**
@@ -13481,6 +13481,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!idempotencyKey) throw new DomainError(ERROR_CODES.IDEMPOTENCY_KEY_REQUIRED, '持久化内容生成必须携带 Idempotency-Key', 400)
         const product = service.products.get(task.productId)
         if (!product || product.workspaceId !== task.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品快照不存在或不属于当前工作区', 404)
+        // Formal content generation must use merchant-confirmed product facts.
+        // This guard remains necessary in legacy read mode where no canonical
+        // product row is available to generationRulePreflight.
+        if (isProduction() && !product.factsConfirmed) {
+          throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '商品事实尚未由商家确认，已阻断正式内容生成', 409, { product_id: product.id, next_action: 'catalog.facts.confirm', candidate_only: false })
+        }
         let existing = [...service.generationJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === idempotencyKey)
         if (!existing) {
           await hydrateDurableIdempotentJob(workspaceId, 'generation_job', idempotencyKey)
@@ -13618,6 +13624,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'content.diff':
     case 'content.export':
     case 'content.approve':
+    case 'content.draft.confirm':
     case 'content.modify':
     case 'content.restore':
       return result(await handleMcpContentVersion(method, params, req, workspaceId, {

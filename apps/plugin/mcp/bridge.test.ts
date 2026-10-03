@@ -355,7 +355,7 @@ describe('Codex stdio MCP bridge', () => {
         [tool.name, tool.description],
         ...Object.entries(tool.inputSchema.properties ?? {}).map(([name, schema]) => [`${tool.name}.${name}`, schema.description]),
       ]).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-      expect(tools).toHaveLength(119)
+      expect(tools).toHaveLength(120)
       expect(descriptions.filter(([, description]) => !/[\u3400-\u9fff]/u.test(description))).toEqual([])
       expect(tools.find(tool => tool.name === 'asset.metadata.update')?.inputSchema.properties?.asset_id).toMatchObject({ type: 'string', minLength: 1, maxLength: 256 })
       expect(tools.find(tool => tool.name === 'asset.metadata.update')?.inputSchema.properties?.expected_revision).toMatchObject({ pattern: '^[1-9][0-9]*$', maxLength: 10 })
@@ -1006,6 +1006,31 @@ describe('Codex stdio MCP bridge', () => {
       child.kill()
       await close(server)
     }
+  })
+
+  it('only exposes review/export cards after a durable formal version exists', async () => {
+    let draft = true
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      const result = draft
+        ? { formalVersionCreated: false, contentPreview: { id: 'candidate-preview-1', version: null, state: 'candidate' } }
+        : { formalVersionCreated: true, content_version_id: 'cv_123456', review_status: 'approved' }
+      draft = false
+      res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: 1, result }, warnings: [], next_actions: [], error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      await nextLine(child.stdout)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.draft.generate', arguments: { draft: 'true', draft_title: '候选内容', idempotency_key: 'candidate-card-1' } } })}\n`)
+      const candidate = await nextLine(child.stdout)
+      expect(candidate.result.structuredContent.action_cards).toBeUndefined()
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'content.draft.generate', arguments: { draft: 'true', draft_title: '正式内容', idempotency_key: 'formal-card-1' } } })}\n`)
+      const formal = await nextLine(child.stdout)
+      expect(formal.result.structuredContent).toMatchObject({ formalVersionCreated: true, content_version_id: 'cv_123456' })
+      expect(formal.result.structuredContent.action_cards ?? []).toBeInstanceOf(Array)
+    } finally { child.kill(); await close(server) }
   })
 
   it('keeps upstream English prose out of merchant-visible result fields while preserving status evidence', async () => {

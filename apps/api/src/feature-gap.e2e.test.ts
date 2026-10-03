@@ -39,6 +39,52 @@ describe('new commercial and operations capabilities', () => {
     expect(response.data.result).toMatchObject({ draft_only: true, publishable: false, candidate_status: '未绑定商品、仅草稿、不可发布', knowledge: { assetCount: 1, documentCount: 1, approvalStatus: 'pending', indexState: 'queued' } })
   })
 
+  it('completes the unbound candidate flow from imported public facts through review and export', async () => {
+    const base = await start(); const workspaceId = `ws_candidate_flow_${Date.now()}`
+    const imported = await call(base, workspaceId, 'catalog.import', {
+      platform: 'taobao', draft_only: 'true', title: '公开资料候选商品', category: '服饰', price: '199.00', stock: '8',
+      attributes_json: JSON.stringify({ material: '锦纶', color: '雾蓝' }),
+    })
+    expect(imported.error).toBeNull()
+    const productId = imported.data.result.product_id
+    const facts = await call(base, workspaceId, 'catalog.facts.confirm', { product_id: productId })
+    expect(facts.error).toBeNull()
+    const task = await call(base, workspaceId, 'task.create.draft', { product_id: productId, platform: 'taobao', request_text: '生成基于已确认事实的商品详情候选' })
+    expect(task.error).toBeNull()
+    expect(task.data.result).toMatchObject({ candidate_only: true, storeContext: null })
+    expect(task.data.result.accountId).toBeUndefined()
+    const selected = await call(base, workspaceId, 'task.select_direction', { task_id: task.data.result.id, direction_id: 'A' })
+    expect(selected.error).toBeNull()
+    const plan = await call(base, workspaceId, 'task.plan.confirm', { task_id: task.data.result.id })
+    expect(plan.error).toBeNull()
+    const factSourceId = `product:${productId}:v2`
+    const committed = await call(base, workspaceId, 'content.codex.commit', {
+      task_id: task.data.result.id,
+      body_json: JSON.stringify({
+        title: '公开资料候选商品', detail: '锦纶材质，雾蓝配色。', sellingPoints: ['轻量透气'],
+        modules: [{
+          key: 'product_facts', title: '商品事实', purpose: '说明已确认商品事实', body: '锦纶材质，雾蓝配色。', factSourceIds: [factSourceId], contentKind: 'fact',
+          decisionContract: {
+            buyerQuestion: '这件商品有哪些已确认信息？', pageTask: '展示已确认商品事实',
+            claim: { text: '锦纶材质，雾蓝配色。', factSourceIds: [factSourceId], platforms: ['taobao'], limitations: ['仅适用于当前商品快照'] },
+            evidence: { type: 'parameter', sourceIds: [factSourceId], status: 'verified' },
+            visualContract: { requiredElements: ['商品'], protectedElements: ['商品外观'], prohibitedImplications: ['不得虚构功效'], accessibilityText: '商品事实图' },
+            priority: 1, optional: false,
+          },
+        }],
+      }),
+    })
+    expect(committed.error).toBeNull()
+    const versionId = committed.data.result.id
+    expect(committed.data.result.state).toBe('review_required')
+    const review = await call(base, workspaceId, 'content.review', { content_version_id: versionId })
+    expect(review.error).toBeNull()
+    expect(review.data.result.blocking).toBe(false)
+    const exported = await call(base, workspaceId, 'content.export', { content_version_id: versionId, format: 'manifest' })
+    expect(exported.error).toBeNull()
+    expect(exported.data.result).toMatchObject({ fileName: 'manifest-v1.json', candidateOnly: true })
+  })
+
   it('exposes social-commerce platforms without promoting them to production capability', async () => {
     const base = await start(); const response = await fetch(`${base}/v1/platform-accounts/xiaohongshu/authorize`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_social_fixture' }, body: JSON.stringify({ actor_id: 'merchant' }) }).then(response => response.json() as Promise<Envelope>)
     expect(response.error?.code).not.toBe('NOT_FOUND')

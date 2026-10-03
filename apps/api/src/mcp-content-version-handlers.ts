@@ -64,6 +64,17 @@ export async function handleMcpContentVersion(method: string, params: JsonObject
       await persistEvent(workspaceId, approved.version.id, 'content.approved', approved.version.revision, { task_id: approved.task.id, content_version_id: approved.version.id, version: approved.version.version })
       return (approved)
     }
+    case 'content.draft.confirm': {
+      const task = scopeTask(req, required(params, 'task_id'))
+      await assertCanonicalTaskScopeForAction(task)
+      let body: ContentVersion['body']
+      try { const parsed = JSON.parse(required(params, 'body_json')); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('body_json must be object'); body = parsed as ContentVersion['body'] } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'body_json 必须是 JSON 对象', 400) }
+      const promoted = service.confirmCandidateVersion({ taskId: task.id, body, ...(typeof params.reason === 'string' && params.reason.trim() ? { reason: params.reason.trim() } : {}) })
+      await persistSnapshot(workspaceId, 'content_version', promoted.version, promoted.version as unknown as Record<string, unknown>)
+      await persistSnapshot(workspaceId, 'task', promoted.task, promoted.task as unknown as Record<string, unknown>)
+      await persistEvent(workspaceId, promoted.version.id, 'content.draft.confirmed', promoted.version.revision, { task_id: promoted.task.id, content_version_id: promoted.version.id, version: promoted.version.version })
+      return ({ ...promoted, candidateOnly: false, formalVersionCreated: true, nextActions: ['调用 content.review 检查正式版本', '审核通过后调用 content.export'] })
+    }
     case 'content.modify': {
       const scoped = scopeContentVersion(req, required(params, 'content_version_id'))
       await assertCanonicalTaskScopeForAction(scoped.task)
