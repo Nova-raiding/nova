@@ -58,9 +58,11 @@ image_edit，最后执行最短 3 秒 video。媒体探针不得自动重跑；�
 生产探针现在还会以相同的模型/视频 Bearer token 只读查询
 `GET /api/usage/token/`，要求两者 `unlimited_quota=false`、有限正剩余额度和
 未过期状态；查询结果进入带 SHA-256 的不可变 artifact，并由发布证据门禁复核。
-101 当前模型和视频 token 均返回 `unlimited_quota=true`，因此在中转后台为生产
-token 配置有限的服务端额度、再重新采集证据前，五模态门禁保持 NO-GO。此步骤
-不能由本地 `MODEL_RELAY_CANARY_MAX_TOTAL_CNY` 替代，也不能靠伪造快照通过。
+历史 9 月快照曾记录 101 的模型和视频 token 为 `unlimited_quota=true`；该快照已过期，
+不能作为当前候选证据。当前探针必须重新读取 `/api/usage/token/`，确认有限服务端额度、
+未过期状态，并把结果绑定到当前候选的 release、Git、镜像集合、manifest 和 nonce。
+本地 `MODEL_RELAY_CANARY_MAX_TOTAL_CNY` 不能替代服务端额度或 release-scoped 证据，
+也不能靠伪造快照通过。
 
 ```sh
 export RELEASE_ID='release-<当前冻结的候选标识>'
