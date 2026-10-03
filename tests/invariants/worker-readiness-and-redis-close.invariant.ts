@@ -89,7 +89,11 @@ const mutations: InvariantMutation[] = [
         {
           pattern: '\\b(?:client|redis|redisClient)\\??\\.(?:destroy|disconnect|quit)\\(|redis\\??\\.quit\\(',
           sample: 'if (redis?.isOpen) await redis.quit().catch(() => { redis?.destroy(); errors.push(1) })',
-          allow: ['apps/worker/src/redis-transport.ts', 'apps/worker/src/clamav-scanner.ts'],
+            // The API owns a separate quota Redis port with the same bounded
+            // shutdown contract. It is intentionally outside the worker
+            // chokepoint but must not be mistaken for a second worker close
+            // implementation by the repository-wide uniqueness audit.
+            allow: ['apps/worker/src/redis-transport.ts', 'apps/worker/src/clamav-scanner.ts', 'apps/api/src/redis-ports.ts'],
           why: 'every Redis connection the worker owns is closed through `closeRedisClient`; a raw `destroy()`/`disconnect()` anywhere else is a second close implementation with different timeout and ejection behaviour',
         },
       ],

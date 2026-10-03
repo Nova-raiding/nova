@@ -44,10 +44,13 @@ function fixture() {
   const eightImages = path('eight-image-set.json')
   writeFileSync(eightImages, JSON.stringify({ schema_version: 1, release_id: 'release-bridge-b', release_git_sha: gitSha, source_sha256: sourceSha, image_digests: digests, image_references: refs }))
   function compose(releaseId: string, releaseGit: string, bridge: boolean) {
-    const services: Record<string, { image: string; environment?: Record<string, string> }> = {}
+    const services: Record<string, { image: string; labels?: Record<string, string>; environment?: Record<string, string> }> = {}
     for (const [artifact, serviceNames] of Object.entries(names)) {
       for (const serviceName of serviceNames) {
-        const service: { image: string; environment?: Record<string, string> } = { image: refs[artifact]! }
+        const service: { image: string; labels?: Record<string, string>; environment?: Record<string, string> } = {
+          image: refs[artifact]!,
+          labels: { 'com.storenova.release.id': releaseId, 'org.opencontainers.image.revision': releaseGit },
+        }
         if (bridge && (serviceName === 'api' || serviceName === 'api-replica' || serviceName.startsWith('worker-'))) service.environment = { BRIDGE_SCHEMA_COMPATIBILITY_MODE: 'prefix_242_or_244' }
         if (serviceName === 'api' || serviceName === 'api-replica') service.environment = { ...service.environment, RELEASE_ID: releaseId, RELEASE_GIT_SHA: releaseGit, RELEASE_MANIFEST_SHA256: '', RELEASE_IMAGE_SET_DIGEST: '' }
         services[serviceName] = service

@@ -221,8 +221,11 @@ describe('ECS pilot API replica parity', () => {
       MODEL_RELAY_ALLOWED_HOSTS: apiExpected.MODEL_RELAY_ALLOWED_HOSTS,
       MODEL_RELAY_API_KEY: '',
     })
-    expect(services['worker-automation']?.environment).not.toHaveProperty('MODEL_EMBEDDING_MAX_REQUEST_CNY')
-    expect(services['worker-automation']?.environment).not.toHaveProperty('MODEL_RELAY_EMBEDDING_COST_EVIDENCE')
+    expect(services['worker-automation']?.environment).toMatchObject({
+      MODEL_EMBEDDING_MAX_REQUEST_CNY: '',
+      MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'false',
+      MODEL_RELAY_EMBEDDING_PRICING_GROUP: 'VIP',
+    })
 
     const explicitlyEnabled = render({
       MODEL_RELAY_API_KEY: 'test-only-redacted-relay-key',
@@ -248,6 +251,8 @@ describe('ECS pilot API replica parity', () => {
     expect(explicitlyEnabled['worker-automation']?.environment).toMatchObject({
       KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true',
       MODEL_RELAY_API_KEY: 'test-only-redacted-relay-key',
+      MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10',
+      MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'true',
     })
   })
 

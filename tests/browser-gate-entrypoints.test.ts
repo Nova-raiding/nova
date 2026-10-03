@@ -131,6 +131,8 @@ const CONFIG_ONLY_BROWSER_SPECS = [
   spec('ops-mcp-request-matrix.spec.js'),
   spec('ops-members-global-isolated.spec.js'),
   spec('ops-merchant-matrix-bootstrap.spec.js'),
+  spec('knowledge-lexical-upload-isolated.spec.js'),
+  spec('ops-merchant-provision-live.spec.js'),
   spec('ops-rbac-desktop-matrix.spec.js'),
   spec('ops-refund-isolated.spec.js'),
   spec('ops-workbench-dirty-guard.spec.js'),

@@ -19,14 +19,12 @@ describe('merchant marketing visual and video contract', () => {
     expect(skill).toContain('当前只能制作脚本/分镜，不能声称已渲染')
     expect(skill).toContain('只问一个问题，确认期望交付物')
 
-    // Keep the user-facing route tied to tools the Bridge actually registers,
-    // and to its fail-closed production video visibility gate.
+    // Keep the user-facing route tied to tools the Bridge actually registers;
+    // the API remains authoritative for production video gates.
     expect(bridge).toContain("'catalog.image.generate': {")
     expect(bridge).toContain("'catalog.image.get': {")
     expect(bridge).toContain("'multimodal.video.request': {")
     expect(bridge).toContain("'multimodal.video.get': {")
-    expect(bridge).toContain("process.env.MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES === 'true'")
-    expect(bridge).toContain("'multimodal.video.request',\n])")
   })
 
   it('does not equate a script, storyboard, queued job, or text plan with a rendered visual deliverable', async () => {
