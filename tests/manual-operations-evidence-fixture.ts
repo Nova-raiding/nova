@@ -8,9 +8,8 @@ export type ManualCaptureIdentity = {
 }
 
 export type ManualCaptureOptions = {
-  manualPublishReportId?: string
-  manualPublishState?: string
-  manualEvidenceBoundary?: string
+  total?: number
+  returnedCount?: number
 }
 
 function canonical(value: unknown): string {
@@ -28,17 +27,15 @@ function observation(name: string, status: number, material: Record<string, unkn
 }
 
 export function manualCaptureJournal(candidateIdentity: ManualCaptureIdentity, capturedAt: string, options: ManualCaptureOptions = {}) {
-  const manualPublishReportId = options.manualPublishReportId ?? 'manual-report-1'
-  const manualPublishState = options.manualPublishState ?? 'manual_publish_reported'
-  const manualEvidenceBoundary = options.manualEvidenceBoundary ?? 'manual_unverified'
+  const total = options.total ?? 0
+  const returnedCount = options.returnedCount ?? 0
   return {
     schema_version: 'manual-operations-capture-journal/1',
     captured_at: capturedAt,
     candidate_identity: candidateIdentity,
     observations: [
       observation('release', 200, { ...candidateIdentity, ready: true }),
-      observation('target_list', 200, { expected_report_visible: true, visible_report_id: manualPublishReportId, total: 1, returned_count: 1 }),
-      observation('target_get', 200, { manual_publish_report_id: manualPublishReportId, state: manualPublishState, evidence_boundary: manualEvidenceBoundary }),
+      observation('target_list', 200, { route: 'publish.manual.list', tenant_scoped: true, total, returned_count: returnedCount }),
       observation('isolation', 403, { error_envelope: true, code_present: true }),
     ],
   }
