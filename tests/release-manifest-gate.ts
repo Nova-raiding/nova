@@ -133,6 +133,8 @@ function validateEvidenceBindings(value: ReleaseManifest, options: EvidenceBindi
       if (field === 'capacity') validateCapacityArtifact(document, value.releaseId!, errors, new Date(now))
       if (field === 'capability' && document.schema_version === 'manual-operations-evidence/2') {
         errors.push(...validateManualOperationsEvidence(document, value.releaseId, new Date(now)).map(error => `productionEvidence.capability ${error}`))
+      } else if (field === 'capability' && document.schema_version === 'manual-operations-evidence/1') {
+        errors.push('productionEvidence.capability legacy manual-operations-evidence/1 is unsupported; capture schema version 2')
       }
       if ((document.release_id ?? document.releaseId) !== value.releaseId) errors.push(`productionEvidence.${field} release_id must match the release manifest`)
       const observedAt = document.generated_at ?? document.generatedAt ?? document.ended_at ?? document.attested_at

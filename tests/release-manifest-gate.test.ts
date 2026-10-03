@@ -334,6 +334,11 @@ describe('release manifest production gate', () => {
     writeFileSync(fixture.evidenceFiles.capability, invalidBytes)
     fixture.manifest.productionEvidence.capability = `artifact://production/evidence/capability.json#${digest(invalidBytes)}`
     expect(validateReleaseManifest(fixture.manifest, { ...fixture.options, publicKeyPem })).toContain('productionEvidence.capability official_api_receipt must be false')
+    const legacy = { ...signed, schema_version: 'manual-operations-evidence/1' }
+    const legacyBytes = JSON.stringify(legacy)
+    writeFileSync(fixture.evidenceFiles.capability, legacyBytes)
+    fixture.manifest.productionEvidence.capability = `artifact://production/evidence/capability.json#${digest(legacyBytes)}`
+    expect(validateReleaseManifest(fixture.manifest, { ...fixture.options, publicKeyPem })).toContain('productionEvidence.capability legacy manual-operations-evidence/1 is unsupported; capture schema version 2')
   })
 
   it('accepts an explicitly bound no-load capacity artifact without treating it as a capacity pass', () => {
