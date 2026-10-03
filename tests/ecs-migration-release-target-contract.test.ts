@@ -14,4 +14,12 @@ describe('ECS migration release target binding', () => {
     expect(preflight).toContain('--release-metadata "$root/release-metadata.json"')
     expect(preflight).toContain('--expected-migration-version "$EXPECTED_MIGRATION_VERSION"')
   })
+
+  it('keeps the legacy Kubernetes preflight on the same source/target metadata contract', () => {
+    const preflight = readFileSync('infra/scripts/deploy-preflight.sh', 'utf8')
+    expect(preflight).toContain('release_metadata_migration_version=$(RELEASE_METADATA_PATH="$repo_root/release-metadata.json" node -e')
+    expect(preflight).toContain('[ "$release_metadata_migration_version" = "$EXPECTED_MIGRATION_VERSION" ]')
+    expect(preflight).toContain('--release-metadata "$repo_root/release-metadata.json"')
+    expect(preflight).toContain('--expected-migration-version "$EXPECTED_MIGRATION_VERSION"')
+  })
 })

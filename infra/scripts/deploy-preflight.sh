@@ -61,6 +61,8 @@ case "$REDIS_URL" in
   *) echo "production REDIS_URL must use rediss:// or the private single-node ECS Redis service" >&2; exit 1 ;;
 esac
 command -v node >/dev/null 2>&1 || { echo "node is required to validate production database URLs" >&2; exit 1; }
+release_metadata_migration_version=$(RELEASE_METADATA_PATH="$repo_root/release-metadata.json" node -e 'const fs=require("node:fs");const m=JSON.parse(fs.readFileSync(process.env.RELEASE_METADATA_PATH,"utf8"));const target=m.expectedMigrationVersion;const source=m.sourceMigrationVersion??242;if(!Number.isSafeInteger(target)||target<1)throw new Error("release-metadata expectedMigrationVersion is invalid");if(!Number.isSafeInteger(source)||source<1||source>target)throw new Error("release-metadata sourceMigrationVersion is invalid");process.stdout.write(String(target))')
+[ "$release_metadata_migration_version" = "$EXPECTED_MIGRATION_VERSION" ] || { echo "EXPECTED_MIGRATION_VERSION does not match release-metadata.json: expected $release_metadata_migration_version" >&2; exit 1; }
 database_url_validator="$(dirname "$0")/validate-production-database-url.mjs"
 [ -f "$database_url_validator" ] || { echo "production database URL validator is missing: $database_url_validator" >&2; exit 1; }
 node "$database_url_validator" DATABASE_URL
@@ -185,7 +187,7 @@ npx --no-install tsx "$(dirname "$0")/../../tests/object-storage-evidence-gate.t
   --expected-encryption "$storage_encryption" \
   --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind payment --file "$PAYMENT_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
-npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
+npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --release-metadata "$repo_root/release-metadata.json" --expected-migration-version "$EXPECTED_MIGRATION_VERSION" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 RELEASE_EVIDENCE_BUNDLE_PATH=${RELEASE_EVIDENCE_BUNDLE_PATH:?RELEASE_EVIDENCE_BUNDLE_PATH is required}
 release_manifest_sha256=$(shasum -a 256 "$RELEASE_MANIFEST_PATH" | awk '{print $1}')
 npx --no-install tsx "$(dirname "$0")/../../tests/release-evidence-bundle-gate.ts" \
