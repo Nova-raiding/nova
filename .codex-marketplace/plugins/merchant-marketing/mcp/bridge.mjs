@@ -163,7 +163,7 @@ const IMAGE_CANDIDATE_CHOICE_UI_URI = 'ui://merchant-marketing/image-candidate-c
 // conversation without necessarily rendering an embedded component.
 const MERCHANT_CONTEXT_METADATA_METHODS = new Set([
   'onboarding.status', 'merchant.start', 'workspace.health', 'catalog.search', 'catalog.import.batch',
-  'task.group.create', 'publish.batch.prepare', 'publish.batch.get',
+  'task.group.create', 'publish.batch.prepare', 'publish.batch.get', 'content.draft.generate',
 ])
 // Only results that materially benefit from selection, review, or confirmation
 // should opt into the context component. Routine onboarding, health checks, and
@@ -1061,6 +1061,10 @@ const METHODS = {
       additionalProperties: false,
     },
   },
+  'content.draft.confirm': {
+    description: '将 content.draft.generate 返回的候选正文提交为绑定已确认商品的正式待审核版本；不会批准或发布。必须先完成商品事实、方向和方案确认。',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, body_json: { type: 'string', contentMediaType: 'application/json', jsonShape: 'object' }, reason: reasonProperty, workspace_id: { type: 'string' } }, required: ['task_id', 'body_json'], additionalProperties: false },
+  },
   'content.modify': {
     description: '按字段局部修改，或只重生成一个详情模块并创建新版本；锁定字段不会被覆盖。',
     inputSchema: { type: 'object', properties: { content_version_id: { type: 'string' }, changes_json: { type: 'string' }, module_key: { type: 'string' }, locked_fields_json: { type: 'string' }, reason: { type: 'string' }, expected_revision: { type: 'string' } }, required: ['content_version_id', 'reason'], additionalProperties: false },
@@ -1382,6 +1386,7 @@ const MERCHANT_ACTION_LABELS = {
   'asset.facts.confirm': '确认商品事实',
   'asset.metadata.update': '更新素材分类',
   'content.generate': '生成内容',
+  'content.draft.generate': '生成候选内容',
   'content.export': '导出交付包',
   'publish.prepare': '查看发布预览',
   'publish.confirm': '确认发布',
@@ -2119,7 +2124,28 @@ function isProviderChannelUnavailable(method, status, remoteError, rawResponseTe
 
 function actionCards(method, result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return result
-  const cards = Array.isArray(result.action_cards) ? result.action_cards.map((card, index) => ({
+  const upstreamCards = Array.isArray(result.action_cards) ? result.action_cards : []
+  // A relay draft is deliberately candidate-only. Never manufacture a review
+  // or export action from its preview id: those tools require a durable formal
+  // content version and a server-issued confirmation/review state. Once the
+  // server does return that version, expose the two sequential actions as
+  // merchant cards so the host can continue the real workflow.
+  const formalVersionId = typeof result.content_version_id === 'string' && result.content_version_id.trim()
+    ? result.content_version_id.trim()
+    : typeof result.contentPreview?.content_version_id === 'string' && result.contentPreview.content_version_id.trim()
+      ? result.contentPreview.content_version_id.trim()
+      : typeof result.contentPreview?.version_id === 'string' && result.contentPreview.version_id.trim()
+        ? result.contentPreview.version_id.trim()
+        : ''
+  const formalVersionCreated = result.formalVersionCreated === true && Boolean(formalVersionId)
+  const reviewCleared = result.review_status === 'approved' || result.review_status === 'cleared' || result.review?.status === 'approved' || result.review?.status === 'cleared'
+  const workflowCards = method === 'content.draft.generate' && formalVersionCreated
+    ? [
+        { tool: 'content.review', label: '检查正式内容版本', arguments: { content_version_id: formalVersionId }, required_inputs: [], confirmation: 'none', reason: '正式版本已创建；先完成服务端规则检查。' },
+        ...(reviewCleared ? [{ tool: 'content.export', label: '导出已审核内容', arguments: { content_version_id: formalVersionId }, required_inputs: [], confirmation: 'interactive_confirmation', requires_confirmation: true, reason: '仅在审核通过后导出；导出不会代表已发布。' }] : []),
+      ]
+    : []
+  const cards = [...upstreamCards, ...workflowCards].map((card, index) => ({
     ...card,
     id: card.id ?? `${method.replaceAll('.', '-')}-${index + 1}`,
     type: card.type ?? (card.method === 'billing.recharge.create' ? 'recharge' : card.method === 'subscription.change' ? 'upgrade' : 'view'),
@@ -2132,7 +2158,7 @@ function actionCards(method, result) {
     enabled: card.enabled ?? true,
     reason: merchantVisibleText(String(card.reason ?? card.description ?? ''), '请查看当前步骤的服务端状态。'),
     requires_confirmation: card.requires_confirmation ?? card.confirmation === 'interactive_confirmation',
-  })).filter(card => typeof card.tool === 'string' && isMerchantTool(card.tool) && !COMMERCIAL_DISABLED_METHODS.has(card.tool)) : []
+  })).filter(card => typeof card.tool === 'string' && isMerchantTool(card.tool) && !COMMERCIAL_DISABLED_METHODS.has(card.tool))
   let sanitizedStoreCapacity = result.store_capacity
   if (result.store_capacity && typeof result.store_capacity === 'object' && !Array.isArray(result.store_capacity) && Array.isArray(result.store_capacity.action_cards)) {
     sanitizedStoreCapacity = {
@@ -2140,8 +2166,9 @@ function actionCards(method, result) {
       action_cards: result.store_capacity.action_cards.filter(card => card && typeof card === 'object' && !Array.isArray(card) && typeof card.tool === 'string' && isMerchantTool(card.tool) && !COMMERCIAL_DISABLED_METHODS.has(card.tool)),
     }
   }
-  return Array.isArray(result.action_cards) || sanitizedStoreCapacity !== result.store_capacity
-    ? { ...result, ...(Array.isArray(result.action_cards) ? { action_cards: cards } : {}), ...(sanitizedStoreCapacity !== result.store_capacity ? { store_capacity: sanitizedStoreCapacity } : {}) }
+  const hasWorkflowCards = workflowCards.length > 0
+  return Array.isArray(result.action_cards) || hasWorkflowCards || sanitizedStoreCapacity !== result.store_capacity
+    ? { ...result, ...((Array.isArray(result.action_cards) || hasWorkflowCards) ? { action_cards: cards } : {}), ...(sanitizedStoreCapacity !== result.store_capacity ? { store_capacity: sanitizedStoreCapacity } : {}) }
     : result
 }
 
@@ -2499,6 +2526,39 @@ function merchantUiMetadata(method, result, args = {}) {
   if (method === 'merchant.start' || method === 'workspace.health') return merchantConversationProjection(method, result, args)
   const explicitContext = method === 'merchant.start' ? merchantStartContext(args) : {}
   const ui = merchantContextMetadata(result, explicitContext)
+  if (method === 'content.draft.generate') {
+    // Draft generation deliberately returns a candidate only. Project the
+    // continuation explicitly so the host can resume with a bound product,
+    // confirmed facts, and the normal formal generation/review/export path.
+    const candidate = result.contentPreview && typeof result.contentPreview === 'object' && !Array.isArray(result.contentPreview)
+      ? result.contentPreview
+      : result.candidate && typeof result.candidate === 'object' && !Array.isArray(result.candidate) ? result.candidate : {}
+    const formalVersionId = typeof result.content_version_id === 'string' && result.content_version_id.trim()
+      ? result.content_version_id.trim()
+      : typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : ''
+    const formal = result.formalVersionCreated === true && Boolean(formalVersionId)
+    ui.candidate = {
+      state: formal ? 'formal_version' : 'candidate',
+      candidate_only: !formal,
+      publishable: result.publishable === true && formal,
+      formal_version_created: formal,
+      content_version_id: formalVersionId || null,
+    }
+    if (!formal) {
+      ui.next_actions = [
+        { method: 'catalog.import', label: '绑定商品并确认事实', required_inputs: ['product_id', 'draft_only'] },
+        { method: 'content.generate', label: '生成正式内容版本', required_inputs: ['task_id'] },
+      ]
+      ui.review_export_blocked = true
+      ui.blocking_reason = '候选草稿尚未绑定已确认商品事实，不能直接审核或导出。'
+    } else {
+      ui.next_actions = [
+        { method: 'content.review', label: '审核正式内容', required_inputs: ['content_version_id'] },
+        { method: 'content.export', label: '导出已审核内容', required_inputs: ['content_version_id', 'format'] },
+      ]
+    }
+    return { ...result, ui }
+  }
   if (method === 'catalog.search') {
     const products = Array.isArray(result.products) ? result.products : Array.isArray(result.items) ? result.items : []
     ui.list = {
@@ -3797,7 +3857,8 @@ async function handle(request) {
         ),
       )
       const candidateMethod = (name === 'catalog.image.generate' || name === 'asset.upload') && hasCandidateEnvelope ? 'catalog.image.get' : name
-      const result = merchantImageCandidateStructuredContent(candidateMethod, workflowResult, args)
+      const projectedResult = merchantImageCandidateStructuredContent(candidateMethod, workflowResult, args)
+      const result = projectedResult && typeof projectedResult === 'object' && !Array.isArray(projectedResult) ? projectedResult : workflowResult
       // Candidate projection is intentionally strict, but it must never erase
       // an image that the API has already returned after its archive/scan
       // gates. Preserve those validated data URLs so the native MCP image
@@ -3814,6 +3875,9 @@ async function handle(request) {
         return jsonRpc(id, { ...artifact, isError: false })
       }
       const normalizedResult = merchantUiMetadata(name, actionCards(name, result), args)
+      if (name === 'content.draft.generate' && result && typeof result === 'object' && result.formalVersionCreated === true && typeof result.content_version_id === 'string' && !Array.isArray(normalizedResult?.action_cards)) {
+        normalizedResult.action_cards = actionCards(name, result).action_cards ?? []
+      }
       const nativeImages = ['catalog.image.get', 'catalog.image.generate', 'asset.upload'].includes(name) && Array.isArray(normalizedResult?.images) ? normalizedResult.images : []
       // Keep short-lived display URLs in structured content. ChatGPT Apps do
       // not guarantee that tool-result `_meta` or native image blocks are
@@ -3824,6 +3888,9 @@ async function handle(request) {
       // Raw base64 remains excluded so it is not duplicated into model-visible
       // structured data; the component can load the signed URL allowed by its
       // resource-domain CSP, while native image blocks remain the fallback.
+      if (name === 'content.draft.generate' && rawResult && typeof rawResult === 'object' && rawResult.formalVersionCreated === true && typeof rawResult.content_version_id === 'string') {
+        normalizedResult.action_cards = actionCards(name, rawResult).action_cards ?? []
+      }
       const structuredContent = name === 'catalog.image.get'
         ? Object.fromEntries(Object.entries(normalizedResult).filter(([key]) => key !== 'images'))
         : normalizedResult

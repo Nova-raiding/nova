@@ -111,7 +111,7 @@ bridge 对缺失或未解析的 `${MERCHANT_MCP_BASE_URL}`、`${MERCHANT_WORKSPA
 
 资料导入调用 `catalog.import` 并显式传 `draft_only="true"`，不猜造店铺账号；文本候选使用 `content.draft.generate`，结果标为“草稿候选（未批准、未发布）”。图片/视频候选仍走既有 MCP 和平台模型中转、事实、权益及计费门禁。工具缺失或接口不支持时明确阻断，不用宿主模型、静态示例或正式绑定路径替代。
 
-审核与导出使用现有 `content.review`、`content.export` 接受的真实内容/版本标识。当前文本候选返回 `formalVersionCreated=false`，不产生可直接交给这两个工具的正式版本；只能先供人工审阅，不能宣称候选审核与文件导出已闭环。已有真实内容版本继续按原门禁审核、导出，输出保留事实来源、审核与批准状态；“已导出”不等于“已批准”或“已发布”。
+审核与导出使用现有 `content.review`、`content.export` 接受的真实内容/版本标识。当前文本候选返回 `formalVersionCreated=false`，不产生可直接交给这两个工具的正式版本；只能先供人工审阅，不能宣称候选审核与文件导出已闭环。商家确认候选后，先准备已绑定商品、已确认事实和制作方案的任务，再调用 `content.draft.confirm`（`task_id`、JSON 对象 `body_json`、可选 `reason`），成功响应必须包含 `formalVersionCreated=true`、`candidateOnly=false` 和 `review_required` 正式版本。该调用只创建待审核版本，随后仍须执行 `content.review`、必要的修改与 `content.approve`，最后才能 `content.export`；任何门禁错误都要原样展示并停止。已有真实内容版本继续按原门禁审核、导出，输出保留事实来源、审核与批准状态；“已导出”不等于“已批准”或“已发布”。
 
 当前插件隐藏店铺接入、商品/库存/订单同步、发布/批量发布及经营巡检自动化入口。不删除已有后端接口、业务数据或正式授权/审计门禁，也不通过兼容调用、直接 HTTP 或旧模板绕回隐藏能力。商业套餐订单、账单和支付恢复不是店铺订单同步，继续按服务端 exact recovery 契约执行。
 
