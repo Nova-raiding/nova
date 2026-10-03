@@ -42,11 +42,17 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
       if (!sourceReady) throw new DomainError('IMAGE_SOURCE_ASSET_INVALID', '图片编辑必须使用当前工作区内已通过扫描、权益和 AI 修改许可的素材', 409, { asset_id: sourceAsset.id, scan_status: sourceAsset.scanStatus, rights_status: sourceAsset.rightsStatus, scan_user_action_required: false, next_step: '平台会自动完成安全扫描；扫描通过后仅需确认权益和 AI 修改许可' })
       const sourceStored = await getStoredObjectWithRetry(workspaceId, sourceAsset.storageKey, { includeQuarantine: sourceAsset.scanStatus === 'unscanned' && demoUnscannedAssetsEnabled() })
       const contextProduct = service.products.get(candidate.value.context.product.id)
+      // Image edits are always product-scoped.  Returning raw provider output
+      // when the referenced product has disappeared (or belongs to another
+      // workspace) would bypass the product facts/rules boundary and would
+      // also leave an unarchived, unreviewable image candidate in the caller.
+      if (!contextProduct || contextProduct.workspaceId !== workspaceId) {
+        throw new DomainError('PRODUCT_NOT_FOUND', '图片编辑引用的商品不存在或不属于当前工作区', 404)
+      }
       if ((await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') {
-        if (!contextProduct || contextProduct.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '图片编辑引用的商品不存在或不属于当前工作区', 404)
         await resolveCanonicalTaskScope({ workspaceId, productId: contextProduct.id, platform: contextProduct.platform, ...(contextProduct.accountId ? { accountId: contextProduct.accountId } : {}), requireCanonical: true, requireListing: true })
       }
-      if (contextProduct && contextProduct.workspaceId === workspaceId && !contextProduct.factsConfirmed) throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '图片编辑需要先确认商品事实', 409)
+      if (!contextProduct.factsConfirmed) throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '图片编辑需要先确认商品事实', 409)
       const rulePreflight = await requireGenerationRulePreflight(workspaceId, candidate.value.context.product.id, '图片编辑前平台规则校验未通过')
       requireRuleSafeGenerationText(rulePreflight, [candidate.value.prompt], '图片编辑指令命中当前平台规则禁用表达')
       const commercialDecision = await enforceMcpCommercialAccess(req, workspaceId, method)
@@ -71,7 +77,6 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
         }
         let images: string[]
         images = await imageEditGenerator.generate({ prompt: appendProtectedProductConstraints(candidate.value.prompt), sourceImages: [{ bytes: sourceStored.body, mimeType: sourceStored.metadata.contentType }], region: candidate.value.region.rect, usageContext: { workspaceId, actionId: walletDebitKey, runKey: `image-edit:${walletDebitKey}` } })
-        if (!contextProduct || contextProduct.workspaceId !== workspaceId) return result({ ...candidate.value, product_protection: productProtection, images, rendering: 'candidate', platformPublished: false, execution: executionContract('image_edit', true) })
         const editJob = service.enqueueImageGeneration({ workspaceId, productId: contextProduct.id, sourceAssetIds: [sourceAsset.id], direction: `局部编辑：${candidate.value.prompt}`, count: 1, idempotencyKey: `image-edit:${candidate.value.id}` })
         editJob.state = 'succeeded'
         const archived = await archiveGeneratedImages(workspaceId, editJob.id, images)
@@ -253,7 +258,14 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
       const providerExecuted = Boolean(rendering ? videoGenerator : generatedPlan && contentGenerator)
       const execution = { status: rendering ? rendering.status : generatedPlan ? 'completed' as const : 'requested' as const, ...executionContract('video', providerExecuted, generatedPlan && contentGenerator ? 'text-relay' : undefined) }
       try {
-        await persistEvent(workspaceId, `video_${randomUUID()}`, rendering || generatedPlan ? 'multimodal.video_completed' : 'multimodal.video.requested', 1, { ...request.value as unknown as Record<string, unknown>, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering } : {}) })
+        // Keep the event truthful: an accepted provider job is only queued
+        // until a later `video.get` returns a completed HTTPS artifact.  The
+        // requested event remains the durable workspace ownership anchor used
+        // to authorize subsequent status queries.
+        const eventType = rendering?.status === 'completed' || generatedPlan
+          ? 'multimodal.video_completed'
+          : 'multimodal.video.requested'
+        await persistEvent(workspaceId, `video_${randomUUID()}`, eventType, 1, { ...request.value as unknown as Record<string, unknown>, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering } : {}) })
       } catch (error) {
         if (!providerExecuted) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '视频结果记录失败' })
         throw error

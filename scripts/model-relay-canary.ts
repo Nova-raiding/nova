@@ -41,7 +41,11 @@ const source = process.env.MODEL_RELAY_BASE_URL?.trim() ?? ''
 const key = process.env.MODEL_RELAY_API_KEY?.trim() ?? ''
 const videoKey = process.env.VIDEO_MODEL_RELAY_API_KEY?.trim() || key
 const confirmCost = process.env.MODEL_RELAY_CANARY_CONFIRM === 'true'
-const timeoutMs = resolveBoundedInteger(process.env.MODEL_RELAY_CANARY_TIMEOUT_MS, 120_000, 2_000, 120_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')
+// Video providers routinely take several minutes even for a short 1080P
+// clip. Keep the probe bounded, but allow an operator to wait for the actual
+// terminal artifact instead of misclassifying a healthy queued job as a
+// transport failure.
+const timeoutMs = resolveBoundedInteger(process.env.MODEL_RELAY_CANARY_TIMEOUT_MS, 300_000, 2_000, 600_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')
 const rawVideoDurationSeconds = Number(process.env.VIDEO_DURATION_SECONDS ?? 5)
 const videoDurationSeconds = Number.isFinite(rawVideoDurationSeconds) ? Math.max(3, Math.min(15, rawVideoDurationSeconds)) : 5
 // Keep the default canary prompt deliberately neutral. Some relay safety
@@ -177,6 +181,21 @@ export function requireCanaryBudget(value: string | undefined): CanaryBudget {
 /** Return an actionable, credential-safe blocker for operator-facing canary output. */
 export function relayProbeFailureReason(error: unknown): string {
   const message = error instanceof Error ? error.message : ''
+  // Keep operator output credential safe while preserving the actionable
+  // failure class.  The old catch-all made a reachable relay look identical
+  // to a missing key and forced a second run with ad-hoc instrumentation.
+  if (message.includes('MODEL_PRICING_') || message.includes('relay pricing')) {
+    if (message.includes('MODEL_PRICING_MODEL_MISSING') || message.includes('pricing is missing model')) return 'relay_pricing_model_missing'
+    if (message.includes('MODEL_PRICING_GROUP_INVALID') || message.includes('has no positive ratio')) return 'relay_pricing_group_invalid'
+    if (message.includes('MODEL_PRICING_GROUP_UNAVAILABLE') || message.includes('not enabled for relay group')) return 'relay_pricing_group_unavailable'
+    if (message.includes('MODEL_PRICING_TOKEN_EVIDENCE_MISSING') || message.includes('token pricing requires')) return 'relay_pricing_token_evidence_missing'
+    if (message.includes('MODEL_PRICING_FIXED_PRICE_INVALID') || message.includes('fixed image price')) return 'relay_pricing_image_price_invalid'
+    if (message.includes('MODEL_PRICING_RESPONSE')) return 'relay_pricing_snapshot_invalid'
+    return 'relay_pricing_failed'
+  }
+  if (message.includes('relay canary price is unknown or zero')) return 'relay_pricing_zero_or_unknown'
+  if (message.includes('video canary requires')) return 'relay_video_preflight_invalid'
+  if (message.includes('MODEL_RELAY_CANARY_TIMEOUT_MS')) return 'relay_canary_timeout_invalid'
   if (message.endsWith('relay token must have a finite server-enforced quota')) return 'relay_token_quota_unbounded'
   if (message.endsWith('relay token finite quota evidence is invalid or exhausted')) return 'relay_token_quota_invalid_or_exhausted'
   if (message.includes('relay token quota HTTP ')) return 'relay_token_quota_http_error'

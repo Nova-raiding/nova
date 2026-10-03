@@ -4179,7 +4179,12 @@ async function assertVideoProviderJobScope(workspaceId: string, providerJobId: s
     ? await persistence.outbox.listWorkspaceEvents(workspaceId, 5000)
     : (inMemoryTimelineEvents.get(workspaceId) ?? [])
   const owned = events.some(event => {
-    if (event.eventType !== 'multimodal.video_completed' && event.eventType !== 'multimodal.generation.completed') return false
+    // A queued request is durable evidence of ownership too.  The first
+    // provider response is intentionally recorded as `multimodal.video.requested`
+    // until a later status query proves that an HTTPS artifact completed.  Do
+    // not make that status query fail its own workspace scope check merely
+    // because the provider is still rendering.
+    if (event.eventType !== 'multimodal.video_completed' && event.eventType !== 'multimodal.video.requested' && event.eventType !== 'multimodal.generation.completed') return false
     const rendering = recordValue(event.payload.rendering)
     return rendering?.providerJobId === providerJobId
   })

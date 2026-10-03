@@ -28,6 +28,8 @@ describe('production model relay contract', () => {
     expect(relayProbeFailureReason(new Error('model relay token must have a finite server-enforced quota'))).toBe('relay_token_quota_unbounded')
     expect(relayProbeFailureReason(new Error('video relay token finite quota evidence is invalid or exhausted'))).toBe('relay_token_quota_invalid_or_exhausted')
     expect(relayProbeFailureReason(new Error('model relay token quota HTTP 401: secret response'))).toBe('relay_token_quota_http_error')
+    expect(relayProbeFailureReason(new Error('MODEL_PRICING_MODEL_MISSING: relay pricing is missing model x'))).toBe('relay_pricing_model_missing')
+    expect(relayProbeFailureReason(new Error('video canary requires explicit 720P/1080P resolution'))).toBe('relay_video_preflight_invalid')
     expect(relayProbeFailureReason(new Error('provider said sk-secret'))).toBe('relay_probe_failed')
   })
 
@@ -234,11 +236,11 @@ describe('production model relay contract', () => {
   })
 
   it('fails closed on malformed timeout and evidence TTL configuration', () => {
-    for (const value of ['NaN', '1.5', '0', '120001']) {
-      expect(() => resolveBoundedInteger(value, 120_000, 2_000, 120_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')).toThrow('MODEL_RELAY_CANARY_TIMEOUT_MS')
+    for (const value of ['NaN', '1.5', '0', '600001']) {
+      expect(() => resolveBoundedInteger(value, 300_000, 2_000, 600_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')).toThrow('MODEL_RELAY_CANARY_TIMEOUT_MS')
     }
-    expect(resolveBoundedInteger(undefined, 120_000, 2_000, 120_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')).toBe(120_000)
-    expect(resolveBoundedInteger(' 60000 ', 120_000, 2_000, 120_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')).toBe(60_000)
+    expect(resolveBoundedInteger(undefined, 300_000, 2_000, 600_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')).toBe(300_000)
+    expect(resolveBoundedInteger(' 60000 ', 300_000, 2_000, 600_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')).toBe(60_000)
   })
 
   it('retries only explicit 429 rejection with bounded Retry-After', () => {

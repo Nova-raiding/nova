@@ -101,7 +101,7 @@ describe('MerchantService', () => {
   it('keeps candidate task identity durable and rejects every publish entry point', () => {
     const service = new MerchantService({ fixtureMode: true })
     const product = service.products.get('prod_fixture_1')!
-    product.factsConfirmed = true
+    service.confirmProductFacts('ws_demo', product.id)
     product.remoteId = undefined
     const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao', candidateOnly: true })
     expect(task.candidateOnly).toBe(true)
@@ -2675,6 +2675,10 @@ describe('MerchantService', () => {
     const product = service.importProduct({ workspaceId: 'ws_demo', platform: 'taobao', title: '绑定历史素材的商品', sourceAssetIds: [asset.id], stock: 5 })
     service.confirmProductFacts('ws_demo', product.id)
     const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao' })
+    if (task.state === 'draft') service.answerTask('ws_demo', task.id, {
+      confirm_facts: true, placement: '商品详情页', goal: '清晰展示规格', audience: '已确认用户', scene: '日常使用',
+      selling_points: ['已确认规格'], output_count: 1, constraints: '无额外限制',
+    })
     service.selectDirection(task.id, 'A')
     service.confirmProductionPlan('ws_demo', task.id, 'merchant')
     expect(service.prepareCodexDraft(task.id).referenceAssets).toEqual([expect.objectContaining({ id: asset.id, preference: expect.objectContaining({ verdict: 'excellent', reasons: ['商品主体清晰', '留白适合移动端'] }) })])
@@ -2806,6 +2810,20 @@ it('accepts and freezes a landscape canvas for banner generation', () => {
   const service = new MerchantService({ fixtureMode: true })
   const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', direction: '夏季活动 Banner', size: '1536x1024', idempotencyKey: 'landscape-banner-size', count: 1 })
   expect(job.visualBrief).toMatchObject({ size: '1536x1024', outputVariant: 'banner' })
+})
+
+it('builds a consistent detail-page image set brief from a suite request', () => {
+  const service = new MerchantService({ fixtureMode: true })
+  const job = service.enqueueImageGeneration({
+    workspaceId: 'ws_demo', productId: 'prod_fixture_1', direction: '详情页套图',
+    idempotencyKey: 'detail-suite-brief', count: 4,
+  })
+  expect(job.visualBrief).toMatchObject({
+    placement: 'product_image',
+    outputVariant: 'secondary',
+    seriesConsistency: expect.stringContaining('统一网格'),
+    detailSections: expect.arrayContaining(['首屏价值主张：商品与核心收益', 'SKU与套餐边界：包含与不包含']),
+  })
 })
 
 it('preserves SKU-specific source images and refuses a missing or foreign SKU source', () => {

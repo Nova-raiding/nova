@@ -27,6 +27,8 @@ export interface SeoGeoSuggestion {
   rankingGuarantee: false
   factsVersion: number
   contextHash: string
+  /** Deterministic checks merchants can inspect before accepting a title. */
+  quality: { characterCount: number; keywordCoverage: number; duplicateTerms: string[]; platformFit: 'within_limit' | 'truncated' }
 }
 
 const platformLimits: Record<SeoGeoPlatform, number> = { jd: 60, taobao: 60, tmall: 60, pinduoduo: 60, xiaohongshu: 25, douyin: 55 }
@@ -34,6 +36,19 @@ const platforms = new Set<SeoGeoPlatform>(Object.keys(platformLimits) as SeoGeoP
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/u
 const MAX_INPUT_LENGTH = 5_000
 const MAX_COLLECTION_ITEMS = 100
+
+// These expressions are intentionally conservative. A title is customer-facing
+// copy, so unsupported superlatives, guarantees and medical claims must never
+// be assembled from an imported title or merchant keyword. Confirmed facts can
+// still be shown in the evidence list for human review.
+const unsupportedClaimPatterns: readonly RegExp[] = [
+  /全网(?:第一|最低|最好|最强)/u,
+  /(?:销量|销售|排名|口碑)(?:第一|冠军|领先)/u,
+  /(?:顶级|极致|完美|绝对|唯一|首选|国家级|官方认证)/u,
+  /(?:100%|百分之百)(?:有效|安全|纯天然|无添加)/iu,
+  /(?:零风险|无风险|永久|根治|治疗|治愈|药效)/u,
+  /(?:假一赔十|假一赔百)/u,
+]
 
 export class SeoGeoInputError extends Error {
   readonly code = 'SEO_GEO_INPUT_INVALID'
@@ -45,6 +60,30 @@ export class SeoGeoInputError extends Error {
 }
 
 const normalize = (value: string) => value.replace(/[\s，。！？、|｜]+/gu, ' ').trim()
+
+function uniqueTerms(values: readonly string[]): string[] {
+  const seen = new Set<string>()
+  return values.filter(value => {
+    const key = normalize(value).toLocaleLowerCase()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function removeUnsupportedClaims(value: string): { value: string; removed: boolean } {
+  let next = value
+  let removed = false
+  for (const pattern of unsupportedClaimPatterns) {
+    // A term can contain more than one claim (for example “零风险永久有效”);
+    // remove every occurrence before it enters the candidate title.
+    while (pattern.test(next)) {
+      removed = true
+      next = next.replace(pattern, ' ')
+    }
+  }
+  return { value: normalize(next), removed }
+}
 
 function requireText(value: unknown, field: string, { optional = false } = {}): string | undefined {
   if (value === undefined && optional) return undefined
@@ -90,15 +129,25 @@ export function generateSeoGeoSuggestions(input: SeoGeoInput): SeoGeoSuggestion[
   const { normalized, factsVersion } = validateInput(input)
   const facts = Object.entries(normalized.attributes ?? {}).map(([key, value]) => `${key}${value}`)
   const points = normalized.sellingPoints ?? []
-  const keywords = [normalized.keyword, normalized.category, ...facts.slice(0, 3), ...points.slice(0, 2)].filter((value): value is string => Boolean(value)).map(normalize)
-  const dedupedKeywords = [...new Set(keywords)].slice(0, 8)
+  const allCandidateTerms = [normalized.keyword, normalized.category, ...facts.slice(0, 3), ...points.slice(0, 2)].filter((value): value is string => Boolean(value)).map(normalize)
+  const sanitizedTerms = allCandidateTerms.map(removeUnsupportedClaims)
+  const dedupedKeywords = [...new Map(sanitizedTerms.filter(term => term.value).map(term => [term.value.toLocaleLowerCase(), term.value])).values()].slice(0, 8)
   const evidence = [
     { source: 'product_fact' as const, value: normalized.title },
     ...facts.slice(0, 3).map(value => ({ source: 'product_fact' as const, value })),
     ...points.slice(0, 2).map(value => ({ source: 'selling_point' as const, value })),
     ...(normalized.keyword ? [{ source: 'merchant_keyword' as const, value: normalized.keyword }] : []),
   ]
-  const base = normalize([normalized.title, normalized.category, ...dedupedKeywords].filter(Boolean).join(' '))
+  const sanitizedTitle = removeUnsupportedClaims(normalized.title)
+  const titleAnchor = sanitizedTitle.value
+  // Do not append a category/keyword when it is already contained in the
+  // merchant title. Repeating the same phrase is a common source of spammy
+  // looking titles and wastes the platform character budget.
+  const additions = dedupedKeywords.filter(term => {
+    const needle = normalize(term).toLocaleLowerCase()
+    return needle && !titleAnchor.toLocaleLowerCase().includes(needle)
+  })
+  const base = normalize([titleAnchor, ...additions].filter(Boolean).join(' '))
   const limit = platformLimits[normalized.platform]
   // Cut by characters, not UTF-16 code units. `slice` splits a surrogate pair,
   // and the lone half survives JSON but is encoded as U+FFFD by the first UTF-8
@@ -107,12 +156,16 @@ export function generateSeoGeoSuggestions(input: SeoGeoInput): SeoGeoSuggestion[
   // counts characters too, or it reports a truncation that did not happen for a
   // title shorter than the limit in characters.
   const title = Array.from(base).slice(0, limit).join('')
+  const titleTerms = title.split(' ').filter(Boolean)
+  const duplicateTerms = titleTerms.filter((term, index, all) => all.findIndex(candidate => candidate.toLocaleLowerCase() === term.toLocaleLowerCase()) !== index)
+  const coveredKeywords = dedupedKeywords.filter(keyword => title.toLocaleLowerCase().includes(keyword.toLocaleLowerCase())).length
   const risks = [
     ...(Array.from(normalized.title).length > limit ? ['原商品标题超过平台建议长度，已截断'] : []),
+    ...(sanitizedTitle.removed || sanitizedTerms.some(term => term.removed) ? ['检测到未经证明的夸大、保证或医疗表达，已从候选标题移除'] : []),
     ...(points.length === 0 ? ['缺少已确认卖点，未自动补写功效或承诺'] : []),
     'SEO/GEO 分数是本地建议，不代表平台排名、收录或转化结果',
   ]
   const seo = Math.min(100, 55 + dedupedKeywords.length * 5 + (normalized.category ? 10 : 0))
   const geo = Math.min(100, 50 + evidence.length * 6 + (normalized.objective ? 5 : 0))
-  return [{ id: `seo_geo_${normalized.productId}_${normalized.platform}`, platform: normalized.platform, title, score: { seo, geo, total: Math.round((seo + geo) / 2) }, keywords: dedupedKeywords, evidence, risks, rationale: ['关键词来自商品标题、类目、属性或商家输入', '未生成未经事实证明的功效、销量、排名和价格承诺'], status: 'suggested', rankingGuarantee: false, factsVersion, contextHash: contextHash(normalized, factsVersion) }]
+  return [{ id: `seo_geo_${normalized.productId}_${normalized.platform}`, platform: normalized.platform, title, score: { seo, geo, total: Math.round((seo + geo) / 2) }, keywords: dedupedKeywords, evidence, risks, rationale: ['关键词来自商品标题、类目、属性或商家输入', '已去除标题中重复的完整词组，优先保留商品原名', '未生成未经事实证明的功效、销量、排名和价格承诺'], status: 'suggested', rankingGuarantee: false, factsVersion, contextHash: contextHash(normalized, factsVersion), quality: { characterCount: Array.from(title).length, keywordCoverage: dedupedKeywords.length ? Math.round((coveredKeywords / dedupedKeywords.length) * 100) : 0, duplicateTerms: [...new Set(duplicateTerms)], platformFit: Array.from(base).length > limit ? 'truncated' : 'within_limit' } }]
 }

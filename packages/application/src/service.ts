@@ -2987,6 +2987,8 @@ export class MerchantService {
       ...promotionLabels,
       brief?.cta,
     ].map(value => value?.trim()).filter((value): value is string => Boolean(value)).slice(0, 8))]
+    const visualPlacement = task?.productionPlan?.placement ?? brief?.placement ?? (contentVersion ? 'detail_page' : 'product_image')
+    const detailPlacement = /detail|详情|套图|长图|gallery/iu.test(`${input.direction} ${visualPlacement}`)
     const detailSections = [
       '首屏价值主张：商品与核心收益',
       '痛点场景：用户为何需要',
@@ -2997,7 +2999,6 @@ export class MerchantService {
       'SKU与套餐边界：包含与不包含',
       '信任与行动：售后与克制 CTA',
     ]
-    const visualPlacement = task?.productionPlan?.placement ?? brief?.placement ?? (contentVersion ? 'detail_page' : 'product_image')
     const bannerPlacement = /banner|横幅|广告位|活动头图/iu.test(`${input.direction} ${visualPlacement}`)
     const visualBrief = {
       ...(input.size ? { size: input.size } : {}),
@@ -3009,14 +3010,15 @@ export class MerchantService {
       ...(logoAssetIds.length ? { logoAssetIds } : {}),
       ...(marketingLabels.length ? { marketingLabels } : {}),
       ...(promotionLabels.length ? { promotionLabels } : {}),
-      ...(task?.productionPlan?.placement?.includes('详情') || brief?.placement?.includes('详情') || input.size === '1024x3072' || input.size === '1024x4096' ? { detailSections } : {}),
+      ...(detailPlacement || input.size === '1024x3072' || input.size === '1024x4096' ? { detailSections } : {}),
+      ...(detailPlacement && count > 1 ? { seriesConsistency: '同一商品详情页套图：统一网格、字体、色板、光影和商品比例；每张图承担独立章节，避免重复构图与规格冲突。' } : {}),
       platformRules: [
         '商品本体、颜色、材质、结构、Logo 与 SKU 必须保持不变',
         '所有价格、优惠、功效和认证必须来自已确认事实',
         '主图保持商品清晰完整；营销信息优先放在详情长图和副图',
       ],
       ...(knowledgeFacts.length ? { knowledgeFacts } : {}),
-      outputVariant: input.size === '1024x3072' || input.size === '1024x4096' ? 'detail_long' as const : bannerPlacement ? 'banner' as const : contentVersion ? 'secondary' as const : 'main' as const,
+      outputVariant: input.size === '1024x3072' || input.size === '1024x4096' ? 'detail_long' as const : bannerPlacement ? 'banner' as const : detailPlacement || contentVersion ? 'secondary' as const : 'main' as const,
       ...(competitorReference ? {
         competitorStructures: competitorReference.structuralObservations,
         competitorThemes: competitorReference.expressionObservations,
@@ -4715,7 +4717,10 @@ export class MerchantService {
     const sellingPoints = [`适配${task.platform}商品信息`, '关键事实可追溯', '发布前保留人工审核环节']
     return {
       title: `${product.title}｜${task.platform}营销稿`,
-      detail: `基于已确认商品事实生成：${product.title}，当前库存 ${product.stock}，SKU ${product.skuCount} 个。`,
+      // A catalog row may carry only an aggregate SKU count while the actual
+      // SKU records are still awaiting import. Never turn that count into a
+      // fabricated per-SKU detail claim; make the missing handoff explicit.
+      detail: `基于已确认商品事实生成：${product.title}，当前库存 ${product.stock}，${product.skus?.length ? `已确认 SKU ${product.skus.length} 个。` : product.skuCount > 0 ? 'SKU 明细待确认。' : '暂无 SKU 明细。'}`,
       sellingPoints,
       modules: orchestrateContentModules(contentModules(product, task.platform), product),
       brief: defaultStaticBrief(task.platform, product.title, sellingPoints, product.price, snapshot.promotions.map(promotion => `${promotion.label}${promotion.priceCny !== undefined ? ` ¥${promotion.priceCny.toFixed(2)}` : promotion.couponPriceCny !== undefined ? ` 券后 ¥${promotion.couponPriceCny.toFixed(2)}` : ''}`).join('；') || undefined),
@@ -5489,7 +5494,17 @@ function contentModules(product: Product, platform: Platform): ContentModule[] {
   const sizeFacts = Object.entries(attributes).filter(([key]) => /尺码|尺寸|规格|净含量/u.test(key)).map(([key, value]) => `${key}：${value}`).join('；')
   const detailFacts = Object.entries(attributes).filter(([key]) => /材质|成分|工艺|面料|重量|结构/u.test(key)).map(([key, value]) => `${key}：${value}`).join('；')
   const sceneFacts = Object.entries(attributes).filter(([key]) => /场景|适用|用途|功能/u.test(key)).map(([key, value]) => `${key}：${value}`).join('；')
-  const skuBody = product.skus?.length ? product.skus.map(sku => `${sku.id}｜${sku.name}｜价格 ${sku.price}｜库存 ${sku.stock}`).join('\n') : pending('逐项 SKU 资料')
+  // Keep the SKU module useful for production handoff: a SKU name alone is
+  // ambiguous when imports carry the attributes in separate columns, and a
+  // missing image mapping must be visible before design/export.  These are
+  // frozen product facts, so we only render values that are actually present.
+  const skuBody = product.skus?.length ? product.skus.map(sku => {
+    const attributes = sku.attributes && Object.keys(sku.attributes).length
+      ? `｜${Object.entries(sku.attributes).map(([key, value]) => `${key}：${value}`).join('；')}`
+      : ''
+    const imageMapping = sku.images?.length ? `｜已绑定图片 ${sku.images.length} 张` : '｜图片待绑定'
+    return `${sku.id}｜${sku.name || '未命名规格'}${attributes}｜价格 ${sku.price}｜库存 ${sku.stock}${imageMapping}`
+  }).join('\n') : pending('逐项 SKU 资料')
   const modules: ContentModule[] = [
     { key: 'hero', title: '首屏信息', purpose: '快速说明商品和使用价值', body: product.title, factSourceIds: source, imageGuidance: '使用已确认的商品主图，不改变商品本体' },
     { key: 'selling_points', title: '核心卖点', purpose: '突出已确认的商品卖点', body: attributeText || pending('结构化卖点'), factSourceIds: source },

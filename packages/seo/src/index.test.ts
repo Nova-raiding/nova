@@ -63,4 +63,47 @@ describe('generateSeoGeoSuggestions', () => {
     expect(suggestion.rankingGuarantee).toBe(false)
     expect(suggestion.risks).toContain('SEO/GEO 分数是本地建议，不代表平台排名、收录或转化结果')
   })
+
+  it('removes unsupported superlatives and guarantees from generated copy', () => {
+    const suggestion = generateSeoGeoSuggestions({
+      ...validInput,
+      title: '全网第一 极致防晒外套',
+      keyword: '销量冠军 100%有效',
+      sellingPoints: ['轻量便携', '零风险永久有效'],
+    })[0]!
+
+    expect(suggestion.title).not.toMatch(/全网第一|极致|销量冠军|100%有效|零风险|永久有效/u)
+    expect(suggestion.title).toContain('防晒外套')
+    expect(suggestion.risks).toContain('检测到未经证明的夸大、保证或医疗表达，已从候选标题移除')
+  })
+
+  it('deduplicates keywords case-insensitively while retaining platform limits', () => {
+    const suggestion = generateSeoGeoSuggestions({
+      ...validInput,
+      platform: 'douyin',
+      title: '轻量防晒外套',
+      category: '女装',
+      keyword: '通勤',
+      attributes: { style: '通勤', material: '锦纶' },
+      sellingPoints: ['通勤', '轻量'],
+    })[0]!
+
+    expect(suggestion.keywords.filter(keyword => keyword === '通勤')).toHaveLength(1)
+    expect([...suggestion.title].length).toBeLessThanOrEqual(55)
+  })
+
+  it('reports deterministic editorial quality and avoids repeating the title anchor', () => {
+    const suggestion = generateSeoGeoSuggestions({
+      ...validInput,
+      title: '轻量防晒外套',
+      category: '轻量防晒外套',
+      keyword: '轻量防晒外套',
+    })[0]!
+
+    expect(suggestion.title.startsWith('轻量防晒外套')).toBe(true)
+    expect(suggestion.title.match(/轻量防晒外套/gu)).toHaveLength(1)
+    expect(suggestion.quality).toMatchObject({ duplicateTerms: [], platformFit: 'within_limit' })
+    expect(suggestion.quality.keywordCoverage).toBe(100)
+    expect(suggestion.rationale).toContain('已去除标题中重复的完整词组，优先保留商品原名')
+  })
 })

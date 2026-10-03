@@ -37,6 +37,8 @@ export interface ImageGenerationInput {
     marketingLabels?: string[]
     /** Ordered long-page chapters, each with one buyer question. */
     detailSections?: string[]
+    /** Guidance shared by every image in a detail-page set. */
+    seriesConsistency?: string
     /** Frozen platform rules that shaped this candidate. */
     platformRules?: string[]
     /** Approved workspace knowledge facts/rules used to ground this image.
@@ -222,6 +224,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const platformDna = platform ? PLATFORM_VISUAL_DNA[platform] ?? `目标平台为 ${platform}，使用适合移动端商品详情页的高转化信息层级。` : '使用适合移动端商品详情页的高转化信息层级。'
       const heroTemplate = platform ? PLATFORM_HERO_TEMPLATES[platform] ?? '模板=通用商品 hero；构图=商品完整、主体突出、留白均衡；光线=均匀商业柔光；背景=简洁纯色。' : '模板=通用商品 hero；构图=商品完整、主体突出、留白均衡；光线=均匀商业柔光；背景=简洁纯色。'
       const placement = brief?.placement?.trim() || '商品详情页运营图'
+      const detailPlacement = /detail|详情|套图|长图|gallery/iu.test(`${input.direction} ${placement}`)
       const bannerRequested = brief?.outputVariant === 'banner' || /banner|横幅|广告位|活动头图/iu.test(`${input.direction} ${placement}`)
       const sceneRequested = /场景|户外|通勤|生活方式|lifestyle|environment|outdoor|commut/iu.test(`${input.direction} ${placement}`)
       const slotGuidance = isLongPage ? '槽位为完整商品详情页长图：从上到下制作多个连续章节，统一字体和视觉系统，包含首屏、细节展示和已知规格信息，禁止只做一个模块或把内容缩成正方形。' : bannerRequested
@@ -243,6 +246,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const logoAssetIds = boundedList(brief?.logoAssetIds, 4, 120)
       const promotionLabels = boundedList(brief?.promotionLabels, 4, 120)
       const detailSections = boundedList(brief?.detailSections, 10, 120)
+      const seriesConsistency = brief?.seriesConsistency?.trim().slice(0, 240)
       const platformRules = boundedList(brief?.platformRules, 8, 160)
       const knowledgeFacts = boundedList(brief?.knowledgeFacts, 16, 240)
       const competitorStructures = boundedList(brief?.competitorStructures, 6, 160)
@@ -279,6 +283,8 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         bannerRequested
           ? 'Banner 必须让商品、核心利益点和 CTA 在缩略图中仍可识别；商品放在视觉重心一侧，另一侧保留可读文案安全区，背景使用品牌/活动氛围但不得抢过商品。不得绘制未经确认的价格、折扣、销量、倒计时、平台 Logo 或二维码。'
           : '',
+        detailPlacement && input.count > 1
+          ? `这是同一商品的一组详情页套图（共 ${input.count} 张）：${seriesConsistency ? `${seriesConsistency}；` : ''}所有图片必须保持同一套字体、色板、网格、光影、商品比例和 SKU 视觉身份；每张图承担不同章节任务，禁止重复同一构图或出现互相矛盾的规格。` : '',
         contentPlatformMainImage
           ? '内容电商主图必须做出明显的新视觉方案：使用真实生活方式场景或简洁有层次的环境、3:4 或竖版阅读构图、单一视觉焦点和可后置排版的安全区；禁止把商品孤零零地原样抠在白底上。'
           : sceneMainImage

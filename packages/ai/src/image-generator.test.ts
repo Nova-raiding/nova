@@ -262,6 +262,21 @@ describe('image generator', () => {
     expect(prompt).toContain('活动价 ¥99.00')
   })
 
+  it('keeps a multi-image detail set visually consistent while varying chapter work', async () => {
+    let prompt = ''
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async (_url, init) => {
+        prompt = (JSON.parse(String(init?.body)) as { prompt: string }).prompt
+        return new Response(JSON.stringify({ usage: { output_image_count: 4 }, data: Array.from({ length: 4 }, (_, index) => ({ url: `https://cdn.example/detail-${index + 1}.png` })) }), { status: 200 })
+      },
+    })
+    await generator.generate({ productTitle: '外套', direction: '详情页套图', count: 4, visualBrief: { placement: 'detail_page', detailSections: ['首屏', '细节', '规格'], seriesConsistency: '统一网格、字体与色板' } })
+    expect(prompt).toContain('同一商品的一组详情页套图（共 4 张）')
+    expect(prompt).toContain('统一网格、字体与色板')
+    expect(prompt).toContain('每张图承担不同章节任务')
+  })
+
   it('uses a responsive conversion hierarchy for banners', async () => {
     let prompt = ''
     const generator = new OpenAICompatibleImageGenerator({
