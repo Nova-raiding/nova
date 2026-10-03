@@ -1040,9 +1040,13 @@ function Topbar({
     publish: '发布中心',
     rules: '规则与检查',
   }
-  const displayName = account?.contactName?.trim() || '商家管理员'
-  const accountInitial = Array.from(displayName)[0] || '商'
   const tenantName = account?.enterpriseName?.trim() || '商家工作区'
+  // The signed-in merchant's contact name is an individual identity. The
+  // workbench is tenant-scoped, so its persistent header and avatar must use
+  // the enterprise name supplied by the authenticated workspace instead of
+  // the contact label (for example, 贵人鸟服装 rather than 贵人鸟商家).
+  const displayName = tenantName
+  const accountInitial = Array.from(displayName)[0] || '商'
   const workspaceName = merchantWorkspaceLabel(account)
   const points = billing?.available_points
   const balance = billing?.balance_cny
