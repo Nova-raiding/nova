@@ -58,11 +58,21 @@ describe('production model relay contract', () => {
   })
 
   it('allows polling an existing video job without re-confirming a new billable request', () => {
-    expect(shouldBlockForCostGuard({ modality: 'video', confirmCost: false, existingVideoTaskId: 'job-existing' })).toBe(false)
+    expect(shouldBlockForCostGuard({ modality: 'video', confirmCost: false, existingVideoTaskId: 'job-existing', existingVideoReadOnly: true })).toBe(false)
+    expect(shouldBlockForCostGuard({ modality: 'video', confirmCost: false, existingVideoTaskId: 'job-existing', existingVideoReadOnly: false })).toBe(true)
     expect(requiresCanaryBudget(['video'], 'job-existing', true)).toBe(false)
     expect(requiresCanaryBudget(['video'], 'job-existing', false)).toBe(true)
     expect(requiresCanaryBudget(['video'])).toBe(true)
     expect(requiresCanaryBudget(['text', 'video'], 'job-existing')).toBe(true)
+  })
+
+  it('keeps a custom POST status route behind confirmation and a reserved budget', async () => {
+    expect(shouldBlockForCostGuard({ modality: 'video', confirmCost: false, existingVideoTaskId: 'job-existing', existingVideoReadOnly: false })).toBe(true)
+    const budget = requireCanaryBudget('3')
+    const pricing = { estimateRequestCost: vi.fn(async () => ({ costCny: 0.75, metadata: { pricing_version: 'v1', pricing_group: 'VIP', quota_type: 1, formula_version: 'relay-video-cny-per-second-v1' as const } })) }
+    await expect(reserveCanaryCost({ pricing, budget, modality: 'video', model: 'video-1', requestBody: { job_id: 'job-existing' }, durationSeconds: 5, resolution: '720P' })).resolves.toBe(2.25)
+    expect(budget.reservedCny).toBe(2.25)
+    expect(pricing.estimateRequestCost).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ preauthorization_duration_seconds: 5, resolution: '720P' }) }))
   })
 
   it('requires an explicit per-run budget before any model request', () => {
