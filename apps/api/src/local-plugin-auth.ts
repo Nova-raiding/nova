@@ -32,6 +32,18 @@ function single(params: URLSearchParams, key: string): string | undefined {
   return values.length === 1 ? values[0] : undefined
 }
 
+// Early local installers used `workspace` (the custom-protocol deep-link
+// spelling) in the OAuth request instead of the canonical OAuth
+// `workspace_id`. Keep accepting that spelling during the rolling upgrade,
+// but reject ambiguous requests that send both names with different values.
+function singleWorkspace(params: URLSearchParams): string | undefined {
+  const canonical = params.getAll('workspace_id')
+  const legacy = params.getAll('workspace')
+  if (canonical.length > 1 || legacy.length > 1) return undefined
+  if (canonical.length === 1 && legacy.length === 1 && canonical[0] !== legacy[0]) return undefined
+  return canonical[0] ?? legacy[0]
+}
+
 export function validateLocalPluginRedirectUri(value: string): string {
   let target: URL
   try { target = new URL(value) } catch { throw new LocalPluginAuthorizationRequestError('INVALID_REDIRECT_URI') }
@@ -54,7 +66,7 @@ export function parseLocalPluginAuthorizationRequest(params: URLSearchParams): L
   const codeChallengeMethod = single(params, 'code_challenge_method')
   const scope = single(params, 'scope')
   const resource = single(params, 'resource')
-  const workspaceId = single(params, 'workspace_id')
+  const workspaceId = singleWorkspace(params)
   const requestId = single(params, 'connection_request_id')
   const installInstanceId = single(params, 'installation_id')
   const instanceChallengeId = single(params, 'challenge_id')
@@ -94,7 +106,7 @@ export function parseLocalPluginTokenRequest(params: URLSearchParams): LocalPlug
   const code = single(params, 'code')
   const codeVerifier = single(params, 'code_verifier')
   const resource = single(params, 'resource')
-  const workspaceId = single(params, 'workspace_id')
+  const workspaceId = singleWorkspace(params)
   const requestId = single(params, 'connection_request_id')
   const installInstanceId = single(params, 'installation_id')
   if (clientId !== LOCAL_PLUGIN_CLIENT_ID || grantType !== 'authorization_code' || !redirectUri

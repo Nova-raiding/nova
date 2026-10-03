@@ -14,6 +14,15 @@ describe('local plugin PKCE contract', () => {
     expect(parseLocalPluginAuthorizationRequest(new URLSearchParams({ response_type: 'code', client_id: 'local-desktop', redirect_uri: redirectUri, state, code_challenge: challenge, code_challenge_method: 'S256', scope: 'merchant', resource: 'https://yxsona.com/mcp', workspace_id: 'workspace_legacy_test' })).workspaceId).toBe('workspace_legacy_test')
   })
 
+  it('accepts the rolling-upgrade deep-link workspace spelling and rejects conflicting aliases', () => {
+    const authorization = new URLSearchParams({ response_type: 'code', client_id: 'local-desktop', redirect_uri: redirectUri, state, code_challenge: challenge, code_challenge_method: 'S256', scope: 'merchant', resource: 'https://yxsona.com/mcp', workspace: 'ws_store' })
+    expect(parseLocalPluginAuthorizationRequest(authorization).workspaceId).toBe('ws_store')
+    authorization.set('workspace_id', 'ws_other')
+    expect(() => parseLocalPluginAuthorizationRequest(authorization)).toThrow('INVALID_REQUEST')
+    const token = new URLSearchParams({ grant_type: 'authorization_code', client_id: 'local-desktop', redirect_uri: redirectUri, code: 'opaque-code', code_verifier: verifier, resource: 'https://yxsona.com/mcp', workspace: 'ws_store' })
+    expect(parseLocalPluginTokenRequest(token).workspaceId).toBe('ws_store')
+  })
+
   it.each([
     'http://localhost:49191/merchant-mcp-callback',
     'http://127.0.0.1/merchant-mcp-callback',
