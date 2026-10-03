@@ -4377,7 +4377,15 @@ async function requireStoreOnboarding(workspaceId: string, method: string, param
   // Local fixture workflows intentionally support unbound planning data. The
   // production App flow must bind at least one live store before any catalog,
   // asset, task, sync, generation, or publishing operation is reachable.
-  if (!isProduction() || ONBOARDING_METHODS.has(method) || COMMERCIAL_READ_ONLY_METHODS.has(method) || STORE_BOUNDARY_EXEMPT_METHODS.has(method) || method.startsWith('ops.') || method.startsWith('knowledge.') || method.startsWith('rule.')) return
+  // A draft-only catalog import is the documented store-less entry point for
+  // merchant supplied facts. It creates a candidate that is explicitly
+  // unbound and non-publishable; requiring a platform store here made the
+  // production ChatGPT flow impossible even though the import handler already
+  // enforces draft_only and never accepts a store binding. Keep regular
+  // catalog imports behind the store boundary.
+  const storelessDraftImport = (method === 'catalog.import' || method === 'catalog.import.batch')
+    && params?.draft_only === 'true'
+  if (!isProduction() || storelessDraftImport || ONBOARDING_METHODS.has(method) || COMMERCIAL_READ_ONLY_METHODS.has(method) || STORE_BOUNDARY_EXEMPT_METHODS.has(method) || method.startsWith('ops.') || method.startsWith('knowledge.') || method.startsWith('rule.')) return
   if (CANDIDATE_PUBLISH_METHODS.has(method)) {
     const taskIds = new Set<string>()
     if (typeof params?.task_id === 'string') taskIds.add(params.task_id)

@@ -622,6 +622,7 @@ describe('API application wiring', () => {
     const approveRestHandler = contentVersionRoutes.slice(contentVersionRoutes.indexOf('const approvalMatch'), contentVersionRoutes.indexOf('const versionDiffMatch'))
     const modifyRestHandler = contentVersionRoutes.slice(contentVersionRoutes.indexOf('const versionModifyMatch'), contentVersionRoutes.indexOf('const versionReviewMatch'))
     const restoreRestHandler = contentVersionRoutes.slice(contentVersionRoutes.indexOf('const versionRestoreMatch'), contentVersionRoutes.indexOf('const versionExportMatch'))
+    const exportRestHandler = contentVersionRoutes.slice(contentVersionRoutes.indexOf('const versionExportMatch'))
     const reviewDecisionRestHandler = contentVersionRoutes.slice(contentVersionRoutes.indexOf('const versionReviewDecisionMatch'), contentVersionRoutes.indexOf('const versionRestoreMatch'))
     expect(source).toContain('handleMcpTaskContinuation(method, params, req, workspaceId, {')
     expect(planMcpHandler).toContain('await assertCanonicalTaskScopeForAction(task)')
@@ -637,6 +638,7 @@ describe('API application wiring', () => {
     expect(approveRestHandler).toContain('await assertCanonicalTaskScopeForAction(task)')
     expect(modifyRestHandler).toContain('await assertCanonicalTaskScopeForAction(scoped.task)')
     expect(restoreRestHandler).toContain('await assertCanonicalTaskScopeForAction(scoped.task)')
+    expect(exportRestHandler).toContain('await assertCanonicalTaskScopeForAction(scoped.task)')
     expect(reviewDecisionRestHandler).toContain('await assertCanonicalTaskScopeForAction(scoped.task)')
   })
 

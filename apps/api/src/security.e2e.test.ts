@@ -1571,6 +1571,13 @@ describe('security and access-control acceptance gates', () => {
     expect(mcp.error?.code).toBe('STORE_ONBOARDING_REQUIRED')
     const rest = await fetch(`${base}/v1/products/import`, { method: 'POST', headers, body: JSON.stringify({ platform: 'taobao', title: '未绑定商品' }) }).then(response => response.json() as Promise<Envelope>)
     expect(rest.error?.code).toBe('STORE_ONBOARDING_REQUIRED')
+
+    // Merchant-supplied draft facts are the documented store-less entry point.
+    // The boundary must let the request reach the commercial gate (which may
+    // still deny it when points/entitlement facts are unavailable), rather
+    // than incorrectly reporting that a platform store is required.
+    const draft = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'catalog.import', params: { platform: 'taobao', draft_only: 'true', title: '未绑定草稿商品' } }) }).then(response => response.json() as Promise<Envelope>)
+    expect(draft.error?.code).not.toBe('STORE_ONBOARDING_REQUIRED')
   })
 
   it('enforces the production first-run store onboarding sequence', async () => {

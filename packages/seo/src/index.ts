@@ -161,6 +161,7 @@ export function generateSeoGeoSuggestions(input: SeoGeoInput): SeoGeoSuggestion[
   const coveredKeywords = dedupedKeywords.filter(keyword => title.toLocaleLowerCase().includes(keyword.toLocaleLowerCase())).length
   const risks = [
     ...(Array.from(normalized.title).length > limit ? ['原商品标题超过平台建议长度，已截断'] : []),
+    ...(coveredKeywords < dedupedKeywords.length ? ['平台字符上限导致部分关键词未纳入候选标题，请人工取舍后再确认'] : []),
     ...(sanitizedTitle.removed || sanitizedTerms.some(term => term.removed) ? ['检测到未经证明的夸大、保证或医疗表达，已从候选标题移除'] : []),
     ...(points.length === 0 ? ['缺少已确认卖点，未自动补写功效或承诺'] : []),
     'SEO/GEO 分数是本地建议，不代表平台排名、收录或转化结果',

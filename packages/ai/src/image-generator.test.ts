@@ -143,7 +143,7 @@ describe('image generator', () => {
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: sink,
       fetch: async () => new Response(JSON.stringify({ id: 'white-image', usage: { output_image_count: 1, cost_cny: 0.01 }, data: [{ b64_json: solidWhitePng() }] }), { status: 200 }),
     })
-    await expect(generator.generate({ productTitle: '外套', direction: '白底主图', count: 1 })).rejects.toMatchObject({ code: 'IMAGE_ARTIFACT_QUALITY_FAILED', providerSucceeded: true, reconciliationRequired: true })
+    await expect(generator.generate({ productTitle: '外套', direction: '白底主图', count: 1, visualBrief: { marketingLabels: ['新品'] } })).rejects.toMatchObject({ code: 'IMAGE_ARTIFACT_QUALITY_FAILED', providerSucceeded: true, reconciliationRequired: true })
     expect(sink).toHaveBeenCalled()
   })
 

@@ -64,6 +64,21 @@ describe('generateSeoGeoSuggestions', () => {
     expect(suggestion.risks).toContain('SEO/GEO 分数是本地建议，不代表平台排名、收录或转化结果')
   })
 
+  it('reports when a short platform limit drops one or more evidence-backed keywords', () => {
+    const suggestion = generateSeoGeoSuggestions({
+      ...validInput,
+      platform: 'xiaohongshu',
+      title: '轻薄防晒外套',
+      category: '女装外套',
+      attributes: { 颜色: '浅蓝', 尺码: 'M', 材质: '聚酯纤维' },
+      keyword: '通勤防晒',
+      sellingPoints: ['防晒', '轻薄'],
+    })[0]!
+
+    expect(suggestion.quality.keywordCoverage).toBeLessThan(100)
+    expect(suggestion.risks).toContain('平台字符上限导致部分关键词未纳入候选标题，请人工取舍后再确认')
+  })
+
   it('removes unsupported superlatives and guarantees from generated copy', () => {
     const suggestion = generateSeoGeoSuggestions({
       ...validInput,

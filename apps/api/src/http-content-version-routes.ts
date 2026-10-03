@@ -105,6 +105,12 @@ export async function handleHttpContentVersionRoutes(req: IncomingMessage, res: 
   const versionExportMatch = path.match(/^\/v1\/content-versions\/([^/]+)\/export$/)
   if (req.method === 'GET' && versionExportMatch) {
     const scoped = scopeContentVersion(req, versionExportMatch[1]!)
+    // Keep REST export on the same canonical task boundary as the MCP
+    // `content.export` path and the preceding review/approval operations.
+    // Without this check a tenant-scoped caller could export a formal version
+    // after its canonical product/listing binding became stale or invalid,
+    // while MCP correctly failed closed.
+    await assertCanonicalTaskScopeForAction(scoped.task)
     const requestedFormat = url.searchParams.get('format') ?? 'bundle'
     if (!['manifest', 'json', 'markdown', 'bundle'].includes(requestedFormat)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'format 必须是 manifest、json、markdown 或 bundle', 400)
     await persistExpiredDeliveryIfNeeded(scoped.task.workspaceId, scoped.version.id)

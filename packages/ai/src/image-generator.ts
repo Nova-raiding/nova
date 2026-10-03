@@ -418,6 +418,10 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       // are diagnostic only and never substituted for provider usage.
       const usage = await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image', model: this.options.model, context: { ...input.usageContext, observedArtifactCount: images.length, providerAttemptId: providerKey } })
       if (usage.metadata?.artifact_count_mismatch === true || images.length !== input.count) throwProviderOutcomeUnknown(providerKey, 'image provider artifact count does not match request and reported usage')
+      // Validate the provider artifacts before the optional marketing
+      // compositor converts them to WebP, which would otherwise bypass the
+      // inline PNG quality gate.
+      for (const image of images) assertImageArtifactQuality(image)
       if (input.mode === 'optimize' && sourceImages.length > 0) {
         const sourceDigests = new Set(sourceImages.map(dataUrlDigest).filter((value): value is string => Boolean(value)))
         const unchanged = images.some(image => {
