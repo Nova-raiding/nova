@@ -167,6 +167,21 @@ describe('production payment and restore evidence gates', () => {
       'checks.isolated_restore.evidence_ref migration chain is incomplete',
     ]))
   })
+  it('accepts a current 257 source prefix when the release metadata binds source 257', () => {
+    const value = evidence('restore')
+    const ref = (value.checks as Record<string, { evidence_ref: string }>).isolated_restore!.evidence_ref!
+    const relative = ref.match(/^artifact:\/\/production\/(.+)#/u)![1]!
+    const path = join(artifactRoot, relative)
+    const capture = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+    capture.source_migration_version = 257
+    capture.restored_migration_prefix = '1:257:257'
+    const bytes = JSON.stringify(capture)
+    writeFileSync(path, bytes)
+    ;(value.checks as Record<string, { evidence_ref: string }>).isolated_restore!.evidence_ref = `artifact://production/${relative}#${createHash('sha256').update(bytes).digest('hex')}`
+    value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, { ...options('restore'), sourceMigrationVersion: 257 })).toEqual([])
+    expect(validateProductionEvidence(value, { ...options('restore'), sourceMigrationVersion: 242 })).toContain('checks.isolated_restore.evidence_ref source_migration_version does not match the protected restore capture')
+  })
 
   it('rejects impossible restore chronology even when independently signed', () => {
     const value = evidence('restore'); value.source_backup_created_at = '2026-08-28T05:10:00Z'; value.recovery_point_at = '2026-08-28T05:00:00Z'; value.signature_base64 = signProductionEvidence(value, privateKeyPem)

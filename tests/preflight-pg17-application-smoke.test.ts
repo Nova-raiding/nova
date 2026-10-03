@@ -39,6 +39,13 @@ describe('PG17 application smoke read-only preflight', () => {
     expect(validatePg17SmokeTopology({ ...input(), capture: { ...capture, migrated_prefix: '1:253:253' } })).toContain('restore capture migration binding invalid')
     expect(validatePg17SmokeTopology({ ...input(), capture: { ...capture, migration_chain_rows: migrationChainRows.slice(1) } })).toContain('restore capture migration chain invalid')
   })
+  it('accepts a same-version 257 source/target capture and rejects target rollback', () => {
+    const rows = Array.from({ length: 257 }, (_, index) => `${index + 1}|migration_${index + 1}|${h('6')}`)
+    const modernCapture = { ...capture, source_migration_version: 257, migration_target_version: 257, restored_migration_prefix: '1:257:257', migrated_prefix: '1:257:257', migration_chain_rows: rows, migration_chain_sha256: createHash('sha256').update(rows.join('\n')).digest('hex') }
+    const modernInput = { ...input(), capture: modernCapture }
+    expect(validatePg17SmokeTopology(modernInput)).toEqual([])
+    expect(validatePg17SmokeTopology({ ...modernInput, capture: { ...modernCapture, migration_target_version: 256, migrated_prefix: '1:256:256' } })).toContain('restore capture migration binding invalid')
+  })
   it('rejects an egress-capable network and production Redis or DB URL', () => {
     const changed: Parameters<typeof validatePg17SmokeTopology>[0] = input()
     changed.network = { ...network, Internal: false }

@@ -9,7 +9,7 @@ import { composeDigestArgument, migrationContainerArgs, postgresContainerArgs, r
 const sha = (value: string) => createHash('sha256').update(value).digest('hex')
 const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]` : value && typeof value === 'object' ? `{${Object.entries(value).filter(([key]) => key !== 'signature_base64').sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}` : JSON.stringify(value)
 const names = ['clamav', 'merchant-api', 'merchant-ops-ui', 'merchant-ui', 'merchant-worker', 'payment-gateway', 'pilot-gateway', 'postgres-migration']
-function fixture() {
+function fixture(sourceMigrationVersion = 242) {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519')
   const releaseId = 'release-restore-1', gitSha = 'a'.repeat(40), sourceSha = `sha256:${'b'.repeat(64)}`
   const digests = Object.fromEntries(names.map((name, index) => [name, `sha256:${String(index + 1).repeat(64)}`]))
@@ -17,16 +17,21 @@ function fixture() {
   const imageSetDigest = `sha256:${sha(names.map(name => `${name}=${digests[name]}\n`).join(''))}`
   const backupSha256 = sha('real backup bytes')
   const started = new Date(Date.now() - 60_000).toISOString(), observed = new Date(Date.now() - 55_000).toISOString(), completed = new Date(Date.now() - 50_000).toISOString()
-  const attestation: Record<string, unknown> = { schema_version: '2', kind: 'postgres_backup', environment: 'production', simulated: false, backup_file_name: 'before-upgrade-242.dump', backup_sha256: backupSha256, source_database_id_sha256: sha('source-system-id'), source_database_oid: 123, source_database_name: 'merchant', migration_version: 242, snapshot_id_sha256: sha('1:1'), backup_started_at: started, snapshot_export_observed_at: observed, dump_completed_at: completed, created_at: started, expires_at: new Date(Date.now() + 60_000).toISOString(), key_id: 'prod-test-key' }
+  const attestation: Record<string, unknown> = { schema_version: '2', kind: 'postgres_backup', environment: 'production', simulated: false, backup_file_name: `before-upgrade-${sourceMigrationVersion}.dump`, backup_sha256: backupSha256, source_database_id_sha256: sha('source-system-id'), source_database_oid: 123, source_database_name: 'merchant', migration_version: sourceMigrationVersion, snapshot_id_sha256: sha('1:1'), backup_started_at: started, snapshot_export_observed_at: observed, dump_completed_at: completed, created_at: started, expires_at: new Date(Date.now() + 60_000).toISOString(), key_id: 'prod-test-key' }
   const resign = () => { attestation.signature_base64 = sign(null, Buffer.from(canonical(attestation)), privateKey).toString('base64') }
   resign()
-  return { backupSha256, backupName: 'before-upgrade-242.dump', attestation, publicPem: publicKey.export({ type: 'spki', format: 'pem' }).toString(), keyId: 'prod-test-key', identity: { release_id: releaseId, git_sha: gitSha, source_sha256: sourceSha }, imageSet: { schema_version: 1, release_id: releaseId, release_git_sha: gitSha, source_sha256: sourceSha, image_digests: digests, image_references: references }, releaseId, gitSha, imageSetDigest, manifestSha256: 'c'.repeat(64), deploymentNonce: 'nonce_abcdefghijklmnopqrstuvwxyz', resign }
+  return { backupSha256, backupName: `before-upgrade-${sourceMigrationVersion}.dump`, attestation, publicPem: publicKey.export({ type: 'spki', format: 'pem' }).toString(), keyId: 'prod-test-key', identity: { release_id: releaseId, git_sha: gitSha, source_sha256: sourceSha }, imageSet: { schema_version: 1, release_id: releaseId, release_git_sha: gitSha, source_sha256: sourceSha, image_digests: digests, image_references: references }, releaseId, gitSha, imageSetDigest, manifestSha256: 'c'.repeat(64), deploymentNonce: 'nonce_abcdefghijklmnopqrstuvwxyz', resign }
 }
 
 describe('protected PostgreSQL 17 isolated restore input contract', () => {
   it('accepts a signed 242 backup and exact eight-image PG17 release identity', () => {
     const { resign: _resign, ...input } = fixture()
     expect(validateRestoreInputs(input).postgresImage).toContain('postgres:17-alpine@sha256:')
+  })
+  it('accepts a current-prefix 257 backup when the candidate binds source 257', () => {
+    const { resign: _resign, ...input } = fixture(257)
+    expect(validateRestoreInputs({ ...input, sourceMigrationVersion: 257 }).sourceMigrationVersion).toBe(257)
+    expect(() => validateRestoreInputs({ ...input, sourceMigrationVersion: 242 })).toThrow(/242 snapshot/u)
   })
   it('rejects tampered, expired and wrong-version backup attestations', () => {
     const tampered = fixture(); tampered.attestation.migration_version = 241

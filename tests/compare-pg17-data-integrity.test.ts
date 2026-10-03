@@ -35,6 +35,12 @@ describe('PG17 raw data integrity comparator', () => {
     expect(() => comparePg17DataIntegrity(baseline, restored, { ...capture, migrated_prefix: '1:253:253' })).toThrow(/migration binding invalid/u)
     expect(() => comparePg17DataIntegrity(baseline, restored, { ...capture, migration_chain_rows: migrationChainRows.slice(1) })).toThrow(/migration chain invalid/u)
   })
+  it('uses a bound 257 source prefix for a same-version restore', () => {
+    const rows = Array.from({ length: 257 }, (_, index) => `${index + 1}|migration_${index + 1}|${'5'.repeat(64)}`)
+    const modern = { ...capture, source_migration_version: 257, migration_target_version: 257, restored_migration_prefix: '1:257:257', migrated_prefix: '1:257:257', migration_chain_rows: rows, migration_chain_sha256: createHash('sha256').update(rows.join('\n')).digest('hex') }
+    expect(comparePg17DataIntegrity(baseline, restored, modern)).toEqual({ status: 'review_consistent', compared_table_count: 1, mismatched_tables: [] })
+    expect(() => comparePg17DataIntegrity(baseline, restored, { ...modern, migration_target_version: 256 })).toThrow(/migration binding invalid/u)
+  })
 
   it('writes a non-replaceable raw artifact, never a signed production claim', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pg17-raw-compare-'))

@@ -54,4 +54,8 @@ describe('repository release metadata gate', () => {
       migrationFiles: [...snapshot.migrationFiles, migration!],
     })).toContain('migration chain contains duplicate version 001')
   })
+  it('requires the source backup prefix to be positive and no newer than the candidate tail', () => {
+    const snapshot = collectReleaseMetadata()
+    expect(validateReleaseMetadata({ ...snapshot, declared: { ...snapshot.declared, sourceMigrationVersion: snapshot.declared.expectedMigrationVersion! + 1 } })).toContain('release-metadata sourceMigrationVersion must not exceed expectedMigrationVersion')
+  })
 })
