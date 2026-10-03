@@ -312,15 +312,15 @@ describe('release manifest production gate', () => {
     const privatePem = fixture.privateKeyPem
     const publicKeyPem = fixture.options.publicKeyPem
     const candidate = {
-      schema_version: 'manual-operations-evidence/1', release_id: fixtureReleaseId, environment: 'production', workflow: 'public_import_manual_publish',
-      workspace_id: 'workspace-1', isolation_probe_workspace_id: 'foreign-workspace', manual_publish_report_id: 'report-1',
-      official_api_receipt: false, manual_evidence_boundary: 'manual_unverified', manual_publish_state: 'manual_publish_reported', tenant_isolation_verified: true, simulated: false, generated_at: '2026-08-29T00:00:00Z',
+      schema_version: 'manual-operations-evidence/2', release_id: fixtureReleaseId, environment: 'production', workflow: 'manual_operations_read_only',
+      workspace_id: 'workspace-1', isolation_probe_workspace_id: 'foreign-workspace',
+      official_api_receipt: false, manual_evidence_boundary: 'manual_unverified', tenant_isolation_verified: true, simulated: false, generated_at: '2026-08-29T00:00:00Z',
       expires_at: '2026-08-30T00:00:00Z', verified_by: 'release-operator',
-      capture_journal: manualCaptureJournal({ release_id: fixtureReleaseId, release_git_sha: 'c'.repeat(40), manifest_sha256: 'b'.repeat(64), image_set_digest: `sha256:${'a'.repeat(64)}` }, '2026-08-29T00:00:00Z', { manualPublishReportId: 'report-1' }),
+      capture_journal: manualCaptureJournal({ release_id: fixtureReleaseId, release_git_sha: 'c'.repeat(40), manifest_sha256: 'b'.repeat(64), image_set_digest: `sha256:${'a'.repeat(64)}` }, '2026-08-29T00:00:00Z'),
       checks: [
-        { name: 'tenant_scope', status: 'pass', observation: 'foreign_workspace_rejected' },
-        { name: 'manual_report', status: 'pass', observation: 'human_evidence_boundary_preserved' },
-        { name: 'merchant_visibility', status: 'pass', observation: 'expected_report_visible' },
+        { name: 'tenant_scope', status: 'pass', observation: 'target_workspace_read_contract' },
+        { name: 'manual_route', status: 'pass', observation: 'publish_manual_list_read_only' },
+        { name: 'isolation_boundary', status: 'pass', observation: 'foreign_workspace_rejected' },
       ],
     }
     Object.assign(candidate, { capture_journal_sha256: manualCaptureJournalSha256(candidate.capture_journal) })

@@ -194,19 +194,17 @@ describe('production readiness fail-closed', () => {
 
   it('validates the manual operations evidence contract independently of the official API canary', () => {
     const generatedAt = '2026-09-22T01:00:00Z'
-    const reportId = 'manual-report-current'
-    const journal = manualCaptureJournal({ release_id: 'release-current', release_git_sha: 'a'.repeat(40), manifest_sha256: 'b'.repeat(64), image_set_digest: `sha256:${'c'.repeat(64)}` }, generatedAt, { manualPublishReportId: reportId })
+    const journal = manualCaptureJournal({ release_id: 'release-current', release_git_sha: 'a'.repeat(40), manifest_sha256: 'b'.repeat(64), image_set_digest: `sha256:${'c'.repeat(64)}` }, generatedAt)
     const evidence = {
-      schema_version: 'manual-operations-evidence/1', release_id: 'release-current', environment: 'production',
-      workflow: 'public_import_manual_publish', workspace_id: 'workspace-current', isolation_probe_workspace_id: 'workspace-isolation',
-      manual_publish_report_id: reportId, verified_by: 'release-operator', manual_evidence_boundary: 'manual_unverified',
-      manual_publish_state: 'manual_publish_reported',
+      schema_version: 'manual-operations-evidence/2', release_id: 'release-current', environment: 'production',
+      workflow: 'manual_operations_read_only', workspace_id: 'workspace-current', isolation_probe_workspace_id: 'workspace-isolation',
+      verified_by: 'release-operator', manual_evidence_boundary: 'manual_unverified',
       official_api_receipt: false, tenant_isolation_verified: true, simulated: false,
       generated_at: generatedAt, expires_at: '2026-09-23T01:00:00Z', capture_journal: journal, capture_journal_sha256: manualCaptureJournalSha256(journal),
       checks: [
-        { name: 'tenant_scope', status: 'pass', observation: 'foreign_workspace_rejected' },
-        { name: 'manual_report', status: 'pass', observation: 'human_evidence_boundary_preserved' },
-        { name: 'merchant_visibility', status: 'pass', observation: 'expected_report_visible' },
+        { name: 'tenant_scope', status: 'pass', observation: 'target_workspace_read_contract' },
+        { name: 'manual_route', status: 'pass', observation: 'publish_manual_list_read_only' },
+        { name: 'isolation_boundary', status: 'pass', observation: 'foreign_workspace_rejected' },
       ],
     }
     expect(validateManualOperationsEvidenceRuntime(evidence, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toEqual([])
@@ -216,13 +214,13 @@ describe('production readiness fail-closed', () => {
     const missingJournal = { ...evidence, capture_journal: undefined }
     expect(validateManualOperationsEvidenceRuntime(missingJournal, { now: new Date('2026-09-22T02:00:00Z') })).toContain('capture_journal is required')
     expect(validateManualOperationsEvidenceRuntime({ ...evidence, manual_evidence_boundary: 'unknown' }, { now: new Date('2026-09-22T02:00:00Z') })).toContain('manual_evidence_boundary must be manual_unverified')
-    expect(validateManualOperationsEvidenceRuntime({ ...evidence, manual_publish_state: 'published' }, { now: new Date('2026-09-22T02:00:00Z') })).toContain('manual_publish_state must be a recognized manual workflow state')
+    expect(validateManualOperationsEvidenceRuntime({ ...evidence, workflow: 'public_import_manual_publish' }, { now: new Date('2026-09-22T02:00:00Z') })).toContain('workflow must be manual_operations_read_only')
     expect(validateManualOperationsEvidenceRuntime({ ...evidence, isolation_probe_workspace_id: 'workspace-current' }, { now: new Date('2026-09-22T02:00:00Z') })).toContain('isolation probe workspace must differ from target workspace')
-    const wrongVisibleReportJournal = structuredClone(journal)
-    const listObservation = wrongVisibleReportJournal.observations.find(observation => observation.name === 'target_list')!
-    listObservation.material.visible_report_id = 'different-report'
+    const malformedTargetListJournal = structuredClone(journal)
+    const listObservation = malformedTargetListJournal.observations.find(observation => observation.name === 'target_list')!
+    listObservation.material.tenant_scoped = false
     listObservation.observation_sha256 = manualCaptureObservationSha256(listObservation.name, listObservation.status, listObservation.material)
-    expect(validateManualOperationsEvidenceRuntime({ ...evidence, capture_journal: wrongVisibleReportJournal, capture_journal_sha256: manualCaptureJournalSha256(wrongVisibleReportJournal) }, { now: new Date('2026-09-22T02:00:00Z') }))
+    expect(validateManualOperationsEvidenceRuntime({ ...evidence, capture_journal: malformedTargetListJournal, capture_journal_sha256: manualCaptureJournalSha256(malformedTargetListJournal) }, { now: new Date('2026-09-22T02:00:00Z') }))
       .toContain('capture_journal target list material is invalid')
   })
 

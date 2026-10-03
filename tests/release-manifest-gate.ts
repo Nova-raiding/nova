@@ -131,7 +131,7 @@ function validateEvidenceBindings(value: ReleaseManifest, options: EvidenceBindi
         }
       }
       if (field === 'capacity') validateCapacityArtifact(document, value.releaseId!, errors, new Date(now))
-      if (field === 'capability' && document.schema_version === 'manual-operations-evidence/1') {
+      if (field === 'capability' && document.schema_version === 'manual-operations-evidence/2') {
         errors.push(...validateManualOperationsEvidence(document, value.releaseId, new Date(now)).map(error => `productionEvidence.capability ${error}`))
       }
       if ((document.release_id ?? document.releaseId) !== value.releaseId) errors.push(`productionEvidence.${field} release_id must match the release manifest`)
