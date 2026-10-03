@@ -24,6 +24,8 @@ export function assertImageArtifactQuality(image: string): void {
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
   if (bytes.length < 33 || !bytes.subarray(0, 8).equals(signature)) return
   let width = 0; let height = 0; let bitDepth = 0; let colorType = 0
+  let palette: Buffer | undefined
+  let transparency: Buffer | undefined
   const idat: Buffer[] = []
   let offset = 8
   while (offset + 12 <= bytes.length) {
@@ -35,14 +37,18 @@ export function assertImageArtifactQuality(image: string): void {
     if (type === 'IHDR' && length >= 13) {
       width = bytes.readUInt32BE(bodyStart); height = bytes.readUInt32BE(bodyStart + 4)
       bitDepth = bytes[bodyStart + 8]!; colorType = bytes[bodyStart + 9]!
-    } else if (type === 'IDAT') idat.push(bytes.subarray(bodyStart, bodyEnd))
+    } else if (type === 'PLTE') palette = Buffer.from(bytes.subarray(bodyStart, bodyEnd))
+    else if (type === 'tRNS') transparency = Buffer.from(bytes.subarray(bodyStart, bodyEnd))
+    else if (type === 'IDAT') idat.push(bytes.subarray(bodyStart, bodyEnd))
     offset = bodyEnd + 4
     if (type === 'IEND') break
   }
-  // RGB/RGBA, 8-bit PNGs are sufficient for relay output. Other valid PNG
-  // variants remain subject to the downstream malware/storage checks.
-  if (width * height < 4096 || bitDepth !== 8 || ![2, 6].includes(colorType) || !idat.length) return
-  const channels = colorType === 6 ? 4 : 3
+  // Decode all common 8-bit PNG colour types so grayscale and indexed blank
+  // artifacts cannot bypass the quality gate. Less common bit depths remain
+  // subject to the downstream malware/storage checks.
+  if (width * height < 4096 || bitDepth !== 8 || ![0, 2, 3, 4, 6].includes(colorType) || !idat.length) return
+  if (colorType === 3 && (!palette || palette.length < 3 || palette.length % 3 !== 0)) return
+  const channels = colorType === 0 ? 1 : colorType === 2 ? 3 : colorType === 3 ? 1 : colorType === 4 ? 2 : 4
   const stride = width * channels
   let raw: Buffer
   try { raw = inflateSync(Buffer.concat(idat)) } catch { return }
@@ -67,8 +73,25 @@ export function assertImageArtifactQuality(image: string): void {
     }
     for (let x = 0; x < width; x += 1) {
       const i = x * channels
-      const alpha = channels === 4 ? row[i + 3]! : 255
-      if (alpha > 8 && (row[i]! < 245 || row[i + 1]! < 245 || row[i + 2]! < 245)) visible += 1
+      let red: number; let green: number; let blue: number; let alpha = 255
+      if (colorType === 0) {
+        red = green = blue = row[i]!
+        if (transparency?.length === 2 && transparency.readUInt16BE(0) === red) alpha = 0
+      } else if (colorType === 2) {
+        [red, green, blue] = [row[i]!, row[i + 1]!, row[i + 2]!]
+        if (transparency?.length === 6 && transparency.readUInt16BE(0) === red && transparency.readUInt16BE(2) === green && transparency.readUInt16BE(4) === blue) alpha = 0
+      }
+      else if (colorType === 3) {
+        const index = row[i]!
+        if (index * 3 + 2 >= (palette?.length ?? 0)) return
+        red = palette![index * 3]!; green = palette![index * 3 + 1]!; blue = palette![index * 3 + 2]!
+        alpha = transparency?.[index] ?? 255
+      } else if (colorType === 4) {
+        red = green = blue = row[i]!; alpha = row[i + 1]!
+      } else {
+        red = row[i]!; green = row[i + 1]!; blue = row[i + 2]!; alpha = row[i + 3]!
+      }
+      if (alpha > 8 && (red < 245 || green < 245 || blue < 245)) visible += 1
     }
     previous = row
   }

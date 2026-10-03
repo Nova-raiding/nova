@@ -37,6 +37,20 @@ export async function authenticateRequest(req: IncomingMessage, dependencies: Au
         // platform session remains usable by the desktop operations console.
         if (mcpOAuthBoundary && !platform) {
           if (!/^Bearer\s+[^\s]+$/iu.test(authorizationHeader)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '商家插件 MCP 请求必须携带本地插件凭据', 401)
+          // A browser session cookie is not the local plugin credential. The
+          // previous branch only checked the Bearer shape, which let any
+          // syntactically valid token ride on a merchant cookie and bypass the
+          // local OAuth token validation. Resolve the bearer token through the
+          // same short-lived token store used when no cookie is present.
+          const accessToken = authorizationHeader.match(/^Bearer\s+([^\s]+)$/iu)?.[1] ?? ''
+          const oauthPrincipal = await passwordAuthRepository.authenticateMcpAccessToken({ ...localPluginTokenContext(req), clientId: 'local-desktop', accessToken })
+          if (!oauthPrincipal) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '本地插件 MCP token 无效或已过期', 401)
+          const requestedWorkspace = header(req, 'x-workspace-id')?.trim()
+          if (requestedWorkspace && requestedWorkspace !== oauthPrincipal.workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, '本地插件 token 无权切换到其他工作区', 403)
+          const principal: RequestPrincipal = { credentialSource: 'mcp_oauth', actorId: oauthPrincipal.identityId, externalSubject: oauthPrincipal.accountLogin, workspaceIdentityIssuer: 'damai-password', accountLogin: oauthPrincipal.accountLogin, identityId: oauthPrincipal.identityId, sessionId: oauthPrincipal.tokenId, sessionSubject: oauthPrincipal.tokenId, sessionKind: 'api_token', sessionIssuedAt: oauthPrincipal.issuedAt, sessionExpiresAt: oauthPrincipal.expiresAt, roles: ['merchant'], workspaces: [oauthPrincipal.workspaceId], workbench: 'workspace', availableWorkbenches: ['workspace'], identityStatus: 'active', mfaVerified: false }
+          requestPrincipals.set(req, principal)
+          await hydrateDurableAuthorizationContext(req, principal)
+          return
         } else {
           if (isMcpRequest && platform && isProduction()) {
             const requestOrigin = header(req, 'origin')?.trim()
