@@ -18,6 +18,7 @@ const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[a-f0-9]{64}$/u
 const RELEASE = /^[A-Za-z0-9._:-]{1,128}$/u
 const GIT = /^[a-f0-9]{40}$/u
 const EXPECTED_IMAGES = ['clamav', 'merchant-api', 'merchant-ops-ui', 'merchant-ui', 'merchant-worker', 'payment-gateway', 'pilot-gateway', 'postgres-migration']
+export const DEFAULT_SOURCE_MIGRATION_VERSION = 242
 const sha = value => createHash('sha256').update(value).digest('hex')
 const requireValue = (condition, message) => { if (!condition) throw new Error(message) }
 function canonical(value) {
@@ -57,11 +58,12 @@ function exactArgs(args) {
   requireValue(keys.every(key => parsed[key]), 'missing restore argument')
   return parsed
 }
-export function validateRestoreInputs({ backupSha256, backupName, attestation, publicPem, keyId, identity, imageSet, releaseId, gitSha, imageSetDigest, manifestSha256, deploymentNonce, now = new Date() }) {
+export function validateRestoreInputs({ backupSha256, backupName, attestation, publicPem, keyId, identity, imageSet, releaseId, gitSha, imageSetDigest, manifestSha256, deploymentNonce, sourceMigrationVersion = DEFAULT_SOURCE_MIGRATION_VERSION, now = new Date() }) {
   requireValue(RELEASE.test(releaseId) && GIT.test(gitSha) && /^sha256:[a-f0-9]{64}$/u.test(imageSetDigest) && HEX.test(manifestSha256) && /^[A-Za-z0-9_-]{22,128}$/u.test(deploymentNonce), 'release binding is invalid')
+  requireValue(Number.isSafeInteger(sourceMigrationVersion) && sourceMigrationVersion > 0, 'source migration version is invalid')
   requireValue(HEX.test(backupSha256 ?? ''), 'backup checksum is invalid')
   requireValue(attestation?.schema_version === '2' && attestation.kind === 'postgres_backup' && attestation.environment === 'production' && attestation.simulated === false, 'strict restore requires a signed v2 backup attestation')
-  requireValue(attestation.backup_file_name === backupName && attestation.backup_sha256 === backupSha256 && attestation.migration_version === 242, 'signed backup does not identify a verified 242 snapshot')
+  requireValue(attestation.backup_file_name === backupName && attestation.backup_sha256 === backupSha256 && attestation.migration_version === sourceMigrationVersion, `signed backup does not identify a verified ${sourceMigrationVersion} snapshot`)
   requireValue(HEX.test(attestation.source_database_id_sha256 ?? '') && attestation.key_id === keyId, 'backup source/key identity is invalid')
   requireValue(Number.isInteger(attestation.source_database_oid) && attestation.source_database_oid > 0 && attestation.source_database_oid <= 4_294_967_295 && typeof attestation.source_database_name === 'string' && attestation.source_database_name.length > 0 && Buffer.byteLength(attestation.source_database_name, 'utf8') <= 63 && !attestation.source_database_name.includes('\0'), 'backup source database metadata is invalid')
   requireValue(/^[A-Za-z0-9._:-]{1,128}$/u.test(keyId), 'trusted key ID is invalid')
@@ -81,7 +83,7 @@ export function validateRestoreInputs({ backupSha256, backupName, attestation, p
   requireValue(/(?:^|\/)postgres:17-alpine@sha256:[a-f0-9]{64}$/u.test(references['postgres-migration']), 'migration image must be pinned PostgreSQL 17 alpine')
   const canonicalImages = EXPECTED_IMAGES.map(name => `${name}=${digests[name]}\n`).join('')
   requireValue(imageSetDigest === `sha256:${sha(canonicalImages)}`, 'canonical eight-image digest mismatch')
-  return { backupSha256: attestation.backup_sha256, sourceDatabaseIdSha256: attestation.source_database_id_sha256, postgresImage: references['postgres-migration'] }
+  return { backupSha256: attestation.backup_sha256, sourceDatabaseIdSha256: attestation.source_database_id_sha256, sourceMigrationVersion, postgresImage: references['postgres-migration'] }
 }
 export function validateArchiveCommit(actual, expected) { requireValue(GIT.test(actual ?? '') && actual === expected, 'candidate archive embedded Git commit does not match staged identity') }
 export function retainedNonceBinding(nonce) { requireValue(/^[A-Za-z0-9_-]{22,128}$/u.test(nonce ?? ''), 'deployment nonce is invalid'); return { deployment_nonce_sha256: sha(nonce) } }
@@ -181,7 +183,9 @@ async function main(args) {
   for (const path of [join(TRUST_ROOT, 'production-evidence-public.pem'), join(TRUST_ROOT, 'production-evidence-key-id')]) protectedPath(path)
   const attestation = JSON.parse(readRegular(attestationPath, 32 * 1024).toString())
   const backupSha256 = await hashFile(backupPath, 16 * 1024 * 1024 * 1024)
-  const binding = validateRestoreInputs({ backupSha256, backupName: basename(backupPath), attestation, publicPem: readRegular(join(TRUST_ROOT, 'production-evidence-public.pem'), 8192), keyId: readRegular(join(TRUST_ROOT, 'production-evidence-key-id'), 128).toString().trim(), identity, imageSet, releaseId: options['--release-id'], gitSha: options['--git-sha'], imageSetDigest: options['--image-set-digest'], manifestSha256: options['--manifest-sha256'], deploymentNonce: options['--deployment-nonce'] })
+  const sourceMigrationVersion = Number.isSafeInteger(attestation.migration_version) ? attestation.migration_version : DEFAULT_SOURCE_MIGRATION_VERSION
+  let binding
+  binding = validateRestoreInputs({ backupSha256, backupName: basename(backupPath), attestation, publicPem: readRegular(join(TRUST_ROOT, 'production-evidence-public.pem'), 8192), keyId: readRegular(join(TRUST_ROOT, 'production-evidence-key-id'), 128).toString().trim(), identity, imageSet, releaseId: options['--release-id'], gitSha: options['--git-sha'], imageSetDigest: options['--image-set-digest'], manifestSha256: options['--manifest-sha256'], deploymentNonce: options['--deployment-nonce'], sourceMigrationVersion })
   const nonce = randomBytes(12).toString('hex'), containerName = `merchant_restore_${nonce}`, migrationName = `merchant_restore_migrate_${nonce}`, network = `merchant_restore_net_${nonce}`, volume = `merchant_restore_data_${nonce}`
   const output = join(RESTORE_ROOT, `${options['--release-id']}-${nonce}.json`)
   const extraction = join(RESTORE_ROOT, `${options['--release-id']}-${nonce}-source`)
@@ -195,7 +199,9 @@ async function main(args) {
   protectedPath(releaseMetadataPath)
   const releaseMetadata = JSON.parse(readRegular(releaseMetadataPath, 16 * 1024).toString())
   const expectedMigrationVersion = releaseMetadata.expectedMigrationVersion
+  const declaredSourceMigrationVersion = releaseMetadata.sourceMigrationVersion ?? DEFAULT_SOURCE_MIGRATION_VERSION
   requireValue(Number.isSafeInteger(expectedMigrationVersion) && expectedMigrationVersion > 0, 'candidate release metadata has no valid expected migration version')
+  requireValue(Number.isSafeInteger(declaredSourceMigrationVersion) && declaredSourceMigrationVersion > 0 && declaredSourceMigrationVersion <= expectedMigrationVersion && declaredSourceMigrationVersion === sourceMigrationVersion, 'candidate release metadata source migration version does not match the signed backup')
   const migrationNames = readdirSync(migrations)
   validateMigrationAssets(migrationNames, expectedMigrationVersion)
   for (const name of migrationNames) protectedPath(join(migrations, name))
@@ -227,7 +233,7 @@ async function main(args) {
   const dbIdentity = query(containerId, 'select system_identifier from pg_control_system()')
   requireValue(/^\d{1,32}$/u.test(dbIdentity) && sha(dbIdentity) !== binding.sourceDatabaseIdSha256, 'restore target is not an isolated database identity')
   const before = query(containerId, "select min(version)||':'||max(version)||':'||count(*) from public.schema_migrations")
-  requireValue(before === '1:242:242', 'restored migration history is not the complete 242 prefix')
+  requireValue(before === `1:${sourceMigrationVersion}:${sourceMigrationVersion}`, `restored migration history is not the complete ${sourceMigrationVersion} prefix`)
   const migrationContainer = docker(migrationContainerArgs({ migrationName, containerName, network, migrations, script, image: binding.postgresImage }), undefined, 3_600_000, { PGPASSWORD: isolatedPassword })
   requireValue(migrationContainer.length < 64 * 1024, 'migration diagnostics exceeded limit')
   const after = query(containerId, "select min(version)||':'||max(version)||':'||count(*) from public.schema_migrations")
@@ -239,7 +245,7 @@ async function main(args) {
     requireValue(migrationRows.split('\n')[version - 1]?.split('|')[2] === sha(fileName), `migration ${version} checksum mismatch`)
   }
   inspectContainer(containerId, imageId, network, volume)
-  record(output, { schema_version: 'pg17-isolated-restore-capture/2', status: 'pass', simulated: false, release_id: options['--release-id'], release_git_sha: options['--git-sha'], image_set_digest: options['--image-set-digest'], manifest_sha256: options['--manifest-sha256'], migration_target_version: expectedMigrationVersion, ...retainedNonceBinding(options['--deployment-nonce']), source_archive_sha256: identity.source_sha256, migration_script_sha256: sha(readRegular(script, 256 * 1024)), backup_sha256: binding.backupSha256, source_database_id_sha256: binding.sourceDatabaseIdSha256, target_database_id_sha256: sha(dbIdentity), postgres_image_ref: binding.postgresImage, postgres_image_id: imageId, network_id: networkId, container_id: containerId, volume_name: volume, restored_migration_prefix: before, migrated_prefix: after, migration_chain_sha256: sha(migrationRows), migration_chain_rows: migrationRows.split('\n'), migration_command_output_sha256: sha(migrationContainer), captured_at: new Date().toISOString() })
+  record(output, { schema_version: 'pg17-isolated-restore-capture/2', status: 'pass', simulated: false, release_id: options['--release-id'], release_git_sha: options['--git-sha'], image_set_digest: options['--image-set-digest'], manifest_sha256: options['--manifest-sha256'], source_migration_version: sourceMigrationVersion, migration_target_version: expectedMigrationVersion, ...retainedNonceBinding(options['--deployment-nonce']), source_archive_sha256: identity.source_sha256, migration_script_sha256: sha(readRegular(script, 256 * 1024)), backup_sha256: binding.backupSha256, source_database_id_sha256: binding.sourceDatabaseIdSha256, target_database_id_sha256: sha(dbIdentity), postgres_image_ref: binding.postgresImage, postgres_image_id: imageId, network_id: networkId, container_id: containerId, volume_name: volume, restored_migration_prefix: before, migrated_prefix: after, migration_chain_sha256: sha(migrationRows), migration_chain_rows: migrationRows.split('\n'), migration_command_output_sha256: sha(migrationContainer), captured_at: new Date().toISOString() })
   process.stdout.write(`PG17 isolated restore captured: ${output}\n`)
   } catch (error) {
     try { docker(['rm', '-f', migrationName], undefined, 10_000) } catch {}
@@ -248,7 +254,7 @@ async function main(args) {
       try { docker(['rm', containerId], undefined, 10_000) } catch {}
     }
     if (networkId && /^[a-f0-9]{64}$/u.test(networkId)) { try { docker(['network', 'rm', networkId], undefined, 10_000) } catch {} }
-    try { record(output, { schema_version: 'pg17-isolated-restore-capture/2', status: 'fail', release_id: options['--release-id'], backup_sha256: binding.backupSha256, network_id: networkId ?? null, container_id: containerId ?? null, volume_name: volume, captured_at: new Date().toISOString() }) } catch {}
+    try { record(output, { schema_version: 'pg17-isolated-restore-capture/2', status: 'fail', release_id: options['--release-id'], backup_sha256: binding?.backupSha256 ?? backupSha256, network_id: networkId ?? null, container_id: containerId ?? null, volume_name: volume, captured_at: new Date().toISOString() }) } catch {}
     throw error
   }
 }

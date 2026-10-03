@@ -11,8 +11,10 @@ export function validateRestoreInputs(input: {
   imageSetDigest: string
   manifestSha256: string
   deploymentNonce: string
+  sourceMigrationVersion?: number
   now?: Date
-}): { backupSha256: string; sourceDatabaseIdSha256: string; postgresImage: string }
+}): { backupSha256: string; sourceDatabaseIdSha256: string; sourceMigrationVersion: number; postgresImage: string }
+export const DEFAULT_SOURCE_MIGRATION_VERSION: 242
 export function validateMigrationAssets(names: string[], expectedMigrationVersion: number): void
 export function validateArchiveCommit(actual: string, expected: string): void
 export function retainedNonceBinding(nonce: string): { deployment_nonce_sha256: string }

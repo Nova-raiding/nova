@@ -13,6 +13,7 @@ const IMAGE = /^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$/u
 const WORKSPACE = /^[A-Za-z0-9._:-]{1,128}$/u
 const RESTORE_ROOT = '/var/lib/merchant-release-security/preview-restores'
 const RELEASE_IMAGE_ARTIFACTS = Object.freeze(['clamav', 'merchant-api', 'merchant-ops-ui', 'merchant-ui', 'merchant-worker', 'payment-gateway', 'pilot-gateway', 'postgres-migration'])
+const DEFAULT_SOURCE_MIGRATION_VERSION = 242
 const requireValue = (ok, message) => { if (!ok) throw new Error(message) }
 function protectedFile(path) {
   requireValue(path === resolve(path) && realpathSync(path) === path, 'input must be a canonical absolute file')
@@ -83,7 +84,8 @@ export function validatePg17SmokeTopology({ capture, network, postgres, redis, i
   const errors = []
   const check = (condition, message) => { if (!condition) errors.push(message) }
   check(capture?.schema_version === 'pg17-isolated-restore-capture/2' && capture.status === 'pass' && capture.simulated === false && RELEASE.test(capture.release_id ?? '') && /^[a-f0-9]{40}$/u.test(capture.release_git_sha ?? '') && /^sha256:[a-f0-9]{64}$/u.test(capture.image_set_digest ?? '') && HEX.test(capture.manifest_sha256 ?? '') && HEX.test(capture.deployment_nonce_sha256 ?? '') && HEX.test(capture.backup_sha256 ?? '') && HEX.test(capture.source_database_id_sha256 ?? '') && HEX.test(capture.target_database_id_sha256 ?? '') && capture.source_database_id_sha256 !== capture.target_database_id_sha256 && HEX.test(capture.network_id ?? '') && HEX.test(capture.container_id ?? ''), 'valid protected PG17 v2 capture required')
-  check(Number.isSafeInteger(capture?.migration_target_version) && capture.migration_target_version >= 242 && capture.restored_migration_prefix === '1:242:242' && capture.migrated_prefix === `1:${capture.migration_target_version}:${capture.migration_target_version}` && HEX.test(capture.migration_chain_sha256 ?? ''), 'restore capture migration binding invalid')
+  const sourceMigrationVersion = capture?.source_migration_version ?? DEFAULT_SOURCE_MIGRATION_VERSION
+  check(Number.isSafeInteger(sourceMigrationVersion) && sourceMigrationVersion > 0 && Number.isSafeInteger(capture?.migration_target_version) && capture.migration_target_version >= sourceMigrationVersion && capture.restored_migration_prefix === `1:${sourceMigrationVersion}:${sourceMigrationVersion}` && capture.migrated_prefix === `1:${capture.migration_target_version}:${capture.migration_target_version}` && HEX.test(capture.migration_chain_sha256 ?? ''), 'restore capture migration binding invalid')
   check(Array.isArray(capture?.migration_chain_rows) && capture.migration_chain_rows.length === capture.migration_target_version && capture.migration_chain_rows.every((row, index) => typeof row === 'string' && row.startsWith(`${index + 1}|`)) && createHash('sha256').update(capture.migration_chain_rows.join('\n')).digest('hex') === capture.migration_chain_sha256, 'restore capture migration chain invalid')
   check(network?.Id === capture?.network_id && network?.Internal === true && network?.Ingress !== true && network?.Driver === 'bridge', 'restore network must be exact internal bridge')
   check(postgres?.Id === capture?.container_id && postgres?.State?.Running === true && postgres?.HostConfig?.NetworkMode === network?.Name && postgres?.Image === capture?.postgres_image_id, 'restore Postgres identity/network mismatch')

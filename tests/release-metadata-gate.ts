@@ -8,6 +8,8 @@ export interface ReleaseMetadataSnapshot {
     schemaVersion?: number
     repositoryVersion?: string
     pluginVersion?: string
+    /** Migration prefix represented by the signed source backup. Legacy metadata defaults to 242. */
+    sourceMigrationVersion?: number
     expectedMigrationVersion?: number
     mcpMethodCount?: number
     merchantBridgeToolCount?: number
@@ -99,6 +101,9 @@ export function validateReleaseMetadata(snapshot: ReleaseMetadataSnapshot): stri
     if (versions[index] !== expected) { errors.push(`migration chain must be contiguous at ${String(expected).padStart(3, '0')}`); break }
   }
   if (versions.at(-1) !== declared.expectedMigrationVersion) errors.push('release-metadata expectedMigrationVersion must match the migration chain tail')
+  const sourceMigrationVersion = declared.sourceMigrationVersion ?? 242
+  if (!Number.isSafeInteger(sourceMigrationVersion) || sourceMigrationVersion < 1) errors.push('release-metadata sourceMigrationVersion must be a positive integer')
+  else if (Number.isSafeInteger(declared.expectedMigrationVersion) && sourceMigrationVersion > Number(declared.expectedMigrationVersion)) errors.push('release-metadata sourceMigrationVersion must not exceed expectedMigrationVersion')
   return errors
 }
 

@@ -20,6 +20,7 @@ export type Pg17RestoreCaptureIdentity = {
   image_set_digest: string
   manifest_sha256: string
   deployment_nonce_sha256: string
+  source_migration_version?: number
   migration_target_version: number
   restored_migration_prefix: string
   migrated_prefix: string
