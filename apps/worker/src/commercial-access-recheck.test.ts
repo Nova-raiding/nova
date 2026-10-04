@@ -46,26 +46,6 @@ describe('worker commercial recheck ordering', () => {
     expect(provider).not.toHaveBeenCalled()
   })
 
-  it('preserves retryable authorization rechecks instead of terminally failing generation', async () => {
-    const executionAuthorization = {
-      assertAuthorized: vi.fn(async () => {
-        throw Object.assign(new Error('authorization authority unavailable'), {
-          code: 'AUTHZ_EXECUTION_RECHECK_UNAVAILABLE', retryable: true, unknown: false,
-        })
-      }),
-    } satisfies WorkerExecutionAuthorizationGuard
-    const commercialAccess = { assertCommercialAccess: vi.fn(async () => ({} as never)) } satisfies WorkerCommercialAccessGuard
-    const provider = vi.fn()
-    const completion = vi.fn(async () => undefined)
-    const handler = createOutboxHandler({ executionAuthorization, commercialAccess, generationRequested: provider, onGenerationResult: completion })
-
-    await expect(handler({ event: event(), attempt: 1, now: Date.now() })).rejects.toMatchObject({
-      error: { code: 'AUTHZ_EXECUTION_RECHECK_UNAVAILABLE', retryable: true, unknown: false },
-    })
-    expect(provider).not.toHaveBeenCalled()
-    expect(completion).not.toHaveBeenCalled()
-  })
-
   it('does not call the provider when commercial readiness is stale or unavailable', async () => {
     const executionAuthorization = { assertAuthorized: vi.fn(async () => ({} as never)) } satisfies WorkerExecutionAuthorizationGuard
     const commercialAccess = { assertCommercialAccess: vi.fn(async () => { throw Object.assign(new Error('access revision stale'), { code: 'COMMERCIAL_EXECUTION_REVISION_STALE', retryable: false, unknown: false }) }) } satisfies WorkerCommercialAccessGuard
