@@ -2032,7 +2032,7 @@ components:
         workspace_id: { type: string, minLength: 1, maxLength: 256 }
         platform: { type: string, enum: [jd, taobao, tmall, pinduoduo, xiaohongshu, douyin] }
         account_id: { type: string, minLength: 1, maxLength: 256 }
-        products_json: { type: string, minLength: 1, maxLength: 33000, description: JSON array containing 1 to 50 products, all scoped to the selected store. }
+        products_json: { type: string, minLength: 1, maxLength: 660000, description: JSON array containing 1 to 1000 products, all scoped to the selected store. }
         source_ref: { type: string, minLength: 1, maxLength: 1000 }
         source_sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
         store_assignment_confirmed: { type: string, enum: ['true'], description: Required when source store identity is missing or cannot be verified; explicit operator confirmation only. }

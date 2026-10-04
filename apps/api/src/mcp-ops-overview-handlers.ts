@@ -181,7 +181,7 @@ export async function handleOpsOverviewMcpMethod(method: string, params: Record<
       let products: unknown
       try { products = JSON.parse(required(params, 'products_json')) }
       catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, '商品表格预览数据无效', 400) }
-      if (!Array.isArray(products) || products.length < 1 || products.length > 50) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '一次只能导入 1 至 50 个商品', 400)
+      if (!Array.isArray(products) || products.length < 1 || products.length > 1000) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '一次只能导入 1 至 1000 个商品', 400)
       let assignmentConfirmationRequired = false
       for (const product of products) {
         if (!product || typeof product !== 'object' || Array.isArray(product)

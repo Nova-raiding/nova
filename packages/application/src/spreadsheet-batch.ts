@@ -177,6 +177,6 @@ export function spreadsheetFactsToBatchProducts(facts: Record<string, unknown>):
     skus.push(sku); existing.sku_count = skus.length; existing.price = Math.min(...skus.map(item => item.price)); existing.stock = skus.reduce((sum, item) => sum + item.stock, 0)
   })
   if (!output.length) throw new SpreadsheetBatchImportError(2, '没有可导入的商品')
-  if (output.length > 50) throw new SpreadsheetBatchImportError(1, '一次最多导入 50 个商品，请拆分表格')
+  if (output.length > 1000) throw new SpreadsheetBatchImportError(1, '一次最多导入 1000 个商品，请拆分表格')
   return output
 }
