@@ -15,6 +15,7 @@ import { MCP_KNOWLEDGE_METHODS, handleMcpKnowledgeMethod } from './mcp-knowledge
 import { createWorkerAuthorizationRuntime } from './worker-authorization-runtime.js'
 import { handleHttpGenerationJobWorker } from './http-generation-job-worker.js'
 import { buildBoundedKnowledgeGenerationContext } from './knowledge-context-runtime.js'
+import { legacyTaskBrandScopeCompatible, resolveContextSnapshotBrandId } from './context-snapshot-brand.js'
 export { buildBoundedKnowledgeGenerationContext, KNOWLEDGE_CONTEXT_LIMITS } from './knowledge-context-runtime.js'
 import { handleHttpGenerationJobCreate } from './http-generation-job-create.js'
 import { handleHttpImageGenerationJobRead } from './http-image-generation-job-read.js'
@@ -457,7 +458,13 @@ const service = new MerchantService({
   contextSnapshotSink: async ({ task, envelope, inputTokensEstimate, maxInputTokens, versions }) => {
     await persistenceReady
     const persistedEnvelope = envelope as unknown as Record<string, unknown>
-    const saved = await (persistence.contextSnapshots ?? memoryContextSnapshots).save({ workspaceId: task.workspaceId, ...(task.brandId ? { brandId: task.brandId } : {}), envelope: persistedEnvelope, inputTokensEstimate, maxInputTokens, versions, taskId: task.id, ...(task.campaignId ? { campaignId: task.campaignId, campaignItemId: task.campaignItemId! } : {}), ...(task.canonicalProductId ? { canonicalProductId: task.canonicalProductId } : {}), ...(task.listingId ? { listingId: task.listingId } : {}), linkId: taskContextLinkId(task.id, persistedEnvelope) })
+    const durableBrandId = await resolveContextSnapshotBrandId({
+      persistenceMode: persistence.mode,
+      workspaceId: task.workspaceId,
+      ...(task.brandId ? { brandId: task.brandId } : {}),
+      ...(persistence.brandUnits ? { brandUnits: persistence.brandUnits } : {}),
+    })
+    const saved = await (persistence.contextSnapshots ?? memoryContextSnapshots).save({ workspaceId: task.workspaceId, ...(durableBrandId ? { brandId: durableBrandId } : {}), envelope: persistedEnvelope, inputTokensEstimate, maxInputTokens, versions, taskId: task.id, ...(task.campaignId ? { campaignId: task.campaignId, campaignItemId: task.campaignItemId! } : {}), ...(task.canonicalProductId ? { canonicalProductId: task.canonicalProductId } : {}), ...(task.listingId ? { listingId: task.listingId } : {}), linkId: taskContextLinkId(task.id, persistedEnvelope) })
     return { id: saved.id, contextHash: saved.contextHash }
   },
   maxActiveJobsPerWorkspace: Number.isFinite(maxActiveJobsPerWorkspace) && maxActiveJobsPerWorkspace > 0 ? maxActiveJobsPerWorkspace : 3,
@@ -13653,10 +13660,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
             // the normalized brand row was never backfilled.  Keep the
             // cross-tenant guard: only the exact frozen snapshot identity may
             // carry this legacy scope when no durable row is available.
-            const legacyFrozenBrandMatches = brands.length === 0
-              && typeof task.inputSnapshot?.brand?.id === 'string'
-              && task.inputSnapshot.brand.id === task.brandId
-              && task.inputSnapshot.brand.workspaceId === workspaceId
+            const legacyFrozenBrandMatches = brands.length === 0 && legacyTaskBrandScopeCompatible({ workspaceId, taskBrandId: task.brandId, frozenBrandId: task.inputSnapshot?.brand?.id, frozenBrandWorkspaceId: task.inputSnapshot?.brand?.workspaceId })
             if (!durableBrandMatches && !legacyFrozenBrandMatches) {
               throw new DomainError('TASK_BRAND_SCOPE_MISMATCH', '任务品牌不属于当前工作区，已拒绝生成执行授权', 409)
             }
