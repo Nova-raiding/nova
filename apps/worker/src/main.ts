@@ -1135,7 +1135,7 @@ export function createApiCommercialAccessGuard(config: Pick<WorkerConfig, 'apiBa
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for commercial access recheck')
     const path = operation === 'publish.execute'
       ? `/v1/publish-jobs/${encodeURIComponent(event.aggregateId)}/execution-check?event_id=${encodeURIComponent(event.id)}`
-      : `/v1/worker-events/${encodeURIComponent(event.id)}/execution-check?aggregate_id=${encodeURIComponent(event.aggregateId)}&operation=${encodeURIComponent(operation)}`
+      : `/v1/worker-events/${encodeURIComponent(event.id)}/execution-check?aggregate_id=${encodeURIComponent(event.aggregateId)}&operation=${encodeURIComponent(operation)}${operation === 'generation.execute' ? '&knowledge_recheck=deferred' : ''}`
     const response = await fetchWorkerApi(fetcher, `${config.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
       headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...(config.apiSigningSecret ? workerAuthIntent(config.apiSigningSecret, config.workerId ?? resolveWorkerId()) : {}) },
       redirect: 'error', signal,
