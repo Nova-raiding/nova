@@ -15,15 +15,16 @@ const approvedModels = ['qwen3.7-text-embedding-flash', 'qwen3.7-text-embedding'
 const hash = value => createHash('sha256').update(value).digest('hex')
 
 function options(argv) {
-  const allowed = new Set(['identity', 'release-images', 'eight-image-set', 'root-env', 'source-root', 'output-dir', 'project', 'redis-image', 'embedding-model', 'merchant-ui'])
+  const allowed = new Set(['identity', 'release-images', 'eight-image-set', 'root-env', 'source-root', 'output-dir', 'project', 'redis-image', 'embedding-model', 'merchant-ui', 'runtime-environment'])
   const result = {}
   for (let i = 0; i < argv.length; i += 2) {
     const name = argv[i]?.startsWith('--') ? argv[i].slice(2) : ''
     if (!allowed.has(name) || !argv[i + 1] || argv[i + 1].startsWith('--') || Object.hasOwn(result, name)) fail('invalid or duplicate command argument')
     result[name] = argv[i + 1]
   }
-  for (const name of allowed) if (!result[name] && !['embedding-model', 'merchant-ui'].includes(name)) fail(`--${name} is required`)
+  for (const name of allowed) if (!result[name] && !['embedding-model', 'merchant-ui', 'runtime-environment'].includes(name)) fail(`--${name} is required`)
   if (result['merchant-ui'] && result['merchant-ui'] !== 'enabled') fail('--merchant-ui must be enabled')
+  if (result['runtime-environment'] && !['production', 'staging'].includes(result['runtime-environment'])) fail('--runtime-environment must be production or staging')
   return result
 }
 
@@ -159,8 +160,10 @@ export function validateDemoCompose(compose, project) {
   assertDependencies('migrate', { postgres: 'service_healthy' })
   assertDependencies('api', { migrate: 'service_completed_successfully', postgres: 'service_healthy', redis: 'service_healthy' })
   const api = services.api
-  if (api.pull_policy !== 'never') fail('candidate API must disable image pulls with pull_policy=never')
   const env = api.environment ?? {}
+  const runtimeEnvironment = compose['x-candidate-runtime-environment'] ?? env.NODE_ENV
+  if (!['production', 'staging'].includes(runtimeEnvironment) || env.NODE_ENV !== runtimeEnvironment) fail('candidate runtime environment must be production or explicit staging')
+  if (api.pull_policy !== 'never') fail('candidate API must disable image pulls with pull_policy=never')
   if (withMerchantUi) {
     const ui = services.ui
     if (ui.image !== compose['x-merchant-ui-image'] || ui.environment?.MERCHANT_API_RESOLVER !== '127.0.0.11' ||
@@ -208,7 +211,7 @@ export function validateDemoCompose(compose, project) {
   return true
 }
 
-function render({ identity, images, eightImageSet, project, sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey, withMerchantUi, migrationTarget }) {
+function render({ identity, images, eightImageSet, project, sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey, withMerchantUi, migrationTarget, runtimeEnvironment }) {
   const rendererSha256 = hash(readFileSync(new URL(import.meta.url)))
   const roles = { merchant_app: newSecret(), merchant_ops: newSecret(), merchant_alert_receiver: newSecret() }
   const adminPassword = newSecret()
@@ -221,6 +224,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
     source_sha256: identity.source_sha256, image_digests: imageDigests, image_references: imageRefs,
     renderer_sha256: rendererSha256,
     deployment_scope: withMerchantUi ? 'isolated_merchant_browser_candidate' : 'isolated_four_service_candidate',
+    runtime_environment: runtimeEnvironment,
     migration_target: migrationTarget, public_ports: [], embedding_enabled: false,
     embedding_model: embeddingModel, embedding_dimensions: 1024,
   }
@@ -234,6 +238,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
   const candidateRoles = join(sourceRoot, 'infra/scripts/provision-isolated-candidate-db-roles.sh')
   const compose = {
     name: project,
+    'x-candidate-runtime-environment': runtimeEnvironment,
     'x-eight-image-set-digest': imageSetDigest,
     ...(withMerchantUi ? { 'x-merchant-ui-image': images.image_references['merchant-ui'] } : {}),
     services: {
@@ -275,7 +280,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
         environment: {
           RELEASE_ID: identity.release_id, RELEASE_GIT_SHA: identity.git_sha,
           RELEASE_MANIFEST_SHA256: manifestSha, RELEASE_IMAGE_SET_DIGEST: imageSetDigest,
-          NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', PORT: '8787', PUBLIC_BASE_URL: 'https://candidate.yxsona.com',
+          NODE_ENV: runtimeEnvironment, DEPLOYMENT_PROFILE: 'ecs', PORT: '8787', PUBLIC_BASE_URL: 'https://candidate.yxsona.com',
           RUN_MIGRATIONS_ON_STARTUP: 'false', CONNECTOR_FIXTURE_MODE: 'false', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
           MCP_AUTHZ_MODE: 'enforce', MCP_AUTHZ_ENFORCE_DOMAINS: '',
           MCP_INTEGRATION_MODE: 'local_stdio', PERSISTENCE_MODE: 'postgres', OPS_AUTH_MODE: 'password',
@@ -284,7 +289,16 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
           REDIS_URL: 'redis://redis:6379', PLUGIN_WRITE_ENABLED: 'false', ASSET_STORAGE_PREFIX: `demo-candidate/${identity.release_id}`,
           EMBEDDING_MODEL: embeddingModel, EMBEDDING_DIMENSIONS: '1024', EMBEDDING_VERSION: 'v1',
           KNOWLEDGE_VECTOR_INDEX_ENABLED: 'false', MODEL_RELAY_BASE_URL: 'https://ai.wormholexyz.xyz/v1',
-          MODEL_RELAY_ALLOWED_HOSTS: 'ai.wormholexyz.xyz', MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'false',
+          MODEL_RELAY_ALLOWED_HOSTS: 'ai.wormholexyz.xyz', IMAGE_ARTIFACT_ALLOWED_HOSTS: 'ai.wormholexyz.xyz',
+          AI_MODEL: 'glm-4.7-flash', IMAGE_MODEL: 'qwen-image-2.0', IMAGE_EDIT_MODEL: 'qwen-image-2.0',
+          OCR_MODEL: 'agnes-2.5-flash', OCR_MAX_OUTPUT_TOKENS: '512', VIDEO_MODEL: 'happyhorse-1.1-t2v',
+          VIDEO_DURATION_SECONDS: '5', VIDEO_RESOLUTION: '1080P', VIDEO_REQUEST_FORMAT: 'json',
+          MODEL_RPM_LIMIT: '30', MODEL_TPM_LIMIT: '100000', MODEL_DAILY_CNY_LIMIT: '5000.00', MODEL_MAX_TASK_COST_CNY: '2000.00',
+          MODEL_TEXT_MAX_REQUEST_CNY: '1.00', MODEL_IMAGE_MAX_REQUEST_CNY: '0.50', MODEL_IMAGE_EDIT_MAX_REQUEST_CNY: '0.50',
+          MODEL_OCR_MAX_REQUEST_CNY: '2.00', MODEL_VIDEO_MAX_REQUEST_CNY: '20.00', MODEL_RELAY_COST_EVIDENCE: 'true',
+          MODEL_RELAY_TEXT_COST_EVIDENCE: 'true', MODEL_RELAY_IMAGE_COST_EVIDENCE: 'true', MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: 'true',
+          MODEL_RELAY_OCR_COST_EVIDENCE: 'true', MODEL_RELAY_VIDEO_COST_EVIDENCE: 'true', MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'false',
+          MODEL_RELAY_PRICING_DERIVATION_ENABLED: 'true', MODEL_RELAY_PRICING_GROUP: 'VIP',
           MODEL_COST_ESTIMATE_VERSION: 'isolated-candidate-review-only',
         },
       },
@@ -317,6 +331,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
   const reviewCapsule = {
     schema_version: '1', kind: 'ecs-compose-review-capsule', status: 'review_only', deployable: false, production_go: false,
     release_id: identity.release_id, git_sha: identity.git_sha, source_sha256: identity.source_sha256,
+    runtime_environment: runtimeEnvironment,
     candidate_manifest_sha256: manifestSha, image_set_digest: imageSetDigest, renderer_sha256: rendererSha256,
     compose_project: project, migration_target: migrationTarget, public_ports: [],
     reproducible_binding: { source_sha256: identity.source_sha256, renderer_sha256: rendererSha256,
@@ -349,6 +364,7 @@ export function main(argv = process.argv.slice(2)) {
   const project = args.project
   if (!/^merchant-demo-[a-z0-9][a-z0-9_-]{0,25}$/u.test(project)) fail('candidate project must be a dedicated merchant-demo-* name')
   const embeddingModel = args['embedding-model'] ?? approvedModels[0]
+  const runtimeEnvironment = args['runtime-environment'] ?? 'production'
   if (!approvedModels.includes(embeddingModel)) fail('embedding model is not an approved Qwen model')
   const paths = {
     identity: resolve(args.identity), images: resolve(args['release-images']), eightImageSet: resolve(args['eight-image-set']), rootEnv: resolve(args['root-env']),
@@ -404,7 +420,7 @@ export function main(argv = process.argv.slice(2)) {
   const redisImage = immutableReference(args['redis-image'], 'redis image')
   if (!/(?:^|\/)redis:7-alpine@sha256:[0-9a-f]{64}$/u.test(redisImage)) fail('isolated redis image must be immutable redis:7-alpine')
   const rendered = render({ identity, images, eightImageSet, project, sourceRoot: paths.sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey,
-    withMerchantUi: args['merchant-ui'] === 'enabled', migrationTarget })
+    withMerchantUi: args['merchant-ui'] === 'enabled', migrationTarget, runtimeEnvironment })
   const created = []
   try {
     createExclusive(join(paths.outputDir, 'candidate.env'), rendered.envText, created)
@@ -416,7 +432,7 @@ export function main(argv = process.argv.slice(2)) {
     for (const path of created.reverse()) { try { unlinkSync(path) } catch {} }
     throw error
   }
-  console.log(JSON.stringify({ status: 'config_rendered', release_id: identity.release_id, git_sha: identity.git_sha, project,
+  console.log(JSON.stringify({ status: 'config_rendered', release_id: identity.release_id, git_sha: identity.git_sha, project, runtime_environment: runtimeEnvironment,
     services: args['merchant-ui'] === 'enabled' ? ['postgres', 'redis', 'migrate', 'api', 'ui'] : ['postgres', 'redis', 'migrate', 'api'],
     migration_target: migrationTarget, public_ports: [], embedding_enabled: false, embedding_dimensions: 1024, image_set_digest: rendered.imageSetDigest, manifest_sha256: rendered.manifestSha, renderer_sha256: rendered.rendererSha256, outputs: outputs.map(name => name) }))
 }

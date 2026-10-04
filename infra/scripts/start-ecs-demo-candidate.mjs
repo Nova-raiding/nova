@@ -46,8 +46,11 @@ if (!/^[A-Za-z0-9._-]{1,40}$/.test(releaseId ?? '') || !/^[0-9a-f]{40}$/.test(gi
     !/^sha256:[0-9a-f]{64}$/.test(identity.source_sha256 ?? '')) fail('candidate identity is incomplete')
 const services = compose?.services ?? {}
 const api = services.api
+const runtimeEnvironment = compose?.['x-candidate-runtime-environment'] ?? api?.environment?.NODE_ENV
+if (!['production', 'staging'].includes(runtimeEnvironment) || api?.environment?.NODE_ENV !== runtimeEnvironment)
+  fail('candidate runtime environment must be production mode or explicit staging mode')
 if (api?.environment?.RELEASE_ID !== releaseId || api?.environment?.RELEASE_GIT_SHA !== gitSha ||
-    api?.environment?.NODE_ENV !== 'production' || api?.environment?.DEPLOYMENT_PROFILE !== 'ecs' ||
+    api?.environment?.DEPLOYMENT_PROFILE !== 'ecs' ||
     api?.environment?.RUN_MIGRATIONS_ON_STARTUP !== 'false' || api?.environment?.CONNECTOR_FIXTURE_MODE !== 'false' ||
     api?.environment?.AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED !== 'true') fail('API does not match frozen candidate identity and production mode')
 if (api.environment.MCP_AUTHZ_MODE !== 'enforce' || (api.environment.MCP_AUTHZ_ENFORCE_DOMAINS ?? '') !== '')
@@ -211,4 +214,4 @@ for (const name of ['postgres', 'redis', ...appServices]) {
     if (container.State.Health.Status !== 'healthy') fail(`${name} is not healthy`)
   }
 }
-console.log(JSON.stringify({ phase: 'isolated_candidate_running', project, release_id: releaseId, git_sha: gitSha }))
+console.log(JSON.stringify({ phase: 'isolated_candidate_running', project, release_id: releaseId, git_sha: gitSha, runtime_environment: runtimeEnvironment }))

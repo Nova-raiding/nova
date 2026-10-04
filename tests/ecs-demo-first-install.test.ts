@@ -66,6 +66,15 @@ describe('isolated ECS demo candidate first install', () => {
     expect(() => readFileSync(value.marker)).toThrow()
   })
 
+  it('accepts an explicit staging runtime before Docker lifecycle checks', () => {
+    const value = fixture()
+    value.compose.services.api.environment.NODE_ENV = 'staging'
+    ;(value.compose as any)['x-candidate-runtime-environment'] = 'staging'
+    const result = value.run()
+    expect(result.stderr).not.toContain('candidate runtime environment must be production mode or explicit staging mode')
+    expect(() => readFileSync(value.marker)).not.toThrow()
+  })
+
   it('rejects an external database and shared data volume before invoking Docker', () => {
     const externalDb = fixture()
     externalDb.compose.services.api.environment.DATABASE_URL = 'postgres://user:password@prod-db.internal/merchant'

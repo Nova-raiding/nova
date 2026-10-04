@@ -149,6 +149,31 @@ describe('protected isolated ECS demo candidate renderer', () => {
     expect(composeCheck.status, composeCheck.stderr).toBe(0)
   })
 
+  it('renders an explicit staging runtime without changing isolation or authorization controls', () => {
+    const value = fixture()
+    const result = value.run(['--runtime-environment', 'staging'])
+    expect(result.status, result.stderr).toBe(0)
+    const compose = JSON.parse(readFileSync(join(value.output, 'candidate.compose.json'), 'utf8'))
+    expect(compose['x-candidate-runtime-environment']).toBe('staging')
+    expect(compose.services.api.environment).toMatchObject({
+      NODE_ENV: 'staging', PLUGIN_WRITE_ENABLED: 'false',
+      MCP_AUTHZ_MODE: 'enforce', MCP_AUTHZ_ENFORCE_DOMAINS: '', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
+      AI_MODEL: 'glm-4.7-flash', IMAGE_MODEL: 'qwen-image-2.0', IMAGE_EDIT_MODEL: 'qwen-image-2.0',
+      OCR_MODEL: 'agnes-2.5-flash', VIDEO_MODEL: 'happyhorse-1.1-t2v', MODEL_RELAY_COST_EVIDENCE: 'true',
+    })
+    expect(compose.services.api.ports ?? []).toEqual([])
+    expect(compose.networks.default).toMatchObject({ name: `${project}_private`, external: false })
+    expect(JSON.parse(readFileSync(join(value.output, 'candidate-manifest.json'), 'utf8')).runtime_environment).toBe('staging')
+    expect(JSON.parse(readFileSync(join(value.output, 'candidate-review-capsule.json'), 'utf8')).runtime_environment).toBe('staging')
+  })
+
+  it('rejects an unsupported runtime environment before writing candidate artifacts', () => {
+    const value = fixture()
+    const result = value.run(['--runtime-environment', 'development'])
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('--runtime-environment must be production or staging')
+  })
+
   it('rejects ports, shared volumes/networks, and writable absolute host mounts', () => {
     const value = fixture()
     expect(value.run().status).toBe(0)
