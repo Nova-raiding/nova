@@ -1055,7 +1055,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'catalog.import.batch',
-    description: '批量导入最多 1000 个商品；可提交商品对象 JSON，或提交已解析且商家确认过的 XLSX/CSV 表格素材；显式 draft_only=true 时只建立未绑定商品和待审核知识，不需要已授权店铺；否则每项必须明确平台和已授权店铺，全部预校验通过后才写入商品档案。',
+    description: '批量导入最多 50 个商品；可提交商品对象 JSON，或提交已解析且商家确认过的 XLSX/CSV 表格素材；显式 draft_only=true 时只建立未绑定商品和待审核知识，不需要已授权店铺；否则每项必须明确平台和已授权店铺，全部预校验通过后才写入商品档案。',
     params: params({
       products_json: { type: 'string', description: '商品对象数组 JSON；每项包含 platform、account_id、title 及可选 SKU/价格/库存/素材/属性；asset_ids 可绑定已上传素材。' },
       source_asset_id: { type: 'string', description: '已解析且商家确认过的 XLSX/CSV 商品表格素材 ID。' },
