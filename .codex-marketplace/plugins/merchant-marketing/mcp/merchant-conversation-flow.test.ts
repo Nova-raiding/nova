@@ -102,7 +102,7 @@ function expectContentProductionIntroduction(content: string) {
   expect(content).not.toContain('店铺连接成功')
 }
 
-describe('Codex App merchant conversation flow', { timeout: 15000 }, () => {
+describe('Codex App merchant conversation flow', () => {
   it('returns shop-link candidates for confirmation without claiming a store connection', async () => {
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')
