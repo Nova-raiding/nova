@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
+import { contextEnvelopeHash } from '../../../packages/persistence/src/context-snapshot-repository.js'
 import { assertGenerationInput } from './generation-input.js'
 
 const valid = () => ({ platform: 'taobao', directionId: 'A', product: { id: 'product_1', title: '商品', stock: 3, skuCount: 1 }, confirmedFactSourceIds: ['product:product_1:v1'], usageContext: { workspaceId: 'ws_1', actionId: 'model:job_1', runKey: 'task_1' } })
 
 describe('durable generation prompt schema', () => {
   it('accepts a tenant-bound frozen input envelope', () => {
-    expect(assertGenerationInput(valid(), 'ws_1', 'model:job_1', 'task_1')).toMatchObject({ platform: 'taobao', directionId: 'A' })
+    const input = valid()
+    const parsed = assertGenerationInput(input, 'ws_1', 'model:job_1', 'task_1')
+    expect(parsed).toMatchObject({ platform: 'taobao', directionId: 'A', product: { id: 'product_1', title: '商品', stock: 3, skuCount: 1 } })
+    expect((parsed.product as unknown as Record<string, unknown>).product).toBeUndefined()
+    expect(contextEnvelopeHash(parsed as unknown as Record<string, unknown>)).toBe(contextEnvelopeHash(input))
   })
   it.each([
     ['missing product', { product: undefined }],

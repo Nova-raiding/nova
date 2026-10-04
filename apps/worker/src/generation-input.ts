@@ -81,5 +81,5 @@ export function assertGenerationInput(input: unknown, expectedWorkspaceId: strin
       requiredString(item.id, 'knowledgeContext.assets.id'); requiredString(item.name, 'knowledgeContext.assets.name'); nonNegativeInteger(item.revision, 'knowledgeContext.assets.revision')
     }
   }
-  return { ...input as ContentGenerationInput, platform, directionId, product: { ...input as ContentGenerationInput['product'], title, stock, skuCount }, confirmedFactSourceIds: facts }
+  return { ...input as ContentGenerationInput, platform, directionId, product: { ...product as ContentGenerationInput['product'], title, stock, skuCount }, confirmedFactSourceIds: facts }
 }
