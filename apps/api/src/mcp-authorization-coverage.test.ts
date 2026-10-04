@@ -194,7 +194,9 @@ describe('registered MCP authorization coverage', () => {
     service.products.set(productId, product)
     const task = service.createTask({ workspaceId, productId, platform: 'taobao' })
     service.tasks.get(task.id)!.brandId = 'brand_cold_scope'
+    const durableTask = structuredClone(service.tasks.get(task.id)!)
     service.products.delete(productId)
+    service.tasks.delete(task.id)
     let snapshotCalls = 0
     const policy = getMcpMethodPolicy('catalog.image.review')!
 
@@ -205,6 +207,14 @@ describe('registered MCP authorization coverage', () => {
         expect(loadedProductId).toBe(productId)
         snapshotCalls += 1
         return { payload: product as unknown as Record<string, unknown> }
+      },
+      getTaskSnapshotsForProduct: async (loadedWorkspaceId, loadedProductId) => {
+        expect(loadedWorkspaceId).toBe(workspaceId)
+        expect(loadedProductId).toBe(productId)
+        return [
+          durableTask as unknown as Record<string, unknown>,
+          { id: `${task.id}:candidate`, workspaceId, productId, candidateOnly: true, brandId: 'brand_candidate_scope' },
+        ]
       },
       listCanonicalProducts: async () => [],
     })).resolves.toEqual({ type: 'brand', id: 'brand_cold_scope' })

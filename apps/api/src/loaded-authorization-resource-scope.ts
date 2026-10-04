@@ -5,6 +5,7 @@ import { resolveAuthorizationResourceScope } from './authorization-projection-he
 interface LoadedAuthorizationScopeDependencies {
   service: MerchantService
   getTaskSnapshot?: (workspaceId: string, taskId: string) => Promise<{ payload: Record<string, unknown> }>
+  getTaskSnapshotsForProduct?: (workspaceId: string, productId: string) => Promise<ReadonlyArray<Record<string, unknown>>>
   getProductSnapshot?: (workspaceId: string, productId: string) => Promise<{ payload: Record<string, unknown> }>
   listCanonicalProducts: (input: { workspaceId: string; sourceProductIds: string[] }) => Promise<Array<{ brandId: string }>>
 }
@@ -108,9 +109,20 @@ export async function resolveLoadedAuthorizationResourceScopeWithDependencies(po
   // `catalog.image.review` cannot receive a task_id, so recover that scope
   // only when every task for this product agrees on one explicit brand. A
   // conflicting or absent scope remains unresolved and fails closed.
-  const taskBrandIds = [...new Set([...deps.service.tasks.values()]
+  const taskById = new Map<string, { workspaceId?: unknown; productId?: unknown; candidateOnly?: unknown; brandId?: unknown }>()
+  for (const task of deps.service.tasks.values()) taskById.set(task.id, task)
+  if (deps.getTaskSnapshotsForProduct) {
+    try {
+      // Durable snapshots are authoritative when a warm compatibility map has
+      // a stale copy of the same task after an API restart.
+      for (const payload of await deps.getTaskSnapshotsForProduct(workspaceId, product.id)) {
+        if (typeof payload.id === 'string' && payload.id.trim()) taskById.set(payload.id, payload)
+      }
+    } catch { /* a missing durable read leaves only already-loaded tasks usable */ }
+  }
+  const taskBrandIds = [...new Set([...taskById.values()]
     .filter(task => task.workspaceId === workspaceId && task.productId === product.id && task.candidateOnly !== true && typeof task.brandId === 'string' && task.brandId.trim())
-    .map(task => task.brandId!.trim()))]
+    .map(task => (task.brandId as string).trim()))]
   return { type: 'brand' as const, id: taskBrandIds.length === 1 ? taskBrandIds[0] : undefined }
 }
 

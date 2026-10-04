@@ -6276,6 +6276,18 @@ export async function resolveLoadedAuthorizationResourceScope(policy: NonNullabl
   return resolveLoadedAuthorizationResourceScopeWithDependencies(policy, workspaceId, params, principal, {
     service,
     ...(persistence.business ? { getTaskSnapshot: (id: string, taskId: string) => persistence.business!.get(id, 'task', taskId) } : {}),
+    ...(persistence.business ? { getTaskSnapshotsForProduct: async (id: string, productId: string) => {
+      const snapshots: Record<string, unknown>[] = []
+      const limit = 100
+      let offset = 0
+      while (true) {
+        const page = await persistence.business!.listTasksPage(id, { productId, limit, offset })
+        snapshots.push(...page.items)
+        offset += page.items.length
+        if (page.items.length < limit || offset >= page.total) break
+      }
+      return snapshots
+    } } : {}),
     ...(persistence.business ? { getProductSnapshot: (id: string, productId: string) => persistence.business!.get(id, 'product', productId) } : {}),
     listCanonicalProducts: input => (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts(input),
   })
