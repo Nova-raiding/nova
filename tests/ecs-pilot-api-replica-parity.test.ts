@@ -204,6 +204,7 @@ describe('ECS pilot API replica parity', () => {
       PLATFORM_RULE_SYNC_SIGNING_SECRET: 'rule-sync-test-secret',
       PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
       MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'false',
+      MODEL_RELAY_EMBEDDING_PRICING_GROUP: 'VIP',
     }
     const apiEnv = services.api?.environment ?? {}
     const replicaEnv = services['api-replica']?.environment ?? {}
@@ -242,11 +243,13 @@ describe('ECS pilot API replica parity', () => {
       KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true',
       MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10',
       MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'true',
+      MODEL_RELAY_EMBEDDING_PRICING_GROUP: 'VIP',
     })
     expect(explicitlyEnabled['api-replica']?.environment).toMatchObject({
       KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true',
       MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10',
       MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'true',
+      MODEL_RELAY_EMBEDDING_PRICING_GROUP: 'VIP',
     })
     expect(explicitlyEnabled['worker-automation']?.environment).toMatchObject({
       KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true',

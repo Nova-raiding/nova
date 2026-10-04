@@ -304,6 +304,7 @@ services:
       PLATFORM_RULE_SYNC_SIGNING_SECRET: ${PLATFORM_RULE_SYNC_SIGNING_SECRET:-}
       PLATFORM_RULE_SYNC_INTERVAL_HOURS: ${PLATFORM_RULE_SYNC_INTERVAL_HOURS:-0}
       MODEL_RELAY_EMBEDDING_COST_EVIDENCE: ${MODEL_RELAY_EMBEDDING_COST_EVIDENCE:-false}
+      MODEL_RELAY_EMBEDDING_PRICING_GROUP: ${MODEL_RELAY_EMBEDDING_PRICING_GROUP:-VIP}
       # Per-duration video pricing requires an explicit resolution so the
       # provider receipt can be settled against the reviewed price snapshot.
       VIDEO_RESOLUTION: ${VIDEO_RESOLUTION:-1080P}
