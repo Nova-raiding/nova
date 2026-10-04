@@ -63,7 +63,14 @@ protected_file=$(mktemp "${TMPDIR:-/tmp}/merchant-protected-releases.XXXXXXXX")
 protected_git_file=$(mktemp "${TMPDIR:-/tmp}/merchant-protected-git-shas.XXXXXXXX")
 candidates_file=$(mktemp "${TMPDIR:-/tmp}/merchant-release-candidates.XXXXXXXX")
 candidate_bundles_file=$(mktemp "${TMPDIR:-/tmp}/merchant-candidate-bundles.XXXXXXXX")
+cleanup_owner_bashpid=${BASHPID:-}
 cleanup_temp() {
+  # bash runs command substitutions with the parent's EXIT trap installed.
+  # Keep cleanup owned by the top-level shell so inventory probes such as
+  # `docker ps -aq` cannot delete the manifests while the report is running.
+  if [ -n "$cleanup_owner_bashpid" ] && [ "${BASHPID:-}" != "$cleanup_owner_bashpid" ]; then
+    return 0
+  fi
   rm -f -- "$protected_file" "$protected_git_file" "$candidates_file" "$candidate_bundles_file"
 }
 

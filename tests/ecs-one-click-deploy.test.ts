@@ -151,6 +151,20 @@ exit 0
     expect(readFileSync(dockerLog, 'utf8')).not.toContain('builder prune')
   })
 
+  it('keeps report manifests alive under bash command-substitution traps', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-bash-report-')))
+    chmodSync(root, 0o700)
+    release(root, 'release-current', 1)
+    const bin = join(root, 'bin'); mkdirSync(bin)
+    writeFileSync(join(bin, 'docker'), '#!/bin/sh\ncase "$1 $2" in\n  "system df") exit 0 ;;\nesac\nexit 0\n', { mode: 0o755 })
+    const result = spawnSync('bash', [script, 'report'], {
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ECS_RELEASES_ROOT: root },
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('KEEP\trelease-current')
+  })
+
   it('deletes only validated stale release directories after explicit confirmation', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-retention-')))
     chmodSync(root, 0o700)
