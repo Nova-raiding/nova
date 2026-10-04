@@ -229,6 +229,19 @@ export interface KnowledgeGenerationClaimSettlement {
   requestBodySha256: string
   requestNonce: string
   to: 'provider_started' | 'outcome_unknown' | 'completed' | 'rejected'
+  /**
+   * Evidence supplied by the API after it has found a settled model-usage
+   * record for this exact provider attempt.  It is only needed when closing
+   * an outcome-unknown claim; the PostgreSQL repository independently checks
+   * the durable ledger, while the memory repository keeps the same contract
+   * for local tests and fixture runs.
+   */
+  settledUsageEvidence?: {
+    actionId: string
+    providerAttemptId: string
+    settlementStatus: 'settled'
+    costCny: number
+  }
 }
 
 export interface KnowledgeRepository {
@@ -448,10 +461,20 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
     if (claim.state === input.to) return { state: claim.state, claimedAt: claim.claimedAt, updatedAt: claim.updatedAt }
     const allowed = (claim.state === 'claimed' && ['provider_started', 'rejected'].includes(input.to))
       || (claim.state === 'provider_started' && ['outcome_unknown', 'completed', 'rejected'].includes(input.to))
+      || (claim.state === 'outcome_unknown' && input.to === 'completed' && this.hasSettledUsageEvidence(claim.input, input.settledUsageEvidence))
     if (claim.state !== input.to && !allowed) return undefined
     claim.state = input.to
     claim.updatedAt = now()
     return { state: claim.state, claimedAt: claim.claimedAt, updatedAt: claim.updatedAt }
+  }
+
+  private hasSettledUsageEvidence(claimInput: KnowledgeGenerationClaimInput, evidence: KnowledgeGenerationClaimSettlement['settledUsageEvidence']): boolean {
+    return Boolean(evidence
+      && evidence.actionId.trim()
+      && evidence.providerAttemptId === claimInput.providerAttemptId
+      && evidence.settlementStatus === 'settled'
+      && Number.isFinite(evidence.costCny)
+      && evidence.costCny >= 0)
   }
   async search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]> {
     const scope = requireWorkspaceScope(input.workspaceId)
@@ -512,7 +535,10 @@ export class PostgresKnowledgeRepository implements KnowledgeRepository {
   async settleGenerationKnowledgeClaim(input: KnowledgeGenerationClaimSettlement): Promise<{ state: KnowledgeGenerationClaimResult['state']; claimedAt: string; updatedAt: string } | undefined> {
     const scope = requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, scope, async client => {
-      const result = await client.query<Row>(`SELECT * FROM settle_knowledge_generation_claim($1,$2,$3,$4,$5,$6,$7)`, [scope, input.claimId, input.providerAttemptId, input.providerAttemptKey, input.requestBodySha256, input.requestNonce, input.to])
+      // The eight-argument function is the evidence-aware overload.  For an
+      // outcome-unknown -> completed transition it checks model_usage_ledger
+      // itself, so callers cannot manufacture completion by passing a flag.
+      const result = await client.query<Row>(`SELECT * FROM settle_knowledge_generation_claim($1,$2,$3,$4,$5,$6,$7,$8)`, [scope, input.claimId, input.providerAttemptId, input.providerAttemptKey, input.requestBodySha256, input.requestNonce, input.to, null])
       const row = result.rows[0]
       return row ? { state: row.claim_state, claimedAt: iso(row.claimed_at), updatedAt: iso(row.updated_at) } : undefined
     })

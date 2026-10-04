@@ -21,7 +21,7 @@ async function harness() {
   return { ...createRelayUsageRuntime(deps), creativePoints, reservation, recordProviderReceipt, recordUsageAndSettleBudget }
 }
 
-const usage = (costCny: number | undefined): RelayUsageRecord => ({ workspaceId: 'ws_policy', actionId: 'action', runKey: 'action', modality: 'text', model: 'qwen', providerRequestId: 'request', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny, observedAt: new Date().toISOString() })
+const usage = (costCny: number | undefined): RelayUsageRecord => ({ workspaceId: 'ws_policy', actionId: 'action', runKey: 'action', modality: 'text', model: 'qwen', providerRequestId: 'request', providerAttemptId: 'attempt-1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny, observedAt: new Date().toISOString() })
 
 describe('normal relay point finalization', () => {
   it.each([0, 0.00090156, 0.099999, 0.1])('settles verified %s cost without dropping budget or receipt evidence', async cost => {
@@ -30,7 +30,7 @@ describe('normal relay point finalization', () => {
     const actualPoints = cost < 0.1 ? 0 : 3
     expect(await h.creativePoints.getReservation('ws_policy', h.reservation.value.id)).toMatchObject({ status: 'settled', settledPoints: actualPoints })
     expect(await h.creativePoints.getBalance('ws_policy')).toMatchObject({ availablePoints: 10 - actualPoints, reservedPoints: 0, settledPoints: actualPoints })
-    expect(h.recordUsageAndSettleBudget).toHaveBeenCalledWith(expect.objectContaining({ costCny: cost, totalTokens: 15, providerRequestId: 'request', budgetReservationKey: 'action' }))
+    expect(h.recordUsageAndSettleBudget).toHaveBeenCalledWith(expect.objectContaining({ costCny: cost, totalTokens: 15, providerRequestId: 'request', budgetReservationKey: 'action', metadata: { provider_attempt_id: 'attempt-1', run_key: 'action' } }))
     expect(h.recordProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'succeeded', cost: { currency: 'CNY', actual: cost } }))
     const settledEvent = (await h.creativePoints.listStatement('ws_policy')).items.find(event => event.eventType === 'settled')
     expect(settledEvent?.intent).toMatchObject({ reservation_id: h.reservation.value.id, actual_points: actualPoints, metadata: {

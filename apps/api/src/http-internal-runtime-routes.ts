@@ -438,7 +438,26 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     const claimId = decodeURIComponent(knowledgeClaimTransitionMatch![1]!)
     const to = input.to
     if (!['provider_started', 'outcome_unknown', 'completed', 'rejected'].includes(String(to))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '知识生成 claim 状态转换无效', 400)
-    const updated = await repository.settleGenerationKnowledgeClaim({ workspaceId, claimId, providerAttemptId, providerAttemptKey, requestBodySha256, requestNonce, to: to as 'provider_started' | 'outcome_unknown' | 'completed' | 'rejected' })
+    // Releasing an outcome-unknown product lock requires a settled model
+    // usage row for this exact physical provider attempt.  The PostgreSQL
+    // repository repeats the check inside its security-definer function; this
+    // API-side lookup supplies the equivalent evidence to the memory/fixture
+    // repository and keeps both implementations fail-closed.
+    let settledUsageEvidence: { actionId: string; providerAttemptId: string; settlementStatus: 'settled'; costCny: number } | undefined
+    if (to === 'completed' && persistence.modelUsage && typeof payload?.action_id === 'string') {
+      const actionId = payload.action_id.trim()
+      if (actionId) {
+        const usage = await persistence.modelUsage.listByAction(workspaceId, actionId)
+        const settled = usage.find(item => item.modality === 'text'
+          && item.settlementStatus === 'settled'
+          && item.costCny !== undefined
+          && Number.isFinite(item.costCny)
+          && item.costCny >= 0
+          && item.metadata?.provider_attempt_id === providerAttemptId)
+        if (settled) settledUsageEvidence = { actionId, providerAttemptId, settlementStatus: 'settled', costCny: settled.costCny! }
+      }
+    }
+    const updated = await repository.settleGenerationKnowledgeClaim({ workspaceId, claimId, providerAttemptId, providerAttemptKey, requestBodySha256, requestNonce, to: to as 'provider_started' | 'outcome_unknown' | 'completed' | 'rejected', ...(settledUsageEvidence ? { settledUsageEvidence } : {}) })
     if (!updated || updated.state !== to) throw new DomainError('KNOWLEDGE_GENERATION_CLAIM_TRANSITION_CONFLICT', '知识生成 claim 状态或请求身份已变化', 409)
     return send(res, 200, workspaceId, { ok: true, claim_id: claimId, workspace_id: workspaceId, event_id: eventId, aggregate_id: aggregateId, task_id: taskId, logical_attempt: logicalAttempt, transport_attempt: transportAttempt, provider_attempt_id: providerAttemptId, provider_attempt_key: providerAttemptKey, request_body_sha256: requestBodySha256, request_nonce: requestNonce, product_id: productId, context_hash: contextHash, document_count: expectedDocuments.length, claim_state: updated.state, claimed_at: updated.claimedAt, updated_at: updated.updatedAt }, null, req)
   }
@@ -457,6 +476,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     const contextLinkId = typeof input.contextLinkId === 'string' ? input.contextLinkId.trim() : undefined
     const contextHash = typeof input.contextHash === 'string' ? input.contextHash.trim() : undefined
     const providerRequestId = typeof input.providerRequestId === 'string' ? input.providerRequestId.trim() : undefined
+    const providerAttemptId = typeof input.providerAttemptId === 'string' ? input.providerAttemptId.trim() : undefined
     const number = (value: unknown, name: string) => {
       if (value === undefined) return undefined
       if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${name} 必须是非负数`, 400)
@@ -504,7 +524,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     if (!actionAuthorization || ['refunded', 'released', 'manual_attention'].includes(actionAuthorization.settlementStatus ?? '') || actionAuthorization.state === 'refunded') {
       throw new DomainError('MODEL_USAGE_ACTION_NOT_AUTHORIZED', '模型中转回执未绑定有效的原始扣费授权，已阻断入账', 409)
     }
-    await recordRelayUsage({ workspaceId, actionId, runKey, ...(contextLinkId ? { contextLinkId, contextHash: contextHash! } : {}), modality: modality as RelayUsageRecord['modality'], model, ...(providerRequestId ? { providerRequestId } : {}), ...(input.inputTokens !== undefined ? { inputTokens: number(input.inputTokens, 'inputTokens')! } : {}), ...(input.outputTokens !== undefined ? { outputTokens: number(input.outputTokens, 'outputTokens')! } : {}), ...(input.totalTokens !== undefined ? { totalTokens: number(input.totalTokens, 'totalTokens')! } : {}), ...(input.costCny !== undefined ? { costCny: number(input.costCny, 'costCny')! } : {}), observedAt: typeof input.observedAt === 'string' && Number.isFinite(Date.parse(input.observedAt)) ? input.observedAt : new Date().toISOString(), ...(input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata) ? { metadata: input.metadata as Record<string, unknown> } : {}) }, { deferCreativePointSettlementToWorker })
+    await recordRelayUsage({ workspaceId, actionId, runKey, ...(contextLinkId ? { contextLinkId, contextHash: contextHash! } : {}), modality: modality as RelayUsageRecord['modality'], model, ...(providerRequestId ? { providerRequestId } : {}), ...(providerAttemptId ? { providerAttemptId } : {}), ...(input.inputTokens !== undefined ? { inputTokens: number(input.inputTokens, 'inputTokens')! } : {}), ...(input.outputTokens !== undefined ? { outputTokens: number(input.outputTokens, 'outputTokens')! } : {}), ...(input.totalTokens !== undefined ? { totalTokens: number(input.totalTokens, 'totalTokens')! } : {}), ...(input.costCny !== undefined ? { costCny: number(input.costCny, 'costCny')! } : {}), observedAt: typeof input.observedAt === 'string' && Number.isFinite(Date.parse(input.observedAt)) ? input.observedAt : new Date().toISOString(), ...(input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata) ? { metadata: input.metadata as Record<string, unknown> } : {}) }, { deferCreativePointSettlementToWorker })
     return send(res, 200, workspaceId, { recorded: true, action_id: actionId ?? null, provider_request_id: providerRequestId ?? null }, null, req)
   }
   if (req.method === 'POST' && path === '/v1/internal/image-generation-jobs/reconciliation') {

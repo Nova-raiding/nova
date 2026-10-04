@@ -23,7 +23,7 @@ export interface WorkerHandlerOptions {
   /** Executes a frozen ordinary-image request; the callback must persist the
    * provider result before the outbox event is acknowledged. */
   imageGenerationRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<unknown>
-  onGenerationResult?: (event: DurableOutboxEvent, result: { content?: GeneratedContent; error?: { code: string; message: string } }, projection: WorkerProjection, signal?: AbortSignal) => Promise<void> | void
+  onGenerationResult?: (event: DurableOutboxEvent, result: { content?: GeneratedContent; error?: { code: string; message: string; preProvider?: boolean } }, projection: WorkerProjection, signal?: AbortSignal) => Promise<void> | void
   onGenerationDeferred?: (event: DurableOutboxEvent, error: { code: string; message: string; retryAfterSeconds: number }, projection: WorkerProjection, signal?: AbortSignal) => Promise<void> | void
   onPublishObservation?: (event: DurableOutboxEvent, observation: PublishHandlerResult, projection: WorkerProjection, signal?: AbortSignal) => Promise<void> | void
   syncRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<unknown>
@@ -154,8 +154,12 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
     }
 
     if (event.eventType === 'generation.requested' && options.generationRequested) {
-      await authorize(event, 'generation.execute', signal)
       try {
+        // Keep the initial authorization inside the same terminal-error path
+        // as callback-local checks. A revoked/invalid snapshot can therefore
+        // close the user-facing generation job and release its untouched
+        // creative-point hold through the owner callback.
+        await authorize(event, 'generation.execute', signal)
         const content = await options.generationRequested(event, projection, signal)
         throwIfLeaseLost(signal)
         await options.onGenerationResult?.(event, { content }, projection, signal)
@@ -165,7 +169,7 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         throwIfLeaseLost(signal)
         const terminalKnowledgeFence = error instanceof WorkerExecutionAuthorizationError
           && (error.code === 'KNOWLEDGE_EXECUTION_CHANGED' || error.code === 'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID')
-        if (error instanceof WorkerExecutionAuthorizationError && !terminalKnowledgeFence) {
+        if (error instanceof WorkerExecutionAuthorizationError && !terminalKnowledgeFence && error.retryable !== false) {
           // A final check can fail after callback-local quota/preflight waits.
           // Keep unavailable authorization retryable without fabricating a
           // provider failure or settling its point reservation. Main preserves
@@ -193,7 +197,9 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         }
         const candidate = error as {
           code?: unknown
+          retryable?: unknown
           unknown?: unknown
+          preProvider?: unknown
           providerSucceeded?: unknown
           providerOutcome?: unknown
           reconciliationRequired?: unknown
@@ -215,7 +221,14 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         if (isProviderOutcomeUnknown(candidate)) {
           throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: false, unknown: true })
         }
-        await options.onGenerationResult?.(event, { error: failure }, projection, signal)
+        // Only a known, non-retryable failure with no provider outcome is safe
+        // to classify as pre-provider. Provider failures without a durable
+        // receipt stay on the reconciliation path and must not release points.
+        const preProvider = candidate.providerOutcome === undefined
+          && candidate.providerSucceeded !== true
+          && candidate.reconciliationRequired !== true
+          && (candidate.preProvider === true || candidate.retryable === false || terminalKnowledgeFence)
+        await options.onGenerationResult?.(event, { error: { ...failure, ...(preProvider ? { preProvider: true } : {}) } }, projection, signal)
         // The user-facing generation job is now terminal. Retrying this
         // external model event would charge the same logical action again
         // while the job can no longer accept a result.

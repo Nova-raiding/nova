@@ -100,6 +100,24 @@ describe('creative point reservation request ownership', () => {
       expect(ownerResponse.status).toBeGreaterThanOrEqual(400)
       expect(generate).toHaveBeenCalledTimes(1)
       expect(await api.creativePointsForTests.getReservationByActionKey(workspaceId, actionKey)).toMatchObject({ status: 'released' })
+
+      // A failed pre-provider attempt releases its hold. Reusing the same
+      // request idempotency key must not turn the finalized reservation into a
+      // second live hold or leak the persistence error as HTTP 500.
+      const terminalReplay = await callContentGenerate(token, workspaceId, task.id)
+      expect(terminalReplay.status).toBe(409)
+      expect(terminalReplay.body.error).toMatchObject({
+        code: 'CREATIVE_ACTION_BUSY',
+        details: {
+          action_key: actionKey,
+          reservation_status: 'released',
+          provider_dispatched: false,
+          retryable: false,
+          requires_new_idempotency_key: true,
+          reconciliation_required: false,
+        },
+      })
+      expect(generate).toHaveBeenCalledTimes(1)
     } finally {
       generate.mockRestore()
     }

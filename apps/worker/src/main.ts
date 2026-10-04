@@ -2554,6 +2554,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
     const taskId = event.payload.task_id
     if (typeof taskId !== 'string' || !taskId) throw new Error('generation event is missing task_id')
     const modelKey = process.env.AI_MODEL?.trim() ?? process.env.MODEL_ID?.trim() ?? 'configured-model'
+    const dispatchScope: WorkerProviderDispatchScope = { event, operation: 'generation.execute', signal, providerRequests: 0 }
     const usageContext = { runKey, contextHash, ...(typeof event.payload.context_link_id === 'string' && event.payload.context_link_id ? { contextLinkId: event.payload.context_link_id } : {}), taskId, ...(typeof event.payload.campaign_item_id === 'string' && event.payload.campaign_item_id ? { campaignItemId: event.payload.campaign_item_id } : {}), event, providerRequestIds: [] as string[], ...(signal ? { signal } : {}) }
     try {
       const content = await executeWorkerProviderAfterPreflight({
@@ -2634,13 +2635,13 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
             },
           }
           const generationInput = { ...validatedInput, allowSchemaRepair: !charged, ...knowledgeClaimHooks }
-          return providerDispatchAdmission.run({ event, operation: 'generation.execute', signal, providerRequests: 0 }, () => contentGenerator.generate(generationInput, { signal }))
+          return providerDispatchAdmission.run(dispatchScope, () => contentGenerator.generate(generationInput, { signal }))
         },
       })
       return content
     } catch (error) {
       generationUsageContexts.delete(actionId)
-      if (error instanceof WorkerExecutionAuthorizationError && usageContext.providerRequestIds.length > 0) {
+      if (error instanceof WorkerExecutionAuthorizationError && (usageContext.providerRequestIds.length > 0 || dispatchScope.providerRequests > 0)) {
         // A schema-repair attempt can be denied after an earlier response
         // already produced real usage. Preserve that evidence and reservation
         // for reconciliation instead of claiming this whole action was free.
@@ -2650,7 +2651,15 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
           providerRequestIds: [...usageContext.providerRequestIds],
         })
       }
-      const candidate = error as { providerOutcome?: unknown; providerRequestId?: unknown; providerIdempotencyKey?: unknown; code?: unknown; message?: unknown }
+      const candidate = error as { providerOutcome?: unknown; providerRequestId?: unknown; providerIdempotencyKey?: unknown; providerSucceeded?: unknown; reconciliationRequired?: unknown; retryable?: unknown; code?: unknown; message?: unknown; preProvider?: unknown }
+      // `providerRequests` increments immediately before every real relay
+      // transport call. Preserve this fact for the outer handler so a plain
+      // terminal preflight/knowledge error can release its untouched hold,
+      // while a request that reached the relay remains reconciliation-bound.
+      if (dispatchScope.providerRequests === 0 && candidate.providerOutcome === undefined && candidate.providerSucceeded !== true && candidate.reconciliationRequired !== true && candidate.retryable !== true && error && typeof error === 'object') {
+        const terminalError = error as { preProvider?: boolean }
+        terminalError.preProvider = true
+      }
       if (candidate.providerOutcome === 'unknown') await creativePointSettlement.recordProviderOutcome(event, candidate).catch(() => undefined)
       else if (candidate.providerOutcome === 'failed') {
         try { await creativePointSettlement.recordProviderOutcome(event, candidate) }
@@ -2810,7 +2819,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for publish observation')
     await postPublishObservation({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, observation, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
   }
-  const onGenerationResult = async (event: DurableOutboxEvent, result: { content?: GeneratedContent; error?: { code: string; message: string } }, _projection: unknown, signal?: AbortSignal) => {
+  const onGenerationResult = async (event: DurableOutboxEvent, result: { content?: GeneratedContent; error?: { code: string; message: string; preProvider?: boolean } }, _projection: unknown, signal?: AbortSignal) => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for generation result')
     const actionId = typeof event.payload.action_id === 'string' ? event.payload.action_id : undefined
     const execution = actionId ? generationUsageContexts.get(actionId) : undefined
@@ -2822,6 +2831,14 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
           if (!execution && requiresPointSettlement) throw Object.assign(new Error('provider execution context is missing; creative point settlement must be reconciled'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', reconciliationRequired: true })
           if (execution) await creativePointSettlement.settleForDelivery(event, execution.providerRequestIds)
         })
+      // A terminal worker/authz failure can be reported before the model
+      // provider is entered. Release only after the API has accepted the
+      // terminal job result; the repository verifies that no provider receipt
+      // exists for the frozen operation, so unknown/succeeded calls remain
+      // held for reconciliation.
+      if (result.error?.preProvider === true && requiresPointSettlement) {
+        await creativePointSettlement.releasePreProviderReservation(event)
+      }
     } catch (error) {
       if (result.content !== undefined) throw Object.assign(error instanceof Error ? error : new Error('generation result delivery or settlement is pending'), { code: 'MODEL_USAGE_SETTLEMENT_PENDING', providerSucceeded: true, reconciliationRequired: true })
       throw error

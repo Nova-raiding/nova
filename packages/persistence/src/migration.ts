@@ -761,6 +761,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const scopedBrandSettings = await readFile(new URL('./migrations/255_scoped_brand_settings.sql', import.meta.url), 'utf8')
   const assetLifecycle = await readFile(new URL('./migrations/256_asset_lifecycle.sql', import.meta.url), 'utf8')
   const assetSnapshotLifecycleGuard = await readFile(new URL('./migrations/257_asset_snapshot_lifecycle_guard.sql', import.meta.url), 'utf8')
+  const knowledgeGenerationClaimUsageEvidence = await readFile(new URL('./migrations/258_knowledge_generation_claim_usage_evidence.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -1019,6 +1020,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 255, name: 'scoped_brand_settings', sql: scopedBrandSettings },
     { version: 256, name: 'asset_lifecycle', sql: assetLifecycle },
     { version: 257, name: 'asset_snapshot_lifecycle_guard', sql: assetSnapshotLifecycleGuard },
+    { version: 258, name: 'knowledge_generation_claim_usage_evidence', sql: knowledgeGenerationClaimUsageEvidence },
   ]
 }
 

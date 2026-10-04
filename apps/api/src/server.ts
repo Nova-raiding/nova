@@ -3856,6 +3856,30 @@ async function reserveCreativePointsForModel(workspaceId: string, actionKey: str
   } catch (error) {
     const code = (error as { code?: string })?.code
     if (code === 'CREATIVE_POINT_INSUFFICIENT' || code === 'CREATIVE_POINT_BALANCE_UNKNOWN') throw new DomainError(code, code === 'CREATIVE_POINT_INSUFFICIENT' ? '创意点不足，请先购买创意点包后再生成' : '创意点余额暂不可用，请稍后重试', code === 'CREATIVE_POINT_INSUFFICIENT' ? 402 : 503, { next_actions: ['commercial.order.create', 'commercial.catalog.get', 'creative-points.balance.get'] })
+    if (code === 'CREATIVE_POINT_RESERVATION_TERMINAL') {
+      // A reserve idempotency replay is deliberately fail-closed after its
+      // hold was finalized. Never hand a released or settled reservation back
+      // to the caller: doing so could dispatch a provider call without a live
+      // hold, or charge a second time. A pre-provider release is safe to retry
+      // only with a new idempotency key (the action key remains immutable).
+      let reservation: Awaited<ReturnType<NonNullable<CreativePointRepository['getReservationByActionKey']>>> | null = null
+      try { reservation = persistence.creativePoints.getReservationByActionKey ? await persistence.creativePoints.getReservationByActionKey(workspaceId, actionKey) : null } catch { reservation = null }
+      const released = reservation?.status === 'released'
+      throw new DomainError('CREATIVE_ACTION_BUSY', released
+        ? '上次收费动作的创意点预留已在模型调用前释放；请使用新的幂等键重新发起，当前不会重复扣点或调用模型'
+        : '上次收费动作的创意点预留已结束，当前不会重复扣点或调用模型；请先查询任务和结算状态', 409, {
+        action_key: actionKey,
+        reservation_id: reservation?.id ?? null,
+        reservation_status: reservation?.status ?? 'unknown',
+        provider_dispatched: !released,
+        // `retryable` describes replaying this exact request/idempotency key;
+        // even a pre-provider release is not safe to auto-retry with that key.
+        // The caller may start a fresh action explicitly as indicated below.
+        retryable: false,
+        requires_new_idempotency_key: released,
+        reconciliation_required: !released,
+      })
+    }
     throw error
   }
 }

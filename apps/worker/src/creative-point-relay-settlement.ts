@@ -137,6 +137,28 @@ export class CreativePointRelaySettlement {
     if (!providerRequestId || !this.points.releaseFailedProviderReservation) throw Object.assign(new Error('a provider request identity and transactionally guarded release are required before refunding a failed relay reservation'), { code: 'CREATIVE_POINT_FAILED_RELEASE_UNAVAILABLE', reconciliationRequired: true })
     await this.points.releaseFailedProviderReservation({ workspaceId: event.workspaceId, reservationId: reservation.id, actionKey: reservation.actionKey, providerRequestId, sourceEventId: event.id, idempotencyKey: `relay-release:${event.id}:${providerRequestId}`, at })
   }
+
+  /**
+   * Release a charged hold when the worker proves that execution stopped
+   * before provider dispatch.  This deliberately uses the provider-release
+   * repository method with `preProvider: true`: that path verifies the
+   * commercial operation has zero provider receipts in the same transaction.
+   * A missing/unknown/succeeded provider outcome must never reach this method.
+   */
+  async releasePreProviderReservation(event: DurableOutboxEvent): Promise<void> {
+    const reservation = await this.reservation(event)
+    if (!reservation) return
+    if (!this.points.releaseFailedProviderReservation) throw Object.assign(new Error('a transactionally guarded pre-provider release is required before releasing a failed relay reservation'), { code: 'CREATIVE_POINT_FAILED_RELEASE_UNAVAILABLE', reconciliationRequired: true })
+    await this.points.releaseFailedProviderReservation({
+      workspaceId: event.workspaceId,
+      reservationId: reservation.id,
+      actionKey: reservation.actionKey,
+      preProvider: true,
+      sourceEventId: event.id,
+      idempotencyKey: `relay-pre-provider-release:${event.id}`,
+      at: new Date().toISOString(),
+    })
+  }
 }
 
 export async function deliverGenerationResultWithPointSettlement(hasContent: boolean, deliver: () => Promise<void>, settle: () => Promise<void>): Promise<void> {

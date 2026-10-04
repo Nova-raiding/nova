@@ -403,7 +403,7 @@ describe('worker production entry', () => {
         .resolves.toEqual({ migrationVersion: version, apiReady: false })
     }
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations }))
-      .rejects.toThrow('expected complete migration chain through 257')
+      .rejects.toThrow('expected complete migration chain through 258')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 253)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
       .rejects.toThrow('exactly 254 or 255')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254).map((row, index) => index === 253 ? { ...row, checksum: 'a'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
@@ -424,7 +424,7 @@ describe('worker production entry', () => {
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
       .rejects.toThrow('exactly 255 or 256')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 255)), expectedMigrations: migrations }))
-      .rejects.toThrow('expected complete migration chain through 257')
+      .rejects.toThrow('expected complete migration chain through 258')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 256).map((row, index) => index === 255 ? { ...row, checksum: 'b'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
       .rejects.toThrow('checksum mismatch')
   })
@@ -695,7 +695,7 @@ describe('worker production entry', () => {
     })
     await expect(handler({ event: { id: 'evt_generation_knowledge_terminal', workspaceId: 'ws_a', aggregateId: 'gen_knowledge_terminal', eventType: 'generation.requested', sequence: 1, payload: { input: {} }, createdAt: new Date().toISOString() }, attempt: 1, now: Date.now() }))
       .rejects.toMatchObject({ error: { code: 'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID', retryable: false, unknown: false } })
-    expect(reported).toEqual([{ error: { code: 'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID', message: '冻结知识快照无效' } }])
+    expect(reported).toEqual([{ error: { code: 'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID', message: '冻结知识快照无效', preProvider: true } }])
   })
 
   it('forwards the durable lease signal to generation, sync, publish and reconcile handlers', async () => {

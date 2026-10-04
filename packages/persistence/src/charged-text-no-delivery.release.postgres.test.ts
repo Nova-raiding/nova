@@ -35,7 +35,7 @@ describe('migration 253 charged text no-delivery resolution', () => {
       db = new Pool({ connectionString: urlFor(base, name), max: 6 })
       const roleSql = await readFile(new URL('../../../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       await db.query(roleSql)
-      expect((await new MigrationRunner(db, await loadMigrations()).run()).at(-1)).toBe(257)
+      expect((await new MigrationRunner(db, await loadMigrations()).run()).at(-1)).toBe(258)
       await db.query(roleSql)
       const acl = await db.query<{ tableSelect: boolean; read: boolean; insert: boolean; opsRead: boolean; ownerToken: boolean }>(`
         SELECT has_table_privilege('merchant_app','public.charged_text_no_delivery_resolutions','SELECT') AS "tableSelect",

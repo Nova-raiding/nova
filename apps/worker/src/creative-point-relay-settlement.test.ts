@@ -20,10 +20,14 @@ async function fixture(operation: 'generation.execute' | 'image_generation.execu
     }),
     verifyModelUsageDeliverySettlement: vi.fn(async () => false),
   }
-  const pointPort = points as typeof points & { releaseFailedProviderReservation: (input: { workspaceId: string; reservationId: string; actionKey: string; providerRequestId: string; sourceEventId: string; idempotencyKey: string; at: string }) => ReturnType<typeof points.release> }
+  const pointPort = points as typeof points & { releaseFailedProviderReservation: (input: { workspaceId: string; reservationId: string; actionKey: string; providerRequestId?: string; preProvider?: boolean; sourceEventId?: string; idempotencyKey: string; at: string }) => ReturnType<typeof points.release> }
   pointPort.releaseFailedProviderReservation = async input => {
     const operationId = (await points.getReservation(input.workspaceId, input.reservationId))?.operationId
     const rows = [...receiptRows.values()].filter(row => row.operationId === operationId)
+    if ('preProvider' in input && input.preProvider === true) {
+      if (rows.length) throw Object.assign(new Error('receipt conflict'), { code: 'CREATIVE_POINT_BALANCE_UNKNOWN' })
+      return points.release({ workspaceId: input.workspaceId, reservationId: input.reservationId, idempotencyKey: input.idempotencyKey, at: input.at })
+    }
     if (!rows.some(row => row.providerRequestId === input.providerRequestId && row.outcome === 'failed') || rows.some(row => row.outcome === 'succeeded')) throw Object.assign(new Error('receipt conflict'), { code: 'CREATIVE_POINT_BALANCE_UNKNOWN' })
     return points.release({ workspaceId: input.workspaceId, reservationId: input.reservationId, idempotencyKey: input.idempotencyKey, at: input.at })
   }
@@ -204,6 +208,19 @@ describe('creative point relay settlement', () => {
     await settlement.recordProviderOutcome(event, { providerOutcome: 'failed', providerRequestId: 'provider_req_failed', code: 'PROVIDER_REJECTED' })
     expect(receipts.recordProviderReceipt).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failed', providerRequestId: 'provider_req_failed' }))
     await expect(points.getReservation('ws_a', reservationId)).resolves.toMatchObject({ status: 'released' })
+  })
+
+  it('releases a charged reservation only when the terminal failure is proven pre-provider', async () => {
+    const { points, event, reservationId, settlement } = await fixture()
+    await settlement.releasePreProviderReservation(event)
+    await expect(points.getReservation('ws_a', reservationId)).resolves.toMatchObject({ status: 'released' })
+  })
+
+  it('keeps the reservation when pre-provider release sees any provider receipt', async () => {
+    const { points, receipts, event, reservationId, settlement } = await fixture()
+    await receipts.recordProviderReceipt({ operationId: (await points.getReservation('ws_a', reservationId))!.operationId, provider: 'relay.example', providerRequestId: 'provider_req_unknown', outcome: 'unknown', receiptHash: 'b'.repeat(64) })
+    await expect(settlement.releasePreProviderReservation(event)).rejects.toMatchObject({ code: 'CREATIVE_POINT_BALANCE_UNKNOWN' })
+    await expect(points.getReservation('ws_a', reservationId)).resolves.toMatchObject({ status: 'active' })
   })
 
   it('does not refund a worker failure when another provider has a succeeded receipt for the same request', async () => {

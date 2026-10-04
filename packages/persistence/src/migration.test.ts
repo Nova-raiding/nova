@@ -66,7 +66,7 @@ describe('MigrationRunner', () => {
   })
   it('accepts only exact, checksummed 256 or 257 prefixes for the lifecycle guard bridge', async () => {
     const migrations = await loadMigrations()
-    const rows = migrations.map(({ version, name, sql }) => ({ version, name, checksum: migrationChecksum(sql) }))
+    const rows = migrations.slice(0, 257).map(({ version, name, sql }) => ({ version, name, checksum: migrationChecksum(sql) }))
     expect(verifyBridgeMigrationPrefix(rows.slice(0, 256), migrations, 'prefix_256_or_257')).toBe(256)
     expect(verifyBridgeMigrationPrefix(rows, migrations, 'prefix_256_or_257')).toBe(257)
     expect(() => verifyBridgeMigrationPrefix(rows.slice(0, 255), migrations, 'prefix_256_or_257')).toThrow('exactly 256 or 257')
@@ -83,7 +83,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(257)
+    expect(latestVersion).toBe(258)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -115,6 +115,8 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(250)?.sql).toContain('REVOKE ALL ON FUNCTION public.knowledge_generation_lock_products(text,text[]) FROM PUBLIC')
     expect(byVersion.get(257)).toMatchObject({ name: 'asset_snapshot_lifecycle_guard' })
     expect(byVersion.get(257)?.sql).toContain('FOREIGN KEY (workspace_id, snapshot_entity_type, asset_id)')
+    expect(byVersion.get(258)).toMatchObject({ name: 'knowledge_generation_claim_usage_evidence' })
+    expect(byVersion.get(258)?.sql).toContain("m.settlement_status='settled'")
     expect(byVersion.get(224)).toMatchObject({ name: 'public_platform_rule_audit_truncate_guard' })
     expect(byVersion.get(224)?.sql).toContain('public_platform_rule_audits_no_truncate')
     expect(byVersion.get(220)).toMatchObject({ name: 'commercial_refund_cumulative_bound' })

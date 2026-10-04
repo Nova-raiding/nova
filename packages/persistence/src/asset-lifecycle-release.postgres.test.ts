@@ -38,7 +38,7 @@ describe('asset lifecycle PostgreSQL release evidence', () => {
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: connection(base, databaseName) })
-      const migrations = await loadMigrations()
+      const migrations = (await loadMigrations()).filter(migration => migration.version <= 257)
       expect(migrations.at(-1)).toMatchObject({ version: 257, name: 'asset_snapshot_lifecycle_guard' })
       // Start from a real 256 prefix, then exercise only the forward migration
       // that adds the database-level snapshot reference guard.
