@@ -35,6 +35,11 @@ export function candidateGatewayConfig(ip) {
   location = /mcp {
     limit_except POST { deny all; }
     client_max_body_size 70m;
+    # Text relay requests can legitimately take up to the API's bounded
+    # provider timeout.  Keep the isolated candidate gateway from converting
+    # a valid, still-running request into an HTML 504 at nginx's 60s default.
+    proxy_read_timeout 120s;
+    proxy_send_timeout 120s;
     proxy_pass ${upstream}/mcp;
     proxy_http_version 1.1;
     proxy_set_header Host yxsona.com;
