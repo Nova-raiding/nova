@@ -34,17 +34,21 @@ describe('candidate environment and lifecycle', () => {
     const value = candidate()
     const own = 'a'.repeat(64); const foreign = 'b'.repeat(64); const exited = 'c'.repeat(64)
     const stopped: string[] = []
+    const removed: string[] = []
     const running = new Set([own, foreign])
     const docker: CleanupDocker = {
       async list(project) { expect(project).toBe(value.project); return [own, foreign, exited] },
       async inspect(id) { return { Id: id, Config: { Labels: { 'com.docker.compose.project': id === foreign ? 'business-runtime' : value.project!, 'com.docker.compose.service': 'api' } }, State: { Running: running.has(id) } } },
       async stop(id) { stopped.push(id); running.delete(id) },
+      async remove(id) { removed.push(id) },
       async listNetworks(project) { expect(project).toBe(value.project); return ['d'.repeat(64)] },
       async inspectNetwork(id) { return { Id: id, Name: `${value.project}_default`, Labels: { 'com.docker.compose.project': value.project!, 'com.docker.compose.network': 'default' }, Containers: {}, IPAM: { Config: [{ Subnet: value.networkSubnet }] } } },
       async removeNetwork() {},
     }
     const evidence = await cleanupBrowserCandidate(value, docker)
     expect(stopped).toEqual([own])
+    expect(removed).toEqual(expect.arrayContaining([own, exited]))
+    expect(removed).toHaveLength(2)
     expect(evidence).toMatchObject({ stopped: [own], leftRunning: [foreign], volumesRetained: true })
     expect(evidence.failures).toHaveLength(1)
   })

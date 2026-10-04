@@ -267,6 +267,8 @@ export interface CleanupDocker {
   list(project: string, env: Environment): Promise<string[]>
   inspect(id: string, env: Environment): Promise<{ Id: string; Config: { Labels: Record<string, string> }; State: { Running: boolean } }>
   stop(id: string, env: Environment): Promise<void>
+  /** Remove a verified candidate container without touching its named volumes. */
+  remove?(id: string, env: Environment): Promise<void>
   listNetworks(project: string, env: Environment): Promise<string[]>
   inspectNetwork(id: string, env: Environment): Promise<{ Id: string; Name: string; Labels?: Record<string, string>; Containers?: Record<string, unknown> | null; IPAM?: { Config?: Array<{ Subnet?: string }> } }>
   removeNetwork(id: string, env: Environment): Promise<void>
@@ -275,6 +277,7 @@ const cleanupDocker: CleanupDocker = {
   async list(project, env) { return execFileSync('docker', ['ps', '-a', '--no-trunc', '--filter', `label=com.docker.compose.project=${project}`, '-q'], { env, encoding: 'utf8' }).trim().split('\n').filter(Boolean) },
   async inspect(id, env) { return JSON.parse(execFileSync('docker', ['inspect', id], { env, encoding: 'utf8' }))[0] },
   async stop(id, env) { await new Promise<void>((accept, reject) => { const child = spawn('docker', ['stop', '--time', '10', id], { env, stdio: 'ignore' }); child.once('error', reject); child.once('exit', code => code === 0 ? accept() : reject(new Error('exact candidate container stop failed'))) }) },
+  async remove(id, env) { await new Promise<void>((accept, reject) => { const child = spawn('docker', ['rm', id], { env, stdio: 'ignore' }); child.once('error', reject); child.once('exit', code => code === 0 ? accept() : reject(new Error('exact candidate container removal failed'))) }) },
   async listNetworks(project, env) { return execFileSync('docker', ['network', 'ls', '--no-trunc', '--filter', `label=com.docker.compose.project=${project}`, '-q'], { env, encoding: 'utf8' }).trim().split('\n').filter(Boolean) },
   async inspectNetwork(id, env) { return JSON.parse(execFileSync('docker', ['network', 'inspect', id], { env, encoding: 'utf8' }))[0] },
   async removeNetwork(id, env) { execFileSync('docker', ['network', 'rm', id], { env, stdio: 'ignore' }) },
@@ -286,13 +289,21 @@ export async function cleanupBrowserCandidate(candidate: BrowserCandidate, docke
   let ids: string[]
   try { ids = await docker.list(candidate.project!, candidate.env) } catch { evidence.leftRunning.push('unknown: enumeration failed'); evidence.failures.push('candidate container enumeration failed'); return evidence }
   await Promise.all(ids.map(async id => {
+    let running = false
     try {
       const inspected = await docker.inspect(id, candidate.env)
+      running = inspected.State.Running
       if (!/^[0-9a-f]{64}$/u.test(id) || inspected.Id !== id || inspected.Config.Labels['com.docker.compose.project'] !== candidate.project || !candidateServices.includes(inspected.Config.Labels['com.docker.compose.service'] ?? '')) throw new Error('candidate cleanup refused unverified container ownership')
-      if (!inspected.State.Running) return
-      await docker.stop(id, candidate.env)
-      if ((await docker.inspect(id, candidate.env)).State.Running) { evidence.leftRunning.push(id); evidence.failures.push('candidate container remains running') } else evidence.stopped.push(id)
-    } catch { evidence.leftRunning.push(id); evidence.failures.push(`candidate cleanup could not safely stop ${id}`) }
+      if (running) {
+        await docker.stop(id, candidate.env)
+        running = (await docker.inspect(id, candidate.env)).State.Running
+        if (running) { evidence.leftRunning.push(id); evidence.failures.push('candidate container remains running'); return }
+        evidence.stopped.push(id)
+      }
+      // `docker rm` without `-v` removes the leaked stopped/created container
+      // while retaining named volumes for post-run forensic inspection.
+      await docker.remove?.(id, candidate.env)
+    } catch { if (running) evidence.leftRunning.push(id); evidence.failures.push(`candidate cleanup could not safely stop ${id}`) }
   }))
   let networkIds: string[]
   try { networkIds = await docker.listNetworks(candidate.project!, candidate.env) } catch {
