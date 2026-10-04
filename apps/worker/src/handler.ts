@@ -177,7 +177,7 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
           // any earlier usage from repair attempts as reconciliation-required.
           throw new WorkerFailure({ code: error.code, message: error.message, retryable: error.retryable, unknown: false, eventId: event.id, workspaceId: event.workspaceId })
         }
-        if (error instanceof WorkerExecutionAuthorizationError && !terminalKnowledgeFence) {
+        if (error instanceof WorkerExecutionAuthorizationError && !terminalKnowledgeFence && !error.code.startsWith('COMMERCIAL_EXECUTION_')) {
           throw new WorkerFailure({ code: error.code, message: error.message, retryable: false, unknown: false, eventId: event.id, workspaceId: event.workspaceId })
         }
         // Quota exhaustion is backpressure, not a terminal generation failure.
@@ -227,9 +227,6 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         // usage worker against the original provider/action identity.
         if (isProviderOutcomeUnknown(candidate)) {
           throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: false, unknown: true })
-        }
-        if (failure.code.startsWith('COMMERCIAL_EXECUTION_')) {
-          throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: candidate.retryable === true, unknown: candidate.unknown === true })
         }
         // Only a known, non-retryable failure with no provider outcome is safe
         // to classify as pre-provider. Provider failures without a durable
