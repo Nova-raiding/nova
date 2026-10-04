@@ -107,15 +107,8 @@ Codex CLI 目前把本地插件源也归在 `plugin marketplace` 命令组下；
       --base-url https://yxsona.com \
       --workspace ws_<管理员分配的工作区>
 
-必须从 **A2 安装得到的版本化插件目录** 启动登录，不要从仓库源码目录、旧缓存目录或裸
-`mcp/bridge.mjs` 启动。登录目标由 `https://yxsona.com` 与管理员分配的 `ws_...` 共同确定；
-本机已有旧工作区绑定时，登录成功后会按这两个字段写入或替换对应记录，不会把旧工作区当成
-当前身份。QA 验收包使用包内明确标记的 seeded broker；正式签名包使用签名的原生 Keychain
-helper。两种包都必须经过同一个 PKCE 浏览器授权、工作区回显校验和读回校验，QA broker 包
-不能交付客户。
-
-第一条命令只在正式包本机构建 Keychain helper，不读取凭据；构建失败时不会降级到文件或环境变量
-存储。QA broker 包不执行这条原生 helper 探测，而是使用其包内 broker。第二条命令使用浏览器授权和钥匙串边界。成功输出不包含 token，
+第一条命令只在本机构建 Keychain helper，不读取凭据；构建失败时不会降级到文件或环境变量
+存储。第二条命令使用浏览器授权和钥匙串边界。成功输出不包含 token，
 并明确 `credential_source=keychain`、`host_verified=false`：这表示本地凭据配置完成，不表示
 ChatGPT 宿主已经加载或验收通过。
 
