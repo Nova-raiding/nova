@@ -308,6 +308,24 @@ describe('content and knowledge MCP methods over real HTTP', () => {
     expect(videoGet.body.error).toBeNull()
     expect((videoGet.body.data?.result as any).videoUrl).toBeUndefined()
 
+    // The generic multimodal surface shares the same video archive helper.
+    // It must not regress by exposing the provider's short-lived URL while
+    // the archived asset is still quarantined.
+    const genericVideo = await callMcp(tokens.rules, workspaceId, 'multimodal.generate', {
+      modality: 'video',
+      prompt: '生成基于已确认商品事实的通勤场景短视频',
+      output: 'rendering',
+      context_json: JSON.stringify({
+        brand: { id: 'brand-http-e2e', version: '1' },
+        product: { id: product.id, version: String(product.version) },
+        rules: [{ id: rule.id, version: rule.version }],
+      }),
+    })
+    expect(genericVideo.status).toBe(200)
+    expect(genericVideo.body.error).toBeNull()
+    expect((genericVideo.body.data?.result as any).rendering).toMatchObject({ providerJobId: 'video-job-http-e2e' })
+    expect((genericVideo.body.data?.result as any).rendering.videoUrl).toBeUndefined()
+
     const missingRequired = await callMcp(tokens.rules, workspaceId, 'generation.get')
     expect(missingRequired.status).toBe(400)
     expect(missingRequired.body.error?.code).toBe('INVALID_REQUEST')

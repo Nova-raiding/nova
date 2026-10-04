@@ -195,7 +195,12 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
         if (!providerExecuted) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '多模态结果记录失败' })
         throw error
       }
-      return result({ ...request.value, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedText ? { content: generatedText } : {}), ...(imageJob ? { image_job_id: imageJob.id } : {}), ...(generatedImages ? { images: generatedImages } : {}), ...(rendering ? { rendering } : {}) })
+      // A completed provider artifact is still quarantined until the isolated
+      // scanner promotes it. Keep the relay's short-lived URL inside the
+      // archive/event boundary; the generic multimodal route must follow the
+      // same contract as multimodal.video.request/get and never hand callers
+      // an unarchived provider URL.
+      return result({ ...request.value, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedText ? { content: generatedText } : {}), ...(imageJob ? { image_job_id: imageJob.id } : {}), ...(generatedImages ? { images: generatedImages } : {}), ...(rendering ? { rendering: userFacingVideoRendering(rendering) } : {}) })
     }
     case 'multimodal.video.request': {
       let context: GenerationContext
