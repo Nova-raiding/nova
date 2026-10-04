@@ -23,6 +23,7 @@ const ATTEMPT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/u
 const MAX_ROWS_PER_TABLE = 1_000_000
 const DOCKER_SOCKET = 'unix:///var/run/docker.sock'
 const PRODUCTION_POSTGRES = 'merchant-production-postgres-1'
+const DEFAULT_SOURCE_MIGRATION_VERSION = 242
 const BACKUP_WALL_CLOCK_MS = 30 * 60_000
 const DUMP_TIMEOUT_MS = 15 * 60_000
 const STATEMENT_TIMEOUT_MS = 60_000
@@ -62,6 +63,19 @@ function candidateIdentity(releaseId, gitSha) {
   const file = join(RELEASES, releaseId, '.candidate-identity')
   const values = Object.fromEntries(protectedPath(file).toString('utf8').trim().split('\n').map(line => { const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)] }))
   check(values.release_id === releaseId && values.git_sha === gitSha && /^sha256:[a-f0-9]{64}$/u.test(values.source_sha256 ?? ''), 'candidate archive identity mismatch')
+}
+export function validateReleaseMigrationMetadata(value) {
+  const expectedMigrationVersion = value?.expectedMigrationVersion
+  const sourceMigrationVersion = value?.sourceMigrationVersion ?? DEFAULT_SOURCE_MIGRATION_VERSION
+  check(Number.isSafeInteger(expectedMigrationVersion) && expectedMigrationVersion > 0, 'candidate release metadata expected migration version invalid')
+  check(Number.isSafeInteger(sourceMigrationVersion) && sourceMigrationVersion > 0 && sourceMigrationVersion <= expectedMigrationVersion, 'candidate release metadata source migration version invalid')
+  return Object.freeze({ sourceMigrationVersion, expectedMigrationVersion })
+}
+function candidateMigrationMetadata(releaseId) {
+  const file = join(RELEASES, releaseId, 'release-metadata.json')
+  let value
+  try { value = JSON.parse(protectedPath(file).toString('utf8')) } catch { throw new Error('candidate release metadata invalid') }
+  return validateReleaseMigrationMetadata(value)
 }
 function assertInstalled() {
   check(process.getuid?.() === 0 && process.geteuid?.() === 0 && !process.env.NODE_OPTIONS && !process.env.NODE_PATH, 'protected root runtime required')
@@ -131,6 +145,7 @@ export async function runProtectedPg17BaselineBackup(args) {
   const deadlineAt = Date.now() + BACKUP_WALL_CLOCK_MS
   const { releaseId, gitSha, attemptId, planSha, maxRows } = options(args)
   candidateIdentity(releaseId, gitSha)
+  const { sourceMigrationVersion, expectedMigrationVersion } = candidateMigrationMetadata(releaseId)
   configureLiveSource()
   const sourcePolicyPath = join(TRUST, `production-backup-source-${releaseId}.json`)
   const sourcePolicyBytes = protectedPath(sourcePolicyPath, 0o444)
@@ -146,20 +161,20 @@ export async function runProtectedPg17BaselineBackup(args) {
   protectedDirectory(join(STATE, 'backups'))
   mkdirSync(outputRoot, { mode: 0o700 })
   protectedDirectory(outputRoot)
-  const backupPath = join(outputRoot, 'before-upgrade-242.dump')
+  const backupPath = join(outputRoot, `before-upgrade-${sourceMigrationVersion}.dump`)
   const attestationPath = `${backupPath}.attestation.json`
   let bound
   const adapter = {
     snapshot: captureSnapshot,
     dump,
-    reviewOnlyObserveSnapshot: (snapshot, identity) => reviewOnlyPreSignSnapshotCheck({ snapshot, identity, connect: connectSource, streamRows: digestSortedPgRows, maxRowsPerTable: maxRows, deadlineAt, planBytes, sourcePolicyBytes, trustedPublicKey: publicPem, trustedKeyId: keyId, expectedReleaseId: releaseId, expectedGitSha: gitSha, expectedMigrationVersion: 242 }),
+    reviewOnlyObserveSnapshot: (snapshot, identity) => reviewOnlyPreSignSnapshotCheck({ snapshot, identity, connect: connectSource, streamRows: digestSortedPgRows, maxRowsPerTable: maxRows, deadlineAt, planBytes, sourcePolicyBytes, trustedPublicKey: publicPem, trustedKeyId: keyId, expectedReleaseId: releaseId, expectedGitSha: gitSha, expectedMigrationVersion: sourceMigrationVersion }),
     reviewOnlyBindBackup: async (observation, signedBackup) => { bound = { ...bindReviewOnlyBaseline(observation.observation, signedBackup), signed_plan_sha256: observation.plan_sha256, source_policy_sha256: observation.source_policy_sha256, release_id: releaseId, release_git_sha: gitSha } },
   }
   const document = await produceBackup({ backupPath, attestationPath, privatePem, publicPem, keyId, sourcePolicy }, adapter)
   check(bound && bound.backup_sha256 === document.backup_sha256, 'same-snapshot baseline was not bound to backup')
-  const baselinePath = join(outputRoot, 'before-upgrade-242.rowset-review.json')
+  const baselinePath = join(outputRoot, `before-upgrade-${sourceMigrationVersion}.rowset-review.json`)
   writeFileSync(baselinePath, `${JSON.stringify(bound, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
-  process.stdout.write(JSON.stringify({ status: 'raw_backup_and_baseline_captured', release_id: releaseId, backup_sha256: document.backup_sha256, baseline_sha256: sha(protectedPath(baselinePath, 0o600)), final_production_evidence: false }) + '\n')
+  process.stdout.write(JSON.stringify({ status: 'raw_backup_and_baseline_captured', release_id: releaseId, source_migration_version: sourceMigrationVersion, expected_migration_version: expectedMigrationVersion, backup_sha256: document.backup_sha256, baseline_sha256: sha(protectedPath(baselinePath, 0o600)), final_production_evidence: false }) + '\n')
 }
 if (process.argv[1] && basename(process.argv[1]) === 'attest-pg17-backup-baseline' && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   runProtectedPg17BaselineBackup(process.argv.slice(2)).catch(error => { process.stderr.write(`PG17 baseline backup rejected: ${error.message}\n`); process.exitCode = 1 })

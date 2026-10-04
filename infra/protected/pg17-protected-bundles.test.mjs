@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { build } from 'esbuild'
-import { assertLocalDockerTarget, backupAttemptDirectoryName, inspectProductionPostgres, validateProductionPostgresInspection } from './attest-pg17-backup-baseline.mjs'
+import { assertLocalDockerTarget, backupAttemptDirectoryName, inspectProductionPostgres, validateProductionPostgresInspection, validateReleaseMigrationMetadata } from './attest-pg17-backup-baseline.mjs'
 
 const entries = [
   ['attest-pg17-frozen-plan', 'PG17 frozen plan rejected'],
@@ -16,6 +16,13 @@ const banner = 'import { createRequire } from "node:module"; const require = cre
 test('backup attempt path meets the installed isolated restore runner contract', () => {
   assert.equal(backupAttemptDirectoryName('release-39fc097d-review', '20260927t1200z'), 'release-39fc097d-review-attempt-20260927t1200z')
   assert.throws(() => backupAttemptDirectoryName('release-39fc097d-review', '../escape'), /identity invalid/u)
+})
+
+test('PG17 baseline binds its source backup name and plan to candidate migration metadata', () => {
+  assert.deepEqual(validateReleaseMigrationMetadata({ sourceMigrationVersion: 257, expectedMigrationVersion: 257 }), { sourceMigrationVersion: 257, expectedMigrationVersion: 257 })
+  assert.deepEqual(validateReleaseMigrationMetadata({ expectedMigrationVersion: 254 }), { sourceMigrationVersion: 242, expectedMigrationVersion: 254 })
+  assert.throws(() => validateReleaseMigrationMetadata({ sourceMigrationVersion: 258, expectedMigrationVersion: 257 }), /source migration version invalid/u)
+  assert.throws(() => validateReleaseMigrationMetadata({ sourceMigrationVersion: 257 }), /expected migration version invalid/u)
 })
 
 function productionPostgresInspection() {
