@@ -226,7 +226,7 @@ export class BrandUnitService {
     const workspaceId = text(input.workspaceId, 'workspaceId')
     const idempotencyKey = text(input.idempotencyKey, 'idempotencyKey')
     if (input.items.length === 0) throw new BrandUnitError('CAMPAIGN_EMPTY', 'campaign must contain at least one item')
-    if (input.items.length > 1000) throw new BrandUnitError('CAMPAIGN_LIMIT_EXCEEDED', 'campaign supports at most 1000 items')
+    if (input.items.length > 50) throw new BrandUnitError('CAMPAIGN_LIMIT_EXCEEDED', 'campaign supports at most 50 items')
     const intent = fingerprint({ workspaceId, items: input.items })
     const idem = this.campaignIdempotency.get(keyOf(workspaceId, idempotencyKey))
     if (idem) {
