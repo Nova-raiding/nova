@@ -317,6 +317,10 @@ test('rejects malformed candidate identity fields before signing', () => {
   assert.throws(() => readCandidateIdentity(f.candidateIdentityPath), /invalid or duplicate/u)
   writeFileSync(f.candidateIdentityPath, `schema_version=candidate-identity/1\ngit_sha=${f.options.gitSha}\n`)
   assert.throws(() => readCandidateIdentity(f.candidateIdentityPath), /schema is unsupported/u)
+  writeFileSync(f.candidateIdentityPath, `__proto__=polluted\ngit_sha=${f.options.gitSha}\n`)
+  const parsed = readCandidateIdentity(f.candidateIdentityPath)
+  assert.equal(parsed.__proto__, 'polluted')
+  assert.equal({}.polluted, undefined)
 })
 
 test('production signing refuses a package without its clean-source builder', () => {

@@ -310,7 +310,10 @@ function gitOutput(root, args) {
  */
 export function readCandidateIdentity(path) {
   const text = regularBytes(resolve(path), 'candidate identity').toString('utf8')
-  const fields = {}
+  // Candidate files are operator-controlled input. Keep parsed keys off the
+  // normal object prototype so an unknown `__proto__` field cannot mutate the
+  // parser's lookup object while preserving forward-compatible fields.
+  const fields = Object.create(null)
   for (const line of text.replace(/\r\n?/gu, '\n').trim().split('\n')) {
     if (!line) continue
     const separator = line.indexOf('=')
