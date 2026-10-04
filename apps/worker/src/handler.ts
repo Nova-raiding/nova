@@ -163,7 +163,9 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         return { value: content }
       } catch (error) {
         throwIfLeaseLost(signal)
-        if (error instanceof WorkerExecutionAuthorizationError) {
+        const terminalKnowledgeFence = error instanceof WorkerExecutionAuthorizationError
+          && (error.code === 'KNOWLEDGE_EXECUTION_CHANGED' || error.code === 'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID')
+        if (error instanceof WorkerExecutionAuthorizationError && !terminalKnowledgeFence) {
           // A final check can fail after callback-local quota/preflight waits.
           // Keep unavailable authorization retryable without fabricating a
           // provider failure or settling its point reservation. Main preserves

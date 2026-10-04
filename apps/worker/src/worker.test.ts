@@ -11,7 +11,7 @@ import { generationKnowledgeReceiptHash } from '../../../packages/application/sr
 import { verifyWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
-import type { WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
+import { WorkerExecutionAuthorizationError, type WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
 import type { WorkerCommercialAccessGuard } from '../../../packages/workers/src/commercial-access.js'
 import { ChargedTextDispatchAdmissionError } from '../../../packages/persistence/src/charged-text-dispatch-repository.js'
 
@@ -126,7 +126,7 @@ describe('worker production entry', () => {
   it('uses the persisted event authority endpoint for non-publish critical operations', async () => {
     const checkedAt = new Date().toISOString()
     const fetcher = vi.fn(async (input: string | URL | Request) => {
-      expect(String(input)).toContain('/v1/worker-events/evt_generation_auth/execution-check?aggregate_id=gen_auth&operation=generation.execute')
+      expect(String(input)).toContain('/v1/worker-events/evt_generation_auth/execution-check?aggregate_id=gen_auth&operation=generation.execute&knowledge_recheck=deferred')
       return new Response(JSON.stringify({ data: { authorization_recheck: { recheck_id: 'recheck_generation_auth', actor_id: 'test_actor', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_2', policy_version: 'policy_2', grant_revision: 'membership:identity_1:0', grant_ids: [], scope_hash: 'a'.repeat(64), capability: 'generation.execute', resource_id: 'gen_auth', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, checked_at: checkedAt } } }), { status: 200, headers: { 'content-type': 'application/json' } })
     }) as unknown as typeof fetch
     const event = { id: 'evt_generation_auth', workspaceId: 'ws_a', aggregateId: 'gen_auth', eventType: 'generation.requested', sequence: 1, createdAt: checkedAt, payload: { authorization_snapshot: { schema_version: 1, decision_id: 'decision_generation_auth', actor_id: 'test_actor', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'membership:identity_1:0', grant_ids: [], scope_hash: 'a'.repeat(64), capability: 'generation.execute', resource_id: 'gen_auth', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, decided_at: checkedAt } } }
@@ -161,7 +161,7 @@ describe('worker production entry', () => {
   it('consumes current commercial revision, subscription, rate and reservation evidence from the execution endpoint', async () => {
     const checkedAt = new Date().toISOString()
     const fetcher = vi.fn(async (input: string | URL | Request) => {
-      expect(String(input)).toContain('/v1/worker-events/evt_generation_commercial/execution-check?aggregate_id=gen_commercial&operation=generation.execute')
+      expect(String(input)).toContain('/v1/worker-events/evt_generation_commercial/execution-check?aggregate_id=gen_commercial&operation=generation.execute&knowledge_recheck=deferred')
       return new Response(JSON.stringify({ data: { commercial_access_recheck: {
         recheck_id: 'commercial_recheck_1', workspace_id: 'ws_a', operation: 'generation.execute', access_mode: 'POINT_CHARGED', access_revision: 'access_7', balance_state: 'known',
         entitlement_snapshot_id: 'entitlement_3', entitlement_snapshot_checksum: 'b'.repeat(64), rate_version: 'rate_2', quoted_points: 2,
@@ -681,6 +681,21 @@ describe('worker production entry', () => {
     const result = await handler({ event: { id: 'evt_generation', workspaceId: 'ws_a', aggregateId: 'gen_1', eventType: 'generation.requested', sequence: 1, payload: { input: {} }, createdAt: new Date().toISOString() }, attempt: 1, now: Date.now() })
     expect(result).toMatchObject({ value: { title: '模型标题' } })
     expect(reported).toEqual([{ content: { title: '模型标题', detail: '模型详情', sellingPoints: ['事实卖点'] } }])
+  })
+
+  it('reports terminal knowledge-fence failures so queued generation jobs do not remain active', async () => {
+    const reported: unknown[] = []
+    const handler = createAuthorizedOutboxHandler({
+      generationRequested: async () => {
+        throw new WorkerExecutionAuthorizationError(
+          'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID', '冻结知识快照无效', { retryable: false },
+        )
+      },
+      onGenerationResult: async (_event, result) => { reported.push(result) },
+    })
+    await expect(handler({ event: { id: 'evt_generation_knowledge_terminal', workspaceId: 'ws_a', aggregateId: 'gen_knowledge_terminal', eventType: 'generation.requested', sequence: 1, payload: { input: {} }, createdAt: new Date().toISOString() }, attempt: 1, now: Date.now() }))
+      .rejects.toMatchObject({ error: { code: 'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID', retryable: false, unknown: false } })
+    expect(reported).toEqual([{ error: { code: 'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID', message: '冻结知识快照无效' } }])
   })
 
   it('forwards the durable lease signal to generation, sync, publish and reconcile handlers', async () => {
