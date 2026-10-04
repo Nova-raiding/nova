@@ -290,6 +290,16 @@ describe('new commercial and operations capabilities', () => {
     expect(response.error?.message).toContain('params.output 的值不受支持')
   })
 
+  it('rejects malformed multimodal contexts before product or brand access', async () => {
+    const base = await start(); const workspaceId = `ws_invalid_multimodal_context_${Date.now()}`
+    const video = await call(base, workspaceId, 'multimodal.video.request', { prompt: '不应执行', output: 'storyboard', context_json: '{}' })
+    expect(video.error).toMatchObject({ code: 'INVALID_REQUEST' })
+    expect(video.error?.message).toContain('product')
+    const generated = await call(base, workspaceId, 'multimodal.generate', { modality: 'text', prompt: '不应执行', context_json: '{}' })
+    expect(generated.error).toMatchObject({ code: 'INVALID_REQUEST' })
+    expect(generated.error?.message).toContain('product')
+  })
+
   it('atomically imports multiple products into their explicit platform stores', async () => {
     const base = await start(); const workspaceId = `ws_batch_import_${Date.now()}`
     const taobao = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: 'batch-taobao-store', credentialRef: `fixture-secret/taobao/${workspaceId}` })

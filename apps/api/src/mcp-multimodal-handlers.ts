@@ -1,4 +1,4 @@
-import type { GenerationContext } from '../../../packages/multimodal/src/index.js'
+import { validateGenerationContext, type GenerationContext } from '../../../packages/multimodal/src/index.js'
 import type { MultimodalMcpRuntime } from './server.js'
 
 export async function handleMultimodalMcpMethod(method: string, params: Record<string, unknown>, dependencies: MultimodalMcpRuntime): Promise<unknown> {
@@ -93,7 +93,15 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
     }
     case 'multimodal.generate': {
       let context: GenerationContext
-      try { context = JSON.parse(required(params, 'context_json')) as GenerationContext } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'context_json 必须是合法 JSON', 400) }
+      try {
+        const parsed = JSON.parse(required(params, 'context_json')) as unknown
+        const validation = validateGenerationContext(parsed)
+        if (!validation.ok) throw new DomainError(ERROR_CODES.INVALID_REQUEST, validation.issues.map(issue => `${issue.path || 'context_json'}: ${issue.message}`).join('; '), 400)
+        context = validation.value
+      } catch (error) {
+        if (error instanceof DomainError) throw error
+        throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'context_json 必须是合法 JSON', 400)
+      }
       await enforceProductBrandAccess(req, workspaceId, context.product.id)
       if ((await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') {
         const product = service.products.get(context.product.id)
@@ -186,7 +194,15 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
     }
     case 'multimodal.video.request': {
       let context: GenerationContext
-      try { context = JSON.parse(required(params, 'context_json')) as GenerationContext } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'context_json 必须是合法 JSON', 400) }
+      try {
+        const parsed = JSON.parse(required(params, 'context_json')) as unknown
+        const validation = validateGenerationContext(parsed)
+        if (!validation.ok) throw new DomainError(ERROR_CODES.INVALID_REQUEST, validation.issues.map(issue => `${issue.path || 'context_json'}: ${issue.message}`).join('; '), 400)
+        context = validation.value
+      } catch (error) {
+        if (error instanceof DomainError) throw error
+        throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'context_json 必须是合法 JSON', 400)
+      }
       const candidateOnly = context.candidateOnly === true
       const sourceProduct = service.products.get(context.product?.id)
       let sourceImage: string | undefined
