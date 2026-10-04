@@ -167,15 +167,28 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         return { value: content }
       } catch (error) {
         throwIfLeaseLost(signal)
-        const terminalKnowledgeFence = error instanceof WorkerExecutionAuthorizationError
-          && (error.code === 'KNOWLEDGE_EXECUTION_CHANGED' || error.code === 'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID')
-        if (error instanceof WorkerExecutionAuthorizationError && !terminalKnowledgeFence && error.retryable !== false) {
+        // Authorization and commercial admission errors are wrapped in
+        // WorkerFailure so the durable runner can retain the event and scope
+        // evidence. Unwrap that payload before classifying generation
+        // failures; otherwise a retryable recheck is misreported as the
+        // generic terminal AI_GENERATION_FAILED error.
+        const wrappedFailure = error instanceof WorkerFailure ? error.error : undefined
+        const failureSource = wrappedFailure ?? error
+        // Commercial admission failures already carry the durable reservation
+        // and entitlement evidence needed by the caller. A replay must not
+        // invoke onGenerationResult a second time for an action whose result
+        // was already recorded.
+        if (wrappedFailure?.code.startsWith('COMMERCIAL_')) throw error
+        const terminalKnowledgeFence = failureSource instanceof WorkerExecutionAuthorizationError
+          && (failureSource.code === 'KNOWLEDGE_EXECUTION_CHANGED' || failureSource.code === 'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID')
+        if (failureSource instanceof WorkerExecutionAuthorizationError && !terminalKnowledgeFence && failureSource.retryable !== false) {
           // A final check can fail after callback-local quota/preflight waits.
           // Keep unavailable authorization retryable without fabricating a
           // provider failure or settling its point reservation. Main preserves
           // any earlier usage from repair attempts as reconciliation-required.
-          throw new WorkerFailure({ code: error.code, message: error.message, retryable: error.retryable, unknown: false, eventId: event.id, workspaceId: event.workspaceId })
+          throw new WorkerFailure({ code: failureSource.code, message: failureSource.message, retryable: failureSource.retryable, unknown: false, eventId: event.id, workspaceId: event.workspaceId })
         }
+        if (wrappedFailure?.retryable === true) throw error
         // Quota exhaustion is backpressure, not a terminal generation failure.
         // Leave the outbox event retryable so the user-facing job remains
         // queued while the provider's window resets.
@@ -195,7 +208,7 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
             retryAfterMs: error.decision.retryAfterSeconds * 1_000,
           })
         }
-        const candidate = error as {
+        const candidate = failureSource as {
           code?: unknown
           retryable?: unknown
           unknown?: unknown
@@ -210,8 +223,9 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
           code: typeof candidateCode === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/u.test(candidateCode) ? candidateCode : 'AI_GENERATION_FAILED',
           message: error instanceof Error ? error.message : 'content generation failed',
         }
+        const preservedEvidence = wrappedFailure ? { ...wrappedFailure } : {}
         if (failure.code === 'GENERATION_JOB_TERMINAL') {
-          throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: false, unknown: false })
+          throw new WorkerFailure({ ...preservedEvidence, code: failure.code, message: failure.message, retryable: false, unknown: false })
         }
         // The relay may have accepted and billed the request before usage/cost
         // settlement or its response was lost. Do not report a terminal job
@@ -219,7 +233,7 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         // blind retry. Durable unknown is reconciled by the separate model
         // usage worker against the original provider/action identity.
         if (isProviderOutcomeUnknown(candidate)) {
-          throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: false, unknown: true })
+          throw new WorkerFailure({ ...preservedEvidence, code: failure.code, message: failure.message, retryable: false, unknown: true })
         }
         // Only a known, non-retryable failure with no provider outcome is safe
         // to classify as pre-provider. Provider failures without a durable
@@ -232,7 +246,7 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         // The user-facing generation job is now terminal. Retrying this
         // external model event would charge the same logical action again
         // while the job can no longer accept a result.
-        throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: false, unknown: false })
+        throw new WorkerFailure({ ...preservedEvidence, code: failure.code, message: failure.message, retryable: false, unknown: false })
       }
     }
 
