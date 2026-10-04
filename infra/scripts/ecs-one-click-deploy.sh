@@ -63,7 +63,14 @@ protected_file=$(mktemp "${TMPDIR:-/tmp}/merchant-protected-releases.XXXXXXXX")
 protected_git_file=$(mktemp "${TMPDIR:-/tmp}/merchant-protected-git-shas.XXXXXXXX")
 candidates_file=$(mktemp "${TMPDIR:-/tmp}/merchant-release-candidates.XXXXXXXX")
 candidate_bundles_file=$(mktemp "${TMPDIR:-/tmp}/merchant-candidate-bundles.XXXXXXXX")
+cleanup_owner_bashpid=${BASHPID:-}
 cleanup_temp() {
+  # bash runs command substitutions with the parent's EXIT trap installed.
+  # Keep cleanup owned by the top-level shell so inventory probes such as
+  # `docker ps -aq` cannot delete the manifests while the report is running.
+  if [ -n "$cleanup_owner_bashpid" ] && [ "${BASHPID:-}" != "$cleanup_owner_bashpid" ]; then
+    return 0
+  fi
   rm -f -- "$protected_file" "$protected_git_file" "$candidates_file" "$candidate_bundles_file"
 }
 
@@ -75,11 +82,7 @@ if [ -e "$ECS_CANDIDATES_ROOT" ]; then
   [ "$(owner_of "$candidate_root")" = "$(id -u)" ] || { echo 'ECS_CANDIDATES_ROOT must be owned by the invoking user' >&2; exit 2; }
   candidate_mode=$(mode_of "$candidate_root"); case "$candidate_mode" in *[2367][0-7]|*[2367]) echo 'ECS_CANDIDATES_ROOT must not be writable by group or other users' >&2; exit 2 ;; esac
 fi
-trap cleanup_temp EXIT
-# A signal must stop orchestration; cleanup alone would resume with deleted manifests.
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap cleanup_temp EXIT HUP INT TERM
 
 # Serialize the complete mutating workflow, not just the Compose cutover. The
 # inner deploy runner has its own production lock, but it releases that lock
