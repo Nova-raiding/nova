@@ -3334,6 +3334,41 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('retries a native MCP rate-limit error using error.data.details', async () => {
+    let attempts = 0
+    const server = createServer(async (_req, res) => {
+      attempts += 1
+      res.setHeader('content-type', 'application/json')
+      if (attempts === 1) {
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: 'remote-1', error: {
+          code: 'RATE_LIMITED', message: 'slow down',
+          data: { code: 'RATE_LIMITED', details: { retryable: true, retry_after_seconds: 0.05 } },
+        } }))
+        return
+      }
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: 'remote-2', result: { content: [{ type: 'text', text: '{}' }], structuredContent: { status: 'ok' } } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_RETRY_DELAY_MS: '50' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(false)
+      expect(response.result.structuredContent).toMatchObject({
+        conversation_state: { stage: 'provide_materials', status: 'needs_input', connected_store_count: 0 },
+        question: '你想制作什么内容？可以提供公开商品链接、商品资料或图片。',
+      })
+      expect(attempts).toBe(2)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('retries merchant.start with a stable idempotency key after a transient gateway failure', async () => {
     let attempts = 0
     const keys: string[] = []

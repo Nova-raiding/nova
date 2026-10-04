@@ -2774,6 +2774,17 @@ function bareGatewayError(response, payload, rawResponseText) {
   }
 }
 
+// Native MCP errors carry application details under error.data.details while
+// the legacy gateway envelope uses error.details. Normalize the two shapes at
+// this boundary so retry and reconciliation decisions see the same evidence.
+function normalizeRemoteError(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  if (value.details && typeof value.details === 'object' && !Array.isArray(value.details)) return value
+  const data = value.data && typeof value.data === 'object' && !Array.isArray(value.data) ? value.data : undefined
+  const details = data?.details && typeof data.details === 'object' && !Array.isArray(data.details) ? data.details : undefined
+  return details ? { ...value, details } : value
+}
+
 function materializeImageFiles(images) {
   const root = process.env.MERCHANT_ARTIFACT_DIR?.trim()
   const directory = resolve(root && !/^\$\{[^}]+\}$/u.test(root) ? root : join(process.cwd(), 'artifacts', 'codex-output'))
@@ -3154,7 +3165,7 @@ async function callRemote(method, params) {
         // gateways may also return a top-level error. Treat both locations as
         // the same protocol boundary so authz/evidence details are not
         // downgraded to a generic missing-result error.
-        const remoteError = payload?.error ?? payload?.data?.error ?? bareGatewayError(response, payload, rawResponseText)
+        const remoteError = normalizeRemoteError(payload?.error ?? payload?.data?.error ?? bareGatewayError(response, payload, rawResponseText))
         // Some relay gateways expose their provider outage as a bare 503
         // message instead of the canonical error code. That response still
         // sits after the provider boundary: retrying an idempotent tool can
@@ -3193,7 +3204,8 @@ async function callRemote(method, params) {
           || normalizedRemoteError?.code === 'MODEL_USAGE_SETTLEMENT_PENDING'
           || normalizedRemoteError?.details?.provider_succeeded === true
           || normalizedRemoteError?.details?.reconciliation_required === true
-        const transient = retrySafe && !providerOutcomeUnknown && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
+        const retryableError = normalizedRemoteError?.details?.retryable === true
+        const transient = retrySafe && !providerOutcomeUnknown && (retryableError || response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
         if ((!response.ok || !payload || remoteError) && (!transient || attempt === maxAttempts)) {
           const error = normalizedRemoteError ?? {
             code: response.status === 401 ? 'MCP_AUTH_REQUIRED' : response.status === 403 ? 'PERMISSION_DENIED' : `HTTP_${response.status}`,
@@ -3206,7 +3218,9 @@ async function callRemote(method, params) {
           throw Object.assign(new Error(error.message ?? 'MCP gateway error'), { code: error.code, details: error.details })
         }
         if (!response.ok || !payload || normalizedRemoteError) {
-          const retryAfter = response.status === 429 ? Number(response.headers.get('retry-after') ?? '') : Number.NaN
+          const retryAfter = response.status === 429 || retryableError
+            ? Number(response.headers.get('retry-after') ?? normalizedRemoteError?.details?.retry_after_seconds ?? '')
+            : Number.NaN
           const retryAfterMs = Number.isFinite(retryAfter) ? Math.max(50, Math.ceil(retryAfter * 1_000)) : 0
           const backoffMs = retryAfterMs > 0 ? retryAfterMs : retryDelayMs * (2 ** (attempt - 1))
           await wait(Math.min(backoffMs, Math.max(50, deadline - Date.now())))
