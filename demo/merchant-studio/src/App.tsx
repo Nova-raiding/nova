@@ -5377,9 +5377,15 @@ function CatalogFilterMenu({
  * useful for read-only merchant/support sessions.
  */
 export function canImportCatalogForAccount(account: MerchantAuthAccount | null | undefined): boolean {
-  return Boolean(account?.roles.some((role) =>
+  if (!account || account.status !== 'active') return false
+  // Password-authenticated merchant accounts carry the account role `merchant`;
+  // their workspace membership is resolved and capability-checked by the API on
+  // each write. The UI must not hide draft import behind an unrelated gateway
+  // role list, while the server remains the authorization boundary.
+  if (account.accountType === 'merchant') return true
+  return account.roles.some((role) =>
     ['workspace_owner', 'merchant_admin', 'operator', 'support', 'platform_ops'].includes(role),
-  ))
+  )
 }
 
 function StoreCatalogExperience({ baseUrl, apiMode, canWrite }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean }) {
