@@ -41,7 +41,7 @@ describe('production Kubernetes overlay binding gate', () => {
       merchant_bearer_hostname: 'yxsona.com',
       public_endpoints: { app_base_url: 'https://yxsona.com', ops_base_url: 'https://ops.yxsona.com', oauth_callback_base_url: 'https://yxsona.com/v1/oauth/callback' },
       codex: { mcp: { base_url: 'https://yxsona.com' } },
-      model_relay_base_url: 'https://model-relay.example.com/v1', text_model: 'merchant-main-text', image_model: 'merchant-main-image', image_edit_model: 'merchant-main-image-edit', ocr_model: 'merchant-vision-ocr', video_model: 'merchant-video', embedding_model: 'merchant-embedding', embedding_dimensions: 1536, embedding_max_request_cny: '0.00', knowledge_vector_index_enabled: false,
+      model_relay_base_url: 'https://model-relay.example.com/v1', text_model: 'merchant-main-text', image_model: 'merchant-main-image', image_edit_model: 'merchant-main-image-edit', ocr_model: 'merchant-vision-ocr', video_model: 'happyhorse-1.1-t2v', embedding_model: 'merchant-embedding', embedding_dimensions: 1536, embedding_max_request_cny: '0.00', knowledge_vector_index_enabled: false,
       approved_requests_per_minute: 0, approved_tokens_per_minute: 0, maximum_task_cost_cny: '0.00',
       object_storage_bucket: 'codex-image-20260914', object_storage_region: 'cn-beijing', object_storage_endpoint: 'https://s3.oss-cn-beijing.aliyuncs.com', asset_display_base_url: 'https://yxsona.com',
       lifecycle_policy_ref: 'vault://merchant-asset-lifecycle-policy', asset_scan_policy_version: '2026-08-30',
