@@ -1,5 +1,5 @@
-import { execFileSync, spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -151,19 +151,48 @@ exit 0
     expect(readFileSync(dockerLog, 'utf8')).not.toContain('builder prune')
   })
 
-  it('keeps report manifests alive under bash command-substitution traps', () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-bash-report-')))
+  it.each(['sh', 'bash'])('stops %s report after TERM instead of resuming with deleted manifests', async (shell) => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-signal-report-')))
     chmodSync(root, 0o700)
     release(root, 'release-current', 1)
     const bin = join(root, 'bin'); mkdirSync(bin)
-    writeFileSync(join(bin, 'docker'), '#!/bin/sh\ncase "$1 $2" in\n  "system df") exit 0 ;;\nesac\nexit 0\n', { mode: 0o755 })
-    const result = spawnSync('bash', [script, 'report'], {
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ECS_RELEASES_ROOT: root },
-      encoding: 'utf8',
+    const marker = join(root, 'probe-started')
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh
+case "$1 $2" in
+  'ps -aq') touch '${marker}'; sleep 30 ;;
+esac
+exit 0
+`, { mode: 0o755 })
+    const child = spawn(shell, [script, 'report'], {
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ECS_RELEASES_ROOT: root, ECS_CANDIDATES_ROOT: join(root, 'absent'), TMPDIR: root },
+      detached: true,
     })
-    expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain('KEEP\trelease-current')
-  })
+    let stdout = ''; let stderr = ''
+    child.stdout.on('data', chunk => { stdout += chunk })
+    child.stderr.on('data', chunk => { stderr += chunk })
+    const closed = new Promise<number | null>((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', resolve)
+    })
+    try {
+      const deadline = Date.now() + 5000
+      while (!existsSync(marker) && child.exitCode === null && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 20))
+      }
+      expect(existsSync(marker), stderr).toBe(true)
+      process.kill(-child.pid!, 'SIGTERM')
+      expect(await closed, stderr).toBe(143)
+      expect(stderr).not.toContain('sort:')
+      expect(stdout).not.toContain('KEEP\trelease-current')
+      expect(spawnSync('find', [root, '-maxdepth', '1', '-name', 'merchant-*'], { encoding: 'utf8' }).stdout).toBe('')
+      expect(readFileSync(join(root, 'release-current', '.candidate-identity'), 'utf8')).toContain('release-current')
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        process.kill(-child.pid!, 'SIGKILL')
+        await closed
+      }
+    }
+  }, 10000)
 
   it('deletes only validated stale release directories after explicit confirmation', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-retention-')))
