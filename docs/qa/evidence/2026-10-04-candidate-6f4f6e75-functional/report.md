@@ -1,6 +1,6 @@
 # 6f4f6e75 isolated staging MCP functional test
 
-- Release: `release-6f4f6e75s`
+- Release: `release-6f4f6e75`
 - Candidate project: `merchant-demo-6f4f6e75s`
 - Workspace: `ws_candidate_6f4f6e75s` (synthetic acceptance fixture)
 - Transport: local plugin bridge over loopback TLS tunnel to isolated ECS candidate
