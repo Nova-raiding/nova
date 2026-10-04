@@ -8,7 +8,7 @@ CREATE OR REPLACE FUNCTION settle_knowledge_generation_claim(
   p_to_state text, p_provider_request_id text
 ) RETURNS TABLE(claim_state text, claimed_at timestamptz, updated_at timestamptz)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
-DECLARE c public.knowledge_generation_claims%ROWTYPE; action_id text;
+DECLARE c public.knowledge_generation_claims%ROWTYPE; v_action_id text;
 BEGIN
   IF current_setting('app.workspace_id', true) IS DISTINCT FROM p_workspace_id THEN
     RAISE EXCEPTION 'knowledge workspace scope mismatch' USING ERRCODE='42501';
@@ -26,17 +26,17 @@ BEGIN
     RETURN;
   END IF;
   IF c.state='outcome_unknown' AND p_to_state='completed' THEN
-    SELECT NULLIF(btrim(e.payload->>'action_id'),'') INTO action_id
+    SELECT NULLIF(btrim(e.payload->>'action_id'),'') INTO v_action_id
       FROM public.outbox_events e
       WHERE e.workspace_id=p_workspace_id AND e.id=c.event_id
         AND e.aggregate_id=c.aggregate_id AND e.event_type='generation.requested';
     -- A creative-point provider receipt is not sufficient to release the
     -- knowledge mutation fence.  Require the model usage ledger's settled,
     -- cost-bearing row and the exact physical provider-attempt metadata.
-    IF action_id IS NULL OR NOT EXISTS (
+    IF v_action_id IS NULL OR NOT EXISTS (
       SELECT 1 FROM public.model_usage_ledger m
       WHERE m.workspace_id=p_workspace_id
-        AND m.action_id=action_id
+        AND m.action_id=v_action_id
         AND m.modality='text'
         AND m.settlement_status='settled'
         AND m.cost_cny IS NOT NULL
