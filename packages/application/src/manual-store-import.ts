@@ -83,8 +83,8 @@ export function prepareManualStoreBatchImport(input: {
   accounts: readonly ManualStoreAccount[]
 }): PreparedManualImport {
   const workspaceId = visibleText(input.workspaceId, 'workspaceId', 128)
-  if (!Array.isArray(input.products) || input.products.length === 0 || input.products.length > 50) {
-    throw new ManualStoreImportError('MANUAL_IMPORT_SIZE_INVALID', '人工导入必须包含 1 到 50 个商品')
+  if (!Array.isArray(input.products) || input.products.length === 0 || input.products.length > 1000) {
+    throw new ManualStoreImportError('MANUAL_IMPORT_SIZE_INVALID', '人工导入必须包含 1 到 1000 个商品')
   }
   const accounts = new Map<string, ManualStoreAccount>()
   for (const account of input.accounts) {

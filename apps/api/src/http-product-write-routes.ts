@@ -32,7 +32,7 @@ export async function handleHttpProductWrite(req: IncomingMessage, res: ServerRe
   if (req.method === 'POST' && path === '/v1/products/import/batch') {
     const input = await body(req)
     const workspaceId = resolveWorkspace(req, input.workspace_id)
-    if (!Array.isArray(input.products) || input.products.length < 1 || input.products.length > 50 || input.products.some(item => !item || typeof item !== 'object' || Array.isArray(item))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'products 必须是 1 至 50 个商品对象的数组', 400)
+    if (!Array.isArray(input.products) || input.products.length < 1 || input.products.length > 1000 || input.products.some(item => !item || typeof item !== 'object' || Array.isArray(item))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'products 必须是 1 至 1000 个商品对象的数组', 400)
     type RestBatchItem = Parameters<MerchantService['importProduct']>[0]
     const items: RestBatchItem[] = input.products.map((raw: Record<string, unknown>, index: number) => {
       const platform = typeof raw.platform === 'string' ? raw.platform as Platform : '' as Platform
