@@ -93,11 +93,17 @@ const validateReviewReports = (bundle, identity, rows) => {
   const protectedSet = new Set(PROTECTED_OPS_PATHS)
   for (const path of structuralPaths) {
     if (!reviewSet.has(path) || !structureSet.has(path)) fail(`unbound structural review path: ${path}`)
-    if (typeof structural.find(item => item.path === path)?.structure_matches !== 'boolean') fail(`structural review has no match decision: ${path}`)
+    const item = structural.find(entry => entry.path === path)
+    const row = rows.get(path)
+    if (item.candidate_sha256 !== row.local_sha256 || item.remote_sha256 !== row.remote_sha256) fail(`structural review digest is not sync-plan bound: ${path}`)
+    if (typeof item.structure_matches !== 'boolean') fail(`structural review has no match decision: ${path}`)
   }
   for (const path of protectedPaths) {
     if (!reviewSet.has(path) || !protectedSet.has(path)) fail(`unbound protected review path: ${path}`)
-    if (protectedReview.find(item => item.path === path)?.status !== 'protected_onsite_review_required') fail(`protected review status is not fail-closed: ${path}`)
+    const item = protectedReview.find(entry => entry.path === path)
+    const row = rows.get(path)
+    if (item.remote_sha256_bound_to_plan !== row.remote_sha256) fail(`protected review digest is not sync-plan bound: ${path}`)
+    if (item.status !== 'protected_onsite_review_required') fail(`protected review status is not fail-closed: ${path}`)
   }
   const acquisition = readJson(join(bundle, 'remote-review-source', 'review-acquisition.json'), true)
   assertBoundIdentity(acquisition, identity, 'source review acquisition')
@@ -110,6 +116,9 @@ const validateReviewReports = (bundle, identity, rows) => {
     const row = rows.get(path)
     const file = acquisition.files.find(item => item.path === path)
     if (!file || file.remote_sha256 !== row.remote_sha256 || !/^[0-9a-f]{64}$/u.test(file.remote_sha256)) fail(`fetched source review digest is not sync-plan bound: ${path}`)
+    const sourcePath = join(bundle, 'remote-review-source', path)
+    const sourceBytes = readRegular(sourcePath)
+    if (!Number.isSafeInteger(file.bytes) || file.bytes !== sourceBytes.length || sha256(sourceBytes) !== file.remote_sha256) fail(`fetched source review bytes do not match bound digest: ${path}`)
   }
   for (const path of refusedPaths) if (!reviewSet.has(path)) fail(`unbound refused review path: ${path}`)
   const partition = new Set([...fetchedPaths, ...structuralPaths, ...protectedPaths])

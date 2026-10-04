@@ -340,6 +340,7 @@ function bindCandidateIdentity(options) {
   const releaseId = options.releaseId ?? candidate?.release_id
   const git = options.gitSha ?? candidate?.git_sha
   if (candidate && candidate.git_sha !== git) throw new Error('candidate identity Git SHA does not match release identity')
+  if (candidate && !releaseId) throw new Error('candidate-bound descriptor requires a release ID')
   if (candidate?.release_id !== undefined && candidate.release_id !== releaseId) {
     throw new Error('candidate identity release ID does not match release identity')
   }

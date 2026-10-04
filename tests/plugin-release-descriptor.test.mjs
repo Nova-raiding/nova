@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { gunzipSync, gzipSync, deflateRawSync } from 'node:zlib'
-import { assertPrivateSigningKey, signPluginReleaseDescriptor, verifyBuildAttestation, verifyPluginPackageBuild, verifyPluginReleaseDescriptor, windowsSigningKeyAclProtected } from '../scripts/plugin-release-descriptor.mjs'
+import { assertPrivateSigningKey, readCandidateIdentity, signPluginReleaseDescriptor, verifyBuildAttestation, verifyPluginPackageBuild, verifyPluginReleaseDescriptor, windowsSigningKeyAclProtected } from '../scripts/plugin-release-descriptor.mjs'
 
 function appendTarMember(packageBytes, name, type = '0', linkname = '') {
   const archive = gunzipSync(packageBytes)
@@ -86,7 +86,9 @@ function fixture() {
     keyId: options.keyId, releaseId: options.releaseId, gitSha: options.gitSha,
     platform: options.platform, mcpMethodsSha256: options.mcpMethodsSha256,
   }
-  return { root, pluginRoot, packagePath, privateKeyPath, options, verifyOptions }
+  const candidateIdentityPath = join(root, 'candidate-identity.txt')
+  writeFileSync(candidateIdentityPath, `git_sha=${gitSha}\nsource_sha256=sha256:${'c'.repeat(64)}\ncomparison_manifest_sha256=sha256:${'d'.repeat(64)}\nsync_plan_sha256=sha256:${'e'.repeat(64)}\n`)
+  return { root, pluginRoot, packagePath, privateKeyPath, candidateIdentityPath, options, verifyOptions }
 }
 
 function zipBytes(entries, dataDescriptor = false) {
@@ -289,6 +291,32 @@ test('signs exact local package bytes and binds release, Git, platform, bridge a
   assert.equal(document.plugin_version, '0.1.0+codex.1')
   assert.equal(verifyPluginReleaseDescriptor(document, f.verifyOptions), document)
   assert.match(document.signature_base64, /^[A-Za-z0-9+/]{86}==$/u)
+})
+
+test('binds a descriptor to the candidate identity file and derives its Git SHA', () => {
+  const f = fixture()
+  const document = signPluginReleaseDescriptor({ ...f.options, gitSha: undefined, candidateIdentityPath: f.candidateIdentityPath })
+  assert.equal(document.release_id, f.options.releaseId)
+  assert.equal(document.git_sha, f.options.gitSha)
+  assert.deepEqual(readCandidateIdentity(f.candidateIdentityPath).git_sha, f.options.gitSha)
+})
+
+test('derives a v2 release ID and rejects candidate identity substitution', () => {
+  const f = fixture()
+  writeFileSync(f.candidateIdentityPath, `schema_version=candidate-identity/2\nrelease_id=${f.options.releaseId}\ngit_sha=${f.options.gitSha}\n`)
+  const document = signPluginReleaseDescriptor({ ...f.options, releaseId: undefined, gitSha: undefined, candidateIdentityPath: f.candidateIdentityPath })
+  assert.equal(document.release_id, f.options.releaseId)
+  assert.throws(() => signPluginReleaseDescriptor({ ...f.options, candidateIdentityPath: f.candidateIdentityPath, releaseId: 'release-other' }), /release ID does not match/u)
+  writeFileSync(f.candidateIdentityPath, `release_id=${f.options.releaseId}\ngit_sha=${'a'.repeat(40)}\n`)
+  assert.throws(() => signPluginReleaseDescriptor({ ...f.options, candidateIdentityPath: f.candidateIdentityPath }), /Git SHA does not match/u)
+})
+
+test('rejects malformed candidate identity fields before signing', () => {
+  const f = fixture()
+  writeFileSync(f.candidateIdentityPath, `git_sha=${f.options.gitSha}\ngit_sha=${f.options.gitSha}\n`)
+  assert.throws(() => readCandidateIdentity(f.candidateIdentityPath), /invalid or duplicate/u)
+  writeFileSync(f.candidateIdentityPath, `schema_version=candidate-identity/1\ngit_sha=${f.options.gitSha}\n`)
+  assert.throws(() => readCandidateIdentity(f.candidateIdentityPath), /schema is unsupported/u)
 })
 
 test('production signing refuses a package without its clean-source builder', () => {
