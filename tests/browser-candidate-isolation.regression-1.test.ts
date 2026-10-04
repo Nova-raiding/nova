@@ -21,7 +21,7 @@ describe('browser candidate isolation', () => {
     expect(value.env).toMatchObject({
       COMPOSE_PROJECT_NAME: value.project, LOCAL_API_IMAGE: value.apiImage, LOCAL_OPS_UI_IMAGE: value.opsImage,
       BROWSER_NETWORK_SUBNET: value.networkSubnet,
-      DOCKER_DEFAULT_PLATFORM: 'linux/amd64',
+      DOCKER_DEFAULT_PLATFORM: 'linux/amd64', COMPOSE_PARALLEL_LIMIT: '1',
       LOCAL_UI_PORT: '28081', LOCAL_OPS_UI_PORT: '28082', LOCAL_API_PORT: '28787', LOCAL_POSTGRES_PORT: '15439', LOCAL_REDIS_PORT: '16389',
       MERCHANT_STUDIO_URL: 'http://127.0.0.1:28081/', OPS_BASE_URL: 'http://127.0.0.1:28082/', RELEASE_ID: value.releaseId, RELEASE_GIT_SHA: sha,
     })

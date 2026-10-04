@@ -24,6 +24,11 @@ export function isolatedCandidateEnvironment(source: Environment): Environment {
     // Release images are built for the production ECS architecture. Keep the
     // isolated browser candidate on that same platform even on ARM dev hosts.
     DOCKER_DEFAULT_PLATFORM: 'linux/amd64',
+    // API, merchant UI and Ops UI each run npm install/build in BuildKit. A
+    // four-CPU/8-GB Colima host can OOM when Compose starts all three builds
+    // concurrently; serialize service builds so an OOM is not reported as a
+    // Playwright startup stall.
+    COMPOSE_PARALLEL_LIMIT: '1',
     PERSISTENCE_MODE: 'postgres', CONNECTOR_FIXTURE_MODE: 'true', PAYMENT_MODE: 'fixture',
     COMMERCIAL_PAYMENT_PROVIDER: 'manual_transfer', PAYMENT_RECONCILIATION_ENABLED: 'false', PAYMENT_REFUND_ENABLED: 'false',
     MODEL_RELAY_API_KEY: '', VIDEO_MODEL_RELAY_API_KEY: '', PLUGIN_WRITE_ENABLED: 'false',
