@@ -1035,7 +1035,7 @@ export function createApiExecutionAuthorizationGuard(config: Pick<WorkerConfig, 
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for execution authorization recheck')
     const path = operation === 'publish.execute'
       ? `/v1/publish-jobs/${encodeURIComponent(event.aggregateId)}/execution-check?event_id=${encodeURIComponent(event.id)}`
-      : `/v1/worker-events/${encodeURIComponent(event.id)}/execution-check?aggregate_id=${encodeURIComponent(event.aggregateId)}&operation=${encodeURIComponent(operation)}`
+      : `/v1/worker-events/${encodeURIComponent(event.id)}/execution-check?aggregate_id=${encodeURIComponent(event.aggregateId)}&operation=${encodeURIComponent(operation)}${operation === 'generation.execute' ? '&knowledge_recheck=deferred' : ''}`
     const response = await fetchWorkerApi(fetcher, `${config.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
       headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...(config.apiSigningSecret ? workerAuthIntent(config.apiSigningSecret, config.workerId ?? resolveWorkerId()) : {}) },
       redirect: 'error', signal,
@@ -1756,12 +1756,21 @@ function generationKnowledgeClaimBody(event: DurableOutboxEvent, proof: { attemp
   const product = productValue && typeof productValue === 'object' && !Array.isArray(productValue) ? productValue as Record<string, unknown> : undefined
   const knowledgeValue = frozenInput?.knowledgeContext
   const knowledge = knowledgeValue && typeof knowledgeValue === 'object' && !Array.isArray(knowledgeValue) ? knowledgeValue as Record<string, unknown> : undefined
-  // An omitted knowledge context means an empty frozen selection. A supplied
-  // context must carry an explicit document array, including an empty one.
-  const rawDocuments = knowledgeValue === undefined ? [] : knowledge?.documents
+  // An omitted knowledge context, or a valid bounded context without the
+  // optional documents field, both mean an empty frozen selection. Keep the
+  // required envelope arrays as a shape check so unrelated malformed objects
+  // still fail closed before any claim or provider I/O.
+  const hasBoundedKnowledgeEnvelope = knowledgeValue === undefined || Boolean(
+    knowledge
+      && (Array.isArray(knowledge.documents)
+        || (Array.isArray(knowledge.rules)
+          && Array.isArray(knowledge.assets)
+          && Array.isArray(knowledge.confirmedLearningSuggestions))),
+  )
+  const rawDocuments = knowledgeValue === undefined || (hasBoundedKnowledgeEnvelope && knowledge?.documents === undefined) ? [] : knowledge?.documents
   const taskId = payload.task_id
   const contextHash = payload.context_hash
-  if (!frozenInput || typeof product?.id !== 'string' || !product.id || typeof taskId !== 'string' || !taskId
+  if (!frozenInput || !hasBoundedKnowledgeEnvelope || typeof product?.id !== 'string' || !product.id || typeof taskId !== 'string' || !taskId
     || typeof contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(contextHash)
     || !Array.isArray(rawDocuments) || rawDocuments.length > 8
     || rawDocuments.some(document => !document || typeof document !== 'object' || Array.isArray(document)
@@ -2551,6 +2560,16 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
                 throw new GenerationKnowledgeReceiptError('text provider attempt has invalid frozen generation identity')
               }
               if (!config.apiSigningSecret) throw new GenerationKnowledgeReceiptError('signed generation knowledge claims are not configured')
+              // The generic execution authorization check runs before the
+              // provider request body exists, so it deliberately defers the
+              // proof-bound knowledge check. Recheck the exact attempt here,
+              // immediately before claiming/dispatching it; this keeps the
+              // frozen knowledge fence fail-closed without inventing a body
+              // hash or provider idempotency key.
+              await assertGenerationKnowledgeExecution({
+                apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, signingSecret: config.apiSigningSecret,
+                event, proof, signal,
+              })
               const chargedAllocation = charged ? await claimChargedTextDispatchWithRetryRecovery({
                 dispatch: chargedTextDispatch,
                 workspaceId: event.workspaceId, actionKey: actionId, eventId: event.id,

@@ -56,7 +56,13 @@ export async function handleHttpWorkerExecutionRoute(req: IncomingMessage, res: 
     if (!event) throw new DomainError('AUTHORIZATION_EVENT_NOT_FOUND', '执行授权事件不存在或不属于当前工作区', 404)
     const expectedOperation = workerEventOperations[event.eventType]
     if (!expectedOperation || expectedOperation !== requestedOperation) throw new DomainError('AUTHZ_EXECUTION_OPERATION_MISMATCH', '事件类型与执行操作不匹配', 403)
-    const knowledgeRecheck = requestedOperation === 'generation.execute'
+    // Generation's generic authorization check runs before the worker has
+    // serialized the provider request body, so it cannot yet supply the
+    // proof-bound attempt key and body hash required by the knowledge fence.
+    // The worker performs that exact recheck immediately before claiming the
+    // provider attempt. Direct calls without either proof or this explicit
+    // deferral marker remain fail-closed.
+    const knowledgeRecheck = requestedOperation === 'generation.execute' && url.searchParams.get('knowledge_recheck') !== 'deferred'
       ? await recheckWorkerGenerationKnowledge(event, {
         number: Number(url.searchParams.get('attempt')),
         key: url.searchParams.get('provider_attempt_key') ?? '',
