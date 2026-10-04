@@ -556,6 +556,7 @@ export function signPluginReleaseDescriptor(options) {
   verifyPluginReleaseDescriptor(document, {
     publicKeyPem: createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }),
     keyId: options.keyId, releaseId: options.releaseId, gitSha: options.gitSha,
+    candidateIdentityPath: options.candidateIdentityPath,
     platform: options.platform, mcpMethodsSha256: options.mcpMethodsSha256,
     packagePath: options.packagePath,
   })
