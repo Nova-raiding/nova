@@ -12662,6 +12662,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const embeddingGate = evaluatePlatformModelGate(process.env, 'embedding')
       const relayGate = evaluatePlatformModelRelayGate(process.env)
       const costGate = evaluatePlatformModelCostGate(process.env)
+      const taskCostGate = evaluatePlatformModelTaskCostLimit(process.env)
       const releaseMetadataNames = ['PLUGIN_VERSION', 'SKILL_BUNDLE_VERSION', 'MCP_VERSION', 'CONNECTOR_BUILD', 'PROMPT_BUNDLE_VERSION']
       const releaseMetadataMissing = isProduction() ? releaseMetadataNames.filter(name => !process.env[name]?.trim() || process.env[name]!.trim().toLowerCase().includes('fixture') || process.env[name]!.trim().toLowerCase() === 'local') : []
       const releaseMetadataReady = releaseMetadataMissing.length === 0
@@ -12675,7 +12676,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const dailyCnyLimit = costGate.dailyCnyLimit
       const costEvidenceByModality = requiredModelCostEvidenceByModality()
       const costEvidenceReady = Object.values(costEvidenceByModality).every(Boolean)
-      const costControlReady = costGate.ready && costEvidenceReady
+      const costControlReady = costGate.ready && taskCostGate.ready && costEvidenceReady
       const ocrReady = ocrGate.ready && Boolean(imageFactsExtractor)
       const imageEditReady = imageEditGate.ready && Boolean(imageEditGenerator)
       const videoReady = videoGate.ready && Boolean(videoGenerator)
@@ -12690,9 +12691,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         capabilities: { text_generation: textReady, image_generation: imageReady, image_editing: imageEditReady, image_fact_ocr: ocrReady, video_rendering: videoReady, knowledge_vector_indexing: embeddingConfigured }, endpoints: { text_https: textGate.https, image_https: imageGate.https, image_edit_https: imageEditGate.https, ocr_https: ocrGate.https, video_https: videoGate.https, embedding_https: embeddingGate.https },
         model_readiness: { text: { ...textGate, provider_configured: textReady }, image: { ...imageGate, provider_configured: imageReady }, image_edit: { ...imageEditGate, provider_configured: imageEditReady }, ocr: { ...ocrGate, provider_configured: ocrReady }, video: { ...videoGate, provider_configured: videoReady }, embedding: vectorIndexEnabled ? { ...embeddingGate, ready: embeddingConfigured, reasons: [...embeddingGate.reasons, ...vectorQueryGate.reasons], provider_configured: embeddingGate.ready } : { ...embeddingGate, ready: false, reasons: ['knowledge_vector_indexing_disabled', ...embeddingGate.reasons], provider_configured: embeddingGate.ready } },
         quotas: { rpm: rpm || null, tpm: tpm || null, daily_cny_limit: dailyCnyLimit ? dailyCnyLimit.toFixed(2) : null },
+        task_cost_limit: { ready: taskCostGate.ready, maximum_task_cost_cny: taskCostGate.limitCny ? taskCostGate.limitCny.toFixed(2) : null, reasons: taskCostGate.reasons },
         cost_control_ready: costControlReady, cost_evidence_ready: costEvidenceReady, cost_evidence_by_modality: costEvidenceByModality,
         release_metadata_ready: releaseMetadataReady, release_metadata_missing: releaseMetadataMissing,
-        next_actions: [...(isProduction() && !relayGate.ready ? ['配置平台模型中转站：' + relayGate.reasons.join('、')] : []), ...(!textReady ? ['配置平台文案模型：' + textGate.reasons.join('、')] : []), ...(!imageReady ? ['配置平台图片模型：' + imageGate.reasons.join('、')] : []), ...(!imageEditReady ? ['配置图片编辑模型和中转 provider：' + imageEditGate.reasons.join('、')] : []), ...(!ocrReady ? ['配置 OCR_MODEL 和 OCR 中转 provider：' + ocrGate.reasons.join('、')] : []), ...(!videoReady ? ['配置 VIDEO_MODEL 和视频中转 provider：' + videoGate.reasons.join('、')] : []), ...(!vectorQueryGate.ready ? ['知识向量查询尚未具备独立授权、预算和成本结算链路，保持 KNOWLEDGE_VECTOR_INDEX_ENABLED=false'] : []), ...(!embeddingReady && vectorQueryGate.ready ? ['完成 embedding 后台授权、预算预留、用量结算并启用 KNOWLEDGE_VECTOR_INDEX_ENABLED'] : []), ...(!costGate.ready ? ['配置并审批平台模型 RPM、TPM 和每日人民币成本上限'] : []), ...(!costEvidenceReady ? ['验证中转站 cost_cny，或验证价格快照、实际计费分组和人民币汇率后，再开启成本证据开关'] : []), ...(!releaseMetadataReady ? ['注入不可使用 fixture/local 默认值的发布版本、Skill、MCP、连接器和 prompt 元数据'] : []), ...(allModelReady && costControlReady && releaseMetadataReady && (!isProduction() || relayGate.ready) ? [] : ['完成平台模型供应商额度、成本和数据处理条款审批'])],
+        next_actions: [...(isProduction() && !relayGate.ready ? ['配置平台模型中转站：' + relayGate.reasons.join('、')] : []), ...(!textReady ? ['配置平台文案模型：' + textGate.reasons.join('、')] : []), ...(!imageReady ? ['配置平台图片模型：' + imageGate.reasons.join('、')] : []), ...(!imageEditReady ? ['配置图片编辑模型和中转 provider：' + imageEditGate.reasons.join('、')] : []), ...(!ocrReady ? ['配置 OCR_MODEL 和 OCR 中转 provider：' + ocrGate.reasons.join('、')] : []), ...(!videoReady ? ['配置 VIDEO_MODEL 和视频中转 provider：' + videoGate.reasons.join('、')] : []), ...(!vectorQueryGate.ready ? ['知识向量查询尚未具备独立授权、预算和成本结算链路，保持 KNOWLEDGE_VECTOR_INDEX_ENABLED=false'] : []), ...(!embeddingReady && vectorQueryGate.ready ? ['完成 embedding 后台授权、预算预留、用量结算并启用 KNOWLEDGE_VECTOR_INDEX_ENABLED'] : []), ...(!costGate.ready ? ['配置并审批平台模型 RPM、TPM 和每日人民币成本上限'] : []), ...(!taskCostGate.ready ? ['配置并审批平台模型单任务成本上限：' + taskCostGate.reasons.join('、')] : []), ...(!costEvidenceReady ? ['验证中转站 cost_cny，或验证价格快照、实际计费分组和人民币汇率后，再开启成本证据开关'] : []), ...(!releaseMetadataReady ? ['注入不可使用 fixture/local 默认值的发布版本、Skill、MCP、连接器和 prompt 元数据'] : []), ...(allModelReady && costControlReady && releaseMetadataReady && (!isProduction() || relayGate.ready) ? [] : ['完成平台模型供应商额度、成本和数据处理条款审批'])],
       })
     }
     case 'platform.settings.update': {

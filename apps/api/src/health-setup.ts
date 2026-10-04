@@ -1,5 +1,5 @@
 import { alertNotificationReadiness } from './alert-notifier.js'
-import { evaluatePlatformModelRelayGate, evaluatePlatformModelGate, evaluatePlatformModelCostGate } from '../../../packages/ai/src/platform-model-gate.js'
+import { evaluatePlatformModelRelayGate, evaluatePlatformModelGate, evaluatePlatformModelCostGate, evaluatePlatformModelTaskCostLimit } from '../../../packages/ai/src/platform-model-gate.js'
 import type { Platform } from '../../../packages/application/src/service.js'
 import type { ConnectorRuntime } from '../../../packages/application/src/connector-runtime.js'
 import type { PaymentChannel } from '../../../packages/billing/src/payment-provider.js'
@@ -62,7 +62,9 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
   const vectorQueryGate = knowledgeVectorQueryReadiness(process.env)
   const embeddingProviderConfigured = embeddingModelGate.ready
   const embeddingReady = vectorIndexEnabled && embeddingProviderConfigured && vectorQueryGate.ready
-  const modelCostGateConfigured = evaluatePlatformModelCostGate(process.env).ready && Object.values(requiredModelCostEvidenceByModality()).every(Boolean)
+  const modelCostGate = evaluatePlatformModelCostGate(process.env)
+  const taskCostGate = evaluatePlatformModelTaskCostLimit(process.env)
+  const modelCostGateConfigured = modelCostGate.ready && taskCostGate.ready && Object.values(requiredModelCostEvidenceByModality()).every(Boolean)
   const vaultConfigured = connectorRuntime.credentialProviderConfigured && !fixtureMode
   const localAcceptanceObjectStorage = production && process.env.DEPLOYMENT_PROFILE === 'local_acceptance' && process.env.ALLOW_LOCAL_DURABLE_OBJECT_STORAGE === 'true' && (process.env.ASSET_STORAGE_ROOT?.startsWith('/var/lib/merchant-assets/') ?? false)
   const configuredSseMode = String(process.env.ASSET_STORAGE_SSE_MODE?.trim() || (configuredEnv('ASSET_STORAGE_KMS_KEY_ID') ? 'aws:kms' : 'AES256')).toLowerCase()
@@ -98,7 +100,7 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
   if (!imageFactsConfigured) nextActions.push('配置平台模型中转站、MODEL_RELAY_API_KEY 和 OCR_MODEL 后启用图片 OCR 候选；未配置时继续要求商家人工确认图片事实')
   if (!videoProviderConfigured) nextActions.push('配置平台模型中转站、MODEL_RELAY_API_KEY、VIDEO_MODEL 和视频 provider 后启用视频渲染；未配置时只能生成无渲染分镜')
   if (vectorIndexEnabled && !embeddingReady) nextActions.push('知识库向量索引已显式启用但未通过门禁：需配置 EMBEDDING_MODEL/EMBEDDING_DIMENSIONS，并完成查询授权、预算预留和用量结算；当前保持阻断')
-  if (!modelCostGateConfigured) nextActions.push('配置平台模型 RPM、TPM 和每日人民币成本上限；成本门禁未通过时生产模型请求保持阻断')
+  if (!modelCostGateConfigured) nextActions.push(`配置平台模型 RPM、TPM、每日人民币成本上限和单任务成本上限；成本门禁未通过时生产模型请求保持阻断${taskCostGate.reasons.length ? `（${taskCostGate.reasons.join('、')}）` : ''}`)
   if (production && !paymentReadiness.ready) nextActions.push('配置支付宝/微信服务端 checkout provider、商户号、回调验签、对账和退款能力：' + paymentReadiness.reasons.join('、'))
   if (platformOperationsMode === 'official_api' && !vaultConfigured) nextActions.push('official_api 模式需配置 VAULT_ADDR 和 VAULT_TOKEN（或接入外部凭据服务），让服务端安全读取商家授权凭据；不要把平台 token 放进插件参数')
   if (!objectStorageConfigured) nextActions.push('配置生产对象存储 bucket、region、HTTPS endpoint 和 KMS key，素材上传才可切换到云端持久化')
@@ -131,7 +133,7 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
   })
   return {
     mode: production ? 'production' : fixtureMode ? 'fixture' : 'local',
-    ai: { ownership: 'platform', userKeyRequired: false, relay: { configured: relayGate.ready, host: relayGate.endpointHost ?? null }, contentGeneration: contentProviderConfigured ? 'configured' : fixtureMode ? 'fixture_fallback' : 'not_configured', imageGeneration: imageProviderConfigured ? 'configured' : fixtureMode ? 'fixture_fallback' : 'not_configured', imageEditing: imageEditProviderConfigured ? 'configured' : 'blocked', imageFacts: imageFactsConfigured ? 'configured' : 'manual_fallback', videoRendering: videoProviderConfigured ? 'configured' : 'storyboard_only', costGate: modelCostGateConfigured ? 'ready' : 'blocked' },
+    ai: { ownership: 'platform', userKeyRequired: false, relay: { configured: relayGate.ready, host: relayGate.endpointHost ?? null }, contentGeneration: contentProviderConfigured ? 'configured' : fixtureMode ? 'fixture_fallback' : 'not_configured', imageGeneration: imageProviderConfigured ? 'configured' : fixtureMode ? 'fixture_fallback' : 'not_configured', imageEditing: imageEditProviderConfigured ? 'configured' : 'blocked', imageFacts: imageFactsConfigured ? 'configured' : 'manual_fallback', videoRendering: videoProviderConfigured ? 'configured' : 'storyboard_only', costGate: modelCostGateConfigured ? 'ready' : 'blocked', taskCostLimit: { ready: taskCostGate.ready, limitCny: taskCostGate.limitCny, reasons: taskCostGate.reasons } },
     modelReadiness: {
       text: { ...evaluatePlatformModelGate(process.env, 'text'), providerConfigured: contentProviderConfigured },
       image: { ...evaluatePlatformModelGate(process.env, 'image'), providerConfigured: imageProviderConfigured },
