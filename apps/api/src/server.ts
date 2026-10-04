@@ -13648,16 +13648,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           queuedJobId = job.id
           if (task.brandId) {
             const brands = await (persistence.brandUnits ?? memoryBrandUnits).listBrands({ workspaceId, brandId: task.brandId })
-            const durableBrandMatches = brands.length === 1 && brands[0]?.workspaceId === workspaceId && brands[0]?.id === task.brandId
-            // Historical tasks can retain a frozen compatibility brand after
-            // the normalized brand row was never backfilled.  Keep the
-            // cross-tenant guard: only the exact frozen snapshot identity may
-            // carry this legacy scope when no durable row is available.
-            const legacyFrozenBrandMatches = brands.length === 0
-              && typeof task.inputSnapshot?.brand?.id === 'string'
-              && task.inputSnapshot.brand.id === task.brandId
-              && task.inputSnapshot.brand.workspaceId === workspaceId
-            if (!durableBrandMatches && !legacyFrozenBrandMatches) {
+            if (brands.length !== 1 || brands[0]?.workspaceId !== workspaceId || brands[0]?.id !== task.brandId) {
               throw new DomainError('TASK_BRAND_SCOPE_MISMATCH', '任务品牌不属于当前工作区，已拒绝生成执行授权', 409)
             }
           }
