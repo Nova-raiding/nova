@@ -14,6 +14,7 @@
 
 | 配置项 | 谁提供 | 不填会怎样 |
 |---|---|---|
+| `deployment_mode` | 平台运营 | 生产门禁无法确定是 `lean` 人工转账档还是 `full` 在线支付档，配置会直接拒绝 |
 | `commercial_payment_provider` | 平台运营 | `commercial.order.create` 直接 503 且**订单不落库**；运营的 `ops.commercial.order.payment.verify` 因查不到订单返回 404 |
 | `payment_mode` | 平台运营 | 生产门禁强制 `provider` |
 | `payment_provider_adapters` | 平台运营 | 固定为 `alipay`；微信支付不在当前产品范围内 |
