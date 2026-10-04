@@ -2392,7 +2392,21 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
   const contentGenerator = createContentGeneratorFromEnv(process.env, async usage => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for model usage settlement')
     const execution = usage.actionId ? generationUsageContexts.get(usage.actionId) : undefined
-    const enriched = execution ? { ...usage, runKey: execution.runKey, contextHash: execution.contextHash, ...(execution.contextLinkId ? { contextLinkId: execution.contextLinkId } : {}), metadata: { ...(usage.metadata ?? {}), task_id: execution.taskId, campaign_item_id: execution.campaignItemId ?? null } } : usage
+    let enriched = execution ? { ...usage, runKey: execution.runKey, contextHash: execution.contextHash, ...(execution.contextLinkId ? { contextLinkId: execution.contextLinkId } : {}), metadata: { ...(usage.metadata ?? {}), task_id: execution.taskId, campaign_item_id: execution.campaignItemId ?? null } } : usage
+    if (enriched.costCny === undefined && relayPricing) {
+      const quote = await relayPricing.quote(enriched)
+      enriched = { ...enriched, costCny: quote.costCny, metadata: { ...(enriched.metadata ?? {}), ...quote.metadata } }
+      imageWorkerTrace('usage.cost_derived', {
+        action_id: enriched.actionId ?? null,
+        provider_request_id: enriched.providerRequestId ?? enriched.providerAttemptId ?? null,
+        model: enriched.model,
+        cost_cny: quote.costCny,
+        cost_source: quote.metadata.cost_source,
+        pricing_version: quote.metadata.pricing_version,
+        pricing_group: quote.metadata.pricing_group,
+        formula_version: quote.metadata.formula_version,
+      })
+    }
     if (execution) {
       const providerRequestId = await creativePointSettlement.recordSucceeded(execution.event, enriched)
       if (providerRequestId) execution.providerRequestIds.push(providerRequestId)
