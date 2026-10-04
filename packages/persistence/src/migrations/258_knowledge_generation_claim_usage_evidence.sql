@@ -40,7 +40,13 @@ BEGIN
         AND m.modality='text'
         AND m.settlement_status='settled'
         AND m.cost_cny IS NOT NULL
-        AND m.metadata->>'provider_attempt_id'=c.provider_attempt_id
+        -- Current text workers persist the physical idempotency key as
+        -- provider_attempt_id, while the claim ledger also stores a
+        -- deterministic provider_attempt_id UUID.  Accept either exact
+        -- identity from the same claim; both are bound by the claim CAS
+        -- fields above and cannot be supplied by an unrelated attempt.
+        AND (m.metadata->>'provider_attempt_id'=c.provider_attempt_id
+          OR m.metadata->>'provider_attempt_id'=c.provider_attempt_key)
         AND (p_provider_request_id IS NULL OR m.provider_request_id=p_provider_request_id)
     ) THEN
       RETURN;

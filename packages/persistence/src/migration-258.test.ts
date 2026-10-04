@@ -13,6 +13,7 @@ describe('migration 258 knowledge claim usage evidence', () => {
     expect(sql).toContain("m.settlement_status='settled'")
     expect(sql).toContain('m.cost_cny IS NOT NULL')
     expect(sql).toContain("m.metadata->>'provider_attempt_id'=c.provider_attempt_id")
+    expect(sql).toContain("m.metadata->>'provider_attempt_id'=c.provider_attempt_key")
     expect(sql).toContain('p_provider_request_id IS NULL OR m.provider_request_id=p_provider_request_id')
     expect(sql).toContain('REVOKE ALL ON FUNCTION settle_knowledge_generation_claim(text,text,text,text,text,text,text,text) FROM PUBLIC')
     expect(sql).not.toMatch(/DROP\s+TABLE|TRUNCATE/iu)

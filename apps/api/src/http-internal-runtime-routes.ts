@@ -453,7 +453,13 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
           && item.costCny !== undefined
           && Number.isFinite(item.costCny)
           && item.costCny >= 0
-          && item.metadata?.provider_attempt_id === providerAttemptId)
+          // Text workers persist the physical idempotency key in
+          // provider_attempt_id. Newer callers may persist the deterministic
+          // claim UUID instead; both values are exact identities from this
+          // signed claim, so accept either while keeping the transition
+          // fail-closed on workspace/action/status/cost.
+          && (item.metadata?.provider_attempt_id === providerAttemptId
+            || item.metadata?.provider_attempt_id === providerAttemptKey))
         if (settled) settledUsageEvidence = { actionId, providerAttemptId, settlementStatus: 'settled', costCny: settled.costCny! }
       }
     }
