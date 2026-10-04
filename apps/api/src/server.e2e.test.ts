@@ -590,7 +590,9 @@ describe('API HTTP vertical slice', () => {
     expect(visibleDetail.data).toMatchObject({ id: visibleProduct.id })
     const visibleImageReview = await fetch(`${base}/v1/products/${encodeURIComponent(visibleProduct.id)}/image-review`, { headers: memberHeaders }).then(json)
     expect(visibleImageReview.error).toBeNull()
-    const hiddenVideo = await mcp(memberHeaders, 8.1, 'multimodal.video.request', { prompt: '生成商品脚本', output: 'script', context_json: JSON.stringify({ brand: { id: 'brand_hidden', version: '1' }, product: { id: hiddenProduct.id, version: '1' }, rules: [] }), idempotency_key: `hidden-video-${Date.now()}` })
+    // Keep the context structurally valid so this assertion exercises the
+    // workspace/brand boundary rather than the multimodal context validator.
+    const hiddenVideo = await mcp(memberHeaders, 8.1, 'multimodal.video.request', { prompt: '生成商品脚本', output: 'script', context_json: JSON.stringify({ brand: { id: 'brand_hidden', version: '1' }, product: { id: hiddenProduct.id, version: '1' }, rules: [{ id: 'rule-hidden', version: '1' }] }), idempotency_key: `hidden-video-${Date.now()}` })
     expect(hiddenVideo.error?.code).toBe('PRODUCT_NOT_FOUND')
 
     const tasks = await fetch(`${base}/v1/tasks?limit=20&offset=0`, { headers: memberHeaders }).then(json)
