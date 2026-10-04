@@ -215,7 +215,7 @@ function validateItem(input: CampaignDeliveryManifestInput, item: CampaignDelive
 function validateManifest(input: CampaignDeliveryManifestInput) {
   for (const [key, value] of Object.entries({ id: input.id, workspaceId: input.workspaceId, campaignId: input.campaignId, brandId: input.brandId })) requireText(value, key)
   if (!input.items.length) throw new CampaignManifestError('CAMPAIGN_MANIFEST_INVALID', 'campaign 至少需要一个交付项', 'items')
-  if (input.items.length > 1000) throw new CampaignManifestError('CAMPAIGN_ITEM_LIMIT_EXCEEDED', '单个 campaign 最多 1000 项', 'items')
+  if (input.items.length > 50) throw new CampaignManifestError('CAMPAIGN_ITEM_LIMIT_EXCEEDED', '单个 campaign 最多 50 项', 'items')
   input.items.forEach((item, index) => validateItem(input, item, index))
   const itemIds = input.items.map(item => item.id)
   const scopes = input.items.map(item => `${item.platform}:${item.accountId}:${item.productId}:${item.listingId}:${[...item.skuIds].sort().join(',')}`)

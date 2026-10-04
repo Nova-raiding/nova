@@ -1211,7 +1211,7 @@ describe('API HTTP vertical slice', () => {
     expect(generatedContent.error).toBeNull()
     const awaitingReview = await call(4.85, 'campaign.batch.get', { campaign_id: campaignResult.id })
     expect(awaitingReview.data).toMatchObject({ result: { state: 'review_required', items: [expect.objectContaining({ state: 'review_required', next_action: 'content.review' })] } })
-    const tooMany = await call(5, 'campaign.batch.create', { brand_id: `brand_${workspaceId}`, platform: 'taobao', account_id: account.id, product_ids_json: JSON.stringify(Array.from({ length: 1001 }, (_, index) => `product_${index}`)) })
+    const tooMany = await call(5, 'campaign.batch.create', { brand_id: `brand_${workspaceId}`, platform: 'taobao', account_id: account.id, product_ids_json: JSON.stringify(Array.from({ length: 51 }, (_, index) => `product_${index}`)) })
     expect(tooMany.error?.code).toBe('CAMPAIGN_PRODUCT_LIMIT')
   })
 
