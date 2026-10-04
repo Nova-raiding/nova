@@ -10677,7 +10677,7 @@ function multimodalMcpRuntime(req: IncomingMessage, workspaceId: string, result:
     videoGenerator, header, isExemptUnboundImageCandidateProduct, enforceAssetAccess,
     requireApprovedAssetForImageGeneration, recordActionSettlement, randomUUID,
     assertVideoProviderJobScope, archiveCompletedVideo, modelSettlementDomainError,
-    publicImageJob,
+    publicImageJob, contentExecutionEvidence,
   }
 }
 export type MultimodalMcpRuntime = ReturnType<typeof multimodalMcpRuntime>
