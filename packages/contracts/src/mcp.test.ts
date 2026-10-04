@@ -374,7 +374,7 @@ describe('MCP method contract', () => {
     expect(MCP_METHOD_SCHEMAS['content.versions'].properties.limit).toEqual({ type: 'string', pattern: '^(?:[1-9]|[1-9][0-9]|100)$', maxLength: 3 })
     expect(MCP_METHOD_SCHEMAS['content.versions'].properties.offset).toEqual({ type: 'string', pattern: '^(?:0|[1-9][0-9]*)$', maxLength: 10 })
     expect(MCP_METHOD_SCHEMAS['campaign.batch.create'].required).toEqual(['brand_id'])
-    expect(MCP_METHOD_SCHEMAS['campaign.batch.create'].properties.product_ids_json).toMatchObject({ type: 'string', description: expect.stringContaining('1 至 50') })
+    expect(MCP_METHOD_SCHEMAS['campaign.batch.create'].properties.product_ids_json).toMatchObject({ type: 'string', description: expect.stringContaining('1 至 1000') })
     expect(MCP_METHOD_SCHEMAS['campaign.batch.generate'].properties.request_text).toMatchObject({ type: 'string', description: expect.stringContaining('素材类型') })
     expect(MCP_METHOD_SCHEMAS['catalog.import.batch'].requiredAnyOf).toEqual(['products_json', 'source_asset_id'])
     expect(MCP_METHOD_SCHEMAS['ops.user.detail'].required).toBeUndefined()
