@@ -175,6 +175,8 @@ describe('release manifest production gate', () => {
       'packages/persistence/src/migrations/256_asset_lifecycle.sql',
       'packages/persistence/src/migrations/257_asset_snapshot_lifecycle_guard.sql',
       'packages/persistence/src/migration-257.test.ts',
+      'packages/persistence/src/migrations/258_knowledge_generation_claim_usage_evidence.sql',
+      'packages/persistence/src/migration-258.test.ts',
       'infra/scripts/render-ecs-production-compose.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/inspect-payment-gateway-receipt-runtime.mjs',

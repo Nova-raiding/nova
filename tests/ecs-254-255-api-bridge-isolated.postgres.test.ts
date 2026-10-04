@@ -90,7 +90,7 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
     let child: ChildProcess | undefined
     try {
       const migrations = await loadMigrations()
-      expect(migrations.at(-1)?.version).toBe(257)
+      expect(migrations.at(-1)?.version).toBe(258)
       const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       const databaseGrant = /ON DATABASE merchant\b/gu
       const grantCount = [...roleSql.matchAll(databaseGrant)].length
@@ -385,6 +385,16 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       )
       expect(lifecycleAfter257Bridge.rows).toEqual(before257.rows)
       await stopApi(child); child = undefined
+
+      // Migration 258 is the current full-candidate tail. Apply it before
+      // starting normal API mode so readiness is checked against the same
+      // complete chain declared by release metadata; the 254→257 bridge
+      // assertions above remain isolated to their reviewed prefixes.
+      expect(await new MigrationRunner(admin, migrations).run()).toEqual([258])
+      await admin.query(isolatedRoleSql)
+      const history258 = (await admin.query<{ version: number; name: string; checksum: string }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version')).rows
+      expect(history258).toHaveLength(258)
+      expect(() => verifyAppliedMigrations(history258, migrations)).not.toThrow()
 
       const headers = { authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId }
       const lifecycleHeaders = { ...headers, 'content-type': 'application/json' }

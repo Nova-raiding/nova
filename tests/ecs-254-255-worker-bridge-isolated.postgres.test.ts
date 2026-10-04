@@ -113,7 +113,7 @@ describe('254–257 worker bridge on an owned PostgreSQL 17 fixture', () => {
     const app = new Pool({ connectionString: appUrl.toString() })
     try {
       const migrations = await loadMigrations()
-      expect(migrations.at(-1)?.version).toBe(257)
+      expect(migrations.at(-1)?.version).toBe(258)
       const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       const databaseGrant = /ON DATABASE merchant\b/gu
       expect([...roleSql.matchAll(databaseGrant)]).toHaveLength(3)

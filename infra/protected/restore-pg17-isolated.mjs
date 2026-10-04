@@ -118,6 +118,7 @@ export function validateMigrationAssets(names, expectedMigrationVersion) {
   if (expectedMigrationVersion >= 245) requireValue(ordered[242] === '243_local_plugin_connection_requests.sql' && ordered[243] === '244_local_plugin_install_instances.sql' && ordered[244] === '245_local_plugin_authorized_timestamp.sql', 'candidate 243/244/245 migration identity mismatch')
   if (expectedMigrationVersion >= 256) requireValue(ordered[255] === '256_asset_lifecycle.sql', 'candidate migration 256 identity mismatch')
   if (expectedMigrationVersion >= 257) requireValue(ordered[256] === '257_asset_snapshot_lifecycle_guard.sql', 'candidate migration 257 identity mismatch')
+  if (expectedMigrationVersion >= 258) requireValue(ordered[257] === '258_knowledge_generation_claim_usage_evidence.sql', 'candidate migration 258 identity mismatch')
 }
 async function hashFile(path, maxBytes) {
   const st = statSync(path); requireValue(st.size > 0 && st.size <= maxBytes, 'input size is invalid')

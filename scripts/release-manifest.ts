@@ -97,6 +97,8 @@ export function buildReleaseManifest(input: {
     resolve(root, 'packages/persistence/src/migrations/256_asset_lifecycle.sql'),
     resolve(root, 'packages/persistence/src/migrations/257_asset_snapshot_lifecycle_guard.sql'),
     resolve(root, 'packages/persistence/src/migration-257.test.ts'),
+    resolve(root, 'packages/persistence/src/migrations/258_knowledge_generation_claim_usage_evidence.sql'),
+    resolve(root, 'packages/persistence/src/migration-258.test.ts'),
     resolve(root, 'apps/api/src/safe-evidence-file.ts'),
     resolve(root, 'apps/api/src/safe-evidence-file.test.ts'),
     resolve(root, 'infra/protected/ecs-bridge-255-core.mjs'),
