@@ -2841,7 +2841,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
       }
     } catch (error) {
       if (result.content !== undefined) throw Object.assign(error instanceof Error ? error : new Error('generation result delivery or settlement is pending'), { code: 'MODEL_USAGE_SETTLEMENT_PENDING', providerSucceeded: true, reconciliationRequired: true })
-      throw error
+      throw generationResultCallbackFailure(error)
     } finally {
       // Keep the in-memory provider evidence when delivery or settlement fails.
       // The durable outbox retry can then retry this callback without losing
@@ -3208,6 +3208,23 @@ function sleep(ms: number): Promise<void> { return new Promise(resolve => setTim
 
 export function rethrowPollFailureInOnceMode(once: boolean, error: unknown): void {
   if (once) throw error
+}
+
+/** Keep terminal generation callback and point-settlement failures available
+ * for reconciliation instead of dead-lettering the outbox event. */
+export function generationResultCallbackFailure(error: unknown): Error & {
+  code: 'CREATIVE_POINT_SETTLEMENT_PENDING'
+  retryable: false
+  unknown: true
+  reconciliationRequired: true
+} {
+  const cause = error instanceof Error ? error : new Error('generation result delivery or settlement is pending')
+  return Object.assign(cause, {
+    code: 'CREATIVE_POINT_SETTLEMENT_PENDING' as const,
+    retryable: false as const,
+    unknown: true as const,
+    reconciliationRequired: true as const,
+  })
 }
 
 function serializeError(error: unknown): { message: string; code?: string } {
