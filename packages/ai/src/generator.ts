@@ -667,8 +667,15 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
             : `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。重新返回完整 JSON，逐字段核对初始消息中的 outputShape。尤其每个模块必须有 factSourceIds、decisionContract.claim.factSourceIds、decisionContract.visualContract.requiredElements、decisionContract.priority 和 decisionContract.optional；claim.validUntil 只在输入事实有真实有效期时填写，不得虚构时间。仅使用输入 confirmedFactSourceIds 中的真实 ID；缺少来源则删除该模块，不能复制 outputShape 的示意值。只修复结构和缺失字段，不增加未确认事实。evidence.type 仅允许 real_image、parameter、test_report、comparison、usage_result、manual_review；evidence.status 仅允许 verified、missing、expired、conflict；product.id 不是 SKU ID，claim.skuIds 和 referencedSkuIds 只能使用 product.skuIds 中的值。不要复述上一份响应。`
           const nextRepairMessages = [...repairMessages, repairMessage]
           const assistantMessage = readAssistantMessage(payload)
-          const messagesForRepair = assistantMessage ? [...messages, assistantMessage, { role: 'user', content: repairMessage }] : [...messages, { role: 'user', content: repairMessage }]
-          if (estimateRequestTokensFromPrompt(initialPrompt, nextRepairMessages, assistantMessage) > (this.options.maxInputTokens ?? 4_000)) {
+          // Candidate outputs are deliberately small and do not need the
+          // provider's opaque reasoning state for a repair. Keeping the full
+          // malformed assistant response here can consume the entire fixed
+          // input budget before the repair instruction is sent. Formal
+          // content keeps the prior assistant message because some reasoning
+          // relays require that continuation state.
+          const repairAssistantMessage = boundedInput.candidateOnly ? undefined : assistantMessage
+          const messagesForRepair = repairAssistantMessage ? [...messages, repairAssistantMessage, { role: 'user', content: repairMessage }] : [...messages, { role: 'user', content: repairMessage }]
+          if (estimateRequestTokensFromPrompt(initialPrompt, nextRepairMessages, repairAssistantMessage) > (this.options.maxInputTokens ?? 4_000)) {
             if (successfulProviderAttempt && input.settleProviderAttempt) await afterProviderClaim(() => input.settleProviderAttempt!(successfulProviderAttempt!.proof, successfulProviderAttempt!.claim, 'completed'))
             throw new Error('CONTEXT_BUDGET_EXCEEDED: 累计结构修复消息加入后超过输入 Token 预算')
           }
