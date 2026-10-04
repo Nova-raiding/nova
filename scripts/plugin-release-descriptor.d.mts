@@ -16,11 +16,17 @@ export interface PluginReleaseDescriptor {
   signature_base64: string
 }
 
+/** Candidate identity fields are parsed and validated by the signing helper. */
+export type CandidateIdentity = Readonly<Record<string, string>>
+
+export function readCandidateIdentity(path: string): CandidateIdentity
+
 export function verifyPluginReleaseDescriptor(document: PluginReleaseDescriptor, options: {
   publicKeyPem: string | Buffer
   keyId: string
   releaseId?: string
   gitSha?: string
+  candidateIdentityPath?: string
   platform?: string
   mcpMethodsSha256?: string
   packagePath?: string
