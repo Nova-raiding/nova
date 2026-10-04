@@ -13,6 +13,17 @@ function testReleaseId(root: string): string {
 }
 
 describe('release manifest', () => {
+  it('rejects a hash-shaped release ID that does not match the resolved Git SHA', () => {
+    const root = process.cwd()
+    const gitSha = releaseGitShaForRoot(root, 'release-1')
+    expect(gitSha).toMatch(/^[a-f0-9]{40}$/u)
+    const wrongPrefix = gitSha.startsWith('deadbee') ? 'cafebab' : 'deadbee'
+
+    expect(releaseGitShaForRoot(root, `release-${wrongPrefix}`)).toBe('')
+    expect(releaseGitShaForRoot(root, 'release-20260923')).toBe(gitSha)
+    expect(releaseGitShaForRoot(root, 'release-1')).toBe(gitSha)
+  })
+
   it('binds the plugin, skill, MCP and evidence references to one release', () => {
     const pluginVersion = (JSON.parse(readFileSync('apps/plugin/package.json', 'utf8')) as { version: string }).version
     const repositoryVersion = readFileSync('VERSION', 'utf8').trim()
