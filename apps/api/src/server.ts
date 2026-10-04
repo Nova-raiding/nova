@@ -534,6 +534,20 @@ let paymentProvider = createPaymentProviderFromEnv()
 const fixturePaymentProvider = new FixturePaymentProvider()
 
 type PaymentChannel = 'alipay' | 'wechat'
+export type DeploymentMode = 'lean' | 'full'
+export function deploymentMode(source: NodeJS.ProcessEnv = process.env): DeploymentMode | undefined {
+  const value = source.DEPLOYMENT_MODE?.trim().toLowerCase()
+  return value === 'lean' || value === 'full' ? value : undefined
+}
+export function paymentRuntimeMode(source: NodeJS.ProcessEnv = process.env): 'provider' | 'manual_transfer' | 'fixture' {
+  const value = source.PAYMENT_MODE?.trim().toLowerCase()
+  if (value === 'provider') return 'provider'
+  if (value === 'manual_transfer' || source.COMMERCIAL_PAYMENT_PROVIDER?.trim().toLowerCase() === 'manual_transfer') return 'manual_transfer'
+  return 'fixture'
+}
+export function isManualTransferPayment(source: NodeJS.ProcessEnv = process.env): boolean {
+  return deploymentMode(source) === 'lean' && paymentRuntimeMode(source) === 'manual_transfer'
+}
 export function paymentChannelDisabled(channel: PaymentChannel, source: NodeJS.ProcessEnv = process.env): boolean {
   return channel === 'wechat' && (source.NODE_ENV === 'production' || source.PAYMENT_ALIPAY_ONLY === 'true')
 }
@@ -549,7 +563,8 @@ function paymentChannel(params: Record<string, unknown>): PaymentChannel {
 }
 
 async function createSubscriptionCheckout(input: { channel: PaymentChannel; orderId: string; idempotencyKey: string; workspaceId: string; amountFen: number; kind: 'subscriptions' }) {
-  const providerMode = process.env.PAYMENT_MODE === 'provider'
+  const providerMode = paymentRuntimeMode() === 'provider'
+  if (isManualTransferPayment()) throw new DomainError('PAYMENT_PROVIDER_DISABLED_MANUAL_TRANSFER', '当前为 lean/manual_transfer，订阅升级必须由运营人工确认收款', 409, { deployment_mode: 'lean', payment_mode: 'manual_transfer' })
   if (!providerMode) {
     if (!fixturePaymentAllowed()) throw new DomainError('PAYMENT_NOT_CONFIGURED', '本地 fixture 支付未显式开启', 503)
     return fixturePaymentProvider.createCheckout({ ...input, callbackUrl: `fixture://${input.workspaceId}/callback`, description: `merchant-marketing 订阅订单 ${input.orderId}` })
@@ -2080,14 +2095,16 @@ export function paymentCapabilityStatus(input: {
   supportedChannels?: readonly PaymentChannel[]
   channelReadiness?: Partial<Record<PaymentChannel, { ready: boolean; reasons: string[] }>>
 }) {
+  const manualTransfer = input.mode === 'manual_transfer' || (input.mode === 'lean' && !input.providerReady)
   const providerConfigured = input.mode === 'provider' && input.providerReady
   // `configured` is intentionally false in fixture mode.  A complete set of
   // provider-shaped env vars must not make a fixture runtime look chargeable.
-  const configured = providerConfigured && !input.fixtureMode
-  const productionEnabled = providerConfigured && input.production && !input.fixtureMode && input.productionGate
+  const configured = manualTransfer ? input.production && !input.fixtureMode : providerConfigured && !input.fixtureMode
+  const productionEnabled = manualTransfer ? configured && input.productionGate : providerConfigured && input.production && !input.fixtureMode && input.productionGate
   const reasons = [...(input.reasons ?? [])]
   if (input.fixtureMode && providerConfigured) reasons.push('payment_fixture_mode_blocked')
   if (providerConfigured && !productionEnabled && !input.fixtureMode) reasons.push('payment_production_gate_blocked')
+  if (manualTransfer && !productionEnabled && !input.fixtureMode) reasons.push('payment_production_gate_blocked')
   return {
     provider_configured: providerConfigured,
     configured,
@@ -2104,8 +2121,9 @@ export function paymentCapabilityStatus(input: {
 
 function requireProviderPaymentConfigured() {
   if (!isProduction()) return
+  if (isManualTransferPayment()) throw new DomainError('PAYMENT_PROVIDER_DISABLED_MANUAL_TRANSFER', '当前为 lean/manual_transfer，provider checkout/query/refund/callback 已禁用', 409, { deployment_mode: 'lean', payment_mode: 'manual_transfer' })
   const readiness = paymentProviderReadiness()
-  if (process.env.PAYMENT_MODE !== 'provider' || !readiness.ready) throw new DomainError('PAYMENT_NOT_CONFIGURED', `生产环境支付 provider 未就绪：${readiness.reasons.join(', ')}`, 503, { reasons: readiness.reasons })
+  if (paymentRuntimeMode() !== 'provider' || !readiness.ready) throw new DomainError('PAYMENT_NOT_CONFIGURED', `生产环境支付 provider 未就绪：${readiness.reasons.join(', ')}`, 503, { reasons: readiness.reasons })
 }
 
 /** Test-only seam for exercising the HTTP authorization/orchestration boundary
@@ -7258,8 +7276,15 @@ function productionAssetScannerReadiness(source: NodeJS.ProcessEnv): ProductionR
 }
 
 function productionPaymentReadiness(source: NodeJS.ProcessEnv): ProductionReadinessGate {
+  if (deploymentMode(source) === 'lean' && paymentRuntimeMode(source) === 'manual_transfer') {
+    const reasons: string[] = []
+    if (source.COMMERCIAL_PAYMENT_PROVIDER?.trim().toLowerCase() !== 'manual_transfer') reasons.push('commercial_payment_provider_must_be_manual_transfer')
+    if (source.PAYMENT_RECONCILIATION_ENABLED === 'true') reasons.push('reconciliation_must_be_disabled_for_manual_transfer')
+    if (source.PAYMENT_REFUND_ENABLED === 'true') reasons.push('refund_must_be_disabled_for_manual_transfer')
+    return { ready: reasons.length === 0, reasons }
+  }
   const readiness = paymentProviderReadiness(source)
-  const reasons = source.PAYMENT_MODE === 'provider' ? [...readiness.reasons] : ['payment_mode_must_be_provider', ...readiness.reasons]
+  const reasons = source.PAYMENT_MODE === 'provider' && deploymentMode(source) !== 'lean' ? [...readiness.reasons] : ['payment_mode_must_be_provider_or_manual_transfer', ...readiness.reasons]
   return { ready: reasons.length === 0, reasons }
 }
 
@@ -7455,6 +7480,7 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
     isProduction,
     fixtureMode,
     paymentProviderReadiness,
+    productionPaymentReadiness: () => productionPaymentReadiness(process.env),
     imageFactsExtractor,
     imageEditGenerator,
     videoGenerator,
@@ -11384,7 +11410,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         }
         await recordOperationAudit({ workspaceId, actorId, action: 'subscription.order.create', resourceType: 'subscription_order', resourceId: order.orderNo, before: {}, after: order as unknown as Record<string, unknown>, reason: '创建订阅订单' })
         await recordGrowthEvent({ workspaceId, eventType: 'subscription.order.created', sourceChannel: order.sourceChannel, actorId, planCode: order.planCode, metadata: { orderNo: order.orderNo, paymentAmountCny: order.paymentAmountCny, couponCode: order.couponCode, addonCodes: order.addonCodes } })
-        return { ...order, ...(checkout.providerOrderId ? { provider_order_id: checkout.providerOrderId } : {}), ...(checkout.expiresAt ? { expires_at: checkout.expiresAt } : {}), warning: process.env.PAYMENT_MODE === 'provider' ? '请完成支付，系统只接受支付服务商签名回调后激活订阅' : '当前为本地 fixture，不会产生真实扣款' }
+        return { ...order, ...(checkout.providerOrderId ? { provider_order_id: checkout.providerOrderId } : {}), ...(checkout.expiresAt ? { expires_at: checkout.expiresAt } : {}), warning: process.env.PAYMENT_MODE === 'provider' ? '请完成支付，系统只接受支付服务商签名回调后激活订阅' : process.env.PAYMENT_MODE === 'manual_transfer' ? '当前为人工转账，需由运营人工确认收款后激活订阅' : '当前为本地 fixture，不会产生真实扣款' }
       })()
       subscriptionCreationInFlight.set(inFlightKey, { intent, promise })
       try { return result(await promise) } finally { subscriptionCreationInFlight.delete(inFlightKey) }
@@ -12976,6 +13002,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         return result(await inFlight.promise)
       }
       const providerMode = process.env.PAYMENT_MODE === 'provider'
+      if (isManualTransferPayment()) throw new DomainError('PAYMENT_PROVIDER_DISABLED_MANUAL_TRANSFER', '当前为 lean/manual_transfer，钱包充值 provider checkout 已禁用；请走运营人工收款确认流程', 409, { deployment_mode: 'lean', payment_mode: 'manual_transfer' })
       if (providerMode) requirePaymentChannelReady(channel)
       const creation = (async () => {
       if (persistence.billing) {
@@ -13091,6 +13118,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'billing.refund': {
       const actorId = requireOperationsRole(req, ['platform_admin', 'ops_admin', 'finance_ops', 'platform_ops'])
+      if (isManualTransferPayment()) throw new DomainError('PAYMENT_PROVIDER_DISABLED_MANUAL_TRANSFER', '当前为 lean/manual_transfer，provider refund 已禁用；人工收款不支持自动退款', 409, { deployment_mode: 'lean', payment_mode: 'manual_transfer' })
       const orderId = required(params, 'order_id')
       const reason = required(params, 'reason')
       await persistenceReady

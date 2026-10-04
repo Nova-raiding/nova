@@ -26,8 +26,17 @@ yaml_validator=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/validate-production-
 # Every required setting must be an actual YAML key. The value checks below
 # intentionally remain dependency-free, but an unanchored grep can otherwise
 # mistake text such as `note: "plugin_enabled: true"` for configuration.
-required_keys='plugin_enabled merchant_bearer_hostname auth_enforcement session_id_hash_secret_ref jd_auth_enabled jd_read_enabled jd_write_enabled taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled object_storage_versioning lifecycle_policy_ref asset_quarantine_retention_days asset_clean_retention_days deletion_request_grace_days backup_retention_days alert_notifications_enabled point_in_time_recovery_enabled database_pooler_enabled database_max_backend_connections database_connection_utilization_alert_percent secret_provider worker_api_credentials_ref worker_sync_api_token_ref worker_sync_api_signing_secret_ref worker_generation_api_token_ref worker_generation_api_signing_secret_ref worker_publish_api_token_ref worker_publish_api_signing_secret_ref worker_reconcile_api_token_ref worker_reconcile_api_signing_secret_ref worker_automation_api_token_ref worker_automation_api_signing_secret_ref merchant_ui_api_token_ref merchant_ui_workspace_id_ref payment_mode payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url payment_provider_api_key_ref payment_provider_merchant_id payment_callback_base_url payment_callback_secret_ref payment_reconciliation_enabled payment_refund_enabled commercial_payment_provider model_relay_base_url model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model knowledge_vector_index_enabled approved_requests_per_minute approved_tokens_per_minute maximum_task_cost_cny object_storage_bucket object_storage_region object_storage_endpoint asset_display_base_url asset_display_url_signing_secret_ref image_artifact_allowed_hosts video_artifact_allowed_hosts platform_rule_sync_manifest_url platform_rule_sync_signing_secret_ref platform_rule_sync_interval_hours asset_scanner_mode allow_local_asset_scan_fixture asset_scanner_api_token_ref asset_scanner_workspace_signing_secret_ref asset_scan_receipt_key_id asset_scan_receipt_private_key_ref asset_scan_policy_version clamav_image_digest clamav_signature_max_age_minutes clamav_max_file_bytes require_approved_asset_for_generation'
+required_keys='plugin_enabled deployment_mode merchant_bearer_hostname auth_enforcement session_id_hash_secret_ref jd_auth_enabled jd_read_enabled jd_write_enabled taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled object_storage_versioning lifecycle_policy_ref asset_quarantine_retention_days asset_clean_retention_days deletion_request_grace_days backup_retention_days alert_notifications_enabled point_in_time_recovery_enabled database_pooler_enabled database_max_backend_connections database_connection_utilization_alert_percent secret_provider worker_api_credentials_ref worker_sync_api_token_ref worker_sync_api_signing_secret_ref worker_generation_api_token_ref worker_generation_api_signing_secret_ref worker_publish_api_token_ref worker_publish_api_signing_secret_ref worker_reconcile_api_token_ref worker_reconcile_api_signing_secret_ref worker_automation_api_token_ref worker_automation_api_signing_secret_ref merchant_ui_api_token_ref merchant_ui_workspace_id_ref payment_mode payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url payment_provider_api_key_ref payment_provider_merchant_id payment_callback_base_url payment_callback_secret_ref payment_reconciliation_enabled payment_refund_enabled commercial_payment_provider model_relay_base_url model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model knowledge_vector_index_enabled approved_requests_per_minute approved_tokens_per_minute maximum_task_cost_cny object_storage_bucket object_storage_region object_storage_endpoint asset_display_base_url asset_display_url_signing_secret_ref image_artifact_allowed_hosts video_artifact_allowed_hosts platform_rule_sync_manifest_url platform_rule_sync_signing_secret_ref platform_rule_sync_interval_hours asset_scanner_mode allow_local_asset_scan_fixture asset_scanner_api_token_ref asset_scanner_workspace_signing_secret_ref asset_scan_receipt_key_id asset_scan_receipt_private_key_ref asset_scan_policy_version clamav_image_digest clamav_signature_max_age_minutes clamav_max_file_bytes require_approved_asset_for_generation'
 required_keys="$required_keys mcp_authorization_mode durable_platform_assignments_required platform_operations_mode"
+deployment_mode=$(ruby -ryaml -e 'v=YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false) || {}; puts(v.is_a?(Hash) ? v["deployment_mode"].to_s : "")' "$rendered_config_path")
+case "$deployment_mode" in
+  lean)
+    required_keys=$(printf '%s\n' "$required_keys" | awk '{for(i=1;i<=NF;i++) if ($i !~ /^(payment_provider_adapters|payment_checkout_base_url|payment_provider_checkout_api_url|payment_provider_query_api_url|payment_provider_refund_query_api_url|payment_provider_refund_api_url|payment_provider_api_key_ref|payment_provider_merchant_id|payment_callback_base_url|payment_callback_secret_ref)$/) printf "%s ", $i; print ""}')
+    ;;
+  full) ;;
+  '') deployment_mode=full ;;
+  *) echo 'deployment_mode must be explicit lean or full' >&2; exit 1 ;;
+esac
 REQUIRED_PRODUCTION_CONFIG_KEYS="$required_keys" ruby "$yaml_validator" "$rendered_config_path"
 filtered_config_path=$(mktemp "${TMPDIR:-/tmp}/merchant-production-config.XXXXXX")
 trap 'rm -f -- "$filtered_config_path"' EXIT
@@ -210,7 +219,8 @@ if [ "$scanner_api_ref" = "$scanner_signing_ref" ] || printf '%s' "$worker_refs"
   echo 'asset scanner credentials must be isolated from all worker role credentials' >&2
   exit 1
 fi
-grep -Eq '^[[:space:]]*payment_mode:[[:space:]]*"?provider"?[[:space:]]*$' "$config_path" || { echo 'payment_mode must be provider in production' >&2; exit 1; }
+if [ "$deployment_mode" = full ]; then
+grep -Eq '^[[:space:]]*payment_mode:[[:space:]]*"?provider"?[[:space:]]*$' "$config_path" || { echo 'payment_mode must be provider in full production mode' >&2; exit 1; }
 grep -Eq 'payment_provider_adapters:[[:space:]]*[^[:space:]]+' "$config_path" || { echo 'payment_provider_adapters must include configured provider adapters' >&2; exit 1; }
 grep -Eq 'payment_checkout_base_url:[[:space:]]*https://' "$config_path" || { echo 'payment_checkout_base_url must be HTTPS' >&2; exit 1; }
 grep -Eq 'payment_provider_checkout_api_url:[[:space:]]*https://' "$config_path" || { echo 'payment_provider_checkout_api_url must be HTTPS' >&2; exit 1; }
@@ -231,6 +241,16 @@ grep -Eq 'payment_callback_base_url:[[:space:]]*https://' "$config_path" || { ec
 grep -Eq "payment_callback_secret_ref:[[:space:]]*[^\"' ]+" "$config_path" || { echo 'payment_callback_secret_ref must be configured' >&2; exit 1; }
 grep -Eq '^[[:space:]]*payment_reconciliation_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'payment reconciliation must be enabled' >&2; exit 1; }
 grep -Eq '^[[:space:]]*payment_refund_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'payment refund must be enabled' >&2; exit 1; }
+else
+  grep -Eq '^[[:space:]]*payment_mode:[[:space:]]*"?manual_transfer"?[[:space:]]*$' "$config_path" || { echo 'payment_mode must be manual_transfer in lean production mode' >&2; exit 1; }
+  grep -Eq '^[[:space:]]*commercial_payment_provider:[[:space:]]*"?manual_transfer"?[[:space:]]*$' "$config_path" || { echo 'commercial_payment_provider must be manual_transfer in lean production mode' >&2; exit 1; }
+  grep -Eq '^[[:space:]]*payment_reconciliation_enabled:[[:space:]]*false[[:space:]]*$' "$config_path" || { echo 'payment reconciliation must be disabled in lean production mode' >&2; exit 1; }
+  grep -Eq '^[[:space:]]*payment_refund_enabled:[[:space:]]*false[[:space:]]*$' "$config_path" || { echo 'payment refund must be disabled in lean production mode' >&2; exit 1; }
+  if grep -Eq '^[[:space:]]*payment_(provider_adapters|checkout_base_url|provider_checkout_api_url|provider_query_api_url|provider_refund_query_api_url|provider_refund_api_url|provider_api_key_ref|provider_merchant_id|callback_base_url|callback_secret_ref):[[:space:]]*[^[:space:]]+' "$config_path"; then
+    echo 'provider-only payment settings must be omitted in lean production mode' >&2
+    exit 1
+  fi
+fi
 # The V2 commercial order channel. `commercialPaymentProvider()` reads this
 # before the order row is written, so an unset value makes
 # `commercial.order.create` fail closed with 503 and leaves the operator's

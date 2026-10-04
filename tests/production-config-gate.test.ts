@@ -28,6 +28,7 @@ function config(overrides: Record<string, boolean> = {}) {
     'auth_enforcement: strict',
     'mcp_authorization_mode: enforce',
     'durable_platform_assignments_required: true',
+    'deployment_mode: full',
     'platform_operations_mode: manual',
     'require_approved_asset_for_generation: true',
     'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
@@ -304,6 +305,31 @@ describe('production config gate', () => {
       expect(() => run(config().replace('https://pay.yxsona.com/v1/query', `https://${hostname}/v1/query`))()).toThrow(/reserved placeholder hosts/)
     }
     expect(() => run(config().replace('payment_provider_merchant_id: 2088123456789012', 'payment_provider_merchant_id: merchant-example'))()).toThrow(/placeholder value/)
+  })
+
+  it('accepts lean manual_transfer without provider-only credentials', () => {
+    const lean = config()
+      .replace('deployment_mode: full', 'deployment_mode: lean')
+      .replace('payment_mode: provider', 'payment_mode: manual_transfer')
+      .replace('payment_reconciliation_enabled: true', 'payment_reconciliation_enabled: false')
+      .replace('payment_refund_enabled: true', 'payment_refund_enabled: false')
+      .replace('commercial_payment_provider: alipay', 'commercial_payment_provider: manual_transfer')
+      .replace(/^payment_provider_adapters:.*\n/m, '')
+      .replace(/^payment_checkout_base_url:.*\n/m, '')
+      .replace(/^payment_provider_(checkout|query|refund_query|refund)_api_url:.*\n/gm, '')
+      .replace(/^payment_provider_(api_key_ref|merchant_id):.*\n/gm, '')
+      .replace(/^payment_callback_(base_url|secret_ref):.*\n/gm, '')
+    expect(run(lean)()).toContain('production config gate passed')
+  })
+
+  it('rejects provider-only payment settings in lean mode', () => {
+    const lean = config()
+      .replace('deployment_mode: full', 'deployment_mode: lean')
+      .replace('payment_mode: provider', 'payment_mode: manual_transfer')
+      .replace('payment_reconciliation_enabled: true', 'payment_reconciliation_enabled: false')
+      .replace('payment_refund_enabled: true', 'payment_refund_enabled: false')
+      .replace('commercial_payment_provider: alipay', 'commercial_payment_provider: manual_transfer')
+    expect(() => run(lean)()).toThrow(/provider-only|manual_transfer/)
   })
 
   it('does not echo rendered secret-bearing lines when rejecting config', () => {

@@ -5,6 +5,7 @@ type Service = { environment?: Record<string, string> }
 type ComposeConfig = { services: Record<string, Service> }
 
 const paymentEnvironment = {
+  DEPLOYMENT_MODE: 'full',
   PAYMENT_MODE: 'provider',
   PAYMENT_PROVIDER_ADAPTERS: 'alipay',
   PAYMENT_CHECKOUT_BASE_URL: 'https://pay.example.test',
@@ -76,17 +77,8 @@ const paymentEnvironment = {
 }
 
 const requiredPaymentKeys = [
+  'DEPLOYMENT_MODE',
   'PAYMENT_MODE',
-  'PAYMENT_PROVIDER_ADAPTERS',
-  'PAYMENT_CHECKOUT_BASE_URL',
-  'PAYMENT_PROVIDER_CHECKOUT_API_URL',
-  'PAYMENT_PROVIDER_QUERY_API_URL',
-  'PAYMENT_PROVIDER_REFUND_QUERY_API_URL',
-  'PAYMENT_PROVIDER_REFUND_API_URL',
-  'PAYMENT_PROVIDER_API_KEY',
-  'PAYMENT_PROVIDER_MERCHANT_ID',
-  'PAYMENT_CALLBACK_BASE_URL',
-  'PAYMENT_CALLBACK_SECRET',
   'PAYMENT_RECONCILIATION_ENABLED',
   'PAYMENT_REFUND_ENABLED',
 ] as const

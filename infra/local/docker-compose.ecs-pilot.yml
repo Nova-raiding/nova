@@ -179,6 +179,9 @@ services:
       retries: 5
 
   payment-gateway:
+    # Lean/manual_transfer keeps this sidecar inert: the API rejects every
+    # provider checkout/query/refund/callback before dispatch. Full/provider
+    # deployments provide the gateway credentials and health contract.
     user: "100:101"
     read_only: true
     security_opt: [no-new-privileges:true]
@@ -200,11 +203,11 @@ services:
       # The API and gateway must use the same bearer credential. A second
       # independently configured name can render successfully while every
       # checkout fails with 401, so keep one canonical secret at deployment.
-      PAYMENT_GATEWAY_API_KEY: ${PAYMENT_PROVIDER_API_KEY:?PAYMENT_PROVIDER_API_KEY is required}
-      PAYMENT_CALLBACK_SECRET: ${PAYMENT_CALLBACK_SECRET:?PAYMENT_CALLBACK_SECRET is required}
+      PAYMENT_GATEWAY_API_KEY: ${PAYMENT_PROVIDER_API_KEY:-}
+      PAYMENT_CALLBACK_SECRET: ${PAYMENT_CALLBACK_SECRET:-}
       PAYMENT_API_BASE_URL: ${PAYMENT_API_BASE_URL:-http://api:8787}
       PAYMENT_PROTECTED_RECEIPT_DIR: /run/payment-receipts
-      ALIPAY_APP_ID: ${ALIPAY_APP_ID:?ALIPAY_APP_ID is required}
+      ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
       ALIPAY_REQUEST_TIMEOUT_MS: ${ALIPAY_REQUEST_TIMEOUT_MS:-10000}
       ALIPAY_APP_PRIVATE_KEY_PATH: /run/secrets/alipay_app_private_key
       ALIPAY_PUBLIC_KEY_PATH: /run/secrets/alipay_public_key
@@ -214,7 +217,7 @@ services:
       # Provision this host directory as UID 100, mode 0700 before release.
       # The gateway refuses callbacks if receipt writes cannot be durable.
       - type: bind
-        source: ${PAYMENT_PROTECTED_RECEIPT_HOST_DIR:?PAYMENT_PROTECTED_RECEIPT_HOST_DIR is required}
+        source: ${PAYMENT_PROTECTED_RECEIPT_HOST_DIR:-/var/lib/merchant-payment-receipts}
         target: /run/payment-receipts
         bind:
           create_host_path: false
@@ -358,17 +361,18 @@ services:
       OPS_ALERT_WEBHOOK_URL: ""
       OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: ""
       OPS_ALERT_WEBHOOK_SECRET_FILE: ""
-      PAYMENT_MODE: ${PAYMENT_MODE:?PAYMENT_MODE=provider is required for ECS}
-      PAYMENT_PROVIDER_ADAPTERS: ${PAYMENT_PROVIDER_ADAPTERS:?PAYMENT_PROVIDER_ADAPTERS=alipay is required}
-      PAYMENT_CHECKOUT_BASE_URL: ${PAYMENT_CHECKOUT_BASE_URL:?public HTTPS payment checkout base URL is required}
-      PAYMENT_PROVIDER_CHECKOUT_API_URL: ${PAYMENT_PROVIDER_CHECKOUT_API_URL:?public HTTPS payment gateway checkout URL is required}
-      PAYMENT_PROVIDER_QUERY_API_URL: ${PAYMENT_PROVIDER_QUERY_API_URL:?public HTTPS payment gateway query URL is required}
-      PAYMENT_PROVIDER_REFUND_QUERY_API_URL: ${PAYMENT_PROVIDER_REFUND_QUERY_API_URL:?public HTTPS payment gateway refund query URL is required}
-      PAYMENT_PROVIDER_REFUND_API_URL: ${PAYMENT_PROVIDER_REFUND_API_URL:?public HTTPS payment gateway refund URL is required}
-      PAYMENT_PROVIDER_API_KEY: ${PAYMENT_PROVIDER_API_KEY:?PAYMENT_PROVIDER_API_KEY is required}
-      PAYMENT_PROVIDER_MERCHANT_ID: ${PAYMENT_PROVIDER_MERCHANT_ID:?PAYMENT_PROVIDER_MERCHANT_ID is required}
-      PAYMENT_CALLBACK_BASE_URL: ${PAYMENT_CALLBACK_BASE_URL:?public HTTPS payment callback base URL is required}
-      PAYMENT_CALLBACK_SECRET: ${PAYMENT_CALLBACK_SECRET:?PAYMENT_CALLBACK_SECRET is required}
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:?DEPLOYMENT_MODE=lean or full is required for ECS}
+      PAYMENT_MODE: ${PAYMENT_MODE:?PAYMENT_MODE=provider or manual_transfer is required for ECS}
+      PAYMENT_PROVIDER_ADAPTERS: ${PAYMENT_PROVIDER_ADAPTERS:-}
+      PAYMENT_CHECKOUT_BASE_URL: ${PAYMENT_CHECKOUT_BASE_URL:-}
+      PAYMENT_PROVIDER_CHECKOUT_API_URL: ${PAYMENT_PROVIDER_CHECKOUT_API_URL:-}
+      PAYMENT_PROVIDER_QUERY_API_URL: ${PAYMENT_PROVIDER_QUERY_API_URL:-}
+      PAYMENT_PROVIDER_REFUND_QUERY_API_URL: ${PAYMENT_PROVIDER_REFUND_QUERY_API_URL:-}
+      PAYMENT_PROVIDER_REFUND_API_URL: ${PAYMENT_PROVIDER_REFUND_API_URL:-}
+      PAYMENT_PROVIDER_API_KEY: ${PAYMENT_PROVIDER_API_KEY:-}
+      PAYMENT_PROVIDER_MERCHANT_ID: ${PAYMENT_PROVIDER_MERCHANT_ID:-}
+      PAYMENT_CALLBACK_BASE_URL: ${PAYMENT_CALLBACK_BASE_URL:-}
+      PAYMENT_CALLBACK_SECRET: ${PAYMENT_CALLBACK_SECRET:-}
       PAYMENT_RECONCILIATION_ENABLED: ${PAYMENT_RECONCILIATION_ENABLED:?PAYMENT_RECONCILIATION_ENABLED=true is required}
       PAYMENT_REFUND_ENABLED: ${PAYMENT_REFUND_ENABLED:?PAYMENT_REFUND_ENABLED=true is required}
       PAYMENT_ONE_FEN_TEST_ENABLED: ${PAYMENT_ONE_FEN_TEST_ENABLED:-false}

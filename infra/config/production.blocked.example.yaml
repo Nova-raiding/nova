@@ -8,6 +8,7 @@
 # set every six-platform auth/read/write flag to false. Do not add OAuth values
 # for those platforms; ChatGPT/MCP host authorization is configured separately.
 configuration_status: BLOCKED_UNTIL_REQUIRED_PRODUCTION_INPUTS
+deployment_mode: null
 plugin_enabled: null
 merchant_bearer_hostname: null
 auth_enforcement: null

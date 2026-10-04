@@ -21,6 +21,7 @@ try {
     maximum_task_cost_cny: 'MODEL_MAX_TASK_COST_CNY',
     mcp_authorization_mode: 'MCP_AUTHZ_MODE',
     durable_platform_assignments_required: 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED',
+    deployment_mode: 'DEPLOYMENT_MODE',
     app_base_url: 'PUBLIC_APP_BASE_URL',
     ops_base_url: 'PUBLIC_OPS_BASE_URL',
     embedding_model: 'EMBEDDING_MODEL', embedding_dimensions: 'EMBEDDING_DIMENSIONS', embedding_max_request_cny: 'MODEL_EMBEDDING_MAX_REQUEST_CNY',
@@ -60,6 +61,9 @@ try {
     resolved.set('platform_rule_sync_interval_hours', '0');
   }
   const required = new Set(requiredKeys);
+  if (resolved.get('deployment_mode') === 'lean') {
+    for (const key of ['payment_provider_adapters', 'payment_checkout_base_url', 'payment_provider_checkout_api_url', 'payment_provider_query_api_url', 'payment_provider_refund_query_api_url', 'payment_provider_refund_api_url', 'payment_provider_api_key_ref', 'payment_provider_merchant_id', 'payment_callback_base_url', 'payment_callback_secret_ref']) required.delete(key);
+  }
   if (resolved.get('knowledge_vector_index_enabled') === 'true') {
     for (const key of ['embedding_model', 'embedding_dimensions', 'embedding_max_request_cny']) required.add(key);
   }

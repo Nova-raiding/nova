@@ -65,6 +65,27 @@ if missing_required_key
   exit 1
 end
 
+deployment_mode = config['deployment_mode']
+unless %w[lean full].include?(deployment_mode)
+  warn 'deployment_mode must be lean or full'
+  exit 1
+end
+if deployment_mode == 'lean'
+  unless config['payment_mode'] == 'manual_transfer' && config['commercial_payment_provider'] == 'manual_transfer'
+    warn 'lean production config must use manual_transfer for payment_mode and commercial_payment_provider'
+    exit 1
+  end
+  unless config['payment_reconciliation_enabled'] == false && config['payment_refund_enabled'] == false
+    warn 'lean production config must disable payment reconciliation and refund'
+    exit 1
+  end
+  provider_only = %w[payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url payment_provider_api_key_ref payment_provider_merchant_id payment_callback_base_url payment_callback_secret_ref]
+  if provider_only.any? { |key| config.key?(key) && !config[key].nil? && !(config[key].is_a?(String) && config[key].strip.empty?) }
+    warn 'lean production config must omit provider-only payment settings'
+    exit 1
+  end
+end
+
 nested_shadow = (required_keys & nested_required_keys).first
 if nested_shadow
   warn "production config required setting must not be nested: #{nested_shadow}"

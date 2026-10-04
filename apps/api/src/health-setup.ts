@@ -18,6 +18,7 @@ export interface SetupDiagnosticsDependencies {
   isProduction: () => boolean
   fixtureMode: boolean
   paymentProviderReadiness: () => PaymentReadiness
+  productionPaymentReadiness: () => Gate
   imageFactsExtractor: unknown
   imageEditGenerator: unknown
   videoGenerator: unknown
@@ -37,7 +38,7 @@ export interface SetupDiagnosticsDependencies {
  * what can run locally and what still needs real credentials/infrastructure,
  * without echoing tokens, keys, endpoints, or bucket names. */
 export function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; reasons?: string[] } } = {}, deps: SetupDiagnosticsDependencies) {
-  const { isProduction, fixtureMode, paymentProviderReadiness, imageFactsExtractor, imageEditGenerator, videoGenerator, requiredModelCostEvidenceByModality, connectorRuntime, configuredEnv, lifecycleDiagnostics, productionReadinessDiagnostics, evidenceReadiness, SUPPORTED_PLATFORMS, manualPlatformEnabled, fixturePlatformEnabled, paymentCapabilityStatus } = deps
+  const { isProduction, fixtureMode, paymentProviderReadiness, productionPaymentReadiness, imageFactsExtractor, imageEditGenerator, videoGenerator, requiredModelCostEvidenceByModality, connectorRuntime, configuredEnv, lifecycleDiagnostics, productionReadinessDiagnostics, evidenceReadiness, SUPPORTED_PLATFORMS, manualPlatformEnabled, fixturePlatformEnabled, paymentCapabilityStatus } = deps
   const production = isProduction()
   const configuredPlatformOperationsMode = process.env.PLATFORM_OPERATIONS_MODE?.trim().toLowerCase()
   const platformOperationsMode = configuredPlatformOperationsMode === 'manual' || configuredPlatformOperationsMode === 'official_api'
@@ -46,6 +47,7 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
   const manualPlatformOperations = platformOperationsMode === 'manual'
   const relayGate = evaluatePlatformModelRelayGate(process.env)
   const paymentReadiness = paymentProviderReadiness()
+  const productionPayment = productionPaymentReadiness()
   const contentProviderConfigured = evaluatePlatformModelGate(process.env, 'text').ready
   const imageProviderConfigured = evaluatePlatformModelGate(process.env, 'image').ready
   const imageEditModelGate = evaluatePlatformModelGate(process.env, 'image_edit')
@@ -101,7 +103,9 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
   if (!videoProviderConfigured) nextActions.push('配置平台模型中转站、MODEL_RELAY_API_KEY、VIDEO_MODEL 和视频 provider 后启用视频渲染；未配置时只能生成无渲染分镜')
   if (vectorIndexEnabled && !embeddingReady) nextActions.push('知识库向量索引已显式启用但未通过门禁：需配置 EMBEDDING_MODEL/EMBEDDING_DIMENSIONS，并完成查询授权、预算预留和用量结算；当前保持阻断')
   if (!modelCostGateConfigured) nextActions.push(`配置平台模型 RPM、TPM、每日人民币成本上限和单任务成本上限；成本门禁未通过时生产模型请求保持阻断${taskCostGate.reasons.length ? `（${taskCostGate.reasons.join('、')}）` : ''}`)
-  if (production && !paymentReadiness.ready) nextActions.push('配置支付宝/微信服务端 checkout provider、商户号、回调验签、对账和退款能力：' + paymentReadiness.reasons.join('、'))
+  if (production && !productionPayment.ready) nextActions.push(process.env.PAYMENT_MODE === 'manual_transfer' || process.env.DEPLOYMENT_MODE === 'lean'
+    ? 'lean/manual_transfer 仅允许运营人工确认收款；请关闭 provider checkout/query/refund/callback，并保持对账与退款开关为 false：' + productionPayment.reasons.join('、')
+    : '配置支付宝/微信服务端 checkout provider、商户号、回调验签、对账和退款能力：' + productionPayment.reasons.join('、'))
   if (platformOperationsMode === 'official_api' && !vaultConfigured) nextActions.push('official_api 模式需配置 VAULT_ADDR 和 VAULT_TOKEN（或接入外部凭据服务），让服务端安全读取商家授权凭据；不要把平台 token 放进插件参数')
   if (!objectStorageConfigured) nextActions.push('配置生产对象存储 bucket、region、HTTPS endpoint 和 KMS key，素材上传才可切换到云端持久化')
   if (!dataLifecycle.configured) nextActions.push('补齐生产数据生命周期、对象版本化和存储控制引用；缺少删除与保留门禁时禁止接收真实商家数据')
@@ -120,14 +124,14 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
   // as a follow-up operational artifact.
   if (!production) nextActions.push('当前不是生产模式；上线前还需完成 TLS/DNS/WAF、备份恢复、容量压测及所选运营模式验收')
   const platformOperationsReady = manualPlatformOperations || (platformOperationsMode === 'official_api' && Object.values(platformDiagnostics).every(item => item.ready) && vaultConfigured && capabilityEvidence.configured)
-  const productionGate = production && !fixtureMode && platformOperationsMode !== 'invalid' && platformOperationsReady && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && paymentReadiness.ready && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && modelCostGateConfigured && objectStorageConfigured && dataLifecycle.configured && alertNotifications.ready
+  const productionGate = production && !fixtureMode && platformOperationsMode !== 'invalid' && platformOperationsReady && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && productionPayment.ready && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && modelCostGateConfigured && objectStorageConfigured && dataLifecycle.configured && alertNotifications.ready
   const payment = paymentCapabilityStatus({
     mode: process.env.PAYMENT_MODE,
     providerReady: paymentReadiness.ready,
     production,
     fixtureMode,
     productionGate,
-    reasons: paymentReadiness.reasons,
+    reasons: productionPayment.reasons,
     supportedChannels: paymentReadiness.supportedChannels,
     channelReadiness: paymentReadiness.channelReadiness,
   })
@@ -151,7 +155,7 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
     productionEvidence: { capability: capabilityEvidence, capacity: capacityEvidence },
     credentialProvider: { configured: vaultConfigured, required: platformOperationsMode === 'official_api', mode: fixtureMode ? 'fixture' : vaultConfigured ? 'vault_or_external' : 'none' },
     platforms: platformDiagnostics,
-    payment: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', ...payment },
+    payment: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : process.env.PAYMENT_MODE === 'manual_transfer' ? 'manual_transfer' : 'fixture', ...payment },
     productionGate,
     nextActions,
   }

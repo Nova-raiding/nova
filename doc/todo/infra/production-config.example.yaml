@@ -1,5 +1,6 @@
 # 商家营销内容助手生产配置参考（仅字段契约，不得填写或提交真实密钥）
 schema_version: "2"
+deployment_mode: "full"
 
 release:
   environment: production
