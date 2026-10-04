@@ -188,6 +188,11 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const base = await start()
     const invalidRequest = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '1.0', id: 5, method: 'initialize' }) })
     expect(await invalidRequest.json()).toMatchObject({ jsonrpc: '2.0', id: 5, error: { code: -32600 } })
+    for (const [index, invalidId] of [ {}, [], true ].entries()) {
+      const invalidIdRequest = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: invalidId, method: 'initialize' }) })
+      expect(await invalidIdRequest.json()).toMatchObject({ jsonrpc: '2.0', id: null, error: { code: -32600 } })
+      expect(invalidIdRequest.status, `invalid native id case ${index}`).toBe(200)
+    }
     const invalidParams = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'creative-points.balance.get', arguments: [] } }) })
     expect(await invalidParams.json()).toMatchObject({ jsonrpc: '2.0', id: 6, error: { code: -32602 } })
   })

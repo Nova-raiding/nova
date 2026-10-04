@@ -34,12 +34,14 @@ export async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, 
   isToolEnabled: (method: string) => boolean
   paymentReady: () => boolean
 }) {
-  const id = Object.prototype.hasOwnProperty.call(input, 'id') && (typeof input.id === 'string' || typeof input.id === 'number' || input.id === null)
+  const hasId = Object.prototype.hasOwnProperty.call(input, 'id')
+  const validId = input.id === null || typeof input.id === 'string' || (typeof input.id === 'number' && Number.isFinite(input.id))
+  const id = hasId && validId
     ? input.id as string | number | null
     : null
   nativeMcpRequests.add(req)
   nativeMcpRequestIds.set(req, id)
-  if (input.jsonrpc !== '2.0' || !Object.prototype.hasOwnProperty.call(input, 'id') || typeof input.method !== 'string' || !input.method.trim()) {
+  if (input.jsonrpc !== '2.0' || !hasId || !validId || typeof input.method !== 'string' || !input.method.trim()) {
     throw new DomainError('MCP_NATIVE_INVALID_REQUEST', '原生 MCP JSON-RPC 请求无效', 400)
   }
   if (!isNativeMcpMethod(input.method)) throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, `不支持的原生 MCP 方法: ${input.method}`, 404)
@@ -64,4 +66,3 @@ export async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, 
   if (args !== undefined && (!args || typeof args !== 'object' || Array.isArray(args))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'tools/call arguments 必须是 JSON 对象', 400)
   return deps.dispatch(req, res, { jsonrpc: '2.0', id, method: name, params: (args ?? {}) as JsonObject }, 'native')
 }
-
