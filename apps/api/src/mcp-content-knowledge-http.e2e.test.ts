@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 const videoRelay = vi.hoisted(() => ({
-  generate: vi.fn(async () => ({ status: 'queued' as const, providerJobId: 'video-job-http-e2e' })),
+  generate: vi.fn(async () => ({ status: 'completed' as const, providerJobId: 'video-job-http-e2e', videoUrl: 'https://cdn.example.test/video-job-http-e2e.mp4' })),
   getStatus: vi.fn(async (providerJobId: string) => ({ status: 'completed' as const, providerJobId, videoUrl: 'https://cdn.example.test/video-job-http-e2e.mp4' })),
 }))
 
@@ -301,6 +301,12 @@ describe('content and knowledge MCP methods over real HTTP', () => {
     expect(videoRequest.status).toBe(200)
     expect(videoRequest.body.error).toBeNull()
     expect(videoRelay.generate).toHaveBeenCalled()
+    expect((videoRequest.body.data?.result as any).rendering).toMatchObject({ providerJobId: 'video-job-http-e2e' })
+    expect((videoRequest.body.data?.result as any).rendering.videoUrl).toBeUndefined()
+    const videoGet = await callMcp(tokens.rules, workspaceId, 'multimodal.video.get', { provider_job_id: 'video-job-http-e2e' })
+    expect(videoGet.status).toBe(200)
+    expect(videoGet.body.error).toBeNull()
+    expect((videoGet.body.data?.result as any).videoUrl).toBeUndefined()
 
     const missingRequired = await callMcp(tokens.rules, workspaceId, 'generation.get')
     expect(missingRequired.status).toBe(400)
