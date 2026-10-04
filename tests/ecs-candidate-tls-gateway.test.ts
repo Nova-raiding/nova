@@ -118,6 +118,8 @@ describe('isolated ECS candidate TLS gateway', () => {
   it('pins the only upstream to the exact API IP and denies all unrelated paths', () => {
     const conf = candidateGatewayConfig('172.20.0.8')
     expect(conf).toContain('proxy_pass http://172.20.0.8:8787/mcp;')
+    expect(conf).toContain('proxy_read_timeout 120s;')
+    expect(conf).toContain('proxy_send_timeout 120s;')
     expect(conf).toContain('X-MCP-OAuth-Required "true"')
     expect(conf).toContain('location / { return 404; }')
     expect(conf.match(/location = /g)).toHaveLength(3)
