@@ -242,7 +242,17 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
       let rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>> | undefined
       let generatedPlan: Awaited<ReturnType<typeof service.generateOneSentenceText>> | undefined
       try {
-        if (request.value.output !== 'rendering') generatedPlan = await service.generateOneSentenceText({ workspaceId, productId: request.value.context.product.id, prompt: `${request.value.output}：${request.value.prompt}`, actionId: walletDebitKey })
+        if (request.value.output !== 'rendering') generatedPlan = await service.generateOneSentenceText({
+          workspaceId,
+          productId: request.value.context.product.id,
+          prompt: `${request.value.output}：${request.value.prompt}`,
+          actionId: walletDebitKey,
+          // Script/storyboard output is a reviewable creative candidate. The
+          // dedicated schema keeps the provider from falling into the much
+          // larger commerce-content contract and inventing fact modules.
+          candidateOnly: true,
+          candidateFormat: 'video_storyboard',
+        })
         if ((request.value.output as string) === 'rendering') {
           if (!videoGenerator) throw new DomainError('VIDEO_GENERATION_NOT_CONFIGURED', '未配置视频生成中转服务', 503, { provider_executed: false })
           rendering = await archiveCompletedVideo(workspaceId, await videoGenerator.generate({ prompt: request.value.prompt, output: 'rendering', context: request.value.context, ...(sourceImage ? { sourceImage } : {}), usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey } }))

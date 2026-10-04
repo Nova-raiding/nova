@@ -4896,7 +4896,15 @@ export class MerchantService {
   }
 
   /** Standalone one-sentence text path used by the multimodal MCP entrypoint. */
-  async generateOneSentenceText(input: { workspaceId: string; productId: string; prompt: string; actionId: string }) {
+  async generateOneSentenceText(input: {
+    workspaceId: string
+    productId: string
+    prompt: string
+    actionId: string
+    /** Video script/storyboard requests are explicit candidates until reviewed. */
+    candidateOnly?: boolean
+    candidateFormat?: 'copy' | 'video_storyboard'
+  }) {
     const product = this.products.get(input.productId)
     if (!product || product.workspaceId !== input.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
     if (!product.factsConfirmed) throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '一句话文案生成需要先确认商品事实', 409)
@@ -4908,8 +4916,10 @@ export class MerchantService {
     try {
       return await this.options.contentGenerator.generate({
         platform: product.platform,
+        ...(input.candidateOnly ? { candidateOnly: true } : {}),
+        ...(input.candidateFormat ? { candidateFormat: input.candidateFormat } : {}),
         directionId: input.prompt,
-        product: { title: product.title, ...(product.category ? { category: product.category } : {}), ...(typeof product.price === 'number' ? { price: product.price } : {}), stock: product.stock, skuCount: product.skuCount, ...(product.attributes ? { attributes: product.attributes } : {}) },
+        product: { id: product.id, title: product.title, ...(product.category ? { category: product.category } : {}), ...(typeof product.price === 'number' ? { price: product.price } : {}), stock: product.stock, skuCount: product.skuCount, ...(product.skus?.length ? { skuIds: product.skus.map(sku => sku.id) } : {}), ...(product.attributes ? { attributes: product.attributes } : {}) },
         usageContext: { workspaceId: input.workspaceId, actionId: input.actionId, runKey: input.actionId },
       })
     } catch (error) {
@@ -4921,7 +4931,34 @@ export class MerchantService {
         throw new DomainError(String(code), '模型供应商已完成调用，但本地用量结算尚未完成；为避免重复计费，当前结果已阻断且不会自动退款', 503, { provider_succeeded: true, ...((error as { receiptKey?: unknown }).receiptKey ? { receipt_key: String((error as { receiptKey: unknown }).receiptKey) } : {}) })
       }
       if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {
-        throw new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '模型请求结果暂时无法确认；为避免重复计费，当前任务已停止自动重试并等待对账', 503, { provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true, ...((error as { providerIdempotencyKey?: unknown }).providerIdempotencyKey ? { provider_idempotency_key: String((error as { providerIdempotencyKey: unknown }).providerIdempotencyKey) } : {}) })
+        const source = error as { details?: unknown; providerIdempotencyKey?: unknown; providerRequestId?: unknown }
+        const details = source.details && typeof source.details === 'object' && !Array.isArray(source.details) ? source.details as Record<string, unknown> : {}
+        const providerRequestId = typeof source.providerRequestId === 'string' && source.providerRequestId.trim() ? source.providerRequestId.trim() : details.provider_request_id
+        const providerIdempotencyKey = typeof source.providerIdempotencyKey === 'string' && source.providerIdempotencyKey.trim() ? source.providerIdempotencyKey.trim() : details.provider_idempotency_key
+        throw new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '模型请求结果暂时无法确认；为避免重复计费，当前任务已停止自动重试并等待对账', 503, {
+          provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true,
+          ...(typeof providerRequestId === 'string' && providerRequestId.length <= 256 ? { provider_request_id: providerRequestId } : {}),
+          ...(typeof providerIdempotencyKey === 'string' && providerIdempotencyKey.length <= 256 ? { provider_idempotency_key: providerIdempotencyKey } : {}),
+          ...(typeof details.provider_status === 'number' ? { provider_status: details.provider_status } : {}),
+          ...(typeof details.provider_error_summary === 'string' ? { provider_error_summary: details.provider_error_summary.slice(0, 500) } : {}),
+        })
+      }
+      if (code === 'MODEL_PROVIDER_REQUEST_FAILED') {
+        const source = error as { details?: unknown; status?: unknown; providerRequestId?: unknown; providerIdempotencyKey?: unknown; retryable?: unknown; retryAfterMs?: unknown }
+        const details = source.details && typeof source.details === 'object' && !Array.isArray(source.details) ? source.details as Record<string, unknown> : {}
+        const status = Number.isInteger(source.status) ? Number(source.status) : details.provider_status
+        const retryable = source.retryable === true || details.retryable === true
+        const retryAfterMs = typeof source.retryAfterMs === 'number' ? source.retryAfterMs : details.retry_after_ms
+        const providerRequestId = typeof source.providerRequestId === 'string' && source.providerRequestId.trim() ? source.providerRequestId.trim() : details.provider_request_id
+        const providerIdempotencyKey = typeof source.providerIdempotencyKey === 'string' && source.providerIdempotencyKey.trim() ? source.providerIdempotencyKey.trim() : details.provider_idempotency_key
+        throw new DomainError('MODEL_PROVIDER_REQUEST_FAILED', '模型中转服务拒绝了本次请求，请稍后重试', status === 429 && retryable ? 429 : 502, {
+          provider_succeeded: false, provider_outcome: 'failed', reconciliation_required: false, retryable,
+          ...(Number.isInteger(status) ? { provider_status: status } : {}),
+          ...(typeof providerRequestId === 'string' && providerRequestId.length <= 256 ? { provider_request_id: providerRequestId } : {}),
+          ...(typeof providerIdempotencyKey === 'string' && providerIdempotencyKey.length <= 256 ? { provider_idempotency_key: providerIdempotencyKey } : {}),
+          ...(typeof details.provider_error_summary === 'string' ? { provider_error_summary: details.provider_error_summary.slice(0, 500) } : {}),
+          ...(Number.isFinite(retryAfterMs) && Number(retryAfterMs) > 0 ? { retry_after_ms: Math.min(60_000, Math.ceil(Number(retryAfterMs))), retry_after_seconds: Math.max(1, Math.ceil(Number(retryAfterMs) / 1000)) } : {}),
+        })
       }
       if (code === 'CONTENT_SCHEMA_INVALID') {
         throw new DomainError('CONTENT_SCHEMA_INVALID', '模型返回内容未通过结构与事实边界校验', 502)

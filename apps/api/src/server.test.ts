@@ -524,6 +524,33 @@ describe('authorization denial error details', () => {
       policy_version: AUTHZ_POLICY_VERSION, transport: 'http', method: 'ops.unknown', operation: 'GET /v1/unknown',
     })
   })
+
+  it('keeps bounded relay 429 retry evidence actionable at the MCP boundary', () => {
+    const mapped = modelSettlementDomainError({
+      code: 'MODEL_PROVIDER_REQUEST_FAILED',
+      status: 429,
+      providerRequestId: 'relay-429',
+      providerIdempotencyKey: 'model-key',
+      retryable: true,
+      retryAfterMs: 7000,
+      details: { provider_status: 429, retryable: true, retry_after_ms: 7000 },
+    })
+    expect(mapped).toMatchObject({
+      code: 'MODEL_PROVIDER_REQUEST_FAILED',
+      status: 429,
+      details: {
+        provider_succeeded: false,
+        provider_outcome: 'failed',
+        reconciliation_required: false,
+        retryable: true,
+        provider_status: 429,
+        provider_request_id: 'relay-429',
+        provider_idempotency_key: 'model-key',
+        retry_after_ms: 7000,
+        retry_after_seconds: 7,
+      },
+    })
+  })
 })
 
 describe('charged text no-delivery authorization obligations', () => {

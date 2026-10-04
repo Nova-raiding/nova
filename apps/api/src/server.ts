@@ -14952,11 +14952,26 @@ export function modelSettlementDomainError(error: unknown) {
     })
   }
   if (code === 'MODEL_PROVIDER_REQUEST_FAILED') {
-    const source = error as { details?: unknown; status?: unknown; providerRequestId?: unknown }
+    const source = error as { details?: unknown; status?: unknown; providerRequestId?: unknown; providerIdempotencyKey?: unknown; retryable?: unknown; retryAfterMs?: unknown }
     const details = source.details && typeof source.details === 'object' && !Array.isArray(source.details) ? source.details as Record<string, unknown> : {}
     const summary = typeof details.provider_error_summary === 'string' && details.provider_error_summary.trim() ? details.provider_error_summary.trim().slice(0, 500) : undefined
     const status = Number.isInteger(source.status) ? Number(source.status) : details.provider_status
-    return new DomainError('MODEL_PROVIDER_REQUEST_FAILED', '模型中转服务拒绝了本次请求，请稍后重试', 502, { provider_succeeded: false, provider_outcome: 'failed', reconciliation_required: false, retryable: false, ...(Number.isInteger(status) ? { provider_status: status } : {}), ...(summary ? { provider_error_summary: summary } : {}) })
+    const providerRequestId = typeof source.providerRequestId === 'string' && source.providerRequestId.trim() ? source.providerRequestId.trim() : details.provider_request_id
+    const providerIdempotencyKey = typeof source.providerIdempotencyKey === 'string' && source.providerIdempotencyKey.trim() ? source.providerIdempotencyKey.trim() : details.provider_idempotency_key
+    const retryable = source.retryable === true || details.retryable === true
+    const rawRetryAfterMs = typeof source.retryAfterMs === 'number' ? source.retryAfterMs : details.retry_after_ms
+    const retryAfterMs = Number.isFinite(rawRetryAfterMs) && Number(rawRetryAfterMs) > 0 ? Math.min(60_000, Math.ceil(Number(rawRetryAfterMs))) : undefined
+    const retryAfterSeconds = retryAfterMs === undefined ? undefined : Math.max(1, Math.ceil(retryAfterMs / 1000))
+    const mappedStatus = status === 429 && retryable ? 429 : 502
+    return new DomainError('MODEL_PROVIDER_REQUEST_FAILED', '模型中转服务拒绝了本次请求，请稍后重试', mappedStatus, {
+      provider_succeeded: false, provider_outcome: 'failed', reconciliation_required: false, retryable,
+      ...(Number.isInteger(status) ? { provider_status: status } : {}),
+      ...(typeof providerRequestId === 'string' && providerRequestId.length <= 256 ? { provider_request_id: providerRequestId } : {}),
+      ...(typeof providerIdempotencyKey === 'string' && providerIdempotencyKey.length <= 256 ? { provider_idempotency_key: providerIdempotencyKey } : {}),
+      ...(summary ? { provider_error_summary: summary } : {}),
+      ...(retryAfterMs !== undefined ? { retry_after_ms: retryAfterMs } : {}),
+      ...(retryAfterSeconds !== undefined ? { retry_after_seconds: retryAfterSeconds } : {}),
+    })
   }
   return undefined
 }

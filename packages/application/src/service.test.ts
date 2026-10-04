@@ -98,6 +98,47 @@ const productionVisualEvidence = (candidateHash: string) => ({
 })
 
 describe('MerchantService', () => {
+  it('uses the dedicated reviewable storyboard candidate contract for video plans', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    const service = new MerchantService({
+      fixtureMode: true,
+      contentGenerator: {
+        generate: async input => {
+          requests.push(input as unknown as Record<string, unknown>)
+          return {
+            title: '待审核视频分镜候选',
+            detail: '仅供创意审核，商品事实待确认。',
+            sellingPoints: ['画面创意待确认'],
+            storyboard: [
+              { durationSeconds: 3, visual: '商品字卡进入画面', subtitle: '商品信息待确认', voiceover: '先核对商品资料' },
+              { durationSeconds: 4, visual: '多角度空镜位置示意', subtitle: '画面素材待补充', voiceover: '按已确认素材安排展示' },
+              { durationSeconds: 3, visual: '审核提示收尾', subtitle: '确认后完善', voiceover: '确认后再形成正式版本' },
+            ],
+          }
+        },
+      },
+    })
+    const product = service.products.get('prod_fixture_1')!
+    service.confirmProductFacts('ws_demo', product.id)
+
+    const plan = await service.generateOneSentenceText({ workspaceId: 'ws_demo', productId: product.id, prompt: 'storyboard：展示通勤场景', actionId: 'video-plan-1', candidateOnly: true, candidateFormat: 'video_storyboard' })
+
+    expect(requests[0]).toMatchObject({ candidateOnly: true, candidateFormat: 'video_storyboard', product: { id: product.id } })
+    expect(plan.storyboard).toHaveLength(3)
+  })
+
+  it('preserves provider request evidence when a video plan is rate limited', async () => {
+    const service = new MerchantService({ fixtureMode: true, contentGenerator: { generate: async () => { throw { code: 'MODEL_PROVIDER_REQUEST_FAILED', status: 429, providerRequestId: 'relay-429', providerIdempotencyKey: 'video-plan-429', retryable: true, retryAfterMs: 7000, details: { provider_status: 429, provider_request_id: 'relay-429', retryable: true, retry_after_ms: 7000 } } } } })
+    const product = service.products.get('prod_fixture_1')!
+    service.confirmProductFacts('ws_demo', product.id)
+
+    await expect(service.generateOneSentenceText({ workspaceId: 'ws_demo', productId: product.id, prompt: 'storyboard：展示通勤场景', actionId: 'video-plan-429', candidateOnly: true, candidateFormat: 'video_storyboard' })).rejects.toMatchObject({
+      code: 'MODEL_PROVIDER_REQUEST_FAILED',
+      status: 429,
+      details: { provider_request_id: 'relay-429', provider_idempotency_key: 'video-plan-429', retry_after_ms: 7000, retry_after_seconds: 7, retryable: true },
+    })
+  })
+
   it('keeps candidate task identity durable and rejects every publish entry point', () => {
     const service = new MerchantService({ fixtureMode: true })
     const product = service.products.get('prod_fixture_1')!
