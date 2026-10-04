@@ -18,7 +18,7 @@ export interface WorkerAuthorizationRuntimeDependencies {
   requireActiveWorkspace: (workspaceId: string, method: string) => Promise<unknown>
   checkCustomerDeliveryAccess: (workspaceId: string, identityId: string) => Promise<void>
   listMembers: (workspaceId: string) => Promise<WorkspaceMember[]>
-  hasBrandAccess: (input: { workspaceId: string; brandId: string; externalSubject: string; minimumRole: 'publisher' }) => Promise<boolean>
+  hasBrandAccess: (input: { workspaceId: string; brandId: string; externalSubject: string; minimumRole: 'editor' | 'publisher' }) => Promise<boolean>
 }
 
 export function createWorkerAuthorizationRuntime(deps: WorkerAuthorizationRuntimeDependencies) {
@@ -165,10 +165,13 @@ async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthorizationS
     const canonicalMemberRole = canonicalizeRole(member.role, 'membership')
     const requiredCapability = workerOperationCapabilities[snapshot.capability]
     if (!canonicalMemberRole || !capabilitiesForRoles([canonicalMemberRole]).includes(requiredCapability)) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '当前成员角色不再具备该 worker 操作能力，已拒绝执行', 403)
-    const brandContext = snapshot.capability === 'publish.execute' ? /^brand:(.+)$/u.exec(snapshot.contextId) : undefined
+    const brandContext = ['publish.execute', 'generation.execute', 'image_generation.execute'].includes(snapshot.capability)
+      ? /^brand:(.+)$/u.exec(snapshot.contextId)
+      : undefined
     if (brandContext && member.role !== 'workspace_owner') {
-      const stillPublisher = await hasBrandAccess({ workspaceId, brandId: brandContext[1]!, externalSubject: member.externalSubject, minimumRole: 'publisher' })
-      if (!stillPublisher) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '入队后品牌发布权限已撤销，已拒绝执行', 403)
+      const minimumRole = snapshot.capability === 'publish.execute' ? 'publisher' : 'editor'
+      const stillBrandAuthorized = await hasBrandAccess({ workspaceId, brandId: brandContext[1]!, externalSubject: member.externalSubject, minimumRole })
+      if (!stillBrandAuthorized) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '入队后品牌权限已撤销，已拒绝执行', 403)
     }
   } else {
     const grant = await authzRepository.getGrant(grantMatch![1]!, subjectIdentityId)

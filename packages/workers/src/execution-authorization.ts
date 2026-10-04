@@ -214,13 +214,14 @@ export function parseWorkerAuthorizationSnapshot(event: DurableOutboxEvent, oper
   if (snapshot.resourceId !== event.aggregateId) throw snapshotError('authorization snapshot resource binding mismatch')
   if (snapshot.capability !== operation) throw snapshotError('authorization snapshot capability binding mismatch')
   if (snapshot.workbench !== 'workspace') throw snapshotError('authorization snapshot workbench binding mismatch')
-  // A brand-scoped publish decision remains bound to this exact workspace,
-  // event and job. The authoritative recheck must verify that same brand's
-  // current publisher membership; no other operation inherits this context.
-  const brandPublishContext = operation === 'publish.execute'
-    && event.eventType === 'publish.requested'
-    && /^brand:[^\s\u0000-\u001f\u007f]+$/u.test(snapshot.contextId)
-  if (snapshot.contextId !== `workspace:${event.workspaceId}` && !brandPublishContext) throw snapshotError('authorization snapshot context binding mismatch')
+  // Brand-scoped merchant work remains bound to this exact workspace, event,
+  // and resource. The API rechecks the same brand membership immediately
+  // before provider I/O. Other worker operations stay workspace-scoped.
+  const brandScopedContext = /^brand:[^\s\u0000-\u001f\u007f]+$/u.test(snapshot.contextId)
+    && ((operation === 'publish.execute' && event.eventType === 'publish.requested')
+      || (operation === 'generation.execute' && event.eventType === 'generation.requested')
+      || (operation === 'image_generation.execute' && event.eventType === 'image.generation.requested'))
+  if (snapshot.contextId !== `workspace:${event.workspaceId}` && !brandScopedContext) throw snapshotError('authorization snapshot context binding mismatch')
   return snapshot
 }
 

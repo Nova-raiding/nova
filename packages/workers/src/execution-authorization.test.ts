@@ -52,9 +52,17 @@ describe('worker execution-time authorization', () => {
     expect(() => parseWorkerAuthorizationSnapshot(event({ context_id: contextId }), 'publish.execute')).toThrowError(expect.objectContaining({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }))
   })
 
-  it.each<CriticalWorkerOperation>(['publish.reconcile', 'generation.execute', 'image_generation.execute', 'catalog.sync.execute', 'asset.scan.execute', 'asset.continuation.execute'])('never admits brand context for %s', operation => {
+  it.each<CriticalWorkerOperation>(['publish.reconcile', 'catalog.sync.execute', 'asset.scan.execute', 'asset.continuation.execute'])('never admits brand context for %s', operation => {
     expect(() => parseWorkerAuthorizationSnapshot(event({ context_id: 'brand:brand_a', capability: operation }), operation)).toThrowError(expect.objectContaining({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }))
     expect(parseWorkerAuthorizationSnapshot(event({ capability: operation }), operation)).toMatchObject({ contextId: 'workspace:ws_a', capability: operation })
+  })
+
+  it.each([
+    ['generation.execute', 'generation.requested'],
+    ['image_generation.execute', 'image.generation.requested'],
+  ] as const)('admits brand context for bound merchant generation %s', (operation, eventType) => {
+    const generationEvent = { ...event({ context_id: 'brand:brand_a', capability: operation, resource_id: 'job_1' }), eventType, aggregateId: 'job_1' }
+    expect(parseWorkerAuthorizationSnapshot(generationEvent, operation)).toMatchObject({ contextId: 'brand:brand_a', capability: operation })
   })
 
   it.each([
