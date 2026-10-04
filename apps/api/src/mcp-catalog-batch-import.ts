@@ -47,8 +47,8 @@ export async function handleCatalogBatchImport(workspaceId: string, params: Para
         if (error instanceof SpreadsheetBatchImportError) throw new DomainError('PRODUCT_IMPORT_SPREADSHEET_INVALID', error.message, 400, { row: error.row })
         throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'products_json 必须是商品对象数组 JSON，或提供已确认的 source_asset_id', 400)
       }
-      if (!Array.isArray(rawItems) || rawItems.length < 1 || rawItems.length > 1000 || rawItems.some(item => !item || typeof item !== 'object' || Array.isArray(item))) {
-        throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'products_json 必须是 1 至 1000 个商品对象的 JSON 数组', 400)
+      if (!Array.isArray(rawItems) || rawItems.length < 1 || rawItems.length > 50 || rawItems.some(item => !item || typeof item !== 'object' || Array.isArray(item))) {
+        throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'products_json 必须是 1 至 50 个商品对象的 JSON 数组', 400)
       }
       type BatchImportItem = { platform: Platform; accountId?: string; remoteId?: string; localProductKey?: string; title: string; skuCount?: number; skus?: import('../../../packages/application/src/service.js').ProductSku[]; stock?: number; price?: number; category?: string; images?: string[]; sourceAssetIds?: string[]; attributes?: Record<string, string>; sellingPoints?: import('../../../packages/application/src/service.js').ProductSellingPoint[]; storeName?: string; storeDifferentiation?: string }
       const numeric = (value: unknown, field: string, index: number) => {

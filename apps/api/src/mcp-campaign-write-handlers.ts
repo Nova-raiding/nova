@@ -204,7 +204,7 @@ export async function transitionCampaignBatch(method: 'campaign.batch.pause' | '
   let itemIds: string[] | undefined
   if (operation === 'retry_failed' && params.item_ids_json !== undefined) {
     const parsed = parseJsonArrayParameter(params, 'item_ids_json')
-    if (!parsed.length || parsed.length > 1000 || parsed.some(value => typeof value !== 'string' || !value.trim()) || new Set(parsed).size !== parsed.length) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'item_ids_json 必须是 1 到 1000 个不重复 item ID', 400)
+    if (!parsed.length || parsed.length > 50 || parsed.some(value => typeof value !== 'string' || !value.trim()) || new Set(parsed).size !== parsed.length) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'item_ids_json 必须是 1 到 50 个不重复 item ID', 400)
     itemIds = parsed.map(value => String(value).trim())
   }
   const transitioned = await repository.transitionCampaignLifecycle({ workspaceId, id: campaignId, operation, expectedRevision: Number(required(params, 'expected_revision')), idempotencyKey: required(params, 'idempotency_key'), reason: required(params, 'reason').trim(), ...(itemIds ? { itemIds } : {}) }).catch(error => campaignLifecycleError(error))

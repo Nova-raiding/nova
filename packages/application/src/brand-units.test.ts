@@ -64,7 +64,7 @@ describe('BrandUnitService', () => {
     expect(service.getCanonicalProductDetail('ws_1', product.id).publishGate).toEqual({ status: 'verified', blockers: [] })
   })
 
-  it('preflights up to 1000 items, aggregates blocked scope and is idempotent', () => {
+  it('preflights up to 50 items, aggregates blocked scope and is idempotent', () => {
     const { service, a, b, store } = setup()
     service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
     const product = service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, title: '外套' })
@@ -76,7 +76,7 @@ describe('BrandUnitService', () => {
     expect(first.items[1]?.blockers).toContain('BRAND_ID_MISMATCH')
     expect(service.preflightCampaign(input)).toEqual(first)
     expect(() => service.preflightCampaign({ ...input, idempotencyKey: 'campaign-1', items: [input.items[0]!] })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED' }))
-    expect(() => service.preflightCampaign({ workspaceId: 'ws_1', idempotencyKey: 'too-many', items: Array.from({ length: 1001 }, () => input.items[0]!) })).toThrowError(expect.objectContaining({ code: 'CAMPAIGN_LIMIT_EXCEEDED' }))
+    expect(() => service.preflightCampaign({ workspaceId: 'ws_1', idempotencyKey: 'too-many', items: Array.from({ length: 51 }, () => input.items[0]!) })).toThrowError(expect.objectContaining({ code: 'CAMPAIGN_LIMIT_EXCEEDED' }))
   })
 
   it('preflights a task and publish target without allowing workspace identity to leak', () => {

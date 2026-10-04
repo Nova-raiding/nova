@@ -34,11 +34,6 @@ describe('manual store product import boundary', () => {
     expect(() => prepareManualStoreBatchImport({ workspaceId: 'ws_merchant', accounts: [{ ...account, status: 'archived' }], products: [{ platform: 'taobao', account_id: account.id, title: '归档店铺' }] })).toThrowError(expect.objectContaining({ code: 'MANUAL_IMPORT_ACCOUNT_NOT_FOUND' }))
   })
 
-  it('accepts a 1000-product daily batch within the backend import boundary', () => {
-    const products = Array.from({ length: 1000 }, (_, index) => ({ platform: 'taobao' as const, account_id: account.id, local_product_key: `daily-${index}`, title: `商品-${index}` }))
-    expect(prepareManualStoreBatchImport({ workspaceId: 'ws_merchant', accounts: [account], products }).products).toHaveLength(1000)
-  })
-
   it('rejects a credential-bearing object even if it is presented as a manual account', () => {
     const unsafe = { ...account, credentialRef: 'vault://fake-manual-account' }
     expect(() => prepareManualStoreBatchImport({ workspaceId: 'ws_merchant', accounts: [unsafe], products: [{ platform: 'taobao', account_id: account.id, title: '不应导入' }] })).toThrowError(expect.objectContaining({ code: 'MANUAL_STORE_CREDENTIAL_FORBIDDEN' }))
