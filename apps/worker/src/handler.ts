@@ -167,6 +167,9 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         return { value: content }
       } catch (error) {
         throwIfLeaseLost(signal)
+        // Preserve durable failures raised by callback adapters and admission
+        // guards instead of flattening their structured error envelope.
+        if (error instanceof WorkerFailure) throw error
         const terminalKnowledgeFence = error instanceof WorkerExecutionAuthorizationError
           && (error.code === 'KNOWLEDGE_EXECUTION_CHANGED' || error.code === 'KNOWLEDGE_EXECUTION_SNAPSHOT_INVALID')
         if (error instanceof WorkerExecutionAuthorizationError && !terminalKnowledgeFence && error.retryable !== false) {
@@ -175,6 +178,9 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
           // provider failure or settling its point reservation. Main preserves
           // any earlier usage from repair attempts as reconciliation-required.
           throw new WorkerFailure({ code: error.code, message: error.message, retryable: error.retryable, unknown: false, eventId: event.id, workspaceId: event.workspaceId })
+        }
+        if (error instanceof WorkerExecutionAuthorizationError && !terminalKnowledgeFence) {
+          throw new WorkerFailure({ code: error.code, message: error.message, retryable: false, unknown: false, eventId: event.id, workspaceId: event.workspaceId })
         }
         // Quota exhaustion is backpressure, not a terminal generation failure.
         // Leave the outbox event retryable so the user-facing job remains
@@ -220,6 +226,12 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         // usage worker against the original provider/action identity.
         if (isProviderOutcomeUnknown(candidate)) {
           throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: false, unknown: true })
+        }
+        // Commercial admission failures happen before provider I/O and must
+        // remain queue evidence; projecting them would fabricate a provider
+        // outcome and release the user's reservation incorrectly.
+        if (failure.code.startsWith('COMMERCIAL_EXECUTION_')) {
+          throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: candidate.retryable === true, unknown: candidate.unknown === true })
         }
         // Only a known, non-retryable failure with no provider outcome is safe
         // to classify as pre-provider. Provider failures without a durable
