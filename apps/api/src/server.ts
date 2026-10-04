@@ -13067,6 +13067,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         return result({ ...publicMoneyRecord(paid), test_payment_confirmed: true, replayed })
       }
       let providerStatus: import('../../../packages/billing/src/payment-provider.js').PaymentStatusResult | undefined
+      if (isManualTransferPayment() && order.paymentMode === 'provider' && order.state === 'pending') {
+        throw new DomainError('PAYMENT_PROVIDER_DISABLED_MANUAL_TRANSFER', '当前为 lean/manual_transfer，provider query 已禁用；请由运营人工确认收款', 409, { deployment_mode: 'lean', payment_mode: 'manual_transfer' })
+      }
       if (order.paymentMode === 'provider' && order.state === 'pending' && paymentProvider?.queryStatus) {
         try {
           providerStatus = await paymentProvider.queryStatus({ channel: order.channel, orderId: order.id, workspaceId })
