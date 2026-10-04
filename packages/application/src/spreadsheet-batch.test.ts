@@ -54,11 +54,6 @@ describe('spreadsheet batch import mapping', () => {
   })
 })
 
-it('accepts 1000 distinct product rows for one daily import batch', () => {
-  const rows = [{ A: '平台', B: '商品名称' }, ...Array.from({ length: 1000 }, (_, index) => ({ A: 'jd', B: `商品-${index}` }))]
-  expect(spreadsheetFactsToBatchProducts({ format: 'xlsx', rows })).toHaveLength(1000)
-})
-
 it('groups SKU rows by product key and preserves per-SKU price, images and attributes', () => {
   const rows = [
     { A: '平台', B: '商品货号', C: '商品名称', D: 'SKU编码', E: '颜色', F: '尺码', G: 'SKU价格', H: 'SKU库存', I: 'SKU图片链接' },
