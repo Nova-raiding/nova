@@ -10640,7 +10640,7 @@ export function imageMcpRuntime() {
     readArchivedGeneratedImages,
     imageJobOutputsAreClean,
     sourceImagesForImageJob,
-    publicImageJob, contentExecutionEvidence,
+    publicImageJob,
     publicImageJobForCommercialRead,
     assetForWorkspace,
     assertAssetActive,
