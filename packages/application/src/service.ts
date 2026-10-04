@@ -2932,6 +2932,19 @@ export class MerchantService {
     const brief = contentVersion?.body.brief
     const selectedDirection = task?.directions?.find(item => item.id === task.selectedDirectionId)
     const requestedMarketingBrief = input.marketingBrief
+    const hasExplicitMarketingBrief = [
+      ...(requestedMarketingBrief?.sellingPoints ?? []),
+      ...(requestedMarketingBrief?.trafficKeywords ?? []),
+      ...(requestedMarketingBrief?.promotionLabels ?? []),
+      ...(requestedMarketingBrief?.marketingLabels ?? []),
+      requestedMarketingBrief?.headline,
+      requestedMarketingBrief?.subheadline,
+      requestedMarketingBrief?.cta,
+      brief?.headline,
+      brief?.subheadline,
+      brief?.cta,
+      brief?.priceExpression,
+    ].some(value => typeof value === 'string' && value.trim().length > 0)
     // Resolve the same approved, workspace-scoped knowledge snapshot used by
     // content generation. Image generation previously consumed product facts
     // and platform rules but silently dropped approved merchant knowledge,
@@ -2967,10 +2980,6 @@ export class MerchantService {
       .map(([key, value]) => `${key}:${value}`.slice(0, 60)).slice(0, 6)
     const trafficKeywords = [...new Set([
       ...(requestedMarketingBrief?.trafficKeywords ?? []),
-      product.title,
-      product.category,
-      ...verifiedAttributeLabels.map(label => label.split(':').slice(1).join(':')),
-      ...confirmedSellingPoints,
     ].map(value => value?.trim()).filter((value): value is string => Boolean(value)).slice(0, 8))]
     const competitorReference = task?.inputSnapshot?.knowledgeContext?.competitorReferences?.[0]
     const promotionLabels = [...new Set([...(requestedMarketingBrief?.promotionLabels ?? []), ...(task?.productionPlan?.promotionSnapshot ?? []).flatMap(promotion => {
@@ -2980,13 +2989,17 @@ export class MerchantService {
     })].map(value => value.trim()).filter(Boolean))].slice(0, 4)
     const marketingLabels = [...new Set([
       ...(requestedMarketingBrief?.marketingLabels ?? []),
-      product.title,
-      brief?.headline,
-      brief?.subheadline,
-      brief?.priceExpression,
       ...promotionLabels,
-      brief?.cta,
+      ...(brief?.headline ? [brief.headline] : []),
+      ...(brief?.subheadline ? [brief.subheadline] : []),
+      ...(brief?.priceExpression ? [brief.priceExpression] : []),
+      ...(brief?.cta ? [brief.cta] : []),
     ].map(value => value?.trim()).filter((value): value is string => Boolean(value)).slice(0, 8))]
+    const marketingLayer = hasExplicitMarketingBrief || logoAssetIds.length > 0 || promotionLabels.length > 0
+    const factLabels = [...new Set([
+      ...verifiedAttributeLabels,
+      ...confirmedSellingPoints.map(value => `卖点:${value}`),
+    ].map(value => value.trim()).filter(Boolean))].slice(0, 12)
     const visualPlacement = task?.productionPlan?.placement ?? brief?.placement ?? (contentVersion ? 'detail_page' : 'product_image')
     const detailPlacement = /detail|详情|套图|长图|gallery/iu.test(`${input.direction} ${visualPlacement}`)
     const detailSections = [
@@ -3005,10 +3018,12 @@ export class MerchantService {
       platform: task?.platform ?? product.platform,
       placement: visualPlacement,
       skuLabels: (product.skus ?? []).filter(sku => skuIds.includes(sku.id)).map(sku => `${sku.name}${sku.attributes && Object.keys(sku.attributes).length ? `（${Object.entries(sku.attributes).map(([key, value]) => `${key}:${value}`).join('，')}）` : ''}`),
+      ...(factLabels.length ? { factLabels } : {}),
       sellingPoints: confirmedSellingPoints,
       ...(trafficKeywords.length ? { trafficKeywords } : {}),
       ...(logoAssetIds.length ? { logoAssetIds } : {}),
       ...(marketingLabels.length ? { marketingLabels } : {}),
+      marketingLayer,
       ...(promotionLabels.length ? { promotionLabels } : {}),
       ...(detailPlacement || input.size === '1024x3072' || input.size === '1024x4096' ? { detailSections } : {}),
       ...(detailPlacement && count > 1 ? { seriesConsistency: '同一商品详情页套图：统一网格、字体、色板、光影和商品比例；每张图承担独立章节，避免重复构图与规格冲突。' } : {}),

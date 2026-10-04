@@ -23,6 +23,8 @@ export interface ImageGenerationInput {
     platform?: string
     placement?: string
     skuLabels?: string[]
+    /** Confirmed product facts used only as visual constraints, never as copy. */
+    factLabels?: string[]
     sellingPoints?: string[]
     /** Verified short search/traffic keyword labels. Never inferred claims. */
     trafficKeywords?: string[]
@@ -36,6 +38,8 @@ export interface ImageGenerationInput {
     styleKeywords?: string[]
     /** Confirmed, reviewable marketing copy. Never inferred by the provider. */
     marketingLabels?: string[]
+    /** Whether the caller explicitly requested a post-composed marketing layer. */
+    marketingLayer?: boolean
     /** Ordered long-page chapters, each with one buyer question. */
     detailSections?: string[]
     /** Guidance shared by every image in a detail-page set. */
@@ -214,9 +218,14 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
     if (options.signal?.aborted) controller.abort()
     else options.signal?.addEventListener('abort', abort, { once: true })
     try {
+      const sourceAssetRefs = [...new Set((input.sourceAssetRefs ?? []).map(ref => ref.trim()).filter(Boolean))].slice(0, 10)
+      const sourceImages = (input.sourceImages ?? []).filter(image => /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/iu.test(image)).slice(0, 10)
+      const hasReferenceInput = sourceImages.length > 0 || sourceAssetRefs.length > 0
       const modeInstruction = input.mode === 'optimize'
         ? '基于提供的已授权商品素材优化构图、背景和光影；必须保持商品本体、颜色、材质、结构、Logo/印花和 SKU 对应关系不变。'
-        : '从零设计概念构图；不得把概念图当作真实商品保真证明。'
+        : hasReferenceInput
+          ? '从零设计概念构图；不得把概念图当作真实商品保真证明；已提供的参考素材仅用于保持商品身份和视觉边界。'
+          : '无参考商品图，本次只生成非品牌概念示意候选；不得声称还原真实包装、颜色、材质、结构、Logo、认证或标签。使用无品牌中性包装，不绘制任何文字、数字、字母、Logo、水印、标签或可读包装文案。'
       const brief = input.visualBrief
       const imageSize = brief?.size ?? this.options.size ?? '1024x1024'
       const [canvasWidth, canvasHeight] = imageSize.split('x').map(Number)
@@ -240,6 +249,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
             ? '槽位为使用场景图：允许真实环境和人物，但商品颜色、款式、比例必须严格跟随参考图。'
             : '槽位为详情页模块图：只完成一个明确任务，背景、文案和装饰服从商品事实。'
       const skuLabels = boundedList(brief?.skuLabels, 12, 80)
+      const factLabels = boundedList(brief?.factLabels, 12, 120)
       const sellingPoints = boundedList(brief?.sellingPoints, 6, 120)
       const styleKeywords = boundedList(brief?.styleKeywords, 8, 80)
       const marketingLabels = boundedList(brief?.marketingLabels, 8, 120)
@@ -257,7 +267,8 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const isMainImage = /主图|白底/iu.test(input.direction) || /主图/iu.test(brief?.placement ?? '')
       const contentPlatformMainImage = isMainImage && (platform === 'xiaohongshu' || platform === 'douyin')
       const sceneMainImage = isMainImage && sceneRequested
-      const hasMarketingLayer = Boolean(logoAssetIds.length || sellingPoints.length || trafficKeywords.length || marketingLabels.length || promotionLabels.length || copy.length)
+      const inferredMarketingLayer = Boolean(logoAssetIds.length || sellingPoints.length || trafficKeywords.length || marketingLabels.length || promotionLabels.length || copy.length)
+      const hasMarketingLayer = brief?.marketingLayer ?? inferredMarketingLayer
       const effectiveHeroTemplate = sceneMainImage
         ? '模板=场景型搜索首屏 hero；构图=商品为唯一主角并占主要视觉面积，使用明确景深、环境层次和干净留白；光线=符合场景的自然商业光；背景=与品类匹配的真实简洁环境；禁止白底抠图复用、促销贴纸和虚构信息。'
         : heroTemplate
@@ -273,13 +284,14 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         isLongPage
           ? `长图必须按以下连续章节完成，每章解决一个购买顾虑，章节之间用同一套网格、字体、色板和光影衔接：${(detailSections.length ? detailSections : ['首屏价值主张：商品与核心收益', '痛点场景：用户为何需要', '核心卖点：最多三个已证据支持的收益', '使用流程：步骤化说明', '细节证据：材质/结构/工艺', '参数规格：尺寸/容量/适配', 'SKU与套餐边界：包含与不包含', '信任与行动：售后与克制 CTA']).join(' → ')}。每章只放一个结论，正文保持短句，严禁把多个正方形卡片简单纵向拼接。` : '',
         `风格方向：${input.direction}。${styleKeywords.length ? `品牌/风格关键词：${styleKeywords.join('、')}。` : ''}`,
-        skuLabels.length ? `只展示已确认的 SKU 标签：${skuLabels.join('、')}。` : '',
-        sellingPoints.length ? `围绕已确认卖点组织视觉层级：${sellingPoints.join('；')}。` : '',
-        copy.length ? `已确认的短文案仅作为排版参考：${copy.join('｜')}。` : '',
-        trafficKeywords.length ? `已确认的搜索/流量关键词只能作为短标签排版，不得扩展为排名、销量或功效承诺：${trafficKeywords.join('、')}。` : '',
+        skuLabels.length ? hasReferenceInput ? `只展示已确认的 SKU 标签：${skuLabels.join('、')}。` : `已确认的 SKU 仅作为事实约束，不在概念图中绘制文字：${skuLabels.join('、')}。` : '',
+        factLabels.length ? `已确认商品事实仅作为视觉约束，不作为营销排版或模型文字：${factLabels.join('；')}。` : '',
+        sellingPoints.length ? hasMarketingLayer ? `围绕已确认卖点组织视觉层级：${sellingPoints.join('；')}。` : `已确认卖点仅作为视觉层级约束，不作为模型文字：${sellingPoints.join('；')}。` : '',
+        hasMarketingLayer && copy.length ? `已确认的短文案仅作为排版参考：${copy.join('｜')}。` : '',
+        hasMarketingLayer && trafficKeywords.length ? `已确认的搜索/流量关键词只能作为短标签排版，不得扩展为排名、销量或功效承诺：${trafficKeywords.join('、')}。` : '',
         logoAssetIds.length ? `品牌 Logo 已授权，引用素材 ID ${logoAssetIds.join('、')}；必须原样使用、保持比例与安全区，不得重绘、变形、改字或伪造 Logo。` : '未提供已授权品牌 Logo，不得臆造任何 Logo 或品牌标识。',
-        promotionLabels.length ? `已确认促销活动标签（仅原样排版，不得改价、补折扣或延长有效期）：${promotionLabels.join('｜')}。` : '',
-        marketingLabels.length ? `已确认营销文案（仅原样排版，不得改写或补数字）：${marketingLabels.join('｜')}。` : '',
+        hasMarketingLayer && promotionLabels.length ? `已确认促销活动标签（仅原样排版，不得改价、补折扣或延长有效期）：${promotionLabels.join('｜')}。` : '',
+        hasMarketingLayer && marketingLabels.length ? `已确认营销文案（仅原样排版，不得改写或补数字）：${marketingLabels.join('｜')}。` : '',
         isMainImage && hasMarketingLayer ? '这是营销版商品主图：在不遮挡商品的前提下，必须形成清晰的营销排版层——品牌 Logo 安全区、一个核心卖点/主标题、最多三个已确认短标签、已确认活动标签（若有）和一个克制 CTA（若有）；使用明确网格、字号层级和可读对比，不能只返回白底商品照。中文文字尽量短、整洁、可读；未确认的字段留空，不要自行补写。' : '',
         bannerRequested
           ? 'Banner 必须让商品、核心利益点和 CTA 在缩略图中仍可识别；商品放在视觉重心一侧，另一侧保留可读文案安全区，背景使用品牌/活动氛围但不得抢过商品。不得绘制未经确认的价格、折扣、销量、倒计时、平台 Logo 或二维码。'
@@ -292,19 +304,21 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
           ? '用户已明确要求重新设计场景：必须生成肉眼可识别的新环境、新景深和新光影关系，不能使用纯白/浅灰无缝背景，不能只放大、裁切、锐化或原样回传参考图。商品应自然融入场景，但不得增加参考图中不存在的 Logo、图案、配件或功能。'
           : isMainImage && hasMarketingLayer
           ? '主图需重新设计为平台搜索首屏营销构图：商品仍是最大视觉焦点，营销信息放在预留安全区，使用一处主标题、少量卖点标签和轻量活动徽章，保持商品轮廓、颜色、材质、结构和 SKU 不变；禁止把画面做成廉价促销海报、禁止虚构 Logo/价格/折扣/销量/认证/功效。'
-          : isMainImage
+          : isMainImage && hasReferenceInput
           ? '电商主图必须使用纯白无缝背景，但必须做出肉眼可识别的新构图设计：使用不同于参考图的主体尺度与留白比例、轻微三分之四视觉层次或结构化裁切、精致接触阴影与轮廓光，形成明确的新主图版式；禁止任何文字、信息卡片、水印、Logo 臆造、边框、道具和复杂场景。即使参考图已经是白底，也必须重新渲染一张具有新构图的图片：不得只做像素级复制、不得原样回传参考图像素。商品颜色、款式、材质、结构、Logo 和 SKU 必须与参考图完全一致，严禁改色、换款或重绘成另一件商品。'
+          : isMainImage
+          ? '这是无参考图的概念主图：使用无品牌、无文字、无标签的中性商品外观，主体完整居中并留出均衡留白；只表达品类和构图方向，不能暗示真实包装、颜色、材质、结构、Logo、认证或 SKU 已被还原。'
           : '画面不要素白：加入有层级的背景、材质/场景细节、信息卡片、几何图形或纹理，但装饰必须服务于商品和卖点。信息卡片只承载已确认文案，采用清晰网格、统一圆角和 8px 倍数间距，避免廉价贴纸堆叠。',
-        '商品本体、Logo、包装、SKU 对应关系和已确认事实不可改变；不要编造价格、折扣、认证、功效、销量、评论或配件。',
-        '参考图是商品主体的唯一视觉事实来源；如果文字描述、自动解析结果或模型上下文与参考图冲突，忽略冲突描述，严格保留参考图中的商品类别、颜色、材质、结构和配件，不得把商品替换成其他品类。',
+        hasReferenceInput ? '商品本体、Logo、包装、SKU 对应关系和已确认事实不可改变；不要编造价格、折扣、认证、功效、销量、评论或配件。' : '本次没有可用于保真还原的商品参考图；不要把文字描述扩展成真实包装、品牌、颜色、材质、结构、Logo、认证或 SKU，输出只能作为概念候选。',
+        hasReferenceInput ? '参考图是商品主体的唯一视觉事实来源；如果文字描述、自动解析结果或模型上下文与参考图冲突，忽略冲突描述，严格保留参考图中的商品类别、颜色、材质、结构和配件，不得把商品替换成其他品类。' : '概念图不得生成可读的中文、英文、数字、品牌标识或包装标签；如果模型无法满足无文字要求，结果不得作为合格候选。',
         '生成前自检：场景类型、平台比例、商品身份、颜色、结构、材质、Logo、SKU、主体完整性和可读性必须同时满足；任一项无法满足就不要把结果当作合格候选。',
         hasMarketingLayer ? '这是后置排版流程：模型只负责生成商品、场景、光影和构图，严禁在图片中绘制任何文字、中文、英文、数字、Logo、促销标签或水印；请在画面左侧或上方预留干净、连续、无纹理的文案安全区，准确文案将由程序后置排版。' : '中文长文案和精确事实文字不要交给模型直接绘制；为后置排版保留清晰安全区，并返回适合叠加真实文案的构图。',
-        isMainImage
+        isMainImage && hasReferenceInput
           ? '商品主体清晰完整，保持原图的颜色、结构、材质和比例，不得改色、换款、增加图案或生成文字。'
+          : isMainImage
+            ? '概念商品主体清晰完整，使用中性无品牌外观，不得生成文字、数字、Logo、包装标签、黑边、黑色竖栏或大面积空白遮挡主体。'
           : '商品主体清晰完整，避免无信息的极简海报、随机英文、乱码和不可读的小字。',
       ].filter(Boolean).join('')
-      const sourceAssetRefs = [...new Set((input.sourceAssetRefs ?? []).map(ref => ref.trim()).filter(Boolean))].slice(0, 10)
-      const sourceImages = (input.sourceImages ?? []).filter(image => /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/iu.test(image)).slice(0, 10)
       if (input.mode === 'optimize' && sourceImages.length === 0) {
         throw new ProviderRequestFailedError('image-source', 422, 'image optimize requires an uploaded source image', undefined, 'SOURCE_IMAGE_REQUIRED: optimize mode cannot fall back to text-only generation')
       }
@@ -314,7 +328,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const requestBody = JSON.stringify({
         model: this.options.model,
         prompt,
-        ...(isMainImage ? { negative_prompt: '文字，中文文字，英文文字，数字，乱码，信息卡片，标签，水印，臆造Logo，品牌标识，边框，道具，人物，复杂场景，廉价促销海报，阴影过重，裁切，缺失袖子，变形衣物，改色，换款' } : {}),
+        ...(isMainImage ? { negative_prompt: '文字，中文文字，英文文字，数字，乱码，信息卡片，标签，水印，臆造Logo，品牌标识，边框，道具，人物，复杂场景，廉价促销海报，阴影过重，裁切，黑边，黑色竖栏，大面积空白遮挡主体，缺失袖子，变形衣物，改色，换款' } : {}),
         n: input.count,
         size: imageSize,
         ...(this.options.quality ? { quality: this.options.quality } : {}),

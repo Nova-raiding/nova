@@ -184,6 +184,29 @@ describe('image generator', () => {
     expect(requestBody?.prompt).toEqual(expect.stringContaining('同平台同类竞品研究'))
   })
 
+  it('keeps a no-source create candidate unbranded and disables inferred marketing composition', async () => {
+    let requestBody: Record<string, unknown> | undefined
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+        return new Response(JSON.stringify({ id: 'concept-image', usage: { output_image_count: 1, cost_cny: 0.01 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 })
+      },
+    })
+    await generator.generate({
+      productTitle: '有机燕麦奶 1L', category: '食品饮料', direction: '白底商品主图', count: 1,
+      visualBrief: { platform: 'pinduoduo', placement: '商品主图', marketingLabels: ['有机燕麦奶 1L'], factLabels: ['净含量:1L'], marketingLayer: false },
+    })
+    const prompt = String(requestBody?.prompt)
+    expect(prompt).toContain('无参考商品图')
+    expect(prompt).toContain('无品牌、无文字、无标签')
+    expect(prompt).toContain('只能作为概念候选')
+    expect(prompt).toContain('已确认商品事实仅作为视觉约束')
+    expect(prompt).not.toContain('已确认营销文案')
+    expect(prompt).not.toContain('这是后置排版流程')
+    expect(String(requestBody?.negative_prompt)).toContain('黑色竖栏')
+  })
+
   it('does not deliver image artifacts when the usage receipt cannot be recorded', async () => {
     const generator = new OpenAICompatibleImageGenerator({
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model',
@@ -333,7 +356,7 @@ describe('image generator', () => {
         return new Response(JSON.stringify({ usage: { output_image_count: 1 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 })
       },
     })
-    await generator.generate({ productTitle: '外套', direction: '白底主图', count: 1, visualBrief: { platform: 'taobao', placement: '商品主图' } })
+    await generator.generate({ productTitle: '外套', direction: '白底主图', count: 1, sourceImages: ['data:image/png;base64,AQID'], visualBrief: { platform: 'taobao', placement: '商品主图' } })
     expect(requestBody?.prompt).toEqual(expect.stringContaining('不得原样回传参考图像素'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('平台模板执行：模板=搜索首屏商品 hero'))
   })

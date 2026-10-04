@@ -2880,6 +2880,24 @@ it('freezes a banner output variant from the requested activity slot', () => {
   expect(job.visualBrief).toMatchObject({ placement: 'product_image', outputVariant: 'banner' })
 })
 
+it('keeps fact-only image requests out of the marketing compositor', () => {
+  const service = new MerchantService({ fixtureMode: true })
+  const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', direction: '白底商品主图', idempotencyKey: 'fact-only-main-image', count: 1 })
+  expect(job.visualBrief?.marketingLayer).toBe(false)
+  expect(job.visualBrief?.trafficKeywords).toBeUndefined()
+  expect(job.visualBrief?.marketingLabels).toBeUndefined()
+})
+
+it('keeps an explicitly supplied marketing brief on the compositor path', () => {
+  const service = new MerchantService({ fixtureMode: true })
+  const job = service.enqueueImageGeneration({
+    workspaceId: 'ws_demo', productId: 'prod_fixture_1', direction: '白底商品主图', idempotencyKey: 'explicit-main-image-marketing', count: 1,
+    marketingBrief: { marketingLabels: ['轻量通勤'], headline: '轻装出行', cta: '立即了解' },
+  })
+  expect(job.visualBrief?.marketingLayer).toBe(true)
+  expect(job.visualBrief?.marketingLabels).toEqual(expect.arrayContaining(['轻量通勤']))
+})
+
 it('accepts and freezes a landscape canvas for banner generation', () => {
   const service = new MerchantService({ fixtureMode: true })
   const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', direction: '夏季活动 Banner', size: '1536x1024', idempotencyKey: 'landscape-banner-size', count: 1 })
