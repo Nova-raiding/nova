@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { persistenceReady, registeredMcpAuthorizationDecision, resolveAuthorizationResourceScope, resolveLoadedAuthorizationResourceScope, service, workspaceAccountPermissionAtoms } from './server.js'
+import { resolveLoadedAuthorizationResourceScopeWithDependencies } from './loaded-authorization-resource-scope.js'
 import { AUTHZ_POLICY_VERSION, MCP_METHODS, getHttpOperationPolicy, getMcpMethodPolicy, type MethodPolicy } from '../../../packages/contracts/src/index.js'
 import { MemoryBrandUnitRepository, type CanonicalProductRow } from '../../../packages/persistence/src/index.js'
 
@@ -159,9 +160,56 @@ describe('registered MCP authorization coverage', () => {
     const policy = getMcpMethodPolicy('catalog.image.review')!
     await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { product_id: productId })).resolves.toEqual({ type: 'brand', id: 'brand_legacy_scope' })
 
+    const candidate = service.createTask({ workspaceId, productId, platform: 'taobao' })
+    service.tasks.get(candidate.id)!.candidateOnly = true
+    service.tasks.get(candidate.id)!.brandId = 'brand_candidate_scope'
+    await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { product_id: productId })).resolves.toEqual({ type: 'brand', id: 'brand_legacy_scope' })
+
     const conflicting = service.createTask({ workspaceId, productId, platform: 'taobao' })
     service.tasks.get(conflicting.id)!.brandId = 'brand_conflicting_scope'
     await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { product_id: productId })).resolves.toEqual({ type: 'brand', id: undefined })
+  })
+
+  it('fails closed when a product-only scope has ambiguous canonical brands', async () => {
+    const suffix = Date.now()
+    const workspaceId = `ws_legacy_product_ambiguous_scope_${suffix}`
+    const productId = `product_legacy_ambiguous_scope_${suffix}`
+    const product = { ...service.products.get('prod_fixture_1')!, id: productId, workspaceId }
+    service.products.set(productId, product)
+    const task = service.createTask({ workspaceId, productId, platform: 'taobao' })
+    service.tasks.get(task.id)!.brandId = 'brand_task_fallback'
+    const policy = getMcpMethodPolicy('catalog.image.review')!
+
+    await expect(resolveLoadedAuthorizationResourceScopeWithDependencies(policy, workspaceId, { product_id: productId }, undefined, {
+      service,
+      listCanonicalProducts: async () => [{ brandId: 'brand_a' }, { brandId: 'brand_b' }],
+    })).resolves.toEqual({ type: 'brand', id: undefined })
+  })
+
+  it('hydrates a cold product before resolving product-only legacy scope', async () => {
+    const suffix = Date.now()
+    const workspaceId = `ws_legacy_product_cold_scope_${suffix}`
+    const productId = `product_legacy_cold_scope_${suffix}`
+    const product = { ...service.products.get('prod_fixture_1')!, id: productId, workspaceId }
+    service.products.set(productId, product)
+    const task = service.createTask({ workspaceId, productId, platform: 'taobao' })
+    service.tasks.get(task.id)!.brandId = 'brand_cold_scope'
+    service.products.delete(productId)
+    let snapshotCalls = 0
+    const policy = getMcpMethodPolicy('catalog.image.review')!
+
+    await expect(resolveLoadedAuthorizationResourceScopeWithDependencies(policy, workspaceId, { product_id: productId }, undefined, {
+      service,
+      getProductSnapshot: async (loadedWorkspaceId, loadedProductId) => {
+        expect(loadedWorkspaceId).toBe(workspaceId)
+        expect(loadedProductId).toBe(productId)
+        snapshotCalls += 1
+        return { payload: product as unknown as Record<string, unknown> }
+      },
+      listCanonicalProducts: async () => [],
+    })).resolves.toEqual({ type: 'brand', id: 'brand_cold_scope' })
+    expect(snapshotCalls).toBe(1)
+    expect(service.products.get(productId)).toMatchObject({ id: productId, workspaceId })
   })
 
   it('produces one unique strict authorization decision for every live MCP method', () => {

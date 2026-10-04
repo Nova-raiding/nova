@@ -5,6 +5,7 @@ import { resolveAuthorizationResourceScope } from './authorization-projection-he
 interface LoadedAuthorizationScopeDependencies {
   service: MerchantService
   getTaskSnapshot?: (workspaceId: string, taskId: string) => Promise<{ payload: Record<string, unknown> }>
+  getProductSnapshot?: (workspaceId: string, productId: string) => Promise<{ payload: Record<string, unknown> }>
   listCanonicalProducts: (input: { workspaceId: string; sourceProductIds: string[] }) => Promise<Array<{ brandId: string }>>
 }
 
@@ -33,7 +34,17 @@ export async function resolveLoadedAuthorizationResourceScopeWithDependencies(po
   }
   const contentTask = contentVersion ? deps.service.tasks.get(contentVersion.taskId) : undefined
   const requestedProductId = typeof params.product_id === 'string' && params.product_id.trim() ? params.product_id.trim() : undefined
-  const requestedProduct = requestedProductId ? deps.service.products.get(requestedProductId) : undefined
+  let requestedProduct = requestedProductId ? deps.service.products.get(requestedProductId) : undefined
+  // Product-only MCP methods have no task_id from which to trigger the usual
+  // durable hydrate. On a cold API replica, load the exact workspace-scoped
+  // product snapshot before resolving its brand/account resource.
+  if (!requestedProduct && requestedProductId && deps.getProductSnapshot) {
+    try {
+      const snapshot = await deps.getProductSnapshot(workspaceId, requestedProductId)
+      deps.service.hydrateSnapshot({ entityType: 'product', entity: snapshot.payload })
+      requestedProduct = deps.service.products.get(requestedProductId)
+    } catch { /* the route-level product check remains the final not-found boundary */ }
+  }
   if (taskId && (!requestedTask || requestedTask.workspaceId !== workspaceId)) return unresolvedLoadedResourceScope(direct)
   if (contentVersionId && (!contentVersion || !contentTask || contentTask.workspaceId !== workspaceId)) return unresolvedLoadedResourceScope(direct)
   if (requestedProductId && (!requestedProduct || requestedProduct.workspaceId !== workspaceId)) return unresolvedLoadedResourceScope(direct)
@@ -91,13 +102,14 @@ export async function resolveLoadedAuthorizationResourceScopeWithDependencies(po
   const canonical = await deps.listCanonicalProducts({ workspaceId, sourceProductIds: [product.id] })
   const brandIds = [...new Set(canonical.map(item => item.brandId))]
   if (brandIds.length === 1) return { type: 'brand' as const, id: brandIds[0] }
+  if (brandIds.length > 1) return { type: 'brand' as const, id: undefined }
   // Legacy formal tasks may carry a frozen brand scope before the canonical
   // product backfill has completed. Product-only methods such as
   // `catalog.image.review` cannot receive a task_id, so recover that scope
   // only when every task for this product agrees on one explicit brand. A
   // conflicting or absent scope remains unresolved and fails closed.
   const taskBrandIds = [...new Set([...deps.service.tasks.values()]
-    .filter(task => task.workspaceId === workspaceId && task.productId === product.id && typeof task.brandId === 'string' && task.brandId.trim())
+    .filter(task => task.workspaceId === workspaceId && task.productId === product.id && task.candidateOnly !== true && typeof task.brandId === 'string' && task.brandId.trim())
     .map(task => task.brandId!.trim()))]
   return { type: 'brand' as const, id: taskBrandIds.length === 1 ? taskBrandIds[0] : undefined }
 }

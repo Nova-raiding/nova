@@ -6276,6 +6276,7 @@ export async function resolveLoadedAuthorizationResourceScope(policy: NonNullabl
   return resolveLoadedAuthorizationResourceScopeWithDependencies(policy, workspaceId, params, principal, {
     service,
     ...(persistence.business ? { getTaskSnapshot: (id: string, taskId: string) => persistence.business!.get(id, 'task', taskId) } : {}),
+    ...(persistence.business ? { getProductSnapshot: (id: string, productId: string) => persistence.business!.get(id, 'product', productId) } : {}),
     listCanonicalProducts: input => (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts(input),
   })
 }
