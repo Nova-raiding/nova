@@ -395,7 +395,12 @@ export const ROLE_CAPABILITIES: Readonly<Record<CanonicalRole, readonly Capabili
 
 export function capabilitiesForRoles(roles: readonly CanonicalRole[]): CapabilityId[] {
   const capabilities = new Set<CapabilityId>(roles.length ? ['authorization.session.read'] : [])
-  for (const role of roles) for (const capability of ROLE_CAPABILITIES[role]) capabilities.add(capability)
+  // `platform_admin` is the designated super administrator. Keep this as a
+  // derived union so newly added capabilities cannot silently fall outside
+  // the super-admin contract. Scope, workbench, obligations and explicit
+  // denies remain enforced by the policy evaluator and request handlers.
+  const effectiveRoles = roles.includes('platform_admin') ? CANONICAL_ROLES : roles
+  for (const role of effectiveRoles) for (const capability of ROLE_CAPABILITIES[role]) capabilities.add(capability)
   return [...capabilities].sort()
 }
 

@@ -6583,7 +6583,8 @@ function requireRuleAdmin(req: IncomingMessage): RequestPrincipal {
   // Compare canonical roles only: matching the raw assertion rejected the
   // registered `platform_rules_admin` gateway alias (canonical `rules_admin`),
   // which made the rule center's writes and lifecycle view unusable for it.
-  if (!principal || !canonicalAuthorizationRolesForRequest(req).includes('rules_admin') || !principal.actorId) throw new DomainError(ERROR_CODES.FORBIDDEN, '规则中心写操作需要绑定 actor_id 的 rules_admin 权限', 403)
+  const roles = canonicalAuthorizationRolesForRequest(req)
+  if (!principal || (!roles.includes('rules_admin') && !roles.includes('platform_admin')) || !principal.actorId) throw new DomainError(ERROR_CODES.FORBIDDEN, '规则中心写操作需要绑定 actor_id 的 rules_admin 或 platform_admin 权限', 403)
   const claimedActor = header(req, 'x-actor-id')?.trim()
   if (requiresStrictAuth() && claimedActor && claimedActor !== principal.actorId) throw new DomainError(ERROR_CODES.FORBIDDEN, 'X-Actor-Id 与认证身份不一致', 403)
   return principal
@@ -6593,10 +6594,11 @@ function requirePlatformRuleReviewer(req: IncomingMessage): { actorId: string; w
   const principal = requestPrincipals.get(req)
   // Public rule drafts are shared control-plane policy. Do not let the caller
   // widen a workspace principal by asserting x-ops-workbench=platform.
+  const roles = canonicalAuthorizationRolesForRequest(req)
   if (!principal || principal.workbench !== 'platform'
-    || !canonicalAuthorizationRolesForRequest(req).includes('rules_admin')
+    || (!roles.includes('rules_admin') && !roles.includes('platform_admin'))
     || !principal.actorId) {
-    throw new DomainError(ERROR_CODES.FORBIDDEN, '公共规则草稿审阅需要平台工作台和 rules_admin 身份', 403)
+    throw new DomainError(ERROR_CODES.FORBIDDEN, '公共规则草稿审阅需要平台工作台和 rules_admin 或 platform_admin 身份', 403)
   }
   return { actorId: principal.actorId, workbench: principal.workbench }
 }
