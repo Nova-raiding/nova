@@ -15,7 +15,6 @@ import { MCP_KNOWLEDGE_METHODS, handleMcpKnowledgeMethod } from './mcp-knowledge
 import { createWorkerAuthorizationRuntime } from './worker-authorization-runtime.js'
 import { handleHttpGenerationJobWorker } from './http-generation-job-worker.js'
 import { buildBoundedKnowledgeGenerationContext } from './knowledge-context-runtime.js'
-import { resolveContextSnapshotBrandId } from './context-snapshot-brand.js'
 export { buildBoundedKnowledgeGenerationContext, KNOWLEDGE_CONTEXT_LIMITS } from './knowledge-context-runtime.js'
 import { handleHttpGenerationJobCreate } from './http-generation-job-create.js'
 import { handleHttpImageGenerationJobRead } from './http-image-generation-job-read.js'
@@ -458,18 +457,7 @@ const service = new MerchantService({
   contextSnapshotSink: async ({ task, envelope, inputTokensEstimate, maxInputTokens, versions }) => {
     await persistenceReady
     const persistedEnvelope = envelope as unknown as Record<string, unknown>
-    // Historical tasks can retain a frozen brand id in their compatibility
-    // snapshot after the normalized brand row was removed or never backfilled.
-    // The context link has a durable FK, so only carry a brand id that exists
-    // in the authoritative repository; task_id/workspace still bind the
-    // generation context for legacy tasks and keep authorization fail-closed.
-    const durableBrandId = await resolveContextSnapshotBrandId({
-      persistenceMode: persistence.mode,
-      workspaceId: task.workspaceId,
-      ...(task.brandId ? { brandId: task.brandId } : {}),
-      ...(persistence.brandUnits ? { brandUnits: persistence.brandUnits } : {}),
-    })
-    const saved = await (persistence.contextSnapshots ?? memoryContextSnapshots).save({ workspaceId: task.workspaceId, ...(durableBrandId ? { brandId: durableBrandId } : {}), envelope: persistedEnvelope, inputTokensEstimate, maxInputTokens, versions, taskId: task.id, ...(task.campaignId ? { campaignId: task.campaignId, campaignItemId: task.campaignItemId! } : {}), ...(task.canonicalProductId ? { canonicalProductId: task.canonicalProductId } : {}), ...(task.listingId ? { listingId: task.listingId } : {}), linkId: taskContextLinkId(task.id, persistedEnvelope) })
+    const saved = await (persistence.contextSnapshots ?? memoryContextSnapshots).save({ workspaceId: task.workspaceId, ...(task.brandId ? { brandId: task.brandId } : {}), envelope: persistedEnvelope, inputTokensEstimate, maxInputTokens, versions, taskId: task.id, ...(task.campaignId ? { campaignId: task.campaignId, campaignItemId: task.campaignItemId! } : {}), ...(task.canonicalProductId ? { canonicalProductId: task.canonicalProductId } : {}), ...(task.listingId ? { listingId: task.listingId } : {}), linkId: taskContextLinkId(task.id, persistedEnvelope) })
     return { id: saved.id, contextHash: saved.contextHash }
   },
   maxActiveJobsPerWorkspace: Number.isFinite(maxActiveJobsPerWorkspace) && maxActiveJobsPerWorkspace > 0 ? maxActiveJobsPerWorkspace : 3,
