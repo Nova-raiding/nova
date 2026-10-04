@@ -34,8 +34,10 @@ test('production merchant workflow is available and remains fail-closed for exte
   await expect(catalogState.first()).toBeVisible()
 
   await page.getByRole('button', { name: '财务概况', exact: true }).click()
-  await expect(page.getByRole('region', { name: '人工发布状态' })).toContainText('六平台由人工执行发布')
-  await expect(page.getByRole('region', { name: '人工发布状态' }).getByRole('button', { name: /发布/u })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: '财务概况' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '充值创意点', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '人工发布状态' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: '财务概况' }).getByRole('button', { name: /提交人工发布任务|确认人工发布/u })).toHaveCount(0)
   expect(pageErrors).toEqual([])
   await context.close()
   await browser.close()
