@@ -1307,6 +1307,33 @@ async function ensureLocalFixtureCreativePoints(workspaceId: string) {
 
 const memoryContinuousFeatureEntitlements = new Map<string, ContinuousFeatureEntitlementSnapshotV2[]>()
 
+/**
+ * Local acceptance data must not depend on a calendar-expired subscription row
+ * left in a persistent QA database. Keep this entitlement in memory and only
+ * enable it behind the explicit fixture commercial mode; ECS/production never
+ * enters this branch.
+ */
+function ensureLocalFixtureEntitlement(workspaceId: string) {
+  if (!fixtureCommercialTestMode || memoryContinuousFeatureEntitlements.has(workspaceId)) return
+  const now = Date.now()
+  const snapshot: ContinuousFeatureEntitlementSnapshotV2 = {
+    id: `local-fixture-entitlement-${workspaceId}`,
+    workspaceId,
+    subscriptionPeriodId: `local-fixture-period-${workspaceId}`,
+    periodStart: new Date(now - 60 * 60 * 1000).toISOString(),
+    periodEnd: new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    periodStatus: 'active',
+    catalogVersionId: 'local-fixture-catalog-v2',
+    skuCode: 'local-fixture-plan',
+    resolvedBenefits: [{ code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 }],
+    unresolvedBlockers: [],
+    executable: true,
+    checksum: createHash('sha256').update(`local-fixture-entitlement:${workspaceId}`).digest('hex'),
+    createdAt: new Date(now).toISOString(),
+  }
+  memoryContinuousFeatureEntitlements.set(workspaceId, [snapshot])
+}
+
 export function grantContinuousFeatureEntitlementForTests(workspaceId: string) {
   if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('CONTINUOUS_FEATURE_ENTITLEMENT_GRANT_TEST_ONLY')
   const snapshot: ContinuousFeatureEntitlementSnapshotV2 = {
@@ -3542,6 +3569,10 @@ const commercialAccessService = new CommercialAccessService({
   entitlement_projection: {
     async listV2EntitlementSnapshots({ workspace_id }) {
       await persistenceReady
+      if (fixtureCommercialTestMode) {
+        ensureLocalFixtureEntitlement(workspace_id)
+        return memoryContinuousFeatureEntitlements.get(workspace_id) ?? []
+      }
       if (persistence.commercialContracts) return persistence.commercialContracts.listEntitlementSnapshots(workspace_id)
       return memoryContinuousFeatureEntitlements.get(workspace_id) ?? []
     },
@@ -15161,6 +15192,7 @@ if (process.env.NODE_ENV !== 'test') {
   persistenceReady.then(() => {
     if (process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true' && persistence.creativePoints) {
       void persistence.creativePoints.grant({ workspaceId: 'ws_demo', idempotencyKey: 'fixture-bootstrap:ws_demo', sourceType: 'test_fixture', sourceId: 'fixture-bootstrap-ws_demo', points: 10_000, metadata: { fixture: true, non_production: true } }).catch(error => console.error('fixture creative point bootstrap failed', error))
+      ensureLocalFixtureEntitlement('ws_demo')
     }
     const cleanupIntervalMs = Math.max(5_000, Number(process.env.ASSET_PROMOTION_CLEANUP_INTERVAL_MS ?? 15_000))
     const cleanupTimer = setInterval(() => { void drainPromotionCleanupTasks() }, cleanupIntervalMs)
