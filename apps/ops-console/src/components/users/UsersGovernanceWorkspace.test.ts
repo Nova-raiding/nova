@@ -21,10 +21,10 @@ describe("visibleUsersGovernanceSections", () => {
     ], ["ops_admin"]), "hyp@sn.com")).toEqual(["workspaces", "authorization"]);
   });
 
-  it("exposes authorization only to the two designated accounts with server-granted read capability", () => {
+  it("exposes authorization only to the three designated accounts with server-granted read capability", () => {
     expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"], ["ops_admin"]), "hyp@sn.com")).toEqual(["authorization"]);
     expect(visibleUsersGovernanceSections(authorization(["authorization.grant.read"], ["ops_admin"]), "hxd@sn.com")).toEqual(["authorization"]);
-    expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"], ["ops_admin"]), "devide@sn.com")).toEqual([]);
+    expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"], ["ops_admin"]), "devide@sn.com")).toEqual(["authorization"]);
     expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"], ["platform_admin"]), "other@sn.com")).toEqual([]);
     expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"], ["security_admin"]), "hyp@sn.com")).toEqual([]);
     expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"], ["ops_admin"], "workspace"), "hyp@sn.com")).toEqual([]);

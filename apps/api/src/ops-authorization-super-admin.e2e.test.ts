@@ -90,12 +90,12 @@ afterEach(async () => {
 
 describe('authorization MCP password session boundary', () => {
   it('denies another platform administrator despite forged allowlisted account headers', async () => {
-    const result = await call(await login('devide@sn.com'))
+    const result = await call(await login('unlisted-platform-admin@example.test'))
     expect(result.status).toBe(403)
     expect(result.body.error?.code).toBe('FORBIDDEN')
   })
 
-  it.each(['hyp@sn.com', 'hxd@sn.com'])('allows designated administrator %s', async account => {
+  it.each(['hyp@sn.com', 'hxd@sn.com', 'devide@sn.com'])('allows designated administrator %s', async account => {
     const result = await call(await login(account))
     expect(result.status).toBe(200)
     expect(result.body.error).toBeNull()
@@ -124,7 +124,7 @@ describe('authorization MCP password session boundary', () => {
     expect(result.body.error?.code).toBe('FORBIDDEN')
   })
 
-  it.each(['hyp@sn.com', 'hxd@sn.com'])('lets designated durable ops_admin %s assign rules_admin through the authenticated Ops mutation', async account => {
+  it.each(['hyp@sn.com', 'hxd@sn.com', 'devide@sn.com'])('lets designated durable ops_admin %s assign rules_admin through the authenticated Ops mutation', async account => {
     const administratorCookie = await login(account, 'ops_admin')
     const maker = await createPlatformIdentity('rules-maker@example.test')
     const checker = await createPlatformIdentity('rules-checker@example.test')

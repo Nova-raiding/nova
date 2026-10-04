@@ -30,7 +30,7 @@ function allowedContext(login = 'hyp@sn.com'): NonNullable<ReturnType<Dependenci
 
 describe('ops authorization MCP super administrator gate', () => {
   it.each([...MCP_OPS_AUTHORIZATION_METHODS])('rejects %s before accessing its repository when the verified login is not designated', async method => {
-    const { deps, authorizationRepository } = dependencies(allowedContext('devide@sn.com'))
+    const { deps, authorizationRepository } = dependencies(allowedContext('unlisted-platform-admin@example.test'))
     await expect(handleMcpOpsAuthorizationMethod(method, {}, request, 'ws_test', deps)).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
     expect(authorizationRepository).not.toHaveBeenCalled()
   })
@@ -48,7 +48,7 @@ describe('ops authorization MCP super administrator gate', () => {
     await expect(handleMcpOpsAuthorizationMethod('ops.authorization.matrix.get', {}, request, 'ws_test', deps)).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
   })
 
-  it.each(['hyp@sn.com', 'hxd@sn.com'])('allows designated account %s when role and method capability are verified', async login => {
+  it.each(['hyp@sn.com', 'hxd@sn.com', 'devide@sn.com'])('allows designated account %s when role and method capability are verified', async login => {
     const { deps } = dependencies(allowedContext(login))
     const result = await handleMcpOpsAuthorizationMethod('ops.authorization.matrix.get', {}, request, 'ws_test', deps)
     expect(result).toMatchObject({ schema_version: 1, generated_from: 'MCP_METHOD_POLICIES' })

@@ -27,7 +27,7 @@ export const MCP_OPS_AUTHORIZATION_METHODS = new Set([
   'ops.authorization.grant.revoke',
 ])
 
-const authorizationSuperAdminLogins = new Set(['hyp@sn.com', 'hxd@sn.com'])
+const authorizationSuperAdminLogins = new Set(['hyp@sn.com', 'hxd@sn.com', 'devide@sn.com'])
 
 function requiredCapability(method: string): CapabilityId | undefined {
   return MCP_METHOD_POLICIES[method as keyof typeof MCP_METHOD_POLICIES]?.capability

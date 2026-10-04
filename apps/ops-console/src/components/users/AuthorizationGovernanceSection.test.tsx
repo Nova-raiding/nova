@@ -208,10 +208,10 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
     return { form, approvedAt, expiresAt };
   }
 
-  it("does not render the authorization panel for a different operations administrator even when capabilities are present", async () => {
+  it("does not render the authorization panel for an unlisted operations administrator even when capabilities are present", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     try {
-      await page.goto(`${baseUrl}/__jit-submit-test?login=devide%40sn.com`);
+      await page.goto(`${baseUrl}/__jit-submit-test?login=unlisted-platform-admin%40example.test`);
       await page.waitForFunction(() => Boolean(document.querySelector("#root > .ant-app")));
       expect(await page.locator(".ops-authorization-card").count()).toBe(0);
       expect(await page.getByRole("form", { name: "签发 JIT 授权" }).count()).toBe(0);

@@ -34,7 +34,7 @@ const capabilityLabels: Record<string, string> = {
   "workspace.member.read": "查看商家成员",
   "workspace.member.manage": "管理商家成员",
 };
-const authorizationSuperAdminLogins = new Set(["hyp@sn.com", "hxd@sn.com"]);
+const authorizationSuperAdminLogins = new Set(["hyp@sn.com", "hxd@sn.com", "devide@sn.com"]);
 
 export function canViewAuthorizationGovernance(
   authorization: Pick<OpsConsoleModel["authorization"], "can" | "roles" | "scope">,
