@@ -24,7 +24,7 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
     videoGenerator, header, isExemptUnboundImageCandidateProduct, enforceAssetAccess,
     requireApprovedAssetForImageGeneration, recordActionSettlement, randomUUID,
     assertVideoProviderJobScope, archiveCompletedVideo, modelSettlementDomainError,
-    publicImageJob,
+    publicImageJob, contentExecutionEvidence,
   } = dependencies
   switch (method) {
     case 'multimodal.image.edit': {
@@ -292,7 +292,19 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
         throw error
       }
       const providerExecuted = Boolean(rendering ? videoGenerator : generatedPlan && contentGenerator)
-      const execution = { status: rendering ? rendering.status : generatedPlan ? 'completed' as const : 'requested' as const, ...executionContract('video', providerExecuted, generatedPlan && contentGenerator ? 'text-relay' : undefined) }
+      const textExecution = generatedPlan && contentGenerator
+        ? await contentExecutionEvidence(workspaceId, walletDebitKey)
+        : undefined
+      const execution = {
+        status: rendering ? rendering.status : generatedPlan ? 'completed' as const : 'requested' as const,
+        ...executionContract('video', providerExecuted, generatedPlan && contentGenerator ? 'text-relay' : undefined),
+        ...(textExecution ? {
+          providerRequestId: textExecution.providerRequestId,
+          ...(textExecution.usage ? { usage: textExecution.usage } : {}),
+          ...(textExecution.costCny !== undefined ? { costCny: textExecution.costCny } : {}),
+          ...(textExecution.settlementStatus ? { settlementStatus: textExecution.settlementStatus } : {}),
+        } : {}),
+      }
       try {
         // Keep the event truthful: an accepted provider job is only queued
         // until a later `video.get` returns a completed HTTPS artifact.  The
