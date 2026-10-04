@@ -21,7 +21,7 @@ test('production merchant workflow is available and remains fail-closed for exte
   for (const heading of ['今日看板', '账号看板', '事务看板']) {
     await expect(page.getByRole('heading', { name: heading })).toBeVisible()
   }
-  await expect(page.getByText('已连接店铺', { exact: true }).first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^已连接店铺/u }).first()).toBeVisible()
 
   await page.goto(new URL('merchant/tasks/new', studioUrl).toString(), { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(1_500)
