@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { safePaymentUrls, unsafePaymentUrls } from './payment-url-gate-fixtures.js'
 
 const config = () => ({
+  deployment_mode: 'full',
   merchant_bearer_hostname: 'merchant.production.test',
   public_endpoints: { app_base_url: 'https://merchant.production.test', ops_base_url: 'https://ops.production.test', oauth_callback_base_url: 'https://merchant.production.test/v1/oauth/callback' },
   codex: { mcp: { base_url: 'https://merchant.production.test' } },
@@ -28,6 +29,7 @@ const config = () => ({
 
 const manifest = () => ({ apiVersion: 'v1', kind: 'List', items: [
   { apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'merchant-runtime' }, data: {
+    DEPLOYMENT_MODE: 'full',
     MERCHANT_BEARER_HOSTNAME: 'merchant.production.test', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true', REQUIRE_APPROVED_ASSET_FOR_GENERATION: 'true',
     MODEL_RELAY_BASE_URL: 'https://relay.production.test/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.production.test',
     AI_MODEL: 'text-v1', IMAGE_MODEL: 'image-v1', IMAGE_EDIT_MODEL: 'image-edit-v1', OCR_MODEL: 'ocr-v1', VIDEO_MODEL: 'video-v1', EMBEDDING_MODEL: 'embedding-v1', EMBEDDING_DIMENSIONS: '1536', MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10', KNOWLEDGE_VECTOR_INDEX_ENABLED: 'false', MODEL_RPM_LIMIT: '120', MODEL_TPM_LIMIT: '120000', MODEL_MAX_TASK_COST_CNY: '10.00',
@@ -84,6 +86,7 @@ describe('production config and rendered manifest binding gate', () => {
   })
 
   it.each([
+    ['deployment_mode', 'DEPLOYMENT_MODE'],
     ['model_relay_base_url', 'MODEL_RELAY_BASE_URL'],
     ['object_storage_endpoint', 'ASSET_STORAGE_ENDPOINT'],
     ['merchant_bearer_hostname', 'MERCHANT_BEARER_HOSTNAME'],

@@ -178,6 +178,7 @@ begin
   raise ProductionManifestBindingError, 'ConfigMap/merchant-runtime.data must be a mapping' unless runtime.is_a?(Hash)
 
   bindings = {
+    'deployment_mode' => 'DEPLOYMENT_MODE',
     'merchant_bearer_hostname' => 'MERCHANT_BEARER_HOSTNAME',
     'mcp_authorization_mode' => 'MCP_AUTHZ_MODE',
     'durable_platform_assignments_required' => 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED',
@@ -228,6 +229,11 @@ begin
     'platform_rule_sync_interval_hours' => 'PLATFORM_RULE_SYNC_INTERVAL_HOURS',
   }
   vector_index_enabled = required_config_leaf(config, 'knowledge_vector_index_enabled').strip.downcase
+  deployment_mode = required_config_leaf(config, 'deployment_mode').strip.downcase
+  raise ProductionManifestBindingError, 'deployment_mode must be lean or full' unless %w[lean full].include?(deployment_mode)
+  if deployment_mode == 'lean'
+    %w[payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url payment_provider_merchant_id payment_callback_base_url].each { |key| bindings.delete(key) }
+  end
   raise ProductionManifestBindingError, 'knowledge_vector_index_enabled must be true or false' unless %w[true false].include?(vector_index_enabled)
   unless vector_index_enabled == 'true'
     bindings.delete('embedding_model')
