@@ -30,3 +30,14 @@ export async function resolveContextSnapshotBrandId(input: {
     ? brandId
     : undefined
 }
+
+/** A frozen legacy scope may stand in for a missing durable brand only when
+ * both the id and the workspace remain exactly the task's original values. */
+export function legacyTaskBrandScopeCompatible(input: {
+  workspaceId: string
+  taskBrandId?: string
+  frozenBrandId?: string
+  frozenBrandWorkspaceId?: string
+}) {
+  return Boolean(input.taskBrandId && input.frozenBrandId === input.taskBrandId && input.frozenBrandWorkspaceId === input.workspaceId)
+}

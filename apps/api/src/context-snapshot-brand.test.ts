@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { MemoryContextSnapshotRepository } from '../../../packages/persistence/src/context-snapshot-repository.js'
-import { resolveContextSnapshotBrandId } from './context-snapshot-brand.js'
+import { legacyTaskBrandScopeCompatible, resolveContextSnapshotBrandId } from './context-snapshot-brand.js'
 
 describe('context snapshot durable brand binding', () => {
   it('omits a legacy brand while retaining the task and workspace link', async () => {
@@ -46,5 +46,11 @@ describe('context snapshot durable brand binding', () => {
       brandId: ' brand_legacy ',
       brandUnits: { listBrands: vi.fn().mockResolvedValue([]) },
     })).resolves.toBe(' brand_legacy ')
+  })
+
+  it('allows only an exact frozen legacy brand scope', () => {
+    expect(legacyTaskBrandScopeCompatible({ workspaceId: 'ws_owner', taskBrandId: 'brand_legacy', frozenBrandId: 'brand_legacy', frozenBrandWorkspaceId: 'ws_owner' })).toBe(true)
+    expect(legacyTaskBrandScopeCompatible({ workspaceId: 'ws_owner', taskBrandId: 'brand_foreign', frozenBrandId: 'brand_legacy', frozenBrandWorkspaceId: 'ws_owner' })).toBe(false)
+    expect(legacyTaskBrandScopeCompatible({ workspaceId: 'ws_owner', taskBrandId: 'brand_legacy', frozenBrandId: 'brand_legacy', frozenBrandWorkspaceId: 'ws_other' })).toBe(false)
   })
 })
