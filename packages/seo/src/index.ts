@@ -71,6 +71,10 @@ function uniqueTerms(values: readonly string[]): string[] {
   })
 }
 
+function dedupeKeywordTokens(value: string): string {
+  return uniqueTerms(value.split(' ')).join(' ')
+}
+
 function removeUnsupportedClaims(value: string): { value: string; removed: boolean } {
   let next = value
   let removed = false
@@ -117,7 +121,7 @@ function validateInput(input: SeoGeoInput): { factsVersion: number; normalized: 
   if (input.sellingPoints !== undefined && !Array.isArray(input.sellingPoints)) throw new SeoGeoInputError('sellingPoints 必须是数组')
   const sellingPoints = input.sellingPoints === undefined ? undefined : input.sellingPoints.map((point, index) => requireText(point, `sellingPoints[${index}]`)!)
   if (sellingPoints && sellingPoints.length > MAX_COLLECTION_ITEMS) throw new SeoGeoInputError('sellingPoints 条目过多')
-  return { factsVersion, normalized: { platform: input.platform, productId, title, ...(category ? { category } : {}), ...(Object.keys(attributes).length ? { attributes } : {}), ...(sellingPoints?.length ? { sellingPoints } : {}), ...(keyword ? { keyword } : {}), ...(objective ? { objective } : {}) } }
+  return { factsVersion, normalized: { platform: input.platform, productId, title, ...(category ? { category } : {}), ...(Object.keys(attributes).length ? { attributes } : {}), ...(sellingPoints?.length ? { sellingPoints } : {}), ...(keyword ? { keyword: dedupeKeywordTokens(keyword) } : {}), ...(objective ? { objective } : {}) } }
 }
 
 function contextHash(input: SeoGeoInput, factsVersion: number): string {

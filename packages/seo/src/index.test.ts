@@ -107,6 +107,19 @@ describe('generateSeoGeoSuggestions', () => {
     expect([...suggestion.title].length).toBeLessThanOrEqual(55)
   })
 
+  it('deduplicates repeated whitespace-separated keyword tokens before assembling the title', () => {
+    const suggestion = generateSeoGeoSuggestions({
+      ...validInput,
+      title: '轻量外套',
+      keyword: '通勤 通勤 防晒 通勤',
+    })[0]!
+
+    expect(suggestion.title.match(/通勤/gu)).toHaveLength(1)
+    expect(suggestion.title.match(/防晒/gu)).toHaveLength(1)
+    expect(suggestion.evidence.find(item => item.source === 'merchant_keyword')).toEqual({ source: 'merchant_keyword', value: '通勤 防晒' })
+    expect(suggestion.quality.duplicateTerms).toEqual([])
+  })
+
   it('reports deterministic editorial quality and avoids repeating the title anchor', () => {
     const suggestion = generateSeoGeoSuggestions({
       ...validInput,
