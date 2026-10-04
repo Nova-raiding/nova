@@ -2572,6 +2572,8 @@ describe('API HTTP vertical slice', () => {
     const completed = await fetch(`${base}/v1/generation-jobs/${jobId}/result`, { method: 'POST', headers, body: JSON.stringify({ content: generatedDecisionBody('异步标题', '异步详情', ['异步事实卖点']) }) }).then(json)
     expect((completed.data as { state: string }).state).toBe('succeeded')
     expect((completed.data as { contentVersionId: string }).contentVersionId).toMatch(/^cv_/)
+    const generationStatus = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'generation.get', params: { job_id: jobId } }) }).then(json)
+    expect((generationStatus.data as { result: { workflow: { status: { terminal: boolean }; next_action: { method: string; label: string } } } }).result.workflow).toMatchObject({ status: { terminal: true }, next_action: { method: 'content.review', label: '审核生成内容' } })
     const versions = await fetch(`${base}/v1/tasks/${taskId}/content-versions`, { headers }).then(json)
     expect((versions.data as Array<{ body: { title: string } }>)[0]?.body.title).toBe('异步标题')
     const denied = await fetch(`${base}/v1/generation-jobs/${jobId}`, { headers: { 'x-workspace-id': 'ws_other' } }).then(json)

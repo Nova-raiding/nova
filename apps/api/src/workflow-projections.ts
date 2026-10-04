@@ -45,6 +45,7 @@ export function createWorkflowProjections(service: MerchantService, fixtureMode:
     const task = service.tasks.get(job.taskId)
     const active = job.state === 'queued' || job.state === 'running'
     const retryable = job.state === 'failed'
+    const completedWithVersion = job.state === 'succeeded' && typeof job.contentVersionId === 'string' && job.contentVersionId.trim().length > 0
     return {
       kind: 'generation' as const,
       resource_id: job.id,
@@ -55,7 +56,9 @@ export function createWorkflowProjections(service: MerchantService, fixtureMode:
         ? { method: 'generation.get', label: '刷新生成状态', allowed: true }
         : retryable
           ? { method: 'generation.get', label: '查看失败原因', allowed: true }
-          : { method: 'generation.get', label: '查看生成结果', allowed: true },
+          : completedWithVersion
+            ? { method: 'content.review', label: '审核生成内容', allowed: true }
+            : { method: 'generation.get', label: '查看生成结果', allowed: true },
       recovery: { retryable, ...(retryable ? { retry_scope: '当前生成任务' } : {}), resume_method: 'generation.get', reconciliation_required: false },
       evidence: { source: fixtureMode ? 'fixture' : 'official_api', simulated: fixtureMode },
     }
