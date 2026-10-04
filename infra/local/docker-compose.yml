@@ -5,7 +5,9 @@ x-default-logging: &default-logging
     max-file: "5"
 
 x-worker-environment: &worker-environment
-  NODE_ENV: production
+  # Local acceptance targets fixture workspaces; ECS and production manifests
+  # set NODE_ENV=production separately.
+  NODE_ENV: development
   MERCHANT_IMAGE_TRACE_LOGS: ${MERCHANT_IMAGE_TRACE_LOGS:-true}
   DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
   REDIS_URL: redis://redis:6379
@@ -33,10 +35,8 @@ x-worker-environment: &worker-environment
   # Prometheus exposition for the worker fleet. No host port is published: the
   # listener is reachable only on the Compose network (`worker-sync:9102`, ...),
   # so this adds an in-network endpoint, not a host-exposed one.
-  # These workers set NODE_ENV=production, so GET /metrics answers
-  # 503 METRICS_AUTH_NOT_CONFIGURED until METRICS_AUTH_TOKEN is supplied in the
-  # environment -- the same fail-closed contract as the API. Export it in the
-  # shell to scrape locally; never commit a token to this file.
+  # Export METRICS_AUTH_TOKEN in the shell when scraping locally; never commit
+  # a token to this file.
   WORKER_METRICS_HOST: 0.0.0.0
   WORKER_METRICS_PORT: 9102
 
