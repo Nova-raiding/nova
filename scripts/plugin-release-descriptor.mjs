@@ -297,6 +297,55 @@ function gitOutput(root, args) {
   return result.stdout.trim()
 }
 
+/**
+ * Read the candidate identity that the descriptor is expected to be bound to.
+ * Candidate identities are deliberately parsed here instead of being passed
+ * through shell interpolation, so a signer cannot accidentally use a release
+ * ID or Git SHA from a different candidate directory.
+ *
+ * v1 review candidates only carry git_sha and archive digests. Cloud v2 adds
+ * release_id and plugin fields. Unknown fields are retained for forward
+ * compatibility, while the identity fields used by this signer are validated
+ * strictly and duplicate keys are rejected.
+ */
+export function readCandidateIdentity(path) {
+  const text = regularBytes(resolve(path), 'candidate identity').toString('utf8')
+  const fields = {}
+  for (const line of text.replace(/\r\n?/gu, '\n').trim().split('\n')) {
+    if (!line) continue
+    const separator = line.indexOf('=')
+    if (separator <= 0) throw new Error('candidate identity contains a malformed field')
+    const key = line.slice(0, separator), value = line.slice(separator + 1)
+    if (!/^[A-Za-z0-9_.-]+$/u.test(key) || !value || Object.hasOwn(fields, key)) {
+      throw new Error('candidate identity contains an invalid or duplicate field')
+    }
+    fields[key] = value
+  }
+  if (!gitSha(fields.git_sha)) throw new Error('candidate identity Git SHA is invalid')
+  if (fields.release_id !== undefined && !safeId(fields.release_id)) throw new Error('candidate identity release ID is invalid')
+  for (const key of ['source_sha256', 'comparison_manifest_sha256', 'sync_plan_sha256']) {
+    if (fields[key] !== undefined && !/^sha256:[0-9a-f]{64}$/u.test(fields[key])) {
+      throw new Error(`candidate identity ${key} is invalid`)
+    }
+  }
+  if (fields.schema_version !== undefined && fields.schema_version !== 'candidate-identity/2') {
+    throw new Error('candidate identity schema is unsupported')
+  }
+  return Object.freeze(fields)
+}
+
+function bindCandidateIdentity(options) {
+  const candidate = options.candidateIdentityPath === undefined
+    ? undefined : readCandidateIdentity(options.candidateIdentityPath)
+  const releaseId = options.releaseId ?? candidate?.release_id
+  const git = options.gitSha ?? candidate?.git_sha
+  if (candidate && candidate.git_sha !== git) throw new Error('candidate identity Git SHA does not match release identity')
+  if (candidate?.release_id !== undefined && candidate.release_id !== releaseId) {
+    throw new Error('candidate identity release ID does not match release identity')
+  }
+  return { releaseId, gitSha: git }
+}
+
 function verifyTrackedPackageSources(entries, pluginRoot, platform) {
   const result = spawnSync('git', ['-C', pluginRoot, 'ls-files', '-z', '--cached'], { maxBuffer: 1024 * 1024 })
   if (result.status !== 0 || result.error) throw new Error('plugin tracked source inventory is unavailable')
@@ -430,8 +479,9 @@ export function verifyPluginReleaseDescriptor(document, options) {
   if (key.asymmetricKeyType !== 'ed25519') throw new Error('trusted plugin public key must be Ed25519')
   if (document.key_id !== options.keyId) throw new Error('plugin signing key ID mismatch')
   if (!verify(null, message, key, Buffer.from(document.signature_base64, 'base64'))) throw new Error('plugin descriptor signature is invalid')
+  const identity = bindCandidateIdentity(options)
   for (const [field, expected] of Object.entries({
-    release_id: options.releaseId, git_sha: options.gitSha, platform: options.platform,
+    release_id: identity.releaseId, git_sha: identity.gitSha, platform: options.platform,
     mcp_methods_sha256: options.mcpMethodsSha256,
   })) if (expected !== undefined && document[field] !== expected) throw new Error(`${field} does not match candidate identity`)
   if (options.packagePath) {
@@ -442,6 +492,9 @@ export function verifyPluginReleaseDescriptor(document, options) {
 }
 
 export function signPluginReleaseDescriptor(options) {
+  const identity = bindCandidateIdentity(options)
+  if (!identity.releaseId || !identity.gitSha) throw new Error('plugin descriptor signing requires release and Git identity')
+  options = { ...options, releaseId: identity.releaseId, gitSha: identity.gitSha }
   const pluginRoot = resolve(options.pluginRoot)
   if (gitOutput(pluginRoot, ['rev-parse', 'HEAD']) !== options.gitSha) throw new Error('plugin source Git SHA differs from release identity')
   if (gitOutput(pluginRoot, ['status', '--porcelain', '--untracked-files=normal'])) throw new Error('plugin source must be clean and committed')
@@ -531,14 +584,17 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const descriptorPath = arg('--descriptor')
     const publicKeyPath = arg('--public-key')
     const keyId = arg('--key-id')
+    const candidateIdentityPath = arg('--candidate-identity')
+    const identity = bindCandidateIdentity({ candidateIdentityPath, releaseId: arg('--release-id'), gitSha: arg('--git-sha') })
     if (mode === 'sign') {
       const output = arg('--output')
       if (!packagePath || !output || !arg('--private-key') || !arg('--plugin-root')) throw new Error('sign requires --package, --output, --private-key and --plugin-root')
+      if (!identity.releaseId || !identity.gitSha) throw new Error('sign requires --release-id and --git-sha, or --candidate-identity with both fields')
       const attestationPath = arg('--build-attestation'), attestationPublicKeyPath = arg('--build-attestation-public-key')
       if (!attestationPath || !attestationPublicKeyPath || !arg('--build-attestation-key-id')) {
         throw new Error('sign requires a separately signed sandbox build attestation and pinned verifier key')
       }
-      const document = signPluginReleaseDescriptor({ packagePath, pluginRoot: arg('--plugin-root'), privateKeyPath: arg('--private-key'), keyId, releaseId: arg('--release-id'), gitSha: arg('--git-sha'), platform: arg('--platform'), mcpMethodsSha256: arg('--mcp-methods-sha256'),
+      const document = signPluginReleaseDescriptor({ packagePath, pluginRoot: arg('--plugin-root'), privateKeyPath: arg('--private-key'), keyId, releaseId: identity.releaseId, gitSha: identity.gitSha, candidateIdentityPath, platform: arg('--platform'), mcpMethodsSha256: arg('--mcp-methods-sha256'),
         buildAttestation: JSON.parse(regularBytes(attestationPath, 'trusted build attestation').toString('utf8')),
         buildAttestationPublicKeyPem: regularBytes(attestationPublicKeyPath, 'trusted build attestation public key'),
         buildAttestationKeyId: arg('--build-attestation-key-id') })
@@ -552,9 +608,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       console.log(JSON.stringify(evidence))
     } else if (mode === 'verify' || mode === 'verify-cloud') {
       if (!descriptorPath || !publicKeyPath || !keyId || (mode === 'verify' && !packagePath)) throw new Error('verify requires --descriptor, --public-key, --key-id and a package unless using verify-cloud')
-      if (mode === 'verify-cloud' && (!arg('--release-id') || !arg('--git-sha'))) throw new Error('verify-cloud requires release and Git identity')
+      if (mode === 'verify-cloud' && (!identity.releaseId || !identity.gitSha)) throw new Error('verify-cloud requires release and Git identity, or --candidate-identity with both fields')
       const document = JSON.parse(regularBytes(descriptorPath, 'plugin descriptor').toString('utf8'))
-      verifyPluginReleaseDescriptor(document, { publicKeyPem: regularBytes(publicKeyPath, 'trusted public key'), keyId, packagePath, releaseId: arg('--release-id'), gitSha: arg('--git-sha'), platform: arg('--platform'), mcpMethodsSha256: arg('--mcp-methods-sha256') })
+      verifyPluginReleaseDescriptor(document, { publicKeyPem: regularBytes(publicKeyPath, 'trusted public key'), keyId, packagePath, releaseId: identity.releaseId, gitSha: identity.gitSha, candidateIdentityPath, platform: arg('--platform'), mcpMethodsSha256: arg('--mcp-methods-sha256') })
       console.log(`plugin descriptor verified: ${basename(descriptorPath)}`)
     } else throw new Error('usage: plugin-release-descriptor.mjs verify-build|sign|verify [options]')
   } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1 }

@@ -14,6 +14,35 @@ export interface LocalPluginTestAttestation {
 
 export const PLUGIN_CONTRACT_TESTS: readonly string[]
 
+export function runAndSignLocalPluginTests(options: {
+  root: string
+  descriptorPath: string
+  packagePath: string
+  publicKeyPath: string
+  privateKeyPath: string
+  keyId: string
+  releaseId: string
+  gitSha: string
+}): LocalPluginTestAttestation
+
+export function generateLocalPluginReleaseEvidence(options: {
+  root: string
+  pluginRoot: string
+  packagePath: string
+  platform: string
+  publicKeyPath: string
+  privateKeyPath: string
+  keyId: string
+  releaseId: string
+  gitSha: string
+  mcpMethodsSha256: string
+  descriptorPath: string
+  attestationPath: string
+  buildAttestation: Record<string, unknown>
+  buildAttestationPublicKeyPem: string | Buffer
+  buildAttestationKeyId: string
+}): { descriptor: Record<string, unknown>; attestation: LocalPluginTestAttestation; descriptorPath: string; attestationPath: string }
+
 export function verifyLocalPluginTestAttestation(record: LocalPluginTestAttestation, options: {
   publicKeyPem: string | Buffer
   keyId: string

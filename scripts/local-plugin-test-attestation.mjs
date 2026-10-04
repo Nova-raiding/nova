@@ -2,10 +2,10 @@
 
 import { spawnSync } from 'node:child_process'
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from 'node:crypto'
-import { closeSync, fsyncSync, lstatSync, openSync, readFileSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { closeSync, fsyncSync, lstatSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertPrivateSigningKey, verifyPluginReleaseDescriptor } from './plugin-release-descriptor.mjs'
+import { assertPrivateSigningKey, signPluginReleaseDescriptor, verifyPluginReleaseDescriptor } from './plugin-release-descriptor.mjs'
 
 export const PLUGIN_CONTRACT_TESTS = Object.freeze([
   'tests/mcp-integration-mode-release-gate.test.ts',
@@ -98,6 +98,55 @@ export function runAndSignLocalPluginTests(options) {
   return record
 }
 
+function writeExclusive(path, bytes) {
+  const fd = openSync(path, 'wx', 0o600)
+  try { writeFileSync(fd, bytes); fsyncSync(fd) } finally { closeSync(fd) }
+}
+
+/**
+ * Build the two candidate-bound local plugin evidence files as one transaction.
+ * The descriptor is signed first, then the exact descriptor bytes are bound into
+ * local-plugin-tests/2. Neither output is created until both operations pass.
+ */
+export function generateLocalPluginReleaseEvidence(options, dependencies = {}) {
+  const signDescriptor = dependencies.signDescriptor ?? signPluginReleaseDescriptor
+  const runTests = dependencies.runTests ?? runAndSignLocalPluginTests
+  const descriptorPath = resolve(options.descriptorPath)
+  const attestationPath = resolve(options.attestationPath)
+  if (descriptorPath === attestationPath) throw new Error('descriptor and test attestation outputs must differ')
+  for (const [path, label] of [[descriptorPath, 'plugin descriptor output'], [attestationPath, 'plugin test attestation output']]) {
+    try { if (lstatSync(path)) throw new Error(`${label} already exists`) } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+  }
+  const expectedPlatform = platform()
+  if (options.platform !== expectedPlatform) throw new Error(`plugin evidence platform must match the signing host (${expectedPlatform})`)
+  const temporary = mkdtempSync(resolve(dirname(descriptorPath), '.local-plugin-evidence-'))
+  const temporaryDescriptor = resolve(temporary, 'plugin-release-descriptor.json')
+  try {
+    const descriptor = signDescriptor({ ...options, packagePath: options.packagePath, pluginRoot: options.pluginRoot,
+      privateKeyPath: options.privateKeyPath, releaseId: options.releaseId, gitSha: options.gitSha,
+      platform: options.platform, mcpMethodsSha256: options.mcpMethodsSha256 })
+    const descriptorBytes = Buffer.from(`${JSON.stringify(descriptor, null, 2)}\n`)
+    writeExclusive(temporaryDescriptor, descriptorBytes)
+    const attestation = runTests({ root: options.root, descriptorPath: temporaryDescriptor, packagePath: options.packagePath,
+      publicKeyPath: options.publicKeyPath, privateKeyPath: options.privateKeyPath, keyId: options.keyId,
+      releaseId: options.releaseId, gitSha: options.gitSha })
+    verifyPluginReleaseDescriptor(descriptor, { publicKeyPem: regular(options.publicKeyPath, 'plugin public key'),
+      keyId: options.keyId, releaseId: options.releaseId, gitSha: options.gitSha, platform: options.platform,
+      mcpMethodsSha256: options.mcpMethodsSha256, packagePath: options.packagePath })
+    verifyLocalPluginTestAttestation(attestation, { publicKeyPem: regular(options.publicKeyPath, 'plugin public key'),
+      keyId: options.keyId, releaseId: options.releaseId, gitSha: options.gitSha, platform: options.platform,
+      descriptorSha256: sha(descriptorBytes) })
+    writeExclusive(descriptorPath, descriptorBytes)
+    try { writeExclusive(attestationPath, Buffer.from(`${JSON.stringify(attestation, null, 2)}\n`)) } catch (error) {
+      try { rmSync(descriptorPath, { force: true }) } catch {}
+      throw error
+    }
+    return { descriptor, attestation, descriptorPath, attestationPath }
+  } finally { rmSync(temporary, { recursive: true, force: true }) }
+}
+
 const arg = name => { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1] }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
@@ -111,6 +160,18 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       const fd = openSync(arg('--output'), 'wx', 0o600)
       try { writeFileSync(fd, `${JSON.stringify(record, null, 2)}\n`); fsyncSync(fd) } finally { closeSync(fd) }
       console.log(`local plugin contract test attestation written: ${arg('--output')}`)
+    } else if (mode === 'generate') {
+      const required = ['--root', '--plugin-root', '--package', '--platform', '--public-key', '--private-key', '--key-id', '--release-id', '--git-sha', '--mcp-methods-sha256', '--build-attestation', '--build-attestation-public-key', '--build-attestation-key-id', '--descriptor-output', '--attestation-output']
+      if (required.some(name => !arg(name))) throw new Error(`generate requires ${required.join(', ')}`)
+      const result = generateLocalPluginReleaseEvidence({
+        root: arg('--root'), pluginRoot: arg('--plugin-root'), packagePath: arg('--package'), platform: arg('--platform'),
+        publicKeyPath: arg('--public-key'), privateKeyPath: arg('--private-key'), keyId: arg('--key-id'), releaseId: arg('--release-id'),
+        gitSha: arg('--git-sha'), mcpMethodsSha256: arg('--mcp-methods-sha256'), descriptorPath: arg('--descriptor-output'), attestationPath: arg('--attestation-output'),
+        buildAttestation: JSON.parse(regular(arg('--build-attestation'), 'trusted build attestation').toString('utf8')),
+        buildAttestationPublicKeyPem: regular(arg('--build-attestation-public-key'), 'trusted build attestation public key'),
+        buildAttestationKeyId: arg('--build-attestation-key-id'),
+      })
+      console.log(`local plugin evidence written: ${result.descriptorPath}, ${result.attestationPath}`)
     } else if (mode === 'verify') {
       const required = ['--record', '--descriptor', '--public-key', '--key-id', '--release-id', '--git-sha', '--platform']
       if (required.some(name => !arg(name))) throw new Error(`verify requires ${required.join(', ')}`)
@@ -118,6 +179,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         { publicKeyPem: regular(arg('--public-key'), 'plugin public key'), keyId: arg('--key-id'), releaseId: arg('--release-id'),
           gitSha: arg('--git-sha'), platform: arg('--platform'), descriptorSha256: sha(regular(arg('--descriptor'), 'plugin descriptor')) })
       console.log('local plugin contract test attestation verified')
-    } else throw new Error('usage: local-plugin-test-attestation.mjs run-and-sign|verify [options]')
+    } else throw new Error('usage: local-plugin-test-attestation.mjs generate|run-and-sign|verify [options]')
   } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1 }
 }
