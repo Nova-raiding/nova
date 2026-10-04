@@ -251,7 +251,7 @@ describe('campaign delivery manifest state machine', () => {
   })
 
   it('fails closed for limits, duplicate scopes, missing canary evidence and shared versions', () => {
-    const tooMany = Array.from({ length: 51 }, (_, index) => item(`bulk-${index}`, 'taobao', `account-${index}`, `product-${index}`))
+    const tooMany = Array.from({ length: 1001 }, (_, index) => item(`bulk-${index}`, 'taobao', `account-${index}`, `product-${index}`))
     expectCode(() => new CampaignDeliveryManifestMachine(manifest(tooMany)), 'CAMPAIGN_ITEM_LIMIT_EXCEEDED')
 
     const duplicate = item('duplicate', 'taobao', 'account-one', 'product-one')
