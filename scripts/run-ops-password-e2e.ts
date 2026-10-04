@@ -69,6 +69,18 @@ export function validateOpsE2eScannerStartupTimeout(source: NodeJS.ProcessEnv): 
   catch { throw new Error('OPS_E2E_SCANNER_STARTUP_TIMEOUT_INVALID') }
 }
 
+/** Bound the browser child before provisioning any isolated resources. A
+ * malformed or excessive value fails closed; the existing timeout path still
+ * terminates the child and runs fixture disposal before reporting failure. */
+export function validateOpsE2eBrowserTimeout(source: NodeJS.ProcessEnv): number {
+  const raw = source.OPS_E2E_BROWSER_TIMEOUT_MS
+  if (raw === undefined) return 300_000
+  if (!/^\d+$/u.test(raw)) throw new Error('OPS_E2E_BROWSER_TIMEOUT_INVALID')
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value) || value < 10_000 || value > 600_000) throw new Error('OPS_E2E_BROWSER_TIMEOUT_INVALID')
+  return value
+}
+
 export function opsE2eScanPurpose(args: readonly string[], source: NodeJS.ProcessEnv): 'customer_delivery' | 'product_import' | undefined {
   const purpose = source.OPS_E2E_SCAN_PURPOSE
   if (purpose !== undefined && purpose !== 'product_import') throw new Error('OPS_E2E_SCAN_PURPOSE_INVALID')
@@ -241,6 +253,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   // Validate before creating directories, containers, connections or processes.
   const args = validateOpsE2eArguments(requested, source)
   const scannerStartupTimeoutMs = validateOpsE2eScannerStartupTimeout(source)
+  const browserTimeoutMs = validateOpsE2eBrowserTimeout(source)
   const scanPurpose = opsE2eScanPurpose(args, source)
   const merchantUiEnabled = scanPurpose === 'product_import' || source.OPS_E2E_MERCHANT_UI === 'true'
   if (source.OPS_E2E_MERCHANT_UI !== undefined && source.OPS_E2E_MERCHANT_UI !== 'true') throw new Error('OPS_E2E_MERCHANT_UI_INVALID')
@@ -464,7 +477,6 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     // seconds per section. 180s killed the run mid-suite (browserExitCode 124)
     // even when the assertions in front of it passed, so the gate could never
     // report a result. Give the suite room to finish while still bounding a hang.
-    const browserTimeout = Number(source.OPS_E2E_BROWSER_TIMEOUT_MS ?? 900_000)
     let browserTimer: ReturnType<typeof setTimeout> | undefined
     const browserOutcome = Promise.race([
       exited(run),
@@ -472,7 +484,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
         run.kill('SIGTERM')
         setTimeout(() => { if (run.exitCode === null && run.signalCode === null) run.kill('SIGKILL') }, 2_000).unref()
         resolveTimeout(124)
-      }, Number.isFinite(browserTimeout) ? Math.max(10_000, browserTimeout) : 900_000) }),
+      }, browserTimeoutMs) }),
     ]).finally(() => clearTimeout(browserTimer))
     throwSite = 'browser_run'
     const exitCode = await guardRuntime(browserOutcome)

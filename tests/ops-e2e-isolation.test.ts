@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { createServer, request as httpRequest } from 'node:http'
 import { describe, expect, it, vi } from 'vitest'
-import { createOpsPasswordProxy, disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, opsE2eFailureReport, opsE2eScanPurpose, productImportPointGrantInput, productImportSyntheticSku, runOpsE2e, validateOpsE2eArguments, validateOpsE2eScannerStartupTimeout, validateOpsE2eSpecIsolation } from '../scripts/run-ops-password-e2e.js'
+import { createOpsPasswordProxy, disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, opsE2eFailureReport, opsE2eScanPurpose, productImportPointGrantInput, productImportSyntheticSku, runOpsE2e, validateOpsE2eArguments, validateOpsE2eBrowserTimeout, validateOpsE2eScannerStartupTimeout, validateOpsE2eSpecIsolation } from '../scripts/run-ops-password-e2e.js'
 
 const { forbidRuntimeResources } = vi.hoisted(() => ({
   forbidRuntimeResources: vi.fn(() => { throw new Error('OPS_E2E_RESOURCE_CREATION_ATTEMPTED') }),
@@ -120,6 +120,14 @@ describe('Ops browser acceptance isolation', () => {
     for (const value of ['1', '5000', '120000', '120001', '300000']) {
       expect(validateOpsE2eScannerStartupTimeout({ OPS_E2E_SCANNER_STARTUP_TIMEOUT_MS: value })).toBe(Number(value))
     }
+  })
+  it('bounds browser lifetime before provisioning an isolated fixture', async () => {
+    expect(validateOpsE2eBrowserTimeout({})).toBe(300_000)
+    expect(validateOpsE2eBrowserTimeout({ OPS_E2E_BROWSER_TIMEOUT_MS: '600000' })).toBe(600_000)
+    for (const value of ['0', '9999', '600001', '1.5', ' 300000', '300000 ', '1e5', 'Infinity', 'NaN']) {
+      expect(() => validateOpsE2eBrowserTimeout({ OPS_E2E_BROWSER_TIMEOUT_MS: value })).toThrow('OPS_E2E_BROWSER_TIMEOUT_INVALID')
+    }
+    await expect(runOpsE2e([], { OPS_E2E_BROWSER_TIMEOUT_MS: '9999' })).rejects.toThrow('OPS_E2E_BROWSER_TIMEOUT_INVALID')
   })
   it('keeps customer-delivery scanning as the default and isolates product-import evidence', async () => {
     const product = 'dogfood/chatgpt-all-functions/ops-product-import-scan-isolated.spec.js'
