@@ -467,6 +467,34 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     if ((contextLinkId === undefined) !== (contextHash === undefined) || (contextHash !== undefined && !/^[a-f0-9]{64}$/u.test(contextHash))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '模型用量回执的 contextLinkId/contextHash 必须成对且合法', 400)
     if (input.workspaceId !== undefined && input.workspaceId !== workspaceId) throw new DomainError(ERROR_CODES.TENANT_SCOPE_DENIED, '模型用量回执工作区不匹配', 403)
     let actionAuthorization = await persistence.actionLedger?.get(workspaceId, actionId)
+    // Formal text generation reserves creative points before the durable
+    // enqueue transaction. Older jobs (and jobs created during a process
+    // crash window) can reach this boundary with the point hold present but
+    // without the zero-charge action-ledger row referenced by model usage.
+    // Repair only that exact, auditable shape; arbitrary text actions remain
+    // fail-closed.
+    if (!actionAuthorization
+      && modality === 'text'
+      && actionId.startsWith('model:generation:')
+      && Boolean(providerRequestId)
+      && persistence.creativePoints?.getReservationByActionKey
+      && persistence.creativeActionClaims?.get) {
+      const reservation = await persistence.creativePoints.getReservationByActionKey(workspaceId, actionId)
+      const claim = reservation ? await persistence.creativeActionClaims.get({ workspaceId, actionKey: actionId }) : undefined
+      if (reservation?.status === 'active' && claim?.phase === 'bound' && claim.reservationId === reservation.id) {
+        actionAuthorization = await recordActionSettlement({
+          workspaceId,
+          actionKey: actionId,
+          actionKind: 'model_text',
+          settlement: 'included_quota',
+          amountFen: 0,
+          actorId: 'worker:model-usage',
+          description: '正式内容生成创意点回执授权',
+          ...(contextLinkId && contextHash ? { contextLinkId, contextHash } : {}),
+          settlementStatus: 'authorized',
+        })
+      }
+    }
     // Older durable candidate jobs could be queued before their zero-charge
     // authorization was persisted. Repair that narrow image-only case at the
     // settlement boundary so a real provider result is not stranded.

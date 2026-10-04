@@ -3,6 +3,7 @@ import { request } from 'node:http'
 import type { ModelUsageRepository } from '../../../packages/persistence/src/model-usage-repository.js'
 import { createWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
 import { evaluatePlatformModelRelayGate } from '../../../packages/ai/src/platform-model-gate.js'
+import { MemoryCreativeActionClaimRepository } from '../../../packages/persistence/src/creative-point-action-claim-repository.js'
 
 const harness = vi.hoisted(() => ({
   modelUsage: null as null | {
@@ -296,6 +297,52 @@ describe('API model usage settlement invariants', () => {
       expect(response).toMatchObject({ status: 409, body: { error: { code: 'MODEL_USAGE_ACTION_NOT_AUTHORIZED' } } })
       expect(await harness.modelUsage!.list(workspaceId, 10)).toHaveLength(0)
     } finally {
+      await new Promise<void>(resolve => api.server.close(() => resolve()))
+    }
+  })
+
+  it('repairs the formal generation action authorization from an active creative-point hold', async () => {
+    const workspaceId = `ws_worker_usage_generation_repair_${Date.now()}`
+    const actionId = `model:generation:repair-${Date.now()}`
+    const runKey = `task:repair-${Date.now()}`
+    await api.grantCreativePointsForTests(workspaceId)
+    const persistence = await api.persistenceReady
+    const previousClaims = persistence.creativeActionClaims
+    persistence.creativeActionClaims = new MemoryCreativeActionClaimRepository()
+    const reservation = await persistence.creativePoints!.reserve({
+      workspaceId,
+      idempotencyKey: `commercial.reserve:${actionId}`,
+      actionKey: actionId,
+      points: 3,
+      rateCardVersion: 'test-v1',
+    })
+    const claim = await persistence.creativeActionClaims!.claim({ workspaceId, actionKey: actionId, intentSha256: 'c'.repeat(64), leaseMs: 60_000 })
+    await persistence.creativeActionClaims!.bindInTransaction(undefined as never, { workspaceId, actionKey: actionId, ownerToken: claim.ownerToken, ownerEpoch: claim.ownerEpoch, reservationId: reservation.value.id, jobId: 'job-generation-repair', eventId: 'event-generation-repair' })
+    await harness.modelUsage!.reserveDailyBudget({ workspaceId, reservationKey: actionId, runKey, modality: 'text', model: 'relay-text-test', estimateCny: 1, estimateVersion: 'test-v1', dailyLimitCny: 100, runLimitCny: 10 })
+    const previousLifecycle = persistence.creativePointLifecycle
+    persistence.creativePointLifecycle = { recordProviderReceipt: vi.fn(async () => undefined) } as unknown as NonNullable<typeof persistence.creativePointLifecycle>
+    const base = await startApi()
+    try {
+      const response = await postWorkerUsage(base, workspaceId, {
+        workspaceId,
+        actionId,
+        runKey,
+        contextLinkId: 'context_link_generation_repair',
+        contextHash: 'b'.repeat(64),
+        modality: 'text',
+        model: 'relay-text-test',
+        providerRequestId: `generation-repair-${Date.now()}`,
+        inputTokens: 20,
+        outputTokens: 8,
+        totalTokens: 28,
+        costCny: 0.04,
+      })
+      expect(response).toMatchObject({ status: 200, body: { error: null } })
+      expect(await harness.actionLedger!.get(workspaceId, actionId)).toMatchObject({ actionKind: 'model_text', settlement: 'included_quota', amountFen: 0, settlementStatus: 'settled' })
+      await expect(persistence.creativePoints!.getReservation(workspaceId, reservation.value.id)).resolves.toMatchObject({ status: 'settled' })
+    } finally {
+      persistence.creativePointLifecycle = previousLifecycle
+      persistence.creativeActionClaims = previousClaims
       await new Promise<void>(resolve => api.server.close(() => resolve()))
     }
   })
