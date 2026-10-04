@@ -137,28 +137,41 @@ sh infra/scripts/verify-ecs-ops-auth-mode.sh "$OPS_AUTH_MODE" "$OPS_UI_IMAGE_REF
 : "${BACKUP_RETENTION_DAYS:?BACKUP_RETENTION_DAYS is required}"
 : "${MERCHANT_API_TOKEN:?MERCHANT_API_TOKEN is required for pilot preflight}"
 : "${MERCHANT_WORKSPACE_ID:?MERCHANT_WORKSPACE_ID is required for pilot preflight}"
-: "${ALIPAY_APP_ID:?ALIPAY_APP_ID is required}"
-: "${PAYMENT_MODE:?PAYMENT_MODE=provider is required for ECS}"
-: "${PAYMENT_PROVIDER_ADAPTERS:?PAYMENT_PROVIDER_ADAPTERS=alipay is required}"
-: "${PAYMENT_CHECKOUT_BASE_URL:?public HTTPS payment checkout base URL is required}"
-: "${PAYMENT_PROVIDER_CHECKOUT_API_URL:?public HTTPS payment gateway checkout URL is required}"
-: "${PAYMENT_PROVIDER_QUERY_API_URL:?public HTTPS payment gateway query URL is required}"
-: "${PAYMENT_PROVIDER_REFUND_QUERY_API_URL:?public HTTPS payment gateway refund query URL is required}"
-: "${PAYMENT_PROVIDER_REFUND_API_URL:?public HTTPS payment gateway refund URL is required}"
-: "${PAYMENT_PROVIDER_API_KEY:?PAYMENT_PROVIDER_API_KEY is required}"
-: "${PAYMENT_PROVIDER_MERCHANT_ID:?PAYMENT_PROVIDER_MERCHANT_ID is required}"
-: "${PAYMENT_CALLBACK_BASE_URL:?public HTTPS payment callback base URL is required}"
-: "${PAYMENT_CALLBACK_SECRET:?PAYMENT_CALLBACK_SECRET is required}"
-: "${PAYMENT_PROTECTED_RECEIPT_HOST_DIR:?PAYMENT_PROTECTED_RECEIPT_HOST_DIR is required}"
-: "${PAYMENT_RECONCILIATION_ENABLED:?PAYMENT_RECONCILIATION_ENABLED=true is required}"
-: "${PAYMENT_REFUND_ENABLED:?PAYMENT_REFUND_ENABLED=true is required}"
-case "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" in
-  /var/lib/merchant-release-security/*) ;;
-  *) echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be under /var/lib/merchant-release-security/' >&2; exit 1 ;;
+: "${DEPLOYMENT_MODE:?DEPLOYMENT_MODE=lean or full is required for ECS}"
+: "${PAYMENT_MODE:?PAYMENT_MODE=provider or manual_transfer is required for ECS}"
+: "${PAYMENT_RECONCILIATION_ENABLED:?PAYMENT_RECONCILIATION_ENABLED is required}"
+: "${PAYMENT_REFUND_ENABLED:?PAYMENT_REFUND_ENABLED is required}"
+case "$DEPLOYMENT_MODE" in
+  lean|full) ;;
+  *) echo 'DEPLOYMENT_MODE must be lean or full' >&2; exit 1 ;;
 esac
-if [ ! -d "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ "$(realpath "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR")" != "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ "$(stat -c '%u:%a' "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR")" != '100:700' ]; then
-  echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be a canonical non-symlink directory owned by UID 100 with mode 0700' >&2
-  exit 1
+if [ "$DEPLOYMENT_MODE" = full ]; then
+  : "${ALIPAY_APP_ID:?ALIPAY_APP_ID is required}"
+  : "${PAYMENT_PROVIDER_ADAPTERS:?PAYMENT_PROVIDER_ADAPTERS=alipay is required}"
+  : "${PAYMENT_CHECKOUT_BASE_URL:?public HTTPS payment checkout base URL is required}"
+  : "${PAYMENT_PROVIDER_CHECKOUT_API_URL:?public HTTPS payment gateway checkout URL is required}"
+  : "${PAYMENT_PROVIDER_QUERY_API_URL:?public HTTPS payment gateway query URL is required}"
+  : "${PAYMENT_PROVIDER_REFUND_QUERY_API_URL:?public HTTPS payment gateway refund query URL is required}"
+  : "${PAYMENT_PROVIDER_REFUND_API_URL:?public HTTPS payment gateway refund URL is required}"
+  : "${PAYMENT_PROVIDER_API_KEY:?PAYMENT_PROVIDER_API_KEY is required}"
+  : "${PAYMENT_PROVIDER_MERCHANT_ID:?PAYMENT_PROVIDER_MERCHANT_ID is required}"
+  : "${PAYMENT_CALLBACK_BASE_URL:?public HTTPS payment callback base URL is required}"
+  : "${PAYMENT_CALLBACK_SECRET:?PAYMENT_CALLBACK_SECRET is required}"
+  : "${PAYMENT_PROTECTED_RECEIPT_HOST_DIR:?PAYMENT_PROTECTED_RECEIPT_HOST_DIR is required}"
+  [ "$PAYMENT_RECONCILIATION_ENABLED" = true ] || { echo 'PAYMENT_RECONCILIATION_ENABLED=true is required for full mode' >&2; exit 1; }
+  [ "$PAYMENT_REFUND_ENABLED" = true ] || { echo 'PAYMENT_REFUND_ENABLED=true is required for full mode' >&2; exit 1; }
+  case "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" in
+    /var/lib/merchant-release-security/*) ;;
+    *) echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be under /var/lib/merchant-release-security/' >&2; exit 1 ;;
+  esac
+  if [ ! -d "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ "$(realpath "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR")" != "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ "$(stat -c '%u:%a' "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR")" != '100:700' ]; then
+    echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be a canonical non-symlink directory owned by UID 100 with mode 0700' >&2
+    exit 1
+  fi
+else
+  [ "$PAYMENT_MODE" = manual_transfer ] || { echo 'PAYMENT_MODE=manual_transfer is required for lean mode' >&2; exit 1; }
+  [ "$PAYMENT_RECONCILIATION_ENABLED" = false ] || { echo 'PAYMENT_RECONCILIATION_ENABLED=false is required for lean mode' >&2; exit 1; }
+  [ "$PAYMENT_REFUND_ENABLED" = false ] || { echo 'PAYMENT_REFUND_ENABLED=false is required for lean mode' >&2; exit 1; }
 fi
 printf '%s' "$RELEASE_ID" | grep -Eq '^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' || { echo 'RELEASE_ID must use a release- prefix and contain only safe characters' >&2; exit 1; }
 printf '%s' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo 'DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters' >&2; exit 1; }
