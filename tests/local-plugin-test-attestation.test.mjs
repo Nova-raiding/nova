@@ -49,6 +49,8 @@ test('generates descriptor and local test attestation atomically from one candid
   const pair = generateKeyPairSync('ed25519')
   writeFileSync(publicKeyPath, pair.publicKey.export({ type: 'spki', format: 'pem' }))
   const releaseId = 'release-1'; const gitSha = 'a'.repeat(40); const keyId = 'plugin-test-key'; const platform = `${process.platform}-${process.arch}`
+  const candidateIdentityPath = join(root, 'candidate-identity.txt')
+  writeFileSync(candidateIdentityPath, `schema_version=candidate-identity/2\nrelease_id=${releaseId}\ngit_sha=${gitSha}\n`)
   const descriptorPayload = {
     schema_version: 'plugin-release/2', release_id: releaseId, git_sha: gitSha, plugin_id: 'merchant-marketing', plugin_version: '0.1.0',
     platform, package_sha256: sha(packageBytes), package_bytes: packageBytes.length, bridge_sha256: '1'.repeat(64),
@@ -64,7 +66,7 @@ test('generates descriptor and local test attestation atomically from one candid
   const attestation = { ...payload, signature_base64: sign(null, Buffer.from(JSON.stringify(payload)), pair.privateKey).toString('base64') }
   const descriptorPath = join(root, 'descriptor.json'); const attestationPath = join(root, 'attestation.json')
   let observedDescriptorPath
-  const result = generateLocalPluginReleaseEvidence({ root, pluginRoot: root, packagePath, platform, publicKeyPath,
+  const result = generateLocalPluginReleaseEvidence({ root, pluginRoot: root, packagePath, platform, candidateIdentityPath, publicKeyPath,
     privateKeyPath: join(root, 'unused-private-key'), keyId, releaseId, gitSha, mcpMethodsSha256: descriptorPayload.mcp_methods_sha256,
     descriptorPath, attestationPath, buildAttestation: {}, buildAttestationPublicKeyPem: '', buildAttestationKeyId: 'build-key' }, {
     signDescriptor: () => descriptor,

@@ -72,7 +72,7 @@ export function runAndSignLocalPluginTests(options) {
   const descriptor = JSON.parse(descriptorBytes.toString('utf8'))
   const publicKeyPem = regular(options.publicKeyPath, 'plugin public key')
   verifyPluginReleaseDescriptor(descriptor, { publicKeyPem, keyId: options.keyId, packagePath: options.packagePath,
-    releaseId: options.releaseId, gitSha: options.gitSha, platform: platform() })
+    releaseId: options.releaseId, gitSha: options.gitSha, candidateIdentityPath: options.candidateIdentityPath, platform: platform() })
   assertPrivateSigningKey(options.privateKeyPath)
   const privateKey = createPrivateKey(regular(options.privateKeyPath, 'plugin test signing key'))
   if (privateKey.asymmetricKeyType !== 'ed25519') throw new Error('plugin test signing key must be Ed25519')
@@ -131,10 +131,10 @@ export function generateLocalPluginReleaseEvidence(options, dependencies = {}) {
     writeExclusive(temporaryDescriptor, descriptorBytes)
     const attestation = runTests({ root: options.root, descriptorPath: temporaryDescriptor, packagePath: options.packagePath,
       publicKeyPath: options.publicKeyPath, privateKeyPath: options.privateKeyPath, keyId: options.keyId,
-      releaseId: options.releaseId, gitSha: options.gitSha })
+      releaseId: options.releaseId, gitSha: options.gitSha, candidateIdentityPath: options.candidateIdentityPath })
     verifyPluginReleaseDescriptor(descriptor, { publicKeyPem: regular(options.publicKeyPath, 'plugin public key'),
       keyId: options.keyId, releaseId: options.releaseId, gitSha: options.gitSha, platform: options.platform,
-      mcpMethodsSha256: options.mcpMethodsSha256, packagePath: options.packagePath })
+      candidateIdentityPath: options.candidateIdentityPath, mcpMethodsSha256: options.mcpMethodsSha256, packagePath: options.packagePath })
     verifyLocalPluginTestAttestation(attestation, { publicKeyPem: regular(options.publicKeyPath, 'plugin public key'),
       keyId: options.keyId, releaseId: options.releaseId, gitSha: options.gitSha, platform: options.platform,
       descriptorSha256: sha(descriptorBytes) })
@@ -161,10 +161,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       try { writeFileSync(fd, `${JSON.stringify(record, null, 2)}\n`); fsyncSync(fd) } finally { closeSync(fd) }
       console.log(`local plugin contract test attestation written: ${arg('--output')}`)
     } else if (mode === 'generate') {
-      const required = ['--root', '--plugin-root', '--package', '--platform', '--public-key', '--private-key', '--key-id', '--release-id', '--git-sha', '--mcp-methods-sha256', '--build-attestation', '--build-attestation-public-key', '--build-attestation-key-id', '--descriptor-output', '--attestation-output']
+      const required = ['--root', '--plugin-root', '--package', '--platform', '--candidate-identity', '--public-key', '--private-key', '--key-id', '--release-id', '--git-sha', '--mcp-methods-sha256', '--build-attestation', '--build-attestation-public-key', '--build-attestation-key-id', '--descriptor-output', '--attestation-output']
       if (required.some(name => !arg(name))) throw new Error(`generate requires ${required.join(', ')}`)
       const result = generateLocalPluginReleaseEvidence({
-        root: arg('--root'), pluginRoot: arg('--plugin-root'), packagePath: arg('--package'), platform: arg('--platform'),
+        root: arg('--root'), pluginRoot: arg('--plugin-root'), packagePath: arg('--package'), platform: arg('--platform'), candidateIdentityPath: arg('--candidate-identity'),
         publicKeyPath: arg('--public-key'), privateKeyPath: arg('--private-key'), keyId: arg('--key-id'), releaseId: arg('--release-id'),
         gitSha: arg('--git-sha'), mcpMethodsSha256: arg('--mcp-methods-sha256'), descriptorPath: arg('--descriptor-output'), attestationPath: arg('--attestation-output'),
         buildAttestation: JSON.parse(regular(arg('--build-attestation'), 'trusted build attestation').toString('utf8')),

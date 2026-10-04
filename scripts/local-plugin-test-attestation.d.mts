@@ -23,6 +23,7 @@ export function runAndSignLocalPluginTests(options: {
   keyId: string
   releaseId: string
   gitSha: string
+  candidateIdentityPath?: string
 }): LocalPluginTestAttestation
 
 export function generateLocalPluginReleaseEvidence(options: {
@@ -30,6 +31,7 @@ export function generateLocalPluginReleaseEvidence(options: {
   pluginRoot: string
   packagePath: string
   platform: string
+  candidateIdentityPath: string
   publicKeyPath: string
   privateKeyPath: string
   keyId: string
