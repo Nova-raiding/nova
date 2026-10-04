@@ -2069,6 +2069,9 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
   const workerId = resolveWorkerId(env)
   const callbackRole = role === 'all' || role === 'sync' || role === 'generation' || role === 'publish' || role === 'reconcile' || role === 'automation'
   const controlledEnvironment = ['staging', 'preview', 'production'].includes(env.NODE_ENV ?? '')
+  if (controlledEnvironment && workspaces.some(value => /^(?:ws_demo|workspace_demo|demo-workspace)$/u.test(value))) {
+    throw new Error('controlled-environment workers cannot target a local/demo fixture workspace')
+  }
   if (controlledEnvironment && callbackRole && (!apiBaseUrl || !apiToken || !apiSigningSecret)) {
     throw new Error('controlled-environment callback workers require WORKER_API_BASE_URL, WORKER_API_TOKEN and WORKER_API_SIGNING_SECRET')
   }

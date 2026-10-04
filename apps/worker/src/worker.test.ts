@@ -330,6 +330,27 @@ describe('worker production entry', () => {
     expect(readWorkerConfig({ DATABASE_URL: baseEnv.DATABASE_URL, WORKER_WORKSPACES: 'auto' })).toMatchObject({ workspaces: [], autoDiscoverWorkspaces: true })
   })
 
+  it('rejects local fixture workspace scope in controlled environments', () => {
+    expect(() => readWorkerConfig({
+      ...baseEnv,
+      NODE_ENV: 'production',
+      WORKER_ROLE: 'publish',
+      WORKER_WORKSPACES: 'ws_demo',
+      WORKER_API_BASE_URL: 'http://api:8787',
+      WORKER_API_TOKEN: 'worker-token',
+      WORKER_API_SIGNING_SECRET: 'worker-signing',
+    })).toThrow('local/demo fixture workspace')
+    expect(readWorkerConfig({
+      ...baseEnv,
+      NODE_ENV: 'production',
+      WORKER_ROLE: 'publish',
+      WORKER_WORKSPACES: 'auto',
+      WORKER_API_BASE_URL: 'http://api:8787',
+      WORKER_API_TOKEN: 'worker-token',
+      WORKER_API_SIGNING_SECRET: 'worker-signing',
+    })).toMatchObject({ autoDiscoverWorkspaces: true })
+  })
+
   it('fails worker readiness closed unless the complete shipped schema and API dependencies are ready', async () => {
     const expectedMigrations = [{ version: 1, name: 'initial' }, { version: 2, name: 'force_rls' }]
     const database = { query: vi.fn(async () => ({ rows: expectedMigrations })) }
