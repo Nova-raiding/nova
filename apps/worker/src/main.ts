@@ -101,6 +101,31 @@ function imageWorkerTrace(event: string, fields: Record<string, unknown> = {}): 
 }
 
 /**
+ * Attach the worker's durable image execution identity to a relay receipt.
+ *
+ * The internal usage endpoint treats contextLinkId/contextHash as an all-or-
+ * nothing pair. Image jobs often have only an intent hash, so remove any
+ * provider-supplied context fields before adding the persisted pair. This
+ * prevents an orphan contextHash from turning an otherwise valid receipt into
+ * a 400 response while retaining the intent hash as audit metadata.
+ */
+export function enrichImageUsageSettlement(
+  usage: RelayUsageRecord,
+  execution?: { runKey: string; contextHash: string; contextLinkId?: string },
+): RelayUsageRecord {
+  if (!execution) return usage
+  const sanitizedUsage = { ...usage }
+  delete sanitizedUsage.contextLinkId
+  delete sanitizedUsage.contextHash
+  return {
+    ...sanitizedUsage,
+    runKey: execution.runKey,
+    ...(execution.contextLinkId ? { contextLinkId: execution.contextLinkId, contextHash: execution.contextHash } : {}),
+    metadata: { ...(usage.metadata ?? {}), image_job: true, intent_hash: execution.contextHash },
+  }
+}
+
+/**
  * Dispatch states map onto the runbook's correlation vocabulary. A failed
  * publish used to leave no log line at all — only `outbox_events.last_error` —
  * so an operator could not join it with the API request that queued it.
@@ -2378,18 +2403,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image model usage settlement')
     const execution = usage.actionId ? imageUsageContexts.get(usage.actionId) : undefined
     if (execution && usage.providerRequestId) execution.providerRequestId = usage.providerRequestId
-    // Image candidates carry a durable intent hash, but only formal content
-    // tasks have a persisted context link. The API requires contextLinkId and
-    // contextHash to be sent as a pair; keep the intent hash in metadata when
-    // no link exists instead of sending an orphan hash that blocks settlement.
-    let enriched = execution
-      ? {
-        ...usage,
-        runKey: execution.runKey,
-        ...(execution.contextLinkId ? { contextLinkId: execution.contextLinkId, contextHash: execution.contextHash } : {}),
-        metadata: { ...(usage.metadata ?? {}), image_job: true, intent_hash: execution.contextHash },
-      }
-      : usage
+    let enriched = enrichImageUsageSettlement(usage, execution)
     if (enriched.costCny === undefined && relayPricing) {
       const quote = await relayPricing.quote(enriched)
       enriched = { ...enriched, costCny: quote.costCny, metadata: { ...(enriched.metadata ?? {}), ...quote.metadata } }

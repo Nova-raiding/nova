@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, enrichImageUsageSettlement, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
 import { contextEnvelopeHash, loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { generationKnowledgeReceiptHash } from '../../../packages/application/src/knowledge-execution-fence.js'
 import { verifyWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
@@ -1271,6 +1271,20 @@ describe('worker production entry', () => {
     const usageSinkSection = source.slice(source.indexOf('const contentGenerator ='), source.indexOf('const requireImageProviderRequestId'))
     expect(usageSinkSection.match(/return postModelUsage\(/gu)).toHaveLength(3)
     expect(usageSinkSection).not.toContain('await postModelUsage(')
+  })
+
+  it('keeps image usage context fields paired when settling relay receipts', () => {
+    const usage = {
+      workspaceId: 'ws_image', actionId: 'image:job_1', contextLinkId: 'provider_orphan_link', contextHash: 'f'.repeat(64),
+      modality: 'image' as const, model: 'relay-image', providerRequestId: 'relay_image_1', observedAt: '2026-08-28T00:00:00.000Z',
+    }
+    const unlinked = enrichImageUsageSettlement(usage, { runKey: 'image-run-1', contextHash: 'a'.repeat(64) })
+    expect(unlinked).not.toHaveProperty('contextLinkId')
+    expect(unlinked).not.toHaveProperty('contextHash')
+    expect(unlinked).toMatchObject({ runKey: 'image-run-1', metadata: { image_job: true, intent_hash: 'a'.repeat(64) } })
+
+    const linked = enrichImageUsageSettlement(usage, { runKey: 'image-run-2', contextLinkId: 'ctx_1', contextHash: 'b'.repeat(64) })
+    expect(linked).toMatchObject({ runKey: 'image-run-2', contextLinkId: 'ctx_1', contextHash: 'b'.repeat(64), metadata: { image_job: true, intent_hash: 'b'.repeat(64) } })
   })
 
   it('rejects a successful model usage callback without settlement evidence', async () => {
