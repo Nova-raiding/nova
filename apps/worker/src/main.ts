@@ -2354,7 +2354,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
     mappingPreflight: createPersistentWorkerMappingPreflightAdapter({ approvals: mappingApprovals, scopes: createPostgresWorkerMappingScopeLoader(pool), execution: mappingExecution }),
   })
   const generationUsageContexts = new Map<string, { runKey: string; contextHash: string; contextLinkId?: string; taskId: string; campaignItemId?: string; event: DurableOutboxEvent; providerRequestIds: string[]; signal?: AbortSignal }>()
-  const imageUsageContexts = new Map<string, { runKey: string; contextHash: string; event: DurableOutboxEvent; signal?: AbortSignal; providerRequestId?: string }>()
+  const imageUsageContexts = new Map<string, { runKey: string; contextHash: string; contextLinkId?: string; event: DurableOutboxEvent; signal?: AbortSignal; providerRequestId?: string }>()
   const contentGenerator = createContentGeneratorFromEnv(process.env, async usage => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for model usage settlement')
     const execution = usage.actionId ? generationUsageContexts.get(usage.actionId) : undefined
@@ -2378,7 +2378,18 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image model usage settlement')
     const execution = usage.actionId ? imageUsageContexts.get(usage.actionId) : undefined
     if (execution && usage.providerRequestId) execution.providerRequestId = usage.providerRequestId
-    let enriched = execution ? { ...usage, runKey: execution.runKey, contextHash: execution.contextHash, metadata: { ...(usage.metadata ?? {}), image_job: true } } : usage
+    // Image candidates carry a durable intent hash, but only formal content
+    // tasks have a persisted context link. The API requires contextLinkId and
+    // contextHash to be sent as a pair; keep the intent hash in metadata when
+    // no link exists instead of sending an orphan hash that blocks settlement.
+    let enriched = execution
+      ? {
+        ...usage,
+        runKey: execution.runKey,
+        ...(execution.contextLinkId ? { contextLinkId: execution.contextLinkId, contextHash: execution.contextHash } : {}),
+        metadata: { ...(usage.metadata ?? {}), image_job: true, intent_hash: execution.contextHash },
+      }
+      : usage
     if (enriched.costCny === undefined && relayPricing) {
       const quote = await relayPricing.quote(enriched)
       enriched = { ...enriched, costCny: quote.costCny, metadata: { ...(enriched.metadata ?? {}), ...quote.metadata } }
@@ -2626,7 +2637,13 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
       await executionAuthorization.assertAuthorized(event, 'image_generation.execute', signal)
       await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'begin_provider_dispatch', ownerToken, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
     } catch (error) { return closeRejected(error) }
-    imageUsageContexts.set(actionId, { runKey, contextHash: intentHash, event, ...(signal ? { signal } : {}) })
+    imageUsageContexts.set(actionId, {
+      runKey,
+      contextHash: intentHash,
+      ...(typeof payload.context_link_id === 'string' && payload.context_link_id.trim() ? { contextLinkId: payload.context_link_id.trim() } : {}),
+      event,
+      ...(signal ? { signal } : {}),
+    })
     // Keep asset IDs and resolved pixels on their respective relay fields.
     // Passing IDs through `sourceImages` silently dropped the reference image
     // in the image generator's data-URL validation, so the provider generated
