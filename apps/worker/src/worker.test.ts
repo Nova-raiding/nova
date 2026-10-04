@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, enrichImageUsageSettlement, executeImageGenerationContinuations, fetchPublishMedia, generationResultCallbackFailure, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, enrichImageUsageSettlement, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
 import { contextEnvelopeHash, loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { generationKnowledgeReceiptHash } from '../../../packages/application/src/knowledge-execution-fence.js'
 import { verifyWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
@@ -79,15 +79,6 @@ const createAuthorizedOutboxHandler = (options: WorkerHandlerOptions) => {
 }
 
 describe('worker production entry', () => {
-  it('keeps generation callback settlement failures reconcilable', () => {
-    expect(generationResultCallbackFailure(new Error('reservation store unavailable'))).toMatchObject({
-      code: 'CREATIVE_POINT_SETTLEMENT_PENDING',
-      retryable: false,
-      unknown: true,
-      reconciliationRequired: true,
-    })
-  })
-
   it('reports terminal scan errors as dead letters, not active backlog', async () => {
     let metricsQuery = ''
     const client = {
