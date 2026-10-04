@@ -166,7 +166,9 @@ describe('structured Kubernetes release image gate', () => {
     const api = readFileSync('infra/kubernetes/base/api.yaml', 'utf8')
     const secretContract = readFileSync('infra/kubernetes/secret-contract.example.yaml', 'utf8')
     expect(api).toContain('{name: MCP_INTEGRATION_MODE, value: local_stdio}')
-    expect(api).toContain('{name: MCP_OAUTH_REQUIRED, value: "false"}')
+    // Retired remote-auth settings must be absent. The production preflight
+    // rejects any non-empty value, including the string "false".
+    expect(api).not.toMatch(/\bMCP_OAUTH_REQUIRED\b/u)
     expect(api).not.toContain('MCP_OAUTH_CLIENTS')
     expect(api).not.toContain('OPENAI_APPS_CHALLENGE_TOKEN')
     expect(secretContract).not.toMatch(/requiredKeys:[\s\S]*?- (?:MCP_OAUTH_CLIENTS|OPENAI_APPS_CHALLENGE_TOKEN)/u)
