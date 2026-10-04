@@ -234,6 +234,12 @@ describe("UserDirectorySection sorting", () => {
     expect(source).toContain("实收金额请核对财务流水");
   });
 
+  it("keeps platform and merchant detail drawers discoverable as user details", () => {
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain('title={detailAccountType === "platform" ? "运营平台用户详情" : "商户用户详情"}');
+    expect(source).toContain('aria-label="用户目录详情抽屉"');
+  });
+
   it("does not manufacture member approval from a browser-selected name", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain("本操作由当前会话授权");

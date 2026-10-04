@@ -356,7 +356,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
         </Row>
       </Form>
     </Modal>
-    <Drawer className="ops-user-detail-drawer" title={detailAccountType === "platform" ? "运营平台账号详情" : "商户用户详情"} aria-label="用户目录详情抽屉" size="min(920px, calc(100vw - 32px))" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden footer={detailAccountType === "platform" ? null : <div style={{ textAlign: "right" }}><Button danger disabled={!model.canUserGovernance || !model.userDetail?.memberships.length} onClick={() => { const row = model.userDetail?.memberships[0]; if (row) { setActionError(""); setAccessTarget(row); } }}>停用</Button></div>}>
+    <Drawer className="ops-user-detail-drawer" title={detailAccountType === "platform" ? "运营平台用户详情" : "商户用户详情"} aria-label="用户目录详情抽屉" size="min(920px, calc(100vw - 32px))" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden footer={detailAccountType === "platform" ? null : <div style={{ textAlign: "right" }}><Button danger disabled={!model.canUserGovernance || !model.userDetail?.memberships.length} onClick={() => { const row = model.userDetail?.memberships[0]; if (row) { setActionError(""); setAccessTarget(row); } }}>停用</Button></div>}>
       <Spin spinning={model.userDetailLoading} tip="正在加载用户详情…" aria-label="正在加载用户详情">
         {!model.userDetailLoading && !model.userDetail ? <Empty description="用户详情尚未取得，请重试或关闭后重新打开" /> : null}
         {model.userDetail && <Space orientation="vertical" size="middle" className="full-width">

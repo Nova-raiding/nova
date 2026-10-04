@@ -26,7 +26,7 @@ test('separates platform operators from merchant members', async ({ page }, test
   const row = table.getByRole('row').filter({ hasText: operator })
   await expect(row).toContainText('运营平台')
   await row.getByRole('button', { name: /用户详情/u }).click()
-  const detail = page.getByRole('dialog', { name: '运营平台账号详情' })
+  const detail = page.getByRole('dialog', { name: '运营平台用户详情' })
   await expect(detail).toContainText('此账号属于运营平台')
   await expect(detail.getByRole('heading', { name: '旧版套餐与任务额度快照' })).toHaveCount(0)
   await testInfo.attach('platform-account-detail', { body: await page.screenshot(), contentType: 'image/png' })

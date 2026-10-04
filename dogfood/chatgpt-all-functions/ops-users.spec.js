@@ -19,7 +19,10 @@ async function filterUserDirectory(page, keyword = '') {
   await filters.getByRole('textbox', { name: '关键词' }).fill(keyword)
   await filters.getByRole('button', { name: /查\s*询/u }).click()
   await expect(filters.getByRole('button', { name: /查\s*询/u })).toBeEnabled({ timeout: 20_000 })
-  return userDirectoryTable(page).getByRole('row').filter({ has: page.getByRole('button', { name: /用户详情/u }) }).first()
+  // The first row may be the authenticated platform operator. This scenario
+  // verifies membership and legacy quota sections, so anchor it to a merchant
+  // account whose detail drawer owns those sections.
+  return userDirectoryTable(page).getByRole('row').filter({ hasText: '商家账号' }).filter({ has: page.getByRole('button', { name: /用户详情/u }) }).first()
 }
 
 async function waitForBackgroundHydration(page) {
