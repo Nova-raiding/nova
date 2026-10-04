@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"vbad","error":{"code":-32602,"message":"brand: 快照引用的 id 和 version 必须是 1 至 200 个字符，且不得包含控制字符。; product: 快照引用的 id 和 version 必须是 1 至 200 个字符，且不得包含控制字符。; rules: 生成上下文至少需要一个规则快照引用。","data":{"code":"INVALID_REQUEST","details":{},"request_id":"req_f3e76af6-1457-4dc0-9eca-c874fbf06492","trace_id":"req_f3e76af6-1457-4dc0-9eca-c874fbf06492"}}}

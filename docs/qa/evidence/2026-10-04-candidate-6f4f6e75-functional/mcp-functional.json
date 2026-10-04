@@ -1,0 +1,907 @@
+{
+  "schema_version": 1,
+  "release_id": "release-6f4f6e75s",
+  "results": [
+    {
+      "name": "tools/list",
+      "summary": {
+        "count": 120,
+        "names": [
+          "onboarding.status",
+          "commercial.service-boundary.accept",
+          "merchant.start",
+          "merchant.first_value",
+          "brand-unit.list",
+          "brand-unit.create",
+          "brand-unit.bind-store",
+          "brand-unit.product.create",
+          "brand-unit.listing.create",
+          "brand-unit.listing.list",
+          "brand-unit.access.grant",
+          "canonical.product.consistency",
+          "campaign.batch.create",
+          "campaign.batch.list",
+          "campaign.batch.get",
+          "campaign.batch.pause",
+          "campaign.batch.resume",
+          "workspace.health",
+          "workspace.invitations.list",
+          "workspace.invitation.accept",
+          "workspace.interactive.confirm",
+          "workspace.metrics",
+          "commercial.access.get",
+          "commercial.catalog.get",
+          "commercial.order.create",
+          "commercial.order.payment.get",
+          "creative-points.balance.get",
+          "creative-points.statement.list",
+          "support.customer.replies.list",
+          "subscription.get",
+          "subscription.orders.list",
+          "billing.export",
+          "workspace.data.export.request",
+          "workspace.data.export.get",
+          "platform.mapping.preflight",
+          "billing.status",
+          "billing.model-usage.statement",
+          "billing.recharge.get",
+          "billing.recharge.list",
+          "billing.transactions",
+          "workspace.deactivate",
+          "workspace.activate",
+          "workspace.data.delete.request",
+          "platform.store.alias.set",
+          "catalog.search",
+          "catalog.categories",
+          "catalog.title.optimize",
+          "catalog.title.accept",
+          "catalog.import",
+          "catalog.import.batch",
+          "catalog.sku.update",
+          "catalog.product.update",
+          "catalog.facts.confirm",
+          "catalog.product.disable",
+          "catalog.product.enable",
+          "catalog.image.generate",
+          "catalog.image.get",
+          "catalog.image.select",
+          "catalog.image.review",
+          "rule.list",
+          "rule.sync.status",
+          "rule.history",
+          "asset.list",
+          "asset.parse",
+          "asset.facts.confirm",
+          "asset.metadata.update",
+          "asset.preference.update",
+          "brand.get",
+          "brand.extract",
+          "brand.upsert",
+          "asset.upload",
+          "asset.upload.batch",
+          "asset.generation.confirm",
+          "asset.rights.update",
+          "deliverable.list",
+          "task.history",
+          "task.resume",
+          "task.clone",
+          "task.timeline",
+          "feedback.list",
+          "feedback.submit",
+          "task.create",
+          "task.create.draft",
+          "task.answer",
+          "task.request.create",
+          "task.sku.split",
+          "task.group.create",
+          "creative.brief",
+          "creative.preview",
+          "creative.directions.update",
+          "task.select_direction",
+          "task.plan.confirm",
+          "content.generate",
+          "content.draft.generate",
+          "generation.get",
+          "content.review.decide",
+          "content.visual.select",
+          "content.versions",
+          "content.diff",
+          "content.export",
+          "content.approve",
+          "content.draft.confirm",
+          "content.restore",
+          "knowledge.rule.create",
+          "knowledge.rule.list",
+          "knowledge.asset.create",
+          "knowledge.asset.update",
+          "knowledge.asset.list",
+          "knowledge.brand.preference.get",
+          "knowledge.brand.preference.update",
+          "knowledge.feedback.record",
+          "knowledge.learning.list",
+          "knowledge.learning.confirm",
+          "knowledge.learning.dismiss",
+          "knowledge.competitor.create",
+          "knowledge.competitor.list",
+          "knowledge.competitor.reference",
+          "multimodal.image.edit",
+          "multimodal.video.request",
+          "multimodal.video.get"
+        ]
+      }
+    },
+    {
+      "name": "workspace.interactive.confirm",
+      "args": {
+        "confirmation": "I_CONFIRM_INTERACTIVE_WRITES"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "f-1791091542760-0.9273819217460864",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。"
+            }
+          ],
+          "structuredContent": {
+            "enabled": true,
+            "expires_at": "2026-10-04T05:40:44.986Z",
+            "scope": "current_interactive_session",
+            "automation": "read_only",
+            "ticket": {
+              "nonce_hash": "f708f1c0ac036e550f36dc9a8632879444fc6734df0fc5a2fc64aaece92ff858",
+              "intent_hash": "836ceaca61709fdddd8c01c77289beecd11f5c185e9f36ae572f317dbe8a01fe",
+              "expires_at": "2026-10-04T05:40:44.986Z"
+            }
+          },
+          "isError": false
+        }
+      },
+      "summary": {
+        "isError": false,
+        "structured": {
+          "enabled": true,
+          "expires_at": "2026-10-04T05:40:44.986Z",
+          "scope": "current_interactive_session",
+          "automation": "read_only",
+          "ticket": {
+            "nonce_hash": "f708f1c0ac036e550f36dc9a8632879444fc6734df0fc5a2fc64aaece92ff858",
+            "intent_hash": "836ceaca61709fdddd8c01c77289beecd11f5c185e9f36ae572f317dbe8a01fe",
+            "expires_at": "2026-10-04T05:40:44.986Z"
+          }
+        },
+        "content": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "billing.status",
+      "args": {},
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "f-1791091545093-0.40300240847006785",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "创意点状态：可用。生成能力由服务端准入决定。"
+            }
+          ],
+          "structuredContent": {
+            "schema_version": "commercial.billing-status.v2",
+            "balance_state": "known",
+            "availability": "available",
+            "available_points": 1000,
+            "allowed": true,
+            "access_revision": "1",
+            "next_actions": [
+              "commercial.access.get",
+              "creative-points.balance.get",
+              "commercial.catalog.get"
+            ],
+            "viewer": {
+              "default_scope": "mine",
+              "available_scopes": [
+                "mine",
+                "workspace"
+              ]
+            }
+          },
+          "isError": false
+        }
+      },
+      "summary": {
+        "isError": false,
+        "structured": {
+          "schema_version": "commercial.billing-status.v2",
+          "balance_state": "known",
+          "availability": "available",
+          "available_points": 1000,
+          "allowed": true,
+          "access_revision": "1",
+          "next_actions": [
+            "commercial.access.get",
+            "creative-points.balance.get",
+            "commercial.catalog.get"
+          ],
+          "viewer": {
+            "default_scope": "mine",
+            "available_scopes": [
+              "mine",
+              "workspace"
+            ]
+          }
+        },
+        "content": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "catalog.import",
+      "args": {
+        "platform": "pinduoduo",
+        "title": "有机燕麦奶 1L",
+        "category": "食品饮料",
+        "price": "29.90",
+        "stock": "100",
+        "sku_count": "1",
+        "skus_json": "[{\"id\":\"sku_oat_1\",\"name\":\"1L\",\"price\":29.9,\"stock\":100,\"attributes\":{\"净含量\":\"1L\"}}]",
+        "attributes_json": "{\"净含量\":\"1L\",\"配料\":\"燕麦、水\"}",
+        "draft_only": "true",
+        "local_product_key": "staging-oatmilk-6f4f6e75sb"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "f-1791091546429-0.029694265615962223",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。"
+            }
+          ],
+          "structuredContent": {
+            "id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+            "workspaceId": "ws_candidate_6f4f6e75s",
+            "platform": "pinduoduo",
+            "storeName": "导入店铺",
+            "localProductKey": "staging-oatmilk-6f4f6e75sb",
+            "title": "有机燕麦奶 1L",
+            "skuCount": 1,
+            "stock": 100,
+            "skus": [
+              {
+                "id": "sku_oat_1",
+                "name": "1L",
+                "price": 29.9,
+                "stock": 100,
+                "attributes": {
+                  "净含量": "1L"
+                }
+              }
+            ],
+            "price": 29.9,
+            "category": "食品饮料",
+            "attributes": {
+              "净含量": "1L",
+              "配料": "燕麦、水"
+            },
+            "factsConfirmed": false,
+            "source": "csv",
+            "updatedAt": "2026-10-04T05:25:47.164Z",
+            "version": 1,
+            "ruleScan": {
+              "scannedAt": "2026-10-04T05:25:47.164Z",
+              "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过",
+              "status": "passed",
+              "ruleVersionIds": [
+                "cn-commerce-1.0.0",
+                "pinduoduo-apparel-1.0.0"
+              ],
+              "findings": []
+            },
+            "product_id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+            "rule_scan": {
+              "scannedAt": "2026-10-04T05:25:47.164Z",
+              "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过",
+              "status": "passed",
+              "ruleVersionIds": [
+                "cn-commerce-1.0.0",
+                "pinduoduo-apparel-1.0.0"
+              ],
+              "findings": []
+            },
+            "draft_only": true,
+            "candidate_status": "未绑定商品、仅草稿、不可发布",
+            "publishable": false,
+            "knowledge": {
+              "assetCount": 1,
+              "documentCount": 2,
+              "chunkCount": 2,
+              "bindingCount": 2,
+              "approvalStatus": "pending",
+              "rightsStatus": "unknown",
+              "indexState": "queued"
+            }
+          },
+          "isError": false
+        }
+      },
+      "summary": {
+        "isError": false,
+        "structured": {
+          "id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+          "workspaceId": "ws_candidate_6f4f6e75s",
+          "platform": "pinduoduo",
+          "storeName": "导入店铺",
+          "localProductKey": "staging-oatmilk-6f4f6e75sb",
+          "title": "有机燕麦奶 1L",
+          "skuCount": 1,
+          "stock": 100,
+          "skus": [
+            {
+              "id": "sku_oat_1",
+              "name": "1L",
+              "price": 29.9,
+              "stock": 100,
+              "attributes": {
+                "净含量": "1L"
+              }
+            }
+          ],
+          "price": 29.9,
+          "category": "食品饮料",
+          "attributes": {
+            "净含量": "1L",
+            "配料": "燕麦、水"
+          },
+          "factsConfirmed": false,
+          "source": "csv",
+          "updatedAt": "2026-10-04T05:25:47.164Z",
+          "version": 1,
+          "ruleScan": {
+            "scannedAt": "2026-10-04T05:25:47.164Z",
+            "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过",
+            "status": "passed",
+            "ruleVersionIds": [
+              "cn-commerce-1.0.0",
+              "pinduoduo-apparel-1.0.0"
+            ],
+            "findings": []
+          },
+          "product_id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+          "rule_scan": {
+            "scannedAt": "2026-10-04T05:25:47.164Z",
+            "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过",
+            "status": "passed",
+            "ruleVersionIds": [
+              "cn-commerce-1.0.0",
+              "pinduoduo-apparel-1.0.0"
+            ],
+            "findings": []
+          },
+          "draft_only": true,
+          "candidate_status": "未绑定商品、仅草稿、不可发布",
+          "publishable": false,
+          "knowledge": {
+            "assetCount": 1,
+            "documentCount": 2,
+            "chunkCount": 2,
+            "bindingCount": 2,
+            "approvalStatus": "pending",
+            "rightsStatus": "unknown",
+            "indexState": "queued"
+          }
+        },
+        "content": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "catalog.facts.confirm",
+      "args": {
+        "product_id": "prod_pinduoduo_local_fe34c50e208bfa7fe979"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "f-1791091547395-0.4161771583522347",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。"
+            }
+          ],
+          "structuredContent": {
+            "id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+            "skus": [
+              {
+                "id": "sku_oat_1",
+                "name": "1L",
+                "price": 29.9,
+                "stock": 100,
+                "attributes": {
+                  "净含量": "1L"
+                }
+              }
+            ],
+            "price": 29.9,
+            "stock": 100,
+            "title": "有机燕麦奶 1L",
+            "source": "csv",
+            "version": 2,
+            "category": "食品饮料",
+            "platform": "pinduoduo",
+            "ruleScan": {
+              "status": "passed",
+              "findings": [],
+              "scannedAt": "2026-10-04T05:25:47.164Z",
+              "ruleVersionIds": [
+                "cn-commerce-1.0.0",
+                "pinduoduo-apparel-1.0.0"
+              ],
+              "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过"
+            },
+            "skuCount": 1,
+            "storeName": "导入店铺",
+            "updatedAt": "2026-10-04T05:25:48.131Z",
+            "attributes": {
+              "配料": "燕麦、水",
+              "净含量": "1L"
+            },
+            "workspaceId": "ws_candidate_6f4f6e75s",
+            "factsConfirmed": true,
+            "localProductKey": "staging-oatmilk-6f4f6e75sb",
+            "product_id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+            "factsConfirmationRequired": false,
+            "humanConfirmed": true,
+            "facts_confirmation": {
+              "state": "confirmed",
+              "required": false,
+              "product_id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+              "next_action": null
+            },
+            "resumed_task_ids": []
+          },
+          "isError": false
+        }
+      },
+      "summary": {
+        "isError": false,
+        "structured": {
+          "id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+          "skus": [
+            {
+              "id": "sku_oat_1",
+              "name": "1L",
+              "price": 29.9,
+              "stock": 100,
+              "attributes": {
+                "净含量": "1L"
+              }
+            }
+          ],
+          "price": 29.9,
+          "stock": 100,
+          "title": "有机燕麦奶 1L",
+          "source": "csv",
+          "version": 2,
+          "category": "食品饮料",
+          "platform": "pinduoduo",
+          "ruleScan": {
+            "status": "passed",
+            "findings": [],
+            "scannedAt": "2026-10-04T05:25:47.164Z",
+            "ruleVersionIds": [
+              "cn-commerce-1.0.0",
+              "pinduoduo-apparel-1.0.0"
+            ],
+            "evidenceBoundary": "仅完成本地确定性规则扫描；不代表外部平台最终审核通过"
+          },
+          "skuCount": 1,
+          "storeName": "导入店铺",
+          "updatedAt": "2026-10-04T05:25:48.131Z",
+          "attributes": {
+            "配料": "燕麦、水",
+            "净含量": "1L"
+          },
+          "workspaceId": "ws_candidate_6f4f6e75s",
+          "factsConfirmed": true,
+          "localProductKey": "staging-oatmilk-6f4f6e75sb",
+          "product_id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+          "factsConfirmationRequired": false,
+          "humanConfirmed": true,
+          "facts_confirmation": {
+            "state": "confirmed",
+            "required": false,
+            "product_id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+            "next_action": null
+          },
+          "resumed_task_ids": []
+        },
+        "content": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "catalog.title.optimize",
+      "args": {
+        "product_id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+        "platform": "pinduoduo",
+        "keyword": "燕麦奶",
+        "objective": "搜索点击"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "f-1791091548238-0.7121484109082996",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。"
+            }
+          ],
+          "structuredContent": {
+            "product_id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+            "platform": "pinduoduo",
+            "suggestions": [
+              {
+                "id": "seo_geo_prod_pinduoduo_local_fe34c50e208bfa7fe979_pinduoduo",
+                "platform": "pinduoduo",
+                "title": "有机燕麦奶 1L 食品饮料 配料燕麦 水 净含量1L",
+                "score": {
+                  "seo": 85,
+                  "geo": 79,
+                  "total": 82
+                },
+                "keywords": [
+                  "燕麦奶",
+                  "食品饮料",
+                  "配料燕麦 水",
+                  "净含量1L"
+                ],
+                "evidence": [
+                  {
+                    "source": "product_fact",
+                    "value": "有机燕麦奶 1L"
+                  },
+                  {
+                    "source": "product_fact",
+                    "value": "配料燕麦 水"
+                  },
+                  {
+                    "source": "product_fact",
+                    "value": "净含量1L"
+                  },
+                  {
+                    "source": "merchant_keyword",
+                    "value": "燕麦奶"
+                  }
+                ],
+                "risks": [
+                  "缺少已确认卖点，未自动补写功效或承诺",
+                  "SEO/GEO 分数是本地建议，不代表平台排名、收录或转化结果"
+                ],
+                "rationale": [
+                  "关键词来自商品标题、类目、属性或商家输入",
+                  "已去除标题中重复的完整词组，优先保留商品原名",
+                  "未生成未经事实证明的功效、销量、排名和价格承诺"
+                ],
+                "status": "suggested",
+                "rankingGuarantee": false,
+                "factsVersion": 1,
+                "contextHash": "8210b80bc5e5c083a905e6753d2772adb112ae20ecfb1e41de5d82f554e4f949",
+                "quality": {
+                  "characterCount": 26,
+                  "keywordCoverage": 100,
+                  "duplicateTerms": [],
+                  "platformFit": "within_limit"
+                }
+              }
+            ],
+            "rule_preflight": {
+              "blocking": false,
+              "finding_count": 0,
+              "rule_hits": [
+                {
+                  "ruleVersionId": "cn-commerce@cn-commerce-1.0.0",
+                  "version": "cn-commerce-1.0.0",
+                  "scope": "global",
+                  "action": "block",
+                  "severity": "error",
+                  "matchedChecks": [
+                    "forbiddenTerms",
+                    "forbiddenTerms",
+                    "forbiddenTerms"
+                  ]
+                },
+                {
+                  "ruleVersionId": "pinduoduo-mapping@pinduoduo-apparel-1.0.0",
+                  "version": "pinduoduo-apparel-1.0.0",
+                  "scope": "platform",
+                  "action": "block",
+                  "severity": "error",
+                  "matchedChecks": []
+                }
+              ],
+              "forbidden_terms": [
+                "最强",
+                "第一",
+                "绝对化"
+              ],
+              "findings": []
+            },
+            "canonical_scope": null,
+            "humanConfirmationRequired": true,
+            "rankingGuarantee": false
+          },
+          "isError": false
+        }
+      },
+      "summary": {
+        "isError": false,
+        "structured": {
+          "product_id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+          "platform": "pinduoduo",
+          "suggestions": [
+            {
+              "id": "seo_geo_prod_pinduoduo_local_fe34c50e208bfa7fe979_pinduoduo",
+              "platform": "pinduoduo",
+              "title": "有机燕麦奶 1L 食品饮料 配料燕麦 水 净含量1L",
+              "score": {
+                "seo": 85,
+                "geo": 79,
+                "total": 82
+              },
+              "keywords": [
+                "燕麦奶",
+                "食品饮料",
+                "配料燕麦 水",
+                "净含量1L"
+              ],
+              "evidence": [
+                {
+                  "source": "product_fact",
+                  "value": "有机燕麦奶 1L"
+                },
+                {
+                  "source": "product_fact",
+                  "value": "配料燕麦 水"
+                },
+                {
+                  "source": "product_fact",
+                  "value": "净含量1L"
+                },
+                {
+                  "source": "merchant_keyword",
+                  "value": "燕麦奶"
+                }
+              ],
+              "risks": [
+                "缺少已确认卖点，未自动补写功效或承诺",
+                "SEO/GEO 分数是本地建议，不代表平台排名、收录或转化结果"
+              ],
+              "rationale": [
+                "关键词来自商品标题、类目、属性或商家输入",
+                "已去除标题中重复的完整词组，优先保留商品原名",
+                "未生成未经事实证明的功效、销量、排名和价格承诺"
+              ],
+              "status": "suggested",
+              "rankingGuarantee": false,
+              "factsVersion": 1,
+              "contextHash": "8210b80bc5e5c083a905e6753d2772adb112ae20ecfb1e41de5d82f554e4f949",
+              "quality": {
+                "characterCount": 26,
+                "keywordCoverage": 100,
+                "duplicateTerms": [],
+                "platformFit": "within_limit"
+              }
+            }
+          ],
+          "rule_preflight": {
+            "blocking": false,
+            "finding_count": 0,
+            "rule_hits": [
+              {
+                "ruleVersionId": "cn-commerce@cn-commerce-1.0.0",
+                "version": "cn-commerce-1.0.0",
+                "scope": "global",
+                "action": "block",
+                "severity": "error",
+                "matchedChecks": [
+                  "forbiddenTerms",
+                  "forbiddenTerms",
+                  "forbiddenTerms"
+                ]
+              },
+              {
+                "ruleVersionId": "pinduoduo-mapping@pinduoduo-apparel-1.0.0",
+                "version": "pinduoduo-apparel-1.0.0",
+                "scope": "platform",
+                "action": "block",
+                "severity": "error",
+                "matchedChecks": []
+              }
+            ],
+            "forbidden_terms": [
+              "最强",
+              "第一",
+              "绝对化"
+            ],
+            "findings": []
+          },
+          "canonical_scope": null,
+          "humanConfirmationRequired": true,
+          "rankingGuarantee": false
+        },
+        "content": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "catalog.image.generate",
+      "args": {
+        "product_id": "prod_pinduoduo_local_fe34c50e208bfa7fe979",
+        "platform": "pinduoduo",
+        "mode": "create",
+        "size": "1024x1024",
+        "direction": "白底商品主图，突出包装与净含量，使用已确认事实",
+        "count": "1",
+        "idempotency_key": "staging-image-6f4f6e75sb"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "f-1791091549093-0.6442072951165805",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "平台正在核对本次生成记录，暂时不能继续。没有生成新内容、扣费或发布；当前任务和已有产物已保留，核对完成后可继续。"
+            }
+          ],
+          "structuredContent": {
+            "code": "MODEL_RELAY_EVIDENCE_REQUIRED",
+            "message": "平台正在核对本次生成记录，暂时不能继续。没有生成新内容、扣费或发布；当前任务和已有产物已保留，核对完成后可继续。",
+            "details": {
+              "missing": [
+                "provider_request_id",
+                "usage",
+                "cost_cny"
+              ],
+              "operation_status": "blocked"
+            }
+          },
+          "isError": true
+        }
+      },
+      "summary": {
+        "isError": true,
+        "code": "MODEL_RELAY_EVIDENCE_REQUIRED",
+        "message": "平台正在核对本次生成记录，暂时不能继续。没有生成新内容、扣费或发布；当前任务和已有产物已保留，核对完成后可继续。",
+        "structured": {
+          "code": "MODEL_RELAY_EVIDENCE_REQUIRED",
+          "message": "平台正在核对本次生成记录，暂时不能继续。没有生成新内容、扣费或发布；当前任务和已有产物已保留，核对完成后可继续。",
+          "details": {
+            "missing": [
+              "provider_request_id",
+              "usage",
+              "cost_cny"
+            ],
+            "operation_status": "blocked"
+          }
+        },
+        "content": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "content.draft.generate",
+      "args": {
+        "draft": "true",
+        "draft_title": "有机燕麦奶 1L",
+        "draft_prompt": "基于已确认事实生成电商商品标题、卖点和详情页结构；缺少事实时明确列出缺口，不要虚构。",
+        "platform": "pinduoduo",
+        "idempotency_key": "staging-draft-6f4f6e75sb"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "f-1791091559921-0.47687285053280637",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "模型请求被中转服务拒绝。未生成新内容、未重复扣费；请更换可用模型或稍后重试。"
+            }
+          ],
+          "structuredContent": {
+            "code": "MODEL_PROVIDER_REQUEST_FAILED",
+            "message": "模型请求被中转服务拒绝。未生成新内容、未重复扣费；请更换可用模型或稍后重试。",
+            "details": {
+              "provider_request_id": "202610040526032571102198268d9d6z5mjW9MS",
+              "provider_idempotency_key": "mm-15ab8f59ef82985552865937dd6cd5398e5adcfbbbbdf2624f1e32ab33fd09f7",
+              "provider_status": 429,
+              "provider_outcome": "failed",
+              "provider_succeeded": false,
+              "reconciliation_required": false,
+              "retryable": true
+            }
+          },
+          "isError": true
+        }
+      },
+      "summary": {
+        "isError": true,
+        "code": "MODEL_PROVIDER_REQUEST_FAILED",
+        "message": "模型请求被中转服务拒绝。未生成新内容、未重复扣费；请更换可用模型或稍后重试。",
+        "structured": {
+          "code": "MODEL_PROVIDER_REQUEST_FAILED",
+          "message": "模型请求被中转服务拒绝。未生成新内容、未重复扣费；请更换可用模型或稍后重试。",
+          "details": {
+            "provider_request_id": "202610040526032571102198268d9d6z5mjW9MS",
+            "provider_idempotency_key": "mm-15ab8f59ef82985552865937dd6cd5398e5adcfbbbbdf2624f1e32ab33fd09f7",
+            "provider_status": 429,
+            "provider_outcome": "failed",
+            "provider_succeeded": false,
+            "reconciliation_required": false,
+            "retryable": true
+          }
+        },
+        "content": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "multimodal.video.request",
+      "args": {
+        "prompt": "为有机燕麦奶制作15秒商品详情页视频分镜，突出已确认配料、净含量和饮用场景，不虚构事实。",
+        "output": "storyboard",
+        "context_json": "{\"brand\":{\"id\":\"brand_candidate_6f4f6e75s\",\"version\":\"1\"},\"product\":{\"id\":\"prod_pinduoduo_local_fe34c50e208bfa7fe979\",\"title\":\"有机燕麦奶 1L\",\"category\":\"食品饮料\",\"facts\":{\"净含量\":\"1L\",\"配料\":\"燕麦、水\"},\"version\":\"1\"},\"rules\":[{\"id\":\"pinduoduo-food-2026\",\"version\":\"v0.1\",\"scope\":\"pinduoduo/食品饮料\"}]}",
+        "idempotency_key": "staging-video-6f4f6e75sb"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "f-1791091563698-0.9512825223969024",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "服务暂时不可用，未确认操作是否完成。请稍后重试；如仍失败，再检查工作区连接。"
+            }
+          ],
+          "structuredContent": {
+            "code": "MCP_GATEWAY_ERROR",
+            "message": "服务暂时不可用，未确认操作是否完成。请稍后重试；如仍失败，再检查工作区连接。"
+          },
+          "isError": true
+        }
+      },
+      "summary": {
+        "isError": true,
+        "code": "MCP_GATEWAY_ERROR",
+        "message": "服务暂时不可用，未确认操作是否完成。请稍后重试；如仍失败，再检查工作区连接。",
+        "structured": {
+          "code": "MCP_GATEWAY_ERROR",
+          "message": "服务暂时不可用，未确认操作是否完成。请稍后重试；如仍失败，再检查工作区连接。"
+        },
+        "content": [
+          "text"
+        ]
+      }
+    }
+  ],
+  "stderr": [
+    "{\"event\":\"merchant.image.api.request\",\"ts\":\"2026-10-04T05:25:49.094Z\",\"method\":\"catalog.image.generate\",\"api_origin\":\"https://yxsona.com\",\"workspace_id\":\"ws_candidate_6f4f6e75s\",\"attempt\":1,\"timeout_ms\":120000,\"has_auth\":true,\"argument_keys\":[\"count\",\"direction\",\"idempotency_key\",\"mode\",\"platform\",\"product_id\",\"size\"]}",
+    "{\"event\":\"merchant.mcp.error\",\"ts\":\"2026-10-04T05:25:59.917Z\",\"method\":\"catalog.image.generate\",\"error_code\":\"MODEL_RELAY_EVIDENCE_REQUIRED\"}",
+    "{\"event\":\"merchant.mcp.error\",\"ts\":\"2026-10-04T05:26:03.698Z\",\"method\":\"content.draft.generate\",\"error_code\":\"MODEL_PROVIDER_REQUEST_FAILED\"}",
+    "{\"event\":\"merchant.mcp.error\",\"ts\":\"2026-10-04T05:26:24.109Z\",\"method\":\"multimodal.video.request\",\"error_code\":\"MCP_GATEWAY_ERROR\"}"
+  ]
+}
