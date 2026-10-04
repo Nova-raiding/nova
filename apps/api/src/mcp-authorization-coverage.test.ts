@@ -148,6 +148,22 @@ describe('registered MCP authorization coverage', () => {
     }
   })
 
+  it('recovers one frozen legacy task brand for product-only image review scope', async () => {
+    const suffix = Date.now()
+    const workspaceId = `ws_legacy_product_brand_scope_${suffix}`
+    const productId = `product_legacy_brand_scope_${suffix}`
+    service.products.set(productId, { ...service.products.get('prod_fixture_1')!, id: productId, workspaceId })
+    const task = service.createTask({ workspaceId, productId, platform: 'taobao' })
+    service.tasks.get(task.id)!.brandId = 'brand_legacy_scope'
+
+    const policy = getMcpMethodPolicy('catalog.image.review')!
+    await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { product_id: productId })).resolves.toEqual({ type: 'brand', id: 'brand_legacy_scope' })
+
+    const conflicting = service.createTask({ workspaceId, productId, platform: 'taobao' })
+    service.tasks.get(conflicting.id)!.brandId = 'brand_conflicting_scope'
+    await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { product_id: productId })).resolves.toEqual({ type: 'brand', id: undefined })
+  })
+
   it('produces one unique strict authorization decision for every live MCP method', () => {
     const decisions = MCP_METHODS.map((method, index) => {
       const policy = getMcpMethodPolicy(method)

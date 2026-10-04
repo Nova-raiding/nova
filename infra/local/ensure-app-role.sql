@@ -213,6 +213,15 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.settle_knowledge_generation_claim(text,text,text,text,text,text,text) TO merchant_app;
   END IF;
 
+  -- Migration 258 adds the evidence-aware overload used by the current
+  -- runtime.  The bootstrap's blanket function revoke runs after every
+  -- migration, so keep this overload executable for the tenant role as well
+  -- as the legacy seven-argument function above.
+  IF to_regprocedure('public.settle_knowledge_generation_claim(text,text,text,text,text,text,text,text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.settle_knowledge_generation_claim(text,text,text,text,text,text,text,text) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.settle_knowledge_generation_claim(text,text,text,text,text,text,text,text) TO merchant_app;
+  END IF;
+
   IF to_regclass('public.creative_point_action_claims') IS NOT NULL THEN
     REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.creative_point_action_claims FROM merchant_app;
   END IF;

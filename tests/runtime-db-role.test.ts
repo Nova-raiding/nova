@@ -186,6 +186,15 @@ describe('runtime database role verification', () => {
     expect(bootstrap).toContain('GRANT EXECUTE ON FUNCTION public.merchant_entitlement_snapshots_v3(integer,timestamptz,text) TO merchant_app')
   })
 
+  it('re-grants the evidence-aware generation claim transition after migration 258', () => {
+    const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
+    const signature = 'public.settle_knowledge_generation_claim(text,text,text,text,text,text,text,text)'
+
+    expect(bootstrap).toContain(`to_regprocedure('${signature}') IS NOT NULL`)
+    expect(bootstrap).toContain(`REVOKE ALL ON FUNCTION ${signature} FROM PUBLIC`)
+    expect(bootstrap).toContain(`GRANT EXECUTE ON FUNCTION ${signature} TO merchant_app`)
+  })
+
   it('bootstraps the local receiver role and re-applies its deny-by-default boundary', () => {
     const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
 

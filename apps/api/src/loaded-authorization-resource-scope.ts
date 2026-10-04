@@ -90,10 +90,18 @@ export async function resolveLoadedAuthorizationResourceScopeWithDependencies(po
   if (direct.type === 'account') return { type: 'account' as const, id: product.accountId }
   const canonical = await deps.listCanonicalProducts({ workspaceId, sourceProductIds: [product.id] })
   const brandIds = [...new Set(canonical.map(item => item.brandId))]
-  return { type: 'brand' as const, id: brandIds.length === 1 ? brandIds[0] : undefined }
+  if (brandIds.length === 1) return { type: 'brand' as const, id: brandIds[0] }
+  // Legacy formal tasks may carry a frozen brand scope before the canonical
+  // product backfill has completed. Product-only methods such as
+  // `catalog.image.review` cannot receive a task_id, so recover that scope
+  // only when every task for this product agrees on one explicit brand. A
+  // conflicting or absent scope remains unresolved and fails closed.
+  const taskBrandIds = [...new Set([...deps.service.tasks.values()]
+    .filter(task => task.workspaceId === workspaceId && task.productId === product.id && typeof task.brandId === 'string' && task.brandId.trim())
+    .map(task => task.brandId!.trim()))]
+  return { type: 'brand' as const, id: taskBrandIds.length === 1 ? taskBrandIds[0] : undefined }
 }
 
 function unresolvedLoadedResourceScope(scope: ReturnType<typeof resolveAuthorizationResourceScope>) {
   return scope?.type === 'brand' || scope?.type === 'account' ? { type: scope.type, id: undefined } : scope
 }
-
