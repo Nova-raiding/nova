@@ -244,9 +244,9 @@ export class PostgresCreativePointLifecycleRepository {
            AND worker_receipt.cost->'actual'=api_receipt.cost->'actual'
            AND api_receipt.usage->>'modality'=m.modality AND worker_receipt.usage->>'modality'=m.modality
            AND api_receipt.usage->>'model'=m.model AND worker_receipt.usage->>'model'=m.model
-           AND COALESCE(api_receipt.usage->'input_tokens','null'::jsonb)=to_jsonb(m.input_tokens)
-           AND COALESCE(api_receipt.usage->'output_tokens','null'::jsonb)=to_jsonb(m.output_tokens)
-           AND COALESCE(api_receipt.usage->'total_tokens','null'::jsonb)=to_jsonb(m.total_tokens)
+           AND COALESCE(api_receipt.usage->'input_tokens','null'::jsonb)=COALESCE(to_jsonb(m.input_tokens),'null'::jsonb)
+           AND COALESCE(api_receipt.usage->'output_tokens','null'::jsonb)=COALESCE(to_jsonb(m.output_tokens),'null'::jsonb)
+           AND COALESCE(api_receipt.usage->'total_tokens','null'::jsonb)=COALESCE(to_jsonb(m.total_tokens),'null'::jsonb)
            AND COALESCE(worker_receipt.usage->'input_tokens','null'::jsonb)=COALESCE(api_receipt.usage->'input_tokens','null'::jsonb)
            AND COALESCE(worker_receipt.usage->'output_tokens','null'::jsonb)=COALESCE(api_receipt.usage->'output_tokens','null'::jsonb)
            AND COALESCE(worker_receipt.usage->'total_tokens','null'::jsonb)=COALESCE(api_receipt.usage->'total_tokens','null'::jsonb)
