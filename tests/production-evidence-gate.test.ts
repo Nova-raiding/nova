@@ -50,8 +50,48 @@ function evidence(kind: ProductionEvidenceKind) {
   return value
 }
 
+function manualTransferArtifactReference(name: string) {
+  const relative = `payment-manual/${name}.json`; const path = join(artifactRoot, relative)
+  const content = JSON.stringify({
+    kind: 'payment', payment_mode: 'manual_transfer', operation: name, release_id: 'release-1', deployment_nonce: deploymentNonce,
+    order_id_sha256: 'f'.repeat(64), manual_transfer_reference_sha256: '1'.repeat(64), amount_fen: 1,
+    observed_at: '2026-08-28T05:10:00Z', simulated: false,
+    outcome: ({ manual_order_created: 'created', operator_verified: 'verified', grant_applied: 'granted', replay_protection: 'idempotent' } as Record<string, string>)[name],
+    ...(name === 'operator_verified' ? { operator_id_sha256: '2'.repeat(64), audit_event_id_sha256: '3'.repeat(64) } : {}),
+    ...(name === 'grant_applied' ? { grant_transaction_id_sha256: '4'.repeat(64), ledger_entry_id_sha256: '5'.repeat(64) } : {}),
+    ...(name === 'replay_protection' ? { idempotency_key_sha256: '6'.repeat(64), replay_rejected: true } : {}),
+  })
+  mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content)
+  return `artifact://production/${relative}#${createHash('sha256').update(content).digest('hex')}`
+}
+
+function manualTransferEvidence() {
+  const checks = Object.fromEntries(['manual_order_created', 'operator_verified', 'grant_applied', 'replay_protection'].map(name => [name, { status: 'pass', evidence_ref: manualTransferArtifactReference(name) }]))
+  const value: Record<string, unknown> = {
+    schema_version: '2', kind: 'payment', payment_mode: 'manual_transfer', release_id: 'release-1', image_set_digest: imageSetDigest, manifest_sha256: manifestSha256, release_git_sha: releaseGitSha, environment: 'production', status: 'pass', generated_at: '2026-08-28T05:20:00Z', attested_at: '2026-08-28T05:30:00Z', expires_at: '2026-08-29T05:30:00Z', evidence_id: 'production-manual-transfer-0001', deployment_nonce: deploymentNonce, key_id: 'release-security-2026', simulated: false, verified_by: 'release-manager@example.com', checks,
+    amount_cny: 0.01, manual_order_id_sha256: 'f'.repeat(64), manual_transfer_reference_sha256: '1'.repeat(64), manual_grant_id_sha256: '4'.repeat(64),
+  }
+  value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+  return value
+}
+
 describe('production payment and restore evidence gates', () => {
   for (const kind of ['payment', 'restore'] as const) it(`accepts independently signed ${kind} evidence bound to release, image, manifest and commit`, () => expect(validateProductionEvidence(evidence(kind), options(kind))).toEqual([]))
+
+  it('accepts signed manual_transfer evidence with operational verification and grant replay checks', () => {
+    expect(validateProductionEvidence(manualTransferEvidence(), options('payment'))).toEqual([])
+  })
+
+  it('rejects provider fields in manual_transfer evidence', () => {
+    const value = manualTransferEvidence(); value.provider = 'alipay'; value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('payment'))).toContain('manual_transfer evidence must not contain provider fields')
+  })
+
+  it('rejects incomplete manual_transfer operation evidence', () => {
+    const value = manualTransferEvidence(); const checks = value.checks as Record<string, { status: string; evidence_ref: string }>
+    const path = join(artifactRoot, 'payment-manual/operator_verified.json'); const bad = JSON.stringify({ kind: 'payment', payment_mode: 'manual_transfer', operation: 'operator_verified', release_id: 'release-1', deployment_nonce: deploymentNonce, order_id_sha256: 'f'.repeat(64), manual_transfer_reference_sha256: '1'.repeat(64), amount_fen: 1, observed_at: '2026-08-28T05:10:00Z', simulated: false, outcome: 'verified' }); writeFileSync(path, bad); checks.operator_verified!.evidence_ref = `artifact://production/payment-manual/operator_verified.json#${createHash('sha256').update(bad).digest('hex')}`; value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('payment'))).toContain('checks.operator_verified.evidence_ref operator verification hashes are required')
+  })
 
   it('fails closed for a malformed evidence schema without throwing', () => {
     const errors = validateProductionEvidence({ checks: null, generated_at: 'not-a-date' }, options('payment'))

@@ -5,6 +5,7 @@ import { resolve, sep } from 'node:path'
 export type ProductionEvidenceKind = 'payment' | 'restore'
 type Evidence = Record<string, unknown> & { checks?: Record<string, { status?: string; evidence_ref?: string }> }
 const checksByKind = { payment: ['checkout', 'callback', 'callback_replay', 'provider_query', 'reconciliation', 'refund'], restore: ['backup_checksum', 'isolated_restore', 'migrations', 'data_integrity', 'application_smoke'] } as const
+const manualTransferChecks = ['manual_order_created', 'operator_verified', 'grant_applied', 'replay_protection'] as const
 const DEFAULT_SOURCE_MIGRATION_VERSION = 242
 const text = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const iso = (value: unknown) => text(value) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u.test(value) && Number.isFinite(Date.parse(value))
@@ -48,7 +49,7 @@ function validateArtifact(reference: string | undefined, root: string, label: st
   return { errors: [] }
 }
 
-const paymentOutcomes: Record<string, string> = { checkout: 'created', callback: 'accepted', callback_replay: 'idempotent', provider_query: 'paid', reconciliation: 'balanced', refund: 'succeeded' }
+const paymentOutcomes: Record<string, string> = { checkout: 'created', callback: 'accepted', callback_replay: 'idempotent', provider_query: 'paid', reconciliation: 'balanced', refund: 'succeeded', manual_order_created: 'created', operator_verified: 'verified', grant_applied: 'granted', replay_protection: 'idempotent' }
 const sha256Hex = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value)
 function validatePaymentArtifact(content: Buffer, name: string, document: Evidence, options: { releaseId: string; deploymentNonce: string; now: Date }): { errors: string[]; orderHash?: string } {
   const label = `checks.${name}.evidence_ref`
@@ -57,16 +58,26 @@ function validatePaymentArtifact(content: Buffer, name: string, document: Eviden
   catch { return { errors: [`${label} must contain a payment operation JSON object`] } }
   const errors: string[] = []
   if (artifact.kind !== 'payment') errors.push(`${label} kind must be payment`)
+  const manualTransfer = document.payment_mode === 'manual_transfer'
+  if (manualTransfer && artifact.payment_mode !== 'manual_transfer') errors.push(`${label} payment_mode must be manual_transfer`)
   if (artifact.operation !== name) errors.push(`${label} operation must match ${name}`)
   if (artifact.release_id !== options.releaseId) errors.push(`${label} release_id must match the release`)
   if (artifact.deployment_nonce !== options.deploymentNonce) errors.push(`${label} deployment_nonce must match the deployment`)
   if (artifact.simulated !== false) errors.push(`${label} simulated must be false`)
   if (!sha256Hex(artifact.order_id_sha256)) errors.push(`${label} order_id_sha256 must be a SHA-256 hash`)
-  if (name !== 'checkout' && artifact.provider_trade_id_sha256 !== document.provider_trade_id_sha256) errors.push(`${label} provider_trade_id_sha256 must match the payment evidence`)
+  if (manualTransfer) {
+    if (Object.keys(artifact).some(key => key === 'provider' || key.startsWith('provider_'))) errors.push(`${label} must not contain provider fields for manual_transfer`)
+    if (artifact.order_id_sha256 !== document.manual_order_id_sha256) errors.push(`${label} order_id_sha256 must match the manual payment evidence`)
+    if (artifact.manual_transfer_reference_sha256 !== document.manual_transfer_reference_sha256) errors.push(`${label} manual_transfer_reference_sha256 must match the manual payment evidence`)
+    if (name === 'operator_verified' && (!sha256Hex(artifact.operator_id_sha256) || !sha256Hex(artifact.audit_event_id_sha256))) errors.push(`${label} operator verification hashes are required`)
+    if (name === 'grant_applied' && (!sha256Hex(artifact.grant_transaction_id_sha256) || !sha256Hex(artifact.ledger_entry_id_sha256))) errors.push(`${label} grant ledger hashes are required`)
+    if (name === 'grant_applied' && artifact.grant_transaction_id_sha256 !== document.manual_grant_id_sha256) errors.push(`${label} grant_transaction_id_sha256 must match the manual payment evidence`)
+    if (name === 'replay_protection' && (!sha256Hex(artifact.idempotency_key_sha256) || artifact.replay_rejected !== true)) errors.push(`${label} replay protection evidence is required`)
+  } else if (name !== 'checkout' && artifact.provider_trade_id_sha256 !== document.provider_trade_id_sha256) errors.push(`${label} provider_trade_id_sha256 must match the payment evidence`)
   const amountFen = typeof document.amount_cny === 'number' ? Math.round(document.amount_cny * 100) : NaN
   if (!Number.isSafeInteger(amountFen) || amountFen <= 0 || artifact.amount_fen !== amountFen) errors.push(`${label} amount_fen must match the payment evidence`)
   if (!iso(artifact.observed_at) || Date.parse(String(artifact.observed_at)) > options.now.getTime() + 300_000 || Date.parse(String(artifact.observed_at)) > Date.parse(String(document.generated_at ?? ''))) errors.push(`${label} observed_at must be a valid observation before evidence generation`)
-  if (!text(artifact.provider_request_id)) errors.push(`${label} provider_request_id is required`)
+  if (!manualTransfer && !text(artifact.provider_request_id)) errors.push(`${label} provider_request_id is required`)
   if (artifact.outcome !== paymentOutcomes[name]) errors.push(`${label} outcome must match ${paymentOutcomes[name]}`)
   return { errors, ...(sha256Hex(artifact.order_id_sha256) ? { orderHash: artifact.order_id_sha256 } : {}) }
 }
@@ -118,7 +129,9 @@ export function validateProductionEvidence(document: unknown, options: { kind: P
   if (Number.isFinite(attested) && now.getTime() - attested > maxAge * 3_600_000) errors.push('evidence is stale')
   const seenArtifactRefs = new Map<string, string>()
   let paymentOrderHash: string | undefined
-  for (const name of checksByKind[options.kind]) {
+  const paymentMode = value.payment_mode === 'manual_transfer' ? 'manual_transfer' : 'provider'
+  const checkNames = options.kind === 'payment' && paymentMode === 'manual_transfer' ? manualTransferChecks : checksByKind[options.kind]
+  for (const name of checkNames) {
     const check = value.checks?.[name]
     if (check?.status !== 'pass') errors.push(`checks.${name}.status must be pass`)
     const contentKind = options.kind === 'payment' ? 'payment' : name === 'isolated_restore' ? 'restore' : undefined
@@ -142,7 +155,18 @@ export function validateProductionEvidence(document: unknown, options: { kind: P
       else seenArtifactRefs.set(check.evidence_ref, name)
     }
   }
-  if (options.kind === 'payment') { if (!text(value.provider) || /mock|fixture|synthetic/iu.test(value.provider)) errors.push('provider must identify a real provider'); if (typeof value.amount_cny !== 'number' || value.amount_cny <= 0) errors.push('amount_cny must be positive'); if (!/^[a-f0-9]{64}$/u.test(String(value.provider_trade_id_sha256 ?? ''))) errors.push('provider_trade_id_sha256 must be a SHA-256 hash') }
+  if (options.kind === 'payment') {
+    if (paymentMode === 'manual_transfer') {
+      if (value.payment_mode !== 'manual_transfer') errors.push('payment_mode must be manual_transfer')
+      if (typeof value.amount_cny !== 'number' || value.amount_cny <= 0) errors.push('amount_cny must be positive')
+      for (const [field, label] of [['manual_order_id_sha256', 'manual_order_id_sha256'], ['manual_transfer_reference_sha256', 'manual_transfer_reference_sha256'], ['manual_grant_id_sha256', 'manual_grant_id_sha256']] as const) if (!sha256Hex(value[field])) errors.push(`${label} must be a SHA-256 hash`)
+      if (Object.keys(value).some(key => key === 'provider' || key.startsWith('provider_'))) errors.push('manual_transfer evidence must not contain provider fields')
+    } else {
+      if (!text(value.provider) || /mock|fixture|synthetic/iu.test(value.provider)) errors.push('provider must identify a real provider')
+      if (typeof value.amount_cny !== 'number' || value.amount_cny <= 0) errors.push('amount_cny must be positive')
+      if (!/^[a-f0-9]{64}$/u.test(String(value.provider_trade_id_sha256 ?? ''))) errors.push('provider_trade_id_sha256 must be a SHA-256 hash')
+    }
+  }
   else {
     if (value.recovery_target_isolated !== true) errors.push('recovery_target_isolated must be true')
     if (!/^[a-f0-9]{64}$/u.test(String(value.backup_sha256 ?? ''))) errors.push('backup_sha256 must be a SHA-256 hash')
