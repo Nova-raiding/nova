@@ -275,8 +275,7 @@ const COMMERCIAL_DISABLED_METHODS = new Set([
   'campaign.batch.generate', 'campaign.batch.retry_failed',
   'catalog.image.retry',
   'brand.tone.preview', 'task.understand', 'creative.directions',
-  'content.codex.prepare', 'content.codex.commit', 'content.review',
-  'content.modify',
+  'content.codex.prepare', 'content.codex.commit',
   // Bridge-only narrowing, not a registry mirror. The shared registry enables
   // multimodal.generate as POINT_CHARGED, but it is the generic form of the
   // three modality-specific tools this bridge already exposes

@@ -355,7 +355,7 @@ describe('Codex stdio MCP bridge', () => {
         [tool.name, tool.description],
         ...Object.entries(tool.inputSchema.properties ?? {}).map(([name, schema]) => [`${tool.name}.${name}`, schema.description]),
       ]).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-      expect(tools).toHaveLength(120)
+      expect(tools).toHaveLength(122)
       expect(descriptions.filter(([, description]) => !/[\u3400-\u9fff]/u.test(description))).toEqual([])
       expect(tools.find(tool => tool.name === 'asset.metadata.update')?.inputSchema.properties?.asset_id).toMatchObject({ type: 'string', minLength: 1, maxLength: 256 })
       expect(tools.find(tool => tool.name === 'asset.metadata.update')?.inputSchema.properties?.expected_revision).toMatchObject({ pattern: '^[1-9][0-9]*$', maxLength: 10 })
@@ -1718,7 +1718,7 @@ describe('Codex stdio MCP bridge', () => {
       const catalogImageGenerate = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.generate')
       expect(catalogImageGet).toMatchObject({ name: 'catalog.image.get', annotations: { readOnlyHint: true }, _meta: { ui: { resourceUri: 'ui://merchant-marketing/image-candidate-choice-v15.html', prefersBorder: true }, 'openai/outputTemplate': 'ui://merchant-marketing/image-candidate-choice-v15.html' } })
       expect(catalogImageGenerate).toMatchObject({ name: 'catalog.image.generate', _meta: { ui: { resourceUri: 'ui://merchant-marketing/image-candidate-choice-v15.html', prefersBorder: true }, 'openai/outputTemplate': 'ui://merchant-marketing/image-candidate-choice-v15.html' } })
-      expect(listed.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining(['onboarding.status', 'merchant.start', 'catalog.image.get', 'billing.status', 'workspace.health']))
+      expect(listed.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining(['onboarding.status', 'merchant.start', 'catalog.image.get', 'billing.status', 'workspace.health', 'content.review', 'content.modify']))
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.select')).toMatchObject({
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         inputSchema: { required: ['job_id', 'visual_ref', 'expected_revision', 'idempotency_key', 'reason', 'confirmation_ticket_nonce_hash', 'confirmation_ticket_intent_hash'] },

@@ -227,8 +227,6 @@ export const MCP_POINT_CHARGED_DISABLED_METHODS = [
   'creative.directions',
   'content.codex.prepare',
   'content.codex.commit',
-  'content.review',
-  'content.modify',
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
@@ -319,6 +317,8 @@ export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
   'task.select_direction',
   'task.plan.confirm',
   'generation.get',
+  'content.review',
+  'content.modify',
   'content.review.decide',
   'content.draft.confirm',
   'content.visual.select',

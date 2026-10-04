@@ -13546,7 +13546,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           // commits. Only the durable snapshot can justify a replay response.
           const durableExisting = await persistence.business?.findByIdempotencyKey(workspaceId, 'generation_job', idempotencyKey)
           if (!durableExisting) throw new DomainError('CREATIVE_ACTION_BUSY', '相同收费动作尚未完成持久入队，请稍后查看任务状态', 409, { retryable: true })
-          return result(jobWithQueueMetadata(existing, workspaceId, 'generation'))
+          return result({ ...jobWithQueueMetadata(existing, workspaceId, 'generation'), workflow: projectGenerationWorkflow(workspaceId, existing) })
         }
         const reservationId = `generation:${idempotencyKey}`
         const usageKey = `generation:${idempotencyKey}`
@@ -13599,7 +13599,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
               await persistEvent(workspaceId, job.id, 'generation.requested', 1, eventPayload)
             }
           }
-          return result(jobWithQueueMetadata(job, workspaceId, 'generation'))
+          return result({ ...jobWithQueueMetadata(job, workspaceId, 'generation'), workflow: projectGenerationWorkflow(workspaceId, job) })
         } catch (error) {
           // The enqueue transaction may have committed even if its response
           // was lost. The compare-and-swap release serializes with binding and
