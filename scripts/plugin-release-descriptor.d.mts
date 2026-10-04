@@ -17,7 +17,15 @@ export interface PluginReleaseDescriptor {
 }
 
 /** Candidate identity fields are parsed and validated by the signing helper. */
-export type CandidateIdentity = Readonly<Record<string, string>>
+export interface CandidateIdentity {
+  readonly git_sha: string
+  readonly release_id?: string
+  readonly schema_version?: 'candidate-identity/2'
+  readonly source_sha256?: string
+  readonly comparison_manifest_sha256?: string
+  readonly sync_plan_sha256?: string
+  readonly [field: string]: string | undefined
+}
 
 export function readCandidateIdentity(path: string): CandidateIdentity
 
