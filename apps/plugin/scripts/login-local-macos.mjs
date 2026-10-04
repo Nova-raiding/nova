@@ -258,11 +258,7 @@ async function main() {
   if (!manifest.version || manifest.version !== pkg.version) throw fail('PACKAGE_MISMATCH')
   const { writeKeychainCredential, readKeychainCredential, assertKeychainHelperReady, installationIdentityStore,
     isQaBrokerPackage, keychainCredentialSeed } = await import('../mcp/keychain-credential.mjs')
-  // QA packages use the explicitly marked seeded broker. Do not probe the
-  // native helper before the broker can serve the binding; release packages
-  // still require the signed native helper.
-  const qaBrokerPackage = isQaBrokerPackage()
-  if (!qaBrokerPackage) assertKeychainHelperReady()
+  assertKeychainHelperReady()
   let createInstallationProof
   if (proofValues.every(Boolean)) {
     const { signInstallationTranscript } = await import('../mcp/installation-identity.mjs')
@@ -298,7 +294,7 @@ async function main() {
       openBrowser: url => options.get('--no-open') ? process.stdout.write(`请在商家浏览器打开此授权地址（不含 token）：\n${url}\n`)
         : execFileSync('/usr/bin/open', [url], { stdio: 'ignore', timeout: 5000 }),
       storeCredential: async (target, bundle) => {
-        if (qaBrokerPackage) {
+        if (isQaBrokerPackage()) {
           const { startSeededKeychainBrokerDetached } = await import('../mcp/keychain-broker.mjs')
           await startSeededKeychainBrokerDetached({ credentials: [keychainCredentialSeed(target, bundle)] })
         } else {
