@@ -138,14 +138,17 @@ sh infra/scripts/verify-ecs-ops-auth-mode.sh "$OPS_AUTH_MODE" "$OPS_UI_IMAGE_REF
 : "${MERCHANT_API_TOKEN:?MERCHANT_API_TOKEN is required for pilot preflight}"
 : "${MERCHANT_WORKSPACE_ID:?MERCHANT_WORKSPACE_ID is required for pilot preflight}"
 : "${DEPLOYMENT_MODE:?DEPLOYMENT_MODE=lean or full is required for ECS}"
-: "${PAYMENT_MODE:?PAYMENT_MODE=provider or manual_transfer is required for ECS}"
 : "${PAYMENT_RECONCILIATION_ENABLED:?PAYMENT_RECONCILIATION_ENABLED is required}"
 : "${PAYMENT_REFUND_ENABLED:?PAYMENT_REFUND_ENABLED is required}"
 case "$DEPLOYMENT_MODE" in
   lean|full) ;;
   *) echo 'DEPLOYMENT_MODE must be lean or full' >&2; exit 1 ;;
 esac
+config_payment_mode=$(ruby -ryaml -e 'document = YAML.safe_load(File.read(ARGV.fetch(0), encoding: "UTF-8"), aliases: false); abort("production config must be a YAML mapping") unless document.is_a?(Hash); value = document["payment_mode"]; abort("production config payment_mode must be provider or manual_transfer") unless %w[provider manual_transfer].include?(value); puts(value)' "$config_path")
 if [ "$DEPLOYMENT_MODE" = full ]; then
+  : "${PAYMENT_MODE:?PAYMENT_MODE=provider is required for full ECS mode}"
+  [ "$PAYMENT_MODE" = provider ] || { echo 'PAYMENT_MODE=provider is required for full mode' >&2; exit 1; }
+  [ "$config_payment_mode" = provider ] || { echo 'payment_mode must be provider in full production mode' >&2; exit 1; }
   : "${ALIPAY_APP_ID:?ALIPAY_APP_ID is required}"
   : "${PAYMENT_PROVIDER_ADAPTERS:?PAYMENT_PROVIDER_ADAPTERS=alipay is required}"
   : "${PAYMENT_CHECKOUT_BASE_URL:?public HTTPS payment checkout base URL is required}"
@@ -169,7 +172,13 @@ if [ "$DEPLOYMENT_MODE" = full ]; then
     exit 1
   fi
 else
-  [ "$PAYMENT_MODE" = manual_transfer ] || { echo 'PAYMENT_MODE=manual_transfer is required for lean mode' >&2; exit 1; }
+  if [ -n "${PAYMENT_MODE:-}" ] && [ "$PAYMENT_MODE" != manual_transfer ]; then
+    echo 'PAYMENT_MODE must not override lean YAML payment_mode=manual_transfer' >&2
+    exit 1
+  fi
+  [ "$config_payment_mode" = manual_transfer ] || { echo 'payment_mode must be manual_transfer in lean production mode' >&2; exit 1; }
+  PAYMENT_MODE=manual_transfer
+  export PAYMENT_MODE
   [ "$PAYMENT_RECONCILIATION_ENABLED" = false ] || { echo 'PAYMENT_RECONCILIATION_ENABLED=false is required for lean mode' >&2; exit 1; }
   [ "$PAYMENT_REFUND_ENABLED" = false ] || { echo 'PAYMENT_REFUND_ENABLED=false is required for lean mode' >&2; exit 1; }
 fi
@@ -335,6 +344,9 @@ npx --no-install tsx tests/object-storage-evidence-gate.ts \
   --expected-bucket "$ASSET_STORAGE_BUCKET" --expected-endpoint "$ASSET_STORAGE_ENDPOINT" \
   --expected-encryption "$storage_encryption" \
   --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
+if [ "$DEPLOYMENT_MODE" = lean ]; then
+  payment_evidence_mode=$(node -e 'const fs = require("node:fs"); const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (value?.payment_mode !== "manual_transfer") process.exit(1); process.stdout.write(value.payment_mode)' "$PAYMENT_EVIDENCE_PATH") || { echo 'lean payment evidence must declare payment_mode=manual_transfer' >&2; exit 1; }
+fi
 npx --no-install tsx tests/production-evidence-gate.ts --kind payment --file "$PAYMENT_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx tests/production-evidence-gate.ts --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --release-metadata "$root/release-metadata.json" --expected-migration-version "$EXPECTED_MIGRATION_VERSION" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx tests/release-evidence-bundle-gate.ts --file "$RELEASE_EVIDENCE_BUNDLE_PATH" \
