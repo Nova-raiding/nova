@@ -663,8 +663,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.canonical.backfill.conflict.resolve', description: 'Resolve or dismiss one canonical backfill conflict. Resolved MISSING_BRAND requires explicit brand and source-version CAS remediation.', params: params({ workspace_id: workspaceProperty, conflict_id: boundedString(200, 1), expected_revision: positiveIntegerString, status: { type: 'string', enum: ['resolved', 'dismissed'] }, resolution_note: boundedString(1_000, 3), reason: boundedString(1_000, 3), remediation_type: { type: 'string', enum: ['set_legacy_brand'] }, brand_id: boundedString(200, 1), expected_product_version: positiveIntegerString, reference: boundedString(500, 1) }, ['workspace_id', 'conflict_id', 'expected_revision', 'status', 'resolution_note', 'reason']) },
   {
     method: 'campaign.batch.create',
-    description: '为最多 1000 个商品创建持久化批量运营计划；可指定单店铺商品 ID，或指定多个商品/平台/店铺目标；创建本身不会生成或发布。',
-    params: params({ brand_id: { type: 'string' }, platform: platformProperty, account_id: { type: 'string' }, product_ids_json: { type: 'string', description: '单平台单店铺模式：1 至 1000 个商品 ID 的 JSON 数组。' }, targets_json: { type: 'string', description: '多品多平台/多店铺模式：多个目标的 JSON 数组；每项含 product_id 或 canonical_product_id、platform、account_id，可选 listing_id。' }, idempotency_key: { type: 'string', description: '重试同一批量计划时保持不变' } }, ['brand_id']),
+    description: '为最多 50 个商品创建持久化批量运营计划；可指定单店铺商品 ID，或指定多个商品/平台/店铺目标；创建本身不会生成或发布。',
+    params: params({ brand_id: { type: 'string' }, platform: platformProperty, account_id: { type: 'string' }, product_ids_json: { type: 'string', description: '单平台单店铺模式：1 至 50 个商品 ID 的 JSON 数组。' }, targets_json: { type: 'string', description: '多品多平台/多店铺模式：多个目标的 JSON 数组；每项含 product_id 或 canonical_product_id、platform、account_id，可选 listing_id。' }, idempotency_key: { type: 'string', description: '重试同一批量计划时保持不变' } }, ['brand_id']),
   },
   {
     method: 'campaign.batch.list',
@@ -694,7 +694,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'campaign.batch.retry_failed',
     description: 'Interactively retry only failed campaign items at the expected revision. Successful items are not replayed, approval gates remain enforced, and ambiguous or stale state fails closed.',
-    params: params({ campaign_id: boundedString(200), item_ids_json: jsonArray('Optional JSON array of 1 to 1000 unique failed campaign item IDs; omit to retry every failed item.'), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, ['campaign_id', 'expected_revision', 'idempotency_key', 'reason']),
+    params: params({ campaign_id: boundedString(200), item_ids_json: jsonArray('Optional JSON array of 1 to 50 unique failed campaign item IDs; omit to retry every failed item.'), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, ['campaign_id', 'expected_revision', 'idempotency_key', 'reason']),
   },
   {
     method: 'workspace.bootstrap',
@@ -1055,7 +1055,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'catalog.import.batch',
-    description: '批量导入最多 1000 个商品；可提交商品对象 JSON，或提交已解析且商家确认过的 XLSX/CSV 表格素材；显式 draft_only=true 时只建立未绑定商品和待审核知识，不需要已授权店铺；否则每项必须明确平台和已授权店铺，全部预校验通过后才写入商品档案。',
+    description: '批量导入最多 50 个商品；可提交商品对象 JSON，或提交已解析且商家确认过的 XLSX/CSV 表格素材；显式 draft_only=true 时只建立未绑定商品和待审核知识，不需要已授权店铺；否则每项必须明确平台和已授权店铺，全部预校验通过后才写入商品档案。',
     params: params({
       products_json: { type: 'string', description: '商品对象数组 JSON；每项包含 platform、account_id、title 及可选 SKU/价格/库存/素材/属性；asset_ids 可绑定已上传素材。' },
       source_asset_id: { type: 'string', description: '已解析且商家确认过的 XLSX/CSV 商品表格素材 ID。' },
