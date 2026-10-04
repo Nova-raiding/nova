@@ -1,0 +1,38 @@
+{
+  "schema_version": "1",
+  "tested_at": "2026-10-04T00:00:00+08:00",
+  "surface": "installed_local_stdio_bridge",
+  "package_version": "0.1.0+codex.20261003154414",
+  "package_profile": "qa-broker",
+  "api_origin": "https://yxsona.com",
+  "workspace_id": "ws_guirenniaoniao",
+  "account_login": "demo@ys.com",
+  "authorization": {
+    "result": "ok",
+    "consent_page": "matched_account_and_workspace",
+    "installer_result": {"ok": true, "mode": "local_stdio", "restart_required": true, "chatgpt_launched": false, "host_verified": false}
+  },
+  "bridge_verification": {
+    "tools": 120,
+    "missing": 0,
+    "forbidden": 0,
+    "duplicates": 0,
+    "cache_drift": false,
+    "onboarding_status": {"isError": false, "status": "in_progress", "relay_ready": true, "modalities_ready": true, "cost_ready": true},
+    "workspace_health": {"isError": false, "stage": "select_product", "status": "needs_input", "connected_store_count": 1, "store_selectable": false},
+    "merchant_start": {"isError": false, "stage": "select_product", "status": "needs_input"},
+    "creative_points_balance": {"isError": false, "balance_state": "known", "availability": "available", "available_points": 12582},
+    "catalog_search_workspace": {"isError": false, "total": 0, "data_status": "real_or_server_reported"},
+    "catalog_import_draft": {"isError": false, "draft_only": true, "publishable": false, "rule_scan_status": "unavailable"},
+    "catalog_title_optimize": {"isError": true, "code": "PLATFORM_RULE_DATA_UNAVAILABLE", "model_called": false},
+    "task_create_draft": {"isError": true, "code": "PRODUCT_FACTS_NOT_CONFIRMED"},
+    "video_status_probe": {"isError": true, "code": "INTERACTIVE_WRITE_DISABLED", "provider_request_created": false}
+  },
+  "failures": [
+    {"area": "store_selection", "code": "STORE_SELECTION_REQUIRED", "detail": "historical store record is not readable/selectable"},
+    {"area": "platform_rules", "code": "PLATFORM_RULE_DATA_UNAVAILABLE", "detail": "signed platform rule data/key is not configured; title generation stopped before model call"},
+    {"area": "product_facts", "code": "PRODUCT_FACTS_NOT_CONFIRMED", "detail": "draft task creation correctly remains blocked until facts are confirmed"},
+    {"area": "desktop_host", "code": "HOST_NOT_VERIFIED", "detail": "ChatGPT desktop conversation was not directly controllable in this run; bridge evidence is separate from host UI evidence"}
+  ],
+  "cost_safety": {"billable_generation_requested": false, "provider_video_job_created": false, "automatic_publish_attempted": false}
+}
