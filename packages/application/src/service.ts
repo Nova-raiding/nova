@@ -86,6 +86,8 @@ export interface Product {
   skuCount: number
   skus?: ProductSku[]
   stock: number
+  /** Whether the current aggregate stock was explicitly supplied; absent on legacy snapshots. */
+  stockProvided?: boolean
   price?: number
   category?: string
   images?: string[]
@@ -1788,7 +1790,7 @@ export class MerchantService {
     return this.captureTaskInputSnapshot(task)
   }
 
-  private deriveTaskQuestions(task: Pick<Task, 'requestText' | 'answers' | 'deferredQuestionIds' | 'accountId' | 'platform'>, product: Product) {
+  private deriveTaskQuestions(task: Pick<Task, 'requestText' | 'answers' | 'deferredQuestionIds' | 'accountId' | 'platform' | 'candidateOnly'>, product: Product) {
     const answers = task.answers
     const requestText = task.requestText ?? ''
     const deferred = new Set(task.deferredQuestionIds)
@@ -1824,7 +1826,7 @@ export class MerchantService {
       }
     }
 
-    if (product.stock <= 0) {
+    if (product.stock <= 0 && (task.candidateOnly !== true || product.stockProvided === true)) {
       add({ id: 'stock_status', kind: 'recommended', prompt: '当前商品库存为 0，是否先补库存再继续？', why: '库存与可售状态会影响发布字段映射和业务判断。', ifSkipped: '先生成草稿并先补充库存后再继续。' }, 45)
     }
 
@@ -2244,7 +2246,7 @@ export class MerchantService {
     const previous = this.products.get(id)
     const product: Product = {
       id, workspaceId: input.workspaceId, platform: input.platform, ...(input.brandId ? { brandId: input.brandId.trim() } : {}), ...(input.accountId ? { accountId: input.accountId } : {}), storeName: input.storeName?.trim() || '导入店铺', ...(input.storeDifferentiation?.trim() ? { storeDifferentiation: input.storeDifferentiation.trim().slice(0, 500) } : {}), ...(remoteId ? { remoteId } : {}), localProductKey: localKey, title,
-      skuCount: input.skus?.length ?? Math.max(0, input.skuCount ?? 0), stock: Math.max(0, input.stock ?? 0),
+      skuCount: input.skus?.length ?? Math.max(0, input.skuCount ?? 0), stock: Math.max(0, input.stock ?? 0), stockProvided: input.stock !== undefined,
       ...(input.skus?.length ? { skus: input.skus.map(normalizeProductSku) } : {}),
       ...(typeof input.price === 'number' && Number.isFinite(input.price) ? { price: input.price } : {}),
       ...(input.category?.trim() ? { category: input.category.trim() } : {}),
@@ -2280,6 +2282,7 @@ export class MerchantService {
     product.skus = skus
     product.skuCount = skus.length
     product.stock = skus.reduce((sum, sku) => sum + sku.stock, 0)
+    if (input.stock !== undefined) product.stockProvided = true
     product.factsConfirmed = false
     product.version = (product.version ?? 0) + 1
     product.updatedAt = now()
@@ -2360,7 +2363,7 @@ export class MerchantService {
         title: item.title,
         skuCount: item.sku.length,
         ...(item.sku.length ? { skus: item.sku.map((value, index) => normalizeProductSku(value, index)) } : {}),
-        stock: item.stock,
+        stock: item.stock, stockProvided: true,
         ...(typeof item.price === 'number' ? { price: item.price } : {}),
         ...(item.category ? { category: item.category } : {}),
         ...(item.images ? { images: [...item.images] } : {}),
