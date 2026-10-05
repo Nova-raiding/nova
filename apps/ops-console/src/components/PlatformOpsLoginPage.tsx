@@ -78,6 +78,7 @@ export function PlatformOpsLoginPage({
           >
             <Form.Item
               label="平台运营账号"
+              htmlFor="ops-login-account"
               name="login"
               rules={[{ required: true, message: "请输入平台运营账号" }]}
             >
@@ -91,6 +92,7 @@ export function PlatformOpsLoginPage({
             </Form.Item>
             <Form.Item
               label="密码"
+              htmlFor="ops-login-password"
               name="password"
               rules={[{ required: true, message: "请输入密码" }]}
             >
