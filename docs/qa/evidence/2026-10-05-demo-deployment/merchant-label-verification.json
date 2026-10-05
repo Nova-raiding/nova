@@ -1,0 +1,32 @@
+{
+  "at": "2026-10-05T01:24:21.115Z",
+  "globalRelease": "release-6ef75bf01a83-demo-ui",
+  "merchantSource": "6ef75bf0",
+  "cases": [
+    {
+      "label": "商家账号",
+      "id": "merchant-login-account",
+      "count": 1,
+      "focusedAfterLabelClick": true
+    },
+    {
+      "label": "密码",
+      "id": "merchant-login-password",
+      "count": 1,
+      "focusedAfterLabelClick": true
+    }
+  ],
+  "pageErrors": [],
+  "documentStatus": 200,
+  "release": {
+    "release": {
+      "release_id": "release-6ef75bf01a83-demo-ui",
+      "release_git_sha": "6ef75bf01a83de79ded1c219b5e281c1d36c4ba1",
+      "manifest_sha256": "28126f2c3ef78f11d40ac7f33e03b3755f9a22e7c16fb78e42fbe8223df52a80",
+      "image_set_digest": "sha256:b735d0449443ac6f3e9b5dac04807e3a9da5e64a66ee029b2250ad48a3a5b617"
+    },
+    "ready": true
+  },
+  "verdict": "PASS",
+  "video": "artifacts/qa/owner-101-merchant-label-6ef75bf0/2bab6bb411654eaad66ac41e46c33f95.webm"
+}

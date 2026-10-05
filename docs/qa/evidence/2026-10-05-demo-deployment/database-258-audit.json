@@ -1,0 +1,114 @@
+{
+  "captured_at": "2026-10-05T01:15:56.517342+00:00",
+  "candidate_sha": "b1beda1be01d5dbe1fccde142ecc09392c12e91b",
+  "roles": [
+    {
+      "key": "DATABASE_URL",
+      "role": {
+        "name": "merchant_app",
+        "rolsuper": false,
+        "rolbypassrls": false
+      },
+      "rls": {
+        "workspace_tables": 142,
+        "enabled": 142,
+        "forced": 142
+      },
+      "count": 258,
+      "tail": 258,
+      "contiguous": true,
+      "candidate_tail": 258,
+      "mismatches": [],
+      "history_sha256": "c90d6273b68157e46588ab90026b620e2a31e74f9f2b50032b332c5c7dd1d7db"
+    },
+    {
+      "key": "OPS_DATABASE_URL",
+      "role": {
+        "name": "merchant_ops",
+        "rolsuper": false,
+        "rolbypassrls": false
+      },
+      "rls": {
+        "workspace_tables": 142,
+        "enabled": 142,
+        "forced": 142
+      },
+      "count": 258,
+      "tail": 258,
+      "contiguous": true,
+      "candidate_tail": 258,
+      "mismatches": [],
+      "history_sha256": "c90d6273b68157e46588ab90026b620e2a31e74f9f2b50032b332c5c7dd1d7db"
+    }
+  ],
+  "role_histories_identical": true,
+  "workers": [
+    {
+      "scope": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao",
+      "role": "sync",
+      "container": "merchant-demo-85575f9c-worker-sync-1",
+      "scope_matches": true
+    },
+    {
+      "scope": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao",
+      "role": "publish",
+      "container": "merchant-demo-85575f9c-worker-publish-1",
+      "scope_matches": true
+    },
+    {
+      "scope": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao",
+      "role": "scan",
+      "container": "merchant-demo-85575f9c-worker-scan-1",
+      "scope_matches": true
+    },
+    {
+      "scope": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao",
+      "role": "reconcile",
+      "container": "merchant-demo-85575f9c-worker-reconcile-1",
+      "scope_matches": true
+    },
+    {
+      "scope": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao",
+      "role": "generation",
+      "container": "merchant-demo-85575f9c-worker-generation-1",
+      "scope_matches": true
+    },
+    {
+      "scope": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao",
+      "role": "automation",
+      "container": "merchant-demo-85575f9c-worker-automation-1",
+      "scope_matches": true
+    }
+  ],
+  "inflight_gate_exit": 0,
+  "counts": {
+    "action_claims_leased": 0,
+    "db_idle_transactions": 0,
+    "historical_budget_active": 3,
+    "historical_failed_image_unknown": 4,
+    "historical_manual_attention": 2,
+    "historical_points_active": 7,
+    "image_continuations_active": 0,
+    "image_executions_active": 0,
+    "image_jobs_active": 0,
+    "knowledge_claims_active": 0,
+    "other_db_active_sessions": 0,
+    "outbox_active_leases": 0,
+    "outbox_unpublished": 79,
+    "parse_active_leases": 0,
+    "publish_jobs_active": 0,
+    "text_attempts_active": 0,
+    "text_jobs_active": 0,
+    "unresolved_outbox_not_failed_image": 0,
+    "usage_active_leases": 0
+  },
+  "migration_roles_pass": true,
+  "expected_worker_scope": [
+    "ws_57fd2361ed5b44c7891f3d37",
+    "ws_guirenniaoniao"
+  ],
+  "scope_note": "Owner shorthand ws57 resolved to observed full ID ws_57fd2361ed5b44c7891f3d37; each worker contains exactly this two-ID set, no auto scope.",
+  "historical_counts_unchanged": true,
+  "outbox_unpublished_before": 85,
+  "outbox_unpublished_delta": -6
+}

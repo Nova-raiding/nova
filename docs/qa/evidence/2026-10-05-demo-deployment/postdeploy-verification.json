@@ -1,0 +1,139 @@
+{
+  "observed_at": "2026-10-05T01:24:24Z",
+  "status": "demo_deployed_health_verified",
+  "git_sha": "6ef75bf01a83de79ded1c219b5e281c1d36c4ba1",
+  "release_id": "release-6ef75bf01a83-demo-ui",
+  "manifest_sha256": "28126f2c3ef78f11d40ac7f33e03b3755f9a22e7c16fb78e42fbe8223df52a80",
+  "image_set_digest": "sha256:b735d0449443ac6f3e9b5dac04807e3a9da5e64a66ee029b2250ad48a3a5b617",
+  "compose_sha256": "a889171e37635eca18c1fd39cf7c9bb050f183e818df8481d8ab117b7fbf4ce4",
+  "containers": {
+    "ui": {
+      "container_id": "8aac8aa036e65621f03151db8329ae13a72a92329a7442383bb0692a9924f5b9",
+      "image": "127.0.0.1:5000/storenova/merchant-ui@sha256:0a79e9b12094fe45e52f20c26728054ff92601a65c173306929ed89b923adaee",
+      "image_id": "sha256:1f38cead18dfb5a31f7feae1221449b61b80e4f3715bd42db5aa0ff811885cb4",
+      "health": "healthy"
+    },
+    "worker-generation": {
+      "container_id": "3590adcf03d9ca1e91c9cd783cf7b8126d8940d23b0578436824860daf03b39c",
+      "image": "127.0.0.1:5000/storenova/merchant-worker@sha256:7e2a91f54c0607c08c24c505d0d155e26e2b213b9d82bf9999d68caa11aed432",
+      "image_id": "sha256:ea58530d083d809d15eb3b6318da7a49ed3eba8b0bc6f1c3b73d2e8d4caa22a6",
+      "health": "healthy"
+    },
+    "api": {
+      "container_id": "45e8161b64ecce50bc7469adffcbd1b0002461a94561908ad6438e6ccd57531c",
+      "image": "127.0.0.1:5000/storenova/merchant-api@sha256:b5fe9283268233b0a94b1a7035a27757774ee5398a1a19444bca969d3dd85cd5",
+      "image_id": "sha256:bf197cb80422bfa3ffc7fd7193ae27497b75e21b2ba5d7b04befb109490f2e0a",
+      "health": "healthy"
+    },
+    "api-replica": {
+      "container_id": "da2ffd6d775753f8c8e9826ca715f7e350e4bae7b33545d5c847b0b8a4e566d4",
+      "image": "127.0.0.1:5000/storenova/merchant-api@sha256:b5fe9283268233b0a94b1a7035a27757774ee5398a1a19444bca969d3dd85cd5",
+      "image_id": "sha256:bf197cb80422bfa3ffc7fd7193ae27497b75e21b2ba5d7b04befb109490f2e0a",
+      "health": "healthy"
+    },
+    "worker-sync": {
+      "container_id": "d581d31765c5a5ae2dd252996499a1a5cf8bf73a2fea0ed8b54775e9e0e5d704",
+      "image": "127.0.0.1:5000/storenova/merchant-worker@sha256:7e2a91f54c0607c08c24c505d0d155e26e2b213b9d82bf9999d68caa11aed432",
+      "image_id": "sha256:ea58530d083d809d15eb3b6318da7a49ed3eba8b0bc6f1c3b73d2e8d4caa22a6",
+      "health": "healthy"
+    },
+    "worker-publish": {
+      "container_id": "a6345f953f1fe6fd33b0d2dd6ca415e320cef3414bfaeede505040844b2cfc93",
+      "image": "127.0.0.1:5000/storenova/merchant-worker@sha256:7e2a91f54c0607c08c24c505d0d155e26e2b213b9d82bf9999d68caa11aed432",
+      "image_id": "sha256:ea58530d083d809d15eb3b6318da7a49ed3eba8b0bc6f1c3b73d2e8d4caa22a6",
+      "health": "healthy"
+    },
+    "worker-scan": {
+      "container_id": "03884e7102e9e3c04db41d3bac2e278c8211fa56c8c57832fa3f90d6342d3d22",
+      "image": "127.0.0.1:5000/storenova/merchant-worker@sha256:7e2a91f54c0607c08c24c505d0d155e26e2b213b9d82bf9999d68caa11aed432",
+      "image_id": "sha256:ea58530d083d809d15eb3b6318da7a49ed3eba8b0bc6f1c3b73d2e8d4caa22a6",
+      "health": "healthy"
+    },
+    "worker-reconcile": {
+      "container_id": "f663b29ecb6bed29dc3e36fb62fc9e2aa58a7caa2bc01d0dce574824cc5179fd",
+      "image": "127.0.0.1:5000/storenova/merchant-worker@sha256:7e2a91f54c0607c08c24c505d0d155e26e2b213b9d82bf9999d68caa11aed432",
+      "image_id": "sha256:ea58530d083d809d15eb3b6318da7a49ed3eba8b0bc6f1c3b73d2e8d4caa22a6",
+      "health": "healthy"
+    },
+    "worker-automation": {
+      "container_id": "3708d3c82e50d2b2860e54c9db849be5c711fc6ecbbbebfe5ac4a6c9a9552224",
+      "image": "127.0.0.1:5000/storenova/merchant-worker@sha256:7e2a91f54c0607c08c24c505d0d155e26e2b213b9d82bf9999d68caa11aed432",
+      "image_id": "sha256:ea58530d083d809d15eb3b6318da7a49ed3eba8b0bc6f1c3b73d2e8d4caa22a6",
+      "health": "healthy"
+    },
+    "ops-ui": {
+      "container_id": "e53bc1d8a4de0676ff312050116a0a7fde1db7e93d687210967a5bad864c7372",
+      "image": "127.0.0.1:5000/storenova/merchant-ops-ui@sha256:11c15d94e06493dfc0714608670a32933864053bcfb356cea2d7185fc19855fe",
+      "image_id": "sha256:b65cb556cafeea194c25a304dcc834b82f0ff200984da0534e5774e2da6edaba",
+      "health": "healthy"
+    },
+    "clamav": {
+      "container_id": "92298f72c708bff68889031e260ab7d91c50df1bdd72b7e48ca3c7e041ea5f45",
+      "image": "clamav/clamav-debian@sha256:bcfc3d6117a6cfbeb6cd041c00164097916291b870c6183e06def6fed7fb740b",
+      "image_id": "sha256:ca96d29c8c1a2e0c55875a6fc9c14f27aadb61b2b412f34bca7d3a989ee8b211",
+      "health": "healthy"
+    },
+    "payment-gateway": {
+      "container_id": "e151c83107e4239b7d0d20e9d2b21997d0920b70247bea048a9c52009e9cbe1e",
+      "image": "127.0.0.1:5000/storenova/payment-gateway@sha256:af8f6a4e3501e613731012130cda6d714d2cd4560f0bd9452e825a485a807f81",
+      "image_id": "sha256:68d42b090416f160cf4e3b00f28720db345f0e09ca9e6ca95af599680f7a87f9",
+      "health": "healthy"
+    },
+    "pilot-gateway": {
+      "container_id": "2966ece1fe9d574e67ce307c3029b8ca6a93d5a680dc210d2d90c9666a430696",
+      "image": "127.0.0.1:5000/storenova/pilot-gateway@sha256:5a367cb6236b949816eaaafeb6d7fd3f7ca50879579510faa5c2796d0dd9513b",
+      "image_id": "sha256:cdbbaa6fdd5aa351c7e0ff3404ee068454f2ec0de9537d6d767456a54b8b03de",
+      "health": "healthy"
+    },
+    "postgres": {
+      "container_id": "6abd0fb584b3746cca5b3e73d21681a24ab3780fce0a46d385ffcebcd43c0980",
+      "image": "postgres:16-alpine",
+      "image_id": "sha256:81bd698b4594e751a3269e4dcd3e03a4a0ec0daf7b72e7aa1abd43cce9887542",
+      "health": "healthy"
+    },
+    "redis": {
+      "container_id": "5db88ab94d454661f28eada925ec807e9493612bcc7112dd67a29a1a5adc1877",
+      "image": "redis:7-alpine",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "health": "healthy"
+    }
+  },
+  "configuration_changes": {
+    "api": {
+      "VIDEO_RESOLUTION": "720P"
+    },
+    "api-replica": {
+      "VIDEO_RESOLUTION": "720P"
+    },
+    "worker-automation": {
+      "WORKER_WORKSPACES": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao"
+    },
+    "worker-generation": {
+      "MODEL_RELAY_EMBEDDING_PRICING_GROUP": "VIP",
+      "MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP": "VIP",
+      "MODEL_RELAY_IMAGE_PRICING_GROUP": "VIP",
+      "MODEL_RELAY_OCR_PRICING_GROUP": "VIP",
+      "MODEL_RELAY_TEXT_PRICING_GROUP": "VIP",
+      "MODEL_RELAY_VIDEO_PRICING_GROUP": "VIP",
+      "VIDEO_RESOLUTION": "720P",
+      "WORKER_WORKSPACES": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao"
+    },
+    "worker-publish": {
+      "WORKER_WORKSPACES": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao"
+    },
+    "worker-reconcile": {
+      "WORKER_WORKSPACES": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao"
+    },
+    "worker-scan": {
+      "WORKER_WORKSPACES": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao"
+    },
+    "worker-sync": {
+      "WORKER_WORKSPACES": "ws_57fd2361ed5b44c7891f3d37,ws_guirenniaoniao"
+    }
+  },
+  "migration_version": 258,
+  "full_business_acceptance": false,
+  "formal_production_approved": false,
+  "local_plugin_published_online": false,
+  "initial_worker_config_failure_resolved": true
+}
