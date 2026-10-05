@@ -128,6 +128,26 @@ describe("complete benefit-bundle option loading", () => {
     expect(loadPage).toHaveBeenCalledTimes(2);
   });
 
+  it("fails closed when totals change or the final catalog page is truncated", async () => {
+    const changingTotal = vi.fn()
+      .mockResolvedValueOnce({ items: [bundle("bundle-v1")], total: 2, nextCursor: "cursor-2", truncated: true })
+      .mockResolvedValueOnce({ items: [bundle("bundle-v2")], total: 3, nextCursor: null, truncated: false });
+    await expect(loadAllBenefitBundlePages(changingTotal)).rejects.toThrow("总数在分页期间变化");
+
+    const hiddenTruncation = vi.fn().mockResolvedValue({ items: [bundle("bundle-v1")], total: 1, nextCursor: null, truncated: true });
+    await expect(loadAllBenefitBundlePages(hiddenTruncation)).rejects.toThrow("结果不完整");
+  });
+
+  it("fails closed when pages omit versions or repeat a version across cursors", async () => {
+    const omitted = vi.fn().mockResolvedValue({ items: [bundle("bundle-v1")], total: 2, nextCursor: null, truncated: false });
+    await expect(loadAllBenefitBundlePages(omitted)).rejects.toThrow("结果不完整");
+
+    const duplicate = vi.fn()
+      .mockResolvedValueOnce({ items: [bundle("bundle-v1")], total: 2, nextCursor: "cursor-2", truncated: true })
+      .mockResolvedValueOnce({ items: [bundle("bundle-v1")], total: 2, nextCursor: null, truncated: false });
+    await expect(loadAllBenefitBundlePages(duplicate)).rejects.toThrow("结果不完整");
+  });
+
   it("keeps earlier version options when the bundle manager refreshes only its current page", () => {
     const first = bundle("bundle-v1");
     const second = { ...bundle("bundle-v2"), version: 2 };
