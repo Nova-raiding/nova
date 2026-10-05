@@ -39,6 +39,11 @@ describe("desktop catalog authorization and error states", () => {
     expect(html).toContain('aria-label="归档"');
     expect(html).toContain("white-space:nowrap");
   });
+  it("tells desktop operators that the wide catalog table can scroll horizontally", () => {
+    const html = renderToStaticMarkup(<PlatformCatalogManagementPanel model={model([version("sold-v1", 1)])} />);
+    expect(html).toContain('class="commercial-catalog-scroll-hint"');
+    expect(html).toContain("可横向滚动查看价格、周期、状态和操作");
+  });
   it("fails closed on catalog actions until the server cursor proves the result set is complete", () => {
     const html = renderToStaticMarkup(<PlatformCatalogManagementPanel model={model([version("pending-v2", 2, { approvalState: "pending_business_approval", currentSaleState: "unlisted", currentSaleVersionId: null })], ["commercial.catalog.approve"])} />);
     const before = html.slice(0, html.indexOf("审批通过</span>"));
