@@ -2,7 +2,7 @@
 
 QA 角色：第 10 名子 agent；需求全文与 23 个 implementation tasks 是验收基线，不以已实现的子集重定义完成。gstack qa-only / review / verify-feature 的实测与证据规则适用。业务源码由各开发 owner 修复，QA 独占测试清单、验收用例与证据。
 
-最新状态：2026-10-05，main共享实现继续补齐全文范围。此前263链第七轮22PG、目录及双端支持已实际通过；当前追加gift read第11it、目录validator/bundle引用分页/三档比较、通知结果mark-read与264迁移，最新源码尚未冻结和重新验收。以下既有绿色为准确历史证据，不能代表新264链完成；最终发布/101尚未签收。
+最新状态：2026-10-06，当前 HEAD `c63eb4df20adcaba25d4ffc9252a8e792cbddaad`。历史条目保留其执行时状态；后续增量见本文末尾“2026-10-06 最新候选证据”。当前类型检查与 release gates 已对该候选通过，但 101 主机候选、生产收款配置和真实宿主验收仍 NO-GO。
 
 | 行为组 / 关联任务 | 必须证明的行为 | 当前独立 QA 证据 / 状态 |
 |---|---|---|
@@ -164,3 +164,13 @@ root CEO全文复核发现明确剩余范围：目录发布复用交易validator
 QA原角色续接：新增264通知结果/已读PG实盘已是2个postgresIt，pending1→2；交易11+sourceblockers7+notification2+catalog/receipt/invite/zero各1，七文件预期24项。此为源码计数/入口登记，未真实执行收集，不称24pass。source/metadata尚未最终freeze；root独占signedmode/markread/bootstrapworker，QA保持无PG/browser，不重启之前已经终态fixture。
 
 root迭代状态：第六轮完整typecheck96079明确exit0（packages/root/两端UI），35目标API tests93839exit0；完整release-gates round5原85297正在严格legacybridge。264metadata当时验证264/384methods/132merchanttools；仍非最终release冻结，bundle真分页需要新265专属Ops只读函数，root已授权CEO实现。当前24PG仅预期分母、尚未复验新264/265链；QA保持nofixture，不用旧263/22绿色替代新链。265loader/metadata及最终it分母待owner冻结实际收集。
+
+## 2026-10-06 最新候选证据
+
+最新隔离商家销售桌面运行：`artifacts/ops-jit-isolation/2026-10-05T21-15-43.405Z-9f61389e-de5a-44b2-8bb6-d9378279ffd5/`。`commercial-sales/evidence.json` 记录15个业务步骤完整、`passed-owned-isolated-only`；`playwright.json` 为1 passed、0 skipped、0 retries，约559秒。证据明确 `productionCandidateVerified:false`、`externalBankTransfer:false`；fixture disposal 为 `leftRunning=[]`、`externalContainersTouched=false`。它关闭了之前“结果通知覆盖尚未完成”的状态：公告和购买结果通知、active/scheduled/awaiting_dependency、通知跳转订单恢复、已读请求断线后相同幂等键重放及刷新后持久化均实际执行。也覆盖套餐/开通费/点数包发布、首购、六期每月500、调价冻结、续购/停售/归档和半期升级报价。
+
+对应矩阵更新：目录三类商品和独立 owned-test 三档发布、调价后冻结旧单、开通及首期隔离收款、点数赠送/点包、未来合同、停止销售仍履行有效旧订单、剩余期补差升级和结果通知 UI 有本轮真实桌面证据。此证据不代表生产三档商品已批准，不覆盖生产银行转账、全部升级方向、月底/闰年、生产租户/worker 或本地 stdio 宿主已加载。
+
+当前 HEAD 已运行 `npm run typecheck` 与 `npm run test:release-gates` 并通过：全 release suite 178 files passed / 7 skipped，1454 assertions passed / 16 declared skips，最后 Node suite 165/165；前置 API/worker/model 23/23 与 PostgreSQL16 migration compatibility 1/1。CodeGraph 同步状态 complete，2628 files / 37266 nodes / 149000 edges，0 pending changes/refs。商业受益人专项测试 18/18 通过。此前的 24 项真实 PG 分母状态仍按历史记载；本条不把它们升级成最新全链 PG 通过。
+
+101 尚未完成候选部署。当前本地 `dev:doctor:production` 为40 pass / 15 fail、local fixture、`productionGate=false`、数据库迁移尾258而源码266；独立101审计的候选 SHA 是旧demo，ECS主机清单有64 blockers。缺口含生产relay/bridge/config、人工转账收款方/账户/核验政策、storage/scanner、签名能力/容量证据、候选schema/worker/恢复/身份验收。旧实例health或releasez不能替代本需求部署。未上传、未迁移、未切流；修复真实外部合同与主机候选门禁后再部署验收。

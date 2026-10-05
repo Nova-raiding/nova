@@ -72,6 +72,18 @@ C6 central gate由eng接完classifier，legacy fresh购买退出旧writer、新�
 
 101只读确认当前API没有商业手动转账批准/收款方/收款账户/核验政策或runtime evidence path。受保护配置来源已异步询问用户；不编造银行账户、审批和转账。尚无候选上传/生产迁移/切流。
 
+## 2026-10-06 当前候选复核（HEAD `c63eb4df20adcaba25d4ffc9252a8e792cbddaad`）
+
+更正上文“销售长 E2E 仍不得记为通过”的历史状态：其后有晚于 HEAD 的最新隔离运行 `artifacts/ops-jit-isolation/2026-10-05T21-15-43.405Z-9f61389e-de5a-44b2-8bb6-d9378279ffd5/`。`commercial-sales/evidence.json` 为 `passed-owned-isolated-only`，15 个业务步骤完整；Playwright JSON 为 1 passed、0 skipped、0 retries，持续约 559 秒。source/candidate/schema SHA 绑定本次运行；标记 `productionCandidateVerified:false`、`externalBankTransfer:false`。fixture disposal 记录 `leftRunning=[]`、`externalContainersTouched=false`。
+
+本次桌面闭环实际覆盖：三档套餐、开通费和点数包通过运营审批/上架；商家公告；开通费与首期合并首购及真实隔离收款分配；开通后六期每期500点及来源；独立点数包购买；开通费/点数包调价而旧订单快照不变；续购形成未来合同、停售/归档仍履行有效旧单；半期剩余有效期升级按服务端 frozen quote 补差并保留到期日；拆分首购的同幂等键恢复、待开通依赖通知、迟到款409待处置；active/scheduled/awaiting_dependency 通知导航与已读重试持久化。该运行证明隔离 fixture 中的这些路径，不证明生产支付、真实生产价格批准、ChatGPT 宿主、101 部署或全部 PRD 验收。
+
+当前候选 `npm run typecheck` 及 `npm run test:release-gates` 均在本轮源冻结后完成并退出0。release gates 报告主 Vitest 178 files passed / 7 skipped、1454 passed / 16 预声明 skipped，最后 Node 套件165/165通过；首段 API/worker bridge 与模型用量23/23、PG16迁移链1/1也通过。CodeGraph增量同步后状态 complete，2628 files / 37266 nodes / 149000 edges，无 pending changes/refs。商业定向回归 18/18（application purchase service + MCP checkout/quote errors）通过。以上是本地/隔离开发证据，不替代下述101门禁。
+
+本轮 `npm run dev:doctor:production` 当前本地环境结果为40 pass / 15 fail；模式是local fixture，`productionGate=false`，migration tail 258 而源码266。fail包括生产模型中转/宿主中转/插件Bridge合同、生产配置、provider付款与收款政策、存储/scanner、签名能力/容量证据、release身份及relay/宿主证据。独立101审计显示其现存候选身份仍为旧demo、候选SHA不匹配；ECS host inventory 有64 blockers，release audit为NO-GO。尤其真实 manual_transfer 的收款方、收款账户、核验政策和运行证据缺失。没有上传候选、执行迁移、写生产数据或部署；禁止把旧实例 health 200 记作本需求上线。
+
+剩余验收仍包括：按批准运营配置生产尊享套餐/权益包，不以随机 owned-test 配置冒充实际售价；真实人工收款政策/账户批准；受控101隔离候选完整 API/worker/schema/身份/兼容/恢复验收；同候选本地 stdio 与 ChatGPT 宿主真实加载/业务读取；上线后两域健康及真实商家/运营购买通知链路。待相关配置和主机阻断解除后再推进，不降低门禁。
+
 ## 第四轮门禁与新 scope 审计
 
 第三轮session85636与第四轮session92925均明确exit1，worker桥及21项settlement通过，API桥未通过。第三轮test292已售V2权益读取受新263函数依赖与259qualification影响而返回entitlement unknown；root将purge商业gate延后后第四轮test236触发反例（无权益应402先于生命周期不可用却503）。不将错误期望改弱：eng已确认两层真实旧schema依赖，继续实现verified-prefix旧权益投影与“仅既有authority诊断、能力不存在仍不写”的前置；正常新schema仍完整资格+feature准入。当前不能签收旧桥或完整门禁。
