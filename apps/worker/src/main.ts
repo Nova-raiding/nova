@@ -1257,7 +1257,7 @@ export async function postImageGenerationResult(input: { apiBaseUrl: string; api
   if (!response.ok) throw new Error(`image generation result API returned ${response.status}`)
 }
 
-export async function updateImageGenerationExecution(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; operation: 'claim' | 'reserve_provider_operation' | 'begin_provider_dispatch' | 'fail_before_provider' | 'provider_started' | 'completed' | 'failed' | 'outcome_unknown'; ownerToken?: string; providerRequestId?: string; errorCode?: string; errorMessage?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+export async function updateImageGenerationExecution(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; operation: 'claim' | 'reserve_provider_operation' | 'begin_provider_dispatch' | 'fail_before_provider' | 'provider_started' | 'completed' | 'failed' | 'outcome_unknown'; ownerToken?: string; expectedProviderOperationKey?: string; providerRequestId?: string; errorCode?: string; errorMessage?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
   const path = `/v1/internal/image-generation-jobs/${encodeURIComponent(input.event.aggregateId)}/execution`
   const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
     method: 'POST',
@@ -1285,7 +1285,23 @@ export async function updateImageGenerationExecution(input: { apiBaseUrl: string
     throw Object.assign(new Error(`image generation execution API returned ${response.status}`), { code: code ?? (response.status === 409 ? 'IMAGE_GENERATION_EXECUTION_BUSY' : 'IMAGE_GENERATION_EXECUTION_GATE_UNAVAILABLE') })
   }
   const envelope = await parseWorkerApiJson(response) as { data?: { execution?: { ownerToken?: string; providerOperationKey?: string; state?: string; workspaceId?: string; jobId?: string; eventId?: string } } }
-  return envelope.data?.execution
+  const execution = envelope.data?.execution
+  if (input.operation === 'begin_provider_dispatch' && (!execution
+    || execution.workspaceId !== input.event.workspaceId
+    || execution.jobId !== input.event.aggregateId
+    || execution.eventId !== input.event.id
+    || execution.ownerToken !== input.ownerToken
+    || execution.state !== 'provider_dispatching'
+    || typeof input.expectedProviderOperationKey !== 'string' || !input.expectedProviderOperationKey.trim()
+    || execution.providerOperationKey !== input.expectedProviderOperationKey)) {
+    // The API may already have committed dispatch. This is deliberately not
+    // an authorization rejection: retain holds and reconcile, never close it
+    // as a known zero-dispatch failure or submit another provider request.
+    throw Object.assign(new Error('image generation dispatch response omitted bound execution evidence'), {
+      code: 'IMAGE_GENERATION_DISPATCH_RESPONSE_INVALID', reconciliationRequired: true,
+    })
+  }
+  return execution
 }
 
 /** Only a locally proven zero-dispatch authorization rejection may close a
@@ -2749,7 +2765,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
     const closeRejected = (error: unknown) => closeRejectedImageDispatch({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, event, ownerToken, providerRequests: dispatchScope.providerRequests, error, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
     try {
       await executionAuthorization.assertAuthorized(event, 'image_generation.execute', signal)
-      await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'begin_provider_dispatch', ownerToken, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+      await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'begin_provider_dispatch', ownerToken, expectedProviderOperationKey: providerOperationKey, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
     } catch (error) { return closeRejected(error) }
     imageUsageContexts.set(actionId, {
       runKey,
