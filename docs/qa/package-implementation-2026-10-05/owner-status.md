@@ -103,3 +103,11 @@ CodeGraph 已同步 190 个变化文件，之后增量同步至当前索引（2,
 销售长 E2E 多轮执行已验证首购联合订单、实际隔离收款分配、续购、停售/归档后履行冻结旧单及 portfolio 两笔未来合同的服务端合同状态；运行失败点曾包括测试收款分钟精度早于精确秒级订单创建、Ant Table 空态行/未激活 tab 的 DOM 假设，以及通知 Dropdown click bubbling。已纠正夹具与选择器。然而源码 lease 因并行进程持续修改其覆盖的 API/server、ops commercial component、worker 授权与 E2E 源文件，多次准确报 `OPS_E2E_COMMERCIAL_SOURCE_CHANGED`；最后一次中止发生在购买结果通知覆盖完成之前。因此完整销售长 E2E 仍不得记为通过，冻结源码后需再跑完整场景并检查 evidence.json 全步骤。
 
 101 只读健康：`https://yxsona.com/api/healthz` 和 `https://ops.yxsona.com/healthz` 返回健康，`ssh 101 docker ps` 所列 API/UI/worker/PostgreSQL/Redis 容器均 healthy；健康只证明当前旧运行实例可用，不证明新商业代码或候选身份已部署。本轮未上传候选、未迁移生产库、未切流。此前发现的完整商业销售 GUI/E2E、人工收款正式策略/批准证据和部署门禁欠缺仍然有效，不得将当前 release-gates 单项绿色解释为可上线。
+
+## 2026-10-06 权益包运营全生命周期复归
+
+修复权益包版本详情只读取引用第一页的问题：API client保留`total`/`nextCursor`/`truncated`，运营面板循环拉取引用，并在游标重复、总数变化、结果截断/数量不符或超过读取上限时明确失败，避免把不完整引用误报为空。对应API、分页模型和面板测试共42项已通过；Ops Console构建、全仓typecheck已通过。CodeGraph增量同步当前新增桌面spec及变更源码，索引complete且0 pending refs/changes。
+
+恢复并完善隔离桌面生命周期Playwright spec：短用例1/1通过；完整生命周期1/1通过、0 flaky、0 retry。真实隔离PostgreSQL/API/浏览器覆盖included/standalone权益包草稿，提交审批/通过/拒绝、拒绝后修订、草稿删除、新版本编辑、套餐草稿绑定已批准v3、查看v3权益与SKU引用、创建并批准新版本后历史SKU仍引用v3、停用新绑定与归档。所有操作只写owned临时fixture，API返回200；终态`leftRunning=[]`、`externalContainersTouched=false`。完整运行证据：`artifacts/ops-jit-isolation/2026-10-05T22-27-23.054Z-a1463b14-1f31-46d8-ad8d-84964991679e/`。失败尝试仅定位并修正了测试对AntD可见标签/可访问按钮名称和注册权益代码文案的误假设，均无共享容器或生产数据影响。
+
+此验收证明权益包管理及套餐引用生命周期，不代表通用storage/feature/service权益已有独立SKU、消费/到期和退款回收闭环；当前独立出售已验证的是创意点包。未经确认不得扩展其他独立权益的售价、有效期、限额或退款语义。101仍保持此前NO-GO，本轮没有上传候选、执行生产迁移或部署；新spec在owner纳入review前仍作为未跟踪文件。
