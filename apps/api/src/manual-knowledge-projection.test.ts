@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { manualKnowledgeProduct, projectImportedProductsToKnowledge } from './knowledge-import.js'
-import { MemoryKnowledgeRepository } from '../../persistence/src/knowledge.js'
-import { handleCatalogImport, type CatalogImportDependencies } from '../../../apps/api/src/mcp-catalog-import.js'
+import { manualKnowledgeProduct, projectImportedProductsToKnowledge } from '../../../packages/application/src/knowledge-import.js'
+import { MemoryKnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
+import { handleCatalogImport, type CatalogImportDependencies } from './mcp-catalog-import.js'
 
 const product = { id: 'qa', workspaceId: 'ws', platform: 'taobao', title: '蓝袋QA', stock: 0, skuCount: 0, storeName: '导入店铺' }
 async function projected(supplied: Parameters<typeof manualKnowledgeProduct>[1]) {
