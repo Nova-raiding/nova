@@ -69,8 +69,6 @@ async function reopenMerchantOrderDetails(studio,orderId){
   await center.getByRole('button',{name:'查看原冻结明细与付款',exact:true}).click();
   const checkout=studio.getByRole('dialog',{name:'确认服务端订单与付款明细',exact:true});
   await expect(checkout).toBeVisible();
-  try{await expect(studio.getByRole('button',{name:'查询原订单与权益状态',exact:true})).toBeVisible({timeout:10000})}
-  catch(error){const base=join(required('OPS_E2E_OUTPUT_DIR'),'commercial-sales',`merchant-recovery-${orderId}`);await studio.screenshot({path:`${base}.png`,fullPage:true}).catch(()=>undefined);await writeFile(`${base}.json`,JSON.stringify({url:studio.url(),title:await studio.title().catch(()=>''),orderId,body:(await studio.locator('body').innerText().catch(()=>'' )).slice(0,5000),aria:await studio.locator('body').ariaSnapshot().catch(()=>'<unavailable>'),failure:error instanceof Error?error.message:String(error)},null,2),{mode:0o600}).catch(()=>undefined);throw new Error(`MERCHANT_ORDER_RECOVERY_DETAIL_UNAVAILABLE:${orderId}; ${error instanceof Error?error.message:String(error)}`)}
 }
 async function assertPurchaseNotification(studio,orderId,state){const found=await notificationFor(studio,orderId,state);await found.row.getByRole('button',{name:'查看已购与相关订单',exact:true}).click();const center=studio.getByRole('region',{name:'套餐与权益包',exact:true});await expect(center.getByLabel('原订单 ID',{exact:true})).toHaveValue(orderId);await expect(center.getByRole('tab',{name:'订单与恢复',exact:true})).toHaveAttribute('aria-selected','true');return found.item}
 async function assertNotificationReadRecovery(studio,orderId,state){
