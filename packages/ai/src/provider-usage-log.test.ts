@@ -61,6 +61,43 @@ describe('NewApiSelfLogClient', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
+  it('does not replay an environment refresh cookie after a persisted stable token is rejected', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'provider-usage-session-'))
+    const sessionFile = join(directory, 'session.json')
+    try {
+      await writeFile(sessionFile, JSON.stringify({ userId: 'u1', userToken: 'stable-token' }), { mode: 0o600 })
+      const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+        expect(new URL(String(input)).pathname).toBe('/api/log/self')
+        expect(init?.headers).toMatchObject({ authorization: 'Bearer stable-token' })
+        return new Response('{}', { status: 401 })
+      })
+      const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'retired-browser-token', refreshCookie: 'new_api_refresh=retired-browser-cookie', sessionFile, userId: 'u1', fetcher })
+      await expect(client.listPage()).rejects.toThrow('PROVIDER_USAGE_HTTP_401')
+      expect(fetcher).toHaveBeenCalledTimes(1)
+      await expect(stat(`${sessionFile}.lock`)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
+
+  it('does not combine a persisted refresh-only session with an old bootstrap access token', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'provider-usage-session-'))
+    const sessionFile = join(directory, 'session.json')
+    try {
+      await writeFile(sessionFile, JSON.stringify({ userId: 'u1', refreshCookie: 'new_api_refresh=current' }), { mode: 0o600 })
+      const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+        if (new URL(String(input)).pathname === '/api/user/auth/refresh') {
+          expect(init?.headers).toMatchObject({ cookie: 'new_api_refresh=current' })
+          return new Response(JSON.stringify({ data: { access_token: 'fresh', user: { id: 'u1' } } }), { headers: { 'set-cookie': 'new_api_refresh=rotated; Path=/api/user/auth; HttpOnly; Secure' } })
+        }
+        expect(init?.headers).toMatchObject({ authorization: 'Bearer fresh' })
+        return new Response(JSON.stringify({ data: { items: [], total: 0 } }))
+      })
+      const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'retired-browser-token', sessionFile, userId: 'u1', fetcher })
+      await expect(client.listPage()).resolves.toMatchObject({ items: [] })
+      expect(fetcher).toHaveBeenCalledTimes(2)
+      expect(new URL(String(fetcher.mock.calls[0]?.[0])).pathname).toBe('/api/user/auth/refresh')
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
+
   it('refreshes an expired short-lived user token and retries the log request once', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'provider-usage-session-'))
     const sessionFile = join(directory, 'session.json')

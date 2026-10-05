@@ -194,8 +194,14 @@ export class NewApiSelfLogClient {
   private async loadPersistedSession() {
     if (this.sessionLoaded) return
     const persisted = await this.readPersistedSession()
-    if (persisted?.userToken) this.userToken = persisted.userToken
-    if (persisted?.refreshCookie) this.refreshCookie = persisted.refreshCookie
+    // A persisted session replaces the bootstrap credentials as a unit. In
+    // particular, a stable user token intentionally has no browser refresh
+    // cookie; retaining one from the environment could replay a retired
+    // browser session when the stable credential is rejected.
+    if (persisted) {
+      this.userToken = persisted.userToken ?? ''
+      this.refreshCookie = persisted.refreshCookie ?? ''
+    }
     this.sessionLoaded = true
   }
 
@@ -223,8 +229,10 @@ export class NewApiSelfLogClient {
       await syncDirectory(directory)
       const previousToken = this.userToken
       const persisted = await this.readPersistedSession()
-      if (persisted?.userToken) this.userToken = persisted.userToken
-      if (persisted?.refreshCookie) this.refreshCookie = persisted.refreshCookie
+      if (persisted) {
+        this.userToken = persisted.userToken ?? ''
+        this.refreshCookie = persisted.refreshCookie ?? ''
+      }
       if (persisted?.userToken && persisted.userToken !== previousToken) {
         await unlink(lockPath)
         await syncDirectory(directory)
