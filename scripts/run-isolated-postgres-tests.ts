@@ -177,6 +177,8 @@ export async function runIsolatedPostgresTests(args: readonly string[], source: 
       ...buildSafeTestEnvironment(source, join(evidenceDir, 'local-objects')),
       PERSISTENCE_RELEASE_DATABASE_URL: fixture.adminDatabaseUrl,
       MERCHANT_ISOLATED_POSTGRES_RUN_ID: fixture.runId,
+      MERCHANT_ISOLATED_REDIS_URL: fixture.redisUrl,
+      MERCHANT_ISOLATED_REDIS_PORT: String(fixture.containerEvidence.find(item => item.kind === 'redis')!.hostPort),
       // Every binding the CI PostgreSQL step provides, pointed at the fixture
       // this process just created. CI and this launcher must agree on the set;
       // a binding only CI sets is a binding that can only be exercised in CI.

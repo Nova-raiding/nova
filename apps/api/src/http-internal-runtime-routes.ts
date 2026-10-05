@@ -187,7 +187,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
           // A concurrent proven pre-dispatch close may have released before
           // our reserve committed. Release only its terminal zero-dispatch hold.
           const latest = await repository.get({ workspaceId, jobId })
-          if (latest?.state === 'failed' && latest.eventId === event.id && !latest.providerStartedAt && !latest.providerRequestId) {
+          if (latest?.state === 'failed' && latest.eventId === event.id && await repository.hasPreProviderFailureProof?.({ workspaceId, jobId, eventId: event.id })) {
             try { await releaseDailyModelBudget(workspaceId, expectedAction) }
             catch (cleanupError) { throw Object.assign(new DomainError('MODEL_USAGE_BUDGET_CLEANUP_PENDING', '图片模型预算清理未完成，需对账', 503, { reconciliation_required: true }), { reconciliationRequired: true, cause: cleanupError }) }
           }
@@ -204,8 +204,9 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
         const current = await repository.get({ workspaceId, jobId })
         // Signed workers may retry budget-only cleanup of this frozen terminal
         // event. This does not claim the erased owner lease was reacquired.
-        const alreadyClosed = current?.state === 'failed' && current.eventId === eventId && !current.providerStartedAt && !current.providerRequestId
+        const alreadyClosed = current?.state === 'failed' && current.eventId === eventId && await repository.hasPreProviderFailureProof?.({ workspaceId, jobId, eventId })
         const execution = alreadyClosed ? current : await repository.failBeforeProvider({ workspaceId, jobId, eventId, ownerToken, errorCode: requiredStringValue(input, 'error_code'), errorMessage: requiredStringValue(input, 'error_message') })
+        if (!await repository.hasPreProviderFailureProof?.({ workspaceId, jobId, eventId })) throw new DomainError('IMAGE_GENERATION_PRE_DISPATCH_PROOF_REQUIRED', '缺少已持久化的零派发关闭证据，保持预留并等待对账', 409, { reconciliation_required: true })
         try { await releaseDailyModelBudget(workspaceId, actionId) }
         catch (error) { throw Object.assign(new DomainError('MODEL_USAGE_BUDGET_CLEANUP_PENDING', '图片模型预算清理未完成，需对账', 503, { reconciliation_required: true }), { reconciliationRequired: true, cause: error }) }
         return send(res, 200, workspaceId, { execution, ...(alreadyClosed ? { already_closed: true, budget_cleanup_only: true } : {}) }, null, req)
@@ -605,7 +606,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
         completionAfter = { unknownAt: decoded.unknownAt, eventId: decoded.eventId }
       } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, '完成回执游标无效', 400) }
     }
-    const page = input.execution_scan_done === true ? { items: [], nextCursor: undefined, scanWatermark: undefined } : await repository.listPage({ workspaceId, states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown'], limit, ...(cursor ? { cursor } : {}), ...(olderThan ? { olderThan } : {}) })
+    const page = input.execution_scan_done === true ? { items: [], nextCursor: undefined, scanWatermark: undefined } : await repository.listPage({ workspaceId, states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown', 'failed'], limit, ...(cursor ? { cursor } : {}), ...(olderThan ? { olderThan } : {}) })
     // Only completed executions with an unpublished unknown original event
     // enter this local recovery. No Provider query or generation is involved.
     let nextCompletionAckCursor: string | undefined
@@ -638,6 +639,37 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     const attention: Array<Record<string, unknown>> = []
     for (const execution of executions) {
       const job = service.getImageGenerationJob(workspaceId, execution.jobId)
+      if (execution.state === 'failed') {
+        // Never infer no-dispatch from failed/receipt absence. Only the exact
+        // owned reserved->failed CAS audit can authorize this recovery.
+        if (!await repository.hasPreProviderFailureProof?.({ workspaceId, jobId: job.id, eventId: execution.eventId })) continue
+        try {
+          const event = persistence.outbox ? (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1000)).find(candidate => candidate.id === execution.eventId) : undefined
+          const commercial = event?.payload.commercial_access_snapshot as Record<string, unknown> | undefined
+          const reservationId = typeof commercial?.reservation_id === 'string' ? commercial.reservation_id : ''
+          const actionId = typeof event?.payload.action_id === 'string' ? event.payload.action_id : ''
+          if (!event || !reservationId || !actionId || !execution.providerOperationKey || !persistence.creativePoints?.releaseFailedProviderReservation || !persistence.persistSnapshotAndEvent) throw new Error('IMAGE_PRE_DISPATCH_RECOVERY_UNAVAILABLE')
+          await persistence.creativePoints.releaseFailedProviderReservation({ workspaceId, reservationId, actionKey: actionId,
+            sourceEventId: event.id, preProvider: true, idempotencyKey: `image-pre-dispatch-release:${job.id}:${event.id}:${reservationId}`,
+            imagePreDispatch: { jobId: job.id, eventId: event.id, intentHash: job.intentHash, attempt: execution.attempt, providerOperationKey: execution.providerOperationKey } })
+          // A projection write can fail after the ledger commit. The failed CAS
+          // remains selectable; stable release identity permits safe replay.
+          const durable = persistence.business ? await persistence.business.get(workspaceId, 'image_generation_job', job.id) : undefined
+          const currentJob = durable?.payload as unknown as ImageGenerationJob | undefined
+          if (!currentJob) throw new Error('IMAGE_PRE_DISPATCH_JOB_SNAPSHOT_REQUIRED')
+          service.hydrateSnapshot({ entityType: 'image_generation_job', entity: currentJob })
+          if (currentJob.state !== 'failed') {
+            const failed = service.markImageGenerationFailed({ workspaceId, jobId: job.id, errorCode: execution.errorCode ?? 'IMAGE_GENERATION_PRE_DISPATCH_FAILED', errorMessage: execution.errorMessage ?? '模型调用前已安全终止', expectedRevision: currentJob.revision })
+            await persistence.persistSnapshotAndEvent({ workspaceId, entityType: 'image_generation_job', entityId: failed.id, entityVersion: failed.revision,
+              payload: failed as unknown as Record<string, unknown>, eventType: 'image.generation.failed',
+              eventPayload: { job_id: failed.id, source_event_id: event.id, error_code: failed.errorCode, error_message: failed.errorMessage, provider_dispatched: false, recovery: 'proven_pre_dispatch' } })
+          }
+          repaired.push({ job_id: job.id, from: 'failed', to: 'failed', reason: 'proven_pre_dispatch_released', creative_points_released: true })
+        } catch {
+          attention.push({ job_id: job.id, event_id: execution.eventId, execution_state: 'failed', reconciliation_required: true, reason: 'pre_dispatch_release_or_projection_pending' })
+        }
+        continue
+      }
       // A provider response may already exist while usage settlement or
       // artifact archiving is still pending. Such jobs must remain
       // reconcilable; treating the user-facing failed projection as a

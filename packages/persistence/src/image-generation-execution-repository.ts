@@ -19,6 +19,20 @@ export interface ImageGenerationExecution {
   updatedAt: string
 }
 
+/** Dedicated audit is created only by the owned provider_reserved close CAS. */
+export const imagePreProviderFailureProofPredicate = `e.state='failed' AND e.owner_token IS NULL AND e.lease_expires_at IS NULL
+  AND e.provider_started_at IS NULL AND e.provider_request_id IS NULL AND e.provider_operation_key IS NOT NULL
+  AND EXISTS (SELECT 1 FROM workspace_operation_audit proof WHERE proof.workspace_id=e.workspace_id
+    AND proof.action='image.dispatch.closed_before_provider' AND proof.actor_id='worker:generation'
+    AND proof.resource_type='image_generation_execution' AND proof.resource_id=e.job_id
+    AND proof.before_json->>'state'='provider_reserved'
+    AND proof.after_json->>'job_id'=e.job_id AND proof.after_json->>'event_id'=e.event_id
+    AND proof.after_json->>'attempt'=e.attempt::text
+    AND proof.after_json->>'provider_operation_key'=e.provider_operation_key
+    AND proof.after_json->>'error_code'=e.error_code
+    AND (proof.after_json->>'closed_at')::timestamptz=e.updated_at
+    AND proof.after_json->>'provider_called'='false')`
+
 export interface ImageGenerationExecutionPage {
   items: ImageGenerationExecution[]
   nextCursor?: string
@@ -60,6 +74,7 @@ export interface ImageGenerationExecutionRepository {
    * error after invoking the provider. Consumes exact event ownership once;
    * preserves the operation fence and cannot clear real start/unknown evidence. */
   failBeforeProvider(input: FailImageGenerationBeforeProviderInput): Promise<ImageGenerationExecution>
+  hasPreProviderFailureProof?(input: { workspaceId: string; jobId: string; eventId: string }): Promise<boolean>
   reconcileCompleted(input: { workspaceId: string; jobId: string; now?: string }): Promise<ImageGenerationExecution>
   reconcileFailed(input: { workspaceId: string; jobId: string; errorCode: string; errorMessage: string; now?: string }): Promise<ImageGenerationExecution>
   get(input: { workspaceId: string; jobId: string }): Promise<ImageGenerationExecution | undefined>
@@ -105,6 +120,7 @@ const leaseDuration = (value: number) => {
  * development. Production wiring must use the PostgreSQL implementation. */
 export class MemoryImageGenerationExecutionRepository implements ImageGenerationExecutionRepository {
   private readonly rows = new Map<string, ImageGenerationExecution>()
+  private readonly preProviderProofs = new Map<string, string>()
 
   async claim(input: { workspaceId: string; jobId: string; eventId: string; leaseMs: number; now?: string }) {
     const workspaceId = workspace(input.workspaceId); const jobId = normalizedId(input.jobId, 'JOB_ID'); const eventId = normalizedId(input.eventId, 'EVENT_ID'); const now = instant(input.now); const leaseMs = leaseDuration(input.leaseMs); const key = keyOf(workspaceId, jobId); const current = this.rows.get(key)
@@ -154,7 +170,12 @@ export class MemoryImageGenerationExecutionRepository implements ImageGeneration
       || current.providerRequestId != null || current.providerStartedAt != null) throw new ImageGenerationExecutionError('IMAGE_GENERATION_EXECUTION_LEASE_LOST', current)
     const row: ImageGenerationExecution = { ...current, state: 'failed', ownerToken: undefined, leaseExpiresAt: undefined, errorCode, errorMessage, updatedAt: at }
     this.rows.set(keyOf(workspaceId, jobId), row)
+    if (current.state === 'provider_reserved') this.preProviderProofs.set(keyOf(workspaceId, jobId), JSON.stringify(row))
     return row
+  }
+  async hasPreProviderFailureProof(input: { workspaceId: string; jobId: string; eventId: string }) {
+    const row = await this.get(input)
+    return Boolean(row && row.eventId === input.eventId && row.state === 'failed' && this.preProviderProofs.get(keyOf(input.workspaceId, input.jobId)) === JSON.stringify(row))
   }
   async reconcileCompleted(input: { workspaceId: string; jobId: string; now?: string }) { return this.reconcile(input, 'completed') }
   async reconcileFailed(input: { workspaceId: string; jobId: string; errorCode: string; errorMessage: string; now?: string }) { return this.reconcile(input, 'failed', input.errorCode, input.errorMessage) }
@@ -240,6 +261,7 @@ export class PostgresImageGenerationExecutionRepository implements ImageGenerati
     const workspaceId = workspace(input.workspaceId); const jobId = normalizedId(input.jobId, 'JOB_ID'); const eventId = normalizedId(input.eventId, 'EVENT_ID'); const ownerToken = normalizedId(input.ownerToken, 'OWNER_TOKEN')
     const errorCode = normalizedId(input.errorCode, 'ERROR_CODE'); const errorMessage = normalizedId(input.errorMessage, 'ERROR_MESSAGE'); const at = new Date(instant(input.now)).toISOString()
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const before = (await client.query<ExecutionRow>(`SELECT ${executionProjection} FROM image_generation_executions WHERE workspace_id=$1 AND job_id=$2 FOR UPDATE`, [workspaceId, jobId])).rows[0]
       // Atomic CAS: concurrent markProviderStarted/markOutcomeUnknown wins or
       // loses the same row lock. No read-then-write gap or fence reset.
       const result = await client.query<ExecutionRow>(`UPDATE image_generation_executions
@@ -249,8 +271,43 @@ export class PostgresImageGenerationExecutionRepository implements ImageGenerati
           AND provider_request_id IS NULL AND provider_started_at IS NULL
         RETURNING ${executionProjection}`, [workspaceId, jobId, eventId, ownerToken, errorCode, errorMessage, at])
       if (!result.rows[0]) throw new ImageGenerationExecutionError('IMAGE_GENERATION_EXECUTION_LEASE_LOST', await this.getWithin(client, workspaceId, jobId))
+      // Only the never-begun reserved state receives an automatic-release proof.
+      // Failed/unknown rows, even with no receipt, can never acquire this proof.
+      if (before?.state === 'provider_reserved') {
+        await client.query(`INSERT INTO workspace_operation_audit
+          (id,workspace_id,actor_id,action,resource_type,resource_id,before_json,after_json,reason)
+          SELECT $1,$2,'worker:generation','image.dispatch.closed_before_provider','image_generation_execution',$3,
+            jsonb_build_object('state','provider_reserved','owner_sha256',$4::text),
+            jsonb_build_object('job_id',$3::text,'event_id',$5::text,'attempt',$6::integer,
+              'provider_operation_key',$7::text,'error_code',$8::text,'closed_at',$9::text,
+              'action_id',o.payload->>'action_id','run_key',o.payload->>'run_key',
+              'reservation_id',o.payload->'commercial_access_snapshot'->>'reservation_id',
+              'commercial_operation_id',r.operation_id,
+              'intent_hash',j.payload->>'intentHash','provider_called',false),
+            'Exact owned provider_reserved CAS closed before provider dispatch'
+          FROM outbox_events o JOIN business_entity_snapshots j ON j.workspace_id=o.workspace_id
+            AND j.entity_type='image_generation_job' AND j.entity_id=o.aggregate_id
+          JOIN creative_point_reservations r ON r.workspace_id=o.workspace_id
+            AND r.id=o.payload->'commercial_access_snapshot'->>'reservation_id'
+            AND r.action_key=o.payload->>'action_id' AND r.status='active'
+          WHERE o.workspace_id=$2 AND o.id=$5 AND o.aggregate_id=$3 AND o.event_type='image.generation.requested'
+            AND o.unknown_at IS NULL AND COALESCE(o.last_error->>'unknown','false')<>'true'
+            AND o.payload->>'job_id'=$3 AND o.payload->>'workspace_id'=$2
+            AND o.payload->>'intent_hash'=j.payload->>'intentHash'
+            AND o.payload->>'product_id'=j.payload->>'productId'
+            AND o.payload->>'action_id'='image:'||(j.payload->>'idempotencyKey')
+            AND o.payload->>'run_key'=o.payload->>'action_id'
+            AND o.payload->'commercial_access_snapshot'->>'access_mode'='POINT_CHARGED'
+            AND COALESCE(o.payload->'commercial_access_snapshot'->>'reservation_id','')<>''`,
+          [randomUUID(),workspaceId,jobId,createHash('sha256').update(ownerToken).digest('hex'),eventId,
+            before.attempt,before.provider_operation_key,errorCode,at])
+      }
       return mapExecution(result.rows[0])
     })
+  }
+  async hasPreProviderFailureProof(input: { workspaceId: string; jobId: string; eventId: string }) {
+    const workspaceId=workspace(input.workspaceId)
+    return withWorkspaceTransaction(this.pool,workspaceId,async client => Boolean((await client.query(`SELECT 1 FROM image_generation_executions e WHERE e.workspace_id=$1 AND e.job_id=$2 AND e.event_id=$3 AND ${imagePreProviderFailureProofPredicate}`, [workspaceId,input.jobId,input.eventId])).rows.length))
   }
   async reconcileCompleted(input: { workspaceId: string; jobId: string; now?: string }) { return this.reconcile(input, 'completed') }
   async reconcileFailed(input: { workspaceId: string; jobId: string; errorCode: string; errorMessage: string; now?: string }) { return this.reconcile(input, 'failed', input.errorCode, input.errorMessage) }

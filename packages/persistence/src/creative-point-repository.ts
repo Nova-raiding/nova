@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { imagePreProviderFailureProofPredicate } from './image-generation-execution-repository.js'
 import { requireWorkspaceScope, type SqlClient, type SqlPool, withWorkspaceTransaction } from './repository.js'
 
 export interface CreativePointBalance {
@@ -70,7 +71,7 @@ export interface CreativePointReserveMutation extends CreativePointMutation<Crea
 export interface GrantCreativePointsInput { workspaceId: string; idempotencyKey: string; sourceType: string; sourceId: string; points: number; expiresAt?: string | null; metadata?: Record<string, unknown>; at?: string }
 export interface ReserveCreativePointsInput { workspaceId: string; idempotencyKey: string; actionKey: string; points: number; rateCardVersion: string; at?: string }
 export interface ReleaseCreativePointsInput { workspaceId: string; idempotencyKey: string; reservationId: string; at?: string }
-export interface ReleaseFailedProviderReservationInput extends ReleaseCreativePointsInput { actionKey: string; providerRequestId?: string; preProvider?: boolean; sourceEventId?: string }
+export interface ReleaseFailedProviderReservationInput extends ReleaseCreativePointsInput { actionKey: string; providerRequestId?: string; preProvider?: boolean; sourceEventId?: string; imagePreDispatch?: { jobId: string; eventId: string; intentHash: string; attempt: number; providerOperationKey: string } }
 export interface SettleCreativePointsInput { workspaceId: string; idempotencyKey: string; reservationId: string; actualPoints: number; metadata?: Record<string, unknown>; at?: string }
 
 export interface CreativePointRepository {
@@ -449,13 +450,71 @@ export class PostgresCreativePointRepository implements CreativePointRepository 
     const workspaceId=requireWorkspaceScope(input.workspaceId); const at=instant(input.at); required(input.idempotencyKey,'idempotencyKey'); required(input.reservationId,'reservationId'); required(input.actionKey,'actionKey')
     if(input.sourceEventId !== undefined) required(input.sourceEventId, 'sourceEventId')
     if(input.preProvider!==true)required(input.providerRequestId??'','providerRequestId')
-    const request={reservation_id:input.reservationId,action_key:input.actionKey,...(input.providerRequestId?{provider_request_id:input.providerRequestId}:{}),...(input.sourceEventId?{source_event_id:input.sourceEventId}:{}),evidence:input.preProvider===true?'pre_provider':'provider_failed'}
+    const request={reservation_id:input.reservationId,action_key:input.actionKey,...(input.providerRequestId?{provider_request_id:input.providerRequestId}:{}),...(input.sourceEventId?{source_event_id:input.sourceEventId}:{}),evidence:input.preProvider===true?'pre_provider':'provider_failed',...(input.imagePreDispatch?{image_pre_dispatch:input.imagePreDispatch}:{})}
     return withWorkspaceTransaction(this.pool,workspaceId,async client=>{
+      if (input.imagePreDispatch) {
+        const guard=input.imagePreDispatch
+        if(input.preProvider!==true || input.sourceEventId!==guard.eventId || !Number.isSafeInteger(guard.attempt) || guard.attempt<1) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN','invalid image pre-dispatch release scope')
+        // Same ordering as the production usage writer: run -> day -> budget ->
+        // action, before the existing commercial operation / reservation locks.
+        const identity=await client.query<{day:string;run_key:string}>(`SELECT budget_date::text AS day,run_key FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2`,[workspaceId,input.actionKey])
+        const budget=identity.rows[0]
+        if(!budget || budget.run_key!==input.actionKey) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN','image cost budget binding missing')
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended('model-cost-run:' || $1 || ':' || $2,0))",[workspaceId,budget.run_key])
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended('model-cost-day:' || $1 || ':' || $2,0))",[workspaceId,budget.day])
+        const closedBudget=await client.query(`SELECT 1 FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2 AND run_key=$2 AND status IN ('active','released') AND provider_request_id IS NULL AND actual_cost_cny IS NULL FOR UPDATE`,[workspaceId,input.actionKey])
+        if(closedBudget.rows.length!==1) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN','image cost budget is not a recoverable uncharged reservation')
+        await client.query(`SELECT action_key FROM action_ledger WHERE workspace_id=$1 AND action_key=$2 FOR UPDATE`,[workspaceId,input.actionKey])
+      }
       const binding=await client.query<{operationId:string}>(`SELECT operation_id AS "operationId" FROM creative_point_reservations WHERE workspace_id=$1 AND id=$2 AND action_key=$3`,[workspaceId,input.reservationId,input.actionKey])
       const boundOperationId=binding.rows[0]?.operationId
       if(!boundOperationId)throw new CreativePointRepositoryError('CREATIVE_POINT_RESERVATION_NOT_FOUND','failed provider reservation binding was not found')
       const operation=await client.query<{id:string}>(`SELECT id FROM creative_point_operations WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,[workspaceId,boundOperationId])
       if(operation.rows.length!==1)throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN','reservation commercial operation is unavailable')
+      if(input.imagePreDispatch){
+        const guard=input.imagePreDispatch
+        const bound=await client.query(`SELECT 1 FROM image_generation_executions e
+          JOIN outbox_events o ON o.workspace_id=e.workspace_id AND o.id=e.event_id
+          JOIN business_entity_snapshots j ON j.workspace_id=e.workspace_id AND j.entity_type='image_generation_job' AND j.entity_id=e.job_id
+          WHERE e.workspace_id=$1 AND e.job_id=$2 AND e.event_id=$3 AND e.attempt=$4 AND e.provider_operation_key=$5
+            AND ${imagePreProviderFailureProofPredicate}
+            AND o.aggregate_id=e.job_id AND o.event_type='image.generation.requested'
+            AND o.published_at IS NULL AND o.unknown_at IS NULL AND o.lease_token IS NULL AND o.lease_until IS NULL
+            AND o.last_error->>'terminal'='true' AND COALESCE(o.last_error->>'unknown','false')<>'true'
+            AND (o.last_error->>'code'=e.error_code OR o.last_error->>'code'='IMAGE_GENERATION_PRE_PROVIDER_CLOSE_UNAVAILABLE')
+            AND (o.last_error->>'code'='IMAGE_GENERATION_PRE_PROVIDER_CLOSE_UNAVAILABLE' OR EXISTS (SELECT 1 FROM model_cost_budget_reservations b WHERE b.workspace_id=$1 AND b.reservation_key=$7 AND b.status='released'))
+            AND o.payload->>'workspace_id'=$1 AND o.payload->>'job_id'=$2
+            AND o.payload->>'intent_hash'=$6 AND j.payload->>'intentHash'=$6
+            AND o.payload->>'product_id'=j.payload->>'productId'
+            AND j.payload->>'id'=$2 AND j.payload->>'workspaceId'=$1
+            AND (j.payload->>'state'='queued' OR (j.payload->>'state'='failed' AND j.payload->>'errorCode'=e.error_code))
+            AND j.payload->>'archiveState'<>'archived' AND COALESCE(jsonb_array_length(j.payload->'outputs'),0)=0
+            AND o.payload->>'action_id'=$7 AND o.payload->>'run_key'=$7
+            AND $7='image:'||(j.payload->>'idempotencyKey')
+            AND o.payload->'commercial_access_snapshot'->>'access_mode'='POINT_CHARGED'
+            AND o.payload->'commercial_access_snapshot'->>'workspace_id'=$1
+            AND o.payload->'commercial_access_snapshot'->>'operation'='image_generation.execute'
+            AND o.payload->'commercial_access_snapshot'->>'reservation_id'=$8
+            AND EXISTS (SELECT 1 FROM workspace_operation_audit a WHERE a.workspace_id=$1
+              AND a.action='image.dispatch.closed_before_provider' AND a.resource_id=$2
+              AND a.after_json->>'event_id'=$3 AND a.after_json->>'attempt'=$4::text
+              AND a.after_json->>'provider_operation_key'=$5 AND a.after_json->>'intent_hash'=$6
+              AND a.after_json->>'action_id'=$7 AND a.after_json->>'run_key'=$7
+              AND a.after_json->>'reservation_id'=$8 AND a.after_json->>'commercial_operation_id'=$9)
+            AND EXISTS (SELECT 1 FROM creative_point_reservations r WHERE r.workspace_id=$1 AND r.id=$8
+              AND r.operation_id=$9 AND r.action_key=$7 AND r.status IN ('active','released')
+              AND r.rate_card_version=o.payload->'commercial_access_snapshot'->>'rate_version'
+              AND r.points::text=o.payload->'commercial_access_snapshot'->>'quoted_points')
+          FOR UPDATE OF e,o,j`,[workspaceId,guard.jobId,guard.eventId,guard.attempt,guard.providerOperationKey,guard.intentHash,input.actionKey,input.reservationId,boundOperationId])
+        if(bound.rows.length!==1) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN','image zero-dispatch proof or durable request binding does not match')
+        const evidence=await client.query(`SELECT
+          (SELECT count(*) FROM model_usage_ledger WHERE workspace_id=$1 AND (action_id=$2 OR budget_reservation_key=$2 OR budget_run_key=$2)) AS usage_count,
+          (SELECT count(*) FROM creative_point_provider_receipts_v2 WHERE workspace_id=$1 AND operation_id=$3) AS receipt_count`,[workspaceId,input.actionKey,boundOperationId])
+        if(Number(evidence.rows[0]?.usage_count)!==0 || Number(evidence.rows[0]?.receipt_count)!==0) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN','provider evidence forbids image pre-dispatch release')
+        // The only active-budget recovery is the proven close-unavailable
+        // wrapper above. Cost and point release commit or roll back together.
+        await client.query(`UPDATE model_cost_budget_reservations SET status='released',revision=revision+1,updated_at=$3 WHERE workspace_id=$1 AND reservation_key=$2 AND status='active'`,[workspaceId,input.actionKey,at])
+      }
       await this.lockState(client,workspaceId)
       const replay=await this.replay<ReservationRow>(client,workspaceId,'release',input.idempotencyKey,request,reservationProjection,'creative_point_reservations')
       if(replay)return {value:reservationFromRow(replay),balance:await this.refreshBalance(client,workspaceId,at,false)}
