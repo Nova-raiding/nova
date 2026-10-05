@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { evaluateVideoStoryboardQuality, type VideoRightsEvidence, type VideoStoryboardQualityInput, type VideoStoryboardScene } from './video-storyboard-quality.js'
+import { evaluateVideoStoryboardQuality, evaluateVideoStoryboardRenderReadiness, type VideoRightsEvidence, type VideoStoryboardQualityInput, type VideoStoryboardScene } from './video-storyboard-quality.js'
 
 const approvedRights = (platform = 'douyin'): VideoRightsEvidence => ({ status: 'approved', evidenceRef: 'rights://approved', validUntil: '2027-01-01T00:00:00Z', platforms: [platform] })
 
@@ -154,5 +154,24 @@ describe('video brief, storyboard and delivery quality gate', () => {
     expect(report.blocks).toContainEqual(expect.objectContaining({ code: 'PLATFORM_SPEC_EXTERNALLY_UNVERIFIED' }))
     expect(Object.isFrozen(report)).toBe(true)
     expect(Object.isFrozen(report.findings)).toBe(true)
+  })
+})
+
+describe('internal candidate render readiness does not grant platform delivery approval', () => {
+  it.each(['unverified', 'official_document'] as const)('allows structurally safe internal rendering with %s platform evidence', state => {
+    const input = baseInput({ platformCapability: { state, specification: { maxFileBytes: 100, durationsSeconds: [999] } }, output: { container: 'mp4', videoCodec: 'h264' }, completionEvidence: {} })
+    expect(evaluateVideoStoryboardRenderReadiness(input).renderReady).toBe(true)
+    expect(evaluateVideoStoryboardQuality(input)).toMatchObject({ publishable: false, externallyUnverified: true, storyboardValid: false })
+  })
+  it.each(['rights', 'timeline', 'format', 'facts', 'subtitle', 'expired'] as const)('still blocks unsafe %s before rendering', failure => {
+    const input = baseInput({ platformCapability: { state: 'unverified' }, output: { container: 'mp4', videoCodec: 'h264' }, completionEvidence: {} })
+    if (failure === 'rights') input.cover.rights = { status: 'denied' }
+    if (failure === 'timeline') input.durationSeconds = 20
+    if (failure === 'format') input.output.container = 'invalid' as 'mp4'
+    if (failure === 'facts') input.scenes[0]!.claims[0]!.factSourceIds = []
+    if (failure === 'subtitle') input.scenes[0]!.subtitle = { text: '字幕', safeZone: { x: 2, y: 0, width: 1, height: 1 } }
+    if (failure === 'expired') input.cover.rights = { ...approvedRights(), validUntil: '2020-01-01T00:00:00Z' }
+    expect(evaluateVideoStoryboardRenderReadiness(input).renderReady).toBe(false)
+    expect(evaluateVideoStoryboardQuality(input).publishable).toBe(false)
   })
 })

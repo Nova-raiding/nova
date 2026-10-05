@@ -256,7 +256,9 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
         ? createVideoRenderingRequest({ prompt: required(params, 'prompt'), context })
         : createVideoGenerationRequest({ prompt: required(params, 'prompt'), output, context })
       if (!request.ok) throw new DomainError(ERROR_CODES.INVALID_REQUEST, request.issues.map(issue => `${issue.path}: ${issue.message}`).join('; '), 400)
-      const storyboardQuality = request.value.output === 'rendering' ? evaluateStoryboardBeforeRendering(context) : undefined
+      const renderingPurpose = candidateOnly ? 'internal_candidate_render' as const : 'platform_render' as const
+      const candidateStatus = candidateOnly ? { candidate_only: true, publishable: false, candidate_status: '未绑定商品、仅候选、不可发布' } : {}
+      const storyboardQuality = request.value.output === 'rendering' ? evaluateStoryboardBeforeRendering(context, renderingPurpose) : undefined
       if (request.value.output === 'rendering') await requireVideoModelCostPreflight(Boolean(sourceImage))
       const commercialDecision = await enforceMcpCommercialAccess(req, workspaceId, method)
       const videoRequestKey = suppliedVideoRequestKey || randomUUID()
@@ -295,7 +297,7 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
           })
           if ((request.value.output as string) === 'rendering') {
             if (!videoGenerator) throw new DomainError('VIDEO_GENERATION_NOT_CONFIGURED', '未配置视频生成中转服务', 503, { provider_executed: false })
-            rendering = await archiveAcceptedVideo(await generateOwnedVideo({ beforeDispatch, prompt: request.value.prompt, output: 'rendering', context: request.value.context, ...(sourceImage ? { sourceImage } : {}), usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey } }))
+            rendering = await archiveAcceptedVideo(await generateOwnedVideo({ beforeDispatch, prompt: request.value.prompt, output: 'rendering', context: request.value.context, ...(sourceImage ? { sourceImage } : {}), usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey } }, renderingPurpose))
           }
           if (generatedPlan) requireRuleSafeGenerationText(rulePreflight, [generatedPlan], '视频脚本或分镜命中当前平台规则禁用表达')
         } catch (error) {
@@ -329,15 +331,15 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
           const eventType = rendering?.status === 'completed' || generatedPlan
             ? 'multimodal.video_completed'
             : 'multimodal.video.requested'
-          await persistEvent(workspaceId, `video_${randomUUID()}`, eventType, 1, { ...request.value as unknown as Record<string, unknown>, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering } : {}) })
+          await persistEvent(workspaceId, `video_${randomUUID()}`, eventType, 1, { ...request.value as unknown as Record<string, unknown>, ...candidateStatus, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering } : {}) })
         } catch (error) {
           if (!providerExecuted) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '视频结果记录失败' })
           throw error
         }
-        return result({ ...request.value, candidate_only: candidateOnly, ...(candidateOnly ? { candidate_status: '未绑定商品、仅候选、不可发布' } : {}), execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering: userFacingVideoRendering(rendering) } : {}) })
+        return result({ ...request.value, candidate_only: candidateOnly, ...candidateStatus, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering: userFacingVideoRendering(rendering) } : {}) })
       }
       return request.value.output === 'rendering'
-        ? withOwnedVideoAction(workspaceId, walletDebitKey, { ...request.value, sourceImageSha256: sourceImage ? createHash('sha256').update(sourceImage).digest('hex') : null }, executeVideoAction, providerJobId => result({ execution: { status: 'queued', ...executionContract('video', true) }, rendering: { status: 'queued', providerJobId, settlementStatus: 'pending_receipt' } }))
+        ? withOwnedVideoAction(workspaceId, walletDebitKey, { ...request.value, sourceImageSha256: sourceImage ? createHash('sha256').update(sourceImage).digest('hex') : null }, executeVideoAction, providerJobId => result({ ...candidateStatus, execution: { status: 'queued', ...executionContract('video', true) }, rendering: { status: 'queued', providerJobId, settlementStatus: 'pending_receipt' } }))
         : executeVideoAction()
     }
     case 'multimodal.video.get': {
@@ -345,11 +347,12 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
       const providerJobId = required(params, 'provider_job_id')
       try {
         const billingContext = await assertVideoProviderJobScope(workspaceId, providerJobId)
+        const candidateStatus = billingContext.candidateOnly === true ? { candidate_only: true, publishable: false, candidate_status: '未绑定商品、仅候选、不可发布' } : {}
         const observed = await videoGenerator.getStatus(providerJobId, billingContext)
-        if (observed.settlementStatus !== 'settled') return result({ provider_job_id: providerJobId, status: 'queued', settlement_status: 'pending_receipt', execution: executionContract('video', true) })
+        if (observed.settlementStatus !== 'settled') return result({ ...candidateStatus, provider_job_id: providerJobId, status: 'queued', settlement_status: 'pending_receipt', execution: executionContract('video', true) })
         const rendering = await archiveCompletedVideo(workspaceId, observed)
-        await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', 1, { provider_job_id: providerJobId, ...rendering })
-        return result({ provider_job_id: providerJobId, execution: executionContract('video', true), ...(rendering.assetId ? { asset_id: rendering.assetId, archive_state: rendering.archiveState, ...(rendering.archiveState === 'archived' ? { download_path: `/v1/assets/${encodeURIComponent(rendering.assetId)}/download` } : { availabilityWarning: '视频已安全归档到隔离区，平台自动安全扫描通过后才可下载或发布；无需商家或运营人员操作' }) } : {}), ...userFacingVideoRendering(rendering) })
+        await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', 1, { provider_job_id: providerJobId, ...rendering, ...candidateStatus })
+        return result({ provider_job_id: providerJobId, execution: executionContract('video', true), ...(rendering.assetId ? { asset_id: rendering.assetId, archive_state: rendering.archiveState, ...(rendering.archiveState === 'archived' ? { download_path: `/v1/assets/${encodeURIComponent(rendering.assetId)}/download` } : { availabilityWarning: '视频已安全归档到隔离区，平台自动安全扫描通过后才可下载或发布；无需商家或运营人员操作' }) } : {}), ...userFacingVideoRendering(rendering), ...candidateStatus })
       } catch (error) {
         if (error instanceof DomainError) throw error
         const providerFailure = modelSettlementDomainError(error)

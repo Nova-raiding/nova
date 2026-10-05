@@ -296,7 +296,7 @@ import { MemoryInteractiveConfirmationTicketRepository, PostgresInteractiveConfi
 import { AssetParseExecutionError, executeAssetParse } from './asset-parse-runtime.js'
 import { checkpointFromKnowledgeSnapshot, isKnowledgeEventAfterCheckpoint, isKnowledgeHydrationCheckpointCurrent, mergeKnowledgeHydrationEvents, type KnowledgeHydrationCheckpoint } from './knowledge-hydration-checkpoint.js'
 import { evaluatePlatformFieldMapping, type PlatformFieldMappingGateInput, type PlatformFieldMappingGateResult } from '../../../packages/application/src/platform-field-mapping-gate.js'
-import { buildDeliveryBundleManifest, evaluateVideoStoryboardQuality, evaluateVisualAuthenticity, verifyDeliveryBundle, type DeliveryBundleFile, type DeliveryBundleManifest, type DeliveryBundleManifestInput, type VideoStoryboardQualityInput, type VisualAuthenticityGateInput } from '../../../packages/multimodal/src/index.js'
+import { buildDeliveryBundleManifest, evaluateVideoStoryboardQuality, evaluateVideoStoryboardRenderReadiness, evaluateVisualAuthenticity, verifyDeliveryBundle, type DeliveryBundleFile, type DeliveryBundleManifest, type DeliveryBundleManifestInput, type VideoStoryboardQualityInput, type VisualAuthenticityGateInput } from '../../../packages/multimodal/src/index.js'
 import { projectPlatformCapabilityEvidence } from './platform-capability-response.js'
 import { MemoryPasswordAuthRepository, PostgresPasswordAuthRepository, type PasswordAccount, type PasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import { MemoryKnowledgeRepository, PostgresKnowledgeRepository, type KnowledgeDocument, type KnowledgeRepository, type KnowledgeSearchResult } from '../../../packages/persistence/src/knowledge.js'
@@ -4233,7 +4233,7 @@ function publishRejectionKnowledgeObservation(job: import('../../../packages/app
   return createPublishRejectionKnowledgeObservation(job, canonicalJson)
 }
 
-type VideoBillingContext = import('../../../packages/ai/src/video-generator.js').VideoBillingContext
+type VideoBillingContext = import('../../../packages/ai/src/video-generator.js').VideoBillingContext & { candidateOnly?: true; publishable?: false }
 
 async function videoBillingAggregateEvents(workspaceId: string, aggregateId: string) {
   await persistenceReady
@@ -4292,12 +4292,13 @@ export async function withOwnedVideoAction<T>(workspaceId: string, actionId: str
   }
 }
 
-export async function generateOwnedVideo(input: Parameters<NonNullable<typeof videoGenerator>['generate']>[0]) {
+export async function generateOwnedVideo(input: Parameters<NonNullable<typeof videoGenerator>['generate']>[0], purpose: 'platform_render' | 'internal_candidate_render' = 'platform_render') {
   if (!videoGenerator) throw new DomainError('VIDEO_GENERATION_NOT_CONFIGURED', '未配置视频生成中转服务', 503)
   const { workspaceId, actionId, runKey } = input.usageContext ?? {}
   if (!workspaceId || !actionId || !runKey || !input.beforeDispatch) throw new DomainError('VIDEO_BILLING_CONTEXT_REQUIRED', '视频生成缺少计费上下文', 503)
   const aggregateId = `video-billing:${createHash('sha256').update(actionId).digest('hex')}`
-  return videoGenerator.generate({ ...input, onAccepted: async context => {
+  return videoGenerator.generate({ ...input, onAccepted: async acceptedContext => {
+    const context: VideoBillingContext = { ...acceptedContext, ...(purpose === 'internal_candidate_render' ? { candidateOnly: true as const, publishable: false as const } : {}) }
     const jobAggregateId = `video-job:${createHash('sha256').update(context.providerJobId).digest('hex')}`
     await persistEvent(workspaceId, jobAggregateId, 'multimodal.video.accepted', 1, { billing_context: context })
     const stored = (await videoBillingAggregateEvents(workspaceId, jobAggregateId)).find(event => event.eventType === 'multimodal.video.accepted')
@@ -10223,7 +10224,7 @@ function requireSelectedVisualAuthenticity(workspaceId: string, visualRefs: read
   }
 }
 
-function evaluateStoryboardBeforeRendering(context: GenerationContext) {
+export function evaluateStoryboardBeforeRendering(context: GenerationContext, purpose: 'platform_render' | 'internal_candidate_render' = 'platform_render') {
   const evidence = (context as unknown as Record<string, unknown>).storyboardQuality
   if (!evidence) {
     if (platformGovernanceGatesRequired()) throw new DomainError('VIDEO_STORYBOARD_QUALITY_REQUIRED', '视频渲染前必须提供已验证的分镜质量证据', 409)
@@ -10231,6 +10232,11 @@ function evaluateStoryboardBeforeRendering(context: GenerationContext) {
   }
   let report: ReturnType<typeof evaluateVideoStoryboardQuality>
   try { report = evaluateVideoStoryboardQuality(evidence as VideoStoryboardQualityInput) } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'storyboardQuality 结构无效', 400) }
+  if (purpose === 'internal_candidate_render') {
+    const readiness = evaluateVideoStoryboardRenderReadiness(evidence as VideoStoryboardQualityInput)
+    if (!readiness.renderReady) throw new DomainError('VIDEO_STORYBOARD_QUALITY_BLOCKED', '内部候选分镜未通过结构、事实或使用权检查，禁止调用视频渲染 provider', 409, { finding_codes: readiness.findings.filter(item => item.severity === 'block').map(item => item.code), publishable: false })
+    return { ...report, renderReady: true, publishable: false }
+  }
   if (!report.storyboardValid || report.externallyUnverified) throw new DomainError('VIDEO_STORYBOARD_QUALITY_BLOCKED', '分镜质量或平台规格证据未通过，禁止调用视频渲染 provider', 409, { finding_codes: report.blocks.map(finding => finding.code), externally_unverified: report.externallyUnverified })
   return report
 }

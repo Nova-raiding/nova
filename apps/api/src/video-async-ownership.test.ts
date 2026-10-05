@@ -8,13 +8,13 @@ const provider = vi.hoisted(() => ({ posts: 0, budgetFailure: false, preflightFa
 vi.mock('./model-budget-runtime.js', async original => ({ ...await original<typeof import('./model-budget-runtime.js')>(), createModelBudgetRuntime: () => ({ reserveDailyModelBudget: async () => {}, releaseDailyModelBudget: async () => {}, withDailyModelBudget: async (_kind: unknown, _context: unknown, invoke: () => Promise<unknown>) => { if (provider.budgetFailure) throw Object.assign(new Error('budget refused'), { code: 'MODEL_DAILY_COST_BUDGET_EXCEEDED' }); return invoke() } }) }))
 vi.mock('../../../packages/ai/src/video-generator.js', async original => {
   const real = await original<typeof import('../../../packages/ai/src/video-generator.js')>()
-  return { ...real, createVideoGeneratorFromEnv: () => new real.OpenAICompatibleVideoGenerator({ baseUrl: 'https://relay.example', apiKey: 'test-only', model: 'video-model', beforeRequest: async () => { if (provider.preflightFailure) throw Object.assign(new Error('preflight refused'), { code: 'MODEL_QUOTA_UNAVAILABLE' }) }, usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async () => { provider.posts += 1; return new Response(JSON.stringify({ id: `job-${provider.posts}`, status: 'queued' }), { headers: { 'x-request-id': `generation-${provider.posts}` } }) } }) }
+  return { ...real, createVideoGeneratorFromEnv: () => new real.OpenAICompatibleVideoGenerator({ baseUrl: 'https://relay.example', apiKey: 'test-only', model: 'video-model', imageModel: 'video-image-model', beforeRequest: async () => { if (provider.preflightFailure) throw Object.assign(new Error('preflight refused'), { code: 'MODEL_QUOTA_UNAVAILABLE' }) }, usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async () => { provider.posts += 1; return new Response(JSON.stringify({ id: `job-${provider.posts}`, status: 'queued' }), { headers: { 'x-request-id': `generation-${provider.posts}` } }) } }) }
 })
-import { assertVideoProviderJobScope, generateOwnedVideo, withOwnedVideoAction, modelSettlementDomainError, setFailedImageReconciliationPersistenceForTests } from './server.js'
+import { evaluateStoryboardBeforeRendering, assertVideoProviderJobScope, generateOwnedVideo, withOwnedVideoAction, modelSettlementDomainError, setFailedImageReconciliationPersistenceForTests } from './server.js'
 let restore: (() => void) | undefined
 const input = (actionId: string) => ({ prompt: 'test', output: 'rendering' as const, context: {}, usageContext: { workspaceId: 'video-workspace', actionId, runKey: actionId } })
 const ownedGenerate = (value: ReturnType<typeof input>) => withOwnedVideoAction(value.usageContext.workspaceId, value.usageContext.actionId, value, beforeDispatch => generateOwnedVideo({ ...value, beforeDispatch }), providerJobId => ({ status: 'queued' as const, providerJobId, settlementStatus: 'pending_receipt' as const }))
-afterEach(() => { restore?.(); provider.posts = 0; provider.budgetFailure = false; provider.preflightFailure = false })
+afterEach(() => { vi.unstubAllEnvs(); restore?.(); provider.posts = 0; provider.budgetFailure = false; provider.preflightFailure = false })
 function install(store = new InMemoryOutbox()) {
   // Exercise the same durable repository interface; reuse the existing narrow injection seam.
   restore = setFailedImageReconciliationPersistenceForTests({ outbox: store as unknown as OutboxRepository })
@@ -113,5 +113,72 @@ describe('durable accepted video ownership', () => {
     await expect(assertVideoProviderJobScope('video-workspace', 'job-1')).rejects.toMatchObject({ code: 'VIDEO_PROVIDER_SCOPE_DENIED' })
     await expect(ownedGenerate(input('video:authority-failure'))).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' })
     expect(provider.posts).toBe(1)
+  })
+})
+
+function candidateEvidence() {
+  return { platform: 'taobao', platformCapability: { state: 'official_document', specification: { maxFileBytes: 100 } }, reviewAt: '2026-10-05T00:00:00Z', durationSeconds: 5, aspectRatio: '1:1', resolution: { width: 512, height: 512 }, fps: 24,
+    scenes: [{ id: 'scene', startSeconds: 0, endSeconds: 5, visual: '原创商品静物展示', productIds: ['product'], skuIds: ['sku'], claims: [] }],
+    cover: { assetId: 'asset', productIds: ['product'], skuIds: ['sku'], factSourceIds: ['asset://original'], rights: { status: 'approved', evidenceRef: 'asset://original-rights' } },
+    output: { container: 'mp4', videoCodec: 'h264' }, completionEvidence: {}, provenance: 'manual' }
+}
+function candidateRuntime() {
+  const archive = vi.fn(async (_workspace: string, rendering: object) => rendering)
+  const runtime = {
+    workspaceId: 'video-workspace', req: {}, result: (value: unknown) => value, required: (params: Record<string, unknown>, key: string) => String(params[key]), DomainError, ERROR_CODES: { INVALID_REQUEST: 'INVALID_REQUEST' },
+    service: { products: new Map([['product', { id: 'product', workspaceId: 'video-workspace', platform: 'taobao', sourceAssetIds: ['asset'] }]]) },
+    isExemptUnboundImageCandidateProduct: async () => true, enforceAssetAccess: async () => {}, requireApprovedAssetForImageGeneration: () => {},
+    assetForWorkspace: () => ({ id: 'asset', mimeType: 'image/png', storageKey: 'test-image', scanStatus: 'clean' }), getStoredObjectWithRetry: async () => ({ body: Buffer.from('original-test-image') }),
+    enforceProductBrandAccess: async () => {}, canonicalProductReadControl: async () => ({ mode: 'legacy' }), observeLegacyWalletShadow: async () => {},
+    header: () => undefined, isProduction: () => false, generationRulePreflight: async () => ({ blocking: false }), requireRuleSafeGenerationText: () => {}, evaluateStoryboardBeforeRendering, requireVideoModelCostPreflight: async () => {}, enforceMcpCommercialAccess: async () => ({}),
+    createVideoRenderingRequest: (value: object) => ({ ok: true, value: { ...value, output: 'rendering' } }), createOneSentenceGenerationRequest: (value: object) => ({ ok: true, value }), createHash,
+    reserveCreativePointsForModel: async () => null, recordActionSettlement: async () => {}, requestActor: () => 'actor', executionContract: () => ({ providerExecuted: true }), randomUUID: () => 'candidate-event', persistEvent: async () => {},
+    releaseReservedModelPoints: async () => {}, refundPluginWalletDebit: async () => {}, providerSucceededButSettlementPending: () => false,
+    withOwnedVideoAction, generateOwnedVideo, assertVideoProviderJobScope, archiveCompletedVideo: archive, modelSettlementDomainError,
+    videoGenerator: { generate: vi.fn(), getStatus: vi.fn(async () => ({ status: 'queued', settlementStatus: 'pending_receipt' })) },
+  } as unknown as MultimodalMcpRuntime
+  return { runtime, archive }
+}
+function candidateParams(evidence: unknown = candidateEvidence()) {
+  return { prompt: '原创内部候选', output: 'rendering', modality: 'video', idempotency_key: 'internal-candidate', context_json: JSON.stringify({ candidateOnly: true, brand: null, product: { id: 'product', version: '1' }, rules: [], storyboardQuality: evidence }) }
+}
+describe('server-authorized internal candidate rendering', () => {
+  it('retains unpublished status through accepted replay, repository reload, pending GET and archived GET', async () => {
+    const store = install(); vi.stubEnv('REQUIRE_PLATFORM_GOVERNANCE_GATES', 'true')
+    const { runtime, archive } = candidateRuntime()
+    const first = await handleMultimodalMcpMethod('multimodal.video.request', candidateParams(), runtime)
+    expect(first).toMatchObject({ candidate_only: true, publishable: false, storyboard_quality: { renderReady: true, externallyUnverified: true, publishable: false } })
+    expect(provider.posts).toBe(1)
+    expect(await handleMultimodalMcpMethod('multimodal.video.request', candidateParams(), runtime)).toMatchObject({ candidate_only: true, publishable: false })
+    expect(provider.posts).toBe(1)
+    restore?.(); install(store)
+    expect(await assertVideoProviderJobScope('video-workspace', 'job-1')).toMatchObject({ candidateOnly: true, publishable: false })
+    archive.mockClear()
+    expect(await handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-1' }, runtime)).toMatchObject({ candidate_only: true, publishable: false, settlement_status: 'pending_receipt' })
+    expect(archive).not.toHaveBeenCalled()
+    vi.mocked(runtime.videoGenerator!.getStatus).mockResolvedValue({ status: 'completed', settlementStatus: 'settled', providerJobId: 'job-1', videoUrl: 'https://relay.example/result.mp4' })
+    archive.mockResolvedValue({ status: 'completed', settlementStatus: 'settled', assetId: 'archive-asset', archiveState: 'archived' })
+    expect(await handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-1' }, runtime)).toMatchObject({ candidate_only: true, publishable: false, asset_id: 'archive-asset' })
+  })
+  it('requires explicit storyboard evidence with governance enabled and never upgrades default platform rendering', async () => {
+    install(); vi.stubEnv('REQUIRE_PLATFORM_GOVERNANCE_GATES', 'true')
+    const { runtime } = candidateRuntime()
+    const params = candidateParams(null)
+    await expect(handleMultimodalMcpMethod('multimodal.video.request', params, runtime)).rejects.toMatchObject({ code: 'VIDEO_STORYBOARD_QUALITY_REQUIRED' })
+    const context = JSON.parse(candidateParams().context_json)
+    expect(() => evaluateStoryboardBeforeRendering(context)).toThrow(DomainError)
+    expect(provider.posts).toBe(0)
+  })
+  it.each(['bound', 'foreign', 'asset_denied', 'rights', 'malformed', 'other_entry'] as const)('blocks %s without provider dispatch', async failure => {
+    install(); vi.stubEnv('REQUIRE_PLATFORM_GOVERNANCE_GATES', 'true')
+    const { runtime } = candidateRuntime()
+    const evidence = candidateEvidence()
+    if (failure === 'bound') runtime.isExemptUnboundImageCandidateProduct = async () => false
+    if (failure === 'foreign') runtime.service.products.get('product')!.workspaceId = 'other-workspace'
+    if (failure === 'asset_denied') runtime.enforceAssetAccess = async () => { throw new DomainError('PERMISSION_DENIED', 'denied', 403) }
+    if (failure === 'rights') evidence.cover.rights.status = 'denied'
+    if (failure === 'malformed') evidence.durationSeconds = -1
+    await expect(handleMultimodalMcpMethod(failure === 'other_entry' ? 'multimodal.generate' : 'multimodal.video.request', candidateParams(evidence), runtime)).rejects.toMatchObject({ code: ['bound', 'foreign'].includes(failure) ? 'VIDEO_CANDIDATE_SOURCE_REQUIRED' : failure === 'asset_denied' ? 'PERMISSION_DENIED' : 'VIDEO_STORYBOARD_QUALITY_BLOCKED' })
+    expect(provider.posts).toBe(0)
   })
 })

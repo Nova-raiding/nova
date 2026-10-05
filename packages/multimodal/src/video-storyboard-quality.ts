@@ -225,16 +225,16 @@ function copyLooksCommercial(value?: string) {
   return Boolean(value && /(?:[$¥￥]\s*\d|\d+(?:\.\d+)?\s*元|\d(?:\.\d)?\s*折|优惠|满减|券|促销|coupon|discount|price|off\b)/iu.test(value))
 }
 
-function validatePlatformAndOutput(input: VideoStoryboardQualityInput, platform: string, findings: VideoQualityFinding[]) {
+function validatePlatformAndOutput(input: VideoStoryboardQualityInput, platform: string, findings: VideoQualityFinding[], internalRender = false) {
   const evidence = input.platformCapability
   const verifiedAt = parseTime(evidence.verifiedAt)
   const reviewAt = parseTime(input.reviewAt)
   const canary = isPlainRecord(evidence) && evidence.state === 'production_canary' && boundedText(evidence.evidenceRef) &&
     (evidence.verifiedAt === undefined || verifiedAt !== undefined && reviewAt !== undefined && verifiedAt <= reviewAt)
   if (!isKnownPlatform(platform)) findings.push(finding('PLATFORM_UNKNOWN', 'block', 'platform', `未知平台 ${platform || '(empty)'}`, '选择六个已声明平台之一，并提供对应能力证据'))
-  if (!canary) findings.push(finding('PLATFORM_SPEC_EXTERNALLY_UNVERIFIED', 'block', 'platformCapability', '平台视频规格没有 production canary 证据', '完成目标平台真实规格与上传 canary 后重新评估'))
-  const specification = evidence.specification
-  if (canary && !specification) findings.push(finding('PLATFORM_SPEC_MISMATCH', 'block', 'platformCapability.specification', 'canary 证据没有绑定可校验的视频规格', '将时长、比例、分辨率、fps、格式和字幕约束绑定到 canary 证据'))
+  if (!internalRender && !canary) findings.push(finding('PLATFORM_SPEC_EXTERNALLY_UNVERIFIED', 'block', 'platformCapability', '平台视频规格没有 production canary 证据', '完成目标平台真实规格与上传 canary 后重新评估'))
+  const specification = internalRender ? undefined : evidence.specification
+  if (!internalRender && canary && !specification) findings.push(finding('PLATFORM_SPEC_MISMATCH', 'block', 'platformCapability.specification', 'canary 证据没有绑定可校验的视频规格', '将时长、比例、分辨率、fps、格式和字幕约束绑定到 canary 证据'))
   if (specification) {
     if (specification.durationsSeconds?.length && !specification.durationsSeconds.includes(input.durationSeconds)) findings.push(finding('PLATFORM_SPEC_MISMATCH', 'block', 'durationSeconds', '视频时长不在已验证平台规格中', '改用已验证时长或重新取得平台 canary'))
     if (specification.aspectRatios?.length && !specification.aspectRatios.includes(input.aspectRatio)) findings.push(finding('PLATFORM_SPEC_MISMATCH', 'block', 'aspectRatio', '视频比例不在已验证平台规格中', '改用已验证比例'))
@@ -273,8 +273,8 @@ function validateTimeline(input: VideoStoryboardQualityInput, findings: VideoQua
   if (Math.abs(last.endSeconds - input.durationSeconds) > EPSILON) findings.push(finding('TIMELINE_DURATION_MISMATCH', 'block', 'durationSeconds', `最后镜头结束于 ${last.endSeconds}s，与总时长 ${input.durationSeconds}s 不一致`, '调整最后镜头或总时长，使二者完全一致', last.id))
 }
 
-function validateClaimsAndSubtitles(input: VideoStoryboardQualityInput, platform: string, reviewAt: number, findings: VideoQualityFinding[]) {
-  const specification = input.platformCapability.specification
+function validateClaimsAndSubtitles(input: VideoStoryboardQualityInput, platform: string, reviewAt: number, findings: VideoQualityFinding[], internalRender = false) {
+  const specification = internalRender ? undefined : input.platformCapability.specification
   input.scenes.forEach((scene, sceneIndex) => {
     const path = `scenes[${sceneIndex}]`
     scene.claims.forEach((claim, claimIndex) => {
@@ -358,4 +358,19 @@ export function evaluateVideoStoryboardQuality(input: VideoStoryboardQualityInpu
   const completionCodes = new Set<VideoQualityFindingCode>(['PLATFORM_SPEC_EXTERNALLY_UNVERIFIED', 'REAL_RENDER_EVIDENCE_REQUIRED', 'OCR_EVIDENCE_REQUIRED', 'HUMAN_REVIEW_REQUIRED'])
   const storyboardValid = !blocks.some(item => !completionCodes.has(item.code))
   return immutable({ platform, externallyUnverified, storyboardValid, publishable: blocks.length === 0 && !externallyUnverified, findings, blocks, warnings, nextActions: [...new Set(findings.map(item => item.nextAction))] })
+}
+
+/** Internal rendering admission is separate from platform delivery approval.
+ * Callers must establish the candidate's authorization on the server first. */
+export function evaluateVideoStoryboardRenderReadiness(input: VideoStoryboardQualityInput) {
+  const findings: VideoQualityFinding[] = []
+  if (!withinComplexityLimits(input)) return immutable({ renderReady: false, findings: [finding('VIDEO_CONFIGURATION_INVALID', 'block', 'input', '分镜结构或安全处理上限无效', '修正分镜结构后重试')] })
+  const platform = input.platform.trim().normalize('NFKC').toLocaleLowerCase('en-US')
+  const reviewAt = parseTime(input.reviewAt)
+  if (reviewAt === undefined) findings.push(finding('VIDEO_CONFIGURATION_INVALID', 'block', 'reviewAt', '审核时间无效', '提供带时区的 ISO 审核时间'))
+  validatePlatformAndOutput(input, platform, findings, true)
+  validateTimeline(input, findings)
+  validateClaimsAndSubtitles(input, platform, reviewAt ?? Number.POSITIVE_INFINITY, findings, true)
+  validateCover(input, platform, reviewAt ?? Number.POSITIVE_INFINITY, findings)
+  return immutable({ renderReady: !findings.some(item => item.severity === 'block'), findings })
 }
