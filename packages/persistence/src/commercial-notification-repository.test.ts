@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { PostgresCommercialNotificationRepository } from './commercial-notification-repository.js'
 import type { SqlPool, SqlClient } from './repository.js'
+import type { CommercialNotificationAuthorizer } from './commercial-notification-repository.js'
 const event = { event_id: '11111111-1111-4111-8111-111111111111', sku_code: 'basic', version: 3, visibility: 'public', payload: { name: '基础版', price_fen: 200000 }, created_at: '2026-10-05T00:00:00Z', cursor_member_id: '', audience_workspace_id: null }
 function fixture(replies: unknown[][], failAt?: number) {
   const calls: { sql: string; values?: readonly unknown[] }[] = []
@@ -102,7 +103,7 @@ describe('commercial outcome projection and recipient read evidence', () => {
   })
   it('filters private purchase results at read time unless the frozen beneficiary is the current member', async () => {
     const result={...event,notification_kind:'purchase_result',notification_key:'result:evt',notification_id:'result:evt:member-1',visibility:'private',order_id:'order',result_state:'active',beneficiary_member_id:'member-1',payload:{title:'private purchase'}}
-    const authorize=(recipient, publication) => publication.visibility === 'public' || (publication.notificationKind === 'purchase_result' && publication.beneficiaryMemberId === recipient.memberId)
+    const authorize: CommercialNotificationAuthorizer=(recipient, publication) => publication.visibility === 'public' || (publication.notificationKind === 'purchase_result' && publication.beneficiaryMemberId === recipient.memberId)
     const owned=fixture([[{id:'member-1',workspace_id:'ws',identity_id:null,role:'merchant_admin'}],[result]])
     expect((await new PostgresCommercialNotificationRepository(owned.pool,authorize).list('ws','member-1')).items).toHaveLength(1)
     const other=fixture([[{id:'member-2',workspace_id:'ws',identity_id:null,role:'merchant_admin'}],[result]])
