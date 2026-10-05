@@ -1008,6 +1008,50 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it.each(['settled', 'unknown_settlement', 'provider_not_executed', 'simulated', 'unknown_status', 'queued_state', 'failed_status', 'missing_preview', 'formal_flag'])('formats draft success only with settled real candidate evidence: %s', async variant => {
+    const result: any = {
+      previewOnly: true, candidateOnly: true, publishable: false, formalVersionCreated: false,
+      contentPreview: { id: 'content-draft:qa', version: null, state: 'candidate', body: { title: '蓝色收纳袋', detail: '蓝色，拉链开合。' } },
+      execution: { simulated: false, providerExecuted: true, modelCalled: true, settlementStatus: 'settled' },
+    }
+    if (variant === 'unknown_settlement') result.execution.settlementStatus = 'unknown'
+    if (variant === 'provider_not_executed') result.execution.providerExecuted = false
+    if (variant === 'simulated') result.execution.simulated = true
+    if (variant === 'unknown_status') result.status = 'unknown'
+    if (variant === 'queued_state') result.state = 'queued'
+    if (variant === 'failed_status') result.status = 'failed'
+    if (variant === 'missing_preview') result.contentPreview.body = {}
+    if (variant === 'formal_flag') result.formalVersionCreated = true
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      const confirmation = await nextLine(child.stdout)
+      expect(confirmation.result.structuredContent.enabled).toBe(true)
+      expect(confirmation.result.content[0].text).toContain('本次交互操作已确认')
+      expect(confirmation.result.content[0].text).toContain('自动化任务保持只读')
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.draft.generate', arguments: { draft: 'true', draft_title: '候选文案', idempotency_key: 'formatter-' + variant } } })}\n`)
+      const draft = await nextLine(child.stdout)
+      expect(draft.result.isError).toBe(false)
+      const text = draft.result.content[0].text
+      if (variant === 'settled') {
+        expect(text).toContain('候选文案已生成，可预览')
+        expect(text).toContain('尚未创建正式内容版本，未批准、未发布')
+        expect(text).not.toContain('状态尚未确认')
+        expect(draft.result.structuredContent.formalVersionCreated).toBe(false)
+        expect(draft.result.structuredContent.ui.review_export_blocked).toBe(true)
+      } else {
+        expect(text).not.toContain('候选文案已生成')
+        expect(text).not.toContain('操作已完成')
+      }
+    } finally { child.kill(); await close(server) }
+  })
+
   it('only exposes review/export cards after a durable formal version exists', async () => {
     let draft = true
     const server = createServer(async (_req, res) => {

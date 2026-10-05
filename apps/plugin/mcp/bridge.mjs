@@ -1577,6 +1577,25 @@ function userFacingToolText(method, result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
     return method === 'content.export' ? '导出已准备好。' : READ_ONLY_METHODS.has(method) ? '查询已返回；请以结构化字段核对业务状态。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
   }
+  if (method === 'workspace.interactive.confirm') {
+    if (result.enabled === true && result.ok !== false && !result.error && result.status === undefined) return '本次交互操作已确认；后续操作仍须通过权限与业务校验，自动化任务保持只读。'
+    if (result.enabled === false) return '本次交互操作确认未生效，请核对当前状态后重试。'
+  }
+  if (method === 'content.draft.generate') {
+    const execution = result.execution
+    const preview = result.contentPreview
+    const body = preview?.body
+    const hasPreview = body && typeof body === 'object' && !Array.isArray(body)
+      && Object.values(body).some(value => typeof value === 'string' && value.trim())
+    const statusConfirmed = result.status === undefined || ['ok', 'success', 'succeeded', 'completed', 'complete', 'ready'].includes(result.status)
+    const stateConfirmed = result.state === undefined || result.state === 'candidate'
+    if (statusConfirmed && stateConfirmed && result.ok !== false && !result.error && result.previewOnly === true && result.candidateOnly === true
+      && result.formalVersionCreated === false && result.publishable === false && preview?.state === 'candidate' && hasPreview
+      && execution?.simulated === false && execution.providerExecuted === true && execution.modelCalled === true
+      && execution.settlementStatus === 'settled') {
+      return '候选文案已生成，可预览。尚未创建正式内容版本，未批准、未发布。'
+    }
+  }
   if (method === 'billing.status' || method === 'creative-points.balance.get') {
     const balanceKnown = result.balance_state === 'known' || points?.balance_state === 'known'
     const available = balanceKnown && Number.isSafeInteger(result.available_points)
