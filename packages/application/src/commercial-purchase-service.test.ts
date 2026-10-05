@@ -17,6 +17,13 @@ describe('CommercialPurchaseService', () => {
     expect(createFromServerSnapshot).toHaveBeenCalledWith({ workspace_id: 'ws-1', actor_id: 'actor-1', purchase_kind: 'purchase', server_snapshot_ref: 'snapshot:basic-v2', server_snapshot: serverSnapshot, idempotency_key: 'order-1', reason: 'subscribe' })
   })
 
+  it('forwards the server-derived beneficiary to the order repository', async () => {
+    const createFromServerSnapshot = vi.fn(async () => order)
+    const service = new CommercialPurchaseService({ resolveApprovedExecutableSku: async () => sku }, { createFromServerSnapshot, getPaymentStatus: async () => null })
+    await service.create({ ...request, beneficiary_member_id: 'member-authenticated' })
+    expect(createFromServerSnapshot).toHaveBeenCalledWith(expect.objectContaining({ beneficiary_member_id: 'member-authenticated' }))
+  })
+
   it('accepts onboarding_once only for the server-owned onboarding SKU snapshot', async () => {
     const createFromServerSnapshot = vi.fn(async () => onboardingOrder)
     const service = new CommercialPurchaseService({ resolveApprovedExecutableSku: async () => onboardingSku }, { createFromServerSnapshot, getPaymentStatus: async () => null })
