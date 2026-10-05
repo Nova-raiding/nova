@@ -917,7 +917,7 @@ export interface WorkerPollResult {
 
 export async function runAutomationMaintenance(input: {
   workspaces: string[]
-  tick: (workspaceId: string) => Promise<{ data?: { result?: { executed?: unknown[]; skipReason?: string } } }>
+  tick: (workspaceId: string) => Promise<{ data?: { executed?: unknown[]; skipReason?: string }; error?: unknown }>
   cleanup: (workspaceId: string) => Promise<{ data?: { cleaned?: number } }>
   purgeAssets?: (workspaceId: string) => Promise<{ data?: { purged?: number } }>
   onError?: (workspaceId: string, operation: 'automation_tick' | 'object_orphan_cleanup' | 'asset_lifecycle_purge', error: unknown) => void
@@ -925,16 +925,20 @@ export async function runAutomationMaintenance(input: {
   let executed = 0
   let failures = 0
   for (const workspaceId of input.workspaces) {
-    let nativeAutomationOnly = false
+    let allowOrphanCleanup = false
     try {
       const response = await input.tick(workspaceId)
-      nativeAutomationOnly = response.data?.result?.skipReason === 'codex_native_automations_only'
-      executed += Array.isArray(response.data?.result?.executed) ? response.data.result.executed.length : 0
+      if (response.error != null || !Array.isArray(response.data?.executed)
+        || (response.data.skipReason !== undefined && typeof response.data.skipReason !== 'string')) {
+        throw new Error('automation tick API returned an invalid response')
+      }
+      allowOrphanCleanup = response.data.skipReason !== 'codex_native_automations_only'
+      executed += response.data.executed.length
     } catch (error) {
       failures += 1
       input.onError?.(workspaceId, 'automation_tick', error)
     }
-    if (!nativeAutomationOnly) {
+    if (allowOrphanCleanup) {
       try {
         const cleanup = await input.cleanup(workspaceId)
         executed += typeof cleanup.data?.cleaned === 'number' ? cleanup.data.cleaned : 0
@@ -3067,7 +3071,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
             if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for automation ticks')
             return runAutomationMaintenance({
               workspaces,
-              tick: workspaceId => postAutomationTick({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }) as Promise<{ data?: { result?: { executed?: unknown[] } } }>,
+              tick: workspaceId => postAutomationTick({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }) as Promise<{ data?: { executed?: unknown[]; skipReason?: string }; error?: unknown }>,
               cleanup: workspaceId => postObjectOrphanCleanup({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }) as Promise<{ data?: { cleaned?: number } }>,
               ...(assetLifecyclePurgeEnabled ? { purgeAssets: (workspaceId: string) => postAssetLifecyclePurge({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }) as Promise<{ data?: { purged?: number } }> } : {}),
               onError: (workspaceId, operation, error) => log({ level: 'error', message: 'automation workspace maintenance failed; continuing', workspaceId, operation, error: serializeError(error) }),

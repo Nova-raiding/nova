@@ -1245,25 +1245,25 @@ describe('worker production entry', () => {
     expect(requests[0]?.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
   })
 
-  it('isolates automation failures so one workspace cannot starve later tenants or orphan cleanup', async () => {
+  it('isolates automation failures while blocking cleanup without a valid tick response', async () => {
     const calls: string[] = []
     const errors: string[] = []
     const result = await runAutomationMaintenance({
       workspaces: ['ws_a', 'ws_b'],
-      tick: async workspaceId => { calls.push(`tick:${workspaceId}`); if (workspaceId === 'ws_a') throw new Error('tick failed'); return { data: { result: { executed: [{}] } } } },
+      tick: async workspaceId => { calls.push(`tick:${workspaceId}`); if (workspaceId === 'ws_a') throw new Error('tick failed'); return { data: { executed: [{}] } } },
       cleanup: async workspaceId => { calls.push(`cleanup:${workspaceId}`); if (workspaceId === 'ws_a') throw new Error('cleanup failed'); return { data: { cleaned: 2 } } },
       onError: (workspaceId, operation) => errors.push(`${operation}:${workspaceId}`),
     })
-    expect(calls).toEqual(['tick:ws_a', 'cleanup:ws_a', 'tick:ws_b', 'cleanup:ws_b'])
-    expect(errors).toEqual(['automation_tick:ws_a', 'object_orphan_cleanup:ws_a'])
-    expect(result).toEqual({ restored: 0, processed: 3, succeeded: 3, unknown: 2, queued: 0, deadLetter: 0 })
+    expect(calls).toEqual(['tick:ws_a', 'tick:ws_b', 'cleanup:ws_b'])
+    expect(errors).toEqual(['automation_tick:ws_a'])
+    expect(result).toEqual({ restored: 0, processed: 3, succeeded: 3, unknown: 1, queued: 0, deadLetter: 0 })
   })
 
   it('does not run object cleanup when Codex native Automations own scheduling', async () => {
     const calls: string[] = []
     await runAutomationMaintenance({
       workspaces: ['ws_native'],
-      tick: async () => ({ data: { result: { executed: [], skipReason: 'codex_native_automations_only' } } }),
+      tick: async () => ({ data: { executed: [], skipReason: 'codex_native_automations_only' } }),
       cleanup: async workspaceId => { calls.push('cleanup:' + workspaceId); return { data: { cleaned: 1 } } },
     })
     expect(calls).toEqual([])
