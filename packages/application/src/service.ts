@@ -1763,6 +1763,18 @@ export class MerchantService {
     this.durableKnowledgeDocuments.set(taskId, structuredClone(documents))
   }
 
+  private generationKnowledgeContext(snapshot: TaskInputSnapshot): KnowledgeGenerationContext | undefined {
+    if (!snapshot.knowledgeContext) return undefined
+    // Old persisted projections can predate the runtime AssetKind contract.
+    // Preserve that evidence in the snapshot, but never send unsupported
+    // product-fact records as workspace-wide generation references.
+    return {
+      ...snapshot.knowledgeContext,
+      assets: snapshot.knowledgeContext.assets.filter(asset =>
+        (asset.kind === 'brand' || asset.kind === 'customer') && asset.confirmed === false),
+    }
+  }
+
   private taskSnapshot(task: Task) {
     const existing = this.taskInputSnapshots.get(task.inputSnapshotId)
     if (existing) return existing
@@ -4866,7 +4878,7 @@ export class MerchantService {
       } } : {}),
       ...(snapshot.assets.length ? { referenceAssets: snapshot.assets.map(asset => ({ id: asset.id, revision: asset.revision, ...(asset.preference ? { preference: asset.preference } : {}) })) } : {}),
       ...(snapshot.promotions.length ? { promotions: snapshot.promotions.map(promotion => ({ ...promotion })) } : {}),
-      ...(snapshot.knowledgeContext ? { knowledgeContext: snapshot.knowledgeContext } : {}),
+      ...(snapshot.knowledgeContext ? { knowledgeContext: this.generationKnowledgeContext(snapshot) } : {}),
       usageContext: { workspaceId: task.workspaceId, actionId: usageActionId ?? task.id, runKey: task.id },
     }
     let maxInputTokens: number
@@ -5035,7 +5047,7 @@ export class MerchantService {
       taskInputSnapshotId: snapshot.id,
       outputType: snapshot.outputType ?? 'detail_page_and_static_brief',
       ...(snapshot.taskIntent ? { taskIntent: snapshot.taskIntent } : {}),
-      ...(snapshot.knowledgeContext ? { knowledgeContext: snapshot.knowledgeContext } : {}),
+      ...(snapshot.knowledgeContext ? { knowledgeContext: this.generationKnowledgeContext(snapshot) } : {}),
       ...(snapshot.brand?.visualRules ? { brandVisualRules: clone(snapshot.brand.visualRules) } : {}),
       referenceAssets: snapshot.assets.map(asset => ({ id: asset.id, revision: asset.revision, sha256: asset.sha256, contentTrust: clone(asset.contentTrust ?? untrustedAssetContent()), ...(asset.preference ? { preference: clone(asset.preference) } : {}) })),
       output: snapshot.outputType === 'plain_text' ? { required: ['title', 'detail', 'sellingPoints'], optional: [], rules: ['仅纯文本，sellingPoints 可为空', '不得输出 modules 或 brief', '遵守冻结 taskIntent；用户指令不是事实证据'] } : {

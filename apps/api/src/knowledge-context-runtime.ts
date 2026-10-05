@@ -43,7 +43,7 @@ export function buildBoundedKnowledgeGenerationContext(input: {
   })
   const selectedLearningIds = new Set(newestKnowledgeFirst(input.learningSuggestions).slice(0, KNOWLEDGE_CONTEXT_LIMITS.confirmedLearningSuggestions).map(({ item }) => item.id))
   const selectedLearningSuggestions = newestKnowledgeFirst(input.learningSuggestions.filter(item => selectedLearningIds.has(item.id))).map(({ item }) => item)
-  const selectedAssets = newestKnowledgeFirst((input.assets ?? []).filter(asset => asset.approvalStatus === 'approved' && asset.rightsStatus === 'cleared')).slice(0, KNOWLEDGE_CONTEXT_LIMITS.approvedAssets).map(({ item }) => item)
+  const selectedAssets = newestKnowledgeFirst((input.assets ?? []).filter(asset => (asset.kind === 'brand' || asset.kind === 'customer') && asset.approvalStatus === 'approved' && asset.rightsStatus === 'cleared')).slice(0, KNOWLEDGE_CONTEXT_LIMITS.approvedAssets).map(({ item }) => item)
   return {
     rules: selectedRules.map(rule => ({ id: rule.id, content: rule.content, version: rule.version, sourceReference: rule.source.reference, ...(rule.effectiveFrom ? { effectiveFrom: rule.effectiveFrom } : {}), ...(rule.effectiveTo ? { effectiveTo: rule.effectiveTo } : {}) })),
     assets: selectedAssets.map(asset => ({ id: asset.id, kind: asset.kind, name: asset.name, content: asset.content, revision: asset.revision, confirmed: false as const })),
