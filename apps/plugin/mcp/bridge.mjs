@@ -1593,6 +1593,57 @@ function userFacingToolText(method, result) {
   }
   const knownSuccessfulState = result.ok !== false && !result.error
     && (result.status === undefined || ['ok', 'success', 'succeeded', 'completed', 'complete', 'ready'].includes(result.status))
+  if (method === 'catalog.facts.confirm') {
+    if (knownSuccessfulState && typeof result.id === 'string' && result.id.trim() && result.product_id === result.id
+      && Number.isInteger(result.version) && result.version > 0 && result.factsConfirmed === true
+      && result.factsConfirmationRequired === false && result.facts_confirmation?.state === 'confirmed'
+      && result.facts_confirmation.required === false && result.facts_confirmation.product_id === result.id) {
+      const rules = result.rule_scan?.status ?? result.ruleScan?.status
+      return `商品资料事实已确认。${rules === 'unavailable' ? '平台规则暂不可用，后续操作仍受规则门禁约束。' : '规则检查仍以实际记录为准。'}知识资料审核、素材权益和安全检查仍需分别核对；本次确认不代表内容已生成或可发布。`
+    }
+    return '商品资料事实确认结果尚未确认，请查询商品当前状态。'
+  }
+  if (method === 'knowledge.asset.update') {
+    if (knownSuccessfulState && typeof result.id === 'string' && result.id.trim()
+      && Number.isInteger(result.revision) && result.revision > 0
+      && ['pending', 'approved', 'rejected'].includes(result.approvalStatus)
+      && ['unknown', 'cleared', 'restricted'].includes(result.rightsStatus)
+      && ['queued', 'processing', 'ready', 'failed'].includes(result.indexState)) {
+      const approval = { pending: '待审核', approved: '审核通过', rejected: '已拒绝' }[result.approvalStatus]
+      const rights = { unknown: '待确认', cleared: '已确认', restricted: '受限' }[result.rightsStatus]
+      const index = { queued: '排队中', processing: '处理中', ready: '已就绪', failed: '失败' }[result.indexState]
+      return `知识资料记录已更新：${approval}，权益${rights}，索引${index}。这不代表素材扫描通过或生成准入已通过；本次更新没有生成内容。`
+    }
+    return '知识资料更新结果尚未确认，请查询当前记录。'
+  }
+  if (method === 'task.create.draft') {
+    if (knownSuccessfulState && typeof result.id === 'string' && result.id.trim() && result.task_id === result.id
+      && typeof result.productId === 'string' && result.productId.trim() && result.product_id === result.productId
+      && result.version === 1 && result.candidateOnly === true && result.candidate_only === true
+      && result.storeContext === null && !result.accountId && !result.brandId
+      && ['draft', 'ready_for_direction'].includes(result.state) && Array.isArray(result.missingQuestions)) {
+      return `未绑定店铺的候选草稿任务已创建，不可发布。${result.missingQuestions.length ? `仍有 ${result.missingQuestions.length} 项待核对问题，请查看任务问题卡。` : ''}${result.state === 'draft' ? '请先补充必要输入。' : '核对输入后可准备并选择制作方向。'}本次创建没有生成内容，也不代表商品库存等事实已核实。`
+    }
+    return '候选草稿任务创建结果尚未确认，请查询已有任务，避免重复创建。'
+  }
+  if (method === 'catalog.import') {
+    const validProduct = knownSuccessfulState && typeof result.id === 'string' && result.id.trim()
+      && result.product_id === result.id && Number.isInteger(result.version) && result.version > 0
+    const knowledge = result.knowledge
+    if (validProduct && result.draft_only === true && result.publishable === false
+      && typeof result.factsConfirmed === 'boolean' && !result.accountId && !result.brandId
+      && Number.isInteger(knowledge?.assetCount) && knowledge.assetCount > 0
+      && ['pending', 'approved', 'rejected'].includes(knowledge.approvalStatus)
+      && ['unknown', 'cleared', 'restricted'].includes(knowledge.rightsStatus)
+      && ['queued', 'processing', 'ready', 'failed'].includes(knowledge.indexState)) {
+      const approval = { pending: '待审核', approved: '已审核', rejected: '已拒绝' }[knowledge.approvalStatus]
+      const rights = { unknown: '待确认', cleared: '已确认', restricted: '受限' }[knowledge.rightsStatus]
+      const index = { queued: '排队中', processing: '处理中', ready: '已就绪', failed: '失败' }[knowledge.indexState]
+      const rules = result.rule_scan?.status ?? result.ruleScan?.status
+      return `商品资料已导入为未绑定草稿，不可发布。商品事实${result.factsConfirmed ? '已确认' : '待确认'}；知识资料${approval}，权益${rights}，索引${index}。${rules === 'unavailable' ? '平台规则暂不可用，后续操作仍受规则门禁约束。' : '规则结果请核对结构化记录，不代表平台审核通过。'}系统默认库存或SKU数量不代表用户提供的事实；本次导入没有生成内容。`
+    }
+    return '商品资料导入结果尚未确认，请查询已有商品记录，避免重复导入。'
+  }
   if (method === 'asset.parse' && knownSuccessfulState) {
     if (result.parseStatus === 'succeeded' && result.extractedFactsSource === 'model_ocr'
       && result.extractedFacts && typeof result.extractedFacts === 'object'
