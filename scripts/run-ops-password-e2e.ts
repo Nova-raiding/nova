@@ -79,7 +79,7 @@ export function validateOpsE2eBrowserTimeout(source: NodeJS.ProcessEnv): number 
   if (raw === undefined) return 300_000
   if (!/^\d+$/u.test(raw)) throw new Error('OPS_E2E_BROWSER_TIMEOUT_INVALID')
   const value = Number(raw)
-  if (!Number.isSafeInteger(value) || value < 10_000 || value > 600_000) throw new Error('OPS_E2E_BROWSER_TIMEOUT_INVALID')
+  if (!Number.isSafeInteger(value) || value < 10_000 || value > 1_200_000) throw new Error('OPS_E2E_BROWSER_TIMEOUT_INVALID')
   return value
 }
 
@@ -502,11 +502,9 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const run = launch(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', ...args, '--workers=1', '--reporter=line,json', '--output', resolve(evidenceDir, 'test-results')], environment, 'browser', true)
     // Bound the browser child independently so a stuck Playwright test cannot
     // prevent fixture teardown or leave detached processes behind forever.
-    // The bound is a hang guard, not a performance assertion: the ops suite is
-    // ten serial full-browser flows, and the section walk alone sleeps five
-    // seconds per section. 180s killed the run mid-suite (browserExitCode 124)
-    // even when the assertions in front of it passed, so the gate could never
-    // report a result. Give the suite room to finish while still bounding a hang.
+    // The bound is a hang guard, not a performance assertion. Full commercial
+    // acceptance crosses real minute-boundary receipt facts for multiple orders;
+    // 10 minutes can end a healthy scenario between those assertions.
     let browserTimer: ReturnType<typeof setTimeout> | undefined
     const browserOutcome = Promise.race([
       exited(run),
