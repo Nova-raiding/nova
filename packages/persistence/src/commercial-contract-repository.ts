@@ -175,6 +175,7 @@ type OrderRow = {
   providerOrderId: string | null
   checkoutUrl: string | null
   checkoutExpiresAt: string | Date | null
+  expiresAt?: string | Date | null
   checkoutIdempotencyKey: string | null
   createdAt: string | Date
   paidAt: string | Date | null
@@ -220,7 +221,7 @@ function canonical(value: unknown): string {
 
 const digest = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex')
 const timestamp = (value: string | Date | null): string | null => value === null ? null : value instanceof Date ? value.toISOString() : String(value)
-const mapOrder = (row: OrderRow): CommercialOrderV2 => ({ ...row, amountFen: safeInteger(row.amountFen, 'amountFen'), createdAt: timestamp(row.createdAt)!, paidAt: timestamp(row.paidAt), checkoutExpiresAt: timestamp(row.checkoutExpiresAt) })
+const mapOrder = (row: OrderRow): CommercialOrderV2 => ({ ...row, amountFen: safeInteger(row.amountFen, 'amountFen'), createdAt: timestamp(row.createdAt)!, paidAt: timestamp(row.paidAt), checkoutExpiresAt: timestamp(row.checkoutExpiresAt), expiresAt: timestamp(row.expiresAt) })
 
 export function assertVerifiedLegacyOrderSnapshot(row: { snapshot: { schema_version?: string; sku: CommercialCatalogSkuSnapshot }; snapshotChecksum: string; snapshotCatalogChecksum: string }, order: CommercialOrderV2): void {
   const sku = row.snapshot.sku
@@ -561,9 +562,11 @@ export class PostgresCommercialContractRepository {
   async getPaymentStatus(workspaceId: string, orderId: string): Promise<CommercialOrderPaymentStatusV2 | null> {
     const scope = requireWorkspaceScope(workspaceId); required(orderId, 'orderId')
     return withWorkspaceTransaction(this.pool, scope, async client => {
+      const hasTerms = await hasCommercialRelationForVerifiedPrefix(client, 'commercial_order_terms_v3', 259)
       const result = await client.query<OrderRow & { skuCode: string; accessRevision: string | number | null }>(
-        `SELECT ${aliasedOrderProjection('o')},s.snapshot->'sku'->>'code' AS "skuCode",l.access_revision AS "accessRevision"
+        `SELECT ${aliasedOrderProjection('o')}${hasTerms ? ',t.expires_at AS "expiresAt"' : ''},s.snapshot->'sku'->>'code' AS "skuCode",l.access_revision AS "accessRevision"
            FROM commercial_orders_v2 o JOIN commercial_order_snapshots_v2 s ON s.workspace_id=o.workspace_id AND s.order_id=o.id
+           ${hasTerms ? 'LEFT JOIN commercial_order_terms_v3 t ON t.workspace_id=o.workspace_id AND t.order_id=o.id' : ''}
            LEFT JOIN creative_point_grants g ON g.workspace_id=o.workspace_id AND g.source_type='commercial_order_v2' AND g.source_id=o.id
            LEFT JOIN creative_point_ledger_events l ON l.workspace_id=g.workspace_id AND l.operation_id=g.operation_id AND l.event_type='granted'
           WHERE o.workspace_id=$1 AND o.id=$2 LIMIT 1`, [scope, orderId],
