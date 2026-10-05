@@ -2763,11 +2763,11 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'outcome_unknown', ownerToken, errorCode: 'IMAGE_GENERATION_CALLBACK_UNCERTAIN', errorMessage: error instanceof Error ? error.message : 'image callback outcome unknown', ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }).catch(() => undefined)
         throw error
       }
-      // The callback proves application acceptance; complete the execution
-      // lease only after that boundary succeeds. A failed completion remains
-      // replayable/reconcilable and must not be acknowledged as completed.
-      await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'completed', ownerToken, providerRequestId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
-      imageWorkerTrace('completed', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, provider_request_id: providerRequestId, image_count: images.length })
+      // The result API owns the durable completion transition after checking
+      // settlement and archived output safety. It clears the owner on success;
+      // a second worker CAS would turn accepted delivery into LEASE_LOST.
+      // Pending scans remain API-owned reconciliation, not worker completion.
+      imageWorkerTrace('delivery_accepted', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, provider_request_id: providerRequestId, image_count: images.length })
       return { images, intent_hash: intentHash }
     } catch (error) {
       throw error

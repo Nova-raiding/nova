@@ -47,7 +47,15 @@ export interface SqlPool {
   connect(): Promise<SqlClient>
 }
 
+export interface CompletedImageUnknownAck {
+  workspaceId: string; eventId: string; jobId: string; providerRequestId: string;
+  intentHash: string; expectedUnknownAt: string; expectedAttempt: number;
+  expectedJob: Record<string, unknown>; expectedEventPayload: Record<string, unknown>;
+}
+
 export interface OutboxRepository {
+  listCompletedImageUnknown?(workspaceId: string, limit: number): Promise<OutboxEvent[]>
+  ackCompletedImageUnknown?(input: CompletedImageUnknownAck): Promise<boolean>
   append(input: OutboxEventInput): Promise<OutboxEvent>
   pending(workspaceId: string, limit?: number): Promise<OutboxEvent[]>
   markPublished(workspaceId: string, id: string, publishedAt?: string): Promise<OutboxEvent>
@@ -202,6 +210,47 @@ function toOutboxEvent(row: OutboxRow): OutboxEvent {
  */
 export class PostgresOutboxRepository implements DurableOutboxRepository {
   constructor(private readonly pool: SqlPool) {}
+
+  async listCompletedImageUnknown(workspaceId: string, limit: number): Promise<OutboxEvent[]> {
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
+      const result = await client.query<OutboxRow & { exact_unknown_at: string }>(`SELECT o.*, o.unknown_at::text AS exact_unknown_at
+        FROM outbox_events o JOIN image_generation_executions e ON e.workspace_id=o.workspace_id AND e.job_id=o.aggregate_id AND e.event_id=o.id
+        WHERE o.workspace_id=$1 AND o.event_type='image.generation.requested' AND o.published_at IS NULL AND o.unknown_at IS NOT NULL
+          AND o.lease_token IS NULL AND o.lease_until IS NULL AND e.state='completed'
+        ORDER BY o.unknown_at,o.id LIMIT $2`, [workspaceId, limit])
+      return result.rows.map(row => ({ ...toOutboxEvent(row), unknownAt: row.exact_unknown_at }))
+    })
+  }
+
+  async ackCompletedImageUnknown(input: CompletedImageUnknownAck): Promise<boolean> {
+    const { workspaceId, eventId, jobId, providerRequestId, intentHash, expectedUnknownAt, expectedAttempt, expectedJob, expectedEventPayload } = input
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
+      // Lock all identity/projection rows. The verified snapshot must still be
+      // byte-for-byte JSON-equivalent at the ACK boundary, including receipts.
+      const locked = await client.query(`SELECT o.id FROM outbox_events o
+        JOIN image_generation_executions e ON e.workspace_id=o.workspace_id AND e.job_id=o.aggregate_id AND e.event_id=o.id
+        JOIN business_entity_snapshots j ON j.workspace_id=o.workspace_id AND j.entity_type='image_generation_job' AND j.entity_id=e.job_id
+        WHERE o.workspace_id=$1 AND o.id=$2 AND o.aggregate_id=$3 AND o.event_type='image.generation.requested'
+          AND o.published_at IS NULL AND o.unknown_at=$4::timestamptz AND o.lease_token IS NULL AND o.lease_until IS NULL
+          AND o.payload->>'intent_hash'=$5 AND o.payload=$9::jsonb AND e.state='completed' AND e.provider_request_id=$6 AND e.attempt=$7
+          AND e.owner_token IS NULL AND e.lease_expires_at IS NULL AND j.payload=$8::jsonb
+          AND j.payload->>'state'='succeeded' AND j.payload->>'archiveState'='archived'
+          AND j.payload->>'intentHash'=$5 AND j.payload->>'workspaceId'=$1 AND j.payload->>'id'=$3
+        FOR UPDATE OF o,e,j`, [workspaceId,eventId,jobId,expectedUnknownAt,intentHash,providerRequestId,expectedAttempt,JSON.stringify(expectedJob),JSON.stringify(expectedEventPayload)])
+      if (!locked.rows.length) return false
+      const auditId = randomUUID()
+      const updated = await client.query<{ published_at: string }>(`UPDATE outbox_events SET published_at=now()
+        WHERE workspace_id=$1 AND id=$2 AND published_at IS NULL RETURNING published_at::text`, [workspaceId,eventId])
+      await client.query(`INSERT INTO workspace_operation_audit
+        (id,workspace_id,actor_id,action,resource_type,resource_id,before_json,after_json,reason)
+        VALUES ($1,$2,'worker:image-reconciliation','image.completed_unknown.ack','outbox_event',$3,$4,$5,$6)`,
+        [auditId,workspaceId,eventId,{ unknown_at: expectedUnknownAt, published_at: null },
+          { event_id:eventId,job_id:jobId,provider_request_id:providerRequestId,intent_hash:intentHash,execution_attempt:expectedAttempt,
+            published_at:updated.rows[0]!.published_at,outputs:expectedJob.outputs,job_revision:expectedJob.revision,provider_called:false },
+          'Verified archived bytes, archive receipts and original delivery settlement; acknowledge completed original event only'])
+      return true
+    })
+  }
 
   async append(input: OutboxEventInput): Promise<OutboxEvent> {
     const workspaceId = requireWorkspaceScope(input.workspaceId)

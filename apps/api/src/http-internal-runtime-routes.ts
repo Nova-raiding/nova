@@ -1,6 +1,6 @@
 import type { InternalRuntimeContext } from './server.js'
 import { createHash } from 'node:crypto'
-import { DomainError, type ImageGenerationJob } from '../../../packages/application/src/service.js'
+import { DomainError, imageArchiveReceiptDigest, type ImageGenerationJob } from '../../../packages/application/src/service.js'
 import { ERROR_CODES, validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
 import { evaluatePlatformModelGate } from '../../../packages/ai/src/platform-model-gate.js'
 import { knowledgeVectorQueryReadiness } from './health-readiness.js'
@@ -10,6 +10,7 @@ import { ReconciliationEvidenceIdempotencyConflictError, type ReconciliationEvid
 import { ImageGenerationExecutionError } from '../../../packages/persistence/src/image-generation-execution-repository.js'
 import { parseWorkerAuthorizationSnapshot, type WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
 import { requiredStringValue } from './ops-params.js'
+import { imageArtifactBody } from './image-artifact-policy.js'
 
 /** Internal worker callbacks share the server's signed worker identity gate. */
 export async function handleInternalRuntimeRoute(context: InternalRuntimeContext): Promise<boolean> {
@@ -26,7 +27,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
   const { send, requireWorkerAuthorization, headerRequired, hydrateWorkspace,
     runAutomationTick, syncSignedPlatformRules, enrichRequestObservation, body,
     service, persistence, persistenceReady, requireChargedImageDeliveryEvidence,
-    persistImageGenerationCompletion, imageJobOutputsAreClean, archiveGeneratedImages,
+    persistImageGenerationCompletion, imageJobOutputsAreClean, archiveGeneratedImages, readArchivedGeneratedImages,
     recheckWorkerAuthorizationSnapshot, executeReadyImageContinuation,
     imageGenerationReconciliationIdempotencyKey, verifiedWorkerRequestRoles,
     durableKnowledgeRepository, requiresStrictAuth, memoryKnowledge,
@@ -83,12 +84,32 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     // scan. The job is not yet `succeeded`, but its outputs already belong to
     // this callback and must not be archived a second time on replay.
     if (job.outputs?.length) {
-      if (callback.error || !ownerToken || execution?.eventId !== eventId || execution.ownerToken !== ownerToken
+      if (callback.error || !ownerToken || execution?.eventId !== eventId || (execution.state !== 'completed' && execution.ownerToken !== ownerToken)
         || !callback.provider_request_id || callback.provider_request_id !== execution.providerRequestId) {
         throw new DomainError('IMAGE_GENERATION_CALLBACK_REPLAY_MISMATCH', '重复图片回执与已接受的执行身份或 Provider 请求不一致', 409)
       }
+      // Completed executions deliberately clear their lease. A signed replay
+      // can acknowledge that completion only with the same archived bytes,
+      // receipt, event and provider identity; never invoke the provider again.
+      if (!callback.images || callback.images.length !== job.outputs.length
+        || (execution.state === 'completed' && (job.state !== 'succeeded' || job.archiveState !== 'archived' || !imageJobOutputsAreClean(job)))) {
+        throw new DomainError('IMAGE_GENERATION_CALLBACK_REPLAY_MISMATCH', '重复图片回执缺少一致的归档完成证据', 409)
+      }
+      for (const [index, reference] of callback.images.entries()) {
+        const output = job.outputs[index]!
+        const inline = reference.match(/^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/iu)
+        const downloaded = !inline && /^https:\/\//iu.test(reference) ? await imageArtifactBody(reference) : undefined
+        const bytes = downloaded?.body ?? (inline ? Buffer.from(inline[2]!, 'base64') : undefined)
+        const mimeType = downloaded?.mimeType ?? inline?.[1]?.toLowerCase()
+        if (!bytes || output.ordinal !== index + 1 || output.mimeType !== mimeType || output.sizeBytes !== bytes.byteLength
+          || output.sha256 !== createHash('sha256').update(bytes).digest('hex') || !output.assetId || !output.archiveReceiptId
+          || output.archiveReceiptDigest !== imageArchiveReceiptDigest({ archiveReceiptId: output.archiveReceiptId, workspaceId, jobId,
+            assetId: output.assetId, objectSha256: output.sha256, sizeBytes: output.sizeBytes, mimeType: output.mimeType, createdAt: output.createdAt })) {
+          throw new DomainError('IMAGE_GENERATION_CALLBACK_REPLAY_MISMATCH', '重复图片回执与已归档图片哈希或回执不一致', 409)
+        }
+      }
       await requireChargedImageDeliveryEvidence(workspaceId, job.id, requested, callback.provider_request_id)
-      await persistImageGenerationCompletion(workspaceId, job)
+      if (execution.state !== 'completed') await persistImageGenerationCompletion(workspaceId, job)
       if (execution.state === 'provider_started' && job.archiveState === 'archived' && imageJobOutputsAreClean(job)) await persistence.imageGenerationExecutions!.markCompleted({ workspaceId, jobId, ownerToken })
       return send(res, 200, workspaceId, { job_id: job.id, state: job.state, archive_state: job.archiveState, already_completed: true, reconciliation_required: job.archiveState !== 'archived' || !imageJobOutputsAreClean(job) }, null, req)
     }
@@ -576,6 +597,28 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     const repository = persistence.imageGenerationExecutions
     if (!repository) throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '图片生成执行租约存储未配置', 503)
     const page = await repository.listPage({ workspaceId, states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown'], limit, ...(cursor ? { cursor } : {}), ...(olderThan ? { olderThan } : {}) })
+    // Only completed executions with an unpublished unknown original event
+    // enter this local recovery. No Provider query or generation is involved.
+    const acknowledged: string[] = []
+    const completionAckAttention: string[] = []
+    if (persistence.outbox?.listCompletedImageUnknown && persistence.outbox.ackCompletedImageUnknown && persistence.business) {
+      for (const event of await persistence.outbox.listCompletedImageUnknown(workspaceId, limit)) {
+        try {
+          const snapshot = await persistence.business.get(workspaceId, 'image_generation_job', event.aggregateId)
+          const job = snapshot.payload as unknown as ImageGenerationJob
+          const execution = await repository.get({ workspaceId, jobId: event.aggregateId })
+          if (job.id !== event.aggregateId || job.workspaceId !== workspaceId || job.state !== 'succeeded' || job.archiveState !== 'archived'
+            || !job.outputs?.length || !imageJobOutputsAreClean(job) || job.intentHash !== event.payload.intent_hash
+            || execution?.state !== 'completed' || execution.eventId !== event.id || !execution.providerRequestId || !event.unknownAt) continue
+          service.hydrateSnapshot({ entityType: 'image_generation_job', entity: job })
+          await readArchivedGeneratedImages(workspaceId, job)
+          await requireChargedImageDeliveryEvidence(workspaceId, job.id, event, execution.providerRequestId)
+          if (await persistence.outbox.ackCompletedImageUnknown({ workspaceId, eventId:event.id,jobId:job.id,
+            providerRequestId:execution.providerRequestId,intentHash:job.intentHash,expectedUnknownAt:event.unknownAt,
+            expectedAttempt:execution.attempt,expectedJob:snapshot.payload,expectedEventPayload:event.payload })) acknowledged.push(event.id)
+        } catch { completionAckAttention.push(event.id) }
+      }
+    }
     const executions = page.items
     const repaired: Array<Record<string, unknown>> = []
     const attention: Array<Record<string, unknown>> = []
@@ -603,7 +646,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
         if (requested?.payload.action_id) attention.at(-1)!.action_id = requested.payload.action_id
       }
     }
-    return send(res, 200, workspaceId, { checked: executions.length, repaired, attention, next_cursor: page.nextCursor ?? null, has_more: Boolean(page.nextCursor), scan_watermark: page.scanWatermark, read_only_provider_policy: true, provider_evidence_endpoint: '/v1/internal/image-generation-jobs/{job_id}/reconciliation-evidence' }, null, req)
+    return send(res, 200, workspaceId, { acknowledged_event_ids: acknowledged, completion_ack_attention: completionAckAttention, checked: executions.length, repaired, attention, next_cursor: page.nextCursor ?? null, has_more: Boolean(page.nextCursor), scan_watermark: page.scanWatermark, read_only_provider_policy: true, provider_evidence_endpoint: '/v1/internal/image-generation-jobs/{job_id}/reconciliation-evidence' }, null, req)
   }
   if (req.method === 'POST' && path === '/v1/internal/billing/reconciliation') {
     await requireWorkerAuthorization(req)

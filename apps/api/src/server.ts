@@ -13870,7 +13870,7 @@ function internalRuntimeContext(req: IncomingMessage, res: ServerResponse, path:
     req, res, path, send, requireWorkerAuthorization, headerRequired, hydrateWorkspace,
     runAutomationTick, syncSignedPlatformRules, enrichRequestObservation, body,
     service, persistence, persistenceReady, requireChargedImageDeliveryEvidence,
-    persistImageGenerationCompletion, imageJobOutputsAreClean, archiveGeneratedImages,
+    persistImageGenerationCompletion, imageJobOutputsAreClean, archiveGeneratedImages, readArchivedGeneratedImages,
     recheckWorkerAuthorizationSnapshot, executeReadyImageContinuation,
     imageGenerationReconciliationIdempotencyKey, verifiedWorkerRequestRoles,
     durableKnowledgeRepository, requiresStrictAuth, memoryKnowledge,

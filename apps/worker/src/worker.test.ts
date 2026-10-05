@@ -540,12 +540,13 @@ describe('worker production entry', () => {
     expect(result).toEqual({ value: { provider_request_id: 'provider_1', images: ['data:image/png;base64,aA=='] } })
   })
 
-  it('keeps image execution completion after the accepted result callback', async () => {
+  it('leaves image completion exclusively to the accepted result callback', async () => {
     const source = await readFile(new URL('./main.ts', import.meta.url), 'utf8')
     const callback = source.indexOf("await postImageGenerationResult({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, result: { intent_hash: intentHash, owner_token: ownerToken, provider_request_id: providerRequestId, images },")
     const completed = source.indexOf("operation: 'completed', ownerToken, providerRequestId", callback)
     expect(callback).toBeGreaterThanOrEqual(0)
-    expect(completed).toBeGreaterThan(callback)
+    expect(completed).toBe(-1)
+    expect(source.indexOf("imageWorkerTrace('delivery_accepted'", callback)).toBeGreaterThan(callback)
     expect(source).toContain("operation: 'outcome_unknown', ownerToken, errorCode: 'IMAGE_GENERATION_CALLBACK_UNCERTAIN'")
   })
 
