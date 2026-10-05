@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
@@ -47,7 +47,7 @@ function runDocker(socket: string, configDir: string, args: readonly string[], e
   }
 }
 
-describe('PostgreSQL 16 isolated execution of migrations 1..257', () => {
+describe('PostgreSQL 16 isolated execution through the release metadata migration tail', () => {
   it('runs the full migration chain on a private tmpfs container and verifies exact history', async () => {
     const runId = randomUUID()
     const name = `merchant-pg16-migration-${runId}`
@@ -94,8 +94,11 @@ describe('PostgreSQL 16 isolated execution of migrations 1..257', () => {
       verifyPg16MigrationContainer(first, { id: containerId, name, runId, imageId, running: true })
       const hostPort = Number(first.ports['5432/tcp']?.[0]?.HostPort)
       const migrations = await loadMigrations()
-      expect(migrations.slice(0, 257)).toHaveLength(257)
-      expect(migrations.slice(0, 257).map(migration => migration.version)).toEqual(Array.from({ length: 257 }, (_, index) => index + 1))
+      const releaseMetadata = JSON.parse(await readFile(new URL('../release-metadata.json', import.meta.url), 'utf8')) as { sourceMigrationVersion: number }
+      const targetVersion = releaseMetadata.sourceMigrationVersion
+      expect(Number.isSafeInteger(targetVersion) && targetVersion >= 258).toBe(true)
+      expect(migrations).toHaveLength(targetVersion)
+      expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: targetVersion }, (_, index) => index + 1))
 
       pool = new Pool({
         host: '127.0.0.1', port: hostPort, database: databaseName, user: username,
@@ -133,8 +136,12 @@ describe('PostgreSQL 16 isolated execution of migrations 1..257', () => {
       )`)
       await pool.query('GRANT SELECT ON public.schema_migrations TO merchant_app, merchant_ops')
       await new MigrationRunner(pool, migrations.slice(0, 257)).run()
+      const legacyBefore = await pool.query(`SELECT pg_get_functiondef('public.settle_knowledge_generation_claim(text,text,text,text,text,text,text)'::regprocedure) AS definition`)
+      expect(await new MigrationRunner(pool, migrations).run()).toEqual(migrations.slice(257).map(migration => migration.version))
+      const legacyAfter = await pool.query(`SELECT pg_get_functiondef('public.settle_knowledge_generation_claim(text,text,text,text,text,text,text)'::regprocedure) AS definition`)
+      expect(legacyAfter.rows).toEqual(legacyBefore.rows)
 
-      const expectedRows = migrations.slice(0, 257).map(migration => ({
+      const expectedRows = migrations.map(migration => ({
         version: migration.version,
         name: migration.name,
         checksum: migrationChecksum(migration.sql),
@@ -144,7 +151,7 @@ describe('PostgreSQL 16 isolated execution of migrations 1..257', () => {
       )
       expect(historyResult.rows).toEqual(expectedRows)
       expect(() => verifyAppliedMigrations(historyResult.rows, migrations)).not.toThrow()
-      expect(historyResult.rows).toHaveLength(257)
+      expect(historyResult.rows).toHaveLength(targetVersion)
       for (const [version, name] of [[254, 'merchant_entitlement_snapshot_cursor'], [255, 'scoped_brand_settings'], [256, 'asset_lifecycle'], [257, 'asset_snapshot_lifecycle_guard']] as const) {
         const actual = historyResult.rows[version - 1]
         const migration = migrations[version - 1]
@@ -217,6 +224,56 @@ describe('PostgreSQL 16 isolated execution of migrations 1..257', () => {
           expect(roleHistory.rows, `${role} migration history`).toEqual(expectedRows)
         } finally {
           try { await client.query('RESET ROLE') } finally { client.release() }
+        }
+      }
+      // Exercise migration 258 as the real tenant role. Each scenario is
+      // rolled back so immutable evidence rows never need test-only rewrites.
+      const signatures = await pool.query(`SELECT pronargs FROM pg_proc
+        WHERE pronamespace='public'::regnamespace AND proname='settle_knowledge_generation_claim' ORDER BY pronargs`)
+      expect(signatures.rows.map(row => row.pronargs)).toEqual([7, 8])
+      const cases = [
+        { name: 'missing evidence', evidence: false, success: false },
+        { name: 'pending cost', status: 'pending_cost', cost: null, success: false },
+        { name: 'wrong physical attempt', attempt: 'unrelated', success: false },
+        { name: 'wrong provider request', request: 'unrelated', success: false },
+        { name: 'wrong claim nonce', nonce: 'unrelated', success: false },
+        { name: 'exact attempt UUID', success: true },
+        { name: 'exact physical idempotency key', attempt: 'key-258', success: true },
+      ]
+      for (const scenario of cases) {
+        const client = await pool.connect()
+        try {
+          await client.query('BEGIN')
+          await client.query("INSERT INTO workspaces(id,status) VALUES('ws-258','active')")
+          await client.query(`INSERT INTO action_ledger(id,workspace_id,action_key,action_kind,settlement,state,units,amount_fen,actor_id,description)
+            VALUES('action-258','ws-258','action-258','model_text','included_quota','settled',1,0,'actor-258','isolated migration test')`)
+          await client.query(`INSERT INTO outbox_events(id,workspace_id,aggregate_id,event_type,sequence,payload)
+            VALUES('event-258','ws-258','aggregate-258','generation.requested',1,'{"action_id":"action-258"}')`)
+          await client.query(`INSERT INTO knowledge_generation_claims(claim_id,workspace_id,event_id,aggregate_id,task_id,logical_attempt,
+            provider_attempt_id,provider_attempt_key,request_body_sha256,request_nonce,product_id,context_hash,expected_documents,state)
+            VALUES('claim-258','ws-258','event-258','aggregate-258','task-258',1,'attempt-258','key-258','body-258','nonce-258','product-258','context-258','[]','outcome_unknown')`)
+          if (scenario.evidence !== false) {
+            await client.query(`INSERT INTO model_usage_ledger(id,workspace_id,action_id,modality,model,provider_request_id,cost_cny,
+              metadata,receipt_key,receipt_hash,settlement_status)
+              VALUES('usage-258','ws-258','action-258','text','isolated-model','request-258',$1,$2::jsonb,'receipt-258','hash-258',$3)`,
+            [scenario.cost === null ? null : 0.1, JSON.stringify({ provider_attempt_id: scenario.attempt ?? 'attempt-258' }), scenario.status ?? 'settled'])
+          }
+          await client.query('SET LOCAL ROLE merchant_app')
+          await client.query("SELECT set_config('app.workspace_id','ws-258',true)")
+          const result = await client.query(`SELECT * FROM settle_knowledge_generation_claim(
+            'ws-258','claim-258','attempt-258','key-258','body-258',$1,'completed',$2)`,
+          [scenario.nonce ?? 'nonce-258', scenario.request ?? 'request-258'])
+          expect(result.rows.map(row => row.claim_state), scenario.name).toEqual(scenario.success ? ['completed'] : [])
+          await client.query('RESET ROLE')
+          const claim = await client.query("SELECT state,terminal_at IS NOT NULL AS terminal FROM knowledge_generation_claims WHERE claim_id='claim-258'")
+          expect(claim.rows, scenario.name).toEqual([{ state: scenario.success ? 'completed' : 'outcome_unknown', terminal: scenario.success }])
+          await client.query('SET LOCAL ROLE merchant_app')
+          await client.query("SELECT set_config('app.workspace_id','other-workspace',true)")
+          await expect(client.query(`SELECT * FROM settle_knowledge_generation_claim(
+            'ws-258','claim-258','attempt-258','key-258','body-258','nonce-258','completed','request-258')`))
+            .rejects.toMatchObject({ code: '42501' })
+        } finally {
+          try { await client.query('ROLLBACK') } finally { client.release() }
         }
       }
       verifyPg16MigrationContainer(inspect(), { id: containerId, name, runId, imageId, running: true })
