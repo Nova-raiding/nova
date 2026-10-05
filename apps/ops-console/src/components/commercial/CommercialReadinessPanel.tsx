@@ -13,7 +13,7 @@ const expectedSkus = [
   { key: "trial", label: "1999 元 / 7 天试用" },
   { key: "monthly_basic", label: "基础版 2000 元 / 月" },
   { key: "monthly_growth", label: "成长版 5000 元 / 月" },
-  { key: "monthly_custom", label: "定制版 10000 元起 / 月" },
+  { key: "monthly_custom", label: "尊享版 10000 元起 / 月" },
   { key: "points_500", label: "500 创意点 / 300 元" },
   { key: "points_2000", label: "2000 创意点 / 1000 元" },
 ] as const;

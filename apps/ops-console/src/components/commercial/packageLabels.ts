@@ -5,9 +5,9 @@ const packageLabels: Record<string, string> = {
   growth: "成长版",
   monthly_growth: "成长版",
   "sku-monthly-5000": "成长版",
-  custom: "定制版",
-  monthly_custom: "定制版",
-  "sku-monthly-10000": "定制版",
+  custom: "尊享版",
+  monthly_custom: "尊享版",
+  "sku-monthly-10000": "尊享版",
   demo_test_package: "演示套餐",
   trial: "7 天试用版",
   private_trial: "私测试用版",
@@ -30,7 +30,7 @@ function fallbackSkuLabel(skuCode: string): string {
     const price = Number.parseInt(monthlyPlan[1] ?? "", 10);
     if (price === 2000) return "基础版（2000 元/月）";
     if (price === 5000) return "成长版（5000 元/月）";
-    if (price === 10000) return "定制版（10000 元/月）";
+    if (price === 10000) return "尊享版（10000 元/月）";
     if (Number.isFinite(price)) return `月度订阅（${price} 元）`;
   }
   const onboardingPlan = /^sku-onboarding-(\d+)$/u.exec(normalized);
