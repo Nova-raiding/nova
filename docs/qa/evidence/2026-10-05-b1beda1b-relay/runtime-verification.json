@@ -333,5 +333,173 @@
       "costCny": 0.17010798
     },
     "mode": "deployed pricing client estimate only; no generation"
+  },
+  "sessionRenewal": {
+    "observedAt": "2026-10-05T01:19:40.523Z",
+    "installedAt": "2026-10-05T01:03:48.711Z",
+    "accessTokenExpiredAt": "2026-10-05T01:16:16.000Z",
+    "accessTokenExpired": true,
+    "deployedClientAttemptCount": 1,
+    "result": "PROVIDER_USAGE_REFRESH_HTTP_401",
+    "activeRefreshLockRetained": true,
+    "repeatedRefresh": false,
+    "conclusion": "Initial authenticated reads succeeded; continued session refresh is currently blocked. Browser/provider rotation cause remains unverified."
+  },
+  "addonPricingRecheck": {
+    "expectedRelease": "6ef75bf01a83-demo-ui",
+    "mode": "read_only_estimates_no_paid_requests_no_session_refresh",
+    "results": [
+      {
+        "container": "merchant-demo-85575f9c-api-1",
+        "observedAt": "2026-10-05T01:25:02.574Z",
+        "releaseId": "release-6ef75bf01a83-demo-ui",
+        "releaseGitSha": "6ef75bf01a83de79ded1c219b5e281c1d36c4ba1",
+        "groups": {
+          "text": "VIP",
+          "image": "VIP",
+          "image_edit": "VIP",
+          "ocr": "VIP",
+          "video": "VIP",
+          "embedding": "VIP"
+        },
+        "videoResolution": "720P",
+        "estimates": [
+          {
+            "modality": "text",
+            "model": "glm-4.7-flash",
+            "ready": true,
+            "estimatedCostCny": 0.00015026,
+            "pricingGroup": "VIP",
+            "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+            "formulaVersion": "new-api-quota-v1"
+          },
+          {
+            "modality": "image",
+            "model": "qwen-image-2.0",
+            "ready": true,
+            "estimatedCostCny": 0.17010798,
+            "pricingGroup": "VIP",
+            "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+            "formulaVersion": "new-api-quota-v1"
+          },
+          {
+            "modality": "image_edit",
+            "model": "qwen-image-3.0",
+            "ready": true,
+            "estimatedCostCny": 0.1590707,
+            "pricingGroup": "VIP",
+            "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+            "formulaVersion": "new-api-quota-v1"
+          },
+          {
+            "modality": "ocr",
+            "model": "agnes-2.5-flash",
+            "ready": true,
+            "estimatedCostCny": 0.00030052,
+            "pricingGroup": "VIP",
+            "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+            "formulaVersion": "new-api-quota-v1"
+          },
+          {
+            "modality": "video",
+            "model": "wan3.0-video",
+            "ready": true,
+            "estimatedCostCny": 2.55442,
+            "pricingGroup": "VIP",
+            "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+            "formulaVersion": "relay-video-resolution-v1"
+          }
+        ],
+        "providerCalls": "GET pricing/status only; no generation or user-session refresh"
+      },
+      {
+        "container": "merchant-demo-85575f9c-worker-generation-1",
+        "observedAt": "2026-10-05T01:25:08.166Z",
+        "groups": {
+          "text": "VIP",
+          "image": "VIP",
+          "image_edit": "VIP",
+          "ocr": "VIP",
+          "video": "VIP",
+          "embedding": "VIP"
+        },
+        "videoResolution": "720P",
+        "estimates": [
+          {
+            "modality": "text",
+            "model": "glm-4.7-flash",
+            "ready": true,
+            "estimatedCostCny": 0.00015026,
+            "pricingGroup": "VIP",
+            "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+            "formulaVersion": "new-api-quota-v1"
+          },
+          {
+            "modality": "image",
+            "model": "qwen-image-2.0",
+            "ready": true,
+            "estimatedCostCny": 0.17010798,
+            "pricingGroup": "VIP",
+            "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+            "formulaVersion": "new-api-quota-v1"
+          },
+          {
+            "modality": "image_edit",
+            "classification": "probe_only_not_execution_config",
+            "executionScope": "Dedicated multimodal.image.edit executes in API, not this worker.",
+            "probeModelSelection": "Probe used IMAGE_EDIT_MODEL || IMAGE_MODEL; this does not instantiate the dedicated image edit factory.",
+            "observedFallbackQuote": {
+              "modality": "image_edit",
+              "model": "qwen-image-2.0",
+              "ready": true,
+              "estimatedCostCny": 0.17010798,
+              "pricingGroup": "VIP",
+              "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+              "formulaVersion": "new-api-quota-v1"
+            }
+          },
+          {
+            "modality": "ocr",
+            "modelConfigured": false,
+            "executionScope": "not configured in this container"
+          },
+          {
+            "modality": "video",
+            "modelConfigured": false,
+            "executionScope": "not configured in this container"
+          }
+        ],
+        "providerCalls": "GET pricing/status only; no generation or user-session refresh"
+      }
+    ]
+  },
+  "imageEditExecutionAudit": {
+    "observedAt": "2026-10-05T01:27:23.705Z",
+    "configurationChangeRequired": false,
+    "api": {
+      "method": "multimodal.image.edit",
+      "model": "qwen-image-3.0",
+      "factory": "createImageEditGeneratorFromEnv",
+      "executionRefs": [
+        "apps/api/src/server.ts:511",
+        "apps/api/src/server.ts:531",
+        "apps/api/src/mcp-multimodal-handlers.ts:84"
+      ]
+    },
+    "worker": {
+      "dedicatedImageEditFactoryPresent": false,
+      "dedicatedImageEditEventHandlerPresent": false,
+      "imageGenerationModel": "qwen-image-2.0",
+      "event": "image.generation.requested",
+      "executionRefs": [
+        "apps/worker/src/handler.ts:249",
+        "apps/worker/src/main.ts:2671",
+        "apps/worker/src/main.ts:2718",
+        "packages/ai/src/image-generator.ts:433",
+        "packages/ai/src/image-generator.ts:517"
+      ],
+      "notes": "Worker create/optimize jobs use the image generation factory and image usage modality. Non-Qwen optimize may use an image-edit transport operation, which does not make it the dedicated multimodal.image.edit executor. Adding IMAGE_EDIT_MODEL to this worker would not change that factory model."
+    },
+    "probeCorrection": "Worker image_edit quote retained only as a diagnostic fallback quote; it must not be used as evidence that worker image-edit execution is configured or ready."
   }
 }
