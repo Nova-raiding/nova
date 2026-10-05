@@ -1627,16 +1627,21 @@ export async function reconcileImageGenerationWorkspace(input: Parameters<typeof
   const results: unknown[] = []
   const maxPages = input.maxPages ?? 100
   const queriedCandidates = new Set<string>()
+  const providerCandidates = new Set<string>()
+  let providerEvidenceSubmitted = 0
   do {
     const page = await postImageGenerationReconciliation({ ...input, cursor, completionAckCursor, executionScanDone, completionAckScanDone }) as { next_cursor?: unknown; next_completion_ack_cursor?: unknown }
     const candidates = imageReconciliationCandidates(page)
     const statusResults: unknown[] = []
-    if (input.queryStatus) for (const candidate of candidates) {
+    let queried = 0
+    for (const candidate of candidates) {
       const providerRequestId = candidate.providerRequestId
       if (!providerRequestId || candidate.executionState === 'provider_reserved' || candidate.executionState === 'provider_dispatching') continue
       const candidateKey = `${candidate.jobId}:${candidate.eventId}:${candidate.intentHash}:${candidate.executionAttempt}:${candidate.providerRequestId}`
-      if (queriedCandidates.has(candidateKey)) continue
+      providerCandidates.add(candidateKey)
+      if (!input.queryStatus || queriedCandidates.has(candidateKey)) continue
       queriedCandidates.add(candidateKey)
+      queried += 1
       let status: ImageGenerationReconciliationEvidence
       try {
         const observed = await queryImageProviderStatus({ queryStatus: input.queryStatus, providerRequestId, signal: input.signal, timeoutMs: input.queryTimeoutMs })
@@ -1645,15 +1650,37 @@ export async function reconcileImageGenerationWorkspace(input: Parameters<typeof
         status = { ...statusEvidenceFromError(error), providerRequestId }
       }
       statusResults.push(await postImageGenerationReconciliationStatus({ ...input, candidate, status }))
+      providerEvidenceSubmitted += 1
     }
-    results.push({ page, queried: candidates.filter(candidate => Boolean(candidate.providerRequestId) && (candidate.executionState === 'provider_started' || candidate.executionState === 'outcome_unknown')).length, statusResults })
+    results.push({ page, queried, statusResults })
     pages += 1
     cursor = typeof page.next_cursor === 'string' && page.next_cursor ? page.next_cursor : undefined
     completionAckCursor = typeof page.next_completion_ack_cursor === 'string' && page.next_completion_ack_cursor ? page.next_completion_ack_cursor : undefined
     executionScanDone = !cursor
     completionAckScanDone = !completionAckCursor
   } while ((!executionScanDone || !completionAckScanDone) && pages < maxPages)
-  return { pages, completed: executionScanDone && completionAckScanDone, results, continuation: { cursor, completionAckCursor, executionScanDone, completionAckScanDone } }
+  const scanCompleted = executionScanDone && completionAckScanDone
+  return { pages, completed: scanCompleted, scanCompleted, providerQueryConfigured: Boolean(input.queryStatus),
+    providerQueryState: !input.queryStatus ? 'not_configured' as const : providerCandidates.size ? 'attempted' as const : 'no_pending' as const,
+    providerCandidates: providerCandidates.size, providerQueriesAttempted: queriedCandidates.size,
+    providerQueriesBlocked: input.queryStatus ? 0 : providerCandidates.size, providerEvidenceSubmitted,
+    results, continuation: { cursor, completionAckCursor, executionScanDone, completionAckScanDone } }
+}
+
+/** Scan completion does not assert Provider queries or business settlement. */
+export function summarizeImageGenerationReconciliation(outcomes: PromiseSettledResult<Awaited<ReturnType<typeof reconcileImageGenerationWorkspace>>>[]) {
+  const scans = outcomes.flatMap(outcome => outcome.status === 'fulfilled' ? [outcome.value] : [])
+  const scanCompleted = scans.filter(scan => scan.scanCompleted).length
+  return {
+    completed: scanCompleted, completedMeaning: 'local_scan_only' as const, scanCompleted,
+    scanIncomplete: scans.filter(scan => !scan.scanCompleted).length,
+    providerUnconfigured: scans.filter(scan => !scan.providerQueryConfigured).length,
+    providerBlockedWorkspaces: scans.filter(scan => scan.providerQueriesBlocked > 0).length,
+    providerQueriesBlocked: scans.reduce((sum, scan) => sum + scan.providerQueriesBlocked, 0),
+    providerQueriesAttempted: scans.reduce((sum, scan) => sum + scan.providerQueriesAttempted, 0),
+    providerEvidenceSubmitted: scans.reduce((sum, scan) => sum + scan.providerEvidenceSubmitted, 0),
+    failed: outcomes.filter(outcome => outcome.status === 'rejected').length,
+  }
 }
 
 export async function assertGenerationExecution(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
@@ -3142,12 +3169,13 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image generation reconciliation')
           const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, async workspaceId => {
             const sweep = await reconcileImageGenerationWorkspace({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...imageReconciliationProgress.get(workspaceId), ...(imageGenerator?.queryStatus ? { queryStatus: imageGenerator.queryStatus.bind(imageGenerator) } : {}), queryTimeoutMs: imageReconciliationQueryTimeoutMs(config.workerApiTimeoutMs), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })
-            if (sweep.completed) imageReconciliationProgress.delete(workspaceId)
+            if (sweep.scanCompleted) imageReconciliationProgress.delete(workspaceId)
             else imageReconciliationProgress.set(workspaceId, sweep.continuation)
+            if (sweep.providerQueriesBlocked > 0) log({ level: 'error', message: 'image provider reconciliation blocked: status query is not configured; local ACK scan remains available', workspaceId, code: 'IMAGE_PROVIDER_STATUS_QUERY_NOT_CONFIGURED', providerQueriesBlocked: sweep.providerQueriesBlocked, scanCompleted: sweep.scanCompleted })
             return sweep
           })
           nextImageGenerationReconciliationAt = Date.now() + config.imageGenerationReconciliationIntervalMs
-          Object.assign(result as unknown as Record<string, unknown>, { imageGenerationReconciliation: { completed: reconciliation.filter(item => item.status === 'fulfilled').length, failed: reconciliation.filter(item => item.status === 'rejected').length } })
+          Object.assign(result as unknown as Record<string, unknown>, { imageGenerationReconciliation: summarizeImageGenerationReconciliation(reconciliation) })
         }
         if (config.role === 'reconcile' && startedAt >= nextSupportSlaScanAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for support SLA scan')
