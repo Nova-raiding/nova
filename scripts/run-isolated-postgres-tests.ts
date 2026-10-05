@@ -94,6 +94,7 @@ export function validateIsolatedPostgresReport(value: unknown, expectedFiles: re
 interface IsolatedPostgresFixture {
   runId: string
   adminDatabaseUrl: string
+  redisUrl: string
   /** Empty databases inside the owned container, for the intermediate-migration files. */
   acceptanceDatabaseUrls?: { legacyBackfill: string; workspaceCatalog: string }
   containerEvidence: readonly { kind: string; runId: string; hostPort: number }[]
