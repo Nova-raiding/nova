@@ -171,7 +171,11 @@ export async function handleCommercialMcpMethod(method: string, params: JsonObje
         orders = found.filter((order): order is NonNullable<typeof order> => Boolean(order)).map(result => result.order)
       } else {
         const [onboardingSku, subscriptionSku] = await Promise.all([deps.required(params, 'onboarding_sku_code'), deps.required(params, 'subscription_sku_code')].map(code => catalog.resolveApprovedExecutableSku(code, { includePrivate: false, capabilities: [] })))
-        const checkout = await contracts.createFirstCheckout({ workspaceId, actorId: deps.actor(req), onboardingSku: onboardingSku!, subscriptionSku: subscriptionSku!, paymentProvider: deps.paymentProvider(), idempotencyKey: key, reason: deps.required(params, 'reason') })
+        // A merchant-created checkout is private to the currently authenticated
+        // member. Freeze that recipient at order creation so the result worker
+        // can deliver the status without widening it to the workspace.
+        const beneficiaryMemberId = await deps.memberId(req, workspaceId)
+        const checkout = await contracts.createFirstCheckout({ workspaceId, actorId: deps.actor(req), onboardingSku: onboardingSku!, subscriptionSku: subscriptionSku!, paymentProvider: deps.paymentProvider(), idempotencyKey: key, reason: deps.required(params, 'reason'), beneficiaryMemberId })
         orders = [checkout.onboarding, checkout.subscription]
       }
       return { checkout_id: orders[0]!.checkoutId, orders: await Promise.all(orders.map(order => deps.viewOrder(order, ''))), amount_fen: orders.reduce((total, order) => total + order.amountFen, 0), currency: 'CNY' }

@@ -35,4 +35,20 @@ describe('commercial upgrade quote domain errors', () => {
     }, 'workspace-1', req, depsFor(failure))).rejects.toBe(failure)
     expect(failure).not.toBeInstanceOf(DomainError)
   })
+
+  it('binds merchant-created checkouts to the authenticated member for private result notices', async () => {
+    const memberId = 'member-merchant'
+    const onboardingSku = { kind: 'onboarding', priceFen: 500000, code: 'opening' }
+    const subscriptionSku = { kind: 'monthly', priceFen: 200000, code: 'basic' }
+    const createFirstCheckout = vi.fn(async () => ({
+      checkoutId: 'checkout-1', amountFen: 700000, onboarding: { id: 'opening-order', amountFen: 500000 }, subscription: { id: 'subscription-order', amountFen: 200000 },
+    }))
+    const deps = {
+      ready: Promise.resolve(),
+      persistence: { commercialCatalog: { resolveApprovedExecutableSku: vi.fn(async ({ code }: { code: string }) => code === 'opening' ? onboardingSku : subscriptionSku) }, commercialContracts: { createFirstCheckout } },
+      required: (params: Record<string, unknown>, key: string) => String(params[key]), actor: () => 'merchant-actor', paymentProvider: () => 'manual_transfer', memberId: vi.fn(async () => memberId), viewOrder: vi.fn(async (order: unknown) => order),
+    } as unknown as CommercialMcpDependencies
+    await handleCommercialMcpMethod('commercial.checkout.create', { onboarding_sku_code: 'opening', subscription_sku_code: 'basic', idempotency_key: 'checkout-1', reason: 'merchant checkout' }, 'workspace-1', req, deps)
+    expect(createFirstCheckout).toHaveBeenCalledWith(expect.objectContaining({ beneficiaryMemberId: memberId }))
+  })
 })
