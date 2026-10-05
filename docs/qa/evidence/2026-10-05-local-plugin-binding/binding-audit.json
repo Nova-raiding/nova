@@ -1,0 +1,42 @@
+{
+  "plugin_version": "0.1.0+codex.20261005090000",
+  "profile": "qa-broker",
+  "api_origin": "https://yxsona.com",
+  "failed_target": "ws_57fd2361ed5b44c7891f3d37",
+  "actual_account": "demo@ys.com",
+  "authenticated_workspace_ids": [
+    "ws_guirenniaoniao"
+  ],
+  "error": "MCP_OAUTH_WORKSPACE_AMBIGUOUS",
+  "request_id": "req_fa4475e4-109f-4c1a-97cc-8e3c84b045d5",
+  "user_reported_request_id": "req_48efa639-53db-4eab-9732-3f5f7cd83b4c",
+  "cause": "Operator reused a historical workspace target not authorized for the authenticated merchant. Server rejected the mismatch correctly.",
+  "resolution": "Read current authenticated session through normal browser; issued a fresh PKCE request for its authorized workspace, completed normal browser confirmation.",
+  "stages": [
+    {
+      "phase": "store_credential"
+    },
+    {
+      "phase": "verify_credential",
+      "ok": true
+    },
+    {
+      "phase": "configure_session",
+      "ok": true
+    },
+    {
+      "phase": "complete",
+      "ok": true
+    }
+  ],
+  "final_workspace": "ws_guirenniaoniao",
+  "stdio_onboarding_success": true,
+  "native_host_verified": false,
+  "old_workspace_binding_metadata": "Preserved unchanged; stale loopback metadata is not reused by this keychain+launchd flow.",
+  "safety": {
+    "membership_modified": false,
+    "authorization_bypassed": false,
+    "binding_forged": false,
+    "tokens_or_cookies_recorded": false
+  }
+}

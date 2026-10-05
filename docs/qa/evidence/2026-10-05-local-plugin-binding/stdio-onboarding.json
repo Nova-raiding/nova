@@ -1,0 +1,73 @@
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "您好，感谢您使用 Store Nova。\n\n从公开商品链接、手工填写的商品资料或你上传的图片开始，完成内容生产 → 审核 → 导出。\n\n不必先连接店铺。资料导入和草稿生成仍需有效登录、当前工作区权限、服务端准入，以及真实模型配置、创意点和成本证据；候选保持未批准、未发布。\n\n公开链接只是来源线索，不代表系统已读取页面或确认商品事实；若当前无法读取，请补充商品资料。审核和导出仅使用当前实际支持的工具，草稿不能冒充正式内容版本。\n\n当前不提供库存/订单同步和自动发布。历史店铺接入状态已保留，但不代表本次内容已生成、审核或导出；不要发送 Cookie、平台密码或验证码。\n\n你想制作什么内容？可以提供公开商品链接、商品资料或图片。"
+      }
+    ],
+    "structuredContent": {
+      "schema_version": "onboarding.status.v1",
+      "status": "in_progress",
+      "summary": {
+        "stores": 1,
+        "officialStores": 0,
+        "manualStores": 1,
+        "fixtureStores": 0,
+        "products": 2,
+        "unboundProducts": 8,
+        "confirmedProducts": 1,
+        "assets": 12,
+        "readyAssets": 0,
+        "tasks": 0,
+        "deliverableTasks": 0
+      },
+      "initialization": {
+        "schema_version": "store-nova.initialization.v1",
+        "status": "in_progress",
+        "completed": 0,
+        "total": 4,
+        "evidence": {
+          "official_stores": 0,
+          "successful_sync_stores": 0,
+          "scanned_products": 0,
+          "confirmed_products": 0,
+          "brand_candidate_count": 0,
+          "sku_records": 0,
+          "image_references": 0,
+          "products_missing_images": 0,
+          "brand_profile_present": false,
+          "content_workspace_confirmed": false,
+          "points_state": "ready",
+          "rules_ready": false,
+          "relay_ready": true,
+          "modalities_ready": true,
+          "cost_ready": true,
+          "storage_ready": true
+        },
+        "brand_clues": {
+          "candidates": [],
+          "totalCandidates": 0,
+          "truncated": false,
+          "profileCreated": false,
+          "guidance": "这些只是已确认商品字段中的品牌线索；不同店铺或不同品牌不能自动合并，商家确认后才可建立品牌档案。"
+        },
+        "legacy_store_setup": true,
+        "note": "历史店铺接入状态仅供核查，不是当前内容制作的步骤或前置条件。"
+      },
+      "current_step": {
+        "id": "provide_materials",
+        "title": "提供商品资料",
+        "state": "available"
+      },
+      "content_workflow": {
+        "scope": "content",
+        "store_connection_required": false,
+        "next_question": "你想制作什么内容？可以提供公开商品链接、商品资料或图片。"
+      }
+    },
+    "isError": false
+  }
+}
