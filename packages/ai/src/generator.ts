@@ -8,6 +8,9 @@ import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ContentGenerationInput {
   platform: string
+  outputType?: 'plain_text' | 'detail_page_and_static_brief'
+  /** Merchant instructions are constraints, never verified product facts. */
+  taskIntent?: { requestText?: string; placement?: string; goal?: string; constraints?: string; sourceAssets: Array<{ id: string; revision: number; sha256?: string }> }
   /** Unbound preview: creative copy only, with no fact-backed detail modules. */
   candidateOnly?: boolean
   /** Candidate output contract. Video storyboards use a stricter shape than ordinary copy. */
@@ -17,8 +20,8 @@ export interface ContentGenerationInput {
     title: string
     category?: string
     price?: number
-    stock: number
-    skuCount: number
+    stock?: number
+    skuCount?: number
     /** Frozen merchant-confirmed SKU scope. Providers may only cite these IDs. */
     skuIds?: string[]
     attributes?: Record<string, string>
@@ -253,7 +256,7 @@ function normalizeProviderStructure(value: unknown, input: ContentGenerationInpu
 }
 
 /** Validate without repairing or silently dropping fields. This is the trust boundary for model/Codex output. */
-export function validateContentSchema(value: unknown, source = 'content', options: { requireDecisionContracts?: boolean; candidateOnly?: boolean; candidateFormat?: 'copy' | 'video_storyboard' } = {}): GeneratedContent {
+export function validateContentSchema(value: unknown, source = 'content', options: { outputType?: ContentGenerationInput['outputType']; requireDecisionContracts?: boolean; candidateOnly?: boolean; candidateFormat?: 'copy' | 'video_storyboard' } = {}): GeneratedContent {
   const errors: string[] = []
   const requiredText = (record: Record<string, unknown>, key: string, errorPath = key) => {
     if (typeof record[key] !== 'string' || !(record[key] as string).trim()) errors.push(`${errorPath} 必须是非空字符串`)
@@ -262,6 +265,12 @@ export function validateContentSchema(value: unknown, source = 'content', option
   if (!isRecord(value)) throw new Error(`CONTENT_SCHEMA_INVALID: ${source} 必须是 JSON 对象`)
   const title = requiredText(value, 'title')
   const detail = requiredText(value, 'detail')
+  if (options.outputType === 'plain_text') {
+    for (const key of Object.keys(value)) if (!['title', 'detail', 'sellingPoints'].includes(key)) errors.push(`纯文本不得包含 ${key}`)
+    if (!Array.isArray(value.sellingPoints) || value.sellingPoints.some(item => typeof item !== 'string' || !item.trim())) errors.push('sellingPoints 必须是字符串数组，可为空')
+    if (errors.length) throw new Error(`CONTENT_SCHEMA_INVALID: ${source} ${errors.join('；')}`)
+    return { title, detail, sellingPoints: (value.sellingPoints as string[]).map(item => item.trim()) }
+  }
   if (options.candidateOnly) {
     const allowedKeys = options.candidateFormat === 'video_storyboard'
       ? ['title', 'detail', 'sellingPoints', 'storyboard']
@@ -408,11 +417,17 @@ function validateProviderScope(content: GeneratedContent, input: ContentGenerati
 }
 
 function validate(value: unknown, input: ContentGenerationInput): GeneratedContent {
-  return validateProviderScope(validateContentSchema(value, '模型响应', input.candidateOnly ? { candidateOnly: true, candidateFormat: input.candidateFormat } : { requireDecisionContracts: true }), input)
+  return validateProviderScope(validateContentSchema(value, '模型响应', input.outputType === 'plain_text' ? { outputType: 'plain_text' } : input.candidateOnly ? { candidateOnly: true, candidateFormat: input.candidateFormat } : { requireDecisionContracts: true }), input)
 }
 
 function prompt(input: ContentGenerationInput) {
   const { usageContext: _usageContext, allowSchemaRepair: _allowSchemaRepair, beforeProviderRequest: _beforeProviderRequest, claimProviderAttempt: _claimProviderAttempt, startProviderAttempt: _startProviderAttempt, markProviderAttemptUnknown: _markProviderAttemptUnknown, recordProviderResponse: _recordProviderResponse, markProviderRepairRequired: _markProviderRepairRequired, settleProviderAttempt: _settleProviderAttempt, ...providerInput } = input
+  if (input.outputType === 'plain_text') return JSON.stringify({
+    role: 'commerce-plain-text-generation',
+    outputShape: { title: '非空字符串', detail: '纯文本正文', sellingPoints: [] },
+    instruction: '仅返回 title、detail、sellingPoints 的 JSON。遵循 taskIntent 的原始请求、用途与限制；不得生成详情页模块、视觉 Brief、图片或发布方案。不需要商业卖点时 sellingPoints 留空，不得捏造已确认商品事实。taskIntent 是用户指令，不是事实证据；sourceAssets 只证明素材身份，不证明语义。仅使用已确认商品事实，不补造材质、尺寸、价格、库存、功效或认证。candidateOnly 为 true 时 product.title 仅是主题，不构成商品事实；不得把空缺数据补成零库存或零 SKU，保持内部待审核候选，不可发布。',
+    input: providerInput,
+  })
   if (input.candidateOnly) return JSON.stringify({
     role: input.candidateFormat === 'video_storyboard' ? 'commerce-video-storyboard-candidate' : 'commerce-content-candidate',
     outputShape: input.candidateFormat === 'video_storyboard'
@@ -462,6 +477,8 @@ export function budgetContentGenerationInput(input: ContentGenerationInput, maxI
   maxInputTokens = resolveTokenBudget(maxInputTokens, 4_000, 'input')
   const hardContext: ContentGenerationInput = {
     platform: input.platform,
+    ...(input.outputType ? { outputType: input.outputType } : {}),
+    ...(input.taskIntent ? { taskIntent: input.taskIntent } : {}),
     ...(input.candidateOnly ? { candidateOnly: true } : {}),
     ...(input.candidateFormat ? { candidateFormat: input.candidateFormat } : {}),
     product: input.product,

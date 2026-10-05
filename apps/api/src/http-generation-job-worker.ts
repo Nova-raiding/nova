@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DomainError, type ContentVersion, type GenerationJob, type MerchantService, type Task } from '../../../packages/application/src/service.js'
 import { ERROR_CODES, generationJobWriteRefused } from '../../../packages/contracts/src/index.js'
-import type { ContentModule, StaticBrief } from '../../../packages/ai/src/generator.js'
+import { validateContentSchema, type ContentModule, type StaticBrief } from '../../../packages/ai/src/generator.js'
 import type { RuleHit } from '../../../packages/review/src/rule-center.js'
 
 type JsonObject = Record<string, unknown>
@@ -76,11 +76,18 @@ export async function handleHttpGenerationJobWorker(req: IncomingMessage, res: S
     }
     if (!input.content || typeof input.content !== 'object' || Array.isArray(input.content)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '缺少生成内容', 400)
     const content = input.content as Record<string, unknown>
-    const sellingPoints = Array.isArray(content.sellingPoints) ? content.sellingPoints.filter((value): value is string => typeof value === 'string') : []
-    if (typeof content.title !== 'string' || typeof content.detail !== 'string' || !sellingPoints.length) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '生成内容结构无效', 400)
-    const brief = readStaticBrief(content.brief)
-    const modules = readContentModules(content.modules)
     const completedTaskBeforeWrite = service.getTask(job.taskId)
+    // The callback cannot select a weaker schema: only the server-owned frozen task can.
+    const plainText = service.generationOutputType(job.taskId) === 'plain_text'
+    let parsedPlain: ReturnType<typeof validateContentSchema> | undefined
+    if (plainText) {
+      try { parsedPlain = validateContentSchema(content, 'worker result', { outputType: 'plain_text' }) }
+      catch (error) { throw new DomainError(ERROR_CODES.INVALID_REQUEST, error instanceof Error ? error.message : '生成内容结构无效', 400) }
+    }
+    const sellingPoints = parsedPlain?.sellingPoints ?? (Array.isArray(content.sellingPoints) ? content.sellingPoints.filter((value): value is string => typeof value === 'string') : [])
+    if (typeof content.title !== 'string' || typeof content.detail !== 'string' || (!plainText && !sellingPoints.length)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '生成内容结构无效', 400)
+    const brief = plainText ? undefined : readStaticBrief(content.brief)
+    const modules = plainText ? undefined : readContentModules(content.modules)
     let rulePreflightBeforeWrite: Awaited<RulePreflight>
     try {
       rulePreflightBeforeWrite = await requireGenerationRulePreflight(workspaceId, completedTaskBeforeWrite.productId, '排队期间平台规则已发生变化，不能提交该生成结果')

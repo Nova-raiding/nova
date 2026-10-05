@@ -35,13 +35,16 @@ export function assertGenerationInput(input: unknown, expectedWorkspaceId: strin
   if (!product) throw new GenerationInputSchemaError('generation input product is required')
   const title = requiredString(product.title, 'product.title')
   if (product.id !== undefined) requiredString(product.id, 'product.id')
-  const stock = nonNegativeInteger(product.stock, 'product.stock')
-  const skuCount = nonNegativeInteger(product.skuCount, 'product.skuCount')
+  // This envelope was loaded from the server-owned context snapshot and its hash
+  // is checked by the caller before dispatch. Missing candidate facts stay absent.
+  const plainCandidate = root.outputType === 'plain_text' && root.candidateOnly === true
+  const stock = plainCandidate && product.stock === undefined ? undefined : nonNegativeInteger(product.stock, 'product.stock')
+  const skuCount = plainCandidate && product.skuCount === undefined ? undefined : nonNegativeInteger(product.skuCount, 'product.skuCount')
   if (product.skuIds !== undefined) {
     if (!Array.isArray(product.skuIds) || product.skuIds.some(value => typeof value !== 'string' || !value.trim() || /[\u0000-\u001f\u007f]/u.test(value))) throw new GenerationInputSchemaError('generation input product.skuIds contains an invalid frozen SKU reference')
     if (new Set(product.skuIds.map(value => (value as string).trim())).size !== product.skuIds.length) throw new GenerationInputSchemaError('generation input product.skuIds must be unique')
   }
-  const facts = stringList(root.confirmedFactSourceIds, 'confirmedFactSourceIds', { min: 1, unique: true })
+  const facts = plainCandidate && root.confirmedFactSourceIds === undefined ? undefined : stringList(root.confirmedFactSourceIds, 'confirmedFactSourceIds', { min: 1, unique: true })
   const usage = record(root.usageContext)
   if (!usage || usage.workspaceId !== expectedWorkspaceId || usage.actionId !== expectedActionId || usage.runKey !== expectedRunKey) throw new GenerationInputSchemaError('generation input usageContext does not match the durable event')
   if (root.referenceAssets !== undefined && (!Array.isArray(root.referenceAssets) || root.referenceAssets.some(value => {
@@ -81,5 +84,5 @@ export function assertGenerationInput(input: unknown, expectedWorkspaceId: strin
       requiredString(item.id, 'knowledgeContext.assets.id'); requiredString(item.name, 'knowledgeContext.assets.name'); nonNegativeInteger(item.revision, 'knowledgeContext.assets.revision')
     }
   }
-  return { ...input as ContentGenerationInput, platform, directionId, product: { ...product as ContentGenerationInput['product'], title, stock, skuCount }, confirmedFactSourceIds: facts }
+  return { ...input as ContentGenerationInput, platform, directionId, product: { ...product as ContentGenerationInput['product'], title, ...(stock !== undefined ? { stock } : {}), ...(skuCount !== undefined ? { skuCount } : {}) }, ...(facts ? { confirmedFactSourceIds: facts } : {}) }
 }

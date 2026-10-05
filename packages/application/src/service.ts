@@ -485,6 +485,9 @@ export interface PromotionSnapshot {
 
 /** Immutable inputs captured when a merchant confirms a production plan. */
 export interface TaskInputSnapshot {
+  candidateOnly?: boolean
+  outputType?: ContentGenerationInput['outputType']
+  taskIntent?: ContentGenerationInput['taskIntent']
   id: string
   taskId: string
   capturedAt: string
@@ -714,7 +717,7 @@ export interface ProductionPlan {
   rulesCheckedAt?: string
   constraints?: string
   outputFormat: string
-  outputType: 'detail_page_and_static_brief'
+  outputType: 'plain_text' | 'detail_page_and_static_brief'
   outputCount: number
   requiredAssets: string[]
   lockedFields: string[]
@@ -1714,6 +1717,9 @@ export class MerchantService {
     const snapshot: TaskInputSnapshot = deepFreeze(structuredClone({
       id: snapshotId,
       taskId: task.id,
+      candidateOnly: task.candidateOnly === true,
+      outputType: task.productionPlan?.outputType ?? 'detail_page_and_static_brief',
+      taskIntent: { requestText: task.requestText, placement: task.productionPlan?.placement, goal: task.productionPlan?.goal, constraints: task.productionPlan?.constraints, sourceAssets: assets.map(asset => ({ id: asset.id, revision: asset.revision, sha256: asset.sha256 })) },
       capturedAt: now(),
       product: scopedProduct,
       ...(task.canonicalProductId ? { canonicalProductId: task.canonicalProductId } : {}),
@@ -1859,11 +1865,14 @@ export class MerchantService {
     const inferredGoal = text.match(/(春季上新|夏季上新|秋季上新|冬季上新|新品上架|提升转化|引流|清库存)/u)?.[1]
     const audience = text.match(/(?:受众|面向|目标人群)[：:]?([^，。；;]+)/u)?.[1]?.trim()
     const sellingPoints = text.match(/(?:卖点|主推|突出)[：:]?([^，。；;]+)/u)?.[1]?.trim()
-    const scene = text.match(/(?:场景|用于|适合)[：:]?([^，。；;]+)/u)?.[1]?.trim()
+    const positiveClauses = text.split(/[，。；;\n]/u).filter(clause => !/(?:不要|禁止|不得|不用于|不作|不做|不适合|无需)/u.test(clause)).join('，')
+    const scene = positiveClauses.match(/(?:场景|用于|适合)[：:]?([^，。；;]+)/u)?.[1]?.trim()
     const activityValidUntil = text.match(/(?:有效期至|截止到|截止|到期日)[：:]?\s*(\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}日?)/u)?.[1]
     const outputCount = text.match(/(\d+)\s*(?:套|版|张|个)(?:候选|方案|内容|主图)?/u)?.[1]
-    const constraints = text.match(/((?:不要|禁止|不得)[^，。；;]+)/u)?.[1]?.trim()
-    const placement = /详情页/u.test(text) ? '商品详情页'
+    const constraints = text.match(/(?:不要|禁止|不得|不用于|不作|不做|不发布|不添加|无需)[^，。；;]+/gu)?.join('；')
+    const wantsPlainText = [...text.matchAll(/纯文本|纯文字|纯文案|仅文案|只要文案/gu)].some(match => !/(?:不要|禁止|不得|不做|无需)\s*$/u.test(text.slice(0, match.index)))
+    const placement = wantsPlainText ? '纯文本'
+      : /详情页/u.test(positiveClauses) ? '商品详情页'
       : /白底主图/u.test(text) ? '白底主图'
         : /主图/u.test(text) ? '商品主图'
           : /Banner/iu.test(text) ? 'Banner'
@@ -3352,7 +3361,16 @@ export class MerchantService {
     job.state = 'running'; job.attempt += 1; job.revision += 1; job.updatedAt = now()
     return job
   }
-  private validateGeneratedBody(body: ContentVersion['body'], source: string, platform: Platform, product: Product): ContentVersion['body'] {
+  generationOutputType(taskId: string) { return this.taskSnapshot(this.mustTask(taskId)).outputType ?? 'detail_page_and_static_brief' }
+
+  private isPlainTextVersion(version: ContentVersion) {
+    return !!version.versionVector?.taskInputSnapshotId && this.taskInputSnapshots.get(version.versionVector.taskInputSnapshotId)?.outputType === 'plain_text'
+  }
+
+  private validateGeneratedBody(body: ContentVersion['body'], source: string, platform: Platform, product: Product, outputType?: ContentGenerationInput['outputType']): ContentVersion['body'] {
+    if (outputType === 'plain_text') {
+      try { return validateContentSchema(body, source, { outputType }) } catch (error) { throw new DomainError('CONTENT_SCHEMA_INVALID', error instanceof Error ? error.message : '纯文本结构不合法', 400) }
+    }
     const fixtureModuleFallback = this.options.fixtureMode === true && body.modules === undefined
     let validated: ContentVersion['body']
     try {
@@ -3372,10 +3390,10 @@ export class MerchantService {
     this.assertTaskState(task, ['plan_confirmed'])
     const snapshot = this.taskSnapshot(task)
     const product = snapshot.product
-    const validatedBody = this.validateGeneratedBody(input.body, 'content.generate', task.platform, product)
+    const validatedBody = this.validateGeneratedBody(input.body, 'content.generate', task.platform, product, snapshot.outputType)
     const factVersionIds = [`product:${product.id}:v${product.version ?? 1}`]
     const ruleVersionIds = [...snapshot.ruleVersionIds]
-    const version: ContentVersion = { id: id('cv'), taskId: task.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body: withStaticBrief(validatedBody, task.platform, product), factVersionIds, ruleVersionIds, ...(snapshot.brand ? { brandSnapshot: clone(snapshot.brand) } : {}), versionVector: contentVersionVector({ task, product, factVersionIds, ruleVersionIds, taskInputSnapshotId: snapshot.id, createdBy: 'model', reason: 'async_generation', modelId: process.env.AI_MODEL?.trim() || 'configured-model' }), state: 'review_required', revision: 1 }
+    const version: ContentVersion = { id: id('cv'), taskId: task.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body: snapshot.outputType === 'plain_text' ? validatedBody : withStaticBrief(validatedBody, task.platform, product), factVersionIds, ruleVersionIds, ...(snapshot.brand ? { brandSnapshot: clone(snapshot.brand) } : {}), versionVector: contentVersionVector({ task, product, factVersionIds, ruleVersionIds, taskInputSnapshotId: snapshot.id, createdBy: 'model', reason: 'async_generation', modelId: process.env.AI_MODEL?.trim() || 'configured-model' }), state: 'review_required', revision: 1 }
     this.contentVersions.set(version.id, version)
     task.contentVersionId = version.id; task.state = 'review_required'; task.version += 1
     job.state = 'succeeded'; job.contentVersionId = version.id; job.revision += 1; job.updatedAt = now(); job.errorCode = undefined; job.errorMessage = undefined; job.nextAttemptAt = undefined; job.waitingReason = undefined
@@ -3895,6 +3913,10 @@ export class MerchantService {
   }
 
   private detailDecisionDeliveryBlockers(version: ContentVersion) {
+    if (this.isPlainTextVersion(version)) {
+      try { validateContentSchema(version.body, '纯文本交付', { outputType: 'plain_text' }); return [] }
+      catch { return [{ code: 'CONTENT_SCHEMA_INVALID', field: 'body', message: '纯文本交付结构不合法。' }] }
+    }
     const modules = version.body.modules as unknown as ReadonlyArray<Record<string, unknown>> | undefined
     if (!modules?.length) return [{ code: 'DETAIL_MODULE_DECISION_CONTRACT_LEGACY', field: 'modules', message: '历史内容缺少详情页模块决策契约，必须创建完整新版本后才能批准、导出或发布。' }]
     return modules.flatMap((module, index) => {
@@ -3962,7 +3984,7 @@ export class MerchantService {
       forbiddenTerms: rules?.forbiddenTerms ?? this.ruleCenter.activeChecks().forbiddenTerms,
       ...(product ? { productFactsConfirmed: product.factsConfirmed } : {}),
       ...(product?.sellingPoints ? { sellingPointProofs: product.sellingPoints } : {}),
-      checkVisualBrief: true,
+      checkVisualBrief: !this.isPlainTextVersion(version),
       ...(reviewBrief ? { brief: reviewBrief } : {}),
       technical: { schemaValid: Boolean(version.body.title.trim() && version.body.detail.trim() && Array.isArray(version.body.sellingPoints) && reviewModules.every(module => module.key && module.factSourceIds.length) && (!rawBrief || Object.values(reviewBrief!).every(value => Array.isArray(value) ? value.length > 0 : value.trim()))) },
       ...(snapshot?.promotions ? { promotions: snapshot.promotions.map(promotion => ({ platform: promotion.platform, productId: promotion.productId, ...(promotion.accountId ? { accountId: promotion.accountId } : {}), skuIds: promotion.skuIds, ...(promotion.validFrom ? { validFrom: promotion.validFrom } : {}), ...(promotion.validTo ? { validTo: promotion.validTo } : {}), sourceId: `promotion:${promotion.id}` })), promotionContext: { platform: task.platform, productId: task.productId, ...(task.accountId ? { accountId: task.accountId } : {}), skuIds: snapshot.skuIds } } : {}),
@@ -4113,13 +4135,13 @@ export class MerchantService {
     const mergedBody = { ...clone(source.body), ...input.changes, ...(input.changes.sellingPoints ? { sellingPoints: [...input.changes.sellingPoints] } : {}), ...(input.changes.brief ? { brief: clone(input.changes.brief) } : {}) }
     let validatedBody: ContentVersion['body']
     try {
-      const validated = validateContentSchema(mergedBody, 'content.modify', { requireDecisionContracts: true })
-      validatedBody = { ...validated, modules: orchestrateContentModules(validated.modules!, product) }
+      const validated = validateContentSchema(mergedBody, 'content.modify', this.isPlainTextVersion(source) ? { outputType: 'plain_text' } : { requireDecisionContracts: true })
+      validatedBody = this.isPlainTextVersion(source) ? validated : { ...validated, modules: orchestrateContentModules(validated.modules!, product) }
     } catch (error) {
       throw new DomainError('CONTENT_SCHEMA_INVALID', error instanceof Error ? error.message : '修改后内容结构不合法', 400)
     }
     const body = validatedBody
-    const version: ContentVersion = { id: id('cv'), taskId: task.id, parentId: source.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body, lockedFields: [...locked], factVersionIds: [...source.factVersionIds], ruleVersionIds: [...source.ruleVersionIds], ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}), versionVector: contentVersionVector({ task, product, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, createdBy: 'user', reason: `content_modify:${input.reason}`, modelId: source.versionVector?.modelId }), state: 'review_required', revision: 1 }
+    const version: ContentVersion = { id: id('cv'), taskId: task.id, parentId: source.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body, lockedFields: [...locked], factVersionIds: [...source.factVersionIds], ruleVersionIds: [...source.ruleVersionIds], ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}), versionVector: contentVersionVector({ task, product, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, taskInputSnapshotId: source.versionVector?.taskInputSnapshotId, createdBy: 'user', reason: `content_modify:${input.reason}`, modelId: source.versionVector?.modelId }), state: 'review_required', revision: 1 }
     this.contentVersions.set(version.id, version)
     task.contentVersionId = version.id
     task.state = 'review_required'
@@ -4137,6 +4159,7 @@ export class MerchantService {
   regenerateContentModule(input: { workspaceId: string; sourceVersionId: string; moduleKey: string; lockedFields?: string[]; reason: string; expectedRevision?: number }) {
     const source = this.getContentVersion(input.workspaceId, input.sourceVersionId)
     if (input.expectedRevision !== undefined && source.revision !== input.expectedRevision) throw new DomainError('VERSION_CONFLICT', '内容版本已被其他操作更新，请刷新后重试', 409, { current_revision: source.revision, expected_revision: input.expectedRevision })
+    if (this.isPlainTextVersion(source)) throw new DomainError('CONTENT_MODULE_NOT_FOUND', '纯文本合同不包含详情页模块', 400)
     const moduleKey = input.moduleKey.trim()
     if (!moduleKey) throw new DomainError('CONTENT_MODULE_REQUIRED', '局部重生成必须指定 module_key', 400)
     const locked = new Set(input.lockedFields ?? source.lockedFields ?? [])
@@ -4225,7 +4248,8 @@ export class MerchantService {
     const reviewFile = approvalReviewSnapshot
       ? { available: true, frozenAtApproval: true, reviewedAt: approvalReviewSnapshot.reviewedAt, blocking: reviewFindings.some(finding => finding.severity === 'error'), evidenceBoundary: approvalReviewSnapshot.evidenceBoundary, ruleVersionIds: [...approvalReviewSnapshot.ruleVersionIds], findings: clone(reviewFindings) }
       : { available: false, frozenAtApproval: false, reviewedAt: null, blocking: null, evidenceBoundary: REVIEW_EVIDENCE_BOUNDARY, ruleVersionIds: [...version.ruleVersionIds], findings: [], reason: 'legacy_or_unapproved_snapshot_unavailable' }
-    const deliveryFiles = ['README.md', 'content.md', 'content.json', 'manifest.json', 'brief.json', 'review-findings.json', 'source-map.json']
+    const plainText = this.isPlainTextVersion(version)
+    const deliveryFiles = ['README.md', 'content.md', 'content.json', 'manifest.json', ...(!plainText ? ['brief.json'] : []), 'review-findings.json', 'source-map.json']
     if (publishReceipt) deliveryFiles.push('publish-receipt.json')
     const manifest = {
       schema_version: '1.0',
@@ -4245,9 +4269,10 @@ export class MerchantService {
       delivery_status_reason: version.deliveryStatusReason ?? null,
       delivery_status_updated_at: version.deliveryStatusUpdatedAt ?? null,
     }
-    const brief = version.body.brief ?? defaultStaticBrief(task.platform, version.body.title, version.body.sellingPoints)
+    const brief = plainText ? undefined : version.body.brief ?? defaultStaticBrief(task.platform, version.body.title, version.body.sellingPoints)
     const content = {
       schema_version: '1.0',
+      candidate_only: task.candidateOnly === true,
       task_id: task.id,
       content_version_id: version.id,
       version: version.version,
@@ -4260,9 +4285,9 @@ export class MerchantService {
       rule_version_ids: [...version.ruleVersionIds],
       version_vector: version.versionVector ?? null,
       locked_fields: [...(version.lockedFields ?? [])],
-      brief,
+      ...(brief ? { brief } : {}),
     }
-    const briefMarkdown = [
+    const briefMarkdown = brief ? [
       '## 静态素材 Brief', '',
       `- 平台/版位：${brief.platform} / ${brief.placement}`,
       `- 目标尺寸：${brief.targetDimensions}`,
@@ -4277,7 +4302,7 @@ export class MerchantService {
       `- Logo 安全：${brief.logoSafety}`,
       `- 视觉层级：${brief.visualHierarchy.join(' → ')}`,
       `- 禁止修改区域：${brief.protectedAreas.join('、')}`,
-    ].join('\n')
+    ].join('\n') : ''
     const markdown = [
       `# ${version.body.title}`,
       '',
@@ -4286,8 +4311,7 @@ export class MerchantService {
       '',
       version.body.detail,
       '',
-      '## 卖点',
-      ...version.body.sellingPoints.map(point => `- ${point}`),
+      ...(version.body.sellingPoints.length ? ['## 卖点', ...version.body.sellingPoints.map(point => `- ${point}`)] : []),
       ...(version.body.modules?.length ? ['', '## 内容模块', ...version.body.modules.flatMap(module => [`### ${module.title}`, ...(module.decisionContract ? [`买家问题：${module.decisionContract.buyerQuestion}`, `页面任务：${module.decisionContract.pageTask}`, `证据状态：${module.decisionContract.evidence.status}`] : []), `用途：${module.purpose}`, module.body, ...(module.imageGuidance ? [`图片建议：${module.imageGuidance}`] : [])])] : []),
       '', briefMarkdown,
       '',
@@ -4333,7 +4357,7 @@ export class MerchantService {
         { path: 'README.md', mimeType: 'text/markdown; charset=utf-8', content: readme, externallyUnverified: !brand || !version.reviewSnapshot },
         { path: 'content.md', mimeType: 'text/markdown; charset=utf-8', content: markdown },
         { path: 'content.json', mimeType: 'application/json; charset=utf-8', content: JSON.stringify(content, null, 2) },
-        { path: 'brief.json', mimeType: 'application/json; charset=utf-8', content: JSON.stringify(brief, null, 2) },
+        ...(brief ? [{ path: 'brief.json', mimeType: 'application/json; charset=utf-8', content: JSON.stringify(brief, null, 2) }] : []),
         { path: 'legacy-manifest.json', mimeType: 'application/json; charset=utf-8', content: JSON.stringify(manifest, null, 2) },
         { path: 'legacy-review-findings.json', mimeType: 'application/json; charset=utf-8', content: JSON.stringify(reviewFile, null, 2) },
         { path: 'legacy-source-map.json', mimeType: 'application/json; charset=utf-8', content: JSON.stringify(sourceMap, null, 2) },
@@ -4621,6 +4645,13 @@ export class MerchantService {
     validateMerchantIntentAnswer(answers.merchant_intent_json)
     this.parsePromotionSnapshot({ ...task, answers: { ...task.answers, ...persistedAnswers } }, product)
     task.answers = { ...task.answers, ...persistedAnswers }
+    // Updated inputs invalidate an unconfirmed plan; confirmation must never
+    // freeze yesterday's plan alongside today's answers.
+    if (task.state === 'direction_selected' && Object.keys(persistedAnswers).length > 0) {
+      task.productionPlan = undefined
+      task.selectedDirectionId = undefined
+      task.state = 'ready_for_direction'
+    }
     task.inputSnapshotId = `task:${task.id}:v${task.version + 1}`
     task.version += 1
     if (answers.confirm_facts === true) this.confirmProductFacts(workspaceId, product.id)
@@ -4631,11 +4662,12 @@ export class MerchantService {
   selectDirection(taskId: string, directionId: string, expectedVersion?: number) {
     const task = this.mustTask(taskId)
     this.assertExpectedTaskVersion(task, expectedVersion)
-    this.assertTaskState(task, ['ready_for_direction'])
+    this.assertTaskState(task, ['ready_for_direction', 'direction_selected'])
     if (!this.listCreativeDirections(task.workspaceId, task.id).some(direction => direction.id === directionId)) throw new DomainError('DIRECTION_NOT_FOUND', '方向必须来自系统提供的创意方向', 400)
     const product = this.products.get(task.productId)
     if (!product || product.workspaceId !== task.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
-    const selectedSellingPoints = typeof task.answers.selling_points === 'string' ? [task.answers.selling_points] : Array.isArray(task.answers.selling_points) ? task.answers.selling_points.filter((value): value is string => typeof value === 'string' && Boolean(value.trim())) : ['已确认商品事实']
+    const plainText = /纯文本|纯文字|纯文案|仅文案|只要文案/u.test(String(task.answers.placement ?? ''))
+    const selectedSellingPoints = typeof task.answers.selling_points === 'string' ? [task.answers.selling_points] : Array.isArray(task.answers.selling_points) ? task.answers.selling_points.filter((value): value is string => typeof value === 'string' && Boolean(value.trim())) : plainText ? [] : ['已确认商品事实']
     if (selectedSellingPoints.length > 3) throw new DomainError('SELLING_POINTS_LIMIT_EXCEEDED', '核心卖点最多只能配置 3 条', 400)
     const requestedSkuId = typeof task.answers.sku_id === 'string' ? task.answers.sku_id.trim() : ''
     const selectedSku = requestedSkuId ? product.skus?.find(sku => sku.id === requestedSkuId || sku.name === requestedSkuId) : undefined
@@ -4663,13 +4695,13 @@ export class MerchantService {
       ...(promotions.length ? { promotionSnapshot: promotions, promotionPriceDiff: this.promotionPriceDiff(product, promotions) } : {}),
       ...(typeof task.answers.activity_valid_until === 'string' ? { activityValidUntil: task.answers.activity_valid_until } : {}),
       ...(typeof task.answers.constraints === 'string' ? { constraints: task.answers.constraints } : {}),
-      outputFormat: 'Markdown + JSON + ZIP',
-      outputType: 'detail_page_and_static_brief',
+      outputFormat: plainText ? 'Markdown + JSON' : 'Markdown + JSON + ZIP',
+      outputType: plainText ? 'plain_text' : 'detail_page_and_static_brief',
       outputCount: typeof task.answers.output_count === 'number'
         ? Math.max(1, Math.min(10, Math.floor(task.answers.output_count)))
         : typeof task.answers.output_count === 'string' && /^\d+$/u.test(task.answers.output_count)
           ? Math.max(1, Math.min(10, Number(task.answers.output_count))) : 1,
-      requiredAssets: ['已确认商品事实', 'SKU/价格/库存快照', '品牌与平台规则快照'],
+      requiredAssets: plainText ? ['适用事实来源与用户限制', '适用规则快照'] : ['已确认商品事实', 'SKU/价格/库存快照', '品牌与平台规则快照'],
       lockedFields: ['商品真实结构/颜色/材质', 'Logo/印花/包装文字', '认证标识'],
       estimatedRevisionRounds: 2,
       estimatedTimeMinutes: 10,
@@ -4734,6 +4766,7 @@ export class MerchantService {
     const task = this.mustTask(taskId)
     const snapshot = this.taskSnapshot(task)
     const product = snapshot.product
+    if (snapshot.outputType === 'plain_text') return { title: product.title, detail: `内部待审核纯文本候选：${product.title}。`, sellingPoints: [] }
     const sellingPoints = [`适配${task.platform}商品信息`, '关键事实可追溯', '发布前保留人工审核环节']
     return {
       title: `${product.title}｜${task.platform}营销稿`,
@@ -4812,9 +4845,12 @@ export class MerchantService {
     const product = snapshot.product
     const generationInput: ContentGenerationInput = {
       platform: task.platform,
+      ...(snapshot.outputType ? { outputType: snapshot.outputType } : {}),
+      ...(snapshot.taskIntent ? { taskIntent: snapshot.taskIntent } : {}),
+      ...(snapshot.candidateOnly && snapshot.outputType === 'plain_text' ? { candidateOnly: true } : {}),
       directionId: task.selectedDirectionId ?? 'default',
-      product: { id: product.id, title: product.title, ...(product.category ? { category: product.category } : {}), ...(typeof product.price === 'number' ? { price: product.price } : {}), stock: product.stock, skuCount: product.skuCount, skuIds: [...snapshot.skuIds], ...(product.attributes ? { attributes: product.attributes } : {}) },
-      confirmedFactSourceIds: [`product:${product.id}:v${product.version ?? 1}`],
+      product: snapshot.candidateOnly && snapshot.outputType === 'plain_text' ? { id: product.id, title: product.title } : { id: product.id, title: product.title, ...(product.category ? { category: product.category } : {}), ...(typeof product.price === 'number' ? { price: product.price } : {}), stock: product.stock, skuCount: product.skuCount, skuIds: [...snapshot.skuIds], ...(product.attributes ? { attributes: product.attributes } : {}) },
+      ...(snapshot.candidateOnly && snapshot.outputType === 'plain_text' ? {} : { confirmedFactSourceIds: [`product:${product.id}:v${product.version ?? 1}`] }),
       ...((snapshot.brand?.visualRules || snapshot.scopedBrand?.values.color || snapshot.scopedBrand?.values.logoAssetId) ? { brandVisualRules: {
         ...(snapshot.brand?.visualRules ?? {}),
         ...(snapshot.scopedBrand?.values.color ? { colors: { ...(snapshot.brand?.visualRules?.colors ?? { secondary: [], forbidden: [] }), primary: [snapshot.scopedBrand.values.color] } } : {}),
@@ -4884,7 +4920,7 @@ export class MerchantService {
       }
       throw new DomainError('AI_GENERATION_FAILED', '内容生成服务暂时不可用，请稍后重试', 503)
     }
-    const validatedGenerated = this.validateGeneratedBody(generated, 'content.generate', task.platform, product)
+    const validatedGenerated = this.validateGeneratedBody(generated, 'content.generate', task.platform, product, snapshot.outputType)
     const version: ContentVersion = {
       id: id('cv'), taskId, version: this.nextContentVersionNumber(task.workspaceId, taskId),
       body: validatedGenerated,
@@ -4994,13 +5030,15 @@ export class MerchantService {
       taskId: task.id,
       platform: task.platform,
       directionId: task.selectedDirectionId ?? 'default',
-      product: { id: product.id, title: product.title, ...(product.category ? { category: product.category } : {}), ...(typeof product.price === 'number' ? { price: product.price } : {}), stock: product.stock, skuCount: product.skuCount, ...(product.attributes ? { attributes: product.attributes } : {}) },
-      confirmedFactVersionId: `product:${product.id}:v${product.version ?? 1}`,
+      product: snapshot.candidateOnly && snapshot.outputType === 'plain_text' ? { id: product.id, title: product.title } : { id: product.id, title: product.title, ...(product.category ? { category: product.category } : {}), ...(typeof product.price === 'number' ? { price: product.price } : {}), stock: product.stock, skuCount: product.skuCount, ...(product.attributes ? { attributes: product.attributes } : {}) },
+      ...(snapshot.candidateOnly && snapshot.outputType === 'plain_text' ? { candidateOnly: true } : { confirmedFactVersionId: `product:${product.id}:v${product.version ?? 1}` }),
       taskInputSnapshotId: snapshot.id,
+      outputType: snapshot.outputType ?? 'detail_page_and_static_brief',
+      ...(snapshot.taskIntent ? { taskIntent: snapshot.taskIntent } : {}),
       ...(snapshot.knowledgeContext ? { knowledgeContext: snapshot.knowledgeContext } : {}),
       ...(snapshot.brand?.visualRules ? { brandVisualRules: clone(snapshot.brand.visualRules) } : {}),
       referenceAssets: snapshot.assets.map(asset => ({ id: asset.id, revision: asset.revision, sha256: asset.sha256, contentTrust: clone(asset.contentTrust ?? untrustedAssetContent()), ...(asset.preference ? { preference: clone(asset.preference) } : {}) })),
-      output: {
+      output: snapshot.outputType === 'plain_text' ? { required: ['title', 'detail', 'sellingPoints'], optional: [], rules: ['仅纯文本，sellingPoints 可为空', '不得输出 modules 或 brief', '遵守冻结 taskIntent；用户指令不是事实证据'] } : {
         required: ['title', 'detail', 'sellingPoints'],
         optional: ['modules', 'brief'],
         module_schema: { required: ['key', 'title', 'purpose', 'body', 'factSourceIds', 'contentKind', 'decisionContract'], optional: ['pendingReason', 'referencedSkuIds', 'imageGuidance'], decision_contract_required: ['buyerQuestion', 'pageTask', 'claim', 'evidence', 'visualContract', 'priority', 'optional'] },
@@ -5020,8 +5058,8 @@ export class MerchantService {
     const product = snapshot.product
     const factVersionIds = [`product:${product.id}:v${product.version ?? 1}`]
     let validatedBody: ContentVersion['body']
-    try { validatedBody = validateContentSchema(input.body, 'content.codex.commit', { requireDecisionContracts: true }) } catch (error) { throw new DomainError('CONTENT_SCHEMA_INVALID', error instanceof Error ? error.message : '提交内容结构不合法', 400) }
-    const normalizedBody = normalizeCodexBody(validatedBody, task.platform, product)
+    try { validatedBody = validateContentSchema(input.body, 'content.codex.commit', snapshot.outputType === 'plain_text' ? { outputType: 'plain_text' } : { requireDecisionContracts: true }) } catch (error) { throw new DomainError('CONTENT_SCHEMA_INVALID', error instanceof Error ? error.message : '提交内容结构不合法', 400) }
+    const normalizedBody = snapshot.outputType === 'plain_text' ? validatedBody : normalizeCodexBody(validatedBody, task.platform, product)
     const ruleVersionIds = [...snapshot.ruleVersionIds]
     const version: ContentVersion = { id: id('cv'), taskId: task.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body: normalizedBody, factVersionIds, ruleVersionIds, ...(snapshot.brand ? { brandSnapshot: clone(snapshot.brand) } : {}), versionVector: contentVersionVector({ task, product, factVersionIds, ruleVersionIds, knowledgeVersionIds: snapshot.knowledgeContext ? [...snapshot.knowledgeContext.rules.map(rule => `knowledge.rule:${rule.id}@${rule.version}`), ...snapshot.knowledgeContext.assets.map(asset => `knowledge.asset:${asset.id}@r${asset.revision}`), ...snapshot.knowledgeContext.confirmedLearningSuggestions.map(item => `knowledge.learning:${item.id}`), ...(snapshot.knowledgeContext.competitorReferences?.map(item => `knowledge.competitor:${item.competitorAnalysisId}`) ?? [])] : [], taskInputSnapshotId: snapshot.id, createdBy: 'model', reason: input.reason ?? 'codex_native_generation', modelId: 'codex-host-session' }), state: 'review_required', revision: 1 }
     this.contentVersions.set(version.id, version)
@@ -5095,6 +5133,7 @@ export class MerchantService {
     if (!['approved', 'publish_prepared'].includes(task.state) || !task.contentVersionId) throw new DomainError('CONTENT_NOT_APPROVED', '内容未批准，不能准备发布')
     const version = this.contentVersions.get(task.contentVersionId)
     if (!version || version.state !== 'approved') throw new DomainError('CONTENT_VERSION_NOT_FOUND', '已批准内容版本不存在', 404)
+    if (this.isPlainTextVersion(version)) throw new DomainError('CONTENT_OUTPUT_NOT_PUBLISHABLE', '纯文本交付尚未配置平台发布映射，仅支持审核与导出', 409)
     const decisionBlockers = this.detailDecisionDeliveryBlockers(version)
     if (decisionBlockers.length) throw new DomainError('DETAIL_DECISION_CONTRACT_BLOCKED', '详情页决策证据不完整，禁止准备发布', 409, { findings: decisionBlockers })
     const product = this.products.get(task.productId)
@@ -5245,6 +5284,7 @@ export class MerchantService {
     const pending = task.pendingPublish
     if (!pending || pending.contentVersionId !== input.contentVersionId || pending.remoteSnapshotHash !== input.remoteSnapshotHash || pending.confirmationHash !== input.confirmationHash || !matchesStoredHash(pending.payloadSnapshot, pending.payloadHash)) throw new DomainError('STALE_PUBLISH_CONFIRMATION', '确认摘要与当前内容、选图或发布载荷不匹配，请重新准备发布', 409)
     const version = this.mustContentVersion(input.contentVersionId)
+    if (this.isPlainTextVersion(version)) throw new DomainError('CONTENT_OUTPUT_NOT_PUBLISHABLE', '纯文本交付尚未配置平台发布映射，仅支持审核与导出', 409)
     const currentSelection = version.visualSelection ? this.validateVisualSelection(task, version, product) : []
     const currentSelectionHash = version.visualSelection?.selectionHash ?? null
     let canonicalBinding: CanonicalExecutionBinding
