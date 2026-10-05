@@ -1606,6 +1606,28 @@ function userFacingToolText(method, result) {
     const rightsLabel = { approved: '已确认', pending: '待确认', rejected: '已拒绝' }[result.rightsStatus]
     if (rightsLabel) return `素材权益记录已更新，当前权益状态：${rightsLabel}。${result.aiModificationAllowed === true ? '已记录允许人工智能修改。' : result.aiModificationAllowed === false ? '已记录禁止人工智能修改。' : '人工智能修改许可仍待确认。'}具体用途、有效期和安全检查仍以素材记录为准。`
   }
+  if (method === 'task.clone' && knownSuccessfulState) {
+    const task = result.task
+    const freshMode = (result.copyMode === 'same_platform_fresh_task' && result.ruleReloadRequired === false)
+      || (result.copyMode === 'cross_platform_fresh_task' && result.ruleReloadRequired === true)
+    if (freshMode && result.staleContentCopied === false && result.stalePromotionCopied === false
+      && typeof result.sourceTaskId === 'string' && result.sourceTaskId.trim()
+      && typeof task?.id === 'string' && task.id.trim() && task.id !== result.sourceTaskId
+      && task.version === 1 && !task.productionPlan && !task.selectedDirectionId && ['draft', 'ready_for_direction'].includes(task.state)) {
+      return `已创建新的草稿任务，原任务保持不变。${task.state === 'draft' ? '下一步请补充待确认输入。' : '下一步可核对输入并准备、选择制作方向。'}${result.ruleReloadRequired ? '目标平台规则仍需重新加载与核验。' : ''}本次复制没有生成内容。`
+    }
+  }
+  if (method === 'task.answer' && knownSuccessfulState && typeof result.id === 'string' && result.id.trim()
+    && Number.isInteger(result.version) && result.version > 1 && result.inputSnapshotId === `task:${result.id}:v${result.version}`
+    && result.answers && typeof result.answers === 'object' && !Array.isArray(result.answers)
+    && Array.isArray(result.missingQuestions) && ['draft', 'ready_for_direction', 'direction_selected'].includes(result.state)) {
+    const next = result.state === 'draft' || result.missingQuestions.some(question => question?.kind === 'blocking')
+      ? '仍有待确认输入，请继续补充。'
+      : result.state === 'ready_for_direction' ? '下一步可准备并选择制作方向。' : '请核对当前方向与制作方案后继续。'
+    return `任务输入已保存。${next}本次保存没有生成内容。`
+  }
+  if (method === 'task.clone') return '任务复制结果尚未确认，请先查询任务状态，避免重复创建。'
+  if (method === 'task.answer') return '任务输入保存结果尚未确认，请先查询当前任务状态。'
   if (['task.select_direction', 'task.plan.confirm'].includes(method) && knownSuccessfulState) {
     const plan = result.productionPlan
     const planMatchesTask = typeof result.id === 'string' && result.id.trim()
