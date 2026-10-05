@@ -233,3 +233,9 @@ export function catalogProductsForStore(
       series,
     }))
 }
+
+/** Workspace drafts have no store identity; never manufacture an account for navigation. */
+export function catalogUnboundDraftProducts(products: Product[] | null, platform: string): Product[] | null {
+  if (products === null) return null
+  return products.filter(product => product.platform === platform && !String(product.accountId ?? '').trim())
+}

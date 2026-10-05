@@ -17,12 +17,14 @@ import {
   catalogPlatformLabel,
   catalogPlatformOrder,
   catalogProductsForStore,
+  catalogUnboundDraftProducts,
   type CatalogPlatformView,
   type CatalogProduct,
   type CatalogStoreView,
 } from './catalog-data'
 import { DetailDecisionContract } from './DetailDecisionContract'
 import { ProductSpreadsheetImport } from './ProductSpreadsheetImport'
+import { ProductKnowledgeReadback } from './knowledge-document-status'
 import {
   formatMaterialFileSize,
   isImageMaterial,
@@ -5388,8 +5390,34 @@ export function canImportCatalogForAccount(account: MerchantAuthAccount | null |
   )
 }
 
-function StoreCatalogExperience({ baseUrl, apiMode, canWrite }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean }) {
+export function UnboundDraftCatalog({ baseUrl, products, readNote, selectedProductId, onSelectProduct, onBack, onOpenKnowledge }: {
+  baseUrl?: string; products: ApiProduct[] | null; readNote: string; selectedProductId: string | null
+  onSelectProduct: (id: string | null) => void; onBack: () => void; onOpenKnowledge: () => void
+}) {
+  const product = products?.find(item => item.id === selectedProductId)
+  return <div className="page-stack products-page">
+    <button type="button" className="catalog-back" onClick={product ? () => onSelectProduct(null) : onBack}><ArrowLeft size={17} />{product ? '返回草稿列表' : '返回平台与店铺'}</button>
+    <section className="panel table-panel" aria-label="未绑定草稿">
+      <h1>{product ? product.title : '未绑定草稿'}</h1>
+      <p role="status">未绑定店铺，仅供草稿资料审核；不可同步或发布。</p>
+      {products === null ? <p role="status">{readNote || '商品列表尚未读取'}</p> : product ? <>
+        <p>商品事实：{product.factsConfirmed ? '已确认' : '待确认'}。知识审核、权益和索引状态需另行核验。</p>
+        <p>商品编号：{product.id}</p>
+        <h2>已保存的手工资料</h2>
+        {product.attributes && Object.keys(product.attributes).length ? <dl>{Object.entries(product.attributes).map(([key, value]) => <Fragment key={key}><dt>{key}</dt><dd>{String(value)}</dd></Fragment>)}</dl> : <p>未提供手工资料。不能从商品壳记录推断库存、价格或规格。</p>}
+        <ProductKnowledgeReadback key={product.id} baseUrl={baseUrl} productId={product.id} />
+        <h2>来源素材</h2>
+        {product.sourceAssetIds?.length ? <ul>{product.sourceAssetIds.map(id => <li key={id}>{id}</li>)}</ul> : <p>尚未记录来源素材。</p>}
+        <p>来源编号仅标识引用，不证明素材内容、权益或审核已通过。</p>
+        <button type="button" className="secondary" onClick={onOpenKnowledge}>前往素材库核对资料</button>
+      </> : products.length ? <ul>{products.map(item => <li key={item.id}><button type="button" className="text-button" onClick={() => onSelectProduct(item.id)}>{item.title}</button><span> · 商品事实{item.factsConfirmed ? '已确认' : '待确认'}</span></li>)}</ul> : <p>当前平台尚无未绑定草稿。</p>}
+    </section>
+  </div>
+}
+
+function StoreCatalogExperience({ baseUrl, apiMode, canWrite, onOpenKnowledge }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; onOpenKnowledge: () => void }) {
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
+  const [showUnboundDrafts, setShowUnboundDrafts] = useState(false)
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null)
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(1)
@@ -5485,6 +5513,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite }: { baseUrl?: stri
   const platforms = useMemo(() => buildCatalogPlatforms(accounts, products), [accounts, products])
   const catalogStores = useMemo(() => (platforms ?? []).flatMap((platform) => platform.stores), [platforms])
   const realConnectedStores = catalogStores.filter((store) => store.realConnected).length
+  const unboundDrafts = catalogUnboundDraftProducts(products, selectedPlatform ?? '')
   const selectedStore = catalogStores.find((store) => store.id === selectedStoreId) ?? null
   const selectedPlatformView = (platforms ?? []).find((platform) => platform.id === selectedPlatform) ?? null
   const selectedPlatformStores = selectedPlatformView?.stores ?? []
@@ -5552,6 +5581,12 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite }: { baseUrl?: stri
   const toggleCatalogProduct = (productId: string) => {
     setCatalogSelectedIds((current) => current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId])
   }
+  if (showUnboundDrafts) return <UnboundDraftCatalog
+    baseUrl={baseUrl}
+    products={unboundDrafts} readNote={productsNote} selectedProductId={selectedProductId}
+    onSelectProduct={setSelectedProductId} onBack={() => { setShowUnboundDrafts(false); setSelectedProductId(null) }}
+    onOpenKnowledge={onOpenKnowledge}
+  />
   if (selectedStore && !selectedStore.catalogAccessible) {
     return (
       <div className="store-catalog-page catalog-connection-page">
@@ -5733,6 +5768,13 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite }: { baseUrl?: stri
           ) : (
             <div className="catalog-platform-empty disconnected"><span><AlertCircle size={28} /></span><strong>{selectedPlatformView?.label ?? platformNames[selectedPlatform] ?? '所选平台'}尚无店铺记录</strong><p>{isManualPlatformOperationsMode(apiMode) ? '可以登记店铺 ID 和名称作为工作区内的人工记录；登记不会连接平台、读取商品或授予发布权限。' : '当前工作区尚无此平台店铺记录。'}</p></div>
           )}
+          {selectedPlatform && <section className="table-panel" aria-label="未绑定草稿入口">
+            <h3>未绑定草稿</h3>
+            <p>当前平台的工作区草稿，无需登记店铺。商品事实确认不代表知识审核或发布就绪。</p>
+            <button type="button" className="secondary" onClick={() => { setShowUnboundDrafts(true); setSelectedStoreId(null); setSelectedProductId(null) }}>
+              查看未绑定草稿（{unboundDrafts === null ? UNREAD_METRIC : unboundDrafts.length}）
+            </button>
+          </section>}
           {selectedPlatform ? <details className="catalog-import-disclosure">
             <summary>商品表格导入</summary>
             <ProductSpreadsheetImport baseUrl={baseUrl} accounts={accounts ?? []} canWrite={canWrite} />
@@ -13474,6 +13516,7 @@ export default function App() {
                       baseUrl={apiBaseUrl}
                       apiMode={apiMode}
                       canWrite={canImportCatalogForAccount(authAccount)}
+                      onOpenKnowledge={() => navigateTo('products', { entry: 'knowledge' })}
                     />
                   ) : (
                     <Products

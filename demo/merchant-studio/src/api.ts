@@ -1528,3 +1528,17 @@ export const fetchSyncJobs = (baseUrl: string) => fetchAllPages<SyncJob>(baseUrl
 export const revokePlatform = (baseUrl: string, platform: PlatformId, accountId: string) => requestApi<{ platform: PlatformId; accountId: string; state: string; remoteRevoked: boolean }>(baseUrl, `/v1/platform-accounts/${platform}`, { method: 'DELETE', headers: { 'x-account-id': accountId } })
 export const retrySyncFailures = (baseUrl: string, syncJobId: string, failureIds?: string[]) => requestApi<{ jobs: SyncJob[] }>(baseUrl, `/v1/sync-jobs/${encodeURIComponent(syncJobId)}/retry-failed`, { method: 'POST', body: JSON.stringify(failureIds?.length ? { failure_ids: failureIds } : {}) })
 export const modifyContentVersion = (baseUrl: string, contentVersionId: string, input: { changes: Record<string, unknown>; locked_fields?: string[]; reason: string; expected_revision?: number }) => requestApi<{ source: ContentVersion; version: ContentVersion; task: Task }>(baseUrl, `/v1/content-versions/${encodeURIComponent(contentVersionId)}/modify`, { method: 'POST', body: JSON.stringify(input) })
+
+export interface KnowledgeDocumentIndexSummary {
+  documentCount: number; liveCount: number; counts: Record<string, number>
+  reviewRequired: number; expiredCount: number; truncated: boolean; complete: boolean
+}
+export interface ProductKnowledgeAsset {
+  id: string; productId?: string; name: string; approvalStatus: string; rightsStatus: string; indexState: string
+  documentIndexSummary?: KnowledgeDocumentIndexSummary
+}
+export async function fetchProductKnowledgeAssets(baseUrl: string, productId: string): Promise<ProductKnowledgeAsset[]> {
+  const result = await requestMcp<ProductKnowledgeAsset[]>(baseUrl, 'knowledge.asset.list')
+  if (!Array.isArray(result)) throw new Error('知识资料响应未确认，请刷新重试')
+  return result.filter(asset => asset.productId === productId)
+}
