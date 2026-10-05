@@ -20,6 +20,11 @@ async function rpc(page,method,action){
       const refresh=assistant(page).getByRole('button',{name:'读取当前目录和合同',exact:true})
       if(await refresh.count()){await refresh.click();await expect(refresh).toBeEnabled({timeout:60000})}
     }
+    const quoteButton=assistant(page).getByRole('button',{name:'读取服务器冻结升级报价',exact:true})
+    if(await quoteButton.count()&&!(await preview.isEnabled().catch(()=>false))){
+      await merchantRpcAction(page,'ops.commercial.upgrade.quote.create',()=>quoteButton.click())
+      await expect(assistant(page)).toContainText('报价截止',{timeout:30000})
+    }
     await expect(preview).toBeEnabled({timeout:30000})
   }
   const result=await merchantRpcAction(page,method,action)
