@@ -30,7 +30,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     recheckWorkerAuthorizationSnapshot, executeReadyImageContinuation,
     imageGenerationReconciliationIdempotencyKey, verifiedWorkerRequestRoles,
     durableKnowledgeRepository, requiresStrictAuth, memoryKnowledge,
-    inMemoryTimelineEvents, recordActionSettlement, requestActor, reserveDailyModelBudget,
+    inMemoryTimelineEvents, recordActionSettlement, requestActor, reserveDailyModelBudget, releaseDailyModelBudget,
     recordRelayUsage, runModelUsageReconciliation, recordOperationAudit,
     runPaymentReconciliation } = context
   async function respond(): Promise<void> {
@@ -151,13 +151,43 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
         try { snapshot = parseWorkerAuthorizationSnapshot(event, 'image_generation.execute') }
         catch { throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '图片调用的持久身份授权证据无效', 403) }
         await recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, jobId, { eventId: event.id })
-        const execution = await repository.beginProviderDispatch({ workspaceId, jobId, ownerToken })
+        // Recheck at the final dispatch boundary, including older queued jobs.
+        // Never reserve retroactively for provider-started/unknown executions.
+        if (current?.state !== 'provider_reserved' || current.ownerToken !== ownerToken) throw new ImageGenerationExecutionError('IMAGE_GENERATION_EXECUTION_LEASE_LOST', current)
+        const job = service.getImageGenerationJob(workspaceId, jobId)
+        const expectedAction = `image:${job.idempotencyKey}`
+        const runKey = typeof event.payload.run_key === 'string' ? event.payload.run_key.trim() : ''
+        if (event.payload.action_id !== expectedAction || !runKey) throw new DomainError('MODEL_USAGE_BUDGET_LINK_CONFLICT', '图片执行的费用动作或任务预算标识不一致，已阻断模型调用', 409, { provider_dispatched: false })
+        const budget = await reserveDailyModelBudget(workspaceId, expectedAction, runKey, 'image')
+        if (budget && budget.reservation.status !== 'active') throw new DomainError('MODEL_USAGE_BUDGET_LINK_CONFLICT', '图片执行缺少有效的模型成本预留，已阻断模型调用', 409, { provider_dispatched: false })
+        let execution
+        try { execution = await repository.beginProviderDispatch({ workspaceId, jobId, ownerToken }) }
+        catch (error) {
+          // A concurrent proven pre-dispatch close may have released before
+          // our reserve committed. Release only its terminal zero-dispatch hold.
+          const latest = await repository.get({ workspaceId, jobId })
+          if (latest?.state === 'failed' && latest.eventId === event.id && !latest.providerStartedAt && !latest.providerRequestId) {
+            try { await releaseDailyModelBudget(workspaceId, expectedAction) }
+            catch (cleanupError) { throw Object.assign(new DomainError('MODEL_USAGE_BUDGET_CLEANUP_PENDING', '图片模型预算清理未完成，需对账', 503, { reconciliation_required: true }), { reconciliationRequired: true, cause: cleanupError }) }
+          }
+          throw error
+        }
         return send(res, 200, workspaceId, { execution }, null, req)
       }
       if (operation === 'fail_before_provider') {
         const eventId = requiredStringValue(input, 'event_id')
-        const execution = await repository.failBeforeProvider({ workspaceId, jobId, eventId, ownerToken, errorCode: requiredStringValue(input, 'error_code'), errorMessage: requiredStringValue(input, 'error_message') })
-        return send(res, 200, workspaceId, { execution }, null, req)
+        const event = persistence.outbox ? (await persistence.outbox.listAggregateEvents(workspaceId, jobId, 1000)).find(candidate => candidate.id === eventId && candidate.eventType === 'image.generation.requested') : undefined
+        const job = service.getImageGenerationJob(workspaceId, jobId)
+        const actionId = `image:${job.idempotencyKey}`
+        if (!event || event.payload.action_id !== actionId) throw new DomainError('MODEL_USAGE_BUDGET_LINK_CONFLICT', '图片预算清理缺少匹配的持久请求', 409)
+        const current = await repository.get({ workspaceId, jobId })
+        // Signed workers may retry budget-only cleanup of this frozen terminal
+        // event. This does not claim the erased owner lease was reacquired.
+        const alreadyClosed = current?.state === 'failed' && current.eventId === eventId && !current.providerStartedAt && !current.providerRequestId
+        const execution = alreadyClosed ? current : await repository.failBeforeProvider({ workspaceId, jobId, eventId, ownerToken, errorCode: requiredStringValue(input, 'error_code'), errorMessage: requiredStringValue(input, 'error_message') })
+        try { await releaseDailyModelBudget(workspaceId, actionId) }
+        catch (error) { throw Object.assign(new DomainError('MODEL_USAGE_BUDGET_CLEANUP_PENDING', '图片模型预算清理未完成，需对账', 503, { reconciliation_required: true }), { reconciliationRequired: true, cause: error }) }
+        return send(res, 200, workspaceId, { execution, ...(alreadyClosed ? { already_closed: true, budget_cleanup_only: true } : {}) }, null, req)
       }
       if (operation === 'provider_started') {
         const providerRequestId = typeof input.provider_request_id === 'string' ? input.provider_request_id.trim() : ''

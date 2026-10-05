@@ -27,7 +27,7 @@ export async function handleImageMcpMethod(method: string, params: Record<string
     recordActionSettlement, observeLegacyImageEntitlementShadow, refundModelEntitlement,
     refundPluginWalletDebit, observeLegacyWalletShadow, requireGenerationRulePreflight,
     requireRuleSafeGenerationText, getStoredObjectWithRetry, enforceMcpCommercialAccess,
-    imageCreativePointsEvidence, reserveCreativePointsForModel, releaseReservedModelPoints,
+    imageCreativePointsEvidence, reserveCreativePointsForModel, releaseReservedModelPoints, reserveDailyModelBudget,
     withCommercialWorkerSnapshot, commercialWorkerSnapshotForReservation, persistEvent,
     persistSnapshot, persistSnapshotsAndEvent, workerAuthorizationSnapshot,
     serializedWorkerAuthorizationSnapshot, header, signedAssetDisplayUrl, imageTrace,
@@ -276,6 +276,11 @@ export async function handleImageMcpMethod(method: string, params: Record<string
             const commercialAccessSnapshot = await commercialWorkerSnapshotForReservation(workspaceId, 'image_generation.execute', commercialDecision, creativeReservation?.id)
             if (commercialAccessSnapshot) eventPayload.commercial_access_snapshot = commercialAccessSnapshot
             const guardedEventPayload = await withCommercialWorkerSnapshot(workspaceId, 'image.generation.requested', eventPayload)
+            // Durable execution bypasses the API imageGenerator wrapper. Reserve
+            // the same action/run that the worker will report before publishing
+            // its dispatchable outbox event; creative points are a separate hold.
+            const budget = await reserveDailyModelBudget(workspaceId, walletDebitKey, walletDebitKey, 'image')
+            if (budget && budget.reservation.status !== 'active') throw new DomainError('MODEL_USAGE_BUDGET_LINK_CONFLICT', '图片任务没有有效的模型成本预留，已阻断入队', 409, { provider_dispatched: false })
             return { guardedEventPayload }
           }, async () => {
             // This scope ends before persistSnapshotAndEvent is called, so the

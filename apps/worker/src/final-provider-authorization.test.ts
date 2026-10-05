@@ -251,3 +251,30 @@ describe('image zero-provider rejection closure', () => {
       .rejects.toMatchObject({ code: 'IMAGE_GENERATION_PRE_PROVIDER_CLOSE_UNAVAILABLE', retryable: false, unknown: false })
   })
 })
+
+
+describe('image budget zero-dispatch classification', () => {
+  it.each(['MODEL_DAILY_COST_BUDGET_EXCEEDED', 'MODEL_TASK_COST_LIMIT_EXCEEDED', 'MODEL_COST_BUDGET_PREFLIGHT_UNAVAILABLE', 'MODEL_COST_BUDGET_CONTEXT_REQUIRED', 'MODEL_USAGE_BUDGET_LINK_CONFLICT'])('closes only explicit %s before POST', async code => {
+    const event = fixture('image_generation.execute')
+    const operations: string[] = []
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      const operation = JSON.parse(String(init?.body)).operation; operations.push(operation)
+      return operation === 'begin_provider_dispatch'
+        ? Response.json({ error: { code } }, { status: 503 })
+        : Response.json({ data: { execution: { state: 'failed', workspaceId: event.workspaceId, jobId: event.aggregateId, eventId: event.id } } })
+    })
+    const input = { apiBaseUrl: 'https://api.example.test', apiToken: 'test', event, ownerToken: 'owner', fetcher }
+    let error: unknown
+    try { await updateImageGenerationExecution({ ...input, operation: 'begin_provider_dispatch' }) } catch (caught) { error = caught }
+    await expect(closeRejectedImageDispatch({ ...input, error, providerRequests: 0 })).rejects.toMatchObject({ code, unknown: false })
+    expect(operations).toEqual(['begin_provider_dispatch', 'fail_before_provider'])
+  })
+  it.each(['INTERNAL_ERROR', 'MODEL_USAGE_BUDGET_CLEANUP_PENDING', 'IMAGE_GENERATION_EXECUTION_GATE_UNAVAILABLE'])('keeps %s unknown instead of closing', async code => {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ error: { code } }, { status: 503 }))
+    const input = { apiBaseUrl: 'https://api.example.test', apiToken: 'test', event: fixture('image_generation.execute'), ownerToken: 'owner', fetcher }
+    let error: unknown
+    try { await updateImageGenerationExecution({ ...input, operation: 'begin_provider_dispatch' }) } catch (caught) { error = caught }
+    await expect(closeRejectedImageDispatch({ ...input, error, providerRequests: 0 })).rejects.toBe(error)
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+})

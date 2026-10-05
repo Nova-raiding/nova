@@ -10666,6 +10666,7 @@ export function imageMcpRuntime() {
     enforceMcpCommercialAccess,
     imageCreativePointsEvidence,
     reserveCreativePointsForModel,
+    reserveDailyModelBudget,
     releaseReservedModelPoints,
     withCommercialWorkerSnapshot,
     commercialWorkerSnapshotForReservation,
@@ -13873,7 +13874,7 @@ function internalRuntimeContext(req: IncomingMessage, res: ServerResponse, path:
     recheckWorkerAuthorizationSnapshot, executeReadyImageContinuation,
     imageGenerationReconciliationIdempotencyKey, verifiedWorkerRequestRoles,
     durableKnowledgeRepository, requiresStrictAuth, memoryKnowledge,
-    inMemoryTimelineEvents, recordActionSettlement, requestActor, reserveDailyModelBudget,
+    inMemoryTimelineEvents, recordActionSettlement, requestActor, reserveDailyModelBudget, releaseDailyModelBudget,
     recordRelayUsage, runModelUsageReconciliation, recordOperationAudit,
     runPaymentReconciliation,
   }

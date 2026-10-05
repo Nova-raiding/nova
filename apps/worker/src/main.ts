@@ -1266,6 +1266,14 @@ export async function updateImageGenerationExecution(input: { apiBaseUrl: string
     let apiError: { code?: unknown; message?: unknown } | undefined
     try { apiError = (await parseWorkerApiJson(response) as { error?: typeof apiError }).error } catch { /* preserve bounded fallback */ }
     const code = typeof apiError?.code === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/u.test(apiError.code) ? apiError.code : undefined
+    // These explicit API preflight errors occur before dispatch CAS/provider I/O.
+    // Never classify transport failures or arbitrary 5xx as known-not-sent.
+    const budgetRejected = input.operation === 'begin_provider_dispatch' && code && new Set([
+      'MODEL_DAILY_COST_BUDGET_EXCEEDED', 'MODEL_TASK_COST_LIMIT_EXCEEDED',
+      'MODEL_COST_BUDGET_PREFLIGHT_UNAVAILABLE', 'MODEL_COST_BUDGET_CONTEXT_REQUIRED',
+      'MODEL_USAGE_BUDGET_LINK_CONFLICT',
+    ]).has(code)
+    if (budgetRejected) throw new WorkerExecutionAuthorizationError(code, 'image dispatch model budget preflight was rejected', { retryable: false })
     const workspaceDisabled = code === 'WORKSPACE_DISABLED' || response.status === 423
     if (workspaceDisabled || (code && (code.startsWith('CUSTOMER_DELIVERY_') || code.startsWith('AUTHZ_') || code.startsWith('AUTHORIZATION_'))) || response.status === 401 || response.status === 403) {
       throw new WorkerExecutionAuthorizationError(workspaceDisabled ? 'WORKSPACE_DISABLED' : code ?? 'AUTHZ_EXECUTION_RECHECK_DENIED', typeof apiError?.message === 'string' ? apiError.message : 'image dispatch authorization was rejected', { retryable: !workspaceDisabled && (response.status === 429 || response.status >= 500) })
