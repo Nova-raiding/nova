@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
@@ -76,8 +77,7 @@ describe('migration 104 interactive confirmation tickets', () => {
     } finally {
       await app?.end()
       await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
+      await dropDrainedPostgresFixture(admin, databaseName)
       await admin.end()
     }
   }, 240_000)
