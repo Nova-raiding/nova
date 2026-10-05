@@ -122,7 +122,7 @@ rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
        JOIN pg_attribute a ON a.attrelid = c.oid
         AND a.attname = 'workspace_id' AND NOT a.attisdropped
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
-        AND c.relname NOT IN ('commercial_rollouts', 'workspace_commercial_notifications', 'workspace_commercial_result_notifications', 'workspace_commercial_notification_reads', 'workspace_commercial_notification_read_requests', 'workspace_members', 'workspace_identity_bindings', 'workspace_commercial_settings', 'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events', 'authorization_execution_reservations', 'mcp_oauth_authorization_codes', 'mcp_oauth_tokens', 'local_plugin_connection_requests', 'local_plugin_install_instances', 'local_plugin_install_audit')
+        AND c.relname NOT IN ('commercial_rollouts', 'workspace_commercial_notifications', 'workspace_commercial_result_notifications', 'workspace_commercial_notification_reads', 'workspace_commercial_notification_read_requests', 'workspace_members', 'workspace_identity_bindings', 'workspace_commercial_settings', 'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events', 'authorization_execution_reservations', 'mcp_oauth_authorization_codes', 'mcp_oauth_tokens', 'local_plugin_connection_requests', 'local_plugin_install_instances', 'local_plugin_install_audit', 'commercial_cash_allocations_v2', 'commercial_cash_receipt_balances_v2', 'commercial_cash_receipt_matches_v2', 'commercial_cash_receipts_v2', 'commercial_cash_returns_v2')
    ), scoped_policies AS (
      SELECT schemaname, tablename, count(*) AS policy_count,
             bool_or(
@@ -139,6 +139,32 @@ rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
      LEFT JOIN scoped_policies p ON p.tablename = t.relname
     WHERE NOT t.relrowsecurity OR NOT t.relforcerowsecurity OR coalesce(p.policy_count, 0) = 0 OR coalesce(p.unsafe_policy, true)")
 [ -z "$rls_failures" ] || { echo "tenant tables missing forced workspace RLS policy: $rls_failures" >&2; exit 1; }
+
+# Commercial cash relations intentionally expose an additional platform/Ops
+# policy and nullable-workspace receipt facts. They still require a forced
+# tenant workspace policy; validate that policy family separately from the
+# ordinary single-policy tenant catalog above.
+cash_rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "WITH expected(tablename, policyname) AS (
+     VALUES
+       ('commercial_cash_allocations_v2', 'commercial_cash_allocations_v2_workspace'),
+       ('commercial_cash_receipt_balances_v2', 'commercial_cash_receipt_balances_v2_workspace'),
+       ('commercial_cash_receipt_matches_v2', 'cash_matches_workspace'),
+       ('commercial_cash_receipts_v2', 'commercial_cash_receipts_v2_workspace'),
+       ('commercial_cash_returns_v2', 'commercial_cash_returns_v2_workspace')
+   ), actual AS (
+     SELECT tablename, policyname, qual
+       FROM pg_policies
+      WHERE schemaname = 'public'
+   )
+   SELECT coalesce(string_agg(e.tablename, ',' ORDER BY e.tablename), '')
+     FROM expected e
+     LEFT JOIN actual a USING (tablename, policyname)
+     LEFT JOIN pg_class c ON c.oid = to_regclass('public.' || e.tablename)
+    WHERE c.oid IS NULL OR NOT c.relrowsecurity OR NOT c.relforcerowsecurity
+       OR a.policyname IS NULL
+       OR replace(a.qual, ' ', '') <> replace('(workspace_id = current_setting(''app.workspace_id''::text, true))', ' ', '')")
+[ -z "$cash_rls_failures" ] || { echo "commercial cash tables missing forced workspace RLS policy: $cash_rls_failures" >&2; exit 1; }
 
 # Notifications additionally bind the trusted recipient, rather than exposing
 # other members' private publication snapshots within the same workspace.

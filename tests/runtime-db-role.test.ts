@@ -29,6 +29,17 @@ describe('runtime database role verification', () => {
     expect(source).toContain('special_scoped_failures=')
     expect(source).not.toContain("tablename <> 'workspace_members'")
   })
+  it('keeps nullable-workspace commercial cash policies outside the ordinary tenant check', () => {
+    const source = readFileSync(scriptPath, 'utf8')
+    expect(source).toContain('cash_rls_failures=')
+    for (const table of [
+      'commercial_cash_allocations_v2',
+      'commercial_cash_receipt_balances_v2',
+      'commercial_cash_receipt_matches_v2',
+      'commercial_cash_receipts_v2',
+      'commercial_cash_returns_v2',
+    ]) expect(source).toContain(`'${table}'`)
+  })
 
   it('runs positive and cross-tenant read/write probes for both special tables', () => {
     const source = readFileSync(scriptPath, 'utf8')
