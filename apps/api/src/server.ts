@@ -147,6 +147,7 @@ import { routeAssetHttp } from './http-asset-routes.js'
 import { reviewProductImagesForMcp, parseImageListForMcp, GENERATED_IMAGE_MIME, MAX_ARCHIVED_IMAGE_BYTES, MAX_ARCHIVED_VIDEO_BYTES, artifactDownloadSignal, artifactDownloadFailure, imageArtifactBody, assertVideoArtifactUrl, videoSignatureMatches, readBoundedVideoBody, generatedImageSignatureMatches, videoArtifactFetcherForTestsValue } from './image-artifact-policy.js'
 import { publicImageJob as publicImageJobModule, publicImageJobForCommercialRead as publicImageJobForCommercialReadModule, assetDisplayProjection as assetDisplayProjectionModule } from './image-projections.js'
 import { createImageArchiveHelpers } from './image-archive-helpers.js'
+import { aggregateContentExecutionEvidence } from './content-execution-evidence.js'
 import { createPublicAssetDisplayHelpers } from './public-asset-display.js'
 import { createPromotionCleanup } from './asset-promotion-cleanup.js'
 export { trustedDashScopeImageArtifactHost, assertVideoArtifactUrl, setVideoArtifactFetcherForTests, videoSignatureMatches } from './image-artifact-policy.js'
@@ -691,31 +692,8 @@ export function executionContract(modality: ExecutionModality, providerExecuted:
 async function contentExecutionEvidence(workspaceId: string, actionId: string) {
   await persistenceReady
   const rows = await (persistence.modelUsage ?? memoryModelUsage).listByAction(workspaceId, actionId)
-  const receipt = rows
-    .filter(item => item.modality === 'text')
-    .slice()
-    .sort((left, right) => right.revision - left.revision || Date.parse(right.observedAt) - Date.parse(left.observedAt))[0]
-  const usage = receipt && (receipt.inputTokens !== undefined || receipt.outputTokens !== undefined || receipt.totalTokens !== undefined)
-    ? {
-        ...(receipt.inputTokens !== undefined ? { inputTokens: receipt.inputTokens } : {}),
-        ...(receipt.outputTokens !== undefined ? { outputTokens: receipt.outputTokens } : {}),
-        ...(receipt.totalTokens !== undefined ? { totalTokens: receipt.totalTokens } : {}),
-      }
-    : undefined
-  const settled = Boolean(
-    receipt
-    && receipt.settlementStatus === 'settled'
-    && receipt.providerRequestId?.trim()
-    && usage
-    && receipt.costCny !== undefined,
-  )
-  return {
-    ...executionContract('content', settled, receipt?.model),
-    ...(receipt?.providerRequestId ? { providerRequestId: receipt.providerRequestId } : {}),
-    ...(usage ? { usage } : {}),
-    ...(receipt?.costCny !== undefined ? { costCny: receipt.costCny } : {}),
-    ...(receipt ? { settlementStatus: receipt.settlementStatus, actionId } : {}),
-  }
+  const { settled, model, ...evidence } = aggregateContentExecutionEvidence(rows, actionId)
+  return { ...executionContract('content', settled, model), ...evidence }
 }
 
 function controlledRelayEnvironment() {
