@@ -20,6 +20,7 @@ class Client implements SqlClient {
   this.calls.push(sql)
   this.bindings=[...this.bindings,[...values]]
   if(sql.includes('pg_catalog.to_regclass'))return {rows:[{present:this.present}]} as SqlQueryResult<Row>
+  if(sql.includes('pg_catalog.to_regclass'))return {rows:[{present:this.present}]} as SqlQueryResult<Row>
   if(sql.includes('FROM public.schema_migrations'))return {rows:history.slice(0,this.tail)} as SqlQueryResult<Row>
   if(sql.includes('FROM commercial_order_terms_v3')){if(this.queryFailure)throw this.queryFailure;return {rows:[]}}
   if(sql.includes('FROM commercial_orders_v2 o'))return {rows:[this.frozen]} as SqlQueryResult<Row>
@@ -74,6 +75,18 @@ describe('verified historical commercial obligation compatibility',()=>{
   await expect(repository(new Client(263,v3,true)).findOrderByIdempotencyKey('ws','maker','original',{onlyV3:true})).resolves.toMatchObject({order:{id:'order'}})
   await expect(repository(new Client(263,order,true)).findOrderByIdempotencyKey('ws','maker','original',{onlyV3:true})).resolves.toBeNull()
   await expect(repository(new Client(263,{...v3,termsOrderId:null},true)).findOrderByIdempotencyKey('ws','maker','original',{onlyV3:true})).rejects.toMatchObject({code:'COMMERCIAL_POLICY_UNRESOLVED'})
+ })
+ it('returns verified V3 payment expiry on merchant recovery while retaining the old-schema query path',async()=>{
+  const deadline='2026-10-06T12:00:00.000Z'
+  const v3={...order,expiresAt:deadline,purchaseKind:'onboarding_once' as const}
+  const current=new Client(266,v3,true)
+  await expect(repository(current).getPaymentStatus('ws','order')).resolves.toMatchObject({order:{id:'order',expiresAt:deadline}})
+  const lookup=current.calls.find(sql=>sql.includes('FROM commercial_orders_v2 o'))!
+  expect(lookup).toContain('LEFT JOIN commercial_order_terms_v3 t')
+  expect(lookup).toContain('t.expires_at AS "expiresAt"')
+  const historical=new Client(257)
+  await expect(repository(historical).getPaymentStatus('ws','order')).resolves.toMatchObject({order:{id:'order',expiresAt:null}})
+  expect(historical.calls.some(sql=>sql.includes('commercial_order_terms_v3'))).toBe(false)
  })
  it('does not hide a current missing-table or real lookup error as no prior request',async()=>{
   await expect(repository(new Client(263)).findOrderByIdempotencyKey('ws','maker','original',{onlyV3:true})).rejects.toMatchObject({code:'COMMERCIAL_SCHEMA_INCOMPLETE'})
