@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { closeSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -16,6 +16,7 @@ import { prepareOwnedCommercialHistoryFixture, prepareOwnedCommercialPendingFixt
 import { isolatedCommercialSalesMode, prepareOwnedCommercialSalesLease, type OwnedCommercialSalesLease } from './ops-commercial-sales-lease.js'
 import { collectProductImportScanEvidence } from './product-import-scan-evidence.js'
 import { disposeOpsE2eChild, monitorOpsE2eChild } from './ops-e2e-child-monitor.js'
+import { acquireCommercialE2eLock } from './commercial-e2e-exclusive-lock.js'
 
 // Own all persistence and identities; never copy a business container or .env.
 export function opsChildEnvironment(source: NodeJS.ProcessEnv, additions: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -266,21 +267,13 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   if (source.OPS_E2E_MERCHANT_UI !== undefined && source.OPS_E2E_MERCHANT_UI !== 'true') throw new Error('OPS_E2E_MERCHANT_UI_INVALID')
   const manualOperationsMode = isolatedManualOperationsMode(source)
   const authorizationSuperAdminLogin = validateOpsE2eSpecIsolation(args, manualOperationsMode)
-  let commercialRunLock: string | undefined
+  let releaseCommercialRunLock: (() => void) | undefined
   if (commercialSalesMode) {
-    commercialRunLock = resolve('artifacts/ops-jit-isolation', '.commercial-sales-exclusive.lock')
-    mkdirSync(resolve('artifacts/ops-jit-isolation'), { recursive: true, mode: 0o700 })
-    let lock: number
-    try { lock = openSync(commercialRunLock, 'wx', 0o600) }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('OPS_E2E_COMMERCIAL_SALES_ALREADY_RUNNING')
-      throw error
-    }
-    try { writeFileSync(lock, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), spec: args[0] })) }
-    finally { closeSync(lock) }
+    releaseCommercialRunLock = acquireCommercialE2eLock(resolve('artifacts/ops-jit-isolation', '.commercial-sales-exclusive.lock'))
   }
   const evidenceDir = resolve('artifacts/ops-jit-isolation', `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}`)
-  mkdirSync(evidenceDir, { recursive: true, mode: 0o700 })
+  try { mkdirSync(evidenceDir, { recursive: true, mode: 0o700 }) }
+  catch (error) { releaseCommercialRunLock?.(); throw error }
   const children: ChildProcess[] = []
   const ownedApiChildren: ChildProcess[] = []
   let commercialLease: OwnedCommercialSalesLease | undefined
@@ -329,7 +322,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const childrenDisposed = await Promise.allSettled(children.map(disposeOpsE2eChild))
     if (childrenDisposed.some(result => result.status === 'rejected')) cleanupErrors.push('OPS_E2E_CHILD_CLEANUP_FAILED')
     cleanupErrors.push(...await disposeOpsE2eResources(scanner, fixture))
-    if (commercialRunLock) try { unlinkSync(commercialRunLock) } catch { cleanupErrors.push('OPS_E2E_COMMERCIAL_LOCK_CLEANUP_FAILED') }
+    try { releaseCommercialRunLock?.() } catch { cleanupErrors.push('OPS_E2E_COMMERCIAL_LOCK_CLEANUP_FAILED') }
     if (cleanupErrors.length) throw new Error(cleanupErrors.join(':'))
   })()
   const onInterrupt = () => { void cleanup().finally(() => process.exit(130)) }

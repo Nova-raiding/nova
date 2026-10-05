@@ -53,6 +53,22 @@ export interface CommercialMcpDependencies {
   rethrowPurchase: (error: unknown) => never
 }
 
+/** Convert persistence/policy failures from quote creation into the public
+ * commercial error contract. Keep unexpected failures untouched so the API's
+ * normal internal-error path still records them as such. */
+export function rethrowCommercialUpgradeQuoteError(error: unknown): never {
+  if (error instanceof DomainError) throw error
+  const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : null
+  if (code === 'COMMERCIAL_ONBOARDING_REQUIRED') throw new DomainError(code, '请先完成开通服务，再购买或升级套餐', 409)
+  if (code === 'COMMERCIAL_DOWNGRADE_NOT_ALLOWED') throw new DomainError(code, '当前套餐只支持升级，不能降级', 409)
+  if (code === 'COMMERCIAL_PLAN_FAMILY_MISMATCH') throw new DomainError(code, '目标套餐与当前套餐不属于同一套餐系列', 409)
+  if (code === 'COMMERCIAL_IDEMPOTENCY_CONFLICT') throw new DomainError(code, '该请求编号已用于其他升级意图，请查询原请求或更换请求编号', 409)
+  if (code === 'COMMERCIAL_CATALOG_UNAVAILABLE' || code === 'COMMERCIAL_POLICY_UNRESOLVED') {
+    throw new DomainError('COMMERCIAL_UPGRADE_UNAVAILABLE', '升级报价依赖的套餐或计价规则暂不可用，请稍后重试', 503, { retryable: true })
+  }
+  throw error
+}
+
 /** Called after the shared MCP schema, identity, workspace and commercial gates. */
 export async function handleCommercialMcpMethod(method: string, params: JsonObject, workspaceId: string, req: IncomingMessage, deps: CommercialMcpDependencies): Promise<unknown> {
   switch (method) {
@@ -123,9 +139,15 @@ export async function handleCommercialMcpMethod(method: string, params: JsonObje
       await deps.ready
       const contracts = deps.persistence.commercialContracts
       if (!contracts) throw new DomainError('COMMERCIAL_PURCHASE_UNAVAILABLE', '交易仓储未配置', 503)
-      const quote = method.endsWith('.create') ? await contracts.createUpgradeQuote({ workspaceId, actorId: deps.actor(req), targetSkuCode: deps.required(params, 'target_sku_code'), idempotencyKey: deps.required(params, 'idempotency_key') })
-        : method.endsWith('.request.get') ? await contracts.findQuoteByIdempotencyKey(workspaceId, deps.actor(req), deps.required(params, 'idempotency_key'))
-        : await contracts.getUpgradeQuote(workspaceId, deps.required(params, 'upgrade_quote_id'))
+      let quote
+      try {
+        quote = method.endsWith('.create') ? await contracts.createUpgradeQuote({ workspaceId, actorId: deps.actor(req), targetSkuCode: deps.required(params, 'target_sku_code'), idempotencyKey: deps.required(params, 'idempotency_key') })
+          : method.endsWith('.request.get') ? await contracts.findQuoteByIdempotencyKey(workspaceId, deps.actor(req), deps.required(params, 'idempotency_key'))
+          : await contracts.getUpgradeQuote(workspaceId, deps.required(params, 'upgrade_quote_id'))
+      } catch (error) {
+        if (method.endsWith('.create')) rethrowCommercialUpgradeQuoteError(error)
+        throw error
+      }
       if (!quote && !method.endsWith('.request.get')) throw new DomainError('COMMERCIAL_UPGRADE_QUOTE_NOT_FOUND', '升级报价不存在', 404)
       return quote ? projectCommercialUpgradeQuote(quote) : null
     }

@@ -3251,7 +3251,15 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const commercialPointOrigins = new PostgresCommercialPointOriginReadRepository(sqlPool)
     const commercialReceipts = opsPool ? new PostgresCommercialReceiptRepository(sqlPool, opsSqlPool) : undefined
     const commercialBenefitBundles = opsPool ? new PostgresCommercialBenefitBundleRepository(opsSqlPool) : undefined
-    const notificationAuthorizer: CommercialNotificationAuthorizer = (recipient, publication) => publication.visibility === 'public' && capabilitiesForRoles(resolveCanonicalRoles({ memberRole: recipient.role })).includes('billing.self.read')
+    const notificationAuthorizer: CommercialNotificationAuthorizer = (recipient, publication) => {
+      const canReadBilling = capabilitiesForRoles(resolveCanonicalRoles({ memberRole: recipient.role })).includes('billing.self.read')
+      const publicCatalogOrResult = publication.visibility === 'public'
+      const exactPrivatePurchaseBeneficiary = publication.visibility === 'private'
+        && publication.notificationKind === 'purchase_result'
+        && Boolean(publication.beneficiaryMemberId)
+        && publication.beneficiaryMemberId === recipient.memberId
+      return canReadBilling && (publicCatalogOrResult || exactPrivatePurchaseBeneficiary)
+    }
     const commercialNotifications = new PostgresCommercialNotificationRepository(sqlPool, notificationAuthorizer)
     const commercialNotificationFanout = opsPool ? new PostgresCommercialNotificationRepository(opsSqlPool, notificationAuthorizer) : undefined
     const demoEvaluationEntitlements = new PostgresDemoEvaluationEntitlementRepository(sqlPool)

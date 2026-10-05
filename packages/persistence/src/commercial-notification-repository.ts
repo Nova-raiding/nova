@@ -10,6 +10,7 @@ export interface CommercialNotificationBatch { scanned: number; delivered: numbe
 export interface CommercialNotificationRecipient { workspaceId: string; memberId: string; identityId: string | null; role: string }
 export interface CommercialNotificationPublication {
   eventId: string; skuCode: string; version: number; visibility: 'public' | 'private'; payload: Record<string, unknown>; publishedAt: string
+  notificationKind?: 'catalog_publication' | 'purchase_result'; beneficiaryMemberId?: string | null
 }
 /** Local authorization only; never perform network work while holding this transaction. */
 export type CommercialNotificationAuthorizer = (recipient: CommercialNotificationRecipient, publication: CommercialNotificationPublication) => boolean
@@ -46,8 +47,8 @@ export function deriveCommercialPurchaseResultNotification(source: CommercialPur
    ...(typeof source.sku.requiredCapability === 'string' ? { required_capability: source.sku.requiredCapability } : {}),
  } }
 }
-const commercialNotificationFeed = `SELECT n.event_id::text AS event_id,n.sku_code,n.version,n.visibility,n.payload,n.published_at AS created_at,'catalog_publication'::text AS notification_kind,'publication:'||n.event_id::text AS notification_key,n.event_id::text||':'||n.member_id::text AS notification_id,NULL::text AS order_id,NULL::text AS result_state FROM workspace_commercial_notifications n WHERE n.workspace_id=$1 AND n.member_id=$2
- UNION ALL SELECT n.source_event_id AS event_id,n.sku_code,n.version,n.visibility,n.payload,n.published_at AS created_at,'purchase_result'::text AS notification_kind,'result:'||n.source_event_id AS notification_key,'result:'||n.source_event_id||':'||n.member_id::text AS notification_id,n.order_id,n.result_state FROM workspace_commercial_result_notifications n WHERE n.workspace_id=$1 AND n.member_id=$2`
+const commercialNotificationFeed = `SELECT n.event_id::text AS event_id,n.sku_code,n.version,n.visibility,n.payload,n.published_at AS created_at,'catalog_publication'::text AS notification_kind,'publication:'||n.event_id::text AS notification_key,n.event_id::text||':'||n.member_id::text AS notification_id,NULL::text AS order_id,NULL::text AS result_state,NULL::text AS beneficiary_member_id FROM workspace_commercial_notifications n WHERE n.workspace_id=$1 AND n.member_id=$2
+ UNION ALL SELECT n.source_event_id AS event_id,n.sku_code,n.version,n.visibility,n.payload,n.published_at AS created_at,'purchase_result'::text AS notification_kind,'result:'||n.source_event_id AS notification_key,'result:'||n.source_event_id||':'||n.member_id::text AS notification_id,n.order_id,n.result_state,o.beneficiary_member_id::text FROM workspace_commercial_result_notifications n JOIN commercial_purchase_result_notification_outbox o ON o.workspace_id=n.workspace_id AND o.source_event_id=n.source_event_id WHERE n.workspace_id=$1 AND n.member_id=$2`
 const iso = (value: Date | string) => new Date(value).toISOString()
 const merchantReadRoles = new Set(['workspace_owner','merchant_admin','workspace_admin','operator','merchant_operator','support','finance'])
 const publicOnly: CommercialNotificationAuthorizer = (recipient, publication) => merchantReadRoles.has(recipient.role) && publication.visibility === 'public'
@@ -56,7 +57,7 @@ function pageLimit(value: number, max: number): number {
   return Math.min(value, max)
 }
 function publication(row: PublicationRow): CommercialNotificationPublication {
-  return { eventId: row.event_id, skuCode: row.sku_code, version: row.version, visibility: row.visibility, payload: row.payload, publishedAt: iso(row.created_at) }
+  return { eventId: row.event_id, skuCode: row.sku_code, version: row.version, visibility: row.visibility, payload: row.payload, publishedAt: iso(row.created_at), notificationKind: row.notification_kind, beneficiaryMemberId: row.beneficiary_member_id }
 }
 function recipient(row: MemberRow): CommercialNotificationRecipient {
   return { workspaceId: row.workspace_id, memberId: row.id, identityId: row.identity_id, role: row.role }
@@ -139,12 +140,15 @@ export class PostgresCommercialNotificationRepository {
       const result = await client.query<PublicationRow>(`SELECT source_event_id AS event_id,sku_code,version,visibility,payload,created_at,cursor_member_id,order_id,result_state,beneficiary_member_id FROM commercial_purchase_result_notification_outbox WHERE workspace_id=$1 AND source_event_id=$2 AND lease_token=$3 AND lease_until>clock_timestamp() AND completed_at IS NULL FOR UPDATE`, [workspaceId, lease.eventId, lease.token])
       const event = result.rows[0]
       if (!event) throw new Error('COMMERCIAL_NOTIFICATION_LEASE_LOST')
+      // Purchase results are private to the immutable beneficiary captured at
+      // checkout. Missing bindings have no safe recipient; never widen to the
+      // workspace audience.
       const members = event.beneficiary_member_id
         ? await client.query<MemberRow>(`SELECT m.id,m.workspace_id,m.identity_id,m.role FROM workspace_members m LEFT JOIN platform_identities i ON i.id=m.identity_id WHERE m.workspace_id=$1 AND m.id=$2 AND m.created_at<=$3 AND m.status='active' AND (m.identity_id IS NULL OR i.access_status='active') ORDER BY m.id::text LIMIT $4`, [workspaceId, event.beneficiary_member_id, event.created_at, limit])
-        : await client.query<MemberRow>(`SELECT m.id,m.workspace_id,m.identity_id,m.role FROM workspace_members m LEFT JOIN platform_identities i ON i.id=m.identity_id WHERE m.workspace_id=$1 AND m.id::text>$2 AND m.created_at<=$3 AND m.status='active' AND (m.identity_id IS NULL OR i.access_status='active') ORDER BY m.id::text LIMIT $4`, [workspaceId, event.cursor_member_id, event.created_at, limit])
+        : { rows: [] as MemberRow[] }
       let delivered = 0
       for (const member of members.rows) {
-        if (!this.authorize(recipient(member), publication(event))) continue
+        if (!this.authorize(recipient(member), { ...publication(event), notificationKind: 'purchase_result', beneficiaryMemberId: event.beneficiary_member_id })) continue
         const inserted = await client.query(`INSERT INTO workspace_commercial_result_notifications(workspace_id,member_id,source_event_id,order_id,result_state,sku_code,version,visibility,payload,published_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10 FROM workspace_members WHERE workspace_id=$1 AND id=$2 AND status='active' ON CONFLICT(workspace_id,member_id,source_event_id) DO NOTHING`, [workspaceId,member.id,event.event_id,event.order_id,event.result_state,event.sku_code,event.version,event.visibility,JSON.stringify(event.payload),event.created_at])
         delivered += inserted.rowCount ?? 0
       }
