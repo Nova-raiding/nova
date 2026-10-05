@@ -9,7 +9,7 @@ function depsFor(error: unknown): CommercialMcpDependencies {
   return {
     ready: Promise.resolve(),
     persistence: { commercialContracts: { createUpgradeQuote: vi.fn(async () => { throw error }) } } as never,
-    required: (params, key) => String(params[key]),
+    required: (params: Record<string, unknown>, key: string) => String(params[key]),
     actor: () => 'actor-1',
   } as unknown as CommercialMcpDependencies
 }
