@@ -57,6 +57,7 @@ describe('workspace storage quota accounting', () => {
       return listed.data?.result.storage_quota.usedBytes as number
     }
 
+    vi.stubEnv('ASSET_STORAGE_QUOTA_BYTES', String(2 * bytes.byteLength))
     const first = await upload(1, 'quota-a.txt')
     expect(first.error).toBeNull()
     expect(await usedBytes(2)).toBe(bytes.byteLength)
@@ -65,6 +66,9 @@ describe('workspace storage quota accounting', () => {
     // (workspace, sha256) and the non trusted clean branch writes a second
     // object under the same asset id with a new object key. Both objects are
     // real stored bytes, so both must be charged.
+    // A smaller default for new tenants must not revoke this workspace's
+    // persisted quota or cause STORAGE_QUOTA_LIMIT_CONFLICT on an upload.
+    vi.stubEnv('ASSET_STORAGE_QUOTA_BYTES', '1')
     const second = await upload(3, 'quota-b.txt')
     expect(second.error).toBeNull()
     expect(second.data?.result.id).toBe(first.data?.result.id)
@@ -75,5 +79,12 @@ describe('workspace storage quota accounting', () => {
     const replay = await upload(5, 'quota-a.txt')
     expect(replay.error).toBeNull()
     expect(await usedBytes(6)).toBe(2 * bytes.byteLength)
+
+    // Conversely, raising the default cannot silently increase an existing
+    // tenant's limit. The full workspace still rejects another physical write.
+    vi.stubEnv('ASSET_STORAGE_QUOTA_BYTES', '1000000')
+    const rejected = await mcp(7, 'asset.upload', { name: 'over-quota.txt', mime_type: 'text/plain', content_base64: Buffer.from('distinct bytes over quota').toString('base64') })
+    expect(rejected.error?.code).toBe('STORAGE_QUOTA_EXCEEDED')
+    expect(await usedBytes(8)).toBe(2 * bytes.byteLength)
   })
 })
