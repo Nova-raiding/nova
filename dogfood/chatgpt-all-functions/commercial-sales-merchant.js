@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test'
+import { commercialRpcRequestSignature } from './commercial-rpc-observation.js'
 
 // Helpers for the owned real PG/password-session commercial sales runner.
 // No service startup, route interception, token fixture or financial seeding.
@@ -29,12 +30,17 @@ export async function merchantRpcAction(page, method, action) {
   const observed = new Set()
   const listener = request => {
     const observedMethod = payload(request)?.method
+    const signature = commercialRpcRequestSignature(request)
     if (typeof observedMethod === 'string') observed.add(`${new URL(request.url()).pathname}:${observedMethod}`)
-    if (observedMethod === method) issued.add(request)
+    if (observedMethod === method) issued.add(signature)
   }
   page.on('request', listener)
   try {
-    const waiting = page.waitForResponse(response => issued.has(response.request()), { timeout: 10000 }).catch(error => {
+    // Playwright can materialize distinct Request wrappers for the page's
+    // `request` and `response` events. Correlate by the exact request bytes
+    // rather than wrapper identity, so a successful MCP response is not
+    // reported as a network failure by the owned desktop regression.
+    const waiting = page.waitForResponse(response => issued.has(commercialRpcRequestSignature(response.request())), { timeout: 10000 }).catch(error => {
       throw new Error(`COMMERCIAL_UI_RPC_NOT_OBSERVED:${method}; seen=${[...observed].join(',') || 'none'}; page=${page.url()}; ${error.message}`)
     })
     await action()
