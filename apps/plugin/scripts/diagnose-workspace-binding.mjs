@@ -58,7 +58,12 @@ if (binding) {
 }
 
 const stale = reasons.length > 0
+const explicitlyConfiguredWorkspace = configured('MERCHANT_WORKSPACE_ID')
 const result = {
+  verification_scope: 'saved_workspace_metadata_only',
+  runtime_authentication: 'not_checked',
+  workspace_resolution: explicitlyConfiguredWorkspace ? 'explicit_environment' : 'host_runtime_not_checked',
+  saved_metadata_used_for_workspace: explicitlyConfiguredWorkspace ? false : null,
   binding_present: Boolean(binding),
   stale,
   reusable: Boolean(binding) && !stale,
@@ -75,10 +80,10 @@ const result = {
     api_origin: targetOrigin || null,
   },
   action: stale
-    ? 'Obtain a new short-lived Store Nova credential for the target workspace, run the installer, then restart the desktop host. The old binding was not reused or deleted.'
+    ? 'Saved workspace metadata is stale; this alone does not prove that the local plugin login failed. An explicitly configured workspace takes precedence over this file. Verify onboarding.status in the installed host using the target origin and authorized workspace; repeat authenticated login only if that runtime check reports unavailable or invalid credentials. The old metadata was not reused or deleted.'
     : binding
       ? 'The saved binding metadata matches the requested origin and workspace. Runtime identity validation still applies.'
-      : 'No saved binding exists. Complete the normal authenticated installation flow.',
+      : 'No saved workspace metadata exists. An explicitly configured workspace can still use a valid credential source. Verify onboarding.status in the installed host before deciding whether authenticated installation is required.',
   safety: { old_identity_reused: false, binding_deleted: false, secrets_read: false },
 }
 
