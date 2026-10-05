@@ -308,3 +308,16 @@ describe('payment provider adapter', () => {
     await expect(provider.createCheckout({ channel: 'wechat', orderId: 'order-1', idempotencyKey: 'key-1', workspaceId: 'ws-1', amountFen: 100, callbackUrl: 'https://merchant.example/callback', description: '充值' })).rejects.toThrow('safety limit')
   })
 })
+
+describe('provider financial evidence identifiers', () => {
+  it.each([' ', '\t\n'])('rejects blank provider identifiers %j before classifying money movement', async (blank) => {
+    const evidence = { order_id: 'order-blank', workspace_id: 'ws-blank', amount_fen: 1000, refund_request_id: 'refund-blank' }
+    let payload: Record<string, unknown> = { ...evidence, state: 'paid', provider_trade_id: blank }
+    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', queryEndpoint: 'https://payments.example/query', refundEndpoint: 'https://payments.example/refund', refundQueryEndpoint: 'https://payments.example/refund/query', apiKey: 'test', merchantId: 'test', fetch: async () => new Response(JSON.stringify(payload)) })
+    await expect(provider.queryStatus({ channel: 'alipay', orderId: 'order-blank', workspaceId: 'ws-blank' })).rejects.toThrow('provider trade id')
+    payload = { ...evidence, state: 'accepted', provider_refund_id: blank }
+    await expect(provider.refund({ channel: 'alipay', orderId: 'order-blank', workspaceId: 'ws-blank', amountFen: 1000, refundRequestId: 'refund-blank', providerTradeId: 'trade-valid', reason: 'test' })).rejects.toBeInstanceOf(PaymentProviderRefundOutcomeUnknownError)
+    payload = { ...evidence, state: 'succeeded', provider_refund_id: blank }
+    await expect(provider.queryRefundStatus({ channel: 'alipay', orderId: 'order-blank', workspaceId: 'ws-blank', amountFen: 1000, refundRequestId: 'refund-blank' })).resolves.toEqual({ state: 'unknown' })
+  })
+})

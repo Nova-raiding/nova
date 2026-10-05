@@ -323,7 +323,7 @@ export class HttpPaymentProvider implements PaymentProvider {
       const rawAmountFen = isRecord(payload) ? payload.amount_fen : undefined
       const amountFen = typeof rawAmountFen === 'number' && Number.isSafeInteger(rawAmountFen) && rawAmountFen > 0 ? rawAmountFen : undefined
       if (state === 'paid' && amountFen === undefined) throw new Error('payment provider paid status must include a positive amount in fen')
-      if (state === 'paid' && !providerTradeId) throw new Error('payment provider paid status must include a provider trade id')
+      if (state === 'paid' && !providerTradeId?.trim()) throw new Error('payment provider paid status must include a provider trade id')
       return { state, ...(providerTradeId ? { providerTradeId } : {}), ...(amountFen !== undefined ? { amountFen } : {}) }
     } finally { clearTimeout(timeout) }
   }
@@ -386,7 +386,7 @@ export class HttpPaymentProvider implements PaymentProvider {
       const classification = classifyPaymentRefundState(state)
       if (classification === 'rejected') throw new PaymentProviderRefundRejectedError(`payment provider refund was rejected: ${state}`)
       if (classification === 'unknown') throw new PaymentProviderRefundOutcomeUnknownError(`payment provider refund outcome unknown: ${state}`)
-      if (!providerRefundId) throw new PaymentProviderRefundOutcomeUnknownError('payment provider returned no refund id')
+      if (!providerRefundId?.trim()) throw new PaymentProviderRefundOutcomeUnknownError('payment provider returned no refund id')
       return { providerRefundId, ...(state ? { state } : {}) }
     } catch (error) {
       if (error instanceof PaymentProviderRefundRejectedError || error instanceof PaymentProviderRefundOutcomeUnknownError) throw error
@@ -419,7 +419,7 @@ export class HttpPaymentProvider implements PaymentProvider {
       const providerRefundId = typeof payload.provider_refund_id === 'string' ? payload.provider_refund_id : typeof payload.refund_id === 'string' ? payload.refund_id : undefined
       if (input.providerRefundId && providerRefundId !== input.providerRefundId) return { state: 'unknown' }
       if (state === 'unknown') return { state }
-      if (state === 'succeeded' && !providerRefundId) return { state: 'unknown' }
+      if (state === 'succeeded' && !providerRefundId?.trim()) return { state: 'unknown' }
       return { state, ...(providerRefundId ? { providerRefundId } : {}), ...(amountFen !== undefined ? { amountFen } : {}) }
     } catch {
       return { state: 'unknown' }
