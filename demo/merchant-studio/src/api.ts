@@ -475,6 +475,12 @@ export interface Task {
   version: number
   createdAt: string
   accountId?: string
+  candidateOnly?: boolean
+  brandId?: string
+  canonicalProductId?: string
+  listingId?: string
+  campaignId?: string
+  campaignItemId?: string
   remoteState?: string
   requestText?: string
   inputSnapshotId?: string

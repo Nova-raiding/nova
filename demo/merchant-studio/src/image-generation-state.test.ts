@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed, isImageGenerationConfigurationError } from './image-generation-state'
+import { imageGenerationDisplayState, imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed, isImageGenerationConfigurationError } from './image-generation-state'
 
 describe('image generation execution presentation', () => {
   it('uses explicit desktop-safe labels for provider lifecycle states', () => {
@@ -28,5 +28,19 @@ describe('image generation execution presentation', () => {
     expect(isImageGenerationConfigurationError({ status: 503, code: 'IMAGE_GENERATION_READ_UNAVAILABLE' })).toBe(false)
     expect(isImageGenerationConfigurationError({ status: 503, code: 'STORE_ONBOARDING_REQUIRED' })).toBe(false)
     expect(isImageGenerationConfigurationError({ status: 500, code: 'MODEL_RELAY_NOT_CONFIGURED' })).toBe(false)
+  })
+})
+
+describe('image generation headline state', () => {
+  it('keeps uncertain and in-flight provider outcomes ahead of pending archive', () => {
+    for (const executionState of ['outcome_unknown', 'provider_reserved', 'provider_dispatching', 'provider_started', 'dispatching']) {
+      expect(imageGenerationDisplayState({ state: 'running', archiveState: 'pending', executionState })).toBe(executionState)
+    }
+  })
+  it('shows archive progress only after provider execution is no longer pending', () => {
+    expect(imageGenerationDisplayState({ state: 'succeeded', executionState: 'succeeded', archiveState: 'pending' })).toBe('archiving')
+    expect(imageGenerationDisplayState({ state: 'succeeded', archiveState: 'archived' })).toBe('succeeded')
+    expect(imageGenerationDisplayState({ state: 'succeeded', archiveState: 'partial' })).toBe('partial_archive')
+    expect(imageGenerationDisplayState(null)).toBe('')
   })
 })

@@ -219,13 +219,14 @@ import { MerchantLoginPage } from './MerchantLoginPage'
 import { pluginAuthorizationReturnPath } from './plugin-authorization-return'
 import { LocalPluginConnection } from './LocalPluginConnection'
 import { brandUnitSelectionMessage } from './brand-unit-selection'
-import { imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed, isImageGenerationConfigurationError } from './image-generation-state'
+import { imageGenerationDisplayState, imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed, isImageGenerationConfigurationError } from './image-generation-state'
 import { resolveStoreSyncTargets } from './store-sync'
 import {
   storeIdentityLabel,
   validateProductStoreIdentity,
   validateTargetStoreIdentity,
   validateTaskStoreIdentity,
+  validateTaskRestoreIdentity,
 } from './store-identity'
 import { resolveLibraryData } from './library-data'
 
@@ -3351,8 +3352,7 @@ async function resolveMerchantRouteTarget(
       resolvedProduct: product,
     }
     const identityError =
-      validateProductStoreIdentity(target, product) ??
-      validateTaskStoreIdentity(target, task)
+      validateTaskRestoreIdentity(target, product, task)
     if (identityError) throw new Error(identityError)
     return target
   }
@@ -9426,7 +9426,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
     }
   }
   const executionState = job?.executionState
-  const displayState = !job ? '' : job.archiveState === 'pending' ? 'archiving' : job.archiveState === 'partial' ? 'partial_archive' : job.archiveState === 'external_unarchived' ? 'external_unarchived' : executionState && ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown', 'dispatching'].includes(executionState) ? executionState : job.state
+  const displayState = imageGenerationDisplayState(job)
   const succeededDisplayLabel = job?.preferredCandidate?.visualRef
     ? '候选已审核并选定，等待内容版本'
     : job?.outputs?.some(output => output.reviewStatus === 'passed')
@@ -9679,8 +9679,9 @@ function TaskWorkspace({
     setSelectedCandidateId('')
     onContext(null)
     const restore = async () => {
-      const targetIdentityError = validateTargetStoreIdentity(target)
-      if (targetIdentityError) throw new Error(targetIdentityError)
+      const current = target.taskId
+        ? (target.resolvedTask ?? (await fetchTask(baseUrl, target.taskId)))
+        : null
       const selectedProduct = assertProductTargetIdentity(
         target.resolvedProduct ??
           (await fetchProduct(baseUrl, targetProductId)),
@@ -9691,15 +9692,11 @@ function TaskWorkspace({
           storeName: target.storeName,
         },
       )
-      const productIdentityError = validateProductStoreIdentity(
-        target,
-        selectedProduct,
-      )
+      const productIdentityError = current
+        ? validateTaskRestoreIdentity(target, selectedProduct, current)
+        : validateProductStoreIdentity(target, selectedProduct)
       if (productIdentityError) throw new Error(productIdentityError)
       if (!cancelled) setProduct(selectedProduct)
-      const current = target.taskId
-        ? (target.resolvedTask ?? (await fetchTask(baseUrl, target.taskId)))
-        : null
       if (!current) {
         setRequestText(`为「${targetTitle}」准备商品详情页营销内容`)
         // Product-first entry already has a safe, editable request. Hand the
@@ -9708,8 +9705,6 @@ function TaskWorkspace({
         window.requestAnimationFrame(() => requestInputRef.current?.focus())
         return null
       }
-      const taskIdentityError = validateTaskStoreIdentity(target, current)
-      if (taskIdentityError) throw new Error(taskIdentityError)
       return current
     }
     restore()
@@ -9748,7 +9743,7 @@ function TaskWorkspace({
             executionPlan: {
               mode: 'single_task',
               canCreate: true,
-              reason: '当前任务已绑定单一平台商品',
+              reason: current.candidateOnly === true ? '当前候选任务使用已确认商品资料，尚未绑定店铺' : '当前任务已绑定单一平台商品',
               childTasks: [
                 {
                   platform: current.platform,
@@ -10558,10 +10553,7 @@ function TaskWorkspace({
                 : taskProductsError
                   ? '商品与店铺身份读取失败，恢复操作暂不可用。请先重试身份读取。'
                   : itemProduct
-                    ? (validateProductStoreIdentity(
-                        identityTarget,
-                        itemProduct,
-                      ) ?? validateTaskStoreIdentity(identityTarget, item))
+                    ? validateTaskRestoreIdentity(identityTarget, itemProduct, item)
                     : '商品及店铺信息尚未恢复，已阻止恢复任务。'
               const label = item.missingQuestions?.length
                 ? '待补充信息'
@@ -10572,7 +10564,7 @@ function TaskWorkspace({
                     <b>
                       {itemProduct?.title ?? '营销任务'} ·{' '}
                       {platformNames[item.platform]} ·{' '}
-                      {itemProduct?.storeName ?? '店铺身份待恢复'}
+                      {item.candidateOnly === true && !identityError ? '候选任务 · 未绑定店铺' : itemProduct?.storeName || '店铺身份待恢复'}
                     </b>
                     <span>
                       {groupLabel} · {actionLabel} ·{' '}
@@ -10615,6 +10607,8 @@ function TaskWorkspace({
                         accountId: item.accountId,
                         storeName: itemProduct.storeName,
                         taskId: item.id,
+                        resolvedTask: item,
+                        resolvedProduct: itemProduct,
                       })
                     }
                     disabled={Boolean(identityError)}
@@ -11443,12 +11437,14 @@ function TaskWorkspace({
                   </StatusChip>
                   <b>{targetTitle}</b>
                   <span>
-                    {target.storeName && target.accountId
-                      ? storeIdentityLabel(target)
-                      : '店铺身份缺失，已阻止继续操作'}
+                    {task?.candidateOnly === true
+                      ? '候选任务 · 未绑定店铺，不可发布'
+                      : target.storeName && target.accountId
+                        ? storeIdentityLabel(target)
+                        : '店铺身份缺失，已阻止继续操作'}
                   </span>
                   <span>
-                    {target?.remoteId ? '平台商品已确认' : '等待平台商品确认'}
+                    {task?.candidateOnly === true ? '使用已确认商品资料' : target?.remoteId ? '平台商品已确认' : '等待平台商品确认'}
                   </span>
                 </div>
               </div>

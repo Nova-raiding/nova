@@ -53,3 +53,14 @@ export function isImageGenerationConfigurationError(error: unknown) {
     'VIDEO_GENERATION_NOT_CONFIGURED',
   ].includes(code)
 }
+
+/** Provider uncertainty precedes archive placeholders; it never means scanning has begun. */
+export function imageGenerationDisplayState(job: { state: string; archiveState?: string; executionState?: ImageGenerationExecutionState } | null | undefined): string {
+  if (!job) return ''
+  const execution = job.executionState
+  if (execution && [...imageGenerationProviderExecutionStates, 'dispatching'].includes(execution)) return execution
+  if (job.archiveState === 'pending') return 'archiving'
+  if (job.archiveState === 'partial') return 'partial_archive'
+  if (job.archiveState === 'external_unarchived') return 'external_unarchived'
+  return job.state
+}

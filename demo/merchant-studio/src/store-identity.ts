@@ -1,3 +1,5 @@
+import type { Product, Task } from './api'
+
 export interface StoreIdentity {
   accountId?: string
   storeName?: string
@@ -36,6 +38,22 @@ export function validateTaskStoreIdentity(target: StoreIdentity, task: StoreIden
   }
   if (normalized(target.accountId) !== normalized(task.accountId)) {
     return '任务店铺账号与所选商品不一致，已阻止继续操作。请返回商品列表重新选择。'
+  }
+  return null
+}
+
+/** Only server-declared candidate tasks may restore without a store. Publishing keeps its separate strict guard. */
+export function validateTaskRestoreIdentity(target: StoreIdentity, product: Product, task: Task): string | null {
+  if (task.productId !== product.id || task.platform !== product.platform || !task.workspaceId || task.workspaceId !== product.workspaceId) {
+    return '任务与商品或工作区身份不一致，已阻止恢复任务。'
+  }
+  if (task.candidateOnly !== true) {
+    return validateProductStoreIdentity(target, product) ?? validateTaskStoreIdentity(target, task)
+  }
+  if (!product.factsConfirmed || target.accountId || task.accountId || product.accountId || task.brandId || product.brandId
+    || task.canonicalProductId || task.listingId || task.campaignId || task.campaignItemId
+    || (product.remoteId && product.source !== 'csv')) {
+    return '候选任务包含不兼容的店铺或商品绑定，已阻止恢复任务。'
   }
   return null
 }
