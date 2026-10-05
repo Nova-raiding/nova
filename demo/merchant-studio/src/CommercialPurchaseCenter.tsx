@@ -41,6 +41,11 @@ export function commercialTargetPriceChanged(targetSkuCode: string, orders: Comm
   const targetOrder = orders.find(order => order.sku_code === targetSkuCode)
   return Boolean(targetOrder && expectedAmountFen !== undefined && targetOrder.amount_fen !== expectedAmountFen)
 }
+export function commercialRecoveryOrderIds(targetIsOpen: boolean, recoverOrderId: string, orders: CommercialPurchaseOrder[]): string[] {
+  const explicitId = recoverOrderId.trim()
+  if (!targetIsOpen && explicitId) return [explicitId]
+  return orders.map(order => order.id)
+}
 function cycleSummary(value: unknown): string {
   if (value === 'monthly') return '自然月'
   if (value === 'once') return '一次性'
@@ -189,7 +194,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
     } catch (cause) { reportError(cause) } finally { setBusy(false) }
   }
   const queryOrders = async () => {
-    const ids = orders.length ? orders.map(order => order.id) : recoverOrderId.trim() ? [recoverOrderId.trim()] : []
+    const ids = commercialRecoveryOrderIds(Boolean(target), recoverOrderId, orders)
     if (!ids.length) { setWriteError('本次提交结果待确认。请保留请求标识联系运营查询原幂等意图，不要重新下单或付款。'); return }
     setBusy(true); setWriteError('')
     try {
@@ -244,7 +249,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
       ]} />}
     </>}
     {writeError && <Alert type="error" title={writeError} description={<>{requestRef && <><p>请求标识：{requestRef}</p><Button onClick={() => { const context = `请求标识：${requestRef}；商业契约：commercial.subscription.v1；步骤：${intent.current?.kind ?? '目录/已购查询'}`; if (!navigator.clipboard) { setCopyNotice('无法自动复制，请手动复制上方请求标识给运营负责人。'); return } void navigator.clipboard.writeText(context).then(() => setCopyNotice('排障标识已复制；尚未提交求助或建立工单。')).catch(() => setCopyNotice('无法自动复制，请手动复制上方请求标识给运营负责人。')) }}>复制脱敏排障标识</Button><p role="status">{copyNotice}</p></>}{resultUnknown && <p>结果待确认，请先查原订单或联系运营；不会重新建立付款意图。</p>}{resultUnknown && intent.current && <Button onClick={() => void queryOriginalRequest()} loading={busy}>查询原提交结果</Button>}<Button onClick={() => setSupportOpen(true)}>提交人工支持</Button></>} />}
-    {orders.length > 0 && !target && <div><p>原订单查询结果：</p><Button onClick={() => { setConfirmed(false); setAccepted(false); setRecoveredCheckoutOpen(true) }}>查看原冻结明细与付款</Button>{orders.map(order => <p key={order.id}>{order.id} · {commercialState(order.state)} · {commercialMoney(order.amount_fen)}</p>)}</div>}
+    {orders.length > 0 && !target && <div><p>原订单查询结果：</p><Button disabled={busy} onClick={() => { setConfirmed(false); setAccepted(false); setRecoveredCheckoutOpen(true) }}>查看原冻结明细与付款</Button>{orders.map(order => <p key={order.id}>{order.id} · {commercialState(order.state)} · {commercialMoney(order.amount_fen)}</p>)}</div>}
     {!supportOpen && !readError && !writeError && <Button onClick={() => setSupportOpen(true)}>首单前需要人工支持</Button>}
     {supportOpen && <MerchantSupportRequestPanel baseUrl={baseUrl} workspaceKey={workspaceKey} handoff={portfolio?.support_handoff} requestId={requestRef || undefined} traceId={traceRef || undefined} step={intent.current?.kind ?? '目录及已购查询'} />}
     <Modal title="确认服务端订单与付款明细" open={Boolean(target) || recoveredCheckoutOpen} footer={null} width={860} onCancel={() => { if (!busy) { setTarget(null); setRecoveredCheckoutOpen(false) } }} mask={{ closable: !busy }} keyboard={!busy} className="commercial-checkout-modal" destroyOnHidden={false}>

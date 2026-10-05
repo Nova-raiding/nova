@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeCommercialFirstCheckout, normalizeCommercialCatalog, normalizeCommercialPurchaseOrder, normalizeCommercialSubscription, selectMerchantCatalogItems, type CommercialCatalogItem, type CommercialSubscriptionPortfolio } from './api'
-import { canConfirmCommercialOrder, commercialOrdersToConfirm, commercialPurchaseAction, commercialTargetPriceChanged } from './CommercialPurchaseCenter'
+import { canConfirmCommercialOrder, commercialOrdersToConfirm, commercialPurchaseAction, commercialRecoveryOrderIds, commercialTargetPriceChanged } from './CommercialPurchaseCenter'
 
 const item: CommercialCatalogItem = { id: 'sku-basic', sku_code: 'basic', name: '基础', type: 'monthly', visibility: 'public', version: 2, price_label: '¥2000.00', price_fen: 200000, cycle_label: '每月', benefits_summary: '5000点', benefits: [], approval_state: 'approved', valid_from: null, valid_to: null, unresolved: [], checksum: 'sha', executable: true, plan_family: 'standard', tier_rank: 1 }
 const empty: CommercialSubscriptionPortfolio = { schema_version: 'commercial.subscription.v1', status: 'available', onboarding_qualified: false, current: null, future: [], packs: [], history: [], orders: [] }
@@ -79,6 +79,12 @@ describe('a price display never authorizes payment', () => {
     const alreadyPaid = { ...pending, id: 'opening-line', sku_code: 'onboarding_once', purchase_kind: 'onboarding_once' as const, state: 'paid_pending_grant' }
     expect(commercialOrdersToConfirm([alreadyPaid, pending]).map(order => order.id)).toEqual(['subscription-line'])
     expect(commercialOrdersToConfirm([alreadyPaid])).toEqual([])
+  })
+  it('prioritizes the explicitly selected recovery ID over stale checkout lines', () => {
+    const stale = normalizeCommercialPurchaseOrder({ ...wire, order_id: 'old-history-order', snapshot: { quantity: 1, cycle: { unit: 'once' }, benefits: [] } })
+    expect(commercialRecoveryOrderIds(false, ' current-opening-order ', [stale])).toEqual(['current-opening-order'])
+    expect(commercialRecoveryOrderIds(false, '   ', [stale])).toEqual(['old-history-order'])
+    expect(commercialRecoveryOrderIds(true, 'current-opening-order', [stale])).toEqual(['old-history-order'])
   })
   it('does not revive retired sales or choose among multiple historical approved versions', () => {
     expect(selectMerchantCatalogItems([{ ...item, sale_state: 'off_sale' }])).toEqual([])
