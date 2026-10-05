@@ -85,6 +85,30 @@ describe('commercial outcome projection and recipient read evidence', () => {
     expect(f.calls.find(call=>call.sql.startsWith('SELECT m.id'))?.sql).toContain('m.id=$5')
     expect(f.calls.find(call=>call.sql.startsWith('UPDATE commercial_purchase_result'))?.values?.at(-1)).toBe(true)
   })
+  it('authorizes a private purchase result only for its frozen beneficiary', async () => {
+    const targeted={...event,visibility:'private',notification_kind:'purchase_result',order_id:'order',result_state:'active',beneficiary_member_id:'member-1'}
+    const member={id:'member-1',workspace_id:'ws',identity_id:null,role:'merchant_admin'}
+    const authorize=vi.fn((recipient, publication) => publication.visibility === 'public' || (publication.notificationKind === 'purchase_result' && publication.beneficiaryMemberId === recipient.memberId))
+    const f=fixture([[targeted],[member],[{rowCount:1}],[]])
+    expect(await new PostgresCommercialNotificationRepository(f.pool,authorize).fanoutPurchaseResult('ws',{eventId:event.event_id,token:'lease'})).toEqual({scanned:1,delivered:1,complete:true})
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({memberId:'member-1'}),expect.objectContaining({visibility:'private',notificationKind:'purchase_result',beneficiaryMemberId:'member-1'}))
+  })
+  it('does not widen an unbound private purchase result to workspace members', async () => {
+    const unbound={...event,visibility:'private',order_id:'order',result_state:'active',beneficiary_member_id:null}
+    const f=fixture([[unbound],[],[]])
+    expect(await new PostgresCommercialNotificationRepository(f.pool).fanoutPurchaseResult('ws',{eventId:event.event_id,token:'lease'})).toEqual({scanned:0,delivered:0,complete:true})
+    expect(f.calls.some(call=>call.sql.startsWith('SELECT m.id'))).toBe(false)
+    expect(f.calls.some(call=>call.sql.startsWith('INSERT'))).toBe(false)
+  })
+  it('filters private purchase results at read time unless the frozen beneficiary is the current member', async () => {
+    const result={...event,notification_kind:'purchase_result',notification_key:'result:evt',notification_id:'result:evt:member-1',visibility:'private',order_id:'order',result_state:'active',beneficiary_member_id:'member-1',payload:{title:'private purchase'}}
+    const authorize=(recipient, publication) => publication.visibility === 'public' || (publication.notificationKind === 'purchase_result' && publication.beneficiaryMemberId === recipient.memberId)
+    const owned=fixture([[{id:'member-1',workspace_id:'ws',identity_id:null,role:'merchant_admin'}],[result]])
+    expect((await new PostgresCommercialNotificationRepository(owned.pool,authorize).list('ws','member-1')).items).toHaveLength(1)
+    const other=fixture([[{id:'member-2',workspace_id:'ws',identity_id:null,role:'merchant_admin'}],[result]])
+    expect((await new PostgresCommercialNotificationRepository(other.pool,authorize).list('ws','member-2')).items).toHaveLength(0)
+    expect(other.calls.find(call=>call.sql.includes('FROM workspace_commercial_result_notifications'))?.sql).toContain('o.beneficiary_member_id::text')
+  })
   it('uses the four committed outcomes rather than calling every paid transaction active', async () => {
     const { deriveCommercialPurchaseResultNotification } = await import('./commercial-notification-repository.js')
     for (const state of ['active','scheduled','awaiting_dependency','reconciliation_required'] as const) {
