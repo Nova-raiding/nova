@@ -250,12 +250,24 @@ export async function handleCatalogSearch(params: Params, workspaceId: string, d
     })
     const product_actions = products.map(product => {
       const base = { product_id: product.id, title: product.title, platform: product.platform, account_id: product.accountId ?? null, facts_confirmed: product.factsConfirmed }
-      if (!product.accountId) return { ...base, action: { method: 'platform.connect', label: '绑定商品所属店铺', required_inputs: ['platform'], confirmation: 'interactive_confirmation' } }
+      // Match task.create.draft's product-scope gate. This is an available next
+      // action, not a claim that permission, rule or generation gates passed.
+      const candidateScope = !product.accountId && !product.brandId && (!product.remoteId || product.source === 'csv')
+      if (candidateScope) return {
+        ...base,
+        candidate_only: true,
+        publishable: false,
+        action: product.factsConfirmed === true
+          ? { method: 'task.create.draft', label: '创建未绑定候选草稿（不可发布）', arguments: { product_id: product.id, platform: product.platform }, required_inputs: [], confirmation: 'interactive_confirmation' }
+          : { method: 'catalog.facts.confirm', label: '核对并确认商品资料事实', arguments: { product_id: product.id }, required_inputs: [], confirmation: 'interactive_confirmation' },
+      }
+      if (!product.accountId) return { ...base, action: { method: 'canonical.product.consistency', label: '检查商品范围与绑定', required_inputs: [], confirmation: 'none', reason: 'candidate_scope_ineligible' } }
       if (!product.factsConfirmed) return { ...base, action: { method: 'catalog.facts.confirm', label: '确认商品、SKU、价格和图片事实', required_inputs: ['product_id'], confirmation: 'interactive_confirmation' } }
       if (product.canonical_scope.verification_status !== 'verified') return { ...base, action: { method: 'canonical.product.consistency', label: '检查标准商品链', required_inputs: [], confirmation: 'none', reason: product.canonical_scope.verification_status } }
       return { ...base, action: null, next_step: '商品事实已确认，可创建内容任务' }
     })
     return {
+      workspace_id: workspaceId,
       scope: scope === 'workspace' ? 'workspace' : 'store',
       selection: accountId && platform ? { platform, accountId } : null,
       products,
