@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Product, Task } from './api'
+import { assertProductTargetIdentity, type Product, type Task } from './api'
+import { projectProductTarget } from './batch-target'
 import { validateTaskRestoreIdentity, validateTaskStoreIdentity } from './store-identity'
 
 const product: Product = { id: 'product', workspaceId: 'workspace', platform: 'jd', title: '商品', storeName: '', factsConfirmed: true, source: 'manual', skuCount: 0, stock: 0, updatedAt: '' }
@@ -28,4 +29,13 @@ describe('existing task restoration identity', () => {
     }
     expect(validateTaskRestoreIdentity({}, { ...product, remoteId: 'csv-row', source: 'csv' }, task)).toBeNull()
   })
+})
+
+it('restores list tasks with SQL-null account using the verified product projection', () => {
+  // The list SQL explicitly projects accountId:null; point-read snapshots omit it.
+  const listedTask = { ...task, accountId: null } as unknown as Task
+  const target = { ...projectProductTarget(product), taskId: listedTask.id }
+  expect(validateTaskRestoreIdentity(target, product, listedTask)).toBeNull()
+  expect(() => assertProductTargetIdentity(product, target)).not.toThrow()
+  expect(() => assertProductTargetIdentity(product, { ...target, accountId: listedTask.accountId })).toThrow('店铺身份')
 })

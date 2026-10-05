@@ -10601,11 +10601,7 @@ function TaskWorkspace({
                     onClick={() =>
                       itemProduct &&
                       onSelectTarget({
-                        productId: item.productId,
-                        platform: item.platform,
-                        title: itemProduct.title,
-                        accountId: item.accountId,
-                        storeName: itemProduct.storeName,
+                        ...projectProductTarget(itemProduct),
                         taskId: item.id,
                         resolvedTask: item,
                         resolvedProduct: itemProduct,
@@ -10849,7 +10845,7 @@ function TaskWorkspace({
           </button>
           <h2>
             {targetTitle} · {platformNames[targetPlatform]} ·{' '}
-            {target.storeName ?? '店铺身份缺失'}
+            {task?.candidateOnly === true ? '候选任务 · 未绑定店铺' : target.storeName ?? '店铺身份缺失'}
           </h2>
           <div className="task-meta">
             <StatusChip
@@ -10865,7 +10861,7 @@ function TaskWorkspace({
                     ? '准备中'
                     : taskStateLabel(task?.state ?? '')}
             </StatusChip>
-            <span>{target.accountId ? '店铺账号已确认' : '店铺身份缺失'}</span>
+            <span>{task?.candidateOnly === true ? '候选任务 · 不可发布' : target.accountId ? '店铺账号已确认' : '店铺身份缺失'}</span>
             <span>
               {task ? `内容版本 v${content?.version ?? 0}` : '内容版本尚未创建'}
             </span>
