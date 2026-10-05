@@ -198,6 +198,64 @@ async function qaPackageBrokerBridge(baseUrl: string) {
 }
 
 describe('Codex stdio MCP bridge', () => {
+  it.each([false, true])('serializes two bridge refreshes and never replays an uncertain refresh (lostResponse=%s)', async lostResponse => {
+    const directory = await mkdtemp(join(tmpdir(), 'merchant-refresh-race-'))
+    const stateFile = join(directory, 'credential.json')
+    let refreshes = 0
+    let initialRequests = 0
+    let releaseInitial!: () => void
+    const bothInitial = new Promise<void>(resolve => { releaseInitial = resolve })
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      res.setHeader('content-type', 'application/json')
+      if (req.url === '/v1/auth/mcp-token/refresh') {
+        refreshes += 1
+        await new Promise(resolve => setTimeout(resolve, 80))
+        if (lostResponse) { req.socket.destroy(); return }
+        res.end(JSON.stringify({ data: { access_token: 'new-access', refresh_token: 'new-refresh', workspace_id: 'ws_race', token_type: 'bearer', scope: 'merchant', expires_in: 600 } }))
+      } else if (req.headers.authorization === 'Bearer old-access') {
+        initialRequests += 1
+        if (initialRequests >= 2) releaseInitial()
+        await bothInitial
+        res.writeHead(401).end(JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'expired' } }))
+      } else {
+        res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: body.id, result: { ok: true } }, error: null }))
+      }
+    })
+    const address = await listen(server)
+    const origin = `http://127.0.0.1:${address.port}`
+    await writeFile(stateFile, JSON.stringify({ access_token: 'old-access', refresh_token: 'old-refresh' }))
+    for (const name of ['bridge.mjs', 'relay-evidence.mjs', 'managed-token.mjs', 'managed-credential-state.mjs', 'windows-credential.mjs', 'windows-session-env.mjs']) {
+      await copyFile(fileURLToPath(new URL(`./${name}`, import.meta.url)), join(directory, name))
+    }
+    await writeFile(join(directory, 'keychain-credential.mjs'), `
+      import { readFileSync, writeFileSync } from 'node:fs'
+      export function readKeychainCredential() { return JSON.parse(readFileSync(process.env.MOCK_CREDENTIAL_STATE_FILE, 'utf8')) }
+      export function writeKeychainCredential(scope, value) { writeFileSync(process.env.MOCK_CREDENTIAL_STATE_FILE, JSON.stringify(value)) }
+    `)
+    const children = [0, 1].map(() => spawn(process.execPath, [join(directory, 'bridge.mjs')], {
+      cwd: process.cwd(), env: { ...TEST_PROCESS_ENV, HOME: directory, DEPLOY_ENV: 'local_desktop', MERCHANT_MCP_BASE_URL: origin,
+        MERCHANT_WORKSPACE_ID: 'ws_race', MERCHANT_MCP_TOKEN_SOURCE: 'keychain', MERCHANT_STRICT_AUTH: 'true', MOCK_CREDENTIAL_STATE_FILE: stateFile },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }))
+    try {
+      const results = await Promise.all(children.map(async child => {
+        const response = nextLine(child.stdout)
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+        return (await response).result
+      }))
+      expect(refreshes).toBe(1)
+      expect(results.map(result => result.isError)).toEqual([lostResponse, lostResponse])
+      if (!lostResponse) expect(JSON.parse(await readFile(stateFile, 'utf8')).access_token).toBe('new-access')
+    } finally {
+      children.forEach(child => child.kill())
+      await close(server)
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('fails a missing broker closed, then recovers on the next call in the same bridge process', async () => {
     let requests = 0
     const server = createServer(async (req, res) => {

@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto'
+import { mkdir, lstat, open, rmdir } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { readKeychainCredential } from './keychain-credential.mjs'
 import { readWindowsCredential } from './windows-credential.mjs'
 import { TEMPORARY_CREDENTIAL_ERROR_CODE } from './managed-credential-state.mjs'
@@ -80,4 +84,32 @@ export function loadManagedToken(env, platform, readLaunchd, readKeychain = read
   if (env.MERCHANT_ACTOR_ID?.trim() || env.MERCHANT_MCP_ROLE?.trim()) reject()
   env.MERCHANT_MCP_TOKEN = values.MERCHANT_MCP_TOKEN
   env.MERCHANT_MCP_REFRESH_TOKEN = values.MERCHANT_MCP_REFRESH_TOKEN
+}
+
+// Shared across plugin versions and bridge processes. A dispatched refresh is
+// single-use even if its response or the subsequent credential write is lost.
+export async function withManagedRefreshLock({ origin, workspaceId, source, root = join(homedir(), '.codex', 'merchant-marketing', 'credential-refresh'), timeoutMs = 20000 }, operation) {
+  await mkdir(root, { recursive: true, mode: 0o700 })
+  const info = await lstat(root)
+  if (!info.isDirectory() || info.isSymbolicLink() || (process.getuid && (info.uid !== process.getuid() || (info.mode & 0o077)))) throw new Error('MCP_REFRESH_LOCK_UNSAFE')
+  const scope = createHash('sha256').update(JSON.stringify([origin, workspaceId, source])).digest('hex')
+  const lock = join(root, `${scope}.lock`)
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    try { await mkdir(lock, { mode: 0o700 }); break }
+    catch (error) {
+      if (error.code !== 'EEXIST') throw error
+      // Never steal a lock by age: a crashed owner may have dispatched a
+      // single-use refresh. Recovery must inspect the durable dispatch record.
+      if (Date.now() >= deadline) throw new Error('MCP_REFRESH_LOCK_BUSY')
+      await new Promise(resolve => setTimeout(resolve, 40))
+    }
+  }
+  try {
+    return await operation(async refreshToken => {
+      const fingerprint = createHash('sha256').update(refreshToken).digest('hex')
+      const record = await open(join(root, `${scope}.${fingerprint}.dispatched`), 'wx', 0o600)
+      try { await record.writeFile('single-use refresh dispatched\n'); await record.sync() } finally { await record.close() }
+    })
+  } finally { await rmdir(lock) }
 }

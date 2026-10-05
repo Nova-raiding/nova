@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 // @ts-ignore JavaScript runtime module
-import { loadManagedToken } from './managed-token.mjs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { loadManagedToken, withManagedRefreshLock } from './managed-token.mjs'
 
 const configured = () => ({
   MERCHANT_MCP_TOKEN_SOURCE: 'launchd',
@@ -96,5 +99,36 @@ describe('managed credential startup', () => {
   })
   it('rejects an unknown source', () => {
     expect(() => loadManagedToken({ ...configured(), MERCHANT_MCP_TOKEN_SOURCE: 'unknown' }, 'darwin', read)).toThrow()
+  })
+})
+
+
+describe('shared managed refresh lock', () => {
+  it('times out a waiting process without running its refresh operation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'refresh-lock-busy-'))
+    const scope = { root, origin: 'https://merchant.example.test', workspaceId: 'ws_test', source: 'keychain', timeoutMs: 50 }
+    let release!: () => void
+    let acquired!: () => void
+    const ready = new Promise<void>(resolve => { acquired = resolve })
+    const held = withManagedRefreshLock(scope, async () => { acquired(); await new Promise<void>(resolve => { release = resolve }) })
+    let called = false
+    try {
+      await ready
+      await expect(withManagedRefreshLock(scope, async () => { called = true })).rejects.toThrow('MCP_REFRESH_LOCK_BUSY')
+      expect(called).toBe(false)
+    } finally { release(); await held; await rm(root, { recursive: true, force: true }) }
+  })
+
+  it('retains dispatch evidence after a persistence failure but permits a newly bound refresh credential', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'refresh-lock-dispatched-'))
+    const scope = { root, origin: 'https://merchant.example.test', workspaceId: 'ws_test', source: 'keychain' }
+    try {
+      await expect(withManagedRefreshLock(scope, async (mark: (token: string) => Promise<void>) => {
+        await mark('old-single-use-refresh')
+        throw new Error('credential persistence failed')
+      })).rejects.toThrow('credential persistence failed')
+      await expect(withManagedRefreshLock(scope, (mark: (token: string) => Promise<void>) => mark('old-single-use-refresh'))).rejects.toMatchObject({ code: 'EEXIST' })
+      await expect(withManagedRefreshLock(scope, (mark: (token: string) => Promise<void>) => mark('new-binding-refresh'))).resolves.toBeUndefined()
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 })

@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { assertRelayEvidence } from './relay-evidence.mjs'
-import { loadManagedToken, validatedRotatedCredential } from './managed-token.mjs'
+import { loadManagedToken, validatedRotatedCredential, withManagedRefreshLock } from './managed-token.mjs'
 import { createManagedCredentialLoader } from './managed-credential-state.mjs'
 import { writeKeychainCredential } from './keychain-credential.mjs'
 import { writeWindowsCredential } from './windows-credential.mjs'
@@ -90,11 +90,13 @@ function managedCredentialTemporaryError() {
 
 let credentialRefreshPromise
 
-async function performLocalDesktopTokenRefresh() {
+async function performLocalDesktopTokenRefresh(markDispatched = async () => {}) {
   const refreshToken = process.env.MERCHANT_MCP_REFRESH_TOKEN?.trim()
   if (!refreshToken || /^\$\{[^}]+\}$/u.test(refreshToken)) return false
   const origin = new URL(baseUrl()).origin
+  await markDispatched(refreshToken)
   const response = await fetch(`${origin}/v1/auth/mcp-token/refresh`, {
+    signal: AbortSignal.timeout(15000),
     method: 'POST', redirect: 'error',
     headers: { accept: 'application/json', 'content-type': 'application/json', origin },
     body: JSON.stringify({ refresh_token: refreshToken }),
@@ -140,9 +142,21 @@ async function performLocalDesktopTokenRefresh() {
   return true
 }
 
-async function refreshLocalDesktopToken() {
+async function refreshLocalDesktopToken(rejectedToken) {
   if (!credentialRefreshPromise) {
-    credentialRefreshPromise = performLocalDesktopTokenRefresh().finally(() => { credentialRefreshPromise = undefined })
+    const source = process.env.MERCHANT_MCP_TOKEN_SOURCE?.trim() || 'environment'
+    const refresh = source === 'environment' ? performLocalDesktopTokenRefresh() : withManagedRefreshLock({
+      origin: new URL(baseUrl()).origin, workspaceId: process.env.MERCHANT_WORKSPACE_ID?.trim(), source,
+    }, async markDispatched => {
+      // Bypass the successful-load cache: another bridge may have rotated the
+      // shared credential while this request was in flight or waiting for lock.
+      await loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
+        encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
+      }))
+      if (process.env.MERCHANT_MCP_TOKEN?.trim() !== rejectedToken) return true
+      return performLocalDesktopTokenRefresh(markDispatched)
+    })
+    credentialRefreshPromise = refresh.catch(() => false).finally(() => { credentialRefreshPromise = undefined })
   }
   return credentialRefreshPromise
 }
@@ -3205,7 +3219,7 @@ async function callRemote(method, params) {
           : remoteError
         if (response.status === 401 && !credentialRefreshAttempted) {
           credentialRefreshAttempted = true
-          if (await refreshLocalDesktopToken()) {
+          if (await refreshLocalDesktopToken(headers.authorization?.replace(/^Bearer /u, ''))) {
             headers.authorization = `Bearer ${process.env.MERCHANT_MCP_TOKEN}`
             // The rotation replay is not a retry against the caller's budget.
             // `credentialRefreshAttempted` already bounds it to one per call,
