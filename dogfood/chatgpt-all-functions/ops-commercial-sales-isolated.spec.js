@@ -18,7 +18,7 @@ async function rpc(page,method,action){
     const preview=assistant(page).getByRole('button',{name:'读取服务端代购预览',exact:true})
     if(await preview.count()===0){
       const refresh=assistant(page).getByRole('button',{name:'读取当前目录和合同',exact:true})
-      if(await refresh.count())await refresh.click()
+      if(await refresh.count()){await refresh.click();await expect(refresh).toBeEnabled({timeout:60000})}
     }
     await expect(preview).toBeEnabled({timeout:30000})
   }
