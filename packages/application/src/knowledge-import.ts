@@ -17,6 +17,26 @@ type ProductLike = {
   skus?: readonly { id: string; name: string; price: number; stock: number; attributes?: Record<string, string>; sourceAssetIds?: readonly string[] }[]
 }
 
+/** Manual draft knowledge must not promote normalized catalog defaults to facts. */
+export function manualKnowledgeProduct(
+  product: Pick<ProductLike, 'id' | 'workspaceId' | 'title' | 'platform'>,
+  supplied: Partial<Omit<ProductLike, 'id' | 'workspaceId' | 'title' | 'platform'>>,
+): ProductLike {
+  const nonnegative = (value: number | undefined) => typeof value === 'number' && Number.isFinite(value) && value >= 0
+  return {
+    id: product.id, workspaceId: product.workspaceId, title: product.title, platform: product.platform,
+    ...(supplied.category?.trim() ? { category: supplied.category.trim() } : {}),
+    ...(supplied.storeName?.trim() ? { storeName: supplied.storeName.trim() } : {}),
+    ...(supplied.accountId?.trim() ? { accountId: supplied.accountId.trim() } : {}),
+    ...(nonnegative(supplied.price) ? { price: supplied.price } : {}),
+    ...(nonnegative(supplied.stock) ? { stock: supplied.stock } : {}),
+    ...(nonnegative(supplied.skuCount) ? { skuCount: supplied.skuCount } : {}),
+    ...(supplied.attributes ? { attributes: structuredClone(supplied.attributes) } : {}),
+    ...(supplied.sellingPoints ? { sellingPoints: structuredClone(supplied.sellingPoints) } : {}),
+    ...(supplied.skus ? { skus: structuredClone(supplied.skus) } : {}),
+  }
+}
+
 export type ImportedKnowledgeProjection = {
   assets: KnowledgeAsset[]
   documents: KnowledgeDocument[]

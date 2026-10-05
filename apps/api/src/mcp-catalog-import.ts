@@ -1,6 +1,6 @@
 import { DomainError, type MerchantService, type Platform, type Product } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
-import { projectImportedProductsToKnowledge } from '../../../packages/application/src/knowledge-import.js'
+import { manualKnowledgeProduct, projectImportedProductsToKnowledge } from '../../../packages/application/src/knowledge-import.js'
 import type { ApiPersistence } from './server.js'
 
 type Params = Record<string, unknown>
@@ -84,7 +84,15 @@ export async function handleCatalogImport(workspaceId: string, params: Params, d
       await scanImportedProductRules(workspaceId, product)
       await persistSnapshot(workspaceId, 'product', product, product as unknown as Record<string, unknown>)
       const knowledgeProjection = draftOnly
-        ? await projectImportedProductsToKnowledge({ repository: knowledgeRepository, workspaceId, products: [product], ...(sourceAssetIds?.[0] ? { sourceAssetId: sourceAssetIds[0] } : {}), sourceMetadata: { source: 'catalog.import.draft', importMode: 'manual' } })
+        ? await projectImportedProductsToKnowledge({ repository: knowledgeRepository, workspaceId, products: [manualKnowledgeProduct(product, {
+          ...(typeof price === 'number' ? { price } : {}),
+          ...(typeof stock === 'number' ? { stock } : {}),
+          ...(typeof skuCount === 'number' ? { skuCount } : {}),
+          ...(skus ? { skus } : {}), ...(attributes ? { attributes } : {}), ...(sellingPoints ? { sellingPoints } : {}),
+          ...(typeof params.category === 'string' ? { category: params.category } : {}),
+          ...(typeof params.store_name === 'string' ? { storeName: params.store_name } : {}),
+          ...(accountId ? { accountId } : {}),
+        })], ...(sourceAssetIds?.[0] ? { sourceAssetId: sourceAssetIds[0] } : {}), sourceMetadata: { source: 'catalog.import.draft', importMode: 'manual' } })
         : undefined
       return ({ ...product, product_id: product.id, rule_scan: product.ruleScan, ...(draftOnly ? { draft_only: true, candidate_status: '未绑定商品、仅草稿、不可发布', publishable: false, knowledge: { assetCount: knowledgeProjection?.assets.length ?? 0, documentCount: knowledgeProjection?.documents.length ?? 0, chunkCount: knowledgeProjection?.chunks.length ?? 0, bindingCount: knowledgeProjection?.bindings.length ?? 0, approvalStatus: 'pending', rightsStatus: 'unknown', indexState: 'queued' } } : {}) })
     }
