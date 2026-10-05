@@ -1,0 +1,337 @@
+{
+  "candidateSha": "b1beda1be01d5dbe1fccde142ecc09392c12e91b",
+  "mode": "postdeploy_read_only_no_paid_generation",
+  "results": [
+    {
+      "container": "merchant-demo-85575f9c-api-1",
+      "observedAt": "2026-10-05T01:16:13.120Z",
+      "releaseId": "release-b1beda1be01d-demo",
+      "releaseGitSha": "b1beda1be01d5dbe1fccde142ecc09392c12e91b",
+      "session": {
+        "configured": true,
+        "mode": "600",
+        "ownerMatches": true,
+        "refreshCookieConfigured": true,
+        "logStatus": 200
+      },
+      "video": {
+        "model": "wan3.0-video",
+        "resolution": "720P",
+        "durationSeconds": "5"
+      },
+      "costGate": {
+        "ready": true,
+        "rpm": 100,
+        "tpm": 100000,
+        "dailyCnyLimit": 25000,
+        "reasons": []
+      },
+      "taskLimit": {
+        "ready": true,
+        "costCny": 0,
+        "limitCny": 25000,
+        "reasons": []
+      },
+      "budgetEstimates": {
+        "text": {
+          "ready": true,
+          "amountCny": 1,
+          "version": "storenova-pricing-20260918",
+          "reasons": []
+        },
+        "image": {
+          "ready": true,
+          "amountCny": 0.5,
+          "version": "storenova-pricing-20260918",
+          "reasons": []
+        },
+        "image_edit": {
+          "ready": true,
+          "amountCny": 0.5,
+          "version": "storenova-pricing-20260918",
+          "reasons": []
+        },
+        "ocr": {
+          "ready": true,
+          "amountCny": 2,
+          "version": "storenova-pricing-20260918",
+          "reasons": []
+        },
+        "video": {
+          "ready": true,
+          "amountCny": 20,
+          "version": "storenova-pricing-20260918",
+          "reasons": []
+        }
+      },
+      "ledgerPrecision": {
+        "moduleSha256": "9f135ec044ef337e2fd34179f26ce6edddee70e6552b122d97f5f506e2a733a7",
+        "hasDecimalProjection": true,
+        "sameProjectionReplaySameId": true,
+        "differentProjectionRejected": true,
+        "probe": "ephemeral MemoryModelUsageRepository only; no database writes"
+      },
+      "pluginExclusion": {
+        "pluginSourcePresent": false,
+        "pluginMarketplacePresent": false,
+        "builtPluginPresent": false
+      }
+    },
+    {
+      "container": "merchant-demo-85575f9c-api-replica-1",
+      "observedAt": "2026-10-05T01:16:18.447Z",
+      "releaseId": "release-b1beda1be01d-demo",
+      "releaseGitSha": "b1beda1be01d5dbe1fccde142ecc09392c12e91b",
+      "session": {
+        "configured": true,
+        "mode": "600",
+        "ownerMatches": true,
+        "refreshCookieConfigured": true,
+        "logStatus": 200
+      },
+      "video": {
+        "model": "wan3.0-video",
+        "resolution": "720P",
+        "durationSeconds": "5"
+      },
+      "costGate": {
+        "ready": true,
+        "rpm": 100,
+        "tpm": 100000,
+        "dailyCnyLimit": 25000,
+        "reasons": []
+      },
+      "taskLimit": {
+        "ready": true,
+        "costCny": 0,
+        "limitCny": 25000,
+        "reasons": []
+      },
+      "budgetEstimates": {
+        "text": {
+          "ready": true,
+          "amountCny": 1,
+          "version": "storenova-pricing-20260918",
+          "reasons": []
+        },
+        "image": {
+          "ready": true,
+          "amountCny": 0.5,
+          "version": "storenova-pricing-20260918",
+          "reasons": []
+        },
+        "image_edit": {
+          "ready": true,
+          "amountCny": 0.5,
+          "version": "storenova-pricing-20260918",
+          "reasons": []
+        },
+        "ocr": {
+          "ready": true,
+          "amountCny": 2,
+          "version": "storenova-pricing-20260918",
+          "reasons": []
+        },
+        "video": {
+          "ready": true,
+          "amountCny": 20,
+          "version": "storenova-pricing-20260918",
+          "reasons": []
+        }
+      },
+      "ledgerPrecision": {
+        "moduleSha256": "9f135ec044ef337e2fd34179f26ce6edddee70e6552b122d97f5f506e2a733a7",
+        "hasDecimalProjection": true,
+        "sameProjectionReplaySameId": true,
+        "differentProjectionRejected": true,
+        "probe": "ephemeral MemoryModelUsageRepository only; no database writes"
+      },
+      "pluginExclusion": {
+        "pluginSourcePresent": false,
+        "pluginMarketplacePresent": false,
+        "builtPluginPresent": false
+      }
+    },
+    {
+      "container": "merchant-demo-85575f9c-worker-generation-1",
+      "observedAt": "2026-10-05T01:16:22.839Z",
+      "session": {
+        "configured": false
+      },
+      "video": {
+        "resolution": "720P"
+      },
+      "costGate": {
+        "ready": false,
+        "rpm": 0,
+        "tpm": 0,
+        "dailyCnyLimit": 0,
+        "reasons": [
+          "rpm_missing_or_invalid",
+          "tpm_missing_or_invalid",
+          "daily_cny_limit_missing_or_invalid"
+        ]
+      },
+      "taskLimit": {
+        "ready": false,
+        "costCny": 0,
+        "limitCny": 0,
+        "reasons": [
+          "task_cny_limit_missing_or_invalid"
+        ]
+      },
+      "budgetEstimates": {
+        "text": {
+          "ready": false,
+          "amountCny": 0,
+          "reasons": [
+            "request_estimate_missing_or_invalid",
+            "estimate_version_missing"
+          ]
+        },
+        "image": {
+          "ready": false,
+          "amountCny": 0,
+          "reasons": [
+            "request_estimate_missing_or_invalid",
+            "estimate_version_missing"
+          ]
+        },
+        "image_edit": {
+          "ready": false,
+          "amountCny": 0,
+          "reasons": [
+            "request_estimate_missing_or_invalid",
+            "estimate_version_missing"
+          ]
+        },
+        "ocr": {
+          "ready": false,
+          "amountCny": 0,
+          "reasons": [
+            "request_estimate_missing_or_invalid",
+            "estimate_version_missing"
+          ]
+        },
+        "video": {
+          "ready": false,
+          "amountCny": 0,
+          "reasons": [
+            "request_estimate_missing_or_invalid",
+            "estimate_version_missing"
+          ]
+        }
+      },
+      "ledgerPrecision": {
+        "moduleSha256": "9f135ec044ef337e2fd34179f26ce6edddee70e6552b122d97f5f506e2a733a7",
+        "hasDecimalProjection": true,
+        "sameProjectionReplaySameId": true,
+        "differentProjectionRejected": true,
+        "probe": "ephemeral MemoryModelUsageRepository only; no database writes"
+      },
+      "pluginExclusion": {
+        "pluginSourcePresent": false,
+        "pluginMarketplacePresent": false,
+        "builtPluginPresent": false
+      },
+      "workerConfiguration": {
+        "signedApiConfigured": true,
+        "textModel": "glm-4.7-flash",
+        "imageModel": "qwen-image-2.0",
+        "relayConfigured": true,
+        "pricingDerivation": "true",
+        "pricingGroup": "SVIP"
+      },
+      "budgetGuardProbeScope": "Budget limits are owned by the signed API execution path; standalone API budget evaluators shown above are not configured in this worker."
+    }
+  ],
+  "workerApiConfigurationComparison": {
+    "observedAt": "2026-10-05T01:17:50.887Z",
+    "sameModelToken": true,
+    "results": [
+      {
+        "container": "merchant-demo-85575f9c-api-1",
+        "tokenStatus": 200,
+        "providerGroup": null,
+        "usageResponseFields": [
+          "expires_at",
+          "model_limits",
+          "model_limits_enabled",
+          "name",
+          "object",
+          "total_available",
+          "total_granted",
+          "total_used",
+          "unlimited_quota"
+        ],
+        "config": {
+          "AI_MODEL": "glm-4.7-flash",
+          "AI_THINKING_MODE": null,
+          "AI_MAX_INPUT_TOKENS": null,
+          "AI_MAX_OUTPUT_TOKENS": null,
+          "AI_TIMEOUT_MS": null,
+          "MODEL_RELAY_PRICING_GROUP": "SVIP",
+          "MODEL_RELAY_TEXT_PRICING_GROUP": "VIP",
+          "MODEL_RELAY_IMAGE_PRICING_GROUP": "VIP",
+          "MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP": "VIP",
+          "MODEL_RELAY_OCR_PRICING_GROUP": "VIP",
+          "MODEL_RELAY_VIDEO_PRICING_GROUP": "VIP",
+          "MODEL_RELAY_EMBEDDING_PRICING_GROUP": "VIP",
+          "IMAGE_MODEL": "qwen-image-2.0",
+          "IMAGE_TIMEOUT_MS": "120000",
+          "IMAGE_GENERATION_PATH": "/images/generations",
+          "IMAGE_RESPONSE_FORMAT": "url",
+          "WORKER_MODEL_QUOTA_PER_MINUTE": null
+        }
+      },
+      {
+        "container": "merchant-demo-85575f9c-worker-generation-1",
+        "tokenStatus": 200,
+        "providerGroup": null,
+        "usageResponseFields": [
+          "expires_at",
+          "model_limits",
+          "model_limits_enabled",
+          "name",
+          "object",
+          "total_available",
+          "total_granted",
+          "total_used",
+          "unlimited_quota"
+        ],
+        "config": {
+          "AI_MODEL": "glm-4.7-flash",
+          "AI_THINKING_MODE": "",
+          "AI_MAX_INPUT_TOKENS": "4000",
+          "AI_MAX_OUTPUT_TOKENS": "2500",
+          "AI_TIMEOUT_MS": "90000",
+          "MODEL_RELAY_PRICING_GROUP": "SVIP",
+          "MODEL_RELAY_TEXT_PRICING_GROUP": null,
+          "MODEL_RELAY_IMAGE_PRICING_GROUP": "VIP",
+          "MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP": null,
+          "MODEL_RELAY_OCR_PRICING_GROUP": null,
+          "MODEL_RELAY_VIDEO_PRICING_GROUP": null,
+          "MODEL_RELAY_EMBEDDING_PRICING_GROUP": null,
+          "IMAGE_MODEL": "qwen-image-2.0",
+          "IMAGE_TIMEOUT_MS": "120000",
+          "IMAGE_GENERATION_PATH": "/images/generations",
+          "IMAGE_RESPONSE_FORMAT": "url",
+          "WORKER_MODEL_QUOTA_PER_MINUTE": "60"
+        }
+      }
+    ]
+  },
+  "workerPricingPreflight": {
+    "text": {
+      "group": "SVIP",
+      "ready": false,
+      "code": "MODEL_PRICING_GROUP_UNAVAILABLE"
+    },
+    "image": {
+      "group": "VIP",
+      "ready": true,
+      "costCny": 0.17010798
+    },
+    "mode": "deployed pricing client estimate only; no generation"
+  }
+}
