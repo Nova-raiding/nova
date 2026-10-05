@@ -64,9 +64,10 @@ async function reopenMerchantOrderDetails(studio,orderId){
   await row.getByRole('button',{name:'选择查单',exact:true}).click();
   const recoverId=center.getByLabel('原订单 ID',{exact:true}),query=center.getByRole('button',{name:'查询原订单',exact:true});
   await expect(recoverId).toHaveValue(orderId);await expect(query).toBeEnabled();
-  await merchantRpcAction(studio,'commercial.order.payment.get',()=>query.click());
-  await expect(center.getByRole('button',{name:'查看原冻结明细与付款',exact:true})).toBeVisible();
-  await center.getByRole('button',{name:'查看原冻结明细与付款',exact:true}).click();
+  const lookup=merchantRpcAction(studio,'commercial.order.payment.get',()=>query.click());
+  const detail=center.getByRole('button',{name:'查看原冻结明细与付款',exact:true});
+  await expect(detail).toBeVisible();await lookup;
+  await detail.click();
   const checkout=studio.getByRole('dialog',{name:'确认服务端订单与付款明细',exact:true});
   await expect(checkout).toBeVisible();
 }
