@@ -1698,7 +1698,8 @@ function userFacingToolText(method, result) {
     const question = typeof result.question === 'string' ? merchantVisibleText(result.question, '请确认下一步需要处理的内容。') : ''
     return [summary, question].filter(Boolean).join('\n')
   }
-  if (method === 'catalog.image.get' && result.candidate_state) {
+  if (['catalog.image.get', 'catalog.image.generate'].includes(method) && result.candidate_state) {
+    if (result.candidate_state.scan_status === 'unscanned') return [merchantVisibleText(result.completed_summary, '候选已归档（演示模式，未扫描），未批准、不可发布。'), pointsText].filter(Boolean).join('\n')
     if (result.candidate_state.presentation === 'component') return ['主图候选已准备好。', pointsText].filter(Boolean).join('\n')
     if (typeof result.question === 'string' && result.question.trim()) return [merchantVisibleText(result.question, '请查看主图候选状态。'), pointsText].filter(Boolean).join('\n')
     return [typeof result.completed_summary === 'string' && result.completed_summary.trim()
@@ -3098,14 +3099,27 @@ function mcpErrorTrace(method, error) {
   try { console.error(JSON.stringify({ event: 'merchant.mcp.error', ts: new Date().toISOString(), method, error_code: errorCode })) } catch { /* diagnostics must never break MCP */ }
 }
 
+function imageExecutionStillPending(result) {
+  const job = result?.job ?? {}
+  const jobState = String(job.state ?? result?.state ?? '').toLowerCase()
+  const executionState = String(result?.execution_state ?? job.executionState ?? job.execution_state ?? result?.execution?.state ?? '').toLowerCase()
+  const errorCode = String(result?.error_code ?? job.errorCode ?? job.error_code ?? '')
+  return ['queued', 'running', 'processing'].includes(jobState)
+    && ['', 'queued', 'pending', 'created', 'provider_reserved', 'provider_dispatching', 'provider_started'].includes(executionState)
+    && !/(?:RECONCILIATION|SETTLEMENT|OUTCOME_UNKNOWN)/u.test(errorCode)
+}
+
 function imagePollingMustStop(result) {
   const job = result?.job ?? {}
   const states = [result?.state, result?.status, result?.execution_state, result?.execution?.state,
-    result?.candidate_state?.state, job.state, job.executionState, job.execution_state]
-    .map(value => String(value ?? '').toLowerCase())
+    job.state, job.executionState, job.execution_state].map(value => String(value ?? '').toLowerCase())
+  if (states.some(state => ['failed', 'error', 'cancelled', 'canceled', 'rejected', 'expired', 'outcome_unknown'].includes(state))) return true
+  // The API also marks queued/in-flight executions as reconciliation-required
+  // until accounting is readable. That flag alone is not a terminal outcome.
+  if (imageExecutionStillPending(result)) return false
   return result?.reconciliation_required === true || result?.reconciliationRequired === true
     || job.reconciliation_required === true || job.reconciliationRequired === true
-    || states.some(state => ['failed', 'error', 'cancelled', 'canceled', 'rejected', 'expired', 'unknown', 'outcome_unknown'].includes(state))
+    || states.includes('unknown') || result?.candidate_state?.state === 'unknown'
 }
 
 async function resolveGeneratedImagePreview(method, initialResult) {
@@ -3399,7 +3413,13 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     && String(candidate?.reviewStatus ?? candidate?.review_status ?? '').toLowerCase() === 'passed'
   const requestedCandidateClean = Boolean(requestedCandidate) && String(requestedCandidate.scanStatus ?? requestedCandidate.scan_status ?? '').toLowerCase() === 'clean'
   const allCandidatesClean = candidates.length === rawImages.length && candidates.length > 0 && candidates.every(candidate => String(candidate.scanStatus ?? candidate.scan_status ?? '').toLowerCase() === 'clean')
-  const deliverable = archived && rawImages.length > 0 && (requestedVisualRef ? rawImages.length === 1 && requestedCandidateClean : allCandidatesClean)
+  const demoPolicy = result.image_delivery_policy
+  const demoUnscannedAuthorized = demoPolicy?.mode === 'demo_unscanned' && demoPolicy.scan_verified === false && demoPolicy.publishable === false
+  const deliveryCandidates = requestedVisualRef ? (requestedCandidate ? [requestedCandidate] : []) : candidates
+  const demoUnscannedDelivery = demoUnscannedAuthorized && deliveryCandidates.length === rawImages.length && deliveryCandidates.length > 0
+    && deliveryCandidates.every(candidate => ['clean', 'unscanned'].includes(String(candidate.scanStatus ?? candidate.scan_status ?? '').toLowerCase()))
+    && deliveryCandidates.some(candidate => String(candidate.scanStatus ?? candidate.scan_status ?? '').toLowerCase() === 'unscanned')
+  const deliverable = archived && rawImages.length > 0 && ((requestedVisualRef ? rawImages.length === 1 && requestedCandidateClean : allCandidatesClean) || demoUnscannedDelivery)
   const images = deliverable ? rawImages : []
   const imageUrls = deliverable && rawImageUrls.length === images.length ? rawImageUrls : []
   const downloadUrls = deliverable && rawDownloadUrls.length === images.length ? rawDownloadUrls : imageUrls
@@ -3414,12 +3434,12 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     : typeof job.error_code === 'string'
       ? job.error_code
       : typeof result.error_code === 'string' ? result.error_code : ''
-  const reconciliationRequired = Boolean(
+  const reconciliationRequired = !imageExecutionStillPending(result) && (Boolean(
     job.reconciliationRequired
       ?? job.reconciliation_required
       ?? result.reconciliationRequired
       ?? result.reconciliation_required,
-  ) || errorCode === 'IMAGE_ARTIFACT_RECONCILIATION_REQUIRED' || String(result.execution_state ?? '').toLowerCase() === 'outcome_unknown'
+  ) || errorCode === 'IMAGE_ARTIFACT_RECONCILIATION_REQUIRED' || String(result.execution_state ?? '').toLowerCase() === 'outcome_unknown')
   const rawJobState = String(job.state ?? result.state ?? '').toLowerCase()
   const executionState = String(result.execution_state ?? job.executionState ?? job.execution_state ?? '').toLowerCase()
   const archivePendingAfterExecution = executionState === 'completed' && !deliverable
@@ -3442,7 +3462,9 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
         : rawJobState === 'queued'
           ? 'queued'
           : 'processing'
-  const nextAction = candidateLifecycle === 'ready'
+  const nextAction = demoUnscannedDelivery
+    ? { type: 'none', label: '演示预览·未扫描', allowed: false }
+    : candidateLifecycle === 'ready'
     ? { type: 'select', label: '选择主图', allowed: true }
     : candidateLifecycle === 'failed'
       ? { type: 'regenerate_in_conversation', label: '回到对话重新生成', allowed: true }
@@ -3474,9 +3496,9 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     candidate_state: {
       state: candidateLifecycle,
       archive_state: archived ? 'archived' : rawJobState === 'queued' ? 'pending' : 'processing',
-      scan_status: deliverable ? 'clean' : rawJobState === 'queued' ? 'pending' : 'processing',
+      scan_status: deliverable ? demoUnscannedDelivery ? 'unscanned' : 'clean' : rawJobState === 'queued' ? 'pending' : 'processing',
       candidate_count: images.length,
-      presentation: imageUrls.length ? 'component' : images.length ? 'native_image' : recoveryPresentation,
+      presentation: demoUnscannedDelivery ? 'native_image' : imageUrls.length ? 'component' : images.length ? 'native_image' : recoveryPresentation,
       next_action: nextAction,
       recovery: {
         retryable: candidateLifecycle === 'failed',
@@ -3484,7 +3506,10 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
         ...(pollBudgetExceeded ? { poll_budget_exhausted: true, poll_budget_seconds: 300 } : {}),
       },
     },
-    completed_summary: multiple
+    ...(demoUnscannedDelivery ? { image_delivery_policy: { mode: 'demo_unscanned', scan_verified: false, publishable: false } } : {}),
+    completed_summary: demoUnscannedDelivery
+      ? '候选已归档（演示模式，未扫描），未批准、不可发布。'
+      : multiple
       ? `已准备 ${images.length} 张通过自动检查的主图候选。`
       : images.length === 1
         ? '主图候选已准备好。'
@@ -3497,18 +3522,18 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
             : candidateLifecycle === 'queued'
               ? '图片任务已排队，完成后会继续，无需重复提交。'
             : '主图候选仍在自动检查，通过后会继续，无需操作。',
-    ...(images.length
+    ...(images.length && !demoUnscannedDelivery
       ? { question: multiple ? '请选择一张作为主图。' : '要使用这张作为主图吗？' }
       : candidateLifecycle === 'failed'
         ? { question: '要回到对话重新生成主图吗？' }
           : {}),
-    expected_input: images.length
+    expected_input: images.length && !demoUnscannedDelivery
       ? { kind: 'main_image_selection', accepts: ['component_selection', 'natural_language'], selection_count: 1 }
       : candidateLifecycle === 'failed'
         ? { kind: 'component_action', action: nextAction.type, user_action_required: true }
         : { kind: 'none', user_action_required: false },
     ...(creativePoints ? { creative_points: creativePoints } : {}),
-    ...(deliverable && selectionJobId && Number.isSafeInteger(expectedRevision) && expectedRevision > 0 ? {
+    ...(deliverable && !demoUnscannedDelivery && selectionJobId && Number.isSafeInteger(expectedRevision) && expectedRevision > 0 ? {
       selection_request: {
         job_id: selectionJobId,
         expected_revision: String(expectedRevision),
@@ -3521,6 +3546,9 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
           availability_label: candidateSelectable(candidate) ? '可用' : '待人工审核',
         })).filter(candidate => Number.isSafeInteger(candidate.ordinal) && candidate.ordinal > 0 && candidate.visual_ref),
       },
+    } : {}),
+    ...((candidateLifecycle === 'unknown' || demoUnscannedDelivery) && selectionJobId ? {
+      display_request: { job_id: selectionJobId },
     } : {}),
     ...(candidateLifecycle === 'failed' && selectionJobId ? {
       recovery_request: { job_id: selectionJobId, action: nextAction.type },

@@ -1066,6 +1066,67 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it.each(['authorized_demo', 'missing_marker', 'incomplete_marker', 'blocked_scan'])('delivers unscanned archives only with an explicit safe server demo policy: %s', async variant => {
+    const policy = variant === 'missing_marker' ? undefined : { mode: 'demo_unscanned', scan_verified: false, ...(variant === 'incomplete_marker' ? {} : { publishable: false }) }
+    const result = { job_id: 'job_demo', image_delivery_policy: policy, images: ['data:image/png;base64,aGVsbG8='], job: {
+      state: 'succeeded', archiveState: 'archived', revision: 1,
+      candidates: [{ ordinal: 1, visualRef: 'visual_demo', scanStatus: variant === 'blocked_scan' ? 'blocked' : 'unscanned', reviewStatus: 'passed' }],
+    } }
+    const server = createServer((_req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ data: { result }, error: null })) })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_demo' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      const authorized = variant === 'authorized_demo'
+      expect(response.result.content.filter((item: any) => item.type === 'image')).toHaveLength(authorized ? 1 : 0)
+      if (authorized) {
+        expect(response.result.structuredContent.candidate_state.scan_status).toBe('unscanned')
+        expect(response.result.structuredContent.image_delivery_policy).toEqual({ mode: 'demo_unscanned', scan_verified: false, publishable: false })
+        expect(response.result.structuredContent.selection_request).toBeUndefined()
+        expect(response.result.structuredContent.question).toBeUndefined()
+        expect(response.result.structuredContent.expected_input).toEqual({ kind: 'none', user_action_required: false })
+        expect(response.result.structuredContent.candidate_state.next_action).toEqual({ type: 'none', label: '演示预览·未扫描', allowed: false })
+        expect(response.result.structuredContent.display_request).toEqual({ job_id: 'job_demo' })
+        expect(response.result._meta).toBeUndefined()
+        expect(response.result.content[0].text).toContain('候选已归档（演示模式，未扫描）')
+        expect(response.result.content[0].text).not.toContain('通过')
+      } else expect(response.result.structuredContent.candidate_state.state).not.toBe('ready')
+    } finally { child.kill(); await close(server) }
+  })
+
+  it('keeps polling queued and running accounting-pending jobs until a real archived candidate arrives', async () => {
+    let generates = 0; let polls = 0
+    const image = 'data:image/png;base64,aGVsbG8='
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const request = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      let result: any
+      if (request.method === 'catalog.image.generate') { generates += 1; result = { job_id: 'job_live', job: { state: 'queued' } } }
+      else {
+        polls += 1
+        result = polls < 3
+          ? { job_id: 'job_live', reconciliation_required: true, execution_state: polls === 1 ? 'provider_reserved' : 'provider_started', job: { state: polls === 1 ? 'queued' : 'running', archiveState: 'pending' } }
+          : { job_id: 'job_live', reconciliation_required: false, execution_state: 'completed', images: [image], job: { state: 'succeeded', archiveState: 'archived', revision: 1, candidates: [{ ordinal: 1, visualRef: 'visual_live', scanStatus: 'clean', reviewStatus: 'passed' }] } }
+      }
+      res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ data: { result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      await nextLine(child.stdout)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: { product_id: 'prod_test', count: '1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.structuredContent.candidate_state.state).toBe('ready')
+      expect(response.result.content[0].text).toContain('要使用这张作为主图吗')
+      expect(response.result.content.filter((item: any) => item.type === 'image')).toHaveLength(1)
+      expect(generates).toBe(1); expect(polls).toBe(3)
+    } finally { child.kill(); await close(server) }
+  }, 15000)
+
   it.each(['initial_failed', 'initial_unknown', 'poll_failed', 'poll_unknown'])('returns terminal image evidence without continued polling: %s', async variant => {
     let generates = 0
     let polls = 0
@@ -1091,6 +1152,8 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.isError).toBe(false)
       expect(response.result.structuredContent.candidate_state.state).toBe(variant.endsWith('unknown') ? 'unknown' : 'failed')
       expect(response.result.content.some((item: any) => item.type === 'image')).toBe(false)
+      expect(response.result.structuredContent[variant.endsWith('unknown') ? 'display_request' : 'recovery_request'].job_id).toBe('job_terminal')
+      expect(response.result.content[0].text).not.toContain('状态尚未确认')
       expect(generates).toBe(1)
       expect(polls).toBe(variant.startsWith('initial') ? 0 : 1)
     } finally { child.kill(); await close(server) }
