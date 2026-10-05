@@ -71,6 +71,7 @@ export function MerchantLoginPage({
           >
             <Form.Item
               label="商家账号"
+              htmlFor="merchant-login-account"
               name="login"
               rules={[{ required: true, whitespace: true, message: '请输入商家账号' }]}
             >
@@ -84,6 +85,7 @@ export function MerchantLoginPage({
             </Form.Item>
             <Form.Item
               label="密码"
+              htmlFor="merchant-login-password"
               name="password"
               rules={[{ required: true, message: '请输入商家密码' }]}
             >
