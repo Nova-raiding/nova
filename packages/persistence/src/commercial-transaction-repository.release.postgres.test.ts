@@ -100,6 +100,21 @@ describe.skipIf(!source)('commercial transactions full-chain PostgreSQL acceptan
     const client = await app.connect(); try { await client.query('BEGIN'); await client.query("SELECT set_config('app.workspace_id',$1,true)", [other]); expect((await client.query('SELECT id FROM commercial_orders_v2 WHERE id=$1', [checkout.onboarding.id])).rows).toEqual([]); await client.query('ROLLBACK') } finally { client.release() }
   }, 90000)
 
+  it('returns V3 payment expiry and purchase terms when a merchant recovers a pending order', async () => {
+    const ws = await workspace('payment-recovery-terms')
+    const checkout = await first(ws, 'payment-recovery-terms-checkout')
+    const recovered = await transactions.getPaymentStatus(ws, checkout.onboarding.id)
+    const stored = (await db.query(`SELECT purchase_kind AS "purchaseKind",expires_at AS "expiresAt",checkout_id AS "checkoutId",grant_status AS "grantStatus" FROM commercial_order_terms_v3 WHERE workspace_id=$1 AND order_id=$2`, [ws, checkout.onboarding.id])).rows[0]
+    expect(recovered?.order).toMatchObject({
+      expiresAt: new Date(stored.expiresAt).toISOString(),
+      purchaseKind: stored.purchaseKind,
+      checkoutId: checkout.checkoutId,
+      grantStatus: stored.grantStatus,
+      status: 'pending',
+    })
+    expect(Date.parse(recovered!.order.expiresAt!)).toBeGreaterThan(Date.parse(firstAt))
+  }, 30000)
+
   it('keeps a valid point pack visible after more than 100 newer orders', async () => {
     const ws = await workspace('pack-portfolio')
     await activate(ws, 'pack-portfolio-onboarding')
