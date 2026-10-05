@@ -1,3 +1,4 @@
+import { withDocumentIndexSummary } from './knowledge-document-index-summary.js'
 import type { IncomingMessage } from 'node:http'
 import { DomainError } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
@@ -142,7 +143,7 @@ export async function handleMcpKnowledgeMethod(
         requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'operator', 'support', 'platform_ops', 'knowledge_reader'])
         let tags: string[] | undefined
         if (typeof params.tags_json === 'string') tags = JSON.parse(params.tags_json) as string[]
-        return result(knowledgeForWorkspace(workspaceId).queryAssets({ workspaceId, ...(typeof params.kind === 'string' ? { kind: params.kind as 'brand' | 'customer' } : {}), ...(typeof params.text === 'string' ? { text: params.text } : {}), ...(tags ? { tags } : {}) }))
+        return result(await withDocumentIndexSummary(deps.knowledgeRepository ?? deps.durableKnowledgeRepository, workspaceId, knowledgeForWorkspace(workspaceId).queryAssets({ workspaceId, ...(typeof params.kind === 'string' ? { kind: params.kind as 'brand' | 'customer' } : {}), ...(typeof params.text === 'string' ? { text: params.text } : {}), ...(tags ? { tags } : {}) })))
       } catch (error) { if (error instanceof KnowledgeError) throw new DomainError(error.code, error.message, 400); throw error }
     }
     case 'knowledge.brand.preference.get': {
