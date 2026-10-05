@@ -1,0 +1,3 @@
+7fa96fe5e4efa51fea7ebee5d0c814611548755899dd5f51d77ffb4c39a6bc1b  docs/qa/evidence/2026-10-05-runtime-round8/api-releasez.json
+863bb868177f558255008ab5196b9cc2242fe67c9140e6ec67fdc739deb103f9  docs/qa/evidence/2026-10-05-runtime-round8/docker-ps.txt
+048c8ca9a54b75140c6af3a4b4316b8f0b0d7f52ae8c3619b8b871010e659403  docs/qa/evidence/2026-10-05-runtime-round8/ops-releasez.json

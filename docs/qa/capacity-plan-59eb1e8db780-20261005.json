@@ -1,0 +1,15 @@
+{
+  "schema_version": "1",
+  "action": "capacity_capture_plan",
+  "network_activity": false,
+  "release_id": "release-59eb1e8db780",
+  "profile": "pilot_50",
+  "target_url": "https://isolated-preproduction.invalid",
+  "output": "/Users/lixiaomei/Desktop/code/codexSkills/docs/qa/release-59eb1e8db780-capacity-raw-20261005.json",
+  "target_kind": "isolated_preproduction",
+  "produces_cloud_gate_evidence": false,
+  "required_confirmation": "CAPACITY_CAPTURE_CONFIRM=release-59eb1e8db780",
+  "next_command": "sh infra/scripts/capture-ecs-capacity-evidence.sh capture",
+  "post_capture_validation": "sh infra/scripts/capture-ecs-capacity-evidence.sh validate",
+  "warning": "The capture is a long-running load test. It produces raw observations only and cannot satisfy the production capacity gate by itself."
+}

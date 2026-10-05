@@ -1,0 +1,4 @@
+artifacts/deployment-candidates/ecs-20260924T074131Z/server-image-evidence/eight-image-set.json
+artifacts/deployment-candidates/ecs-20260924T075428Z/server-image-evidence/eight-image-set.json
+artifacts/deployment-candidates/ecs-20261001T035344Z-3dc76c93b536/candidate.image-set.demo-3dc76c93b536.json
+artifacts/deployment-candidates/ecs-20261001T035344Z-3dc76c93b536/remote-baseline/candidate.image-set.demo-dc63e0b9.json

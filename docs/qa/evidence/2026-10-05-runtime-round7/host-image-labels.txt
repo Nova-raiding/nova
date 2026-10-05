@@ -1,0 +1,16 @@
+/merchant-demo-85575f9c-api-replica-1 127.0.0.1:5000/storenova/merchant-api@sha256:8b8938779b073a8554ba0a48d86067e96e951b53fd3c065ad072fce8319479e9 fa6beb91fdb81f4ebb2b676be3fa97baa7fb0ed5
+/merchant-demo-85575f9c-api-1 127.0.0.1:5000/storenova/merchant-api@sha256:8b8938779b073a8554ba0a48d86067e96e951b53fd3c065ad072fce8319479e9 fa6beb91fdb81f4ebb2b676be3fa97baa7fb0ed5
+/merchant-demo-85575f9c-worker-reconcile-1 127.0.0.1:5000/storenova/merchant-worker@sha256:2aca1cf726dfd110dbffca1e90a764794481dbe5db4a45b982435a5f8ba791ce fa6beb91fdb81f4ebb2b676be3fa97baa7fb0ed5
+/merchant-demo-85575f9c-worker-sync-1 127.0.0.1:5000/storenova/merchant-worker@sha256:2aca1cf726dfd110dbffca1e90a764794481dbe5db4a45b982435a5f8ba791ce fa6beb91fdb81f4ebb2b676be3fa97baa7fb0ed5
+/merchant-demo-85575f9c-worker-scan-1 127.0.0.1:5000/storenova/merchant-worker@sha256:2aca1cf726dfd110dbffca1e90a764794481dbe5db4a45b982435a5f8ba791ce fa6beb91fdb81f4ebb2b676be3fa97baa7fb0ed5
+/merchant-demo-85575f9c-worker-publish-1 127.0.0.1:5000/storenova/merchant-worker@sha256:2aca1cf726dfd110dbffca1e90a764794481dbe5db4a45b982435a5f8ba791ce fa6beb91fdb81f4ebb2b676be3fa97baa7fb0ed5
+/merchant-demo-85575f9c-worker-generation-1 127.0.0.1:5000/storenova/merchant-worker@sha256:2aca1cf726dfd110dbffca1e90a764794481dbe5db4a45b982435a5f8ba791ce fa6beb91fdb81f4ebb2b676be3fa97baa7fb0ed5
+/merchant-demo-85575f9c-worker-automation-1 127.0.0.1:5000/storenova/merchant-worker@sha256:2aca1cf726dfd110dbffca1e90a764794481dbe5db4a45b982435a5f8ba791ce fa6beb91fdb81f4ebb2b676be3fa97baa7fb0ed5
+/merchant-demo-85575f9c-ui-1 127.0.0.1:5000/storenova/merchant-ui@sha256:111c918ffc4996a3a770bb352ec670edecb4845ba749f2db4cee5ad4eeab32c9 dc63e0b9e05bf4761cd3fde7b1fa28c329e151eb
+/merchant-demo-85575f9c-ops-ui-1 127.0.0.1:5000/storenova/merchant-ops-ui@sha256:a904814fd5a152af82509b51ac885ac60498050cd7a03b2e121922e1f31995b0 dc63e0b9e05bf4761cd3fde7b1fa28c329e151eb
+/merchant-demo-85575f9c-clamav-1 clamav/clamav-debian@sha256:bcfc3d6117a6cfbeb6cd041c00164097916291b870c6183e06def6fed7fb740b 
+/merchant-demo-85575f9c-payment-gateway-1 127.0.0.1:5000/storenova/payment-gateway@sha256:af8f6a4e3501e613731012130cda6d714d2cd4560f0bd9452e825a485a807f81 0fa18b78a65de8c5b07f09488f416a6ed08bfe08
+/merchant-demo-85575f9c-pilot-gateway-1 127.0.0.1:5000/storenova/pilot-gateway@sha256:5a367cb6236b949816eaaafeb6d7fd3f7ca50879579510faa5c2796d0dd9513b 3567df1e2894aaf45974464f2ecad50b187971ab
+/merchant-demo-85575f9c-postgres-1 postgres:16-alpine 
+/merchant-demo-85575f9c-redis-1 redis:7-alpine 
+/storenova-registry registry:2 

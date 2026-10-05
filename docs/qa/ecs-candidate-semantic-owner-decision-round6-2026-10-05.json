@@ -1,0 +1,1991 @@
+{
+  "schema_version": "ecs-three-way-semantic-owner-decision/6",
+  "generated_at": "2026-10-05",
+  "candidate_git_sha": "59eb1e8db78005a2f9be1b8a808507422ffc82b8",
+  "trusted_base_git_sha": "85575f9c257c5186116e16fc0bde58d25c25f8ed",
+  "merge_base": "85575f9c257c5186116e16fc0bde58d25c25f8ed",
+  "source_review": "docs/qa/ecs-candidate-three-way-round5-2026-10-05.json",
+  "scope": {
+    "candidate_only": 39,
+    "merge_clean": 64,
+    "rows": 103
+  },
+  "approved": false,
+  "approved_count": 0,
+  "owner_attestation_policy": {
+    "required_fields": [
+      "owner_identity",
+      "owner_attestation",
+      "attested_at",
+      "decision",
+      "rationale",
+      "checks_run"
+    ],
+    "accepted_decisions": [
+      "PRESERVE_REMOTE",
+      "TAKE_CANDIDATE",
+      "MANUAL_MERGE"
+    ],
+    "rejection_reason": "No authenticated owner attestation was found in the workspace or candidate-bound evidence."
+  },
+  "rows": [
+    {
+      "path": "apps/api/src/scanner-health.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "c2f67deace001e18d2136fbc492b453e7e64186895b64c8b941158e7de138268",
+      "trusted_base_sha256": "c2f67deace001e18d2136fbc492b453e7e64186895b64c8b941158e7de138268",
+      "remote_sha256": "3e5b6db951340839e047c3209def28b468d14940bddbd43bd7777735122f7777",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "platform-runtime-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "API/worker contract",
+        "tenant/authz boundary",
+        "runtime and migration impact"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/.env.example",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "60b61ac4aaf11398c215cd5350d92cfb437db836dc5029fb00034460dd6a5143",
+      "trusted_base_sha256": "3f694e5985343053ef2804348f4d4f96d943893373fe9b12028269de5361007f",
+      "remote_sha256": "3f694e5985343053ef2804348f4d4f96d943893373fe9b12028269de5361007f",
+      "remote_bytes_persisted": false,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/README.md",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "afa80f6bb12254603039519b97499eae5b94d68d04f359b72b3a0220b8c55200",
+      "trusted_base_sha256": "384740e31ee57a6306c4e30d9339b0b679ab648a0ba62e34d7278375b56b15d1",
+      "remote_sha256": "384740e31ee57a6306c4e30d9339b0b679ab648a0ba62e34d7278375b56b15d1",
+      "remote_bytes_persisted": false,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/api/commercialOperationsClient.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "8d190ecf1f60a8ff7add3f585e9f5f0c53d13587e2ec7c51a52a798aefa0a9dc",
+      "trusted_base_sha256": "8d190ecf1f60a8ff7add3f585e9f5f0c53d13587e2ec7c51a52a798aefa0a9dc",
+      "remote_sha256": "7236dbdd41522a27fe75c048cc1b5f33ad43d437770100e138b8f95e10789bce",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/api/opsDomainClients.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "a9d0ba8068fd459cb72bc2e45db2a454d1c27b54a4ef08fe7bfb32854904499c",
+      "trusted_base_sha256": "a9d0ba8068fd459cb72bc2e45db2a454d1c27b54a4ef08fe7bfb32854904499c",
+      "remote_sha256": "d4eee7ae1571331c47f3636f0f12881838707d975098dae6621e4e69e40250d9",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/authz/authorization.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "c99e61d35cf00c812ccb2fd50b6d746507a2b2e9a39129a2ce89a61257bc3080",
+      "trusted_base_sha256": "c99e61d35cf00c812ccb2fd50b6d746507a2b2e9a39129a2ce89a61257bc3080",
+      "remote_sha256": "5e9c030d66060daf56be502291373a62ceed04e7ba45d06d58659be1dc5a8e06",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/authz/authorization.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "0508e6585a8162040324eb41d9072f60c98e6d168a8b0471285dd075d97c6e55",
+      "trusted_base_sha256": "6ed985304001bcdf5ce2d20f8c4e8f06db84cfe826a74f0181a7bfb875b4a740",
+      "remote_sha256": "1948dcfc3095a6f27ed5db76cad31ab8e8dafa759144d9ebb62981ce6dc88743",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/OpsHeader.test.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "42f5bbb89809fcd9b0e9b3948c545666b749b755c8b6fd86fd5fdaa20b1f91cd",
+      "trusted_base_sha256": "0cd60308aeb66715805e7c2d09a6c778a519e65182ad794cb188f3e028e75c22",
+      "remote_sha256": "2aee523d48cf24bc02c328d96848a851c8060c146318a5d15f1d1922f63808f0",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/PlatformOpsLoginPage.test.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "2c3e091337a8fdc46b4169e05d8d3492ee6fe6b30a450d219f9baedc3bb1b46c",
+      "trusted_base_sha256": "5e0b6dfe0e53f90055824f1a2e2c4eed151da428423fc48f8f07c9d6615f6acc",
+      "remote_sha256": "5e0b6dfe0e53f90055824f1a2e2c4eed151da428423fc48f8f07c9d6615f6acc",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/audit/AuditCenterSection.test.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "18ea1593fe75c623dbd1b7e177032605c1a7b415fd6c2e7a120ede3d76fa8e06",
+      "trusted_base_sha256": "552e658528f3b5c9ebc371f106ff8f0d971ae99eaf319eddfe5adf88547ba1f3",
+      "remote_sha256": "552e658528f3b5c9ebc371f106ff8f0d971ae99eaf319eddfe5adf88547ba1f3",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/authz/AccessDeniedResult.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "a9a08508a9fc905ad65ddb779e432020287f9472816e3d18585f65f0e4707d49",
+      "trusted_base_sha256": "a9a08508a9fc905ad65ddb779e432020287f9472816e3d18585f65f0e4707d49",
+      "remote_sha256": "f266ca086fbf81e35562613e00210db2f699a809afde878d1463250472349751",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/authz/DangerActionModal.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "ed5de4073b95a5e1e8e4883f3a43e3cb548ca9f4cb3797f6682a1e8dd151fc59",
+      "trusted_base_sha256": "ed5de4073b95a5e1e8e4883f3a43e3cb548ca9f4cb3797f6682a1e8dd151fc59",
+      "remote_sha256": "27f8874aa465026b526b368a045e97da89cfacfeb240c90f7e2d3df0d46ca72d",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/authz/RoleScopeBar.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "afb03c72db671bae62cbc15f025d8dab1d394fa73c592f19ec7be37c58f7ec55",
+      "trusted_base_sha256": "0e0699cd76c225a9c54c56ab22afc7b0a1fdf15bd3a60f7a8d8b9767774b54b1",
+      "remote_sha256": "e3c76143c57dc54751249b8b547c7b374122b4362f36870cac7fafb909ab6aed",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/authz/permissionUx.test.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "7bdc493a133f1f1b5cc217f8d1982a682e8e7917ca3f60990553212c1fe90558",
+      "trusted_base_sha256": "7bdc493a133f1f1b5cc217f8d1982a682e8e7917ca3f60990553212c1fe90558",
+      "remote_sha256": "58437e2e49f426fa394124ae28bdcce01f73cd241b2f55a8e53dfe5ef9d17da9",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/canonical-governance-accessibility.test.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "ea1141dc5caad43ee602a6974b9d026262610c446cd9e49df307b90d9faba274",
+      "trusted_base_sha256": "1cb1ccc4151445aeaf875f1093f733673aabfc4468f81292b089f7657b04ee8a",
+      "remote_sha256": "1cb1ccc4151445aeaf875f1093f733673aabfc4468f81292b089f7657b04ee8a",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/commercial/CommercialOperationsWorkspace.test.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "7fd6951a8c524eff7e8bc009d6123ff62c0dbe141ea28a56c49f3ab7adf6df3a",
+      "trusted_base_sha256": "7fd6951a8c524eff7e8bc009d6123ff62c0dbe141ea28a56c49f3ab7adf6df3a",
+      "remote_sha256": "09f3787c6ca37dae3f77494b3c5fbcc015076e2e130a4696fb31fa1a660c1976",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/commercial/CommercialOperationsWorkspace.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "7e773e15c616f4a622c00b033202bae3c60a4fedb1d37cf8a5fdd6448e82a536",
+      "trusted_base_sha256": "26102f1a4f248b596133fab5356276263c48e4c26eedb515ad3d4e4cd5c2bac6",
+      "remote_sha256": "2b7fda576d798bb14c974f66e7c53d73ae4b6f26dabe0623860b65c03cb0011f",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/commercial/CommercialReadinessPanel.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "9e36ec8ab45f9d8478b9af2d842775a4d0c578f86518a62322eb1fa35da28c95",
+      "trusted_base_sha256": "b3138ed267b27d45cf51fe96f376da95a0cea7a1161d4a8e0d5f8ae17d6903d9",
+      "remote_sha256": "b3138ed267b27d45cf51fe96f376da95a0cea7a1161d4a8e0d5f8ae17d6903d9",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/commercial/ServiceFulfillmentPanel.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "7d0b8a081419030c2c1f8a3a5d77bdb1e7be4c942f2cf78499938d0e5200c489",
+      "trusted_base_sha256": "7d0b8a081419030c2c1f8a3a5d77bdb1e7be4c942f2cf78499938d0e5200c489",
+      "remote_sha256": "73bc7fd15092cf109a918887fcccac8e9d73ea6968f7bf409cded72c08177208",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/commercial/benefitLabels.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "ac3394d2d609516feaf45a0b58618f06fda9fcd4563d9847db1857c278a391f3",
+      "trusted_base_sha256": "ac3394d2d609516feaf45a0b58618f06fda9fcd4563d9847db1857c278a391f3",
+      "remote_sha256": "7a022565c3975697357806ba6f74abc085fb10cb413173ad4cec04dd207d066f",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/delivery/CustomerDeliveryUpload.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "0202f3fc7c29cbdb9976981bf099aa7de32684690107664bfc2b5244f4d272dd",
+      "trusted_base_sha256": "f3f4464ddd2a803f227fea84e238c1de7db69f4378d9040104135b4cfc47e6a4",
+      "remote_sha256": "91bd8aa3a11eb89c78faa90290e5777cb7d325982fd73e776169da9e10123fe3",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/delivery/deliveryDateTime.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "0d6f2326f2c077538646d024527e97fbee0c20dc7728d1db733751b4faf61211",
+      "trusted_base_sha256": "0d6f2326f2c077538646d024527e97fbee0c20dc7728d1db733751b4faf61211",
+      "remote_sha256": "dc1b4f9b988096f2bc1d2d4afb181866ef28b47030e5f4843cee20b9c6d659f5",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/delivery/deliveryDateTime.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "be68415536e215ee9668b3ce0938851e1314f66d6a87196516502890e0cf52b3",
+      "trusted_base_sha256": "be68415536e215ee9668b3ce0938851e1314f66d6a87196516502890e0cf52b3",
+      "remote_sha256": "61cbe5167965d0d28c8b80dd93c5b8d755e400a93aa7f9480754c5eacf0c1e58",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/FinanceDetailDrawer.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "3b94cf3a0c9805868e3cac3fe223a28bdbbcefab54be9653439b6b4b32d72708",
+      "trusted_base_sha256": "8d065b0720c08ce57448c7f443a56dffafb441bd0b66ffb02e50452f13fe9da8",
+      "remote_sha256": "8d065b0720c08ce57448c7f443a56dffafb441bd0b66ffb02e50452f13fe9da8",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/FinanceSearchSection.test.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "9bf8ee70597fcfa683f9180a21435048ff449637508e1fd0c37335493410ffaa",
+      "trusted_base_sha256": "4a478bead3ab244ca605d61b658648b3348bf1c36c4089b7f61e641c3d5b2b38",
+      "remote_sha256": "4a478bead3ab244ca605d61b658648b3348bf1c36c4089b7f61e641c3d5b2b38",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/FinanceSearchSection.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "53225dd2ac8413c4e03275c8566cbaf88aeaecbdc3b27fb9dec60150274af9e0",
+      "trusted_base_sha256": "0b38c8e04c02ea1c568dac1d932a3e1a68b71883c064342fdaddf2ee6f7b2dda",
+      "remote_sha256": "0b38c8e04c02ea1c568dac1d932a3e1a68b71883c064342fdaddf2ee6f7b2dda",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/MembersSection.test.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "de7c1be6185125ffab87c937ff9ba28451ac9e22e9453dce55a73e227c5b1572",
+      "trusted_base_sha256": "d351d764864bf9f50a20f48dc259cd644e7d928b2e2aac25684e1c9c804f57a8",
+      "remote_sha256": "d351d764864bf9f50a20f48dc259cd644e7d928b2e2aac25684e1c9c804f57a8",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/MembersSection.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "420efbec5b42b86b014479872f52e6e952668a313aacd04ad087e625f1b1f31e",
+      "trusted_base_sha256": "c45ac52dbb9c44cda6b86057b6f6c168a0ebdb35fd7019fbebd844a3e6702e44",
+      "remote_sha256": "c45ac52dbb9c44cda6b86057b6f6c168a0ebdb35fd7019fbebd844a3e6702e44",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/RechargeOrdersSection.test.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "e3ab19b9465c9452c21752e4ab9ffefeba51046d0f7afd289e5eb4a1edb8643a",
+      "trusted_base_sha256": "e3ab19b9465c9452c21752e4ab9ffefeba51046d0f7afd289e5eb4a1edb8643a",
+      "remote_sha256": "8dfe4ad03a8299be212fafebd17246135a39d586062e95001cc1e609d8d667f0",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/RechargeOrdersSection.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "cc87749f02f7e3dee36a15f27b9d230f4b9ce15dd14f90f03bd937b2859b861b",
+      "trusted_base_sha256": "cc87749f02f7e3dee36a15f27b9d230f4b9ce15dd14f90f03bd937b2859b861b",
+      "remote_sha256": "9849d465545f8c92df911e657ed923b9c3e188e4c775d35bbe64eae1bce4ae1b",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/ReconciliationSection.test.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "11a32024e9e16a1599db0ad871e639f556e0267e1b51d7f6b43b3d3760cd9552",
+      "trusted_base_sha256": "40293caf1480564c7fcd39ae068154281b87daf461cdbcd4556471c31bf2310f",
+      "remote_sha256": "40293caf1480564c7fcd39ae068154281b87daf461cdbcd4556471c31bf2310f",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/ReconciliationSection.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "15855715b45706597dad8419d3c158cb49885d9e4867c60cd917b25e70b2f2fe",
+      "trusted_base_sha256": "2d506ebd4b9596b141659496c77dfe07938f1b66fc23b61a06e1b1c03a323ebf",
+      "remote_sha256": "2d506ebd4b9596b141659496c77dfe07938f1b66fc23b61a06e1b1c03a323ebf",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/RefundSection.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "dd46dca1348b70433dcfef265a4846e09fcadcb595717a6ae2564816d20aee7a",
+      "trusted_base_sha256": "dd46dca1348b70433dcfef265a4846e09fcadcb595717a6ae2564816d20aee7a",
+      "remote_sha256": "c2c41a8101c14519ee6769b7279378c4f27738a71f3bcfcc82d381d57d8556b7",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/rechargeOrders.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "5ad9b28a9eb259e74960db475e68a835b926f41291a1b8803240827e40df3dba",
+      "trusted_base_sha256": "5ad9b28a9eb259e74960db475e68a835b926f41291a1b8803240827e40df3dba",
+      "remote_sha256": "fffd3554c3468f39da8d54eee6dbae58e671078a7ed2b0eb2b7b0d984a53780c",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/rechargeOrders.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "9efd6a009f8154d124507d4c72de76b844d79d09515807c6f7612fe8965b3ad4",
+      "trusted_base_sha256": "9efd6a009f8154d124507d4c72de76b844d79d09515807c6f7612fe8965b3ad4",
+      "remote_sha256": "1393f67fe7a8700fb71926674b789d11cd40d85e79e2f98f70b44919545763b0",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/models/ModelReadinessTable.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "50df466adbc15334bbb806a3bbfccfbe70330a745420bc481df1058bc1448b94",
+      "trusted_base_sha256": "50df466adbc15334bbb806a3bbfccfbe70330a745420bc481df1058bc1448b94",
+      "remote_sha256": "995ee16c87065207e4f075594bb31b6db31643edde48c8d3ad59dd336135b381",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/models/ModelServiceSummary.test.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "28415cc4debef41ddc3341a9bdf3ce4177642cc3b2f9eaf61d0ec2bb14f2a37e",
+      "trusted_base_sha256": "28415cc4debef41ddc3341a9bdf3ce4177642cc3b2f9eaf61d0ec2bb14f2a37e",
+      "remote_sha256": "e4b0a9d31396a61b41ce0584f0aaa3e799f34fb73c324c26f0fb20ad66e279e9",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/models/ModelServiceSummary.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "791d9f0a658442b5235e735ed371dca0be57448b16828fc062c47840bfc2d730",
+      "trusted_base_sha256": "791d9f0a658442b5235e735ed371dca0be57448b16828fc062c47840bfc2d730",
+      "remote_sha256": "30d314a1fbe22bc599f3b82d767a43365143811514174744db6f94a5bb2a6860",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/models/ModelStatusSection.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "27cb0077c735d470b909fae22a448b7906731c821ee54ad92fb4dc896da85b56",
+      "trusted_base_sha256": "27cb0077c735d470b909fae22a448b7906731c821ee54ad92fb4dc896da85b56",
+      "remote_sha256": "4a55bf25602776ed585e3c0bbe86f3d69bb6c6d3289f18f2b8bb463b51508ea6",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/models/ModelStatusSection.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "b8ca5907843996bf24f8d3f05d2a8f81f897d36e080234396ccaa50d6e75f1e3",
+      "trusted_base_sha256": "b8ca5907843996bf24f8d3f05d2a8f81f897d36e080234396ccaa50d6e75f1e3",
+      "remote_sha256": "b54af178f3427d39284cccfebcb456441bb77f590b2b9873c7e29ee36524be0b",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/rules/RuleSyncStatusSection.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "807df2683c3ad6929b9c4c8a52826ffd8b43a5e9922f7710d07847fb89122d57",
+      "trusted_base_sha256": "3cf7fd4c0870db3c46f2ad4cc9beafded9a0028ebac819e7596dc293851f2f70",
+      "remote_sha256": "3cf7fd4c0870db3c46f2ad4cc9beafded9a0028ebac819e7596dc293851f2f70",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/rules/WorkspaceRuleAuditPanel.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "40add0a56542404219449555875fb8f08b9eaa434c43d88e3252b7bfcd4ae232",
+      "trusted_base_sha256": "ccae761be8e2c669141d299c7dcc7ddafa0edb5eadc1a23d693fbe86d77a1137",
+      "remote_sha256": "ccae761be8e2c669141d299c7dcc7ddafa0edb5eadc1a23d693fbe86d77a1137",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/sections/overview/DataReadinessSection.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "20e614b43c0948d7184344c5a450b325fb4c32d41e45432b2e00346eba05403b",
+      "trusted_base_sha256": "20e614b43c0948d7184344c5a450b325fb4c32d41e45432b2e00346eba05403b",
+      "remote_sha256": "91a9e64f56df0a3cd099f2c023dad4bccd68fab4b0fd109c72c9fe774c424ee4",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/sections/overview/modelReadiness.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "986834102615984508451a556fd1b54699d2271e48f5c45ffc9d7bb97ed94bc9",
+      "trusted_base_sha256": "986834102615984508451a556fd1b54699d2271e48f5c45ffc9d7bb97ed94bc9",
+      "remote_sha256": "ffbc3524670410403d7a8f6a7f8018459e35b5101ece5c4636b095d60a483708",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/sections/overview/modelReadiness.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "42e7204e9dea149dc48a9c83365054f8845c0f57362622e80487e69c1ca49ef3",
+      "trusted_base_sha256": "42e7204e9dea149dc48a9c83365054f8845c0f57362622e80487e69c1ca49ef3",
+      "remote_sha256": "971ad3aa3877f7564c48f00a668b749ad773df7b483fb6d4780995ec50d0368d",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/storage/StorageReconciliationSection.test.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "db0f50d971b032a6fbfd8fb576b373916168542d162ff0327e49eebadee1057e",
+      "trusted_base_sha256": "71377e96312b0794e1476fcc7cf94432a345207ebdcc044649461ce732b07d07",
+      "remote_sha256": "71377e96312b0794e1476fcc7cf94432a345207ebdcc044649461ce732b07d07",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/storage/StorageReconciliationSection.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "7f1c518ae6803074a136e74153a88e2fe691e4040a79515bcc79747f552ac822",
+      "trusted_base_sha256": "1dc1323fc92b8a4fa805cc7059ec33ce1e2a9ba0ea4cf1929d1307d45721fd89",
+      "remote_sha256": "1dc1323fc92b8a4fa805cc7059ec33ce1e2a9ba0ea4cf1929d1307d45721fd89",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/AutomationScanSection.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "92bf1646ab24736331be5b5e90e2794cb00b3e77944b5e2f56c79c4e57b7e096",
+      "trusted_base_sha256": "92bf1646ab24736331be5b5e90e2794cb00b3e77944b5e2f56c79c4e57b7e096",
+      "remote_sha256": "f7e5109367b2ccfb00ef213445b29b450b2b22459bc0dea85d6e14f4b0e03674",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/BrandGovernanceSummary.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "1a0a3543c58c89b94f06d0c7454afa6c0c438b337a25ea5f0cee3f95941d1aa8",
+      "trusted_base_sha256": "6db113e2d2781f1580c2233a25364b7591c7bd300f0e0e98cbcbf6bff949a748",
+      "remote_sha256": "6db113e2d2781f1580c2233a25364b7591c7bd300f0e0e98cbcbf6bff949a748",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/CanonicalBackfillConflictSection.test.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "dcaee24649e0c353a2cc71d7b6a51f9c8df1af71e0d4f1fdcce11ab6e721aa42",
+      "trusted_base_sha256": "518a07901add7730e566d7f9ea2b407724862070c826f4284bc1370ed3caa50a",
+      "remote_sha256": "518a07901add7730e566d7f9ea2b407724862070c826f4284bc1370ed3caa50a",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/CanonicalBackfillConflictSection.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "cc9fb5b04cc6ebe9d43207f678ea8e4e21b3882afe17e255cea276678937b3b8",
+      "trusted_base_sha256": "dbc26958e677a653addcfcded8da1516feffb747456b40e00add2a17c2e3bdfc",
+      "remote_sha256": "dbc26958e677a653addcfcded8da1516feffb747456b40e00add2a17c2e3bdfc",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/CanonicalProductConsistencySection.test.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "6fdb66252d3c5dbf2731c7c48e7c3d01836e064d9314cabfb7af89fda8f41d27",
+      "trusted_base_sha256": "6fdb66252d3c5dbf2731c7c48e7c3d01836e064d9314cabfb7af89fda8f41d27",
+      "remote_sha256": "a300fbf805f2f705338794fb55df307b7bd4567e054f782fee76a6cc97b063a6",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/CanonicalProductConsistencySection.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "2466df1fe624d95421079cc11b24788e8a550b1efca360ed9dfbf58f3df2bc0b",
+      "trusted_base_sha256": "2466df1fe624d95421079cc11b24788e8a550b1efca360ed9dfbf58f3df2bc0b",
+      "remote_sha256": "4bd3e081cb895d8fd9b926d91e1792d66c02d3b2fadde2fe7bdb0c4ba0223919",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/PlatformSummarySection.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "09324e883406678186b689399985e13f7b94ec680d2a508eba51a1ee21c4116d",
+      "trusted_base_sha256": "198b3f6c0e9d6c6d71cce640e5556d966978f23a7a4803b5435102b04243a0f6",
+      "remote_sha256": "198b3f6c0e9d6c6d71cce640e5556d966978f23a7a4803b5435102b04243a0f6",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/StoreDirectorySection.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "46b2ae5d52bc71acdfa4a703c194e989211382a29cbd9267f8a7570ddb13661e",
+      "trusted_base_sha256": "ea137ee2be0954770697c33a994575d44ceeac2786844fbbe60c2f1421eff799",
+      "remote_sha256": "054051d3cc03f888eddd6a0e83eb0501ff1993d520018e028f6479202f0ba4f9",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/support/SupportSlaReportSection.test.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "ceff8107602b05d34e4fb4245031dfa531abaff8e830fbca3616b0f5192de34c",
+      "trusted_base_sha256": "ceff8107602b05d34e4fb4245031dfa531abaff8e830fbca3616b0f5192de34c",
+      "remote_sha256": "3d91648150f2a58a07e3f3dddd599cdb577a399bb9a482fec50863e8542e46e4",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/support/SupportSlaReportSection.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "4908411f7558cac21c8d97dd9285bccb4589fa2bced63c13f087085dd801f0a8",
+      "trusted_base_sha256": "4908411f7558cac21c8d97dd9285bccb4589fa2bced63c13f087085dd801f0a8",
+      "remote_sha256": "9b7e63febf19d0c6a270d51fcb6f5cfcfc6bf93b459581842ea391093f704609",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/KnowledgeGovernanceSection.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "9d54bcf77835864e6260562f37775f5ca390b19deb826cf12fdec9ed84926de3",
+      "trusted_base_sha256": "9d54bcf77835864e6260562f37775f5ca390b19deb826cf12fdec9ed84926de3",
+      "remote_sha256": "c44c5bb2af53c5092f96323d07db080cc46f85c0c38c7a60302cf1504d577d3f",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/OperationalGovernanceSection.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "2d0df9137f9b2e0f9e7c58f4a8597938b196ba42301378e792e673c56f0422d0",
+      "trusted_base_sha256": "2d0df9137f9b2e0f9e7c58f4a8597938b196ba42301378e792e673c56f0422d0",
+      "remote_sha256": "ba6149c5797c92de287e6a6047da879f5026fe44fcc2fa4d5af2f2d87753e3d1",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/knowledge/AssetRightsPanel.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "f42ffd9189e83085fc1f1c069e8e27b9c83ba813c26114818b730edd6d40fb74",
+      "trusted_base_sha256": "f42ffd9189e83085fc1f1c069e8e27b9c83ba813c26114818b730edd6d40fb74",
+      "remote_sha256": "fd2239477166d2f9b85be7a1e57f7369ee8d613ff66ac289c24ab2f44d1ca2f3",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/knowledge/CompetitorReferencesPanel.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "ebea33cb4018af4528cce2364267bf2419a8f4bcc1a2f845554dd87521ce645b",
+      "trusted_base_sha256": "ebea33cb4018af4528cce2364267bf2419a8f4bcc1a2f845554dd87521ce645b",
+      "remote_sha256": "57904551cf80f81c014048dcfd8df0396e86d7394f52bb0de2cdd82424459477",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/knowledge/KnowledgeRulesPanel.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "a82042333468f14cdf474dea04168ee599a14818403cd772fe7904704658002d",
+      "trusted_base_sha256": "a82042333468f14cdf474dea04168ee599a14818403cd772fe7904704658002d",
+      "remote_sha256": "9f021a7a71bc23792d473bec9a80ebe924f2816af99cdac01c5c35473caa17e1",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/knowledge/LearningSuggestionsPanel.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "52881e4139ca5bfcfedbc49a3657ba47cb41df10952b48c46357bc6ae617928d",
+      "trusted_base_sha256": "52881e4139ca5bfcfedbc49a3657ba47cb41df10952b48c46357bc6ae617928d",
+      "remote_sha256": "4990e42de188fa46d73d072f0bbd209563f197a7d3753fe9037c0ce9f0aeefd5",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/components/users/PermissionMatrixSection.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "2bfb8652e630f40da2fe5d341875766ce64274cc60c44a05e50c00ab53149438",
+      "trusted_base_sha256": "e793ffb109a876989c82c9a978a1e3bb3ebb943a76afcdefa43d5174af851bd1",
+      "remote_sha256": "ac223b1718432c7390f9598cc1a36cfe448a9d1910e48f0a2de67a680c3f0478",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/hooks/opsLoadCoordinator.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "ed9257b9f7e026747d8ce8bb05b0e9e65f95d038a35c3275738c84a7bed5fa5c",
+      "trusted_base_sha256": "ed9257b9f7e026747d8ce8bb05b0e9e65f95d038a35c3275738c84a7bed5fa5c",
+      "remote_sha256": "78a9f7808e21e418eb7ac574acf4e72330f122500597bd1679d61558dac6927b",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/hooks/opsLoadCoordinator.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "1c7e7a114566d675022de37084a5fbf679bef3769830b12eb1f3ef88432c923d",
+      "trusted_base_sha256": "1c7e7a114566d675022de37084a5fbf679bef3769830b12eb1f3ef88432c923d",
+      "remote_sha256": "96cfb21495f4ba9ab439a52c256a5f6d620e274e52825022b3274d9706f1642a",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useAuditCenter.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "3ad876e5d6ce95d903b0bae9bb8da9d9019fe22d61fecb60d75cb01cb106fa32",
+      "trusted_base_sha256": "3ad876e5d6ce95d903b0bae9bb8da9d9019fe22d61fecb60d75cb01cb106fa32",
+      "remote_sha256": "0ebe470c5d79ace60410734d039f7170c5c32c050788a86cdb9adca207674111",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useAuditCenter.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "a91163001d00774906252466ef47f8f3e728709343a1f322ba7b525fd6e94cf4",
+      "trusted_base_sha256": "a91163001d00774906252466ef47f8f3e728709343a1f322ba7b525fd6e94cf4",
+      "remote_sha256": "6e0cc7714d9a6e7168aeb4a0a78e2549faf4cf84f90edfad6690c772713f5556",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useCommercialOperations.test.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "1b304a3f442d31fb9ccebcad99aa5a7a51efdc2825a6a05a1821cdaeb06450bd",
+      "trusted_base_sha256": "4f5129f5ec884ea6fed5d59b540c9f73cb5728c0e39cd2adcc2177d052bb4410",
+      "remote_sha256": "4f5129f5ec884ea6fed5d59b540c9f73cb5728c0e39cd2adcc2177d052bb4410",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useFinanceSearch.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "2e892ca5fec1f9a0819913572b745aa7a27682c32d32d7aba082e669b8fb0829",
+      "trusted_base_sha256": "fdab74d1e5fc39d1da0865604129ad512ac9204912f46194c9cf655506ed95ff",
+      "remote_sha256": "e0acc66d450d3ed27ccd857e4df9b12a9efa94a86305056b3647a378a4dd3ea6",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useFinanceSearch.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "d67ede955365e84ae30413d8d4a55004dd46e05c13ae1472c445e358fbcdcceb",
+      "trusted_base_sha256": "5d8882aa809a20b78f947b4445cf9ea723af804b2e069582203c4cd479b039c8",
+      "remote_sha256": "cf11b8886dae3bfaf8ce2f95c508ed9589046375e5c22ff271e9acb66e7e7ede",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useMembers.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "76041e487418721596128d5bc315fa0fe7255185ea8f8b3bf7e896d1b24f1ba2",
+      "trusted_base_sha256": "76041e487418721596128d5bc315fa0fe7255185ea8f8b3bf7e896d1b24f1ba2",
+      "remote_sha256": "ca3e5cbdf46e04c8c598b1c726e13322f3c61a104eff4a2ac2498bbf222eed94",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useMembers.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "9a59dff32d7ca6e3022de164b35e282756008b071550f78edebe3e1e42722992",
+      "trusted_base_sha256": "9a59dff32d7ca6e3022de164b35e282756008b071550f78edebe3e1e42722992",
+      "remote_sha256": "02afe1f46df2a2e42a5970e65a2a3776995deaf5fe890fcfe2e7a79b66ad1175",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useSupportDomain.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "ce68adedca31a712ca9aef90036050bd4bacdecef8f6e7e069147f20e14714d3",
+      "trusted_base_sha256": "ce68adedca31a712ca9aef90036050bd4bacdecef8f6e7e069147f20e14714d3",
+      "remote_sha256": "ff667314a7a60019c09a1dd98a9c564ff2d3545c75741678bcbb324a13714b64",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/navigation/opsPageRegistry.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "8a76b37b9c41263cd536cef743543f5fcf6c5dba00bfc634300dede088c7c936",
+      "trusted_base_sha256": "6e87089aa13afd15fb453a65aa8ebee535a79304b84bb77fe0ab270ce9508a3d",
+      "remote_sha256": "6e87089aa13afd15fb453a65aa8ebee535a79304b84bb77fe0ab270ce9508a3d",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/navigation/useOpsNavigation.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "f3a30235b7118603052814a648674ac9595617be995f8a4a51375541b788e9d0",
+      "trusted_base_sha256": "e517551f8be62027ab98dbd10af1bd2574b28e081d6648b504bef1a1ca25c412",
+      "remote_sha256": "e517551f8be62027ab98dbd10af1bd2574b28e081d6648b504bef1a1ca25c412",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/pages/AuditPage.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "296df43f92850379751235cfdd217afb86aa73af4d6ea9ff84f55e18e1b83bf5",
+      "trusted_base_sha256": "296df43f92850379751235cfdd217afb86aa73af4d6ea9ff84f55e18e1b83bf5",
+      "remote_sha256": "60e78596b6e8ea04ac3abe1055eace7c612482d2924f2caff2a457025a91d920",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/pages/MembersPage.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "75d78dae59c1958ddc71389a031d7d444d3e16f29e21aada4fa0b131588a73f8",
+      "trusted_base_sha256": "75d78dae59c1958ddc71389a031d7d444d3e16f29e21aada4fa0b131588a73f8",
+      "remote_sha256": "e87aacfef1726f67a6ca82fa8da01da9730d09cb8c5b09c6def745339398e247",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/pages/OpsConsoleController.test.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "88f31dc9270c23ca4f2be1a708b2d3b587b1e5a99706f78e906333ba59dd01dc",
+      "trusted_base_sha256": "fffc661bcb0665915b6adc3e77129c20da4fd1edb207d03e9a4a5905c7b9e178",
+      "remote_sha256": "fffc661bcb0665915b6adc3e77129c20da4fd1edb207d03e9a4a5905c7b9e178",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/pages/OverviewPage.test.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "5924f0294b4bd25710c99d1aa66102971b543ad79af29732613ca634bb2194ff",
+      "trusted_base_sha256": "a0e3f68e08b310ca4e9e2f09446b0b0075e17ac268fd922e6a2eaeddb9a020d5",
+      "remote_sha256": "a0e3f68e08b310ca4e9e2f09446b0b0075e17ac268fd922e6a2eaeddb9a020d5",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/pages/StoragePage.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "a3e47a0825a23643a3e7c5e42c457e0108b3434aba15abe270da69d828270862",
+      "trusted_base_sha256": "72f0f47c36912709948f0cdfb9ac017574febea815b18957e35b61dab3bd3bf4",
+      "remote_sha256": "b2bd88dcdecdb17e6e966c8c7d4eed00bd754dd203d73237c9077d64ae5f3aed",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/pages/UsersPage.test.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "eee7f609cdcdf15893fc13f4c7018f7d6b6bb48b6aecb9582d2cec9e681f34a6",
+      "trusted_base_sha256": "a2e42edcffc623aee1aa706300bc0afbf2cff93ed597c53cdb4f0f15b8f2dcc0",
+      "remote_sha256": "ce7d6ec0887b99fbee475624be1545795bdec0dac5af8210315dd4a83ad64a5d",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/pages/modelsPageVisibility.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "5f77ba78cf1c8bf64dd92cb55ca46370292dcdfe5d3fe3e76fa4d02fbab04851",
+      "trusted_base_sha256": "5f77ba78cf1c8bf64dd92cb55ca46370292dcdfe5d3fe3e76fa4d02fbab04851",
+      "remote_sha256": "7f47b93e81f10972ca670e4f66f6ea8c30b82acf35877ea92e4ed87f45a7dcca",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/src/types/ops.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "18cd26dc520d997aa5cb38678b26226dc569e5b32a663bef4e2a17e17597d4fe",
+      "trusted_base_sha256": "c5e661c4b27d13e6a1a58a633a2b1987b02160e97fdab6ea0b184feabb73724d",
+      "remote_sha256": "d9f13376300c4dd81924a36bc3e7dd0949d3535fc15adf81225b96f5410eae54",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/ops-console/vite.config.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "3a32be3ba535bbaf78557d0956da3c023bcd9e0cbcf7d8d3f075b8a78d87bf1d",
+      "trusted_base_sha256": "9ed4bb385f2d3fea371be14d74deaf21b98ebeb64894c5ec8bf9771f36f5d33a",
+      "remote_sha256": "9ed4bb385f2d3fea371be14d74deaf21b98ebeb64894c5ec8bf9771f36f5d33a",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "ops-console-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "tenant/authz boundary",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "apps/worker/src/scanner-heartbeat.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "8d2f106586e7da25220ec7aa9b6fd5b0a662a33415cbf1cabea379e20c5730ed",
+      "trusted_base_sha256": "8d2f106586e7da25220ec7aa9b6fd5b0a662a33415cbf1cabea379e20c5730ed",
+      "remote_sha256": "fd997ed63235409d00a0e78b77cdb243dfa9babe0ef4a42828fd2374f08c7618",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "platform-runtime-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "API/worker contract",
+        "tenant/authz boundary",
+        "runtime and migration impact"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/entry-points.test.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "d9d65a631179eafa54b07bcde3acfa6158c13e1ef184a0c1d02852cc638253c0",
+      "trusted_base_sha256": "399466f0390a9e9a0e102bba92c0a1afc0e40a2d91ca20805901153ed8f19acb",
+      "remote_sha256": "399466f0390a9e9a0e102bba92c0a1afc0e40a2d91ca20805901153ed8f19acb",
+      "remote_bytes_persisted": false,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/CampaignLifecyclePanel.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "e9d3c073ea192ed1cca38be09cfa88bc2804f69d287f1d80d4c8de66b7e31093",
+      "trusted_base_sha256": "8206288083e7a1d124c1187d5f4449601b2536237a628d684ad2989160cf2199",
+      "remote_sha256": "8206288083e7a1d124c1187d5f4449601b2536237a628d684ad2989160cf2199",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/CanonicalConsistencyPanel.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "74f3520c066584e00d0b236da154c9750aa2ecd397f753f29bdcebcf4e13d666",
+      "trusted_base_sha256": "1ff9765a44f72048d3da377f2049fc44cd148042ca45573804746aa4d5404e3b",
+      "remote_sha256": "1ff9765a44f72048d3da377f2049fc44cd148042ca45573804746aa4d5404e3b",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/ContextRecoveryCard.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "7dea883e0b281e9b1687b67724d30878b12b47a907f6311aa87a8034f130ad4a",
+      "trusted_base_sha256": "ab891d9759ffbccdb63d256b50d42c1ba739c5b37a7a51aecbdd28a58e462730",
+      "remote_sha256": "ab891d9759ffbccdb63d256b50d42c1ba739c5b37a7a51aecbdd28a58e462730",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/DeliveryReadinessPanel.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "2c3057111c3d7a51331054bef07df8b4325cd9b143fa068d18ae20e517ad6a65",
+      "trusted_base_sha256": "7cf575be1b1bbfa7152e50164ecdd1d28315d4a1704badb6e98c91c0cd72a774",
+      "remote_sha256": "7cf575be1b1bbfa7152e50164ecdd1d28315d4a1704badb6e98c91c0cd72a774",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/MerchantLoginPage.tsx",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "71a3546e9227aa252b57ea9f19bf866932da1cae4f00cf39cd29c0324b01eff6",
+      "trusted_base_sha256": "71a3546e9227aa252b57ea9f19bf866932da1cae4f00cf39cd29c0324b01eff6",
+      "remote_sha256": "0968254ebb4c7a114ef6db123841ba148eecb01884108ea3e726690dc2040547",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/detail-sop.test.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "000baf958ed7ce776274743c02b1f2ad3389b50ed7e5e5c558aa1414bf81379b",
+      "trusted_base_sha256": "9eed845e93cbcdad7615f0d3b1b0988cc63069f92c2398a17bc2da7497d42fad",
+      "remote_sha256": "9eed845e93cbcdad7615f0d3b1b0988cc63069f92c2398a17bc2da7497d42fad",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/detail-sop.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "09b9fb75217685bd486abe530f268d27565bce7e096ae9305d541b09085b79c2",
+      "trusted_base_sha256": "bde0addceec1f006975163769131fb9373974a9abb9c15302a430172a906c10a",
+      "remote_sha256": "bde0addceec1f006975163769131fb9373974a9abb9c15302a430172a906c10a",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/knowledge-consumption.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "3ff8cc71a74683f82b40d4cc3e7462c7b60379e47a2994d64de951815780aa0f",
+      "trusted_base_sha256": "3ff8cc71a74683f82b40d4cc3e7462c7b60379e47a2994d64de951815780aa0f",
+      "remote_sha256": "a59db3946ba8e56fe749e8e4c67f84a26db193c97b59aea8461dd898906199b7",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/main.tsx",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "5737fb2d54495eacaff85c766a990619fe4412b7fad47fd0450bb9f32f9dad18",
+      "trusted_base_sha256": "97178eb376c3e6ae58adfcb2a8d79e2c2720bdffb6c121d558535b5f07b0e9f3",
+      "remote_sha256": "97178eb376c3e6ae58adfcb2a8d79e2c2720bdffb6c121d558535b5f07b0e9f3",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/navigation-cleanup.test.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "0896cae59adb807bdb21dbf0d8f5e2b808369616abf69adb6b1bb2119b22728e",
+      "trusted_base_sha256": "64810dc376d249018c2c08914d95ee6547e77acab5d048950d18f2882c38755b",
+      "remote_sha256": "64810dc376d249018c2c08914d95ee6547e77acab5d048950d18f2882c38755b",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/platform-connection-status.test.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "e5a6eda405387ba38d27065c0645d506b4f23465f8afb3794ce0513a1f64cd28",
+      "trusted_base_sha256": "d560f09f0dca87561367852a6fbac86b2837de6556196c6f33ceb5ede6d5a85c",
+      "remote_sha256": "d560f09f0dca87561367852a6fbac86b2837de6556196c6f33ceb5ede6d5a85c",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/platform-connection-status.ts",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "7dccc283eb6e714d25d2534f3ec160f4b2eac6bd2a79907b8f872a6b79f4cedb",
+      "trusted_base_sha256": "96abb7989bcd9d6f89e5c06677418527c37d24c40b23509e3e960caa6cd682c1",
+      "remote_sha256": "96abb7989bcd9d6f89e5c06677418527c37d24c40b23509e3e960caa6cd682c1",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/src/task-visual-contract.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "814ec8d0ce1576f52553a078dc659c01bf5a5800fabdcf93275f968560ec6c9d",
+      "trusted_base_sha256": "11d9f66a2f5baeb5528fab115de8d7f8e5aff6591a40f1461c98846624b25710",
+      "remote_sha256": "cec3fe67d99b36b1803518007b928e2c410888e06aae3b7f143f96169bb5567f",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "demo/merchant-studio/tsconfig.node.json",
+      "classification": "candidate_only",
+      "merge_result": "not_applicable",
+      "candidate_sha256": "89488791c6f3f6c18234a9fcd80b9e1b08b3be0811e29fbedde72bb71784f7b8",
+      "trusted_base_sha256": "16bf8bd63dccdb9d4e80f8d3048b3d9bb72732f0499dab34f11f4f018ef1a481",
+      "remote_sha256": "16bf8bd63dccdb9d4e80f8d3048b3d9bb72732f0499dab34f11f4f018ef1a481",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "merchant-studio-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "merchant workflow contract",
+        "desktop runtime/API contract",
+        "UI regression"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "packages/workers/src/scanner-heartbeat.test.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "644312f5c58dd5c7f80a09acd2e7d7cca0e57954c09934d8b1cd5dcbfdcc5754",
+      "trusted_base_sha256": "644312f5c58dd5c7f80a09acd2e7d7cca0e57954c09934d8b1cd5dcbfdcc5754",
+      "remote_sha256": "1855c28ced539be1d7eafb4b24d6c3b8470ab1f8c24111f8d532b0fddb1d6957",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "platform-runtime-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "API/worker contract",
+        "tenant/authz boundary",
+        "runtime and migration impact"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    },
+    {
+      "path": "packages/workers/src/scanner-heartbeat.ts",
+      "classification": "double_change",
+      "merge_result": "clean",
+      "candidate_sha256": "1549c1c65f3e1a8c4a15f4cebaf9e135afced6f56e2b901bf3a99ac8d46edae0",
+      "trusted_base_sha256": "1549c1c65f3e1a8c4a15f4cebaf9e135afced6f56e2b901bf3a99ac8d46edae0",
+      "remote_sha256": "3a415ef866caf49a2f27fb3b2b8b59ea512e958c742e49cfeffac958471d1ee0",
+      "remote_bytes_persisted": true,
+      "suggested_owner_role": "platform-runtime-owner",
+      "owner_identity": null,
+      "owner_attestation": null,
+      "semantic_checks_required": [
+        "API/worker contract",
+        "tenant/authz boundary",
+        "runtime and migration impact"
+      ],
+      "decision": "UNRESOLVED",
+      "decision_reason": "No authenticated owner identity/attestation is present; byte identity or clean merge is insufficient for semantic approval."
+    }
+  ],
+  "source_review_sha256": "sha256:7474cc669ea9ff0153db8c9929c2aaf7167adb081d36797149dc0cb4ef7eb3e9"
+}

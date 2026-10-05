@@ -1,0 +1,2442 @@
+{
+  "schema_version": "ecs-three-way-review/2",
+  "generated_at_utc": "2026-10-04T22:35:00Z",
+  "remote_alias": "101",
+  "remote_root": "/opt/merchant-deploy",
+  "candidate_git_sha": "59eb1e8db78005a2f9be1b8a808507422ffc82b8",
+  "candidate_parent_sha": "088f112b273408bad2ac40e82eb4b0b3c4cf71d6",
+  "candidate_source_sha256": "sha256:88b5c0c69629678e1364b2fe7e13fd9e144d5eebfe48b9ec0083ff233fa26fd1",
+  "candidate_sync_plan_sha256": "sha256:5998d907f0f75ab4e20b8305e8dfa8d090c8097317d915bb36bf66053b3d96d6",
+  "remote_read_only": true,
+  "raw_remote_bytes_persisted": false,
+  "review_required_count": 240,
+  "classification_counts": {
+    "remote_only_change": 240
+  },
+  "approved": false,
+  "decision": "NO_GO",
+  "decision_basis": "All 240 exact remote readbacks differ from the candidate parent while candidate content equals the candidate parent. The candidate therefore has no recorded change for any review_required path and would replace a remote-only change. No trusted remote commit/parent or owner-approved preservation decision exists; no overwrite or merge is authorized. Two host source archives were also probed read-only; neither contains Git metadata and neither matches all current remote bytes (163/240 and 123/240), so neither supplies a trusted remote base. A broader read-only search found no Git bundle, checkout HEAD, packed refs, or commit metadata under the host release/archive roots.",
+  "files": [
+    {
+      "path": ".env.example",
+      "remote_sha256": "479cb042975007cf088cd33cc49582e03d7012f023fd5985820dd232c83d8f1c",
+      "candidate_sha256": "8c019f84d06416a4766853bdb0369ddc3b1e1868243b5f35413d0b8128af6b86",
+      "parent_sha256": "8c019f84d06416a4766853bdb0369ddc3b1e1868243b5f35413d0b8128af6b86",
+      "classification": "remote_only_change",
+      "remote_bytes": 11699,
+      "candidate_bytes": 22742,
+      "parent_bytes": 22742
+    },
+    {
+      "path": "package.json",
+      "remote_sha256": "972d2ee8631159cf48265d529251d249cb1b0c3c9f53e58084bdfed8dab0d78b",
+      "candidate_sha256": "03cb8d6c83106c93edeac98fd8cf91de6c094e126ec6da3511c9ad98e22264bd",
+      "parent_sha256": "03cb8d6c83106c93edeac98fd8cf91de6c094e126ec6da3511c9ad98e22264bd",
+      "classification": "remote_only_change",
+      "remote_bytes": 12785,
+      "candidate_bytes": 21564,
+      "parent_bytes": 21564
+    },
+    {
+      "path": "package-lock.json",
+      "remote_sha256": "39f587cc56f935f47838a2bc01c06067a33f7ec6de4cd461b6f0469428fc220f",
+      "candidate_sha256": "a825779cdd1f4aa2bbe83a204c465307e47405759225eea9dd4476ad9739226d",
+      "parent_sha256": "a825779cdd1f4aa2bbe83a204c465307e47405759225eea9dd4476ad9739226d",
+      "classification": "remote_only_change",
+      "remote_bytes": 144855,
+      "candidate_bytes": 148828,
+      "parent_bytes": 148828
+    },
+    {
+      "path": "apps/api/src/server.ts",
+      "remote_sha256": "6f24d7bf1d3a052618b9ac8b8f562f0a81f01e5e60061aa5a917f9a5584a0a99",
+      "candidate_sha256": "687a1bee0afafce5176e0ecaf5790931ccbb07643aa9dee087d7eb132455bb0c",
+      "parent_sha256": "687a1bee0afafce5176e0ecaf5790931ccbb07643aa9dee087d7eb132455bb0c",
+      "classification": "remote_only_change",
+      "remote_bytes": 1784938,
+      "candidate_bytes": 1172108,
+      "parent_bytes": 1172108
+    },
+    {
+      "path": "apps/api/src/scanner-health.test.ts",
+      "remote_sha256": "3e5b6db951340839e047c3209def28b468d14940bddbd43bd7777735122f7777",
+      "candidate_sha256": "c2f67deace001e18d2136fbc492b453e7e64186895b64c8b941158e7de138268",
+      "parent_sha256": "c2f67deace001e18d2136fbc492b453e7e64186895b64c8b941158e7de138268",
+      "classification": "remote_only_change",
+      "remote_bytes": 6481,
+      "candidate_bytes": 11178,
+      "parent_bytes": 11178
+    },
+    {
+      "path": "apps/api/src/aliyun-ecs-role-credentials.ts",
+      "remote_sha256": "d99abc65e8dc3a116909d707a82e13b4e5303c782d80cc6a3ad8d300ba06cea6",
+      "candidate_sha256": "dfd63a2381c4ece1e789360707d79bd32438e2fc7ed52409a531b6c888511840",
+      "parent_sha256": "dfd63a2381c4ece1e789360707d79bd32438e2fc7ed52409a531b6c888511840",
+      "classification": "remote_only_change",
+      "remote_bytes": 2606,
+      "candidate_bytes": 1220,
+      "parent_bytes": 1220
+    },
+    {
+      "path": "packages/persistence/src/migration.ts",
+      "remote_sha256": "4303a0e30b880a743a9e692913103612e9f7dfb47e1fa8f29ccc309b7318f143",
+      "candidate_sha256": "b84f5b0f506309522f730fd229e08a8e595f1ba1bbaf8aab59c5e60928287ebd",
+      "parent_sha256": "b84f5b0f506309522f730fd229e08a8e595f1ba1bbaf8aab59c5e60928287ebd",
+      "classification": "remote_only_change",
+      "remote_bytes": 58480,
+      "candidate_bytes": 83641,
+      "parent_bytes": 83641
+    },
+    {
+      "path": "release-metadata.json",
+      "remote_sha256": "f17d693e877cacc3360d4035a9a82ede7145aec0148fcfbcbfd01fcf67ec25c0",
+      "candidate_sha256": "08a707ffbc8a1cb523d11e3785a88c27943dd23c075107d06e508c60b7698d72",
+      "parent_sha256": "08a707ffbc8a1cb523d11e3785a88c27943dd23c075107d06e508c60b7698d72",
+      "classification": "remote_only_change",
+      "remote_bytes": 224,
+      "candidate_bytes": 257,
+      "parent_bytes": 257
+    },
+    {
+      "path": "infra/docker/api.Dockerfile",
+      "remote_sha256": "8a2d032aed19a1a57e779e8684819d4b64ae9b0d7c846f9a0c9e69404f79d0e0",
+      "candidate_sha256": "bf262f73109e9e13dae2f1723b6fadfb32171ff304dc2d42f4066e36042b28b7",
+      "parent_sha256": "bf262f73109e9e13dae2f1723b6fadfb32171ff304dc2d42f4066e36042b28b7",
+      "classification": "remote_only_change",
+      "remote_bytes": 3377,
+      "candidate_bytes": 5815,
+      "parent_bytes": 5815
+    },
+    {
+      "path": "infra/docker/worker.Dockerfile",
+      "remote_sha256": "dc788129f81ab950cc0f9fd6f0f615ab4360660126a36c327dfe881362c704b9",
+      "candidate_sha256": "1e7f8de998c231aaa6e91e5bb6da84be010de5dc69f40abf4e9880835028562b",
+      "parent_sha256": "1e7f8de998c231aaa6e91e5bb6da84be010de5dc69f40abf4e9880835028562b",
+      "classification": "remote_only_change",
+      "remote_bytes": 2657,
+      "candidate_bytes": 3978,
+      "parent_bytes": 3978
+    },
+    {
+      "path": "infra/docker/pilot-gateway-https.Dockerfile",
+      "remote_sha256": "d5e22b27197ab375f94675439cde099c58e8c959dbbe307e03c81f1c7d7c8021",
+      "candidate_sha256": "b304b1ca6fb185d8c28fff97bff1d8537683122759ecceaf2de03c152a6334fc",
+      "parent_sha256": "b304b1ca6fb185d8c28fff97bff1d8537683122759ecceaf2de03c152a6334fc",
+      "classification": "remote_only_change",
+      "remote_bytes": 413,
+      "candidate_bytes": 623,
+      "parent_bytes": 623
+    },
+    {
+      "path": "infra/nginx/pilot-gateway-https.conf",
+      "remote_sha256": "c8c1bde8cdca8c3aed2117727f0f4ef64dafdd4a0522ce85865b71d66800f114",
+      "candidate_sha256": "b1204e23b729d4533aa31731c28765c169f1905d1b60fe259cdc8cc7bf591dd4",
+      "parent_sha256": "b1204e23b729d4533aa31731c28765c169f1905d1b60fe259cdc8cc7bf591dd4",
+      "classification": "remote_only_change",
+      "remote_bytes": 14947,
+      "candidate_bytes": 13657,
+      "parent_bytes": 13657
+    },
+    {
+      "path": "infra/scripts/apply-migrations.sh",
+      "remote_sha256": "e22c056318e2fcfe4573490f141591210cecbeea6a68bc8e31c16f00fec97dd2",
+      "candidate_sha256": "6b056e7a2a3e15a3fddbde6084508483c15adbec01668e5f6496757f4a38824d",
+      "parent_sha256": "6b056e7a2a3e15a3fddbde6084508483c15adbec01668e5f6496757f4a38824d",
+      "classification": "remote_only_change",
+      "remote_bytes": 7387,
+      "candidate_bytes": 11356,
+      "parent_bytes": 11356
+    },
+    {
+      "path": "infra/scripts/verify-runtime-db-role.sh",
+      "remote_sha256": "8199b2cc7a9790b846a4ccec227fd0f94441046066ddd5262c98962abbb248d8",
+      "candidate_sha256": "64603e09c6bb89d6ca44c0d94a3712106d2aa026d36c17e27745a032fcceec2d",
+      "parent_sha256": "64603e09c6bb89d6ca44c0d94a3712106d2aa026d36c17e27745a032fcceec2d",
+      "classification": "remote_only_change",
+      "remote_bytes": 21925,
+      "candidate_bytes": 36681,
+      "parent_bytes": 36681
+    },
+    {
+      "path": "infra/scripts/generate-container-source-manifest.mjs",
+      "remote_sha256": "64677669f1f193ae8e8ff4f2241215986f5682467c9d37fe5bb42b8e18d31f5b",
+      "candidate_sha256": "e59a2fd43bc563aec7a97fc553ad4b495131d9bc43359102b45715df5d127ac0",
+      "parent_sha256": "e59a2fd43bc563aec7a97fc553ad4b495131d9bc43359102b45715df5d127ac0",
+      "classification": "remote_only_change",
+      "remote_bytes": 10157,
+      "candidate_bytes": 10323,
+      "parent_bytes": 10323
+    },
+    {
+      "path": "infra/local/ensure-app-role.sql",
+      "remote_sha256": "32ae671b1e58d5352c94c9b158e126a0ae295680ea4dec976f807489c7a2f649",
+      "candidate_sha256": "6cf8c920ff880089193050e54657c9506dcf9ce2e629a080d3cfebb5b572ca74",
+      "parent_sha256": "6cf8c920ff880089193050e54657c9506dcf9ce2e629a080d3cfebb5b572ca74",
+      "classification": "remote_only_change",
+      "remote_bytes": 12756,
+      "candidate_bytes": 30248,
+      "parent_bytes": 30248
+    },
+    {
+      "path": "infra/local/docker-compose.yml",
+      "remote_sha256": "512f3c5632cf963289722fcf8f63ec2618f37437892dc522557dba584d5b1284",
+      "candidate_sha256": "6de42c1789e9ed678bd3d666d386f7206dc57ca14b8d6175ac5afa9d59329a5a",
+      "parent_sha256": "6de42c1789e9ed678bd3d666d386f7206dc57ca14b8d6175ac5afa9d59329a5a",
+      "classification": "remote_only_change",
+      "remote_bytes": 29532,
+      "candidate_bytes": 33321,
+      "parent_bytes": 33321
+    },
+    {
+      "path": "infra/local/docker-compose.ecs-pilot.yml",
+      "remote_sha256": "14c351817c90a63779d16af3ebf28325cef1e86923e4cb44196a3284c6ae050d",
+      "candidate_sha256": "d247f8d7e7356599ced256790cdff342083964fbc1ee261905d7c6620ee636dc",
+      "parent_sha256": "d247f8d7e7356599ced256790cdff342083964fbc1ee261905d7c6620ee636dc",
+      "classification": "remote_only_change",
+      "remote_bytes": 15730,
+      "candidate_bytes": 37321,
+      "parent_bytes": 37321
+    },
+    {
+      "path": "infra/local/docker-compose.ecs-production-migration.yml",
+      "remote_sha256": "be13e7a63ae21277dedede950db972b895cd30c52389afdfa4ff4d28ce3a70aa",
+      "candidate_sha256": "c2994e7c98583edfce4d3052cb0933ccca5bf089a8afc94546544a1f0525be51",
+      "parent_sha256": "c2994e7c98583edfce4d3052cb0933ccca5bf089a8afc94546544a1f0525be51",
+      "classification": "remote_only_change",
+      "remote_bytes": 2535,
+      "candidate_bytes": 2574,
+      "parent_bytes": 2574
+    },
+    {
+      "path": "infra/local/docker-compose.ecs-pilot-release.yml",
+      "remote_sha256": "fe4f60eb151a341ec4dfd133c674fb20bea112ecb47398dc24bbdcdecce92815",
+      "candidate_sha256": "0b538150036bdda6b17ad2ce55d9bac3adf0d452c724b0aa2a3c6bc71789a61b",
+      "parent_sha256": "0b538150036bdda6b17ad2ce55d9bac3adf0d452c724b0aa2a3c6bc71789a61b",
+      "classification": "remote_only_change",
+      "remote_bytes": 2290,
+      "candidate_bytes": 4483,
+      "parent_bytes": 4483
+    },
+    {
+      "path": "infra/local/ecs-production-compose.layers",
+      "remote_sha256": "f079dbdfce385426eb3213e250c29e795e3c4ac1d93b9919e0f99a0a4357a43c",
+      "candidate_sha256": "2a845072d00c2cb2eec920a874ce1bc9d65740bc6923c2d91c0cfc18a8c0b5f7",
+      "parent_sha256": "2a845072d00c2cb2eec920a874ce1bc9d65740bc6923c2d91c0cfc18a8c0b5f7",
+      "classification": "remote_only_change",
+      "remote_bytes": 224,
+      "candidate_bytes": 329,
+      "parent_bytes": 329
+    },
+    {
+      "path": "infra/scripts/pilot-compose-preflight.sh",
+      "remote_sha256": "b6b9c227bdb1b832beb6979599f537660bbd91a088d2820e84cd91286b090a1d",
+      "candidate_sha256": "4d502fb307415f12fd73d5e06639f3a6d408741f883fb558b4fc8c7558bb0c89",
+      "parent_sha256": "4d502fb307415f12fd73d5e06639f3a6d408741f883fb558b4fc8c7558bb0c89",
+      "classification": "remote_only_change",
+      "remote_bytes": 1305,
+      "candidate_bytes": 5290,
+      "parent_bytes": 5290
+    },
+    {
+      "path": "infra/scripts/render-ecs-production-compose.sh",
+      "remote_sha256": "f8128043e18063f3a7954193487d7defd56f51ab461852ccf7881ea173ceb9ef",
+      "candidate_sha256": "a29bf6a76f6a02103d8f704cbe4c0de25a73d2e3b6d9bd223e657da3ddc29812",
+      "parent_sha256": "a29bf6a76f6a02103d8f704cbe4c0de25a73d2e3b6d9bd223e657da3ddc29812",
+      "classification": "remote_only_change",
+      "remote_bytes": 1880,
+      "candidate_bytes": 5954,
+      "parent_bytes": 5954
+    },
+    {
+      "path": "infra/scripts/rotate-alipay-secrets.sh",
+      "remote_sha256": "36d50430856dfb1a0d1c8f569cffa94963d27b2613398b69f028b11edda7fc9a",
+      "candidate_sha256": "d4141cb2df2614da8caa80c4cdd0093a2190d58a708761d21e18eec032988d6b",
+      "parent_sha256": "d4141cb2df2614da8caa80c4cdd0093a2190d58a708761d21e18eec032988d6b",
+      "classification": "remote_only_change",
+      "remote_bytes": 5790,
+      "candidate_bytes": 581,
+      "parent_bytes": 581
+    },
+    {
+      "path": "infra/scripts/stage-verified-ecs-release.sh",
+      "remote_sha256": "4f8e8fc2059cdbc5bf2d7ad371094b23523d3ac34844f52ebfa91b523606a739",
+      "candidate_sha256": "555647fb446817d348a0a5dd2c89fb3b8388141ed5984ab28b56d25d324ebc4f",
+      "parent_sha256": "555647fb446817d348a0a5dd2c89fb3b8388141ed5984ab28b56d25d324ebc4f",
+      "classification": "remote_only_change",
+      "remote_bytes": 7232,
+      "candidate_bytes": 16203,
+      "parent_bytes": 16203
+    },
+    {
+      "path": "infra/scripts/deploy-verified-ecs-compose.sh",
+      "remote_sha256": "fe72236ccefa4e99f435f0cb7e16111b50b04aa17983e3953363169e1a9f7fd5",
+      "candidate_sha256": "f56b465c21384d6d944265a81af2f1dfce77ab68067df6e8446600e7e685c208",
+      "parent_sha256": "f56b465c21384d6d944265a81af2f1dfce77ab68067df6e8446600e7e685c208",
+      "classification": "remote_only_change",
+      "remote_bytes": 26739,
+      "candidate_bytes": 46477,
+      "parent_bytes": 46477
+    },
+    {
+      "path": "infra/scripts/validate-ecs-production-compose.mjs",
+      "remote_sha256": "15c7176eca49846450084239dc1ca25996409f200f8bc1177607b70df1ae2ab8",
+      "candidate_sha256": "466beb7a2a1241acaff14a90fe782a6cf663133fd3c4ee5b788db043d0cd09e0",
+      "parent_sha256": "466beb7a2a1241acaff14a90fe782a6cf663133fd3c4ee5b788db043d0cd09e0",
+      "classification": "remote_only_change",
+      "remote_bytes": 9048,
+      "candidate_bytes": 13453,
+      "parent_bytes": 13453
+    },
+    {
+      "path": "infra/scripts/validate-production-config.sh",
+      "remote_sha256": "6a411f9f77cbedea748b8372c0c31488d16ae5149272edaca562e5a0042c7018",
+      "candidate_sha256": "3f70507de8aef7c199d82ef4083e85a1dbc8c57e9a548674e4fda8f3eae2f339",
+      "parent_sha256": "3f70507de8aef7c199d82ef4083e85a1dbc8c57e9a548674e4fda8f3eae2f339",
+      "classification": "remote_only_change",
+      "remote_bytes": 26915,
+      "candidate_bytes": 29464,
+      "parent_bytes": 29464
+    },
+    {
+      "path": "tests/ecs-pilot-api-replica-parity.test.ts",
+      "remote_sha256": "15c481433319db564f4297516e5eff70186dda1f3a6ece048d918cbbfa36f127",
+      "candidate_sha256": "9177a0b4a5c5c4240a07068ac81f553775236fac82739003b0effc3b80b085d9",
+      "parent_sha256": "9177a0b4a5c5c4240a07068ac81f553775236fac82739003b0effc3b80b085d9",
+      "classification": "remote_only_change",
+      "remote_bytes": 4163,
+      "candidate_bytes": 22899,
+      "parent_bytes": 22899
+    },
+    {
+      "path": "tests/object-storage-evidence-gate.test.ts",
+      "remote_sha256": "283cee2cff27dead6c388f7679436dfe7bbbe2b40ada41fd98d2e7d87fbb62bd",
+      "candidate_sha256": "5351671a069e4adf4c8af9d1d372e9c475f2a7458521028c1601350b3fe3e10b",
+      "parent_sha256": "5351671a069e4adf4c8af9d1d372e9c475f2a7458521028c1601350b3fe3e10b",
+      "classification": "remote_only_change",
+      "remote_bytes": 5520,
+      "candidate_bytes": 9346,
+      "parent_bytes": 9346
+    },
+    {
+      "path": "tests/object-storage-evidence-gate.ts",
+      "remote_sha256": "9dd6b6911e809721a5b0fbc047e43ef7384d0c6b1714c8d2625cda9cdf398b7c",
+      "candidate_sha256": "aa2dbc96bc90e235ed3a651b93e0d0ea7a5c3e655b2d99ac3c09bb96a6084f74",
+      "parent_sha256": "aa2dbc96bc90e235ed3a651b93e0d0ea7a5c3e655b2d99ac3c09bb96a6084f74",
+      "classification": "remote_only_change",
+      "remote_bytes": 10578,
+      "candidate_bytes": 16715,
+      "parent_bytes": 16715
+    },
+    {
+      "path": "tests/production-config-gate.test.ts",
+      "remote_sha256": "e9cd715e80573e64aa2c74b0d03ca26d01d5cb6751d5aa62cfebb6b2f09fd0c1",
+      "candidate_sha256": "a7d4098d8b34e75cb4df9786ebd0235e059418ad388e6edac396150e9bb26772",
+      "parent_sha256": "a7d4098d8b34e75cb4df9786ebd0235e059418ad388e6edac396150e9bb26772",
+      "classification": "remote_only_change",
+      "remote_bytes": 14517,
+      "candidate_bytes": 23390,
+      "parent_bytes": 23390
+    },
+    {
+      "path": "tests/rendered-production-config-gate.test.ts",
+      "remote_sha256": "f5de67297b1eeb1e88d9482ababfe5773d8725dbb514660b4a9c731ce9953469",
+      "candidate_sha256": "fb377e2104cf92a1798cf44d0195eaed55fbef846dee44bd29f8abe229edd5f1",
+      "parent_sha256": "fb377e2104cf92a1798cf44d0195eaed55fbef846dee44bd29f8abe229edd5f1",
+      "classification": "remote_only_change",
+      "remote_bytes": 12352,
+      "candidate_bytes": 15431,
+      "parent_bytes": 15431
+    },
+    {
+      "path": "apps/api/src/production-readiness.e2e.test.ts",
+      "remote_sha256": "ffb3b43d1a2f5cbdea6a2ef7cfa83bdfe87c5c3d18e8ff65d000ead5cb32fb32",
+      "candidate_sha256": "9716b8dd963e7efdd93a93439ca7171a800bdba03a13724bc3e6a6f1e35919f0",
+      "parent_sha256": "9716b8dd963e7efdd93a93439ca7171a800bdba03a13724bc3e6a6f1e35919f0",
+      "classification": "remote_only_change",
+      "remote_bytes": 14286,
+      "candidate_bytes": 43016,
+      "parent_bytes": 43016
+    },
+    {
+      "path": "demo/merchant-studio/package.json",
+      "remote_sha256": "b8677361211b219ca967f838d269cec073c2021080d18f37755fbc61216adeb4",
+      "candidate_sha256": "fafb71fad00f88ebb3be047753afc4ebe837935321af8fe181f54ab5d660dda6",
+      "parent_sha256": "fafb71fad00f88ebb3be047753afc4ebe837935321af8fe181f54ab5d660dda6",
+      "classification": "remote_only_change",
+      "remote_bytes": 509,
+      "candidate_bytes": 722,
+      "parent_bytes": 722
+    },
+    {
+      "path": "demo/merchant-studio/src/App.tsx",
+      "remote_sha256": "003b72f9807be2551e6d392594c6c95b41124da732295964d8ffc565290714ca",
+      "candidate_sha256": "9793c55e0efce3c67c31d80bb1d0d9f82ccbcf22e7f69d3307cd81c780ba7d97",
+      "parent_sha256": "9793c55e0efce3c67c31d80bb1d0d9f82ccbcf22e7f69d3307cd81c780ba7d97",
+      "classification": "remote_only_change",
+      "remote_bytes": 448198,
+      "candidate_bytes": 631587,
+      "parent_bytes": 631587
+    },
+    {
+      "path": "infra/scripts/deploy-preflight-ecs.sh",
+      "remote_sha256": "9c87993136985ec650d8f4c5e4a1032c0a102f9d216b9bd0cc8dcad5d28fe23b",
+      "candidate_sha256": "5a9126f050f55ccb6bf8ecd234e8015b5c7d05d7546313e221c225f50a238e98",
+      "parent_sha256": "5a9126f050f55ccb6bf8ecd234e8015b5c7d05d7546313e221c225f50a238e98",
+      "classification": "remote_only_change",
+      "remote_bytes": 20137,
+      "candidate_bytes": 31161,
+      "parent_bytes": 31161
+    },
+    {
+      "path": "infra/scripts/deploy-preflight.sh",
+      "remote_sha256": "ddbc5f6b82147e05ce9b7ebea4279e6e9f07ef3faeafdf9f38f02482220de659",
+      "candidate_sha256": "4cd95d0bb9020b10b48d6b9e722f08d93f380e61f30c25b72a8b681758ea70f7",
+      "parent_sha256": "4cd95d0bb9020b10b48d6b9e722f08d93f380e61f30c25b72a8b681758ea70f7",
+      "classification": "remote_only_change",
+      "remote_bytes": 13776,
+      "candidate_bytes": 20159,
+      "parent_bytes": 20159
+    },
+    {
+      "path": "packages/ai/src/generator.ts",
+      "remote_sha256": "944c346f9f2c918097a5bb2c6bfe2ce63f19b8a72e03c75d29b3e2dbd0421e65",
+      "candidate_sha256": "28932e3bf8ef05c4fbb9e5f4cd552dafb07c10552579850893d5383748a46b87",
+      "parent_sha256": "28932e3bf8ef05c4fbb9e5f4cd552dafb07c10552579850893d5383748a46b87",
+      "classification": "remote_only_change",
+      "remote_bytes": 36122,
+      "candidate_bytes": 57121,
+      "parent_bytes": 57121
+    },
+    {
+      "path": "packages/ai/src/image-editor.ts",
+      "remote_sha256": "f0451b394a214c0a76c874254f2e2728502537da99cddc16be932622abf5b13a",
+      "candidate_sha256": "f85a974e37b528ceede4e98844b969bdb3a1b72af0c8890bd2a82d1911d9410e",
+      "parent_sha256": "f85a974e37b528ceede4e98844b969bdb3a1b72af0c8890bd2a82d1911d9410e",
+      "classification": "remote_only_change",
+      "remote_bytes": 7386,
+      "candidate_bytes": 8769,
+      "parent_bytes": 8769
+    },
+    {
+      "path": "packages/ai/src/image-facts.ts",
+      "remote_sha256": "d8b2ddd2240d5a369a8845ac6c39c93f36486f09eef8ac0ced65788dfacc7d11",
+      "candidate_sha256": "df5b788896aef81cbb89eee3916d4cdeb8e852b7f0c767adc445e9f8f438bdff",
+      "parent_sha256": "df5b788896aef81cbb89eee3916d4cdeb8e852b7f0c767adc445e9f8f438bdff",
+      "classification": "remote_only_change",
+      "remote_bytes": 6442,
+      "candidate_bytes": 8554,
+      "parent_bytes": 8554
+    },
+    {
+      "path": "packages/ai/src/image-generator.ts",
+      "remote_sha256": "6cb3114e0517579454a5748a3033bd6a2b56b1f97d201be61505d16c5ba7bad8",
+      "candidate_sha256": "631b67e6214890256a3fccfb0182022ebc8c700e08bf88fa2f2e8165d26003db",
+      "parent_sha256": "631b67e6214890256a3fccfb0182022ebc8c700e08bf88fa2f2e8165d26003db",
+      "classification": "remote_only_change",
+      "remote_bytes": 39132,
+      "candidate_bytes": 44435,
+      "parent_bytes": 44435
+    },
+    {
+      "path": "packages/ai/src/image-generator.test.ts",
+      "remote_sha256": "3855fe537d901d9f5beed1a0c68d036f8e19fdfe1e391923d87027ff27865433",
+      "candidate_sha256": "0922e2cb28fa4dd65c57239ce0019127fa975902fa961e2f9b8a66c92c33211c",
+      "parent_sha256": "0922e2cb28fa4dd65c57239ce0019127fa975902fa961e2f9b8a66c92c33211c",
+      "classification": "remote_only_change",
+      "remote_bytes": 32944,
+      "candidate_bytes": 45490,
+      "parent_bytes": 45490
+    },
+    {
+      "path": "packages/ai/src/platform-model-gate.ts",
+      "remote_sha256": "e19244709544384a63237a582c19c59574d5e7e6eed66925b4ac56c7d6269c3c",
+      "candidate_sha256": "9afdf8d93e15245bffd1e690d0a184926709fa7e388bf116504129eee57e858f",
+      "parent_sha256": "9afdf8d93e15245bffd1e690d0a184926709fa7e388bf116504129eee57e858f",
+      "classification": "remote_only_change",
+      "remote_bytes": 8281,
+      "candidate_bytes": 28075,
+      "parent_bytes": 28075
+    },
+    {
+      "path": "packages/ai/src/platform-model-gate.test.ts",
+      "remote_sha256": "8e1cab5741e8812f7ed42161def83aa738178b36f61a0fdb4dce9972346d829c",
+      "candidate_sha256": "8abf7f5d1d53929ad680f29603b971494115049740b437d20c0c02d008b83b62",
+      "parent_sha256": "8abf7f5d1d53929ad680f29603b971494115049740b437d20c0c02d008b83b62",
+      "classification": "remote_only_change",
+      "remote_bytes": 7219,
+      "candidate_bytes": 16358,
+      "parent_bytes": 16358
+    },
+    {
+      "path": "packages/ai/src/relay-usage.ts",
+      "remote_sha256": "a16414c46444d5e62f51ad5a4cbb963e06be13c33e3647b4ad0bbf2877ea0b83",
+      "candidate_sha256": "6a8d97ef8e9930f48b562a2844c1155282b7765797492b80f4cfdf2837b278d2",
+      "parent_sha256": "6a8d97ef8e9930f48b562a2844c1155282b7765797492b80f4cfdf2837b278d2",
+      "classification": "remote_only_change",
+      "remote_bytes": 16146,
+      "candidate_bytes": 19933,
+      "parent_bytes": 19933
+    },
+    {
+      "path": "packages/ai/src/relay-usage.test.ts",
+      "remote_sha256": "4e81ff56637427e4b18513ec530a3d93c7a2f1af1943e54b03a00c65fe3a1bda",
+      "candidate_sha256": "251c1e2107135b93fb3f6f47711124a536967b6072f02004257a4da4ae5ac6b5",
+      "parent_sha256": "251c1e2107135b93fb3f6f47711124a536967b6072f02004257a4da4ae5ac6b5",
+      "classification": "remote_only_change",
+      "remote_bytes": 13700,
+      "candidate_bytes": 23431,
+      "parent_bytes": 23431
+    },
+    {
+      "path": "packages/ai/src/video-generator.ts",
+      "remote_sha256": "1f830f394be31902374d2662df816dfdfee4fc5f58eed68d16a4460231e0c1cc",
+      "candidate_sha256": "5d04f9ff3d9d3d71631635e15c643d214409295ce642726c14ad3b8f93436d40",
+      "parent_sha256": "5d04f9ff3d9d3d71631635e15c643d214409295ce642726c14ad3b8f93436d40",
+      "classification": "remote_only_change",
+      "remote_bytes": 15736,
+      "candidate_bytes": 21085,
+      "parent_bytes": 21085
+    },
+    {
+      "path": "packages/contracts/src/ops/feature-flags.ts",
+      "remote_sha256": "a61934f2a36027d33d10e8c8e422829d0bb9e4a2341e096938b52733081bfab9",
+      "candidate_sha256": "f5fd83650884d57bc103cd4749026113d9def7fc70b69661342b3589588c9fcc",
+      "parent_sha256": "f5fd83650884d57bc103cd4749026113d9def7fc70b69661342b3589588c9fcc",
+      "classification": "remote_only_change",
+      "remote_bytes": 7348,
+      "candidate_bytes": 7951,
+      "parent_bytes": 7951
+    },
+    {
+      "path": "packages/persistence/src/migration.test.ts",
+      "remote_sha256": "e8b9f8a74b3e207311728d89f934711867a0c5290b03f00cddb820bd088038f4",
+      "candidate_sha256": "60de56f1593e93604a54f4eaa04fd34704ecd92b500d84e6521f1bd850bcfaa2",
+      "parent_sha256": "60de56f1593e93604a54f4eaa04fd34704ecd92b500d84e6521f1bd850bcfaa2",
+      "classification": "remote_only_change",
+      "remote_bytes": 24745,
+      "candidate_bytes": 37505,
+      "parent_bytes": 37505
+    },
+    {
+      "path": "scripts/model-relay-canary.ts",
+      "remote_sha256": "4436c3d763d2addcb135a8eac3ecfa7efa27f621dbf60d5ad38f20407402bbc2",
+      "candidate_sha256": "c9da5ff2f3240f9549db3e9c4c7053de388e5bc6008a47c8a9ee5762247940f7",
+      "parent_sha256": "c9da5ff2f3240f9549db3e9c4c7053de388e5bc6008a47c8a9ee5762247940f7",
+      "classification": "remote_only_change",
+      "remote_bytes": 23484,
+      "candidate_bytes": 73802,
+      "parent_bytes": 73802
+    },
+    {
+      "path": "scripts/release-manifest.ts",
+      "remote_sha256": "418e12c97c432a96ab5d02add19562788115b68366360560c16fffcd6fae9a3f",
+      "candidate_sha256": "ce4b3c24d6a3f6daf12887d42f43e5e0b242f0afc7b9faa2c013dc503ddefae0",
+      "parent_sha256": "ce4b3c24d6a3f6daf12887d42f43e5e0b242f0afc7b9faa2c013dc503ddefae0",
+      "classification": "remote_only_change",
+      "remote_bytes": 7868,
+      "candidate_bytes": 22432,
+      "parent_bytes": 22432
+    },
+    {
+      "path": "tests/model-relay-contract.test.ts",
+      "remote_sha256": "1c1e42dc30957012af3e5a16bb8106da49b7052dfb08e3f040c24cc80910f43f",
+      "candidate_sha256": "efe089bcc2bb87432651f745c415dcbf8abebfa4f7b2ae5bd69edbe21d9e7a75",
+      "parent_sha256": "efe089bcc2bb87432651f745c415dcbf8abebfa4f7b2ae5bd69edbe21d9e7a75",
+      "classification": "remote_only_change",
+      "remote_bytes": 14138,
+      "candidate_bytes": 64191,
+      "parent_bytes": 64191
+    },
+    {
+      "path": "tests/production-evidence-gate.test.ts",
+      "remote_sha256": "3d9b707eac43651b9a8bc99b5659ab87acba86d5a46339eed25ff5cd1788966e",
+      "candidate_sha256": "63bb24ebd439bb8977fe1fe7437bac60c77db1106696955284eb0e95176e1444",
+      "parent_sha256": "63bb24ebd439bb8977fe1fe7437bac60c77db1106696955284eb0e95176e1444",
+      "classification": "remote_only_change",
+      "remote_bytes": 9853,
+      "candidate_bytes": 24154,
+      "parent_bytes": 24154
+    },
+    {
+      "path": "tests/production-evidence-gate.ts",
+      "remote_sha256": "4fd0ff96aaa1e592692a5e1b5c60c8e0f46619f1b92ef6d5d0f4e56dc0466956",
+      "candidate_sha256": "dfc8258132f85a2987ba91d71ace7f218fe8db1b0b511b3dd4d91acb1b9ec553",
+      "parent_sha256": "dfc8258132f85a2987ba91d71ace7f218fe8db1b0b511b3dd4d91acb1b9ec553",
+      "classification": "remote_only_change",
+      "remote_bytes": 8996,
+      "candidate_bytes": 23266,
+      "parent_bytes": 23266
+    },
+    {
+      "path": "tests/release-manifest-gate.test.ts",
+      "remote_sha256": "5930745658988e708f95237ad26c6e46f6854b0f18a1321ee2b87322437cd84d",
+      "candidate_sha256": "c6608c2bda889491e4c7a8189741d5adab2a37783ffe36469a12835360e0ee70",
+      "parent_sha256": "c6608c2bda889491e4c7a8189741d5adab2a37783ffe36469a12835360e0ee70",
+      "classification": "remote_only_change",
+      "remote_bytes": 9995,
+      "candidate_bytes": 28901,
+      "parent_bytes": 28901
+    },
+    {
+      "path": "tests/release-manifest-gate.ts",
+      "remote_sha256": "d0c2273c707a111a676199ff69140beb67ee32ce94d70adaa98fc337eaf3232d",
+      "candidate_sha256": "42d4c10af1ef877d8e5f0c8b22951eff92c548e45299d8ab2cf52fae3c279674",
+      "parent_sha256": "42d4c10af1ef877d8e5f0c8b22951eff92c548e45299d8ab2cf52fae3c279674",
+      "classification": "remote_only_change",
+      "remote_bytes": 11848,
+      "candidate_bytes": 24752,
+      "parent_bytes": 24752
+    },
+    {
+      "path": "tests/release-manifest.test.ts",
+      "remote_sha256": "f688e9b6a86eb70f0dc3fdec121b1399381c2208e5ceddc1882a1f48f2d43ea7",
+      "candidate_sha256": "505e67752f606629ece087c76ed215c69b169be8aa1651297b350ef0ff413b05",
+      "parent_sha256": "505e67752f606629ece087c76ed215c69b169be8aa1651297b350ef0ff413b05",
+      "classification": "remote_only_change",
+      "remote_bytes": 3252,
+      "candidate_bytes": 9946,
+      "parent_bytes": 9946
+    },
+    {
+      "path": "tests/test-suite-isolation.ts",
+      "remote_sha256": "6bb8f61fbc76b6dc26b4b9ed186add940455efd6a5882bc56fe1ab0e1530a500",
+      "candidate_sha256": "7a40a5d8687cb4a865050550fc93c1b7ff96f7a5e4f7abf69fdebf62e3c71d65",
+      "parent_sha256": "7a40a5d8687cb4a865050550fc93c1b7ff96f7a5e4f7abf69fdebf62e3c71d65",
+      "classification": "remote_only_change",
+      "remote_bytes": 1728,
+      "candidate_bytes": 21700,
+      "parent_bytes": 21700
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "remote_sha256": "e821c8372976239bb16aab910ec9e3c690cb078e412954cfb0da6a71e91deb28",
+      "candidate_sha256": "2b486c2990ef23d7953d2cbf845686a353c8e98a1873826922d43fd981171289",
+      "parent_sha256": "2b486c2990ef23d7953d2cbf845686a353c8e98a1873826922d43fd981171289",
+      "classification": "remote_only_change",
+      "remote_bytes": 16563,
+      "candidate_bytes": 22068,
+      "parent_bytes": 22068
+    },
+    {
+      "path": "AGENTS.md",
+      "remote_sha256": "c76d9be463527d453671a05f5ee0417a3cce3c4024a960a1d0c7b6d365162e5f",
+      "candidate_sha256": "d24b34f4bcf41a3c5043934e3681721bb7bf16a053f7fb4b16f7420f25f6d7ac",
+      "parent_sha256": "d24b34f4bcf41a3c5043934e3681721bb7bf16a053f7fb4b16f7420f25f6d7ac",
+      "classification": "remote_only_change",
+      "remote_bytes": 1514,
+      "candidate_bytes": 3169,
+      "parent_bytes": 3169
+    },
+    {
+      "path": "tests/local-compose-ops-ui.test.ts",
+      "remote_sha256": "f06f1acdc234a5018e2663a68e73ea546fea9e6da6b98b469f6d488966ffe9f1",
+      "candidate_sha256": "9d78a41a1df45ee42b6bdf7a4d2e35acbfac759957b28a401067462894410930",
+      "parent_sha256": "9d78a41a1df45ee42b6bdf7a4d2e35acbfac759957b28a401067462894410930",
+      "classification": "remote_only_change",
+      "remote_bytes": 3871,
+      "candidate_bytes": 3992,
+      "parent_bytes": 3992
+    },
+    {
+      "path": "docs/chatgpt-host-canary-runbook.md",
+      "remote_sha256": "f5326ae4ae1bbd4308d4a5db1a31f6664995da9f620a137fd7aa7c3cb08dffb8",
+      "candidate_sha256": "911681f0c13f50f576d29e7b1b127f18719fc47b086a9d96066077a0ec963994",
+      "parent_sha256": "911681f0c13f50f576d29e7b1b127f18719fc47b086a9d96066077a0ec963994",
+      "classification": "remote_only_change",
+      "remote_bytes": 3293,
+      "candidate_bytes": 7046,
+      "parent_bytes": 7046
+    },
+    {
+      "path": "scripts/collect-codex-app-host-evidence.mjs",
+      "remote_sha256": "4fb623ea860323fd5bf528024ebee9b0454f140f352da07ef375613e6263d033",
+      "candidate_sha256": "1c3c10eeb3e8a345e5dc49a645e924adfbc80da6d79890df6883bf9a69cdd70f",
+      "parent_sha256": "1c3c10eeb3e8a345e5dc49a645e924adfbc80da6d79890df6883bf9a69cdd70f",
+      "classification": "remote_only_change",
+      "remote_bytes": 5882,
+      "candidate_bytes": 11752,
+      "parent_bytes": 11752
+    },
+    {
+      "path": "tests/codex-app-host-evidence-gate.test.ts",
+      "remote_sha256": "7f7e62c86024fd1ec10c7d8a544cfc12b1b595d123a17abf1fdb4cfa79c79d70",
+      "candidate_sha256": "8ea0e55143d4116557d3d10e658e4ed8cb59e9a2ff2bba303bea7814b17b13a5",
+      "parent_sha256": "8ea0e55143d4116557d3d10e658e4ed8cb59e9a2ff2bba303bea7814b17b13a5",
+      "classification": "remote_only_change",
+      "remote_bytes": 5110,
+      "candidate_bytes": 21191,
+      "parent_bytes": 21191
+    },
+    {
+      "path": "tests/codex-app-host-evidence-gate.ts",
+      "remote_sha256": "123c32ce2d7cbe1c4eff35730c178294b74c391737cebb1f71cac7533c2cacc8",
+      "candidate_sha256": "b1fc425ced4452f387b494d635b32d2b9c82b0c9efe3c6980f738764375f6301",
+      "parent_sha256": "b1fc425ced4452f387b494d635b32d2b9c82b0c9efe3c6980f738764375f6301",
+      "classification": "remote_only_change",
+      "remote_bytes": 11704,
+      "candidate_bytes": 20695,
+      "parent_bytes": 20695
+    },
+    {
+      "path": "tests/operations-scripts.test.ts",
+      "remote_sha256": "0756a9b92c9c3a56bd89b3255bbce127c5d2085e9bd0a7d782b0a5e75ef7b723",
+      "candidate_sha256": "d14f80d4109e4957af72229ea0efd5d5da2a1b868ef60f4f4ffe4b951019cf10",
+      "parent_sha256": "d14f80d4109e4957af72229ea0efd5d5da2a1b868ef60f4f4ffe4b951019cf10",
+      "classification": "remote_only_change",
+      "remote_bytes": 65772,
+      "candidate_bytes": 91216,
+      "parent_bytes": 91216
+    },
+    {
+      "path": "apps/worker/src/scanner-heartbeat.ts",
+      "remote_sha256": "fd997ed63235409d00a0e78b77cdb243dfa9babe0ef4a42828fd2374f08c7618",
+      "candidate_sha256": "8d2f106586e7da25220ec7aa9b6fd5b0a662a33415cbf1cabea379e20c5730ed",
+      "parent_sha256": "8d2f106586e7da25220ec7aa9b6fd5b0a662a33415cbf1cabea379e20c5730ed",
+      "classification": "remote_only_change",
+      "remote_bytes": 6931,
+      "candidate_bytes": 8375,
+      "parent_bytes": 8375
+    },
+    {
+      "path": "apps/worker/src/main.ts",
+      "remote_sha256": "2978a73e554dda83cac5ee9ce84677cc53ff1e8f95181464fa7d7cfa9eab6eab",
+      "candidate_sha256": "cf0803fcd7788f241e55727017eddc4a60947a7a0c715ec77ed8bd504487261f",
+      "parent_sha256": "cf0803fcd7788f241e55727017eddc4a60947a7a0c715ec77ed8bd504487261f",
+      "classification": "remote_only_change",
+      "remote_bytes": 144081,
+      "candidate_bytes": 241194,
+      "parent_bytes": 241194
+    },
+    {
+      "path": "apps/worker/src/redis-transport.ts",
+      "remote_sha256": "79928f9341a8b47d76a7b817c34d98146bb940bdb068aa2e1398cd3a02fc3dcc",
+      "candidate_sha256": "50931d00fe58be69d1d90090fd69ab29347ff7244831752bf87809d03afd3f84",
+      "parent_sha256": "50931d00fe58be69d1d90090fd69ab29347ff7244831752bf87809d03afd3f84",
+      "classification": "remote_only_change",
+      "remote_bytes": 4135,
+      "candidate_bytes": 23446,
+      "parent_bytes": 23446
+    },
+    {
+      "path": "infra/scripts/validate-production-config-yaml.rb",
+      "remote_sha256": "281854b9a6c2c35721af12537a49bbc3581d25deb234e4bea741221b294f73c0",
+      "candidate_sha256": "b54926be26380670b72d8580b6ede356ba17fc0381742aa0559f64d5c4a565a5",
+      "parent_sha256": "b54926be26380670b72d8580b6ede356ba17fc0381742aa0559f64d5c4a565a5",
+      "classification": "remote_only_change",
+      "remote_bytes": 4663,
+      "candidate_bytes": 7589,
+      "parent_bytes": 7589
+    },
+    {
+      "path": "packages/workers/src/scanner-heartbeat.ts",
+      "remote_sha256": "3a415ef866caf49a2f27fb3b2b8b59ea512e958c742e49cfeffac958471d1ee0",
+      "candidate_sha256": "1549c1c65f3e1a8c4a15f4cebaf9e135afced6f56e2b901bf3a99ac8d46edae0",
+      "parent_sha256": "1549c1c65f3e1a8c4a15f4cebaf9e135afced6f56e2b901bf3a99ac8d46edae0",
+      "classification": "remote_only_change",
+      "remote_bytes": 10111,
+      "candidate_bytes": 10609,
+      "parent_bytes": 10609
+    },
+    {
+      "path": "packages/workers/src/scanner-heartbeat.test.ts",
+      "remote_sha256": "1855c28ced539be1d7eafb4b24d6c3b8470ab1f8c24111f8d532b0fddb1d6957",
+      "candidate_sha256": "644312f5c58dd5c7f80a09acd2e7d7cca0e57954c09934d8b1cd5dcbfdcc5754",
+      "parent_sha256": "644312f5c58dd5c7f80a09acd2e7d7cca0e57954c09934d8b1cd5dcbfdcc5754",
+      "classification": "remote_only_change",
+      "remote_bytes": 4869,
+      "candidate_bytes": 6322,
+      "parent_bytes": 6322
+    },
+    {
+      "path": "apps/ops-console/.env.example",
+      "remote_sha256": "3f694e5985343053ef2804348f4d4f96d943893373fe9b12028269de5361007f",
+      "candidate_sha256": "60b61ac4aaf11398c215cd5350d92cfb437db836dc5029fb00034460dd6a5143",
+      "parent_sha256": "60b61ac4aaf11398c215cd5350d92cfb437db836dc5029fb00034460dd6a5143",
+      "classification": "remote_only_change",
+      "remote_bytes": 825,
+      "candidate_bytes": 479,
+      "parent_bytes": 479
+    },
+    {
+      "path": "apps/ops-console/README.md",
+      "remote_sha256": "384740e31ee57a6306c4e30d9339b0b679ab648a0ba62e34d7278375b56b15d1",
+      "candidate_sha256": "afa80f6bb12254603039519b97499eae5b94d68d04f359b72b3a0220b8c55200",
+      "parent_sha256": "afa80f6bb12254603039519b97499eae5b94d68d04f359b72b3a0220b8c55200",
+      "classification": "remote_only_change",
+      "remote_bytes": 1346,
+      "candidate_bytes": 1229,
+      "parent_bytes": 1229
+    },
+    {
+      "path": "apps/ops-console/package.json",
+      "remote_sha256": "2349aae8cd3f6bca652c0f77b7890fb773ceaa04978cbd91706c6a94f3cfa962",
+      "candidate_sha256": "1bf8b81526e2f13b79e73de3a1000a88ca8a31c9a925248893cacc4e6510fe4e",
+      "parent_sha256": "1bf8b81526e2f13b79e73de3a1000a88ca8a31c9a925248893cacc4e6510fe4e",
+      "classification": "remote_only_change",
+      "remote_bytes": 560,
+      "candidate_bytes": 583,
+      "parent_bytes": 583
+    },
+    {
+      "path": "apps/ops-console/src/api/commercialOperationsClient.test.ts",
+      "remote_sha256": "7236dbdd41522a27fe75c048cc1b5f33ad43d437770100e138b8f95e10789bce",
+      "candidate_sha256": "8d190ecf1f60a8ff7add3f585e9f5f0c53d13587e2ec7c51a52a798aefa0a9dc",
+      "parent_sha256": "8d190ecf1f60a8ff7add3f585e9f5f0c53d13587e2ec7c51a52a798aefa0a9dc",
+      "classification": "remote_only_change",
+      "remote_bytes": 3815,
+      "candidate_bytes": 7153,
+      "parent_bytes": 7153
+    },
+    {
+      "path": "apps/ops-console/src/api/commercialOperationsClient.ts",
+      "remote_sha256": "c6d590daa2644c2addafd92c09d2f2f6b67e09553c89130d827c4daac8f09f3f",
+      "candidate_sha256": "88ab9b7ae841a4c0960c22f63d0e66a7ec6d6e0e08d877e6475d0a085459d4f6",
+      "parent_sha256": "88ab9b7ae841a4c0960c22f63d0e66a7ec6d6e0e08d877e6475d0a085459d4f6",
+      "classification": "remote_only_change",
+      "remote_bytes": 37231,
+      "candidate_bytes": 45357,
+      "parent_bytes": 45357
+    },
+    {
+      "path": "apps/ops-console/src/api/customerDeliveryClient.test.ts",
+      "remote_sha256": "33f1831071dc8a33b304619ee76cda4fa6e6ed35054cc3c384b5fe615d80156c",
+      "candidate_sha256": "568b3f7aac2e0380de6ec4253b4aa2ef612f1f9b74cf4893160b4e8cbb31b874",
+      "parent_sha256": "568b3f7aac2e0380de6ec4253b4aa2ef612f1f9b74cf4893160b4e8cbb31b874",
+      "classification": "remote_only_change",
+      "remote_bytes": 1674,
+      "candidate_bytes": 17892,
+      "parent_bytes": 17892
+    },
+    {
+      "path": "apps/ops-console/src/api/customerDeliveryClient.ts",
+      "remote_sha256": "c19987f478e9bf490f3cdfbec6d055e55d68a4c710de8bc3896a84613383b6c2",
+      "candidate_sha256": "7d1d65d14f3ac2830fdcd0ca681d2188b641c3fd64c119da43ff288dfbc17783",
+      "parent_sha256": "7d1d65d14f3ac2830fdcd0ca681d2188b641c3fd64c119da43ff288dfbc17783",
+      "classification": "remote_only_change",
+      "remote_bytes": 18877,
+      "candidate_bytes": 33322,
+      "parent_bytes": 33322
+    },
+    {
+      "path": "apps/ops-console/src/api/opsClient.test.ts",
+      "remote_sha256": "2577d03b13f6b4f311e3e4cc599b6fe4f3baf2e3357899b533282445a822e9f6",
+      "candidate_sha256": "64a76adbc71ee002893deca628a4e850ce0f7b625e24dfb71f0e3d5a0b64bf17",
+      "parent_sha256": "64a76adbc71ee002893deca628a4e850ce0f7b625e24dfb71f0e3d5a0b64bf17",
+      "classification": "remote_only_change",
+      "remote_bytes": 16405,
+      "candidate_bytes": 23708,
+      "parent_bytes": 23708
+    },
+    {
+      "path": "apps/ops-console/src/api/opsClient.ts",
+      "remote_sha256": "e408f6500ae139d9fe195cf2f021da8b8c6128badf3dfd2a7fe27be9eb2ccdee",
+      "candidate_sha256": "ec23fef5a2a6605b28413d0994cf3165b3860fb22be89fc8dd60f0cdd221f79e",
+      "parent_sha256": "ec23fef5a2a6605b28413d0994cf3165b3860fb22be89fc8dd60f0cdd221f79e",
+      "classification": "remote_only_change",
+      "remote_bytes": 36051,
+      "candidate_bytes": 40302,
+      "parent_bytes": 40302
+    },
+    {
+      "path": "apps/ops-console/src/api/opsDomainClients.ts",
+      "remote_sha256": "d4eee7ae1571331c47f3636f0f12881838707d975098dae6621e4e69e40250d9",
+      "candidate_sha256": "a9d0ba8068fd459cb72bc2e45db2a454d1c27b54a4ef08fe7bfb32854904499c",
+      "parent_sha256": "a9d0ba8068fd459cb72bc2e45db2a454d1c27b54a4ef08fe7bfb32854904499c",
+      "classification": "remote_only_change",
+      "remote_bytes": 30914,
+      "candidate_bytes": 31606,
+      "parent_bytes": 31606
+    },
+    {
+      "path": "apps/ops-console/src/authz/authorization.test.ts",
+      "remote_sha256": "5e9c030d66060daf56be502291373a62ceed04e7ba45d06d58659be1dc5a8e06",
+      "candidate_sha256": "c99e61d35cf00c812ccb2fd50b6d746507a2b2e9a39129a2ce89a61257bc3080",
+      "parent_sha256": "c99e61d35cf00c812ccb2fd50b6d746507a2b2e9a39129a2ce89a61257bc3080",
+      "classification": "remote_only_change",
+      "remote_bytes": 9411,
+      "candidate_bytes": 9896,
+      "parent_bytes": 9896
+    },
+    {
+      "path": "apps/ops-console/src/authz/authorization.ts",
+      "remote_sha256": "1948dcfc3095a6f27ed5db76cad31ab8e8dafa759144d9ebb62981ce6dc88743",
+      "candidate_sha256": "0508e6585a8162040324eb41d9072f60c98e6d168a8b0471285dd075d97c6e55",
+      "parent_sha256": "0508e6585a8162040324eb41d9072f60c98e6d168a8b0471285dd075d97c6e55",
+      "classification": "remote_only_change",
+      "remote_bytes": 7449,
+      "candidate_bytes": 7804,
+      "parent_bytes": 7804
+    },
+    {
+      "path": "apps/ops-console/src/components/OpsHeader.test.tsx",
+      "remote_sha256": "2aee523d48cf24bc02c328d96848a851c8060c146318a5d15f1d1922f63808f0",
+      "candidate_sha256": "42f5bbb89809fcd9b0e9b3948c545666b749b755c8b6fd86fd5fdaa20b1f91cd",
+      "parent_sha256": "42f5bbb89809fcd9b0e9b3948c545666b749b755c8b6fd86fd5fdaa20b1f91cd",
+      "classification": "remote_only_change",
+      "remote_bytes": 2222,
+      "candidate_bytes": 13478,
+      "parent_bytes": 13478
+    },
+    {
+      "path": "apps/ops-console/src/components/OpsHeader.tsx",
+      "remote_sha256": "676bd176a7ac03c18860feb16f8fdbd84f01d7663d5ec1673aa2fd184a8e4f16",
+      "candidate_sha256": "dfbad24a80299667f74f978fdd74007fca8cdccfd2b420b01e8e36a45f9d4e86",
+      "parent_sha256": "dfbad24a80299667f74f978fdd74007fca8cdccfd2b420b01e8e36a45f9d4e86",
+      "classification": "remote_only_change",
+      "remote_bytes": 9884,
+      "candidate_bytes": 11607,
+      "parent_bytes": 11607
+    },
+    {
+      "path": "apps/ops-console/src/components/OpsPage.tsx",
+      "remote_sha256": "c8b347aac2607e5a0e4fde0bf0c1ed6770ee2ff8c095c48a084f11cb6092cf45",
+      "candidate_sha256": "75353c7296146650754b106a698e3a47ac59f0f929dda0111a1f6b5beab0d092",
+      "parent_sha256": "75353c7296146650754b106a698e3a47ac59f0f929dda0111a1f6b5beab0d092",
+      "classification": "remote_only_change",
+      "remote_bytes": 1687,
+      "candidate_bytes": 1839,
+      "parent_bytes": 1839
+    },
+    {
+      "path": "apps/ops-console/src/components/OpsSidebar.test.tsx",
+      "remote_sha256": "30e0e3e7bc1b93df2bdf6c2a9e72ba82f536438eb6243ef861031db035503f12",
+      "candidate_sha256": "b9a9d1325dcf381db43eb34fb04deee747497fb4e88d38cf5a1fc5e48a3c7ee6",
+      "parent_sha256": "b9a9d1325dcf381db43eb34fb04deee747497fb4e88d38cf5a1fc5e48a3c7ee6",
+      "classification": "remote_only_change",
+      "remote_bytes": 4808,
+      "candidate_bytes": 7643,
+      "parent_bytes": 7643
+    },
+    {
+      "path": "apps/ops-console/src/components/OpsSidebar.tsx",
+      "remote_sha256": "6dc716498dda52a2936e68fcd3399a50f1f7daca7b1779dc0f81b5ec126dd54e",
+      "candidate_sha256": "31491b505c9cb47f8ed6e3849bee4b6db2fa502fa84e6c2167738b1669a61444",
+      "parent_sha256": "31491b505c9cb47f8ed6e3849bee4b6db2fa502fa84e6c2167738b1669a61444",
+      "classification": "remote_only_change",
+      "remote_bytes": 6119,
+      "candidate_bytes": 6399,
+      "parent_bytes": 6399
+    },
+    {
+      "path": "apps/ops-console/src/components/PlatformOpsLoginPage.test.tsx",
+      "remote_sha256": "5e0b6dfe0e53f90055824f1a2e2c4eed151da428423fc48f8f07c9d6615f6acc",
+      "candidate_sha256": "2c3e091337a8fdc46b4169e05d8d3492ee6fe6b30a450d219f9baedc3bb1b46c",
+      "parent_sha256": "2c3e091337a8fdc46b4169e05d8d3492ee6fe6b30a450d219f9baedc3bb1b46c",
+      "classification": "remote_only_change",
+      "remote_bytes": 1242,
+      "candidate_bytes": 1305,
+      "parent_bytes": 1305
+    },
+    {
+      "path": "apps/ops-console/src/components/PlatformOpsLoginPage.tsx",
+      "remote_sha256": "5d0ddfda117f93312ce0fb6065c18c8ea2c2160bb5172b61ff2ccede8d182090",
+      "candidate_sha256": "43cfe0ebae06f0d1e76b1bbfb1a080a4e53591da06d05648d5254b8312b322d1",
+      "parent_sha256": "43cfe0ebae06f0d1e76b1bbfb1a080a4e53591da06d05648d5254b8312b322d1",
+      "classification": "remote_only_change",
+      "remote_bytes": 5385,
+      "candidate_bytes": 3654,
+      "parent_bytes": 3654
+    },
+    {
+      "path": "apps/ops-console/src/components/audit/AuditCenterSection.test.ts",
+      "remote_sha256": "552e658528f3b5c9ebc371f106ff8f0d971ae99eaf319eddfe5adf88547ba1f3",
+      "candidate_sha256": "18ea1593fe75c623dbd1b7e177032605c1a7b415fd6c2e7a120ede3d76fa8e06",
+      "parent_sha256": "18ea1593fe75c623dbd1b7e177032605c1a7b415fd6c2e7a120ede3d76fa8e06",
+      "classification": "remote_only_change",
+      "remote_bytes": 7190,
+      "candidate_bytes": 7637,
+      "parent_bytes": 7637
+    },
+    {
+      "path": "apps/ops-console/src/components/audit/AuditCenterSection.tsx",
+      "remote_sha256": "abc97acf65b8560f1cd4cc23707a292da15442e67a4d3f7459a0373e98251b2a",
+      "candidate_sha256": "a5f2b11644a74b29e35465ac8736135a46243b3f23f6419a2353e236eebdaa6a",
+      "parent_sha256": "a5f2b11644a74b29e35465ac8736135a46243b3f23f6419a2353e236eebdaa6a",
+      "classification": "remote_only_change",
+      "remote_bytes": 10258,
+      "candidate_bytes": 10557,
+      "parent_bytes": 10557
+    },
+    {
+      "path": "apps/ops-console/src/components/authz/AccessDeniedResult.tsx",
+      "remote_sha256": "f266ca086fbf81e35562613e00210db2f699a809afde878d1463250472349751",
+      "candidate_sha256": "a9a08508a9fc905ad65ddb779e432020287f9472816e3d18585f65f0e4707d49",
+      "parent_sha256": "a9a08508a9fc905ad65ddb779e432020287f9472816e3d18585f65f0e4707d49",
+      "classification": "remote_only_change",
+      "remote_bytes": 4448,
+      "candidate_bytes": 6887,
+      "parent_bytes": 6887
+    },
+    {
+      "path": "apps/ops-console/src/components/authz/DangerActionModal.tsx",
+      "remote_sha256": "27f8874aa465026b526b368a045e97da89cfacfeb240c90f7e2d3df0d46ca72d",
+      "candidate_sha256": "ed5de4073b95a5e1e8e4883f3a43e3cb548ca9f4cb3797f6682a1e8dd151fc59",
+      "parent_sha256": "ed5de4073b95a5e1e8e4883f3a43e3cb548ca9f4cb3797f6682a1e8dd151fc59",
+      "classification": "remote_only_change",
+      "remote_bytes": 4010,
+      "candidate_bytes": 4772,
+      "parent_bytes": 4772
+    },
+    {
+      "path": "apps/ops-console/src/components/authz/RoleScopeBar.tsx",
+      "remote_sha256": "e3c76143c57dc54751249b8b547c7b374122b4362f36870cac7fafb909ab6aed",
+      "candidate_sha256": "afb03c72db671bae62cbc15f025d8dab1d394fa73c592f19ec7be37c58f7ec55",
+      "parent_sha256": "afb03c72db671bae62cbc15f025d8dab1d394fa73c592f19ec7be37c58f7ec55",
+      "classification": "remote_only_change",
+      "remote_bytes": 11129,
+      "candidate_bytes": 11447,
+      "parent_bytes": 11447
+    },
+    {
+      "path": "apps/ops-console/src/components/authz/permissionUx.test.tsx",
+      "remote_sha256": "58437e2e49f426fa394124ae28bdcce01f73cd241b2f55a8e53dfe5ef9d17da9",
+      "candidate_sha256": "7bdc493a133f1f1b5cc217f8d1982a682e8e7917ca3f60990553212c1fe90558",
+      "parent_sha256": "7bdc493a133f1f1b5cc217f8d1982a682e8e7917ca3f60990553212c1fe90558",
+      "classification": "remote_only_change",
+      "remote_bytes": 16284,
+      "candidate_bytes": 16973,
+      "parent_bytes": 16973
+    },
+    {
+      "path": "apps/ops-console/src/components/canonical-governance-accessibility.test.tsx",
+      "remote_sha256": "1cb1ccc4151445aeaf875f1093f733673aabfc4468f81292b089f7657b04ee8a",
+      "candidate_sha256": "ea1141dc5caad43ee602a6974b9d026262610c446cd9e49df307b90d9faba274",
+      "parent_sha256": "ea1141dc5caad43ee602a6974b9d026262610c446cd9e49df307b90d9faba274",
+      "classification": "remote_only_change",
+      "remote_bytes": 1656,
+      "candidate_bytes": 2155,
+      "parent_bytes": 2155
+    },
+    {
+      "path": "apps/ops-console/src/components/commercial/CommercialOperationsWorkspace.test.tsx",
+      "remote_sha256": "09f3787c6ca37dae3f77494b3c5fbcc015076e2e130a4696fb31fa1a660c1976",
+      "candidate_sha256": "7fd6951a8c524eff7e8bc009d6123ff62c0dbe141ea28a56c49f3ab7adf6df3a",
+      "parent_sha256": "7fd6951a8c524eff7e8bc009d6123ff62c0dbe141ea28a56c49f3ab7adf6df3a",
+      "classification": "remote_only_change",
+      "remote_bytes": 11167,
+      "candidate_bytes": 14670,
+      "parent_bytes": 14670
+    },
+    {
+      "path": "apps/ops-console/src/components/commercial/CommercialOperationsWorkspace.tsx",
+      "remote_sha256": "2b7fda576d798bb14c974f66e7c53d73ae4b6f26dabe0623860b65c03cb0011f",
+      "candidate_sha256": "7e773e15c616f4a622c00b033202bae3c60a4fedb1d37cf8a5fdd6448e82a536",
+      "parent_sha256": "7e773e15c616f4a622c00b033202bae3c60a4fedb1d37cf8a5fdd6448e82a536",
+      "classification": "remote_only_change",
+      "remote_bytes": 62254,
+      "candidate_bytes": 75790,
+      "parent_bytes": 75790
+    },
+    {
+      "path": "apps/ops-console/src/components/commercial/CommercialReadinessPanel.tsx",
+      "remote_sha256": "b3138ed267b27d45cf51fe96f376da95a0cea7a1161d4a8e0d5f8ae17d6903d9",
+      "candidate_sha256": "9e36ec8ab45f9d8478b9af2d842775a4d0c578f86518a62322eb1fa35da28c95",
+      "parent_sha256": "9e36ec8ab45f9d8478b9af2d842775a4d0c578f86518a62322eb1fa35da28c95",
+      "classification": "remote_only_change",
+      "remote_bytes": 10862,
+      "candidate_bytes": 11093,
+      "parent_bytes": 11093
+    },
+    {
+      "path": "apps/ops-console/src/components/commercial/ServiceFulfillmentPanel.tsx",
+      "remote_sha256": "73bc7fd15092cf109a918887fcccac8e9d73ea6968f7bf409cded72c08177208",
+      "candidate_sha256": "7d0b8a081419030c2c1f8a3a5d77bdb1e7be4c942f2cf78499938d0e5200c489",
+      "parent_sha256": "7d0b8a081419030c2c1f8a3a5d77bdb1e7be4c942f2cf78499938d0e5200c489",
+      "classification": "remote_only_change",
+      "remote_bytes": 7109,
+      "candidate_bytes": 8701,
+      "parent_bytes": 8701
+    },
+    {
+      "path": "apps/ops-console/src/components/commercial/benefitLabels.ts",
+      "remote_sha256": "7a022565c3975697357806ba6f74abc085fb10cb413173ad4cec04dd207d066f",
+      "candidate_sha256": "ac3394d2d609516feaf45a0b58618f06fda9fcd4563d9847db1857c278a391f3",
+      "parent_sha256": "ac3394d2d609516feaf45a0b58618f06fda9fcd4563d9847db1857c278a391f3",
+      "classification": "remote_only_change",
+      "remote_bytes": 4124,
+      "candidate_bytes": 4725,
+      "parent_bytes": 4725
+    },
+    {
+      "path": "apps/ops-console/src/components/delivery/CustomerDeliverySection.test.tsx",
+      "remote_sha256": "f41f67ec0997332ba533d8a56bbfcfb639635e89d5762732b8c4fffb7bdfd770",
+      "candidate_sha256": "f721932ca98d27465ec475d3ca0a84ab3adb5a770d3fc51e5c2be08a6c5e1988",
+      "parent_sha256": "f721932ca98d27465ec475d3ca0a84ab3adb5a770d3fc51e5c2be08a6c5e1988",
+      "classification": "remote_only_change",
+      "remote_bytes": 4501,
+      "candidate_bytes": 13864,
+      "parent_bytes": 13864
+    },
+    {
+      "path": "apps/ops-console/src/components/delivery/CustomerDeliverySection.tsx",
+      "remote_sha256": "4477d31b6e0fe3f107d7eecbe1ac4a3b0da787847b4a2f0dd5425734c35ccba4",
+      "candidate_sha256": "a9618f4ece5b881e82b55c008df7eb730de58cc4151654e1e3b4eb4f63610642",
+      "parent_sha256": "a9618f4ece5b881e82b55c008df7eb730de58cc4151654e1e3b4eb4f63610642",
+      "classification": "remote_only_change",
+      "remote_bytes": 31118,
+      "candidate_bytes": 46741,
+      "parent_bytes": 46741
+    },
+    {
+      "path": "apps/ops-console/src/components/delivery/CustomerDeliveryUpload.test.tsx",
+      "remote_sha256": "1eade9990062b1f13490a9023c6d9080ab5a0431636057af567195c5afddf6eb",
+      "candidate_sha256": "a7b587c7385ac31c5ccd368717989b681f6f739c41ee05c25891a3b290478652",
+      "parent_sha256": "a7b587c7385ac31c5ccd368717989b681f6f739c41ee05c25891a3b290478652",
+      "classification": "remote_only_change",
+      "remote_bytes": 12081,
+      "candidate_bytes": 31172,
+      "parent_bytes": 31172
+    },
+    {
+      "path": "apps/ops-console/src/components/delivery/CustomerDeliveryUpload.tsx",
+      "remote_sha256": "91bd8aa3a11eb89c78faa90290e5777cb7d325982fd73e776169da9e10123fe3",
+      "candidate_sha256": "0202f3fc7c29cbdb9976981bf099aa7de32684690107664bfc2b5244f4d272dd",
+      "parent_sha256": "0202f3fc7c29cbdb9976981bf099aa7de32684690107664bfc2b5244f4d272dd",
+      "classification": "remote_only_change",
+      "remote_bytes": 8228,
+      "candidate_bytes": 13139,
+      "parent_bytes": 13139
+    },
+    {
+      "path": "apps/ops-console/src/components/delivery/deliveryDateTime.test.ts",
+      "remote_sha256": "dc1b4f9b988096f2bc1d2d4afb181866ef28b47030e5f4843cee20b9c6d659f5",
+      "candidate_sha256": "0d6f2326f2c077538646d024527e97fbee0c20dc7728d1db733751b4faf61211",
+      "parent_sha256": "0d6f2326f2c077538646d024527e97fbee0c20dc7728d1db733751b4faf61211",
+      "classification": "remote_only_change",
+      "remote_bytes": 841,
+      "candidate_bytes": 1229,
+      "parent_bytes": 1229
+    },
+    {
+      "path": "apps/ops-console/src/components/delivery/deliveryDateTime.ts",
+      "remote_sha256": "61cbe5167965d0d28c8b80dd93c5b8d755e400a93aa7f9480754c5eacf0c1e58",
+      "candidate_sha256": "be68415536e215ee9668b3ce0938851e1314f66d6a87196516502890e0cf52b3",
+      "parent_sha256": "be68415536e215ee9668b3ce0938851e1314f66d6a87196516502890e0cf52b3",
+      "classification": "remote_only_change",
+      "remote_bytes": 634,
+      "candidate_bytes": 863,
+      "parent_bytes": 863
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/FinanceDetailDrawer.tsx",
+      "remote_sha256": "8d065b0720c08ce57448c7f443a56dffafb441bd0b66ffb02e50452f13fe9da8",
+      "candidate_sha256": "3b94cf3a0c9805868e3cac3fe223a28bdbbcefab54be9653439b6b4b32d72708",
+      "parent_sha256": "3b94cf3a0c9805868e3cac3fe223a28bdbbcefab54be9653439b6b4b32d72708",
+      "classification": "remote_only_change",
+      "remote_bytes": 3845,
+      "candidate_bytes": 5551,
+      "parent_bytes": 5551
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/FinanceSearchSection.test.ts",
+      "remote_sha256": "4a478bead3ab244ca605d61b658648b3348bf1c36c4089b7f61e641c3d5b2b38",
+      "candidate_sha256": "9bf8ee70597fcfa683f9180a21435048ff449637508e1fd0c37335493410ffaa",
+      "parent_sha256": "9bf8ee70597fcfa683f9180a21435048ff449637508e1fd0c37335493410ffaa",
+      "classification": "remote_only_change",
+      "remote_bytes": 7860,
+      "candidate_bytes": 9066,
+      "parent_bytes": 9066
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/FinanceSearchSection.tsx",
+      "remote_sha256": "0b38c8e04c02ea1c568dac1d932a3e1a68b71883c064342fdaddf2ee6f7b2dda",
+      "candidate_sha256": "53225dd2ac8413c4e03275c8566cbaf88aeaecbdc3b27fb9dec60150274af9e0",
+      "parent_sha256": "53225dd2ac8413c4e03275c8566cbaf88aeaecbdc3b27fb9dec60150274af9e0",
+      "classification": "remote_only_change",
+      "remote_bytes": 12070,
+      "candidate_bytes": 11996,
+      "parent_bytes": 11996
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/MembersSection.test.ts",
+      "remote_sha256": "d351d764864bf9f50a20f48dc259cd644e7d928b2e2aac25684e1c9c804f57a8",
+      "candidate_sha256": "de7c1be6185125ffab87c937ff9ba28451ac9e22e9453dce55a73e227c5b1572",
+      "parent_sha256": "de7c1be6185125ffab87c937ff9ba28451ac9e22e9453dce55a73e227c5b1572",
+      "classification": "remote_only_change",
+      "remote_bytes": 3525,
+      "candidate_bytes": 4318,
+      "parent_bytes": 4318
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/MembersSection.tsx",
+      "remote_sha256": "c45ac52dbb9c44cda6b86057b6f6c168a0ebdb35fd7019fbebd844a3e6702e44",
+      "candidate_sha256": "420efbec5b42b86b014479872f52e6e952668a313aacd04ad087e625f1b1f31e",
+      "parent_sha256": "420efbec5b42b86b014479872f52e6e952668a313aacd04ad087e625f1b1f31e",
+      "classification": "remote_only_change",
+      "remote_bytes": 13858,
+      "candidate_bytes": 15345,
+      "parent_bytes": 15345
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/RechargeOrdersSection.test.tsx",
+      "remote_sha256": "8dfe4ad03a8299be212fafebd17246135a39d586062e95001cc1e609d8d667f0",
+      "candidate_sha256": "e3ab19b9465c9452c21752e4ab9ffefeba51046d0f7afd289e5eb4a1edb8643a",
+      "parent_sha256": "e3ab19b9465c9452c21752e4ab9ffefeba51046d0f7afd289e5eb4a1edb8643a",
+      "classification": "remote_only_change",
+      "remote_bytes": 2099,
+      "candidate_bytes": 3792,
+      "parent_bytes": 3792
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/RechargeOrdersSection.tsx",
+      "remote_sha256": "9849d465545f8c92df911e657ed923b9c3e188e4c775d35bbe64eae1bce4ae1b",
+      "candidate_sha256": "cc87749f02f7e3dee36a15f27b9d230f4b9ce15dd14f90f03bd937b2859b861b",
+      "parent_sha256": "cc87749f02f7e3dee36a15f27b9d230f4b9ce15dd14f90f03bd937b2859b861b",
+      "classification": "remote_only_change",
+      "remote_bytes": 7404,
+      "candidate_bytes": 8220,
+      "parent_bytes": 8220
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/ReconciliationSection.test.ts",
+      "remote_sha256": "40293caf1480564c7fcd39ae068154281b87daf461cdbcd4556471c31bf2310f",
+      "candidate_sha256": "11a32024e9e16a1599db0ad871e639f556e0267e1b51d7f6b43b3d3760cd9552",
+      "parent_sha256": "11a32024e9e16a1599db0ad871e639f556e0267e1b51d7f6b43b3d3760cd9552",
+      "classification": "remote_only_change",
+      "remote_bytes": 6147,
+      "candidate_bytes": 9983,
+      "parent_bytes": 9983
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/ReconciliationSection.tsx",
+      "remote_sha256": "2d506ebd4b9596b141659496c77dfe07938f1b66fc23b61a06e1b1c03a323ebf",
+      "candidate_sha256": "15855715b45706597dad8419d3c158cb49885d9e4867c60cd917b25e70b2f2fe",
+      "parent_sha256": "15855715b45706597dad8419d3c158cb49885d9e4867c60cd917b25e70b2f2fe",
+      "classification": "remote_only_change",
+      "remote_bytes": 25633,
+      "candidate_bytes": 30680,
+      "parent_bytes": 30680
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/RefundSection.tsx",
+      "remote_sha256": "c2c41a8101c14519ee6769b7279378c4f27738a71f3bcfcc82d381d57d8556b7",
+      "candidate_sha256": "dd46dca1348b70433dcfef265a4846e09fcadcb595717a6ae2564816d20aee7a",
+      "parent_sha256": "dd46dca1348b70433dcfef265a4846e09fcadcb595717a6ae2564816d20aee7a",
+      "classification": "remote_only_change",
+      "remote_bytes": 1906,
+      "candidate_bytes": 1896,
+      "parent_bytes": 1896
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/rechargeOrders.test.ts",
+      "remote_sha256": "fffd3554c3468f39da8d54eee6dbae58e671078a7ed2b0eb2b7b0d984a53780c",
+      "candidate_sha256": "5ad9b28a9eb259e74960db475e68a835b926f41291a1b8803240827e40df3dba",
+      "parent_sha256": "5ad9b28a9eb259e74960db475e68a835b926f41291a1b8803240827e40df3dba",
+      "classification": "remote_only_change",
+      "remote_bytes": 2467,
+      "candidate_bytes": 3291,
+      "parent_bytes": 3291
+    },
+    {
+      "path": "apps/ops-console/src/components/finance/rechargeOrders.ts",
+      "remote_sha256": "1393f67fe7a8700fb71926674b789d11cd40d85e79e2f98f70b44919545763b0",
+      "candidate_sha256": "9efd6a009f8154d124507d4c72de76b844d79d09515807c6f7612fe8965b3ad4",
+      "parent_sha256": "9efd6a009f8154d124507d4c72de76b844d79d09515807c6f7612fe8965b3ad4",
+      "classification": "remote_only_change",
+      "remote_bytes": 3835,
+      "candidate_bytes": 4512,
+      "parent_bytes": 4512
+    },
+    {
+      "path": "apps/ops-console/src/components/models/ModelReadinessTable.tsx",
+      "remote_sha256": "995ee16c87065207e4f075594bb31b6db31643edde48c8d3ad59dd336135b381",
+      "candidate_sha256": "50df466adbc15334bbb806a3bbfccfbe70330a745420bc481df1058bc1448b94",
+      "parent_sha256": "50df466adbc15334bbb806a3bbfccfbe70330a745420bc481df1058bc1448b94",
+      "classification": "remote_only_change",
+      "remote_bytes": 2298,
+      "candidate_bytes": 2297,
+      "parent_bytes": 2297
+    },
+    {
+      "path": "apps/ops-console/src/components/models/ModelServiceSummary.test.tsx",
+      "remote_sha256": "e4b0a9d31396a61b41ce0584f0aaa3e799f34fb73c324c26f0fb20ad66e279e9",
+      "candidate_sha256": "28415cc4debef41ddc3341a9bdf3ce4177642cc3b2f9eaf61d0ec2bb14f2a37e",
+      "parent_sha256": "28415cc4debef41ddc3341a9bdf3ce4177642cc3b2f9eaf61d0ec2bb14f2a37e",
+      "classification": "remote_only_change",
+      "remote_bytes": 1453,
+      "candidate_bytes": 2049,
+      "parent_bytes": 2049
+    },
+    {
+      "path": "apps/ops-console/src/components/models/ModelServiceSummary.tsx",
+      "remote_sha256": "30d314a1fbe22bc599f3b82d767a43365143811514174744db6f94a5bb2a6860",
+      "candidate_sha256": "791d9f0a658442b5235e735ed371dca0be57448b16828fc062c47840bfc2d730",
+      "parent_sha256": "791d9f0a658442b5235e735ed371dca0be57448b16828fc062c47840bfc2d730",
+      "classification": "remote_only_change",
+      "remote_bytes": 1825,
+      "candidate_bytes": 1877,
+      "parent_bytes": 1877
+    },
+    {
+      "path": "apps/ops-console/src/components/models/ModelStatusSection.test.ts",
+      "remote_sha256": "4a55bf25602776ed585e3c0bbe86f3d69bb6c6d3289f18f2b8bb463b51508ea6",
+      "candidate_sha256": "27cb0077c735d470b909fae22a448b7906731c821ee54ad92fb4dc896da85b56",
+      "parent_sha256": "27cb0077c735d470b909fae22a448b7906731c821ee54ad92fb4dc896da85b56",
+      "classification": "remote_only_change",
+      "remote_bytes": 3196,
+      "candidate_bytes": 5914,
+      "parent_bytes": 5914
+    },
+    {
+      "path": "apps/ops-console/src/components/models/ModelStatusSection.tsx",
+      "remote_sha256": "b54af178f3427d39284cccfebcb456441bb77f590b2b9873c7e29ee36524be0b",
+      "candidate_sha256": "b8ca5907843996bf24f8d3f05d2a8f81f897d36e080234396ccaa50d6e75f1e3",
+      "parent_sha256": "b8ca5907843996bf24f8d3f05d2a8f81f897d36e080234396ccaa50d6e75f1e3",
+      "classification": "remote_only_change",
+      "remote_bytes": 5605,
+      "candidate_bytes": 6427,
+      "parent_bytes": 6427
+    },
+    {
+      "path": "apps/ops-console/src/components/rules/RuleSyncStatusSection.tsx",
+      "remote_sha256": "3cf7fd4c0870db3c46f2ad4cc9beafded9a0028ebac819e7596dc293851f2f70",
+      "candidate_sha256": "807df2683c3ad6929b9c4c8a52826ffd8b43a5e9922f7710d07847fb89122d57",
+      "parent_sha256": "807df2683c3ad6929b9c4c8a52826ffd8b43a5e9922f7710d07847fb89122d57",
+      "classification": "remote_only_change",
+      "remote_bytes": 5773,
+      "candidate_bytes": 5806,
+      "parent_bytes": 5806
+    },
+    {
+      "path": "apps/ops-console/src/components/rules/WorkspaceRuleAuditPanel.tsx",
+      "remote_sha256": "ccae761be8e2c669141d299c7dcc7ddafa0edb5eadc1a23d693fbe86d77a1137",
+      "candidate_sha256": "40add0a56542404219449555875fb8f08b9eaa434c43d88e3252b7bfcd4ae232",
+      "parent_sha256": "40add0a56542404219449555875fb8f08b9eaa434c43d88e3252b7bfcd4ae232",
+      "classification": "remote_only_change",
+      "remote_bytes": 1445,
+      "candidate_bytes": 5504,
+      "parent_bytes": 5504
+    },
+    {
+      "path": "apps/ops-console/src/components/sections/overview/CommercialOverviewSection.tsx",
+      "remote_sha256": "c4aebd8500cd69d7ad20c9b1d739e951ed051d08089b3df1243ccf5d4ca51cd5",
+      "candidate_sha256": "1177a3cb234e873cb9cd2552062aef572774dcfa3c181f59392a474a2518df93",
+      "parent_sha256": "1177a3cb234e873cb9cd2552062aef572774dcfa3c181f59392a474a2518df93",
+      "classification": "remote_only_change",
+      "remote_bytes": 13281,
+      "candidate_bytes": 13507,
+      "parent_bytes": 13507
+    },
+    {
+      "path": "apps/ops-console/src/components/sections/overview/DataReadinessSection.tsx",
+      "remote_sha256": "91a9e64f56df0a3cd099f2c023dad4bccd68fab4b0fd109c72c9fe774c424ee4",
+      "candidate_sha256": "20e614b43c0948d7184344c5a450b325fb4c32d41e45432b2e00346eba05403b",
+      "parent_sha256": "20e614b43c0948d7184344c5a450b325fb4c32d41e45432b2e00346eba05403b",
+      "classification": "remote_only_change",
+      "remote_bytes": 18626,
+      "candidate_bytes": 19845,
+      "parent_bytes": 19845
+    },
+    {
+      "path": "apps/ops-console/src/components/sections/overview/PlatformOverviewSnapshot.tsx",
+      "remote_sha256": "ac49af26010f1182b8b005943580c532c299748a66b65e9d61481020c13d4111",
+      "candidate_sha256": "b2f2d117a4a03f94fc707cf2162867183066a4dc08630fe343659a6d974ab7b0",
+      "parent_sha256": "b2f2d117a4a03f94fc707cf2162867183066a4dc08630fe343659a6d974ab7b0",
+      "classification": "remote_only_change",
+      "remote_bytes": 8893,
+      "candidate_bytes": 6604,
+      "parent_bytes": 6604
+    },
+    {
+      "path": "apps/ops-console/src/components/sections/overview/PlatformReadinessSection.tsx",
+      "remote_sha256": "3cae796ac50152ca072a2618df2ad74e0236961b219ccc6369a7b4a5512c0522",
+      "candidate_sha256": "a30b7c3a6c0b41eb355f48c6fe3076d1997f241426f73b376b7d1fd638c2fc34",
+      "parent_sha256": "a30b7c3a6c0b41eb355f48c6fe3076d1997f241426f73b376b7d1fd638c2fc34",
+      "classification": "remote_only_change",
+      "remote_bytes": 11370,
+      "candidate_bytes": 15263,
+      "parent_bytes": 15263
+    },
+    {
+      "path": "apps/ops-console/src/components/sections/overview/modelReadiness.test.ts",
+      "remote_sha256": "ffbc3524670410403d7a8f6a7f8018459e35b5101ece5c4636b095d60a483708",
+      "candidate_sha256": "986834102615984508451a556fd1b54699d2271e48f5c45ffc9d7bb97ed94bc9",
+      "parent_sha256": "986834102615984508451a556fd1b54699d2271e48f5c45ffc9d7bb97ed94bc9",
+      "classification": "remote_only_change",
+      "remote_bytes": 1570,
+      "candidate_bytes": 2017,
+      "parent_bytes": 2017
+    },
+    {
+      "path": "apps/ops-console/src/components/sections/overview/modelReadiness.ts",
+      "remote_sha256": "971ad3aa3877f7564c48f00a668b749ad773df7b483fb6d4780995ec50d0368d",
+      "candidate_sha256": "42e7204e9dea149dc48a9c83365054f8845c0f57362622e80487e69c1ca49ef3",
+      "parent_sha256": "42e7204e9dea149dc48a9c83365054f8845c0f57362622e80487e69c1ca49ef3",
+      "classification": "remote_only_change",
+      "remote_bytes": 2144,
+      "candidate_bytes": 2130,
+      "parent_bytes": 2130
+    },
+    {
+      "path": "apps/ops-console/src/components/storage/StorageReconciliationSection.test.tsx",
+      "remote_sha256": "71377e96312b0794e1476fcc7cf94432a345207ebdcc044649461ce732b07d07",
+      "candidate_sha256": "db0f50d971b032a6fbfd8fb576b373916168542d162ff0327e49eebadee1057e",
+      "parent_sha256": "db0f50d971b032a6fbfd8fb576b373916168542d162ff0327e49eebadee1057e",
+      "classification": "remote_only_change",
+      "remote_bytes": 5435,
+      "candidate_bytes": 5343,
+      "parent_bytes": 5343
+    },
+    {
+      "path": "apps/ops-console/src/components/storage/StorageReconciliationSection.tsx",
+      "remote_sha256": "1dc1323fc92b8a4fa805cc7059ec33ce1e2a9ba0ea4cf1929d1307d45721fd89",
+      "candidate_sha256": "7f1c518ae6803074a136e74153a88e2fe691e4040a79515bcc79747f552ac822",
+      "parent_sha256": "7f1c518ae6803074a136e74153a88e2fe691e4040a79515bcc79747f552ac822",
+      "classification": "remote_only_change",
+      "remote_bytes": 9259,
+      "candidate_bytes": 8742,
+      "parent_bytes": 8742
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/AutomationScanSection.tsx",
+      "remote_sha256": "f7e5109367b2ccfb00ef213445b29b450b2b22459bc0dea85d6e14f4b0e03674",
+      "candidate_sha256": "92bf1646ab24736331be5b5e90e2794cb00b3e77944b5e2f56c79c4e57b7e096",
+      "parent_sha256": "92bf1646ab24736331be5b5e90e2794cb00b3e77944b5e2f56c79c4e57b7e096",
+      "classification": "remote_only_change",
+      "remote_bytes": 8900,
+      "candidate_bytes": 9672,
+      "parent_bytes": 9672
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/BrandGovernanceSummary.tsx",
+      "remote_sha256": "6db113e2d2781f1580c2233a25364b7591c7bd300f0e0e98cbcbf6bff949a748",
+      "candidate_sha256": "1a0a3543c58c89b94f06d0c7454afa6c0c438b337a25ea5f0cee3f95941d1aa8",
+      "parent_sha256": "1a0a3543c58c89b94f06d0c7454afa6c0c438b337a25ea5f0cee3f95941d1aa8",
+      "classification": "remote_only_change",
+      "remote_bytes": 1314,
+      "candidate_bytes": 1589,
+      "parent_bytes": 1589
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/CanonicalBackfillConflictSection.test.tsx",
+      "remote_sha256": "518a07901add7730e566d7f9ea2b407724862070c826f4284bc1370ed3caa50a",
+      "candidate_sha256": "dcaee24649e0c353a2cc71d7b6a51f9c8df1af71e0d4f1fdcce11ab6e721aa42",
+      "parent_sha256": "dcaee24649e0c353a2cc71d7b6a51f9c8df1af71e0d4f1fdcce11ab6e721aa42",
+      "classification": "remote_only_change",
+      "remote_bytes": 3888,
+      "candidate_bytes": 4014,
+      "parent_bytes": 4014
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/CanonicalBackfillConflictSection.tsx",
+      "remote_sha256": "dbc26958e677a653addcfcded8da1516feffb747456b40e00add2a17c2e3bdfc",
+      "candidate_sha256": "cc9fb5b04cc6ebe9d43207f678ea8e4e21b3882afe17e255cea276678937b3b8",
+      "parent_sha256": "cc9fb5b04cc6ebe9d43207f678ea8e4e21b3882afe17e255cea276678937b3b8",
+      "classification": "remote_only_change",
+      "remote_bytes": 15088,
+      "candidate_bytes": 16250,
+      "parent_bytes": 16250
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/CanonicalProductConsistencySection.test.tsx",
+      "remote_sha256": "a300fbf805f2f705338794fb55df307b7bd4567e054f782fee76a6cc97b063a6",
+      "candidate_sha256": "6fdb66252d3c5dbf2731c7c48e7c3d01836e064d9314cabfb7af89fda8f41d27",
+      "parent_sha256": "6fdb66252d3c5dbf2731c7c48e7c3d01836e064d9314cabfb7af89fda8f41d27",
+      "classification": "remote_only_change",
+      "remote_bytes": 10319,
+      "candidate_bytes": 10844,
+      "parent_bytes": 10844
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/CanonicalProductConsistencySection.tsx",
+      "remote_sha256": "4bd3e081cb895d8fd9b926d91e1792d66c02d3b2fadde2fe7bdb0c4ba0223919",
+      "candidate_sha256": "2466df1fe624d95421079cc11b24788e8a550b1efca360ed9dfbf58f3df2bc0b",
+      "parent_sha256": "2466df1fe624d95421079cc11b24788e8a550b1efca360ed9dfbf58f3df2bc0b",
+      "classification": "remote_only_change",
+      "remote_bytes": 24017,
+      "candidate_bytes": 27283,
+      "parent_bytes": 27283
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/PlatformSummarySection.tsx",
+      "remote_sha256": "198b3f6c0e9d6c6d71cce640e5556d966978f23a7a4803b5435102b04243a0f6",
+      "candidate_sha256": "09324e883406678186b689399985e13f7b94ec680d2a508eba51a1ee21c4116d",
+      "parent_sha256": "09324e883406678186b689399985e13f7b94ec680d2a508eba51a1ee21c4116d",
+      "classification": "remote_only_change",
+      "remote_bytes": 3352,
+      "candidate_bytes": 3382,
+      "parent_bytes": 3382
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/ProductSpreadsheetImport.test.tsx",
+      "remote_sha256": "ab1cae13947f9da0dd860ee12576177a8d94ce71258699bca12b04f63f8c8d7c",
+      "candidate_sha256": "e25ecdab9c5de9747ed111ae0bf302fa15a1aa4f6c234620fc1fc2677cd70560",
+      "parent_sha256": "e25ecdab9c5de9747ed111ae0bf302fa15a1aa4f6c234620fc1fc2677cd70560",
+      "classification": "remote_only_change",
+      "remote_bytes": 1671,
+      "candidate_bytes": 5546,
+      "parent_bytes": 5546
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/ProductSpreadsheetImport.tsx",
+      "remote_sha256": "467ecf0ae73606f7375e19b1c5e587e50cdc84e58244ca579a66dc0ce9edc3ab",
+      "candidate_sha256": "3265e4c5271b294b74bc7d0e25d2afe69fc46f58f0f49862c5e2c722942cc43b",
+      "parent_sha256": "3265e4c5271b294b74bc7d0e25d2afe69fc46f58f0f49862c5e2c722942cc43b",
+      "classification": "remote_only_change",
+      "remote_bytes": 12396,
+      "candidate_bytes": 21027,
+      "parent_bytes": 21027
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/StoreDirectorySection.test.tsx",
+      "remote_sha256": "502742ee480b760e9c12457f3a8b73796e954feb758ffe502988ef479459927b",
+      "candidate_sha256": "4caacb3dd268c44d85ff782946d5c8b769270520323684f389cab3c988ca00db",
+      "parent_sha256": "4caacb3dd268c44d85ff782946d5c8b769270520323684f389cab3c988ca00db",
+      "classification": "remote_only_change",
+      "remote_bytes": 2253,
+      "candidate_bytes": 4906,
+      "parent_bytes": 4906
+    },
+    {
+      "path": "apps/ops-console/src/components/stores/StoreDirectorySection.tsx",
+      "remote_sha256": "054051d3cc03f888eddd6a0e83eb0501ff1993d520018e028f6479202f0ba4f9",
+      "candidate_sha256": "46b2ae5d52bc71acdfa4a703c194e989211382a29cbd9267f8a7570ddb13661e",
+      "parent_sha256": "46b2ae5d52bc71acdfa4a703c194e989211382a29cbd9267f8a7570ddb13661e",
+      "classification": "remote_only_change",
+      "remote_bytes": 8841,
+      "candidate_bytes": 13547,
+      "parent_bytes": 13547
+    },
+    {
+      "path": "apps/ops-console/src/components/support/SupportSlaReportSection.test.tsx",
+      "remote_sha256": "3d91648150f2a58a07e3f3dddd599cdb577a399bb9a482fec50863e8542e46e4",
+      "candidate_sha256": "ceff8107602b05d34e4fb4245031dfa531abaff8e830fbca3616b0f5192de34c",
+      "parent_sha256": "ceff8107602b05d34e4fb4245031dfa531abaff8e830fbca3616b0f5192de34c",
+      "classification": "remote_only_change",
+      "remote_bytes": 2322,
+      "candidate_bytes": 5130,
+      "parent_bytes": 5130
+    },
+    {
+      "path": "apps/ops-console/src/components/support/SupportSlaReportSection.tsx",
+      "remote_sha256": "9b7e63febf19d0c6a270d51fcb6f5cfcfc6bf93b459581842ea391093f704609",
+      "candidate_sha256": "4908411f7558cac21c8d97dd9285bccb4589fa2bced63c13f087085dd801f0a8",
+      "parent_sha256": "4908411f7558cac21c8d97dd9285bccb4589fa2bced63c13f087085dd801f0a8",
+      "classification": "remote_only_change",
+      "remote_bytes": 9182,
+      "candidate_bytes": 11266,
+      "parent_bytes": 11266
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/KnowledgeGovernanceSection.tsx",
+      "remote_sha256": "c44c5bb2af53c5092f96323d07db080cc46f85c0c38c7a60302cf1504d577d3f",
+      "candidate_sha256": "9d54bcf77835864e6260562f37775f5ca390b19deb826cf12fdec9ed84926de3",
+      "parent_sha256": "9d54bcf77835864e6260562f37775f5ca390b19deb826cf12fdec9ed84926de3",
+      "classification": "remote_only_change",
+      "remote_bytes": 3300,
+      "candidate_bytes": 5602,
+      "parent_bytes": 5602
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/OperationalGovernanceSection.tsx",
+      "remote_sha256": "ba6149c5797c92de287e6a6047da879f5026fe44fcc2fa4d5af2f2d87753e3d1",
+      "candidate_sha256": "2d0df9137f9b2e0f9e7c58f4a8597938b196ba42301378e792e673c56f0422d0",
+      "parent_sha256": "2d0df9137f9b2e0f9e7c58f4a8597938b196ba42301378e792e673c56f0422d0",
+      "classification": "remote_only_change",
+      "remote_bytes": 1469,
+      "candidate_bytes": 2356,
+      "parent_bytes": 2356
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/RuleCenterSection.test.tsx",
+      "remote_sha256": "32898eaa24e05cfb381ad4f6381dba015ee539ca5491cdd4a60c30491d61cb72",
+      "candidate_sha256": "ca8d5806447a8d3206eedfe663a39c82230f409ed7096ad799c8889424198db1",
+      "parent_sha256": "ca8d5806447a8d3206eedfe663a39c82230f409ed7096ad799c8889424198db1",
+      "classification": "remote_only_change",
+      "remote_bytes": 1292,
+      "candidate_bytes": 11609,
+      "parent_bytes": 11609
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/RuleCenterSection.tsx",
+      "remote_sha256": "49e7de40b55dbed5838ebcf2a46f41bbd16352705756e23834541dae4b93f005",
+      "candidate_sha256": "9c6e7f37133f170dfdb3969f5c3fe921e9f30f1961bad8abd44ce9eef135f7de",
+      "parent_sha256": "9c6e7f37133f170dfdb3969f5c3fe921e9f30f1961bad8abd44ce9eef135f7de",
+      "classification": "remote_only_change",
+      "remote_bytes": 8318,
+      "candidate_bytes": 19101,
+      "parent_bytes": 19101
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/knowledge/AssetRightsPanel.tsx",
+      "remote_sha256": "fd2239477166d2f9b85be7a1e57f7369ee8d613ff66ac289c24ab2f44d1ca2f3",
+      "candidate_sha256": "f42ffd9189e83085fc1f1c069e8e27b9c83ba813c26114818b730edd6d40fb74",
+      "parent_sha256": "f42ffd9189e83085fc1f1c069e8e27b9c83ba813c26114818b730edd6d40fb74",
+      "classification": "remote_only_change",
+      "remote_bytes": 4974,
+      "candidate_bytes": 5283,
+      "parent_bytes": 5283
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/knowledge/CompetitorReferencesPanel.tsx",
+      "remote_sha256": "57904551cf80f81c014048dcfd8df0396e86d7394f52bb0de2cdd82424459477",
+      "candidate_sha256": "ebea33cb4018af4528cce2364267bf2419a8f4bcc1a2f845554dd87521ce645b",
+      "parent_sha256": "ebea33cb4018af4528cce2364267bf2419a8f4bcc1a2f845554dd87521ce645b",
+      "classification": "remote_only_change",
+      "remote_bytes": 5239,
+      "candidate_bytes": 5573,
+      "parent_bytes": 5573
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/knowledge/KnowledgeRulesPanel.tsx",
+      "remote_sha256": "9f021a7a71bc23792d473bec9a80ebe924f2816af99cdac01c5c35473caa17e1",
+      "candidate_sha256": "a82042333468f14cdf474dea04168ee599a14818403cd772fe7904704658002d",
+      "parent_sha256": "a82042333468f14cdf474dea04168ee599a14818403cd772fe7904704658002d",
+      "classification": "remote_only_change",
+      "remote_bytes": 5718,
+      "candidate_bytes": 6055,
+      "parent_bytes": 6055
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/knowledge/LearningSuggestionsPanel.tsx",
+      "remote_sha256": "4990e42de188fa46d73d072f0bbd209563f197a7d3753fe9037c0ce9f0aeefd5",
+      "candidate_sha256": "52881e4139ca5bfcfedbc49a3657ba47cb41df10952b48c46357bc6ae617928d",
+      "parent_sha256": "52881e4139ca5bfcfedbc49a3657ba47cb41df10952b48c46357bc6ae617928d",
+      "classification": "remote_only_change",
+      "remote_bytes": 3047,
+      "candidate_bytes": 3486,
+      "parent_bytes": 3486
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/knowledge/MarketingQueuePanel.test.ts",
+      "remote_sha256": "a3afac2aaaa84bb69329038a037272491b8fcd02aa770d3b61717698c0cbbdf9",
+      "candidate_sha256": "e617cddc9633b151d49b9eb4cbf981182161cba124c372eedadbc90f6fdbc10f",
+      "parent_sha256": "e617cddc9633b151d49b9eb4cbf981182161cba124c372eedadbc90f6fdbc10f",
+      "classification": "remote_only_change",
+      "remote_bytes": 6305,
+      "candidate_bytes": 8633,
+      "parent_bytes": 8633
+    },
+    {
+      "path": "apps/ops-console/src/components/tasks/knowledge/MarketingQueuePanel.tsx",
+      "remote_sha256": "6fb01150f1e5ae55546527e95d76904c8ce2a7e79206da0a65876a5ae150b702",
+      "candidate_sha256": "15ac2eaa2b646657e4a9724eeba9ce2828a8fe61dac401b11844564cc556f131",
+      "parent_sha256": "15ac2eaa2b646657e4a9724eeba9ce2828a8fe61dac401b11844564cc556f131",
+      "classification": "remote_only_change",
+      "remote_bytes": 39339,
+      "candidate_bytes": 50192,
+      "parent_bytes": 50192
+    },
+    {
+      "path": "apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx",
+      "remote_sha256": "61677a5a422eab5190e5c8c008979c5180c90936e471847a829f9e9e615b99f6",
+      "candidate_sha256": "c8b1a3d3b90eb05aa91a0ef21551fe4c19a0222d6449acf492b77694d864e1c9",
+      "parent_sha256": "c8b1a3d3b90eb05aa91a0ef21551fe4c19a0222d6449acf492b77694d864e1c9",
+      "classification": "remote_only_change",
+      "remote_bytes": 13847,
+      "candidate_bytes": 20951,
+      "parent_bytes": 20951
+    },
+    {
+      "path": "apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx",
+      "remote_sha256": "6c66e192210a777197c6949bb2a88b0fba7e28993e694936522670344b869e03",
+      "candidate_sha256": "a0069f469fcb27193e4fd727698d367de389960396a53c06a8dd69df00ee1be3",
+      "parent_sha256": "a0069f469fcb27193e4fd727698d367de389960396a53c06a8dd69df00ee1be3",
+      "classification": "remote_only_change",
+      "remote_bytes": 22300,
+      "candidate_bytes": 26482,
+      "parent_bytes": 26482
+    },
+    {
+      "path": "apps/ops-console/src/components/users/PermissionMatrixSection.test.ts",
+      "remote_sha256": "ba2c409bde660263b1ea3d292de67d765bf57c0b4c2c062dd94b4e23cbfaf511",
+      "candidate_sha256": "ba7732c52cc82cd33a5ead3a97837def2e7ace20cb376d073a88d198a6b51671",
+      "parent_sha256": "ba7732c52cc82cd33a5ead3a97837def2e7ace20cb376d073a88d198a6b51671",
+      "classification": "remote_only_change",
+      "remote_bytes": 2338,
+      "candidate_bytes": 3076,
+      "parent_bytes": 3076
+    },
+    {
+      "path": "apps/ops-console/src/components/users/PermissionMatrixSection.tsx",
+      "remote_sha256": "ac223b1718432c7390f9598cc1a36cfe448a9d1910e48f0a2de67a680c3f0478",
+      "candidate_sha256": "2bfb8652e630f40da2fe5d341875766ce64274cc60c44a05e50c00ab53149438",
+      "parent_sha256": "2bfb8652e630f40da2fe5d341875766ce64274cc60c44a05e50c00ab53149438",
+      "classification": "remote_only_change",
+      "remote_bytes": 8379,
+      "candidate_bytes": 9086,
+      "parent_bytes": 9086
+    },
+    {
+      "path": "apps/ops-console/src/components/users/UserDirectorySection.test.ts",
+      "remote_sha256": "82de9c8aec596152e3e427562f15ce909bd72e2450454b2b3b23eba17a6a0361",
+      "candidate_sha256": "7a38a37706a583f30c49f5c58c9b11933f457143aac958bae04da208d0b47c3f",
+      "parent_sha256": "7a38a37706a583f30c49f5c58c9b11933f457143aac958bae04da208d0b47c3f",
+      "classification": "remote_only_change",
+      "remote_bytes": 6188,
+      "candidate_bytes": 15304,
+      "parent_bytes": 15304
+    },
+    {
+      "path": "apps/ops-console/src/components/users/UserDirectorySection.tsx",
+      "remote_sha256": "4ebd055834f311724616360673eff9ab33b95bb10ec452ae6e53e09dd5f5b3b5",
+      "candidate_sha256": "e7b2aaed7af16cd044bab975168523682c3a6b91d0f44b6ab7280cee28862a91",
+      "parent_sha256": "e7b2aaed7af16cd044bab975168523682c3a6b91d0f44b6ab7280cee28862a91",
+      "classification": "remote_only_change",
+      "remote_bytes": 38514,
+      "candidate_bytes": 36377,
+      "parent_bytes": 36377
+    },
+    {
+      "path": "apps/ops-console/src/components/users/UsersGovernanceWorkspace.test.ts",
+      "remote_sha256": "b6b6d7df42efbba47ab0391958d83521afce524d8ff878ed16d0e58e8cc6b081",
+      "candidate_sha256": "f8d589d78f48109c7c63fb802874cae95a99270dd8b5a1d4bd56b20195cb7ef0",
+      "parent_sha256": "f8d589d78f48109c7c63fb802874cae95a99270dd8b5a1d4bd56b20195cb7ef0",
+      "classification": "remote_only_change",
+      "remote_bytes": 1901,
+      "candidate_bytes": 5104,
+      "parent_bytes": 5104
+    },
+    {
+      "path": "apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx",
+      "remote_sha256": "eeab795e10ef79b6c61c7c33cb30e4199a9e94086173c6d4b7235983b3503b08",
+      "candidate_sha256": "effc0ce01499a53c1ed3a757cbffeb04218b73f44e187f1fdb349a9195ebed39",
+      "parent_sha256": "effc0ce01499a53c1ed3a757cbffeb04218b73f44e187f1fdb349a9195ebed39",
+      "classification": "remote_only_change",
+      "remote_bytes": 11006,
+      "candidate_bytes": 16374,
+      "parent_bytes": 16374
+    },
+    {
+      "path": "apps/ops-console/src/components/users/WorkspaceGovernanceSection.tsx",
+      "remote_sha256": "28f8b9ff5bab1b65bac65c4c93b9da06bbfc6685f8666db8f6ba5e21f290ba00",
+      "candidate_sha256": "fbb655bac6eeae621e280820962db9d6ad8cc6ba66e5025f03f76064fd5189c9",
+      "parent_sha256": "fbb655bac6eeae621e280820962db9d6ad8cc6ba66e5025f03f76064fd5189c9",
+      "classification": "remote_only_change",
+      "remote_bytes": 6688,
+      "candidate_bytes": 13578,
+      "parent_bytes": 13578
+    },
+    {
+      "path": "apps/ops-console/src/hooks/opsLoadCoordinator.test.ts",
+      "remote_sha256": "78a9f7808e21e418eb7ac574acf4e72330f122500597bd1679d61558dac6927b",
+      "candidate_sha256": "ed9257b9f7e026747d8ce8bb05b0e9e65f95d038a35c3275738c84a7bed5fa5c",
+      "parent_sha256": "ed9257b9f7e026747d8ce8bb05b0e9e65f95d038a35c3275738c84a7bed5fa5c",
+      "classification": "remote_only_change",
+      "remote_bytes": 1325,
+      "candidate_bytes": 7065,
+      "parent_bytes": 7065
+    },
+    {
+      "path": "apps/ops-console/src/hooks/opsLoadCoordinator.ts",
+      "remote_sha256": "96cfb21495f4ba9ab439a52c256a5f6d620e274e52825022b3274d9706f1642a",
+      "candidate_sha256": "1c7e7a114566d675022de37084a5fbf679bef3769830b12eb1f3ef88432c923d",
+      "parent_sha256": "1c7e7a114566d675022de37084a5fbf679bef3769830b12eb1f3ef88432c923d",
+      "classification": "remote_only_change",
+      "remote_bytes": 565,
+      "candidate_bytes": 4656,
+      "parent_bytes": 4656
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useAuditCenter.test.ts",
+      "remote_sha256": "0ebe470c5d79ace60410734d039f7170c5c32c050788a86cdb9adca207674111",
+      "candidate_sha256": "3ad876e5d6ce95d903b0bae9bb8da9d9019fe22d61fecb60d75cb01cb106fa32",
+      "parent_sha256": "3ad876e5d6ce95d903b0bae9bb8da9d9019fe22d61fecb60d75cb01cb106fa32",
+      "classification": "remote_only_change",
+      "remote_bytes": 2867,
+      "candidate_bytes": 3704,
+      "parent_bytes": 3704
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useAuditCenter.ts",
+      "remote_sha256": "6e0cc7714d9a6e7168aeb4a0a78e2549faf4cf84f90edfad6690c772713f5556",
+      "candidate_sha256": "a91163001d00774906252466ef47f8f3e728709343a1f322ba7b525fd6e94cf4",
+      "parent_sha256": "a91163001d00774906252466ef47f8f3e728709343a1f322ba7b525fd6e94cf4",
+      "classification": "remote_only_change",
+      "remote_bytes": 8804,
+      "candidate_bytes": 9045,
+      "parent_bytes": 9045
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useCommercialOperations.test.ts",
+      "remote_sha256": "4f5129f5ec884ea6fed5d59b540c9f73cb5728c0e39cd2adcc2177d052bb4410",
+      "candidate_sha256": "1b304a3f442d31fb9ccebcad99aa5a7a51efdc2825a6a05a1821cdaeb06450bd",
+      "parent_sha256": "1b304a3f442d31fb9ccebcad99aa5a7a51efdc2825a6a05a1821cdaeb06450bd",
+      "classification": "remote_only_change",
+      "remote_bytes": 3270,
+      "candidate_bytes": 3940,
+      "parent_bytes": 3940
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useCommercialOperations.ts",
+      "remote_sha256": "ae8b7c89df1fa9846274ee6b8d58c86eac9d9e8b5a5b03cf2279a7c04e2b39ec",
+      "candidate_sha256": "3d4efc32fe08bfc1defae73179282367990e78a4ca425df24db8f01c19dbdb05",
+      "parent_sha256": "3d4efc32fe08bfc1defae73179282367990e78a4ca425df24db8f01c19dbdb05",
+      "classification": "remote_only_change",
+      "remote_bytes": 14473,
+      "candidate_bytes": 19739,
+      "parent_bytes": 19739
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useFinanceSearch.test.ts",
+      "remote_sha256": "e0acc66d450d3ed27ccd857e4df9b12a9efa94a86305056b3647a378a4dd3ea6",
+      "candidate_sha256": "2e892ca5fec1f9a0819913572b745aa7a27682c32d32d7aba082e669b8fb0829",
+      "parent_sha256": "2e892ca5fec1f9a0819913572b745aa7a27682c32d32d7aba082e669b8fb0829",
+      "classification": "remote_only_change",
+      "remote_bytes": 7210,
+      "candidate_bytes": 8325,
+      "parent_bytes": 8325
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useFinanceSearch.ts",
+      "remote_sha256": "cf11b8886dae3bfaf8ce2f95c508ed9589046375e5c22ff271e9acb66e7e7ede",
+      "candidate_sha256": "d67ede955365e84ae30413d8d4a55004dd46e05c13ae1472c445e358fbcdcceb",
+      "parent_sha256": "d67ede955365e84ae30413d8d4a55004dd46e05c13ae1472c445e358fbcdcceb",
+      "classification": "remote_only_change",
+      "remote_bytes": 6978,
+      "candidate_bytes": 8465,
+      "parent_bytes": 8465
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useMembers.test.ts",
+      "remote_sha256": "ca3e5cbdf46e04c8c598b1c726e13322f3c61a104eff4a2ac2498bbf222eed94",
+      "candidate_sha256": "76041e487418721596128d5bc315fa0fe7255185ea8f8b3bf7e896d1b24f1ba2",
+      "parent_sha256": "76041e487418721596128d5bc315fa0fe7255185ea8f8b3bf7e896d1b24f1ba2",
+      "classification": "remote_only_change",
+      "remote_bytes": 4367,
+      "candidate_bytes": 4633,
+      "parent_bytes": 4633
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useMembers.ts",
+      "remote_sha256": "02afe1f46df2a2e42a5970e65a2a3776995deaf5fe890fcfe2e7a79b66ad1175",
+      "candidate_sha256": "9a59dff32d7ca6e3022de164b35e282756008b071550f78edebe3e1e42722992",
+      "parent_sha256": "9a59dff32d7ca6e3022de164b35e282756008b071550f78edebe3e1e42722992",
+      "classification": "remote_only_change",
+      "remote_bytes": 9647,
+      "candidate_bytes": 9951,
+      "parent_bytes": 9951
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useOpsConsoleModel.helpers.test.ts",
+      "remote_sha256": "450f131ebe5a8ec2739803163fca917b3369787a89c8da831b25f43b69b7dd1e",
+      "candidate_sha256": "fa417ae580c1adf963c067eedae95633e80f22e61d521c02463d6e7614516e83",
+      "parent_sha256": "fa417ae580c1adf963c067eedae95633e80f22e61d521c02463d6e7614516e83",
+      "classification": "remote_only_change",
+      "remote_bytes": 7256,
+      "candidate_bytes": 9052,
+      "parent_bytes": 9052
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useOpsConsoleModel.ts",
+      "remote_sha256": "b187bbd9cafbdee4b044162850c3e54ca4a969ee8cc8b376ed045647833e1311",
+      "candidate_sha256": "169bbaf7601a1c93d194b843095026bc151de41536583483c9272b847e7c7980",
+      "parent_sha256": "169bbaf7601a1c93d194b843095026bc151de41536583483c9272b847e7c7980",
+      "classification": "remote_only_change",
+      "remote_bytes": 123710,
+      "candidate_bytes": 143655,
+      "parent_bytes": 143655
+    },
+    {
+      "path": "apps/ops-console/src/hooks/useSupportDomain.ts",
+      "remote_sha256": "ff667314a7a60019c09a1dd98a9c564ff2d3545c75741678bcbb324a13714b64",
+      "candidate_sha256": "ce68adedca31a712ca9aef90036050bd4bacdecef8f6e7e069147f20e14714d3",
+      "parent_sha256": "ce68adedca31a712ca9aef90036050bd4bacdecef8f6e7e069147f20e14714d3",
+      "classification": "remote_only_change",
+      "remote_bytes": 12869,
+      "candidate_bytes": 16937,
+      "parent_bytes": 16937
+    },
+    {
+      "path": "apps/ops-console/src/navigation/opsNavigation.test.ts",
+      "remote_sha256": "468bbc4fc974b79473f4548bac72bea605c3182567b94befb6ea994f0aac430f",
+      "candidate_sha256": "cf59a93f323abb5c32ed46c53708440a71273a82515f5d3d96f45f409215a43d",
+      "parent_sha256": "cf59a93f323abb5c32ed46c53708440a71273a82515f5d3d96f45f409215a43d",
+      "classification": "remote_only_change",
+      "remote_bytes": 4960,
+      "candidate_bytes": 9317,
+      "parent_bytes": 9317
+    },
+    {
+      "path": "apps/ops-console/src/navigation/opsNavigation.ts",
+      "remote_sha256": "5a28e8e3fb832226d6dbcb11e1909410ac4054e4b8de86da4e475a020852615b",
+      "candidate_sha256": "edc9fd9cb56d9f7a34aea5f7284ecdb7262261ee359c294d00c44212dd5e8a47",
+      "parent_sha256": "edc9fd9cb56d9f7a34aea5f7284ecdb7262261ee359c294d00c44212dd5e8a47",
+      "classification": "remote_only_change",
+      "remote_bytes": 2898,
+      "candidate_bytes": 4123,
+      "parent_bytes": 4123
+    },
+    {
+      "path": "apps/ops-console/src/navigation/opsPageRegistry.tsx",
+      "remote_sha256": "6e87089aa13afd15fb453a65aa8ebee535a79304b84bb77fe0ab270ce9508a3d",
+      "candidate_sha256": "8a76b37b9c41263cd536cef743543f5fcf6c5dba00bfc634300dede088c7c936",
+      "parent_sha256": "8a76b37b9c41263cd536cef743543f5fcf6c5dba00bfc634300dede088c7c936",
+      "classification": "remote_only_change",
+      "remote_bytes": 1894,
+      "candidate_bytes": 1990,
+      "parent_bytes": 1990
+    },
+    {
+      "path": "apps/ops-console/src/navigation/useOpsNavigation.ts",
+      "remote_sha256": "e517551f8be62027ab98dbd10af1bd2574b28e081d6648b504bef1a1ca25c412",
+      "candidate_sha256": "f3a30235b7118603052814a648674ac9595617be995f8a4a51375541b788e9d0",
+      "parent_sha256": "f3a30235b7118603052814a648674ac9595617be995f8a4a51375541b788e9d0",
+      "classification": "remote_only_change",
+      "remote_bytes": 2057,
+      "candidate_bytes": 2852,
+      "parent_bytes": 2852
+    },
+    {
+      "path": "apps/ops-console/src/pages/AuditPage.test.ts",
+      "remote_sha256": "60e78596b6e8ea04ac3abe1055eace7c612482d2924f2caff2a457025a91d920",
+      "candidate_sha256": "296df43f92850379751235cfdd217afb86aa73af4d6ea9ff84f55e18e1b83bf5",
+      "parent_sha256": "296df43f92850379751235cfdd217afb86aa73af4d6ea9ff84f55e18e1b83bf5",
+      "classification": "remote_only_change",
+      "remote_bytes": 655,
+      "candidate_bytes": 1945,
+      "parent_bytes": 1945
+    },
+    {
+      "path": "apps/ops-console/src/pages/AuditPage.tsx",
+      "remote_sha256": "8d2732cb99e65efec07bb15601d04a5b6445c54d313606bfefa8976d9cd269e0",
+      "candidate_sha256": "ef90d163c2eefea4e419ed37265865a5f763dc9b86fb25d20dcd90ca3766ef2d",
+      "parent_sha256": "ef90d163c2eefea4e419ed37265865a5f763dc9b86fb25d20dcd90ca3766ef2d",
+      "classification": "remote_only_change",
+      "remote_bytes": 1408,
+      "candidate_bytes": 1964,
+      "parent_bytes": 1964
+    },
+    {
+      "path": "apps/ops-console/src/pages/CustomerDeliveryPage.test.tsx",
+      "remote_sha256": "2e8e98037baf2253ba70cac946e9ea693dc66e4e4b30c64fa91c5b627b2950c5",
+      "candidate_sha256": "039fe77624b4ee02f94cf37a02e0d818610b78e4d51d80a1c1f22045d730d783",
+      "parent_sha256": "039fe77624b4ee02f94cf37a02e0d818610b78e4d51d80a1c1f22045d730d783",
+      "classification": "remote_only_change",
+      "remote_bytes": 1818,
+      "candidate_bytes": 52528,
+      "parent_bytes": 52528
+    },
+    {
+      "path": "apps/ops-console/src/pages/CustomerDeliveryPage.tsx",
+      "remote_sha256": "c3c1e69ffa3e21d5b17c5119cfc7e65861f12af81c5bb82a3f4900902ce5d516",
+      "candidate_sha256": "095c6250c6ce5e6066b0af61903a4c8f52607861d8bcddb4e0eb1308acae4847",
+      "parent_sha256": "095c6250c6ce5e6066b0af61903a4c8f52607861d8bcddb4e0eb1308acae4847",
+      "classification": "remote_only_change",
+      "remote_bytes": 12215,
+      "candidate_bytes": 32892,
+      "parent_bytes": 32892
+    },
+    {
+      "path": "apps/ops-console/src/pages/FinancePage.tsx",
+      "remote_sha256": "b321623f3f6e379f8f2462713efbd7441b28f5d14d60e45cdb63da72f44018e7",
+      "candidate_sha256": "26fc6c8d66e050165c881f63656a52019f553eda23a64cb21ca5b16b90dafecc",
+      "parent_sha256": "26fc6c8d66e050165c881f63656a52019f553eda23a64cb21ca5b16b90dafecc",
+      "classification": "remote_only_change",
+      "remote_bytes": 20959,
+      "candidate_bytes": 22900,
+      "parent_bytes": 22900
+    },
+    {
+      "path": "apps/ops-console/src/pages/MembersPage.tsx",
+      "remote_sha256": "e87aacfef1726f67a6ca82fa8da01da9730d09cb8c5b09c6def745339398e247",
+      "candidate_sha256": "75d78dae59c1958ddc71389a031d7d444d3e16f29e21aada4fa0b131588a73f8",
+      "parent_sha256": "75d78dae59c1958ddc71389a031d7d444d3e16f29e21aada4fa0b131588a73f8",
+      "classification": "remote_only_change",
+      "remote_bytes": 5351,
+      "candidate_bytes": 5397,
+      "parent_bytes": 5397
+    },
+    {
+      "path": "apps/ops-console/src/pages/ModelsPage.test.ts",
+      "remote_sha256": "1be46ac700699f61d60aad9a930233fd96a7f1f80075f85e765be8b8188ca646",
+      "candidate_sha256": "e4793cf1b4b5abe8ebd7c4f2652315f81fa7e1ce4bee0e03e07fe7b950a6e3f5",
+      "parent_sha256": "e4793cf1b4b5abe8ebd7c4f2652315f81fa7e1ce4bee0e03e07fe7b950a6e3f5",
+      "classification": "remote_only_change",
+      "remote_bytes": 1093,
+      "candidate_bytes": 2366,
+      "parent_bytes": 2366
+    },
+    {
+      "path": "apps/ops-console/src/pages/ModelsPage.tsx",
+      "remote_sha256": "8f6775c146cbe610b6610bd32df7b6e9ba9c140f06862f232aada629f72fb256",
+      "candidate_sha256": "3ff2a9b88f9730d19115780b1aaec30b56aa1adbe2ac4f7f4f4709850e211c25",
+      "parent_sha256": "3ff2a9b88f9730d19115780b1aaec30b56aa1adbe2ac4f7f4f4709850e211c25",
+      "classification": "remote_only_change",
+      "remote_bytes": 1389,
+      "candidate_bytes": 1389,
+      "parent_bytes": 1389
+    },
+    {
+      "path": "apps/ops-console/src/pages/OpsConsoleController.test.ts",
+      "remote_sha256": "fffc661bcb0665915b6adc3e77129c20da4fd1edb207d03e9a4a5905c7b9e178",
+      "candidate_sha256": "88f31dc9270c23ca4f2be1a708b2d3b587b1e5a99706f78e906333ba59dd01dc",
+      "parent_sha256": "88f31dc9270c23ca4f2be1a708b2d3b587b1e5a99706f78e906333ba59dd01dc",
+      "classification": "remote_only_change",
+      "remote_bytes": 7883,
+      "candidate_bytes": 7755,
+      "parent_bytes": 7755
+    },
+    {
+      "path": "apps/ops-console/src/pages/OpsConsoleController.tsx",
+      "remote_sha256": "d379f483bff47519a38b36111bdd84fc5a3bac3d9b95b42bccd6175daea84790",
+      "candidate_sha256": "d3d6caa10bd402ae70f09ad70153dbb43b130670ee6b58ef9230c2ac43a49321",
+      "parent_sha256": "d3d6caa10bd402ae70f09ad70153dbb43b130670ee6b58ef9230c2ac43a49321",
+      "classification": "remote_only_change",
+      "remote_bytes": 22194,
+      "candidate_bytes": 23376,
+      "parent_bytes": 23376
+    },
+    {
+      "path": "apps/ops-console/src/pages/OpsConsoleController.workbench.test.ts",
+      "remote_sha256": "8b54c38563af1dcddd60e02e9c7092f825d95f40360d7a4cd549b3a9f43c7370",
+      "candidate_sha256": "ac11097a1fb89fa6cc1a96d1da7be5135712806b49491736741536ff22fb63ab",
+      "parent_sha256": "ac11097a1fb89fa6cc1a96d1da7be5135712806b49491736741536ff22fb63ab",
+      "classification": "remote_only_change",
+      "remote_bytes": 2836,
+      "candidate_bytes": 6145,
+      "parent_bytes": 6145
+    },
+    {
+      "path": "apps/ops-console/src/pages/OverviewPage.test.tsx",
+      "remote_sha256": "a0e3f68e08b310ca4e9e2f09446b0b0075e17ac268fd922e6a2eaeddb9a020d5",
+      "candidate_sha256": "5924f0294b4bd25710c99d1aa66102971b543ad79af29732613ca634bb2194ff",
+      "parent_sha256": "5924f0294b4bd25710c99d1aa66102971b543ad79af29732613ca634bb2194ff",
+      "classification": "remote_only_change",
+      "remote_bytes": 4738,
+      "candidate_bytes": 5344,
+      "parent_bytes": 5344
+    },
+    {
+      "path": "apps/ops-console/src/pages/OverviewPage.tsx",
+      "remote_sha256": "43601986183659a3415fc52d9148a1ad44096cc06c4361d202d2ed0b77cf6d3c",
+      "candidate_sha256": "c468ebc6a152d7d0189500cd4696a3db13002c51e7c640ea49a468dc843bee09",
+      "parent_sha256": "c468ebc6a152d7d0189500cd4696a3db13002c51e7c640ea49a468dc843bee09",
+      "classification": "remote_only_change",
+      "remote_bytes": 1297,
+      "candidate_bytes": 798,
+      "parent_bytes": 798
+    },
+    {
+      "path": "apps/ops-console/src/pages/RulesPage.tsx",
+      "remote_sha256": "65f39c0bb32596f1403db20c3098fd712034b74257503f62f659e039f7acd1de",
+      "candidate_sha256": "53d460aa8f8694ee681943a15088755fb7294b3190c33f98fe4698262fc6d561",
+      "parent_sha256": "53d460aa8f8694ee681943a15088755fb7294b3190c33f98fe4698262fc6d561",
+      "classification": "remote_only_change",
+      "remote_bytes": 1809,
+      "candidate_bytes": 2854,
+      "parent_bytes": 2854
+    },
+    {
+      "path": "apps/ops-console/src/pages/StoragePage.tsx",
+      "remote_sha256": "b2bd88dcdecdb17e6e966c8c7d4eed00bd754dd203d73237c9077d64ae5f3aed",
+      "candidate_sha256": "a3e47a0825a23643a3e7c5e42c457e0108b3434aba15abe270da69d828270862",
+      "parent_sha256": "a3e47a0825a23643a3e7c5e42c457e0108b3434aba15abe270da69d828270862",
+      "classification": "remote_only_change",
+      "remote_bytes": 1285,
+      "candidate_bytes": 2314,
+      "parent_bytes": 2314
+    },
+    {
+      "path": "apps/ops-console/src/pages/StoresPage.test.tsx",
+      "remote_sha256": "df7629882fdf6b98d945776a64e5fbe203ebb729740863d824f69c9babd9045f",
+      "candidate_sha256": "3420022909a77acbfe84bb6f364fe91ad26d8517a7227f6e879fe0e9f5343052",
+      "parent_sha256": "3420022909a77acbfe84bb6f364fe91ad26d8517a7227f6e879fe0e9f5343052",
+      "classification": "remote_only_change",
+      "remote_bytes": 10975,
+      "candidate_bytes": 13149,
+      "parent_bytes": 13149
+    },
+    {
+      "path": "apps/ops-console/src/pages/StoresPage.tsx",
+      "remote_sha256": "70720f058961ea7abaf0899a11aea7dd196dd52cb4a9e9a3760a2c1ced28284f",
+      "candidate_sha256": "618d3cacdaf2d8c75c360891e6003aa2b477dbd7fb1ad85dbe0ce35b2eb5fdc4",
+      "parent_sha256": "618d3cacdaf2d8c75c360891e6003aa2b477dbd7fb1ad85dbe0ce35b2eb5fdc4",
+      "classification": "remote_only_change",
+      "remote_bytes": 6223,
+      "candidate_bytes": 8296,
+      "parent_bytes": 8296
+    },
+    {
+      "path": "apps/ops-console/src/pages/UsersPage.test.tsx",
+      "remote_sha256": "ce7d6ec0887b99fbee475624be1545795bdec0dac5af8210315dd4a83ad64a5d",
+      "candidate_sha256": "eee7f609cdcdf15893fc13f4c7018f7d6b6bb48b6aecb9582d2cec9e681f34a6",
+      "parent_sha256": "eee7f609cdcdf15893fc13f4c7018f7d6b6bb48b6aecb9582d2cec9e681f34a6",
+      "classification": "remote_only_change",
+      "remote_bytes": 3296,
+      "candidate_bytes": 3700,
+      "parent_bytes": 3700
+    },
+    {
+      "path": "apps/ops-console/src/pages/UsersPage.tsx",
+      "remote_sha256": "3b20b2b05f28d627f3062dc62d57b534b5b82c34e46c7a4313ec1ad05f2188ba",
+      "candidate_sha256": "148c2a34fafc9e979eb7acf02a9ad12f4140a9db6620f0ef47ff540a08af912f",
+      "parent_sha256": "148c2a34fafc9e979eb7acf02a9ad12f4140a9db6620f0ef47ff540a08af912f",
+      "classification": "remote_only_change",
+      "remote_bytes": 1790,
+      "candidate_bytes": 1295,
+      "parent_bytes": 1295
+    },
+    {
+      "path": "apps/ops-console/src/pages/modelsPageVisibility.ts",
+      "remote_sha256": "7f47b93e81f10972ca670e4f66f6ea8c30b82acf35877ea92e4ed87f45a7dcca",
+      "candidate_sha256": "5f77ba78cf1c8bf64dd92cb55ca46370292dcdfe5d3fe3e76fa4d02fbab04851",
+      "parent_sha256": "5f77ba78cf1c8bf64dd92cb55ca46370292dcdfe5d3fe3e76fa4d02fbab04851",
+      "classification": "remote_only_change",
+      "remote_bytes": 153,
+      "candidate_bytes": 130,
+      "parent_bytes": 130
+    },
+    {
+      "path": "apps/ops-console/src/styles.css",
+      "remote_sha256": "34194f270f4be00c641f6890cfb26f3032bc44d3cf6369fcb429b8a573ccb023",
+      "candidate_sha256": "54018b90b4a039f8b9bd4232a28ca379eb8ebdf3501402a72945167c997c614c",
+      "parent_sha256": "54018b90b4a039f8b9bd4232a28ca379eb8ebdf3501402a72945167c997c614c",
+      "classification": "remote_only_change",
+      "remote_bytes": 44557,
+      "candidate_bytes": 70889,
+      "parent_bytes": 70889
+    },
+    {
+      "path": "apps/ops-console/src/types/ops.ts",
+      "remote_sha256": "d9f13376300c4dd81924a36bc3e7dd0949d3535fc15adf81225b96f5410eae54",
+      "candidate_sha256": "18cd26dc520d997aa5cb38678b26226dc569e5b32a663bef4e2a17e17597d4fe",
+      "parent_sha256": "18cd26dc520d997aa5cb38678b26226dc569e5b32a663bef4e2a17e17597d4fe",
+      "classification": "remote_only_change",
+      "remote_bytes": 28103,
+      "candidate_bytes": 30347,
+      "parent_bytes": 30347
+    },
+    {
+      "path": "apps/ops-console/vite.config.ts",
+      "remote_sha256": "9ed4bb385f2d3fea371be14d74deaf21b98ebeb64894c5ec8bf9771f36f5d33a",
+      "candidate_sha256": "3a32be3ba535bbaf78557d0956da3c023bcd9e0cbcf7d8d3f075b8a78d87bf1d",
+      "parent_sha256": "3a32be3ba535bbaf78557d0956da3c023bcd9e0cbcf7d8d3f075b8a78d87bf1d",
+      "classification": "remote_only_change",
+      "remote_bytes": 2595,
+      "candidate_bytes": 2575,
+      "parent_bytes": 2575
+    },
+    {
+      "path": "demo/merchant-studio/README.md",
+      "remote_sha256": "9a229dd87a6cbf6157112a77b120e54da0f6fb096fac0531f19421e8cb4fa52d",
+      "candidate_sha256": "afaee709b44d6dd9661217d376a382c929682dae93a5d82f4a8b96763d6e1507",
+      "parent_sha256": "afaee709b44d6dd9661217d376a382c929682dae93a5d82f4a8b96763d6e1507",
+      "classification": "remote_only_change",
+      "remote_bytes": 1733,
+      "candidate_bytes": 2947,
+      "parent_bytes": 2947
+    },
+    {
+      "path": "demo/merchant-studio/api.test.ts",
+      "remote_sha256": "0f9f89feb8359d2e338235409702f94db138e48acad474575ec1178a667cb32b",
+      "candidate_sha256": "5b9fceadf48df1c79bc891d6d68309dff637ba3005ec27512c07967f0aff9b97",
+      "parent_sha256": "5b9fceadf48df1c79bc891d6d68309dff637ba3005ec27512c07967f0aff9b97",
+      "classification": "remote_only_change",
+      "remote_bytes": 8616,
+      "candidate_bytes": 13178,
+      "parent_bytes": 13178
+    },
+    {
+      "path": "demo/merchant-studio/entry-points.test.ts",
+      "remote_sha256": "399466f0390a9e9a0e102bba92c0a1afc0e40a2d91ca20805901153ed8f19acb",
+      "candidate_sha256": "d9d65a631179eafa54b07bcde3acfa6158c13e1ef184a0c1d02852cc638253c0",
+      "parent_sha256": "d9d65a631179eafa54b07bcde3acfa6158c13e1ef184a0c1d02852cc638253c0",
+      "classification": "remote_only_change",
+      "remote_bytes": 3711,
+      "candidate_bytes": 4946,
+      "parent_bytes": 4946
+    },
+    {
+      "path": "demo/merchant-studio/image-generation-desktop.spec.js",
+      "remote_sha256": "39242b56e59cff722cb725078b6300347b49ffeff7a209a5a273ea4b9b22fec2",
+      "candidate_sha256": "72997e66831a2633c3dfec4659c41045b913548a5ff57e42500d652f71dc6852",
+      "parent_sha256": "72997e66831a2633c3dfec4659c41045b913548a5ff57e42500d652f71dc6852",
+      "classification": "remote_only_change",
+      "remote_bytes": 11941,
+      "candidate_bytes": 12479,
+      "parent_bytes": 12479
+    },
+    {
+      "path": "demo/merchant-studio/notification-center.test.ts",
+      "remote_sha256": "1ae619aa64a2b9a348eb5774fd989ad3df72b426bfdcee7192877ee709baa325",
+      "candidate_sha256": "e94a78866a5cef3416d6d1c6192c43fccc7fd631183e4c1aa8d3722c52a6b70b",
+      "parent_sha256": "e94a78866a5cef3416d6d1c6192c43fccc7fd631183e4c1aa8d3722c52a6b70b",
+      "classification": "remote_only_change",
+      "remote_bytes": 1884,
+      "candidate_bytes": 2416,
+      "parent_bytes": 2416
+    },
+    {
+      "path": "demo/merchant-studio/package-lock.json",
+      "remote_sha256": "6017c12f740df1b1ea540d7c62b882fe59527cae2beeaa4288507d90c235afce",
+      "candidate_sha256": "2f1558722f1041f309c93fa017aed9c0949459261c7e72d33509d1371b47b4c7",
+      "parent_sha256": "2f1558722f1041f309c93fa017aed9c0949459261c7e72d33509d1371b47b4c7",
+      "classification": "remote_only_change",
+      "remote_bytes": 75880,
+      "candidate_bytes": 93636,
+      "parent_bytes": 93636
+    },
+    {
+      "path": "demo/merchant-studio/src/CampaignLifecyclePanel.tsx",
+      "remote_sha256": "8206288083e7a1d124c1187d5f4449601b2536237a628d684ad2989160cf2199",
+      "candidate_sha256": "e9d3c073ea192ed1cca38be09cfa88bc2804f69d287f1d80d4c8de66b7e31093",
+      "parent_sha256": "e9d3c073ea192ed1cca38be09cfa88bc2804f69d287f1d80d4c8de66b7e31093",
+      "classification": "remote_only_change",
+      "remote_bytes": 20014,
+      "candidate_bytes": 20009,
+      "parent_bytes": 20009
+    },
+    {
+      "path": "demo/merchant-studio/src/CanonicalConsistencyPanel.tsx",
+      "remote_sha256": "1ff9765a44f72048d3da377f2049fc44cd148042ca45573804746aa4d5404e3b",
+      "candidate_sha256": "74f3520c066584e00d0b236da154c9750aa2ecd397f753f29bdcebcf4e13d666",
+      "parent_sha256": "74f3520c066584e00d0b236da154c9750aa2ecd397f753f29bdcebcf4e13d666",
+      "classification": "remote_only_change",
+      "remote_bytes": 5352,
+      "candidate_bytes": 5354,
+      "parent_bytes": 5354
+    },
+    {
+      "path": "demo/merchant-studio/src/ContextRecoveryCard.tsx",
+      "remote_sha256": "ab891d9759ffbccdb63d256b50d42c1ba739c5b37a7a51aecbdd28a58e462730",
+      "candidate_sha256": "7dea883e0b281e9b1687b67724d30878b12b47a907f6311aa87a8034f130ad4a",
+      "parent_sha256": "7dea883e0b281e9b1687b67724d30878b12b47a907f6311aa87a8034f130ad4a",
+      "classification": "remote_only_change",
+      "remote_bytes": 4392,
+      "candidate_bytes": 4386,
+      "parent_bytes": 4386
+    },
+    {
+      "path": "demo/merchant-studio/src/DeliveryReadinessPanel.tsx",
+      "remote_sha256": "7cf575be1b1bbfa7152e50164ecdd1d28315d4a1704badb6e98c91c0cd72a774",
+      "candidate_sha256": "2c3057111c3d7a51331054bef07df8b4325cd9b143fa068d18ae20e517ad6a65",
+      "parent_sha256": "2c3057111c3d7a51331054bef07df8b4325cd9b143fa068d18ae20e517ad6a65",
+      "classification": "remote_only_change",
+      "remote_bytes": 7253,
+      "candidate_bytes": 7258,
+      "parent_bytes": 7258
+    },
+    {
+      "path": "demo/merchant-studio/src/MerchantLoginPage.tsx",
+      "remote_sha256": "0968254ebb4c7a114ef6db123841ba148eecb01884108ea3e726690dc2040547",
+      "candidate_sha256": "71a3546e9227aa252b57ea9f19bf866932da1cae4f00cf39cd29c0324b01eff6",
+      "parent_sha256": "71a3546e9227aa252b57ea9f19bf866932da1cae4f00cf39cd29c0324b01eff6",
+      "classification": "remote_only_change",
+      "remote_bytes": 4108,
+      "candidate_bytes": 4314,
+      "parent_bytes": 4314
+    },
+    {
+      "path": "demo/merchant-studio/src/api-error-classification.test.ts",
+      "remote_sha256": "c94edae5d6d4f5e5b1cf1ad86a7dbf7fae3dad31dd27f9bed93616e2626d6eef",
+      "candidate_sha256": "3991d01b4fc83d7a788c3f61a219f0aa70d0baa692ab0f1dc76b3426acc719cd",
+      "parent_sha256": "3991d01b4fc83d7a788c3f61a219f0aa70d0baa692ab0f1dc76b3426acc719cd",
+      "classification": "remote_only_change",
+      "remote_bytes": 1992,
+      "candidate_bytes": 3087,
+      "parent_bytes": 3087
+    },
+    {
+      "path": "demo/merchant-studio/src/api.ts",
+      "remote_sha256": "055185e7866cf7d8f73392bed14afa5fac88f59c71b2ec0860e84cf37c47c8b4",
+      "candidate_sha256": "3c739e81063ea5a2bba3f36a06ba1e951186fba6809ac84563eafd1ed5370773",
+      "parent_sha256": "3c739e81063ea5a2bba3f36a06ba1e951186fba6809ac84563eafd1ed5370773",
+      "classification": "remote_only_change",
+      "remote_bytes": 67440,
+      "candidate_bytes": 92169,
+      "parent_bytes": 92169
+    },
+    {
+      "path": "demo/merchant-studio/src/capability.css",
+      "remote_sha256": "9b25b434232733dfee99052ba00371624fea47a232cc88a5d600efd0ddf16b00",
+      "candidate_sha256": "48aacbc8e5a1e00fb63336a4554d0d6cd8867c135d2532b220c1951145ef2344",
+      "parent_sha256": "48aacbc8e5a1e00fb63336a4554d0d6cd8867c135d2532b220c1951145ef2344",
+      "classification": "remote_only_change",
+      "remote_bytes": 3760,
+      "candidate_bytes": 4323,
+      "parent_bytes": 4323
+    },
+    {
+      "path": "demo/merchant-studio/src/detail-sop.test.ts",
+      "remote_sha256": "9eed845e93cbcdad7615f0d3b1b0988cc63069f92c2398a17bc2da7497d42fad",
+      "candidate_sha256": "000baf958ed7ce776274743c02b1f2ad3389b50ed7e5e5c558aa1414bf81379b",
+      "parent_sha256": "000baf958ed7ce776274743c02b1f2ad3389b50ed7e5e5c558aa1414bf81379b",
+      "classification": "remote_only_change",
+      "remote_bytes": 1693,
+      "candidate_bytes": 2669,
+      "parent_bytes": 2669
+    },
+    {
+      "path": "demo/merchant-studio/src/detail-sop.ts",
+      "remote_sha256": "bde0addceec1f006975163769131fb9373974a9abb9c15302a430172a906c10a",
+      "candidate_sha256": "09b9fb75217685bd486abe530f268d27565bce7e096ae9305d541b09085b79c2",
+      "parent_sha256": "09b9fb75217685bd486abe530f268d27565bce7e096ae9305d541b09085b79c2",
+      "classification": "remote_only_change",
+      "remote_bytes": 1849,
+      "candidate_bytes": 2871,
+      "parent_bytes": 2871
+    },
+    {
+      "path": "demo/merchant-studio/src/entry-points.ts",
+      "remote_sha256": "237e0f7a927ff5f594528532c44e30e90c76c99129e3d33a56d7fbdb5c261f87",
+      "candidate_sha256": "6813f467bd95f828b8b94d6d9c68561ced50513d29d0d84b950de747c47e5319",
+      "parent_sha256": "6813f467bd95f828b8b94d6d9c68561ced50513d29d0d84b950de747c47e5319",
+      "classification": "remote_only_change",
+      "remote_bytes": 864,
+      "candidate_bytes": 1145,
+      "parent_bytes": 1145
+    },
+    {
+      "path": "demo/merchant-studio/src/knowledge-consumption.test.ts",
+      "remote_sha256": "a59db3946ba8e56fe749e8e4c67f84a26db193c97b59aea8461dd898906199b7",
+      "candidate_sha256": "3ff8cc71a74683f82b40d4cc3e7462c7b60379e47a2994d64de951815780aa0f",
+      "parent_sha256": "3ff8cc71a74683f82b40d4cc3e7462c7b60379e47a2994d64de951815780aa0f",
+      "classification": "remote_only_change",
+      "remote_bytes": 980,
+      "candidate_bytes": 1563,
+      "parent_bytes": 1563
+    },
+    {
+      "path": "demo/merchant-studio/src/main.tsx",
+      "remote_sha256": "97178eb376c3e6ae58adfcb2a8d79e2c2720bdffb6c121d558535b5f07b0e9f3",
+      "candidate_sha256": "5737fb2d54495eacaff85c766a990619fe4412b7fad47fd0450bb9f32f9dad18",
+      "parent_sha256": "5737fb2d54495eacaff85c766a990619fe4412b7fad47fd0450bb9f32f9dad18",
+      "classification": "remote_only_change",
+      "remote_bytes": 2076,
+      "candidate_bytes": 2073,
+      "parent_bytes": 2073
+    },
+    {
+      "path": "demo/merchant-studio/src/navigation-cleanup.test.ts",
+      "remote_sha256": "64810dc376d249018c2c08914d95ee6547e77acab5d048950d18f2882c38755b",
+      "candidate_sha256": "0896cae59adb807bdb21dbf0d8f5e2b808369616abf69adb6b1bb2119b22728e",
+      "parent_sha256": "0896cae59adb807bdb21dbf0d8f5e2b808369616abf69adb6b1bb2119b22728e",
+      "classification": "remote_only_change",
+      "remote_bytes": 1008,
+      "candidate_bytes": 4145,
+      "parent_bytes": 4145
+    },
+    {
+      "path": "demo/merchant-studio/src/navigation.ts",
+      "remote_sha256": "54d1b764ae7e92a2e8d4a174afeeb9dfaf908a45f93d39d0318dd74f240cf8bb",
+      "candidate_sha256": "14d1c10abef4e5116df521432e26dacefe7b43a5d28880addb079868f2086822",
+      "parent_sha256": "14d1c10abef4e5116df521432e26dacefe7b43a5d28880addb079868f2086822",
+      "classification": "remote_only_change",
+      "remote_bytes": 5852,
+      "candidate_bytes": 5993,
+      "parent_bytes": 5993
+    },
+    {
+      "path": "demo/merchant-studio/src/platform-connection-status.test.ts",
+      "remote_sha256": "d560f09f0dca87561367852a6fbac86b2837de6556196c6f33ceb5ede6d5a85c",
+      "candidate_sha256": "e5a6eda405387ba38d27065c0645d506b4f23465f8afb3794ce0513a1f64cd28",
+      "parent_sha256": "e5a6eda405387ba38d27065c0645d506b4f23465f8afb3794ce0513a1f64cd28",
+      "classification": "remote_only_change",
+      "remote_bytes": 2125,
+      "candidate_bytes": 3050,
+      "parent_bytes": 3050
+    },
+    {
+      "path": "demo/merchant-studio/src/platform-connection-status.ts",
+      "remote_sha256": "96abb7989bcd9d6f89e5c06677418527c37d24c40b23509e3e960caa6cd682c1",
+      "candidate_sha256": "7dccc283eb6e714d25d2534f3ec160f4b2eac6bd2a79907b8f872a6b79f4cedb",
+      "parent_sha256": "7dccc283eb6e714d25d2534f3ec160f4b2eac6bd2a79907b8f872a6b79f4cedb",
+      "classification": "remote_only_change",
+      "remote_bytes": 2512,
+      "candidate_bytes": 2870,
+      "parent_bytes": 2870
+    },
+    {
+      "path": "demo/merchant-studio/src/styles.css",
+      "remote_sha256": "93cb1c254a091a47cdb6b0327e078d01a6ebf43d601fe5898a27e2624be85edb",
+      "candidate_sha256": "2d7e89cb34fb275333b74cb6961e15a45dd4aab2a65b92225179f4fb126eb7ae",
+      "parent_sha256": "2d7e89cb34fb275333b74cb6961e15a45dd4aab2a65b92225179f4fb126eb7ae",
+      "classification": "remote_only_change",
+      "remote_bytes": 117755,
+      "candidate_bytes": 272281,
+      "parent_bytes": 272281
+    },
+    {
+      "path": "demo/merchant-studio/src/task-visual-contract.test.ts",
+      "remote_sha256": "cec3fe67d99b36b1803518007b928e2c410888e06aae3b7f143f96169bb5567f",
+      "candidate_sha256": "814ec8d0ce1576f52553a078dc659c01bf5a5800fabdcf93275f968560ec6c9d",
+      "parent_sha256": "814ec8d0ce1576f52553a078dc659c01bf5a5800fabdcf93275f968560ec6c9d",
+      "classification": "remote_only_change",
+      "remote_bytes": 5484,
+      "candidate_bytes": 5649,
+      "parent_bytes": 5649
+    },
+    {
+      "path": "demo/merchant-studio/tsconfig.node.json",
+      "remote_sha256": "16bf8bd63dccdb9d4e80f8d3048b3d9bb72732f0499dab34f11f4f018ef1a481",
+      "candidate_sha256": "89488791c6f3f6c18234a9fcd80b9e1b08b3be0811e29fbedde72bb71784f7b8",
+      "parent_sha256": "89488791c6f3f6c18234a9fcd80b9e1b08b3be0811e29fbedde72bb71784f7b8",
+      "classification": "remote_only_change",
+      "remote_bytes": 322,
+      "candidate_bytes": 346,
+      "parent_bytes": 346
+    },
+    {
+      "path": "infra/docker/ops-console.Dockerfile",
+      "remote_sha256": "3a001fdaf0868cde5cd8a6df02e9b485cd97ee5cce3a6c46a2bda653e8a773e6",
+      "candidate_sha256": "8cdcbad3ac11cf4223df537ad59fb8038816f2aa7682bd952fbe0a66c9f912f5",
+      "parent_sha256": "8cdcbad3ac11cf4223df537ad59fb8038816f2aa7682bd952fbe0a66c9f912f5",
+      "classification": "remote_only_change",
+      "remote_bytes": 2889,
+      "candidate_bytes": 3344,
+      "parent_bytes": 3344
+    },
+    {
+      "path": "infra/docker/ui.Dockerfile",
+      "remote_sha256": "f18d0f36bb5e3839ae9f6d6ca1d10ee1eb581814769c3d1c6bf03269f6ee76f5",
+      "candidate_sha256": "267bc3ff267dad4c9f6a10f895358d961ced0413218e01f9dc0316c83666fd08",
+      "parent_sha256": "267bc3ff267dad4c9f6a10f895358d961ced0413218e01f9dc0316c83666fd08",
+      "classification": "remote_only_change",
+      "remote_bytes": 1256,
+      "candidate_bytes": 2058,
+      "parent_bytes": 2058
+    },
+    {
+      "path": "infra/nginx/merchant-studio.conf",
+      "remote_sha256": "8eb7b8169c243c23c92405e917d0626f560e73d21baf68e373194ce0868741c5",
+      "candidate_sha256": "58571351b3dde1fe4661cac99b599dba57af2a55a980d4a94ac0acad506bb66a",
+      "parent_sha256": "58571351b3dde1fe4661cac99b599dba57af2a55a980d4a94ac0acad506bb66a",
+      "classification": "remote_only_change",
+      "remote_bytes": 2575,
+      "candidate_bytes": 3948,
+      "parent_bytes": 3948
+    },
+    {
+      "path": "infra/nginx/ops-console.conf",
+      "remote_sha256": "7c6a00935f89bcd1d2ee4d7a0472fdeabde615d428500ed189a516b242bc9ca0",
+      "candidate_sha256": "4771924e8ce99bb0a586daf9f705912986f5c037391c9a27cf6d9afeac73b218",
+      "parent_sha256": "4771924e8ce99bb0a586daf9f705912986f5c037391c9a27cf6d9afeac73b218",
+      "classification": "remote_only_change",
+      "remote_bytes": 2971,
+      "candidate_bytes": 4415,
+      "parent_bytes": 4415
+    },
+    {
+      "path": "infra/nginx/pilot-gateway.conf",
+      "remote_sha256": "e155c095e13f93ff58d5c0aa46111a9dcd83ee3fbd9d410003d394fdc6b0facb",
+      "candidate_sha256": "97c15c45cd93ce9c4538ebd5802d03bbb1fb10fb913e79df5aa9972975b50bc9",
+      "parent_sha256": "97c15c45cd93ce9c4538ebd5802d03bbb1fb10fb913e79df5aa9972975b50bc9",
+      "classification": "remote_only_change",
+      "remote_bytes": 7922,
+      "candidate_bytes": 7994,
+      "parent_bytes": 7994
+    }
+  ],
+  "host_archive_probe": [
+    {
+      "path": "/opt/merchant-candidates/merge-20260915-1329/source.tar.gz",
+      "sha256": "sha256:bd9e1e4ecc05d426378faf8303f6017a821f49a6326431acbb50452b537a523b",
+      "matches_current_remote_files": 163,
+      "missing_or_different": 77,
+      "git_metadata_present": false
+    },
+    {
+      "path": "/opt/merchant-deploy/rollback/20260914162935/source-before.tar.gz",
+      "sha256": "sha256:41135ccc75cbf275650e454b063d50ecf19fae2ded5354e52c9778d59e2ad6cb",
+      "matches_current_remote_files": 123,
+      "missing_or_different": 117,
+      "git_metadata_present": false
+    },
+    {
+      "probe": "find /opt /var/lib/merchant-release-security for Git bundles, packed refs, HEAD, source-head, commit metadata",
+      "result": "no Git bundle, checkout metadata, or commit metadata found; four unrelated source-head files only",
+      "git_metadata_present": false
+    }
+  ]
+}

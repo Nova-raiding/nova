@@ -1,0 +1,37 @@
+{
+  "schema_version": "ecs-candidate-provenance-preflight/1",
+  "observed_at": "2026-10-04T22:33:39Z",
+  "candidate_directory": "artifacts/deployment-candidates/ecs-20261004T214923Z",
+  "candidate": {
+    "release_git_sha": "59eb1e8db78005a2f9be1b8a808507422ffc82b8",
+    "source_sha256": "sha256:88b5c0c69629678e1364b2fe7e13fd9e144d5eebfe48b9ec0083ff233fa26fd1",
+    "comparison_manifest_sha256": "sha256:dcbb2f0a2527a7bab6791f0669abdd25d875380d324da16cd6190c480e809a44",
+    "sync_plan_sha256": "sha256:5998d907f0f75ab4e20b8305e8dfa8d090c8097317d915bb36bf66053b3d96d6"
+  },
+  "public_release": {
+    "release_id": "ecs-3dc76c93b536",
+    "release_git_sha": "3dc76c93b53652190f03454b305c86931e5f72ae",
+    "manifest_sha256": "d15e8a9175d4fb478ab145a48e17a12d038fed47c2812c6a329f4b3f8b8cee89",
+    "image_set_digest": "sha256:eb17537f8c2824611155508c1a0c817c66a19b973ea7a090a0b66c23cfdbcd62",
+    "ready": true,
+    "observed_from": ["https://yxsona.com/releasez", "https://ops.yxsona.com/releasez"]
+  },
+  "preflight": {
+    "source_binding_present": true,
+    "complete_image_set_manifest_present": false,
+    "protected_per_service_preflight_present": false,
+    "host_inventory_matches_candidate": false,
+    "public_release_matches_candidate": false,
+    "deployable": false,
+    "production_authorized": false,
+    "status": "review_only"
+  },
+  "blockers": [
+    "CANDIDATE_IMAGE_SET_MANIFEST_MISSING",
+    "CANDIDATE_PROTECTED_SERVICE_PREFLIGHT_MISSING",
+    "PUBLIC_RELEASE_SHA_DIFFERS_FROM_CANDIDATE",
+    "101_RUNTIME_IMAGE_IDS_DIFFER_FROM_REVIEWED_IMAGE_SET",
+    "101_INVENTORY_DUPLICATE_API_AND_UNCLASSIFIED_CONSUMERS",
+    "CAPABILITY_CAPACITY_AND_OTHER_PRODUCTION_EVIDENCE_NOT_BOUND"
+  ]
+}

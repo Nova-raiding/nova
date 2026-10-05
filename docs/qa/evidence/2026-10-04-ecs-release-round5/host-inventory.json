@@ -1,0 +1,2818 @@
+{
+  "schema_version": "ecs-demo-254-host-inventory/2",
+  "project": "merchant-demo-85575f9c",
+  "observed_at": "2026-10-04T22:33:25.490Z",
+  "containers": [
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-555e938b",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-555e938b/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-555e938b",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "a91fb4ae92ba34c2fd2b8ea96e31059a3216c0e0a08ed9e5878d6c3016fb86d6",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "023da4bf33781c235f9a5fc3a8e11b37a9313522912af4ec219f9c28eeab2a29",
+      "id": "0052a71d5b95c7c0fb2b491e63157003f3d767f4a96d46ddd02301bd5ccb0583",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-555e938b_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "4f4d25b8662c8b67c02f916cfc45f3d556e18f4cdbfd66772eb23ec95669ebb1",
+      "name": "/merchant-demo-555e938b-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-555e938b-redis-1",
+            "redis"
+          ],
+          "id": "f45a690b3bd61dab469327ea86b838531ce0b62b761958fe93c54106f0a74a6f",
+          "name": "merchant-demo-555e938b_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-b36cee30",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-b36cee30/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-b36cee30",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "d56071d815bd2a2c69699bfcbc1fe32eb6a090b24d94eb01403f3ea0e69d592d",
+      "env_sha256": "b70b182718d0b4a20a7da77c02bcf11e144ae39705d3d600ba89a923631e08be",
+      "health": "unhealthy",
+      "host_config_sha256": "f14eb25a3ebe301d3be1af2e00bfd645e1f4e5a24796c2ad6fe13f6acb62ffac",
+      "id": "0243231c4c26b2abbb0067c00f1370fe660ca522ae411891bb8793812281eea7",
+      "image_id": "sha256:8e6e49b3dc1a343811c1f45fef9766f4ed73ae4b3f483beff41bfc0b26cb5830",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-b36cee30-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-b36cee30-ui-1",
+            "ui"
+          ],
+          "id": "9e178e4cefb18fa2e4bd122a34ac2d28f00d00b911aab49138776e6382d8a4a5",
+          "name": "merchant-demo-b36cee30_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-555e938b",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-555e938b/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-555e938b",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "fcf87cbf63f8407f8c7a1b4cb7e1017997f6e84ac178b84023ecde60223abc5a",
+      "env_sha256": "b17a95119d2191d72611b5d09e8c0e873a37e3d8e76ce82b4659115ff2d464af",
+      "health": "unhealthy",
+      "host_config_sha256": "282868d2451b72cc53eba48b8540462097ee8dac48e03dced31fc1caadea8dd6",
+      "id": "02763ea987068e28062320ffe4db0960131c60909777a5b4e6ec2e5386bdbea4",
+      "image_id": "sha256:a1b705528cf8c48113c562486c9e2d53847ff95dad5dc8f980cacaf60fa59f46",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-555e938b-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-555e938b-api-1"
+          ],
+          "id": "f45a690b3bd61dab469327ea86b838531ce0b62b761958fe93c54106f0a74a6f",
+          "name": "merchant-demo-555e938b_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-54b9b493",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-54b9b493/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-54b9b493",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "fc5014d3996eca196de5bbf8b721cf7022ae3765a8b34d27b02706f9764697d6",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "1856ae07ee522627f428323351f9e035a2a38610d25b54c088a171c5581fd7e1",
+      "id": "062a8629f63cb17359c7fadb69234a47591e9529013d455076f4cae1b02db16b",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-54b9b493_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "8ffcdd30f70228ee82b4a0bf9af1489391c0d4844578a2fc2501c504c810f685",
+      "name": "/merchant-demo-54b9b493-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-54b9b493-redis-1",
+            "redis"
+          ],
+          "id": "d52a203151aabf08cf0635e1e7710b912cb1fb377f8ec800af554e8c4682a9f5",
+          "name": "merchant-demo-54b9b493_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-18e20ca1",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-18e20ca1/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-18e20ca1",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "01efd22a9cff0b5648c2ef8c20ba40af973bc6f403922c363a6c95190dd13703",
+      "env_sha256": "02326f0535f768b4c0557112aed07daea736b8ae59e8e0e4c6b9e0cb592474e1",
+      "health": "unhealthy",
+      "host_config_sha256": "802e97035adc3b3dedafb910064b9d8481d606460672233288cac566a343d9ec",
+      "id": "13320352bc6eea3919a4d8f3d411e18de3e8c51f96d1c77298d35cc981bd1852",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-18e20ca1_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "ed1c2d5c466158f062adb6c262644b878a70020ad611c5f7d632ed76d373de81",
+      "name": "/merchant-demo-18e20ca1-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-18e20ca1-postgres-1",
+            "postgres"
+          ],
+          "id": "4a87658f78d27077e637487904c64a9a5503d7fadbc48af56fc03f3274a60790",
+          "name": "merchant-demo-18e20ca1_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.demo-opsui-dc63e0b9.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "ops-ui"
+      },
+      "config_sha256": "02504711fcf1185230b2da31829dc923ec337bf59247a234bffdb831c2e13d07",
+      "env_sha256": "46bc442c2c4329d943bd3dded711c1bf547058c1a883d67ff8310265473603d9",
+      "health": "healthy",
+      "host_config_sha256": "c90a6e639fe245fb5bc785c8f2072f294ab040f424e9be58404db7d6e6a761d4",
+      "id": "146a18e1336fa63f306dbe85c7bf1bee701fda95fc9c687402827d844720c1de",
+      "image_id": "sha256:c7de9bca4618e82fcc2776f904615d414c367f4eec24cc0a7afb8f2b7f46105c",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-85575f9c-ops-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-ops-ui-1",
+            "ops-ui"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-6f4f6e75r2",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-6f4f6e75-r2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-6f4f6e75-r2",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "2c266cacc670ebd15d8e4be87e0ec6febdd24907d92aec1984291c0cb52aecea",
+      "env_sha256": "e45b2b7ea9591c5f9edc8c47f9a832ba59d70d0d5a4d2119af2934a5fbb9559f",
+      "health": "unhealthy",
+      "host_config_sha256": "aceb257467007074b527f7548e43c7b6c60f32104a5bee45da21cc1e2558f38b",
+      "id": "1a0d68e40bc8d74ab09ca089b8440fc424870d267aa9bc825912cc6af9b0bbfc",
+      "image_id": "sha256:3d9425f575eea536a28240138e8095b2208df509193fafa7048ceb774e54e763",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-6f4f6e75r2-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-6f4f6e75r2-api-1"
+          ],
+          "id": "2a3e8605b2a91b96ef2db00ecde0d4c98fc7b338006862de2fd2f772fddd4a45",
+          "name": "merchant-demo-6f4f6e75r2_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-9c40ccd7",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-9c40ccd7-staging/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-9c40ccd7-staging",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "8c5b4c99a32803bd6618b08111b50b89b91416da80afdcdd14b3ef8ac6987b5d",
+      "env_sha256": "3fff6b8350de8b3d09eba87b7273f377ccc56ce64b37056358e10cab88e4713e",
+      "health": "unhealthy",
+      "host_config_sha256": "40cbac2c966e3b4d4d6ea0bf4bcf6f9423e8dae23474c721c6b53a97756f90d6",
+      "id": "1b0074624be0e1edc924b2734b0662bb56f08b6d04b2a7f0ac2db87233950583",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-9c40ccd7_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "098f3ab046206310901268911ad52237eb4a7a22fdf6346230cc0cfe7da896bb",
+      "name": "/merchant-demo-9c40ccd7-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-9c40ccd7-postgres-1",
+            "postgres"
+          ],
+          "id": "c14300298ac6673a7ec62dd80b6f6dc5313f8e3437bab4258debbe0e098e7fb0",
+          "name": "merchant-demo-9c40ccd7_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-ca287c35",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-ca287c35/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-ca287c35",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "7ee2b93a0aa9e990231866a91297a9eb3d6978890bda28a42ce80862a83ca51d",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "d43ee9e18f1df51f6f788f7637a8eff8e31942f5696cb7d35f907ea0efd5a0a9",
+      "id": "22c253b918b8baa34eac0132bfdf298bcb13fbad8a4c7a29df723a80f13a8f3f",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-ca287c35_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "7daa3547f9a8af0e5cf31ab85e7ea9fc7a7c9d7791c43226e19d35ae8e8b5f15",
+      "name": "/merchant-demo-ca287c35-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-ca287c35-redis-1",
+            "redis"
+          ],
+          "id": "96363587b41a8e411e0be3bdd837fec2299199b4e02721faf01f2384595a2687",
+          "name": "merchant-demo-ca287c35_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-9c40ccd7",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-9c40ccd7-staging/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-9c40ccd7-staging",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "5a918e18d112477220b283a848b5145c2275c6cc7228e68870647d7b4bc056f9",
+      "env_sha256": "b2705f1dce3a68c092e6f8ad5bd8964cd60247b7c0ad6d592b8260bd918c55e9",
+      "health": "unhealthy",
+      "host_config_sha256": "8e89835bfdeb1b98a0d428ccb74cad13b3cab86df57aab17f99a5e5cbce02cfc",
+      "id": "23a93e12d602b58046c3dc2bf24c077db06609c192531228ac53ed44b85d935e",
+      "image_id": "sha256:48f6f12b00d1231e32ca47fb6d509c8ebd03e57ae2962b322fd445afd96efa00",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-9c40ccd7-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-9c40ccd7-api-1"
+          ],
+          "id": "c14300298ac6673a7ec62dd80b6f6dc5313f8e3437bab4258debbe0e098e7fb0",
+          "name": "merchant-demo-9c40ccd7_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-b36cee30",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-b36cee30/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-b36cee30",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "b939704b83bf0bf051c39135ca850c43e56a985fca8658a0165bd49a74c228d9",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "3e104a639d5e5c2a8a4b411c4eee9faa76fed9e718fe0bbcd23a23fa2777a69e",
+      "id": "244ec0c407d0acf1b71d985041a8b6f3ed27b1ae991094bef722cd411c0cdabf",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-b36cee30_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "211623e3da8ae77ed011a7462aec7843d191d3cb2f08f39934a8275de6862002",
+      "name": "/merchant-demo-b36cee30-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-b36cee30-redis-1",
+            "redis"
+          ],
+          "id": "9e178e4cefb18fa2e4bd122a34ac2d28f00d00b911aab49138776e6382d8a4a5",
+          "name": "merchant-demo-b36cee30_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/config/ecs-20260930T133625Z-live-network.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/config",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "67be3010029a96afb893ba63dc289b6ad1d96b58356ec0b551818df8904d8517",
+      "env_sha256": "7960e62e56ae84d1c859fb3483856491ab4a159bfa50cc0d4c45da52b1e86645",
+      "health": "unhealthy",
+      "host_config_sha256": "f6d01fd38da241455570e6d36a14b8f57e226474760acc58380f03c6c170be47",
+      "id": "2721eb5f80475b03cfa6bac6f895716f6ad66b1289bb98c9a4bbdb1c109ea235",
+      "image_id": "sha256:fd58ca9c8e3f20bd83d9fe30ddbf0298bbb54ebf9c24bd855bb8690e28a8cefe",
+      "mounts": [
+        {
+          "destination": "/run/release-evidence/capacity-report.json",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/release-evidence/platform-capability.json",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/release-security/evidence-trust",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/secrets/postgres_server.crt",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/var/lib/merchant-assets",
+          "name": "merchant-demo-85575f9c_merchant-assets",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "24ca415cdfcc1734b6f2d8894f9f0a9aede4398b47dcd2aca6cad2049e66bbe5",
+      "name": "/merchant-candidate-api-ecs-20260930T133625Z-244933747f",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-candidate-api-ecs-20260930T133625Z-244933747f"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-3567df1e2894-image/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-3567df1e2894-image",
+        "com.docker.compose.service": "pilot-gateway"
+      },
+      "config_sha256": "966893b909beca0bd3ba08240b67d60ab6c0dae573b8ea040a30e3d757ce3f9f",
+      "env_sha256": "3d8798d5ca456c7c1f422233ba265b875c14cfc19f03637d3ca15777abd634fe",
+      "health": "healthy",
+      "host_config_sha256": "59fa3dbd3727441d34ddc63701dc9741f48020243d9d79223a021dbe8443fae6",
+      "id": "2966ece1fe9d574e67ce307c3029b8ca6a93d5a680dc210d2d90c9666a430696",
+      "image_id": "sha256:cdbbaa6fdd5aa351c7e0ff3404ee068454f2ec0de9537d6d767456a54b8b03de",
+      "mounts": [
+        {
+          "destination": "/etc/nginx/certs",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        }
+      ],
+      "mounts_sha256": "73a83044650cbb3c1f3d140c7882eb2a104cc3d407a1f956087111000480d183",
+      "name": "/merchant-demo-85575f9c-pilot-gateway-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-pilot-gateway-1",
+            "pilot-gateway"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [
+        {
+          "container_port": "8080/tcp",
+          "host_ip": "0.0.0.0",
+          "host_port": "80"
+        },
+        {
+          "container_port": "8443/tcp",
+          "host_ip": "0.0.0.0",
+          "host_port": "443"
+        }
+      ],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-b36cee30",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-b36cee30/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-b36cee30",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "bff703e018701c8fbfaec3809e88ab2ed890b60d2a1797ceb03b70b9ec55fb94",
+      "env_sha256": "b4c528f18f98ec7b362bf9b3efb397b9ea2eced9b2877b12b4fd07371079d81f",
+      "health": "unhealthy",
+      "host_config_sha256": "b06c8d5a35487db229eba98612a0fef93fb1a1c43cba0e4953312ac245a8bb0c",
+      "id": "29e34978bbb52bcb92d00f316fa561d0aa94a84fbb8e126354c2ecdb10257c02",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-b36cee30_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "527d38f24dd5e6a55ccf65fcec08fef09a46959fe2642dd8d5fac6cbf32e869f",
+      "name": "/merchant-demo-b36cee30-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-b36cee30-postgres-1",
+            "postgres"
+          ],
+          "id": "9e178e4cefb18fa2e4bd122a34ac2d28f00d00b911aab49138776e6382d8a4a5",
+          "name": "merchant-demo-b36cee30_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-54b9b493",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-54b9b493/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-54b9b493",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "90b4bf8565b5b3b417dfee76e29152a4a9988829fe572d5dd80cb22f4e230664",
+      "env_sha256": "3e29da18542211e8919061632e01c68394084cd92442e7a54fad18f0f59aef01",
+      "health": "unhealthy",
+      "host_config_sha256": "dd9729eb564811053610b82e9d0ad051fd083d3fe1341c0f46d49c5fa6587376",
+      "id": "328e86fb2e7774876d48bb11c269496a3bb17d403b5debcfd89b8b244f388295",
+      "image_id": "sha256:38d6c109cf7a26520cdc18325d7f02f7d9977e3552433602fca19153346add3c",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-54b9b493-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-54b9b493-ui-1",
+            "ui"
+          ],
+          "id": "d52a203151aabf08cf0635e1e7710b912cb1fb377f8ec800af554e8c4682a9f5",
+          "name": "merchant-demo-54b9b493_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-555e938b",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-555e938b/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-555e938b",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "33e414cd497190a15fccb2b0ea7e52aac68a6cb09cb7e81299cb206cd51b7da1",
+      "env_sha256": "f9c74ef076a6265cfd9482c9861ce6d2624ebd444868521eb8b87a6e021fc941",
+      "health": "unhealthy",
+      "host_config_sha256": "282868d2451b72cc53eba48b8540462097ee8dac48e03dced31fc1caadea8dd6",
+      "id": "3c3fe044d4f0f92c218b5321f98bcc32547635578978fb4e061acb233212da96",
+      "image_id": "sha256:921e207e79b38ac9ff858b82fde4092a63519b83bf9eafd0a209c77c1d9ae153",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-555e938b-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-555e938b-ui-1",
+            "ui"
+          ],
+          "id": "f45a690b3bd61dab469327ea86b838531ce0b62b761958fe93c54106f0a74a6f",
+          "name": "merchant-demo-555e938b_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.demo-api-3dc76c93b536.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "worker-publish"
+      },
+      "config_sha256": "d97432a4604829586f4f8db1f75bd7a03a68a202d6010eb88dd309e5498f9ddf",
+      "env_sha256": "b4cf4801aa700d3e563ea675a8d97ad5ed8c7a4ff36f01097917a2757f673585",
+      "health": "healthy",
+      "host_config_sha256": "129f1c149a5c72b438453f69d5ab4d13a64099b275807b13d14e0011417b47b2",
+      "id": "3d8213f6c1cf2955514f2ebd7869d630dd854ebb8b57ef46630fa68e6378dd80",
+      "image_id": "sha256:5cd4126edb9c2cdbc29dcb6827eba4c83ede59e1ac7522a550364e546506fd13",
+      "mounts": [
+        {
+          "destination": "/run/secrets/postgres_server.crt",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        }
+      ],
+      "mounts_sha256": "3c114e8372c80ce95470f220a9ad40f82e66293333c66167ad9e6211bfb766d2",
+      "name": "/merchant-demo-85575f9c-worker-publish-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-worker-publish-1",
+            "worker-publish"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.demo-api-3dc76c93b536.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "worker-sync"
+      },
+      "config_sha256": "cee49e6b96d33f7fcffb6002107d31d6758c9cee01f8d496ec30ec042731b42e",
+      "env_sha256": "1f379ba993e465ec32e93ecfad8364844930885ca191448f4b16f158b398063a",
+      "health": "healthy",
+      "host_config_sha256": "129f1c149a5c72b438453f69d5ab4d13a64099b275807b13d14e0011417b47b2",
+      "id": "3f726584ba307ac36cc5df19cf8032e9ea3e98883c29236000f395ffb134c5c7",
+      "image_id": "sha256:5cd4126edb9c2cdbc29dcb6827eba4c83ede59e1ac7522a550364e546506fd13",
+      "mounts": [
+        {
+          "destination": "/run/secrets/postgres_server.crt",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        }
+      ],
+      "mounts_sha256": "3c114e8372c80ce95470f220a9ad40f82e66293333c66167ad9e6211bfb766d2",
+      "name": "/merchant-demo-85575f9c-worker-sync-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-worker-sync-1",
+            "worker-sync"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-ca287c35",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-ca287c35/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-ca287c35",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "e4b273dc4bf55aff4ab11fbaf09f5aa7a99edca3f54376440a35d7c6490d31a5",
+      "env_sha256": "5b688a9a21bacf8031159118dd65d2065d7e243ed0e33a34031bf79c6ee858d6",
+      "health": "unhealthy",
+      "host_config_sha256": "bdb3852d4f770b37d407be77230f37bd11d8715a4632432817cca08a9290bb56",
+      "id": "4492ccd00830ad454ede8c25dae19d35fd530c3eeb92388f71a47bf14481db63",
+      "image_id": "sha256:baa9e1e15f823f856dbe0d775e53b196c1f2612744706188994813df4883766f",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-ca287c35-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-ca287c35-ui-1",
+            "ui"
+          ],
+          "id": "96363587b41a8e411e0be3bdd837fec2299199b4e02721faf01f2384595a2687",
+          "name": "merchant-demo-ca287c35_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-34e141b4",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-34e141b4/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-34e141b4",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "a90ea41fbd1683c5522521564a12b119adf118fbc1ec2be980ec20a79c852acb",
+      "env_sha256": "8759915a33d1138f3affa791dec5f0ec7b94b7480b6ef616763ccc744fcd760f",
+      "health": "unhealthy",
+      "host_config_sha256": "e3b9471b14660b75a4d265ac9154e457647e6374b2f3da185a719511a6a18a9f",
+      "id": "48335d4fdd53067b9e60d9f1935754a441b2285241b66c8940760464e8c2eb4b",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-34e141b4_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "baf0b4d8161f67ef90da4a34dccab8d962937aebba47ee4f3f02be6288516f07",
+      "name": "/merchant-demo-34e141b4-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-34e141b4-postgres-1",
+            "postgres"
+          ],
+          "id": "371ef6b8ba642d97f2c0da58e95d80b70e36f32a928674e51c9e573eaa982bea",
+          "name": "merchant-demo-34e141b4_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-555e938b",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-555e938b/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-555e938b",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "ec67c7283c3416e15008db93701bd22867d84f8410f65ab586599131e8afcddc",
+      "env_sha256": "1f12488fe02f1640483a80031fd38cc499b6ab88c82d0fa86b848682588d498c",
+      "health": "unhealthy",
+      "host_config_sha256": "7eb48bb755d90b1d3d471e58a486dfbc4ae87ecb1bc406d1c69a3661cd2c399d",
+      "id": "49155510cbbb8f91ccc3e4fd5d9ba52f6179375cc6671c329f5f2a574187b23c",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-555e938b_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "9b8e9e62bcec4e174287e56c354a92c5f4b964420ee3d03137b042b5a94801a8",
+      "name": "/merchant-demo-555e938b-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-555e938b-postgres-1",
+            "postgres"
+          ],
+          "id": "f45a690b3bd61dab469327ea86b838531ce0b62b761958fe93c54106f0a74a6f",
+          "name": "merchant-demo-555e938b_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.demo-api-3dc76c93b536.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "worker-automation"
+      },
+      "config_sha256": "c3e8308fc25a510a8abf748362cc8dd7736a3ea20987d1aeafa1fb8efaeee4d4",
+      "env_sha256": "edcaf549fa33184c0f54a30d9000d8ddbd65a0be6531be648c4952c7e8f808a8",
+      "health": "healthy",
+      "host_config_sha256": "129f1c149a5c72b438453f69d5ab4d13a64099b275807b13d14e0011417b47b2",
+      "id": "4f94d0d21a9a9066edfc5252a048fc7f56d2e4aa184ccd9b71640d323ecd06bb",
+      "image_id": "sha256:5cd4126edb9c2cdbc29dcb6827eba4c83ede59e1ac7522a550364e546506fd13",
+      "mounts": [
+        {
+          "destination": "/run/secrets/postgres_server.crt",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        }
+      ],
+      "mounts_sha256": "3c114e8372c80ce95470f220a9ad40f82e66293333c66167ad9e6211bfb766d2",
+      "name": "/merchant-demo-85575f9c-worker-automation-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-worker-automation-1",
+            "worker-automation"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "5b87e82a3370d55a59f823f515871ba6476eff5aa07328f80903a4018d501072",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "healthy",
+      "host_config_sha256": "f4bfc411ed31836ef95a1eeb355da5bd7ed81839b951b02c309d32e224c4e906",
+      "id": "5db88ab94d454661f28eada925ec807e9493612bcc7112dd67a29a1a5adc1877",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-85575f9c_merchant-redis",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "e6a03281e2982951921207ff1c2d2b8092773c7dca30563b48be83837f05957b",
+      "name": "/merchant-demo-85575f9c-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-redis-1",
+            "redis"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-e3c9a7aa",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/deployments/ecs-e3c9a7aa/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/deployments/ecs-e3c9a7aa",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "b40f5bf7c0beafee9e0ce34939ec7eedb5fa55a4b0315f2c7d1debae6b4760a3",
+      "env_sha256": "dcc11a3f0bb3b215f6b0cc05134d4840c65a3b807d5f966cefb59321f58f3ab3",
+      "health": "unhealthy",
+      "host_config_sha256": "d563c1fe274ff7afce77b7a85698d299d351c7c7141e423c3f60cc7dd52fc3ed",
+      "id": "62e9c1b9c3621898629caf7aa70aace261904dd30df44776717c499ae4ffa1c0",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-e3c9a7aa_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "d75d4e8e6fd8385f4331fea720f9d5122a9f0c95ae5fe8e29015d346c5aa21b1",
+      "name": "/merchant-demo-e3c9a7aa-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-e3c9a7aa-postgres-1",
+            "postgres"
+          ],
+          "id": "94daab54a0e175db686430c0105a01d04390e9be24a6deef2f9dd642ab7fcf5c",
+          "name": "merchant-demo-e3c9a7aa_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-9c40ccd7",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-9c40ccd7-staging/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-9c40ccd7-staging",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "8c6483f481726eb0bcd21c31c40bffc39ed6ec8f23e5cb3b8c4c64c117ea7f29",
+      "env_sha256": "2f031487f631ab805bdfeb6102a72c14f725d0becf495f114d7c5da970f7cbbd",
+      "health": "unhealthy",
+      "host_config_sha256": "8e89835bfdeb1b98a0d428ccb74cad13b3cab86df57aab17f99a5e5cbce02cfc",
+      "id": "63772211f0159ead60301b084f5b03f4de25701bfbdbd4ab4a127c622059bd82",
+      "image_id": "sha256:b81a20ae0253009b3de6362bee128b4325292d67bfff731a49670141edec1935",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-9c40ccd7-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-9c40ccd7-ui-1",
+            "ui"
+          ],
+          "id": "c14300298ac6673a7ec62dd80b6f6dc5313f8e3437bab4258debbe0e098e7fb0",
+          "name": "merchant-demo-9c40ccd7_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "",
+        "com.docker.compose.project.config_files": "",
+        "com.docker.compose.project.working_dir": "",
+        "com.docker.compose.service": ""
+      },
+      "config_sha256": "414764e8ab5c3610f8b11c52e26e8edd1225840968bca4a88d4b54ac270b5a72",
+      "env_sha256": "3d8798d5ca456c7c1f422233ba265b875c14cfc19f03637d3ca15777abd634fe",
+      "health": "absent",
+      "host_config_sha256": "7761847847371a123c58674a77356e242c474d7a05219957ab7f7477dd02d91b",
+      "id": "64c813ae6905b577deebe2001e3c89c5d43ba36f1d3c0204eb7ae51d8b1bd0d8",
+      "image_id": "sha256:4da06a852ea71d187dca4aec748eef658787c952f9bd7f78e1fd910712adc0c1",
+      "mounts": [
+        {
+          "destination": "/etc/nginx/certs",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/etc/nginx/templates/default.conf.template",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        }
+      ],
+      "mounts_sha256": "ddd4fa51ac0606ddc0afb7ee9293efc5c3f30a8798ab07a824d0e9c294f2007b",
+      "name": "/merchant-candidate-tls-release-5b1e5a03-ec0f9144bd",
+      "networks": [
+        {
+          "aliases": [],
+          "id": "246aa57fd6edecb39108a38c6c40630b0c6f2e876fb1502041d5b2af5f2d9378",
+          "name": "merchant-demo-5b1e5a03_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "3589d3c32a5171853a0cbedc9ce945c1daa2cd95ea107c27b8ccf726c4dbb7f2",
+      "env_sha256": "0dc56c57f5c73a12d6bd47089eb28b64f5a7d242dbf64ac74b492e01871cebb0",
+      "health": "healthy",
+      "host_config_sha256": "fcb10de4cc5492ac7e1656cd5025a39fd8dff1444b570ac9500156ea2973c533",
+      "id": "6abd0fb584b3746cca5b3e73d21681a24ab3780fce0a46d385ffcebcd43c0980",
+      "image_id": "sha256:81bd698b4594e751a3269e4dcd3e03a4a0ec0daf7b72e7aa1abd43cce9887542",
+      "mounts": [
+        {
+          "destination": "/run/secrets/postgres_server.crt",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/secrets/postgres_server.key",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-85575f9c_merchant-postgres",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "9019c90c2e19a403266fb0edfe0bd42e86dc27d3c1e02823a2a84b1878f4133b",
+      "name": "/merchant-demo-85575f9c-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-postgres-1",
+            "postgres"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-159088a1",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-159088a1/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-159088a1",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "2a87c40aaea93791efef5859d9abf95959fb9079f57aa512df20d719be686310",
+      "env_sha256": "9a79f4fbbd818ad0c3e4f771b738d1ac64a4b3738b70bbb3104beaa180f245d7",
+      "health": "unhealthy",
+      "host_config_sha256": "af2c2a4de1b914f48bc4ae63db93ec29faccab6f9bd6a345878beeef8e6c54b5",
+      "id": "6c2272cdca37919623c15b8294d07901572e75e31a63cf6003229acd78ae445a",
+      "image_id": "sha256:109d375874263b5fe62f35d57b1c5d409ee8a4cb8cda35aa894a175ebb442b31",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-159088a1-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-159088a1-ui-1",
+            "ui"
+          ],
+          "id": "70c6ec2be11c566058aaaa90498cf501dae98f1be244f2f31807fbad1b3422f3",
+          "name": "merchant-demo-159088a1_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-159088a1",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-159088a1/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-159088a1",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "933e06ad1b43d48373bd2b866576afdc0ef053f206af4863d44c4579a6e3da94",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "4ea2f21a053847e63619b4caa41c18fb56b01be8f410ac306958d0a5ea7147c8",
+      "id": "6d52488cdff45b9825732971101ef08e19eb5ffd5021ca171d16e7a580ea1ae9",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-159088a1_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "f3d14d281e7cb9a4cf482361b729cdbd622813ab27c8343eab1791b156078c3a",
+      "name": "/merchant-demo-159088a1-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-159088a1-redis-1",
+            "redis"
+          ],
+          "id": "70c6ec2be11c566058aaaa90498cf501dae98f1be244f2f31807fbad1b3422f3",
+          "name": "merchant-demo-159088a1_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-ca287c35",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-ca287c35/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-ca287c35",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "f97282dca75dfd718a0fb2974be49c9ab4f1c2f7cbd88e90baaf706f6b2012d3",
+      "env_sha256": "15b7339504832eeec5ee529eb32a7e7e3494527597a6b4171fabd3d0a67051f4",
+      "health": "unhealthy",
+      "host_config_sha256": "c30c4ecf0f3cc0811d852fce334cf846928694554641027a80c192af18ab0571",
+      "id": "6eb3387f9198ef4df7e9bd9bf35ca11360d6463762e928a8686a6e070587937d",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-ca287c35_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "87dd7775291edbfd2557bc807c3b621706bf4deb5565879dd90bdeda59fb1c4f",
+      "name": "/merchant-demo-ca287c35-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-ca287c35-postgres-1",
+            "postgres"
+          ],
+          "id": "96363587b41a8e411e0be3bdd837fec2299199b4e02721faf01f2384595a2687",
+          "name": "merchant-demo-ca287c35_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "",
+        "com.docker.compose.project.config_files": "",
+        "com.docker.compose.project.working_dir": "",
+        "com.docker.compose.service": ""
+      },
+      "config_sha256": "e9c08368eb188782766090cd0d677f6a14d195fa1152ee900760190a2e5b4009",
+      "env_sha256": "3d8798d5ca456c7c1f422233ba265b875c14cfc19f03637d3ca15777abd634fe",
+      "health": "absent",
+      "host_config_sha256": "4b214a2766c8edf1fa89ed9fa39d463b92d3d409d51cef1661fbf58dc71a6c29",
+      "id": "6fe5824f0c2981379de5c69f4d5e7e2815cff6d393c3174a0c115cbc3dcd7903",
+      "image_id": "sha256:aae57bc1796e7124b96ebc653bac52f2d00c14c2177279cacbd36975d30f2be7",
+      "mounts": [
+        {
+          "destination": "/etc/nginx/certs",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/etc/nginx/templates/default.conf.template",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        }
+      ],
+      "mounts_sha256": "20e5f76c69c7c32f33665e5252236c0f3c54af53303b80fffda16235b22bcce2",
+      "name": "/merchant-candidate-tls-release-6f4f6e75-ae1f6a3f24",
+      "networks": [
+        {
+          "aliases": [],
+          "id": "4a02b2544245718580c9dea7312fc43c14a77ba17394d53fffefb32ca8f4536a",
+          "name": "merchant-demo-6f4f6e75c_private"
+        }
+      ],
+      "ports": [],
+      "state": "created",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-6f4f6e75r2",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-6f4f6e75-r2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-6f4f6e75-r2",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "9e16ff560eeeb5526a29d0d71c552aac921c6950a42584adfbc988de5e0519f9",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "f665b966e1237f03710f80cb30316232c639ad3053f6f0b3c0de83b0a3b3273b",
+      "id": "70ece818ce8c4cc63ab442f6ae79ee879c8912155288804d025f39644ccc4a6e",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-6f4f6e75r2_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "f110773e23eaa6e62caf213591322845ed8fe8e1062578f07d87c04649c42e5b",
+      "name": "/merchant-demo-6f4f6e75r2-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-6f4f6e75r2-redis-1",
+            "redis"
+          ],
+          "id": "2a3e8605b2a91b96ef2db00ecde0d4c98fc7b338006862de2fd2f772fddd4a45",
+          "name": "merchant-demo-6f4f6e75r2_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-dc63e0b9",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/deployments/ecs-dc63e0b9/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/deployments/ecs-dc63e0b9",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "f4390b347e34a1023cb9edb3c9376c404fa964ae6a93d104f69722de16341d11",
+      "env_sha256": "270a74a151563ef2eac7a3d9c449efe93321b6d64edad7d7ba87f2eea7d2a497",
+      "health": "unhealthy",
+      "host_config_sha256": "8f0ba0f2b1e1a7542a07338b6f2069d7ccacece424b1686e9e1620d674f25f75",
+      "id": "7572484285f1ab4f71f2c2008517190b6082273b6f2db4b953896bfd9b402747",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-dc63e0b9_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "3622500723a795d50d82dc02eb76f70ab3758498c86d1fa9222e64c8c38eda31",
+      "name": "/merchant-demo-dc63e0b9-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-dc63e0b9-postgres-1",
+            "postgres"
+          ],
+          "id": "fea912199cb058912ae98943cb5b7302bf0837029066b4cc8f3cf6f670f0b3d3",
+          "name": "merchant-demo-dc63e0b9_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-ca287c35",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-ca287c35/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-ca287c35",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "7589bd6145c56ec43ad67ee6bc4bcfa5406310cbf4c45d9fea25da2a9fab1671",
+      "env_sha256": "a9d993bbc3506f740a52713ac5a73c59bf3002fce87061f407d67d46de6c8c7e",
+      "health": "unhealthy",
+      "host_config_sha256": "bdb3852d4f770b37d407be77230f37bd11d8715a4632432817cca08a9290bb56",
+      "id": "806ac907888ecd096e2ad7f21fb4ec676f58e05ae6c35a52124ddda7e5e5d3f1",
+      "image_id": "sha256:0e5bdd8a5500bfe396529a899fb0e669deee4bbad3cfdd662bbabb7443dd06b4",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-ca287c35-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-ca287c35-api-1"
+          ],
+          "id": "96363587b41a8e411e0be3bdd837fec2299199b4e02721faf01f2384595a2687",
+          "name": "merchant-demo-ca287c35_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-6f4f6e75r2",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-6f4f6e75-r2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-6f4f6e75-r2",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "833a16a9989cf43b072e8f839eb88579509362f3b8e9ffb53158dbbfea04437f",
+      "env_sha256": "bcff4be143edb75ddafd21fb49cfa285d4726f55ad665dd956ef66baa61fe146",
+      "health": "unhealthy",
+      "host_config_sha256": "acb42c0c1408323b3b8d69cda57c7af1d26b1f1a9e13951e9ee6876ae9991c58",
+      "id": "83fc3195a4f7ed6a45e8e34f73dc83dc7054f60f7983f0061f5695f983a42ea0",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-6f4f6e75r2_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "4dab78f82427f716408b6573cf5a9d816f189b29ae667b432a8bb7ad3bfeaa46",
+      "name": "/merchant-demo-6f4f6e75r2-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-6f4f6e75r2-postgres-1",
+            "postgres"
+          ],
+          "id": "2a3e8605b2a91b96ef2db00ecde0d4c98fc7b338006862de2fd2f772fddd4a45",
+          "name": "merchant-demo-6f4f6e75r2_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-34e141b4",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-34e141b4/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-34e141b4",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "a22e671a2f7fe5c5bb169c60814237a77aaee1c4c36be7a170aedef8dd69df20",
+      "env_sha256": "6eb61d21e9e1b179aed625e9f3008943434df74d102103eb7bb1c6184f676f45",
+      "health": "unhealthy",
+      "host_config_sha256": "5f4721cee04129859a19db8eb215aa51c428444f4e64080e33a12322e3c44605",
+      "id": "840b9d09209e23a334a505cf94d419da6cb5fed3bec5684fdd00902beef37564",
+      "image_id": "sha256:9f4dd50d6f59144983b7e2e4fd16296c3672afedc713c20b516c5f0fca802c19",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-34e141b4-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-34e141b4-api-1"
+          ],
+          "id": "371ef6b8ba642d97f2c0da58e95d80b70e36f32a928674e51c9e573eaa982bea",
+          "name": "merchant-demo-34e141b4_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-bdd060f610d7v2",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-candidates/release-bdd060f610d7-v2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-candidates/release-bdd060f610d7-v2",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "5f04e60f1dc25c7060582e278f00e0b66e5c30bf07d0a45fbff203a37b40caf7",
+      "env_sha256": "e4d36825b0db286717ff77f9dc94ed6647404e8820e3a3ddaaafa56f7978097f",
+      "health": "unhealthy",
+      "host_config_sha256": "d48aabd6cecdcc34434c528b7b5ac6ab2ac10ea1dd6a7451b5f33be5fff2d2fd",
+      "id": "87d06b26a20c009dde2dd2d3b54939fc9d254718380d35b6c496899f10f3993a",
+      "image_id": "sha256:86b592cf4448f5b9e117af66d7ab03b3fde631caa19b2018dde5bee88eeb38a9",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-bdd060f610d7v2-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-bdd060f610d7v2-api-1"
+          ],
+          "id": "d104044bd79094d9a57d5d3502696e3822d555f36c3326505d4520475bd37c32",
+          "name": "merchant-demo-bdd060f610d7v2_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-bdd060f610d7v2",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-candidates/release-bdd060f610d7-v2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-candidates/release-bdd060f610d7-v2",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "ce70061dc47a93933eb68412ec1a2a616e54cc600f64eedbeb277b1382149ef2",
+      "env_sha256": "2510a4b12daca0959e85d8e3db475323914ffcfc0d9c1028fc7f0cb53f1cd491",
+      "health": "unhealthy",
+      "host_config_sha256": "d48aabd6cecdcc34434c528b7b5ac6ab2ac10ea1dd6a7451b5f33be5fff2d2fd",
+      "id": "886db540c76b73e2328b3b8a19ae24745f7ef7b393be680d5493a9cea27ca5df",
+      "image_id": "sha256:dad13fef7e6e2f76e5466082f5918df9b5b4ec0eb8a4c7c3538dda78a8e002ac",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-bdd060f610d7v2-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-bdd060f610d7v2-ui-1",
+            "ui"
+          ],
+          "id": "d104044bd79094d9a57d5d3502696e3822d555f36c3326505d4520475bd37c32",
+          "name": "merchant-demo-bdd060f610d7v2_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-e3c9a7aa",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/deployments/ecs-e3c9a7aa/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/deployments/ecs-e3c9a7aa",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "8e054699edeba5edbedf635b20d13f3df8b64864e624d6574e8d7a8de451cfbb",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "fa7c052dbf427157627b69db4eee4d024e9ea3a082aa037a7ebf7613071921b8",
+      "id": "894817f368803c898d3541597c90b1360ad8b2ae000d3b584537706b2911d11b",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-e3c9a7aa_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "c0286a638c0bc065cdda823f181d04393ae1a0dd28cb610c5175f1e8503aa93a",
+      "name": "/merchant-demo-e3c9a7aa-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-e3c9a7aa-redis-1",
+            "redis"
+          ],
+          "id": "94daab54a0e175db686430c0105a01d04390e9be24a6deef2f9dd642ab7fcf5c",
+          "name": "merchant-demo-e3c9a7aa_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-159088a1",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-159088a1/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-159088a1",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "64599f92841e484236e468018b875a70154e9dac6d6d3e8555ad1236d2efb91a",
+      "env_sha256": "c54496a994b5150344c95de507bb14cfd2a681745f9da606ed287b9b86cc9eb8",
+      "health": "unhealthy",
+      "host_config_sha256": "af2c2a4de1b914f48bc4ae63db93ec29faccab6f9bd6a345878beeef8e6c54b5",
+      "id": "8bbddfeb700e4b59ccecdded22cb3750a06a0a4ad038c598dd2fd2c847f613c3",
+      "image_id": "sha256:7066a3966eab012f64eca5551f7ecbcedec1a4da5d136b808c5a5b76849b7449",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-159088a1-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-159088a1-api-1"
+          ],
+          "id": "70c6ec2be11c566058aaaa90498cf501dae98f1be244f2f31807fbad1b3422f3",
+          "name": "merchant-demo-159088a1_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/tmp/merchant-scan-compose.json",
+        "com.docker.compose.project.working_dir": "/tmp",
+        "com.docker.compose.service": "clamav"
+      },
+      "config_sha256": "894ff7939d19ff42913cd3235dac2bb0ce1f6344068c3a09ff27e4f17958c8c8",
+      "env_sha256": "a28440fd9b79ac0cc43ae292d1e93a0351b5d10357206a1ae8c716561d1b5ced",
+      "health": "healthy",
+      "host_config_sha256": "2bf8284f8c47562fe0939be17a6370d3da8a20827dd6f39798e2d1db4fec46d8",
+      "id": "92298f72c708bff68889031e260ab7d91c50df1bdd72b7e48ca3c7e041ea5f45",
+      "image_id": "sha256:ca96d29c8c1a2e0c55875a6fc9c14f27aadb61b2b412f34bca7d3a989ee8b211",
+      "mounts": [
+        {
+          "destination": "/opt/merchant/clamav-supervisor.sh",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/var/lib/clamav",
+          "name": "merchant-demo-85575f9c_clamav-database",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "87321d88af704bcddd7433cc5b7b9e7bbdf3077919b01750d449a6edcd98e4be",
+      "name": "/merchant-demo-85575f9c-clamav-1",
+      "networks": [
+        {
+          "aliases": [
+            "clamav",
+            "merchant-demo-85575f9c-clamav-1"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-bdd060f610d7v2",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-candidates/release-bdd060f610d7-v2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-candidates/release-bdd060f610d7-v2",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "6fa08fe100fe207090f6b3854914ae4c9124674f2051ebd5c0a009d183e79568",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "9949c9eee5026b93c76c0f0816c53d5f0d6b0839cdb507ad08cf3d3c809f25d7",
+      "id": "9a17ca892c0635cf16974c9df64ee3bbaecc3b7ecf716ccebfe02aa4e387fade",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-bdd060f610d7v2_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "f3ac15257ae2a5ca67ae25f4a1035389d090d15a60b1bb0ecad4408a5a9c4d99",
+      "name": "/merchant-demo-bdd060f610d7v2-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-bdd060f610d7v2-redis-1",
+            "redis"
+          ],
+          "id": "d104044bd79094d9a57d5d3502696e3822d555f36c3326505d4520475bd37c32",
+          "name": "merchant-demo-bdd060f610d7v2_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-6f4f6e75r2",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-6f4f6e75-r2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-6f4f6e75-r2",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "7a47d886737a66a6295aa048fffa1d5c18cf4c557c4248e764478974c40396bb",
+      "env_sha256": "b2eed3998fe1be4470fabb7f9233450f1b52f116125fdd3eb58293414e1a9e04",
+      "health": "unhealthy",
+      "host_config_sha256": "aceb257467007074b527f7548e43c7b6c60f32104a5bee45da21cc1e2558f38b",
+      "id": "9e35e207e28acebcceeb58e4cdbf707c119f79a2dada83cf36c4b7b9360ec5ef",
+      "image_id": "sha256:29d434aef95cb266d1b6702af8c0d1faa4983b64d384dd2c5ed7f49a30142920",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-6f4f6e75r2-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-6f4f6e75r2-ui-1",
+            "ui"
+          ],
+          "id": "2a3e8605b2a91b96ef2db00ecde0d4c98fc7b338006862de2fd2f772fddd4a45",
+          "name": "merchant-demo-6f4f6e75r2_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-18e20ca1",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-18e20ca1/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-18e20ca1",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "dd3be31b36336c4058eab9850f02c936cde1ec4151554360c9a7e364619823db",
+      "env_sha256": "655f4740d5320c7c8c698ecf255b1b33731e26d0ee556ec0e31c51af3fc408eb",
+      "health": "unhealthy",
+      "host_config_sha256": "8be0f5d9bfc9a7b380c5193be06294bb4ac645f8e3ab048ebd985900e135be56",
+      "id": "a4cc59b6ec4a3b353a06e82b776ebbc836307e159ed77031a94a9045b8ade937",
+      "image_id": "sha256:b9c31e6eb2c2c1f744e4eecc98c7bd8ee930b5d37c663c032f76308526c27229",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-18e20ca1-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-18e20ca1-ui-1",
+            "ui"
+          ],
+          "id": "4a87658f78d27077e637487904c64a9a5503d7fadbc48af56fc03f3274a60790",
+          "name": "merchant-demo-18e20ca1_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-18e20ca1",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-18e20ca1/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-18e20ca1",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "11bf8494e223995df91d1c610f85b463e5a085496cfaf72e6af573adb10a034b",
+      "env_sha256": "dacd0b767e5cbbac81b305bca20b7f22def0ab79425ec2db702fbc00131e29fd",
+      "health": "unhealthy",
+      "host_config_sha256": "8be0f5d9bfc9a7b380c5193be06294bb4ac645f8e3ab048ebd985900e135be56",
+      "id": "a5231f68b38b006c82de563ffb0f8f13c62b4dbf473ab2a8394c4cf0b76d0014",
+      "image_id": "sha256:9d1434752062a4a510595f31496bb5c7b8850a111931e44d075a9a51988daf51",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-18e20ca1-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-18e20ca1-api-1"
+          ],
+          "id": "4a87658f78d27077e637487904c64a9a5503d7fadbc48af56fc03f3274a60790",
+          "name": "merchant-demo-18e20ca1_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "",
+        "com.docker.compose.project.config_files": "",
+        "com.docker.compose.project.working_dir": "",
+        "com.docker.compose.service": ""
+      },
+      "config_sha256": "89790dac8b307c7a5e60af741f0035cfdcba0b370faae1e662e322dc30400804",
+      "env_sha256": "1c24775fadba31bd348800df91e54a100f1b2e4936bd629e5a36e89c5c8f51f7",
+      "health": "absent",
+      "host_config_sha256": "932f3cb9597e5cd6883a65a0600020bf34061cd76681ac789dc0b09374d9afc6",
+      "id": "a77f0da8b0ee8a6607d521ed35c9dd40e3a70a8116b31f3cdffc451a93ada03f",
+      "image_id": "sha256:26b2eb03618e749084668eaff68cff8f81dda12d06ac641be7a6398b82a6f25b",
+      "mounts": [
+        {
+          "destination": "/var/lib/registry",
+          "name": "storenova-registry-data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "20e1cf2546f240a0d7b8aaed46714c7f5d5a00cbe79c2859863e642282439e06",
+      "name": "/storenova-registry",
+      "networks": [
+        {
+          "aliases": [],
+          "id": "6b680c2d8346f786501b1a76c6dd71c4745c817a36185472750149556ced220a",
+          "name": "bridge"
+        }
+      ],
+      "ports": [
+        {
+          "container_port": "5000/tcp",
+          "host_ip": "127.0.0.1",
+          "host_port": "5000"
+        }
+      ],
+      "state": "running",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.demo-api-3dc76c93b536.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "e9c1783a7c689f50c534fdd64100808e6f4a45affeb57ce5914fc6dfa526fe07",
+      "env_sha256": "56dcc5edda01db59c43864efd04cfdf9dddc07426a27507bbf9de3ce5e89e4c7",
+      "health": "healthy",
+      "host_config_sha256": "89bb24b588f9f8f9870cb87dc222f0003cbf7716a0020667eb6211172d405e64",
+      "id": "a99c453814df24d1c543976ed079cebf6a6b67319e658cbbc4341cbf5bacd4aa",
+      "image_id": "sha256:73b10e4e4df2b981f2e170ee8d89bd7097ec719bb69d3b56b2de2893b463cbee",
+      "mounts": [
+        {
+          "destination": "/run/release-evidence/capacity-report.json",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/release-evidence/platform-capability.json",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/release-security/evidence-trust",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/secrets/postgres_server.crt",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/var/lib/merchant-assets",
+          "name": "merchant-demo-85575f9c_merchant-assets",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "e8c3f319ecf10eb95d42bed33e05e584b1e5de260652eb4c528cd5ecd1626b5f",
+      "name": "/merchant-demo-85575f9c-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-85575f9c-api-1"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.demo-api-3dc76c93b536.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "api-replica"
+      },
+      "config_sha256": "8c3a99dce6fffb839c038fc357ec310a26dd9ac57db9dacee1cfa1ec6f6de5fe",
+      "env_sha256": "6fe696dcd68ca3d60060ffd9d895c74dfb4999bb040aac99fd3a93e1e29f3a5a",
+      "health": "healthy",
+      "host_config_sha256": "d3ad0e90b64493d632b50119d5c0b0a8732fce8c9b63722f60e9ad06174449e7",
+      "id": "b19798429f7a55800c0249fec630c96346928fe46ad21ca4c433cebdf602252b",
+      "image_id": "sha256:73b10e4e4df2b981f2e170ee8d89bd7097ec719bb69d3b56b2de2893b463cbee",
+      "mounts": [
+        {
+          "destination": "/run/release-evidence/capacity-report.json",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/release-evidence/platform-capability.json",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/release-security/evidence-trust",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/secrets/postgres_server.crt",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/var/lib/merchant-assets",
+          "name": "merchant-demo-85575f9c_merchant-assets",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "da4017152f8d22a75e553ef9a001303d75ab7f8c8a0b60a486f95cf894645c32",
+      "name": "/merchant-demo-85575f9c-api-replica-1",
+      "networks": [
+        {
+          "aliases": [
+            "api-replica",
+            "api-replica",
+            "merchant-demo-85575f9c-api-replica-1"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-54b9b493",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-54b9b493/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-54b9b493",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "6faf4edd21caa9741548b1ae698b6ceeb4f7eaa1bf0cd0e7a67cc635e4670168",
+      "env_sha256": "93ca9e3a1eb68c5d84f08cf548d2a704f1b3dadb1474bb2ca7e0a9dd00fe9262",
+      "health": "unhealthy",
+      "host_config_sha256": "4dc41fbc92e6a01b06762f12c6c65e75fc9b0ab96dde9f2615203a38f158b3fd",
+      "id": "b2a3a7ec30e28e3c5ef327934ab430f930e1c46a56f87afaa414b41f545761b4",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-54b9b493_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "04a4c65f9bba720b7972d99d350d1415ef7272258d9d845fad193505e86b3b56",
+      "name": "/merchant-demo-54b9b493-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-54b9b493-postgres-1",
+            "postgres"
+          ],
+          "id": "d52a203151aabf08cf0635e1e7710b912cb1fb377f8ec800af554e8c4682a9f5",
+          "name": "merchant-demo-54b9b493_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-34e141b4",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-34e141b4/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-34e141b4",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "198236c9980332aa1b6b73581737d4be065231a534a30cc94addd07cfd79d18b",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "4622ad78241250d7ce3097e26a9485a3da721eaf4f0fee75e270b08cc11fd6bb",
+      "id": "b61b343ceb078fab3461d7177c7746cc8b6601dd4e54ae860a2d4d754ee22eb9",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-34e141b4_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "bae977d257eba2812013a78f4cf612cc1394afa06ff63a7f65e10a2028182fa3",
+      "name": "/merchant-demo-34e141b4-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-34e141b4-redis-1",
+            "redis"
+          ],
+          "id": "371ef6b8ba642d97f2c0da58e95d80b70e36f32a928674e51c9e573eaa982bea",
+          "name": "merchant-demo-34e141b4_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-18e20ca1",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-18e20ca1/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-18e20ca1",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "31a080f3189c50abc303aa72617171d07021c6bad5273de08567652b1a5599ae",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "eb964159f7b1d457460c73737571a5a753b5412acff4679ff982ea0c8983bb4e",
+      "id": "b81ea04bbbbcb1160cc33cb2f53e850fa311d9517b664df479fc0a3ed40ad212",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-18e20ca1_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "fa660e81901086fc3dc8e4accb5e1ca6d512e130d8d42a82e52e55277e278c8a",
+      "name": "/merchant-demo-18e20ca1-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-18e20ca1-redis-1",
+            "redis"
+          ],
+          "id": "4a87658f78d27077e637487904c64a9a5503d7fadbc48af56fc03f3274a60790",
+          "name": "merchant-demo-18e20ca1_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-9c40ccd7",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-9c40ccd7-staging/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-9c40ccd7-staging",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "061d4a13790a82928fea755ffedcb0c66ec4ad7a3764852eae4b74438b3160ef",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "2906e76df1a5e59ac0be879f89db8935425cdd352f1b040a856d58d71e825937",
+      "id": "b8a58e03f1cd20344c7960230baccea901d8afbbf2a0ef5f9b0262c00d43bba3",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-9c40ccd7_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "b333725e4ff776e39fe98f7db178ec5f8eea8618a68ac4ee6a4767ab947847ac",
+      "name": "/merchant-demo-9c40ccd7-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-9c40ccd7-redis-1",
+            "redis"
+          ],
+          "id": "c14300298ac6673a7ec62dd80b6f6dc5313f8e3437bab4258debbe0e098e7fb0",
+          "name": "merchant-demo-9c40ccd7_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-54b9b493",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-54b9b493/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-54b9b493",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "a7199663bb54db6a7223306ad2de05a54d57f4fbe5803f0fa0ee4942dcf2b5f8",
+      "env_sha256": "1237fe12ea841eace0abdf78a11dc96b5bdc91e94fd2b34636082c082423ddbf",
+      "health": "unhealthy",
+      "host_config_sha256": "dd9729eb564811053610b82e9d0ad051fd083d3fe1341c0f46d49c5fa6587376",
+      "id": "bb0bb4cc409187ad0dc7c293fbea0d2714dc72b5222d8056ceaefd6368379c50",
+      "image_id": "sha256:720ff07538f071b939aca489ba6da677b194688d14a67f8abd056e6016f34ece",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-54b9b493-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-54b9b493-api-1"
+          ],
+          "id": "d52a203151aabf08cf0635e1e7710b912cb1fb377f8ec800af554e8c4682a9f5",
+          "name": "merchant-demo-54b9b493_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.demo-api-3dc76c93b536.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "worker-generation"
+      },
+      "config_sha256": "be790c0975b23d6b353d73ca750f182014071697a0d0da605e40c76ccfe71c60",
+      "env_sha256": "3ff2a6d8832fcb2469b28df84963e24857acbecb68dec6965cb60b4b0d688d0a",
+      "health": "healthy",
+      "host_config_sha256": "129f1c149a5c72b438453f69d5ab4d13a64099b275807b13d14e0011417b47b2",
+      "id": "bf1c8cdf695eef5c305a9899d6e37f58456d17ea3c36b56e2fb7009173c1f6ba",
+      "image_id": "sha256:5cd4126edb9c2cdbc29dcb6827eba4c83ede59e1ac7522a550364e546506fd13",
+      "mounts": [
+        {
+          "destination": "/run/secrets/postgres_server.crt",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        }
+      ],
+      "mounts_sha256": "3c114e8372c80ce95470f220a9ad40f82e66293333c66167ad9e6211bfb766d2",
+      "name": "/merchant-demo-85575f9c-worker-generation-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-worker-generation-1",
+            "worker-generation"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.demo-ui-dc63e0b9.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "371d82ca1761dbd3e8df713b32993c5af28c0fa63a3a83535d17b13c9c62c6f0",
+      "env_sha256": "4bd5558581b5476ddb392b2e7a5a89b5cc440338e15e88e2fae130487e9e1868",
+      "health": "healthy",
+      "host_config_sha256": "c90a6e639fe245fb5bc785c8f2072f294ab040f424e9be58404db7d6e6a761d4",
+      "id": "bf3a7a6b64cdbc7b362615f5fa42088968c128a605b641d9f0bcac60043097f5",
+      "image_id": "sha256:73ae01ec75a4d328a57366105bb1b5c04a4247acbaa1e7b9dc97de0c13cc806c",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-85575f9c-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-ui-1",
+            "ui"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-811a679c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-811a679c-v2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-811a679c-v2",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "0e21628edaca04b33c8938cd52c4f6c0c3d3fa6185c052615a656e2216ab209f",
+      "env_sha256": "828eef4a08ed237cd2f5cf7afef7a127c78de92e2cb600e7fe1c00c93383dc57",
+      "health": "unhealthy",
+      "host_config_sha256": "4e81c12c8de07d0933ea663646b7f8adc55754af9e344d5233f30d7f877bf4bd",
+      "id": "bf77af3403d7954bfe95a0a53837c0179b624d3e3e3c5a7ede14914efa325283",
+      "image_id": "sha256:64172cbb91222c00c92a5999bb3c6554dcbc281fc01679fa4aa05569e98bab66",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-811a679c-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-811a679c-ui-1",
+            "ui"
+          ],
+          "id": "d1fdcf9718120d755641d7a720f71e32b0b7f13bc7089830c86bd92d4538f430",
+          "name": "merchant-demo-811a679c_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-34e141b4",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-34e141b4/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-34e141b4",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "7e52f28b357b5d780dbb35442a120b25a27721823b5350deeb004365eba0d177",
+      "env_sha256": "144d7cf1bd8021d9d6a31f479988eb14b1811524c28464ca2637cc86ed61969c",
+      "health": "unhealthy",
+      "host_config_sha256": "5f4721cee04129859a19db8eb215aa51c428444f4e64080e33a12322e3c44605",
+      "id": "c4c947d4ce9f0994331ddb0236af17ea858abba7e0af41f9c406a6288634968e",
+      "image_id": "sha256:a38699dd0d8ef6f2f88739c58cc2bce798d6f0ebeca189a72596fc25ba0f9323",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-34e141b4-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-34e141b4-ui-1",
+            "ui"
+          ],
+          "id": "371ef6b8ba642d97f2c0da58e95d80b70e36f32a928674e51c9e573eaa982bea",
+          "name": "merchant-demo-34e141b4_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-811a679c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-811a679c-v2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-811a679c-v2",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "97e9794f57b353415b6294a79f75c898adce3871e421054ddd7cc51dd075dceb",
+      "env_sha256": "ad2eabe61743f562b25b1ec64838628d0a9072213ae0089ad8d59b2ca4e80e0c",
+      "health": "unhealthy",
+      "host_config_sha256": "4e81c12c8de07d0933ea663646b7f8adc55754af9e344d5233f30d7f877bf4bd",
+      "id": "c7d195a33e4e0a0786c95e25f8b7874d7a9c0abd7db238923b84aead44b6ee71",
+      "image_id": "sha256:03e9ec543f61cb7216fe2b93931fbc9bcd2f08136e50d54168195c3a42417998",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-811a679c-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-811a679c-api-1"
+          ],
+          "id": "d1fdcf9718120d755641d7a720f71e32b0b7f13bc7089830c86bd92d4538f430",
+          "name": "merchant-demo-811a679c_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-dc63e0b9",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/deployments/ecs-dc63e0b9/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/deployments/ecs-dc63e0b9",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "64ca04f1994d4b3faa8e4a5d2e26a0a4ac307ee4dbc9bc102b84d3d65da35a4c",
+      "env_sha256": "b10fc021ef2edc51a119b6dfea5a42ce8a62d971c1c47a0d2847a85f6e3032ed",
+      "health": "unhealthy",
+      "host_config_sha256": "3e99da8ed775458d7e766ea2c746ca932892b4df9682051a3e816ddcf7eb6cf4",
+      "id": "c85b4ca77003f782385fb235750729a7aedef37fb62ab67d03645c2c34219648",
+      "image_id": "sha256:2258613fbba1a0f066f91a2a40e3105370f7668e7bed460011a97fc90c127611",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-dc63e0b9-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-dc63e0b9-api-1"
+          ],
+          "id": "fea912199cb058912ae98943cb5b7302bf0837029066b4cc8f3cf6f670f0b3d3",
+          "name": "merchant-demo-dc63e0b9_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-e3c9a7aa",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/deployments/ecs-e3c9a7aa/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/deployments/ecs-e3c9a7aa",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "301da349b8e064113d7432e4c32e48a65c91cc13c1e904a4e71967e327ce3d2b",
+      "env_sha256": "7ae3801d2dd47ca9e74a44268690cabc902178874b92c0c292fe2e3912f5e942",
+      "health": "unhealthy",
+      "host_config_sha256": "27e72ed0cb0f4fb3fd9e0c124dfc4cd4d4c9407ce093c3ad9dc9b2f60e0834fb",
+      "id": "cab07fcb91641704757113ce2cbcdf7548578f20eb974c8594efdfa96b5f66d0",
+      "image_id": "sha256:e3addabe31019dfa2e252fd1f198b272f92b2e2ff366389becf5054cb40743dd",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-e3c9a7aa-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-e3c9a7aa-ui-1",
+            "ui"
+          ],
+          "id": "94daab54a0e175db686430c0105a01d04390e9be24a6deef2f9dd642ab7fcf5c",
+          "name": "merchant-demo-e3c9a7aa_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.demo-api-3dc76c93b536.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "worker-reconcile"
+      },
+      "config_sha256": "f091e0a9ecfe560633d0ddfdf957c98579daa5f17264ab99cd1acb6bde91643b",
+      "env_sha256": "be07bb3ef65b5a673b529bf0ff805bcf454a191089664ef5d25ebc713ebda83c",
+      "health": "healthy",
+      "host_config_sha256": "129f1c149a5c72b438453f69d5ab4d13a64099b275807b13d14e0011417b47b2",
+      "id": "cd6e7a249949e3c12c47b6aab79302300ee11755f05fadd794f768fac895b5bb",
+      "image_id": "sha256:5cd4126edb9c2cdbc29dcb6827eba4c83ede59e1ac7522a550364e546506fd13",
+      "mounts": [
+        {
+          "destination": "/run/secrets/postgres_server.crt",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        }
+      ],
+      "mounts_sha256": "3c114e8372c80ce95470f220a9ad40f82e66293333c66167ad9e6211bfb766d2",
+      "name": "/merchant-demo-85575f9c-worker-reconcile-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-worker-reconcile-1",
+            "worker-reconcile"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-dc63e0b9",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/deployments/ecs-dc63e0b9/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/deployments/ecs-dc63e0b9",
+        "com.docker.compose.service": "ui"
+      },
+      "config_sha256": "6a0bd11c17a7b8c1f409e83dff73841bf6c076cd854a26ff4f53afd440642399",
+      "env_sha256": "8d9c6d1b58ab17b84a26619212165dd62ae70d1d7bfcbbd29cdc77b3fb5fcbe1",
+      "health": "unhealthy",
+      "host_config_sha256": "3e99da8ed775458d7e766ea2c746ca932892b4df9682051a3e816ddcf7eb6cf4",
+      "id": "cfb60c53d2758dc793efb740e243a25faf5e9a4592630fe468951203dbc2154a",
+      "image_id": "sha256:73ae01ec75a4d328a57366105bb1b5c04a4247acbaa1e7b9dc97de0c13cc806c",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-dc63e0b9-ui-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-dc63e0b9-ui-1",
+            "ui"
+          ],
+          "id": "fea912199cb058912ae98943cb5b7302bf0837029066b4cc8f3cf6f670f0b3d3",
+          "name": "merchant-demo-dc63e0b9_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-b36cee30",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-b36cee30/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-b36cee30",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "db0da468f93e72b2e4003009333d16dd0d5766d4b54ffb8a4f55abc94a10707a",
+      "env_sha256": "a640f6951c1cb645a00c65747c04f3de841570989f83c957b8c2ed8d28b1192c",
+      "health": "unhealthy",
+      "host_config_sha256": "f14eb25a3ebe301d3be1af2e00bfd645e1f4e5a24796c2ad6fe13f6acb62ffac",
+      "id": "d55b2f0e820ce135d32d24e336bb6210f0bd7c1fb2105811efdb7eb14db036a3",
+      "image_id": "sha256:bb44f51d8cb6be766313685342dfae00b09ce425b738b1e53a8432067310f50b",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-b36cee30-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-b36cee30-api-1"
+          ],
+          "id": "9e178e4cefb18fa2e4bd122a34ac2d28f00d00b911aab49138776e6382d8a4a5",
+          "name": "merchant-demo-b36cee30_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c/candidate.compose.demo-api-3dc76c93b536.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-first-install/release-85575f9c",
+        "com.docker.compose.service": "worker-scan"
+      },
+      "config_sha256": "0aa132176cc7603dfbad61af1e2c9bc89e0a051a6df30dd24df00478f95e691e",
+      "env_sha256": "e92c7c3638396951b15a00196167024fa2f3bfe97519894e225dece52f623825",
+      "health": "healthy",
+      "host_config_sha256": "129f1c149a5c72b438453f69d5ab4d13a64099b275807b13d14e0011417b47b2",
+      "id": "da24c0b37e0cd13e599c7cf001627154b4e098a809ced0860b211a0b62220c50",
+      "image_id": "sha256:5cd4126edb9c2cdbc29dcb6827eba4c83ede59e1ac7522a550364e546506fd13",
+      "mounts": [
+        {
+          "destination": "/run/secrets/postgres_server.crt",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        }
+      ],
+      "mounts_sha256": "3c114e8372c80ce95470f220a9ad40f82e66293333c66167ad9e6211bfb766d2",
+      "name": "/merchant-demo-85575f9c-worker-scan-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-worker-scan-1",
+            "worker-scan"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-dc63e0b9",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/deployments/ecs-dc63e0b9/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/deployments/ecs-dc63e0b9",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "74f35623ca60d1f856ecc19190d79cb701013d3293d615890cfc8e9b0e66b7e6",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "76074b0b1014ffe053c66aade91a6405207028c85ad1a863177b47cdea052043",
+      "id": "da4582ba03fd10e188f99deab637b5a5f19c79acaac5b2e2453e17d580849f40",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-dc63e0b9_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "b5e23689c5a2a95a5e409ae9aea3849681258789749b74742308ada9470c3971",
+      "name": "/merchant-demo-dc63e0b9-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-dc63e0b9-redis-1",
+            "redis"
+          ],
+          "id": "fea912199cb058912ae98943cb5b7302bf0837029066b4cc8f3cf6f670f0b3d3",
+          "name": "merchant-demo-dc63e0b9_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-811a679c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-811a679c-v2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-811a679c-v2",
+        "com.docker.compose.service": "redis"
+      },
+      "config_sha256": "b7a11a9638cff98150ea56c6b8c56df9bfb0b75e5051bbaa1f7daec64035c4fc",
+      "env_sha256": "f8895e654462872d2383bcd3e1130e3dce53c849bd08c18fcb225b78a14a5bc6",
+      "health": "unhealthy",
+      "host_config_sha256": "5c92aa1081c91c278cc362e41cec6221d2f5aff8fec7d18b897923704a34eaae",
+      "id": "dc39d961b277844386328967b21ea8c62c4c230710e6937655328eefe2ce82b7",
+      "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+      "mounts": [
+        {
+          "destination": "/data",
+          "name": "merchant-demo-811a679c_redis_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "17ca59791d36952dadd54cdd262f2ea5f0e3a60a34763b6f395c658488a327c5",
+      "name": "/merchant-demo-811a679c-redis-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-811a679c-redis-1",
+            "redis"
+          ],
+          "id": "d1fdcf9718120d755641d7a720f71e32b0b7f13bc7089830c86bd92d4538f430",
+          "name": "merchant-demo-811a679c_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/deployments/release-0fa18b78-fast-20260927-v2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/deployments/release-0fa18b78-fast-20260927-v2",
+        "com.docker.compose.service": "payment-gateway"
+      },
+      "config_sha256": "3dd3876cd1437e152fa217eb8e40254aa3c990b41a80eedd0427f00f7df83edf",
+      "env_sha256": "17b2382c65eca28f9a3470e0139439e7943e33206d48bef33dde6bb63baef767",
+      "health": "healthy",
+      "host_config_sha256": "21c84661287263944d1c8f0c4fdfdda0ef14610832522694b0563e1cb08c7a31",
+      "id": "e151c83107e4239b7d0d20e9d2b21997d0920b70247bea048a9c52009e9cbe1e",
+      "image_id": "sha256:68d42b090416f160cf4e3b00f28720db345f0e09ca9e6ca95af599680f7a87f9",
+      "mounts": [
+        {
+          "destination": "/run/payment-receipts",
+          "name": "",
+          "read_write": true,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/secrets/alipay_app_private_key",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/secrets/alipay_public_key",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        }
+      ],
+      "mounts_sha256": "47928be99680f2809022a296a71ea05dc6dafb21a7e31153fd20853c13521c59",
+      "name": "/merchant-demo-85575f9c-payment-gateway-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-85575f9c-payment-gateway-1",
+            "payment-gateway"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "running",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-159088a1",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-159088a1/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-159088a1",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "5b19168661554c413a1c1ddf43416bd3a016f36bb9b9707e900622258ccf462c",
+      "env_sha256": "71ba3458bb6293353dbf197da8c665de927ebdaeae2f8bd777bc39ddcc6affe3",
+      "health": "unhealthy",
+      "host_config_sha256": "4163a60bb9a3c290dedff144361b5c4307b832654b3b2f091c094549b2b0ece9",
+      "id": "e16ed1d2fa7e08a298e4c246ca6079317009d3a04d61230b95db8bbbe2e8002c",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-159088a1_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "e6ab413ef5c44a614121800d1f80933a09b99b641cdf5547e2463d8bc3945b57",
+      "name": "/merchant-demo-159088a1-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-159088a1-postgres-1",
+            "postgres"
+          ],
+          "id": "70c6ec2be11c566058aaaa90498cf501dae98f1be244f2f31807fbad1b3422f3",
+          "name": "merchant-demo-159088a1_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-85575f9c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/config/ecs-20260930T133625Z-live-network.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/config",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "31b1054359a364dd784aa765e805bafddf5081954afb83f26a9ac7cb67c05072",
+      "env_sha256": "3bc99aa90cdca8424233876757bdeec357bb65266f17add5dfa2858609868943",
+      "health": "unhealthy",
+      "host_config_sha256": "be5d67b2bfc56b265a0e8184b913035f8b83229a6bdffb18f66e9ab39fd32566",
+      "id": "e73b81ee5c0d0d7fde8e07904727a69ab400d49e972a36a475920912df319b89",
+      "image_id": "sha256:fd58ca9c8e3f20bd83d9fe30ddbf0298bbb54ebf9c24bd855bb8690e28a8cefe",
+      "mounts": [
+        {
+          "destination": "/run/release-evidence/capacity-report.json",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/release-evidence/platform-capability.json",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/release-security/evidence-trust",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/run/secrets/postgres_server.crt",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/var/lib/merchant-assets",
+          "name": "merchant-demo-85575f9c_merchant-assets",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "a23959ff8e091f2f75cdfd6451ec36902b50eed990e97d80c914b1e7ee1db4e7",
+      "name": "/merchant-candidate-api-ecs-20260930T133625Z-4a0e1b77a1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-candidate-api-ecs-20260930T133625Z-4a0e1b77a1"
+          ],
+          "id": "852cdfc914aa8465511885a7757d45bbd074c1874fca6e42fa52e736da3cd531",
+          "name": "merchant-demo-85575f9c_default"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "expected_demo_role"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-e3c9a7aa",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/deployments/ecs-e3c9a7aa/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/deployments/ecs-e3c9a7aa",
+        "com.docker.compose.service": "api"
+      },
+      "config_sha256": "0ab9e05e475bc97d6f3664b257f1f08d2dee53694553d8c7eb79a56541295905",
+      "env_sha256": "bf9fdf230d4e8a67818be6586dbed22d7132d7a7ebfb87aa7e89f31405c677bd",
+      "health": "unhealthy",
+      "host_config_sha256": "27e72ed0cb0f4fb3fd9e0c124dfc4cd4d4c9407ce093c3ad9dc9b2f60e0834fb",
+      "id": "ea2dfff859fc738fca3ebd8d8ffc881d89cdf4f3a1fd8afc70bf54faeb898ca7",
+      "image_id": "sha256:304d1257321a8a2323515983fa5d4ac63246014034fd25bec89cb806407c08b4",
+      "mounts": [],
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "name": "/merchant-demo-e3c9a7aa-api-1",
+      "networks": [
+        {
+          "aliases": [
+            "api",
+            "merchant-api",
+            "merchant-demo-e3c9a7aa-api-1"
+          ],
+          "id": "94daab54a0e175db686430c0105a01d04390e9be24a6deef2f9dd642ab7fcf5c",
+          "name": "merchant-demo-e3c9a7aa_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-bdd060f610d7v2",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/demo-candidates/release-bdd060f610d7-v2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/demo-candidates/release-bdd060f610d7-v2",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "6f011784e08859489ca865a40ea41f48cc6049213255c38449b9db7127de3d57",
+      "env_sha256": "dd5660e326c02ec5b1a94ed43967f1e89bed391a7217af9aaa5c9b8310dc20ca",
+      "health": "unhealthy",
+      "host_config_sha256": "147f1e4c9f3ec37909c02ee81940939bd66619e3dcb4592c057f293b3a725359",
+      "id": "f58b4f9b2ff37d3ab5dd7eb632ba0e047a05bf53c2b319c4ddbcdac725fc9dbf",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-bdd060f610d7v2_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "5f91efc6470f81aafbf1cf8112fde37474b882f10aba4710c9a173c5a1d72690",
+      "name": "/merchant-demo-bdd060f610d7v2-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-bdd060f610d7v2-postgres-1",
+            "postgres"
+          ],
+          "id": "d104044bd79094d9a57d5d3502696e3822d555f36c3326505d4520475bd37c32",
+          "name": "merchant-demo-bdd060f610d7v2_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "",
+        "com.docker.compose.project.config_files": "",
+        "com.docker.compose.project.working_dir": "",
+        "com.docker.compose.service": ""
+      },
+      "config_sha256": "588164d3e315413412bc45da769f319b314e07cacbebb991ace73b0faa1e06be",
+      "env_sha256": "3d8798d5ca456c7c1f422233ba265b875c14cfc19f03637d3ca15777abd634fe",
+      "health": "absent",
+      "host_config_sha256": "95ea977d5ee4f8d1dbd0d96ab5d68f84daef003bfa980e91befb66462aae5a64",
+      "id": "f7d6f8e1a9b241f360e18cb01f894a787f1e85747c7b7f0bea2a3d5c4c996304",
+      "image_id": "sha256:72b4cc274c06db79006ad0cb1acdd44d2fb9272c29473b3e90a43d30dd8107c1",
+      "mounts": [
+        {
+          "destination": "/etc/nginx/certs",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        },
+        {
+          "destination": "/etc/nginx/templates/default.conf.template",
+          "name": "",
+          "read_write": false,
+          "type": "bind"
+        }
+      ],
+      "mounts_sha256": "39573b9cba1eddac961f8a7bea9f78ec6e9b3505b81d155da174ac577c804b73",
+      "name": "/merchant-candidate-tls-release-9c40ccd7-dc0de058d5",
+      "networks": [
+        {
+          "aliases": [],
+          "id": "c14300298ac6673a7ec62dd80b6f6dc5313f8e3437bab4258debbe0e098e7fb0",
+          "name": "merchant-demo-9c40ccd7_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    },
+    {
+      "compose": {
+        "com.docker.compose.project": "merchant-demo-811a679c",
+        "com.docker.compose.project.config_files": "/var/lib/merchant-release-security/candidate-renders/release-811a679c-v2/candidate.compose.json",
+        "com.docker.compose.project.working_dir": "/var/lib/merchant-release-security/candidate-renders/release-811a679c-v2",
+        "com.docker.compose.service": "postgres"
+      },
+      "config_sha256": "1fa3a80fe4504502bb9650a63e5604b328c4f2a058ca9e2f8c7d5a82572a122f",
+      "env_sha256": "8b8a75597a071ee775b8535574c8a9ae47b06a19b01db2754ec1846da006d603",
+      "health": "unhealthy",
+      "host_config_sha256": "4e82a89a341fbc9cda1ca1a326ff1ba0d759a74aebe3f88f88bd3a0024b0b6ff",
+      "id": "febd941d88aff52bfe232a38fe8487b1bc8dc7dcf2777c8684b6715385285043",
+      "image_id": "sha256:79bd7c99e923138f136f8009d6bffa66e21e9d4fda5c0c561b00fc9c90cfe537",
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "name": "merchant-demo-811a679c_postgres_data",
+          "read_write": true,
+          "type": "volume"
+        }
+      ],
+      "mounts_sha256": "229fc51d4c21d98d3078122a7fcf3d55ead4ff06f68b2a0094a729d0511e3581",
+      "name": "/merchant-demo-811a679c-postgres-1",
+      "networks": [
+        {
+          "aliases": [
+            "merchant-demo-811a679c-postgres-1",
+            "postgres"
+          ],
+          "id": "d1fdcf9718120d755641d7a720f71e32b0b7f13bc7089830c86bd92d4538f430",
+          "name": "merchant-demo-811a679c_private"
+        }
+      ],
+      "ports": [],
+      "state": "exited",
+      "classification": "unclassified_external_consumer"
+    }
+  ],
+  "expected_services": [
+    "api",
+    "api-replica",
+    "ops-ui",
+    "pilot-gateway",
+    "postgres",
+    "redis",
+    "ui",
+    "payment-gateway",
+    "worker-automation",
+    "worker-generation",
+    "worker-publish",
+    "worker-reconcile",
+    "worker-sync"
+  ],
+  "unclassified_external_consumer_ids": [
+    "0052a71d5b95c7c0fb2b491e63157003f3d767f4a96d46ddd02301bd5ccb0583",
+    "0243231c4c26b2abbb0067c00f1370fe660ca522ae411891bb8793812281eea7",
+    "02763ea987068e28062320ffe4db0960131c60909777a5b4e6ec2e5386bdbea4",
+    "062a8629f63cb17359c7fadb69234a47591e9529013d455076f4cae1b02db16b",
+    "13320352bc6eea3919a4d8f3d411e18de3e8c51f96d1c77298d35cc981bd1852",
+    "1a0d68e40bc8d74ab09ca089b8440fc424870d267aa9bc825912cc6af9b0bbfc",
+    "1b0074624be0e1edc924b2734b0662bb56f08b6d04b2a7f0ac2db87233950583",
+    "22c253b918b8baa34eac0132bfdf298bcb13fbad8a4c7a29df723a80f13a8f3f",
+    "23a93e12d602b58046c3dc2bf24c077db06609c192531228ac53ed44b85d935e",
+    "244ec0c407d0acf1b71d985041a8b6f3ed27b1ae991094bef722cd411c0cdabf",
+    "29e34978bbb52bcb92d00f316fa561d0aa94a84fbb8e126354c2ecdb10257c02",
+    "328e86fb2e7774876d48bb11c269496a3bb17d403b5debcfd89b8b244f388295",
+    "3c3fe044d4f0f92c218b5321f98bcc32547635578978fb4e061acb233212da96",
+    "4492ccd00830ad454ede8c25dae19d35fd530c3eeb92388f71a47bf14481db63",
+    "48335d4fdd53067b9e60d9f1935754a441b2285241b66c8940760464e8c2eb4b",
+    "49155510cbbb8f91ccc3e4fd5d9ba52f6179375cc6671c329f5f2a574187b23c",
+    "62e9c1b9c3621898629caf7aa70aace261904dd30df44776717c499ae4ffa1c0",
+    "63772211f0159ead60301b084f5b03f4de25701bfbdbd4ab4a127c622059bd82",
+    "64c813ae6905b577deebe2001e3c89c5d43ba36f1d3c0204eb7ae51d8b1bd0d8",
+    "6c2272cdca37919623c15b8294d07901572e75e31a63cf6003229acd78ae445a",
+    "6d52488cdff45b9825732971101ef08e19eb5ffd5021ca171d16e7a580ea1ae9",
+    "6eb3387f9198ef4df7e9bd9bf35ca11360d6463762e928a8686a6e070587937d",
+    "6fe5824f0c2981379de5c69f4d5e7e2815cff6d393c3174a0c115cbc3dcd7903",
+    "70ece818ce8c4cc63ab442f6ae79ee879c8912155288804d025f39644ccc4a6e",
+    "7572484285f1ab4f71f2c2008517190b6082273b6f2db4b953896bfd9b402747",
+    "806ac907888ecd096e2ad7f21fb4ec676f58e05ae6c35a52124ddda7e5e5d3f1",
+    "83fc3195a4f7ed6a45e8e34f73dc83dc7054f60f7983f0061f5695f983a42ea0",
+    "840b9d09209e23a334a505cf94d419da6cb5fed3bec5684fdd00902beef37564",
+    "87d06b26a20c009dde2dd2d3b54939fc9d254718380d35b6c496899f10f3993a",
+    "886db540c76b73e2328b3b8a19ae24745f7ef7b393be680d5493a9cea27ca5df",
+    "894817f368803c898d3541597c90b1360ad8b2ae000d3b584537706b2911d11b",
+    "8bbddfeb700e4b59ccecdded22cb3750a06a0a4ad038c598dd2fd2c847f613c3",
+    "92298f72c708bff68889031e260ab7d91c50df1bdd72b7e48ca3c7e041ea5f45",
+    "9a17ca892c0635cf16974c9df64ee3bbaecc3b7ecf716ccebfe02aa4e387fade",
+    "9e35e207e28acebcceeb58e4cdbf707c119f79a2dada83cf36c4b7b9360ec5ef",
+    "a4cc59b6ec4a3b353a06e82b776ebbc836307e159ed77031a94a9045b8ade937",
+    "a5231f68b38b006c82de563ffb0f8f13c62b4dbf473ab2a8394c4cf0b76d0014",
+    "a77f0da8b0ee8a6607d521ed35c9dd40e3a70a8116b31f3cdffc451a93ada03f",
+    "b2a3a7ec30e28e3c5ef327934ab430f930e1c46a56f87afaa414b41f545761b4",
+    "b61b343ceb078fab3461d7177c7746cc8b6601dd4e54ae860a2d4d754ee22eb9",
+    "b81ea04bbbbcb1160cc33cb2f53e850fa311d9517b664df479fc0a3ed40ad212",
+    "b8a58e03f1cd20344c7960230baccea901d8afbbf2a0ef5f9b0262c00d43bba3",
+    "bb0bb4cc409187ad0dc7c293fbea0d2714dc72b5222d8056ceaefd6368379c50",
+    "bf77af3403d7954bfe95a0a53837c0179b624d3e3e3c5a7ede14914efa325283",
+    "c4c947d4ce9f0994331ddb0236af17ea858abba7e0af41f9c406a6288634968e",
+    "c7d195a33e4e0a0786c95e25f8b7874d7a9c0abd7db238923b84aead44b6ee71",
+    "c85b4ca77003f782385fb235750729a7aedef37fb62ab67d03645c2c34219648",
+    "cab07fcb91641704757113ce2cbcdf7548578f20eb974c8594efdfa96b5f66d0",
+    "cfb60c53d2758dc793efb740e243a25faf5e9a4592630fe468951203dbc2154a",
+    "d55b2f0e820ce135d32d24e336bb6210f0bd7c1fb2105811efdb7eb14db036a3",
+    "da24c0b37e0cd13e599c7cf001627154b4e098a809ced0860b211a0b62220c50",
+    "da4582ba03fd10e188f99deab637b5a5f19c79acaac5b2e2453e17d580849f40",
+    "dc39d961b277844386328967b21ea8c62c4c230710e6937655328eefe2ce82b7",
+    "e16ed1d2fa7e08a298e4c246ca6079317009d3a04d61230b95db8bbbe2e8002c",
+    "ea2dfff859fc738fca3ebd8d8ffc881d89cdf4f3a1fd8afc70bf54faeb898ca7",
+    "f58b4f9b2ff37d3ab5dd7eb632ba0e047a05bf53c2b319c4ddbcdac725fc9dbf",
+    "f7d6f8e1a9b241f360e18cb01f894a787f1e85747c7b7f0bea2a3d5c4c996304",
+    "febd941d88aff52bfe232a38fe8487b1bc8dc7dcf2777c8684b6715385285043"
+  ],
+  "shared_build_infrastructure_ids": [],
+  "warnings": [],
+  "blockers": [
+    "expected_service_duplicate:api",
+    "expected_service_not_running:api",
+    "expected_service_unhealthy:api",
+    "expected_service_not_running:api",
+    "expected_service_unhealthy:api",
+    "unclassified_external_consumer:0052a71d5b95c7c0fb2b491e63157003f3d767f4a96d46ddd02301bd5ccb0583",
+    "unclassified_external_consumer:0243231c4c26b2abbb0067c00f1370fe660ca522ae411891bb8793812281eea7",
+    "unclassified_external_consumer:02763ea987068e28062320ffe4db0960131c60909777a5b4e6ec2e5386bdbea4",
+    "unclassified_external_consumer:062a8629f63cb17359c7fadb69234a47591e9529013d455076f4cae1b02db16b",
+    "unclassified_external_consumer:13320352bc6eea3919a4d8f3d411e18de3e8c51f96d1c77298d35cc981bd1852",
+    "unclassified_external_consumer:1a0d68e40bc8d74ab09ca089b8440fc424870d267aa9bc825912cc6af9b0bbfc",
+    "unclassified_external_consumer:1b0074624be0e1edc924b2734b0662bb56f08b6d04b2a7f0ac2db87233950583",
+    "unclassified_external_consumer:22c253b918b8baa34eac0132bfdf298bcb13fbad8a4c7a29df723a80f13a8f3f",
+    "unclassified_external_consumer:23a93e12d602b58046c3dc2bf24c077db06609c192531228ac53ed44b85d935e",
+    "unclassified_external_consumer:244ec0c407d0acf1b71d985041a8b6f3ed27b1ae991094bef722cd411c0cdabf",
+    "unclassified_external_consumer:29e34978bbb52bcb92d00f316fa561d0aa94a84fbb8e126354c2ecdb10257c02",
+    "unclassified_external_consumer:328e86fb2e7774876d48bb11c269496a3bb17d403b5debcfd89b8b244f388295",
+    "unclassified_external_consumer:3c3fe044d4f0f92c218b5321f98bcc32547635578978fb4e061acb233212da96",
+    "unclassified_external_consumer:4492ccd00830ad454ede8c25dae19d35fd530c3eeb92388f71a47bf14481db63",
+    "unclassified_external_consumer:48335d4fdd53067b9e60d9f1935754a441b2285241b66c8940760464e8c2eb4b",
+    "unclassified_external_consumer:49155510cbbb8f91ccc3e4fd5d9ba52f6179375cc6671c329f5f2a574187b23c",
+    "unclassified_external_consumer:62e9c1b9c3621898629caf7aa70aace261904dd30df44776717c499ae4ffa1c0",
+    "unclassified_external_consumer:63772211f0159ead60301b084f5b03f4de25701bfbdbd4ab4a127c622059bd82",
+    "unclassified_external_consumer:64c813ae6905b577deebe2001e3c89c5d43ba36f1d3c0204eb7ae51d8b1bd0d8",
+    "unclassified_external_consumer:6c2272cdca37919623c15b8294d07901572e75e31a63cf6003229acd78ae445a",
+    "unclassified_external_consumer:6d52488cdff45b9825732971101ef08e19eb5ffd5021ca171d16e7a580ea1ae9",
+    "unclassified_external_consumer:6eb3387f9198ef4df7e9bd9bf35ca11360d6463762e928a8686a6e070587937d",
+    "unclassified_external_consumer:6fe5824f0c2981379de5c69f4d5e7e2815cff6d393c3174a0c115cbc3dcd7903",
+    "unclassified_external_consumer:70ece818ce8c4cc63ab442f6ae79ee879c8912155288804d025f39644ccc4a6e",
+    "unclassified_external_consumer:7572484285f1ab4f71f2c2008517190b6082273b6f2db4b953896bfd9b402747",
+    "unclassified_external_consumer:806ac907888ecd096e2ad7f21fb4ec676f58e05ae6c35a52124ddda7e5e5d3f1",
+    "unclassified_external_consumer:83fc3195a4f7ed6a45e8e34f73dc83dc7054f60f7983f0061f5695f983a42ea0",
+    "unclassified_external_consumer:840b9d09209e23a334a505cf94d419da6cb5fed3bec5684fdd00902beef37564",
+    "unclassified_external_consumer:87d06b26a20c009dde2dd2d3b54939fc9d254718380d35b6c496899f10f3993a",
+    "unclassified_external_consumer:886db540c76b73e2328b3b8a19ae24745f7ef7b393be680d5493a9cea27ca5df",
+    "unclassified_external_consumer:894817f368803c898d3541597c90b1360ad8b2ae000d3b584537706b2911d11b",
+    "unclassified_external_consumer:8bbddfeb700e4b59ccecdded22cb3750a06a0a4ad038c598dd2fd2c847f613c3",
+    "unclassified_external_consumer:92298f72c708bff68889031e260ab7d91c50df1bdd72b7e48ca3c7e041ea5f45",
+    "unclassified_external_consumer:9a17ca892c0635cf16974c9df64ee3bbaecc3b7ecf716ccebfe02aa4e387fade",
+    "unclassified_external_consumer:9e35e207e28acebcceeb58e4cdbf707c119f79a2dada83cf36c4b7b9360ec5ef",
+    "unclassified_external_consumer:a4cc59b6ec4a3b353a06e82b776ebbc836307e159ed77031a94a9045b8ade937",
+    "unclassified_external_consumer:a5231f68b38b006c82de563ffb0f8f13c62b4dbf473ab2a8394c4cf0b76d0014",
+    "unclassified_external_consumer:a77f0da8b0ee8a6607d521ed35c9dd40e3a70a8116b31f3cdffc451a93ada03f",
+    "unclassified_external_consumer:b2a3a7ec30e28e3c5ef327934ab430f930e1c46a56f87afaa414b41f545761b4",
+    "unclassified_external_consumer:b61b343ceb078fab3461d7177c7746cc8b6601dd4e54ae860a2d4d754ee22eb9",
+    "unclassified_external_consumer:b81ea04bbbbcb1160cc33cb2f53e850fa311d9517b664df479fc0a3ed40ad212",
+    "unclassified_external_consumer:b8a58e03f1cd20344c7960230baccea901d8afbbf2a0ef5f9b0262c00d43bba3",
+    "unclassified_external_consumer:bb0bb4cc409187ad0dc7c293fbea0d2714dc72b5222d8056ceaefd6368379c50",
+    "unclassified_external_consumer:bf77af3403d7954bfe95a0a53837c0179b624d3e3e3c5a7ede14914efa325283",
+    "unclassified_external_consumer:c4c947d4ce9f0994331ddb0236af17ea858abba7e0af41f9c406a6288634968e",
+    "unclassified_external_consumer:c7d195a33e4e0a0786c95e25f8b7874d7a9c0abd7db238923b84aead44b6ee71",
+    "unclassified_external_consumer:c85b4ca77003f782385fb235750729a7aedef37fb62ab67d03645c2c34219648",
+    "unclassified_external_consumer:cab07fcb91641704757113ce2cbcdf7548578f20eb974c8594efdfa96b5f66d0",
+    "unclassified_external_consumer:cfb60c53d2758dc793efb740e243a25faf5e9a4592630fe468951203dbc2154a",
+    "unclassified_external_consumer:d55b2f0e820ce135d32d24e336bb6210f0bd7c1fb2105811efdb7eb14db036a3",
+    "unclassified_external_consumer:da24c0b37e0cd13e599c7cf001627154b4e098a809ced0860b211a0b62220c50",
+    "unclassified_external_consumer:da4582ba03fd10e188f99deab637b5a5f19c79acaac5b2e2453e17d580849f40",
+    "unclassified_external_consumer:dc39d961b277844386328967b21ea8c62c4c230710e6937655328eefe2ce82b7",
+    "unclassified_external_consumer:e16ed1d2fa7e08a298e4c246ca6079317009d3a04d61230b95db8bbbe2e8002c",
+    "unclassified_external_consumer:ea2dfff859fc738fca3ebd8d8ffc881d89cdf4f3a1fd8afc70bf54faeb898ca7",
+    "unclassified_external_consumer:f58b4f9b2ff37d3ab5dd7eb632ba0e047a05bf53c2b319c4ddbcdac725fc9dbf",
+    "unclassified_external_consumer:f7d6f8e1a9b241f360e18cb01f894a787f1e85747c7b7f0bea2a3d5c4c996304",
+    "unclassified_external_consumer:febd941d88aff52bfe232a38fe8487b1bc8dc7dcf2777c8684b6715385285043"
+  ],
+  "inventory_only": true,
+  "release_approved": false
+}
