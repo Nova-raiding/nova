@@ -24,6 +24,24 @@ async function harness() {
 const usage = (costCny: number | undefined): RelayUsageRecord => ({ workspaceId: 'ws_policy', actionId: 'action', runKey: 'action', modality: 'text', model: 'qwen', providerRequestId: 'request', providerAttemptId: 'attempt-1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny, observedAt: new Date().toISOString() })
 
 describe('normal relay point finalization', () => {
+  it('replays the first durable observation after receipt commit but before point settlement succeeds', async () => {
+    const h = await harness()
+    const firstObservedAt = '2026-10-05T01:00:00.000Z'
+    h.recordUsageAndSettleBudget.mockImplementation(async input => ({ usage: { ...input, id: 'usage', revision: 1, settlementStatus: 'settled', observedAt: firstObservedAt } }))
+    const realSettle = h.creativePoints.settle.bind(h.creativePoints)
+    vi.spyOn(h.creativePoints, 'settle').mockRejectedValueOnce(new Error('injected point commit failure')).mockImplementation(realSettle)
+    // Simulate the durable receipt's strict immutable replay check.
+    let receipt: unknown
+    h.recordProviderReceipt.mockImplementation(async input => { if (receipt) expect(input).toEqual(receipt); else receipt = structuredClone(input) })
+    const initial = { ...usage(0.25), modality: 'video' as const, observedAt: firstObservedAt }
+    await expect(h.recordRelayUsage(initial)).rejects.toThrow('injected point commit failure')
+    expect(await h.creativePoints.getReservation('ws_policy', h.reservation.value.id)).toMatchObject({ status: 'active' })
+    await h.recordRelayUsage({ ...initial, observedAt: '2026-10-05T01:00:05.000Z' })
+    expect(h.recordProviderReceipt).toHaveBeenCalledTimes(2)
+    expect(h.recordProviderReceipt).toHaveBeenLastCalledWith(expect.objectContaining({ verifiedAt: firstObservedAt, at: firstObservedAt }))
+    expect(await h.creativePoints.getReservation('ws_policy', h.reservation.value.id)).toMatchObject({ status: 'settled', settledPoints: 3 })
+  })
+
   it.each([0, 0.00090156, 0.099999, 0.1])('settles verified %s cost without dropping budget or receipt evidence', async cost => {
     const h = await harness()
     await h.recordRelayUsage(usage(cost))

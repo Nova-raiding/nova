@@ -21,7 +21,7 @@ describe('video generator relay', () => {
         return new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'vid_1', video_url: 'https://cdn.example/video.mp4' } }), { status: 200 })
       }) as typeof fetch,
     })
-    await expect(generator.generate({ prompt: '生成春季上新短视频', output: 'rendering', context: { product: { id: 'p1' } } })).resolves.toEqual({ status: 'completed', videoUrl: 'https://cdn.example/video.mp4', providerJobId: 'vid_1' })
+    await expect(generator.generate({ prompt: '生成春季上新短视频', output: 'rendering', context: { product: { id: 'p1' } } })).resolves.toEqual({ status: 'completed', videoUrl: 'https://cdn.example/video.mp4', providerJobId: 'vid_1', settlementStatus: 'settled' })
     expect(calls[0]?.url).toBe('https://relay.example/videos')
     expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ model: 'video-v1', prompt: '生成春季上新短视频', duration: 5 })
   })
@@ -31,7 +31,7 @@ describe('video generator relay', () => {
       baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: (async () => new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, task_id: 'job_1', status: 'queued' }), { status: 200 })) as typeof fetch,
     })
-    await expect(queued.generate({ prompt: '生成视频', output: 'rendering', context: {} })).resolves.toEqual({ status: 'queued', providerJobId: 'job_1' })
+    await expect(queued.generate({ prompt: '生成视频', output: 'rendering', context: {} })).resolves.toEqual({ status: 'queued', providerJobId: 'job_1', settlementStatus: 'settled' })
 
     const invalid = new OpenAICompatibleVideoGenerator({
       baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => ({ recorded: true, costEvidence: true }),
@@ -77,15 +77,15 @@ describe('video generator relay', () => {
     expect(usageRecords[0]?.metadata).toMatchObject({ provider_job_id: 'job_queued_1', duration_seconds: 5, duration_evidence: 'provider_usage' })
   })
 
-  it('keeps the accepted provider job id when a queued job has no settlement evidence yet', async () => {
+  it('returns pending with the accepted provider job id when metering is not available yet', async () => {
     const generator = new OpenAICompatibleVideoGenerator({
       baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: (async () => new Response(JSON.stringify({ data: { id: 'video_job_2', status: 'queued' } }), { status: 200, headers: { 'x-request-id': 'req_video_2' } })) as typeof fetch,
     })
-    await expect(generator.generate({ prompt: '生成视频', output: 'rendering', context: {} })).rejects.toMatchObject({
-      code: 'MODEL_USAGE_EVIDENCE_MISSING',
+    await expect(generator.generate({ prompt: '生成视频', output: 'rendering', context: {} })).resolves.toMatchObject({
+      status: 'queued',
       providerJobId: 'video_job_2',
-      providerStatus: 'queued',
+      settlementStatus: 'pending_receipt',
     })
   })
 

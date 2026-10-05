@@ -4233,22 +4233,77 @@ function publishRejectionKnowledgeObservation(job: import('../../../packages/app
   return createPublishRejectionKnowledgeObservation(job, canonicalJson)
 }
 
-async function assertVideoProviderJobScope(workspaceId: string, providerJobId: string) {
+type VideoBillingContext = import('../../../packages/ai/src/video-generator.js').VideoBillingContext
+
+async function videoBillingAggregateEvents(workspaceId: string, aggregateId: string) {
   await persistenceReady
-  const events = persistence.outbox?.listWorkspaceEvents
-    ? await persistence.outbox.listWorkspaceEvents(workspaceId, 5000)
-    : (inMemoryTimelineEvents.get(workspaceId) ?? [])
-  const owned = events.some(event => {
-    // A queued request is durable evidence of ownership too.  The first
-    // provider response is intentionally recorded as `multimodal.video.requested`
-    // until a later status query proves that an HTTPS artifact completed.  Do
-    // not make that status query fail its own workspace scope check merely
-    // because the provider is still rendering.
-    if (event.eventType !== 'multimodal.video_completed' && event.eventType !== 'multimodal.video.requested' && event.eventType !== 'multimodal.generation.completed') return false
-    const rendering = recordValue(event.payload.rendering)
-    return rendering?.providerJobId === providerJobId
-  })
-  if (!owned) throw new DomainError('VIDEO_PROVIDER_SCOPE_DENIED', '视频任务不存在或不属于当前工作区', 403)
+  return persistence.outbox
+    ? persistence.outbox.listAggregateEvents(workspaceId, aggregateId, 10)
+    : (inMemoryTimelineEvents.get(workspaceId) ?? []).filter(event => event.aggregateId === aggregateId)
+}
+
+export async function assertVideoProviderJobScope(workspaceId: string, providerJobId: string): Promise<VideoBillingContext> {
+  const aggregateId = `video-job:${createHash('sha256').update(providerJobId).digest('hex')}`
+  const event = (await videoBillingAggregateEvents(workspaceId, aggregateId)).find(event => event.eventType === 'multimodal.video.accepted')
+  const context = event && recordValue(event.payload.billing_context)
+  if (!context || context.providerJobId !== providerJobId || context.workspaceId !== workspaceId || typeof context.actionId !== 'string' || typeof context.runKey !== 'string' || typeof context.model !== 'string') {
+    throw new DomainError('VIDEO_PROVIDER_SCOPE_DENIED', '视频任务不存在、计费上下文缺失或不属于当前工作区', 403)
+  }
+  const receipts = await persistence.modelUsage?.listByAction(workspaceId, context.actionId)
+  const settlementVerified = receipts?.some(row => row.modality === 'video' && row.model === context.model && row.providerRequestId === context.providerRequestId && row.costCny !== undefined && row.settlementStatus === 'settled') ?? false
+  return { ...context, settlementVerified } as unknown as VideoBillingContext
+}
+
+export async function withOwnedVideoAction<T>(workspaceId: string, actionId: string, intent: unknown, execute: (beforeDispatch: () => Promise<void>) => Promise<T>, replay: (providerJobId: string) => T): Promise<T> {
+  await persistenceReady
+  if (isProduction() && !persistence.outbox) throw new DomainError('VIDEO_BILLING_STORE_UNAVAILABLE', '视频计费上下文持久化未配置', 503)
+  const intentHash = createHash('sha256').update(canonicalJson(intent)).digest('hex')
+  const aggregateId = `video-billing:${createHash('sha256').update(actionId).digest('hex')}`
+  const readEvents = () => videoBillingAggregateEvents(workspaceId, aggregateId)
+  const previous = await readEvents()
+  const previousPreparation = previous.find(event => event.eventType === 'multimodal.video.preparation_claimed')
+  if (previousPreparation && previousPreparation.payload.intent_hash !== intentHash) throw new DomainError('VIDEO_IDEMPOTENCY_CONFLICT', '该视频请求标识已用于其他内容，请查询原任务', 409, { reconciliation_required: true })
+  const accepted = previous.find(event => event.eventType === 'multimodal.video.accepted')
+  if (accepted) return replay(String(recordValue(accepted.payload.billing_context)!.providerJobId))
+  if (previous.some(event => event.eventType === 'multimodal.video.preflight_rejected')) throw new DomainError('VIDEO_PREFLIGHT_REJECTED', '原视频请求在提交模型前被阻断，请修复配置后使用新的幂等键发起', 409, { provider_dispatched: false, retryable: false, requires_new_idempotency_key: true })
+  const busy = () => new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '视频请求正在准备或已提交核对，请查询原任务，不要重复提交', 409, { reconciliation_required: true, retryable: false })
+  if (previousPreparation) throw busy()
+  const nonce = randomUUID()
+  await persistEvent(workspaceId, aggregateId, 'multimodal.video.preparation_claimed', 1, { nonce, action_id: actionId, intent_hash: intentHash })
+  const preparation = (await readEvents()).find(event => event.eventType === 'multimodal.video.preparation_claimed')
+  if (preparation?.payload.nonce !== nonce) throw busy()
+  let dispatchStarted = false
+  try {
+    // The callback owns ALL reservations and cleanup, including point holds.
+    return await execute(async () => {
+      dispatchStarted = true
+      await persistEvent(workspaceId, aggregateId, 'multimodal.video.dispatch_started', 2, { nonce, action_id: actionId })
+    })
+  } catch (error) {
+    if (!dispatchStarted && !providerSucceededButSettlementPending(error)) {
+      // A failed cleanup is not a safe new-intent/retry signal.
+      const reservation = await persistence.creativePoints?.getReservationByActionKey?.(workspaceId, actionId)
+      if (reservation?.status === 'active') throw busy()
+      const rawCode = (error as { code?: unknown })?.code
+      const code = typeof rawCode === 'string' && /^[A-Z0-9_]{1,80}$/u.test(rawCode) ? rawCode : 'VIDEO_PREFLIGHT_FAILED'
+      await persistEvent(workspaceId, aggregateId, 'multimodal.video.preflight_rejected', 2, { nonce, code, provider_dispatched: false })
+    }
+    throw error
+  }
+}
+
+export async function generateOwnedVideo(input: Parameters<NonNullable<typeof videoGenerator>['generate']>[0]) {
+  if (!videoGenerator) throw new DomainError('VIDEO_GENERATION_NOT_CONFIGURED', '未配置视频生成中转服务', 503)
+  const { workspaceId, actionId, runKey } = input.usageContext ?? {}
+  if (!workspaceId || !actionId || !runKey || !input.beforeDispatch) throw new DomainError('VIDEO_BILLING_CONTEXT_REQUIRED', '视频生成缺少计费上下文', 503)
+  const aggregateId = `video-billing:${createHash('sha256').update(actionId).digest('hex')}`
+  return videoGenerator.generate({ ...input, onAccepted: async context => {
+    const jobAggregateId = `video-job:${createHash('sha256').update(context.providerJobId).digest('hex')}`
+    await persistEvent(workspaceId, jobAggregateId, 'multimodal.video.accepted', 1, { billing_context: context })
+    const stored = (await videoBillingAggregateEvents(workspaceId, jobAggregateId)).find(event => event.eventType === 'multimodal.video.accepted')
+    if (canonicalJson(stored?.payload.billing_context) !== canonicalJson(context)) throw new Error('VIDEO_BILLING_CONTEXT_CONFLICT')
+    await persistEvent(workspaceId, aggregateId, 'multimodal.video.accepted', 3, { billing_context: context })
+  } })
 }
 
 async function getWorkspaceStatus(workspaceId: string): Promise<'active' | 'disabled'> {
@@ -8036,8 +8091,9 @@ export function readContentModules(value: unknown): ContentModule[] | undefined 
   }
 }
 
-async function archiveCompletedVideo(workspaceId: string, rendering: { status: 'completed' | 'queued'; videoUrl?: string; providerJobId?: string }): Promise<{ status: 'completed' | 'queued'; videoUrl?: string; providerJobId?: string; assetId?: string; archiveState?: 'quarantined' | 'archived' }> {
+async function archiveCompletedVideo(workspaceId: string, rendering: { status: 'completed' | 'queued'; videoUrl?: string; providerJobId?: string; settlementStatus?: 'pending_receipt' | 'settled' }): Promise<{ status: 'completed' | 'queued'; videoUrl?: string; providerJobId?: string; assetId?: string; archiveState?: 'quarantined' | 'archived' }> {
   if (rendering.status === 'queued') return rendering
+  if (rendering.settlementStatus !== 'settled') throw new DomainError('MODEL_USAGE_SETTLEMENT_PENDING', '视频成本尚未完成结算，暂不交付素材', 503, { provider_succeeded: true, reconciliation_required: true })
   if (!rendering.videoUrl || !rendering.providerJobId) throw new DomainError('VIDEO_ARTIFACT_REFERENCE_INCOMPLETE', '视频 provider 已标记完成，但缺少可归档的 HTTPS artifact URL 或 provider job id', 502)
   const existing = service.findAssetBySourceProviderJobId(workspaceId, rendering.providerJobId)
   if (existing) return { ...rendering, assetId: existing.id, archiveState: isUsableAssetWithoutScan(existing, demoUnscannedAssetsEnabled()) ? 'archived' as const : 'quarantined' as const }
@@ -10663,7 +10719,7 @@ function multimodalMcpRuntime(req: IncomingMessage, workspaceId: string, result:
     readArchivedGeneratedImages, createVideoRenderingRequest, createVideoGenerationRequest,
     videoGenerator, header, isExemptUnboundImageCandidateProduct, enforceAssetAccess,
     requireApprovedAssetForImageGeneration, recordActionSettlement, randomUUID,
-    assertVideoProviderJobScope, archiveCompletedVideo, modelSettlementDomainError,
+    assertVideoProviderJobScope, withOwnedVideoAction, generateOwnedVideo, archiveCompletedVideo, modelSettlementDomainError,
     publicImageJob, contentExecutionEvidence,
   }
 }
@@ -14987,6 +15043,14 @@ function publishCommitDomainError(error: unknown) {
 
 export function modelSettlementDomainError(error: unknown) {
   const code = (error as { code?: unknown })?.code
+  if (code === 'MODEL_VIDEO_CONTEXT_PENDING') {
+    const source = error as { providerJobId?: unknown; actionId?: unknown; runKey?: unknown }
+    const bounded = (value: unknown, max: number) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\u0000-\u001f\u007f]/u.test(value) ? value : undefined
+    return new DomainError('MODEL_VIDEO_CONTEXT_PENDING', '中转已接受视频任务，但任务记录尚待核对；请保留任务标识，不要重新提交', 503, {
+      provider_succeeded: true, reconciliation_required: true, retryable: false,
+      provider_job_id: bounded(source.providerJobId, 256), action_id: bounded(source.actionId, 512), run_key: bounded(source.runKey, 512),
+    })
+  }
   if (code === 'MODEL_TASK_COST_ACTUAL_EXCEEDED' || code === 'MODEL_DAILY_COST_ACTUAL_EXCEEDED') return new DomainError(String(code), '模型供应商已完成调用，但实际成本超过安全上限；结果已进入费用核对，不会自动退款或重试', 409, { provider_succeeded: true, reconciliation_required: true })
   if (code === 'MODEL_USAGE_SETTLEMENT_PENDING' || code === 'MODEL_USAGE_COST_MISSING') return new DomainError(String(code), '模型供应商已完成调用，但本地用量结算尚未完成；为避免重复计费，当前结果已阻断且不会自动退款', 503, { provider_succeeded: true, reconciliation_required: true, ...((error as { receiptKey?: unknown }).receiptKey ? { receipt_key: String((error as { receiptKey: unknown }).receiptKey) } : {}) })
   if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {

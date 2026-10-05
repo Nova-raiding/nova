@@ -1,9 +1,10 @@
+import { InMemoryOutbox, type OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 import { evaluatePlatformModelGate, startPlatformRelayTokenQuotaMonitor } from '../../../packages/ai/src/platform-model-gate.js'
 
 const videoProvider = vi.hoisted(() => ({
-  generate: vi.fn(async () => ({ status: 'queued' as const, providerJobId: 'video-provider-job-1' })),
+  generate: vi.fn(async (input: import('../../../packages/ai/src/video-generator.js').VideoGenerationInput) => { await input.beforeDispatch?.(); await input.onAccepted?.({ ...input.usageContext, model: 'video-test-model', providerJobId: 'video-provider-job-1', providerRequestId: 'video-test-request-1' }); return { status: 'queued' as const, providerJobId: 'video-provider-job-1', settlementStatus: 'pending_receipt' as const } }),
   getStatus: vi.fn(),
 }))
 
@@ -115,6 +116,7 @@ beforeAll(async () => {
   vi.stubEnv('MODEL_RELAY_VIDEO_COST_EVIDENCE', 'true')
   vi.stubGlobal('fetch', snapshotFetch)
   api = await import('./server.js')
+  api.setFailedImageReconciliationPersistenceForTests({ outbox: new InMemoryOutbox() as unknown as OutboxRepository })
   stopQuotaMonitor = startPlatformRelayTokenQuotaMonitor({ ...process.env, NODE_ENV: 'production' }, snapshotFetch)
   await vi.waitFor(() => expect(evaluatePlatformModelGate({ ...process.env, NODE_ENV: 'production' }, 'video').ready).toBe(true))
   baseUrl = await startServer()

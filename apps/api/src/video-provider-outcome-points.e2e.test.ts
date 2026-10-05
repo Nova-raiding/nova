@@ -1,9 +1,10 @@
+import { InMemoryOutbox, type OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { startPlatformRelayTokenQuotaMonitor } from '../../../packages/ai/src/platform-model-gate.js'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 
 const videoProvider = vi.hoisted(() => ({
-  generate: vi.fn(async (): Promise<never> => { throw Object.assign(new Error('provider response outcome unknown'), { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerOutcome: 'unknown' }) }),
+  generate: vi.fn(async (input: import('../../../packages/ai/src/video-generator.js').VideoGenerationInput): Promise<never> => { await input.beforeDispatch?.(); throw Object.assign(new Error('provider response outcome unknown'), { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerOutcome: 'unknown' }) }),
   getStatus: vi.fn(),
 }))
 
@@ -66,6 +67,7 @@ beforeAll(async () => {
     return actualFetch(input, init)
   }) as typeof fetch)
   api = await import('./server.js')
+  api.setFailedImageReconciliationPersistenceForTests({ outbox: new InMemoryOutbox() as unknown as OutboxRepository })
   await new Promise<void>((resolve, reject) => { api.server.once('error', reject); api.server.listen(0, '127.0.0.1', () => resolve()) })
   const address = api.server.address()
   if (!address || typeof address === 'string') throw new Error('server did not bind')

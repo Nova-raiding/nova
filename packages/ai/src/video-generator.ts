@@ -1,4 +1,4 @@
-import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
+import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, parseRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, ProviderRequestFailedError, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
@@ -10,9 +10,20 @@ export interface VideoGenerationInput {
   context: unknown
   sourceImage?: string
   usageContext?: RelayUsageContext
+  beforeDispatch?: () => Promise<void>
+  onAccepted?: (context: VideoBillingContext) => Promise<void>
+}
+
+export interface VideoBillingContext extends RelayUsageContext {
+  settlementVerified?: boolean
+  providerJobId: string
+  model: string
+  providerRequestId?: string
 }
 
 export interface VideoGenerationResult {
+  settlementStatus?: 'pending_receipt' | 'settled'
+
   status: 'completed' | 'queued'
   videoUrl?: string
   providerJobId?: string
@@ -24,7 +35,7 @@ export interface VideoGenerationResult {
 
 export interface VideoGenerator {
   generate(input: VideoGenerationInput): Promise<VideoGenerationResult>
-  getStatus(providerJobId: string): Promise<VideoGenerationResult>
+  getStatus(providerJobId: string, billingContext?: VideoBillingContext): Promise<VideoGenerationResult>
 }
 
 export interface OpenAICompatibleVideoGeneratorOptions {
@@ -164,10 +175,15 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
           form.set('metadata', JSON.stringify({ img_url: input.sourceImage, ...(this.options.resolution ? { resolution: this.options.resolution } : {}) }))
         }
       }
+      let dispatchClaimed = false
       const response = await withProviderRequestRetry(async () => {
         if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
         if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'video_generate', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
         controller.signal.throwIfAborted()
+        if (!dispatchClaimed) {
+          await input.beforeDispatch?.()
+          dispatchClaimed = true
+        }
         let candidate: Response
         try {
           candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${this.options.path ?? '/videos'}`, {
@@ -213,20 +229,30 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
       // provider job: without the id neither `video.get` nor provider-side
       // reconciliation can identify work the relay has already queued (and may
       // already be billing for).
-      const acceptedJob = videoJobIdentity(payload)
+      const parsed = parseVideoResult(payload, providerKey)
+      const context = { ...input.usageContext, preauthorizationDurationSeconds: this.options.durationSeconds ?? 5, resolution: this.options.resolution, providerAttemptId: providerKey }
+      const observed = parseRelayUsage(payload, response.headers, { modality: 'video', model, context })
+      if (parsed.providerJobId && input.onAccepted) {
+        try { await input.onAccepted({ ...context, model, providerJobId: parsed.providerJobId, ...(observed?.providerRequestId ? { providerRequestId: observed.providerRequestId } : {}) }) }
+        catch (error) { throw Object.assign(new Error('accepted video job persistence requires reconciliation', { cause: error }), { code: 'MODEL_VIDEO_CONTEXT_PENDING', providerSucceeded: true, reconciliationRequired: true, providerJobId: parsed.providerJobId, actionId: input.usageContext?.actionId, runKey: input.usageContext?.runKey }) }
+      }
+      // Accepted asynchronous work is queryable, but never deliverable before actual metering.
+      if (parsed.providerJobId && observed?.metadata?.usage_observed !== true) {
+        return { status: 'queued', providerJobId: parsed.providerJobId, settlementStatus: 'pending_receipt' }
+      }
       try {
-        await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'video', model, context: { ...input.usageContext, preauthorizationDurationSeconds: this.options.durationSeconds ?? 5, resolution: this.options.resolution, providerAttemptId: providerKey } })
+        await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'video', model, context })
       } catch (error) {
-        if (acceptedJob.providerJobId && error instanceof Error) Object.assign(error, { ...acceptedJob, providerAttemptId: providerKey })
+        if (parsed.providerJobId && error instanceof Error) Object.assign(error, { ...videoJobIdentity(payload), providerAttemptId: providerKey })
         throw error
       }
-      return parseVideoResult(payload, providerKey)
+      return { ...parsed, settlementStatus: 'settled' }
     } finally {
       clearTimeout(timeout)
     }
   }
 
-  async getStatus(providerJobId: string): Promise<VideoGenerationResult> {
+  async getStatus(providerJobId: string, billingContext?: VideoBillingContext): Promise<VideoGenerationResult> {
     const jobId = providerJobId.trim()
     if (!jobId || jobId.length > 256 || /[\u0000-\u001f\u007f]/u.test(jobId)) throw new Error('provider job id is invalid')
     const controller = new AbortController()
@@ -257,7 +283,24 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
       let payload: unknown
       try { payload = JSON.parse(responseText) as unknown }
       catch (error) { throwProviderOutcomeUnknown(providerKey, 'video provider status response parsing', error) }
-      return parseVideoResult(payload, providerKey)
+      const parsed = { ...parseVideoResult(payload, providerKey) }
+      if (parsed.providerJobId && parsed.providerJobId !== jobId) throw new Error('VIDEO_PROVIDER_JOB_ID_MISMATCH')
+      if (!billingContext) return parsed
+      parsed.providerJobId = jobId
+      if (billingContext.providerJobId !== jobId) throw new Error('VIDEO_BILLING_CONTEXT_MISMATCH')
+      if (parsed.status !== 'completed') return { ...parsed, settlementStatus: 'pending_receipt' }
+      // Status HTTP request ids identify a read, not the original billable generation.
+      const billingHeaders = new Headers()
+      if (billingContext.providerRequestId) billingHeaders.set('x-oneapi-request-id', billingContext.providerRequestId)
+      else throw Object.assign(new Error('video generation request identity missing'), { code: 'MODEL_USAGE_RECEIPT_IDENTITY_MISSING', providerSucceeded: true })
+      const defaults = { modality: 'video' as const, model: billingContext.model, context: billingContext }
+      const usage = parseRelayUsage(payload, billingHeaders, defaults)
+      if (usage?.metadata?.usage_observed !== true) return billingContext.settlementVerified
+        ? { ...parsed, settlementStatus: 'settled' }
+        : { status: 'queued', providerJobId: jobId, settlementStatus: 'pending_receipt' }
+      const sink = this.options.usageSink
+      await emitRelayUsage(sink ? usage => sink({ ...usage, metadata: { ...usage.metadata, provider_job_id: jobId } }) : undefined, payload, billingHeaders, defaults)
+      return { ...parsed, settlementStatus: 'settled' }
     } finally {
       clearTimeout(timeout)
     }

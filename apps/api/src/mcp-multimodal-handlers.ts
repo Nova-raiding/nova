@@ -23,9 +23,13 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
     readArchivedGeneratedImages, createVideoRenderingRequest, createVideoGenerationRequest,
     videoGenerator, header, isExemptUnboundImageCandidateProduct, enforceAssetAccess,
     requireApprovedAssetForImageGeneration, recordActionSettlement, randomUUID,
-    assertVideoProviderJobScope, archiveCompletedVideo, modelSettlementDomainError,
+    assertVideoProviderJobScope, withOwnedVideoAction, generateOwnedVideo, archiveCompletedVideo, modelSettlementDomainError,
     publicImageJob, contentExecutionEvidence,
   } = dependencies
+  const archiveAcceptedVideo = async (rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>>) => {
+    try { return await archiveCompletedVideo(workspaceId, rendering) }
+    catch (error) { throw Object.assign(error instanceof Error ? error : new Error('video archive failed'), { providerSucceeded: true, reconciliationRequired: true }) }
+  }
   switch (method) {
     case 'multimodal.image.edit': {
       await observeLegacyWalletShadow(workspaceId)
@@ -143,64 +147,72 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
       const modelRunKey = request.value.modality === 'video' && request.value.output === 'rendering'
         ? `video:${walletDebitKey}`
         : walletDebitKey
-      const creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
-      await observeLegacyWalletShadow(workspaceId)
-      let rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>> | undefined
-      let generatedImages: string[] | undefined
-      let imageJob: ReturnType<typeof service.enqueueImageGeneration> | undefined
-      let generatedText: Awaited<ReturnType<typeof service.generateOneSentenceText>> | undefined
-      try {
-        if (request.value.modality === 'text') {
-          generatedText = await service.generateOneSentenceText({ workspaceId, productId: request.value.context.product.id, prompt: request.value.prompt, actionId: walletDebitKey })
+      const executeVideoAction = async (beforeDispatch?: () => Promise<void>) => {
+        let creativeReservation: Awaited<ReturnType<typeof reserveCreativePointsForModel>> = null
+        let rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>> | undefined
+        let generatedImages: string[] | undefined
+        let imageJob: ReturnType<typeof service.enqueueImageGeneration> | undefined
+        let generatedText: Awaited<ReturnType<typeof service.generateOneSentenceText>> | undefined
+        try {
+          creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
+          await observeLegacyWalletShadow(workspaceId)
+          if (request.value.modality === 'text') {
+            generatedText = await service.generateOneSentenceText({ workspaceId, productId: request.value.context.product.id, prompt: request.value.prompt, actionId: walletDebitKey })
+          }
+          if (request.value.modality === 'video' && request.value.output !== 'rendering') {
+            generatedText = await service.generateOneSentenceText({ workspaceId, productId: request.value.context.product.id, prompt: `${request.value.output}：${request.value.prompt}`, actionId: walletDebitKey })
+          }
+          if (request.value.modality === 'image') {
+            const product = service.products.get(request.value.context.product.id)
+            if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '多模态图片请求引用的商品不存在或不属于当前工作区', 404)
+            if (!product.factsConfirmed) throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '多模态图片生成需要先确认商品事实', 409)
+            service.assertBrandVisualGenerationReady(workspaceId, product.platform)
+            imageJob = service.enqueueImageGeneration({ workspaceId, productId: product.id, direction: request.value.prompt, count: 1, idempotencyKey: `multimodal-image:${multimodalKey}` })
+            const completed = await service.completeImageGeneration({ workspaceId, jobId: imageJob.id, runKey: modelRunKey, sourceImages: await sourceImagesForImageJob(workspaceId, imageJob) })
+            // Multimodal image requests must converge through the same durable
+            // candidate archive as catalog.image.generate. Returning the raw
+            // provider payload here used to make the image visible in ChatGPT
+            // while leaving no selectable/reviewable candidate behind.
+            const archived = await archiveGeneratedImages(workspaceId, imageJob.id, completed.images)
+            await persistSnapshot(workspaceId, 'image_generation_job', archived, archived as unknown as Record<string, unknown>)
+            generatedImages = imageJobOutputsAreClean(archived)
+              ? await readArchivedGeneratedImages(workspaceId, archived)
+              : []
+          }
+          if (request.value.modality === 'video' && (request.value.output as string) === 'rendering') {
+            if (!videoGenerator) throw new DomainError('VIDEO_GENERATION_NOT_CONFIGURED', '未配置视频生成中转服务', 503, { provider_executed: false })
+            rendering = await archiveAcceptedVideo(await generateOwnedVideo({ beforeDispatch, prompt: request.value.prompt, output: 'rendering', context: request.value.context, usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey } }))
+          }
+          if (generatedText) requireRuleSafeGenerationText(rulePreflight, [generatedText], '多模态生成结果命中当前平台规则禁用表达')
+        } catch (error) {
+          if (!providerSucceededButSettlementPending(error)) {
+            try {
+            await releaseReservedModelPoints(workspaceId, walletDebitKey, '多模态生成失败', creativeReservation)
+            await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '多模态生成 provider 调用失败' })
+            } catch (cleanupError) { throw Object.assign(cleanupError instanceof Error ? cleanupError : new Error('video cleanup failed'), { reconciliationRequired: true }) }
+          }
+          throw error
         }
-        if (request.value.modality === 'video' && request.value.output !== 'rendering') {
-          generatedText = await service.generateOneSentenceText({ workspaceId, productId: request.value.context.product.id, prompt: `${request.value.output}：${request.value.prompt}`, actionId: walletDebitKey })
+        const providerExecuted = request.value.modality === 'text' || (request.value.modality === 'video' && request.value.output !== 'rendering')
+          ? Boolean(contentGenerator)
+          : request.value.modality === 'image' ? Boolean(imageGenerator) : Boolean(rendering)
+        const execution = { status: rendering ? rendering.status : generatedImages || generatedText ? 'completed' as const : 'requested' as const, ...executionContract(request.value.modality === 'text' ? 'content' : request.value.modality, providerExecuted) }
+        try {
+          await persistEvent(workspaceId, `multimodal_${randomUUID()}`, rendering?.status === 'completed' || generatedImages || generatedText ? 'multimodal.generation.completed' : 'multimodal.generation.requested', 1, { ...request.value as unknown as Record<string, unknown>, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(imageJob ? { image_job_id: imageJob.id } : {}), ...(generatedText ? { content: generatedText } : {}), ...(generatedImages ? { images: generatedImages } : {}), ...(rendering ? { rendering } : {}) })
+        } catch (error) {
+          if (!providerExecuted) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '多模态结果记录失败' })
+          throw error
         }
-        if (request.value.modality === 'image') {
-          const product = service.products.get(request.value.context.product.id)
-          if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '多模态图片请求引用的商品不存在或不属于当前工作区', 404)
-          if (!product.factsConfirmed) throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '多模态图片生成需要先确认商品事实', 409)
-          service.assertBrandVisualGenerationReady(workspaceId, product.platform)
-          imageJob = service.enqueueImageGeneration({ workspaceId, productId: product.id, direction: request.value.prompt, count: 1, idempotencyKey: `multimodal-image:${multimodalKey}` })
-          const completed = await service.completeImageGeneration({ workspaceId, jobId: imageJob.id, runKey: modelRunKey, sourceImages: await sourceImagesForImageJob(workspaceId, imageJob) })
-          // Multimodal image requests must converge through the same durable
-          // candidate archive as catalog.image.generate. Returning the raw
-          // provider payload here used to make the image visible in ChatGPT
-          // while leaving no selectable/reviewable candidate behind.
-          const archived = await archiveGeneratedImages(workspaceId, imageJob.id, completed.images)
-          await persistSnapshot(workspaceId, 'image_generation_job', archived, archived as unknown as Record<string, unknown>)
-          generatedImages = imageJobOutputsAreClean(archived)
-            ? await readArchivedGeneratedImages(workspaceId, archived)
-            : []
-        }
-        if (request.value.modality === 'video' && (request.value.output as string) === 'rendering') {
-          if (!videoGenerator) throw new DomainError('VIDEO_GENERATION_NOT_CONFIGURED', '未配置视频生成中转服务', 503, { provider_executed: false })
-          rendering = await archiveCompletedVideo(workspaceId, await videoGenerator.generate({ prompt: request.value.prompt, output: 'rendering', context: request.value.context, usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey } }))
-        }
-        if (generatedText) requireRuleSafeGenerationText(rulePreflight, [generatedText], '多模态生成结果命中当前平台规则禁用表达')
-      } catch (error) {
-        if (!providerSucceededButSettlementPending(error)) {
-          await releaseReservedModelPoints(workspaceId, walletDebitKey, '多模态生成失败', creativeReservation)
-          await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '多模态生成 provider 调用失败' })
-        }
-        throw error
+        // A completed provider artifact is still quarantined until the isolated
+        // scanner promotes it. Keep the relay's short-lived URL inside the
+        // archive/event boundary; the generic multimodal route must follow the
+        // same contract as multimodal.video.request/get and never hand callers
+        // an unarchived provider URL.
+        return result({ ...request.value, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedText ? { content: generatedText } : {}), ...(imageJob ? { image_job_id: imageJob.id } : {}), ...(generatedImages ? { images: generatedImages } : {}), ...(rendering ? { rendering: userFacingVideoRendering(rendering) } : {}) })
       }
-      const providerExecuted = request.value.modality === 'text' || (request.value.modality === 'video' && request.value.output !== 'rendering')
-        ? Boolean(contentGenerator)
-        : request.value.modality === 'image' ? Boolean(imageGenerator) : Boolean(rendering)
-      const execution = { status: rendering ? rendering.status : generatedImages || generatedText ? 'completed' as const : 'requested' as const, ...executionContract(request.value.modality === 'text' ? 'content' : request.value.modality, providerExecuted) }
-      try {
-        await persistEvent(workspaceId, `multimodal_${randomUUID()}`, rendering || generatedImages || generatedText ? 'multimodal.generation.completed' : 'multimodal.generation.requested', 1, { ...request.value as unknown as Record<string, unknown>, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(imageJob ? { image_job_id: imageJob.id } : {}), ...(generatedText ? { content: generatedText } : {}), ...(generatedImages ? { images: generatedImages } : {}), ...(rendering ? { rendering } : {}) })
-      } catch (error) {
-        if (!providerExecuted) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '多模态结果记录失败' })
-        throw error
-      }
-      // A completed provider artifact is still quarantined until the isolated
-      // scanner promotes it. Keep the relay's short-lived URL inside the
-      // archive/event boundary; the generic multimodal route must follow the
-      // same contract as multimodal.video.request/get and never hand callers
-      // an unarchived provider URL.
-      return result({ ...request.value, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedText ? { content: generatedText } : {}), ...(imageJob ? { image_job_id: imageJob.id } : {}), ...(generatedImages ? { images: generatedImages } : {}), ...(rendering ? { rendering: userFacingVideoRendering(rendering) } : {}) })
+      return request.value.modality === 'video' && request.value.output === 'rendering'
+        ? withOwnedVideoAction(workspaceId, walletDebitKey, request.value, executeVideoAction, providerJobId => result({ execution: { status: 'queued', ...executionContract('video', true) }, rendering: { status: 'queued', providerJobId, settlementStatus: 'pending_receipt' } }))
+        : executeVideoAction()
     }
     case 'multimodal.video.request': {
       let context: GenerationContext
@@ -250,88 +262,96 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
       const videoRequestKey = suppliedVideoRequestKey || randomUUID()
       const walletDebitKey = `video:${videoRequestKey}`
       const modelRunKey = request.value.output === 'rendering' ? `video:${walletDebitKey}` : walletDebitKey
-      const creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
-      // Persist the authorization before calling the provider. Model usage
-      // receipts carry this action key and the ledger enforces the FK, so a
-      // successful provider request can be settled durably and idempotently.
-      await recordActionSettlement({
-        workspaceId,
-        actionKey: walletDebitKey,
-        actionKind: 'model_video',
-        settlement: 'included_quota',
-        amountFen: 0,
-        actorId: requestActor(req),
-        description: '商品视频生成（商品展示、卖点字幕与剪辑）',
-        settlementStatus: 'authorized',
-      })
-      await observeLegacyWalletShadow(workspaceId)
-      let rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>> | undefined
-      let generatedPlan: Awaited<ReturnType<typeof service.generateOneSentenceText>> | undefined
-      try {
-        if (request.value.output !== 'rendering') generatedPlan = await service.generateOneSentenceText({
-          workspaceId,
-          productId: request.value.context.product.id,
-          prompt: `${request.value.output}：${request.value.prompt}`,
-          actionId: walletDebitKey,
-          // Script/storyboard output is a reviewable creative candidate. The
-          // dedicated schema keeps the provider from falling into the much
-          // larger commerce-content contract and inventing fact modules.
-          candidateOnly: true,
-          candidateFormat: 'video_storyboard',
-        })
-        if ((request.value.output as string) === 'rendering') {
-          if (!videoGenerator) throw new DomainError('VIDEO_GENERATION_NOT_CONFIGURED', '未配置视频生成中转服务', 503, { provider_executed: false })
-          rendering = await archiveCompletedVideo(workspaceId, await videoGenerator.generate({ prompt: request.value.prompt, output: 'rendering', context: request.value.context, ...(sourceImage ? { sourceImage } : {}), usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey } }))
+      const executeVideoAction = async (beforeDispatch?: () => Promise<void>) => {
+        let creativeReservation: Awaited<ReturnType<typeof reserveCreativePointsForModel>> = null
+        let rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>> | undefined
+        let generatedPlan: Awaited<ReturnType<typeof service.generateOneSentenceText>> | undefined
+        try {
+          creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
+          // Persist the authorization before calling the provider. Model usage
+          // receipts carry this action key and the ledger enforces the FK, so a
+          // successful provider request can be settled durably and idempotently.
+          await recordActionSettlement({
+            workspaceId,
+            actionKey: walletDebitKey,
+            actionKind: 'model_video',
+            settlement: 'included_quota',
+            amountFen: 0,
+            actorId: requestActor(req),
+            description: '商品视频生成（商品展示、卖点字幕与剪辑）',
+            settlementStatus: 'authorized',
+          })
+          await observeLegacyWalletShadow(workspaceId)
+          if (request.value.output !== 'rendering') generatedPlan = await service.generateOneSentenceText({
+            workspaceId,
+            productId: request.value.context.product.id,
+            prompt: `${request.value.output}：${request.value.prompt}`,
+            actionId: walletDebitKey,
+            // Script/storyboard output is a reviewable creative candidate. The
+            // dedicated schema keeps the provider from falling into the much
+            // larger commerce-content contract and inventing fact modules.
+            candidateOnly: true,
+            candidateFormat: 'video_storyboard',
+          })
+          if ((request.value.output as string) === 'rendering') {
+            if (!videoGenerator) throw new DomainError('VIDEO_GENERATION_NOT_CONFIGURED', '未配置视频生成中转服务', 503, { provider_executed: false })
+            rendering = await archiveAcceptedVideo(await generateOwnedVideo({ beforeDispatch, prompt: request.value.prompt, output: 'rendering', context: request.value.context, ...(sourceImage ? { sourceImage } : {}), usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey } }))
+          }
+          if (generatedPlan) requireRuleSafeGenerationText(rulePreflight, [generatedPlan], '视频脚本或分镜命中当前平台规则禁用表达')
+        } catch (error) {
+          if (!providerSucceededButSettlementPending(error)) {
+            try {
+            await releaseReservedModelPoints(workspaceId, walletDebitKey, '视频生成失败', creativeReservation)
+            await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '视频生成 provider 调用失败' })
+            } catch (cleanupError) { throw Object.assign(cleanupError instanceof Error ? cleanupError : new Error('video cleanup failed'), { reconciliationRequired: true }) }
+          }
+          throw error
         }
-        if (generatedPlan) requireRuleSafeGenerationText(rulePreflight, [generatedPlan], '视频脚本或分镜命中当前平台规则禁用表达')
-      } catch (error) {
-        if (!providerSucceededButSettlementPending(error)) {
-          await releaseReservedModelPoints(workspaceId, walletDebitKey, '视频生成失败', creativeReservation)
-          await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '视频生成 provider 调用失败' })
+        const providerExecuted = Boolean(rendering ? videoGenerator : generatedPlan && contentGenerator)
+        const textExecution = generatedPlan && contentGenerator
+          ? await contentExecutionEvidence(workspaceId, walletDebitKey)
+          : undefined
+        const execution = {
+          status: rendering ? rendering.status : generatedPlan ? 'completed' as const : 'requested' as const,
+          ...executionContract('video', providerExecuted, generatedPlan && contentGenerator ? 'text-relay' : undefined),
+          ...(textExecution ? {
+            providerRequestId: textExecution.providerRequestId,
+            ...(textExecution.usage ? { usage: textExecution.usage } : {}),
+            ...(textExecution.costCny !== undefined ? { costCny: textExecution.costCny } : {}),
+            ...(textExecution.settlementStatus ? { settlementStatus: textExecution.settlementStatus } : {}),
+          } : {}),
         }
-        throw error
+        try {
+          // Keep the event truthful: an accepted provider job is only queued
+          // until a later `video.get` returns a completed HTTPS artifact.  The
+          // requested event remains the durable workspace ownership anchor used
+          // to authorize subsequent status queries.
+          const eventType = rendering?.status === 'completed' || generatedPlan
+            ? 'multimodal.video_completed'
+            : 'multimodal.video.requested'
+          await persistEvent(workspaceId, `video_${randomUUID()}`, eventType, 1, { ...request.value as unknown as Record<string, unknown>, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering } : {}) })
+        } catch (error) {
+          if (!providerExecuted) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '视频结果记录失败' })
+          throw error
+        }
+        return result({ ...request.value, candidate_only: candidateOnly, ...(candidateOnly ? { candidate_status: '未绑定商品、仅候选、不可发布' } : {}), execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering: userFacingVideoRendering(rendering) } : {}) })
       }
-      const providerExecuted = Boolean(rendering ? videoGenerator : generatedPlan && contentGenerator)
-      const textExecution = generatedPlan && contentGenerator
-        ? await contentExecutionEvidence(workspaceId, walletDebitKey)
-        : undefined
-      const execution = {
-        status: rendering ? rendering.status : generatedPlan ? 'completed' as const : 'requested' as const,
-        ...executionContract('video', providerExecuted, generatedPlan && contentGenerator ? 'text-relay' : undefined),
-        ...(textExecution ? {
-          providerRequestId: textExecution.providerRequestId,
-          ...(textExecution.usage ? { usage: textExecution.usage } : {}),
-          ...(textExecution.costCny !== undefined ? { costCny: textExecution.costCny } : {}),
-          ...(textExecution.settlementStatus ? { settlementStatus: textExecution.settlementStatus } : {}),
-        } : {}),
-      }
-      try {
-        // Keep the event truthful: an accepted provider job is only queued
-        // until a later `video.get` returns a completed HTTPS artifact.  The
-        // requested event remains the durable workspace ownership anchor used
-        // to authorize subsequent status queries.
-        const eventType = rendering?.status === 'completed' || generatedPlan
-          ? 'multimodal.video_completed'
-          : 'multimodal.video.requested'
-        await persistEvent(workspaceId, `video_${randomUUID()}`, eventType, 1, { ...request.value as unknown as Record<string, unknown>, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering } : {}) })
-      } catch (error) {
-        if (!providerExecuted) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '视频结果记录失败' })
-        throw error
-      }
-      return result({ ...request.value, candidate_only: candidateOnly, ...(candidateOnly ? { candidate_status: '未绑定商品、仅候选、不可发布' } : {}), execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering: userFacingVideoRendering(rendering) } : {}) })
+      return request.value.output === 'rendering'
+        ? withOwnedVideoAction(workspaceId, walletDebitKey, { ...request.value, sourceImageSha256: sourceImage ? createHash('sha256').update(sourceImage).digest('hex') : null }, executeVideoAction, providerJobId => result({ execution: { status: 'queued', ...executionContract('video', true) }, rendering: { status: 'queued', providerJobId, settlementStatus: 'pending_receipt' } }))
+        : executeVideoAction()
     }
     case 'multimodal.video.get': {
       if (!videoGenerator) throw new DomainError('VIDEO_GENERATION_NOT_CONFIGURED', '未配置视频生成中转服务', 503, { provider_executed: false })
       const providerJobId = required(params, 'provider_job_id')
       try {
-        await assertVideoProviderJobScope(workspaceId, providerJobId)
-        const rendering = await archiveCompletedVideo(workspaceId, await videoGenerator.getStatus(providerJobId))
+        const billingContext = await assertVideoProviderJobScope(workspaceId, providerJobId)
+        const observed = await videoGenerator.getStatus(providerJobId, billingContext)
+        if (observed.settlementStatus !== 'settled') return result({ provider_job_id: providerJobId, status: 'queued', settlement_status: 'pending_receipt', execution: executionContract('video', true) })
+        const rendering = await archiveCompletedVideo(workspaceId, observed)
         await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', 1, { provider_job_id: providerJobId, ...rendering })
         return result({ provider_job_id: providerJobId, execution: executionContract('video', true), ...(rendering.assetId ? { asset_id: rendering.assetId, archive_state: rendering.archiveState, ...(rendering.archiveState === 'archived' ? { download_path: `/v1/assets/${encodeURIComponent(rendering.assetId)}/download` } : { availabilityWarning: '视频已安全归档到隔离区，平台自动安全扫描通过后才可下载或发布；无需商家或运营人员操作' }) } : {}), ...userFacingVideoRendering(rendering) })
       } catch (error) {
         if (error instanceof DomainError) throw error
-        const archived = service.findAssetBySourceProviderJobId(workspaceId, providerJobId)
-        if (archived) return result({ provider_job_id: providerJobId, status: 'completed', asset_id: archived.id, archive_state: isUsableAssetWithoutScan(archived, demoUnscannedAssetsEnabled()) ? 'archived' : 'quarantined', ...(isUsableAssetWithoutScan(archived, demoUnscannedAssetsEnabled()) ? { download_path: `/v1/assets/${encodeURIComponent(archived.id)}/download` } : { availabilityWarning: '视频已安全归档到隔离区，平台自动安全扫描通过后才可下载或发布；无需商家或运营人员操作' }), execution: executionContract('video', false) })
         const providerFailure = modelSettlementDomainError(error)
         if (providerFailure) throw providerFailure
         throw new DomainError('VIDEO_PROVIDER_STATUS_FAILED', error instanceof Error ? error.message : '视频 provider 状态查询失败', 503)

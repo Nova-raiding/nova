@@ -1,8 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 const videoRelay = vi.hoisted(() => ({
-  generate: vi.fn(async () => ({ status: 'completed' as const, providerJobId: 'video-job-http-e2e', videoUrl: 'https://cdn.example.test/video-job-http-e2e.mp4' })),
-  getStatus: vi.fn(async (providerJobId: string) => ({ status: 'completed' as const, providerJobId, videoUrl: 'https://cdn.example.test/video-job-http-e2e.mp4' })),
+  generate: vi.fn(async (input: import('../../../packages/ai/src/video-generator.js').VideoGenerationInput) => {
+    await input.beforeDispatch?.()
+    const providerJobId = input.usageContext?.actionId?.startsWith('multimodal:') ? 'generic-video-job-http-e2e' : 'video-job-http-e2e'
+    await input.onAccepted?.({ ...input.usageContext, providerJobId, model: 'video-fixture', providerRequestId: `request-${providerJobId}` })
+    return { status: 'completed' as const, settlementStatus: 'settled' as const, providerJobId, videoUrl: 'https://cdn.example.test/video-job-http-e2e.mp4' }
+  }),
+  getStatus: vi.fn(async (providerJobId: string) => ({ status: 'completed' as const, settlementStatus: 'settled' as const, providerJobId, videoUrl: 'https://cdn.example.test/video-job-http-e2e.mp4' })),
 }))
 
 vi.mock('../../../packages/ai/src/video-generator.js', () => ({
@@ -323,7 +328,7 @@ describe('content and knowledge MCP methods over real HTTP', () => {
     })
     expect(genericVideo.status).toBe(200)
     expect(genericVideo.body.error).toBeNull()
-    expect((genericVideo.body.data?.result as any).rendering).toMatchObject({ providerJobId: 'video-job-http-e2e' })
+    expect((genericVideo.body.data?.result as any).rendering).toMatchObject({ providerJobId: 'generic-video-job-http-e2e' })
     expect((genericVideo.body.data?.result as any).rendering.videoUrl).toBeUndefined()
 
     const missingRequired = await callMcp(tokens.rules, workspaceId, 'generation.get')

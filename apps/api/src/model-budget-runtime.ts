@@ -73,7 +73,12 @@ export function createModelBudgetRuntime(deps: {
       await deps.recheckBeforeProvider({ operation: kind, workspaceId }, false)
       return await invoke()
     } catch (error) {
-      if (!deps.providerSucceededButSettlementPending(error)) await releaseDailyModelBudget(workspaceId, actionId)
+      if (!deps.providerSucceededButSettlementPending(error)) {
+        try { await releaseDailyModelBudget(workspaceId, actionId) }
+        catch (releaseError) {
+          throw Object.assign(releaseError instanceof Error ? releaseError : new Error('model budget release outcome is unknown'), { reconciliationRequired: true })
+        }
+      }
       throw error
     }
   }
