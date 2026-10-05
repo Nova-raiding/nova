@@ -503,6 +503,13 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       }
       const images = commercialReady && imageJobOutputsAreClean(job, visualRef) ? await readArchivedGeneratedImages(workspaceId, job, visualRef) : []
       const selectedImages = images
+      // The demo opt-in permits reading archived unscanned bytes; it never
+      // turns them into a successful scanner result. Carry that server-side
+      // decision to the local plugin so it does not wait for a scan event
+      // that this explicit deferred-scanner profile will never enqueue.
+      const demoUnscannedDelivery = selectedImages.length > 0 && demoUnscannedAssetsEnabled()
+        && (job.outputs ?? []).filter(output => !visualRef || output.visualRef === visualRef)
+          .some(output => output.assetId && service.assets.get(output.assetId)?.scanStatus === 'unscanned')
       const selectedOutputs = selectedImages.length
         ? (job.outputs ?? []).filter(output => !visualRef || output.visualRef === visualRef)
         : []
@@ -516,7 +523,7 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       const reconciliationRequired = !commercialReady || execution?.state === 'provider_reserved' || execution?.state === 'provider_dispatching' || execution?.state === 'provider_started' || execution?.state === 'outcome_unknown'
       const creativePoints = await imageCreativePointsEvidence(workspaceId, undefined, `image:${job.idempotencyKey}`)
       imageTrace('get.result', { workspace_id: workspaceId, job_id: job.id, state: job.state, archive_state: job.archiveState, execution_state: execution?.state ?? 'none', selected_image_count: selectedImages.length, candidate_count: commercialReady ? job.outputs?.length ?? 0 : 0, reconciliation_required: reconciliationRequired })
-      return ({ job_id: job.id, creative_points: creativePoints, execution: executionContract('image', Boolean(imageGenerator)), execution_state: execution?.state ?? null, provider_request_id: execution?.providerRequestId ?? null, execution_attempt: execution?.attempt ?? null, reconciliation_required: reconciliationRequired, ...(execution?.errorCode ? { error_code: execution.errorCode, error_message: execution.errorMessage ?? null } : {}), next_action: !commercialReady || execution?.state === 'outcome_unknown' || execution?.state === 'provider_started' ? { type: 'reconcile', label: '中转结果与结算证据待对账，暂不重试', allowed: true } : { type: 'refresh_status', label: '刷新任务状态', allowed: true }, ...(selectedImages.length ? { images: selectedImages, ...(imageUrls.length ? { image_urls: imageUrls, download_urls: imageUrls } : {}), selection_tickets: selectionTickets, review: reviewProductImagesForMcp(selectedImages) } : { availabilityWarning: !commercialReady ? '图片结果尚未通过原始用量、成本与创意点结算核验；已保留待对账，不会返回候选或自动重复扣费。' : execution?.state === 'outcome_unknown' ? '中转服务返回结果不确定，已停止自动重试，等待对账；不会重复扣费。' : '平台正在自动执行交付前安全扫描，完成前不会返回图片内容，商家无需操作。' }), job: publicImageJobForCommercialRead(job, commercialReady), historicalCandidate: true, platformPublished: false })
+      return ({ job_id: job.id, creative_points: creativePoints, execution: executionContract('image', Boolean(imageGenerator)), execution_state: execution?.state ?? null, provider_request_id: execution?.providerRequestId ?? null, execution_attempt: execution?.attempt ?? null, reconciliation_required: reconciliationRequired, ...(execution?.errorCode ? { error_code: execution.errorCode, error_message: execution.errorMessage ?? null } : {}), next_action: !commercialReady || execution?.state === 'outcome_unknown' || execution?.state === 'provider_started' ? { type: 'reconcile', label: '中转结果与结算证据待对账，暂不重试', allowed: true } : { type: 'refresh_status', label: '刷新任务状态', allowed: true }, ...(selectedImages.length ? { images: selectedImages, ...(demoUnscannedDelivery ? { image_delivery_policy: { mode: 'demo_unscanned', scan_verified: false, publishable: false } } : {}), ...(imageUrls.length ? { image_urls: imageUrls, download_urls: imageUrls } : {}), selection_tickets: selectionTickets, review: reviewProductImagesForMcp(selectedImages) } : { availabilityWarning: !commercialReady ? '图片结果尚未通过原始用量、成本与创意点结算核验；已保留待对账，不会返回候选或自动重复扣费。' : execution?.state === 'outcome_unknown' ? '中转服务返回结果不确定，已停止自动重试，等待对账；不会重复扣费。' : '平台正在自动执行交付前安全扫描，完成前不会返回图片内容，商家无需操作。' }), job: publicImageJobForCommercialRead(job, commercialReady), historicalCandidate: true, platformPublished: false })
     }
     case 'catalog.image.select': {
       const jobId = required(params, 'job_id')

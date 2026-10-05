@@ -53,7 +53,16 @@ describe('explicit demo unscanned generated image', () => {
     expect(service.assets.get(job.candidates[0].assetId)?.scanReceiptId).toBeUndefined()
     const get = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'catalog.image.get', params: { job_id: job.jobId } }) }).then(response => response.json()) as any
     expect(get.error).toBeNull()
+    expect(get.data.result.image_delivery_policy).toEqual({ mode: 'demo_unscanned', scan_verified: false, publishable: false })
+    expect(get.data.result.job.candidates[0].scanStatus).toBe('unscanned')
     expect(get.data.result.images).toHaveLength(1)
     expect(get.data.result.images[0]).toMatch(/^data:image\//u)
+    vi.stubEnv('DEMO_UNSCANNED_ASSETS_ENABLED', 'false')
+    const restricted = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'catalog.image.get', params: { job_id: job.jobId } }) }).then(response => response.json()) as any
+    expect(restricted.error).toBeNull()
+    expect(restricted.data.result.image_delivery_policy).toBeUndefined()
+    expect(restricted.data.result.images).toBeUndefined()
+    expect(service.assets.get(job.candidates[0].assetId)?.scanStatus).toBe('unscanned')
+
   })
 })
