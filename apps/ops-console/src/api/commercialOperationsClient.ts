@@ -180,6 +180,19 @@ function pageRows(value: unknown, method: string): { rows: RecordValue[]; total:
   return { rows, total, truncated, nextCursor };
 }
 
+export function parsePurchaseCustomers(value: unknown) {
+  const method = "ops.users.list";
+  return pageRows(value, method).rows.map(row => ({
+    workspaceId: requiredText(row,method,"workspaceId","workspaceId","workspace_id"),
+    memberId: requiredText(row,method,"memberId","memberId","member_id","id"),
+    customerId: requiredText(row,method,"externalSubject","externalSubject","external_subject"),
+    name: requiredText(row,method,"displayName","displayName","display_name"),
+    enterpriseName: optionalText(pick(row,"enterpriseName","enterprise_name")),
+    workspaceStatus: optionalText(pick(row,"workspaceStatus","workspace_status")),
+    status: requiredText(row,method,"status","status"),
+  }));
+}
+
 export interface CommercialPageRequest { cursor?: string; limit?: number }
 export type CommercialPageInput = CommercialPageRequest | AbortSignal | undefined;
 
@@ -811,9 +824,7 @@ export const commercialOperationsClient = {
   verifyPrivateTrialTransfer: (workspace: string, creditId: string, orderId: string, paymentSubjectRef: string, providerEventId: string, providerOrderId: string, nonce: string, payloadHash: string, paidAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialPaymentVerify, { target_workspace_id: workspace, credit_id: creditId, order_id: orderId, payment_subject_ref: paymentSubjectRef, provider_event_id: providerEventId, provider_order_id: providerOrderId, nonce, payload_hash: payloadHash, paid_at: paidAt, idempotency_key: operationId("private_trial_transfer_verify"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "manual_transfer_verified" }) }, { signal }),
   verifyCommercialOrderTransfer: (workspace: string, orderId: string, paymentSubjectRef: string, providerEventId: string, providerOrderId: string, nonce: string, payloadHash: string, paidAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.orderPaymentVerify, { target_workspace_id: workspace, order_id: orderId, payment_subject_ref: paymentSubjectRef, provider_event_id: providerEventId, provider_order_id: providerOrderId, nonce, payload_hash: payloadHash, paid_at: paidAt, idempotency_key: operationId("commercial_order_transfer_verify"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "commercial_order_manual_transfer_verified" }) }, { signal }),
   searchPurchaseCustomers: async (query: string, signal?: AbortSignal) => {
-      const method = "ops.users.list";
-    const rows = pageRows(await rpc(method, { query: query.trim(), account_type: "merchant", limit: "50", offset: "0" }, { signal }), method).rows;
-    return rows.map(row => ({ workspaceId: requiredText(row,method,"workspaceId","workspaceId","workspace_id"), memberId: requiredText(row,method,"memberId","memberId","member_id"), customerId: requiredText(row,method,"externalSubject","externalSubject","external_subject"), name: requiredText(row,method,"displayName","displayName","display_name"), enterpriseName: optionalText(pick(row,"enterpriseName","enterprise_name")), workspaceStatus: optionalText(pick(row,"workspaceStatus","workspace_status")), status: requiredText(row,method,"status","status") }));
+    return parsePurchaseCustomers(await rpc("ops.users.list", { query: query.trim(), account_type: "merchant", limit: "50", offset: "0" }, { signal }));
   },
   createAssistedUpgradeQuote: (workspace: string, skuCode: string, idempotencyKey: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.assistedUpgradeQuoteCreate, { target_workspace_id: workspace, target_sku_code: skuCode, idempotency_key: idempotencyKey }, { signal }).then(parseAssistedUpgradeQuote),
   getAssistedUpgradeQuote: (workspace: string, quoteId: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.assistedUpgradeQuoteGet, { target_workspace_id: workspace, upgrade_quote_id: quoteId }, { signal }),

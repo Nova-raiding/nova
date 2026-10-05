@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   parseAccessBlocks,
   parseCatalog,
@@ -13,9 +13,28 @@ import {
   positiveCommercialFen,
   parseCommercialReceipt,
   parseAllocationPreview,
+  parsePurchaseCustomers,
 } from "./commercialOperationsClient.js";
+import { saveOpsConnectionConfig } from "./opsClient.js";
+
+const storage = () => {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key: string) => values.get(key) ?? "",
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+    clear: () => { values.clear(); },
+  };
+};
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("commercial operations DTO parsers", () => {
+  it("maps the real ops.users.list membership id into an assisted-purchase beneficiary", () => {
+    expect(parsePurchaseCustomers({ items: [{ id: "member_1", externalSubject: "merchant@example.test", displayName: "Merchant", enterpriseName: "Merchant Co", workspaceId: "ws_merchant", status: "active", workspaceStatus: "active" }], total: 1, truncated: false })).toEqual([
+      { workspaceId: "ws_merchant", memberId: "member_1", customerId: "merchant@example.test", name: "Merchant", enterpriseName: "Merchant Co", workspaceStatus: "active", status: "active" },
+    ]);
+  });
   it("preserves initial catalog sale revision zero for new SKU approval actions", () => {
     const result = parseCatalog({ items: [{
       id: "sku_new_v1", sku_code: "new_sku", name: "新草稿", type: "onboarding",

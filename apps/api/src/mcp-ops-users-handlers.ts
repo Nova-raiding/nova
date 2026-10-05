@@ -60,6 +60,9 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
       if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 到 100 的整数', 400)
       if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'offset 必须是 0 到 1000000 的整数', 400)
       const allWorkspaceIds = persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [...knownWorkspaces]
+      // Local Postgres fixtures may be created after the API process starts.
+      // The durable repository is authoritative for its workspace inventory;
+      // merge process-local IDs only for adapters without that inventory.
       const scopedWorkspaceIds = targetWorkspaceId ? allWorkspaceIds.filter(id => id === targetWorkspaceId) : allWorkspaceIds
       const memberRepository = persistence.members ?? memoryMembers
       const platformAccounts = accountType === 'merchant' ? [] : await passwordAuthRepository.listAccounts()
