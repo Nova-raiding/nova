@@ -54,7 +54,7 @@ export interface CompletedImageUnknownAck {
 }
 
 export interface OutboxRepository {
-  listCompletedImageUnknown?(workspaceId: string, limit: number): Promise<OutboxEvent[]>
+  listCompletedImageUnknown?(workspaceId: string, limit: number, after?: { unknownAt: string; eventId: string }): Promise<OutboxEvent[]>
   ackCompletedImageUnknown?(input: CompletedImageUnknownAck): Promise<boolean>
   append(input: OutboxEventInput): Promise<OutboxEvent>
   pending(workspaceId: string, limit?: number): Promise<OutboxEvent[]>
@@ -211,13 +211,14 @@ function toOutboxEvent(row: OutboxRow): OutboxEvent {
 export class PostgresOutboxRepository implements DurableOutboxRepository {
   constructor(private readonly pool: SqlPool) {}
 
-  async listCompletedImageUnknown(workspaceId: string, limit: number): Promise<OutboxEvent[]> {
+  async listCompletedImageUnknown(workspaceId: string, limit: number, after?: { unknownAt: string; eventId: string }): Promise<OutboxEvent[]> {
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
       const result = await client.query<OutboxRow & { exact_unknown_at: string }>(`SELECT o.*, o.unknown_at::text AS exact_unknown_at
         FROM outbox_events o JOIN image_generation_executions e ON e.workspace_id=o.workspace_id AND e.job_id=o.aggregate_id AND e.event_id=o.id
         WHERE o.workspace_id=$1 AND o.event_type='image.generation.requested' AND o.published_at IS NULL AND o.unknown_at IS NOT NULL
           AND o.lease_token IS NULL AND o.lease_until IS NULL AND e.state='completed'
-        ORDER BY o.unknown_at,o.id LIMIT $2`, [workspaceId, limit])
+          AND ($3::timestamptz IS NULL OR (o.unknown_at,o.id)>($3::timestamptz,$4::text))
+        ORDER BY o.unknown_at,o.id LIMIT $2`, [workspaceId, limit, after?.unknownAt ?? null, after?.eventId ?? null])
       return result.rows.map(row => ({ ...toOutboxEvent(row), unknownAt: row.exact_unknown_at }))
     })
   }

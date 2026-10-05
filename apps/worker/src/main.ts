@@ -1534,15 +1534,28 @@ function validateImageReconciliationPageRequest(input: { workspaceId: string; li
   return { workspaceId, limit, ...(input.cursor !== undefined ? { cursor: input.cursor.trim() } : {}) }
 }
 
-export async function postImageGenerationReconciliation(input: { apiBaseUrl: string; apiToken: string; workspaceId: string; limit?: number; cursor?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+export async function postImageGenerationReconciliation(input: { apiBaseUrl: string; apiToken: string; workspaceId: string; limit?: number; cursor?: string; completionAckCursor?: string; executionScanDone?: boolean; completionAckScanDone?: boolean; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
   const request = validateImageReconciliationPageRequest(input)
   const path = '/v1/internal/image-generation-jobs/reconciliation'
   const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
     method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': request.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
-    body: JSON.stringify({ workspace_id: request.workspaceId, limit: request.limit, query_only: true, ...('cursor' in request ? { cursor: request.cursor } : {}) }), redirect: 'error', signal: input.signal,
+    body: JSON.stringify({ workspace_id: request.workspaceId, limit: request.limit, query_only: true, ...('cursor' in request ? { cursor: request.cursor } : {}), ...(input.completionAckCursor ? { completion_ack_cursor: input.completionAckCursor } : {}), ...(input.executionScanDone ? { execution_scan_done: true } : {}), ...(input.completionAckScanDone ? { completion_ack_scan_done: true } : {}) }), redirect: 'error', signal: input.signal,
   })
   if (!response.ok) throw new Error(`image generation reconciliation API returned ${response.status}`)
-  return parseWorkerApiJson(response)
+  const payload = await parseWorkerApiJson(response)
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('image reconciliation response is invalid')
+  const envelope = payload as Record<string, unknown>
+  if (envelope.error != null) throw new Error('image reconciliation response contains an error')
+  const page = 'data' in envelope ? envelope.data : envelope
+  if (!page || typeof page !== 'object' || Array.isArray(page)
+    || !['checked', 'attention', 'executions', 'pending_executions', 'next_cursor', 'next_completion_ack_cursor'].some(key => key in page)) {
+    throw new Error('image reconciliation response has no valid page data')
+  }
+  for (const key of ['next_cursor', 'next_completion_ack_cursor']) {
+    const value = (page as Record<string, unknown>)[key]
+    if (value !== undefined && value !== null && (typeof value !== 'string' || !value.trim())) throw new Error('image reconciliation response cursor is invalid')
+  }
+  return page
 }
 
 function imageReconciliationCandidates(page: unknown): ImageGenerationReconciliationCandidate[] {
@@ -1602,13 +1615,16 @@ async function queryImageProviderStatus(input: { queryStatus: (providerRequestId
 export async function reconcileImageGenerationWorkspace(input: Parameters<typeof postImageGenerationReconciliation>[0] & { maxPages?: number; queryStatus?: (providerRequestId: string, options?: { signal?: AbortSignal }) => Promise<ImageGenerationStatus>; queryTimeoutMs?: number }) {
   if (input.maxPages !== undefined && (!Number.isSafeInteger(input.maxPages) || input.maxPages < 1 || input.maxPages > 1000)) throw new RangeError('image reconciliation maxPages must be between 1 and 1000')
   if (input.queryTimeoutMs !== undefined && (!Number.isSafeInteger(input.queryTimeoutMs) || input.queryTimeoutMs < 1 || input.queryTimeoutMs > 5 * 60 * 1000)) throw new RangeError('image provider status query timeout must be between 1 and 300000 milliseconds')
-  let cursor: string | undefined
+  let cursor = input.cursor
+  let completionAckCursor = input.completionAckCursor
+  let executionScanDone = input.executionScanDone ?? false
+  let completionAckScanDone = input.completionAckScanDone ?? false
   let pages = 0
   const results: unknown[] = []
   const maxPages = input.maxPages ?? 100
   const queriedCandidates = new Set<string>()
   do {
-    const page = await postImageGenerationReconciliation({ ...input, ...(cursor ? { cursor } : {}) }) as { next_cursor?: unknown }
+    const page = await postImageGenerationReconciliation({ ...input, cursor, completionAckCursor, executionScanDone, completionAckScanDone }) as { next_cursor?: unknown; next_completion_ack_cursor?: unknown }
     const candidates = imageReconciliationCandidates(page)
     const statusResults: unknown[] = []
     if (input.queryStatus) for (const candidate of candidates) {
@@ -1629,8 +1645,11 @@ export async function reconcileImageGenerationWorkspace(input: Parameters<typeof
     results.push({ page, queried: candidates.filter(candidate => Boolean(candidate.providerRequestId) && (candidate.executionState === 'provider_started' || candidate.executionState === 'outcome_unknown')).length, statusResults })
     pages += 1
     cursor = typeof page.next_cursor === 'string' && page.next_cursor ? page.next_cursor : undefined
-  } while (cursor && pages < maxPages)
-  return { pages, completed: !cursor, results }
+    completionAckCursor = typeof page.next_completion_ack_cursor === 'string' && page.next_completion_ack_cursor ? page.next_completion_ack_cursor : undefined
+    executionScanDone = !cursor
+    completionAckScanDone = !completionAckCursor
+  } while ((!executionScanDone || !completionAckScanDone) && pages < maxPages)
+  return { pages, completed: executionScanDone && completionAckScanDone, results, continuation: { cursor, completionAckCursor, executionScanDone, completionAckScanDone } }
 }
 
 export async function assertGenerationExecution(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
@@ -2865,6 +2884,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
   let nextStorageReconciliationAt = 0
   let nextPaymentReconciliationAt = 0
   let nextModelUsageReconciliationAt = 0
+  const imageReconciliationProgress = new Map<string, Awaited<ReturnType<typeof reconcileImageGenerationWorkspace>>['continuation']>()
   let nextImageGenerationReconciliationAt = 0
   let nextSupportSlaScanAt = 0
   let nextSupportSlaReportAt = 0
@@ -3116,7 +3136,12 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         }
         if (config.role === 'reconcile' && startedAt >= nextImageGenerationReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image generation reconciliation')
-          const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => reconcileImageGenerationWorkspace({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...(imageGenerator?.queryStatus ? { queryStatus: imageGenerator.queryStatus.bind(imageGenerator) } : {}), queryTimeoutMs: imageReconciliationQueryTimeoutMs(config.workerApiTimeoutMs), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))
+          const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, async workspaceId => {
+            const sweep = await reconcileImageGenerationWorkspace({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...imageReconciliationProgress.get(workspaceId), ...(imageGenerator?.queryStatus ? { queryStatus: imageGenerator.queryStatus.bind(imageGenerator) } : {}), queryTimeoutMs: imageReconciliationQueryTimeoutMs(config.workerApiTimeoutMs), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })
+            if (sweep.completed) imageReconciliationProgress.delete(workspaceId)
+            else imageReconciliationProgress.set(workspaceId, sweep.continuation)
+            return sweep
+          })
           nextImageGenerationReconciliationAt = Date.now() + config.imageGenerationReconciliationIntervalMs
           Object.assign(result as unknown as Record<string, unknown>, { imageGenerationReconciliation: { completed: reconciliation.filter(item => item.status === 'fulfilled').length, failed: reconciliation.filter(item => item.status === 'rejected').length } })
         }

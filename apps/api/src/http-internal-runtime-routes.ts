@@ -596,13 +596,27 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     const olderThan = input.older_than === undefined ? undefined : typeof input.older_than === 'string' && Number.isFinite(Date.parse(input.older_than)) ? input.older_than : (() => { throw new DomainError(ERROR_CODES.INVALID_REQUEST, '图片对账 older_than 必须是合法时间', 400) })()
     const repository = persistence.imageGenerationExecutions
     if (!repository) throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '图片生成执行租约存储未配置', 503)
-    const page = await repository.listPage({ workspaceId, states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown'], limit, ...(cursor ? { cursor } : {}), ...(olderThan ? { olderThan } : {}) })
+    let completionAfter: { unknownAt: string; eventId: string } | undefined
+    if (input.completion_ack_cursor !== undefined) {
+      try {
+        if (typeof input.completion_ack_cursor !== 'string' || input.completion_ack_cursor.length > 2048) throw new Error('invalid cursor')
+        const decoded = JSON.parse(Buffer.from(input.completion_ack_cursor, 'base64url').toString('utf8'))
+        if (typeof decoded.unknownAt !== 'string' || !Number.isFinite(Date.parse(decoded.unknownAt)) || typeof decoded.eventId !== 'string' || !decoded.eventId.trim()) throw new Error('invalid cursor')
+        completionAfter = { unknownAt: decoded.unknownAt, eventId: decoded.eventId }
+      } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, '完成回执游标无效', 400) }
+    }
+    const page = input.execution_scan_done === true ? { items: [], nextCursor: undefined, scanWatermark: undefined } : await repository.listPage({ workspaceId, states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown'], limit, ...(cursor ? { cursor } : {}), ...(olderThan ? { olderThan } : {}) })
     // Only completed executions with an unpublished unknown original event
     // enter this local recovery. No Provider query or generation is involved.
+    let nextCompletionAckCursor: string | undefined
     const acknowledged: string[] = []
     const completionAckAttention: string[] = []
-    if (persistence.outbox?.listCompletedImageUnknown && persistence.outbox.ackCompletedImageUnknown && persistence.business) {
-      for (const event of await persistence.outbox.listCompletedImageUnknown(workspaceId, limit)) {
+    if (input.completion_ack_scan_done !== true && persistence.outbox?.listCompletedImageUnknown && persistence.outbox.ackCompletedImageUnknown && persistence.business) {
+      const completionEvents = await persistence.outbox.listCompletedImageUnknown(workspaceId, limit + 1, completionAfter)
+      const completionPage = completionEvents.slice(0, limit)
+      const lastCompletion = completionPage.at(-1)
+      if (completionEvents.length > limit && lastCompletion?.unknownAt) nextCompletionAckCursor = Buffer.from(JSON.stringify({ unknownAt:lastCompletion.unknownAt,eventId:lastCompletion.id })).toString('base64url')
+      for (const event of completionPage) {
         try {
           const snapshot = await persistence.business.get(workspaceId, 'image_generation_job', event.aggregateId)
           const job = snapshot.payload as unknown as ImageGenerationJob
@@ -646,7 +660,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
         if (requested?.payload.action_id) attention.at(-1)!.action_id = requested.payload.action_id
       }
     }
-    return send(res, 200, workspaceId, { acknowledged_event_ids: acknowledged, completion_ack_attention: completionAckAttention, checked: executions.length, repaired, attention, next_cursor: page.nextCursor ?? null, has_more: Boolean(page.nextCursor), scan_watermark: page.scanWatermark, read_only_provider_policy: true, provider_evidence_endpoint: '/v1/internal/image-generation-jobs/{job_id}/reconciliation-evidence' }, null, req)
+    return send(res, 200, workspaceId, { next_completion_ack_cursor: nextCompletionAckCursor ?? null, acknowledged_event_ids: acknowledged, completion_ack_attention: completionAckAttention, checked: executions.length, repaired, attention, next_cursor: page.nextCursor ?? null, has_more: Boolean(page.nextCursor || nextCompletionAckCursor), completion_ack_has_more: Boolean(nextCompletionAckCursor), scan_watermark: page.scanWatermark, read_only_provider_policy: true, provider_evidence_endpoint: '/v1/internal/image-generation-jobs/{job_id}/reconciliation-evidence' }, null, req)
   }
   if (req.method === 'POST' && path === '/v1/internal/billing/reconciliation') {
     await requireWorkerAuthorization(req)

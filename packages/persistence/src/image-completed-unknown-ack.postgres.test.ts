@@ -1,3 +1,4 @@
+import { reconcileImageGenerationWorkspace } from '../../../apps/worker/src/main.js'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
@@ -123,6 +124,42 @@ describe('completed image unknown PostgreSQL ACK', () => {
       await handleInternalRuntimeRoute(context)
       expect((await outbox.listAggregateEvents(workspaceId,job2))[0]!.publishedAt).toBeTruthy()
       expect(await outbox.listCompletedImageUnknown(otherWorkspaceId,10)).toEqual([])
+      // Actual worker + API + PostgreSQL: a bad oldest item must not starve
+      // a later verified completion when each page contains only one item.
+      const queued: string[] = []
+      for (const suffix of ['missing-snapshot','bad-oldest','good-later']) {
+        const id = `${jobId}-${suffix}`; queued.push(id)
+        await business.save({workspaceId,entityType:'image_generation_job',entityId:id,entityVersion:1,payload:{...payload,id,idempotencyKey:id}})
+        const e = await outbox.append({workspaceId,aggregateId:id,eventType:'image.generation.requested',sequence:1,payload:{intent_hash:payload.intentHash}})
+        const l = await repo.claim({workspaceId,jobId:id,eventId:e.id,leaseMs:60000})
+        const o = {workspaceId,jobId:id,ownerToken:l.ownerToken}
+        await repo.reserveProviderOperation(o); await repo.beginProviderDispatch(o)
+        await repo.markProviderStarted({...o,providerRequestId:`provider-${suffix}`}); await repo.markCompleted(o)
+        await outbox.markUnknown(workspaceId,e.id,{code:'IMAGE_GENERATION_EXECUTION_LEASE_LOST',message:'fixture',retryable:false,unknown:true})
+      }
+      await database.query("DELETE FROM business_entity_snapshots WHERE workspace_id=$1 AND entity_type='image_generation_job' AND entity_id=$2",[workspaceId,queued[0]])
+      archive.mockImplementation(async (_workspace:string,job:{id:string}) => { if (job.id===queued[1]) throw new Error('missing archive'); return [] })
+      const queryStatus = vi.fn()
+      const requests: Record<string,unknown>[] = []
+      const fetcher: typeof fetch = async (_url,init) => {
+        const request = JSON.parse(String(init?.body)); requests.push(request)
+        let response: Response | undefined
+        await handleInternalRuntimeRoute({...context,body:async()=>request,
+          send:(_res:unknown,status:number,_workspace:string,data:unknown)=>{ response=Response.json({data},{status}) }
+        } as unknown as InternalRuntimeContext)
+        return response!
+      }
+      const firstSweep = await reconcileImageGenerationWorkspace({apiBaseUrl:'https://fixture.test',apiToken:'fixture',workspaceId,limit:1,maxPages:1,fetcher,queryStatus})
+      expect(firstSweep.completed).toBe(false)
+      expect((firstSweep.results[0] as {page:unknown}).page).toMatchObject({has_more:true,completion_ack_has_more:true})
+      const sweep = await reconcileImageGenerationWorkspace({apiBaseUrl:'https://fixture.test',apiToken:'fixture',workspaceId,limit:1,fetcher,queryStatus,...firstSweep.continuation})
+      expect((await outbox.listAggregateEvents(workspaceId,queued[2]!))[0]!.publishedAt).toBeTruthy()
+      expect((await outbox.listAggregateEvents(workspaceId,queued[0]!))[0]!.publishedAt).toBeUndefined()
+      expect(sweep.completed).toBe(true); expect(requests.length).toBe(3)
+      expect(requests[1]?.execution_scan_done).toBe(true)
+      expect(requests[1]?.completion_ack_cursor).toBeTruthy()
+      expect(queryStatus).not.toHaveBeenCalled()
+
 
     } finally {
       await app?.end(); await database?.end()
