@@ -76,18 +76,16 @@ describe('unread reads are never rendered as measured values', () => {
     expect(html).toContain('服务端未返回储存配额，当前不显示用量。')
   })
 
-  it('keeps the screenshot finance plan ribbon and only the matched summary facts visible', () => {
+  it('keeps ledger summaries and renders the new commercial read as pending instead of fabricated contract dates', () => {
     const html = finance()
     expect(html).toContain('ACCOUNT &amp; BILLING')
     expect(html).toContain('CREATIVE POINTS')
     expect(html).toContain('默认展示当月每日数据，也可查询日期或月份区间。')
     expect(html).toContain('账号版本')
-    expect(html).toContain('ACCOUNT PLAN')
-    expect(html).toContain('aria-label="账号版本与有效期"')
-    expect(html).toContain('账号版本')
-    expect(html).toContain('当前版本')
-    expect(html).toContain('到期时间')
-    expect(html).toContain('剩余时间')
+    expect(html).toContain('aria-label="套餐与权益包"')
+    expect(html).toContain('我的套餐与权益包')
+    expect(html).toContain('正在读取商品与已购套餐，当前不能下单')
+    expect(html).not.toContain('当前没有生效套餐')
     expect(html).toContain('截止今日总消耗')
     expect(html).not.toContain('最近已入账充值')
     expect(html).not.toContain('aria-label="账号与工作区"')

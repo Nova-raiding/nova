@@ -56,6 +56,12 @@ export const CAPABILITIES = [
   'commercial.private_trial.workflow',
   'commercial.order.read',
   'commercial.payment.reconcile',
+  'commercial.receipt.record',
+  'commercial.receipt.allocate',
+  'commercial.receipt.return.propose',
+  'commercial.receipt.return.approve',
+  'commercial.receipt.return.complete',
+
   'commercial.rate.read',
   'commercial.rate.draft',
   'commercial.rate.approve',
@@ -362,6 +368,7 @@ const commercialOpsRead: readonly CapabilityId[] = [
   'commercial.catalog.read', 'commercial.catalog.draft', 'commercial.catalog.approve', 'commercial.catalog.publish', 'commercial.private_sku.read', 'commercial.order.read',
   'commercial.rate.read', 'commercial.service_fulfillment.read',
 ]
+const commercialReceiptOperate: readonly CapabilityId[] = ['commercial.receipt.record', 'commercial.receipt.allocate', 'commercial.receipt.return.propose', 'commercial.receipt.return.approve', 'commercial.receipt.return.complete']
 const customerDeliveryRead: readonly CapabilityId[] = ['customer.delivery.read']
 const commercialFinanceRead: readonly CapabilityId[] = [
   'commercial.access.read', 'commercial.entitlement.read', 'commercial.point.read',
@@ -369,13 +376,13 @@ const commercialFinanceRead: readonly CapabilityId[] = [
 ]
 
 export const ROLE_CAPABILITIES: Readonly<Record<CanonicalRole, readonly CapabilityId[]>> = {
-  platform_admin: [...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'rule.read', 'rule.update', 'customer.manual_import', 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export'],
+  platform_admin: [...commercialReceiptOperate, 'support.ticket.update', ...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'rule.read', 'rule.update', 'customer.manual_import', 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export'],
   // P0 compatibility: legacy platform_ops resolves here, so existing identity/member/delete
   // enforcement remains intact until durable platform-role assignments replace that alias.
   // Role mutations additionally require a verified designated super-admin login at the API boundary.
-  ops_admin: [...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'customer.manual_import', 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
+  ops_admin: [...commercialReceiptOperate, ...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'customer.manual_import', 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
   support_agent: ['platform.summary.read', 'workspace.directory.read', 'support.ticket.read', 'support.ticket.update', 'support.sla.update', 'incident.read', 'incident.update', 'audit.read', 'feature_flag.read', 'commercial.access.read', 'commercial.entitlement.read', 'commercial.service_fulfillment.read', 'customer.delivery.read'],
-  finance_ops: ['platform.summary.read', 'workspace.directory.read', 'commercial.private_trial.workflow', 'commercial.point.adjust.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export', 'model.cost.read', 'commercial.read', 'audit.read', ...commercialFinanceRead],
+  finance_ops: [...commercialReceiptOperate, 'platform.summary.read', 'workspace.directory.read', 'commercial.private_trial.workflow', 'commercial.point.adjust.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export', 'model.cost.read', 'commercial.read', 'audit.read', ...commercialFinanceRead],
   security_admin: ['authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'audit.read', 'audit.export', 'feature_flag.read'],
   auditor: [...platformRead, 'audit.export'],
   rules_admin: ['rule.read', 'rule.update', 'rule.publish.approve', 'platform.media_spec.read', 'platform.media_spec.update', 'platform.media_spec.approve', 'audit.read', 'identity.read', 'billing.export'],
@@ -436,6 +443,8 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('audit.read', 'workspace', 'secret_metadata', ['ops.audit.list', 'ops.audit.detail']),
   read('audit.read', 'platform', 'secret_metadata', ['ops.audit.platform.list']),
   read('audit.export', 'workspace', 'secret_metadata', ['ops.audit.export']),
+  read('support.ticket.read', 'platform', 'customer_metadata', ['ops.support.platform.tickets.list', 'ops.support.platform.ticket.get']),
+  write('support.ticket.update', 'platform', 'customer_metadata', ['ops.support.platform.ticket.comment'], 'allow_and_deny', ['revision','idempotency']),
   read('support.ticket.read', 'workspace', 'customer_metadata', ['ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.sla.report']),
   write('support.ticket.update', 'workspace', 'customer_metadata', ['ops.support.ticket.create', 'ops.support.ticket.assign', 'ops.support.ticket.transition', 'ops.support.ticket.comment']),
   read('customer.delivery.read', 'platform', 'customer_metadata', ['ops.customer-delivery.accounts.list', 'ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.assets.get']),
@@ -463,9 +472,11 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('commercial.point.read', 'platform', 'finance', ['ops.commercial.points-ledger.list']),
   write('commercial.point.adjust', 'platform', 'finance', ['ops.commercial.points.adjust.propose', 'ops.marketing.generation.no_delivery.refund'], 'mutation', ['reason', 'revision', 'idempotency']),
   write('commercial.point.adjust.approve', 'platform', 'finance', ['ops.commercial.points.adjust.decide'], 'mutation', ['reason', 'idempotency']),
-  read('commercial.catalog.read', 'platform', 'finance', ['ops.commercial.catalog-v2.list']),
-  write('commercial.catalog.draft', 'platform', 'finance', ['ops.commercial.catalog-v2.mutate'], 'mutation', ['reason', 'idempotency']),
-  read('commercial.order.read', 'platform', 'finance', ['ops.commercial.orders-v2.list']),
+  read('commercial.catalog.read', 'platform', 'finance', ['ops.commercial.catalog-v2.list', 'ops.commercial.benefit-definitions.list', 'ops.commercial.benefit-bundles.list', 'ops.commercial.benefit-bundles.references.list']),
+  read('commercial.order.read', 'platform', 'finance', ['ops.commercial.notifications.purchase-results.list']),
+  write('commercial.payment.reconcile', 'platform', 'finance', ['ops.commercial.notifications.purchase-results.redrive'], 'allow_and_deny', ['reason', 'idempotency']),
+  write('commercial.catalog.draft', 'platform', 'finance', ['ops.commercial.catalog-v2.mutate', 'ops.commercial.benefit-bundles.mutate'], 'mutation', ['reason', 'idempotency']),
+  read('commercial.order.read', 'platform', 'finance', ['ops.commercial.orders-v2.list', 'ops.commercial.receipt.list', 'ops.commercial.receipt.get', 'ops.commercial.receipt.return.list', 'ops.commercial.receipt.request.get', 'ops.commercial.receipt.allocation.request.get', 'ops.commercial.receipt.return.request.get', 'ops.commercial.receipt.unmatched.return.list', 'ops.commercial.receipt.allocation.preview', 'ops.commercial.order.preview', 'ops.commercial.upgrade.quote.get', 'ops.commercial.order.request.get', 'ops.commercial.upgrade.quote.request.get', 'ops.commercial.checkout.preview', 'ops.commercial.receipt.allocations.preview', 'ops.commercial.checkout.request.get']),
   read('commercial.rate.read', 'platform', 'finance', ['ops.commercial.rate-cards.list', 'ops.commercial.readiness.report']),
   write('commercial.private_trial.workflow', 'platform', 'finance', [
     'ops.commercial.private-trial.eligibility.create',
@@ -481,8 +492,16 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
     'ops.commercial.private-trial.conversion.create',
     'ops.commercial.private-trial.payment.verify',
   ], 'allow_and_deny', ['reason', 'idempotency']),
+  write('commercial.receipt.record', 'platform', 'finance', ['ops.commercial.receipt.record'], 'allow_and_deny'),
+  write('commercial.receipt.record', 'platform', 'finance', ['ops.commercial.receipt.unmatched.record', 'ops.commercial.receipt.unmatched.match'], 'allow_and_deny', ['reason']),
+  read('commercial.order.read', 'platform', 'finance', ['ops.commercial.receipt.unmatched.list'], 'allow_and_deny'),
+  write('commercial.receipt.allocate', 'platform', 'finance', ['ops.commercial.receipt.allocation.confirm', 'ops.commercial.receipt.allocations.confirm'], 'allow_and_deny', ['idempotency']),
+  write('commercial.receipt.return.propose', 'platform', 'finance', ['ops.commercial.receipt.return.propose', 'ops.commercial.receipt.unmatched.return.propose'], 'allow_and_deny', ['reason']),
+  write('commercial.receipt.return.approve', 'platform', 'finance', ['ops.commercial.receipt.return.decide', 'ops.commercial.receipt.unmatched.return.decide'], 'allow_and_deny'),
+  write('commercial.receipt.return.complete', 'platform', 'finance', ['ops.commercial.receipt.return.complete', 'ops.commercial.receipt.unmatched.return.complete'], 'allow_and_deny'),
   read('commercial.payment.reconcile', 'platform', 'finance', ['ops.commercial.order.refund.list'], 'allow_and_deny'),
-  write('commercial.payment.reconcile', 'platform', 'finance', ['ops.commercial.order.payment.verify', 'ops.commercial.order.refund.request', 'ops.commercial.order.refund.approve', 'ops.commercial.order.refund.complete'], 'allow_and_deny', ['reason', 'idempotency']),
+  write('commercial.payment.reconcile', 'platform', 'finance', ['ops.commercial.upgrade.quote.create'], 'allow_and_deny', ['idempotency']),
+  write('commercial.payment.reconcile', 'platform', 'finance', ['ops.commercial.checkout.create', 'ops.commercial.order.create', 'ops.commercial.order.payment.verify', 'ops.commercial.order.refund.request', 'ops.commercial.order.refund.approve', 'ops.commercial.order.refund.complete'], 'allow_and_deny', ['reason', 'idempotency']),
   read('commercial.service_fulfillment.read', 'platform', 'customer_metadata', ['ops.commercial.service-fulfillment.list']),
   write('commercial.service_boundary.accept', 'workspace', 'customer_metadata', ['commercial.service-boundary.accept'], 'mutation', ['idempotency']),
   write('commercial.service_fulfillment.write', 'platform', 'customer_metadata', ['ops.commercial.service-allocation.create', 'ops.commercial.service-fulfillment.schedule', 'ops.commercial.service-fulfillment.start', 'ops.commercial.service-fulfillment.complete', 'ops.commercial.service-fulfillment.adjust'], 'mutation', ['reason', 'revision', 'idempotency', 'approval']),
@@ -497,8 +516,9 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('canonical.backfill.update', 'platform', 'customer_metadata', ['ops.canonical.backfill.create', 'ops.canonical.backfill.run', 'ops.canonical.backfill.pause', 'ops.canonical.backfill.resume', 'ops.canonical.backfill.conflict.claim', 'ops.canonical.backfill.conflict.resolve'], 'allow_and_deny'),
   read('rule.read', 'platform', 'customer_metadata', ['rule.audit', 'ops.rules.public.drafts.list', 'ops.rules.public.drafts.get', 'ops.rules.public.sync.status']),
   read('rule.read', 'workspace', 'customer_metadata', ['ops.rules.workspace.audit']),
-  read('billing.self.read', 'self', 'finance', ['subscription.get', 'subscription.orders.list', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'commercial.access.get', 'commercial.catalog.get', 'commercial.order.payment.get']),
-  write('billing.workspace.update', 'workspace', 'finance', ['subscription.order.create', 'subscription.change', 'billing.usage.consume', 'billing.recharge.create', 'commercial.order.create']),
+  read('billing.self.read', 'self', 'finance', ['subscription.get', 'subscription.orders.list', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'commercial.access.get', 'commercial.catalog.get', 'commercial.upgrade.quote.get', 'commercial.subscription.get', 'commercial.notifications.list', 'commercial.order.payment.get', 'commercial.order.request.get', 'commercial.upgrade.quote.request.get', 'commercial.checkout.request.get']),
+  write('billing.self.read', 'self', 'customer_metadata', ['commercial.notifications.mark-read'], 'mutation', ['idempotency']),
+  write('billing.workspace.update', 'workspace', 'finance', ['subscription.order.create', 'subscription.change', 'billing.usage.consume', 'billing.recharge.create', 'commercial.order.create', 'commercial.upgrade.quote.create', 'commercial.checkout.create', 'commercial.order.payment.create']),
   write('billing.refund.execute', 'workspace', 'finance', ['billing.usage.refund'], 'allow_and_deny', ['reason', 'idempotency']),
   // Provider-backed recharge refunds and reconciliation are platform-operated
   // actions. Merchant surfaces must stay outside this workbench.
@@ -580,8 +600,17 @@ function buildPolicyRegistry(groups: readonly PolicyGroup[]): Readonly<Record<Mc
 
 export const MCP_METHOD_POLICIES = buildPolicyRegistry(POLICY_GROUPS)
 
-export function getMcpMethodPolicy(method: string): MethodPolicy | undefined {
-  return MCP_METHOD_POLICIES[method as McpMethod]
+export function getMcpMethodPolicy(method: string, params?: Readonly<Record<string, unknown>>): MethodPolicy | undefined {
+  const policy = MCP_METHOD_POLICIES[method as McpMethod]
+  if (policy && (method === 'ops.commercial.catalog-v2.mutate' || method === 'ops.commercial.benefit-bundles.mutate') && params) {
+    const action = params.action
+    const capability = action === 'approve' || action === 'reject'
+      ? 'commercial.catalog.approve'
+      : action === 'publish' || action === 'retire' || action === 'archive'
+        ? 'commercial.catalog.publish' : 'commercial.catalog.draft'
+    return { ...policy, capability }
+  }
+  return policy
 }
 
 /**

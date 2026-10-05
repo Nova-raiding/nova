@@ -1,0 +1,36 @@
+{
+  "ok": true,
+  "artifact": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/local-plugin/merchant-marketing-0.1.0+codex.20261005042504-darwin-arm64.tar.gz",
+  "plugin": "merchant-marketing",
+  "version": "0.1.0+codex.20261005042504",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "bundled_node_version": "v22.16.0",
+  "package_profile": "production",
+  "git_commit": "d44afc3ca721c304998083a25a0d34c8724568a5",
+  "schema_version": "1",
+  "release_status": "dirty_source_candidate",
+  "ready_to_install": false,
+  "ci_test_certificate": false,
+  "source_dirty": true,
+  "chatgpt_app_bundled": false,
+  "cloud_code_included": false,
+  "connect_helper": {
+    "source_included": true,
+    "app_bundle_included": true,
+    "custom_scheme": "included_unregistered_until_signed",
+    "production_ready": false,
+    "reason": "The macOS helper is bundled but remains unregistered until Developer ID signing, notarization, and trusted installation succeed.",
+    "platforms": {
+      "darwin": {
+        "source_included": true,
+        "binary_included": true
+      },
+      "win32": {
+        "source_included": true,
+        "binary_included": false,
+        "authenticode_required": true
+      }
+    }
+  }
+}

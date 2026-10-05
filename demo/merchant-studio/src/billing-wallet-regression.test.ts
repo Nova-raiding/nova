@@ -4,6 +4,7 @@ import { formatAmountCny, rechargeAmountFen, resolveRechargeIdempotency } from '
 
 const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+const commercial = readFileSync(new URL('./CommercialPurchaseCenter.tsx', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 
 /** apps/api/src/server.ts `parseCnyToFen`: anything else is BILLING_AMOUNT_INVALID. */
@@ -25,11 +26,10 @@ describe('Merchant Studio paid wallet projection', () => {
     expect(app).toContain('当前剩余创意点')
     expect(app).toContain('财务与资源')
     expect(app).toContain('充值创意点')
-    expect(app).toContain('支付完成后由服务端回调或查单入账，未支付不会增加权益或创意点。')
+    expect(commercial).toContain('未支付不增加权益')
     expect(app).not.toContain('最近已入账充值（最近读取的 20 条钱包流水）')
     expect(app).not.toContain('finance-recharge-proof')
-    expect(app).toContain('className="finance-recharge-order"')
-    expect(app).toContain('订单：{rechargeOrder.id}')
+    expect(commercial).toContain('查询原订单与权益状态')
     expect(styles).toContain('.finance-balance-card')
   })
 
@@ -83,6 +83,8 @@ describe('Merchant Studio recharge order safety', () => {
     const createRecharge = api.slice(api.indexOf('export const createRechargeOrder'), api.indexOf('export const fetchRechargeOrder'))
     expect(createRecharge).toContain('idempotency_key: idempotencyKey')
     expect(createRecharge, 'a per-attempt key defeats the server dedupe').not.toContain('Date.now()')
-    expect(app).toContain('createRechargeOrder(baseUrl, amount, paymentMethod, idempotencyKey)')
+    expect(commercial).toContain('createCommercialPurchaseOrder(')
+    expect(commercial).not.toContain('window.open(')
+    expect(commercial).toContain('原订单分项合计：<strong>{commercialMoney(total)}</strong>')
   })
 })

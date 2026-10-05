@@ -4,12 +4,15 @@ import zhCN from 'antd/es/date-picker/locale/zh_CN'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import './capability.css'
+import { CommercialPurchaseCenter } from './CommercialPurchaseCenter'
+import { CommercialNotificationPanel } from './CommercialNotificationPanel'
+import { CommercialPointLedger } from './CommercialGiftDetails'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
 import { getImageCandidatePage } from './image-candidate-pagination'
 import { imageCandidateLoading } from './image-candidate-loading'
 import { mergeImageGenerationJobs } from './image-job-list'
 import { BrandAssetPreviewRegistry, brandAssetFileError, brandAssetMatchesKind, isUsableBrandAsset } from './material-brand-assets'
-import { daysRemainingInShanghai, yesterdayWindowInShanghai } from './entitlement-date'
+import { yesterdayWindowInShanghai } from './entitlement-date'
 import { currentShanghaiMonthRange, filterFinanceEntriesByWindow, fillDailyFinancePoints, shanghaiCalendarDate } from './finance-window'
 import { isRealReadableStore, merchantConnectionPresentation } from './platform-connection-status'
 import {
@@ -191,6 +194,7 @@ import {
   type BillingStatus,
   type CatalogCategory,
   type CommercialCatalogItem,
+  type CommercialNotification,
   type CreativePointStatementEntry,
   type FeedbackRating,
   type ImageGenerationJob,
@@ -960,6 +964,7 @@ function Topbar({
   onPasswordChanged,
   onOpenUtility,
   onOpenIssues,
+  onOpenCommercialCatalog,
   searchQuery,
   onSearchQuery,
   onSearch,
@@ -981,6 +986,7 @@ function Topbar({
   onPasswordChanged: () => void
   onOpenUtility: (panel: UtilityPanel) => void
   onOpenIssues: () => void
+  onOpenCommercialCatalog: (item: CommercialNotification) => void
   searchQuery: string
   onSearchQuery: (value: string) => void
   onSearch: () => void
@@ -1066,13 +1072,13 @@ function Topbar({
     setNotificationOpen(false)
     setIssueDetail(item)
   }
-  const notificationPanel = <IssueNotificationPanel
+  const notificationPanel = <div className="merchant-all-notifications"><IssueNotificationPanel
     state={issueRead}
     items={actionableIssues ?? []}
     onOpenIssue={openIssueDetail}
     onClose={() => setNotificationOpen(false)}
     onRetry={() => setIssueReload((value) => value + 1)}
-  />
+  /><CommercialNotificationPanel key={`${account?.id ?? 'unbound'}:${account?.workspaceIds.join(',') ?? ''}`} baseUrl={apiBaseUrl} onOpenCatalog={(item) => { setNotificationOpen(false); onOpenCommercialCatalog(item) }} /></div>
   return (
     <header className="topbar">
       <button
@@ -2934,62 +2940,6 @@ export function resolveRechargeIdempotency(
   return { intent, key: `studio-${intent}-${crypto.randomUUID()}` }
 }
 
-/** Point packs are only those the server commercial catalog actually publishes. */
-function resolvePointPackages(catalog: CommercialCatalogItem[]): PointPackageOption[] {
-  return selectMerchantCatalogItems(catalog)
-    .filter((item) => item.type === 'point_pack')
-    .map((item) => {
-      const price = Number(item.price_label.replace(/[^0-9.]/gu, ''))
-      const points = item.benefits.find((benefit) => /point/iu.test(benefit.code))?.quantity ?? null
-      return {
-        id: item.id,
-        skuCode: item.sku_code,
-        purchaseKind: 'point_pack' as const,
-        name: item.name,
-        amountLabel: item.benefits_summary || item.cycle_label || '权益以服务端目录为准',
-        priceLabel: item.price_label,
-        priceCny: Number.isFinite(price) && price > 0 ? price : null,
-        note: item.cycle_label ?? '服务端商业目录',
-        pointsPerUnit: typeof points === 'number' && points > 0 ? points : null,
-        blockedReason: item.executable ? '' : (item.unresolved.join('；') || '服务端未将该套餐标记为可下单'),
-      }
-    })
-}
-
-/** Monthly plans are purchasable from the same server-owned catalog, but are
- * deliberately separate from one-time creative-point packs. */
-function resolveMonthlyPackages(catalog: CommercialCatalogItem[]): PointPackageOption[] {
-  return selectMerchantCatalogItems(catalog)
-    .filter((item) => item.type === 'monthly')
-    .map((item) => {
-      const price = Number(item.price_label.replace(/[^0-9.]/gu, ''))
-      const points = item.benefits.find((benefit) => /point/iu.test(benefit.code))?.quantity ?? null
-      return {
-        id: item.id, skuCode: item.sku_code, purchaseKind: 'purchase' as const,
-        name: item.name, amountLabel: item.benefits_summary || '权益以服务端目录为准', priceLabel: item.price_label,
-        priceCny: Number.isFinite(price) && price > 0 ? price : null, note: item.cycle_label ?? '每月',
-        pointsPerUnit: typeof points === 'number' && points > 0 ? points : null,
-        blockedReason: item.executable ? '' : (item.unresolved.join('；') || '服务端未将该套餐标记为可下单'),
-      }
-    })
-}
-
-function PaymentQrCode() {
-  const cells = Array.from({ length: 21 * 21 }, (_, index) => {
-    const x = index % 21
-    const y = Math.floor(index / 21)
-    const inFinder = (left: number, top: number) => x >= left && x < left + 7 && y >= top && y < top + 7
-    const finderCell = (left: number, top: number) => {
-      const dx = x - left
-      const dy = y - top
-      return dx === 0 || dx === 6 || dy === 0 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4)
-    }
-    const filled = inFinder(0, 0) ? finderCell(0, 0) : inFinder(14, 0) ? finderCell(14, 0) : inFinder(0, 14) ? finderCell(0, 14) : ((x * 7 + y * 11 + x * y) % 5 < 2)
-    return filled ? <rect key={index} x={x} y={y} width="1" height="1" /> : null
-  })
-  return <svg className="finance-payment-qr" viewBox="-1 -1 23 23" role="img" aria-label="购买支付二维码"><rect x="-1" y="-1" width="23" height="23" fill="#fff" />{cells}</svg>
-}
-
 function PointUsageChart({ items, label }: { items: PointUsageItem[]; label: string }) {
   const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null)
   const width = 900
@@ -3025,7 +2975,7 @@ function PointUsageChart({ items, label }: { items: PointUsageItem[]; label: str
   )
 }
 
-export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { baseUrl: string; billing: BillingStatus | null; account: MerchantAuthAccount | null; onOpenSupport: () => void }) {
+export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, notificationTarget }: { baseUrl: string; billing: BillingStatus | null; account: MerchantAuthAccount | null; onOpenSupport: () => void; notificationTarget?: CommercialNotification | null }) {
   const [rangeMode, setRangeMode] = useState<'day' | 'month'>('day')
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
@@ -3040,23 +2990,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   const [statementUnreadable, setStatementUnreadable] = useState(0)
   const [statementNote, setStatementNote] = useState('正在读取创意点流水…')
   const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
-  const [catalogItems, setCatalogItems] = useState<CommercialCatalogItem[] | null>(null)
-  const [catalogNote, setCatalogNote] = useState('正在读取创意点套餐…')
-  const [currentEntitlement, setCurrentEntitlement] = useState<Awaited<ReturnType<typeof fetchCurrentCommercialEntitlement>> | null>(null)
-  const [entitlementNote, setEntitlementNote] = useState('正在读取当前套餐…')
   const [pricingDialog, setPricingDialog] = useState<'points' | 'storage' | null>(null)
-  const [selectedPointPackage, setSelectedPointPackage] = useState('')
-  const [purchaseQuantity, setPurchaseQuantity] = useState(1)
-  const [agreementAccepted, setAgreementAccepted] = useState(false)
-  const [paymentMethod] = useState<'alipay'>('alipay')
-  const [rechargeOrder, setRechargeOrder] = useState<Awaited<ReturnType<typeof createRechargeOrder>> | null>(null)
-  const [rechargeLoading, setRechargeLoading] = useState(false)
-  const [rechargeError, setRechargeError] = useState('')
-  // One idempotency key per purchase intent. It must survive a failed or timed
-  // out attempt so the retry replays the order the server already created, and
-  // it must change when the merchant really does change what they are buying.
-  const rechargeIntent = useRef('')
-  const rechargeIdempotencyKey = useRef('')
   useEffect(() => {
     if (!baseUrl) {
       setStatementEntries(null)
@@ -3064,10 +2998,6 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
       setStatementUnreadable(0)
       setStatementNote('未配置 API，无法读取创意点流水。')
       setStorageQuota(null)
-      setCatalogItems(null)
-      setCatalogNote('未配置 API，无法读取创意点套餐。')
-      setCurrentEntitlement(null)
-      setEntitlementNote('未配置 API，无法读取当前套餐。')
       return
     }
     let active = true
@@ -3076,10 +3006,6 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
     setStatementUnreadable(0)
     setStatementNote('正在读取创意点流水…')
     setStorageQuota(null)
-    setCatalogItems(null)
-    setCatalogNote('正在读取创意点套餐…')
-    setCurrentEntitlement(null)
-    setEntitlementNote('正在读取当前套餐…')
     fetchCreativePointStatement(baseUrl)
       .then((page) => {
         if (!active) return
@@ -3104,24 +3030,8 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
     fetchAssetStorageQuota(baseUrl)
       .then((quota) => { if (active) setStorageQuota(quota ?? null) })
       .catch(() => { if (active) setStorageQuota(null) })
-    fetchCommercialCatalog(baseUrl)
-      .then((result) => { if (active) setCatalogItems(result.catalog) })
-      .catch((cause) => {
-        if (!active) return
-        setCatalogItems(null)
-        setCatalogNote(`创意点套餐读取失败：${describeApiError(cause)}`)
-      })
-    fetchCurrentCommercialEntitlement(baseUrl)
-      .then((entitlement) => { if (active) { setCurrentEntitlement(entitlement); setEntitlementNote('') } })
-      .catch((cause) => { if (active) { setCurrentEntitlement(null); setEntitlementNote(`当前套餐读取失败：${describeApiError(cause)}`) } })
     return () => { active = false }
   }, [baseUrl])
-  const pointPackages = useMemo(() => (catalogItems ? resolvePointPackages(catalogItems) : []), [catalogItems])
-  const monthlyPackages = useMemo(() => (catalogItems ? resolveMonthlyPackages(catalogItems) : []), [catalogItems])
-  const selectedPackage = [...monthlyPackages, ...pointPackages].find((item) => item.id === selectedPointPackage) ?? null
-  const effectivePurchaseQuantity = selectedPackage?.purchaseKind === 'purchase' ? 1 : purchaseQuantity
-  const selectedPointCount = selectedPackage?.pointsPerUnit ? selectedPackage.pointsPerUnit * effectivePurchaseQuantity : null
-  const purchaseBlockNotice = resolvePurchaseBlockNotice(selectedPackage)
   const dailyUsage = useMemo(() => aggregatePointUsage(statementEntries ?? [], 'day'), [statementEntries])
   const monthlyUsage = useMemo(() => aggregatePointUsage(statementEntries ?? [], 'month'), [statementEntries])
   // The finance summary's lifetime consumption is only complete after every
@@ -3171,44 +3081,6 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   const storageLimitBytes = storageQuota?.limitBytes ?? null
   const storageAvailableBytes = storageQuota?.availableBytes ?? null
   const storageKnown = storageUsedBytes !== null && storageLimitBytes !== null && storageLimitBytes > 0
-  const entitlementDaysRemaining = currentEntitlement?.status === 'available'
-    ? daysRemainingInShanghai(currentEntitlement.period.end)
-    : null
-  const submitRecharge = async () => {
-    if (!selectedPackage || !agreementAccepted || !baseUrl) return
-    if (selectedPackage.blockedReason) { setRechargeError(selectedPackage.blockedReason); return }
-    if (selectedPackage.priceCny === null) { setRechargeError('服务端目录未给出可下单价格，无法创建充值订单。'); return }
-    setRechargeLoading(true); setRechargeError('')
-    const amount = formatAmountCny(rechargeAmountFen(selectedPackage.priceCny, effectivePurchaseQuantity))
-    const intent = [selectedPackage.id, amount, paymentMethod, effectivePurchaseQuantity].join('|')
-    const resolved = resolveRechargeIdempotency(intent, { intent: rechargeIntent.current, key: rechargeIdempotencyKey.current })
-    rechargeIntent.current = resolved.intent
-    rechargeIdempotencyKey.current = resolved.key
-    const idempotencyKey = resolved.key
-    try {
-      const order = selectedPackage.purchaseKind === 'purchase'
-        ? await createCommercialPurchaseOrder(baseUrl, selectedPackage.purchaseKind, selectedPackage.skuCode, 'merchant_monthly_subscription', idempotencyKey)
-        : await createRechargeOrder(baseUrl, amount, paymentMethod, idempotencyKey)
-      // The intent is settled: the next click is a new purchase and must not be
-      // collapsed into this order by the server's dedupe.
-      rechargeIntent.current = ''
-      rechargeIdempotencyKey.current = ''
-      setRechargeOrder(order)
-      if (order.payment_url || order.paymentUrl) window.open(order.payment_url ?? order.paymentUrl, '_blank', 'noopener,noreferrer')
-    } catch (error) {
-      // The key is deliberately kept: the server may already have created the
-      // order, so the retry must reach the same one instead of a second one.
-      setRechargeError(error instanceof Error ? error.message : '创建充值订单失败')
-    } finally { setRechargeLoading(false) }
-  }
-  const refreshRecharge = async () => {
-    if (!rechargeOrder?.id || !baseUrl) return
-    try {
-      setRechargeOrder(await (selectedPackage?.purchaseKind === 'purchase'
-        ? fetchCommercialPurchaseOrder(baseUrl, rechargeOrder.id)
-        : fetchRechargeOrder(baseUrl, rechargeOrder.id)))
-    } catch (error) { setRechargeError(error instanceof Error ? error.message : '查询订单失败') }
-  }
   const resetUsage = () => {
     setRangeMode('day')
     setRangeStart('')
@@ -3223,6 +3095,8 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
         <article className="finance-balance-card accent"><div className="finance-card-icon"><Sparkles size={20} /></div><div className="finance-inline-metric"><span>当前剩余创意点</span><strong>{pointBalance === null ? UNREAD_METRIC : `${pointBalance.toLocaleString('zh-CN')} 点`}</strong></div><div className="finance-inline-metric subtle"><span>截止今日总消耗</span><strong>{totalSettledConsumption === null ? UNREAD_METRIC : `${totalSettledConsumption.toLocaleString('zh-CN')} 点`}</strong></div><button className="primary" type="button" onClick={() => setPricingDialog('points')}>充值创意点</button></article>
         <article className="finance-balance-card"><div className="finance-card-icon"><Boxes size={20} /></div><div className="finance-inline-metric"><span>储存空间剩余</span><strong>{storageAvailableBytes === null ? UNREAD_METRIC : formatStorageGb(storageAvailableBytes)}</strong></div><div className="finance-storage-summary"><p>{storageKnown ? `已使用 ${formatStorageGb(storageUsedBytes!)} / 共 ${formatStorageGb(storageLimitBytes!)}` : '服务端未返回储存配额，当前不显示用量。'}</p>{storageKnown && <div className="finance-storage-track" role="progressbar" aria-label="储存空间已用" aria-valuemin={0} aria-valuemax={Math.round(storageLimitBytes!)} aria-valuenow={Math.min(Math.round(storageLimitBytes!), Math.max(0, Math.round(storageUsedBytes!)))}><i style={{ width: `${Math.min(100, (storageUsedBytes! / storageLimitBytes!) * 100).toFixed(1)}%` }} /></div>}</div><button className="primary" type="button" onClick={() => setPricingDialog('storage')}>购买储存空间</button></article>
       </div>
+      <CommercialPurchaseCenter baseUrl={baseUrl} workspaceKey={account ? `${account.id}:${account.workspaceIds.join(',')}` : 'unbound'} onOpenSupport={onOpenSupport} notificationTarget={notificationTarget} />
+      <CommercialPointLedger entries={statementEntries} unavailableMessage={statementNote} partial={statementTruncated || statementUnreadable > 0} />
       <section className="finance-panel finance-usage-panel">
         <div className="finance-panel-heading"><div><span className="section-kicker">CREATIVE POINTS</span><h3>创意点消耗趋势</h3><p>默认展示当月每日数据，也可查询日期或月份区间。</p></div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault() }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={rangeMode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => { setRangeMode(value); setRangeStart(''); setRangeEnd('') }} /></label><label><span>开始{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeStart ? dayjs(rangeStart).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeStart(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><i>至</i><label><span>结束{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeEnd ? dayjs(rangeEnd).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeEnd(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
         {/* The sum may only be stated when the ledger read succeeded: a failed
@@ -3252,24 +3126,8 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
               : `该区间已读取 ${entriesInRange?.length ?? 0} 条创意点流水，其中没有消耗记录（只有消耗类流水计入趋势），不显示趋势图。`}</p>
         )}
       </section>
-      <section className="finance-account-panel finance-plan-ribbon" aria-label="账号版本与有效期">
-        <div><span className="section-kicker">ACCOUNT PLAN</span><h3>账号版本与有效期</h3><p>{currentEntitlement?.status === 'available' ? `当前账号为 ${currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan}，有效期至 ${new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}，还剩 ${entitlementDaysRemaining ?? UNREAD_METRIC} 天。` : currentEntitlement?.status === 'unknown' ? '服务端未确认当前账号版本，请联系平台运营核对权益。' : entitlementNote || '当前账号版本未读取。'}</p></div>
-        <div className="finance-account-facts"><span><b>{currentEntitlement?.status === 'available' ? (currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan) : UNREAD_METRIC}</b>当前版本</span><span><b>{currentEntitlement?.status === 'available' ? new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : UNREAD_METRIC}</b>到期时间</span><span><b>{entitlementDaysRemaining === null ? UNREAD_METRIC : entitlementDaysRemaining}</b>剩余时间</span></div>
-        <button className="primary" type="button" onClick={onOpenSupport}>咨询客服升级账号版本</button>
-      </section>
-      <Modal title={pricingDialog === 'points' ? '创意点套餐' : '储存空间购买'} open={Boolean(pricingDialog)} footer={null} width={720} onCancel={() => { setPricingDialog(null); setSelectedPointPackage(''); setPurchaseQuantity(1); setAgreementAccepted(false) }}>
-        {pricingDialog === 'points' ? <>
-          <p className="finance-pricing-dialog-note">以下套餐来自服务端商业目录，价格与权益以服务端返回为准。</p>
-          {catalogItems === null ? <p className="muted" role="status">{catalogNote}</p> : (
-            <>
-              <h3>月度套餐</h3>
-              {monthlyPackages.length === 0 ? <p className="muted" role="status">服务端商业目录未返回可购买的月度套餐。</p> : <div className="finance-price-table dialog" role="table" aria-label="月度套餐价格表"><div className="finance-price-row header has-action" role="row"><span>套餐</span><span>权益</span><span>价格</span><span>周期</span><span>操作</span></div>{monthlyPackages.map((item) => <div className="finance-price-row has-action" role="row" key={item.id}><strong>{item.name}</strong><span>{item.amountLabel}</span><b>{item.priceLabel}</b><small>{item.note}</small><button className="primary" type="button" disabled={Boolean(item.blockedReason)} onClick={() => { setSelectedPointPackage(item.id); setPurchaseQuantity(1); setAgreementAccepted(false) }}>{selectedPointPackage === item.id ? '已选择' : item.blockedReason ? '联系客服' : '选择'}</button></div>)}</div>}
-              <h3>创意点包</h3>
-              {pointPackages.length === 0 ? <p className="muted" role="status">服务端商业目录未返回可购买的创意点套餐。</p> : <div className="finance-price-table dialog" role="table" aria-label="创意点价格表"><div className="finance-price-row header has-action" role="row"><span>套餐</span><span>创意点</span><span>价格</span><span>说明</span><span>操作</span></div>{pointPackages.map((item) => <div className="finance-price-row has-action" role="row" key={item.id}><strong>{item.name}</strong><span>{item.amountLabel}</span><b>{item.priceLabel}</b><small>{item.note}</small><button className="primary" type="button" disabled={Boolean(item.blockedReason)} onClick={() => { setSelectedPointPackage(item.id); setPurchaseQuantity(1); setAgreementAccepted(false) }}>{selectedPointPackage === item.id ? '已选择' : item.blockedReason ? '联系客服' : '选择'}</button></div>)}</div>}
-            </>
-          )}
-          {selectedPackage && <section className="finance-checkout" aria-label="套餐购买确认"><div className="finance-checkout-qr">{rechargeOrder?.payment_url || rechargeOrder?.paymentUrl ? <a href={(rechargeOrder.payment_url ?? rechargeOrder.paymentUrl) || '#'} target="_blank" rel="noreferrer">打开支付页面</a> : <strong>确认后生成真实支付订单</strong>}<span>支付完成后由服务端回调或查单入账，未支付不会增加权益或创意点。</span><div className="finance-payment-methods" role="group" aria-label="支付方式"><button className="selected" type="button" disabled>支付宝</button></div></div><div className="finance-checkout-details"><div><span>购买套餐</span><strong>{selectedPackage.name} · {selectedPackage.amountLabel}</strong></div><label><span>购买数量</span><div className="finance-quantity-stepper"><button type="button" aria-label="减少购买数量" onClick={() => setPurchaseQuantity((value) => Math.max(1, value - 1))}>−</button><InputNumber controls={false} min={1} max={99} value={purchaseQuantity} onChange={(value) => setPurchaseQuantity(value || 1)} /><button type="button" aria-label="增加购买数量" onClick={() => setPurchaseQuantity((value) => Math.min(99, value + 1))}>＋</button></div></label><div><span>本次购买创意点</span><strong>{selectedPointCount === null ? '以服务端订单为准' : `共 ${selectedPointCount.toLocaleString()} 点`}</strong></div><div><span>应付金额</span><b>{selectedPackage.priceCny === null ? '以服务端订单为准' : `¥${formatAmountCny(rechargeAmountFen(selectedPackage.priceCny, purchaseQuantity))}`}</b></div><div className="finance-checkout-action"><Checkbox checked={agreementAccepted} onChange={(event) => setAgreementAccepted(event.target.checked)}>我已阅读并同意《套餐购买协议》，确认虚拟权益按服务端回调到账。</Checkbox><button className="primary finance-confirm-purchase" type="button" disabled={!agreementAccepted || rechargeLoading || Boolean(selectedPackage.blockedReason) || selectedPackage.priceCny === null} onClick={() => void submitRecharge()}>{rechargeLoading ? '创建订单中…' : '确认购买'}</button></div>{selectedPackage.blockedReason && <p className="error-text" role="alert">{selectedPackage.blockedReason}</p>}{purchaseBlockNotice && <p className="muted" role="status">{purchaseBlockNotice}</p>}{rechargeOrder && <div className="finance-recharge-order" role="status"><strong>订单：{rechargeOrder.id}</strong><span>状态：{rechargeOrder.state}{rechargeOrder.warning ? ` · ${rechargeOrder.warning}` : ''}</span><button type="button" onClick={() => void refreshRecharge()}>查询订单</button></div>}{rechargeError && <p className="error-text" role="alert">{rechargeError}</p>}</div></section>}
-        </> : <div className="finance-storage-contact"><Boxes size={28} /><strong>请咨询客服</strong></div>}
+      <Modal title={pricingDialog === 'points' ? '套餐与权益包' : '储存空间购买'} open={Boolean(pricingDialog)} footer={null} width={720} onCancel={() => setPricingDialog(null)}>
+        {pricingDialog === 'points' ? <><p>本页“购买套餐与权益包”展示服务端当前上架商品。关闭后可核对已购套餐并选择商品。</p><Button type="primary" onClick={() => { setPricingDialog(null); document.querySelector('.commercial-center')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>查看当前目录</Button></> : <div className="finance-storage-contact"><Boxes size={28} /><strong>请咨询客服</strong></div>}
       </Modal>
     </section>
   )
@@ -12953,6 +12811,8 @@ export default function App() {
     apiBaseUrl ? 'loading' : 'authenticated',
   )
   const [authAccount, setAuthAccount] = useState<MerchantAuthAccount | null>(null)
+  const [commercialNotificationTarget, setCommercialNotificationTarget] = useState<CommercialNotification | null>(null)
+  useEffect(() => { setCommercialNotificationTarget(null) }, [authAccount?.id])
   const [authError, setAuthError] = useState('')
   const [capabilityDenied, setCapabilityDenied] = useState<{ code?: string; message?: string; requestId?: string } | null>(null)
   const [accountBilling, setAccountBilling] = useState<BillingStatus | null>(null)
@@ -13449,6 +13309,7 @@ export default function App() {
             }}
             onOpenUtility={openUtility}
             onOpenIssues={() => navigateTo('products', { clearContext: true })}
+            onOpenCommercialCatalog={(item) => { setCommercialNotificationTarget(item); navigateTo('finance', { clearContext: true }) }}
             searchQuery={globalSearch}
             onSearchQuery={setGlobalSearch}
             onSearch={searchProducts}
@@ -13507,7 +13368,7 @@ export default function App() {
                     onOpenUtility={openUtility}
                   />
                 )}
-                {page === 'finance' && <FinanceOverview baseUrl={apiBaseUrl ?? ''} billing={accountBilling} account={authAccount} onOpenSupport={() => openUtility('support')} />}
+                {page === 'finance' && <FinanceOverview baseUrl={apiBaseUrl ?? ''} billing={accountBilling} account={authAccount} notificationTarget={commercialNotificationTarget} onOpenSupport={() => openUtility('support')} />}
                 {page === 'members' && authAccount && <MerchantMembersPage baseUrl={apiBaseUrl ?? ''} account={authAccount} />}
                 {page === 'products' && (
                   activeEntry === 'products' ? (

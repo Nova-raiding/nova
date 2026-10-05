@@ -1,0 +1,33 @@
+{
+  "mode": "isolated_component_fixture_not_real_api",
+  "passed": true,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "checks": [
+    "current sale independent from draft",
+    "edit priced in integer fen",
+    "version and sale revision bound",
+    "stable idempotency key supplied",
+    "monthly cycle preserved",
+    "explicit versioned upgrade configuration saved as draft",
+    "onboarding price edit preserves non-default gift count and points",
+    "real policy object and explicit source recovery configuration",
+    "three navigation tabs",
+    "200% local table navigation with shadows disabled",
+    "confirmation modal keyboard Escape recovery"
+  ],
+  "metrics": {
+    "viewport": 1440,
+    "pageWidth": 1440,
+    "bodyFont": "16px"
+  },
+  "mutation": {
+    "action": "create",
+    "priceFen": 260000,
+    "versionId": "draft-v3",
+    "expectedRevision": 3
+  },
+  "pageErrors": []
+}

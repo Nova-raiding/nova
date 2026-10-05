@@ -3,7 +3,7 @@ import { DomainError } from '../../../packages/application/src/service.js'
 import type { CommercialAccessService } from '../../../packages/application/src/commercial-access-service.js'
 import type { CommercialPurchaseService } from '../../../packages/application/src/commercial-purchase-service.js'
 import type { CommercialCatalogRepository, CreativePointRepository } from '../../../packages/persistence/src/index.js'
-import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
+import { ERROR_CODES, validateMcpRequest } from '../../../packages/contracts/src/index.js'
 
 type JsonObject = Record<string, unknown>
 
@@ -12,6 +12,8 @@ export interface HttpCommercialRouteDependencies {
   commercialPurchaseService: Pick<CommercialPurchaseService, 'create' | 'paymentStatus'>
   creativePoints?: Pick<CreativePointRepository, 'getBalance' | 'listStatement'>
   commercialCatalog?: Pick<CommercialCatalogRepository, 'list'>
+  /** Invokes the same authorized commercial handler used by MCP with trusted request scope. */
+  callCommercialMethod?(method: string, params: JsonObject, workspaceId: string, req: IncomingMessage): Promise<unknown>
   resolveWorkspace(req: IncomingMessage): string
   requestActor(req: IncomingMessage): string
   body(req: IncomingMessage): Promise<JsonObject>
@@ -28,7 +30,18 @@ export async function handleHttpCommercialRoute(
   url: URL,
   deps: HttpCommercialRouteDependencies,
 ): Promise<boolean> {
-  const { commercialAccessService, commercialPurchaseService, creativePoints, commercialCatalog, resolveWorkspace, requestActor, body, required, rethrowCommercialPurchaseError, send } = deps
+  const { commercialAccessService, creativePoints, resolveWorkspace, body, required, send } = deps
+  const invoke = async (method: string, input: JsonObject, status = 200): Promise<boolean> => {
+    // The HTTP principal and header binding own the workspace/actor; the body
+    // cannot supply an identity or commercial amount to the shared handler.
+    const workspaceId = resolveWorkspace(req)
+    if ('workspace_id' in input || 'actor_id' in input) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '请求不能指定身份或工作区', 400)
+    const validation = validateMcpRequest({ jsonrpc: '2.0', id: 'commercial-http', method, params: input })
+    if (!validation.valid) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '商业请求参数无效', 400, { issues: validation.errors })
+    if (!deps.callCommercialMethod) throw new DomainError('COMMERCIAL_HTTP_ADAPTER_UNAVAILABLE', '商业统一处理器未配置', 503)
+    send(res, status, workspaceId, await deps.callCommercialMethod(method, input, workspaceId, req), null, req)
+    return true
+  }
   if (req.method === 'GET' && path === '/v1/commercial/access') {
     const workspaceId = resolveWorkspace(req)
     const access = await commercialAccessService.decide({ surface: 'MCP', operation: 'commercial.access.get', workspace_id: workspaceId })
@@ -58,35 +71,55 @@ export async function handleHttpCommercialRoute(
         throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'cursor 无效', 400)
       }
     }
-    const statement = await creativePoints.listStatement(workspaceId, { limit: statementLimit, ...(cursor ? { cursor } : {}) })
-    send(res, 200, workspaceId, { schema_version: 'creative-points.statement.v1', entries: statement.items, next_cursor: statement.nextCursor ? Buffer.from(JSON.stringify(statement.nextCursor)).toString('base64url') : null }, null, req)
-    return true
+    return invoke('creative-points.statement.list', { limit: String(statementLimit), ...(cursor ? { cursor: requestedCursor! } : {}) })
   }
-  if (req.method === 'GET' && path === '/v1/commercial/catalog') {
-    const workspaceId = resolveWorkspace(req)
-    if (!commercialCatalog) throw new DomainError('COMMERCIAL_CATALOG_REPOSITORY_UNAVAILABLE', 'V2 商业目录仓储未配置', 503, { catalog: null })
-    const catalog = await commercialCatalog.list({ includePrivate: false, capabilities: [] })
-    if (!catalog.length) throw new DomainError('COMMERCIAL_CATALOG_UNAVAILABLE', '没有可展示的 V2 商业目录版本，不能回退到旧套餐数据', 503, { catalog: null })
-    send(res, 200, workspaceId, { schema_version: 'commercial.catalog.v2', status: 'available', catalog }, null, req)
-    return true
+
+  const decodeSegment = (value: string): string => {
+    try {
+      const decoded = decodeURIComponent(value)
+      if (!decoded.trim() || /[\u0000-\u001f\u007f/]/u.test(decoded)) throw new Error('invalid')
+      return decoded
+    } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, '商业请求路径参数无效', 400) }
+  }
+  const query = (): JsonObject => {
+    const input: JsonObject = {}
+    for (const [key, value] of url.searchParams) {
+      if (key in input) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '商业查询参数不能重复', 400)
+      input[key] = value
+    }
+    return input
+  }
+  if (req.method === 'GET' && path === '/v1/commercial/catalog') return invoke('commercial.catalog.get', query())
+  if (req.method === 'GET' && path === '/v1/commercial/subscription') return invoke('commercial.subscription.get', query())
+  if (req.method === 'GET' && path === '/v1/commercial/notifications') return invoke('commercial.notifications.list', query())
+  const notificationReadMatch = path.match(/^\/v1\/commercial\/notifications\/([^/]+)\/read$/u)
+  if (req.method === 'POST' && notificationReadMatch) {
+    const input = await body(req)
+    if ('notification_id' in input) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '通知由请求路径指定', 400)
+    return invoke('commercial.notifications.mark-read', { ...input, notification_id: decodeSegment(notificationReadMatch[1]!) })
   }
   if (req.method === 'POST' && path === '/v1/commercial/orders') {
     const input = await body(req)
-    const workspaceId = resolveWorkspace(req)
     const purchaseKind = required(input, 'purchase_kind')
     if (!['purchase', 'onboarding_once', 'upgrade', 'point_pack'].includes(purchaseKind)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'purchase_kind 无效', 400)
-    try {
-      send(res, 201, workspaceId, await commercialPurchaseService.create({ workspace_id: workspaceId, actor_id: requestActor(req), purchase_kind: purchaseKind as 'purchase' | 'onboarding_once' | 'upgrade' | 'point_pack', sku_code: required(input, 'sku_code'), idempotency_key: required(input, 'idempotency_key'), reason: required(input, 'reason') }), null, req)
-      return true
-    } catch (error) { rethrowCommercialPurchaseError(error) }
+    return invoke('commercial.order.create', input, 201)
+  }
+  if (req.method === 'POST' && path === '/v1/commercial/upgrade-quotes') return invoke('commercial.upgrade.quote.create', await body(req), 201)
+  if (req.method === 'POST' && path === '/v1/commercial/checkouts') return invoke('commercial.checkout.create', await body(req), 201)
+  const quoteMatch = path.match(/^\/v1\/commercial\/upgrade-quotes\/([^/]+)$/u)
+  if (req.method === 'GET' && quoteMatch) return invoke('commercial.upgrade.quote.get', { ...query(), upgrade_quote_id: decodeSegment(quoteMatch[1]!) })
+  const requestMatch = path.match(/^\/v1\/commercial\/(order-requests|upgrade-quote-requests|checkout-requests)\/([^/]+)$/u)
+  if (req.method === 'GET' && requestMatch) {
+    const method = requestMatch[1] === 'order-requests' ? 'commercial.order.request.get' : requestMatch[1] === 'upgrade-quote-requests' ? 'commercial.upgrade.quote.request.get' : 'commercial.checkout.request.get'
+    return invoke(method, { ...query(), idempotency_key: decodeSegment(requestMatch[2]!) })
   }
   const commercialPaymentMatch = path.match(/^\/v1\/commercial\/orders\/([^/]+)\/payment$/u)
-  if (req.method === 'GET' && commercialPaymentMatch) {
-    const workspaceId = resolveWorkspace(req)
-    try {
-      send(res, 200, workspaceId, await commercialPurchaseService.paymentStatus({ workspace_id: workspaceId, actor_id: requestActor(req), order_id: decodeURIComponent(commercialPaymentMatch[1]!) }), null, req)
-      return true
-    } catch (error) { rethrowCommercialPurchaseError(error) }
+  if (req.method === 'GET' && commercialPaymentMatch) return invoke('commercial.order.payment.get', { ...query(), order_id: decodeSegment(commercialPaymentMatch[1]!) })
+  const paymentCreateMatch = path.match(/^\/v1\/commercial\/orders\/([^/]+)\/checkout$/u)
+  if (req.method === 'POST' && paymentCreateMatch) {
+    const input = await body(req)
+    if ('order_id' in input) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '订单由请求路径指定', 400)
+    return invoke('commercial.order.payment.create', { ...input, order_id: decodeSegment(paymentCreateMatch[1]!) })
   }
   return false
 }

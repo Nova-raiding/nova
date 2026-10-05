@@ -157,7 +157,7 @@ describe("Ops console marketing governance contract", () => {
     expect(registry).toContain("models: lazy(() => import('../pages/ModelsPage.js')");
     expect(registry).toContain("users: lazy(async () => ({ default: UsersPage }))");
     expect(controller).toContain("const visibleDomains = visibleOpsDomains(model.authorization)");
-    expect(registry).not.toContain("SupportRoute");
+    expect(registry).toContain("SupportRoute");
     expect(registry).not.toContain("IncidentsRoute");
     expect(registry).not.toContain("FeatureFlagsRoute");
     expect(controller).toContain("const authorized = sessionReady && canViewOpsDomain(activeDomain, model.authorization)");

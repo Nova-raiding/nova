@@ -47,6 +47,30 @@ describe('CommercialPurchaseService', () => {
     expect(orders.createFromServerSnapshot).not.toHaveBeenCalled()
   })
 
+  it('rejects the old upgrade request before catalog or full-price order creation', async () => {
+    const catalog = { resolveApprovedExecutableSku: vi.fn(async () => sku) }
+    const orders = { createFromServerSnapshot: vi.fn(async () => order), getPaymentStatus: async () => null }
+    const service = new CommercialPurchaseService(catalog, orders)
+    await expect(service.create({ ...request, purchase_kind: 'upgrade' })).rejects.toMatchObject({ code: 'COMMERCIAL_UPGRADE_QUOTE_REQUIRED' })
+    expect(catalog.resolveApprovedExecutableSku).not.toHaveBeenCalled()
+    expect(orders.createFromServerSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('forwards the quote reference to the transactional order repository without client prices', async () => {
+    const createFromServerSnapshot = vi.fn(async () => order)
+    const service = new CommercialPurchaseService({ resolveApprovedExecutableSku: async () => sku }, { createFromServerSnapshot, getPaymentStatus: async () => null })
+    await service.create({ ...request, purchase_kind: 'upgrade', upgrade_quote_id: 'quote-1' })
+    expect(createFromServerSnapshot).toHaveBeenCalledWith(expect.objectContaining({ purchase_kind: 'upgrade', upgrade_quote_id: 'quote-1' }))
+    await expect(service.create({ ...request, upgrade_quote_id: 'quote-1' })).rejects.toMatchObject({ code: 'COMMERCIAL_PURCHASE_KIND_MISMATCH' })
+  })
+
+  it('preserves the first-checkout dependency identifiers for atomic repository admission', async () => {
+    const createFromServerSnapshot = vi.fn(async () => order)
+    const service = new CommercialPurchaseService({ resolveApprovedExecutableSku: async () => sku }, { createFromServerSnapshot, getPaymentStatus: async () => null })
+    await service.create({ ...request, checkout_id: 'checkout-1', onboarding_order_id: 'opening-order-1' })
+    expect(createFromServerSnapshot).toHaveBeenCalledWith(expect.objectContaining({ checkout_id: 'checkout-1', onboarding_order_id: 'opening-order-1' }))
+  })
+
   it('returns the workspace-scoped payment status and preserves paid without inferring recovery', async () => {
     const paid = { ...order, status: 'paid' as const, paid_at: '2026-09-02T00:01:00Z', access_revision: null }
     const service = new CommercialPurchaseService({ resolveApprovedExecutableSku: async () => sku }, { createFromServerSnapshot: async () => order, getPaymentStatus: async input => input.workspace_id === 'ws-1' ? paid : null })

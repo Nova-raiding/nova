@@ -1,3 +1,4 @@
+import { COMMERCIAL_FEATURE_CODES } from './commercial-feature-definitions.js'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -32,11 +33,12 @@ function serviceFor(registry: readonly CommercialOperationPolicy[], balance: Cre
     registry_version: 'commercial-side-effect-matrix.v1',
     balance_projection: { projectCreativePointBalance: vi.fn(async () => balance) },
     rate_resolver: { resolveApprovedRate: vi.fn(async () => ({ state: 'approved' as const, quoted_points: quote, rate_card_version: 'rate-approved-v1' })) },
+    qualification_projection: { projectCommercialQualification: async () => ({ state: 'known', qualified: true }) },
     entitlement_projection: { listV2EntitlementSnapshots: vi.fn(async () => [{
       id: 'entitlement-v2-matrix', workspaceId: 'ws_matrix', subscriptionPeriodId: 'period-matrix',
       periodStart: '2026-01-01T00:00:00.000Z', periodEnd: '2027-01-01T00:00:00.000Z', periodStatus: 'active',
       catalogVersionId: 'catalog-matrix', skuCode: 'monthly_basic',
-      resolvedBenefits: [{ code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 }],
+      resolvedBenefits: [{ code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 }, ...COMMERCIAL_FEATURE_CODES.map(code => ({ code, quantity: 1 }))],
       unresolvedBlockers: [], executable: true, checksum: 'a'.repeat(64), createdAt: '2026-01-01T00:00:00.000Z',
     }]) },
     id_factory: () => 'decision-matrix',

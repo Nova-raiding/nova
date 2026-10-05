@@ -25,4 +25,10 @@ describe("finance workspace context", () => {
     expect(financeSource).toContain("当前企业：${selectedWorkspace?.enterpriseName || workspaceDraft}");
     expect(financeSource).not.toContain('placeholder="例如 ws_demo"');
   });
+
+  it("exposes platform assisted purchase and verified cash allocation only through platform capabilities", () => {
+    expect(financeSource).toContain('model.authorization.can("commercial.payment.reconcile") && model.authorization.can("commercial.order.read") ? <AssistedPurchaseOperationsPanel controller={commercial} /> : null');
+    expect(financeSource).toContain('model.authorization.can("commercial.receipt.record") || model.authorization.can("commercial.receipt.allocate") ? <CashReceiptOperationsPanel controller={commercial} /> : null');
+    expect(financeSource).toContain('aria-label="代购与收款目标企业主体"');
+  });
 });

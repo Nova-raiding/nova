@@ -90,6 +90,75 @@ paths:
         '400': { $ref: '#/components/responses/ErrorEnvelope' }
         '401': { $ref: '#/components/responses/ErrorEnvelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /internal/commercial-runtime-attestation:
+    get:
+      tags: [Infrastructure]
+      operationId: getCommercialRuntimeAttestation
+      security: []
+      description: Public read-only runtime identity probe used over each API container loopback during release verification. Returns process instance identity, code sales protocol, verified release-manifest SHA-256 and actual database migration-checksum hash. Contains no secrets or customer facts. A successful response proves runtime protocol identity only, never purchase, payment, grant or business readiness.
+      responses:
+        '200':
+          description: Runtime identity and actual schema evidence, with unavailable evidence explicit.
+          content:
+            application/json:
+              schema: { type: object }
+        '503':
+          description: Required runtime or database attestation evidence is unavailable.
+          content:
+            application/json:
+              schema: { type: object }
+  /v1/support/requests:
+    post:
+      tags: [Support]
+      operationId: createMerchantSupportRequest
+      description: Pre-order support for an authenticated active workspace member. Server fixes workspace, actor and customer identity; no Ops identity or paid qualification is implied. Exact commercial recovery with no point charge.
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [subject, message, idempotency_key]
+              properties:
+                subject: { type: string, minLength: 3, maxLength: 200 }
+                message: { type: string, minLength: 3, maxLength: 4000 }
+                idempotency_key: { type: string, minLength: 8, maxLength: 128, pattern: '^[a-zA-Z0-9._:-]+$' }
+                request_id: { type: string, minLength: 1, maxLength: 128 }
+                trace_id: { type: string, minLength: 1, maxLength: 128 }
+                version: { type: string, minLength: 1, maxLength: 128 }
+                step: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/support/requests/{ticketId}:
+    get:
+      tags: [Support]
+      operationId: getMerchantSupportRequest
+      description: Return only a caller-owned ticket and customer-visible replies in the authenticated workspace. Request IDs and ticket IDs do not grant access to another customer.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: ticketId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/internal/commercial/notifications/tick:
+    post:
+      tags: [Internal]
+      operationId: tickCommercialNotifications
+      description: Signed worker-only notification fanout. Requires the configured worker bearer and request-signing proof; never accessible with a merchant session. Worker batching, durable leases and visibility checks remain authoritative.
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/commercial/access:
     get:
       tags: [Commercial]
@@ -112,6 +181,195 @@ paths:
         '401': { $ref: '#/components/responses/ErrorEnvelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
         '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/commercial/order-requests/{idempotencyKey}:
+    get:
+      tags: [Commercial]
+      operationId: commercial_order_request_get
+      description: Authenticated workspace and creating-actor scope; server-owned immutable commerce facts only.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: idempotencyKey, in: path, required: true, schema: { type: string, minLength: 8, maxLength: 200 } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/commercial/upgrade-quote-requests/{idempotencyKey}:
+    get:
+      tags: [Commercial]
+      operationId: commercial_upgrade_quote_request_get
+      description: Authenticated workspace and creating-actor scope; server-owned immutable commerce facts only.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: idempotencyKey, in: path, required: true, schema: { type: string, minLength: 8, maxLength: 200 } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/commercial/checkout-requests/{idempotencyKey}:
+    get:
+      tags: [Commercial]
+      operationId: commercial_checkout_request_get
+      description: Authenticated workspace and creating-actor scope; server-owned immutable commerce facts only.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: idempotencyKey, in: path, required: true, schema: { type: string, minLength: 8, maxLength: 200 } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/commercial/checkouts:
+    post:
+      tags: [Commercial]
+      operationId: commercial_checkout_create
+      description: Authenticated workspace and creating-actor scope; server-owned immutable commerce facts only.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [onboarding_sku_code, subscription_sku_code, idempotency_key, reason]
+              properties:
+                onboarding_sku_code: { type: string, minLength: 1, maxLength: 128 }
+                subscription_sku_code: { type: string, minLength: 1, maxLength: 128 }
+                idempotency_key: { type: string, minLength: 8, maxLength: 200 }
+                reason: { type: string, minLength: 3, maxLength: 1000 }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/commercial/orders/{orderId}/checkout:
+    post:
+      tags: [Commercial]
+      operationId: commercial_order_payment_create
+      description: Authenticated workspace and creating-actor scope; server-owned immutable commerce facts only.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: orderId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 256 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotency_key]
+              properties:
+                idempotency_key: { type: string, minLength: 8, maxLength: 200 }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/commercial/upgrade-quotes:
+    post:
+      tags: [Commercial]
+      operationId: createCommercialUpgradeQuote
+      description: Freezes a server-calculated remaining-period higher-tier upgrade quote. Preserves the original expiry and does not accept client amounts.
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [target_sku_code, idempotency_key]
+              properties:
+                target_sku_code: { type: string, minLength: 1, maxLength: 128 }
+                idempotency_key: { type: string, minLength: 8, maxLength: 200 }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/commercial/upgrade-quotes/{quoteId}:
+    get:
+      tags: [Commercial]
+      operationId: getCommercialUpgradeQuote
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: quoteId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 256 } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/commercial/subscription:
+    get:
+      tags: [Commercial]
+      operationId: getCommercialSubscription
+      description: Returns current and future paid contracts separately. Future points remain unavailable until their approved release window.
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/commercial/notifications:
+    get:
+      tags: [Commercial]
+      operationId: listCommercialNotifications
+      description: Workspace-authorized bounded commercial publication and purchase-result notifications; membership and visibility are rechecked on read. Each result exposes notification_kind, nullable read_at, and optional order_id/result_state (active, scheduled, awaiting_dependency, reconciliation_required); event_id and cursor are opaque.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 4096 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/commercial/notifications/{notificationId}/read:
+    post:
+      tags: [Commercial]
+      operationId: markCommercialNotificationRead
+      description: Idempotently marks only a notification already visible to the verified active member as read. Caller workspace/member identity, financial intent, prices and entitlements are not accepted.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: notificationId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 256 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotency_key]
+              properties:
+                idempotency_key: { type: string, minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/commercial/orders:
     post:
       tags: [Commercial]
@@ -127,8 +385,11 @@ paths:
               additionalProperties: false
               required: [purchase_kind, sku_code, idempotency_key, reason]
               properties:
-                purchase_kind: { type: string, enum: [purchase, upgrade, point_pack] }
+                purchase_kind: { type: string, enum: [purchase, onboarding_once, upgrade, point_pack] }
                 sku_code: { type: string, minLength: 1, maxLength: 128 }
+                upgrade_quote_id: { type: string, minLength: 1, maxLength: 256, description: Required when purchase_kind is upgrade; old full-price upgrade requests are rejected. }
+                checkout_id: { type: string, minLength: 1, maxLength: 256 }
+                onboarding_order_id: { type: string, minLength: 1, maxLength: 256 }
                 idempotency_key: { type: string, minLength: 8, maxLength: 200 }
                 reason: { type: string, minLength: 3, maxLength: 1000 }
       responses:
@@ -2046,7 +2307,7 @@ components:
         id: { oneOf: [{ type: string }, { type: integer }, { type: 'null' }] }
         method:
           type: string
-          enum: [onboarding.status, merchant.start, commercial.service-boundary.accept, merchant.first_value, brand-unit.list, brand-unit.create, brand-unit.bind-store, brand-unit.product.create, brand-unit.listing.create, brand-unit.listing.list, brand-unit.access.grant, canonical.product.consistency, ops.canonical.backfill.create, ops.canonical.backfill.get, ops.canonical.backfill.pause, ops.canonical.backfill.resume, ops.canonical.backfill.run, ops.canonical.backfill.conflicts.list, ops.canonical.backfill.conflict.claim, ops.canonical.backfill.conflict.resolve, ops.rules.workspace.audit, campaign.batch.create, campaign.batch.list, campaign.batch.get, campaign.batch.generate, campaign.batch.pause, campaign.batch.resume, campaign.batch.retry_failed, workspace.health, workspace.invitations.list, workspace.invitation.accept, workspace.bootstrap, workspace.content_setup.confirm, workspace.interactive.confirm, workspace.metrics, workspace.commercial.get, workspace.commercial.update, workspace.usage.get, commercial.access.get, commercial.catalog.get, commercial.order.create, commercial.order.payment.get, creative-points.balance.get, creative-points.statement.list, ops.audit.list, ops.audit.platform.list, ops.audit.detail, ops.audit.export, ops.data.delete.list, ops.data.delete.cancel, ops.data.delete.approve, ops.members.list, ops.session, ops.authorization.matrix.get, ops.authorization.roles.list, ops.authorization.role.assign, ops.authorization.role.revoke, ops.authorization.grants.list, ops.authorization.grant.issue, ops.authorization.grant.revoke, ops.workspaces.list, ops.stores.list, ops.platform.store.record.create, ops.platform.manual-stores.list, ops.platform.product.import.batch, ops.brand-units.summary, ops.tasks.summary, ops.model-usage.summary, ops.storage.reconciliation.list, ops.support.tickets.list, ops.support.ticket.get, support.customer.replies.list, ops.support.ticket.create, ops.support.ticket.assign, ops.support.ticket.transition, ops.support.ticket.comment, ops.support.sla.report, ops.support.sla.correction.create, ops.support.sla.correction.decide, ops.customer-delivery.list, ops.customer-delivery.accounts.list, ops.customer-delivery.account.bind, ops.customer-delivery.get, ops.customer-delivery.create, ops.customer-delivery.update, ops.customer-delivery.checklist.update, ops.customer-delivery.checklist-items.list, ops.customer-delivery.checklist-item.update, ops.customer-delivery.training.complete, ops.customer-delivery.videos.list, ops.customer-delivery.videos.add, ops.customer-delivery.assets.upload, ops.customer-delivery.assets.get, ops.incidents.list, ops.incident.get, ops.incident.timeline, ops.incident.create, ops.incident.transition, ops.incident.comment, ops.incident.commander.assign, ops.incident.scope.update, ops.feature-flags.list, ops.feature-flag.upsert, ops.feature-flag.emergency.set, ops.feature-flag.events, ops.feature-flag.evaluate, ops.finance.search, ops.finance.detail, ops.finance.export, ops.users.list, ops.users.export, ops.user.detail, ops.user.suspend, ops.user.activate, ops.user.risk.transition, ops.user.session.revoke, ops.commercial.offers.list, ops.commercial.offer.upsert, ops.commercial.addons.list, ops.commercial.addon.upsert, ops.commercial.coupons.list, ops.commercial.export, ops.commercial.coupon.upsert, ops.commercial.rollouts.list, ops.commercial.rollout.upsert, ops.commercial.model-markup.get, ops.commercial.model-markup.update, ops.commercial.access.summary, ops.commercial.access-blocks.list, ops.commercial.entitlements.list, ops.commercial.points-ledger.list, ops.commercial.points.adjust.propose, ops.commercial.points.adjust.decide, ops.commercial.catalog-v2.list, ops.commercial.catalog-v2.mutate, ops.commercial.orders-v2.list, ops.commercial.rate-cards.list, ops.commercial.readiness.report, ops.commercial.private-trial.eligibility.create, ops.commercial.private-trial.order.create, ops.commercial.private-trial.trial-payment.verify, ops.commercial.private-trial.invite.create, ops.commercial.private-trial.invite.list, ops.commercial.private-trial.invite.revoke, ops.commercial.private-trial.eligibility.approve, ops.commercial.private-trial.validation.complete, ops.commercial.private-trial.credit.prepare, ops.commercial.private-trial.credit.approve, ops.commercial.private-trial.conversion.create, ops.commercial.private-trial.payment.verify, ops.commercial.order.payment.verify, ops.commercial.order.refund.list, ops.commercial.order.refund.request, ops.commercial.order.refund.approve, ops.commercial.order.refund.complete, ops.commercial.service-fulfillment.list, ops.commercial.timeline.list, ops.commercial.service-allocation.create, ops.commercial.service-fulfillment.schedule, ops.commercial.service-fulfillment.start, ops.commercial.service-fulfillment.complete, ops.commercial.service-fulfillment.adjust, ops.growth.funnel, ops.alerts.list, ops.alert.ack, ops.marketing.queue, ops.marketing.summary, ops.marketing.queue.assign, ops.marketing.image.reconcile, ops.marketing.image.evidence.export, ops.marketing.image.archive.audit, ops.marketing.image.billing.audit, ops.marketing.visual.review, ops.marketing.generation.retry, ops.marketing.generation.no_delivery.refund, ops.marketing.asset_scan.retry, ops.marketing.publish.acknowledge, ops.marketing.revision.create, ops.member.upsert, ops.member.suspend, subscription.get, subscription.orders.list, subscription.order.create, subscription.change, billing.usage.consume, billing.usage.refund, billing.refund, billing.reconciliation, billing.model-usage.statement, billing.reconciliation.run, billing.model-usage.reconciliation.run, billing.model-usage.resolve, billing.export, platform.settings.get, platform.settings.update, platform.media.spec.list, platform.media.spec.get, platform.media.spec.create, platform.media.spec.update, platform.media.spec.approve, platform.media.spec.expire, platform.mapping.preflight, platform.model.status, billing.status, billing.recharge.create, billing.recharge.get, billing.recharge.list, billing.transactions, workspace.deactivate, workspace.activate, workspace.data.export.request, workspace.data.export.get, workspace.data.delete.request, platform.store.list, platform.connect, platform.store.alias.set, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.import.batch, catalog.sku.update, catalog.product.update, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.retry, catalog.image.get, catalog.image.select, catalog.image.review, sync.retry_failed, rule.list, rule.sync.status, ops.rules.public.sync.status, rule.sync.now, rule.history, rule.audit, ops.rules.public.drafts.list, ops.rules.public.drafts.get, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.metadata.update, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, upload.session.create, upload.session.part, upload.session.complete, asset.scan, asset.generation.confirm, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, feedback.submit, platform.revoke, task.create, task.create.draft, task.answer, task.understand, task.request.create, task.sku.split, task.group.create, creative.directions, creative.brief, creative.preview, creative.directions.update, task.select_direction, task.plan.confirm, content.generate, content.draft.generate, content.draft.confirm, content.codex.prepare, content.codex.commit, generation.get, content.review, content.review.decide, content.visual.select, content.versions, content.diff, content.export, content.approve, content.modify, content.restore, publish.prepare, publish.batch.prepare, publish.batch.confirm, publish.batch.get, publish.batch.pause, publish.batch.resume, publish.batch.retry_failed, automation.policy.get, automation.policy.list, automation.policy.update, automation.scan, automation.tick, automation.pause, publish.confirm, publish.get, ops.marketing.publish.manual-evidence.record, publish.manual.get, publish.manual.list, knowledge.rule.create, knowledge.rule.update, knowledge.rule.list, knowledge.asset.create, knowledge.asset.update, knowledge.asset.list, knowledge.brand.preference.get, knowledge.brand.preference.update, knowledge.feedback.record, knowledge.learning.list, knowledge.learning.confirm, knowledge.learning.dismiss, knowledge.competitor.create, knowledge.competitor.list, knowledge.competitor.reference, delivery.bundle.verify, multimodal.image.edit, multimodal.generate, multimodal.video.request, multimodal.video.get]
+          enum: [onboarding.status, merchant.start, commercial.service-boundary.accept, merchant.first_value, brand-unit.list, brand-unit.create, brand-unit.bind-store, brand-unit.product.create, brand-unit.listing.create, brand-unit.listing.list, brand-unit.access.grant, canonical.product.consistency, ops.canonical.backfill.create, ops.canonical.backfill.get, ops.canonical.backfill.pause, ops.canonical.backfill.resume, ops.canonical.backfill.run, ops.canonical.backfill.conflicts.list, ops.canonical.backfill.conflict.claim, ops.canonical.backfill.conflict.resolve, ops.rules.workspace.audit, campaign.batch.create, campaign.batch.list, campaign.batch.get, campaign.batch.generate, campaign.batch.pause, campaign.batch.resume, campaign.batch.retry_failed, workspace.health, workspace.invitations.list, workspace.invitation.accept, workspace.bootstrap, workspace.content_setup.confirm, workspace.interactive.confirm, workspace.metrics, workspace.commercial.get, workspace.commercial.update, workspace.usage.get, commercial.access.get, commercial.catalog.get, commercial.upgrade.quote.create, commercial.upgrade.quote.get, commercial.subscription.get, commercial.notifications.list, commercial.notifications.mark-read, commercial.order.create, commercial.order.payment.get, commercial.order.payment.create, commercial.checkout.request.get, commercial.order.request.get, commercial.upgrade.quote.request.get, commercial.checkout.create, creative-points.balance.get, creative-points.statement.list, ops.audit.list, ops.audit.platform.list, ops.audit.detail, ops.audit.export, ops.data.delete.list, ops.data.delete.cancel, ops.data.delete.approve, ops.members.list, ops.session, ops.authorization.matrix.get, ops.authorization.roles.list, ops.authorization.role.assign, ops.authorization.role.revoke, ops.authorization.grants.list, ops.authorization.grant.issue, ops.authorization.grant.revoke, ops.workspaces.list, ops.stores.list, ops.platform.store.record.create, ops.platform.manual-stores.list, ops.platform.product.import.batch, ops.brand-units.summary, ops.tasks.summary, ops.model-usage.summary, ops.storage.reconciliation.list, ops.support.tickets.list, ops.support.platform.tickets.list, ops.support.platform.ticket.get, ops.support.platform.ticket.comment, ops.support.ticket.get, support.customer.replies.list, ops.support.ticket.create, ops.support.ticket.assign, ops.support.ticket.transition, ops.support.ticket.comment, ops.support.sla.report, ops.support.sla.correction.create, ops.support.sla.correction.decide, ops.customer-delivery.list, ops.customer-delivery.accounts.list, ops.customer-delivery.account.bind, ops.customer-delivery.get, ops.customer-delivery.create, ops.customer-delivery.update, ops.customer-delivery.checklist.update, ops.customer-delivery.checklist-items.list, ops.customer-delivery.checklist-item.update, ops.customer-delivery.training.complete, ops.customer-delivery.videos.list, ops.customer-delivery.videos.add, ops.customer-delivery.assets.upload, ops.customer-delivery.assets.get, ops.incidents.list, ops.incident.get, ops.incident.timeline, ops.incident.create, ops.incident.transition, ops.incident.comment, ops.incident.commander.assign, ops.incident.scope.update, ops.feature-flags.list, ops.feature-flag.upsert, ops.feature-flag.emergency.set, ops.feature-flag.events, ops.feature-flag.evaluate, ops.finance.search, ops.finance.detail, ops.finance.export, ops.users.list, ops.users.export, ops.user.detail, ops.user.suspend, ops.user.activate, ops.user.risk.transition, ops.user.session.revoke, ops.commercial.offers.list, ops.commercial.offer.upsert, ops.commercial.addons.list, ops.commercial.addon.upsert, ops.commercial.coupons.list, ops.commercial.export, ops.commercial.coupon.upsert, ops.commercial.rollouts.list, ops.commercial.rollout.upsert, ops.commercial.model-markup.get, ops.commercial.model-markup.update, ops.commercial.access.summary, ops.commercial.access-blocks.list, ops.commercial.entitlements.list, ops.commercial.points-ledger.list, ops.commercial.points.adjust.propose, ops.commercial.points.adjust.decide, ops.commercial.catalog-v2.list, ops.commercial.benefit-definitions.list, ops.commercial.notifications.purchase-results.list, ops.commercial.notifications.purchase-results.redrive, ops.commercial.benefit-bundles.list, ops.commercial.benefit-bundles.mutate, ops.commercial.benefit-bundles.references.list, ops.commercial.catalog-v2.mutate, ops.commercial.orders-v2.list, ops.commercial.order.preview, ops.commercial.order.request.get, ops.commercial.upgrade.quote.request.get, ops.commercial.checkout.preview, ops.commercial.checkout.create, ops.commercial.checkout.request.get, ops.commercial.receipt.allocations.preview, ops.commercial.receipt.allocations.confirm, ops.commercial.upgrade.quote.create, ops.commercial.upgrade.quote.get, ops.commercial.order.create, ops.commercial.receipt.record, ops.commercial.receipt.request.get, ops.commercial.receipt.allocation.request.get, ops.commercial.receipt.return.request.get, ops.commercial.receipt.unmatched.return.propose, ops.commercial.receipt.unmatched.return.decide, ops.commercial.receipt.unmatched.return.complete, ops.commercial.receipt.unmatched.return.list, ops.commercial.receipt.unmatched.record, ops.commercial.receipt.unmatched.list, ops.commercial.receipt.unmatched.match, ops.commercial.receipt.list, ops.commercial.receipt.get, ops.commercial.receipt.allocation.preview, ops.commercial.receipt.allocation.confirm, ops.commercial.receipt.return.propose, ops.commercial.receipt.return.decide, ops.commercial.receipt.return.complete, ops.commercial.receipt.return.list, ops.commercial.rate-cards.list, ops.commercial.readiness.report, ops.commercial.private-trial.eligibility.create, ops.commercial.private-trial.order.create, ops.commercial.private-trial.trial-payment.verify, ops.commercial.private-trial.invite.create, ops.commercial.private-trial.invite.list, ops.commercial.private-trial.invite.revoke, ops.commercial.private-trial.eligibility.approve, ops.commercial.private-trial.validation.complete, ops.commercial.private-trial.credit.prepare, ops.commercial.private-trial.credit.approve, ops.commercial.private-trial.conversion.create, ops.commercial.private-trial.payment.verify, ops.commercial.order.payment.verify, ops.commercial.order.refund.list, ops.commercial.order.refund.request, ops.commercial.order.refund.approve, ops.commercial.order.refund.complete, ops.commercial.service-fulfillment.list, ops.commercial.timeline.list, ops.commercial.service-allocation.create, ops.commercial.service-fulfillment.schedule, ops.commercial.service-fulfillment.start, ops.commercial.service-fulfillment.complete, ops.commercial.service-fulfillment.adjust, ops.growth.funnel, ops.alerts.list, ops.alert.ack, ops.marketing.queue, ops.marketing.summary, ops.marketing.queue.assign, ops.marketing.image.reconcile, ops.marketing.image.evidence.export, ops.marketing.image.archive.audit, ops.marketing.image.billing.audit, ops.marketing.visual.review, ops.marketing.generation.retry, ops.marketing.generation.no_delivery.refund, ops.marketing.asset_scan.retry, ops.marketing.publish.acknowledge, ops.marketing.revision.create, ops.member.upsert, ops.member.suspend, subscription.get, subscription.orders.list, subscription.order.create, subscription.change, billing.usage.consume, billing.usage.refund, billing.refund, billing.reconciliation, billing.model-usage.statement, billing.reconciliation.run, billing.model-usage.reconciliation.run, billing.model-usage.resolve, billing.export, platform.settings.get, platform.settings.update, platform.media.spec.list, platform.media.spec.get, platform.media.spec.create, platform.media.spec.update, platform.media.spec.approve, platform.media.spec.expire, platform.mapping.preflight, platform.model.status, billing.status, billing.recharge.create, billing.recharge.get, billing.recharge.list, billing.transactions, workspace.deactivate, workspace.activate, workspace.data.export.request, workspace.data.export.get, workspace.data.delete.request, platform.store.list, platform.connect, platform.store.alias.set, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.import.batch, catalog.sku.update, catalog.product.update, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.retry, catalog.image.get, catalog.image.select, catalog.image.review, sync.retry_failed, rule.list, rule.sync.status, ops.rules.public.sync.status, rule.sync.now, rule.history, rule.audit, ops.rules.public.drafts.list, ops.rules.public.drafts.get, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.metadata.update, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, upload.session.create, upload.session.part, upload.session.complete, asset.scan, asset.generation.confirm, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, feedback.submit, platform.revoke, task.create, task.create.draft, task.answer, task.understand, task.request.create, task.sku.split, task.group.create, creative.directions, creative.brief, creative.preview, creative.directions.update, task.select_direction, task.plan.confirm, content.generate, content.draft.generate, content.draft.confirm, content.codex.prepare, content.codex.commit, generation.get, content.review, content.review.decide, content.visual.select, content.versions, content.diff, content.export, content.approve, content.modify, content.restore, publish.prepare, publish.batch.prepare, publish.batch.confirm, publish.batch.get, publish.batch.pause, publish.batch.resume, publish.batch.retry_failed, automation.policy.get, automation.policy.list, automation.policy.update, automation.scan, automation.tick, automation.pause, publish.confirm, publish.get, ops.marketing.publish.manual-evidence.record, publish.manual.get, publish.manual.list, knowledge.rule.create, knowledge.rule.update, knowledge.rule.list, knowledge.asset.create, knowledge.asset.update, knowledge.asset.list, knowledge.brand.preference.get, knowledge.brand.preference.update, knowledge.feedback.record, knowledge.learning.list, knowledge.learning.confirm, knowledge.learning.dismiss, knowledge.competitor.create, knowledge.competitor.list, knowledge.competitor.reference, delivery.bundle.verify, multimodal.image.edit, multimodal.generate, multimodal.video.request, multimodal.video.get]
         params:
           type: object
           description: Method-specific parameters. Production-evidence methods use the fail-closed schemas declared by x-method-schema-refs; complex values are JSON-encoded strings and validated for object/array shape before dispatch.

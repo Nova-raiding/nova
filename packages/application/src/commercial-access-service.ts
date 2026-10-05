@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { requiredCommercialFeatures, type CommercialFeatureModality } from './commercial-feature-definitions.js'
 import {
   ERROR_CODES,
   assertCommercialAccessDecision,
@@ -12,6 +13,7 @@ import {
 import {
   ContinuousFeatureEntitlementService,
   type ContinuousFeatureEntitlementPort,
+  type ContinuousFeatureEntitlementDecision,
   type DemoEvaluationEntitlementPort,
 } from './continuous-feature-entitlement.js'
 
@@ -50,6 +52,8 @@ export interface ApprovedCreativePointRateResolver {
 
 export interface CommercialAccessRequest extends CommercialOperationRef {
   readonly workspace_id: string
+  /** Passed by the server after input/job validation; never used to override an exact operation. */
+  readonly validated_modality?: CommercialFeatureModality
   /** Workers may pin the revision captured when work was admitted. */
   readonly required_access_revision?: string
   /** Test-only registry injection for the real HTTP fixture harness. */
@@ -68,6 +72,21 @@ export type CommercialAccessServiceResult = CommercialAccessDecisionTrace & (
   | { readonly outcome: 'DENY_NON_COMMERCIAL'; readonly policy: CommercialOperationPolicy }
 )
 
+export type CommercialQualificationProjection =
+  | { readonly state: 'unknown' }
+  | { readonly state: 'known'; readonly qualified: boolean; readonly approved_private_trial_exception?: {
+      readonly workspace_id: string
+      readonly starts_at: string
+      readonly expires_at: string
+      readonly policy_id: string
+      readonly order_id: string
+    } }
+export interface CommercialQualificationProjectionPort {
+  /** Reads verified onboarding qualification or an approved private contract,
+   * never balances, plan names, client flags, or a nominal payment amount. */
+  projectCommercialQualification(input: { readonly workspace_id: string }): Promise<CommercialQualificationProjection>
+}
+
 export interface CommercialAccessServiceOptions {
   readonly registry: readonly CommercialOperationPolicy[]
   readonly registry_version: string
@@ -75,6 +94,7 @@ export interface CommercialAccessServiceOptions {
   readonly rate_resolver: ApprovedCreativePointRateResolver
   /** V2 subscription snapshot authority for every non-recovery merchant feature. */
   readonly entitlement_projection: ContinuousFeatureEntitlementPort
+  readonly qualification_projection?: CommercialQualificationProjectionPort
   /** Explicit ECS demo grant, scoped to the sole first-install workspace. */
   readonly demo_evaluation?: { readonly workspaceId: 'ws_guirenniaoniao'; readonly projection: DemoEvaluationEntitlementPort }
   /** Only server-authorized recovery actions may be exposed to clients. */
@@ -129,6 +149,7 @@ export class CommercialAccessService {
   readonly #balanceProjection: CreativePointBalanceProjectionPort
   readonly #rateResolver: ApprovedCreativePointRateResolver
   readonly #continuousEntitlement: ContinuousFeatureEntitlementService
+  readonly #qualificationProjection?: CommercialQualificationProjectionPort
   readonly #nextActions?: CommercialAccessServiceOptions['next_actions']
   readonly #idFactory: () => string
   readonly #now: () => Date
@@ -140,6 +161,7 @@ export class CommercialAccessService {
     this.#balanceProjection = options.balance_projection
     this.#rateResolver = options.rate_resolver
     this.#continuousEntitlement = new ContinuousFeatureEntitlementService({ projection: options.entitlement_projection, now: options.now, demoEvaluation: options.demo_evaluation })
+    this.#qualificationProjection = options.qualification_projection
     this.#nextActions = options.next_actions
     this.#idFactory = options.id_factory ?? randomUUID
     this.#now = options.now ?? (() => new Date())
@@ -253,7 +275,7 @@ export class CommercialAccessService {
         error_code: null,
         next_actions: [],
       } as const
-      return this.#entitlementDecision(trace, candidate)
+      return this.#entitlementDecision(trace, candidate, policy, request.validated_modality)
     }
 
     let rate: ApprovedCreativePointRate
@@ -299,7 +321,7 @@ export class CommercialAccessService {
         next_actions: normalizeNextActions(this.#nextActions, ERROR_CODES.CREATIVE_POINTS_INSUFFICIENT),
       })
     }
-    return this.#entitlementDecision(trace, { ...quoteBase, allowed: true, error_code: null, next_actions: [] })
+    return this.#entitlementDecision(trace, { ...quoteBase, allowed: true, error_code: null, next_actions: [] }, policy, request.validated_modality)
   }
 
   #createTrace(): CommercialAccessDecisionTrace {
@@ -314,17 +336,44 @@ export class CommercialAccessService {
     return { ...trace, outcome: 'DECISION', decision: assertCommercialAccessDecision(decision) }
   }
 
-  async #entitlementDecision(
-    trace: CommercialAccessDecisionTrace,
-    candidate: CommercialAccessDecision,
-  ): Promise<CommercialAccessServiceResult> {
-    const entitlement = await this.#continuousEntitlement.decide({ workspace_id: candidate.workspace_id, decided_at: trace.decided_at })
+  /** Execution-time feature/qualification recheck for an already authorized
+   * operation. Existing reservation and money checks remain with the caller;
+   * a fully reserved job may legitimately have zero unreserved points. */
+  async recheckEntitlement(request: CommercialOperationRef & { readonly workspace_id: string; readonly validated_modality?: CommercialFeatureModality }): Promise<ContinuousFeatureEntitlementDecision> {
+    if (!isNonEmptyText(request.workspace_id)) throw new Error('commercial access workspace_id must be non-empty')
+    const resolution = resolveCommercialOperation(this.#registry, request)
+    if (resolution.outcome !== 'REGISTERED' || resolution.policy.domain !== 'COMMERCIAL' || resolution.policy.classification === 'RECOVERY_CONTROL') {
+      return { allowed: false, code: 'COMMERCIAL_ENTITLEMENT_REQUIRED', snapshot_id: null, subscription_period_id: null, catalog_version_id: null, checksum: null, ignored_legacy_sources: [] }
+    }
+    return this.#eligibleEntitlement(request.workspace_id, this.#createTrace().decided_at, resolution.policy, request.validated_modality)
+  }
+
+  async #eligibleEntitlement(workspaceId: string, decidedAt: string, policy: CommercialOperationPolicy, validatedModality?: CommercialFeatureModality): Promise<ContinuousFeatureEntitlementDecision> {
+    const entitlement = await this.#continuousEntitlement.decide({ workspace_id: workspaceId, decided_at: decidedAt, required_feature_codes: requiredCommercialFeatures(policy, validatedModality) })
+    if (!entitlement.allowed) return entitlement
+    // Only the explicitly scoped audited demo authority is independent of paid onboarding.
+    if (entitlement.catalog_version_id === 'demo-evaluation:v1' && entitlement.subscription_period_id.startsWith('demo-evaluation:')) return entitlement
+    let qualification: CommercialQualificationProjection = { state: 'unknown' }
+    try {
+      if (this.#qualificationProjection) qualification = await this.#qualificationProjection.projectCommercialQualification({ workspace_id: workspaceId })
+    } catch { /* Unknown qualification never authorizes a paid workflow. */ }
+    if (qualification?.state === 'known' && typeof qualification.qualified === 'boolean') {
+      const exception = qualification.approved_private_trial_exception
+      const instant = Date.parse(decidedAt)
+      const start = exception ? Date.parse(exception.starts_at) : NaN
+      const end = exception ? Date.parse(exception.expires_at) : NaN
+      const privateAllowed = exception !== undefined && exception.workspace_id === workspaceId
+        && isNonEmptyText(exception.policy_id) && isNonEmptyText(exception.order_id)
+        && Number.isFinite(start) && Number.isFinite(end) && start <= instant && instant < end
+      if (qualification.qualified || privateAllowed) return entitlement
+    }
+    return { allowed: false, code: qualification?.state === 'known' && typeof qualification.qualified === 'boolean' ? 'COMMERCIAL_ENTITLEMENT_REQUIRED' : 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE',
+      snapshot_id: null, subscription_period_id: null, catalog_version_id: null, checksum: null, ignored_legacy_sources: entitlement.ignored_legacy_sources }
+  }
+
+  async #entitlementDecision(trace: CommercialAccessDecisionTrace, candidate: CommercialAccessDecision, policy: CommercialOperationPolicy, validatedModality?: CommercialFeatureModality): Promise<CommercialAccessServiceResult> {
+    const entitlement = await this.#eligibleEntitlement(candidate.workspace_id, trace.decided_at, policy, validatedModality)
     if (entitlement.allowed) return this.#decision(trace, candidate)
-    return this.#decision(trace, {
-      ...candidate,
-      allowed: false,
-      error_code: entitlement.code,
-      next_actions: normalizeNextActions(this.#nextActions, entitlement.code),
-    })
+    return this.#decision(trace, { ...candidate, allowed: false, error_code: entitlement.code, next_actions: normalizeNextActions(this.#nextActions, entitlement.code) })
   }
 }

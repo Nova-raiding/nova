@@ -16,7 +16,7 @@ import { imageArtifactBody } from './image-artifact-policy.js'
 export async function handleInternalRuntimeRoute(context: InternalRuntimeContext): Promise<boolean> {
   const { req, res, path } = context
   const postPath = req.method === 'POST' && (
-    ['/v1/internal/automation/tick', '/v1/internal/knowledge-embeddings/admission', '/v1/internal/knowledge-embeddings/outcome',
+    ['/v1/internal/commercial/notifications/tick', '/v1/internal/automation/tick', '/v1/internal/knowledge-embeddings/admission', '/v1/internal/knowledge-embeddings/outcome',
       '/v1/internal/knowledge/generation-claims', '/v1/internal/model-usage', '/v1/internal/image-generation-jobs/reconciliation',
       '/v1/internal/billing/reconciliation', '/v1/internal/model-usage/reconciliation'].includes(path)
     || /^\/v1\/internal\/image-generation-jobs\/[^/]+\/(?:result|execution|reconciliation-evidence)$/u.test(path)
@@ -33,12 +33,21 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     durableKnowledgeRepository, requiresStrictAuth, memoryKnowledge,
     inMemoryTimelineEvents, recordActionSettlement, requestActor, reserveDailyModelBudget, releaseDailyModelBudget,
     recordRelayUsage, runModelUsageReconciliation, recordOperationAudit,
-    runPaymentReconciliation } = context
+    runPaymentReconciliation, runCommercialNotifications, requireWorkerFeature } = context
   async function respond(): Promise<void> {
+  if (req.method === 'POST' && path === '/v1/internal/commercial/notifications/tick') {
+    await requireWorkerAuthorization(req)
+    const workspaceId = headerRequired(req, 'x-workspace-id')
+    const input = await body(req)
+    const kind = input.notification_kind ?? 'catalog_publication'
+    if (kind !== 'catalog_publication' && kind !== 'purchase_result') throw new DomainError('INVALID_REQUEST', '通知类型无效', 400)
+    return send(res, 200, workspaceId, await runCommercialNotifications(kind, workspaceId), null, req)
+  }
   if (req.method === 'POST' && path === '/v1/internal/automation/tick') {
     await requireWorkerAuthorization(req)
     const workspaceId = headerRequired(req, 'x-workspace-id')
     await hydrateWorkspace(workspaceId)
+    await requireWorkerFeature(workspaceId, 'automation.tick.execute')
     const automation = await runAutomationTick(workspaceId, req, 'worker-automation')
     const ruleSync = automation.skipReason === 'codex_native_automations_only'
       ? { skipped: true, reason: 'codex_native_automations_only' as const }
@@ -370,6 +379,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     const expectedRunKey = `knowledge-index:${documentId}:${documentRevision}`
     if (actionId !== expectedActionId || runKey !== expectedRunKey) throw new DomainError('KNOWLEDGE_EMBEDDING_BINDING_INVALID', '知识向量动作标识未绑定文档版本', 409, { expected_action_id: expectedActionId, expected_run_key: expectedRunKey })
     if (path.endsWith('/admission')) {
+      await requireWorkerFeature(workspaceId, 'knowledge.embedding.execute')
       const queryGate = knowledgeVectorQueryReadiness(process.env)
       const embeddingGate = evaluatePlatformModelGate(process.env, 'embedding')
       if (!queryGate.ready || !embeddingGate.ready || process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED !== 'true') throw new DomainError('KNOWLEDGE_EMBEDDING_PROVIDER_NOT_READY', '知识向量检索和中转配置未通过生产门禁', 503, { reasons: [...queryGate.reasons, ...embeddingGate.reasons], vector_index_enabled: process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true' })

@@ -59,7 +59,7 @@ describe('the statement capture is the shape the server produces', () => {
     const httpStart = commercialHttpSource.indexOf("path === '/v1/creative-points/statement'")
     expect(httpStart, 'the HTTP statement handler must exist').toBeGreaterThan(-1)
     const httpCase = commercialHttpSource.slice(httpStart, commercialHttpSource.indexOf("path === '/v1/commercial/catalog'", httpStart))
-    expect(httpCase).toContain('creativePoints.listStatement')
+    expect(httpCase).toContain("invoke('creative-points.statement.list'")
   })
 })
 

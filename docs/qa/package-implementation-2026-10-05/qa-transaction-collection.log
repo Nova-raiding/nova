@@ -1,0 +1,57 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ❯ packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts [ packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts ]
+Error: "." is not exported under the conditions ["node", "development", "import"] from package /Users/lixiaomei/Desktop/code/codexSkills/node_modules/@merchant-marketing/application (see exports field in /Users/lixiaomei/Desktop/code/codexSkills/node_modules/@merchant-marketing/application/package.json)
+  Plugin: builtin:vite-resolve
+ ❯ EnvironmentPluginContainer.resolveId node_modules/vite/dist/node/chunks/node.js:30848:19
+ ❯ TransformPluginContext.resolve node_modules/vite/dist/node/chunks/node.js:31077:13
+ ❯ normalizeUrl node_modules/vite/dist/node/chunks/node.js:28075:22
+ ❯ node_modules/vite/dist/node/chunks/node.js:28153:30
+ ❯ TransformPluginContext.transform node_modules/vite/dist/node/chunks/node.js:28119:4
+ ❯ EnvironmentPluginContainer.transform node_modules/vite/dist/node/chunks/node.js:30932:14
+ ❯ loadAndTransform node_modules/vite/dist/node/chunks/node.js:20671:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  11:37:53
+   Duration  1.35s (transform 0ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)
+
+The default test suite reported assertions that never executed, or an allowance no longer matches reality.
+Each pending assertion must be declared in DEFAULT_SUITE_PENDING_ALLOWANCES (tests/test-suite-isolation.ts)
+with the exact count, the reason it cannot run here, and the entrypoint that does run it.
+An allowance whose file ran without skipping is stale and must be removed.
+  - <file> (n): pending assertion no allowance declares
+  - <file> expected N, observed M: declared count drift
+  - <file> declares N but reported 0: stale allowance
+  - DEFAULT_SUITE_EMPTY_FILE:packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts
+  - DEFAULT_SUITE_STALE_PENDING_ALLOWANCE:packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts declares 5 pending assertion(s) but reported 0 while PERSISTENCE_RELEASE_DATABASE_URL is unset — the skip gate is gone, delete the allowance or restore the assertion
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: DEFAULT_SUITE_UNEXPECTED_PENDING_ASSERTIONS
+ ❯ PendingAssertionGateReporter.onTestRunEnd scripts/pending-assertion-gate.ts:259:11
+    257|     }
+    258|     console.error(formatPendingGateFailure(errors))
+    259|     throw new Error(PENDING_GATE_ERROR_CODES.unexpectedPending)
+       |           ^
+    260|   }
+    261| }
+ ❯ node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:14051:56
+ ❯ Vitest.report node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:14051:36
+ ❯ TestRun.end node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:12674:21
+ ❯ node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:13674:26
+ ❯ node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:13684:11
+ ❯ node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:13546:19
+ ❯ startVitest node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:14621:8
+ ❯ start node_modules/vitest/dist/chunks/cac.uFydS1Z4.js:2340:15
+
+
+
+

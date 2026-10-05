@@ -1,0 +1,47 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ tests/default-suite-pending.test.ts (17 tests) 249ms
+ ❯ tests/postgres-ci-denominator.test.ts (2 tests | 1 failed) 62ms
+     × executes every repository PostgreSQL test file in the dedicated CI service 58ms
+     ✓ pins the schema-dump client to PostgreSQL 17 in CI 2ms
+ ↓ packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts (6 tests | 6 skipped)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/postgres-ci-denominator.test.ts > CI PostgreSQL denominator > executes every repository PostgreSQL test file in the dedicated CI service
+AssertionError: expected [ …(113) ] to deeply equal [ …(114) ]
+
+- Expected
++ Received
+
+@@ -40,11 +40,10 @@
+    "packages/persistence/src/image-generation-before-provider.release.postgres.test.ts",
+    "packages/persistence/src/knowledge-generation-claim-boundary.postgres.test.ts",
+    "packages/persistence/src/knowledge-index-cas.release.postgres.test.ts",
+    "packages/persistence/src/local-212-collision-bridge.postgres.test.ts",
+    "packages/persistence/src/local-plugin-install-rls.release.postgres.test.ts",
+-   "packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts",
+    "packages/persistence/src/migration-064-release.postgres.test.ts",
+    "packages/persistence/src/migration-067-release.postgres.test.ts",
+    "packages/persistence/src/migration-068-release.postgres.test.ts",
+    "packages/persistence/src/migration-069-release.postgres.test.ts",
+    "packages/persistence/src/migration-070-072-release.postgres.test.ts",
+
+ ❯ tests/postgres-ci-denominator.test.ts:29:29
+     27|       ...postgresFiles('tests'),
+     28|     ].sort()
+     29|     expect(ciPostgresFiles).toEqual(expected)
+       |                             ^
+     30|   })
+     31|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed | 1 skipped (3)
+      Tests  1 failed | 18 passed | 6 skipped (25)
+   Start at  11:45:30
+   Duration  9.77s (transform 4.31s, setup 0ms, import 6.06s, tests 311ms, environment 1ms)
+
+[pending-gate] 6 declared pending assertion(s) across 1 allow-listed file(s)

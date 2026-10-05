@@ -56,7 +56,7 @@ function serviceAndProduct(input: {
   title: string
   price?: number
   stock?: number
-  skus?: Array<{ id: string; name: string; price: number; stock: number }>
+  skus?: Array<{ id: string; name: string; price: number; stock: number; images?: string[] }>
   sellingPoints?: Array<{ id: string; text: string; proofStatus: 'pending' | 'confirmed' | 'rejected'; sourceIds: string[] }>
 }) {
   const service = new MerchantService({ fixtureMode: true, seedFixture: false })
@@ -66,7 +66,7 @@ function serviceAndProduct(input: {
     title: input.title,
     stock: input.stock ?? 10,
     ...(input.price === undefined ? {} : { price: input.price }),
-    ...(input.skus ? { skus: input.skus } : {}),
+    ...(input.skus ? { skus: input.skus.map(sku => ({ ...sku, images: sku.images ?? [`fixture://${sku.id}.jpg`] })) } : {}),
     ...(input.sellingPoints ? { sellingPoints: input.sellingPoints } : {}),
   })
   return { service, product }
@@ -76,7 +76,7 @@ function approvedDetail(input: {
   workspaceId: string
   title: string
   price?: number
-  skus?: Array<{ id: string; name: string; price: number; stock: number }>
+  skus?: Array<{ id: string; name: string; price: number; stock: number; images?: string[] }>
   answers?: Record<string, string | number | boolean | string[]>
   priceImpactConfirmed?: boolean
 }) {

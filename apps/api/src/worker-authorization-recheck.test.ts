@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { createHash, randomUUID } from 'node:crypto'
 import { contextEnvelopeHash } from '../../../packages/persistence/src/context-snapshot-repository.js'
-import { persistenceReady, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests } from './server.js'
+import { enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, persistenceReady, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests } from './server.js'
 import { MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCreativePointRepository, MemoryKnowledgeRepository, MemoryMembersRepository } from '../../../packages/persistence/src/index.js'
 import { InMemoryOutbox, type OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { createWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
@@ -295,6 +295,7 @@ async function withHttpExecutionFixture(operation: HttpOperation, test: (fixture
     scan: { token: 'test-authz-scan-token', signing_secret: 'test-authz-scan-secret' },
   }))
   vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+  enableCommercialFixtureHarnessForTests()
   persistence.knowledge = new MemoryKnowledgeRepository()
   try {
     const fixture = await createFixture(operation)
@@ -321,6 +322,9 @@ async function createFixture(operation: HttpOperation) {
   const persistence = await persistenceReady
   const suffix = randomUUID().replaceAll('-', '')
   const workspaceId = `ws_authz_http_${suffix}`
+  // This memory-only protocol fixture needs the continuous entitlement as
+  // well as points; neither is evidence of a real paid subscription.
+  grantContinuousFeatureEntitlementForTests(workspaceId)
   const identityId = `identity_${suffix}`
   const resourceId = `${operation === 'publish.execute' ? 'publish_job' : operation === 'asset.scan.execute' ? 'asset' : operation === 'asset.continuation.execute' ? 'asset_continuation' : 'generation_job'}_${suffix}`
   const repository = new MemoryAuthorizationRepository()

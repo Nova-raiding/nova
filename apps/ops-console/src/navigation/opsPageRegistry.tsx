@@ -41,6 +41,7 @@ export const opsPageRegistry: Record<OpsDomain, OpsDomainPage> = {
   finance: lazy(() =>
     import("../pages/FinancePage.js").then(({ FinancePage }) => ({ default: FinancePage })),
   ),
+  support: lazy(() => import("./routes/SupportRoute.js").then(({ SupportRoute }) => ({ default: SupportRoute }))),
   audit: lazy(() =>
     import("../pages/AuditPage.js").then(({ AuditPage }) => ({ default: AuditPage })),
   ),

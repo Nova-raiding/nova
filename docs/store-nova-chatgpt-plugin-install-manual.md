@@ -5,7 +5,7 @@
 1. ChatGPT 能加载Store Nova插件；
 2. 插件能连接商家 API/MCP；
 3. 服务端能识别正确的工作区和用户身份；
-4. 商家能在新会话中查看工作区状态或上传资料；
+4. 商家能在新会话中读取工作区状态和当前商业目录，制作另按准入验收；
 5. 模型、支付和平台授权缺少时，页面明确阻断，不把演示数据说成真实能力。
 
 商家不需要提供平台账号密码、模型 API Key 或支付宝/微信商户密钥。当前六平台运营采用人工流程；模型中转和支付密钥由管理员在服务端配置。
@@ -16,7 +16,7 @@
 stdio bridge，由 bridge 连接 Store Nova API/MCP。这条链路不使用 ChatGPT 远程 MCP OAuth，
 不要求 OpenAI Apps challenge，也不发布到公开或团队插件市场。
 
-本地模式仍然需要 Store Nova 自己的身份边界：商家在运营后台用账号密码登录，插件
+本地模式仍然需要 Store Nova 自己的身份边界：商家使用 Store Nova 账号密码登录，插件
 使用平台为该工作区签发的短期 Bearer 凭据调用 `/mcp`。账号密码不会写入插件、环境变量、
 聊天或日志；不能用 Cookie、平台密码或共享演示 token 代替用户凭据。
 
@@ -182,7 +182,7 @@ ChatGPT 宿主已经加载或验收通过。
 技术人员完成 A 节后，商家只需：
 
 1. 打开新的 ChatGPT 会话；
-2. 选择第一个快捷提示“@Store Nova 开始使用”，先查看服务端核验的进度；
+2. 先请求只读 `onboarding.status` 和 `commercial.catalog.get`，核对身份、企业和当前销售版本；需要制作时再使用“@Store Nova 开始使用”；
 3. 由平台运营先为该商家建立人工店铺记录并导入商品资料，商家在插件中选择被分配的店铺与商品。**当前上线档为 `manual`，不接入六平台 OAuth，插件内没有“经平台官方页面授权”这一步**（`platform.connect`、`platform.store.list` 已从商家工具面隐藏，调用得到 `Unknown tool`）；
 4. 需要生成、审核、批准时按对话中的一次性确认继续；需要内容上线时，由运营在官方商家后台人工发布并回填结果，插件不提供 `publish.*` 工具。
 
@@ -193,7 +193,9 @@ ChatGPT 宿主已经加载或验收通过。
 | 创意点余额**已知**且大于 0 | `CREATIVE_POINTS_UNAVAILABLE`（503，工作区没有点数状态记录、余额未知；全新工作区即此状态）/ `CREATIVE_POINTS_EXHAUSTED`（402，余额为 0）/ `CREATIVE_POINTS_INSUFFICIENT`（402，余额不足） |
 | 有效月付套餐权益 | `COMMERCIAL_ENTITLEMENT_REQUIRED`（402） |
 
-**只买创意点包不能创作**：点包只增加余额，公开目录中只有月付套餐 `basic`（¥2000）/ `growth`（¥5000）才产生套餐权益快照（`packages/persistence/src/commercial-contract-repository.ts` 的 `validatePeriod` 与核销路径）。店铺绑定也仍然必要：未绑定店铺时商品同步、正式任务与发布返回 `STORE_ONBOARDING_REQUIRED`（428）。当前 101 demo 使用 `ASSET_SCANNER_MODE=deferred` 和 `DEMO_UNSCANNED_ASSETS_ENABLED=true`，授权上传的 `unscanned` 素材可进入 demo 工作流，无需等待 ClamAV 回执。其他启用扫描的正式环境仍按其配置处理；素材的访问权限、商用权益、模型鉴权、创意点和成本门禁不会因 deferred 模式取消。
+**点数包不能替代主套餐**：必须同时有当前有效的批准套餐功能与可用点数，已付未来合同和未来点数未到期前不能提前消费。套餐价格和权益读取当前上架版本，不把历史 `basic`/`growth` 数字当固定销售常量。首次购买的开通费不含首期；开通赠点初始为六个月每月 500 点。账号激活、订单创建、截图或转账通知都不表示商业授予完成。
+
+店铺绑定依实际动作判断：未绑定时正式任务仍可能返回 `STORE_ONBOARDING_REQUIRED`（428），不以购买套餐绕过。历史 demo 使用 `ASSET_SCANNER_MODE=deferred`、`DEMO_UNSCANNED_ASSETS_ENABLED=true` 的结果只适用于该环境；其他环境扫描与生成门禁单独按实际配置验收。
 
 商家不会把平台登录密码交给插件，插件也不会保存平台 access token。店铺选择始终以“平台 + 店铺账号”为范围，同名店铺不会自动选第一家。
 
@@ -227,8 +229,8 @@ ChatGPT 宿主已经加载或验收通过。
 | 能看到示例商品但不能读取真实商品 | 使用了 fixture，或运营尚未为该商家建立人工店铺记录 | 标记为演示/待配置；由平台运营建立人工店铺记录并导入资料后再验收 |
 | `STORE_ONBOARDING_REQUIRED`（428） | 当前工作区未绑定任何平台店铺，而该动作属于商品同步、正式任务或发布 | 先用上传素材、生成候选、查看/购买创意点等店铺边界外能力；联系平台运营建立人工店铺记录。错误响应里的 `next_actions` 是可执行的下一步 |
 | `CREATIVE_POINTS_EXHAUSTED`（402） | 创意点余额为 0，零余额先于操作分类，除恢复类方法外全部拒绝 | 在商家后台购买创意点包或月付套餐；不要绕过门禁 |
-| `COMMERCIAL_ENTITLEMENT_REQUIRED`（402） | 余额可能够，但没有有效月付套餐权益快照 | 购买月付套餐（`basic` ¥2000 / `growth` ¥5000）。只买点包不会产生权益 |
-| `COMMERCIAL_PAYMENT_PROVIDER_UNAVAILABLE`（503） | 服务端未配置 `COMMERCIAL_PAYMENT_PROVIDER`，订单未创建、未落库 | 平台管理员配置支付通道；这是平台侧缺失，商家重试无效 |
+| `COMMERCIAL_ENTITLEMENT_REQUIRED`（402） | 当前套餐或相应功能未生效，余额不等于功能授权 | 查询当前/未来合同和原订单；首购确认开通费及首期两行，点包不能替代主套餐 |
+| `COMMERCIAL_PAYMENT_PROVIDER_UNAVAILABLE`（503） | 所选线上或人工转账模式尚未批准/配置就绪 | 管理员核对该模式 blockers；未启用微信/支付宝不阻断已批准人工转账。提交结果未知先查原请求，不反复建单/付款 |
 | `IMAGE_SOURCE_ASSET_INVALID`（409） | 素材不符合当前环境的来源、访问权限、商用权益或 AI 修改许可；启用扫描的环境也可能因扫描状态拒绝 | 查看服务端返回的具体原因并补齐授权资料；只有实际启用扫描且显示待扫描时才等待回执，不要手工改扫描状态 |
 | 生成/支付按钮不可用 | 创意点准入、套餐权益、模型成本证据或支付 provider 未通过 | 只查看服务端返回的阻断原因；不要改前端金额或绕过门禁 |
 
@@ -252,9 +254,77 @@ ChatGPT 宿主已经加载或验收通过。
 - [ ] ChatGPT 已完全重启，并在新会话中重新加载工具。
 - [ ] 新会话调用 `onboarding.status` 能返回真实工作区/引导状态，而不是 MCP 配置缺失。
 - [ ] 如启用宿主中转，`npm run codex:relay:validate` 通过，且密钥没有写入 `config.toml`。
-- [ ] 服务端已配置 `COMMERCIAL_PAYMENT_PROVIDER`，且商业目录中已有可售的月付套餐（`basic` / `growth`）。**未配置时商家下单返回 503 且订单不落库，运营的人工核验也找不到订单，交付后客户将无法自助开通。**
+- [ ] 服务端已选择并批准线上通道或 `manual_transfer`；人工模式收款账户和核验策略真实有效。目录、首购依赖、收款分配与授予在目标环境另做验收，不用未启用线上通道否定合法人工模式。
 - [ ] 101 demo 的上传模式为 `ASSET_SCANNER_MODE=deferred`、`DEMO_UNSCANNED_ASSETS_ENABLED=true`，已用授权素材验证 `unscanned` 上传与读取；其他正式环境按其实际扫描配置单独验收。
 - [ ] 模型 usage/cost evidence、支付回调和发布 canary 仍按生产门禁单独验收；当前人工平台流程不要求六平台 OAuth。
+
+## H. 套餐候选版本与首次成功验收
+
+本节更新于 2026-10-05，源代码读取基线 `189135dba07232efddc1c310a0d77731256c904b`（包含尚未提交的实施改动），manifest `0.1.0+codex.20261005113527`。这里只记录候选文档流程，尚未测得新套餐在真实桌面 ChatGPT 的完成耗时，也没有据此宣布正式包或生产服务可用。验收前把最终候选 SHA、服务端镜像、实际安装路径和 manifest 版本替换记录，不以源码版本代替安装缓存版本。
+
+### H1. 新商业工具与安装兼容
+
+当前共享契约的商家商业入口包括 `commercial.catalog.get`、`commercial.subscription.get`、`commercial.notifications.list`、`commercial.checkout.create`、`commercial.order.create`、`commercial.order.payment.get`、`commercial.upgrade.quote.create` / `commercial.upgrade.quote.get` 和对应原请求查询。具体可见工具以实际安装包的 `tools/list` 为准，必须不含 `ops.*`；商家不能通过换方法名取得运营代购权限。
+
+升级先取得 `upgrade_quote_id`，建单强制引用该报价；只给 SKU 和 `purchase_kind=upgrade` 的旧请求不能回退普通全价新周期。更新按 A2/A4 执行同一批准本地包安装、完全重启、新会话验证，不手改插件缓存，不改走插件市场或 ChatGPT OAuth。
+
+| 版本组合 | 必查行为 | 当前运行结论 |
+|---|---|---|
+| 候选服务端 + 当前实际安装插件 | 身份/企业、目录销售版本、schema、首购依赖、报价及原请求恢复一致；不暴露 Ops | 新套餐实际宿主与付款闭环待独立复测 |
+| 候选服务端 + 支持窗口旧插件 | 合法旧单可查和履约；不支持新写明确提示更新，缺报价升级拒绝 | 具体旧版本窗口及真实安装证据待候选冻结，不能默认所有旧包支持 |
+| 回滚兼容服务端 + 新插件 | 旧单事实保留；未知契约/新字段禁新写并提供更新或授权桌面路径 | 待回滚环境与实际安装矩阵验证 |
+
+未知版本不猜字段、不自动降级购买。发现源码与已安装工具不一致时记录版本、路径和失败步骤交安装负责人；源码 verifier 通过不能代替真实宿主验证。
+
+### H2. 只读首次成功：目标与计时
+
+目标 **≤5 分钟**只适用于：已有可用授权环境、本地包已安装、当前登录身份已合法绑定 Workspace、服务器及目录读取依赖就绪。它衡量新 ChatGPT 会话的两项只读查询与桌面对照，不包括安装、获权限、填支付配置、上架通知、实际转账/授予或模型生成。当前实际耗时 **unknown**，不能填写 0 或声称目标已达到。
+
+安装/支持人员先在仓库运行既有 `npm run dev:doctor` 检查准备项，确认目标 API、身份和桌面工作台可读；配置缺失分别记录 blocked、责任人和准备耗时。`dev:doctor` 不给客户签发凭据，也不代替正式包签名及宿主验收。完成 A2/A3/A4 后，由未参与开发的安装或支持人员复测：
+
+1. 打开新会话并记 t0，请插件调用 `onboarding.status`，核对真实用户与管理员已分配企业，记录 t1。
+2. 请插件调用 `commercial.catalog.get`，记录 t2；成功空目录如实记录，仓储错误不能显示成空商品。
+3. 在获授权桌面工作台读取同一企业准入和实际当前销售版本，核对 SKU/版本/价格/状态，记录 t3；不能只比较名称或历史 approved 行。
+4. t3−t0 是本次首次成功耗时。若任何阶段无权、配置缺失或结果未核实，记 blocked/unknown 与责任人，结束本轮而不伪造成功；问题修复后开新会话单独复测。
+
+下面是从当前共享 schema 核对的只读请求形状，仅供安装人员核对工具，不包含 token 或生产写命令；本轮尚未把这组请求与真实宿主计时证据绑定：
+
+```json
+{"jsonrpc":"2.0","id":"install-read-1","method":"onboarding.status","params":{}}
+```
+
+```json
+{"jsonrpc":"2.0","id":"install-read-2","method":"commercial.catalog.get","params":{}}
+```
+
+| 记录字段 | 填写规则 |
+|---|---|
+| 目标环境、候选 SHA/镜像、实际插件版本/路径 | 使用本次真实读取结果；工作树改动和安装缓存单独记 |
+| 身份/Workspace及权限条件 | 保留脱敏企业及获授权能力；不记录密码/token |
+| 准备阶段 | doctor、安装/绑定、权限/配置等待分别计时，不能纳入已就绪≤5分钟指标 |
+| t0/t1/t2/t3、查询及核对证据 | 没有观测记 unknown；阻断记 blocked、code、负责人 |
+| 失败/求助次数和恢复结果 | 配置缺失、无权、非法字段三类分别复测，另覆盖冲突/未知提交 |
+| 业务闭环 | 另附上架通知、真实支付/分配/授予、worker及真实中转证据，不能用只读查询或 health 200替代 |
+
+### H3. 没有订单、任务或工单时如何求助
+
+首次目录读取或建单之前失败，也可整理脱敏 request_id/trace_id、实际安装版本、失败步骤、企业与错误 code。禁止复制密码、Bearer、完整支付凭证或日志堆栈；request_id 不是查询他人资料的凭据。
+
+项目支持登记使用实际 `POST /v1/support/requests`，读取使用 `GET /v1/support/requests/{ticket_id}`，不要求已有订单、任务或工单。当前套餐投影在支持仓储已配置时返回 `support_handoff.status=available`、`entry_path=/v1/support/requests`、`method=POST`；未配置时返回 blocked/`support_project_entry_not_configured`，责任人“平台运营支持”。以目标环境返回事实判断，不固定声称入口缺失，也不虚构 URL。
+
+当前 active 成员身份、企业与 customerId 由服务器认证确定，支持正文不允许传用户/企业身份。商家登记问题标题、说明和原幂等键，可附脱敏排障标识、版本和失败步骤。真正建单后返回 `submitted=true`、ticket_id/ticket_number 和客户可见 replies_path；只查询属于该账号和企业的工单及客户可见回复。结果未知时同键同内容重试，返回原真实工单 receipt；不要生成第二个键、改变原问题或把查询旧回复称为新求助已提交。配置缺失仍明确“当前未提交”并由安装/运营负责人补齐。
+
+支持人员沿既有工单处理；商家不调用 Ops 创建能力。代码已经接线，真实桌面首次无业务标识登记、客户回复查询、跨企业/账号拒绝、脱敏及未知恢复尚待独立复测，不能把路径存在说成验收通过。
+
+| 错误类型 | 安装/支持的安全恢复 |
+|---|---|
+| 本地连接/支付/仓储配置缺失 | 明确列待补项和负责人，保留步骤；不建议重复付款 |
+| 无权或身份/企业不匹配 | 管理员核对账号和成员授权；不改客户端权限或 Workspace 字符串 |
+| 字段非法 | 按字段错误修正，保留其余输入；不能用任意权益 code/金额绕过 |
+| revision/销售版本/报价已变化 | 重新读取原企业事实并重新确认，不改旧单金额 |
+| 提交结果未知、5xx、超时 | 先查原请求、订单或返款意图；未确认保持待核实/冻结，禁止换新幂等键或再付款 |
+
+详细商业步骤见[产品使用介绍](product-usage-guide.md)与[商业可执行规则](commercial-executable-spec.md)。本地 stdio、桌面运营后台是本项目验收范围；不增加移动适配、公开/团队插件市场或真实 ChatGPT OAuth 门禁。
 
 相关文档：
 

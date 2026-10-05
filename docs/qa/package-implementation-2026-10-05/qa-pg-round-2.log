@@ -1,0 +1,32 @@
+
+> merchant-marketing-codex@0.2.4 test:postgres:isolated
+> node --import tsx scripts/run-isolated-postgres-tests.ts packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts packages/persistence/src/commercial-receipt-repository.postgres.test.ts packages/persistence/src/commercial-notification-repository.release.postgres.test.ts
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ❯ packages/persistence/src/commercial-receipt-repository.postgres.test.ts (1 test | 1 failed) 35657ms
+     × serializes split cash, original payer returns, unmatched mapping and tenant isolation 35654ms
+ ✓ packages/persistence/src/commercial-notification-repository.release.postgres.test.ts (1 test) 18991ms
+     ✓ recovers a bounded fanout and preserves events, while ACL and read authorization reject leakage  18986ms
+ ✓ packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts (1 test) 10865ms
+     ✓ publishes atomically, keeps live version during edits, binds immutable bundles and blocks retired history  10860ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/persistence/src/commercial-receipt-repository.postgres.test.ts > factual cash receipts PostgreSQL > serializes split cash, original payer returns, unmatched mapping and tenant isolation
+error: relation "commercial_order_terms_v3" does not exist
+ ❯ node_modules/pg-pool/index.js:45:11
+ ❯ packages/persistence/src/commercial-receipt-repository.postgres.test.ts:22:5
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 2 passed (3)
+   Start at  11:35:14
+   Duration  71.44s (transform 3.02s, setup 0ms, import 4.00s, tests 65.51s, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/isolated-postgres/run-s61pUC/vitest.json
+Isolated PostgreSQL acceptance failed; report: /Users/lixiaomei/Desktop/code/codexSkills/artifacts/isolated-postgres/run-s61pUC/vitest.json

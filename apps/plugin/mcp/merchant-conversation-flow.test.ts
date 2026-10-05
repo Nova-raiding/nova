@@ -8,7 +8,14 @@ type Json = Record<string, unknown>
 const json = (value: Json) => JSON.stringify(value)
 // Keep the transport harness independent from release-suite environment.
 // Restricted-environment behavior is covered by bridge.test.ts explicitly.
-const TEST_PROCESS_ENV = { ...process.env, NODE_ENV: 'test', DEPLOY_ENV: '${DEPLOY_ENV}' }
+const TEST_PROCESS_ENV = {
+  ...process.env,
+  NODE_ENV: 'test',
+  DEPLOY_ENV: '${DEPLOY_ENV}',
+  MERCHANT_MCP_TOKEN_SOURCE: 'environment',
+  MERCHANT_MCP_TOKEN: 'test-fixture-token',
+  MERCHANT_ALLOW_FIXTURE_FALLBACK: 'true',
+}
 
 async function listen(server: ReturnType<typeof createServer>) {
   server.listen(0, '127.0.0.1')
@@ -67,7 +74,8 @@ async function withBridge(handler: (request: Json, res: ServerResponse<IncomingM
       ...TEST_PROCESS_ENV,
       MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
       MERCHANT_WORKSPACE_ID: 'ws_test',
-      MERCHANT_MCP_TOKEN: '${MERCHANT_MCP_TOKEN}',
+      MERCHANT_MCP_TOKEN: 'test-fixture-token',
+      MERCHANT_MCP_TOKEN_SOURCE: 'environment',
       MERCHANT_ALLOW_FIXTURE_FALLBACK: 'true',
       MERCHANT_STRICT_AUTH: '${MERCHANT_STRICT_AUTH}',
       MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}',
@@ -341,7 +349,7 @@ describe('Codex App merchant conversation flow', { timeout: 15000 }, () => {
       const response = await request(child, 2, 'content.codex.prepare', { task_id: 'task_1' })
       expect(response.error).toMatchObject({ code: -32602 })
       expect(JSON.stringify(response)).not.toContain('success')
-      expect(calls).toEqual([])
+      expect(calls.map(call => call.method)).toEqual(['workspace.interactive.confirm'])
     })
   })
 
@@ -401,7 +409,7 @@ describe('Codex App merchant conversation flow', { timeout: 15000 }, () => {
       })
       expect((uploaded.result as Json)._meta).toBeUndefined()
       expect(JSON.stringify(uploaded.result)).not.toMatch(/管理员|运营后台|扫描证据|automation\.scan/u)
-      expect(calls.map(call => call.method)).toEqual(['merchant.start', 'asset.upload', 'asset.list'])
+      expect(calls.map(call => call.method)).toEqual(['merchant.start', 'workspace.interactive.confirm', 'asset.upload', 'asset.list'])
     })
     },
   )
@@ -454,7 +462,7 @@ describe('Codex App merchant conversation flow', { timeout: 15000 }, () => {
         expect(response.error).toMatchObject({ code: -32602, message: `当前插件没有此工具：${method}` })
         expect(response).not.toHaveProperty('result')
       }
-      expect(calls).toEqual([])
+      expect(calls.map(call => call.method)).toEqual(['workspace.interactive.confirm'])
     })
   })
 })

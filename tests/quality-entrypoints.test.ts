@@ -299,6 +299,8 @@ describe('quality entrypoint coverage', () => {
       'ops.feature-flag.evaluate',
       'ops.marketing.generation.no_delivery.refund',
       'ops.platform.store.record.create',
+      'ops.commercial.notifications.purchase-results.list',
+      'ops.commercial.notifications.purchase-results.redrive',
     ]
     for (const method of serverOnly) expect(auditSource).toContain(`'${method}'`)
 
@@ -316,7 +318,8 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(44)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(51)
+    expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/kubernetes-release-gate.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/rendered-kubernetes-config.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')

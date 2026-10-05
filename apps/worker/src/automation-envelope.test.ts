@@ -14,6 +14,7 @@ describe('automation actual route envelope contract', () => {
         requireWorkerAuthorization:vi.fn(),headerRequired:()=> 'workspace',hydrateWorkspace:vi.fn(),
         runAutomationTick:async()=>({executed:nativeOnly?[]:[{id:'fixture'}],skipped:nativeOnly,...(nativeOnly?{skipReason:'codex_native_automations_only'}:{})}),
         syncSignedPlatformRules:syncRules,
+        requireWorkerFeature: vi.fn(),
         send:(_res:unknown,status:number,_workspace:string,data:unknown)=>{response=Response.json({data,error:null},{status})},
       } as unknown as InternalRuntimeContext)
       return response!

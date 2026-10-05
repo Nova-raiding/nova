@@ -151,7 +151,7 @@ describe('commercial refund PostgreSQL cumulative bound', () => {
       // The point reversal and completed refund event share one transaction.
       const points = new PostgresCreativePointRepository(database)
       const lifecycle = new PostgresCreativePointLifecycleRepository(database)
-      await points.grant({ workspaceId, idempotencyKey: 'grant-refund-point', sourceType: 'paid_order', sourceId: 'order-refund-point', points: 20, at: '2026-09-08T00:00:00.000Z' })
+      await points.grant({ workspaceId, idempotencyKey: 'grant-refund-point', sourceType: 'commercial_order_v2', sourceId: 'order-refund-point', points: 20, at: '2026-09-08T00:00:00.000Z' })
       for (const orderId of ['order-refund-point', 'order-refund-point-fail', 'order-refund-point-insufficient', 'order-refund-zero']) {
         await database.query(`INSERT INTO commercial_orders_v2(id,workspace_id,sku_id,sku_version_id,amount_fen,currency,payment_provider,status,idempotency_key,request_hash,created_by_actor_id,paid_at) VALUES ($1,$2,'sku-refund-db','sku-refund-db-v1',1000,'CNY','alipay','paid',$3,$4,'actor-1',now())`, [orderId, workspaceId, `key-${orderId}`, 'b'.repeat(64)])
       }
@@ -164,9 +164,10 @@ describe('commercial refund PostgreSQL cumulative bound', () => {
       const successful = await pointChain('refund-point', 'order-refund-point')
       await expect(repository.completeWithPointRevoke(successful, lifecycle)).resolves.toMatchObject({ eventType: 'completed' })
       expect(await points.getBalance(workspaceId)).toMatchObject({ availablePoints: 15 })
-      await expect(repository.completeWithPointRevoke(successful, lifecycle)).rejects.toMatchObject({ code: 'COMMERCIAL_REFUND_STATE_INVALID' })
+      await expect(repository.completeWithPointRevoke(successful, lifecycle)).resolves.toMatchObject({ eventType: 'completed' })
       expect(await points.getBalance(workspaceId)).toMatchObject({ availablePoints: 15 })
 
+      await points.grant({ workspaceId, idempotencyKey: 'grant-refund-point-fail', sourceType: 'commercial_order_v2', sourceId: 'order-refund-point-fail', points: 5, at: '2026-09-08T00:00:00.000Z' })
       const failed = await pointChain('refund-point-fail', 'order-refund-point-fail')
       await database.query(`CREATE FUNCTION fail_refund_completion_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.request_id='refund-point-fail' AND NEW.event_type='completed' THEN RAISE EXCEPTION 'injected refund completion failure'; END IF; RETURN NEW; END $$`)
       await database.query(`CREATE TRIGGER fail_refund_completion_test BEFORE INSERT ON commercial_refund_events_v2 FOR EACH ROW EXECUTE FUNCTION fail_refund_completion_test()`)
@@ -174,9 +175,8 @@ describe('commercial refund PostgreSQL cumulative bound', () => {
       expect(await points.getBalance(workspaceId)).toMatchObject({ availablePoints: 15 })
       expect((await repository.latest(workspaceId, failed.requestId))?.eventType).toBe('approved')
       expect((await database.query<{ count: number }>(`SELECT count(*)::int AS count FROM creative_point_adjustments_v2 WHERE workspace_id=$1 AND approval_id='refund:refund-point-fail'`, [workspaceId])).rows[0]).toEqual({ count: 0 })
-      const insufficient = await pointChain('refund-point-insufficient', 'order-refund-point-insufficient', 100)
-      await expect(repository.completeWithPointRevoke(insufficient, lifecycle)).rejects.toMatchObject({ code: 'CREATIVE_POINT_INSUFFICIENT' })
-      expect((await repository.latest(workspaceId, insufficient.requestId))?.eventType).toBe('approved')
+      await expect(pointChain('refund-point-insufficient', 'order-refund-point-insufficient', 100)).rejects.toMatchObject({ code: 'COMMERCIAL_REFUND_STATE_INVALID' })
+      expect((await repository.latest(workspaceId, 'refund-point-insufficient'))?.eventType).toBe('requested')
       expect(await points.getBalance(workspaceId)).toMatchObject({ availablePoints: 15 })
       const zeroPoint = await pointChain('refund-zero', 'order-refund-zero', 0)
       await expect(repository.completeWithPointRevoke(zeroPoint, lifecycle)).resolves.toMatchObject({ eventType: 'completed', pointsToRevoke: 0 })

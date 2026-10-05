@@ -1,0 +1,425 @@
+[
+  {
+    "id": "C1",
+    "priority": "P1",
+    "component": "checkout",
+    "title": "实现首购依赖明细、唯一开通资格与六笔赠点计划",
+    "source_finding": "CEO-01",
+    "phase": "ceo-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "L，实施前拆分估算",
+    "effort_cc": "L，实施前拆分估算",
+    "files": [
+      "packages/application/src/commercial-purchase-service.ts",
+      "packages/persistence/src/commercial-contract-repository.ts"
+    ],
+    "owner_normalized": true
+  },
+  {
+    "id": "C2",
+    "priority": "P1",
+    "component": "upgrade",
+    "title": "实现剩余期报价、连续升级基价、迟核验及源变化资金处置",
+    "source_finding": "CEO-02/03",
+    "phase": "ceo-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "L，实施前拆分估算",
+    "effort_cc": "L，实施前拆分估算",
+    "files": [
+      "packages/application/src/commercial-purchase-service.ts",
+      "packages/persistence/src/commercial-contract-repository.ts",
+      "packages/contracts/src/mcp.ts"
+    ],
+    "owner_normalized": true
+  },
+  {
+    "id": "C3",
+    "priority": "P1",
+    "component": "catalog",
+    "title": "实现三档身份、权益包版本、周期配置及可靠增改上下架归档",
+    "source_finding": "CEO-04/06/08 + 用户目录管理",
+    "phase": "ceo-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "L，实施前拆分估算",
+    "effort_cc": "L，实施前拆分估算",
+    "files": [
+      "packages/persistence/src/commercial-catalog-repository.ts",
+      "apps/api/src/mcp-commercial-ops-catalog.ts",
+      "packages/application/src/commercial-plan-catalog.ts"
+    ],
+    "owner_normalized": true
+  },
+  {
+    "id": "C4",
+    "priority": "P1",
+    "component": "entitlement",
+    "title": "实现分型增量权益、精确余数、单一账期和功能消费器准入",
+    "source_finding": "CEO-05",
+    "phase": "ceo-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "L，实施前拆分估算",
+    "effort_cc": "L，实施前拆分估算",
+    "files": [
+      "packages/application/src/continuous-feature-entitlement.ts",
+      "packages/persistence/src/commercial-contract-repository.ts",
+      "packages/application/src/commercial-access-service.ts"
+    ],
+    "owner_normalized": true
+  },
+  {
+    "id": "C5",
+    "priority": "P1",
+    "component": "receipt",
+    "title": "实现指定客户代购、真实收款拆分分配及未分配款受控退回",
+    "source_finding": "CEO CLI-3 + 用户运营代购",
+    "phase": "ceo-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "L，实施前拆分估算",
+    "effort_cc": "L，实施前拆分估算",
+    "files": [
+      "apps/api/src/server.ts",
+      "packages/persistence/src/commercial-contract-repository.ts",
+      "packages/persistence/src/commercial-refund-repository.ts"
+    ],
+    "owner_normalized": true
+  },
+  {
+    "id": "C6",
+    "priority": "P1",
+    "component": "rollout",
+    "title": "实现对账关联、普通价格去硬编码、销售迁移和兼容回滚门禁",
+    "source_finding": "CEO-09 + 可调价要求",
+    "phase": "ceo-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "L，实施前拆分估算",
+    "effort_cc": "L，实施前拆分估算",
+    "files": [
+      "apps/api/src/server.ts",
+      "packages/persistence/src/commercial-catalog-repository.ts",
+      "apps/worker/src/main.ts"
+    ],
+    "owner_normalized": true
+  },
+  {
+    "id": "D1",
+    "priority": "P1",
+    "component": "商品目录",
+    "title": "分离销售与草稿显示并拆分下架与归档",
+    "source_finding": "Pass 1：草稿不能遮蔽当前在售合同",
+    "phase": "design-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "4h",
+    "effort_cc": "30min",
+    "files": [
+      "apps/ops-console/src/pages/FinancePage.tsx",
+      "apps/ops-console/src/api/commercialOperationsClient.ts"
+    ]
+  },
+  {
+    "id": "D2",
+    "priority": "P1",
+    "component": "商业状态",
+    "title": "落地加载空失败部分与响应未知恢复",
+    "source_finding": "Pass 2：读失败不能视为空，部分合款不可全成功",
+    "phase": "design-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "5h",
+    "effort_cc": "40min",
+    "files": [
+      "apps/ops-console/src/components/commercial/CommercialOperationsWorkspace.tsx",
+      "demo/merchant-studio/src/App.tsx"
+    ]
+  },
+  {
+    "id": "D3",
+    "priority": "P1",
+    "component": "商家订单",
+    "title": "提供首购升级明细双截止与当前未来合同分区",
+    "source_finding": "Pass 3：点击支付不能视为到账，未来合同不能改变",
+    "phase": "design-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "5h",
+    "effort_cc": "40min",
+    "files": [
+      "demo/merchant-studio/src/App.tsx",
+      "demo/merchant-studio/src/api.ts",
+      "packages/contracts/src/mcp.ts"
+    ]
+  },
+  {
+    "id": "D6",
+    "priority": "P1",
+    "component": "可访问",
+    "title": "提供行标签焦点状态语义与桌面缩放契约",
+    "source_finding": "Pass 6：仅桌面验收尚未定义键盘读屏",
+    "phase": "design-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "3h",
+    "effort_cc": "25min",
+    "files": [
+      "apps/ops-console/src/pages/FinancePage.tsx",
+      "demo/merchant-studio/src/App.tsx",
+      "apps/ops-console/src/styles.css",
+      "demo/merchant-studio/src/styles.css"
+    ]
+  },
+  {
+    "id": "ENG1",
+    "priority": "P1",
+    "component": "commercial sales",
+    "title": "受控同事务销售解析与投影锁",
+    "source_finding": "E1: 事务外解析与bootstrap最小权限",
+    "phase": "eng-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "1d",
+    "effort_cc": "1h",
+    "files": [
+      "packages/application/src/commercial-purchase-service.ts",
+      "packages/persistence/src/commercial-contract-repository.ts",
+      "packages/persistence/src/migrations"
+    ]
+  },
+  {
+    "id": "ENG2",
+    "priority": "P1",
+    "component": "commercial receipts",
+    "title": "统一锁序、真实流水唯一与返款冻结",
+    "source_finding": "E2: 分配/返款/权益共享资源并发",
+    "phase": "eng-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "2d",
+    "effort_cc": "2h",
+    "files": [
+      "packages/persistence/src/commercial-contract-repository.ts",
+      "packages/persistence/src/commercial-refund-repository.ts",
+      "packages/persistence/src/migrations"
+    ]
+  },
+  {
+    "id": "ENG4",
+    "priority": "P1",
+    "component": "commercial acceptance",
+    "title": "补齐14组新行为测试及关键旧流回归",
+    "source_finding": "Test review: 当前6组局部证据不足新契约",
+    "phase": "eng-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "2d",
+    "effort_cc": "2h",
+    "files": [
+      "packages/persistence/src",
+      "packages/application/src",
+      "tests",
+      "dogfood/chatgpt-all-functions"
+    ]
+  },
+  {
+    "id": "ENG5",
+    "priority": "P1",
+    "component": "order-period",
+    "title": "实现普通到账截止、浮动顺延与未来额度计划门禁",
+    "source_finding": "Eng CLI P1-01/02/03",
+    "phase": "eng-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "需实现前拆分估算",
+    "effort_cc": "需实现前拆分估算",
+    "files": [
+      "packages/contracts/src/commercial-order.ts",
+      "packages/persistence/src/commercial-contract-repository.ts",
+      "packages/application/src/commercial-payment-service.ts",
+      "apps/worker/src/main.ts"
+    ]
+  },
+  {
+    "id": "ENG6",
+    "priority": "P1",
+    "component": "refund",
+    "title": "新增来源限定的回收预检、冻结与退款恢复执行器",
+    "source_finding": "Eng CLI P1-04",
+    "phase": "eng-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "需实现前拆分估算",
+    "effort_cc": "需实现前拆分估算",
+    "files": [
+      "packages/persistence/src/commercial-refund-repository.ts",
+      "packages/persistence/src/creative-point-lifecycle-repository.ts",
+      "packages/application/src/commercial-payment-service.ts"
+    ]
+  },
+  {
+    "id": "DX-T1",
+    "priority": "P1",
+    "component": "commercial-contracts",
+    "title": "同步商业契约与安装插件兼容矩阵，拒绝无报价旧升级请求",
+    "source_finding": "DX-1：共享MCP和Bridge schema及恢复集合独立，旧upgrade仅传SKU可能全价下单",
+    "phase": "devex-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "1–2d",
+    "effort_cc": "2–4h",
+    "files": [
+      "packages/contracts/src/mcp.ts",
+      "packages/contracts/src/commercial-access.ts",
+      "apps/api/src/server.ts",
+      "apps/plugin/mcp/bridge.mjs",
+      "apps/plugin/scripts/verify-installed-bridge.mjs"
+    ]
+  },
+  {
+    "id": "DX-T2",
+    "priority": "P1",
+    "component": "payment-readiness",
+    "title": "明确批准manual_transfer模式与线上支付的独立readiness",
+    "source_finding": "DX-2：手工转账不能因未启用线上provider误拒绝，也不能任意provider通过生产",
+    "phase": "devex-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "4–8h",
+    "effort_cc": "1–2h",
+    "files": [
+      "apps/api/src/server.ts",
+      "apps/ops-console/src/components/commercial/CommercialOperationsWorkspace.tsx",
+      "apps/ops-console/src/api/commercialOperationsClient.ts"
+    ]
+  },
+  {
+    "id": "DX-T3",
+    "priority": "P1",
+    "component": "commercial-errors",
+    "title": "增加商业错误机器契约及安全授权恢复测试",
+    "source_finding": "DX-3：错误中文与HTTP状态不足以确定可安全恢复，Bridge安全投影须同步",
+    "phase": "devex-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "1d",
+    "effort_cc": "2h",
+    "files": [
+      "packages/contracts/src/mcp.ts",
+      "apps/api/src/mcp-commercial-ops-catalog.ts",
+      "apps/api/src/server.ts",
+      "apps/plugin/mcp/bridge.mjs"
+    ]
+  },
+  {
+    "id": "D4",
+    "priority": "P2",
+    "component": "人工收款",
+    "title": "以业务分配向导替代技术字段输入",
+    "source_finding": "Pass 7：运营不应手填nonce及hash",
+    "phase": "design-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "3h",
+    "effort_cc": "25min",
+    "files": [
+      "apps/ops-console/src/components/commercial/CommercialOperationsWorkspace.tsx",
+      "apps/ops-console/src/api/commercialOperationsClient.ts"
+    ]
+  },
+  {
+    "id": "D5",
+    "priority": "P2",
+    "component": "商业视觉",
+    "title": "复用主题表格并使本功能文字至少16px",
+    "source_finding": "Pass 4/5：本功能不继承不可读小字或装饰卡片",
+    "phase": "design-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "2h",
+    "effort_cc": "20min",
+    "files": [
+      "apps/ops-console/src/styles.css",
+      "demo/merchant-studio/src/styles.css"
+    ]
+  },
+  {
+    "id": "ENG3",
+    "priority": "P2",
+    "component": "commercial notifications",
+    "title": "实现有界fan-out、游标分页和监控",
+    "source_finding": "E3: 发布outbox不能同步遍历全体收件人",
+    "phase": "eng-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "0.5d",
+    "effort_cc": "30m",
+    "files": [
+      "packages/workers/src",
+      "apps/api/src",
+      "apps/ops-console/src",
+      "demo/merchant-studio/src"
+    ]
+  },
+  {
+    "id": "DX-T4",
+    "priority": "P2",
+    "component": "commercial-docs",
+    "title": "更新既有交付文档并定义测量首次成功和排障",
+    "source_finding": "DX-4：现有手册仍以basic/growth及初始价描述，新流程缺文档验真和TTHW起止",
+    "phase": "devex-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "4–8h",
+    "effort_cc": "1h",
+    "files": [
+      "README.md",
+      "docs/product-usage-guide.md",
+      "docs/store-nova-chatgpt-plugin-install-manual.md",
+      "docs/commercial-executable-spec.md"
+    ]
+  },
+  {
+    "id": "DX-T5",
+    "priority": "P2",
+    "component": "support",
+    "title": "实现首单前无业务标识的支持交接及工单回执",
+    "source_finding": "DX CLI P2-01",
+    "phase": "devex-review",
+    "branch": "main",
+    "commit": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+    "run_id": "20261005-024113",
+    "effort_human": "M，实施前拆分估算",
+    "effort_cc": "M，实施前拆分估算",
+    "files": [
+      "demo/merchant-studio/src/App.tsx",
+      "packages/contracts/src/mcp.ts",
+      "docs/store-nova-chatgpt-plugin-install-manual.md"
+    ]
+  }
+]

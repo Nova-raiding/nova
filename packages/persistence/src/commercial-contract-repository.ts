@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { CommercialTransactionRepositoryV3 } from './commercial-transaction-repository.js'
+import { CommercialSchemaCompatibilityError, hasCommercialFunctionForVerifiedPrefix, hasCommercialRelationForVerifiedPrefix } from './commercial-schema-compatibility.js'
+import type { CommercialPurchaseKindV3, CommercialGrantStatusV3 } from './commercial-transaction-policy.js'
 import type { CommercialCatalogSkuSnapshot } from './commercial-catalog-repository.js'
 import { requireWorkspaceScope, type SqlClient, type SqlPool, withWorkspaceTransaction } from './repository.js'
 
@@ -9,6 +12,12 @@ export type CommercialContractErrorCode =
   | 'COMMERCIAL_PAYMENT_MISMATCH'
   | 'COMMERCIAL_POLICY_UNRESOLVED'
   | 'PRIVATE_SKU_NOT_FOUND'
+  | 'COMMERCIAL_ONBOARDING_REQUIRED'
+  | 'COMMERCIAL_UPGRADE_QUOTE_REQUIRED'
+  | 'COMMERCIAL_ORDER_EXPIRED'
+  | 'COMMERCIAL_ENTITLEMENT_CONFLICT'
+  | 'COMMERCIAL_DOWNGRADE_NOT_ALLOWED'
+  | 'COMMERCIAL_PLAN_FAMILY_MISMATCH'
 
 export class CommercialContractError extends Error {
   constructor(readonly code: CommercialContractErrorCode, message: string) {
@@ -36,6 +45,11 @@ export interface CommercialOrderV2 {
   checkoutIdempotencyKey: string | null
   createdAt: string
   paidAt: string | null
+  expiresAt?: string | null
+  purchaseKind?: CommercialPurchaseKindV3
+  checkoutId?: string | null
+  grantStatus?: CommercialGrantStatusV3
+  beneficiaryMemberId?: string | null
 }
 export interface CommercialOrderListItemV2 extends CommercialOrderV2 { skuCode: string }
 
@@ -48,6 +62,16 @@ export interface CreateCommercialOrderInput {
   reason: string
   /** Required in addition to capability for a private SKU. */
   privateEligibilityId?: string
+  /** New ordinary sale intents always use the v3 transaction/eligibility path. */
+  purchaseKind?: CommercialPurchaseKindV3
+  /** Explicit active merchant member receiving this operator-assisted order. */
+  beneficiaryMemberId?: string
+  upgradeQuoteId?: string
+  checkoutId?: string
+  onboardingOrderId?: string
+  /** Capability facts supplied by the authenticated server adapter, never wire input. */
+  saleCapabilities?: string[]
+  expectedSkuVersionId?: string
   now?: string
 }
 
@@ -67,11 +91,14 @@ export interface VerifiedPaymentGrantInput {
   /** Server-derived period. Monthly periods are checked as one calendar month; private periods as exactly seven days. */
   period?: { start: string; end: string }
   grantExpiresAt?: string | null
+  /** Server clock when the trusted receipt is verified; distinct from actual paidAt. */
+  verifiedAt?: string
 }
 
 export interface PaymentGrantResult {
   order: CommercialOrderV2
-  grantId: string
+  grantId: string | null
+  grantStatus?: CommercialGrantStatusV3
   accessRevision: number
   availablePoints: number
   replayed: boolean
@@ -195,6 +222,12 @@ const digest = (value: unknown) => createHash('sha256').update(canonical(value))
 const timestamp = (value: string | Date | null): string | null => value === null ? null : value instanceof Date ? value.toISOString() : String(value)
 const mapOrder = (row: OrderRow): CommercialOrderV2 => ({ ...row, amountFen: safeInteger(row.amountFen, 'amountFen'), createdAt: timestamp(row.createdAt)!, paidAt: timestamp(row.paidAt), checkoutExpiresAt: timestamp(row.checkoutExpiresAt) })
 
+export function assertVerifiedLegacyOrderSnapshot(row: { snapshot: { schema_version?: string; sku: CommercialCatalogSkuSnapshot }; snapshotChecksum: string; snapshotCatalogChecksum: string }, order: CommercialOrderV2): void {
+  const sku = row.snapshot.sku
+  if (row.snapshot.schema_version !== 'commercial-order.v2' || row.snapshotChecksum !== digest(row.snapshot) || row.snapshotCatalogChecksum !== sku.checksum || order.skuId !== sku.id || order.skuVersionId !== sku.versionId || !/^[a-f0-9]{64}$/u.test(sku.checksum)) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'legacy fulfillment requires the original checksum-verified V2 snapshot')
+  validateOrderSku(sku, order.createdAt)
+}
+
 function validateOrderSku(sku: CommercialCatalogSkuSnapshot, now: string): void {
   if (sku.lifecycle !== 'approved' || !sku.executable || sku.effectiveAt === null || Date.parse(sku.effectiveAt) > Date.parse(now)) {
     throw new CommercialContractError('COMMERCIAL_CATALOG_UNAVAILABLE', 'SKU is not an active approved executable version')
@@ -205,7 +238,7 @@ function validateOrderSku(sku: CommercialCatalogSkuSnapshot, now: string): void 
 }
 
 function pointBenefit(snapshot: CommercialCatalogSkuSnapshot): number {
-  if (snapshot.kind === 'onboarding') return 500
+  if (snapshot.kind === 'onboarding') return commercialOnboardingGrantSchedule(snapshot).pointsPerGrant
   const code = snapshot.kind === 'monthly' ? 'monthly_creative_points' : 'creative_points'
   const values = snapshot.benefits.filter(benefit => benefit.code === code && benefit.quantity !== null)
   if (values.length !== 1 || !Number.isSafeInteger(values[0]!.quantity) || values[0]!.quantity! <= 0) {
@@ -351,14 +384,15 @@ export function monthlyAnniversary(start: string, monthOffset: number): string {
   )).toISOString()
 }
 
+export function commercialOnboardingGrantSchedule(sku: CommercialCatalogSkuSnapshot): { grantCount: number; pointsPerGrant: number } {
+  const value = sku.payload.grantSchedule as Record<string, unknown> | undefined
+  if (!value || !Number.isSafeInteger(value.grantCount) || Number(value.grantCount) < 1 || Number(value.grantCount) > 24 || !Number.isSafeInteger(value.pointsPerGrant) || Number(value.pointsPerGrant) < 1 || value.cadence !== 'monthly' || value.startsAt !== 'payment_verified' || value.grantExpiresAtRule !== 'next_monthly_anniversary' || value.schedulingStatus !== 'resolved') throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'approved onboarding grant schedule required')
+  return { grantCount: Number(value.grantCount), pointsPerGrant: Number(value.pointsPerGrant) }
+}
+
 function resolvedOnboardingSchedule(sku: CommercialCatalogSkuSnapshot, paidAt: string): Array<{ sequence: number; dueAt: string; expiresAt: string }> {
-  const schedule = sku.payload.grantSchedule
-  if (!schedule || typeof schedule !== 'object') throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'onboarding grant schedule is unresolved')
-  const value = schedule as Record<string, unknown>
-  if (value.grantCount !== 6 || value.pointsPerGrant !== 500 || value.cadence !== 'monthly' || value.startsAt !== 'payment_verified' || value.grantExpiresAtRule !== 'next_monthly_anniversary' || value.schedulingStatus !== 'resolved') {
-    throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'onboarding grant schedule is unresolved')
-  }
-  return Array.from({ length: 6 }, (_, index) => ({ sequence: index + 1, dueAt: monthlyAnniversary(paidAt, index), expiresAt: monthlyAnniversary(paidAt, index + 1) }))
+  const value = commercialOnboardingGrantSchedule(sku)
+  return Array.from({ length: value.grantCount }, (_, index) => ({ sequence: index + 1, dueAt: monthlyAnniversary(paidAt, index), expiresAt: monthlyAnniversary(paidAt, index + 1) }))
 }
 
 /**
@@ -370,6 +404,37 @@ function resolvedOnboardingSchedule(sku: CommercialCatalogSkuSnapshot, paidAt: s
  */
 export class PostgresCommercialContractRepository {
   constructor(private readonly pool: SqlPool) {}
+
+  get transactionsV3(): CommercialTransactionRepositoryV3 { return new CommercialTransactionRepositoryV3(this.pool) }
+  createUpgradeQuote(input: Parameters<CommercialTransactionRepositoryV3['createUpgradeQuote']>[0]) { return this.transactionsV3.createUpgradeQuote(input) }
+  getOnboardingStatus(workspaceId: string) { return this.transactionsV3.getOnboardingStatus(workspaceId) }
+  createFirstCheckout(input: Parameters<CommercialTransactionRepositoryV3['createFirstCheckout']>[0]) { return this.transactionsV3.createFirstCheckout(input) }
+  async getActiveWorkspaceMember(workspaceIdInput: string, memberId: string): Promise<boolean> {
+    const workspaceId = requireWorkspaceScope(workspaceIdInput)
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      await client.query(`SELECT set_config('app.platform_scope','platform_ops',true)`)
+      const member = await client.query(`SELECT 1 FROM workspace_members WHERE workspace_id=$1 AND id=$2 AND status='active'`, [workspaceId,memberId])
+      return Boolean(member.rows[0])
+    })
+  }
+  dispatchDueScheduledGrants(input: Parameters<CommercialTransactionRepositoryV3['dispatchDueScheduledGrants']>[0]) { return this.transactionsV3.dispatchDueScheduledGrants(input) }
+  preflightSourceRecoveryInTransaction(client: SqlClient, input: Parameters<CommercialTransactionRepositoryV3['preflightSourceRecoveryInTransaction']>[1]) { return this.transactionsV3.preflightSourceRecoveryInTransaction(client, input) }
+  async getOrderSnapshot(workspaceIdInput: string, orderId: string) {
+    const workspaceId = requireWorkspaceScope(workspaceIdInput)
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      if (await hasCommercialRelationForVerifiedPrefix(client, 'commercial_order_terms_v3', 259)) return this.transactionsV3.getOrderSnapshotInTransaction(client, workspaceId, orderId)
+      const result = await client.query<OrderRow & { snapshot: { schema_version?: string; sku: CommercialCatalogSkuSnapshot }; snapshotChecksum: string; snapshotCatalogChecksum: string }>(`SELECT ${aliasedOrderProjection('o')},s.snapshot,s.checksum AS "snapshotChecksum",s.catalog_checksum AS "snapshotCatalogChecksum" FROM commercial_orders_v2 o JOIN commercial_order_snapshots_v2 s ON s.workspace_id=o.workspace_id AND s.order_id=o.id WHERE o.workspace_id=$1 AND o.id=$2`, [workspaceId, orderId])
+      const row = result.rows[0]
+      if (!row) return null
+      const order = mapOrder(row)
+      assertVerifiedLegacyOrderSnapshot(row, order)
+      return { order, snapshot: row.snapshot }
+    })
+  }
+  getSubscriptionSummary(input: Parameters<CommercialTransactionRepositoryV3['getSubscriptionSummary']>[0]) { return this.transactionsV3.getSubscriptionSummary(input) }
+  getUpgradeQuote(workspaceId: string, quoteId: string) { return this.transactionsV3.getUpgradeQuote(workspaceId, quoteId) }
+  findOrderByIdempotencyKey(workspaceId: string, actorId: string, key: string, options?: {onlyV3?: boolean}) { return this.transactionsV3.findOrderByIdempotencyKey(workspaceId, actorId, key, options) }
+  findQuoteByIdempotencyKey(workspaceId: string, actorId: string, key: string) { return this.transactionsV3.findQuoteByIdempotencyKey(workspaceId, actorId, key) }
 
   async listOrders(workspaceId: string, limit?: number): Promise<CommercialOrderListItemV2[]>
   async listOrders(workspaceId: string, options: { limit?: number; cursor?: CommercialContractListCursor }): Promise<CommercialContractPage<CommercialOrderListItemV2>>
@@ -418,6 +483,12 @@ export class PostgresCommercialContractRepository {
       // it), so `scope` is passed through the transaction-local
       // `app.workspace_id` setting set by `withWorkspaceTransaction`.
       const includeSourceOrder = typeof input !== 'number' && input.includeSourceOrder === true
+      const hasCursorProjection = await hasCommercialFunctionForVerifiedPrefix(client, 'public.merchant_entitlement_snapshots_v3(integer,timestamptz,text)')
+      if (!hasCursorProjection && !await hasCommercialFunctionForVerifiedPrefix(client, 'public.merchant_entitlement_snapshots_v2(integer)')) throw new CommercialSchemaCompatibilityError('approved entitlement projection is unavailable')
+      if (!hasCursorProjection) {
+        const bounded = await client.query<{count:string|number}>(`SELECT count(*) AS count FROM public.merchant_entitlement_snapshots_v2(200)`)
+        if (Number(bounded.rows[0]?.count) >= 200) throw new CommercialSchemaCompatibilityError('legacy entitlement projection is bounded; absence cannot be inferred')
+      }
       const sourceOrderColumns = includeSourceOrder ? 'o.id AS "sourceOrderId", o.status AS "sourceOrderStatus"' : 'NULL::text AS "sourceOrderId", NULL::text AS "sourceOrderStatus"'
       const sourceOrderJoins = includeSourceOrder ? `
            LEFT JOIN workspace_subscription_periods_v2 AS p
@@ -432,8 +503,14 @@ export class PostgresCommercialContractRepository {
                 f.period_start AS "periodStart", f.period_end AS "periodEnd", f.period_status AS "periodStatus",
                 f.catalog_version_id AS "catalogVersionId", f.sku_code AS "skuCode", f.resolved_benefits AS "resolvedBenefits",
                 f.unresolved_blockers AS "unresolvedBlockers", f.executable, f.checksum, f.created_at AS "createdAt"
-           FROM public.merchant_entitlement_snapshots_v3($1, $2::timestamptz, $3::text) AS f
-           ${sourceOrderJoins}`, [limit + 1, options.cursor?.createdAt ?? null, options.cursor?.id ?? null],
+           FROM ${hasCursorProjection ? 'public.merchant_entitlement_snapshots_v3($1, $2::timestamptz, $3::text)' : 'public.merchant_entitlement_snapshots_v2(200)'} AS f
+           JOIN workspace_entitlement_snapshots_v2 AS authoritative_e
+             ON authoritative_e.workspace_id=f.workspace_id AND authoritative_e.id=f.id
+           JOIN workspace_subscription_periods_v2 AS authoritative_p
+             ON authoritative_p.workspace_id=authoritative_e.workspace_id AND authoritative_p.id=authoritative_e.subscription_period_id AND authoritative_p.revision=authoritative_e.subscription_period_revision
+           ${sourceOrderJoins}
+          WHERE ($2::timestamptz IS NULL OR (f.created_at,f.id)<($2::timestamptz,$3::text))
+          ORDER BY f.created_at DESC,f.id DESC LIMIT $1`, [limit + 1, options.cursor?.createdAt ?? null, options.cursor?.id ?? null],
       )
       const items = result.rows.slice(0, limit).map(row => {
         if (includeSourceOrder && (!row.sourceOrderId || !row.sourceOrderStatus)) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'entitlement source order is unavailable')
@@ -497,6 +574,7 @@ export class PostgresCommercialContractRepository {
   }
 
   async createOrder(input: CreateCommercialOrderInput): Promise<CommercialOrderV2> {
+    if (input.purchaseKind) return this.transactionsV3.createOrder(input)
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     const idempotencyKey = required(input.idempotencyKey, 'idempotencyKey')
     const paymentProvider = required(input.paymentProvider, 'paymentProvider')
@@ -575,21 +653,32 @@ export class PostgresCommercialContractRepository {
     paymentUrl: string
     providerOrderId?: string | null
     expiresAt?: string | null
+    now?: string
   }): Promise<CommercialCheckoutResource> {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     required(input.orderId, 'orderId'); required(input.idempotencyKey, 'idempotencyKey')
     if (!/^(?:https:\/\/|weixin:\/\/|alipays:\/\/)/u.test(input.paymentUrl)) throw new TypeError('paymentUrl must be a supported provider checkout URI')
-    const expiresAt = input.expiresAt == null ? null : instant(input.expiresAt, 'expiresAt')
+    let expiresAt = input.expiresAt == null ? null : instant(input.expiresAt, 'expiresAt')
     const providerOrderId = input.providerOrderId == null ? null : required(input.providerOrderId, 'providerOrderId')
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const loaded = await client.query<OrderRow & { skuCode: string; accessRevision: string | number | null }>(
-        `SELECT ${aliasedOrderProjection('o')},s.snapshot->'sku'->>'code' AS "skuCode",NULL::bigint AS "accessRevision"
+      await client.query(`SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext($1),pg_catalog.hashtext($2))`, ['workspace_subscription_periods_v2',workspaceId])
+      const hasTerms = await hasCommercialRelationForVerifiedPrefix(client, 'commercial_order_terms_v3', 259)
+      const terms = hasTerms ? await client.query<{ expiresAt: string | Date }>(`SELECT expires_at AS "expiresAt" FROM commercial_order_terms_v3 WHERE workspace_id=$1 AND order_id=$2`,[workspaceId,input.orderId]) : { rows: [] }
+      if (terms.rows[0]) {
+        const deadline = new Date(terms.rows[0].expiresAt).toISOString()
+        if (Date.parse(deadline) <= Date.parse(input.now ?? new Date().toISOString())) throw new CommercialContractError('COMMERCIAL_ORDER_EXPIRED','order payment window expired')
+        expiresAt = expiresAt === null ? deadline : new Date(Math.min(Date.parse(deadline),Date.parse(expiresAt))).toISOString()
+      }
+      const loaded = await client.query<OrderRow & { skuCode: string; accessRevision: string | number | null; snapshot: { schema_version?: string; sku: CommercialCatalogSkuSnapshot }; snapshotChecksum: string; snapshotCatalogChecksum: string }>(
+        `SELECT ${aliasedOrderProjection('o')},s.snapshot->'sku'->>'code' AS "skuCode",NULL::bigint AS "accessRevision",s.snapshot,s.checksum AS "snapshotChecksum",s.catalog_checksum AS "snapshotCatalogChecksum"
            FROM commercial_orders_v2 o JOIN commercial_order_snapshots_v2 s ON s.workspace_id=o.workspace_id AND s.order_id=o.id
           WHERE o.workspace_id=$1 AND o.id=$2 FOR UPDATE`, [workspaceId, input.orderId],
       )
       const row = loaded.rows[0]
       if (!row) throw new CommercialContractError('COMMERCIAL_ORDER_NOT_FOUND', 'commercial order was not found')
       const order = mapOrder(row)
+      if (!hasTerms) assertVerifiedLegacyOrderSnapshot(row, order)
+      if (row.snapshot?.schema_version === 'commercial-order.v3' && !terms.rows[0]) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'V3 order terms are missing')
       if (order.status !== 'pending') {
         if (order.checkoutIdempotencyKey === input.idempotencyKey && order.checkoutUrl) {
           return { order, channel: input.channel, paymentUrl: order.checkoutUrl, providerOrderId: order.providerOrderId, expiresAt: order.checkoutExpiresAt, replayed: true }
@@ -630,9 +719,22 @@ export class PostgresCommercialContractRepository {
     if (!/^[0-9a-f]{64}$/u.test(input.payloadHash)) throw new TypeError('payloadHash must be sha256 hex')
     if (!Number.isSafeInteger(input.amountFen) || input.amountFen < 0) throw new TypeError('amountFen must be a non-negative integer')
 
-    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const loaded = await client.query<OrderRow & { snapshotId: string; snapshot: { sku: CommercialCatalogSkuSnapshot } }>(
-        `SELECT ${aliasedOrderProjection('o')}, s.id AS "snapshotId", s.snapshot
+    return withWorkspaceTransaction(this.pool, workspaceId, client => this.recordVerifiedPaymentAndGrantInTransaction(client, input))
+  }
+
+  async recordVerifiedPaymentAndGrantInTransaction(client: SqlClient, input: VerifiedPaymentGrantInput): Promise<PaymentGrantResult> {
+    const workspaceId = requireWorkspaceScope(input.workspaceId)
+    const paidAt = instant(input.paidAt, 'paidAt')
+    required(input.providerEventId, 'providerEventId'); required(input.providerOrderId, 'providerOrderId')
+    required(input.nonce, 'nonce'); required(input.payloadHash, 'payloadHash')
+    if (!/^[0-9a-f]{64}$/u.test(input.payloadHash)) throw new TypeError('payloadHash must be sha256 hex')
+    if (!Number.isSafeInteger(input.amountFen) || input.amountFen <= 0) throw new TypeError('amountFen must be a positive integer')
+    await client.query(`SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext($1), pg_catalog.hashtext($2))`, ['workspace_subscription_periods_v2', workspaceId])
+    const hasTerms = await hasCommercialRelationForVerifiedPrefix(client, 'commercial_order_terms_v3', 259)
+    const terms = hasTerms ? await client.query<{ purchaseKind: string }>(`SELECT purchase_kind AS "purchaseKind" FROM commercial_order_terms_v3 WHERE workspace_id=$1 AND order_id=$2`, [workspaceId, input.orderId]) : { rows: [] }
+    if (terms.rows[0]) return this.transactionsV3.recordVerifiedPaymentAndGrantInTransaction(client, input)
+      const loaded = await client.query<OrderRow & { snapshotId: string; snapshot: { schema_version?: string; sku: CommercialCatalogSkuSnapshot }; snapshotChecksum: string; snapshotCatalogChecksum: string }>(
+        `SELECT ${aliasedOrderProjection('o')}, s.id AS "snapshotId", s.snapshot,s.checksum AS "snapshotChecksum",s.catalog_checksum AS "snapshotCatalogChecksum"
            FROM commercial_orders_v2 o
            JOIN commercial_order_snapshots_v2 s ON s.workspace_id=o.workspace_id AND s.order_id=o.id
           WHERE o.workspace_id=$1 AND o.id=$2 FOR UPDATE OF o`,
@@ -641,6 +743,8 @@ export class PostgresCommercialContractRepository {
       const row = loaded.rows[0]
       if (!row) throw new CommercialContractError('COMMERCIAL_ORDER_NOT_FOUND', 'commercial order was not found')
       const order = mapOrder(row)
+      if (!hasTerms) assertVerifiedLegacyOrderSnapshot(row, order)
+      if (row.snapshot.schema_version === 'commercial-order.v3') throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'V3 order terms are missing')
       const sku = row.snapshot.sku
       if (order.paymentProvider !== input.provider || order.amountFen !== input.amountFen || order.currency !== input.currency) {
         throw new CommercialContractError('COMMERCIAL_PAYMENT_MISMATCH', 'provider, amount or currency does not match immutable order snapshot')
@@ -737,7 +841,7 @@ export class PostgresCommercialContractRepository {
           await client.query(
             `INSERT INTO onboarding_point_grant_schedules_v2
               (id,workspace_id,onboarding_order_id,sequence,points,due_at,expires_at,policy_ref,status,grant_id,blockers,entitlement_snapshot_id,source_checksum,created_by_actor_id,creation_reason,creation_evidence)
-              VALUES ($1,$2,$3,$4,500,$5::timestamptz,$6::timestamptz,'commercial.onboarding.v2',$7,$8,$9,$10,$11,$12,$13,$14::jsonb)
+              VALUES ($1,$2,$3,$4,$15,$5::timestamptz,$6::timestamptz,'commercial.onboarding.v2',$7,$8,$9,$10,$11,$12,$13,$14::jsonb)
              ON CONFLICT (workspace_id,onboarding_order_id,sequence) DO NOTHING`,
             [
               `opgs_${digest({ workspaceId, orderId: input.orderId, sequence: item.sequence }).slice(0, 28)}`,
@@ -754,6 +858,7 @@ export class PostgresCommercialContractRepository {
               input.providerEventId,
               'verified onboarding payment grant schedule',
               JSON.stringify({ payment_event_id: input.providerEventId, sku_version_id: sku.versionId }),
+              commercialOnboardingGrantSchedule(sku).pointsPerGrant,
             ],
           )
         }
@@ -763,7 +868,7 @@ export class PostgresCommercialContractRepository {
             WHERE workspace_id=$1 AND onboarding_order_id=$2 AND status IN ('scheduled','granted') AND blockers='[]'::jsonb`,
           [workspaceId, input.orderId],
         )
-        if (safeInteger(scheduleRows.rows[0]?.count ?? 0, 'onboardingScheduleCount') !== 6) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'onboarding grant schedule was not committed completely')
+        if (safeInteger(scheduleRows.rows[0]?.count ?? 0, 'onboardingScheduleCount') !== schedule.length) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'onboarding grant schedule was not committed completely')
       }
       const balance = await client.query<{ available: string | number; reserved: string | number; settled: string | number; revision: string | number }>(
         `UPDATE creative_point_access_state
@@ -789,14 +894,16 @@ export class PostgresCommercialContractRepository {
         [workspaceId, input.orderId, input.providerOrderId, paidAt],
       )
       if (!paid.rows[0]) throw new CommercialContractError('COMMERCIAL_IDEMPOTENCY_CONFLICT', 'commercial order cannot transition to paid')
+      if (sku.kind === 'onboarding' && hasTerms) {
+        await client.query(`INSERT INTO workspace_commercial_onboarding_v3(workspace_id,onboarding_order_id,status,activated_at,revision) VALUES($1,$2,'active',$3::timestamptz,1) ON CONFLICT(workspace_id) DO NOTHING`, [workspaceId, input.orderId, paidAt])
+      }
       await this.appendRecoveryDecision(client, workspaceId, input.orderId, state.available, state.reserved, revision, paidAt)
       await client.query(
         `INSERT INTO outbox_events (id,workspace_id,aggregate_id,event_type,sequence,payload)
          VALUES ($1,$2,$3,'commercial.payment_grant_committed',1,$4::jsonb)`,
         [`evt_${randomUUID()}`, workspaceId, input.orderId, JSON.stringify({ order_id: input.orderId, grant_id: grantId, access_revision: revision, payment_event_id: input.providerEventId })],
       )
-      return { order: mapOrder(paid.rows[0]), grantId, availablePoints: safeInteger(state.available, 'availablePoints'), accessRevision: revision, replayed: false }
-    })
+      return { order: mapOrder(paid.rows[0]), grantId, grantStatus: 'active', availablePoints: safeInteger(state.available, 'availablePoints'), accessRevision: revision, replayed: false }
   }
 
   private async appendRecoveryDecision(client: SqlClient, workspaceId: string, requestId: string, available: string | number, reserved: string | number, revision: number, decidedAt: string): Promise<void> {

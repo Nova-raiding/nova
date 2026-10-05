@@ -1,0 +1,502 @@
+{
+  "ok": true,
+  "bundle_provenance": {
+    "ok": true,
+    "errors": [],
+    "git_commit": "d44afc3ca721c304998083a25a0d34c8724568a5",
+    "source_dirty": true,
+    "version": "0.1.0+codex.20261005042504",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "authenticity_verified": false,
+    "checked_files": 84
+  },
+  "plugin_version": "0.1.0+codex.20261005042504",
+  "expected_plugin_version": "0.1.0+codex.20261005042504",
+  "source_manifest": {
+    "version": "0.1.0+codex.20261005042504",
+    "package_version": "0.1.0+codex.20261005042504",
+    "errors": []
+  },
+  "package_profile": {
+    "expected": "production",
+    "source": "production",
+    "installed": "production",
+    "errors": []
+  },
+  "manifest": {
+    "errors": []
+  },
+  "source_root": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/local-plugin/production-20261005042504/extracted",
+  "installed_root": "/Users/lixiaomei/.codex/plugins/cache/personal/merchant-marketing/local",
+  "runtime_files": [
+    {
+      "path": ".codex-plugin/plugin.json",
+      "source_sha256": "462bebdacd0ec743ef9c75af4ade6b27b2704a1a77d0e3b01634e14ee12a94b8",
+      "installed_sha256": "462bebdacd0ec743ef9c75af4ade6b27b2704a1a77d0e3b01634e14ee12a94b8",
+      "matches": true
+    },
+    {
+      "path": ".mcp.json",
+      "source_sha256": "f0c153f00abc3b21df61859425d043c2d4666b011192245b34b051fb48a46c4b",
+      "installed_sha256": "f0c153f00abc3b21df61859425d043c2d4666b011192245b34b051fb48a46c4b",
+      "matches": true
+    },
+    {
+      "path": "README.md",
+      "source_sha256": "1c435ea3652947b975aca01bb278982fb971460bb6388ea7013925f985f18e63",
+      "installed_sha256": "1c435ea3652947b975aca01bb278982fb971460bb6388ea7013925f985f18e63",
+      "matches": true
+    },
+    {
+      "path": "assets/store-nova-logo.png",
+      "source_sha256": "0f258e45fb50705fb108d4260a6a2a4d6b5f5984e6e070681438486a37d28fa1",
+      "installed_sha256": "0f258e45fb50705fb108d4260a6a2a4d6b5f5984e6e070681438486a37d28fa1",
+      "matches": true
+    },
+    {
+      "path": "bundle-profile.json",
+      "source_sha256": "cbcb630c763ac164f44b801eeba76f87628e0d764cc03a3521251e6d55909c17",
+      "installed_sha256": "cbcb630c763ac164f44b801eeba76f87628e0d764cc03a3521251e6d55909c17",
+      "matches": true
+    },
+    {
+      "path": "macos/store-nova-connect-helper.swift",
+      "source_sha256": "a6c5992de476788980d111a5937ebff4418b5ca085a0ff0769244923c497427d",
+      "installed_sha256": "a6c5992de476788980d111a5937ebff4418b5ca085a0ff0769244923c497427d",
+      "matches": true
+    },
+    {
+      "path": "mcp/bridge.mjs",
+      "source_sha256": "b524d71690c5ab6ef8d3f077ee17660b874f5edd43c5ba9ac7772de61cabda53",
+      "installed_sha256": "b524d71690c5ab6ef8d3f077ee17660b874f5edd43c5ba9ac7772de61cabda53",
+      "matches": true
+    },
+    {
+      "path": "mcp/bridge.sh",
+      "source_sha256": "5e8a1b68924124116b54fb94dad34431da79a7c72c746cc82ac614610a7cb6de",
+      "installed_sha256": "5e8a1b68924124116b54fb94dad34431da79a7c72c746cc82ac614610a7cb6de",
+      "matches": true
+    },
+    {
+      "path": "mcp/installation-identity.mjs",
+      "source_sha256": "d7b1b4ff461606ba466fd99d4eb1d24171bf4a2f8c45fd45355a14d66cef8a04",
+      "installed_sha256": "d7b1b4ff461606ba466fd99d4eb1d24171bf4a2f8c45fd45355a14d66cef8a04",
+      "matches": true
+    },
+    {
+      "path": "mcp/keychain-credential-helper.swift",
+      "source_sha256": "56b3d10561412279dfd7e7c2cace72d05d30024e11a6060672f2f0a9649db676",
+      "installed_sha256": "56b3d10561412279dfd7e7c2cace72d05d30024e11a6060672f2f0a9649db676",
+      "matches": true
+    },
+    {
+      "path": "mcp/keychain-credential.mjs",
+      "source_sha256": "3cc9dadefd229980a37f02e66cde3f07df5d71ba3709ce89270e3974d0eeeac4",
+      "installed_sha256": "3cc9dadefd229980a37f02e66cde3f07df5d71ba3709ce89270e3974d0eeeac4",
+      "matches": true
+    },
+    {
+      "path": "mcp/managed-credential-state.mjs",
+      "source_sha256": "f9b020a9e56225f5befd5cbca0ba99bf4b0f1e3ac3774c9256dcb0982654abf2",
+      "installed_sha256": "f9b020a9e56225f5befd5cbca0ba99bf4b0f1e3ac3774c9256dcb0982654abf2",
+      "matches": true
+    },
+    {
+      "path": "mcp/managed-token.mjs",
+      "source_sha256": "76f47358b3a101bd1207a53b4529ae8e2d824b534b1602c313d9f8150270878c",
+      "installed_sha256": "76f47358b3a101bd1207a53b4529ae8e2d824b534b1602c313d9f8150270878c",
+      "matches": true
+    },
+    {
+      "path": "mcp/relay-evidence.mjs",
+      "source_sha256": "835f3176646bc9363e83425fbc743a5926ef6a74f1ed73bc024eaeb144e02bf9",
+      "installed_sha256": "835f3176646bc9363e83425fbc743a5926ef6a74f1ed73bc024eaeb144e02bf9",
+      "matches": true
+    },
+    {
+      "path": "mcp/windows-credential.mjs",
+      "source_sha256": "f9215c9629abbe116835d27ebf4e8339136b2e1a15fa6ef7ea0a3a8d0118116d",
+      "installed_sha256": "f9215c9629abbe116835d27ebf4e8339136b2e1a15fa6ef7ea0a3a8d0118116d",
+      "matches": true
+    },
+    {
+      "path": "mcp/windows-installation-binding.mjs",
+      "source_sha256": "ec3ed61addea81b14c31084a802d9e97031af716e465fab0fefb11d41b2fc81f",
+      "installed_sha256": "ec3ed61addea81b14c31084a802d9e97031af716e465fab0fefb11d41b2fc81f",
+      "matches": true
+    },
+    {
+      "path": "mcp/windows-session-env.mjs",
+      "source_sha256": "434b941d0c8d2ca8ad483b770cbed5201aad3d26906b6ce1f811192a09aff7ec",
+      "installed_sha256": "434b941d0c8d2ca8ad483b770cbed5201aad3d26906b6ce1f811192a09aff7ec",
+      "matches": true
+    },
+    {
+      "path": "package.json",
+      "source_sha256": "785f2b3d04a8957a223030b36063562a08e0fdf509ddd88266c1d18f310301e0",
+      "installed_sha256": "785f2b3d04a8957a223030b36063562a08e0fdf509ddd88266c1d18f310301e0",
+      "matches": true
+    },
+    {
+      "path": "scheduled/daily-store-risk-scan.json",
+      "source_sha256": "a9e3b6e65c416257a244e441176bff4752f1242fc44021c5ecdc62c867a01254",
+      "installed_sha256": "a9e3b6e65c416257a244e441176bff4752f1242fc44021c5ecdc62c867a01254",
+      "matches": true
+    },
+    {
+      "path": "scheduled/weekly-six-platform-digest.json",
+      "source_sha256": "0e2c50537bef9d34c44b0986e50f22f3dc50a88431029acc087b265e35ca6ccb",
+      "installed_sha256": "0e2c50537bef9d34c44b0986e50f22f3dc50a88431029acc087b265e35ca6ccb",
+      "matches": true
+    },
+    {
+      "path": "scripts/build-connect-helper-windows.mjs",
+      "source_sha256": "073c3f9f7592dff47c2e8ee4eb39bf5bfc5a63cc471cba3109af6c3fac877aad",
+      "installed_sha256": "073c3f9f7592dff47c2e8ee4eb39bf5bfc5a63cc471cba3109af6c3fac877aad",
+      "matches": true
+    },
+    {
+      "path": "scripts/build-connect-helper.mjs",
+      "source_sha256": "b4d6b92b73e9fc27c9b1420485a8cb3b00edeb772e7baddb42f48a835551954c",
+      "installed_sha256": "b4d6b92b73e9fc27c9b1420485a8cb3b00edeb772e7baddb42f48a835551954c",
+      "matches": true
+    },
+    {
+      "path": "scripts/build-keychain-helper.mjs",
+      "source_sha256": "e9cfde4c66c8646aadacdd0ca66ba39d62aa6a3f20784fd0a930efa6f7b8b481",
+      "installed_sha256": "e9cfde4c66c8646aadacdd0ca66ba39d62aa6a3f20784fd0a930efa6f7b8b481",
+      "matches": true
+    },
+    {
+      "path": "scripts/build-windows-credential-helper.mjs",
+      "source_sha256": "8fa1394ba0ccf5467cf8dc0ecd9ecf70581a1d193becdabbfc5c9654a26cf351",
+      "installed_sha256": "8fa1394ba0ccf5467cf8dc0ecd9ecf70581a1d193becdabbfc5c9654a26cf351",
+      "matches": true
+    },
+    {
+      "path": "scripts/bundle-provenance.mjs",
+      "source_sha256": "46bf05cddd42f9660275876ba7ab705f98db70dff589839a12c29ae1c1ecb07f",
+      "installed_sha256": "46bf05cddd42f9660275876ba7ab705f98db70dff589839a12c29ae1c1ecb07f",
+      "matches": true
+    },
+    {
+      "path": "scripts/connect-local-macos.mjs",
+      "source_sha256": "a88152c91f3fd8e165fbff0fe900f52f888b66c8ca0a7a7a2e5bed59a911334b",
+      "installed_sha256": "a88152c91f3fd8e165fbff0fe900f52f888b66c8ca0a7a7a2e5bed59a911334b",
+      "matches": true
+    },
+    {
+      "path": "scripts/diagnose-workspace-binding.mjs",
+      "source_sha256": "bb40b879c513d0512d311efb778d38a99b978fe3ea561f98b83e26541b559450",
+      "installed_sha256": "bb40b879c513d0512d311efb778d38a99b978fe3ea561f98b83e26541b559450",
+      "matches": true
+    },
+    {
+      "path": "scripts/enroll-local-macos.mjs",
+      "source_sha256": "ef6a02af8db45844f9a03d849dc53baca1a7c7b64eea12533de4211089ed6c2a",
+      "installed_sha256": "ef6a02af8db45844f9a03d849dc53baca1a7c7b64eea12533de4211089ed6c2a",
+      "matches": true
+    },
+    {
+      "path": "scripts/ensure-chatgpt-windows.ps1",
+      "source_sha256": "3c5ed7e44350ccdb6d140a24babf30844703020665b72eb535dcd33867a048eb",
+      "installed_sha256": "3c5ed7e44350ccdb6d140a24babf30844703020665b72eb535dcd33867a048eb",
+      "matches": true
+    },
+    {
+      "path": "scripts/install-all-macos.mjs",
+      "source_sha256": "327aaf311e619668006651724df6d037813522610b8dd5c183fb163efefbf015",
+      "installed_sha256": "327aaf311e619668006651724df6d037813522610b8dd5c183fb163efefbf015",
+      "matches": true
+    },
+    {
+      "path": "scripts/install-chatgpt-bundled.mjs",
+      "source_sha256": "be3913771925c12de66585ebce6ed777dd6bbc0b4c6762c71a6fa82555be98de",
+      "installed_sha256": "be3913771925c12de66585ebce6ed777dd6bbc0b4c6762c71a6fa82555be98de",
+      "matches": true
+    },
+    {
+      "path": "scripts/install-local-macos.sh",
+      "source_sha256": "2e902830952f10f8866b93f614e8f60057c7294bc3cc437fee48bb7dff595600",
+      "installed_sha256": "2e902830952f10f8866b93f614e8f60057c7294bc3cc437fee48bb7dff595600",
+      "matches": true
+    },
+    {
+      "path": "scripts/install-local-plugin.mjs",
+      "source_sha256": "eb20753800bf5c90f0ef5c5d01b9bdfe27637240fa7991118174fc39a3a53265",
+      "installed_sha256": "eb20753800bf5c90f0ef5c5d01b9bdfe27637240fa7991118174fc39a3a53265",
+      "matches": true
+    },
+    {
+      "path": "scripts/launch-verified-chatgpt-macos.mjs",
+      "source_sha256": "6aeb47a63322f9525c8060e93c80ef8cfa8607a4baa9caeebf5eba9380208991",
+      "installed_sha256": "6aeb47a63322f9525c8060e93c80ef8cfa8607a4baa9caeebf5eba9380208991",
+      "matches": true
+    },
+    {
+      "path": "scripts/local-plugin-package-profile.mjs",
+      "source_sha256": "bd6798e9a5aa137b47fb37bb5f980af623a015cc0d15db97adafc48316d9ee23",
+      "installed_sha256": "bd6798e9a5aa137b47fb37bb5f980af623a015cc0d15db97adafc48316d9ee23",
+      "matches": true
+    },
+    {
+      "path": "scripts/login-local-macos.mjs",
+      "source_sha256": "8c89a0d9913d950705773307bce7b43cb3d6b16ede92d863b3091f313e305773",
+      "installed_sha256": "8c89a0d9913d950705773307bce7b43cb3d6b16ede92d863b3091f313e305773",
+      "matches": true
+    },
+    {
+      "path": "scripts/login-local-windows.mjs",
+      "source_sha256": "d0dde97abdc95515b09aa3d6641a2447cad715fede35cbda6732a26cdd9a6fc2",
+      "installed_sha256": "d0dde97abdc95515b09aa3d6641a2447cad715fede35cbda6732a26cdd9a6fc2",
+      "matches": true
+    },
+    {
+      "path": "scripts/package-local-plugin.mjs",
+      "source_sha256": "2469d1b38bee540ed19e44706df889afcde44d9d1764cbd7039079893acee7f2",
+      "installed_sha256": "2469d1b38bee540ed19e44706df889afcde44d9d1764cbd7039079893acee7f2",
+      "matches": true
+    },
+    {
+      "path": "scripts/register-connect-helper.mjs",
+      "source_sha256": "f2680673d6792bf919a46ae11f5997f97f11aca26cfcb9759d72d2d5d0792711",
+      "installed_sha256": "f2680673d6792bf919a46ae11f5997f97f11aca26cfcb9759d72d2d5d0792711",
+      "matches": true
+    },
+    {
+      "path": "scripts/upgrade-installed-plugin.mjs",
+      "source_sha256": "66b3ae3fd893718a49870a1a0661cceacc26493a83bd70f2c69b5cba5c8e6b90",
+      "installed_sha256": "66b3ae3fd893718a49870a1a0661cceacc26493a83bd70f2c69b5cba5c8e6b90",
+      "matches": true
+    },
+    {
+      "path": "scripts/verify-bundle-provenance.mjs",
+      "source_sha256": "93ae9c760ae728a564adf7c713f60befb5a6aee58736e33d001fb4ea97fd6895",
+      "installed_sha256": "93ae9c760ae728a564adf7c713f60befb5a6aee58736e33d001fb4ea97fd6895",
+      "matches": true
+    },
+    {
+      "path": "scripts/verify-chatgpt-macos.mjs",
+      "source_sha256": "db3884a4ae264b8ca441120658458d305e91b90d3c7910e1c548aff9093be712",
+      "installed_sha256": "db3884a4ae264b8ca441120658458d305e91b90d3c7910e1c548aff9093be712",
+      "matches": true
+    },
+    {
+      "path": "scripts/verify-connect-helper-windows.ps1",
+      "source_sha256": "32e36923dbd83a15ce857c16575387b1e5379fa954dcce3bfa6d6273d41d1d44",
+      "installed_sha256": "32e36923dbd83a15ce857c16575387b1e5379fa954dcce3bfa6d6273d41d1d44",
+      "matches": true
+    },
+    {
+      "path": "scripts/verify-installed-bridge.mjs",
+      "source_sha256": "f0cedc976f3628cba38ae4393d09ebb8bdf99b09a5cbb0eb8e4ec83a877c9737",
+      "installed_sha256": "f0cedc976f3628cba38ae4393d09ebb8bdf99b09a5cbb0eb8e4ec83a877c9737",
+      "matches": true
+    },
+    {
+      "path": "scripts/verify-marketplace-source.mjs",
+      "source_sha256": "eb84ddba137f0c57f508bfdbb34484b0479b68afe35792eb9068a5cd78608ed1",
+      "installed_sha256": "eb84ddba137f0c57f508bfdbb34484b0479b68afe35792eb9068a5cd78608ed1",
+      "matches": true
+    },
+    {
+      "path": "scripts/windows-installation-binding.mjs",
+      "source_sha256": "4f8fd9475e9e738a8ce54adeb8814274277e4773ee806925582383709a92b049",
+      "installed_sha256": "4f8fd9475e9e738a8ce54adeb8814274277e4773ee806925582383709a92b049",
+      "matches": true
+    },
+    {
+      "path": "skills/ecommerce-video-marketing/SKILL.md",
+      "source_sha256": "428d26d4dd5b63074340b0dbf139fb0320f5a9d50268bb220c0ed5cdd1a43345",
+      "installed_sha256": "428d26d4dd5b63074340b0dbf139fb0320f5a9d50268bb220c0ed5cdd1a43345",
+      "matches": true
+    },
+    {
+      "path": "skills/ecommerce-video-marketing/references/culture_adaptation.md",
+      "source_sha256": "6957dc244be1657c1b19a0e462e387597f79cfabc59ebeed2f6c851adc6c7c03",
+      "installed_sha256": "6957dc244be1657c1b19a0e462e387597f79cfabc59ebeed2f6c851adc6c7c03",
+      "matches": true
+    },
+    {
+      "path": "skills/ecommerce-video-marketing/references/shot_guide.md",
+      "source_sha256": "87f7881acb0a48650d795829ff5154c5fa2445422821bacf759bd7880b56d4c8",
+      "installed_sha256": "87f7881acb0a48650d795829ff5154c5fa2445422821bacf759bd7880b56d4c8",
+      "matches": true
+    },
+    {
+      "path": "skills/ecommerce-video-marketing/references/video_guide.md",
+      "source_sha256": "4867e5e616ead3b77fe0f9f325a8a4e3ac4d8292a41d7c2abae16745dc911c5f",
+      "installed_sha256": "4867e5e616ead3b77fe0f9f325a8a4e3ac4d8292a41d7c2abae16745dc911c5f",
+      "matches": true
+    },
+    {
+      "path": "skills/ecommerce-video-marketing/references/video_templates.md",
+      "source_sha256": "cc845af0c32c69b6fc6d52580071ea6d4e89a31043c8e2ca6aad66a7feaf0e21",
+      "installed_sha256": "cc845af0c32c69b6fc6d52580071ea6d4e89a31043c8e2ca6aad66a7feaf0e21",
+      "matches": true
+    },
+    {
+      "path": "skills/merchant-marketing/SKILL.md",
+      "source_sha256": "289aa83a03f5563223c33fa88d80d29ef3ccc12304f25b4585501cc6a8c3ebfe",
+      "installed_sha256": "289aa83a03f5563223c33fa88d80d29ef3ccc12304f25b4585501cc6a8c3ebfe",
+      "matches": true
+    },
+    {
+      "path": "skills/merchant-marketing/references/automations.md",
+      "source_sha256": "e280a8ec78cea6dc42c3ee48b003ce981ebafd681c87d6217d45647899d03aa2",
+      "installed_sha256": "e280a8ec78cea6dc42c3ee48b003ce981ebafd681c87d6217d45647899d03aa2",
+      "matches": true
+    },
+    {
+      "path": "skills/merchant-marketing/references/ecommerce-detail-page-generator.md",
+      "source_sha256": "2fb3ee85eb37f62d0ecc74c1cd064b6f0339648f355e4b7c0ad4324cc688a7ae",
+      "installed_sha256": "2fb3ee85eb37f62d0ecc74c1cd064b6f0339648f355e4b7c0ad4324cc688a7ae",
+      "matches": true
+    },
+    {
+      "path": "skills/merchant-marketing/references/ecommerce-detail-page-generator/category-playbooks.md",
+      "source_sha256": "9ea1934689aa9dc0723a5a34704ecd74cd090a28e57826eba0de8122926441b9",
+      "installed_sha256": "9ea1934689aa9dc0723a5a34704ecd74cd090a28e57826eba0de8122926441b9",
+      "matches": true
+    },
+    {
+      "path": "skills/merchant-marketing/references/ecommerce-detail-page-generator/page-spec.schema.json",
+      "source_sha256": "3849fc0a44f60b7a000ed7beff204b4a9530011c9438b69e0d3c78af107046c0",
+      "installed_sha256": "3849fc0a44f60b7a000ed7beff204b4a9530011c9438b69e0d3c78af107046c0",
+      "matches": true
+    },
+    {
+      "path": "skills/merchant-marketing/references/ecommerce-detail-page-generator/platform-profiles.json",
+      "source_sha256": "ca1fabebe35db271d81ad4ba855729f0210274003d0de703c9e566078f137d4a",
+      "installed_sha256": "ca1fabebe35db271d81ad4ba855729f0210274003d0de703c9e566078f137d4a",
+      "matches": true
+    },
+    {
+      "path": "skills/merchant-marketing/references/ecommerce-detail-page-generator/platform-style-guide.md",
+      "source_sha256": "06c6faf7fc5502d5975d0186879779d451916c56c815f4703a15cffc6a60d854",
+      "installed_sha256": "06c6faf7fc5502d5975d0186879779d451916c56c815f4703a15cffc6a60d854",
+      "matches": true
+    },
+    {
+      "path": "skills/merchant-marketing/references/ecommerce-detail-page-generator/prompt-recipes.md",
+      "source_sha256": "3319dcb25c829d9ac3314500d99b74f7668ddc238024a24e8728d497f623b416",
+      "installed_sha256": "3319dcb25c829d9ac3314500d99b74f7668ddc238024a24e8728d497f623b416",
+      "matches": true
+    },
+    {
+      "path": "skills/six-platform-public-import/SKILL.md",
+      "source_sha256": "41a57710f95f9bcd1bf80e76fce52f2df6315934b8231685d9b03fcf3e128475",
+      "installed_sha256": "41a57710f95f9bcd1bf80e76fce52f2df6315934b8231685d9b03fcf3e128475",
+      "matches": true
+    },
+    {
+      "path": "skills/six-platform-public-import/references/platforms.md",
+      "source_sha256": "f581b6e054a412fd60cac8234508d470db717c1cbddb78dd9c0f9c600f1a0d9f",
+      "installed_sha256": "f581b6e054a412fd60cac8234508d470db717c1cbddb78dd9c0f9c600f1a0d9f",
+      "matches": true
+    },
+    {
+      "path": "skills/six-platform-public-import/scripts/extract-product.mjs",
+      "source_sha256": "32eb4934933583d7230f2b6589f8df96035aaca912af8ca786eaa8ef78409971",
+      "installed_sha256": "32eb4934933583d7230f2b6589f8df96035aaca912af8ca786eaa8ef78409971",
+      "matches": true
+    },
+    {
+      "path": "skills/storyboard-prompt-assistant/SKILL.md",
+      "source_sha256": "78e9a68669f5d40454edd15b92da8a63804c1261abb1321079007ca385410ca2",
+      "installed_sha256": "78e9a68669f5d40454edd15b92da8a63804c1261abb1321079007ca385410ca2",
+      "matches": true
+    },
+    {
+      "path": "ui/image-local-edit.html",
+      "source_sha256": "4050adc50570379023db09566e27358a8bdaf21c661b2849c377171508b356cc",
+      "installed_sha256": "4050adc50570379023db09566e27358a8bdaf21c661b2849c377171508b356cc",
+      "matches": true
+    },
+    {
+      "path": "ui/recharge.html",
+      "source_sha256": "1320215762eed42d2468c782f1003998a0e800250f8ae059eff46db299b76f43",
+      "installed_sha256": "1320215762eed42d2468c782f1003998a0e800250f8ae059eff46db299b76f43",
+      "matches": true
+    },
+    {
+      "path": "windows/StoreNovaConnectHelper.cs",
+      "source_sha256": "efc064ca47b2550d6a2401a47859ef662a4fefc46e0d423a31602a330a9e0da2",
+      "installed_sha256": "efc064ca47b2550d6a2401a47859ef662a4fefc46e0d423a31602a330a9e0da2",
+      "matches": true
+    },
+    {
+      "path": "windows/StoreNovaCredentialHelper.cs",
+      "source_sha256": "65968eabd71f8d9a2fe677184e554653a928530edaf9e5b4d2252441a98bc3aa",
+      "installed_sha256": "65968eabd71f8d9a2fe677184e554653a928530edaf9e5b4d2252441a98bc3aa",
+      "matches": true
+    },
+    {
+      "path": "windows/StoreNovaCredentialHelper.csproj",
+      "source_sha256": "2b406ecdd49861cd1fb72e358f6d4187f33ee3620577176802e37c3dc75af191",
+      "installed_sha256": "2b406ecdd49861cd1fb72e358f6d4187f33ee3620577176802e37c3dc75af191",
+      "matches": true
+    }
+  ],
+  "runtime_inventory": {
+    "source_count": 68,
+    "installed_count": 68,
+    "missing": [],
+    "unexpected": []
+  },
+  "tools": {
+    "count": 131,
+    "source_count": 131,
+    "source_discovery_error": null,
+    "installed_discovery_error": null,
+    "unconfigured_call": {
+      "tool": "workspace.health",
+      "blocked": true,
+      "code": "MCP_CONFIGURATION_REQUIRED",
+      "error": null
+    },
+    "required": [
+      "merchant.start",
+      "commercial.access.get",
+      "commercial.catalog.get",
+      "creative-points.balance.get",
+      "creative-points.statement.list"
+    ],
+    "missing": [],
+    "forbidden": [],
+    "missing_from_installed": [],
+    "unexpected_in_installed": [],
+    "duplicates": [],
+    "cache_drift": {
+      "detected": false,
+      "action": "No source-versus-installed tool surface drift detected.",
+      "automatic_reuse": false,
+      "automatic_deletion": false
+    }
+  },
+  "current_conversation_refresh": {
+    "verified": false,
+    "reason": "The installed bridge can be verified, but an already-running ChatGPT conversation may retain its original tool snapshot."
+  },
+  "connect_helper": {
+    "source_verified": true,
+    "app_bundle_verified": false,
+    "custom_scheme": "development_recovery_only",
+    "production_ready": false,
+    "reason": "Unsigned custom-scheme platform binaries are not a production connection path; require trusted signing and installation-instance binding.",
+    "platforms": {
+      "darwin": {
+        "source_verified": true,
+        "signed_bundle_verified": false,
+        "production_ready": false
+      },
+      "win32": {
+        "source_verified": true,
+        "sha256_verified": false,
+        "authenticode_verified": false,
+        "production_ready": false
+      }
+    }
+  }
+}

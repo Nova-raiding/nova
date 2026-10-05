@@ -17,7 +17,7 @@ function fixture() {
     req: { method: 'POST' }, res: {}, path: '/v1/internal/image-generation-jobs/job/execution',
     requireWorkerAuthorization: vi.fn(), headerRequired: () => 'ws', enrichRequestObservation: vi.fn(),
     body: async () => ({ operation: 'begin_provider_dispatch', owner_token: 'owner' }),
-    persistence: { imageGenerationExecutions: { get: async () => execution, beginProviderDispatch: dispatch, failBeforeProvider: close }, outbox: { listAggregateEvents: async () => [event] } },
+    persistence: { imageGenerationExecutions: { get: async () => execution, beginProviderDispatch: dispatch, failBeforeProvider: close, hasPreProviderFailureProof: async () => true }, outbox: { listAggregateEvents: async () => [event] } },
     service: { getImageGenerationJob: () => ({ idempotencyKey: 'key' }) },
     reserveDailyModelBudget: reserve, releaseDailyModelBudget: release, recheckWorkerAuthorizationSnapshot: vi.fn(), send: vi.fn(),
   } as unknown as InternalRuntimeContext

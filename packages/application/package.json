@@ -4,8 +4,16 @@
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
-  "scripts": { "build": "tsc -p tsconfig.json" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
   "dependencies": {
     "@merchant-marketing/contracts": "0.1.0"
+  },
+  "exports": {
+    "./commercial-upgrade-policy": {
+      "types": "./dist/packages/application/src/commercial-upgrade-policy.d.ts",
+      "import": "./dist/packages/application/src/commercial-upgrade-policy.js"
+    }
   }
 }

@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ASSET_SCAN_RECEIPT_SCHEMA, parseAssetScanReceipt, signAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
-import { assetContinuationReadyEventsForTests, assetScanJobIdForTests, creativePointsForTests, grantContinuousFeatureEntitlementForTests, server, service, signedAssetScanCallbackRequired, workspaceMembers } from './server.js'
+import { assetContinuationReadyEventsForTests, assetScanJobIdForTests, creativePointsForTests, enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, server, service, signedAssetScanCallbackRequired, workspaceMembers } from './server.js'
 
 type Envelope<T> = { data: T; error: { code: string } | null }
 
@@ -62,6 +62,7 @@ function signedReceipt(asset: Awaited<ReturnType<typeof upload>>, verdict: 'clea
 }
 
 beforeAll(async () => {
+  enableCommercialFixtureHarnessForTests()
   storageRoot = await mkdtemp(join(tmpdir(), 'merchant-scanner-e2e-'))
   vi.stubEnv('NODE_ENV', 'test')
   vi.stubEnv('ASSET_STORAGE_ROOT', storageRoot)

@@ -51,6 +51,37 @@ function registryAt(path: string, sourcePath = './plugins/merchant-marketing') {
 }
 
 describe('bundled ChatGPT local installer safety', () => {
+  it('archives the exact audited legacy shell installation and preserves its custom files', () => {
+    const f = fixture()
+    try {
+      knownPlugin(f.destination)
+      const oldVersion = '0.1.0+codex.20260907102000'
+      writeFileSync(resolve(f.destination, '.codex-plugin/plugin.json'), JSON.stringify({ id: plugin, name: plugin, version: oldVersion, mcpServers: './.mcp.json' }))
+      writeFileSync(resolve(f.destination, 'package.json'), JSON.stringify({ name: '@merchant-marketing/plugin', version: oldVersion }))
+      writeFileSync(resolve(f.destination, '.mcp.json'), JSON.stringify({ mcpServers: { [plugin]: { command: 'sh', args: ['./mcp/bridge.sh'] } } }))
+      const legacy = readFileSync(new URL('./fixtures/legacy-20260907102000-bridge.sh', import.meta.url))
+      writeFileSync(resolve(f.destination, 'mcp/bridge.sh'), legacy)
+      const result = f.run()
+      expect(readFileSync(resolve(result.previous_source!, 'mcp/bridge.sh'))).toEqual(legacy)
+      expect(readFileSync(resolve(result.previous_source!, 'merchant-note.txt'), 'utf8')).toBe('keep this previous version')
+    } finally { f.cleanup() }
+  })
+
+  it('rejects an altered legacy shell entry without changing the installed directory', () => {
+    const f = fixture()
+    try {
+      knownPlugin(f.destination)
+      const oldVersion = '0.1.0+codex.20260907102000'
+      writeFileSync(resolve(f.destination, '.codex-plugin/plugin.json'), JSON.stringify({ id: plugin, name: plugin, version: oldVersion, mcpServers: './.mcp.json' }))
+      writeFileSync(resolve(f.destination, 'package.json'), JSON.stringify({ name: '@merchant-marketing/plugin', version: oldVersion }))
+      writeFileSync(resolve(f.destination, '.mcp.json'), JSON.stringify({ mcpServers: { [plugin]: { command: 'sh', args: ['./mcp/bridge.sh'] } } }))
+      writeFileSync(resolve(f.destination, 'mcp/bridge.sh'), '#!/bin/sh\necho custom\n')
+      expect(() => f.run()).toThrow(/not recognized as Store Nova/u)
+      expect(readFileSync(resolve(f.destination, 'mcp/bridge.sh'), 'utf8')).toContain('custom')
+      expect(existsSync(f.cache)).toBe(false)
+    } finally { f.cleanup() }
+  })
+
   it('refuses an unknown existing destination without modifying it or user configuration', () => {
     const f = fixture()
     try {

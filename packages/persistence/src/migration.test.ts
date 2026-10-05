@@ -83,7 +83,8 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(258)
+    const release = JSON.parse(await readFile(new URL('../../../release-metadata.json', import.meta.url), 'utf8')) as { expectedMigrationVersion: number }
+    expect(latestVersion).toBe(release.expectedMigrationVersion)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -117,6 +118,12 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(257)?.sql).toContain('FOREIGN KEY (workspace_id, snapshot_entity_type, asset_id)')
     expect(byVersion.get(258)).toMatchObject({ name: 'knowledge_generation_claim_usage_evidence' })
     expect(byVersion.get(258)?.sql).toContain("m.settlement_status='settled'")
+    expect(byVersion.get(259)).toMatchObject({ name: 'commercial_transaction_policy' })
+    expect(byVersion.get(260)).toMatchObject({ name: 'commercial_catalog_sales_and_bundles' })
+    expect(byVersion.get(261)).toMatchObject({ name: 'commercial_receipts_source_refunds' })
+    expect(byVersion.get(262)).toMatchObject({ name: 'commercial_catalog_notifications' })
+    expect(byVersion.get(263)).toMatchObject({ name: 'merchant_activation_invites' })
+    expect(byVersion.get(264)).toMatchObject({ name: 'commercial_result_notifications_and_reads' })
     expect(byVersion.get(224)).toMatchObject({ name: 'public_platform_rule_audit_truncate_guard' })
     expect(byVersion.get(224)?.sql).toContain('public_platform_rule_audits_no_truncate')
     expect(byVersion.get(220)).toMatchObject({ name: 'commercial_refund_cumulative_bound' })

@@ -148,7 +148,7 @@ describe('Ops browser acceptance isolation', () => {
   })
   it('labels the disposable entitlement as synthetic and keeps its period and benefits explicit', () => {
     const sku = productImportSyntheticSku('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '2026-09-28T00:00:00.000Z')
-    expect(sku).toMatchObject({ kind: 'monthly', visibility: 'public', priceFen: 0, payload: { synthetic: true, purpose: 'product_import_scan' } })
+    expect(sku).toMatchObject({ kind: 'monthly', visibility: 'public', priceFen: 1, payload: { synthetic: true, purpose: 'product_import_scan' } })
     expect(sku.benefits.map(item => item.code)).toEqual(['max_brands', 'max_stores', 'monthly_creative_points'])
     expect(sku.checksum).toMatch(/^[a-f0-9]{64}$/u)
   })

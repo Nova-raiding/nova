@@ -2108,3 +2108,72 @@ body {
   .finance-account-facts { grid-template-columns:1fr; }
   .finance-account-facts span { border-left:0; border-top:1px solid rgba(255,255,255,.16); }
 }
+
+/* Commercial workflows use the existing desktop theme and flat table hierarchy. */
+.commercial-center {
+  font-size: 16px;
+  line-height: 1.6;
+  min-width: 0;
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
+}
+.commercial-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin: 16px 0; }
+.commercial-heading h3, .commercial-heading p { margin: 0; }
+.commercial-center .ant-table, .commercial-checkout-modal .ant-table,
+.commercial-center .ant-tabs, .commercial-center .ant-btn,
+.commercial-checkout-modal .ant-btn, .commercial-checkout-modal .ant-checkbox-wrapper,
+.merchant-commercial-notifications { font-size: 16px; }
+.merchant-commercial-notifications .ant-tag { font-size: 16px; }
+.commercial-center .ant-table-thead > tr > th { font-size: 16px; }
+.commercial-center .ant-btn, .commercial-checkout-modal .ant-btn,
+.merchant-commercial-notifications .ant-btn, .commercial-payment-link { min-height: 44px; }
+.commercial-center .ant-table-cell, .commercial-checkout-modal .ant-table-cell { overflow-wrap: anywhere; }
+.commercial-benefit-snapshot > p { margin: 0; }
+.commercial-benefit-snapshot summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; text-decoration: underline; }
+.commercial-benefit-snapshot summary:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.commercial-benefit-snapshot pre { max-width: 100%; max-height: 320px; overflow: auto; padding: 12px; background: var(--surface-muted, #f5f5f5); white-space: pre-wrap; overflow-wrap: anywhere; }
+.commercial-center .ant-table-cell-align-right, .commercial-checkout-modal .ant-table-cell-align-right,
+.commercial-total, .commercial-quote strong { font-variant-numeric: tabular-nums; }
+.commercial-action-reason { margin: 8px 0 0; max-width: 280px; }
+.commercial-checkout-modal .ant-modal-body { max-height: 70vh; overflow-y: auto; font-size: 16px; line-height: 1.6; }
+.commercial-checkout-modal .ant-btn { margin: 8px 8px 8px 0; }
+.commercial-checkout-modal .ant-checkbox-wrapper { display: block; margin: 16px 0; }
+.commercial-total { text-align: right; font-size: 20px; }
+.commercial-quote, .commercial-payment { padding: 16px 0; border-block: 1px solid var(--line); }
+.commercial-payment-link { display: inline-flex; align-items: center; text-decoration: underline; padding: 8px 0; }
+.commercial-center button:focus-visible, .commercial-checkout-modal button:focus-visible,
+.commercial-payment-link:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
+.merchant-all-notifications { max-height: min(700px, 80vh); overflow-y: auto; background: var(--surface, #fff); }
+.merchant-commercial-notifications { padding: 16px; border-top: 1px solid var(--line); }
+.merchant-commercial-notifications ul { padding: 0; list-style: none; margin: 0; }
+.merchant-commercial-notifications li { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.merchant-commercial-notifications li p { margin: 8px 0; overflow-wrap: anywhere; }
+
+.commercial-payment-link:visited { color: var(--violet); }
+
+.merchant-all-notifications { width: min(480px, calc(100vw - 24px)); border: 1px solid var(--line); border-radius: var(--radius); }
+.merchant-all-notifications .merchant-notification-panel { width: 100%; box-shadow: none; border: none; border-radius: 0; }
+.commercial-center .ant-alert-title, .commercial-center .ant-alert-description,
+.commercial-center .ant-tabs-tab, .commercial-checkout-modal .ant-alert-title,
+.commercial-checkout-modal .ant-alert-description { font-size: 16px; }
+.commercial-center a:visited { color: var(--violet); }
+.merchant-support-request { padding: 24px 0; border-top: 1px solid var(--line); font-size: 16px; }
+.merchant-support-request label { display: block; margin: 16px 0 8px; font-weight: 600; }
+.merchant-support-request form { max-width: 760px; }
+.merchant-support-request .ant-input, .merchant-support-request textarea.ant-input { font-size: 16px; }
+.merchant-support-request .ant-input { min-height: 44px; }
+.merchant-support-request .ant-alert { margin: 16px 0; }
+.merchant-support-request .ant-alert-title, .merchant-support-request .ant-alert-description { font-size: 16px; }
+.merchant-support-query { max-width: 760px; margin: 16px 0; }
+.merchant-support-request li { border-bottom: 1px solid var(--line); padding: 8px 0; }
+.commercial-gift-details { margin: 24px 0; padding: 20px 0; border-top: 1px solid var(--line); font-size: 16px; }
+.commercial-gift-details h3, .commercial-gift-details p, .commercial-gift-details .ant-table, .commercial-gift-details .ant-alert, .commercial-gift-details .ant-pagination { font-size: 16px; }
+.commercial-gift-details .ant-table-cell { overflow-wrap: anywhere; }
+.commercial-gift-details summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 16px; text-decoration: underline; }
+.commercial-gift-details summary:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.commercial-gift-details details p { overflow-wrap: anywhere; }
+.commercial-gift-details .ant-pagination-item, .commercial-gift-details .ant-pagination-prev, .commercial-gift-details .ant-pagination-next { min-width: 44px; min-height: 44px; line-height: 42px; }
+.commercial-plan-comparison { margin: 20px 0; font-size: 16px; }
+.commercial-plan-comparison p, .commercial-plan-comparison .ant-table, .commercial-plan-comparison summary { font-size: 16px; }
+.commercial-plan-comparison summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; text-decoration: underline; }
+.commercial-plan-comparison summary:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }

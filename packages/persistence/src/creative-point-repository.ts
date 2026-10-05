@@ -1,3 +1,4 @@
+import { hasCommercialRelationForVerifiedPrefix } from './commercial-schema-compatibility.js'
 import { randomUUID } from 'node:crypto'
 import { imagePreProviderFailureProofPredicate } from './image-generation-execution-repository.js'
 import { requireWorkspaceScope, type SqlClient, type SqlPool, withWorkspaceTransaction } from './repository.js'
@@ -368,7 +369,9 @@ export class PostgresCreativePointRepository implements CreativePointRepository 
   }
   private async lockState(client: SqlClient, workspaceId: string) { await client.query('INSERT INTO creative_point_access_state (workspace_id,available_points,reserved_points,settled_points) VALUES ($1,NULL,NULL,NULL) ON CONFLICT (workspace_id) DO NOTHING', [workspaceId]); await client.query('SELECT workspace_id FROM creative_point_access_state WHERE workspace_id=$1 FOR UPDATE', [workspaceId]) }
   private async refreshBalance(client: SqlClient, workspaceId: string, at: string, advance: boolean): Promise<CreativePointBalance> {
-    const computed = await client.query<{ available: string | null; reserved: string | null; settled: string | null; known: boolean }>(`SELECT EXISTS(SELECT 1 FROM creative_point_grants WHERE workspace_id=$1) AS known, COALESCE((SELECT sum(GREATEST(g.points-COALESCE(a.points,0),0)) FROM creative_point_grants g LEFT JOIN (SELECT workspace_id,grant_id,sum(points_delta) points FROM creative_point_allocations WHERE workspace_id=$1 GROUP BY workspace_id,grant_id) a ON a.workspace_id=g.workspace_id AND a.grant_id=g.id WHERE g.workspace_id=$1 AND (g.expires_at IS NULL OR g.expires_at>$2::timestamptz)),0) AS available, COALESCE((SELECT sum(points) FROM creative_point_reservations WHERE workspace_id=$1 AND status='active'),0) AS reserved, COALESCE((SELECT sum(GREATEST(r.settled_points-COALESCE(v.points,0),0)) FROM creative_point_reservations r LEFT JOIN (SELECT workspace_id,original_reservation_id,sum(points) AS points FROM creative_point_reversals_v2 WHERE workspace_id=$1 GROUP BY workspace_id,original_reservation_id) v ON v.workspace_id=r.workspace_id AND v.original_reservation_id=r.id WHERE r.workspace_id=$1 AND r.status='settled'),0) AS settled`, [workspaceId, at])
+    const holds = await hasCommercialRelationForVerifiedPrefix(client,'commercial_refund_source_holds_v2',261)
+    const heldPoints = holds ? `COALESCE((SELECT sum(h.points) FROM commercial_refund_source_holds_v2 h WHERE h.workspace_id=g.workspace_id AND h.grant_id=g.id AND h.released_at IS NULL),0)` : '0'
+    const computed = await client.query<{ available: string | null; reserved: string | null; settled: string | null; known: boolean }>(`SELECT EXISTS(SELECT 1 FROM creative_point_grants WHERE workspace_id=$1) AS known, COALESCE((SELECT sum(GREATEST(g.points-COALESCE(a.points,0)-${heldPoints},0)) FROM creative_point_grants g LEFT JOIN (SELECT workspace_id,grant_id,sum(points_delta) points FROM creative_point_allocations WHERE workspace_id=$1 GROUP BY workspace_id,grant_id) a ON a.workspace_id=g.workspace_id AND a.grant_id=g.id WHERE g.workspace_id=$1 AND (g.expires_at IS NULL OR g.expires_at>$2::timestamptz)),0) AS available, COALESCE((SELECT sum(points) FROM creative_point_reservations WHERE workspace_id=$1 AND status='active'),0) AS reserved, COALESCE((SELECT sum(GREATEST(r.settled_points-COALESCE(v.points,0),0)) FROM creative_point_reservations r LEFT JOIN (SELECT workspace_id,original_reservation_id,sum(points) AS points FROM creative_point_reversals_v2 WHERE workspace_id=$1 GROUP BY workspace_id,original_reservation_id) v ON v.workspace_id=r.workspace_id AND v.original_reservation_id=r.id WHERE r.workspace_id=$1 AND r.status='settled'),0) AS settled`, [workspaceId, at])
     const values = computed.rows[0]!; const available = values.known ? integer(values.available!) : null
     if (available !== null && available < 0) throw new CreativePointRepositoryError('CREATIVE_POINT_INSUFFICIENT', 'creative point allocation exceeds grant capacity')
     const reserved = values.known ? integer(values.reserved!) : null
@@ -390,9 +393,11 @@ export class PostgresCreativePointRepository implements CreativePointRepository 
   private async complete(client: SqlClient, workspaceId: string, operationId: string, entityId: string, at: string) { await client.query("UPDATE creative_point_operations SET status='completed',result=jsonb_build_object('entity_id',$3::text),completed_at=$4::timestamptz WHERE workspace_id=$1 AND id=$2", [workspaceId, operationId, entityId, at]) }
   private async ledger(client: SqlClient, workspaceId: string, operationId: string, type: string, delta: number, balance: CreativePointBalance, metadata: Record<string, unknown> = {}) { await client.query('INSERT INTO creative_point_ledger_events (id,workspace_id,operation_id,event_type,points_delta,available_after,reserved_after,settled_after,access_revision,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)', [`cpl_${randomUUID()}`, workspaceId, operationId, type, delta, balance.availablePoints, balance.reservedPoints, balance.settledPoints, balance.revision, JSON.stringify(metadata)]) }
   private async allocate(client: SqlClient, workspaceId: string, reservationId: string, points: number, at: string, allocationType: 'reserve' | 'settle_adjustment') {
+    const holds = await hasCommercialRelationForVerifiedPrefix(client,'commercial_refund_source_holds_v2',261)
+    const heldPoints = holds ? `COALESCE((SELECT sum(h.points) FROM commercial_refund_source_holds_v2 h WHERE h.workspace_id=g.workspace_id AND h.grant_id=g.id AND h.released_at IS NULL),0)` : '0'
     let remaining = points
     const grants = await client.query<{ id: string; remaining: string | number }>(
-      `SELECT g.id, g.points-COALESCE(a.points,0) AS remaining
+      `SELECT g.id, g.points-COALESCE(a.points,0)-${heldPoints} AS remaining
          FROM creative_point_grants g
          LEFT JOIN LATERAL (
            SELECT sum(points_delta) AS points
@@ -401,7 +406,7 @@ export class PostgresCreativePointRepository implements CreativePointRepository 
          ) a ON true
         WHERE g.workspace_id=$1
           AND (g.expires_at IS NULL OR g.expires_at>$2::timestamptz)
-          AND g.points-COALESCE(a.points,0)>0
+          AND g.points-COALESCE(a.points,0)-${heldPoints}>0
         ORDER BY g.expires_at NULLS LAST, g.created_at, g.id`,
       [workspaceId, at],
     )

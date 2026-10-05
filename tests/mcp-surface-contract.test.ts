@@ -28,7 +28,8 @@ function methodsFromAllowlist(source: string): string[] {
 // the bridge source instead of keeping a third hand-copied snapshot that can
 // silently go stale.
 function literalSetFromBridge(source: string, name: string): Set<string> {
-  const block = source.match(new RegExp(`const ${name} = new Set\\(\\[([\\s\\S]*?)\\]\\)`))?.[1] ?? ''
+  const commentFree = source.replace(/^\s*\/\/.*$/gmu, '')
+  const block = commentFree.match(new RegExp(`const ${name} = new Set\\(\\[([\\s\\S]*?)\\]\\)`))?.[1] ?? ''
   return new Set([...block.matchAll(/'([^']+)'/g)].map(match => match[1]!))
 }
 
@@ -236,7 +237,8 @@ describe('MCP surface coverage', () => {
     const rootReadme = readFileSync(new URL('../apps/plugin/skills/merchant-marketing/SKILL.md', import.meta.url), 'utf8')
     const installedSkill = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/skills/merchant-marketing/SKILL.md', import.meta.url), 'utf8')
     expect(installedSkill).toBe(rootReadme)
-    const neverExposedMerchantTools = new Set(['workspace.bootstrap'])
+    const explicitlyForbiddenTools = [...rootReadme.matchAll(/(?:不能调用被禁用的|不要调用|禁止调用)\s*`([a-z][a-z0-9.-]+)`/gu)].map(match => match[1]!)
+    const neverExposedMerchantTools = new Set(['workspace.bootstrap', ...explicitlyForbiddenTools])
     for (const method of neverExposedMerchantTools) {
       expect(runtimeTools.has(method), `${method} must remain unavailable to merchant tools`).toBe(false)
     }
@@ -260,7 +262,8 @@ describe('MCP surface coverage', () => {
       || method.startsWith('ops.feature-flag')
       || method.startsWith('ops.finance.'),
     )
-    expect(opsDomainMethods).toHaveLength(25)
+    expect(opsDomainMethods).toHaveLength(28)
+    expect(opsDomainMethods).toEqual(expect.arrayContaining(['ops.support.platform.tickets.list', 'ops.support.platform.ticket.get', 'ops.support.platform.ticket.comment']))
     expect(MCP_METHODS.filter(method => method.startsWith('ops.audit.'))).toEqual([
       'ops.audit.list', 'ops.audit.platform.list', 'ops.audit.detail', 'ops.audit.export',
     ])
@@ -270,13 +273,21 @@ describe('MCP surface coverage', () => {
     const internalOperationsMethods = new Set(['billing.model-usage.reconciliation.run', 'billing.model-usage.resolve'])
     const contracts = readFileSync(new URL('../packages/contracts/src/mcp.ts', import.meta.url), 'utf8')
     const api = apiSurfaceSource()
+    // Extracted handlers dispatch through exact exported inventories instead
+    // of repeating one branch per method. Require both the inventory and the
+    // server dispatch to it; a stray literal does not count as a route.
+    const dispatchedInventory = new Set<string>()
+    for (const match of api.matchAll(/export const ([A-Z_]+METHODS) = new Set\(\[([\s\S]*?)\]\)/gu)) {
+      if (!api.includes(`${match[1]}.has(method)`)) continue
+      for (const method of match[2]!.matchAll(/'([^']+)'/gu)) dispatchedInventory.add(method[1]!)
+    }
     const openapi = readFileSync(new URL('../apps/api/openapi.yaml', import.meta.url), 'utf8')
     const bridge = readFileSync(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url), 'utf8')
     const installedBridge = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', import.meta.url), 'utf8')
     expect(installedBridge).toBe(bridge)
     expect(methodsFromAllowlist(contracts)).toEqual([...MCP_METHODS])
     for (const method of MCP_METHODS) {
-      expect(api.includes(`case '${method}'`) || api.includes(`method === '${method}'`), `${method} missing API route`).toBe(true)
+      expect(api.includes(`case '${method}'`) || api.includes(`method === '${method}'`) || dispatchedInventory.has(method), `${method} missing API route`).toBe(true)
       if (!method.startsWith('ops.') && !internalOperationsMethods.has(method)) {
         expect(bridge.includes(`'${method}':`), `${method} missing bridge definition`).toBe(true)
         expect(installedBridge.includes(`'${method}':`), `${method} missing installed bridge definition`).toBe(true)

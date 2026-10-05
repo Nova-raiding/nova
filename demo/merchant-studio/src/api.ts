@@ -1,3 +1,5 @@
+import type { MerchantSupportRequestInput, MerchantSupportRequestReceipt, MerchantSupportRequestView } from '../../../packages/contracts/src/merchant-support-request.js'
+import type { OnboardingGiftsView, CommercialPointOriginView } from '../../../packages/contracts/src/commercial-point-origins.js'
 import type { ImageGenerationExecutionState } from './image-generation-state.js'
 import { MerchantMcpSession } from './merchant-mcp-session.js'
 
@@ -301,12 +303,16 @@ export interface CommercialCatalogItem {
   unresolved: string[]
   checksum: string
   executable: boolean
+  price_fen?: number | null
+  tier_rank?: number | null
+  plan_family?: string | null
+  sale_state?: string
 }
 
 type CommercialCatalogSnapshotWire = {
   id?: unknown; code?: unknown; kind?: unknown; visibility?: unknown; version?: unknown
   lifecycle?: unknown; executable?: unknown; priceFen?: unknown; payload?: unknown
-  checksum?: unknown; effectiveAt?: unknown; benefits?: unknown
+  checksum?: unknown; effectiveAt?: unknown; benefits?: unknown; name?: unknown; tierRank?: unknown; planFamily?: unknown; saleState?: unknown; cycle?: unknown
 }
 
 const commercialOfferNames: Record<string, string> = {
@@ -323,62 +329,58 @@ function commercialPayloadSummary(kind: string, payload: Record<string, unknown>
   return parts.join(' · ') || commercialOfferNames[kind] || '服务端商业权益'
 }
 
+const commercialBenefitNames: Record<string, string> = { creative_points: '创意点', monthly_creative_points: '每月创意点', cloud_storage: '共享存储', max_brands: '品牌数', max_stores: '店铺数', first_response_business_hours: '首响时间', grant_count: '赠点批次', points_per_grant: '每批赠点', monthly_one_to_one_hours: '每月一对一服务', one_to_one_service_hours: '一对一服务', outcome_review_count: '经营复盘' }
+function catalogBenefitsSummary(benefits: unknown): string {
+  if (!Array.isArray(benefits)) return ''
+  return benefits.map(value => {
+    if (!value || typeof value !== 'object') return ''
+    const row = value as Record<string, unknown>
+    const code = String(row.code ?? '权益')
+    return `${commercialBenefitNames[code] ?? code} ${row.quantity ?? row.rawValue ?? '按合同'}${row.rawUnit === 'GB_DECIMAL' ? ' GB' : row.rawUnit ?? ''}`
+  }).filter(Boolean).join(' · ')
+}
+
 function normalizeCommercialCatalogItem(raw: CommercialCatalogSnapshotWire): CommercialCatalogItem {
   const code = typeof raw.code === 'string' && raw.code ? raw.code : String(raw.id ?? 'unknown')
   const payload = raw.payload && typeof raw.payload === 'object' && !Array.isArray(raw.payload) ? raw.payload as Record<string, unknown> : {}
-  const priceFen = typeof raw.priceFen === 'number' ? raw.priceFen : null
+  const priceFen = typeof raw.priceFen === 'number' && Number.isSafeInteger(raw.priceFen) && raw.priceFen > 0 ? raw.priceFen : null
   const kind = typeof raw.kind === 'string' ? raw.kind : 'unknown'
+  const cycle = raw.cycle && typeof raw.cycle === 'object' ? raw.cycle as Record<string, unknown> : payload.cycle && typeof payload.cycle === 'object' ? payload.cycle as Record<string, unknown> : null
+  const cycleLabel = cycle?.unit === 'month' && typeof cycle.count === 'number' ? `${cycle.count} 个月` : cycle?.unit === 'day' && typeof cycle.count === 'number' ? `${cycle.count} 天` : cycle?.unit === 'once' ? '一次性' : null
   const blockers = Array.isArray(payload.blockers) ? payload.blockers.filter((item): item is string => typeof item === 'string') : []
   return {
-    id: typeof raw.id === 'string' ? raw.id : code, sku_code: code, name: commercialOfferNames[code] ?? code,
+    id: typeof raw.id === 'string' ? raw.id : code, sku_code: code, name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : typeof payload.name === 'string' && payload.name.trim() ? payload.name : commercialOfferNames[code] ?? code,
     type: kind, visibility: typeof raw.visibility === 'string' ? raw.visibility : 'unknown',
     version: typeof raw.version === 'number' || typeof raw.version === 'string' ? raw.version : 'unknown',
     price_label: priceFen === null ? (typeof payload.minimumMonthlyPriceCny === 'number' ? `¥${payload.minimumMonthlyPriceCny.toFixed(2)} 起` : '按合同确认') : `¥${(priceFen / 100).toFixed(2)}`,
-    cycle_label: kind === 'monthly' ? '每月' : kind === 'point_pack' ? `${typeof payload.expiryDays === 'number' ? payload.expiryDays : 30} 天有效` : null,
-    benefits_summary: commercialPayloadSummary(kind, payload),
+    cycle_label: cycleLabel ?? (kind === 'monthly' ? '每月' : kind === 'point_pack' ? `${typeof payload.expiryDays === 'number' ? payload.expiryDays : 30} 天有效` : null),
+    benefits_summary: catalogBenefitsSummary(raw.benefits) || commercialPayloadSummary(kind, payload),
     benefits: Array.isArray(raw.benefits) ? raw.benefits.map(value => {
       const benefit = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
       return { code: String(benefit.code ?? 'unknown'), quantity: typeof benefit.quantity === 'number' ? benefit.quantity : null, raw_value: typeof benefit.rawValue === 'string' ? benefit.rawValue : null, raw_unit: typeof benefit.rawUnit === 'string' ? benefit.rawUnit : null }
     }) : [],
     approval_state: typeof raw.lifecycle === 'string' ? raw.lifecycle : 'unknown', valid_from: typeof raw.effectiveAt === 'string' ? raw.effectiveAt : null,
     valid_to: null, unresolved: blockers, checksum: typeof raw.checksum === 'string' ? raw.checksum : '', executable: raw.executable === true,
+    price_fen: priceFen, tier_rank: typeof raw.tierRank === 'number' ? raw.tierRank : typeof payload.tierRank === 'number' ? payload.tierRank : null, plan_family: typeof raw.planFamily === 'string' ? raw.planFamily : typeof payload.planFamily === 'string' ? payload.planFamily : null, sale_state: typeof raw.saleState === 'string' ? raw.saleState : undefined,
   }
 }
 
 export function normalizeCommercialCatalog(value: { schema_version?: unknown; status?: unknown; catalog?: unknown }): CommercialCatalog {
-  return { schema_version: typeof value.schema_version === 'string' ? value.schema_version : 'commercial.catalog.v2', status: typeof value.status === 'string' ? value.status : 'available', catalog: Array.isArray(value.catalog) ? value.catalog.map(item => normalizeCommercialCatalogItem(item as CommercialCatalogSnapshotWire)) : [] }
+  if ((value.schema_version !== undefined && value.schema_version !== 'commercial.catalog.v2') || !Array.isArray(value.catalog) || (value.status !== undefined && value.status !== 'available')) throw new Error('商品目录未确认可用，请重试读取；当前不会将失败当作空目录。')
+  return { schema_version: typeof value.schema_version === 'string' ? value.schema_version : 'commercial.catalog.v2', status: 'available', catalog: value.catalog.map(item => normalizeCommercialCatalogItem(item as CommercialCatalogSnapshotWire)) }
 }
 
-/**
- * The server catalog intentionally retains historical/draft versions for
- * auditability. Merchant-facing purchase choices must not render each
- * version as a separate offer: prefer the approved executable version and
- * otherwise show the newest server version so its blockers remain visible.
- */
+/** The server owns current sales selection. Never revive historical approvals. */
 export function selectMerchantCatalogItems(catalog: CommercialCatalogItem[]): CommercialCatalogItem[] {
   const groups = new Map<string, CommercialCatalogItem[]>()
   for (const item of catalog) {
+    if (!item.executable || item.approval_state !== 'approved' || (item.sale_state !== undefined && item.sale_state !== 'on_sale')) continue
     const key = item.sku_code || item.id
-    const existing = groups.get(key)
-    if (existing) existing.push(item)
-    else groups.set(key, [item])
+    groups.set(key, [...(groups.get(key) ?? []), item])
   }
-  const versionNumber = (item: CommercialCatalogItem) => {
-    const value = Number(String(item.version).replace(/^v/iu, ''))
-    return Number.isFinite(value) ? value : -1
-  }
-  const effectiveTime = (item: CommercialCatalogItem) => item.valid_from ? Date.parse(item.valid_from) : -1
-  return [...groups.values()]
-    .flatMap(items => {
-      const chosen = [...items].sort((left, right) =>
-        Number(right.executable) - Number(left.executable) ||
-        Number(right.approval_state === 'approved') - Number(left.approval_state === 'approved') ||
-        versionNumber(right) - versionNumber(left) ||
-        effectiveTime(right) - effectiveTime(left),
-      )[0]
-      return chosen ? [chosen] : []
-    })
-    .sort((left, right) => left.name.localeCompare(right.name) || left.sku_code.localeCompare(right.sku_code))
+  // Ambiguity is blocked rather than choosing the highest historical version.
+  return [...groups.values()].flatMap(items => items.length === 1 ? items : [])
+    .sort((left, right) => (left.tier_rank ?? Number.MAX_SAFE_INTEGER) - (right.tier_rank ?? Number.MAX_SAFE_INTEGER) || left.name.localeCompare(right.name))
 }
 
 export interface CommercialCatalog {
@@ -1171,11 +1173,121 @@ export const fetchWorkspaceMetrics = (baseUrl: string, period: { date_from?: str
  */
 export const createRechargeOrder = (baseUrl: string, amountCny: string, channel: 'alipay' | 'wechat', idempotencyKey: string) => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.create', { amount_cny: amountCny, channel, idempotency_key: idempotencyKey })
 export const fetchRechargeOrder = (baseUrl: string, orderId: string) => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.get', { order_id: orderId })
-export type CommercialPurchaseOrder = RechargeOrder & { sku_code?: string; purchase_kind?: string }
-type CommercialPurchaseOrderWire = Omit<CommercialPurchaseOrder, 'id'> & { id?: string; order_id?: string }
-const normalizeCommercialPurchaseOrder = (value: CommercialPurchaseOrderWire): CommercialPurchaseOrder => ({ ...value, id: value.id ?? value.order_id ?? '' })
-export const createCommercialPurchaseOrder = async (baseUrl: string, purchaseKind: 'purchase' | 'point_pack', skuCode: string, reason: string, idempotencyKey: string) => normalizeCommercialPurchaseOrder(await requestMcp<CommercialPurchaseOrderWire>(baseUrl, 'commercial.order.create', { purchase_kind: purchaseKind, sku_code: skuCode, reason, idempotency_key: idempotencyKey }))
+export interface CommercialPurchaseOrder extends RechargeOrder {
+  sku_code: string
+  sku_version_id: string
+  amount_fen: number
+  currency: 'CNY'
+  purchase_kind?: string
+  expires_at?: string | null
+  snapshot?: { name?: string; cycle?: unknown; benefits?: unknown[]; version?: string | number; quantity?: number; kind?: string; onboarding_gift_policy?: { grant_count: number; points_per_grant: number; cadence: string; starts_at: string; grant_expires_at_rule: string } | null }
+  transfer_instructions?: { receiver_name: string; receiving_account: string; bank_name?: string; reference: string; warning?: string }
+}
+type CommercialPurchaseOrderWire = Partial<CommercialPurchaseOrder> & { order_id?: string; status?: string; payment_provider?: string }
+export function normalizeCommercialPurchaseOrder(value: CommercialPurchaseOrderWire): CommercialPurchaseOrder {
+  const id = value.id ?? value.order_id
+  if (!id || !Number.isSafeInteger(value.amount_fen) || (value.amount_fen ?? 0) <= 0 || value.currency !== 'CNY' || !value.sku_version_id || !value.sku_code || !(value.status ?? value.state)) throw new Error('订单事实未确认完整，暂不能付款；请查询原订单或联系运营。')
+  if (value.payment_url) { const url = new URL(value.payment_url); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('支付链接未确认安全，当前不能打开付款请求。') }
+  return { ...value, id, state: value.status ?? value.state!, sku_code: value.sku_code, sku_version_id: value.sku_version_id, amount_fen: value.amount_fen!, currency: 'CNY', payment_mode: value.payment_mode ?? value.payment_provider }
+}
+export const createCommercialPurchaseOrder = async (baseUrl: string, purchaseKind: 'purchase' | 'point_pack' | 'onboarding_once' | 'upgrade', skuCode: string, reason: string, idempotencyKey: string, upgradeQuoteId?: string, dependency?: { checkout_id?: string; onboarding_order_id?: string }) => normalizeCommercialPurchaseOrder(await requestMcp<CommercialPurchaseOrderWire>(baseUrl, 'commercial.order.create', { purchase_kind: purchaseKind, sku_code: skuCode, reason, idempotency_key: idempotencyKey, ...(upgradeQuoteId ? { upgrade_quote_id: upgradeQuoteId } : {}), ...dependency }))
 export const fetchCommercialPurchaseOrder = async (baseUrl: string, orderId: string) => normalizeCommercialPurchaseOrder(await requestMcp<CommercialPurchaseOrderWire>(baseUrl, 'commercial.order.payment.get', { order_id: orderId }))
+export const fetchCommercialPurchaseRequest = async (baseUrl: string, idempotencyKey: string) => {
+  const value = await requestMcp<CommercialPurchaseOrderWire | null>(baseUrl, 'commercial.order.request.get', { idempotency_key: idempotencyKey })
+  return value === null ? null : normalizeCommercialPurchaseOrder(value)
+}
+export const fetchCommercialUpgradeQuoteRequest = async (baseUrl: string, idempotencyKey: string) => {
+  const value = await requestMcp<CommercialUpgradeQuote | null>(baseUrl, 'commercial.upgrade.quote.request.get', { idempotency_key: idempotencyKey })
+  return value === null ? null : normalizeCommercialUpgradeQuote(value)
+}
+export function normalizeCommercialFirstCheckout(value: { checkout_id: string; orders: CommercialPurchaseOrderWire[] }): { checkout_id: string; orders: CommercialPurchaseOrder[] } {
+  if (!value.checkout_id || !Array.isArray(value.orders) || value.orders.length !== 2) throw new Error('首购分项未确认完整，请查询原意图，勿重新付款。')
+  const orders = value.orders.map(normalizeCommercialPurchaseOrder)
+  if (new Set(orders.map(order => order.id)).size !== 2) throw new Error('首购两条分项来源冲突，当前不能付款。')
+  return { checkout_id: value.checkout_id, orders }
+}
+export const createCommercialFirstCheckout = async (baseUrl: string, onboardingSkuCode: string, subscriptionSkuCode: string, idempotencyKey: string) => normalizeCommercialFirstCheckout(await requestMcp<{ checkout_id: string; orders: CommercialPurchaseOrderWire[] }>(baseUrl, 'commercial.checkout.create', { onboarding_sku_code: onboardingSkuCode, subscription_sku_code: subscriptionSkuCode, idempotency_key: idempotencyKey, reason: 'merchant_first_purchase_checkout' }))
+export const fetchCommercialFirstCheckoutRequest = async (baseUrl: string, idempotencyKey: string) => {
+  const value = await requestMcp<{ checkout_id: string; orders: CommercialPurchaseOrderWire[] } | null>(baseUrl, 'commercial.checkout.request.get', { idempotency_key: idempotencyKey })
+  return value === null ? null : normalizeCommercialFirstCheckout(value)
+}
+export const createCommercialPaymentRequest = async (baseUrl: string, orderId: string, idempotencyKey: string) => normalizeCommercialPurchaseOrder(await requestMcp<CommercialPurchaseOrderWire>(baseUrl, 'commercial.order.payment.create', { order_id: orderId, idempotency_key: idempotencyKey }))
+
+export interface CommercialSubscriptionSnapshot {
+  id: string; sourceOrderId: string | null; skuCode: string; catalogVersionId: string
+  periodStart: string; periodEnd: string; periodStatus: string; resolvedBenefits: unknown[]; executable: boolean
+  plan_family?: string | null; tier_rank?: number | null
+}
+export interface CommercialSubscriptionPortfolio {
+  schema_version: string; status: 'available'; onboarding_qualified: boolean
+  current: CommercialSubscriptionSnapshot | null; future: CommercialSubscriptionSnapshot[]
+  packs: Array<{ orderId: string; skuCode: string; skuVersionId: string; benefits: unknown[]; paidAt: string; expiresAt: string | null; grantStatus: string }>
+  history: CommercialSubscriptionSnapshot[]; orders: Array<Record<string, unknown>>
+  onboarding_gifts?: CommercialOnboardingGifts
+  support_handoff?: { status: 'available' | 'configured' | 'blocked'; entry_path?: string; method?: 'POST'; url?: string; owner: string; blockers?: string[] }
+}
+export type CommercialOnboardingGifts = OnboardingGiftsView
+export type CommercialPointOrigin = CommercialPointOriginView
+export function normalizeCommercialSubscription(value: unknown): CommercialSubscriptionPortfolio {
+  const raw = value as Partial<CommercialSubscriptionPortfolio> | null
+  if (!raw || raw.schema_version !== 'commercial.subscription.v1' || raw.status !== 'available' || typeof raw.onboarding_qualified !== 'boolean' || !('current' in raw) || !Array.isArray(raw.future) || !Array.isArray(raw.packs) || !Array.isArray(raw.history) || !Array.isArray(raw.orders)) throw new Error('已购套餐事实未确认完整；当前不会将读取失败视为从未购买。')
+  for (const item of [...(raw.current ? [raw.current] : []), ...raw.future, ...raw.history]) {
+    if (!item.id || !item.skuCode || !Number.isFinite(Date.parse(item.periodStart)) || !Number.isFinite(Date.parse(item.periodEnd)) || Date.parse(item.periodEnd) <= Date.parse(item.periodStart)) throw new Error('套餐有效期未确认，暂不能购买或升级。')
+  }
+  return raw as CommercialSubscriptionPortfolio
+}
+export const fetchCommercialSubscription = async (baseUrl: string) => normalizeCommercialSubscription(await requestMcp<unknown>(baseUrl, 'commercial.subscription.get'))
+export interface CommercialUpgradeQuote {
+  upgrade_quote_id: string; source_order_id: string; source_period_id: string; source_period_revision: number
+  source_entitlement_id: string; target_sku_code: string; current_cycle_price_fen: number; target_cycle_price_fen: number; amount_fen: number
+  period_start: string; period_end: string; quoted_at: string; expires_at: string; remaining_ms: number; total_ms: number; benefit_increments: Readonly<Record<string, number>>; algorithm_version: string
+}
+export function normalizeCommercialUpgradeQuote(value: CommercialUpgradeQuote): CommercialUpgradeQuote {
+  if (!value || !value.benefit_increments || typeof value.benefit_increments !== 'object' || Array.isArray(value.benefit_increments) || Object.values(value.benefit_increments).some(quantity => !Number.isFinite(quantity) || quantity < 0) || value.algorithm_version !== 'remaining-period.v1' || !Number.isSafeInteger(value.current_cycle_price_fen) || !Number.isSafeInteger(value.target_cycle_price_fen) || value.current_cycle_price_fen <= 0 || value.target_cycle_price_fen <= value.current_cycle_price_fen || !value.upgrade_quote_id || !value.source_entitlement_id || !value.target_sku_code || !Number.isSafeInteger(value.amount_fen) || value.amount_fen <= 0 || !Number.isFinite(Date.parse(value.expires_at)) || !Number.isFinite(Date.parse(value.period_end)) || value.remaining_ms <= 0 || value.total_ms < value.remaining_ms) throw new Error('升级报价未确认完整，暂不能付款。')
+  return value
+}
+export const createCommercialUpgradeQuote = async (baseUrl: string, targetSkuCode: string, idempotencyKey: string) => normalizeCommercialUpgradeQuote(await requestMcp<CommercialUpgradeQuote>(baseUrl, 'commercial.upgrade.quote.create', { target_sku_code: targetSkuCode, idempotency_key: idempotencyKey }))
+export type CommercialResultState = 'active' | 'scheduled' | 'awaiting_dependency' | 'reconciliation_required'
+export const commercialResultLabel = (state: CommercialResultState | undefined) => state ? ({ active: '立即生效', scheduled: '未来待生效', awaiting_dependency: '待开通依赖', reconciliation_required: '待处置' }[state] ?? '结果状态尚未核实') : '结果状态尚未核实'
+export interface CommercialNotification { id: string; event_id: string; sku_code: string; version: number; title: string; body: string; published_at: string; notification_kind?: 'catalog_publication' | 'purchase_result'; read_at?: string | null; order_id?: string; result_state?: CommercialResultState; current_sale_state?: string; payload?: Record<string, unknown> }
+export const fetchCommercialNotifications = async (baseUrl: string, cursor?: string): Promise<{ items: CommercialNotification[]; next_cursor: string | null }> => {
+  const value = await requestMcp<{ items?: CommercialNotification[]; next_cursor?: string | null }>(baseUrl, 'commercial.notifications.list', { limit: '50', ...(cursor ? { cursor } : {}) })
+  if (!Array.isArray(value.items) || value.items.some(item => !item.id || !item.event_id || !item.sku_code || !item.title || !Number.isSafeInteger(item.version) || item.version < 1 || !Number.isFinite(Date.parse(item.published_at)) || !['catalog_publication', 'purchase_result'].includes(item.notification_kind ?? '') || !(item.read_at === null || (typeof item.read_at === 'string' && Number.isFinite(Date.parse(item.read_at)))) || (item.notification_kind === 'purchase_result' && (!item.order_id || !['active', 'scheduled', 'awaiting_dependency', 'reconciliation_required'].includes(item.result_state ?? ''))))) throw new Error('商业通知或已读状态未返回完整，请重试读取。')
+  return { items: value.items, next_cursor: value.next_cursor ?? null }
+}
+export async function markCommercialNotificationRead(baseUrl: string, notificationId: string, idempotencyKey: string) {
+  const result = await requestApi<{ notification_id: string; read_at: string; replayed: boolean }>(baseUrl, `/v1/commercial/notifications/${encodeURIComponent(notificationId)}/read`, { method: 'POST', body: JSON.stringify({ idempotency_key: idempotencyKey }) })
+  if (result.notification_id !== notificationId || !Number.isFinite(Date.parse(result.read_at)) || typeof result.replayed !== 'boolean') throw new Error('已读结果尚未确认，请用原标识重试；当前不更新已读状态。')
+  return result
+}
+export type MerchantSupportReceipt = MerchantSupportRequestReceipt
+export type { MerchantSupportRequestInput, MerchantSupportRequestView }
+/** Defense in depth: the server repeats redaction before durable storage. */
+export function redactMerchantSupportText(value: string): string {
+  return value.replace(/\bBearer\s+[a-z0-9._~+/=-]+/giu, 'Bearer [已脱敏]')
+    .replace(/\b(password|passwd|authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|secret)\s*[:=]\s*[^\s,;]+/giu, '$1=[已脱敏]')
+    .replace(/([?&#](?:token|key|password|secret)=)[^\s&#]+/giu, '$1[已脱敏]')
+}
+export function merchantSupportDiagnostic(value: string | undefined): string | undefined {
+  const text = value?.trim()
+  return text && redactMerchantSupportText(text) === text && text.length <= 128 && /^[\p{L}\p{N} ._:/-]+$/u.test(text) ? text : undefined
+}
+export function normalizeMerchantSupportReceipt(value: MerchantSupportReceipt): MerchantSupportReceipt {
+  if (!value || value.submitted !== true || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(value.ticket_id) || typeof value.ticket_number !== 'string' || !value.ticket_number.trim() || !['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'].includes(value.status) || typeof value.replayed !== 'boolean' || value.replies_path !== `/v1/support/requests/${value.ticket_id}`) throw new Error('支持登记结果尚未确认，请保留原请求查询或重试，勿新建重复求助。')
+  return value
+}
+export const submitMerchantSupportRequest = async (baseUrl: string, input: MerchantSupportRequestInput) => {
+  const diagnostic = Object.fromEntries(['request_id', 'trace_id', 'version', 'step'].flatMap(field => { const value = merchantSupportDiagnostic(input[field as 'request_id' | 'trace_id' | 'version' | 'step']); return value === undefined ? [] : [[field, value]] }))
+  return normalizeMerchantSupportReceipt(await requestApi<MerchantSupportReceipt>(baseUrl, '/v1/support/requests', { method: 'POST', body: JSON.stringify({ subject: redactMerchantSupportText(input.subject), message: redactMerchantSupportText(input.message), idempotency_key: input.idempotency_key, ...diagnostic }) }))
+}
+
+export const fetchMerchantSupportRequest = async (baseUrl: string, ticketId: string): Promise<MerchantSupportRequestView> => {
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(ticketId)) throw new Error('请填写有效的支持工单 ID。')
+  const value = await requestApi<MerchantSupportRequestView>(baseUrl, `/v1/support/requests/${encodeURIComponent(ticketId)}`)
+  normalizeMerchantSupportReceipt(value)
+  if (typeof value.subject !== 'string' || !Array.isArray(value.replies) || value.replies.some(reply => !reply.id || typeof reply.body !== 'string' || !Number.isFinite(Date.parse(reply.created_at)))) throw new Error('支持回复未读取完整，请保留工单并重试查询。')
+  return value
+}
 export const optimizeProductTitle = (baseUrl: string, input: { product_id: string; platform?: PlatformId; keyword?: string; objective?: string }) => requestMcp<{ product_id: string; platform: PlatformId; suggestions: Array<{ title: string; score: { seo: number; geo: number; total: number }; keywords: string[]; evidence: Array<{ source: string; value: string }>; risks: string[]; rankingGuarantee: false }>; humanConfirmationRequired: boolean; rankingGuarantee: false }>(baseUrl, 'catalog.title.optimize', input)
 
 export const fetchPlatformAccounts = (baseUrl: string) => requestApi<{ items: PlatformAccount[] }>(baseUrl, '/v1/platform-accounts')
@@ -1274,6 +1386,7 @@ export interface CreativePointStatementEntry {
   intent: Record<string, unknown>
   grantSourceType: string | null
   grantSourceId: string | null
+  commercial_origin?: CommercialPointOrigin
 }
 
 /** `null` means "this row is not in the wire shape the client understands". */
@@ -1304,6 +1417,7 @@ function normalizeCreativePointStatementEntry(raw: unknown): CreativePointStatem
     intent: intent ?? {},
     grantSourceType: typeof entry.grantSourceType === 'string' ? entry.grantSourceType : null,
     grantSourceId: typeof entry.grantSourceId === 'string' ? entry.grantSourceId : null,
+    ...(entry.commercial_origin && typeof entry.commercial_origin === 'object' ? { commercial_origin: entry.commercial_origin as CommercialPointOrigin } : {}),
   }
 }
 

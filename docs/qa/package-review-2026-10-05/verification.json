@@ -1,0 +1,25 @@
+{
+  "verified_at": "2026-10-05T03:13:31.560277+00:00",
+  "source_head": "e8c9f98e33df2c5639d35764dd072e7d37657b96",
+  "branch": "main",
+  "checks": [
+    "all 4 final signatures match reviewed business snapshot SHA256",
+    "final document matches manifest SHA256",
+    "Markdown links point to existing local files",
+    "JSON/JSONL parse",
+    "no conflict markers or unexpected whitespace; CommonMark hard breaks allowed",
+    "last level-2 heading GSTACK REVIEW REPORT and final sentinel",
+    "23 aggregated implementation tasks",
+    "repository and gstack test-plan artifacts identical",
+    "git diff --check clean",
+    "single main worktree; task changes only untracked documentation"
+  ],
+  "implementation_or_production_tests_performed_in_review": false,
+  "remaining_requirement_findings": {
+    "ceo": 0,
+    "design": 0,
+    "eng": 0,
+    "dx": 0
+  },
+  "approval_status": "pending_final_user_confirmation"
+}

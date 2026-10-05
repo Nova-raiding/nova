@@ -57,6 +57,11 @@ describe('ContinuousFeatureEntitlementService C14', () => {
     ['unresolved snapshot', [snapshot({ unresolvedBlockers: ['STORAGE_UNIT_UNRESOLVED'] })]],
     ['wrong tenant', [snapshot({ workspaceId: 'workspace-2' })]],
     ['malformed checksum', [snapshot({ checksum: 'fixture' })]],
+    ['missing quota quantities', [snapshot({ resolvedBenefits: [{ code: 'max_brands' }, { code: 'max_stores' }] })]],
+    ['negative quota quantity', [snapshot({ resolvedBenefits: [{ code: 'max_brands', quantity: -1 }, { code: 'max_stores', quantity: 5 }] })]],
+    ['fractional quota quantity', [snapshot({ resolvedBenefits: [{ code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 1.5 }] })]],
+    ['duplicate quota codes', [snapshot({ resolvedBenefits: [{ code: 'max_brands', quantity: 1 }, { code: 'max_brands', quantity: 2 }, { code: 'max_stores', quantity: 5 }] })]],
+    ['malformed snapshot', [null as never]],
     ['point-pack-only benefits', [snapshot({ resolvedBenefits: [{ code: 'creative_points', quantity: 2_000 }] })]],
   ])('fails closed for %s V2 evidence', async (_name, items) => {
     await expect(harness(items).service.decide({ workspace_id: 'workspace-1' })).resolves.toMatchObject({

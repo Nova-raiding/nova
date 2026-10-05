@@ -11,7 +11,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
   const {
     createHash, randomBytes, isTrustedCleanAsset, isUsableAssetWithoutScan, DomainError,
     ObjectStorageError, ERROR_CODES, demoUnscannedAssetsEnabled, SUPPORTED_PLATFORMS,
-    service, persistence, configuredAssetLimit, configuredStorageQuotaLimit,
+    service, persistence, configuredAssetLimit, configuredStorageQuotaLimit, effectiveStorageQuotaSnapshot,
     getStoredObjectWithRetry, compensateStoredAsset, putQuarantineObject,
     executeDurableAssetParse, confirmDurableAssetFacts, enforceHttpCommercialAccess,
     persistEvent, persistSnapshot, persistAssetSnapshotAndEvent, persistAssetReference,
@@ -20,7 +20,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     isObject, assetForWorkspace, assetDisplayProjection, promoteAssetAndPersist,
     applySignedAssetScanResult, automaticallyScanLocalFixture, requireAssetUploadSecurity,
     rejectMerchantVideoUpload, headerRequired, assetScannerWorkspace, accessibleAssetIds,
-    enforceAssetAccess, httpOperationPolicyOperation,
+    enforceAssetAccess, httpOperationPolicyOperation, diagnoseUnavailableAssetLifecycle,
   } = runtime
   const trashedIdsFor = async (workspaceId: string, assetIds: readonly string[]) => {
     const trashed = new Set<string>()
@@ -107,7 +107,11 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
   if (req.method === 'POST' && assetPurgeMatch) {
     const workspaceId = resolveWorkspace(req)
     const lifecycle = persistence.assetLifecycle
-    if (!lifecycle) throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
+    if (!lifecycle) {
+      await diagnoseUnavailableAssetLifecycle(workspaceId)
+      // Diagnostic evidence never authorizes a write without its implementation.
+      throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
+    }
     const assetId = decodeURIComponent(assetPurgeMatch[1]!)
     const asset = assetForWorkspace(workspaceId, assetId)
     await enforceAssetAccess(req, workspaceId, asset.id, 'editor', { allowTrashed: true })
@@ -117,6 +121,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
       throw new DomainError(ERROR_CODES.INVALID_REQUEST, '请准确确认素材名称、填写删除原因并提供当前回收版本', 400)
     }
     try {
+      if (httpOperationPolicyOperation) await enforceHttpCommercialAccess(req, workspaceId, httpOperationPolicyOperation)
       const state = await lifecycle.requestEarlyPurge({ workspaceId, assetId: asset.id, actorId: requestActor(req), reason: input.reason, expectedRevision: input.expected_revision })
       return send(res, 202, workspaceId, { asset_id: asset.id, purge_requested_at: state.purgeRequestedAt, purge_requested_by: state.purgeRequestedBy, purge_request_reason: state.purgeRequestReason, expires_at: state.expiresAt, revision: state.revision, status: 'purge_queued' }, null, req)
     } catch (error) {
@@ -130,13 +135,18 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
   if (req.method === 'POST' && assetPurgeCancelMatch) {
     const workspaceId = resolveWorkspace(req)
     const lifecycle = persistence.assetLifecycle
-    if (!lifecycle) throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
+    if (!lifecycle) {
+      await diagnoseUnavailableAssetLifecycle(workspaceId)
+      // Diagnostic evidence never authorizes a write without its implementation.
+      throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
+    }
     const assetId = decodeURIComponent(assetPurgeCancelMatch[1]!)
     const asset = assetForWorkspace(workspaceId, assetId)
     await enforceAssetAccess(req, workspaceId, asset.id, 'editor', { allowTrashed: true })
     const input = await body(req)
     if (typeof input.expected_revision !== 'number' || !Number.isSafeInteger(input.expected_revision) || input.expected_revision < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_revision 必须是正整数', 400)
     try {
+      if (httpOperationPolicyOperation) await enforceHttpCommercialAccess(req, workspaceId, httpOperationPolicyOperation)
       const state = await lifecycle.cancelEarlyPurge({ workspaceId, assetId: asset.id, actorId: requestActor(req), expectedRevision: input.expected_revision })
       return send(res, 200, workspaceId, { asset_id: asset.id, expires_at: state.expiresAt, revision: state.revision, status: 'purge_cancelled' }, null, req)
     } catch (error) {
@@ -147,7 +157,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
   if (req.method === 'GET' && path === '/v1/assets') {
     const workspaceId = resolveWorkspace(req)
     const accessibleIds = await accessibleAssetIds(req, workspaceId)
-    const quotaSnapshot = (await persistence.storageQuota?.getSnapshot(workspaceId)) ?? { limitBytes: configuredStorageQuotaLimit(), usedBytes: 0, reservedBytes: 0 }
+    const quotaSnapshot = (await effectiveStorageQuotaSnapshot(workspaceId)) ?? { limitBytes: configuredStorageQuotaLimit(), usedBytes: 0, reservedBytes: 0 }
     const storageQuota = quotaSnapshot
       ? (() => {
           const usedBytes = Math.max(0, quotaSnapshot.usedBytes)

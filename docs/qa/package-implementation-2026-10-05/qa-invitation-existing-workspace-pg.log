@@ -1,0 +1,17 @@
+
+> merchant-marketing-codex@0.2.7 test:postgres:isolated
+> node --import tsx scripts/run-isolated-postgres-tests.ts packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts (1 test) 3398ms
+     ✓ creates identity/Workspace/member/invite atomically, consumes once and never creates payment/entitlement facts  3397ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  12:35:39
+   Duration  3.69s (transform 109ms, setup 0ms, import 150ms, tests 3.40s, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/isolated-postgres/run-IK6GlH/vitest.json
+Isolated PostgreSQL acceptance passed; report: /Users/lixiaomei/Desktop/code/codexSkills/artifacts/isolated-postgres/run-IK6GlH/vitest.json

@@ -62,6 +62,7 @@ describe('commercial plan coverage gates', () => {
     const service = new CommercialAccessService({
       registry: [{ surface: 'MCP', operation: 'catalog.image.generate', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_CHARGED', rate_action: 'image.generate.standard' }],
       registry_version: 'coverage-test-v1',
+      qualification_projection: { projectCommercialQualification: async () => ({ state: 'known' as const, qualified: true }) },
       balance_projection: { projectCreativePointBalance: async () => ({ state: 'known' as const, available_points: 10, access_revision: 'rev-1', freshness: 'fresh' as const }) },
       rate_resolver: { resolveApprovedRate },
       entitlement_projection: { listV2EntitlementSnapshots },

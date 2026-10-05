@@ -35,7 +35,7 @@ describe('migration 253 charged text no-delivery resolution', () => {
       db = new Pool({ connectionString: urlFor(base, name), max: 6 })
       const roleSql = await readFile(new URL('../../../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       await db.query(roleSql)
-      expect((await new MigrationRunner(db, await loadMigrations()).run()).at(-1)).toBe(258)
+      expect((await new MigrationRunner(db, await loadMigrations()).run()).at(-1)).toBe(265)
       await db.query(roleSql)
       const acl = await db.query<{ tableSelect: boolean; read: boolean; insert: boolean; opsRead: boolean; ownerToken: boolean }>(`
         SELECT has_table_privilege('merchant_app','public.charged_text_no_delivery_resolutions','SELECT') AS "tableSelect",
@@ -94,11 +94,11 @@ describe('migration 253 charged text no-delivery resolution', () => {
       await dispatch.transition({ workspaceId, id: attempt.id, ownerToken: attempt.ownerToken, to: 'provider_started' })
       await dispatch.transition({ workspaceId, id: attempt.id, ownerToken: attempt.ownerToken, to: 'response_recorded', providerRequestId })
       await dispatch.transition({ workspaceId, id: attempt.id, ownerToken: attempt.ownerToken, to: 'completed', providerRequestId })
-      await points.settle({ workspaceId, idempotencyKey: `commercial.settle:${actionKey}`, reservationId: reservation.id, actualPoints: 1,
-        metadata: { provider_request_id: providerRequestId, receipt_hash: receiptHash, cost_cny: 0.25, modality: 'text' } })
       for (const provider of ['model-relay', 'worker-relay']) await lifecycle.recordProviderReceipt({ workspaceId,
         operationId: reservation.operationId, provider, providerRequestId, outcome: 'succeeded', usage, cost,
         receiptHash, verifiedAt: new Date().toISOString(), at: new Date().toISOString() })
+      await points.settle({ workspaceId, idempotencyKey: `commercial.settle:${actionKey}`, reservationId: reservation.id, actualPoints: 1,
+        metadata: { provider_request_id: providerRequestId, receipt_hash: receiptHash, cost_cny: 0.25, modality: 'text' } })
       await db.query(`INSERT INTO action_ledger(id,workspace_id,action_key,action_kind,settlement,state,units,amount_fen,actor_id,description,provider_request_id,settlement_status)
         VALUES($1,$2,$3,'model_text','wallet','settled',1,0,'fixture-actor','fixture settled request',$4,'settled')`,
         [`ledger_${randomUUID()}`, workspaceId, actionKey, providerRequestId])

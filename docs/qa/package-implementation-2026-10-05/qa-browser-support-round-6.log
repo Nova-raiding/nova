@@ -1,0 +1,14 @@
+{"evidenceDir":"/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-10-05T04-37-21.945Z-16b7f2f6-414c-4ce2-a31b-3ce3c1342daf","runId":"61c7e2a8-e599-4890-a9ed-597cefa8cba6","isolated":true,"persistence":"postgres","testFiles":["dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js"]}
+
+Running 1 test using 1 worker
+
+[1A[2K(node:10011) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:10011) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[1/1] dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js:14:1 › merchant without an order submits durable support and reads only own customer-visible replies
+[1A[2K  1 passed (22.3s)

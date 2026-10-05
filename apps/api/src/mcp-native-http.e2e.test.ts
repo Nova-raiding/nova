@@ -66,7 +66,7 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const base = await start()
     const create = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 'order-1', method: 'tools/call', params: { name: 'commercial.order.create', arguments: { purchase_kind: 'point_pack', sku_code: 'points-500', idempotency_key: 'native-order-1', reason: '购买批准点包' } } }) })
     expect(create.status).toBe(200)
-    expect(await create.json()).toMatchObject({ jsonrpc: '2.0', id: 'order-1', error: { data: { code: 'COMMERCIAL_PURCHASE_UNAVAILABLE' } } })
+    expect(await create.json()).toMatchObject({ jsonrpc: '2.0', id: 'order-1', error: { data: { code: 'COMMERCIAL_RUNTIME_WRITE_BLOCKED' } } })
 
     const arbitraryAmount = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 'order-2', method: 'tools/call', params: { name: 'commercial.order.create', arguments: { purchase_kind: 'point_pack', sku_code: 'points-500', amount_fen: '1', idempotency_key: 'native-order-2', reason: '尝试客户端定价' } } }) })
     expect(arbitraryAmount.status).toBe(200)

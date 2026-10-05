@@ -1,0 +1,38 @@
+
+> merchant-marketing-codex@0.2.4 test:postgres:isolated
+> node --import tsx scripts/run-isolated-postgres-tests.ts packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts packages/persistence/src/commercial-receipt-repository.postgres.test.ts tests/commercial-zero-side-effect-release.postgres.test.ts
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ❯ packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts (5 tests | 5 skipped) 2926ms
+     ↓ atomically allocates first-checkout cash, rolls back failed grants, preserves 6 gift batches and enforces runtime roles/RLS
+     ↓ recovers a first-period payment waiting on onboarding without duplicate grants or losing factual paidAt
+     ↓ prorates consecutive upgrades, retains expiry and grants target boolean features through the real admission consumer
+     ↓ keeps a valid quote price after catalog repricing and routes late source-expired cash to disposition
+     ↓ serializes paid renewals into future periods and releases future points once without extending expired windows
+ ✓ packages/persistence/src/commercial-receipt-repository.postgres.test.ts (1 test) 3111ms
+     ✓ serializes split cash, original payer returns, unmatched mapping and tenant isolation  3108ms
+ ✓ tests/commercial-zero-side-effect-release.postgres.test.ts (1 test) 39994ms
+     ✓ keeps durable facts and all external ports unchanged for the registry-derived zero/unknown/insufficient matrix  39992ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts > commercial transactions full-chain PostgreSQL acceptance
+error: permission denied for table commercial_catalog_skus
+ ❯ node_modules/pg/lib/client.js:694:17
+ ❯ PostgresCommercialCatalogRepository.mutate packages/persistence/src/commercial-catalog-repository.ts:645:9
+
+ ❯ publish packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts:43:7
+ ❯ packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts:47:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  2 passed | 5 skipped (7)
+   Start at  11:40:45
+   Duration  47.17s (transform 423ms, setup 0ms, import 658ms, tests 46.03s, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/isolated-postgres/run-Cd4yOc/vitest.json
+Isolated PostgreSQL acceptance failed; report: /Users/lixiaomei/Desktop/code/codexSkills/artifacts/isolated-postgres/run-Cd4yOc/vitest.json

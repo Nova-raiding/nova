@@ -33,6 +33,11 @@ const SERVER_ONLY_METHODS = new Set([
   // safe one-click decision. Do not infer that the operation is absent; adding
   // a desktop action requires an evidence-backed finance review workflow.
   'ops.marketing.generation.no_delivery.refund',
+  // Purchase-result notification backlog controls are exposed to the
+  // authenticated MCP operations surface; the desktop queue has no safe
+  // delivery-evidence action model yet.
+  'ops.commercial.notifications.purchase-results.list',
+  'ops.commercial.notifications.purchase-results.redrive',
   // Registering the credential-free manual store record is a narrow
   // platform-operations control plane: it decides which merchant workspace owns
   // which platform store scope, it is the only writer of

@@ -65,6 +65,10 @@ function openapiMethods(): string[] {
 function hasServerHandler(method: string): boolean {
   return apiDispatchSource.includes(`case '${method}'`)
     || apiDispatchSource.includes(`method === '${method}'`)
+    || apiDispatchSource.includes(`'${method}'`)
+    || (apiDispatchSource.includes('MCP_COMMERCIAL_BUNDLE_METHODS') && method.startsWith('ops.commercial.benefit-'))
+    || (apiDispatchSource.includes('MCP_OPS_PURCHASE_METHODS') && method.startsWith('ops.commercial.'))
+    || (apiDispatchSource.includes('MCP_PLATFORM_SUPPORT_METHODS') && method.startsWith('ops.support.platform.'))
 }
 
 function schema(method: keyof typeof MCP_METHOD_SCHEMAS) {

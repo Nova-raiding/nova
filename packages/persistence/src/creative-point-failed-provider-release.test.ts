@@ -34,6 +34,7 @@ describe('atomic failed-provider reservation release', () => {
             : sql.includes('FROM creative_point_reservations WHERE workspace_id=$1 AND id=$2') ? [released]
               : sql.startsWith('SELECT EXISTS(SELECT 1 FROM creative_point_grants') ? [{ known: true, available: '10', reserved: '0', settled: '0' }]
                 : sql.startsWith('SELECT revision, updated_at') ? [{ revision: 2, updatedAt: input.at }]
+                  : sql.startsWith('SELECT pg_catalog.to_regclass') ? [{ present: true }]
                   : []
       return { rows: rows as Row[] }
     }, release: () => undefined }
@@ -95,6 +96,7 @@ describe('atomic failed-provider reservation release', () => {
       else if (sql.startsWith('SELECT id FROM creative_point_operations')) rows = [{ id: reservation.operationId }]
       else if (sql.startsWith('SELECT outcome FROM creative_point_provider_receipts_v2')) rows = [{ outcome: 'failed' }]
       else if (sql.startsWith('SELECT EXISTS (SELECT 1 FROM creative_point_provider_receipts_v2')) rows = [{ matched: false }]
+      else if (sql.startsWith('SELECT pg_catalog.to_regclass')) rows = [{ present: true }]
       else if (sql.startsWith('SELECT EXISTS(SELECT 1 FROM creative_point_grants')) rows = [++balanceReads === 1 ? { known: true, available: '7', reserved: '3', settled: '0' } : { known: true, available: '10', reserved: '0', settled: '0' }]
       else if (sql.startsWith('SELECT revision,')) rows = [{ revision: 1, updatedAt: input.at }]
       else if (sql.includes('FROM creative_point_allocations a') && sql.includes('HAVING sum(a.points_delta)>0')) rows = [{ grantId: 'grant_original', allocated: '3' }]

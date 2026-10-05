@@ -28,7 +28,7 @@ function routeMethods(): string[] {
   const source = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
   const directory = new URL('../apps/api/src/', import.meta.url)
   const importedHandlers = new Map<string, string>()
-  for (const match of source.matchAll(/import\s*\{([^}]+)\}\s*from\s*'\.\/(mcp-[^']+-handlers)\.js'/gu)) {
+  for (const match of source.matchAll(/import\s*\{([^}]+)\}\s*from\s*'\.\/(mcp-[^']+)\.js'/gu)) {
     const handler = readFileSync(new URL(`${match[2]}.ts`, directory), 'utf8')
     for (const symbol of match[1]!.split(',').map(part => part.trim().split(/\s+as\s+/u)[0]!.trim())) {
       importedHandlers.set(symbol, handler)

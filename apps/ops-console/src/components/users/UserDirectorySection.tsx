@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Card, Col, Descriptions, Dropdown, Drawer, Empty, Form, Input, Modal, Row, Select, Space, Spin, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Descriptions, Dropdown, Drawer, Empty, Form, Input, Modal, Select, Space, Spin, Table, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
 import type { TableProps } from "antd";
-import type { MerchantAccountAuthorizationResult, OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
+import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { PlatformUser } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
-import { packageCodeLabel } from "../commercial/packageLabels.js";
+import { opsRestPost, describeOpsError } from "../../api/opsClient.js";
 
+type MerchantInvitationView = {
+  account: { id: string; login: string; workspaceIds: string[]; status: string };
+  invitation: { id: string; expires_at: string; status: string; activation_link?: string; replayed: boolean; delivery_status: "not_sent"; next_action?: string };
+  commercial_qualification_granted: false;
+  capabilities_granted: string[];
+};
+type MerchantInvitationForm = { login: string; enterpriseName: string; contactName: string; workspaceId?: string; workspaceMode: "new" | "existing"; reason: string };
 type UserFilters = { query?: string; status?: string; workspaceId?: string; accountType?: "all" | "merchant" | "platform" };
 export type UserDirectorySort = { field: "displayName" | "status" | "createdAt"; order: "ascend" | "descend" };
 type DirectoryUser = PlatformUser & { createdAt?: string };
@@ -83,8 +90,12 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
   const [bulkSuspending, setBulkSuspending] = useState(false);
   const [provisionOpen, setProvisionOpen] = useState(false);
   const [provisionSubmitting, setProvisionSubmitting] = useState(false);
-  const [provisionResult, setProvisionResult] = useState<{ login: string; onboardingFeeFen: number; authorization?: MerchantAccountAuthorizationResult }>();
-  const [provisionForm] = Form.useForm<{ login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string; reason: string; skuCode: string; amountFen: number; paymentStatus: "pending" | "verified"; paymentReference?: string; paidAt?: string }>();
+  const [provisionResult, setProvisionResult] = useState<MerchantInvitationView>();
+  const [provisionError, setProvisionError] = useState("");
+  const [provisionUnknown, setProvisionUnknown] = useState(false);
+  const provisionIntentRef = useRef<Record<string, unknown> | undefined>(undefined);
+  const [provisionForm] = Form.useForm<MerchantInvitationForm>();
+  const provisionWorkspaceMode = Form.useWatch("workspaceMode", provisionForm) ?? "new";
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef<HTMLDivElement>(null);
   const directoryErrorRef = useRef<HTMLDivElement>(null);
@@ -168,6 +179,8 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
     } else if (key === "export") {
       void model.exportUsers(form.getFieldsValue());
     } else if (key === "provision") {
+      if (!provisionUnknown && provisionResult) { setProvisionResult(undefined); provisionForm.resetFields(); provisionIntentRef.current = undefined; }
+      void model.loadWorkspaceDirectory({ status: "active", page: 1, pageSize: 100 });
       setProvisionOpen(true);
     } else {
       onSelectGovernanceSection?.(key);
@@ -266,94 +279,66 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
       />
     </Card>
     <Modal
-      title="平台开通商家账号"
+      title="邀请客户激活登录账号"
       open={provisionOpen}
-      okText="开通账号"
-      cancelText="取消"
+      okText={provisionUnknown ? "查询原邀请结果" : "创建账号与安全邀请"}
+      cancelText="关闭"
       confirmLoading={provisionSubmitting}
-      okButtonProps={{ disabled: Boolean(provisionResult) }}
+      okButtonProps={{ disabled: Boolean(provisionResult) || !model.canPlatformOps }}
       destroyOnHidden
-      onCancel={() => {
-        if (!provisionSubmitting) setProvisionOpen(false);
-      }}
+      onCancel={() => { if (!provisionSubmitting) setProvisionOpen(false); }}
       onOk={() => void provisionForm.submit()}
     >
-      <Alert
-        className="ops-inline-alert"
-        showIcon
-        type="warning"
-        title="开通账号不会自动确认收款"
-        description="系统会记录 ¥5,000 正式接入费为待核验状态；支付、合同、权益授予和收入确认仍需要独立审计事件。"
-      />
-      {provisionResult ? (
-        <Alert
-          className="ops-inline-alert"
-          showIcon
-          type="success"
-          title="账号已开通"
-            description={<Space orientation="vertical" size={4}><span>商家账号 {provisionResult.login} 已创建；接入费 ¥{(provisionResult.onboardingFeeFen / 100).toLocaleString("zh-CN")}。</span>{provisionResult.authorization ? <span>授权状态：{provisionResult.authorization.entitlement_status === "granted" ? "已开通商家全量权限" : "待收款核验"}；权限数量：{provisionResult.authorization.capabilities.length}；支付状态：{provisionResult.authorization.payment_status === "verified" ? "已核验" : "待核验"}。</span> : null}<span>请把临时密码通过安全渠道交付给客户，系统不会再次展示。</span></Space>}
-        />
-      ) : null}
-      <Form
-        form={provisionForm}
-        layout="vertical"
-        requiredMark={false}
-        onFinish={async (values) => {
-          setProvisionSubmitting(true);
-          setProvisionResult(undefined);
-          const result = await model.provisionMerchantAccount({
-            login: values.login,
-            password: values.password,
-            enterpriseName: values.enterpriseName,
-            contactName: values.contactName,
-            workspaceIds: values.workspaceIds.split(/[\s,，]+/u),
-            reason: values.reason,
-          });
-          if (result) {
-            const workspaceId = values.workspaceIds.split(/[\s,，]+/u).map((value: string) => value.trim()).filter(Boolean)[0] ?? "";
-            const authorization = await model.authorizeMerchantAccount({
-              login: result.account.login,
-              workspaceId,
-              memberRole: "merchant_admin",
-              skuCode: values.skuCode,
-              amountFen: Number(values.amountFen),
-              paymentStatus: values.paymentStatus,
-              paymentReference: values.paymentReference,
-              paidAt: values.paidAt,
-              reason: values.reason,
-              idempotencyKey: `merchant-authorize-${result.account.id}`,
-            });
-            setProvisionResult({ login: result.account.login, onboardingFeeFen: result.onboarding_fee_fen, authorization: authorization ?? undefined });
-            provisionForm.resetFields(["password"]);
-          }
-          setProvisionSubmitting(false);
-        }}
-      >
-        <Form.Item label="商家登录账号" name="login" rules={[{ required: true, type: "email", message: "请输入邮箱格式的商家账号" }]}>
-          <Input autoComplete="username" placeholder="merchant@example.com" />
-        </Form.Item>
-        <Form.Item label="临时密码" name="password" rules={[{ required: true, message: "请输入临时密码" }, { min: 12, message: "临时密码至少 12 位" }]}>
-          <Input.Password autoComplete="new-password" placeholder="只在本次开通时录入，不会再次回显" />
-        </Form.Item>
-        <Form.Item label="企业名称" name="enterpriseName" rules={[{ required: true, whitespace: true, message: "请输入企业名称" }]}>
-          <Input placeholder="客户企业名称" />
-        </Form.Item>
-        <Form.Item label="联系人" name="contactName" rules={[{ required: true, whitespace: true, message: "请输入联系人" }]}>
-          <Input placeholder="客户联系人" />
-        </Form.Item>
-        <Form.Item label="绑定工作区 ID" name="workspaceIds" rules={[{ required: true, whitespace: true, message: "至少填写一个工作区 ID" }]}>
-          <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} placeholder="多个工作区用逗号或换行分隔" />
-        </Form.Item>
-        <Form.Item label="开通原因" name="reason" rules={[{ required: true, min: 4, message: "请填写不少于 4 个字符的开通原因" }]}>
-          <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} placeholder="例如：合同已签，等待财务核验首期接入费" />
-        </Form.Item>
-        <Row gutter={12}>
-          <Col span={12}><Form.Item label="套餐" name="skuCode" initialValue="sku-onboarding-5000" rules={[{ required: true, message: "请选择套餐" }]}><Select options={["sku-onboarding-5000", "sku-monthly-2000", "sku-monthly-5000", "sku-monthly-10000", "sku-points-500", "sku-points-2000"].map(value => ({ value, label: packageCodeLabel(value) }))} /></Form.Item></Col>
-          <Col span={12}><Form.Item label="实收金额（分）" name="amountFen" initialValue={500000} rules={[{ required: true, message: "请输入实收金额" }]}><Input type="number" min={0} /></Form.Item></Col>
-          <Col span={12}><Form.Item label="收款状态" name="paymentStatus" initialValue="pending" rules={[{ required: true }]}><Select options={[{ value: "pending", label: "待核验（不开放权限）" }, { value: "verified", label: "已核验（立即开通）" }]} /></Form.Item></Col>
-          <Col span={12}><Form.Item label="支付凭证号" name="paymentReference"><Input placeholder="微信/支付宝交易号" /></Form.Item></Col>
-          <Col span={24}><Form.Item label="支付时间（ISO UTC）" name="paidAt"><Input placeholder="已核验时必填，例如 2026-09-10T12:00:00.000Z" /></Form.Item></Col>
-        </Row>
+      <Alert className="ops-inline-alert" showIcon type="info" title="账号激活与付费开通分别处理" description="客户通过一次性邀请自行设置密码；运营不录入或交付临时密码。本操作不建收款、不授予套餐。代购及真实到账核验请到财务中心“商业订单”。" />
+      {provisionError && <Alert className="ops-inline-alert" showIcon type="error" role="alert" title={provisionUnknown ? "邀请结果待确认" : "邀请未完成"} description={provisionError} />}
+      {provisionResult && <section aria-live="polite">
+        <Alert className="ops-inline-alert" showIcon type="success" title={provisionResult.invitation.status === "activated" ? "客户已激活登录" : "账号与邀请已登记，等待客户激活"} description={`账号：${provisionResult.account.login}；企业：${provisionResult.account.workspaceIds.join("、")}。激活仅开放登录，不代表开通费或套餐已支付。`} />
+        <Typography.Paragraph>邀请有效至 {formatKnownDateTime(provisionResult.invitation.expires_at)}。系统没有发送邮件，请核对客户身份后通过安全渠道交付邀请链接。</Typography.Paragraph>
+        {provisionResult.invitation.activation_link ? <Typography.Paragraph copyable={{ text: provisionResult.invitation.activation_link }}>一次性激活链接（仅本次显示；点击右侧复制后安全交付客户）</Typography.Paragraph> : provisionResult.invitation.status !== "activated" ? <Alert showIcon type="warning" title="原邀请记录已找到，原始链接不会再次返回" description="重新签发会立即使旧链接失效，不会重复创建账号或企业。" /> : null}
+        {provisionResult.invitation.status !== "activated" && <Button loading={provisionSubmitting} disabled={!model.canPlatformOps} onClick={async () => {
+          const values = provisionForm.getFieldsValue();
+          const payload = { login: provisionResult.account.login, enterprise_name: values.enterpriseName, contact_name: values.contactName,
+            workspace_ids: provisionResult.account.workspaceIds, create_workspace: false, reason: values.reason,
+            action: "reissue", idempotency_key: `merchant-invite-${crypto.randomUUID()}` };
+          provisionIntentRef.current = payload; setProvisionSubmitting(true); setProvisionError("");
+          try {
+            const result = await opsRestPost<MerchantInvitationView>("/v1/ops/merchant-accounts", payload);
+            if (!result) throw new Error("原邀请结果尚未返回，请按原标识查询");
+            setProvisionResult(result); setProvisionUnknown(false);
+          } catch (error) { setProvisionUnknown(true); setProvisionResult(undefined); setProvisionError(`${describeOpsError(error)}；请沿用原邀请意图查询，勿重新开户。`); }
+          finally { setProvisionSubmitting(false); }
+        }}>重新签发邀请并使旧链接失效</Button>}
+        <Typography.Paragraph>邀请标识：<Typography.Text copyable>{provisionResult.invitation.id}</Typography.Text></Typography.Paragraph>
+      </section>}
+      <Form form={provisionForm} layout="vertical" requiredMark={false} disabled={provisionSubmitting || provisionUnknown || Boolean(provisionResult)} initialValues={{ workspaceMode: "new" }} onFinish={async (values) => {
+        if (!model.canPlatformOps) { setProvisionError("当前身份没有平台运营开户权限。"); return; }
+        const payload = provisionUnknown && provisionIntentRef.current ? provisionIntentRef.current : {
+          login: values.login.trim(), enterprise_name: values.enterpriseName.trim(), contact_name: values.contactName.trim(),
+          workspace_ids: values.workspaceMode === "existing" && values.workspaceId ? [values.workspaceId] : [],
+          create_workspace: values.workspaceMode === "new", reason: values.reason.trim(),
+          action: "create", idempotency_key: `merchant-invite-${crypto.randomUUID()}`,
+        };
+        provisionIntentRef.current = payload; setProvisionSubmitting(true); setProvisionError("");
+        try {
+          const result = await opsRestPost<MerchantInvitationView>("/v1/ops/merchant-accounts", payload);
+          if (!result) throw new Error("邀请创建结果未返回，请查询原意图");
+          setProvisionResult(result); setProvisionUnknown(false);
+          await model.loadUsers({ page: 1 });
+        } catch (error) {
+          const detail = error as { httpStatus?: number };
+          const unknown = !detail.httpStatus || detail.httpStatus >= 500;
+          setProvisionUnknown(unknown);
+          setProvisionError(`${describeOpsError(error)}${unknown ? "；请查询原邀请结果，不要创建另一账号。" : ""}`);
+        } finally { setProvisionSubmitting(false); }
+      }}>
+        <Form.Item label="商家登录邮箱" name="login" rules={[{ required: true, type: "email", message: "请输入客户本人的邮箱" }]}><Input autoComplete="off" maxLength={128} placeholder="merchant@example.com" /></Form.Item>
+        <Form.Item label="企业名称" name="enterpriseName" rules={[{ required: true, whitespace: true, message: "请输入企业名称" }]}><Input maxLength={200} /></Form.Item>
+        <Form.Item label="联系人" name="contactName" rules={[{ required: true, whitespace: true, message: "请输入联系人" }]}><Input maxLength={100} /></Form.Item>
+        <Form.Item label="企业工作区" name="workspaceMode"><Select options={[{ value: "new", label: "创建新的企业工作区" }, { value: "existing", label: "绑定一个已存在的企业" }]} /></Form.Item>
+        {provisionWorkspaceMode === "existing" && <Form.Item label="目标企业" name="workspaceId" rules={[{ required: true, message: "请选择要绑定的企业" }]}>
+          <Select showSearch optionFilterProp="label" loading={model.workspaceDirectoryLoading} options={(model.workspaceDirectory?.items ?? []).filter(item => item.status === "active").map(item => ({ value: item.workspaceId, label: `${item.enterpriseName || item.workspaceId} · ${item.workspaceId}` }))} placeholder="选择已核实企业，服务端会再次验证" />
+        </Form.Item>}
+        <Form.Item label="开户或邀请原因" name="reason" rules={[{ required: true, min: 4, message: "请填写不少于4个字符的原因" }]}><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} maxLength={500} /></Form.Item>
       </Form>
     </Modal>
     <Drawer className="ops-user-detail-drawer" title={detailAccountType === "platform" ? "运营平台用户详情" : "商户用户详情"} aria-label="用户目录详情抽屉" size="min(920px, calc(100vw - 32px))" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden footer={detailAccountType === "platform" ? null : <div style={{ textAlign: "right" }}><Button danger disabled={!model.canUserGovernance || !model.userDetail?.memberships.length} onClick={() => { const row = model.userDetail?.memberships[0]; if (row) { setActionError(""); setAccessTarget(row); } }}>停用</Button></div>}>

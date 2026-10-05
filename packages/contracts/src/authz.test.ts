@@ -50,6 +50,9 @@ describe('authorization policy registry', () => {
       'publish.prepare', 'publish.batch.prepare', 'publish.batch.pause',
       'publish.batch.resume', 'publish.batch.retry_failed', 'delivery.bundle.verify',
       'ops.commercial.order.refund.list',
+      // These factual workflows require bank/return evidence in their shared
+      // schema and repository rather than a generic reason/confirmation atom.
+      'ops.commercial.receipt.unmatched.list', 'ops.commercial.receipt.record', 'ops.commercial.receipt.return.decide', 'ops.commercial.receipt.return.complete', 'ops.commercial.receipt.unmatched.return.decide', 'ops.commercial.receipt.unmatched.return.complete',
     ]))
   })
 

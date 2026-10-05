@@ -10,6 +10,7 @@ export interface CommercialCapacityDependencies {
   memorySubscriptions: NonNullable<ApiPersistence['subscriptions']>
   service: Pick<MerchantService, 'listPlatformAccounts'>
   isProduction(): boolean
+  isFixtureHarnessEnabled?: () => boolean
 }
 
 export function createCommercialCapacity(deps: CommercialCapacityDependencies) {
@@ -21,7 +22,11 @@ export function createCommercialCapacity(deps: CommercialCapacityDependencies) {
 
   async function commercialBenefitQuantity(workspaceId: string, code: CommercialCountBenefitCode): Promise<number | null> {
     const repository = deps.persistence().commercialContracts
-    if (!repository) return null
+    if (!repository) {
+      if (deps.isFixtureHarnessEnabled?.()) return null
+      if (deps.isProduction()) throw new DomainError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', '商业权益仓储未配置，无法安全判定套餐额度', 503)
+      return null
+    }
     const snapshots = await repository.listEntitlementSnapshots(workspaceId, 100)
     try {
       return await resolveCommercialCountBenefit({ workspaceId, code, snapshots })
@@ -37,9 +42,9 @@ export function createCommercialCapacity(deps: CommercialCapacityDependencies) {
 
   async function storeCapacity(workspaceId: string) {
     const commercialIncluded = await commercialBenefitQuantity(workspaceId, 'max_stores')
-    const subscription = await (deps.persistence().subscriptions ?? deps.memorySubscriptions).get(workspaceId)
     const used = deps.service.listPlatformAccounts(workspaceId).filter(account => account.tokenState !== 'revoked').length
     if (commercialIncluded !== null) return { used, included: commercialIncluded, remaining: Math.max(0, commercialIncluded - used), planCode: 'commercial_v2', planName: 'V2 商业权益' }
+    const subscription = await (deps.persistence().subscriptions ?? deps.memorySubscriptions).get(workspaceId)
     const included = Math.max(0, subscription.includedStores)
     return { used, included, remaining: Math.max(0, included - used), planCode: subscription.planCode, planName: subscription.planName }
   }
@@ -62,7 +67,12 @@ export function createCommercialCapacity(deps: CommercialCapacityDependencies) {
     if (capacity.used >= capacity.included) throw new DomainError('STORE_QUOTA_EXCEEDED', `当前套餐已使用 ${capacity.used}/${capacity.included} 家店铺`, 402, { ...capacity, next_actions: ['升级套餐增加店铺数', '购买店铺加购包'], action_cards: commercialActionCards() })
   }
 
-  return { requireEnabledPlatform, commercialBenefitQuantity, storeCapacity, requireCommercialCountCapacity, requireStoreCapacity }
+  async function requireStorageCapacityLimit(workspaceId: string) {
+    const limit = await commercialBenefitQuantity(workspaceId, 'cloud_storage')
+    if (limit === null) throw new DomainError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', '存储额度必须来自当前商业权益', 503)
+    return limit
+  }
+  return { requireEnabledPlatform, commercialBenefitQuantity, storeCapacity, requireCommercialCountCapacity, requireStoreCapacity, requireStorageCapacityLimit }
 }
 
 export function commercialActionCards() {

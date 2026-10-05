@@ -3,6 +3,20 @@
 
 
 
+
+
+
+## 0.2.7 - 2026-10-05
+
+- Preserve the audited historical local shell plugin entry during transactional upgrade; reject modified shell content and retain previous files/configuration.
+- Allocate a new immutable production local plugin identity for the package-management release.
+
+## 0.2.6 - 2026-10-05
+
+- Add versioned package and benefit management, remaining-period upgrade quotes, atomic first checkout, operations receipts and source-bound returns, and platform support contracts.
+- Publish a new immutable local plugin identity with 131 merchant tools; production package and installed stdio validation remain separate from ChatGPT host acceptance.
+- Version 0.2.5 was allocated locally during this release preparation and was never published.
+
 ## 0.2.4 - 2026-10-04
 
 - Release 0.2.4.

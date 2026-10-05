@@ -1,0 +1,34 @@
+{"evidenceDir":"/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-10-05T04-35-59.424Z-e2c5ae9c-d85a-41f7-b4cc-4f170da3c643","runId":"0b83a91c-20a1-40fe-abc3-1a15696922c0","isolated":true,"persistence":"postgres","testFiles":["dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js"]}
+
+Running 1 test using 1 worker
+
+[1A[2K(node:8582) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:8582) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[1/1] dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js:14:1 › merchant without an order submits durable support and reads only own customer-visible replies
+[1A[2K  1) dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js:14:1 › merchant without an order submits durable support and reads only own customer-visible replies 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m201[39m
+    Received: [31m401[39m
+
+      117 |         return { status: response.status, envelope: await response.json() }
+      118 |       }, randomUUID())
+    > 119 |       expect(foreign.status).toBe(201)
+          |                              ^
+      120 |       foreignId = (foreign.envelope.data ?? foreign.envelope).ticket_id
+      121 |     } finally { await other.close() }
+      122 |     const denied = await studio.evaluate(async id => { const response = await fetch(`/api/v1/support/requests/${id}`, { credentials: 'include' }); return { status: response.status, body: await response.json() } }, foreignId)
+        at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js:119:30
+
+    Error Context: artifacts/ops-jit-isolation/2026-10-05T04-35-59.424Z-e2c5ae9c-d85a-41f7-b4cc-4f170da3c643/test-results/dogfood-chatgpt-all-functi-6dd30-wn-customer-visible-replies/error-context.md
+
+
+[1A[2K  1 failed
+    dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js:14:1 › merchant without an order submits durable support and reads only own customer-visible replies 

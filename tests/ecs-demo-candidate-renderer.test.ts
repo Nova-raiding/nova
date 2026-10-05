@@ -65,6 +65,18 @@ function fixture() {
 }
 
 describe('protected isolated ECS demo candidate renderer', () => {
+  it('injects explicit commercial runtime env with a read-only existing directory without widening the relay secret file', () => {
+    const value = fixture()
+    const commercialDir = join(value.root,'commercial-evidence')
+    mkdirSync(commercialDir,{mode:0o700})
+    const envPath=join(value.root,'commercial.env')
+    writeFileSync(envPath,`COMMERCIAL_RUNTIME_HOST_DIR=${commercialDir}\nCOMMERCIAL_RUNTIME_EVIDENCE_PATH=/run/merchant-commercial/lease.json\nCOMMERCIAL_RUNTIME_FLEET_OBSERVATION_PATH=/run/merchant-commercial/fleet.json\n`,{mode:0o600})
+    const result=value.run(['--commercial-runtime-env',envPath])
+    expect(result.status,result.stderr).toBe(0)
+    const compose=JSON.parse(readFileSync(join(value.output,'candidate.compose.json'),'utf8'))
+    expect(compose.services.api.environment.COMMERCIAL_RUNTIME_EVIDENCE_PATH).toBe('/run/merchant-commercial/lease.json')
+    expect(compose.services.api.volumes.at(-1)).toMatchObject({type:'bind',target:'/run/merchant-commercial',read_only:true,bind:{create_host_path:false}})
+  })
   it('renders only four private services, fresh scoped state, pinned six-image identity, and disabled Qwen1024 configuration', () => {
     const value = fixture()
     const result = value.run()

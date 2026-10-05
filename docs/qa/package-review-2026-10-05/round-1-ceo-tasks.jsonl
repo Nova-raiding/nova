@@ -1,0 +1,6 @@
+{"phase":"ceo-review","run_id":"round-1-20261005","id":"T1","priority":"P1","component":"checkout","title":"冻结首购依赖与分项核验状态","source_finding":"CEO-01"}
+{"phase":"ceo-review","run_id":"round-1-20261005","id":"T2","priority":"P1","component":"upgrade","title":"冻结报价接受窗口与期满晚核验处理","source_finding":"CEO-02"}
+{"phase":"ceo-review","run_id":"round-1-20261005","id":"T3","priority":"P1","component":"subscription","title":"固定档位与未来已付续期边界","source_finding":"CEO-03/04"}
+{"phase":"ceo-review","run_id":"round-1-20261005","id":"T4","priority":"P1","component":"entitlement","title":"定义升级增量权益规则结构与门禁","source_finding":"CEO-05"}
+{"phase":"ceo-review","run_id":"round-1-20261005","id":"T5","priority":"P2","component":"catalog","title":"修正文案冲突与重上架事件幂等粒度","source_finding":"CEO-06/07/08"}
+{"phase":"ceo-review","run_id":"round-1-20261005","id":"T6","priority":"P2","component":"operations","title":"增补对账恢复与兼容回滚验收","source_finding":"CEO-09"}

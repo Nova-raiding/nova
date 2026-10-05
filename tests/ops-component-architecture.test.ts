@@ -65,13 +65,13 @@ describe("ops console component architecture", () => {
     }
     expect(registry).toContain('import { UsersPage } from "../pages/UsersPage.js"');
     expect(registry).toContain("users: lazy(async () => ({ default: UsersPage }))");
-    expect(registry).not.toContain("SupportRoute");
+    expect(registry).toContain("SupportRoute");
     expect(registry).not.toContain("IncidentsRoute");
     expect(registry).not.toContain("FeatureFlagsRoute");
     expect(registry).toContain('storage: lazy(');
     // One entry per `opsDomains` member; 12 since `finance` was restored
     // (2026-09-20), and locked to `release-metadata.json`'s opsDomainCount.
-    expect(registry.match(/lazy\(/gu)).toHaveLength(12);
+    expect(registry.match(/lazy\(/gu)).toHaveLength(13);
   });
 
   it("separates transport and domain types from React page files", () => {

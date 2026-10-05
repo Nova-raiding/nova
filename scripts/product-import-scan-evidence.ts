@@ -30,7 +30,7 @@ export async function collectProductImportScanEvidence(input: { fixture: Isolate
       && pointFixture.actor === 'isolated_fixture' && typeof pointFixture.reason === 'string', 'POINT_FIXTURE_INVALID')
     requireEvidence(entitlementFixture.workspaceId === input.fixture.workspaceId && entitlementFixture.synthetic === true
       && entitlementFixture.providerCalled === false && entitlementFixture.modelCalls === 0
-      && entitlementFixture.paidAmountFen === 0 && entitlementFixture.actor === 'isolated_fixture'
+      && entitlementFixture.paidAmountFen === 1 && entitlementFixture.actor === 'isolated_fixture'
       && entitlementFixture.availablePoints === 2, 'ENTITLEMENT_FIXTURE_INVALID')
     const scannerPath = resolve(runtime.scanner.evidenceDir)
     requireEvidence(scannerPath.startsWith(`${evidenceDir}/`), 'SCANNER_PATH_INVALID')
@@ -104,7 +104,7 @@ export async function collectProductImportScanEvidence(input: { fixture: Isolate
         report.catalogSearch = browser.catalog_search
         report.pointFixture = { grantId: pointFixture.grantId, balanceAtGrant: 1, actor: pointFixture.actor,
           reason: pointFixture.reason, databaseRole: 'merchant_app', bypassRls: false, modelCalls: 0 }
-        report.entitlementFixture = { orderId: entitlementFixture.orderId, synthetic: true, amountFen: 0,
+        report.entitlementFixture = { orderId: entitlementFixture.orderId, synthetic: true, amountFen: 1,
           providerCalled: false, period: entitlementFixture.period, durableSnapshot: true }
       } finally { await client.query('ROLLBACK').catch(() => undefined); client.release() }
     } finally { await pool.end() }

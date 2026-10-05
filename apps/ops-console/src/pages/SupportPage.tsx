@@ -4,9 +4,12 @@ import { OpsPageError } from "../components/OpsPageError.js";
 import { SupportQueueSection } from "../components/support/SupportQueueSection.js";
 import { SupportTicketDetailSection } from "../components/support/SupportTicketDetailSection.js";
 import { SupportSlaReportSection } from "../components/support/SupportSlaReportSection.js";
+import { PlatformSupportWorkspace, type PlatformSupportModel } from "../components/support/PlatformSupportWorkspace.js";
 import type { SupportDomainModel } from "../hooks/useSupportDomain.js";
 
-export function SupportPage({ model }: { model: SupportDomainModel }) {
+export function SupportPage(props: { model: SupportDomainModel; platformModel?: never } | { platformModel: PlatformSupportModel; model?: never }) {
+  if (props.platformModel) return <OpsPage eyebrow="CUSTOMER SUPPORT" title="客服工作台" description="选择授权企业处理真实客户工单；首单前无需订单或任务。"><PlatformSupportWorkspace model={props.platformModel}/></OpsPage>;
+  const model = props.model;
   const initialLoadFailed = Boolean(model.error && !model.loading && model.tickets.length === 0);
   return (
     <OpsPage
@@ -21,7 +24,7 @@ export function SupportPage({ model }: { model: SupportDomainModel }) {
           type="info"
           showIcon
           title="客服处理顺序"
-          description="从任务、生成、发布或订单异常进入客服后，先关联任务/订单，再分配负责人；所有沟通写入工单事件，按 SLA 跟踪，确认客户可见回复后再解决或关闭。"
+          description="核对真实客户与企业后处理问题；首单前无需订单或任务，可选关联已有任务/订单再分配负责人；所有沟通写入工单事件，按 SLA 跟踪，确认客户可见回复后再解决或关闭。"
         />
         <SupportQueueSection model={model} />
         {!initialLoadFailed ? <SupportSlaReportSection model={model} /> : null}

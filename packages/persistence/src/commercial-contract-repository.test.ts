@@ -18,6 +18,7 @@ class ScriptedClient implements SqlClient {
   constructor(private readonly handler: (sql: string, values: readonly unknown[]) => SqlQueryResult | undefined) {}
   async query<Row>(sql: string, values: readonly unknown[] = []): Promise<SqlQueryResult<Row>> {
     this.calls.push({ sql, values })
+    if (sql.includes('pg_catalog.to_regclass') || sql.includes('pg_catalog.to_regprocedure')) return { rows: [{ present: true }] } as SqlQueryResult<Row>
     return (this.handler(sql, values) ?? { rows: [] }) as SqlQueryResult<Row>
   }
   release() { this.released = true }

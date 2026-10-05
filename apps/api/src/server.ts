@@ -1,3 +1,11 @@
+import { MCP_PLATFORM_SUPPORT_METHODS, handleMcpPlatformSupport } from './mcp-platform-support-handler.js'
+import { recoverKnownPlatformAccountAdmissionRollback, requireKnownEffectiveStorageSnapshot } from './platform-account-persistence-recovery.js'
+import { BusinessSnapshotNotFoundError } from '../../../packages/persistence/src/business-repository.js'
+import { loadCommercialRuntimePolicy, commercialRuntimeEvidenceConfig, assertCommercialRuntimeOperation, CommercialRuntimePolicyError, type CommercialExistingIntentEvidence } from './commercial-runtime-policy.js'
+import { classifyCommercialRuntimeMethod, commercialOrderObligationEvidence, commercialApprovedRefundEvidence, commercialApprovedReturnEvidence } from './commercial-runtime-methods.js'
+import { createCommercialFileFleetObserver } from './commercial-fleet-observer.js'
+import { CommercialAbsoluteCapacityError } from '../../../packages/persistence/src/commercial-capacity-admission.js'
+import { hostname } from 'node:os'
 import { createHttpResponseHelpers } from './http-response-helpers.js'
 import { authenticateRequest } from './http-authentication-runtime.js'
 import { merchantFirstValuePreview as createMerchantFirstValuePreview } from './mcp-first-value-preview.js'
@@ -51,6 +59,7 @@ import { MCP_OPS_USERS_METHODS, handleMcpOpsUsersMethod } from './mcp-ops-users-
 import { MCP_OPS_INCIDENTS_FLAGS_METHODS, handleMcpOpsIncidentsFlags } from './mcp-ops-incidents-flags-handlers.js'
 import { createCampaignRuntime } from './campaign-runtime.js'
 import { MCP_CANONICAL_METHODS, handleCanonicalMcpMethod } from './mcp-canonical-handlers.js'
+import { handleMerchantActivationRoute, inviteMerchantAccount, merchantActivationPath } from './http-merchant-activation-routes.js'
 import { handlePasswordAuthRoute } from './http-password-auth-routes.js'
 import { handleHttpHealthRoute } from './http-health-routes.js'
 import { listCampaignBatches, getCampaignBatch } from './mcp-campaign-handlers.js'
@@ -62,6 +71,7 @@ import { MCP_BRAND_METHODS, handleBrandMcpMethod } from './mcp-brand-handlers.js
 import { handlePlatformMediaSpecMethod } from './mcp-platform-media-spec-handlers.js'
 import { handleMultimodalMcpMethod } from './mcp-multimodal-handlers.js'
 import { handleHttpCommercialRoute } from './http-commercial-routes.js'
+import { submitMerchantSupportRequest, getMerchantSupportRequest } from './merchant-support-request.js'
 import { acceptWorkspaceInvitation, getOpsSession, listOpsMembers, listWorkspaceInvitations } from './mcp-membership-handlers.js'
 import { handleWorkspaceLifecycleMethod } from './mcp-workspace-lifecycle-handlers.js'
 import { handleBillingSettlementMethod } from './mcp-billing-settlement-handlers.js'
@@ -77,6 +87,15 @@ import { authorizationDecisionAuditContextIsValid, authorizationDecisionAuditEvi
 import { effectiveAuthorizationProjectionWithDependencies } from './effective-authorization-projection.js'
 import { resolveLoadedAuthorizationResourceScopeWithDependencies } from './loaded-authorization-resource-scope.js'
 export { authorizationDecisionAuditContextIsValid, authorizationDecisionAuditEvidence, authorizationDecisionRequiresAudit, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, minimumBrandRoleForPolicy, resolveAuthorizationResourceScope, workspaceAccountPermissionAtoms, workspaceCapabilitySourceForBrandScope } from './authorization-projection-helpers.js'
+import { MCP_OPS_PURCHASE_METHODS, handleOpsCommercialPurchase } from './mcp-commercial-ops-purchase.js'
+import { resolveCommercialPaymentMode, commercialTransferInstructions } from './commercial-payment-mode.js'
+import { MCP_COMMERCIAL_BUNDLE_METHODS, handleCommercialBenefitBundleMethod } from './mcp-commercial-benefit-bundles.js'
+import { MCP_COMMERCIAL_RECEIPT_METHODS, handleCommercialReceiptMethod } from './mcp-commercial-receipts.js'
+import { MCP_COMMERCIAL_NOTIFICATION_OPS_METHODS, handleCommercialNotificationOpsMethod } from './mcp-commercial-notification-ops.js'
+import { PostgresCommercialReceiptRepository } from '../../../packages/persistence/src/commercial-receipt-repository.js'
+import { PostgresCommercialBenefitBundleRepository } from '../../../packages/persistence/src/commercial-benefit-bundle-repository.js'
+import { runCommercialNotificationTick, runCommercialPurchaseResultNotificationTick } from '../../../packages/workers/src/commercial-notification-fanout.js'
+import { PostgresCommercialNotificationRepository, CommercialNotificationError, type CommercialNotificationAuthorizer } from '../../../packages/persistence/src/commercial-notification-repository.js'
 import { MCP_COMMERCIAL_METHODS, handleCommercialMcpMethod } from './mcp-commercial-handlers.js'
 import { handleCommercialOpsFactMethod } from './mcp-commercial-ops-facts.js'
 import { handleCommercialOpsCatalogMethod } from './mcp-commercial-ops-catalog.js'
@@ -155,10 +174,17 @@ import { handleMcpCanonicalBackfill } from './mcp-canonical-backfill-handlers.js
 import { defaultRuleCenterSeeds, type RuleHit, type RulePack } from '../../../packages/review/src/rule-center.js'
 import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
+import { CommercialStorageEntitlementError } from '../../../packages/persistence/src/storage-quota-repository.js'
 import { StorageQuotaExceededError, AssetScanRedriveError, AuthorizationRepositoryError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, compareMembersByRecency, DEFAULT_MEMBER_ENTERPRISE_NAME, loadMigrations, reversalOrderId, settlementOrderId, visibleProductIds, memberIdentityKey, memberMatchesQuery, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type WorkspaceMember, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { PostgresDemoEvaluationEntitlementRepository } from '../../../packages/persistence/src/demo-evaluation-entitlement-repository.js'
 import { verifyBridgeMigrationPrefix } from '../../../packages/persistence/src/migration.js'
+import { commercialSchemaAttestationDigest } from './commercial-schema-attestation.js'
+import { CommercialSchemaCompatibilityError } from '../../../packages/persistence/src/commercial-schema-compatibility.js'
+import { projectFrozenOnboardingGiftPolicy } from './commercial-gift-policy-view.js'
+import { requireCommercialLifecycleDiagnostic } from './commercial-lifecycle-preflight.js'
+import { PostgresCommercialPointOriginReadRepository } from '../../../packages/persistence/src/commercial-point-origin-read-repository.js'
+import type { CommercialPointOriginReadPort } from '../../../packages/contracts/src/commercial-point-origins.js'
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import { CustomerDeliveryError, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository, normalizeCustomerDeliveryAccountListInput, customerDeliveryAccountCursor, type CustomerDeliveryRepository } from '../../../packages/persistence/src/customer-delivery-repository.js'
 import { loadCustomerDeliveryAsset, requireCustomerDeliveryAsset } from './customer-delivery-assets.js'
@@ -303,6 +329,7 @@ import { MemoryKnowledgeRepository, PostgresKnowledgeRepository, type KnowledgeD
 import { projectImportedProductsToKnowledge } from '../../../packages/application/src/knowledge-import.js'
 import { creativePointRequestOwnership, mayReleaseCreativePointReservation } from '../../../packages/application/src/creative-point-reservation-ownership.js'
 import { generationKnowledgeReceiptHash, MAX_FROZEN_GENERATION_KNOWLEDGE_DOCUMENTS } from '../../../packages/application/src/knowledge-execution-fence.js'
+import { COMMERCIAL_FEATURE_DEFINITIONS } from '../../../packages/contracts/src/commercial-feature-definitions.js'
 
 const port = Number(process.env.PORT ?? 8787)
 const uploadSessions = new UploadSessionManager()
@@ -334,38 +361,6 @@ const MAX_MCP_EXPORT_BYTES = 25 * 1024 * 1024
 // for production until official OAuth, mapping and canary evidence exists.
 const SUPPORTED_PLATFORMS: readonly Platform[] = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']
 const PLATFORM_LABELS: Record<Platform, string> = { jd: '京东', taobao: '淘宝', tmall: '天猫', pinduoduo: '拼多多', xiaohongshu: '小红书', douyin: '抖音' }
-
-/**
- * Platform-ops account authorization is a manual payment-evidence boundary.
- * Keep its legacy SKU aliases, but never allow an operator (or a malformed
- * client) to record an arbitrary SKU/amount pair as a paid entitlement.
- * Commercial order checkout remains the canonical purchase path; this map is
- * only the audited account-provisioning bridge used while payment is verified
- * outside the checkout flow.
- */
-const MERCHANT_AUTHORIZATION_PRICE_FEN: Readonly<Record<string, number>> = Object.freeze({
-  'sku-onboarding-once': 500_000,
-  onboarding_once: 500_000,
-  'sku-monthly-2000': 200_000,
-  'sku-monthly-5000': 500_000,
-  'sku-monthly-10000': 1_000_000,
-  basic: 200_000,
-  growth: 500_000,
-})
-
-function validateMerchantAuthorizationCommercialTerms(skuCode: string, amountFen: number) {
-  const expected = MERCHANT_AUTHORIZATION_PRICE_FEN[skuCode]
-  if (expected !== undefined && amountFen !== expected) {
-    throw new DomainError('MERCHANT_PAYMENT_AMOUNT_MISMATCH', '授权金额与所选套餐价格不一致，已阻止开通', 400, { sku_code: skuCode, expected_amount_fen: expected, amount_fen: amountFen })
-  }
-  // `custom` is a quote-based offer: it is allowed only at/above the
-  // published minimum and still requires the operator's payment evidence.
-  if (skuCode === 'custom' || skuCode === 'sku-monthly-custom') {
-    if (amountFen < 1_000_000) throw new DomainError('MERCHANT_PAYMENT_AMOUNT_MISMATCH', '定制套餐金额不得低于 ¥10000.00', 400, { sku_code: skuCode, minimum_amount_fen: 1_000_000, amount_fen: amountFen })
-    return
-  }
-  if (expected === undefined) throw new DomainError('MERCHANT_AUTHORIZATION_SKU_INVALID', '授权套餐不存在或未纳入商业目录，已阻止开通', 400, { sku_code: skuCode })
-}
 
 const knowledgeByWorkspace = new Map<string, KnowledgeModule>()
 function knowledgeForWorkspace(workspaceId: string): KnowledgeModule {
@@ -742,7 +737,13 @@ export interface ApiPersistence {
   creativePointLifecycle?: PostgresCreativePointLifecycleRepository
   commercialPointAdjustmentApprovals?: CommercialPointAdjustmentApprovalRepository
   commercialCatalog?: CommercialCatalogRepository
+  commercialReceipts?: PostgresCommercialReceiptRepository
+  commercialBenefitBundles?: PostgresCommercialBenefitBundleRepository
+  commercialRuntimeSchemaDigest?: () => Promise<string>
+  commercialNotifications?: PostgresCommercialNotificationRepository
+  commercialNotificationFanout?: PostgresCommercialNotificationRepository
   commercialContracts?: PostgresCommercialContractRepository
+  commercialPointOrigins?: CommercialPointOriginReadPort
   demoEvaluationEntitlements?: PostgresDemoEvaluationEntitlementRepository
   privateTrialConversion?: PostgresPrivateTrialConversionRepository
   commercialRefunds?: CommercialRefundRepository
@@ -1303,7 +1304,10 @@ function ensureLocalFixtureEntitlement(workspaceId: string) {
     periodStatus: 'active',
     catalogVersionId: 'local-fixture-catalog-v2',
     skuCode: 'local-fixture-plan',
-    resolvedBenefits: [{ code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 }],
+    resolvedBenefits: [
+      { code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 },
+      ...COMMERCIAL_FEATURE_DEFINITIONS.map(definition => ({ code: definition.code, quantity: 1 })),
+    ],
     unresolvedBlockers: [],
     executable: true,
     checksum: createHash('sha256').update(`local-fixture-entitlement:${workspaceId}`).digest('hex'),
@@ -1323,7 +1327,10 @@ export function grantContinuousFeatureEntitlementForTests(workspaceId: string) {
     periodStatus: 'active',
     catalogVersionId: 'test-catalog-v2',
     skuCode: 'test-monthly-plan',
-    resolvedBenefits: [{ code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 }],
+    resolvedBenefits: [
+      { code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 },
+      ...COMMERCIAL_FEATURE_DEFINITIONS.map(definition => ({ code: definition.code, quantity: 1 })),
+    ],
     unresolvedBlockers: [],
     executable: true,
     checksum: createHash('sha256').update(`test-entitlement:${workspaceId}`).digest('hex'),
@@ -1504,7 +1511,7 @@ function assetMcpDependencies() {
   return {
     service, required, requestActor, requestId, accessibleAssetIds, filterActiveAssets, assetDisplayProjection,
     conversationalAssetScanWaitingState,
-    getStorageQuotaSnapshot: async (workspaceId: string) => persistence.storageQuota?.getSnapshot(workspaceId),
+    getStorageQuotaSnapshot: effectiveStorageQuotaSnapshot,
     configuredStorageQuotaLimit, enforceAssetAccess, assertAssetActive, executeDurableAssetParse, assetForWorkspace,
     confirmDurableAssetFacts, enforceMcpCommercialAccess, persistSnapshot, persistEvent,
     uploadAssetForMcp, rejectMerchantVideoUpload, persistRejectedAssetUpload,
@@ -2910,13 +2917,13 @@ async function putQuarantineObject(input: PutQuarantineObjectInput) {
   const reservationKey = reservationKeyFor({ assetId: input.assetId, fileName: input.fileName })
   if (quota) {
     await persistence.ensureWorkspace?.(input.workspaceId)
-    // The durable workspace limit is authoritative, matching asset.list and
-    // GET /v1/assets. The environment initializes only a missing quota row;
-    // reserve still checks the locked row to reject concurrent limit changes.
+    // Production reserves against the current contract in the same database
+    // transaction. Upgrades replace the limit while retaining usage and holds.
     const snapshot = await quota.getSnapshot(input.workspaceId)
     try {
-      await quota.reserve({ workspaceId: input.workspaceId, reservationKey, assetId: input.assetId, bytes: input.body.byteLength, limitBytes: snapshot?.limitBytes ?? configuredStorageQuotaLimit() })
+      await quota.reserve({ workspaceId: input.workspaceId, reservationKey, assetId: input.assetId, bytes: input.body.byteLength, limitBytes: isProduction() ? 0 : snapshot?.limitBytes ?? configuredStorageQuotaLimit(), commercialEntitlement: isProduction() })
     } catch (error) {
+      if (error instanceof CommercialStorageEntitlementError) throw new DomainError(error.code, '当前套餐存储额度未通过准入，请查询套餐状态或联系运营支持', error.status, { retryable: error.status === 503, next_actions: ['commercial.subscription.get', 'commercial.catalog.get'] })
       if (error instanceof StorageQuotaExceededError) throw new DomainError(error.code, '工作区存储空间不足，请清理不再使用的素材或联系管理员调整配额', 413, { ...error.details })
       throw error
     }
@@ -3231,7 +3238,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
       // the bridge rollout. Mutations remain disabled below for bridge mode.
       || bridgeSchemaMode === 'prefix_256_or_257' && (bridgeSchemaVersion === 256 || bridgeSchemaVersion === 257)
     const outbox = new PostgresOutboxRepository(sqlPool)
-    const business = new PostgresBusinessRepository(sqlPool, { normalizedProjection: true })
+    const business = new PostgresBusinessRepository(sqlPool, { normalizedProjection: true, commercialEntitlement: isProduction() })
     const billing = new PostgresBillingRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event))
     const commercial = new PostgresCommercialRepository(sqlPool)
     const creativePoints = new PostgresCreativePointRepository(sqlPool)
@@ -3241,9 +3248,15 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const commercialPointAdjustmentApprovals = new PostgresCommercialPointAdjustmentApprovalRepository(sqlPool)
     const commercialCatalog = opsPool ? new PostgresCommercialCatalogRepository(opsSqlPool) : undefined
     const commercialContracts = new PostgresCommercialContractRepository(sqlPool)
+    const commercialPointOrigins = new PostgresCommercialPointOriginReadRepository(sqlPool)
+    const commercialReceipts = opsPool ? new PostgresCommercialReceiptRepository(sqlPool, opsSqlPool) : undefined
+    const commercialBenefitBundles = opsPool ? new PostgresCommercialBenefitBundleRepository(opsSqlPool) : undefined
+    const notificationAuthorizer: CommercialNotificationAuthorizer = (recipient, publication) => publication.visibility === 'public' && capabilitiesForRoles(resolveCanonicalRoles({ memberRole: recipient.role })).includes('billing.self.read')
+    const commercialNotifications = new PostgresCommercialNotificationRepository(sqlPool, notificationAuthorizer)
+    const commercialNotificationFanout = opsPool ? new PostgresCommercialNotificationRepository(opsSqlPool, notificationAuthorizer) : undefined
     const demoEvaluationEntitlements = new PostgresDemoEvaluationEntitlementRepository(sqlPool)
     const privateTrialConversion = new PostgresPrivateTrialConversionRepository(sqlPool)
-    const commercialRefunds = new PostgresCommercialRefundRepository(sqlPool)
+    const commercialRefunds = new PostgresCommercialRefundRepository(sqlPool, (client, input) => commercialContracts.preflightSourceRecoveryInTransaction(client, input))
     const serviceFulfillment = new PostgresServiceFulfillmentRepository(sqlPool)
     const customerDeliveries = new PostgresCustomerDeliveryRepository(opsSqlPool)
     const usage = new PostgresUsageRepository(sqlPool)
@@ -3271,7 +3284,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     // shared rule tables, so a tenant-pool write is either an ACL escalation
     // (ECS, whose bootstrap re-widens merchant_app) or a 42501 failure (k8s).
     const rules = new PostgresRuleRepository(sqlPool, opsSqlPool)
-    const brandUnits = new PostgresBrandUnitRepository(sqlPool)
+    const brandUnits = new PostgresBrandUnitRepository(sqlPool, { commercialEntitlement: isProduction() })
     const scopedBrandSettings = bridgeSchemaVersion === 254 ? undefined : new PostgresScopedBrandSettingsRepository(sqlPool)
     const objectOrphans = new PostgresObjectOrphanRepository(sqlPool)
     const contextSnapshots = new PostgresContextSnapshotRepository(sqlPool)
@@ -3450,6 +3463,13 @@ async function initializePersistence(): Promise<ApiPersistence> {
         await client.query('UPDATE workspaces SET status = $2 WHERE id = $1', [workspaceId, status])
       })
     }
+    const commercialRuntimeSchemaDigest = async () => {
+      if (!opsPool) throw new Error('commercial schema requires both runtime database roles')
+      const [rows, opsRows] = await Promise.all([pool, opsPool].map(runtimePool => runtimePool.query<{ version: number; name: string; checksum: string }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version')))
+      const digest = commercialSchemaAttestationDigest(rows!.rows, migrations)
+      if (commercialSchemaAttestationDigest(opsRows!.rows, migrations) !== digest) throw new Error('commercial runtime database role histories differ')
+      return digest
+    }
     const checkHealth = async () => {
       const client = await pool.connect()
       try {
@@ -3480,7 +3500,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, ...(bridgeSchemaVersion !== undefined ? { bridgeSchemaVersion } : {}), objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, ...(assetLifecycleRead ? { assetLifecycleRead } : {}), ...(assetLifecycle ? { assetLifecycle } : {}), imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, commercialPointOrigins, commercialReceipts, commercialBenefitBundles, commercialNotifications, commercialNotificationFanout, commercialRuntimeSchemaDigest, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, ...(bridgeSchemaVersion !== undefined ? { bridgeSchemaVersion } : {}), objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, ...(assetLifecycleRead ? { assetLifecycleRead } : {}), ...(assetLifecycle ? { assetLifecycle } : {}), imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -3536,6 +3556,15 @@ const commercialAccessService = new CommercialAccessService({
       }
     },
   },
+  qualification_projection: {
+    async projectCommercialQualification({ workspace_id }) {
+      await persistenceReady
+      if (fixtureCommercialTestMode || testCommercialFixtureHarnessEnabled) return { state: 'known' as const, qualified: true }
+      if (!persistence.commercialContracts) return { state: 'unknown' as const }
+      const qualification = await persistence.commercialContracts.getOnboardingStatus(workspace_id)
+      return { state: 'known' as const, qualified: qualification.qualified, ...('approved_private_trial_exception' in qualification ? { approved_private_trial_exception: qualification.approved_private_trial_exception } : {}) }
+    },
+  },
   rate_resolver: {
     async resolveApprovedRate({ rate_action }) {
       await persistenceReady
@@ -3560,6 +3589,7 @@ const commercialAccessService = new CommercialAccessService({
         ensureLocalFixtureEntitlement(workspace_id)
         return memoryContinuousFeatureEntitlements.get(workspace_id) ?? []
       }
+      if (testCommercialFixtureHarnessEnabled && memoryContinuousFeatureEntitlements.has(workspace_id)) return memoryContinuousFeatureEntitlements.get(workspace_id)!
       if (persistence.commercialContracts) return persistence.commercialContracts.listEntitlementSnapshots(workspace_id)
       return memoryContinuousFeatureEntitlements.get(workspace_id) ?? []
     },
@@ -3587,14 +3617,7 @@ function commercialSkuBlockers(snapshot: CommercialCatalogSkuSnapshot): string[]
 }
 
 function commercialPaymentProvider(): string {
-  const provider = process.env.COMMERCIAL_PAYMENT_PROVIDER?.trim()
-  if (!provider || !/^[a-z][a-z0-9_-]{1,63}$/u.test(provider)) {
-    throw new DomainError('COMMERCIAL_PAYMENT_PROVIDER_UNAVAILABLE', 'V2 商业订单支付渠道尚未配置', 503)
-  }
-  if (isProduction() && provider === 'sandbox') {
-    throw new DomainError('COMMERCIAL_PAYMENT_PROVIDER_UNAVAILABLE', '生产环境不能使用 sandbox 支付渠道', 503)
-  }
-  return provider
+  return resolveCommercialPaymentMode(process.env, isProduction())
 }
 
 function commercialOrderView(order: Awaited<ReturnType<PostgresCommercialContractRepository['createOrder']>>, skuCode: string, accessRevision: number | null = null) {
@@ -3613,6 +3636,17 @@ function commercialOrderView(order: Awaited<ReturnType<PostgresCommercialContrac
     access_revision: accessRevision,
     created_at: order.createdAt,
     paid_at: order.paidAt,
+  }
+}
+
+async function frozenCommercialOrderView(order: Awaited<ReturnType<PostgresCommercialContractRepository['createOrder']>>, skuCode: string, accessRevision: number | null = null) {
+  const fact = await persistence.commercialContracts?.getOrderSnapshot(order.workspaceId, order.id)
+  if (!fact) throw new DomainError('COMMERCIAL_ORDER_SNAPSHOT_UNAVAILABLE', '订单冻结明细暂不可用，请查询原订单，勿重复付款', 503, { order_id: order.id, retryable: false })
+  const sku = fact.snapshot.sku
+  return { ...commercialOrderView(order, skuCode || sku.code, accessRevision), expires_at: order.expiresAt ?? null,
+    purchase_kind: order.purchaseKind ?? null, checkout_id: order.checkoutId ?? null, grant_status: order.grantStatus ?? null,
+    snapshot: { kind: sku.kind, onboarding_gift_policy: sku.kind === 'onboarding' ? projectFrozenOnboardingGiftPolicy(sku.payload.grantSchedule) : null, name: typeof sku.payload.name === 'string' ? sku.payload.name : sku.code, version: sku.version, version_id: sku.versionId, quantity: 1, cycle: sku.payload.cycle ?? (sku.kind === 'monthly' ? { unit: 'month', count: 1 } : sku.kind === 'onboarding' ? { unit: 'once', count: 1 } : { unit: 'day', count: sku.durationDays }), benefits: sku.benefits, checksum: sku.checksum },
+    ...(order.paymentProvider === 'manual_transfer' ? { transfer_instructions: commercialTransferInstructions(process.env, order.id) } : {}),
   }
 }
 
@@ -3693,8 +3727,12 @@ const commercialPurchaseService = new CommercialPurchaseService({
       createdByActorId: input.actor_id,
       idempotencyKey: input.idempotency_key,
       reason: input.reason,
+      purchaseKind: input.purchase_kind,
+      ...(input.upgrade_quote_id ? { upgradeQuoteId: input.upgrade_quote_id } : {}),
+      ...(input.checkout_id ? { checkoutId: input.checkout_id } : {}),
+      ...(input.onboarding_order_id ? { onboardingOrderId: input.onboarding_order_id } : {}),
     })
-    return commercialOrderView(order, snapshot.code)
+    return frozenCommercialOrderView(order, snapshot.code)
   },
   async getPaymentStatus(input) {
     await persistenceReady
@@ -3702,7 +3740,7 @@ const commercialPurchaseService = new CommercialPurchaseService({
     const status = await readOwnCommercialPaymentStatus(persistence.commercialContracts, {
       workspaceId: input.workspace_id, orderId: input.order_id, actorId: input.actor_id,
     })
-    return status ? commercialOrderView(status.order, status.skuCode, status.accessRevision) : null
+    return status ? frozenCommercialOrderView(status.order, status.skuCode, status.accessRevision) : null
   },
 })
 
@@ -3972,6 +4010,16 @@ function currentPointAccessExecutionFact(workspaceId: string, balance: Awaited<R
 
 async function recheckWorkerCommercialAccess(event: OutboxEvent, snapshot: WorkerCommercialAccessSnapshot): Promise<WorkerCommercialAccessRecheck> {
   await persistenceReady
+  // This event was loaded from the durable outbox. The content-generation
+  // event is the text-only validated job path; unknown shared jobs stay closed.
+  const entitlement = await commercialAccessService.recheckEntitlement({
+    surface: 'WORKER', operation: snapshot.operation, workspace_id: event.workspaceId,
+    ...(snapshot.operation === 'generation.execute' && event.eventType === 'generation.requested'
+      ? { validated_modality: 'text' as const } : {}),
+  })
+  if (!entitlement.allowed) {
+    throw new DomainError(entitlement.code, '当前开通资格或套餐权限不允许执行该任务', 403, { retryable: false })
+  }
   if (!persistence.creativePoints) {
     throw new DomainError('COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE', '创意点事实仓储未配置，已拒绝 worker 执行', 503, { retryable: true })
   }
@@ -4416,6 +4464,9 @@ const STORE_BOUNDARY_EXEMPT_METHODS = new Set([
   // landed, and only then reach the `POINT_REQUIRED_NO_CHARGE` creation methods.
   'creative-points.balance.get', 'creative-points.statement.list',
   'commercial.catalog.get', 'commercial.order.create', 'commercial.access.get',
+  // The shared package adapter exposes only scoped commerce/recovery methods.
+  // Reading an offer or paying an account-opening order must precede store setup.
+  ...MCP_COMMERCIAL_METHODS,
   // `commercial.order.payment.get` is the only documented way to verify a
   // purchase after paying (plugin README), and the billing/workspace-data reads
   // plus `canonical.product.consistency` are registered as `RECOVERY_CONTROL`:
@@ -4454,6 +4505,9 @@ const COMMERCIAL_READ_ONLY_METHODS = new Set([
   'ops.session', 'onboarding.status', 'workspace.health', 'workspace.metrics',
   'billing.status', 'billing.transactions', 'billing.reconciliation', 'billing.model-usage.statement',
   'subscription.get', 'subscription.orders.list', 'platform.model.status',
+  // Manual-publish history reads remain available during package lapses; the
+  // write/confirmation path still checks the exact publishing entitlement.
+  'publish.manual.list', 'publish.manual.get',
   'platform.media.spec.list', 'platform.media.spec.get',
   // Store discovery only reads the workspace-scoped directory. It must remain
   // available before commercial activation so a merchant can see whether an
@@ -4922,15 +4976,28 @@ async function sweepOperationalAlerts() {
 async function persistSnapshot(workspaceId: string, entityType: 'product' | 'task' | 'content_version' | 'publish_job' | 'manual_publish_record' | 'publish_batch' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job' | 'automation_policy', entity: { id: string; version?: number; revision?: number }, value: Record<string, unknown>) {
   await persistenceReady
   const entityVersion = entity.version ?? entity.revision ?? 1
-  if (persistence.persistSnapshotAndEvent) {
-    await persistence.persistSnapshotAndEvent({ workspaceId, entityType: entityType as BusinessEntityType, entityId: entity.id, entityVersion, payload: value, eventType: 'state.snapshot', eventPayload: { entityType, entity: value } })
+  try {
+    if (persistence.persistSnapshotAndEvent) {
+      await persistence.persistSnapshotAndEvent({ workspaceId, entityType: entityType as BusinessEntityType, entityId: entity.id, entityVersion, payload: value, eventType: 'state.snapshot', eventPayload: { entityType, entity: value } })
+      invalidateWorkspaceHydration(workspaceId)
+      return
+    }
+    await persistence.ensureWorkspace?.(workspaceId)
+    await persistence.business?.save({ workspaceId, entityType: entityType as BusinessEntityType, entityId: entity.id, entityVersion, payload: value })
+    await persistEvent(workspaceId, entity.id, 'state.snapshot', entityVersion, { entityType, entity: value })
     invalidateWorkspaceHydration(workspaceId)
-    return
+  } catch (error) {
+    if (entityType === 'platform_account') {
+      await recoverKnownPlatformAccountAdmissionRollback({ workspaceId, attempted: entity, attemptedRevision: entityVersion, error, service,
+        readDurable: async () => {
+          if (!persistence.business) throw new Error('durable account repository unavailable')
+          try { return (await persistence.business.get(workspaceId, 'platform_account', entity.id)).payload }
+          catch (readError) { if (readError instanceof BusinessSnapshotNotFoundError) return undefined; throw readError }
+        } })
+      invalidateWorkspaceHydration(workspaceId)
+    }
+    throw error
   }
-  await persistence.ensureWorkspace?.(workspaceId)
-  await persistence.business?.save({ workspaceId, entityType: entityType as BusinessEntityType, entityId: entity.id, entityVersion, payload: value })
-  await persistEvent(workspaceId, entity.id, 'state.snapshot', entityVersion, { entityType, entity: value })
-  invalidateWorkspaceHydration(workspaceId)
 }
 
 /** Confirm a product and persist the task projection changes. */
@@ -5263,7 +5330,7 @@ async function listNormalizedTasksForMetrics(workspaceId: string): Promise<Task[
   return tasks
 }
 
-function publishEventPayload(job: import('../../../packages/application/src/service.js').PublishJob) {
+function publishEventPayload(job: import('../../../packages/application/src/service.js').PublishJob): Record<string, unknown> {
   const payloadSnapshot = job.payloadSnapshot ?? {}
   const fields = structuredClone(payloadSnapshot.fields ?? {})
   return {
@@ -6930,7 +6997,15 @@ function campaignLifecycleError(error: unknown): never {
   throw new DomainError(error.code, mapped.message, mapped.status)
 }
 
-const { requireEnabledPlatform, commercialBenefitQuantity, storeCapacity, requireCommercialCountCapacity, requireStoreCapacity } = createCommercialCapacity({ persistence: () => persistence, memoryCommercial, memorySubscriptions, service, isProduction })
+const { requireEnabledPlatform, commercialBenefitQuantity, storeCapacity, requireCommercialCountCapacity, requireStoreCapacity, requireStorageCapacityLimit } = createCommercialCapacity({ persistence: () => persistence, memoryCommercial, memorySubscriptions, service, isProduction, isFixtureHarnessEnabled: () => testCommercialFixtureHarnessEnabled })
+
+async function effectiveStorageQuotaSnapshot(workspaceId: string) {
+  await persistenceReady
+  const snapshot = await persistence.storageQuota?.getSnapshot(workspaceId)
+  if (!isProduction()) return snapshot
+  const limitBytes = await requireStorageCapacityLimit(workspaceId)
+  return requireKnownEffectiveStorageSnapshot(limitBytes, snapshot)
+}
 
 function parseApprovalGrant(req: IncomingMessage, workspaceId: string, actorId: string, input: JsonObject) {
   const approvalValue = input.approval
@@ -9034,7 +9109,8 @@ function headerRequired(req: IncomingMessage, name: string): string {
 
 function isWorkerRoute(method: string | undefined, path: string): boolean {
   if (method === 'POST') {
-    return path === '/v1/internal/automation/tick'
+    return path === '/v1/internal/commercial/notifications/tick'
+      || path === '/v1/internal/automation/tick'
       || path === '/v1/internal/model-usage'
       || path === '/v1/internal/model-usage/reconciliation'
       || path === '/v1/internal/knowledge-embeddings/admission'
@@ -9121,6 +9197,7 @@ function workerRouteRoles(method: string | undefined, path: string): WorkerReque
   }
   if (method === 'POST') {
     if (/^\/v1\/sync-jobs\/[^/]+\/(?:progress|result)$/u.test(path)) return ['sync']
+    if (path === '/v1/internal/commercial/notifications/tick') return ['reconcile']
     if (path === '/v1/internal/billing/reconciliation') return ['reconcile']
     if (path === '/v1/internal/image-generation-jobs/reconciliation') return ['reconcile']
     if (/^\/v1\/(?:generation-jobs|internal\/image-generation-jobs|internal\/image-generation-continuations)\//u.test(path)) return ['generation']
@@ -10053,7 +10130,7 @@ const PLATFORM_COMMERCIAL_METHODS = new Set([
   'ops.commercial.model-markup.update',
 ])
 function effectiveMcpMethodPolicy(method: string, params: Record<string, unknown> = {}) {
-  const policy = getMcpMethodPolicy(method)
+  const policy = getMcpMethodPolicy(method, params)
   if (method === 'ops.support.tickets.list' && params.platform_scope === 'platform') {
     return policy ? { ...policy, scope: 'platform' as const } : undefined
   }
@@ -11073,6 +11150,21 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       invokeOpsDomain,
     }))
   }
+  if (MCP_PLATFORM_SUPPORT_METHODS.has(method)) {
+    await persistenceReady
+    return result(await handleMcpPlatformSupport(method, params, req, {
+      repository: persistence.support,
+      requirePlatformOperations: request => { if (!isPlatformOperations(request)) throw new DomainError(ERROR_CODES.FORBIDDEN, '需要真实平台运营工作台身份', 403) },
+      requireSupportCapability: (request, target, capability) => {
+        if (!effectiveAuthorizationProjection(requestPrincipals.get(request), target).capabilities.includes(capability)) throw new DomainError(ERROR_CODES.FORBIDDEN, '当前身份缺少独立客服权限', 403)
+      },
+      requireTargetWorkspace: async target => {
+        const rows = await persistence.listWorkspaceSummaries?.({ workspaceIds: [target] })
+        if (!rows?.length) throw new DomainError('WORKSPACE_NOT_FOUND', '目标企业不存在或无法验证', 404)
+      },
+      requestActor, invokeOpsDomain,
+    }))
+  }
   if (MCP_OPS_SUPPORT_METHODS.has(method)) {
     return result(await handleMcpOpsSupport(method, params, req, workspaceId, {
       persistence,
@@ -11106,18 +11198,37 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       principalActorId: req => requestPrincipals.get(req)?.actorId,
     }))
   }
-  if (MCP_COMMERCIAL_METHODS.has(method)) {
-    return result(await handleCommercialMcpMethod(method, params, workspaceId, req, {
-      access: commercialAccessService,
-      purchase: commercialPurchaseService,
-      checkout: commercialCheckoutService,
-      persistence,
-      ready: persistenceReady,
-      required,
-      actor: requestActor,
-      rethrowPayment: rethrowCommercialPaymentError,
-      rethrowPurchase: rethrowCommercialPurchaseError,
+  await enforceCommercialRuntimeMethod(method, params, workspaceId, requestActor(req))
+  if (MCP_OPS_PURCHASE_METHODS.has(method)) {
+    return result(await handleOpsCommercialPurchase(method, params, { catalog: persistence.commercialCatalog, contracts: persistence.commercialContracts, actorId: requestActor(req), required, paymentProvider: commercialPaymentProvider, view: frozenCommercialOrderView, previewSigningKey: process.env.SESSION_ID_HASH_SECRET?.trim() }))
+  }
+  if (MCP_COMMERCIAL_BUNDLE_METHODS.has(method)) {
+    return result(await handleCommercialBenefitBundleMethod(method, params, { repository: persistence.commercialBenefitBundles, actorId: requestActor(req), capabilities: effectiveAuthorizationProjection(requestPrincipals.get(req), workspaceId).capabilities, required, object: parseJsonObjectParameter, array: parseJsonArrayParameter }))
+  }
+  if (MCP_COMMERCIAL_RECEIPT_METHODS.has(method)) {
+    return result(await handleCommercialReceiptMethod(method, params, {
+      receipts: persistence.commercialReceipts, contracts: persistence.commercialContracts,
+      actorId: requestActor(req), required, object: parseJsonObjectParameter, previewSigningKey: process.env.SESSION_ID_HASH_SECRET?.trim(),
+      validateMatchTarget: async (target, customerRef) => {
+        const rows = await persistence.listWorkspaceSummaries?.({ workspaceIds: [target] })
+        if (!rows?.length || await getWorkspaceStatus(target) !== 'active') throw new DomainError('COMMERCIAL_MATCH_TARGET_INVALID', '目标企业未启用或不存在', 409)
+        const member = (await (persistence.members ?? memoryMembers).list(target)).find(row => row.status === 'active' && row.externalSubject === customerRef)
+        if (!member?.identityId || !persistence.identities) throw new DomainError('COMMERCIAL_MATCH_TARGET_INVALID', '目标客户不是该企业的有效身份成员', 409)
+        const detail = await persistence.identities.detailForOperations(member.identityId)
+        if (detail.identity.accessStatus !== 'active' || detail.identity.riskDecision === 'block') throw new DomainError('COMMERCIAL_MATCH_TARGET_INVALID', '目标客户身份未启用', 409)
+      },
+      fulfill: (client, input) => persistence.commercialContracts!.recordVerifiedPaymentAndGrantInTransaction(client, { ...input, providerOrderId: input.orderId, paymentSubjectRef: input.providerEventId }),
     }))
+  }
+  if (MCP_COMMERCIAL_NOTIFICATION_OPS_METHODS.has(method)) {
+    return result(await handleCommercialNotificationOpsMethod(method, params, {
+      repository: persistence.commercialNotificationFanout,
+      actorId: requestActor(req),
+      required,
+    }))
+  }
+  if (MCP_COMMERCIAL_METHODS.has(method)) {
+    return result(await handleCommercialMcpMethod(method, params, workspaceId, req, commercialMcpDependencies()))
   }
   if (MCP_OPS_OVERVIEW_METHODS.has(method)) {
     return result(await handleOpsOverviewMcpMethod(method, params, workspaceId, req, {
@@ -13865,6 +13976,112 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   return deliveryDispatchContext.run({ request: req }, () => routeWithRequestContext(req, res))
 }
 
+async function enforceCommercialRuntimeMethod(method: string, params: JsonObject, workspaceId: string, actorId: string) {
+  const classification = classifyCommercialRuntimeMethod(method, params)
+  const operation = classification.operation
+  if (!operation || operation === 'read' || operation === 'record_cash') return
+  await persistenceReady
+  const target = typeof params.target_workspace_id === 'string' ? params.target_workspace_id : workspaceId
+  const key = typeof params.idempotency_key === 'string' ? params.idempotency_key : undefined
+  // The legacy offer/conversion handlers do not implement the V3 frozen terms
+  // or strict replay comparison. Keep their fact reads and original payments,
+  // but never execute a fresh legacy create/change through a Sale lease.
+  if (classification.retiredLegacy) throw new DomainError('COMMERCIAL_LEGACY_PURCHASE_RETIRED', '请使用当前套餐目录和 V3 首购或剩余有效期升级流程；原请求请查询已有订单', 409, { business_reason: 'V3_FROZEN_TERMS_REQUIRED', retryable: false, next_actions: method.startsWith('ops.') ? ['ops.commercial.order.request.get', 'ops.commercial.checkout.preview', 'ops.commercial.upgrade.quote.create'] : ['subscription.orders.list', 'commercial.checkout.create', 'commercial.upgrade.quote.create'] })
+  // Recovery still verifies the full intent in the transaction repository.
+  // A stored actor-bound request is never an authorization token for new work.
+  if (key && persistence.commercialContracts && classification.replay) {
+    if (classification.replay === 'quote' && await persistence.commercialContracts.findQuoteByIdempotencyKey(target, actorId, key)) return
+    if (classification.replay === 'checkout') {
+      const prior = await Promise.all(['onboarding', 'subscription'].map(suffix => persistence.commercialContracts!.findOrderByIdempotencyKey(target, actorId, `${key}:${suffix}`, { onlyV3: true })))
+      if (prior.every(Boolean)) return
+    } else if (classification.replay === 'order' && await persistence.commercialContracts.findOrderByIdempotencyKey(target, actorId, key, { onlyV3: true })) return
+  }
+  try {
+    if (operation === 'unknown_commercial_write') throw new CommercialRuntimePolicyError('UNKNOWN_WRITE_OPERATION')
+    let evidence: CommercialExistingIntentEvidence | undefined
+    const orderEvidence = async (orderId: string) => {
+      if (!persistence.commercialContracts) throw new CommercialRuntimePolicyError('EXISTING_VALID_OBLIGATION_REQUIRED')
+      return commercialOrderObligationEvidence(target, orderId, await persistence.commercialContracts.getOrderSnapshot(target, orderId))
+    }
+    if (classification.evidence === 'order') evidence = await orderEvidence(required(params, method === 'ops.commercial.private-trial.validation.complete' ? 'trial_order_id' : 'order_id'))
+    if (classification.evidence === 'batch_orders') {
+      const rows = parseJsonArrayParameter(params, 'allocations_json')
+      if (!rows.length || rows.length > 100 || rows.some(row => !isObject(row))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'allocations_json 需要1到100项收款分配', 400)
+      const facts = await Promise.all(rows.map(row => orderEvidence(required(row as JsonObject, 'order_id'))))
+      evidence = { existingIntentId: facts.map(fact => fact.existingIntentId).join(','), originalFulfillmentValid: true }
+    }
+    if (classification.evidence === 'source_allocation') {
+      const repository = persistence.serviceFulfillment
+      if (!repository) throw new CommercialRuntimePolicyError('EXISTING_VALID_OBLIGATION_REQUIRED')
+      const allocation = method === 'ops.commercial.service-allocation.create' ? null : await repository.getAllocation(target, required(params, 'allocation_id'))
+      if (method !== 'ops.commercial.service-allocation.create' && !allocation) throw new CommercialRuntimePolicyError('EXISTING_VALID_OBLIGATION_REQUIRED')
+      const snapshotId = allocation?.orderSnapshotId ?? required(params, 'order_snapshot_id')
+      const source = await repository.getSourceOrderObligation(target, snapshotId)
+      if (!source || allocation && allocation.sourceChecksum !== source.sourceChecksum) throw new CommercialRuntimePolicyError('EXISTING_VALID_OBLIGATION_REQUIRED')
+      evidence = await orderEvidence(source.orderId)
+    }
+    if (classification.evidence === 'refund_approval') {
+      if (!persistence.commercialRefunds) throw new CommercialRuntimePolicyError('PERSISTED_REFUND_APPROVAL_REQUIRED')
+      const requestId = required(params, 'request_id')
+      evidence = commercialApprovedRefundEvidence(target, requestId, await persistence.commercialRefunds.history(target, requestId))
+    }
+    if (classification.evidence === 'return_approval') {
+      if (!persistence.commercialReceipts) throw new CommercialRuntimePolicyError('PERSISTED_REFUND_APPROVAL_REQUIRED')
+      const returnId = required(params, 'return_id')
+      const returnScope = method.startsWith('ops.commercial.receipt.unmatched.') ? null : target
+      evidence = commercialApprovedReturnEvidence(returnId, await persistence.commercialReceipts.getReturn(returnScope, returnId))
+    }
+    if (operation === 'existing_fulfillment' || operation === 'approved_refund_recovery') {
+      assertCommercialRuntimeOperation(undefined, operation, evidence)
+      return
+    }
+    const config = commercialRuntimeEvidenceConfig(process.env)
+    const policy = await loadCommercialRuntimePolicy(config, createCommercialFileFleetObserver({ path: process.env.COMMERCIAL_RUNTIME_FLEET_OBSERVATION_PATH, attesterRef: config.fleetAttesterRef, production: isProduction() }))
+    assertCommercialRuntimeOperation(policy, operation, evidence)
+  } catch (error) {
+    if (error instanceof CommercialRuntimePolicyError) throw new DomainError(error.code, '商业新写入尚未通过运行版本和迁移审计门禁', error.status, { business_reason: error.reason, retryable: true, next_actions: ['commercial.catalog.get', 'commercial.subscription.get'] })
+    throw error
+  }
+}
+
+function commercialMcpDependencies(): import('./mcp-commercial-handlers.js').CommercialMcpDependencies {
+  return {
+      access: commercialAccessService,
+      purchase: commercialPurchaseService,
+      checkout: commercialCheckoutService,
+      persistence,
+      ready: persistenceReady,
+      required,
+      actor: requestActor,
+      viewOrder: frozenCommercialOrderView, paymentProvider: commercialPaymentProvider,
+      async memberId(request, id) {
+        const principal = requestPrincipals.get(request)
+        const member = (await (persistence.members ?? memoryMembers).list(id)).find(row => row.status === 'active' && (row.identityId === principal?.identityId && Boolean(principal?.identityId) || row.externalSubject === principal?.actorId || row.externalSubject === principal?.accountLogin))
+        if (!member) throw new DomainError('WORKSPACE_MEMBERSHIP_REQUIRED', '通知读取需要当前工作区有效成员', 403)
+        return member.id
+      },
+      rethrowPayment: rethrowCommercialPaymentError,
+      rethrowPurchase: rethrowCommercialPurchaseError,
+    }
+}
+
+async function requireWorkerFeature(workspaceId: string, operation: 'automation.tick.execute' | 'knowledge.embedding.execute') {
+  await persistenceReady
+  if (testCommercialFixtureHarnessEnabled) return
+  const decision = await commercialAccessService.recheckEntitlement({ surface: 'WORKER', operation, workspace_id: workspaceId })
+  if (!decision.allowed) throw new DomainError(decision.code, '当前开通资格或套餐权限不允许后台任务执行', 403, { retryable: false })
+}
+
+async function runCommercialNotifications(kind: 'catalog_publication' | 'purchase_result' = 'catalog_publication', workspaceId?: string) {
+  await persistenceReady
+  if (!persistence.commercialNotificationFanout) throw new DomainError('COMMERCIAL_NOTIFICATIONS_NOT_CONFIGURED', '套餐通知持久化或运营数据库连接未配置', 503)
+  if (kind === 'purchase_result') {
+    if (!workspaceId?.trim()) throw new DomainError('INVALID_REQUEST', '结果通知需要明确工作区', 400)
+    return runCommercialPurchaseResultNotificationTick(persistence.commercialNotificationFanout, workspaceId)
+  }
+  return runCommercialNotificationTick(persistence.commercialNotificationFanout)
+}
+
 function internalRuntimeContext(req: IncomingMessage, res: ServerResponse, path: string) {
   return {
     req, res, path, send, requireWorkerAuthorization, headerRequired, hydrateWorkspace,
@@ -13876,12 +14093,17 @@ function internalRuntimeContext(req: IncomingMessage, res: ServerResponse, path:
     durableKnowledgeRepository, requiresStrictAuth, memoryKnowledge,
     inMemoryTimelineEvents, recordActionSettlement, requestActor, reserveDailyModelBudget, releaseDailyModelBudget,
     recordRelayUsage, runModelUsageReconciliation, recordOperationAudit,
-    runPaymentReconciliation,
+    runPaymentReconciliation, runCommercialNotifications, requireWorkerFeature,
   }
 }
 export type InternalRuntimeContext = ReturnType<typeof internalRuntimeContext>
 
 export function assetHttpRuntime(httpOperationPolicyOperation?: string) {
+  const diagnoseUnavailableAssetLifecycle = async (workspaceId: string) => {
+    await persistenceReady
+    if (!persistence.commercialContracts) throw new DomainError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', '套餐合同读取暂不可用', 503)
+    await requireCommercialLifecycleDiagnostic({ workspaceId, projection: { listV2EntitlementSnapshots: ({ workspace_id }) => persistence.commercialContracts!.listEntitlementSnapshots(workspace_id) } })
+  }
   return {
     body,
     resolveWorkspace,
@@ -13904,7 +14126,7 @@ export function assetHttpRuntime(httpOperationPolicyOperation?: string) {
     SUPPORTED_PLATFORMS,
     persistence,
     configuredAssetLimit,
-    configuredStorageQuotaLimit,
+    configuredStorageQuotaLimit, effectiveStorageQuotaSnapshot,
     getStoredObjectWithRetry,
     compensateStoredAsset,
     putQuarantineObject,
@@ -13929,6 +14151,7 @@ export function assetHttpRuntime(httpOperationPolicyOperation?: string) {
     headerRequired,
     assetScannerWorkspace,
     accessibleAssetIds,
+    diagnoseUnavailableAssetLifecycle,
     enforceAssetAccess,
     httpOperationPolicyOperation,
   }
@@ -13943,7 +14166,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   const bridgeNewTableRouteUnavailable = () => {
     if (process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE && process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE !== 'prefix_254_or_255') throw new DomainError('LOCAL_PLUGIN_BRIDGE_UNAVAILABLE', '本地插件一键连接将在数据库升级后开放', 503)
   }
-  const isPasswordAuthRoute = isLocalPluginConnectionRoute || path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/workspace-bootstrap' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke' || path === '/v1/auth/local-plugin/authorize' || path === '/v1/auth/local-plugin/token'
+  const isPasswordAuthRoute = path === merchantActivationPath || isLocalPluginConnectionRoute || path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/workspace-bootstrap' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke' || path === '/v1/auth/local-plugin/authorize' || path === '/v1/auth/local-plugin/token'
   const passwordSessionToken = () => {
     const encoded = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
     if (!encoded) return ''
@@ -13953,6 +14176,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   // cookie. Keep the production invariant while allowing the documented
   // local account/password flow to round-trip through Chromium.
   if (req.method === 'OPTIONS') return send(res, 204, isProduction() ? 'unknown' : 'ws_demo', null, null, req)
+  if (await handleMerchantActivationRoute(req, res, path, { repository: passwordAuthRepository, readBody: limit => body(req, limit), send: (status, data) => send(res, status, 'unknown', data, null, req) })) return
   if (await handlePasswordAuthRoute(req, res, path, { repository: passwordAuthRepository, readBody: limit => body(req, limit), send: (status, workspaceId, data) => send(res, status, workspaceId, data, null, req), production: isProduction(), publicOrigin: publicRequestOrigin(req), workspaceBootstrap: workspaceBootstrapRepositoryOverride ?? persistence.workspaceBootstrap ?? memoryWorkspaceBootstrap, onWorkspaceCreated: id => knownWorkspaces.add(id) })) return
   if (await handleLocalPluginConnectionRoute(req, res, path, url, { passwordAuth: passwordAuthRepository, connections: localPluginConnections, installInstances: localPluginInstallInstances, readBody: limit => body(req, limit), send: (status, workspaceId, data) => send(res, status, workspaceId || 'unknown', data, null, req) as void, production: isProduction(), integrationMode: mcpIntegrationMode(), publicOrigin: publicRequestOrigin(req) })) return
   if (isPasswordAuthRoute) {
@@ -14170,7 +14394,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     || /^\/v1\/internal\/image-generation-continuations\/[^/]+\/execute$/u.test(path)
   )
   const assetScannerRoute = isAssetScannerRoute(req.method, path)
-  const infrastructureProbe = path === '/healthz' || path === '/readyz' || path === '/livez' || path === '/releasez'
+  const infrastructureProbe = path === '/healthz' || path === '/readyz' || path === '/livez' || path === '/releasez' || path === '/internal/commercial-runtime-attestation'
   // Health probes are infrastructure-scoped and intentionally unauthenticated;
   // all merchant and MCP routes still pass the production identity boundary.
   // OAuth callbacks are the exception: the platform redirects a browser and
@@ -14180,59 +14404,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   else if (workerRoute) await requireWorkerAuthorization(req)
   else if (!infrastructureProbe && !isOAuthCallback && !paymentCallbackMatch && !isPasswordAuthRoute) await authenticate(req)
   if (req.method === 'POST' && path === '/v1/ops/merchant-accounts') {
-    requireOperationsRole(req, ['platform_ops', 'platform_admin', 'ops_admin'])
-    const input = await body(req, 64 * 1024)
-    const workspaceIds = Array.isArray(input.workspace_ids) ? input.workspace_ids.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).map(value => value.trim()) : []
-    const bootstrapWorkspace = input.bootstrap_workspace === true
-    if ((!workspaceIds.length && !bootstrapWorkspace) || (workspaceIds.length && bootstrapWorkspace)) throw new DomainError('AUTH_ACCOUNT_PROVISIONING_INVALID', '须绑定现有工作区，或显式开启首次工作区引导', 400)
-    try {
-      const account = await passwordAuthRepository.createMerchantAccount({
-        login: String(input.login ?? ''),
-        password: String(input.password ?? ''),
-        enterpriseName: String(input.enterprise_name ?? input.enterpriseName ?? ''),
-        contactName: String(input.contact_name ?? input.contactName ?? ''),
-        workspaceIds,
-        bootstrapWorkspace,
-        actorId: requestPrincipals.get(req)?.actorId ?? 'platform_ops',
-        reason: String(input.reason ?? ''),
-      })
-      // Provisioning creates the initial active workspace membership as part
-      // of the same operator action. Password sessions use the immutable
-      // identity UUID as actor_id while legacy member rows may use the login;
-      // resolveActiveWorkspaceMember binds the identity on first access.
-      const members = persistence.members ?? memoryMembers
-      for (const targetWorkspaceId of account.workspaceIds) {
-        const existing = (await members.list(targetWorkspaceId)).find(member => member.externalSubject === account.login || member.identityId === account.identityId)
-        await members.upsertWithAudit({
-          workspaceId: targetWorkspaceId,
-          externalSubject: existing?.externalSubject ?? account.login,
-          displayName: account.contactName || account.enterpriseName || account.login,
-          role: existing?.role ?? 'merchant_admin',
-          status: 'active',
-          ...(existing ? { expectedRevision: existing.revision } : {}),
-          actorId: requestPrincipals.get(req)?.actorId ?? 'platform_ops',
-          action: 'merchant.account.provision',
-          reason: String(input.reason ?? '').trim(),
-        })
-      }
-      return send(res, 201, 'unknown', { account: { ...account, workspaceIds: account.workspaceIds }, onboarding_fee_fen: 500000, vip_access: 'pending_billing_verification', ...(bootstrapWorkspace ? { next_action: 'workspace_bootstrap' } : {}) }, null, req)
-    } catch (error) {
-      const code = (error as { code?: string }).code
-      const status = code === 'AUTH_LOGIN_ALREADY_EXISTS' ? 409 : code === 'AUTH_PASSWORD_POLICY_INVALID' || code === 'AUTH_ACCOUNT_PROVISIONING_INVALID' || code === 'AUTH_LOGIN_INVALID' || code === 'AUTH_WORKSPACE_NOT_FOUND' ? 400 : 500
-      throw new DomainError(code ?? 'AUTH_ACCOUNT_PROVISIONING_FAILED', status === 409 ? '账号已存在' : status === 400 ? code === 'AUTH_WORKSPACE_NOT_FOUND' ? '绑定的企业工作区不存在或未启用' : code === 'AUTH_PASSWORD_POLICY_INVALID' ? '密码至少 8 位并同时包含字母和数字' : '开通账号信息无效' : '平台开通商家账号暂时失败', status)
-    }
+    const invitation = await inviteMerchantAccount(req, { repository: passwordAuthRepository, requireOperationsRole, requestActor, readBody: limit => body(req, limit), publicOrigin: publicRequestOrigin(req), production: isProduction() })
+    return send(res, invitation.status, 'unknown', invitation.data, null, req)
   }
   if (await handleHttpMerchantRegistrationRoute(req, res, path, url, { passwordAuthRepository, requireOperationsRole, paginationRequest, body, requestActor, send: (response, status, workspaceId, data, meta, request) => send(response, status, workspaceId, data, meta as never, request) })) return
   if (req.method === 'POST' && path === '/v1/ops/merchant-accounts/authorize') {
     const response = await authorizeMerchantAccount(req, {
-      requireOperationsRole, body, passwordAuthRepository, requestActor,
-      workspaceMemberRoles, validateMerchantAuthorizationCommercialTerms,
-      isProduction, getWorkspaceStatus,
-      operations: () => persistence.operations ?? memoryOperations,
-      commercialCatalog: () => persistence.commercialCatalog,
-      commercialContracts: () => persistence.commercialContracts,
-      commercialMonthlyPeriod, members: () => persistence.members ?? memoryMembers,
-      recordOperationAudit,
+      requireOperationsRole, body, operations: () => persistence.operations ?? memoryOperations,
     })
     return send(res, response.status, 'unknown', response.data, null, req)
   }
@@ -14292,6 +14470,9 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   }
   const httpCommercialValidationDeferred = (req.method === 'PUT' && /^\/v1\/assets\/[^/]+\/(?:preference|metadata)$/u.test(path))
     || (req.method === 'POST' && /^\/v1\/assets\/[^/]+\/(?:trash|restore)$/u.test(path))
+    // Validate the lifecycle repository and the original asset request before
+    // commercial admission; bridge mode deliberately disables these writes.
+    || (req.method === 'POST' && /^\/v1\/assets\/[^/]+\/purge(?:\/cancel)?$/u.test(path))
     || (req.method === 'GET' && path === '/v1/assets/trash')
     || (req.method === 'POST' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/manual-record$/u.test(path))
     || (req.method === 'POST' && path === '/v1/brand-profile/extract')
@@ -14403,7 +14584,21 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     if (stored.metadata.sha256 !== asset.sha256 || stored.metadata.sizeBytes !== asset.sizeBytes || stored.metadata.contentType.toLowerCase() !== asset.mimeType.toLowerCase() || storedDigest !== asset.sha256) throw new DomainError('ASSET_BINARY_INTEGRITY_FAILED', '交付文件对象与已扫描快照不一致，已阻止下载', 409)
     return sendAssetDownload(res, customerDeliveryUploadView(asset, purpose, demoUnscannedAssetsEnabled()), stored, req)
   }
+  const merchantSupportMatch = path.match(/^\/v1\/support\/requests\/([^/]+)$/u)
+  if ((req.method === 'POST' && path === '/v1/support/requests') || (req.method === 'GET' && merchantSupportMatch)) {
+    const workspaceId = resolveWorkspace(req)
+    await persistenceReady
+    const memberId = await commercialMcpDependencies().memberId(req, workspaceId)
+    const principal = requestPrincipals.get(req)
+    if (!principal) throw new DomainError('SUPPORT_REQUEST_FORBIDDEN', '需要当前登录账号', 403)
+    const context = { workspaceId, actorId: requestActor(req), customerId: `member:${memberId}`, customerName: principal.accountLogin ?? principal.actorId }
+    const data = req.method === 'POST'
+      ? await submitMerchantSupportRequest(persistence.support, context, await body(req))
+      : await getMerchantSupportRequest(persistence.support, context, decodeURIComponent(merchantSupportMatch![1]!))
+    return send(res, req.method === 'POST' ? 201 : 200, workspaceId, data, null, req)
+  }
   if (await handleHttpCommercialRoute(req, res, path, url, {
+    callCommercialMethod: async (method, params, workspaceId, request) => { await enforceCommercialRuntimeMethod(method, params, workspaceId, requestActor(request)); return handleCommercialMcpMethod(method, params, workspaceId, request, commercialMcpDependencies()) },
     commercialAccessService,
     commercialPurchaseService,
     creativePoints: persistence.creativePoints,
@@ -14437,6 +14632,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   // HEAD would mark a healthy origin down. Node discards the body for HEAD, so
   // `send` is unchanged.
   if (await handleHttpHealthRoute(req, res, path, {
+    commercialRuntimeAttestation: async () => {
+      await persistenceReady
+      const manifestSha256 = process.env.RELEASE_MANIFEST_SHA256?.trim()
+      if (!/^[a-f0-9]{64}$/.test(manifestSha256 ?? '') || !persistence.commercialRuntimeSchemaDigest) throw new DomainError('COMMERCIAL_RUNTIME_ATTESTATION_UNAVAILABLE', '商业运行身份或真实数据库证据未就绪', 503)
+      await persistence.checkHealth?.()
+      return { instanceId: hostname(), salesProtocol: 'commercial.sales.v3', manifestSha256: manifestSha256!, schemaSha256: await persistence.commercialRuntimeSchemaDigest() }
+    },
     send,
     fail,
     persistence,
@@ -15161,8 +15363,12 @@ const server = createServer((req, res) => {
   route(req, res).catch(error => {
     const settlementError = modelSettlementDomainError(error)
     const publishError = publishCommitDomainError(error)
-    const mappedError = settlementError ?? publishError ?? authorizationRepositoryDomainError(error)
-    const observedFailure = requestFailureMetadata(mappedError ?? error)
+    const capacityError = error instanceof CommercialAbsoluteCapacityError ? new DomainError(error.code, '当前套餐额度不允许新增记录', error.status, { quota: error.quota, used: error.used, included: error.included, next_actions: ['commercial.subscription.get', 'commercial.catalog.get'] }) : error instanceof CommercialStorageEntitlementError ? new DomainError(error.code, '当前套餐权益未通过准入', error.status, { retryable: error.status === 503 }) : undefined
+    const schemaError = error instanceof CommercialSchemaCompatibilityError ? new DomainError(error.code, '商业数据结构尚未通过完整迁移核验，请联系运营处理', 503, { retryable: false, next_actions: ['commercial.catalog.get', 'commercial.subscription.get'] }) : undefined
+    const notificationError = error instanceof CommercialNotificationError ? new DomainError(error.code, error.status === 404 ? '通知不存在或当前账号不可见' : error.status === 409 ? '原请求与该通知不一致，请查询原通知' : '通知读状态暂无法确认，请刷新或重试原请求', error.status, { retryable: error.status === 503 }) : undefined
+    const mappedError = notificationError ?? schemaError ?? capacityError ?? settlementError ?? publishError ?? authorizationRepositoryDomainError(error)
+    error = mappedError ?? error
+    const observedFailure = requestFailureMetadata(error)
     if (!mappedError && !isClientDisconnect(error) && !(error instanceof DomainError) && !(error instanceof OAuthStateError) && !(error instanceof ConnectorFailure) && !(error instanceof ObjectStorageError) && !(error instanceof ConnectorMappingPreflightError) && !(error instanceof SyncPaginationError)) {
       const correlation = getRequestCorrelation(req)
       console.error(JSON.stringify({

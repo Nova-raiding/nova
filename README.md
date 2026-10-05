@@ -74,6 +74,16 @@ Compose 会先执行版本化迁移，再启动 API 和 UI；UI 地址为 `http:
 
 UI Demo：见 [demo/merchant-studio/README.md](demo/merchant-studio/README.md)。
 
+## 套餐与权益包候选流程
+
+2026-10-05 套餐候选正在实施，尚未通过生产验收。初始配置为开通费 5000 元（不含首期，六个月每月赠 500 点）、基础版 2000 元/月、成长版 5000 元/月及尊享版 10000 元/月；授权运营可编辑新版本、审批后上架改价。尊享版必须另行填写和批准完整额度，历史定制起价不自动成为可售尊享版。
+
+商家使用当前上架目录、通知、购买中心和当前/未来已购合同；首次购买同时确认开通费与首期两行，升级按当前合同剩余有效期读取服务器报价并保留原到期时间。运营在财务中心管理目录和权益包，选择真实客户与企业后代购，登记核实银行流水，再将收款分配至原订单；部分到账、待依赖、未来待生效和待处置分别核验，余款不自动成为人民币钱包。
+
+没有订单或任务也可在支持仓储就绪时通过项目内商家支持入口登记问题，取得真实工单回执；未配置明确阻断，登记未知保留原键恢复。此支持路径的真实验收仍待完成。
+
+操作与错误恢复见[产品使用介绍](docs/product-usage-guide.md)，安装版本及首次只读成功计时见[安装手册](docs/store-nova-chatgpt-plugin-install-manual.md)，价格、周期、授予与退款规则见[商业可执行规则](docs/commercial-executable-spec.md)。[需求方案](doc/todo/product/platform-package-and-benefit-management-prd-2026-10-05.md)和[本轮前端实施证据](docs/qa/package-implementation-2026-10-05/ops-purchase-ui.md)分别记录要求与实际检查；文档存在、fixture、健康 200 和单元测试均不代表生产闭环完成。
+
 ## 代码入口
 
 - 产品总文档（主链路、账号密码、知识库、账务与上线门禁）：[docs/store-nova-product-master-document.md](docs/store-nova-product-master-document.md)
@@ -99,7 +109,7 @@ UI Demo：见 [demo/merchant-studio/README.md](demo/merchant-studio/README.md)�
 - 商家产品界面有两个，二者共享同一套 MCP/API 契约：安装在桌面 ChatGPT 中的插件，以及浏览器中的 Merchant Studio（`demo/merchant-studio`）。Merchant Studio 由 `infra/docker/ui.Dockerfile` 构建为 `merchant-ui` 镜像，在 `infra/kubernetes/base/ingress.yaml` 中绑定 `host: yxsona.com` 的 `path: /`，ECS/Compose 路径同样由 `infra/nginx/pilot-gateway-https.conf` 的 `location /` 代理到 `pilot_ui`；`infra/scripts/validate-rendered-production-config.rb` 会在该绑定缺失时拒绝生产部署。因此商家访问 `https://yxsona.com/` 落地页即为 Merchant Studio 的运营概览，其展示内容对客户可见，必须来自真实 API 数据，不得使用演示数值。平台运营后台是桌面工作台。
 - 手机和平板不在产品范围、验收范围或上线门禁范围内；不得因移动端适配、移动视口或响应式表现阻断上线，也不得据此扩展需求。
 - 真实平台 OAuth、商品读取和写入尚未因代码自动获得权限；未配置时 API 返回 `NOT_CONFIGURED` 并 fail closed。当前上线 profile 为 `manual`：六平台不接 OAuth，商品资料由运营人工上传，发布由运营在官方商家后台人工完成并回填。
-- 商业准入是硬门禁，不是提示：零创意点余额会锁死除恢复类方法外的全部业务方法（包括插件入口 `merchant.start`），且只有月付套餐（`basic` / `growth`）会产生权益快照，**点数包不产生权益**。因此上线前必须配置 `COMMERCIAL_PAYMENT_PROVIDER` 并上架可售月付套餐——未配置时下单返回 503 且订单不落库，运营的人工核验又需要一条已存在的订单，客户与运营都无法推进。未绑店铺时商品同步、正式任务与发布返回 428 `STORE_ONBOARDING_REQUIRED`。详见 [产品使用介绍](docs/product-usage-guide.md)。
+- 商业准入是硬门禁：生成仍要求有效套餐功能、已知可用创意点及对应模型/素材配置；点数包不能替代有效主套餐或授予后台权限。获授权的商业目录、首购、原请求查询及恢复方法按 exact registry 在零/未知余额下仍可用，但不豁免身份、Workspace/RBAC/RLS、商品资格及支付模式校验。已批准 `manual_transfer` 独立使用核实收款账户和核验策略，不要求启用无关微信/支付宝通道；没有任何批准支付模式时建单阻断。未绑店铺的正式任务仍受店铺门禁约束。详见[产品使用介绍](docs/product-usage-guide.md)。
 - fixture connector 的数据和写入只用于契约测试和本地演示，不能作为平台上线证据。
 - 未设置 `DATABASE_URL` 时应用默认使用内存 service，便于本地单测；设置 `DATABASE_URL` 后启动迁移并使用 PostgreSQL Outbox。生产必须保留 RLS、Outbox 和幂等约束。
 - 生产 API 必须同时提供不同凭据的 `DATABASE_URL` 与 `OPS_DATABASE_URL`；前者是强制 workspace RLS 的租户运行角色，后者只能访问平台 feature flag 控制面，不能访问租户业务表。

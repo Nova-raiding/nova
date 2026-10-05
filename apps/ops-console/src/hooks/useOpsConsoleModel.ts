@@ -80,6 +80,29 @@ export type JitRevocationReceipt = {
   workbench: "platform" | "workspace";
 };
 
+export function projectPlatformCommercialCatalog(items: readonly Record<string, unknown>[]): CommercialCatalogItem[] {
+  return items.map((item) => ({
+    id: String(item.id ?? ""), skuCode: String(item.sku_code ?? ""), name: String(item.name ?? item.sku_code ?? ""),
+    type: String(item.type ?? ""), visibility: String(item.visibility ?? ""), version: String(item.version ?? ""),
+    priceFen: typeof item.price_fen === "number" && Number.isSafeInteger(item.price_fen) ? item.price_fen : null,
+    priceLabel: String(item.price_label ?? ""), cycleLabel: typeof item.cycle_label === "string" ? item.cycle_label : null,
+    benefitsSummary: String(item.benefits_summary ?? ""), approvalState: String(item.approval_state ?? ""),
+    executable: item.executable === true,
+    currentSaleState: typeof item.sale_state === "string" ? item.sale_state : null,
+    currentSaleVersionId: typeof item.current_sale_version_id === "string" ? item.current_sale_version_id : null,
+    saleRevision: typeof item.sale_revision === "number" && Number.isSafeInteger(item.sale_revision) ? item.sale_revision : null,
+    payload: item.payload && typeof item.payload === "object" && !Array.isArray(item.payload) ? item.payload as Record<string, unknown> : {},
+    benefits: Array.isArray(item.benefits) ? item.benefits.flatMap((benefit) => benefit && typeof benefit === "object" && !Array.isArray(benefit) ? [{ code: String((benefit as Record<string, unknown>).code ?? ""), quantity: typeof (benefit as Record<string, unknown>).quantity === "number" ? (benefit as Record<string, unknown>).quantity as number : null, rawValue: typeof (benefit as Record<string, unknown>).raw_value === "string" ? (benefit as Record<string, unknown>).raw_value as string : null, rawUnit: typeof (benefit as Record<string, unknown>).raw_unit === "string" ? (benefit as Record<string, unknown>).raw_unit as string : null, normalizedValue: typeof (benefit as Record<string, unknown>).normalized_value === "number" ? (benefit as Record<string, unknown>).normalized_value as number : null, policyRef: typeof (benefit as Record<string, unknown>).policy_ref === "string" ? (benefit as Record<string, unknown>).policy_ref as string : null, metadata: (benefit as Record<string, unknown>).metadata && typeof (benefit as Record<string, unknown>).metadata === "object" && !Array.isArray((benefit as Record<string, unknown>).metadata) ? (benefit as Record<string, unknown>).metadata as Record<string, unknown> : {} }] : []) : [],
+    priceMode: typeof item.price_mode === "string" ? item.price_mode : null,
+    durationDays: typeof item.duration_days === "number" ? item.duration_days : null,
+    family: typeof item.family === "string" ? item.family : null,
+    tierRank: typeof item.tier_rank === "number" ? item.tier_rank : null,
+    bundleRefs: Array.isArray(item.bundle_refs) ? item.bundle_refs : [],
+    validFrom: typeof item.valid_from === "string" ? item.valid_from : null, validTo: typeof item.valid_to === "string" ? item.valid_to : null,
+    unresolved: Array.isArray(item.unresolved) ? item.unresolved.filter((entry): entry is string => typeof entry === "string") : [],
+  }));
+}
+
 export interface OpsLoadFilterOverrides {
   queueFilters?: QueueFilters;
   alertFilters?: AlertFilters;
@@ -183,13 +206,15 @@ export const OPS_BACKGROUND_HYDRATION_POLICY = {
   "ops.model-usage.summary": "billing.platform.read",
   "billing.model-usage.statement": "billing.workspace.read",
   "ops.commercial.access.summary": "commercial.access.read",
+  "ops.commercial.catalog-v2.list": "commercial.catalog.read",
+  "ops.commercial.benefit-definitions.list": "commercial.catalog.read",
+  "ops.commercial.benefit-bundles.list": "commercial.catalog.read",
   "ops.commercial.offers.list": "commercial.read",
   "ops.commercial.addons.list": "commercial.read",
   "ops.commercial.coupons.list": "commercial.read",
   "ops.commercial.rollouts.list": "commercial.read",
   "ops.growth.funnel": "workspace.directory.read",
   "ops.finance.search": "billing.platform.read",
-  "ops.commercial.catalog-v2.list": "commercial.catalog.read",
   "workspace.health": "workspace.summary.read",
   "ops.alerts.list": "marketing.summary.read",
   "ops.data.delete.list": "workspace.delete.execute",
@@ -1064,22 +1089,7 @@ export function useOpsConsoleModel() {
         const items = value && typeof value === "object" && !Array.isArray(value)
           ? (value as { items?: Array<Record<string, unknown>> }).items ?? []
           : [];
-        setPlatformCommercialCatalog(items.map((item) => ({
-          id: String(item.id ?? ""),
-          skuCode: String(item.sku_code ?? ""),
-          name: String(item.name ?? item.sku_code ?? ""),
-          type: String(item.type ?? ""),
-          visibility: String(item.visibility ?? ""),
-          version: String(item.version ?? ""),
-          priceFen: typeof item.price_fen === "number" && Number.isSafeInteger(item.price_fen) ? item.price_fen : null,
-          priceLabel: String(item.price_label ?? ""),
-          cycleLabel: typeof item.cycle_label === "string" ? item.cycle_label : null,
-          benefitsSummary: String(item.benefits_summary ?? ""),
-          approvalState: String(item.approval_state ?? ""),
-          validFrom: typeof item.valid_from === "string" ? item.valid_from : null,
-          validTo: typeof item.valid_to === "string" ? item.valid_to : null,
-          unresolved: Array.isArray(item.unresolved) ? item.unresolved.filter((entry): entry is string => typeof entry === "string") : [],
-        })));
+        setPlatformCommercialCatalog(projectPlatformCommercialCatalog(items));
       });
       applyLoadedValue(financeResult, (value) => {
         const statement = value as unknown as Reconciliation;

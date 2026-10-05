@@ -1,0 +1,5 @@
+
+> merchant-marketing-codex@0.2.4 test:postgres:isolated
+> node --import tsx scripts/run-isolated-postgres-tests.ts packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts packages/persistence/src/commercial-receipt-repository.postgres.test.ts packages/persistence/src/commercial-notification-repository.release.postgres.test.ts
+
+Isolated PostgreSQL acceptance failed; report: /Users/lixiaomei/Desktop/code/codexSkills/artifacts/isolated-postgres/run-npWQdY/vitest.json

@@ -28,11 +28,11 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("Store Nova商家中心");
   });
 
-  it("keeps the primary rail matched to the three screenshot destinations", () => {
-    expect(navigationGroups[0]?.items).toEqual(["overview", "users", "customer-delivery"]);
+  it("keeps the established destinations and adds the authorized support entry", () => {
+    expect(navigationGroups[0]?.items).toEqual(["overview", "users", "customer-delivery", "support"]);
     expect(navigationGroups).toHaveLength(1);
     expect(mainItems.map(({ domain }) => domain)).toEqual([
-      "overview", "users", "customer-delivery", "members", "tasks", "knowledge", "stores", "rules", "models", "storage", "finance", "audit",
+      "overview", "users", "customer-delivery", "members", "tasks", "knowledge", "stores", "rules", "models", "storage", "finance", "support", "audit",
     ]);
   });
 
@@ -54,8 +54,15 @@ describe("OpsSidebar navigation", () => {
     expect(mainItems.map(({ domain }) => domain)).not.toContain("feature-flags");
   });
 
-  it("does not expose removed support, incident, or feature flag destinations", () => {
-    expect(mainItems.map(({ domain }) => domain)).not.toEqual(expect.arrayContaining(["support", "incidents", "feature-flags"]));
+  it("does not restore unrelated retired incident or feature flag destinations", () => {
+    expect(mainItems.map(({ domain }) => domain)).not.toContain("incidents");
+    expect(mainItems.map(({ domain }) => domain)).not.toContain("feature-flags");
+  });
+
+  it("shows the real support entry only when authorized visibility includes it", () => {
+    const markup = renderToStaticMarkup(<OpsSidebar activeDomain="support" visibleDomains={["support"]} onNavigate={() => undefined}/>);
+    expect(markup).toContain('aria-label="客服工作台"');
+    expect(markup).not.toContain('aria-label="用户中心"');
   });
 
   it("omits destinations outside the supplied role-aware visibility set", () => {

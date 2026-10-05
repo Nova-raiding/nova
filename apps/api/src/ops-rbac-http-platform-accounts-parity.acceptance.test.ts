@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { creativePointsForTests, grantContinuousFeatureEntitlementForTests, operationAudits, server, setAuthorizationRepositoryForTests, service, workspaceMembers } from './server.js'
+import { creativePointsForTests, enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, operationAudits, server, setAuthorizationRepositoryForTests, service, workspaceMembers } from './server.js'
 import { AUTHZ_POLICY_VERSION } from '../../../packages/contracts/src/authz.js'
 
 type Envelope = {
@@ -247,6 +247,7 @@ describe('Ops HTTP/MCP platform account list parity', () => {
   })
 
   it('uses the exact account scope for platform revoke over HTTP and MCP', async () => {
+    enableCommercialFixtureHarnessForTests()
     const workspaceId = `ws_revoke_scope_${Date.now()}`
     const foreignWorkspaceId = `${workspaceId}_foreign`
     const actorId = `revoke-scope-owner-${Date.now()}`

@@ -1,0 +1,37 @@
+
+> merchant-marketing-codex@0.2.7 test:postgres:isolated
+> node --import tsx scripts/run-isolated-postgres-tests.ts packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts packages/persistence/src/commercial-source-refund-blockers.release.postgres.test.ts packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts packages/persistence/src/commercial-receipt-repository.postgres.test.ts packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts packages/persistence/src/commercial-notification-repository.release.postgres.test.ts tests/commercial-zero-side-effect-release.postgres.test.ts
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts (10 tests) 8158ms
+     ✓ atomically allocates first-checkout cash, rolls back failed grants, preserves 6 gift batches and enforces runtime roles/RLS  714ms
+     ✓ prorates consecutive upgrades, retains expiry and grants target boolean features through the real admission consumer  435ms
+     ✓ keeps a valid quote price after catalog repricing and routes late source-expired cash to disposition  380ms
+     ✓ serializes paid renewals into future periods and releases future points once without extending expired windows  569ms
+     ✓ restores only the latest unused upgrade source while preserving opening gifts and unrelated point grants  389ms
+     ✓ blocks full source restoration when real stored plus reserved bytes exceed the prior quota without clearing usage  310ms
+     ✓ blocks source restoration below actual created brands and connected store counts  531ms
+     ✓ dispatches frozen six monthly gifts, expires each anniversary and does not backfill missed windows after repricing to 600  647ms
+ ✓ packages/persistence/src/commercial-source-refund-blockers.release.postgres.test.ts (7 tests) 4016ms
+     ✓ blocks source cancellation after real source points are settled  356ms
+     ✓ cancels an unused future source period and its scheduled points while preserving the active period and unrelated gifts  404ms
+ ✓ tests/commercial-zero-side-effect-release.postgres.test.ts (1 test) 5478ms
+     ✓ keeps durable facts and all external ports unchanged for the registry-derived zero/unknown/insufficient matrix  5476ms
+ ✓ packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts (1 test) 2875ms
+     ✓ creates identity/Workspace/member/invite atomically, consumes once and never creates payment/entitlement facts  2872ms
+ ✓ packages/persistence/src/commercial-receipt-repository.postgres.test.ts (1 test) 2637ms
+     ✓ serializes split cash, original payer returns, unmatched mapping and tenant isolation  2635ms
+ ✓ packages/persistence/src/commercial-notification-repository.release.postgres.test.ts (1 test) 867ms
+     ✓ recovers a bounded fanout and preserves events, while ACL and read authorization reject leakage  866ms
+ ✓ packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts (1 test) 429ms
+     ✓ publishes atomically, keeps live version during edits, binds immutable bundles and blocks retired history  427ms
+
+ Test Files  7 passed (7)
+      Tests  22 passed (22)
+   Start at  12:30:46
+   Duration  26.89s (transform 744ms, setup 0ms, import 1.29s, tests 24.46s, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/isolated-postgres/run-Sgzgj1/vitest.json
+Isolated PostgreSQL acceptance passed; report: /Users/lixiaomei/Desktop/code/codexSkills/artifacts/isolated-postgres/run-Sgzgj1/vitest.json

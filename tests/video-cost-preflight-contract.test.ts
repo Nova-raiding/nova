@@ -7,6 +7,6 @@ describe('video cost preflight contract', () => {
     expect(source.match(/await requireVideoModelCostPreflight\(/gu)).toHaveLength(2)
     const dedicatedRoute = source.slice(source.indexOf("case 'multimodal.video.request':"), source.indexOf("case 'multimodal.video.get':"))
     expect(dedicatedRoute).not.toContain('debitPluginWallet')
-    expect(dedicatedRoute.indexOf('await requireVideoModelCostPreflight(Boolean(sourceImage))')).toBeLessThan(dedicatedRoute.indexOf('videoGenerator.generate'))
+    expect(dedicatedRoute.indexOf('await requireVideoModelCostPreflight(Boolean(sourceImage))')).toBeLessThan(dedicatedRoute.indexOf('generateOwnedVideo'))
   })
 })

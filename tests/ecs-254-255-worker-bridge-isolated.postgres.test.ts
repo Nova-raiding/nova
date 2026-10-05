@@ -29,7 +29,7 @@ async function startWorkerApiStub(): Promise<{ url: string; requests: StubReques
     }
     requests.push({ method: request.method ?? 'GET', target, body, headers: request.headers })
     const payload = target === '/v1/internal/automation/tick'
-      ? { data: { result: { executed: [] } } }
+      ? { data: { executed: [] } }
       : target === '/v1/internal/storage/orphans/cleanup'
         ? { data: { cleaned: 0 } }
         : target === '/v1/internal/assets/lifecycle/purge'
@@ -113,7 +113,8 @@ describe('254–257 worker bridge on an owned PostgreSQL 17 fixture', () => {
     const app = new Pool({ connectionString: appUrl.toString() })
     try {
       const migrations = await loadMigrations()
-      expect(migrations.at(-1)?.version).toBe(258)
+      const release = JSON.parse(await readFile(new URL('../release-metadata.json', import.meta.url), 'utf8')) as { expectedMigrationVersion: number }
+      expect(migrations.at(-1)?.version).toBe(release.expectedMigrationVersion)
       const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       const databaseGrant = /ON DATABASE merchant\b/gu
       expect([...roleSql.matchAll(databaseGrant)]).toHaveLength(3)

@@ -1,3 +1,4 @@
+import { hasCommercialRelationForVerifiedPrefix } from './commercial-schema-compatibility.js'
 import { randomUUID } from 'node:crypto'
 import { requireWorkspaceScope, type SqlClient, type SqlPool, withWorkspaceTransaction } from './repository.js'
 
@@ -44,6 +45,8 @@ export class PostgresOnboardingGrantDispatchRepository {
     const limit = input.limit ?? 25
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new TypeError('limit must be between 1 and 100')
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      await client.query(`SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext($1),pg_catalog.hashtext($2))`, ['workspace_subscription_periods_v2', workspaceId])
+      const recoveryHoldsAvailable = await hasCommercialRelationForVerifiedPrefix(client, 'commercial_source_recovery_holds_v3', 259)
       const schedules = await client.query<ScheduleRow>(
         `SELECT id, workspace_id AS "workspaceId", onboarding_order_id AS "onboardingOrderId",
                 entitlement_snapshot_id AS "entitlementSnapshotId", sequence, points,
@@ -53,6 +56,10 @@ export class PostgresOnboardingGrantDispatchRepository {
           WHERE workspace_id=$1 AND status='scheduled' AND blockers='[]'::jsonb
             AND due_at <= $2::timestamptz AND expires_at > $2::timestamptz
             AND policy_ref='commercial.onboarding.v2'
+            AND NOT EXISTS (SELECT 1 FROM onboarding_point_grant_dispatches_v2 d WHERE d.workspace_id=onboarding_point_grant_schedules_v2.workspace_id AND d.schedule_id=onboarding_point_grant_schedules_v2.id)
+            AND NOT EXISTS (SELECT 1 FROM onboarding_point_grant_expirations_v2 e WHERE e.workspace_id=onboarding_point_grant_schedules_v2.workspace_id AND e.schedule_id=onboarding_point_grant_schedules_v2.id)
+            AND EXISTS (SELECT 1 FROM commercial_orders_v2 o WHERE o.workspace_id=onboarding_point_grant_schedules_v2.workspace_id AND o.id=onboarding_point_grant_schedules_v2.onboarding_order_id AND o.status='paid')
+            ${recoveryHoldsAvailable ? "AND NOT EXISTS (SELECT 1 FROM commercial_source_recovery_holds_v3 h WHERE h.workspace_id=onboarding_point_grant_schedules_v2.workspace_id AND h.order_id=onboarding_point_grant_schedules_v2.onboarding_order_id AND h.state='frozen')" : ''}
           ORDER BY due_at, sequence, id
           FOR UPDATE SKIP LOCKED LIMIT $3`, [workspaceId, now.toISOString(), limit],
       )
@@ -64,6 +71,8 @@ export class PostgresOnboardingGrantDispatchRepository {
            FROM onboarding_point_grant_schedules_v2 s
           WHERE s.workspace_id=$1 AND s.status='scheduled' AND s.blockers='[]'::jsonb
             AND s.expires_at <= $2::timestamptz AND s.policy_ref='commercial.onboarding.v2'
+            AND EXISTS (SELECT 1 FROM commercial_orders_v2 o WHERE o.workspace_id=s.workspace_id AND o.id=s.onboarding_order_id AND o.status='paid')
+            ${recoveryHoldsAvailable ? "AND NOT EXISTS (SELECT 1 FROM commercial_source_recovery_holds_v3 h WHERE h.workspace_id=s.workspace_id AND h.order_id=s.onboarding_order_id AND h.state='frozen')" : ''}
             AND NOT EXISTS (SELECT 1 FROM onboarding_point_grant_dispatches_v2 d WHERE d.workspace_id=s.workspace_id AND d.schedule_id=s.id)
             AND NOT EXISTS (SELECT 1 FROM onboarding_point_grant_expirations_v2 e WHERE e.workspace_id=s.workspace_id AND e.schedule_id=s.id)
           ORDER BY s.expires_at, s.sequence, s.id
@@ -76,20 +85,20 @@ export class PostgresOnboardingGrantDispatchRepository {
       for (const row of expired.rows) {
         const sequence = integer(row.sequence, 'sequence')
         const points = integer(row.points, 'points')
-        if (points !== 500) throw new Error('onboarding schedule points must equal 500')
+        await this.assertFrozenSchedule(client, row, sequence, points)
         await client.query(
           `INSERT INTO onboarding_point_grant_expirations_v2
              (id,workspace_id,schedule_id,onboarding_order_id,sequence,points,policy_ref,entitlement_snapshot_id,source_checksum,expired_at,reason,evidence)
            VALUES ($1,$2,$3,$4,$5,$6,'commercial.onboarding.v2',$7,$8,$9::timestamptz,$10,$11::jsonb)
            ON CONFLICT (workspace_id,schedule_id) DO NOTHING`,
-          [`opge_${randomUUID()}`, workspaceId, row.id, row.onboardingOrderId, sequence, points, row.entitlementSnapshotId, row.sourceChecksum, iso(row.expiresAt), 'scheduled grant window elapsed before dispatch', JSON.stringify({ schedule_id: row.id, sequence, policy_ref: 'commercial.onboarding.v2' })],
+          [`opge_${randomUUID()}`, workspaceId, row.id, row.onboardingOrderId, sequence, points, row.entitlementSnapshotId, row.sourceChecksum, iso(row.expiresAt), 'scheduled grant window elapsed before dispatch', JSON.stringify({ schedule_id: row.id, sequence, policy_ref: row.policyRef })],
         )
         expiredCount += 1
       }
       for (const row of schedules.rows) {
         const sequence = integer(row.sequence, 'sequence')
         const points = integer(row.points, 'points')
-        if (points !== 500) throw new Error('onboarding schedule points must equal 500')
+        await this.assertFrozenSchedule(client, row, sequence, points)
         const idempotencyKey = `onboarding-schedule:${row.id}`
         const existing = await client.query<{ grantId: string }>(`SELECT grant_id AS "grantId" FROM onboarding_point_grant_dispatches_v2 WHERE workspace_id=$1 AND schedule_id=$2`, [workspaceId, row.id])
         if (existing.rows[0]) { skipped += 1; grantIds.push(existing.rows[0].grantId); continue }
@@ -115,7 +124,7 @@ export class PostgresOnboardingGrantDispatchRepository {
         const grant = await client.query<{ id: string }>(
           `INSERT INTO creative_point_grants (id,workspace_id,operation_id,source_type,source_id,points,expires_at,metadata,created_at)
            VALUES ($1,$2,$3,'onboarding_schedule_v2',$4,$5,$6::timestamptz,$7::jsonb,$8::timestamptz)
-           RETURNING id`, [grantId, workspaceId, operationId, row.id, points, iso(row.expiresAt), JSON.stringify({ schedule_id: row.id, onboarding_order_id: row.onboardingOrderId, sequence, policy_ref: 'commercial.onboarding.v2', entitlement_snapshot_id: row.entitlementSnapshotId, source_checksum: row.sourceChecksum }), now.toISOString()],
+           RETURNING id`, [grantId, workspaceId, operationId, row.id, points, iso(row.expiresAt), JSON.stringify({ schedule_id: row.id, onboarding_order_id: row.onboardingOrderId, sequence, policy_ref: row.policyRef, entitlement_snapshot_id: row.entitlementSnapshotId, source_checksum: row.sourceChecksum }), now.toISOString()],
         )
         if (!grant.rows[0]) throw new Error('onboarding grant was not created')
         const balance = await client.query<{ available: string | number; reserved: string | number; settled: string | number; revision: string | number }>(
@@ -123,13 +132,21 @@ export class PostgresOnboardingGrantDispatchRepository {
         )
         const state = balance.rows[0]
         if (!state) throw new Error('creative point access state is unavailable')
-        await client.query(`INSERT INTO creative_point_ledger_events (id,workspace_id,operation_id,event_type,points_delta,available_after,reserved_after,settled_after,access_revision,metadata,created_at) VALUES ($1,$2,$3,'granted',$4,$5,$6,$7,$8,$9::jsonb,$10::timestamptz)`, [`cpl_${randomUUID()}`, workspaceId, operationId, points, state.available, state.reserved, state.settled, state.revision, JSON.stringify({ schedule_id: row.id, policy_ref: 'commercial.onboarding.v2' }), now.toISOString()])
+        await client.query(`INSERT INTO creative_point_ledger_events (id,workspace_id,operation_id,event_type,points_delta,available_after,reserved_after,settled_after,access_revision,metadata,created_at) VALUES ($1,$2,$3,'granted',$4,$5,$6,$7,$8,$9::jsonb,$10::timestamptz)`, [`cpl_${randomUUID()}`, workspaceId, operationId, points, state.available, state.reserved, state.settled, state.revision, JSON.stringify({ schedule_id: row.id, policy_ref: row.policyRef }), now.toISOString()])
         await client.query(`UPDATE creative_point_operations SET status='completed',result=jsonb_build_object('entity_id',$3::text),completed_at=$4::timestamptz WHERE workspace_id=$1 AND id=$2`, [workspaceId, operationId, grantId, now.toISOString()])
-        await client.query(`INSERT INTO onboarding_point_grant_dispatches_v2 (id,workspace_id,schedule_id,onboarding_order_id,sequence,grant_id,points,policy_ref,entitlement_snapshot_id,source_checksum,dispatched_at,idempotency_key,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,'commercial.onboarding.v2',$8,$9,$10::timestamptz,$11,$12::jsonb)`, [`opgd_${randomUUID()}`, workspaceId, row.id, row.onboardingOrderId, sequence, grantId, points, row.entitlementSnapshotId, row.sourceChecksum, now.toISOString(), idempotencyKey, JSON.stringify({ schedule_id: row.id, sequence, policy_ref: 'commercial.onboarding.v2', due_at: iso(row.dueAt), expires_at: iso(row.expiresAt) })])
+        await client.query(`INSERT INTO onboarding_point_grant_dispatches_v2 (id,workspace_id,schedule_id,onboarding_order_id,sequence,grant_id,points,policy_ref,entitlement_snapshot_id,source_checksum,dispatched_at,idempotency_key,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,'commercial.onboarding.v2',$8,$9,$10::timestamptz,$11,$12::jsonb)`, [`opgd_${randomUUID()}`, workspaceId, row.id, row.onboardingOrderId, sequence, grantId, points, row.entitlementSnapshotId, row.sourceChecksum, now.toISOString(), idempotencyKey, JSON.stringify({ schedule_id: row.id, sequence, policy_ref: row.policyRef, due_at: iso(row.dueAt), expires_at: iso(row.expiresAt) })])
         dispatched += 1
         grantIds.push(grantId)
       }
       return { workspaceId, dispatched, expired: expiredCount, skipped, grantIds }
     })
   }
+  private async assertFrozenSchedule(client: SqlClient, row: ScheduleRow, sequence: number, points: number): Promise<void> {
+    if (sequence>24 || row.policyRef!=='commercial.onboarding.v2' || !/^[0-9a-f]{64}$/u.test(row.sourceChecksum)) throw new Error('onboarding schedule has an unsupported policy or sequence')
+    const source = await client.query<{ catalogChecksum: string; sku: { kind?: string; lifecycle?: string; executable?: boolean; checksum?: string; payload?: Record<string, unknown> } }>(`SELECT s.catalog_checksum AS "catalogChecksum",s.snapshot->'sku' AS sku FROM commercial_order_snapshots_v2 s JOIN commercial_orders_v2 o ON o.workspace_id=s.workspace_id AND o.id=s.order_id WHERE s.workspace_id=$1 AND s.order_id=$2 AND o.status='paid'`, [row.workspaceId, row.onboardingOrderId])
+    const fact=source.rows[0],sku=fact?.sku,schedule=sku?.payload?.grantSchedule as Record<string, unknown> | undefined
+    const policy=sku?.payload?.policyRef as Record<string, unknown> | undefined
+    if (!fact || sku?.kind!=='onboarding' || sku.lifecycle!=='approved' || !sku.executable || fact.catalogChecksum!==row.sourceChecksum || sku.checksum!==row.sourceChecksum || !schedule || !Number.isSafeInteger(schedule.grantCount) || Number(schedule.grantCount)<1 || Number(schedule.grantCount)>24 || sequence>Number(schedule.grantCount) || !Number.isSafeInteger(schedule.pointsPerGrant) || Number(schedule.pointsPerGrant)<1 || Number(schedule.pointsPerGrant)!==points || schedule.timezone!=='UTC' || schedule.cadence!=='monthly' || schedule.startsAt!=='payment_verified' || schedule.grantExpiresAtRule!=='next_monthly_anniversary' || schedule.schedulingStatus!=='resolved' || !policy || `${policy.policyId}.${policy.version}`!==row.policyRef) throw new Error('onboarding schedule does not match its paid approved frozen source')
+  }
+
 }

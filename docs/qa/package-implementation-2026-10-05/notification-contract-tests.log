@@ -1,0 +1,12 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ packages/contracts/src/authz.test.ts (35 tests) 48ms
+ ✓ packages/contracts/src/commercial-package-contract.test.ts (7 tests) 5ms
+ ✓ packages/contracts/src/commercial-notification-contract.test.ts (4 tests) 152ms
+
+ Test Files  3 passed (3)
+      Tests  46 passed (46)
+   Start at  12:59:41
+   Duration  1.25s (transform 238ms, setup 0ms, import 387ms, tests 205ms, environment 0ms)
+

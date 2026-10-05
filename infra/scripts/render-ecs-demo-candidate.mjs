@@ -6,6 +6,7 @@ import { closeSync, constants, fsyncSync, lstatSync, openSync, readFileSync, rea
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { execFileSync } from 'node:child_process'
+import {applyCommercialRuntimeCompose,readCommercialRuntimeEnvironment} from './apply-commercial-runtime-compose.mjs'
 
 const fail = message => { throw new Error(message) }
 const testMode = process.env.NODE_ENV === 'test' && process.env.VITEST === 'true' && process.env.DEMO_CANDIDATE_TEST_UNPROTECTED_FILES === 'true'
@@ -15,14 +16,14 @@ const approvedModels = ['qwen3.7-text-embedding-flash', 'qwen3.7-text-embedding'
 const hash = value => createHash('sha256').update(value).digest('hex')
 
 function options(argv) {
-  const allowed = new Set(['identity', 'release-images', 'eight-image-set', 'root-env', 'source-root', 'output-dir', 'project', 'redis-image', 'embedding-model', 'merchant-ui', 'runtime-environment'])
+  const allowed = new Set(['identity', 'release-images', 'eight-image-set', 'root-env', 'source-root', 'output-dir', 'project', 'redis-image', 'embedding-model', 'merchant-ui', 'runtime-environment', 'commercial-runtime-env'])
   const result = {}
   for (let i = 0; i < argv.length; i += 2) {
     const name = argv[i]?.startsWith('--') ? argv[i].slice(2) : ''
     if (!allowed.has(name) || !argv[i + 1] || argv[i + 1].startsWith('--') || Object.hasOwn(result, name)) fail('invalid or duplicate command argument')
     result[name] = argv[i + 1]
   }
-  for (const name of allowed) if (!result[name] && !['embedding-model', 'merchant-ui', 'runtime-environment'].includes(name)) fail(`--${name} is required`)
+  for (const name of allowed) if (!result[name] && !['embedding-model', 'merchant-ui', 'runtime-environment', 'commercial-runtime-env'].includes(name)) fail(`--${name} is required`)
   if (result['merchant-ui'] && result['merchant-ui'] !== 'enabled') fail('--merchant-ui must be enabled')
   if (result['runtime-environment'] && !['production', 'staging'].includes(result['runtime-environment'])) fail('--runtime-environment must be production or staging')
   return result
@@ -211,7 +212,7 @@ export function validateDemoCompose(compose, project) {
   return true
 }
 
-function render({ identity, images, eightImageSet, project, sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey, withMerchantUi, migrationTarget, runtimeEnvironment }) {
+function render({ identity, images, eightImageSet, project, sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey, withMerchantUi, migrationTarget, runtimeEnvironment, commercialRuntimeEnv={} }) {
   const rendererSha256 = hash(readFileSync(new URL(import.meta.url)))
   const roles = { merchant_app: newSecret(), merchant_ops: newSecret(), merchant_alert_receiver: newSecret() }
   const adminPassword = newSecret()
@@ -319,6 +320,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
     networks: { default: { name: `${project}_private`, external: false } },
     'x-candidate-env-path': envPath,
   }
+  applyCommercialRuntimeCompose(compose,commercialRuntimeEnv,{production:!testMode})
   validateDemoCompose(compose, project)
   // Keep the review/rollback identity binding explicit and secret-safe.  The
   // capsule contains only identities and hashes of protected inputs; it never
@@ -416,11 +418,12 @@ export function main(argv = process.argv.slice(2)) {
   const postgresImage = eightImageSet.image_references['postgres-migration']
   const migrationImage = postgresImage
   const relayKey = parseRootRelayEnvironment(paths.rootEnv)
+  if(args['commercial-runtime-env'])inspectPath(resolve(args['commercial-runtime-env']),'commercial runtime env','file',{secret:true})
   if (!/(?:^|\/)postgres:17-alpine@sha256:[0-9a-f]{64}$/u.test(migrationImage)) fail('migration image must be immutable postgres:17-alpine')
   const redisImage = immutableReference(args['redis-image'], 'redis image')
   if (!/(?:^|\/)redis:7-alpine@sha256:[0-9a-f]{64}$/u.test(redisImage)) fail('isolated redis image must be immutable redis:7-alpine')
   const rendered = render({ identity, images, eightImageSet, project, sourceRoot: paths.sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey,
-    withMerchantUi: args['merchant-ui'] === 'enabled', migrationTarget, runtimeEnvironment })
+    withMerchantUi: args['merchant-ui'] === 'enabled', migrationTarget, runtimeEnvironment, commercialRuntimeEnv:args['commercial-runtime-env']?readCommercialRuntimeEnvironment(resolve(args['commercial-runtime-env'])):{} })
   const created = []
   try {
     createExclusive(join(paths.outputDir, 'candidate.env'), rendered.envText, created)

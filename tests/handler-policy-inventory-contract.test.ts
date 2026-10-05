@@ -11,7 +11,7 @@ function dispatchSources(server = serverSource): string[] {
   const visited = new Set<string>()
   while (queue.length) {
     const source = queue.shift()!
-    for (const match of source.matchAll(/\bfrom\s+['"]\.\/(mcp-[a-z0-9-]+-handlers)\.js['"]/gu)) {
+    for (const match of source.matchAll(/\bfrom\s+['"]\.\/(mcp-[a-z0-9-]+)\.js['"]/gu)) {
       const name = match[1]!
       if (visited.has(name)) continue
       visited.add(name)
@@ -48,6 +48,13 @@ function unique(values: readonly string[], label: string): string[] {
 function parseDispatchInventory(source: string): Inventory {
   const sources = dispatchSources(source)
   const casesBySource = sources.map(item => [...item.matchAll(/\bcase\s+(['"])([^'"\n]+)\1\s*:/gu)].map(match => match[2]!))
+  // Delegated commercial handlers intentionally register method families in
+  // exported Set constants rather than repeating a switch case for every
+  // method. Include those explicit registrations in the inventory; otherwise
+  // the parity gate silently undercounts the real dispatch surface.
+  const registeredSets = sources.flatMap(item => [...item.matchAll(/const\s+MCP_[A-Z0-9_]+_METHODS\s*=\s*new Set\(\[([\s\S]*?)\]\)/gu)]
+    .flatMap(match => [...match[1]!.matchAll(/['"]([^'"\n]+)['"]/gu)].map(match => match[1]!))
+  )
   // Repeated labels in the route are a registration error. A delegated
   // handler may repeat a label in separate internal switches for validation.
   const routeCases = unique(casesBySource[0]!, 'case')
@@ -61,7 +68,7 @@ function parseDispatchInventory(source: string): Inventory {
 
   const caseMethods = cases
   const guardMethods = [...new Set(dispatchGuards)]
-  const methods = [...new Set([...caseMethods, ...guardMethods])]
+  const methods = [...new Set([...caseMethods, ...guardMethods, ...registeredSets])]
   if (methods.some(method => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(method))) {
     throw new Error('HANDLER_INVENTORY_MALFORMED_METHOD')
   }

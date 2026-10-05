@@ -36,9 +36,9 @@ describe('daily model budget provider boundary', () => {
   it('settles provider actuals and only releases failures that did not succeed upstream', () => {
     expect(source).toContain('createRelayUsageRuntime({')
     expect(relayUsageSource).toContain('recordUsageAndSettleBudget({ ...usageInput, budgetReservationKey: usage.actionId, budgetRunKey: usage.runKey!, costCny: usage.costCny')
-    expect(relayUsageSource).toContain("...(usage.metadata || usage.runKey ? { metadata: { ...(usage.metadata ?? {}), ...(usage.runKey ? { run_key: usage.runKey } : {}) } } : {})")
+    expect(relayUsageSource).toContain("...(usage.metadata || usage.runKey || usage.providerAttemptId ? { metadata: { ...(usage.metadata ?? {}), ...(usage.providerAttemptId ? { provider_attempt_id: usage.providerAttemptId } : {}), ...(usage.runKey ? { run_key: usage.runKey } : {}) } } : {})")
     expect(relayUsageSource).not.toContain('const actionActualCostCny =')
-    expect(budgetSource).toContain("if (!deps.providerSucceededButSettlementPending(error)) await releaseDailyModelBudget(workspaceId, actionId)")
+    expect(budgetSource).toContain('if (!deps.providerSucceededButSettlementPending(error)) {')
     expect(relayUsageSource).toContain("alertKey: `model-budget-overrun:${usage.actionId}`")
   })
 

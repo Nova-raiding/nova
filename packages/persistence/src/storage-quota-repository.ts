@@ -47,7 +47,7 @@ export class StorageQuotaActualExceededError extends Error {
 
 export interface StorageQuotaRepository {
   getSnapshot(workspaceId: string): Promise<{ limitBytes: number; usedBytes: number; reservedBytes: number } | undefined>
-  reserve(input: { workspaceId: string; reservationKey: string; assetId: string; bytes: number; limitBytes: number; at?: string }): Promise<{ reservation: StorageQuotaReservation; snapshot: StorageQuotaSnapshot; reused: boolean }>
+  reserve(input: { workspaceId: string; reservationKey: string; assetId: string; bytes: number; limitBytes: number; commercialEntitlement?: boolean; at?: string }): Promise<{ reservation: StorageQuotaReservation; snapshot: StorageQuotaSnapshot; reused: boolean }>
   settle(input: { workspaceId: string; reservationKey: string; actualBytes: number; at?: string }): Promise<{ reservation: StorageQuotaReservation; snapshot: StorageQuotaSnapshot }>
   release(input: { workspaceId: string; reservationKey: string; at?: string }): Promise<StorageQuotaReservation | undefined>
   releaseAfterPhysicalDeletion(input: { workspaceId: string; reservationKey: string; receipt: StoragePhysicalDeletionReceipt; at?: string }): Promise<StorageQuotaReservation | undefined>
@@ -103,7 +103,30 @@ function isSafePhysicalObjectKey(objectKey: unknown, workspaceId: string): objec
 
 const now = () => new Date().toISOString()
 
+export class CommercialStorageEntitlementError extends Error {
+  readonly status: number
+  constructor(readonly code: 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE' | 'COMMERCIAL_ENTITLEMENT_REQUIRED' | 'COMMERCIAL_ENTITLEMENT_AMBIGUOUS') {
+    super(code)
+    this.status = code === 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE' ? 503 : code === 'COMMERCIAL_ENTITLEMENT_AMBIGUOUS' ? 409 : 402
+  }
+}
+
+/** Rows come from the scoped current-revision SQL projection, never catalog prices or legacy quota defaults. */
+export function resolveCommercialStorageLimit(rows: readonly { period_start: Date | string; period_end: Date | string; period_status: string; executable: boolean; checksum: string; unresolved_blockers: unknown; resolved_benefits: unknown }[], at: string, code: 'cloud_storage' | 'max_brands' | 'max_stores' = 'cloud_storage'): number {
+  if (rows.length >= 200) throw new CommercialStorageEntitlementError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE')
+  const instant = Date.parse(at)
+  const active = rows.filter(row => row.period_status === 'active' && new Date(row.period_start).getTime() <= instant && new Date(row.period_end).getTime() > instant)
+  if (active.length !== 1) throw new CommercialStorageEntitlementError(active.length ? 'COMMERCIAL_ENTITLEMENT_AMBIGUOUS' : 'COMMERCIAL_ENTITLEMENT_REQUIRED')
+  const row = active[0]!
+  if (!row.executable || !/^[a-f0-9]{64}$/iu.test(row.checksum) || !Array.isArray(row.unresolved_blockers) || row.unresolved_blockers.length || !Array.isArray(row.resolved_benefits)) throw new CommercialStorageEntitlementError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE')
+  const benefits = row.resolved_benefits.filter(value => value && typeof value === 'object' && value.code === code)
+  const limit = code === 'cloud_storage' ? benefits[0]?.normalizedValue : benefits[0]?.quantity
+  if (benefits.length !== 1 || !validBytes(limit, true)) throw new CommercialStorageEntitlementError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE')
+  return limit
+}
+
 export class MemoryStorageQuotaRepository implements StorageQuotaRepository {
+  constructor(private readonly commercialLimit?: (workspaceId: string) => Promise<number>) {}
   private readonly reservations = new Map<string, StorageQuotaReservation>()
   private readonly totals = new Map<string, { limitBytes: number; usedBytes: number; reservedBytes: number }>()
 
@@ -115,9 +138,12 @@ export class MemoryStorageQuotaRepository implements StorageQuotaRepository {
 
   async reserve(input: Parameters<StorageQuotaRepository['reserve']>[0]) {
     const workspaceId = validateReserve(input)
+    const limitBytes = input.commercialEntitlement ? await this.commercialLimit?.(workspaceId) : input.limitBytes
+    if (limitBytes === undefined || !validBytes(limitBytes, true)) throw new CommercialStorageEntitlementError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE')
     const key = `${workspaceId}:${input.reservationKey}`
-    const total = this.totals.get(workspaceId) ?? { limitBytes: input.limitBytes, usedBytes: 0, reservedBytes: 0 }
-    if (total.limitBytes !== input.limitBytes) throw new Error('STORAGE_QUOTA_LIMIT_CONFLICT')
+    const total = this.totals.get(workspaceId) ?? { limitBytes, usedBytes: 0, reservedBytes: 0 }
+    if (input.commercialEntitlement) total.limitBytes = limitBytes
+    else if (total.limitBytes !== limitBytes) throw new Error('STORAGE_QUOTA_LIMIT_CONFLICT')
     const existing = this.reservations.get(key)
     if (existing && existing.assetId !== input.assetId) throw new Error('STORAGE_QUOTA_IDEMPOTENCY_CONFLICT')
     if (existing && existing.status !== 'released') return { reservation: structuredClone(existing), snapshot: { usedBytes: total.usedBytes, reservedBytes: total.reservedBytes, requestBytes: input.bytes, limitBytes: total.limitBytes }, reused: true }
@@ -248,11 +274,21 @@ export class PostgresStorageQuotaRepository implements StorageQuotaRepository {
   async reserve(input: Parameters<StorageQuotaRepository['reserve']>[0]) {
     const workspaceId = validateReserve(input)
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      await client.query(`INSERT INTO workspace_storage_quotas (workspace_id,limit_bytes) VALUES ($1,$2) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId, input.limitBytes])
+      let limitBytes = input.limitBytes
+      if (input.commercialEntitlement) {
+        // Same lock and order as purchase/upgrade/source recovery, before storage row locks.
+        await client.query(`SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext($1),pg_catalog.hashtext($2))`, ['workspace_subscription_periods_v2', workspaceId])
+        const current = await client.query<Parameters<typeof resolveCommercialStorageLimit>[0][number]>(`SELECT * FROM public.merchant_entitlement_snapshots_v3(200,NULL,NULL)`)
+        limitBytes = resolveCommercialStorageLimit(current.rows, now())
+      }
+      await client.query(`INSERT INTO workspace_storage_quotas (workspace_id,limit_bytes) VALUES ($1,$2) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId, limitBytes])
       const quota = await client.query<TotalRow>(`SELECT limit_bytes,used_bytes,reserved_bytes FROM workspace_storage_quotas WHERE workspace_id=$1 FOR UPDATE`, [workspaceId])
       if (!quota.rows[0]) throw new Error('STORAGE_QUOTA_NOT_CONFIGURED')
       const total = quota.rows[0]
-      if (Number(total.limit_bytes) !== input.limitBytes) throw new Error('STORAGE_QUOTA_LIMIT_CONFLICT')
+      if (input.commercialEntitlement && Number(total.limit_bytes) !== limitBytes) {
+        await client.query('UPDATE workspace_storage_quotas SET limit_bytes=$2,revision=revision+1,updated_at=now() WHERE workspace_id=$1', [workspaceId, limitBytes])
+        total.limit_bytes = limitBytes
+      } else if (Number(total.limit_bytes) !== limitBytes) throw new Error('STORAGE_QUOTA_LIMIT_CONFLICT')
       const found = await client.query<QuotaRow>(`SELECT ${projection} FROM storage_quota_reservations WHERE workspace_id=$1 AND reservation_key=$2 FOR UPDATE`, [workspaceId, input.reservationKey])
       const existing = found.rows[0] ? map(found.rows[0]) : undefined
       if (existing && existing.assetId !== input.assetId) throw new Error('STORAGE_QUOTA_IDEMPOTENCY_CONFLICT')

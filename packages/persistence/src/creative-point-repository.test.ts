@@ -108,6 +108,7 @@ describe('creative point repository', () => {
         const client: SqlClient = {
           async query<Row>(text: string) {
             requested.push(text)
+            if (text.includes('pg_catalog.to_regclass')) return { rows: [{present:true}] as unknown as Row[] }
             if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK' || text.includes("set_config('app.workspace_id'")) return { rows: [] as Row[] }
             if (text.includes('ON CONFLICT (workspace_id) DO NOTHING')) return { rows: [] as Row[] }
             if (text.includes('FROM creative_point_access_state WHERE workspace_id=$1 FOR UPDATE')) return { rows: [] as Row[] }

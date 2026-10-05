@@ -7,6 +7,18 @@ export const commercialOperationsMethods = {
   ledger: "ops.commercial.points-ledger.list",
   catalog: "ops.commercial.catalog-v2.list",
   catalogMutate: "ops.commercial.catalog-v2.mutate",
+  benefitDefinitions: "ops.commercial.benefit-definitions.list",
+  benefitBundles: "ops.commercial.benefit-bundles.list",
+  benefitBundleMutate: "ops.commercial.benefit-bundles.mutate",
+  benefitBundleReferences: "ops.commercial.benefit-bundles.references.list",
+  assistedOrderPreview: "ops.commercial.order.preview",
+  assistedOrderCreate: "ops.commercial.order.create",
+  assistedOrderRequest: "ops.commercial.order.request.get",
+  assistedQuoteRequest: "ops.commercial.upgrade.quote.request.get",
+  assistedCheckoutPreview: "ops.commercial.checkout.preview",
+  assistedCheckoutCreate: "ops.commercial.checkout.create",
+  assistedUpgradeQuoteCreate: "ops.commercial.upgrade.quote.create",
+  assistedUpgradeQuoteGet: "ops.commercial.upgrade.quote.get",
   orders: "ops.commercial.orders-v2.list",
   rates: "ops.commercial.rate-cards.list",
   services: "ops.commercial.service-fulfillment.list",
@@ -25,6 +37,18 @@ export const commercialOperationsMethods = {
   privateTrialConversionCreate: "ops.commercial.private-trial.conversion.create",
   privateTrialPaymentVerify: "ops.commercial.private-trial.payment.verify",
   orderPaymentVerify: "ops.commercial.order.payment.verify",
+  unmatchedReceiptRecord: "ops.commercial.receipt.unmatched.record",
+  unmatchedReceiptList: "ops.commercial.receipt.unmatched.list",
+  unmatchedReceiptMatch: "ops.commercial.receipt.unmatched.match",
+  receiptRecord: "ops.commercial.receipt.record",
+  receiptList: "ops.commercial.receipt.list",
+  receiptGet: "ops.commercial.receipt.get",
+  allocationPreview: "ops.commercial.receipt.allocation.preview",
+  allocationConfirm: "ops.commercial.receipt.allocation.confirm",
+  receiptReturnPropose: "ops.commercial.receipt.return.propose",
+  receiptReturnDecide: "ops.commercial.receipt.return.decide",
+  receiptReturnComplete: "ops.commercial.receipt.return.complete",
+  receiptReturnList: "ops.commercial.receipt.return.list",
   refundList: "ops.commercial.order.refund.list",
   refundRequest: "ops.commercial.order.refund.request",
   refundApprove: "ops.commercial.order.refund.approve",
@@ -53,6 +77,15 @@ export function refundPolicyApproval(value: string): Record<string, unknown> {
   try { parsed = JSON.parse(value); } catch { throw new Error("政策审批证据必须是 JSON 对象"); }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || typeof (parsed as Record<string, unknown>).legal_review_ref !== "string" || !(parsed as Record<string, string>).legal_review_ref.trim()) throw new Error("政策审批证据必须包含非空 legal_review_ref");
   return parsed as Record<string, unknown>;
+}
+
+/** Exact decimal input: receipt amounts must never round a third decimal or become zero. */
+export function positiveCommercialFen(value: string): number {
+  const match = /^(0|[1-9][0-9]*)(?:\.([0-9]{1,2}))?$/u.exec(value.trim());
+  if (!match) throw new Error("金额须为正数，最多两位小数");
+  const fen = BigInt(match[1]!) * 100n + BigInt((match[2] ?? "").padEnd(2, "0"));
+  if (fen < 1n || fen > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("金额超出合法整数分范围");
+  return Number(fen);
 }
 
 const operationId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -100,6 +133,7 @@ export const commercialCapabilities = {
   catalogRead: "commercial.catalog.read",
   catalogDraft: "commercial.catalog.draft",
   catalogPublish: "commercial.catalog.publish",
+  catalogApprove: "commercial.catalog.approve",
   privateSkuRead: "commercial.private_sku.read",
   privateSkuGrant: "commercial.private_sku.grant",
   orderRead: "commercial.order.read",
@@ -239,13 +273,152 @@ export interface CommercialCatalogItem {
   /** Server-priced amount in fen; absent only for legacy unparsed responses. */
   priceFen?: number | null;
   cycleLabel: string | null;
+  durationDays?: number | null;
+  priceMode?: string | null;
   benefitsSummary: string;
-  benefits?: Array<{ code: string; quantity: number | null; rawValue: string | null; rawUnit: string | null }>;
+  benefits?: Array<{ code: string; quantity: number | null; rawValue: string | null; rawUnit: string | null; normalizedValue?: number | null; policyRef?: string | null; metadata?: Record<string, unknown> }>;
   approvalState: string;
   executable?: boolean;
+  /** Current sale projection; never inferred from a historical approved row. */
+  currentSaleState?: string | null;
+  currentSaleVersionId?: string | null;
+  saleRevision?: number | null;
+  payload?: Record<string, unknown>;
   validFrom: string | null;
   validTo: string | null;
   unresolved: string[];
+}
+
+export type CommercialCatalogAction = "create" | "submit" | "approve" | "reject" | "publish" | "retire" | "archive" | "delete_draft";
+export interface CommercialCatalogManagementInput {
+  cursor?: string;
+  limit?: number;
+  kind?: "onboarding" | "monthly" | "point_pack" | "private_trial";
+  saleState?: "unlisted" | "on_sale" | "off_sale" | "archived" | "deleted";
+  search?: string;
+}
+export interface CommercialBenefitBundle {
+  id: string; code: string; versionId: string; version: number; name: string;
+  usage: "included" | "standalone"; lifecycle: string; benefits: Record<string, unknown>[];
+  payload: Record<string, unknown>; checksum: string; revision: number; state: string;
+}
+export function parseBenefitBundles(value: unknown): CommercialPage<CommercialBenefitBundle> {
+  const method = commercialOperationsMethods.benefitBundles;
+  const page = pageRows(value, method);
+  return { ...pageMeta(page), items: page.rows.map(row => {
+    const version = finiteNumber(row.version), revision = finiteNumber(row.revision);
+    if (!Number.isSafeInteger(version) || version === null || version < 1 || !Number.isSafeInteger(revision) || revision === null || revision < 0) invalid(method, "版本或revision无效");
+    if (row.usage !== "included" && row.usage !== "standalone") invalid(method, "usage无效");
+    if (!Array.isArray(row.benefits) || !row.benefits.every(object)) invalid(method, "benefits必须是对象数组");
+    return { id: requiredText(row, method, "id", "id"), code: requiredText(row, method, "code", "code"), versionId: requiredText(row, method, "versionId", "versionId", "version_id"), version, revision,
+      name: requiredText(row, method, "name", "name"), usage: row.usage, lifecycle: requiredText(row, method, "lifecycle", "lifecycle"), state: requiredText(row, method, "state", "state"),
+      benefits: row.benefits, payload: object(row.payload) ? row.payload : {}, checksum: requiredText(row, method, "checksum", "checksum") };
+  }) };
+}
+
+function validatedCommercialTime(value: unknown, method: string, field: string): string {
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) invalid(method,`${field}时间无效`);
+  return value;
+}
+export interface AssistedOrderInput { workspace: string; beneficiaryMemberId: string; skuCode: string; purchaseKind: "onboarding_once" | "purchase" | "renewal" | "upgrade" | "point_pack"; upgradeQuoteId?: string; checkoutId?: string; onboardingOrderId?: string; reason: string }
+const assistedOrderParams = (input: AssistedOrderInput) => ({ target_workspace_id: input.workspace, beneficiary_member_id: input.beneficiaryMemberId, sku_code: input.skuCode, purchase_kind: input.purchaseKind, ...(input.upgradeQuoteId ? { upgrade_quote_id: input.upgradeQuoteId } : {}), ...(input.checkoutId ? { checkout_id: input.checkoutId } : {}), ...(input.onboardingOrderId ? { onboarding_order_id: input.onboardingOrderId } : {}), reason: input.reason });
+export interface AssistedOrderPreview {
+  workspaceId: string; skuCode: string; purchaseKind: AssistedOrderInput["purchaseKind"]; amountFen: number; previewHash: string; expiresAt: string; reason: string;
+  name: string; versionId: string; cycle: unknown; benefits: unknown[]; onboardingQualified: boolean; current: unknown; future: unknown[];
+}
+export function parseAssistedOrderPreview(value: unknown): AssistedOrderPreview {
+  const method = commercialOperationsMethods.assistedOrderPreview;
+  if (!object(value) || !object(value.snapshot) || value.currency !== "CNY" || !Array.isArray(value.snapshot.benefits) || !Array.isArray(value.future) || typeof value.onboarding_qualified !== "boolean") invalid(method, "服务端商品、客户或依赖快照缺失");
+  const amountFen = finiteNumber(value.amount_fen);
+  if (amountFen === null || !Number.isSafeInteger(amountFen) || amountFen < 0) invalid(method, "订单金额无效");
+  const purchaseKind = requiredText(value,method,"purchase_kind","purchase_kind");
+  if (!["onboarding_once","purchase","renewal","upgrade","point_pack"].includes(purchaseKind)) invalid(method,"购买意图无效");
+  return { workspaceId: requiredText(value,method,"workspace_id","workspace_id"), skuCode: requiredText(value,method,"sku_code","sku_code"), purchaseKind: purchaseKind as AssistedOrderInput["purchaseKind"], amountFen, previewHash: requiredText(value,method,"preview_hash","preview_hash"), expiresAt: validatedCommercialTime(value.expires_at,method,"expires_at"), reason: requiredText(value,method,"reason","reason"), name: requiredText(value.snapshot,method,"name","name"), versionId: requiredText(value.snapshot,method,"version_id","version_id"), cycle: value.snapshot.cycle, benefits: value.snapshot.benefits, onboardingQualified: value.onboarding_qualified, current: value.current ?? null, future: value.future };
+}
+export interface AssistedUpgradeQuote { id: string; workspaceId: string; targetSkuCode: string; amountFen: number; currentCyclePriceFen: number; targetCyclePriceFen: number; periodStart: string; periodEnd: string; remainingMs: number; totalMs: number; expiresAt: string; benefitIncrements: unknown[] }
+export function parseAssistedUpgradeQuote(value: unknown): AssistedUpgradeQuote {
+  const method = commercialOperationsMethods.assistedUpgradeQuoteGet;
+  if (!object(value)) invalid(method,"升级报价缺失");
+  const increments = pick(value,"benefit_increment_details","benefitIncrements");
+  if (!Array.isArray(increments)) invalid(method,"升级增量权益明细缺失");
+  const result = { id: requiredText(value,method,"upgrade_quote_id","upgrade_quote_id","id"), workspaceId: requiredText(value,method,"workspace_id","workspace_id","workspaceId"), targetSkuCode: requiredText(value,method,"target_sku_code","target_sku_code","targetSkuCode"), amountFen: finiteNumber(pick(value,"amount_fen","amountFen")), currentCyclePriceFen: finiteNumber(pick(value,"current_cycle_price_fen","currentCyclePriceFen")), targetCyclePriceFen: finiteNumber(pick(value,"target_cycle_price_fen","targetCyclePriceFen")), remainingMs: finiteNumber(pick(value,"remaining_ms","remainingMs")), totalMs: finiteNumber(pick(value,"total_ms","totalMs")), periodStart: validatedCommercialTime(pick(value,"period_start","periodStart"),method,"period_start"), periodEnd: validatedCommercialTime(pick(value,"period_end","periodEnd"),method,"period_end"), expiresAt: validatedCommercialTime(pick(value,"expires_at","expiresAt"),method,"expires_at"), benefitIncrements: increments };
+  for (const key of ["amountFen","currentCyclePriceFen","targetCyclePriceFen","remainingMs","totalMs"] as const) if (result[key] === null || !Number.isSafeInteger(result[key]) || result[key]! < 0) invalid(method,"升级报价金额或剩余期无效");
+  if (!result.totalMs || result.remainingMs! > result.totalMs || Date.parse(result.periodStart) >= Date.parse(result.periodEnd)) invalid(method,"升级原周期无效");
+  return result as AssistedUpgradeQuote;
+}
+export interface AssistedCheckoutPreview { workspaceId: string; amountFen: number; previewHash: string; expiresAt: string; reason: string; onboardingQualified: boolean; current: unknown; future: unknown[]; lines: Array<{ kind: "onboarding_once" | "purchase"; skuCode: string; name: string; versionId: string; amountFen: number; cycle: unknown; benefits: unknown[]; dependsOn: string | null }> }
+export function parseAssistedCheckoutPreview(value: unknown): AssistedCheckoutPreview {
+  const method = commercialOperationsMethods.assistedCheckoutPreview;
+  if (!object(value) || value.currency !== "CNY" || !Array.isArray(value.lines) || value.lines.length !== 2 || !Array.isArray(value.future) || typeof value.onboarding_qualified !== "boolean") invalid(method,"首购联合快照不完整");
+  const lines = value.lines.map(row => {
+    if (!object(row) || !object(row.snapshot) || !Array.isArray(row.snapshot.benefits) || !["onboarding_once","purchase"].includes(String(row.purchase_kind))) invalid(method,"首购行快照无效");
+    const amountFen = finiteNumber(row.amount_fen);
+    if (amountFen === null || !Number.isSafeInteger(amountFen) || amountFen <= 0 || (row.purchase_kind === "purchase" && row.depends_on !== "onboarding_once")) invalid(method,"首购金额或依赖无效");
+    return { kind: row.purchase_kind as "onboarding_once" | "purchase", amountFen, skuCode:requiredText(row.snapshot,method,"sku_code","sku_code"),name:requiredText(row.snapshot,method,"name","name"),versionId:requiredText(row.snapshot,method,"version_id","version_id"),cycle:row.snapshot.cycle,benefits:row.snapshot.benefits,dependsOn:optionalText(row.depends_on) };
+  });
+  const amountFen = finiteNumber(value.amount_fen);
+  if (new Set(lines.map(line => line.kind)).size !== 2 || amountFen !== lines.reduce((sum,line) => sum + line.amountFen,0) || amountFen === null || !Number.isSafeInteger(amountFen)) invalid(method,"首购合计金额不守恒");
+  return { workspaceId: requiredText(value,method,"workspace_id","workspace_id"),amountFen,previewHash:requiredText(value,method,"preview_hash","preview_hash"),expiresAt:validatedCommercialTime(value.expires_at,method,"expires_at"),reason:requiredText(value,method,"reason","reason"),onboardingQualified:value.onboarding_qualified,current:value.current ?? null,future:value.future,lines };
+}
+
+export interface CommercialAllocationPreview {
+  workspaceId: string; previewHash: string; expiresAt: string; receipt: CommercialCashReceipt;
+  orderId: string; orderAmountFen: number; skuCode: string; amountFen: number; expectedRevision: number; availableAfterFen: number; fulfillmentState: string;
+}
+export function parseAllocationPreview(value: unknown): CommercialAllocationPreview {
+  const method = commercialOperationsMethods.allocationPreview;
+  if (!object(value) || !object(value.order)) invalid(method, "缺少服务端分配明细");
+  const receipt = parseCommercialReceipt(value.receipt);
+  const workspaceId = requiredText(value, method, "workspace_id", "workspace_id");
+  const amountFen = finiteNumber(value.amount_fen), availableAfterFen = finiteNumber(value.available_after_fen), expectedRevision = finiteNumber(value.expected_revision), orderAmountFen = finiteNumber(pick(value.order,"amountFen","amount_fen"));
+  if ([amountFen,availableAfterFen,expectedRevision,orderAmountFen].some(item => item === null || !Number.isSafeInteger(item) || item < 0) || amountFen === null || amountFen <= 0 || orderAmountFen === null || availableAfterFen === null || expectedRevision === null || expectedRevision !== receipt.revision || workspaceId !== receipt.workspaceId || receipt.availableFen - amountFen !== availableAfterFen) invalid(method, "金额、企业或revision不一致");
+  return { workspaceId, receipt, previewHash: requiredText(value,method,"preview_hash","preview_hash"), expiresAt: validatedCommercialTime(value.expires_at,method,"expires_at"), orderId: requiredText(value.order,method,"orderId","id","order_id"), orderAmountFen, skuCode: requiredText(value,method,"sku_code","sku_code"), amountFen, expectedRevision, availableAfterFen, fulfillmentState: requiredText(value,method,"fulfillment_state","fulfillment_state") };
+}
+
+export interface CashAllocationLine { receipt_id: string; order_id: string; amount_fen: number; expected_revision: number }
+export interface CashAllocationBatchPreview { items: CommercialAllocationPreview[]; previewHash: string; expiresAt: string }
+export function parseAllocationBatchPreview(value: unknown): CashAllocationBatchPreview {
+  const method = "ops.commercial.receipt.allocations.preview";
+  if (!object(value) || !Array.isArray(value.items) || !value.items.length) invalid(method,"批次明细缺失");
+  const items = value.items.map(parseAllocationPreview);
+  if (new Set(items.map(item => item.workspaceId)).size !== 1) invalid(method,"批次跨企业");
+  const byReceipt = new Map<string, { amount: number; available: number }>();
+  for (const item of items) { const current = byReceipt.get(item.receipt.id) ?? { amount: 0, available: item.receipt.availableFen }; current.amount += item.amountFen; if (!Number.isSafeInteger(current.amount) || current.available !== item.receipt.availableFen || current.amount > current.available) invalid(method,"同笔收款的批次分配超出可用余款"); byReceipt.set(item.receipt.id,current); }
+  return { items, previewHash: requiredText(value,method,"preview_hash","preview_hash"), expiresAt: validatedCommercialTime(value.expires_at,method,"expires_at") };
+}
+export interface CommercialCashReceipt {
+  id: string; workspaceId: string; source: string; receivingAccountRef: string; externalTradeId: string; payerRef: string;
+  amountFen: number; currency: "CNY"; receivedAt: string; verifiedAt: string;
+  allocatedFen: number; returnedFen: number; frozenReturnFen: number; availableFen: number; revision: number;
+}
+function parseReceiptFact(value: unknown, ownership: "matched" | "unmatched") {
+  const method = commercialOperationsMethods.receiptGet;
+  if (!object(value)) invalid(method, "收款事实缺失");
+  const row = object(value.receipt) ? value.receipt : object(value.item) ? value.item : value;
+  const workspaceId = pick(row,"workspaceId","workspace_id");
+  if (ownership === "unmatched" ? workspaceId !== null : !text(workspaceId)) invalid(method,"收款归属范围无效");
+  const amounts = ["amountFen", "allocatedFen", "returnedFen", "frozenReturnFen", "availableFen", "revision"] as const;
+  const numbers = Object.fromEntries(amounts.map(key => [key, finiteNumber(pick(row, key, key.replace(/[A-Z]/gu, letter => `_${letter.toLowerCase()}`)))])) as Record<typeof amounts[number], number>;
+  for (const key of amounts) if (!Number.isSafeInteger(numbers[key]) || numbers[key] < 0) invalid(method, `${key}无效`);
+  if (numbers.amountFen < 1 || numbers.revision < 1 || numbers.amountFen !== numbers.allocatedFen + numbers.returnedFen + numbers.frozenReturnFen + numbers.availableFen || row.currency !== "CNY") invalid(method, "收款金额不守恒或币种无效");
+  return { ...numbers, id: requiredText(row, method, "id", "id"), workspaceId: workspaceId as string | null, source: requiredText(row, method, "source", "source"), receivingAccountRef: requiredText(row, method, "receivingAccountRef", "receivingAccountRef", "receiving_account_ref"), externalTradeId: requiredText(row, method, "externalTradeId", "externalTradeId", "external_trade_id"), payerRef: requiredText(row, method, "payerRef", "payerRef", "payer_ref"), currency: "CNY", receivedAt: validatedCommercialTime(pick(row,"receivedAt","received_at"),method,"receivedAt"), verifiedAt: validatedCommercialTime(pick(row,"verifiedAt","verified_at"),method,"verifiedAt") };
+}
+export interface UnmatchedCashReceipt extends Omit<CommercialCashReceipt,"workspaceId"> { workspaceId: null }
+export function parseCommercialReceipt(value: unknown): CommercialCashReceipt { return parseReceiptFact(value,"matched") as CommercialCashReceipt; }
+export function parseUnmatchedCashReceipt(value: unknown): UnmatchedCashReceipt { return parseReceiptFact(value,"unmatched") as UnmatchedCashReceipt; }
+export function parseUnmatchedReceiptPage(value: unknown): CommercialPage<UnmatchedCashReceipt> {
+  const page = pageRows(value,commercialOperationsMethods.unmatchedReceiptList);
+  return {...pageMeta(page),items:page.rows.map(parseUnmatchedCashReceipt)};
+}
+export interface UnmatchedReceiptRecordInput { receivingAccountRef: string; externalTradeId: string; payerRef: string; amountFen: number; receivedAt: string; evidenceRef: string; reason: string }
+
+export interface CommercialCashReturn { id: string; receiptId: string; amountFen: number; payerRef: string; status: string; requestedByActorId: string; approvedByActorId: string | null; externalReturnId: string | null }
+export function parseCommercialReturns(value: unknown): CommercialCashReturn[] {
+  return pageRows(value, commercialOperationsMethods.receiptReturnList).rows.map(row => {
+    const amountFen = finiteNumber(pick(row, "amountFen", "amount_fen"));
+    if (amountFen === null || !Number.isSafeInteger(amountFen) || amountFen < 1) invalid(commercialOperationsMethods.receiptReturnList, "返款金额无效");
+    return { id: requiredText(row, commercialOperationsMethods.receiptReturnList, "id", "id"), receiptId: requiredText(row, commercialOperationsMethods.receiptReturnList, "receiptId", "receiptId", "receipt_id"), amountFen, payerRef: requiredText(row, commercialOperationsMethods.receiptReturnList, "payerRef", "payerRef", "payer_ref"), status: requiredText(row, commercialOperationsMethods.receiptReturnList, "status", "status"), requestedByActorId: requiredText(row, commercialOperationsMethods.receiptReturnList, "requestedByActorId", "requestedByActorId", "requested_by_actor_id"), approvedByActorId: optionalText(pick(row,"approvedByActorId","approved_by_actor_id")), externalReturnId: optionalText(pick(row,"externalReturnId","external_return_id")) };
+  });
 }
 
 export interface CommercialOrderItem {
@@ -444,15 +617,21 @@ export function parseCatalog(value: unknown): CommercialPage<CommercialCatalogIt
     id: requiredText(row, method, "id", "id", "sku_id"), skuCode: requiredText(row, method, "sku_code", "sku_code", "skuCode", "code"),
     name: requiredText(row, method, "name", "name"), type: requiredText(row, method, "type", "type", "sku_type"),
     visibility: requiredText(row, method, "visibility", "visibility"), version: requiredText(row, method, "version", "version", "sku_version"),
-    priceLabel: requiredText(row, method, "price_label", "price_label", "priceLabel"), priceFen: finiteNumber(pick(row, "price_fen", "priceFen")), cycleLabel: optionalText(pick(row, "cycle_label", "cycleLabel")),
+    priceLabel: requiredText(row, method, "price_label", "price_label", "priceLabel"), priceFen: finiteNumber(pick(row, "price_fen", "priceFen")), cycleLabel: optionalText(pick(row, "cycle_label", "cycleLabel")), durationDays: finiteNumber(pick(row, "duration_days", "durationDays")), priceMode: optionalText(pick(row, "price_mode", "priceMode")),
     benefitsSummary: requiredText(row, method, "benefits_summary", "benefits_summary", "benefitsSummary"),
     benefits: Array.isArray(row.benefits) ? row.benefits.flatMap((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) return [];
       const item = value as Record<string, unknown>;
-      return typeof item.code === "string" && item.code.trim() ? [{ code: item.code, quantity: typeof item.quantity === "number" && Number.isSafeInteger(item.quantity) ? item.quantity : null, rawValue: typeof item.raw_value === "string" ? item.raw_value : null, rawUnit: typeof item.raw_unit === "string" ? item.raw_unit : null }] : [];
+      return typeof item.code === "string" && item.code.trim() ? [{ code: item.code, quantity: typeof item.quantity === "number" && Number.isSafeInteger(item.quantity) ? item.quantity : null, rawValue: typeof item.raw_value === "string" ? item.raw_value : null, rawUnit: typeof item.raw_unit === "string" ? item.raw_unit : null, normalizedValue: finiteNumber(item.normalized_value), policyRef: optionalText(item.policy_ref), metadata: object(item.metadata) ? item.metadata : {} }] : [];
     }) : [],
     approvalState: requiredText(row, method, "approval_state", "approval_state", "approvalState", "status"),
     executable: boolean(row.executable) ?? false,
+    currentSaleState: optionalText(pick(row, "current_sale_state", "sale_state", "currentSaleState")),
+    currentSaleVersionId: optionalText(pick(row, "current_sale_version_id", "current_version_id", "currentSaleVersionId")),
+    // Revision zero is the valid initial state for a newly created SKU; keep it
+    // distinct from a missing projection because catalog actions require CAS.
+    saleRevision: finiteNumber(pick(row, "sale_revision", "saleRevision", "catalog_sale_revision")),
+    payload: object(row.payload) ? row.payload : { ...(object(row.cycle) ? { cycle: row.cycle } : {}), ...(text(row.family) ? { planFamily: row.family } : {}), ...(finiteNumber(row.tier_rank) !== null ? { tierRank: finiteNumber(row.tier_rank) } : {}), ...(Array.isArray(row.bundle_refs) ? { bundleRefs: row.bundle_refs } : {}) },
     validFrom: optionalText(pick(row, "valid_from", "validFrom")), validTo: optionalText(pick(row, "valid_to", "validTo")),
     unresolved: stringArray(row.unresolved),
   })) };
@@ -465,7 +644,7 @@ export function parseCatalog(value: unknown): CommercialPage<CommercialCatalogIt
  */
 export function provisionableCatalogItems(items: readonly CommercialCatalogItem[]): CommercialCatalogItem[] {
   return items
-    .filter((item) => item.visibility === "public" && item.approvalState === "approved" && item.executable === true && item.unresolved.length === 0 && item.priceFen !== null && item.priceFen !== undefined)
+    .filter((item) => item.visibility === "public" && item.currentSaleState === "on_sale" && item.currentSaleVersionId === item.id && item.approvalState === "approved" && item.executable === true && item.unresolved.length === 0 && item.priceFen !== null && item.priceFen !== undefined)
     .slice()
     .sort((left, right) => left.skuCode.localeCompare(right.skuCode) || left.version.localeCompare(right.version));
 }
@@ -585,7 +764,31 @@ export const commercialOperationsClient = {
   entitlements: async (targetWorkspaceId: string, input?: CommercialPageInput, signal?: AbortSignal) => { const page = pageRequest(input, signal); return parseEntitlements(await rpc(commercialOperationsMethods.entitlements, { target_workspace_id: targetWorkspaceId, ...page.params }, { signal: page.signal })); },
   ledger: async (targetWorkspaceId: string, signal?: AbortSignal) => parseLedger(await rpc(commercialOperationsMethods.ledger, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
   catalog: async (_targetWorkspaceId: string, includePrivate: boolean, signal?: AbortSignal) => parseCatalog(await rpc(commercialOperationsMethods.catalog, { limit: "100", include_private: String(includePrivate) }, { signal })),
-  mutateCatalog: (input: { action: "create" | "approve" | "publish" | "retire"; code: string; kind?: string; visibility?: string; priceFen?: number | null; priceMode?: string; durationDays?: number | null; payload?: Record<string, unknown>; benefits?: unknown[]; reason: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.catalogMutate, { action: input.action, code: input.code, ...(input.kind ? { kind: input.kind } : {}), ...(input.visibility ? { visibility: input.visibility } : {}), ...(input.priceFen !== undefined && input.priceFen !== null ? { price_fen: String(input.priceFen) } : {}), ...(input.priceMode ? { price_mode: input.priceMode } : {}), ...(input.durationDays ? { duration_days: String(input.durationDays) } : {}), ...(input.payload ? { payload_json: JSON.stringify(input.payload) } : {}), ...(input.benefits ? { benefits_json: JSON.stringify(input.benefits) } : {}), idempotency_key: operationId("catalog_mutation"), reason: input.reason, evidence_json: JSON.stringify({ source: "ops_console", action: input.action }) }, { signal }),
+  catalogManagement: async (input: CommercialCatalogManagementInput = {}, signal?: AbortSignal) => {
+    const limit = input.limit ?? 100;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("目录分页 limit 必须是 1 到 100 的整数");
+    return parseCatalog(await rpc(commercialOperationsMethods.catalog, {
+      include_private: "false",
+      limit: String(limit),
+      ...(input.cursor ? { cursor: input.cursor } : {}),
+      ...(input.kind ? { kind: input.kind } : {}),
+      ...(input.saleState ? { sale_state: input.saleState } : {}),
+      ...(input.search?.trim() ? { search: input.search.trim() } : {}),
+    }, { signal }));
+  },
+  mutateCatalog: (input: { action: "create" | "approve" | "publish" | "retire" | "archive" | "delete_draft" | "submit" | "reject"; code: string; versionId?: string; expectedRevision?: number; idempotencyKey?: string; kind?: string; visibility?: string; priceFen?: number | null; priceMode?: string; durationDays?: number | null; family?: string; tierRank?: number; cycle?: Record<string, unknown>; bundleRefs?: unknown[]; payload?: Record<string, unknown>; benefits?: unknown[]; reason: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.catalogMutate, { action: input.action, code: input.code, ...(input.versionId ? { version_id: input.versionId } : {}), ...(input.expectedRevision !== undefined ? { expected_revision: String(input.expectedRevision) } : {}), ...(input.kind ? { kind: input.kind } : {}), ...(input.visibility ? { visibility: input.visibility } : {}), ...(input.priceFen !== undefined && input.priceFen !== null ? { price_fen: String(input.priceFen) } : {}), ...(input.priceMode ? { price_mode: input.priceMode } : {}), ...(input.durationDays ? { duration_days: String(input.durationDays) } : {}), ...(input.family ? { family: input.family } : {}), ...(input.tierRank !== undefined ? { tier_rank: String(input.tierRank) } : {}), ...(input.cycle ? { cycle_json: JSON.stringify(input.cycle) } : {}), ...(input.bundleRefs ? { bundle_refs_json: JSON.stringify(input.bundleRefs) } : {}), ...(input.payload ? { payload_json: JSON.stringify(input.payload) } : {}), ...(input.benefits ? { benefits_json: JSON.stringify(input.benefits) } : {}), idempotency_key: input.idempotencyKey ?? operationId("catalog_mutation"), reason: input.reason, evidence_json: JSON.stringify({ source: "ops_console", action: input.action }) }, { signal }),
+  benefitDefinitions: async (signal?: AbortSignal): Promise<Record<string, unknown>[]> => {
+    const value = await rpc(commercialOperationsMethods.benefitDefinitions, {}, { signal });
+    const rows = pageRows(value, commercialOperationsMethods.benefitDefinitions).rows;
+    for (const row of rows) requiredText(row, commercialOperationsMethods.benefitDefinitions, "code", "code");
+    return rows;
+  },
+  benefitBundles: async (input?: CommercialPageInput, signal?: AbortSignal) => { const page = pageRequest(input, signal); return parseBenefitBundles(await rpc(commercialOperationsMethods.benefitBundles, page.params, { signal: page.signal })); },
+  mutateBenefitBundle: (input: { action: CommercialCatalogAction; code: string; versionId?: string; expectedRevision: number; idempotencyKey: string; name?: string; usage?: "included" | "standalone"; payload?: Record<string, unknown>; benefits?: unknown[]; reason: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.benefitBundleMutate, {
+    action: input.action, code: input.code, expected_revision: String(input.expectedRevision), idempotency_key: input.idempotencyKey, reason: input.reason,
+    ...(input.versionId ? { version_id: input.versionId } : {}), ...(input.name ? { name: input.name } : {}), ...(input.usage ? { usage: input.usage } : {}), ...(input.payload ? { payload_json: JSON.stringify(input.payload) } : {}), ...(input.benefits ? { benefits_json: JSON.stringify(input.benefits) } : {}), evidence_json: JSON.stringify({ source: "ops_console", action: input.action }),
+  }, { signal }),
+  benefitBundleReferences: async (code: string, versionId?: string, signal?: AbortSignal) => pageRows(await rpc(commercialOperationsMethods.benefitBundleReferences, { code, ...(versionId ? { version_id: versionId } : {}) }, { signal }), commercialOperationsMethods.benefitBundleReferences).rows,
   orders: async (targetWorkspaceId: string, input?: CommercialPageInput, signal?: AbortSignal) => { const page = pageRequest(input, signal); return parseOrders(await rpc(commercialOperationsMethods.orders, { target_workspace_id: targetWorkspaceId, ...page.params }, { signal: page.signal })); },
   rates: async (_targetWorkspaceId: string, signal?: AbortSignal) => parseRates(await rpc(commercialOperationsMethods.rates, { limit: "100" }, { signal })),
   services: async (targetWorkspaceId: string, signal?: AbortSignal) => parseServices(await rpc(commercialOperationsMethods.services, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
@@ -607,6 +810,55 @@ export const commercialOperationsClient = {
   createPrivateTrialConversionOrder: (workspace: string, creditId: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialConversionCreate, { target_workspace_id: workspace, credit_id: creditId, idempotency_key: operationId("private_trial_conversion"), reason }, { signal }),
   verifyPrivateTrialTransfer: (workspace: string, creditId: string, orderId: string, paymentSubjectRef: string, providerEventId: string, providerOrderId: string, nonce: string, payloadHash: string, paidAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialPaymentVerify, { target_workspace_id: workspace, credit_id: creditId, order_id: orderId, payment_subject_ref: paymentSubjectRef, provider_event_id: providerEventId, provider_order_id: providerOrderId, nonce, payload_hash: payloadHash, paid_at: paidAt, idempotency_key: operationId("private_trial_transfer_verify"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "manual_transfer_verified" }) }, { signal }),
   verifyCommercialOrderTransfer: (workspace: string, orderId: string, paymentSubjectRef: string, providerEventId: string, providerOrderId: string, nonce: string, payloadHash: string, paidAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.orderPaymentVerify, { target_workspace_id: workspace, order_id: orderId, payment_subject_ref: paymentSubjectRef, provider_event_id: providerEventId, provider_order_id: providerOrderId, nonce, payload_hash: payloadHash, paid_at: paidAt, idempotency_key: operationId("commercial_order_transfer_verify"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "commercial_order_manual_transfer_verified" }) }, { signal }),
+  searchPurchaseCustomers: async (query: string, signal?: AbortSignal) => {
+      const method = "ops.users.list";
+    const rows = pageRows(await rpc(method, { query: query.trim(), account_type: "merchant", limit: "50", offset: "0" }, { signal }), method).rows;
+    return rows.map(row => ({ workspaceId: requiredText(row,method,"workspaceId","workspaceId","workspace_id"), memberId: requiredText(row,method,"memberId","memberId","member_id"), customerId: requiredText(row,method,"externalSubject","externalSubject","external_subject"), name: requiredText(row,method,"displayName","displayName","display_name"), enterpriseName: optionalText(pick(row,"enterpriseName","enterprise_name")), workspaceStatus: optionalText(pick(row,"workspaceStatus","workspace_status")), status: requiredText(row,method,"status","status") }));
+  },
+  createAssistedUpgradeQuote: (workspace: string, skuCode: string, idempotencyKey: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.assistedUpgradeQuoteCreate, { target_workspace_id: workspace, target_sku_code: skuCode, idempotency_key: idempotencyKey }, { signal }).then(parseAssistedUpgradeQuote),
+  getAssistedUpgradeQuote: (workspace: string, quoteId: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.assistedUpgradeQuoteGet, { target_workspace_id: workspace, upgrade_quote_id: quoteId }, { signal }),
+  previewAssistedOrder: (input: AssistedOrderInput, signal?: AbortSignal) => rpc(commercialOperationsMethods.assistedOrderPreview, assistedOrderParams(input), { signal }).then(parseAssistedOrderPreview),
+  createAssistedOrder: (input: AssistedOrderInput & { previewHash: string; idempotencyKey: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.assistedOrderCreate, { ...assistedOrderParams(input), preview_hash: input.previewHash, idempotency_key: input.idempotencyKey }, { signal }),
+  getAssistedOrderRequest: (workspace: string, key: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.assistedOrderRequest, { target_workspace_id: workspace, idempotency_key: key }, { signal }),
+  getAssistedQuoteRequest: (workspace: string, key: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.assistedQuoteRequest, { target_workspace_id: workspace, idempotency_key: key }, { signal }),
+  getAssistedCheckoutRequest: (workspace: string, key: string, signal?: AbortSignal) => rpc("ops.commercial.checkout.request.get", { target_workspace_id:workspace,idempotency_key:key }, { signal }),
+  previewAssistedCheckout: (input: { workspace: string; beneficiaryMemberId: string; onboardingSkuCode: string; subscriptionSkuCode: string; reason: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.assistedCheckoutPreview, { target_workspace_id: input.workspace, beneficiary_member_id: input.beneficiaryMemberId, onboarding_sku_code: input.onboardingSkuCode, subscription_sku_code: input.subscriptionSkuCode, reason: input.reason }, { signal }).then(parseAssistedCheckoutPreview),
+  createAssistedCheckout: (input: { workspace: string; beneficiaryMemberId: string; onboardingSkuCode: string; subscriptionSkuCode: string; reason: string; previewHash: string; idempotencyKey: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.assistedCheckoutCreate, { target_workspace_id: input.workspace, beneficiary_member_id: input.beneficiaryMemberId, onboarding_sku_code: input.onboardingSkuCode, subscription_sku_code: input.subscriptionSkuCode, reason: input.reason, preview_hash: input.previewHash, idempotency_key: input.idempotencyKey }, { signal }),
+  getReceiptRequest: async (input: { workspace?: string; receivingAccountRef: string; externalTradeId: string }, signal?: AbortSignal) => {
+    const value: unknown = await rpc("ops.commercial.receipt.request.get", { source:"bank_transfer", receiving_account_ref:input.receivingAccountRef, external_trade_id:input.externalTradeId, ...(input.workspace ? {target_workspace_id:input.workspace}: {}) }, {signal});
+    if(value === null)return null;
+    if(!object(value) || !object(value.receipt))invalid("ops.commercial.receipt.request.get","原到账事实缺失");
+    return parseReceiptFact(value,pick(value.receipt,"workspaceId","workspace_id") === null ? "unmatched" : "matched");
+  },
+  getReceiptAllocationRequest: (workspace: string, key: string, signal?: AbortSignal) => rpc("ops.commercial.receipt.allocation.request.get",{target_workspace_id:workspace,idempotency_key:key},{signal}),
+  getReceiptReturnRequest: async (returnId: string, workspace?: string, signal?: AbortSignal) => {
+    const value: unknown = await rpc("ops.commercial.receipt.return.request.get",{return_id:returnId,...(workspace?{target_workspace_id:workspace}:{})},{signal});
+    if(value === null)return null;
+    if(!object(value) || !object(value.item))invalid("ops.commercial.receipt.return.request.get","原返款事实缺失");
+    return parseCommercialReturns({items:[value.item]})[0]!;
+  },
+  listCashReturnPage: async (workspace?: string, input?: CommercialPageInput, signal?: AbortSignal): Promise<CommercialPage<CommercialCashReturn>> => {
+    const page=pageRequest(input,signal);const method=workspace?commercialOperationsMethods.receiptReturnList:"ops.commercial.receipt.unmatched.return.list";
+    const value=await rpc(method,{...page.params,...(workspace?{target_workspace_id:workspace}:{})},{signal:page.signal});const rows=pageRows(value,method);
+    return {...pageMeta(rows),items:parseCommercialReturns(value)};
+  },
+  proposeUnmatchedReturn: (input: {receiptId:string;returnId:string;amountFen:number;payerRef:string;expectedRevision:number;evidenceRef:string;reason:string},signal?:AbortSignal) => rpc("ops.commercial.receipt.unmatched.return.propose",{receipt_id:input.receiptId,return_id:input.returnId,amount_fen:String(input.amountFen),payer_ref:input.payerRef,expected_revision:String(input.expectedRevision),reason:input.reason,evidence_json:JSON.stringify({evidence_ref:input.evidenceRef})},{signal}),
+  decideUnmatchedReturn: (input:{returnId:string;action:"approve"|"reject";evidenceRef:string},signal?:AbortSignal) => rpc("ops.commercial.receipt.unmatched.return.decide",{return_id:input.returnId,decision:input.action,evidence_json:JSON.stringify({evidence_ref:input.evidenceRef})},{signal}),
+  completeUnmatchedReturn: (input:{returnId:string;outcome:"completed"|"unknown";externalReturnId?:string;evidenceRef:string},signal?:AbortSignal) => rpc("ops.commercial.receipt.unmatched.return.complete",{return_id:input.returnId,outcome:input.outcome,...(input.externalReturnId?{external_return_id:input.externalReturnId}:{}),evidence_json:JSON.stringify({evidence_ref:input.evidenceRef})},{signal}),
+  listUnmatchedReceipts: async (input?: CommercialPageInput, signal?: AbortSignal) => { const page = pageRequest(input,signal); return parseUnmatchedReceiptPage(await rpc(commercialOperationsMethods.unmatchedReceiptList,page.params,{signal:page.signal})); },
+  recordUnmatchedReceipt: (input: UnmatchedReceiptRecordInput, signal?: AbortSignal) => rpc(commercialOperationsMethods.unmatchedReceiptRecord,{source:"bank_transfer",receiving_account_ref:input.receivingAccountRef,external_trade_id:input.externalTradeId,payer_ref:input.payerRef,amount_fen:String(input.amountFen),currency:"CNY",received_at:input.receivedAt,reason:input.reason,evidence_json:JSON.stringify({evidence_ref:input.evidenceRef})},{signal}).then(parseUnmatchedCashReceipt),
+  matchUnmatchedReceipt: (input: { workspace: string; receiptId: string; customerRef: string; reason: string; evidenceRef: string },signal?:AbortSignal) => rpc(commercialOperationsMethods.unmatchedReceiptMatch,{receipt_id:input.receiptId,target_workspace_id:input.workspace,reason:input.reason,evidence_json:JSON.stringify({ownership_evidence_ref:input.evidenceRef,matched_customer_ref:input.customerRef})},{signal}).then(parseCommercialReceipt),
+  listReceipts: async (workspace: string, signal?: AbortSignal) => pageRows(await rpc(commercialOperationsMethods.receiptList, { target_workspace_id: workspace, limit: "100" }, { signal }), commercialOperationsMethods.receiptList).rows.map(parseCommercialReceipt),
+  getReceipt: async (workspace: string, receiptId: string, signal?: AbortSignal) => parseCommercialReceipt(await rpc(commercialOperationsMethods.receiptGet, { target_workspace_id: workspace, receipt_id: receiptId }, { signal })),
+  recordReceipt: async (input: { workspace: string; source: string; receivingAccountRef: string; externalTradeId: string; payerRef: string; amountFen: number; receivedAt: string; evidenceRef: string; idempotencyKey: string; reason: string }, signal?: AbortSignal) => parseCommercialReceipt(await rpc(commercialOperationsMethods.receiptRecord, { target_workspace_id: input.workspace, source: input.source, receiving_account_ref: input.receivingAccountRef, external_trade_id: input.externalTradeId, payer_ref: input.payerRef, amount_fen: String(input.amountFen), currency: "CNY", received_at: input.receivedAt, evidence_json: JSON.stringify({ evidence_ref: input.evidenceRef }), idempotency_key: input.idempotencyKey, reason: input.reason }, { signal })),
+  previewReceiptAllocation: async (input: { workspace: string; receiptId: string; orderId: string; amountFen: number; expectedRevision: number }, signal?: AbortSignal) => parseAllocationPreview(await rpc(commercialOperationsMethods.allocationPreview, { target_workspace_id: input.workspace, receipt_id: input.receiptId, order_id: input.orderId, amount_fen: String(input.amountFen), expected_revision: String(input.expectedRevision) }, { signal })),
+  previewReceiptAllocationBatch: (workspace: string, allocations: CashAllocationLine[], signal?: AbortSignal) => rpc("ops.commercial.receipt.allocations.preview", { target_workspace_id: workspace, allocations_json: JSON.stringify(allocations) }, { signal }).then(parseAllocationBatchPreview),
+  confirmReceiptAllocationBatch: (input: { workspace: string; allocations: CashAllocationLine[]; previewHash: string; idempotencyKey: string }, signal?: AbortSignal) => rpc("ops.commercial.receipt.allocations.confirm", { target_workspace_id: input.workspace, allocations_json: JSON.stringify(input.allocations), preview_hash: input.previewHash, idempotency_key: input.idempotencyKey }, { signal }),
+  confirmReceiptAllocation: (input: { workspace: string; receiptId: string; orderId: string; amountFen: number; expectedRevision: number; previewHash: string; idempotencyKey: string; reason: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.allocationConfirm, { target_workspace_id: input.workspace, receipt_id: input.receiptId, order_id: input.orderId, amount_fen: String(input.amountFen), expected_revision: String(input.expectedRevision), preview_hash: input.previewHash, idempotency_key: input.idempotencyKey, reason: input.reason }, { signal }),
+  listReceiptReturns: async (workspace: string, signal?: AbortSignal) => parseCommercialReturns(await rpc(commercialOperationsMethods.receiptReturnList, { target_workspace_id: workspace, limit: "100" }, { signal })),
+  proposeReceiptReturn: (input: { workspace: string; receiptId: string; returnId: string; amountFen: number; payerRef: string; expectedRevision: number; evidenceRef: string; reason: string; idempotencyKey: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.receiptReturnPropose, { target_workspace_id: input.workspace, receipt_id: input.receiptId, return_id: input.returnId, amount_fen: String(input.amountFen), payer_ref: input.payerRef, expected_revision: String(input.expectedRevision), reason: input.reason, idempotency_key: input.idempotencyKey, evidence_json: JSON.stringify({ evidence_ref: input.evidenceRef }) }, { signal }),
+  decideReceiptReturn: (input: { workspace: string; returnId: string; action: "approve" | "reject"; evidenceRef: string; reason: string; idempotencyKey: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.receiptReturnDecide, { target_workspace_id: input.workspace, return_id: input.returnId, decision: input.action, reason: input.reason, idempotency_key: input.idempotencyKey, evidence_json: JSON.stringify({ evidence_ref: input.evidenceRef }) }, { signal }),
+  completeReceiptReturn: (input: { workspace: string; returnId: string; outcome: "completed" | "unknown"; externalReturnId?: string; evidenceRef: string; reason: string; idempotencyKey: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.receiptReturnComplete, { target_workspace_id: input.workspace, return_id: input.returnId, outcome: input.outcome, ...(input.externalReturnId ? { external_return_id: input.externalReturnId } : {}), reason: input.reason, idempotency_key: input.idempotencyKey, evidence_json: JSON.stringify({ evidence_ref: input.evidenceRef }) }, { signal }),
   listCommercialRefunds: async (workspace: string, signal?: AbortSignal) => parseCommercialRefunds(await rpc(commercialOperationsMethods.refundList, { target_workspace_id: workspace, limit: "100" }, { signal })),
   requestCommercialRefund: async (input: { workspace: string; orderId: string; requestId: string; kind: CommercialRefundKind; amountFen: number; pointsToRevoke: number; reason: string; evidenceRef: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundRequest, { target_workspace_id: input.workspace, order_id: input.orderId, request_id: input.requestId, refund_kind: input.kind, amount_fen: String(input.amountFen), points_to_revoke: String(input.pointsToRevoke), reason: input.reason, evidence_json: JSON.stringify(commercialRefundEvidence(input.kind, input.evidenceRef)) }, { signal, idempotencyKey: await refundOperationKey("request", input.workspace, input.requestId) }),
   approveCommercialRefund: async (workspace: string, requestId: string, policyApproval: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundApprove, { target_workspace_id: workspace, request_id: requestId, reason, policy_approval_json: JSON.stringify(refundPolicyApproval(policyApproval)) }, { signal, idempotencyKey: await refundOperationKey("approve", workspace, requestId) }),
@@ -621,3 +873,31 @@ export const commercialOperationsClient = {
 };
 
 export type CommercialOperationsClient = typeof commercialOperationsClient;
+
+/** Only identifiers and numeric original facts persist; evidence and credentials never persist. */
+export type CashRecoveryIntent = {key:string} & (
+  | {kind:"record";workspace?:string;receivingAccountRef:string;externalTradeId:string;amountFen:number;payerRef:string;receivedAt:string}
+  | {kind:"match";workspace:string;receiptId:string;receivingAccountRef:string;externalTradeId:string;amountFen:number;payerRef:string}
+  | {kind:"allocation";workspace:string;lines:CashAllocationLine[];batch:boolean}
+  | {kind:"return";workspace?:string;returnId:string;receiptId:string;amountFen:number;payerRef:string;action:"propose"|"approve"|"reject"|"completed"|"unknown";externalReturnId?:string}
+);
+export async function recoverCashIntent(client:CommercialOperationsClient,intent:CashRecoveryIntent):Promise<boolean> {
+  if(intent.kind === "record" || intent.kind === "match") {
+    const fact=intent.kind === "match"?await client.getReceipt(intent.workspace,intent.receiptId):await client.getReceiptRequest(intent);
+    return !!fact && fact.source==="bank_transfer" && (intent.kind!=="record" || Date.parse(fact.receivedAt)===Date.parse(intent.receivedAt)) && fact.receivingAccountRef===intent.receivingAccountRef && fact.externalTradeId===intent.externalTradeId && fact.amountFen===intent.amountFen && fact.payerRef===intent.payerRef && (intent.kind!=="match" || fact.id===intent.receiptId) && (!intent.workspace || fact.workspaceId===intent.workspace);
+  }
+  if(intent.kind === "allocation") {
+    if(!intent.lines.length || intent.lines.length>100)return false;
+    const facts=await Promise.all(intent.lines.map((_,index)=>client.getReceiptAllocationRequest(intent.workspace,intent.batch?`${intent.key}:${index}`:intent.key)));
+    return facts.every((raw,index)=>{const value:unknown=raw;const original=intent.lines[index]!;if(!object(value)||!object(value.allocation))return false;const fact=value.allocation;return fact.receiptId===original.receipt_id && fact.orderId===original.order_id && fact.allocatedFen===original.amount_fen && typeof fact.allocationId==="string" && !!fact.allocationId && ["partially_received","fully_received"].includes(String(fact.status));});
+  }
+  let item:CommercialCashReturn|undefined|null;
+  if(intent.action === "propose")item=await client.getReceiptReturnRequest(intent.returnId,intent.workspace);
+  else {let cursor:string|undefined;const seen=new Set<string>();for(let pageNumber=0;pageNumber<100;pageNumber++){const page=await client.listCashReturnPage(intent.workspace,{limit:100,...(cursor?{cursor}:{})});item=page.items.find(row=>row.id===intent.returnId);if(item||!page.nextCursor)break;if(seen.has(page.nextCursor))break;seen.add(page.nextCursor);cursor=page.nextCursor;}}
+  if(!item || item.id!==intent.returnId || item.receiptId!==intent.receiptId || item.amountFen!==intent.amountFen || item.payerRef!==intent.payerRef)return false;
+  if(intent.action === "propose")return true;
+  if(intent.action === "approve")return ["approved","pending_external","external_unknown","completed"].includes(item.status) && !!item.approvedByActorId;
+  if(intent.action === "reject")return item.status === "rejected";
+  if(intent.action === "unknown")return item.status === "external_unknown" || item.status === "completed";
+  return item.status === "completed" && !!intent.externalReturnId && item.externalReturnId === intent.externalReturnId;
+}

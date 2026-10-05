@@ -3,7 +3,7 @@ import {
   type ContinuousFeatureEntitlementSnapshotV2,
 } from '../../../packages/application/src/continuous-feature-entitlement.js'
 
-export type CommercialCountBenefitCode = 'max_brands' | 'max_stores'
+export type CommercialCountBenefitCode = 'max_brands' | 'max_stores' | 'cloud_storage'
 
 export class CommercialCountCapacityError extends Error {
   constructor(
@@ -20,6 +20,17 @@ export async function resolveCommercialCountBenefit(input: {
   readonly now?: Date
 }): Promise<number> {
   const now = input.now ?? new Date()
+  for (const snapshot of input.snapshots) {
+    if (snapshot.workspaceId !== input.workspaceId || snapshot.periodStatus !== 'active'
+      || Date.parse(snapshot.periodStart) > now.getTime() || Date.parse(snapshot.periodEnd) <= now.getTime()
+      || !snapshot.executable || !/^[a-f0-9]{64}$/iu.test(snapshot.checksum)) continue
+    if (!Array.isArray(snapshot.resolvedBenefits)) throw new CommercialCountCapacityError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE')
+    const matches = snapshot.resolvedBenefits.filter(value => value && typeof value === 'object' && (value as Record<string, unknown>).code === input.code)
+    if (!matches.length) continue
+    const value = matches[0] as Record<string, unknown>
+    const quantity = input.code === 'cloud_storage' ? value.normalizedValue : value.quantity
+    if (matches.length !== 1 || typeof quantity !== 'number' || !Number.isSafeInteger(quantity) || quantity < 0) throw new CommercialCountCapacityError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE')
+  }
   const entitlement = new ContinuousFeatureEntitlementService({
     projection: { listV2EntitlementSnapshots: async () => input.snapshots },
     now: () => now,
@@ -34,7 +45,8 @@ export async function resolveCommercialCountBenefit(input: {
       && (value as Record<string, unknown>).code === input.code
   })
   if (benefits.length !== 1) throw new CommercialCountCapacityError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE')
-  const quantity = (benefits[0] as Record<string, unknown>).quantity
+  const benefit = benefits[0] as Record<string, unknown>
+  const quantity = input.code === 'cloud_storage' ? benefit.normalizedValue : benefit.quantity
   if (typeof quantity !== 'number' || !Number.isSafeInteger(quantity) || quantity < 0) {
     throw new CommercialCountCapacityError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE')
   }

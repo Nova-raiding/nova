@@ -44,6 +44,10 @@ export const HTTP_OPERATION_POLICIES = [
   // the registration queue and the authorization decision below: the router
   // authenticates the caller and then requires an operations role, and there is
   // no merchant MCP method for it (`authenticate` + `requireOperationsRole`).
+  // Merchant support is authenticated and membership scoped in its handler;
+  // it cannot inherit platform Ops ticket creation privileges.
+  identityOnly('POST', '/v1/support/requests'),
+  identityOnly('GET', '/v1/support/requests/{ticketId}'),
   identityOnly('POST', '/v1/ops/merchant-accounts'),
   identityOnly('GET', '/v1/ops/merchant-registration-applications'),
   identityOnly('POST', '/v1/ops/merchant-registration-applications/review'),
@@ -55,6 +59,17 @@ export const HTTP_OPERATION_POLICIES = [
   identity('GET', '/v1/delivery-readiness', 'workspace.health'),
   identity('GET', '/v1/commercial/access', 'commercial.access.get'),
   identity('GET', '/v1/commercial/catalog', 'commercial.catalog.get'),
+  identity('GET', '/v1/commercial/order-requests/{idempotencyKey}', 'commercial.order.request.get'),
+  identity('GET', '/v1/commercial/upgrade-quote-requests/{idempotencyKey}', 'commercial.upgrade.quote.request.get'),
+  identity('GET', '/v1/commercial/checkout-requests/{idempotencyKey}', 'commercial.checkout.request.get'),
+  identity('POST', '/v1/commercial/checkouts', 'commercial.checkout.create'),
+  identity('POST', '/v1/commercial/orders/{orderId}/checkout', 'commercial.order.payment.create'),
+
+  identity('POST', '/v1/commercial/upgrade-quotes', 'commercial.upgrade.quote.create'),
+  identity('GET', '/v1/commercial/upgrade-quotes/{quoteId}', 'commercial.upgrade.quote.get'),
+  identity('GET', '/v1/commercial/subscription', 'commercial.subscription.get'),
+  identity('GET', '/v1/commercial/notifications', 'commercial.notifications.list'),
+  identity('POST', '/v1/commercial/notifications/{notificationId}/read', 'commercial.notifications.mark-read'),
   identity('POST', '/v1/commercial/orders', 'commercial.order.create'),
   identity('GET', '/v1/commercial/orders/{orderId}/payment', 'commercial.order.payment.get'),
   identity('GET', '/v1/creative-points/balance', 'creative-points.balance.get'),
@@ -164,6 +179,7 @@ export const HTTP_OPERATION_POLICIES = [
   machine('POST', '/v1/publish-jobs/{jobId}/observation', 'worker'),
   identity('POST', '/v1/canonical-backfill/conflicts/scan', 'ops.canonical.backfill.run'),
   machine('POST', '/v1/internal/automation/tick', 'worker'),
+  machine('POST', '/v1/internal/commercial/notifications/tick', 'worker'),
   machine('POST', '/v1/internal/model-usage', 'worker'),
   machine('POST', '/v1/internal/model-usage/reconciliation', 'worker'),
   machine('POST', '/v1/internal/billing/reconciliation', 'worker'),
@@ -202,6 +218,7 @@ export const HTTP_OPERATION_POLICIES = [
   machine('GET', '/readyz', 'infrastructure'),
   machine('GET', '/livez', 'infrastructure'),
   machine('GET', '/releasez', 'infrastructure'),
+  machine('GET', '/internal/commercial-runtime-attestation', 'infrastructure'),
   machine('GET', '/metrics', 'metrics'),
   machine('POST', '/mcp', 'mcp'),
 ] as const satisfies readonly HttpOperationPolicy[]

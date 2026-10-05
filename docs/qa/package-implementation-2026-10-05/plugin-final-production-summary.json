@@ -1,0 +1,33 @@
+{
+  "version": "0.1.0+codex.20261005042504",
+  "personal_install_ok": true,
+  "personal_stdio_ok": true,
+  "isolated_stdio_ok": true,
+  "tools": 131,
+  "runtime_inventory": {
+    "source_count": 68,
+    "installed_count": 68,
+    "missing": [],
+    "unexpected": []
+  },
+  "package_profile": {
+    "expected": "production",
+    "source": "production",
+    "installed": "production",
+    "errors": []
+  },
+  "unconfigured_call": {
+    "tool": "workspace.health",
+    "blocked": true,
+    "code": "MCP_CONFIGURATION_REQUIRED",
+    "error": null
+  },
+  "previous_source": "/Users/lixiaomei/plugins/.merchant-marketing-previous-4c99d6ab-c912-4292-a0ac-b5ec83d25bfd",
+  "previous_cache": null,
+  "previous_config": "/Users/lixiaomei/.codex/.config-previous-4c99d6ab-c912-4292-a0ac-b5ec83d25bfd.bak",
+  "previous_source_preserved": true,
+  "previous_file_count": 21,
+  "previous_config_preserved": true,
+  "host_restarted": false,
+  "host_loaded_new_snapshot_verified": false
+}

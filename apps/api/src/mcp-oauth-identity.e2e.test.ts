@@ -34,26 +34,18 @@ describe('canonical password identity and local plugin authentication', () => {
     const operatorCookie = operatorLogin.headers.get('set-cookie')?.split(';')[0]
     const merchantLogin = `first-workspace-${Date.now()}@example.test`
     const password = 'FirstWorkspace1234!'
-    const provision = await fetch(`${base}/v1/ops/merchant-accounts`, { method: 'POST', headers: { cookie: operatorCookie!, 'content-type': 'application/json', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ login: merchantLogin, password, enterprise_name: '首次工作区企业', contact_name: '商家', workspace_ids: [], bootstrap_workspace: true, reason: '受保护首次工作区引导' }) })
-    expect(provision.status).toBe(201)
-    await expect(provision.json()).resolves.toMatchObject({ data: { account: { workspaceIds: [] }, next_action: 'workspace_bootstrap' } })
+    const provision = await fetch(`${base}/v1/ops/merchant-accounts`, { method: 'POST', headers: { cookie: operatorCookie!, 'content-type': 'application/json', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ login: merchantLogin, enterprise_name: '首次工作区企业', contact_name: '商家', workspace_ids: [], create_workspace: true, idempotency_key: `bootstrap-invite-${Date.now()}`, reason: '受保护首次工作区引导' }) })
+    expect(provision.status, await provision.clone().text()).toBe(201)
+    const provisionBody = await provision.json() as { data?: { account?: { workspaceIds?: string[] }; invitation?: { activation_link?: string } } }
+    expect(provisionBody.data).toMatchObject({ account: { workspaceIds: [expect.stringMatching(/^ws_[a-f0-9]{32}$/u)] }, invitation: { activation_link: expect.stringContaining('#token=') } })
+    const activationToken = decodeURIComponent(provisionBody.data?.invitation?.activation_link?.split('#token=')[1] ?? '')
+    const activation = await fetch(`${base}/v1/auth/merchant-activation`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: activationToken, password, terms_agreed: true }) })
+    expect(activation.status).toBe(200)
     const merchantLoginResponse = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: merchantLogin, password, account_type: 'merchant' }) })
     expect(merchantLoginResponse.status).toBe(200)
     const cookie = merchantLoginResponse.headers.get('set-cookie')?.split(';')[0]
-    const beforeToken = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({}) })
-    expect(beforeToken.status).not.toBe(200)
-    const csrf = await fetch(`${base}/v1/auth/workspace-bootstrap`, { method: 'POST', headers: { cookie: cookie!, origin: 'https://wrong.example', 'content-type': 'application/json' }, body: JSON.stringify({ display_name: '首次工作区' }) })
-    expect(csrf.status).toBe(403)
-    const blockedIdentity = vi.spyOn(repository, 'assertBootstrapEligible').mockRejectedValueOnce(Object.assign(new Error('BOOTSTRAP_PRINCIPAL_INVALID'), { code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' }))
-    const blocked = await fetch(`${base}/v1/auth/workspace-bootstrap`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ display_name: '首次工作区' }) })
-    expect(blocked.status).toBe(403)
-    await expect(blocked.json()).resolves.toMatchObject({ error: { code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' } })
-    blockedIdentity.mockRestore()
-    const bootstrap = await fetch(`${base}/v1/auth/workspace-bootstrap`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ display_name: '首次工作区' }) })
-    expect(bootstrap.status).toBe(201)
-    const payload = await bootstrap.json() as { data?: { workspace_id?: string } }
-    const workspaceId = payload.data?.workspace_id
-    expect(workspaceId).toMatch(/^ws_[a-f0-9]{24}$/u)
+    const workspaceId = provisionBody.data?.account?.workspaceIds?.[0]
+    expect(workspaceId).toMatch(/^ws_[a-f0-9]{32}$/u)
     expect((await repository.authenticate(cookie!.split('=')[1]!))?.account.workspaceIds).toEqual([workspaceId])
     const token = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) })
     expect(token.status).toBe(200)

@@ -1,0 +1,14 @@
+{"evidenceDir":"/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-10-05T03-59-02.028Z-5c141f42-7f4f-4916-bc21-f4acc1c7a4e5","runId":"f3d8910b-a586-48e7-b729-31a7bf0ecb2a","isolated":true,"persistence":"postgres","testFiles":["dogfood/chatgpt-all-functions/ops-commercial-packages-isolated.spec.js"]}
+
+Running 1 test using 1 worker
+
+[1A[2K(node:35628) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:35628) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[1/1] dogfood/chatgpt-all-functions/ops-commercial-packages-isolated.spec.js:12:1 › desktop commercial catalog separates approval/sale and preserves an invalid draft through keyboard/zoom states
+[1A[2K  1 passed (15.2s)

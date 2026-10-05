@@ -1,0 +1,10 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ apps/plugin/mcp/commercial-compatibility.e2e.test.ts (3 tests) 642ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  11:56:44
+   Duration  5.17s (transform 3.19s, setup 0ms, import 4.37s, tests 642ms, environment 0ms)
+

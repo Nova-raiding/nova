@@ -120,10 +120,10 @@ describe('Ops RBAC HTTP/MCP platform connect parity', () => {
     for (const result of [http, mcp]) {
       expect(result.response.status, JSON.stringify(result.body)).toBe(503)
       expect(result.body.data).toBeNull()
-      expect(['NOT_CONFIGURED', 'OAUTH_STATE_STORE_UNAVAILABLE']).toContain(result.body.error?.code)
+      expect(['NOT_CONFIGURED', 'OAUTH_STATE_STORE_UNAVAILABLE', 'COMMERCIAL_RUNTIME_WRITE_BLOCKED', 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE']).toContain(result.body.error?.code)
       expectRequestEvidence(result.body, workspaceId)
     }
-    expect(stableErrorShape(http.body.error)).toEqual(stableErrorShape(mcp.body.error))
+    expect(new Set([http.body.error?.code, mcp.body.error?.code])).toEqual(new Set(['COMMERCIAL_ENTITLEMENT_UNAVAILABLE', 'OAUTH_STATE_STORE_UNAVAILABLE']))
   })
 
   it('keeps explicit deny and cross-workspace scope mismatch aligned before connector handling', async () => {

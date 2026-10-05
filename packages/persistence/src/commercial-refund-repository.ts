@@ -53,13 +53,14 @@ const nonNegative = (value: number, field: string): number => { if (!Number.isSa
 const hasEvidenceRef = (value: Record<string, unknown>, key: string): boolean => typeof value[key] === 'string' && Boolean((value[key] as string).trim())
 
 export class PostgresCommercialRefundRepository implements CommercialRefundRepository {
-  constructor(private readonly pool: SqlPool) {}
+  constructor(private readonly pool: SqlPool, private readonly sourceRecovery?: (client: SqlClient, input: { workspaceId: string; orderId: string; requestId: string; amountFen: number; pointsToRevoke: number; policyVersion: string; phase: 'approve' | 'complete' | 'reject'; now: string }) => Promise<unknown>) {}
 
   async request(input: Parameters<CommercialRefundRepository['request']>[0]): Promise<CommercialRefundEvent> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const requestId = text(input.requestId, 'requestId'); const actorId = text(input.actorId, 'actorId'); const reason = text(input.reason, 'reason'); const createdAt = at(input.at); const amountFen = positive(input.amountFen, 'amountFen'); const pointsToRevoke = nonNegative(input.pointsToRevoke, 'pointsToRevoke'); const requestEvidence = evidence(input.evidence)
     const evidenceKey = input.refundKind === 'onboarding_pre_deployment' ? 'deployment_status' : input.refundKind === 'monthly_unused_points' ? 'supplement_agreement_ref' : input.refundKind === 'point_pack_unused_points' ? 'expiry_policy_ref' : input.refundKind === 'outage_compensation' ? 'incident_id' : 'milestone_id'
     if (input.refundKind === 'onboarding_pre_deployment' ? requestEvidence.deployment_status !== 'not_started' : !hasEvidenceRef(requestEvidence, evidenceKey)) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_INPUT_INVALID', `${evidenceKey} is required for this refund kind`)
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      await this.lockWorkspace(client, workspaceId)
       // Serialize every refund decision for this order: the cumulative bound is
       // only sound while concurrent requests cannot both read the same
       // unrefunded order snapshot.
@@ -78,6 +79,7 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
     const workspaceId = requireWorkspaceScope(input.workspaceId); const requestId = text(input.requestId, 'requestId'); const actorId = text(input.actorId, 'actorId'); const reason = text(input.reason, 'reason'); const createdAt = at(input.at); const policyApproval = evidence(input.policyApproval, 'policyApproval')
     if (!hasEvidenceRef(policyApproval, 'legal_review_ref')) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_INPUT_INVALID', 'legal_review_ref is required for refund approval')
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      await this.lockWorkspace(client, workspaceId)
       const prior = await this.latestIn(client, workspaceId, requestId)
       if (!prior || prior.eventType !== 'requested') throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund request is not awaiting approval')
       if (prior.actorId === actorId) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund requester cannot approve their own request')
@@ -89,6 +91,8 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
       if (!order.rows[0]) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_ORDER_NOT_FOUND', 'commercial order was not found')
       const committedFen = await this.committedIn(client, workspaceId, prior.orderId, requestId)
       if (order.rows[0].status !== 'paid' || prior.amountFen + committedFen > Number(order.rows[0].amountFen)) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund amount exceeds the remaining refundable order amount')
+      await this.recoverSource(client, { workspaceId, orderId: prior.orderId, requestId: prior.requestId, amountFen: prior.amountFen, pointsToRevoke: prior.pointsToRevoke, policyVersion: typeof policyApproval.policy_version === 'string' ? policyApproval.policy_version : String(policyApproval.legal_review_ref), phase: 'approve', now: createdAt })
+      if (prior.pointsToRevoke > 0) await this.freezeSourcePoints(client, prior, createdAt)
       return this.insert(client, workspaceId, { ...prior, revision: prior.revision + 1, eventType: 'approved', actorId, reason, evidence: { ...prior.evidence, policy_approval: policyApproval }, externalRefundId: null, at: createdAt })
     })
   }
@@ -96,34 +100,43 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
   async reject(input: Parameters<CommercialRefundRepository['reject']>[0]): Promise<CommercialRefundEvent> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const requestId = text(input.requestId, 'requestId'); const actorId = text(input.actorId, 'actorId'); const reason = text(input.reason, 'reason'); const createdAt = at(input.at); const rejectionEvidence = evidence(input.evidence)
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      await this.lockWorkspace(client, workspaceId)
       const prior = await this.latestIn(client, workspaceId, requestId)
       if (!prior || prior.eventType !== 'requested') throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund request is not awaiting decision')
+      const policy = prior.evidence.policy_approval as Record<string, unknown> | undefined
+      await this.recoverSource(client, { workspaceId, orderId: prior.orderId, requestId: prior.requestId, amountFen: prior.amountFen, pointsToRevoke: prior.pointsToRevoke, policyVersion: String(policy?.policy_version ?? policy?.legal_review_ref ?? ''), phase: 'reject', now: createdAt })
       return this.insert(client, workspaceId, { ...prior, revision: prior.revision + 1, eventType: 'rejected', actorId, reason, evidence: { ...prior.evidence, rejection: rejectionEvidence }, externalRefundId: null, at: createdAt })
     })
   }
 
   async complete(input: Parameters<CommercialRefundRepository['complete']>[0]): Promise<CommercialRefundEvent> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const requestId = text(input.requestId, 'requestId'); const actorId = text(input.actorId, 'actorId'); const reason = text(input.reason, 'reason'); const externalRefundId = text(input.externalRefundId, 'externalRefundId'); const completionEvidence = evidence(input.evidence); const createdAt = at(input.at)
-    return withWorkspaceTransaction(this.pool, workspaceId, client => this.completeIn(client, { workspaceId, requestId, actorId, reason, externalRefundId, completionEvidence, createdAt }))
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => { await this.lockWorkspace(client, workspaceId); return this.completeIn(client, { workspaceId, requestId, actorId, reason, externalRefundId, completionEvidence, createdAt }) })
   }
 
   async completeWithPointRevoke(input: Parameters<CommercialRefundRepository['complete']>[0], lifecycle: PostgresCreativePointLifecycleRepository): Promise<CommercialRefundEvent> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const requestId = text(input.requestId, 'requestId'); const actorId = text(input.actorId, 'actorId'); const reason = text(input.reason, 'reason'); const externalRefundId = text(input.externalRefundId, 'externalRefundId'); const completionEvidence = evidence(input.evidence); const createdAt = at(input.at)
-    return withWorkspaceTransaction(this.pool, workspaceId, client => this.completeIn(client, { workspaceId, requestId, actorId, reason, externalRefundId, completionEvidence, createdAt }, async approved => {
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => { await this.lockWorkspace(client, workspaceId); return this.completeIn(client, { workspaceId, requestId, actorId, reason, externalRefundId, completionEvidence, createdAt }, async approved => {
       const requested = await client.query<EventRow>(`SELECT ${projection} FROM commercial_refund_events_v2 WHERE workspace_id=$1 AND request_id=$2 AND event_type='requested' ORDER BY revision ASC LIMIT 1`, [workspaceId, requestId])
       const maker = requested.rows[0] ? map(requested.rows[0]) : null
       if (!maker || maker.orderId !== approved.orderId || maker.pointsToRevoke !== approved.pointsToRevoke || maker.actorId === approved.actorId) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund is missing a consistent request and distinct approver')
       if (approved.pointsToRevoke === 0) return
+      await client.query(`SELECT workspace_id FROM creative_point_access_state WHERE workspace_id=$1 FOR UPDATE`, [workspaceId])
+      const released = await client.query<{ points: string | number }>(`UPDATE commercial_refund_source_holds_v2 SET released_at=$3::timestamptz WHERE workspace_id=$1 AND request_id=$2 AND released_at IS NULL RETURNING points`, [workspaceId, requestId, createdAt])
+      const frozen = released.rows.reduce((sum, row) => sum + Number(row.points), 0)
+      if (frozen !== approved.pointsToRevoke) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund must have a complete source-bound preflight freeze before external payout')
+      await client.query(`UPDATE creative_point_access_state SET available_points=available_points+$2,revision=revision+1 WHERE workspace_id=$1 AND available_points IS NOT NULL`, [workspaceId, frozen])
       const state = await client.query<{ revision: string | number; available: string | number | null }>(`SELECT revision,available_points AS available FROM creative_point_access_state WHERE workspace_id=$1`, [workspaceId])
       const current = state.rows[0]
       if (!current || current.available === null || !Number.isSafeInteger(Number(current.revision))) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'creative point balance is unknown')
-      await lifecycle.adjustInTransaction(client, { workspaceId, approvalId: `refund:${requestId}`, pointsDelta: -approved.pointsToRevoke, expectedAccessRevision: Number(current.revision), actorId: maker.actorId, approvedByActorId: approved.actorId, reason, evidence: { refund_request_id: requestId, external_refund_id: externalRefundId, refund: completionEvidence }, idempotencyKey: `commercial.refund.points:${requestId}`, at: createdAt })
-    }))
+      await lifecycle.adjustInTransaction(client, { workspaceId, sourceOrderId: approved.orderId, approvalId: `refund:${requestId}`, pointsDelta: -approved.pointsToRevoke, expectedAccessRevision: Number(current.revision), actorId: maker.actorId, approvedByActorId: approved.actorId, reason, evidence: { refund_request_id: requestId, external_refund_id: externalRefundId, refund: completionEvidence }, idempotencyKey: `commercial.refund.points:${requestId}`, at: createdAt })
+    }) })
   }
 
   private async completeIn(client: SqlClient, input: { workspaceId: string; requestId: string; actorId: string; reason: string; externalRefundId: string; completionEvidence: Record<string, unknown>; createdAt: string }, beforeInsert?: (approved: CommercialRefundEvent) => Promise<void>): Promise<CommercialRefundEvent> {
       const { workspaceId, requestId, actorId, reason, externalRefundId, completionEvidence, createdAt } = input
       const prior = await this.latestIn(client, workspaceId, requestId)
+      if (prior?.eventType === 'completed') { if (prior.externalRefundId !== externalRefundId) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_REQUEST_CONFLICT', 'refund external fact changed'); return prior }
       if (!prior || prior.eventType !== 'approved') throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund request is not approved')
       const order = await client.query<{ amountFen: string | number; status: string }>('SELECT amount_fen AS "amountFen",status FROM commercial_orders_v2 WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [workspaceId, prior.orderId])
       if (!order.rows[0]) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_ORDER_NOT_FOUND', 'commercial order was not found')
@@ -131,6 +144,8 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
       // same order still fits inside the amount the customer actually paid.
       const committedFen = await this.committedIn(client, workspaceId, prior.orderId, requestId)
       if (order.rows[0].status !== 'paid' || prior.amountFen + committedFen > Number(order.rows[0].amountFen)) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'commercial order is no longer refundable within its paid amount')
+      { const policy = prior.evidence.policy_approval as Record<string, unknown>; await this.recoverSource(client, { workspaceId, orderId: prior.orderId, requestId: prior.requestId, amountFen: prior.amountFen, pointsToRevoke: prior.pointsToRevoke, policyVersion: typeof policy?.policy_version === 'string' ? policy.policy_version : String(policy?.legal_review_ref ?? ''), phase: 'complete', now: createdAt }) }
+      if (prior.pointsToRevoke > 0 && !beforeInsert) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'point recovery must commit with cash completion')
       await beforeInsert?.(prior)
       const event = await this.insert(client, workspaceId, { ...prior, revision: prior.revision + 1, eventType: 'completed', actorId, reason, evidence: { ...prior.evidence, completion: completionEvidence }, externalRefundId, at: createdAt })
       // The order leaves 'paid' only once the money actually paid out equals
@@ -147,6 +162,25 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
         if (settled.rowCount !== 1) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'commercial order was already refunded')
       }
       return event
+  }
+
+  private async recoverSource(client: SqlClient, input: { workspaceId: string; orderId: string; requestId: string; amountFen: number; pointsToRevoke: number; policyVersion: string; phase: 'approve' | 'complete' | 'reject'; now: string }) {
+    if (this.sourceRecovery) return this.sourceRecovery(client, input)
+    const v3 = await client.query(`SELECT order_id FROM commercial_order_terms_v3 WHERE workspace_id=$1 AND order_id=$2`, [input.workspaceId, input.orderId])
+    if (v3.rows.length) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'source contract recovery executor is not configured; automatic refund is blocked')
+  }
+
+  private async lockWorkspace(client: SqlClient, workspaceId: string) { await client.query(`SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext($1),pg_catalog.hashtext($2))`, ['workspace_subscription_periods_v2', workspaceId]) }
+
+  /** Approval is the preflight: freeze only source-order unused points before any external payout. */
+  private async freezeSourcePoints(client: SqlClient, prior: CommercialRefundEvent, observedAt: string) {
+    await client.query(`SELECT workspace_id FROM creative_point_access_state WHERE workspace_id=$1 FOR UPDATE`, [prior.workspaceId])
+    const grants = await client.query<{ id: string; remaining: string | number }>(`SELECT g.id,g.points-COALESCE(a.points,0)-COALESCE(h.points,0) AS remaining FROM creative_point_grants g LEFT JOIN LATERAL(SELECT sum(points_delta) AS points FROM creative_point_allocations WHERE workspace_id=g.workspace_id AND grant_id=g.id) a ON true LEFT JOIN LATERAL(SELECT sum(points) AS points FROM commercial_refund_source_holds_v2 WHERE workspace_id=g.workspace_id AND grant_id=g.id AND released_at IS NULL) h ON true WHERE g.workspace_id=$1 AND ((g.source_type='commercial_order_v2' AND g.source_id=$2) OR (g.source_type='commercial_schedule_v3' AND EXISTS(SELECT 1 FROM commercial_point_grant_schedules_v3 cs WHERE cs.workspace_id=g.workspace_id AND cs.id=g.source_id AND cs.order_id=$2)) OR (g.source_type='onboarding_schedule_v2' AND EXISTS(SELECT 1 FROM onboarding_point_grant_schedules_v2 os WHERE os.workspace_id=g.workspace_id AND os.id=g.source_id AND os.onboarding_order_id=$2))) AND (g.expires_at IS NULL OR g.expires_at>$3::timestamptz) ORDER BY g.id FOR UPDATE OF g`, [prior.workspaceId, prior.orderId, observedAt])
+    let remaining = prior.pointsToRevoke
+    for (const grant of grants.rows) { const amount = Math.min(remaining, Math.max(0, Number(grant.remaining))); if (amount > 0) await client.query(`INSERT INTO commercial_refund_source_holds_v2(workspace_id,request_id,order_id,grant_id,points,created_at) VALUES($1,$2,$3,$4,$5,$6::timestamptz)`, [prior.workspaceId, prior.requestId, prior.orderId, grant.id, amount, observedAt]); remaining -= amount; if (!remaining) break }
+    if (remaining) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'source order unused and unreserved points cannot cover refund; controlled compensation is required')
+    const state = await client.query(`UPDATE creative_point_access_state SET available_points=available_points-$2,revision=revision+1,updated_at=$3::timestamptz WHERE workspace_id=$1 AND available_points >= $2`, [prior.workspaceId, prior.pointsToRevoke, observedAt])
+    if (state.rowCount !== 1) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'source refund balance cannot be frozen')
   }
 
   async latest(workspaceIdInput: string, requestIdInput: string): Promise<CommercialRefundEvent | null> { const workspaceId = requireWorkspaceScope(workspaceIdInput); const requestId = text(requestIdInput, 'requestId'); return withWorkspaceTransaction(this.pool, workspaceId, client => this.latestIn(client, workspaceId, requestId)) }

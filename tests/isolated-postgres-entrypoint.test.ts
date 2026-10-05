@@ -12,15 +12,15 @@ const report = (files: readonly string[]) => ({
 
 describe('isolated PostgreSQL entrypoint', () => {
   it('selects exactly the audited PostgreSQL files by default', async () => {
-    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(34)
-    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(34)
+    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(46)
+    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(46)
     await expect(selectIsolatedPostgresTests([])).resolves.toEqual(ISOLATED_POSTGRES_TEST_FILES)
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/bridge-242-254-forward-migrations.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('apps/api/src/content-generation-action-owner.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('apps/api/src/catalog-positive-isolated.postgres.test.ts')
-    expect(ISOLATED_POSTGRES_TEST_FILES.every(file => (file.startsWith('packages/persistence/src/') || file === 'apps/api/src/content-generation-action-owner.postgres.test.ts' || file === 'apps/api/src/catalog-positive-isolated.postgres.test.ts' || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts' || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts') && file.endsWith('.postgres.test.ts'))).toBe(true)
+    expect(ISOLATED_POSTGRES_TEST_FILES.every(file => (file.startsWith('packages/persistence/src/') || file === 'apps/api/src/content-generation-action-owner.postgres.test.ts' || file === 'apps/api/src/catalog-positive-isolated.postgres.test.ts' || file === 'apps/api/src/product-stock-provenance.postgres.test.ts' || file === 'apps/api/src/image-dispatch-scope-http.postgres.test.ts' || file === 'apps/worker/src/image-worker-signed-boundary.postgres.test.ts' || file === 'apps/worker/src/image-pre-dispatch-budget-recovery.postgres.test.ts' || file === 'apps/worker/src/image-pre-dispatch-recovery.postgres.test.ts' || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts' || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts') && file.endsWith('.postgres.test.ts'))).toBe(true)
   })
   it('accepts exact known file selections and normalizes a relative prefix', async () => {
     await expect(selectIsolatedPostgresTests([`./${ISOLATED_POSTGRES_TEST_FILES[0]}`])).resolves.toEqual([ISOLATED_POSTGRES_TEST_FILES[0]])

@@ -1,12 +1,33 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CommercialOperationsController } from "../../hooks/useCommercialOperations.js";
-import { commercialBlockDisplayState, CommercialAccessStatusBar, CommercialErrorSummary, CommercialOperationsWorkspace, matchingRefundEvent, platformCatalogGovernanceTarget } from "./CommercialOperationsWorkspace.js";
+import { UnmatchedCashOperationsPanel, CashReceiptOperationsPanel, AssistedPurchaseOperationsPanel, commercialBlockDisplayState, CommercialAccessStatusBar, CommercialErrorSummary, CommercialOperationsWorkspace, matchingRefundEvent, platformCatalogGovernanceTarget } from "./CommercialOperationsWorkspace.js";
 import { parseCommercialReadiness } from "../../api/commercialOperationsClient.js";
 
 const query = { view: "blocks", record: "", status: "", query: "", page: 1, sort: "", order: "" } as const;
 
 describe("CommercialOperationsWorkspace", () => {
+  it("does not expose financial approval or technical payment secrets to a recording-only operator", () => {
+    const controller = {targetWorkspaceId:"ws1",permissions:{canReadOrders:true,canRecordReceipt:true,canAllocateReceipt:false,canProposeReceiptReturn:false,canApproveReceiptReturn:false,canCompleteReceiptReturn:false},data:{orders:{status:"idle"}},client:{},loadView:vi.fn()} as unknown as CommercialOperationsController;
+    const html = renderToStaticMarkup(<CashReceiptOperationsPanel controller={controller} />);
+    expect(html).toContain("预览到账事实");
+    for (const label of ["读取服务端分配预览","独立审批返款","登记已核实返款结果"]) { const before = html.slice(0,html.indexOf(`>${label}<`)); expect(before.slice(before.lastIndexOf("<button"))).toContain("disabled"); }
+    expect(html).not.toContain("nonce"); expect(html).not.toContain("payload hash");
+  });
+  it("requires a verified selected customer even when the operator can create orders", () => {
+    const controller = {targetWorkspaceId:"ws1",permissions:{canReadOrders:true,canCreateOrder:true,canSearchCustomers:true},data:{catalog:{status:"idle"}},client:{}} as unknown as CommercialOperationsController;
+    const html = renderToStaticMarkup(<AssistedPurchaseOperationsPanel controller={controller} />);
+    expect(html).toContain("尚未核实客户与企业匹配");
+    const before = html.slice(0,html.indexOf(">读取服务端代购预览<")); expect(before.slice(before.lastIndexOf("<button"))).toContain("disabled");
+  });
+  it("permits unmatched queue reading without allowing ownership mutations",()=>{
+    const controller={permissions:{canReadUnmatchedReceipts:true,canRecordUnmatchedReceipts:false,canMatchUnmatchedReceipts:false,canSearchCustomers:true},client:{}} as unknown as CommercialOperationsController;
+    const html=renderToStaticMarkup(<UnmatchedCashOperationsPanel controller={controller}/>);
+    expect(html).toContain("尚未读取真实队列，不代表队列为空");
+    for(const label of ["预览待匹配到账事实","预览匹配并核对归属","申请未知归属款返还","独立审批未知归属返款","拒绝未知归属返款","登记外部结果未知并冻结","登记核实的未知归属返款完成"]){const before=html.slice(0,html.indexOf(`>${label}<`));expect(before.slice(before.lastIndexOf("<button"))).toContain("disabled");}
+    expect(html).toContain("原款原付款方返还，独立审批");
+    expect(html).not.toContain("ws_demo");
+  });
   it("permits only the latest matching server refund state for approval or completion", () => {
     const requested = { id: "event-1", workspaceId: "ws_1", orderId: "order-1", requestId: "refund-1", revision: 1, eventType: "requested", refundKind: "monthly_unused_points", amountFen: 2000, pointsToRevoke: 10, reason: "policy", actorId: "finance-1", evidence: {}, externalRefundId: null, createdAt: "2026-09-23T00:00:00.000Z" } as const;
     const approved = { ...requested, id: "event-2", revision: 2, eventType: "approved", actorId: "finance-2" };

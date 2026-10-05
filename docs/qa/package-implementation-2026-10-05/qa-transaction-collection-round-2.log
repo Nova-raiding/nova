@@ -1,0 +1,14 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ↓ packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts (5 tests | 5 skipped)
+ ✓ packages/persistence/src/migration.test.ts (17 tests) 328ms
+ ✓ tests/default-suite-pending.test.ts (17 tests) 31ms
+ ✓ tests/postgres-ci-denominator.test.ts (2 tests) 7ms
+
+ Test Files  3 passed | 1 skipped (4)
+      Tests  36 passed | 5 skipped (41)
+   Start at  11:39:54
+   Duration  1.47s (transform 342ms, setup 0ms, import 567ms, tests 366ms, environment 0ms)
+
+[pending-gate] 5 declared pending assertion(s) across 1 allow-listed file(s)

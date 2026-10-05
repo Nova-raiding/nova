@@ -45,11 +45,11 @@ export interface CommercialPlanEntitlements {
 export interface OnboardingOffer {
   policyRef?: CommercialPolicyReference
   code: 'onboarding_once'
-  priceCny: 5000
+  priceCny: number
   priceMode: 'fixed'
   grantSchedule: {
-    grantCount: 6
-    pointsPerGrant: 500
+    grantCount: number
+    pointsPerGrant: number
     cadence: 'monthly'
     startsAt: 'payment_verified'
     timezone: 'UTC'
@@ -87,11 +87,11 @@ export interface PrivateValidationOffer {
 
 export interface CreativePointPack {
   policyRef?: CommercialPolicyReference
-  code: 'points_500' | 'points_2000'
-  creativePoints: 500 | 2000
-  priceCny: 300 | 1000
+  code: string
+  creativePoints: number
+  priceCny: number
   expiryRule: 'purchase_plus_30_natural_days'
-  expiryDays: 30
+  expiryDays: number
   lifecycle: 'active'
   executable: true
   blockers: readonly []
@@ -119,8 +119,8 @@ export interface DraftCreativePointRate {
 /**
  * Local source contract used to seed a versioned catalog. It is never a
  * replacement for the persisted offer snapshot or evidence of production
- * readiness. `50g` deliberately remains unnormalised until its unit is
- * approved; callers must not derive bytes from this catalog.
+ * readiness. Stored approved versions, rather than these initial seed prices,
+ * authorize purchases and entitlement grants.
  */
 export const LOCAL_PLAN_ENTITLEMENTS: readonly CommercialPlanEntitlements[] = Object.freeze([
   {
@@ -228,8 +228,7 @@ export function validatePlanEntitlements(value: CommercialPlanEntitlements): Com
 
 /**
  * Activation is only possible from an approved persisted snapshot. The source
- * catalog intentionally fails here while `50g` or custom order quantities are
- * unresolved.
+ * catalog intentionally fails here while custom order quantities are unresolved.
  */
 export function validateResolvedPlanEntitlements(value: CommercialPlanEntitlements): CommercialPlanEntitlements {
   const validated = validatePlanEntitlements(value)

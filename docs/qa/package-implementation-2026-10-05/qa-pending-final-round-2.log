@@ -1,0 +1,12 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ tests/postgres-ci-denominator.test.ts (2 tests) 13ms
+ ✓ packages/persistence/src/migration.test.ts (17 tests) 348ms
+ ✓ tests/default-suite-pending.test.ts (17 tests) 34ms
+
+ Test Files  3 passed (3)
+      Tests  36 passed (36)
+   Start at  12:05:07
+   Duration  1.03s (transform 74ms, setup 0ms, import 223ms, tests 395ms, environment 0ms)
+

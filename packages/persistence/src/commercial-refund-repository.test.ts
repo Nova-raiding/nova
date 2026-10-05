@@ -76,7 +76,8 @@ class FakeClient implements SqlClient {
 
   async query<Row = Record<string, unknown>>(text: string, values: readonly unknown[] = []) {
     this.queries.push(text)
-    if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK' || text.includes('set_config')) return { rows: [] as Row[] }
+    if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK' || text.includes('set_config') || text.includes('pg_advisory_xact_lock')) return { rows: [] as Row[] }
+    if (text.includes('FROM commercial_order_terms_v3')) return { rows: [] as Row[] }
     if (text.includes('FROM commercial_orders_v2')) {
       return { rows: (this.ledger.order ? [{ amountFen: this.ledger.order.amountFen, status: this.ledger.order.status }] : []) as Row[] }
     }
@@ -122,7 +123,7 @@ class FakePool implements SqlPool {
 const repositoryFor = (ledger: RefundLedger) => new PostgresCommercialRefundRepository(new FakePool(ledger))
 const requestInput = (requestId: string, amountFen = 10000) => ({
   workspaceId: 'ws-refund', orderId: 'order-1', requestId, refundKind: 'monthly_unused_points' as const,
-  amountFen, pointsToRevoke: 20, reason: '未使用月费点数', actorId: 'maker', evidence: { supplement_agreement_ref: 'SUP-1' }, at: '2026-09-08T00:00:00.000Z',
+  amountFen, pointsToRevoke: 0, reason: '未使用月费点数', actorId: 'maker', evidence: { supplement_agreement_ref: 'SUP-1' }, at: '2026-09-08T00:00:00.000Z',
 })
 const approveInput = (requestId: string) => ({ workspaceId: 'ws-refund', requestId, actorId: 'finance', reason: 'approved', policyApproval: { legal_review_ref: 'LAW-1' }, at: '2026-09-08T00:01:00.000Z' })
 const completeInput = (requestId: string, externalRefundId = 'bank-refund-1') => ({ workspaceId: 'ws-refund', requestId, actorId: 'finance', reason: 'external transfer confirmed', externalRefundId, evidence: { provider: 'manual_transfer', receipt: 'R-1' }, at: '2026-09-08T00:02:00.000Z' })
@@ -133,7 +134,7 @@ describe('commercial refund repository', () => {
     const repository = repositoryFor(ledger)
     // The full paid amount, so completion is also the point where the order
     // legitimately reaches its 'refunded' terminal state.
-    await expect(repository.request(requestInput('refund-1', 500000))).resolves.toMatchObject({ eventType: 'requested', pointsToRevoke: 20 })
+    await expect(repository.request(requestInput('refund-1', 500000))).resolves.toMatchObject({ eventType: 'requested', pointsToRevoke: 0 })
     await expect(repository.approve({ ...approveInput('refund-1'), policyApproval: { legal_review_ref: '' } })).rejects.toMatchObject({ code: 'COMMERCIAL_REFUND_INPUT_INVALID' })
     await expect(repository.approve({ ...approveInput('refund-1'), actorId: 'maker' })).rejects.toMatchObject({ code: 'COMMERCIAL_REFUND_STATE_INVALID' })
     await expect(repository.approve(approveInput('refund-1'))).resolves.toMatchObject({ eventType: 'approved' })

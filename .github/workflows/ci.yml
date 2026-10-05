@@ -263,6 +263,9 @@ jobs:
           # audited disposable subset; CI's dedicated PostgreSQL service is
           # the authoritative full-surface execution environment.
           apps/worker/src/creative-point-relay-settlement.postgres.test.ts
+          apps/worker/src/image-pre-dispatch-budget-recovery.postgres.test.ts
+          apps/worker/src/image-pre-dispatch-recovery.postgres.test.ts
+          apps/worker/src/image-worker-signed-boundary.postgres.test.ts
           packages/persistence/src/application-rls-allow-scope-mismatch.postgres.test.ts
           packages/persistence/src/authorization-audit-rls.postgres.test.ts
           packages/persistence/src/authorization-execution-reservation-rls.postgres.test.ts
@@ -277,10 +280,18 @@ jobs:
           packages/persistence/src/canonical-product-backfill.postgres.test.ts
           packages/persistence/src/local-212-collision-bridge.postgres.test.ts
           packages/persistence/src/commercial-contract-repository.release.postgres.test.ts
+          packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts
+          packages/persistence/src/commercial-notification-repository.release.postgres.test.ts
+          packages/persistence/src/commercial-receipt-repository.postgres.test.ts
+          packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts
+          packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts
+          packages/persistence/src/commercial-source-refund-blockers.release.postgres.test.ts
           packages/persistence/src/commercial-refund-repository.release.postgres.test.ts
           packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts
           packages/persistence/src/data-lifecycle-repository.postgres.test.ts
           packages/persistence/src/image-generation-before-provider.release.postgres.test.ts
+          packages/persistence/src/image-budget-interleaving.postgres.test.ts
+          packages/persistence/src/image-completed-unknown-ack.postgres.test.ts
           packages/persistence/src/knowledge-index-cas.release.postgres.test.ts
           packages/persistence/src/knowledge-generation-claim-boundary.postgres.test.ts
           packages/persistence/src/scoped-brand-settings.release.postgres.test.ts

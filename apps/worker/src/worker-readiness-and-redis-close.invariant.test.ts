@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtemp, stat } from 'node:fs/promises'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
@@ -248,7 +249,7 @@ describe('the ready marker means the loop is completing iterations', () => {
       async query(sql: string) {
         if (/schema_migrations/u.test(sql)) {
           dependencyChecks += 1
-          return { rows: migrations.map(migration => ({ version: migration.version, name: migration.name })) }
+          return { rows: migrations.map(migration => ({ version: migration.version, name: migration.name, checksum: createHash('sha256').update(migration.sql).digest('hex') })) }
         }
         return { rows: [] }
       },
@@ -301,7 +302,7 @@ describe('the ready marker means the loop is completing iterations', () => {
     let transientFailures = 0
     let healthyIterationInFlight = false
     const query = async (sql: string) => {
-      if (/schema_migrations/u.test(sql)) return { rows: migrations.map(migration => ({ version: migration.version, name: migration.name })) }
+      if (/schema_migrations/u.test(sql)) return { rows: migrations.map(migration => ({ version: migration.version, name: migration.name, checksum: createHash('sha256').update(migration.sql).digest('hex') })) }
       if (/worker_active_workspace_catalog/u.test(sql)) {
         // Exactly one transient failure - a Redis round trip over its budget, an
         // API 503 - and then a healthy iteration that is long enough for the

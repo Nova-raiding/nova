@@ -1,0 +1,21 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ tests/mcp-surface-contract.test.ts (16 tests) 9630ms
+     ✓ offers Alipay as the only payment channel on every purchasing tool  1722ms
+     ✓ keeps the merchant hidden/disabled sets resolvable against the allowlist and the runtime tools/list  1319ms
+     ✓ never declares a tools/list argument the authoritative contract would reject  1838ms
+     ✓ keeps every tool named by the entry skill reachable through tools/list  1678ms
+     ✓ keeps every allowlisted method represented by API/OpenAPI while hiding operations tools from the merchant plugin  2093ms
+     ✓ keeps campaign controls unique across API, OpenAPI, source bridge, and installed bridge  425ms
+     ✓ keeps video evidence and model usage settlement fields aligned across relay surfaces  304ms
+ ✓ tests/plugin-manifest.test.ts (6 tests) 1082ms
+     ✓ executes discovery from both source and local-source adapter bridge roots  1057ms
+ ✓ tests/release-metadata-gate.test.ts (5 tests) 706ms
+     ✓ matches the actual merchant Bridge tools/list surface  671ms
+
+ Test Files  3 passed (3)
+      Tests  27 passed (27)
+   Start at  12:21:13
+   Duration  19.19s (transform 2.06s, setup 0ms, import 2.74s, tests 11.42s, environment 2ms)
+

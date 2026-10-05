@@ -7,6 +7,7 @@ import { InMemoryJobRunner, WorkerFailure } from '../packages/workers/src/runner
 const request = async (base: string, workspaceId: string, path: string, init?: RequestInit) => {
   const headers = new Headers(init?.headers)
   headers.set('x-workspace-id', workspaceId)
+  headers.set('x-test-commercial-fixture', 'server-e2e')
   const response = await fetch(`${base}${path}`, { ...init, headers })
   return { status: response.status, body: await response.json() as { data: any; error: { code: string } | null } }
 }
@@ -44,6 +45,7 @@ describe('quality gates', () => {
       const contentVersionId = service.createDraft(taskId).id
       await request(base, owner, `/v1/tasks/${taskId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content_version_id: contentVersionId }) })
       const preview = await request(base, owner, `/v1/tasks/${taskId}/publish-preview`, { method: 'POST' })
+      expect(preview.status, JSON.stringify(preview.body.error)).toBe(200)
       const deniedPublish = await request(base, attacker, '/v1/publish-jobs', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': `attacker-${suffix}` }, body: JSON.stringify({ workspace_id: attacker, task_id: taskId, content_version_id: contentVersionId, confirmation_hash: preview.body.data.confirmationHash, remote_snapshot_hash: preview.body.data.remoteSnapshotHash }) })
       expect(deniedPublish.status).toBe(403)
       expect(deniedPublish.body.error?.code).toBe('TENANT_SCOPE_DENIED')

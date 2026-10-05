@@ -25,6 +25,11 @@ describe('commercial count capacity', () => {
     await expect(resolveCommercialCountBenefit({ workspaceId: 'workspace-1', code: 'max_stores', snapshots: [snapshot()], now })).resolves.toBe(5)
   })
 
+  it('reads cloud storage normalized bytes rather than display GB quantity', async () => {
+    await expect(resolveCommercialCountBenefit({ workspaceId: 'workspace-1', code: 'cloud_storage', snapshots: [snapshot({ resolvedBenefits: [...snapshot().resolvedBenefits, { code: 'cloud_storage', quantity: 50, normalizedValue: 50_000_000_000 }] })], now })).resolves.toBe(50_000_000_000)
+    await expect(resolveCommercialCountBenefit({ workspaceId: 'workspace-1', code: 'cloud_storage', snapshots: [snapshot()], now })).rejects.toMatchObject({ code: 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE' })
+  })
+
   it.each([
     ['missing entitlement', []],
     ['expired entitlement', [snapshot({ periodEnd: now.toISOString() })]],

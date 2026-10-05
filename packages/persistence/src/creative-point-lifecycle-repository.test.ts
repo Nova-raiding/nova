@@ -7,7 +7,7 @@ class Client implements SqlClient {
   readonly sql: string[] = []
   readonly values: Array<readonly unknown[] | undefined> = []
   constructor(private readonly respond: (sql: string, values?: readonly unknown[]) => SqlQueryResult | undefined = () => ({ rows: [] })) {}
-  async query<Row>(sql: string, values?: readonly unknown[]): Promise<SqlQueryResult<Row>> { this.sql.push(sql); this.values.push(values); return (this.respond(sql, values) ?? { rows: [] }) as SqlQueryResult<Row> }
+  async query<Row>(sql: string, values?: readonly unknown[]): Promise<SqlQueryResult<Row>> { this.sql.push(sql); this.values.push(values); return (sql.includes('pg_catalog.to_regclass') ? {rows:[{present:true}]} : this.respond(sql, values) ?? { rows: [] }) as SqlQueryResult<Row> }
 }
 
 /** One completed operation row. Before the replay guard compares payloads the

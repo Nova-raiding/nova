@@ -52,8 +52,8 @@ test('downloads Ops XLSX, imports merchant draft through real scan, and keeps kn
     const uploadPromise = studio.waitForResponse(response => response.url().endsWith('/api/v1/assets/upload') && response.request().method() === 'POST')
     await form.locator('input[type="file"]').setInputFiles({ name: '商品-SKU导入模板.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: workbook })
     const upload = await uploadPromise
-    expect(upload.status()).toBe(201)
     const uploadBody = await upload.json()
+    expect(upload.status(), JSON.stringify(uploadBody)).toBe(201)
     const assetId = uploadBody.data?.id
     expect(assetId).toMatch(/^asset_/u)
     await expect(form.getByText('预览：1 个商品，1 个 SKU / 商品记录')).toBeVisible({ timeout: 90_000 })

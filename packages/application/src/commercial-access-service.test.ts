@@ -1,9 +1,11 @@
+import { COMMERCIAL_FEATURE_CODES } from './commercial-feature-definitions.js'
 import { describe, expect, it, vi } from 'vitest'
 import { ERROR_CODES, defineCommercialOperationRegistry } from '@merchant-marketing/contracts'
 import {
   CommercialAccessService,
   type ApprovedCreativePointRate,
   type CreativePointBalanceProjection,
+  type CommercialAccessServiceOptions,
 } from './commercial-access-service.js'
 
 const registry = defineCommercialOperationRegistry([
@@ -17,7 +19,7 @@ const registry = defineCommercialOperationRegistry([
 function harness(
   balance: CreativePointBalanceProjection,
   rate: ApprovedCreativePointRate = { state: 'approved', quoted_points: 1, rate_card_version: 'rate-v1' },
-  trace: { readonly id_factory?: () => string; readonly now?: () => Date } = {},
+  trace: Pick<CommercialAccessServiceOptions, 'id_factory' | 'now' | 'qualification_projection'> = {},
   entitlement: 'available' | 'missing' | 'unavailable' = 'available',
 ) {
   const projectCreativePointBalance = vi.fn(async () => balance)
@@ -29,7 +31,7 @@ function harness(
       id: 'entitlement-v2-1', workspaceId: 'workspace-1', subscriptionPeriodId: 'period-1',
       periodStart: '2026-01-01T00:00:00.000Z', periodEnd: '2027-01-01T00:00:00.000Z', periodStatus: 'active',
       catalogVersionId: 'catalog-v1', skuCode: 'monthly_basic',
-      resolvedBenefits: [{ code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 }],
+      resolvedBenefits: [{ code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 }, ...COMMERCIAL_FEATURE_CODES.map(code => ({ code, quantity: 1 }))],
       unresolvedBlockers: [], executable: true, checksum: 'a'.repeat(64), createdAt: '2026-01-01T00:00:00.000Z',
     }]
   })
@@ -39,6 +41,7 @@ function harness(
     balance_projection: { projectCreativePointBalance },
     rate_resolver: { resolveApprovedRate },
     entitlement_projection: { listV2EntitlementSnapshots },
+    qualification_projection: { projectCommercialQualification: async () => ({ state: 'known', qualified: true }) },
     next_actions: code => code === ERROR_CODES.CREATIVE_POINTS_EXHAUSTED ? ['billing.status', 'billing.status'] : [],
     ...trace,
   })
@@ -54,6 +57,48 @@ const decision = async (service: CommercialAccessService, operation: string, req
 }
 
 describe('CommercialAccessService E1', () => {
+  it('requires factual onboarding qualification after the valid paid subscription gate', async () => {
+    const balance = { state: 'known' as const, available_points: 10, access_revision: 'r1', freshness: 'fresh' as const }
+    for (const projection of [undefined, { projectCommercialQualification: async () => ({ state: 'unknown' as const }) }]) {
+      const h = harness(balance, undefined, { qualification_projection: projection })
+      expect(await decision(h.service, 'merchant.start')).toMatchObject({ allowed: false, error_code: 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE' })
+    }
+    const h = harness(balance, undefined, { qualification_projection: { projectCommercialQualification: async () => ({ state: 'known', qualified: false }) } })
+    expect(await decision(h.service, 'catalog.image.generate')).toMatchObject({ allowed: false, error_code: 'COMMERCIAL_ENTITLEMENT_REQUIRED' })
+    expect(await decision(h.service, 'subscription.get')).toMatchObject({ allowed: true })
+  })
+
+  it('accepts only the approved same-Workspace private contract inside its effective window', async () => {
+    const exception = { workspace_id: 'workspace-1', starts_at: '2026-09-01T00:00:00.000Z', expires_at: '2026-09-08T00:00:00.000Z', policy_id: 'private-approved-v1', order_id: 'trial-order-1' }
+    const projection = (value: typeof exception) => ({ projectCommercialQualification: async () => ({ state: 'known' as const, qualified: false, approved_private_trial_exception: value }) })
+    const balance = { state: 'known' as const, available_points: 10, access_revision: 'r1', freshness: 'fresh' as const }
+    const trace = { now: () => new Date('2026-09-04T00:00:00.000Z') }
+    expect(await decision(harness(balance, undefined, { ...trace, qualification_projection: projection(exception) }).service, 'merchant.start')).toMatchObject({ allowed: true })
+    for (const invalid of [{ ...exception, workspace_id: 'workspace-2' }, { ...exception, expires_at: '2026-09-04T00:00:00.000Z' }, { ...exception, policy_id: '' }]) {
+      expect(await decision(harness(balance, undefined, { ...trace, qualification_projection: projection(invalid) }).service, 'merchant.start')).toMatchObject({ allowed: false })
+    }
+  })
+
+  it('does not read qualification or balances for an exact recovery action', async () => {
+    const projectCommercialQualification = vi.fn(async () => { throw new Error('qualification database unavailable') })
+    const h = harness({ state: 'unknown' }, undefined, { qualification_projection: { projectCommercialQualification } })
+    expect(await decision(h.service, 'subscription.get')).toMatchObject({ allowed: true, balance_state: 'unknown' })
+    expect(projectCommercialQualification).not.toHaveBeenCalled()
+    expect(h.projectCreativePointBalance).not.toHaveBeenCalled()
+  })
+
+  it('rechecks active feature and opening qualification without rejecting a fully reserved zero balance', async () => {
+    const h = harness({ state: 'known', available_points: 0, access_revision: 'r1', freshness: 'fresh' })
+    expect(await h.service.recheckEntitlement(request('catalog.image.generate'))).toMatchObject({ allowed: true, code: 'OK', snapshot_id: 'entitlement-v2-1' })
+    expect(h.projectCreativePointBalance).not.toHaveBeenCalled()
+    expect(h.resolveApprovedRate).not.toHaveBeenCalled()
+    expect(await h.service.recheckEntitlement(request('subscription.get'))).toMatchObject({ allowed: false })
+    expect(await h.service.recheckEntitlement(request('content.generate'))).toMatchObject({ allowed: false })
+    expect(await h.service.recheckEntitlement(request('unregistered.action'))).toMatchObject({ allowed: false })
+    h.listV2EntitlementSnapshots.mockResolvedValueOnce([])
+    expect(await h.service.recheckEntitlement(request('catalog.image.generate'))).toMatchObject({ allowed: false, code: 'COMMERCIAL_ENTITLEMENT_REQUIRED' })
+  })
+
   it('generates an authoritative decision identity and timestamp for every outcome', async () => {
     let sequence = 0
     const idFactory = vi.fn(() => `decision-${++sequence}`)

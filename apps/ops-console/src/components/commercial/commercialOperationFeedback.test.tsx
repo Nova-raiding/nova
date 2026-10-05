@@ -174,7 +174,7 @@ describe("confirmation dialog default focus", () => {
     expect(dangerModalSource).toContain("autoFocus={focusPlan.cancel}");
     expect(dangerModalSource).toContain("disabled={!reason.trim() || loading}");
     // Both commercial dialogs opt into cancel-first.
-    expect(workspaceSource.match(/initialFocus="cancel"/gu)).toHaveLength(2);
+    expect(workspaceSource.match(/initialFocus="cancel"/gu)).toHaveLength(5);
   });
 
   it("runs the command from the dialog confirmation, not from opening it", () => {

@@ -248,7 +248,7 @@ describe('central commercial access gate', () => {
     const httpStart = httpRoutes.indexOf("path === '/v1/creative-points/statement'")
     const httpEnd = httpRoutes.indexOf("path === '/v1/commercial/catalog'", httpStart)
     expect(handlers.slice(mcpStart, mcpEnd)).toContain('deps.persistence.creativePoints.listStatement')
-    expect(httpRoutes.slice(httpStart, httpEnd)).toContain('creativePoints.listStatement')
+    expect(httpRoutes.slice(httpStart, httpEnd < 0 ? undefined : httpEnd)).toContain("invoke('creative-points.statement.list'")
   })
 
   it('returns ops commercial DTOs in the desktop parser shape', () => {

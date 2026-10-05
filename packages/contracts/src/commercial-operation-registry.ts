@@ -21,8 +21,52 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.commercial.points.adjust.decide',
   'ops.marketing.generation.no_delivery.refund',
   'ops.commercial.catalog-v2.list',
+  'ops.commercial.benefit-definitions.list',
+  'ops.commercial.notifications.purchase-results.list',
+  'ops.commercial.notifications.purchase-results.redrive',
+  'ops.commercial.benefit-bundles.list',
+  'ops.commercial.benefit-bundles.mutate',
+  'ops.commercial.benefit-bundles.references.list',
+
   'ops.commercial.catalog-v2.mutate',
   'ops.commercial.orders-v2.list',
+  'ops.commercial.order.preview',
+  'ops.commercial.order.request.get',
+  'ops.commercial.upgrade.quote.request.get',
+  'ops.commercial.checkout.preview',
+  'ops.commercial.checkout.create',
+  'ops.commercial.checkout.request.get',
+
+  'ops.commercial.receipt.allocations.preview',
+  'ops.commercial.receipt.allocations.confirm',
+
+  'ops.commercial.upgrade.quote.create',
+  'ops.commercial.upgrade.quote.get',
+
+  'ops.commercial.order.create',
+
+  'ops.commercial.receipt.record',
+  'ops.commercial.receipt.request.get',
+  'ops.commercial.receipt.allocation.request.get',
+  'ops.commercial.receipt.return.request.get',
+  'ops.commercial.receipt.unmatched.return.propose',
+  'ops.commercial.receipt.unmatched.return.decide',
+  'ops.commercial.receipt.unmatched.return.complete',
+  'ops.commercial.receipt.unmatched.return.list',
+
+  'ops.commercial.receipt.unmatched.record',
+  'ops.commercial.receipt.unmatched.list',
+  'ops.commercial.receipt.unmatched.match',
+
+  'ops.commercial.receipt.list',
+  'ops.commercial.receipt.get',
+  'ops.commercial.receipt.allocation.preview',
+  'ops.commercial.receipt.allocation.confirm',
+  'ops.commercial.receipt.return.propose',
+  'ops.commercial.receipt.return.decide',
+  'ops.commercial.receipt.return.complete',
+  'ops.commercial.receipt.return.list',
+
   'ops.commercial.rate-cards.list',
   'ops.commercial.readiness.report',
   'ops.commercial.private-trial.eligibility.create',
@@ -90,6 +134,10 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.model-usage.summary',
   'ops.storage.reconciliation.list',
   'ops.support.tickets.list',
+  'ops.support.platform.tickets.list',
+  'ops.support.platform.ticket.get',
+  'ops.support.platform.ticket.comment',
+
   'ops.support.ticket.get',
   'ops.support.ticket.create',
   'ops.support.ticket.assign',
@@ -182,8 +230,21 @@ export const MCP_RECOVERY_ENABLED_METHODS = [
   'canonical.product.consistency',
   'commercial.access.get',
   'commercial.catalog.get',
+  'commercial.upgrade.quote.create',
+  'commercial.upgrade.quote.get',
+  'commercial.subscription.get',
+  'commercial.notifications.list',
+  'commercial.notifications.mark-read',
+
   'commercial.order.create',
   'commercial.order.payment.get',
+  'commercial.order.payment.create',
+  'commercial.checkout.request.get',
+
+  'commercial.order.request.get',
+  'commercial.upgrade.quote.request.get',
+  'commercial.checkout.create',
+
   'creative-points.balance.get',
   'creative-points.statement.list',
   'subscription.get',
@@ -378,6 +439,17 @@ export const HTTP_IDENTITY_LINKED_OPERATIONS = [
   'http:GET:/v1/delivery-readiness',
   'http:GET:/v1/commercial/access',
   'http:GET:/v1/commercial/catalog',
+  'http:GET:/v1/commercial/order-requests/{idempotencyKey}',
+  'http:GET:/v1/commercial/upgrade-quote-requests/{idempotencyKey}',
+  'http:GET:/v1/commercial/checkout-requests/{idempotencyKey}',
+  'http:POST:/v1/commercial/checkouts',
+  'http:POST:/v1/commercial/orders/{orderId}/checkout',
+
+  'http:POST:/v1/commercial/upgrade-quotes',
+  'http:GET:/v1/commercial/upgrade-quotes/{quoteId}',
+  'http:GET:/v1/commercial/subscription',
+  'http:GET:/v1/commercial/notifications',
+  'http:POST:/v1/commercial/notifications/{notificationId}/read',
   'http:POST:/v1/commercial/orders',
   'http:GET:/v1/commercial/orders/{orderId}/payment',
   'http:GET:/v1/creative-points/balance',
@@ -477,6 +549,13 @@ export const HTTP_OPS_IDENTITY_OPERATIONS = [
   'http:POST:/v1/ops/merchant-accounts/authorize',
 ] as const satisfies readonly string[]
 
+/** Exact merchant support recovery endpoints. The runtime still requires an
+ * active authenticated workspace membership and verifies ticket ownership. */
+export const HTTP_CUSTOMER_SUPPORT_RECOVERY_OPERATIONS = [
+  'http:POST:/v1/support/requests',
+  'http:GET:/v1/support/requests/{ticketId}',
+] as const
+
 export const HTTP_RECOVERY_CALLBACK_OPERATIONS = [
   'http:POST:/v1/billing/callback/{channel}',
   'http:POST:/v1/subscriptions/callback/{channel}',
@@ -499,6 +578,7 @@ export const HTTP_MACHINE_INFRASTRUCTURE_OPERATIONS = [
   'http:GET:/v1/publish-jobs/{jobId}/media',
   'http:POST:/v1/publish-jobs/{jobId}/observation',
   'http:POST:/v1/internal/automation/tick',
+  'http:POST:/v1/internal/commercial/notifications/tick',
   'http:POST:/v1/internal/model-usage',
   'http:POST:/v1/internal/model-usage/reconciliation',
   'http:POST:/v1/internal/billing/reconciliation',
@@ -522,6 +602,7 @@ export const HTTP_MACHINE_INFRASTRUCTURE_OPERATIONS = [
   'http:GET:/readyz',
   'http:GET:/livez',
   'http:GET:/releasez',
+  'http:GET:/internal/commercial-runtime-attestation',
   'http:GET:/metrics',
   'http:POST:/mcp',
 ] as const satisfies readonly string[]
@@ -529,6 +610,8 @@ export const HTTP_MACHINE_INFRASTRUCTURE_OPERATIONS = [
 /** Exact Worker action inventory used by the durable outbox handler. */
 export const WORKER_RUNTIME_OPERATIONS = [
   'generation.execute',
+  'automation.tick.execute',
+  'knowledge.embedding.execute',
   'image_generation.execute',
   'catalog.sync.execute',
   'asset.scan.execute',
@@ -542,7 +625,7 @@ const workerRegistry = defineCommercialOperationRegistry([
   { surface: 'WORKER' as const, operation: 'customer_delivery.asset.scan.execute', domain: 'OPS_CONTROL' as const, enabled: true, classification: null, rate_action: null, authorization_policy_ref: 'ops.customer-delivery.assets.upload' },
   { surface: 'WORKER' as const, operation: 'generation.execute', domain: 'COMMERCIAL' as const, enabled: true, classification: 'POINT_CHARGED' as const, rate_action: 'generation.execute' },
   { surface: 'WORKER' as const, operation: 'image_generation.execute', domain: 'COMMERCIAL' as const, enabled: true, classification: 'POINT_CHARGED' as const, rate_action: 'image_generation.execute' },
-  ...['catalog.sync.execute', 'asset.scan.execute', 'asset.continuation.execute', 'publish.execute'].map(operation => ({
+  ...['catalog.sync.execute', 'asset.scan.execute', 'asset.continuation.execute', 'publish.execute', 'automation.tick.execute', 'knowledge.embedding.execute'].map(operation => ({
     surface: 'WORKER' as const,
     operation,
     domain: 'COMMERCIAL' as const,
@@ -624,6 +707,10 @@ const httpRegistry = defineCommercialOperationRegistry([
     classification: null,
     rate_action: null,
     authorization_policy_ref: null,
+  })),
+  ...HTTP_CUSTOMER_SUPPORT_RECOVERY_OPERATIONS.map(operation => ({
+    surface: 'HTTP' as const, operation, domain: 'COMMERCIAL' as const, enabled: true,
+    classification: 'RECOVERY_CONTROL' as const, rate_action: null, authorization_policy_ref: null,
   })),
   ...HTTP_RECOVERY_CALLBACK_OPERATIONS.map(operation => ({
     surface: 'HTTP' as const,

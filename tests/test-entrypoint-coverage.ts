@@ -71,7 +71,7 @@ export function filesOnDisk(root: string, matches: (name: string) => boolean, di
   const found: string[] = []
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory()) {
-      if (IGNORED_DIRECTORIES.has(entry.name)) continue
+      if (IGNORED_DIRECTORIES.has(entry.name) || entry.name.startsWith('.plugin-restore-')) continue
       found.push(...filesOnDisk(root, matches, join(directory, entry.name)))
     } else if (entry.isFile() && matches(entry.name)) {
       found.push(relative(root, join(directory, entry.name)).replaceAll('\\', '/'))

@@ -12,6 +12,7 @@ export const opsDomains = [
   "models",
   "storage",
   "finance",
+  "support",
   "audit",
 ] as const;
 

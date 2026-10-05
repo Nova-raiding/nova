@@ -45,9 +45,9 @@ describe('commercial contract PostgreSQL E2', () => {
       await expect(lifecycle.adjust({ workspaceId: 'ws-commercial', approvalId: 'approval-e2', pointsDelta: 100, expectedAccessRevision: 1, actorId: 'support-maker', approvedByActorId: 'finance-approver', reason: 'approved support correction', evidence: { ticket: 'T-E2' }, idempotencyKey: 'adjust-e2', at: '2026-09-02T00:00:01Z' })).resolves.toMatchObject({ availablePoints: 5100, revision: 2 })
       const points = new PostgresCreativePointRepository(app)
       const reserved = await points.reserve({ workspaceId: 'ws-commercial', idempotencyKey: 'reserve-e2', actionKey: 'image.generate.standard', rateCardVersion: 'rate-approved-e2', points: 10, at: '2026-09-02T00:00:02Z' })
+      await lifecycle.recordProviderReceipt({ workspaceId: 'ws-commercial', operationId: reserved.value.operationId, provider: 'relay', providerRequestId: 'relay-e2', outcome: 'unknown', receiptHash: 'c'.repeat(64), at: '2026-09-02T00:00:02.500Z' })
       await points.settle({ workspaceId: 'ws-commercial', reservationId: reserved.value.id, actualPoints: 10, idempotencyKey: 'settle-e2', at: '2026-09-02T00:00:03Z' })
       await expect(lifecycle.reverseSettlement({ workspaceId: 'ws-commercial', reservationId: reserved.value.id, points: 5, kind: 'refund', actorId: 'finance-1', reason: 'verified refund', evidence: { refund: 'R-E2' }, idempotencyKey: 'refund-e2', at: '2026-09-02T00:00:04Z' })).resolves.toMatchObject({ availablePoints: 5095, settledPoints: 5, revision: 5 })
-      await lifecycle.recordProviderReceipt({ workspaceId: 'ws-commercial', operationId: reserved.value.operationId, provider: 'relay', providerRequestId: 'relay-e2', outcome: 'unknown', receiptHash: 'c'.repeat(64), at: '2026-09-02T00:00:05Z' })
       await expect(lifecycle.expireGrant({ workspaceId: 'ws-commercial', grantId: (await database.query<{ id: string }>("SELECT id FROM creative_point_grants WHERE workspace_id='ws-commercial' AND source_type='commercial_order_v2'")).rows[0]!.id, idempotencyKey: 'expire-e2', at: '2026-10-02T00:00:00Z' })).resolves.toMatchObject({ availablePoints: 100, settledPoints: 5, revision: 6 })
       const facts = await database.query<{ orders: number; snapshots: number; periods: number; entitlements: number; payments: number; grants: number; decisions: number; outbox: number }>(`SELECT
         (SELECT count(*)::int FROM commercial_orders_v2 WHERE workspace_id='ws-commercial') orders,
@@ -153,7 +153,7 @@ describe('commercial contract PostgreSQL E2', () => {
       const snapshots = await repository.listEntitlementSnapshots('ws-renewal')
       expect(snapshots.map(snapshot => [snapshot.periodStart, snapshot.periodEnd, snapshot.periodStatus])).toEqual([
         ['2026-10-02T00:00:00.000Z', '2026-11-02T00:00:00.000Z', 'active'],
-        ['2026-09-02T00:00:00.000Z', '2026-10-02T00:00:00.000Z', 'active'],
+        ['2026-09-02T00:00:00.000Z', '2026-10-02T00:00:00.000Z', 'expired'],
       ])
       const linked = await repository.listEntitlementSnapshots('ws-renewal', { limit: 20, includeSourceOrder: true })
       const paidOrders = await database.query<{ id: string }>(`SELECT id FROM commercial_orders_v2 WHERE workspace_id='ws-renewal' AND status='paid'`)
@@ -164,7 +164,13 @@ describe('commercial contract PostgreSQL E2', () => {
       // out. Two overlapping windows made `decide` return
       // COMMERCIAL_ENTITLEMENT_AMBIGUOUS and denied every non-recovery method.
       const entitlementAt = (iso: string) => new ContinuousFeatureEntitlementService({
-        projection: { listV2EntitlementSnapshots: input => repository.listEntitlementSnapshots(input.workspace_id) },
+        // The repository projection reports the database's current period
+        // status. Recompute it in this as-of test so the service is evaluated
+        // at the historical instant supplied by the test clock.
+        projection: { listV2EntitlementSnapshots: async input => (await repository.listEntitlementSnapshots(input.workspace_id)).map(snapshot => ({
+          ...snapshot,
+          periodStatus: Date.parse(snapshot.periodStart) <= Date.parse(iso) && Date.parse(snapshot.periodEnd) > Date.parse(iso) ? 'active' : 'expired',
+        })) },
         now: () => new Date(iso),
       })
       await expect(entitlementAt('2026-09-25T00:00:00.000Z').decide({ workspace_id: 'ws-renewal' })).resolves.toMatchObject({ allowed: true, code: 'OK' })

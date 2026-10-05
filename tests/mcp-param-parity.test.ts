@@ -132,15 +132,17 @@ function functionBlocks(source: string): DispatchBlock[] {
   // function separately so campaign create fields cannot leak into pause.
   if (/^  switch \(method\) \{$/mu.test(source)) return []
   const functions = [...source.matchAll(/^export async function (\w+)\(/gmu)]
+  const registeredMethods = [...source.matchAll(/const\s+MCP_[A-Z0-9_]+_METHODS\s*=\s*new Set\(\[([\s\S]*?)\]\)/gu)].flatMap(match => [...match[1]!.matchAll(/['"]([^'"\n]+)['"]/gu)].map(match => match[1]!))
   return functions.flatMap((declaration, index) => {
     const body = source.slice(declaration.index, functions[index + 1]?.index ?? source.length)
     const name = declaration[1]!
     const delegated = serverBlocks.flatMap(block => block.body.includes(`${name}(`) ? block.methods : [])
     const compared = [...body.matchAll(/\bmethod === '([^']+)'/gu)].map(match => match[1]!)
-    const methods = [...new Set([...delegated, ...compared])]
+    const methods = [...new Set([...delegated, ...compared, ...(index === 0 ? registeredMethods : [])])]
       .filter(method => MCP_METHODS.includes(method as typeof MCP_METHODS[number]))
     if (!methods.length) return []
     const helperCalls = [...body.matchAll(/(\w+)\s*\(\s*params\s*,\s*'([^']+)'(?:\s*,\s*'([^']+)')?/gu)]
+      .filter(match => match[1] !== 'receiptPage')
       .map(match => ({ camel: match[2]!, ...(match[3] ? { snake: match[3] } : {}) }))
     const helperKeys = new Set(helperCalls.flatMap(call => [call.camel, ...(call.snake ? [call.snake] : [])]))
     const direct = new Set([...body.matchAll(/\bparams(?:Object)?\.([A-Za-z_][A-Za-z0-9_]*)\b/gu)]
@@ -293,7 +295,7 @@ describe('audit remediation pins', () => {
     expect(sites.map(site => site.method).sort()).toEqual([
       'billing.recharge.create', 'billing.recharge.get', 'billing.transactions',
       'campaign.batch.create', 'campaign.batch.generate', 'catalog.facts.confirm',
-      'catalog.image.retry', 'commercial.order.create', 'commercial.order.payment.get',
+      'catalog.image.retry', 'commercial.checkout.create', 'commercial.checkout.request.get', 'commercial.notifications.list', 'commercial.order.create', 'commercial.order.payment.create', 'commercial.order.payment.get', 'commercial.order.request.get', 'commercial.upgrade.quote.create', 'commercial.upgrade.quote.request.get',
       'support.customer.replies.list', 'workspace.metrics',
     ])
     for (const site of sites) {

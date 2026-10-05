@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { creativePointsForTests, grantContinuousFeatureEntitlementForTests, server, service, workspaceMembers } from './server.js'
+import { creativePointsForTests, enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, server, service, workspaceMembers } from './server.js'
 
 type WorkspaceRole = 'workspace_owner' | 'merchant_admin' | 'operator' | 'support' | 'finance' | 'platform_ops'
 type Envelope<T = unknown> = {
@@ -114,6 +114,7 @@ describe('MCP completion operations per-method HTTP evidence', () => {
   })
 
   it('executes enabled completion methods and proves disabled commercial methods, contracts, authorization, tenant isolation, and idempotency', async () => {
+    enableCommercialFixtureHarnessForTests()
     const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const workspaceA = `ws_mcp_completion_a_${suffix}`
     const workspaceB = `ws_mcp_completion_b_${suffix}`

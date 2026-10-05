@@ -1,0 +1,44 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ❯ tests/quality-entrypoints.test.ts (16 tests | 1 failed) 3527ms
+     ✓ resolves npm pre/post hooks across nested script lifecycle chains 4ms
+     ✓ keeps the real release runtime lifecycle hook reachable from release gates  496ms
+     ✓ keeps release gate script names unique in the source manifest 1ms
+     ✓ keeps the capability evidence fixture in lockstep with the platform capability contract 1ms
+     ✓ keeps the root check wired to the deterministic entrypoints, including the mutation gate 1ms
+     ✓ collects every test file on disk into an enumerated entrypoint ledger  1624ms
+     ✓ schedules every browser spec in a Playwright project or a runner argument 228ms
+     ✓ keeps every document reference to a test file pointing at a file that exists 156ms
+     ✓ names every package.json script that no entrypoint invokes 178ms
+     ✓ keeps the commercial read-boundary acceptance runner behind a named entrypoint 2ms
+     ✓ keeps all fail-closed gate tests in the explicit release suite 9ms
+     ✓ runs critical MCP, worker, payment, and usage evidence checks from the default release entrypoint 3ms
+     × keeps the deliberately server-only control planes explicit 805ms
+     ✓ keeps non-hermetic coverage explicit instead of silently passing it in the default suite 1ms
+     ✓ tracks the current migration tail and required CI quality entrypoints 6ms
+     ✓ keeps the current late-migration acceptance tests in CI 9ms
+ ✓ packages/persistence/src/migration.test.ts (17 tests) 1859ms
+ ✓ tests/default-suite-pending.test.ts (17 tests) 71ms
+ ✓ tests/commercial-plan-coverage.test.ts (6 tests) 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/quality-entrypoints.test.ts > quality entrypoint coverage > keeps the deliberately server-only control planes explicit
+Error: Command failed: /opt/homebrew/Cellar/node@22/22.23.2_2/bin/node scripts/audit-ops-surface.mjs
+ ❯ tests/quality-entrypoints.test.ts:305:31
+    303|     for (const method of serverOnly) expect(auditSource).toContain(`'$…
+    304|
+    305|     const report = JSON.parse(execFileSync(process.execPath, ['scripts…
+       |                               ^
+    306|       cwd: root,
+    307|       encoding: 'utf8',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 55 passed (56)
+   Start at  11:52:33
+   Duration  8.29s (transform 1.00s, setup 0ms, import 1.71s, tests 5.47s, environment 0ms)
+

@@ -3,13 +3,24 @@ import { readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { DEFAULT_SUITE_PENDING_ALLOWANCES, NON_HERMETIC_TEST_FILES } from './tests/test-suite-isolation.js'
 
-export const ISOLATED_POSTGRES_TEST_FILES = NON_HERMETIC_TEST_FILES.filter(file => (
+export const ISOLATED_POSTGRES_TEST_FILES = [...NON_HERMETIC_TEST_FILES,
+  'packages/persistence/src/commercial-notification-repository.release.postgres.test.ts',
+  'packages/persistence/src/commercial-receipt-repository.postgres.test.ts',
+  'packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts',
+  'packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts',
+  'packages/persistence/src/commercial-source-refund-blockers.release.postgres.test.ts',
+].filter(file => (
   file.startsWith('packages/persistence/src/')
   || file === 'apps/api/src/content-generation-action-owner.postgres.test.ts'
   || file === 'apps/api/src/catalog-positive-isolated.postgres.test.ts'
+  || file === 'apps/api/src/product-stock-provenance.postgres.test.ts'
+  || file === 'apps/api/src/image-dispatch-scope-http.postgres.test.ts'
   || file === 'packages/persistence/src/asset-lifecycle-release.postgres.test.ts'
   || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts'
   || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts'
+  || file === 'apps/worker/src/image-worker-signed-boundary.postgres.test.ts'
+  || file === 'apps/worker/src/image-pre-dispatch-budget-recovery.postgres.test.ts'
+  || file === 'apps/worker/src/image-pre-dispatch-recovery.postgres.test.ts'
 ) && file.endsWith('.postgres.test.ts'))
 
 const projectRoot = resolve(import.meta.dirname)

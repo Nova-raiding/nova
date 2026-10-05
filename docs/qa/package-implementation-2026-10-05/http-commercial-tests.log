@@ -1,0 +1,10 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ apps/api/src/http-commercial-routes.test.ts (19 tests) 76ms
+
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+   Start at  11:47:35
+   Duration  13.22s (transform 10.93s, setup 0ms, import 12.27s, tests 76ms, environment 0ms)
+

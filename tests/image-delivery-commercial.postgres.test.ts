@@ -98,6 +98,7 @@ describe('charged image callback commercial delivery fence (real isolated PG17/R
     vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ [merchantToken]: { workspaces: [fixture.workspaceId], actor_id: 'image-commercial-merchant', roles: ['merchant_admin'] } }))
     vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ generation: { token: workerToken, signing_secret: workerSecret } }))
     api = await import('../apps/api/src/server.js')
+    api.enableCommercialFixtureHarnessForTests()
     persistence = await api.persistenceReady
     expect(persistence.mode).toBe('postgres')
     await persistence.members!.upsert({ workspaceId: fixture.workspaceId, externalSubject: 'image-commercial-merchant', displayName: 'isolated image commercial owner', role: 'merchant_admin', status: 'active', invitedBy: 'isolated-regression' })
@@ -183,7 +184,7 @@ describe('charged image callback commercial delivery fence (real isolated PG17/R
     expect(usages[0]?.settlement_status).toBe('settled')
     expect(Number(usages[0]?.cost_cny)).toBe(0.5)
     const merchant = await fetch(`${base}/v1/image-generation-jobs/${encodeURIComponent(job.id)}`, { headers: { authorization: `Bearer ${merchantToken}`, 'x-workspace-id': fixture.workspaceId } }).then(response => response.json()) as Envelope
-    expect(merchant.data?.outputs).toHaveLength(1)
+    expect(merchant.data?.outputs, JSON.stringify(merchant)).toHaveLength(1)
     // Model a second API replica whose in-memory projection predates the
     // accepted callback. The result handler must refresh the durable snapshot
     // before deciding whether this delivery needs a new archive.

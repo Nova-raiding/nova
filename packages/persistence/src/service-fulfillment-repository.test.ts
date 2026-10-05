@@ -3,8 +3,9 @@ import { PostgresServiceFulfillmentRepository, ServiceFulfillmentRepositoryError
 import type { SqlClient, SqlPool, SqlQueryResult } from './repository.js'
 
 class Client implements SqlClient {
+  constructor(private readonly points = 500) {}
   async query<Row>(sql: string): Promise<SqlQueryResult<Row>> {
-    if (sql.includes('SELECT id,workspace_id,onboarding_order_id')) return { rows: [{ id: 'schedule-1', workspace_id: 'ws-1', onboarding_order_id: 'order-1', entitlement_snapshot_id: 'snapshot-1', sequence: 1, points: 500, due_at: '2026-01-31T23:00:00.000Z', expires_at: '2026-02-28T23:00:00.000Z', status: 'granted', blockers: [], source_checksum: 'a'.repeat(64), created_by_actor_id: 'actor-1', creation_reason: 'verified payment', creation_evidence: { payment: 'event-1' }, created_at: '2026-01-31T23:00:00.000Z' }] } as SqlQueryResult<Row>
+    if (sql.includes('SELECT id,workspace_id,onboarding_order_id')) return { rows: [{ id: 'schedule-1', workspace_id: 'ws-1', onboarding_order_id: 'order-1', entitlement_snapshot_id: 'snapshot-1', sequence: 1, points: this.points, due_at: '2026-01-31T23:00:00.000Z', expires_at: '2026-02-28T23:00:00.000Z', status: 'granted', blockers: [], source_checksum: 'a'.repeat(64), created_by_actor_id: 'actor-1', creation_reason: 'verified payment', creation_evidence: { payment: 'event-1' }, created_at: '2026-01-31T23:00:00.000Z' }] } as SqlQueryResult<Row>
     return { rows: [] } as SqlQueryResult<Row>
   }
   release() {}
@@ -16,6 +17,17 @@ describe('PostgresServiceFulfillmentRepository activated schedule projection', (
     await expect(repository.listOnboardingGrantSchedule('ws-1', 'order-1')).resolves.toMatchObject([{
       sequence: 1, points: 500, dueAt: '2026-01-31T23:00:00.000Z', expiresAt: '2026-02-28T23:00:00.000Z', status: 'granted', blockers: [],
     }])
+  })
+})
+
+describe('configured onboarding point quantity projection', () => {
+  it('returns the persisted approved gift quantity without replacing it with 500', async () => {
+    const repository = new PostgresServiceFulfillmentRepository({ connect: async () => new Client(600) } satisfies SqlPool)
+    await expect(repository.listOnboardingGrantSchedule('ws-1', 'order-1')).resolves.toMatchObject([{ points: 600 }])
+  })
+  it('rejects invalid persisted gift quantity instead of inventing a default', async () => {
+    const repository = new PostgresServiceFulfillmentRepository({ connect: async () => new Client(0) } satisfies SqlPool)
+    await expect(repository.listOnboardingGrantSchedule('ws-1', 'order-1')).rejects.toThrowError(ServiceFulfillmentRepositoryError)
   })
 })
 

@@ -12,6 +12,8 @@ import { PostgresCommercialContractRepository, monthlyAnniversary } from '../pac
 import type { CommercialCatalogSkuSnapshot } from '../packages/persistence/src/commercial-catalog-repository.js'
 import { customerDeliveryScanTimeout, startCustomerDeliveryScanFixture, prepareCustomerDeliveryScanEnvironment, type CustomerDeliveryScanFixture } from './customer-delivery-scan-fixture.js'
 import { collectCustomerDeliveryScanEvidence } from './customer-delivery-scan-evidence.js'
+import { prepareOwnedCommercialHistoryFixture, prepareOwnedCommercialPendingFixture } from './ops-commercial-history-fixture.js'
+import { isolatedCommercialSalesMode, prepareOwnedCommercialSalesLease, type OwnedCommercialSalesLease } from './ops-commercial-sales-lease.js'
 import { collectProductImportScanEvidence } from './product-import-scan-evidence.js'
 import { disposeOpsE2eChild, monitorOpsE2eChild } from './ops-e2e-child-monitor.js'
 
@@ -103,7 +105,10 @@ export function productImportSyntheticSku(runId: string, now: string): Commercia
   const benefit = (code: string, quantity: number) => ({ code, quantity, rawValue: null, rawUnit: null, normalizedValue: null, policyRef: null, metadata: { isolated: true } })
   return { id: `sku_product_scan_${key}`, code: `product_scan_${key}`, kind: 'monthly', visibility: 'public', requiredCapability: null,
     versionId: `sku_product_scan_${key}_v1`, version: 1, lifecycle: 'approved', executable: true,
-    priceFen: 0, currency: 'CNY', priceMode: 'fixed', durationDays: null,
+    // The disposable entitlement still uses a positive immutable amount so it
+    // exercises the same verified-payment contract as production. No provider
+    // is contacted and the fixture is destroyed after the browser run.
+    priceFen: 1, currency: 'CNY', priceMode: 'fixed', durationDays: null,
     payload: { blockers: [], synthetic: true, purpose: 'product_import_scan' }, checksum: createHash('sha256').update(`product-import-synthetic-sku:${runId}`).digest('hex'),
     effectiveAt: now, benefits: [benefit('max_brands', 1), benefit('max_stores', 1), benefit('monthly_creative_points', 1)] }
 }
@@ -252,6 +257,7 @@ export function createOpsPasswordProxy(uiUpstream: string, apiUpstream: string):
 export async function runOpsE2e(requested: readonly string[], source: NodeJS.ProcessEnv = process.env, afterRun?: (context: OpsE2eContext) => Promise<void>): Promise<number> {
   // Validate before creating directories, containers, connections or processes.
   const args = validateOpsE2eArguments(requested, source)
+  const commercialSalesMode = isolatedCommercialSalesMode(args, source)
   const scannerStartupTimeoutMs = validateOpsE2eScannerStartupTimeout(source)
   const browserTimeoutMs = validateOpsE2eBrowserTimeout(source)
   const scanPurpose = opsE2eScanPurpose(args, source)
@@ -262,6 +268,9 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   const evidenceDir = resolve('artifacts/ops-jit-isolation', `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}`)
   mkdirSync(evidenceDir, { recursive: true, mode: 0o700 })
   const children: ChildProcess[] = []
+  const ownedApiChildren: ChildProcess[] = []
+  let commercialLease: OwnedCommercialSalesLease | undefined
+  let commercialHistoryEnvironment: NodeJS.ProcessEnv = {}
   let fixture: IsolatedOpsFixture | undefined
   let fixtureSetup: Promise<IsolatedOpsFixture> | undefined
   let scanner: CustomerDeliveryScanFixture | undefined
@@ -270,7 +279,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   const serviceMonitors: ReturnType<typeof monitorOpsE2eChild>[] = []
   const guardRuntime = <T>(operation: Promise<T>): Promise<T> => {
     const guarded = serviceMonitors.reduce((pending, monitor) => monitor.guard(pending), operation)
-    return scannerMonitor ? scannerMonitor.guard(guarded) : guarded
+    const scannerGuarded = scannerMonitor ? scannerMonitor.guard(guarded) : guarded
+    return commercialLease ? commercialLease.guard(scannerGuarded) : scannerGuarded
   }
   const assertRuntimeHealthy = () => {
     scannerMonitor?.assertHealthy()
@@ -288,6 +298,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   const runtimeErrors: string[] = []
   const cleanup = () => cleanupPromise ??= (async () => {
     stopping = true
+    await commercialLease?.stop()
     // Detach before intentionally terminating services; latched failures remain observable.
     for (const monitor of serviceMonitors) monitor.stop()
     await scannerMonitor?.stop()
@@ -320,6 +331,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     if (output !== undefined) closeSync(output)
     if (errors !== undefined) closeSync(errors)
     children.push(child)
+    if (name === 'api' || name === 'api-replica') ownedApiChildren.push(child)
     return child
   }
   const ready = async (url: string, child: ChildProcess) => {
@@ -360,7 +372,9 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
         if (admin.rows[0]?.role !== 'merchant' || admin.rows[0]?.database !== 'merchant') throw new Error('OPS_E2E_PRODUCT_IMPORT_CATALOG_FIXTURE_UNSAFE')
         await adminPool.query(`INSERT INTO commercial_catalog_skus(id,code,kind,visibility) VALUES ($1,$2,'monthly','public')`, [sku.id, sku.code])
         await adminPool.query(`INSERT INTO commercial_catalog_sku_versions(id,sku_id,version,lifecycle,executable,price_fen,currency,price_mode,payload,checksum,effective_at)
-          VALUES ($1,$2,1,'approved',true,0,'CNY','fixed',$3::jsonb,$4,$5::timestamptz)`, [sku.versionId, sku.id, JSON.stringify(sku.payload), sku.checksum, now])
+          VALUES ($1,$2,1,'approved',true,1,'CNY','fixed',$3::jsonb,$4,$5::timestamptz)`, [sku.versionId, sku.id, JSON.stringify(sku.payload), sku.checksum, now])
+        await adminPool.query(`INSERT INTO commercial_catalog_sku_benefits(id,sku_version_id,benefit_code,quantity,raw_value,raw_unit,normalized_value,policy_ref,metadata)
+          VALUES ($1,$2,'monthly_creative_points',1,NULL,NULL,NULL,NULL,$3::jsonb)`, [randomUUID(), sku.versionId, JSON.stringify({ isolated: true, purpose: 'product_import_scan' })])
       } finally { await adminPool.end() }
       const contractPool = new Pool({ connectionString: fixture.databaseUrl, max: 1 })
       try {
@@ -371,12 +385,21 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
         const granted = await contracts.recordVerifiedPaymentAndGrant({ workspaceId: fixture.workspaceId, orderId: order.id,
           provider: 'synthetic_fixture', providerEventId: `synthetic:${fixture.runId}`, providerOrderId: `synthetic:${fixture.runId}`,
           nonce: `synthetic:${fixture.runId}`, payloadHash: createHash('sha256').update(`synthetic:${fixture.runId}`).digest('hex'),
-          amountFen: 0, currency: 'CNY', paidAt: now, period: { start: now, end: monthlyAnniversary(now, 1) } })
+          amountFen: 1, currency: 'CNY', paidAt: now, period: { start: now, end: monthlyAnniversary(now, 1) } })
         if (granted.order.status !== 'paid' || granted.availablePoints !== 2) throw new Error('OPS_E2E_PRODUCT_IMPORT_ENTITLEMENT_FIXTURE_FAILED')
+        // The scanner admission is a no-charge feature, but its production
+        // recheck still requires verified onboarding qualification. The
+        // synthetic payment above proves the durable grant; this qualification
+        // row completes the same server-side fact set inside the disposable DB.
+        const qualificationPool = new Pool({ connectionString: fixture.adminDatabaseUrl, max: 1 })
+        try {
+          await qualificationPool.query(`INSERT INTO workspace_commercial_onboarding_v3(workspace_id,onboarding_order_id,status,activated_at,revision)
+            VALUES ($1,$2,'active',$3::timestamptz,1) ON CONFLICT (workspace_id) DO NOTHING`, [fixture.workspaceId, order.id, now])
+        } finally { await qualificationPool.end() }
         writeFileSync(resolve(evidenceDir, 'product-import-entitlement-fixture.json'), JSON.stringify({ workspaceId: fixture.workspaceId,
           skuId: sku.id, orderId: order.id, grantId: granted.grantId, availablePoints: granted.availablePoints,
           actor: 'isolated_fixture', reason: 'Disposable scanner browser acceptance; no payment provider called',
-          synthetic: true, paidAmountFen: 0, providerCalled: false, modelCalls: 0,
+          synthetic: true, paidAmountFen: 1, providerCalled: false, modelCalls: 0,
           period: { start: now, end: monthlyAnniversary(now, 1) } }), { mode: 0o600, flag: 'wx' })
       } finally { await contractPool.end() }
     }
@@ -404,6 +427,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     // desktop spec receives it for the approver form; it is never written to
     // runtime/evidence artifacts or inherited from ambient environment.
     const approvalToken = randomBytes(32).toString('base64url')
+    if (commercialSalesMode) commercialHistoryEnvironment = {...await prepareOwnedCommercialHistoryFixture(fixture,evidenceDir),...await prepareOwnedCommercialPendingFixture(fixture,evidenceDir)}
+    if (commercialSalesMode) commercialLease = await prepareOwnedCommercialSalesLease({root:process.cwd(),evidenceDir,runId:fixture.runId,databaseUrl:fixture.databaseUrl,opsDatabaseUrl:fixture.opsDatabaseUrl,controllerActor:`owned-test-controller:${fixture.runId}`,workspaceId:fixture.workspaceId,ownedWorkspaceIds:[fixture.workspaceId,commercialHistoryEnvironment.OPS_E2E_HISTORY_WORKSPACE_ID!,commercialHistoryEnvironment.OPS_E2E_PENDING_WORKSPACE_ID!]})
     const apiEnvironment = opsChildEnvironment(source, {
       NODE_ENV: 'development', AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres',
       PORT: String(apiPort), OPS_AUTH_MODE: 'password',
@@ -416,6 +441,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       ...(manualOperationsMode ? { PLATFORM_OPERATIONS_MODE: 'manual' } : {}),
       ALLOWED_ORIGINS: [baseUrl, merchantBaseUrl].filter(Boolean).join(','), PUBLIC_OPS_BASE_URL: baseUrl, ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
       ...scanEnvironment?.apiEnvironment,
+      ...commercialLease?.env,
+      ...(commercialSalesMode ? { PAYMENT_MODE: 'manual_transfer', COMMERCIAL_PAYMENT_PROVIDER: 'manual_transfer', COMMERCIAL_MANUAL_TRANSFER_APPROVED: 'true', COMMERCIAL_TRANSFER_RECEIVER_NAME: `owned-test receiver ${fixture.runId}`, COMMERCIAL_TRANSFER_RECEIVING_ACCOUNT: `owned-test-bank:${fixture.runId}`, COMMERCIAL_TRANSFER_VERIFICATION_POLICY: `owned-test-controller:${fixture.runId}:bank-verification` } : {}),
     })
     const api = launch(process.execPath, ['--import', 'tsx', 'apps/api/src/server.ts'], apiEnvironment, 'api')
     serviceMonitors.push(monitorOpsE2eChild(api))
@@ -445,6 +472,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     await guardRuntime(Promise.all([ready(`http://127.0.0.1:${apiPort}/healthz`, api), ready(`http://127.0.0.1:${uiPort}/`, ui)]))
     const health = await guardRuntime(fetchOpsE2eHealth(`http://127.0.0.1:${apiPort}/healthz`))
     if (health.data?.persistence?.mode !== 'postgres' || !health.data.persistence.ready || !health.data.redis?.ready) throw new Error('OPS_E2E_DURABLE_RUNTIME_REQUIRED')
+    if (commercialLease) await commercialLease.start(api, `http://127.0.0.1:${apiPort}/`, () => ownedApiChildren)
     if (scanEnvironment) serviceMonitors.push(monitorOpsE2eChild(launch(process.execPath, ['--import', 'tsx', 'apps/worker/src/main.ts'], scanEnvironment.workerEnvironment, 'scan-worker')))
     gateway = createOpsPasswordProxy(`http://127.0.0.1:${uiPort}`, `http://127.0.0.1:${apiPort}`)
     await new Promise<void>((done, reject) => { gateway!.once('error', reject); gateway!.listen(gatewayPort, '127.0.0.1', done) })
@@ -457,6 +485,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       OPS_E2E_OUTPUT_DIR: evidenceDir, PLAYWRIGHT_JSON_OUTPUT_NAME: resolve(evidenceDir, 'playwright.json'),
       OPS_E2E_MERCHANT_USERNAME: fixture.merchantLogin, OPS_E2E_MERCHANT_PASSWORD: fixture.merchantPassword,
       OPS_E2E_MANUAL_OPERATIONS: manualOperationsMode ? 'true' : 'false',
+      ...commercialHistoryEnvironment,
+      ...(commercialLease ? { OPS_E2E_COMMERCIAL_SALES: 'true', OPS_E2E_COMMERCIAL_CANDIDATE_SHA256: commercialLease.candidateSha256, OPS_E2E_COMMERCIAL_SCHEMA_SHA256: commercialLease.schemaSha256, OPS_E2E_COMMERCIAL_SOURCE_SHA256: commercialLease.sourceSha256, OPS_E2E_COMMERCIAL_RECEIVER: `owned-test-bank:${fixture.runId}` } : {}),
       ...(scanPurpose ? { OPS_E2E_SCAN_PURPOSE: scanPurpose } : {}),
       ...(merchantBaseUrl ? { MERCHANT_STUDIO_URL: merchantBaseUrl } : {}),
       ...(scanner ? { OPS_E2E_REAL_DELIVERY_SCAN: 'true' } : {}),

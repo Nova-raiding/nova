@@ -1,0 +1,5 @@
+
+> merchant-marketing-codex@0.2.6 release:bump
+> tsx scripts/bump-release-version.ts --apply
+
+release version bumped: 0.2.6 -> 0.2.7 (plugin 0.1.0+codex.20261005042504)

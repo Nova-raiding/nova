@@ -54,6 +54,7 @@ export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly OpsCapa
     "commercial.access.read", "commercial.entitlement.read", "commercial.point.read", "commercial.catalog.read",
     "commercial.order.read", "commercial.rate.read", "commercial.service_fulfillment.read",
   ],
+  support: ["support.ticket.read"],
   audit: ["audit.read", "audit.export"],
 };
 

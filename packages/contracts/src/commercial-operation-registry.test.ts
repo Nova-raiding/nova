@@ -130,7 +130,7 @@ describe('complete commercial operation registry E1 totality', () => {
   })
 
   it('publishes V2 purchase intent without accepting client-owned commercial facts', () => {
-    expect(Object.keys(MCP_METHOD_SCHEMAS['commercial.order.create'].properties)).toEqual(['workspace_id', 'purchase_kind', 'sku_code', 'idempotency_key', 'reason'])
+    expect(Object.keys(MCP_METHOD_SCHEMAS['commercial.order.create'].properties)).toEqual(['workspace_id', 'purchase_kind', 'sku_code', 'upgrade_quote_id', 'checkout_id', 'onboarding_order_id', 'idempotency_key', 'reason'])
     expect(MCP_METHOD_SCHEMAS['commercial.order.create'].required).toEqual(['purchase_kind', 'sku_code', 'idempotency_key', 'reason'])
     expect(MCP_METHOD_SCHEMAS['commercial.order.create'].properties).not.toHaveProperty('amount_fen')
     expect(MCP_METHOD_SCHEMAS['commercial.order.create'].properties).not.toHaveProperty('currency')

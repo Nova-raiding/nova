@@ -6,8 +6,9 @@ import { readFileSync } from 'node:fs'
 import { Pool, type PoolConfig } from 'pg'
 import type { RedisClientType } from 'redis'
 import { contextEnvelopeHash, loadMigrations, PostgresAssetScanAttemptRepository, PostgresCreativePointLifecycleRepository, PostgresCreativePointRepository, PostgresOnboardingGrantDispatchRepository, PostgresOutboxRepository, withWorkspaceTransaction, type AssetScanAttemptRecord, type AssetScanAttemptRepository, type Migration, type SqlPool } from '../../../packages/persistence/src/index.js'
+import { PostgresCommercialContractRepository } from '../../../packages/persistence/src/commercial-contract-repository.js'
 import { PostgresMappingPreflightApprovalRepository } from '../../../packages/persistence/src/mapping-preflight-approval-repository.js'
-import { verifyBridgeMigrationPrefix } from '../../../packages/persistence/src/migration.js'
+import { verifyAppliedMigrations, verifyBridgeMigrationPrefix } from '../../../packages/persistence/src/migration.js'
 import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type QueuePort, type RedisQueueTransport, type WorkerDispatchObservation } from '../../../packages/workers/src/durable.js'
 import { buildWorkerDispatchLogRecord, workerDispatchTraceId, writeWorkerDispatchLog, type WorkerDispatchLogEvent } from '../../../packages/workers/src/dispatch-observability.js'
 import { createOutboxHandler, createWorkerProjection } from './handler.js'
@@ -656,6 +657,20 @@ export function assertBridgeStartupMigrationVersion(startupVersion: number | und
   if (startupVersion !== undefined && currentVersion !== startupVersion) throw new Error('bridge database migration prefix changed; restart the worker before processing tasks')
 }
 
+/** Commercial V3 maintenance must never run merely because a legacy bridge
+ * prefix is healthy. Validate the full observed release history before enabling it. */
+export async function verifyCommercialWorkerMaintenanceSchema(input: {
+  database: WorkerReadinessDatabase; expectedMigrations: readonly Migration[];
+  observedVersion: number; bridgeMode?: string;
+}): Promise<boolean> {
+  if (input.bridgeMode !== undefined || input.observedVersion < 263) return false
+  if (input.expectedMigrations.at(-1)?.version !== input.observedVersion || input.expectedMigrations.length !== input.observedVersion) throw new Error('commercial worker requires the complete release migration inventory')
+  const actual = await input.database.query('SELECT version,name,checksum FROM schema_migrations ORDER BY version')
+  if (actual.rows.length !== input.expectedMigrations.length || actual.rows.some((row, index) => row.version !== index + 1 || !/^[a-f0-9]{64}$/u.test(row.checksum ?? ''))) throw new Error('commercial worker migration history is incomplete or unverified')
+  verifyAppliedMigrations(actual.rows, input.expectedMigrations)
+  return true
+}
+
 export function shouldRunAssetLifecyclePurge(bridgeMode: string | undefined, startupVersion: number | undefined): boolean {
   return bridgeMode === undefined || (
     bridgeMode === 'prefix_256_or_257' && startupVersion === 257
@@ -770,6 +785,7 @@ function workerAuthIntent(signingSecret: string, workerId = resolveWorkerId()): 
 export function workerRoleForRequest(method: string, requestTarget: string, body?: string | Uint8Array): WorkerRequestRole {
   const path = new URL(requestTarget, 'http://worker.internal').pathname
   if (/^\/v1\/sync-jobs\//u.test(path)) return 'sync'
+  if (path === '/v1/internal/commercial/notifications/tick') return 'reconcile'
   if (path === '/v1/internal/billing/reconciliation') return 'reconcile'
   if (path === '/v1/internal/image-generation-jobs/reconciliation') return 'reconcile'
   if (/^\/v1\/(?:generation-jobs|internal\/image-generation-jobs|internal\/image-generation-continuations)\//u.test(path)) return 'generation'
@@ -861,6 +877,54 @@ export async function postStorageReconciliation(input: { apiBaseUrl: string; api
   })
   if (!response.ok) throw new Error(`storage reconciliation API returned ${response.status}`)
   return await parseWorkerApiJson(response)
+}
+
+export interface CommercialNotificationTickResult { eventId?: string; scanned: number; delivered: number; complete: boolean }
+export async function postCommercialNotificationTick(input: { apiBaseUrl: string; apiToken: string; workspaceId: string; signingSecret?: string; fetcher?: typeof fetch; signal?: AbortSignal; notificationKind?: 'catalog_publication' | 'purchase_result' }): Promise<CommercialNotificationTickResult> {
+  if (!input.apiBaseUrl.trim() || !input.apiToken.trim() || !input.signingSecret?.trim() || !input.workspaceId.trim()) throw Object.assign(new Error('Commercial notifications require WORKER_API_BASE_URL, WORKER_API_TOKEN, WORKER_API_SIGNING_SECRET and an active workspace'), { code: 'COMMERCIAL_NOTIFICATION_WORKER_CONFIG_MISSING' })
+  const path = '/v1/internal/commercial/notifications/tick'
+  const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+    method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.workspaceId.trim(), ...workerAuthIntent(input.signingSecret) },
+    body: JSON.stringify({ workspace_id: input.workspaceId.trim(), ...(input.notificationKind ? { notification_kind: input.notificationKind } : {}) }), redirect: 'error', signal: input.signal,
+  })
+  if (!response.ok) throw Object.assign(new Error(`commercial notification tick API returned ${response.status}`), { code: 'COMMERCIAL_NOTIFICATION_WORKER_API_FAILED', status: response.status })
+  const envelope = await parseWorkerApiJson(response) as { data?: CommercialNotificationTickResult }
+  const data = envelope.data
+  if (!data || !Number.isSafeInteger(data.scanned) || data.scanned < 0 || data.scanned > 200 || !Number.isSafeInteger(data.delivered) || data.delivered < 0 || data.delivered > data.scanned || typeof data.complete !== 'boolean' || (data.eventId !== undefined && (typeof data.eventId !== 'string' || !data.eventId.trim())) || (data.scanned > 0 && !data.eventId)) throw Object.assign(new Error('commercial notification tick omitted valid durable batch evidence'), { code: 'COMMERCIAL_NOTIFICATION_WORKER_RESULT_INVALID' })
+  return data
+}
+
+/** A failed notification batch must never acknowledge a successful worker poll.
+ * Invoke after other maintenance so notification outages do not suppress grants. */
+export function requireCommercialNotificationPollSuccess(result: { commercialNotifications?: { failed?: number }; purchaseResultNotifications?: { failed?: number } }): void {
+  if ((result.commercialNotifications?.failed ?? 0) > 0 || (result.purchaseResultNotifications?.failed ?? 0) > 0) {
+    throw Object.assign(new Error('Commercial notification delivery failed; durable pending facts require retry'), { code: 'COMMERCIAL_NOTIFICATION_POLL_FAILED', publicationFailed: result.commercialNotifications?.failed ?? 0, purchaseResultFailed: result.purchaseResultNotifications?.failed ?? 0 })
+  }
+}
+
+interface CommercialScheduledGrantResult { dispatched: number; expired: number; canceled?: number }
+interface CommercialScheduledGrantSummary { completed: number; failed: number; dispatched: number; expired: number; canceled: number }
+export async function runCommercialScheduledGrantDispatch(input: {
+  workspaces: readonly string[]; concurrency: number; limit: number;
+  onboarding: (input: { workspaceId: string; limit: number }) => Promise<CommercialScheduledGrantResult>;
+  subscriptions?: (input: { workspaceId: string; limit: number }) => Promise<CommercialScheduledGrantResult>;
+}): Promise<{ onboardingGrantDispatch: CommercialScheduledGrantSummary; subscriptionGrantDispatch: CommercialScheduledGrantSummary }> {
+  if (!Number.isSafeInteger(input.limit) || input.limit < 1 || !Number.isSafeInteger(input.concurrency) || input.concurrency < 1) throw new RangeError('commercial grant dispatch limits must be positive integers')
+  const limit = Math.min(100, input.limit)
+  const outcomes = await allSettledWithConcurrency([...new Set(input.workspaces)], input.concurrency, async workspaceId => Promise.allSettled([
+    Promise.resolve().then(() => input.onboarding({ workspaceId, limit })),
+    input.subscriptions ? Promise.resolve().then(() => input.subscriptions!({ workspaceId, limit })) : Promise.resolve(undefined),
+  ]))
+  const summarize = (index: number): CommercialScheduledGrantSummary => {
+    if (index === 1 && !input.subscriptions) return { completed: 0, failed: 0, dispatched: 0, expired: 0, canceled: 0 }
+    return outcomes.reduce((sum, outcome) => {
+    const result = outcome.status === 'fulfilled' ? outcome.value[index] : undefined
+    if (!result || result.status === 'rejected' || !result.value) sum.failed += 1
+    else { sum.completed += 1; sum.dispatched += result.value.dispatched; sum.expired += result.value.expired; sum.canceled += result.value.canceled ?? 0 }
+    return sum
+  }, { completed: 0, failed: 0, dispatched: 0, expired: 0, canceled: 0 })
+  }
+  return { onboardingGrantDispatch: summarize(0), subscriptionGrantDispatch: summarize(1) }
 }
 
 export async function postSupportSlaScan(input: { apiBaseUrl: string; apiToken: string; workspaceId: string; limit?: number; signingSecret?: string; fetcher?: typeof fetch; signal?: AbortSignal }) {
@@ -2430,6 +2494,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
   const mappingApprovals = new PostgresMappingPreflightApprovalRepository(pool as unknown as SqlPool)
   const sqlPool = pool as unknown as SqlPool
   const onboardingGrantDispatch = new PostgresOnboardingGrantDispatchRepository(sqlPool)
+  const subscriptionGrantDispatch = new PostgresCommercialContractRepository(sqlPool)
   const scanAttempts = new PostgresAssetScanAttemptRepository(sqlPool)
   const creativePointSettlement = new CreativePointRelaySettlement(new PostgresCreativePointRepository(sqlPool), new PostgresCreativePointLifecycleRepository(sqlPool), relayProviderIdentity(process.env))
   const chargedTextDispatch = new PostgresChargedTextDispatchRepository(sqlPool)
@@ -2982,6 +3047,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
     // 256-to-257 bridge worker must stay quiet until that guard is installed;
     // the existing bridge version fence revokes readiness if the prefix moves.
     const assetLifecyclePurgeEnabled = shouldRunAssetLifecyclePurge(bridgeMode, bridgeStartupVersion)
+    let commercialMaintenanceEnabled = false
     if (scanRoleEnabled) {
       const instanceId = process.env.HOSTNAME?.trim() || `worker-${process.pid}`
       const heartbeatIntervalMs = positiveInt(process.env.SCANNER_HEARTBEAT_INTERVAL_MS, 5_000, 'SCANNER_HEARTBEAT_INTERVAL_MS')
@@ -3099,6 +3165,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
           dependenciesReady = false
           const dependencyState = await assertWorkerReadinessDependencies({ database: pool, ...(config.apiBaseUrl ? { apiBaseUrl: config.apiBaseUrl } : {}), ...(scannerHeartbeat ? { apiHealthPath: '/healthz' as const } : {}), expectedMigrations, ...(process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE ? { bridgeMode: process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE, bridgeMigrations: expectedMigrations } : {}) })
           assertBridgeStartupMigrationVersion(bridgeStartupVersion, dependencyState.migrationVersion)
+          commercialMaintenanceEnabled = await verifyCommercialWorkerMaintenanceSchema({ database: pool, expectedMigrations, observedVersion: dependencyState.migrationVersion, ...(bridgeMode ? { bridgeMode } : {}) })
           if (clamavReadiness && !scannerHeartbeat) await clamavReadiness.ping()
           dependenciesReady = true
           nextDependencyCheckAt = startedAt + config.dependencyCheckIntervalMs
@@ -3165,15 +3232,30 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
           if (paymentReconciliation.businessWarnings > 0) log({ level: 'warn', message: 'payment reconciliation completed with business warnings', paymentReconciliation })
         }
         if ((config.role === 'reconcile' || config.role === 'all') && workspaces.length > 0) {
-          const onboardingDispatches = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => onboardingGrantDispatch.dispatchDue({ workspaceId, limit: Math.min(100, config.batchSize) }))
-          Object.assign(result as unknown as Record<string, unknown>, {
-            onboardingGrantDispatch: {
-              completed: onboardingDispatches.filter(item => item.status === 'fulfilled').length,
-              failed: onboardingDispatches.filter(item => item.status === 'rejected').length,
-              dispatched: onboardingDispatches.reduce((sum, item) => sum + (item.status === 'fulfilled' ? item.value.dispatched : 0), 0),
-              expired: onboardingDispatches.reduce((sum, item) => sum + (item.status === 'fulfilled' ? item.value.expired : 0), 0),
-            },
-          })
+          const grants = await runCommercialScheduledGrantDispatch({ workspaces, concurrency: config.workspaceBatchSize, limit: config.batchSize, onboarding: input => onboardingGrantDispatch.dispatchDue(input), ...(commercialMaintenanceEnabled ? { subscriptions: (input: { workspaceId: string; limit: number }) => subscriptionGrantDispatch.dispatchDueScheduledGrants(input) } : {}) })
+          Object.assign(result as unknown as Record<string, unknown>, grants, { commercialMaintenance: { enabled: commercialMaintenanceEnabled, reason: commercialMaintenanceEnabled ? 'verified_complete_release_schema' : 'legacy_schema_maintenance_only' } })
+          if (grants.onboardingGrantDispatch.failed || grants.subscriptionGrantDispatch.failed) log({ level: 'error', message: 'commercial scheduled grant dispatch has failed workspaces', ...grants })
+          // The outbox is global and bounded: one signed tick per poll, rather
+          // than repeatedly fanning out once for every workspace.
+          if (commercialMaintenanceEnabled) try {
+            const notificationTick = await postCommercialNotificationTick({ apiBaseUrl: config.apiBaseUrl ?? '', apiToken: config.apiToken ?? '', workspaceId: workspaces[0]!, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })
+            Object.assign(result as unknown as Record<string, unknown>, { commercialNotifications: { ...notificationTick, failed: 0 } })
+          } catch (error) {
+            const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' && /^COMMERCIAL_NOTIFICATION_[A-Z_]+$/u.test(error.code) ? error.code : 'COMMERCIAL_NOTIFICATION_WORKER_UNAVAILABLE'
+            Object.assign(result as unknown as Record<string, unknown>, { commercialNotifications: { failed: 1, code } })
+            log({ level: 'error', message: 'commercial notification tick failed; original outbox lease remains recoverable', code })
+          }
+          if (commercialMaintenanceEnabled) {
+            const outcomes = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => postCommercialNotificationTick({ apiBaseUrl: config.apiBaseUrl ?? '', apiToken: config.apiToken ?? '', workspaceId, notificationKind: 'purchase_result', ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))
+            const purchaseResultNotifications = {
+              completed: outcomes.filter(item => item.status === 'fulfilled').length,
+              failed: outcomes.filter(item => item.status === 'rejected').length,
+              scanned: outcomes.reduce((sum,item) => sum + (item.status === 'fulfilled' ? item.value.scanned : 0),0),
+              delivered: outcomes.reduce((sum,item) => sum + (item.status === 'fulfilled' ? item.value.delivered : 0),0),
+            }
+            Object.assign(result as unknown as Record<string, unknown>, { purchaseResultNotifications })
+            if (purchaseResultNotifications.failed) log({ level: 'error', message: 'commercial purchase result notifications have failed workspaces; source facts and leases remain recoverable', ...purchaseResultNotifications })
+          }
         }
         if (config.role === 'reconcile' && startedAt >= nextModelUsageReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for model usage reconciliation')
@@ -3210,6 +3292,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         }
         // Completed iteration: the marker is allowed back, and the write below
         // is the one piece of evidence that says the loop is draining.
+        requireCommercialNotificationPollSuccess(result as unknown as Parameters<typeof requireCommercialNotificationPollSuccess>[0])
         consecutiveIterationFailures = 0
         if (!scannerHeartbeat) await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, workspaces: workspaces.length, quotaAdmission: quotaConnection.mode, ...result }))
         // Only aggregate counters reach the endpoint: `workspaces` and the

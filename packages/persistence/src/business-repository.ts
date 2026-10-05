@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { accessibleProductBrandClause } from './product-brand-visibility.js'
+import { requireCommercialAbsoluteCapacityInTransaction } from './commercial-capacity-admission.js'
 import { withWorkspaceTransaction, requireWorkspaceScope, type SqlClient, type SqlPool } from './repository.js'
 
 export type BusinessEntityType = 'product' | 'task' | 'content_version' | 'publish_job' | 'manual_publish_record' | 'publish_batch' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job' | 'automation_policy' | 'merchant_intent'
@@ -106,7 +107,9 @@ function canonicalJson(value: unknown): string {
 
 /** Tenant-scoped durable snapshot repository used during aggregate persistence migration. */
 export class PostgresBusinessRepository {
-  constructor(private readonly pool: SqlPool, private readonly options: { normalizedProjection?: boolean } = {}) {}
+  constructor(private readonly pool: SqlPool, private readonly options: { normalizedProjection?: boolean; commercialEntitlement?: boolean } = {}) {
+    if (options.commercialEntitlement && !options.normalizedProjection) throw new Error('COMMERCIAL_CAPACITY_NORMALIZED_PROJECTION_REQUIRED')
+  }
 
   async save(input: SaveBusinessSnapshotInput): Promise<BusinessSnapshot> {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
@@ -118,6 +121,9 @@ export class PostgresBusinessRepository {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     if (!input.entityId || !input.entityType) throw new Error('business snapshot identity is required')
     if (!Number.isInteger(input.entityVersion) || input.entityVersion < 1) throw new RangeError('entityVersion must be positive')
+    if (this.options.commercialEntitlement && input.entityType === 'platform_account' && input.payload.tokenState !== 'revoked') {
+      await requireCommercialAbsoluteCapacityInTransaction(client, { workspaceId, code: 'max_stores', operation: 'account_connect', platform: String(input.payload.platform ?? ''), accountId: input.entityId })
+    }
     const result = await client.query<BusinessSnapshotRow>(
       `INSERT INTO business_entity_snapshots
         (workspace_id, entity_type, entity_id, entity_version, payload)

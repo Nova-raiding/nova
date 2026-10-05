@@ -153,7 +153,9 @@ export function canLoadCommercialView(
   targetWorkspaceId: string,
   view: CommercialView,
 ): boolean {
-  return Boolean(targetWorkspaceId.trim()) && authorization.can(commercialViewCapability[view]);
+  const platformScope = authorization.scope?.kind === "platform";
+  return Boolean(targetWorkspaceId.trim()) && authorization.can(commercialViewCapability[view]) &&
+    (!platformScope || authorization.can(commercialCapabilities.catalogRead));
 }
 
 function isForbiddenError(error: CommercialLoadError): boolean {
@@ -210,8 +212,8 @@ export function useCommercialOperations(
   const [summary, setSummary] = useState<CommercialDataState<CommercialAccessSummary>>({ status: "idle" });
   const [data, setData] = useState(initialDataStates);
   const [refunds, setRefunds] = useState<CommercialDataState<CommercialPage<CommercialRefundEvent>>>({ status: "idle" });
-  const requestRef = useRef(0);
-  const controllerRef = useRef<AbortController | undefined>(undefined);
+  const requestRef = useRef<Partial<Record<CommercialView, number>>>({});
+  const controllerRef = useRef<Partial<Record<CommercialView, AbortController>>>({});
   const commercialPageCursorsRef = useRef<Partial<Record<CommercialView, Record<number, string>>>>({});
   const commercialPageItemsRef = useRef<Partial<Record<CommercialView, Record<number, unknown[]>>>>({});
   const summaryRequestRef = useRef(0);
@@ -249,10 +251,10 @@ export function useCommercialOperations(
   useEffect(() => {
     if (sensitiveScopeRef.current === targetWorkspaceId) return;
     sensitiveScopeRef.current = targetWorkspaceId;
-    controllerRef.current?.abort();
+    for (const controller of Object.values(controllerRef.current)) controller?.abort();
     summaryControllerRef.current?.abort();
     refundControllerRef.current?.abort();
-    requestRef.current += 1;
+    for (const view of commercialViews) requestRef.current[view] = (requestRef.current[view] ?? 0) + 1;
     summaryRequestRef.current += 1;
     refundRequestRef.current += 1;
     commercialPageCursorsRef.current = {};
@@ -291,8 +293,8 @@ export function useCommercialOperations(
 
   const loadView = useCallback(async (target: CommercialView = view) => {
     if (!enabled || !canLoadCommercialView(authorization, targetWorkspaceId, target)) {
-      controllerRef.current?.abort();
-      requestRef.current += 1;
+      controllerRef.current[target]?.abort();
+      requestRef.current[target] = (requestRef.current[target] ?? 0) + 1;
       setData((current) => ({ ...current, [target]: { status: "forbidden" } }));
       return;
     }
@@ -300,10 +302,11 @@ export function useCommercialOperations(
       setData((current) => ({ ...current, [target]: { status: "forbidden" } }));
       return;
     }
-    controllerRef.current?.abort();
+    controllerRef.current[target]?.abort();
     const controller = new AbortController();
-    controllerRef.current = controller;
-    const request = ++requestRef.current;
+    controllerRef.current[target] = controller;
+    const request = (requestRef.current[target] ?? 0) + 1;
+    requestRef.current[target] = request;
     setData((current) => ({ ...current, [target]: { status: "loading", data: current[target].data } }));
     try {
       let result: CommercialDataMap[CommercialView];
@@ -330,7 +333,7 @@ export function useCommercialOperations(
           const cursor = pageNumber === 1 ? undefined : commercialPageCursorsRef.current[target]?.[pageNumber];
           if (pageNumber > 1 && !cursor) break;
           paged = await client[target](targetWorkspaceId, { limit: 20, ...(cursor ? { cursor } : {}) }, controller.signal);
-          if (request !== requestRef.current) return;
+          if (request !== requestRef.current[target]) return;
           lastFetchedPage = pageNumber;
           const cursors = { ...(commercialPageCursorsRef.current[target] ?? {}) };
           if (paged.nextCursor) cursors[pageNumber + 1] = paged.nextCursor;
@@ -355,10 +358,10 @@ export function useCommercialOperations(
       } else {
         result = await client[target](targetWorkspaceId, controller.signal);
       }
-      if (request !== requestRef.current) return;
+      if (request !== requestRef.current[target]) return;
       setData((current) => ({ ...current, [target]: { status: "ready", data: result } }));
     } catch (cause) {
-      if (request !== requestRef.current || cause instanceof DOMException && cause.name === "AbortError") return;
+      if (request !== requestRef.current[target] || cause instanceof DOMException && cause.name === "AbortError") return;
       const error = errorEvidence(cause);
       setData((current) => ({ ...current, [target]: isForbiddenError(error)
         ? { status: "forbidden", error }
@@ -396,7 +399,7 @@ export function useCommercialOperations(
 
   useEffect(() => { void loadView(view); }, [loadView, view, queryState.page]);
   useEffect(() => { void loadRefunds(); }, [loadRefunds]);
-  useEffect(() => () => { controllerRef.current?.abort(); refundControllerRef.current?.abort(); }, []);
+  useEffect(() => () => { for (const controller of Object.values(controllerRef.current)) controller?.abort(); summaryControllerRef.current?.abort(); refundControllerRef.current?.abort(); }, []);
 
   const permissions = useMemo(() => ({
     privateSkuReadable,
@@ -405,6 +408,18 @@ export function useCommercialOperations(
     canApprovePoints: authorization.can("commercial.point.adjust.approve"),
     canDraftCatalog: authorization.can(commercialCapabilities.catalogDraft),
     canPublishCatalog: authorization.can(commercialCapabilities.catalogPublish),
+    canApproveCatalog: authorization.can(commercialCapabilities.catalogApprove),
+    canCreateOrder: authorization.can(commercialCapabilities.paymentReconcile),
+    canReadOrders: authorization.can(commercialCapabilities.orderRead),
+    canSearchCustomers: authorization.can("identity.read"),
+    canRecordReceipt: authorization.can("commercial.receipt.record"),
+    canReadUnmatchedReceipts: authorization.can(commercialCapabilities.orderRead),
+    canRecordUnmatchedReceipts: authorization.can("commercial.receipt.record"),
+    canMatchUnmatchedReceipts: authorization.can("commercial.receipt.record"),
+    canAllocateReceipt: authorization.can("commercial.receipt.allocate"),
+    canProposeReceiptReturn: authorization.can("commercial.receipt.return.propose"),
+    canApproveReceiptReturn: authorization.can("commercial.receipt.return.approve"),
+    canCompleteReceiptReturn: authorization.can("commercial.receipt.return.complete"),
     canGrantPrivateSku: authorization.can(commercialCapabilities.privateSkuGrant),
     canReconcilePayment: authorization.can(commercialCapabilities.paymentReconcile),
     canDraftRate: authorization.can(commercialCapabilities.rateDraft),

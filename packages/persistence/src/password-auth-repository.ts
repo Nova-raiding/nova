@@ -69,7 +69,35 @@ export interface McpOAuthTokenPair {
   scope: string[]
   workspaceId: string
 }
+export interface MerchantActivationInviteInput {
+  login: string
+  enterpriseName: string
+  contactName: string
+  workspaceIds: string[]
+  createWorkspace: boolean
+  actorId: string
+  reason: string
+  idempotencyKey: string
+  action?: 'create' | 'reissue'
+}
+export interface MerchantActivationInviteResult {
+  account: PasswordAccount
+  invitation: { id: string; expiresAt: string; status: 'pending_activation' | 'activated' | 'expired' | 'superseded'; token?: string; replayed: boolean }
+}
+function activationIntent(input: MerchantActivationInviteInput) {
+  const login = assertRegistration({ ...input, password: '', termsAgreed: true })
+  const workspaceIds = [...new Set(input.workspaceIds.map(value => value.trim()).filter(Boolean))].sort()
+  if (input.createWorkspace ? workspaceIds.length !== 0 : workspaceIds.length !== 1) throw Object.assign(new Error('ACCOUNT_PROVISIONING_INVALID'), { code: 'AUTH_ACCOUNT_PROVISIONING_INVALID' })
+  if (!input.actorId.trim() || input.reason.trim().length < 4 || input.reason.length > 500 || !/^[A-Za-z0-9_.:-]{8,128}$/u.test(input.idempotencyKey)
+    || (input.action !== undefined && !['create', 'reissue'].includes(input.action))) throw Object.assign(new Error('ACCOUNT_PROVISIONING_INVALID'), { code: 'AUTH_ACCOUNT_PROVISIONING_INVALID' })
+  const normalized = { action: input.action ?? 'create', login, enterpriseName: input.enterpriseName.trim(), contactName: input.contactName.trim(), workspaceIds,
+    createWorkspace: input.createWorkspace, actorId: input.actorId.trim(), reason: input.reason.trim(), idempotencyKey: input.idempotencyKey }
+  return { ...normalized, intentHash: createHash('sha256').update(JSON.stringify(normalized)).digest('hex') }
+}
+
 export interface PasswordAuthRepository {
+  createMerchantInvitation?(input: MerchantActivationInviteInput): Promise<MerchantActivationInviteResult>
+  confirmMerchantInvitation?(input: { token: string; password: string; termsAgreed: boolean }): Promise<PasswordAccount>
   register(input: { login: string; password: string; enterpriseName: string; contactName: string; termsAgreed: boolean }): Promise<{ account: PasswordAccount; applicationId: string }>
   createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string; bootstrapWorkspace?: boolean }): Promise<PasswordAccount>
   assertBootstrapEligible(input: { login: string; identityId: string }): Promise<void>
@@ -133,6 +161,15 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
   private bootstrapAdminIdentityId?: string
   private readonly accounts = new Map<string, AccountRecord>()
   private readonly sessions = new Map<string, SessionRecord>()
+  private inviteTail: Promise<void> = Promise.resolve()
+  private readonly activationInvites = new Map<string, { id: string; accountId: string; intentHash: string; tokenHash: string; expiresAt: number }>()
+  private async withInviteLock<T>(operation: () => Promise<T>): Promise<T> {
+    const preceding = this.inviteTail
+    let release!: () => void
+    this.inviteTail = new Promise<void>(resolve => { release = resolve })
+    await preceding
+    try { return await operation() } finally { release() }
+  }
   private readonly resets = new Map<string, ResetRecord>()
   private readonly mcpCodes = new Map<string, McpCodeRecord>()
   private readonly mcpTokens = new Map<string, McpTokenRecord>()
@@ -184,6 +221,50 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
     if (!existing) await this.ensurePlatformAccount({ login, passwordHash: input.passwordHash, roles: ['platform_admin'] })
     this.bootstrapAdminIdentityId = this.accounts.get(login)!.identityId
     return { identityId: this.bootstrapAdminIdentityId, status: existing ? 'repaired' as const : 'created' as const }
+  }
+
+  async createMerchantInvitation(raw: MerchantActivationInviteInput): Promise<MerchantActivationInviteResult> {
+    const input = activationIntent(raw)
+    return this.withInviteLock<MerchantActivationInviteResult>(async () => {
+      const key = JSON.stringify([input.actorId, input.idempotencyKey])
+      const replay = this.activationInvites.get(key)
+      if (replay) {
+        if (replay.intentHash !== input.intentHash) throw Object.assign(new Error('ACTIVATION_IDEMPOTENCY_CONFLICT'), { code: 'AUTH_ACTIVATION_IDEMPOTENCY_CONFLICT' })
+        const account = [...this.accounts.values()].find(value => value.id === replay.accountId)!
+        return { account: accountPublic(account), invitation: { id: replay.id, expiresAt: new Date(replay.expiresAt).toISOString(), status: account.status === 'active' ? 'activated' : this.resets.get(replay.tokenHash)?.used ? 'superseded' : replay.expiresAt <= Date.now() ? 'expired' : 'pending_activation', replayed: true } }
+      }
+      let account = this.accounts.get(input.login)
+      if (input.action === 'create') {
+        if (account) throw Object.assign(new Error('LOGIN_ALREADY_EXISTS'), { code: 'AUTH_LOGIN_ALREADY_EXISTS' })
+        const now = new Date().toISOString(), id = randomUUID()
+        account = { id, identityId: id, login: input.login, accountType: 'merchant', enterpriseName: input.enterpriseName, contactName: input.contactName,
+          status: 'merchant_pending', roles: ['merchant'], workspaceIds: input.createWorkspace ? [`ws_${randomUUID().replaceAll('-', '')}`] : input.workspaceIds,
+          failedAttempts: 0, revision: 1, authEpoch: 1, createdAt: now, updatedAt: now, passwordHash: await hashPassword(`A1${newOpaqueToken()}`) }
+        this.accounts.set(input.login, account)
+      } else if (!account || account.accountType !== 'merchant' || account.status !== 'merchant_pending' || ![...this.activationInvites.values()].some(value => value.accountId === account!.id)) {
+        throw Object.assign(new Error('ACTIVATION_REISSUE_UNAVAILABLE'), { code: 'AUTH_ACTIVATION_REISSUE_UNAVAILABLE' })
+      }
+      for (const record of this.resets.values()) if (record.accountId === account.id) record.used = true
+      const token = newOpaqueToken(), tokenHash = tokenDigest(token), expiresAt = Date.now() + RESET_MS, id = randomUUID()
+      this.resets.set(tokenHash, { accountId: account.id, tokenHash, expiresAt, used: false })
+      this.activationInvites.set(key, { id, accountId: account.id, intentHash: input.intentHash, tokenHash, expiresAt })
+      auditMemory(this.events, 'auth.merchant_activation_invited', account.id, { invitation_id: id, actor_id: input.actorId, workspace_ids: account.workspaceIds, reason: input.reason })
+      return { account: accountPublic(account), invitation: { id, expiresAt: new Date(expiresAt).toISOString(), status: 'pending_activation', token, replayed: false } }
+    })
+  }
+  async confirmMerchantInvitation(input: { token: string; password: string; termsAgreed: boolean }): Promise<PasswordAccount> {
+    if (!input.termsAgreed) throw Object.assign(new Error('TERMS_REQUIRED'), { code: 'AUTH_TERMS_REQUIRED' })
+    const passwordHash = await hashPassword(input.password)
+    return this.withInviteLock(async () => {
+      const tokenHash = tokenDigest(input.token), record = this.resets.get(tokenHash)
+      const invitation = [...this.activationInvites.values()].find(value => value.tokenHash === tokenHash)
+      const account = record ? [...this.accounts.values()].find(value => value.id === record.accountId) : undefined
+      if (!record || !invitation || record.used || record.expiresAt <= Date.now() || !account || account.accountType !== 'merchant' || account.status !== 'merchant_pending') throw Object.assign(new Error('ACTIVATION_TOKEN_INVALID'), { code: 'AUTH_ACTIVATION_TOKEN_INVALID' })
+      record.used = true; account.passwordHash = passwordHash; account.status = 'active'; account.authEpoch += 1; account.revision += 1; account.updatedAt = new Date().toISOString()
+      for (const session of this.sessions.values()) if (session.account.id === account.id) session.status = 'revoked'
+      auditMemory(this.events, 'auth.merchant_activation_confirmed', account.id, { invitation_id: invitation.id, terms_accepted: true, commercial_qualification_granted: false })
+      return accountPublic(account)
+    })
   }
 
   async createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string; bootstrapWorkspace?: boolean }) {
@@ -299,7 +380,7 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
     this.sessions.set(session.tokenHash, session); auditMemory(this.events, 'auth.refresh', account.id, { session_id: session.sessionId }); return { token: raw, principal: { account: session.account, sessionId: session.sessionId, issuedAt: session.issuedAt, expiresAt: session.expiresAt } }
   }
   async requestPasswordReset(loginInput: string) { const login = normalizeLogin(loginInput); const account = this.accounts.get(login); if (!account) return { accepted: true as const }; const token = newOpaqueToken(32); this.resets.set(tokenDigest(token), { accountId: account.id, tokenHash: tokenDigest(token), expiresAt: Date.now() + RESET_MS, used: false }); auditMemory(this.events, 'auth.password_reset_requested', account.id); return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' ? { accepted: true as const, token } : { accepted: true as const } }
-  async confirmPasswordReset(token: string, password: string) { const record = this.resets.get(tokenDigest(token)); if (!record || record.used || record.expiresAt <= Date.now()) throw Object.assign(new Error('AUTH_RESET_TOKEN_INVALID'), { code: 'AUTH_RESET_TOKEN_INVALID' }); const account = [...this.accounts.values()].find(item => item.id === record.accountId)!; account.passwordHash = await hashPassword(password); account.authEpoch += 1; account.failedAttempts = 0; account.lockedUntil = undefined; account.revision += 1; account.updatedAt = new Date().toISOString(); record.used = true; for (const session of this.sessions.values()) if (session.account.id === account.id) session.status = 'revoked'; auditMemory(this.events, 'auth.password_reset_confirmed', account.id, { sessions_revoked: true }) }
+  async confirmPasswordReset(token: string, password: string) { const record = this.resets.get(tokenDigest(token)); if ([...this.activationInvites.values()].some(value => value.tokenHash === tokenDigest(token)) || !record || record.used || record.expiresAt <= Date.now()) throw Object.assign(new Error('AUTH_RESET_TOKEN_INVALID'), { code: 'AUTH_RESET_TOKEN_INVALID' }); const account = [...this.accounts.values()].find(item => item.id === record.accountId)!; account.passwordHash = await hashPassword(password); account.authEpoch += 1; account.failedAttempts = 0; account.lockedUntil = undefined; account.revision += 1; account.updatedAt = new Date().toISOString(); record.used = true; for (const session of this.sessions.values()) if (session.account.id === account.id) session.status = 'revoked'; auditMemory(this.events, 'auth.password_reset_confirmed', account.id, { sessions_revoked: true }) }
   async issueMcpAuthorizationCode(input: McpOAuthContext & { account: PasswordAccount; redirectUri: string; codeChallenge: string; workspaceId?: string }) {
     const account = this.accounts.get(input.account.login)
     if (!account || account.id !== input.account.id || account.accountType !== 'merchant' || account.status !== 'active') throw mcpOAuthError('MCP_OAUTH_ACCOUNT_INVALID')
@@ -372,6 +453,89 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
   private async find(client: SqlClient, login: string) { const result = await client.query<any>(`SELECT id, identity_id AS "identityId", login_identifier AS login, account_type AS "accountType", enterprise_name AS "enterpriseName", contact_name AS "contactName", password_hash AS "passwordHash", status, roles, workspace_ids AS "workspaceIds", failed_attempts AS "failedAttempts", locked_until AS "lockedUntil", auth_epoch AS "authEpoch", revision, created_at AS "createdAt", updated_at AS "updatedAt" FROM platform_password_accounts WHERE login_identifier=$1`, [login]); return result.rows[0] as (AccountRecord & { identityId: string }) | undefined }
   private public(account: AccountRecord) { return accountPublic({ ...account, createdAt: iso(account.createdAt), updatedAt: iso(account.updatedAt) }) }
   async register(input: { login: string; password: string; enterpriseName: string; contactName: string; termsAgreed: boolean }) { const login = assertRegistration(input); const passwordHash = await hashPassword(input.password); return this.withClient(async client => { const identityId = randomUUID(); const applicationId = randomUUID(); try { await client.query(`INSERT INTO platform_identities (id, issuer, external_subject, display_name) VALUES ($1,'damai-password',$2,$3)`, [identityId, login, input.contactName.trim()]); await client.query(`INSERT INTO platform_password_accounts (id, identity_id, login_identifier, account_type, enterprise_name, contact_name, password_hash, terms_agreed_at, status, roles, workspace_ids) VALUES ($1,$2,$3,'merchant',$4,$5,$6,now(),'merchant_pending',ARRAY['merchant'],ARRAY[]::text[])`, [applicationId, identityId, login, input.enterpriseName.trim(), input.contactName.trim(), passwordHash]); await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2,'auth.registered',$3,'merchant registration',$4)`, [randomUUID(), identityId, login, { account_type: 'merchant', status: 'merchant_pending' }]) } catch (error) { if ((error as { code?: string }).code === '23505') throw Object.assign(new Error('LOGIN_ALREADY_EXISTS'), { code: 'AUTH_LOGIN_ALREADY_EXISTS' }); throw error } const account = await this.find(client, login); return { account: this.public(account!), applicationId } }) }
+  async createMerchantInvitation(raw: MerchantActivationInviteInput): Promise<MerchantActivationInviteResult> {
+    const input = activationIntent(raw)
+    const unknownPasswordHash = input.action === 'create' ? await hashPassword(`A1${newOpaqueToken()}`) : undefined
+    return this.withClient<MerchantActivationInviteResult>(async client => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [JSON.stringify(['merchant-invite-request', input.actorId, input.idempotencyKey])])
+      const replay = await client.query<{ id: string; account_id: string; intent_hash: string; expires_at: string; used_at: string | null }>('SELECT i.id,i.account_id,i.intent_hash,i.expires_at,t.used_at FROM platform_merchant_activation_invites i JOIN platform_password_reset_tokens t ON t.id=i.reset_token_id WHERE i.actor_id=$1 AND i.idempotency_key=$2', [input.actorId, input.idempotencyKey])
+      if (replay.rows[0]) {
+        const fact = replay.rows[0]
+        if (fact.intent_hash !== input.intentHash) throw Object.assign(new Error('ACTIVATION_IDEMPOTENCY_CONFLICT'), { code: 'AUTH_ACTIVATION_IDEMPOTENCY_CONFLICT' })
+        const account = await this.find(client, input.login)
+        if (!account || account.id !== fact.account_id) throw Object.assign(new Error('ACTIVATION_IDEMPOTENCY_CONFLICT'), { code: 'AUTH_ACTIVATION_IDEMPOTENCY_CONFLICT' })
+        return { account: this.public(account), invitation: { id: fact.id, expiresAt: iso(fact.expires_at), status: account.status === 'active' ? 'activated' : fact.used_at !== null ? 'superseded' : Date.parse(iso(fact.expires_at)) <= Date.now() ? 'expired' : 'pending_activation', replayed: true } }
+      }
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [JSON.stringify(['merchant-invite-login', input.login])])
+      await client.query('SELECT id FROM platform_password_accounts WHERE login_identifier=$1 FOR UPDATE', [input.login])
+      let account = await this.find(client, input.login)
+      if (input.action === 'create') {
+        if (account) throw Object.assign(new Error('LOGIN_ALREADY_EXISTS'), { code: 'AUTH_LOGIN_ALREADY_EXISTS' })
+        const workspaceIds = input.createWorkspace ? [`ws_${randomUUID().replaceAll('-', '')}`] : input.workspaceIds
+        await client.query("SELECT set_config('app.workspace_id',$1,true)", [workspaceIds[0]])
+        if (input.createWorkspace) await client.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [workspaceIds[0]])
+        else {
+          // Invitation only stages a pending login/member. SELECT FOR SHARE
+          // requires UPDATE privilege, which the Ops invitation role must not
+          // acquire on tenant roots. Activation rechecks active workspace status
+          // in the atomic member update before any login becomes active.
+          const existing = await client.query<{ id: string }>("SELECT id FROM workspaces WHERE id=ANY($1::text[]) AND status='active'", [workspaceIds])
+          if (existing.rows.length !== workspaceIds.length) throw Object.assign(new Error('WORKSPACE_NOT_FOUND'), { code: 'AUTH_WORKSPACE_NOT_FOUND' })
+        }
+        const identityId = randomUUID(), accountId = randomUUID()
+        await client.query("INSERT INTO platform_identities (id,issuer,external_subject,display_name) VALUES ($1,'damai-password',$2,$3)", [identityId, input.login, input.contactName])
+        await client.query(`INSERT INTO platform_password_accounts (id,identity_id,login_identifier,account_type,enterprise_name,contact_name,password_hash,terms_agreed_at,status,roles,workspace_ids) VALUES ($1,$2,$3,'merchant',$4,$5,$6,NULL,'merchant_pending',ARRAY['merchant'],$7::text[])`, [accountId, identityId, input.login, input.enterpriseName, input.contactName, unknownPasswordHash, workspaceIds])
+        for (const workspaceId of workspaceIds) {
+          await client.query("SELECT set_config('app.workspace_id',$1,true)", [workspaceId])
+          const memberId = randomUUID()
+          await client.query(`INSERT INTO workspace_members (id,workspace_id,external_subject,display_name,role,status,invited_by,identity_id) VALUES ($1,$2,$3,$4,$5,'invited',$6,$7)`, [memberId, workspaceId, input.login, input.contactName, input.createWorkspace ? 'workspace_owner' : 'merchant_admin', input.actorId, identityId])
+          if (input.createWorkspace) {
+            await client.query("SELECT set_config('app.identity_issuer','damai-password',true),set_config('app.identity_subject',$1,true)", [input.login])
+            await client.query(`INSERT INTO workspace_identity_bindings (issuer,external_subject,identity_id,workspace_id,display_name) VALUES ('damai-password',$1,$2,$3,$4)`, [input.login, identityId, workspaceId, input.enterpriseName.slice(0,120)])
+          }
+          await client.query(`INSERT INTO workspace_operation_audit (id,workspace_id,actor_id,action,resource_type,resource_id,before_json,after_json,reason) VALUES ($1,$2,$3,'merchant.account.invite','merchant_account',$4,'{}'::jsonb,$5,$6)`, [randomUUID(), workspaceId, input.actorId, accountId, { identity_id: identityId, member_id: memberId, login: input.login, login_status: 'pending_activation', commercial_qualification_granted: false }, input.reason])
+        }
+        await this.syncEnterpriseName(client, workspaceIds, input.enterpriseName)
+        account = (await this.find(client, input.login))!
+      } else {
+        const prior = account ? await client.query('SELECT id FROM platform_merchant_activation_invites WHERE account_id=$1 LIMIT 1', [account.id]) : undefined
+        if (!account || account.accountType !== 'merchant' || account.status !== 'merchant_pending' || !prior?.rows[0]) throw Object.assign(new Error('ACTIVATION_REISSUE_UNAVAILABLE'), { code: 'AUTH_ACTIVATION_REISSUE_UNAVAILABLE' })
+      }
+      // Serialize with token consumption on the account before touching reset
+      // rows. Reissue invalidates every previous unconsumed credential intent.
+      await client.query('UPDATE platform_password_reset_tokens SET used_at=now() WHERE account_id=$1 AND used_at IS NULL', [account.id])
+      const token = newOpaqueToken(), tokenId = randomUUID(), id = randomUUID(), expiresAt = new Date(Date.now() + RESET_MS).toISOString()
+      await client.query('INSERT INTO platform_password_reset_tokens (id,account_id,token_hash,expires_at) VALUES ($1,$2,$3,$4)', [tokenId, account.id, tokenDigest(token), expiresAt])
+      await client.query('INSERT INTO platform_merchant_activation_invites (id,account_id,reset_token_id,actor_id,idempotency_key,intent_hash,expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7)', [id, account.id, tokenId, input.actorId, input.idempotencyKey, input.intentHash, expiresAt])
+      await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2,'auth.merchant_activation_invited',$3,$4,$5)`, [randomUUID(), account.identityId, input.actorId, input.reason, { invitation_id: id, workspace_ids: account.workspaceIds, commercial_qualification_granted: false }])
+      return { account: this.public(account), invitation: { id, expiresAt, status: 'pending_activation', token, replayed: false } }
+    })
+  }
+
+  async confirmMerchantInvitation(input: { token: string; password: string; termsAgreed: boolean }): Promise<PasswordAccount> {
+    if (!input.termsAgreed) throw Object.assign(new Error('TERMS_REQUIRED'), { code: 'AUTH_TERMS_REQUIRED' })
+    const passwordHash = await hashPassword(input.password)
+    return this.withClient(async client => {
+      const matched = await client.query<{ account_id: string }>(`SELECT t.account_id FROM platform_password_reset_tokens t JOIN platform_merchant_activation_invites i ON i.reset_token_id=t.id WHERE t.token_hash=$1`, [tokenDigest(input.token)])
+      if (!matched.rows[0]) throw Object.assign(new Error('ACTIVATION_TOKEN_INVALID'), { code: 'AUTH_ACTIVATION_TOKEN_INVALID' })
+      await client.query('SELECT id FROM platform_password_accounts WHERE id=$1 FOR UPDATE', [matched.rows[0].account_id])
+      const consumed = await client.query<{ account_id: string; login: string; identity_id: string; workspace_ids: string[]; invitation_id: string }>(`UPDATE platform_password_reset_tokens t SET used_at=now() FROM platform_password_accounts a,platform_merchant_activation_invites i WHERE t.token_hash=$1 AND t.used_at IS NULL AND t.expires_at>now() AND i.reset_token_id=t.id AND a.id=t.account_id AND a.account_type='merchant' AND a.status='merchant_pending' RETURNING a.id AS account_id,a.login_identifier AS login,a.identity_id,a.workspace_ids,i.id AS invitation_id`, [tokenDigest(input.token)])
+      const fact = consumed.rows[0]
+      if (!fact) throw Object.assign(new Error('ACTIVATION_TOKEN_INVALID'), { code: 'AUTH_ACTIVATION_TOKEN_INVALID' })
+      await client.query(`UPDATE platform_password_accounts SET password_hash=$2,status='active',terms_agreed_at=now(),auth_epoch=auth_epoch+1,revision=revision+1,updated_at=now() WHERE id=$1`, [fact.account_id, passwordHash])
+      await client.query('UPDATE platform_identities SET auth_epoch=auth_epoch+1,revision=revision+1,updated_at=now() WHERE id=$1', [fact.identity_id])
+      for (const workspaceId of fact.workspace_ids) {
+        await client.query("SELECT set_config('app.workspace_id',$1,true)", [workspaceId])
+        const active = await client.query<{ id: string }>(`UPDATE workspace_members m SET status='active',revision=revision+1,updated_at=now() FROM workspaces w WHERE m.workspace_id=$1 AND m.identity_id=$2 AND m.external_subject=$3 AND m.status='invited' AND w.id=m.workspace_id AND w.status='active' RETURNING m.id`, [workspaceId, fact.identity_id, fact.login])
+        if (active.rows.length !== 1) throw Object.assign(new Error('ACTIVATION_MEMBERSHIP_CHANGED'), { code: 'AUTH_ACTIVATION_MEMBERSHIP_CHANGED' })
+        await client.query(`INSERT INTO workspace_operation_audit (id,workspace_id,actor_id,action,resource_type,resource_id,before_json,after_json,reason) VALUES ($1,$2,$3,'merchant.account.activate','merchant_account',$4,$5,$6,'商家通过一次性邀请自主设密并同意条款')`, [randomUUID(), workspaceId, fact.identity_id, fact.account_id, { member_status: 'invited' }, { member_status: 'active', commercial_qualification_granted: false }])
+      }
+      await client.query("UPDATE platform_password_sessions SET status='revoked',revoked_at=now(),revoke_reason='merchant_activation' WHERE account_id=$1 AND status='active'", [fact.account_id])
+      await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2::uuid,'auth.merchant_activation_confirmed',$2::text,'客户自主激活账号',$3)`, [randomUUID(), fact.identity_id, { invitation_id: fact.invitation_id, terms_accepted: true, commercial_qualification_granted: false }])
+      return this.public((await this.find(client, fact.login))!)
+    })
+  }
+
   async createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string; bootstrapWorkspace?: boolean }) {
     const login = assertRegistration({ ...input, termsAgreed: true })
     const workspaceIds = [...new Set(input.workspaceIds.map(value => value.trim()).filter(Boolean))]
@@ -617,7 +781,7 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
     })
   }
   async requestPasswordReset(loginInput: string) { const login = normalizeLogin(loginInput); return this.withClient(async client => { const account = await this.find(client, login); if (!account) return { accepted: true as const }; const raw = newOpaqueToken(); await client.query(`INSERT INTO platform_password_reset_tokens (id,account_id,token_hash,expires_at) VALUES ($1,$2,$3,now()+interval '15 minutes')`, [randomUUID(), account.id, tokenDigest(raw)]); await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason) SELECT $1,identity_id,'auth.password_reset_requested',login_identifier,'password reset requested' FROM platform_password_accounts WHERE id=$2`, [randomUUID(), account.id]); return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' ? { accepted: true as const, token: raw } : { accepted: true as const } }) }
-  async confirmPasswordReset(token: string, password: string) { const hash = await hashPassword(password); await this.withClient(async client => { const row = await client.query<{id:string;account_id:string;identity_id:string}>(`UPDATE platform_password_reset_tokens SET used_at=now() WHERE token_hash=$1 AND used_at IS NULL AND expires_at>now() RETURNING id,account_id,(SELECT identity_id FROM platform_password_accounts WHERE id=account_id) AS identity_id`, [tokenDigest(token)]); if (!row.rows[0]) throw Object.assign(new Error('AUTH_RESET_TOKEN_INVALID'), { code: 'AUTH_RESET_TOKEN_INVALID' }); await client.query(`UPDATE platform_password_accounts SET password_hash=$2,auth_epoch=auth_epoch+1,failed_attempts=0,locked_until=NULL,revision=revision+1,updated_at=now() WHERE id=$1`, [row.rows[0].account_id, hash]); await client.query(`UPDATE platform_identities SET auth_epoch=auth_epoch+1,revision=revision+1,updated_at=now() WHERE id=$1`, [row.rows[0].identity_id]); await client.query(`UPDATE platform_password_sessions SET status='revoked',revoked_at=now(),revoke_reason='password_reset' WHERE account_id=$1 AND status='active'`, [row.rows[0].account_id]); await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2,'auth.password_reset_confirmed','system','password reset confirmed',$3)`, [randomUUID(), row.rows[0].identity_id, { sessions_revoked: true }]) }) }
+  async confirmPasswordReset(token: string, password: string) { const hash = await hashPassword(password); await this.withClient(async client => { const matched = await client.query<{ account_id: string }>('SELECT account_id FROM platform_password_reset_tokens WHERE token_hash=$1', [tokenDigest(token)]); if (matched.rows[0]) await client.query('SELECT id FROM platform_password_accounts WHERE id=$1 FOR UPDATE', [matched.rows[0].account_id]); const row = await client.query<{id:string;account_id:string;identity_id:string}>(`UPDATE platform_password_reset_tokens SET used_at=now() WHERE token_hash=$1 AND used_at IS NULL AND expires_at>now() AND NOT EXISTS (SELECT 1 FROM platform_merchant_activation_invites i WHERE i.reset_token_id=platform_password_reset_tokens.id) RETURNING id,account_id,(SELECT identity_id FROM platform_password_accounts WHERE id=account_id) AS identity_id`, [tokenDigest(token)]); if (!row.rows[0]) throw Object.assign(new Error('AUTH_RESET_TOKEN_INVALID'), { code: 'AUTH_RESET_TOKEN_INVALID' }); await client.query(`UPDATE platform_password_accounts SET password_hash=$2,auth_epoch=auth_epoch+1,failed_attempts=0,locked_until=NULL,revision=revision+1,updated_at=now() WHERE id=$1`, [row.rows[0].account_id, hash]); await client.query(`UPDATE platform_identities SET auth_epoch=auth_epoch+1,revision=revision+1,updated_at=now() WHERE id=$1`, [row.rows[0].identity_id]); await client.query(`UPDATE platform_password_sessions SET status='revoked',revoked_at=now(),revoke_reason='password_reset' WHERE account_id=$1 AND status='active'`, [row.rows[0].account_id]); await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2,'auth.password_reset_confirmed','system','password reset confirmed',$3)`, [randomUUID(), row.rows[0].identity_id, { sessions_revoked: true }]) }) }
   async issueMcpAuthorizationCode(input: McpOAuthContext & { account: PasswordAccount; redirectUri: string; codeChallenge: string; workspaceId?: string }) {
     return this.withClient(async client => {
       // Status and epoch must remain stable until the code row commits. A

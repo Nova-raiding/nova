@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const app = readFileSync(new URL('../demo/merchant-studio/src/App.tsx', import.meta.url), 'utf8')
 const api = readFileSync(new URL('../demo/merchant-studio/src/api.ts', import.meta.url), 'utf8')
+const purchaseCenter = readFileSync(new URL('../demo/merchant-studio/src/CommercialPurchaseCenter.tsx', import.meta.url), 'utf8')
 const campaign = readFileSync(new URL('../demo/merchant-studio/src/CampaignLifecyclePanel.tsx', import.meta.url), 'utf8')
 const smoke = readFileSync(new URL('./merchant-studio-smoke.ts', import.meta.url), 'utf8')
 const merchantNginx = readFileSync(new URL('../infra/nginx/merchant-studio.conf', import.meta.url), 'utf8')
@@ -178,14 +179,14 @@ describe('Merchant Studio production UI contract', () => {
     expect(app).toContain('清除筛选')
   })
 
-  it('creates a server-owned recharge order and supports status queries', () => {
-    expect(app).toContain('充值订单')
-    expect(app).toContain('createRechargeOrder(baseUrl')
-    expect(app).toContain('支付完成后由服务端回调或查单入账')
-    expect(app).toContain('查询订单')
-    expect(app).toContain('fetchRechargeOrder(baseUrl, rechargeOrder.id)')
-    expect(api).toContain("'billing.recharge.create'")
-    expect(api).toContain("'billing.recharge.get'")
+  it('routes package purchase and order status through server-owned commercial facts', () => {
+    expect(app).toContain("import { CommercialPurchaseCenter } from './CommercialPurchaseCenter'")
+    expect(app).toContain('<CommercialPurchaseCenter baseUrl={baseUrl}')
+    expect(purchaseCenter).toContain('createCommercialPurchaseOrder(baseUrl')
+    expect(purchaseCenter).toContain('fetchCommercialPurchaseOrder(baseUrl')
+    expect(purchaseCenter).toContain('生成订单明细，暂不付款')
+    expect(api).toContain("'commercial.order.create'")
+    expect(api).toContain("'commercial.order.payment.get'")
   })
 
   it('renders independent multi-platform child-task bindings instead of one implicit product', () => {

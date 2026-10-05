@@ -10,9 +10,37 @@ import {
   refundPolicyApproval,
   refundOperationKey,
   provisionableCatalogItems,
+  positiveCommercialFen,
+  parseCommercialReceipt,
+  parseAllocationPreview,
 } from "./commercialOperationsClient.js";
 
 describe("commercial operations DTO parsers", () => {
+  it("preserves initial catalog sale revision zero for new SKU approval actions", () => {
+    const result = parseCatalog({ items: [{
+      id: "sku_new_v1", sku_code: "new_sku", name: "新草稿", type: "onboarding",
+      visibility: "public", version: "v1", price_label: "¥5000.00",
+      benefits_summary: "开通权益", approval_state: "draft", sale_state: "unlisted",
+      sale_revision: 0, current_sale_version_id: null,
+    }] });
+    expect(result.items[0]?.saleRevision).toBe(0);
+  });
+  const receipt = { id: "receipt_1", workspaceId: "ws_1", source: "bank_transfer", receivingAccountRef: "receiver_approved", externalTradeId: "bank_1", payerRef: "payer_1", amountFen: 700000, currency: "CNY", receivedAt: "2026-10-05T01:00:00Z", verifiedAt: "2026-10-05T02:00:00Z", allocatedFen: 100000, returnedFen: 100000, frozenReturnFen: 100000, availableFen: 400000, revision: 3 };
+  it("rejects nonconserving cash and refuses a cross-workspace allocation preview", () => {
+    expect(parseCommercialReceipt({ receipt }).availableFen).toBe(400000);
+    expect(() => parseCommercialReceipt({ ...receipt, availableFen: 400001 })).toThrow();
+    expect(() => parseCommercialReceipt({ ...receipt, amountFen: 700000.1 })).toThrow();
+    const preview = { workspace_id: "ws_1", receipt, order: { id: "order_1", amountFen: 200000 }, sku_code: "basic", amount_fen: 200000, expected_revision: 3, available_after_fen: 200000, fulfillment_state: "verification_required", preview_hash: "server_hash", expires_at: "2026-10-05T02:05:00Z" };
+    expect(parseAllocationPreview(preview).orderId).toBe("order_1");
+    expect(() => parseAllocationPreview({ ...preview, workspace_id: "ws_other" })).toThrow();
+    expect(() => parseAllocationPreview({ ...preview, expected_revision: 2 })).toThrow();
+    expect(() => parseAllocationPreview({ ...preview, available_after_fen: 1 })).toThrow();
+  });
+  it("parses actual cash in integer fen without rounding or accepting blank input", () => {
+    expect(positiveCommercialFen("2000.01")).toBe(200001);
+    expect(positiveCommercialFen("0.01")).toBe(1);
+    for (const value of ["", "0", "-1", "1.001", "1e3", "Infinity", "90071992547410"]) expect(() => positiveCommercialFen(value)).toThrow();
+  });
   it("keeps refund authorization keys stable for retries and distinct by scope and transition", async () => {
     const requestId = "refund-request-1";
     expect(await refundOperationKey("request", "ws_1", requestId)).toBe(await refundOperationKey("request", "ws_1", requestId));
@@ -61,12 +89,25 @@ describe("commercial operations DTO parsers", () => {
       { id: "draft", sku_code: "draft", name: "草稿", type: "monthly", visibility: "public", version: "v1", price_fen: 200000, price_label: "¥2000.00", benefits_summary: "草稿权益", approval_state: "draft", executable: true, unresolved: [] },
       { id: "blocked", sku_code: "blocked", name: "阻断", type: "monthly", visibility: "public", version: "v1", price_fen: 200000, price_label: "¥2000.00", benefits_summary: "待补充条款", approval_state: "approved", executable: true, unresolved: ["ORDER_TERMS_REQUIRED"] },
       { id: "private", sku_code: "private", name: "私测", type: "trial", visibility: "private", version: "v1", price_fen: 199900, price_label: "¥1999.00", benefits_summary: "私测权益", approval_state: "approved", executable: true, unresolved: [] },
-      { id: "ready", sku_code: "ready", name: "正式", type: "onboarding", visibility: "public", version: "v2", price_fen: 500000, price_label: "¥5000.00", benefits_summary: "正式权益", approval_state: "approved", executable: true, unresolved: [] },
+      { id: "ready", current_sale_state: "on_sale", current_sale_version_id: "ready", sale_revision: 3, sku_code: "ready", name: "正式", type: "onboarding", visibility: "public", version: "v2", price_fen: 500000, price_label: "¥5000.00", benefits_summary: "正式权益", approval_state: "approved", executable: true, unresolved: [] },
       { id: "unpriced", sku_code: "unpriced", name: "定制", type: "monthly", visibility: "public", version: "v1", price_fen: null, price_label: "按合同定价", benefits_summary: "合同定价", approval_state: "approved", executable: true, unresolved: [] },
     ] });
 
     expect(result.items.find((item) => item.skuCode === "ready")?.priceFen).toBe(500000);
     expect(provisionableCatalogItems(result.items).map((item) => item.skuCode)).toEqual(["ready"]);
+  });
+
+  it("never offers historical approved or missing sale projections as purchasable", () => {
+    const base = { sku_code: "basic", name: "基础版", type: "monthly", visibility: "public", version: "v1", price_fen: 200000, price_label: "¥2000.00", benefits_summary: "合同权益", approval_state: "approved", executable: true, unresolved: [] };
+    const catalog = parseCatalog({ items: [
+      { ...base, id: "history", sale_state: "on_sale", current_sale_version_id: "current", sale_revision: 2 },
+      { ...base, id: "retired", sale_state: "off_sale", current_sale_version_id: "retired", sale_revision: 3 },
+      { ...base, id: "missing" },
+      { ...base, id: "current", sale_state: "on_sale", current_sale_version_id: "current", sale_revision: 2, payload: { cycle: { unit: "calendar_month", count: 1 } } },
+    ] });
+    expect(provisionableCatalogItems(catalog.items).map(item => item.id)).toEqual(["current"]);
+    expect(catalog.items[3]?.payload).toEqual({ cycle: { unit: "calendar_month", count: 1 } });
+    expect(catalog.items[0]?.currentSaleVersionId).toBe("current");
   });
 
   it("requires correlation and audit-safe fields on timeline events", () => {

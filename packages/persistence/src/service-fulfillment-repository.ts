@@ -51,7 +51,7 @@ export interface OnboardingGrantScheduleRecord {
   onboardingOrderId: string
   entitlementSnapshotId: string
   sequence: number
-  points: 500
+  points: number
   dueAt: string | null
   expiresAt: string | null
   status: 'unresolved' | 'scheduled' | 'granted' | 'canceled'
@@ -108,6 +108,8 @@ export interface SaveOnboardingGrantScheduleDraftInput {
 export interface ServiceFulfillmentRepository {
   createAllocation(input: CreateServiceAllocationInput): Promise<ServiceAllocationRecord>
   appendEvent(input: AppendServiceFulfillmentEventInput): Promise<{ allocation: ServiceAllocationRecord; event: ServiceFulfillmentEventRecord }>
+  getSourceOrderObligation(workspaceId: string, orderSnapshotId: string): Promise<{orderId: string;sourceChecksum: string} | null>
+  getAllocation(workspaceId: string, allocationId: string): Promise<ServiceAllocationRecord | null>
   listAllocations(workspaceId: string, limit?: number): Promise<ServiceAllocationRecord[]>
   listEvents(workspaceId: string, allocationId: string, limit?: number): Promise<ServiceFulfillmentEventRecord[]>
   saveOnboardingGrantScheduleDraft(input: SaveOnboardingGrantScheduleDraftInput): Promise<OnboardingGrantScheduleRecord[]>
@@ -245,7 +247,8 @@ const iso = (value: string | Date | null): string | null => value === null ? nul
 const number = (value: number | string): number => typeof value === 'number' ? value : Number(value)
 const mapAllocation = (row: AllocationRow): ServiceAllocationRecord => ({ id: row.id, workspaceId: row.workspace_id, orderSnapshotId: row.order_snapshot_id, entitlementSnapshotId: row.entitlement_snapshot_id, serviceType: row.service_type, unit: row.unit, allocatedQuantity: row.allocated_quantity === null ? null : number(row.allocated_quantity), contractLabel: row.contract_label, periodStart: iso(row.period_start), periodEnd: iso(row.period_end), sourceChecksum: row.source_checksum, createdByActorId: row.created_by_actor_id, creationReason: row.creation_reason, creationEvidence: clone(row.creation_evidence), revision: number(row.revision), status: row.status, usedQuantity: number(row.used_quantity), createdAt: iso(row.created_at)!, updatedAt: iso(row.updated_at)! })
 const mapEvent = (row: EventRow): ServiceFulfillmentEventRecord => ({ id: row.id, workspaceId: row.workspace_id, allocationId: row.allocation_id, type: row.event_type, revision: number(row.revision), idempotencyKey: row.idempotency_key, actorId: row.actor_id, reason: row.reason, scheduleAt: iso(row.schedule_at), actualQuantity: row.actual_quantity === null ? null : number(row.actual_quantity), correctsEventId: row.corrects_event_id, before: clone(row.before_state), after: clone(row.after_state), evidence: clone(row.evidence), createdAt: iso(row.created_at)! })
-const mapSchedule = (row: ScheduleRow): OnboardingGrantScheduleRecord => ({ id: row.id, workspaceId: row.workspace_id, onboardingOrderId: row.onboarding_order_id, entitlementSnapshotId: row.entitlement_snapshot_id, sequence: number(row.sequence), points: 500, dueAt: iso(row.due_at), expiresAt: iso(row.expires_at), status: row.status === 'blocked_policy_unresolved' ? 'unresolved' : row.status, blockers: Array.isArray(row.blockers) ? row.blockers.filter((value): value is string => typeof value === 'string') : [], sourceChecksum: row.source_checksum, createdByActorId: row.created_by_actor_id, creationReason: row.creation_reason, creationEvidence: clone(row.creation_evidence), createdAt: iso(row.created_at)! })
+const positiveScheduleInteger = (value: number | string, field: string): number => { const quantity = Number(value); if (!Number.isSafeInteger(quantity) || quantity < 1) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_INPUT_INVALID', `${field} is invalid`); return quantity }
+const mapSchedule = (row: ScheduleRow): OnboardingGrantScheduleRecord => ({ id: row.id, workspaceId: row.workspace_id, onboardingOrderId: row.onboarding_order_id, entitlementSnapshotId: row.entitlement_snapshot_id, sequence: positiveScheduleInteger(row.sequence, 'sequence'), points: positiveScheduleInteger(row.points, 'points'), dueAt: iso(row.due_at), expiresAt: iso(row.expires_at), status: row.status === 'blocked_policy_unresolved' ? 'unresolved' : row.status, blockers: Array.isArray(row.blockers) ? row.blockers.filter((value): value is string => typeof value === 'string') : [], sourceChecksum: row.source_checksum, createdByActorId: row.created_by_actor_id, creationReason: row.creation_reason, creationEvidence: clone(row.creation_evidence), createdAt: iso(row.created_at)! })
 const allocationProjection = 'id,workspace_id,order_snapshot_id,entitlement_snapshot_id,service_type,unit,allocated_quantity,contract_label,period_start,period_end,source_checksum,created_by_actor_id,creation_reason,creation_evidence,request_hash,revision,status,used_quantity,created_at,updated_at'
 const eventProjection = `id,workspace_id,allocation_id,event_type,revision,idempotency_key,request_hash,actor_id,reason,schedule_at,actual_quantity,corrects_event_id,before_state,after_state,allocation_after,evidence,created_at`
 const scheduleProjection = 'id,workspace_id,onboarding_order_id,entitlement_snapshot_id,sequence,points,due_at,expires_at,status,blockers,source_checksum,created_by_actor_id,creation_reason,creation_evidence,created_at'
@@ -256,8 +259,9 @@ export class PostgresServiceFulfillmentRepository implements ServiceFulfillmentR
   async createAllocation(input: CreateServiceAllocationInput): Promise<ServiceAllocationRecord> {
     const value = validateAllocation(input); const requestHash = hash(value)
     return withWorkspaceTransaction(this.pool, value.workspaceId, async client => {
+      await client.query(`SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext($1),pg_catalog.hashtext($2))`, ['workspace_subscription_periods_v2',value.workspaceId])
       const source = await client.query(
-        `SELECT 1
+        `SELECT es.resolved_benefits AS benefits
            FROM commercial_order_snapshots_v2 os
            JOIN workspace_subscription_periods_v2 sp
              ON sp.workspace_id=os.workspace_id AND sp.order_snapshot_id=os.id
@@ -268,12 +272,27 @@ export class PostgresServiceFulfillmentRepository implements ServiceFulfillmentR
           WHERE os.workspace_id=$1 AND os.id=$2 AND es.id=$3
             AND sp.status='active' AND sp.period_start <= now() AND sp.period_end > now()
             AND es.executable=true AND es.unresolved_blockers='[]'::jsonb
+            AND os.checksum=$6
             AND ($4::timestamptz IS NULL OR $4::timestamptz >= sp.period_start)
             AND ($5::timestamptz IS NULL OR $5::timestamptz <= sp.period_end)
           LIMIT 1`,
-        [value.workspaceId, value.orderSnapshotId, value.entitlementSnapshotId, value.periodStart, value.periodEnd],
+        [value.workspaceId, value.orderSnapshotId, value.entitlementSnapshotId, value.periodStart, value.periodEnd,value.sourceChecksum],
       )
       if (!source.rows[0]) throw new ServiceFulfillmentRepositoryError('SERVICE_ALLOCATION_SOURCE_INVALID', 'service allocation requires one executable entitlement snapshot bound to the order snapshot')
+      const benefits = (source.rows[0] as {benefits: Array<{code:string;quantity:number}>}).benefits
+      const approved = Array.isArray(benefits) ? benefits.find(benefit=>benefit.code===value.serviceType) : undefined
+      const quantity = approved ? Number(approved.quantity) : 0
+      const minuteService = ['one_to_one_service_hours','monthly_one_to_one_hours'].includes(value.serviceType)
+      const countService = value.serviceType==='outcome_review_count'
+      const labelService = value.serviceType==='first_response_business_hours'
+      if (!Number.isSafeInteger(quantity) || quantity<1 || !(value.unit==='minute' && minuteService || value.unit==='count' && countService || value.unit==='contract_label' && labelService)) throw new ServiceFulfillmentRepositoryError('SERVICE_ALLOCATION_SOURCE_INVALID','service type and unit must match a positive frozen approved source entitlement')
+      const prior = await client.query(`SELECT id,request_hash FROM workspace_service_allocations WHERE workspace_id=$1 AND idempotency_key=$2`,[value.workspaceId,value.idempotencyKey])
+      if (!prior.rows[0] && value.unit!=='contract_label') {
+        const total = await client.query<{allocated:string}>(`SELECT COALESCE(sum(a.allocated_quantity),0) AS allocated FROM workspace_service_allocations a JOIN workspace_entitlement_snapshots_v2 prior ON prior.workspace_id=a.workspace_id AND prior.id=a.entitlement_snapshot_id JOIN workspace_entitlement_snapshots_v2 current_entitlement ON current_entitlement.workspace_id=prior.workspace_id AND current_entitlement.subscription_period_id=prior.subscription_period_id AND current_entitlement.id=$2 WHERE a.workspace_id=$1 AND a.service_type=$3 AND a.status<>'cancelled'`,[value.workspaceId,value.entitlementSnapshotId,value.serviceType])
+        const limit = value.unit==='minute' ? quantity*60 : quantity
+        if (!Number.isSafeInteger(limit) || Number(total.rows[0]?.allocated??0)+Number(value.allocatedQuantity)>limit) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_QUOTA_EXCEEDED','service allocations exceed the frozen source entitlement')
+      }
+
       const inserted = await client.query<AllocationRow>(`INSERT INTO workspace_service_allocations (id,workspace_id,idempotency_key,request_hash,order_snapshot_id,entitlement_snapshot_id,service_type,unit,allocated_quantity,contract_label,period_start,period_end,source_checksum,created_by_actor_id,creation_reason,creation_evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb) ON CONFLICT (workspace_id,idempotency_key) DO NOTHING RETURNING ${allocationProjection}`, [`svc_${randomUUID()}`, value.workspaceId, value.idempotencyKey, requestHash, value.orderSnapshotId, value.entitlementSnapshotId, value.serviceType, value.unit, value.allocatedQuantity, value.contractLabel, value.periodStart, value.periodEnd, value.sourceChecksum, value.actorId, value.reason, JSON.stringify(value.evidence)])
       if (inserted.rows[0]) return mapAllocation(inserted.rows[0])
       const replay = await client.query<AllocationRow>(`SELECT ${allocationProjection} FROM workspace_service_allocations WHERE workspace_id=$1 AND idempotency_key=$2`, [value.workspaceId, value.idempotencyKey])
@@ -285,6 +304,7 @@ export class PostgresServiceFulfillmentRepository implements ServiceFulfillmentR
   async appendEvent(input: AppendServiceFulfillmentEventInput): Promise<{ allocation: ServiceAllocationRecord; event: ServiceFulfillmentEventRecord }> {
     const value = validateEvent(input); const requestHash = hash(value)
     return withWorkspaceTransaction(this.pool, value.workspaceId, async client => {
+      await client.query(`SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext($1),pg_catalog.hashtext($2))`, ['workspace_subscription_periods_v2',value.workspaceId])
       const replay = await client.query<EventRow>(`SELECT ${eventProjection} FROM workspace_service_fulfillment_events WHERE workspace_id=$1 AND idempotency_key=$2`, [value.workspaceId, value.idempotencyKey])
       if (replay.rows[0]) {
         if (replay.rows[0].request_hash !== requestHash) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_IDEMPOTENCY_CONFLICT', 'event idempotency key conflicts with a different intent')
@@ -298,6 +318,8 @@ export class PostgresServiceFulfillmentRepository implements ServiceFulfillmentR
         if (concurrentReplay.rows[0].request_hash !== requestHash) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_IDEMPOTENCY_CONFLICT', 'event idempotency key conflicts with a different intent')
         return { allocation: mapAllocation(concurrentReplay.rows[0].allocation_after), event: mapEvent(concurrentReplay.rows[0]) }
       }
+      const source = await client.query(`SELECT 1 FROM workspace_subscription_periods_v2 p JOIN workspace_entitlement_snapshots_v2 e ON e.workspace_id=p.workspace_id AND e.subscription_period_id=p.id AND e.subscription_period_revision=p.revision WHERE p.workspace_id=$1 AND p.order_snapshot_id=$2 AND e.id=$3 AND p.status='active' AND p.period_start<=now() AND p.period_end>now() AND e.executable=true AND e.unresolved_blockers='[]'::jsonb`,[value.workspaceId,current.order_snapshot_id,current.entitlement_snapshot_id])
+      if (!source.rows[0]) throw new ServiceFulfillmentRepositoryError('SERVICE_ALLOCATION_SOURCE_INVALID','service source is frozen, superseded, or outside its active period')
       if (number(current.revision) !== value.expectedRevision) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_REVISION_CONFLICT', 'service allocation revision changed')
       assertServiceFulfillmentPeriod({ type: value.type, scheduleAt: value.scheduleAt, periodStart: iso(current.period_start), periodEnd: iso(current.period_end) })
       if (value.type === 'completed' && current.unit !== 'contract_label' && (value.actualQuantity === null || value.actualQuantity < 1)) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_INPUT_INVALID', 'completed count/minute service requires a positive actualQuantity')
@@ -322,6 +344,22 @@ export class PostgresServiceFulfillmentRepository implements ServiceFulfillmentR
       const event = await client.query<EventRow>(`INSERT INTO workspace_service_fulfillment_events (id,workspace_id,allocation_id,event_type,revision,idempotency_key,request_hash,actor_id,reason,schedule_at,actual_quantity,corrects_event_id,before_state,after_state,allocation_after,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb) RETURNING ${eventProjection}`, [`svce_${randomUUID()}`, value.workspaceId, value.allocationId, value.type, revision, value.idempotencyKey, requestHash, value.actorId, value.reason, value.scheduleAt, value.actualQuantity, value.correctsEventId, JSON.stringify(before), JSON.stringify(after), JSON.stringify(allocationAfter), JSON.stringify(value.evidence)])
       if (!event.rows[0]) throw new Error('service fulfillment event insert failed')
       return { allocation: mapAllocation(allocationAfter), event: mapEvent(event.rows[0]) }
+    })
+  }
+
+  async getSourceOrderObligation(workspaceId: string, orderSnapshotId: string): Promise<{orderId: string;sourceChecksum: string} | null> {
+    const scope=requireWorkspaceScope(workspaceId),snapshotId=required(orderSnapshotId,'orderSnapshotId')
+    return withWorkspaceTransaction(this.pool,scope,async client=>{
+      const row=(await client.query<{orderId:string;sourceChecksum:string}>(`SELECT o.id AS "orderId",s.checksum AS "sourceChecksum" FROM commercial_order_snapshots_v2 s JOIN commercial_orders_v2 o ON o.workspace_id=s.workspace_id AND o.id=s.order_id WHERE s.workspace_id=$1 AND s.id=$2 AND o.status='paid' AND s.snapshot->'sku'->>'lifecycle'='approved' AND s.snapshot->'sku'->>'executable'='true'`,[scope,snapshotId])).rows[0]
+      return row??null
+    })
+  }
+
+  async getAllocation(workspaceId: string, allocationId: string): Promise<ServiceAllocationRecord | null> {
+    const scope=requireWorkspaceScope(workspaceId),id=required(allocationId,'allocationId')
+    return withWorkspaceTransaction(this.pool,scope,async client=>{
+      const row=(await client.query<AllocationRow>(`SELECT ${allocationProjection} FROM workspace_service_allocations WHERE workspace_id=$1 AND id=$2`,[scope,id])).rows[0]
+      return row?mapAllocation(row):null
     })
   }
 

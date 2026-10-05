@@ -10,6 +10,10 @@ import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner, verifyAppliedMigrations } from '../packages/persistence/src/migration.js'
 import { PostgresCreativePointRepository } from '../packages/persistence/src/creative-point-repository.js'
 import { PostgresAssetLifecycleRepository } from '../packages/persistence/src/asset-lifecycle-repository.js'
+import { PostgresCommercialBenefitBundleRepository } from '../packages/persistence/src/commercial-benefit-bundle-repository.js'
+import { PostgresCommercialCatalogRepository } from '../packages/persistence/src/commercial-catalog-repository.js'
+import { PostgresCommercialContractRepository } from '../packages/persistence/src/commercial-contract-repository.js'
+import { PostgresCommercialReceiptRepository } from '../packages/persistence/src/commercial-receipt-repository.js'
 import { LocalObjectStorage } from '../packages/storage/src/object-storage.js'
 import { createWorkerRequestProof } from '../packages/security/src/worker-request-proof.js'
 import { createIsolatedOpsFixture } from './isolated-ops-fixture.js'
@@ -90,7 +94,8 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
     let child: ChildProcess | undefined
     try {
       const migrations = await loadMigrations()
-      expect(migrations.at(-1)?.version).toBe(258)
+      const release = JSON.parse(await readFile(new URL('../release-metadata.json', import.meta.url), 'utf8')) as { expectedMigrationVersion: number }
+      expect(migrations.at(-1)?.version).toBe(release.expectedMigrationVersion)
       const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       const databaseGrant = /ON DATABASE merchant\b/gu
       const grantCount = [...roleSql.matchAll(databaseGrant)].length
@@ -386,18 +391,128 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
       expect(lifecycleAfter257Bridge.rows).toEqual(before257.rows)
       await stopApi(child); child = undefined
 
-      // Migration 258 is the current full-candidate tail. Apply it before
-      // starting normal API mode so readiness is checked against the same
-      // complete chain declared by release metadata; the 254→257 bridge
-      // assertions above remain isolated to their reviewed prefixes.
-      expect(await new MigrationRunner(admin, migrations).run()).toEqual([258])
+      // The compatibility entitlement above intentionally used the old
+      // bridge-only fixture shape. End that period before applying V3 sales
+      // migrations so the new transaction repository only sees the real
+      // payment-verified contract fixture created below.
+      await admin.query(`UPDATE workspace_subscription_periods_v2 SET status='expired' WHERE workspace_id=$1 AND id=$2`, [workspaceId, periodId])
+
+      // Apply every migration after the reviewed 254→257 bridge prefixes so
+      // normal API readiness and the final role bootstrap match release metadata.
+      const expectedTail = Array.from({ length: migrations.length - 257 }, (_, index) => 258 + index)
+      expect(await new MigrationRunner(admin, migrations).run()).toEqual(expectedTail)
       await admin.query(isolatedRoleSql)
-      const history258 = (await admin.query<{ version: number; name: string; checksum: string }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version')).rows
-      expect(history258).toHaveLength(258)
-      expect(() => verifyAppliedMigrations(history258, migrations)).not.toThrow()
+      const currentHistory = (await admin.query<{ version: number; name: string; checksum: string }>('SELECT version,name,checksum FROM schema_migrations ORDER BY version')).rows
+      expect(currentHistory).toHaveLength(migrations.length)
+      expect(() => verifyAppliedMigrations(currentHistory, migrations)).not.toThrow()
+
+      // This test fixture exercises post-onboarding lifecycle routes. Use the
+      // production contract repository against migration-published snapshots,
+      // so the access projection receives checksum-verified entitlement facts
+      // and a payment-verified onboarding authority before lifecycle writes.
+      const contracts = new PostgresCommercialContractRepository(app)
+      const catalog = new PostgresCommercialCatalogRepository({ connect: async () => {
+        const client = await admin.connect()
+        await client.query('SET ROLE merchant_ops')
+        return { query: client.query.bind(client), release: () => { void client.query('RESET ROLE').finally(() => client.release()) } }
+      } })
+      const baseOpening = await catalog.resolveApprovedExecutableSku('onboarding_once')
+      const openingDraft = await catalog.mutate({
+        action: 'create', code: baseOpening.code, versionId: baseOpening.versionId, expectedRevision: baseOpening.saleRevision!,
+        idempotencyKey: `bridge-onboarding-policy:${commercialFixtureId}`, actorId: 'bridge-actor',
+        reason: 'isolated bridge fixture; approved local payment window', evidence: { test_only: true },
+        payload: { ...baseOpening.payload, purchasePolicy: { approved: true, version: 'owned-bridge-cash-window-v1', expiresInSeconds: 3600 }, grantSchedule: { ...(baseOpening.payload.grantSchedule as Record<string, unknown>), policyRef: { policyId: 'commercial.onboarding', version: 'v2' } } },
+        benefits: baseOpening.benefits,
+      })
+      const openingApproved = await catalog.mutate({ action: 'approve', code: openingDraft.code, versionId: openingDraft.versionId, expectedRevision: openingDraft.saleRevision!, idempotencyKey: `bridge-onboarding-approve:${commercialFixtureId}`, actorId: 'bridge-approver', reason: 'isolated bridge policy approval', evidence: { test_only: true } })
+      const openingPublished = await catalog.mutate({ action: 'publish', code: openingDraft.code, versionId: openingApproved.versionId, expectedRevision: openingApproved.saleRevision!, idempotencyKey: `bridge-onboarding-publish:${commercialFixtureId}`, actorId: 'bridge-publisher', reason: 'isolated bridge fixture publication', evidence: { test_only: true } })
+      const baseMonthly = await catalog.resolveApprovedExecutableSku('basic')
+      const monthlyDraft = await catalog.mutate({
+        action: 'create', code: baseMonthly.code, versionId: baseMonthly.versionId, expectedRevision: baseMonthly.saleRevision!,
+        idempotencyKey: `bridge-monthly-policy:${commercialFixtureId}`, actorId: 'bridge-actor',
+        reason: 'isolated bridge fixture; approved local payment window', evidence: { test_only: true },
+        payload: { ...baseMonthly.payload, purchasePolicy: { approved: true, version: 'owned-bridge-cash-window-v1', expiresInSeconds: 3600 }, planFamily: 'owned-bridge', tierRank: 1, cycle: { unit: 'month', count: 1 }, pointGrantPolicy: { cadence: 'once' }, upgradePolicy: { approved: true, version: 'owned-bridge-upgrade-v1' } },
+      })
+      const monthlyApproved = await catalog.mutate({ action: 'approve', code: monthlyDraft.code, versionId: monthlyDraft.versionId, expectedRevision: monthlyDraft.saleRevision!, idempotencyKey: `bridge-monthly-approve:${commercialFixtureId}`, actorId: 'bridge-approver', reason: 'isolated bridge policy approval', evidence: { test_only: true } })
+      const monthlyPublished = await catalog.mutate({ action: 'publish', code: monthlyDraft.code, versionId: monthlyApproved.versionId, expectedRevision: monthlyApproved.saleRevision!, idempotencyKey: `bridge-monthly-publish:${commercialFixtureId}`, actorId: 'bridge-publisher', reason: 'isolated bridge fixture publication', evidence: { test_only: true } })
+      const openingSku = openingPublished
+      const monthlySku = monthlyPublished
+      const checkout = await contracts.createFirstCheckout({
+        workspaceId, actorId: 'bridge-actor', onboardingSku: openingSku, subscriptionSku: monthlySku,
+        paymentProvider: 'manual_transfer', idempotencyKey: `bridge-qualified-checkout:${commercialFixtureId}`,
+        reason: 'isolated release-gate fixture; no external funds or production approval',
+      })
+      // The durable cash receipt cannot predate the checkout orders it settles.
+      const verifiedAt = new Date().toISOString()
+      const receipts = new PostgresCommercialReceiptRepository(app)
+      const receipt = await receipts.record({
+        workspaceId, source: 'manual_transfer', receivingAccountRef: 'owned-bridge-fixture-bank',
+        externalTradeId: `bridge-receipt:${commercialFixtureId}`, payerRef: 'owned-bridge-fixture-payer',
+        amountFen: checkout.amountFen, currency: 'CNY', receivedAt: verifiedAt, verifiedAt,
+        actorId: 'bridge-finance', evidence: { test_only: true, fixture: 'owned PostgreSQL release gate' },
+      })
+      const receiptLines = [checkout.onboarding, checkout.subscription].map((order, index) => ({
+        workspaceId, receiptId: receipt.id, orderId: order.id, amountFen: order.amountFen,
+        expectedRevision: receipt.revision, idempotencyKey: `bridge-receipt-allocation:${commercialFixtureId}:${index}`,
+        actorId: 'bridge-finance', at: verifiedAt,
+      }))
+      const receiptFulfillmentResults = await receipts.allocateBatchAndFulfill(receiptLines, (client, payment) => contracts.recordVerifiedPaymentAndGrantInTransaction(client, {
+        workspaceId, orderId: payment.orderId, provider: 'manual_transfer', providerEventId: `bridge-receipt:${payment.orderId}`,
+        providerOrderId: `owned-fixture:${payment.orderId}`, nonce: `owned-fixture:${payment.orderId}`,
+        payloadHash: 'a'.repeat(64), amountFen: payment.amountFen, currency: payment.currency,
+        paidAt: payment.paidAt, verifiedAt: payment.verifiedAt,
+      }))
+      const onboardingAfterReceipt = await contracts.getOnboardingStatus(workspaceId)
+      expect(receiptFulfillmentResults.map(result => result.status)).toEqual(['fully_received', 'fully_received'])
+      expect(onboardingAfterReceipt.qualified).toBe(true)
+
+      // Exercise the real Ops-only reader beyond one hundred SKU references
+      // and include an immutable order snapshot reference in its second page.
+      const referenceBundleCode = `bridge-bundle-${commercialFixtureId}`
+      const referenceBundle = new PostgresCommercialBenefitBundleRepository({ connect: async () => {
+        const client = await admin.connect()
+        await client.query('SET ROLE merchant_ops')
+        return { query: client.query.bind(client), release: () => { void client.query('RESET ROLE').finally(() => client.release()) } }
+      } })
+      const referenceDraft = await referenceBundle.mutate({ action: 'create', code: referenceBundleCode, name: '桥接引用测试', usage: 'included', benefits: [], payload: {}, expectedRevision: 0, idempotencyKey: `create:${commercialFixtureId}`, actorId: 'bridge-actor', reason: 'isolated pagination acceptance', evidence: { test_only: true } })
+      const referenceApproved = await referenceBundle.mutate({ action: 'approve', code: referenceBundleCode, expectedRevision: referenceDraft.revision, idempotencyKey: `approve:${commercialFixtureId}`, actorId: 'bridge-actor', reason: 'isolated pagination acceptance', evidence: { test_only: true } })
+      await admin.query(`INSERT INTO commercial_catalog_skus(id,code,kind,visibility)
+        SELECT 'bundle-ref-sku-'||lpad(n::text,3,'0'),'bundle-ref-'||lpad(n::text,3,'0'),'monthly','public' FROM generate_series(1,101) AS n`)
+      await admin.query(`INSERT INTO commercial_catalog_sku_versions
+        (id,sku_id,version,lifecycle,executable,price_fen,currency,price_mode,duration_days,payload,checksum,effective_at)
+        SELECT 'bundle-ref-version-'||lpad(n::text,3,'0'),'bundle-ref-sku-'||lpad(n::text,3,'0'),1,'approved',true,0,'CNY','fixed',NULL,
+          jsonb_build_object('name','reference fixture','bundleRefs',jsonb_build_array(jsonb_build_object('code',$1::text,'versionId',$2::text))),repeat('f',64),now()
+        FROM generate_series(1,101) AS n`, [referenceBundleCode, referenceApproved.versionId])
+      await admin.query(`INSERT INTO commercial_catalog_bundle_refs_v3(sku_version_id,bundle_version_id)
+        SELECT id,$1 FROM commercial_catalog_sku_versions WHERE sku_id LIKE 'bundle-ref-sku-%'`, [referenceApproved.versionId])
+      const referenceSkuId = 'bundle-ref-sku-001', referenceSkuVersion = 'bundle-ref-version-001'
+      const referenceOrderId = `bridge-bundle-reference-order-${commercialFixtureId}`
+      const referenceOrderSnapshotId = `bridge-bundle-reference-snapshot-${commercialFixtureId}`
+      await admin.query(`INSERT INTO commercial_orders_v2
+        (id,workspace_id,sku_id,sku_version_id,amount_fen,currency,payment_provider,status,idempotency_key,request_hash,created_by_actor_id,paid_at)
+        VALUES ($1,$2,$3,$4,0,'CNY','fixture','paid',$5,$6,'bridge-actor',now())`,
+        [referenceOrderId, workspaceId, referenceSkuId, referenceSkuVersion, `bundle-ref:${commercialFixtureId}`, 'a'.repeat(64)])
+      const frozenSku = { id: referenceSkuId, code: 'bundle-ref-001', versionId: referenceSkuVersion, payload: { bundleRefs: [{ code: referenceBundleCode, versionId: referenceApproved.versionId }] } }
+      await admin.query(`INSERT INTO commercial_order_snapshots_v2(id,workspace_id,order_id,sku_id,sku_version_id,catalog_checksum,snapshot,checksum)
+        VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)`,
+        [referenceOrderSnapshotId, workspaceId, referenceOrderId, referenceSkuId, referenceSkuVersion, 'b'.repeat(64), JSON.stringify({ sku: frozenSku }), 'c'.repeat(64)])
+      const firstReferencePage = await referenceBundle.referencesPage({ code: referenceBundleCode, versionId: referenceApproved.versionId, limit: 100 })
+      expect(firstReferencePage.items).toHaveLength(100)
+      expect(firstReferencePage.total).toBe(102)
+      expect(firstReferencePage.nextAfterId).toBeTruthy()
+      const secondReferencePage = await referenceBundle.referencesPage({ code: referenceBundleCode, versionId: referenceApproved.versionId, afterId: firstReferencePage.nextAfterId!, limit: 100 })
+      expect(secondReferencePage.items).toHaveLength(2)
+      expect(secondReferencePage.nextAfterId).toBeNull()
+      expect([...firstReferencePage.items, ...secondReferencePage.items].filter(item => item.reference_kind === 'order')).toMatchObject([
+        { workspace_id: workspaceId, order_id: referenceOrderId, sku_version_id: referenceSkuVersion },
+      ])
 
       const headers = { authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId }
       const lifecycleHeaders = { ...headers, 'content-type': 'application/json' }
+      const commercialRuntimeFacts = {
+        qualification: await contracts.getOnboardingStatus(workspaceId),
+        entitlements: await contracts.listEntitlementSnapshots(workspaceId),
+      }
       // Seed an expired asset before the v256 API hydrates this workspace so
       // the worker sees the same durable snapshot as the service read model.
       const purgeAssetId = 'asset_bridge_256_worker_purge'
@@ -442,9 +557,10 @@ describe('254/255 API bridge on an owned PostgreSQL 17 fixture', () => {
         method: 'POST', headers: lifecycleHeaders,
         body: JSON.stringify({ confirm_asset_name: `${assetId}.txt`, reason: 'isolated PostgreSQL purge cancellation acceptance', expected_revision: reTrashedBody.data.revision }),
       })
-      expect(earlyPurge.status).toBe(202)
-      const earlyPurgeBody = await earlyPurge.json() as { data: { revision: number; status: string } }
+      const earlyPurgeBody = await earlyPurge.json() as { data?: { revision: number; status: string }; error?: unknown }
+      expect(earlyPurge.status, JSON.stringify({ response: earlyPurgeBody, commercialRuntimeFacts })).toBe(202)
       expect(earlyPurgeBody.data).toMatchObject({ revision: 4, status: 'purge_queued' })
+      if (!earlyPurgeBody.data) throw new Error('isolated purge queue response omitted data')
       const queuedState = await admin.query<{ purge_requested_at: string | null; purge_request_reason: string | null; revision: number }>(
         'SELECT purge_requested_at, purge_request_reason, revision FROM merchant_asset_lifecycle WHERE workspace_id=$1 AND asset_id=$2',
         [workspaceId, assetId],

@@ -32,11 +32,12 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; description: s
     { domain: "models", label: "模型服务", description: "查看模型状态与计费设置", icon: <RobotOutlined /> },
     { domain: "storage", label: "存储治理", description: "核对对象存储容量与一致性", icon: <ShopOutlined /> },
     { domain: "finance", label: "账务与退款", description: "核对收款、创意点与退款", icon: <DollarOutlined /> },
+    { domain: "support", label: "客服工作台", description: "核实企业并处理客户工单与回复", icon: <TeamOutlined /> },
     { domain: "audit", label: "审计中心", description: "查询脱敏审计记录", icon: <SafetyCertificateOutlined /> },
   ];
 
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
-  { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery"] },
+  { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery", "support"] },
 ];
 
 // Match the reviewed desktop rail. Other authorized destinations remain

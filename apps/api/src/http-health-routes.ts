@@ -10,6 +10,7 @@ export interface HttpHealthRouteDependencies {
   send: <T>(res: ServerResponse, status: number, workspaceId: string, data: T | null, error?: ApiEnvelope<T>['error'], req?: IncomingMessage) => void
   fail: (res: ServerResponse, status: number, workspaceId: string, code: string, message: string, req?: IncomingMessage, details?: Readonly<Record<string, unknown>>) => void
   persistence: { mode: string; checkHealth?: () => Promise<unknown>; commercialCatalog?: CommercialCatalogRepository }
+  commercialRuntimeAttestation?: () => Promise<{ instanceId: string; salesProtocol: string; manifestSha256: string; schemaSha256: string }>
   persistenceError: unknown
   persistenceReady: Promise<unknown>
   redisHealth: RedisHealthPort | undefined
@@ -27,7 +28,7 @@ export interface HttpHealthRouteDependencies {
 const RELEASE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
 
 export async function handleHttpHealthRoute(req: IncomingMessage, res: ServerResponse, path: string, deps: HttpHealthRouteDependencies): Promise<boolean> {
-  if ((req.method !== 'GET' && req.method !== 'HEAD') || !['/livez', '/releasez', '/healthz', '/readyz'].includes(path)) return false
+  if ((req.method !== 'GET' && req.method !== 'HEAD') || !['/livez', '/releasez', '/healthz', '/readyz', '/internal/commercial-runtime-attestation'].includes(path)) return false
   const {
     send, fail, persistence, persistenceError, persistenceReady, redisHealth,
     runtimeHealth, productionReadinessDiagnostics, productionCommercialReadiness,
@@ -35,6 +36,14 @@ export async function handleHttpHealthRoute(req: IncomingMessage, res: ServerRes
     productionAssetScannerReadiness, evaluateScannerHeartbeatReadiness,
   } = deps
   async function respond(): Promise<void> {
+  if (path === '/internal/commercial-runtime-attestation') {
+    try {
+      if (!deps.commercialRuntimeAttestation) throw new Error('runtime attestation not configured')
+      return send(res, 200, 'system', await deps.commercialRuntimeAttestation(), null, req)
+    } catch {
+      return fail(res, 503, 'system', 'COMMERCIAL_RUNTIME_ATTESTATION_UNAVAILABLE', '商业运行身份或真实数据库证据未就绪', req)
+    }
+  }
   if (path === '/livez') return send(res, 200, 'system', { process: { ready: true } }, null, req)
   if (path === '/releasez') {
     const release = {

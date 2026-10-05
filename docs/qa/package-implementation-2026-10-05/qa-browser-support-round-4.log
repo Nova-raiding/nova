@@ -1,0 +1,34 @@
+{"evidenceDir":"/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-10-05T04-31-33.067Z-91667cf9-ca1f-42d5-9bc8-e019355aa187","runId":"ffb31759-f0bd-4d93-9834-d2d132f71058","isolated":true,"persistence":"postgres","testFiles":["dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js"]}
+
+Running 1 test using 1 worker
+
+[1A[2K(node:1362) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:1362) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[1/1] dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js:14:1 › merchant without an order submits durable support and reads only own customer-visible replies
+[1A[2K  1) dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js:14:1 › merchant without an order submits durable support and reads only own customer-visible replies 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m201[39m
+    Received: [31m503[39m
+
+      93 |       return { status: response.status, envelope: await response.json() }
+      94 |     }, { login: otherLogin, enterprise_name: '同企业隔离验收', contact_name: '另一个真实测试成员', workspace_ids: [process.env.OPS_E2E_WORKSPACE_ID], create_workspace: false, reason: '隔离fixture本人支持权限验收', idempotency_key: `qa-invite-${randomUUID()}` })
+    > 95 |     expect(invitation.status).toBe(201)
+         |                               ^
+      96 |     const invitationData = invitation.envelope.data ?? invitation.envelope
+      97 |     expect(invitationData).toMatchObject({ commercial_qualification_granted: false, capabilities_granted: [] })
+      98 |     const token = new URLSearchParams(new URL(invitationData.invitation.activation_link).hash.slice(1)).get('token')
+        at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js:95:31
+
+    Error Context: artifacts/ops-jit-isolation/2026-10-05T04-31-33.067Z-91667cf9-ca1f-42d5-9bc8-e019355aa187/test-results/dogfood-chatgpt-all-functi-6dd30-wn-customer-visible-replies/error-context.md
+
+
+[1A[2K  1 failed
+    dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js:14:1 › merchant without an order submits durable support and reads only own customer-visible replies 

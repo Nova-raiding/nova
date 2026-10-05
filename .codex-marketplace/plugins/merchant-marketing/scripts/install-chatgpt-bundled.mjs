@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { dirname, relative, resolve, sep } from 'node:path'
@@ -74,11 +74,21 @@ function assertKnownPluginDirectory(path) {
   })
   const [manifest, pkg, mcp] = records
   const bridge = resolve(path, 'mcp', 'bridge.mjs')
+  const startup = mcp.mcpServers?.[pluginName]
+  const legacyShell = resolve(path, 'mcp', 'bridge.sh')
+  // Audited 20260907102000 desktop entry point. Accept its exact bytes only;
+  // a shell-shaped custom entry point is not an owned Store Nova installation.
+  const knownLegacyShell = startup?.command === 'sh'
+    && startup?.args?.length === 1 && startup.args[0] === './mcp/bridge.sh'
+    && manifest.version === '0.1.0+codex.20260907102000'
+    && existsSync(legacyShell) && lstatSync(legacyShell).isFile() && !lstatSync(legacyShell).isSymbolicLink()
+    && createHash('sha256').update(readFileSync(legacyShell)).digest('hex')
+      === 'd7eb619195669b9c6e2e01c972335cd561b66d8086f14122c9304bed0f10c9d5'
   if (manifest.id !== pluginName || manifest.name !== pluginName || pkg.name !== '@merchant-marketing/plugin'
     || manifest.version !== pkg.version || manifest.mcpServers !== './.mcp.json'
     || !Array.isArray(mcp.mcpServers?.[pluginName]?.args)
     || mcp.mcpServers[pluginName].args.length !== 1
-    || mcp.mcpServers[pluginName].args[0] !== './mcp/bridge.mjs'
+    || (mcp.mcpServers[pluginName].args[0] !== './mcp/bridge.mjs' && !knownLegacyShell)
     || !existsSync(bridge) || !lstatSync(bridge).isFile() || lstatSync(bridge).isSymbolicLink()) {
     throw new Error(`Existing plugin directory is not recognized as Store Nova: ${path}`)
   }

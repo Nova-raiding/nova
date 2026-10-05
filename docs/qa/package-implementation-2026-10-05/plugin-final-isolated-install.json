@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "plugin": "merchant-marketing",
+  "version": "0.1.0+codex.20261005042504",
+  "installed": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/local-plugin/production-20261005042504/isolated-home/.codex/plugins/cache/merchant-personal/merchant-marketing/local",
+  "source": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/local-plugin/production-20261005042504/isolated-home/plugins/merchant-marketing",
+  "registry": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/local-plugin/production-20261005042504/isolated-home/.agents/plugins/marketplace.json",
+  "previous_source": null,
+  "previous_cache": null,
+  "previous_config": null,
+  "restart_required": true,
+  "login_required": true,
+  "previous_source_preserved": true,
+  "previous_file_count": 0,
+  "previous_config_preserved": true,
+  "profile": {
+    "schema_version": "1",
+    "profile": "production",
+    "qa_only": false,
+    "release_eligible": true,
+    "credential_broker": {
+      "path": "mcp/keychain-broker.mjs",
+      "included": false,
+      "authenticated_peer_identity": false,
+      "release_eligible": false
+    }
+  },
+  "bundle_status": {
+    "schema_version": "1",
+    "release_status": "dirty_source_candidate",
+    "ready_to_install": false,
+    "ci_test_certificate": false,
+    "source_dirty": true,
+    "chatgpt_app_bundled": false
+  },
+  "host_restarted": false,
+  "host_loaded_new_snapshot_verified": false
+}

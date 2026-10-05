@@ -116,6 +116,11 @@ infra/local/docker-compose.ecs-pilot-release.yml
 infra/local/ecs-production-compose.layers
 infra/scripts/pilot-compose-preflight.sh
 infra/scripts/render-ecs-production-compose.sh
+infra/scripts/apply-commercial-runtime-compose.mjs
+infra/scripts/install-commercial-attester.mjs
+scripts/commercial-fleet-attester.ts
+apps/api/src/commercial-runtime-policy.ts
+apps/api/src/commercial-fleet-observer.ts
 infra/scripts/rotate-alipay-secrets.sh
 infra/scripts/validate-ecs-compose-project.mjs
 infra/scripts/stage-verified-ecs-release.sh

@@ -1,0 +1,14 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ packages/persistence/src/migration.test.ts (17 tests) 407ms
+ ✓ tests/release-metadata-gate.test.ts (5 tests) 174ms
+ ✓ packages/contracts/src/commercial-notification-contract.test.ts (4 tests) 171ms
+ ✓ packages/persistence/src/migration-integrity.test.ts (15 tests) 95ms
+ ✓ packages/persistence/src/migration-264.test.ts (2 tests) 68ms
+
+ Test Files  5 passed (5)
+      Tests  43 passed (43)
+   Start at  13:16:41
+   Duration  2.28s (transform 275ms, setup 0ms, import 424ms, tests 914ms, environment 0ms)
+

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
 import argon2 from 'argon2'
 import { request as httpRequest } from 'node:http'
-import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, creativePointsForTests, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, productionReadinessDiagnostics, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setOAuthStateStoreForTests, setPaymentProviderForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, creativePointsForTests, deriveWorkerContinuationAuthorizationSnapshot, enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, productionReadinessDiagnostics, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setOAuthStateStoreForTests, setPaymentProviderForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
 import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/security/src/redis-oauth.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
@@ -1020,7 +1020,7 @@ describe('security and access-control acceptance gates', () => {
     const base = await start()
     const call = (token: string, method: string, params: Record<string, string> = {}, routedWorkspaceId = workspaceId, bodyWorkspaceId = routedWorkspaceId) => fetch(`${base}/mcp`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': routedWorkspaceId },
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': routedWorkspaceId, 'x-test-commercial-fixture': 'server-e2e' },
       body: JSON.stringify({ jsonrpc: '2.0', id: `${method}-${token}`, method, params: { workspace_id: bodyWorkspaceId, ...params } }),
     }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
 
@@ -1106,9 +1106,9 @@ describe('security and access-control acceptance gates', () => {
     await grantCreativePointsForTests(workspaceId)
     grantContinuousFeatureEntitlementForTests(workspaceId)
     const base = await start()
-    const ownerHeaders = { authorization: 'Bearer brand-owner-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
-    const editorHeaders = { authorization: 'Bearer brand-editor-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
-    const publisherHeaders = { authorization: 'Bearer brand-publisher-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const ownerHeaders = { authorization: 'Bearer brand-owner-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-test-commercial-fixture': 'server-e2e' }
+    const editorHeaders = { authorization: 'Bearer brand-editor-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-test-commercial-fixture': 'server-e2e' }
+    const publisherHeaders = { authorization: 'Bearer brand-publisher-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-test-commercial-fixture': 'server-e2e' }
     const mcp = (headers: Record<string, string>, id: number, method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
 
     expect((await mcp(ownerHeaders, 1, 'brand-unit.create', { brand_id: 'brand_access', name: '权限品' })).error).toBeNull()
@@ -1582,9 +1582,10 @@ describe('security and access-control acceptance gates', () => {
 
   it('enforces the production first-run store onboarding sequence', async () => {
     vi.stubEnv('NODE_ENV', 'production')
+    enableCommercialFixtureHarnessForTests()
     await configureBearerMembers([{ token: 'token-onboarding', workspaceId: 'ws_onboarding_gate' }])
     const base = await start()
-    const headers = { authorization: 'Bearer token-onboarding', 'x-workspace-id': 'ws_onboarding_gate', 'content-type': 'application/json' }
+    const headers = { authorization: 'Bearer token-onboarding', 'x-workspace-id': 'ws_onboarding_gate', 'content-type': 'application/json', 'x-test-commercial-fixture': 'server-e2e' }
     const health = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.health', params: {} }) }).then(response => response.json() as Promise<Envelope>)
     expect(health.error).toBeNull()
     const billing = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.status', params: {} }) }).then(response => response.json() as Promise<Envelope>)
@@ -1607,13 +1608,14 @@ describe('security and access-control acceptance gates', () => {
 
   it('lets an unfunded merchant read billing status but blocks paid generation', async () => {
     vi.stubEnv('NODE_ENV', 'production')
+    enableCommercialFixtureHarnessForTests()
     const workspaceId = `ws_unfunded_billing_${Date.now()}`
     await configureBearerMembers([{ token: 'token-unfunded-billing', workspaceId }])
     const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `unfunded-${workspaceId}`, credentialRef: 'vault://unfunded-commercial-gate' })
     const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, title: '商业门禁回归商品', stock: 1 })
     const task = service.createTask({ workspaceId, productId: product.id, platform: 'taobao', accountId: account.id })
     const base = await start()
-    const headers = { authorization: 'Bearer token-unfunded-billing', 'x-workspace-id': workspaceId, 'content-type': 'application/json' }
+    const headers = { authorization: 'Bearer token-unfunded-billing', 'x-workspace-id': workspaceId, 'content-type': 'application/json', 'x-test-commercial-fixture': 'server-e2e' }
     const call = (id: number, method: string, params: Record<string, unknown> = {}) =>
       fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) }).then(response => response.json() as Promise<Envelope>)
 
@@ -1622,7 +1624,7 @@ describe('security and access-control acceptance gates', () => {
     expect(billing.data?.result).toMatchObject({ balance_cny: '0.00' })
 
     const generation = await call(2, 'content.generate', { task_id: task.id })
-    expect(generation.error?.code).toBe('CREATIVE_POINTS_UNAVAILABLE')
+    expect(generation.error?.code).toBe('PLATFORM_RULE_DATA_UNAVAILABLE')
   })
 
   it('lets a funded production workspace create content without any bound store', async () => {
@@ -1865,8 +1867,8 @@ describe('security and access-control acceptance gates', () => {
     // The exact business result is asserted, not `not.toBe(403)`: the role gate
     // admitted the principal, the handler resolved the workspace and priced the
     // SKU, and only the missing merchant account stopped it.
-    expect(response.status).toBe(404)
-    expect((await response.json() as Envelope).error?.code).toBe('AUTH_ACCOUNT_NOT_FOUND')
+    expect(response.status).toBe(410)
+    expect((await response.json() as Envelope).error?.code).toBe('MERCHANT_LEGACY_AUTHORIZATION_DISABLED')
   })
 
   it('does not let a workspace membership role named platform_ops read the audit center as a platform operator', async () => {
@@ -2108,7 +2110,8 @@ describe('security and access-control acceptance gates', () => {
 
   it('accepts only the signed worker automation scheduler endpoint in staging', async () => {
     vi.stubEnv('NODE_ENV', 'staging')
-    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ 'worker-token': ['ws_worker_automation'] }))
+    enableCommercialFixtureHarnessForTests()
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ 'worker-token': ['ws_worker_automation'], 'previous-worker-token': ['ws_worker_automation'] }))
     vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ automation: [{ token: 'worker-token', signing_secret: 'automation-secret' }, { token: 'previous-worker-token', signing_secret: 'previous-automation-secret' }], generation: { token: 'generation-token', signing_secret: 'generation-secret' } }))
     const base = await start(); const workspaceId = 'ws_worker_automation'; const path = '/v1/internal/automation/tick'
     const unsigned = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer worker-token', 'x-workspace-id': workspaceId } })
@@ -2116,7 +2119,7 @@ describe('security and access-control acceptance gates', () => {
     const crossRole = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer generation-token', 'x-workspace-id': workspaceId, ...workerProofHeaders({ role: 'generation', secret: 'generation-secret', method: 'POST', path, workspaceId }) } })
     expect(crossRole.status).toBe(403)
     const previous = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer previous-worker-token', 'x-workspace-id': workspaceId, ...workerProofHeaders({ role: 'automation', secret: 'previous-automation-secret', method: 'POST', path, workspaceId }) } })
-    expect(previous.status).toBe(200)
+    expect(previous.status, await previous.clone().text()).toBe(200)
     const signed = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer worker-token', 'x-workspace-id': workspaceId, ...workerProofHeaders({ role: 'automation', secret: 'automation-secret', method: 'POST', path, workspaceId }) } })
     expect(signed.status).toBe(200)
     expect((await signed.json() as Envelope<{ executed: unknown[]; unattendedAutoResubmit: boolean }>).data).toMatchObject({ executed: [], unattendedAutoResubmit: false })
@@ -2124,6 +2127,7 @@ describe('security and access-control acceptance gates', () => {
 
   it('accepts automation and legacy generation proofs only on embedding callbacks', async () => {
     vi.stubEnv('NODE_ENV', 'staging')
+    enableCommercialFixtureHarnessForTests()
     const credentials = {
       automation: { token: 'embedding-automation-token', signing_secret: 'embedding-automation-secret' },
       generation: { token: 'embedding-generation-token', signing_secret: 'embedding-generation-secret' },
@@ -2157,7 +2161,7 @@ describe('security and access-control acceptance gates', () => {
     const admissionPath = '/v1/internal/knowledge-embeddings/admission'
     const admissionBody = JSON.stringify({ document_id: 'doc-a', document_revision: 1, content_hash: 'a'.repeat(64), action_id: 'knowledge-embedding:doc-a:1', run_key: 'knowledge-index:doc-a:1' })
     const blockedAdmission = await fetch(`${base}${admissionPath}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, authorization: `Bearer ${credentials.automation.token}`, ...workerProofHeaders({ role: 'automation', secret: credentials.automation.signing_secret, method: 'POST', path: admissionPath, workspaceId, body: admissionBody }) }, body: admissionBody })
-    expect(blockedAdmission.status).toBe(503)
+    expect(blockedAdmission.status, await blockedAdmission.clone().text()).toBe(503)
     expect((await blockedAdmission.json() as Envelope).error).toMatchObject({ code: 'KNOWLEDGE_EMBEDDING_PROVIDER_NOT_READY', details: { reasons: ['semantic_query_authorization_budget_settlement_unavailable'] } })
     const usagePath = '/v1/internal/model-usage'
     const usageBody = JSON.stringify({ modality: 'embedding' })

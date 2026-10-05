@@ -18,18 +18,17 @@ describe('merchant commercial catalog projection', () => {
     const selected = selectMerchantCatalogItems([
       item({ version: 'v1' }),
       item({ version: 2, approval_state: 'approved', executable: true, unresolved: [] }),
-      item({ sku_code: 'points_500', id: 'sku-points-500', name: '500 点包', version: 'v1' }),
+      item({ sku_code: 'points_500', id: 'sku-points-500', name: '500 点包', version: 'v1', approval_state: 'approved', executable: true }),
     ])
     expect(selected).toHaveLength(2)
     expect(selected.find(value => value.sku_code === 'basic')).toMatchObject({ version: 2, executable: true })
   })
 
-  it('keeps the newest blocked version when no approved version exists', () => {
+  it('does not publish draft-only SKUs as purchase options', () => {
     const selected = selectMerchantCatalogItems([
       item({ version: 'v1', unresolved: ['旧阻断'] }),
       item({ version: 'v2', unresolved: ['新阻断'] }),
     ])
-    expect(selected).toHaveLength(1)
-    expect(selected[0]).toMatchObject({ version: 'v2', unresolved: ['新阻断'] })
+    expect(selected).toHaveLength(0)
   })
 })

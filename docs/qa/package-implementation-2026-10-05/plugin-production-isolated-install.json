@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "plugin": "merchant-marketing",
+  "version": "0.1.0+codex.20261005041942",
+  "installed": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/local-plugin/production-20261005041942/isolated-home/.codex/plugins/cache/merchant-personal/merchant-marketing/local",
+  "source": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/local-plugin/production-20261005041942/isolated-home/plugins/merchant-marketing",
+  "registry": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/local-plugin/production-20261005041942/isolated-home/.agents/plugins/marketplace.json",
+  "previous_source": null,
+  "previous_cache": null,
+  "previous_config": null,
+  "restart_required": true,
+  "login_required": true
+}

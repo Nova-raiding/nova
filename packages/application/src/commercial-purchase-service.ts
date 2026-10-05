@@ -19,7 +19,7 @@ export interface CommercialPurchaseCatalogPort {
 }
 
 export interface CommercialPurchaseOrderPort {
-  createFromServerSnapshot(input: { workspace_id: string; actor_id: string; purchase_kind: CommercialPurchaseCreateRequest['purchase_kind']; server_snapshot_ref: string; server_snapshot: unknown; idempotency_key: string; reason: string }): Promise<CommercialPurchaseOrderView>
+  createFromServerSnapshot(input: { workspace_id: string; actor_id: string; purchase_kind: CommercialPurchaseCreateRequest['purchase_kind']; server_snapshot_ref: string; server_snapshot: unknown; upgrade_quote_id?: string; checkout_id?: string; onboarding_order_id?: string; idempotency_key: string; reason: string }): Promise<CommercialPurchaseOrderView>
   getPaymentStatus(input: CommercialPaymentStatusRequest): Promise<CommercialPurchaseOrderView | null>
 }
 
@@ -34,6 +34,14 @@ export class CommercialPurchaseService {
 
   async create(request: CommercialPurchaseCreateRequest): Promise<CommercialPurchaseOrderView> {
     required(request.workspace_id, 'workspace_id'); required(request.actor_id, 'actor_id'); required(request.sku_code, 'sku_code'); required(request.idempotency_key, 'idempotency_key'); required(request.reason, 'reason')
+    if (request.purchase_kind === 'upgrade' && !request.upgrade_quote_id) throw new CommercialPurchaseError('COMMERCIAL_UPGRADE_QUOTE_REQUIRED', 'upgrade requires a current server quote; update the client or use the authorized purchase page')
+    if (request.upgrade_quote_id !== undefined) {
+      required(request.upgrade_quote_id, 'upgrade_quote_id')
+      if (request.purchase_kind !== 'upgrade') throw new CommercialPurchaseError('COMMERCIAL_PURCHASE_KIND_MISMATCH', 'only an upgrade may reference an upgrade quote')
+    }
+    for (const field of ['checkout_id', 'onboarding_order_id'] as const) {
+      if (request[field] !== undefined) required(request[field], field)
+    }
     const sku = await this.catalog.resolveApprovedExecutableSku({ workspace_id: request.workspace_id, sku_code: request.sku_code, actor_id: request.actor_id })
     if (!sku || sku.lifecycle !== 'approved' || sku.executable !== true || sku.blockers.length > 0 || !Number.isFinite(Date.parse(sku.effective_at)) || Date.parse(sku.effective_at) > Date.now()) {
       throw new CommercialPurchaseError(request.purchase_kind === 'onboarding_once' ? 'ONBOARDING_PURCHASE_UNAVAILABLE' : 'COMMERCIAL_PURCHASE_UNAVAILABLE', 'approved executable commercial SKU is unavailable')
@@ -45,7 +53,7 @@ export class CommercialPurchaseService {
         ? 'point_pack'
         : 'monthly'
     if (sku.kind !== expected) throw new CommercialPurchaseError('COMMERCIAL_PURCHASE_KIND_MISMATCH', 'purchase kind does not match approved SKU kind')
-    return this.orders.createFromServerSnapshot({ workspace_id: request.workspace_id, actor_id: request.actor_id, purchase_kind: request.purchase_kind, server_snapshot_ref: sku.server_snapshot_ref, server_snapshot: sku.server_snapshot, idempotency_key: request.idempotency_key, reason: request.reason })
+    return this.orders.createFromServerSnapshot({ workspace_id: request.workspace_id, actor_id: request.actor_id, purchase_kind: request.purchase_kind, server_snapshot_ref: sku.server_snapshot_ref, server_snapshot: sku.server_snapshot, ...(request.upgrade_quote_id ? { upgrade_quote_id: request.upgrade_quote_id } : {}), ...(request.checkout_id ? { checkout_id: request.checkout_id } : {}), ...(request.onboarding_order_id ? { onboarding_order_id: request.onboarding_order_id } : {}), idempotency_key: request.idempotency_key, reason: request.reason })
   }
 
   async paymentStatus(request: CommercialPaymentStatusRequest): Promise<CommercialPurchaseOrderView> {

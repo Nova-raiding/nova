@@ -1,0 +1,37 @@
+
+> merchant-marketing-codex@0.2.4 typecheck
+> npm run build:packages && tsc -b --pretty false && tsc -p apps/ops-console/tsconfig.json --pretty false && tsc -p demo/merchant-studio/tsconfig.json --pretty false
+
+
+> merchant-marketing-codex@0.2.4 build:packages
+> npm run build --workspace @merchant-marketing/config && npm run build --workspace @merchant-marketing/contracts && npm run build --workspace @merchant-marketing/domain && npm run build --workspace @merchant-marketing/connectors && npm run build --workspace @merchant-marketing/application && npm run build --workspace @merchant-marketing/knowledge && npm run build --workspace @merchant-marketing/multimodal && npm run build --workspace @merchant-marketing/storage && npm run build --workspace @merchant-marketing/persistence && npm run build --workspace @merchant-marketing/security && npm run build --workspace @merchant-marketing/workers
+
+
+> @merchant-marketing/config@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/contracts@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/domain@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/connectors@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @merchant-marketing/application@0.1.0 build
+> tsc -p tsconfig.json
+
+error TS5055: Cannot write file '/Users/lixiaomei/Desktop/code/codexSkills/packages/application/dist/packages/application/src/commercial-upgrade-policy.d.ts' because it would overwrite input file.
+../../apps/api/src/server.ts(5296,10): error TS2742: The inferred type of 'publishEventPayload' cannot be named without a reference to '../../../node_modules/@merchant-marketing/application/src/canonical-execution-binding.js'. This is likely not portable. A type annotation is necessary.
+npm error Lifecycle script `build` failed with error:
+npm error code 1
+npm error path /Users/lixiaomei/Desktop/code/codexSkills/packages/application
+npm error workspace @merchant-marketing/application@0.1.0
+npm error location /Users/lixiaomei/Desktop/code/codexSkills/packages/application
+npm error command failed
+npm error command sh -c tsc -p tsconfig.json

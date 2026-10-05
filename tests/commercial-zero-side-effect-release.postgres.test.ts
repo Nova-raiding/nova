@@ -73,6 +73,9 @@ describe('commercial zero-side-effect PostgreSQL E2 matrix', () => {
       const createService = (registry: readonly CommercialOperationPolicy[]) => new CommercialAccessService({
         registry,
         registry_version: 'commercial-side-effect-e2.v1',
+        // This matrix isolates point rejection after a verified onboarding
+        // qualification; unknown qualification has its own fail-closed tests.
+        qualification_projection: { projectCommercialQualification: async () => ({ state: 'known' as const, qualified: true }) },
         balance_projection: {
           async projectCreativePointBalance({ workspace_id }) {
             const balance = await points.getBalance(workspace_id)

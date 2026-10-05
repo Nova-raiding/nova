@@ -1,0 +1,15 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ tests/mcp-surface-contract.test.ts (16 tests) 993ms
+ ✓ tests/plugin-manifest.test.ts (6 tests) 339ms
+     ✓ executes discovery from both source and local-source adapter bridge roots  314ms
+ ✓ tests/release-metadata-gate.test.ts (5 tests) 141ms
+ ✓ packages/contracts/src/authz.test.ts (35 tests) 22ms
+ ✓ packages/contracts/src/commercial-package-contract.test.ts (6 tests) 5ms
+
+ Test Files  5 passed (5)
+      Tests  68 passed (68)
+   Start at  11:56:13
+   Duration  3.56s (transform 701ms, setup 0ms, import 946ms, tests 1.50s, environment 0ms)
+

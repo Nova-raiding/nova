@@ -21,6 +21,17 @@ const specialPolicyTables = [
   'local_plugin_connection_requests',
   'local_plugin_install_instances',
   'local_plugin_install_audit',
+  // These relations intentionally use platform/member or nullable-workspace
+  // policies rather than the ordinary single-workspace predicate below.
+  'commercial_cash_allocations_v2',
+  'commercial_cash_receipt_balances_v2',
+  'commercial_cash_receipt_matches_v2',
+  'commercial_cash_receipts_v2',
+  'commercial_cash_returns_v2',
+  'workspace_commercial_notification_read_requests',
+  'workspace_commercial_notification_reads',
+  'workspace_commercial_notifications',
+  'workspace_commercial_result_notifications',
 ] as const
 
 describe('complete migration workspace RLS integrity gate', () => {

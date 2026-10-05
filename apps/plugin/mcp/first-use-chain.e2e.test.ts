@@ -49,7 +49,7 @@ describe('first-use plugin → API/MCP chain', () => {
     const apiBase = await startApi()
     child = spawn(process.execPath, [bridgePath], {
       cwd: process.cwd(),
-      env: { ...process.env, NODE_ENV: 'test', DEPLOY_ENV: '${DEPLOY_ENV}', MERCHANT_MCP_BASE_URL: apiBase, MERCHANT_WORKSPACE_ID: `ws_first_use_chain_${Date.now()}`, MERCHANT_MCP_TOKEN: '', MERCHANT_STRICT_AUTH: 'false', MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false' },
+      env: { ...process.env, NODE_ENV: 'test', DEPLOY_ENV: '${DEPLOY_ENV}', MERCHANT_MCP_BASE_URL: apiBase, MERCHANT_WORKSPACE_ID: `ws_first_use_chain_${Date.now()}`, MERCHANT_MCP_TOKEN_SOURCE: 'environment', MERCHANT_MCP_TOKEN: 'test-fixture-token', MERCHANT_STRICT_AUTH: 'false', MERCHANT_ALLOW_FIXTURE_FALLBACK: 'true' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} })}\n`)

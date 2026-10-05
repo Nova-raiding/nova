@@ -18,6 +18,7 @@ export const NON_HERMETIC_TEST_FILES = [
   'packages/persistence/src/migration-064-release.postgres.test.ts',
   'packages/persistence/src/migration-127-release.postgres.test.ts',
   'packages/persistence/src/migration-146-release.postgres.test.ts',
+  'packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts',
   'packages/persistence/src/migration-148-release.postgres.test.ts',
   'packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts',
   'packages/persistence/src/private-trial-invites.release.postgres.test.ts',
@@ -50,6 +51,12 @@ export const NON_HERMETIC_TEST_FILES = [
   // Runs API catalog writes against an owned tmpfs PostgreSQL fixture through
   // the explicit isolated PostgreSQL launcher; no default-suite skip is allowed.
   'apps/api/src/catalog-positive-isolated.postgres.test.ts',
+  'apps/api/src/product-stock-provenance.postgres.test.ts',
+  'apps/api/src/image-dispatch-scope-http.postgres.test.ts',
+  'apps/worker/src/image-pre-dispatch-budget-recovery.postgres.test.ts',
+  'apps/worker/src/image-pre-dispatch-recovery.postgres.test.ts',
+  'apps/worker/src/image-worker-signed-boundary.postgres.test.ts',
+  'packages/persistence/src/image-completed-unknown-ack.postgres.test.ts',
   // Uses a fixed-digest, one-off local Docker container and its own launcher;
   // it must not run from the default suite or the generic safe-test runner.
   'tests/ecs-pg16-migration-compatibility.isolated.test.ts',
@@ -108,6 +115,12 @@ export const CI_POSTGRES_ACCEPTANCE_STEP = 'Run PostgreSQL migration acceptance 
  */
 export const DEFAULT_SUITE_PENDING_ALLOWANCES: readonly DefaultSuitePendingAllowance[] = [
   // PERSISTENCE_RELEASE_DATABASE_URL
+  { file: 'packages/persistence/src/commercial-notification-repository.release.postgres.test.ts', pending: 2, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/commercial-receipt-repository.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts', pending: 14, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/image-budget-interleaving.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/commercial-source-refund-blockers.release.postgres.test.ts', pending: 7, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'apps/worker/src/creative-point-relay-settlement.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'apps/worker/src/knowledge-generation-worker-fence.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/charged-text-no-delivery.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
@@ -196,7 +209,7 @@ export const DEFAULT_SUITE_PENDING_ALLOWANCES: readonly DefaultSuitePendingAllow
   // ASSET_PARSE_DATABASE_URL
   { file: 'packages/persistence/src/asset-parse-repository.test.ts', pending: 1, binding: 'ASSET_PARSE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   // MODEL_BUDGET_DATABASE_URL
-  { file: 'packages/persistence/src/model-daily-budget.postgres.test.ts', pending: 5, binding: 'MODEL_BUDGET_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/model-daily-budget.postgres.test.ts', pending: 6, binding: 'MODEL_BUDGET_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   // STORAGE_QUOTA_DATABASE_URL
   { file: 'packages/persistence/src/storage-quota-repository.postgres.test.ts', pending: 1, binding: 'STORAGE_QUOTA_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
 ]

@@ -12,7 +12,7 @@ async function callTask(method: string, result: any) {
   if (!address || typeof address === 'string') throw new Error('test HTTP server unavailable')
   const child = spawn(process.execPath, [fileURLToPath(new URL('./bridge.mjs', import.meta.url))], {
     env: { ...process.env, NODE_ENV: 'test', DEPLOY_ENV: '${DEPLOY_ENV}', MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
-      MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN_SOURCE: 'environment', MERCHANT_MCP_TOKEN: '', MERCHANT_MCP_REFRESH_TOKEN: '' },
+      MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN_SOURCE: 'environment', MERCHANT_MCP_TOKEN: 'test-fixture-token', MERCHANT_MCP_REFRESH_TOKEN: '', MERCHANT_ALLOW_FIXTURE_FALLBACK: 'true' },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const lines = createInterface({ input: child.stdout }); const iterator = lines[Symbol.asyncIterator]()

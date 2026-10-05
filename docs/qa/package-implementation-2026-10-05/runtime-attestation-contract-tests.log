@@ -1,0 +1,12 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ packages/contracts/src/commercial-operation-registry.test.ts (17 tests) 31ms
+ ✓ packages/contracts/src/http-authz.test.ts (6 tests) 14ms
+ ✓ packages/contracts/src/commercial-worker-registry.test.ts (5 tests) 8ms
+
+ Test Files  3 passed (3)
+      Tests  28 passed (28)
+   Start at  12:03:07
+   Duration  1.17s (transform 357ms, setup 0ms, import 515ms, tests 53ms, environment 0ms)
+

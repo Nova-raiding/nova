@@ -551,4 +551,166 @@ BEGIN
 END
 $$;
 
+-- Versioned catalog facts and mutable sales projections: restore the intended
+-- Ops writer after bootstrap, without granting tenant access to global facts.
+DO $$
+DECLARE relation_name TEXT;
+BEGIN
+  FOREACH relation_name IN ARRAY ARRAY[
+    'commercial_catalog_skus', 'commercial_catalog_sku_versions',
+    'commercial_catalog_sku_benefits', 'commercial_catalog_events_v2',
+    'commercial_catalog_mutations_v3', 'commercial_benefit_bundle_versions_v3',
+    'commercial_catalog_bundle_refs_v3', 'commercial_bundle_mutations_v3'
+  ] LOOP
+    IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
+      EXECUTE format('REVOKE ALL ON TABLE public.%I FROM merchant_app, merchant_ops', relation_name);
+      EXECUTE format('GRANT SELECT, INSERT ON TABLE public.%I TO merchant_ops', relation_name);
+    END IF;
+  END LOOP;
+  FOREACH relation_name IN ARRAY ARRAY['commercial_catalog_sales_v3', 'commercial_benefit_bundles_v3'] LOOP
+    IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
+      EXECUTE format('REVOKE ALL ON TABLE public.%I FROM merchant_app, merchant_ops', relation_name);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.%I TO merchant_ops', relation_name);
+    END IF;
+  END LOOP;
+  IF to_regprocedure('public.merchant_resolve_sale_sku_v3(text,boolean,text[])') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.merchant_resolve_sale_sku_v3(text,boolean,text[]) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.merchant_resolve_sale_sku_v3(text,boolean,text[]) TO merchant_app, merchant_ops;
+  END IF;
+END
+$$;
+
+-- Publication notifications: retain least privilege after the blanket grants.
+DO $$
+BEGIN
+  IF to_regclass('public.commercial_catalog_publish_outbox') IS NOT NULL THEN
+    REVOKE ALL ON commercial_catalog_publish_outbox FROM merchant_app, merchant_ops;
+    GRANT SELECT, INSERT, UPDATE ON commercial_catalog_publish_outbox TO merchant_ops;
+  END IF;
+  IF to_regclass('public.workspace_commercial_notifications') IS NOT NULL THEN
+    REVOKE ALL ON workspace_commercial_notifications FROM merchant_app, merchant_ops;
+    GRANT SELECT ON workspace_commercial_notifications TO merchant_app;
+    GRANT SELECT, INSERT ON workspace_commercial_notifications TO merchant_ops;
+  END IF;
+END
+$$;
+
+-- Invitation facts remain immutable and inaccessible to tenant connections.
+DO $$
+BEGIN
+  IF to_regclass('public.platform_merchant_activation_invites') IS NOT NULL THEN
+    REVOKE ALL ON platform_merchant_activation_invites FROM PUBLIC, merchant_app, merchant_ops;
+    GRANT SELECT, INSERT ON platform_merchant_activation_invites TO merchant_ops;
+  END IF;
+END
+$$;
+
+-- 264 commercial result delivery and recipient read facts: retain prefix safety.
+DO $commercial_result_notifications_runtime_acl$
+DECLARE relation_name TEXT;
+BEGIN
+ IF to_regclass('public.commercial_purchase_result_notification_outbox') IS NOT NULL THEN
+  REVOKE ALL ON commercial_purchase_result_notification_outbox FROM merchant_app,merchant_ops;
+  GRANT SELECT,INSERT,UPDATE ON commercial_purchase_result_notification_outbox TO merchant_ops;
+ END IF;
+ IF to_regclass('public.workspace_commercial_result_notifications') IS NOT NULL THEN
+  REVOKE ALL ON workspace_commercial_result_notifications FROM merchant_app,merchant_ops;
+  GRANT SELECT ON workspace_commercial_result_notifications TO merchant_app;
+  GRANT SELECT,INSERT ON workspace_commercial_result_notifications TO merchant_ops;
+ END IF;
+ FOREACH relation_name IN ARRAY ARRAY['workspace_commercial_notification_reads','workspace_commercial_notification_read_requests'] LOOP
+  IF to_regclass(format('public.%I',relation_name)) IS NOT NULL THEN
+   EXECUTE format('REVOKE ALL ON TABLE public.%I FROM merchant_app,merchant_ops',relation_name);
+   EXECUTE format('GRANT SELECT,INSERT ON TABLE public.%I TO merchant_app',relation_name);
+  END IF;
+ END LOOP;
+END $commercial_result_notifications_runtime_acl$;
+
+COMMIT;
+
+-- Package receipt -> atomic contract fulfillment -> source refund SQL closure.
+-- Operations callers use the same workspace-scoped transaction and FORCE RLS
+-- as tenant runtime callers. Granting row locks is not a global tenant bypass.
+DO $package_commercial_runtime_acl$
+DECLARE runtime_role text; relation_name text;
+BEGIN
+ FOREACH runtime_role IN ARRAY ARRAY['merchant_app','merchant_ops'] LOOP
+  IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=runtime_role) THEN CONTINUE; END IF;
+  FOREACH relation_name IN ARRAY ARRAY[
+   'commercial_orders_v2','workspace_subscription_periods_v2',
+   'commercial_order_terms_v3','workspace_commercial_onboarding_v3',
+   'commercial_point_grant_schedules_v3','commercial_source_recovery_holds_v3',
+   'onboarding_point_grant_schedules_v2','creative_point_access_state',
+   'creative_point_operations','creative_point_reservations',
+   'commercial_cash_receipt_balances_v2','commercial_cash_returns_v2',
+   'commercial_refund_source_holds_v2'
+  ] LOOP
+   IF to_regclass(format('public.%I',relation_name)) IS NOT NULL THEN
+    EXECUTE format('REVOKE DELETE,TRUNCATE,REFERENCES,TRIGGER ON TABLE public.%I FROM %I',relation_name,runtime_role);
+    EXECUTE format('GRANT SELECT,INSERT,UPDATE ON TABLE public.%I TO %I',relation_name,runtime_role);
+   END IF;
+  END LOOP;
+  FOREACH relation_name IN ARRAY ARRAY[
+   'commercial_order_snapshots_v2','workspace_entitlement_snapshots_v2',
+   'commercial_payment_events_v2','commercial_upgrade_quotes_v3','commercial_upgrade_events_v3',
+   'creative_point_grants','creative_point_allocations','creative_point_ledger_events',
+   'creative_point_adjustments_v2','commercial_refund_events_v2','commercial_access_decisions_v2',
+   'onboarding_point_grant_dispatches_v2','onboarding_point_grant_expirations_v2',
+   'commercial_cash_receipts_v2','commercial_cash_allocations_v2'
+  ] LOOP
+   IF to_regclass(format('public.%I',relation_name)) IS NOT NULL THEN
+    EXECUTE format('REVOKE UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON TABLE public.%I FROM %I',relation_name,runtime_role);
+    EXECUTE format('GRANT SELECT,INSERT ON TABLE public.%I TO %I',relation_name,runtime_role);
+   END IF;
+  END LOOP;
+  -- PostgreSQL SELECT ... FOR UPDATE OF g needs UPDATE on one column. Source
+  -- grants remain immutable: the existing row and statement triggers reject
+  -- every actual UPDATE/DELETE/TRUNCATE; no other grant column is writable.
+  IF to_regclass('public.creative_point_grants') IS NOT NULL THEN
+   EXECUTE format('GRANT UPDATE(id) ON TABLE public.creative_point_grants TO %I',runtime_role);
+  END IF;
+  IF to_regclass('public.outbox_events') IS NOT NULL THEN
+   EXECUTE format('GRANT SELECT,INSERT ON TABLE public.outbox_events TO %I',runtime_role);
+  END IF;
+ END LOOP;
+ IF to_regclass('public.commercial_cash_receipt_matches_v2') IS NOT NULL THEN
+  REVOKE ALL ON commercial_cash_receipt_matches_v2 FROM merchant_app,merchant_ops;
+  GRANT SELECT ON commercial_cash_receipt_matches_v2 TO merchant_app;
+  GRANT SELECT,INSERT ON commercial_cash_receipt_matches_v2 TO merchant_ops;
+ END IF;
+END $package_commercial_runtime_acl$;
+
+-- Restore migration 154's controlled Ops service consumer. API still requires
+-- service write capability and the customer's immutable boundary acceptance.
+DO $commercial_service_runtime_acl$
+BEGIN
+ IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='merchant_ops') AND to_regclass('public.workspace_service_allocations') IS NOT NULL THEN
+  REVOKE ALL ON workspace_service_allocations,workspace_service_fulfillment_events FROM merchant_app;
+  REVOKE UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON workspace_service_allocations,workspace_service_fulfillment_events FROM merchant_ops;
+  GRANT SELECT,INSERT ON workspace_service_allocations,workspace_service_fulfillment_events TO merchant_ops;
+  GRANT UPDATE(revision,status,used_quantity,updated_at) ON workspace_service_allocations TO merchant_ops;
+ END IF;
+END $commercial_service_runtime_acl$;
+
+-- Source recovery evaluates current tenant brands, live stores and actual
+-- storage usage. Preserve approved read surfaces; add only missing columns.
+-- The quota row lock needs UPDATE privilege on one non-consumption column.
+DO $commercial_source_usage_acl$
+BEGIN
+ IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='merchant_ops') THEN
+  IF to_regclass('public.brands') IS NOT NULL THEN
+   GRANT SELECT(workspace_id) ON brands TO merchant_ops;
+  END IF;
+  IF to_regclass('public.platform_accounts') IS NOT NULL THEN
+   GRANT SELECT(workspace_id,token_state) ON platform_accounts TO merchant_ops;
+  END IF;
+  IF to_regclass('public.brand_store_bindings') IS NOT NULL THEN
+   GRANT SELECT(workspace_id,platform,platform_account_id,status) ON brand_store_bindings TO merchant_ops;
+  END IF;
+  IF to_regclass('public.workspace_storage_quotas') IS NOT NULL THEN
+   GRANT SELECT(workspace_id,used_bytes,reserved_bytes) ON workspace_storage_quotas TO merchant_ops;
+   GRANT UPDATE(limit_bytes) ON workspace_storage_quotas TO merchant_ops;
+  END IF;
+ END IF;
+END $commercial_source_usage_acl$;
 COMMIT;

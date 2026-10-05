@@ -295,7 +295,7 @@ export class MemoryBrandUnitRepository implements BrandUnitRepository {
 function brandRoleLevel(role: BrandAccessRole) { return ({ viewer: 1, editor: 2, publisher: 3, admin: 4 } as const)[role] }
 
 export class PostgresBrandUnitRepository implements BrandUnitRepository {
-  constructor(private readonly pool: SqlPool) {}
+  constructor(private readonly pool: SqlPool, private readonly options: { commercialEntitlement?: boolean } = {}) {}
 
   async listPlatformSummary(workspaceIds: readonly string[]): Promise<BrandUnitPlatformSummary[]> {
     const scopedIds = [...new Set(workspaceIds.map(id => requireWorkspaceScope(id)))].sort()
@@ -342,6 +342,7 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
   async createBrand(input: { workspaceId: string; id: string; name: string }) {
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
+      if (this.options.commercialEntitlement) await requireCommercialAbsoluteCapacityInTransaction(client, { workspaceId: input.workspaceId, code: 'max_brands', operation: 'brand_create' })
       const result = await client.query<BrandUnitRow>(`INSERT INTO brands (id, workspace_id, name) VALUES ($1,$2,$3) RETURNING id, workspace_id AS "workspaceId", name, revision, created_at AS "createdAt", updated_at AS "updatedAt"`, [input.id, input.workspaceId, input.name])
       return { ...result.rows[0]!, storeBindings: [] }
     })
@@ -350,6 +351,7 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
     requireWorkspaceScope(input.workspaceId)
     if (input.expectedRevision !== undefined && (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1)) throw new Error('BRAND_STORE_REVISION_INVALID')
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
+      if (this.options.commercialEntitlement) await requireCommercialAbsoluteCapacityInTransaction(client, { workspaceId: input.workspaceId, code: 'max_stores', operation: 'store_bind', platform: input.platform, accountId: input.accountId })
       await client.query(`INSERT INTO brand_store_bindings (workspace_id, brand_id, platform, platform_account_id) VALUES ($1,$2,$3,$4) ON CONFLICT (workspace_id, brand_id, platform_account_id) DO UPDATE SET status='active', revision=brand_store_bindings.revision+1, updated_at=now()`, [input.workspaceId, input.brandId, input.platform, input.accountId])
       const result = await client.query<BrandUnitRow & { bindings: Array<{ platform: BrandUnitPlatform; accountId: string }> }>(`UPDATE brands SET revision=revision+1, updated_at=now() WHERE workspace_id=$1 AND id=$2 AND status='active' AND ($3::int IS NULL OR revision=$3) RETURNING id, workspace_id AS "workspaceId", name, revision, created_at AS "createdAt", updated_at AS "updatedAt"`, [input.workspaceId, input.brandId, input.expectedRevision ?? null])
       const row = result.rows[0]
@@ -601,3 +603,4 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
     })
   }
 }
+import { requireCommercialAbsoluteCapacityInTransaction } from './commercial-capacity-admission.js'

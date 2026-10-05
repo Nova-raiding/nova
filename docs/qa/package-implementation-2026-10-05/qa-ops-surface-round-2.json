@@ -1,0 +1,29 @@
+{
+  "generated_at": "2026-10-05T03:52:46.469Z",
+  "contract_methods": 175,
+  "frontend_references": 166,
+  "unreferenced_count": 3,
+  "unreferenced": [
+    "ops.commercial.receipt.unmatched.list",
+    "ops.commercial.receipt.unmatched.match",
+    "ops.commercial.receipt.unmatched.record"
+  ],
+  "server_only_methods": [
+    "ops.feature-flag.emergency.set",
+    "ops.feature-flag.evaluate",
+    "ops.feature-flag.events",
+    "ops.feature-flag.upsert",
+    "ops.feature-flags.list",
+    "ops.marketing.generation.no_delivery.refund",
+    "ops.platform.store.record.create"
+  ],
+  "server_only_referenced": [
+    "ops.platform.store.record.create"
+  ],
+  "unregistered_server_only": [],
+  "indirect_candidates": [
+    "ops.data.delete.approve",
+    "ops.data.delete.cancel",
+    "ops.data.delete.list"
+  ]
+}

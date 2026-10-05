@@ -1,0 +1,7 @@
+import {describe,expect,it} from 'vitest'
+import {COMMERCIAL_SALES_SPEC,isolatedCommercialSalesMode} from '../scripts/ops-commercial-sales-lease.js'
+describe('isolated commercial sales runner opt-in boundary',()=>{
+ it('keeps ordinary support and catalog runs closed without the sales flag',()=>{expect(isolatedCommercialSalesMode(['dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js'],{})).toBe(false);expect(isolatedCommercialSalesMode(['dogfood/chatgpt-all-functions/ops-commercial-packages-isolated.spec.js'],{})).toBe(false)})
+ it('allows exactly the declared two-UI commercial fixture',()=>{expect(isolatedCommercialSalesMode([COMMERCIAL_SALES_SPEC],{OPS_E2E_COMMERCIAL_SALES:'true',OPS_E2E_MERCHANT_UI:'true'})).toBe(true)})
+ it.each([{args:[COMMERCIAL_SALES_SPEC],env:{}},{args:[COMMERCIAL_SALES_SPEC],env:{OPS_E2E_COMMERCIAL_SALES:'false'}},{args:[COMMERCIAL_SALES_SPEC],env:{OPS_E2E_COMMERCIAL_SALES:'true'}},{args:[COMMERCIAL_SALES_SPEC,'dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js'],env:{OPS_E2E_COMMERCIAL_SALES:'true',OPS_E2E_MERCHANT_UI:'true'}},{args:['dogfood/chatgpt-all-functions/ops-commercial-support-isolated.spec.js'],env:{OPS_E2E_COMMERCIAL_SALES:'true',OPS_E2E_MERCHANT_UI:'true'}},{args:[COMMERCIAL_SALES_SPEC],env:{OPS_E2E_COMMERCIAL_SALES:'true',OPS_E2E_MERCHANT_UI:'true',OPS_E2E_DELIVERY_SCAN:'true'}}])('rejects broader or ambiguous commercial evidence scope %#',({args,env})=>{expect(()=>isolatedCommercialSalesMode(args,env)).toThrow()})
+})

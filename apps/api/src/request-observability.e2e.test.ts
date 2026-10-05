@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { request as httpRequest } from 'node:http'
 import { createWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
-import { server, service, workspaceMembers } from './server.js'
+import { enableCommercialFixtureHarnessForTests, server, service, workspaceMembers } from './server.js'
 
 async function start() {
   await new Promise<void>((resolve, reject) => {
@@ -189,6 +189,7 @@ describe('API request observability wiring', () => {
     const lines: string[] = []
     vi.spyOn(console, 'info').mockImplementation(value => lines.push(String(value)))
     vi.stubEnv('NODE_ENV', 'staging')
+    enableCommercialFixtureHarnessForTests()
     vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ automation: [
       { token: 'current-worker-token', signing_secret: 'current-worker-signing-secret' },
       { token: 'rotation-worker-token', signing_secret: 'rotation-worker-signing-secret' },
@@ -201,7 +202,7 @@ describe('API request observability wiring', () => {
       authorization: 'Bearer rotation-worker-token', 'x-workspace-id': workspaceId, 'x-request-id': 'req-worker-observed', ...proof.headers,
     } })
 
-    expect(response.status).toBe(200)
+    expect(response.status, await response.clone().text()).toBe(200)
     const events = lines.map(line => JSON.parse(line) as Record<string, unknown>)
     expect(events.at(-1)).toMatchObject({
       event: 'request.completed', request_id: 'req-worker-observed', workspace_id: workspaceId, actor_id: 'worker:automation',

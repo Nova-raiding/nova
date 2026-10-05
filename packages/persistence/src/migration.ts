@@ -762,6 +762,14 @@ export async function loadMigrations(): Promise<Migration[]> {
   const assetLifecycle = await readFile(new URL('./migrations/256_asset_lifecycle.sql', import.meta.url), 'utf8')
   const assetSnapshotLifecycleGuard = await readFile(new URL('./migrations/257_asset_snapshot_lifecycle_guard.sql', import.meta.url), 'utf8')
   const knowledgeGenerationClaimUsageEvidence = await readFile(new URL('./migrations/258_knowledge_generation_claim_usage_evidence.sql', import.meta.url), 'utf8')
+  const commercialTransactionPolicy = await readFile(new URL('./migrations/259_commercial_transaction_policy.sql', import.meta.url), 'utf8')
+  const commercialCatalogSalesAndBundles = await readFile(new URL('./migrations/260_commercial_catalog_sales_and_bundles.sql', import.meta.url), 'utf8')
+  const commercialReceiptsSourceRefunds = await readFile(new URL('./migrations/261_commercial_receipts_source_refunds.sql', import.meta.url), 'utf8')
+  const commercialCatalogNotifications = await readFile(new URL('./migrations/262_commercial_catalog_notifications.sql', import.meta.url), 'utf8')
+  const merchantActivationInvites = await readFile(new URL('./migrations/263_merchant_activation_invites.sql', import.meta.url), 'utf8')
+  const commercialResultNotificationsAndReads = await readFile(new URL('./migrations/264_commercial_result_notifications_and_reads.sql', import.meta.url), 'utf8')
+  const commercialBundleReferenceReader = await readFile(new URL('./migrations/265_commercial_bundle_reference_reader.sql', import.meta.url), 'utf8')
+  const commercialOrderBeneficiaries = await readFile(new URL('./migrations/266_commercial_order_beneficiaries.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -1021,6 +1029,14 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 256, name: 'asset_lifecycle', sql: assetLifecycle },
     { version: 257, name: 'asset_snapshot_lifecycle_guard', sql: assetSnapshotLifecycleGuard },
     { version: 258, name: 'knowledge_generation_claim_usage_evidence', sql: knowledgeGenerationClaimUsageEvidence },
+    { version: 259, name: 'commercial_transaction_policy', sql: commercialTransactionPolicy },
+    { version: 260, name: 'commercial_catalog_sales_and_bundles', sql: commercialCatalogSalesAndBundles },
+    { version: 261, name: 'commercial_receipts_source_refunds', sql: commercialReceiptsSourceRefunds },
+    { version: 262, name: 'commercial_catalog_notifications', sql: commercialCatalogNotifications },
+    { version: 263, name: 'merchant_activation_invites', sql: merchantActivationInvites },
+    { version: 264, name: 'commercial_result_notifications_and_reads', sql: commercialResultNotificationsAndReads },
+    { version: 265, name: 'commercial_bundle_reference_reader', sql: commercialBundleReferenceReader },
+    { version: 266, name: 'commercial_order_beneficiaries', sql: commercialOrderBeneficiaries },
   ]
 }
 

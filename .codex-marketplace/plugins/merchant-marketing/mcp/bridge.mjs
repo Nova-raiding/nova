@@ -219,8 +219,8 @@ const READ_ONLY_METHODS = new Set([
   'onboarding.status',
   'brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get',
   'workspace.health', 'workspace.invitations.list', 'catalog.search', 'catalog.categories', 'catalog.image.get',
-  'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'workspace.data.export.get', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list',
-  'ops.support.tickets.list', 'ops.support.ticket.get', 'support.customer.replies.list',
+  'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'workspace.data.export.get', 'commercial.access.get', 'commercial.catalog.get', 'commercial.upgrade.quote.get', 'commercial.order.request.get', 'commercial.upgrade.quote.request.get', 'commercial.checkout.request.get', 'commercial.subscription.get', 'commercial.notifications.list', 'creative-points.balance.get', 'creative-points.statement.list', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list',
+  'ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.platform.tickets.list', 'ops.support.platform.ticket.get', 'support.customer.replies.list',
   'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline',
   'ops.feature-flags.list', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
   'ops.finance.search', 'ops.finance.detail', 'ops.finance.export',
@@ -241,14 +241,41 @@ const COMMERCIAL_REGISTRY_VERSION = 'commercial-operation-registry.v1'
 // annotations and transport retries, not commercial access or zero-point
 // recovery.
 const COMMERCIAL_RECOVERY_METHODS = new Set([
-  'workspace.bootstrap', 'onboarding.status', 'workspace.content_setup.confirm',
-  'workspace.health', 'canonical.product.consistency',
-  'commercial.access.get', 'commercial.catalog.get', 'commercial.order.create', 'commercial.order.payment.get',
-  'creative-points.balance.get', 'creative-points.statement.list',
-  'subscription.get', 'subscription.orders.list',
-  'billing.export', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.recharge.create', 'billing.transactions',
-  'upload.session.create', 'upload.session.part', 'upload.session.complete',
-  'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request',
+  'workspace.bootstrap',
+  'onboarding.status',
+  'workspace.content_setup.confirm',
+  'workspace.health',
+  'canonical.product.consistency',
+  'commercial.access.get',
+  'commercial.catalog.get',
+  'commercial.upgrade.quote.create',
+  'commercial.upgrade.quote.get',
+  'commercial.subscription.get',
+  'commercial.notifications.list',
+  'commercial.notifications.mark-read',
+  'commercial.order.create',
+  'commercial.order.payment.get',
+  'commercial.order.payment.create',
+  'commercial.checkout.request.get',
+  'commercial.order.request.get',
+  'commercial.upgrade.quote.request.get',
+  'commercial.checkout.create',
+  'creative-points.balance.get',
+  'creative-points.statement.list',
+  'subscription.get',
+  'subscription.orders.list',
+  'billing.export',
+  'billing.status',
+  'billing.recharge.get',
+  'billing.recharge.list',
+  'billing.recharge.create',
+  'billing.transactions',
+  'upload.session.create',
+  'upload.session.part',
+  'upload.session.complete',
+  'workspace.data.export.request',
+  'workspace.data.export.get',
+  'workspace.data.delete.request',
   'platform.mapping.preflight',
 ])
 // Mirrors the API's COMMERCIAL_READ_ONLY_METHODS. These methods only inspect
@@ -261,6 +288,7 @@ const COMMERCIAL_API_READ_ONLY_METHODS = new Set([
   'subscription.get', 'subscription.orders.list', 'platform.model.status',
   'platform.media.spec.list', 'platform.media.spec.get', 'platform.store.list',
   'brand.get', 'support.customer.replies.list',
+  'publish.manual.get', 'publish.manual.list',
   'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get',
   'knowledge.learning.list', 'knowledge.competitor.list',
   'rule.list', 'rule.sync.status', 'automation.policy.get', 'automation.policy.list',
@@ -376,6 +404,8 @@ const reasonProperty = boundedString(1000, 3, '当前交互写操作的可审计
 // asserts the empty intersection.
 const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   ...READ_ONLY_METHODS,
+  // Marking the current member's visible notification read changes no financial intent.
+  'commercial.notifications.mark-read',
   'merchant.start', 'merchant.first_value',
   'content.export', 'catalog.image.review', 'catalog.image.select',
   // A reference only creates an audit record; it does not mutate the analysis.
@@ -540,10 +570,20 @@ const METHODS = {
     description: '查看当前工作区可见的版本化商业目录；不可用时明确返回阻断，不回退到历史套餐报价。只读恢复入口。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
+  'commercial.upgrade.quote.create': { description: '按当前套餐剩余有效期生成锁价升级报价，保留原到期时间。', inputSchema: { type: 'object', properties: { target_sku_code: boundedString(128), idempotency_key: idempotencyKeyProperty }, required: ['target_sku_code', 'idempotency_key'], additionalProperties: false } },
+  'commercial.upgrade.quote.get': { description: '查询当前工作区的原升级报价。', inputSchema: { type: 'object', properties: { upgrade_quote_id: boundedString(256) }, required: ['upgrade_quote_id'], additionalProperties: false } },
+  'commercial.subscription.get': { description: '查看当前、未来已购套餐及独立权益包。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  'commercial.notifications.list': { description: '查看当前工作区套餐和权益包上架通知。', inputSchema: { type: 'object', properties: { cursor: boundedString(4_096), limit: { type: 'string', pattern: '^(?:[1-9]|[1-9][0-9]|100)$' } }, additionalProperties: false } },
+  'commercial.notifications.mark-read': { description: '把自己可见的商业通知标记为已读；不创建订单、不改变支付或权益。', inputSchema: { type: 'object', properties: { notification_id: boundedString(256), idempotency_key: { type: 'string', minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' } }, required: ['notification_id', 'idempotency_key'], additionalProperties: false } },
   'commercial.order.create': {
     description: '基于服务端当前批准且可执行的 SKU 创建 V2 购买、升级或创意点包订单；金额、币种、点数和权益只能由服务端快照决定。',
-    inputSchema: { type: 'object', properties: { purchase_kind: { type: 'string', enum: ['purchase', 'onboarding_once', 'upgrade', 'point_pack'] }, sku_code: boundedString(128), idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['purchase_kind', 'sku_code', 'idempotency_key', 'reason'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { purchase_kind: { type: 'string', enum: ['purchase', 'onboarding_once', 'upgrade', 'point_pack'] }, sku_code: boundedString(128), upgrade_quote_id: boundedString(256), checkout_id: boundedString(256), onboarding_order_id: boundedString(256), idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['purchase_kind', 'sku_code', 'idempotency_key', 'reason'], additionalProperties: false },
   },
+  'commercial.order.request.get': { description: '按原幂等键查询当前工作区由本人创建的请求，不重复下单或重新报价。', inputSchema: { type: 'object', properties: { idempotency_key: idempotencyKeyProperty }, required: ['idempotency_key'], additionalProperties: false } },
+  'commercial.upgrade.quote.request.get': { description: '按原幂等键查询当前工作区由本人创建的请求，不重复下单或重新报价。', inputSchema: { type: 'object', properties: { idempotency_key: idempotencyKeyProperty }, required: ['idempotency_key'], additionalProperties: false } },
+  'commercial.checkout.create': { description: '原子创建开通费和首期套餐两笔依赖明细，由服务端决定价格和权益。', inputSchema: { type: 'object', properties: { onboarding_sku_code: boundedString(128), subscription_sku_code: boundedString(128), idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['onboarding_sku_code','subscription_sku_code','idempotency_key','reason'], additionalProperties: false } },
+  'commercial.order.payment.create': { description: '确认订单价格与明细后再申请原订单支付链接，不延长订单期限。', inputSchema: { type: 'object', properties: { order_id: boundedString(256), idempotency_key: idempotencyKeyProperty }, required: ['order_id','idempotency_key'], additionalProperties: false } },
+  'commercial.checkout.request.get': { description: '按原请求幂等键查询本人创建的首购及两笔完整订单，不重复创建。', inputSchema: { type: 'object', properties: { idempotency_key: idempotencyKeyProperty }, required: ['idempotency_key'], additionalProperties: false } },
   'commercial.order.payment.get': {
     description: '查询当前工作区 V2 订单支付与权益状态；仅服务端订单事实有效。只读。',
     inputSchema: { type: 'object', properties: { order_id: boundedString(256) }, required: ['order_id'], additionalProperties: false },
@@ -565,6 +605,9 @@ const METHODS = {
   'ops.session': { description: '查看当前运营会话身份、角色和工作区授权范围；不返回凭据。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'ops.workspaces.list': { description: '查看当前运营者授权工作区的汇总。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'ops.support.tickets.list': { description: '查看一个授权工作区内的有界客服工单队列。只读。', inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'] }, priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, sla_state: { type: 'string', enum: ['on_track', 'at_risk', 'breached', 'met'] }, assignee_id: boundedString(256), customer_id: boundedString(256), query: boundedString(200), cursor_json: boundedString(2000), limit: pageLimit100 }, additionalProperties: false } },
+  'ops.support.platform.tickets.list': { description: '平台支持工作台查看明确目标企业的工单，独立核验权限。', inputSchema: { type: 'object', properties: { target_workspace_id: boundedString(200), status: { type: 'string', enum: ['open','in_progress','waiting_customer','resolved','closed'] }, limit: pageLimit100, cursor_json: boundedString(2000) }, required: ['target_workspace_id'], additionalProperties: false } },
+  'ops.support.platform.ticket.get': { description: '平台支持工作台查看授权目标企业的指定工单。', inputSchema: { type: 'object', properties: { target_workspace_id: boundedString(200), ticket_id: boundedString(36) }, required: ['target_workspace_id','ticket_id'], additionalProperties: false } },
+  'ops.support.platform.ticket.comment': { description: '平台支持人员追加内部说明或明确的客户可见回复。', inputSchema: { type: 'object', properties: { target_workspace_id: boundedString(200), ticket_id: boundedString(36), body: boundedString(10000), visibility: { type: 'string', enum: ['internal','customer'] }, expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, required: ['target_workspace_id','ticket_id','body','visibility','expected_revision','idempotency_key'], additionalProperties: false } },
   'ops.support.ticket.get': { description: '查看一张客服工单和不可变事件历史。只读。', inputSchema: { type: 'object', properties: { ticket_id: boundedString(36) }, required: ['ticket_id'], additionalProperties: false } },
   'ops.support.ticket.create': { description: '创建带幂等键的客服工单。', inputSchema: { type: 'object', properties: { subject: boundedString(200, 3), description: boundedString(10000), priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, customer_id: boundedString(256), customer_name: boundedString(200), customer_email: boundedString(320), related_order_id: boundedString(256), related_task_id: boundedString(256), tags_json: boundedString(2000), idempotency_key: idempotencyKeyProperty }, required: ['subject', 'description', 'priority', 'customer_id', 'customer_name', 'idempotency_key'], additionalProperties: false } },
   'ops.support.ticket.assign': { description: '按 revision 和幂等键分配客服工单。', inputSchema: { type: 'object', properties: { ticket_id: boundedString(36), assignee_id: boundedString(256), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, required: ['ticket_id', 'assignee_id', 'expected_revision', 'idempotency_key'], additionalProperties: false } },
@@ -2002,6 +2045,8 @@ function validateToolArguments(name, args) {
   const schema = METHODS[name]?.inputSchema
   if (!schema || schema.type !== 'object') return undefined
   const fail = message => ({ message: `工具 ${name} 参数无效：${message}` })
+  if (name === 'commercial.notifications.mark-read' && 'workspace_id' in args) return fail('通知读状态不接受调用方工作区；使用已绑定会话')
+  if (name === 'commercial.order.create' && args.purchase_kind === 'upgrade' && (typeof args.upgrade_quote_id !== 'string' || !args.upgrade_quote_id.trim())) return fail('升级需要服务端 upgrade_quote_id；请更新客户端并先获取升级报价')
   const validate = (value, propertySchema, path) => {
     if (!propertySchema || typeof propertySchema !== 'object') return undefined
     if (Array.isArray(propertySchema.anyOf)) {
@@ -2080,7 +2125,7 @@ function safeErrorDetails(details) {
     if (value && typeof value === 'object') {
       const nested = {}
       for (const [key, item] of Object.entries(value)) {
-        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'gateway_status', 'gateway_error_summary', 'malformed_error_response', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'issues', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'availability', 'access_revision', 'rate_card_version'].includes(key)) {
+        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'gateway_status', 'gateway_error_summary', 'malformed_error_response', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'issues', 'field_errors', 'blockers', 'business_reason', 'order_id', 'upgrade_quote_id', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'availability', 'access_revision', 'rate_card_version'].includes(key)) {
           const sanitized = sanitize(item, depth + 1)
           if (sanitized !== undefined) nested[key] = sanitized
         }
@@ -2089,7 +2134,7 @@ function safeErrorDetails(details) {
     }
     return undefined
   }
-  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'gateway_status', 'gateway_error_summary', 'malformed_error_response', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'availability', 'access_revision', 'rate_card_version', ...authorizationEvidenceKeys]) {
+  for (const key of ['issues', 'field_errors', 'blockers', 'business_reason', 'order_id', 'upgrade_quote_id', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'gateway_status', 'gateway_error_summary', 'malformed_error_response', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'availability', 'access_revision', 'rate_card_version', ...authorizationEvidenceKeys]) {
     const value = authorizationEvidenceKeys.includes(key) || correlationEvidenceKeys.includes(key)
       ? key === 'explicit_deny'
         ? evidenceBoolean(details[key])
@@ -2757,6 +2802,7 @@ function toolUiMetadata(name) {
 
 function toolAnnotations(name) {
   if (READ_ONLY_METHODS.has(name)) return { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+  if (name === 'commercial.notifications.mark-read') return { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   if (name === 'merchant.start') return { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   if (name === 'catalog.image.select' || name === 'catalog.image.retry') return { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   if (name === 'content.visual.select') return { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
@@ -3283,7 +3329,7 @@ async function callRemote(method, params) {
   }
   const ruleApprovalToken = process.env.MERCHANT_RULE_APPROVAL_TOKEN?.trim()
   if ((method === 'rule.publish' || method === 'rule.status') && ruleApprovalToken && !/^\$\{[^}]+\}$/u.test(ruleApprovalToken)) headers['x-rule-approval-token'] = ruleApprovalToken
-  if (method === 'merchant.start' || method === 'publish.confirm' || method === 'content.generate' || method === 'content.visual.select' || method === 'catalog.image.select' || method === 'platform.media.spec.create' || method === 'platform.media.spec.update' || method === 'platform.media.spec.approve' || method === 'platform.media.spec.expire' || method === 'campaign.batch.generate' || method === 'campaign.batch.pause' || method === 'campaign.batch.resume' || method === 'campaign.batch.retry_failed') {
+  if (method === 'commercial.notifications.mark-read' || method === 'merchant.start' || method === 'publish.confirm' || method === 'content.generate' || method === 'content.visual.select' || method === 'catalog.image.select' || method === 'platform.media.spec.create' || method === 'platform.media.spec.update' || method === 'platform.media.spec.approve' || method === 'platform.media.spec.expire' || method === 'campaign.batch.generate' || method === 'campaign.batch.pause' || method === 'campaign.batch.resume' || method === 'campaign.batch.retry_failed') {
     headers['idempotency-key'] = typeof params.idempotency_key === 'string' && params.idempotency_key.trim()
       ? params.idempotency_key.trim()
       : idempotencyKey(method, params)
@@ -3321,7 +3367,7 @@ async function callRemote(method, params) {
           method: 'POST',
           redirect: 'error',
           headers,
-          body: JSON.stringify({ jsonrpc: '2.0', id: `${Date.now()}-${Math.random()}`, method, params: { ...params, ...(scopedWorkspaceId ? { workspace_id: scopedWorkspaceId } : {}) } }),
+          body: JSON.stringify({ jsonrpc: '2.0', id: `${Date.now()}-${Math.random()}`, method, params: { ...params, ...(scopedWorkspaceId && method !== 'commercial.notifications.mark-read' ? { workspace_id: scopedWorkspaceId } : {}) } }),
           signal: controller.signal,
         })
         const responseBody = await responseJsonWithLimit(response)

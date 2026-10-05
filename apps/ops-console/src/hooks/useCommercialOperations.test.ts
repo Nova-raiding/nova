@@ -10,6 +10,15 @@ describe("commercial operations deep links", () => {
     const allowed = { can: (capability: string) => capability === "commercial.order.read" } as unknown as AuthorizationProjection;
     expect(canLoadCommercialView(allowed, "ws_1", "orders")).toBe(true);
   });
+  it("allows platform operators to load an explicitly selected workspace using platform read grants", () => {
+    const platform = { scope: { kind: "platform" }, can: (capability: string) => ["commercial.catalog.read", "commercial.order.read"].includes(capability) } as unknown as AuthorizationProjection;
+    expect(canLoadCommercialView(platform, "ws_target", "catalog")).toBe(true);
+    expect(canLoadCommercialView(platform, "ws_target", "orders")).toBe(true);
+    const missingCatalog = { scope: { kind: "platform" }, can: (capability: string) => capability === "commercial.order.read" } as unknown as AuthorizationProjection;
+    expect(canLoadCommercialView(missingCatalog, "ws_target", "catalog")).toBe(false);
+    const noTarget = { ...platform, can: () => true } as unknown as AuthorizationProjection;
+    expect(canLoadCommercialView(noTarget, "", "catalog")).toBe(false);
+  });
   it("defaults invalid or missing views to the recovery queue", () => {
     expect(readCommercialView("")).toBe("blocks");
     expect(readCommercialView("?view=legacy-wallet")).toBe("blocks");

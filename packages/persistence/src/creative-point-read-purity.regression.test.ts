@@ -12,6 +12,9 @@ function balancePool(queries: string[]): SqlPool {
       if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK' || sql.includes("set_config('app.workspace_id'")) {
         return { rows: [] as Row[] }
       }
+      if (sql.startsWith('SELECT pg_catalog.to_regclass')) {
+        return { rows: [{ present: true }] as Row[] }
+      }
       if (sql.includes('FROM creative_point_access_state WHERE workspace_id=$1')) {
         expect(values?.[0]).toBe('ws_read_purity')
         return { rows: [{

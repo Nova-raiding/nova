@@ -38,6 +38,9 @@ export interface CommercialPurchaseCreateRequest {
   sku_code: string
   idempotency_key: string
   reason: string
+  upgrade_quote_id?: string
+  checkout_id?: string
+  onboarding_order_id?: string
 }
 
 export interface CommercialPaymentStatusRequest {
@@ -62,6 +65,14 @@ export interface CommercialPurchaseOrderView {
 
 export const COMMERCIAL_PURCHASE_ERROR_CODES = [
   'COMMERCIAL_PURCHASE_UNAVAILABLE',
+  'COMMERCIAL_UPGRADE_QUOTE_REQUIRED',
+  'COMMERCIAL_UPGRADE_QUOTE_NOT_FOUND',
+  'COMMERCIAL_UPGRADE_QUOTE_EXPIRED',
+  'COMMERCIAL_UPGRADE_QUOTE_CONFLICT',
+  'COMMERCIAL_UPGRADE_UNAVAILABLE',
+  'COMMERCIAL_ONBOARDING_REQUIRED',
+  'COMMERCIAL_ORDER_EXPIRED',
+
   'ONBOARDING_PURCHASE_UNAVAILABLE',
   'COMMERCIAL_PURCHASE_KIND_MISMATCH',
   'PRIVATE_PURCHASE_UNAVAILABLE',
@@ -79,4 +90,41 @@ export type CommercialPurchaseErrorCode = (typeof COMMERCIAL_PURCHASE_ERROR_CODE
 
 export function isCommercialPurchaseErrorCode(value: string): value is CommercialPurchaseErrorCode {
   return (COMMERCIAL_PURCHASE_ERROR_CODES as readonly string[]).includes(value)
+}
+
+/** All amounts are server-owned integer fen; payment acceptance uses actual received time. */
+export interface CommercialUpgradeQuoteView {
+  upgrade_quote_id: string
+  workspace_id: string
+  source_order_id: string
+  source_period_id: string
+  source_period_revision: number
+  source_entitlement_id: string
+  source_sku_code: string
+  target_sku_code: string
+  target_sku_version_id: string
+  current_cycle_price_fen: number
+  target_cycle_price_fen: number
+  amount_fen: number
+  currency: 'CNY'
+  period_start: string
+  period_end: string
+  quoted_at: string
+  expires_at: string
+  remaining_ms: number
+  total_ms: number
+  benefit_increments: Readonly<Record<string, number>>
+  algorithm_version: 'remaining-period.v1'
+}
+
+export interface CommercialRecoveryErrorDetails {
+  request_id: string
+  trace_id: string
+  business_reason: string
+  retryable: boolean
+  field_errors?: readonly { field: string; code: string; message: string }[]
+  blockers?: readonly { code: string; message: string }[]
+  next_actions: readonly string[]
+  order_id?: string
+  upgrade_quote_id?: string
 }

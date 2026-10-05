@@ -87,6 +87,14 @@ alert_receipt_runtime_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=
                THEN 'alert_webhook_receipts' ELSE '' END")
 [ -z "$alert_receipt_runtime_exposure" ] || { echo 'tenant runtime role must not access alert webhook receipts' >&2; exit 1; }
 
+commercial_notification_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT coalesce(string_agg(c.relname, ','), '') FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND
+    ((c.relname IN ('commercial_catalog_publish_outbox','commercial_purchase_result_notification_outbox') AND has_table_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))
+    OR (c.relname IN ('workspace_commercial_notifications','workspace_commercial_result_notifications') AND has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))
+    OR (c.relname IN ('workspace_commercial_notification_reads','workspace_commercial_notification_read_requests') AND has_table_privilege(current_user,c.oid,'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')))")
+[ -z "$commercial_notification_exposure" ] || { echo "tenant runtime role has unexpected commercial notification access: $commercial_notification_exposure" >&2; exit 1; }
+
 ops_directory_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
   "SELECT CASE WHEN has_table_privilege(current_user, 'public.ops_workspace_summaries', 'SELECT') THEN 'ops_workspace_summaries' ELSE '' END")
 [ -z "$ops_directory_exposure" ] || { echo 'tenant runtime role must not access the platform workspace directory projection' >&2; exit 1; }
@@ -114,7 +122,7 @@ rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
        JOIN pg_attribute a ON a.attrelid = c.oid
         AND a.attname = 'workspace_id' AND NOT a.attisdropped
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
-        AND c.relname NOT IN ('commercial_rollouts', 'workspace_members', 'workspace_identity_bindings', 'workspace_commercial_settings', 'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events', 'authorization_execution_reservations', 'mcp_oauth_authorization_codes', 'mcp_oauth_tokens', 'local_plugin_connection_requests', 'local_plugin_install_instances', 'local_plugin_install_audit')
+        AND c.relname NOT IN ('commercial_rollouts', 'workspace_commercial_notifications', 'workspace_commercial_result_notifications', 'workspace_commercial_notification_reads', 'workspace_commercial_notification_read_requests', 'workspace_members', 'workspace_identity_bindings', 'workspace_commercial_settings', 'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events', 'authorization_execution_reservations', 'mcp_oauth_authorization_codes', 'mcp_oauth_tokens', 'local_plugin_connection_requests', 'local_plugin_install_instances', 'local_plugin_install_audit')
    ), scoped_policies AS (
      SELECT schemaname, tablename, count(*) AS policy_count,
             bool_or(
@@ -131,6 +139,31 @@ rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
      LEFT JOIN scoped_policies p ON p.tablename = t.relname
     WHERE NOT t.relrowsecurity OR NOT t.relforcerowsecurity OR coalesce(p.policy_count, 0) = 0 OR coalesce(p.unsafe_policy, true)")
 [ -z "$rls_failures" ] || { echo "tenant tables missing forced workspace RLS policy: $rls_failures" >&2; exit 1; }
+
+# Notifications additionally bind the trusted recipient, rather than exposing
+# other members' private publication snapshots within the same workspace.
+commercial_notification_rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT CASE WHEN c.relrowsecurity AND c.relforcerowsecurity AND
+      (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename=c.relname)=1
+      AND EXISTS(SELECT 1 FROM pg_policies p WHERE p.schemaname='public' AND p.tablename=c.relname
+        AND p.policyname='workspace_commercial_notifications_scope' AND p.cmd='ALL' AND p.permissive='PERMISSIVE' AND p.roles=ARRAY['public']::name[]
+        AND replace(p.qual,' ','')=replace('((workspace_id = current_setting(''app.workspace_id''::text, true)) AND (((member_id)::text = current_setting(''app.member_id''::text, true)) OR (CURRENT_USER = ''merchant_ops''::name)))',' ','')
+        AND replace(p.with_check,' ','')=replace('((workspace_id = current_setting(''app.workspace_id''::text, true)) AND (CURRENT_USER = ''merchant_ops''::name))',' ',''))
+      THEN '' ELSE c.relname END FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND c.relname='workspace_commercial_notifications'")
+[ -z "$commercial_notification_rls_failures" ] || { echo "commercial notifications lack recipient/workspace RLS: $commercial_notification_rls_failures" >&2; exit 1; }
+
+# 264 member-specific result/read facts require the exact recipient policy.
+commercial_result_member_rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT coalesce(string_agg(c.relname, ','), '') FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND c.relname IN ('workspace_commercial_result_notifications','workspace_commercial_notification_reads','workspace_commercial_notification_read_requests')
+      AND NOT (c.relrowsecurity AND c.relforcerowsecurity
+        AND (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename=c.relname)=1
+        AND EXISTS(SELECT 1 FROM pg_policies p WHERE p.schemaname='public' AND p.tablename=c.relname
+          AND p.policyname=c.relname||'_scope' AND p.cmd='ALL' AND p.permissive='PERMISSIVE' AND p.roles=ARRAY['public']::name[]
+          AND replace(p.qual,' ','')=replace('((workspace_id = current_setting(''app.workspace_id''::text, true)) AND (((member_id)::text = current_setting(''app.member_id''::text, true)) OR (CURRENT_USER = ''merchant_ops''::name)))',' ','')
+          AND p.with_check=p.qual))")
+[ -z "$commercial_result_member_rls_failures" ] || { echo "commercial result/read facts lack exact recipient/workspace RLS: $commercial_result_member_rls_failures" >&2; exit 1; }
 
 # Backfill control and human-review tables are release-critical. Keep an
 # explicit check so a partially applied migration cannot pass this gate merely
@@ -387,9 +420,14 @@ EOF
        JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
         AND has_table_privilege(current_user, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
-        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_password_accounts','platform_password_sessions','platform_password_reset_tokens','platform_media_specs','platform_media_spec_audit','platform_authorization_audit','public_platform_rule_versions','public_platform_rule_audits','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events','workspace_customer_deliveries','workspace_customer_delivery_videos','workspace_customer_delivery_checklist_items','manual_publish_evidence','mcp_oauth_authorization_codes','mcp_oauth_tokens','commercial_offers','commercial_addons','commercial_coupons','commercial_rollouts','model_markup_policy','commercial_catalog_skus','commercial_catalog_sku_versions','commercial_catalog_sku_benefits','commercial_catalog_events_v2','local_plugin_connection_requests','local_plugin_install_instances','local_plugin_install_challenges','local_plugin_install_audit')
+        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_password_accounts','platform_password_sessions','platform_password_reset_tokens','platform_media_specs','platform_media_spec_audit','platform_authorization_audit','public_platform_rule_versions','public_platform_rule_audits','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events','workspace_customer_deliveries','workspace_customer_delivery_videos','workspace_customer_delivery_checklist_items','manual_publish_evidence','mcp_oauth_authorization_codes','mcp_oauth_tokens','commercial_offers','commercial_addons','commercial_coupons','commercial_rollouts','model_markup_policy','commercial_catalog_skus','commercial_catalog_sku_versions','commercial_catalog_sku_benefits','commercial_catalog_events_v2','commercial_catalog_publish_outbox','workspace_commercial_notifications','commercial_purchase_result_notification_outbox','workspace_commercial_result_notifications','local_plugin_connection_requests','local_plugin_install_instances','local_plugin_install_challenges','local_plugin_install_audit')
         AND NOT (c.relname = 'workspace_operation_audit' AND NOT has_table_privilege(current_user, c.oid, 'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))")
   [ -z "$ops_tenant_access" ] || { echo "Ops database role has unexpected tenant write access: $ops_tenant_access" >&2; exit 1; }
+  ops_commercial_notification_delete_exposure=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+    "SELECT coalesce(string_agg(c.relname, ','), '') FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='public' AND c.relname IN ('commercial_catalog_publish_outbox','workspace_commercial_notifications','commercial_purchase_result_notification_outbox','workspace_commercial_result_notifications','workspace_commercial_notification_reads','workspace_commercial_notification_read_requests')
+      AND (has_table_privilege(current_user,c.oid,'DELETE,TRUNCATE,REFERENCES,TRIGGER') OR (c.relname IN ('workspace_commercial_notifications','workspace_commercial_result_notifications','workspace_commercial_notification_reads','workspace_commercial_notification_read_requests') AND has_table_privilege(current_user,c.oid,'UPDATE')))")
+  [ -z "$ops_commercial_notification_delete_exposure" ] || { echo "Ops role can destroy commercial notification facts: $ops_commercial_notification_delete_exposure" >&2; exit 1; }
   ops_plugin_delete_exposure=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
     "SELECT coalesce(string_agg(name, ',' ORDER BY name), '')
        FROM unnest(ARRAY['local_plugin_connection_requests','local_plugin_install_instances','local_plugin_install_challenges','local_plugin_install_audit']) AS name

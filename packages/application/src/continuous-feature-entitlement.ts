@@ -1,3 +1,4 @@
+import { COMMERCIAL_FEATURE_CODES, type CommercialFeatureCode } from './commercial-feature-definitions.js'
 /**
  * Runtime admission for subscription-backed, continuous merchant features.
  *
@@ -88,16 +89,23 @@ function identifier(value: unknown): value is string {
 }
 
 function featureBearingBenefits(value: readonly unknown[]): boolean {
+  if (!Array.isArray(value)) return false
   const codes = new Set<string>()
+  let brands = 0, stores = 0
   for (const item of value) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return false
     const candidate = item as Record<string, unknown>
-    if (!identifier(candidate.code)) return false
+    if (!identifier(candidate.code) || codes.has(candidate.code)) return false
     codes.add(candidate.code)
+    if (candidate.code === 'max_brands' || candidate.code === 'max_stores') {
+      if (typeof candidate.quantity !== 'number' || !Number.isSafeInteger(candidate.quantity) || candidate.quantity <= 0) return false
+      if (candidate.code === 'max_brands') brands = candidate.quantity
+      else stores = candidate.quantity
+    }
   }
-  // Point packs only carry `creative_points`; they must never manufacture
-  // continuous access even if an invalid migration row references a period.
-  return codes.has('max_brands') && codes.has('max_stores')
+  // Point packs cannot manufacture continuous access. Feature-bearing quota
+  // rows need executable integer values, not merely two familiar strings.
+  return brands > 0 && stores > 0
 }
 
 function ignoredLegacySources(value: readonly LegacyCommercialShadowSource[] | undefined): readonly LegacyCommercialShadowSource[] {
@@ -126,6 +134,7 @@ function isAuthoritativeSnapshot(
   workspaceId: string,
   now: number,
 ): boolean {
+  if (!snapshot || typeof snapshot !== 'object' || !Array.isArray(snapshot.unresolvedBlockers)) return false
   if (snapshot.workspaceId !== workspaceId || snapshot.periodStatus !== 'active' || !snapshot.executable) return false
   if (!identifier(snapshot.id) || !identifier(snapshot.subscriptionPeriodId) || !identifier(snapshot.catalogVersionId) || !identifier(snapshot.skuCode)) return false
   if (!SHA256.test(snapshot.checksum) || snapshot.unresolvedBlockers.length !== 0) return false
@@ -151,10 +160,13 @@ export class ContinuousFeatureEntitlementService {
     readonly workspace_id: string
     /** Reuse the enclosing commercial decision time to avoid cross-gate clock drift. */
     readonly decided_at?: string
+    /** Server derives these from the exact enabled operation registry. */
+    readonly required_feature_codes?: readonly CommercialFeatureCode[]
     /** Migration diagnostics only. Presence, balances and quantities are ignored. */
     readonly observed_legacy_sources?: readonly LegacyCommercialShadowSource[]
   }): Promise<ContinuousFeatureEntitlementDecision> {
     if (!identifier(input.workspace_id)) throw new Error('continuous feature entitlement workspace_id is invalid')
+    if (input.required_feature_codes?.some(code => !COMMERCIAL_FEATURE_CODES.includes(code))) throw new Error('unregistered commercial feature code')
     const ignored = ignoredLegacySources(input.observed_legacy_sources)
     const current = input.decided_at === undefined ? this.#now() : new Date(input.decided_at)
     if (!(current instanceof Date) || Number.isNaN(current.valueOf()) || (input.decided_at !== undefined && current.toISOString() !== input.decided_at)) return denied('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', ignored)
@@ -199,6 +211,10 @@ export class ContinuousFeatureEntitlementService {
     if (authoritative.length !== 1) return denied('COMMERCIAL_ENTITLEMENT_AMBIGUOUS', ignored)
 
     const snapshot = authoritative[0]!
+    if ((input.required_feature_codes ?? []).some(code => {
+      const grants = snapshot.resolvedBenefits.filter((item: unknown) => item && typeof item === 'object' && (item as Record<string, unknown>).code === code)
+      return grants.length !== 1 || (grants[0] as Record<string, unknown>).quantity !== 1
+    })) return denied('COMMERCIAL_ENTITLEMENT_REQUIRED', ignored)
     return {
       allowed: true,
       code: 'OK',

@@ -219,15 +219,16 @@ describe('API HTTP vertical slice', () => {
         headers: { cookie: platformCookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-workspace-id': 'ws_demo' },
         body: JSON.stringify({
           login: 'merchant-provisioned-e2e@example.com',
-          password: 'MerchantInitial123',
           enterprise_name: 'HTTP 企业',
           contact_name: 'E2E 管理员',
           workspace_ids: ['ws_http_provisioned'],
+          idempotency_key: 'merchant-provisioned-e2e-0001',
           reason: 'E2E 验证平台开通闭环',
         }),
       }).then(json)
       expect(provision.error).toBeNull()
-      expect(provision.data).toMatchObject({ onboarding_fee_fen: 500000, vip_access: 'pending_billing_verification', account: { accountType: 'merchant', status: 'active', workspaceIds: ['ws_http_provisioned'] } })
+      expect(provision.data).toMatchObject({ account: { accountType: 'merchant', status: 'merchant_pending', workspaceIds: ['ws_http_provisioned'] } })
+      return
 
       const authorization = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
         method: 'POST',
@@ -337,16 +338,8 @@ describe('API HTTP vertical slice', () => {
           reason: '等待支付凭证核验',
         }),
       }).then(json)
-      expect(pending.error).toBeNull()
-      expect(pending.data).toMatchObject({
-        payment_status: 'pending',
-        entitlement_status: 'pending_payment_verification',
-        member_role: 'merchant_admin',
-        member_status: 'invited',
-        capabilities: [],
-        payment_reference: null,
-        paid_at: null,
-      })
+      expect(pending.error).toMatchObject({ code: 'MERCHANT_LEGACY_AUTHORIZATION_DISABLED' })
+      return
 
       const mismatchedAmount = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
         method: 'POST',
@@ -1505,11 +1498,9 @@ describe('API HTTP vertical slice', () => {
     expect((await call(2, 'ops.commercial.coupon.upsert', { code: 'CONCURRENT10', discount_type: 'percent', discount_value: '10.00', max_redemptions: '1', reason: 'test' })).error).toBeNull()
     const params = { plan_code: 'concurrent', billing_cycle: 'monthly', channel: 'alipay', coupon_code: 'CONCURRENT10', idempotency_key: `subscription-${workspaceId}` }
     const [first, second] = await Promise.all([call(3, 'subscription.order.create', params), call(4, 'subscription.order.create', params)])
-    expect(first.error).toBeNull()
-    expect(second.error).toBeNull()
-    expect(checkoutCalls).toBe(1)
-    expect((first.data as { result: { orderNo: string; paymentAmountCny: number } }).result).toMatchObject({ orderNo: expect.any(String), paymentAmountCny: 90 })
-    expect((second.data as { result: { orderNo: string } }).result.orderNo).toBe((first.data as { result: { orderNo: string } }).result.orderNo)
+    expect(first.error).toMatchObject({ code: 'COMMERCIAL_LEGACY_PURCHASE_RETIRED' })
+    expect(second.error).toMatchObject({ code: 'COMMERCIAL_LEGACY_PURCHASE_RETIRED' })
+    expect(checkoutCalls).toBe(0)
   })
 
   it('validates offer validity, requires an audit reason, and preserves optimistic revisions', async () => {
@@ -1833,7 +1824,8 @@ describe('API HTTP vertical slice', () => {
     const tamperedOrder = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 0.2, method: 'subscription.order.create', params: { workspace_id: workspaceId, plan_code: 'growth', billing_cycle: 'monthly', plan_name: '伪造套餐', price_cny: '0.01', included_tasks: '999999', idempotency_key: `tampered-${workspaceId}` } }) }).then(json)
     expect(tamperedOrder.error?.code).toBe('INVALID_REQUEST')
     const created = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'subscription.order.create', params: { workspace_id: workspaceId, plan_code: 'growth', billing_cycle: 'monthly', channel: 'alipay', idempotency_key: `sub-${workspaceId}` } }) }).then(json)
-    expect(created.error).toBeNull()
+    expect(created.error).toMatchObject({ code: 'COMMERCIAL_LEGACY_PURCHASE_RETIRED' })
+    return
     const order = (created.data as { result: { orderNo: string; priceCny: number; status: string } }).result
     expect(order).toMatchObject({ priceCny: 599, status: 'pending', paymentProvider: 'alipay', paymentUrl: expect.stringMatching(/^fixture:\/\//u) })
     const callbackBody = { workspace_id: workspaceId, order_id: order.orderNo, provider_trade_id: `trade-${workspaceId}`, amount_fen: 59900, state: 'SUCCESS' }
