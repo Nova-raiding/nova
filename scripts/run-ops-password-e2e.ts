@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { closeSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -160,6 +160,7 @@ const OPS_E2E_THROW_SITES = [
 ] as const
 type OpsE2eThrowSite = typeof OPS_E2E_THROW_SITES[number]
 const OPS_E2E_FAILURE_CODES = new Set([
+  'OPS_E2E_COMMERCIAL_SALES_ALREADY_RUNNING', 'OPS_E2E_COMMERCIAL_LOCK_CLEANUP_FAILED',
   'OPS_E2E_SCANNER_CLEANUP_REQUIRES_REVIEW', 'OPS_E2E_SCANNER_CLEANUP_FAILED',
   'OPS_E2E_FIXTURE_CLEANUP_REQUIRES_REVIEW', 'OPS_E2E_FIXTURE_CLEANUP_FAILED',
   'OPS_E2E_GATEWAY_CLEANUP_FAILED', 'OPS_E2E_CHILD_CLEANUP_FAILED',
@@ -265,6 +266,19 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   if (source.OPS_E2E_MERCHANT_UI !== undefined && source.OPS_E2E_MERCHANT_UI !== 'true') throw new Error('OPS_E2E_MERCHANT_UI_INVALID')
   const manualOperationsMode = isolatedManualOperationsMode(source)
   const authorizationSuperAdminLogin = validateOpsE2eSpecIsolation(args, manualOperationsMode)
+  let commercialRunLock: string | undefined
+  if (commercialSalesMode) {
+    commercialRunLock = resolve('artifacts/ops-jit-isolation', '.commercial-sales-exclusive.lock')
+    mkdirSync(resolve('artifacts/ops-jit-isolation'), { recursive: true, mode: 0o700 })
+    let lock: number
+    try { lock = openSync(commercialRunLock, 'wx', 0o600) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('OPS_E2E_COMMERCIAL_SALES_ALREADY_RUNNING')
+      throw error
+    }
+    try { writeFileSync(lock, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), spec: args[0] })) }
+    finally { closeSync(lock) }
+  }
   const evidenceDir = resolve('artifacts/ops-jit-isolation', `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}`)
   mkdirSync(evidenceDir, { recursive: true, mode: 0o700 })
   const children: ChildProcess[] = []
@@ -315,6 +329,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const childrenDisposed = await Promise.allSettled(children.map(disposeOpsE2eChild))
     if (childrenDisposed.some(result => result.status === 'rejected')) cleanupErrors.push('OPS_E2E_CHILD_CLEANUP_FAILED')
     cleanupErrors.push(...await disposeOpsE2eResources(scanner, fixture))
+    if (commercialRunLock) try { unlinkSync(commercialRunLock) } catch { cleanupErrors.push('OPS_E2E_COMMERCIAL_LOCK_CLEANUP_FAILED') }
     if (cleanupErrors.length) throw new Error(cleanupErrors.join(':'))
   })()
   const onInterrupt = () => { void cleanup().finally(() => process.exit(130)) }
