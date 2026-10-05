@@ -91,7 +91,10 @@ function workerAuthorizationSnapshot<T extends CriticalWorkerOperation>(req: Inc
     identityId: principal.identityId,
     workspaceId,
     workbench: 'workspace' as const,
-    contextId: decision.scope.required === 'brand' ? `brand:${decision.scope.resource_id}` : `workspace:${workspaceId}`,
+    contextId: capability === 'generation.execute' && trustedTask?.candidateOnly === true && !trustedTask.brandId
+      && decision.scope.required === 'brand' && decision.scope.resource_id === `task:${trustedTask.id}`
+      ? `task:${trustedTask.id}`
+      : decision.scope.required === 'brand' ? `brand:${decision.scope.resource_id}` : `workspace:${workspaceId}`,
     contextVersion: decision.policy_version,
     policyVersion: decision.policy_version,
     grantRevision,
@@ -146,6 +149,16 @@ async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthorizationS
   const expectedAuthorizationRevision = Number(membershipMatch?.[2] ?? grantMatch?.[4])
   if (snapshot.identityId !== subjectIdentityId || snapshot.workspaceId !== workspaceId || snapshot.resourceId !== resourceId) {
     throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '执行授权快照未绑定当前身份、工作区或资源，已拒绝执行', 403)
+  }
+  // Candidate tasks have a task scope, not a synthetic brand. Re-read only
+  // server-owned state; stale/rebound tasks cannot inherit this credential.
+  if (snapshot.contextId.startsWith('brand:task:')) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '旧候选任务品牌授权无效，需要重新入队', 403)
+  if (snapshot.contextId.startsWith('task:')) {
+    const task = getTrustedTask(snapshot.contextId.slice('task:'.length))
+    if (snapshot.capability !== 'generation.execute' || !task || task.workspaceId !== workspaceId
+      || task.candidateOnly !== true || task.brandId) {
+      throw new DomainError('AUTHZ_EXECUTION_REVOKED', '候选任务授权范围已失效，已拒绝执行', 403)
+    }
   }
   const authzRepository = getAuthorizationRepository()
   if (!authzRepository) throw new DomainError('AUTHORIZATION_REPOSITORY_UNAVAILABLE', '执行前授权仓储不可用，已拒绝执行', 503)

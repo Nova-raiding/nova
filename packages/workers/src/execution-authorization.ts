@@ -217,11 +217,17 @@ export function parseWorkerAuthorizationSnapshot(event: DurableOutboxEvent, oper
   // Brand-scoped merchant work remains bound to this exact workspace, event,
   // and resource. The API rechecks the same brand membership immediately
   // before provider I/O. Other worker operations stay workspace-scoped.
+  // This parser binds the immutable event's task ID; the mandatory API
+  // recheck verifies the live candidate-only, unbranded task in its workspace.
+  const taskScopedContext = operation === 'generation.execute' && event.eventType === 'generation.requested'
+    && typeof event.payload.task_id === 'string' && /^[^\s\u0000-\u001f\u007f]+$/u.test(event.payload.task_id)
+    && snapshot.contextId === `task:${event.payload.task_id}`
+  if (snapshot.contextId.startsWith('brand:task:')) throw snapshotError('legacy candidate brand context is invalid')
   const brandScopedContext = /^brand:[^\s\u0000-\u001f\u007f]+$/u.test(snapshot.contextId)
     && ((operation === 'publish.execute' && event.eventType === 'publish.requested')
       || (operation === 'generation.execute' && event.eventType === 'generation.requested')
       || (operation === 'image_generation.execute' && event.eventType === 'image.generation.requested'))
-  if (snapshot.contextId !== `workspace:${event.workspaceId}` && !brandScopedContext) throw snapshotError('authorization snapshot context binding mismatch')
+  if (snapshot.contextId !== `workspace:${event.workspaceId}` && !brandScopedContext && !taskScopedContext) throw snapshotError('authorization snapshot context binding mismatch')
   return snapshot
 }
 

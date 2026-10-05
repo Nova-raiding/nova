@@ -33,6 +33,33 @@ describe('worker execution-time authorization', () => {
     }))
   })
 
+  it('binds candidate task context to the generation event and still requires a live recheck', async () => {
+    const candidate = { ...event({ context_id: 'task:task_a', capability: 'generation.execute', resource_id: 'job_1' }), eventType: 'generation.requested', aggregateId: 'job_1' }
+    candidate.payload.task_id = 'task_a'
+    expect(parseWorkerAuthorizationSnapshot(candidate, 'generation.execute').contextId).toBe('task:task_a')
+    const provider = vi.fn(async () => 'sent')
+    const guard = createExecutionAuthorizationGuard(async () => { throw new Error('live candidate authorization denied') }, { now: () => now })
+    await expect(executeAfterAuthorizationCheck({ guard, event: candidate, operation: 'generation.execute', providerCall: provider })).rejects.toThrow()
+    expect(provider).not.toHaveBeenCalled()
+    for (const taskId of [undefined, 'other', '', ' task_a']) {
+      candidate.payload.task_id = taskId
+      expect(() => parseWorkerAuthorizationSnapshot(candidate, 'generation.execute')).toThrow()
+    }
+  })
+
+  it.each(['publish.execute', 'image_generation.execute', 'asset.scan.execute'] as const)('rejects candidate task context for %s', operation => {
+    const candidate = event({ context_id: 'task:task_a', capability: operation })
+    candidate.payload.task_id = 'task_a'
+    expect(() => parseWorkerAuthorizationSnapshot(candidate, operation)).toThrow()
+  })
+
+  it('rejects legacy candidate brand context and wrong event type', () => {
+    expect(() => parseWorkerAuthorizationSnapshot(event({ context_id: 'brand:task:task_a' }), 'publish.execute')).toThrow()
+    const candidate = event({ context_id: 'task:task_a', capability: 'generation.execute' })
+    candidate.payload.task_id = 'task_a'
+    expect(() => parseWorkerAuthorizationSnapshot(candidate, 'generation.execute')).toThrow()
+  })
+
   it('preserves a strictly bound brand publish context through the final recheck', async () => {
     const publishEvent = event({ context_id: 'brand:brand_a' })
     expect(parseWorkerAuthorizationSnapshot(publishEvent, 'publish.execute')).toMatchObject({ contextId: 'brand:brand_a', workspaceId: 'ws_a', resourceId: 'publish_1' })
