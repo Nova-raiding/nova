@@ -14,6 +14,10 @@ COPY demo/merchant-studio ./
 # project, matching the source import path, and expose the app dependencies to
 # its resolver without copying the rest of the monorepo into the image.
 COPY packages/application/src/spreadsheet-batch.ts /packages/application/src/spreadsheet-batch.ts
+# The desktop app also consumes type-safe commercial contracts. Copy the
+# contracts source tree because those modules have local type imports (for
+# example commercial-feature-definitions -> commercial-access -> errors).
+COPY packages/contracts/src /packages/contracts/src
 RUN ln -s /app/node_modules /packages/node_modules
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
