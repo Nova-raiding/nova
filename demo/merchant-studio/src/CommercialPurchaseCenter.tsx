@@ -88,8 +88,9 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
   useEffect(() => {
     if (notificationTarget?.notification_kind === 'purchase_result') {
       setActiveTab('orders'); setRecoverOrderId(notificationTarget.order_id ?? '')
+      setReload(value => value + 1)
     }
-  }, [notificationTarget])
+  }, [notificationTarget?.notification_kind, notificationTarget?.order_id])
   const [recoverOrderId, setRecoverOrderId] = useState('')
   useEffect(() => {
     if (!orders.some(order => order.state === 'pending' && order.expires_at)) return
@@ -234,7 +235,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
         { key: 'orders', label: '订单与恢复', children: <><Table rowKey={row => String(row.id ?? row.orderId ?? row.order_id)} pagination={false} dataSource={portfolio.orders} locale={{ emptyText: '暂无商业订单' }} columns={[{ title: '订单', render: (_, row) => String(row.id ?? row.order_id ?? '') }, { title: '状态', render: (_, row) => commercialState(String(row.status ?? row.state ?? '待确认')) }, { title: '操作', render: (_, row) => <Button onClick={() => { setRecoverOrderId(String(row.id ?? row.order_id ?? '')); setTarget(null); setOrders([]) }}>选择查单</Button> }]} /><label htmlFor="commercial-order-recovery">原订单 ID</label><input id="commercial-order-recovery" value={recoverOrderId} onChange={event => setRecoverOrderId(event.target.value)} /><Button onClick={() => void queryOrders()} disabled={!baseUrl || busy}>查询原订单</Button></> },
       ]} />
       <CommercialGiftPlans projection={portfolio.onboarding_gifts} />
-      {notificationTarget?.notification_kind === 'purchase_result' && <Alert type="info" title="购买结果通知" description={<><p>通知记录的处理结果：{commercialResultLabel(notificationTarget.result_state)}。当前合同与权益以本页最新读取为准，通知不代表再次购买或再次授予。</p><p>相关订单：{notificationTarget.order_id ?? '尚未核实'}</p><Button onClick={() => { setActiveTab('orders'); setRecoverOrderId(notificationTarget.order_id ?? '') }}>查看相关原订单</Button></>} />}
+      {notificationTarget?.notification_kind === 'purchase_result' && <Alert type="info" title="购买结果通知" description={<><p>通知记录的处理结果：{commercialResultLabel(notificationTarget.result_state)}。当前合同与权益以本页最新读取为准，通知不代表再次购买或再次授予。</p><p>相关订单：{notificationTarget.order_id ?? '尚未核实'}</p><Button onClick={() => { setActiveTab('orders'); setRecoverOrderId(notificationTarget.order_id ?? ''); setReload(value => value + 1) }}>查看相关原订单</Button></>} />}
       {notificationTarget && notificationTarget.notification_kind !== 'purchase_result' && catalog !== null && <Alert type="info" title="通知对应的当前商品" description={(() => {
         const current = catalog.find(item => item.sku_code === notificationTarget.sku_code)
         const oldPrice = typeof notificationTarget.payload?.price_fen === 'number' ? notificationTarget.payload.price_fen : null
