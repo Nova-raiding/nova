@@ -1066,6 +1066,64 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it.each(['initial_failed', 'initial_unknown', 'poll_failed', 'poll_unknown'])('returns terminal image evidence without continued polling: %s', async variant => {
+    let generates = 0
+    let polls = 0
+    const terminal = variant.endsWith('unknown')
+      ? { execution_state: 'outcome_unknown', reconciliation_required: true, job: { state: 'failed', archiveState: 'external_unarchived' } }
+      : { job: { state: 'failed', archiveState: 'external_unarchived' } }
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const request = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      const isPoll = request.method === 'catalog.image.get'
+      if (isPoll) polls += 1; else generates += 1
+      const result = { job_id: 'job_terminal', ...(isPoll || variant.startsWith('initial') ? terminal : { state: 'queued' }) }
+      res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ data: { result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      await nextLine(child.stdout)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: { product_id: 'prod_test', count: '1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(false)
+      expect(response.result.structuredContent.candidate_state.state).toBe(variant.endsWith('unknown') ? 'unknown' : 'failed')
+      expect(response.result.content.some((item: any) => item.type === 'image')).toBe(false)
+      expect(generates).toBe(1)
+      expect(polls).toBe(variant.startsWith('initial') ? 0 : 1)
+    } finally { child.kill(); await close(server) }
+  })
+
+  it.each(['ocr_success', 'ocr_unknown', 'ocr_simulated', 'rights_approved', 'rights_pending', 'rights_unknown', 'task_ready'])('formats only confirmed modality and task states: %s', async variant => {
+    const isOcr = variant.startsWith('ocr')
+    const isTask = variant === 'task_ready'
+    const result = isTask ? { task: { id: 'task_real', state: 'ready_for_direction', version: 2, candidateOnly: true }, nextAction: '任务没有已暂缓的问题。' }
+      : isOcr ? { id: 'asset_test', parseStatus: variant === 'ocr_unknown' ? 'unknown' : 'succeeded', extractedFactsSource: 'model_ocr', extractedFacts: { ocr_text: '蓝色袋子' }, execution: { providerExecuted: true, simulated: variant === 'ocr_simulated', label: '已由配置的 OCR 模型解析' } }
+      : { id: 'asset_test', revision: 7, rightsStatus: variant === 'rights_approved' ? 'approved' : variant === 'rights_pending' ? 'pending' : 'unknown', aiModificationAllowed: false }
+    const server = createServer((_req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ data: { result }, error: null })) })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      await nextLine(child.stdout)
+      const name = isTask ? 'task.resume' : isOcr ? 'asset.parse' : 'asset.rights.update'
+      const args = isTask ? { task_id: 'task_real' } : isOcr ? { asset_id: 'asset_test' } : { asset_id: 'asset_test', rights_status: 'approved', rights_scope: 'owned', ai_modification_allowed: 'false' }
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(false)
+      const text = response.result.content[0].text
+      if (variant === 'ocr_success') { expect(text).toContain('图片文字识别已完成'); expect(response.result.structuredContent.execution.label).toBe('已由配置的文字识别模型解析') }
+      else if (isOcr) expect(text).not.toContain('图片文字识别已完成')
+      else if (variant === 'rights_unknown') expect(text).not.toContain('素材权益记录已更新')
+      else if (isTask) { expect(text).toContain('固定模板'); expect(text).not.toContain('已调用模型生成内容。') }
+      else { expect(text).toContain('素材权益记录已更新'); expect(text).toContain('禁止人工智能修改'); if (variant === 'rights_pending') expect(text).toContain('待确认') }
+      expect(text).not.toContain('结算已完成')
+    } finally { child.kill(); await close(server) }
+  })
+
   it.each(['settled', 'unknown_settlement', 'provider_not_executed', 'simulated', 'unknown_status', 'queued_state', 'failed_status', 'missing_preview', 'formal_flag'])('formats draft success only with settled real candidate evidence: %s', async variant => {
     const result: any = {
       previewOnly: true, candidateOnly: true, publishable: false, formalVersionCreated: false,

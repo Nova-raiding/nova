@@ -1332,7 +1332,7 @@ function sanitizeMerchantText(value) {
 // sentence only when it is already Chinese; the original remains in structured
 // content for diagnosis without being repeated as merchant-facing prose.
 function merchantVisibleText(value, fallback) {
-  const sanitized = typeof value === 'string' ? sanitizeMerchantText(value.trim()) : ''
+  const sanitized = typeof value === 'string' ? sanitizeMerchantText(value.trim()).replace(/ *\bOCR\b */gu, '文字识别') : ''
   const prose = sanitized.replace(/\bStore Nova\b/giu, '')
   return /[\u3400-\u9fff]/u.test(sanitized) && !/[A-Za-z]{2,}/u.test(prose) ? sanitized : fallback
 }
@@ -1590,6 +1590,25 @@ function userFacingToolText(method, result) {
   }
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
     return method === 'content.export' ? '导出已准备好。' : READ_ONLY_METHODS.has(method) ? '查询已返回；请以结构化字段核对业务状态。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
+  }
+  const knownSuccessfulState = result.ok !== false && !result.error
+    && (result.status === undefined || ['ok', 'success', 'succeeded', 'completed', 'complete', 'ready'].includes(result.status))
+  if (method === 'asset.parse' && knownSuccessfulState) {
+    if (result.parseStatus === 'succeeded' && result.extractedFactsSource === 'model_ocr'
+      && result.extractedFacts && typeof result.extractedFacts === 'object'
+      && result.execution?.providerExecuted === true && result.execution?.simulated === false) {
+      return '图片文字识别已完成，提取内容仍需核对；商品事实、素材权益和安全检查请分别确认。'
+    }
+    if (result.parseStatus === 'failed') return '素材解析未成功，请查看失败原因；不要重复生成或将未确认内容当作商品事实。'
+  }
+  if (method === 'asset.rights.update' && knownSuccessfulState && typeof result.id === 'string'
+    && Number.isInteger(result.revision) && result.revision > 0) {
+    const rightsLabel = { approved: '已确认', pending: '待确认', rejected: '已拒绝' }[result.rightsStatus]
+    if (rightsLabel) return `素材权益记录已更新，当前权益状态：${rightsLabel}。${result.aiModificationAllowed === true ? '已记录允许人工智能修改。' : result.aiModificationAllowed === false ? '已记录禁止人工智能修改。' : '人工智能修改许可仍待确认。'}具体用途、有效期和安全检查仍以素材记录为准。`
+  }
+  if (method === 'task.resume' && knownSuccessfulState && result.task?.state === 'ready_for_direction'
+    && typeof result.task.id === 'string' && Number.isInteger(result.task.version) && result.task.version > 0) {
+    return '任务已恢复，下一步可准备并选择制作方向。方向方案来自固定模板，不代表已调用模型生成内容；确认制作方案后仍须通过生成、费用与审核门禁。'
   }
   if (method === 'workspace.interactive.confirm') {
     if (result.enabled === true && result.ok !== false && !result.error && result.status === undefined) return '本次交互操作已确认；后续操作仍须通过权限与业务校验，自动化任务保持只读。'
@@ -3079,8 +3098,19 @@ function mcpErrorTrace(method, error) {
   try { console.error(JSON.stringify({ event: 'merchant.mcp.error', ts: new Date().toISOString(), method, error_code: errorCode })) } catch { /* diagnostics must never break MCP */ }
 }
 
+function imagePollingMustStop(result) {
+  const job = result?.job ?? {}
+  const states = [result?.state, result?.status, result?.execution_state, result?.execution?.state,
+    result?.candidate_state?.state, job.state, job.executionState, job.execution_state]
+    .map(value => String(value ?? '').toLowerCase())
+  return result?.reconciliation_required === true || result?.reconciliationRequired === true
+    || job.reconciliation_required === true || job.reconciliationRequired === true
+    || states.some(state => ['failed', 'error', 'cancelled', 'canceled', 'rejected', 'expired', 'unknown', 'outcome_unknown'].includes(state))
+}
+
 async function resolveGeneratedImagePreview(method, initialResult) {
   if (!['catalog.image.generate', 'asset.upload'].includes(method) || !initialResult || typeof initialResult !== 'object' || Array.isArray(initialResult)) return initialResult
+  if (imagePollingMustStop(initialResult)) return initialResult
   if (Array.isArray(initialResult.images) && initialResult.images.length) return initialResult
   const continuation = initialResult.generation_continuation && typeof initialResult.generation_continuation === 'object' ? initialResult.generation_continuation : initialResult.continuation && typeof initialResult.continuation === 'object' ? initialResult.continuation : initialResult.image_generation && typeof initialResult.image_generation === 'object' ? initialResult.image_generation : {}
   const jobId = [initialResult.job_id, continuation.job_id, continuation.jobId].find(value => typeof value === 'string' && value.trim())?.trim() ?? ''
@@ -3101,6 +3131,7 @@ async function resolveGeneratedImagePreview(method, initialResult) {
     const polled = await callRemote('catalog.image.get', { job_id: jobId })
     if (!polled || typeof polled !== 'object' || Array.isArray(polled)) continue
     latest = { ...latest, ...polled }
+    if (imagePollingMustStop(polled)) return latest
     imageTrace('poll.result', { method, job_id: jobId, state: String(polled.state ?? polled.status ?? polled.execution_state ?? polled.candidate_state?.state ?? 'missing').toLowerCase(), image_count: Array.isArray(polled.images) ? polled.images.length : 0, archive_state: polled.job?.archiveState ?? polled.job?.archive_state ?? polled.candidate_state?.archive_state ?? 'unknown' })
     if (Array.isArray(polled.images) && polled.images.length) return latest
     const polledState = String(polled.state ?? polled.status ?? polled.execution_state ?? '').toLowerCase()

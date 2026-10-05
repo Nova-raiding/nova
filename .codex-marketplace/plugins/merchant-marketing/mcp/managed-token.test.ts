@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-// @ts-ignore JavaScript runtime module
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+// @ts-ignore JavaScript runtime module
 import { loadManagedToken, withManagedRefreshLock } from './managed-token.mjs'
 
 const configured = () => ({
