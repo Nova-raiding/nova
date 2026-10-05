@@ -53,6 +53,11 @@ async function notificationFor(studio,orderId,state){
 }
 async function reopenMerchantOrderDetails(studio,orderId){
   const center=studio.getByRole('region',{name:'套餐与权益包',exact:true});
+  // A purchase-result notification is only a navigation hint. Reread the
+  // server portfolio before searching its order table so newly created sibling
+  // checkout lines are present in the recovery view.
+  const portfolio=await readCurrentContract(studio);
+  expect(portfolio.orders.some(order=>String(order.id??order.order_id)===orderId),`fresh server portfolio should include recovery order ${orderId}`).toBe(true);
   await center.getByRole('tab',{name:'订单与恢复',exact:true}).click();
   const row=center.locator('tbody tr').filter({hasText:orderId});
   await expect(row).toHaveCount(1);
