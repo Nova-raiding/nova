@@ -43,6 +43,29 @@ const SOURCE_MODE = 0o600
 const RUNTIME_MODE = 0o440
 const MAX_BYTES = 4 * 1024 * 1024
 
+/** Validate the handoff payload before creating the API-readable copy.  A
+ * missing source file causes Docker to create a directory at the bind target,
+ * while an old `{}` placeholder is technically a regular file but still makes
+ * the runtime claim that evidence is present.  Reject both cases at the
+ * immutable handoff boundary and bind the document to the release directory.
+ */
+export function validateEvidenceDocument(kind, bytes, targetPath) {
+  assert(Object.hasOwn(RUNTIME_EVIDENCE_TARGET_NAMES, kind), 'kind must be capability or capacity')
+  let value
+  try { value = JSON.parse(bytes.toString('utf8')) } catch { throw new Error('source must contain valid JSON evidence') }
+  assert(value && typeof value === 'object' && !Array.isArray(value), 'source evidence must be a JSON object')
+  const releaseId = targetPath.slice(`${RUNTIME_EVIDENCE_TARGET_ROOT}/`.length).split('/')[0]
+  assert(value.release_id === releaseId, 'source evidence release_id must match runtime target release')
+  if (kind === 'capacity') {
+    assert(value.schema_version === '1', 'capacity source schema_version must be 1')
+    assert(typeof value.profile === 'string' && value.profile.trim(), 'capacity source profile is required')
+  } else {
+    assert(['1', 'manual-operations-evidence/2'].includes(value.schema_version), 'capability source schema_version is unsupported')
+  }
+  assert(value.status !== 'placeholder' && value.status !== 'example', 'source evidence must not be a placeholder or example')
+  return value
+}
+
 function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
@@ -164,6 +187,7 @@ function verifyRuntimeFile(path, expectedSha256) {
 export function installRuntimeEvidence({ kind, sourcePath, targetPath }) {
   assert(process.getuid?.() === 0 && process.geteuid?.() === 0, 'runtime evidence handoff requires host root')
   const source = readSource(sourcePath)
+  validateEvidenceDocument(kind, source.bytes, targetPath)
   const parent = validateTarget(kind, targetPath)
   assert(resolve(sourcePath) !== resolve(targetPath), 'source and target must differ')
   const tempPath = resolve(parent, `.${basename(targetPath)}.${process.pid}.tmp`)

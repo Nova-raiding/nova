@@ -160,6 +160,16 @@ sh infra/scripts/ecs-one-click-deploy.sh cleanup
 
 - `review_required`：必须基于服务器文件进行三方合并，禁止整文件覆盖。
 - `missing_remote`：确认是当前候选版本的新增文件后，才可放入隔离发布目录。
+
+对 `missing_remote` 文件使用只读确认器完成这一步：
+
+```sh
+node infra/scripts/confirm-ecs-candidate-new-files.mjs \
+  artifacts/deployment-candidates/ecs-<candidate-id> \
+  artifacts/deployment-candidates/ecs-<candidate-id>/candidate-new-file-confirmation.json
+```
+
+该命令将候选归档成员和 `sync-plan.tsv` 摘要逐项绑定，并通过一次只读 SSH 检查确认 101 主机对应路径不存在；报告必须显示 `approved=true`、`remote_read_only=true`，之后由 `triage-ecs-sync-plan.mjs` 消费。任何已存在、非归档成员、摘要不一致或缺少报告的路径都会保持 fail-closed。
 - `.env`、密钥、OAuth/支付凭据、告警 Webhook 密钥及签名私钥不得进入候选包。
 - `docker-compose.ecs-pilot.yml` 在服务器上可能保留六平台连接器、Vault 和生产安全配置；本地版本不能直接替换它。
 - 最终层顺序只由 `infra/local/ecs-production-compose.layers` 定义：基础 Compose → ECS pilot → production API private → OSS cutover → 生产迁移 → HTTPS gateway → release identity。production API private 层清空 `api` 的宿主端口发布；gateway 和 payment-gateway 通过同项目服务名访问 API，因此不需要宿主映射，也不会与本机服务争用端口。HTTPS 层发布宿主 80/443 到容器 8080/8443，并只读挂载受保护证书目录；网关使用同项目服务别名解析 upstream。禁止加入开发用途的 `deploy/runtime/auth-hardening.yml`；最终渲染必须通过 `validate-ecs-production-compose.mjs` 的服务器生产安全校验。OSS overlay 仅包含 `api`、`api-replica` 的存储、生命周期和配额字段，不修改六平台、Vault、支付、证据或告警配置；当前候选不启用 `--profile alerts`。

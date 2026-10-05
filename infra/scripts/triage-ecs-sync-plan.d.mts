@@ -23,7 +23,31 @@ export interface TriageReport {
     protected_onsite_paths: string[]
     partition_complete: boolean
   }
-  missing_remote: { count: number; top_level_counts: Record<string, number>; paths: string[] }
+  missing_remote: {
+    count: number
+    top_level_counts: Record<string, number>
+    paths: string[]
+    confirmation: {
+      required: boolean
+      approved: boolean
+      count: number
+      paths: string[]
+    }
+  }
+  protected_onsite: {
+    required: boolean
+    approved: boolean
+    count: number
+    paths: string[]
+    semantic_diff: {
+      required: boolean
+      approved: boolean
+      status: 'not_run' | 'classification_only' | 'completed'
+      reason: string
+      count: number
+      paths: string[]
+    }
+  }
   three_way_merge_checklist: { local_prepare: string[]; onsite_required: string[]; pass_conditions: string[] }
   decision: 'NO_GO'
   blockers: string[]

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { existsSync, lstatSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -32,8 +33,10 @@ const parseIdentity = bytes => {
   const identity = {}
   for (const line of bytes.toString('utf8').trim().split(/\r?\n/u)) {
     const index = line.indexOf('=')
-    if (index < 1) fail('candidate identity is malformed')
-    identity[line.slice(0, index)] = line.slice(index + 1)
+    if (index < 1 || line.indexOf('=', index + 1) !== -1) fail('candidate identity is malformed')
+    const key = line.slice(0, index)
+    if (identity[key] !== undefined) fail(`candidate identity has duplicate key: ${key}`)
+    identity[key] = line.slice(index + 1)
   }
   return identity
 }
@@ -133,6 +136,104 @@ const validateReviewReports = (bundle, identity, rows) => {
   }
 }
 
+const validateCandidateNewConfirmation = (bundle, identity, rows) => {
+  const missingPaths = sorted([...rows].filter(([, row]) => row.status === 'missing_remote').map(([path]) => path))
+  const path = join(bundle, 'candidate-new-file-confirmation.json')
+  if (!missingPaths.length) return { required: false, approved: true, count: 0, paths: [] }
+  if (!existsSync(path)) return { required: true, approved: false, count: 0, paths: [] }
+  const report = readJson(path, true)
+  assertBoundIdentity(report, identity, 'candidate-new file confirmation')
+  if (report.schema_version !== 'ecs-candidate-new-file-confirmation/1' || report.remote_read_only !== true || report.approved !== true || report.remote_alias !== '101' || report.remote_root !== '/opt/merchant-deploy' || report.candidate_archive_sha256 !== identity.source_sha256 || !Array.isArray(report.files)) fail('candidate-new file confirmation is not a read-only approved report')
+  const files = report.files
+  if (report.count !== files.length || files.length !== missingPaths.length || new Set(files.map(item => item?.path)).size !== files.length) fail('candidate-new file confirmation does not cover every missing_remote path')
+  let archiveMembers
+  try {
+    const inventory = JSON.parse(execFileSync('python3', ['-c', `import hashlib,json,pathlib,sys,tarfile
+max_members, max_file, max_total = 250000, 2 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024
+seen, total, result = set(), 0, []
+with tarfile.open(sys.argv[1], "r:") as archive:
+    members = archive.getmembers()
+    if not members or len(members) > max_members: raise SystemExit('invalid candidate archive member count')
+    for member in members:
+        path = pathlib.PurePosixPath(member.name)
+        if path.is_absolute() or not member.name or '..' in path.parts or '\\n' in member.name or '\\r' in member.name:
+            raise SystemExit('unsafe candidate archive member path')
+        normalized = path.as_posix().rstrip('/')
+        if not normalized or normalized in seen: raise SystemExit('duplicate candidate archive path')
+        seen.add(normalized)
+        if not (member.isdir() or member.isfile()): raise SystemExit('candidate archive contains a link or special file')
+        if member.mode & 0o7000: raise SystemExit('candidate archive contains privileged mode bits')
+        if member.isfile():
+            if member.size > max_file: raise SystemExit('candidate archive member is too large')
+            total += member.size
+            if total > max_total: raise SystemExit('candidate archive expands beyond release limit')
+            content = archive.extractfile(member).read()
+            result.append({"path":member.name,"regular":True,"sha256":hashlib.sha256(content).hexdigest()})
+        else:
+            result.append({"path":member.name,"regular":False,"sha256":None})
+print(json.dumps(result))`, join(bundle, 'candidate-source.tar')], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }))
+    if (new Set(inventory.map(item => item.path)).size !== inventory.length) fail('candidate source archive contains duplicate members')
+    archiveMembers = new Map(inventory.map(item => [item.path, item]))
+  } catch { fail('candidate source archive cannot be verified') }
+  for (const item of files) {
+    const row = rows.get(item.path)
+    if (!/^[A-Za-z0-9._/-]+$/u.test(item?.path ?? '') || item.path.startsWith('/') || item.path.split('/').some(part => part === '..' || part === '.' || part === '') || !row || row.status !== 'missing_remote' || !/^[0-9a-f]{64}$/u.test(item.local_sha256 ?? '') || item.local_sha256 !== row.local_sha256 || item.archive_member !== true || item.archive_sha256 !== row.local_sha256 || archiveMembers.get(item.path)?.regular !== true || archiveMembers.get(item.path)?.sha256 !== row.local_sha256 || item.remote_state !== 'absent') fail(`candidate-new file confirmation is not sync-plan bound: ${item.path}`)
+  }
+  return { required: true, approved: true, count: files.length, paths: sorted(files.map(item => item.path)) }
+}
+
+const validateProtectedOnsiteReview = (bundle, identity, rows) => {
+  const path = join(bundle, 'protected-onsite-structure-review.json')
+  if (!existsSync(path)) return { required: true, approved: false, count: 0, paths: [] }
+  const report = readJson(path, true)
+  assertBoundIdentity(report, identity, 'protected onsite review')
+  if (report.remote_read_only !== true || report.raw_remote_bytes_persisted !== false || report.remote_alias !== '101' || report.remote_root !== '/opt/merchant-deploy' || report.approved !== false || report.review_scope !== 'hash_and_metadata_only' || report.semantic_review_completed !== false || !Array.isArray(report.protected_onsite_review)) fail('protected onsite review is not an explicitly unapproved hash-only report')
+  const expected = sorted([...rows].filter(([path, row]) => row.status === 'review_required' && PROTECTED_OPS_PATHS.includes(path)).map(([path]) => path))
+  const entries = report.protected_onsite_review
+  if (report.protected_onsite_review_count !== entries.length || entries.length !== expected.length || new Set(entries.map(item => item?.path)).size !== entries.length) fail('protected onsite review does not cover the exact protected path set')
+  for (const item of entries) {
+    const row = rows.get(item.path)
+    if (!row || !PROTECTED_OPS_PATHS.includes(item.path) || item.remote_sha256_bound_to_plan !== row.remote_sha256 || item.remote_sha256_observed !== row.remote_sha256 || item.digest_match !== true || !Number.isSafeInteger(item.bytes) || item.bytes <= 0 || !/^\d{4,5}$/u.test(item.mode ?? '') || !Number.isSafeInteger(item.uid) || item.uid < 0 || !Number.isSafeInteger(item.gid) || item.gid < 0 || item.status !== 'reviewed_protected_structure') fail(`protected onsite review is not sync-plan bound: ${item.path}`)
+  }
+  // Metadata and structural observations do not approve deployment wiring.
+  // Keep the semantic onsite review gate closed until its contract is implemented.
+  return { required: true, approved: false, count: entries.length, paths: expected }
+}
+
+// A hash/metadata observation cannot establish what the host revision was.
+// Semantic review is only consumable when a separate, candidate-bound
+// attestation names the trusted host baseline.  In particular, the candidate
+// identity alone is not a trusted remote identity and must never be treated as
+// a merge base.
+const validateProtectedSemanticDiff = (bundle, identity, rows) => {
+  const expected = sorted([...rows].filter(([path, row]) => row.status === 'review_required' && PROTECTED_OPS_PATHS.includes(path)).map(([path]) => path))
+  const path = join(bundle, 'protected-onsite-semantic-diff.json')
+  if (!existsSync(path)) return {
+    required: true,
+    approved: false,
+    status: 'not_run',
+    reason: 'trusted_remote_identity_unavailable',
+    count: 0,
+    paths: [],
+  }
+  const report = readJson(path, true)
+  assertBoundIdentity(report, identity, 'protected semantic diff')
+  if (report.schema_version !== 'ecs-protected-onsite-semantic-diff/1' || report.remote_read_only !== true || report.raw_remote_bytes_persisted !== false || report.remote_alias !== '101' || report.remote_root !== '/opt/merchant-deploy') fail('protected semantic diff is not a candidate-bound read-only report')
+  const baseline = report.trusted_remote_baseline
+  if (baseline?.status !== 'verified' || typeof baseline.revision !== 'string' || !/^[A-Za-z0-9._:@/-]{1,256}$/u.test(baseline.revision) || !/^[0-9a-f]{64}$/u.test(baseline.manifest_sha256 ?? '') || baseline.attestation_verified !== true) {
+    if (baseline?.status === 'classification_only' && typeof baseline.revision === 'string' && /^[A-Za-z0-9._:@/-]{1,256}$/u.test(baseline.revision) && /^[0-9a-f]{64}$/u.test(baseline.manifest_sha256 ?? '') && baseline.attestation_verified === false) {
+      return { required: true, approved: false, status: 'classification_only', reason: 'trusted_remote_identity_bound_for_classification_only', count: 0, paths: [] }
+    }
+    return { required: true, approved: false, status: 'not_run', reason: 'trusted_remote_identity_unverified', count: 0, paths: [] }
+  }
+  if (report.semantic_review_completed !== true || report.approved !== true || !Array.isArray(report.files) || report.files.length !== expected.length || new Set(report.files.map(item => item?.path)).size !== report.files.length) fail('protected semantic diff is not an approved complete report')
+  for (const item of report.files) {
+    const row = rows.get(item.path)
+    if (!row || !PROTECTED_OPS_PATHS.includes(item.path) || item.candidate_sha256 !== row.local_sha256 || item.remote_sha256 !== row.remote_sha256 || item.decision !== 'approved' || item.semantic_diff_status !== 'completed') fail(`protected semantic diff is not sync-plan bound: ${item.path}`)
+  }
+  return { required: true, approved: true, status: 'completed', reason: 'trusted_remote_identity_and_owner_review', count: report.files.length, paths: expected }
+}
+
 export function buildTriageReport(bundleInput) {
   const bundle = resolve(bundleInput)
   const identity = parseIdentity(readRegular(join(bundle, 'candidate-identity.txt')))
@@ -144,14 +245,20 @@ export function buildTriageReport(bundleInput) {
   for (const [path, row] of rows) byStatus[row.status].push(path)
   for (const paths of Object.values(byStatus)) paths.sort((a, b) => a.localeCompare(b))
   const review = validateReviewReports(bundle, identity, rows)
+  const candidateNew = validateCandidateNewConfirmation(bundle, identity, rows)
+  const protectedOnsite = validateProtectedOnsiteReview(bundle, identity, rows)
+  const protectedSemanticDiff = validateProtectedSemanticDiff(bundle, identity, rows)
+  // Hash/metadata review records what was observed; the gate is approved only
+  // when the separately attested semantic diff covers the same exact set.
+  const protectedGate = { ...protectedOnsite, approved: protectedSemanticDiff.approved && protectedOnsite.count === protectedSemanticDiff.count }
   const structuralMatches = review.structural.filter(item => item.structure_matches).map(item => item.path)
   const structuralMismatches = review.structural.filter(item => !item.structure_matches).map(item => item.path)
   const blockers = [
     'review_required_three_way_merge_not_approved',
-    'protected_onsite_review_not_approved',
-    'missing_remote_new_file_confirmation_not_approved',
     'candidate_runtime_evidence_not_present',
   ]
+  if (!protectedGate.approved) blockers.splice(1, 0, 'protected_onsite_review_not_approved')
+  if (!candidateNew.approved) blockers.splice(2, 0, 'missing_remote_new_file_confirmation_not_approved')
   return {
     schema_version: `ecs-sync-plan-triage/${TRIAGE_SCHEMA_VERSION}`,
     candidate: {
@@ -181,7 +288,9 @@ export function buildTriageReport(bundleInput) {
       count: byStatus.missing_remote.length,
       top_level_counts: countByTopLevel(byStatus.missing_remote),
       paths: byStatus.missing_remote,
+      confirmation: candidateNew,
     },
+    protected_onsite: { ...protectedGate, semantic_diff: protectedSemanticDiff },
     three_way_merge_checklist: {
       local_prepare: [
         `Review and merge ${review.fetchedPaths.length} fetched source files in a separate checkout; preserve remote-only wiring.`,

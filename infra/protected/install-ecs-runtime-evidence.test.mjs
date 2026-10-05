@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { RUNTIME_EVIDENCE_TARGET_NAMES, RUNTIME_EVIDENCE_TARGET_ROOT, validateRuntimeEvidenceDirectoryMetadata, validateRuntimeTarget } from './install-ecs-runtime-evidence.mjs'
+import { RUNTIME_EVIDENCE_TARGET_NAMES, RUNTIME_EVIDENCE_TARGET_ROOT, validateEvidenceDocument, validateRuntimeEvidenceDirectoryMetadata, validateRuntimeTarget } from './install-ecs-runtime-evidence.mjs'
 
 test('runtime evidence has two fixed container bind names under a release-scoped host root', () => {
   assert.equal(RUNTIME_EVIDENCE_TARGET_ROOT, '/var/lib/merchant-release-security/runtime-evidence')
@@ -29,4 +29,12 @@ test('runtime evidence root requires an exact root-owned 0700 directory', () => 
   assert.throws(() => validateRuntimeEvidenceDirectoryMetadata(stats(0o40700, 10001)), /root-owned mode 0700/u)
   assert.throws(() => validateRuntimeEvidenceDirectoryMetadata(stats(0o100700, 0, false)), /root-owned mode 0700/u)
   assert.throws(() => validateRuntimeEvidenceDirectoryMetadata(stats(0o40700, 0, true, true)), /root-owned mode 0700/u)
+})
+
+test('runtime evidence handoff rejects placeholders and release mismatches before creating a bind source', () => {
+  const target = `${RUNTIME_EVIDENCE_TARGET_ROOT}/release-test/capacity-report.json`
+  assert.throws(() => validateEvidenceDocument('capacity', Buffer.from('{}'), target), /release_id/u)
+  assert.throws(() => validateEvidenceDocument('capacity', Buffer.from(JSON.stringify({ release_id: 'release-test', status: 'placeholder', schema_version: '1', profile: 'no_load' })), target), /placeholder/u)
+  assert.throws(() => validateEvidenceDocument('capacity', Buffer.from(JSON.stringify({ release_id: 'release-other', schema_version: '1', profile: 'no_load' })), target), /release_id/u)
+  assert.doesNotThrow(() => validateEvidenceDocument('capacity', Buffer.from(JSON.stringify({ release_id: 'release-test', schema_version: '1', profile: 'no_load', status: 'not_performed' })), target))
 })
