@@ -67,8 +67,8 @@ describe('isolated PostgreSQL entrypoint', () => {
 
   const fixture = () => {
     const handle = {
-      runId, adminDatabaseUrl: adminUrl,
-      containerEvidence: [{ kind: 'postgres', runId, hostPort: 45678 }],
+      runId, adminDatabaseUrl: adminUrl, redisUrl: 'redis://127.0.0.1:45679/0',
+      containerEvidence: [{ kind: 'postgres', runId, hostPort: 45678 }, { kind: 'redis', runId, hostPort: 45679 }],
       dispose: vi.fn(async () => ({ stopped: ['owned-postgres', 'owned-redis'], leftRunning: [] })),
     }
     const runtime: IsolatedPostgresRuntime = {
@@ -90,7 +90,7 @@ describe('isolated PostgreSQL entrypoint', () => {
     expect(args).toContain('--config')
     expect(args).toContain('--reporter=json')
     expect(args).toContain('--passWithNoTests=false')
-    expect(environment).toEqual({ PATH: '/test/bin', NODE_ENV: 'test', ASSET_STORAGE_ROOT: '/owned/evidence/run-unique/local-objects', PERSISTENCE_RELEASE_DATABASE_URL: adminUrl, MERCHANT_ISOLATED_POSTGRES_RUN_ID: runId })
+    expect(environment).toEqual({ PATH: '/test/bin', NODE_ENV: 'test', ASSET_STORAGE_ROOT: '/owned/evidence/run-unique/local-objects', PERSISTENCE_RELEASE_DATABASE_URL: adminUrl, MERCHANT_ISOLATED_POSTGRES_RUN_ID: runId, MERCHANT_ISOLATED_REDIS_URL: 'redis://127.0.0.1:45679/0', MERCHANT_ISOLATED_REDIS_PORT: '45679' })
     expect(handle.dispose).toHaveBeenCalledOnce()
     const summary = JSON.stringify(vi.mocked(runtime.writeSummary).mock.calls)
     expect(summary).not.toContain('generated-fixture-secret')
