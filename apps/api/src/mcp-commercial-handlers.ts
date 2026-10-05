@@ -117,7 +117,8 @@ export async function handleCommercialMcpMethod(method: string, params: JsonObje
     case 'commercial.order.create': {
       try {
         const idempotencyKey = deps.required(params, 'idempotency_key')
-        const order = await deps.purchase.create({ workspace_id: workspaceId, actor_id: deps.actor(req), purchase_kind: deps.required(params, 'purchase_kind') as 'purchase' | 'onboarding_once' | 'upgrade' | 'point_pack', sku_code: deps.required(params, 'sku_code'), idempotency_key: idempotencyKey, reason: deps.required(params, 'reason'), ...(typeof params.upgrade_quote_id === 'string' ? { upgrade_quote_id: params.upgrade_quote_id } : {}), ...(typeof params.checkout_id === 'string' ? { checkout_id: params.checkout_id } : {}), ...(typeof params.onboarding_order_id === 'string' ? { onboarding_order_id: params.onboarding_order_id } : {}) })
+        const beneficiaryMemberId = await deps.memberId(req, workspaceId)
+        const order = await deps.purchase.create({ workspace_id: workspaceId, actor_id: deps.actor(req), beneficiary_member_id: beneficiaryMemberId, purchase_kind: deps.required(params, 'purchase_kind') as 'purchase' | 'onboarding_once' | 'upgrade' | 'point_pack', sku_code: deps.required(params, 'sku_code'), idempotency_key: idempotencyKey, reason: deps.required(params, 'reason'), ...(typeof params.upgrade_quote_id === 'string' ? { upgrade_quote_id: params.upgrade_quote_id } : {}), ...(typeof params.checkout_id === 'string' ? { checkout_id: params.checkout_id } : {}), ...(typeof params.onboarding_order_id === 'string' ? { onboarding_order_id: params.onboarding_order_id } : {}) })
         return order
       } catch (error) {
         if (error instanceof CommercialPaymentError || error instanceof CommercialContractError) deps.rethrowPayment(error)

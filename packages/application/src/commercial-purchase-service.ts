@@ -19,9 +19,12 @@ export interface CommercialPurchaseCatalogPort {
 }
 
 export interface CommercialPurchaseOrderPort {
-  createFromServerSnapshot(input: { workspace_id: string; actor_id: string; purchase_kind: CommercialPurchaseCreateRequest['purchase_kind']; server_snapshot_ref: string; server_snapshot: unknown; upgrade_quote_id?: string; checkout_id?: string; onboarding_order_id?: string; idempotency_key: string; reason: string }): Promise<CommercialPurchaseOrderView>
+  createFromServerSnapshot(input: { workspace_id: string; actor_id: string; purchase_kind: CommercialPurchaseCreateRequest['purchase_kind']; server_snapshot_ref: string; server_snapshot: unknown; beneficiary_member_id?: string; upgrade_quote_id?: string; checkout_id?: string; onboarding_order_id?: string; idempotency_key: string; reason: string }): Promise<CommercialPurchaseOrderView>
   getPaymentStatus(input: CommercialPaymentStatusRequest): Promise<CommercialPurchaseOrderView | null>
 }
+
+/** Server-derived authenticated member binding; MCP clients cannot supply this value. */
+export type CommercialPurchaseCreateCommand = CommercialPurchaseCreateRequest & { beneficiary_member_id?: string }
 
 export class CommercialPurchaseError extends Error {
   constructor(readonly code: CommercialPurchaseErrorCode, message: string) { super(message); this.name = 'CommercialPurchaseError' }
@@ -32,7 +35,7 @@ const required = (value: string, field: string) => { if (!value || value.trim() 
 export class CommercialPurchaseService {
   constructor(private readonly catalog: CommercialPurchaseCatalogPort, private readonly orders: CommercialPurchaseOrderPort) {}
 
-  async create(request: CommercialPurchaseCreateRequest): Promise<CommercialPurchaseOrderView> {
+  async create(request: CommercialPurchaseCreateCommand): Promise<CommercialPurchaseOrderView> {
     required(request.workspace_id, 'workspace_id'); required(request.actor_id, 'actor_id'); required(request.sku_code, 'sku_code'); required(request.idempotency_key, 'idempotency_key'); required(request.reason, 'reason')
     if (request.purchase_kind === 'upgrade' && !request.upgrade_quote_id) throw new CommercialPurchaseError('COMMERCIAL_UPGRADE_QUOTE_REQUIRED', 'upgrade requires a current server quote; update the client or use the authorized purchase page')
     if (request.upgrade_quote_id !== undefined) {
@@ -53,7 +56,7 @@ export class CommercialPurchaseService {
         ? 'point_pack'
         : 'monthly'
     if (sku.kind !== expected) throw new CommercialPurchaseError('COMMERCIAL_PURCHASE_KIND_MISMATCH', 'purchase kind does not match approved SKU kind')
-    return this.orders.createFromServerSnapshot({ workspace_id: request.workspace_id, actor_id: request.actor_id, purchase_kind: request.purchase_kind, server_snapshot_ref: sku.server_snapshot_ref, server_snapshot: sku.server_snapshot, ...(request.upgrade_quote_id ? { upgrade_quote_id: request.upgrade_quote_id } : {}), ...(request.checkout_id ? { checkout_id: request.checkout_id } : {}), ...(request.onboarding_order_id ? { onboarding_order_id: request.onboarding_order_id } : {}), idempotency_key: request.idempotency_key, reason: request.reason })
+    return this.orders.createFromServerSnapshot({ workspace_id: request.workspace_id, actor_id: request.actor_id, purchase_kind: request.purchase_kind, server_snapshot_ref: sku.server_snapshot_ref, server_snapshot: sku.server_snapshot, ...(request.beneficiary_member_id ? { beneficiary_member_id: request.beneficiary_member_id } : {}), ...(request.upgrade_quote_id ? { upgrade_quote_id: request.upgrade_quote_id } : {}), ...(request.checkout_id ? { checkout_id: request.checkout_id } : {}), ...(request.onboarding_order_id ? { onboarding_order_id: request.onboarding_order_id } : {}), idempotency_key: request.idempotency_key, reason: request.reason })
   }
 
   async paymentStatus(request: CommercialPaymentStatusRequest): Promise<CommercialPurchaseOrderView> {

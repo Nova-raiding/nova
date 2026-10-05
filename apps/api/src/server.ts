@@ -3729,6 +3729,7 @@ const commercialPurchaseService = new CommercialPurchaseService({
       idempotencyKey: input.idempotency_key,
       reason: input.reason,
       purchaseKind: input.purchase_kind,
+      ...(input.beneficiary_member_id ? { beneficiaryMemberId: input.beneficiary_member_id } : {}),
       ...(input.upgrade_quote_id ? { upgradeQuoteId: input.upgrade_quote_id } : {}),
       ...(input.checkout_id ? { checkoutId: input.checkout_id } : {}),
       ...(input.onboarding_order_id ? { onboardingOrderId: input.onboarding_order_id } : {}),
