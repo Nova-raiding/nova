@@ -7,6 +7,13 @@ describe('relay usage normalization', () => {
     expect(usage).toMatchObject({ workspaceId: 'ws_usage', actionId: 'task_1', contextLinkId: 'context_link_1', contextHash: 'a'.repeat(64), modality: 'text', model: 'merchant-v1', providerRequestId: 'header_req', inputTokens: 12, outputTokens: 8, totalTokens: 20, costCny: 0.013 })
   })
 
+  it('rejects malformed or non-CNY explicit provider cost instead of deriving a fallback', () => {
+    expect(parseRelayUsage({ usage: { prompt_tokens: 1, cost_cny: 0.01 }, cost_cny: 0.02 }, new Headers({ 'x-request-id': 'conflicting-cost' }), { modality: 'text', model: 'm' })).toBeUndefined()
+    expect(parseRelayUsage({ usage: { prompt_tokens: 1, cost_cny: 'not-a-number' } }, new Headers({ 'x-request-id': 'bad-cost' }), { modality: 'text', model: 'm' })).toBeUndefined()
+    expect(parseRelayUsage({ usage: { prompt_tokens: 1, cost_cny: 0.01, currency: 'USD' } }, new Headers({ 'x-request-id': 'usd-cost' }), { modality: 'text', model: 'm' })).toBeUndefined()
+    expect(parseRelayUsage({ usage: { prompt_tokens: 1, currency: 'CNY' } }, new Headers({ 'x-request-id': 'currency-only' }), { modality: 'text', model: 'm' })).toBeUndefined()
+  })
+
   it('prefers the New API request id used by its user log', () => {
     const usage = parseRelayUsage({ usage: { total_tokens: 1 } }, new Headers({ 'x-oneapi-request-id': 'new-api-request', 'x-request-id': 'response-request' }), { modality: 'text', model: 'm' })
     expect(usage?.providerRequestId).toBe('new-api-request')

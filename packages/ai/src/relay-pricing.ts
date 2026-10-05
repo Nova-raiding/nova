@@ -215,6 +215,14 @@ export class RelayPricingClient {
     if (!model.enable_groups.includes(group) && !model.enable_groups.includes('all')) {
       throw new RelayPricingError('MODEL_PRICING_GROUP_UNAVAILABLE', `model ${usage.model} is not enabled for relay group ${group}`)
     }
+    // Dynamic tariffs (for example peak_offpeak) cannot be priced from the
+    // generic ratio fields. They require the provider's billed interval and
+    // cache breakdown; treating their fallback ratio as actual cost silently
+    // over/undercharges. Reject both estimates and settlement until that
+    // billing mode has an explicitly audited implementation.
+    if (model.billing_mode && !(model.billing_mode === 'per_duration' && model.quota_type === 1 && usage.modality === 'video')) {
+      throw new RelayPricingError('MODEL_PRICING_MODE_UNSUPPORTED', 'relay pricing billing mode is unsupported')
+    }
 
     let rawQuota: number
     let directCostCny: number | undefined

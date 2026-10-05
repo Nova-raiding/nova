@@ -157,6 +157,30 @@ const assertBudgetLinkMatches = (existing: Pick<ModelUsageRecord, 'budgetReserva
   validateBudgetPair(input)
   if (existing.budgetReservationKey !== input.budgetReservationKey || existing.budgetRunKey !== input.budgetRunKey) throw new Error('MODEL_USAGE_BUDGET_LINK_CONFLICT')
 }
+/**
+ * A provider request id is an immutable billing receipt identity.  Retries may
+ * fill in cost after a pending-cost row was written, but once actual cost is
+ * present a replay with a different amount must fail closed.  Previously the
+ * plain `record()` path silently ignored that drift (the atomic budget path
+ * already rejected it), allowing a caller to present contradictory cost
+ * evidence for the same relay request.
+ */
+// Ledger cost is numeric(12,6). Compare its exact decimal projection, never an
+// epsilon: PostgreSQL rounds nonnegative decimal ties upward. Sub-micro-CNY
+// differences cannot be distinguished by this column; retain raw receipts as
+// evidence separately. Memory and PostgreSQL must use the same replay rule.
+const ledgerCostUnits = (value: number): bigint => {
+  const [coefficient, exponent = '0'] = value.toString().split('e')
+  const [whole, fraction = ''] = coefficient!.split('.')
+  const digits = BigInt(whole! + fraction)
+  const shift = 6 + Number(exponent) - fraction.length
+  if (shift >= 0) return digits * 10n ** BigInt(shift)
+  const divisor = 10n ** BigInt(-shift)
+  return digits / divisor + (digits % divisor * 2n >= divisor ? 1n : 0n)
+}
+const assertCostMatches = (existing: Pick<ModelUsageRecord, 'costCny'>, input: Pick<ModelUsageRecord, 'costCny'>) => {
+  if (existing.costCny !== undefined && input.costCny !== undefined && ledgerCostUnits(existing.costCny) !== ledgerCostUnits(input.costCny)) throw new Error('MODEL_USAGE_COST_CONFLICT')
+}
 const validateTokenFields = (input: Pick<ModelUsageRecord, 'inputTokens' | 'outputTokens' | 'totalTokens'>) => {
   for (const value of [input.inputTokens, input.outputTokens, input.totalTokens]) {
     if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new Error('MODEL_USAGE_TOKEN_COUNT_INVALID')
@@ -183,6 +207,7 @@ export class MemoryModelUsageRepository implements ModelUsageRepository {
     const existing = this.rows.find(row => row.workspaceId === input.workspaceId && (row.receiptKey === receiptKey || Boolean(input.providerRequestId && row.providerRequestId === input.providerRequestId)))
     if (existing) {
       if (existing.receiptHash !== receiptHash) throw new Error('MODEL_USAGE_IDEMPOTENCY_CONFLICT')
+      assertCostMatches(existing, input)
       assertBudgetLinkMatches(existing, input)
       mergeContext(existing, input)
       if (existing.costCny === undefined && input.costCny !== undefined) {
@@ -204,7 +229,7 @@ export class MemoryModelUsageRepository implements ModelUsageRepository {
     if (!reservation || reservation.runKey !== input.budgetRunKey) throw new Error('MODEL_USAGE_BUDGET_LINK_CONFLICT')
     if (reservation.status === 'released') throw new Error('MODEL_COST_BUDGET_RESERVATION_RELEASED')
     const existing = this.rows.find(row => row.workspaceId === input.workspaceId && (row.receiptKey === stableReceiptKey(input) || Boolean(input.providerRequestId && row.providerRequestId === input.providerRequestId)))
-    if (existing?.costCny !== undefined && existing.costCny !== input.costCny) throw new Error('MODEL_USAGE_COST_CONFLICT')
+    if (existing) assertCostMatches(existing, input)
     const usage = await this.record({ ...input, settlementStatus: 'pending_wallet' })
     const actualCostCny = roundedCny(this.rows.filter(row => row.workspaceId === input.workspaceId && row.budgetReservationKey === input.budgetReservationKey && row.costCny !== undefined).reduce((sum, row) => sum + (row.costCny ?? 0), 0))
     const snapshot = { ...this.budgetSnapshot(input.workspaceId, reservation.budgetDate, actualCostCny, reservation.reservationKey), limitCny: reservation.dailyLimitCny }
@@ -364,6 +389,7 @@ export class PostgresModelUsageRepository implements ModelUsageRepository {
         : [workspaceId, receiptKey, input.providerRequestId ?? null])
       if (found.rows[0]) {
         const existing = map(found.rows[0]); if (existing.receiptHash !== receiptHash) throw new Error('MODEL_USAGE_IDEMPOTENCY_CONFLICT')
+        assertCostMatches(existing, input)
         assertBudgetLinkMatches(existing, input)
         mergeContext(existing, input)
         if (existing.contextLinkId !== undefined && existing.contextHash !== undefined && (!found.rows[0].context_link_id || !found.rows[0].context_hash)) { const updated = await client.query<UsageRow>(`UPDATE model_usage_ledger SET context_link_id=$3, context_hash=$4, revision=revision+1 WHERE workspace_id=$1 AND id=$2 RETURNING ${projection}`, [workspaceId, existing.id, existing.contextLinkId, existing.contextHash]); Object.assign(existing, map(updated.rows[0]!)) }
@@ -395,7 +421,7 @@ export class PostgresModelUsageRepository implements ModelUsageRepository {
         const existing = map(found.rows[0])
         if (existing.receiptHash !== receiptHash) throw new Error('MODEL_USAGE_IDEMPOTENCY_CONFLICT')
         assertBudgetLinkMatches(existing, input)
-        if (existing.costCny !== undefined && existing.costCny !== input.costCny) throw new Error('MODEL_USAGE_COST_CONFLICT')
+        assertCostMatches(existing, input)
         mergeContext(existing, input)
         let updated = found.rows[0]
         if (existing.contextLinkId !== undefined && existing.contextHash !== undefined && (!found.rows[0].context_link_id || !found.rows[0].context_hash)) updated = (await client.query<UsageRow>(`UPDATE model_usage_ledger SET context_link_id=$3,context_hash=$4,revision=revision+1 WHERE workspace_id=$1 AND id=$2 RETURNING ${projection}`, [workspaceId, existing.id, existing.contextLinkId, existing.contextHash])).rows[0]!

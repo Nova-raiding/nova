@@ -31,6 +31,8 @@ describe('production model relay contract', () => {
     expect(relayProbeFailureReason(new Error('MODEL_PRICING_MODEL_MISSING: relay pricing is missing model x'))).toBe('relay_pricing_model_missing')
     expect(relayProbeFailureReason(new Error('video canary requires explicit 720P/1080P resolution'))).toBe('relay_video_preflight_invalid')
     expect(relayProbeFailureReason(new Error('provider said sk-secret'))).toBe('relay_probe_failed')
+    expect(relayProbeFailureReason(Object.assign(new Error('relay pricing billing mode is unsupported'), { code: 'MODEL_PRICING_MODE_UNSUPPORTED' }))).toBe('relay_pricing_mode_unsupported')
+    expect(relayProbeFailureReason(Object.assign(new Error('sensitive artifact path'), { code: 'EEXIST' }))).toBe('relay_evidence_path_exists')
   })
 
   it('requires non-empty OCR content and usable image references before canary success', () => {
@@ -408,7 +410,7 @@ describe('production model relay contract', () => {
       new Headers(),
       'text',
       'text-v1',
-    )).resolves.toEqual({ usageObserved: true, usage: { totalTokens: 1 }, costObserved: false })
+    )).resolves.toEqual({ usageObserved: false, costObserved: false })
   })
 
   it('blocks queued and failed async video states until an HTTPS artifact is complete', () => {

@@ -44,6 +44,7 @@ describe('MemoryModelUsageRepository', () => {
     const first = await repository.record({ workspaceId: 'ws_usage', actionId: 'task_1', modality: 'text', model: 'relay-text', providerRequestId: 'req_1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny: 0.01, markupMultiplier: 2.5, customerChargeCny: 0.025, pricingPolicyRevision: 1 })
     const replay = await repository.record({ workspaceId: 'ws_usage', actionId: 'task_1', modality: 'text', model: 'relay-text', providerRequestId: 'req_1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny: 0.01 })
     expect(replay).toEqual(first)
+    await expect(repository.record({ workspaceId: 'ws_usage', actionId: 'task_1', modality: 'text', model: 'relay-text', providerRequestId: 'req_1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny: 0.02 })).rejects.toThrow('MODEL_USAGE_COST_CONFLICT')
     await expect(repository.record({ workspaceId: 'ws_usage', actionId: 'other_task', modality: 'text', model: 'relay-text', providerRequestId: 'req_1', totalTokens: 198, costCny: 9 })).rejects.toThrow('MODEL_USAGE_IDEMPOTENCY_CONFLICT')
     expect(first.customerChargeCny).toBe(0.025)
     expect(await repository.list('ws_usage')).toHaveLength(1)
@@ -251,6 +252,23 @@ describe('MemoryModelUsageRepository', () => {
 })
 
 describe('PostgresModelUsageRepository settlement cost invariant', () => {
+  it.each([[0.00090156, 0.000902], [0.0000005, 0.000001], [0.00000049, 0], [0.0999995, 0.1]])('matches decimal ledger precision for %s in memory and PostgreSQL', async (raw, projected) => {
+    const receipt = { workspaceId: 'ws_usage', receiptKey: 'receipt_1', receiptHash: 'a'.repeat(64), modality: 'image' as const, model: 'relay-image', providerRequestId: 'provider_1', costCny: raw }
+    const memory = new MemoryModelUsageRepository()
+    await memory.record(receipt)
+    await expect(memory.record({ ...receipt, costCny: projected })).resolves.toMatchObject({ costCny: raw })
+    await expect(memory.record({ ...receipt, costCny: projected + 0.000001 })).rejects.toThrow('MODEL_USAGE_COST_CONFLICT')
+    await memory.reserveDailyBudget({ workspaceId: receipt.workspaceId, reservationKey: 'precision', runKey: 'precision', modality: receipt.modality, model: receipt.model, estimateCny: 0.2, estimateVersion: 'precision', dailyLimitCny: 10, runLimitCny: 1 })
+    const budgeted = { ...receipt, receiptKey: 'receipt_atomic', providerRequestId: 'provider_atomic', budgetReservationKey: 'precision', budgetRunKey: 'precision' }
+    await memory.recordUsageAndSettleBudget(budgeted)
+    await expect(memory.recordUsageAndSettleBudget({ ...budgeted, costCny: projected })).resolves.toMatchObject({ usage: { costCny: raw } })
+    await expect(memory.recordUsageAndSettleBudget({ ...budgeted, costCny: projected + 0.000001 })).rejects.toThrow('MODEL_USAGE_COST_CONFLICT')
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue()
+    client.enqueue([postgresUsageRow({ action_id: null, cost_cny: projected })]); client.enqueue()
+    await expect(new PostgresModelUsageRepository(new RecordingPool(client)).record(receipt)).resolves.toMatchObject({ costCny: projected })
+  })
+
   it('locks the linked action while recording a provider receipt', async () => {
     const client = new RecordingClient()
     client.enqueue() // BEGIN

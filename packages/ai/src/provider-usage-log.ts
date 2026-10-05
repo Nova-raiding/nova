@@ -13,6 +13,10 @@ export interface ProviderUsageRecord {
   outputTokens?: number
   totalTokens?: number
   quota?: number
+  /** Provider-reported currency amount. Never derived from `quota`. */
+  costCny?: number
+  /** Currency attached to the provider-reported amount, when supplied. */
+  costCurrency?: string
   raw: Record<string, unknown>
 }
 
@@ -28,6 +32,18 @@ export interface ProviderUsageStatement {
   records: ProviderUsageRecord[]
   pages: number
   complete: boolean
+}
+
+/** A provider log row that is strong enough to settle an actual-cost receipt.
+ *
+ * `quota` is deliberately absent from this contract: it is a relay billing
+ * unit and cannot be converted to CNY without an independently bound pricing
+ * snapshot. Callers that settle money must use this shape (or a stronger
+ * provider-native receipt), never a raw `ProviderUsageRecord`.
+ */
+export type ProviderActualCostReceipt = ProviderUsageRecord & {
+  costCny: number
+  costCurrency?: string
 }
 
 export interface NewApiSelfLogClientOptions {
@@ -59,6 +75,15 @@ function integer(value: unknown): number | undefined {
   if (typeof value === 'string' && /^\d+$/u.test(value)) {
     const parsed = Number(value)
     return Number.isSafeInteger(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
+function nonNegativeNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value
+  if (typeof value === 'string' && /^(?:0|[1-9]\d*)(?:\.\d+)?$/u.test(value.trim())) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed
   }
   return undefined
 }
@@ -98,10 +123,32 @@ function parseRecord(value: unknown): ProviderUsageRecord | undefined {
   const row = value as Record<string, unknown>
   const providerRecordId = text(row.id) ?? text(row.record_id) ?? text(row.request_id)
   if (!providerRecordId) return undefined
+  // New API deployments have emitted both string and integer user IDs. Keep
+  // the normalized identity so the actual-cost boundary can reject an
+  // explicitly cross-user row instead of silently treating numeric IDs as
+  // absent evidence.
+  const providerUserId = text(row.user_id) ?? (typeof row.user_id === 'number' && Number.isSafeInteger(row.user_id) && row.user_id >= 0 ? String(row.user_id) : undefined)
+  if (Object.prototype.hasOwnProperty.call(row, 'user_id') && providerUserId === undefined) return undefined
   const inputTokens = integer(row.prompt_tokens) ?? integer(row.input_tokens)
   const outputTokens = integer(row.completion_tokens) ?? integer(row.output_tokens)
   const totalTokens = integer(row.total_tokens) ?? (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined)
-  return { providerRecordId, ...(text(row.user_id) ? { userId: text(row.user_id) } : {}), ...(text(row.created_at) ? { createdAt: text(row.created_at) } : {}), ...(text(row.model_name) ? { model: text(row.model_name) } : {}), ...(text(row.token_name) ? { tokenName: text(row.token_name) } : {}), ...(inputTokens !== undefined ? { inputTokens } : {}), ...(outputTokens !== undefined ? { outputTokens } : {}), ...(totalTokens !== undefined ? { totalTokens } : {}), ...(typeof row.quota === 'number' && Number.isFinite(row.quota) ? { quota: row.quota } : {}), raw: row }
+  // New API's `quota` is an internal billing unit. Treating it as CNY would
+  // fabricate actual-cost evidence, so only explicitly currency-named fields
+  // can populate costCny. If such a field is present but malformed, reject the
+  // row rather than silently downgrading it to an unpriced statement.
+  const costKeys = ['cost_cny', 'costCny', 'actual_cost_cny', 'actualCostCny'].filter(key => Object.prototype.hasOwnProperty.call(row, key))
+  const costs = costKeys.map(key => nonNegativeNumber(row[key]))
+  const costCny = costs[0]
+  if (costs.some(cost => cost === undefined || cost !== costCny)) return undefined
+  const currencyKeys = ['currency', 'cost_currency', 'costCurrency'].filter(key => Object.prototype.hasOwnProperty.call(row, key))
+  const currencies = currencyKeys.map(key => text(row[key])?.toUpperCase())
+  const costCurrency = currencies[0]
+  // A currency marker without an explicit amount is ambiguous evidence and
+  // must not be persisted as a provider cost statement. Explicit non-CNY
+  // amounts are likewise rejected before they can reach settlement.
+  if (currencyKeys.length > 0 && costKeys.length === 0) return undefined
+  if (currencies.some(currency => currency !== 'CNY')) return undefined
+  return { providerRecordId, ...(providerUserId ? { userId: providerUserId } : {}), ...(text(row.created_at) ? { createdAt: text(row.created_at) } : {}), ...(text(row.model_name) ? { model: text(row.model_name) } : {}), ...(text(row.token_name) ? { tokenName: text(row.token_name) } : {}), ...(inputTokens !== undefined ? { inputTokens } : {}), ...(outputTokens !== undefined ? { outputTokens } : {}), ...(totalTokens !== undefined ? { totalTokens } : {}), ...(typeof row.quota === 'number' && Number.isFinite(row.quota) ? { quota: row.quota } : {}), ...(costCny !== undefined ? { costCny } : {}), ...(costCurrency ? { costCurrency } : {}), raw: row }
 }
 
 export class NewApiSelfLogClient {
@@ -256,6 +303,37 @@ export class NewApiSelfLogClient {
       if (current.complete) return { records, pages: page, complete: true }
     }
     throw new Error('PROVIDER_USAGE_PAGINATION_INCOMPLETE')
+  }
+
+  /**
+   * Read the provider's own usage log as actual-cost evidence.
+   *
+   * This intentionally rejects a complete statement when any row has only
+   * quota/token data. A statement with mixed priced and unpriced rows cannot
+   * safely be used for settlement because selecting a subset would make the
+   * accounting boundary ambiguous. The request ID match is exact and the
+   * duplicate guard in listAll remains authoritative.
+   */
+  async readActualCostReceipt(providerRequestId: string, input: { startTimestamp?: number; endTimestamp?: number } = {}): Promise<ProviderActualCostReceipt> {
+    const requestId = providerRequestId.trim()
+    if (!requestId || requestId.length > 256 || /[\u0000-\u001f\u007f]/u.test(requestId)) throw new Error('PROVIDER_USAGE_REQUEST_ID_INVALID')
+    const statement = await this.listAll(input)
+    // The endpoint is user-scoped, but a provider response may still contain
+    // an explicit user_id field. Never allow a row that names another user to
+    // cross the settlement boundary: accepting it would turn a valid session
+    // into cross-tenant billing evidence. Rows that omit user_id remain bound
+    // by the authenticated request and the `New-Api-User` header.
+    if (statement.records.some(record => record.userId !== undefined && record.userId !== this.options.userId.trim())) {
+      throw new Error('PROVIDER_USAGE_IDENTITY_MISMATCH')
+    }
+    const unpriced = statement.records.find(record => record.costCny === undefined || (record.costCurrency !== undefined && record.costCurrency.toUpperCase() !== 'CNY'))
+    if (unpriced) throw new Error('PROVIDER_USAGE_ACTUAL_COST_INCOMPLETE')
+    const matches = statement.records.filter(record => record.providerRecordId === requestId)
+    if (matches.length === 0) throw new Error('PROVIDER_USAGE_RECEIPT_NOT_FOUND')
+    if (matches.length !== 1) throw new Error('PROVIDER_USAGE_RECEIPT_DUPLICATE')
+    const receipt = matches[0]
+    if (!receipt || receipt.costCny === undefined || !Number.isFinite(receipt.costCny) || receipt.costCny < 0) throw new Error('PROVIDER_USAGE_ACTUAL_COST_INVALID')
+    return receipt as ProviderActualCostReceipt
   }
 }
 

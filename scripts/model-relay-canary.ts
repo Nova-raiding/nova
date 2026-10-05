@@ -181,10 +181,13 @@ export function requireCanaryBudget(value: string | undefined): CanaryBudget {
 /** Return an actionable, credential-safe blocker for operator-facing canary output. */
 export function relayProbeFailureReason(error: unknown): string {
   const message = error instanceof Error ? error.message : ''
+  const code = error instanceof Error && 'code' in error ? String(error.code) : ''
+  if (code === 'EEXIST') return 'relay_evidence_path_exists'
   // Keep operator output credential safe while preserving the actionable
   // failure class.  The old catch-all made a reachable relay look identical
   // to a missing key and forced a second run with ad-hoc instrumentation.
-  if (message.includes('MODEL_PRICING_') || message.includes('relay pricing')) {
+  if (code.startsWith('MODEL_PRICING_') || message.includes('MODEL_PRICING_') || message.includes('relay pricing')) {
+    if (code === 'MODEL_PRICING_MODE_UNSUPPORTED' || message.includes('MODEL_PRICING_MODE_UNSUPPORTED')) return 'relay_pricing_mode_unsupported'
     if (message.includes('MODEL_PRICING_MODEL_MISSING') || message.includes('pricing is missing model')) return 'relay_pricing_model_missing'
     if (message.includes('MODEL_PRICING_GROUP_INVALID') || message.includes('has no positive ratio')) return 'relay_pricing_group_invalid'
     if (message.includes('MODEL_PRICING_GROUP_UNAVAILABLE') || message.includes('not enabled for relay group')) return 'relay_pricing_group_unavailable'
@@ -974,7 +977,7 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
     }
     return finalized
   } catch (error) {
-    return { ...common, state: 'blocked', detail: error instanceof Error && error.name === 'AbortError' ? 'timeout' : 'probe_failed' }
+    return { ...common, state: 'blocked', detail: error instanceof Error && error.name === 'AbortError' ? 'timeout' : relayProbeFailureReason(error) }
   } finally { clearTimeout(timer) }
 }
 

@@ -178,8 +178,22 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     ? undefined
     : reportedTotal ?? (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined)
   // Raw quota is deliberately excluded: without a versioned unit, exchange
-  // rate and pricing formula it is not currency evidence.
-  const costCny = firstNumber(usage?.cost_cny, usage?.costCny, root.cost_cny, root.costCny, data?.cost_cny, data?.costCny, nestedData?.cost_cny, nestedData?.costCny, result?.cost_cny, result?.costCny)
+  // rate and pricing formula it is not currency evidence. Explicit provider
+  // cost fields are financial evidence: malformed values or a non-CNY
+  // currency must invalidate the receipt instead of being silently ignored
+  // and replaced by a derived estimate downstream.
+  const costNodes = [usage, root, data, nestedData, result, metadata].filter((value): value is RecordLike => Boolean(value))
+  const costKeys = ['cost_cny', 'costCny', 'actual_cost_cny', 'actualCostCny'] as const
+  const explicitCost = costNodes.flatMap(node => costKeys.filter(key => Object.prototype.hasOwnProperty.call(node, key)).map(key => node[key]))
+  const explicitCurrency = costNodes.flatMap(node => ['currency', 'cost_currency', 'costCurrency'].filter(key => Object.prototype.hasOwnProperty.call(node, key)).map(key => node[key]))
+  if ((explicitCurrency.length > 0 && explicitCost.length === 0)
+    || explicitCost.some(value => firstNumber(value) === undefined)
+    || explicitCurrency.some(value => {
+      if (typeof value !== 'string' || !value.trim()) return true
+      return value.trim().toUpperCase() !== 'CNY'
+    })) return undefined
+  const costCny = explicitCost.length > 0 ? firstNumber(...explicitCost) : undefined
+  if (explicitCost.some(value => firstNumber(value) !== costCny)) return undefined
   const imageResultObserved = (defaults.modality === 'image' || defaults.modality === 'image_edit') && (
     (Array.isArray(root.data) && root.data.length > 0)
     || (Array.isArray(root.images) && root.images.length > 0)

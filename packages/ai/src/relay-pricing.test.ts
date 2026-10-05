@@ -17,6 +17,13 @@ function client(payload = pricing) {
 }
 
 describe('RelayPricingClient', () => {
+  it.each(['peak_offpeak', 'unknown_dynamic_tariff'])('rejects %s rather than billing its fallback token ratio', async billing_mode => {
+    const payload = { ...pricing, data: pricing.data.map(model => ({ ...model, billing_mode })) }
+    const { value } = client(payload)
+    const usage = { modality: 'text' as const, model: 'deepseek-v4-pro', inputTokens: 86, outputTokens: 33, observedAt: '2026-10-04T22:14:10.013Z' }
+    await expect(value.quote(usage)).rejects.toMatchObject({ code: 'MODEL_PRICING_MODE_UNSUPPORTED' })
+    await expect(value.estimateRequestCost(usage)).rejects.toMatchObject({ code: 'MODEL_PRICING_MODE_UNSUPPORTED' })
+  })
   it('derives token cost from a frozen relay pricing and currency snapshot', async () => {
     const { value, fetch } = client()
     await expect(value.quote({ modality: 'text', model: 'deepseek-v4-pro', inputTokens: 1000, outputTokens: 500, totalTokens: 1500, observedAt: new Date().toISOString() })).resolves.toMatchObject({

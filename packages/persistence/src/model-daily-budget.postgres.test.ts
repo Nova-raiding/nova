@@ -6,6 +6,29 @@ import { ModelCostBudgetExceededError, ModelRunCostBudgetActualExceededError, Mo
 const postgresIt = process.env.MODEL_BUDGET_DATABASE_URL ? it : it.skip
 
 describe('PostgreSQL daily model-cost budget', () => {
+  postgresIt('replays high precision receipts using exact numeric(12,6) boundaries in both write paths', async () => {
+    const pool = new Pool({ connectionString: process.env.MODEL_BUDGET_DATABASE_URL, max: 4 })
+    const workspaceId = `ws_precision_pg_${Date.now()}`
+    try {
+      await new MigrationRunner(pool, await loadMigrations()).run()
+      await pool.query('INSERT INTO workspaces (id,status) VALUES ($1,$2)', [workspaceId, 'active'])
+      const repository = new PostgresModelUsageRepository(pool)
+      for (const [index, raw] of [0.00090156, 0.0000005, 0.00000049, 0.0999995].entries()) {
+        const projection = Number((await pool.query('SELECT $1::numeric(12,6) AS cost', [raw])).rows[0].cost)
+        const base = { workspaceId, modality: 'text' as const, model: 'relay-text', providerRequestId: `plain_${index}`, costCny: raw, observedAt: '2026-08-29T01:01:00.000Z' }
+        const first = await repository.record(base)
+        await expect(repository.record(base)).resolves.toMatchObject({ id: first.id, revision: first.revision, costCny: projection })
+        await expect(repository.record({ ...base, costCny: projection + 0.000001 })).rejects.toThrow('MODEL_USAGE_COST_CONFLICT')
+        const key = `reservation_${index}`
+        await repository.reserveDailyBudget({ workspaceId, reservationKey: key, runKey: key, modality: 'text', model: 'relay-text', estimateCny: 0.2, estimateVersion: 'precision-test', dailyLimitCny: 10, runLimitCny: 1, at: base.observedAt })
+        const budgeted = { ...base, providerRequestId: `atomic_${index}`, budgetReservationKey: key, budgetRunKey: key }
+        const atomic = await repository.recordUsageAndSettleBudget(budgeted)
+        await expect(repository.recordUsageAndSettleBudget(budgeted)).resolves.toMatchObject({ usage: { id: atomic.usage.id, revision: atomic.usage.revision, costCny: projection }, reservation: { revision: atomic.reservation.revision } })
+        await expect(repository.recordUsageAndSettleBudget({ ...budgeted, costCny: projection + 0.000001 })).rejects.toThrow('MODEL_USAGE_COST_CONFLICT')
+      }
+    } finally { await pool.end() }
+  }, 60_000)
+
   postgresIt('serializes competing reservations across independent connections', async () => {
     const pool = new Pool({ connectionString: process.env.MODEL_BUDGET_DATABASE_URL, max: 4 })
     const workspaceId = `ws_budget_pg_${Date.now()}_${Math.random().toString(16).slice(2)}`

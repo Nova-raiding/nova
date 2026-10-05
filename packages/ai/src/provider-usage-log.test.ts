@@ -5,12 +5,49 @@ import { join } from 'node:path'
 import { NewApiSelfLogClient } from './provider-usage-log.js'
 
 describe('NewApiSelfLogClient', () => {
+  it.each([
+    { cost_cny: 0.01, currency: null },
+    { cost_cny: 0.01, currency: 'CNY', cost_currency: 'USD' },
+    { cost_cny: 0.01, actual_cost_cny: 0.02 },
+    { cost_cny: 0.01, actual_cost_cny: 'invalid' },
+    { cost_cny: 0.01, user_id: null },
+    { cost_cny: 0.01, user_id: -1 },
+  ])('rejects ambiguous provider evidence %j', async fields => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: { items: [{ id: 'receipt-1', ...fields }], total: 1 } })))
+    const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'session', userId: 'u1', fetcher })
+    await expect(client.listPage()).rejects.toThrow('PROVIDER_USAGE_RECORD_INVALID')
+  })
+
   it('reads paginated user logs with user credentials and normalizes tokens', async () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: { items: [{ id: 'r1', user_id: 'u1', model_name: 'm', prompt_tokens: 2, completion_tokens: '3', quota: 0.01 }], total: 1 } }), { headers: { 'content-type': 'application/json' } }))
     const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'session', userId: 'u1', fetcher, pageSize: 200 })
     await expect(client.listPage({ page: 2 })).resolves.toMatchObject({ page: 2, pageSize: 100, complete: true, items: [{ providerRecordId: 'r1', inputTokens: 2, outputTokens: 3, totalTokens: 5 }] })
     expect(fetcher.mock.calls[0]?.[0].toString()).toContain('p=2')
     expect(fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({ authorization: 'Bearer session', 'New-Api-User': 'u1' })
+  })
+
+  it('keeps provider currency cost separate from quota units', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: { items: [{ id: 'priced-1', prompt_tokens: 2, completion_tokens: 3, quota: 987654, cost_cny: '0.0125', currency: 'CNY' }], total: 1 } })))
+    const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'session', userId: 'u1', fetcher })
+    await expect(client.listPage()).resolves.toMatchObject({ items: [{ providerRecordId: 'priced-1', quota: 987654, costCny: 0.0125, costCurrency: 'CNY' }] })
+  })
+
+  it('rejects a currency marker without an explicit amount', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: { items: [{ id: 'currency-only', quota: 10, currency: 'CNY' }], total: 1 } })))
+    const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'session', userId: 'u1', fetcher })
+    await expect(client.listPage()).rejects.toThrow('PROVIDER_USAGE_RECORD_INVALID')
+  })
+
+  it('rejects a malformed explicit provider cost instead of treating quota as currency', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: { items: [{ id: 'bad-cost', prompt_tokens: 1, quota: 10, cost_cny: 'not-a-number' }], total: 1 } })))
+    const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'session', userId: 'u1', fetcher })
+    await expect(client.listPage()).rejects.toThrow('PROVIDER_USAGE_RECORD_INVALID')
+  })
+
+  it('rejects an explicit non-CNY currency instead of importing it as CNY', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: { items: [{ id: 'usd-cost', cost_cny: 0.01, currency: 'USD' }], total: 1 } })))
+    const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'session', userId: 'u1', fetcher })
+    await expect(client.listPage()).rejects.toThrow('PROVIDER_USAGE_RECORD_INVALID')
   })
 
   it('rejects model API credentials as a substitute for user log credentials', () => {
@@ -256,5 +293,38 @@ describe('NewApiSelfLogClient', () => {
     const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'session', userId: 'u1', fetcher, pageSize: 1 })
     await expect(client.listAll()).resolves.toMatchObject({ pages: 2, complete: true, records: [{ providerRecordId: 'r1' }, { providerRecordId: 'r2' }] })
     expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns an exact provider actual-cost receipt and never promotes quota-only rows', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: { items: [
+      { id: 'provider-actual-1', prompt_tokens: 4, completion_tokens: 6, total_tokens: 10, quota: 1234, cost_cny: '0.021', currency: 'CNY' },
+    ], total: 1 } }), { headers: { 'content-type': 'application/json' } }))
+    const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'session', userId: 'u1', fetcher })
+    await expect(client.readActualCostReceipt('provider-actual-1')).resolves.toMatchObject({ providerRecordId: 'provider-actual-1', costCny: 0.021, costCurrency: 'CNY' })
+    await expect(client.readActualCostReceipt('other-provider-id')).rejects.toThrow('PROVIDER_USAGE_RECEIPT_NOT_FOUND')
+  })
+
+  it('fails closed when the provider statement contains any unpriced quota row', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: { items: [
+      { id: 'provider-priced', prompt_tokens: 1, completion_tokens: 1, cost_cny: 0.01, currency: 'CNY' },
+      { id: 'provider-quota-only', prompt_tokens: 1, completion_tokens: 1, quota: 9 },
+    ], total: 2 } }), { headers: { 'content-type': 'application/json' } }))
+    const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'session', userId: 'u1', fetcher })
+    await expect(client.readActualCostReceipt('provider-priced')).rejects.toThrow('PROVIDER_USAGE_ACTUAL_COST_INCOMPLETE')
+  })
+
+  it('rejects an explicitly cross-user provider row before actual-cost settlement', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: { items: [
+      { id: 'provider-other-user', user_id: 2, prompt_tokens: 1, completion_tokens: 1, cost_cny: 0.01, currency: 'CNY' },
+    ], total: 1 } }), { headers: { 'content-type': 'application/json' } }))
+    const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'session', userId: 'u1', fetcher })
+    await expect(client.readActualCostReceipt('provider-other-user')).rejects.toThrow('PROVIDER_USAGE_IDENTITY_MISMATCH')
+  })
+
+  it('rejects unsafe provider request identifiers before making a log request', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+    const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', userToken: 'session', userId: 'u1', fetcher })
+    await expect(client.readActualCostReceipt('provider-\u0001-id')).rejects.toThrow('PROVIDER_USAGE_REQUEST_ID_INVALID')
+    expect(fetcher).not.toHaveBeenCalled()
   })
 })
