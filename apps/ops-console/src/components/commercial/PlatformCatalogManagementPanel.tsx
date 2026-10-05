@@ -172,7 +172,7 @@ export function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleMod
     <div className="commercial-catalog-heading"><div><h3 id="commercial-catalog-heading">商品目录</h3><p>价格按版本修改。当前在售、草稿审批与历史合同分别保留。</p></div><Space><Button disabled={busy || catalogLoading} onClick={refreshCatalog}>刷新目录</Button><Button type="primary" disabled={!canDraft || blocked} onClick={() => openEditor()}>新增{tab === "plans" ? "套餐" : tab === "onboarding" ? "开通费" : "权益包"}草稿</Button></Space></div>
     <Tabs activeKey={tab} onChange={key => { const nextTab = key as Tab; setTab(nextTab); resetCatalogQuery({ tab: nextTab, query, filter }); }} items={[{ key: "plans", label: "套餐管理" }, { key: "bundles", label: "权益包管理" }, { key: "onboarding", label: "开通费" }]} />
     {tab === "bundles" && <BenefitBundleManagementPanel model={model} definitions={definitions} definitionError={definitionError} onChange={items => setBundles(current => mergeBenefitBundleVersions(current, items))} />}
-    {bundlesLoading && <Typography.Text role="status">正在读取完整权益包目录…</Typography.Text>}
+    {bundlesLoading && <p role="status">正在读取完整权益包目录…</p>}
     {bundlesError && <Alert type="error" showIcon title="权益包目录读取不完整" description={<>{bundlesError}<Button onClick={() => void refreshBundleOptions()}>重新读取全部权益包</Button></>} />}
     {tab === "bundles" && <h4>独立销售商品（价格与周期）</h4>}
     <div ref={resultRef} tabIndex={-1}>{notice && <Alert type="success" showIcon title={notice} role="status" />}</div>
