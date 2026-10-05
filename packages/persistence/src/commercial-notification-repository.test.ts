@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { PostgresCommercialNotificationRepository } from './commercial-notification-repository.js'
 import type { SqlPool, SqlClient } from './repository.js'
 const event = { event_id: '11111111-1111-4111-8111-111111111111', sku_code: 'basic', version: 3, visibility: 'public', payload: { name: '基础版', price_fen: 200000 }, created_at: '2026-10-05T00:00:00Z', cursor_member_id: '', audience_workspace_id: null }
@@ -81,8 +81,8 @@ describe('commercial outcome projection and recipient read evidence', () => {
     const member={id:'member-1',workspace_id:'ws',identity_id:null,role:'merchant_admin'}
     const f=fixture([[targeted],[member],[{rowCount:1}],[]])
     expect(await new PostgresCommercialNotificationRepository(f.pool).fanoutPurchaseResult('ws',{eventId:event.event_id,token:'lease'})).toEqual({scanned:1,delivered:1,complete:true})
-    expect(f.calls.find(call=>call.sql.startsWith('SELECT m.id'))?.values).toEqual(['ws','',targeted.created_at,200,'member-1'])
-    expect(f.calls.find(call=>call.sql.startsWith('SELECT m.id'))?.sql).toContain('m.id=$5')
+    expect(f.calls.find(call=>call.sql.startsWith('SELECT m.id'))?.values).toEqual(['ws','member-1',targeted.created_at,200])
+    expect(f.calls.find(call=>call.sql.startsWith('SELECT m.id'))?.sql).toContain('m.id=$2')
     expect(f.calls.find(call=>call.sql.startsWith('UPDATE commercial_purchase_result'))?.values?.at(-1)).toBe(true)
   })
   it('authorizes a private purchase result only for its frozen beneficiary', async () => {
