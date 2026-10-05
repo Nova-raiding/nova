@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeCommercialFirstCheckout, normalizeCommercialCatalog, normalizeCommercialPurchaseOrder, normalizeCommercialSubscription, selectMerchantCatalogItems, type CommercialCatalogItem, type CommercialSubscriptionPortfolio } from './api'
-import { canConfirmCommercialOrder, commercialOrdersToConfirm, commercialPurchaseAction, commercialRecoveryOrderIds, commercialTargetPriceChanged } from './CommercialPurchaseCenter'
+import { canConfirmCommercialOrder, commercialOrdersToConfirm, commercialPurchaseAction, commercialRecoveryOrderIds, commercialTargetPriceChanged, openCommercialCurrentPlanFromNotification } from './CommercialPurchaseCenter'
 
 const item: CommercialCatalogItem = { id: 'sku-basic', sku_code: 'basic', name: '基础', type: 'monthly', visibility: 'public', version: 2, price_label: '¥2000.00', price_fen: 200000, cycle_label: '每月', benefits_summary: '5000点', benefits: [], approval_state: 'approved', valid_from: null, valid_to: null, unresolved: [], checksum: 'sha', executable: true, plan_family: 'standard', tier_rank: 1 }
 const empty: CommercialSubscriptionPortfolio = { schema_version: 'commercial.subscription.v1', status: 'available', onboarding_qualified: false, current: null, future: [], packs: [], history: [], orders: [] }
 const period = { id: 'e1', sourceOrderId: 'o1', skuCode: 'basic', catalogVersionId: 'v2', periodStart: '2026-11-01T00:00:00.000Z', periodEnd: '2026-12-01T00:00:00.000Z', periodStatus: 'scheduled', resolvedBenefits: [], executable: true, plan_family: 'standard', tier_rank: 1 }
 
 describe('commercial purchase decisions are based on verified contracts', () => {
+  it('opens the current-plan and upgrade view from a purchase-result notification and rereads current facts', () => {
+    let activeTab = 'orders'
+    let requestReload: ((current: number) => number) | undefined
+    openCommercialCurrentPlanFromNotification(tab => { activeTab = tab }, update => { requestReload = update })
+    expect(activeTab).toBe('current')
+    expect(requestReload?.(3)).toBe(4)
+  })
   it('blocks unknown portfolio rather than claiming the account has never purchased', () => {
     expect(() => normalizeCommercialSubscription({ status: 'unknown', current: null })).toThrow('从未购买')
     expect(() => normalizeCommercialSubscription({ ...empty, future: undefined })).toThrow()

@@ -26,6 +26,7 @@ describe("CommercialReadinessPanel", () => {
     expect(checks.policyChecks.every(item => !item.check.ready)).toBe(true);
     expect(checks.registryCheck.ready).toBe(false);
     expect(checks.skuChecks[0].check.reason).toContain("未返回");
+    expect(checks.skuChecks.find(item => item.key === "monthly_custom")?.label).toBe("尊享版 10000 元起 / 月");
   });
 
   it("does not turn a top-level ready flag into SKU or policy success", () => {

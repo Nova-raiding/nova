@@ -107,7 +107,7 @@ describe('commercial outcome projection and recipient read evidence', () => {
     expect((await new PostgresCommercialNotificationRepository(owned.pool,authorize).list('ws','member-1')).items).toHaveLength(1)
     const other=fixture([[{id:'member-2',workspace_id:'ws',identity_id:null,role:'merchant_admin'}],[result]])
     expect((await new PostgresCommercialNotificationRepository(other.pool,authorize).list('ws','member-2')).items).toHaveLength(0)
-    expect(other.calls.find(call=>call.sql.includes('FROM workspace_commercial_result_notifications'))?.sql).toContain('o.beneficiary_member_id::text')
+    expect(other.calls.find(call=>call.sql.includes('FROM workspace_commercial_result_notifications'))?.sql).toContain('n.member_id::text')
   })
   it('uses the four committed outcomes rather than calling every paid transaction active', async () => {
     const { deriveCommercialPurchaseResultNotification } = await import('./commercial-notification-repository.js')

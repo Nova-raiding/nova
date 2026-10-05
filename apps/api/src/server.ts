@@ -92,6 +92,7 @@ import { resolveCommercialPaymentMode, commercialTransferInstructions } from './
 import { MCP_COMMERCIAL_BUNDLE_METHODS, handleCommercialBenefitBundleMethod } from './mcp-commercial-benefit-bundles.js'
 import { MCP_COMMERCIAL_RECEIPT_METHODS, handleCommercialReceiptMethod } from './mcp-commercial-receipts.js'
 import { MCP_COMMERCIAL_NOTIFICATION_OPS_METHODS, handleCommercialNotificationOpsMethod } from './mcp-commercial-notification-ops.js'
+import { authorizeCommercialNotification } from './commercial-notification-authorization.js'
 import { PostgresCommercialReceiptRepository } from '../../../packages/persistence/src/commercial-receipt-repository.js'
 import { PostgresCommercialBenefitBundleRepository } from '../../../packages/persistence/src/commercial-benefit-bundle-repository.js'
 import { runCommercialNotificationTick, runCommercialPurchaseResultNotificationTick } from '../../../packages/workers/src/commercial-notification-fanout.js'
@@ -3251,15 +3252,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const commercialPointOrigins = new PostgresCommercialPointOriginReadRepository(sqlPool)
     const commercialReceipts = opsPool ? new PostgresCommercialReceiptRepository(sqlPool, opsSqlPool) : undefined
     const commercialBenefitBundles = opsPool ? new PostgresCommercialBenefitBundleRepository(opsSqlPool) : undefined
-    const notificationAuthorizer: CommercialNotificationAuthorizer = (recipient, publication) => {
-      const canReadBilling = capabilitiesForRoles(resolveCanonicalRoles({ memberRole: recipient.role })).includes('billing.self.read')
-      const publicCatalogOrResult = publication.visibility === 'public'
-      const exactPrivatePurchaseBeneficiary = publication.visibility === 'private'
-        && publication.notificationKind === 'purchase_result'
-        && Boolean(publication.beneficiaryMemberId)
-        && publication.beneficiaryMemberId === recipient.memberId
-      return canReadBilling && (publicCatalogOrResult || exactPrivatePurchaseBeneficiary)
-    }
+    const notificationAuthorizer: CommercialNotificationAuthorizer = authorizeCommercialNotification
     const commercialNotifications = new PostgresCommercialNotificationRepository(sqlPool, notificationAuthorizer)
     const commercialNotificationFanout = opsPool ? new PostgresCommercialNotificationRepository(opsSqlPool, notificationAuthorizer) : undefined
     const demoEvaluationEntitlements = new PostgresDemoEvaluationEntitlementRepository(sqlPool)
