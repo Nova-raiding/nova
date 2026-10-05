@@ -25,7 +25,10 @@ const product = flatten(jsonLd).find(item => {
 const offer = Array.isArray(product.offers) ? product.offers[0] ?? {} : product.offers ?? {}
 const imageValues = Array.isArray(product.image) ? product.image : product.image ? [product.image] : []
 const images = [...new Set(imageValues.map(text).filter(Boolean))]
-const price = first(offer.price, offer.lowPrice, product.price, metas.get('product:price:amount'))
+// JSON-LD amounts may be numbers, including zero. Preserve raw invalid/negative
+// values for the existing import validator; extraction is not price approval.
+const price = [offer.price, offer.lowPrice, product.price, metas.get('product:price:amount')]
+  .map(value => typeof value === 'number' ? String(value) : text(value)).find(Boolean) ?? null
 const result = {
   title: first(product.name, metas.get('og:title'), metas.get('twitter:title'), (html.match(/<title[^>]*>([\s\S]*?)<\/title>/iu) ?? [])[1]),
   description: first(product.description, metas.get('description'), metas.get('og:description')),
