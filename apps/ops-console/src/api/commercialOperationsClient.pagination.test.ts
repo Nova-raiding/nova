@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const rpc = vi.hoisted(() => vi.fn());
 vi.mock("./opsClient.js", () => ({ rpc }));
 
-import { commercialOperationsClient, parseAccessBlocks, parseEntitlements, parseOrders } from "./commercialOperationsClient.js";
+import { commercialOperationsClient, parseAccessBlocks, parseBenefitBundles, parseEntitlements, parseOrders } from "./commercialOperationsClient.js";
 
 describe("commercial operations pagination contract", () => {
   beforeEach(() => rpc.mockReset());
@@ -39,5 +39,28 @@ describe("commercial operations pagination contract", () => {
       id: "ent_1", workspace_id: "ws_1", sku_code: "growth", snapshot_version: "v1", status: "active",
       source_order_id: "order_1", source_order_status: "paid",
     }] }).items[0]).toMatchObject({ sourceOrderId: "order_1", sourceOrderStatus: "paid" });
+  });
+
+  it("parses versioned benefit bundles and rejects invalid lifecycle payloads", () => {
+    const bundle = {
+      id: "bundle-1", code: "creative", version_id: "bundle-1-v1", version: 1, revision: 4,
+      name: "创意权益包", usage: "included", lifecycle: "approved", state: "active",
+      benefits: [{ code: "creative_points", quantity: 500 }], payload: { policyRef: "points-v1" }, checksum: "sha256:abc",
+    };
+    expect(parseBenefitBundles({ items: [bundle], total: 1 }).items[0]).toMatchObject({
+      id: "bundle-1", versionId: "bundle-1-v1", revision: 4, usage: "included", lifecycle: "approved", state: "active",
+    });
+    expect(() => parseBenefitBundles({ items: [{ ...bundle, usage: "monthly" }], total: 1 })).toThrow("usage无效");
+    expect(() => parseBenefitBundles({ items: [{ ...bundle, revision: -1 }], total: 1 })).toThrow("版本或revision无效");
+  });
+
+  it("preserves the benefit-bundle reference cursor and returns completeness metadata", async () => {
+    rpc.mockResolvedValue({ items: [{ sku_code: "growth", sku_version_id: "growth-v1" }], total: 3, next_cursor: "references-next", truncated: true });
+    await expect(commercialOperationsClient.benefitBundleReferences("benefit-core", "benefit-v1", { limit: 2, cursor: "references-first" })).resolves.toMatchObject({
+      items: [{ sku_code: "growth", sku_version_id: "growth-v1" }], total: 3, nextCursor: "references-next", truncated: true,
+    });
+    expect(rpc).toHaveBeenCalledWith("ops.commercial.benefit-bundles.references.list", {
+      code: "benefit-core", version_id: "benefit-v1", limit: "2", cursor: "references-first",
+    }, { signal: undefined });
   });
 });

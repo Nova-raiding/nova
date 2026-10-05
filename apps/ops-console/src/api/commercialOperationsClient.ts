@@ -801,7 +801,11 @@ export const commercialOperationsClient = {
     action: input.action, code: input.code, expected_revision: String(input.expectedRevision), idempotency_key: input.idempotencyKey, reason: input.reason,
     ...(input.versionId ? { version_id: input.versionId } : {}), ...(input.name ? { name: input.name } : {}), ...(input.usage ? { usage: input.usage } : {}), ...(input.payload ? { payload_json: JSON.stringify(input.payload) } : {}), ...(input.benefits ? { benefits_json: JSON.stringify(input.benefits) } : {}), evidence_json: JSON.stringify({ source: "ops_console", action: input.action }),
   }, { signal }),
-  benefitBundleReferences: async (code: string, versionId?: string, signal?: AbortSignal) => pageRows(await rpc(commercialOperationsMethods.benefitBundleReferences, { code, ...(versionId ? { version_id: versionId } : {}) }, { signal }), commercialOperationsMethods.benefitBundleReferences).rows,
+  benefitBundleReferences: async (code: string, versionId?: string, input?: CommercialPageInput, signal?: AbortSignal): Promise<CommercialPage<RecordValue>> => {
+    const page = pageRequest(input, signal);
+    const result = pageRows(await rpc(commercialOperationsMethods.benefitBundleReferences, { code, ...(versionId ? { version_id: versionId } : {}), ...page.params }, { signal: page.signal }), commercialOperationsMethods.benefitBundleReferences);
+    return { items: result.rows, ...pageMeta(result) };
+  },
   orders: async (targetWorkspaceId: string, input?: CommercialPageInput, signal?: AbortSignal) => { const page = pageRequest(input, signal); return parseOrders(await rpc(commercialOperationsMethods.orders, { target_workspace_id: targetWorkspaceId, ...page.params }, { signal: page.signal })); },
   rates: async (_targetWorkspaceId: string, signal?: AbortSignal) => parseRates(await rpc(commercialOperationsMethods.rates, { limit: "100" }, { signal })),
   services: async (targetWorkspaceId: string, signal?: AbortSignal) => parseServices(await rpc(commercialOperationsMethods.services, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),

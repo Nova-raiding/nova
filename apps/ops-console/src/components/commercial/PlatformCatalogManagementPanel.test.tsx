@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CommercialCatalogItem } from "../../api/commercialOperationsClient.js";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel.js";
-import { catalogProductRows, loadAllBenefitBundlePages, mergeBenefitBundleVersions } from "./catalogManagementModel.js";
+import { catalogProductRows, loadAllBenefitBundlePages, loadAllBenefitBundleReferences, mergeBenefitBundleVersions } from "./catalogManagementModel.js";
 import { catalogPolicyPatch, mutateCatalogAndStartRefresh, PlatformCatalogManagementPanel } from "./PlatformCatalogManagementPanel.js";
 import { encodeBenefits } from "./RegisteredBenefitFields.js";
 
@@ -132,5 +132,26 @@ describe("complete benefit-bundle option loading", () => {
     const first = bundle("bundle-v1");
     const second = { ...bundle("bundle-v2"), version: 2 };
     expect(mergeBenefitBundleVersions([first], [second])).toEqual([first, second]);
+  });
+});
+
+describe("complete benefit-bundle impact references", () => {
+  it("reads every server page before presenting the reference set as complete", async () => {
+    const loadPage = vi.fn()
+      .mockResolvedValueOnce({ items: [{ sku_code: "basic" }], total: 2, nextCursor: "refs-2", truncated: true })
+      .mockResolvedValueOnce({ items: [{ sku_code: "growth" }], total: 2, nextCursor: null, truncated: false });
+    await expect(loadAllBenefitBundleReferences(loadPage)).resolves.toEqual([{ sku_code: "basic" }, { sku_code: "growth" }]);
+    expect(loadPage).toHaveBeenNthCalledWith(1, { limit: 100 }, undefined);
+    expect(loadPage).toHaveBeenNthCalledWith(2, { limit: 100, cursor: "refs-2" }, undefined);
+  });
+
+  it("fails closed for a repeated cursor, inconsistent total, or hidden truncation", async () => {
+    const repeated = vi.fn().mockResolvedValue({ items: [], total: 1, nextCursor: "same", truncated: true });
+    await expect(loadAllBenefitBundleReferences(repeated)).rejects.toThrow("游标重复");
+    const changing = vi.fn()
+      .mockResolvedValueOnce({ items: [{ sku_code: "basic" }], total: 2, nextCursor: "next", truncated: true })
+      .mockResolvedValueOnce({ items: [{ sku_code: "growth" }], total: 3, nextCursor: null, truncated: false });
+    await expect(loadAllBenefitBundleReferences(changing)).rejects.toThrow("总数在分页期间变化");
+    await expect(loadAllBenefitBundleReferences(async () => ({ items: [{ sku_code: "basic" }], total: 2, nextCursor: null, truncated: true }))).rejects.toThrow("结果不完整");
   });
 });

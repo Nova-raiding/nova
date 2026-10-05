@@ -19,6 +19,30 @@ export async function loadAllBenefitBundlePages(
   throw new Error("权益包目录超过100页读取上限；当前目录不完整，不能进行套餐绑定");
 }
 
+export async function loadAllBenefitBundleReferences(
+  loadPage: (input: CommercialPageRequest, signal?: AbortSignal) => Promise<CommercialPage<Record<string, unknown>>>,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>[]> {
+  const references: Record<string, unknown>[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  let expectedTotal: number | undefined;
+  for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+    const page = await loadPage({ limit: 100, ...(cursor ? { cursor } : {}) }, signal);
+    if (expectedTotal === undefined) expectedTotal = page.total;
+    else if (page.total !== expectedTotal) throw new Error("套餐引用总数在分页期间变化，无法确认完整影响范围");
+    references.push(...page.items);
+    if (!page.nextCursor) {
+      if (page.truncated || references.length !== expectedTotal) throw new Error("套餐引用结果不完整，无法确认完整影响范围");
+      return references;
+    }
+    if (seenCursors.has(page.nextCursor)) throw new Error("套餐引用分页游标重复，已停止读取以避免遗漏");
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  }
+  throw new Error("套餐引用超过100页读取上限；无法确认完整影响范围");
+}
+
 export function mergeBenefitBundleVersions(existing: readonly CommercialBenefitBundle[], incoming: readonly CommercialBenefitBundle[]): CommercialBenefitBundle[] {
   const bundles = new Map<string, CommercialBenefitBundle>();
   for (const bundle of [...existing, ...incoming]) bundles.set(`${bundle.code}\u0000${bundle.versionId}`, bundle);
