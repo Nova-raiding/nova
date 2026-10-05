@@ -22,7 +22,9 @@ async function rpc(page,method,action){
     }
     await expect(preview).toBeEnabled({timeout:30000})
   }
-  return merchantRpcAction(page,method,action)
+  const result=await merchantRpcAction(page,method,action)
+  if(method==='ops.commercial.upgrade.quote.create')await expect(assistant(page)).toContainText('报价截止',{timeout:30000})
+  return result
 }
 async function openDetails(details){if(await details.getAttribute('open')===null)await details.locator('summary').evaluate(summary=>summary.click())}
 async function select(page,control,text,contains=false){await control.scrollIntoViewIfNeeded();await control.click({timeout:10000});await expect(control).toHaveAttribute('aria-expanded','true');let selected=false;const visited=new Set();for(let index=0;index<40;index++){const activeId=await control.getAttribute('aria-activedescendant');if(activeId){if(visited.has(activeId))break;visited.add(activeId);const active=page.locator(`[id=${JSON.stringify(activeId)}]`);const label=await active.getAttribute('aria-label');if(label===text||(contains&&label?.includes(text))){await control.press('Enter');selected=true;break}}await control.press('ArrowDown')}expect(selected,`keyboard navigation must reach registered option ${text}`).toBe(true);await expect(control.locator('xpath=..')).toContainText(text)}
