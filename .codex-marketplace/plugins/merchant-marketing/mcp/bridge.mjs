@@ -1606,6 +1606,22 @@ function userFacingToolText(method, result) {
     const rightsLabel = { approved: '已确认', pending: '待确认', rejected: '已拒绝' }[result.rightsStatus]
     if (rightsLabel) return `素材权益记录已更新，当前权益状态：${rightsLabel}。${result.aiModificationAllowed === true ? '已记录允许人工智能修改。' : result.aiModificationAllowed === false ? '已记录禁止人工智能修改。' : '人工智能修改许可仍待确认。'}具体用途、有效期和安全检查仍以素材记录为准。`
   }
+  if (['task.select_direction', 'task.plan.confirm'].includes(method) && knownSuccessfulState) {
+    const plan = result.productionPlan
+    const planMatchesTask = typeof result.id === 'string' && result.id.trim()
+      && Number.isInteger(result.version) && result.version > 0
+      && typeof result.selectedDirectionId === 'string' && result.selectedDirectionId.trim()
+      && plan && typeof plan.id === 'string' && plan.id.trim() && plan.taskId === result.id
+      && Number.isInteger(plan.version) && plan.version > 0 && plan.directionId === result.selectedDirectionId
+    if (planMatchesTask && method === 'task.select_direction' && result.state === 'direction_selected') {
+      return '制作方向已选择，制作方案已准备。请核对方案后确认；本次选择不会生成内容。'
+    }
+    if (planMatchesTask && method === 'task.plan.confirm' && result.state === 'plan_confirmed'
+      && typeof plan.confirmedAt === 'string' && Number.isFinite(Date.parse(plan.confirmedAt))
+      && typeof plan.confirmedBy === 'string' && plan.confirmedBy.trim()) {
+      return '制作方案已确认。接下来可按当前任务继续生成；生成仍须通过权限、模型与费用门禁，本次确认不代表内容已生成、审核或发布。'
+    }
+  }
   if (method === 'task.resume' && knownSuccessfulState && result.task?.state === 'ready_for_direction'
     && typeof result.task.id === 'string' && Number.isInteger(result.task.version) && result.task.version > 0) {
     return '任务已恢复，下一步可准备并选择制作方向。方向方案来自固定模板，不代表已调用模型生成内容；确认制作方案后仍须通过生成、费用与审核门禁。'
