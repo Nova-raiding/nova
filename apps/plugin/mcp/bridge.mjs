@@ -1309,7 +1309,10 @@ const contentDiffUiHtml = () => taskDecisionUiHtml('diff')
 const publishConfirmUiHtml = () => taskDecisionUiHtml('publish')
 
 function imageCandidateChoiceUiHtml() {
-  return rawImageCandidateChoiceUiHtml().replaceAll('无需找管理员', '无需人工干预')
+  return rawImageCandidateChoiceUiHtml()
+    .replace("if(currentState==='queued'||currentState==='processing'){", "if(currentState==='queued'||currentState==='processing'||currentState==='unknown'&&payload.poll_request){")
+    .replace("titleNode.textContent='图片正在准备';", "titleNode.textContent=currentState==='unknown'?'图片结果正在确认':'图片正在准备';")
+    .replaceAll('无需找管理员', '无需人工干预')
 }
 
 function rawImageCandidateChoiceUiHtml() {
@@ -3052,7 +3055,7 @@ function toolResultUiMetadata(name, result, selectionTickets = []) {
   const selectionCandidates = Array.isArray(result?.selection_request?.candidates) ? result.selection_request.candidates : []
   const imageCandidateTool = name === 'catalog.image.generate' || name === 'catalog.image.get' || (name === 'asset.upload' && Boolean(result?.candidate_state))
   const pendingChoice = imageCandidateTool
-    && ['queued', 'processing'].includes(String(candidateState?.state ?? '').toLowerCase())
+    && ['queued', 'processing', 'unknown'].includes(String(candidateState?.state ?? '').toLowerCase())
     && typeof result?.poll_request?.job_id === 'string'
     && result.poll_request.job_id.trim().length > 0
   const readyChoice = imageCandidateTool
@@ -3688,7 +3691,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     ...(candidateLifecycle === 'failed' && selectionJobId ? {
       recovery_request: { job_id: selectionJobId, action: nextAction.type },
     } : {}),
-    ...((candidateLifecycle === 'queued' || candidateLifecycle === 'processing') && selectionJobId ? {
+    ...((candidateLifecycle === 'queued' || candidateLifecycle === 'processing' || (candidateLifecycle === 'unknown' && !pollBudgetExceeded)) && selectionJobId ? {
       poll_request: { job_id: selectionJobId, max_attempts: 4, initial_delay_ms: 750, max_delay_ms: 4000 },
     } : {}),
     ...(pollBudgetExceeded && selectionJobId ? { poll_budget: { exhausted: true, max_wait_seconds: 300, job_id: selectionJobId } } : {}),

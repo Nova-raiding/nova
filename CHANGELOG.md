@@ -6,6 +6,11 @@
 
 
 
+
+## 0.2.8 - 2026-10-06
+
+- Release 0.2.8.
+
 ## 0.2.7 - 2026-10-05
 
 - Preserve the audited historical local shell plugin entry during transactional upgrade; reject modified shell content and retain previous files/configuration.
