@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Alert, Button, Card, Form, Input, message, Modal, Space, Table, Tag, Typography } from "antd";
+import JSZip from "jszip";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { platformLabels, platforms, type Platform, type Rule } from "../../types/ops";
 
@@ -15,25 +16,48 @@ const platformByMarkdownName = new Map<string, Platform>(
     [platformLabels[platform], platform] as const,
   ]),
 );
+platformByMarkdownName.set("抖店", "douyin");
 
 const approvedRuleSources: Record<Platform, { host: string; paths: readonly RegExp[] }> = {
   jd: { host: "rule.jd.com", paths: [/^\/rule\/(?:list|ruleDetail)\.action$/u] },
-  taobao: { host: "developer.alibaba.com", paths: [/^\/(?:doc|docs)\//u] },
-  tmall: { host: "www.tmall.com", paths: [/^\/wow\/seller\/act\/guize(?:\/|$)/u] },
+  taobao: { host: "developer.alibaba.com", paths: [/^\/(?:doc|docs|api\.htm|support\/announcementDetail\.htm)/u] },
+  tmall: { host: "www.tmall.com", paths: [/^\/wow\/seller\/act\/(?:guize|rule-detail)(?:\/|$)/u] },
   pinduoduo: { host: "www.yangkeduo.com", paths: [/^\/home\/(?:help|food_trade)(?:\/|$)/u] },
   xiaohongshu: { host: "school.xiaohongshu.com", paths: [/^\/(?:rule|helper|en\/open\/product)(?:\/|$)/u] },
   douyin: { host: "school.jinritemai.com", paths: [/^\/doudian\/(?:web|wap)\/(?:home|rules|article)(?:\/|$)/u] },
 };
 
+const additionalApprovedRuleSources: Partial<Record<Platform, readonly { host: string; paths: readonly RegExp[] }[]>> = {
+  jd: [
+    { host: "helpcenter.jd.com", paths: [/^\/vender\/issue\//u] },
+    { host: "media.shop.jd.com", paths: [/^\/app\/html\/(?:list|upload)\.html$/u] },
+  ],
+  taobao: [{ host: "rulechannel.taobao.com", paths: [/^\/$/u] }],
+  tmall: [{ host: "developer.alibaba.com", paths: [/^\/(?:doc|docs|api\.htm|support\/announcementDetail\.htm)/u] }],
+  pinduoduo: [{ host: "mms.pinduoduo.com", paths: [/^\/other\/rule$/u] }],
+  douyin: [
+    { host: "open.douyin.com", paths: [/^\/platform\/resource\/docs\//u] },
+    { host: "op.jinritemai.com", paths: [/^\/$/u] },
+  ],
+};
+
 function isApprovedRuleSourceReference(reference: string, platform?: Platform) {
-  try {
-    const url = new URL(reference);
-    if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return false;
-    return (platform ? [platform] : platforms).some(id => {
-      const policy = approvedRuleSources[id];
-      return url.hostname === policy.host && policy.paths.some(pattern => pattern.test(url.pathname));
-    });
-  } catch { return false; }
+  const references = [...reference.matchAll(/https:\/\/[^\s)\]，；]+/gu)]
+    .map(match => match[0]?.replace(/[.,。；，]+$/u, ""))
+    .filter((url): url is string => Boolean(url));
+  if (!references.length) return false;
+  return references.every(referenceUrl => {
+    try {
+      const url = new URL(referenceUrl);
+      if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return false;
+      return (platform ? [platform] : platforms).some(id => {
+        const policy = approvedRuleSources[id];
+        const matches = (candidate: { host: string; paths: readonly RegExp[] }) =>
+          url.hostname === candidate.host && candidate.paths.some(pattern => pattern.test(url.pathname));
+        return matches(policy) || (additionalApprovedRuleSources[id] ?? []).some(matches);
+      });
+    } catch { return false; }
+  });
 }
 
 function resolveMarkdownPlatform(value: string, cardId: string): Platform {
@@ -86,8 +110,8 @@ export function hasRuleDraftChanges(values: Readonly<Record<string, unknown>>) {
 }
 
 export function parseMarkdownDraftInputs(markdown: string, fileName: string) {
-  const cards = [...markdown.matchAll(/^##\s+(PDD-[A-Z0-9-]+)｜(.+)$/gmu)];
-  if (!cards.length) throw new Error("未识别到规则卡片；请使用 ## PDD-xxx｜规则名称 格式");
+  const cards = [...markdown.matchAll(/^##\s+([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)｜(.+)$/gmu)];
+  if (!cards.length) throw new Error("未识别到规则卡片；请使用 ## <平台前缀>-xxx｜规则名称 格式");
   const version = markdown.match(/知识库\s+v([\w.-]+)/u)?.[1] ?? "imported";
   return cards.map((card, index) => {
     const cardId = card[1] ?? `PDD-${index + 1}`;
@@ -129,6 +153,34 @@ export async function uploadMarkdownDrafts(
   return { succeeded, failedCard: undefined, reason: undefined };
 }
 
+const platformRuleMarkdownNames = new Set([
+  "京东平台规则.md",
+  "淘宝平台规则.md",
+  "天猫平台规则.md",
+  "抖店平台规则.md",
+  "拼多多平台规则.md",
+  "小红书平台规则.md",
+]);
+
+function isPlatformRuleMarkdownEntry(name: string) {
+  const normalized = name.replaceAll("\\", "/");
+  const fileName = normalized.split("/").at(-1) ?? normalized;
+  return normalized.includes("/01_上传文件/") && platformRuleMarkdownNames.has(fileName);
+}
+
+export async function readRuleMarkdownDocuments(file: Pick<File, "name" | "text" | "arrayBuffer">) {
+  if (!/\.zip$/iu.test(file.name)) return [{ name: file.name, text: await file.text() }];
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const entries = Object.values(zip.files)
+    .filter(entry => !entry.dir && isPlatformRuleMarkdownEntry(entry.name))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  if (!entries.length) throw new Error("ZIP 内未找到平台规则 Markdown；请使用各平台包的 01_上传文件/平台规则.md");
+  return Promise.all(entries.map(async entry => ({
+    name: `${file.name}:${entry.name}`,
+    text: await entry.async("text"),
+  })));
+}
+
 export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSectionProps) {
   const { canRules, ruleMutationKey, rules, updateRuleStatus, publishRuleDraft } =
     model;
@@ -159,19 +211,18 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
     activationForm.resetFields();
   };
 
-  const importMarkdownDrafts = async (file: File) => {
+  const importMarkdownDocuments = async (documents: Array<{ name: string; text: string }>) => {
     if (!canRules || markdownImporting) return;
     setMarkdownImporting(true);
     setMarkdownImportResult(undefined);
     try {
-      const markdown = await file.text();
       // Parse and validate the complete document before the first write. A
       // malformed later card must not leave an earlier card persisted.
-      const drafts = parseMarkdownDraftInputs(markdown, file.name);
+      const drafts = documents.flatMap(document => parseMarkdownDraftInputs(document.text, document.name));
       setMarkdownImportResult(await uploadMarkdownDrafts(drafts, publishRuleDraft));
     } catch (error) {
       const reason = error instanceof Error ? error.message : "平台规则文件导入失败";
-      setMarkdownImportResult({ succeeded: 0, failedCard: reason.match(/^(PDD-[A-Z0-9-]+)/u)?.[1], reason });
+      setMarkdownImportResult({ succeeded: 0, failedCard: reason.match(/^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)/u)?.[1], reason });
       message.error(reason);
     } finally {
       setMarkdownImporting(false);
@@ -179,9 +230,20 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
     }
   };
 
+  const importMarkdownFile = async (file: File) => {
+    try {
+      await importMarkdownDocuments(await readRuleMarkdownDocuments(file));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "平台规则文件导入失败";
+      setMarkdownImportResult({ succeeded: 0, failedCard: reason.match(/^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)/u)?.[1], reason });
+      message.error(reason);
+      if (markdownInputRef.current) markdownInputRef.current.value = "";
+    }
+  };
+
   if (platformOnly) return <Card title="提交公共平台规则草稿">
     <Alert type="info" showIcon title="人工资料须独立审核" description="上传 Markdown 只创建公共草稿。规则管理员核对官方依据并完成独立审批后，规则才可能生效。" style={{ marginBottom: 16 }} />
-    <input ref={markdownInputRef} type="file" accept=".md,text/markdown" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importMarkdownDrafts(file); }} />
+    <input ref={markdownInputRef} type="file" accept=".md,.zip,text/markdown,application/zip" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importMarkdownFile(file); }} />
     <Button disabled={!canRules || markdownImporting} loading={markdownImporting} onClick={() => markdownInputRef.current?.click()}>上传平台规则 Markdown</Button>
     {markdownImportResult && <Alert style={{ marginTop: 16 }} type={markdownImportResult.failedCard ? "error" : "success"} role="status" title={markdownImportResult.failedCard ? "Markdown 导入未完成" : "Markdown 草稿导入完成"} description={`成功 ${markdownImportResult.succeeded} 张${markdownImportResult.failedCard ? `；失败卡片 ${markdownImportResult.failedCard}：${markdownImportResult.reason}` : "；没有失败卡片"}`} />}
   </Card>;
@@ -191,7 +253,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
       title="规则中心"
       extra={
         <Space>
-          <input ref={markdownInputRef} type="file" accept=".md,text/markdown" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importMarkdownDrafts(file); }} />
+          <input ref={markdownInputRef} type="file" accept=".md,.zip,text/markdown,application/zip" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importMarkdownFile(file); }} />
           <Button disabled={!canRules || markdownImporting} loading={markdownImporting} onClick={() => markdownInputRef.current?.click()}>上传平台规则 Markdown</Button>
           <Tag color={unverifiedRules.length ? "orange" : rules.length ? "green" : "orange"}>
             {unverifiedRules.length ? `${unverifiedRules.length} 条未验证（不展示）` : `${verifiedRules.length} 条可信规则`}

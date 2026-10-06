@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import JSZip from "jszip";
 import { renderToStaticMarkup } from "react-dom/server";
-import { RuleCenterSection, canActivateOfficialPlatformRule, isTrustedPlatformRule, parseMarkdownDraftInputs, ruleTrustLabel, uploadMarkdownDrafts } from "./RuleCenterSection";
+import { RuleCenterSection, canActivateOfficialPlatformRule, isTrustedPlatformRule, parseMarkdownDraftInputs, readRuleMarkdownDocuments, ruleTrustLabel, uploadMarkdownDrafts } from "./RuleCenterSection";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { Platform, Rule } from "../../types/ops";
 
@@ -90,6 +91,51 @@ describe("trusted platform rule boundary", () => {
       expect(parseMarkdownDraftInputs(markdownCard("001", id), "rules.md")[0]?.targetId).toBe(id);
       expect(parseMarkdownDraftInputs(markdownCard("001", label), "rules.md")[0]?.targetId).toBe(id);
     }
+  });
+
+  it("accepts the card prefixes and official source hosts used by the supplied platform rule packages", () => {
+    const cases: Array<[string, string, string]> = [
+      ["JD-GEN-001", "京东", "https://helpcenter.jd.com/vender/issue/1000-44348.html"],
+      ["TB-GEN-001", "淘宝", "https://developer.alibaba.com/api.htm?apiId=147"],
+      ["TM-GEN-001", "天猫", "https://developer.alibaba.com/docs/doc.htm?articleId=108953&docType=1&treeId=796"],
+      ["PDD-GEN-001", "拼多多", "https://mms.pinduoduo.com/other/rule?listId=3&id=75"],
+      ["DY-GEN-001", "抖店", "https://open.douyin.com/platform/resource/docs/ability/content-management/douyin-publish-solution"],
+    ];
+    for (const [cardId, platform, source] of cases) {
+      const markdown = [
+        "# Store Nova｜平台规则知识库 v0.1",
+        `## ${cardId}｜规则卡片`,
+        `- 平台：${platform}`,
+        `- 官方依据：${source}`,
+        "规则内容",
+      ].join("\n");
+      expect(parseMarkdownDraftInputs(markdown, `${cardId}.md`)[0]).toMatchObject({
+        targetId: { 京东: "jd", 淘宝: "taobao", 天猫: "tmall", 拼多多: "pinduoduo", 抖店: "douyin" }[platform],
+        sourceReference: source,
+      });
+    }
+  });
+
+  it("extracts only platform rule Markdown files from a supplied ZIP package", async () => {
+    const zip = new JSZip();
+    zip.file("StoreNova_京东平台规则_v0.1/01_上传文件/京东平台规则.md", [
+      "# Store Nova｜京东平台规则知识库 v0.1",
+      "## JD-GEN-001｜规则卡片",
+      "- 平台：京东",
+      "- 官方依据：https://rule.jd.com/rule/ruleDetail.action?ruleId=1",
+      "规则内容",
+    ].join("\n"));
+    zip.file("StoreNova_京东平台规则_v0.1/02_查阅资料/待核实参数.md", "## PENDING-001｜不能上传");
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    const file = {
+      name: "StoreNova_京东平台规则_v0.1.zip",
+      text: async () => "",
+      arrayBuffer: async () => bytes.buffer,
+    } as unknown as File;
+    await expect(readRuleMarkdownDocuments(file)).resolves.toEqual([{
+      name: "StoreNova_京东平台规则_v0.1.zip:StoreNova_京东平台规则_v0.1/01_上传文件/京东平台规则.md",
+      text: expect.stringContaining("JD-GEN-001"),
+    }]);
   });
 
   it("rejects an unknown platform in a later card before any draft write", () => {
