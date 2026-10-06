@@ -33,7 +33,11 @@ export function productionReadinessDiagnostics(source: NodeJS.ProcessEnv = proce
   const { requiredModelCostEvidenceByModality, productionAuthorizationReadiness, productionIdentityReadiness, productionObjectStorageReadiness, productionAssetScannerReadiness, productionPaymentReadiness, productionRuleSyncReadiness, productionReleaseMetadataReadiness } = dependencies
   // CONNECTOR_FIXTURE_MODE is acceptable for local/test acceptance only. It
   // must never make a production process ready or eligible for traffic.
-  const required = source.NODE_ENV === 'production'
+  // The 101 Demo runs the production-shaped container image with an explicit
+  // staging/demo marker. Keep each capability fail-closed, but do not make the
+  // whole demo unhealthy because formal production relay/evidence gates are
+  // intentionally absent. Unmarked production remains strict.
+  const required = source.NODE_ENV === 'production' && source.DEMO_RUNTIME_MODE !== 'true'
   if (!required) return { required: false, ready: true, gates: {} as Record<string, ProductionReadinessGate> }
 
   const relayResults = {

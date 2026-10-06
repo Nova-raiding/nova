@@ -328,7 +328,7 @@ function render({ identity, images, eightImageSet, imageMetadata, project, sourc
         environment: {
           RELEASE_ID: identity.release_id, RELEASE_GIT_SHA: identity.git_sha,
           RELEASE_MANIFEST_SHA256: manifestSha, RELEASE_IMAGE_SET_DIGEST: imageSetDigest,
-          NODE_ENV: runtimeEnvironment, DEPLOYMENT_PROFILE: 'ecs', PORT: '8787', PUBLIC_BASE_URL: 'https://candidate.yxsona.com',
+          NODE_ENV: runtimeEnvironment, DEMO_RUNTIME_MODE: runtimeEnvironment === 'staging' ? 'true' : 'false', DEPLOYMENT_PROFILE: 'ecs', PORT: '8787', PUBLIC_BASE_URL: 'https://candidate.yxsona.com',
           RUN_MIGRATIONS_ON_STARTUP: 'false', CONNECTOR_FIXTURE_MODE: 'false', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
           MCP_AUTHZ_MODE: 'enforce', MCP_AUTHZ_ENFORCE_DOMAINS: '',
           MCP_INTEGRATION_MODE: 'local_stdio', PERSISTENCE_MODE: 'postgres', OPS_AUTH_MODE: 'password',
