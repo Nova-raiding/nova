@@ -75,6 +75,7 @@ function playwrightInvocation(source: string): string {
 }
 
 const MERCHANT_SPECS = [
+  'demo/merchant-studio/image-visual-qa.spec.js',
   'demo/merchant-studio/overview-finance.browser.spec.js',
   spec('merchant-all.spec.js'),
   spec('merchant-brand-scopes.spec.js'),
@@ -179,7 +180,7 @@ describe('browser gate entrypoints', () => {
     expect(command).not.toContain('--config')
   })
 
-  it('delegates test:browser:merchant to a runner that names exactly six spec files', () => {
+  it('delegates test:browser:merchant to a runner that names exactly seven spec files', () => {
     const command = script('test:browser:merchant')
     expect(command).toContain('scripts/merchant-browser-candidate.ts')
     expect(command).not.toContain('--config')
