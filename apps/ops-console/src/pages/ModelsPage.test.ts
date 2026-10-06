@@ -54,6 +54,8 @@ describe("models page sections", () => {
     expect(markup).toContain("模型服务页已合并");
     expect(markup).toContain("Token 成本倍率");
     expect(markup).toContain("Token 计费倍率");
+    expect(markup).toContain("请重试或检查运营 API 与数据库迁移状态");
+    expect(markup).toContain("重 试");
     expect(markup).toContain("MODEL BILLING");
     expect(markup).not.toContain("模型服务关键指标");
   });

@@ -86,9 +86,14 @@ export function ModelMarkupPanel({ model }: ModelMarkupPanelProps) {
         </Button>
       </Space>
       {!modelMarkupLoading && !modelMarkup && !modelMarkupError ? (
-        <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-          尚未读取到全局倍率配置，当前不能编辑。请点击重试或检查运营 API 与数据库迁移状态。
-        </Typography.Paragraph>
+        <Space align="center" wrap style={{ marginTop: 12 }}>
+          <Typography.Text type="secondary">
+            尚未读取到全局倍率配置，当前不能编辑。请重试或检查运营 API 与数据库迁移状态。
+          </Typography.Text>
+          <Button size="small" onClick={() => void model.loadModelMarkup()}>
+            重试
+          </Button>
+        </Space>
       ) : null}
       {modelMarkup && !canModelMarkupUpdate ? (
         <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
