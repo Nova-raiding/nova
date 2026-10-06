@@ -77,6 +77,7 @@
 - Demo 101 已从该提交仅更新 API 双副本；迁移 268 已应用，PostgreSQL 运行角色校验通过，镜像 digest 为 `sha256:d67d9d659cc4d6523dda68d825a4825a583b50159d0f2711194c0eba91c89f86`，双副本 healthy。
 - 重新从已安装本地 stdio bridge 调用 `catalog.search(scope=workspace, query=贵人鸟)`：成功读取 7 个商品、1 个 SKU；商品数据仍明确标记未绑定候选、手工导入或规则数据不可用，不把它们冒充为平台实时授权数据。
 - 已通过的 typecheck、迁移兼容性和 bridge 安装探针未重复执行。规则激活、品牌档案、真实五模态 provider 回执和 ChatGPT 原生桌面 UI 仍未通过，继续保持阻断。
+- 并行提交 `88457a96` 的 Demo gateway 组件已单独构建并部署；`POST /oauth/register` 实测返回 401 `remote OAuth is disabled`，符合本地 stdio-only 约束。API、API replica、Ops UI 和 gateway 均 healthy，两个公网 healthz 仍为 200。
 
 ## 健康评分
 
