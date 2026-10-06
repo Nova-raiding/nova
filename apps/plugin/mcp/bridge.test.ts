@@ -47,6 +47,7 @@ const {
 }
 
 const BRIDGE_PATH = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
+const BRIDGE_SHELL_PATH = fileURLToPath(new URL('./bridge.sh', import.meta.url))
 const TEST_ARTIFACT_DIR = await mkdtemp(join(tmpdir(), 'merchant-bridge-artifacts-'))
 // The full release suite can run with production deployment variables in the
 // parent process. Bridge subprocess tests must start from an explicit local
@@ -206,6 +207,10 @@ async function qaPackageBrokerBridge(baseUrl: string) {
 }
 
 describe('Codex stdio MCP bridge', () => {
+  it('keeps the shell entrypoint executable for direct ChatGPT stdio launches', async () => {
+    expect((await stat(BRIDGE_SHELL_PATH)).mode & 0o111).toBe(0o111)
+  })
+
   it('keeps tools/list snapshots complete and ordered under a high-load discovery scan', async () => {
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),

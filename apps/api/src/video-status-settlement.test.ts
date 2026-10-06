@@ -32,6 +32,23 @@ describe('video.get settlement delivery boundary', () => {
     await expect(handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)).rejects.toMatchObject({ code: 'VIDEO_PROVIDER_SCOPE_DENIED' })
     expect(f.getStatus).not.toHaveBeenCalled()
   })
+  it('records a definitive provider rejection as a terminal status event', async () => {
+    const f = runtime()
+    f.getStatus.mockRejectedValue(Object.assign(new Error('provider rejected'), {
+      code: 'MODEL_PROVIDER_REQUEST_FAILED',
+      details: { provider_outcome: 'failed', provider_status: 422, provider_request_id: 'provider-rejected-1' },
+    }))
+    ;(f.dependencies as any).modelSettlementDomainError = () => new DomainError('MODEL_PROVIDER_REQUEST_FAILED', 'provider rejected', 502)
+    await expect(handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)).rejects.toMatchObject({ code: 'MODEL_PROVIDER_REQUEST_FAILED' })
+    expect(f.archive).not.toHaveBeenCalled()
+    expect(f.persistEvent).toHaveBeenCalledWith('workspace-a', 'video_job-a', 'multimodal.video_status_observed', 1, expect.objectContaining({
+      provider_job_id: 'job-a',
+      error_code: 'MODEL_PROVIDER_REQUEST_FAILED',
+      provider_status: 422,
+      provider_request_id: 'provider-rejected-1',
+      rendering: { status: 'failed', providerJobId: 'job-a', settlementStatus: 'settled' },
+    }))
+  })
   it('archives only after status confirms settlement', async () => {
     const f = runtime(); f.getStatus.mockResolvedValue({ status: 'completed', providerJobId: 'job-a', settlementStatus: 'settled', videoUrl: undefined })
     expect(await handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)).toMatchObject({ asset_id: 'workspace-a-asset', status: 'completed' })

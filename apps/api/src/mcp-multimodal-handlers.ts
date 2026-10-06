@@ -389,6 +389,24 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
         }
       } catch (error) {
         if (error instanceof DomainError) throw error
+        const providerError = error as { code?: unknown; details?: unknown }
+        const details = providerError.details && typeof providerError.details === 'object' && !Array.isArray(providerError.details)
+          ? providerError.details as Record<string, unknown>
+          : {}
+        // Definitive provider rejection is terminal provider state. Persist it
+        // before mapping the error so Ops can show the failure and its safe
+        // retry instruction instead of leaving the job queued forever.
+        if (providerError.code === 'MODEL_PROVIDER_REQUEST_FAILED' && details.provider_outcome === 'failed') {
+          const eventSequence = nextEventSequence ? await nextEventSequence(workspaceId, `video_${providerJobId}`) : 1
+          await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', eventSequence, {
+            provider_job_id: providerJobId,
+            rendering: { status: 'failed', providerJobId, settlementStatus: 'settled' },
+            error_code: 'MODEL_PROVIDER_REQUEST_FAILED',
+            ...(details.provider_status !== undefined ? { provider_status: details.provider_status } : {}),
+            ...(details.provider_request_id !== undefined ? { provider_request_id: details.provider_request_id } : {}),
+            next_action: 'provider 已明确拒绝该视频任务；保留失败证据，请修正请求后使用新的幂等键重试',
+          })
+        }
         const providerFailure = modelSettlementDomainError(error)
         if (providerFailure) throw providerFailure
         throw new DomainError('VIDEO_PROVIDER_STATUS_FAILED', error instanceof Error ? error.message : '视频 provider 状态查询失败', 503)

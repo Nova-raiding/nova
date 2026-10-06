@@ -24,7 +24,8 @@ export function FinancePage({ model }: FinancePageProps) {
   const canReconcileCommercialRefund = isPlatformWorkbench && model.authorization.can("commercial.payment.reconcile");
   const canOperateCrossWorkspaceCommercial = isPlatformWorkbench &&
     model.authorization.can("commercial.order.read") && model.authorization.can("commercial.catalog.read");
-  const commercial = useCommercialOperations(model.authorization, undefined, !isPlatformWorkbench || canOperateCrossWorkspaceCommercial, canReconcileCommercialRefund);
+  const allowedWorkspaceIds = model.workspaceRows.map(row => row.workspaceId);
+  const commercial = useCommercialOperations(model.authorization, undefined, !isPlatformWorkbench || canOperateCrossWorkspaceCommercial, canReconcileCommercialRefund, allowedWorkspaceIds);
   const workspaceDraft = commercial.targetWorkspaceId;
   const workspaceOptions = model.workspaceRows.map(row => ({ value: row.workspaceId, label: `${row.enterpriseName || row.workspaceId} · ${row.workspaceId}` }));
   if (workspaceDraft && !workspaceOptions.some(option => option.value === workspaceDraft)) {

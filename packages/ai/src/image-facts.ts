@@ -5,7 +5,7 @@ import { assertProviderResponseAccepted, providerIdempotencyKey, resolveProvider
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ImageFactsExtractor {
-  extract(input: { name: string; mimeType: string; body: Uint8Array; usageContext?: RelayUsageContext }): Promise<Record<string, unknown>>
+  extract(input: { name: string; mimeType: string; body: Uint8Array; usageContext?: RelayUsageContext; signal?: AbortSignal }): Promise<Record<string, unknown>>
 }
 
 export interface ImageFactsExtractorOptions {
@@ -69,9 +69,12 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
     this.fetchImpl = options.fetch ?? fetch
   }
 
-  async extract(input: { name: string; mimeType: string; body: Uint8Array; usageContext?: RelayUsageContext }): Promise<Record<string, unknown>> {
+  async extract(input: { name: string; mimeType: string; body: Uint8Array; usageContext?: RelayUsageContext; signal?: AbortSignal }): Promise<Record<string, unknown>> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 90_000)
+    const abort = () => controller.abort()
+    if (input.signal?.aborted) controller.abort()
+    else input.signal?.addEventListener('abort', abort, { once: true })
     try {
       const dataUrl = `data:${input.mimeType};base64,${Buffer.from(input.body).toString('base64')}`
       const requestBody = JSON.stringify({
@@ -116,7 +119,10 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
       catch (error) { throwProviderOutcomeUnknown(providerKey, 'OCR provider response parsing', error) }
       await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'ocr', model: this.options.model, context: { ...input.usageContext, providerAttemptId: providerKey } })
       return normalizeFacts(readContent(payload))
-    } finally { clearTimeout(timeout) }
+    } finally {
+      clearTimeout(timeout)
+      input.signal?.removeEventListener('abort', abort)
+    }
   }
 }
 

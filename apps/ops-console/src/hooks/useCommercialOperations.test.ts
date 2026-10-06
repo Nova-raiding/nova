@@ -29,6 +29,13 @@ describe("commercial operations deep links", () => {
     expect(readCommercialTargetWorkspace("?workspace=ws_target&view=ledger", authorization)).toBe("ws_target");
   });
 
+  it("fails closed when a platform commercial deep-link names an unknown workspace", () => {
+    const authorization = { scope: { kind: "platform" } } as AuthorizationProjection;
+    expect(readCommercialTargetWorkspace("?workspace=ws_unknown&view=ledger", authorization, [])).toBe("");
+    expect(readCommercialTargetWorkspace("?workspace=ws_unknown&view=ledger", authorization, ["ws_known"])).toBe("");
+    expect(readCommercialTargetWorkspace("?workspace=ws_known&view=ledger", authorization, ["ws_known"])).toBe("ws_known");
+  });
+
   it("applies a target workspace without dropping view filters", () => {
     expect(commercialTargetWorkspaceUrl({ pathname: "/ops/finance", search: "?view=ledger&status=paid", hash: "#row" }, " ws_target "))
       .toBe("/ops/finance?view=ledger&status=paid&workspace=ws_target#row");

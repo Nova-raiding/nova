@@ -13,6 +13,23 @@ describe('detail page SOP navigation', () => {
     expect(steps[0]).toMatchObject({ disposition: 'ready', evidenceStatus: 'verified', statusLabel: '可展示 · 证据已验证' })
     expect(steps[1]).toMatchObject({ disposition: 'pending', evidenceStatus: 'pending', statusLabel: '待生成' })
   })
+  it('matches service semantic module keys to the cookware buyer-question rhythm', () => {
+    const steps = resolveDetailSopSteps([
+      verifiedModule('hero'),
+      verifiedModule('details_craft'),
+      verifiedModule('selling_points'),
+      verifiedModule('specifications'),
+      verifiedModule('usage_scenarios'),
+      verifiedModule('cta'),
+    ], '炒锅')
+
+    expect(steps.map(step => step.disposition)).toEqual([
+      'ready', 'ready', 'ready', 'pending', 'pending', 'ready', 'ready', 'ready',
+    ])
+    expect(steps.map(step => step.evidenceStatus)).toEqual([
+      'verified', 'verified', 'verified', 'pending', 'pending', 'verified', 'verified', 'verified',
+    ])
+  })
   it('keeps blocked module recovery visible to the desktop reviewer', () => {
     const module = { ...verifiedModule('result'), contentKind: 'pending', body: '[待确认] 缺少烹饪结果' }
     const result = resolveDetailSopSteps([module], '锅具')[2]

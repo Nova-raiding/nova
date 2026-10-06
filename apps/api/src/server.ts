@@ -3035,7 +3035,7 @@ async function parseAssetFacts(input: { name: string; mimeType: string; body: Ui
       throw ledgerError
     }
     try {
-      return { facts: await imageFactsExtractor.extract({ name: input.name, mimeType: input.mimeType, body: input.body, usageContext: { workspaceId, actionId: actionKey, runKey } }), source: 'model_ocr' }
+      return { facts: await imageFactsExtractor.extract({ name: input.name, mimeType: input.mimeType, body: input.body, usageContext: { workspaceId, actionId: actionKey, runKey }, signal: input.signal }), source: 'model_ocr' }
     } catch (providerError) {
       const preDispatch = (providerError as { ocrPreDispatch?: boolean })?.ocrPreDispatch === true
       const definitelyFailed = providerError instanceof ProviderRequestFailedError && providerError.providerOutcome === 'failed'
@@ -4342,8 +4342,10 @@ export function marketingVideoProviderJobsFromEvents(events: OutboxEvent[], limi
     const current = jobs.get(providerJobId)
     if (!current) continue
     const rendering = recordValue(event.payload.rendering)
-    const archiveState = rendering?.archiveState === 'archived' || rendering?.archiveState === 'quarantined' ? rendering.archiveState : 'failed'
-    const providerStatus = rendering?.status === 'completed' ? 'completed' : 'provider_started'
+    const archiveState = rendering?.archiveState === 'archived' || rendering?.archiveState === 'quarantined'
+      ? rendering.archiveState
+      : rendering?.status === 'failed' ? 'not_started' : 'failed'
+    const providerStatus = rendering?.status === 'completed' ? 'completed' : rendering?.status === 'failed' ? 'failed' : 'provider_started'
     const errorCode = typeof event.payload.error_code === 'string' ? event.payload.error_code : null
     jobs.set(providerJobId, {
       ...current,
@@ -4353,7 +4355,11 @@ export function marketingVideoProviderJobsFromEvents(events: OutboxEvent[], limi
       assetId: typeof rendering?.assetId === 'string' ? rendering.assetId : null,
       errorCode,
       updatedAt: event.createdAt,
-      nextAction: archiveState === 'archived'
+      nextAction: providerStatus === 'failed'
+        ? (typeof event.payload.next_action === 'string' && event.payload.next_action.trim()
+          ? event.payload.next_action
+          : 'provider 已明确拒绝该视频任务；保留失败证据，请修正请求后使用新的幂等键重试')
+        : archiveState === 'archived'
         ? '已归档，可继续按现有内容和资产门禁处理'
         : archiveState === 'quarantined'
           ? '已完成但仍在隔离区，等待安全扫描；禁止下载或发布'
@@ -10434,13 +10440,28 @@ export function evaluateStoryboardBeforeRendering(context: GenerationContext, pu
   return report
 }
 
-function parseDeliveryBundleFiles(value: unknown[]): DeliveryBundleFile[] {
+function decodeDeliveryBundleBase64(value: string, index: number): Uint8Array {
+  // Buffer.from(value, 'base64') is intentionally permissive: it silently
+  // ignores non-base64 bytes and accepts malformed padding. A verification
+  // endpoint must reject those inputs before hashing or comparing file bytes,
+  // otherwise the caller may verify bytes different from the submitted text.
+  if (!value || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(value)) {
+    throw new DomainError(ERROR_CODES.INVALID_REQUEST, `files_json[${index}].content_base64 无效`, 400)
+  }
+  const bytes = Buffer.from(value, 'base64')
+  if (bytes.toString('base64') !== value) {
+    throw new DomainError(ERROR_CODES.INVALID_REQUEST, `files_json[${index}].content_base64 无效`, 400)
+  }
+  return new Uint8Array(bytes)
+}
+
+export function parseDeliveryBundleFiles(value: unknown[]): DeliveryBundleFile[] {
   return value.map((item, index) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, `files_json[${index}] 无效`, 400)
     const file = item as Record<string, unknown>
     const path = typeof file.path === 'string' ? file.path : ''
     const mimeType = typeof file.mimeType === 'string' ? file.mimeType : typeof file.mime_type === 'string' ? file.mime_type : ''
-    const content = typeof file.content === 'string' ? file.content : typeof file.content_base64 === 'string' ? new Uint8Array(Buffer.from(file.content_base64, 'base64')) : undefined
+    const content = typeof file.content === 'string' ? file.content : typeof file.content_base64 === 'string' ? decodeDeliveryBundleBase64(file.content_base64, index) : undefined
     if (!path || !mimeType || content === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, `files_json[${index}] 缺少 path、mimeType 或 content/content_base64`, 400)
     return { path, mimeType, content }
   })

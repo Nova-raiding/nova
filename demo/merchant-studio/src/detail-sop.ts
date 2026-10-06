@@ -26,6 +26,21 @@ type SopModule = { key?: unknown; title?: unknown; contentKind?: unknown; body?:
 
 const cookwareCategoryPattern = /(?:锅具|炒锅|煎锅|汤锅|奶锅|蒸锅|炖锅|cookware|frying\s*pan|saucepan|stockpot)/iu
 
+// The service keeps semantic content keys (for example `details_craft` and
+// `usage_scenarios`), while the merchant-facing cookware rhythm uses buyer
+// questions. Keep the rhythm stable without making a verified service module
+// look like it is still missing.
+const cookwareModuleKeys: Readonly<Record<string, readonly string[]>> = {
+  hero: ['hero'],
+  material: ['material', 'materials', 'details_craft'],
+  result: ['function', 'functions', 'result', 'results', 'solution', 'selling_points'],
+  experience: ['experience', 'handling', 'hand_feel', 'weight'],
+  compatibility: ['compatibility', 'cooktop_compatibility', 'stove_compatibility'],
+  specification: ['spec', 'specs', 'specification', 'specifications', 'size_guide', 'sku'],
+  scene: ['scene', 'scenes', 'scenario', 'scenarios', 'usage_scenarios'],
+  summary: ['summary', 'confirmation', 'brand', 'package', 'after_sales', 'cta'],
+}
+
 export function resolveDetailSopSteps(modules: readonly SopModule[] | undefined, category?: string): DetailSopStep[] {
   // The fixed eight buyer questions describe cookware. For other categories,
   // show only modules the current content version actually contains; a missing
@@ -38,7 +53,10 @@ export function resolveDetailSopSteps(modules: readonly SopModule[] | undefined,
         return { key, label: typeof module.title === 'string' && module.title.trim() ? module.title.trim() : key, question: presentation.contract?.buyerQuestion ?? '买家问题待补录' }
       })
   return steps.map((step, index) => {
-    const module = modules?.find(candidate => candidate.key === step.key)
+    const aliases = category && cookwareCategoryPattern.test(category.normalize('NFKC').trim())
+      ? (cookwareModuleKeys[step.key] ?? [step.key])
+      : [step.key]
+    const module = modules?.find(candidate => typeof candidate.key === 'string' && aliases.includes(candidate.key.trim().toLocaleLowerCase('en-US')))
     const presentation = module ? moduleDecisionPresentation(module) : null
     return { ...step, position: index + 1, disposition: presentation?.disposition ?? 'pending', evidenceStatus: presentation?.evidenceStatus ?? 'pending', statusLabel: presentation?.label ?? '待生成', statusDetail: presentation?.detail ?? '当前内容版本尚未提供这一屏的决策合同。' }
   })

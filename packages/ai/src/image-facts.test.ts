@@ -45,4 +45,24 @@ describe('platform-relay image facts extraction', () => {
     })
     await expect(extractor.extract({ name: 'test.png', mimeType: 'image/png', body: Buffer.from('png') })).resolves.toMatchObject({ label: 'test' })
   })
+
+  it('propagates an asset-parse cancellation signal to the relay request', async () => {
+    const controller = new AbortController()
+    let requestSignal: AbortSignal | undefined
+    const extractor = new OpenAICompatibleImageFactsExtractor({
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'vision-v1',
+      usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async (_url, init) => {
+        requestSignal = init?.signal as AbortSignal
+        return await new Promise<Response>((_resolve, reject) => {
+          requestSignal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+        })
+      },
+    })
+    const pending = extractor.extract({ name: 'test.png', mimeType: 'image/png', body: Buffer.from('png'), signal: controller.signal })
+    await new Promise<void>(resolve => queueMicrotask(resolve))
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ providerOutcome: 'unknown' })
+    expect(requestSignal?.aborted).toBe(true)
+  })
 })

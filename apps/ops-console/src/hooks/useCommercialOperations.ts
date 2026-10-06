@@ -138,10 +138,17 @@ export function readCommercialView(search: string): CommercialView {
   return commercialViews.includes(value as CommercialView) ? value as CommercialView : "blocks";
 }
 
-export function readCommercialTargetWorkspace(search: string, authorization: AuthorizationProjection): string {
+export function readCommercialTargetWorkspace(
+  search: string,
+  authorization: AuthorizationProjection,
+  allowedWorkspaceIds?: readonly string[],
+): string {
   if (typeof search === "string") {
     const requested = new URLSearchParams(search).get("workspace")?.trim();
-    if (requested) return requested;
+    if (requested) {
+      if (allowedWorkspaceIds && !allowedWorkspaceIds.includes(requested)) return "";
+      return requested;
+    }
   }
   return authorization.scope.kind === "workspace" || authorization.scope.kind === "controlled_support"
     ? authorization.scope.id?.trim() ?? ""
@@ -205,6 +212,7 @@ export function useCommercialOperations(
   client: CommercialOperationsClient = commercialOperationsClient,
   enabled = true,
   platformRefundReadEnabled = false,
+  allowedWorkspaceIds?: readonly string[],
 ) {
   const [queryState, setQueryState] = useState<CommercialQueryState>(() => typeof window === "undefined"
     ? readCommercialQuery("") : readCommercialQuery(window.location.search));
@@ -221,7 +229,11 @@ export function useCommercialOperations(
   const refundRequestRef = useRef(0);
   const refundControllerRef = useRef<AbortController | undefined>(undefined);
   const privateSkuReadable = authorization.can(commercialCapabilities.privateSkuRead);
-  const targetWorkspaceId = readCommercialTargetWorkspace(typeof window === "undefined" ? "" : window.location.search, authorization);
+  const targetWorkspaceId = readCommercialTargetWorkspace(
+    typeof window === "undefined" ? "" : window.location.search,
+    authorization,
+    allowedWorkspaceIds,
+  );
 
   const setTargetWorkspace = useCallback((workspaceId: string) => {
     if (typeof window === "undefined") return;

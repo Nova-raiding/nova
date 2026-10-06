@@ -21,6 +21,8 @@ describe("catalogPriceYuan", () => {
 describe("finance workspace context", () => {
   it("selects a tenant from the enterprise directory and labels the active scope", () => {
     expect(financeSource).toContain("model.workspaceRows.map(row => ({ value: row.workspaceId");
+    expect(financeSource).toContain("allowedWorkspaceIds");
+    expect(financeSource).toContain("useCommercialOperations(model.authorization, undefined, !isPlatformWorkbench || canOperateCrossWorkspaceCommercial, canReconcileCommercialRefund, allowedWorkspaceIds)");
     expect(financeSource).toContain('aria-label="商业目标企业主体"');
     expect(financeSource).toContain("当前企业：${selectedWorkspace?.enterpriseName || workspaceDraft}");
     expect(financeSource).not.toContain('placeholder="例如 ws_demo"');
