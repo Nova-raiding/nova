@@ -293,7 +293,11 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     try { name = decodeURIComponent(encodedName) } catch { /* Preserve legacy raw header names. */ }
     rejectMerchantVideoUpload(name, contentType)
     const expectedSha256 = header(req, 'x-asset-sha256')?.trim()
-    const categoryHeader = header(req, 'x-asset-category')?.trim()
+    const encodedCategoryHeader = header(req, 'x-asset-category')?.trim()
+    let categoryHeader = encodedCategoryHeader
+    if (categoryHeader) {
+      try { categoryHeader = decodeURIComponent(categoryHeader) } catch { /* Preserve legacy raw category headers. */ }
+    }
     const validMaterialCategories = ['品牌资料', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类']
     if (categoryHeader && !validMaterialCategories.includes(categoryHeader)) throw new DomainError('ASSET_MATERIAL_CATEGORY_INVALID', '素材分类无效', 400)
     const bytes = await binaryBody(req, limit)

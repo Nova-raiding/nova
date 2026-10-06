@@ -1543,7 +1543,9 @@ const assetMimeType = (file: File) => file.type || ({
 } as Record<string, string>)[file.name.slice(file.name.lastIndexOf('.')).toLowerCase()] || 'application/octet-stream'
 export const uploadAsset = async (baseUrl: string, file: File, materialCategory?: AssetMetadata['materialCategory']) => requestApi<AssetMetadata>(baseUrl, '/v1/assets/upload', {
   method: 'POST',
-  headers: { 'content-type': assetMimeType(file), 'x-asset-name': encodeURIComponent(file.name), ...(materialCategory ? { 'x-asset-category': materialCategory } : {}) },
+  // HTTP headers are byte-oriented; keep Unicode filenames/categories encoded
+  // on the wire and let the API decode them before validation/persistence.
+  headers: { 'content-type': assetMimeType(file), 'x-asset-name': encodeURIComponent(file.name), ...(materialCategory ? { 'x-asset-category': encodeURIComponent(materialCategory) } : {}) },
   body: await file.arrayBuffer(),
 })
 export const updateAssetMaterialCategory = (baseUrl: string, assetId: string, materialCategory: NonNullable<AssetMetadata['materialCategory']>, expectedRevision: number) => requestApi<AssetMetadata>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/metadata`, { method: 'PUT', body: JSON.stringify({ material_category: materialCategory, expected_revision: expectedRevision }) })
