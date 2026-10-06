@@ -119,7 +119,7 @@ async function readArchivedGeneratedImages(workspaceId: string, job: import('../
   const outputs = [...(job.outputs ?? [])].filter(output => !visualRef || output.visualRef === visualRef).sort((left, right) => left.ordinal - right.ordinal)
   for (const output of outputs) {
     const asset = output.assetId ? assetForWorkspace(workspaceId, output.assetId) : undefined
-    const usability = imageGenerationCandidateUsability({ workspaceId, job, output, asset, allowUnscannedAssets: demoUnscannedAssetsEnabled() })
+    const usability = imageGenerationCandidateUsability({ workspaceId, job, output, asset, allowUnscannedAssets: demoUnscannedAssetsEnabled(), allowPendingRightsForPreview: demoUnscannedAssetsEnabled() })
     if (!usability.currentlyUsable) {
       if (usability.reason === 'asset_scan_required' || usability.reason === 'asset_missing_or_scope_mismatch') throw new DomainError('GENERATED_IMAGE_SCAN_REQUIRED', '生成候选仍在平台自动安全扫描中，完成前不会向 ChatGPT 返回图片内容', 409, { job_id: job.id, visual_ref: output.visualRef, user_action_required: false })
       throw new DomainError('GENERATED_IMAGE_INTEGRITY_FAILED', '历史生成图片归档完整性校验失败', 500, { job_id: job.id, visual_ref: output.visualRef, reason: usability.reason })
@@ -137,7 +137,7 @@ function imageJobOutputsAreClean(job: import('../../../packages/application/src/
   const outputs = job.outputs?.filter(output => !visualRef || output.visualRef === visualRef) ?? []
   return job.archiveState === 'archived' && Boolean(outputs.length) && outputs.every(output => {
     const asset = output.assetId ? service.assets.get(output.assetId) : undefined
-    return imageGenerationCandidateUsability({ workspaceId: job.workspaceId, job, output, asset, allowUnscannedAssets: demoUnscannedAssetsEnabled() }).currentlyUsable
+    return imageGenerationCandidateUsability({ workspaceId: job.workspaceId, job, output, asset, allowUnscannedAssets: demoUnscannedAssetsEnabled(), allowPendingRightsForPreview: demoUnscannedAssetsEnabled() }).currentlyUsable
   })
 }
 

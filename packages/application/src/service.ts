@@ -944,7 +944,7 @@ export function imageArchiveReceiptDigest(input: { archiveReceiptId: string; wor
   })
 }
 
-export function imageGenerationCandidateUsability(input: { workspaceId: string; job: ImageGenerationJob; output?: VisualGenerationOutput; asset?: AssetMetadata; allowUnscannedAssets?: boolean }) {
+export function imageGenerationCandidateUsability(input: { workspaceId: string; job: ImageGenerationJob; output?: VisualGenerationOutput; asset?: AssetMetadata; allowUnscannedAssets?: boolean; allowPendingRightsForPreview?: boolean }) {
   const { job, output, asset } = input
   let reason: ImageGenerationCandidateUsabilityReason | undefined
   if (job.state !== 'succeeded' || job.archiveState !== 'archived') reason = 'job_not_ready'
@@ -952,7 +952,7 @@ export function imageGenerationCandidateUsability(input: { workspaceId: string; 
   else if (output.reviewStatus === 'blocked') reason = 'candidate_blocked'
   else if (!asset || asset.workspaceId !== input.workspaceId || asset.id !== output.assetId) reason = 'asset_missing_or_scope_mismatch'
   else if (!isUsableAssetWithoutScan(asset, input.allowUnscannedAssets)) reason = 'asset_scan_required'
-  else if ((job.taskId || job.contentVersionId) && (asset.rightsStatus !== 'approved' || asset.rightsScope === 'unusable')) reason = 'asset_rights_required'
+  else if (!input.allowPendingRightsForPreview && (job.taskId || job.contentVersionId) && (asset.rightsStatus !== 'approved' || asset.rightsScope === 'unusable')) reason = 'asset_rights_required'
   else if (asset.sha256 !== output.sha256 || asset.sizeBytes !== output.sizeBytes || asset.mimeType !== output.mimeType) reason = 'asset_metadata_mismatch'
   else if (!output.archiveReceiptId || !output.archiveReceiptDigest) reason = 'archive_receipt_missing'
   else if (!/^[a-f0-9]{64}$/u.test(output.archiveReceiptDigest)) reason = 'archive_receipt_invalid'
