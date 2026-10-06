@@ -40,7 +40,12 @@ export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly OpsCapa
   members: ["workspace.member.read", "workspace.member.manage"],
   tasks: ["marketing.summary.read", "marketing.queue.read", "customer.content.read"],
   knowledge: ["customer.content.read"],
-  stores: ["platform.settings.read", "store.connection.read"],
+  // The Demo platform operator is intentionally provisioned with the
+  // customer manual-import capability while store connection read access is
+  // not part of the reduced grant. Keep the product-import entry discoverable
+  // without widening any API authorization; the page still gates each action
+  // by its own capability.
+  stores: ["platform.settings.read", "store.connection.read", "customer.manual_import"],
   rules: ["rule.read"],
   models: ["model.status.read", "model.cost.read", "model.policy.update"],
   storage: ["storage.reconciliation.read", "workspace.summary.read"],
