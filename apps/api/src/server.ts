@@ -4279,6 +4279,14 @@ async function persistEvent(workspaceId: string, aggregateId: string, eventType:
   inMemoryTimelineEvents.set(workspaceId, local)
 }
 
+async function nextEventSequence(workspaceId: string, aggregateId: string) {
+  await persistenceReady
+  const events = persistence.outbox?.listAggregateEvents
+    ? await persistence.outbox.listAggregateEvents(workspaceId, aggregateId, 10_000)
+    : (inMemoryTimelineEvents.get(workspaceId) ?? []).filter(event => event.aggregateId === aggregateId)
+  return Math.max(0, ...events.map(event => event.sequence)) + 1
+}
+
 function publishRejectionKnowledgeObservation(job: import('../../../packages/application/src/service.js').PublishJob): Record<string, unknown> | undefined {
   return createPublishRejectionKnowledgeObservation(job, canonicalJson)
 }
@@ -10438,7 +10446,31 @@ function parseDeliveryBundleFiles(value: unknown[]): DeliveryBundleFile[] {
   })
 }
 
-function verifyExportedBundle(workspaceId: string, contentVersionId: string, binaryBody: Uint8Array) {
+function verifyExportedBundle(workspaceId: string, contentVersionId: string, binaryBody: Uint8Array, exported?: {
+  binaryBody?: Uint8Array
+  deliveryManifest?: { publishable: boolean }
+  deliveryManifestHash?: string
+  deliveryVerification?: { valid: boolean; errors: readonly unknown[] }
+}) {
+  const artifactSha256 = createHash('sha256').update(binaryBody).digest('hex')
+  // The application service already builds and verifies the exact delivery
+  // manifest and ZIP bytes. Reuse that evidence here; rebuilding a synthetic
+  // one-file manifest would falsely downgrade the proof to transport-only.
+  if (exported?.binaryBody && exported.deliveryManifest && exported.deliveryManifestHash && exported.deliveryVerification) {
+    const exportedSha256 = createHash('sha256').update(exported.binaryBody).digest('hex')
+    if (exportedSha256 !== artifactSha256 || exported.binaryBody.byteLength !== binaryBody.byteLength) {
+      throw new DomainError('DELIVERY_BUNDLE_VERIFICATION_FAILED', '导出二进制与服务层交付包证据不一致', 500)
+    }
+    return {
+      ...exported.deliveryVerification,
+      scope: 'delivery_manifest',
+      manifest_hash: exported.deliveryManifestHash,
+      artifact_sha256: artifactSha256,
+      artifact_size_bytes: binaryBody.byteLength,
+      content_publishable: exported.deliveryManifest.publishable,
+      verify_method: 'delivery.bundle.verify',
+    }
+  }
   const version = service.getContentVersion(workspaceId, contentVersionId)
   const task = service.getTask(version.taskId)
   const product = service.products.get(task.productId)
@@ -10472,7 +10504,7 @@ function verifyExportedBundle(workspaceId: string, contentVersionId: string, bin
     ...verification,
     scope: 'transport_integrity_only',
     manifest_hash: built.manifestHash,
-    artifact_sha256: createHash('sha256').update(binaryBody).digest('hex'),
+    artifact_sha256: artifactSha256,
     artifact_size_bytes: binaryBody.byteLength,
     content_publishable: built.manifest.publishable,
     verify_method: 'delivery.bundle.verify',
@@ -10913,6 +10945,7 @@ function multimodalMcpRuntime(req: IncomingMessage, workspaceId: string, result:
     requireApprovedAssetForImageGeneration, recordActionSettlement, randomUUID,
     assertVideoProviderJobScope, withOwnedVideoAction, generateOwnedVideo, archiveCompletedVideo, modelSettlementDomainError,
     publicImageJob, contentExecutionEvidence,
+    nextEventSequence,
   }
 }
 export type MultimodalMcpRuntime = ReturnType<typeof multimodalMcpRuntime>

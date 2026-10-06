@@ -24,7 +24,7 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
     videoGenerator, header, isExemptUnboundImageCandidateProduct, enforceAssetAccess,
     requireApprovedAssetForImageGeneration, recordActionSettlement, randomUUID,
     assertVideoProviderJobScope, withOwnedVideoAction, generateOwnedVideo, archiveCompletedVideo, modelSettlementDomainError,
-    publicImageJob, contentExecutionEvidence,
+    publicImageJob, contentExecutionEvidence, nextEventSequence,
   } = dependencies
   const archiveAcceptedVideo = async (rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>>, binding: { productId?: string; taskId?: string; contentVersionId?: string } = {}) => {
     try { return await archiveCompletedVideo(workspaceId, rendering, binding) }
@@ -367,7 +367,8 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
         if (observed.settlementStatus !== 'settled') return result({ ...candidateStatus, provider_job_id: providerJobId, status: 'queued', settlement_status: 'pending_receipt', execution: executionContract('video', true) })
         try {
           const rendering = await archiveCompletedVideo(workspaceId, observed, billingContext)
-          await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', 1, { provider_job_id: providerJobId, ...rendering, ...candidateStatus })
+          const eventSequence = nextEventSequence ? await nextEventSequence(workspaceId, `video_${providerJobId}`) : 1
+          await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', eventSequence, { provider_job_id: providerJobId, rendering, ...candidateStatus })
           return result({ provider_job_id: providerJobId, execution: executionContract('video', true), ...(rendering.assetId ? { asset_id: rendering.assetId, archive_state: rendering.archiveState, ...(rendering.archiveState === 'archived' ? { download_path: `/v1/assets/${encodeURIComponent(rendering.assetId)}/download` } : { availabilityWarning: '视频已安全归档到隔离区，平台自动安全扫描通过后才可下载或发布；无需商家或运营人员操作' }) } : {}), ...userFacingVideoRendering(rendering), ...candidateStatus })
         } catch (error) {
           // Provider completion and local archive completion are separate
@@ -376,7 +377,8 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
           // an auditable trail instead of leaving the job queued forever.
           const rawCode = error instanceof DomainError ? error.code : (error as { code?: unknown })?.code
           const errorCode = typeof rawCode === 'string' && /^[A-Z0-9_]{1,80}$/u.test(rawCode) ? rawCode : 'VIDEO_ARCHIVE_FAILED'
-          await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', 1, {
+          const eventSequence = nextEventSequence ? await nextEventSequence(workspaceId, `video_${providerJobId}`) : 1
+          await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', eventSequence, {
             provider_job_id: providerJobId,
             rendering: { ...observed, archiveState: 'failed' as const },
             error_code: errorCode,

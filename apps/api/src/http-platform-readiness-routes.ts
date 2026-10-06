@@ -23,7 +23,7 @@ export async function handleHttpPlatformReadinessRoute(req: IncomingMessage, res
   filterByTaskBrandAccess: <T extends { brandId?: string }>(req: IncomingMessage, workspaceId: string, tasks: T[]) => Promise<T[]>
   projectPlatformCapabilityEvidence: (capabilities: ReturnType<ConnectorRuntime['capabilityMatrix']>, specs: Awaited<ReturnType<PlatformMediaSpecRepository['list']>>, platform: Platform) => PlatformCapabilityEvidenceRow[]
   asPlatform: (value: unknown) => PlatformMediaSpecPlatform | undefined
-  verifyExportedBundle: (workspaceId: string, contentVersionId: string, binaryBody: Uint8Array) => BundleVerification
+  verifyExportedBundle: (workspaceId: string, contentVersionId: string, binaryBody: Uint8Array, exported?: { binaryBody?: Uint8Array; deliveryManifest?: { publishable: boolean }; deliveryManifestHash?: string; deliveryVerification?: { valid: boolean; errors: readonly unknown[] } }) => BundleVerification
   send: Send
 }) {
   if (req.method === 'GET' && path === '/v1/platform-capabilities') {
@@ -70,7 +70,7 @@ export async function handleHttpPlatformReadinessRoute(req: IncomingMessage, res
         try {
           const exported = deps.service.exportContent(workspaceId, version.id, 'bundle')
           if (!exported.binaryBody) throw new Error('bundle bytes missing')
-          const verification = deps.verifyExportedBundle(workspaceId, version.id, exported.binaryBody)
+          const verification = deps.verifyExportedBundle(workspaceId, version.id, exported.binaryBody, exported)
           const passed = verification.valid === true && verification.content_publishable === true
           return { id: version.id, taskId: task.id, productId: task.productId, status: passed ? 'passed' : 'blocked', findings: passed ? [] : [{ code: 'DELIVERY_BUNDLE_NOT_VERIFIED', message: '交付包完整性或内容发布状态未通过', nextAction: '重新导出并执行 delivery.bundle.verify' }], verification: { valid: verification.valid, manifestHash: verification.manifest_hash, artifactSha256: verification.artifact_sha256 } }
         } catch {

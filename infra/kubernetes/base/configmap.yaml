@@ -141,7 +141,7 @@ data:
   # be reconciled. Keep it empty in the base until the relay contract supplies
   # a real request-id endpoint; outcome_unknown remains fail-closed.
   IMAGE_STATUS_PATH: ""
-  IMAGE_EDIT_PATH: /images/generations
+  IMAGE_EDIT_PATH: /images/edits
   IMAGE_TIMEOUT_MS: "120000"
   IMAGE_EDIT_TIMEOUT_MS: "300000"
   IMAGE_EDIT_MODEL: merchant-main-image-edit

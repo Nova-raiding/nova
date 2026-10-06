@@ -846,6 +846,8 @@ describe('deployment operation scripts', () => {
     const httpsReleaseLocation = httpsGateway.split('location = /releasez {')[1]?.split('}')[0] ?? ''
     expect(httpsReleaseLocation).toContain('proxy_pass http://pilot_api/releasez')
     expect(httpsReleaseLocation).toContain('proxy_set_header X-Forwarded-Proto https')
+    expect(httpsGateway).toContain('if ($host = admin.yxsona.com)')
+    expect(httpsGateway).toContain('return 302 https://ops.yxsona.com/ops/overview;')
   })
 
   it('keeps the API image build context complete for the TypeScript project references', () => {

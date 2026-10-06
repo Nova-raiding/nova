@@ -3962,6 +3962,13 @@ async function waitForAssetScan(uploadResult) {
 }
 
 async function handle(request) {
+  // JSON-RPC distinguishes malformed JSON (-32700) from a valid JSON value
+  // that is not a Request object (-32600).  Keep protocol-shape failures at
+  // this boundary instead of letting null/arrays fall through to the generic
+  // process-error handler (-32603).
+  if (!request || typeof request !== 'object' || Array.isArray(request)) {
+    return jsonRpcError(null, -32600, 'JSON-RPC 请求格式无效')
+  }
   const id = request.id ?? null
   if (request.jsonrpc !== '2.0') return jsonRpcError(id, -32600, 'JSON-RPC 请求格式无效')
   if (request.method === 'notifications/initialized') return null

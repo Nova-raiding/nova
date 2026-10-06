@@ -20,7 +20,7 @@ interface HttpContentVersionDependencies {
   persistSnapshot: (workspaceId: string, entityType: 'content_version' | 'task', entity: ContentVersion | Task, value: Record<string, unknown>) => Promise<void>
   persistEvent: (workspaceId: string, aggregateId: string, eventType: string, sequence: number, payload: Record<string, unknown>) => Promise<void>
   persistExpiredDeliveryIfNeeded: (workspaceId: string, contentVersionId: string) => Promise<unknown>
-  verifyExportedBundle: (workspaceId: string, contentVersionId: string, binaryBody: Uint8Array) => { artifact_sha256: string; manifest_hash: string; valid: boolean; scope: string }
+  verifyExportedBundle: (workspaceId: string, contentVersionId: string, binaryBody: Uint8Array, exported?: { binaryBody?: Uint8Array; deliveryManifest?: { publishable: boolean }; deliveryManifestHash?: string; deliveryVerification?: { valid: boolean; errors: readonly unknown[] } }) => { artifact_sha256: string; manifest_hash: string; valid: boolean; scope: string }
   send: (res: ServerResponse, status: number, workspaceId: string, data: unknown, error: null, req: IncomingMessage) => true
   sendDownload: (res: ServerResponse, content: { fileName: string; contentType: string; body: string; binaryBody?: Uint8Array }, req: IncomingMessage) => true
 }
@@ -116,7 +116,7 @@ export async function handleHttpContentVersionRoutes(req: IncomingMessage, res: 
     await persistExpiredDeliveryIfNeeded(scoped.task.workspaceId, scoped.version.id)
     const exported = service.exportContent(scoped.task.workspaceId, scoped.version.id, requestedFormat as 'manifest' | 'json' | 'markdown' | 'bundle')
     if (exported.binaryBody) {
-      const verification = verifyExportedBundle(scoped.task.workspaceId, scoped.version.id, exported.binaryBody)
+      const verification = verifyExportedBundle(scoped.task.workspaceId, scoped.version.id, exported.binaryBody, exported)
       res.setHeader('x-delivery-bundle-sha256', verification.artifact_sha256)
       res.setHeader('x-delivery-manifest-sha256', verification.manifest_hash)
       res.setHeader('x-delivery-bundle-verified', String(verification.valid))

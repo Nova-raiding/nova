@@ -14,7 +14,7 @@ export interface McpContentVersionDependencies {
   assertCanonicalTaskScopeForAction: (task: Task) => Promise<unknown>
   mcpPagination: (params: JsonObject) => { limit: number; offset: number }
   persistExpiredDeliveryIfNeeded: (workspaceId: string, contentVersionId: string) => Promise<unknown>
-  verifyExportedBundle: (workspaceId: string, contentVersionId: string, binaryBody: Uint8Array) => unknown
+  verifyExportedBundle: (workspaceId: string, contentVersionId: string, binaryBody: Uint8Array, exported?: { binaryBody?: Uint8Array; deliveryManifest?: { publishable: boolean }; deliveryManifestHash?: string; deliveryVerification?: { valid: boolean; errors: readonly unknown[] } }) => unknown
   maxMcpExportBytes: number
   rulesForTask: (workspaceId: string, task: Task) => Promise<ApprovalRules>
   persistSnapshot: (workspaceId: string, entityType: 'content_version' | 'task', entity: ContentVersion | Task, value: Record<string, unknown>) => Promise<void>
@@ -51,7 +51,7 @@ export async function handleMcpContentVersion(method: string, params: JsonObject
       if (!exportBytes || exportBytes > MAX_MCP_EXPORT_BYTES) throw new DomainError('CONTENT_EXPORT_SIZE_LIMIT', '内容导出文件为空或超过 25MB 限制', 413)
       if (!exported.binaryBody) return (exported)
       const { binaryBody, ...textExport } = exported
-      const bundleVerification = verifyExportedBundle(workspaceId, scoped.version.id, binaryBody)
+      const bundleVerification = verifyExportedBundle(workspaceId, scoped.version.id, binaryBody, exported)
       return ({ ...textExport, binary_base64: Buffer.from(binaryBody).toString('base64'), bundle_verification: bundleVerification })
     }
     case 'content.approve': {

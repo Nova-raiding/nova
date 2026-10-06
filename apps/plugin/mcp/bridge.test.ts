@@ -538,9 +538,28 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write('null\n')
-      expect(await nextLine(child.stdout)).toMatchObject({ id: null, error: { code: -32603 } })
+      expect(await nextLine(child.stdout)).toMatchObject({ id: null, error: { code: -32600 } })
+      child.stdin.write('[1,2,3]\n')
+      expect(await nextLine(child.stdout)).toMatchObject({ id: null, error: { code: -32600 } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'ping', params: {} })}\n`)
       expect(await nextLine(child.stdout)).toEqual({ jsonrpc: '2.0', id: 2, result: {} })
+    } finally {
+      child.kill()
+    }
+  })
+
+  it('preserves UTF-8 request text when a host splits a multibyte frame across byte chunks', async () => {
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:9', MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      const frame = Buffer.from(`${JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'ping', params: { note: '中文🙂' } })}\n`, 'utf8')
+      for (const byte of frame) {
+        if (!child.stdin.write(Buffer.from([byte]))) await once(child.stdin, 'drain')
+      }
+      expect(await nextLine(child.stdout)).toEqual({ jsonrpc: '2.0', id: 7, result: {} })
     } finally {
       child.kill()
     }
@@ -574,6 +593,55 @@ describe('Codex stdio MCP bridge', () => {
         expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `当前插件没有此工具：${name}` })
       }
       expect(requests).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('forwards a valid image-edit request through local stdio after session confirmation', async () => {
+    let request: { headers: Record<string, string | string[] | undefined>; body: any } | undefined
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      request = { headers: req.headers, body: JSON.parse(body) }
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { status: 'candidate', original_preserved: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: {
+        ...TEST_PROCESS_ENV,
+        MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MERCHANT_MCP_TOKEN: 'local-stdio-test-token',
+        MERCHANT_WORKSPACE_ID: 'ws_image_edit_bridge',
+        MERCHANT_MCP_WRITE_ENABLED: 'true',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result.isError).not.toBe(true)
+      const editRequest = {
+        kind: 'image_local_edit',
+        id: 'bridge-image-edit-1',
+        sourceImage: { id: 'asset-image-edit-1', uri: 'asset://image-edit-1', width: 1200, height: 1200 },
+        prompt: '只优化背景，保持商品本体不变',
+        region: { id: 'background', rect: { x: 0, y: 0, width: 1, height: 1 } },
+        constraints: { editableRegions: [{ id: 'background', rect: { x: 0, y: 0, width: 1, height: 1 } }], nonModifiableRegions: [] },
+        context: {
+          brand: { id: 'brand-1', version: '1' },
+          product: { id: 'product-1', version: '1' },
+          rules: [{ id: 'rule-1', version: '1' }],
+        },
+      }
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.image.edit', arguments: { request_json: JSON.stringify(editRequest) } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: false, structuredContent: { status: 'candidate', original_preserved: true } })
+      expect(request?.body).toMatchObject({ method: 'multimodal.image.edit', params: { workspace_id: 'ws_image_edit_bridge', request_json: JSON.stringify(editRequest) } })
+      expect(request?.headers.authorization).toBe('Bearer local-stdio-test-token')
+      expect(request?.headers['x-workspace-id']).toBe('ws_image_edit_bridge')
     } finally {
       child.kill()
       await close(server)

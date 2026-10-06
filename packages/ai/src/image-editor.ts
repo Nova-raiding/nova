@@ -92,7 +92,7 @@ export class OpenAICompatibleImageEditGenerator implements ImageEditGenerator {
         controller.signal.throwIfAborted()
         let candidate: Response
         try {
-          candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${this.options.path ?? '/images/generations'}`, {
+          candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${this.options.path ?? '/images/edits'}`, {
             method: 'POST',
             headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey },
             body: requestBody,
