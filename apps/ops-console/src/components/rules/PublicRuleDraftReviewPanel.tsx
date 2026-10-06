@@ -13,6 +13,11 @@ type ReviewRule = {
 };
 type ReviewAudit = { id: string; action: string; actor_id: string; reason?: string; occurred_at: string; data: Record<string, unknown> };
 type ReviewDetail = { rule: ReviewRule; audit: ReviewAudit[] };
+const PUBLIC_RULE_DRAFT_PAGE_SIZE = "20";
+
+export function buildPublicRuleDraftListParams(platform: Platform | "", cursor?: string) {
+  return { ...(platform ? { platform } : {}), limit: PUBLIC_RULE_DRAFT_PAGE_SIZE, ...(cursor ? { cursor } : {}) };
+}
 
 export function parsePublicRuleDraftList(value: unknown): { items: ReviewRule[]; nextCursor?: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("公共规则草稿列表响应格式无效");
@@ -78,6 +83,8 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   const [platform, setPlatform] = useState<Platform | "">("");
   const [items, setItems] = useState<ReviewRule[]>([]);
   const [nextCursor, setNextCursor] = useState<string>();
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageCursors, setPageCursors] = useState<Array<string | undefined>>([undefined]);
   const [detail, setDetail] = useState<ReviewDetail>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -89,20 +96,32 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   const [reason, setReason] = useState("");
   const [approvalToken, setApprovalToken] = useState("");
 
-  const load = async (cursor?: string) => {
+  const load = async (cursor?: string, targetPage = pageIndex) => {
     if (!visible) return;
     const requestId = ++listRequest.current;
     setLoading(true); setError("");
     try {
-      const response = await rpc<unknown>("ops.rules.public.drafts.list", { ...(platform ? { platform } : {}), limit: "50", ...(cursor ? { cursor } : {}) });
+      const response = await rpc<unknown>("ops.rules.public.drafts.list", buildPublicRuleDraftListParams(platform, cursor));
       const parsed = parsePublicRuleDraftList(response);
       if (requestId !== listRequest.current) return;
-      setItems(current => cursor ? [...current, ...parsed.items] : parsed.items);
+      setItems(parsed.items);
       setNextCursor(parsed.nextCursor);
+      setPageIndex(targetPage);
+      if (parsed.nextCursor) {
+        setPageCursors(current => {
+          const updated = current.slice(0, targetPage + 1);
+          updated[targetPage + 1] = parsed.nextCursor;
+          return updated;
+        });
+      }
     } catch (cause) { if (requestId === listRequest.current) setError(cause instanceof Error ? cause.message : "公共规则草稿读取失败"); }
     finally { if (requestId === listRequest.current) setLoading(false); }
   };
-  useEffect(() => { listRequest.current += 1; setItems([]); setNextCursor(undefined); setDetail(undefined); setLoading(false); void load(); }, [visible, platform]);
+  useEffect(() => {
+    listRequest.current += 1;
+    setItems([]); setNextCursor(undefined); setPageIndex(0); setPageCursors([undefined]); setDetail(undefined); setLoading(false);
+    void load(undefined, 0);
+  }, [visible, platform]);
 
   if (!visible) return null;
   const openDetail = async (item: ReviewRule) => {
@@ -133,7 +152,7 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
       } : undefined), status === "active" ? { ruleApprovalToken: approvalToken.trim() } : {});
       message.success(status === "active" ? "公共规则已审批并激活" : "公共规则草稿已拒绝并归档");
       setDetail(undefined); setReason(""); setApprovalRef(""); setApprovedBy(""); setApprovedAt(""); setApprovalToken("");
-      await load();
+      await load(pageCursors[pageIndex], pageIndex);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "公共规则状态更新失败"); }
     finally { setBusy(false); }
   };
@@ -141,10 +160,14 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   return <Card title="公共平台规则草稿审核" extra={<Typography.Text type="secondary">平台工作台 · 仅展示待审核公共草稿</Typography.Text>}>
     <Alert type="warning" showIcon title="审核会影响所有商家" description="激活前请核对官方依据、规则内容和校验和。人工审批仅记录运营审核，不代表系统独立验证来源网站。" style={{ marginBottom: 16 }} />
     {!canWrite && <Alert type="info" showIcon title="只读审核视图" description="当前身份只有规则读取权限；审批、激活或拒绝需要 rule.update，激活还需要 rule.publish.approve 和服务端签发的规则审批凭证。" style={{ marginBottom: 16 }} />}
-    <Space wrap style={{ marginBottom: 12 }}><Select aria-label="按平台筛选公共规则草稿" allowClear placeholder="全部平台" value={platform || undefined} onChange={value => setPlatform((value ?? "") as Platform | "")} options={platforms.map(value => ({ value, label: platformLabels[value] }))} style={{ minWidth: 180 }} /><Button onClick={() => void load()} loading={loading}>刷新草稿</Button></Space>
+    <Space wrap style={{ marginBottom: 12 }}><Select aria-label="按平台筛选公共规则草稿" allowClear placeholder="全部平台" value={platform || undefined} onChange={value => setPlatform((value ?? "") as Platform | "")} options={platforms.map(value => ({ value, label: platformLabels[value] }))} style={{ minWidth: 180 }} /><Button onClick={() => void load(pageCursors[pageIndex], pageIndex)} loading={loading}>刷新草稿</Button></Space>
     {error && <Alert type="error" showIcon title="公共规则审核操作失败" description={error} style={{ marginBottom: 12 }} />}
     {items.length ? <Table rowKey="id" size="small" dataSource={items} columns={columns} pagination={false} scroll={{ x: 900 }} onRow={item => ({ onClick: () => void openDetail(item), style: { cursor: "pointer" } })} /> : !loading ? <Empty description="当前筛选范围内没有待审核公共规则草稿" /> : null}
-    {nextCursor && <Button style={{ marginTop: 12 }} loading={loading} onClick={() => void load(nextCursor)}>加载更多</Button>}
+    {(pageIndex > 0 || nextCursor) && <Space align="center" style={{ marginTop: 12 }}>
+      <Button aria-label="上一页公共规则草稿" disabled={pageIndex === 0 || loading} onClick={() => void load(pageCursors[pageIndex - 1], pageIndex - 1)}>上一页</Button>
+      <Typography.Text aria-live="polite">第 {pageIndex + 1} 页</Typography.Text>
+      <Button aria-label="下一页公共规则草稿" disabled={!nextCursor || loading} loading={loading} onClick={() => void load(nextCursor, pageIndex + 1)}>下一页</Button>
+    </Space>}
     {detail && <Card size="small" title={`${detail.rule.name} · ${detail.rule.version}`} style={{ marginTop: 16 }}>
       <Descriptions size="small" column={2} items={[
         { key: "platform", label: "平台", children: platformLabels[detail.rule.platform] ?? detail.rule.platform }, { key: "creator", label: "提交人", children: detail.rule.created_by },

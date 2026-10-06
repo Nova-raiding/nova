@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { AuthorizationProjection } from "../../authz/authorization.js";
-import { buildPublicRuleStatusParams, canReviewPublicRuleDraft, parsePublicRuleDraftList, PublicRuleDraftReviewPanel } from "./PublicRuleDraftReviewPanel.js";
+import { buildPublicRuleDraftListParams, buildPublicRuleStatusParams, canReviewPublicRuleDraft, parsePublicRuleDraftList, PublicRuleDraftReviewPanel } from "./PublicRuleDraftReviewPanel.js";
 
 function authorization(scope: "platform" | "workspace", capabilities: string[]): AuthorizationProjection {
   const allowed = new Set(capabilities);
@@ -19,6 +19,11 @@ describe("public platform rule draft review", () => {
     expect(parsePublicRuleDraftList({ items: [pending], next_cursor: "next" })).toMatchObject({ items: [pending], nextCursor: "next" });
     expect(() => parsePublicRuleDraftList({ items: [{ ...pending, checksum_valid: "yes" }] })).toThrow("字段不完整");
     expect(() => parsePublicRuleDraftList({ items: [], next_cursor: {} })).toThrow("游标格式无效");
+  });
+
+  it("uses cursor pagination with a bounded page size", () => {
+    expect(buildPublicRuleDraftListParams("pinduoduo")).toEqual({ platform: "pinduoduo", limit: "20" });
+    expect(buildPublicRuleDraftListParams("", "cursor-page-2")).toEqual({ limit: "20", cursor: "cursor-page-2" });
   });
 
   it("requires platform read and update plus verified pending evidence to approve", () => {
