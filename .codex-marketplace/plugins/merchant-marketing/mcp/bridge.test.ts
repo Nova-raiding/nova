@@ -596,7 +596,9 @@ describe('Codex stdio MCP bridge', () => {
         isError: true,
         structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' },
       })
-      expect(imageEditResponse.result._meta).toBeUndefined()
+      expect(imageEditResponse.result._meta).toMatchObject({
+        ui: { resourceUri: 'ui://merchant-marketing/image-local-edit-v1.html' },
+      })
       for (const [index, name] of ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 3, method: 'tools/call', params: { name, arguments: { id: 'spec_1', expected_revision: '1', idempotency_key: `media:${index}:write`, reason: 'verified production evidence' } } })}\n`)
         expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `当前插件没有此工具：${name}` })

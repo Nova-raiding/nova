@@ -185,7 +185,7 @@ export class ContinuousFeatureEntitlementService {
       try {
         demo = await this.#demoEvaluation.projection.listDemoEvaluationEntitlements({ workspace_id: input.workspace_id })
       } catch {
-        demo = []
+        return denied('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', ignored)
       }
       const active = Array.isArray(demo) ? demo.filter(item => {
         const start = canonicalInstant(item.startsAt)
