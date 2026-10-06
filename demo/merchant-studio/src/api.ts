@@ -1005,6 +1005,7 @@ export function describeApiError(error: unknown) {
   if (code === 'CREATIVE_POINTS_UNAVAILABLE') return '当前工作区的创意点余额尚未确认，本次操作未完成。请到“财务与资源”核对套餐权益、订单和创意点到账状态；仍显示未读取时请联系平台运营。'
   if (code === 'CREATIVE_POINTS_EXHAUSTED' || code === 'CREATIVE_POINTS_INSUFFICIENT') return '当前工作区可用创意点不足，本次操作未完成。请到“财务与资源”核对余额及到账状态后重试。'
   if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '模型请求结果尚未确认，可能已经产生结果；请先查询模型状态或提交人工对账，确认前不会重复生成、扣费或发布。'
+  if (code === 'PLATFORM_RULE_DATA_UNAVAILABLE') return '平台规则尚未完成审批或已过期，本次操作未完成；请先在平台运营台核对来源并完成独立审批、激活后再生成。'
   if ([
     'MODEL_RELAY_NOT_CONFIGURED',
     'IMAGE_GENERATION_NOT_CONFIGURED',
