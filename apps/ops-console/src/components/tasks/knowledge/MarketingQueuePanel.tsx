@@ -79,7 +79,7 @@ export function parsePublishBatchDetail(value: unknown): PublishBatchDetail {
 
 function stateColor(state: string) {
   if (
-    ["failed", "rejected", "unknown", "outcome_unknown", "manual_attention", "blocked"].includes(
+    ["failed", "rejected", "unknown", "outcome_unknown", "quarantined", "archive_failed", "manual_attention", "blocked"].includes(
       state,
     )
   )
@@ -107,7 +107,12 @@ export function queueStateLabel(state: string) {
     rejected: "已驳回",
     unknown: "待对账",
     pending_receipt: "等待成本回执",
+    settled: "已结算",
     outcome_unknown: "结果待对账",
+    quarantined: "安全隔离中，暂不可交付",
+    archive_failed: "归档失败",
+    not_started: "尚未归档",
+    archived: "已归档",
     manual_attention: "待人工处理",
     blocked: "已阻断",
     succeeded: "已完成",
@@ -120,6 +125,17 @@ export function queueStateLabel(state: string) {
     manual_review_required: "人工复核异常",
     platform_verified: "平台 API 已验证",
   } as Record<string, string>)[state] ?? "状态待确认";
+}
+
+type VideoQueueStatus = Pick<OpsConsoleModel["marketingQueue"]["videoProviderJobs"][number], "state" | "settlementStatus" | "archiveState">;
+
+/** A provider completion is not a deliverable completion. */
+export function videoQueueState(job: VideoQueueStatus): string {
+  if (job.settlementStatus === "pending_receipt") return "pending_receipt";
+  if (job.settlementStatus === "unknown") return "unknown";
+  if (job.archiveState === "quarantined") return "quarantined";
+  if (job.archiveState === "failed") return "archive_failed";
+  return job.state;
 }
 
 export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
@@ -391,8 +407,8 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       id: `video:${job.providerJobId}`,
       kind: "视频 Provider 任务",
       taskId: job.taskId ?? "未绑定任务",
-      state: job.settlementStatus === "pending_receipt" ? "pending_receipt" : job.state,
-      detail: `Provider job：${job.providerJobId}；请求：${job.providerRequestId ?? "未返回"}；结算：${job.settlementStatus}；归档：${job.archiveState}；资产：${job.assetId ?? "未归档"}；${job.nextAction}`,
+      state: videoQueueState(job),
+      detail: `Provider job：${job.providerJobId}；请求：${job.providerRequestId ?? "未返回"}；模型：${queueStateLabel(job.state)}；结算：${queueStateLabel(job.settlementStatus)}；归档：${queueStateLabel(job.archiveState === "failed" ? "archive_failed" : job.archiveState)}；资产：${job.assetId ?? "未归档"}；${job.nextAction}`,
       updatedAt: job.updatedAt,
       action: <Typography.Text type="secondary">只读观测；视频不支持队列分派或自动重试</Typography.Text>,
     })),

@@ -167,4 +167,15 @@ describe('unbound video context', () => {
     expect(createVideoRenderingRequest({ prompt: '商品展示', context: { candidateOnly: true, brand: null, product: { id: 'product-1', version: '1' }, rules: [] } }).ok).toBe(true)
     expect(createVideoRenderingRequest({ prompt: '商品展示', context: { brand: null, product: { id: 'product-1', version: '1' }, rules: [] } }).ok).toBe(false)
   })
+
+  it('accepts a formal task/content-version binding and rejects a dangling version', () => {
+    const bound = { ...context, task: { id: 'task-1', version: '3' }, contentVersion: { id: 'content-1', version: '2' } }
+    expect(createVideoRenderingRequest({ prompt: '商品展示', context: bound }).ok).toBe(true)
+    const dangling = createVideoRenderingRequest({ prompt: '商品展示', context: { ...context, contentVersion: { id: 'content-1', version: '2' } } })
+    expect(dangling.ok).toBe(false)
+    if (!dangling.ok) expect(dangling.issues).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'contentVersion' })]))
+    const candidateBound = createVideoRenderingRequest({ prompt: '商品展示', context: { ...context, candidateOnly: true, brand: null, rules: [], task: { id: 'task-1', version: '1' } } })
+    expect(candidateBound.ok).toBe(false)
+    if (!candidateBound.ok) expect(candidateBound.issues).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'task' })]))
+  })
 })

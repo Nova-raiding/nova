@@ -75,6 +75,9 @@ export interface GenerationContext {
   readonly brand: SnapshotRef | null
   readonly candidateOnly?: true
   readonly product: SnapshotRef
+  /** Optional formal-task binding. Candidate renders must omit these refs. */
+  readonly task?: SnapshotRef
+  readonly contentVersion?: SnapshotRef
   readonly rules: readonly SnapshotRef[]
 }
 
@@ -224,6 +227,14 @@ export const validateGenerationContext = (value: unknown): ValidationResult<Gene
     ...(value.candidateOnly === true && value.brand === null ? [] : validateSnapshotRef(value.brand, 'brand')),
     ...validateSnapshotRef(value.product, 'product'),
   ]
+  if (value.candidateOnly === true && (value.task !== undefined || value.contentVersion !== undefined)) {
+    issues.push(issue('INVALID_CONTEXT', 'task', '内部候选视频不能携带正式任务或内容版本绑定。'))
+  }
+  if (value.contentVersion !== undefined && value.task === undefined) {
+    issues.push(issue('INVALID_CONTEXT', 'contentVersion', '内容版本绑定必须同时提供任务快照引用。'))
+  }
+  if (value.task !== undefined) issues.push(...validateSnapshotRef(value.task, 'task'))
+  if (value.contentVersion !== undefined) issues.push(...validateSnapshotRef(value.contentVersion, 'contentVersion'))
   if (!Array.isArray(value.rules) || (value.rules.length === 0 && value.candidateOnly !== true)) {
     issues.push(issue('INVALID_CONTEXT', 'rules', '生成上下文至少需要一个规则快照引用。'))
   } else {

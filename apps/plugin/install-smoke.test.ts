@@ -696,6 +696,7 @@ esac
         required: ['merchant.start', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list'],
         missing: [],
         forbidden: [],
+        snapshot_matches: true,
         cache_drift: { detected: false, automatic_reuse: false, automatic_deletion: false },
       },
       current_conversation_refresh: { verified: false },
@@ -711,6 +712,8 @@ esac
       },
     })
     expect(evidence.tools.count).toBeGreaterThanOrEqual(5)
+    expect(evidence.tools.source_snapshot_sha256).toMatch(/^[a-f0-9]{64}$/u)
+    expect(evidence.tools.installed_snapshot_sha256).toBe(evidence.tools.source_snapshot_sha256)
     expect(evidence.runtime_files.every((file: { matches: boolean }) => file.matches)).toBe(true)
   })
 

@@ -4289,6 +4289,7 @@ type MarketingVideoProviderJob = {
   providerJobId: string
   providerRequestId: string | null
   taskId: string | null
+  contentVersionId: string | null
   productId: string | null
   state: 'queued' | 'provider_started' | 'completed' | 'failed' | 'unknown'
   settlementStatus: 'pending_receipt' | 'settled' | 'unknown'
@@ -4309,10 +4310,13 @@ export function marketingVideoProviderJobsFromEvents(events: OutboxEvent[], limi
       if (!providerJobId) continue
       const providerRequestId = typeof context?.providerRequestId === 'string' ? context.providerRequestId : null
       const productId = typeof context?.productId === 'string' ? context.productId : null
+      const taskId = typeof context?.taskId === 'string' ? context.taskId : null
+      const contentVersionId = typeof context?.contentVersionId === 'string' ? context.contentVersionId : null
       jobs.set(providerJobId, {
         providerJobId,
         providerRequestId,
-        taskId: null,
+        taskId,
+        contentVersionId,
         productId,
         state: 'queued',
         settlementStatus: 'pending_receipt',
@@ -4444,6 +4448,8 @@ export async function generateOwnedVideo(input: Parameters<NonNullable<typeof vi
       ...acceptedContext,
       ...(purpose === 'internal_candidate_render' ? { candidateOnly: true as const, publishable: false as const } : {}),
       ...(purpose === 'platform_render' && input.productId ? { productId: input.productId } : {}),
+      ...(purpose === 'platform_render' && input.taskId ? { taskId: input.taskId } : {}),
+      ...(purpose === 'platform_render' && input.contentVersionId ? { contentVersionId: input.contentVersionId } : {}),
     }
     const jobAggregateId = `video-job:${createHash('sha256').update(context.providerJobId).digest('hex')}`
     await persistEvent(workspaceId, jobAggregateId, 'multimodal.video.accepted', 1, { billing_context: context })
@@ -8265,7 +8271,7 @@ export function readContentModules(value: unknown): ContentModule[] | undefined 
   }
 }
 
-async function archiveCompletedVideo(workspaceId: string, rendering: { status: 'completed' | 'queued'; videoUrl?: string; providerJobId?: string; settlementStatus?: 'pending_receipt' | 'settled' }): Promise<{ status: 'completed' | 'queued'; videoUrl?: string; providerJobId?: string; assetId?: string; archiveState?: 'quarantined' | 'archived' }> {
+async function archiveCompletedVideo(workspaceId: string, rendering: { status: 'completed' | 'queued'; videoUrl?: string; providerJobId?: string; settlementStatus?: 'pending_receipt' | 'settled' }, binding: { productId?: string; taskId?: string; contentVersionId?: string } = {}): Promise<{ status: 'completed' | 'queued'; videoUrl?: string; providerJobId?: string; assetId?: string; archiveState?: 'quarantined' | 'archived' }> {
   if (rendering.status === 'queued') return rendering
   if (rendering.settlementStatus !== 'settled') throw new DomainError('MODEL_USAGE_SETTLEMENT_PENDING', '视频成本尚未完成结算，暂不交付素材', 503, { provider_succeeded: true, reconciliation_required: true })
   if (!rendering.videoUrl || !rendering.providerJobId) throw new DomainError('VIDEO_ARTIFACT_REFERENCE_INCOMPLETE', '视频 provider 已标记完成，但缺少可归档的 HTTPS artifact URL 或 provider job id', 502)
@@ -8282,7 +8288,7 @@ async function archiveCompletedVideo(workspaceId: string, rendering: { status: '
   if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(mimeType) || !videoSignatureMatches(mimeType, body)) throw new DomainError('VIDEO_ARTIFACT_SIGNATURE_INVALID', '视频 provider 返回的 MIME 类型或文件签名无法验证，已阻断归档', 502)
   const sha256 = createHash('sha256').update(body).digest('hex')
   const name = `provider-${rendering.providerJobId}.mp4`
-  const provisional = service.registerAsset({ workspaceId, name, mimeType, sizeBytes: body.byteLength, sha256, storageKey: `quarantine/${workspaceId}/video_pending_${randomBytes(12).toString('hex')}/${name}`, sourceProviderJobId: rendering.providerJobId, ...(demoUnscannedAssetsEnabled() ? { scanMode: 'unscanned' as const } : {}) })
+  const provisional = service.registerAsset({ workspaceId, name, mimeType, sizeBytes: body.byteLength, sha256, storageKey: `quarantine/${workspaceId}/video_pending_${randomBytes(12).toString('hex')}/${name}`, sourceProviderJobId: rendering.providerJobId, ...binding, ...(demoUnscannedAssetsEnabled() ? { scanMode: 'unscanned' as const } : {}) })
   if (provisional.deduplication.mode === 'deduplicated') {
     await persistAssetReference(workspaceId, provisional)
     return { ...rendering, assetId: provisional.id, archiveState: isUsableAssetWithoutScan(provisional, demoUnscannedAssetsEnabled()) ? 'archived' as const : 'quarantined' as const }

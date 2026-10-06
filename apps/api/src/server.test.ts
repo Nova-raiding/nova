@@ -22,8 +22,8 @@ describe('marketing video provider queue projection', () => {
 
   it('keeps accepted jobs queued and pending until a real status event exists', () => {
     expect(marketingVideoProviderJobsFromEvents([
-      event('multimodal.video.accepted', { billing_context: { providerJobId: 'job-1', providerRequestId: 'request-1', productId: 'product-1' } }, '2026-10-06T00:00:00.000Z', 'accepted'),
-    ], 10)).toEqual([expect.objectContaining({ providerJobId: 'job-1', providerRequestId: 'request-1', state: 'queued', settlementStatus: 'pending_receipt', archiveState: 'not_started', taskId: null, productId: 'product-1' })])
+      event('multimodal.video.accepted', { billing_context: { providerJobId: 'job-1', providerRequestId: 'request-1', productId: 'product-1', taskId: 'task-1', contentVersionId: 'cv-1' } }, '2026-10-06T00:00:00.000Z', 'accepted'),
+    ], 10)).toEqual([expect.objectContaining({ providerJobId: 'job-1', providerRequestId: 'request-1', state: 'queued', settlementStatus: 'pending_receipt', archiveState: 'not_started', taskId: 'task-1', contentVersionId: 'cv-1', productId: 'product-1' })])
   })
 
   it('only projects a status event for a previously owned accepted job', () => {

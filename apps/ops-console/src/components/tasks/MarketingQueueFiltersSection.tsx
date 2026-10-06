@@ -1,6 +1,7 @@
 import { Button, Card, Input, Select, Space } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { platformLabels, platforms } from "../../types/ops";
+import { queueStateLabel } from "./knowledge/MarketingQueuePanel.js";
 
 interface MarketingQueueFiltersSectionProps {
   model: OpsConsoleModel;
@@ -95,9 +96,10 @@ export function MarketingQueueFiltersSection({
             "failed",
             "rejected",
             "unknown",
+            "pending_receipt",
             "manual_attention",
             "visual_review",
-          ].map((state) => ({ value: state, label: state }))}
+          ].map((state) => ({ value: state, label: queueStateLabel(state) }))}
         />
         <Button type="primary" onClick={() => void load()}>
           应用筛选

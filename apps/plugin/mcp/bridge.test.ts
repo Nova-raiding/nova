@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
+import { StringDecoder } from 'node:string_decoder'
 import { copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -205,6 +206,55 @@ async function qaPackageBrokerBridge(baseUrl: string) {
 }
 
 describe('Codex stdio MCP bridge', () => {
+  it('keeps tools/list snapshots complete and ordered under a high-load discovery scan', async () => {
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: 'https://merchant.example.com', MERCHANT_WORKSPACE_ID: 'ws_surface_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const requestCount = 96
+    const responses: any[] = []
+    let buffer = ''
+    const decoder = new StringDecoder('utf8')
+    let resolveResponses!: () => void
+    let rejectResponses!: (error: Error) => void
+    const complete = new Promise<void>((resolve, reject) => { resolveResponses = resolve; rejectResponses = reject })
+    const timeout = setTimeout(() => rejectResponses(new Error('high-load tools/list scan timed out')), 15_000)
+    child.stdout.on('data', chunk => {
+      buffer += decoder.write(chunk)
+      for (;;) {
+        const newline = buffer.indexOf('\n')
+        if (newline < 0) break
+        const line = buffer.slice(0, newline)
+        buffer = buffer.slice(newline + 1)
+        if (!line.trim()) continue
+        try { responses.push(JSON.parse(line)) }
+        catch (error) { rejectResponses(error instanceof Error ? error : new Error(String(error))); return }
+        if (responses.length === requestCount) resolveResponses()
+      }
+    })
+    try {
+      for (let id = 1; id <= requestCount; id += 1) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/list', params: {} })}\n`)
+      }
+      await complete
+      expect(responses).toHaveLength(requestCount)
+      expect(responses.map(response => response.id)).toEqual(Array.from({ length: requestCount }, (_, index) => index + 1))
+      const firstTools = responses[0]?.result?.tools
+      expect(Array.isArray(firstTools)).toBe(true)
+      expect(firstTools.length).toBeGreaterThan(0)
+      const snapshot = JSON.stringify([...firstTools].sort((left, right) => left.name.localeCompare(right.name)))
+      for (const response of responses) {
+        expect(response.error).toBeUndefined()
+        const responseSnapshot = JSON.stringify([...(response.result?.tools ?? [])].sort((left, right) => left.name.localeCompare(right.name)))
+        expect(responseSnapshot).toBe(snapshot)
+      }
+    } finally {
+      clearTimeout(timeout)
+      child.kill()
+    }
+  }, 20_000)
+
   it.each([false, true])('serializes two bridge refreshes and never replays an uncertain refresh (lostResponse=%s)', async lostResponse => {
     const directory = await mkdtemp(join(tmpdir(), 'merchant-refresh-race-'))
     const stateFile = join(directory, 'credential.json')

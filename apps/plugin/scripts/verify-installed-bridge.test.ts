@@ -152,5 +152,5 @@ describe('installed MCP bridge verification', () => {
     } finally {
       rmSync(fixture.directory, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 })

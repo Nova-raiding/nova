@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { createElement, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel.js";
 import { AlertFiltersSection, clearAlertFilters } from "./AlertFiltersSection.js";
 import { clearMarketingQueueFilters, MarketingQueueFiltersSection } from "./MarketingQueueFiltersSection.js";
+
+const marketingQueueFiltersSource = readFileSync(new URL("./MarketingQueueFiltersSection.tsx", import.meta.url), "utf8");
 
 describe("Ops filter clearing", () => {
   it("gives every task filter control an accessible name", () => {
@@ -29,6 +32,11 @@ describe("Ops filter clearing", () => {
 
     expect(setQueueFilters).toHaveBeenCalledWith({});
     expect(load).toHaveBeenCalledWith({ queueFilters: {} });
+  });
+
+  it("offers the video settlement attention filter with a truthful label", () => {
+    expect(marketingQueueFiltersSource).toContain('"pending_receipt"');
+    expect(marketingQueueFiltersSource).toContain("queueStateLabel(state)");
   });
 
   it("loads alerts with an explicit empty filter", async () => {

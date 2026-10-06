@@ -238,7 +238,25 @@ function discoverTools(root, nodeBinary = process.execPath) {
   if (probe.error) return { names: [], error: probe.error }
   const tools = probe.response?.result?.tools
   if (!Array.isArray(tools)) return { names: [], error: 'invalid tools/list response' }
-  return { names: tools.map(tool => tool?.name).filter(name => typeof name === 'string') }
+  return { tools, names: tools.map(tool => tool?.name).filter(name => typeof name === 'string') }
+}
+
+// A name-only comparison cannot detect a stale description or input schema.
+// Canonicalize object keys and tool order so the digest describes the exposed
+// contract rather than incidental object insertion order. Descriptor/schema
+// changes still alter the digest and fail closed.
+function canonicalSnapshot(value) {
+  if (Array.isArray(value)) return value.map(canonicalSnapshot)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, canonicalSnapshot(item)]))
+  }
+  return value
+}
+function canonicalToolSnapshot(tools) {
+  return canonicalSnapshot([...tools].sort((left, right) => String(left?.name ?? '').localeCompare(String(right?.name ?? ''))))
+}
+function toolSnapshotDigest(tools) {
+  return createHash('sha256').update(JSON.stringify(canonicalToolSnapshot(tools)), 'utf8').digest('hex')
 }
 
 const sourceDiscovery = discoverTools(sourceRoot)
@@ -260,6 +278,13 @@ const unconfiguredError = unconfiguredProbe.error
     ? null : `unconfigured tools/call did not fail closed: ${String(unconfiguredCode ?? 'missing code')}`)
 const sourceToolNames = sourceDiscovery.names
 const toolNames = installedDiscovery.names
+const sourceToolSnapshot = Array.isArray(sourceDiscovery.tools) ? sourceDiscovery.tools : []
+const installedToolSnapshot = Array.isArray(installedDiscovery.tools) ? installedDiscovery.tools : []
+const sourceToolSnapshotSha256 = toolSnapshotDigest(sourceToolSnapshot)
+const installedToolSnapshotSha256 = toolSnapshotDigest(installedToolSnapshot)
+const toolSnapshotMatches = Boolean(sourceDiscovery.error || installedDiscovery.error)
+  ? false
+  : JSON.stringify(canonicalToolSnapshot(sourceToolSnapshot)) === JSON.stringify(canonicalToolSnapshot(installedToolSnapshot))
 const sourceToolSet = new Set(sourceToolNames)
 const installedToolSet = new Set(toolNames)
 const missingFromInstalled = sourceToolNames.filter(name => !installedToolSet.has(name))
@@ -287,6 +312,7 @@ const toolCacheDrift = mismatchedFiles.some(path => path === 'mcp/bridge.mjs' ||
   || duplicateTools.length > 0
   || Boolean(sourceDiscovery.error)
   || Boolean(installedDiscovery.error)
+  || !toolSnapshotMatches
   || Boolean(unconfiguredError)
 const connectHelperSourcePaths = [
   'macos/store-nova-connect-helper.swift', 'scripts/build-connect-helper.mjs', 'scripts/connect-local-macos.mjs',
@@ -331,6 +357,9 @@ const evidence = {
     source_count: sourceToolNames.length,
     source_discovery_error: sourceDiscovery.error ?? null,
     installed_discovery_error: installedDiscovery.error ?? null,
+    source_snapshot_sha256: sourceToolSnapshotSha256,
+    installed_snapshot_sha256: installedToolSnapshotSha256,
+    snapshot_matches: toolSnapshotMatches,
     unconfigured_call: { tool: 'workspace.health', blocked: !unconfiguredError, code: unconfiguredCode ?? null, error: unconfiguredError },
     required: requiredTools,
     missing: missingTools,

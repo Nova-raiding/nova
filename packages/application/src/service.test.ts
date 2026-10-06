@@ -1145,6 +1145,16 @@ describe('MerchantService', () => {
     expect(service.assets.size).toBe(2)
   })
 
+  it('retains formal video commerce bindings on the archived asset', () => {
+    const service = new MerchantService({ seedFixture: false })
+    const asset = service.registerAsset({
+      workspaceId: 'ws_video_binding', name: 'provider-job.mp4', mimeType: 'video/mp4', sizeBytes: 8,
+      sha256: 'c'.repeat(64), storageKey: 'quarantine/ws_video_binding/provider-job.mp4',
+      sourceProviderJobId: 'provider-job-1', productId: 'product-1', taskId: 'task-1', contentVersionId: 'content-1',
+    })
+    expect(asset).toMatchObject({ sourceProviderJobId: 'provider-job-1', productId: 'product-1', taskId: 'task-1', contentVersionId: 'content-1' })
+  })
+
   it('persists material category changes only in the owning workspace and checks revisions', () => {
     const service = new MerchantService({ seedFixture: false })
     const asset = service.registerAsset({ workspaceId: 'ws_asset_category', name: 'main.png', mimeType: 'image/png', sizeBytes: 12, sha256: 'a'.repeat(64), storageKey: 'quarantine/ws_asset_category/main.png' })

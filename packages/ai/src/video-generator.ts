@@ -10,6 +10,8 @@ export interface VideoGenerationInput {
   context: unknown
   /** Durable business binding for a formal product render; candidate renders omit it. */
   productId?: string
+  taskId?: string
+  contentVersionId?: string
   sourceImage?: string
   usageContext?: RelayUsageContext
   beforeDispatch?: () => Promise<void>
@@ -22,6 +24,8 @@ export interface VideoBillingContext extends RelayUsageContext {
   model: string
   providerRequestId?: string
   productId?: string
+  taskId?: string
+  contentVersionId?: string
 }
 
 export interface VideoGenerationResult {

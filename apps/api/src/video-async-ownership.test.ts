@@ -102,6 +102,12 @@ describe('durable accepted video ownership', () => {
     await expect(ownedGenerate(input('video:partial'))).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' })
     expect(provider.posts).toBe(1)
   })
+  it('persists formal product/task/content-version binding with the accepted provider job', async () => {
+    install()
+    const base = input('video:bound')
+    await withOwnedVideoAction<Awaited<ReturnType<typeof generateOwnedVideo>>>('video-workspace', 'video:bound', { ...base, productId: 'product', taskId: 'task-1', contentVersionId: 'cv-1' }, async beforeDispatch => generateOwnedVideo({ ...base, productId: 'product', taskId: 'task-1', contentVersionId: 'cv-1', beforeDispatch }), () => ({ status: 'queued' as const, providerJobId: 'job-1', settlementStatus: 'pending_receipt' as const }))
+    expect(await assertVideoProviderJobScope('video-workspace', 'job-1')).toMatchObject({ productId: 'product', taskId: 'task-1', contentVersionId: 'cv-1' })
+  })
   it('accepted authority write failure keeps dispatch claim and forbids another submit', async () => {
     const store = install(); const append = store.append.bind(store)
     vi.spyOn(store, 'append').mockImplementation(value => {
@@ -143,6 +149,16 @@ function candidateParams(evidence: unknown = candidateEvidence()) {
   return { prompt: '原创内部候选', output: 'rendering', modality: 'video', idempotency_key: 'internal-candidate', context_json: JSON.stringify({ candidateOnly: true, brand: null, product: { id: 'product', version: '1' }, rules: [], storyboardQuality: evidence }) }
 }
 describe('server-authorized internal candidate rendering', () => {
+  it('rejects a formal video whose task or content-version binding does not match the product', async () => {
+    install(); vi.stubEnv('REQUIRE_PLATFORM_GOVERNANCE_GATES', 'true')
+    const { runtime } = candidateRuntime()
+    runtime.service.getTask = () => ({ id: 'task-1', workspaceId: 'video-workspace', productId: 'other-product', version: 2, contentVersionId: 'cv-1' } as never)
+    runtime.service.getContentVersion = () => ({ id: 'cv-1', taskId: 'task-1', version: 1 } as never)
+    const context = { brand: { id: 'brand', version: '1' }, product: { id: 'product', version: '1' }, task: { id: 'task-1', version: '2' }, contentVersion: { id: 'cv-1', version: '1' }, rules: [{ id: 'rule', version: '1' }], storyboardQuality: candidateEvidence() }
+    await expect(handleMultimodalMcpMethod('multimodal.video.request', { prompt: '正式商品视频', output: 'rendering', idempotency_key: 'formal-binding-mismatch', context_json: JSON.stringify(context) }, runtime)).rejects.toMatchObject({ code: 'VIDEO_TASK_SCOPE_MISMATCH' })
+    expect(provider.posts).toBe(0)
+  })
+
   it('retains unpublished status through accepted replay, repository reload, pending GET and archived GET', async () => {
     const store = install(); vi.stubEnv('REQUIRE_PLATFORM_GOVERNANCE_GATES', 'true')
     const { runtime, archive } = candidateRuntime()

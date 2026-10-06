@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { hasAmbiguousManualPublishJob, parsePublishBatchDetail, publishBatchItemKey, publishBatchItemScope, queueStateLabel, visualEvidenceState } from './MarketingQueuePanel.js'
+import { hasAmbiguousManualPublishJob, parsePublishBatchDetail, publishBatchItemKey, publishBatchItemScope, queueStateLabel, videoQueueState, visualEvidenceState } from './MarketingQueuePanel.js'
 
 const panelSource = readFileSync(new URL('./MarketingQueuePanel.tsx', import.meta.url), 'utf8')
 const imageEvidenceModalSource = readFileSync(new URL('./ImageExecutionEvidenceModal.tsx', import.meta.url), 'utf8')
@@ -14,7 +14,12 @@ describe('marketing queue delivery evidence', () => {
     expect(queueStateLabel('failed')).toBe('失败')
     expect(queueStateLabel('unknown')).toBe('待对账')
     expect(queueStateLabel('pending_receipt')).toBe('等待成本回执')
+    expect(queueStateLabel('settled')).toBe('已结算')
     expect(queueStateLabel('outcome_unknown')).toBe('结果待对账')
+    expect(queueStateLabel('quarantined')).toBe('安全隔离中，暂不可交付')
+    expect(queueStateLabel('archive_failed')).toBe('归档失败')
+    expect(queueStateLabel('not_started')).toBe('尚未归档')
+    expect(queueStateLabel('archived')).toBe('已归档')
     expect(queueStateLabel('provider_reserved')).toBe('生成请求已登记，等待提交')
     expect(queueStateLabel('provider_dispatching')).toBe('正在提交模型请求，等待受理确认')
     expect(queueStateLabel('dispatching')).toBe('正在提交模型请求，等待受理确认')
@@ -23,6 +28,16 @@ describe('marketing queue delivery evidence', () => {
     expect(queueStateLabel('manual_publish_reported')).toBe('人工已报告，待复核')
     expect(queueStateLabel('platform_verified')).toBe('平台 API 已验证')
     expect(queueStateLabel('future_state')).toBe('状态待确认')
+  })
+
+  it.each([
+    [{ state: 'completed', settlementStatus: 'settled', archiveState: 'quarantined' }, 'quarantined'],
+    [{ state: 'completed', settlementStatus: 'unknown', archiveState: 'archived' }, 'unknown'],
+    [{ state: 'completed', settlementStatus: 'pending_receipt', archiveState: 'archived' }, 'pending_receipt'],
+    [{ state: 'failed', settlementStatus: 'settled', archiveState: 'failed' }, 'archive_failed'],
+    [{ state: 'completed', settlementStatus: 'settled', archiveState: 'archived' }, 'completed'],
+  ] as const)('does not present a blocked video as completed (%o)', (job, expected) => {
+    expect(videoQueueState(job)).toBe(expected)
   })
 
   it('keeps manual publish reports distinct from verified platform receipts', () => {
