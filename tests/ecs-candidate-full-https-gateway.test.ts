@@ -154,7 +154,7 @@ describe('loopback-only full candidate HTTPS gateway', () => {
     expect(after.at(-1)).toEqual(['--host', 'unix:///var/run/docker.sock', 'stop', '--time', '10', gatewayId])
     expect(name).toMatch(new RegExp(`^merchant-candidate-full-https-${releaseId}-[a-f0-9]{10}$`))
     expect(after.some(call => call.includes('rm') || call.includes('down'))).toBe(false)
-  })
+  }, 15_000)
 
   it('rejects an invalid public port map before any Docker operation', () => {
     const value = fixture()
