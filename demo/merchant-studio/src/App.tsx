@@ -6429,8 +6429,14 @@ export function MaterialLibraryWorkspace({
     }
     const controller = new AbortController()
     const objectUrls: string[] = []
+    // The 101 Demo profile allows authenticated reads of unscanned bytes while
+    // deferred scanning is pending. The API still owns the fail-closed gate;
+    // rejected/quarantined assets are never admitted here.
     const imageAssets = remoteAssets
-      .filter((asset) => asset.scanStatus === 'clean' && asset.mimeType.toLowerCase().startsWith('image/'))
+      .filter((asset) =>
+        (asset.scanStatus === 'clean' || asset.scanStatus === 'unscanned') &&
+        asset.mimeType.toLowerCase().startsWith('image/'),
+      )
       .sort((left, right) => right.sizeBytes - left.sizeBytes)
       .slice(0, 24)
     const previews = new Map<string, string>()
