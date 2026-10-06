@@ -129,6 +129,19 @@ describe("trusted platform rule boundary", () => {
     });
   });
 
+  it("strips trailing Markdown-link punctuation from normalized official evidence", () => {
+    const markdown = [
+      "# Store Nova｜京东平台规则知识库 v0.1",
+      "## JD-GEN-002｜规则卡片",
+      "- 平台：京东",
+      "- 官方依据：[京东规则页面](https://rule.jd.com/rule/ruleDetail.action?id=456)。",
+      "规则内容",
+    ].join("\n");
+    expect(parseMarkdownDraftInputs(markdown, "jd.md")[0]?.sourceReference).toBe(
+      "https://rule.jd.com/rule/ruleDetail.action?id=456",
+    );
+  });
+
   it("extracts only platform rule Markdown files from a supplied ZIP package", async () => {
     const zip = new JSZip();
     zip.file("StoreNova_京东平台规则_v0.1/01_上传文件/京东平台规则.md", [
