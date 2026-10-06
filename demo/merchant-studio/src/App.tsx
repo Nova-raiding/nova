@@ -7333,6 +7333,7 @@ export function Products({
   const [imageGenerationMode, setImageGenerationMode] = useState<'create' | 'optimize'>('create')
   const [imageGenerationDirection, setImageGenerationDirection] = useState('保留商品本体，生成适合电商首图的干净背景与克制光影')
   const [imageGenerationCount, setImageGenerationCount] = useState('1')
+  const [imageGenerationSize, setImageGenerationSize] = useState<import('./api.js').ProductImageSize>('1024x1024')
   const [imageGenerationBusy, setImageGenerationBusy] = useState(false)
   const [imageGenerationError, setImageGenerationError] = useState('')
   const [imageGenerationErrorField, setImageGenerationErrorField] = useState<'direction' | 'count' | null>(null)
@@ -7824,7 +7825,7 @@ export function Products({
     if (!Number.isInteger(count) || count < 1 || count > 6) { setImageGenerationError('候选数量必须是 1–6。'); setImageGenerationErrorField('count'); return }
     setImageGenerationBusy(true); setImageGenerationError(''); setImageGenerationErrorField(null)
     try {
-      const result = await generateProductImages(baseUrl, { product_id: imageGenerationTarget.productId, platform: imageGenerationTarget.platform, ...(imageGenerationTarget.accountId ? { account_id: imageGenerationTarget.accountId } : {}), direction, mode: imageGenerationMode, count: String(count), idempotency_key: `merchant-studio-image-${imageGenerationTarget.productId}-${imageGenerationTarget.platform}-${count}-${direction}` })
+      const result = await generateProductImages(baseUrl, { product_id: imageGenerationTarget.productId, platform: imageGenerationTarget.platform, ...(imageGenerationTarget.accountId ? { account_id: imageGenerationTarget.accountId } : {}), direction, mode: imageGenerationMode, size: imageGenerationSize, count: String(count), idempotency_key: `merchant-studio-image-${imageGenerationTarget.productId}-${imageGenerationTarget.platform}-${imageGenerationSize}-${count}-${direction}` })
       setImageGenerationTarget(null)
       // The job panel lives in the task workspace.  The old URL preserved the
       // current /merchant/products path, so a successful generation appeared
@@ -8711,6 +8712,13 @@ export function Products({
             )}
             <div className="info-notice" role="status">将进入真实图片任务队列；生成完成后仍需安全扫描、人工审核和候选选择，不会直接发布。</div>
             <label htmlFor="image-generation-direction">生成方向<textarea id="image-generation-direction" aria-invalid={imageGenerationErrorField === 'direction'} aria-describedby={imageGenerationError ? 'image-generation-error' : undefined} data-dialog-initial-focus value={imageGenerationDirection} onChange={event => { setImageGenerationDirection(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} maxLength={500} rows={4} /></label>
+            <label htmlFor="image-generation-size">输出用途与画布尺寸<select id="image-generation-size" value={imageGenerationSize} onChange={event => setImageGenerationSize(event.target.value as import('./api.js').ProductImageSize)}>
+              <option value="1024x1024">主图 / 方图 · 1024×1024</option>
+              <option value="1024x1536">竖版内容图 · 1024×1536</option>
+              <option value="1536x1024">Banner / 横幅 · 1536×1024</option>
+              <option value="1024x3072">详情长图 · 1024×3072</option>
+              <option value="1024x4096">完整详情长图 · 1024×4096</option>
+            </select></label>
             <label htmlFor="image-generation-count">候选数量<input id="image-generation-count" inputMode="numeric" aria-invalid={imageGenerationErrorField === 'count'} aria-describedby={imageGenerationError ? 'image-generation-error' : undefined} value={imageGenerationCount} onChange={event => { setImageGenerationCount(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} /></label>
             {imageGenerationError && <div id="image-generation-error" ref={imageGenerationErrorRef} className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"><strong>无法提交图片生成</strong><span>{imageGenerationError}</span>{imageGenerationErrorField && <a href={`#image-generation-${imageGenerationErrorField}`}>跳转到需要修正的字段</a>}<span className="sr-only">请修正表单后重新提交。</span></div>}
           </div>
