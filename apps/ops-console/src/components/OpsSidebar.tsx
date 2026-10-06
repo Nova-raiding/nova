@@ -37,7 +37,7 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; description: s
   ];
 
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
-  { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery", "support"] },
+  { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery", "stores", "rules", "support"] },
 ];
 
 // Match the reviewed desktop rail. Other authorized destinations remain

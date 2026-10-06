@@ -29,7 +29,7 @@ describe("OpsSidebar navigation", () => {
   });
 
   it("keeps the established destinations and adds the authorized support entry", () => {
-    expect(navigationGroups[0]?.items).toEqual(["overview", "users", "customer-delivery", "support"]);
+    expect(navigationGroups[0]?.items).toEqual(["overview", "users", "customer-delivery", "stores", "rules", "support"]);
     expect(navigationGroups).toHaveLength(1);
     expect(mainItems.map(({ domain }) => domain)).toEqual([
       "overview", "users", "customer-delivery", "members", "tasks", "knowledge", "stores", "rules", "models", "storage", "finance", "support", "audit",
@@ -50,7 +50,7 @@ describe("OpsSidebar navigation", () => {
 
   it("keeps role-gated routes available in their authorized navigation group", () => {
     expect(mainItems.map(({ domain }) => domain)).toContain("rules");
-    expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("rules");
+    expect(navigationGroups.flatMap(({ items }) => [...items])).toContain("rules");
     expect(mainItems.map(({ domain }) => domain)).not.toContain("feature-flags");
   });
 
@@ -89,15 +89,17 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain('aria-label="存储与对账"');
   });
 
-  it("renders only the three screenshot destinations in the primary rail", () => {
+  it("renders the governed platform workflow destinations in the primary rail", () => {
     const markup = renderToStaticMarkup(<OpsSidebar activeDomain="overview" visibleDomains={["overview", "users", "customer-delivery", "stores", "rules", "finance", "storage", "audit"]} onNavigate={() => undefined} />);
-    expect((markup.match(/class="sider-item(?: active)?"/g) ?? [])).toHaveLength(3);
+    expect((markup.match(/class="sider-item(?: active)?"/g) ?? [])).toHaveLength(5);
     expect(markup).toContain('aria-label="总览"');
     expect(markup).toContain('aria-label="用户中心"');
     expect(markup).toContain('aria-label="客户交付"');
-    for (const label of ["平台与店铺", "规则中心", "账务与退款", "审计中心", "存储治理"]) {
+    for (const label of ["账务与退款", "审计中心", "存储治理"]) {
       expect(markup).not.toContain(`aria-label="${label}"`);
     }
+    expect(markup).toContain('aria-label="平台与店铺"');
+    expect(markup).toContain('aria-label="规则中心"');
     expect(mainItems.map(({ domain }) => domain)).toEqual(expect.arrayContaining(["stores", "rules", "finance", "storage", "audit"]));
   });
 
