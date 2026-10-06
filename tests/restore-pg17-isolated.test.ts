@@ -86,20 +86,21 @@ describe('protected PostgreSQL 17 isolated restore input contract', () => {
       'merchant-ui': ['ui'], 'merchant-ops-ui': ['ops-ui'],
       'payment-gateway': ['payment-gateway'], 'pilot-gateway': ['pilot-gateway'], clamav: ['clamav'],
     }
-    for (const [artifact, names] of Object.entries(groups)) for (const name of names) services[name] = { image: references[artifact]! }
+    for (const [artifact, serviceNames] of Object.entries(groups)) for (const name of serviceNames) services[name] = { image: references[artifact]!, labels: { 'com.storenova.release.id': input.releaseId, 'org.opencontainers.image.revision': input.gitSha } }
     const directory = mkdtempSync(join(tmpdir(), 'pg17-compose-gate-'))
     const compose = join(directory, 'rendered-compose.json'), sidecar = join(directory, 'image-digests.json')
     writeFileSync(compose, JSON.stringify({ services }))
     writeFileSync(sidecar, JSON.stringify(digests))
     const gate = 'infra/scripts/validate-ecs-compose-release.rb'
     const jsonArgument = composeDigestArgument(digests, { ...digests })
-    const imageResult = spawnSync('ruby', [gate, compose, jsonArgument, '--print-image-set-digest'], { encoding: 'utf8' })
+    const validatorEnv = { ...process.env, RELEASE_ID: input.releaseId, RELEASE_GIT_SHA: input.gitSha }
+    const imageResult = spawnSync('ruby', [gate, compose, jsonArgument, '--print-image-set-digest'], { encoding: 'utf8', env: validatorEnv })
     expect(imageResult.status).toBe(0)
     expect(imageResult.stdout.trim()).toBe(input.imageSetDigest)
-    const manifestResult = spawnSync('ruby', [gate, compose, jsonArgument, '--print-manifest-sha256'], { encoding: 'utf8' })
+    const manifestResult = spawnSync('ruby', [gate, compose, jsonArgument, '--print-manifest-sha256'], { encoding: 'utf8', env: validatorEnv })
     expect(manifestResult.status).toBe(0)
     expect(manifestResult.stdout.trim()).toMatch(/^[a-f0-9]{64}$/u)
-    const pathInsteadOfJson = spawnSync('ruby', [gate, compose, sidecar, '--print-image-set-digest'], { encoding: 'utf8' })
+    const pathInsteadOfJson = spawnSync('ruby', [gate, compose, sidecar, '--print-image-set-digest'], { encoding: 'utf8', env: validatorEnv })
     expect(pathInsteadOfJson.status).not.toBe(0)
     expect(() => composeDigestArgument({ ...digests, 'merchant-api': `sha256:${'0'.repeat(64)}` }, digests)).toThrow(/sidecar mismatch/)
   })

@@ -403,7 +403,7 @@ describe('worker production entry', () => {
         .resolves.toEqual({ migrationVersion: version, apiReady: false })
     }
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations }))
-      .rejects.toThrow('expected complete migration chain through 266')
+      .rejects.toThrow('expected complete migration chain through 267')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 253)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
       .rejects.toThrow('exactly 254 or 255')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254).map((row, index) => index === 253 ? { ...row, checksum: 'a'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
@@ -424,7 +424,7 @@ describe('worker production entry', () => {
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
       .rejects.toThrow('exactly 255 or 256')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 255)), expectedMigrations: migrations }))
-      .rejects.toThrow('expected complete migration chain through 266')
+      .rejects.toThrow('expected complete migration chain through 267')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 256).map((row, index) => index === 255 ? { ...row, checksum: 'b'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
       .rejects.toThrow('checksum mismatch')
   })

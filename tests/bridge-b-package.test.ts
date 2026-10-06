@@ -59,8 +59,9 @@ function fixture() {
     const doc = { services }
     const file = path(`${releaseId}.json`)
     writeFileSync(file, JSON.stringify(doc))
-    const manifest = execFileSync('ruby', [validator, file, JSON.stringify(digests), '--print-manifest-sha256'], { encoding: 'utf8' }).trim()
-    const imageSet = execFileSync('ruby', [validator, file, JSON.stringify(digests), '--print-image-set-digest'], { encoding: 'utf8' }).trim()
+    const validatorEnv = { ...process.env, RELEASE_ID: releaseId, RELEASE_GIT_SHA: releaseGit }
+    const manifest = execFileSync('ruby', [validator, file, JSON.stringify(digests), '--print-manifest-sha256'], { encoding: 'utf8', env: validatorEnv }).trim()
+    const imageSet = execFileSync('ruby', [validator, file, JSON.stringify(digests), '--print-image-set-digest'], { encoding: 'utf8', env: validatorEnv }).trim()
     for (const serviceName of ['api', 'api-replica']) {
       services[serviceName]!.environment!.RELEASE_MANIFEST_SHA256 = manifest
       services[serviceName]!.environment!.RELEASE_IMAGE_SET_DIGEST = imageSet
@@ -88,7 +89,11 @@ function fixture() {
   const writePlan = () => writeFileSync(rollbackPlan, JSON.stringify(plan))
   writePlan()
   const argumentsList = ['--candidate-identity', identity, '--source-archive', source, '--release-images', releaseImages, '--eight-image-set', eightImages, '--rendered-compose', current.file, '--rollback-plan', rollbackPlan, '--old-runtime-evidence', oldEvidence, '--old-image-archive', oldArchive]
-  const run = () => execFileSync('node', [script, ...argumentsList], { encoding: 'utf8', stdio: 'pipe' })
+  const run = () => execFileSync('node', [script, ...argumentsList], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+    env: { ...process.env, RELEASE_ID: 'release-bridge-b', RELEASE_GIT_SHA: gitSha },
+  })
   return { run, plan, writePlan, identity, source, current, oldArchive, oldEvidence }
 }
 
