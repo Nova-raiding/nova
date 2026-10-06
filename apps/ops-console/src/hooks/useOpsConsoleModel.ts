@@ -1452,8 +1452,12 @@ export function useOpsConsoleModel() {
       await loadRules();
       return true;
     } catch (cause) {
-      message.error(cause instanceof Error ? cause.message : "规则发布失败");
-      return false;
+      const reason = cause instanceof Error ? cause.message : "规则发布失败";
+      message.error(reason);
+      // Preserve the server's structured conflict/source message for the
+      // batch importer. The importer can continue with later cards while the
+      // toast still gives the operator immediate feedback.
+      throw new Error(reason);
     } finally {
       ruleMutationInFlight.current = false;
       setRuleMutationKey(undefined);

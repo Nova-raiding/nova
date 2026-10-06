@@ -173,16 +173,16 @@ describe("trusted platform rule boundary", () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
-  it("reports completed cards and the first failed card without attempting later writes", async () => {
+  it("reports completed cards and the first failed card while continuing later writes", async () => {
     const drafts = parseMarkdownDraftInputs(`${markdownCard("001", "jd")}\n${markdownCard("002", "taobao")}\n${markdownCard("003", "tmall")}`, "rules.md");
     const publish = vi.fn(async (draft: typeof drafts[number]) => !draft.packId.includes("pdd-002"));
     expect(await uploadMarkdownDrafts(drafts, publish)).toEqual({
-      succeeded: 1,
+      succeeded: 2,
       failedCard: "pdd-002",
       reason: "规则服务拒绝了该卡片；请查看规则服务错误提示并核对官方依据。",
     });
-    expect(publish).toHaveBeenCalledTimes(2);
-    expect(publish.mock.calls.map(([draft]) => draft.packId)).toEqual(["jd-manual-pdd-001", "taobao-manual-pdd-002"]);
+    expect(publish).toHaveBeenCalledTimes(3);
+    expect(publish.mock.calls.map(([draft]) => draft.packId)).toEqual(["jd-manual-pdd-001", "taobao-manual-pdd-002", "tmall-manual-pdd-003"]);
     const component = readFileSync(new URL("./RuleCenterSection.tsx", import.meta.url), "utf8");
     expect(component).toContain("Markdown 导入未完成");
     expect(component).toContain("成功 ${markdownImportResult.succeeded} 张");

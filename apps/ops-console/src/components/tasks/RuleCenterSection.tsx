@@ -146,17 +146,27 @@ export async function uploadMarkdownDrafts(
   publishRuleDraft: (draft: ReturnType<typeof parseMarkdownDraftInputs>[number]) => Promise<boolean>,
 ) {
   let succeeded = 0;
+  const failures: Array<{ cardId: string; reason: string }> = [];
   for (const draft of drafts) {
-    if (!(await publishRuleDraft(draft))) {
-      return {
-        succeeded,
-        failedCard: draft.packId.replace(/^.*-manual-/u, ""),
-        reason: "规则服务拒绝了该卡片；请查看规则服务错误提示并核对官方依据。",
-      };
+    const cardId = draft.packId.replace(/^.*-manual-/u, "");
+    try {
+      if (await publishRuleDraft(draft)) {
+        succeeded += 1;
+      } else {
+        failures.push({ cardId, reason: "规则服务拒绝了该卡片；请查看规则服务错误提示并核对官方依据。" });
+      }
+    } catch (error) {
+      failures.push({ cardId, reason: error instanceof Error ? error.message : "规则服务拒绝了该卡片" });
     }
-    succeeded += 1;
   }
-  return { succeeded, failedCard: undefined, reason: undefined };
+  const firstFailure = failures[0];
+  return {
+    succeeded,
+    failedCard: firstFailure?.cardId,
+    reason: firstFailure
+      ? `${firstFailure.reason}${failures.length > 1 ? `；另有 ${failures.length - 1} 张卡片失败` : ""}`
+      : undefined,
+  };
 }
 
 const platformRuleMarkdownNames = new Set([
