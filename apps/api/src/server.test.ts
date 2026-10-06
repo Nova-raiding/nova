@@ -35,6 +35,19 @@ describe('marketing video provider queue projection', () => {
     expect(jobs).toEqual([expect.objectContaining({ providerJobId: 'job-1', state: 'completed', settlementStatus: 'settled', archiveState: 'quarantined', assetId: 'asset-1' })])
   })
 
+  it('projects completed provider work with a failed local archive for Ops retry', () => {
+    const [job] = marketingVideoProviderJobsFromEvents([
+      event('multimodal.video.accepted', { billing_context: { providerJobId: 'job-archive-failed', providerRequestId: 'request-1' } }, '2026-10-06T00:00:00.000Z', 'accepted'),
+      event('multimodal.video_status_observed', {
+        provider_job_id: 'job-archive-failed',
+        rendering: { status: 'completed', providerJobId: 'job-archive-failed', archiveState: 'failed' },
+        error_code: 'VIDEO_ARTIFACT_DOWNLOAD_FAILED',
+        next_action: 'provider 已完成但归档失败；重试 video.get',
+      }, '2026-10-06T00:01:00.000Z', 'archive-failed'),
+    ], 10)
+    expect(job).toMatchObject({ providerJobId: 'job-archive-failed', state: 'completed', settlementStatus: 'settled', archiveState: 'failed', assetId: null, errorCode: 'VIDEO_ARTIFACT_DOWNLOAD_FAILED', nextAction: expect.stringContaining('重试') })
+  })
+
   it('matches settlement filters without collapsing pending receipts into completed state', () => {
     const [job] = marketingVideoProviderJobsFromEvents([
       event('multimodal.video.accepted', { billing_context: { providerJobId: 'job-pending', providerRequestId: 'request-1' } }, '2026-10-06T00:00:00.000Z', 'accepted'),

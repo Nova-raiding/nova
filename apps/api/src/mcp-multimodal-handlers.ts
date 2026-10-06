@@ -365,9 +365,26 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
         const candidateStatus = billingContext.candidateOnly === true ? { candidate_only: true, publishable: false, candidate_status: '未绑定商品、仅候选、不可发布' } : {}
         const observed = await videoGenerator.getStatus(providerJobId, billingContext)
         if (observed.settlementStatus !== 'settled') return result({ ...candidateStatus, provider_job_id: providerJobId, status: 'queued', settlement_status: 'pending_receipt', execution: executionContract('video', true) })
-        const rendering = await archiveCompletedVideo(workspaceId, observed, billingContext)
-        await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', 1, { provider_job_id: providerJobId, ...rendering, ...candidateStatus })
-        return result({ provider_job_id: providerJobId, execution: executionContract('video', true), ...(rendering.assetId ? { asset_id: rendering.assetId, archive_state: rendering.archiveState, ...(rendering.archiveState === 'archived' ? { download_path: `/v1/assets/${encodeURIComponent(rendering.assetId)}/download` } : { availabilityWarning: '视频已安全归档到隔离区，平台自动安全扫描通过后才可下载或发布；无需商家或运营人员操作' }) } : {}), ...userFacingVideoRendering(rendering), ...candidateStatus })
+        try {
+          const rendering = await archiveCompletedVideo(workspaceId, observed, billingContext)
+          await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', 1, { provider_job_id: providerJobId, ...rendering, ...candidateStatus })
+          return result({ provider_job_id: providerJobId, execution: executionContract('video', true), ...(rendering.assetId ? { asset_id: rendering.assetId, archive_state: rendering.archiveState, ...(rendering.archiveState === 'archived' ? { download_path: `/v1/assets/${encodeURIComponent(rendering.assetId)}/download` } : { availabilityWarning: '视频已安全归档到隔离区，平台自动安全扫描通过后才可下载或发布；无需商家或运营人员操作' }) } : {}), ...userFacingVideoRendering(rendering), ...candidateStatus })
+        } catch (error) {
+          // Provider completion and local archive completion are separate
+          // facts. Persist the latter even when the archive/download fails so
+          // Ops can show archive_failed and the next video.get can retry with
+          // an auditable trail instead of leaving the job queued forever.
+          const rawCode = error instanceof DomainError ? error.code : (error as { code?: unknown })?.code
+          const errorCode = typeof rawCode === 'string' && /^[A-Z0-9_]{1,80}$/u.test(rawCode) ? rawCode : 'VIDEO_ARCHIVE_FAILED'
+          await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', 1, {
+            provider_job_id: providerJobId,
+            rendering: { ...observed, archiveState: 'failed' as const },
+            error_code: errorCode,
+            next_action: '视频 provider 已完成，但本地资产归档失败；保留任务并重试 video.get，禁止下载或发布',
+            ...candidateStatus,
+          })
+          throw error
+        }
       } catch (error) {
         if (error instanceof DomainError) throw error
         const providerFailure = modelSettlementDomainError(error)

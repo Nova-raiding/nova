@@ -36,4 +36,16 @@ describe('video.get settlement delivery boundary', () => {
     expect(await handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)).toMatchObject({ asset_id: 'workspace-a-asset', status: 'completed' })
     expect(f.archive).toHaveBeenCalledTimes(1)
   })
+
+  it('records an archive failure after provider completion so the job is retryable and visible to Ops', async () => {
+    const f = runtime()
+    f.getStatus.mockResolvedValue({ status: 'completed', settlementStatus: 'settled', providerJobId: 'job-a', videoUrl: 'https://cdn.example/video.mp4' })
+    f.archive.mockRejectedValue(new DomainError('VIDEO_ARTIFACT_DOWNLOAD_FAILED', 'archive failed', 502))
+    await expect(handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)).rejects.toMatchObject({ code: 'VIDEO_ARTIFACT_DOWNLOAD_FAILED' })
+    expect(f.persistEvent).toHaveBeenCalledWith('workspace-a', 'video_job-a', 'multimodal.video_status_observed', 1, expect.objectContaining({
+      provider_job_id: 'job-a',
+      error_code: 'VIDEO_ARTIFACT_DOWNLOAD_FAILED',
+      rendering: expect.objectContaining({ status: 'completed', archiveState: 'failed' }),
+    }))
+  })
 })

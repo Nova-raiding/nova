@@ -4336,18 +4336,22 @@ export function marketingVideoProviderJobsFromEvents(events: OutboxEvent[], limi
     const rendering = recordValue(event.payload.rendering)
     const archiveState = rendering?.archiveState === 'archived' || rendering?.archiveState === 'quarantined' ? rendering.archiveState : 'failed'
     const providerStatus = rendering?.status === 'completed' ? 'completed' : 'provider_started'
+    const errorCode = typeof event.payload.error_code === 'string' ? event.payload.error_code : null
     jobs.set(providerJobId, {
       ...current,
       state: providerStatus,
       settlementStatus: 'settled',
       archiveState,
       assetId: typeof rendering?.assetId === 'string' ? rendering.assetId : null,
+      errorCode,
       updatedAt: event.createdAt,
       nextAction: archiveState === 'archived'
         ? '已归档，可继续按现有内容和资产门禁处理'
         : archiveState === 'quarantined'
           ? '已完成但仍在隔离区，等待安全扫描；禁止下载或发布'
-          : '归档状态异常，保持人工核对；禁止下载或发布',
+          : (typeof event.payload.next_action === 'string' && event.payload.next_action.trim()
+            ? event.payload.next_action
+            : '本地资产归档失败，请重试 video.get；禁止下载或发布'),
     })
   }
   return [...jobs.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.providerJobId.localeCompare(left.providerJobId)).slice(0, limit)
