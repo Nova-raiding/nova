@@ -116,6 +116,19 @@ describe("trusted platform rule boundary", () => {
     }
   });
 
+  it("normalizes Markdown-linked official evidence to the raw URL sent to the rule API", () => {
+    const markdown = [
+      "# Store Nova｜京东平台规则知识库 v0.1",
+      "## JD-GEN-001｜规则卡片",
+      "- 平台：京东",
+      "- 官方依据：[京东开放平台商品信息规范总则](https://rule.jd.com/rule/ruleDetail.action?ruleId=1126064694289895424&type=0&btype=1)，第三条",
+      "规则内容",
+    ].join("\n");
+    expect(parseMarkdownDraftInputs(markdown, "jd.md")[0]).toMatchObject({
+      sourceReference: "https://rule.jd.com/rule/ruleDetail.action?ruleId=1126064694289895424&type=0&btype=1",
+    });
+  });
+
   it("extracts only platform rule Markdown files from a supplied ZIP package", async () => {
     const zip = new JSZip();
     zip.file("StoreNova_京东平台规则_v0.1/01_上传文件/京东平台规则.md", [

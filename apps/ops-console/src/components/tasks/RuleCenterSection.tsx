@@ -60,6 +60,10 @@ function isApprovedRuleSourceReference(reference: string, platform?: Platform) {
   });
 }
 
+function extractRuleSourceUrl(reference: string) {
+  return reference.match(/https:\/\/[^\s)\]，；]+/u)?.[0]?.replace(/[.,。；，]+$/u, "") ?? "";
+}
+
 function resolveMarkdownPlatform(value: string, cardId: string): Platform {
   const normalized = value.trim();
   const platform = platformByMarkdownName.get(normalized) ?? platformByMarkdownName.get(normalized.toLowerCase());
@@ -121,6 +125,8 @@ export function parseMarkdownDraftInputs(markdown: string, fileName: string) {
     if (!platform || !source) throw new Error(`${cardId} 缺少平台或官方依据字段`);
     const targetId = resolveMarkdownPlatform(platform, cardId);
     if (!isApprovedRuleSourceReference(source, targetId)) throw new Error(`${cardId} 的官方依据不是该平台批准域名和路径下的 HTTPS 规则页面`);
+    const sourceReference = extractRuleSourceUrl(source);
+    if (!sourceReference) throw new Error(`${cardId} 缺少可提交的官方 HTTPS URL`);
     return {
       packId: `${targetId}-manual-${cardId.toLowerCase()}`,
       name: card[2]?.trim() || cardId,
@@ -128,8 +134,8 @@ export function parseMarkdownDraftInputs(markdown: string, fileName: string) {
       category: "platform" as const,
       publicScope: "platform" as const,
       targetId,
-      sourceReference: source,
-      checksJson: JSON.stringify({ platform, source, sourceDocument: fileName, sourceCard: cardId, content: `${card[0]}\n${body}` }),
+      sourceReference,
+      checksJson: JSON.stringify({ platform, source, sourceReference, sourceDocument: fileName, sourceCard: cardId, content: `${card[0]}\n${body}` }),
       reason: `运营上传平台规则草稿：${fileName}`,
     };
   });
