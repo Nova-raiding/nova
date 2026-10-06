@@ -29,6 +29,28 @@ describe('executeAssetParse', () => {
     await expect(repository.get({ workspaceId: 'ws_a', assetId: 'asset_timeout' })).resolves.toMatchObject({ state: 'failed', errorCode: 'ASSET_PARSE_TIMEOUT' })
   })
 
+  it('forwards caller cancellation to the parser before recording its failure', async () => {
+    const repository = new MemoryAssetParseRepository()
+    const caller = new AbortController()
+    let parserSignal!: AbortSignal
+    let parserStarted!: () => void
+    const started = new Promise<void>(resolve => { parserStarted = resolve })
+    const execution = executeAssetParse({
+      repository, workspaceId: 'ws_a', assetId: 'asset_cancelled', timeoutMs: 1_000,
+      callerSignal: caller.signal,
+      parse: async signal => {
+        parserSignal = signal
+        parserStarted()
+        return await new Promise<Record<string, unknown>>((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }))
+      },
+    })
+    await started
+    caller.abort(new DOMException('client disconnected', 'AbortError'))
+    await expect(execution).rejects.toMatchObject({ code: 'ASSET_PARSE_FAILED' })
+    expect(parserSignal.aborted).toBe(true)
+    await expect(repository.get({ workspaceId: 'ws_a', assetId: 'asset_cancelled' })).resolves.toMatchObject({ state: 'failed', retryable: true })
+  })
+
   it('records a terminal deadline after provider dispatch so a second claim cannot replay it', async () => {
     vi.useFakeTimers()
     const repository = new MemoryAssetParseRepository()

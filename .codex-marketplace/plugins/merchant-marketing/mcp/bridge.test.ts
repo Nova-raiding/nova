@@ -2116,9 +2116,17 @@ describe('Codex stdio MCP bridge', () => {
           ],
         },
       })
-      for (const name of ['catalog.search', 'billing.status', 'billing.transactions', 'billing.recharge.get', 'multimodal.image.edit']) {
+      for (const name of ['catalog.search', 'billing.status', 'billing.transactions', 'billing.recharge.get']) {
         expect(listed.result.tools.find((tool: { name: string }) => tool.name === name)._meta).toBeUndefined()
       }
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'multimodal.image.edit')).toMatchObject({
+        _meta: {
+          ui: { resourceUri: 'ui://merchant-marketing/image-local-edit-v1.html', prefersBorder: true },
+          'openai/outputTemplate': 'ui://merchant-marketing/image-local-edit-v1.html',
+          'openai/toolInvocation/invoking': '正在创建局部编辑候选…',
+          'openai/toolInvocation/invoked': '局部编辑候选已更新',
+        },
+      })
       const taskComponents = {
         'creative.directions': ['ui://merchant-marketing/creative-choice-v1.html', '正在准备创意方向…', '创意方向已准备'],
         'content.diff': ['ui://merchant-marketing/content-diff-v1.html', '正在比较内容版本…', '版本差异已准备'],

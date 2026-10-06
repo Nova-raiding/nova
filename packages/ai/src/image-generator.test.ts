@@ -30,6 +30,26 @@ describe('image generator', () => {
     expect(createImageEditGeneratorFromEnv({ ...relay, IMAGE_EDIT_TIMEOUT_MS: '300000' })).toBeDefined()
   })
 
+  it('forwards caller cancellation to image-edit fetch and preserves pre-dispatch aborts', async () => {
+    const caller = new AbortController()
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      await new Promise<void>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true }))
+      throw new Error('unreachable')
+    })
+    const generator = new OpenAICompatibleImageEditGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'edit-model', fetch: fetcher })
+    const pending = generator.generate({ prompt: '优化背景', sourceImages: [{ bytes: new Uint8Array([1]), mimeType: 'image/png' }], region: { x: 0, y: 0, width: 1, height: 1 }, signal: caller.signal })
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce())
+    caller.abort(new DOMException('caller canceled', 'AbortError'))
+    await expect(pending).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
+    expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(true)
+
+    const alreadyCanceled = new AbortController()
+    alreadyCanceled.abort(new DOMException('already canceled', 'AbortError'))
+    const preDispatch = new OpenAICompatibleImageEditGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'edit-model', fetch: fetcher })
+    await expect(preDispatch.generate({ prompt: '优化背景', sourceImages: [{ bytes: new Uint8Array([1]), mimeType: 'image/png' }], region: { x: 0, y: 0, width: 1, height: 1 }, signal: alreadyCanceled.signal })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
   it('queries provider status fail-closed and returns verified artifacts', async () => {
     let method = ''
     const generator = new OpenAICompatibleImageGenerator({

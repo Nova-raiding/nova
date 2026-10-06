@@ -838,10 +838,10 @@ describe('deployment operation scripts', () => {
     expect(alertServer).toContain('location = /internal/v1/alerts')
     expect(alertServer).toContain('location / { return 404; }')
     expect(httpsGateway).not.toContain('/.well-known/openai-apps-challenge')
-    expect(httpsGateway).not.toContain('/.well-known/oauth-authorization-server')
-    expect(httpsGateway).not.toContain('/.well-known/oauth-protected-resource')
-    expect(httpsGateway).not.toContain('/oauth/authorize')
-    expect(httpsGateway).not.toContain('/oauth/token')
+    for (const path of ['/oauth/authorize', '/oauth/token', '/oauth/revoke', '/.well-known/oauth-authorization-server', '/.well-known/oauth-protected-resource']) {
+      const escaped = path.replaceAll('/', '\\/')
+      expect(httpsGateway).toMatch(new RegExp(`location = ${escaped} \\{[\\s\\S]*?return 401 '[^']*UNAUTHENTICATED`, 'u'))
+    }
     expect(httpsGateway).toContain('location ^~ /v1/auth/local-plugin/')
     const httpsReleaseLocation = httpsGateway.split('location = /releasez {')[1]?.split('}')[0] ?? ''
     expect(httpsReleaseLocation).toContain('proxy_pass http://pilot_api/releasez')

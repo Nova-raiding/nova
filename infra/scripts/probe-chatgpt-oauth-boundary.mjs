@@ -15,26 +15,25 @@ async function request(path, options = {}) {
   } catch { failures.push('endpoint_unavailable'); return null }
   finally { clearTimeout(timer) }
 }
-async function expectProtocolError(path, options, code) {
+async function expectRetiredEndpoint(path, options, code) {
   const response = await request(path, options)
   if (!response) return
-  if (response.status !== 400 || !(response.headers.get('content-type') ?? '').includes('application/json')) { failures.push(code); return }
+  if (response.status !== 401 || !(response.headers.get('content-type') ?? '').includes('application/json')) { failures.push(code); return }
   try {
     const body = await response.json()
-    if (body?.error !== 'invalid_request' || 'access_token' in body || 'code' in body) failures.push(code)
+    if (body?.error !== 'UNAUTHENTICATED' || 'access_token' in body || 'code' in body) failures.push(code)
   } catch { failures.push(code) }
 }
-// A well-formed PKCE request with an unregistered client/callback must be rejected
-// before any login page or redirect is presented.
+// A well-formed PKCE request must hit the retired-endpoint boundary, not a
+// login page, redirect, token issuer, or SPA fallback.
 const authorization = new URLSearchParams({
   response_type: 'code', client_id: 'unregistered_probe_client',
   redirect_uri: 'https://invalid.example/oauth/callback', state: 'probe-state',
   code_challenge: 'A'.repeat(43), code_challenge_method: 'S256',
   scope: 'merchant', resource: productionOrigin + '/mcp',
 })
-await expectProtocolError('/oauth/authorize?' + authorization, {}, 'unregistered_client_not_rejected')
-// Empty token grant catches a fixture endpoint that would mint a demo bearer.
-await expectProtocolError('/oauth/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'grant_type=authorization_code' }, 'invalid_token_grant_not_rejected')
+await expectRetiredEndpoint('/oauth/authorize?' + authorization, {}, 'retired_authorize_not_rejected')
+await expectRetiredEndpoint('/oauth/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'grant_type=authorization_code' }, 'retired_token_not_rejected')
 // Tool discovery must require a bearer. The real ChatGPT session remains a
 // separate browser acceptance step; this request intentionally has none.
 const mcp = await request('/mcp', {

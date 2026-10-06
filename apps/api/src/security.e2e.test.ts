@@ -2196,6 +2196,24 @@ describe('security and access-control acceptance gates', () => {
     expect(signedEnvelope.data).toMatchObject({ workspaceId, reportId: expect.stringMatching(/^sla-report-/u) })
   })
 
+  it('runs SLA scans on the signed, tenant-bound reconcile worker path', async () => {
+    vi.stubEnv('NODE_ENV', 'staging')
+    vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ reconcile: { token: 'reconcile-token', signing_secret: 'reconcile-secret' }, generation: { token: 'generation-token', signing_secret: 'generation-secret' } }))
+    const base = await start()
+    const workspaceId = `ws_sla_scan_${Date.now()}`
+    const path = '/v1/internal/support/sla-scan'
+    const body = JSON.stringify({ workspace_id: workspaceId, limit: 10 })
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+
+    const crossRole = await fetch(`${base}${path}`, { method: 'POST', headers: { ...headers, authorization: 'Bearer generation-token', ...workerProofHeaders({ role: 'generation', secret: 'generation-secret', method: 'POST', path, workspaceId, body }) }, body })
+    expect(crossRole.status).toBe(403)
+
+    const signed = await fetch(`${base}${path}`, { method: 'POST', headers: { ...headers, authorization: 'Bearer reconcile-token', ...workerProofHeaders({ role: 'reconcile', secret: 'reconcile-secret', method: 'POST', path, workspaceId, body }) }, body })
+    const signedEnvelope = await signed.json() as Envelope<{ workspaceId: string; checked: number; planned: number; recorded: unknown[] }>
+    expect({ status: signed.status, error: signedEnvelope.error }).toEqual({ status: 200, error: null })
+    expect(signedEnvelope.data).toMatchObject({ workspaceId, checked: expect.any(Number), planned: expect.any(Number), recorded: expect.any(Array) })
+  })
+
   it('authorizes image reconciliation listings only for the reconcile worker', async () => {
     vi.stubEnv('NODE_ENV', 'staging')
     vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ reconcile: { token: 'reconcile-token', signing_secret: 'reconcile-secret' }, generation: { token: 'generation-token', signing_secret: 'generation-secret' } }))

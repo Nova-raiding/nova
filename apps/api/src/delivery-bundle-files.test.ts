@@ -12,4 +12,10 @@ describe('delivery bundle file byte parsing', () => {
     const files = parseDeliveryBundleFiles([{ path: 'content.bin', mimeType: 'application/octet-stream', content_base64: Buffer.from([0, 1, 2, 255]).toString('base64') }])
     expect(files[0]?.content).toEqual(new Uint8Array([0, 1, 2, 255]))
   })
+
+  it('preserves UTF-8 content bytes without normalizing or re-encoding them', () => {
+    const original = Buffer.from('中文商品说明🙂\u0000', 'utf8')
+    const files = parseDeliveryBundleFiles([{ path: 'content.txt', mimeType: 'text/plain; charset=utf-8', content_base64: original.toString('base64') }])
+    expect(Buffer.from(files[0]?.content as Uint8Array)).toEqual(original)
+  })
 })

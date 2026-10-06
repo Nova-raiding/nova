@@ -377,10 +377,12 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         }
       }
       const response = await withProviderRequestRetry(async () => {
+        let dispatched = false
         assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
         if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
         if (this.options.beforeRequest) await this.options.beforeRequest({ operation: editing ? 'image_edit' : 'image_generate', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
         controller.signal.throwIfAborted()
+        dispatched = true
         imageTrace('provider.request', requestTrace)
         let candidate: Response
         try {
@@ -391,7 +393,10 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
             signal: controller.signal,
             redirect: 'error',
           })
-        } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'image provider request') }
+        } catch (error) {
+          if (!dispatched) throw error
+          rethrowProviderTransportFailure(error, providerKey, 'image provider request')
+        }
         // Defer non-429 error parsing below so provider diagnostics remain
         // available; 429 must be classified before its body is consumed.
         if (candidate.status === 429) assertProviderResponseAccepted(candidate, providerKey, 'image provider')

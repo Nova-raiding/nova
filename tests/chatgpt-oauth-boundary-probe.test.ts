@@ -26,8 +26,8 @@ async function withServer(handler: (req: IncomingMessage, res: ServerResponse) =
 }
 function protocolHandler(req: IncomingMessage, res: ServerResponse) {
   if (req.url?.startsWith('/oauth/authorize') || req.url === '/oauth/token') {
-    res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-    res.end(JSON.stringify({ error: 'invalid_request' }))
+    res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+    res.end(JSON.stringify({ error: 'UNAUTHENTICATED', error_description: 'remote OAuth is disabled' }))
   } else { res.writeHead(401); res.end() }
 }
 
@@ -48,7 +48,7 @@ describe('ChatGPT OAuth read-only boundary probe', () => {
     }, async port => {
       const result = await run(port)
       expect(result.code).toBe(1)
-      expect(result.output).toContain('invalid_token_grant_not_rejected')
+      expect(result.output).toContain('retired_token_not_rejected')
       expect(result.output).toContain('unauthenticated_tools_not_rejected')
       expect(result.output).not.toContain('fixture-secret')
     })
@@ -60,7 +60,7 @@ describe('ChatGPT OAuth read-only boundary probe', () => {
     }, async port => {
       const result = await run(port)
       expect(result.code).toBe(1)
-      expect(result.output).toContain('unregistered_client_not_rejected')
+      expect(result.output).toContain('retired_authorize_not_rejected')
       expect(result.output).not.toContain('fixture-code')
     })
   })

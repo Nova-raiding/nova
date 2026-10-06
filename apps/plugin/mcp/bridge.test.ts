@@ -596,7 +596,9 @@ describe('Codex stdio MCP bridge', () => {
         isError: true,
         structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' },
       })
-      expect(imageEditResponse.result._meta).toBeUndefined()
+      expect(imageEditResponse.result._meta).toMatchObject({
+        ui: { resourceUri: 'ui://merchant-marketing/image-local-edit-v1.html' },
+      })
       for (const [index, name] of ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 3, method: 'tools/call', params: { name, arguments: { id: 'spec_1', expected_revision: '1', idempotency_key: `media:${index}:write`, reason: 'verified production evidence' } } })}\n`)
         expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `当前插件没有此工具：${name}` })
@@ -2116,9 +2118,17 @@ describe('Codex stdio MCP bridge', () => {
           ],
         },
       })
-      for (const name of ['catalog.search', 'billing.status', 'billing.transactions', 'billing.recharge.get', 'multimodal.image.edit']) {
+      for (const name of ['catalog.search', 'billing.status', 'billing.transactions', 'billing.recharge.get']) {
         expect(listed.result.tools.find((tool: { name: string }) => tool.name === name)._meta).toBeUndefined()
       }
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'multimodal.image.edit')).toMatchObject({
+        _meta: {
+          ui: { resourceUri: 'ui://merchant-marketing/image-local-edit-v1.html', prefersBorder: true },
+          'openai/outputTemplate': 'ui://merchant-marketing/image-local-edit-v1.html',
+          'openai/toolInvocation/invoking': '正在创建局部编辑候选…',
+          'openai/toolInvocation/invoked': '局部编辑候选已更新',
+        },
+      })
       const taskComponents = {
         'creative.directions': ['ui://merchant-marketing/creative-choice-v1.html', '正在准备创意方向…', '创意方向已准备'],
         'content.diff': ['ui://merchant-marketing/content-diff-v1.html', '正在比较内容版本…', '版本差异已准备'],

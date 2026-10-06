@@ -90,6 +90,7 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
       const providerKey = providerIdempotencyKey({ operation: 'ocr', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
       assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
       const response = await withProviderRequestRetry(async () => {
+        let dispatched = false
         if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
         if (this.options.beforeRequest) {
           try {
@@ -104,10 +105,14 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
           }
         }
         controller.signal.throwIfAborted()
+        dispatched = true
         let candidate: Response
         try {
           candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}/chat/completions`, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey }, body: requestBody, signal: controller.signal, redirect: 'error' })
-        } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'OCR provider request') }
+        } catch (error) {
+          if (!dispatched) throw error
+          rethrowProviderTransportFailure(error, providerKey, 'OCR provider request')
+        }
         assertProviderResponseAccepted(candidate, providerKey, 'OCR provider')
         return candidate
       }, { signal: controller.signal })

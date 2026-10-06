@@ -189,7 +189,7 @@ export type DeliveryBundleBuildResult =
 
 export interface DeliveryBundleVerificationResult {
   readonly valid: boolean
-  readonly errors: readonly { code: 'MANIFEST_HASH_MISMATCH' | 'MANIFEST_CONTENT_MISMATCH' | 'FILE_MISSING' | 'FILE_HASH_MISMATCH' | 'FILE_SIZE_MISMATCH' | 'FILE_MIME_MISMATCH' | 'UNEXPECTED_FILE'; path: string; message: string }[]
+  readonly errors: readonly { code: 'MANIFEST_HASH_MISMATCH' | 'MANIFEST_CONTENT_MISMATCH' | 'FILE_MISSING' | 'FILE_HASH_MISMATCH' | 'FILE_SIZE_MISMATCH' | 'FILE_MIME_MISMATCH' | 'UNEXPECTED_FILE' | 'DUPLICATE_FILE'; path: string; message: string }[]
 }
 
 const SHA256 = /^(?:sha256:)?[a-f0-9]{64}$/iu
@@ -549,6 +549,11 @@ export function verifyDeliveryBundle(
   const serialized = canonicalJson(manifest)
   if (sha256(serialized) !== normalizeSha(expectedManifestHash)) errors.push({ code: 'MANIFEST_HASH_MISMATCH', path: 'manifest.json', message: '交付 manifest canonical hash 不匹配。' })
   const byPath = new Map(files.map(file => [file.path, file]))
+  const seenPaths = new Set<string>()
+  for (const file of files) {
+    if (seenPaths.has(file.path)) errors.push({ code: 'DUPLICATE_FILE', path: file.path, message: '交付文件路径重复，无法确定唯一待验证字节。' })
+    seenPaths.add(file.path)
+  }
   const manifestFile = byPath.get('manifest.json')
   if (!manifestFile || typeof manifestFile.content !== 'string' || manifestFile.content !== serialized) errors.push({ code: 'MANIFEST_CONTENT_MISMATCH', path: 'manifest.json', message: 'manifest.json 内容与待验证 manifest 不一致。' })
   for (const expected of manifest.files) {

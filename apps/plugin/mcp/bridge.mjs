@@ -195,7 +195,7 @@ const TASK_UI_METHODS = new Map([
   ['publish.batch.prepare', PUBLISH_CONFIRM_UI_URI],
 ])
 const RECHARGE_UI_METHODS = new Set()
-const IMAGE_EDIT_UI_METHODS = new Set()
+const IMAGE_EDIT_UI_METHODS = new Set(['multimodal.image.edit'])
 // Bind the merchant image candidate view at tool discovery time. Result-level
 // metadata is still state-specific (only ready/progress results open the
 // chooser), but ChatGPT needs the output template on the tool definition to
@@ -3969,8 +3969,12 @@ async function handle(request) {
   if (!request || typeof request !== 'object' || Array.isArray(request)) {
     return jsonRpcError(null, -32600, 'JSON-RPC 请求格式无效')
   }
-  const id = request.id ?? null
-  if (request.jsonrpc !== '2.0') return jsonRpcError(id, -32600, 'JSON-RPC 请求格式无效')
+  const hasId = Object.prototype.hasOwnProperty.call(request, 'id')
+  const validId = !hasId
+    ? request.method === 'notifications/initialized'
+    : request.id === null || typeof request.id === 'string' || (typeof request.id === 'number' && Number.isFinite(request.id))
+  const id = hasId && validId ? request.id : null
+  if (request.jsonrpc !== '2.0' || (!hasId && request.method !== 'notifications/initialized') || !validId) return jsonRpcError(id, -32600, 'JSON-RPC 请求格式无效')
   if (typeof request.method !== 'string' || !request.method.trim()) return jsonRpcError(id, -32600, 'JSON-RPC method 必须是非空字符串')
   if (request.params !== undefined && (!request.params || typeof request.params !== 'object' || Array.isArray(request.params))) return jsonRpcError(id, -32602, 'JSON-RPC params 必须是对象')
   if (request.method === 'notifications/initialized') return null

@@ -98,7 +98,18 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
           return result({ ...candidate.value, product_protection: productProtection, execution: executionContract('image_edit', false) })
         }
         let images: string[]
-        images = await imageEditGenerator.generate({ prompt: appendProtectedProductConstraints(candidate.value.prompt), sourceImages: [{ bytes: sourceStored.body, mimeType: sourceStored.metadata.contentType }], region: candidate.value.region.rect, usageContext: { workspaceId, actionId: walletDebitKey, runKey: `image-edit:${walletDebitKey}` } })
+        const requestAbortController = new AbortController()
+        const abortOnRequestClose = () => requestAbortController.abort(new DOMException('image edit request aborted', 'AbortError'))
+        const abortOnRequestSocketClose = () => { if (req.socket?.destroyed || !req.complete) abortOnRequestClose() }
+        req.once('aborted', abortOnRequestClose)
+        req.once('close', abortOnRequestSocketClose)
+        try {
+          if (req.aborted || req.socket?.destroyed) abortOnRequestClose()
+          images = await imageEditGenerator.generate({ prompt: appendProtectedProductConstraints(candidate.value.prompt), sourceImages: [{ bytes: sourceStored.body, mimeType: sourceStored.metadata.contentType }], region: candidate.value.region.rect, usageContext: { workspaceId, actionId: walletDebitKey, runKey: `image-edit:${walletDebitKey}` }, signal: requestAbortController.signal })
+        } finally {
+          req.removeListener('aborted', abortOnRequestClose)
+          req.removeListener('close', abortOnRequestSocketClose)
+        }
         const editJob = service.enqueueImageGeneration({ workspaceId, productId: contextProduct.id, sourceAssetIds: [sourceAsset.id], direction: `局部编辑：${candidate.value.prompt}`, count: 1, idempotencyKey: `image-edit:${candidate.value.id}` })
         editJob.state = 'succeeded'
         const archived = await archiveGeneratedImages(workspaceId, editJob.id, images)

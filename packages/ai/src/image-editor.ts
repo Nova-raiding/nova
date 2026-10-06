@@ -10,6 +10,7 @@ export interface ImageEditInput {
   sourceImages: Array<{ bytes: Uint8Array; mimeType: string }>
   region: { x: number; y: number; width: number; height: number }
   usageContext?: RelayUsageContext
+  signal?: AbortSignal
 }
 
 export interface ImageEditGenerator {
@@ -81,15 +82,20 @@ export class OpenAICompatibleImageEditGenerator implements ImageEditGenerator {
     })
     if (sourceImages.length === 0) throw new Error('image edit requires at least one source image')
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 120_000)
+    const timeout = setTimeout(() => controller.abort(new DOMException('image edit provider request timed out', 'TimeoutError')), this.options.timeoutMs ?? 120_000)
+    const abortFromCaller = () => controller.abort(input.signal?.reason)
+    if (input.signal?.aborted) abortFromCaller()
+    else input.signal?.addEventListener('abort', abortFromCaller, { once: true })
     try {
       const requestBody = JSON.stringify({ model: this.options.model, prompt: input.prompt, image: sourceImages, image_mode: 'optimize', edit_region: input.region, n: 1, size: '1024x1024', response_format: 'url' })
       const providerKey = providerIdempotencyKey({ operation: 'image_edit', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
       const response = await withProviderRequestRetry(async () => {
+        let dispatched = false
         assertUsageSinkConfiguredBeforeDispatch(this.options.usageSink, this.options.relaySecurity?.environment)
         if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
         if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'image_edit', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
         controller.signal.throwIfAborted()
+        dispatched = true
         let candidate: Response
         try {
           candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${this.options.path ?? '/images/edits'}`, {
@@ -99,7 +105,10 @@ export class OpenAICompatibleImageEditGenerator implements ImageEditGenerator {
             signal: controller.signal,
             redirect: 'error',
           })
-        } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'image edit provider request') }
+        } catch (error) {
+          if (!dispatched) throw error
+          rethrowProviderTransportFailure(error, providerKey, 'image edit provider request')
+        }
         assertProviderResponseAccepted(candidate, providerKey, 'image edit provider')
         return candidate
       }, { signal: controller.signal })
@@ -120,7 +129,10 @@ export class OpenAICompatibleImageEditGenerator implements ImageEditGenerator {
       if (usage.metadata?.artifact_count_mismatch === true || images.length !== 1) throwProviderOutcomeUnknown(providerKey, 'image edit provider artifact count does not match reported usage')
       for (const image of images) assertImageArtifactQuality(image)
       return images
-    } finally { clearTimeout(timeout) }
+    } finally {
+      clearTimeout(timeout)
+      input.signal?.removeEventListener('abort', abortFromCaller)
+    }
   }
 }
 

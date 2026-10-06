@@ -197,6 +197,37 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(await invalidParams.json()).toMatchObject({ jsonrpc: '2.0', id: 6, error: { code: -32602 } })
   })
 
+  it('accepts the MCP initialized notification without emitting a JSON-RPC response', async () => {
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { ...headers, accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} }),
+    })
+    expect(response.status).toBe(202)
+    expect(await response.text()).toBe('')
+  })
+
+  it('keeps malformed native bodies on the JSON-RPC error contract', async () => {
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { ...headers, accept: 'application/json, text/event-stream', 'x-request-id': 'req_native_malformed', 'x-trace-id': 'trace_native_malformed' },
+      body: '{"jsonrpc":"2.0",',
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-request-id')).toBe('req_native_malformed')
+    expect(response.headers.get('x-trace-id')).toBe('trace_native_malformed')
+    expect(await response.json()).toMatchObject({
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code: -32700,
+        data: { code: 'INVALID_JSON_BODY', request_id: 'req_native_malformed', trace_id: 'trace_native_malformed' },
+      },
+    })
+  })
+
   it('keeps the HTTP authentication boundary outside native JSON-RPC dispatch', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
     const base = await start()

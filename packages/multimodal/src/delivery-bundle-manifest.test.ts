@@ -156,6 +156,16 @@ describe('deterministic delivery bundle manifest builder', () => {
     expect(manifestCheck.errors).toContainEqual(expect.objectContaining({ code: 'MANIFEST_HASH_MISMATCH', path: 'manifest.json' }))
   })
 
+  it('rejects duplicate file paths instead of silently verifying the last copy', () => {
+    const result = built()
+    const content = result.files.find(file => file.path === 'content.json')!
+    const duplicate = [...result.files, { ...content, content: `${String(content.content)}\n` }]
+    expect(verifyDeliveryBundle(result.manifest, duplicate, result.manifestHash)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([expect.objectContaining({ code: 'DUPLICATE_FILE', path: 'content.json' })]),
+    })
+  })
+
   it('rejects a blocked finding waiver and missing variant file reference', () => {
     const waiver = buildDeliveryBundleManifest(baseInput({
       reviewFindings: [{ code: 'LOGO_DRIFT', field: 'visual.logo', status: 'blocked', message: 'blocked', evidenceSourceIds: ['fact-product-17'] }],

@@ -13,6 +13,10 @@ function isNativeMcpMethod(method: unknown): method is 'initialize' | 'tools/lis
   return method === 'initialize' || method === 'tools/list' || method === 'tools/call'
 }
 
+function isNativeMcpNotification(method: unknown): method is 'notifications/initialized' {
+  return method === 'notifications/initialized'
+}
+
 export function isNativeMcpTransport(req: IncomingMessage, method: unknown, header: (req: IncomingMessage, name: string) => string | undefined) {
   if (isNativeMcpMethod(method)) return true
   return (header(req, 'accept') ?? '').split(',').some(value => value.trim().toLowerCase() === 'text/event-stream')
@@ -22,6 +26,7 @@ export function nativeMcpErrorCode(error: unknown) {
   if (error instanceof DomainError) {
     if (error.code === 'MCP_NATIVE_INVALID_REQUEST') return -32600
     if (error.code === ERROR_CODES.MCP_METHOD_NOT_FOUND) return -32601
+    if (error.code === ERROR_CODES.INVALID_JSON_BODY) return -32700
     if (error.code === ERROR_CODES.INVALID_REQUEST) return -32602
     if (error.code === ERROR_CODES.UNAUTHENTICATED || error.status === 401) return -32001
   }
@@ -35,14 +40,24 @@ export async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, 
   paymentReady: () => boolean
 }) {
   const hasId = Object.prototype.hasOwnProperty.call(input, 'id')
-  const validId = input.id === null || typeof input.id === 'string' || (typeof input.id === 'number' && Number.isFinite(input.id))
+  const validId = !hasId
+    ? isNativeMcpNotification(input.method)
+    : input.id === null || typeof input.id === 'string' || (typeof input.id === 'number' && Number.isFinite(input.id))
   const id = hasId && validId
     ? input.id as string | number | null
     : null
   nativeMcpRequests.add(req)
   nativeMcpRequestIds.set(req, id)
-  if (input.jsonrpc !== '2.0' || !hasId || !validId || typeof input.method !== 'string' || !input.method.trim()) {
+  if (input.jsonrpc !== '2.0' || (!hasId && !isNativeMcpNotification(input.method)) || !validId || typeof input.method !== 'string' || !input.method.trim()) {
     throw new DomainError('MCP_NATIVE_INVALID_REQUEST', '原生 MCP JSON-RPC 请求无效', 400)
+  }
+  if (isNativeMcpNotification(input.method)) {
+    if (input.params !== undefined && (!input.params || typeof input.params !== 'object' || Array.isArray(input.params))) {
+      throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'notifications/initialized params 必须是 JSON 对象', 400)
+    }
+    res.statusCode = 202
+    res.end()
+    return
   }
   if (!isNativeMcpMethod(input.method)) throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, `不支持的原生 MCP 方法: ${input.method}`, 404)
   if (input.method === 'initialize') {

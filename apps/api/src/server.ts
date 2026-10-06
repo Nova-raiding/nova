@@ -3116,6 +3116,21 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
   let extraction: AssetFactExtraction | undefined
   let parserFailure: unknown
   let parseAttempt = 0
+  const requestAbortController = new AbortController()
+  const abortOnRequestClose = () => {
+    // `aborted` is the authoritative signal for a request body that was
+    // interrupted. `close` also covers transports that close before Node
+    // emits `aborted`, but must not cancel a fully received request while the
+    // server is writing its response.
+    requestAbortController.abort(new DOMException('asset parse request aborted', 'AbortError'))
+  }
+  const abortOnRequestSocketClose = () => {
+    if (!req.complete) abortOnRequestClose()
+  }
+  const abortOnConnectionClose = () => abortOnRequestClose()
+  req.once('aborted', abortOnRequestClose)
+  req.once('close', abortOnRequestSocketClose)
+  req.socket.once('close', abortOnConnectionClose)
 
   try {
     const executed = await executeAssetParse({
@@ -3124,6 +3139,7 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
       assetId: asset.id,
       timeoutMs: effectiveTimeoutMs,
       maxAttempts,
+      callerSignal: requestAbortController.signal,
       timeoutRetryable: () => !ocrProviderEntered.has(`${workspaceId}:${ocrDebitKeyPrefix}${parseAttempt}`),
       onClaim: async lease => {
         parseAttempt = lease.attempts
@@ -3184,6 +3200,10 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
       throw new DomainError(error.code, error.message, status, { asset_id: asset.id, asset_persisted: true, retryable: error.record.retryable, attempts: error.record.attempts, next_actions: error.record.retryable ? ['asset.parse', 'asset.facts.confirm'] : ['asset.facts.confirm'] })
     }
     throw error
+  } finally {
+    req.removeListener('aborted', abortOnRequestClose)
+    req.removeListener('close', abortOnRequestSocketClose)
+    req.socket.removeListener('close', abortOnConnectionClose)
   }
 }
 
@@ -14594,6 +14614,15 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       requireOperationsRole, body, operations: () => persistence.operations ?? memoryOperations,
     })
     return send(res, response.status, 'unknown', response.data, null, req)
+  }
+  // Body parsing happens before the JSON-RPC method is available. Mark an
+  // explicitly SSE-capable MCP request as native first so malformed JSON or
+  // an oversized body still receives a JSON-RPC error rather than silently
+  // falling back to the legacy API envelope. This mirrors the transport
+  // selector below, which also treats `Accept: text/event-stream` as native.
+  if (req.method === 'POST' && path === '/mcp' && isNativeMcpTransportWithHeader(req, undefined, header)) {
+    nativeMcpRequests.add(req)
+    nativeMcpRequestIds.set(req, null)
   }
   const mcpInputForHydration = req.method === 'POST' && path === '/mcp' ? await body(req, MCP_BODY_LIMIT) : undefined
   const mcpMethodForHydration = typeof mcpInputForHydration?.method === 'string' ? mcpInputForHydration.method : undefined
