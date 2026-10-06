@@ -34,7 +34,7 @@ export const PLATFORM_RULE_SOURCES: readonly PlatformRuleSource[] = [
 
 const PLATFORM_RULE_SOURCE_PATHS: Readonly<Record<RuleSyncPlatform, readonly RegExp[]>> = {
   jd: [/^\/rule\/(?:list|ruleDetail)\.action$/u],
-  taobao: [/^\/(?:doc|docs)\//u],
+  taobao: [/^\/(?:doc|docs)\//u, /^\/api\.htm$/u, /^\/support\/announcementDetail\.htm$/u],
   tmall: [/^\/wow\/seller\/act\/guize(?:\/|$)/u],
   pinduoduo: [/^\/home\/(?:help|food_trade)(?:\/|$)/u],
   xiaohongshu: [/^\/(?:rule|helper|en\/open\/product)(?:\/|$)/u],

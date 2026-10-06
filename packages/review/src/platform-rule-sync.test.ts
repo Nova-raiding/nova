@@ -12,6 +12,7 @@ describe('platform rule sync status', () => {
 
   it('accepts approved secondary official sources used by manual platform packages', () => {
     expect(isApprovedPlatformRuleSource('taobao', 'https://rulechannel.taobao.com/')).toBe(true)
+    expect(isApprovedPlatformRuleSource('taobao', 'https://developer.alibaba.com/support/announcementDetail.htm?id=25721')).toBe(true)
     expect(isApprovedPlatformRuleSource('jd', 'https://helpcenter.jd.com/vender/issue/1000-44348.html')).toBe(true)
     expect(isApprovedPlatformRuleSource('pinduoduo', 'https://mms.pinduoduo.com/other/rule?listId=3&id=75')).toBe(true)
     expect(isApprovedPlatformRuleSource('douyin', 'https://open.douyin.com/platform/resource/docs/ability/content-management/douyin-publish-solution')).toBe(true)
