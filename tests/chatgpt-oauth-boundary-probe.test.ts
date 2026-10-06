@@ -25,7 +25,7 @@ async function withServer(handler: (req: IncomingMessage, res: ServerResponse) =
   } finally { await new Promise<void>(resolveClosed => server.close(() => resolveClosed())) }
 }
 function protocolHandler(req: IncomingMessage, res: ServerResponse) {
-  if (req.url?.startsWith('/oauth/authorize') || req.url === '/oauth/token') {
+  if (req.url?.startsWith('/oauth/authorize') || req.url === '/oauth/token' || req.url === '/oauth/register') {
     res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' })
     res.end(JSON.stringify({ error: 'UNAUTHENTICATED', error_description: 'remote OAuth is disabled' }))
   } else { res.writeHead(401); res.end() }

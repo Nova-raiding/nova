@@ -34,6 +34,7 @@ const authorization = new URLSearchParams({
 })
 await expectRetiredEndpoint('/oauth/authorize?' + authorization, {}, 'retired_authorize_not_rejected')
 await expectRetiredEndpoint('/oauth/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'grant_type=authorization_code' }, 'retired_token_not_rejected')
+await expectRetiredEndpoint('/oauth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }, 'retired_register_not_rejected')
 // Tool discovery must require a bearer. The real ChatGPT session remains a
 // separate browser acceptance step; this request intentionally has none.
 const mcp = await request('/mcp', {
